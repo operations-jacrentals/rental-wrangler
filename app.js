@@ -8178,6 +8178,7 @@ function bottomBarInner(opts = {}) {
     <button class="iconbtn js-chat-toggle${state.chat.open ? ' on' : ''}" data-tip="New team chat — flagged comments + tagged context">${I.chat}${(() => { const n = chatUnreadCount(); return n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''; })()}</button>
     <button class="iconbtn js-wrangler" data-tip="New chat with Mr. Wrangler — ask the yard AI, or report a bug" style="font-size:16px">🤠</button>
     ${opts.noInbox ? '' : `<button class="iconbtn js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${wranglerRequests.length ? `<span class="bb-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : ''}</button>`}
+    <button class="iconbtn js-gps-health" data-tip="Tracker Health — every GPS device across the fleet">${I.truck}</button>
     <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
     ${devUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
     <button class="iconbtn js-inspect${state.inspect ? ' on' : ''}" data-tip="Design Inspector — hover names the rule, click copies the reference">${I.search}</button>
@@ -10301,6 +10302,56 @@ function buildPopupEl(o, overlay, opts = {}) {
     const pop = el('div', 'popup'); pop.style.width = '400px';
     pop.innerHTML = popupShell({ icon: CARD_ICON.units || '', title: 'Connect GPS Device', tag: `Unit · GPS · ${u.name}`, body, foot });
     overlay.appendChild(pop);
+  } else if (o.kind === 'gpsHealth') {
+    // Phase 2 M2 — TRACKER HEALTH: every GPS device across all four providers, mapping-
+    // INDEPENDENT, bucketed by ping freshness with the dark ones pinned top. Renders off the
+    // live snapshot already in memory; also the login/account canary (empty list vs degraded
+    // banner vs devices-with-no-mapping tells you which layer is dark).
+    o.q = o.q || ''; o.bucket = o.bucket || 'all';
+    const roster = gpsConfigured() ? gpsFleetRoster() : [];
+    const q = o.q.trim().toLowerCase();
+    const matchRow = (r) => !q || `${r.name} ${r.serial || ''} ${gpsProvLabel(r.provider)} ${r.unit ? r.unit.name : ''}`.toLowerCase().includes(q);
+    const ORDER = { 'Not Reporting': 0, 'Verify': 1, 'Reporting': 2 };
+    const shown = roster.filter(matchRow).filter((r) => o.bucket === 'all' || r.status === o.bucket)
+      .sort((a, b) => (ORDER[a.status] - ORDER[b.status]) || gpsProvLabel(a.provider).localeCompare(gpsProvLabel(b.provider)) || a.name.localeCompare(b.name));
+    const nAll = roster.length, nMapped = roster.filter((r) => r.unit).length, nUnmapped = nAll - nMapped;
+    const nOff = roster.filter((r) => r.status === 'Not Reporting').length;
+
+    const rowHtml = (r) => `<div class="gpsh-row">
+      <span class="gpsh-prov">${badge(gpsProvLabel(r.provider))}</span>
+      <span class="gpsh-name">${esc(r.name)}${r.serial ? `<span class="gpsh-ser">${esc(r.serial)}</span>` : ''}</span>
+      <span class="gpsh-stat">${statusPill('gpsStatus', r.status)}</span>
+      <span class="gpsh-eng">${badge(r.engineOn ? 'Engine On' : 'Engine Off', r.engineOn ? 'green' : 'gray')}</span>
+      <span class="gpsh-seen muted">${r.lastSeen ? esc(gpsRelTime(r.lastSeen)) : '—'}</span>
+      <span class="gpsh-map">${r.unit ? refPill('units', r.unit.unitId, r.unit.name) : badge('Unmapped', 'yellow')}</span>
+    </div>`;
+
+    const bucketCtl = segCtl([
+      { label: `All ${nAll}`, js: 'js-gpsh-bucket', data: { val: 'all' }, on: o.bucket === 'all' ? 'orange' : '' },
+      { label: `Down ${nOff}`, js: 'js-gpsh-bucket', data: { val: 'Not Reporting' }, on: o.bucket === 'Not Reporting' ? 'orange' : '' },
+      { label: 'Verify', js: 'js-gpsh-bucket', data: { val: 'Verify' }, on: o.bucket === 'Verify' ? 'orange' : '' },
+      { label: 'Reporting', js: 'js-gpsh-bucket', data: { val: 'Reporting' }, on: o.bucket === 'Reporting' ? 'orange' : '' },
+    ]);
+    const degraded = !gpsConfigured() ? 'GPS backend isn’t configured (GPS_BACKEND_URL).'
+      : gpsLiveErr ? 'Live link down — showing the last good snapshot.'
+      : (gpsLiveAt === 0) ? 'No snapshot yet — the fleet is still checking in (or GPS login hasn’t returned a token).'
+      : '';
+    const body = `
+      <div class="gpsh-head">
+        <div class="gpsh-counts"><span class="gpsh-big">${nAll}</span> ${nAll === 1 ? 'device' : 'devices'} · ${nMapped} mapped · ${nUnmapped} unmapped</div>
+        <div class="gpsh-tools">
+          <div class="bv-searchwrap gpsh-search"><span class="s-icon">${I.search}</span><input class="bv-query js-gpsh-search" placeholder="Find a tracker…" value="${esc(o.q)}"></div>
+          <button class="iconbtn iconbtn-bare js-gpsh-refresh" data-tip="Refresh the snapshot">${I.refresh || '⟳'}</button>
+        </div>
+      </div>
+      ${degraded ? `<div class="gpsh-banner">${esc(degraded)}</div>` : ''}
+      <div class="gpsh-bucketrow">${bucketCtl}${nAll ? ghostPill('Export CSV', { js: 'js-gpsh-csv', tip: 'Download this roster as CSV' }) : ''}</div>
+      <div class="gpsh-list">
+        ${shown.length ? shown.map(rowHtml).join('') : `<div class="gpsh-empty">${nAll ? 'No trackers match that search.' : 'No trackers reporting on any provider account yet. If the GPS login was just deployed, sign out and back in; otherwise check the provider connections on the backend.'}</div>`}
+      </div>`;
+    const pop = el('div', 'popup gpsh-popup'); pop.style.width = '620px';
+    pop.innerHTML = popupShell({ icon: I.truck || '', title: 'Tracker Health', tag: 'Fleet · GPS roster', body });
+    overlay.appendChild(pop);
   } else if (o.kind === 'rulebook') {
     // THE VISUAL RULEBOOK (SPEC v8) — every example is emitted by the REAL
     // builder, so this reference can never drift from the code.
@@ -11104,6 +11155,7 @@ const WINDOW_CATALOG = [
   { kind: 'comment',       label: 'Comment note',            tag: 'Note · comment',           sample: () => ({ card: 'units', recId: ((DATA.units || [])[0] || {}).unitId, recType: null, color: 'yellow' }) },
   { kind: 'linkConfirm',   label: 'Confirm link',            tag: 'Link · confirm',           sample: () => ({ srcCard: 'rentals', srcId: ((DATA.rentals || [])[0] || {}).rentalId, targetCard: 'invoices', targetId: ((DATA.invoices || [])[0] || {}).invoiceId }) },
   { kind: 'gpsConnect',    label: 'Connect GPS device',      tag: 'Unit · GPS',                sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, step: 'provider', provider: 'Hapn' }) },
+  { kind: 'gpsHealth',     label: 'Tracker Health',          tag: 'Fleet · GPS roster',        sample: () => ({ q: '', bucket: 'all' }) },
   { kind: 'rulebook',      label: 'The R-Rulebook',          tag: 'SPEC v8 · design system',  sample: () => ({}) },
   { kind: 'partform',      label: 'Add / Edit Part · Task',  tag: 'Work order · line',         sample: () => ({ woId: ((DATA.workOrders || [])[0] || {}).woId }) },
   { kind: 'receiptform',   label: 'New / Edit Receipt',      tag: 'Expense · receipt',         sample: () => ({}) },
@@ -14502,6 +14554,20 @@ function onClick(e) {
   }
   if (closest('.js-link-confirm')) { e.stopPropagation(); return doLinkConfirm(); }
 
+  // Phase 2 M2 — Tracker Health roster (fleet-wide GPS device list)
+  if (closest('.js-gps-health')) {
+    e.stopPropagation();
+    if (gpsConfigured() && (gpsLiveAt === 0 || Date.now() - gpsLiveAt > 60000)) refreshGpsLive();   // freshen on open — re-renders when the snapshot lands
+    return openOverlay({ kind: 'gpsHealth', q: '', bucket: 'all' });
+  }
+  if (closest('.js-gpsh-bucket')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsHealth') return;
+    o.bucket = closest('.js-gpsh-bucket').dataset.val || 'all'; return renderOverlay();
+  }
+  if (closest('.js-gpsh-refresh')) { e.stopPropagation(); if (gpsConfigured()) refreshGpsLive(); return; }
+  if (closest('.js-gpsh-csv')) { e.stopPropagation(); return gpsRosterCsv(); }
+
   // §5a — the connect-a-device wizard (gpsConnect popup)
   if (closest('.js-gps-connect')) {
     e.stopPropagation();
@@ -15360,6 +15426,12 @@ function onInput(e) {
   if (e.target.classList.contains('js-gps-search')) {
     const o = state.overlay;
     if (o?.kind === 'gpsConnect') { o.deviceQuery = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.overlay .js-gps-search'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
+    return;
+  }
+  // Phase 2 M2 — Tracker Health roster live filter (same caret-restore pattern)
+  if (e.target.classList.contains('js-gpsh-search')) {
+    const o = state.overlay;
+    if (o?.kind === 'gpsHealth') { o.q = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.overlay .js-gpsh-search'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
     return;
   }
   if (e.target.classList.contains('chat-input')) { state.chat.draft = e.target.value; return; }
@@ -17899,6 +17971,46 @@ function startGpsViewPoll() {
     if (!u || !u.gpsProvider || !u.gpsDeviceId) return;   // ...and it's mapped to a tracker
     refreshGpsLive();                                     // re-renders when the snapshot lands
   }, 30000);
+}
+
+/* ── FLEET-WIDE GPS ROSTER (Tracker Health · Phase 2 M2) ──────────────────────────
+   The whole live snapshot as a flat, deduped device list — every tracker across all four
+   providers, INDEPENDENT of whether it's mapped to a unit yet. Powers the Tracker Health
+   roster, and doubles as the login/account canary: an empty list vs the degraded banner vs
+   devices-with-no-mapping tells you which layer is dark. Reuses the same freshness
+   thresholds as unitGpsStatus so a device reads the same status everywhere. */
+function gpsDeviceFresh(m) {
+  const t = m && m.lastSeen ? new Date(m.lastSeen).getTime() : NaN;
+  if (Number.isNaN(t)) return (m && m.lat != null && m.lng != null) ? 'Verify' : 'Not Reporting';
+  const age = Date.now() - t;
+  return age < GPS_FRESH_MS ? 'Reporting' : age < GPS_STALE_MS ? 'Verify' : 'Not Reporting';
+}
+function gpsFleetRoster() {
+  const byDevice = new Map();   // device key → the unit it's mapped to (mapped units only)
+  for (const u of (DATA.units || [])) if (u.gpsProvider && u.gpsDeviceId) byDevice.set(String(u.gpsDeviceId), u);
+  const machines = gpsLive ? [...new Set(gpsLive.values())] : [];   // dedupe: one machine is keyed under id/imei/…
+  return machines.map((m) => ({
+    key: gpsDevKey(m), machine: m, provider: String(m.source || ''),
+    name: m.name || gpsDevKey(m) || 'Tracker', serial: m.serialNumber || null,
+    status: gpsDeviceFresh(m), engineOn: !!m.engineOn, lastSeen: m.lastSeen || null,
+    unit: byDevice.get(gpsDevKey(m)) || null,
+  }));
+}
+const GPS_PROV_LABEL = { hapn: 'Hapn', deere: 'John Deere', yanmar: 'Yanmar', bouncie: 'Bouncie' };
+const gpsProvLabel = (p) => GPS_PROV_LABEL[String(p || '').toLowerCase()] || (p ? String(p) : 'GPS');
+
+/* Export the roster as CSV (Tracker Health · M2). Client-side Blob download — the same
+   snapshot the roster renders, no extra backend round-trip. */
+function gpsRosterCsv() {
+  const rows = gpsFleetRoster();
+  const cell = (v) => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const head = ['Provider', 'Device', 'Serial', 'Status', 'Engine', 'Last Seen', 'Mapped Unit'];
+  const lines = [head.join(',')].concat(rows.map((r) => [gpsProvLabel(r.provider), r.name, r.serial || '', r.status, r.engineOn ? 'On' : 'Off', r.lastSeen || '', r.unit ? r.unit.name : ''].map(cell).join(',')));
+  try {
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    const a = el('a'); a.href = URL.createObjectURL(blob); a.download = `tracker-health-${TODAY_ISO}.csv`;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  } catch (e) { toast('Could not build the CSV.'); }
 }
 
 /* ── GPS STATUS & ALERT HISTORY FEED (spec §6a) ───────────────────────────────

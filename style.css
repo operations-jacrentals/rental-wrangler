@@ -2136,6 +2136,31 @@ body.is-phone .set-tab-l { flex: 0 0 auto; }
 .gps-hazard.hot .gh-note { color: color-mix(in srgb, var(--red) 68%, var(--txt-3)); }
 @media (prefers-reduced-motion: no-preference) { .gps-hazard.hot { transition: box-shadow .15s ease, border-color .15s ease; } }
 
+/* ── TRACKER HEALTH roster (Phase 2 M2) — the fleet-wide GPS device list. Quiet steel
+   data-plate: a stamped count, a scannable row grid, freshness pinned top. Tokens only. */
+.gpsh-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.gpsh-counts { font-size: 12px; color: var(--txt-2); }
+.gpsh-counts .gpsh-big { font-family: 'Saira Condensed', var(--font); font-weight: 800; font-size: 20px; letter-spacing: .5px; color: var(--txt); margin-right: 3px; }
+.gpsh-tools { display: flex; align-items: center; gap: 8px; }
+.gpsh-search { width: 200px; margin: 0; }
+.gpsh-banner { font-size: 11.5px; color: color-mix(in srgb, var(--yellow) 72%, var(--txt)); background: var(--yellow-bg);
+  border: 1px solid color-mix(in srgb, var(--yellow) 34%, transparent); border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; }
+.gpsh-bucketrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.gpsh-list { display: flex; flex-direction: column; gap: 6px; max-height: 52vh; overflow-y: auto; }
+.gpsh-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto auto; align-items: center; gap: 10px;
+  padding: 8px 11px; border-radius: var(--chip-radius); background: var(--panel); border: 1px solid var(--line); }
+.gpsh-row .gpsh-name { min-width: 0; display: flex; flex-direction: column; gap: 1px; font-weight: 700; color: var(--txt);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gpsh-row .gpsh-ser { font-family: ui-monospace, monospace; font-size: 10.5px; font-weight: 500; color: var(--txt-3); letter-spacing: .2px; }
+.gpsh-row .gpsh-seen { font-size: 11px; color: var(--txt-3); white-space: nowrap; text-align: right; }
+.gpsh-empty { color: var(--txt-3); font-size: 12px; text-align: center; padding: 22px 14px; line-height: 1.45; }
+@media (max-width: 560px) {
+  .gpsh-row { grid-template-columns: auto minmax(0, 1fr) auto; row-gap: 6px; }
+  .gpsh-row .gpsh-eng, .gpsh-row .gpsh-seen, .gpsh-row .gpsh-map { grid-column: span 3; justify-self: start; }
+  .gpsh-row .gpsh-seen { text-align: left; }
+  .gpsh-search { width: 150px; }
+}
+
 /* List-rows customiser panel */
 .bv-customize { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: flex-start; padding: 14px 16px; background: var(--accent-soft); border-bottom: 1px solid var(--accent-line); }
 .bv-pick-group { min-width: 190px; }
