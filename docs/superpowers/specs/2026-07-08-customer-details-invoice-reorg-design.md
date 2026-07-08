@@ -109,6 +109,7 @@ Fold the two `.detail-cols` halves into one section with a segmented switch (`.s
 - Default tab: **Rental** (the higher-frequency surface).
 - Toggle state is view-local (mirror `session.cols` pattern — in-memory, snapshotted), **not** persisted to localStorage; resets to Rental on a fresh customer open.
 - **Equipment Sales gains two buyer-criteria fields** (Jac, 2026-07-08): **Desired Age** and **Desired Hours** (alongside the existing interested-categories + est. budget), captured on the customer/used-sales record. These feed future equipment-sales matching; render as `fm-line` meta fields.
+- **Interest is by Make OR Category** (Jac, 2026-07-08): the existing interested-categories list becomes a mixed list of **Make** and **Category** interests, and the add button reads **"＋ Make / Category"**. Each pill carries a small stamped type tag (Category = safety-orange, Make = leather-tan) so the two read distinctly. Extends `interestedCategoryIds` to hold typed interest entries (category-id or make), or a parallel makes list — settle at build; keep the icon/keyword matching for category pills working.
 - Frees a full column of width → room for the Invoices section.
 
 ### 3.6 Next Actions — a per-funnel list that replaces the schedule feature (Jac, 2026-07-08)
