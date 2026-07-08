@@ -8334,7 +8334,6 @@ function chatComments() {
 function chatUnreadCount() { const u = commentUserKey(); return chatComments().filter((c) => !(c.ack || []).includes(u)).length; }
 const chatById = (id) => state.chat.chats.find((c) => c.id === id) || null;
 const activeChat = () => chatById(state.chat.activeId);
-function chatRoleOn(id) { const c = activeChat(); return !!c && (c.members || []).includes(id); }
 function chatsTagging(card, recId) { return state.chat.chats.filter((c) => (c.tags || []).some((t) => t.ref && t.ref.card === card && String(t.ref.recId) === String(recId))); }
 function chatMarkSeen(chat) { const c = chat || activeChat(); if (c) c.seen[commentUserKey()] = Date.now(); }
 // an element re-flashes when ANY chat tagging it has messages this user hasn't seen (chats are never lost)
@@ -14293,7 +14292,6 @@ function onClick(e) {
   if (closest('.js-chat-markread')) { e.stopPropagation(); closeMenus(); const c = activeChat(); if (c) { chatMarkSeen(c); pushChatsSoon(); } return render(); }
   if (closest('.js-chat-rename')) { e.stopPropagation(); closeMenus(); setTimeout(() => { const i = document.querySelector('.chat-title-in'); if (i) { i.focus(); i.select(); } }, 0); return; }
   if (closest('.js-chat-end')) { e.stopPropagation(); closeMenus(); return commsEndConv(closest('.js-chat-end').dataset.chat, 'team'); }   // admin ends the chat (phone-safe: cat pinned)
-  if (closest('[data-chat-untag]')) { e.stopPropagation(); const id = closest('[data-chat-untag]').dataset.chatUntag; const c = activeChat(); if (c) c.tags = c.tags.filter((t) => t.id !== id); pushChatsSoon(); return render(); }
   if (closest('[data-chat-member]')) { e.stopPropagation(); return chatToggleMember(closest('[data-chat-member]').dataset.chatMember); }
   if (closest('[data-chat-open]')) { e.stopPropagation(); const [card, recId] = closest('[data-chat-open]').dataset.chatOpen.split('|'); return anchorRecord(SHOP_TYPES.includes(card) ? 'shop' : card, recId, SHOP_TYPES.includes(card) ? card : null); }
   // D8/D9 THE COMMS RAIL — toolbar chips · session tabs · the single window · ALL menu
@@ -17645,31 +17643,44 @@ let chatPushTimer = null, lastChatsJson = null;
 function normalizeChat(c) {
   return normalizeTeamChat({ id: c.id, title: c.title, members: Array.isArray(c.members) ? c.members : [], muted: Array.isArray(c.muted) ? c.muted : [], messages: c.messages || [], seen: c.seen || {}, by: c.by, tags: c.tags || [], participants: c.participants || [] });
 }
+const sameMembers = (a, b) => { a = (a || []).map(String).slice().sort(); b = (b || []).map(String).slice().sort(); return a.length === b.length && a.every((x, i) => x === b[i]); };
 function mergeChats(remoteChats) {
   if (!Array.isArray(remoteChats)) return { changed: false, localAhead: false };
   let changed = false, localAhead = false;
   const remoteById = new Map(remoteChats.filter((c) => c && c.id).map((c) => [c.id, c]));
   const localById = new Map(state.chat.chats.map((c) => [c.id, c]));
+  // The last snapshot we successfully synced — used to tell an UNPUSHED local edit
+  // (a rename/add/leave in flight) from a field we can safely adopt from the server.
+  const pushedById = new Map();
+  try { (JSON.parse(lastChatsJson || '[]') || []).forEach((c) => { if (c && c.id) pushedById.set(String(c.id), c); }); } catch (e) {}
   remoteChats.forEach((rc) => {
     if (!rc || !rc.id) return;
     const lc = localById.get(rc.id);
     if (!lc) { state.chat.chats.push(normalizeChat(rc)); changed = true; return; }   // a whole thread from another user
     normalizeTeamChat(lc);
     const haveMsg = new Set((lc.messages || []).map((m) => m.id));
-    (rc.messages || []).forEach((m) => { if (m && m.id && !haveMsg.has(m.id)) { lc.messages.push(m); changed = true; } });
+    (rc.messages || []).forEach((m) => { if (m && m.id && !haveMsg.has(m.id)) { lc.messages.push(m); changed = true; } });   // messages UNION (never lose one)
     lc.messages.sort((a, b) => (a.at || 0) - (b.at || 0));
-    if ((rc.title || '').trim() && !(lc.title || '').trim()) { lc.title = rc.title; changed = true; }   // adopt a title if we have none
-    (rc.members || []).forEach((p) => { if (!lc.members.includes(p)) { lc.members.push(p); changed = true; } });   // union members (never lose a member)
+    // `title` + `members` are ADMIN-authoritative, not union fields — the server holds the
+    // canonical set. Adopt the server's value UNLESS we hold an unpushed local edit (else a
+    // poll clobbers an in-flight rename / member-add / self-leave). This is the fix for the
+    // "Leave gets reverted" + "kicks/renames don't propagate live" races.
+    const pushed = pushedById.get(String(rc.id));
+    const titleDirty = pushed && (lc.title || '') !== (pushed.title || '');
+    if (!titleDirty && (lc.title || '') !== (rc.title || '')) { lc.title = rc.title || ''; changed = true; }
+    const membersDirty = pushed && !sameMembers(lc.members, pushed.members);
+    if (!membersDirty && !sameMembers(lc.members, rc.members)) { lc.members = (rc.members || []).map(String); changed = true; }
+    if (rc.by && lc.by == null) lc.by = rc.by;
     const haveTag = new Set((lc.tags || []).map((t) => t.id));
     (rc.tags || []).forEach((t) => { if (t && t.id && !haveTag.has(t.id)) { (lc.tags = lc.tags || []).push(t); changed = true; } });   // legacy passthrough
     Object.keys(rc.seen || {}).forEach((k) => { if ((rc.seen[k] || 0) > (lc.seen[k] || 0)) lc.seen[k] = rc.seen[k]; });   // latest-seen wins (view state)
   });
-  state.chat.chats.forEach((lc) => {   // does local hold anything the server lacks? → we should push
+  state.chat.chats.forEach((lc) => {   // does local hold an unpushed edit the server lacks? → push
     const rc = remoteById.get(lc.id);
     if (!rc) { localAhead = true; return; }
     const rMsg = new Set((rc.messages || []).map((m) => m.id));
     if ((lc.messages || []).some((m) => !rMsg.has(m.id))) localAhead = true;
-    if ((lc.members || []).some((p) => !(rc.members || []).includes(p))) localAhead = true;
+    if (!sameMembers(lc.members, rc.members)) localAhead = true;
     if ((lc.title || '') !== (rc.title || '')) localAhead = true;
   });
   return { changed, localAhead };

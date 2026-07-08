@@ -96,10 +96,15 @@ function chatAuthorizeWrite_(existing, inc, me, rosterId) {
   var mem = (existing.members || []).map(String);
   var amMember = rosterId != null && mem.indexOf(String(rosterId)) !== -1;
   if (!amMember) return null;                                // not a participant → reject
-  var next = {}; for (var k in existing) next[k] = existing[k];   // start from the SERVER copy
+  var next = {}, k; for (k in existing) next[k] = existing[k];   // start from the SERVER copy
   next.messages = chatMergeMsgs_(existing.messages, inc.messages);
-  next.seen = chatMergeSeen_(existing.seen, inc.seen);
-  next.muted = inc.muted || existing.muted;                  // let a member set their own mute
+  // a member may only touch THEIR OWN view-state — seen[me] + their own mute — never others'
+  var seen = {}, sk; for (sk in (existing.seen || {})) seen[sk] = existing.seen[sk];
+  if (inc.seen && inc.seen[me] != null && (inc.seen[me] > (seen[me] || 0))) seen[me] = inc.seen[me];
+  next.seen = seen;
+  var muted = (existing.muted || []).filter(function (x) { return String(x) !== String(me); });
+  if ((inc.muted || []).map(String).indexOf(String(me)) !== -1) muted.push(me);
+  next.muted = muted;
   var incMem = (inc.members || []).map(String);
   next.members = (incMem.indexOf(String(rosterId)) === -1)   // allow SELF-leave only
     ? mem.filter(function (x) { return x !== String(rosterId); })
