@@ -20,7 +20,7 @@
   plus six ES-module siblings (`config.js`, `data.js`, `cascade.js`,
   `icons.js`, `agreements.js`, `service-countdown.js`) and **`style.css`**.
 - `app.js` is divided into **chapters** marked by `═` banners. Each chapter has a
-  stable **ID** (`APP-01` … `APP-38`) and usually a legacy **`§`-anchor** (e.g.
+  stable **ID** (`APP-01` … `APP-39`) and usually a legacy **`§`-anchor** (e.g.
   `§3`) that ties back to SPEC v8. *We never renumber `§`* — the IDs are the
   stable handle; the `§`s are preserved as-is. The IDs are **stamped into the
   banner comments**, so `grep "APP-19" app.js` jumps straight to that chapter
@@ -212,6 +212,17 @@ that is the real database.*
   client: load on sign-in, debounced save, snapshots. `BACKEND_URL`,
   `backendCall`, `loadFromBackend`, `dataSnapshot`, `PERSIST_KEYS`. _Debug here
   when:_ data won't save/load or the password gate fails.
+- **`APP-39 · D8/D9 The Comms Rail** — the four-category comms surface on the
+  bottom bar (spec `comms-notifications.md` D8 + D9): the Team · Texts · Email ·
+  Mr. Wrangler toolbar chips (each wearing its category's worst status dot),
+  per-device session tabs (`state.commsRail`, `jactec.commsRail`), the SINGLE
+  open conversation window above its own tab (D9 single-open law — `lastOpen`),
+  the ALL menu (Open / End / + New chat), freeform sends (`commsSend` →
+  `sendCustomerMessage`), the R20 Text…/Email… entries, and the customer-profile
+  Comms section (`commsCustSectionHtml`). Team and Mr. Wrangler are LIVE rail
+  sessions riding the APP-23 chat store and the APP-28 wrangler machinery — the
+  old docks survive as phone-only bottom sheets. _Debug here when:_ a chip, rail
+  tab, comms window, or customer thread misbehaves.
 
 ---
 

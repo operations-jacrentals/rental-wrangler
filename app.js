@@ -2066,6 +2066,56 @@ function saveSort(card, sort) {
 // the entity-card a record belongs to (Shop holds 3 entity types via recType)
 const entityCardOf = (card, recType) => (card === 'shop' ? recType : card);
 
+/* ── D8/D9 THE COMMS RAIL — per-device session persistence (spec comms D8 + D9).
+   { cat, sessions: { team|text|email|wrangler: { tabs:[id…], lastOpen, hidden:[id…],
+   menuOpen } } }. D9 SINGLE-OPEN LAW: `lastOpen` replaces D8's `open:{}` multi-map —
+   a session remembers only its LAST-open conversation, so at most ONE window is
+   mounted at any time across all categories (a chip re-summon restores exactly one).
+   `tabs` = the pulled customer threads (Texts/Email); Team/Wrangler tabs derive from
+   their own stores, with `hidden` as the per-device ✕-hide set. Sessions persist like
+   the item-tab rail (jactec.commsRail), but `cat` is NEVER restored — login/boot = an
+   EMPTY rail ("quiet start" is inherent; nothing shows until the user reaches). */
+const COMMS_LS_KEY = 'jactec.commsRail';
+const COMMS_CATS = ['team', 'text', 'email', 'wrangler'];
+const commsFreshSessions = () => Object.fromEntries(COMMS_CATS.map((k) => [k, { tabs: [], lastOpen: null, hidden: [], menuOpen: false }]));
+function loadCommsRail() {
+  const rail = { cat: null, sessions: commsFreshSessions() };
+  try {
+    const saved = JSON.parse(localStorage.getItem(COMMS_LS_KEY) || '{}');
+    COMMS_CATS.forEach((k) => {
+      const s = saved.sessions && saved.sessions[k]; if (!s) return;
+      // D8→D9 migration: a stored `open:{}` multi-map folds to its first key (single-open)
+      const lastOpen = s.lastOpen != null ? String(s.lastOpen)
+        : (s.open && typeof s.open === 'object' && Object.keys(s.open)[0]) || null;
+      rail.sessions[k] = { tabs: Array.isArray(s.tabs) ? s.tabs.map(String) : [], lastOpen, hidden: Array.isArray(s.hidden) ? s.hidden.map(String) : [], menuOpen: !!s.menuOpen };
+    });
+  } catch (e) {}
+  return rail;
+}
+function saveCommsRail() { try { localStorage.setItem(COMMS_LS_KEY, JSON.stringify({ sessions: state.commsRail.sessions })); } catch (e) {} }
+/* 'Ended' conversations (spec D8: End ≠ delete — the full history persists forever;
+   the conversation just leaves the All list + rail). A CLIENT-side per-device map of
+   `id|channel` → ended-at epoch (D9: the timestamp lets Team/Wrangler chats RESURRECT
+   when a message NEWER than the End arrives; legacy array entries load as `true` =
+   ended until explicitly re-opened). Channels: sms · email · team · wrangler. */
+const COMMS_ENDED_KEY = 'jactec.commsEnded';
+function commsEndedMap() {
+  try {
+    const v = JSON.parse(localStorage.getItem(COMMS_ENDED_KEY) || '{}');
+    if (Array.isArray(v)) return Object.fromEntries(v.map((k) => [k, true]));   // legacy Set shape
+    return (v && typeof v === 'object') ? v : {};
+  } catch (e) { return {}; }
+}
+function commsEndedSet() { return new Set(Object.keys(commsEndedMap())); }
+/* Ended, honoring resurrection: a message newer than the End un-ends the conversation. */
+function commsIsEnded(id, channel, lastAt) {
+  const ts = commsEndedMap()[String(id) + '|' + channel];
+  if (ts === undefined) return false;
+  return !(typeof ts === 'number' && (lastAt || 0) > ts);
+}
+function commsEnd(customerId, channel) { const m = commsEndedMap(); m[String(customerId) + '|' + channel] = Date.now(); try { localStorage.setItem(COMMS_ENDED_KEY, JSON.stringify(m)); } catch (e) {} }
+function commsUnend(customerId, channel) { const m = commsEndedMap(); const k = String(customerId) + '|' + channel; if (k in m) { delete m[k]; try { localStorage.setItem(COMMS_ENDED_KEY, JSON.stringify(m)); } catch (e) {} } }
+
 const state = {
   data: DATA,
   theme: 'bluedsteel',   // Blued Steel is the only theme now — Yard mode removed (Jac 2026-06-15)
@@ -2083,7 +2133,8 @@ const state = {
   availWin: null,      // §10 persistent window scope for the "available" search (set by the picker; outlives it)
   filterTerms: [],            // §5.4 — AND-narrowing filter terms (type + Enter)
   unitPick: null,             // { ids, from } — Invoice +WO narrows the Units list to the invoice's linked units (Phase 4)
-  chat: { open: false, activeId: null, draft: '', chats: [] },   // §17 internal team dock (Phase 7): PERSISTENT chats (never deleted). Each = { id, tags, participants, messages, seen{userKey:lastViewedAt} }. Empty participants = dormant; reopen via a tagged element.
+  chat: { open: false, activeId: null, draft: '', chats: [] },   // §17 team chats (2026-07-08 rail spec): PERSISTENT titled threads (never deleted). Each = { id, title, members[personId], messages[{…,refs?}], seen{userKey:at}, by }. Members default none; visibility ungated pending the login↔roster bind (spec §7).
+  held: null,   // Copy→paste: the ONE held element awaiting paste into an internal (Team / Mr. Wrangler) chat — { card, recId, label }. Not persisted (cleared on refresh).
   wrangler: { open: false, min: false, id: null, messages: [], busy: false, error: '', draft: '', attach: [], files: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null },   // §18 Mr. Wrangler dock — id ties the live chat to its §18g rail snapshot; min collapses it to the header bar; survives minimize, restores conversation on reopen
   mobileCol: 0,               // §M1 — which column the phone shows (0 Yard · 1 Rentals · 2 Customers); drives swipe position + the per-column bottom strip
   woPartForm: null,           // woId whose "+ Add Part/Labor" inline form is open
@@ -2095,6 +2146,7 @@ const state = {
   previewsOn: (() => { try { return localStorage.getItem('jactec.previewsOff') !== '1'; } catch (e) { return true; } })(),   // hover previews (per device)
   overbookOn: (() => { try { return localStorage.getItem('jactec.overbook') === '1'; } catch (e) { return false; } })(),   // §10 allow-overbooking policy (per device, default OFF — drag build)
   hapticsOff: (() => { try { return localStorage.getItem('jactec.hapticsOff') === '1'; } catch (e) { return false; } })(),   // §M-touch Vibration-API feedback (per device, default ON; Android-only, no-op on iOS)
+  commsRail: loadCommsRail(),   // D8 THE COMMS RAIL — { cat, sessions } per device; cat always null at boot (empty rail at login)
   wranglerRail: [],   // §18g the bottom-right rail of past Mr. Wrangler conversations (per device), each a snapshot { id, title, ts, card, recId, recType, reqNumber, reqTitle, reqUrl, messages }. Loaded async from IndexedDB (wranglerRailLoad) — IndexedDB replaced the localStorage rail that silently overflowed.
   settings: loadAdminSettings(),   // Settings Board admin customization (config.settings); mirrored to localStorage, applied at boot via applySettings()
 };
@@ -4605,12 +4657,16 @@ function openCtxMenu(e, hit) {
   m.className = 'ctx-menu'; m.id = 'rw-ctx';
   const item = (act, label) => `<button class="dd-item" data-ctx="${act}">${label}</button>`;
   const linkSec = linkItems.length ? linkItems.map((a) => `<button class="dd-item" data-ctx="link:${a.target}">${CARD_ICON[a.target] || ''}${esc(a.label)}</button>`).join('') + '<div class="menu-sep"></div>' : '';
-  m.innerHTML = linkSec + [
+  // D8 comms block — on a customer, Text… / Email… start (or resurrect) that
+  // conversation onto the rail. ('Ask Mr. Wrangler about…' rides D8 Phase B.)
+  const ctxCust = ctxRecord && ctxRecord.card === 'customers' ? recOf('customers', ctxRecord.recId) : null;
+  const commsSec = ctxCust ? `<button class="dd-item" data-ctx="commsText">${I.messageSquare}Text ${esc((ctxCust.firstName || fullName(ctxCust) || 'customer').trim().split(/\s+/)[0])}…</button><button class="dd-item" data-ctx="commsEmail">${I.mail}Email ${esc((ctxCust.firstName || fullName(ctxCust) || 'customer').trim().split(/\s+/)[0])}…</button><div class="menu-sep"></div>` : '';
+  m.innerHTML = commsSec + linkSec + [
     item('cut', '✂️ Cut'), item('copy', '📋 Copy'), item('paste', '📥 Paste'), item('clear', '🧹 Clear'),
     '<div class="menu-sep"></div>',
     item('search', '🔎 Search'), item('gsearch', '🌐 Global Search'), item('replace', '✏️ Replace'),
     '<div class="menu-sep"></div>',
-    item('comment', '💬 Add Comment'), item('startchat', '🧵 Start chat'), item('wrangler', '🤠 Ask Mr. Wrangler'),
+    item('comment', '💬 Add Comment'), item('copyel', '📋 Copy to chat'), item('wrangler', '🤠 Ask Mr. Wrangler'),
   ].join('');
   document.body.appendChild(m);
   m.style.left = Math.min(e.clientX, window.innerWidth - 205) + 'px';
@@ -4666,6 +4722,11 @@ function runCtxAction(act) {
     else if (act === 'gv-reset') saveGvChrome(card, { pills: false, sort: false });
     return render();
   }
+  if (act === 'commsText' || act === 'commsEmail') {   // D8 — start/resume a customer conversation from the R20 menu
+    const rec = ctxRecord; closeCtxMenu(); document.removeEventListener('mousedown', ctxOutside); ctxRecord = null;
+    if (rec && rec.card === 'customers') commsOpenConv(act === 'commsText' ? 'text' : 'email', rec.recId);
+    return;
+  }
   if (act.startsWith('link:')) {   // §17b — menu-driven linking
     const target = act.slice(5); const rec = ctxRecord;
     closeCtxMenu(); document.removeEventListener('mousedown', ctxOutside); ctxRecord = null;
@@ -4705,7 +4766,7 @@ function runCtxAction(act) {
     if (!hit) { toast('Right-click a record (or open one) to comment.'); return; }
     return openOverlay({ kind: 'comment', card: hit.card, recId: hit.recId, recType: hit.recType, color: 'yellow' });
   }
-  if (act === 'startchat') return startChatFromEl(el);   // §17 — start a team chat seeded from this element
+  if (act === 'copyel') return copyElement(el);   // §17 — copy this element; paste it into a Team / Mr. Wrangler chat as a live chip
   if (act === 'wrangler') {
     const hit = cardRecordAt(el);   // §18 — open Mr. Wrangler dock, record-aware when a record is under the cursor
     return openWranglerDock({ messages: [], draft: '', attach: [], card: hit ? hit.card : null, recId: hit ? hit.recId : null, recType: hit ? hit.recType : null, reqNumber: null, reqTitle: null, reqUrl: null });
@@ -6743,6 +6804,7 @@ const DETAIL = {
       ${activity}
       ${activeBar}
       ${account}
+      ${commsCustSectionHtml(c)}
       ${paymentMethodsSection(c)}
       ${notes.bottom}
       ${historySection('customers', c, cs)}
@@ -8147,12 +8209,11 @@ function bottomBarInner(opts = {}) {
   // rules 5/6: LEFT = labeled actions (icon LEADS label, no "+"), Wash joins them;
   // RIGHT (after divider) = icon-only utilities. The +New collapse button is dropped (Jac).
   return `
+    ${commsChipsHtml()}
     <button class="iconbtn js-newitem" data-new="receipt">${CARD_ICON.expenses}Receipt</button>
     <span class="bb-sep"></span>
     <button class="iconbtn js-qr" data-tip="Share session (QR)">${I.qr}</button>
     <button class="iconbtn${state.previewsOn ? '' : ' off'} js-previews" data-tip="${state.previewsOn ? 'Hover previews: on' : 'Hover previews: off'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
-    <button class="iconbtn js-chat-toggle${state.chat.open ? ' on' : ''}" data-tip="New team chat — flagged comments + tagged context">${I.chat}${(() => { const n = chatUnreadCount(); return n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''; })()}</button>
-    <button class="iconbtn js-wrangler" data-tip="New chat with Mr. Wrangler — ask the yard AI, or report a bug" style="font-size:16px">🤠</button>
     ${opts.noInbox ? '' : `<button class="iconbtn js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${wranglerRequests.length ? `<span class="bb-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : ''}</button>`}
     <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
     ${devUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
@@ -8160,9 +8221,9 @@ function bottomBarInner(opts = {}) {
     <button class="iconbtn js-rulebook" data-tip="The R-Rulebook — visual design reference (SPEC v8)">${I.doc}</button>` : ''}
     ${adminUnlocked() ? `<button class="iconbtn js-photo-sweep" data-tip="Offload base64 photos to Drive — one-shot migration to de-bloat the payload">${I.camera}</button>` : ''}`;
 }
-// §18g/§17 — the bottom COMMS BAND: toolbar pinned left · the conversation rail
-// fills the middle (every Mr. Wrangler request + chat and every team thread is its
-// OWN tab, so nothing funnels into one session) · bell + inbox at the right.
+// §18g/§17/D9 — the bottom COMMS BAND: toolbar (with the four comms chips) pinned
+// left · the conversation rail fills the middle (idle = the actionable Mr. Wrangler
+// request tabs; a summoned category session otherwise) · the bell at the right.
 function bottomBarEl() {
   const bar = el('div', 'bottombar');
   bar.innerHTML = `<div class="bb-tools">${bottomBarInner({ noInbox: true })}</div>`
@@ -8179,62 +8240,39 @@ function commsUtilsEl() {
   const notifBadge = nu ? `<span class="fab-badge">${nu > 9 ? '9+' : nu}</span>` : '';
   return `<button class="fab js-notifications" data-tip="Notifications — resolved fixes">${I.bell}${notifBadge}</button>`;
 }
-// The conversation rail: Wrangler + Team channels (split by a thin divider, no section
-// labels), each conversation a SEPARATE tab. 🤠 Wrangler — one tab per OPEN request
-// (needs-answer = red · needs-your-OK = yellow; both open the dock, which carries
-// Approve/Dismiss), the live chat, and every past chat. 💬 Team — one tab per active
-// thread. Tabs read as actionable via a STEADY tinted edge (no perpetual glow). The rail
-// REPLACES the old Requests inbox on desktop; each opens ONLY its own thread
-// (data-wrc-needs / data-wrc-open / data-team-open).
+// The conversation rail. Idle (no chip summoned) it carries ONLY the open Mr. Wrangler
+// REQUEST tabs (needs-answer = red · needs-your-OK = yellow; they replaced the desktop
+// Requests inbox — each opens its own conversation window with Approve/Dismiss). All
+// conversation tabs — Team, Texts, Email, Mr. Wrangler chats — ride the summoned
+// category session (D9; the old always-on team/wrangler tab groups retired).
 function commsRailEl() {
+  // D8/D9 THE COMMS RAIL — a summoned session takes the rail (one category at a time;
+  // a sibling chip or a re-click sweeps it clean). D9: ALL FOUR categories — Team and
+  // Mr. Wrangler chats now ride the same session-tab engine as Texts/Email (their old
+  // dock tab groups retired with the docks).
+  if (state.commsRail.cat) return commsSessTabsHtml();
   const trim = (t, n = 24) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return esc(t.length > n ? t.slice(0, n - 1) + '…' : t); };
-  // ── 🤠 WRANGLER ── every open request is its own tab (the inbox lived here before)
+  // ── 🤠 WRANGLER REQUESTS ── every open request is its own tab (they replaced the
+  // desktop approval inbox, so they stay on the idle rail — actionable alerts, not chats).
   const reqStateKey = (rq) => { const L = rq.labels || []; return L.includes('wrangler-needs-jac') ? 'needs' : L.includes('wrangler-fix') ? 'building' : 'ok'; };
-  const open = (wranglerRequests || []);
-  const reqNums = new Set(open.map((rq) => rq.number));
   const wrOpen = state.wrangler.open;
-  const reqTabs = open.filter((rq) => reqStateKey(rq) !== 'building').map((rq) => {   // building = Mr. Wrangler working; not actionable, surfaces via the bell when done
+  const reqTabs = (wranglerRequests || []).filter((rq) => reqStateKey(rq) !== 'building').map((rq) => {   // building = Mr. Wrangler working; not actionable, surfaces via the bell when done
     const st = reqStateKey(rq), cls = st === 'needs' ? 'crail-needs' : 'crail-ok';
     const tip = st === 'needs' ? `Mr. Wrangler needs your answer — #${rq.number}` : `Needs your OK — #${rq.number}`;
     const active = wrOpen && (state.wrangler.reqNumber === rq.number || state.wrangler.id === 'req' + rq.number);
     return `<button class="crail-tab ${cls}${active ? ' is-active' : ''}" data-wrc-needs="${rq.number}" role="tab" aria-selected="${active}" data-tip="${tip}"><span class="crail-dot"></span><span class="crail-t">${trim(rq.title || ('Request #' + rq.number))}</span></button>`;
   }).join('');
-  // §18g A chat is "resolved" — take it off the rail — once the bug it filed is fixed/closed:
-  // it filed at least one issue (message m.issue) and NONE of those are still open. Guarded on a
-  // loaded requests list so a failed/empty fetch never hides live chats. Non-destructive — the chat
-  // stays in the store, it just leaves the tab bar (Jac 2026-07-03 — "take away the resolved ones").
-  const wrChatResolved = (c) => {
-    if (!reqLoaded) return false;
-    const filed = (c.messages || []).map((m) => m.issue).filter((n) => n != null);
-    return filed.length > 0 && filed.every((n) => !wranglerRequests.some((rq) => rq.number === n));
-  };
-  const snaps = (state.wranglerRail || []).filter((c) => !c.reqNumber && !wrChatResolved(c));
-  // the live chat first if it's a brand-new one not yet snapshotted onto the rail
-  let liveTab = '';
-  if (wrOpen && state.wrangler.id && !state.wrangler.reqNumber && !snaps.some((c) => c.id === state.wrangler.id) && (state.wrangler.messages || []).length) {
-    liveTab = `<button class="crail-tab is-active" data-wrc-open="${esc(state.wrangler.id)}" role="tab" aria-selected="true" data-tip="Current chat with Mr. Wrangler"><span class="crail-dot"></span><span class="crail-t">${trim(wranglerConvoTitle(state.wrangler) || 'New chat')}</span><span class="crail-x js-wrc-remove" data-wrc-rm="${esc(state.wrangler.id)}" aria-label="Remove this chat" data-tip="Remove this chat">×</span></button>`;
-  }
-  const snapTabs = snaps.map((c) => {
-    const active = wrOpen && state.wrangler.id === c.id;
-    return `<button class="crail-tab${active ? ' is-active' : ''}" data-wrc-open="${esc(c.id)}" role="tab" aria-selected="${active}" data-tip="Reopen this chat with Mr. Wrangler"><span class="crail-dot"></span><span class="crail-t">${trim(c.title || 'Chat')}</span><span class="crail-x js-wrc-remove" data-wrc-rm="${esc(c.id)}" aria-label="Remove this chat" data-tip="Remove this chat">×</span></button>`;
-  }).join('');
-  const wrTabs = reqTabs + liveTab + snapTabs;
-  // ── 💬 TEAM ──
-  const u = commentUserKey();
-  const teamChats = (state.chat.chats || []).filter((c) => c.participants.length && c.messages.length)
-    .sort((a, b) => Math.max(0, ...b.messages.map((m) => m.at || 0)) - Math.max(0, ...a.messages.map((m) => m.at || 0)));
-  const teamTabs = teamChats.map((c) => {
-    const active = state.chat.open && state.chat.activeId === c.id;
-    const unseen = c.messages.length && Math.max(...c.messages.map((m) => m.at || 0)) > (c.seen[u] || 0);
-    const tag = (c.tags && c.tags[0]) || null;
-    const label = (tag && tag.label) || 'Team chat';
-    return `<button class="crail-tab c-${(tag && tag.color) || 'gray'}${active ? ' is-active' : ''}${unseen ? ' is-unseen' : ''}" data-team-open="${esc(c.id)}" role="tab" aria-selected="${active}" data-tip="${esc(label)}"><span class="crail-dot"></span><span class="crail-t">${trim(label)}</span></button>`;
-  }).join('');
-  const groups = [];
-  if (wrTabs) groups.push(`<div class="crail-group">${wrTabs}</div>`);
-  if (teamTabs) groups.push(`<div class="crail-group">${teamTabs}</div>`);
-  return groups.length ? groups.join('<span class="crail-div" aria-hidden="true"></span>')
-    : '<span class="crail-empty">No conversations yet — start one from the tools on the left.</span>';
+  return reqTabs ? `<div class="crail-group">${reqTabs}</div>`
+    : '<span class="crail-empty">Quiet on the line — the chips at left round up a conversation.</span>';
+}
+// §18g A wrangler chat is "resolved" — take it off the rail — once the bug it filed is
+// fixed/closed: it filed at least one issue (message m.issue) and NONE of those are still
+// open. Guarded on a loaded requests list so a failed/empty fetch never hides live chats.
+// Non-destructive — the chat stays in the store, it just leaves the tab bar (Jac 2026-07-03).
+function wrChatResolved(c) {
+  if (!reqLoaded) return false;
+  const filed = (c.messages || []).map((m) => m.issue).filter((n) => n != null);
+  return filed.length > 0 && filed.every((n) => !wranglerRequests.some((rq) => rq.number === n));
 }
 // §M1 — phone-only per-column bottom strip: Yard→internal chat · Rentals→tool bar · Customers→external chats (shell).
 // §M1/§M3 — the active phone column's card id (state.cards key), for the grid Back/Fwd swipe.
@@ -8296,33 +8334,79 @@ function chatComments() {
 function chatUnreadCount() { const u = commentUserKey(); return chatComments().filter((c) => !(c.ack || []).includes(u)).length; }
 const chatById = (id) => state.chat.chats.find((c) => c.id === id) || null;
 const activeChat = () => chatById(state.chat.activeId);
-function chatRoleOn(id) { const c = activeChat(); return !!c && c.participants.includes(id); }
 function chatsTagging(card, recId) { return state.chat.chats.filter((c) => (c.tags || []).some((t) => t.ref && t.ref.card === card && String(t.ref.recId) === String(recId))); }
-function chatMarkSeen() { const c = activeChat(); if (c) c.seen[commentUserKey()] = Date.now(); }
+function chatMarkSeen(chat) { const c = chat || activeChat(); if (c) c.seen[commentUserKey()] = Date.now(); }
 // an element re-flashes when ANY chat tagging it has messages this user hasn't seen (chats are never lost)
 function chatUnseenForRec(card, recId) {
   const u = commentUserKey();
   return chatsTagging(card, recId).some((c) => c.messages.length && Math.max(...c.messages.map((m) => m.at || 0)) > (c.seen[u] || 0));
 }
-function newChat(tag) {
-  const c = { id: 'CHAT' + (state.seq++), tags: tag ? [tag] : [], participants: ROLES.map((r) => r.id), messages: [], seen: { [commentUserKey()]: Date.now() } };
+// A team chat is now a user-created, TITLED thread with chosen MEMBERS (roster people,
+// default none) — see the 2026-07-08 comms-rail spec. `tags`/`participants` retired
+// (record context now rides in as pasted chips, §Copy/paste). Legacy chats normalize
+// in normalizeTeamChat() on load.
+function newChat(opts) {
+  opts = opts || {};
+  // Creator = admin (tracked by `by`) — that alone grants them visibility + control, so
+  // members starts empty ("default no one"); the admin adds people deliberately.
+  const c = { id: 'CHAT' + (state.seq++), title: opts.title || '', members: opts.members ? [...opts.members] : [], messages: [], seen: { [commentUserKey()]: Date.now() }, by: commentUserKey() };
   state.chat.chats.push(c); state.chat.activeId = c.id; pushChatsSoon(); return c;
 }
-// Reopen a dormant/existing chat through one of its tagged elements — the chat is never lost;
-// the current user rejoins (their role selected) and the dock opens to it.
+// ── Team-chat identity + ownership (2026-07-08) ──
+// The current user resolved to a roster person, by matching the typed login name to a
+// Settings → Team Roster entry (the pragmatic login↔roster bind). null = not on the
+// roster (a demo / un-rostered login) → treated as an unbound viewer below.
+function myRosterId() {
+  const me = (currentUser || '').trim().toLowerCase(); if (!me) return null;
+  const hit = ((state.settings && state.settings.employees) || []).find((e) => (e.name || '').trim().toLowerCase() === me);
+  return hit ? String(hit.id) : null;
+}
+// The chat's creator owns it: only they add/remove members or rename. Legacy chats with
+// no recorded creator stay openly editable (back-compat — they predate the model).
+function chatIsAdmin(c) { return !c || !c.by || c.by === commentUserKey(); }
+const chatAmMember = (c) => { const m = myRosterId(); return !!m && (c.members || []).map(String).includes(String(m)); };
+// Visibility: the admin and members see a chat; a bound non-member does not (Leave hides
+// it). An unbound login (not on the roster) sees all — so demo / un-rostered use isn't empty.
+function chatVisibleToMe(c) {
+  if (chatIsAdmin(c)) return true;
+  const mine = myRosterId();
+  return !mine || (c.members || []).map(String).includes(String(mine));
+}
+// Bring a legacy (participants/tags) or partial chat up to the {title,members} shape.
+// Non-destructive: keeps every message; synthesizes a title from the old first-tag label.
+function normalizeTeamChat(c) {
+  if (!c || typeof c !== 'object') return c;
+  if (c.title == null) c.title = (c.tags && c.tags[0] && c.tags[0].label) || '';
+  if (!Array.isArray(c.members)) c.members = [];
+  return c;
+}
+// Reopen an existing chat and land it on the rail. Membership is edited on the member
+// rail (default none), not auto-joined by role — so opening no longer mutates a roster.
 function openChat(id, msg) {
   const c = chatById(id); if (!c) return;
+  normalizeTeamChat(c);
   state.chat.activeId = id;
-  const myRole = currentRole && ROLES.some((r) => r.id === currentRole) ? currentRole : null;
-  if (myRole) { if (!c.participants.includes(myRole)) c.participants.push(myRole); }
-  else if (!c.participants.length) c.participants = ROLES.map((r) => r.id);   // demo (no role) → everyone rejoins
   c.seen[commentUserKey()] = Date.now();
-  pushChatsSoon();                                  // a rejoin/participant change syncs to the team
-  state.chat.open = true; render();
+  pushChatsSoon();
+  chatShow(); render();
   if (msg) toast(msg);
 }
-function chatFeed() {
-  const c = activeChat();
+/* D9 — the ONE way to surface the active team chat: phones keep the bottom-sheet dock;
+   desktop lands it on the comms rail as the Team session's SINGLE open window
+   (single-open law — summoning it closes whatever window was up). */
+function chatShow() {
+  if (document.body.classList.contains('is-phone')) { state.chat.open = true; return; }
+  const id = state.chat.activeId; if (!id) return;
+  commsUnend(id, 'team');                           // any open resurrects an ended chat
+  const rail = state.commsRail;
+  if (rail.cat !== 'team') { commsLeaveCat(rail.cat); rail.cat = 'team'; }
+  const s = rail.sessions.team;
+  s.lastOpen = String(id); s.menuOpen = false;
+  s.hidden = (s.hidden || []).filter((x) => String(x) !== String(id));
+  saveCommsRail();
+}
+function chatFeed(chat) {
+  const c = chat || activeChat();
   if (!c) return chatComments();   // no active chat → the global "what's flagged" overview
   const refs = (c.tags || []).map((t) => t.ref).filter(Boolean);
   const comments = chatComments().filter((cm) => refs.some((r) => r.card === cm.card && String(r.recId) === String(cm.recId)));
@@ -8331,25 +8415,91 @@ function chatFeed() {
 const CHAT_AV = ['blue', 'orange', 'green', 'purple', 'yellow', 'red'];
 function chatInitials(name) { return (String(name || '?').replace(/\(.*?\)/g, '').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('') || '?').toUpperCase(); }
 function chatAvatarColor(name) { let h = 0; const s = String(name || ''); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return `var(--${CHAT_AV[h % CHAT_AV.length]})`; }
+// A pasted element chip — a LIVE pointer. Reflects the record's current title; clicking
+// opens it for any member (reuses the data-chat-open path). A deleted record greys out.
+function chatRefChipHtml(r) {
+  const ec = r.card, rec = recOf(ec, r.recId);
+  if (!rec) return `<span class="chip-ref chip-gone" data-tip="This record was removed">${I.x}<span class="cr-t">No longer available</span></span>`;
+  const label = ROW_META[ec] ? ROW_META[ec](rec).title : String(r.recId);
+  return `<button class="chip-ref" data-chat-open="${esc(ec)}|${esc(r.recId)}" data-tip="Open ${esc(label)}"><span class="cr-i">${CARD_ICON[ec] || I.doc}</span><span class="cr-t">${esc(label)}</span><span class="cr-go">${I.chev}</span></button>`;
+}
+// A message bubble's inner content — text and/or pasted chips (a chips-only message reads
+// "shared an item").
+function chatBubbleInner(it) {
+  const t = it.text ? `<span class="cbub-t">${esc(it.text)}</span>` : '';
+  const refs = (it.refs || []).map(chatRefChipHtml).join('');
+  if (!t && !refs) return '<span class="cbub-t"></span>';
+  return t + (refs ? `<span class="cbub-refs">${refs}</span>` : '') + (!t && !refs ? '' : '');
+}
+// The chat title — editable (rename in place) for the creator, static for members.
+function chatTitleInputHtml(c) {
+  if (!chatIsAdmin(c)) return `<span class="cp-who chat-title-ro">${esc(commsTeamLabel(c))}</span>`;
+  return `<input class="chat-title-in" data-chat-title="${esc(c.id)}" value="${esc(c.title || '')}" placeholder="Name this chat…" aria-label="Chat title" maxlength="60" />`;
+}
+// The held element awaiting paste, shown in an internal composer; sends with the message.
+function chatHeldChipHtml() {
+  const h = state.held; if (!h) return '';
+  return `<span class="held-chip" data-tip="Attached — sends with your message"><span class="hc-i">${CARD_ICON[h.card] || I.doc}</span><span class="hc-t">${esc(h.label || 'Item')}</span><button class="hc-x" data-held-clear aria-label="Clear attachment">${I.x}</button></span>`;
+}
+/* Shared team-chat feed rows (dock + D9 rail window): messages as bubbles (mine ride
+   `me`, carrying text and/or pasted chips), flagged comments as tappable cflag rows. */
+function chatFeedRowsHtml(c) {
+  const u = commentUserKey();
+  return chatFeed(c).map((it) => {
+    if (it.kind === 'msg') {
+      if (it.by === u) return `<div class="cbub-row me"><div class="cbub me">${chatBubbleInner(it)}</div></div>`;
+      return `<div class="cbub-row"><span class="cav" style="--av:${chatAvatarColor(it.by)}">${esc(chatInitials(it.by))}</span><div class="cbub-wrap"><span class="cbub-name">${esc(it.by || 'Team')}</span><div class="cbub">${chatBubbleInner(it)}</div></div></div>`;
+    }
+    return `<button class="cflag" data-chat-open="${esc(it.card)}|${esc(it.recId)}"><span class="cmt-marker c-${it.color}"></span><span class="cflag-b"><span class="cflag-t">${esc(it.text)}</span><span class="cflag-m">flagged · on ${esc(it.recName)}</span></span></button>`;
+  }).join('') || `<div class="chat-empty">${c ? 'No messages yet — say something, or paste a record in.' : 'Flagged comments show up here. Start a chat from the + on the Team rail.'}</div>`;
+}
+// The member rail — who's in the chat. People come from the Settings → Team Roster
+// (settings.employees), grouped under their role heading; default NONE until added.
+// Tinted by the person's role color so a glance reads the crew mix.
+const ROLE_BY_LABEL = () => { const m = {}; ROLES.forEach((r) => { m[r.label] = r; m[r.id] = r; }); return m; };
+function chatMemberBarHtml(c) {
+  if (!c) return '';
+  const emps = (state.settings && state.settings.employees) || [];
+  const members = new Set((c.members || []).map(String));
+  const rmap = ROLE_BY_LABEL();
+  // ── Members can't edit the roster — they see who's in, and a Leave if they're in it. ──
+  if (!chatIsAdmin(c)) {
+    const empById = new Map(emps.map((e) => [String(e.id), e]));
+    const chips = [...members].map((id) => {
+      const em = empById.get(id); const nm = (em && em.name) || 'Member';
+      const rc = (em && rmap[em.role] && rmap[em.role].color) || 'gray';
+      return `<span class="rtab is-static" style="--rc:var(--${rc})" data-tip="${esc(nm)} — in the chat"><span class="rtab-dot"></span><span class="rtab-l">${esc(nm)}</span></span>`;
+    }).join('') || '<span class="mbar-hint">No members yet.</span>';
+    return `<div class="chat-rolebar chat-memberbar chat-memberbar-ro" role="group" aria-label="Chat members">${chips}</div>`;   // Leave lives in the gear menu now
+  }
+  // ── Admin (creator): the full editable roster, grouped by role; default none. ──
+  if (!emps.length) return `<div class="chat-rolebar chat-memberbar"><span class="mbar-hint">No crew on the roster yet — add hands in Settings → Team Roster.</span></div>`;
+  const byRole = new Map();
+  emps.forEach((em) => { const k = em.role || 'Crew'; if (!byRole.has(k)) byRole.set(k, []); byRole.get(k).push(em); });
+  const grps = [...byRole.entries()].map(([role, list]) => {
+    const rc = (rmap[role] && rmap[role].color) || 'gray';
+    const chips = list.map((em) => {
+      const on = members.has(String(em.id));
+      const nm = em.name || 'Hand';
+      return `<button class="rtab${on ? ' on' : ''}" data-chat-member="${esc(em.id)}" style="--rc:var(--${rc})" data-tip="${esc(nm)} — ${on ? 'in the chat (tap to remove)' : 'tap to add'}"><span class="rtab-dot"></span><span class="rtab-l">${esc(nm)}</span></button>`;
+    }).join('');
+    return `<div class="mrole-grp"><span class="mrole-h">${esc(role)}</span><div class="mrole-chips">${chips}</div></div>`;
+  }).join('');
+  return `<div class="chat-rolebar chat-memberbar" role="group" aria-label="Chat members — you're the creator">${grps}</div>`;
+}
 function chatDockEl() {
   chatMarkSeen();   // §17 — the open dock is "seen": clears the re-flash for this user
   const c = activeChat();
-  const u = commentUserKey();
-  // tagged-element rail at the very top (no header, per Jac) — close/back ride the rail's end
-  const tagsHtml = c ? c.tags.map((t) => `<span class="chat-tag c-${t.color || 'gray'}" data-tip="${esc(t.label)}"><span class="ct-dot"></span><span class="ct-lbl">${esc(t.label)}</span><button class="x" data-chat-untag="${esc(t.id)}" aria-label="Remove ${esc(t.label)}">${I.x}</button></span>`).join('') : '<span class="chat-rail-hint">No chat open — right-click / long-press a record, or drag one in</span>';
-  const rail = `<div class="chat-rail">${tagsHtml}<span class="rail-sp"></span>${c ? `<button class="rail-ico js-chat-back" aria-label="All flags" data-tip="All flags">${I.chevL}</button>` : ''}<button class="rail-ico js-chat-close" aria-label="Close chat" data-tip="Close">${I.x}</button></div>`;
-  const feed = chatFeed().map((it) => {
-    if (it.kind === 'msg') {
-      if (it.by === u) return `<div class="cbub-row me"><div class="cbub me">${esc(it.text)}</div></div>`;
-      return `<div class="cbub-row"><span class="cav" style="--av:${chatAvatarColor(it.by)}">${esc(chatInitials(it.by))}</span><div class="cbub-wrap"><span class="cbub-name">${esc(it.by || 'Team')}</span><div class="cbub">${esc(it.text)}</div></div></div>`;
-    }
-    return `<button class="cflag" data-chat-open="${esc(it.card)}|${esc(it.recId)}"><span class="cmt-marker c-${it.color}"></span><span class="cflag-b"><span class="cflag-t">${esc(it.text)}</span><span class="cflag-m">flagged · on ${esc(it.recName)}</span></span></button>`;
-  }).join('') || `<div class="chat-empty">${c ? 'No messages yet — say something.' : 'Flagged comments show up here. Start a chat from any record or element.'}</div>`;
-  const roles = c ? `<div class="chat-rolebar">${ROLES.map((r) => `<button class="rtab${chatRoleOn(r.id) ? ' on' : ''}" data-chat-role="${esc(r.id)}" style="--rc:var(--${r.color})" data-tip="${esc(r.label)} — ${chatRoleOn(r.id) ? 'in the chat' : 'left out'}"><span class="rtab-dot"></span><span class="rtab-l">${esc(r.label)}</span></button>`).join('')}</div>` : '';
+  if (!c) {
+    // no chat open → the flagged-comments overview (deferred: fate revisited later)
+    return `<div class="chat-rail"><span class="chat-rail-hint">No chat open — tap <b>+ New chat</b> on the Team rail.</span><span class="rail-sp"></span><button class="rail-ico js-chat-close" aria-label="Close" data-tip="Close">${I.x}</button></div>
+      <div class="chat-feed">${chatFeedRowsHtml(c)}</div>`;
+  }
+  const rail = `<div class="chat-rail chat-titlebar">${chatTitleInputHtml(c)}<span class="rail-sp"></span><button class="rail-ico js-chat-settings" aria-label="Chat settings" data-tip="Chat settings">${I.sliders}</button><button class="rail-ico js-chat-back" aria-label="All chats" data-tip="All chats">${I.chevL}</button><button class="rail-ico js-chat-close" aria-label="Close chat" data-tip="Close">${I.x}</button></div>`;
   return `${rail}
-    <div class="chat-feed">${feed}</div>
-    <div class="chat-compose"><input class="chat-input" placeholder="${c ? 'Message the team…' : 'Type to start a team chat…'}" value="${esc(state.chat.draft || '')}" aria-label="Message the team" /><button class="chat-send js-chat-send" aria-label="Send">${I.chev}</button></div>
-    ${roles}`;
+    <div class="chat-feed">${chatFeedRowsHtml(c)}</div>
+    <div class="chat-compose">${chatHeldChipHtml()}<input class="chat-input" placeholder="Message the team…" value="${esc(state.chat.draft || '')}" aria-label="Message the team" /><button class="chat-send js-chat-send" aria-label="Send">${I.chev}</button></div>
+    ${chatMemberBarHtml(c)}`;
 }
 // Render Mr. Wrangler's message text — escape FIRST (no HTML injection), then apply the light markdown the
 // model actually emits: **bold**, `code`, and newlines. Only safe <strong>/<code>/<br> tags are introduced.
@@ -8372,11 +8522,43 @@ function wrMsgStamp(at, prevAt) {
     : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   return day + ' · ' + time;
 }
-// §18 Mr. Wrangler dock — renders the floating dock HTML (mirrors wrangler overlay but as a dock).
+// §18 Mr. Wrangler dock — renders the floating dock HTML (mirrors wrangler overlay but as
+// a dock). D9: the dock survives on PHONES only; desktop renders the same BODY inside the
+// comms-rail window (commsWranglerPopupHtml) — one body builder, two shells.
 function wranglerDockEl() {
   const o = state.wrangler;
   const rec = (o.card && o.recId != null) ? recOf(entityCardOf(o.card, o.recType), o.recId) : null;
   const chip = rec ? `<span class="wr-chip">${CARD_ICON[entityCardOf(o.card, o.recType)] || ''}${esc(detailTitle(entityCardOf(o.card, o.recType), rec))}</span>` : '';
+  return `
+    <div class="wr-dock-head">
+      <span style="font-size:18px">🤠</span>
+      <span class="wr-dock-title">Mr. Wrangler</span>
+      ${chip}
+      <span class="spacer"></span>
+      <button class="iconbtn js-wr-min" aria-label="${o.min ? 'Expand' : 'Minimize'}" data-tip="${o.min ? 'Expand' : 'Minimize'}">${I.chev}</button>
+      <button class="iconbtn js-wr-close" aria-label="Close" data-tip="Close">×</button>
+    </div>
+    ${wranglerDockBodyHtml()}`;
+}
+// The wrangler conversation BODY — request bar, feed, error, attachments, composer.
+// Shared verbatim by the phone dock and the D9 rail window (the send/apply/attach
+// machinery keys off these classes: .js-wr-in, .js-wr-send, .wr-feed …).
+// The Wrangler composer's focus/paste row: a held element awaiting paste (becomes the
+// focus on send) + the currently-FOCUSED record (what Claude can see) with a clear ✕.
+// Pasting an element into Mr. Wrangler feeds him its data — he can't click a chip, so the
+// element rides in as context rather than a link (2026-07-08 rail spec, internal paste).
+function wranglerFocusRowHtml(o) {
+  const bits = [];
+  if (state.held) bits.push(chatHeldChipHtml());   // paste-ready — becomes the focus on send
+  if (o.card && o.recId != null) {
+    const ec = entityCardOf(o.card, o.recType), rec = recOf(ec, o.recId);
+    const label = rec ? (ROW_META[ec] ? ROW_META[ec](rec).title : String(o.recId)) : 'record removed';
+    bits.push(`<span class="wr-focus-chip${rec ? '' : ' chip-gone'}" data-tip="Mr. Wrangler is focused on this record — he can see its data"><span class="wf-i">${CARD_ICON[ec] || I.doc}</span><span class="wf-t">${esc(label)}</span><button class="wf-x" data-wr-unfocus aria-label="Clear focus" data-tip="Clear the focused record">${I.x}</button></span>`);
+  }
+  return bits.length ? `<div class="wr-focus-row">${bits.join('')}</div>` : '';
+}
+function wranglerDockBodyHtml() {
+  const o = state.wrangler;
   const turns = o.messages.length
     ? o.messages.map((m, i) => {
         let act = '';
@@ -8446,17 +8628,10 @@ function wranglerDockEl() {
       ${acts}</div>`;
   })();
   return `
-    <div class="wr-dock-head">
-      <span style="font-size:18px">🤠</span>
-      <span class="wr-dock-title">Mr. Wrangler</span>
-      ${chip}
-      <span class="spacer"></span>
-      <button class="iconbtn js-wr-min" aria-label="${o.min ? 'Expand' : 'Minimize'}" data-tip="${o.min ? 'Expand' : 'Minimize'}">${I.chev}</button>
-      <button class="iconbtn js-wr-close" aria-label="Close" data-tip="Close">×</button>
-    </div>
     ${reqBar}
     <div class="wr-feed">${turns}${o.busy ? '<div class="wr-msg assistant"><span class="wr-av">🤠</span><div class="wr-bub wr-think">…wrangling an answer</div></div>' : ''}</div>
     ${o.error ? `<div class="wr-err">${esc(o.error)}</div>` : ''}
+    ${wranglerFocusRowHtml(o)}
     ${attachRow}
     <div class="wr-compose"><label class="wr-attach js-wr-attach" data-r="R21" data-tip="Attach a screenshot or a CSV/text file"><input type="file" accept="image/*,.csv,.tsv,.txt,.md,.log,text/csv,text/plain" class="js-wr-file" hidden multiple>${I.paperclip || '📎'}</label><input class="wr-in js-wr-in" placeholder="Ask Mr. Wrangler, or tell him what's broken…" value="${esc(o.draft || '')}" ${o.busy ? 'disabled' : ''} /><button class="wr-send js-wr-send" data-r="R17" ${o.busy ? 'disabled' : ''} aria-label="Ask">${I.chev}</button></div>`;
 }
@@ -8738,67 +8913,114 @@ function openWranglerDock(opts) {
   if (opts.reqNumber !== undefined) w.reqNumber = opts.reqNumber;
   if (opts.reqTitle !== undefined) w.reqTitle = opts.reqTitle;
   if (opts.reqUrl !== undefined) w.reqUrl = opts.reqUrl;
+  // D9 — desktop has no floating dock anymore: the conversation lands on the comms
+  // rail as the Mr. Wrangler session's SINGLE open window (single-open law).
+  if (!document.body.classList.contains('is-phone')) {
+    const rail = state.commsRail;
+    if (rail.cat !== 'wrangler') { commsLeaveCat(rail.cat); rail.cat = 'wrangler'; }
+    const s = rail.sessions.wrangler;
+    s.lastOpen = String(w.id); s.menuOpen = false;
+    s.hidden = (s.hidden || []).filter((x) => String(x) !== String(w.id));
+    commsUnend(w.id, 'wrangler');                    // any open resurrects an ended chat
+    saveCommsRail();
+  }
   render();
   setTimeout(() => { const i = document.querySelector('.wrangler-dock .js-wr-in'); if (i) i.focus(); const f = document.querySelector('.wrangler-dock .wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
 }
 function chatSend() {
   const inp = document.querySelector('.chat-input');
   const text = ((inp ? inp.value : state.chat.draft) || '').trim();
-  if (!text) { if (inp) inp.focus(); return; }
+  const held = state.held;
+  if (!text && !held) { if (inp) inp.focus(); return; }                 // nothing to send (no text, no pasted chip)
   let c = activeChat(); if (!c) c = newChat();                          // typing with no active chat opens one to the team
-  c.messages.push({ id: 'MSG' + (state.seq++), by: commentUserKey(), when: TODAY_ISO, at: Date.now(), text });
+  const msg = { id: 'MSG' + (state.seq++), by: commentUserKey(), when: TODAY_ISO, at: Date.now(), text };
+  if (held) { msg.refs = [{ card: held.card, recId: held.recId }]; state.held = null; }   // paste the held element as a live chip
+  c.messages.push(msg);
   c.seen[commentUserKey()] = Date.now();                                // author has seen their own update
+  commsUnend(c.id, 'team');                                             // D9: any new message resurrects an Ended chat
   state.chat.draft = ''; saveSoon(); pushChatsSoon(); haptic([12, 30, 12]); render();   // §M-touch — success tick on a posted message
   setTimeout(() => { const i = document.querySelector('.chat-input'); if (i) i.focus(); const f = document.querySelector('.chat-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
 }
-function chatToggleRole(id) {
+function chatToggleMember(empId) {
   const c = activeChat(); if (!c) return;
-  c.participants = c.participants.includes(id) ? c.participants.filter((x) => x !== id) : [...c.participants, id];
-  // never deleted — at 0 participants the chat goes dormant; reopen it via a tagged element (Jac)
+  if (!chatIsAdmin(c)) { toast('Only the chat’s creator can change who’s in it.'); return; }   // members can leave, not add
+  const s = new Set((c.members || []).map(String)); const k = String(empId);
+  if (s.has(k)) s.delete(k); else s.add(k);
+  c.members = [...s];
   pushChatsSoon(); render();
 }
-// Right-click → Start chat: OPEN the element's existing chat (rejoin) if it has one, else start fresh.
-function startChatFromEl(el) {
+// A member removes THEMSELVES (voluntary exit). Drops the chat off their rail (visibility).
+function chatLeave() {
+  const c = activeChat(); if (!c) return;
+  const mine = myRosterId(); if (!mine) return;
+  c.members = (c.members || []).filter((x) => String(x) !== String(mine));
+  if (String(state.chat.activeId) === String(c.id)) state.chat.activeId = null;   // fall back to the overview; it's off your rail now
+  pushChatsSoon(); render();
+  toast('You left the chat.');
+}
+// Per-user mute — a muted chat never raises its status dot for you (still readable).
+function chatMuted(c) { return !!c && (c.muted || []).includes(commentUserKey()); }
+function chatToggleMute() {
+  const c = activeChat(); if (!c) return;
+  const me = commentUserKey(), s = new Set(c.muted || []);
+  const nowMuted = !s.has(me);
+  if (nowMuted) s.add(me); else s.delete(me);
+  c.muted = [...s];
+  pushChatsSoon(); render();
+  toast(nowMuted ? 'Muted — this chat won’t raise an alert.' : 'Unmuted.');
+}
+// The gear menu — classic chat settings. Everyone: mark read + mute. Creator: rename +
+// end. Member: leave. (Leave/End live here so they're a deliberate, tucked-away action.)
+function chatSettingsMenu(btn) {
+  const c = activeChat(); if (!c) return;
+  const muted = chatMuted(c), admin = chatIsAdmin(c);
+  let html = `<button class="dd-item js-chat-markread">${I.eye}<span>Mark as read</span></button>`;
+  html += `<button class="dd-item${muted ? ' on' : ''} js-chat-mute">${I.bell}<span>${muted ? 'Unmute notifications' : 'Mute notifications'}</span></button>`;
+  if (admin) {
+    html += `<button class="dd-item js-chat-rename">${I.sliders}<span>Rename chat</span></button>`;
+    html += `<div class="dd-sep" aria-hidden="true"></div>`;
+    html += `<button class="dd-item danger js-chat-end" data-chat="${esc(c.id)}">${I.x}<span>End chat</span></button>`;
+  } else if (chatAmMember(c)) {
+    html += `<div class="dd-sep" aria-hidden="true"></div>`;
+    html += `<button class="dd-item danger js-chat-leave">${I.x}<span>Leave chat</span></button>`;
+  }
+  openDropdown(btn, html, { align: 'right', cls: 'chat-settings-menu' });
+}
+const closeMenus = () => document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
+// Rename a chat (title input on the window header). Debounced-sync; no re-render so the
+// caret doesn't jump — the tab label refreshes on the next render.
+function chatSetTitle(id, title) {
+  const c = chatById(id); if (!c || !chatIsAdmin(c)) return;   // only the creator renames
+  c.title = title; pushChatsSoon();
+}
+// Right-click → Copy to chat: HOLD this element so it can be pasted into an internal
+// (Team / Mr. Wrangler) chat as a live, clickable chip. Replaces the retired
+// "start a chat seeded from this element" flow (2026-07-08 rail spec) — the copied
+// element travels into any conversation, and every member can click through it.
+function copyElement(el) {
   const hit = cardRecordAt(el);
-  if (!hit) { toast('Right-click a record to start or open its chat.'); return; }
+  if (!hit) { toast('Right-click a record to copy it into a chat.'); return; }
   const ec = entityCardOf(hit.card, hit.recType), rec = recOf(ec, hit.recId);
   if (!rec) { toast('Record not found.'); return; }
-  const existing = chatsTagging(ec, hit.recId)[0];
-  if (existing) return openChat(existing.id, `Reopened the chat on this ${SINGULAR[ec] || 'record'}.`);
   const label = ROW_META[ec] ? ROW_META[ec](rec).title : String(hit.recId);
-  const m = commentMarker(rec);
-  newChat({ id: 'TAG:' + ec + ':' + hit.recId, label, color: m ? m.color : 'gray', ref: { card: ec, recId: hit.recId } });
-  state.chat.open = true; render();
-  toast(`Started a chat from "${label}".`);
+  state.held = { card: ec, recId: hit.recId, label };
+  render();
+  toast(`Copied “${label}” — paste it into a Team or Mr. Wrangler chat.`);
 }
 // Resolve a dragged payload into a chat tag — label from the record, color inherited
 // from any flag it already carries (else neutral). Granular-element sources (line/pill/
 // price) ride the same path once they're wired as drag sources.
-function chatTagFromPayload(p) {
-  const rec = p.rec, ec = p.entity;
+// Dropping a record on the chat pad COPIES it (held) to paste into a Team / Mr. Wrangler
+// chat — the drag equivalent of right-click → Copy to chat. (Replaces the retired
+// drop-to-tag / drop-to-new-chat flows, 2026-07-08 rail spec.)
+function chatDropCopy(p) {
+  const ec = p.entity, rec = p.rec;
+  if (p.chatEl && p.chatEl.ref) { state.held = { card: p.chatEl.ref.card, recId: p.chatEl.ref.recId, label: p.chatEl.label || 'Item' }; render(); toast(`Copied “${p.chatEl.label || 'item'}” — paste it into a chat.`); return; }
+  if (!ec || rec == null) return;
   const label = ROW_META[ec] ? ROW_META[ec](rec).title : (idOf(ec, rec) || 'Item');
-  const m = commentMarker(rec);
-  chatAddTag({ id: 'TAG:' + ec + ':' + p.id, label, color: m ? m.color : 'gray', ref: { card: ec, recId: p.id } });
-  toast(`Tagged “${label}” into the team chat.`);
-}
-// Drop on the bottom-right pad → spin up a NEW chat seeded with the dragged thing
-// (a granular element OR a whole record).
-function chatStartFromDrop(p) {
-  let tag;
-  if (p.chatEl) tag = { id: p.chatEl.id || ('TAG' + (state.seq++)), label: p.chatEl.label, color: p.chatEl.color || 'gray', ref: p.chatEl.ref || null };
-  else { const ec = p.entity, rec = p.rec; const label = ROW_META[ec] ? ROW_META[ec](rec).title : (idOf(ec, rec) || 'Item'); const m = commentMarker(rec); tag = { id: 'TAG:' + ec + ':' + p.id, label, color: m ? m.color : 'gray', ref: { card: ec, recId: p.id } }; }
-  // Dedup like startChatFromEl: a record/element already has a chat → REOPEN it, never spin a duplicate thread.
-  if (tag.ref) { const existing = chatsTagging(tag.ref.card, tag.ref.recId)[0]; if (existing) return openChat(existing.id, `Reopened the chat on this ${SINGULAR[tag.ref.card] || 'record'}.`); }
-  newChat(tag); state.chat.open = true; render();
-  toast(`New chat started from “${tag.label}”.`);
-}
-// Tag an element into the chat (drag-drop) — records OR granular elements (line/pill/price).
-function chatAddTag(tag) {
-  if (!tag || !tag.label) return;
-  let c = activeChat(); if (!c) c = newChat();                          // dragging context in with no active chat opens one
-  if (tag.id && c.tags.some((t) => t.id === tag.id)) return;            // no dupes
-  c.tags.push({ id: tag.id || 'TAG' + (state.seq++), label: tag.label, color: tag.color || 'gray', ref: tag.ref || null });
-  state.chat.open = true; pushChatsSoon(); render();
+  state.held = { card: ec, recId: p.id, label };
+  render();
+  toast(`Copied “${label}” — paste it into a Team or Mr. Wrangler chat.`);
 }
 function tabStrip(tabs) {
   tabs = tabs || state.tabs;
@@ -11425,10 +11647,14 @@ async function wranglerSend() {
   const text = ((inp ? inp.value : o.draft) || '').trim();
   const imgs = (o.attach && o.attach.length) ? o.attach.slice() : null;
   const files = (o.files && o.files.length) ? o.files.slice() : null;
+  // A pasted element focuses the chat on that record (Claude reads its data via
+  // wranglerContext) — consumed here so it applies to this turn and stays as context.
+  const pastedFocus = state.held;
+  if (pastedFocus) { o.card = pastedFocus.card; o.recId = pastedFocus.recId; o.recType = null; state.held = null; }
   // A typed reply while Mr. Wrangler has a pending ask_user question ANSWERS it (resumes the loop),
   // rather than starting a fresh turn. Tapping an option chip resolves it the same way.
-  if (o.ask && o.ask.resolve) { if (!text) { if (inp) inp.focus(); return; } o.draft = ''; if (inp) inp.value = ''; o.ask.resolve(text); return; }
-  if ((!text && !imgs && !files) || o.busy) { if (inp) inp.focus(); return; }
+  if (o.ask && o.ask.resolve) { if (!text) { if (pastedFocus) render(); if (inp) inp.focus(); return; } o.draft = ''; if (inp) inp.value = ''; o.ask.resolve(text); return; }
+  if ((!text && !imgs && !files) || o.busy) { if (pastedFocus) render(); if (inp) inp.focus(); return; }   // pasting a focus with no message still updates the chip
   o.messages.push({ role: 'user', content: text, images: imgs, files, at: Date.now() });
   syncWranglerComment(o, 'user', text, imgs);   // §18e mirror the turn onto the issue thread
   wranglerClearNeedsAnswer(o.reqNumber);        // §18e answering a "Needs your answer" request clears it from the inbox
@@ -12963,10 +13189,12 @@ function render() {
   // §M3 — lock the column scroll behind any open sheet/overlay/dock on phones
   document.body.classList.toggle('sheet-open', !!(state.overlay || state.datesearch || state.chat.open || (state.wrangler.open && !state.wrangler.min)));   // a MINIMIZED Wrangler dock is a slim in-flow bar — it must NOT lock the page scroll (Jac, mobile)
   syncBackGuard();   // §M3 — keep the Android back-button guard in step with what's open
-  // §17 — the internal team dock floats bottom-right above the bar when open
-  if (state.chat.open) { const d = el('div', 'chat-dock', ''); d.dataset.drop = 'chat'; d.innerHTML = chatDockEl(); $('#app').appendChild(d); }
-  // §18 — Mr. Wrangler dock floats alongside the team chat (or alone at bottom-right)
-  if (state.wrangler.open) { const d = el('div', 'wrangler-dock' + (state.chat.open ? ' wr-beside-chat' : '') + (state.wrangler.min ? ' wr-min' : '')); d.innerHTML = wranglerDockEl(); $('#app').appendChild(d); }
+  // §17/§18 — the team + wrangler DOCKS are PHONE-only bottom sheets now (D9): desktop
+  // retired both surfaces onto the comms rail (their machinery is shared, not the shell).
+  const _phoneDocks = document.body.classList.contains('is-phone');
+  if (_phoneDocks && state.chat.open) { const d = el('div', 'chat-dock', ''); d.dataset.drop = 'chat'; d.innerHTML = chatDockEl(); $('#app').appendChild(d); }
+  if (_phoneDocks && state.wrangler.open) { const d = el('div', 'wrangler-dock' + (state.chat.open ? ' wr-beside-chat' : '') + (state.wrangler.min ? ' wr-min' : '')); d.innerHTML = wranglerDockEl(); $('#app').appendChild(d); }
+  mountCommsPops();   // D8/D9 comms rail — the session's single open window floats above its own tab
   // §18e/§17 — the bell + Requests inbox now live in the bottom comms band (bb-utils),
   // always visible; the docks float above it. (The old floating fab-stack is retired.)
   mountTransportEditor();   // inline transport editor: mount the live map + wire the address field
@@ -13266,10 +13494,10 @@ function initDrag() {
   dragLayer.id = 'drag-layer';
   dragArc = el('div', 'cancel-arc', '<div class="ca-inner"><svg class="ca-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h9a6 6 0 1 1 0 12H7"/><path d="M8 5 4 9l4 4"/></svg><span class="ca-label">Cancel</span></div>');
   dragLayer.appendChild(dragArc);
-  // §17 — "drop to start a chat" pad: a cancel-arc sibling pinned to the bottom-right
-  // footer. Appears during any drag; release a record OR a granular element on it to
-  // spin up a brand-new chat seeded with that thing.
-  chatDropPad = el('div', 'chat-drop', '<div class="cd-inner"><svg class="cd-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span class="cd-label">Drop to start a chat</span></div>');
+  // §17 — "drop to copy" pad: a cancel-arc sibling pinned to the bottom-right footer.
+  // Appears during any drag; release a record on it to COPY it (held) for pasting into a
+  // Team / Mr. Wrangler chat (2026-07-08 rail spec — replaces the old drop-to-new-chat).
+  chatDropPad = el('div', 'chat-drop', '<div class="cd-inner"><svg class="cd-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span class="cd-label">Drop to copy into a chat</span></div>');
   dragLayer.appendChild(chatDropPad);
   // §M2 — phone "zip zones": edge rails of valid drop-target cards. Dragging onto one
   // jumps to that card's column mid-drag (drag stays live), then you drop on the row.
@@ -13473,7 +13701,7 @@ function dropTargetAt(x, y, under) {
   if (!n || !n.closest) return null;
   if (n.closest('.winpicker-float, .overlay, .dropdown-menu, .ctx-menu')) return null;   // floaters are dead zones
   // §17 — dropping ANY dragged element into the team dock (or its launcher) tags it
-  const chatHit = n.closest('.chat-dock, .js-chat-toggle');
+  const chatHit = n.closest('.chat-dock, .comms-pop.team-pop, .js-comms-chip[data-cat="team"]');   // D8/D9: the Team chip + rail window replaced the old js-chat-toggle launcher/dock
   if (chatHit) return { chat: true, node: chatHit };
   if (DRAG.payload.chatEl) return null;                                  // a granular chat-element only drops on chat zones (pad/dock)
   const accept = DROP_MATRIX[DRAG.payload.entity] || {};
@@ -13661,8 +13889,7 @@ function endDrag({ rerender } = {}) {
    R19-flash the newly linked pill on whatever card shows it (row/card fallback). ── */
 function dropFlash(sel, fallbackSel) { if (document.querySelector(sel)) attnFlash(sel); else if (fallbackSel && document.querySelector(fallbackSel)) attnFlash(fallbackSel); }
 function dispatchDrop(p, t) {
-  if (t.newChat) return chatStartFromDrop(p);                        // §17 — bottom-right pad = start a NEW chat
-  if (t.chat) return p.chatEl ? chatAddTag({ ...p.chatEl }) : chatTagFromPayload(p);   // dock = tag into the active chat
+  if (t.newChat || t.chat) return chatDropCopy(p);                   // §17 — drop on the chat pad = COPY the element to paste into a chat
   const pair = `${p.entity}>${t.entity}`;
   // UNIT ↔ RENTAL — ADD the unit to the rental (a Rental is an EVENT, §20);
   // gates fire per unit inside linkUnitToRental.
@@ -14055,14 +14282,33 @@ function onClick(e) {
   if (closest('.js-mtools')) { e.stopPropagation(); return openOverlay({ kind: 'tools' }); }   // §M1 phone footer → the global tool tray as a sheet
   if (closest('[data-gocard]')) { e.stopPropagation(); return goToCard(closest('[data-gocard]').dataset.gocard); }   // §M1 footer card-toggle bar → jump to that card
   if (closest('.js-ext-chat')) { e.stopPropagation(); return toast('External customer & vendor chats arrive with the messaging backend.'); }
-  if (closest('.js-chat-toggle')) { e.stopPropagation(); state.chat.open = !state.chat.open; return render(); }
   if (closest('.js-chat-close')) { e.stopPropagation(); state.chat.open = false; return render(); }
   if (closest('.js-chat-back')) { e.stopPropagation(); state.chat.activeId = null; return render(); }   // back to the all-flags overview (chat persists)
   if (closest('.js-chat-send')) { e.stopPropagation(); return chatSend(); }
-  if (closest('[data-chat-untag]')) { e.stopPropagation(); const id = closest('[data-chat-untag]').dataset.chatUntag; const c = activeChat(); if (c) c.tags = c.tags.filter((t) => t.id !== id); pushChatsSoon(); return render(); }
-  if (closest('[data-chat-role]')) { e.stopPropagation(); return chatToggleRole(closest('[data-chat-role]').dataset.chatRole); }
+  if (closest('[data-held-clear]')) { e.stopPropagation(); state.held = null; return render(); }   // drop the pasted-element attachment before sending
+  if (closest('.js-chat-settings')) { e.stopPropagation(); return chatSettingsMenu(closest('.js-chat-settings')); }   // the gear menu
+  if (closest('.js-chat-leave')) { e.stopPropagation(); closeMenus(); return chatLeave(); }   // voluntary exit — drops the chat off your rail
+  if (closest('.js-chat-mute')) { e.stopPropagation(); closeMenus(); return chatToggleMute(); }
+  if (closest('.js-chat-markread')) { e.stopPropagation(); closeMenus(); const c = activeChat(); if (c) { chatMarkSeen(c); pushChatsSoon(); } return render(); }
+  if (closest('.js-chat-rename')) { e.stopPropagation(); closeMenus(); setTimeout(() => { const i = document.querySelector('.chat-title-in'); if (i) { i.focus(); i.select(); } }, 0); return; }
+  if (closest('.js-chat-end')) { e.stopPropagation(); closeMenus(); return commsEndConv(closest('.js-chat-end').dataset.chat, 'team'); }   // admin ends the chat (phone-safe: cat pinned)
+  if (closest('[data-chat-member]')) { e.stopPropagation(); return chatToggleMember(closest('[data-chat-member]').dataset.chatMember); }
   if (closest('[data-chat-open]')) { e.stopPropagation(); const [card, recId] = closest('[data-chat-open]').dataset.chatOpen.split('|'); return anchorRecord(SHOP_TYPES.includes(card) ? 'shop' : card, recId, SHOP_TYPES.includes(card) ? card : null); }
-  if (closest('[data-team-open]')) { e.stopPropagation(); return openChat(closest('[data-team-open]').dataset.teamOpen); }   // §17 comms rail: open a team thread in its own tab
+  // D8/D9 THE COMMS RAIL — toolbar chips · session tabs · the single window · ALL menu
+  if (closest('.js-comms-chip')) { e.stopPropagation(); return commsToggleCat(closest('.js-comms-chip').dataset.cat); }
+  if (closest('.js-comms-new')) { e.stopPropagation(); return commsNewChat(); }   // D9 ALL menu: + New chat (team → newChat(), wrangler → wranglerNewChat())
+  if (closest('[data-comms-hide]')) { e.stopPropagation(); return commsHideTab(closest('[data-comms-hide]').dataset.commsHide); }   // ✕ hides from the rail only — never ends
+  if (closest('.js-comms-all')) { e.stopPropagation(); const s = commsSess(); if (s) { s.menuOpen = !s.menuOpen; saveCommsRail(); } return render(); }
+  if (closest('.js-comms-menu-x')) { e.stopPropagation(); const s = commsSess(); if (s) { s.menuOpen = false; saveCommsRail(); } return render(); }
+  if (closest('[data-comms-tab]')) { e.stopPropagation(); return commsToggleTab(closest('[data-comms-tab]').dataset.commsTab); }
+  if (closest('.js-comms-end')) { e.stopPropagation(); closeMenus(); return commsEndConv(closest('.js-comms-end').dataset.cust); }
+  if (closest('.js-comms-mopen')) { e.stopPropagation(); return commsOpenConv(state.commsRail.cat, closest('.js-comms-mopen').dataset.cust); }
+  if (closest('.js-comms-mend')) { e.stopPropagation(); return commsEndConv(closest('.js-comms-mend').dataset.cust); }
+  if (closest('.js-comms-send')) { e.stopPropagation(); return commsSend(closest('.js-comms-send').dataset.cust); }
+  if (closest('.js-comms-from')) { e.stopPropagation(); return commsFromMenu(closest('.js-comms-from')); }
+  if (closest('.js-comms-from-pick')) { e.stopPropagation(); const b = closest('.js-comms-from-pick'); commsFromSel.set(String(b.dataset.cust), b.dataset.from); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return render(); }
+  if (closest('.js-comms-copen')) { e.stopPropagation(); const b = closest('.js-comms-copen'); return commsOpenConv(commsCatOfChannel(b.dataset.channel), b.dataset.cust); }   // customer profile → Open
+  if (closest('.js-comms-cend')) { e.stopPropagation(); const b = closest('.js-comms-cend'); return commsEndConv(b.dataset.cust, commsCatOfChannel(b.dataset.channel)); }     // customer profile → End
   if (closest('.js-fb-type')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.fbType = closest('.js-fb-type').dataset.val; renderOverlay(); } return; }
   if (closest('.js-fb-shot-x')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.shot = ''; renderOverlay(); } return; }
   if (closest('[data-cmt-color]')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'comment') { const ta = document.querySelector('.overlay .js-cmt-text'); if (ta) o.text = ta.value; o.color = closest('[data-cmt-color]').dataset.cmtColor; renderOverlay(); } return; }
@@ -14077,11 +14323,9 @@ function onClick(e) {
   if (closest('.js-wr-goto')) { e.stopPropagation(); const b = closest('.js-wr-goto'); wrFocusRecord(b.dataset.ent, b.dataset.id); state.wrangler.min = true; return render(); }   // the clickable "Open →" link → jump to the record + collapse the dock so it's revealed (esp. on mobile)   // Mr. Wrangler applies the previewed add/update/import; a failed async op (e.g. a payment that didn't go through) un-files so the user can retry
   if (closest('.js-wr-kpi-lock')) { e.stopPropagation(); lockKpiFromWrangler(Number(closest('.js-wr-kpi-lock').dataset.mi)); return; }   // Mr. Wrangler locks in an authored KPI ring
   if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); render(); } return; }   // §18d drop a pending image attachment
+  if (closest('[data-wr-unfocus]')) { e.stopPropagation(); const o = state.wrangler; o.card = null; o.recId = null; o.recType = null; return render(); }   // clear the focused record (paste context)
   if (closest('.js-wr-unfile')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.files) { o.files.splice(Number(closest('.js-wr-unfile').dataset.i), 1); render(); } return; }   // §18d drop a pending file attachment
-  if (closest('.js-wrangler')) { e.stopPropagation(); if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; return render(); } return wranglerNewChat(); }   // §18 toggle Mr. Wrangler dock — opening always starts a fresh chat (the last one waits on the §18g rail)
-  if (closest('.js-wrc-remove')) { e.stopPropagation(); return wrRailRemove(closest('.js-wrc-remove').dataset.wrcRm); }   // §18g rail: the × on a chat tab → REMOVE that conversation (not just close it)
-  if (closest('[data-wrc-needs]')) { e.stopPropagation(); return openWranglerFromRequest(Number(closest('[data-wrc-needs]').dataset.wrcNeeds)); }   // §18g rail: a flashing "needs you" chat → reopen it seeded from the request
-  if (closest('[data-wrc-open]')) { e.stopPropagation(); return wranglerRailOpen(closest('[data-wrc-open]').dataset.wrcOpen); }   // §18g rail: reopen a stored conversation
+  if (closest('[data-wrc-needs]')) { e.stopPropagation(); return openWranglerFromRequest(Number(closest('[data-wrc-needs]').dataset.wrcNeeds)); }   // §18g rail: a flashing "needs you" request → reopen it seeded from the request (D9: lands on the rail window)
   if (closest('.js-notifications')) { e.stopPropagation(); openOverlay({ kind: 'notifications' }); markNotifsSeen(); refreshWranglerNotifications(); return; }   // §18f notification bell — in-app resolved-fix feed
   if (closest('.js-notif-refresh')) { e.stopPropagation(); return refreshWranglerNotifications(); }
   if (closest('.js-notif-dismiss')) { e.stopPropagation(); return dismissNotif(Number(closest('.js-notif-dismiss').dataset.num)); }   // §246 clear one
@@ -15195,7 +15439,9 @@ function onInput(e) {
   if (e.target.classList.contains('js-fb-text')) { if (state.overlay?.kind === 'feedback') state.overlay.text = e.target.value; return; }
   if (e.target.classList.contains('js-cmt-text')) { if (state.overlay?.kind === 'comment') state.overlay.text = e.target.value; return; }
   if (e.target.classList.contains('js-wr-in')) { if (state.wrangler.open) state.wrangler.draft = e.target.value; return; }
+  if (e.target.classList.contains('chat-title-in')) { chatSetTitle(e.target.dataset.chatTitle, e.target.value); return; }   // rename in place, no re-render (caret stays put)
   if (e.target.classList.contains('chat-input')) { state.chat.draft = e.target.value; return; }
+  if (e.target.classList.contains('js-comms-in')) { commsDrafts.set(state.commsRail.cat + '|' + e.target.dataset.cust, e.target.value); return; }   // D8 window composer — draft survives re-renders
   // Company Files live search → re-render the board popup and restore the caret.
   if (e.target.classList.contains('js-files-query')) {
     if (state.overlay?.kind === 'board') { state.overlay.fileSearch = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.js-files-query'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
@@ -17370,11 +17616,12 @@ async function refreshFromBackend() {
     });
     // also pull the shared team-chat threads so messages from other users land live
     try {
-      const cr = await backendCall('getChats');
+      const cr = await backendCall('getChats', chatSyncIdentity());
       if (cr && cr.ok && Array.isArray(cr.chats)) {
         const m = mergeChats(cr.chats);
+        const pruned = reconcileScopedChats(cr.chats);
         if (m.localAhead) pushChats(); else lastChatsJson = JSON.stringify(state.chat.chats);
-        if (m.changed) applied++;
+        if (m.changed || pruned) applied++;
       }
     } catch (e) { /* chat sync is best-effort */ }
     loadWranglerRail();   // also pull this role's Mr. Wrangler rail (cross-device) — best-effort, self-renders
@@ -17391,50 +17638,84 @@ function startRefreshPoll() { clearInterval(refreshTimer); refreshTimer = setInt
 // and pull in the refresh poll. Threads AND messages UNION by id, so two people
 // posting to the same thread never clobber each other (matches "chats are never lost").
 let chatPushTimer = null, lastChatsJson = null;
-function normalizeChat(c) { return { id: c.id, tags: c.tags || [], participants: c.participants || [], messages: c.messages || [], seen: c.seen || {} }; }
+// Preserve the {title, members} shape through sync; keep legacy tags/participants as
+// passthrough so a mixed old/new client fleet never loses data.
+function normalizeChat(c) {
+  return normalizeTeamChat({ id: c.id, title: c.title, members: Array.isArray(c.members) ? c.members : [], muted: Array.isArray(c.muted) ? c.muted : [], messages: c.messages || [], seen: c.seen || {}, by: c.by, tags: c.tags || [], participants: c.participants || [] });
+}
+const sameMembers = (a, b) => { a = (a || []).map(String).slice().sort(); b = (b || []).map(String).slice().sort(); return a.length === b.length && a.every((x, i) => x === b[i]); };
 function mergeChats(remoteChats) {
   if (!Array.isArray(remoteChats)) return { changed: false, localAhead: false };
   let changed = false, localAhead = false;
   const remoteById = new Map(remoteChats.filter((c) => c && c.id).map((c) => [c.id, c]));
   const localById = new Map(state.chat.chats.map((c) => [c.id, c]));
+  // The last snapshot we successfully synced — used to tell an UNPUSHED local edit
+  // (a rename/add/leave in flight) from a field we can safely adopt from the server.
+  const pushedById = new Map();
+  try { (JSON.parse(lastChatsJson || '[]') || []).forEach((c) => { if (c && c.id) pushedById.set(String(c.id), c); }); } catch (e) {}
   remoteChats.forEach((rc) => {
     if (!rc || !rc.id) return;
     const lc = localById.get(rc.id);
     if (!lc) { state.chat.chats.push(normalizeChat(rc)); changed = true; return; }   // a whole thread from another user
+    normalizeTeamChat(lc);
     const haveMsg = new Set((lc.messages || []).map((m) => m.id));
-    (rc.messages || []).forEach((m) => { if (m && m.id && !haveMsg.has(m.id)) { lc.messages.push(m); changed = true; } });
+    (rc.messages || []).forEach((m) => { if (m && m.id && !haveMsg.has(m.id)) { lc.messages.push(m); changed = true; } });   // messages UNION (never lose one)
     lc.messages.sort((a, b) => (a.at || 0) - (b.at || 0));
+    // `title` + `members` are ADMIN-authoritative, not union fields — the server holds the
+    // canonical set. Adopt the server's value UNLESS we hold an unpushed local edit (else a
+    // poll clobbers an in-flight rename / member-add / self-leave). This is the fix for the
+    // "Leave gets reverted" + "kicks/renames don't propagate live" races.
+    const pushed = pushedById.get(String(rc.id));
+    const titleDirty = pushed && (lc.title || '') !== (pushed.title || '');
+    if (!titleDirty && (lc.title || '') !== (rc.title || '')) { lc.title = rc.title || ''; changed = true; }
+    const membersDirty = pushed && !sameMembers(lc.members, pushed.members);
+    if (!membersDirty && !sameMembers(lc.members, rc.members)) { lc.members = (rc.members || []).map(String); changed = true; }
+    if (rc.by && lc.by == null) lc.by = rc.by;
     const haveTag = new Set((lc.tags || []).map((t) => t.id));
-    (rc.tags || []).forEach((t) => { if (t && t.id && !haveTag.has(t.id)) { lc.tags.push(t); changed = true; } });
-    (rc.participants || []).forEach((p) => { if (!lc.participants.includes(p)) { lc.participants.push(p); changed = true; } });
+    (rc.tags || []).forEach((t) => { if (t && t.id && !haveTag.has(t.id)) { (lc.tags = lc.tags || []).push(t); changed = true; } });   // legacy passthrough
     Object.keys(rc.seen || {}).forEach((k) => { if ((rc.seen[k] || 0) > (lc.seen[k] || 0)) lc.seen[k] = rc.seen[k]; });   // latest-seen wins (view state)
   });
-  state.chat.chats.forEach((lc) => {   // does local hold anything the server lacks? → we should push
+  state.chat.chats.forEach((lc) => {   // does local hold an unpushed edit the server lacks? → push
     const rc = remoteById.get(lc.id);
     if (!rc) { localAhead = true; return; }
     const rMsg = new Set((rc.messages || []).map((m) => m.id));
     if ((lc.messages || []).some((m) => !rMsg.has(m.id))) localAhead = true;
-    const rTag = new Set((rc.tags || []).map((t) => t.id));
-    if ((lc.tags || []).some((t) => !rTag.has(t.id))) localAhead = true;
-    if ((lc.participants || []).some((p) => !(rc.participants || []).includes(p))) localAhead = true;
+    if (!sameMembers(lc.members, rc.members)) localAhead = true;
+    if ((lc.title || '') !== (rc.title || '')) localAhead = true;
   });
   return { changed, localAhead };
 }
+// After a SCOPED load, drop local chats the server no longer returns for me (I was removed
+// or left) so they leave the rail live, not just on reload. Guards: only for a bound user
+// (unbound sees all → never prune); never drop a chat I own or the one I just created; a
+// no-op against an old backend that returns everything.
+function reconcileScopedChats(returnedChats) {
+  const mine = myRosterId(); if (!mine) return false;
+  const keep = new Set((returnedChats || []).map((c) => String(c.id)));
+  const before = state.chat.chats.length;
+  state.chat.chats = state.chat.chats.filter((c) => chatIsAdmin(c) || String(c.id) === String(state.chat.activeId) || keep.has(String(c.id)));
+  return state.chat.chats.length !== before;
+}
+// Identity sent with team-chat sync so the backend can scope a caller to THEIR chats
+// (admin + members). Self-asserted, gated behind the team password — a real server-side
+// filter for normal use, not a crypto boundary. Old backends ignore it (fully back-compat).
+const chatSyncIdentity = () => ({ me: commentUserKey(), rosterId: myRosterId() });
 async function pushChats() {
   if (!backendPassword) return;
   const js = JSON.stringify(state.chat.chats);
   if (js === lastChatsJson) return;                 // nothing new since the last successful push
-  try { const r = await backendCall('setChats', { chats: state.chat.chats }); if (r && r.ok) lastChatsJson = js; } catch (e) { /* offline → retries on next change/poll */ }
+  try { const r = await backendCall('setChats', { chats: state.chat.chats, ...chatSyncIdentity() }); if (r && r.ok) lastChatsJson = js; } catch (e) { /* offline → retries on next change/poll */ }
 }
 function pushChatsSoon() { if (booting || !backendPassword) return; clearTimeout(chatPushTimer); chatPushTimer = setTimeout(pushChats, 1200); }
 async function loadChats() {
   if (!backendPassword) return;
   try {
-    const r = await backendCall('getChats');
+    const r = await backendCall('getChats', chatSyncIdentity());
     if (!r || !r.ok || !Array.isArray(r.chats)) return;
     const { changed, localAhead } = mergeChats(r.chats);
+    const pruned = reconcileScopedChats(r.chats);
     if (localAhead) pushChats(); else lastChatsJson = JSON.stringify(state.chat.chats);   // mark synced (or send local-only threads up)
-    if (changed) render();
+    if (changed || pruned) render();
   } catch (e) { /* offline → the refresh poll retries */ }
 }
 // ── Cross-device Mr. Wrangler rail sync (per ROLE; mirrors team-chat sync) ──
@@ -17614,6 +17895,7 @@ window.addEventListener('beforeunload', (e) => {
   e.preventDefault(); e.returnValue = '';
 });
 function renderLogin(msg) {
+  if (state.commsRail) { state.commsRail.cat = null; state.commsRail.sessions && Object.values(state.commsRail.sessions).forEach((s) => { s.menuOpen = false; }); }   // D8 — clock-in = an EMPTY rail (sessions persist per device, nothing summons itself)
   $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4?v=20260702a" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="login-form">
     <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
     <div class="login-plate">
@@ -17645,6 +17927,7 @@ function finishLoad() {
   wranglerRailLoad();                                           // load the Mr. Wrangler rail from IndexedDB (+ one-time localStorage migration)
   refreshWranglerRequests();                                    // §18e populate the approval-inbox badge
   refreshWranglerNotifications();                               // §18f populate the notification-bell badge
+  refreshCommsThreads();                                        // D8 comms rail — the chips wear their worst-of-category dots from clock-in (the rail itself stays empty)
   startRefreshPoll();                                           // live multi-user: poll for others' changes (§ refreshFromBackend)
   if (migrationDirty) { migrationDirty = false; saveSoon(); }   // push parsed first/last names up to the Sheet
   // #edit=<id> — desktop→phone handoff opens that customer's account form (§7.1).
@@ -17976,6 +18259,7 @@ function boot() {
     if (e.target.classList.contains('nc-in') && e.key === 'Enter' && e.target.tagName !== 'SELECT') { e.preventDefault(); return saveNewCustomer(); }
     if (e.target.classList.contains('js-wr-in') && e.key === 'Enter') { e.preventDefault(); return wranglerSend(); }   // §18
     if (e.target.classList.contains('chat-input') && e.key === 'Enter') { e.preventDefault(); return chatSend(); }
+    if (e.target.classList.contains('js-comms-in') && e.key === 'Enter') { e.preventDefault(); return commsSend(e.target.dataset.cust); }   // D8 — Enter fires the ignition Send
     // §M3 — one predictable back/dismiss chain (shared with the Android back button):
     // winpicker → overlay → Mr. Wrangler dock → team chat dock.
     if (e.key === 'Escape') dismissTopSheet();
@@ -18222,6 +18506,541 @@ async function reseedFromFile() {
     renderLogin('Reseed failed — live data unchanged.');
   }
 }
+/* ════════════════════════════════════════════════════════════════════════
+   APP-39 · D8/D9 THE COMMS RAIL (spec comms-notifications D8 + D9, Jac
+   2026-07-07) — the four-category comms surface on the bottom bar: Team ·
+   Texts · Email · Mr. Wrangler as glyph chips (bottom-left, saddle-stitch
+   divider), each summoning its category's LAST SESSION of conversation tabs
+   onto the rail (one category at a time; login = empty rail). D9 SINGLE-OPEN
+   LAW: at most ONE conversation window is open at any time across ALL
+   categories — every open path closes whatever was up first; a session
+   remembers only its LAST-open conversation. The dashed blue ALL tab lists
+   every un-ended conversation with Open / End (+ New chat for Team/Wrangler).
+   ALL FOUR categories are live: Texts + Email ride commsThreads / messagesFor
+   / sendCustomerMessage (Phase 2a backend); Team rides the APP-23 chat store
+   (chatSend/chatMarkSeen — its dock is phone-only now); Mr. Wrangler rides
+   the §18 machinery (wranglerSend/wranglerRail — its dock is phone-only now).
+   Chips wear their category's WORST status dot (red Unseen · yellow Reply? ·
+   green quiet). Open / End language everywhere — never "Close".
+   ════════════════════════════════════════════════════════════════════════ */
+const COMMS_CAT_META = {
+  team:     { label: 'Team',        icon: () => I.users,         channel: null,    tip: 'Team — the shop-floor chat' },
+  text:     { label: 'Texts',       icon: () => I.messageSquare, channel: 'sms',   tip: 'Texts — customer SMS threads' },
+  email:    { label: 'Email',       icon: () => I.mail,          channel: 'email', tip: 'Email — customer email threads' },
+  wrangler: { label: 'Mr. Wrangler', icon: () => I.lasso,        channel: null,    tip: 'Mr. Wrangler — ask the yard AI, or report a bug' },
+};
+const commsOnline = () => typeof backendPassword !== 'undefined' && !!backendPassword;
+const commsSess = () => (state.commsRail.cat ? state.commsRail.sessions[state.commsRail.cat] : null);
+const commsCatOfChannel = (channel) => (channel === 'email' ? 'email' : 'text');
+/* ── live thread data (Phase 2a backend) ─────────────────────────────────── */
+let commsThreads = null;            // [{ customerId, count, lastWhen, lastChannel, lastDirection, lastSnippet, lastStatus, channels? }]
+let commsThreadsAt = 0, commsThreadsLoading = false;
+function refreshCommsThreads(force) {
+  if (!commsOnline()) return;                       // demo/#local — chips render, sessions show the connect note
+  if (commsThreadsLoading || (!force && Date.now() - commsThreadsAt < 30000)) return;
+  commsThreadsLoading = true;
+  backendCall('commsThreads').then((r) => {
+    commsThreadsLoading = false;
+    if (r && r.ok && Array.isArray(r.threads)) { commsThreads = r.threads; commsThreadsAt = Date.now(); render(); }
+  }).catch(() => { commsThreadsLoading = false; });
+}
+/* A thread's presence in ONE channel. Backend ≥v75 sends a per-channel `channels`
+   rollup (the same customer can be a conversation in BOTH Texts and Email); the
+   v74 shape only carries the LAST message's channel — fall back to that. */
+function commsThreadChannel(t, channel) {
+  if (t && t.channels && typeof t.channels === 'object') return t.channels[channel] || null;
+  return t && t.lastChannel === channel ? t : null;
+}
+function commsThreadsFor(cat) {
+  const channel = COMMS_CAT_META[cat] && COMMS_CAT_META[cat].channel;
+  if (!channel || !commsThreads) return [];
+  const ended = commsEndedSet();
+  return commsThreads.filter((t) => commsThreadChannel(t, channel) && !ended.has(String(t.customerId) + '|' + channel));
+}
+/* Status grammar (registry semantics, spec D8): red = Unseen · yellow = Reply? ·
+   green = Replied. v1 has no inbound pipe yet, so: last outbound landed = green,
+   failed send = red. `lastDirection === 'inbound'` is already honored (red) so the
+   Phase-B inbound webhook flips statuses with no client change. */
+function commsConvStatus(t, channel) {
+  const ch = commsThreadChannel(t, channel);
+  if (!ch) return 'gray';                          // no history yet (fresh conversation off the R20 menu)
+  if (ch.lastDirection === 'inbound') return 'red';
+  return ch.lastStatus === 'failed' ? 'red' : 'green';
+}
+const COMMS_ST_RANK = { red: 0, yellow: 1, green: 2, gray: 3 };
+/* D9 — the chip's WORST-of-category dot, same registry grammar everywhere:
+   red = Unseen · yellow = Reply? (last word isn't yours) · green = all quiet. */
+function commsCatWorst(cat) {
+  if (cat === 'team') return commsTeamWorst();
+  if (cat === 'wrangler') return commsWranglerWorst();
+  const list = commsThreadsFor(cat);
+  let worst = null;
+  list.forEach((t) => { const s = commsConvStatus(t, COMMS_CAT_META[cat].channel); if (!worst || COMMS_ST_RANK[s] < COMMS_ST_RANK[worst]) worst = s; });
+  return (!worst || worst === 'gray') ? 'green' : worst;   // nothing waiting = green (quiet line)
+}
+/* ── Team category (D9) — conversations derive from the APP-23 chat store ── */
+const commsChatLastAt = (c) => Math.max(0, ...(c.messages || []).map((m) => m.at || 0));
+function commsTeamChats() {   // every un-ended team chat, newest first (End resurrects on a newer message)
+  return (state.chat.chats || [])
+    .map(normalizeTeamChat)
+    // a chat shows once it has messages, members, OR is the one you're in (a just-created blank)
+    .filter((c) => (c.messages || []).length || (c.members || []).length || String(c.id) === String(state.chat.activeId))
+    .filter((c) => chatVisibleToMe(c))   // admin + members only (a bound non-member who left drops off the rail)
+    .filter((c) => !commsIsEnded(c.id, 'team', commsChatLastAt(c)))
+    .sort((a, b) => commsChatLastAt(b) - commsChatLastAt(a));
+}
+const commsTeamLabel = (c) => ((c.title || '').trim() || (c.tags && c.tags[0] && c.tags[0].label) || 'Untitled chat');
+function commsTeamStatus(c) {
+  const msgs = c.messages || [];
+  if (!msgs.length) return 'gray';                                   // fresh chat — nothing said yet
+  if (chatMuted(c)) return 'green';                                  // muted → never raises an alert dot
+  const u = commentUserKey();
+  if (commsChatLastAt(c) > (c.seen[u] || 0)) return 'red';           // unseen
+  const last = msgs[msgs.length - 1];
+  return last.by !== u ? 'yellow' : 'green';                         // their word last = Reply?
+}
+function commsTeamWorst() {
+  if (chatUnreadCount() > 0) return 'red';                           // unacked flagged comments count as unseen
+  let worst = null;
+  commsTeamChats().forEach((c) => { const s = commsTeamStatus(c); if (!worst || COMMS_ST_RANK[s] < COMMS_ST_RANK[worst]) worst = s; });
+  return (!worst || worst === 'gray') ? 'green' : worst;
+}
+/* ── Mr. Wrangler category (D9) — conversations derive from the §18g rail store
+   (snapshots) + the live state.wrangler chat; request-linked chats surface via the
+   idle rail's request tabs instead. ── */
+function commsWranglerConvs() {
+  const w = state.wrangler, out = [];
+  if (w.id && (w.open || (w.messages || []).length)) out.push({ id: String(w.id), title: wranglerConvoTitle(w), ts: Date.now(), live: true });
+  (state.wranglerRail || []).forEach((c) => {
+    if (String(c.id) === String(w.id)) return;                       // the live copy wins
+    if (c.reqNumber || wrChatResolved(c)) return;
+    out.push({ id: String(c.id), title: c.title || 'Chat', ts: c.ts || 0, live: false, snap: c });
+  });
+  return out.filter((x) => !commsIsEnded(x.id, 'wrangler', x.ts));
+}
+function commsWranglerStatus(x) {
+  if (x.live && state.wrangler.ask) return 'red';                    // Mr. Wrangler is waiting on your answer
+  const msgs = x.live ? (state.wrangler.messages || []) : ((x.snap && x.snap.messages) || []);
+  const last = msgs[msgs.length - 1];
+  if (!last) return 'gray';
+  return last.role === 'assistant' ? 'yellow' : 'green';             // his word last = Reply?
+}
+function commsWranglerWorst() {
+  if ((wranglerRequests || []).some((rq) => (rq.labels || []).includes('wrangler-needs-jac'))) return 'red';
+  if (state.wrangler.ask) return 'red';
+  let worst = null;
+  commsWranglerConvs().forEach((x) => { const s = commsWranglerStatus(x); if (!worst || COMMS_ST_RANK[s] < COMMS_ST_RANK[worst]) worst = s; });
+  return (!worst || worst === 'gray') ? 'green' : worst;
+}
+/* ── per-customer thread messages (messagesFor — bodies + maskedTo + fromUsed) ── */
+const commsMsgs = new Map();        // customerId -> { loading, at, messages }
+function commsFetchMsgs(customerId, force) {
+  if (!commsOnline()) return null;
+  let entry = commsMsgs.get(String(customerId));
+  if (entry && (entry.loading || (!force && Date.now() - entry.at < 30000))) return entry;
+  entry = { loading: true, at: entry ? entry.at : 0, messages: entry ? entry.messages : null };
+  commsMsgs.set(String(customerId), entry);
+  backendCall('messagesFor', { customerId }).then((r) => {
+    entry.loading = false;
+    if (r && r.ok && Array.isArray(r.messages)) { entry.messages = r.messages; entry.at = Date.now(); render(); }
+  }).catch(() => { entry.loading = false; });
+  return entry;
+}
+const commsDrafts = new Map();      // `${cat}|${customerId}` -> composer draft (survives re-renders)
+const commsSending = new Set();     // in-flight send keys (disables the ignition)
+const commsFromSel = new Map();     // customerId -> chosen FROM alias (D7 picker)
+let commsAliasesKicked = false;
+function commsAliasesEnsure() {     // lazy one-shot alias fetch for the email FROM picker
+  if (commsAliasesKicked || !commsOnline()) return;
+  commsAliasesKicked = true;
+  commsAliasList().then((a) => { if (a && a.length) render(); });
+}
+/* ── the four toolbar chips (bottom-left, before the tool buttons) ────────── */
+function commsChipsHtml() {
+  const phone = document.body.classList.contains('is-phone');
+  const chip = (cat) => {
+    const meta = COMMS_CAT_META[cat];
+    // phones have no rail — the team/wrangler chips still bridge to their bottom-sheet docks there
+    const on = phone
+      ? (cat === 'team' ? state.chat.open : cat === 'wrangler' ? (state.wrangler.open && !state.wrangler.min) : state.commsRail.cat === cat)
+      : state.commsRail.cat === cat;
+    const worst = commsCatWorst(cat);
+    return `<button class="iconbtn comms-chip js-comms-chip${on ? ' on' : ''}" data-cat="${cat}" data-tip="${esc(meta.tip)}" aria-pressed="${on}">${meta.icon()}${worst ? `<span class="cc-dot c-${worst}" aria-hidden="true"></span>` : ''}</button>`;
+  };
+  return `<span class="comms-chips" role="group" aria-label="Comms — Team, Texts, Email, Mr. Wrangler">${COMMS_CATS.map(chip).join('')}</span><span class="bb-sep bb-stitch" aria-hidden="true"></span>`;
+}
+/* ── the summoned session's tabs on the rail (ALL first, then conversations).
+   D9: one builder, four categories — a tab's is-active means "this is THE open
+   window" (single-open). The ✕ hides from the rail only, never ends. ── */
+function commsSessTabsHtml() {
+  const cat = state.commsRail.cat, meta = COMMS_CAT_META[cat], sess = state.commsRail.sessions[cat];
+  if (meta.channel && !commsOnline()) return '<span class="crail-empty">Connect to the backend to wrangle customer threads.</span>';
+  const hidden = new Set((sess.hidden || []).map(String));
+  const tab = (id, name, st) => {
+    const open = String(sess.lastOpen) === String(id);
+    return `<button class="crail-tab comms-tab st-${st}${open ? ' is-active' : ''}" data-comms-tab="${esc(id)}" role="tab" aria-selected="${open}" data-tip="${esc(name)} — ${open ? 'tuck the window away' : 'open the window'}"><span class="crail-t">${esc(name)}</span><span class="crail-x" data-comms-hide="${esc(id)}" role="button" aria-label="Hide from the rail — does NOT end it" data-tip="Hide from the rail — does NOT end it">×</span></button>`;
+  };
+  let count = 0, tabs = '';
+  if (cat === 'team') {
+    const chats = commsTeamChats(); count = chats.length;
+    tabs = chats.filter((c) => !hidden.has(String(c.id))).map((c) => tab(c.id, commsTeamLabel(c), commsTeamStatus(c))).join('');
+  } else if (cat === 'wrangler') {
+    const convs = commsWranglerConvs(); count = convs.length;
+    tabs = convs.filter((x) => !hidden.has(x.id)).map((x) => tab(x.id, x.title, commsWranglerStatus(x))).join('');
+  } else {
+    const threads = commsThreadsFor(cat); count = threads.length;
+    const byId = new Map(threads.map((t) => [String(t.customerId), t]));
+    const ended = commsEndedSet();
+    tabs = sess.tabs.filter((id) => !ended.has(String(id) + '|' + meta.channel)).map((id) => {
+      const c = IDX.customer.get(id);
+      return tab(id, (c && fullName(c)) || String(id), commsConvStatus(byId.get(String(id)) || null, meta.channel));
+    }).join('');
+  }
+  const all = `<button class="crail-tab comms-all js-comms-all${sess.menuOpen ? ' is-active' : ''}" role="tab" aria-selected="${sess.menuOpen}" data-tip="Every un-ended ${meta.label} conversation — Open / End"><span class="crail-t">All · ${count}</span></button>`;
+  return `<div class="crail-group comms-group">${all}${tabs}</div>`;
+}
+/* ── Messenger-style conversation window (above its own tab) ─────────────── */
+function commsPopupHtml(cat, t, id) {
+  const meta = COMMS_CAT_META[cat];
+  const c = IDX.customer.get(id);
+  const name = (c && fullName(c)) || String(id);
+  const st = commsConvStatus(t, meta.channel);
+  const entry = commsFetchMsgs(id);
+  const msgs = ((entry && entry.messages) || []).filter((m) => m.channel === meta.channel)
+    .sort((a, b) => String(a.when || '').localeCompare(String(b.when || '')));
+  const stamp = (m) => { const d = m.when ? new Date(m.when) : null; return (d && !isNaN(d)) ? d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''; };
+  const rows = msgs.map((m) => {
+    const me = m.direction !== 'inbound';
+    const metaLine = me
+      ? [m.status === 'failed' ? '✕ Failed' : 'Sent', m.maskedTo || '', m.fromUsed ? 'from ' + m.fromUsed : '', stamp(m)].filter(Boolean).join(' · ')
+      : [name, stamp(m)].filter(Boolean).join(' · ');
+    return `<div class="cp-row${me ? ' me' : ''}"><div class="cp-cell"><div class="cp-bub${me ? ' me' : ''}${m.status === 'failed' ? ' failed' : ''}">${esc(m.body || m.subject || '(no text)')}</div><div class="cp-meta">${esc(metaLine)}</div></div></div>`;
+  }).join('') || `<div class="cp-empty">${entry && entry.loading ? 'Rounding up the thread…' : 'No messages yet — say the word.'}</div>`;
+  // D7 FROM picker — only for email, only when the shop has >1 connected alias
+  let fromRow = '';
+  if (meta.channel === 'email') {
+    commsAliasesEnsure();
+    const aliases = _commsAliases || [];
+    if (aliases.length > 1) {
+      const sel = commsFromSel.get(String(id)) || aliases[0];
+      fromRow = `<div class="cp-fromrow"><button class="cp-from js-comms-from" data-cust="${esc(id)}" data-tip="Which connected address this goes out as">from ${esc(sel)}${I.chev}</button></div>`;
+    }
+  }
+  const key = cat + '|' + id;
+  const sending = commsSending.has(key);
+  const first = ((c && (c.firstName || fullName(c))) || '').trim().split(/\s+/)[0] || 'them';
+  return `<div class="cp-cap" aria-hidden="true"></div>
+    <div class="cp-head"><span class="cp-dot c-${st}" aria-hidden="true"></span><span class="cp-cat">${esc(meta.label)}</span><span class="cp-who">${esc(name)}</span><span class="spacer"></span>${ghostPill('End', { js: 'js-comms-end', data: { cust: id }, tip: 'End the conversation — the history stays on the profile' })}</div>
+    <div class="cp-feed">${rows}</div>
+    ${fromRow}
+    <div class="cp-compose"><input class="cp-in js-comms-in" data-cust="${esc(id)}" placeholder="${meta.channel === 'sms' ? 'Text' : 'Email'} ${esc(first)}…" aria-label="Message ${esc(name)}" value="${esc(commsDrafts.get(key) || '')}" maxlength="600" /><button class="cp-send js-comms-send" data-cust="${esc(id)}"${sending ? ' disabled' : ''}>${sending ? 'Sending…' : 'Send'}</button></div>`;
+}
+/* ── D9 Team window — the APP-23 chat riding the rail shell: same store, same
+   bubbles (yours ride blue up here; the orange pair stays customer-only), same
+   composer classes so chatSend / the Enter handler / drafts keep working. ── */
+function commsTeamPopupHtml(id) {
+  const c = chatById(String(id)); if (!c) return '';
+  normalizeTeamChat(c);
+  chatMarkSeen(c);   // the open window is "seen" — clears the re-flash, mirrors the dock
+  return `<div class="cp-cap" aria-hidden="true"></div>
+    <div class="cp-head"><span class="cp-dot c-${commsTeamStatus(c)}" aria-hidden="true"></span><span class="cp-cat">Team</span>${chatTitleInputHtml(c)}<span class="spacer"></span><button class="cp-gear js-chat-settings" aria-label="Chat settings" data-tip="Chat settings">${I.sliders}</button></div>
+    <div class="cp-feed chat-feed">${chatFeedRowsHtml(c)}</div>
+    <div class="chat-compose">${chatHeldChipHtml()}<input class="chat-input" placeholder="Message the team…" value="${esc(state.chat.draft || '')}" aria-label="Message the team" /><button class="chat-send js-chat-send" aria-label="Send">${I.chev}</button></div>
+    ${chatMemberBarHtml(c)}`;
+}
+/* ── D9 Mr. Wrangler window — the §18 conversation riding the rail shell: the
+   node ALSO wears .wrangler-dock so wranglerSend / paste / drag-drop / focus all
+   find their selectors untouched; only the chrome changed (dock head → cp-head). ── */
+function commsWranglerPopupHtml() {
+  const o = state.wrangler;
+  const st = commsWranglerStatus({ id: String(o.id), live: true });
+  return `<div class="cp-cap" aria-hidden="true"></div>
+    <div class="cp-head"><span class="cp-dot c-${st}" aria-hidden="true"></span><span class="cp-cat">Mr. Wrangler</span><span class="cp-who">${esc(wranglerConvoTitle(o))}</span><span class="spacer"></span>${ghostPill('End', { js: 'js-comms-end', data: { cust: o.id }, tip: 'End the conversation — the transcript stays stored' })}</div>
+    ${wranglerDockBodyHtml()}`;
+}
+/* ── the ALL menu: every un-ended conversation, Open / End per row (D9: Team and
+   Mr. Wrangler list their chats too, with a + New chat at the foot) ────────── */
+function commsMenuHtml(cat) {
+  const meta = COMMS_CAT_META[cat];
+  const row = (id, name, st, snip) => `<div class="cm-row"><span class="cp-dot c-${st}" aria-hidden="true"></span><span class="cm-who">${esc(name)}</span><span class="cm-snip">${esc(snip)}</span>${actionPill('commit', 'Open', { js: 'js-comms-mopen', h: 22, data: { cust: id } })}${ghostPill('End', { js: 'js-comms-mend', data: { cust: id }, tip: cat === 'team' || cat === 'wrangler' ? 'End it — the history stays stored' : 'End it — the history stays on the profile' })}</div>`;
+  let rows = '', empty = 'Nothing on the line — right-click a customer to start one.', newRow = '';
+  if (cat === 'team') {
+    rows = commsTeamChats().map((c) => {
+      const last = (c.messages || [])[c.messages.length - 1];
+      return row(c.id, commsTeamLabel(c), commsTeamStatus(c), last ? `${last.by === commentUserKey() ? 'you' : (last.by || 'them')}: ${last.text || ''}` : 'No messages yet');
+    }).join('');
+    empty = 'No team chats yet — saddle one up below.';
+    newRow = `<div class="cm-row cm-new">${addBtn('New chat', { js: 'js-comms-new', link: true })}</div>`;
+  } else if (cat === 'wrangler') {
+    rows = commsWranglerConvs().map((x) => {
+      const msgs = x.live ? (state.wrangler.messages || []) : ((x.snap && x.snap.messages) || []);
+      const last = msgs[msgs.length - 1];
+      return row(x.id, x.title, commsWranglerStatus(x), last ? `${last.role === 'assistant' ? '🤠' : 'you'}: ${(last.content || '').replace(/\s+/g, ' ')}` : 'No messages yet');
+    }).join('');
+    empty = 'Nothing on the line — ask Mr. Wrangler anything below.';
+    newRow = `<div class="cm-row cm-new">${addBtn('New chat', { js: 'js-comms-new', link: true })}</div>`;
+  } else {
+    rows = commsThreadsFor(cat).map((t) => {
+      const id = String(t.customerId), c = IDX.customer.get(id);
+      const ch = commsThreadChannel(t, meta.channel) || t;
+      return row(id, (c && fullName(c)) || id, commsConvStatus(t, meta.channel), (ch.lastDirection === 'inbound' ? 'them: ' : 'you: ') + (ch.lastSnippet || ''));
+    }).join('');
+  }
+  return `<div class="cp-cap" aria-hidden="true"></div>
+    <div class="cp-head"><span class="cp-cat">${esc(meta.label)}</span><span class="cp-who">Open &amp; un-ended</span><span class="spacer"></span><button class="cp-x js-comms-menu-x" aria-label="Tuck the list away" data-tip="Tuck away — nothing ends">${I.x}</button></div>
+    <div class="cp-feed cp-list">${rows || `<div class="cp-empty">${empty}</div>`}${newRow}</div>`;
+}
+/* Mount THE open window ABOVE its own tab (Messenger metaphor, D9 single-open: at
+   most one conversation window across all categories — the session's lastOpen) —
+   called at the end of render() while a session is summoned. Desktop-only
+   (phones have no rail; the D8 mobile bottom-sheet reflow rides later). */
+function mountCommsPops() {
+  const cat = state.commsRail.cat;
+  if (!cat || document.body.classList.contains('is-phone')) return;
+  const sess = state.commsRail.sessions[cat];
+  const bar = document.querySelector('.bottombar');
+  if (!bar) return;
+  const host = el('div', 'comms-pops');
+  $('#app').appendChild(host);
+  const bottom = Math.max(56, Math.round(window.innerHeight - bar.getBoundingClientRect().top) + 8);
+  let lastRight = 0;   // the window + the ALL menu would stack — nudge each clear of the previous
+  const place = (node, anchor, w) => {
+    const r = anchor.getBoundingClientRect();
+    let left = Math.max(8, Math.min(r.left - 30, window.innerWidth - w - 8));
+    if (left < lastRight + 8) left = Math.min(lastRight + 8, window.innerWidth - w - 8);
+    lastRight = left + w;
+    node.style.left = left + 'px';
+    node.style.bottom = bottom + 'px';
+  };
+  const id = sess.lastOpen != null ? String(sess.lastOpen) : null;
+  const tb = id ? document.querySelector(`.comms-rail [data-comms-tab="${id}"]`) : null;   // no tab (hidden/ended) → no window
+  if (id && tb) {
+    let html = '', w = 300, cls = 'comms-pop';
+    if (cat === 'team') { html = commsTeamPopupHtml(id); w = 340; cls += ' team-pop'; }
+    else if (cat === 'wrangler') {
+      // the window renders the LIVE chat only — every open path loads a snapshot into
+      // state.wrangler first (wranglerRailOpen), so a mismatch just means "not loaded yet"
+      if (state.wrangler.open && String(state.wrangler.id) === id) { html = commsWranglerPopupHtml(); w = 380; cls += ' wrangler-dock wr-pop'; }
+    } else {
+      const t = commsThreadsFor(cat).find((x) => String(x.customerId) === id) || null;
+      html = commsPopupHtml(cat, t, id);
+    }
+    if (html) {
+      const node = el('div', cls);
+      node.innerHTML = html;
+      if (cat === 'team') node.dataset.drop = 'chat';   // drag a record in = tag it into the chat (dock parity)
+      host.appendChild(node); place(node, tb, w);
+      const feed = node.querySelector('.cp-feed, .wr-feed'); if (feed) feed.scrollTop = feed.scrollHeight;
+    }
+  }
+  if (sess.menuOpen && (!COMMS_CAT_META[cat].channel || commsOnline())) {
+    const at = document.querySelector('.comms-rail .js-comms-all');
+    if (at) { const node = el('div', 'comms-pop comms-menu'); node.innerHTML = commsMenuHtml(cat); host.appendChild(node); place(node, at, 340); }
+  }
+}
+/* ── actions ─────────────────────────────────────────────────────────────── */
+/* Sweep a category's window off the rail when the rail leaves it (chip re-click,
+   sibling chip, or any cross-category open — the single-open law's broom). */
+function commsLeaveCat(cat) {
+  if (cat === 'wrangler' && state.wrangler.open && !document.body.classList.contains('is-phone')) {
+    wranglerRailSnapshot(); state.wrangler.open = false; state.wrangler.min = false;
+  }
+}
+function commsToggleCat(cat) {
+  const phone = document.body.classList.contains('is-phone');
+  if (phone && (cat === 'team' || cat === 'wrangler')) {
+    // phones have no rail — these chips keep bridging to the bottom-sheet docks (mobile reflow rides later)
+    if (cat === 'team') { state.chat.open = !state.chat.open; return render(); }
+    if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; return render(); }
+    return wranglerNewChat();
+  }
+  const rail = state.commsRail;
+  if (rail.cat === cat) {                                // same chip again → sweep the rail clean
+    rail.cat = null; commsLeaveCat(cat);
+    saveCommsRail(); return render();
+  }
+  const prev = rail.cat;
+  rail.cat = cat; if (prev) commsLeaveCat(prev);
+  if (COMMS_CAT_META[cat].channel) refreshCommsThreads();
+  // summon the last session — its remembered LAST-open conversation is the ONE window restored
+  const s = rail.sessions[cat];
+  if (cat === 'team' && s.lastOpen) {
+    const c = chatById(String(s.lastOpen));
+    if (c && !commsIsEnded(c.id, 'team', commsChatLastAt(c))) state.chat.activeId = c.id;
+    else s.lastOpen = null;
+  }
+  if (cat === 'wrangler' && s.lastOpen) {
+    const idw = String(s.lastOpen);
+    if (String(state.wrangler.id) === idw) state.wrangler.open = true;
+    else if ((state.wranglerRail || []).some((c) => String(c.id) === idw)) { saveCommsRail(); return wranglerRailOpen(idw); }
+    else s.lastOpen = null;
+  }
+  saveCommsRail(); render();
+}
+function commsToggleTab(id) {
+  const cat = state.commsRail.cat, s = commsSess(); if (!s) return;
+  id = String(id);
+  if (String(s.lastOpen) === id) {                       // the open window's tab → tuck it away
+    s.lastOpen = null;
+    if (cat === 'wrangler') commsLeaveCat('wrangler');
+    saveCommsRail(); return render();
+  }
+  if (cat === 'team') return openChat(id);               // rejoin + seen + rail routing, one funnel
+  if (cat === 'wrangler') return commsOpenWrangler(id);
+  s.lastOpen = id; commsFetchMsgs(id);
+  saveCommsRail(); render();
+}
+function commsHideTab(id) {   // the tab ✕ HIDES from the rail only — it never ends a conversation
+  const cat = state.commsRail.cat, s = commsSess(); if (!s) return;
+  id = String(id);
+  if (COMMS_CAT_META[cat].channel) s.tabs = s.tabs.filter((x) => String(x) !== id);
+  else { s.hidden = s.hidden || []; if (!s.hidden.includes(id)) s.hidden.push(id); }   // team/wrangler tabs derive from their stores — hide per device
+  if (String(s.lastOpen) === id) { s.lastOpen = null; if (cat === 'wrangler') commsLeaveCat('wrangler'); }
+  saveCommsRail(); render();
+}
+/* Open (or resurrect — conversations never really end) a conversation onto the rail
+   in the right category, window up. Entry: the R20 menu, the ALL list, the customer
+   profile's Comms section, and the team/wrangler tab clicks. Single-open: landing
+   here closes whatever window was up (lastOpen replaces; category switch sweeps). */
+function commsOpenConv(cat, id) {
+  if (cat === 'team') return openChat(String(id));
+  if (cat === 'wrangler') return commsOpenWrangler(String(id));
+  const meta = COMMS_CAT_META[cat]; if (!meta || !meta.channel) return;
+  commsUnend(id, meta.channel);                          // any new open resurrects an ended thread (phone-contact model)
+  const rail = state.commsRail;
+  if (rail.cat !== cat) { commsLeaveCat(rail.cat); rail.cat = cat; }
+  const s = rail.sessions[cat];
+  if (!s.tabs.some((x) => String(x) === String(id))) s.tabs.push(String(id));
+  s.lastOpen = String(id); s.menuOpen = false;
+  saveCommsRail(); refreshCommsThreads(); commsFetchMsgs(id); render();
+  if (!commsOnline()) toast('Connect to the backend to wrangle customer threads.');
+}
+// Open/resurrect a Mr. Wrangler conversation onto the rail (live chat or a §18g snapshot).
+function commsOpenWrangler(id) {
+  id = String(id);
+  commsUnend(id, 'wrangler');
+  if (String(state.wrangler.id) === id) {
+    const rail = state.commsRail;
+    if (rail.cat !== 'wrangler') { commsLeaveCat(rail.cat); rail.cat = 'wrangler'; }
+    const s = rail.sessions.wrangler;
+    state.wrangler.open = true;
+    s.lastOpen = id; s.menuOpen = false;
+    s.hidden = (s.hidden || []).filter((x) => String(x) !== id);
+    saveCommsRail(); return render();
+  }
+  wranglerRailOpen(id);                                  // loads the snapshot → openWranglerDock routes it onto the rail
+}
+// The ALL menu's + New chat (D9): team reuses newChat(), wrangler reuses wranglerNewChat().
+function commsNewChat() {
+  const cat = state.commsRail.cat;
+  if (cat === 'team') { const c = newChat(); return openChat(c.id); }
+  if (cat === 'wrangler') return wranglerNewChat();
+}
+function commsEndConv(id, cat) {
+  cat = cat || state.commsRail.cat;
+  id = String(id);
+  const s = state.commsRail.sessions[cat];
+  if (cat === 'team') {
+    commsEnd(id, 'team');                                // client-side, per device — a newer message resurrects
+    if (String(s.lastOpen) === id) s.lastOpen = null;
+    if (String(state.chat.activeId) === id) state.chat.activeId = null;
+    saveCommsRail(); render();
+    toast('Chat ended — a new message rounds it back up.');
+    return;
+  }
+  if (cat === 'wrangler') {
+    const w = state.wrangler;
+    if (String(w.id) === id) {                           // snapshot FIRST, then end (ended-at > snapshot ts keeps it ended)
+      wranglerRailSnapshot();
+      w.open = false; w.min = false; w.id = null; w.messages = []; w.reqNumber = null; w.reqTitle = null; w.reqUrl = null;
+    }
+    commsEnd(id, 'wrangler');
+    if (String(s.lastOpen) === id) s.lastOpen = null;
+    saveCommsRail(); render();
+    toast('Conversation ended — the transcript stays stored.');
+    return;
+  }
+  const meta = COMMS_CAT_META[cat]; if (!meta || !meta.channel) return;
+  commsEnd(id, meta.channel);                            // client-side v1 — the server 'ended' flag is Phase B
+  s.tabs = s.tabs.filter((x) => String(x) !== id);
+  if (String(s.lastOpen) === id) s.lastOpen = null;
+  saveCommsRail(); render();
+  toast('Conversation ended — the history stays on the profile.');
+}
+function commsFromMenu(btn) {   // D7 — pick which connected address the email goes out as
+  const id = btn.dataset.cust, aliases = _commsAliases || [];
+  const sel = commsFromSel.get(String(id)) || aliases[0] || '';
+  openDropdown(btn, aliases.map((a) => `<button class="dd-item js-comms-from-pick${a === sel ? ' on' : ''}" data-cust="${esc(id)}" data-from="${esc(a)}">${esc(a)}</button>`).join(''), { align: 'left' });
+}
+async function commsSend(customerId) {
+  const cat = state.commsRail.cat;
+  const meta = COMMS_CAT_META[cat]; if (!meta || !meta.channel) return;
+  const key = cat + '|' + customerId;
+  const text = (commsDrafts.get(key) || '').trim();
+  if (!text || commsSending.has(key)) return;
+  if (!commsOnline()) { toast('Connect to the backend to wrangle customer threads.'); return; }
+  const cust = IDX.customer.get(customerId);
+  const from = meta.channel === 'email' ? (commsFromSel.get(String(customerId)) || ((_commsAliases || [])[0] || '')) : '';
+  commsSending.add(key); render();
+  let r; try { r = await backendCall('sendCustomerMessage', { channel: meta.channel, entity: 'customer', recId: customerId, customerId, template: 'freeform', text, from }); }
+  catch (e) { r = { ok: false, reason: 'network' }; }
+  commsSending.delete(key);
+  if (r && r.ok) {
+    commsDrafts.delete(key);
+    // optimistic feed + thread rollup; the next commsThreads poll re-truths it from the server log
+    const now = new Date().toISOString();
+    const entry = commsMsgs.get(String(customerId));
+    if (entry && Array.isArray(entry.messages)) entry.messages.push({ msgId: r.msgId, channel: meta.channel, direction: 'outbound', status: 'sent', when: now, body: text, maskedTo: r.maskedTo || '', fromUsed: r.fromUsed || '' });
+    if (commsThreads) {
+      let t = commsThreads.find((x) => String(x.customerId) === String(customerId));
+      if (!t) { t = { customerId: String(customerId), count: 0 }; commsThreads.push(t); }
+      t.count = (t.count || 0) + 1;
+      t.lastWhen = now; t.lastChannel = meta.channel; t.lastDirection = 'outbound'; t.lastSnippet = text.slice(0, 80); t.lastStatus = 'sent';
+      if (t.channels && t.channels[meta.channel]) { const ch = t.channels[meta.channel]; ch.lastWhen = now; ch.lastDirection = 'outbound'; ch.lastSnippet = text.slice(0, 80); ch.lastStatus = 'sent'; }
+      else if (t.channels) t.channels[meta.channel] = { lastWhen: now, lastDirection: 'outbound', lastSnippet: text.slice(0, 80), lastStatus: 'sent' };
+    }
+    if (cust) logAction(cust, `${meta.channel === 'sms' ? 'Texted' : 'Emailed'} ${r.maskedTo || 'customer'}`);   // History stays stamped, masked (spec Q-8b)
+    refreshCommsThreads(true);
+    haptic([12, 30, 12]);
+    render();
+    return;
+  }
+  render();
+  const why = {   // server refusal → say what's wrong and where to fix it (R19 voice)
+    'no-phone': 'No phone on file — add one on the account.',
+    'no-email': 'No email on file — add one on the account.',
+    'opted-out': `This customer has opted out of ${meta.channel === 'sms' ? 'texts' : 'email'} — hard stop.`,
+    'not-configured': 'SMS isn’t wired yet — Mocean keys go in the backend Script Properties.',
+    'cap': 'Daily send cap reached — raise SMS_DAILY_CAP if this run is legit.',
+    'quiet-hours': 'Quiet hours (8pm–8am) — the message can go out in the morning.',
+    'isolation': 'Record/customer mismatch — reload and try again.',
+    'provider': 'The send failed server-side — check the line and try again.',
+    'empty': 'Nothing to send — type a message first.',
+    'network': 'Couldn’t reach the backend — try again.',
+  }[r && r.reason] || 'Didn’t send — try again.';
+  toast(why);
+}
+/* ── customer profile: the compact Comms section (one row per channel) ────── */
+function commsCustSectionHtml(c) {
+  if (!commsOnline() || !c || !c.customerId) return '';
+  const entry = commsFetchMsgs(c.customerId);           // lazy fetch when the card opens; 30s cache per render cycle
+  const msgs = (entry && entry.messages) || [];
+  if (!msgs.length) return '';
+  const ended = commsEndedSet();
+  const row = (channel) => {
+    const list = msgs.filter((m) => m.channel === channel);
+    if (!list.length) return '';
+    const last = list.reduce((a, b) => (String(a.when || '') > String(b.when || '') ? a : b));
+    const me = last.direction !== 'inbound';
+    const st = me ? (last.status === 'failed' ? 'red' : 'green') : 'red';
+    const isEnded = ended.has(String(c.customerId) + '|' + channel);
+    return `<div class="kv comms-line"><span class="cp-dot c-${st}" aria-hidden="true"></span>${badge(channel === 'sms' ? 'Text' : 'Email', 'gray')}<span class="comms-snip">${esc((me ? 'you: ' : 'them: ') + (last.body || last.subject || ''))}</span>${actionPill('commit', 'Open', { js: 'js-comms-copen', h: 24, data: { cust: c.customerId, channel } })}${isEnded ? '' : ghostPill('End', { js: 'js-comms-cend', data: { cust: c.customerId, channel }, tip: 'End it — the history stays right here' })}</div>`;
+  };
+  const rows = row('sms') + row('email');
+  return rows ? `<div class="section comms-sec"><h4>Comms</h4><div class="fieldstack">${rows}</div></div>` : '';
+}
+
+
 boot();
 
 // expose for console/debugging + future DATA WIRING

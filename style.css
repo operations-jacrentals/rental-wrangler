@@ -25,6 +25,12 @@
   --gray:#8b94a3;   --gray-bg:rgba(139,148,163,.14);
   --orange:#ff7a1a; --orange-bg:rgba(255,122,26,.14);
 
+  /* D8 comms bubbles — Jac's EXPLICIT palette exception (spec comms D8, 2026-07-07):
+     operator = iMessage blue with white ink, customer reply = a soft orange tint.
+     Tokens (not literals in markup) so each theme can tune them. */
+  --bub-me:#0A84FF; --on-bub-me:#f4f8ff;
+  --bub-them:rgba(255,145,60,.16); --bub-them-line:rgba(255,145,60,.25);
+
   /* bold proportional-mix viz tones (category inspection mix / service tints) —
      stronger than the soft pill -bg so the Failed share reads clearly red */
   --mix-green:rgba(52,211,153,.22); --mix-yellow:rgba(245,197,66,.34); --mix-red:rgba(255,66,66,.46);
@@ -57,6 +63,9 @@
   --mix-pink:rgba(197,51,124,.32); --mix-brown:rgba(133,85,38,.34); --mix-gray:rgba(86,96,114,.30); --mix-orange:rgba(207,96,0,.30);
   --chip-shadow: 0 6px 16px -12px rgba(20,30,60,.5);
   --anchor-section:#dde2ea;
+  /* D8 comms bubbles — the iMessage blue holds on light; the customer tint deepens for AA */
+  --bub-me:#0A84FF; --on-bub-me:#f4f8ff;
+  --bub-them:rgba(207,96,0,.13); --bub-them-line:rgba(207,96,0,.30);
 }
 
 /* ── Reset / base ────────────────────────────────────────────────────────── */
@@ -1368,6 +1377,100 @@ select.lf-in { appearance: none; cursor: pointer; }
 .crail-tab.is-active .crail-dot { background: var(--on-orange, #1a1205); box-shadow: none; }
 @media (prefers-reduced-motion: reduce) { .crail-tab:hover { transform: none; } }
 
+/* ── D8 THE COMMS RAIL (spec comms-notifications D8, 2026-07-07) — the four toolbar
+   chips (Team · Texts · Email · Mr. Wrangler), the summoned session's tabs, and the
+   Messenger-style windows that pop above their own tab. Steel plates + hazard cap;
+   ONE orange (active chip / open tab / ignition Send); status colors keep their
+   registry meanings; the bubble pair is Jac's documented palette exception. */
+.comms-chips { display: inline-flex; align-items: center; gap: 7px; }
+.comms-chip { position: relative; }
+.comms-chip svg { width: 17px; height: 17px; }
+.cc-dot { position: absolute; top: -3px; right: -3px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--bg); background: var(--txt-3); }
+.cc-dot.c-red { background: var(--red); } .cc-dot.c-yellow { background: var(--yellow); } .cc-dot.c-green { background: var(--green); }
+.bb-sep.bb-stitch { width: 0; border-left: 1.5px dashed var(--tan, #c2925a); background: none; opacity: .65; }   /* saddle-stitch seam between the comms chips and the tool buttons */
+/* session tabs — the conversation's status rides the LEFT EDGE (red/yellow/green).
+   An OPEN window's tab is ARMED = orange OUTLINE (mock v3; solid fill would bury the
+   status edge — orange fill stays reserved for the truly selected rail tabs). */
+.crail-tab.comms-tab { border-left-width: 3px; }
+.crail-tab.comms-tab.is-active { background: linear-gradient(180deg, var(--card-head), var(--card)); border-color: var(--accent); color: var(--txt); }
+.crail-tab.comms-tab.st-green, .crail-tab.comms-tab.is-active.st-green { border-left-color: var(--green); }
+.crail-tab.comms-tab.st-yellow, .crail-tab.comms-tab.is-active.st-yellow { border-left-color: var(--yellow); }
+.crail-tab.comms-tab.st-red, .crail-tab.comms-tab.is-active.st-red { border-left-color: var(--red); }
+.crail-tab.comms-tab.st-gray, .crail-tab.comms-tab.is-active.st-gray { border-left-color: var(--txt-3); }
+/* the ALL tab — dashed, blue, stamped; FIRST (leftmost) in every session */
+.crail-tab.comms-all { border-style: dashed; border-color: color-mix(in srgb, var(--blue) 55%, var(--line)); color: var(--blue); }
+.crail-tab.comms-all .crail-t { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.3px; font-weight: 800; font-size: 11px; }
+.crail-tab.comms-all.is-active { background: var(--blue); border-style: solid; border-color: var(--blue); color: #fff; }   /* solid-blue ink matches .pill.c-commit */
+/* ── the windows (Messenger metaphor: each above its OWN tab, several at once) ── */
+.comms-pops { position: fixed; inset: 0; z-index: 58; pointer-events: none; }
+.comms-pop { position: fixed; width: 300px; max-height: min(420px, 56dvh); display: flex; flex-direction: column; pointer-events: auto;
+  border: 1px solid var(--line); border-radius: var(--radius, 16px); overflow: hidden;
+  background: linear-gradient(180deg, var(--panel-2), var(--panel)); box-shadow: var(--shadow); }
+.comms-pop.comms-menu { width: 340px; }
+.cp-cap { flex: 0 0 auto; height: 5px; background: repeating-linear-gradient(135deg, var(--yellow, #f5c542) 0 13px, #14181d 13px 26px); }   /* the hazard cap — plate chrome */
+.cp-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); background: var(--card-head); flex: 0 0 auto; }
+.cp-head .spacer { flex: 1 1 auto; }
+.cp-head .pill { height: 22px; font-size: 10.5px; }
+.cp-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; background: var(--txt-3); }
+.cp-dot.c-green { background: var(--green); } .cp-dot.c-yellow { background: var(--yellow); } .cp-dot.c-red { background: var(--red); } .cp-dot.c-gray { background: var(--txt-3); }
+.cp-cat { flex: 0 0 auto; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.3px; font-size: 10px; font-weight: 800; color: var(--txt-3); }
+.cp-who { min-width: 0; font-weight: 700; font-size: 13px; color: var(--txt); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-x { flex: 0 0 auto; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--txt-3); }
+.cp-x:hover { color: var(--txt); background: var(--panel-2); }
+.cp-x svg { width: 13px; height: 13px; }
+.cp-feed { flex: 1 1 auto; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 7px; min-height: 110px; }
+.cp-empty { color: var(--txt-3); font-size: 12px; font-style: italic; text-align: center; padding: 22px 12px; line-height: 1.5; }
+.cp-row { display: flex; } .cp-row.me { justify-content: flex-end; }
+.cp-cell { max-width: 84%; display: flex; flex-direction: column; gap: 2px; }
+.cp-row.me .cp-cell { align-items: flex-end; }
+/* bubbles — 16px radius with the Apple corner-notch (tight corner on the sender side) */
+.cp-bub { padding: 7px 12px; border-radius: 16px; border-bottom-left-radius: 5px; background: var(--bub-them); border: 1px solid var(--bub-them-line); color: var(--txt); font-size: 12.5px; line-height: 1.4; overflow-wrap: break-word; }
+.cp-bub.me { background: var(--bub-me); border-color: var(--bub-me); color: var(--on-bub-me); border-radius: 16px; border-bottom-right-radius: 5px; }
+.cp-bub.failed { border-color: var(--red); box-shadow: 0 0 0 1px color-mix(in srgb, var(--red) 45%, transparent); }
+.cp-meta { font-size: 9.5px; color: var(--txt-3); padding: 0 4px; }
+/* D7 FROM picker chip — email only, >1 connected alias */
+.cp-fromrow { padding: 7px 10px 0; border-top: 1px solid var(--line); flex: 0 0 auto; }
+.cp-from { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 3px 9px; border-radius: 999px; border: 1px dashed var(--line); background: var(--bg-2); color: var(--txt-2); font-size: 11px; overflow: hidden; }
+.cp-from:hover { border-color: var(--accent-line); color: var(--txt); }
+.cp-from svg.chev { width: 12px; height: 12px; flex: 0 0 auto; }
+.cp-compose { display: flex; gap: 7px; padding: 9px 10px; border-top: 1px solid var(--line); flex: 0 0 auto; }
+.cp-fromrow + .cp-compose { border-top: none; padding-top: 7px; }
+.cp-in { flex: 1; min-width: 0; height: 32px; border-radius: 9px; background: var(--bg-2); border: 1px solid var(--line); color: var(--txt); padding: 0 10px; font: inherit; font-size: 12.5px; outline: none; }
+.cp-in:focus { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
+/* the ignition Send — stamped, orange, dark ink (the ONE primary beat per window) */
+.cp-send { flex: 0 0 auto; height: 32px; padding: 0 14px; border-radius: 999px; border: none;
+  font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.4px; font-weight: 800; font-size: 11px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 78%, #ffd9b0), var(--accent)); color: var(--on-orange, #1a1205); }
+.cp-send:hover { filter: brightness(1.05); }
+.cp-send:disabled { opacity: .6; cursor: default; }
+/* the ALL menu rows — dot · name · snippet · Open / End */
+.cp-feed.cp-list { padding: 0; gap: 0; }
+.cm-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line-soft); }
+.cm-row:last-child { border-bottom: none; }
+.cm-row .pill { flex: 0 0 auto; }
+.cm-who { flex: 0 0 auto; font-weight: 700; font-size: 12.5px; white-space: nowrap; }
+.cm-snip { flex: 1 1 auto; min-width: 0; color: var(--txt-2); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* customer profile — the compact Comms section (one row per channel with history) */
+.comms-sec .comms-line { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
+.comms-sec .comms-line .pill { flex: 0 0 auto; }
+.comms-sec .comms-snip { flex: 1 1 auto; min-width: 0; color: var(--txt-2); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.comms-chip:focus-visible, .cp-x:focus-visible, .cp-from:focus-visible, .cp-send:focus-visible, .cp-in:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* ── D9 — Team + Mr. Wrangler windows on the rail (their docks are phone-only now).
+   The window reuses each dock's INNER classes verbatim (the machinery's selectors),
+   so the rules here only re-fit the shell: sizing, and the team "mine" bubble riding
+   blue (the orange them-bubble pair stays reserved for CUSTOMER conversations). */
+.comms-pop.team-pop { width: 340px; max-height: min(480px, 60dvh); }
+.comms-pop .chat-rail { padding: 8px 10px; }
+.comms-pop .chat-feed { padding: 10px 11px; gap: 9px; min-height: 110px; }
+.comms-pop .cbub.me { background: var(--bub-me); color: var(--on-bub-me); font-weight: 500; }
+.comms-pop.wrangler-dock { right: auto; width: 380px; max-height: min(520px, 62dvh); z-index: auto;
+  background: linear-gradient(180deg, var(--panel-2), var(--panel)); box-shadow: var(--shadow); }   /* rail windows follow the theme — the always-dark plate stays a DOCK (phone) trait */
+.comms-pop .wr-feed { padding: 12px 13px; min-height: 110px; }
+/* neutral them-bubbles token up inside the rail windows (the docks hardcode #232c37 on their dark plates) */
+.comms-pop .cbub, .comms-pop .wr-msg.assistant .wr-bub { background: var(--bg-2); color: var(--txt); border: 1px solid var(--line); }
+.comms-pop .cbub.me { border: none; }
+.cm-row.cm-new { justify-content: center; border-bottom: none; padding: 9px 10px; }
+
 /* §17 INTERNAL TEAM DOCK (Jac, Phase 7) — headerless: tagged-element pill rail on top,
    chat bubbles, role tab-bar at the bottom. Floats bottom-right. Yard data-plate steel. */
 .bottombar .iconbtn { position: relative; }
@@ -1419,6 +1522,76 @@ select.lf-in { appearance: none; cursor: pointer; }
 .rtab.on .rtab-dot { opacity: 1; box-shadow: 0 0 9px 0 var(--rc); }
 .rtab.on .rtab-l { color: var(--rc); }
 .rtab:hover { background: rgba(255,255,255,.05); }
+/* ── Team chat 2026-07-08 rail spec: editable title · member rail · pasted chips ── */
+.chat-title-in { flex: 1 1 auto; min-width: 0; background: transparent; border: none; color: var(--txt);
+  font-family: var(--font); font-weight: 700; font-size: 13px; padding: 3px 5px; border-radius: 6px;
+  overflow: hidden; text-overflow: ellipsis; }
+.chat-title-in::placeholder { color: var(--txt-3); font-weight: 600; font-style: italic; }
+.chat-title-in:hover { background: rgba(255,255,255,.05); }
+.chat-title-in:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; background: rgba(0,0,0,.25); }
+.chat-titlebar { padding: 8px 10px; }
+.cp-head .chat-title-in { font-size: 13px; }
+/* member rail — roster people grouped under their role heading; default none */
+.chat-memberbar { flex-wrap: wrap; gap: 7px 12px; align-items: flex-start; padding: 7px 9px 9px; }
+.chat-memberbar .mrole-grp { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.chat-memberbar .mrole-h { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase;
+  letter-spacing: 1px; font-size: 9px; font-weight: 800; color: var(--txt-3); padding: 0 2px; }
+.chat-memberbar .mrole-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chat-memberbar .rtab { flex: 0 0 auto; flex-direction: row; gap: 5px; padding: 4px 10px 4px 8px;
+  border: 1px solid var(--line); border-radius: 999px; }
+.chat-memberbar .rtab .rtab-l { max-width: 132px; font-size: 10.5px; }
+.chat-memberbar .rtab.on { border-color: var(--rc); background: rgba(255,255,255,.05); }
+.mbar-hint { font-size: 11px; color: var(--txt-3); font-style: italic; padding: 4px 4px; }
+/* read-only member view (non-creator): static chips + a Leave */
+.chat-memberbar-ro { align-items: center; }
+.chat-memberbar-ro .rtab.is-static { cursor: default; border: 1px solid var(--line); border-radius: 999px;
+  flex: 0 0 auto; flex-direction: row; gap: 5px; padding: 4px 10px 4px 8px; }
+.chat-memberbar-ro .rtab.is-static .rtab-dot { opacity: 1; }
+.chat-memberbar-ro .rtab.is-static .rtab-l { color: var(--txt-2); max-width: 132px; font-size: 10.5px; }
+.chat-title-ro { flex: 1 1 auto; min-width: 0; font-weight: 700; font-size: 13px; color: var(--txt); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 3px 5px; }
+/* the gear (chat settings) button in the window header */
+.cp-gear { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; flex: 0 0 auto;
+  border: none; background: none; color: var(--txt-3); cursor: pointer; border-radius: 7px; }
+.cp-gear svg { width: 16px; height: 16px; }
+.cp-gear:hover { background: rgba(255,255,255,.06); color: var(--txt); }
+.cp-gear:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* gear dropdown: a divider + a danger (leave/end) item */
+.dropdown-menu .dd-sep { height: 1px; margin: 5px 4px; background: var(--line); }
+.dropdown-menu .dd-item svg { width: 15px; height: 15px; flex: 0 0 auto; opacity: .8; }
+.dropdown-menu .dd-item.danger { color: var(--red); }
+.dropdown-menu .dd-item.danger:hover { background: rgba(255,66,66,.12); color: var(--red); }
+/* a pasted element chip inside a bubble — a live pointer; deleted → greyed */
+.cbub-refs { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; }
+.chip-ref { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; padding: 5px 9px; border-radius: 9px;
+  border: 1px solid var(--line); background: rgba(0,0,0,.2); color: var(--txt); cursor: pointer; font: inherit; text-align: left; }
+.cbub.me .chip-ref { background: rgba(0,0,0,.16); border-color: rgba(0,0,0,.22); color: #1a1205; }
+.chip-ref .cr-i, .chip-ref .cr-go { display: inline-flex; flex: 0 0 auto; }
+.chip-ref .cr-i { color: var(--accent); } .cbub.me .chip-ref .cr-i { color: #1a1205; }
+.chip-ref .cr-i svg { width: 15px; height: 15px; }
+.chip-ref .cr-t { font-weight: 700; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip-ref .cr-go { margin-left: auto; opacity: .55; } .chip-ref .cr-go svg { width: 13px; height: 13px; }
+.chip-ref:hover { border-color: var(--accent); }
+.chip-ref:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chip-ref.chip-gone { cursor: default; color: var(--txt-3); border-style: dashed; opacity: .75; }
+.chip-ref.chip-gone svg { width: 13px; height: 13px; }
+/* the paste-ready held chip in the composer (saddle-stitch tan) */
+.chat-compose .held-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 9px; border-radius: 999px;
+  border: 1px dashed var(--tan); background: rgba(194,146,90,.14); color: var(--txt-2); flex: 0 0 auto; max-width: 48%; align-self: center; }
+.held-chip .hc-i { flex: 0 0 auto; color: var(--tan); display: inline-flex; } .held-chip .hc-i svg { width: 14px; height: 14px; }
+.held-chip .hc-t { font-size: 11px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.held-chip .hc-x { display: inline-flex; align-items: center; border: none; background: none; color: var(--txt-3); cursor: pointer; padding: 0; }
+.held-chip .hc-x:hover { color: var(--red); } .held-chip .hc-x svg { width: 12px; height: 12px; }
+.held-chip .hc-x:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+/* Mr. Wrangler paste = FOCUS a record (he reads its data). Linked-record accent (R2 family). */
+.wr-focus-row { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px 0; }
+.wr-focus-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 9px; border-radius: 999px;
+  border: 1px solid var(--accent); background: rgba(255,122,26,.1); color: var(--txt-2); }
+.wr-focus-chip.chip-gone { border-style: dashed; border-color: var(--line); color: var(--txt-3); }
+.wr-focus-chip .wf-i { display: inline-flex; color: var(--accent); } .wr-focus-chip .wf-i svg { width: 14px; height: 14px; }
+.wr-focus-chip .wf-t { font-size: 11px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
+.wr-focus-chip .wf-x { display: inline-flex; align-items: center; border: none; background: none; color: var(--txt-3); cursor: pointer; padding: 0; }
+.wr-focus-chip .wf-x:hover { color: var(--red); } .wr-focus-chip .wf-x svg { width: 12px; height: 12px; }
+.wr-focus-chip .wf-x:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .chat-dock.drop-hot { outline: 2px dashed var(--accent); outline-offset: -4px; }
 /* "drop to start a chat" pad — a cancel-arc sibling pinned bottom-right (Jac) */
 .chat-drop { position: fixed; right: 16px; bottom: 64px; width: 190px; height: 116px; z-index: 9400;
