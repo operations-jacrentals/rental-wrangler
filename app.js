@@ -15936,20 +15936,139 @@ async function recordManualPayment(invoiceId) {
     if (live()) { o.busy = false; o.error = (e && e.rwTimeout) ? 'Timed out — try again.' : ((e && e.message) || 'Network error — try again.'); renderOverlay(); }
   }
 }
-// Print / PDF a customer-facing invoice (#109) — a clean white document (not the dark
-// yard UI) rendered into #print-root; the @media print rules hide everything else and
-// the browser's print dialog handles paper or "Save as PDF".
+// ── Invoice "Yard Log" PRINT / PDF (#109; reshaped to a kraft yard-log page 2026-07-08).
+// A customer-facing document rendered into #print-root: line items GROUPED by rental
+// (recent→oldest window), each group stamped with its window · duration · merge/extension
+// provenance · per-rental subtotal; a grand subtotal; a machine glyph per unit line; a red
+// BALANCE DUE + PAID stamp; a signature block; and a customer-safe Amendments log. The
+// @media print rules swap the dark yard UI out and the browser dialog handles "Save as PDF".
+
+/** "2 Days" · "2 Weeks" · "1 Month" from a day count (28d = 1 Month, matching the 4-Week
+ *  rate; falls back to whole weeks then days). */
+function prDuration(days) {
+  if (days % 28 === 0) { const m = days / 28; return `${m} Month${m === 1 ? '' : 's'}`; }
+  if (days % 7 === 0)  { const w = days / 7;  return `${w} Week${w === 1 ? '' : 's'}`; }
+  return `${days} Day${days === 1 ? '' : 's'}`;
+}
+/** Provenance stamp for a rental group: "Merged from 216i" (lines carry a `fromInv` tag
+ *  stamped at merge time) · "Extension of 216i" (a line's "Ext of NNN" tail, or the invoice's
+ *  contOf when this is the covered rental) · "Extension" (a grow-in-place extension line). */
+function prGroupProvenance(inv, r, gl) {
+  const merged = gl.find((li) => li.fromInv);
+  if (merged) return `Merged from ${invoiceShort(merged.fromInv)}`;
+  for (const li of gl) { const m = /·\s*Ext of\s+(\S+)\s*$/i.exec(li.label || ''); if (m) return `Extension of ${m[1]}`; }
+  if (inv.contOf && r && inv.covOf === r.rentalId) return `Extension of ${invoiceShort(inv.contOf)}`;
+  if (gl.some((li) => li.kind === 'extension')) return 'Extension';
+  return '';
+}
+/** Group an invoice's line items by rental, newest window first (manual / unlinked lines
+ *  fall to a trailing "Additional charges" group). */
+function invoicePrintGroups(inv) {
+  const map = new Map(), order = [];
+  (inv.lineItems || []).forEach((li) => {
+    const r = li.ref ? IDX.rental.get(li.ref) : null;
+    const key = r ? r.rentalId : '__other';
+    if (!map.has(key)) { map.set(key, { r, key, lines: [] }); order.push(key); }
+    map.get(key).lines.push(li);
+  });
+  const groups = order.map((key) => {
+    const g = map.get(key), r = g.r;
+    const start = r ? r.startDate : '', end = r ? r.endDate : '';   // unlinked "Additional charges" get no window/duration
+    const days = (parseISO(start) && parseISO(end)) ? Math.max(1, dayDiff(parseISO(start), parseISO(end))) : 0;
+    return {
+      key, r, isOther: key === '__other', start,
+      title: (key === '__other') ? 'Additional charges' : 'Rental',
+      window: (start && end) ? `${fmtShortDate(start)} – ${fmtShortDate(end)}` : '',
+      dur: days ? prDuration(days) : '',
+      prov: (key === '__other') ? '' : prGroupProvenance(inv, r, g.lines),
+      subtotal: g.lines.reduce((a, li) => a + (Number(li.amount) || 0), 0),
+      lines: g.lines,
+    };
+  });
+  groups.sort((a, b) => a.isOther ? 1 : b.isOther ? -1 : (a.start < b.start ? 1 : a.start > b.start ? -1 : 0));
+  return groups;
+}
+/** One printed line row → { icon, name, cat, meta }, with the provenance tail stripped off
+ *  the stored label (it now lives in the group header) and the unit's category surfaced. */
+function prLineParts(li) {
+  let rest = String(li.label || '').replace(/\s*·\s*Ext of\s+\S+\s*$/i, '').replace(/\s*·\s*Extension\s*→.*$/i, '');
+  if (li.kind === 'transport') return { icon: I.truck, name: 'Transport', cat: '', meta: rest.replace(/^Transport\s*·\s*/i, '') };
+  const u = li.unitId ? IDX.unit.get(li.unitId) : null;
+  if (u) {
+    const cat = IDX.category.get(u.categoryId);
+    let meta = rest;
+    if (u.name && rest.startsWith(u.name + ' · ')) meta = rest.slice((u.name + ' · ').length);
+    else { const p = rest.split(' · '); if (p.length > 1) { p.shift(); meta = p.join(' · '); } }
+    return { icon: categoryIconFor(cat && cat.name), name: u.name, cat: (cat && cat.name) || '', meta };
+  }
+  return { icon: '', name: rest, cat: '', meta: '' };
+}
+/** Customer-safe amendment log — the invoice's + its rentals' actions, scrubbed of internal
+ *  ops detail (staff names via `by`, pricing locks, Mr. Wrangler, card/ACH, mechanic/GPS),
+ *  internal-but-relevant wording translated to plain language, oldest→newest so the ticket
+ *  reads like a running log. */
+function invoiceAmendments(inv) {
+  const DENY = /pricing (un)?locked|mr\.?\s*wrangler|added by|••|\bach\b|\bcard\b|mechanic|assigned|\bgps\b|\bhours\b/i;
+  const raw = [];
+  (inv.actions || []).forEach((a) => raw.push(a));
+  (inv.rentalIds || []).map((id) => IDX.rental.get(id)).filter(Boolean).forEach((r) => {
+    const rname = rentalUnitsLabel(r) || r.rentalName || '';
+    (r.actions || []).forEach((a) => raw.push(Object.assign({}, a, { rname })));
+  });
+  const out = [];
+  raw.forEach((a) => {
+    let text = String(a.text || '');
+    if (!text || DENY.test(text)) return;
+    text = text
+      .replace(/Merged in invoice\s+\S+.*$/i, 'Combined with a prior ticket')
+      .replace(/Continuation (of|invoice)\b.*$/i, 'Continued on a new ticket (28-day billing)')
+      .replace(/Transport type →/i, 'Transport set to');
+    out.push({ when: a.when, clock: a.clock || '', seq: a.seq || 0, text, rname: a.rname || '' });
+  });
+  out.sort((x, y) => (x.when < y.when ? -1 : x.when > y.when ? 1 : x.seq - y.seq));
+  return out;
+}
 function printInvoice(invoiceId) {
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
   const t = invoiceTotals(inv);
   const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
-  const rows = (inv.lineItems || []).map((li) => `<tr><td>${esc(li.label)}</td><td class="r">${money2(Number(li.amount) || 0)}</td></tr>`).join('')
-    || '<tr><td colspan="2" class="pr-empty">No line items.</td></tr>';
+  const groups = invoicePrintGroups(inv);
+  const paid = t.balance <= 0.005 && t.total > 0;
+  const bigDate = (fmtShortDate(inv.date) || '').toUpperCase();
+
+  const lineRows = (g) => g.lines.map((li) => {
+    const p = prLineParts(li);
+    return `<tr class="pr-line"><td class="pr-desc">${p.icon ? `<span class="pr-ic">${p.icon}</span>` : '<span class="pr-ic"></span>'}<span class="pr-txt"><span class="pr-nm">${esc(p.name)}</span>${p.cat ? `<span class="pr-cat">${esc(p.cat)}</span>` : ''}${p.meta ? `<span class="pr-mt">${esc(p.meta)}</span>` : ''}</span></td><td class="pr-amt r">${money2(Number(li.amount) || 0)}</td></tr>`;
+  }).join('');
+  const bodyRows = groups.length ? groups.map((g) => `<tr class="pr-grp"><td class="pr-grp-h"><span class="pr-grp-t">${esc(g.title)}</span>${g.window ? `<span class="pr-grp-win">${esc(g.window)}</span>` : ''}${g.dur ? `<span class="pr-grp-dur">${esc(g.dur)}</span>` : ''}${g.prov ? `<span class="pr-grp-prov">${esc(g.prov)}</span>` : ''}</td><td class="pr-grp-sub r">${money2(g.subtotal)}</td></tr>${lineRows(g)}`).join('')
+    : '<tr><td colspan="2" class="pr-empty">No line items.</td></tr>';
+
+  const paymentRows = (inv.payments || []).length
+    ? (inv.payments || []).map((pmt) => {
+        const when = pmt.at ? esc(fmtShortDate(pmt.at)) : '';
+        const method = pmt.type === 'cash' ? 'Cash'
+          : pmt.type === 'check' ? ('Check' + (pmt.checkNum ? ' #' + esc(String(pmt.checkNum)) : ''))
+          : pmt.type === 'ach-pending' ? 'ACH (pending)'
+          : pmt.type === 'charge' ? 'Card'
+          : esc(String(pmt.type || 'Payment'));
+        return `<div><span>Paid${when ? ' · ' + when : ''} · ${method}</span><span>${money2((Number(pmt.amountCents) || 0) / 100)}</span></div>`;
+      }).join('')
+    : (t.paid ? `<div><span>Paid${inv.paymentMethod ? ' · ' + esc(inv.paymentMethod) : ''}</span><span>${money2(t.paid)}</span></div>` : '');
+
+  const amend = invoiceAmendments(inv);
+  const amendRows = amend.length
+    ? amend.map((a) => `<div class="pr-am-row"><span class="pr-am-when">${esc(fmtShortDate(a.when))}${a.clock ? ' · ' + esc(a.clock) : ''}</span><span class="pr-am-tx">${esc(a.text)}${a.rname ? ` <em>· ${esc(a.rname)}</em>` : ''}</span></div>`).join('')
+    : '<div class="pr-am-empty">No amendments — original ticket as written.</div>';
+
   let host = document.getElementById('print-root');
   if (!host) { host = document.createElement('div'); host.id = 'print-root'; document.body.appendChild(host); }
   host.innerHTML = `
     <div class="pr-doc">
-      <div class="pr-head"><div class="pr-brand">${esc(companyName())}</div><div class="pr-sub">${esc(companyTagline())}</div></div>
+      <div class="pr-head">
+        <div class="pr-brandwrap"><span class="pr-mark">${I.bluesteel}</span><div><div class="pr-brand">${esc(companyName())}</div><div class="pr-sub">${esc(companyTagline())} · Yard Log</div></div></div>
+        <div class="pr-datestamp">${esc(bigDate)}</div>
+      </div>
+      <div class="pr-hazard" aria-hidden="true"></div>
       <div class="pr-meta">
         <div><span class="pr-k">Invoice</span><span class="pr-v">${esc(inv.invoiceId)}</span></div>
         <div><span class="pr-k">Bill to</span><span class="pr-v">${esc(cust ? cust.name : '—')}</span></div>
@@ -15959,25 +16078,25 @@ function printInvoice(invoiceId) {
         ${inv.covStart && inv.covEnd ? `<div><span class="pr-k">Rental period</span><span class="pr-v">${esc(fmtShortDate(inv.covStart))} – ${esc(fmtShortDate(inv.covEnd))}</span></div>` : ''}
         ${inv.contOf ? `<div><span class="pr-k">Continuation of</span><span class="pr-v">${esc(invoiceShort(inv.contOf))} (28-day billing split)</span></div>` : ''}
       </div>
-      <table class="pr-lines"><thead><tr><th>Description</th><th class="r">Amount</th></tr></thead><tbody>${rows}</tbody></table>
+      <table class="pr-lines"><thead><tr><th>Description</th><th class="r">Amount</th></tr></thead><tbody>${bodyRows}</tbody></table>
       <div class="pr-tot">
-        <div><span>Subtotal</span><span>${money2(t.subtotal)}</span></div>
+        <div><span>Grand Subtotal</span><span>${money2(t.subtotal)}</span></div>
         <div><span>Tax${t.exempt ? ' (exempt)' : ` (${(TAX_RATE * 100).toFixed(2)}%)`}</span><span>${t.exempt ? '—' : money2(t.tax)}</span></div>
         <div class="pr-big"><span>Total</span><span>${money2(t.total)}</span></div>
-        ${(inv.payments || []).length
-          ? (inv.payments || []).map((p) => {
-              const when = p.at ? esc(fmtShortDate(p.at)) : '';
-              const method = p.type === 'cash' ? 'Cash'
-                : p.type === 'check' ? ('Check' + (p.checkNum ? ' #' + esc(String(p.checkNum)) : ''))
-                : p.type === 'ach-pending' ? 'ACH (pending)'
-                : p.type === 'charge' ? 'Card'
-                : esc(String(p.type || 'Payment'));
-              return `<div><span>Paid${when ? ' · ' + when : ''} · ${method}</span><span>${money2((Number(p.amountCents) || 0) / 100)}</span></div>`;
-            }).join('')
-          : (t.paid ? `<div><span>Paid${inv.paymentMethod ? ' · ' + esc(inv.paymentMethod) : ''}</span><span>${money2(t.paid)}</span></div>` : '')}
-        <div class="pr-due"><span>Balance due</span><span>${money2(t.balance)}</span></div>
+        ${paymentRows}
+        <div class="pr-due"><span>Balance Due</span><span>${money2(t.balance)}</span></div>
       </div>
-      <div class="pr-foot">Thank you for your business — much obliged. Questions on this ticket? Give the yard a holler.</div>
+      ${paid ? '<div class="pr-stamp" aria-hidden="true">Paid in Full</div>' : ''}
+      <div class="pr-sign">
+        <div class="pr-sig"><span class="pr-sig-r"></span><span class="pr-sig-l">Customer Signature</span></div>
+        <div class="pr-sig"><span class="pr-sig-r"></span><span class="pr-sig-l">Authorized By</span></div>
+        <div class="pr-sig"><span class="pr-sig-r"></span><span class="pr-sig-l">Date</span></div>
+      </div>
+      <div class="pr-amend">
+        <div class="pr-amend-h">Yard Log — Amendments</div>
+        ${amendRows}
+      </div>
+      <div class="pr-foot"><span class="pr-foot-thx">Thank you for your business — much obliged. Questions on this ticket? Give the yard a holler${companyPhone() ? ` — ${esc(companyPhone())}` : ''}.</span><span class="pr-foot-mark">A JacTec Service</span></div>
     </div>`;
   document.body.classList.add('printing');
   const cleanup = () => { document.body.classList.remove('printing'); window.removeEventListener('afterprint', cleanup); };
@@ -16861,8 +16980,10 @@ function mergeInvoiceInto(keepId, absorbId) {
   if (!invoiceMergeable(keep)) { toast(`Blocked: invoice ${invoiceShort(keepId)} has a payment or lock — can't merge into it (refund/unlock first).`); return; }
   if (!invoiceMergeable(src)) { toast(`Blocked: invoice ${invoiceShort(absorbId)} has a payment or lock — refund/unlock it before merging.`); return; }
   if (keep.customerId !== src.customerId) { toast('Blocked: those invoices belong to different customers.'); return; }
-  // move every line over, re-minting lids so allocations can never collide on the keeper
-  const moved = (src.lineItems || []).map((li) => Object.assign({}, li, { lid: lineLid() }));
+  // move every line over, re-minting lids so allocations can never collide on the keeper.
+  // Stamp the absorbed invoice id as `fromInv` (kept if a line was already merged once, so
+  // the earliest source sticks) — the print doc reads it for the "Merged from" group stamp.
+  const moved = (src.lineItems || []).map((li) => Object.assign({}, li, { lid: lineLid(), fromInv: li.fromInv || absorbId }));
   moved.forEach((li) => keep.lineItems.push(li));
   // union rentalIds + relink the absorbed invoice's rentals to the keeper (§7.5: one invoice per rental)
   (src.rentalIds || []).forEach((rid) => {
@@ -17792,7 +17913,7 @@ function exposeTestApi() {
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
       companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
-      openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
+      openCustomerForm, renderOverlay, render, printInvoice, invoicePrintGroups, invoiceAmendments, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }
 }
