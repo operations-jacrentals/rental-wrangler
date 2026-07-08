@@ -3036,6 +3036,82 @@ body { font-variant-numeric: tabular-nums; }
 .ag-lifecycle { flex-wrap: wrap; }
 @media (prefers-reduced-motion: reduce) { .nextact { transition: none; } }
 
+/* ── §3.2/§3.3 EMBEDDED INVOICES (Customer Details) — summary strip + scrollable rows +
+   accordion expand into the interactive .pr-doc sheet. All colors/sizes from :root, so
+   light/dark theme for free; the white .pr-doc sheet keeps its own fixed document colors. */
+.inv-summary { display: flex; gap: 7px; flex-wrap: wrap; margin: -2px 0 12px; }
+.kchip { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 12px; border-radius: 10px;
+  background: var(--panel); border: 1px solid var(--line); min-width: 76px; }
+.kchip .kc-v { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.kchip .kc-l { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: 1px; font-size: 9px; color: var(--txt-3); }
+.kchip.due .kc-v { color: var(--red); }
+.kchip.paid .kc-v { color: var(--green); }
+.inv-scroll { max-height: 340px; overflow: auto; padding-right: 3px; display: flex; flex-direction: column; gap: 7px; }
+.inv-empty { font-size: 12px; padding: 4px 0; }
+
+.inv-row { display: flex; align-items: center; gap: 10px; padding: 10px 11px; border: 1px solid var(--line); border-radius: 11px;
+  background: linear-gradient(180deg, var(--card-head), var(--card)); cursor: pointer; position: relative;
+  transition: border-color .12s ease, filter .12s ease; }
+.inv-row:hover { border-color: var(--accent-line); filter: brightness(1.05); }
+.inv-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ir-stat { width: 3px; align-self: stretch; border-radius: 3px; flex: 0 0 auto; margin: -2px 0; background: var(--gray); }
+.ir-stat.due { background: var(--red); } .ir-stat.paid { background: var(--green); } .ir-stat.part { background: var(--yellow); }
+.ir-id { font-family: ui-monospace, monospace; font-weight: 700; font-size: 12px; letter-spacing: .3px; flex: 0 0 auto; }
+.ir-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ir-desc { color: var(--txt-2); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ir-date { color: var(--txt-3); font-size: 10.5px; }
+.ir-amt { font-weight: 800; font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; flex: 0 0 auto; }
+.ir-amt small { display: block; font-weight: 600; font-size: 9.5px; letter-spacing: .5px; font-family: 'Saira Condensed', var(--font); text-transform: uppercase; color: var(--txt-3); }
+.ir-amt.due small { color: var(--red); } .ir-amt.paid small { color: var(--green); } .ir-amt.part small { color: var(--yellow); }
+.ir-chev { color: var(--txt-3); flex: 0 0 auto; display: inline-flex; }
+.ir-chev svg { width: 15px; height: 15px; }
+
+/* expanded (accordion open) */
+.inv-open { border: 1px solid var(--accent-line); border-radius: 12px; background: var(--card);
+  box-shadow: 0 0 0 1px var(--accent-soft); overflow: hidden; }
+.io-bar { background: linear-gradient(180deg, var(--card-head), var(--panel-2)); padding: 11px 13px; border-bottom: 1px solid var(--line); }
+.io-bar-top { display: flex; align-items: center; gap: 9px; }
+.io-id { font-family: ui-monospace, monospace; font-weight: 800; font-size: 14px; }
+.io-collapse { width: 24px; height: 24px; border-radius: 7px; border: 1px solid var(--line); background: var(--panel); color: var(--txt-3);
+  cursor: pointer; display: grid; place-items: center; flex: 0 0 auto; }
+.io-collapse svg { width: 14px; height: 14px; transform: rotate(180deg); }
+.io-collapse:hover { color: var(--txt); border-color: var(--accent-line); }
+.io-collapse:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* R28 — the status pill that IS the action menu; fill = pay state; SOLID when open */
+.io-menu-wrap { margin-left: auto; position: relative; }
+.io-statmenu { display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 8px 0 12px; border-radius: 999px;
+  font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: 1px; font-weight: 700; font-size: 10px;
+  border: none; cursor: pointer; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.8); }
+.io-statmenu .cv { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: rgba(0,0,0,.28); }
+.io-statmenu .cv svg { width: 11px; height: 11px; }
+.io-statmenu.part { background: repeating-linear-gradient(135deg, var(--yellow) 0 11px, #14181d 11px 22px); }
+.io-statmenu.due  { background: repeating-linear-gradient(135deg, var(--red) 0 11px, #14181d 11px 22px); }
+.io-statmenu.paid { background: linear-gradient(180deg, var(--green), #1fae7f); color: var(--on-orange); text-shadow: none; }
+.io-statmenu.part.open { background: linear-gradient(180deg, #ffd766, var(--yellow)); color: var(--on-orange); text-shadow: none; }
+.io-statmenu.due.open  { background: linear-gradient(180deg, #ff6a6a, var(--red)); color: #fff; }
+.io-statmenu.open .cv { background: rgba(0,0,0,.22); transform: rotate(180deg); }
+.io-statmenu:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.io-menu { position: absolute; top: 31px; right: 0; z-index: 5; min-width: 152px; background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 11px; box-shadow: var(--shadow); padding: 5px; display: flex; flex-direction: column; gap: 1px; }
+.im-item { display: flex; align-items: center; gap: 9px; height: 32px; padding: 0 11px; border-radius: 8px; border: none; background: transparent;
+  color: var(--txt); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; text-align: left; width: 100%; }
+.im-item:hover:not([disabled]) { background: var(--panel); }
+.im-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.im-item[disabled] { color: var(--txt-3); cursor: not-allowed; }
+.im-item .im-ic { width: 16px; text-align: center; flex: 0 0 auto; color: var(--txt-3); }
+.im-item.pay { color: var(--green); } .im-item.pay .im-ic { color: var(--green); }
+.im-item.danger { color: var(--red); } .im-item.danger .im-ic { color: var(--red); }
+.im-sep { height: 1px; background: var(--line); margin: 4px 6px; }
+/* the white print sheet hosted inside the dark card */
+.io-sheet-wrap { padding: 13px; background: repeating-linear-gradient(135deg, rgba(255,255,255,.015) 0 8px, transparent 8px 16px), var(--bg-2); }
+.io-sheet-wrap .pr-doc { max-width: none; border-radius: 8px; padding: 20px 22px; box-shadow: 0 10px 30px -12px rgba(0,0,0,.8); }
+/* on-sheet affordances (white-document colors — fixed like the rest of .pr-doc) */
+.pr-line-src { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; color: #1864d6; font-weight: 700;
+  border: 1px solid #b9d2f7; background: #eef4fe; border-radius: 6px; padding: 0 5px; margin-left: 5px; cursor: pointer; }
+.pr-line-src:hover { background: #dfeaff; }
+.pr-po-edit { font-size: 9.5px; color: #1864d6; border: 1px dashed #b9d2f7; border-radius: 5px; padding: 0 5px; margin-left: 4px; cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { .inv-row { transition: none; } }
+
 /* R22 DATE FIELD + inline calendar (Jac 2026-06-12) — ONE date picker everywhere
    a single date/datetime is entered (rental WINDOW keeps its timeline winpicker). */
 .datefield { display: inline-flex; align-items: center; gap: 7px; width: 100%; height: 36px; padding: 0 12px;

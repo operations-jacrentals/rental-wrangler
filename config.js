@@ -384,11 +384,11 @@ export const BACKOFFICE_BOARDS = [
 export const COLUMNS = [
   { id: 'left',   default: 'units',     members: ['units', 'categories', 'inspections', 'serviceOrders', 'workOrders'] },
   { id: 'middle', default: 'rentals',   members: ['rentals', 'calendar'] },
-  { id: 'right',  default: 'customers', members: ['customers', 'invoices'] },
+  { id: 'right',  default: 'customers', members: ['customers'] },   // invoices retired as a standalone card (2026-07-08) — its list is embedded in Customer Details; data model + DETAIL.invoices kept
 ];
 export const COLUMN_OF = {
   units: 'left', categories: 'left', inspections: 'left', serviceOrders: 'left', workOrders: 'left', shop: 'left',
-  rentals: 'middle', invoices: 'right', customers: 'right',
+  rentals: 'middle', customers: 'right',   // no 'invoices' — links route via openInvoice() into Customer Details, never revealCol('invoices')
 };
 
 /* ── In-card sort fields (SPEC §12 locked table) ─────────────────────────── */

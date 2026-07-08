@@ -2047,6 +2047,8 @@ const state = {
   mobileCol: 0,               // §M1 — which column the phone shows (0 Yard · 1 Rentals · 2 Customers); drives swipe position + the per-column bottom strip
   funnelTab: {},              // §3.5 customer funnel toggle — { [customerId]: 'rental'|'usedSales' }; in-memory (view-local), reset to Rental on a fresh customer open
   actLogOpen: {},             // §3.8 per-funnel Action Log open state — { ['<custId>|<scope>']: true }
+  custInvOpen: {},            // §3.3 embedded Invoices accordion — { [customerId]: invoiceId } (one open at a time); view-local, reset on a fresh customer open
+  custInvMenu: {},            // §3.3 which expanded invoice's status/action menu is open — { [customerId]: invoiceId }
   woPartForm: null,           // woId whose "+ Add Part/Labor" inline form is open
   invLineForm: null,          // invoiceId whose "+ Add Custom" inline form is open
   invMergePick: null,         // invoiceId whose "Merge invoice" picker is open (consolidate unpaid bills)
@@ -2267,6 +2269,7 @@ function openStandard(card, recId, recType) {
   pushCardHistory(cs);       // Task 1 — record the prior (list) view so Back can return
   cs.mode = 'standard'; cs.recId = recId; cs.recType = recType || null; cs.graphView = false;   // opening a record exits the in-column graph view
   if (card === 'customers' && state.funnelTab) delete state.funnelTab[recId];   // §3.5 — a fresh customer open resets the funnel toggle to Rental
+  if (card === 'customers') { if (state.custInvOpen) delete state.custInvOpen[recId]; if (state.custInvMenu) delete state.custInvMenu[recId]; }   // §3.3 — collapse the embedded Invoices accordion on a fresh open (openInvoice re-sets it after)
   ackComments(recOf(entityCardOf(card, recType), recId));   // viewing = acknowledged (Phase 6)
   // §10 + #54 — opening a Category while the rental-window picker is live (a window's
   // picked, so availWin is set) pivots the left column to Units, pre-filled with the
@@ -2467,6 +2470,7 @@ function rowOpen(card, recId, recType) {
 function deferOrAnchor(key, singleFn, anchor) {
   if (pendingRowClick && pendingRowClick.key === key) {
     clearTimeout(pendingRowClick.timer); pendingRowClick = null;
+    if (anchor && anchor.card === 'invoices') return openInvoice(anchor.recId);   // invoice card retired → double-click routes to the embedded invoice too (matches the single-click pillTo redirect)
     return anchorOrToggle(anchor.card, anchor.recId, anchor.recType);   // 2nd tap on the anchored record un-anchors (toggle)
   }
   if (pendingRowClick) clearTimeout(pendingRowClick.timer);
@@ -2529,6 +2533,10 @@ function scrollToSect(card, sect) {
 }
 function pillTo(card, recId) {
   if (recId == null) return;
+  // §3.4 — the Invoice card is retired: EVERY invoice cross-link (refPill('invoices',…)
+  // + the two inline data-pill-card="invoices" pills) lands INSIDE Customer Details,
+  // scrolled to and expanding the target invoice row. One interception point catches all.
+  if (card === 'invoices') return openInvoice(recId);
   // 3-column display: a link pill forces its column to reveal the target card.
   const revealCol = (member) => { const cs = activeSession(); const col = COLUMN_OF[member]; if (cs.cols && col) { cs.cols[col] = member; const idx = COLUMNS.findIndex((c) => c.id === col); if (idx >= 0) state.mobileCol = idx; } };   // §M1 — also flip the visible phone column so a cross-column link lands where you can see it
   // If revealing the target SWAPS its column — hiding the card you're on now (e.g. an invoice
@@ -2539,6 +2547,24 @@ function pillTo(card, recId) {
   const noteSwap = (member) => { const s = activeSession(), col = COLUMN_OF[member]; if (s.cols && col && s.cols[col] !== member) pushCardHistory(s.cards[SHOP_TYPES.includes(member) ? 'shop' : member], true); };
   if (SHOP_TYPES.includes(card)) { if (recOf(card, recId)) { noteSwap(card); revealCol(card); openStandard('shop', recId, card); } return; }
   if (recOf(card, recId)) { noteSwap(card); revealCol(card); openStandard(card, recId); }
+}
+/* §3.4 — the nav primitive for a retired-card invoice: resolve invId → its customer,
+   open that customer in the right column, then scroll the embedded Invoices section into
+   view and expand the target invoice row (open-row state set BEFORE the expanded paint so
+   there's no two-phase flash), with the R19 attention glow pointing at it. */
+function openInvoice(invId) {
+  const inv = IDX.invoice.get(invId); if (!inv) return;
+  const custId = inv.customerId;
+  if (custId == null) { toast('That invoice has no customer on file yet — link one first.'); return; }
+  pillTo('customers', custId);   // reveal + open the customer (fresh open resets the accordion) — renders collapsed
+  state.custInvOpen = state.custInvOpen || {}; state.custInvOpen[custId] = invId;   // now force the target row open…
+  if (state.custInvMenu) state.custInvMenu[custId] = null;
+  render();   // …and repaint with it expanded
+  setTimeout(() => {
+    const secN = document.querySelector('.card[data-card="customers"] .inv-sec');
+    if (secN) secN.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    attnFlash('.card[data-card="customers"] .inv-sec .inv-open');
+  }, 80);
 }
 
 /* ── global search (§5.4) ────────────────────────────────────────────────── */
@@ -3620,6 +3646,98 @@ function funnelSectionHtml(c) {
   return `<div class="section funnel-sec">`
     + `<div class="funnel-hd"><span class="fh-rule"></span>${seg}<span class="fh-rule"></span></div>`
     + `<div class="funnel-body">${body}</div>`
+    + `</div>`;
+}
+/* ── §3.2/§3.3 — the embedded per-customer Invoices section (replaces the retired
+   standalone Invoice card). A manager summary strip over a bounded scroll region of
+   invoice rows; a row expands accordion-style (one open at a time) into the interactive
+   invoice — a one-row control header (id + the R28 status/action menu) over the shared
+   .pr-doc sheet (invoiceDocHtml, interactive). Money actions reuse the EXISTING
+   js-pay-invoice opener + canMoney() gate verbatim. ── */
+const invoicesForCustomer = (c) => DATA.invoices.filter((i) => i.customerId === c.customerId)
+  .sort((a, b) => (parseISO(b.date) || 0) - (parseISO(a.date) || 0));   // newest first
+// pay-state → the hazard-stripe fill class + the status WORD shown on the row rail / menu pill
+function invPayState(t) {
+  if (t.status === 'Refunded') return { cls: 'part', word: 'Refunded' };
+  if (t.status === 'Paid') return { cls: 'paid', word: 'Paid' };
+  if (t.status === 'Partial') return { cls: 'part', word: 'Partial' };
+  return { cls: 'due', word: t.status };   // Unpaid / Not Due / Late* / Collections
+}
+const invoiceOneLine = (i) => { const l = (i.lineItems || []).map((x) => x.label).filter(Boolean); return l.length ? l.join(' · ') : (i.membership ? 'Membership' : 'No line items yet'); };
+function invSummaryStrip(invs) {
+  const yr = TODAY.getFullYear();
+  let open = 0, paidYtd = 0; const payDays = [];
+  invs.forEach((i) => {
+    const t = invoiceTotals(i);
+    open += Math.max(0, t.balance);
+    const d = parseISO(i.date);
+    if (d && d.getFullYear() === yr) paidYtd += Math.max(0, t.paid);
+    if (t.paid > 0.005 && i.paidAt && d) { const diff = dayDiff(d, parseISO(i.paidAt)); if (diff >= 0 && diff < 3650) payDays.push(diff); }
+  });
+  const avg = payDays.length ? Math.round(payDays.reduce((a, b) => a + b, 0) / payDays.length) : null;
+  const chip = (v, l, cls) => `<div class="kchip${cls ? ' ' + cls : ''}"><span class="kc-v">${esc(v)}</span><span class="kc-l">${esc(l)}</span></div>`;
+  return `<div class="inv-summary">`
+    + chip(money2(open), 'Open', open > 0.005 ? 'due' : '')
+    + chip(String(invs.length), invs.length === 1 ? 'Invoice' : 'Invoices', '')
+    + chip(money2(paidYtd), 'Paid YTD', 'paid')
+    + chip(avg == null ? '—' : avg + 'd', 'Avg pay', '')
+    + `</div>`;
+}
+/* R28 — the status pill that DOUBLES as the action menu. Its fill = pay state (green solid
+   paid · yellow-stripe partial · red-stripe due); solid while its menu is open. Pay/Refund
+   dispatch the SAME js-pay-invoice opener the card used (canMoney()-gated identically);
+   Print = js-print-invoice; Send is disabled ("soon") — the consent-gated comms path isn't
+   wired here (see report). */
+function invoiceStatMenu(i, c, open) {
+  const t = invoiceTotals(i);
+  const ps = invPayState(t);
+  const mayMoney = canMoney() && !!c;
+  const canPay = mayMoney && t.status !== 'Refunded' && t.balance > 0.005;
+  const canRefund = mayMoney && (t.status === 'Refunded' || (t.balance <= 0.005 && t.paid > 0.005));   // mirrors DETAIL.invoices payCell exactly
+  const items = [];
+  if (canPay) items.push(`<button class="im-item pay js-pay-invoice" role="menuitem" data-rec="${esc(i.invoiceId)}"><span class="im-ic">$</span> Pay</button>`);
+  items.push(`<button class="im-item js-print-invoice" role="menuitem" data-rec="${esc(i.invoiceId)}"><span class="im-ic">🖨</span> Print</button>`);
+  items.push(`<button class="im-item" role="menuitem" disabled data-tip="Sending invoices to customers is coming soon"><span class="im-ic">✉</span> Send</button>`);
+  if (canRefund) items.push(`<div class="im-sep"></div><button class="im-item danger js-pay-invoice" role="menuitem" data-rec="${esc(i.invoiceId)}"><span class="im-ic">↩</span> ${t.status === 'Refunded' ? 'Details' : 'Refund'}</button>`);
+  return `<div class="io-menu-wrap">`
+    + `<button class="io-statmenu ${ps.cls}${open ? ' open' : ''} js-inv-statmenu" data-r="R28" data-rec="${esc(i.invoiceId)}" data-cust="${esc(c.customerId)}" aria-expanded="${open ? 'true' : 'false'}" aria-haspopup="menu" data-tip="Invoice status · actions">${esc(ps.word)} <span class="cv">${I.chev}</span></button>`
+    + (open ? `<div class="io-menu" role="menu">${items.join('')}</div>` : '')
+    + `</div>`;
+}
+function invoiceExpandedHtml(i, c, cs, menuOpen) {
+  return `<div class="inv-open">`
+    + `<div class="io-bar"><div class="io-bar-top">`
+    + `<span class="io-id">${esc(invoiceShort(i.invoiceId))}</span>`
+    + invoiceStatMenu(i, c, menuOpen)
+    + `<button class="io-collapse js-inv-collapse" data-cust="${esc(c.customerId)}" data-tip="Collapse">${I.chev}</button>`
+    + `</div></div>`
+    + `<div class="io-sheet-wrap">${invoiceDocHtml(i, { interactive: true })}</div>`
+    + `</div>`;
+}
+function customerInvoicesSection(c, cs) {
+  const invs = invoicesForCustomer(c);
+  const openId = (state.custInvOpen && state.custInvOpen[c.customerId]) || null;
+  const menuId = (state.custInvMenu && state.custInvMenu[c.customerId]) || null;
+  const body = invs.length ? invs.map((i) => {
+    if (i.invoiceId === openId) return invoiceExpandedHtml(i, c, cs, menuId === i.invoiceId);
+    const t = invoiceTotals(i);
+    const ps = invPayState(t);
+    const paidFull = t.paid > 0.005 && t.balance <= 0.005;
+    const dateLine = paidFull
+      ? `Paid ${fmtShortDate(i.paidAt || i.date) || '—'}${i.paymentMethod ? ' · ' + i.paymentMethod : ''}`
+      : `Issued ${fmtShortDate(i.date) || '—'}${i.dueDate ? ' · due ' + fmtShortDate(i.dueDate) : ''}`;
+    const amt = money2(t.balance > 0.005 ? t.balance : t.total);
+    return `<div class="inv-row js-inv-row" data-rec="${esc(i.invoiceId)}" data-cust="${esc(c.customerId)}" data-tip="Open invoice">`
+      + `<span class="ir-stat ${ps.cls}"></span>`
+      + `<span class="ir-id">${esc(invoiceShort(i.invoiceId))}</span>`
+      + `<span class="ir-mid"><span class="ir-desc">${esc(invoiceOneLine(i))}</span><span class="ir-date">${esc(dateLine)}</span></span>`
+      + `<span class="ir-amt ${ps.cls}">${esc(amt)}<small>${esc(ps.word)}</small></span>`
+      + `<span class="ir-chev">${I.chev}</span>`
+      + `</div>`;
+  }).join('') : '<div class="inv-empty muted">No invoices for this customer yet.</div>';
+  return `<div class="section inv-sec"><h4>Invoices</h4>`
+    + (invs.length ? invSummaryStrip(invs) : '')
+    + `<div class="inv-scroll">${body}</div>`
     + `</div>`;
 }
 /* ── F5 — enrollment / cancel / reactivate orchestration ──────────────────────────
@@ -4765,6 +4883,7 @@ const RULE_META = {
   R25: ['Sync banner', 'renderSyncBanner / #sync-banner', 'persistent “Not saving” plate — red hazard-stripe danger cap; raised when the backend sync is failing, hides on recovery. The ONE non-toast alert; lives on <body>, outside #app'],
   R26: ['Due-Today banner', 'renderSchedBanner / #sched-banner', 'top-of-screen reminder plate — caution-YELLOW hazard-stripe cap; lists the scheduled actions due today (customer · note · time), each customer an R2 link. Manual X only (never auto-clears), dismissal sticks for the session (sessionStorage). Like R25 it lives on <body>, outside #app'],
   R27: ['Account button', 'acctBtn', 'the stamped button on the customer funnel gate row — label = the account TYPE (Contractor/Business/Member…); opens the agreements window (same js-view-agreement access as the signed-agreement pill). Neutral steel chip, not an ignition/status color.'],
+  R28: ['Invoice action menu', 'invoiceStatMenu', 'the expanded-invoice header control: a hazard-stripe status pill (green solid = paid · yellow-stripe = partial · red-stripe = due; goes SOLID while its menu is open) that DOUBLES as the Pay · Print · Send · Refund action menu. A pressable-status control like R1, but it opens actions rather than advancing a status. Pay/Refund reuse the canMoney()-gated payment window.'],
 };
 /* ════════════ APP-12 · DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
    The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
@@ -4889,7 +5008,7 @@ const RB_TABS = [
   { id: 'fields', label: 'Fields & Adds', intro: 'Where you type, link, and add.',
     items: [{ r: 'R5' }, { r: 'R5b' }, { r: 'R5c' }, { r: 'R6' }, { r: 'R7' }, { r: 'R8' }, { r: 'R14' }, { r: 'R22' }] },
   { id: 'actions', label: 'Actions', intro: 'Buttons that DO something — colored by intent.',
-    items: [{ r: 'R17' }, { r: 'R18' }, { r: 'R24' }, { r: 'R27' }] },
+    items: [{ r: 'R17' }, { r: 'R18' }, { r: 'R24' }, { r: 'R27' }, { r: 'R28' }] },
   { id: 'upload', label: 'Upload & Capture', intro: 'Add-file zones and photo/site captures.',
     items: [{ r: 'R21' }, { f: 'upload-capture' }] },
   { id: 'data', label: 'Data & Behaviors', intro: 'Visualizations, plus the app’s behaviors — it flashes instead of erroring, right-clicks, tooltips, and self-lints.',
@@ -6683,6 +6802,7 @@ const DETAIL = {
       ${activeBar}
       ${account}
       ${paymentMethodsSection(c)}
+      ${customerInvoicesSection(c, cs)}
       ${notes.bottom}
       ${historySection('customers', c, cs)}
     </div>`;
@@ -13874,6 +13994,11 @@ function onClick(e) {
   if (closest('.js-bank-verify')) { e.stopPropagation(); const b = closest('.js-bank-verify'); return openVerifyBank(b.dataset.rec, b.dataset.bank); }
   if (closest('.js-ach-verify-save')) { e.stopPropagation(); return verifyAchFlow(closest('.js-ach-verify-save')); }
   if (closest('.js-ach-check')) { e.stopPropagation(); const b = closest('.js-ach-check'); return checkAchStatus(b.dataset.rec, b.dataset.pi); }
+  // §3.3 — embedded Invoices accordion (Customer Details). Row toggles open (one at a
+  // time); the status pill toggles its action menu; the header ✕ collapses. All view-local.
+  if (closest('.js-inv-statmenu')) { e.stopPropagation(); const b = closest('.js-inv-statmenu'); const cu = b.dataset.cust, rec = b.dataset.rec; state.custInvMenu = state.custInvMenu || {}; state.custInvMenu[cu] = (state.custInvMenu[cu] === rec) ? null : rec; return render(); }
+  if (closest('.js-inv-collapse')) { e.stopPropagation(); const cu = closest('.js-inv-collapse').dataset.cust; if (state.custInvOpen) state.custInvOpen[cu] = null; if (state.custInvMenu) state.custInvMenu[cu] = null; return render(); }
+  if (closest('.js-inv-row')) { e.stopPropagation(); const b = closest('.js-inv-row'); const cu = b.dataset.cust, rec = b.dataset.rec; state.custInvOpen = state.custInvOpen || {}; state.custInvOpen[cu] = (state.custInvOpen[cu] === rec) ? null : rec; if (state.custInvMenu) state.custInvMenu[cu] = null; return render(); }
   if (closest('.js-pay-invoice')) { e.stopPropagation(); return openPayInvoice(closest('.js-pay-invoice').dataset.rec); }
   if (closest('.js-pay-pick')) { e.stopPropagation(); if (state.overlay) { const b = closest('.js-pay-pick'); state.overlay.selectedCardId = b.dataset.card || b.dataset.bank; renderOverlay(); } return; }
   if (closest('.js-pay-method')) { e.stopPropagation(); if (state.overlay) { const nb = document.querySelector('.overlay .js-check-num'); if (nb) state.overlay.checkNum = nb.value.trim(); state.overlay.method = closest('.js-pay-method').dataset.method; state.overlay.error = ''; renderOverlay(); } return; }
@@ -16146,15 +16271,33 @@ async function recordManualPayment(invoiceId) {
 // Print / PDF a customer-facing invoice (#109) — a clean white document (not the dark
 // yard UI) rendered into #print-root; the @media print rules hide everything else and
 // the browser's print dialog handles paper or "Save as PDF".
-function printInvoice(invoiceId) {
-  const inv = IDX.invoice.get(invoiceId); if (!inv) return;
+/* §12.5 — the ONE invoice document builder. Both printInvoice (into #print-root) and the
+   embedded Customer-Details expand (§3.3) render from this, so screen and printout can
+   never diverge. The DEFAULT output is BYTE-IDENTICAL to the legacy printInvoice markup
+   (the print path passes no opts). `opts.interactive` — used ONLY by the on-screen inline
+   sheet, NEVER for #print-root — additively augments the SAME sheet with line-item source
+   links (R2) and an inline PO edit; because print never sets it, the printed bytes are
+   unchanged. */
+function invoiceDocHtml(inv, opts = {}) {
+  const interactive = !!opts.interactive;
   const t = invoiceTotals(inv);
   const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
-  const rows = (inv.lineItems || []).map((li) => `<tr><td>${esc(li.label)}</td><td class="r">${money2(Number(li.amount) || 0)}</td></tr>`).join('')
+  const rows = (inv.lineItems || []).map((li) => {
+    const amt = `<td class="r">${money2(Number(li.amount) || 0)}</td>`;
+    if (interactive) {
+      const ref = li.kind === 'rental' ? ` data-pill-card="rentals" data-pill-rec="${esc(li.ref)}"`
+        : li.kind === 'WO' ? ` data-pill-card="workOrders" data-pill-rec="${esc(li.ref)}"` : '';
+      const src = ref ? ` <span class="pr-line-src" data-r="R2"${ref} data-tip="Open the source ${li.kind === 'WO' ? 'work order' : 'rental'}">↗</span>` : '';
+      return `<tr><td>${esc(li.label)}${src}</td>${amt}</tr>`;
+    }
+    return `<tr><td>${esc(li.label)}</td>${amt}</tr>`;
+  }).join('')
     || '<tr><td colspan="2" class="pr-empty">No line items.</td></tr>';
-  let host = document.getElementById('print-root');
-  if (!host) { host = document.createElement('div'); host.id = 'print-root'; document.body.appendChild(host); }
-  host.innerHTML = `
+  // PO meta cell — print shows it only when set; the inline sheet always offers an edit.
+  const poRow = interactive
+    ? `<div><span class="pr-k">PO</span><span class="pr-v">${inv.po ? esc(inv.po) : '<span class="muted">—</span>'} <span class="pr-po-edit inline-edit" data-edit="invoicePO" data-rec="${esc(inv.invoiceId)}" data-tip="Edit PO number">Edit</span></span></div>`
+    : (inv.po ? `<div><span class="pr-k">PO</span><span class="pr-v">${esc(inv.po)}</span></div>` : '');
+  return `
     <div class="pr-doc">
       <div class="pr-head"><div class="pr-brand">${esc(companyName())}</div><div class="pr-sub">${esc(companyTagline())}</div></div>
       <div class="pr-meta">
@@ -16162,7 +16305,7 @@ function printInvoice(invoiceId) {
         <div><span class="pr-k">Bill to</span><span class="pr-v">${esc(cust ? cust.name : '—')}</span></div>
         <div><span class="pr-k">Date</span><span class="pr-v">${esc(fmtShortDate(inv.date) || '—')}</span></div>
         <div><span class="pr-k">Due</span><span class="pr-v">${esc(inv.dueDate ? fmtShortDate(inv.dueDate) : '—')}</span></div>
-        ${inv.po ? `<div><span class="pr-k">PO</span><span class="pr-v">${esc(inv.po)}</span></div>` : ''}
+        ${poRow}
         ${inv.covStart && inv.covEnd ? `<div><span class="pr-k">Rental period</span><span class="pr-v">${esc(fmtShortDate(inv.covStart))} – ${esc(fmtShortDate(inv.covEnd))}</span></div>` : ''}
         ${inv.contOf ? `<div><span class="pr-k">Continuation of</span><span class="pr-v">${esc(invoiceShort(inv.contOf))} (28-day billing split)</span></div>` : ''}
       </div>
@@ -16186,6 +16329,12 @@ function printInvoice(invoiceId) {
       </div>
       <div class="pr-foot">Thank you for your business — much obliged. Questions on this ticket? Give the yard a holler.</div>
     </div>`;
+}
+function printInvoice(invoiceId) {
+  const inv = IDX.invoice.get(invoiceId); if (!inv) return;
+  let host = document.getElementById('print-root');
+  if (!host) { host = document.createElement('div'); host.id = 'print-root'; document.body.appendChild(host); }
+  host.innerHTML = invoiceDocHtml(inv);   // print path: no opts → byte-identical to the legacy markup
   document.body.classList.add('printing');
   const cleanup = () => { document.body.classList.remove('printing'); window.removeEventListener('afterprint', cleanup); };
   window.addEventListener('afterprint', cleanup);
@@ -16277,12 +16426,17 @@ function startNewInvoice(customerId) {
   const draft = { invoiceId: id, customerId: customerId || null, rentalIds: [], date: TODAY_ISO, dueDate: dueForCustomer(customerId), po: '', amountPaid: 0, lineItems: [], mock: true };
   DATA.invoices.push(draft); IDX.invoice.set(id, draft); reindex('invoices', draft);
   logAction(draft, cust ? `Invoice created for ${cust.name}` : 'Invoice created');
-  anchorRecord('invoices', id);   // no pick mode — drag links it up (Wave 2)
-  // no customer yet → reveal the Customers list (right column); dragging a
-  // customer swaps the column back to the invoice mid-drag (§15c stacked column).
-  if (!cust) { const s = activeSession(); if (s.cols) s.cols.right = 'customers'; }
-  toast(cust ? `New invoice for ${cust.name} — drag rentals onto it.` : 'New invoice — drag a customer and rentals onto it.');
-  render();
+  // §3.4 — the Invoice card is retired. With a customer, open the new invoice INSIDE
+  // Customer Details (expanded); without one, reveal the Customers list so a customer
+  // gets assigned first (then it opens there).
+  if (cust) {
+    openInvoice(id);
+    toast(`New invoice for ${cust.name} — add lines or drag rentals onto it.`);
+  } else {
+    const s = activeSession(); if (s.cols) s.cols.right = 'customers';
+    render();
+    toast('New invoice needs a customer — pick one and it opens in Customer Details.');
+  }
   maybeAutoLink('invoices', id);   // §17b — if a "+ Invoice" link was in progress, bill the source onto this new invoice
 }
 
@@ -16349,12 +16503,11 @@ function createInvoiceForRental(rentalId) {
   });
   logAction(r, `Invoice ${invoiceShort(id)} created${chunks.length > 1 ? ` + ${chunks.length - 1} continuation${chunks.length > 2 ? 's' : ''} (28-day cap)` : ''}`);
   toast(`Invoice ${invoiceShort(id)} created and linked${chunks.length > 1 ? ` — split into ${chunks.length} (28-day cap)` : ''}.`);
-  // #8 — open the new invoice ON the Invoice card (Jac 2026-06-13)
+  // §3.4 — the Invoice card is retired: surface the new invoice INSIDE Customer Details
+  // (openInvoice reveals + opens the customer, then expands this invoice row).
   const session = activeSession();
   if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
-  const ics = session.cards.invoices; ics.mode = 'standard'; ics.recId = id; ics.recType = null; ics.released = false; ics.graphView = false;   // surfacing an invoice exits graph view
-  const col = columnOfMember('invoices'); if (col && session.cols) session.cols[col] = 'invoices';
-  render();
+  openInvoice(id);
 }
 function setDraftDate(rentalId, which, val) {
   const r = IDX.rental.get(rentalId); if (!r) return;
@@ -17010,7 +17163,7 @@ function billWOToInvoice(woId) {
     DATA.invoices.push(inv); IDX.invoice.set(id, inv); reindex('invoices', inv);
   }
   addWOToInvoice(inv.invoiceId, woId);
-  anchorRecord('invoices', inv.invoiceId);   // jump to the invoice we billed to
+  openInvoice(inv.invoiceId);   // §3.4 — invoice card retired: land inside Customer Details, expanded
 }
 /* Wash requests live on the Unit card's condition segs + the Service tasks
    ("Wash Now"); Wash Mode + its 'washunit' pick slot died in Wave 2. */
