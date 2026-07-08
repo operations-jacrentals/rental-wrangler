@@ -4290,6 +4290,8 @@ body.dragging .row.drop-ok { opacity: 1; }
 .pr-doc.is-paid { --pr-accent: #2f9e44; --pr-stripe: #37b04d; }   /* paid in full → green */
 .pr-doc.is-open { --pr-accent: #e08a00; --pr-stripe: #ffc21c; }   /* open, not yet due → vibrant amber-gold */
 .pr-doc.is-due  { --pr-accent: #e11507; --pr-stripe: #ff3a20; }   /* past due → vibrant red */
+.pr-doc.is-refunded { --pr-accent: #6b7280; --pr-stripe: #9aa3af; }   /* settled by refund → gray, NOT paid-green (#552-r2) */
+.pr-tot .pr-refund { color: #b0281a; }   /* refund credit line reads red */
 /* Header — our logo + stamped wordmark, status-colored date stamp, hazard-stripe signature */
 .pr-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .pr-brandwrap { display: flex; align-items: center; gap: 11px; }
