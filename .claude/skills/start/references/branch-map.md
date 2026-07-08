@@ -27,6 +27,14 @@
 | `area/sales-growth` | Quotes, outside/inside sales, equipment/used-equipment sales, marketing, pipeline depth, lead handling | "quote", "sales", "equipment sale", "used sale", "marketing", "pipeline", "lead" |
 | `area/maps-location` | Maps integration, the dispatch map/cockpit, address capture/geocoding, drive-time + city-lookup transport pricing (§10) | "map", "address", "drive time", "route", "geocode", "location", "cockpit" |
 | `area/search-views` | Global search (incl. phone-number + natural-date tokens), filters/pinned chips, saved Views menu, anchored-card navigation, list/dispatcher rows, toolbar | "search", "filter", "find", "navigation", "list view", "saved view", "chip", "toolbar" |
+| `area/frontend-performance` | Keeping the single-file SPA fast — render-budget enforcement, list windowing, Web-Vitals + render histogram (`__perf()`), offline service-worker shell, update toast, progressive load / native `import()` code-splitting, cache-busting machinery (spec: `docs/specs/frontend-performance.md`) | "slow", "performance", "vitals", "LCP", "lag", "service worker", "offline", "code split", "prefetch", "cache" |
+| `area/wrangler-ai` | Mr. Wrangler AI assistant — agentic tool loop + read-tool catalog, money-tier gates on AI-initiated billing/rate actions, provenance stamps, prompt-injection corpus CI pins, the Wrangler dock, prompt caching | "Mr. Wrangler", "AI", "assistant", "agent", "wrangler chat", "prompt", "injection", "AI dock" |
+
+**Roadmap-only areas (no branch yet).** The master index `docs/specs/AREAS-ROADMAP.md`
+(on `staging` / `area/backend-data`) tracks **27** areas — more than have `area/*` branches
+(e.g. Customer Portal, Equipment Insurance, Collections, Market Research, Automated Pricing).
+If work targets one of those, create its `area/<slug>` off `staging` first (the "nothing
+fits" rule below), matching the roadmap's slug.
 
 **Rules for routing**
 - Pick the single best area. If two genuinely overlap (e.g. a dispatch feature that's mostly a map), name both and let Jac choose via `AskUserQuestion`.
