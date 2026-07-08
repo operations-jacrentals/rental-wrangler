@@ -17464,6 +17464,7 @@ function gpsNormalize(source, raw, extra = {}) {
     return {
       id: String(raw.imei || raw.id), source: 'hapn', imei: raw.imei ? String(raw.imei) : null,
       name: String(raw.name || raw.imei || 'Unknown'),
+      serialNumber: ap.serialNumber ? String(ap.serialNumber) : null,   // M3 — carried for the onboarding matcher (assetProfile.serialNumber, per useFleet §1)
       make: ap.make ? String(ap.make) : null,
       model: ap.model ? String(ap.model) : (raw.model?.name ? String(raw.model.name) : null),
       lat: lat != null ? parseFloat(lat) : null, lng: lng != null ? parseFloat(lng) : null,
@@ -17479,6 +17480,7 @@ function gpsNormalize(source, raw, extra = {}) {
     return {
       id: String(raw.id || raw.principalId), source: 'deere', principalId: String(raw.principalId),
       imei: null, name: String(raw.name || raw.serialNumber || 'JD Machine'),
+      serialNumber: raw.serialNumber ?? null,   // M3 — matcher key
       make: raw.make ?? null, model: raw.model ?? null,
       lat: raw.location?.lat ?? null, lng: raw.location?.lon ?? null,
       speed: null, moving: false, engineOn: raw.engineState === 1,
@@ -17490,6 +17492,7 @@ function gpsNormalize(source, raw, extra = {}) {
     return {
       id: String(raw.id), source: 'yanmar', contractId: raw.contractId != null ? String(raw.contractId) : null,
       imei: null, name: raw.name || 'Yanmar Machine', make: 'YANMAR', model: raw.model || null,
+      serialNumber: raw.serialNumber || null,   // M3 — matcher key
       lat: raw.lat ?? null, lng: raw.lng ?? null, speed: null, moving: false,
       engineOn: raw.engineOn ?? false, lastSeen: raw.lastSeen ?? null,
       engineHours: raw.engineHours ?? null, address: raw.address ?? null,
@@ -17500,6 +17503,7 @@ function gpsNormalize(source, raw, extra = {}) {
     return {
       id: String(raw.imei), source: 'bouncie', imei: String(raw.imei),
       name: raw.nickName || `${raw.model?.year || ''} ${raw.model?.make || ''} ${raw.model?.name || ''}`.trim() || 'Vehicle',
+      serialNumber: null,   // M3 — Bouncie is VIN/IMEI-keyed, exposes no equipment serial; matcher falls back to name/make for these
       make: raw.model?.make ?? null, model: raw.model?.name ?? null,
       lat: loc.lat ?? null, lng: loc.lon ?? null, speed: stats.speed ?? null,
       moving: (stats.speed ?? 0) > 0, engineOn: stats.isRunning ?? false,
