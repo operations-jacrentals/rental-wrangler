@@ -2042,7 +2042,8 @@ const state = {
   invMergePick: null,         // invoiceId whose "Merge invoice" picker is open (consolidate unpaid bills)
   dashboard: false,           // §5.3/§11 Office Dispatch Time Grid (grid-swap mode)
   seq: 1,
-  invoiceSeq: maxInvoiceSeq(),   // monotonic invoice number — derived from the highest running number actually present (NOT .length: see maxInvoiceSeq)
+  invoiceSeq: maxInvoiceSeq(),   // per-MONTH running number — highest present this month (NOT .length: see maxInvoiceSeq)
+  invoiceSeqMonth: CFG.invoiceMonthKey(TODAY_ISO),   // the month this counter belongs to; nextInvoiceId resets invoiceSeq on a month rollover
   previewsOn: (() => { try { return localStorage.getItem('jactec.previewsOff') !== '1'; } catch (e) { return true; } })(),   // hover previews (per device)
   overbookOn: (() => { try { return localStorage.getItem('jactec.overbook') === '1'; } catch (e) { return false; } })(),   // §10 allow-overbooking policy (per device, default OFF — drag build)
   hapticsOff: (() => { try { return localStorage.getItem('jactec.hapticsOff') === '1'; } catch (e) { return false; } })(),   // §M-touch Vibration-API feedback (per device, default ON; Android-only, no-op on iOS)
@@ -2050,16 +2051,15 @@ const state = {
   settings: loadAdminSettings(),   // Settings Board admin customization (config.settings); mirrored to localStorage, applied at boot via applySettings()
 };
 const activeSession = () => (state.activeTabId ? state.tabs.find((t) => t.id === state.activeTabId)?.session : state.defaultSession) || state.defaultSession;
-/** Highest running number actually present across invoices, parsed from each id's
- *  leading digits (e.g. '07i02Ju26' -> 7). The counter MUST come from the data, not
- *  the array: `DATA.invoices.length` started from the seed file (4) and was never
- *  recomputed after loadFromBackend swapped in the real invoices, so every login it
- *  restarted low and minted 05i…/06i… numbers that already existed on the backend —
- *  duplicate "##i" prefixes that the 18s refresh poll then leap-frogged in. `.length`
- *  also shrinks on discard (breaking the "never reused" invariant) and doesn't grow
- *  when the poll pushes remote invoices in. Mirrors nextUnitId/nextCategoryId. */
+/** Highest running number for the CURRENT MONTH — the invoice counter resets monthly (Jac
+ *  2026-07-08). Each id is parsed via CFG.parseInvoice (handles the new ##MMDDYY form AND the
+ *  legacy ##iDDMmmYY), scoped to this month+year: July keeps counting up, August restarts at 1.
+ *  MUST come from the data, not `.length` — that restarted low each login and minted numbers
+ *  already on the backend (duplicate prefixes the 18s poll then leap-frogged in), and it shrinks
+ *  on discard, breaking the "never reused" invariant. Mirrors nextUnitId/nextCategoryId. */
 function maxInvoiceSeq() {
-  return (DATA.invoices || []).reduce((m, inv) => { const n = /^(\d+)i/.exec(String(inv.invoiceId || '')); return n ? Math.max(m, +n[1]) : m; }, 0);
+  const cur = CFG.invoiceMonthKey(TODAY_ISO);
+  return (DATA.invoices || []).reduce((m, inv) => { const p = CFG.parseInvoice(inv.invoiceId); return (p && p.monthKey === cur) ? Math.max(m, p.seq) : m; }, 0);
 }
 /** Invoice ids this session MINTED — lets the refresh poll tell an id COLLISION apart from
  *  a normal remote edit. If a number we just minted already belonged to ANOTHER customer's
@@ -2073,6 +2073,8 @@ const mintedInvoiceIds = new Set();
  *  live-refresh poll. (A same-day number minted by ANOTHER session before it has polled in
  *  can't be seen here — that residual race is caught downstream by healInvoiceIdCollision.) */
 const nextInvoiceId = () => {
+  const monthKey = CFG.invoiceMonthKey(TODAY_ISO);
+  if (state.invoiceSeqMonth !== monthKey) { state.invoiceSeqMonth = monthKey; state.invoiceSeq = 0; }   // per-month counter: drop the session high-water on a month rollover
   let seq = Math.max(state.invoiceSeq || 0, maxInvoiceSeq());
   let id; do { id = CFG.invoiceId(TODAY_ISO, ++seq); } while (IDX.invoice && IDX.invoice.has(id));
   state.invoiceSeq = seq; mintedInvoiceIds.add(id); return id;
@@ -17860,6 +17862,7 @@ function exposeTestApi() {
       unitStatus, rentalUnitStatuses, unitsUniform, rentalStatusDisplay, rentalMirrorStatus, rentalDisplayStatus,
       allUnitsTerminal, unitTerminal, unitVoided, rentalCleared, rentalLineItems, transportLineItems, extensionPreview, billExtension, unitBilledRental, unitBilledSeries, retroPricingOn, rentalInvoices, rentalActiveInvoice, invoiceChunks, createInvoiceForRental, syncRentalPrimary,
       nextInvoiceId, maxInvoiceSeq, mintedInvoiceIds, isInvoiceIdCollision, healInvoiceIdCollision, reindex,
+      CFG, invoiceShort,
       addUnitToRental, removeUnitFromRental, removeUnitInvoiceLine, unitLinePaid, invoiceTotals, allocLines,
       rentalAllocated, itemRefunded, itemRefundable, lineRefunded, lineFullyRefunded, refundLines, rentalLineRefund, applyPayment, unitRentalPrice, rentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,

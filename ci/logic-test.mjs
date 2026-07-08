@@ -1498,6 +1498,29 @@ try {
       T.IDX.rental.delete('DIAG-UR1'); T.IDX.rental.delete('DIAG-UR2'); T.IDX.invoice.delete('DIAG-UI1'); T.IDX.invoice.delete('DIAG-UI2');
     }
 
+    // §inv-id-format (Jac 2026-07-08) — new ##MMDDYY id (no 'i', month up front, counter PER MONTH);
+    // legacy ##iDDMmmYY still resolves; maxInvoiceSeq scopes to the current month.
+    {
+      const id = T.CFG.invoiceId(T.TODAY_ISO, 7);
+      ok(/^0*7[A-Z]{2}\d{4}$/.test(id) && !id.includes('i'), `new id is ##MMDDYY, no 'i' (${id})`);
+      ok(T.invoiceShort(id) === id.slice(0, -4), 'invoiceShort on a new id keeps num+month (drops DDYY)');
+      const p = T.CFG.parseInvoice(id);
+      ok(p && p.seq === 7 && p.monthKey === T.CFG.invoiceMonthKey(T.TODAY_ISO), 'parseInvoice round-trips a new id (seq + monthKey)');
+      ok(T.invoiceShort('228i07Jy26') === '228i', 'invoiceShort on a legacy id -> "228i"');
+      const lp = T.CFG.parseInvoice('228i07Jy26');
+      ok(lp && lp.seq === 228 && lp.monthKey === 'JY26', 'parseInvoice reads a legacy id (228, JY26)');
+      // per-month scoping: a different-month invoice is ignored; a current-month one counts
+      const base = T.maxInvoiceSeq();
+      const far = { invoiceId: '9999i07Ja20', customerId: null, rentalIds: [], date: '2020-01-07', lineItems: [], mock: true };
+      T.DATA.invoices.push(far); T.IDX.invoice.set(far.invoiceId, far); T.reindex('invoices', far);
+      ok(T.maxInvoiceSeq() === base, 'maxInvoiceSeq ignores an invoice from another month (per-month scope)');
+      const cur = { invoiceId: T.CFG.invoiceId(T.TODAY_ISO, base + 500), customerId: null, rentalIds: [], date: T.TODAY_ISO, lineItems: [], mock: true };
+      T.DATA.invoices.push(cur); T.IDX.invoice.set(cur.invoiceId, cur); T.reindex('invoices', cur);
+      ok(T.maxInvoiceSeq() === base + 500, 'maxInvoiceSeq counts a current-month invoice');
+      T.DATA.invoices = T.DATA.invoices.filter((v) => v !== far && v !== cur);
+      T.IDX.invoice.delete(far.invoiceId); T.IDX.invoice.delete(cur.invoiceId);
+    }
+
     return out;
   });
 
