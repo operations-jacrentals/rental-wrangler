@@ -1,11 +1,13 @@
 # Maintenance / Shop — SPEC v1 (DRAFT)
 
-**Date:** 2026-06-28
+**Date:** 2026-06-28 (updated 2026-07-08)
 **Status:** DRAFT — for critique
 **Area branch:** `area/maintenance-shop`
 **Task branch:** `maintenance-shop/spec` (proposed)
 **Maturity:** shipped
-**Scope:** The merged Shop card (Work Orders, Service Orders, Inspections), the recurring-service countdown engine, WO lifecycle/parts/billing, the inspection → auto-WO cascade, and the parts/vendor back-office boards.
+**Scope:** ~~The merged Shop card~~ (RETIRED 2026-07-07 — see the D5 note below; WO/Service/Inspections now render inside a Unit's detail, owned by `units-fleet`), the recurring-service countdown engine, WO lifecycle/parts/billing, the inspection → auto-WO cascade, and the parts/vendor back-office boards.
+
+> ⚠️ **2026-07-07 canon shift:** §2.1 below still describes the standalone **Shop card** as live — that card was **retired** on `area/units-fleet` (units-fleet §2.7 / D5). The engine described in this spec (WO lifecycle, service countdown, parts/vendor boards, inspection cascade) is unchanged and still canon; only the **front-end surface moved** — Work Orders, the per-unit Services list, and Inspections now render inside a **Unit's own detail**, and the Units card carries the cross-fleet worklist. Read §2.1's "merged Shop card" as historical; the boards + engine remain here.
 
 ---
 
@@ -19,6 +21,15 @@ These resolve the §11 Open Questions and **supersede the §3 target-state money
 - **D4 · Field Call billing defaults to No (resolves OQ-6).** A field-call WO defaults `billCustomer:'No'` — the shop eats it unless someone explicitly decides to bill (customer-relations-conservative).
 
 **Defaults adopted:** OQ-7 → manager can override the photo-proof service completion · OQ-9 → confirm on a **backwards** hour-meter entry · OQ-10 → a cancelled WO with real work must be **reopened before billing** (no stranded cost) · OQ-8 → drivers can request a wash · OQ-4 → keep explicit Complete-WO (no auto-complete) · OQ-3 → 3-bar front page defaults for mechanic/M.Tech · OQ-5 → parts `partId` FK in Phase 3.
+
+## ✅ Decisions — 2026-07-07/08 (Jac) — SHIPPED on `area/units-fleet`
+
+The Shop-side render surface and the D3 service-schedule blocker were resolved this session; the canonical spec for the shipped detail is **units-fleet §2.7 / D4–D8** (the Model entity lives in `units-fleet`). Cross-referenced here because it lands on this area's engine:
+
+- **D5 · Shop card RETIRED (units-fleet D5).** The standalone merged Shop card (§2.1) is gone. WO sections, the per-unit **Services** list, and the inspection segctl render inside a **Unit's detail**; the **Units** card carries the cross-fleet worklist (service-urgency sort + `__svcstat` filter + the stackbars graph via `graphViewsFor('units')`); mechanics land on Units at clock-in (`applyShopRoleLanding`); every WO/inspection/service ref resolves to the owning unit (`unitOfShopRec`). The **3-bar wrench graph** (§6.1, previously "approved-unbuilt") shipped in this new Units home.
+- **D3 RESOLVED → per-MODEL schedules.** OQ-2/D3 asked for per-category maker schedules + per-unit overrides. Shipped as a **per-Model** schedule (a new category-scoped **Model** entity — a category can standardize on one or a few real make/models), which is the better join point: `unitServiceRows(u)` prefers `IDX.model.get(u.modelId).tasks`, falling back honestly to the generic list. **Real production data is LIVE:** 63 models, 869 sourced tasks, 34 Drive-hosted OEM manuals, 233 fluid/part `detail` entries (double-extracted + capacity-verified; blanks left honest where a manual is silent).
+- **Service snooze (backlog #43)** and the **"hold their hands" mechanic surface** (fluid capacity/type + parts, per-task manual deep-links, editable parts reusing the WO `partform`, a side-by-side vendor/cost panel, and browse-the-parts-catalog attach) shipped — full canon in units-fleet §2.7 / D6–D7.
+- **Parts board reuse (ties OQ-5).** The parts catalog board (`DATA.parts`) gained a **pick mode** (`pickTarget`) so a service task can attach an existing catalog part (vendor/cost/OEM prefilled). The `partId` FK deepening from OQ-5 remains Phase 3; today a service task's `partRefs` carry `oem`/`vendorId` loosely, matched to the catalog by `productNumber`.
 
 ---
 

@@ -110,6 +110,18 @@ These resolve the §11 Open Questions. **Priority note:** Jac wants this built *
 
 **Defaults adopted:** Q-2 → consent `unknown` = implied for **transactional** (quotes/reminders; quick legal check, marketing needs express opt-in) · Q-16 → **hard-block opted-out**, no override · Q-7 → **record-only** recipients (no ad-hoc numbers) · Q-9/Q-17 → `messages` log is **server-only** (on-demand fetch; PII never synced) · Q-8b → history phone lines **masked** · Q-13/Q-14 → templates in a **server-side registry**, hardcoded v1 · Q-11 → channel **stop-on-fail** for automated · Q-15 → daily send-cap as an admin setting · Q-10 → quiet hours **America/Chicago**, server-computed.
 
+## ✅ Decisions / status — 2026-07-07/08 (Jac) — A2P/10DLC compliance + Comms Rail
+
+- **D5 · Comms Rail shipped & merged (#501).** The four-category bottom rail — single-open law (open one, previous closes), Team chat + Mr. Wrangler migrated onto the rail engine. Canon: the D8/D9 addendum later in this doc.
+- **⚠️ D6 · A2P/10DLC registration runs on TWILIO — appears to SUPERSEDE D1's Mocean choice for the registered outbound SMS (CONFIRM).** This session's carrier registration, brand (approved), 10DLC campaign, and the sending number (`+1 337 607 1352`) are all **Twilio**. Either the provider decision changed from Mocean → Twilio, or both are in play — **flag for Jac to reconcile D1.** The `sendCustomerMessage` server contract stays provider-agnostic regardless.
+- **D7 · Public compliance pages are LIVE (Pages, alongside the app).** `privacy.html` + `sms-terms.html` (#497, merged) carry the carrier-mandated language: transactional-only purpose, **message frequency varies**, **msg & data rates may apply**, **STOP**/**HELP**, and the explicit **"we do not sell/share your mobile number or messaging consent with third parties/affiliates for marketing"** clause. `sample-quote.html` (#523, → `main`) is a **public, no-login** sample of what a quote/invoice text-link opens — added because the A2P reviewer must be able to open message links (real per-customer quote/invoice links are login-gated).
+- **D8 · A2P campaign CTA-verification saga (root cause on record).** The 10DLC campaign was **rejected twice** for "issues verifying the Call to Action." Root cause: message links pointed to **login-gated** pages the reviewer couldn't open. Fix = the public `sample-quote.html` + a resubmission packet (opt-in/message-flow text pointing at the three public URLs, cleaned sample messages, keep "Embedded links" checked). Resubmitted; **approval outcome pending.**
+- **D9 · Opt-in/out/help keywords (for the registration + future inbound handling).** Opt-in: `START,YES,UNSTOP,SUBSCRIBE,JOIN,BEGIN,RESUME,OPTIN`. Opt-out: `STOP,STOPALL,UNSUBSCRIBE,CANCEL,END,QUIT`. Help: `HELP,INFO`. Each paired with a compliant confirmation message (brand · frequency · rates · STOP/HELP). Primary opt-in is **offline** (in person / by phone at rental or account signup) — described in the campaign message-flow field; no public web opt-in form.
+
+**🔴 Known open blockers (see the session Parked list):**
+- The Twilio number `+1 337 607 1352` is **not attached to a Messaging Service** (`messaging_service_sid: null`) → sends fail **error 30034** until Jac attaches it (Console → Messaging → Services). Independent of campaign approval.
+- **Inbound keyword auto-reply handlers** (a real `START`/`HELP`/`STOP` from a customer triggering the right reply in the GAS SMS pipe) are **declared in the registration but not yet built** in the backend — offered, parked.
+
 ---
 
 ## 1. Goal & Problem
