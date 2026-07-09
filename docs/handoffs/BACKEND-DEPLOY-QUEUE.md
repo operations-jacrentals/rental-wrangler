@@ -7,6 +7,25 @@
 > with full deploymentConfig, immediate JSON probe) — see /clasp SKILL.md §AMENDED. The
 > editor click is the FALLBACK/recovery path, no longer the only go-live.
 
+## ⏳ PUSHED, AWAITING EDITOR DEPLOY — 10 medium audit fixes (2026-07-09)
+- **What:** 10 of the 16 MEDIUM findings from the backend audit, auto-fixed per Jac's "fix the
+  mechanical ones" call. Full detail in `docs/handoffs/backend-audit-2026-07-09-medium-fixes.gs`:
+  - `wrangler` + `adminSetProps` added to WRITE_ACTIONS (were GET-reachable)
+  - `deformula_()` formula-injection guard added to: `feedback_`'s type field, `setChats_`'s id,
+    `setWranglerRail_`'s id, `writeRecord_`/`doSeed`/`doSync`'s id column (every sync/seed write),
+    and `perfReport_`'s `t1()` (this one was already written+queued once before but never
+    actually deployed — now actually live)
+  - Lock added around `getConfigObj()`/`backfillRoles_`'s writes and
+    `stripeSetDefault_`/`stripeRemoveCard_`'s read-modify-write
+  - **⚠ Bigger than the others:** `sendCustomerMessage_`'s SMS daily-cap race needed a real
+    restructure (reserve-then-send-then-finalize under a lock, since holding the lock across the
+    Twilio/Mocean/Gmail network call would violate this file's own lock discipline) — worth an
+    extra look before deploying, not a one-liner like the rest.
+- **Pushed to HEAD** (service account, content-only), confirmed present, `node --check` passes.
+- **Not yet deployed** — awaiting Jac's go, same editor flow as the previous two batches.
+- **Remaining 6 mediums** (3 money-correctness bugs needing judgment, 2 spend-risk, 1
+  config-resilience) still to be walked through one at a time — not started yet.
+
 ## ⏳ QUEUED, READY TO DEPLOY INDEPENDENTLY — seed gate + recordCharge_ dedup (2026-07-09)
 - **What (2 fixes, no frontend coordination needed, unlike the chat-privacy item below):**
   1. **`seed` gated to Admin+.** Any signed-in role could trigger a full destructive database
