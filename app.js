@@ -13949,9 +13949,19 @@ const WR_OPERATIONS = {
     },
   },
   unlinkInvoice: {
-    // Repair a mislinked rental — clear its invoiceId so it can be re-billed fresh (e.g. an invoice-number
-    // collision left it pointing at another customer's bill). Money-safe: mirrors the app's §7.4 inv-remove
-    // guard — refuse while ANY payment is allocated to THIS rental on that invoice (a refund is out of scope).
+    // Repair a mislinked rental — fully detach it from its invoice(s) so it can be re-billed fresh (e.g. an
+    // invoice-number collision left it pointing at another customer's bill). A rental links to an invoice TWO
+    // ways — the legacy r.invoiceId pointer AND the invoice's rentalIds series list — and rentalInvoices()
+    // (what the detail chip + +Invoice affordance read) keys off rentalIds. So we must clear BOTH sides, or
+    // clearing invoiceId alone leaves the chip lingering and blocks re-invoicing (#581). Mirrors the full
+    // detach in inv-remove / voidInvoice. Money-safe: mirrors the app's §7.4 inv-remove guard — refuse while
+    // ANY payment is allocated to THIS rental on a linked invoice (a refund is out of scope).
+    _linked(r) {   // every invoice this rental is on, via either linkage mechanism
+      const invs = rentalInvoices(r).slice();
+      const legacy = r.invoiceId ? IDX.invoice.get(r.invoiceId) : null;
+      if (legacy && !invs.includes(legacy)) invs.push(legacy);
+      return invs;
+    },
     _pick(p) {
       if (p && p.rentalId) { const r = IDX.rental.get(p.rentalId); return r ? { rental: r } : { issue: `no rental “${p.rentalId}”` }; }
       const custRef = (p && (p.customer != null ? p.customer : p.customerId)) || '';
@@ -13959,7 +13969,7 @@ const WR_OPERATIONS = {
       const cres = wrResolveCustomer(custRef);
       if (cres.many) return { issue: `more than one customer matches “${custRef}” — which one?` };
       if (!cres.rec) return { issue: `no customer matching “${custRef}”` };
-      const linked = (DATA.rentals || []).filter((r) => r.customerId === cres.rec.customerId && r.invoiceId);
+      const linked = (DATA.rentals || []).filter((r) => r.customerId === cres.rec.customerId && this._linked(r).length);
       if (!linked.length) return { issue: `no invoice-linked rental for ${cres.rec.name}` };
       if (linked.length > 1) return { issue: `${cres.rec.name} has ${linked.length} invoice-linked rentals — say which rental id` };
       return { rental: linked[0] };
@@ -13968,16 +13978,21 @@ const WR_OPERATIONS = {
       const pick = this._pick(p);
       if (pick.issue) return { issue: pick.issue };
       const r = pick.rental;
-      if (!r.invoiceId) return { issue: `rental ${r.rentalId} isn’t linked to an invoice` };
-      const inv = IDX.invoice.get(r.invoiceId);
-      if (inv && rentalAllocated(inv, r.rentalId) > 0.005) return { issue: `a payment is assigned to this rental on ${invoiceShort(r.invoiceId)} — that has to be refunded first, which I can’t do` };
-      return { summary: `unlink invoice ${invoiceShort(r.invoiceId)} from ${rentalUnitsLabel(r) || `rental ${r.rentalId}`} (frees it to re-bill)` };
+      const invs = this._linked(r);
+      if (!invs.length) return { issue: `rental ${r.rentalId} isn’t linked to an invoice` };
+      const paid = invs.find((inv) => rentalAllocated(inv, r.rentalId) > 0.005);
+      if (paid) return { issue: `a payment is assigned to this rental on ${invoiceShort(paid.invoiceId)} — that has to be refunded first, which I can’t do` };
+      return { summary: `unlink invoice ${invs.map((iv) => invoiceShort(iv.invoiceId)).join(', ')} from ${rentalUnitsLabel(r) || `rental ${r.rentalId}`} (frees it to re-bill)` };
     },
     apply(p) {
       const pick = this._pick(p); if (pick.issue || !pick.rental) return null;
-      const r = pick.rental; const old = r.invoiceId;
+      const r = pick.rental; const invs = this._linked(r);
+      const label = invs.map((iv) => invoiceShort(iv.invoiceId)).join(', ') || invoiceShort(r.invoiceId);
+      // FULL detach — drop the rental from every invoice's rentalIds series list AND clear the legacy
+      // pointer, so rentalInvoices() (the chip / +Invoice source) stops returning it (#581).
+      invs.forEach((inv) => { inv.rentalIds = (inv.rentalIds || []).filter((id) => id !== r.rentalId); reindex('invoices', inv); });
       r.invoiceId = null; reindex('rentals', r);
-      logAction(r, `Invoice ${invoiceShort(old)} unlinked — repair mislinked invoice (Mr. Wrangler)`);
+      logAction(r, `Invoice ${label} unlinked — repair mislinked invoice (Mr. Wrangler)`);
       return { entity: 'rentals', id: r.rentalId };
     },
   },
@@ -17021,9 +17036,15 @@ function handlePillX(xEl) {
   } else if (kind === 'cust-swap') {
     rec.customerId = null; toast('Customer removed — drag a replacement on (or quick-add one).'); return render();
   } else if (kind === 'inv-remove') {
-    const inv = IDX.invoice.get(rec.invoiceId);
-    if (inv && rentalAllocated(inv, rec.rentalId) > 0) { toast('Blocked: a payment is assigned to this rental — refund it first to unlink (§7.4).'); return; }
-    rec.invoiceId = null; toast('Invoice unlinked.'); render();
+    // Full detach of this rental from its invoice(s). A rental links TWO ways — the legacy r.invoiceId
+    // pointer AND the invoice's rentalIds series list (what rentalInvoices() / this chip read) — so clear
+    // BOTH, or the chip lingers and +Invoice stays blocked after a "clean" unlink (#581). Money-safe:
+    // refuse while a payment is allocated to this rental on any linked invoice (§7.4).
+    const linkedInvs = rentalInvoices(rec).slice(); const legacyInv = rec.invoiceId ? IDX.invoice.get(rec.invoiceId) : null;
+    if (legacyInv && !linkedInvs.includes(legacyInv)) linkedInvs.push(legacyInv);
+    if (linkedInvs.some((inv) => rentalAllocated(inv, rec.rentalId) > 0)) { toast('Blocked: a payment is assigned to this rental — refund it first to unlink (§7.4).'); return; }
+    linkedInvs.forEach((inv) => { inv.rentalIds = (inv.rentalIds || []).filter((id) => id !== rec.rentalId); reindex('invoices', inv); });
+    rec.invoiceId = null; reindex('rentals', rec); toast('Invoice unlinked.'); render();
   } else if (kind === 'inv-cust-remove') {
     if (invoiceTotals(rec).paid > 0) { toast('Blocked: invoice has a payment — customer locked (§7.5).'); return; }
     rec.customerId = null; toast('Customer removed — drag a replacement onto the invoice (or quick-add one).'); return render();
