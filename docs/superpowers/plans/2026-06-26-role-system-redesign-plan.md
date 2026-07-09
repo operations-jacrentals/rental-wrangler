@@ -84,7 +84,7 @@ Done at runtime via the shipped UI (an Admin/Developer), **not** in any committe
 file. Documented in the handoff:
 1. **Owner → Manager:** re-key live `roles.Owner` → `roles.manager` (password
    retained); `roleMeta.manager = {label:'Manager', tier:'manager'}`.
-2. **Add Developer:** `roles.developer = <Jacob5133, entered in-app>`;
+2. **Add Developer:** `roles.developer = <<developer password — set in-app, NEVER in the repo>, entered in-app>`;
    `roleMeta.developer = {label:'Developer', tier:'developer'}`.
 3. **Admin:** `roleMeta.admin = {label:'Admin', tier:'admin'}`.
 > The Developer password is entered in the app / backend at runtime and is

@@ -29,7 +29,7 @@ import {
   SHOP_TYPES, SHOP_SEGMENTS, COLUMNS, COLUMN_OF,
   legacyTransportPrice, computeTransportPrice, isFueledType, legsForType, YARD_ORIGIN, GOOGLE_MAPS_KEY,
   fmtWindow, fmtShortDate, showsTruck, parseISO, TODAY_ISO, refreshTodayISO, invoiceShort, TRANSPORT_MAP,
-  FLAG_META, FLAG_SEVERITY_RANK,
+  FLAG_META, FLAG_SEVERITY_RANK, INSURANCE_COVERAGE_TYPES,
 } from './config.js';
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -1411,6 +1411,7 @@ const YARD_CENTER = { lat: 30.2366, lng: -93.3774 };   // Sulphur, LA — map de
 let _teMap = null, _teMarker = null, _teSession = null, _teDebounce = null;
 /** Open the inline editor for a unit's transport leg (delivery|recovery). */
 function openTransportEdit(rentalId, unitId, leg) {
+  if (!canMoney()) { toast('Transport & site editing is Office/Admin only.'); return; }   // spec maps-location D1 (Jac 2026-06-29): a site/leg edit reprices transport — money tier, whole edit
   const r = IDX.rental.get(rentalId); if (!r) return;
   const eu = unitId ? unitEntry(r, unitId) : null;
   const T = eu || r;
@@ -1457,7 +1458,11 @@ function mountTransportEditor() {
   const input = document.querySelector('.js-taddr');
   if (input && !input.dataset.wired) {
     input.dataset.wired = '1';
-    setTimeout(() => { try { input.focus(); const n = input.value.length; input.setSelectionRange(n, n); } catch (e) {} }, 0);
+    // Desktop only: auto-focus = type-immediately ergonomics. On the PHONE this fired on EVERY
+    // render while the editor was open (the wired flag resets with each DOM rebuild) — each focus
+    // scrolled the bottom-of-card editor into view + popped the keyboard (Jac bug 2026-07-06:
+    // "every transport action jumps me to the bottom"). Phone: tap the field to type.
+    if (!document.body.classList.contains('is-phone')) setTimeout(() => { try { input.focus(); const n = input.value.length; input.setSelectionRange(n, n); } catch (e) {} }, 0);
     input.addEventListener('input', () => teQuery(input.value));
     input.addEventListener('keydown', teKeydown);
   }
@@ -1663,6 +1668,8 @@ function armTransportNode(rentalId, unitId, node) {
 
 /** Invoice subtotal / tax / total / paid / balance / derived status (§10 + aging). */
 const TAX_RATE = 0.1075;   // §10 sales tax — 10.75% (Jac 2026-06-07); honors exemptions
+/** Active collections placement on an invoice (spec collections Phase 1). 'Recalled' = back in-house. */
+const invoiceCollectionsActive = (inv) => !!(inv && inv.collections && inv.collections.status && inv.collections.status !== 'Recalled');
 function invoiceTotals(inv) {
   const subtotal = (inv.lineItems || []).reduce((a, li) => a + (Number(li.amount) || 0), 0);
   const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
@@ -1675,7 +1682,11 @@ function invoiceTotals(inv) {
   const balance = total - paid;
   let status;
   if (inv.refunded) status = 'Refunded';
-  else if (total > 0 && paid >= total) status = 'Paid';
+  else if (total > 0 && paid >= total) status = 'Paid';   // money arrived — Paid beats a queued placement
+  // Stored collections marker beats the derived aging tier (spec collections §7.1, Jac 2026-06-29):
+  // a queued/placed invoice reads 'Sent to Collections' (gray, off active aging) regardless of age;
+  // a Recalled one falls back to the normal ladder (the office is chasing it again).
+  else if (invoiceCollectionsActive(inv)) status = 'Sent to Collections';
   else if (paid > 0) status = 'Partial';
   else {
     const due = parseISO(inv.dueDate);
@@ -1787,6 +1798,52 @@ function isUnitAvailableFor(u, startISO, endISO, selfId) {
   if (!u || u.fleetStatus !== 'Active') return false;
   if (u.inspectionStatus === 'Failed') return false;
   return rentalsOverlappingUnit(u.unitId, startISO, endISO, selfId).length === 0;
+}
+/* ── Sale-price engine (spec automated-pricing D1/D3, Jac 2026-06-29) ──────────────
+   Suggests a category's used-sale BOTTOM DOLLAR + ASKING PRICE from an owner-set scale:
+   a % of the category's avg unit cost, or a % of its MSRP. Manager+ SEES suggestions and
+   ACCEPTS them (writes c.bottomDollar / c.askPrice); Settings picks approve-vs-auto.
+   AUTO mode applies drift only under a manager+ session — a staff login never writes
+   pricing. Config rides settings.salePricing { basis:'cost'|'msrp', bottomPct, askPct,
+   mode:'approve'|'auto' } (additive blob; absent = engine off). */
+function salePricingCfg() {
+  const co = (state.settings && state.settings.company) || {};
+  const num = (v, d) => (isFinite(Number(v)) && Number(v) > 0 ? Number(v) : d);
+  return { basis: co.salePriceBasis === 'msrp' ? 'msrp' : 'cost', bottomPct: num(co.saleBottomPct, 0), askPct: num(co.saleAskPct, 0), mode: co.salePriceMode === 'auto' ? 'auto' : 'approve', on: !!(num(co.saleBottomPct, 0) || num(co.saleAskPct, 0)) };
+}
+function categoryCostBasis(c) {
+  const us = DATA.units.filter((u) => u.categoryId === c.categoryId && (Number(u.trueCost) || Number(u.purchasePrice)));
+  if (!us.length) return 0;
+  return Math.round(us.reduce((a, u) => a + (Number(u.trueCost) || Number(u.purchasePrice) || 0), 0) / us.length);
+}
+function salePriceSuggest(c) {
+  const cfg = salePricingCfg(); if (!cfg.on) return null;
+  const base = cfg.basis === 'msrp' ? (Number(c.msrp) || 0) : categoryCostBasis(c);
+  if (!base) return null;
+  const r2 = (x) => Math.round(x / 25) * 25;   // sale prices land on clean $25 steps
+  return { basis: cfg.basis, base, bottom: cfg.bottomPct ? r2(base * cfg.bottomPct / 100) : null, ask: cfg.askPct ? r2(base * cfg.askPct / 100) : null, mode: cfg.mode };
+}
+/* AUTO mode: apply drifted suggestions once per boot — manager+ sessions only. */
+function salePricingAutoApply() {
+  const cfg = salePricingCfg();
+  if (!cfg.on || cfg.mode !== 'auto') return;
+  if (currentRole && roleTier(currentRole) < tierRank('manager')) return;   // never auto-write pricing under a sub-manager login
+  let n = 0;
+  DATA.categories.forEach((c) => {
+    const sug = salePriceSuggest(c); if (!sug) return;
+    const patch = [];
+    if (sug.bottom != null && Number(c.bottomDollar) !== sug.bottom) { c.bottomDollar = sug.bottom; patch.push(`bottom ${money(sug.bottom)}`); }
+    if (sug.ask != null && Number(c.askPrice) !== sug.ask) { c.askPrice = sug.ask; patch.push(`ask ${money(sug.ask)}`); }
+    if (patch.length) { logAction(c, `Sale-price engine (auto, ${sug.basis} basis): ${patch.join(' · ')}`); reindex('categories', c); n++; }
+  });
+  if (n) toast(`Sale-price engine updated ${n} categor${n === 1 ? 'y' : 'ies'} (auto mode).`);
+}
+/* Lost-demand capture (spec market-research D3, Jac 2026-06-29): a customer asked for a
+   category with 0 available — one tap logs the ask onto cat.lostDemand[] (additive, rides
+   the generic sync). Volume of asks per category feeds purchasing/fleet-spread decisions. */
+function lostDemandBtn(c) {
+  const n = (c.lostDemand || []).length;
+  return `<button class="catr-slot js-lost-demand" data-r="R5b" data-cat="${esc(c.categoryId)}" data-tip="A customer wanted one and none were free — log the lost ask${n ? ` (${n} logged)` : ''}"><span class="add-field anchor" style="height:20px;font-size:10px">+Lost${n ? ` ${n}` : ''}</span></button>`;
 }
 function categoryAvailableCount(catId, startISO, endISO, selfId) {
   return DATA.units.filter((u) => u.categoryId === catId && isUnitAvailableFor(u, startISO, endISO, selfId)).length;
@@ -2229,7 +2286,10 @@ function openCloseAllMenu(anchorEl) {
 // (computeChanges) so they never reach the backend until they earn real content.
 function isEmptyMockDraft(card, rec) {
   if (!rec || !rec.mock) return false;
-  if (card === 'invoices') return !(rec.lineItems || []).length && !(Number(rec.amountPaid) || 0);
+  // An invoice LINKED to a rental is not abandoned (Jac bug 2026-07-06: adding a transport
+  // address navigated → sweep deleted the attached-but-not-yet-billed mock invoice and cleared
+  // r.invoiceId). Mirrors the rentals branch below, where a link (!rec.invoiceId) counts as content.
+  if (card === 'invoices') return !(rec.lineItems || []).length && !(Number(rec.amountPaid) || 0) && !(rec.rentalIds || []).length && !DATA.rentals.some((r) => r.invoiceId === rec.invoiceId);
   if (card === 'rentals')  return !(rentalUnits(rec) || []).length && !rec.customerId && !rec.startDate && !rec.invoiceId;
   return false;
 }
@@ -3497,11 +3557,14 @@ function membershipSectionHtml(c) {
   // invoice Pay/Charge/Refund row (5868) and Add-Card (canMoney). Print Agreement is not a money
   // action, so it stays visible to every role. (Handlers re-check canMoney() as defence-in-depth.)
   const mayMoney = canMoney();
-  const enrollBtn = (!isMem && mayMoney) ? actionPill('commit', status === 'Incomplete' ? 'Complete Enrollment' : 'Saddle Up — Enroll', { js: 'js-mem-enroll', h: 26, data: { rec: c.customerId } }) : '';
+  // Sign-up moved to the ACCOUNT-LEVEL agreement popup (spec memberships D5, Jac 2026-06-29):
+  // enrollment starts where the agreement is signed, not in this status section. Lifecycle
+  // actions on an EXISTING membership (cancel / pay-cancellation / print) stay here.
   const cancelBtn = (isMem && mayMoney) ? actionPill('danger', 'Cancel Membership', { js: 'js-mem-cancel', h: 26, data: { rec: c.customerId } }) : '';
   const payCxlBtn = (cxlInv && mayMoney) ? actionPill('money', 'Pay Cancellation ' + money2(invoiceTotals(cxlInv).balance), { js: 'js-mem-paycxl', h: 26, data: { rec: c.customerId } }) : '';
   const printBtn = stageSet ? actionPill('commit', 'Print Agreement', { js: 'js-print-magreement', h: 26, data: { rec: c.customerId } }) : '';
-  const actions = [enrollBtn, cancelBtn, payCxlBtn, printBtn].filter(Boolean).join('');
+  const enrollHint = (!isMem && mayMoney) ? `<div class="kv" style="justify-content:center"><span class="muted" style="font-size:10.5px">Enroll from the account agreement — open Agreement on this card</span></div>` : '';
+  const actions = [cancelBtn, payCxlBtn, printBtn].filter(Boolean).join('');
   return `<div class="section"><h4>Membership</h4><div class="fieldstack centered">
     ${kvPills(funnelPill(c.customerId, 'membership', c.membershipStage || 'N/A'))}
     ${stateBadge ? kvPills(stateBadge) : ''}
@@ -3510,6 +3573,7 @@ function membershipSectionHtml(c) {
     ${planBadges}
     ${membershipEconomicsHtml(c)}
     ${actions ? `<div class="kv pillrow">${actions}</div>` : ''}
+    ${enrollHint}
   </div></div>`;
 }
 /* ── F5 — enrollment / cancel / reactivate orchestration ──────────────────────────
@@ -3647,6 +3711,8 @@ const SETTINGS_TABS = [
   { id: 'inspections',   label: 'Inspections',      icon: CARD_ICON.inspections,  v1: true },
   { id: 'requirements',  label: 'Rental Rules',     icon: STATUS_ICONS.shield,    v1: true },
   { id: 'kpis',          label: 'KPIs & Rings',     icon: STATUS_ICONS.gauge,     v1: true },
+  { id: 'flags',         label: 'Flags & Alerts',   icon: STATUS_ICONS.alert,     v1: true },
+  { id: 'team',          label: 'Team Roster',      icon: I.lock,                 v1: true },
   { id: 'notifications', label: 'Notifications',    icon: I.bell,                 note: 'Team chat on/off, driver dispatch alerts, customer reminders & cadence.' },
   { id: 'integrations',  label: 'Integrations',     icon: STATUS_ICONS.zap,       note: 'Stripe, Maps, telematics feed — references & toggles (secrets stay server-side).' },
 ];
@@ -3658,6 +3724,13 @@ function setDraftStatus(o, set, val, patch) {
   const next = { ...(o.draftSettings.status[set][val] || {}), ...patch };
   if (!next.color) delete next.color; if (!next.icon) delete next.icon; if (!next.label) delete next.label;   // empties → fall back to the shipped default
   if (Object.keys(next).length) o.draftSettings.status[set][val] = next; else delete o.draftSettings.status[set][val];
+}
+function captureTeamEdits(o) {   // keep typed roster edits across re-renders + into Save
+  const root = document.querySelector('.settings-popup .popup-body'); if (!root) return;
+  const inputs = root.querySelectorAll('.set-input[data-emp]'); if (!inputs.length) return;
+  if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {}));
+  const emps = o.draftSettings.employees || (o.draftSettings.employees = []);
+  inputs.forEach((i) => { const idx = Number(i.dataset.i); if (emps[idx]) emps[idx][i.dataset.emp] = i.value; });
 }
 function captureLoginEdits(o) {   // keep typed-but-unsaved password + label edits across a re-render
   const root = document.querySelector('.settings-popup .popup-body'); if (!root) return;
@@ -3688,6 +3761,46 @@ function ensureRoleMeta(o) {
 }
 // Just the active tab's pane HTML — so an in-pane edit can repaint ONLY the pane
 // (rerenderSettingsPane) instead of tearing down the whole overlay (renderOverlay), which flashed.
+/* ── Settings → Flags & Alerts (spec design-system D1, Jac 2026-06-29) ─────────────
+   Owner tunes the prescriptive flag engine: turn ANY flag off (including the money/credit
+   safety flags — Jac's explicit call) or override its severity. Stored in
+   settings.flagOverrides — absent = the shipped FLAG_META default. Every change is a
+   draft until Save (setConfig, admin-password-gated server-side); disables are audited
+   into settings.flagAuditLog so a hidden safety flag is always traceable. */
+function settingsFlagsPane(o) {
+  if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {}));
+  const ov = o.draftSettings.flagOverrides || {};
+  const ENT_LBL = { rentals: 'Rentals', units: 'Units', workOrders: 'Work Orders', invoices: 'Invoices', customers: 'Customers' };
+  const rows = Object.keys(FLAG_META).map((ent) => {
+    const items = (FLAG_META[ent] || []).map((f) => {
+      const oo = (ov[ent] || {})[f.id] || {};
+      const sev = oo.severity || f.severity;
+      const off = !!oo.off;
+      const sevCtl = segCtl(['red', 'yellow', 'green'].map((sv) => ({ label: sv === 'red' ? 'R' : sv === 'yellow' ? 'Y' : 'G', js: 'js-flag-sev', data: { ent, id: f.id, sev: sv }, on: (!off && sev === sv) ? sv : null })));
+      const onCtl = segCtl([{ label: 'On', js: 'js-flag-ov', data: { ent, id: f.id, val: 'on' }, on: !off ? 'green' : null }, { label: 'Off', js: 'js-flag-ov', data: { ent, id: f.id, val: 'off' }, on: off ? 'red' : null }]);
+      const changed = oo.off || oo.severity ? `<span class="muted" style="font-size:10px">edited</span>` : '';
+      return `<div class="set-row" style="gap:9px;align-items:center"><span style="flex:1;min-width:150px;${off ? 'opacity:.45' : ''}">${flagEl(f.label, sev)} ${esc(f.label)}</span>${sevCtl}${onCtl}${changed}</div>`;
+    }).join('');
+    return `<div class="set-sec"><h4 class="set-h">${esc(ENT_LBL[ent] || ent)}</h4>${items}</div>`;
+  }).join('');
+  return `<div class="set-pane"><div class="muted" style="font-size:11.5px;margin-bottom:9px">Every flag is owner-tunable — Off hides it everywhere; R/Y/G overrides its severity. Defaults return by flipping back. Disabling a money/credit flag is audited.</div>${rows}</div>`;
+}
+/* ── Settings → Team Roster (spec hr-compliance trimmed scope, Jac 2026-06-29) ──────
+   The employee list — name · role · phone · note. Deliberately NO credentials/medical/
+   compliance PII (dropped from scope). Feeds the future multi-driver identity +
+   Driving Score hooks. Rides settings.employees (additive blob). */
+function settingsTeamPane(o) {
+  if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {}));
+  const emps = o.draftSettings.employees || [];
+  const roleOpts = ROLES.map((r) => r.label || r.id);
+  const rows = emps.map((em, i) => `<div class="set-row" style="gap:7px">
+    <input class="set-input" data-emp="name" data-i="${i}" placeholder="Name" value="${esc(em.name || '')}" style="flex:2;min-width:110px" />
+    <select class="set-input" data-emp="role" data-i="${i}" style="flex:1;min-width:90px">${roleOpts.map((r) => `<option${(em.role || '') === r ? ' selected' : ''}>${esc(r)}</option>`).join('')}</select>
+    <input class="set-input" data-emp="phone" data-i="${i}" placeholder="Phone" value="${esc(em.phone || '')}" style="flex:1;min-width:90px" />
+    <input class="set-input" data-emp="note" data-i="${i}" placeholder="Note" value="${esc(em.note || '')}" style="flex:2;min-width:110px" />
+    ${closeX('js-emp-del', { data: { i } })}</div>`).join('');
+  return `<div class="set-pane"><div class="muted" style="font-size:11.5px;margin-bottom:9px">The crew — name, role, phone, note. No credentials or compliance PII lives here (dropped from scope, Jac 2026-06-29).</div>${rows || '<div class="muted" style="font-size:12px">No hands on the roster yet.</div>'}<div class="kv pillrow" style="margin-top:9px">${addBtn('Hand', { link: true, js: 'js-emp-add' })}</div></div>`;
+}
 function settingsPaneFor(o) {
   if (o.tab === 'statuses') return settingsStatusesPane(o);
   if (o.tab === 'logins') return settingsLoginsPane(o);
@@ -3696,6 +3809,8 @@ function settingsPaneFor(o) {
   if (o.tab === 'requirements') return settingsRulesPane(o);
   if (o.tab === 'fields') return settingsFieldsPane(o);
   if (o.tab === 'inspections') return settingsInspectionsPane(o);
+  if (o.tab === 'flags') return settingsFlagsPane(o);
+  if (o.tab === 'team') return settingsTeamPane(o);
   return settingsPlannedPane(SETTINGS_TABS.find((t) => t.id === o.tab));
 }
 function settingsBoardHtml(o) {
@@ -3767,6 +3882,16 @@ function settingsCompanyPane(o) {
         ${segCtl([{ label: 'Off', js: 'js-retro-set', data: { val: 'off' }, on: retro ? null : 'gray' }, { label: 'On', js: 'js-retro-set', data: { val: 'on' }, on: retro ? 'green' : null }])}
       </label>
       <p class="set-note"><strong>On</strong> (default): extending a rental bills the cheapest price for <strong>all</strong> the days rented — what's already paid counts toward it (a week paid rolls into the month). <strong>Off</strong>: the extension is billed as a fresh rental of just the added days; the original invoice price stays as it was.</p>
+      <div class="set-pane-head" style="margin-top:14px"><h4>Used-Sale Price Engine</h4><p>Suggests each category's <strong>Bottom Dollar</strong> and <strong>Asking Price</strong> from a scale you set — % of avg unit cost, or % of MSRP (spec automated-pricing, Jac 2026-06-29). Leave the percents blank to keep the engine off.</p></div>
+      <label class="co-fld co-fld-toggle"><span class="kpi-cap">PRICE BASIS</span>
+        ${segCtl([{ label: '% of Cost', js: 'js-spe-basis', data: { val: 'cost' }, on: (co.salePriceBasis || 'cost') === 'cost' ? 'green' : null }, { label: '% of MSRP', js: 'js-spe-basis', data: { val: 'msrp' }, on: co.salePriceBasis === 'msrp' ? 'green' : null }])}
+      </label>
+      <label class="co-fld co-fld-goal"><span class="kpi-cap">BOTTOM DOLLAR %</span><span class="co-goal-wrap"><input class="co-in co-in-num js-co-field" data-f="saleBottomPct" value="${co.saleBottomPct != null ? esc(co.saleBottomPct) : ''}" placeholder="e.g. 55" inputmode="numeric" autocomplete="off"/><span class="co-goal-suffix">%</span></span></label>
+      <label class="co-fld co-fld-goal"><span class="kpi-cap">ASKING PRICE %</span><span class="co-goal-wrap"><input class="co-in co-in-num js-co-field" data-f="saleAskPct" value="${co.saleAskPct != null ? esc(co.saleAskPct) : ''}" placeholder="e.g. 80" inputmode="numeric" autocomplete="off"/><span class="co-goal-suffix">%</span></span></label>
+      <label class="co-fld co-fld-toggle"><span class="kpi-cap">APPLY MODE</span>
+        ${segCtl([{ label: 'Manager approves', js: 'js-spe-mode', data: { val: 'approve' }, on: (co.salePriceMode || 'approve') === 'approve' ? 'green' : null }, { label: 'Full auto', js: 'js-spe-mode', data: { val: 'auto' }, on: co.salePriceMode === 'auto' ? 'yellow' : null }])}
+      </label>
+      <p class="set-note"><strong>Manager approves</strong>: suggestions show on each category's Investment plate with an Accept button (Manager+). <strong>Full auto</strong>: drifted prices apply themselves at boot — only while a Manager+ is signed in, and every change lands in the category's audit log.</p>
       <div class="co-preview">
         <span class="kpi-cap">RECEIPT PREVIEW</span>
         <div class="co-receipt"><div class="co-receipt-brand">${esc(companyDraftName(co))}</div><div class="co-receipt-sub">${esc(companyDraftTagline(co))}</div></div>
@@ -4167,6 +4292,26 @@ const rentalUnitRecords = (r) => rentalUnitIds(r).map((id) => IDX.unit.get(id)).
 // A WO carries an ETA when the WO or any of its lines has an `eta` date set.
 const woHasEta = (w) => !!(w.eta || (w.lineItems || []).some((li) => li.eta));
 
+/* ── Equipment-insurance coverage (spec equipment-insurance Phase 1, Jac 2026-06-29) ──
+ * The YARD's asset policy on a unit — additive unit.insurance{}; absent = uninsured.
+ * Effective coverage rolls down: unit's own insurance if present, else the category
+ * insuranceDefault (Phase-2 surface; read-ready now), else uninsured. NOT the same as
+ * membership Rental Protection (customer-side, anything up to $2,000 on the rental). */
+function insuranceTypeCatalog() {
+  const o = (state.settings && Array.isArray(state.settings.insuranceTypes) && state.settings.insuranceTypes.length) ? state.settings.insuranceTypes : INSURANCE_COVERAGE_TYPES;
+  return o.map((t) => ({ id: t.id, label: t.label }));
+}
+function unitCoverage(u) {
+  if (u && u.insurance && u.insurance.covered !== undefined) return { covered: !!u.insurance.covered, types: u.insurance.types || [], src: 'unit' };
+  const cat = u && IDX.category.get(u.categoryId);
+  if (cat && cat.insuranceDefault && cat.insuranceDefault.covered !== undefined) return { covered: !!cat.insuranceDefault.covered, types: cat.insuranceDefault.types || [], src: 'category' };
+  return { covered: false, types: [], src: 'none' };
+}
+/* Owner rollups (admin-only render; helpers open for tests). Excludes out-of-service units. */
+const INS_OUT = new Set(['Sold', 'Inactive', 'For Sale']);
+function fleetInsuredValue() { return (DATA.units || []).filter((u) => unitCoverage(u).covered && !INS_OUT.has(u.fleetStatus)).reduce((a, u) => a + (Number(u.insurance?.insuredValue) || 0), 0); }
+function fleetPremiumMonthly() { return Math.round((DATA.units || []).filter((u) => unitCoverage(u).covered && !INS_OUT.has(u.fleetStatus)).reduce((a, u) => { const p = Number(u.insurance?.premium) || 0; return a + (String(u.insurance?.premiumCadence || 'Monthly') === 'Annual' ? p / 12 : p); }, 0) * 100) / 100; }
+
 const FLAG_COND = {
   rentals: {
     'fc':               (r) => openWOsForRental(r).some((w) => w.woType === 'Field Call'),
@@ -4198,6 +4343,8 @@ const FLAG_COND = {
     'service-due-soon':     (u) => { const s = topServiceForUnit(u); return !!s && s.status === 'due-soon'; },
     'wash-requested':       (u) => !!u.washRequested,
     'gps-verify':           (u) => u.gpsStatus === 'Verify',
+    'coverage-expired':     (u) => { const ins = u.insurance || {}; return !!ins.covered && !!ins.expires && ins.expires < TODAY_ISO; },
+    'uninsured-active':     (u) => !unitCoverage(u).covered && !!activeRentalForUnit(u.unitId),
   },
   workOrders: {
     'part-needed':         (w) => w.phase === 'Part Needed',
@@ -4241,8 +4388,19 @@ function getEntityFlags(entityType, rec) {
   if (!rec) return [];
   const meta = FLAG_META[entityType], cond = FLAG_COND[entityType];
   if (!meta || !cond) return [];
+  // Admin flag overrides (spec design-system D1, Jac 2026-06-29): settings.flagOverrides =
+  // { [entity]: { [flagId]: { off:true } | { severity:'red'|'yellow'|'green' } } }. ALL flags are
+  // overridable — including the money/credit safety flags (Jac's explicit call); turning one off
+  // is an adminUnlocked+setConfig-gated act, audited at the Settings write. Default = FLAG_META as-is.
+  const ovAll = (state.settings && state.settings.flagOverrides) || {};
+  const ov = ovAll[entityType] || {};
   const out = [];
-  for (const f of meta) { let on = false; try { on = !!(cond[f.id] && cond[f.id](rec)); } catch (e) { on = false; } if (on) out.push(f); }
+  for (const f of meta) {
+    const o = ov[f.id];
+    if (o && o.off) continue;                                        // owner disabled this flag
+    let on = false; try { on = !!(cond[f.id] && cond[f.id](rec)); } catch (e) { on = false; }
+    if (on) out.push(o && o.severity && FLAG_SEVERITY_RANK[o.severity] ? { ...f, severity: o.severity } : f);
+  }
   return out.sort((a, b) => (FLAG_SEVERITY_RANK[b.severity] || 0) - (FLAG_SEVERITY_RANK[a.severity] || 0));
 }
 /** Formally archived → gray, no flag evaluation (§6: rentals when CLEARED — every
@@ -4251,7 +4409,7 @@ function getEntityFlags(entityType, rec) {
 function entityArchived(entityType, rec) {
   if (!rec) return false;
   if (entityType === 'rentals') return rentalCleared(rec);
-  if (entityType === 'invoices') return rec.refunded === true || invoiceTotals(rec).status === 'Refunded';
+  if (entityType === 'invoices') return rec.refunded === true || invoiceTotals(rec).status === 'Refunded' || invoiceCollectionsActive(rec);   // in-collections = off the active books (gray)
   return false;
 }
 /** Computed status color: 'gray' (archived) · highest active-flag severity · 'green'. */
@@ -5288,11 +5446,11 @@ const ROWS = {
       const dlabel = (nd && daysAhead >= 0 && daysAhead <= 7) ? DOW3[nd.getDay()] : fmtShortDate(next.iso).replace(' 0', ' ');
       const when = `${dlabel}${next.min != null ? ` ${compactClock(next.min)}` : ''}`;
       const nu = IDX.unit.get(next.unitId);
-      lead = `<button class="catr-slot js-cat-next" data-unit="${esc(next.unitId)}" data-tip="Next free: ${esc(nu ? nu.name : 'unit')} on ${esc(when)} (4-hr turnaround) — tap to open it">${badge(`Next ${when}`, 'red')}</button>`;
+      lead = `<button class="catr-slot js-cat-next" data-unit="${esc(next.unitId)}" data-tip="Next free: ${esc(nu ? nu.name : 'unit')} on ${esc(when)} (4-hr turnaround) — tap to open it">${badge(`Next ${when}`, 'red')}</button>${lostDemandBtn(c)}`;
     } else {
       // 0 free and no return date to show → tell the salesperson WHY in one word (Jac).
       const why = categoryUnavailReason(c.categoryId);
-      lead = `<div class="catr-slot catr-slot-none" data-tip="None available — ${esc(why.toLowerCase())}">${badge(`None · ${why}`, 'red')}</div>`;
+      lead = `<div class="catr-slot catr-slot-none" data-tip="None available — ${esc(why.toLowerCase())}">${badge(`None · ${why}`, 'red')}</div>${lostDemandBtn(c)}`;
     }
     // The three status pills (Passed · Not Ready · Failed inspection) filter Units to that
     // status in this category via the established js-fleet-filter path (like the detail mixbar).
@@ -5588,7 +5746,7 @@ const kvPills = (html) => `<div class="kv pillrow">${html}</div>`;
    so a one-field change auto-saves per-record. Empty value renders "+ placeholder".
    opts: { type:'text'|'number'|'date', pfx, sfx, wrap, fmt(value) }. */
 function efld(card, rec, idField, field, ph, opts = {}) {
-  const raw = rec[field];
+  const raw = field.includes('.') ? field.split('.').reduce((o, k) => (o == null ? o : o[k]), rec) : rec[field];   // dotted path → nested read (e.g. insurance.premium)
   const has = raw !== '' && raw != null;
   const phDisp = String(ph).replace(/^Add\s+/i, '');   // rule 8/12: drop "Add" + space (data-ph keeps full prompt)
   const dotColor = opts.dot ? rec[field + 'Color'] : '';   // rule 8: notes carry a 3-color dot tag
@@ -5597,9 +5755,12 @@ function efld(card, rec, idField, field, ph, opts = {}) {
   const pfx = opts.pfx ? `<span class="pfx">${esc(opts.pfx)}</span>` : '';
   const sfx = (has && opts.sfx) ? `<span class="sfx">${esc(opts.sfx)}</span>` : '';
   // opts.admin → the edit is gated behind requireAdmin (Admin/Owner pass, others get the password popup);
+  // opts.money → the edit requires the money tier (canMoney) — display stays open, editing refuses below tier
+  //   (spec units-fleet D2: cost-field edits lock to money; no password escalation, a flat refusal);
   // opts.editKind → swap the startInlineEdit branch (e.g. 'unitCategory' opens a <select>).
   const adm = opts.admin ? ' data-admin="1"' : '';
-  return `<div class="kv${opts.wrap ? ' wrap' : ''}">${pfx}<span class="v inline-edit" data-edit="${opts.editKind || 'field'}" data-card="${card}" data-field="${field}" data-rec="${esc(String(rec[idField]))}" data-ph="${esc(ph)}" data-type="${opts.type || 'text'}"${opts.dot ? ' data-dot="1"' : ''}${adm}${opts.wrap ? ' style="white-space:normal"' : ''}>${disp}</span>${sfx}</div>`;
+  const mny = opts.money ? ' data-money="1"' : '';
+  return `<div class="kv${opts.wrap ? ' wrap' : ''}">${pfx}<span class="v inline-edit" data-edit="${opts.editKind || 'field'}" data-card="${card}" data-field="${field}" data-rec="${esc(String(rec[idField]))}" data-ph="${esc(ph)}" data-type="${opts.type || 'text'}"${opts.dot ? ' data-dot="1"' : ''}${adm}${mny}${opts.wrap ? ' style="white-space:normal"' : ''}>${disp}</span>${sfx}</div>`;
 }
 
 /* Card anatomy (Jac 2026-06-10): Section 0 = Notes on EVERY standard view.
@@ -6314,6 +6475,35 @@ const DETAIL = {
       ${efld('units', u, 'unitId', 'gpsType', 'GPS unit/type')}
       ${efld('units', u, 'unitId', 'gpsPlacement', 'Placement')}
     </div></div>`;
+    /* COVERAGE — the yard's own equipment insurance on this unit (spec equipment-insurance
+       Phase 1, Jac 2026-06-29). STATUS + riders are open to every role (a driver must know a
+       machine is uninsured before it leaves the yard); insurer/policy/dates render at ≥money;
+       PREMIUM + INSURED VALUE are ADMIN-ONLY and OMITTED from the DOM below that (D5 — cost/
+       margin-adjacent, never merely CSS-hidden). Editing is admin-gated (requireAdmin). */
+    const cov = unitCoverage(u);
+    const ins = u.insurance || {};
+    const covTypes = insuranceTypeCatalog();
+    const riderBadges = cov.covered
+      ? (cov.types.length ? cov.types.map((tid) => badge((covTypes.find((t) => t.id === tid) || { label: tid }).label, 'navy')).join('') : badge('No riders set', 'yellow'))
+      : '';
+    const covEditable = adminUnlocked();
+    const covToggle = covEditable
+      ? segCtl([{ label: 'Insured', js: 'js-cov-toggle', data: { rec: u.unitId, val: '1' }, on: cov.covered ? 'green' : null }, { label: 'Uninsured', js: 'js-cov-toggle', data: { rec: u.unitId, val: '' }, on: !cov.covered ? 'red' : null }])
+      : kvPills(cov.covered ? badge('Insured ✓', 'green') : badge('Uninsured', 'gray'));
+    const riderCtl = (covEditable && cov.covered)
+      ? segCtl(covTypes.map((t) => ({ label: t.label, js: 'js-cov-type', data: { rec: u.unitId, id: t.id }, on: (ins.types || []).includes(t.id) ? 'green' : null })))
+      : (cov.covered ? kvPills(riderBadges) : '');
+    const coverage = `<div class="section"><h4>Coverage</h4><div class="fieldstack centered">
+      <div class="kv" style="justify-content:center">${covToggle}</div>
+      ${riderCtl ? `<div class="kv" style="justify-content:center">${riderCtl}</div>` : ''}
+      ${cov.covered && canMoney() ? `
+        ${efld('units', u, 'unitId', 'insurance.policyRef', 'Policy #', { admin: true, pfx: 'Policy' })}
+        ${efld('units', u, 'unitId', 'insurance.effective', 'Effective', { type: 'date', admin: true, sfx: 'effective', fmt: fmtShortDate })}
+        ${efld('units', u, 'unitId', 'insurance.expires', 'Expires', { type: 'date', admin: true, sfx: 'expires', fmt: fmtShortDate })}` : ''}
+      ${cov.covered && adminUnlocked() ? `
+        ${efld('units', u, 'unitId', 'insurance.insuredValue', 'Insured value', { type: 'number', admin: true, fmt: money, sfx: 'insured value' })}
+        ${efld('units', u, 'unitId', 'insurance.premium', 'Premium', { type: 'number', admin: true, fmt: money, sfx: `premium / ${ins.premiumCadence === 'Annual' ? 'yr' : 'mo'}` })}` : ''}
+    </div></div>`;
     /* INVESTMENT — left = entry · right = derived, ordered per Jac:
        Total Revenue → Monthly → Work Orders → Profit · (ROI%) */
     const invested = Number(u.trueCost) || Number(u.purchasePrice) || 0;
@@ -6322,16 +6512,16 @@ const DETAIL = {
     const investment = `<div class="section"><h4>Investment</h4>
       <div class="split">
         <div class="side">
-          ${efld('units', u, 'unitId', 'purchasePrice', 'Purchase price', { type: 'number', sfx: 'paid', fmt: money })}
+          ${efld('units', u, 'unitId', 'purchasePrice', 'Purchase price', { type: 'number', sfx: 'paid', fmt: money, money: true })}
           ${efld('units', u, 'unitId', 'purchaseDate', 'Purchase date', { type: 'date', sfx: 'purchased', fmt: yr })}
-          ${efld('units', u, 'unitId', 'trueCost', 'True cost', { type: 'number', sfx: 'true cost', fmt: money })}
+          ${efld('units', u, 'unitId', 'trueCost', 'True cost', { type: 'number', sfx: 'true cost', fmt: money, money: true })}
           ${efld('units', u, 'unitId', 'purchaseHours', 'Hours at purchase', { type: 'number', sfx: 'at purchase', fmt: (v) => num(v) + ' HRS' })}
         </div>
         <div class="side r">
           ${kv(money(totalRev), { pfx: 'Total Revenue', derived: true })}
           ${kv(money(avgRevMo), { pfx: 'Monthly', derived: true })}
           ${kv(money(repair), { pfx: 'Work Orders', derived: true })}
-          ${kv(`${money(profit)}${roi != null ? ` · (${roi}%)` : ''}`, { pfx: 'Profit', derived: true })}
+          ${kv(`${money(profit)}${roi != null && canMoney() ? ` · (${roi}%)` : ''}`, { pfx: 'Profit', derived: true })}
         </div>
       </div>
       <div style="display:flex;justify-content:flex-end;margin-top:8px">${gatePill('unitFleetStatus', u.fleetStatus, 'js-fleetstatus', { rec: u.unitId })}</div></div>`;
@@ -6377,6 +6567,7 @@ const DETAIL = {
       ${woSecs}
       <div class="add-row">${addBtn('Work Order', { js: 'js-new-wo-unit', link: true, data: { rec: u.unitId } })}</div>
       <div class="detail-cols">${specs}${gps}</div>
+      ${coverage}
       ${investment}
       ${notes.bottom}
       ${historySection('units', u, cs, hchips)}
@@ -6550,6 +6741,9 @@ const DETAIL = {
         </div>
         <div class="side r">
           ${kvPills(`${badge(acct.label, acct.color)}${c.requiresPO ? badge('PO Required', 'yellow') : ''}${c.rentalProtection ? badge('Protected', 'blue') : ''}${agPill}`)}
+          <div class="kv" style="justify-content:flex-end">${c.accountType === 'Blacklisted'
+            ? ghostPill('Lift blacklist', { js: 'js-blacklist-lift', h: 24, data: { rec: c.customerId } })
+            : actionPill('danger', 'Blacklist', { js: 'js-blacklist', h: 24, data: { rec: c.customerId } })}</div>
           ${kv(money(d.totalPaid), { pfx: 'Total', derived: true })}
           ${kv(`${d.visits || 0}`, { pfx: 'Visits', derived: true })}
           ${kv(`${d.years || 0} yrs`, { pfx: 'Customer for', derived: true })}
@@ -6631,6 +6825,7 @@ const DETAIL = {
     const fleet = `<div class="section"><h4>Fleet Summary</h4><div class="fieldstack">
       ${st.forSale ? kvPills(badge(st.forSale + ' For Sale', 'purple')) : ''}
       ${kv(`${num(st.avgHours)} HRS`, { sfx: 'avg hours', derived: true })}
+      ${(c.lostDemand || []).length ? kv(`${(c.lostDemand || []).length}`, { sfx: 'lost-demand asks', derived: true }) : ''}
       ${c.description ? kv(c.description, { wrap: true }) : ''}
     </div></div>`;
     // every unit in the category — R2 linked pill + R4 derived status pill (Jac 2026-06-12)
@@ -6644,9 +6839,16 @@ const DETAIL = {
     const investment = `<div class="section"><h4>Investment</h4>
       <div class="split">
         <div class="side">
-          ${st.roi != null ? kv(`${st.roi}%`, { sfx: 'ROI', derived: true }) : ''}
+          ${st.roi != null && canMoney() ? kv(`${st.roi}%`, { sfx: 'ROI', derived: true }) : ''}
           ${kv(money(st.avgRevUnit), { sfx: '/unit revenue', derived: true })}${kv(money(st.avgExpUnit), { sfx: '/unit expenses', derived: true })}
-          ${kv(money(c.msrp), { sfx: 'MSRP' })}${kv(money(c.askPrice), { sfx: 'ask' })}${kv(money(c.bottomDollar), { sfx: 'bottom dollar' })}
+          ${kv(money(c.msrp), { sfx: 'MSRP' })}${kv(money(c.askPrice), { sfx: 'ask' })}${canMoney() ? kv(money(c.bottomDollar), { sfx: 'bottom dollar' }) : ''}
+          ${(() => {   // sale-price engine suggestion (spec automated-pricing D1/D3) — Manager+ sees + accepts
+            if (!currentRole || roleTier(currentRole) < tierRank('manager')) { if (currentRole) return ''; }
+            const sug = salePriceSuggest(c); if (!sug || sug.mode !== 'approve') return '';
+            const drift = (sug.bottom != null && Number(c.bottomDollar) !== sug.bottom) || (sug.ask != null && Number(c.askPrice) !== sug.ask);
+            if (!drift) return '';
+            return `<div class="kv" style="gap:7px">${kv(`${sug.bottom != null ? money(sug.bottom) : '—'} / ${sug.ask != null ? money(sug.ask) : '—'}`, { sfx: `engine bottom/ask (${sug.basis === 'msrp' ? '% MSRP' : '% cost'})`, derived: true })}${actionPill('commit', 'Accept', { js: 'js-spe-accept', h: 22, data: { rec: c.categoryId } })}</div>`;
+          })()}
           ${catUtilKv(c)}
           ${efld('categories', c, 'categoryId', 'usefulLifeHours', 'Useful life (hrs)', { type: 'number', admin: true, fmt: (v) => num(v) + ' HRS', sfx: 'useful life' })}
           ${efld('categories', c, 'categoryId', 'endOfLifeYears', 'End of life (yrs)', { type: 'number', admin: true, fmt: (v) => v + ' YRS', sfx: 'end of life' })}
@@ -6690,13 +6892,23 @@ const DETAIL = {
     const poCell = cust?.requiresPO && !i.po
       ? `<span class="req inline-edit" data-r="R6" data-edit="invoicePO" data-rec="${i.invoiceId}">PO #</span>`
       : `<span class="${i.po ? 'pill ghost' : 'add-field'} inline-edit" data-r="${i.po ? 'R18' : 'R5c'}" data-edit="invoicePO" data-rec="${i.invoiceId}"${i.po ? '' : ' style="height:26px"'}>${esc(i.po ? 'PO ' + i.po : '+PO')}</span>`;
-    const payCell = canMoney() && cust
+    // Collections (spec collections Phase 1, Jac 2026-06-29): manager-tier queues a late unpaid
+    // invoice for the agency (LOCAL queue — the outbound placement is Phase 2, blocked on
+    // backend-data server-tier trust). Queuing AUTO-blacklists the account (D2); Recall reverts.
+    const mgrTier = !currentRole || roleTier(currentRole) >= tierRank('manager');
+    const colCell = (() => {
+      if (!mgrTier || !cust) return '';
+      if (invoiceCollectionsActive(i)) return `${badge('In Collections · ' + esc(i.collections.status), 'gray')}${ghostPill('Recall', { js: 'js-col-recall', data: { rec: i.invoiceId } })}`;
+      const late = ['Late', 'Late+30', 'Late+60', 'Late+90', 'Collections'].includes(t.status);
+      return (late && t.balance > 0.005 && !i.locked && !i.refunded) ? actionPill('danger', 'Wrangle to Collections', { js: 'js-col-queue', h: 26, data: { rec: i.invoiceId } }) : '';
+    })();
+    const payCell = (canMoney() && cust
       ? (t.status === 'Refunded'
           ? `${badge('Refunded')}${actionPill('commit', 'Details', { js: 'js-pay-invoice', data: { rec: i.invoiceId } })}`
           : t.balance <= 0 && t.paid > 0
             ? `${badge(`Paid${i.paymentMethod ? ' · ' + i.paymentMethod : ''}`, 'green')}${actionPill('danger', 'Refund', { js: 'js-pay-invoice', data: { rec: i.invoiceId } })}`
             : `${actionPill('money', hasCardOnFile(cust) ? (t.paid > 0 ? 'Pay balance ' : 'Pay ') + money2(t.balance) : 'Take payment', { js: 'js-pay-invoice', data: { rec: i.invoiceId } })}${hasCardOnFile(cust) ? `<span class="muted" style="font-size:11px">${esc(cardLabel(cust))}</span>` : ''}`)
-      : '';
+      : '') + colCell;
     const lineForm = `<div class="lineform"><input class="lf-in js-lf-label" placeholder="Custom line description" /><div class="lineform-row"><input class="lf-in js-lf-amt" type="number" min="0" placeholder="Amount $" /></div><div class="pillrow" style="justify-content:flex-end">${ghostPill('Cancel', { js: 'js-line-cancel' })}${actionPill('commit', 'Add line', { js: 'js-line-save', data: { rec: i.invoiceId } })}</div></div>`;
     // Merge (#64): a customer's other UNPAID invoices can fold into this one. Money-safe
     // by construction — only $0-paid, unlocked, un-refunded bills qualify (invoiceMergeable).
@@ -8237,14 +8449,14 @@ function wranglerDockEl() {
           const goto = m.focus && m.focus.id ? ` <button class="wr-goto js-wr-goto" data-ent="${esc(m.focus.entity)}" data-id="${esc(m.focus.id)}">${esc(wrRecLabel(m.focus.entity, m.focus.id))} →</button>` : '';
           act = m.filed
             ? `<span class="wr-actdone">✓ Applied — ${esc(sum)}</span>${goto}`
-            : `<div class="wr-apply"><div class="wr-apply-sum">Preview: ${esc(sum)}</div>${cut}${skip}${plan.ops.length ? `<button class="wr-actbtn wr-actbtn-build js-wr-apply" data-mi="${i}">✓ Apply these changes</button>` : '<span class="wr-apply-none">Nothing here I can safely apply.</span>'}</div>`;
+            : `<div class="wr-apply"><div class="wr-apply-sum">Preview: ${esc(sum)}</div>${cut}${skip}${plan.ops.length ? `<button class="wr-actbtn wr-actbtn-build js-wr-apply" data-r="R17" data-mi="${i}">✓ Apply these changes</button>` : '<span class="wr-apply-none">Nothing here I can safely apply.</span>'}</div>`;
         } else if (m.action && m.action.action === 'kpi') {
           const v = m.action._kpi || (m.action._kpi = wrValidateKpi(m.action));
           const valTxt = v.value == null ? '—' : v.value + '%';
           act = m.filed
             ? `<span class="wr-actdone">✓ Locked in — ${esc(v.ring.label)} (${esc(valTxt)})</span>`
             : v.ok
-              ? `<div class="wr-apply"><div class="wr-apply-sum">${esc(v.role)} · Ring ${v.idx + 1}: <b>${esc(v.ring.label)}</b> — live <b>${esc(valTxt)}</b></div><div class="wr-kpi-readback">${esc(kpiMetricReadback(v.ring.metric))}</div><button class="wr-actbtn wr-actbtn-build js-wr-kpi-lock" data-mi="${i}">✓ Lock in this KPI</button></div>`
+              ? `<div class="wr-apply"><div class="wr-apply-sum">${esc(v.role)} · Ring ${v.idx + 1}: <b>${esc(v.ring.label)}</b> — live <b>${esc(valTxt)}</b></div><div class="wr-kpi-readback">${esc(kpiMetricReadback(v.ring.metric))}</div><button class="wr-actbtn wr-actbtn-build js-wr-kpi-lock" data-r="R17" data-mi="${i}">✓ Lock in this KPI</button></div>`
               : `<div class="wr-apply"><div class="wr-apply-skip">can’t build that yet: ${esc(v.issues.join('; '))}</div></div>`;
         } else if (m.action) {
           const ak = m.action.action;
@@ -8254,7 +8466,7 @@ function wranglerDockEl() {
             ? `<span class="wr-actdone">✓ ${doneLbl}${m.issue ? ` · #${m.issue}` : ''}</span>`
             : m.filing
               ? `<span class="wr-actdone" style="color:var(--txt-3)">…filing</span>`
-              : `<button class="wr-actbtn${ak === 'plan' ? ' wr-actbtn-build' : ''} js-wr-act" data-mi="${i}">${btnLbl}</button>`;
+              : `<button class="wr-actbtn${ak === 'plan' ? ' wr-actbtn-build' : ''} js-wr-act" data-r="R17" data-mi="${i}">${btnLbl}</button>`;
         }
         const imgs = (m.images && m.images.length) ? `<div class="wr-bub-imgs">${m.images.map((img) => { const s = wrImgSrc(img); return s ? `<img src="${esc(s)}" alt="attached image">` : ''; }).join('')}</div>` : '';
         const files = (m.files && m.files.length) ? `<div class="wr-bub-files">${m.files.map((f) => `<span class="wr-file-chip" data-tip="${esc(f.name)}">${I.paperclip || '📎'}<span class="wr-file-n">${esc(f.name)}</span></span>`).join('')}</div>` : '';
@@ -8302,7 +8514,7 @@ function wranglerDockEl() {
     <div class="wr-feed">${turns}${o.busy ? '<div class="wr-msg assistant"><span class="wr-av">🤠</span><div class="wr-bub wr-think">…wrangling an answer</div></div>' : ''}</div>
     ${o.error ? `<div class="wr-err">${esc(o.error)}</div>` : ''}
     ${attachRow}
-    <div class="wr-compose"><label class="wr-attach js-wr-attach" data-tip="Attach a screenshot or a CSV/text file"><input type="file" accept="image/*,.csv,.tsv,.txt,.md,.log,text/csv,text/plain" class="js-wr-file" hidden multiple>${I.paperclip || '📎'}</label><input class="wr-in js-wr-in" placeholder="Ask Mr. Wrangler, or tell him what's broken…" value="${esc(o.draft || '')}" ${o.busy ? 'disabled' : ''} /><button class="wr-send js-wr-send" ${o.busy ? 'disabled' : ''} aria-label="Ask">${I.chev}</button></div>`;
+    <div class="wr-compose"><label class="wr-attach js-wr-attach" data-r="R21" data-tip="Attach a screenshot or a CSV/text file"><input type="file" accept="image/*,.csv,.tsv,.txt,.md,.log,text/csv,text/plain" class="js-wr-file" hidden multiple>${I.paperclip || '📎'}</label><input class="wr-in js-wr-in" placeholder="Ask Mr. Wrangler, or tell him what's broken…" value="${esc(o.draft || '')}" ${o.busy ? 'disabled' : ''} /><button class="wr-send js-wr-send" data-r="R17" ${o.busy ? 'disabled' : ''} aria-label="Ask">${I.chev}</button></div>`;
 }
 function mountWranglerDock() {
   const d = document.querySelector('.wrangler-dock'); if (!d) return;
@@ -8682,6 +8894,16 @@ function hkDemoInner(d) {
 /* ── §5.3/§11 Office Dispatch Time Grid ──────────────────────────────────────
    Every transport task (Deliver at the rental's start, Pick up at its end) for
    active rentals, grouped by day so the Office sees what trucks go where/when. */
+/* Driver roster (spec rentals-dispatch D6, Jac 2026-06-29): the Settings → Team Roster rows
+   whose role reads Driver (fallback: the whole roster when nobody is tagged Driver yet).
+   Rows predating stable ids fall back to name as the ref. */
+function driverRoster() {
+  const emps = (state.settings && state.settings.employees) || [];
+  const drivers = emps.filter((e2) => /driver/i.test(e2.role || ''));
+  return (drivers.length ? drivers : emps).map((e2) => ({ id: e2.id || e2.name, name: e2.name || '(unnamed)' })).filter((d) => d.name && d.name !== '(unnamed)');
+}
+const legDriverField = (task) => (task === 'Deliver' ? 'deliveryDriverId' : 'recoveryDriverId');
+function driverName(idOrName) { const d = driverRoster().find((x) => x.id === idOrName); return d ? d.name : (idOrName || ''); }
 function dispatchEvents() {
   const out = [];
   const SKIP = new Set(['Cancelled', 'No Show', 'Returned', 'Quote']);
@@ -8693,8 +8915,9 @@ function dispatchEvents() {
       const unit = IDX.unit.get(eu.unitId);
       const pin = eu.sitePin || (isPrimaryUnit(r, eu) ? r.sitePin : null) || null;   // §2.3 map: the geocoded drop, if set
       const base = { rentalId: r.rentalId, unitId: eu.unitId, unit: unit?.name || '—', cust: cust?.name || cust?.company || '—', addr: eu.deliveryAddress || '', ttype: eu.transportType, pin };
-      if (['Delivery', 'Round-Trip'].includes(eu.transportType) && r.startDate) out.push({ ...base, date: r.startDate, time: r.startTime || '', task: 'Deliver', color: 'blue' });
-      if (['Round-Trip', 'Recovery'].includes(eu.transportType) && r.endDate) out.push({ ...base, date: r.endDate, time: '', task: 'Pick up', color: 'brown', addr: eu.recoveryAddress || eu.deliveryAddress || '' });
+      // per-LEG driver (spec rentals-dispatch D6): eu.deliveryDriverId / eu.recoveryDriverId — additive, rides sync
+      if (['Delivery', 'Round-Trip'].includes(eu.transportType) && r.startDate) out.push({ ...base, date: r.startDate, time: r.startTime || '', task: 'Deliver', color: 'blue', driverId: eu.deliveryDriverId || null });
+      if (['Round-Trip', 'Recovery'].includes(eu.transportType) && r.endDate) out.push({ ...base, date: r.endDate, time: '', task: 'Pick up', color: 'brown', addr: eu.recoveryAddress || eu.deliveryAddress || '', driverId: eu.recoveryDriverId || null });
     });
   });
   return out.sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
@@ -8711,44 +8934,73 @@ const _lsJSON = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}'
 const _lsSave = (k, o) => { try { localStorage.setItem(k, JSON.stringify(o)); } catch (e) {} };
 const dispatchOrderLS = () => _lsJSON('jactec.dispatchOrder');
 const dispatchTimesLS = () => _lsJSON('jactec.dispatchTimes');
-// §2.3 free-form route arrows (Jac): the dispatcher can draw arbitrary directional
-// "from here → there" legs between any two stop icons, on TOP of the top-to-bottom run
-// order. Stored per-day as [fromNode, toNode] pairs (node = a stop id or 'home:in'/'home:out').
-const dispatchArrowsLS = () => _lsJSON('jactec.dispatchArrows');
-const HOME_IN = 'home:in', HOME_OUT = 'home:out';   // the yard, start-of-day and end-of-day nodes
-// Click an icon to arm it (the leg's "from"); click a second to draw the arrow; click the
-// same one again — or Esc — to cancel; re-drawing an existing leg removes it (toggle).
-function dispatchArrowClick(day, node) {
-  if (state.dispArm == null) { state.dispArm = node; return render(); }
-  if (state.dispArm === node) { state.dispArm = null; return render(); }      // tapped self → cancel
-  const all = dispatchArrowsLS(); const legs = all[day] || [];
-  const i = legs.findIndex(([a, b]) => a === state.dispArm && b === node);
-  if (i !== -1) legs.splice(i, 1); else legs.push([state.dispArm, node]);      // toggle the leg
-  all[day] = legs; _lsSave('jactec.dispatchArrows', all);
-  state.dispArm = null; render();
+/* §2.3 D6 (spec rentals-dispatch) — the per-driver schedule slice:
+   { [dayISO]: { [driverId|'pool']: { order:[stopId], times:{ [stopId]:'HH:MM' } } } }.
+   'pool' = the unassigned lane. Local-first today; D3 later moves this SAME shape to an
+   additive backend `dispatchSchedule` action (stale-rev rejection), so it's a drop-in swap.
+   The legacy flat jactec.dispatchOrder/{day:[ids]} + jactec.dispatchTimes/{stopId} keys stay
+   readable as fallbacks (solo view still writes them), so nothing a dispatcher set is lost. */
+const dispatchSchedLS = () => _lsJSON('jactec.dispatchSchedule');
+const laneKeyOf = (s) => s.driverId || 'pool';
+function schedLane(day, laneKey) { const all = dispatchSchedLS(); return (all[day] && all[day][laneKey]) || { order: [], times: {} }; }
+function schedSaveLane(day, laneKey, lane) {
+  const all = dispatchSchedLS();
+  (all[day] || (all[day] = {}))[laneKey] = lane;
+  _lsSave('jactec.dispatchSchedule', all);
 }
-function removeDispatchArrow(day, from, to) {
-  const all = dispatchArrowsLS(); const legs = all[day] || [];
-  const i = legs.findIndex(([a, b]) => a === from && b === to); if (i === -1) return;
-  legs.splice(i, 1); all[day] = legs; _lsSave('jactec.dispatchArrows', all); render();
+// Move a stop's schedule entries (time + order slot) when it changes lanes, so a re-assigned
+// stop keeps its set time and the old lane doesn't hold a ghost slot.
+function schedMoveStop(day, stopId, fromKey, toKey) {
+  if (fromKey === toKey) return;
+  const from = schedLane(day, fromKey), to = schedLane(day, toKey);
+  const t = from.times[stopId];
+  delete from.times[stopId];
+  from.order = from.order.filter((id) => id !== stopId);
+  if (t !== undefined) to.times[stopId] = t;
+  if (!to.order.includes(stopId)) to.order.push(stopId);
+  schedSaveLane(day, fromKey, from); schedSaveLane(day, toKey, to);
 }
+// D4/D6 — THE one assignment path (the stop's driver badge, a lane drop, and Round up all
+// land here): writes the per-leg driver on the unit entry, moves the stop's schedule slot
+// (time + order) to the new lane on the stop's own day, logs, reindexes. UI renders after.
+function assignStopDriver(rentalId, unitId, task, driverId) {
+  const r = IDX.rental.get(rentalId); if (!r) return false;
+  const eu = unitEntry(r, unitId) || (r.units || [])[0]; if (!eu) return false;
+  const f = legDriverField(task); const nv = driverId || null;
+  if ((eu[f] || null) === nv) return false;
+  const day = task === 'Deliver' ? r.startDate : r.endDate;
+  if (day) schedMoveStop(day, `${rentalId}|${eu.unitId || ''}|${task}`, (eu[f] || 'pool'), (nv || 'pool'));
+  eu[f] = nv;
+  logAction(r, `${IDX.unit.get(eu.unitId)?.name || 'Unit'} — ${task === 'Deliver' ? 'delivery' : 'recovery'} driver → ${nv ? driverName(nv) : 'unassigned'}`);
+  reindex('rentals', r);
+  return true;
+}
+// Which driver lanes the dispatcher has open, per device (a VIEW pref, not data — D5:
+// "the dispatcher clicks which drivers to show"). Pruned against the live roster on read.
+const dispatchLanesLS = () => { const v = _lsJSON('jactec.dispatchLanes'); const ids = Array.isArray(v.show) ? v.show : []; const roster = driverRoster().map((d) => d.id); return ids.filter((id) => roster.includes(id)); };
+const dispatchLanesSave = (ids) => _lsSave('jactec.dispatchLanes', { show: ids });
 const addDaysISO = (iso, n) => { const d = parseISO(iso); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
-// §2.3 — Auto-route: draw the legs connecting the yard → every stop in its run order → yard,
-// so a driver sees the whole route in one click instead of clicking icon-to-icon. (Jac follow-up)
-function autoDispatchRoute(day) {
-  const stops = dispatchDayStops(day);
-  if (!stops.length) return;
-  const chain = [HOME_IN, ...stops.map((s) => s.id), HOME_OUT];
-  const legs = [];
-  for (let i = 0; i < chain.length - 1; i++) legs.push([chain[i], chain[i + 1]]);
-  const all = dispatchArrowsLS(); all[day] = legs; _lsSave('jactec.dispatchArrows', all);
-  state.dispArm = null; render();
-}
 const dispatchDayLabel = (iso) => { const d = parseISO(iso); return d ? d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : iso; };
 function dispatchDayStops(day) {
-  const times = dispatchTimesLS();
-  const stops = dispatchEvents().filter((ev) => ev.date === day).map((ev) => ({ ...ev, id: dispatchStopId(ev), time: times[dispatchStopId(ev)] ?? ev.time ?? '' }));
+  const legacyTimes = dispatchTimesLS();
+  const sched = dispatchSchedLS()[day] || {};
+  const stops = dispatchEvents().filter((ev) => ev.date === day).map((ev) => {
+    const id = dispatchStopId(ev), lane = ev.driverId || 'pool';
+    const lt = sched[lane] && sched[lane].times ? sched[lane].times[id] : undefined;   // D6 per-lane time wins, legacy flat key falls back
+    return { ...ev, id, lane, time: lt !== undefined ? lt : (legacyTimes[id] ?? ev.time ?? '') };
+  });
   const order = dispatchOrderLS()[day] || [];
+  return stops.sort((a, b) => {
+    const ia = order.indexOf(a.id), ib = order.indexOf(b.id);
+    if (ia !== -1 || ib !== -1) return (ia === -1 ? 1e9 : ia) - (ib === -1 ? 1e9 : ib);
+    return (a.time || '~').localeCompare(b.time || '~');
+  });
+}
+// D5/D6 — one driver's run for the day: the merged list filtered to a lane, re-sorted by
+// that lane's own order (a lane reorder must not fight the merged/legacy order).
+function dispatchLaneStops(day, laneKey, all) {
+  const stops = (all || dispatchDayStops(day)).filter((s) => s.lane === laneKey);
+  const order = schedLane(day, laneKey).order;
   return stops.sort((a, b) => {
     const ia = order.indexOf(a.id), ib = order.indexOf(b.id);
     if (ia !== -1 || ib !== -1) return (ia === -1 ? 1e9 : ia) - (ib === -1 ? 1e9 : ib);
@@ -8790,7 +9042,7 @@ function dispatchFocusStop(stopId) {
   if (_dispMap && pos) { _dispMap.panTo(pos); if (_dispMap.getZoom() < 14) _dispMap.setZoom(14); }
   document.querySelectorAll('.disp-tok.focus').forEach((n) => n.classList.remove('focus'));
   const esc1 = (window.CSS && CSS.escape) ? CSS.escape(stopId) : stopId.replace(/["\\]/g, '\\$&');
-  const tok = document.querySelector(`.disp-tok[data-id="${esc1}"]`); if (tok) tok.classList.add('focus');
+  document.querySelectorAll(`.disp-tok[data-id="${esc1}"]`).forEach((tok) => tok.classList.add('focus'));   // the token exists in BOTH the merged strip and its lane
 }
 /* §2.3 DISPATCH = the OFFICE COCKPIT (Phase 1, Jac): a FULL-PANE live map of the day's
    run + a minimal schedule rail floating on the right that widens on hover/focus to
@@ -8815,75 +9067,56 @@ function dispatchGridBody() {
   const nextId = dispatchNextId(stops);
   const scheduled = stops.filter((s) => timeToMin(s.time) != null);
   const unscheduled = stops.filter((s) => timeToMin(s.time) == null);   // §2.3 "No set time" pinned to the TOP of the rail (Jac)
-  const tokenEl = (s) => {
+  const tokenEl = (s, inDriverLane) => {
     const kind = dispatchKind(s);
     const done = stopDone(s), isNext = s.id === nextId;
     const flag = done ? badge('Done', 'green') : (isNext ? `<span class="dt-next">${I.truck} Next</span>` : '');
-    return `<div class="disp-tok js-disp-tok kind-${kind}${done ? ' done' : ''}${isNext ? ' next' : ''}${s.id === state.dispFocusId ? ' focus' : ''}${s.pin ? '' : ' nopin'}" draggable="true" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}">
+    const driverChip = inDriverLane ? '' : (s.driverId   // inside a driver's lane the lane IS the driver — don't repeat it
+      ? `<button class="catr-slot js-stop-driver" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-task="${esc(s.task)}" data-tip="Driver on this leg — tap to change">${badge(driverName(s.driverId), 'navy')}</button>`
+      : (driverRoster().length ? `<button class="catr-slot js-stop-driver" data-r="R5b" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-task="${esc(s.task)}" data-tip="Assign a driver to this leg"><span class="add-field anchor" style="height:20px;font-size:10px">+Driver</span></button>` : ''));
+    return `<div class="disp-tok js-disp-tok kind-${kind}${done ? ' done' : ''}${isNext ? ' next' : ''}${s.id === state.dispFocusId ? ' focus' : ''}${s.pin ? '' : ' nopin'}" draggable="true" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-lane="${esc(s.lane)}" data-task="${esc(s.task)}">
       <div class="dt-rail"><span class="dt-dot"></span><b class="dt-mini">${timeToMin(s.time) != null ? esc(fmtClock(s.time)) : '—'}</b></div>
       <div class="dt-full">
-        <div class="dt-r1"><span class="dt-grip" data-tip="Drag to reorder · or type a time">⠿</span><input class="dt-time js-disp-time" data-id="${esc(s.id)}" value="${esc(s.time || '')}" placeholder="—:—" maxlength="8" aria-label="Stop time" data-tip="Set the stop time — reorders the run" /><span class="spacer"></span>${flag}</div>
-        <div class="dt-r2">${badge(kind === 'deliver' ? 'Deliver' : 'Recover', kind === 'deliver' ? 'blue' : 'brown')}${refPill('rentals', s.rentalId, s.cust)}${s.unitId ? unitPill(s.unitId) : ''}</div>
+        <div class="dt-r1"><span class="dt-grip" data-tip="Drag to reorder — or drop on a driver's lane to assign">⠿</span><input class="dt-time js-disp-time" data-id="${esc(s.id)}" data-lane="${esc(s.lane)}" value="${esc(s.time || '')}" placeholder="—:—" maxlength="8" aria-label="Stop time" data-tip="Set the stop time — reorders the run" /><span class="spacer"></span>${flag}</div>
+        <div class="dt-r2">${badge(kind === 'deliver' ? 'Deliver' : 'Recover', kind === 'deliver' ? 'blue' : 'brown')}${refPill('rentals', s.rentalId, s.cust)}${s.unitId ? unitPill(s.unitId) : ''}${driverChip}</div>
         ${s.addr ? `<div class="dt-addr js-site-go" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-tip="Open the site / set the map pin">${s.pin ? '' : '⚠ '}${esc(s.addr)}</div>` : ''}
       </div>
     </div>`;
   };
   const sec = (t) => `<div class="dr-sec">${t}</div>`;
+  const listOf = (arr, inDriverLane) => {
+    const un = arr.filter((s) => timeToMin(s.time) == null), schd = arr.filter((s) => timeToMin(s.time) != null);   // "No set time" pinned on top, same law as the merged rail
+    const tok = (s) => tokenEl(s, inDriverLane);
+    return (un.length ? sec('No set time') + un.map(tok).join('') : '') + (schd.length ? (un.length ? sec('Scheduled') : '') + schd.map(tok).join('') : '');
+  };
   const railRows = (unscheduled.length ? sec('No set time') + unscheduled.map(tokenEl).join('') : '')
     + (scheduled.length ? (unscheduled.length ? sec('Scheduled') : '') + scheduled.map(tokenEl).join('') : '');
-  // The map is the full pane; the rail is a minimal time strip floating on the right that
-  // widens on hover/focus to let the office adjust the run. "No set time" sits up top.
-  const rail = `<div class="disprail js-disprail" data-day="${esc(day)}" tabindex="0" data-tip="Hover to adjust the run">
-    <div class="dr-head"><span class="dr-chev">‹</span><span class="dr-title">Run · ${stops.length} stop${stops.length === 1 ? '' : 's'}</span></div>
-    <div class="dr-list">${railRows}</div>
+  // D5 driver lanes — the same rail shape repeated per driver on the same map surface.
+  // Collapsed stays the one 90px strip; expanded shows the Unassigned pool + the lanes the
+  // dispatcher picked (+Lanes), panning horizontally past ~3. Solo view (no lanes picked)
+  // is EXACTLY the pre-lane rail, so the owner-operator flow is untouched.
+  const roster = driverRoster(), shown = dispatchLanesLS(), laned = shown.length > 0;
+  const lanesBtn = roster.length ? `<button class="catr-slot js-disp-lanes" data-r="R5b" data-tip="Corral the run into driver lanes — pick who's showing"><span class="add-field anchor" style="height:20px;font-size:10px">${laned ? `Lanes · ${shown.length}` : '+Lanes'}</span></button>` : '';
+  const laneEl = (key) => {
+    const ls = dispatchLaneStops(day, key, stops);
+    const isPool = key === 'pool';
+    const done = ls.filter(stopDone).length;
+    const iso = state.dispLaneIso === key;
+    const roundup = isPool && ls.length && shown.length ? actionPill('commit', 'Round up', { js: 'js-disp-roundup', h: 20 }) : '';
+    // header: name + done/total progress (the Onfleet fraction); click = isolate this run on the map.
+    // Round up rides the TOP OF THE POOL LIST ("round up everything below"), not the crowded head.
+    return `<div class="dr-lane${isPool ? ' pool' : ''}" data-lane="${esc(key)}">
+      <div class="dl-head js-disp-laneiso${iso ? ' iso' : ''}" data-lane="${esc(key)}" data-tip="${iso ? 'Showing only this run on the map — tap to show all' : 'Tap to trace only this run on the map · drop a stop here to hand it over'}"><span class="dl-name">${isPool ? 'Unassigned' : esc(driverName(key))}</span><span class="spacer"></span>${badge(`${done}/${ls.length}`, ls.length && done === ls.length ? 'green' : 'gray')}</div>
+      <div class="dl-list">${roundup}${listOf(ls, !isPool) || `<div class="dl-empty">${isPool ? 'Every stop is assigned' : 'Drag a stop here to assign'}</div>`}</div>
+    </div>`;
+  };
+  const lanesRow = laned ? `<div class="dr-lanes">${laneEl('pool')}${shown.map(laneEl).join('')}</div>` : '';
+  const rail = `<div class="disprail js-disprail${laned ? ' lanes' : ''}" data-day="${esc(day)}" tabindex="0" style="--dr-lanes:${shown.length + 1}" data-tip="${laned ? 'Hover to work the driver lanes' : 'Hover to adjust the run'}">
+    <div class="dr-head"><span class="dr-chev">‹</span><span class="dr-title">${laned ? 'Runs' : 'Run'} · ${stops.length} stop${stops.length === 1 ? '' : 's'}</span><span class="spacer"></span>${lanesBtn}</div>
+    ${lanesRow}<div class="dr-list">${railRows}</div>
   </div>`;
   const foot = `<div class="disp-foot"><span class="disp-livedot"></span><span class="disp-live">Live · auto-notifies the driver on change</span></div>`;
   return `${head}<div class="disp-cockpit"><div class="dispm js-dispmount" data-day="${esc(day)}"></div>${rail}</div>${foot}`;
-}
-/* §2.3 — paint the free-form route legs as an SVG overlay in the route's left gutter,
-   AFTER the DOM lands (we need each icon's real geometry). Pure post-render decor: each
-   leg bows into the gutter so non-adjacent / backtracking legs stay legible, with an
-   arrowhead at the destination. The armed icon is highlighted via the .armed class. */
-function drawDispatchArrows() {
-  const route = document.querySelector('.js-disp-route'); if (!route) return;
-  route.querySelector('.disp-arrows')?.remove();
-  const day = route.dataset.day, arm = state.dispArm;
-  route.querySelectorAll('.js-disp-arrowpt').forEach((n) => n.classList.toggle('armed', arm != null && n.dataset.node === arm));
-  const legs = dispatchArrowsLS()[day] || [];
-  if (!legs.length) return;
-  const rr = route.getBoundingClientRect(), top = route.scrollTop;
-  const RAIL = 19;   // legs live in the route's left rail (its padding-left), clear of the rows
-  // node anchor = rail-x, aligned to the icon's vertical center (content coords so it scrolls)
-  const yOf = (node) => {
-    const i = route.querySelector(`.js-disp-arrowpt[data-node="${CSS.escape(node)}"]`); if (!i) return null;
-    const r = i.getBoundingClientRect(); return r.top - rr.top + top + r.height / 2;
-  };
-  const NS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(NS, 'svg');
-  svg.setAttribute('class', 'disp-arrows');
-  svg.setAttribute('width', rr.width); svg.setAttribute('height', route.scrollHeight);
-  svg.setAttribute('viewBox', `0 0 ${rr.width} ${route.scrollHeight}`);
-  svg.innerHTML = `<defs><marker id="dispArrowHead" markerWidth="7" markerHeight="7" refX="5.2" refY="3" orient="auto-start-reverse"><path d="M0,0 L6,3 L0,6 Z" fill="var(--accent)"/></marker></defs>`;
-  legs.forEach(([a, b], idx) => {
-    const ya = yOf(a), yb = yOf(b); if (ya == null || yb == null) return;
-    // bow left within the rail, deeper for longer legs / stacked legs so they don't overlap
-    const bow = Math.min(13, 4 + Math.abs(yb - ya) * 0.03) + (idx % 3) * 2;
-    const cx = RAIL - bow;
-    const d = `M ${RAIL} ${ya.toFixed(1)} C ${cx.toFixed(1)} ${ya.toFixed(1)}, ${cx.toFixed(1)} ${yb.toFixed(1)}, ${RAIL} ${yb.toFixed(1)}`;
-    // a fat invisible hit-path makes the thin leg easy to click away
-    const hit = document.createElementNS(NS, 'path');
-    hit.setAttribute('d', d); hit.setAttribute('class', 'disp-arrow-hit js-disp-arrow');
-    hit.setAttribute('data-from', a); hit.setAttribute('data-to', b);
-    hit.setAttribute('fill', 'none'); hit.setAttribute('stroke', 'transparent'); hit.setAttribute('stroke-width', '13');
-    const line = document.createElementNS(NS, 'path');
-    line.setAttribute('d', d); line.setAttribute('class', 'disp-arrow-line');
-    line.setAttribute('fill', 'none'); line.setAttribute('marker-end', 'url(#dispArrowHead)');
-    const dot = document.createElementNS(NS, 'circle');   // the leg's origin
-    dot.setAttribute('cx', RAIL); dot.setAttribute('cy', ya.toFixed(1)); dot.setAttribute('r', '2.6');
-    dot.setAttribute('class', 'disp-arrow-dot');
-    svg.appendChild(hit); svg.appendChild(line); svg.appendChild(dot);
-  });
-  route.appendChild(svg);
 }
 /* §2.3 OFFICE COCKPIT MAP. The Map is a SINGLETON (_dispMapEl) RE-PARENTED into the
    fresh mount point each render (render() rebuilds the DOM) so it never reloads/flickers;
@@ -8909,20 +9142,26 @@ function mountDispatchMap() {
 function refreshDispatchMap(day, fit) {
   if (!_dispMap) return;
   const stops = dispatchDayStops(day), nextId = dispatchNextId(stops);
+  // D5 route isolation: with a lane isolated, the orange route + truck trace ONLY that
+  // driver's run (in its own lane order); every pin stays visible so nothing disappears.
+  const iso = state.dispLaneIso && (state.dispLaneIso === 'pool' || dispatchLanesLS().includes(state.dispLaneIso)) ? state.dispLaneIso : null;
+  const routeStops = iso ? dispatchLaneStops(day, iso, stops) : stops;
   _dispMarkers.forEach((m) => m.setMap(null)); _dispMarkers = [];
   if (_dispRoute) { _dispRoute.setMap(null); _dispRoute = null; }
   const bounds = new google.maps.LatLngBounds(); bounds.extend(YARD_CENTER);
   _dispMarkers.push(new google.maps.Marker({ map: _dispMap, position: YARD_CENTER, title: 'JAC Yard · Sulphur', zIndex: 5,
     icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 5, fillColor: '#ff7a1a', fillOpacity: 1, strokeColor: '#1a1205', strokeWeight: 2 } }));
-  const path = [YARD_CENTER], need = []; let placed = 0;
+  const posOf = (s) => (s.pin && Number.isFinite(s.pin.lat)) ? s.pin : _dispGeo[s.addr];
+  const need = []; let placed = 0;
   stops.forEach((s) => {
-    const p = (s.pin && Number.isFinite(s.pin.lat)) ? s.pin : _dispGeo[s.addr];
-    if (p) { placeDispatchPin(s, p, s.id === nextId, stopDone(s)); bounds.extend(p); path.push(p); placed++; }
+    const p = posOf(s);
+    if (p) { placeDispatchPin(s, p, s.id === nextId, stopDone(s)); bounds.extend(p); placed++; }
     else if (s.addr) need.push(s);
   });
-  path.push(YARD_CENTER);
+  // the route path follows routeStops' OWN order (lane order under isolation, merged run otherwise)
+  const path = [YARD_CENTER, ...routeStops.map(posOf).filter(Boolean), YARD_CENTER];
   _dispRoute = new google.maps.Polyline({ map: _dispMap, path, strokeColor: '#ff7a1a', strokeOpacity: .9, strokeWeight: 3 });   // straight legs — no Directions/quota
-  _dispMarkers.push(new google.maps.Marker({ map: _dispMap, position: dispatchTruckPos(stops), title: 'Driver', zIndex: 999,
+  _dispMarkers.push(new google.maps.Marker({ map: _dispMap, position: dispatchTruckPos(routeStops), title: 'Driver', zIndex: 999,
     icon: { path: google.maps.SymbolPath.CIRCLE, scale: 9, fillColor: '#18b6ff', fillOpacity: .22, strokeColor: '#18b6ff', strokeWeight: 2 } }));
   if (fit && placed) _dispMap.fitBounds(bounds, 46);   // only fit once a real stop is located (single-point fit zooms absurdly)
   need.forEach((s) => dispGeocode(s.addr, day));   // resolve pinless stops, then refresh once each lands
@@ -10589,13 +10828,45 @@ function buildPopupEl(o, overlay, opts = {}) {
     const c = IDX.customer.get(o.recId);
     if (!c) { return false; }
     const ag = AGREEMENTS[c.agreementType] || AGREEMENTS.rental;
+    // Membership SIGN-UP lives here, at the account-level agreement (spec memberships D5,
+    // Jac 2026-06-29) — not in the customer card's Membership status section. Money-gated
+    // like every enroll path; the js-mem-enroll handler re-checks canMoney() as defence.
+    const magStatus = membershipStatus(c);
+    const magIsMem = magStatus === 'Active' || magStatus === 'Past Due';
+    const enrollFoot = (!magIsMem && canMoney()) ? `<button class="pill ignition js-mem-enroll" data-r="R17" data-rec="${c.customerId}">${magStatus === 'Incomplete' ? 'Complete Enrollment' : 'Saddle Up — Enroll'}</button>` : '';
     const pop = el('div', 'popup nc-popup');
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: ag.title, tag: 'Customer · agreement',
-      foot: `<button class="pill ghost js-close" data-r="R18">Close</button><button class="pill ignition js-edit-customer" data-r="R17" data-rec="${c.customerId}">Edit account</button>`,
+      foot: `<button class="pill ghost js-close" data-r="R18">Close</button>${enrollFoot}<button class="pill ignition js-edit-customer" data-r="R17" data-rec="${c.customerId}">Edit account</button>`,
       body: `
         <div class="nc-ag-meta">${esc(fullName(c))}${c.agreementSignedAt ? ` · accepted ${esc(c.agreementSignedAt)}` : ' · not yet signed'}</div>
         <div class="nc-agreement" tabindex="0">${esc(ag.text)}</div>
         ${c.signature ? `<div class="nc-ag-sigline"><span class="nc-cap-lbl">Signature</span><img class="nc-thumb sig" src="${esc(c.signature)}" alt="signature" /></div>` : ''}` });
+    overlay.appendChild(pop);
+  } else if (o.kind === 'collectionsSend') {
+    // Queue an invoice for Collections (spec collections Phase 1 — LOCAL queue; the outbound
+    // agency placement is Phase 2, blocked on backend-data server-tier trust). Manager-tier.
+    // Queuing AUTO-blacklists the account (D2, Jac 2026-06-29) — stated plainly on the plate.
+    const inv = IDX.invoice.get(o.invoiceId);
+    if (!inv) { return false; }
+    const t = invoiceTotals(inv);
+    const cust = IDX.customer.get(inv.customerId);
+    const daysPast = (() => { try { const due = parseISO(inv.dueDate); return due ? Math.max(0, dayDiff(due, TODAY)) : 0; } catch (e) { return 0; } })();
+    const pop = el('div', 'popup nc-popup col-popup');
+    pop.innerHTML = popupShell({ icon: CARD_ICON.invoices || '', title: 'Send to Collections', tag: 'Invoice · collections', danger: true,
+      foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-danger js-col-queue-confirm" data-r="R17" data-rec="${esc(inv.invoiceId)}">Queue for Collections</button>`,
+      body: `
+        <div class="nc-ag-meta">${esc(cust ? cust.name : 'No customer')} · ${esc(invoiceShort(inv.invoiceId))}</div>
+        <div class="kv" style="justify-content:center">${kv(money2(t.balance), { sfx: `balance handed over · ${daysPast} days past` })}</div>
+        <label class="pay-field"><span>Reason</span><select class="lf-in js-col-reason"><option>Uncollectable in-house</option><option>Customer unresponsive</option><option>Disputed — exhausted</option><option>Business closed</option><option>Other</option></select></label>
+        <label class="pay-field"><span>Note</span><input class="lf-in js-col-note" placeholder="Optional note for the record" /></label>
+        <div class="muted" style="font-size:11.5px;margin-top:8px">This queues the debt for the collections agency and takes it off active aging. <b>It also blacklists the account</b> (blocks new rentals). A Recall reverses both.</div>` });
+    overlay.appendChild(pop);
+  } else if (o.kind === 'installNudge') {
+    // A1 — one-time Add-to-Home-Screen sheet (spec frontend-performance P1 / mobile-remote D3).
+    const pop = el('div', 'popup nc-popup');
+    pop.innerHTML = popupShell({ icon: CARD_ICON.units || '', title: 'Saddle Up — Add to Home Screen', tag: 'App · install',
+      foot: `<button class="pill ghost js-install-later" data-r="R18">Not now</button><button class="pill ignition js-install-go" data-r="R17">Add it</button>`,
+      body: `<div class="muted" style="font-size:12.5px;line-height:1.5">Pin Rental Wrangler to your home screen — full-screen, one tap from the yard, no browser chrome. You can always do it later from the browser menu.</div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'checklist') {
     // Required-checklist takeover (Settings → Inspections): replaces the sheet until completed;
@@ -10867,6 +11138,8 @@ const WINDOW_CATALOG = [
   { kind: 'settings',      label: 'Settings',                tag: 'Admin · settings',          sample: () => ({}) },
   { kind: 'newCustomer',   label: 'New / Edit Customer',     tag: 'Customer · account',        sample: () => ({ editId: null, draft: { firstName: '', lastName: '', company: '', phone: '', email: '', industry: '', accountType: 'Non-Business', requiresPO: undefined, rentalProtection: undefined, accountNotes: '', idNumber: '', netDays: '', custom: {} } }) },
   { kind: 'agreement',     label: 'Signed agreement',        tag: 'Customer · agreement',      sample: () => ({ recId: ((DATA.customers || [])[0] || {}).customerId }) },
+  { kind: 'collectionsSend', label: 'Send to Collections',   tag: 'Invoice · collections',     sample: () => ({ invoiceId: ((DATA.invoices || [])[0] || {}).invoiceId }) },
+  { kind: 'installNudge',  label: 'Add to Home Screen',      tag: 'App · install',             sample: () => ({}) },
   { kind: 'checklist',     label: 'Inspection checklist',    tag: 'Inspection · checklist',    sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, inspId: ((DATA.inspections || [])[0] || {}).inspectionId }) },
   { kind: 'inspection',    label: 'Failure report',          tag: 'Inspection · failure',      sample: () => ({ recId: ((DATA.inspections || [])[0] || {}).inspectionId }) },
   { kind: 'service',       label: 'Complete service',        tag: 'Service · complete',        sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, taskId: 'svc-wash' }) },
@@ -11555,6 +11828,9 @@ function wrValidatePlan(act) {
     if (raw.op === 'operate') {   // named business operation (e.g. billRental) — validated by its registry entry
       const def = WR_OPERATIONS[raw.name];
       if (!def) { issues.push(`I don’t know how to “${raw.name}” yet`); return; }
+      // Money-tier gate (spec wrangler-ai D1, Jac 2026-06-29): Wrangler must never be a back door
+      // around the human-flow money gate — billing + payments require the SAME tier the UI enforces.
+      if (def.money && !canMoney()) { issues.push(`invoicing and payments are Office/Admin only — this login can’t move money through Mr. Wrangler`); return; }
       const v = def.validate(raw.params || {});
       if (v.issue) { issues.push(v.issue); return; }
       ops.push({ op: 'operate', name: raw.name, params: raw.params || {}, summary: v.summary });
@@ -11616,6 +11892,12 @@ function wrValidatePlan(act) {
       const t = rr.rec;
       if (!t) { issues.push(`no ${ent.label} “${raw.id}”`); return; }
       const c = wrCleanFields(raw.entity, raw.fields);
+      // Money-tier gate on rate authoring (spec wrangler-ai D1): a rate poisons every future
+      // quote — rate fields match the human rate-edit gate, stripped (never written) below money tier.
+      if (!canMoney()) {
+        const mk = Object.keys(c.out).filter((k) => WR_MONEY_FIELDS.has(k));
+        if (mk.length) { mk.forEach((k) => { delete c.out[k]; }); issues.push(`rate changes are Office/Admin only — skipped ${mk.join(', ')}`); }
+      }
       if (Object.keys(c.out).length) ops.push({ op: 'update', entity: raw.entity, id: idOf(raw.entity, t), fields: c.out, target: t });
     } else {
       if (!ent.create) { issues.push(`${ent.label}s can’t be created this way`); return; }
@@ -11720,6 +12002,7 @@ const WR_CREATE = {
 // See specs/…wrangler-full-action-parity (Stage 2).
 const WR_OPERATIONS = {
   billRental: {
+    money: true,   // requires canMoney() — gated in wrValidatePlan (spec wrangler-ai D1)
     // Pick the rental: by rentalId, OR by customer (name/phone) → their one un-invoiced rental.
     _pick(p) {
       if (p && p.rentalId) { const r = IDX.rental.get(p.rentalId); return r ? { rental: r } : { issue: `no rental “${p.rentalId}”` }; }
@@ -11747,9 +12030,10 @@ const WR_OPERATIONS = {
       return { summary: `invoice ${label} for ${cust ? cust.name : r.customerId} (${fmtWindow(r.startDate, r.endDate)})${pick.picked > 1 ? ` — most recent of ${pick.picked}` : ''}` };
     },
     selfToasts: true,   // createInvoiceForRental already toasts; don't add a second
-    apply(p) { const pick = this._pick(p); if (pick.issue || !pick.rental) return null; createInvoiceForRental(pick.rental.rentalId); return { entity: 'invoices', id: IDX.rental.get(pick.rental.rentalId)?.invoiceId || null }; },   // wraps the REAL billing path (pricing engine, 28-day cap, nav + toast)
+    apply(p) { const pick = this._pick(p); if (pick.issue || !pick.rental) return null; createInvoiceForRental(pick.rental.rentalId); const invId = IDX.rental.get(pick.rental.rentalId)?.invoiceId || null; const inv = invId ? IDX.invoice.get(invId) : null; if (inv) logAction(inv, 'Invoiced via Mr. Wrangler'); return { entity: 'invoices', id: invId }; },   // wraps the REAL billing path (pricing engine, 28-day cap, nav + toast); provenance stamp per spec wrangler-ai D4
   },
   recordPayment: {
+    money: true,   // requires canMoney() — gated in wrValidatePlan (spec wrangler-ai D1)
     // Record a CASH or CHECK payment on an existing invoice (by invoiceId, OR by customer → their one open
     // invoice). The backend is authoritative (caps at the live balance). NEVER a card/ACH charge — method is
     // cash|check only, enforced here AND in postManualPayment.
@@ -11788,6 +12072,7 @@ const WR_OPERATIONS = {
       let amt = (p.amount != null) ? Number(p.amount) : t.balance;
       amt = Math.min(amt, t.balance);
       await postManualPayment({ invoiceId: inv.invoiceId, amountCents: Math.round(amt * 100), method, checkNum: method === 'check' ? String(p.checkNum || '').trim() : '' });
+      logAction(inv, `${money2(amt)} ${method} payment recorded via Mr. Wrangler`);   // provenance stamp (spec wrangler-ai D4) — an auditor can tell a Wrangler-assisted entry from a human one
       return { entity: 'invoices', id: inv.invoiceId };   // bring the user to the invoice that was paid
     },
   },
@@ -12330,7 +12615,8 @@ function vendorTotals(vendorId) {
 const receiptParts = (expenseId) => DATA.parts.filter((p) => p.receiptId === expenseId);
 const receiptLineTotal = (expenseId) => receiptParts(expenseId).reduce((a, p) => a + (Number(p.receiptQty) || 1) * (Number(p.priceEach) || 0), 0);
 const reviewState = (iso) => { const d = parseISO(iso); if (!d) return ''; if (d < TODAY) return badge('Overdue', 'red'); return (d - TODAY) / 86400000 <= 30 ? badge('Review soon', 'yellow') : ''; };   // 3-state (audit fix): overdue was invisible under the old d >= TODAY clause
-const boardRows = (boardId) => ({ parts: DATA.parts, vendors: DATA.vendors, expenses: DATA.expenses, files: DATA.companyFiles }[boardId] || []);
+const inPipeline = (c) => (c.usedSalesStage && c.usedSalesStage !== 'N/A') || (c.membershipStage && c.membershipStage !== 'N/A') || !!c.salesAction;
+const boardRows = (boardId) => ({ parts: DATA.parts, vendors: DATA.vendors, expenses: DATA.expenses, files: DATA.companyFiles, collections: (DATA.invoices || []).filter(invoiceCollectionsActive), pipeline: (DATA.customers || []).filter(inPipeline) }[boardId] || []);
 const BOARD_DEF = {
   parts: {
     cols: ['Part', 'Vendor', 'Cost', 'Qty', 'Product #', 'Order from'],
@@ -12347,6 +12633,16 @@ const BOARD_DEF = {
   expenses: {
     cols: ['Vendor', 'Date', 'Amount', 'Reconcile', 'Method', 'Category', 'WO'],
     row: (e) => [esc(IDX.vendor.get(e.vendorId)?.name || '—'), esc(fmtShortDate(e.date)), (e.aiPending ? '✨ ' : '') + money(e.amount), gatePill('expenseReconcile', e.reconcile, 'js-reconcile', { rec: e.expenseId }), badge(e.method, getStatus('paymentMethod', e.method).color), badge(e.category, getStatus('expenseCategory', e.category).color), e.woId ? refPill('workOrders', e.woId, e.woId) : '—'],
+  },
+  pipeline: {
+    // The top-level Sales board (spec sales-growth D1): every account with a LIVE funnel stage
+    // or a scheduled next action — the dual funnels + the follow-up in one sweep.
+    cols: ['Customer', 'Used-Equipment', 'Membership', 'Next action', 'Interested in'],
+    row: (c) => [refPill('customers', c.customerId, c.name), funnelPill(c.customerId, 'usedSales', c.usedSalesStage || 'N/A'), funnelPill(c.customerId, 'membership', c.membershipStage || 'N/A'), c.salesAction ? esc(c.salesAction) : addBtn('Action', { js: 'js-sales-schedule', data: { rec: c.customerId } }), (c.interestedCategoryIds || []).map((id) => IDX.category.get(id)?.name).filter(Boolean).map((n) => badge(n, 'blue')).join('') || '—'],
+  },
+  collections: {
+    cols: ['Customer', 'Invoice', 'Placed balance', 'Status', 'Queued', 'Reason'],
+    row: (i) => { const c = IDX.customer.get(i.customerId); const col = i.collections || {}; return [c ? refPill('customers', i.customerId, c.name) : '—', refPill('invoices', i.invoiceId, invoiceShort(i.invoiceId)), money((col.placedBalanceCents || 0) / 100), badge(col.status || '—', 'gray'), esc(col.queuedAt ? fmtShortDate(col.queuedAt) : '—'), esc(col.reason || '—')]; },
   },
   files: {
     cols: ['Title', 'Type', 'Group', 'Review-By'],
@@ -12709,10 +13005,11 @@ function addInterestedCategory(custId, catId) {
    just drops its search into the card's search bar (visible + clearable like any
    search), replacing bespoke filter "modes". The View menu = Add-view (when the
    current search isn't already a view) + Views + Sort. */
-// Views are GLOBAL / company-wide (Jac 2026-06-13): ONE shared set, synced to the
-// backend so they follow every device + login. The localStorage mirror keeps the
-// demo and offline working; a one-time migration folds the old per-card keys in.
-// Curating the set (add/remove) is an Admin action; everyone can apply a view.
+// Views are PERSONAL "my views" (spec search-views D2, Jac 2026-06-29 — supersedes the
+// 2026-06-13 shared/company-wide set): per-device, stored in localStorage only, no backend
+// sync, no admin curation — every operator saves and deletes their OWN views freely.
+// A view captures search + pinned chips + SORT (D1). The old shared-set localStorage
+// mirror seeds the personal set on first run (nothing is lost in the switch).
 const VIEWS_LS_ALL = 'jactec.views.all';
 const VIEW_CARDS = ['units', 'categories', 'rentals', 'customers', 'invoices', 'shop', 'expenses'];
 let GLOBAL_VIEWS = null;
@@ -12730,15 +13027,8 @@ function loadViews(card) { return _viewsMap()[card] || []; }
 function saveViews(card, views) {
   const m = _viewsMap(); m[card] = views; GLOBAL_VIEWS = m;
   try { localStorage.setItem(VIEWS_LS_ALL, JSON.stringify(m)); } catch (e) {}
-  pushViewsToBackend();                                           // async, online only
-}
-async function loadGlobalViews() {                                // boot: pull the shared set from the server
-  if (typeof backendPassword === 'undefined' || !backendPassword) return;   // demo/offline → localStorage only
-  try { const r = await backendCall('getViews'); if (r && r.ok && r.views && typeof r.views === 'object') { GLOBAL_VIEWS = r.views; try { localStorage.setItem(VIEWS_LS_ALL, JSON.stringify(r.views)); } catch (e) {} render(); } } catch (e) { /* unknown action / offline → keep localStorage */ }
-}
-async function pushViewsToBackend() {                             // mirror local changes up to the server
-  if (typeof backendPassword === 'undefined' || !backendPassword) return;   // demo → localStorage only
-  try { await backendCall('setViews', { views: GLOBAL_VIEWS || {} }); } catch (e) { /* offline → re-syncs on next change */ }
+  // No backend push — views are personal/per-device (D2). The getViews/setViews GAS
+  // actions stay deployed but unused (additive backend: nothing breaks by not calling them).
 }
 // A view captures the WHOLE filter state — the live search text AND the pinned
 // filter chips (cs.filterTerms) — so ANY filter you build is saveable (Jac 2026-06-13).
@@ -12760,6 +13050,7 @@ function applyView(card, v) {
   const cs = activeSession().cards[card];
   cs.search = v.search || '';
   cs.filterTerms = (v.terms || []).map((t) => ({ ...t }));   // restore the pinned chips too
+  if (v.sort && v.sort.field) { cs.sort = { ...v.sort }; saveSort(card, cs.sort); }   // views capture SORT too (spec search-views D1, Jac 2026-06-29)
   cs.mode = 'list'; cs.recId = null; cs.listLimit = undefined;
   render();
 }
@@ -12769,9 +13060,9 @@ function openViewMenu(card, anchorEl) {
   const curSig = viewSig(cs.search, cs.filterTerms);
   const hasFilter = (cs.search || '').trim() || (cs.filterTerms || []).length;   // search text OR pinned chips
   const onView = views.some((v) => viewSig(v.search, v.terms) === curSig);
-  const admin = adminUnlocked();   // curating the shared set is an Admin action; anyone can apply
+  // Personal "my views" (D2): every operator curates their OWN per-device set — no admin gate.
   let html = '';
-  if (hasFilter && !onView && admin) { const lbl = viewLabel(cs.search, cs.filterTerms); html += `<button class="dd-item js-addview" data-card="${card}">${I.plus} Add view “${esc(lbl.length > 22 ? lbl.slice(0, 22) + '…' : lbl)}”</button>`; }
+  if (hasFilter && !onView) { const lbl = viewLabel(cs.search, cs.filterTerms); html += `<button class="dd-item js-addview" data-card="${card}">${I.plus} Add view “${esc(lbl.length > 22 ? lbl.slice(0, 22) + '…' : lbl)}”</button>`; }
   if (views.length) {
     html += `<div class="dd-sec">Views</div>`;
     html += views.map((v, i) => `<button class="dd-item js-applyview${viewSig(v.search, v.terms) === curSig ? ' on' : ''}" data-card="${card}" data-idx="${i}">${esc(v.name)}<span class="tick">✓</span><span class="x js-delview" data-card="${card}" data-name="${esc(v.name)}" data-tip="Delete view">${I.x}</span></button>`).join('');
@@ -12877,11 +13168,11 @@ function render() {
   renderSchedBanner();   // R26 — top "Due Today" scheduled-actions band (lives on <body>, survives the #app swap)
   ruMountStrips();   // §13.7 gauge strips — build each open strip's chart into its measured 25% box
   applyTitles();   // full text on hover wherever we truncate (custom ~0.5s tooltip)
-  drawDispatchArrows();   // §2.3 — paint free-form route legs over the dispatch run (needs live geometry)
   scoreTick();     // §11 gamification — pop +X over any ring whose metric just rose
   if (DRAG.active) { reapplyDragDecor(); buildZipZones(); }   // §15c — re-stamp drop targets + rebuild the §M2 zip rails after ANY mid-drag rebuild (the card swap IS a render)
   const dt = performance.now() - t0;
   renderCount++;
+  perfRecordRender(dt);   // histogram (P0) — arithmetic only, no DOM work
   if (dt > CFG.PERF_BUDGET_MS) console.warn(`[perf] render ${renderCount} took ${dt.toFixed(1)}ms (budget ${CFG.PERF_BUDGET_MS}ms)`);
 }
 /** Flag any element that's actually truncated with data-tip (full text) so the
@@ -12928,6 +13219,61 @@ function initTooltip() {
 }
 const hideTip = () => { clearTimeout(tipTimer); if (tipEl) tipEl.classList.remove('show'); };
 let toastTimer;
+/* ── §Perf — Web-Vitals + render-time instrumentation (spec frontend-performance P0/D2,
+   Jac 2026-06-29). Client captures LCP/INP/CLS via PerformanceObserver + a render-time
+   histogram off the existing budget hook; window.__perf() reads it live; one fire-and-forget
+   perfReport flush per session (sampled) feeds the backend _perf sink WHEN the additive GAS
+   action exists — until then the call fails silently (a failed report must be
+   indistinguishable from no telemetry; it never raises R25, never retries hot).
+   METRICS ONLY: no PII, no dollars, no record ids, never the password (role ID only). */
+/* ── §Perf/SW — offline shell registration + the update-ready toast (spec frontend-performance
+   P1, Jac 2026-06-29). PRODUCTION origin ONLY (Q4: the staging mirror re-clones on a cron and a
+   SW there could pin a snapshot no refresh fixes; localhost would break the dev loop + CI smoke).
+   Update model = PROMPT, never yank (Q5): when a new SW is waiting, offer one reload; suppressed
+   while an overlay is open or the operator is typing (the P11 guard instinct), re-offered next boot. */
+function swInit() {
+  try {
+    if (!('serviceWorker' in navigator)) return;
+    if (location.hostname !== 'app.jacrentals.com') return;   // production only — staging mirror + localhost stay SW-free
+    const token = (document.querySelector('script[src*="app.js?v="]')?.src.match(/v=([\w-]+)/) || [])[1] || 'dev';
+    navigator.serviceWorker.register('sw.js?v=' + token).then((reg) => {
+      const offer = (w) => {
+        if (!w || document.querySelector('.sw-toast')) return;
+        const show = () => {
+          if (state.overlay || document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName)) { setTimeout(show, 15000); return; }
+          const t = el('div', 'sw-toast');
+          t.setAttribute('role', 'status');
+          t.innerHTML = `<span class="sw-toast-stripe"></span><span class="sw-toast-msg">FRESH SUPPLIES IN — a newer build’s saddled up.</span><button class="pill ignition js-sw-reload" data-r="R17">Reload</button>${closeX('js-sw-dismiss')}`;
+          document.body.appendChild(t);
+          t.querySelector('.js-sw-reload').addEventListener('click', () => { try { w.postMessage('skipWaiting'); } catch (e) {} location.reload(); });
+          t.querySelector('.js-sw-dismiss').addEventListener('click', () => t.remove());
+        };
+        show();
+      };
+      if (reg.waiting) offer(reg.waiting);
+      reg.addEventListener('updatefound', () => { const nw = reg.installing; if (nw) nw.addEventListener('statechange', () => { if (nw.state === 'installed' && navigator.serviceWorker.controller) offer(reg.waiting || nw); }); });
+    }).catch(() => {});
+  } catch (e) {}
+}
+
+const PERF = { lcp: null, inp: null, cls: 0, renders: [], over: 0, flushed: false };
+function perfInit() {
+  if (!CFG.PERF_VITALS_ON || typeof PerformanceObserver === 'undefined') return;
+  try { new PerformanceObserver((l) => { const e = l.getEntries().pop(); if (e) PERF.lcp = Math.round(e.startTime); }).observe({ type: 'largest-contentful-paint', buffered: true }); } catch (e) {}
+  try { new PerformanceObserver((l) => { l.getEntries().forEach((e) => { const d = e.processingEnd && e.startTime != null ? Math.round(e.duration) : 0; if (d > (PERF.inp || 0)) PERF.inp = d; }); }).observe({ type: 'event', buffered: true, durationThreshold: 40 }); } catch (e) {}
+  try { new PerformanceObserver((l) => { l.getEntries().forEach((e) => { if (!e.hadRecentInput) PERF.cls += e.value; }); }).observe({ type: 'layout-shift', buffered: true }); } catch (e) {}
+  window.__perf = () => { const r = PERF.renders.slice().sort((a, b) => a - b); const q = (f) => r.length ? r[Math.min(r.length - 1, Math.floor(f * r.length))] : 0; return { lcp: PERF.lcp, inp: PERF.inp, cls: Math.round(PERF.cls * 1000) / 1000, renders: { n: r.length, p50: q(0.5), p95: q(0.95), over: PERF.over } }; };
+  // one best-effort flush per session, on first hidden (sampled; metrics-only payload)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'hidden' || PERF.flushed || Math.random() > CFG.PERF_SAMPLE_RATE) return;
+    PERF.flushed = true;
+    if (typeof backendPassword === 'undefined' || !backendPassword) return;   // demo/offline → nothing leaves the device
+    const v = window.__perf();
+    try { backendCall('perfReport', { build: (document.querySelector('script[src*="app.js?v="]')?.src.match(/v=([\w-]+)/) || [])[1] || '', device: document.body.classList.contains('is-phone') ? 'phone' : document.body.classList.contains('is-narrow') ? 'tablet' : 'desktop', role: currentRole || '', vitals: { lcp: v.lcp, inp: v.inp, cls: v.cls }, renders: v.renders, ts: Date.now() }).catch(() => {}); } catch (e) {}
+  });
+}
+function perfRecordRender(dt) { if (!CFG.PERF_VITALS_ON) return; PERF.renders.push(Math.round(dt)); if (PERF.renders.length > 2000) PERF.renders.splice(0, 1000); if (dt > CFG.PERF_BUDGET_MS) PERF.over++; }
+
 function toast(msg) {
   const t = $('#toast'); t.textContent = msg; t.classList.add('show');
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
@@ -13660,7 +14006,7 @@ function onClick(e) {
   if (closest('.js-overbook')) { e.stopPropagation(); const on = closest('.js-overbook').dataset.val === '1'; state.overbookOn = on; try { localStorage.setItem('jactec.overbook', on ? '1' : '0'); } catch (err) {} toast(on ? 'Overbooking allowed — conflicting links get a pulsing red Overbooked flag.' : 'Overbooking blocked — a conflicting unit drop is refused.'); reSettings(); return; }
   if (closest('.js-haptics')) { e.stopPropagation(); const on = closest('.js-haptics').dataset.val === '1'; state.hapticsOff = !on; try { localStorage.setItem('jactec.hapticsOff', on ? '0' : '1'); } catch (err) {} if (on) haptic([12, 30, 12]); reSettings(); return; }   // §M-touch — toggle + a sample buzz when turning ON
   // Settings Board — tab rail + Statuses & Icons editing
-  if (closest('.js-set-tab')) { e.stopPropagation(); const o = state.overlay; if (o) { captureLoginEdits(o); o.tab = closest('.js-set-tab').dataset.tab; o.iconFor = null; o.error = null; o.resetArm = false; reSettings(); } return; }
+  if (closest('.js-set-tab')) { e.stopPropagation(); const o = state.overlay; if (o) { captureLoginEdits(o); captureTeamEdits(o); o.tab = closest('.js-set-tab').dataset.tab; o.iconFor = null; o.error = null; o.resetArm = false; reSettings(); } return; }
   if (closest('.js-set-pick')) { e.stopPropagation(); const o = state.overlay; if (o) { o.setSel = closest('.js-set-pick').dataset.set; o.iconFor = null; reSettings(); } return; }
   if (closest('.js-set-color')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-set-color'); if (o) { setDraftStatus(o, b.dataset.set, b.dataset.val, { color: b.dataset.color }); reSettings(); } return; }
   if (closest('.js-set-icon-open')) { e.stopPropagation(); const o = state.overlay, k = closest('.js-set-icon-open').dataset.key; if (o) { o.iconFor = o.iconFor === k ? null : k; reSettings(); } return; }
@@ -13674,6 +14020,8 @@ function onClick(e) {
   // Rental Rules tab
   if (closest('.js-rule-set')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-rule-set'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.rentalRules = o.draftSettings.rentalRules || { ...((state.settings && state.settings.rentalRules) || {}) }; o.draftSettings.rentalRules[b.dataset.rule] = b.dataset.val === 'required' ? 'required' : 'off'; reSettings(); } return; }
   if (closest('.js-retro-set')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-retro-set'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.company = o.draftSettings.company || { ...((state.settings && state.settings.company) || {}) }; o.draftSettings.company.retroactivePricing = b.dataset.val === 'on'; reSettings(); } return; }
+  if (closest('.js-spe-basis')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-spe-basis'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.company = o.draftSettings.company || { ...((state.settings && state.settings.company) || {}) }; o.draftSettings.company.salePriceBasis = b.dataset.val; reSettings(); } return; }
+  if (closest('.js-spe-mode')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-spe-mode'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.company = o.draftSettings.company || { ...((state.settings && state.settings.company) || {}) }; o.draftSettings.company.salePriceMode = b.dataset.val; reSettings(); } return; }
   // Custom Fields tab
   if (closest('.js-cf-entity')) { e.stopPropagation(); const o = state.overlay; if (o) { o.cfEntity = closest('.js-cf-entity').dataset.ent; reSettings(); } return; }
   if (closest('.js-cf-type')) { e.stopPropagation(); const o = state.overlay; if (o) { o.cfDraft = { ...(o.cfDraft || { label: '', type: 'text', required: false }), type: closest('.js-cf-type').dataset.type }; reSettings(); } return; }
@@ -13773,6 +14121,67 @@ function onClick(e) {
   if (closest('.js-refund-invoice')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = true; state.overlay.error = ''; renderOverlay(); } return; }
   if (closest('.js-refund-cancel')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = false; state.overlay.refundAlloc = null; renderOverlay(); } return; }
   if (closest('.js-refund-confirm')) { e.stopPropagation(); return refundInvoiceFlow(closest('.js-refund-confirm').dataset.rec); }
+  if (closest('.js-stop-driver')) { e.stopPropagation(); const b = closest('.js-stop-driver'); const ds = driverRoster(); if (!ds.length) { toast('Add drivers on Settings → Team Roster first.'); return; } const html = ds.map((d) => `<button class="dd-item js-stop-driver-pick" data-rec="${esc(b.dataset.rec)}" data-unit="${esc(b.dataset.unit)}" data-task="${esc(b.dataset.task)}" data-driver="${esc(d.id)}">${esc(d.name)}</button>`).join('') + `<button class="dd-item js-stop-driver-pick" data-rec="${esc(b.dataset.rec)}" data-unit="${esc(b.dataset.unit)}" data-task="${esc(b.dataset.task)}" data-driver="">— Unassign —</button>`; openDropdown(b, html, { align: 'left' }); return; }
+  if (closest('.js-stop-driver-pick')) { e.stopPropagation(); const b = closest('.js-stop-driver-pick'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); assignStopDriver(b.dataset.rec, b.dataset.unit, b.dataset.task, b.dataset.driver || null); render(); return; }
+  // D5 — pick which driver lanes are showing (a per-device view pref; '' = back to the solo rail)
+  if (closest('.js-disp-lanes')) { e.stopPropagation(); const b = closest('.js-disp-lanes'); const ds = driverRoster(); if (!ds.length) { toast('Add drivers on Settings → Team Roster first.'); return; } const shown = dispatchLanesLS(); const html = ds.map((d) => `<button class="dd-item js-disp-lane-pick${shown.includes(d.id) ? ' on' : ''}" data-driver="${esc(d.id)}">${shown.includes(d.id) ? '✓ ' : ''}${esc(d.name)}</button>`).join('') + `<button class="dd-item js-disp-lane-pick" data-driver="">— Solo rail —</button>`; openDropdown(b, html, { align: 'left' }); return; }
+  if (closest('.js-disp-lane-pick')) { e.stopPropagation(); const b = closest('.js-disp-lane-pick'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); const id = b.dataset.driver; if (!id) { dispatchLanesSave([]); state.dispLaneIso = null; } else { const shown = dispatchLanesLS(); dispatchLanesSave(shown.includes(id) ? shown.filter((x) => x !== id) : [...shown, id]); } render(); return; }
+  // D5 + research (Bringg/Routific route isolation): tap a lane head → the map traces only that
+  // run; tap again → back to the whole day. A view toggle, not data — never persisted.
+  if (closest('.js-disp-laneiso') && !closest('.js-disp-roundup')) { e.stopPropagation(); const key = closest('.js-disp-laneiso').dataset.lane; state.dispLaneIso = state.dispLaneIso === key ? null : key; const day = state.dispatchDay || TODAY_ISO; render(); refreshDispatchMap(day, true); return; }
+  // D4 — Round up: split the unassigned pool across the OPEN lanes, round-robin in run order
+  // (a starting suggestion the dispatcher then drags around — region/load smarts come later).
+  if (closest('.js-disp-roundup')) { e.stopPropagation(); const day = state.dispatchDay || TODAY_ISO; const shown = dispatchLanesLS(); if (!shown.length) return; const pool = dispatchLaneStops(day, 'pool'); if (!pool.length) return; pool.forEach((s, i) => assignStopDriver(s.rentalId, s.unitId, s.task, shown[i % shown.length])); toast(`Rounded up ${pool.length} stop${pool.length === 1 ? '' : 's'} across ${shown.length} driver${shown.length === 1 ? '' : 's'}.`); render(); return; }
+  if (closest('.js-spe-accept')) { e.stopPropagation(); if (currentRole && roleTier(currentRole) < tierRank('manager')) { toast('Accepting engine prices is Manager-tier and up.'); return; } const c = IDX.category.get(closest('.js-spe-accept').dataset.rec); const sug = c && salePriceSuggest(c); if (!sug) return; const patch = []; if (sug.bottom != null && Number(c.bottomDollar) !== sug.bottom) { c.bottomDollar = sug.bottom; patch.push(`bottom ${money(sug.bottom)}`); } if (sug.ask != null && Number(c.askPrice) !== sug.ask) { c.askPrice = sug.ask; patch.push(`ask ${money(sug.ask)}`); } if (patch.length) { logAction(c, `Sale-price engine accepted (${sug.basis} basis): ${patch.join(' · ')}`); reindex('categories', c); toast(`${c.name} — engine prices accepted.`); } render(); return; }
+  if (closest('.js-lost-demand')) { e.stopPropagation(); const b = closest('.js-lost-demand'); const c = IDX.category.get(b.dataset.cat); if (!c) return; c.lostDemand = c.lostDemand || []; const aw = state.availWin; c.lostDemand.push({ when: TODAY_ISO, window: aw ? { start: aw.start, end: aw.end } : null, by: currentRole || '' }); logAction(c, `Lost demand logged — a customer wanted one, none free${aw ? ` (${fmtWindow(aw.start, aw.end)})` : ''}`); reindex('categories', c); toast(`Lost ask logged for ${c.name} — ${c.lostDemand.length} on record.`); render(); return; }
+  if (closest('.js-blacklist')) { e.stopPropagation(); const b = closest('.js-blacklist'); const c = IDX.customer.get(b.dataset.rec); if (!c || c.accountType === 'Blacklisted') return; if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Click again — blacklist'; return; } c._prevAccountType = c.accountType || ''; c.accountType = 'Blacklisted'; c.blacklistedAt = TODAY_ISO; c.activityLog = c.activityLog || []; c.activityLog.push({ when: TODAY_ISO, text: `Blacklisted by ${currentRole || 'operator'}` }); reindex('customers', c); toast(`${c.name} blacklisted — new rentals blocked.`); render(); return; }   // spec customers-crm D3: ANY role can blacklist; the audit trail is the control
+  if (closest('.js-blacklist-lift')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-blacklist-lift').dataset.rec); if (!c || c.accountType !== 'Blacklisted') return; c.accountType = c._prevAccountType || 'Non-Business'; delete c._prevAccountType; c.activityLog = c.activityLog || []; c.activityLog.push({ when: TODAY_ISO, text: `Blacklist lifted by ${currentRole || 'operator'}` }); reindex('customers', c); toast(`${c.name} — blacklist lifted.`); render(); return; }
+  if (closest('.js-flag-ov')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'settings') return; const b = closest('.js-flag-ov'); captureTeamEdits(o); if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {})); const ov = o.draftSettings.flagOverrides || (o.draftSettings.flagOverrides = {}); const m = ov[b.dataset.ent] || (ov[b.dataset.ent] = {}); const cur = m[b.dataset.id] || {}; if (b.dataset.val === 'off') cur.off = true; else delete cur.off; if (Object.keys(cur).length) m[b.dataset.id] = cur; else delete m[b.dataset.id]; reSettings(); return; }
+  if (closest('.js-flag-sev')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'settings') return; const b = closest('.js-flag-sev'); captureTeamEdits(o); if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {})); const ov = o.draftSettings.flagOverrides || (o.draftSettings.flagOverrides = {}); const m = ov[b.dataset.ent] || (ov[b.dataset.ent] = {}); const cur = m[b.dataset.id] || {}; const def = (FLAG_META[b.dataset.ent] || []).find((f) => f.id === b.dataset.id); if (def && def.severity === b.dataset.sev) delete cur.severity; else cur.severity = b.dataset.sev; delete cur.off; if (Object.keys(cur).length) m[b.dataset.id] = cur; else delete m[b.dataset.id]; reSettings(); return; }
+  if (closest('.js-emp-add')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'settings') return; captureTeamEdits(o); if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {})); (o.draftSettings.employees || (o.draftSettings.employees = [])).push({ id: 'EMP' + Math.random().toString(36).slice(2, 8).toUpperCase(), name: '', role: (ROLES[0] && (ROLES[0].label || ROLES[0].id)) || '', phone: '', note: '' }); reSettings(); return; }
+  if (closest('.js-emp-del')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'settings') return; const i = Number(closest('.js-emp-del').dataset.i); captureTeamEdits(o); (o.draftSettings.employees || []).splice(i, 1); reSettings(); return; }
+  if (closest('.js-sales-schedule')) { e.stopPropagation(); return openOverlay({ kind: 'schedule', customerId: closest('.js-sales-schedule').dataset.rec }); }
+  if (closest('.js-install-go')) { e.stopPropagation(); try { localStorage.setItem('jactec.installNudged', '1'); } catch (er) {} const ev = state._installEvt; closeOverlay(); if (ev) { ev.prompt(); } return; }
+  if (closest('.js-install-later')) { e.stopPropagation(); try { localStorage.setItem('jactec.installNudged', '1'); } catch (er) {} closeOverlay(); return; }
+  if (closest('.js-cov-toggle')) { e.stopPropagation(); const b = closest('.js-cov-toggle'); const doIt = () => { const u = IDX.unit.get(b.dataset.rec); if (!u) return; u.insurance = u.insurance || {}; const nv = b.dataset.val === '1'; if (!!u.insurance.covered !== nv) { u.insurance.covered = nv; logAction(u, nv ? 'Branded covered — yard equipment insurance ON' : 'Coverage dropped — yard equipment insurance OFF'); reindex('units', u); } render(); }; if (!adminUnlocked()) return requireAdmin('Equipment insurance is Owner-only.', doIt); return doIt(); }
+  if (closest('.js-cov-type')) { e.stopPropagation(); const b = closest('.js-cov-type'); const doIt = () => { const u = IDX.unit.get(b.dataset.rec); if (!u) return; u.insurance = u.insurance || {}; const ts = new Set(u.insurance.types || []); const id = b.dataset.id; ts.has(id) ? ts.delete(id) : ts.add(id); u.insurance.types = [...ts]; logAction(u, `Coverage riders → ${u.insurance.types.join(', ') || 'none'}`); reindex('units', u); render(); }; if (!adminUnlocked()) return requireAdmin('Equipment insurance is Owner-only.', doIt); return doIt(); }
+  if (closest('.js-col-queue')) { e.stopPropagation(); if (currentRole && roleTier(currentRole) < tierRank('manager')) { toast('Collections is Manager-tier and up.'); return; } return openOverlay({ kind: 'collectionsSend', invoiceId: closest('.js-col-queue').dataset.rec }); }
+  if (closest('.js-col-queue-confirm')) {
+    e.stopPropagation();
+    if (currentRole && roleTier(currentRole) < tierRank('manager')) { toast('Collections is Manager-tier and up.'); return; }
+    const inv = IDX.invoice.get(closest('.js-col-queue-confirm').dataset.rec); if (!inv || invoiceCollectionsActive(inv)) return;
+    const t = invoiceTotals(inv); if (t.balance <= 0.005) { toast('Nothing to place — the balance is $0.'); return; }
+    const reason = document.querySelector('.js-col-reason')?.value || 'Uncollectable in-house';
+    const note = (document.querySelector('.js-col-note')?.value || '').trim();
+    inv.collections = { status: 'Queued', queuedAt: TODAY_ISO, reason, note, placedBalanceCents: Math.round(t.balance * 100), by: currentRole || '' };
+    const cust = IDX.customer.get(inv.customerId);
+    if (cust && cust.accountType !== 'Blacklisted') {   // AUTO-blacklist on placement (spec collections D2)
+      inv.collections.prevAccountType = cust.accountType || '';
+      cust.accountType = 'Blacklisted';
+      cust.activityLog = cust.activityLog || [];
+      cust.activityLog.push({ when: TODAY_ISO, text: `Sent invoice ${invoiceShort(inv.invoiceId)} to Collections & blacklisted by ${currentRole || 'operator'}` });
+      reindex('customers', cust);
+    }
+    logAction(inv, `Queued for Collections (${reason}) — ${money2(t.balance)} off active aging, by ${currentRole || 'operator'}`);
+    reindex('invoices', inv); closeOverlay(); toast(`${invoiceShort(inv.invoiceId)} queued for Collections — off the active books.`);
+    return;
+  }
+  if (closest('.js-col-recall')) {
+    e.stopPropagation();
+    if (currentRole && roleTier(currentRole) < tierRank('manager')) { toast('Collections is Manager-tier and up.'); return; }
+    const inv = IDX.invoice.get(closest('.js-col-recall').dataset.rec); if (!inv || !invoiceCollectionsActive(inv)) return;
+    inv.collections.status = 'Recalled'; inv.collections.recalledAt = TODAY_ISO;
+    const cust = IDX.customer.get(inv.customerId);
+    if (cust && cust.accountType === 'Blacklisted' && inv.collections.prevAccountType !== undefined) {   // lift only what the queue set (D2 note)
+      cust.accountType = inv.collections.prevAccountType || 'Non-Business';
+      cust.activityLog = cust.activityLog || [];
+      cust.activityLog.push({ when: TODAY_ISO, text: `Recalled ${invoiceShort(inv.invoiceId)} from Collections — blacklist lifted by ${currentRole || 'operator'}` });
+      reindex('customers', cust);
+    }
+    logAction(inv, `Recalled from Collections — back to normal aging, by ${currentRole || 'operator'}`);
+    reindex('invoices', inv); toast(`${invoiceShort(inv.invoiceId)} recalled — back on the aging ladder.`);
+    return;
+  }
   if (closest('.js-lock-invoice')) { e.stopPropagation(); return lockInvoiceFlow(closest('.js-lock-invoice').dataset.rec, true); }
   if (closest('.js-unlock-invoice')) { e.stopPropagation(); return lockInvoiceFlow(closest('.js-unlock-invoice').dataset.rec, false); }
   if (closest('.js-ring')) return openOverlay({ kind: 'role', role: closest('.js-ring').dataset.role });
@@ -13936,14 +14345,9 @@ function onClick(e) {
     return render();
   }
   // §2.3 dispatch timeline — day nav + open a stop's rental (Phase 6)
-  if (closest('.js-disp-day')) { e.stopPropagation(); state.dispArm = null; state.dispatchDay = addDaysISO(state.dispatchDay || TODAY_ISO, Number(closest('.js-disp-day').dataset.dir)); return render(); }
-  if (closest('.js-disp-today')) { e.stopPropagation(); state.dispArm = null; state.dispatchDay = TODAY_ISO; return render(); }
+  if (closest('.js-disp-day')) { e.stopPropagation(); state.dispatchDay = addDaysISO(state.dispatchDay || TODAY_ISO, Number(closest('.js-disp-day').dataset.dir)); return render(); }
+  if (closest('.js-disp-today')) { e.stopPropagation(); state.dispatchDay = TODAY_ISO; return render(); }
   // §2.3 free-form route arrows — these win over the stop-open below (the icon lives inside the row)
-  if (closest('.js-disp-arrow')) { e.stopPropagation(); const a = closest('.js-disp-arrow'); return removeDispatchArrow(state.dispatchDay || TODAY_ISO, a.dataset.from, a.dataset.to); }
-  if (closest('.js-disp-arrowpt')) { e.stopPropagation(); const route = closest('.js-disp-route'); return dispatchArrowClick(route ? route.dataset.day : (state.dispatchDay || TODAY_ISO), closest('.js-disp-arrowpt').dataset.node); }
-  if (closest('.js-disp-arm-cancel')) { e.stopPropagation(); state.dispArm = null; return render(); }
-  if (closest('.js-disp-autoroute')) { e.stopPropagation(); return autoDispatchRoute(state.dispatchDay || TODAY_ISO); }
-  if (closest('.js-disp-clearlegs')) { e.stopPropagation(); const all = dispatchArrowsLS(); delete all[state.dispatchDay || TODAY_ISO]; _lsSave('jactec.dispatchArrows', all); state.dispArm = null; return render(); }
   if (closest('.js-disp-stop') && !closest('.js-disp-time') && !closest('.disp-grip') && !closest('.js-site-go')) { e.stopPropagation(); return anchorRecord('rentals', closest('.js-disp-stop').dataset.rec); }
   if (closest('.js-disp-tok') && !closest('.dt-time') && !closest('.dt-grip') && !closest('.js-site-go') && !closest('.pill')) { e.stopPropagation(); return dispatchFocusStop(closest('.js-disp-tok').dataset.id); }   // §2.3 cockpit: tap a rail stop → focus it on the map (the customer pill opens the rental)
   if (closest('.js-new-wo-unit')) { e.stopPropagation(); return startNewWorkOrder(closest('.js-new-wo-unit').dataset.rec); }
@@ -14138,13 +14542,13 @@ function onClick(e) {
   if (closest('.js-sortmenu')) { const b = closest('.js-sortmenu'); return openViewMenu(b.dataset.card, b); }
   if (closest('.js-delview')) { e.stopPropagation(); const b = closest('.js-delview'); const card = b.dataset.card; saveViews(card, loadViews(card).filter((v) => v.name !== b.dataset.name)); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); const anchor = document.querySelector(`.js-sortmenu[data-card="${card}"]`); if (anchor) openViewMenu(card, anchor); else render(); return; }
   if (closest('.js-applyview')) { const b = closest('.js-applyview'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return applyView(b.dataset.card, loadViews(b.dataset.card)[Number(b.dataset.idx)]); }
-  if (closest('.js-addview')) { if (!adminUnlocked()) { document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return; } const b = closest('.js-addview'); const card = b.dataset.card; const cs = activeSession().cards[card]; const search = (cs.search || '').trim(); const terms = (cs.filterTerms || []).map((t) => ({ ...t })); const suggested = viewLabel(search, terms); const name = (typeof prompt === 'function' ? prompt('Name this view:', suggested) : suggested); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); if (name && name.trim()) { const views = loadViews(card); if (!views.some((v) => v.name.toLowerCase() === name.trim().toLowerCase())) { views.push({ name: name.trim(), search, terms }); saveViews(card, views); } } render(); return; }
+  if (closest('.js-addview')) { const b = closest('.js-addview'); const card = b.dataset.card; const cs = activeSession().cards[card]; const search = (cs.search || '').trim(); const terms = (cs.filterTerms || []).map((t) => ({ ...t })); const sort = cs.sort && cs.sort.field ? { ...cs.sort } : null; const suggested = viewLabel(search, terms); const name = (typeof prompt === 'function' ? prompt('Name this view:', suggested) : suggested); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); if (name && name.trim()) { const views = loadViews(card); if (!views.some((v) => v.name.toLowerCase() === name.trim().toLowerCase())) { views.push({ name: name.trim(), search, terms, ...(sort ? { sort } : {}) }); saveViews(card, views); } } render(); return; }   // personal my-views: any role saves its own (D2); sort captured (D1)
   if (closest('.js-sortfield')) { const b = closest('.js-sortfield'); const cs = activeSession().cards[b.dataset.card]; const f = SORT_FIELDS[b.dataset.card].find((x) => x.field === b.dataset.field); if (f) { cs.sort = { ...f }; saveSort(b.dataset.card, cs.sort); } document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); render(); return; }
   if (closest('.js-paymethod')) { const cs = activeSession().cards.invoices; cs.payMethod = closest('.js-paymethod').dataset.method; document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); render(); return; }   // §337
   if (closest('.js-sortdir')) { const card = closest('.js-sortdir').dataset.card; const cs = activeSession().cards[card]; cs.sort.dir = cs.sort.dir === 'asc' ? 'desc' : 'asc'; saveSort(card, cs.sort); render(); return; }
 
   // inline edit (click a value → input)
-  if (closest('.inline-edit')) { e.stopPropagation(); const _ie = closest('.inline-edit'); if (_ie.dataset.admin === '1' && !adminUnlocked()) return requireAdmin('Categories and pricing are Admin-only.', () => startInlineEdit(_ie)); return startInlineEdit(_ie); }
+  if (closest('.inline-edit')) { e.stopPropagation(); const _ie = closest('.inline-edit'); if (_ie.dataset.admin === '1' && !adminUnlocked()) return requireAdmin('Categories and pricing are Admin-only.', () => startInlineEdit(_ie)); if (_ie.dataset.money === '1' && !canMoney()) return toast('Cost fields are Office/Admin only.'); return startInlineEdit(_ie); }
 
   // X-to-swap / remove on pills (handle before the pill-open)
   const xEl = closest('.x');
@@ -14330,12 +14734,14 @@ function startInlineEdit(span) {
   } else if (kind === 'field') {
     // Generic per-card field editor (text / number / date) — routes through recOf+reindex.
     const card = span.dataset.card, f = span.dataset.field, type = span.dataset.type || 'text';
+    const dotGet = (r, path) => path.split('.').reduce((o, k) => (o == null ? o : o[k]), r);
+    const dotSet = (r, path, v) => { const ks = path.split('.'); let o = r; for (let i = 0; i < ks.length - 1; i++) { if (typeof o[ks[i]] !== 'object' || o[ks[i]] == null) o[ks[i]] = {}; o = o[ks[i]]; } o[ks[ks.length - 1]] = v; };
     const rec = recOf(card, recId);
-    input.value = (rec && rec[f] != null) ? rec[f] : '';
+    input.value = (rec && (f.includes('.') ? dotGet(rec, f) : rec[f]) != null) ? (f.includes('.') ? dotGet(rec, f) : rec[f]) : '';
     input.placeholder = span.dataset.ph || '';
     if (type === 'number') input.type = 'number';
     else if (type === 'date') input.type = 'date';
-    commit = () => { if (done) return; done = true; if (rec) { let v = input.value.trim(); if (type === 'number') v = (v === '' ? null : Number(v)); const old = rec[f]; const oldDot = rec[f + 'Color'] || ''; const newDot = (span.dataset.dot === '1' && v) ? (input._dotPick ?? oldDot) : ''; if (String(old ?? '') !== String(v ?? '') || oldDot !== newDot) { rec[f] = v; if (span.dataset.dot === '1') rec[f + 'Color'] = newDot; reindex(card, rec); logAction(rec, `${humanizeField(f)}: ${auditVal(old)} → ${auditVal(v)}`); } } render(); if (state.overlay?.kind === 'board') renderOverlay(); };
+    commit = () => { if (done) return; done = true; if (rec) { let v = input.value.trim(); if (type === 'number') v = (v === '' ? null : Number(v)); const dotted = f.includes('.'); const old = dotted ? dotGet(rec, f) : rec[f]; const oldDot = rec[f + 'Color'] || ''; const newDot = (span.dataset.dot === '1' && v) ? (input._dotPick ?? oldDot) : ''; if (String(old ?? '') !== String(v ?? '') || oldDot !== newDot) { if (dotted) dotSet(rec, f, v); else rec[f] = v; if (span.dataset.dot === '1') rec[f + 'Color'] = newDot; reindex(card, rec); logAction(rec, `${humanizeField(f)}: ${auditVal(old)} → ${auditVal(v)}`); } } render(); if (state.overlay?.kind === 'board') renderOverlay(); };
   } else if (kind === 'unitCategory') {
     // Admin-gated category link for a unit — a <select> of categories (the gate fires
     // in the click handler before we get here). Drops back to "No category" on the blank.
@@ -14635,7 +15041,11 @@ function saveYardCapture() {
   // stamp persists immediately; the video uploads to Drive and only its URL
   // lands on the stamp afterwards (uploadCapture backend action).
   const file = state.capFile;
-  const stamp = { date: TODAY_ISO, clock: nowClock(), video: '' };
+  const eu0 = captureUnit(r, o.unitId) || (r.units || [])[0] || null;
+  const drvId = eu0 ? (o.cap === 'end' ? (eu0.recoveryDriverId || eu0.deliveryDriverId) : eu0.deliveryDriverId) : null;
+  // Driver-stamped capture (spec rentals-dispatch D7): the assigned leg driver rides the stamp;
+  // no assignment → the logged-in operator name, so the stamp is never anonymous.
+  const stamp = { date: TODAY_ISO, clock: nowClock(), video: '', driver: drvId ? driverName(drvId) : (currentUser || currentRole || '') };
   // move just this unit's status (or the whole rental when no unit context); a §9
   // gate may block it, in which case the popup stays open.
   const moveStatus = (val) => {
@@ -15101,8 +15511,12 @@ function onChange(e) {
     reader.readAsDataURL(file);
     return;
   }
-  if (e.target.classList.contains('js-disp-time')) {   // §2.3 dispatch stop time (per-device)
-    const t = dispatchTimesLS(); const v = e.target.value.trim(); t[e.target.dataset.id] = v; _lsSave('jactec.dispatchTimes', t);
+  if (e.target.classList.contains('js-disp-time')) {   // §2.3 dispatch stop time — D6: stored under the stop's lane
+    const day = (e.target.closest('.disprail') && e.target.closest('.disprail').dataset.day) || state.dispatchDay || TODAY_ISO;
+    const laneKey = e.target.dataset.lane || 'pool';
+    const v = e.target.value.trim();
+    const lane = schedLane(day, laneKey); lane.times[e.target.dataset.id] = v; schedSaveLane(day, laneKey, lane);
+    const t = dispatchTimesLS(); if (t[e.target.dataset.id] !== undefined) { delete t[e.target.dataset.id]; _lsSave('jactec.dispatchTimes', t); }   // retire the legacy flat key for this stop
     if (e.target.closest('.disprail') && timeToMin(v) != null) render();   // cockpit: a complete time re-sorts the token on the rail = retime/reorder
     return;
   }
@@ -15230,6 +15644,16 @@ async function openSettings() {
 async function saveSettings() {
   const o = state.overlay; if (!o || o.kind !== 'settings') return;
   const root = document.querySelector('.settings-popup .popup-body'); if (!root) return;
+  captureTeamEdits(o);   // roster inputs → draft
+  // Audit trail for flag disables (spec design-system D1): a turned-off safety flag must be traceable.
+  if (o.draftSettings && o.draftSettings.flagOverrides) {
+    const prevOv = (state.settings && state.settings.flagOverrides) || {};
+    const log = o.draftSettings.flagAuditLog || (o.draftSettings.flagAuditLog = []);
+    Object.entries(o.draftSettings.flagOverrides).forEach(([ent, m]) => Object.entries(m).forEach(([id, oo]) => {
+      if (oo.off && !((prevOv[ent] || {})[id] || {}).off) log.push({ when: TODAY_ISO, text: `Flag ${ent}/${id} turned OFF`, by: currentRole || 'admin' });
+    }));
+    if (log.length > 50) log.splice(0, log.length - 50);
+  }
   // Logins inputs only exist while the Logins tab is open — when they're absent, keep the
   // passwords from o.config so saving from another tab can't wipe them.
   const haveLogins = !!root.querySelector('.set-input[data-role]');
@@ -15913,6 +16337,8 @@ async function chargeInvoiceFlow(invoiceId) {
 // Refund the captured amount back to the card (full). Reduces amountPaid; a full
 // refund flips the invoice to Refunded. The server is authoritative.
 async function refundInvoiceFlow(invoiceId) {
+  { const _i = IDX.invoice.get(invoiceId); if (_i && invoiceCollectionsActive(_i)) { toast('Blocked: this invoice is in Collections — recall it first.'); return; } }   // spec collections §7.7
+
   const o = state.overlay; if (!o || o.kind !== 'payment') return;
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
   // §19b per-line / partial refund (#125) — GATED behind PARTIAL_REFUNDS_ENABLED. When OFF
@@ -16197,6 +16623,11 @@ function createInvoiceForRental(rentalId) {
   if (!r.customerId) { flashOr('[data-slot="customer"]', 'The Quote needs a customer first — drag one on (or quick-add).'); return; }
   if (!r.startDate || !r.endDate) { flashOr('.rdcal, .timeline, .statusbar.draftwin', 'Set the rental window first.'); return; }
   if (!rentalUnitIds(r).length) { flashOr('.stall-empty, [data-slot="unit"]', 'Add at least one unit before invoicing.'); return; }
+  // §20 voided units aren't billed — so a rental where EVERY unit is No Show/Cancelled would
+  // mint a silently-EMPTY invoice (Jac bug 2026-07-06: a stale Reserved rental derives No Show
+  // → rentalLineItems() filters everything → attached invoice with zero lines). Refuse loudly
+  // instead: re-date or un-void first, then bill.
+  if (!rentalLineItems(r).length) { flashOr('.rdcal, .timeline, .statusbar.draftwin', 'Every unit here is No Show/Cancelled — nothing to bill. Re-date the window or un-void a unit first.'); return; }
   // §28cap — chunk the window into ≤28-day invoices (a long rental → a billing series).
   // ≤28 days = exactly one invoice, lines built exactly as before (the common path).
   const chunks = invoiceChunks(r.startDate, r.endDate);
@@ -16245,7 +16676,7 @@ let currentRole = (() => { try { return sessionStorage.getItem('jactec.role') ||
 function nowClock() { const d = new Date(); let h = d.getHours(); const ap = h < 12 ? 'AM' : 'PM'; h = h % 12 || 12; return `${h}:${String(d.getMinutes()).padStart(2, '0')} ${ap}`; }
 function logAction(rec, text) { if (!rec) return; rec.actions = rec.actions || []; rec.actions.push({ when: TODAY_ISO, clock: nowClock(), text, by: currentUser || '', seq: actionSeq++ }); saveSoon(); }
 // Humanize a field key + format a value for an audit line ("Phone: (337)… → (337)…").
-const humanizeField = (f) => ({ po: 'PO', eta: 'ETA', accountNotes: 'Notes', assignedMechanic: 'Mechanic', gpsType: 'GPS type', gpsPlacement: 'GPS placement', purchasePrice: 'Purchase price', purchaseDate: 'Purchase date', trueCost: 'True cost', purchaseHours: 'Hours at purchase', currentHours: 'Hours', startHours: 'Start hours', returnHours: 'Return hours', rentalName: 'Name', woReport: 'Report', firstName: 'First name', lastName: 'Last name' }[f] || (f.charAt(0).toUpperCase() + f.slice(1).replace(/([A-Z])/g, ' $1')));
+const humanizeField = (f) => ({ po: 'PO', eta: 'ETA', 'insurance.policyRef': 'Policy #', 'insurance.effective': 'Coverage effective', 'insurance.expires': 'Coverage expires', 'insurance.insuredValue': 'Insured value', 'insurance.premium': 'Premium', accountNotes: 'Notes', assignedMechanic: 'Mechanic', gpsType: 'GPS type', gpsPlacement: 'GPS placement', purchasePrice: 'Purchase price', purchaseDate: 'Purchase date', trueCost: 'True cost', purchaseHours: 'Hours at purchase', currentHours: 'Hours', startHours: 'Start hours', returnHours: 'Return hours', rentalName: 'Name', woReport: 'Report', firstName: 'First name', lastName: 'Last name' }[f] || (f.charAt(0).toUpperCase() + f.slice(1).replace(/([A-Z])/g, ' $1')));
 const auditVal = (v) => { const s = String(v ?? '').trim(); return s ? (s.length > 28 ? s.slice(0, 28) + '…' : s) : '(empty)'; };
 
 /* §12.6 — WO phase changes (header pill + per-line journey pills) via a woPhase
@@ -16325,6 +16756,11 @@ function winPickSave() {
     if (r.startDate && r.endDate && r.status === 'Quote') r.status = 'Reserved';
     logAction(r, `Rental window → ${r.startDate && r.endDate ? fmtShortDate(r.startDate) + '–' + fmtShortDate(r.endDate) : 'cleared'}`);
     const ext = billExtension(r, prevEnd, prevStart);   // bill the lengthened window (either end) across the ≤28-day invoice series
+    // Un-void-by-RE-DATING restores billing (Jac bug 2026-07-06): a No-Show-stale unit's line
+    // was filtered/removed while voided; new valid dates un-void it, but billExtension only
+    // re-prices lines that EXIST. Mirror the un-void-by-status path (§20) and add back any
+    // missing unit lines — after the extension pass, so nothing double-bills.
+    if (r.invoiceId) { syncRentalLines(r); syncTransportLine(r); }
     if (ext) {
       const basis = ext.retro ? 'retroactive' : 'added days';
       const up = ext.subtotalDelta >= 0;
@@ -16926,7 +17362,7 @@ function addWOToInvoice(invoiceId, woId) {
    or refund. It only ever removes a $0-paid invoice — exactly what sweepEmptyDrafts
    already does for empty drafts. Same customer only. */
 function invoiceMergeable(i) {
-  return !!i && !!i.customerId && !i.locked && !i.refunded && !i.achProcessing && (Number(i.amountPaid) || 0) === 0;
+  return !!i && !!i.customerId && !i.locked && !i.refunded && !i.achProcessing && (Number(i.amountPaid) || 0) === 0 && !invoiceCollectionsActive(i);   // in-collections invoices are frozen (spec collections §7.3)
 }
 /* Fold the absorbed invoice's lines into the keeper, relink its rentals, then delete
    it. (The 1.2s sync diff sees the vanished id and pushes a backend delete — §18b.) */
@@ -16936,8 +17372,11 @@ function mergeInvoiceInto(keepId, absorbId) {
   if (!invoiceMergeable(keep)) { toast(`Blocked: invoice ${invoiceShort(keepId)} has a payment or lock — can't merge into it (refund/unlock first).`); return; }
   if (!invoiceMergeable(src)) { toast(`Blocked: invoice ${invoiceShort(absorbId)} has a payment or lock — refund/unlock it before merging.`); return; }
   if (keep.customerId !== src.customerId) { toast('Blocked: those invoices belong to different customers.'); return; }
-  // move every line over, re-minting lids so allocations can never collide on the keeper
-  const moved = (src.lineItems || []).map((li) => Object.assign({}, li, { lid: lineLid() }));
+  // move every line over, re-minting lids so allocations can never collide on the keeper.
+  // Each moved line is stamped with its ORIGIN invoice (spec collections D3, Jac 2026-06-29) so a
+  // merged invoice stays auditable back to every source — the prerequisite for placing a merged
+  // debt stack with a collections agency. An existing originInvoiceId (a re-merge) is preserved.
+  const moved = (src.lineItems || []).map((li) => Object.assign({}, li, { lid: lineLid(), originInvoiceId: li.originInvoiceId || absorbId }));
   moved.forEach((li) => keep.lineItems.push(li));
   // union rentalIds + relink the absorbed invoice's rentals to the keeper (§7.5: one invoice per rental)
   (src.rentalIds || []).forEach((rid) => {
@@ -17444,8 +17883,9 @@ function renderLogin(msg) {
 function finishLoad() {
   snapshotSaved();                                              // baseline = what the backend currently holds
   buildIndexes(); state.cascade = createCascade(DATA); booting = false; render();
-  loadGlobalViews();                                            // pull the shared, company-wide view set
+  // (views no longer pull from the backend — personal per-device "my views", spec search-views D2)
   loadGroupOrderFromBackend();                                  // pull THIS role's saved card-group order
+  salePricingAutoApply();                                       // used-sale price engine, auto mode (manager+ sessions only)
   loadChats();                                                  // pull the shared team-chat threads (§ team-chat sync)
   wranglerRailLoad();                                           // load the Mr. Wrangler rail from IndexedDB (+ one-time localStorage migration)
   refreshWranglerRequests();                                    // §18e populate the approval-inbox badge
@@ -17556,6 +17996,19 @@ function boot() {
     if (t && t.classList && t.classList.contains('js-ru-nav')) { e.preventDefault(); t.dispatchEvent(new MouseEvent('click', { bubbles: true })); }
   });
   applyViewportClass();
+  perfInit();                                   // Web-Vitals + render-histogram capture (spec frontend-performance P0)
+  swInit();                                     // offline shell — service worker, PRODUCTION origin only (P1)
+  // A1 install nudge (spec frontend-performance / mobile-remote): capture the prompt; offer ONCE,
+  // after the 2nd visit, dismissible forever (localStorage). iOS has no beforeinstallprompt — skipped.
+  try {
+    const visits = (Number(localStorage.getItem('jactec.visits')) || 0) + 1;
+    localStorage.setItem('jactec.visits', String(visits));
+    window.addEventListener('beforeinstallprompt', (ev) => {
+      if (localStorage.getItem('jactec.installNudged')) return;
+      ev.preventDefault(); state._installEvt = ev;
+      if (visits >= 2 && !state.overlay) { openOverlay({ kind: 'installNudge' }); }
+    });
+  } catch (e) {}
   const onVP = () => { applyViewportClass(); if (!booting) render(); };
   window.matchMedia('(max-width: 640px)').addEventListener('change', onVP);
   window.matchMedia('(max-width: 1024px)').addEventListener('change', onVP);
@@ -17629,18 +18082,39 @@ function boot() {
   // so the grid's custom pointer engine isn't involved). Reorders the day's run.
   let dispDragId = null;   // §2.3 cockpit rail: drag a stop token up/down to set the run order (overrides time-sort)
   document.addEventListener('dragstart', (e) => { const s = e.target.closest && e.target.closest('.js-disp-tok'); if (s) { dispDragId = s.dataset.id; if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', s.dataset.id); } catch (x) {} } s.classList.add('disp-dragging'); const rail = s.closest('.disprail'); if (rail) rail.classList.add('dragging'); } });   // pin the rail OPEN for the whole drag (hover is lost mid-drag)
-  document.addEventListener('dragover', (e) => { if (dispDragId && e.target.closest && e.target.closest('.disprail')) e.preventDefault(); });
+  document.addEventListener('dragover', (e) => {
+    if (!dispDragId || !e.target.closest || !e.target.closest('.disprail')) return;
+    e.preventDefault();
+    // D4 — arm the lane under the cursor (orange outline = "release to assign here")
+    const lane = e.target.closest('.dr-lane');
+    document.querySelectorAll('.dr-lane.armed').forEach((n) => { if (n !== lane) n.classList.remove('armed'); });
+    if (lane) lane.classList.add('armed');
+  });
   document.addEventListener('drop', (e) => {
     const rail = e.target.closest && e.target.closest('.disprail'); if (!dispDragId || !rail) return; e.preventDefault();
-    const ids = [...rail.querySelectorAll('.js-disp-tok')].map((n) => n.dataset.id);
+    const dragId = dispDragId; dispDragId = null;
     const over = e.target.closest('.js-disp-tok');
-    const from = ids.indexOf(dispDragId); if (from !== -1) ids.splice(from, 1);
-    const to = over && over.dataset.id !== dispDragId ? ids.indexOf(over.dataset.id) : ids.length;
-    ids.splice(to < 0 ? ids.length : to, 0, dispDragId);
-    const ord = dispatchOrderLS(); ord[rail.dataset.day] = ids; _lsSave('jactec.dispatchOrder', ord);
-    state.dispFocusId = dispDragId; dispDragId = null; render();   // keep the moved stop highlighted so it stays trackable after the reorder
+    const laneEl = e.target.closest('.dr-lane');
+    const tok = rail.querySelector(`.js-disp-tok[data-id="${(window.CSS && CSS.escape) ? CSS.escape(dragId) : dragId}"]`);
+    if (laneEl && tok) {
+      // D4/D6 — laned drop: assign if the lane changed, then write THIS lane's own order
+      const toLane = laneEl.dataset.lane;
+      if (tok.dataset.lane !== toLane) assignStopDriver(tok.dataset.rec, tok.dataset.unit, tok.dataset.task, toLane === 'pool' ? null : toLane);
+      const ids = [...laneEl.querySelectorAll('.js-disp-tok')].map((n) => n.dataset.id).filter((id) => id !== dragId);
+      const to = over && over.dataset.id !== dragId ? ids.indexOf(over.dataset.id) : ids.length;
+      ids.splice(to < 0 ? ids.length : to, 0, dragId);
+      const lane = schedLane(rail.dataset.day, toLane); lane.order = ids; schedSaveLane(rail.dataset.day, toLane, lane);
+    } else {
+      // solo rail — the pre-lane flat reorder, unchanged (legacy key keeps old installs intact)
+      const ids = [...rail.querySelectorAll('.dr-list .js-disp-tok')].map((n) => n.dataset.id);
+      const from = ids.indexOf(dragId); if (from !== -1) ids.splice(from, 1);
+      const to = over && over.dataset.id !== dragId ? ids.indexOf(over.dataset.id) : ids.length;
+      ids.splice(to < 0 ? ids.length : to, 0, dragId);
+      const ord = dispatchOrderLS(); ord[rail.dataset.day] = ids; _lsSave('jactec.dispatchOrder', ord);
+    }
+    state.dispFocusId = dragId; render();   // keep the moved stop highlighted so it stays trackable after the reorder
   });
-  document.addEventListener('dragend', () => { dispDragId = null; document.querySelectorAll('.disp-dragging').forEach((n) => n.classList.remove('disp-dragging')); document.querySelectorAll('.disprail.dragging').forEach((n) => n.classList.remove('dragging')); });
+  document.addEventListener('dragend', () => { dispDragId = null; document.querySelectorAll('.disp-dragging').forEach((n) => n.classList.remove('disp-dragging')); document.querySelectorAll('.disprail.dragging').forEach((n) => n.classList.remove('dragging')); document.querySelectorAll('.dr-lane.armed').forEach((n) => n.classList.remove('armed')); });
   // Card GROUP header reorder (Jac 2026-07-04) — native drag, same self-contained
   // pattern as the dispatch-rail stop reorder above. Reorders Units/Rentals/Customers/
   // Invoices groups; persisted per role via saveGroupOrder (see its comment for the
@@ -17697,14 +18171,7 @@ function boot() {
     });
     render();
   });
-  // §2.3 route arrows — keyboard parity: Enter/Space arms or lands a leg; Escape cancels the draw.
   document.addEventListener('keydown', (e) => {
-    const pt = e.target.closest && e.target.closest('.js-disp-arrowpt');
-    if (pt && (e.key === 'Enter' || e.key === ' ')) {
-      e.preventDefault(); const route = pt.closest('.js-disp-route');
-      return dispatchArrowClick(route ? route.dataset.day : (state.dispatchDay || TODAY_ISO), pt.dataset.node);
-    }
-    if (e.key === 'Escape' && state.dispArm != null) { e.preventDefault(); e.stopPropagation(); state.dispArm = null; render(); }
     // §20 route-rail: keyboard-activate a stop, Esc disarms the pending route pick
     const rn = e.target.closest && e.target.closest('.js-tnode');
     if (rn && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); return armTransportNode(rn.dataset.rec, rn.dataset.unit || null, rn.dataset.node); }
@@ -17902,7 +18369,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, setRole: (r) => { currentRole = r || ''; render(); },
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }

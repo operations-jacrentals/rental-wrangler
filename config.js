@@ -95,6 +95,9 @@ const RAW_STATUS = {
     'Late+60':     { label: 'Late +60',    color: 'red'    },
     'Late+90':     { label: 'Late +90',    color: 'red'    },
     'Collections': { label: 'Collections', color: 'red'    },
+    // Stored placement marker beats the derived aging tier (spec collections §4.2/§7.1, Jac 2026-06-29):
+    // gray-adjacent = off the active R/Y/G aging ladder — the balance left active chasing.
+    'Sent to Collections': { label: 'In Collections', color: 'gray' },
     'Paid':        { label: 'Paid',        color: 'green'  },
     'Refunded':    { label: 'Refunded',    color: 'gray'   },
   },
@@ -153,13 +156,14 @@ const RAW_STATUS = {
     'Reconciled':   { label: 'Reconciled',   color: 'green'  },
   },
   expenseCategory: {
-    'Parts':    { label: 'Parts',    color: 'blue'   },
-    'Fuel':     { label: 'Fuel',     color: 'orange' },
-    'Tools':    { label: 'Tools',    color: 'navy'   },
-    'Service':  { label: 'Service',  color: 'purple' },
-    'Shipping': { label: 'Shipping', color: 'brown'  },
-    'Supplies': { label: 'Supplies', color: 'gray'   },
-    'Other':    { label: 'Other',    color: 'gray'   },
+    'Parts':     { label: 'Parts',     color: 'blue'   },
+    'Fuel':      { label: 'Fuel',      color: 'orange' },
+    'Tools':     { label: 'Tools',     color: 'navy'   },
+    'Service':   { label: 'Service',   color: 'purple' },
+    'Shipping':  { label: 'Shipping',  color: 'brown'  },
+    'Supplies':  { label: 'Supplies',  color: 'gray'   },
+    'Insurance': { label: 'Insurance', color: 'navy'   },   // yard equipment-policy premiums — a COST, never revenue (spec equipment-insurance §7.3)
+    'Other':     { label: 'Other',     color: 'gray'   },
   },
   vendorType: {
     'Local':  { label: 'Local',  color: 'gray' },
@@ -240,6 +244,8 @@ export const FLAG_META = {
     { id: 'service-due-soon',     label: 'Service Due Soon',  severity: 'yellow' },
     { id: 'wash-requested',       label: 'Wash Requested',    severity: 'yellow' },
     { id: 'gps-verify',           label: 'GPS Verify',        severity: 'yellow' },
+    { id: 'coverage-expired',     label: 'Coverage Expired',  severity: 'red'    },   // insured but past insurance.expires (spec equipment-insurance D6)
+    { id: 'uninsured-active',     label: 'Uninsured On Rent', severity: 'yellow' },   // on rent with no yard coverage — the worst-case pre-warning
   ],
   workOrders: [
     { id: 'part-needed',         label: 'Part Needed',       severity: 'red'    },
@@ -367,11 +373,24 @@ export const SHOP_SEGMENTS = [
   { id: 'workOrders',    label: 'Work Orders' },
   { id: 'serviceOrders', label: 'Service'     },
 ];
+/* ── Equipment-insurance coverage types (spec equipment-insurance D1, Jac 2026-06-29) ──
+ * The YARD's asset-policy riders — exactly three: Theft, Flood, In-Tow Damage (asset only).
+ * NOT the same thing as membership Rental Protection (customer-side, covers anything up to
+ * $2,000 on the rented unit). Owner-editable at runtime via settings.insuranceTypes
+ * (same repriceable-config pattern as the mem* keys); these are the shipped defaults. */
+export const INSURANCE_COVERAGE_TYPES = [
+  { id: 'theft',  label: 'Theft' },
+  { id: 'flood',  label: 'Flood' },
+  { id: 'in-tow', label: 'In-Tow Damage (asset only)' },
+];
+
 export const BACKOFFICE_BOARDS = [
-  { id: 'parts',    title: 'Parts'                },
-  { id: 'vendors',  title: 'Vendors'              },
-  { id: 'expenses', title: 'Expenses & Receipts'  },
-  { id: 'files',    title: 'Company Files'        },
+  { id: 'parts',       title: 'Parts'                },
+  { id: 'vendors',     title: 'Vendors'              },
+  { id: 'expenses',    title: 'Expenses & Receipts'  },
+  { id: 'files',       title: 'Company Files'        },
+  { id: 'collections', title: 'Collections'          },   // invoices queued for collections (spec collections Phase 1)
+  { id: 'pipeline',    title: 'Sales Pipeline'       },   // the top-level sales board (spec sales-growth D1, Jac 2026-06-29)
 ];
 
 /* ── 3-column layout (display only) ───────────────────────────────────────
@@ -591,3 +610,5 @@ export function refreshTodayISO() {
 }
 export const REVENUE_GOAL_DEFAULT = 150000; // SPEC §10 Revenue Goal default
 export const PERF_BUDGET_MS = 100;          // SPEC §3 hard interaction budget
+export const PERF_VITALS_ON = true;         // master kill-switch for Web-Vitals/render instrumentation (spec frontend-performance P0)
+export const PERF_SAMPLE_RATE = 1;          // fraction of sessions that flush a perfReport (1 = all, tune down at scale)

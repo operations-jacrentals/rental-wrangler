@@ -705,7 +705,7 @@ select.lf-in { appearance: none; cursor: pointer; }
 .dt-time:focus { border-color: var(--accent-line); background: var(--bg-2); outline: none; }
 .dt-next { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-size: 9px; font-weight: 700; color: var(--accent); display: inline-flex; align-items: center; gap: 3px; }
 .dt-next svg { width: 12px; height: 12px; }
-.dt-r2 { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.dt-r2 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 4px; }   /* wraps in the narrower lane tokens instead of clipping */
 .dt-r1 .pill, .dt-r2 .pill { font-size: 9.5px; }   /* compact stamped badges (R3b) in the tight rail */
 .dt-who { font-size: 11.5px; color: var(--txt-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dt-addr { font-size: 10.5px; color: var(--blue); cursor: pointer; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -713,6 +713,23 @@ select.lf-in { appearance: none; cursor: pointer; }
 .disp-foot { flex: 0 0 auto; display: flex; align-items: center; gap: 7px; padding: 7px 12px; border-top: 1px solid var(--line); font-size: 10.5px; color: var(--txt-3); }
 .disp-live { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .8px; }
 .disp-livedot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px var(--green-bg); flex: 0 0 auto; }
+/* D5 driver lanes (spec rentals-dispatch) — the rail repeated per driver, side-by-side over
+   the map. Collapsed stays the same 90px strip (the merged run minis); expanded swaps the
+   merged list for the Unassigned pool + the picked driver lanes, PANNING horizontally past
+   ~3 lanes (never squishing). --dr-lanes is set inline by dispatchGridBody (lane count + pool). */
+.disprail.lanes:hover, .disprail.lanes:focus-within, .disprail.lanes.dragging { width: min(calc(var(--dr-lanes, 1) * 206px + 16px), calc(100% - 16px)); }
+.dr-lanes { display: none; flex: 1; min-height: 0; }
+.disprail.lanes:hover .dr-lanes, .disprail.lanes:focus-within .dr-lanes, .disprail.lanes.dragging .dr-lanes { display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden; padding: 6px; }
+.disprail.lanes:hover > .dr-list, .disprail.lanes:focus-within > .dr-list, .disprail.lanes.dragging > .dr-list { display: none; }   /* expanded = lanes take over from the merged strip */
+.dr-lane { flex: 0 0 198px; min-width: 0; display: flex; flex-direction: column; background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.dr-lane.armed { outline: 2px solid var(--accent); outline-offset: -2px; }   /* drag-over: release to assign here (armed = outline, never fill) */
+.dl-head { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--line); flex: 0 0 auto; cursor: pointer; }
+.dl-head.iso { box-shadow: inset 0 -2px 0 var(--accent); }   /* selected-tab semantics: this run is traced on the map */
+.dl-name { font-weight: 700; font-size: 11px; color: var(--txt); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dr-lane.pool .dl-name { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .8px; font-size: 10px; color: var(--txt-2); }   /* the pool is a stamped bucket label, not a person */
+.dl-list { flex: 1; min-height: 0; overflow-y: auto; padding: 5px; display: flex; flex-direction: column; gap: 5px; }
+.dl-list > .js-disp-roundup { width: 100%; justify-content: center; flex: 0 0 auto; }   /* "round up everything below" spans the pool */
+.dl-empty { border: 1px dashed var(--line); border-radius: 6px; padding: 10px 8px; font-size: 10px; color: var(--txt-3); text-align: center; }
 
 /* ── Card (each is the detail view; scrolls internally) ──────────────────── */
 .card {
@@ -3903,3 +3920,17 @@ body.sync-failing #sched-banner { top: 40px; }   /* an active R25 sync band outr
 #sched-banner .close-x { flex-shrink: 0; margin-top: 1px; }
 body.sched-due #app { padding-top: var(--sched-band, 46px); }
 body.sync-failing.sched-due #app { padding-top: calc(40px + var(--sched-band, 46px)); }
+
+/* ── §Perf/SW — update-ready toast (spec frontend-performance P1) ─────────────
+   Steel plate pinned bottom-center; hi-vis hazard stripe on the left edge; Saira
+   stamped message; the one orange = the Reload ignition. Reduced-motion: appears
+   with no slide (no keyframe used at all — steady by default). */
+.sw-toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px 9px 0; z-index: 300;
+  background: linear-gradient(180deg, #1b2129, #0c0e11); border: 1px solid var(--line); border-radius: var(--chip-radius);
+  box-shadow: var(--shadow); }
+.sw-toast-stripe { align-self: stretch; width: 13px; border-radius: var(--chip-radius) 0 0 var(--chip-radius);
+  background: repeating-linear-gradient(135deg, var(--yellow, #f5c542) 0 13px, #14181d 13px 26px); }
+.sw-toast-msg { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: 1.4px;
+  font-weight: 600; font-size: 12px; color: var(--txt-2); }
+.sw-toast .pill.ignition:focus-visible, .sw-toast .x:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

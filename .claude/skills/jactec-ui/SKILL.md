@@ -15,7 +15,7 @@ description: >-
   the "yard data-plate" design language (dark industrial steel, ONE safety-orange
   accent, hi-vis hazard-stripe signature, stamped Saira Condensed labels, rivets,
   a light wrangler/ranch seasoning) and its enforcement machinery (the §5
-  builders, the R0–R24 stamped rulebook, the R0 flash-lint, the CI gates). Exists
+  builders, the R0–R25 stamped rulebook, the R0 flash-lint, the CI gates). Exists
   to keep UI unmistakably OURS and never generic, AI-detectable slop. Triggers:
   "add a column to the units card", "restyle the rentals popup", "make a new
   status pill", "make this work on phones", "wire a long-press", "scaffold a
@@ -45,7 +45,7 @@ the rulebook.
 > Load the right reference for depth.
 > **Build language:** [`references/tokens.md`](references/tokens.md)
 > (every color/size literal, all themes) · [`references/rulebook.md`](references/rulebook.md)
-> (the full R0–R24 catalog) · [`references/signature-recipes.md`](references/signature-recipes.md)
+> (the full R0–R25 catalog) · [`references/signature-recipes.md`](references/signature-recipes.md)
 > (copy-paste hazard stripe / rivets / ignition / rings / focus / reduced-motion)
 > · [`references/anti-slop.md`](references/anti-slop.md) (the banned looks + tells)
 > · [`references/checklists.md`](references/checklists.md) (pre-ship gate).
