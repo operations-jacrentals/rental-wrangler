@@ -48,3 +48,27 @@ the task. To work one: `git checkout <branch>`, refresh it from its area
   (they share send plumbing — templates, triggers, delivery status).
 - Safety backup of the pre-reset `staging` tip lives at branch
   `backup/staging-2026-06-23`.
+- **Gaps found during the 2026-07-09 area-spec reconciliation sweep** (10 area
+  specs synced to shipped reality across PRs #568–#577) — real, not yet acted
+  on:
+  - **`gpsToken` auth-proxy still has a hardcoded fallback password** (backend
+    audit finding, not fixed) — `docs/specs/gps-tracking.md`.
+  - **GPS Driving Score shipped fleet-level, not per-driver** as Decision D1
+    resolved; **GPS coordinate visibility + the Tracking-board role gate both
+    shipped all-roles**, not manager+ as Decision D2 called for — a real
+    access-scope deviation from what was decided, worth a look.
+    `docs/specs/gps-tracking.md`.
+  - **`PARTIAL_REFUNDS_ENABLED` flipped to `true` in production** with no
+    in-repo writeup confirming the deploy→verify→flip sequence Decision D1
+    required was actually followed in order — worth a quick sanity check with
+    whoever flipped it. `docs/specs/invoicing-payments.md`.
+  - **Sell-a-unit flow shipped alongside an old bare fleet-status dropdown**
+    that still lets anyone flip a unit to "Sold" with no price/gate, bypassing
+    the new gated flow entirely. `docs/specs/units-fleet.md`.
+  - **`purchaseDate` isn't money-tier-gated** for edits, unlike `trueCost`/
+    `purchasePrice` — likely an oversight in the same D2 unit-fields lock.
+    `docs/specs/units-fleet.md`.
+  - Already tracked elsewhere, not duplicated here: team-chat privacy hardening
+    (inert, gated on `claude/internal-chat-updates-vq6p7b`) and Wrangler Ops'
+    global 100/day rate limit (documented, not yet deployed) — both live in
+    `docs/handoffs/BACKEND-DEPLOY-QUEUE.md`.
