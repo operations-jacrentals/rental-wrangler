@@ -2092,6 +2092,261 @@ body.is-phone .set-tab-l { flex: 0 0 auto; }
 .bv-table tfoot .bv-sumlabel { color: var(--accent); font-weight: 800; }
 .bv-calc { background: var(--panel); color: var(--txt-2); border: 1px solid var(--line); border-radius: 6px; font-size: 11px; padding: 1px 3px; }
 .bv-mini.on { color: var(--accent); border-color: var(--accent-line); background: var(--accent-soft); }
+
+/* ── GPS CONNECT WIZARD (spec §5a) — device picker rows (step 2, Deere/Yanmar/Bouncie)
+   + the live first-contact poll icon (step 3). Search box reuses .bv-searchwrap/.bv-query
+   verbatim; the in-flight skeleton reuses .set-loading/.set-loading-bar verbatim. ── */
+.gps-dev-list { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow: auto; }
+.gps-dev-row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 9px 12px;
+  border-radius: 10px; background: var(--panel); border: 1px solid var(--line); color: var(--txt);
+  font: inherit; font-size: 12.5px; cursor: pointer; transition: border-color .12s, background .12s; }
+.gps-dev-row svg { width: 15px; height: 15px; flex: 0 0 auto; color: var(--txt-3); }
+.gps-dev-row:hover { border-color: var(--accent-line); background: var(--accent-soft); }
+.gps-dev-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.gps-dev-row .gdr-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.gps-dev-row .gdr-sub { flex: 0 0 auto; color: var(--txt-3); font-size: 11px; }
+.gps-poll-ic { display: inline-flex; align-items: center; justify-content: center; width: 46px; height: 46px;
+  border-radius: 50%; font-size: 20px; font-weight: 800; }
+.gps-poll-ic svg { width: 20px; height: 20px; }
+/* Enriched GPS section (step 4): the external "last seen" map link. External nav, so a
+   plain anchor — blue like the registry link tone, never orange. */
+.gps-maplink { color: var(--blue); font-size: 11px; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.gps-maplink:hover { color: color-mix(in srgb, var(--blue) 82%, var(--txt)); }
+.gps-maplink:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+
+/* GPS status & alert history feed (spec §6a) — a compact read-only timeline in the
+   unit's GPS section, mirroring the chat-feed language (scrollable, timestamped rows). */
+.gps-feed-wrap { width: 100%; margin-top: 4px; }
+.gps-feed-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.gps-feed-head .gfh-lbl { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: 1.4px; font-weight: 700; font-size: 10.5px; color: var(--txt-3); }
+.gps-feed { display: flex; flex-direction: column; gap: 6px; max-height: 190px; overflow-y: auto; padding: 8px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); }
+.gps-feed-empty { color: var(--txt-3); font-size: 11.5px; text-align: center; padding: 14px 8px; }
+.gps-feed-row { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--txt-2); }
+.gps-feed-row .gfr-ic { flex: 0 0 auto; display: inline-flex; }
+.gps-feed-row .gfr-ic svg { width: 13px; height: 13px; }
+.gps-feed-row .gfr-txt { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gps-feed-row .gfr-ts { flex: 0 0 auto; color: var(--txt-3); font-size: 10.5px; }
+
+/* Remote-shutdown hazard control (spec §6/§7) — the ignition-critical action. Borrows
+   the cancel-arc's hazard language: caution-yellow stripe cap, red "hot" variant once
+   ARMED. The buttons inside are stamped actionPills (R17); this frame is chrome. */
+.gps-hazard { width: 100%; border-radius: 12px; overflow: hidden; background: var(--panel); border: 1px solid var(--line); margin-top: 2px; }
+.gps-hazard .gh-cap { height: 7px; background: repeating-linear-gradient(135deg, var(--yellow) 0 13px, #14181d 13px 26px); }
+.gps-hazard.hot { border-color: color-mix(in srgb, var(--red) 55%, var(--line)); box-shadow: inset 0 0 34px -14px color-mix(in srgb, var(--red) 55%, transparent); }
+.gps-hazard.hot .gh-cap { background: repeating-linear-gradient(135deg, var(--red) 0 13px, #1a0808 13px 26px); }
+.gps-hazard .gh-row { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 10px 6px; }
+.gps-hazard .gh-note { font-size: 10px; color: var(--txt-3); text-align: center; padding: 0 12px 9px; line-height: 1.35; }
+.gps-hazard.hot .gh-note { color: color-mix(in srgb, var(--red) 68%, var(--txt-3)); }
+@media (prefers-reduced-motion: no-preference) { .gps-hazard.hot { transition: box-shadow .15s ease, border-color .15s ease; } }
+
+/* ── TRACKER HEALTH roster (Phase 2 M2) — the fleet-wide GPS device list. Quiet steel
+   data-plate: a stamped count, a scannable row grid, freshness pinned top. Tokens only. */
+.gpsh-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.gpsh-counts { font-size: 12px; color: var(--txt-2); }
+.gpsh-counts .gpsh-big { font-family: 'Saira Condensed', var(--font); font-weight: 800; font-size: 20px; letter-spacing: .5px; color: var(--txt); margin-right: 3px; }
+.gpsh-tools { display: flex; align-items: center; gap: 8px; }
+.gpsh-search { width: 200px; margin: 0; }
+.gpsh-banner { font-size: 11.5px; color: color-mix(in srgb, var(--yellow) 72%, var(--txt)); background: var(--yellow-bg);
+  border: 1px solid color-mix(in srgb, var(--yellow) 34%, transparent); border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; }
+.gpsh-bucketrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.gpsh-list { display: flex; flex-direction: column; gap: 6px; max-height: 52vh; overflow-y: auto; }
+.gpsh-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto auto; align-items: center; gap: 10px;
+  padding: 8px 11px; border-radius: var(--chip-radius); background: var(--panel); border: 1px solid var(--line); }
+.gpsh-row .gpsh-name { min-width: 0; display: flex; flex-direction: column; gap: 1px; font-weight: 700; color: var(--txt);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gpsh-row .gpsh-ser { font-family: ui-monospace, monospace; font-size: 10.5px; font-weight: 500; color: var(--txt-3); letter-spacing: .2px; }
+.gpsh-row .gpsh-seen { font-size: 11px; color: var(--txt-3); white-space: nowrap; text-align: right; }
+.gpsh-empty { color: var(--txt-3); font-size: 12px; text-align: center; padding: 22px 14px; line-height: 1.45; }
+@media (max-width: 560px) {
+  .gpsh-row { grid-template-columns: auto minmax(0, 1fr) auto; row-gap: 6px; }
+  .gpsh-row .gpsh-eng, .gpsh-row .gpsh-seen, .gpsh-row .gpsh-map { grid-column: span 3; justify-self: start; }
+  .gpsh-row .gpsh-seen { text-align: left; }
+  .gpsh-search { width: 150px; }
+}
+
+/* ── FLEET MAP (Phase 2 M1) — every GPS tracker on a live map, mapping-independent.
+   Wide two-pane popup: a Google Maps pane (mounted by mountGpsFleetMap, app.js) + an
+   asset sidebar reusing the same badge/pill language as Tracker Health (.gpsh-*).
+   Tokens only — the ONE orange marks the selected device, in the sidebar row AND the
+   marker ring, never decoration. Degrades to a roster-only view (.gpsfm-map-ph) when
+   mapsReady() is false — same reference the transport editor's offline placeholder uses. */
+.gpsfm-popup { width: 92vw; height: 84vh; max-width: 1200px; }
+.gpsfm-body { padding: 0; overflow: hidden; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.gpsfm-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+.gpsfm-counts { font-size: 12px; color: var(--txt-2); }
+.gpsfm-counts .gpsfm-big { font-family: 'Saira Condensed', var(--font); font-weight: 800; font-size: 20px; letter-spacing: .5px; color: var(--txt); margin-right: 3px; }
+.gpsfm-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gpsfm-search { width: 180px; margin: 0; }
+.gpsfm-banner { flex: 0 0 auto; font-size: 11.5px; color: color-mix(in srgb, var(--yellow) 72%, var(--txt)); background: var(--yellow-bg);
+  border: 1px solid color-mix(in srgb, var(--yellow) 34%, transparent); border-radius: 10px; padding: 8px 12px; margin: 10px 16px 0; }
+.gpsfm-layout { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 300px; }
+.gpsfm-map { position: relative; min-height: 360px; background: var(--panel-2); }
+.gpsfm-map-ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 22px;
+  background: repeating-linear-gradient(135deg, rgba(245,197,66,.05) 0 13px, rgba(20,24,29,.5) 13px 26px), radial-gradient(circle at 50% 40%, var(--accent-soft), transparent 62%), var(--panel-2); }
+.gpsfm-map-ph-plate { display: flex; flex-direction: column; align-items: center; gap: 6px; max-width: 260px; padding: 16px 18px; text-align: center;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }   /* a calm plate so the hazard stripe never sits behind text */
+.gpsfm-side { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-left: 1px solid var(--line); }
+.gpsfm-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 10px; }
+.gpsfm-row { display: flex; flex-direction: column; gap: 5px; width: 100%; text-align: left; padding: 9px 11px; border-radius: var(--chip-radius);
+  background: var(--panel); border: 1px solid var(--line); color: var(--txt); font: inherit; cursor: pointer; transition: border-color .12s, background .12s; }
+.gpsfm-row:hover { border-color: var(--accent-line); }
+.gpsfm-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.gpsfm-row.sel { border-color: var(--accent); background: var(--accent-soft); }
+.gpsfm-row .gpsfm-name { min-width: 0; font-weight: 700; font-size: 12.5px; color: var(--txt); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gpsfm-row .gpsfm-ser { font-family: ui-monospace, monospace; font-size: 10px; font-weight: 500; color: var(--txt-3); letter-spacing: .2px; margin-left: 6px; }
+.gpsfm-row-mid { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.gpsfm-row-bot { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.gpsfm-seen { font-size: 10.5px; color: var(--txt-3); }
+.gpsfm-empty { color: var(--txt-3); font-size: 12px; text-align: center; padding: 22px 14px; line-height: 1.45; }
+@media (max-width: 900px) { .gpsfm-layout { grid-template-columns: minmax(0, 1fr) 250px; } .gpsfm-search { width: 140px; } }
+@media (max-width: 560px) {
+  .gpsfm-layout { grid-template-columns: 1fr; grid-template-rows: minmax(220px, 38vh) 1fr; }
+  .gpsfm-map { min-height: 220px; }
+  .gpsfm-side { border-left: none; border-top: 1px solid var(--line); }
+  .gpsfm-search { width: 130px; }
+}
+
+/* ── ROUND UP TRACKERS (Phase 2 M5) — the bulk-onboarding review table over
+   gpsMatchFleet(). Same steel/plate language as Tracker Health + Fleet Map (badge/
+   statusPill/gps-maplink reused verbatim); the new device here is the tier-bucketed
+   row with an inline expand for the mandatory Hapn confirm + the device-swap picker
+   (reuses .gps-dev-row/.gps-dev-list verbatim — same picker language as the connect
+   wizard). Tokens only; the ONE orange marks the selected swap-provider tab, never
+   decoration. */
+.gpsru-popup { width: 900px; }
+.gpsru-cta { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; padding: 34px 20px; }
+.gpsru-cta-txt { max-width: 440px; font-size: 13px; color: var(--txt-2); line-height: 1.5; }
+.gpsru-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.gpsru-counts { font-size: 12px; color: var(--txt-2); }
+.gpsru-counts .gpsru-big { font-family: 'Saira Condensed', var(--font); font-weight: 800; font-size: 20px; letter-spacing: .5px; color: var(--txt); margin-right: 3px; }
+.gpsru-tools { display: flex; align-items: center; gap: 8px; }
+.gpsru-search { width: 220px; margin: 0; }
+.gpsru-banner { font-size: 11.5px; color: color-mix(in srgb, var(--yellow) 72%, var(--txt)); background: var(--yellow-bg);
+  border: 1px solid color-mix(in srgb, var(--yellow) 34%, transparent); border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; }
+.gpsru-empty { color: var(--txt-3); font-size: 12px; text-align: center; padding: 30px 14px; line-height: 1.5; }
+.gpsru-bucket { margin-bottom: 14px; }
+.gpsru-bucket-head { display: flex; align-items: baseline; gap: 8px; margin: 0 0 7px; padding-bottom: 5px; border-bottom: 1.5px dashed var(--tan, #c2925a); opacity: .96; }   /* saddle-stitch — the ranch seasoning */
+.gpsru-bucket-lbl { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: 1.2px; font-weight: 800; font-size: 11.5px; }
+.gpsru-bucket-lbl.c-green { color: var(--green); }
+.gpsru-bucket-lbl.c-yellow { color: var(--yellow); }
+.gpsru-bucket-lbl.c-red { color: var(--red); }
+.gpsru-bucket-lbl.c-blue { color: var(--blue); }
+.gpsru-bucket-lbl.c-gray { color: var(--txt-3); }
+.gpsru-bucket-note { font-size: 10.5px; }
+.gpsru-row { border-radius: var(--chip-radius); background: var(--panel); border: 1px solid var(--line); margin-bottom: 6px; overflow: hidden; }
+.gpsru-row.conflict { border-color: color-mix(in srgb, var(--red) 40%, var(--line)); }
+.gpsru-row.needsconfirm { border-color: color-mix(in srgb, var(--yellow) 40%, var(--line)); }
+.gpsru-row.expanded { border-color: var(--accent-line); }
+.gpsru-row-main { display: grid; grid-template-columns: 22px minmax(0,1.3fr) 18px minmax(0,1.3fr) minmax(0,1fr) auto; align-items: center; gap: 10px; padding: 9px 11px; }
+.gpsru-check { display: flex; align-items: center; justify-content: center; padding: 4px; margin: -4px; }
+.gpsru-check input { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+.gpsru-unit, .gpsru-dev { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.gpsru-unit-name, .gpsru-dev-name { font-weight: 700; color: var(--txt); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gpsru-unit-sub, .gpsru-dev-ser { font-family: ui-monospace, monospace; font-size: 10.5px; color: var(--txt-3); }
+.gpsru-dev-missing { font-size: 12px; }
+.gpsru-arrow { color: var(--txt-3); display: flex; align-items: center; justify-content: center; }
+.gpsru-arrow svg { width: 14px; height: 14px; }
+.gpsru-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.gpsru-reasons { font-size: 10.5px; text-transform: capitalize; }
+.gpsru-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.gpsru-detail { padding: 12px; border-top: 1px solid var(--line); background: var(--panel-2); }
+.gpsru-confirm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 10px; }
+.gpsru-plate { padding: 10px 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); }
+.gpsru-plate-cap { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: 1.2px; font-size: 10px; font-weight: 700; color: var(--txt-3); margin-bottom: 4px; }
+.gpsru-plate-name { font-weight: 700; font-size: 13px; color: var(--txt); }
+.gpsru-plate-sub { font-size: 11px; margin-top: 2px; }
+.gpsru-detail-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gpsru-hazard-note { margin: 9px 0 0; font-size: 10.5px; color: color-mix(in srgb, var(--yellow) 70%, var(--txt-3)); line-height: 1.4; }
+.gpsru-poll { display: flex; align-items: center; gap: 10px; }
+.gpsru-poll-txt { min-width: 0; }
+.gpsru-poll-lbl { font-weight: 700; font-size: 12.5px; color: var(--txt); }
+.gpsru-nomatch-row .gpsru-check { visibility: hidden; }
+.gpsru-nomatch-devs { display: flex; flex-wrap: wrap; gap: 6px; }
+.gpsru-nomatch-dev { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); font-size: 11.5px; color: var(--txt-2); }
+.gpsru-result { border-radius: 10px; padding: 9px 12px; margin-bottom: 12px; background: var(--panel); border: 1px solid var(--line); }
+.gpsru-result.haswarn { border-color: color-mix(in srgb, var(--yellow) 45%, var(--line)); background: var(--yellow-bg); }
+.gpsru-result-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.gpsru-result-stamp { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: 1px; font-weight: 700; font-size: 11.5px; color: var(--txt); }
+.gpsru-result-list { margin: 8px 0 0; padding-left: 18px; font-size: 11.5px; color: var(--txt-2); line-height: 1.6; }
+@media (max-width: 940px) { .gpsru-popup { width: 94vw; } }
+@media (max-width: 640px) {
+  .gpsru-row-main { grid-template-columns: 20px minmax(0,1fr) auto; row-gap: 6px; }
+  .gpsru-arrow { display: none; }
+  .gpsru-dev, .gpsru-meta, .gpsru-actions { grid-column: 2 / -1; }
+  .gpsru-confirm-grid { grid-template-columns: 1fr; }
+  .gpsru-search { width: 140px; }
+}
+
+/* ── GPS ISSUES (Phase 3) — the fault/connectivity complement to Tracker Health
+   (.gpsh-*). Same quiet steel data-plate + row-grid language; the only real
+   difference is the row carries one-or-more issue chips instead of a single
+   status pill. Tokens only — red/yellow chip colors come straight off the
+   registry (statusPill/badge), never invented here. */
+.gpsi-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.gpsi-counts { font-size: 12px; color: var(--txt-2); }
+.gpsi-counts .gpsi-big { font-family: 'Saira Condensed', var(--font); font-weight: 800; font-size: 20px; letter-spacing: .5px; color: var(--txt); margin-right: 3px; }
+.gpsi-tools { display: flex; align-items: center; gap: 8px; }
+.gpsi-search { width: 200px; margin: 0; }
+.gpsi-banner { font-size: 11.5px; color: color-mix(in srgb, var(--yellow) 72%, var(--txt)); background: var(--yellow-bg);
+  border: 1px solid color-mix(in srgb, var(--yellow) 34%, transparent); border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; }
+.gpsi-list { display: flex; flex-direction: column; gap: 6px; max-height: 56vh; overflow-y: auto; }
+.gpsi-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; align-items: center; gap: 10px;
+  padding: 8px 11px; border-radius: var(--chip-radius); background: var(--panel); border: 1px solid var(--line); }
+.gpsi-row .gpsi-name { min-width: 0; display: flex; flex-direction: column; gap: 1px; font-weight: 700; color: var(--txt);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gpsi-row .gpsi-ser { font-family: ui-monospace, monospace; font-size: 10.5px; font-weight: 500; color: var(--txt-3); letter-spacing: .2px; }
+.gpsi-row .gpsi-issues { display: flex; flex-wrap: wrap; gap: 5px; }
+.gpsi-row .gpsi-seen { font-size: 11px; color: var(--txt-3); white-space: nowrap; text-align: right; }
+.gpsi-empty { color: var(--txt-3); font-size: 12px; text-align: center; padding: 22px 14px; line-height: 1.45; }
+@media (max-width: 560px) {
+  .gpsi-row { grid-template-columns: auto minmax(0, 1fr) auto; row-gap: 6px; }
+  .gpsi-row .gpsi-issues, .gpsi-row .gpsi-seen, .gpsi-row .gpsi-map { grid-column: span 3; justify-self: start; }
+  .gpsi-row .gpsi-seen { text-align: left; }
+  .gpsi-search { width: 150px; }
+}
+
+/* ── FLEET UTILIZATION (Phase 4) — real, provider-sourced actual-usage rollup. Same
+   quiet steel data-plate + row-grid language as Tracker Health/GPS Issues (.gpsh-*/
+   .gpsi-*); WIDE popup like Round Up Trackers (.gpsru-*) since it carries two stacked
+   tables. Tokens only — the category/unit tables are plain data, no invented colors. */
+.gpsu-popup { width: 900px; }
+@media (max-width: 940px) { .gpsu-popup { width: 94vw; } }
+.gpsu-cta { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; padding: 34px 20px; }
+.gpsu-cta-txt { max-width: 440px; font-size: 13px; color: var(--txt-2); line-height: 1.5; }
+.gpsu-cta-days { display: flex; justify-content: center; }
+.gpsu-banner { font-size: 11.5px; color: color-mix(in srgb, var(--yellow) 72%, var(--txt)); background: var(--yellow-bg);
+  border: 1px solid color-mix(in srgb, var(--yellow) 34%, transparent); border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; }
+.gpsu-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.gpsu-counts { font-size: 12px; color: var(--txt-2); }
+.gpsu-counts .gpsu-big { font-family: 'Saira Condensed', var(--font); font-weight: 800; font-size: 20px; letter-spacing: .5px; color: var(--txt); margin-right: 3px; }
+.gpsu-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.gpsu-section { margin-bottom: 16px; }
+.gpsu-section-lbl { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: 1.2px;
+  font-weight: 700; font-size: 11px; color: var(--txt-3); margin-bottom: 6px; }
+.gpsu-cat-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center; gap: 10px;
+  padding: 7px 11px; border-radius: var(--chip-radius); background: var(--panel); border: 1px solid var(--line); margin-bottom: 5px; }
+.gpsu-cat-name { min-width: 0; font-weight: 700; color: var(--txt); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gpsu-cat-count, .gpsu-cat-avg { font-size: 11px; white-space: nowrap; }
+.gpsu-cat-hrs { font-family: 'Saira Condensed', var(--font); font-weight: 800; font-size: 13px; color: var(--txt); white-space: nowrap; }
+.gpsu-table { display: flex; flex-direction: column; gap: 6px; max-height: 42vh; overflow-y: auto; }
+.gpsu-row { display: grid; grid-template-columns: minmax(0, 1.4fr) auto auto auto auto auto; align-items: center; gap: 10px;
+  padding: 8px 11px; border-radius: var(--chip-radius); background: var(--panel); border: 1px solid var(--line); }
+.gpsu-row.failed { opacity: .82; }
+.gpsu-u-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.gpsu-u-cat { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gpsu-u-hrs { font-family: 'Saira Condensed', var(--font); font-weight: 700; font-size: 12.5px; color: var(--txt); white-space: nowrap; text-align: right; }
+.gpsu-u-hpd, .gpsu-u-mi { font-size: 11px; white-space: nowrap; text-align: right; }
+.gpsu-u-fail { text-align: right; }
+.gpsu-empty { color: var(--txt-3); font-size: 12px; text-align: center; padding: 22px 14px; line-height: 1.45; }
+.gpsu-foot-note { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  margin-top: 4px; padding-top: 12px; border-top: 1px dashed var(--line-soft); font-size: 12px; color: var(--txt-2); }
+@media (max-width: 560px) {
+  .gpsu-cat-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
+  .gpsu-cat-row .gpsu-cat-hrs, .gpsu-cat-row .gpsu-cat-avg { grid-column: span 2; justify-self: start; }
+  .gpsu-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
+  .gpsu-row .gpsu-u-cat, .gpsu-row .gpsu-u-hrs, .gpsu-row .gpsu-u-hpd, .gpsu-row .gpsu-u-mi, .gpsu-row .gpsu-u-fail { grid-column: span 2; justify-self: start; text-align: left; }
+}
+
 /* List-rows customiser panel */
 .bv-customize { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: flex-start; padding: 14px 16px; background: var(--accent-soft); border-bottom: 1px solid var(--accent-line); }
 .bv-pick-group { min-width: 190px; }
@@ -2813,6 +3068,7 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 .seg button.on-green { background: var(--green); color: #04150d; }
 .seg button.on-red { background: var(--red); color: #fff; }
 .seg button.on-yellow { background: var(--yellow); color: #1a1205; }
+.seg button.on-orange { background: var(--accent); color: var(--on-orange); }   /* the connect wizard's provider pick — the ONE orange, selected segment (spec §5a) */
 
 /* ── Inline transport editor (Jac 2026-06-15) — replaces the Transport·Site popup ── */
 .tedit { display: flex; flex-direction: column; gap: 8px; padding: 11px; border-radius: 13px;
