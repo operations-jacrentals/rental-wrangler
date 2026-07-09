@@ -602,7 +602,7 @@ select.lf-in { appearance: none; cursor: pointer; }
 .prev-flags { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line); display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
 .prev-flags .pf-cap { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.1px; font-size: 9px; font-weight: 700; color: var(--txt-3); }
 .prev-flags .flags { display: flex; flex-wrap: wrap; gap: 5px; }
-/* Calendar (dispatch grid) inside the middle column */
+/* Trips (née Calendar/dispatch grid) inside the middle column */
 .cal-body { padding: 0; display: flex; flex-direction: column; min-height: 0; }
 /* §2.3 dispatch — the daily driver timeline (Phase 6) */
 .disp-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
@@ -617,6 +617,36 @@ select.lf-in { appearance: none; cursor: pointer; }
 .disp-empty svg { width: 30px; height: 30px; opacity: .5; }
 .disp-empty p { font-size: 14px; color: var(--txt-2); margin: 10px 0 4px; }
 .disp-empty span { font-size: 12px; }
+.disp-route { position: relative; padding: 6px 12px 18px 34px; overflow-y: auto; }
+.disp-stop { position: relative; display: flex; align-items: center; gap: 9px; }
+.js-disp-stop { background: linear-gradient(180deg, var(--card-head), var(--card)); border: 1px solid var(--line); border-radius: 11px; padding: 9px 11px; margin: 7px 0; cursor: pointer; }
+.js-disp-stop:hover { border-color: var(--accent-line); }
+.js-disp-stop.disp-dragging { opacity: .4; }
+/* directional route arrow between stops */
+.js-disp-stop:not(:last-child)::after, .disp-home:not(:last-child)::after { content: '▼'; position: absolute; left: 26px; bottom: -14px; font-size: 10px; color: var(--accent); opacity: .65; z-index: 1; }
+.disp-grip { color: var(--txt-3); cursor: grab; font-size: 13px; flex: 0 0 auto; }
+.disp-seq { font-size: 10px; font-weight: 800; color: var(--txt-3); width: 12px; text-align: center; flex: 0 0 auto; }
+.disp-time { width: 50px; flex: 0 0 auto; height: 28px; text-align: center; border: 1px solid var(--line); border-radius: 7px; background: var(--bg-2, var(--panel)); color: var(--txt); font: inherit; font-size: 12px; font-weight: 700; }
+.disp-time:focus { border-color: var(--accent-line); outline: none; }
+.disp-ico { width: 30px; height: 30px; flex: 0 0 auto; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 14px; color: #fff; }
+/* the D/R letter must stay white on the colored disc — beat the generic .c-blue/.c-brown text color (style.css §pills) */
+.disp-ico.c-blue { background: var(--blue); color: #fff; } .disp-ico.c-brown { background: var(--brown, #9a6a3a); color: #fff; }
+.disp-ico.home { background: var(--bg-2, var(--panel)); border: 1px solid var(--line); font-size: 15px; }
+.disp-bd { flex: 1; min-width: 0; }
+.disp-unit { font-weight: 700; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.disp-task { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--txt-3); margin-left: 4px; }
+.disp-sub { font-size: 11.5px; color: var(--txt-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.disp-addr { color: var(--blue); text-decoration: underline; cursor: pointer; }
+.disp-deadline { flex: 0 0 auto; font-size: 10.5px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .4px; }
+.disp-deadline.today { color: var(--accent); }
+.disp-deadline.over { color: var(--red); -webkit-text-fill-color: color-mix(in srgb, var(--red) 65%, white); text-shadow: 0 0 3px var(--red), 0 0 7px color-mix(in srgb, var(--red) 60%, transparent); }
+.disp-home { padding: 4px 11px; }
+.disp-home .disp-unit { font-size: 12px; color: var(--txt-2); font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; }
+.disp-home .disp-sub { font-size: 10.5px; }
+/* Trips empty state (spec §2.2) — a small stamped plate, not a void. */
+.trip-empty { padding: 22px 14px; text-align: center; border: 1px dashed var(--line); border-radius: 12px; margin: 4px 8px; }
+.trip-empty-label { display: block; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.4px; font-weight: 700; font-size: 12px; color: var(--txt-2); }
+.trip-empty-hint { display: block; margin-top: 4px; font-size: 11.5px; color: var(--txt-3); }
 /* ── §2.3 free-form route arrows: click an icon to start a leg, click another to land it ── */
 .js-disp-arrowpt { cursor: pointer; transition: box-shadow .12s, transform .12s; }
 .js-disp-arrowpt:hover { box-shadow: 0 0 0 2px var(--accent-line); }
@@ -636,76 +666,94 @@ select.lf-in { appearance: none; cursor: pointer; }
 .disp-arrow-dot { fill: var(--accent); }
 .disp-arrow-hit { pointer-events: stroke; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .js-disp-arrowpt { transition: none; } .js-disp-arrowpt.armed { transform: none; } }
-/* ── §2.3 OFFICE COCKPIT (Phase 1): FULL-PANE map + hover-expand schedule rail ──── */
-.disp-cockpit { flex: 1; min-height: 0; position: relative; }
-.dispm { position: absolute; inset: 0; }                                   /* the map is the whole pane */
-/* the rail floats over the map's right edge: a minimal time strip that widens on hover/focus */
-.disprail { position: absolute; top: 8px; right: 8px; bottom: 8px; width: 90px; z-index: 3; display: flex; flex-direction: column;
-  background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; box-shadow: var(--chip-shadow); transition: width .16s ease, box-shadow .16s ease; }
-.disprail:hover, .disprail:focus-within, .disprail.dragging { width: 256px; box-shadow: var(--shadow); }   /* .dragging pins it open while reordering (hover drops mid-drag) */
-.disprail.dragging .dr-chev { transform: rotate(180deg); }
-.disprail.dragging .dr-title { opacity: 1; }
-.disprail.dragging .dr-sec { display: block; }
-.disprail.dragging .dt-rail { display: none; }
-.disprail.dragging .dt-full { display: block; }
-.dr-head { display: flex; align-items: center; gap: 6px; padding: 7px 9px; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
-.dr-chev { color: var(--txt-3); font-size: 13px; flex: 0 0 auto; transition: transform .16s ease; }
-.disprail:hover .dr-chev, .disprail:focus-within .dr-chev { transform: rotate(180deg); }
-.dr-title { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-size: 10.5px; font-weight: 700; color: var(--txt-2); white-space: nowrap; opacity: 0; transition: opacity .16s ease; }
-.disprail:hover .dr-title, .disprail:focus-within .dr-title { opacity: 1; }
-.dr-list { flex: 1; min-height: 0; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 5px; }
-.dr-sec { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .8px; font-size: 9px; font-weight: 700; color: var(--txt-3); padding: 3px 2px 0; display: none; }
-.disprail:hover .dr-sec, .disprail:focus-within .dr-sec { display: block; }
-.disp-tok { border: 1px solid var(--line); border-left: 3px solid var(--gray); border-radius: 8px; background: linear-gradient(180deg, var(--card-head), var(--card)); cursor: pointer; overflow: hidden; }
-.disp-tok.kind-deliver { border-left-color: var(--blue); }
-.disp-tok.kind-recover { border-left-color: var(--brown); }
-.disp-tok.next { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.disp-tok.done { opacity: .82; }
-.disp-tok.nopin { border-style: dashed; }
-.disp-tok.disp-dragging { opacity: .45; }
-.disp-tok.focus { box-shadow: 0 0 0 2px #18b6ff; }   /* tapped → focused on the map (the "you are here" blue) */
-.dt-rail { display: flex; align-items: center; gap: 7px; padding: 6px 8px; }                 /* collapsed view: kind dot + time */
-.disprail:hover .dt-rail, .disprail:focus-within .dt-rail { display: none; }
-.dt-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: 0 0 auto; color: var(--gray); }
-.disp-tok.kind-deliver .dt-dot { color: var(--blue); }
-.disp-tok.kind-recover .dt-dot { color: var(--brown); }
-.disp-tok.next .dt-dot { color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
-.dt-mini { font-size: 11px; font-weight: 800; color: var(--txt); white-space: nowrap; }
-.dt-full { display: none; padding: 6px 8px; }                                                /* expanded view: editable detail */
-.disprail:hover .dt-full, .disprail:focus-within .dt-full { display: block; }
-.dt-r1 { display: flex; align-items: center; gap: 6px; }
-.dt-grip { color: var(--txt-3); cursor: grab; font-size: 12px; }
-.dt-time { width: 52px; flex: 0 0 auto; font-size: 13px; font-weight: 800; color: var(--txt); font-family: inherit; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 1px 4px; }
+/* ── §2.1 TRIPS LIVE-MAP PANEL — the map singleton in a collapsible ~260px band at the
+   top of the card body; the trip list scrolls beneath it, the footer stays pinned. ──── */
+.card-body.cal-body { overflow: hidden; }                                  /* panel + footer pin; the list scrolls between them */
+.cal-body > .list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.cal-body > .list > * { flex: 0 0 auto; }                                  /* rows keep natural height — a height-constrained flex column would compress them before scrolling */
+.trips-map { position: relative; height: 260px; flex: 0 0 auto; border-bottom: 1px solid var(--line); }
+.dispm { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }   /* the map fills the panel; flex centers the pre-mount loading tag (the mounted map's own nodes are absolute, unaffected) */
+.trips-map .map-tag { position: static; max-width: 82%; text-align: center; line-height: 1.4; }
+/* MAP OFFLINE plate (spec §2.1) — the transport editor's .ph recipe at panel size:
+   faint hazard-stripe field, stamped label, one-line Geist hint. Never an empty pane. */
+.trips-map-ph { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 0 18px;
+  background: repeating-linear-gradient(135deg, rgba(245,197,66,.05) 0 13px, rgba(20,24,29,.5) 13px 26px), radial-gradient(circle at 50% 40%, rgba(255,122,26,.10), transparent 62%), var(--panel-2); }
+/* §2.2b Google Maps handoff — rides the panel (map or plate) when a trip is focused */
+.trips-gmaps { position: absolute; right: 8px; bottom: 8px; z-index: 4; display: inline-flex; align-items: center; background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 4px 11px; box-shadow: var(--chip-shadow); }
+.trips-gmaps .linkname { font-size: 11.5px; white-space: nowrap; display: inline-flex; align-items: center; }
+.is-phone .trips-gmaps .linkname { min-height: 36px; }   /* §M-touch: the ANCHOR is the tap target (the chip's padding tops it up past 44) */
+
+/* ── Trips card — day-grouped trip rows (spec 2026-07-09 §2.2 + §2.2b, Phase 1/1b) ──
+   Rows route through the universal .row/.row-1/.row-2 template (APP-14); only the
+   time input (reused verbatim from the retired lane rail) + the §2.2b driver taps
+   (town / call / log / cab sheet) need their own rules. Tokens only — no new hex. */
+.dt-time { width: 72px; flex: 0 0 auto; font-size: 13px; font-weight: 800; color: var(--txt); font-family: inherit; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 3px 4px; }   /* 72px fits "12:00 PM" — 56px clipped it (review, 2026-07-09) */
 .dt-time::placeholder { color: var(--txt-3); font-weight: 600; }
 .dt-time:hover { border-color: var(--line); }
 .dt-time:focus { border-color: var(--accent-line); background: var(--bg-2); outline: none; }
-.dt-next { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-size: 9px; font-weight: 700; color: var(--accent); display: inline-flex; align-items: center; gap: 3px; }
-.dt-next svg { width: 12px; height: 12px; }
-.dt-r2 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 4px; }   /* wraps in the narrower lane tokens instead of clipping */
-.dt-r1 .pill, .dt-r2 .pill { font-size: 9.5px; }   /* compact stamped badges (R3b) in the tight rail */
-.dt-who { font-size: 11.5px; color: var(--txt-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dt-addr { font-size: 10.5px; color: var(--blue); cursor: pointer; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.disp-tok.nopin .dt-addr { color: var(--yellow); }
+/* §2.2b destination = the TOWN; tap jumps the live map to the trip. Blue = link voice;
+   yellow ⚠ when the site has no pin yet (same signal the address line carried). */
+.trip-town { background: none; border: 0; padding: 0; font: inherit; font-size: 11.5px; color: var(--blue); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; min-width: 0; text-align: left; }
+.trip-town.nopin { color: var(--yellow); }
+.trip-town:hover { filter: brightness(1.15); }
+.trip-town:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+/* §2.2b third line: tap-to-call left · +Log Delivery/Recovery (or the stamp clock) right */
+.row[data-card="calendar"] .trip-r3 { display: flex; align-items: center; gap: 10px; margin-top: 6px; min-width: 0; }
+.row[data-card="calendar"] .trip-r3:empty { display: none; }
+.row[data-card="calendar"] .trip-r3 .linkname { white-space: nowrap; }
+.row[data-card="calendar"] .trip-r3 .add-field { white-space: nowrap; gap: 5px; }
+.row[data-card="calendar"] .trip-r3 .add-field svg { width: 14px; height: 14px; flex: 0 0 auto; }   /* dim the glyph to the label's weight — the unsized ico() SVG was out-shouting it */
+.linkname svg { width: 12px; height: 12px; vertical-align: -2px; margin-right: 3px; }
+/* Phase 5 polish: the tel: link, +Log Delivery/Recovery, and the driver pill/+Driver
+   anchor never got a :focus-visible ring — the shared builders (.linkname/.add-field/
+   .catr-slot) don't carry one app-wide, so this is scoped to the Trips row only (the
+   accessibility gate is per-element; a site-wide pass on those builders is out of
+   scope for this verification pass). The map panel's "Open in Google Maps" handoff
+   (also a .linkname, lives outside the row) gets the same ring. */
+.row[data-card="calendar"] .linkname:focus-visible, .row[data-card="calendar"] .add-field:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.row[data-card="calendar"] .catr-slot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.trips-gmaps .linkname:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+/* §2.2b cab sheet — unit facts one level down (unit pill · fuel · weight), saddle-stitch top */
+.row[data-card="calendar"] .trip-cab { margin-top: 7px; padding-top: 7px; border-top: 1px dashed color-mix(in srgb, var(--tan, #c2925a) 60%, transparent); display: flex; flex-direction: column; gap: 5px; }
+.row[data-card="calendar"] .trip-cab-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.row.trip-done .row-content { opacity: .6; }   /* a done run stays visible, dimmed (spec §2.2) — same recipe as .row.fleet-dim */
+.row[data-card="calendar"].trip-focus { border-color: #18b6ff; box-shadow: 0 0 0 1px rgba(24,182,255,.65); }   /* focused on the live map — the anchored "you are here" neon (same recipe as .card.anchored) */
+/* §M-touch — §2.2b driver-lens floor: the row taps (town / call / log / time) reach ≥44px on phones */
+.row[data-card="calendar"] .trip-tap { display: inline-flex; align-items: center; min-height: 26px; }
+.is-phone .row[data-card="calendar"] .trip-tap { min-height: 44px; }
+.is-phone .row[data-card="calendar"] .dt-time { min-height: 44px; }
+/* §2.3 Phase 3 — the ⋯ Merge/Split menu trigger. A real <button>, always visible (no
+   hover-reveal state to keep in sync with the phone rule); ≥44px on phones. */
+.row[data-card="calendar"] .trip-more { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 22px; height: 22px; border-radius: 8px; background: none; border: none; color: var(--txt-2); font-size: 15px; font-weight: 800; letter-spacing: 1px; line-height: 1; cursor: pointer; }
+.row[data-card="calendar"] .trip-more:hover { background: var(--panel-2); color: var(--accent); }
+.row[data-card="calendar"] .trip-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.is-phone .row[data-card="calendar"] .trip-more { width: 44px; height: 44px; }
+/* §M-touch — Phase 5 polish: the day-header AUTO-RUN pill (§2.7, the only user of
+   .grp-hd .pill.c-commit) and the merge/split picker's dd-items (openTripMergePicker/
+   openTripSplitPicker — trip-specific classes, NOT the shared .dd-item used by every
+   other picker in the app) missed the touch-floor pass Phase 1b gave the rest of the
+   row; phone measured 82×17 / 230×28. Scoped narrowly so the generic dropdown-menu
+   item used elsewhere (driver picker, view picker, context menus) is untouched. */
+.is-phone .grp-hd .pill.c-commit { min-width: 44px; min-height: 44px; }
+.is-phone .js-trip-merge-pick, .is-phone .js-trip-split-pick,
+.is-phone .js-trip-mergepick-open, .is-phone .js-trip-splitpick-open { min-height: 44px; }
+.grp-hd .pill.c-commit:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }   /* same gap — AUTO-RUN had no focus ring */
+/* §2.3 Phase 3 — a merged trip's stop sequence number (row-2 + the cab sheet): the
+   array order IS the run order. Plain R3b-adjacent fact chip, not a status pill. */
+.row[data-card="calendar"] .trip-seq-n { display: inline-flex; align-items: center; justify-content: center; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 999px; background: var(--panel-2); color: var(--txt-3); font-size: 9.5px; font-weight: 800; flex: 0 0 auto; }
+/* §2.3 Phase 3 — drag one trip row onto another to merge (desktop; the ⋯ menu is the
+   touch-parity path). Blue = commit-intent (R17 language), never orange (R2/selected). */
+.row[data-card="calendar"].trip-dragging { opacity: .4; }
+.row[data-card="calendar"].trip-dragover { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: var(--chip-radius); }
+/* Trips footer — honest sync status (spec §2.1 "false trust signals"): a quiet gray stamp
+   ("Offline — cached") unless a real getTrips/setTrip round-trip has actually succeeded this
+   session (Phase 4, tripsSyncFooter in app.js), in which case the dot/text go --green and the
+   text names the highest synced rev — never a claim the app can't back up. */
 .disp-foot { flex: 0 0 auto; display: flex; align-items: center; gap: 7px; padding: 7px 12px; border-top: 1px solid var(--line); font-size: 10.5px; color: var(--txt-3); }
-.disp-live { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .8px; }
-.disp-livedot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px var(--green-bg); flex: 0 0 auto; }
-/* D5 driver lanes (spec rentals-dispatch) — the rail repeated per driver, side-by-side over
-   the map. Collapsed stays the same 90px strip (the merged run minis); expanded swaps the
-   merged list for the Unassigned pool + the picked driver lanes, PANNING horizontally past
-   ~3 lanes (never squishing). --dr-lanes is set inline by dispatchGridBody (lane count + pool). */
-.disprail.lanes:hover, .disprail.lanes:focus-within, .disprail.lanes.dragging { width: min(calc(var(--dr-lanes, 1) * 206px + 16px), calc(100% - 16px)); }
-.dr-lanes { display: none; flex: 1; min-height: 0; }
-.disprail.lanes:hover .dr-lanes, .disprail.lanes:focus-within .dr-lanes, .disprail.lanes.dragging .dr-lanes { display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden; padding: 6px; }
-.disprail.lanes:hover > .dr-list, .disprail.lanes:focus-within > .dr-list, .disprail.lanes.dragging > .dr-list { display: none; }   /* expanded = lanes take over from the merged strip */
-.dr-lane { flex: 0 0 198px; min-width: 0; display: flex; flex-direction: column; background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-.dr-lane.armed { outline: 2px solid var(--accent); outline-offset: -2px; }   /* drag-over: release to assign here (armed = outline, never fill) */
-.dl-head { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--line); flex: 0 0 auto; cursor: pointer; }
-.dl-head.iso { box-shadow: inset 0 -2px 0 var(--accent); }   /* selected-tab semantics: this run is traced on the map */
-.dl-name { font-weight: 700; font-size: 11px; color: var(--txt); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dr-lane.pool .dl-name { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .8px; font-size: 10px; color: var(--txt-2); }   /* the pool is a stamped bucket label, not a person */
-.dl-list { flex: 1; min-height: 0; overflow-y: auto; padding: 5px; display: flex; flex-direction: column; gap: 5px; }
-.dl-list > .js-disp-roundup { width: 100%; justify-content: center; flex: 0 0 auto; }   /* "round up everything below" spans the pool */
-.dl-empty { border: 1px dashed var(--line); border-radius: 6px; padding: 10px 8px; font-size: 10px; color: var(--txt-3); text-align: center; }
+.disp-offline { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .8px; }
+.disp-offline.on { color: var(--green); }
+.disp-offdot { width: 8px; height: 8px; border-radius: 50%; background: var(--txt-3); flex: 0 0 auto; }
+.disp-offdot.on { background: var(--green); }
 
 /* ── Card (each is the detail view; scrolls internally) ──────────────────── */
 .card {
@@ -3270,6 +3318,7 @@ body { font-variant-numeric: tabular-nums; }
    rental, pay status that isn't Paid/Current. Slow + gentle, not the lint alarm. */
 @keyframes flagPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 .flag.alert, .pill.alert { animation: flagPulse 1.6s ease-in-out infinite; }   /* R9b flashing flags · R4b flashing pills */
+@media (prefers-reduced-motion: reduce) { .flag.alert, .pill.alert { animation: none; } }
 /* §12.1 rapid action entry: field left, R14 mode toggle right, under the active bar */
 .act-entry { display: flex; gap: 8px; align-items: center; }
 .act-entry .act-in { flex: 1; height: 28px; background: var(--bg-2); border: 1px solid var(--line);
@@ -3766,6 +3815,10 @@ body.is-phone .card[data-card="units"] .list { grid-template-columns: repeat(2, 
 .grp-hd::after { content: ''; flex: 1 1 auto; border-top: 1.5px dashed var(--sec, var(--line)); opacity: .5; }
 .grp-hd:hover .grp-label, .grp-hd:hover .grp-chev { filter: brightness(1.2); }
 @media (prefers-reduced-motion: reduce) { .grp-chev svg { transition: none; } }
+/* §2.7 Trips AUTO-RUN — an actionPill (R17) living inside the day header; the header's own
+   grip/chevron/label are already stamped Saira caps, so the button picks up the same voice
+   here (the builder itself stays plain body-font everywhere else it's used). */
+.grp-hd .pill.c-commit { flex: 0 0 auto; height: 17px; padding: 0 8px; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-size: 9.5px; cursor: pointer; }
 /* Red group header (Needs Attention / No Show / Unpaid / Collections / Late) — raw
    --red at this tiny 7.9px stamped size read illegible (Jac 2026-07-03). Same lighter
    mix as the danger card name, NO glow — a halo would blur type this small even worse. */
