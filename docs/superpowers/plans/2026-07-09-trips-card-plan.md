@@ -105,7 +105,29 @@ Every UI phase runs through `jactec-ui` (screenshot + self-critique before Jac s
 - **Verify:** logic suite green with new cases; drag + menu paths driven headless.
 - **Commit:** "Trips card phase 3: trip materialization + merge/split".
 
+## Phase 3b — Auto-Run (spec §2.7; depends on Phase 3's order store)
+
+- AUTO-RUN button on the day group header (Saira stamp, R17 blue commit —
+  it rearranges, takes no money): per driver (+ the pool as its own run),
+  not-done pinned stops only; unpinned stops flagged + excluded, never dropped.
+- Directions API `optimize:true` (yard → stops → yard) → optimized order →
+  **deadline repair**: anchors = set times + rental start/end promises;
+  leg durations + buffer; violations pull the stop earlier; unsatisfiable →
+  R9b alert flag on the row. Apply writes the day's trip order, logged,
+  drag-reversible.
+- Prereq (Jac): enable Directions API on the referrer-locked key.
+- Logic tests: repair pass (fixture leg durations — no network in CI): anchor
+  respected, violation pulled earlier, unsatisfiable flags; optimizer output
+  mocked. **Commit:** "Trips card phase 3b: Auto-Run (Directions optimize +
+  deadline repair)".
+
 ## Phase 4 — Backend sync (the `/clasp` STOP gate)
+
+Also rides this deploy — **Bouncie truck feed (spec §2.6)**: additive GAS
+action `getTruckPos` proxying the Bouncie API (creds in Script Properties;
+Jac supplies the credential + vehicle→truck mapping at deploy time). Front-end:
+~20s poll while the map panel is open; marker "last seen" stamp; stale/unreachable
+→ capture-seam fallback, gray stamp.
 
 - GAS `Code.js` (gitignored — ships via `/clasp`, ADDITIVE only): `getTrips` /
   `setTrips` with stale-rev conflict rejection, keyed per day. Queue through the

@@ -171,6 +171,44 @@ Reachable (2.4). Standard touch rows ≥44 px; zero hover dependence. Map open b
 collapsible; reorder + merge via the existing long-press drag engine; ⋯ menu for
 right-click parity. Haptics on drop, per the app's drag patterns.
 
+### 2.6 Live truck position — Bouncie (Jac, 2026-07-09 follow-up)
+
+The truck marker stops being a guess. `dispatchTruckPos` (today: last done pin,
+else the yard — an explicit v1 seam) upgrades to **live telematics from
+Bouncie**: a GAS backend action `getTruckPos` proxies the Bouncie API (OAuth
+credentials live in Script Properties — NEVER the repo, the front-end is
+public via Pages). The map panel polls it (~20s while open); the marker gains
+a "last seen h:mm" stamp. Bouncie unreachable/stale → fall back to the
+capture-based seam silently — the marker never lies about freshness (stale
+stamp shows gray).
+
+Needs from Jac at build time: the Bouncie API credential and the
+vehicle-to-truck/driver mapping. Backend action is additive (`/clasp` STOP
+gate, rides the Phase 4 deploy).
+
+### 2.7 Auto-Run — efficient order that respects the deadlines (Jac, 2026-07-09)
+
+An **AUTO-RUN** button on the day header sorts the day's not-done stops into
+the most drive-efficient order — per driver (the unassigned pool optimizes as
+its own run) — while **never violating a rental's date/time deadlines**.
+
+- **Engine (v1):** Google **Directions API with `optimize:true` waypoints**
+  (yard → pinned stops → yard). At our scale (2–7 stops) this beats wiring the
+  heavyweight Route Optimization API; unpinned stops are excluded and flagged,
+  never silently dropped. Note: the cockpit deliberately avoided Directions
+  for quota so far — Auto-Run requires the Directions API enabled on the
+  existing referrer-locked key (Jac flips it in the Cloud console; small
+  per-click cost).
+- **Deadline repair pass:** stops with a set time, and rentals whose
+  start/end date-time promise an arrival, are **anchors**. Using the returned
+  leg durations (+ a load/unload buffer), the optimized order is checked
+  against every anchor; violations pull the stop earlier until it fits. An
+  unsatisfiable deadline gets a pulsing alert flag (R9b) on the row — a late
+  plan is shown, never shipped silently.
+- **Apply semantics:** commits immediately to the day's trip order (the trips
+  slice), activity-logged, and fully drag-reversible — same guardrail as
+  Round up (visible, reviewable, never a silent force-assign).
+
 ## 3. Testing
 - `ci/logic-test.mjs` additions: derived-trip generation (delivery + retrieval per
   transport rental); merge → order/driver/time semantics; split-out round-trip;
