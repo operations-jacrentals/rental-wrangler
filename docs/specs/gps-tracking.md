@@ -1,9 +1,9 @@
 # GPS / Tracking — SPEC v2
 
-**Date:** 2026-06-28 · **Updated:** 2026-07-07 (WranglerGPS integration shipped)
-**Status:** 🟢 Phase 1 SHIPPED — Phase 2 (fleet pages) in design
+**Date:** 2026-06-28 · **Updated:** 2026-07-09 (staging → main promotion, PR #552 — see "Shipped status" below)
+**Status:** 🟢 LIVE ON MAIN (2026-07-09) — Phase 1 SHIPPED, Phase 2 (M0–M7) SHIPPED, Phase 3 partial (GPS Issues + an unplanned "Fleet Utilization" view both shipped) — geofencing/stray alerts still PLANNED
 **Area branch:** `area/wrangler-gps`
-**Maturity:** 🟢 Live (Phase 1)
+**Maturity:** 🟢 Live (Phase 1 + Phase 2 + partial Phase 3) — promoted to production `main` 2026-07-09
 **Scope:** A live telematics layer for the fleet — real-time unit position, a self-healing `gpsStatus`, a per-unit status/alert history feed, role-gated **remote engine shutdown**, and the Driver "Driving Score" — sourced from **WranglerGPS**, a companion Node/Express + Postgres service (on our own Railway) that merges FOUR telematics providers. Phase 2 lifts this to fleet-wide pages (map, tracker health, issues, utilization reports).
 
 > ## 🚨 STAGING/DEPLOY NOTE — BUMP THE `?v=` CACHE TOKEN
@@ -106,6 +106,81 @@ latest base" pattern used throughout this session. Scope, when picked up: Yanmar
 account shows `authenticated: false` on the GPS backend (0 devices vs. 25 across the
 other three providers) — needs a re-auth on the GPS backend's Yanmar OAuth (was linked
 under `sales@jacrentals.com`).
+
+---
+
+## ✅ Shipped status (2026-07-09) — reconciliation pass
+
+Everything above this line (Phase 1 + the full Phase 2 sub-status table, M0–M7) shipped
+and was **promoted from `staging` to `main` today** as part of **PR #552** ("Promote
+staging → main: GPS integration, mobile rail, comms v3, backend audit + accumulated
+fixes", commit `2ff471e`) — a large multi-area batch, not GPS-only. Everything marked
+✅ SHIPPED above is now **live in production**, not just staging. This section is a
+2026-07-09 reality-check pass against the actually-shipped `app.js`; it does not
+change any of the prose above or below, only annotates it.
+
+**Confirmed LIVE in production, beyond what's already marked ✅ above:**
+- The `gpsToken` GAS auth-proxy (§ "2026-07-08 — GPS login moved server-side") is
+  confirmed live — read directly from the deployed `Code.gs` during the #552
+  pre-promotion audit (`docs/handoffs/gps-token-proxy-backend.gs`). One caveat the
+  audit flagged (not fixed, Jac's explicit call): the live handler carries a
+  **hardcoded plaintext fallback password** in addition to the `GPS_DASHBOARD_PASSWORD`
+  Script Property, so the credential can't be fully rotated without an editor edit.
+- **A "Phase 4" that isn't in this spec's phasing at all: Fleet Utilization**
+  (`gpsUtilization` popup, `app.js` ~20232, toolbar graph icon, WINDOW_CATALOG
+  `Fleet · GPS usage`) — a real, provider-sourced hours/miles rollup per unit and per
+  category, pulled from the backend's `/api/usage/daily`. **Shipped deliberately
+  simpler** than the "Category Utilization" idea referenced in the Phase 2 sub-status
+  table below and in `wrangler-gps-backend-handoff.md` §3 (`getCategory`,
+  `CATEGORY_HOURS_PER_DAY`, repair-vs-buy over/under-capacity math): the shipped
+  version shows only what the telematics actually report (real hours/miles), with
+  **no target-hrs/day comparison and no repair-vs-buy recommendation** — that needs a
+  shared daily-snapshot job + banked history that doesn't exist yet, per its own
+  in-code comment. Net: "Reports / Category Utilization" below is not fully
+  "still deferred" as the Phase 2 sub-status table (2026-07-08) says — a real-usage
+  slice of it shipped a day later; the comparison/recommendation slice is still deferred.
+
+**Confirmed STILL PLANNED / NOT built, despite being in-scope somewhere in this spec:**
+- **Geofencing + stray alerts** (§6.1 stray banner, §6.2 fence rings, §7.3 stray
+  derivation, `gpsAckStray`) — grepped for and absent from `app.js` (`gpsStray`,
+  `geofence`, `yardFence`, `jobsiteFence`, `gpsAckStray` all return zero matches).
+  Matches what the Phase-1 "Known limitations" note above already says; still gated
+  on `comms-notifications` server-side SMS per Decision D4.
+- **`dispatchTruckPos` (§6.3) is still the unswapped v1 placeholder.** `app.js:9602`
+  still carries the exact "v1 seam — swapped for live telematics (~next week, Jac)"
+  comment and still returns the last-done-stop's pin (or `YARD_CENTER`) — no live GPS
+  fix is read here. This was explicit Phase-1 in-scope (§8) and an acceptance
+  criterion (§9) in the original design; the shipped "WranglerGPS Phase 1" scope
+  (the 7-item list above) never re-listed it, so it's a real gap, not a rename.
+- **Settings → Integrations panel (§6.5)** — still the original note-only stub
+  (`app.js` settings sections, `id:'integrations'`, no `v1:true` flag). Largely moot
+  under the shipped direct-to-Railway architecture (no `pollMinutes`/GPSWOX token to
+  configure server-side), but no replacement health/status screen was built either —
+  `gpsHealth` shipped instead as the unrelated "Tracker Health" roster popup (a
+  name collision worth noting: it is NOT the admin integrations-health panel §5.2
+  described).
+- **Telematics auto-updating `currentHours` (Decision D3)** — no code path found
+  wiring GPS engine-hours data into `currentHours`; hours stay fully manual, unlike
+  the resolved decision above.
+- **Per-driver Driving Score (Decision D1 / §11.9 "resolved" to per-driver)** —
+  **shipped as a fleet/team score instead**, a deliberate, documented deviation:
+  `app.js` ~20575 states outright "Rental Wrangler has no driver↔trip attribution, so
+  a per-DRIVER score isn't honestly computable — a fleet safety score is."
+- **Manual status override (`gpsOverride`, §7.2)** — no `gpsOverride` field/logic in
+  `app.js`; the shipped status derivation is purely freshness-based (§ "Status
+  source" above) with no human override-and-pin mechanism.
+- **Yanmar re-auth** — confirmed still parked/not started (see the note immediately
+  above this section).
+- **M6 (onboard the real fleet + reconcile the 4 legacy GPSWOX units U001/U003/
+  U004/U024)** — the 2026-07-08 Phase 2 plan marks this "Jac (human-in-the-loop),"
+  i.e. run Round Up Trackers against live provider accounts and confirm. No doc read
+  for this pass confirms it has actually been run against production data — worth a
+  direct check with Jac rather than assuming done just because the promotion happened.
+- **The original §5 GAS-based backend contract** (`gpsPoll`/`gpsSnapshot`/
+  `gpsConfig`/an admin `gpsHealth`/`gpsTestConn`/`gpsAckStray`) — none of these exist;
+  wholesale superseded by the four-provider direct-to-Railway `gpsFetch` client plus
+  the single `gpsToken` GAS proxy action. §5 below is historical design reference
+  only, not a live or pending build target.
 
 ---
 

@@ -9,13 +9,32 @@
 
 ---
 
+## Shipped status (2026-07-09)
+
+A large slice (this area's D1–D3/D9 gates + the Sell-a-unit flow, among other work) was promoted
+`staging` → `main` today. Verified against the live `app.js` on `main`:
+
+| Item | Status | Note |
+|---|---|---|
+| **D1** — margin-floor (`bottomDollar`) + Category ROI% display gate to ≥money | ✅ **SHIPPED** | `canMoney()` gates the `bottomDollar` `kv` (`app.js:7438`), the Category ROI% (`app.js:7436`), and the unit-level Profit·ROI% (`app.js:7120`). Raw value still flows into `DATA`/sync/`categoryStats` math untouched — matches the spec exactly. |
+| **D2** — lock cost-field edits (`trueCost`/`purchasePrice`/`purchaseDate`) to ≥money | ⚠️ **PARTIAL** | `purchasePrice` and `trueCost` ship with `efld(..., { money:true })` (`app.js:7110`, `7112`), enforced by the inline-edit handler (`app.js:15971`, "Cost fields are Office/Admin only."). **`purchaseDate` (`app.js:7111`) was left without `money:true`** — it's still editable by any signed-in operator, unlike the other two fields D2 named. Looks like an oversight, not a deliberate scope-cut. |
+| **D3** — first-class "Sell a unit" flow | ✅ **SHIPPED**, with one gap | `sellUnit()` `app.js:16713`; popup `kind:'sellUnit'` `app.js:12153` (money-gated, defence-in-depth re-check); `WINDOW_CATALOG` entry `app.js:12343`; opener pill `js-open-sell` `app.js:7101`/`15921`; save handler `js-sell-save` `app.js:15795`. Captures sale price + date, flips `fleetStatus:'Sold'`, writes new unit fields `salePrice`/`saleDate`/`soldNote` (not yet listed in §4.1's field table), and logs `"Sold for $X on <date>"`. `categoryStats`'s residual math (§7.5) was refined beyond the spec's documented formula — see the §7.5 note below. **Gap:** the plain fleet-status dropdown (`openFleetDropdown`/`setUnitFleet`, `app.js:14159`–`14170`) still lets anyone flip `fleetStatus` straight to `Sold` with no price/date capture and no money gate — the "bare flip" path (§8 Phase 2) still coexists with the new Sell flow instead of being retired/redirected by it. |
+| **D9** — gate all `$` amounts in History/audit log by role | ✅ **SHIPPED** | `histText()` `app.js:18768` masks `$12,500`→`$•••` when `!canMoney()`; wired into the single shared `historySection` renderer (`app.js:7676`) used by every card kind — one site, not the spec's "two render sites," because the customer `activityLog`/Action-Log renderer (`actionLogHtml` `app.js:3781`) turns out never to carry `$` text. |
+| §2.1/§2.2/§7.1–7.4 (availability, rentable, investment math, service countdown, migration tool, category mix bars) | ✅ **SHIPPED, unchanged** | No drift found from what's documented. |
+| §2.7 Models/service-schedule stack (D4–D8) | ✅ **SHIPPED** (not re-verified this pass) | Out of focus for this reconciliation pass — spot-checked as still present, not re-audited line-by-line. |
+
+Everything below this point keeps the original prose; status callouts are added inline at the
+specific claims the above table updates.
+
+---
+
 ## ✅ Decisions — 2026-06-29 critique (Jac)
 
 These supersede the matching Open Questions and amend §3 / §5 / §6 / §7 / §8.
 
-- **D1 · Margin-floor display gate (resolves Q1 + Q10).** Gate **both** the `bottomDollar` `kv` **and** the back-derivable Category **ROI%** to **≥ money** tier (mirror `canMoney()` so the `#local` no-role demo is unaffected). Keep `msrp` / `askPrice` open (ask is customer-facing anyway). **Client-side display gate only** — the raw value still flows into `DATA` / sync and into `categoryStats` math untouched. The heavier **server-withheld secret is explicitly NOT taken** (no `backend-data` change); it covers the realistic screen-share/screenshot threat, not devtools-level access. **Security decision — stays on main, not delegated.**
-- **D2 · Lock the cost-field edits (resolves Q11).** `trueCost` / `purchasePrice` / `purchaseDate` become editable only at **≥ money** tier (they move ROI). Health / spec / hours / GPS `efld`s stay open to any signed-in operator (a Mechanic logging hours is the intended flow).
-- **D3 · First-class "Sell a unit" (resolves Q6).** A **Sell** flow captures **sale price + date**, closes out the unit's ROI cleanly, and writes a **revenue/accounting entry** — the integration seam with the **`accounting`** area. New UI → `/jactec-ui` + a `data-r` stamp; if it opens as a popup, a `WINDOW_CATALOG` entry + `check-window-catalog` re-run.
+- **D1 · Margin-floor display gate (resolves Q1 + Q10).** Gate **both** the `bottomDollar` `kv` **and** the back-derivable Category **ROI%** to **≥ money** tier (mirror `canMoney()` so the `#local` no-role demo is unaffected). Keep `msrp` / `askPrice` open (ask is customer-facing anyway). **Client-side display gate only** — the raw value still flows into `DATA` / sync and into `categoryStats` math untouched. The heavier **server-withheld secret is explicitly NOT taken** (no `backend-data` change); it covers the realistic screen-share/screenshot threat, not devtools-level access. **Security decision — stays on main, not delegated.** — ✅ **SHIPPED 2026-07-09** (see Shipped status table).
+- **D2 · Lock the cost-field edits (resolves Q11).** `trueCost` / `purchasePrice` / `purchaseDate` become editable only at **≥ money** tier (they move ROI). Health / spec / hours / GPS `efld`s stay open to any signed-in operator (a Mechanic logging hours is the intended flow). — ⚠️ **PARTIAL as of 2026-07-09**: `trueCost`/`purchasePrice` shipped gated; `purchaseDate` shipped WITHOUT the gate (see Shipped status table).
+- **D3 · First-class "Sell a unit" (resolves Q6).** A **Sell** flow captures **sale price + date**, closes out the unit's ROI cleanly, and writes a **revenue/accounting entry** — the integration seam with the **`accounting`** area. New UI → `/jactec-ui` + a `data-r` stamp; if it opens as a popup, a `WINDOW_CATALOG` entry + `check-window-catalog` re-run. — ✅ **SHIPPED 2026-07-09**, with the old bare fleet-status-dropdown flip to "Sold" still live alongside it (see Shipped status table).
 
 **Kept at recommendation:** Q3 (`assignedMechanic` stays free-text until `hr-compliance` lands) · Q5 (clamp `currentHours` monotonic-up on sync to protect service countdowns — recommend adopt) · new quick-added unit stays **bookable before its first inspection** (shipped behavior; one-line `isUnitAvailableFor` change if it ever bites) · Q2/Q4/Q7/Q8/Q9 stand at their stated recommendations.
 
@@ -28,7 +47,7 @@ A large slice shipped onto this area branch — see the new **§2.7** for the ca
 - **D6 · Snooze silences the alarm.** A snoozed service task is skipped by `topServiceForUnit` (row pills, Units alert, worklist, `__svcstat` filter, Service-Due sort all go quiet); the row itself stays honest; completion clears the snooze.
 - **D7 · "Hold their hands" mechanic surface.** The service popup shows fluid capacity/type + parts, deep-links each task to its cited OEM manual page, and lets the mechanic edit parts (remove / type-new / **browse the parts catalog**) — reusing the Work-Order `partform` and the parts board rather than parallel UI. Part edits persist to the **real model task** (affect every unit of that model).
 - **D8 · Sourced service data lives in PRODUCTION, not in these PRs.** 63 real models, 869 tasks, 34 Drive-hosted OEM manuals, and 233 fluid/part `detail` entries were loaded directly via the sync action (double-extracted + capacity-verified). The demo seed carries only a few illustrative examples. Manuals sourced from genuine OEM Operator's/Service manuals; blanks left honest where a manual doesn't specify.
-- **D9 · Gate ALL dollar amounts in the History/audit log by role (extends D1/D2).** Non-money roles never see `$` amounts in any History/audit line — a **client-side DISPLAY redaction only** (`histText()` masks `$12,500`→`$•••` when `!canMoney()`; the raw action text still stores/syncs untouched), same philosophy as the D1 `bottomDollar` display gate. Applied at the two audit-line render sites (`historySection`, the customer `activityLog` renderer); team chat is out of scope (comms, not the audit log). Surfaced by the Sell-a-unit "Sold for $X" line (D3), but applies to every money log line (payments, refunds, WO costs, membership totals). Security/margin decision — stays on main.
+- **D9 · Gate ALL dollar amounts in the History/audit log by role (extends D1/D2).** Non-money roles never see `$` amounts in any History/audit line — a **client-side DISPLAY redaction only** (`histText()` masks `$12,500`→`$•••` when `!canMoney()`; the raw action text still stores/syncs untouched), same philosophy as the D1 `bottomDollar` display gate. Applied at the two audit-line render sites (`historySection`, the customer `activityLog` renderer); team chat is out of scope (comms, not the audit log). Surfaced by the Sell-a-unit "Sold for $X" line (D3), but applies to every money log line (payments, refunds, WO costs, membership totals). Security/margin decision — stays on main. — ✅ **SHIPPED 2026-07-09**: `histText()` wired into the shared `historySection` renderer (`app.js:7676`, `app.js:18768`); the customer `activityLog` render site turned out to carry no `$` text, so one site covers it (see Shipped status table).
 
 ---
 
@@ -144,7 +163,7 @@ Permissions key off **TIERS**, not role names (`ROLE_TIERS` `config.js:326`; `ti
 | **Category pricing edit** | Reading the 5 rates is open; editing any rate (or the category itself) fires `requireAdmin("Categories and pricing are Admin-only.")` (Admin/Owner pass; others get the backend-verified password popup) | `priceFld(... { admin:true })` `app.js:6188`; click guard `app.js:12831` (`dataset.admin === '1' && !adminUnlocked()`) | admin |
 | **Fleet migration** | Admin-only, preview-first, confirm-gated, idempotent | `#migrate-units` `app.js:16020` → `adminUnlocked()` `app.js:16022` | admin |
 | **Reseed** | Admin-only, password + confirm, refuses to shrink a populated DB | `reseedFromFile` `app.js:16482` | admin |
-| **Sale-economics row (MSRP / ask / `bottomDollar`)** | **No gate today** (read or write) — see §3.3; this is the open fork **Q1** | `app.js:6210` | *(none — should be ≥ money)* |
+| **Sale-economics row (MSRP / ask / `bottomDollar`)** | ~~No gate today~~ — ✅ **SHIPPED 2026-07-09**: `bottomDollar` now gated to ≥money (`app.js:7438`); `msrp`/`askPrice` stay open per the Q1 recommendation. See §3.3 and the Shipped status table. | `app.js:7438` | money |
 
 ### 3.3 Pricing-floor / margin visibility — the sensitive one
 The Category Investment block surfaces **`bottomDollar` (the lowest sale price), `askPrice`, and `msrp`** (`app.js:6210`, `kv(money(c.bottomDollar), { sfx: 'bottom dollar' })`). `bottomDollar` is a true **margin floor** — the number a salesperson must never undercut and a customer must never see.
