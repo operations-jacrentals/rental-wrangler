@@ -649,9 +649,17 @@ try {
       const s1 = T.salePriceSuggest(cat);
       ok(!!s1 && s1.basis === 'msrp' && s1.bottom === Math.round(cat.msrp * 0.5 / 25) * 25 && s1.ask === Math.round(cat.msrp * 0.8 / 25) * 25, 'SPE: MSRP basis scales bottom/ask on $25 steps');
       T.__state.settings.company = { ...(co0 || {}), salePriceBasis: 'cost', saleBottomPct: 55, salePriceMode: 'approve' };
+      // #552 audit item 15b: `cat` above was picked for MSRP > 0 (the previous assertion's
+      // criterion), unrelated to categoryCostBasis's need for a unit with trueCost/
+      // purchasePrice set — base was usually 0, so this never ran. Build a synthetic
+      // unit with trueCost set so it always does.
+      const costUnit = { unitId: 'T12J9-COSTU', categoryId: cat.categoryId, name: 'Cost Basis Test Unit', fleetStatus: 'Active', trueCost: 12000, mock: true };
+      T.DATA.units.push(costUnit); T.IDX.unit.set(costUnit.unitId, costUnit);
       const s2 = T.salePriceSuggest(cat);
       const base = T.categoryCostBasis(cat);
-      if (base) ok(s2.base === base && s2.bottom === Math.round(base * 0.55 / 25) * 25 && s2.ask == null, 'SPE: cost basis uses avg unit cost; unset ask % stays null');
+      ok(base > 0, 'SPE: categoryCostBasis picks up a unit with trueCost set');
+      ok(!!s2 && s2.base === base && s2.bottom === Math.round(base * 0.55 / 25) * 25 && s2.ask == null, 'SPE: cost basis uses avg unit cost; unset ask % stays null');
+      T.DATA.units = T.DATA.units.filter((u) => u !== costUnit); T.IDX.unit.delete(costUnit.unitId);
       T.__state.settings.company = co0;
       ok(T.salePriceSuggest(cat) === null || !T.salePricingCfg().on, 'SPE: engine is OFF when no percents are configured');
       const ld0 = (cat.lostDemand || []).length;
@@ -1129,8 +1137,15 @@ try {
     ok(/card/i.test(T.rentalRuleBlock({}, { name: 'X' }, 'On Rent') || ''), 'card Required + no card → On Rent blocked (true hard stop)');
     st.settings.rentalRules = { po: 'required' };
     ok(/PO/.test(T.rentalRuleBlock({ invoiceId: null }, { name: 'X' }, 'On Rent') || ''), 'PO Required + no invoice/PO → On Rent blocked');
-    const poInv = T.DATA.invoices.find((i) => i.po);
-    if (poInv) ok(T.rentalRuleBlock({ invoiceId: poInv.invoiceId }, { name: 'X' }, 'On Rent') === null, 'PO Required + invoice carries a PO → allowed');
+    // #552 audit item 15a: was `T.DATA.invoices.find((i) => i.po)` — every seeded invoice
+    // has po:'', so this never found one and the assertion silently never ran. Build a
+    // synthetic PO'd invoice so this branch actually executes every run.
+    {
+      const poInv = { invoiceId: 'T22-PO', po: 'PO-12345', mock: true };
+      T.DATA.invoices.push(poInv); T.IDX.invoice.set(poInv.invoiceId, poInv);
+      ok(T.rentalRuleBlock({ invoiceId: poInv.invoiceId }, { name: 'X' }, 'On Rent') === null, 'PO Required + invoice carries a PO → allowed');
+      T.DATA.invoices = T.DATA.invoices.filter((i) => i !== poInv); T.IDX.invoice.delete(poInv.invoiceId);
+    }
     st.settings.rentalRules = { id: 'required' };
     ok(/ID/i.test(T.rentalRuleBlock({}, { name: 'X' }, 'On Rent') || '') && T.rentalRuleBlock({}, { name: 'X', idNumber: 'LA-12345' }, 'On Rent') === null, 'ID Required: blocks without an ID #, allows with one');
     st.settings.rentalRules = { terms: 'required' };

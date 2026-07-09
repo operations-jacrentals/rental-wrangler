@@ -136,7 +136,9 @@ const norm = (v) => v.toLowerCase().replace(/\s+/g, '')
 let mapped = 0;
 for (const [cv, dk] of Object.entries(MAP)) {
   const want = cssVar[cv], got = colors[dk];
-  if (want == null) { WARN(`drift map: style.css ${cv} (→ ${dk}) not found in :root — update the map`); continue; }
+  // #552 audit item 14: a mapped var vanishing from :root (renamed/removed) is real
+  // drift, arguably the most common kind — this must fail the build, not just warn.
+  if (want == null) { ERR(`drift: style.css ${cv} (→ colors.${dk}) not found in :root — update the map or restore the token`); continue; }
   if (got == null) { ERR(`drift: DESIGN.md colors.${dk} missing — style.css ${cv} = ${want}`); continue; }
   if (norm(want) !== norm(got)) ERR(`drift: colors.${dk} = "${got}" ≠ style.css ${cv} = "${want}"`);
   else mapped++;

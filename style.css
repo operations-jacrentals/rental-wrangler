@@ -2,7 +2,7 @@
    style.css — Rental Wrangler design system (SPEC v6 §6)
    Locked card ruleset: color tokens, the fixed single-page frame, rows-as-chips,
    the universal pill system, label-free 2-column sections, row-background
-   visualizations. Dark is default; [data-theme="light"] overrides the same tokens.
+   visualizations. Dark (:root) is the only live theme — see THEME_NEXT in app.js.
    ============================================================================ */
 
 /* ── §6.1 Color tokens ───────────────────────────────────────────────────── */
@@ -43,29 +43,6 @@
   --shadow: 0 18px 50px -24px rgba(0,0,0,.75);
   --chip-shadow: 0 6px 16px -10px rgba(0,0,0,.7);
   --font: "Geist", -apple-system, "Segoe UI", sans-serif;
-}
-[data-theme="light"] {
-  --bg:#eef1f6; --bg-2:#e6eaf1; --panel:#ffffff; --panel-2:#eef1f6;
-  --card:#ffffff; --card-head:#eef1f6;
-  --line:#cfd6e1; --line-soft:#e1e6ee;
-  --txt:#141821; --txt-2:#414b5a; --txt-3:#69727f; --track:#d3d9e3; --on-orange:#2a1400;
-  --shadow: 0 18px 40px -26px rgba(20,30,60,.35);
-  /* darker, saturated status colors so pill TEXT reads on the light -bg fills */
-  --green:#0c8f5f; --yellow:#956f00; --red:#d52a2a; --blue:#1864d6; --navy:#2f4496;
-  --purple:#7a37c9; --pink:#c5337c; --brown:#855526; --gray:#566072; --orange:#cf6000;
-  --green-bg:rgba(12,143,95,.16); --yellow-bg:rgba(149,111,0,.18);
-  --red-bg:rgba(213,42,42,.15); --blue-bg:rgba(24,100,214,.15);
-  --navy-bg:rgba(47,68,150,.15); --purple-bg:rgba(122,55,201,.15);
-  --pink-bg:rgba(197,51,124,.15); --brown-bg:rgba(133,85,38,.16);
-  --gray-bg:rgba(86,96,114,.15); --orange-bg:rgba(207,96,0,.15);
-  --mix-green:rgba(12,143,95,.30); --mix-yellow:rgba(200,150,10,.42); --mix-red:rgba(213,42,42,.42);
-  --mix-blue:rgba(24,100,214,.32); --mix-navy:rgba(47,68,150,.32); --mix-purple:rgba(122,55,201,.34);
-  --mix-pink:rgba(197,51,124,.32); --mix-brown:rgba(133,85,38,.34); --mix-gray:rgba(86,96,114,.30); --mix-orange:rgba(207,96,0,.30);
-  --chip-shadow: 0 6px 16px -12px rgba(20,30,60,.5);
-  --anchor-section:#dde2ea;
-  /* D8 comms bubbles — the iMessage blue holds on light; the customer tint deepens for AA */
-  --bub-me:#0A84FF; --on-bub-me:#f4f8ff;
-  --bub-them:rgba(207,96,0,.13); --bub-them-line:rgba(207,96,0,.30);
 }
 
 /* ── Reset / base ────────────────────────────────────────────────────────── */
@@ -1647,7 +1624,6 @@ select.inline-input:focus-visible { outline: 2px solid var(--accent); outline-of
 .winpicker .wp-time { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 9px; padding-bottom: 9px; border-bottom: 1px solid var(--line-soft); }
 .winpicker .wp-time label { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; color: var(--txt-3); }
 .winpicker .wp-time input[type="time"] { height: 30px; border-radius: 8px; border: 1px solid #fff; background: #fff; color: #16181d; font: inherit; font-size: 13px; padding: 0 8px; color-scheme: light; }   /* rule 16: required input = white until entered */
-[data-theme="light"] .winpicker .wp-time input[type="time"] { color-scheme: light; }
 .winpicker .wp-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; }
 .winpicker .wp-month { font-size: 13px; font-weight: 800; }
 .winpicker .wp-nav { display: flex; gap: 4px; }
@@ -2710,7 +2686,6 @@ select.nc-in { cursor: pointer; }
 .insp-desc:focus { outline: none; border-color: var(--accent-line); }
 .svc-field { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; font-size: 12px; font-weight: 700; color: var(--txt-2); }
 .svc-field input { height: 32px; width: 150px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); color: var(--txt); font: inherit; font-size: 13px; padding: 0 9px; color-scheme: dark; }
-[data-theme="light"] .svc-field input { color-scheme: light; }
 .svc-ref { margin-bottom: 12px; padding: 10px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
 .svc-ref-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; color: var(--txt-3); margin-bottom: 5px; }
 .svc-ref-body { font-size: 12px; color: var(--txt-2); line-height: 1.5; }
@@ -4013,113 +3988,6 @@ body.dragging .row.drop-ok { opacity: 1; }
   text-transform:uppercase; letter-spacing:.8px; font-weight:800; font-size:14.5px;
 }
 [data-theme="bluedsteel"] .bottombar { margin-top: 2px; }
-
-/* ════════════════════════════════════════════════════════════════════════════
-   THEME — "RANCH" (data-theme="ranch")  ·  real-leather western, 2026-06-14
-   ────────────────────────────────────────────────────────────────────────────
-   A PARALLEL, opt-in theme: the app rebuilt in tooled leather on a barn-wood
-   floor. Real CC0 textures (ambientCG: Leather033A oxblood · Leather004 buff ·
-   Leather029 pebble · Planks037A wood), used the way the popup/unit-card mocks
-   locked it: DARK oxblood cards carry LIGHT-buff content (sections/rows/inputs)
-   with dark ink + WHITE stamped labels; muted earthy status; blue = create;
-   Zilla-Slab stamped type. NO rope yet — clean saddle-stitch edges (a better
-   rope asset drops in here later). Textures load ONLY when ranch is active.
-
-   Reversible + additive: everything is scoped under [data-theme="ranch"] and
-   never touches the .anchored ring (background/position only on the card).
-   ════════════════════════════════════════════════════════════════════════════ */
-[data-theme="ranch"] {
-  --tex-card: url('assets/tex-leather-dark.jpg');
-  --tex-light: url('assets/tex-leather-light.jpg');
-  --tex-pebble: url('assets/tex-leather-pebble.jpg');
-  --tex-wood: url('assets/tex-wood.jpg');
-  --tex-rope: url('assets/tex-rope.jpg');
-  --cream: #f3e1b8;
-  /* surfaces — dark oxblood card/chrome, cream chrome text */
-  --bg:#241608; --bg-2:#2e1c0d; --panel:#34210f; --panel-2:#3e2814;
-  --card:#2a1709; --card-head:#321d0d;
-  --line:#6e4a28; --line-soft:#8a6a40;
-  --txt:#f3e1b8; --txt-2:#d3bd92; --txt-3:#ad9266; --track:#3a2614; --on-orange:#2a1606;
-  --accent:#d9772b; --accent-soft:rgba(217,119,43,.18); --accent-line:rgba(217,119,43,.55);
-  --orange:#d9772b; --orange-bg:rgba(217,119,43,.18);
-  --anchor-section:#3a2614;
-  --radius:16px; --chip-radius:11px;
-  --shadow:0 30px 64px -26px rgba(0,0,0,.82); --chip-shadow:0 5px 14px -8px rgba(0,0,0,.7);
-  /* muted, earthy status — still readable on both buff and leather */
-  --green:#6e8b40;  --green-bg:rgba(110,139,64,.22);
-  --yellow:#c79a35; --yellow-bg:rgba(199,154,53,.22);
-  --red:#a8412f;    --red-bg:rgba(168,65,47,.24);
-  --blue:#3f6298;   --blue-bg:rgba(63,98,152,.2);
-  --navy:#4a5f8a;   --navy-bg:rgba(74,95,138,.2);
-  --gray:#8a7a5e;   --gray-bg:rgba(138,122,94,.2);
-  --brown:#9a6a38;  --brown-bg:rgba(154,106,56,.22);
-}
-/* the barn-wood floor (header & bottom bar float transparent over it) */
-[data-theme="ranch"] html { background:#180f06; }
-[data-theme="ranch"] body {
-  background: linear-gradient(180deg, rgba(217,119,43,.05), transparent 30%), var(--tex-wood);
-  background-size: auto, 360px;
-}
-/* DARK oxblood leather column cards + a thin REAL-ROPE frame + dotted saddle-stitch */
-[data-theme="ranch"] .col > .card {
-  position: relative;
-  background: linear-gradient(180deg, rgba(255,228,188,.05), rgba(0,0,0,.3)), var(--tex-card);
-  background-size: auto, 360px; background-blend-mode: soft-light, normal;
-}
-/* ::after = thin rope frame (an OVERLAY, so the .anchored border-color stays intact) */
-[data-theme="ranch"] .col > .card::after {
-  content:''; position:absolute; inset:0; z-index:5; pointer-events:none; border-radius:inherit;
-  border:6px solid transparent; border-image:var(--tex-rope) 46 round;
-}
-/* ::before = the dotted saddle-stitch, riding just inside the rope */
-[data-theme="ranch"] .col > .card::before {
-  content:''; position:absolute; inset:11px; border-radius:9px; z-index:4; pointer-events:none;
-  border:2px dashed rgba(226,194,134,.42);
-}
-/* LIGHT-buff content surfaces — sections, rows, search/inputs — flip the text
-   tokens to dark ink (custom-prop cascade) and lay the buff hide underneath. */
-[data-theme="ranch"] .section,
-[data-theme="ranch"] .row,
-[data-theme="ranch"] .searchwrap,
-[data-theme="ranch"] .mini-searchwrap,
-[data-theme="ranch"] .lf-in,
-[data-theme="ranch"] .insp-desc {
-  --txt:#34251a; --txt-2:#6a533a; --txt-3:#9a7d50;
-  color:#34251a; border-color:#8a6a40;
-  background: linear-gradient(180deg, rgba(255,255,255,.1), rgba(70,45,20,.06)), var(--tex-light);
-  background-size: auto, 230px; background-blend-mode: normal;
-}
-[data-theme="ranch"] .row { box-shadow: 0 3px 9px -5px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.4); }
-[data-theme="ranch"] .row:hover { border-color: var(--accent-line); }
-/* pop-ups = dark leather, fields buff (handled above via .lf-in) */
-[data-theme="ranch"] .popup {
-  background: linear-gradient(180deg, rgba(255,228,188,.05), rgba(0,0,0,.3)), var(--tex-card);
-  background-size: auto, 360px; background-blend-mode: soft-light, normal;
-  border-color:#1f0f08;
-}
-[data-theme="ranch"] .popup-head { border-bottom-color:#6e4a28; }
-[data-theme="ranch"] .ctx-menu, [data-theme="ranch"] .dropdown-menu {
-  background: linear-gradient(180deg, rgba(0,0,0,.2), rgba(0,0,0,.34)), var(--tex-card); background-size:auto,300px;
-}
-/* ── Zilla-Slab stamped type (the western "stamped steel" voice) ── */
-[data-theme="ranch"] .coltab,
-[data-theme="ranch"] .ring-label,
-[data-theme="ranch"] .section > h4,
-[data-theme="ranch"] .popup-head h3 {
-  font-family:'Zilla Slab', system-ui, serif; text-transform:uppercase; letter-spacing:1px; font-weight:700;
-}
-[data-theme="ranch"] .c-titlecard .c-title {
-  font-family:'Zilla Slab', system-ui, serif; text-transform:uppercase; letter-spacing:.6px; font-weight:700;
-}
-[data-theme="ranch"] .coltab.on {
-  background: linear-gradient(180deg, #e58a34, var(--accent)); color: var(--on-orange);
-  box-shadow: inset 0 1px 0 rgba(255,235,200,.34), 0 3px 9px -4px rgba(217,119,43,.6);
-}
-/* the wrangler saddle-stitch under the deck */
-[data-theme="ranch"] .bottombar {
-  border-top: 1.5px dashed var(--tan);
-  border-image: repeating-linear-gradient(90deg, var(--tan) 0 7px, transparent 7px 13px) 1;
-}
 
 /* ── #109 printable invoice → a kraft "YARD LOG" page (2026-07-08): our logo, a stamped
    Saira header with a status-colored date stamp + hazard-stripe signature rule, each rental

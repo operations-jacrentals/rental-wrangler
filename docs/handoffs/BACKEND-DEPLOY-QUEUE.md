@@ -91,6 +91,7 @@ https://script.google.com/d/1hw9A7Id3YIoiSCBkNFeDaKGRv-VtljFFIuBdQG5QULrgS0DjQhQ
 |---|---|---|---|---|
 | 1 | **perfReport** — Web-Vitals sink → `_perf` tab (5k-row FIFO, metrics-only by construction) | `perf-report-backend.gs` | `if (action === 'perfReport') return json(perfReport_(body));` (wrap in `json()` — `handle()` must return a ContentService output, not the bare `{ok:true}` the source's comment shows) | ✅ DEPLOYED @62 (2026-07-06) |
 | 2 | **unitDaily snapshots (M4)** — daily unit hours/fleet-status history | `unit-daily-snapshots.gs` | router line per that file + run `installUnitDailyTrigger()` ONCE | ✅ Already live @57 (2026-07-03) |
+| 3 | **perfReport formula-injection guard** — `t1()` gets a leading-apostrophe guard so a client-supplied `build`/`device`/`role` starting with `=/+/-/@` can't be evaluated as a formula if the `_perf` tab is ever opened/exported (#552 audit, low severity — metrics tab, no money/PII) | `perf-report-backend.gs` (updated in place — same file as #1, now with the fix) | Replace the live `t1()` function body with the one in the source file (same signature, one added guard line) | ⏳ QUEUED (2026-07-09) — not yet deployed, needs the usual STOP-gate |
 
 Deploy flow (same deployment id, same exec URL). **`push` via the API, then deploy from the
 EDITOR** — the API `deploy` breaks anonymous access (see the ⛔ section above):
