@@ -2103,6 +2103,62 @@ try {
       } else { ok(true, 'audit#5: skipped — demo seed lacks a priced active unit'); }
     }
 
+    // §18h/§18i — Wrangler Ops: the developer live-chat bridge (re-implementation of the
+    // stale claude/mirror-wrangler-chats-l8pjfd branch, 2026-07-09). The substantive NEW
+    // backend logic (count-cursor slicing, cross-role flattening, the dev-tier gate) lives
+    // in Code.gs (gitignored, not exercised here — see docs/handoffs/wrangler-ops-backend.gs);
+    // these lock in the FRONTEND contract: the Developer-tier gate on the entry point, the
+    // AI-pause guard, the driver default, and the age formatter.
+    {
+      // 1) devUnlocked() — the SAME tier gate as Design Lint/Inspector/Rulebook; no role → false (no bypass)
+      T.setRole('');
+      ok(T.devUnlocked() === false, 'wrops#1: devUnlocked() is false with no role set (no implicit bypass, unlike canMoney)');
+      T.setRole('mechanic');
+      ok(T.devUnlocked() === false, 'wrops#1: a staff-tier role stays locked out of devUnlocked()');
+      T.setRole('developer');
+      ok(T.devUnlocked() === true, 'wrops#1: the Developer role clears devUnlocked()');
+
+      // 2) openWranglerOps() is a no-op below Developer tier, opens the popup at/above it
+      const overlayBefore = T.__state.overlay;
+      T.setRole('mechanic'); T.__state.overlay = null;
+      T.openWranglerOps();
+      ok(T.__state.overlay === null, 'wrops#2: openWranglerOps() no-ops for a non-developer role');
+      T.setRole('developer');
+      T.openWranglerOps();
+      ok(T.__state.overlay && T.__state.overlay.kind === 'wranglerOps', 'wrops#2: openWranglerOps() opens the inbox popup at Developer tier');
+      T.__state.overlay = overlayBefore;   // restore — don't leak into later tests
+      T.setRole('');
+
+      // 3) openWranglerDock() always resets driver to 'ai' on a fresh/reopened chat (a stray
+      //    'human' from a prior live chat must never leak into a new conversation)
+      T.__state.wrangler.driver = 'human';
+      T.openWranglerDock({ messages: [], draft: '', attach: [], files: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null, id: 'WROPS-FRESH' });
+      ok(T.__state.wrangler.driver === 'ai', 'wrops#3: openWranglerDock() resets driver to \'ai\' on a fresh open');
+      T.__state.wrangler.open = false; T.render();   // unmount the dock DOM — else its stale (empty) .js-wr-in shadows o.draft for test #4 below
+
+      // 4) the AI-pause guard: driver:'human' short-circuits wranglerSend() before anything
+      //    is pushed/sent (belt-and-suspenders — the composer is disabled too); driver:'ai'
+      //    proceeds normally (demo mode's canned reply, since backendPassword is unset in #local)
+      const o = T.__state.wrangler;
+      const saved = { open: o.open, id: o.id, messages: o.messages, busy: o.busy, draft: o.draft, driver: o.driver, error: o.error, reqNumber: o.reqNumber, attach: o.attach, files: o.files };
+      o.open = true; o.id = 'WROPS-PAUSE-TEST'; o.messages = []; o.busy = false; o.draft = 'hello while paused'; o.driver = 'human'; o.error = ''; o.reqNumber = null; o.attach = []; o.files = [];
+      await T.wranglerSend();
+      ok(o.messages.length === 0 && o.busy === false, 'wrops#4: wranglerSend() is a no-op while driver===\'human\' (paused) — nothing pushed, no busy spinner');
+
+      o.driver = 'ai'; o.draft = 'hello while live';
+      await T.wranglerSend();
+      ok(o.messages.length === 2 && o.messages[0].role === 'user' && o.messages[0].content === 'hello while live', 'wrops#4: driver===\'ai\' sends normally — the user turn posts');
+      ok(o.messages[1] && o.messages[1].role === 'assistant', 'wrops#4: driver===\'ai\' gets the (demo-mode) reply — the agent loop is NOT suppressed when unpaused');
+      Object.assign(o, saved); T.render();   // restore + re-render — don't leak a live chat/open dock into later tests
+
+      // 5) wrOpsAgo() — the inbox row's age label (pure formatter)
+      const now = Date.now();
+      ok(T.wrOpsAgo(now - 5000) === 'just now', 'wrops#5: <60s → "just now"');
+      ok(T.wrOpsAgo(now - 90000) === '1m', 'wrops#5: 90s → "1m"');
+      ok(T.wrOpsAgo(now - 3 * 3600000) === '3h', 'wrops#5: 3h → "3h"');
+      ok(T.wrOpsAgo(now - 2 * 86400000) === '2d', 'wrops#5: 2 days → "2d"');
+    }
+
     return out;
   });
 

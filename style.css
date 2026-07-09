@@ -1164,6 +1164,17 @@ select.lf-in { appearance: none; cursor: pointer; }
 .wr-msg.user .wr-bub-wrap { align-items: flex-end; }
 .wr-time { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .5px; font-size: 9.5px; font-weight: 700; color: var(--txt-3); padding: 0 3px; }
 .wr-err { color: var(--red); font-size: 12px; padding: 0 16px 6px; }
+/* R28 — Wrangler Ops PAUSED plate (§18h): a Developer-tier operator took the wheel
+   (live jump-in from Wrangler Ops), so the dock/rail window is read-only until
+   released. Red hazard stripe (danger variant of the app's signature motif) on a
+   calm steel body + a Saira Condensed stamped label — the ONE honest status signal
+   for a seamless dev turn (no per-message "Support" tag). Scoped to the dock, not a
+   body-level fixed band like R25/R27 — this is a per-conversation state, not global. */
+.wr-paused { position: relative; display: flex; flex-direction: column; gap: 1px; padding: 8px 14px 8px 22px; background: var(--red-bg); border-bottom: 1px solid var(--red); flex: 0 0 auto; }
+.wr-paused::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 8px; background: repeating-linear-gradient(135deg, var(--red) 0 7px, #14181d 7px 14px); }
+.wr-paused-ttl { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 2px; font-weight: 700; font-size: 13px; color: var(--red); -webkit-text-fill-color: color-mix(in srgb, var(--red) 70%, white); text-shadow: 0 0 3px var(--red), 0 0 7px color-mix(in srgb, var(--red) 55%, transparent); }
+.wr-paused-sub { font-size: 11.5px; color: var(--txt-2); }
+.wr-attach.is-disabled { opacity: .45; cursor: not-allowed; pointer-events: none; }
 .wr-compose { display: flex; align-items: center; gap: 8px; padding: 11px 14px; border-top: 1px solid var(--line); }
 /* §18d attach/paste images — paperclip stamp + pending thumbnails + sent-in-bubble.
    The chat takes a paste or a dropped file, Claude-style. */
@@ -1588,6 +1599,31 @@ select.lf-in { appearance: none; cursor: pointer; }
 .wrangler-dock.wr-min .js-wr-min .chev { transform: rotate(180deg); }   /* chevron flips up = expand */
 @media (prefers-reduced-motion: reduce) { .js-wr-min .chev { transition: none; } }
 @media (max-width: 760px) { .wrangler-dock { right: 8px; left: 8px; width: auto; bottom: max(56px, calc(8px + env(safe-area-inset-bottom))); max-height: 76dvh; } .wrangler-dock.wr-beside-chat { right: 8px; } }
+/* §18i Wrangler Ops — the Developer-tier inbox: a two-pane plate (chat list + transcript/
+   composer), Developer-tier gated (devUnlocked()). Tokens only, so dark/light/ranch themes
+   are free. Reuses .wr-msg/.wr-bub for the transcript pane (same renderer as the dock). */
+.wrops-body { padding: 0; }
+.wrops-empty { color: var(--txt-3); font-size: 13px; text-align: center; padding: 30px 16px; line-height: 1.5; }
+.wrops-wrap { display: grid; grid-template-columns: 280px 1fr; height: 62vh; min-height: 0; }
+.wrops-list { overflow-y: auto; border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+.wrops-row { display: flex; flex-direction: column; gap: 4px; padding: 10px 13px; border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left; cursor: pointer; color: var(--txt); width: 100%; }
+.wrops-row:hover { background: var(--panel-2); }
+.wrops-row.on { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.wrops-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.wrops-row-top { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.wrops-row-ttl { font-weight: 600; font-size: 13px; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wrops-row-role { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.5px; font-size: 10px; color: var(--txt-3); flex: 0 0 auto; }
+.wrops-row-prev { font-size: 12px; color: var(--txt-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wrops-row-meta { display: flex; align-items: center; gap: 8px; }
+.wrops-age { font-size: 11px; color: var(--txt-3); margin-left: auto; }
+.wrops-pane { display: flex; flex-direction: column; min-width: 0; }
+.wrops-detail { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.wrops-transcript { flex: 1 1 auto; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.wrops-driver { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-top: 1px solid var(--line); }
+.wrops-compose { display: flex; align-items: center; gap: 8px; padding: 11px 14px; border-top: 1px solid var(--line); }
+.wrops-in { flex: 1 1 auto; height: 38px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel-2); color: var(--txt); padding: 0 12px; font-size: 13.5px; }
+.wrops-in:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 700px) { .wrops-popup { width: 94vw !important; } .wrops-wrap { grid-template-columns: 1fr; height: 70vh; } .wrops-list { max-height: 38%; border-right: 0; border-bottom: 1px solid var(--line); } }
 
 /* §6.2 #11 inline edit */
 .inline-edit { cursor: text; border-radius: 4px; }
