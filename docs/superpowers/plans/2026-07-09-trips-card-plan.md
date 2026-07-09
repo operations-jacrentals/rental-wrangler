@@ -190,6 +190,14 @@ Properties, no new OAuth flow, no `/clasp` deploy for this piece.
   piece can commit/push independently of the backend deploy (graceful offline
   degradation until the action is actually live).
 
+**Shipped 2026-07-09:** backend deployed and verified live (`getTrips`/`setTrip`
+on the prod `Code.gs`, confirmed via a clean anonymous-access check post-deploy);
+frontend commit `d4c632c`. **Known gap, not a blocker:** the locked contract has
+no delete op — `tripMerge`'s absorbed source trip is removed from the local
+cache but its last-synced backend record (if any) is orphaned server-side
+(unused, harmless, just dead data). Add a `deleteTrip` action if this needs
+cleaning up later.
+
 ## Phase 5 — Polish + handoff
 
 - Mobile drive (phone viewport): reachability, touch targets ≥44px, long-press drag,
