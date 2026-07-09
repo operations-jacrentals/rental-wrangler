@@ -43,3 +43,6 @@ backend/
 
 # Local-only test credentials for agent click-through (NEVER committed)
 test-creds.local.json
+
+# transient scratch test harnesses (e.g. a subagent headless-serve check)
+tmp-*.mjs
