@@ -9,6 +9,48 @@
 
 ---
 
+## Shipped status (2026-07-09)
+
+Reconciliation pass against production `main` (a large batch — comms rail v3, the D8/D9
+addenda below, on-demand/scheduled transport-due alerts, the "Due Today" scheduled-actions
+banner, and the A2P/10DLC compliance pages — was promoted from `staging` to `main` today).
+§2 and inline call-outs below are updated in place with per-line status; this is the top-line
+summary using the doc's own SHIPPED / PARTIAL / STUB / MISSING convention.
+
+- **SHIPPED, LIVE** — the D8/D9 comms rail itself (four-category toolbar, single-open popup
+  law, ALL menu, session tabs, R20 Text…/Email… entries, customer-profile Comms section) —
+  `app.js` `APP-39`, `COMMS_CAT_META`, `commsRailEl`. Team + Mr. Wrangler ride the rail as
+  real sessions (D9 Phase B); their old bottom-bar docks survive only as phone-only bottom
+  sheets (`_phoneDocks`, `app.js:14398-14400`).
+- **SHIPPED, LIVE — built beyond the §2.3/§8 baseline below:** Phase 1's real server send.
+  `sendCustomerMessage` (SMS via Twilio-or-Mocean, email via Gmail send-as aliases per D7),
+  `messagesFor`, and `commsAliases` are deployed to production (backend prod v66–v70, per
+  `docs/handoffs/BACKEND-DEPLOY-QUEUE.md`, 2026-07-06), wired to the rail's freeform composer
+  (`commsSend`). The `messages` Sheet tab is the live delivery log. The `sms:`/`mailto:`
+  deep-links remain only as the documented no-provider fallback.
+- **SHIPPED, LIVE — not previously in this spec:** the A2P/10DLC compliance pages
+  (`opt-in.html`, `privacy.html`, `sms-terms.html` at repo root) for Twilio 10DLC campaign
+  verification — static, self-contained, STOP/HELP copy, cross-linked.
+- **PREPARED BUT NOT DEPLOYED end-to-end — known gap:** the team-chat privacy hardening
+  (`docs/handoffs/team-chat-privacy-backend.gs`, scoping `getChats_`/`setChats_` to
+  admin+members). The backend half was pushed 2026-07-08, but it's back-compat-inert by
+  design — it only scopes when the client sends `body.me`/`rosterId`, and the frontend that
+  sends that identity ships on a separate branch, **`claude/internal-chat-updates-vq6p7b`**,
+  not yet merged to `main`. **Until that branch lands, production team chat is still
+  effectively unscoped** (any signed-in user can read any chat via the raw sync) — do not
+  treat this as shipped protection.
+- **Still PLANNED, unchanged (Phase 2/3):** the Notifications settings pane (still a stub —
+  `app.js:4077`, no `v1` flag; `pageDefaultSlice('notifications') === null` still asserted at
+  `ci/logic-test.mjs:1237`), `runReminderSweep`, the `inboundMessage`/STOP webhook, the
+  editable customer-consent surface (§6.4 — no `commsConsent` UI exists in `app.js`), the
+  `dispatch-eta` customer send, `review-request`, and the Reputation KPI composite (still
+  returns `null` — `app.js:8300`, `8330`).
+- **Built differently / adjacent, not what this spec describes:** the "on-demand + scheduled
+  transport-due alerts" shipped today (`transportAlerts()` / `visibleTransportAlerts()`, #515,
+  `app.js:13596`) is an **internal** "call the customer" reminder (bell/FAB badge + a
+  dismiss-per-leg overlay for staff) — it is **not** the spec's customer-facing automated
+  `dispatch-eta` SMS send (§7.1, Phase 3), which remains unbuilt.
+
 ## ✅ Addendum — 2026-07-07 (Jac, PM): D9 SINGLE-OPEN + ALL FOUR CATEGORIES LIVE
 
 Two revisions to D8, both Jac's direct calls:
@@ -139,7 +181,7 @@ A glance at the bell or the chat dock tells the team what needs a human; the cus
 
 The live system is documented here **as canon**. Three sub-systems exist; only the first two are real channels.
 
-### 2.1 SHIPPED — Internal team chat (`APP-23`) — RESHAPED 2026-07-08
+### 2.1 SHIPPED — Internal team chat (`APP-23`) — RESHAPED 2026-07-08 — confirmed LIVE 2026-07-09, now rides the D8/D9 comms rail (`APP-39`) as a rail session; see "Shipped status" above
 
 Reshaped from the Phase-6-comment dock into **user-created, titled, member-scoped threads**
 riding the v3 comms rail. Full design + rationale:
@@ -155,12 +197,12 @@ riding the v3 comms rail. Full design + rationale:
 | Status | `commsTeamStatus` | Per-tab red/yellow/green = unseen / reply? / replied (muted → quiet). |
 | Flagged overview | `chatComments()` | The "what's flagged" record-comment feed still shows when no chat is open — its fate (Notifications / landing / drop) is **deferred**. |
 | Sync | `pushChats/loadChats/mergeChats` + `reconcileScopedChats` | Backend `teamChats` tab. Messages **union by id**; `title`/`members` are **admin-authoritative** (adopt the server's value unless a local edit is unpushed) so a Leave/kick/rename isn't clobbered by a racing poll. Client sends its identity (`me`/`rosterId`) and prunes scoped-out chats live. |
-| Backend privacy | `docs/handoffs/team-chat-privacy-backend.gs` (**DEPLOYED 2026-07-08**) | `getChats_` scopes reads to admin+members; `setChats_` authorizes writes (non-member self-leave only + own view-state, no injecting/tampering). Back-compatible (absent identity = old client → prior behavior). Identity is client-asserted behind the team password — a real filter for normal use, **not a crypto boundary** (true per-person privacy needs per-user auth). |
+| Backend privacy | `docs/handoffs/team-chat-privacy-backend.gs` (backend pushed 2026-07-08 — **⚠️ CORRECTION 2026-07-09: not yet live end-to-end**) | `getChats_` scopes reads to admin+members; `setChats_` authorizes writes (non-member self-leave only + own view-state, no injecting/tampering). Back-compatible (absent identity = old client → prior behavior). **The "DEPLOYED" note above is only half true:** the backend scoping code is live, but it stays inert (falls back to unscoped legacy behavior) until the client sends `body.me`/`rosterId` — and that frontend change ships on a separate branch, `claude/internal-chat-updates-vq6p7b`, not yet merged to `main`. Until that branch lands, production team chat is **still effectively unscoped**. Identity is client-asserted behind the team password — a real filter for normal use, **not a crypto boundary** (true per-person privacy needs per-user auth). |
 
 `commentUserKey()` identifies the author. Avatars: deterministic color + initials
 (`chatAvatarColor`, `chatInitials`).
 
-### 2.2 SHIPPED — Mr.-Wrangler notification bell (§18f, app.js:10915)
+### 2.2 SHIPPED — Mr.-Wrangler notification bell (§18f, app.js:10915) — confirmed LIVE 2026-07-09, unchanged; the Mr.-Wrangler *chat* (separate from this bell) additionally now rides the comms rail as a session per D9 Phase B
 
 A **read-only mirror** of resolved auto-fix tickets — *system* notifications, not customer comms.
 
@@ -173,7 +215,16 @@ A **read-only mirror** of resolved auto-fix tickets — *system* notifications, 
 
 There is a sibling **Requests inbox** (overlay `kind: 'requests'`) for Owner/Admin to approve filed Mr.-Wrangler requests (`canApproveRequests`, `roleTier >= manager`). Both are part of the wrangler-AI pipeline, surfaced here because they share the bell chrome.
 
-### 2.3 PARTIAL — Outbound customer messaging (deep-links only)
+### 2.3 UPDATE 2026-07-09 — this baseline is now STALE: Phase 1 real server send is SHIPPED
+
+`sendCustomerMessage` / `messagesFor` / `commsAliases` are live in production (backend v66–v70,
+2026-07-06 — `docs/handoffs/BACKEND-DEPLOY-QUEUE.md`), sending real SMS (Twilio-or-Mocean) and
+email (Gmail send-as aliases, D7 FROM picker) through the comms rail's freeform composer
+(`commsSend`), with the `messages` Sheet tab as a real delivery log (`messagesFor` serves the
+redacted client projection per §4.3/Q-9). The table below is the **pre-rail baseline as
+originally drafted** — kept for history; treat it as superseded by the above, not current.
+
+### 2.3 (as-drafted baseline, now superseded) PARTIAL — Outbound customer messaging (deep-links only)
 
 | Piece | Where | Behavior |
 |---|---|---|
@@ -183,18 +234,34 @@ There is a sibling **Requests inbox** (overlay `kind: 'requests'`) for Owner/Adm
 
 These are the *only* customer-facing comms. There is **no** reminder engine, no dispatch alert to customers, no review request, no delivery receipt, and no scheduling.
 
-### 2.4 STUB — Notifications settings tab
+> **2026-07-09:** the paragraph above is no longer accurate — see the 2.3 update note. Real
+> server sends, a delivery log, and threaded history now exist. What's still true and
+> unchanged: no reminder/cadence engine, no automated customer-facing dispatch alert, no
+> review request, no inbound STOP handling.
+
+### 2.4 STUB — Notifications settings tab — confirmed still accurate 2026-07-09 (`app.js:4077` has no `v1` flag; `ci/logic-test.mjs:1237` still asserts `pageDefaultSlice('notifications') === null`)
 
 `SETTINGS_TABS` entry `{ id: 'notifications', label: 'Notifications', icon: I.bell, note: 'Team chat on/off, driver dispatch alerts, customer reminders & cadence.' }` (app.js:3414). It is a **Planned** stub — no pane renders, no settings slice (`ci/logic-test.mjs:1004` asserts `pageDefaultSlice('notifications') === null`). A sibling `integrations` stub (3415) is where Stripe/Maps/telematics/**SMS-email** references and toggles will live, "secrets stay server-side."
 
-### 2.5 MISSING — what does not exist
+### 2.5 MISSING — what does not exist (2026-07-09: re-checked line by line, most of this list moved)
 
-- Any **server-side send** for SMS or email (no provider integration).
-- A **notification preferences** model (per-role, per-channel, per-event).
-- A **reminder/cadence engine** (time-driven sends).
-- A **delivery log** entity (sent/delivered/failed/replied).
-- A **review/reputation** source feeding the Office KPI.
-- **Customer notification consent** (opt-in/opt-out, STOP handling).
+- ~~Any **server-side send** for SMS or email (no provider integration).~~ **SHIPPED
+  2026-07-09** — `sendCustomerMessage` (Twilio-or-Mocean SMS, Gmail-alias email) is live in
+  prod (v66–v70).
+- A **notification preferences** model (per-role, per-channel, per-event). — **still MISSING**,
+  unchanged; the Notifications settings pane is still a stub (§2.4).
+- A **reminder/cadence engine** (time-driven sends). — **still MISSING**, unchanged; no
+  `runReminderSweep` action exists anywhere in the frontend or the backend handoffs checked.
+- ~~A **delivery log** entity (sent/delivered/failed/replied).~~ **SHIPPED 2026-07-09** — the
+  `messages` Sheet tab + `messagesFor` (redacted client projection) exist and are live.
+- A **review/reputation** source feeding the Office KPI. — **still MISSING**, unchanged; the
+  Office Reputation ring still returns `null` (`app.js:8300`, `8330`).
+- **Customer notification consent** (opt-in/opt-out, STOP handling). — **PARTIAL as of
+  2026-07-09**: the `opted-out` hard-block is enforced server-side in `sendCustomerMessage_`
+  (reads `cust.commsConsent[channel]`), but there is still no `inboundMessage`/STOP webhook to
+  ever *set* `opted-out` automatically, and no UI to edit consent (§6.4 not built). The new
+  A2P/10DLC pages (`opt-in.html` etc.) cover *carrier-registration* consent capture, which is
+  adjacent to but not the same system as this in-app `commsConsent` model.
 
 ### 2.6 Adjacent code this must build on
 
@@ -346,12 +413,16 @@ Backend = Google Apps Script, schema-less Sheets, **additive actions** on the si
 
 | Action | Body | Returns | Notes |
 |---|---|---|---|
-| `getChats` | `{ me, rosterId }` | `{ ok, chats[] }` | team chat, **scoped to the caller** (admin + members); absent identity = old client → all rows |
-| `setChats` | `{ chats, me, rosterId }` | `{ ok, saved }` | **authorized** upsert (2026-07-08): owner=full, member=self-leave + own view-state + message-append, non-member=reject; messages unioned; never deletes |
+| `getChats` | `{ me, rosterId }` | `{ ok, chats[] }` | team chat, **scoped to the caller** (admin + members) *in the backend code* — but **not yet scoped in practice on `main`**: the running frontend doesn't send `me`/`rosterId` yet (that ships on `claude/internal-chat-updates-vq6p7b`), so today every call takes the "absent identity = old client → all rows" branch. See "Shipped status" note above. |
+| `setChats` | `{ chats, me, rosterId }` | `{ ok, saved }` | **authorized** upsert (2026-07-08): owner=full, member=self-leave + own view-state + message-append, non-member=reject; messages unioned; never deletes — same caveat as `getChats` above, inert until the frontend branch lands |
 | `wranglerNotifications` | — | `{ ok, notifications[] }` | resolved-fix feed |
 | `wranglerRequests` / `wranglerApprove` / `wranglerDismiss` | — / `{number}` | `{ ok, … }` | requests inbox |
+| `sendCustomerMessage` | see §5.2 below | see §5.2 below | **SHIPPED 2026-07-09** — this is no longer just "proposed" (§5.2); it's deployed (prod v66–v70) and live per `docs/handoffs/customer-sms-backend.gs` |
+| `messagesFor` | `{ entity, recId }` or `{ customerId }` | `{ ok, messages[] }` | **SHIPPED** — redacted client projection of the `messages` log (spec Q-9's "on-demand action" resolution) |
+| `commsAliases` | — | `{ ok, aliases[] }` | **SHIPPED** — D7's FROM-picker data source (`GmailApp.getAliases()`) |
+| `commsThreads` | — | `{ ok, threads[] }` | **SHIPPED** — per-customer thread rollup feeding the rail's Texts/Email categories |
 
-### 5.2 Proposed — additive send actions
+### 5.2 Proposed — additive send actions — **`sendCustomerMessage` itself is SHIPPED** (see §5.1 row above and "Shipped status" at the top); `messageStatus`, `inboundMessage`, and `runReminderSweep` below remain proposed/not built
 
 > **External provider:** an SMS/email vendor (Twilio-class SMS + transactional email — e.g. SendGrid/Postmark). Provider **API keys live ONLY in GAS Script Properties** (named `SMS_API_KEY`, `SMS_FROM`, `EMAIL_API_KEY`, `EMAIL_FROM` — *names only*, never values, never in repo). The frontend never holds a key. **OPEN Q-3** picks the actual vendor(s).
 

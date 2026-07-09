@@ -236,6 +236,8 @@ Everything that exists today is **metadata + seam**. There is no live feed, no w
 
 ### 2.1 What exists (shipped — but inert)
 
+> **[2026-07-09] STALE BASELINE.** This table describes the pre-integration state (2026-06-28). As of today most rows are superseded: `gpsStatus` is now live-feed-driven (not manual), the Driving Score ring is populated (fleet-level, not `null`), and a full GPS section/toolbar exists. `dispatchTruckPos` is the one row still accurate as-is — see the "Shipped status" section up top.
+
 | Piece | Anchor | State |
 |---|---|---|
 | **GPS section** on the unit card (status pill + type + placement, inline-edit) | `STD.units`, app.js:5873–5877 (`APP-16`) | Renders `statusPill('gpsStatus', …)` or a `badge('No GPS')`, then two `efld` text fields `gpsType` / `gpsPlacement`. Pure metadata. |
@@ -306,6 +308,8 @@ Every row below is a **tier compare** (`tierRank(role) >= tierRank(X)`), never a
 
 ## 4. Data Model
 
+> **[2026-07-09] SHIPPED DIFFERENTLY.** The shipped join key is `gpsProvider` (Hapn/Deere/Yanmar/Bouncie) + `gpsDeviceId` — not the single-provider `gpsDeviceId` this section assumes. `gpsLat`/`gpsLng`/`gpsTs`/`gpsSpeed`/`gpsHeading`/`gpsStray`/`gpsOverride` below were **never added as unit fields** — live position/engine/last-seen are read from the backend snapshot at render time, not stored. See the shipped "Data model" note in the WranglerGPS section above for the real shape.
+
 Schema-less Sheets + `data.js` shapes. **All new fields are additive** — old records simply lack them and render as "No GPS" / unknown, exactly as today.
 
 ### 4.1 Unit — new live-telematics fields (additive to the existing unit record)
@@ -366,6 +370,8 @@ For v1 MVP, stray state can live purely on the unit (`gpsStray`) with no ledger;
 ---
 
 ## 5. Backend / Integration Contract
+
+> **[2026-07-09] SUPERSEDED, NOT BUILT.** None of §5's GAS actions (`gpsPoll`, `gpsSnapshot`, `gpsConfig`, an admin-panel `gpsHealth`, `gpsTestConn`, `gpsAckStray`) exist in the shipped backend. Confirmed replaced wholesale by: a four-provider direct-to-Railway client (`gpsFetch` in `app.js`, no GAS polling/relay) plus one additive GAS action, `gpsToken` (§ "2026-07-08 — GPS login moved server-side" above), which only brokers an auth token — it does no polling, config, or health reporting. This whole section is historical design reference, not a pending build target. (Note: `gpsHealth` DID ship as a popup name, but for an unrelated feature — the "Tracker Health" device roster, not this section's admin integrations-health panel.)
 
 ### 5.1 The external provider — GPSWOX
 GPSWOX exposes a REST API (token auth) and webhooks. Two integration shapes are possible; the spec proposes **server-side polling** for v1 (simplest, no public webhook endpoint to secure on a Pages-fronted app):
@@ -430,6 +436,8 @@ GPSWOX adapter (server-side only — the **only** place provider specifics live;
 All new UI runs through the `jactec-ui` skill in the yard data-plate language: dark steel panels (`linear-gradient(180deg,#1b2129,#0c0e11)`), ONE safety-orange accent (`--accent #ff7a1a`) for the "live/now" beat, the hi-vis hazard stripe as the single signature (stray/danger uses the **red** stripe variant), Saira Condensed stamped labels (uppercase, ~2px tracking), corner rivets, and the subtle leather-tan ranch seasoning mostly in copy ("Last seen", "Strayed off the range", "Round up"). Every pill/flag/button/field is built via a §5 builder with a `data-r` stamp; zero R0 flash-lint violations; tokens only (no hardcoded hex).
 
 ### 6.1 Unit card — GPS section upgrade (app.js:5873)
+> **[2026-07-09] SHIPPED, DIFFERENTLY.** A "Last seen" line, map link, engine chip, and history feed did ship (the "Enriched GPS section" item in the WranglerGPS Phase 1 list above) — but the **stray banner + Acknowledge button never shipped** (no `gpsStray`, no `gpsAckStray` — stray/geofencing wasn't built at all, see §7.3 below). What shipped in its place on the unit card: a remote-shutdown hazard control (`gpsShutdownControl`) that the original design didn't spec here.
+
 Today: pill + two text fields. Add, **only when a device is mapped + reporting**:
 
 - A **stamped "LAST SEEN"** kv: relative time (`fmtShortDate` + clock) + a tiny map thumbnail OR a "View on map" link that pans the existing map. Rivet-cornered mini steel plate.
@@ -438,6 +446,8 @@ Today: pill + two text fields. Add, **only when a device is mapped + reporting**
 - Empty/loading/error: no device → existing `badge('No GPS')`; feed off → "Tracking off" gray badge; stale → "Last seen 3d ago" muted with a Verify/Not-Reporting pill (already the flag).
 
 ### 6.2 NEW: Tracking board (fleet map) — manager/admin
+> **[2026-07-09] SHIPPED as `gpsFleet` ("Fleet Map").** Matches the intent closely: a Google map with pins colored by status, a roster rail, search/filter, a placeholder-degrade state without a Maps key. **Deviations:** open to **all signed-in roles**, not manager/admin-gated — Jac explicitly declined the manager-only asset-protection gate on 2026-07-08. No yard-fence/jobsite-fence rings drawn (geofencing wasn't built). Markers color by **engine on/off**, not by `gpsStatus` freshness tier as written below.
+
 A new **popup window** (`board`-style or its own `kind`) showing the whole fleet on one Google Map, reusing `loadGoogleMaps`/`YARD_CENTER`/the `_dispMap` mount pattern:
 
 - **Map pins** per mapped unit, colored by `gpsStatus` flag color (green/yellow/red) — the dot you trust. Click a pin → focus + a stamped data-plate callout (unit name, last-seen, on-rent customer if any, stray state) with a link into the unit card.
@@ -447,12 +457,16 @@ A new **popup window** (`board`-style or its own `kind`) showing the whole fleet
 - **NEW WINDOW_CATALOG entry required** (`ci/check-window-catalog.mjs` gate): e.g. `{ kind:'tracking', label:'Fleet tracking', tag:'Yard · GPS', sample: () => ({}) }`. Its open trigger + any new buttons need `data-r` stamps and a `gen-rule-usage` regen.
 
 ### 6.3 Dispatch map — swap the truck seam (app.js:8114)
+> **[2026-07-09] NOT BUILT.** Confirmed still the exact v1 placeholder — `app.js:9602` (line numbers shifted since this note was written, function unchanged) still carries the "v1 seam — swapped for live telematics (~next week, Jac)" comment and still returns the last-done-stop's pin. See "Shipped status" at the top for detail.
+
 Replace `dispatchTruckPos`'s body so that, **when the feed is live**, the driver marker uses the real last-known position of the unit being hauled (or a designated truck device), falling back to the current last-done-stop logic when no fix exists. This is the literal "swapped for live telematics" the code comment promises — additive, single-function, graceful fallback. A small "live" orange pulse vs. a gray "estimated" state tells the dispatcher which they're looking at.
 
 ### 6.4 Driver cab (dispatch-map Phase 2 consumer)
 When the pending driver-cab ships, its "you-are-here → next stop" map reads the live position; the NOW-bar can show real drive progress. GPS/Tracking provides the position; the cab UI is owned by `rentals-dispatch`.
 
 ### 6.5 Settings → Integrations panel (build the stub, app.js:3415)
+> **[2026-07-09] NOT BUILT.** Still a note-only stub, no `v1:true`. Largely moot under the shipped direct-to-Railway architecture (no `pollMinutes`/token/geofence to configure server-side here), but no replacement status/health screen exists either — Tracker Health (`gpsHealth` popup) is a device roster, not an integrations-health panel.
+
 A proper panel body (currently note-only):
 
 - **Telematics card**: provider label (GPSWOX), a master **enable** ignition toggle, `pollMinutes`/`staleMinutes`/`verifyMinutes` numeric stamps, **Test connection** button (`gpsTestConn` → green "Reachable · N devices" / red error), and a health line from `gpsHealth` ("Last poll 6m ago · 12/14 mapped"). **Never shows the token** — only status.
@@ -460,6 +474,8 @@ A proper panel body (currently note-only):
 - All stamped, rivets, hazard-stripe header. Each control `data-r`-stamped; panel is inside the existing `settings` window (no new WINDOW_CATALOG entry needed unless the geofence editor is a separate popup → then it is).
 
 ### 6.6 Driving Score ring (app.js:7118)
+> **[2026-07-09] SHIPPED, DIFFERENTLY.** The ring fills from real Bouncie trip data as described, but as a **fleet/team score**, not per-driver — see §7.4 below.
+
 The third Driver ring fills from the feed (§7.4). On hover, `KPI_HELP['Driving Score']` gets a real formula description replacing "placeholder until that's connected". Ring renders gray/empty until the feed has enough events.
 
 ### 6.7 Mobile reflow
@@ -472,6 +488,8 @@ The Tracking board map is full-bleed on phone with the roster as a **bottom shee
 No money in this area — but precise derivations:
 
 ### 7.1 Status derivation (the core rule)
+> **[2026-07-09] SHIPPED, DIFFERENTLY.** The freshness-tier concept survives (see "Status source" in the WranglerGPS section above: `<6h` Reporting · `<72h` Verify · older/absent Not Reporting) but derivation happens **client-side** off the live fleet snapshot, not server-side per a GAS poll — there is no poll job. Thresholds also differ from the 30/60-minute values below.
+
 Server, per poll, per **mapped** unit (blank `gpsDeviceId` = skip, keep manual status):
 ```
 age = now - gpsTs
@@ -483,9 +501,13 @@ else                       → 'Not Reporting'(red)     // dark
 This makes `gps-offline` (red flag) and `gps-verify` (yellow flag) **truthful** with **zero flag-code changes** — they already read `gpsStatus`.
 
 ### 7.2 Manual override precedence
+> **[2026-07-09] NOT BUILT.** No `gpsOverride` field or precedence logic in `app.js`.
+
 `gpsOverride.status` (within `until`) beats the derived value, so "device pulled for service, ignore" doesn't fire a false red. Surfaced on the unit card as a small "manual" tag on the pill.
 
 ### 7.3 Stray rule
+> **[2026-07-09] NOT BUILT.** Confirmed no geofencing/stray code anywhere in `app.js`. Still explicitly deferred, gated on `comms-notifications` server-side SMS per Decision D4.
+
 ```
 fence = (strayOnRent==='jobsite' && unit.activeRental.deliveryPin)
           ? circle(deliveryPin, jobsiteFenceM)
@@ -497,6 +519,8 @@ distance(lastFix, fence.center) > fence.radius  → gpsStray = {at: now, fence}
 - Hysteresis: require N consecutive out-of-fence fixes (default 2) before firing, so a GPS jitter on the fence edge doesn't spam. → Open Q §11.1.
 
 ### 7.4 Driving Score formula (NEW)
+> **[2026-07-09] SHIPPED, DIFFERENTLY.** Ships as a rolling-21-day **fleet** score (hard-brake/accel per 100 mi + a speeding-trip share, tunable weights) — not per-driver as the "Single-driver model" note below and the later multi-driver decision (D1/§11.9) both anticipated. In-code rationale: no driver↔trip attribution exists, so a per-driver number wouldn't be honest. Null-when-no-data behavior matches this section as written.
+
 The third Driver ring. GPSWOX (or similar) reports harsh-braking / harsh-accel / speeding events. Proposed:
 ```
 score = 100 - clamp( w_speed*speedingEvents + w_harsh*harshEvents , 0, 100 )   // per rolling 30 days
@@ -512,6 +536,8 @@ score = 100 - clamp( w_speed*speedingEvents + w_harsh*harshEvents , 0, 100 )   /
 ---
 
 ## 8. Phasing & Milestones
+
+> **[2026-07-09] This phasing was superseded by the WranglerGPS integration's own phasing (see "Phasing (revised)" and "Phase 2 sub-status" up top) — the two don't map 1:1.** Roughly: this section's "Phase 1" (status truth + position dots) → shipped via the WranglerGPS Phase 1 list, MINUS the `dispatchTruckPos` swap (not built) and PLUS several items (connect wizard, shutdown, history feed) this section didn't anticipate. This section's "Phase 2" (Tracking board + geofence + stray) → the Tracking board shipped as `gpsFleet`; geofence/stray did NOT ship. This section's "Phase 3" (Driving Score + event ledger + webhooks) → Driving Score shipped (fleet-level); no event ledger, no webhooks. An unplanned "Fleet Utilization" view also shipped (see top section) that this phasing never mentions at all.
 
 **Phase 1 — Status truth + position dots (MVP).** *In scope:* `gpsDeviceId` field; `gpsPoll`/`gpsSnapshot`/`gpsConfig`/`gpsHealth`/`gpsTestConn` actions; server status derivation (§7.1) writing `gpsStatus`+`gpsLat/Lng/Ts`; unit-card "Last seen" + honest pill; swap `dispatchTruckPos` (§6.3); Settings → Integrations telematics card with Test-connection + health. *Out of scope:* geofencing, stray alerts, Driving Score, fleet board, breadcrumb history, webhooks. **Outcome:** the red GPS flag is finally real, and you can see where a machine last reported.
 
