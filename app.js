@@ -8343,14 +8343,10 @@ function headerEl() {
     </div>`;
   return h;
 }
-/* Theme cycle: dark → yard → light → dark. The bottom-bar button shows the icon
-   + tooltip of the theme you'll switch TO next (matching the old sun/moon convention). */
-// #552 audit follow-up (2026-07-09): dark/ranch/light removed — dormant, unreachable
-// via the live toggle (Jac: "we only have one theme... the others can be removed").
-const THEME_NEXT = {
-  yard:       { next: 'bluedsteel', icon: I.bluesteel, tip: 'Blued Steel' },
-  bluedsteel: { next: 'yard',       icon: I.hardhat,   tip: 'Yard mode' },
-};
+// #552 audit follow-up (2026-07-09): THEME_NEXT + the .js-theme toggle removed
+// entirely — the button that would trigger it never actually rendered anywhere
+// in the UI, so the whole Yard<->Blued-Steel cycle was unreachable dead code.
+// The app is hardcoded to bluedsteel (state.theme below).
 /** The action toolbar — pinned to the LEFT of the bottom comms band (the
  *  conversation rail fills the middle, bell + inbox sit at the right). On phones
  *  this same set opens up across the top header, so the inbox stays here (the
@@ -14889,7 +14885,7 @@ function onClick(e) {
   // ── DESIGN INSPECTOR intercept (SPEC v8): while inspecting, clicking any
   // rule-bearing element COPIES its reference instead of acting — the exact
   // string Jac pastes to debug ("R4 · Derived pill — RENTALS › RENTAL › …").
-  if (state.inspect && !closest('.js-inspect, .js-lint, .js-rulebook, .js-theme, .overlay, #rw-tip')) {
+  if (state.inspect && !closest('.js-inspect, .js-lint, .js-rulebook, .overlay, #rw-tip')) {
     const hit = ruleOf(t);
     if (hit) {
       e.preventDefault(); e.stopPropagation();
@@ -15150,7 +15146,6 @@ function onClick(e) {
   if (closest('.js-ring')) return openOverlay({ kind: 'role', role: closest('.js-ring').dataset.role });
   if (closest('.js-roadmap')) return openOverlay({ kind: 'roadmap' });
   if (closest('.js-close')) return closeOverlay();
-  if (closest('.js-theme')) { state.theme = (THEME_NEXT[state.theme] || THEME_NEXT.yard).next; try { localStorage.setItem('jactec.theme', state.theme); } catch (e) {} if (state.overlay && state.overlay.kind !== 'addCard') renderOverlay(); render(); return; }
   if (closest('.js-qr')) return shareSession();
   if (closest('.js-previews') || closest('.js-roweye')) { e.stopPropagation(); state.previewsOn = !state.previewsOn; if (!state.previewsOn) hideHoverPreview(); try { localStorage.setItem('jactec.previewsOff', state.previewsOn ? '0' : '1'); } catch (e) {} toast(state.previewsOn ? 'Hover previews on.' : 'Hover previews off — every eye runs red.'); return render(); }
   if (closest('.js-hotkeys')) return openOverlay({ kind: 'hotkeys' });

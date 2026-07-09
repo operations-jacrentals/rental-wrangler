@@ -96,15 +96,35 @@ Legend: **file:line** — one-line verdict.
 
 ---
 
-## ⏳ STILL OPEN (2)
+## ⏳ STILL OPEN (1)
 
 20. **`colorVar()`/`colorBgVar()`** (config.js) — documented as the mandatory color-resolution
-    API but zero call sites. **Parked at Jac's explicit direction** ("park this as a design thing
-    to look at later") — not touched.
+    API but zero call sites. **Parked at Jac's explicit direction, revisited and re-confirmed
+    parked** ("still park it") — not touched.
 
-21. **`style.css:1944` `!important` on `.set-planned-sub`** — papers over a specificity conflict
-    that scoping the selector would resolve cleanly. Not part of today's fix pass; low risk but
-    touches live rendering, so still flagged rather than auto-fixed.
+## ✅ RESOLVED — second follow-up round (2026-07-09, later same day)
+
+21. **`style.css` `!important` on `.set-planned-sub`** — rescoped to `.set-planned p.set-planned-sub`
+    (beats `.set-planned p`'s specificity naturally), `!important` removed.
+- **Dead theme-toggle mechanism** — removed entirely per Jac's direction ("remove the whole
+  mechanism"): `THEME_NEXT`, the `.js-theme` click handler, and its reference in the design-
+  inspector click-guard are all gone. `state.theme` stays hardcoded to `'bluedsteel'` (unchanged
+  behavior — it was never reachable anyway).
+- **GPS password fallback** — investigated further per Jac's question ("is it there for a
+  reason maybe?"). Confirmed: yes — the live comment cites Jac's own 2026-07-08 decision
+  ("minimal steps, secrets-exposure OK — Code.js is server-side + gitignored, never served
+  publicly"). Left as-is, not changed.
+- **Membership deployment discrepancy — escalated, not yet resolved.** Traced the full git
+  history: PR #344 (2026-06-25) and its handoff doc confidently claim the app-driven membership
+  backend (`membershipEnroll_`/`membershipCancel_`/`membershipReactivate_`/
+  `membershipBillingCron`) was deployed live as v46, and wired the **frontend** to call those
+  actions in prod — that frontend wiring is still live today (app.js:3762/3780/3813). But two
+  independent fresh Drive pulls confirm those functions do NOT exist in the live Code.gs right
+  now. Leading theory: a later backend deploy (there were several after 6/25) used a stale local
+  Code.gs as its splice base and silently reverted this. **This looks like membership
+  enroll/cancel/reactivate may be broken in production right now** — needs Jac's confirmation
+  (checking a later deploy session's transcript, or a live prod test) before anyone tries to
+  "fix" the tracked doc further.
 
 ---
 

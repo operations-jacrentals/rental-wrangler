@@ -1862,7 +1862,7 @@ select.inline-input:focus-visible { outline: 2px solid var(--accent); outline-of
 .set-planned h4 { margin: 4px 0 0; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.4px; font-weight: 800; font-size: 16px; color: var(--txt); }
 .set-planned-tag { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-size: 9.5px; font-weight: 700; color: var(--tan, #c2925a); border: 1px dashed var(--tan, #c2925a); border-radius: 999px; padding: 2px 9px; }
 .set-planned p { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--txt-2); }
-.set-planned-sub { color: var(--txt-3) !important; font-size: 11px !important; }
+.set-planned p.set-planned-sub { color: var(--txt-3); font-size: 11px; }   /* #552 audit item 21: scoped to beat .set-planned p's specificity, no !important needed */
 
 /* KPIs & Rings tab */
 .kpi-board { display: flex; gap: 16px; align-items: flex-start; }
