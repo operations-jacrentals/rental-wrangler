@@ -13,7 +13,7 @@
 
 These resolve the §11 Open Questions and amend §3 / §5 / §6 / §8.
 
-- **D1 · Partial refunds — keep PARKED until a validated backend deploy (resolves Q1).** The over-refund risk exists **only** if the flag is flipped before the server cap ships. Done right it is safe: the server re-caps `amountCents` at the live remaining balance in **integer cents under a `LockService` lock**, so a client-invented over-cap is clamped, never honored; a zero-remaining invoice is rejected `nothing-to-refund`. **Keep `PARTIAL_REFUNDS_ENABLED = false` for now.** Ship only in a dedicated `/clasp` session: deploy the `amountCents` validation → verify on a real test invoice → *then* flip the flag + bump `?v=`. Never unattended. (Sequence is the risk, not the feature.)
+- **D1 · Partial refunds — keep PARKED until a validated backend deploy (resolves Q1). [2026-07-09] FULFILLED / SHIPPED — see "Shipped status (2026‑07‑09)" below.** The over-refund risk exists **only** if the flag is flipped before the server cap ships. Done right it is safe: the server re-caps `amountCents` at the live remaining balance in **integer cents under a `LockService` lock**, so a client-invented over-cap is clamped, never honored; a zero-remaining invoice is rejected `nothing-to-refund`. **Keep `PARTIAL_REFUNDS_ENABLED = false` for now.** Ship only in a dedicated `/clasp` session: deploy the `amountCents` validation → verify on a real test invoice → *then* flip the flag + bump `?v=`. Never unattended. (Sequence is the risk, not the feature.)
 - **D2 · Dual-approver refunds via a Settings toggle (resolves Q2/Q15, + Q3/Q16 reason).** Add **Settings → Company → "Require a second approver for refunds"**. When ON, confirming a refund opens a popup requiring a **second, *different* user** to enter their password (money-tier+); the server logs **both** the initiator (`role`, from the call password) and the **approver** on the ledger entry — a two-person, "both responsible" control. A **structured refund reason** (enum + optional note) is captured on the same step. Default **ON** recommended (Jac to confirm). New popup → `WINDOW_CATALOG` entry + `data-r` stamps.
 - **D3 · No new retire statuses now (resolves Q6/Q14); uncollectables route to Collections (Jac, 2026-06-29).** An empty/zero invoice already "stealth-clears" a *never-paid mistake*, so no `Void` is added. For a *partially-paid uncollectable*, rather than a passive bad-debt write-off, the invoice is **sent to "Collections"** — a planned in-app feature integrating a **3rd-party collections service** (now its own roadmap area). A `Sent to Collections` status (gray-adjacent) marks it, the balance leaves active aging, and a recovery remits back through the payment path. Specced in the **Collections** area.
 - **D4 · Deposits + surcharges as default-OFF Settings toggles (resolves Q11/Q12/Q20).** Add **Settings → Company** toggles, **both default OFF**: **"Damage deposit / hold"** and **"Card surcharge / convenience fee."** Enabling either introduces its own line type that MUST declare per Q20: (a) taxable vs exempt, (b) revenue/KPI netting, (c) **no cost/margin on the print doc** (§3.5). Confirm LA legality before enabling surcharge.
@@ -105,7 +105,7 @@ the specific sections below; this is the fast-scan summary.
 
 ## 2. Current State (Baseline) — CANON
 
-Anchors: `APP-04` (`app.js:841`, derivations/pricing), `APP-05` (`app.js:942`, extensions + 28‑day series), `APP-35` (`app.js:14143`, Stripe/payments client), `invoiceTotals` (`app.js:1602`), `TAX_RATE` (`app.js:1602`/config), invoice seed (`data.js:78`), `invoiceId()` formatter (`config.js:540`).
+Anchors: `APP-04` (`app.js:841`, derivations/pricing), `APP-05` (`app.js:942`, extensions + 28‑day series), `APP-35` (`app.js:14143`, Stripe/payments client), `invoiceTotals` (`app.js:1602`), `TAX_RATE` (`app.js:1602`/config), invoice seed (`data.js:78`), `invoiceId()` formatter (`config.js:540`). **[2026-07-09] Some line numbers have drifted** after today's promotion (the Customer Details reorg + rulebook work shifted code around) — e.g. Stripe/Payments is now chapter `APP-34` at `app.js:13339` per `docs/CODE-MAP.md`, and `TAX_RATE`/`invoiceTotals` are now at `app.js:1689`/`1695`. Not re‑verified line‑by‑line in this pass; treat cited line numbers throughout this doc as approximate and re‑grep the symbol name if a cite doesn't land.
 
 ### 2.1 Shipped (live, canon)
 
@@ -342,9 +342,23 @@ Stripe (cards, ACH, refunds, 3DS). Google Maps feeds transport *pricing* upstrea
 
 ## 6. UX / UI — yard data‑plate language
 
+> **[2026-07-09] ARCHITECTURE CHANGE — read this before the paragraph below.** The standalone
+> Invoices grid card is **retired**; `'invoices'` no longer sits in `config.js` `COLUMNS.right`/
+> `COLUMN_OF` (the `GRID_CARDS` catalog entry + `DETAIL.invoices`/`ROW_META` are kept for the
+> flag/status‑pill system, just not as a navigable column). Invoices now render inside a
+> scrollable `customerInvoicesSection` embedded in **Customer Details**, reached via
+> `pillTo('invoices')` → `openInvoice()`. See "Shipped status (2026‑07‑09)" above for the full
+> mechanism. The design‑language description below (steel panels, orange accent, rivets,
+> hazard stripe, payment popup) is still accurate for the content — only its host surface moved.
+
 Surfaces live on the **Invoices** grid card (`config.js GRID_CARDS` id `invoices`) and one popup (`payment`). Design language: dark steel panels, **one** safety‑orange `--accent #ff7a1a` accent reserved for the primary ignition action (here: **Take payment / Charge**), corner rivets, **Saira Condensed** stamped labels, hi‑vis hazard stripe for danger (refund/abort), subtle leather‑tan saddle‑stitch divider + wrangler voice in copy.
 
 ### 6.1 Invoice row / detail (existing, canon)
+
+> **[2026-07-09]** Written for the standalone card; the same content now renders inside the
+> embedded `customerInvoicesSection` accordion rows via `invoiceDocHtml(inv, {interactive:true})`
+> instead of a dedicated grid‑card row. Status pill, ledger block, money‑actions row, line
+> editing, lock state, and series chips described below are all still live as described.
 
 - **Status pill** keeps the lifecycle/aging label and takes the **flag color** (R/Y/G, flag‑color‑system §7.4). `Refunded` → gray (archived). Pill stamped `data-r="R1"` (status pill rule).
 - **Ledger block** (`ledgerRow`): Subtotal · Tax (10.75% or "Exempt") · Total · Paid · Balance.
@@ -441,7 +455,7 @@ Maturity = **shipped**, so phasing is about *closing the parked edges*, not gree
 
 **Phase 1 — Documentation‑as‑canon (this spec).** Ratify the live behavior above. No code. In scope: §2–§7 as the single source of truth. Out of scope: any behavior change.
 
-**Phase 2 — Ship partial refunds (flip `PARTIAL_REFUNDS_ENABLED`).** Deploy the additive backend (`amountCents` on both refund actions, server‑validated), then flip the flag. In scope: per‑line refund UI (already built), refund netting on the rental/unit (strikethrough marker), audit log. Out of scope: any payment‑side change.
+**Phase 2 — Ship partial refunds (flip `PARTIAL_REFUNDS_ENABLED`). [2026-07-09] SHIPPED.** Deploy the additive backend (`amountCents` on both refund actions, server‑validated), then flip the flag. In scope: per‑line refund UI (already built), refund netting on the rental/unit (strikethrough marker), audit log. Out of scope: any payment‑side change. — **Done**: flag is `true` live (`app.js:6702`); see "Shipped status (2026‑07‑09)" above for the one open caveat (no tracked deploy‑verification writeup).
 
 **Phase 3 — Invoice delivery & dunning (candidate).** Server‑side invoice send (PDF + delivery receipt) and aging‑driven reminders. **Cross‑area** with `comms-notifications`. Out of scope for v1 unless Jac pulls it in.
 
@@ -496,7 +510,7 @@ For any code change (Phase 2+):
 
 > **Resolved 2026-06-29:** Q1 → D1 (keep parked; ship only via a validated clasp deploy) · Q2/Q15/Q3/Q16 → D2 (dual-approver refund Settings toggle + reason) · Q6/Q14 → D3 (no new statuses; bad-debt Write-off deferred to `accounting`) · Q11/Q12/Q20 → D4 (deposit + surcharge as default-off Settings toggles). Adopted: Q5 (Settings value), Q9 (keep blocked), Q10 (CI margin-scan), Q18 (AI payment always needs human Apply), Q19 (auto-lock paid). Q17/Q7 stand. See the Decisions block up top.
 
-1. **Ship partial refunds now?** The UI is built and gated. Flip `PARTIAL_REFUNDS_ENABLED` after deploying the additive `amountCents` backend — or leave parked? Trade‑off: real customer value vs. the shared‑backend over‑refund risk until the server validates the cap.
+1. **Ship partial refunds now?** ~~The UI is built and gated.~~ **[2026-07-09] RESOLVED / SHIPPED** — `PARTIAL_REFUNDS_ENABLED = true` live; backend deployed per `docs/handoffs/partial-refunds-backend.md`. Flip `PARTIAL_REFUNDS_ENABLED` after deploying the additive `amountCents` backend — or leave parked? Trade‑off: real customer value vs. the shared‑backend over‑refund risk until the server validates the cap.
 2. **Refund authority.** Should refunds (especially > $X, or a *full* refund) require **manager+** tier rather than the same `money` tier as taking a payment? Trade‑off: friction vs. blast radius of an erroneous/abusive refund. (Today refund == money tier.)
 3. **Refund reason + audit.** Capture a required refund **reason** code/note (logged) before confirming? Helps the future `accounting` reconciliation and dispute defense; adds a field + a UI step.
 4. **Aging reminders / dunning.** Should `Late/Late+30/60/90/Collections` trigger automated customer reminders, or stay a passive color? Owner is `comms-notifications`, but the *trigger* is this area's aging. Decide ownership of the cadence.
