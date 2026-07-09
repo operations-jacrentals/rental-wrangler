@@ -1693,6 +1693,50 @@ try {
       T.IDX.invoice.delete(far.invoiceId); T.IDX.invoice.delete(cur.invoiceId);
     }
 
+    // §Trips (spec 2026-07-09) — derived trips, day buckets, and the §2.2b driver row
+    // actions (tel: link · town-parse · +Log via the SAME journey capture path, D7 stamp).
+    {
+      // derived generation: one trip per dispatch event, id = the stop id, done tracks the capture
+      const evs = T.dispatchEvents();
+      const trips = T.tripsFor();
+      ok(trips.length === evs.length, `TRIPS: one derived trip per dispatch event (${trips.length}/${evs.length})`);
+      const tMU = trips.find((x) => x.rentalId === 'R-MU' && x.unitId === 'U007');
+      ok(!!tMU && tMU.id === 'R-MU|U007|Deliver' && tMU.done === true, 'TRIPS: trip id = dispatchStopId; done follows the start capture');
+      ok(trips.every((x) => x.stops.length === 1 && x.stops[0].rentalId === x.rentalId), 'TRIPS: phase-1 derived trip carries exactly its own stop');
+      // §2.2b town parse: city = 2nd-from-last segment before the state; country dropped; fallback truncates
+      ok(T.tripTown('265 Callie Ln, Orange, TX, USA') === 'Orange', 'TRIPS-town: street, city, state, country → city');
+      ok(T.tripTown('Lake Charles, LA, USA') === 'Lake Charles', 'TRIPS-town: city, state, country → city');
+      ok(T.tripTown('1200 Ryan St, Lake Charles, LA') === 'Lake Charles', 'TRIPS-town: no country → still the city');
+      ok(T.tripTown('The old pit off Hwy 27') === 'The old pit off Hwy 27', 'TRIPS-town: no state shape → raw address falls through');
+      // §2.2b tel: link — formatted phone strips to +1 digits
+      ok(T.telHref('(337) 214-5001') === 'tel:+13372145001', 'TRIPS-call: "(337) 214-5001" → tel:+13372145001');
+      ok(T.telHref('') === '', 'TRIPS-call: blank phone → no href');
+      const tA = trips.find((x) => x.rentalId === 'R-A');
+      const rowA = T.tripRowHTML(tA);
+      ok(rowA.includes('href="tel:+13372145001"') && /data-r="R7"/.test(rowA), 'TRIPS-row: the customer phone rides the row as a stamped R7 tel: anchor');
+      ok(rowA.includes('js-trip-town') && rowA.includes('>⚠ Orange<'), 'TRIPS-row: destination = the town, ⚠ while unpinned');
+      ok(rowA.includes('js-yard') && rowA.includes('data-cap="start"') && rowA.includes('+Log Delivery'), 'TRIPS-row: not-done Deliver carries +Log Delivery on the journey js-yard path');
+      const rowMU = T.tripRowHTML(tMU);
+      ok(!rowMU.includes('js-yard') && /Logged 8:42 AM/.test(rowMU), 'TRIPS-row: done trip shows the capture clock instead of the action');
+      // §2.2b D7 — capture opened FROM THE ROW stamps the assigned leg driver (one code path)
+      const preEmp = T.__state.settings.employees;
+      T.__state.settings.employees = [{ id: 'EMPTRP', name: 'Row Hauler', role: 'Driver', phone: '', note: '' }];
+      const rMU = T.IDX.rental.get('R-MU');
+      const eu7 = T.unitEntry(rMU, 'U007');
+      const snap = { rec: eu7.recoveryDriverId, st: eu7.status, endEu: eu7.endCapture, endR: rMU.endCapture, prim: rMU.status };
+      eu7.recoveryDriverId = 'EMPTRP';
+      T.yardCapture('R-MU', 'end', 'U007');   // = the row's +Log Recovery tap
+      ok(T.__state.overlay && T.__state.overlay.kind === 'capture' && T.__state.overlay.cap === 'end' && T.__state.overlay.unitId === 'U007', 'TRIPS-log: the row action opens the journey capture overlay (one code path)');
+      T.saveYardCapture();
+      ok(!!eu7.endCapture && eu7.endCapture.driver === 'Row Hauler', 'TRIPS-log: capture from the row stamps the assigned leg driver (D7)');
+      ok(T.unitStatus(rMU, eu7) === 'Returned', 'TRIPS-log: the end capture moved the unit to Returned (same status path as the journey)');
+      // restore the demo seed exactly (status, captures, driver, roster)
+      eu7.endCapture = snap.endEu; rMU.endCapture = snap.endR; eu7.status = snap.st; eu7.recoveryDriverId = snap.rec;
+      T.syncRentalPrimary(rMU); T.reindex('rentals', rMU);
+      T.__state.settings.employees = preEmp;
+      T.__state.overlay = null; T.__state.calOpenTrip = null;
+    }
+
     return out;
   });
 

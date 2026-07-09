@@ -654,17 +654,36 @@ select.lf-in { appearance: none; cursor: pointer; }
 /* ── §2.3 OFFICE COCKPIT MAP (Phase 2 re-parents this into the Trips card) ──── */
 .dispm { position: absolute; inset: 0; }                                   /* the map is the whole pane */
 
-/* ── Trips card — day-grouped trip rows (spec 2026-07-09 §2.2, Phase 1) ──────
+/* ── Trips card — day-grouped trip rows (spec 2026-07-09 §2.2 + §2.2b, Phase 1/1b) ──
    Rows route through the universal .row/.row-1/.row-2 template (APP-14); only the
-   time input + address line (reused verbatim from the retired lane rail, incl. their
-   original class names) need their own rules. Tokens only — no new hex/shadow. */
-.dt-time { width: 56px; flex: 0 0 auto; font-size: 13px; font-weight: 800; color: var(--txt); font-family: inherit; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 3px 4px; }
+   time input (reused verbatim from the retired lane rail) + the §2.2b driver taps
+   (town / call / log / cab sheet) need their own rules. Tokens only — no new hex. */
+.dt-time { width: 72px; flex: 0 0 auto; font-size: 13px; font-weight: 800; color: var(--txt); font-family: inherit; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 3px 4px; }   /* 72px fits "12:00 PM" — 56px clipped it (review, 2026-07-09) */
 .dt-time::placeholder { color: var(--txt-3); font-weight: 600; }
 .dt-time:hover { border-color: var(--line); }
 .dt-time:focus { border-color: var(--accent-line); background: var(--bg-2); outline: none; }
-.dt-addr { font-size: 11px; color: var(--blue); cursor: pointer; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dt-addr.nopin { color: var(--yellow); }
+/* §2.2b destination = the TOWN; tap jumps the live map to the trip. Blue = link voice;
+   yellow ⚠ when the site has no pin yet (same signal the address line carried). */
+.trip-town { background: none; border: 0; padding: 0; font: inherit; font-size: 11.5px; color: var(--blue); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; min-width: 0; text-align: left; }
+.trip-town.nopin { color: var(--yellow); }
+.trip-town:hover { filter: brightness(1.15); }
+.trip-town:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+/* §2.2b third line: tap-to-call left · +Log Delivery/Recovery (or the stamp clock) right */
+.row[data-card="calendar"] .trip-r3 { display: flex; align-items: center; gap: 10px; margin-top: 6px; min-width: 0; }
+.row[data-card="calendar"] .trip-r3:empty { display: none; }
+.row[data-card="calendar"] .trip-r3 .linkname { white-space: nowrap; }
+.row[data-card="calendar"] .trip-r3 .add-field { white-space: nowrap; gap: 5px; }
+.row[data-card="calendar"] .trip-r3 .add-field svg { width: 14px; height: 14px; flex: 0 0 auto; }   /* dim the glyph to the label's weight — the unsized ico() SVG was out-shouting it */
+.linkname svg { width: 12px; height: 12px; vertical-align: -2px; margin-right: 3px; }
+/* §2.2b cab sheet — unit facts one level down (unit pill · fuel · weight), saddle-stitch top */
+.row[data-card="calendar"] .trip-cab { margin-top: 7px; padding-top: 7px; border-top: 1px dashed color-mix(in srgb, var(--tan, #c2925a) 60%, transparent); display: flex; flex-direction: column; gap: 5px; }
+.row[data-card="calendar"] .trip-cab-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .row.trip-done .row-content { opacity: .6; }   /* a done run stays visible, dimmed (spec §2.2) — same recipe as .row.fleet-dim */
+.row[data-card="calendar"].trip-focus { border-color: #18b6ff; box-shadow: 0 0 0 1px rgba(24,182,255,.65); }   /* focused on the live map — the anchored "you are here" neon (same recipe as .card.anchored) */
+/* §M-touch — §2.2b driver-lens floor: the row taps (town / call / log / time) reach ≥44px on phones */
+.row[data-card="calendar"] .trip-tap { display: inline-flex; align-items: center; min-height: 26px; }
+.is-phone .row[data-card="calendar"] .trip-tap { min-height: 44px; }
+.is-phone .row[data-card="calendar"] .dt-time { min-height: 44px; }
 /* Trips footer — honest sync status (spec §2.1 "false trust signals"): no "auto-notifies"
    claim until D3 sync ships (Phase 4); a quiet gray stamp instead of the green live-dot. */
 .disp-foot { flex: 0 0 auto; display: flex; align-items: center; gap: 7px; padding: 7px 12px; border-top: 1px solid var(--line); font-size: 10.5px; color: var(--txt-3); }

@@ -2103,6 +2103,7 @@ const state = {
   wrangler: { open: false, min: false, id: null, messages: [], busy: false, error: '', draft: '', attach: [], files: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null },   // §18 Mr. Wrangler dock — id ties the live chat to its §18g rail snapshot; min collapses it to the header bar; survives minimize, restores conversation on reopen
   mobileCol: 0,               // §M1 — which column the phone shows (0 Yard · 1 Rentals · 2 Customers); drives swipe position + the per-column bottom strip
   calSearch: '',               // Trips card mini-search (calendar is card-stateless — no session.cards.calendar — so this rides on state directly)
+  calOpenTrip: null,           // §2.2b cab sheet — the ONE trip row expanded to its unit-facts sheet (row-body tap toggles; second tap collapses)
   woPartForm: null,           // woId whose "+ Add Part/Labor" inline form is open
   invLineForm: null,          // invoiceId whose "+ Add Custom" inline form is open
   invMergePick: null,         // invoiceId whose "Merge invoice" picker is open (consolidate unpaid bills)
@@ -4556,10 +4557,14 @@ function closeX(js, { data, hover } = {}) {
 function reqBtn(label, { js, data, icon } = {}) {
   return `<button class="req${js ? ' ' + js : ''}" data-r="R6"${dataAttrs(data)}>${icon || ''}${esc(label)}</button>`;
 }
-/** R7: a hyperlink — blue, italic, permanent underline; navigates when card/rec given. */
-function linkName(label, { card, recId, js, data } = {}) {
+/** R7: a hyperlink — blue, italic, permanent underline; navigates when card/rec given.
+ *  href → a REAL <a> (tel:, external maps…); ext adds target=_blank rel=noopener;
+ *  icon rides left of the label (dimmed to text weight by the .linkname svg rule). */
+function linkName(label, { card, recId, js, data, href, ext, icon } = {}) {
   const nav = card ? ` data-pill-card="${card}" data-pill-rec="${esc(recId)}"` : '';
-  return `<span class="linkname${js ? ' ' + js : ''}" data-r="R7"${nav}${dataAttrs(data)}>${esc(label)}</span>`;
+  const body = `${icon || ''}${esc(label)}`;
+  if (href) return `<a class="linkname${js ? ' ' + js : ''}" data-r="R7" href="${esc(href)}"${ext ? ' target="_blank" rel="noopener"' : ''}${dataAttrs(data)}>${body}</a>`;
+  return `<span class="linkname${js ? ' ' + js : ''}" data-r="R7"${nav}${dataAttrs(data)}>${body}</span>`;
 }
 /** R9: a title mini-flag + the ≤2-row stack that matches the 30px title chip. */
 function flagEl(label, color, { icon, card, recId, title, alert, sect } = {}) {
@@ -5227,6 +5232,8 @@ function rowEl(card, rec) {
   // §10 — under an active rental window, tint every unavailable unit/category red
   if (availWin && availUnavailable(card, rec)) extra += ' unavailable';
   if (card === 'calendar' && rec.done) extra += ' trip-done';   // Trips: a done run stays visible, dimmed (spec §2.2)
+  if (card === 'calendar' && state.calOpenTrip === id) extra += ' trip-open';       // §2.2b cab sheet expanded
+  if (card === 'calendar' && state.dispFocusId === id) extra += ' trip-focus';      // focused on the live map — the neon "you are here" ring survives a re-render
   const node = el('div', 'row' + extra);
   node.dataset.card = card; node.dataset.rec = id;
   // Trips rows have no detail view yet (Phase 1, derived-only) — eye-preview / new-tab
@@ -5536,23 +5543,51 @@ const ROWS = {
       </div>`;
   },
 
-  /* ── TRIPS (née Calendar/dispatch cockpit) — spec 2026-07-09 §2.2, Phase 1: one
-     row per derived Trip. Anatomy: kind badge · tap-to-edit time · customer refPill ·
-     unit pill · address (pin-status ⚠) · driver pill (R5b +Driver, reused verbatim
-     from the retired lane rail) · Done badge. Row content only — rowEl() supplies the
-     card frame (and skips the eye/new-tab actions for this card, see rowEl). */
+  /* ── TRIPS (née Calendar/dispatch cockpit) — spec 2026-07-09 §2.2 + §2.2b, Phase 1/1b:
+     one row per derived Trip, and the row IS the cab view. Anatomy: kind badge ·
+     tap-to-edit time · destination TOWN (tap → focus on the live map) · customer
+     refPill · unit pill · driver pill (R5b +Driver, reused verbatim from the retired
+     lane rail) · tap-to-call tel: link · +Log Delivery/Recovery (the SAME journey
+     capture path — D7 stamp free) or the capture clock once done. Tapping the row
+     BODY toggles the cab sheet (unit facts, one level down). Row content only —
+     rowEl() supplies the card frame (and skips eye/new-tab actions for this card). */
   calendar: (t) => {
+    const r = IDX.rental.get(t.rentalId);
+    const cu = r && r.customerId ? IDX.customer.get(r.customerId) : null;
     const driverChip = t.driverId
       ? `<button class="catr-slot js-stop-driver" data-id="${esc(t.id)}" data-rec="${esc(t.rentalId)}" data-unit="${esc(t.unitId || '')}" data-task="${esc(t.task)}" data-tip="Driver on this leg — tap to change">${badge(driverName(t.driverId), 'navy')}</button>`
       : (driverRoster().length ? `<button class="catr-slot js-stop-driver" data-r="R5b" data-id="${esc(t.id)}" data-rec="${esc(t.rentalId)}" data-unit="${esc(t.unitId || '')}" data-task="${esc(t.task)}" data-tip="Assign a driver to this leg"><span class="add-field anchor" style="height:20px;font-size:10px">+Driver</span></button>` : '');
+    // §2.2b destination = the TOWN, compact; tap jumps the inline live map to this trip.
+    const town = tripTown(t.addr);
+    const townHtml = town ? `<button class="trip-town trip-tap js-trip-town${t.pin ? '' : ' nopin'}" data-id="${esc(t.id)}" data-day="${esc(t.day)}" data-tip="${esc(t.addr)} — tap to see this run on the live map">${t.pin ? '' : '⚠ '}${esc(town)}</button>` : '';
+    // §2.2b call the customer — a REAL tel: anchor (R7), no detour through Customers.
+    const callHtml = (cu && cu.phone && telHref(cu.phone)) ? linkName(cu.phone, { href: telHref(cu.phone), icon: I.phone, js: 'trip-tap' }) : '';
+    // §2.2b log completion from the row — the journey's js-yard flow verbatim (yardCapture
+    // → the capture overlay → saveYardCapture → D7 driver stamp). Done → the stamp clock.
+    const capKey = t.task === 'Deliver' ? 'startCapture' : 'endCapture';
+    const src = r ? (unitEntry(r, t.unitId) || r) : null;
+    const clock = t.done && src && src[capKey] ? src[capKey].clock : '';
+    const logHtml = t.done
+      ? (clock ? badge(`Logged ${clock}`, 'green') : '')
+      : (t.task === 'Deliver'
+        ? addBtn('Log Delivery', { link: true, icon: I.video, js: 'js-yard trip-tap', data: { cap: 'start', rec: t.rentalId, unit: t.unitId || '' } })
+        : addBtn('Log Recovery', { link: true, icon: I.video, js: 'js-yard trip-tap', data: { cap: 'end', rec: t.rentalId, unit: t.unitId || '' } }));
+    // §2.2b cab sheet — unit facts one level down: unit pill · fuel · weight (R3b facts).
+    const cab = state.calOpenTrip === t.id ? `<div class="trip-cab">${t.stops.map((s) => {
+      const u = IDX.unit.get(s.unitId); if (!u) return '';
+      const cat = IDX.category.get(u.categoryId);
+      return `<div class="trip-cab-line">${unitPill(s.unitId)}${cat && cat.fuelType ? badge(String(cat.fuelType).toUpperCase()) : ''}${badge(u.weight ? String(u.weight).toUpperCase() : 'NO WEIGHT')}</div>`;
+    }).join('')}</div>` : '';
     return `<div class="row-1">
         ${badge(t.task, t.task === 'Deliver' ? 'blue' : 'brown')}
         <input class="dt-time js-disp-time" data-id="${esc(t.id)}" data-day="${esc(t.day)}" data-lane="${esc(t.driverId || 'pool')}" value="${esc(t.time || '')}" placeholder="—:—" maxlength="8" aria-label="Stop time" data-tip="Set the stop time — reorders the run" />
+        ${townHtml}
         <span class="spacer"></span>
         ${t.done ? badge('Done', 'green') : ''}
       </div>
       <div class="row-2">${refPill('rentals', t.rentalId, t.cust)}${t.unitId ? unitPill(t.unitId) : ''}${driverChip}</div>
-      ${t.addr ? `<div class="dt-addr${t.pin ? '' : ' nopin'} js-site-go" data-rec="${esc(t.rentalId)}" data-unit="${esc(t.unitId || '')}" data-tip="Open the site / set the map pin">${t.pin ? '' : '⚠ '}${esc(t.addr)}</div>` : ''}`;
+      <div class="trip-r3">${callHtml}<span class="spacer"></span>${logHtml}</div>
+      ${cab}`;
   },
 };
 
@@ -9124,6 +9159,19 @@ function tripsFor() {
     };
   });
 }
+/* §2.2b destination town — the 2nd-from-last comma segment before the state, once a
+   trailing country is dropped ("265 Callie Ln, Orange, TX, USA" → "Orange"). The last
+   segment must LOOK like a state (2 letters, optional zip) or we can't trust the shape —
+   fall back to the truncated raw address so an odd site string still reads. */
+function tripTown(addr) {
+  addr = String(addr || '').trim(); if (!addr) return '';
+  const parts = addr.split(',').map((s) => s.trim()).filter(Boolean);
+  if (parts.length && /^(usa|united states)$/i.test(parts[parts.length - 1])) parts.pop();
+  if (parts.length >= 2 && /^[A-Za-z]{2}(\s+\d{5}(-\d{4})?)?$/.test(parts[parts.length - 1])) return parts[parts.length - 2];
+  return addr.length > 26 ? addr.slice(0, 25).trimEnd() + '…' : addr;
+}
+/* tel: href from a formatted phone ("(337) 214-5001" → tel:+13372145001). Blank/unparseable → ''. */
+const telHref = (phone) => { const d = String(phone || '').replace(/\D/g, ''); return d ? `tel:${d.length === 10 ? '+1' + d : (d.length === 11 && d[0] === '1' ? '+' + d : d)}` : ''; };
 /* Trips mini-search (calendar has no IDX.search blob — it's derived, not a stored
    record — so this is a direct substring match, not the shared rowMatches/blobMatches
    AND-term engine every other card's search bar uses). */
@@ -9157,18 +9205,30 @@ function timeToMin(t) {
   return m ? (+m[1]) * 60 + (+m[2]) : null;
 }
 function fmtClock(t) { const mn = timeToMin(t); if (mn == null) return '—:—'; let h = Math.floor(mn / 60); const m = mn % 60; const ap = h < 12 ? 'a' : 'p'; h = h % 12 || 12; return `${h}:${String(m).padStart(2, '0')}${ap}`; }
-// §2.3 cockpit: tapping a stop FOCUSES it on the map (pan + highlight) — never leaves the
-// cockpit. Opening the full rental is the customer link inside the stop (refPill). No flicker
-// (pan + a class toggle, not a full render).
+// §2.3/§2.2b: FOCUS a stop on the live map (pan + highlight) — never leaves the card.
+// Opening the full rental is the customer refPill in the row. No flicker (pan + a
+// class toggle, not a full render).
 function dispatchFocusStop(stopId) {
   const day = state.dispatchDay || TODAY_ISO;
   const s = dispatchDayStops(day).find((x) => x.id === stopId); if (!s) return;
   state.dispFocusId = stopId;   // remember the focused stop so the highlight survives a re-render
   const pos = (s.pin && Number.isFinite(s.pin.lat)) ? s.pin : _dispGeo[s.addr];
   if (_dispMap && pos) { _dispMap.panTo(pos); if (_dispMap.getZoom() < 14) _dispMap.setZoom(14); }
-  document.querySelectorAll('.disp-tok.focus').forEach((n) => n.classList.remove('focus'));
   const esc1 = (window.CSS && CSS.escape) ? CSS.escape(stopId) : stopId.replace(/["\\]/g, '\\$&');
-  document.querySelectorAll(`.disp-tok[data-id="${esc1}"]`).forEach((tok) => tok.classList.add('focus'));   // the token exists in BOTH the merged strip and its lane
+  // trips row — the neon "you are here" ring rides the focused trip's row
+  document.querySelectorAll('.row[data-card="calendar"].trip-focus').forEach((n) => n.classList.remove('trip-focus'));
+  document.querySelectorAll(`.row[data-card="calendar"][data-rec="${esc1}"]`).forEach((n) => n.classList.add('trip-focus'));
+}
+/* §2.2b — destination (town) tap: jump the inline live map to this trip. Flips to the
+   trip's own day (the map + focus lookups run per-day), rings the row, and pans the map
+   when one is mounted. No map (offline/#local, or the panel not shipped/collapsed) →
+   the row ring is the whole (quiet) response — never an error path. Phase 2 opens the
+   collapsed map panel from here. */
+function tripTownGo(stopId, day) {
+  if (day) state.dispatchDay = day;
+  state.dispFocusId = stopId;
+  render();
+  dispatchFocusStop(stopId);
 }
 /* dispatchGridBody() — the map-cockpit card body (full-pane map + hover-expand rail +
    driver lanes) — RETIRED here (Trips card phase 1, spec 2026-07-09): calendarCardEl
@@ -14403,6 +14463,8 @@ function onClick(e) {
   // §2.3 dispatch timeline — day nav + open a stop's rental (Phase 6)
   if (closest('.js-disp-day')) { e.stopPropagation(); state.dispatchDay = addDaysISO(state.dispatchDay || TODAY_ISO, Number(closest('.js-disp-day').dataset.dir)); return render(); }
   if (closest('.js-disp-today')) { e.stopPropagation(); state.dispatchDay = TODAY_ISO; return render(); }
+  // §2.2b Trips row — destination (town) tap: jump the live map to this trip
+  if (closest('.js-trip-town')) { e.stopPropagation(); const b = closest('.js-trip-town'); return tripTownGo(b.dataset.id, b.dataset.day); }
   // §2.3 free-form route arrows — these win over the stop-open below (the icon lives inside the row)
   if (closest('.js-disp-stop') && !closest('.js-disp-time') && !closest('.disp-grip') && !closest('.js-site-go')) { e.stopPropagation(); return anchorRecord('rentals', closest('.js-disp-stop').dataset.rec); }
   if (closest('.js-disp-tok') && !closest('.dt-time') && !closest('.dt-grip') && !closest('.js-site-go') && !closest('.pill')) { e.stopPropagation(); return dispatchFocusStop(closest('.js-disp-tok').dataset.id); }   // §2.3 cockpit: tap a rail stop → focus it on the map (the customer pill opens the rental)
@@ -14681,9 +14743,15 @@ function onClick(e) {
   // instead (the first click never opens — #10). Ctrl/Cmd+click = new tab (instant).
   const row = closest('.row');
   if (row) {
-    // Trips rows have no detail view yet (Phase 1, derived-only) — a bare-row tap/hotkey
-    // is a no-op; the pill branch above already handled anything worth navigating to.
-    if (row.dataset.card === 'calendar') { e.stopPropagation(); return; }
+    // §2.2b Trips cab sheet — tapping the row BODY (pills/time/town/log all returned
+    // above; the tel: anchor + time input are left to their own devices) toggles the
+    // trip's inline unit-facts sheet. One open at a time; a second tap collapses.
+    if (row.dataset.card === 'calendar') {
+      if (closest('.dt-time') || closest('a')) return;
+      e.stopPropagation();
+      state.calOpenTrip = state.calOpenTrip === row.dataset.rec ? null : row.dataset.rec;
+      return render();
+    }
     if (e.metaKey || e.ctrlKey) { e.preventDefault(); return openInNewTab(row.dataset.card, row.dataset.rec, row.dataset.type); }
     const rc = row.dataset.card, rr = row.dataset.rec, rt = row.dataset.type;
     document.querySelectorAll('.row.selected').forEach((n) => n.classList.remove('selected'));
@@ -18441,7 +18509,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, setRole: (r) => { currentRole = r || ''; render(); },
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, saveYardCapture, setRole: (r) => { currentRole = r || ''; render(); },
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }

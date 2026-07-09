@@ -31,7 +31,7 @@ const LUCIDE = {
   I: {
     plus: 'plus', search: 'search', x: 'x', filter: 'filter', grid: 'layout-grid',
     truck: 'truck', back: 'chevron-left', list: 'list', sun: 'sun', moon: 'moon',
-    qr: 'qr-code', mouse: 'mouse', video: 'video', camera: 'camera', droplet: 'droplet',
+    qr: 'qr-code', mouse: 'mouse', video: 'video', camera: 'camera', droplet: 'droplet', phone: 'phone',
     table: 'table', graph: 'chart-column', sliders: 'sliders-horizontal', inbox: 'inbox',
     bell: 'bell', alert: 'triangle-alert', eye: 'eye', eyeOff: 'eye-off', feedback: 'message-square-text',
     box: 'box', doc: 'file', lock: 'lock', lockOpen: 'lock-open',
@@ -122,7 +122,7 @@ const CUSTOM = {
 // Emission order per object (keeps the generated file diff-stable).
 const ORDER = {
   I: ['circle', 'plus', 'search', 'x', 'filter', 'grid', 'truck', 'back', 'list', 'mark',
-      'sun', 'moon', 'hardhat', 'horseshoe', 'bluesteel', 'qr', 'mouse', 'video', 'camera',
+      'sun', 'moon', 'hardhat', 'horseshoe', 'bluesteel', 'qr', 'mouse', 'video', 'camera', 'phone',
       'droplet', 'table', 'graph', 'sliders', 'inbox', 'bell', 'alert', 'eye', 'eyeOff', 'feedback',
       'box', 'doc', 'lock', 'lockOpen', 'chev', 'chevL', 'chevR', 'chat'],
   CARD_ICON: ['customers', 'rentals', 'categories', 'units', 'invoices', 'workOrders',
