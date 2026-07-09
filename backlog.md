@@ -33,6 +33,16 @@ the task. To work one: `git checkout <branch>`, refresh it from its area
   up: "I have a lot in mind for this. Leave it in the UI but add a task for
   later completion.") — needs a concrete spec for which graph(s) should get
   it before it's wired up.
+- **Rental Detail redesign** (`design-system/flag-color-system`) — a flag-driven
+  R/Y/G status-color engine (`getEntityFlags`/`getEntityColor`/`entityArchived`,
+  reworked `statusPill`) plus a new numbered-date summary calendar embedded in
+  the Rental Detail card (`rentalDetailCal`) and a reshuffled header/units/
+  footer. Real, unshipped work but 455+ commits stale (hard conflicts in
+  app.js/config.js/icons.js/rule-usage.js/style.css/tools/gen-icons.mjs) — would
+  need a forward-port, not a merge. Doesn't touch the dispatch-grid Calendar
+  card's code directly, but it's calendar UI in the rentals area landing near
+  Jac's concurrent Trips-card work — **parked at Jac's direction (2026-07-09),
+  revisit next week** once Trips has more shape.
 - **`area/comms-notifications`** is a new area created off `staging` for #9 + #11
   (they share send plumbing — templates, triggers, delivery status).
 - Safety backup of the pre-reset `staging` tip lives at branch
