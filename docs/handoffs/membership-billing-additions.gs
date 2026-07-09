@@ -1,17 +1,39 @@
 /* ════════════════════════════════════════════════════════════════════════
- * ⚠ UNVERIFIED AS OF 2026-07-09 — this file's header claims "DEPLOYED LIVE
- * 2026-06-25 (version 46)", but a live Code.gs read via the Drive connector
- * that day found ZERO occurrences of membershipEnroll_, membershipCancel_,
- * membershipReactivate_, membershipBillingCron, or MEM_TERM_MONTHS anywhere
- * in the bound script — only the older Stripe-Subscription membershipActivate_
- * path exists live. Either the deployed web-app version differs from the
- * bound-script content this read saw (Apps Script versioning — a deploy can
- * be pinned to an older version than the editor's current content), or the
- * app-driven membership system documented below is NOT actually live despite
- * this header. Flagged to Jac (#552 audit follow-up, 2026-07-09) — do not
- * trust the "DEPLOYED LIVE" claim below until that's confirmed one way or
- * the other. The gate-name correction (MONEY_ROLES → roleMoneyOk_) below is
- * still applied for whenever this does get deployed for real.
+ * ⚠ CONFIRMED REGRESSION (2026-07-09) — root-caused via the Apps Script REST
+ * API's read-only projects.versions.list / projects.getContent (service
+ * account, no deploy risk). This file's header claim "DEPLOYED LIVE
+ * 2026-06-25 (version 46)" was TRUE at the time — v46 (23:09:17 UTC) really
+ * did add membershipEnroll_/membershipCancel_/membershipReactivate_/
+ * membershipBillingCron/MEM_TERM_MONTHS + the 3 dispatch lines, confirmed
+ * present in v46 and v47.
+ *
+ * It was then SILENTLY DELETED 11 minutes later in v48 (23:21:35 UTC,
+ * "redeploy: #256 POST-guard") and has been absent from every version since
+ * (confirmed through v82, the version live today). Binary-searched + diffed
+ * v47 vs v48 directly:
+ *   - v48 legitimately ADDS the #255 grace-anchor fix, the #256 POST-guard
+ *     dispatch check, deformula_() formula-injection guard, and the #250
+ *     webhook token guard — all real, all still live, none of this was a
+ *     mistake.
+ *   - But v48 ALSO removes the 3 membershipEnroll/Cancel/Reactivate dispatch
+ *     lines AND the entire ~176-line app-driven membership block (every
+ *     function below this banner: memAddMonthsIso_ through installMembershipBillingCron).
+ *   - The older Stripe-subscription membership path (membershipActivate_ /
+ *     membershipDailySweep / membershipLedger_) is UNAFFECTED — present in
+ *     both v47 and v48, still live today. Only the app-driven system below
+ *     was lost.
+ * Conclusion: whoever pushed the #255/#256/#250 fixes did so from a local
+ * Code.js snapshot taken BEFORE v46's membership merge (updateContent is a
+ * full-file overwrite, not a merge, so the stale base silently reverted
+ * everything after it). This has been live in production, broken, for the
+ * full ~13.5 days since 2026-06-25T23:21:35Z — the frontend (app.js) still
+ * actively calls membershipEnroll/membershipCancel/membershipReactivate as
+ * if they work; every one of those calls has been hitting "unknown action"
+ * in prod the entire time.
+ * FIX: re-splice this file's membership block (gate correction already
+ * applied below: MONEY_ROLES → roleMoneyOk_) back into the CURRENT live
+ * Code.gs and redeploy — same additive recipe as any other
+ * BACKEND-DEPLOY-QUEUE.md item, still STOP-gated on Jac's go-ahead.
  * ════════════════════════════════════════════════════════════════════════ */
 /* ════════════════════════════════════════════════════════════════════════
  * MEMBERSHIP — app-driven billing backend. DEPLOYED LIVE 2026-06-25 (version 46)
@@ -31,8 +53,12 @@
  *   if (action === 'membershipReactivate') return json(roleMoneyOk_(role) ? membershipReactivate_(body, role) : { ok:false, error:'forbidden' });
  *
  * ── REMAINING MANUAL STEP: install the daily trigger (clasp run can't — no API-exec deploy).
- *   In the Apps Script editor: Run → installMembershipBillingCron_   (creates a daily 3am trigger)
+ *   In the Apps Script editor: Run → installMembershipBillingCron   (creates a daily 3am trigger)
  *   — or Triggers (clock icon) → Add Trigger → membershipBillingCron · Time-driven · Day timer · 3am.
+ *   NOTE (2026-07-09): this installer function is named WITHOUT a trailing underscore on purpose
+ *   — Apps Script's editor hides any function ending in "_" from the Run dropdown (private-helper
+ *   convention), so a trailing underscore here would make it unrunnable from the UI. Matches the
+ *   existing installUnitDailyTrigger precedent elsewhere in this file.
  * ════════════════════════════════════════════════════════════════════════ */
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -208,5 +234,5 @@ function memLapse_(c) {
   memPatchCustomer_(c.customerId, { paidUntil: memYestIso_(), graceUntil: memYestIso_(), prepaid: false });
   memLedger_(cxlId, c.customerId, 0, c.stripeId, 'cron', 'membership-lapse');
 }
-// Install ONCE from the Apps Script editor (Run → installMembershipBillingCron_):
-function installMembershipBillingCron_() { ScriptApp.newTrigger('membershipBillingCron').timeBased().everyDays(1).atHour(3).create(); }
+// Install ONCE from the Apps Script editor (Run → installMembershipBillingCron):
+function installMembershipBillingCron() { ScriptApp.newTrigger('membershipBillingCron').timeBased().everyDays(1).atHour(3).create(); }
