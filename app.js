@@ -750,7 +750,7 @@ function reindexRentalLinks() {
   DATA.units.forEach((u) => IDX.search.set('units:' + u.unitId, searchBlob('units', u)));
   DATA.categories.forEach((c) => IDX.search.set('categories:' + c.categoryId, searchBlob('categories', c)));
 }
-const idOf   = (card, rec) => rec && rec[{ customers: 'customerId', rentals: 'rentalId', categories: 'categoryId', units: 'unitId', invoices: 'invoiceId', workOrders: 'woId', inspections: 'inspectionId', serviceOrders: 'unitId', vendors: 'vendorId', parts: 'partId', expenses: 'expenseId', files: 'fileId' }[card]];   // null-safe: a dangling ref resolves to undefined, never a render crash (matches recOf)
+const idOf   = (card, rec) => rec && rec[{ customers: 'customerId', rentals: 'rentalId', categories: 'categoryId', units: 'unitId', invoices: 'invoiceId', workOrders: 'woId', inspections: 'inspectionId', serviceOrders: 'unitId', vendors: 'vendorId', parts: 'partId', expenses: 'expenseId', files: 'fileId', calendar: 'id' }[card]];   // null-safe: a dangling ref resolves to undefined, never a render crash (matches recOf) — calendar = a derived Trip (tripsFor), keyed by its dispatchStopId
 const recOf  = (card, id) => ({ customers: IDX.customer, rentals: IDX.rental, categories: IDX.category, units: IDX.unit, invoices: IDX.invoice, workOrders: IDX.wo, inspections: IDX.insp, serviceOrders: IDX.unit, vendors: IDX.vendor, expenses: IDX.expense, parts: IDX.part, files: IDX.file }[card])?.get(id);
 
 /* ── §5 comprehensive search blob — ONE source of truth for what's searchable.
@@ -2102,6 +2102,7 @@ const state = {
   chat: { open: false, activeId: null, draft: '', chats: [] },   // §17 internal team dock (Phase 7): PERSISTENT chats (never deleted). Each = { id, tags, participants, messages, seen{userKey:lastViewedAt} }. Empty participants = dormant; reopen via a tagged element.
   wrangler: { open: false, min: false, id: null, messages: [], busy: false, error: '', draft: '', attach: [], files: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null },   // §18 Mr. Wrangler dock — id ties the live chat to its §18g rail snapshot; min collapses it to the header bar; survives minimize, restores conversation on reopen
   mobileCol: 0,               // §M1 — which column the phone shows (0 Yard · 1 Rentals · 2 Customers); drives swipe position + the per-column bottom strip
+  calSearch: '',               // Trips card mini-search (calendar is card-stateless — no session.cards.calendar — so this rides on state directly)
   woPartForm: null,           // woId whose "+ Add Part/Labor" inline form is open
   invLineForm: null,          // invoiceId whose "+ Add Custom" inline form is open
   invMergePick: null,         // invoiceId whose "Merge invoice" picker is open (consolidate unpaid bills)
@@ -2257,7 +2258,7 @@ function closeAll() {
   // Clearing the item-tab rail returns to a clean slate, so the search bars must
   // go with it — both the global one (query + pinned filter pills) and every
   // per-card mini-search on the now-active default session (these stayed filled).
-  state.searchMode = false; state.query = ''; state.filterTerms = [];
+  state.searchMode = false; state.query = ''; state.filterTerms = []; state.calSearch = '';
   for (const c of GRID_CARDS) { const ccs = state.defaultSession.cards[c.id]; if (ccs) { ccs.search = ''; ccs.filterTerms = []; ccs.listLimit = undefined; } }
   state.winEdit = null; state.datesearch = null;
   render();
@@ -2392,7 +2393,9 @@ function cardRecordAt(target) {
     return SHOP_TYPES.includes(pc) ? { card: 'shop', recId: pill.dataset.pillRec, recType: pc } : { card: pc, recId: pill.dataset.pillRec, recType: null };
   }
   const row = target.closest && target.closest('.row');
-  if (row && row.dataset.rec) return { card: row.dataset.card, recId: row.dataset.rec, recType: row.dataset.type || null };
+  // Trips rows have no detail view yet (Phase 1, derived-only) — pills inside them still
+  // resolve above (a customer/unit/driver pill navigates); the bare row resolves to nothing.
+  if (row && row.dataset.rec && row.dataset.card !== 'calendar') return { card: row.dataset.card, recId: row.dataset.rec, recType: row.dataset.type || null };
   const cardNode = target.closest && target.closest('.card');
   if (cardNode) {
     const dc = cardNode.dataset.card;
@@ -5223,13 +5226,17 @@ function rowEl(card, rec) {
   if (card === 'customers' && /Blacklist/i.test(rec.accountType || '')) extra += ' unavailable';   // §9 blacklisted → red
   // §10 — under an active rental window, tint every unavailable unit/category red
   if (availWin && availUnavailable(card, rec)) extra += ' unavailable';
+  if (card === 'calendar' && rec.done) extra += ' trip-done';   // Trips: a done run stays visible, dimmed (spec §2.2)
   const node = el('div', 'row' + extra);
   node.dataset.card = card; node.dataset.rec = id;
-  node.innerHTML = `${rowViz(card, rec)}${commentMarkerHtml(card, rec)}
+  // Trips rows have no detail view yet (Phase 1, derived-only) — eye-preview / new-tab
+  // open a "record" that doesn't exist, so they're dropped rather than wired to crash.
+  const actions = card === 'calendar' ? '' : `
     <div class="r-actions">
       <button class="rbtn js-roweye${state.previewsOn ? '' : ' off'}" data-tip="${state.previewsOn ? 'Hover: preview · Click: previews OFF app-wide' : 'Previews are OFF — click to turn on'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
       <button class="rbtn js-newtab" data-tip="Open in new tab (+)">${I.plus}</button>
-    </div>
+    </div>`;
+  node.innerHTML = `${rowViz(card, rec)}${commentMarkerHtml(card, rec)}${actions}
     <div class="row-content">${inner}</div>`;
   return node;
 }
@@ -5527,6 +5534,25 @@ const ROWS = {
         ${svcPills(top, true)}
         ${ar ? statusPill('rentalStatus', rentalDisplayStatus(ar), { card: 'rentals', recId: ar.rentalId }) : ''}
       </div>`;
+  },
+
+  /* ── TRIPS (née Calendar/dispatch cockpit) — spec 2026-07-09 §2.2, Phase 1: one
+     row per derived Trip. Anatomy: kind badge · tap-to-edit time · customer refPill ·
+     unit pill · address (pin-status ⚠) · driver pill (R5b +Driver, reused verbatim
+     from the retired lane rail) · Done badge. Row content only — rowEl() supplies the
+     card frame (and skips the eye/new-tab actions for this card, see rowEl). */
+  calendar: (t) => {
+    const driverChip = t.driverId
+      ? `<button class="catr-slot js-stop-driver" data-id="${esc(t.id)}" data-rec="${esc(t.rentalId)}" data-unit="${esc(t.unitId || '')}" data-task="${esc(t.task)}" data-tip="Driver on this leg — tap to change">${badge(driverName(t.driverId), 'navy')}</button>`
+      : (driverRoster().length ? `<button class="catr-slot js-stop-driver" data-r="R5b" data-id="${esc(t.id)}" data-rec="${esc(t.rentalId)}" data-unit="${esc(t.unitId || '')}" data-task="${esc(t.task)}" data-tip="Assign a driver to this leg"><span class="add-field anchor" style="height:20px;font-size:10px">+Driver</span></button>` : '');
+    return `<div class="row-1">
+        ${badge(t.task, t.task === 'Deliver' ? 'blue' : 'brown')}
+        <input class="dt-time js-disp-time" data-id="${esc(t.id)}" data-day="${esc(t.day)}" data-lane="${esc(t.driverId || 'pool')}" value="${esc(t.time || '')}" placeholder="—:—" maxlength="8" aria-label="Stop time" data-tip="Set the stop time — reorders the run" />
+        <span class="spacer"></span>
+        ${t.done ? badge('Done', 'green') : ''}
+      </div>
+      <div class="row-2">${refPill('rentals', t.rentalId, t.cust)}${t.unitId ? unitPill(t.unitId) : ''}${driverChip}</div>
+      ${t.addr ? `<div class="dt-addr${t.pin ? '' : ' nopin'} js-site-go" data-rec="${esc(t.rentalId)}" data-unit="${esc(t.unitId || '')}" data-tip="Open the site / set the map pin">${t.pin ? '' : '⚠ '}${esc(t.addr)}</div>` : ''}`;
   },
 };
 
@@ -7251,13 +7277,41 @@ const GROUP_DEFS = {
     { key: 'Collections', color: 'red' }, { key: 'Late', color: 'red' }, { key: 'Unpaid', color: 'yellow' },
     { key: 'Partial', color: 'yellow' }, { key: 'Not Due', color: 'blue' }, { key: 'Paid', color: 'green' }, { key: 'Refunded', color: 'gray' },
   ] },
+  /* Trips (spec 2026-07-09 §2.2) — day buckets, not status buckets. keyOf returns 'Today' /
+     'Tomorrow' / the trip's own ISO day (any other future day) / 'Earlier' (past — trailing,
+     default-collapsed below). `sections` is a FUNCTION of the bucketed keys (not a fixed list —
+     unlike every other card, the "days present" are only known once the rows are bucketed):
+     Today/Tomorrow lead, future days sort chronologically (ISO strings sort = date order), the
+     bucket's own ISO day rides as the key (stable across renders — a display label would drift
+     year to year) with the 'SAT JUL 12'-style label carried separately for the header text.
+     groupSuffix rides the done/total fraction onto the header label (e.g. "· 3 · 2 done"). */
+  calendar: {
+    keyOf: (t) => (t.day === TODAY_ISO ? 'Today' : t.day === addDaysISO(TODAY_ISO, 1) ? 'Tomorrow' : t.day > TODAY_ISO ? t.day : 'Earlier'),
+    sections: (keys) => {
+      const future = keys.filter((k) => k !== 'Today' && k !== 'Tomorrow' && k !== 'Earlier').sort();
+      return [
+        { key: 'Today', color: 'red' },
+        { key: 'Tomorrow', color: 'yellow' },
+        ...future.map((iso) => ({ key: iso, label: dispatchDayLabel(iso).toUpperCase(), color: 'purple' })),
+        { key: 'Earlier', color: 'gray' },
+      ];
+    },
+    groupSuffix: (group) => { const done = group.filter((t) => t.done).length; return done ? `${done} done` : ''; },
+  },
 };
-// Collapsed groups, remembered per device: { "<card>:<groupKey>": 1 }.
+// Collapsed groups, remembered per device: { "<card>:<groupKey>": true|false }. Absent = the
+// card's own default (every card defaults OPEN except Trips' Earlier bucket — spec §2.2 — which
+// starts collapsed until the dispatcher opens it; hasOwnProperty (not a truthy check) so an
+// explicit "expanded" (stored false) sticks, distinct from "never touched" (falls to the default).
 const COLLAPSED_GROUPS = (() => { try { return JSON.parse(localStorage.getItem('jactec.collapsedGroups') || '{}'); } catch (e) { return {}; } })();
-const groupCollapsed = (card, key) => !!COLLAPSED_GROUPS[card + ':' + key];
+const groupDefaultCollapsed = (card, key) => card === 'calendar' && key === 'Earlier';
+const groupCollapsed = (card, key) => {
+  const k = card + ':' + key;
+  return Object.prototype.hasOwnProperty.call(COLLAPSED_GROUPS, k) ? !!COLLAPSED_GROUPS[k] : groupDefaultCollapsed(card, key);
+};
 function toggleGroupCollapsed(card, key) {
   const k = card + ':' + key;
-  if (COLLAPSED_GROUPS[k]) delete COLLAPSED_GROUPS[k]; else COLLAPSED_GROUPS[k] = 1;
+  COLLAPSED_GROUPS[k] = !groupCollapsed(card, key);
   try { localStorage.setItem('jactec.collapsedGroups', JSON.stringify(COLLAPSED_GROUPS)); } catch (e) {}
 }
 /* Custom GROUP ORDER — drag-to-reorder a card's group headers (Jac 2026-07-04),
@@ -7296,8 +7350,12 @@ function appendGroupedSections(list, rows, cs, card) {
   const limit = cs.listLimit || VIRT_CAP;
   const buckets = new Map();
   for (const rec of rows) { const k = def.keyOf(rec) || '—'; if (!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(rec); }
-  const known = new Set(def.sections.map((s) => s.key));
-  let secs = def.sections.filter((s) => buckets.has(s.key))
+  // `sections` is usually a fixed list (status buckets known ahead of time); Trips' day
+  // buckets aren't known until the rows are bucketed, so it may be a FUNCTION of the
+  // bucketed keys instead — backward compatible with every existing card's fixed array.
+  const defSections = typeof def.sections === 'function' ? def.sections([...buckets.keys()]) : def.sections;
+  const known = new Set(defSections.map((s) => s.key));
+  let secs = defSections.filter((s) => buckets.has(s.key))
     .concat([...buckets.keys()].filter((k) => !known.has(k)).map((k) => ({ key: k, color: 'gray' })));   // leftover keys → trailing gray group (never dropped)
   const custom = customGroupOrder(card);
   if (custom) {
@@ -7314,7 +7372,8 @@ function appendGroupedSections(list, rows, cs, card) {
     hd.dataset.card = card; hd.dataset.group = sec.key;
     hd.draggable = true;   // drag-to-reorder (native DnD — matches the dispatch-rail stop reorder pattern)
     hd.setAttribute('style', `--sec:var(--${sec.color})`);
-    hd.innerHTML = `<span class="grp-grip" data-tip="Drag to reorder">⠿</span><span class="grp-chev">${I.chevR}</span><span class="grp-label">${esc(sec.label || sec.key)} · ${group.length}</span>`;
+    const suffix = def.groupSuffix ? def.groupSuffix(group) : '';   // e.g. Trips' "2 done" riding the count (spec §2.2)
+    hd.innerHTML = `<span class="grp-grip" data-tip="Drag to reorder">⠿</span><span class="grp-chev">${I.chevR}</span><span class="grp-label">${esc(sec.label || sec.key)} · ${group.length}${suffix ? ' · ' + esc(suffix) : ''}</span>`;
     list.appendChild(hd);
     if (collapsed) continue;   // header only — cards hidden, and they don't consume the window
     const canShow = limit - shown;
@@ -7466,12 +7525,36 @@ function memberCardEl(member, session) {
   if (SHOP_TYPES.includes(member)) return shopCardEl({ id: 'shop', title: MEMBER_TITLE[member] }, session, member);
   return cardEl(GRID_CARD_BY_ID[member], session);
 }
+/* Trips card body (spec 2026-07-09 §2.2, Phase 1) — a native list card: a mini-search
+   listbar + day-grouped trip rows, same skeleton as every other card (Units/Rentals/…).
+   'calendar' is card-stateless (no session.cards.calendar — Phase 0), so this hand-rolls
+   the pieces listView()/cardEl() normally wire up, using state.calSearch for the search
+   text instead of a per-card cs. No title bar — the column tab already says "Trips". */
 function calendarCardEl(session) {
   const node = el('div', 'card' + (state.searchMode ? ' search-glow' : ''));
   node.dataset.card = 'calendar';
-  // no card title — the column tab already says "Calendar" (#2.3)
   const body = el('div', 'card-body cal-body');
-  body.innerHTML = dispatchGridBody();
+  const q = (state.calSearch || '').trim();
+  const bar = el('div', 'listbar');
+  bar.innerHTML = `<div class="mini-searchwrap${q ? ' has-query' : ''}">
+    <input class="mini-search" placeholder="Search trips…" value="${esc(state.calSearch || '')}" data-card="calendar" />
+  </div>`;
+  body.appendChild(bar);
+  let trips = tripsFor();
+  if (q) trips = trips.filter((t) => tripMatches(t, q));
+  trips = [...trips].sort(tripSort);
+  const list = el('div', 'list');
+  if (!trips.length) {
+    const label = q ? 'No Matching Trips' : 'No Hauls On The Books';
+    const hint = q ? `No trips match "${q}".` : 'Rentals with delivery or recovery land here on their own.';
+    list.innerHTML = `<div class="trip-empty"><span class="trip-empty-label">${esc(label)}</span><span class="trip-empty-hint">${esc(hint)}</span></div>`;
+  } else {
+    appendGroupedSections(list, trips, {}, 'calendar');
+  }
+  body.appendChild(list);
+  const foot = el('div', 'disp-foot');
+  foot.innerHTML = `<span class="disp-offdot"></span><span class="disp-offline">Offline — cached</span>`;
+  body.appendChild(foot);
   node.appendChild(body);
   return node;
 }
@@ -8892,9 +8975,13 @@ function hkDemoInner(d) {
   return '<div class="hk-card"><i class="hit"></i><i></i></div><span class="hk-ring r1"></span>' + ptr;       // click → row lights
 }
 
-/* ── §5.3/§11 Office Dispatch Time Grid ──────────────────────────────────────
+/* ── §5.3/§11/§2.3 Trips (née Office Dispatch Time Grid) ──────────────────────
    Every transport task (Deliver at the rental's start, Pick up at its end) for
-   active rentals, grouped by day so the Office sees what trucks go where/when. */
+   active rentals, grouped by day so the Office sees what trucks go where/when.
+   Phase 1 (spec 2026-07-09) retired the map-cockpit card body (dispatchGridBody)
+   for a native day-grouped trip list (calendarCardEl/tripsFor, APP-18); this
+   derivation cluster + the map singleton (mountDispatchMap/refreshDispatchMap)
+   stay — Phase 2 re-parents the map into the new card. */
 /* Driver roster (spec rentals-dispatch D6, Jac 2026-06-29): the Settings → Team Roster rows
    whose role reads Driver (fallback: the whole roster when nobody is tagged Driver yet).
    Rows predating stable ids fall back to name as the ref. */
@@ -8923,13 +9010,9 @@ function dispatchEvents() {
   });
   return out.sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
 }
-// Body-only dispatch grid (stats + day groups) — rendered inside the Calendar
-// card body in the middle column. Pure derivation; dispatchEvents() unchanged.
-/* §2.3 DISPATCH — the Calendar card is a DAILY DRIVER TIMELINE (Phase 6, Jac):
-   the day's transports, auto-filled from rentals, as an ordered route from the
-   yard and back. D = Deliver, R = Recover, 🏠 = JAC. Drag a stop to reorder the
-   run; type a time; the date rides as a bold-red deadline. Order + times are
-   per-device (localStorage). */
+/* §2.3 DISPATCH — the Trips card (Phase 6/spec 2026-07-09): the day's transports,
+   auto-filled from rentals. D = Deliver, R = Pick up. Order + times are per-device
+   (localStorage) until Phase 3/4 materialize a Trip + sync it. */
 const dispatchStopId = (ev) => `${ev.rentalId}|${ev.unitId || ''}|${ev.task}`;
 const _lsJSON = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}'); } catch (e) { return {}; } };
 const _lsSave = (k, o) => { try { localStorage.setItem(k, JSON.stringify(o)); } catch (e) {} };
@@ -9017,6 +9100,48 @@ function stopDone(ev) {
   return ev.task === 'Deliver' ? !!src.startCapture : !!src.endCapture;
 }
 const dispatchNextId = (stops) => { const n = stops.find((s) => !stopDone(s)); return n ? n.id : null; };
+/* ── APP-23b Trips derivation (spec 2026-07-09 §2.3, Phase 1) ─────────────────
+   tripsFor(): every dispatchEvents() event becomes its own derived Trip — no
+   materialized record yet (Phase 3), so a cancelled rental's trip vanishes for
+   free on the next render. One event = one trip in Phase 1 (merge/split, which
+   turns several stops into one trip, is Phase 3). Time resolution mirrors
+   dispatchDayStops exactly (per-lane schedule → legacy flat key → the rental's
+   own time) so a dispatcher's prior edits under the old cockpit carry over. */
+function tripsFor() {
+  const legacyTimes = dispatchTimesLS();
+  const sched = dispatchSchedLS();
+  return dispatchEvents().map((ev) => {
+    const id = dispatchStopId(ev), lane = ev.driverId || 'pool', day = ev.date;
+    const daySched = sched[day] || {};
+    const lt = daySched[lane] && daySched[lane].times ? daySched[lane].times[id] : undefined;
+    const time = lt !== undefined ? lt : (legacyTimes[id] ?? ev.time ?? '');
+    return {
+      id, day, time, driverId: ev.driverId || null,
+      stops: [{ rentalId: ev.rentalId, unitId: ev.unitId, task: ev.task }],
+      done: stopDone(ev),
+      // convenience fields (derived-only in Phase 1 — Phase 3's materialized shape is additive, not this)
+      task: ev.task, color: ev.color, rentalId: ev.rentalId, unitId: ev.unitId, cust: ev.cust, unit: ev.unit, addr: ev.addr, pin: ev.pin,
+    };
+  });
+}
+/* Trips mini-search (calendar has no IDX.search blob — it's derived, not a stored
+   record — so this is a direct substring match, not the shared rowMatches/blobMatches
+   AND-term engine every other card's search bar uses). */
+function tripMatches(t, query) {
+  const q = query.trim().toLowerCase(); if (!q) return true;
+  const blob = [t.cust, t.unit, t.addr, t.task, driverName(t.driverId), t.time].filter(Boolean).join(' ').toLowerCase();
+  return blob.includes(q);
+}
+/* Within a day: no-time trips pinned to the top, then chronological by minute (spec
+   §2.2). A numeric-minute compare, not dispatchDayStops' order-array/string fallback —
+   Phase 1 has no manual drag-reorder to feed an order array (removed; comes back in
+   Phase 3 against the materialized store), so that half of the old comparator never fires. */
+function tripSort(a, b) {
+  if (a.day !== b.day) return a.day < b.day ? -1 : 1;
+  const ma = timeToMin(a.time), mb = timeToMin(b.time);
+  if ((ma == null) !== (mb == null)) return ma == null ? -1 : 1;
+  return ma == null ? 0 : ma - mb;
+}
 function dispatchTruckPos(stops) {   // v1 seam — swapped for live telematics (~next week, Jac)
   const done = stops.filter(stopDone);
   const last = done[done.length - 1];
@@ -9045,80 +9170,10 @@ function dispatchFocusStop(stopId) {
   const esc1 = (window.CSS && CSS.escape) ? CSS.escape(stopId) : stopId.replace(/["\\]/g, '\\$&');
   document.querySelectorAll(`.disp-tok[data-id="${esc1}"]`).forEach((tok) => tok.classList.add('focus'));   // the token exists in BOTH the merged strip and its lane
 }
-/* §2.3 DISPATCH = the OFFICE COCKPIT (Phase 1, Jac): a FULL-PANE live map of the day's
-   run + a minimal schedule rail floating on the right that widens on hover/focus to
-   adjust the run ("No set time" pinned on top). Stops auto-fill from rentals; the map
-   draws the route + truck; every stop reads its KIND (deliver=blue / recover=brown) and
-   the NEXT stop is marked, on BOTH map + rail. Live board — no "send"; edits auto-notify.
-   Phase 1b: drag a token to retime (today it's type-the-time). */
-function dispatchGridBody() {
-  const day = state.dispatchDay || TODAY_ISO;
-  const stops = dispatchDayStops(day);
-  const isToday = day === TODAY_ISO;
-  const allUpcoming = dispatchEvents().filter((e) => e.date >= TODAY_ISO).length;
-  const head = `<div class="disp-head">
-    <button class="disp-nav js-disp-day" data-dir="-1" data-tip="Previous day">‹</button>
-    <div class="disp-date"><b>${esc(dispatchDayLabel(day))}</b>${isToday ? '<span class="disp-today">Today</span>' : '<button class="disp-jump js-disp-today">Today</button>'}</div>
-    <button class="disp-nav js-disp-day" data-dir="1" data-tip="Next day">›</button>
-    <span class="spacer"></span>
-    <span class="disp-count">${stops.length} stop${stops.length === 1 ? '' : 's'}${allUpcoming ? ` · ${allUpcoming} upcoming` : ''}</span>
-  </div>`;
-  if (!stops.length) return `${head}<div class="disp-empty">${I.truck}<p>No transports on this day.</p><span>Rentals with Delivery / Round-Trip / Recovery land here automatically — flip days with ‹ ›.</span></div>`;
-
-  const nextId = dispatchNextId(stops);
-  const scheduled = stops.filter((s) => timeToMin(s.time) != null);
-  const unscheduled = stops.filter((s) => timeToMin(s.time) == null);   // §2.3 "No set time" pinned to the TOP of the rail (Jac)
-  const tokenEl = (s, inDriverLane) => {
-    const kind = dispatchKind(s);
-    const done = stopDone(s), isNext = s.id === nextId;
-    const flag = done ? badge('Done', 'green') : (isNext ? `<span class="dt-next">${I.truck} Next</span>` : '');
-    const driverChip = inDriverLane ? '' : (s.driverId   // inside a driver's lane the lane IS the driver — don't repeat it
-      ? `<button class="catr-slot js-stop-driver" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-task="${esc(s.task)}" data-tip="Driver on this leg — tap to change">${badge(driverName(s.driverId), 'navy')}</button>`
-      : (driverRoster().length ? `<button class="catr-slot js-stop-driver" data-r="R5b" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-task="${esc(s.task)}" data-tip="Assign a driver to this leg"><span class="add-field anchor" style="height:20px;font-size:10px">+Driver</span></button>` : ''));
-    return `<div class="disp-tok js-disp-tok kind-${kind}${done ? ' done' : ''}${isNext ? ' next' : ''}${s.id === state.dispFocusId ? ' focus' : ''}${s.pin ? '' : ' nopin'}" draggable="true" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-lane="${esc(s.lane)}" data-task="${esc(s.task)}">
-      <div class="dt-rail"><span class="dt-dot"></span><b class="dt-mini">${timeToMin(s.time) != null ? esc(fmtClock(s.time)) : '—'}</b></div>
-      <div class="dt-full">
-        <div class="dt-r1"><span class="dt-grip" data-tip="Drag to reorder — or drop on a driver's lane to assign">⠿</span><input class="dt-time js-disp-time" data-id="${esc(s.id)}" data-lane="${esc(s.lane)}" value="${esc(s.time || '')}" placeholder="—:—" maxlength="8" aria-label="Stop time" data-tip="Set the stop time — reorders the run" /><span class="spacer"></span>${flag}</div>
-        <div class="dt-r2">${badge(kind === 'deliver' ? 'Deliver' : 'Recover', kind === 'deliver' ? 'blue' : 'brown')}${refPill('rentals', s.rentalId, s.cust)}${s.unitId ? unitPill(s.unitId) : ''}${driverChip}</div>
-        ${s.addr ? `<div class="dt-addr js-site-go" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-tip="Open the site / set the map pin">${s.pin ? '' : '⚠ '}${esc(s.addr)}</div>` : ''}
-      </div>
-    </div>`;
-  };
-  const sec = (t) => `<div class="dr-sec">${t}</div>`;
-  const listOf = (arr, inDriverLane) => {
-    const un = arr.filter((s) => timeToMin(s.time) == null), schd = arr.filter((s) => timeToMin(s.time) != null);   // "No set time" pinned on top, same law as the merged rail
-    const tok = (s) => tokenEl(s, inDriverLane);
-    return (un.length ? sec('No set time') + un.map(tok).join('') : '') + (schd.length ? (un.length ? sec('Scheduled') : '') + schd.map(tok).join('') : '');
-  };
-  const railRows = (unscheduled.length ? sec('No set time') + unscheduled.map(tokenEl).join('') : '')
-    + (scheduled.length ? (unscheduled.length ? sec('Scheduled') : '') + scheduled.map(tokenEl).join('') : '');
-  // D5 driver lanes — the same rail shape repeated per driver on the same map surface.
-  // Collapsed stays the one 90px strip; expanded shows the Unassigned pool + the lanes the
-  // dispatcher picked (+Lanes), panning horizontally past ~3. Solo view (no lanes picked)
-  // is EXACTLY the pre-lane rail, so the owner-operator flow is untouched.
-  const roster = driverRoster(), shown = dispatchLanesLS(), laned = shown.length > 0;
-  const lanesBtn = roster.length ? `<button class="catr-slot js-disp-lanes" data-r="R5b" data-tip="Corral the run into driver lanes — pick who's showing"><span class="add-field anchor" style="height:20px;font-size:10px">${laned ? `Lanes · ${shown.length}` : '+Lanes'}</span></button>` : '';
-  const laneEl = (key) => {
-    const ls = dispatchLaneStops(day, key, stops);
-    const isPool = key === 'pool';
-    const done = ls.filter(stopDone).length;
-    const iso = state.dispLaneIso === key;
-    const roundup = isPool && ls.length && shown.length ? actionPill('commit', 'Round up', { js: 'js-disp-roundup', h: 20 }) : '';
-    // header: name + done/total progress (the Onfleet fraction); click = isolate this run on the map.
-    // Round up rides the TOP OF THE POOL LIST ("round up everything below"), not the crowded head.
-    return `<div class="dr-lane${isPool ? ' pool' : ''}" data-lane="${esc(key)}">
-      <div class="dl-head js-disp-laneiso${iso ? ' iso' : ''}" data-lane="${esc(key)}" data-tip="${iso ? 'Showing only this run on the map — tap to show all' : 'Tap to trace only this run on the map · drop a stop here to hand it over'}"><span class="dl-name">${isPool ? 'Unassigned' : esc(driverName(key))}</span><span class="spacer"></span>${badge(`${done}/${ls.length}`, ls.length && done === ls.length ? 'green' : 'gray')}</div>
-      <div class="dl-list">${roundup}${listOf(ls, !isPool) || `<div class="dl-empty">${isPool ? 'Every stop is assigned' : 'Drag a stop here to assign'}</div>`}</div>
-    </div>`;
-  };
-  const lanesRow = laned ? `<div class="dr-lanes">${laneEl('pool')}${shown.map(laneEl).join('')}</div>` : '';
-  const rail = `<div class="disprail js-disprail${laned ? ' lanes' : ''}" data-day="${esc(day)}" tabindex="0" style="--dr-lanes:${shown.length + 1}" data-tip="${laned ? 'Hover to work the driver lanes' : 'Hover to adjust the run'}">
-    <div class="dr-head"><span class="dr-chev">‹</span><span class="dr-title">${laned ? 'Runs' : 'Run'} · ${stops.length} stop${stops.length === 1 ? '' : 's'}</span><span class="spacer"></span>${lanesBtn}</div>
-    ${lanesRow}<div class="dr-list">${railRows}</div>
-  </div>`;
-  const foot = `<div class="disp-foot"><span class="disp-livedot"></span><span class="disp-live">Live · auto-notifies the driver on change</span></div>`;
-  return `${head}<div class="disp-cockpit"><div class="dispm js-dispmount" data-day="${esc(day)}"></div>${rail}</div>${foot}`;
-}
+/* dispatchGridBody() — the map-cockpit card body (full-pane map + hover-expand rail +
+   driver lanes) — RETIRED here (Trips card phase 1, spec 2026-07-09): calendarCardEl
+   now renders day-grouped trip rows via tripsFor()/GROUP_DEFS.calendar instead. The
+   map singleton below stays intact — Phase 2 re-parents it into the new card body. */
 /* §2.3 OFFICE COCKPIT MAP. The Map is a SINGLETON (_dispMapEl) RE-PARENTED into the
    fresh mount point each render (render() rebuilds the DOM) so it never reloads/flickers;
    only pins/route/truck refresh. Stops without a stored sitePin are geocoded via Places
@@ -14626,6 +14681,9 @@ function onClick(e) {
   // instead (the first click never opens — #10). Ctrl/Cmd+click = new tab (instant).
   const row = closest('.row');
   if (row) {
+    // Trips rows have no detail view yet (Phase 1, derived-only) — a bare-row tap/hotkey
+    // is a no-op; the pill branch above already handled anything worth navigating to.
+    if (row.dataset.card === 'calendar') { e.stopPropagation(); return; }
     if (e.metaKey || e.ctrlKey) { e.preventDefault(); return openInNewTab(row.dataset.card, row.dataset.rec, row.dataset.type); }
     const rc = row.dataset.card, rr = row.dataset.rec, rt = row.dataset.type;
     document.querySelectorAll('.row.selected').forEach((n) => n.classList.remove('selected'));
@@ -15389,7 +15447,16 @@ function onInput(e) {
     return;
   }
   if (e.target.classList.contains('mini-search')) {
-    const card = e.target.dataset.card; const mcs = activeSession().cards[card]; mcs.search = e.target.value; mcs.listLimit = undefined;
+    const card = e.target.dataset.card;
+    // Trips (calendar) is card-stateless — no session.cards.calendar — its search text
+    // rides state.calSearch directly instead of a per-card cs (Phase 1, spec §2.2).
+    if (card === 'calendar') {
+      state.calSearch = e.target.value;
+      const sel = e.target.selectionStart; render();
+      const ms = document.querySelector('.mini-search[data-card="calendar"]'); if (ms) { ms.focus(); ms.setSelectionRange(sel, sel); }
+      return;
+    }
+    const mcs = activeSession().cards[card]; mcs.search = e.target.value; mcs.listLimit = undefined;
     // light re-render of just that card would be ideal; full render is fine at seed scale
     const sel = e.target.selectionStart; render();
     const ms = document.querySelector(`.mini-search[data-card="${card}"]`); if (ms) { ms.focus(); ms.setSelectionRange(sel, sel); }
@@ -15513,12 +15580,15 @@ function onChange(e) {
     return;
   }
   if (e.target.classList.contains('js-disp-time')) {   // §2.3 dispatch stop time — D6: stored under the stop's lane
-    const day = (e.target.closest('.disprail') && e.target.closest('.disprail').dataset.day) || state.dispatchDay || TODAY_ISO;
+    // Trips rows carry their own day (data-day) — they have no .disprail wrapper to read it
+    // from (retired, Phase 1); the .disprail/state.dispatchDay fallbacks stay for the map's
+    // own affordances (Phase 2) in case a day isn't stamped directly on the input.
+    const day = e.target.dataset.day || (e.target.closest('.disprail') && e.target.closest('.disprail').dataset.day) || state.dispatchDay || TODAY_ISO;
     const laneKey = e.target.dataset.lane || 'pool';
     const v = e.target.value.trim();
     const lane = schedLane(day, laneKey); lane.times[e.target.dataset.id] = v; schedSaveLane(day, laneKey, lane);
     const t = dispatchTimesLS(); if (t[e.target.dataset.id] !== undefined) { delete t[e.target.dataset.id]; _lsSave('jactec.dispatchTimes', t); }   // retire the legacy flat key for this stop
-    if (e.target.closest('.disprail') && timeToMin(v) != null) render();   // cockpit: a complete time re-sorts the token on the rail = retime/reorder
+    if (timeToMin(v) != null) render();   // a complete time re-sorts the trip within its day group
     return;
   }
   if (e.target.classList.contains('js-wr-file')) {   // §18d Mr. Wrangler attach — image or CSV/text
@@ -18217,6 +18287,7 @@ function boot() {
     }
     // §5.4 (per-card) — same Enter-to-pin / Backspace-to-pop on a card's list search.
     if (e.target.classList.contains('mini-search') && e.target.dataset.card && !e.target.classList.contains('js-history-search')) {
+      if (e.target.dataset.card === 'calendar') return;   // Trips search is a plain filter, no filter-term pinning (Phase 1 scope; no session.cards.calendar to pin against)
       const card = e.target.dataset.card; const cs = activeSession().cards[card];
       if (e.key === 'Enter') {
         e.preventDefault();

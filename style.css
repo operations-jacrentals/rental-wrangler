@@ -600,17 +600,8 @@ select.lf-in { appearance: none; cursor: pointer; }
 .prev-flags { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line); display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
 .prev-flags .pf-cap { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.1px; font-size: 9px; font-weight: 700; color: var(--txt-3); }
 .prev-flags .flags { display: flex; flex-wrap: wrap; gap: 5px; }
-/* Calendar (dispatch grid) inside the middle column */
+/* Trips (née Calendar/dispatch grid) inside the middle column */
 .cal-body { padding: 0; display: flex; flex-direction: column; min-height: 0; }
-/* §2.3 dispatch — the daily driver timeline (Phase 6) */
-.disp-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
-.disp-nav { width: 30px; height: 30px; flex: 0 0 auto; border-radius: 8px; border: 1px solid var(--line); background: var(--bg-2, var(--panel)); color: var(--txt); font-size: 17px; cursor: pointer; line-height: 1; }
-.disp-nav:hover { border-color: var(--accent-line); }
-.disp-date { display: flex; align-items: center; gap: 8px; font-size: 14px; }
-.disp-date b { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; }
-.disp-today { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: var(--accent); background: var(--accent-soft); padding: 2px 7px; border-radius: 99px; }
-.disp-jump { font-size: 11px; color: var(--accent); background: none; border: none; cursor: pointer; text-decoration: underline; }
-.disp-count { font-size: 11px; color: var(--txt-3); white-space: nowrap; }
 .disp-route { position: relative; padding: 6px 12px 18px 34px; overflow-y: auto; }
 .disp-stop { position: relative; display: flex; align-items: center; gap: 9px; }
 .js-disp-stop { background: linear-gradient(180deg, var(--card-head), var(--card)); border: 1px solid var(--line); border-radius: 11px; padding: 9px 11px; margin: 7px 0; cursor: pointer; }
@@ -637,10 +628,10 @@ select.lf-in { appearance: none; cursor: pointer; }
 .disp-home { padding: 4px 11px; }
 .disp-home .disp-unit { font-size: 12px; color: var(--txt-2); font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; }
 .disp-home .disp-sub { font-size: 10.5px; }
-.disp-empty { padding: 40px 24px; text-align: center; color: var(--txt-3); }
-.disp-empty svg { width: 30px; height: 30px; opacity: .5; }
-.disp-empty p { font-size: 14px; color: var(--txt-2); margin: 10px 0 4px; }
-.disp-empty span { font-size: 12px; }
+/* Trips empty state (spec §2.2) — a small stamped plate, not a void. */
+.trip-empty { padding: 22px 14px; text-align: center; border: 1px dashed var(--line); border-radius: 12px; margin: 4px 8px; }
+.trip-empty-label { display: block; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.4px; font-weight: 700; font-size: 12px; color: var(--txt-2); }
+.trip-empty-hint { display: block; margin-top: 4px; font-size: 11.5px; color: var(--txt-3); }
 /* ── §2.3 free-form route arrows: click an icon to start a leg, click another to land it ── */
 .js-disp-arrowpt { cursor: pointer; transition: box-shadow .12s, transform .12s; }
 .js-disp-arrowpt:hover { box-shadow: 0 0 0 2px var(--accent-line); }
@@ -660,76 +651,25 @@ select.lf-in { appearance: none; cursor: pointer; }
 .disp-arrow-dot { fill: var(--accent); }
 .disp-arrow-hit { pointer-events: stroke; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .js-disp-arrowpt { transition: none; } .js-disp-arrowpt.armed { transform: none; } }
-/* ── §2.3 OFFICE COCKPIT (Phase 1): FULL-PANE map + hover-expand schedule rail ──── */
-.disp-cockpit { flex: 1; min-height: 0; position: relative; }
+/* ── §2.3 OFFICE COCKPIT MAP (Phase 2 re-parents this into the Trips card) ──── */
 .dispm { position: absolute; inset: 0; }                                   /* the map is the whole pane */
-/* the rail floats over the map's right edge: a minimal time strip that widens on hover/focus */
-.disprail { position: absolute; top: 8px; right: 8px; bottom: 8px; width: 90px; z-index: 3; display: flex; flex-direction: column;
-  background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; box-shadow: var(--chip-shadow); transition: width .16s ease, box-shadow .16s ease; }
-.disprail:hover, .disprail:focus-within, .disprail.dragging { width: 256px; box-shadow: var(--shadow); }   /* .dragging pins it open while reordering (hover drops mid-drag) */
-.disprail.dragging .dr-chev { transform: rotate(180deg); }
-.disprail.dragging .dr-title { opacity: 1; }
-.disprail.dragging .dr-sec { display: block; }
-.disprail.dragging .dt-rail { display: none; }
-.disprail.dragging .dt-full { display: block; }
-.dr-head { display: flex; align-items: center; gap: 6px; padding: 7px 9px; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
-.dr-chev { color: var(--txt-3); font-size: 13px; flex: 0 0 auto; transition: transform .16s ease; }
-.disprail:hover .dr-chev, .disprail:focus-within .dr-chev { transform: rotate(180deg); }
-.dr-title { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-size: 10.5px; font-weight: 700; color: var(--txt-2); white-space: nowrap; opacity: 0; transition: opacity .16s ease; }
-.disprail:hover .dr-title, .disprail:focus-within .dr-title { opacity: 1; }
-.dr-list { flex: 1; min-height: 0; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 5px; }
-.dr-sec { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .8px; font-size: 9px; font-weight: 700; color: var(--txt-3); padding: 3px 2px 0; display: none; }
-.disprail:hover .dr-sec, .disprail:focus-within .dr-sec { display: block; }
-.disp-tok { border: 1px solid var(--line); border-left: 3px solid var(--gray); border-radius: 8px; background: linear-gradient(180deg, var(--card-head), var(--card)); cursor: pointer; overflow: hidden; }
-.disp-tok.kind-deliver { border-left-color: var(--blue); }
-.disp-tok.kind-recover { border-left-color: var(--brown); }
-.disp-tok.next { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.disp-tok.done { opacity: .82; }
-.disp-tok.nopin { border-style: dashed; }
-.disp-tok.disp-dragging { opacity: .45; }
-.disp-tok.focus { box-shadow: 0 0 0 2px #18b6ff; }   /* tapped → focused on the map (the "you are here" blue) */
-.dt-rail { display: flex; align-items: center; gap: 7px; padding: 6px 8px; }                 /* collapsed view: kind dot + time */
-.disprail:hover .dt-rail, .disprail:focus-within .dt-rail { display: none; }
-.dt-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: 0 0 auto; color: var(--gray); }
-.disp-tok.kind-deliver .dt-dot { color: var(--blue); }
-.disp-tok.kind-recover .dt-dot { color: var(--brown); }
-.disp-tok.next .dt-dot { color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
-.dt-mini { font-size: 11px; font-weight: 800; color: var(--txt); white-space: nowrap; }
-.dt-full { display: none; padding: 6px 8px; }                                                /* expanded view: editable detail */
-.disprail:hover .dt-full, .disprail:focus-within .dt-full { display: block; }
-.dt-r1 { display: flex; align-items: center; gap: 6px; }
-.dt-grip { color: var(--txt-3); cursor: grab; font-size: 12px; }
-.dt-time { width: 52px; flex: 0 0 auto; font-size: 13px; font-weight: 800; color: var(--txt); font-family: inherit; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 1px 4px; }
+
+/* ── Trips card — day-grouped trip rows (spec 2026-07-09 §2.2, Phase 1) ──────
+   Rows route through the universal .row/.row-1/.row-2 template (APP-14); only the
+   time input + address line (reused verbatim from the retired lane rail, incl. their
+   original class names) need their own rules. Tokens only — no new hex/shadow. */
+.dt-time { width: 56px; flex: 0 0 auto; font-size: 13px; font-weight: 800; color: var(--txt); font-family: inherit; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 3px 4px; }
 .dt-time::placeholder { color: var(--txt-3); font-weight: 600; }
 .dt-time:hover { border-color: var(--line); }
 .dt-time:focus { border-color: var(--accent-line); background: var(--bg-2); outline: none; }
-.dt-next { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-size: 9px; font-weight: 700; color: var(--accent); display: inline-flex; align-items: center; gap: 3px; }
-.dt-next svg { width: 12px; height: 12px; }
-.dt-r2 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 4px; }   /* wraps in the narrower lane tokens instead of clipping */
-.dt-r1 .pill, .dt-r2 .pill { font-size: 9.5px; }   /* compact stamped badges (R3b) in the tight rail */
-.dt-who { font-size: 11.5px; color: var(--txt-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dt-addr { font-size: 10.5px; color: var(--blue); cursor: pointer; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.disp-tok.nopin .dt-addr { color: var(--yellow); }
+.dt-addr { font-size: 11px; color: var(--blue); cursor: pointer; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dt-addr.nopin { color: var(--yellow); }
+.row.trip-done .row-content { opacity: .6; }   /* a done run stays visible, dimmed (spec §2.2) — same recipe as .row.fleet-dim */
+/* Trips footer — honest sync status (spec §2.1 "false trust signals"): no "auto-notifies"
+   claim until D3 sync ships (Phase 4); a quiet gray stamp instead of the green live-dot. */
 .disp-foot { flex: 0 0 auto; display: flex; align-items: center; gap: 7px; padding: 7px 12px; border-top: 1px solid var(--line); font-size: 10.5px; color: var(--txt-3); }
-.disp-live { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .8px; }
-.disp-livedot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px var(--green-bg); flex: 0 0 auto; }
-/* D5 driver lanes (spec rentals-dispatch) — the rail repeated per driver, side-by-side over
-   the map. Collapsed stays the same 90px strip (the merged run minis); expanded swaps the
-   merged list for the Unassigned pool + the picked driver lanes, PANNING horizontally past
-   ~3 lanes (never squishing). --dr-lanes is set inline by dispatchGridBody (lane count + pool). */
-.disprail.lanes:hover, .disprail.lanes:focus-within, .disprail.lanes.dragging { width: min(calc(var(--dr-lanes, 1) * 206px + 16px), calc(100% - 16px)); }
-.dr-lanes { display: none; flex: 1; min-height: 0; }
-.disprail.lanes:hover .dr-lanes, .disprail.lanes:focus-within .dr-lanes, .disprail.lanes.dragging .dr-lanes { display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden; padding: 6px; }
-.disprail.lanes:hover > .dr-list, .disprail.lanes:focus-within > .dr-list, .disprail.lanes.dragging > .dr-list { display: none; }   /* expanded = lanes take over from the merged strip */
-.dr-lane { flex: 0 0 198px; min-width: 0; display: flex; flex-direction: column; background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-.dr-lane.armed { outline: 2px solid var(--accent); outline-offset: -2px; }   /* drag-over: release to assign here (armed = outline, never fill) */
-.dl-head { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--line); flex: 0 0 auto; cursor: pointer; }
-.dl-head.iso { box-shadow: inset 0 -2px 0 var(--accent); }   /* selected-tab semantics: this run is traced on the map */
-.dl-name { font-weight: 700; font-size: 11px; color: var(--txt); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dr-lane.pool .dl-name { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .8px; font-size: 10px; color: var(--txt-2); }   /* the pool is a stamped bucket label, not a person */
-.dl-list { flex: 1; min-height: 0; overflow-y: auto; padding: 5px; display: flex; flex-direction: column; gap: 5px; }
-.dl-list > .js-disp-roundup { width: 100%; justify-content: center; flex: 0 0 auto; }   /* "round up everything below" spans the pool */
-.dl-empty { border: 1px dashed var(--line); border-radius: 6px; padding: 10px 8px; font-size: 10px; color: var(--txt-3); text-align: center; }
+.disp-offline { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .8px; }
+.disp-offdot { width: 8px; height: 8px; border-radius: 50%; background: var(--txt-3); flex: 0 0 auto; }
 
 /* ── Card (each is the detail view; scrolls internally) ──────────────────── */
 .card {
