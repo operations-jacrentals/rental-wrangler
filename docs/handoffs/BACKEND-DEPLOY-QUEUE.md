@@ -23,8 +23,21 @@
     extra look before deploying, not a one-liner like the rest.
 - **Pushed to HEAD** (service account, content-only), confirmed present, `node --check` passes.
 - **Not yet deployed** — awaiting Jac's go, same editor flow as the previous two batches.
-- **Remaining 6 mediums** (3 money-correctness bugs needing judgment, 2 spend-risk, 1
-  config-resilience) still to be walked through one at a time — not started yet.
+- **✅ Remaining 6 mediums — all fixed, pushed to HEAD, node --check passes.** Full detail in
+  `docs/handoffs/backend-audit-2026-07-09-final-6-fixes.gs`:
+  - `getConfigObj()` no longer wipes all custom role passwords when `admin` is falsy but `roles`
+    is intact — repairs just `admin`, matching the file's own stated intent.
+  - Invoice price-lock seal now pins the customer's `salesTaxExempt` flag too (frozen into
+    `inv.taxExempt` at first-charge time, not a signature-format change — doesn't affect any
+    already-locked invoice's seal check).
+  - `membershipActivate_`'s Stripe idempotency key dropped its calendar-day scoping (was creating
+    real duplicate subscriptions on a retry that crossed midnight).
+  - `stripeRefundInvoice_` now walks ALL charges on a multi-charge invoice for a "full" refund
+    instead of capping at just the last one (was silently under-refunding).
+  - `wranglerReply_` + `wranglerFile_` gain a shared **global 100/day** cap (Jac's call — one
+    combined counter, not per-role, tunable via `WRANGLER_DAILY_CAP` Script Property).
+  - **This closes the full 32-finding backend audit** (4 critical + 16 medium — 5 low items were
+    dead-code/no-op findings, not tracked for deploy).
 
 ## ⏳ QUEUED, READY TO DEPLOY INDEPENDENTLY — seed gate + recordCharge_ dedup (2026-07-09)
 - **What (2 fixes, no frontend coordination needed, unlike the chat-privacy item below):**
