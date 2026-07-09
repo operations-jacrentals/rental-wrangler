@@ -2019,6 +2019,75 @@ try {
       } else { ok(true, 'r4: skipped — demo seed lacks 2 priced active units'); }
     }
 
+    // ── #552 pre-promotion audit — lock the 7 HIGH-severity fixes (WO gates, transport
+    // money gate, Wrangler create gate, billWOToInvoice's rental-first routing) ──
+    // item 1 — a WO line carrying cost can't be Cancelled outright; Cancel/Complete lines
+    // both drop out of woBottleneck's "open" set; a WO-level Complete never resurrects an
+    // already-Cancelled line back to Complete.
+    {
+      const w = { woId: 'A1-WO', unitId: null, customerId: null, phase: 'Part Needed', cancelled: false, lineItems: [
+        { part: 'Filter', phase: 'Part Needed', cost: 45 },
+        { part: 'Grease', phase: 'Part in Stock', cost: 0 },
+      ] };
+      T.DATA.workOrders.push(w); T.IDX.wo.set('A1-WO', w);
+      T.setWoLinePhase('A1-WO', 0, 'Cancel');
+      ok(w.lineItems[0].phase === 'Part Needed', 'audit#1: a line with cost > 0 cannot be Cancelled (blocked)');
+      T.setWoLinePhase('A1-WO', 1, 'Cancel');
+      ok(w.lineItems[1].phase === 'Cancel', 'audit#1: a line with no cost CAN be Cancelled');
+      ok(T.woBottleneck(w).label !== 'Ready to complete', 'audit#1: a still-open (non-Cancel, non-Complete) line keeps the WO not-ready');
+      w.lineItems[0].phase = 'Complete';   // simulate the part getting installed
+      ok(T.woBottleneck(w).label === 'Ready to complete', 'audit#1: Complete + Cancel lines together count as fully resolved');
+      T.setWoPhase('A1-WO', 'Complete');
+      ok(w.lineItems[1].phase === 'Cancel', 'audit#1: completing the WO does not resurrect an already-Cancelled line to Complete');
+      T.DATA.workOrders = T.DATA.workOrders.filter((x) => x !== w); T.IDX.wo.delete('A1-WO');
+    }
+    // item 3 — Mr. Wrangler's CREATE path strips money fields below money tier, same as UPDATE already did
+    {
+      T.setRole('mechanic');
+      const created = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'categories', fields: { name: 'A3-Cat', rate1Day: '999' } }] });
+      const op = created.ops.find((o) => o.op === 'create' && o.entity === 'categories' && o.fields.name === 'A3-Cat');
+      ok(!!op, 'audit#3: the create still goes through (non-money fields survive)');
+      ok(op && !('rate1Day' in op.fields), 'audit#3: rate1Day is stripped from a Wrangler CREATE below money tier');
+      ok(created.issues.some((i) => /rate changes are Office\/Admin only/.test(i)), 'audit#3: the strip is surfaced as an issue, not silently dropped');
+      T.setRole('manager');
+      const created2 = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'categories', fields: { name: 'A3-Cat2', rate1Day: '999' } }] });
+      const op2 = created2.ops.find((o) => o.op === 'create' && o.entity === 'categories' && o.fields.name === 'A3-Cat2');
+      ok(op2 && Number(op2.fields.rate1Day) === 999, 'audit#3: manager tier (money-gated) keeps rate1Day on create');
+      T.setRole('');   // restore the suite's default (no role → canMoney() true)
+    }
+    // item 5 — billWOToInvoice bills to the invoice carrying the RENTAL that needed the
+    // WO (not just any open invoice for the customer), and skips a locked/paid one for a
+    // fresh auto-created invoice instead.
+    {
+      // must be a unit with NO existing active rental — activeRentalForUnit() sorts by
+      // EARLIEST startDate, so a real seeded rental would otherwise outrank our synthetic one
+      const priced5 = (T.DATA.units || []).find((u) => u.fleetStatus === 'Active' && u.categoryId && !T.activeRentalForUnit(u.unitId));
+      if (priced5) {
+        const rr = { rentalId: 'A5-RENTAL', customerId: 'C0009', rentalName: 'audit5', startDate: '2099-01-01', endDate: '2099-01-08', startTime: '', status: 'On Rent', transportType: 'Self', deliveryAddress: '', po: '', invoiceId: 'A5-RIGHT', units: [{ unitId: priced5.unitId, status: 'On Rent', transportType: 'Self', deliveryAddress: '', recoveryAddress: '', transportMiles: 0, startCapture: null, endCapture: null, fcCapture: null }], notes: '', actions: [], mock: true };
+        T.DATA.rentals.push(rr); T.IDX.rental.set('A5-RENTAL', rr);
+        const wrongInv = { invoiceId: 'A5-WRONG', customerId: 'C0009', rentalIds: [], date: T.TODAY_ISO, dueDate: T.TODAY_ISO, po: '', amountPaid: 0, lineItems: [{ kind: 'misc', ref: null, lid: 'x', label: 'unrelated', amount: 10 }], mock: true };
+        const rightInv = { invoiceId: 'A5-RIGHT', customerId: 'C0009', rentalIds: ['A5-RENTAL'], date: T.TODAY_ISO, dueDate: T.TODAY_ISO, po: '', amountPaid: 0, lineItems: [], covStart: '2099-01-01', mock: true };
+        T.DATA.invoices.push(wrongInv, rightInv); T.IDX.invoice.set('A5-WRONG', wrongInv); T.IDX.invoice.set('A5-RIGHT', rightInv);
+        const woA = { woId: 'A5-WO1', unitId: priced5.unitId, customerId: null, phase: 'Part Needed', cancelled: false, lineItems: [{ part: 'Belt', phase: 'Part Needed', cost: 60 }] };
+        T.DATA.workOrders.push(woA); T.IDX.wo.set('A5-WO1', woA);
+        T.billWOToInvoice('A5-WO1');
+        ok(rightInv.lineItems.some((li) => li.kind === 'WO' && li.ref === 'A5-WO1'), 'audit#5: bills to the RENTAL\'s own invoice, not an unrelated open invoice for the same customer');
+        ok(wrongInv.lineItems.length === 1, 'audit#5: the unrelated invoice is untouched');
+        // now lock the rental's invoice — billing a 2nd WO should fall through to a FRESH invoice, not the locked one
+        rightInv.locked = true;
+        const woB = { woId: 'A5-WO2', unitId: priced5.unitId, customerId: null, phase: 'Part Needed', cancelled: false, lineItems: [{ part: 'Hose', phase: 'Part Needed', cost: 20 }] };
+        T.DATA.workOrders.push(woB); T.IDX.wo.set('A5-WO2', woB);
+        const invCountBefore = T.DATA.invoices.length;
+        T.billWOToInvoice('A5-WO2');
+        ok(rightInv.lineItems.every((li) => li.ref !== 'A5-WO2'), 'audit#5: a locked rental invoice is never silently billed');
+        ok(T.DATA.invoices.length === invCountBefore + 1, 'audit#5: a locked rental invoice triggers a fresh auto-created invoice instead');
+        [woA, woB].forEach((w) => { T.DATA.workOrders = T.DATA.workOrders.filter((x) => x !== w); T.IDX.wo.delete(w.woId); });
+        const freshInv = T.DATA.invoices.find((iv) => iv.lineItems.some((li) => li.kind === 'WO' && li.ref === 'A5-WO2'));
+        [wrongInv, rightInv, freshInv].filter(Boolean).forEach((iv) => { T.DATA.invoices = T.DATA.invoices.filter((x) => x !== iv); T.IDX.invoice.delete(iv.invoiceId); });
+        T.DATA.rentals = T.DATA.rentals.filter((x) => x !== rr); T.IDX.rental.delete('A5-RENTAL');
+      } else { ok(true, 'audit#5: skipped — demo seed lacks a priced active unit'); }
+    }
+
     return out;
   });
 
