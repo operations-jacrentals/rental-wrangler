@@ -287,8 +287,8 @@ Backend = Google Apps Script + schema‑less Sheets, deployed by clasp (`Code.gs
 | `stripeChargeInvoice` *(via `chargeInvoiceFlow` `app.js:14557`)* | `{ invoiceId, amountCents, paymentMethodId? }` — **`amountCents` is `null` ⇒ charge the full balance**; a number ⇒ a cap‑validated partial. `paymentMethodId` is the picked card/verified‑bank Stripe PM (absent ⇒ server's default PM). | `{ ok, status:'succeeded'|…, amountPaid, paid, paidAt, paymentMethod, locked? }`, or `{ ok, processing, paymentIntentId }` (ACH initiated), or `{ ok, requiresAction, clientSecret, paymentIntentId }` (3DS). | **The client sends an amount, but the SERVER is authoritative — it re‑caps `amountCents` at the live balance and ignores any over‑cap value** (the north‑star contract, §1). 3DS → client `confirmCardPayment` → `stripeFinalizeInvoice` re‑verify. |
 | `stripeFinalizeInvoice` | `{ invoiceId, paymentIntentId }` | `{ ok, amountPaid, … }` / `{ error:'ach-failed' }` | ACH settle/poll + 3DS re‑verify (after the client confirms the SCA challenge). |
 | `recordManualPayment` | `{ invoiceId, amountCents, method:'cash'|'check', checkNum }` | `{ ok, amountPaid, paymentMethod, paidAt }` | server caps at live balance. |
-| `stripeRefundInvoice` | `{ invoiceId }` *(today; full only)* | `{ ok, refunded, refundedAmount, refundedCents }` | card refund. |
-| `recordManualRefund` | `{ invoiceId }` *(today; full only)* | `{ ok, refunded, refundedAmount }` | cash/check refund. |
+| `stripeRefundInvoice` | `{ invoiceId, amountCents? }` *(**[2026-07-09] SHIPPED** — optional partial, was "today; full only")* | `{ ok, refunded, refundedAmount, refundedCents }` | card refund; `amountCents` omitted = full refund (legacy behavior kept). |
+| `recordManualRefund` | `{ invoiceId, amountCents? }` *(**[2026-07-09] SHIPPED** — optional partial, was "today; full only")* | `{ ok, refunded, refundedAmount }` | cash/check refund; `amountCents` omitted = full refund. |
 | `stripeLockInvoice` / `stripeUnlockInvoice` | `{ invoiceId }` | `{ ok, locked }` | pricing seal. |
 
 ### 5.2 Failure handling (CANON)
@@ -301,7 +301,12 @@ Backend = Google Apps Script + schema‑less Sheets, deployed by clasp (`Code.gs
 - **Authority gate:** every money action re‑derives the caller's tier from the call password and returns `forbidden` for a non‑money caller — the same gate, server‑side, regardless of what the client rendered.
 - **Concurrency:** the refund handlers (and any money mutation) take a `LockService` script lock so two simultaneous taps/devices serialize against the same invoice row (prevents a double‑refund / lost‑update on the shared Sheet).
 
-### 5.3 Proposed ADDITIVE actions (for partial refunds — already client‑ready)
+### 5.3 ~~Proposed~~ SHIPPED ADDITIVE actions (partial refunds)
+
+> **[2026-07-09]** This section was written when `PARTIAL_REFUNDS_ENABLED` was `false`; the
+> flag is now `true` (`app.js:6702`) and the contract below is the LIVE contract, not a
+> proposal — see "Shipped status (2026‑07‑09)" above. Left otherwise unchanged since the
+> mechanics described (clamp, lock, ledger write) still match `docs/handoffs/partial-refunds-backend.md`.
 
 To flip `PARTIAL_REFUNDS_ENABLED` true, two existing actions learn an **optional** `amountCents` (backward‑compatible — `0`/absent ⇒ legacy full refund of the whole remaining). The full server‑side contract is specced in `docs/handoffs/partial-refunds-backend.md` (the deploy‑by‑clasp handoff) and the design `2026-06-23-invoice-partial-refunds-design.md`:
 
