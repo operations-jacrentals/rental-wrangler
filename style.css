@@ -3283,6 +3283,225 @@ body { font-variant-numeric: tabular-nums; }
 .rented-cats { display: flex; align-items: baseline; gap: 8px; width: 100%; justify-content: flex-end; margin-top: 2px; }
 .rented-cats .rc-flags { display: flex; flex-wrap: wrap; gap: 4px 10px; justify-content: flex-end; }
 
+/* ── CUSTOMER FUNNEL TOGGLE (2026-07-08 reorg) — the centered R14 segmented control
+   IS the section header (RENTAL | EQUIPMENT SALES); each tab body carries its funnel
+   pill + account button (R28), meta, a Next-Actions list, and a collapsible Action Log.
+   All tokens theme themselves in dark + light; --tan carries its fallback per house
+   convention. ── */
+.funnel-hd { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 13px; }
+.funnel-hd .fh-rule { flex: 1; border-top: 1.5px dashed var(--tan, #c2925a); opacity: .4; }   /* saddle-stitch flanks (ranch seasoning) */
+.funnel-sec .seg button.on-accent { background: var(--accent); color: var(--on-orange); }     /* selected tab = the ONE orange (rule #3) */
+.seg .seg-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+.seg .seg-dot.due { background: var(--red); box-shadow: 0 0 0 2px color-mix(in srgb, var(--red) 30%, transparent); }
+.seg .seg-dot.soon { background: var(--yellow); }
+.seg .seg-dot.ok { background: var(--green); }
+.seg button.on-accent .seg-dot.soon { background: #1a1205; }   /* keep the dot legible on the orange selected tab */
+.seg button.on-accent .seg-dot.ok { background: #04150d; }
+
+.fb-toprow { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+/* R28 — the account button: a neutral steel chip, stamped label = the account type */
+.acct-btn { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 13px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--card); color: var(--txt);
+  font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: 1px; font-weight: 700; font-size: 10.5px;
+  cursor: pointer; flex: 0 0 auto; }
+.acct-btn:hover { border-color: var(--accent-line); color: var(--accent); }
+.acct-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.funnel-fields { margin-top: 11px; gap: 5px; }
+.funnel-sublabel { margin-top: 11px; margin-bottom: 3px; font-family: 'Saira Condensed', var(--font); text-transform: uppercase;
+  letter-spacing: 1px; font-size: 9.5px; color: var(--txt-3); font-weight: 700; }
+/* interest type tags on the linked/interest pills (Cat = safety-orange, Make = leather-tan) */
+.pill.ref .ref-tag { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: .5px; font-size: 8px;
+  font-weight: 800; padding: 2px 4px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 20%, transparent); margin-right: 1px; }
+.pill.ref.tone-tan { color: var(--tan, #c2925a); border-color: color-mix(in srgb, var(--tan, #c2925a) 45%, transparent);
+  background: color-mix(in srgb, var(--tan, #c2925a) 14%, transparent); }
+.pill.ref.tone-tan .ref-tag { background: color-mix(in srgb, var(--tan, #c2925a) 26%, transparent); }
+.dd-itag { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: .5px; font-size: 8px; font-weight: 800;
+  padding: 1px 4px; border-radius: 4px; margin-right: 5px; }
+.dd-itag.cat { color: var(--accent); background: var(--accent-soft); }
+.dd-itag.mk { color: var(--tan, #c2925a); background: color-mix(in srgb, var(--tan, #c2925a) 16%, transparent); }
+.dd-sec-lbl { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: 1px; font-size: 9px; font-weight: 700;
+  color: var(--txt-3); padding: 6px 9px 3px; }
+.dd-empty { padding: 5px 9px; color: var(--txt-3); font-size: 11.5px; }
+
+/* NEXT ACTIONS — a running list; each row is ONE line, date FIRST, RYG by the action's date */
+.na-list { margin-top: 11px; display: flex; flex-direction: column; gap: 5px; }
+.nextact { display: flex; align-items: center; gap: 9px; padding: 8px 11px; border-radius: 9px; min-width: 0;
+  background: var(--panel); border: 1px solid var(--line); border-left-width: 3px; cursor: pointer; }
+.nextact.due { border-left-color: var(--red); background: color-mix(in srgb, var(--red) 8%, var(--panel)); }
+.nextact.soon { border-left-color: var(--yellow); background: color-mix(in srgb, var(--yellow) 8%, var(--panel)); }
+.nextact.ok { border-left-color: var(--green); }
+.nextact:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.na-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.nextact.due .na-dot { background: var(--red); box-shadow: 0 0 0 3px color-mix(in srgb, var(--red) 22%, transparent); }
+.nextact.soon .na-dot { background: var(--yellow); }
+.nextact.ok .na-dot { background: var(--green); }
+.na-when { flex: 0 0 auto; font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: .5px; font-size: 10px;
+  font-weight: 800; padding: 2px 7px; border-radius: 6px; line-height: 1.4; }
+.nextact.due .na-when { color: #fff; background: var(--red); }
+.nextact.soon .na-when { color: #1a1205; background: var(--yellow); }
+.nextact.ok .na-when { color: var(--txt-2); background: var(--panel-2); border: 1px solid var(--line); }
+.na-txt { flex: 1; min-width: 0; font-size: 12px; font-weight: 600; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.na-acts { flex: 0 0 auto; display: inline-flex; gap: 4px; }
+.na-acts button { width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel-2);
+  cursor: pointer; display: grid; place-items: center; font-size: 12px; line-height: 1; padding: 0; }
+.na-acts button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.na-done { color: var(--green); }
+.na-done:hover { background: color-mix(in srgb, var(--green) 18%, var(--panel-2)); border-color: var(--green); }
+.na-cancel { color: var(--red); }
+.na-cancel:hover { background: color-mix(in srgb, var(--red) 18%, var(--panel-2)); border-color: var(--red); }
+
+/* ACTION LOG — collapsible, under Next Actions; open body scrolls internally + pushes flow down */
+.acthist { margin-top: 13px; border-top: 1px dashed var(--line); padding-top: 11px; }
+.ah-hd { display: flex; align-items: center; width: 100%; background: transparent; border: none; cursor: pointer; padding: 2px 0;
+  font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: 1.2px; font-size: 10.5px; font-weight: 700; color: var(--txt-2); }
+.ah-hd:hover { color: var(--txt); }
+.ah-hd:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.ah-hd .ah-cnt { color: var(--txt-3); font-weight: 600; margin-left: 6px; }
+.ah-hd .ah-chev { color: var(--txt-3); margin-left: auto; padding-left: 8px; }
+.ah-body { margin-top: 9px; max-height: 128px; overflow: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 4px; }
+.ah-row { display: flex; gap: 10px; font-size: 11.5px; color: var(--txt-2); padding: 6px 9px; background: var(--panel);
+  border-radius: 7px; border: 1px solid var(--line-soft); }
+.ah-when { flex: 0 0 auto; font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: .5px; font-size: 9.5px;
+  color: var(--txt-3); min-width: 40px; padding-top: 1px; }
+.ah-ic { font-weight: 800; margin-right: 3px; }
+.ah-ic.done { color: var(--green); }
+.ah-ic.cancel { color: var(--red); }
+.ah-empty { color: var(--txt-3); font-size: 11.5px; padding: 2px 0; }
+
+/* membership lifecycle actions, re-homed into the agreements window (§3.7) */
+.ag-lifecycle-wrap { margin-top: 14px; padding-top: 12px; border-top: 1.5px dashed var(--tan, #c2925a); }
+.ag-lifecycle-wrap .nc-cap-lbl { display: block; margin-bottom: 8px; }
+.ag-lifecycle { flex-wrap: wrap; }
+@media (prefers-reduced-motion: reduce) { .nextact { transition: none; } }
+
+/* ── §3.2/§3.3 EMBEDDED INVOICES (Customer Details) — summary strip + scrollable rows +
+   accordion expand into the interactive .pr-doc sheet. All colors/sizes from :root, so
+   light/dark theme for free; the white .pr-doc sheet keeps its own fixed document colors. */
+.inv-summary { display: flex; gap: 7px; flex-wrap: wrap; margin: -2px 0 12px; }
+.kchip { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 12px; border-radius: 10px;
+  background: var(--panel); border: 1px solid var(--line); min-width: 76px; }
+.kchip .kc-v { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.kchip .kc-l { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: 1px; font-size: 9px; color: var(--txt-3); }
+.kchip.due .kc-v { color: var(--red); }
+.kchip.paid .kc-v { color: var(--green); }
+.inv-scroll { max-height: 340px; overflow: auto; padding-right: 3px; display: flex; flex-direction: column; gap: 7px; }
+/* When an invoice is expanded, drop the list's inner scroll so the whole invoice shows in
+   normal flow and pushes the sections below (History, etc.) down — Jac 2026-07-08. */
+.inv-scroll.expanded { max-height: none; overflow: visible; }
+/* SALES card — "coming soon" placeholder holding the retired invoice-card slot (PR 2). */
+.sales-soon { display: flex; align-items: center; justify-content: center; min-height: 320px; padding: 24px; }
+.soon-plate { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; max-width: 260px;
+  padding: 26px 22px; border: 1px dashed var(--tan); border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--panel-2), var(--panel)); box-shadow: var(--chip-shadow); }
+.soon-ico { width: 34px; height: 34px; color: var(--tan); opacity: .85; }
+.soon-ico svg { width: 100%; height: 100%; }
+.soon-title { font-family: 'Saira Condensed', sans-serif; text-transform: uppercase; letter-spacing: 2px; font-weight: 800; font-size: 20px; color: var(--txt); }
+.soon-tag { font-family: 'Saira Condensed', sans-serif; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; font-size: 10px;
+  color: var(--tan-deep); background: color-mix(in srgb, var(--tan) 16%, transparent); border: 1px solid color-mix(in srgb, var(--tan) 45%, transparent);
+  border-radius: 999px; padding: 3px 10px; }
+.soon-sub { font-size: 12px; color: var(--txt-3); line-height: 1.5; }
+.inv-empty { font-size: 12px; padding: 4px 0; }
+
+.inv-row { display: flex; align-items: center; gap: 10px; padding: 10px 11px; border: 1px solid var(--line); border-radius: 11px;
+  background: linear-gradient(180deg, var(--card-head), var(--card)); cursor: pointer; position: relative;
+  transition: border-color .12s ease, filter .12s ease; }
+.inv-row:hover { border-color: var(--accent-line); filter: brightness(1.05); }
+.inv-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ir-stat { width: 3px; align-self: stretch; border-radius: 3px; flex: 0 0 auto; margin: -2px 0; background: var(--gray); }
+.ir-stat.due { background: var(--red); } .ir-stat.paid { background: var(--green); } .ir-stat.part { background: var(--yellow); }
+.ir-id { font-family: ui-monospace, monospace; font-weight: 700; font-size: 12px; letter-spacing: .3px; flex: 0 0 auto; }
+.ir-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ir-desc { color: var(--txt-2); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ir-date { color: var(--txt-3); font-size: 10.5px; }
+.ir-amt { font-weight: 800; font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; flex: 0 0 auto; }
+.ir-amt small { display: block; font-weight: 600; font-size: 9.5px; letter-spacing: .5px; font-family: 'Saira Condensed', var(--font); text-transform: uppercase; color: var(--txt-3); }
+.ir-amt.due small { color: var(--red); } .ir-amt.paid small { color: var(--green); } .ir-amt.part small { color: var(--yellow); }
+.ir-chev { color: var(--txt-3); flex: 0 0 auto; display: inline-flex; }
+.ir-chev svg { width: 15px; height: 15px; }
+
+/* expanded (accordion open) */
+.inv-open { border: 1px solid var(--accent-line); border-radius: 12px; background: var(--card);
+  box-shadow: 0 0 0 1px var(--accent-soft); overflow: hidden; }
+.io-bar { background: linear-gradient(180deg, var(--card-head), var(--panel-2)); padding: 11px 13px; border-bottom: 1px solid var(--line); }
+.io-bar-top { display: flex; align-items: center; gap: 9px; }
+.io-id { font-family: ui-monospace, monospace; font-weight: 800; font-size: 14px; }
+.io-collapse { width: 24px; height: 24px; border-radius: 7px; border: 1px solid var(--line); background: var(--panel); color: var(--txt-3);
+  cursor: pointer; display: grid; place-items: center; flex: 0 0 auto; }
+.io-collapse svg { width: 14px; height: 14px; transform: rotate(180deg); }
+.io-collapse:hover { color: var(--txt); border-color: var(--accent-line); }
+.io-collapse:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* R29 — the status pill that IS the action menu; fill = pay state; SOLID when open */
+.io-menu-wrap { margin-left: auto; position: relative; }
+.io-statmenu { display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 8px 0 12px; border-radius: 999px;
+  font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: 1px; font-weight: 700; font-size: 10px;
+  border: none; cursor: pointer; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.8); }
+.io-statmenu .cv { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: rgba(0,0,0,.28); }
+.io-statmenu .cv svg { width: 11px; height: 11px; }
+.io-statmenu.part { background: repeating-linear-gradient(135deg, var(--yellow) 0 11px, #14181d 11px 22px); }
+.io-statmenu.due  { background: repeating-linear-gradient(135deg, var(--red) 0 11px, #14181d 11px 22px); }
+.io-statmenu.paid { background: linear-gradient(180deg, var(--green), #1fae7f); color: var(--on-orange); text-shadow: none; }
+.io-statmenu.part.open { background: linear-gradient(180deg, #ffd766, var(--yellow)); color: var(--on-orange); text-shadow: none; }
+.io-statmenu.due.open  { background: linear-gradient(180deg, #ff6a6a, var(--red)); color: #fff; }
+.io-statmenu.open .cv { background: rgba(0,0,0,.22); transform: rotate(180deg); }
+.io-statmenu:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.io-menu { position: absolute; top: 31px; right: 0; z-index: 5; min-width: 152px; background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 11px; box-shadow: var(--shadow); padding: 5px; display: flex; flex-direction: column; gap: 1px; }
+.im-item { display: flex; align-items: center; gap: 9px; height: 32px; padding: 0 11px; border-radius: 8px; border: none; background: transparent;
+  color: var(--txt); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; text-align: left; width: 100%; }
+.im-item:hover:not([disabled]) { background: var(--panel); }
+.im-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.im-item[disabled] { color: var(--txt-3); cursor: not-allowed; }
+.im-item .im-ic { width: 16px; text-align: center; flex: 0 0 auto; color: var(--txt-3); }
+.im-item.pay { color: var(--green); } .im-item.pay .im-ic { color: var(--green); }
+.im-item.danger { color: var(--red); } .im-item.danger .im-ic { color: var(--red); }
+.im-sep { height: 1px; background: var(--line); margin: 4px 6px; }
+/* the white print sheet hosted inside the dark card */
+.io-sheet-wrap { padding: 13px; background: repeating-linear-gradient(135deg, rgba(255,255,255,.015) 0 8px, transparent 8px 16px), var(--bg-2); container-type: inline-size; }
+.io-sheet-wrap .pr-doc { max-width: none; border-radius: 8px; padding: 20px 22px; box-shadow: 0 10px 30px -12px rgba(0,0,0,.8); }
+/* Narrow-embed reflow (mobile / narrow column): the pretty invoice was laid out for a wide
+   printed page; on a narrow inline sheet the wordmark, big datestamp, 300px totals block and
+   2-col meta/logs overflow. Scale + stack them here ONLY — print and the wide desktop column
+   keep the approved layout (scoped to the embed via the io-sheet-wrap container, never
+   #print-root). */
+@container (max-width: 440px) {
+  .io-sheet-wrap .pr-doc { padding: 15px; }
+  .io-sheet-wrap .pr-head { gap: 10px; align-items: center; }
+  .io-sheet-wrap .pr-brandwrap { gap: 8px; min-width: 0; }
+  .io-sheet-wrap .pr-logo { width: 38px; height: 38px; flex-basis: 38px; }
+  .io-sheet-wrap .pr-brand { font-size: 21px; letter-spacing: .3px; }
+  .io-sheet-wrap .pr-sub { font-size: 9.5px; letter-spacing: 1px; }
+  .io-sheet-wrap .pr-datestamp { font-size: 22px; letter-spacing: .5px; }
+  .io-sheet-wrap .pr-meta { grid-template-columns: 1fr; gap: 0; }
+  .io-sheet-wrap .pr-summary { flex-direction: column; align-items: stretch; gap: 12px; }
+  .io-sheet-wrap .pr-cust { margin-right: 0; justify-content: center; }
+  .io-sheet-wrap .pr-cust-photo { width: 84px; height: 84px; }
+  .io-sheet-wrap .pr-tot { flex-basis: auto; width: 100%; }
+  .io-sheet-wrap .pr-logs { grid-template-columns: 1fr; gap: 12px; }
+}
+/* on-sheet affordances (white-document colors — fixed like the rest of .pr-doc) */
+.pr-line-src { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; color: #1864d6; font-weight: 700;
+  border: 1px solid #b9d2f7; background: #eef4fe; border-radius: 6px; padding: 0 5px; margin-left: 5px; cursor: pointer; }
+.pr-line-src:hover { background: #dfeaff; }
+.pr-po-edit { font-size: 9.5px; color: #1864d6; border: 1px dashed #b9d2f7; border-radius: 5px; padding: 0 5px; margin-left: 4px; cursor: pointer; }
+/* §3.4 — the transient +Invoice DROP pill: create a fresh invoice for this customer from a
+   released rental/WO/unit. Inherits the R5b blue-add (.anchor) look; hidden until a valid
+   lineable drag OR an invoice menu-link is in flight; a full-width drop zone in the section.
+   Themes for free via tokens (dark/light/ranch). */
+.inv-add-pill { display: none; width: 100%; justify-content: center; margin-top: 7px; }
+.inv-add-pill svg { width: 15px; height: 15px; }
+body.dragging[data-drag="rentals"] .inv-add-pill,
+body.dragging[data-drag="units"] .inv-add-pill,
+body.dragging[data-drag="workOrders"] .inv-add-pill,
+.inv-add-pill.linking-show { display: inline-flex; }
+.inv-add-pill.drop-ok { box-shadow: 0 0 0 1px var(--accent-line); }
+.inv-add-pill.drop-hot { border-color: var(--accent) !important; color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent-line), 0 0 26px -4px rgba(255,122,26,.5) !important; }
+/* embedded invoice rows / the expanded invoice as drop targets (they aren't `.row`/`.card`) */
+.inv-row.drop-ok, .inv-open.drop-ok { border-color: var(--accent-line); box-shadow: 0 0 0 1px var(--accent-line); cursor: copy; }
+.inv-row.drop-hot, .inv-open.drop-hot { border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent-line), 0 0 26px -4px rgba(255,122,26,.5) !important; }
+@media (prefers-reduced-motion: reduce) { .inv-row { transition: none; } }
+
 /* R22 DATE FIELD + inline calendar (Jac 2026-06-12) — ONE date picker everywhere
    a single date/datetime is entered (rental WINDOW keeps its timeline winpicker). */
 .datefield { display: inline-flex; align-items: center; gap: 7px; width: 100%; height: 36px; padding: 0 12px;

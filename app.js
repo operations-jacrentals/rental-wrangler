@@ -2220,6 +2220,10 @@ const state = {
   held: null,   // Copy→paste: the ONE held element awaiting paste into an internal (Team / Mr. Wrangler) chat — { card, recId, label }. Not persisted (cleared on refresh).
   wrangler: { open: false, min: false, id: null, messages: [], busy: false, error: '', draft: '', attach: [], files: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null },   // §18 Mr. Wrangler dock — id ties the live chat to its §18g rail snapshot; min collapses it to the header bar; survives minimize, restores conversation on reopen
   mobileCol: 0,               // §M1 — which column the phone shows (0 Yard · 1 Rentals · 2 Customers); drives swipe position + the per-column bottom strip
+  funnelTab: {},              // §3.5 customer funnel toggle — { [customerId]: 'rental'|'usedSales' }; in-memory (view-local), reset to Rental on a fresh customer open
+  actLogOpen: {},             // §3.8 per-funnel Action Log open state — { ['<custId>|<scope>']: true }
+  custInvOpen: {},            // §3.3 embedded Invoices accordion — { [customerId]: invoiceId } (one open at a time); view-local, reset on a fresh customer open
+  custInvMenu: {},            // §3.3 which expanded invoice's status/action menu is open — { [customerId]: invoiceId }
   woPartForm: null,           // woId whose "+ Add Part/Labor" inline form is open
   invLineForm: null,          // invoiceId whose "+ Add Custom" inline form is open
   invMergePick: null,         // invoiceId whose "Merge invoice" picker is open (consolidate unpaid bills)
@@ -2446,6 +2450,8 @@ function openStandard(card, recId, recType) {
   sweepEmptyDrafts(recId);   // #8 — leaving an empty draft deletes it
   pushCardHistory(cs);       // Task 1 — record the prior (list) view so Back can return
   cs.mode = 'standard'; cs.recId = recId; cs.recType = recType || null; cs.graphView = false;   // opening a record exits the in-column graph view
+  if (card === 'customers' && state.funnelTab) delete state.funnelTab[recId];   // §3.5 — a fresh customer open resets the funnel toggle to Rental
+  if (card === 'customers') { if (state.custInvOpen) delete state.custInvOpen[recId]; if (state.custInvMenu) delete state.custInvMenu[recId]; }   // §3.3 — collapse the embedded Invoices accordion on a fresh open (openInvoice re-sets it after)
   ackComments(recOf(entityCardOf(card, recType), recId));   // viewing = acknowledged (Phase 6)
   // §10 + #54 — opening a Category while the rental-window picker is live (a window's
   // picked, so availWin is set) pivots the left column to Units, pre-filled with the
@@ -2646,6 +2652,7 @@ function rowOpen(card, recId, recType) {
 function deferOrAnchor(key, singleFn, anchor) {
   if (pendingRowClick && pendingRowClick.key === key) {
     clearTimeout(pendingRowClick.timer); pendingRowClick = null;
+    if (anchor && anchor.card === 'invoices') return openInvoice(anchor.recId);   // §3.4 invoice card retired → double-click routes to the embedded invoice too (matches the single-click pillTo redirect)
     return anchorOrToggle(anchor.card, anchor.recId, anchor.recType);   // 2nd tap on the anchored record un-anchors (toggle)
   }
   if (pendingRowClick) clearTimeout(pendingRowClick.timer);
@@ -2708,6 +2715,10 @@ function scrollToSect(card, sect) {
 }
 function pillTo(card, recId) {
   if (recId == null) return;
+  // §3.4 — the Invoice card is retired: EVERY invoice cross-link (refPill('invoices',…)
+  // + the two inline data-pill-card="invoices" pills) lands INSIDE Customer Details,
+  // scrolled to and expanding the target invoice row. One interception point catches all.
+  if (card === 'invoices') return openInvoice(recId);
   // 3-column display: a link pill forces its column to reveal the target card.
   const revealCol = (member) => { const cs = activeSession(); const col = COLUMN_OF[member]; if (cs.cols && col) { cs.cols[col] = member; const idx = COLUMNS.findIndex((c) => c.id === col); if (idx >= 0) state.mobileCol = idx; } };   // §M1 — also flip the visible phone column so a cross-column link lands where you can see it
   // If revealing the target SWAPS its column — hiding the card you're on now (e.g. an invoice
@@ -2723,6 +2734,24 @@ function pillTo(card, recId) {
     return;
   }
   if (recOf(card, recId)) { noteSwap(card); revealCol(card); openStandard(card, recId); }
+}
+/* §3.4 — the nav primitive for a retired-card invoice: resolve invId → its customer,
+   open that customer in the right column, then scroll the embedded Invoices section into
+   view and expand the target invoice row (open-row state set BEFORE the expanded paint so
+   there's no two-phase flash), with the R19 attention glow pointing at it. */
+function openInvoice(invId) {
+  const inv = IDX.invoice.get(invId); if (!inv) return;
+  const custId = inv.customerId;
+  if (custId == null) { toast('That invoice has no customer on file yet — link one first.'); return; }
+  pillTo('customers', custId);   // reveal + open the customer (fresh open resets the accordion) — renders collapsed
+  state.custInvOpen = state.custInvOpen || {}; state.custInvOpen[custId] = invId;   // now force the target row open…
+  if (state.custInvMenu) state.custInvMenu[custId] = null;
+  render();   // …and repaint with it expanded
+  setTimeout(() => {
+    const secN = document.querySelector('.card[data-card="customers"] .inv-sec');
+    if (secN) secN.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    attnFlash('.card[data-card="customers"] .inv-sec .inv-open');
+  }, 80);
 }
 
 /* ── global search (§5.4) ────────────────────────────────────────────────── */
@@ -3667,12 +3696,15 @@ function membershipCancellationInvoice(c) {
   if (!c) return null;
   return DATA.invoices.find((inv) => inv.membershipCancellation && inv.customerId === c.customerId && invoiceTotals(inv).balance > 0.005) || null;
 }
-/* ── Membership section (F6) — lifecycle state + actions, in the yard data-plate language ── */
-function membershipSectionHtml(c) {
+/* ── Membership (F6) — lifecycle state, economics + lifecycle actions ──
+   Split (2026-07-08 funnel reorg): the STATE/economics render inside the Rental
+   funnel body (membershipMetaHtml); the lifecycle ACTIONS move into the agreements
+   window (membershipActionsHtml). membershipSectionHtml was retired with the old
+   side-by-side .detail-cols layout. */
+function membershipMetaHtml(c) {
   const status = membershipStatus(c);
   const isMem = status === 'Active' || status === 'Past Due';
   const yrFull = (iso) => `${fmtShortDate(iso)}, ${parseISO(iso).getFullYear()}`;
-  const stageSet = !!(c.membershipStage && c.membershipStage !== 'N/A');
   const stateBadge = isMem
     ? badge(status === 'Past Due' ? 'Past Due' : 'Active Member', status === 'Past Due' ? 'yellow' : 'green')
     : status === 'Lapsed' ? badge('Lapsed', 'red')
@@ -3681,29 +3713,229 @@ function membershipSectionHtml(c) {
   const graceFlag = (graceN != null && graceN >= 0) ? kvPills(badge(`⚠ Canceled in ${graceN} day${graceN === 1 ? '' : 's'}`, 'red')) : '';
   const paidUntil = (isMem && c.paidUntil) ? kv(yrFull(c.paidUntil), { sfx: c.prepaid ? 'prepaid through' : 'paid until' }) : '';
   const planBadges = c.paidCadence ? kvPills(`${badge('Paid ' + c.paidCadence, 'green')}${c.unlimitedTransport ? badge('Unlimited Transport', 'purple') : ''}${c.rentalProtection ? badge('Protected', 'blue') : ''}${c.autoRenew ? badge('Auto-Renew', 'navy') : ''}`) : '';
+  return `${stateBadge ? kvPills(stateBadge) : ''}${graceFlag}${paidUntil}${planBadges}${membershipEconomicsHtml(c)}`;
+}
+/* Lifecycle actions — re-homed into the agreements window (§3.7). MONEY-gate PRESERVED
+   verbatim: Cancel / Pay-Cancellation are canMoney()-gated (same gate as the invoice
+   Pay/Charge/Refund row + Add-Card); Print Agreement is not money-gated so every role
+   sees it. Enrollment already lives in the agreements-window foot (enrollFoot). Handlers
+   (js-mem-cancel/paycxl/print-magreement) are UNCHANGED and re-check canMoney(). */
+function membershipActionsHtml(c) {
+  const status = membershipStatus(c);
+  const isMem = status === 'Active' || status === 'Past Due';
+  const stageSet = !!(c.membershipStage && c.membershipStage !== 'N/A');
   const cxlInv = membershipCancellationInvoice(c);
-  // Enroll / Cancel / Pay-Cancellation are MONEY actions → Office/Admin only, same gate as the
-  // invoice Pay/Charge/Refund row (5868) and Add-Card (canMoney). Print Agreement is not a money
-  // action, so it stays visible to every role. (Handlers re-check canMoney() as defence-in-depth.)
   const mayMoney = canMoney();
-  // Sign-up moved to the ACCOUNT-LEVEL agreement popup (spec memberships D5, Jac 2026-06-29):
-  // enrollment starts where the agreement is signed, not in this status section. Lifecycle
-  // actions on an EXISTING membership (cancel / pay-cancellation / print) stay here.
   const cancelBtn = (isMem && mayMoney) ? actionPill('danger', 'Cancel Membership', { js: 'js-mem-cancel', h: 26, data: { rec: c.customerId } }) : '';
   const payCxlBtn = (cxlInv && mayMoney) ? actionPill('money', 'Pay Cancellation ' + money2(invoiceTotals(cxlInv).balance), { js: 'js-mem-paycxl', h: 26, data: { rec: c.customerId } }) : '';
   const printBtn = stageSet ? actionPill('commit', 'Print Agreement', { js: 'js-print-magreement', h: 26, data: { rec: c.customerId } }) : '';
-  const enrollHint = (!isMem && mayMoney) ? `<div class="kv" style="justify-content:center"><span class="muted" style="font-size:10.5px">Enroll from the account agreement — open Agreement on this card</span></div>` : '';
   const actions = [cancelBtn, payCxlBtn, printBtn].filter(Boolean).join('');
-  return `<div class="section"><h4>Membership</h4><div class="fieldstack centered">
-    ${kvPills(funnelPill(c.customerId, 'membership', c.membershipStage || 'N/A'))}
-    ${stateBadge ? kvPills(stateBadge) : ''}
-    ${graceFlag}
-    ${paidUntil}
-    ${planBadges}
-    ${membershipEconomicsHtml(c)}
-    ${actions ? `<div class="kv pillrow">${actions}</div>` : ''}
-    ${enrollHint}
-  </div></div>`;
+  return actions ? `<div class="kv pillrow ag-lifecycle">${actions}</div>` : '';
+}
+/* ── The funnel toggle (§3.5–§3.8) — ONE section whose centered R14 segmented toggle
+   IS the header: RENTAL | EQUIPMENT SALES, each tab carrying an RYG dot for its
+   most-urgent open Next Action. Each tab body = its funnel pill + account button, its
+   meta, a running Next-Actions list, and a collapsible per-funnel Action Log. Replaces
+   the old side-by-side membership/used-sales columns AND the Action Board. ── */
+// Next Actions + logged actions live as funnel-scoped entries in c.activityLog:
+//   OPEN next action  = { when, text:'Scheduled: …', scope:'rental'|'usedSales' }  (no outcome)
+//   CLOSED (done/cxl)  = the same entry with outcome:'done'|'cancelled' + closedWhen → drops
+//                        out of the open list and shows in the Action Log with a ✓/✕ prefix
+//   manual log         = { when, text, scope }  (no 'Scheduled:' prefix)
+// Legacy untagged entries default to the Rental bucket (R7 migration — never dropped).
+const naScopeOf = (a) => (a && a.scope) ? a.scope : 'rental';
+const naIsSched = (a) => a && /^Scheduled:/.test(a.text || '');
+function naOpenList(c, scope) {
+  return (c.activityLog || []).map((a, idx) => ({ a, idx }))
+    .filter(({ a }) => naIsSched(a) && !a.outcome && naScopeOf(a) === scope)
+    .sort((x, y) => parseISO(x.a.when) - parseISO(y.a.when));   // soonest / most-overdue first
+}
+function naUrgency(whenISO) {
+  const d = dayDiff(TODAY, parseISO(whenISO));   // >0 = days until, ≤0 = due/overdue
+  if (d <= 0) return 'due';
+  if (d <= 2) return 'soon';
+  return 'ok';
+}
+function naDotClass(c, scope) {
+  const items = naOpenList(c, scope);
+  if (items.some(({ a }) => naUrgency(a.when) === 'due')) return 'due';
+  if (items.some(({ a }) => naUrgency(a.when) === 'soon')) return 'soon';
+  return 'ok';
+}
+function nextActionsHtml(c, scope) {
+  const rows = naOpenList(c, scope).map(({ a, idx }) => {
+    const u = naUrgency(a.when);
+    const d = dayDiff(TODAY, parseISO(a.when));
+    const when = u === 'due' ? (d === 0 ? 'Today' : `Late: ${-d}d`) : fmtShortDate(a.when);
+    const note = parseSchedText(a.text).note;
+    return `<div class="nextact ${u} js-na-edit" data-rec="${esc(c.customerId)}" data-scope="${scope}" data-idx="${idx}" data-tip="Click to edit">`
+      + `<span class="na-dot"></span><span class="na-when">${esc(when)}</span>`
+      + `<span class="na-txt">${esc(note)}</span>`
+      + `<span class="na-acts">`
+      + `<button class="na-done js-na-done" data-rec="${esc(c.customerId)}" data-idx="${idx}" data-tip="Done — logs completed">✓</button>`
+      + `<button class="na-cancel js-na-cancel" data-rec="${esc(c.customerId)}" data-idx="${idx}" data-tip="Cancel — logs cancelled">✕</button>`
+      + `</span></div>`;
+  }).join('');
+  return `<div class="na-list">${rows}${addBtn('Action', { link: true, js: 'js-na-add', h: 26, data: { rec: c.customerId, scope } })}</div>`;
+}
+function actionLogHtml(c, scope) {
+  const entries = (c.activityLog || []).map((a, idx) => ({ a, idx }))
+    .filter(({ a }) => naScopeOf(a) === scope && (!naIsSched(a) || a.outcome));   // manual logs + closed next-actions only
+  entries.sort((x, y) => parseISO(x.a.closedWhen || x.a.when) - parseISO(y.a.closedWhen || y.a.when));
+  entries.reverse();   // newest first
+  const key = c.customerId + '|' + scope;
+  const isOpen = !!(state.actLogOpen && state.actLogOpen[key]);
+  const rows = entries.map(({ a }) => {
+    const w = a.closedWhen || a.when;
+    const note = naIsSched(a) ? parseSchedText(a.text).note : a.text;
+    const ic = a.outcome === 'done' ? '<span class="ah-ic done">✓</span>'
+      : a.outcome === 'cancelled' ? '<span class="ah-ic cancel">✕</span>' : '';
+    return `<div class="ah-row"><span class="ah-when">${esc(fmtShortDate(w))}</span><span>${ic}${esc(note)}</span></div>`;
+  }).join('');
+  return `<div class="acthist">`
+    + `<button class="ah-hd js-actlog-toggle" data-rec="${esc(c.customerId)}" data-scope="${scope}" aria-expanded="${isOpen}">Action Log <span class="ah-cnt">· ${entries.length}</span> <span class="ah-chev">${isOpen ? '▾' : '▸'}</span></button>`
+    + (isOpen ? `<div class="ah-body">${rows || '<div class="ah-empty">No logged actions yet.</div>'}</div>` : '')
+    + `</div>`;
+}
+/* R28: the account button on the gate row — stamped label = the account TYPE; opens the
+   agreements window (same js-view-agreement access as the signed-agreement pill). */
+function acctBtn(c) {
+  const acct = getStatus('customerAccountType', c.accountType || 'Non-Business');
+  return `<button class="acct-btn js-view-agreement" data-r="R28" data-rec="${esc(c.customerId)}" data-tip="Open account agreements">${esc(acct.label)}</button>`;
+}
+/* Labeled click-to-edit customer field (module-level twin of DETAIL.customers' efield),
+   for the Equipment-Sales buyer-criteria fields (Desired Age / Desired Hours). */
+function custMetaField(c, field, label, ph) {
+  const val = c[field];
+  return `<div class="kv"><span class="pfx">${esc(label)}</span><span class="v inline-edit" data-edit="custField" data-field="${esc(field)}" data-rec="${esc(c.customerId)}" data-ph="${esc(ph)}">${val ? esc(val) : `<span class="add-field" data-r="R5c">+${esc(label)}</span>`}</span></div>`;
+}
+function funnelSectionHtml(c) {
+  const tab = (state.funnelTab && state.funnelTab[c.customerId]) || 'rental';
+  const seg = segCtl([
+    { label: `Rental <span class="seg-dot ${naDotClass(c, 'rental')}"></span>`, js: 'js-funnel-tab', data: { rec: c.customerId, tab: 'rental' }, on: tab === 'rental' ? 'accent' : null },
+    { label: `Equipment Sales <span class="seg-dot ${naDotClass(c, 'usedSales')}"></span>`, js: 'js-funnel-tab', data: { rec: c.customerId, tab: 'usedSales' }, on: tab === 'usedSales' ? 'accent' : null },
+  ]);
+  let body;
+  if (tab === 'rental') {
+    body = `<div class="fb-toprow">${funnelPill(c.customerId, 'membership', c.membershipStage || 'N/A')}${acctBtn(c)}</div>`
+      + `<div class="fieldstack funnel-fields">${membershipMetaHtml(c)}</div>`
+      + nextActionsHtml(c, 'rental')
+      + actionLogHtml(c, 'rental');
+  } else {
+    const intCats = (c.interestedCategoryIds || []).map((id) => { const cat = IDX.category.get(id); return cat ? refPill('categories', id, cat.name, { x: 'intcat-remove', xData: id, tag: 'Cat' }) : ''; }).join('');
+    const intMakes = (c.interestedMakes || []).map((mk) => refPill(null, mk, mk, { x: 'intmake-remove', xData: mk, tag: 'Make', tone: 'tan' })).join('');
+    body = `<div class="fb-toprow">${funnelPill(c.customerId, 'usedSales', c.usedSalesStage || 'N/A')}${acctBtn(c)}</div>`
+      + `<div class="fieldstack funnel-fields">${custMetaField(c, 'desiredAge', 'Desired Age', 'Add desired age')}${custMetaField(c, 'desiredHours', 'Desired Hours', 'Add desired hours')}</div>`
+      + `<div class="funnel-sublabel">Interested in</div>`
+      + `<div class="kv pillrow interested">${intCats}${intMakes}${addBtn('Make / Category', { link: true, js: 'js-addmakecat', h: 26, data: { rec: c.customerId } })}</div>`
+      + nextActionsHtml(c, 'usedSales')
+      + actionLogHtml(c, 'usedSales');
+  }
+  return `<div class="section funnel-sec">`
+    + `<div class="funnel-hd"><span class="fh-rule"></span>${seg}<span class="fh-rule"></span></div>`
+    + `<div class="funnel-body">${body}</div>`
+    + `</div>`;
+}
+/* ── §3.2/§3.3 — the embedded per-customer Invoices section (replaces the retired
+   standalone Invoice card). A manager summary strip over a bounded scroll region of
+   invoice rows; a row expands accordion-style (one open at a time) into the interactive
+   invoice — a one-row control header (id + the R29 status/action menu) over the shared
+   .pr-doc sheet (invoiceDocHtml, interactive). Money actions reuse the EXISTING
+   js-pay-invoice opener + canMoney() gate verbatim. ── */
+const invoicesForCustomer = (c) => DATA.invoices.filter((i) => i.customerId === c.customerId)
+  .sort((a, b) => (parseISO(b.date) || 0) - (parseISO(a.date) || 0));   // newest first
+// pay-state → the hazard-stripe fill class + the status WORD shown on the row rail / menu pill
+function invPayState(t) {
+  if (t.status === 'Refunded') return { cls: 'part', word: 'Refunded' };
+  if (t.status === 'Paid') return { cls: 'paid', word: 'Paid' };
+  if (t.status === 'Partial') return { cls: 'part', word: 'Partial' };
+  return { cls: 'due', word: t.status };   // Unpaid / Not Due / Late* / Collections
+}
+const invoiceOneLine = (i) => { const l = (i.lineItems || []).map((x) => x.label).filter(Boolean); return l.length ? l.join(' · ') : (i.membership ? 'Membership' : 'No line items yet'); };
+function invSummaryStrip(invs) {
+  const yr = TODAY.getFullYear();
+  let open = 0, paidYtd = 0; const payDays = [];
+  invs.forEach((i) => {
+    const t = invoiceTotals(i);
+    open += Math.max(0, t.balance);
+    const d = parseISO(i.date);
+    if (d && d.getFullYear() === yr) paidYtd += Math.max(0, t.paid);
+    if (t.paid > 0.005 && i.paidAt && d) { const diff = dayDiff(d, parseISO(i.paidAt)); if (diff >= 0 && diff < 3650) payDays.push(diff); }
+  });
+  const avg = payDays.length ? Math.round(payDays.reduce((a, b) => a + b, 0) / payDays.length) : null;
+  const chip = (v, l, cls) => `<div class="kchip${cls ? ' ' + cls : ''}"><span class="kc-v">${esc(v)}</span><span class="kc-l">${esc(l)}</span></div>`;
+  return `<div class="inv-summary">`
+    + chip(money2(open), 'Open', open > 0.005 ? 'due' : '')
+    + chip(String(invs.length), invs.length === 1 ? 'Invoice' : 'Invoices', '')
+    + chip(money2(paidYtd), 'Paid YTD', 'paid')
+    + chip(avg == null ? '—' : avg + 'd', 'Avg pay', '')
+    + `</div>`;
+}
+/* R29 — the status pill that DOUBLES as the action menu. Its fill = pay state (green solid
+   paid · yellow-stripe partial · red-stripe due); solid while its menu is open. Pay/Refund
+   dispatch the SAME js-pay-invoice opener the card used (canMoney()-gated identically);
+   Print = js-print-invoice; Send is disabled ("soon") — the consent-gated comms path isn't
+   wired here (see report). */
+function invoiceStatMenu(i, c, open) {
+  const t = invoiceTotals(i);
+  const ps = invPayState(t);
+  const mayMoney = canMoney() && !!c;
+  const canPay = mayMoney && t.status !== 'Refunded' && t.balance > 0.005;
+  const canRefund = mayMoney && (t.status === 'Refunded' || (t.balance <= 0.005 && t.paid > 0.005));   // mirrors DETAIL.invoices payCell exactly
+  const items = [];
+  if (canPay) items.push(`<button class="im-item pay js-pay-invoice" role="menuitem" data-rec="${esc(i.invoiceId)}"><span class="im-ic">$</span> Pay</button>`);
+  items.push(`<button class="im-item js-print-invoice" role="menuitem" data-rec="${esc(i.invoiceId)}"><span class="im-ic">🖨</span> Print</button>`);
+  items.push(`<button class="im-item" role="menuitem" disabled data-tip="Sending invoices to customers is coming soon"><span class="im-ic">✉</span> Send</button>`);
+  if (canRefund) items.push(`<div class="im-sep"></div><button class="im-item danger js-pay-invoice" role="menuitem" data-rec="${esc(i.invoiceId)}"><span class="im-ic">↩</span> ${t.status === 'Refunded' ? 'Details' : 'Refund'}</button>`);
+  return `<div class="io-menu-wrap">`
+    + `<button class="io-statmenu ${ps.cls}${open ? ' open' : ''} js-inv-statmenu" data-r="R29" data-rec="${esc(i.invoiceId)}" data-cust="${esc(c.customerId)}" aria-expanded="${open ? 'true' : 'false'}" aria-haspopup="menu" data-tip="Invoice status · actions">${esc(ps.word)} <span class="cv">${I.chev}</span></button>`
+    + (open ? `<div class="io-menu" role="menu">${items.join('')}</div>` : '')
+    + `</div>`;
+}
+function invoiceExpandedHtml(i, c, cs, menuOpen) {
+  return `<div class="inv-open">`
+    + `<div class="io-bar"><div class="io-bar-top">`
+    + `<span class="io-id">${esc(invoiceShort(i.invoiceId))}</span>`
+    + invoiceStatMenu(i, c, menuOpen)
+    + `<button class="io-collapse js-inv-collapse" data-cust="${esc(c.customerId)}" data-tip="Collapse">${I.chev}</button>`
+    + `</div></div>`
+    + `<div class="io-sheet-wrap">${invoiceDocHtml(i, { interactive: true })}</div>`
+    + `</div>`;
+}
+function customerInvoicesSection(c, cs) {
+  const invs = invoicesForCustomer(c);
+  const openId = (state.custInvOpen && state.custInvOpen[c.customerId]) || null;
+  const menuId = (state.custInvMenu && state.custInvMenu[c.customerId]) || null;
+  const body = invs.length ? invs.map((i) => {
+    if (i.invoiceId === openId) return invoiceExpandedHtml(i, c, cs, menuId === i.invoiceId);
+    const t = invoiceTotals(i);
+    const ps = invPayState(t);
+    const paidFull = t.paid > 0.005 && t.balance <= 0.005;
+    const dateLine = paidFull
+      ? `Paid ${fmtShortDate(i.paidAt || i.date) || '—'}${i.paymentMethod ? ' · ' + i.paymentMethod : ''}`
+      : `Issued ${fmtShortDate(i.date) || '—'}${i.dueDate ? ' · due ' + fmtShortDate(i.dueDate) : ''}`;
+    const amt = money2(t.balance > 0.005 ? t.balance : t.total);
+    return `<div class="inv-row js-inv-row" data-rec="${esc(i.invoiceId)}" data-cust="${esc(c.customerId)}" data-tip="Open invoice">`
+      + `<span class="ir-stat ${ps.cls}"></span>`
+      + `<span class="ir-id">${esc(invoiceShort(i.invoiceId))}</span>`
+      + `<span class="ir-mid"><span class="ir-desc">${esc(invoiceOneLine(i))}</span><span class="ir-date">${esc(dateLine)}</span></span>`
+      + `<span class="ir-amt ${ps.cls}">${esc(amt)}<small>${esc(ps.word)}</small></span>`
+      + `<span class="ir-chev">${I.chev}</span>`
+      + `</div>`;
+  }).join('') : '<div class="inv-empty muted">No invoices for this customer yet.</div>';
+  // §3.4 — the standalone Invoice card is retired, so invoice-building re-homes HERE: the
+  // rows + the expanded invoice are desktop drag drop-targets, and this transient +Invoice
+  // pill creates a fresh invoice for THIS customer from a released rental/WO/unit (or a tap
+  // while menu-linking on a phone). Hidden until a valid drag / an invoice-link is in flight
+  // (see .inv-add-pill in style.css); routes through the same money builders drops use.
+  const linkingInv = !!(state.linking && state.linking.targetCard === 'invoices');
+  const addPill = addBtn('Invoice', { link: true, icon: CARD_ICON.invoices, h: 26,
+    js: 'inv-add-pill js-inv-add-pill' + (linkingInv ? ' linking-show' : ''), data: { cust: c.customerId } });
+  return `<div class="section inv-sec" data-cust="${esc(c.customerId)}"><h4>Invoices</h4>`
+    + (invs.length ? invSummaryStrip(invs) : '')
+    + `<div class="inv-scroll${openId ? ' expanded' : ''}">${body}</div>`
+    + addPill
+    + `</div>`;
 }
 /* ── F5 — enrollment / cancel / reactivate orchestration ──────────────────────────
    Reuses the deployed, money-gated stripeChargeInvoice action (same security model as
@@ -4577,13 +4809,19 @@ function statusPill(set, value, { card, recId, x, truck, previewColor, previewIc
   const chat = card ? ` data-chat-el data-chat-label="${esc(chatLbl)}" data-chat-color="${esc(st.color)}" data-chat-card="${esc(card)}" data-chat-rec="${esc(recId)}"` : '';
   return `<span class="pill c-${color}${truck ? ' truck' : ''}${focal ? ' focal' : ''}" data-r="R3" data-badge${data}${chat}>${tk}${ic}<span class="t">${esc(label)}</span>${xb}</span>`;
 }
-function refPill(card, recId, label, { x, xData } = {}) {
+function refPill(card, recId, label, { x, xData, tag, tone } = {}) {
   const xb = x ? `<span class="x" data-x="${esc(x)}"${xData != null ? ` data-id="${esc(xData)}"` : ''}>✕</span>` : '';
+  // optional stamped TYPE tag (interest pills: "Cat" orange / "Make" tan) + tone variant
+  const tg = tag ? `<span class="ref-tag">${esc(tag)}</span>` : '';
+  const toneCls = tone ? ` tone-${esc(tone)}` : '';
+  // a non-record interest TAG (e.g. a Make — no card to navigate to): same linked-pill
+  // vocabulary + ✕, but no data-pill nav target.
+  if (!card) return `<span class="pill ref link${toneCls}" data-r="R2">${tg}${esc(label)}${xb}</span>`;
   // customer-name pills get long — clip to ~9 chars (full name stays in the tooltip)
   const tip = (card === 'customers' && label && label.length > 9) ? ` data-tip="${esc(label)}"` : '';
   const shown = (card === 'customers' && label && label.length > 9) ? label.slice(0, 9).trimEnd() + '…' : label;
   const chat = ` data-chat-el data-chat-label="${esc(label || recId)}" data-chat-color="gray" data-chat-card="${esc(card)}" data-chat-rec="${esc(recId)}"`;   // §17 — link/person pill → draggable into a chat
-  return `<span class="pill ref link" data-r="R2" data-pill-card="${card}" data-pill-rec="${esc(recId)}"${tip}${chat}>${CARD_ICON[card] || ''}${esc(shown)}${xb}</span>`;
+  return `<span class="pill ref link${toneCls}" data-r="R2" data-pill-card="${card}" data-pill-rec="${esc(recId)}"${tip}${chat}>${tg}${CARD_ICON[card] || ''}${esc(shown)}${xb}</span>`;
 }
 /** R2: a Unit pill — LINKED record, orange outline + units icon. */
 function unitPill(unitId, { x, xData } = {}) {
@@ -5078,6 +5316,8 @@ const RULE_META = {
   R25: ['Sync banner', 'renderSyncBanner / #sync-banner', 'persistent “Not saving” plate — red hazard-stripe danger cap; raised when the backend sync is failing, hides on recovery. The ONE non-toast alert; lives on <body>, outside #app'],
   R26: ['Manual link', 'sourceLinkBtn', 'small ghost-circle external-link icon beside a service task — opens its cited OEM manual page (task.sourceUrl) in a new tab; renders only when the task actually carries one'],
   R27: ['Due-Today banner', 'renderSchedBanner / #sched-banner', 'top-of-screen reminder plate — caution-YELLOW hazard-stripe cap; lists the scheduled actions due today (customer · note · time), each customer an R2 link. Manual X only (never auto-clears), dismissal sticks for the session (sessionStorage). Like R25 it lives on <body>, outside #app'],
+  R28: ['Account button', 'acctBtn', 'the stamped button on the customer funnel gate row — label = the account TYPE (Contractor/Business/Member…); opens the agreements window (same js-view-agreement access as the signed-agreement pill). Neutral steel chip, not an ignition/status color.'],
+  R29: ['Invoice action menu', 'invoiceStatMenu', 'the expanded-invoice header control: a hazard-stripe status pill (green solid = paid · yellow-stripe = partial · red-stripe = due; goes SOLID while its menu is open) that DOUBLES as the Pay · Print · Send · Refund action menu. A pressable-status control like R1, but it opens actions rather than advancing a status. Pay/Refund reuse the canMoney()-gated payment window.'],
 };
 /* ════════════ APP-12 · DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
    The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
@@ -5202,7 +5442,7 @@ const RB_TABS = [
   { id: 'fields', label: 'Fields & Adds', intro: 'Where you type, link, and add.',
     items: [{ r: 'R5' }, { r: 'R5b' }, { r: 'R5c' }, { r: 'R6' }, { r: 'R7' }, { r: 'R8' }, { r: 'R14' }, { r: 'R22' }] },
   { id: 'actions', label: 'Actions', intro: 'Buttons that DO something — colored by intent.',
-    items: [{ r: 'R17' }, { r: 'R18' }, { r: 'R24' }, { r: 'R26' }] },
+    items: [{ r: 'R17' }, { r: 'R18' }, { r: 'R24' }, { r: 'R26' }, { r: 'R28' }, { r: 'R29' }] },
   { id: 'upload', label: 'Upload & Capture', intro: 'Add-file zones and photo/site captures.',
     items: [{ r: 'R21' }, { f: 'upload-capture' }] },
   { id: 'data', label: 'Data & Behaviors', intro: 'Visualizations, plus the app’s behaviors — it flashes instead of erroring, right-clicks, tooltips, and self-lints.',
@@ -7113,42 +7353,18 @@ const DETAIL = {
     const title = `<span class="d-title">${esc(fullName(c)) || 'New Customer'}</span>`;
     const activeBar = customerActivityChart(c);
 
-    const intCats = (c.interestedCategoryIds || []).map((id) => { const cat = IDX.category.get(id); return cat ? refPill('categories', id, cat.name, { x: 'intcat-remove', xData: id }) : ''; }).join('');
-    const usedSales = `<div class="section"><h4>Used Sales</h4><div class="fieldstack centered">
-      ${kvPills(funnelPill(c.customerId, 'usedSales', c.usedSalesStage || 'N/A'))}
-      <div class="kv pillrow">${intCats}${addBtn('Category', { link: true, js: 'js-addcat', h: 26, data: { rec: c.customerId } })}</div>
-    </div></div>`;
-    // #293 — once a membership stage is set, offer a printable filled-in agreement (handout/PDF).
-    const membership = membershipSectionHtml(c);   // F6/F7 — lifecycle state, economics + actions
-    /* §12.1 ACTION BOARD v4 (Jac 2026-06-12): header row = "Actions" label +
-       +Log Actions · +Schedule Actions + "Schedule" label; under them, TWO
-       columns — logged actions LEFT, scheduled RIGHT. No empty-state text;
-       sections below flow down as the columns grow. Entry opens under the row. */
-    // two halves so the button gap centers on the SECTION center regardless of the
-    // label widths (Jac 2026-06-12); labels bottom-align to the row.
-    const actHead = `<div class="act-head">
-      <div class="act-half"><span class="act-col-lbl">Actions</span>${addBtn('Log Actions', { line: true, js: 'js-act-open', h: 26, data: { rec: c.customerId, val: 'record' } })}</div>
-      <div class="act-half">${addBtn('Schedule Actions', { line: true, js: 'js-act-open', h: 26, data: { rec: c.customerId, val: 'schedule' } })}<span class="act-col-lbl">Schedule</span></div>
-    </div>`;
-    const actEntry = state.actOpen === c.customerId
-      ? `<div class="act-entry"><input class="act-in js-act-in" data-rec="${c.customerId}" placeholder="${state.actMode === 'schedule' ? 'Schedule an action…' : 'Log an action…'}" /></div>`
-      : '';
-    const hit = (a, strip) => `<div class="hitem"><span class="htime">${esc(fmtShortDate(a.when))}</span><span>${esc(histText(strip ? a.text.replace(/^Scheduled:\s*/, '') : a.text))}</span></div>`;
-    const acts = (c.activityLog || []).filter((a) => !/^Scheduled:/.test(a.text)).map((a) => hit(a)).join('');
-    const scheds = (c.activityLog || []).filter((a) => /^Scheduled:/.test(a.text)).map((a) => hit(a, true)).join('');
-    const activity = acts || scheds ? `<div class="act-cols"><div class="act-col">${acts}</div><div class="act-col">${scheds}</div></div>` : '';
-
     const notes = notesSection('customers', c, 'customerId', 'accountNotes');
-    /* Jac order: filled Notes ABOVE the funnels (under the title) → funnels → active
-       bar → action header → entry → action columns → Account → Cards → (empty Notes) →
-       History. Empty Notes keep the bottom slot per R12 (Jac, Phase 7). */
+    /* Jac order (2026-07-08 reorg): filled Notes ABOVE the funnel toggle (under the
+       title) → the ONE funnel section (RENTAL | EQUIPMENT SALES toggle IS the header;
+       each tab = funnel pill + account button + meta + Next-Actions list + Action Log)
+       → the Invoices section (sits directly BELOW the funnel, Jac 2026-07-08) → active
+       bar → Account → Comms → Cards → (empty Notes) → History. The old side-by-side
+       membership/used-sales columns AND the Action Board are folded into funnelSectionHtml. */
     return `<div class="detail">
       <div class="detail-head">${title}</div>
       ${notes.top}
-      <div class="detail-cols">${membership}${usedSales}</div>
-      ${actHead}
-      ${actEntry}
-      ${activity}
+      ${funnelSectionHtml(c)}
+      ${customerInvoicesSection(c, cs)}
       ${activeBar}
       ${account}
       ${commsCustSectionHtml(c)}
@@ -7714,11 +7930,12 @@ function detailTitle(card, rec) {
  * ════════════════════════════════════════════════════════════════════════ */
 const GRID_CARD_BY_ID = Object.fromEntries(GRID_CARDS.map((c) => [c.id, c]));
 const MEMBER_TITLE = (() => {
-  const m = {}; GRID_CARDS.forEach((c) => { m[c.id] = c.title; }); m.calendar = 'Calendar'; return m;
+  const m = {}; GRID_CARDS.forEach((c) => { m[c.id] = c.title; }); m.calendar = 'Calendar'; m.sales = 'Sales'; return m;
 })();
-const memberIcon = (m) => (m === 'calendar' ? I.grid : (CARD_ICON[m] || ''));
+const memberIcon = (m) => (m === 'calendar' ? I.grid : m === 'sales' ? RING_ICON.sales : (CARD_ICON[m] || ''));
 // Tab row count for a member (search-aware; mirrors the card's own count chip).
 function memberCount(member, session) {
+  if (member === 'sales') return null;   // "coming soon" placeholder — no count chip
   if (member === 'calendar') return dispatchEvents().length;
   try { let r = listFor(member, session); if (member === 'units') r = unitsVisible(r, session.cards.units); if (member === 'rentals') r = rentalsVisible(r, session, session.cards.rentals); return r.length; } catch { return 0; }
 }
@@ -7811,8 +8028,25 @@ function colActionsHtml(active, session) {
   return `<div class="c-actions"><button class="hbtn js-tolist" data-tip="${anchored ? 'Browse list (pick another to anchor)' : 'Back to list'}">${I.list}</button><button class="hbtn js-anchor" data-rec="${esc(cs.recId)}" data-tip="Anchor (⊞)">${I.circle}</button><button class="hbtn js-newtab" data-rec="${esc(cs.recId)}" data-tip="New tab (+)">${I.plus}</button></div>`;
 }
 function memberCardEl(member, session) {
+  if (member === 'sales') return salesCardEl(session);
   if (member === 'calendar') return calendarCardEl(session);
   return cardEl(GRID_CARD_BY_ID[member], session);
+}
+/* SALES — bespoke "coming soon" placeholder card holding the slot the retired Invoice card
+   vacated (mirrors calendarCardEl: no list/detail, no data model). The real Sales dashboard /
+   work-manager ships in PR 2; until then this reserves + labels the slot. */
+function salesCardEl(session) {
+  const node = el('div', 'card' + (state.searchMode ? ' search-glow' : ''));
+  node.dataset.card = 'sales';
+  const body = el('div', 'card-body sales-soon');
+  body.innerHTML = `<div class="soon-plate">`
+    + `<div class="soon-ico">${RING_ICON.sales || ''}</div>`
+    + `<div class="soon-title">Sales</div>`
+    + `<div class="soon-tag">Coming soon</div>`
+    + `<div class="soon-sub">The sales dashboard &amp; work manager saddles up here.</div>`
+    + `</div>`;
+  node.appendChild(body);
+  return node;
 }
 function calendarCardEl(session) {
   const node = el('div', 'card' + (state.searchMode ? ' search-glow' : ''));
@@ -8442,12 +8676,14 @@ function currentMobileMember() {
   return (s.cols && s.cols[colObj.id]) || colObj.default;
 }
 // §M1 — the phone footer is 3 independent 2-way toggles, one per desktop column (left:
-// Units/Categories · middle: Rentals/Calendar · right: Customers/Invoices). (Shop
-// retirement: the wrench entry is gone — the Units card carries the worklist graph.)
+// Units/Categories · middle: Rentals/Calendar · right: Customers/Sales). (Shop
+// retirement: the wrench entry is gone — the Units card carries the worklist graph.
+// Invoices retired 2026-07-08 — embedded in Customer Details; the 2nd right slot is the
+// upcoming Sales placeholder.)
 const MOBILE_TOGGLE_GROUPS = [
   { col: 'left',   members: ['units', 'categories'] },
   { col: 'middle', members: ['rentals', 'calendar'] },
-  { col: 'right',  members: ['customers', 'invoices'] },
+  { col: 'right',  members: ['customers', 'sales'] },
 ];
 // The 3 MAIN cards, left→right — what the footer swipe steps between (never a sub-card).
 const MAIN_CARDS = ['units', 'rentals', 'customers'];
@@ -11736,13 +11972,18 @@ function buildPopupEl(o, overlay, opts = {}) {
     const magStatus = membershipStatus(c);
     const magIsMem = magStatus === 'Active' || magStatus === 'Past Due';
     const enrollFoot = (!magIsMem && canMoney()) ? `<button class="pill ignition js-mem-enroll" data-r="R17" data-rec="${c.customerId}">${magStatus === 'Incomplete' ? 'Complete Enrollment' : 'Saddle Up — Enroll'}</button>` : '';
+    // §3.7 — the membership lifecycle actions (Cancel / Pay-Cancellation / Print Agreement)
+    // live HERE now (they act on the agreement). MONEY-gate PRESERVED: membershipActionsHtml
+    // keeps the exact canMoney() gate + the js-mem-cancel/paycxl/print-magreement handlers.
+    const lifecycle = membershipActionsHtml(c);
     const pop = el('div', 'popup nc-popup');
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: ag.title, tag: 'Customer · agreement',
       foot: `<button class="pill ghost js-close" data-r="R18">Close</button>${enrollFoot}<button class="pill ignition js-edit-customer" data-r="R17" data-rec="${c.customerId}">Edit account</button>`,
       body: `
         <div class="nc-ag-meta">${esc(fullName(c))}${c.agreementSignedAt ? ` · accepted ${esc(c.agreementSignedAt)}` : ' · not yet signed'}</div>
         <div class="nc-agreement" tabindex="0">${esc(ag.text)}</div>
-        ${c.signature ? `<div class="nc-ag-sigline"><span class="nc-cap-lbl">Signature</span><img class="nc-thumb sig" src="${esc(c.signature)}" alt="signature" /></div>` : ''}` });
+        ${c.signature ? `<div class="nc-ag-sigline"><span class="nc-cap-lbl">Signature</span><img class="nc-thumb sig" src="${esc(c.signature)}" alt="signature" /></div>` : ''}
+        ${lifecycle ? `<div class="ag-lifecycle-wrap"><span class="nc-cap-lbl">Membership</span>${lifecycle}</div>` : ''}` });
     overlay.appendChild(pop);
   } else if (o.kind === 'collectionsSend') {
     // Queue an invoice for Collections (spec collections Phase 1 — LOCAL queue; the outbound
@@ -11875,16 +12116,22 @@ function buildPopupEl(o, overlay, opts = {}) {
       if (pr) { overlay.appendChild(svcPartPanelEl(u, task, pr, o.partRef.idx)); }
     }
   } else if (o.kind === 'schedule') {
-    // §12.1 Schedule — a single date+time follow-up logged to the customer Activity Log
+    // §12.1 / §3.6 — a dated "Next Action" for a funnel, stored in the customer Activity
+    // Log (scope-tagged). Opened from a funnel's "+ Action" (add) or a row (edit).
     const c = IDX.customer.get(o.customerId);
     if (!c) { return false; }
-    if (o.when === undefined) { o.when = TODAY_ISO; o.whenTime = to24(nowHourLabel()) || '09:00'; }
+    const editing = (o.editIdx != null) ? (c.activityLog || [])[o.editIdx] : null;
+    if (o.when === undefined) {
+      if (editing) { const p = parseSchedText(editing.text); o.when = editing.when; o.whenTime = to24(p.time) || to24(nowHourLabel()) || '09:00'; o.note = p.note; }
+      else { o.when = TODAY_ISO; o.whenTime = to24(nowHourLabel()) || '09:00'; }
+    }
+    const scopeLbl = (o.scope === 'usedSales') ? 'Equipment Sales' : 'Rental';
     const pop = el('div', 'popup'); pop.style.width = '340px';
-    pop.innerHTML = popupShell({ icon: CARD_ICON.customers, title: `Schedule — ${c.name}`, tag: 'Customer · follow-up',
-      foot: `<button class="pill ignition js-schedule-save" data-r="R17" data-rec="${c.customerId}">Add to schedule</button>`,
+    pop.innerHTML = popupShell({ icon: CARD_ICON.customers, title: `${editing ? 'Edit action' : 'Next action'} — ${c.name}`, tag: `${scopeLbl} · next action`,
+      foot: `<button class="pill ignition js-schedule-save" data-r="R17" data-rec="${c.customerId}">${editing ? 'Save action' : 'Add action'}</button>`,
       body: `
         <label class="svc-field"><span>Date &amp; time</span>${dateField('when', o.when, { withTime: true, time: o.whenTime })}</label>
-        <textarea class="insp-desc js-sch-note" placeholder="What's the follow-up? (quote call, pickup, demo…)">${esc(o.note || '')}</textarea>` });
+        <textarea class="insp-desc js-sch-note" placeholder="What's the next action? (quote call, pickup, demo…)">${esc(o.note || '')}</textarea>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'sellUnit') {
     // Sell a unit (spec units-fleet D3): captures sale price + date, closes the unit's
@@ -12868,7 +13115,7 @@ function wrPlanSummary(plan) {
 }
 function wrCreateCustomer(f) {
   const id = nextCustomerId();
-  const c = { customerId: id, firstName: f.firstName || '', lastName: f.lastName || '', name: `${f.firstName || ''} ${f.lastName || ''}`.trim() || (f.company || 'New lead'), company: f.company || '', phone: f.phone || '', email: f.email || '', address: f.address || '', industry: f.industry || '', accountType: f.accountType || 'Non-Business', payStatus: 'New Customer', requiresPO: false, rentalProtection: false, accountNotes: f.accountNotes || '', stripeId: '', selfie: '', signature: '', agreementType: '', agreementSignedAt: '', interestedCategoryIds: [], activityLog: [], usedSalesStage: f.usedSalesStage || 'Inbound Lead', membershipStage: f.membershipStage || 'Inbound Lead', _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' } };
+  const c = { customerId: id, firstName: f.firstName || '', lastName: f.lastName || '', name: `${f.firstName || ''} ${f.lastName || ''}`.trim() || (f.company || 'New lead'), company: f.company || '', phone: f.phone || '', email: f.email || '', address: f.address || '', industry: f.industry || '', accountType: f.accountType || 'Non-Business', payStatus: 'New Customer', requiresPO: false, rentalProtection: false, accountNotes: f.accountNotes || '', stripeId: '', selfie: '', signature: '', agreementType: '', agreementSignedAt: '', interestedCategoryIds: [], interestedMakes: [], desiredAge: '', desiredHours: '', activityLog: [], usedSalesStage: f.usedSalesStage || 'Inbound Lead', membershipStage: f.membershipStage || 'Inbound Lead', _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' } };
   DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c); logAction(c, 'Added by Mr. Wrangler');
   return c;
 }
@@ -13952,6 +14199,26 @@ function addInterestedCategory(custId, catId) {
   document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
   reanchorRender();
 }
+/* §3.5 — Equipment-Sales interest is by Make OR Category. The dropdown offers both:
+   every category (existing) + every distinct Make in the fleet (from DATA.units). */
+function openInterestDropdown(custId, anchorEl) {
+  const cust = IDX.customer.get(custId);
+  const haveCat = new Set(cust?.interestedCategoryIds || []);
+  const haveMk = new Set(cust?.interestedMakes || []);
+  const makes = [...new Set((DATA.units || []).map((u) => u.make).filter(Boolean))].sort();
+  const catRows = DATA.categories.map((k) =>
+    `<button class="dd-item js-setintcat ${haveCat.has(k.categoryId) ? 'on' : ''}" data-rec="${esc(custId)}" data-val="${esc(k.categoryId)}"><span class="dd-itag cat">Cat</span> ${esc(k.name)}</button>`).join('');
+  const mkRows = makes.map((mk) =>
+    `<button class="dd-item js-setintmake ${haveMk.has(mk) ? 'on' : ''}" data-rec="${esc(custId)}" data-val="${esc(mk)}"><span class="dd-itag mk">Make</span> ${esc(mk)}</button>`).join('');
+  openDropdown(anchorEl, `<div class="dd-sec-lbl">Category</div>${catRows}<div class="dd-sec-lbl">Make</div>${mkRows || '<div class="dd-empty">No makes on file yet.</div>'}`);
+}
+function addInterestedMake(custId, mk) {
+  const c = IDX.customer.get(custId); if (!c) return;
+  c.interestedMakes = c.interestedMakes || [];
+  if (!c.interestedMakes.includes(mk)) { c.interestedMakes.push(mk); reindex('customers', c); logAction(c, `Interested in ${mk}`); }
+  document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
+  reanchorRender();
+}
 /* §5.5 VIEWS (Jac 2026-06-13) — saved per-card searches in localStorage. A view
    just drops its search into the card's search bar (visible + clearable like any
    search), replacing bespoke filter "modes". The View menu = Add-view (when the
@@ -14250,6 +14517,10 @@ const DRAG = { active: false, armed: null, payload: null, point: { x: 0, y: 0 },
 // units/rentals/customers/invoices link via DROP_MATRIX; categories + serviceOrders are
 // drag sources ONLY for chat-tagging (they're not in DROP_MATRIX, so no record links). §17
 const DRAG_SOURCES = new Set(['units', 'rentals', 'customers', 'invoices', 'categories', 'serviceOrders']);
+// §3.4 — payloads that produce an invoice LINE (so they can create a fresh invoice via
+// the embedded +Invoice drop pill). A customer→invoice link is a re-assignment, not a
+// line, so it drops on an invoice ROW only — never the create pill.
+const INV_LINEABLE = new Set(['rentals', 'units', 'workOrders']);
 let dragLayer = null, dragArc = null, chatDropPad = null, zipZones = null, zipDwell = null, zipCooldown = false;
 
 /* DROP_MATRIX — payload entity → { target entity: validator(srcRec, tgtRec) }.
@@ -14342,6 +14613,22 @@ function linkActionsFor(srcCard, rec) {
 function enterLinking(srcCard, srcId, targetCard) {
   state.linking = { srcCard, srcId, targetCard };
   const sess = activeSession();
+  // §3.4 — invoices are no longer a standalone card (COLUMN_OF has no 'invoices'), so the
+  // old COLUMN_OF reveal is dead for them. Reveal the SOURCE's customer instead and open
+  // it in Customer Details, where the embedded Invoices section (rows + the +Invoice create
+  // pill) is the pick surface: tap an invoice row → confirm; tap +Invoice → create + link.
+  if (targetCard === 'invoices') {
+    const custId = linkInvoiceCustomer(srcCard, recOf(srcCard, srcId));
+    if (custId != null && recOf('customers', custId)) {
+      if (sess.cols) sess.cols.right = 'customers';
+      const idx = COLUMNS.findIndex((c) => c.id === 'right'); if (idx >= 0) state.mobileCol = idx;
+      const ccs = sess.cards.customers; if (ccs) { ccs.mode = 'standard'; ccs.recId = custId; ccs.recType = null; ccs.search = ''; }
+      render();
+      setTimeout(() => { try { document.querySelector('.card[data-card="customers"] .inv-sec')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {} }, 40);
+      return;
+    }
+    state.linking = null; toast('Assign a customer to this record first, then bill it to an invoice (§7.5).'); render(); return;
+  }
   const col = COLUMN_OF[targetCard];
   if (sess.cols && col) { sess.cols[col] = targetCard; const idx = COLUMNS.findIndex((c) => c.id === col); if (idx >= 0) state.mobileCol = idx; }   // §M1 reveal + flip the phone column
   const cs = sess.cards[targetCard];
@@ -14349,11 +14636,34 @@ function enterLinking(srcCard, srcId, targetCard) {
   render();
   setTimeout(() => { try { document.querySelector(`.card[data-card="${targetCard}"] .card-search, .card[data-card="${targetCard}"] input`)?.focus(); } catch (e) {} }, 40);
 }
+/* §3.4 — the customer whose embedded invoices are the pick surface when menu-linking a
+   rental / WO / unit onto an invoice (invoices are no longer a card). */
+function linkInvoiceCustomer(srcCard, rec) {
+  if (!rec) return null;
+  if (srcCard === 'rentals') return rec.customerId || null;
+  if (srcCard === 'workOrders') { if (rec.customerId) return rec.customerId; const ar = activeRentalForUnit(rec.unitId); return ar ? ar.customerId : null; }
+  if (srcCard === 'units') { const w = unbilledOpenWOForUnit(rec.unitId); if (w && w.customerId) return w.customerId; const ar = activeRentalForUnit(rec.unitId); return ar ? ar.customerId : null; }
+  if (srcCard === 'customers') return rec.customerId;
+  return null;
+}
+/* §3.4 — tap the embedded +Invoice pill while menu-linking = create a fresh invoice for
+   this customer and bill the linking source onto it (mirrors the desktop +Invoice drop). */
+function linkCreateInvoice(custId) {
+  const L = state.linking; if (!L) return;
+  const p = { entity: L.srcCard, id: L.srcId, rec: recOf(L.srcCard, L.srcId) };
+  state.linking = null;
+  if (!p.rec) { render(); return; }
+  dropCreateInvoiceWith(p, custId);
+}
 function cancelLinking() { if (state.linking) { state.linking = null; render(); } }
 function startUnitWorkOrder(unitId) { pillTo('units', unitId); }   // §4a — "+ Work Order" just lands on the unit (WO creation lives on the unit's card)
 /* The hazard-stripe banner shown atop the target card while linking. */
 function linkBanner(card) {
-  const L = state.linking; if (!L || L.targetCard !== card) return '';
+  const L = state.linking; if (!L) return '';
+  // §3.4 — an invoice link is picked on the CUSTOMERS card (embedded invoices), not an
+  // 'invoices' card, so surface the banner there too.
+  const onInvoiceCust = L.targetCard === 'invoices' && card === 'customers';
+  if (L.targetCard !== card && !onInvoiceCust) return '';
   const srcRec = recOf(L.srcCard, L.srcId);
   const srcT = srcRec ? detailTitle(L.srcCard, srcRec) : String(L.srcId);
   const tgt = LINK_TARGET_LABEL[L.targetCard] || L.targetCard;
@@ -14634,6 +14944,29 @@ function dropTargetAt(x, y, under) {
     }
     return null;
   }
+  // §3.4 — the embedded Invoices section (inside the OPEN customer card) is the invoice
+  // drop-target now: an inv-row / the expanded .inv-open resolves to THAT invoice; the
+  // transient +Invoice pill resolves to a NEW invoice for the section's customer. Keyed
+  // off the .inv-sec's data-cust, NOT a data-card="invoices" (that card is gone).
+  if (accept.invoices) {
+    const addPill = n.closest('.js-inv-add-pill');
+    if (addPill && INV_LINEABLE.has(DRAG.payload.entity)) {
+      const custId = addPill.dataset.cust;
+      if (recOf('customers', custId) && linkActionPossible(DRAG.payload.entity, DRAG.payload.rec, 'invoices'))
+        return { newInvoice: true, custId, node: addPill };
+    }
+    const invEl = n.closest('.inv-row, .inv-open');
+    if (invEl) {
+      const sec = invEl.closest('.inv-sec');
+      const custId = invEl.dataset.cust || (sec && sec.dataset.cust);
+      let invId = invEl.dataset.rec;
+      if (!invId && custId && state.custInvOpen) invId = state.custInvOpen[custId];   // the expanded .inv-open carries no data-rec
+      const inv = invId ? recOf('invoices', invId) : null;
+      if (inv && !(DRAG.payload.entity === 'invoices' && String(invId) === String(DRAG.payload.id))
+          && accept.invoices(DRAG.payload.rec, inv)) return { entity: 'invoices', id: invId, rec: inv, node: invEl };
+      return null;   // over the section but not a valid invoice target → dead (never fall through to the customer card)
+    }
+  }
   const cardNode = n.closest('.card');
   if (cardNode && accept[cardNode.dataset.card]) {
     const dc = cardNode.dataset.card;
@@ -14687,6 +15020,23 @@ function reapplyDragDecor() {
     const rec = recOf(dc, cs.recId);
     if (rec && accept[dc](DRAG.payload.rec, rec)) cardNode.classList.add('drop-ok');
   });
+  // §3.4 — glow the embedded invoice rows / expanded invoice / +Invoice create pill in
+  // the open customer card (they aren't `.row`/`.card[data-card]`, so the loops above miss them).
+  if (accept.invoices) {
+    document.querySelectorAll('.inv-sec').forEach((sec) => {
+      const custId = sec.dataset.cust;
+      sec.querySelectorAll('.inv-row, .inv-open').forEach((eln) => {
+        let invId = eln.dataset.rec; if (!invId && custId && state.custInvOpen) invId = state.custInvOpen[custId];
+        const inv = invId ? recOf('invoices', invId) : null;
+        if (inv && !(DRAG.payload.entity === 'invoices' && String(invId) === String(DRAG.payload.id))
+            && accept.invoices(DRAG.payload.rec, inv)) eln.classList.add('drop-ok');
+      });
+      if (INV_LINEABLE.has(DRAG.payload.entity) && custId && recOf('customers', custId)
+          && linkActionPossible(DRAG.payload.entity, DRAG.payload.rec, 'invoices')) {
+        const pill = sec.querySelector('.js-inv-add-pill'); if (pill) pill.classList.add('drop-ok');
+      }
+    });
+  }
 }
 /* ONE rAF loop per drag: a single elementFromPoint per frame feeds BOTH the
    hot-target highlight and the edge auto-scroll — pointermove never hit-tests,
@@ -14808,8 +15158,30 @@ function endDrag({ rerender } = {}) {
 /* ── DROP DISPATCH — route into §16, then say exactly what happened (toast) +
    R19-flash the newly linked pill on whatever card shows it (row/card fallback). ── */
 function dropFlash(sel, fallbackSel) { if (document.querySelector(sel)) attnFlash(sel); else if (fallbackSel && document.querySelector(fallbackSel)) attnFlash(fallbackSel); }
+/* §3.4 — a rental / WO / unit released on the customer card's transient +Invoice pill (or
+   the +Invoice tap while menu-linking): create a fresh invoice for THAT customer, bill the
+   payload onto it as line 1 via the SAME money builders the inv-row drops + tap buttons use
+   (no new charge/gate logic here — they re-fire their own §7.5/§7.6 gates), then SNAP to it
+   (openInvoice reveals the customer + expands the invoice inside Customer Details). Never
+   strands an empty invoice: if nothing bills (a gate blocked it), the draft is removed. */
+function dropCreateInvoiceWith(p, custId) {
+  const c = recOf('customers', custId); if (!c) return;
+  const id = nextInvoiceId();
+  const inv = { invoiceId: id, customerId: custId, rentalIds: [], date: TODAY_ISO, dueDate: dueForCustomer(custId), po: '', amountPaid: 0, lineItems: [], mock: true };
+  DATA.invoices.push(inv); IDX.invoice.set(id, inv); reindex('invoices', inv);
+  logAction(inv, `Invoice created for ${c.name}`);
+  if (p.entity === 'rentals') addRentalLineToInvoice(id, p.id);
+  else if (p.entity === 'workOrders') billWOToInvoiceExplicit(p.id, id);
+  else if (p.entity === 'units') { const w = unbilledOpenWOForUnit(p.rec.unitId); if (w) billWOToInvoiceExplicit(w.woId, id); }
+  if (!(inv.lineItems || []).length) {   // a gate blocked the bill (its own toast fired) — don't leave an empty draft
+    const idx = DATA.invoices.indexOf(inv); if (idx >= 0) DATA.invoices.splice(idx, 1); IDX.invoice.delete(id); return;
+  }
+  toast(`New invoice ${invoiceShort(id)} for ${c.name}.`);
+  openInvoice(id);   // §3.4 — snap to the new invoice, expanded in the embedded section
+}
 function dispatchDrop(p, t) {
   if (t.newChat || t.chat) return chatDropCopy(p);                   // §17 — drop on the chat pad = COPY the element to paste into a chat
+  if (t.newInvoice) return dropCreateInvoiceWith(p, t.custId);       // §3.4 — the embedded +Invoice pill: fresh invoice for this customer
   const pair = `${p.entity}>${t.entity}`;
   // UNIT ↔ RENTAL — ADD the unit to the rental (a Rental is an EVENT, §20);
   // gates fire per unit inside linkUnitToRental.
@@ -15063,6 +15435,12 @@ function onClick(e) {
   if (closest('.js-bank-verify')) { e.stopPropagation(); const b = closest('.js-bank-verify'); return openVerifyBank(b.dataset.rec, b.dataset.bank); }
   if (closest('.js-ach-verify-save')) { e.stopPropagation(); return verifyAchFlow(closest('.js-ach-verify-save')); }
   if (closest('.js-ach-check')) { e.stopPropagation(); const b = closest('.js-ach-check'); return checkAchStatus(b.dataset.rec, b.dataset.pi); }
+  // §3.3 — embedded Invoices accordion (Customer Details). Row toggles open (one at a
+  // time); the status pill toggles its action menu; the header ✕ collapses. All view-local.
+  if (closest('.js-inv-statmenu')) { e.stopPropagation(); const b = closest('.js-inv-statmenu'); const cu = b.dataset.cust, rec = b.dataset.rec; state.custInvMenu = state.custInvMenu || {}; state.custInvMenu[cu] = (state.custInvMenu[cu] === rec) ? null : rec; return render(); }
+  if (closest('.js-inv-collapse')) { e.stopPropagation(); const cu = closest('.js-inv-collapse').dataset.cust; if (state.custInvOpen) state.custInvOpen[cu] = null; if (state.custInvMenu) state.custInvMenu[cu] = null; return render(); }
+  if (closest('.js-inv-add-pill')) { e.stopPropagation(); const b = closest('.js-inv-add-pill'); if (state.linking && state.linking.targetCard === 'invoices') { e.preventDefault(); return linkCreateInvoice(b.dataset.cust); } return; }   // §3.4 — otherwise drag-only (hidden except mid-drag)
+  if (closest('.js-inv-row')) { e.stopPropagation(); const b = closest('.js-inv-row'); if (state.linking && state.linking.targetCard === 'invoices' && b.dataset.rec) { e.preventDefault(); return openLinkConfirm(b.dataset.rec); }   /* §3.4 — pick this invoice as the menu-link target */ const cu = b.dataset.cust, rec = b.dataset.rec; state.custInvOpen = state.custInvOpen || {}; state.custInvOpen[cu] = (state.custInvOpen[cu] === rec) ? null : rec; if (state.custInvMenu) state.custInvMenu[cu] = null; return render(); }
   if (closest('.js-pay-invoice')) { e.stopPropagation(); return openPayInvoice(closest('.js-pay-invoice').dataset.rec); }
   if (closest('.js-pay-pick')) { e.stopPropagation(); if (state.overlay) { const b = closest('.js-pay-pick'); state.overlay.selectedCardId = b.dataset.card || b.dataset.bank; renderOverlay(); } return; }
   if (closest('.js-pay-method')) { e.stopPropagation(); if (state.overlay) { const nb = document.querySelector('.overlay .js-check-num'); if (nb) state.overlay.checkNum = nb.value.trim(); state.overlay.method = closest('.js-pay-method').dataset.method; state.overlay.error = ''; renderOverlay(); } return; }
@@ -15372,9 +15750,24 @@ function onClick(e) {
   if (closest('.js-clear-unitpick')) { e.stopPropagation(); state.unitPick = null; render(); return; }
   if (closest('.js-clear-paymethod')) { e.stopPropagation(); activeSession().cards.invoices.payMethod = 'all'; render(); return; }   // §337
   if (closest('.js-addcat')) { const b = closest('.js-addcat'); e.stopPropagation(); return openIntCatDropdown(b.dataset.rec, b); }
+  if (closest('.js-addmakecat')) { const b = closest('.js-addmakecat'); e.stopPropagation(); return openInterestDropdown(b.dataset.rec, b); }
   if (closest('.js-setintcat')) { const b = closest('.js-setintcat'); e.stopPropagation(); return addInterestedCategory(b.dataset.rec, b.dataset.val); }
+  if (closest('.js-setintmake')) { const b = closest('.js-setintmake'); e.stopPropagation(); return addInterestedMake(b.dataset.rec, b.dataset.val); }
+  // §3.5 funnel toggle — view-local active tab, in-memory, keyed by customer (never persisted)
+  if (closest('.js-funnel-tab')) { const b = closest('.js-funnel-tab'); e.stopPropagation(); state.funnelTab = state.funnelTab || {}; state.funnelTab[b.dataset.rec] = b.dataset.tab; render(); return; }
+  // §3.8 per-funnel Action Log — expandable, one open-state per (customer, scope)
+  if (closest('.js-actlog-toggle')) { const b = closest('.js-actlog-toggle'); e.stopPropagation(); state.actLogOpen = state.actLogOpen || {}; const k = b.dataset.rec + '|' + b.dataset.scope; state.actLogOpen[k] = !state.actLogOpen[k]; render(); return; }
+  // §3.6 Next Actions — ✓ Done / ✕ Cancel MUST be checked before the row's edit hit (they sit inside it)
+  if (closest('.js-na-done') || closest('.js-na-cancel')) {
+    const done = !!closest('.js-na-done'); const b = closest('.js-na-done') || closest('.js-na-cancel'); e.stopPropagation();
+    const c = IDX.customer.get(b.dataset.rec); const ent = c && (c.activityLog || [])[Number(b.dataset.idx)];
+    if (ent) { ent.outcome = done ? 'done' : 'cancelled'; ent.closedWhen = TODAY_ISO; reindex('customers', c); toast(done ? 'Action completed — logged.' : 'Action cancelled — logged.'); render(); }
+    return;
+  }
+  if (closest('.js-na-add')) { const b = closest('.js-na-add'); e.stopPropagation(); return openOverlay({ kind: 'schedule', customerId: b.dataset.rec, scope: b.dataset.scope || 'rental' }); }
+  if (closest('.js-na-edit')) { const b = closest('.js-na-edit'); e.stopPropagation(); return openOverlay({ kind: 'schedule', customerId: b.dataset.rec, scope: b.dataset.scope || 'rental', editIdx: Number(b.dataset.idx) }); }
   if (closest('.js-act-open')) { const b = closest('.js-act-open'); e.stopPropagation(); state.actMode = b.dataset.val; state.actOpen = b.dataset.rec; const rec = b.dataset.rec; render(); document.querySelector(`.js-act-in[data-rec="${rec}"]`)?.focus(); return; }
-  if (closest('.js-schedule-save')) { const b = closest('.js-schedule-save'); e.stopPropagation(); const o = state.overlay; const root = b.closest('.popup'); const c = IDX.customer.get(b.dataset.rec); const date = o?.when, time = o?.whenTime || '09:00'; const note = (root.querySelector('.js-sch-note')?.value || '').trim(); if (!c || !date) { flashOr('.datefield', 'Pick a date first.'); return; } c.activityLog = c.activityLog || []; c.activityLog.push({ when: date, text: `Scheduled: ${note || 'follow-up'} @ ${date} ${to12(time)}` }); reindex('customers', c); toast('Scheduled — added to the Activity Log.'); state.datepick = null; closeOverlay(); render(); }
+  if (closest('.js-schedule-save')) { const b = closest('.js-schedule-save'); e.stopPropagation(); const o = state.overlay; const root = b.closest('.popup'); const c = IDX.customer.get(b.dataset.rec); const date = o?.when, time = o?.whenTime || '09:00'; const note = (root.querySelector('.js-sch-note')?.value || '').trim(); if (!c || !date) { flashOr('.datefield', 'Pick a date first.'); return; } const scope = (o?.scope === 'usedSales') ? 'usedSales' : 'rental'; const text = `Scheduled: ${note || 'follow-up'} @ ${date} ${to12(time)}`; c.activityLog = c.activityLog || []; if (o?.editIdx != null && c.activityLog[o.editIdx]) { const ent = c.activityLog[o.editIdx]; ent.when = date; ent.text = text; ent.scope = scope; } else { c.activityLog.push({ when: date, text, scope }); } reindex('customers', c); toast(o?.editIdx != null ? 'Next action saved.' : 'Next action added.'); state.datepick = null; closeOverlay(); render(); }
   if (closest('.js-sell-save')) { const b = closest('.js-sell-save'); e.stopPropagation(); const o = state.overlay; const root = b.closest('.popup'); const price = root.querySelector('.js-sell-price')?.value; const date = o?.saleDate; const note = (root.querySelector('.js-sell-note')?.value || '').trim(); if (!date) { flashOr('.datefield', 'Pick a sale date first.'); return; } if (!price || Number(price) <= 0) { flashOr('.js-sell-price', 'Enter a sale price first.'); return; } return sellUnit(b.dataset.rec, price, date, note); }
   // Wave 2 — empty slots on a Quote/invoice: the UNIT slot points you at the
   // Units list (drag IS the link path); the CUSTOMER slot opens quick-add-link.
@@ -15936,6 +16329,10 @@ function handlePillX(xEl) {
     const catName = IDX.category.get(cid)?.name || 'category';
     rec.interestedCategoryIds = (rec.interestedCategoryIds || []).filter((x) => x !== cid);
     reindex('customers', rec); logAction(rec, `No longer interested in ${catName}`); toast('Interested category removed.'); render();   // audit: removal was unlogged (add logged "Interested in")
+  } else if (kind === 'intmake-remove') {
+    const mk = xEl.dataset.id;
+    rec.interestedMakes = (rec.interestedMakes || []).filter((x) => x !== mk);
+    reindex('customers', rec); logAction(rec, `No longer interested in ${mk}`); toast('Interested make removed.'); render();
   }
 }
 
@@ -17134,7 +17531,7 @@ function parseQuickCustomer(q) {
 function quickAddCustomerFromSearch(value) {
   const p = parseQuickCustomer(value); if (!p) return false;
   const id = nextCustomerId();
-  const c = { customerId: id, firstName: p.firstName, lastName: p.lastName, name: `${p.firstName} ${p.lastName}`.trim(), company: '', phone: p.phone, email: '', address: '', industry: '', accountType: 'Non-Business', payStatus: 'New Customer', requiresPO: false, rentalProtection: false, accountNotes: '', stripeId: '', selfie: '', signature: '', agreementType: '', agreementSignedAt: '', interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A', _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' } };
+  const c = { customerId: id, firstName: p.firstName, lastName: p.lastName, name: `${p.firstName} ${p.lastName}`.trim(), company: '', phone: p.phone, email: '', address: '', industry: '', accountType: 'Non-Business', payStatus: 'New Customer', requiresPO: false, rentalProtection: false, accountNotes: '', stripeId: '', selfie: '', signature: '', agreementType: '', agreementSignedAt: '', interestedCategoryIds: [], interestedMakes: [], desiredAge: '', desiredHours: '', activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A', _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' } };
   DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c);
   logAction(c, 'Customer quick-added');
   const s = activeSession();
@@ -17236,7 +17633,7 @@ function quickSaveCustomer(o) {
     requiresPO: !!d.requiresPO, rentalProtection: !!d.rentalProtection, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
     idNumber: d.idNumber || '', netDays: normNetDays(d.netDays), custom: d.custom || {},
     agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '',
-    interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A',
+    interestedCategoryIds: [], interestedMakes: [], desiredAge: '', desiredHours: '', activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A',
     _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' },
   };
   DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c);
@@ -17307,7 +17704,7 @@ function saveNewCustomer() {
     requiresPO: !!d.requiresPO, rentalProtection: !!d.rentalProtection, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
     idNumber: d.idNumber || '', netDays: normNetDays(d.netDays), custom: d.custom || {},
     agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '',
-    interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A',
+    interestedCategoryIds: [], interestedMakes: [], desiredAge: '', desiredHours: '', activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A',
     _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' },
   };
   DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c);
@@ -17972,8 +18369,14 @@ function prInvoiceInk(inv, t) {
   if (tt.balance <= 0.005) return 'is-paid';
   return /^(Late|Collections)/.test(tt.status) ? 'is-due' : 'is-open';
 }
-function printInvoice(invoiceId) {
-  const inv = IDX.invoice.get(invoiceId); if (!inv) return;
+/* §12.5 / §3.3 — the ONE invoice document builder. Both printInvoice (into #print-root)
+   and the embedded Customer-Details expand render from this, so screen and printout can
+   never diverge. The DEFAULT output (no opts) is BYTE-IDENTICAL to the print doc. `opts
+   .interactive` — used ONLY by the on-screen inline sheet, NEVER for #print-root —
+   additively augments the SAME sheet with line-item source links (R2) + an inline PO edit;
+   because print never sets it, the printed bytes are unchanged. */
+function invoiceDocHtml(inv, opts = {}) {
+  const interactive = !!opts.interactive;
   const t = invoiceTotals(inv);
   const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
   const groups = invoicePrintGroups(inv);
@@ -17987,10 +18390,14 @@ function printInvoice(invoiceId) {
 
   // Each rental → a soft card with a single-line header: the bold title FIRST, then its window ·
   // duration · provenance, and the per-rental subtotal pinned right; the unit lines sit inside.
+  // `interactive` (inline sheet only) additively appends a source-link ↗ on rental/WO lines.
   const cardHtml = (g) => {
     const lines = g.lines.map((li) => {
       const p = prLineParts(li);
-      return `<div class="pr-line"><span class="pr-desc">${p.icon ? `<span class="pr-ic">${p.icon}</span>` : '<span class="pr-ic"></span>'}<span class="pr-txt"><span class="pr-nm">${esc(p.name)}</span>${p.cat ? `<span class="pr-cat">${esc(p.cat)}</span>` : ''}${p.meta ? `<span class="pr-mt">${esc(p.meta)}</span>` : ''}</span></span><span class="pr-amt">${money2(Number(li.amount) || 0)}</span></div>`;
+      const src = (interactive && li.ref && (li.kind === 'rental' || li.kind === 'WO'))
+        ? ` <span class="pr-line-src" data-r="R2" data-pill-card="${li.kind === 'WO' ? 'workOrders' : 'rentals'}" data-pill-rec="${esc(li.ref)}" data-tip="Open the source ${li.kind === 'WO' ? 'work order' : 'rental'}">↗</span>`
+        : '';
+      return `<div class="pr-line"><span class="pr-desc">${p.icon ? `<span class="pr-ic">${p.icon}</span>` : '<span class="pr-ic"></span>'}<span class="pr-txt"><span class="pr-nm">${esc(p.name)}${src}</span>${p.cat ? `<span class="pr-cat">${esc(p.cat)}</span>` : ''}${p.meta ? `<span class="pr-mt">${esc(p.meta)}</span>` : ''}</span></span><span class="pr-amt">${money2(Number(li.amount) || 0)}</span></div>`;
     }).join('');
     const meta = `${g.window ? `<span>${esc(g.window)}</span>` : ''}${g.dur ? `<span>${esc(g.dur)}</span>` : ''}${g.prov ? `<span class="pr-prov">${esc(g.prov)}</span>` : ''}`;
     return `<section class="pr-card">
@@ -18016,9 +18423,12 @@ function printInvoice(invoiceId) {
   const logRow = (a, withName) => `<div class="pr-am-row"><span class="pr-am-when">${esc(fmtShortDate(a.when))}${a.clock ? ' · ' + esc(a.clock) : ''}</span><span class="pr-am-tx">${esc(a.text)}${withName && a.rname ? ` <em>· ${esc(a.rname)}</em>` : ''}</span></div>`;
   const logCol = (title, items, withName) => `<div class="pr-log"><div class="pr-log-h">${title}</div>${items.length ? items.map((a) => logRow(a, withName)).join('') : '<div class="pr-am-empty">No entries.</div>'}</div>`;
 
-  let host = document.getElementById('print-root');
-  if (!host) { host = document.createElement('div'); host.id = 'print-root'; document.body.appendChild(host); }
-  host.innerHTML = `
+  // PO meta row — print shows it only when set; the inline sheet always renders it with an edit control.
+  const poRow = interactive
+    ? `<div><span class="pr-k">PO</span><span class="pr-v">${inv.po ? esc(inv.po) : '<span class="muted">—</span>'} <span class="pr-po-edit inline-edit" data-edit="invoicePO" data-rec="${esc(inv.invoiceId)}" data-tip="Edit PO number">Edit</span></span></div>`
+    : (inv.po ? `<div><span class="pr-k">PO</span><span class="pr-v">${esc(inv.po)}</span></div>` : '');
+
+  return `
     <div class="pr-doc ${ink}">
       <div class="pr-head">
         <div class="pr-brandwrap"><img class="pr-logo" src="assets/jac-rentals-logo.jpg" alt="${esc(brandName)}" /><div><div class="pr-brand">${esc(brandName)}</div><div class="pr-sub">${esc(companyTagline())}</div></div></div>
@@ -18030,7 +18440,7 @@ function printInvoice(invoiceId) {
         <div><span class="pr-k">Bill to</span><span class="pr-v">${esc(cust ? cust.name : '—')}</span></div>
         <div><span class="pr-k">Created</span><span class="pr-v">${esc(fmtShortDate(inv.date) || '—')}</span></div>
         <div><span class="pr-k">Due</span><span class="pr-v">${esc(inv.dueDate ? fmtShortDate(inv.dueDate) : '—')}</span></div>
-        ${inv.po ? `<div><span class="pr-k">PO</span><span class="pr-v">${esc(inv.po)}</span></div>` : ''}
+        ${poRow}
         ${inv.contOf ? `<div><span class="pr-k">Continuation of</span><span class="pr-v">${esc(invoiceShort(inv.contOf))} (28-day billing split)</span></div>` : ''}
       </div>
       <div class="pr-groups">${groupsHtml}</div>
@@ -18053,6 +18463,12 @@ function printInvoice(invoiceId) {
         ${logCol('Rental Log', rentalLog, true)}
       </div>
     </div>`;
+}
+function printInvoice(invoiceId) {
+  const inv = IDX.invoice.get(invoiceId); if (!inv) return;
+  let host = document.getElementById('print-root');
+  if (!host) { host = document.createElement('div'); host.id = 'print-root'; document.body.appendChild(host); }
+  host.innerHTML = invoiceDocHtml(inv);   // print path: no opts → byte-identical to the pretty print doc
   document.documentElement.classList.add('printing');   // full-bleed: kraft rides the root canvas so it fills every sheet edge
   document.body.classList.add('printing');
   const cleanup = () => { document.documentElement.classList.remove('printing'); document.body.classList.remove('printing'); window.removeEventListener('afterprint', cleanup); };
@@ -18210,12 +18626,17 @@ function startNewInvoice(customerId) {
   const draft = { invoiceId: id, customerId: customerId || null, rentalIds: [], date: TODAY_ISO, dueDate: dueForCustomer(customerId), po: '', amountPaid: 0, lineItems: [], mock: true };
   DATA.invoices.push(draft); IDX.invoice.set(id, draft); reindex('invoices', draft);
   logAction(draft, cust ? `Invoice created for ${cust.name}` : 'Invoice created');
-  anchorRecord('invoices', id);   // no pick mode — drag links it up (Wave 2)
-  // no customer yet → reveal the Customers list (right column); dragging a
-  // customer swaps the column back to the invoice mid-drag (§15c stacked column).
-  if (!cust) { const s = activeSession(); if (s.cols) s.cols.right = 'customers'; }
-  toast(cust ? `New invoice for ${cust.name} — drag rentals onto it.` : 'New invoice — drag a customer and rentals onto it.');
-  render();
+  // §3.4 — the Invoice card is retired. With a customer, open the new invoice INSIDE
+  // Customer Details (expanded); without one, reveal the Customers list so a customer
+  // gets assigned first (then it opens there).
+  if (cust) {
+    openInvoice(id);
+    toast(`New invoice for ${cust.name} — add lines or drag rentals onto it.`);
+  } else {
+    const s = activeSession(); if (s.cols) s.cols.right = 'customers';
+    render();
+    toast('New invoice needs a customer — pick one and it opens in Customer Details.');
+  }
   maybeAutoLink('invoices', id);   // §17b — if a "+ Invoice" link was in progress, bill the source onto this new invoice
 }
 
@@ -18287,12 +18708,11 @@ function createInvoiceForRental(rentalId) {
   });
   logAction(r, `Invoice ${invoiceShort(id)} created${chunks.length > 1 ? ` + ${chunks.length - 1} continuation${chunks.length > 2 ? 's' : ''} (28-day cap)` : ''}`);
   toast(`Invoice ${invoiceShort(id)} created and linked${chunks.length > 1 ? ` — split into ${chunks.length} (28-day cap)` : ''}.`);
-  // #8 — open the new invoice ON the Invoice card (Jac 2026-06-13)
+  // §3.4 — the Invoice card is retired: surface the new invoice INSIDE Customer Details
+  // (openInvoice reveals + opens the customer, then expands this invoice row).
   const session = activeSession();
   if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
-  const ics = session.cards.invoices; ics.mode = 'standard'; ics.recId = id; ics.recType = null; ics.released = false; ics.graphView = false;   // surfacing an invoice exits graph view
-  const col = columnOfMember('invoices'); if (col && session.cols) session.cols[col] = 'invoices';
-  render();
+  openInvoice(id);
 }
 function setDraftDate(rentalId, which, val) {
   const r = IDX.rental.get(rentalId); if (!r) return;
@@ -18957,8 +19377,10 @@ function billWOToInvoice(woId) {
   const ar = activeRentalForUnit(w.unitId);
   const custId = w.customerId || ar?.customerId || null;
   if (!custId) {
-    // no bill-to customer (unit isn't on an active rental) — bill by dragging instead
-    toast('No customer to bill — drag the unit onto the customer’s invoice instead (§7.6).');
+    // no bill-to customer (unit isn't on an active rental) — there's no customer to bill,
+    // so put the unit on a customer's rental first, then bill it (§3.4: invoices live in
+    // Customer Details now — the old "drag the unit onto the invoice" path needs a customer).
+    toast('No customer to bill this work order — put its unit on a customer’s rental first, then bill it (§7.6).');
     return;
   }
   let inv = (ar && ar.customerId === custId) ? rentalActiveInvoice(ar) : null;
@@ -18969,7 +19391,7 @@ function billWOToInvoice(woId) {
     DATA.invoices.push(inv); IDX.invoice.set(id, inv); reindex('invoices', inv);
   }
   addWOToInvoice(inv.invoiceId, woId);
-  anchorRecord('invoices', inv.invoiceId);   // jump to the invoice we billed to
+  openInvoice(inv.invoiceId);   // §3.4 — invoice card retired: land inside Customer Details, expanded
 }
 /* Wash requests live on the Unit card's condition segs + the Service tasks
    ("Wash Now"); Wash Mode + its 'washunit' pick slot died in Wave 2. */
@@ -20574,7 +20996,7 @@ function schedActionsDueToday() {
   const out = [];
   (DATA.customers || []).forEach((c) => {
     (c.activityLog || []).forEach((a) => {
-      if (a && a.when === TODAY_ISO && /^Scheduled:/.test(a.text || '')) {
+      if (a && a.when === TODAY_ISO && /^Scheduled:/.test(a.text || '') && !a.outcome) {   // §3.6 — a done/cancelled Next Action no longer fires the banner
         const p = parseSchedText(a.text);
         out.push({ customerId: c.customerId, name: fullName(c) || c.company || 'Customer', note: p.note, time: p.time });
       }
@@ -21165,7 +21587,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsUtilRollup, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsUtilRollup, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
       openCustomerForm, renderOverlay, render, printInvoice, invoicePrintGroups, invoiceAmendments, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }

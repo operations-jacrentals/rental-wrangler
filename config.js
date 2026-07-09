@@ -394,11 +394,11 @@ export const BACKOFFICE_BOARDS = [
 export const COLUMNS = [
   { id: 'left',   default: 'units',     members: ['units', 'categories'] },
   { id: 'middle', default: 'rentals',   members: ['rentals', 'calendar'] },
-  { id: 'right',  default: 'customers', members: ['customers', 'invoices'] },
+  { id: 'right',  default: 'customers', members: ['customers', 'sales'] },   // invoices retired (embedded in Customer Details); 2nd slot reserved for the upcoming 'sales' card ("coming soon" placeholder until PR 2)
 ];
 export const COLUMN_OF = {
   units: 'left', categories: 'left',
-  rentals: 'middle', calendar: 'middle', invoices: 'right', customers: 'right',
+  rentals: 'middle', calendar: 'middle', customers: 'right', sales: 'right',   // no 'invoices' — links route via openInvoice() into Customer Details; 'sales' is a bespoke card (like 'calendar'), not in GRID_CARDS
 };
 
 /* ── In-card sort fields (SPEC §12 locked table) ─────────────────────────── */
