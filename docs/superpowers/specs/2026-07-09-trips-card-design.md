@@ -171,42 +171,49 @@ Reachable (2.4). Standard touch rows ≥44 px; zero hover dependence. Map open b
 collapsible; reorder + merge via the existing long-press drag engine; ⋯ menu for
 right-click parity. Haptics on drop, per the app's drag patterns.
 
-### 2.6 Live truck position — Bouncie (Jac, 2026-07-09 follow-up; integration path corrected 2026-07-09)
+### 2.6 Live truck position — Bouncie (Jac, 2026-07-09 follow-up; integration path corrected 2026-07-09, then corrected again same day — see below)
 
-The truck marker stops being a guess. `dispatchTruckPos` (today: last done pin,
-else the yard — an explicit v1 seam) upgrades to **live telematics from
-Bouncie**: a GAS backend action `getTruckPos` calls the Bouncie API
-(`api.bouncie.dev/v1/vehicles`) **directly** — GAS owns the OAuth
-authorization-code exchange and token storage itself, ported from a working
-reference implementation (a friend's `wranglergps` telematics-aggregator repo,
-inspected read-only for its Bouncie route/token-manager logic — not a runtime
-dependency; Jac doesn't hold login credentials for that separately-hosted
-service, so this build does not call it). Jac's own Bouncie OAuth app
-(`bouncie-to-wrangler-gps`, already registered under his account) gets a
-**new redirect URI added** pointing at our GAS web app's own callback,
-alongside the reference app's existing ones. Client id/secret live in Script
-Properties — NEVER the repo, the front-end is public via Pages.
+**This entire section was redundant and is now rewritten.** `area/wrangler-gps`
+already has a SHIPPED, live-on-staging telematics integration (Hapn + Deere +
+Yanmar + **Bouncie**) — the `wranglergps` Railway service, a GAS `gpsToken`
+broker action (server-side password, hands back only an `x-auth-token`), and a
+full client module in `app.js` (`gpsLogin`, `gpsFetch`, `gpsNormalize`,
+`gpsFleetRoster`) that talks to it directly from the browser (bypassing GAS
+for the actual telemetry reads — proxying every poll through Apps Script would
+burn its `UrlFetchApp` quota, per that module's own comment). Canon:
+`docs/specs/gps-tracking.md` on `area/wrangler-gps`. None of this exists yet
+on `area/rentals-dispatch` / this branch — the two areas haven't converged.
 
-**One-time setup (Jac, at Phase 4 build time):** add the new redirect URI in
-Bouncie's developer portal, then visit the authorize URL once to approve
-access — GAS's callback captures the code, exchanges it, and stores the
-resulting access/refresh tokens in Script Properties.
+**What's genuinely still open, even reusing the shipped client:** the GPS
+mapping today is **unit-scoped** — `gpsFleetRoster()` joins a live device to a
+*rental unit* via `unit.gpsProvider`/`unit.gpsDeviceId`. There is no "truck"
+entity yet to hang a Bouncie device off of for `dispatchTruckPos` specifically
+— `docs/specs/gps-tracking.md` D1 (2026-06-29) already calls this out as an
+open build note ("decide whether trucks are a new mini-entity or units of a
+'truck' type"). This is a real cross-area design question (driver/truck
+identity is `rentals-dispatch`'s D6/D7 territory; device mapping is
+`wrangler-gps`'s), not something to resolve unilaterally inside this spec.
 
-**Refresh-token rotation gotcha (carried over from the reference
-implementation's own hard-won fix):** Bouncie's refresh tokens rotate on
-every use — a naive refresh-on-401 without guarding against concurrent
-refreshes can invalidate the token entirely (this bit the reference app for
-its Deere integration too). `getTruckPos` must serialize/guard its refresh
-path, not fire a bare refresh on every stale-token hit.
+**Revised plan:** `getTruckPos` is **dropped** as a concept — no new GAS
+action, no separate OAuth flow, no Script Properties for Bouncie creds (the
+`wranglergps` service already owns that). Once the truck-entity question is
+resolved (cross-area, Jac's call), the Trips card's map marker calls the
+*existing* `gpsFetch`/`gpsFleetRoster` client path for the mapped truck's
+Bouncie device, same as any other GPS-mapped asset. Until then, `dispatchTruckPos`
+keeps its current v1 seam (last-done-pin fallback) — no regression, just
+deferred, not a new redundant integration.
 
-The map panel polls `getTruckPos` (~20s while open); the marker gains a
-"last seen h:mm" stamp. Bouncie unreachable/stale → fall back to the
+The map panel would poll the live fleet snapshot (~20s while open, matching
+the existing GPS module's refresh cadence elsewhere) once wired; the marker
+gains a "last seen h:mm" stamp. Bouncie unreachable/stale → fall back to the
 capture-based seam silently — the marker never lies about freshness (stale
 stamp shows gray).
 
-Needs from Jac at build time: the vehicle-to-truck/driver mapping (which
-Bouncie `imei` is which truck). Backend action is additive (`/clasp` STOP
-gate, rides the Phase 4 deploy).
+Needs from Jac before this can build at all: the truck-entity design decision
+(cross-area with `wrangler-gps`), and which of the branch-convergence options
+in the plan's Phase 4 note applies. No Script Properties, no Bouncie
+credentials, and no `/clasp` deploy are needed for THIS card's part of the
+work — that infrastructure already exists and is already deployed.
 
 ### 2.7 Auto-Run — efficient order that respects the deadlines (Jac, 2026-07-09)
 

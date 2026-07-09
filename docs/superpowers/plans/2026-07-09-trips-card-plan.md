@@ -123,11 +123,28 @@ Every UI phase runs through `jactec-ui` (screenshot + self-critique before Jac s
 
 ## Phase 4 — Backend sync (the `/clasp` STOP gate)
 
-Also rides this deploy — **Bouncie truck feed (spec §2.6)**: additive GAS
-action `getTruckPos` proxying the Bouncie API (creds in Script Properties;
-Jac supplies the credential + vehicle→truck mapping at deploy time). Front-end:
-~20s poll while the map panel is open; marker "last seen" stamp; stale/unreachable
-→ capture-seam fallback, gray stamp.
+**Bouncie truck feed (spec §2.6) — DROPPED as a new build, DOES NOT ride this
+deploy.** `area/wrangler-gps` already shipped a full Hapn/Deere/Yanmar/Bouncie
+telematics integration (GAS `gpsToken` broker + a direct browser→Railway
+client module, `docs/specs/gps-tracking.md` on that branch) — building a
+second, parallel Bouncie OAuth path here would be redundant work on top of
+something already live on staging. Blocked on a real decision, not on
+credentials:
+1. **Branch convergence** — how does this Trips-card branch get access to
+   `area/wrangler-gps`'s client module: merge that area in here (mirrors how
+   `area/rentals-dispatch` itself was merged in earlier), or build the
+   truck-marker wiring as its own task branch off `area/wrangler-gps` instead
+   and let it land there?
+2. **The truck-entity gap** — `gpsFleetRoster()` today maps a live device to a
+   *rental unit* (`unit.gpsProvider`/`gpsDeviceId`); there's no "truck" entity
+   yet for a Bouncie/OBD device to hang off for `dispatchTruckPos` specifically
+   — `gps-tracking.md`'s own D1 flags this as unresolved. Spans
+   `rentals-dispatch` (driver/truck identity) and `wrangler-gps` (device
+   mapping) — Jac's call, not a unilateral one.
+Once resolved: front-end wiring is just calling the existing `gpsFetch`/
+`gpsFleetRoster` client path for the mapped truck, same ~20s poll cadence,
+"last seen" stamp, stale/unreachable → capture-seam fallback. No Script
+Properties, no new OAuth flow, no `/clasp` deploy for this piece.
 
 - GAS `Code.js` (gitignored — ships via `/clasp`, ADDITIVE only): `getTrips` /
   `setTrips` with stale-rev conflict rejection, keyed per day. Queue through the
