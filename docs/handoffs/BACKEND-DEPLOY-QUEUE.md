@@ -7,6 +7,28 @@
 > with full deploymentConfig, immediate JSON probe) — see /clasp SKILL.md §AMENDED. The
 > editor click is the FALLBACK/recovery path, no longer the only go-live.
 
+## ⏳ QUEUED, READY TO DEPLOY INDEPENDENTLY — seed gate + recordCharge_ dedup (2026-07-09)
+- **What (2 fixes, no frontend coordination needed, unlike the chat-privacy item below):**
+  1. **`seed` gated to Admin+.** Any signed-in role could trigger a full destructive database
+     replace before — the app's UI only ever fires it from the admin-only `#reseed` bootstrap
+     flow, now the backend enforces that too (`isAdmin(pw)` check at dispatch, matching
+     `getConfig`/`feedbackList`/`setViews`'s existing pattern). `load`/`sync` unchanged.
+  2. **`doSeed` no longer wipes an entity absent from the payload.** Was: an entity key missing
+     from the client's `data` object got treated as "empty it" (`s.clear()` ran regardless) — a
+     future `ENTITIES`/`PERSIST_KEYS` drift would silently delete a whole entity's rows on the
+     next reseed. Now skips any entity not present as a key in `data`.
+  3. **`recordCharge_` de-dup guard.** A retry with an already-recorded PaymentIntent id
+     (network hiccup, double-click) inflated `amountPaid` a second time with no matching second
+     Stripe charge — bookkeeping bug, not a real double-charge (Stripe's own idempotency key
+     prevents that), but real. Now a repeat call for an already-recorded charge is an idempotent
+     no-op.
+- **Prepared** in `docs/handoffs/backend-audit-2026-07-09-critical-fixes.gs`, `node --check` passes.
+- **✅ PUSHED to HEAD 2026-07-09** (service account, content-only, confirmed present in a fresh
+  HEAD read). **REMAINING STEP (Jac, editor):** Deploy → Manage deployments → Edit prod →
+  New version → Deploy. No trigger install needed this time (unlike the membership fix) — these
+  are pure logic changes, nothing to install. Verify after: anonymous-access curl check, and
+  confirm `seed` now returns `{"ok":false,"error":"forbidden"}` for a non-admin password.
+
 ## ⏳ QUEUED, GATED ON FRONTEND — team-chat privacy hardening (2026-07-09)
 - **What:** the 8-agent backend audit (2026-07-09) confirmed CRITICAL: `getChats_`/
   `chatAuthorizeWrite_`'s original "old client → unscoped fallback" back-compat design is a
