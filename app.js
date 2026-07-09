@@ -1658,8 +1658,10 @@ function saveTransportEdit() {
   const session = activeSession(); if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
   render();
 }
-/** Click a journey type segment → set this unit's transport type + re-bill. */
+/** Click a journey type segment → set this unit's transport type + re-bill.
+ *  Money tier only — re-bills the invoice's transport line (#552 audit item 2). */
 function setTransportType(rentalId, unitId, type) {
+  if (!canMoney()) { toast('Setting the transport route is Office/Admin only.'); return; }
   const r = IDX.rental.get(rentalId); if (!r) return;
   const eu = unitEntry(r, unitId); const tgt = eu || r;
   tgt.transportType = type;
@@ -1668,7 +1670,8 @@ function setTransportType(rentalId, unitId, type) {
 }
 /** §20 route-rail node tap: arm the first stop, then a second stop locks the type.
  *  Jac→Site = Delivery · Site→Jac = Recovery · Jac↔Jac = Round-Trip (order-free).
- *  Tapping the armed node again disarms it. */
+ *  Tapping the armed node again disarms it. Arming/disarming is free (no money
+ *  change); only the type-locking tap money-gates, via setTransportType itself. */
 const ROUTE_PAIR = { 'jacL+site': 'Delivery', 'jacR+site': 'Recovery', 'jacL+jacR': 'Round-Trip' };
 function armTransportNode(rentalId, unitId, node) {
   const arm = state.transportArm;
@@ -1677,7 +1680,7 @@ function armTransportNode(rentalId, unitId, node) {
   if (arm.node === node) { state.transportArm = null; return render(); }   // tap the same stop → disarm
   const type = ROUTE_PAIR[[arm.node, node].sort().join('+')];
   state.transportArm = null;
-  if (type) return setTransportType(rentalId, unitId, type);   // setTransportType re-bills + renders
+  if (type) return setTransportType(rentalId, unitId, type);   // setTransportType re-bills + renders (money-gated)
   render();
 }
 
@@ -6045,7 +6048,7 @@ function woBottleneck(w) {
   if (w.cancelled) return { label: 'Cancelled', color: 'gray' };
   if (w.phase === 'Complete') return { label: 'Complete', color: 'green' };
   const lines = w.lineItems || [];
-  const open = lines.filter((l) => l.phase !== 'Complete').map((l) => ({ ph: l.phase, eta: l.eta }));
+  const open = lines.filter((l) => l.phase !== 'Complete' && l.phase !== 'Cancel').map((l) => ({ ph: l.phase, eta: l.eta }));
   // no lines yet → the WO shows its own header phase; with lines, the bottleneck is
   // the worst OPEN line, and "Ready to complete" once every line is done (the WO
   // stays open until the blue Complete WO button — never auto-completes).
@@ -7344,8 +7347,9 @@ const DETAIL = {
       ${efld('workOrders', w, 'woId', 'description', 'Add description', { wrap: true })}
     </div></div>`;
     const notes = notesSection('workOrders', w, 'woId');
+    const bn = woBottleneck(w);
     return `<div class="detail">
-      <div class="detail-head"><span class="d-title">${esc(`${unit?.name || '—'} — ${w.woReport}`)}</span>${badge(getStatus('woType', w.woType).label, getStatus('woType', w.woType).color)}${gatePillRaw(getStatus('woPhase', w.phase).label, getStatus('woPhase', w.phase).color, 'js-wophase', { rec: w.woId })}</div>
+      <div class="detail-head"><span class="d-title">${esc(`${unit?.name || '—'} — ${w.woReport}`)}</span>${badge(getStatus('woType', w.woType).label, getStatus('woType', w.woType).color)}${badge(bn.label, bn.color)}</div>
       ${notes.top}
       ${journeySec}
       ${report}
@@ -12811,6 +12815,13 @@ function wrValidatePlan(act) {
     } else {
       if (!ent.create) { issues.push(`${ent.label}s can’t be created this way`); return; }
       const c = wrCleanFields(raw.entity, raw.fields);
+      // Same money-tier gate as the update branch above (#552 audit item 3) — a
+      // created category/expense with an attacker- or below-tier-chosen rate/amount
+      // is just as dangerous as an edited one; strip it the same way.
+      if (!canMoney()) {
+        const mk = Object.keys(c.out).filter((k) => WR_MONEY_FIELDS.has(k));
+        if (mk.length) { mk.forEach((k) => { delete c.out[k]; }); issues.push(`rate changes are Office/Admin only — skipped ${mk.join(', ')}`); }
+      }
       // A WO/inspection needs a unit; if only the customer was named, infer it from their on-rent equipment (Jac).
       if ((raw.entity === 'workOrders' || raw.entity === 'inspections') && !c.out.unitId && c.out.customerId) {
         const uid = wrUnitForCustomer(c.out.customerId); if (uid) c.out.unitId = uid;
@@ -13762,6 +13773,7 @@ const GATE_ICON = {
   'Part is Local': GTI('<path d="M12 21s7-6.6 7-11a7 7 0 0 0-14 0c0 4.4 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>'),
   'Part Ordered': GTI('<path d="M1 5h13v11H1zM14 8h4l4 4v4h-8z"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/>'),
   'Part in Stock': GTI('<path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/>'),
+  'Cancel': GTI('<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>'),
   'Complete': GTI('<circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/>'),
   'N/A': GTI('<path d="M5 12h14"/>'),
   'Inbound Lead': GTI('<circle cx="12" cy="12" r="9"/><path d="M12 7v8M8.5 11.5 12 15l3.5-3.5"/>'),
@@ -13774,7 +13786,7 @@ const GATE_ICON = {
 };
 const GATE_TL = {
   rentalStatus: { title: 'Rental status', order: ['Quote', 'Reserved', 'On Rent', 'End Rent', 'Off Rent', 'Returned', 'Cancelled', 'No Show'], off: new Set(['Cancelled', 'No Show']) },
-  woPhase:      { title: 'Work order phase', order: ['Part Needed?', 'No Part Needed', 'Part Needed', 'Part is Local', 'Part Ordered', 'Part in Stock', 'Complete'], off: new Set() },
+  woPhase:      { title: 'Line phase', order: ['Part Needed?', 'No Part Needed', 'Part Needed', 'Part is Local', 'Part Ordered', 'Part in Stock', 'Cancel', 'Complete'], off: new Set() },
   funnelStage:  { title: 'Funnel stage', order: ['N/A', 'Inbound Lead', 'Outbound Lead', "Don't Contact", 'Contacted', 'Not A No!', 'Payment Discussed', 'Paid'], off: new Set(["Don't Contact"]) },
 };
 const GTCHK = GTI('<path d="M5 12.5l4 4 10-11"/>');
@@ -15464,9 +15476,7 @@ function onClick(e) {
   if (closest('.js-fleetstatus')) { const b = closest('.js-fleetstatus'); e.stopPropagation(); return openFleetDropdown(b.dataset.rec, b); }
   if (closest('.js-setfleet')) { const b = closest('.js-setfleet'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return setUnitFleet(b.dataset.rec, b.dataset.val); }
   if (closest('.js-open-sell')) { e.stopPropagation(); if (!canMoney()) { toast('Selling a unit is Office/Admin only.'); return; } return openOverlay({ kind: 'sellUnit', unitId: closest('.js-open-sell').dataset.rec, saleDate: TODAY_ISO }); }   // D2 money-gate, re-checked as defence-in-depth
-  if (closest('.js-wophase')) { const b = closest('.js-wophase'); e.stopPropagation(); return openWoPhaseDropdown(b.dataset.rec, b, null); }
   if (closest('.js-wophase-line')) { const b = closest('.js-wophase-line'); e.stopPropagation(); return openWoPhaseDropdown(b.dataset.rec, b, Number(b.dataset.idx)); }
-  if (closest('.js-setwophase')) { const b = closest('.js-setwophase'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return setWoPhase(b.dataset.rec, b.dataset.val); }
   if (closest('.js-setwolinephase')) { const b = closest('.js-setwolinephase'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return setWoLinePhase(b.dataset.rec, Number(b.dataset.idx), b.dataset.val); }
   if (closest('.js-reconcile')) { const b = closest('.js-reconcile'); e.stopPropagation(); return openReconcileDropdown(b.dataset.rec, b); }
   if (closest('.js-setreconcile')) { const b = closest('.js-setreconcile'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return setExpenseReconcile(b.dataset.rec, b.dataset.val); }
@@ -16701,7 +16711,7 @@ async function saveFileForm() {
 }
 function completeWOAttempt(woId) {
   const w = IDX.wo.get(woId); if (!w) return;
-  const open = (w.lineItems || []).filter((l) => l.phase !== 'Complete');
+  const open = (w.lineItems || []).filter((l) => l.phase !== 'Complete' && l.phase !== 'Cancel');
   if (!open.length) return setWoPhase(woId, 'Complete');
   openOverlay({ kind: 'wodone', woId });           // "Are you sure? Not all items are completed."
 }
@@ -17350,7 +17360,7 @@ function friendlyPayErr(r) {
 async function openAddCard(customerId, opts) { if (!canMoney()) { toast('Cards on file are Office/Admin only.'); return; } await ensurePubKey(); openOverlay({ kind: 'addCard', customerId, returnTo: (opts && opts.returnTo) || '', invoiceId: (opts && opts.invoiceId) || '' }); }
 async function openAddBank(customerId, opts) { if (!canMoney()) { toast('Bank accounts on file are Office/Admin only.'); return; } await ensurePubKey(); openOverlay({ kind: 'addAch', customerId, returnTo: (opts && opts.returnTo) || '', invoiceId: (opts && opts.invoiceId) || '' }); }
 async function openVerifyBank(customerId, bankId) { await ensurePubKey(); openOverlay({ kind: 'verifyAch', customerId, bankId }); }
-async function openPayInvoice(invoiceId) { await ensurePubKey(); openOverlay({ kind: 'payment', invoiceId, busy: false, error: '' }); }
+async function openPayInvoice(invoiceId) { if (!canMoney()) { toast('Pay/Charge/Refund is Office/Admin only.'); return; } await ensurePubKey(); openOverlay({ kind: 'payment', invoiceId, busy: false, error: '' }); }   // #552 audit item 4: defence-in-depth, same gate as js-add-card
 
 /* §19 ALLOCATION POPUP — the user splits a payment across the invoice's line
    items (pre-tax). Because the charge total is BUILT from these per-line inputs,
@@ -17676,6 +17686,7 @@ async function checkAchStatus(invoiceId, piId) {
 // re-verify server-side before marking paid. The payment overlay has no Card
 // Element, so re-rendering it for busy/error states is safe.
 async function chargeInvoiceFlow(invoiceId) {
+  if (!canMoney()) { toast('Pay/Charge/Refund is Office/Admin only.'); return; }   // #552 audit item 4: defence-in-depth
   const o = state.overlay; if (!o || o.kind !== 'payment') return;
   const live = () => state.overlay === o;   // bail if the overlay changed/closed mid-await
   // §19: when the allocation rows are present, the gross + per-line split come
@@ -17723,6 +17734,7 @@ async function chargeInvoiceFlow(invoiceId) {
 // Refund the captured amount back to the card (full). Reduces amountPaid; a full
 // refund flips the invoice to Refunded. The server is authoritative.
 async function refundInvoiceFlow(invoiceId) {
+  if (!canMoney()) { toast('Pay/Charge/Refund is Office/Admin only.'); return; }   // #552 audit item 4: defence-in-depth
   { const _i = IDX.invoice.get(invoiceId); if (_i && invoiceCollectionsActive(_i)) { toast('Blocked: this invoice is in Collections — recall it first.'); return; } }   // spec collections §7.7
 
   const o = state.overlay; if (!o || o.kind !== 'payment') return;
@@ -17780,6 +17792,11 @@ function applyPayment(invoiceId, r, alloc, refundAlloc) {
 // audits the ledger); we apply its result via applyPayment. method is 'cash'|'check' ONLY — this NEVER
 // charges a card or runs an ACH. Throws (with a friendly message) on failure so the caller can surface it.
 async function postManualPayment({ invoiceId, amountCents, method, checkNum }) {
+  // #552 audit item 4: defence-in-depth — the direct UI flow (recordManualPayment)
+  // had no gate of its own; Mr. Wrangler's recordPayment action is already gated
+  // upstream in wrValidatePlan, so canMoney() is still true there and this is a
+  // no-op for that path, but now nothing can reach the backend call ungated.
+  if (!canMoney()) throw new Error('Recording a payment is Office/Admin only.');
   const m = String(method || '').toLowerCase();
   if (m !== 'cash' && m !== 'check') throw new Error('Only cash or check can be recorded here.');   // belt-and-suspenders e-rail guard
   const r = await withTimeout(backendCall('recordManualPayment', { invoiceId, amountCents, method: m, checkNum: m === 'check' ? (checkNum || '') : '' }), 30000, 'Recording the payment');
@@ -18299,7 +18316,7 @@ function setWoPhase(woId, val) {
   const w = IDX.wo.get(woId); if (!w) return;
   w.phase = val;
   let note = '';
-  if (val === 'Complete') { (w.lineItems || []).forEach((li) => { li.phase = 'Complete'; }); note = woCompleteCascade(w); }
+  if (val === 'Complete') { (w.lineItems || []).forEach((li) => { if (li.phase !== 'Cancel') li.phase = 'Complete'; }); note = woCompleteCascade(w); }
   reindex('workOrders', w);
   logAction(w, `Status → ${getStatus('woPhase', val).label}`);
   toast(`Status → ${getStatus('woPhase', val).label}${note}`);
@@ -18307,23 +18324,27 @@ function setWoPhase(woId, val) {
 }
 function setWoLinePhase(woId, idx, val) {
   const w = IDX.wo.get(woId); if (!w || !w.lineItems || !w.lineItems[idx]) return;
-  w.lineItems[idx].phase = val;
-  // Line statuses drive the WO's displayed bottleneck, but they NEVER complete the
-  // WO — only the blue "Complete WO" button does (Jac 2026-06-13). When every line
-  // is done, woBottleneck shows "Ready to complete" and the WO stays open until the
-  // button is clicked; no auto-complete, no cascade here.
-  const open = w.lineItems.filter((li) => li.phase !== 'Complete');
-  if (w.phase !== 'Complete' && !w.cancelled && open.length) w.phase = open[open.length - 1].phase;
+  const li = w.lineItems[idx];
+  // #552 audit item 1: a line already carrying cost (a part already bought from a
+  // vendor) can't be cancelled outright — mirrors the same rule for a rental unit
+  // with an assigned payment (No Show/Cancelled is blocked until it's refunded).
+  if (val === 'Cancel' && Number(li.cost) > 0) { toast('This line has cost attached — zero it out or move it before cancelling.'); return; }
+  li.phase = val;
+  // The WO's displayed status is a DERIVED value (woBottleneck, by severity) — line
+  // edits never write it here. w.phase only ever moves to 'Complete', and only via
+  // the blue "Complete WO" button (Jac 2026-06-13 / #552 audit item 1).
   reindex('workOrders', w);
-  logAction(w, `${w.lineItems[idx].part} → ${getStatus('woPhase', val).label}`);
+  logAction(w, `${li.part} → ${getStatus('woPhase', val).label}`);
   toast(`Line → ${getStatus('woPhase', val).label}`);
   reanchorRender();
 }
+/** #552 audit item 1: line phases are the only settable gate — the WO's own header
+ *  status is a derived display (woBottleneck), never a dropdown. */
 function openWoPhaseDropdown(woId, anchorEl, lineIdx) {
   const w = IDX.wo.get(woId);
-  const cur = lineIdx == null ? (w?.phase || '') : (w?.lineItems?.[lineIdx]?.phase || '');
-  const html = gateTimeline('woPhase', cur, lineIdx == null ? 'Work order phase' : 'Line phase', (v, inner, sc) =>
-    `<button class="gt-row ${sc} ${lineIdx == null ? 'js-setwophase' : 'js-setwolinephase'}" data-rec="${esc(woId)}"${lineIdx == null ? '' : ` data-idx="${lineIdx}"`} data-val="${esc(v)}">${inner}</button>`);
+  const cur = w?.lineItems?.[lineIdx]?.phase || '';
+  const html = gateTimeline('woPhase', cur, 'Line phase', (v, inner, sc) =>
+    `<button class="gt-row ${sc} js-setwolinephase" data-rec="${esc(woId)}" data-idx="${lineIdx}" data-val="${esc(v)}">${inner}</button>`);
   openDropdown(anchorEl, html, { cls: 'gt' });
 }
 
@@ -18898,21 +18919,27 @@ function billWOToInvoiceExplicit(woId, invoiceId) {
   addWOToInvoice(invoiceId, woId);
   return (inv.lineItems || []).length > before;
 }
-/* Bill a WO from the work-order side: find the customer's open invoice (or make
-   one) and add the WO to it, then jump to that invoice. */
+/* Bill a WO from the work-order side (the quick "Bill" button — drag the WO instead
+   if you want to CHOOSE the invoice, per billWOToInvoiceExplicit above). #552 audit
+   item 5: bill to the invoice carrying the RENTAL that necessitated this WO (the
+   customer whose equipment needed the work), not just any open invoice for the
+   customer — that was the bug (it could land on an unrelated invoice, or one that's
+   pricing-locked). If that rental has no billable invoice (none yet, or the one it
+   has is locked or already paid off), auto-create a fresh invoice and open it. */
 function billWOToInvoice(woId) {
   const w = IDX.wo.get(woId); if (!w) return;
-  let custId = w.customerId;
-  if (!custId) { const ar = activeRentalForUnit(w.unitId); custId = ar?.customerId || null; }
+  const ar = activeRentalForUnit(w.unitId);
+  const custId = w.customerId || ar?.customerId || null;
   if (!custId) {
     // no bill-to customer (unit isn't on an active rental) — bill by dragging instead
     toast('No customer to bill — drag the unit onto the customer’s invoice instead (§7.6).');
     return;
   }
-  let inv = DATA.invoices.find((i) => i.customerId === custId && !['Paid', 'Refunded'].includes(invoiceTotals(i).status));
+  let inv = (ar && ar.customerId === custId) ? rentalActiveInvoice(ar) : null;
+  if (inv) { const st = invoiceTotals(inv).status; if (inv.locked || st === 'Paid' || st === 'Refunded') inv = null; }
   if (!inv) {
     const id = nextInvoiceId();
-    inv = { invoiceId: id, customerId: custId, rentalIds: [], date: TODAY_ISO, dueDate: dueForCustomer(custId), po: '', amountPaid: 0, lineItems: [], mock: true };
+    inv = { invoiceId: id, customerId: custId, rentalIds: ar ? [ar.rentalId] : [], date: TODAY_ISO, dueDate: dueForCustomer(custId), po: '', amountPaid: 0, lineItems: [], mock: true };
     DATA.invoices.push(inv); IDX.invoice.set(id, inv); reindex('invoices', inv);
   }
   addWOToInvoice(inv.invoiceId, woId);
@@ -21105,7 +21132,7 @@ function exposeTestApi() {
       nextInvoiceId, maxInvoiceSeq, mintedInvoiceIds, isInvoiceIdCollision, healInvoiceIdCollision, reindex,
       CFG, invoiceShort,
       addUnitToRental, removeUnitFromRental, removeUnitInvoiceLine, unitLinePaid, invoiceTotals, allocLines,
-      rentalAllocated, itemRefunded, itemRefundable, lineRefunded, lineFullyRefunded, refundLines, rentalLineRefund, applyPayment, unitRentalPrice, rentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
+      rentalAllocated, itemRefunded, itemRefundable, lineRefunded, lineFullyRefunded, refundLines, rentalLineRefund, applyPayment, unitRentalPrice, rentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck, billWOToInvoice, billWOToInvoiceExplicit, activeRentalForUnit,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
       wrValidatePlan, applyWranglerData, wrPlanNeedsApply, wrPlanSummary, wrFunnel, wrResolveCustomer, wrResolveUnit, wrResolveCategory, wrResolveVendor, wrResolvePart, wrResolveRental, wrChatFormat, wrFocusRecord, wrRecLabel, activeSession, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv, wrRunAgent, wrApplyChangesTool, wranglerDigest, wrPruneOldChats, WR_CHAT_RETAIN_DAYS, WR_TOOL_IMPL, WR_TOOLS, WR_OPERATIONS,

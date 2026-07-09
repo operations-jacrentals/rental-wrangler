@@ -131,6 +131,7 @@ const RAW_STATUS = {
     'Part is Local':  { label: 'Part is Local',  color: 'yellow' },
     'Part in Stock':  { label: 'Part in Stock',  color: 'green'  },
     'Part Ordered':   { label: 'Part Ordered',   color: 'blue'   },
+    'Cancel':         { label: 'Cancelled',      color: 'gray'   },
     'Complete':       { label: 'Complete',       color: 'green'  },
   },
   woType: {
