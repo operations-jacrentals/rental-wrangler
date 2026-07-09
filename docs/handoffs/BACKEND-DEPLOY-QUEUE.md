@@ -7,6 +7,22 @@
 > with full deploymentConfig, immediate JSON probe) — see /clasp SKILL.md §AMENDED. The
 > editor click is the FALLBACK/recovery path, no longer the only go-live.
 
+## ⏳ QUEUED, GATED ON FRONTEND — team-chat privacy hardening (2026-07-09)
+- **What:** the 8-agent backend audit (2026-07-09) confirmed CRITICAL: `getChats_`/
+  `chatAuthorizeWrite_`'s original "old client → unscoped fallback" back-compat design is a
+  universal bypass — any caller (not just a genuinely old client) can omit `body.me` to read
+  every team chat and overwrite any chat's ownership/members. Worse: the new frontend that
+  always sends `me`/`rosterId` (`claude/internal-chat-updates-vq6p7b`) hasn't shipped yet, so
+  this scoping has never actually been active in production for anyone.
+- **Fix prepared** in `docs/handoffs/team-chat-privacy-backend.gs`: back-compat fallback removed
+  from both handlers — `getChats_` always scopes via `chatCanSee_`, `chatAuthorizeWrite_` rejects
+  any write with no asserted `me`. `node --check` passes.
+- **⛔ NOT safe to deploy independently** — the CURRENT live frontend never sends `me`, so
+  deploying this alone would make every team member's chats disappear / writes get silently
+  rejected. **Must ship in the same rollout as `claude/internal-chat-updates-vq6p7b`.** Jac's
+  call (2026-07-09): fix now, coordinate the deploy with that frontend branch landing — not
+  deployed yet, no STOP-gate go-ahead given for the live push.
+
 ## ⏳ PUSHED, AWAITING EDITOR DEPLOY — membership regression fix (2026-07-09)
 - **What:** re-splices the app-driven membership block (`membershipEnroll_`/`membershipCancel_`/
   `membershipReactivate_`/`membershipBillingCron` + ~15 helpers + the 3 dispatch lines) that was
