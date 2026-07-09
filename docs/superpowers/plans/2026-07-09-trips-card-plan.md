@@ -64,6 +64,10 @@ Every UI phase runs through `jactec-ui` (screenshot + self-critique before Jac s
   the row's rentalId/unitId/cap) — one code path, D7 stamp intact. Done rows
   show the capture clock instead.
 - Phone pass: all three thumb-reachable in the row, ≥44px, no hover.
+- **Cab sheet (spec §2.2b):** row tap (non-pill target) toggles an inline
+  expansion — one line per unit: `unitPill` · fuel type (category `fuelType`)
+  · `unit.weight` as R3b `badge` fact chips; `NO WEIGHT` when blank. One
+  expanded trip at a time (`state.calOpenTrip`); collapse on second tap.
 - `ci/logic-test.mjs`: row exposes tel/nav hrefs; capture opened from the row
   stamps the assigned driver (D7) — same asserts as the journey path.
 - **Verify:** gates + phone screenshot. **Commit:** "Trips card phase 1b: driver

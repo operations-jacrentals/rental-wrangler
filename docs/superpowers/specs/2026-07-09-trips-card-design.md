@@ -113,6 +113,15 @@ must carry the driver's whole loop, thumb-reachable on a phone:
   the action.
 - Driver-lens floor: on phones all three sit inside the row without expanding
   anything; targets ≥44px; no hover.
+- **The cab sheet — unit facts live one level down, not on the row (Jac).**
+  The driver also needs *which units, fuel type, and unit weight* — for the
+  trailer, the ramps, and the fuel can — but the row stays lean. Tapping the
+  row (anywhere that isn't a pill/action) expands it inline into the **cab
+  sheet**: one line per unit — unit pill · `DIESEL`/`ELECTRIC` · `24,800 LBS`
+  as R3b gray fact chips (`badge`), sourced from `unit.weight` and the
+  category's `fuelType`. One trip expanded at a time; tap again to collapse.
+  No new data fields; a unit with no weight on record shows `NO WEIGHT` so the
+  gap is visible, not silent.
 
 ### 2.3 The Trip layer (scope B — approved)
 - **Model:** every transport order added to a rental surfaces as its own trip by
