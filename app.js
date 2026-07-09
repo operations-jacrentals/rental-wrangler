@@ -2108,6 +2108,7 @@ const state = {
   calSearch: '',               // Trips card mini-search (calendar is card-stateless — no session.cards.calendar — so this rides on state directly)
   calOpenTrip: null,           // §2.2b cab sheet — the ONE trip row expanded to its unit-facts sheet (row-body tap toggles; second tap collapses)
   autoRunFlags: null,          // §2.7 Auto-Run — { [tripId]: {reason:'unpinned'|'deadline', deadline?, projectedArrival?} }, session-only report on the last run (never a stored record field)
+  tripsSyncStatus: null,       // §2.3 Phase 4 — null until a push/pull to the backend succeeds this session; 'synced' after either does (footer falls back to "Offline — cached" otherwise — honest either way, since the local cache is the only thing on screen in both cases)
   woPartForm: null,           // woId whose "+ Add Part/Labor" inline form is open
   invLineForm: null,          // invoiceId whose "+ Add Custom" inline form is open
   invMergePick: null,         // invoiceId whose "Merge invoice" picker is open (consolidate unpaid bills)
@@ -7704,7 +7705,8 @@ function calendarCardEl(session) {
   }
   body.appendChild(list);
   const foot = el('div', 'disp-foot');
-  foot.innerHTML = `<span class="disp-offdot"></span><span class="disp-offline">Offline — cached</span>`;
+  const sync = tripsSyncFooter();   // §2.3 Phase 4 — real sync state, replaces the Phase 1 static placeholder
+  foot.innerHTML = `<span class="disp-offdot${sync.synced ? ' on' : ''}"></span><span class="disp-offline${sync.synced ? ' on' : ''}">${esc(sync.label)}</span>`;
   body.appendChild(foot);
   node.appendChild(body);
   return node;
@@ -9227,6 +9229,74 @@ function assignStopDriver(rentalId, unitId, task, driverId) {
    of sync with what a leg actually has. */
 const tripsLS = () => _lsJSON('jactec.trips');
 function tripsSaveDay(day, dayStore) { const all = tripsLS(); all[day] = dayStore; _lsSave('jactec.trips', all); }
+/* §2.3 Phase 4 (spec 2026-07-09 Phase 4, LOCKED contract) — backend sync layer around the
+   local cache above. tripsLS()/tripsSaveDay() stay the source renders always read (instant,
+   no network wait); this only pushes/pulls in the background. Mirrors saveGroupOrder/
+   loadGroupOrderFromBackend's own pattern (the backendPassword guard, the debounced push via
+   backendCall, the try/catch-silently-keep-local-cache pull) — adapted to PER-TRIP
+   granularity (setTrip takes one trip at a time, not a whole-day bulk) and the stale-rev
+   conflict case getGroupOrder never had to handle. Debounced PER (day,tripId), not one shared
+   timer like groupOrderSaveTimer — more than one trip can be touched by a single edit
+   (tripSplit writes two records at once), and a single shared timer would drop all but the
+   last of them. */
+const tripSyncTimers = {};   // `${day}|${tripId}` → setTimeout handle
+function tripPushSoon(day, tripId) {
+  if (typeof backendPassword === 'undefined' || !backendPassword) return;   // demo/offline (#local) → the local cache is the only source of truth, never reach the backend
+  const key = day + '|' + tripId;
+  clearTimeout(tripSyncTimers[key]);
+  tripSyncTimers[key] = setTimeout(() => tripPushNow(day, tripId), 600);
+}
+async function tripPushNow(day, tripId) {
+  const rec = (tripsLS()[day] || {})[tripId];
+  if (!rec) return;   // merged/split away locally before the debounce fired — nothing left to push
+  try {
+    const r = await backendCall('setTrip', { day, tripId, time: rec.time, order: rec.order, rev: rec.rev || 0 });
+    if (r && r.ok) {
+      // re-read fresh — another edit (or the stale-rev path below) may have landed while this awaited
+      const store = tripsLS();
+      if (store[day] && store[day][tripId]) { store[day][tripId] = { ...store[day][tripId], rev: r.rev }; tripsSaveDay(day, store[day]); }
+      state.tripsSyncStatus = 'synced';
+      render();
+    } else if (r && !r.ok && r.error === 'stale-rev' && r.current) {
+      // A concurrent dispatcher won the race — never silently overwrite their edit with ours;
+      // adopt the server's version instead and tell the operator why their view just changed.
+      const store = tripsLS();
+      const dayStore = store[day] || (store[day] = {});
+      dayStore[tripId] = { time: r.current.time, order: r.current.order, rev: r.current.rev };
+      tripsSaveDay(day, dayStore);
+      toast('Someone else updated this trip — refreshed');
+      render();
+    }
+  } catch (e) { /* offline/network hiccup → local cache stands; the next edit retries */ }
+}
+/* Boot: pull the WHOLE trips store once at login (mirrors loadGroupOrderFromBackend) — server
+   wins (another device's dispatcher may have edited since this device's local cache was last
+   written). No-op in #local/offline (same backendPassword guard as every other sync path). */
+async function loadTripsFromBackend() {
+  if (typeof backendPassword === 'undefined' || !backendPassword) return;
+  try {
+    const r = await backendCall('getTrips');
+    if (r && r.ok && r.trips && typeof r.trips === 'object') {
+      _lsSave('jactec.trips', r.trips);
+      state.tripsSyncStatus = 'synced';
+      render();
+    }
+  } catch (e) { /* offline → keep local cache */ }
+}
+/* §2.3 Phase 4 — the Trips card footer's live sync state (replaces the Phase 1 static
+   placeholder). 'Synced · rev N' (N = the highest rev among TODAY's materialized trips) only
+   once a push or pull has actually succeeded THIS session; otherwise "Offline — cached" —
+   honest whether that's genuine #local/offline or just "online but hasn't synced yet", since
+   the local cache is the only thing on screen either way. */
+function tripsSyncFooter() {
+  const online = typeof backendPassword !== 'undefined' && !!backendPassword;
+  if (online && state.tripsSyncStatus === 'synced') {
+    const today = tripsLS()[TODAY_ISO] || {};
+    const revs = Object.values(today).map((t) => t.rev || 0);
+    return { synced: true, label: revs.length ? `Synced · rev ${Math.max(...revs)}` : 'Synced' };
+  }
+  return { synced: false, label: 'Offline — cached' };
+}
 // Which driver lanes the dispatcher has open, per device (a VIEW pref, not data — D5:
 // "the dispatcher clicks which drivers to show"). Pruned against the live roster on read.
 const dispatchLanesLS = () => { const v = _lsJSON('jactec.dispatchLanes'); const ids = Array.isArray(v.show) ? v.show : []; const roster = driverRoster().map((d) => d.id); return ids.filter((id) => roster.includes(id)); };
@@ -9350,8 +9420,9 @@ function tripMerge(day, targetId, sourceId) {
   const targetDriverId = target.driverId || null;
   mergedOrder.forEach((s) => assignStopDriver(s.rentalId, s.unitId, s.task, targetDriverId));
   dayStore[targetId] = { time: targetRec ? targetRec.time : target.time, order: mergedOrder, rev: (targetRec ? targetRec.rev || 0 : 0) + 1 };
-  delete dayStore[sourceId];   // fully absorbed into the target
+  delete dayStore[sourceId];   // fully absorbed into the target — no delete op in the setTrip contract, so the source's own last-synced backend record is left as-is (Phase 4 scope)
   tripsSaveDay(day, dayStore);
+  tripPushSoon(day, targetId);   // §2.3 Phase 4 — sync the merged target; the absorbed source has nothing left locally to push
   const targetR = IDX.rental.get(target.rentalId);
   if (targetR) logAction(targetR, `Trip merge — ${tripLabel(source)} folded into this run (now ${mergedOrder.length} stops)`);
   const logged = new Set();
@@ -9393,6 +9464,8 @@ function tripSplit(day, tripId, stopId) {
   dayStore[remainingId] = { time: curRec ? curRec.time : trip.time, order: remaining, rev: (curRec ? curRec.rev || 0 : 0) + 1 };
   dayStore[removedId] = { time: '', order: [removed], rev: 0 };
   tripsSaveDay(day, dayStore);
+  tripPushSoon(day, remainingId);   // §2.3 Phase 4 — both halves of a split are new/changed records, both sync
+  tripPushSoon(day, removedId);
   const removedR = IDX.rental.get(removed.rentalId);
   const remainR = remaining.length ? IDX.rental.get(remaining[0].rentalId) : null;
   if (removedR) logAction(removedR, `Trip split — ${removed.task === 'Deliver' ? 'delivery' : 'recovery'} split out into its own run`);
@@ -9636,6 +9709,7 @@ function tripSetTime(day, tripId, time) {
   const cur = dayStore[tripId];
   dayStore[tripId] = { time, order: cur ? cur.order : trip.stops.slice(), rev: (cur ? cur.rev || 0 : 0) + 1 };
   tripsSaveDay(day, dayStore);
+  tripPushSoon(day, tripId);   // §2.3 Phase 4 — debounced sync of this one trip's new time
   return true;
 }
 
@@ -20454,6 +20528,7 @@ function finishLoad() {
   buildIndexes(); state.cascade = createCascade(DATA); booting = false; render();
   // (views no longer pull from the backend — personal per-device "my views", spec search-views D2)
   loadGroupOrderFromBackend();                                  // pull THIS role's saved card-group order
+  loadTripsFromBackend();                                       // §2.3 Phase 4 — pull the trips store (getTrips), server wins at boot
   salePricingAutoApply();                                       // used-sale price engine, auto mode (manager+ sessions only)
   loadChats();                                                  // pull the shared team-chat threads (§ team-chat sync)
   wranglerRailLoad();                                           // load the Mr. Wrangler rail from IndexedDB (+ one-time localStorage migration)
@@ -20977,6 +21052,7 @@ function exposeTestApi() {
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
       companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, saveYardCapture, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsUtilRollup, gpsBounciePlan, gpsApplyBouncieTrucks, nextCategoryId, nextUnitId, logAction, setRole: (r) => { currentRole = r || ''; render(); },
       tripsLS, tripMerge, tripSplit, assignTripDriver, tripLabel, assignStopDriver, tripSetTime,
+      tripPushSoon, tripPushNow, loadTripsFromBackend, tripsSyncFooter, setBackendPassword: (pw) => { backendPassword = pw || ''; },   // §2.3 Phase 4 sync — the setter is test-only (mirrors setRole), letting logic-test.mjs exercise the online path via a mocked window.fetch, never a real backend
       autoRunRepair, autoRunAnchorsFor, secToClock, AUTORUN_DAY_START_SEC, AUTORUN_EOD_DEADLINE_SEC, AUTORUN_LOAD_BUFFER_SEC, dispatchPinOf,
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 

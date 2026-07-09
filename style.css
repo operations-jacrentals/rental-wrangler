@@ -711,11 +711,15 @@ select.lf-in { appearance: none; cursor: pointer; }
    touch-parity path). Blue = commit-intent (R17 language), never orange (R2/selected). */
 .row[data-card="calendar"].trip-dragging { opacity: .4; }
 .row[data-card="calendar"].trip-dragover { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: var(--chip-radius); }
-/* Trips footer — honest sync status (spec §2.1 "false trust signals"): no "auto-notifies"
-   claim until D3 sync ships (Phase 4); a quiet gray stamp instead of the green live-dot. */
+/* Trips footer — honest sync status (spec §2.1 "false trust signals"): a quiet gray stamp
+   ("Offline — cached") unless a real getTrips/setTrip round-trip has actually succeeded this
+   session (Phase 4, tripsSyncFooter in app.js), in which case the dot/text go --green and the
+   text names the highest synced rev — never a claim the app can't back up. */
 .disp-foot { flex: 0 0 auto; display: flex; align-items: center; gap: 7px; padding: 7px 12px; border-top: 1px solid var(--line); font-size: 10.5px; color: var(--txt-3); }
 .disp-offline { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .8px; }
+.disp-offline.on { color: var(--green); }
 .disp-offdot { width: 8px; height: 8px; border-radius: 50%; background: var(--txt-3); flex: 0 0 auto; }
+.disp-offdot.on { background: var(--green); }
 
 /* ── Card (each is the detail view; scrolls internally) ──────────────────── */
 .card {

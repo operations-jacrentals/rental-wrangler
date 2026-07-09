@@ -1973,6 +1973,113 @@ try {
       }
     }
 
+    // §Trips Phase 4 (spec 2026-07-09 Phase 4, LOCKED contract) — the frontend half of the
+    // backend-synced trips slice: getTrips/setTrip, per-trip rev, stale-rev rejection. The
+    // harness boots #local (backendPassword=''), so the online path is exercised via the
+    // test-only setBackendPassword() setter plus a window.fetch mock that intercepts
+    // backendCall's own fetch — this suite NEVER makes a real network call. backendPassword
+    // and window.fetch are both restored to their #local defaults before this block ends, so
+    // no later test in this file can accidentally reach a real backend.
+    {
+      const t0 = T.tripsFor().find((x) => !x.done);
+      ok(!!t0, 'TRIPS-P4 fixture: at least one not-done derived trip exists to materialize/sync');
+      if (t0) {
+        const day = t0.day, tripId = t0.id;
+        const origFetch = window.fetch;
+        let fetchCalls = [];
+        const mockFetch = (respond) => (url, opts) => {
+          fetchCalls.push(JSON.parse(opts.body));
+          return Promise.resolve({ ok: true, text: () => Promise.resolve(JSON.stringify(respond())) });
+        };
+
+        // Fixture materialization ALWAYS happens with backendPassword '' (offline): tripSetTime
+        // is real production code and — now that Phase 4 is wired in — it fires its OWN
+        // internal tripPushSoon() as a side effect whenever backendPassword is truthy. If that
+        // ran here it would arm a real 600ms-debounced timer that fires later in this block
+        // against whatever fetch mock happens to be active AT THAT LATER MOMENT — a stray extra
+        // backendCall this suite must never make. Keeping password '' during every fixture edit
+        // (only flipping it on right around the deliberate push/pull call under test, then back
+        // off) is what guarantees each mock only ever sees the ONE call it's testing for.
+
+        // (a) SUCCESS — a push updates the cache's rev to the server's returned newRev, and
+        // flips the sync-status flag so the footer can report it.
+        T.tripSetTime(day, tripId, '9:15 AM');   // materialize locally first (Phase 3's own optimistic write) — offline, no stray push armed
+        T.setBackendPassword('TEST-PW');
+        window.fetch = mockFetch(() => ({ ok: true, rev: 42 }));
+        await T.tripPushNow(day, tripId);
+        ok(fetchCalls.length === 1 && fetchCalls[0].action === 'setTrip' && fetchCalls[0].day === day && fetchCalls[0].tripId === tripId, `TRIPS-P4 push: setTrip is called once with the touched day/tripId (${fetchCalls.length} call(s))`);
+        ok(Number.isFinite(fetchCalls[0].rev), 'TRIPS-P4 push: the payload carries a numeric rev (the caller\'s last-known)');
+        ok(T.tripsLS()[day][tripId].rev === 42, 'TRIPS-P4 push: a successful response adopts the server\'s returned rev into the local cache');
+        ok(T.__state.tripsSyncStatus === 'synced', 'TRIPS-P4 push: a successful push flips tripsSyncStatus to synced');
+        T.setBackendPassword('');   // back offline before the next fixture edit
+
+        // (b) STALE-REV — the server rejects; the cache is overwritten with the server's
+        // `current`, discarding the client's own (now-stale) local edit — never silently
+        // keep a possibly-conflicting local copy.
+        T.tripSetTime(day, tripId, '11:45 AM');   // a second local edit (offline) — the client's soon-to-be-stale attempt
+        T.setBackendPassword('TEST-PW');
+        fetchCalls = [];
+        const serverCurrent = { time: '3:15 PM', order: t0.stops.slice(), rev: 99 };
+        window.fetch = mockFetch(() => ({ ok: false, error: 'stale-rev', current: serverCurrent }));
+        const preToast = document.getElementById('toast').textContent;
+        await T.tripPushNow(day, tripId);
+        const afterStale = T.tripsLS()[day][tripId];
+        ok(afterStale.time === '3:15 PM' && afterStale.rev === 99, `TRIPS-P4 stale-rev: the cache is overwritten with the server's current (time="${afterStale.time}", rev=${afterStale.rev}), not the client's stale "11:45 AM" edit`);
+        const toastMsg = document.getElementById('toast').textContent;
+        ok(toastMsg !== preToast && /Someone else updated this trip — refreshed/.test(toastMsg), `TRIPS-P4 stale-rev: toasts that a concurrent edit won the race (got "${toastMsg}")`);
+        T.setBackendPassword('');
+
+        // (c) PULL — loadTripsFromBackend merges a getTrips response into the local cache.
+        localStorage.removeItem('jactec.trips');
+        const pulled = { [day]: { [tripId]: { time: '2:00 PM', order: t0.stops.slice(), rev: 7 } } };
+        T.setBackendPassword('TEST-PW');
+        fetchCalls = [];
+        window.fetch = mockFetch(() => ({ ok: true, trips: pulled }));
+        await T.loadTripsFromBackend();
+        ok(fetchCalls.length === 1 && fetchCalls[0].action === 'getTrips', 'TRIPS-P4 pull: getTrips is called with no extra input');
+        const pulledRec = (T.tripsLS()[day] || {})[tripId];
+        ok(!!pulledRec && pulledRec.time === '2:00 PM' && pulledRec.rev === 7, `TRIPS-P4 pull: loadTripsFromBackend merges the getTrips response into the local cache (${JSON.stringify(pulledRec)})`);
+        ok(T.__state.tripsSyncStatus === 'synced', 'TRIPS-P4 pull: a successful pull also flips tripsSyncStatus to synced');
+        T.setBackendPassword('');
+
+        // (d) OFFLINE/#local — no backendPassword → the backend is never reached (push OR
+        // pull), and the local cache remains the only source of truth.
+        localStorage.removeItem('jactec.trips');
+        T.__state.tripsSyncStatus = null;
+        fetchCalls = [];
+        window.fetch = mockFetch(() => { throw new Error('backendCall must never fire while offline'); });
+        T.tripSetTime(day, tripId, '4:00 PM');          // backendPassword is already '' here — no internal push armed either
+        T.tripPushSoon(day, tripId);                    // debounced — the offline guard must return before ever arming the timer
+        await new Promise((r) => setTimeout(r, 650));   // > the 600ms debounce — proves no timer was armed, not just that we didn't wait long enough
+        await T.loadTripsFromBackend();
+        ok(fetchCalls.length === 0, `TRIPS-P4 offline: backendCall is never reached while backendPassword is empty (push AND pull) — ${fetchCalls.length} call(s) leaked`);
+        ok(T.tripsLS()[day][tripId].time === '4:00 PM', 'TRIPS-P4 offline: the local write stands untouched — the local cache is the only source of truth');
+
+        // §2.3 Phase 4 footer — pure, so directly testable without a DOM render. Uses its own
+        // controlled fixture trips (not t0/day) so it doesn't depend on TODAY_ISO having a
+        // real dispatch trip in the demo seed.
+        {
+          T.setBackendPassword('');
+          T.__state.tripsSyncStatus = null;
+          localStorage.removeItem('jactec.trips');
+          const off = T.tripsSyncFooter();
+          ok(off.synced === false && off.label === 'Offline — cached', `TRIPS-P4 footer: offline/not-yet-synced shows "Offline — cached" (got "${off.label}")`);
+
+          T.setBackendPassword('TEST-PW');
+          T.__state.tripsSyncStatus = 'synced';
+          localStorage.setItem('jactec.trips', JSON.stringify({ [T.TODAY_ISO]: { fx1: { time: '9:00 AM', order: [], rev: 3 }, fx2: { time: '10:00 AM', order: [], rev: 11 } } }));
+          const on = T.tripsSyncFooter();
+          ok(on.synced === true && on.label === 'Synced · rev 11', `TRIPS-P4 footer: synced shows the HIGHEST rev among today's trips (got "${on.label}")`);
+        }
+
+        // restore #local defaults so nothing later in this suite can reach a real backend
+        window.fetch = origFetch;
+        T.setBackendPassword('');
+        T.__state.tripsSyncStatus = null;
+        localStorage.removeItem('jactec.trips');
+      }
+    }
+
     // === GPS M4 — fleet auto-match matcher (PURE; gpsDeviceId drives remote shutdown, so verify hard) ===
     {
       const mk = (id, extra) => Object.assign({ unitId: id, fleetStatus: 'Active' }, extra);
