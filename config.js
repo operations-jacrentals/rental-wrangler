@@ -109,6 +109,9 @@ const RAW_STATUS = {
     'Sent to Collections': { label: 'In Collections', color: 'gray' },
     'Paid':        { label: 'Paid',        color: 'green'  },
     'Refunded':    { label: 'Refunded',    color: 'gray'   },
+    // Voided (Jac 2026-07-09): an unpaid invoice unlinked from its rental & retired to a
+    // $0 record — off the active books (gray), keeps the audit trail instead of a delete gap.
+    'Voided':      { label: 'Voided',      color: 'gray'   },
   },
   customerPayStatus: {
     'Current':      { label: 'Current',      color: 'green' },

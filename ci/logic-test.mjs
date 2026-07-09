@@ -81,6 +81,25 @@ try {
       ok(T.rentalLineRefund({ rentalId: 'Z', invoiceId: null }).refunded === false, 'rentalLineRefund: no invoice → not refunded');
     }
 
+    // 2c) VOID unpaid invoice (Jac 2026-07-09, #579) — unlink the rental, retire to a $0 off-books record
+    {
+      const vinv = { invoiceId: 'VOIDTEST1', customerId: null, rentalIds: ['VOIDRENT1'], amountPaid: 0, lineItems: [{ kind: 'custom', lid: 'VL1', ref: null, amount: 500 }] };
+      const vrent = { rentalId: 'VOIDRENT1', invoiceId: 'VOIDTEST1', units: [], status: 'Quote' };
+      T.DATA.invoices.push(vinv); T.IDX.invoice.set('VOIDTEST1', vinv);
+      T.DATA.rentals.push(vrent); T.IDX.rental.set('VOIDRENT1', vrent);
+      ok(T.invoiceVoidable(vinv) === true, 'void: a $0-paid, unlocked invoice is voidable');
+      ok(T.invoiceTotals(vinv).total > 0, 'void: pre-void the invoice carries a live total');
+      T.voidInvoice(vinv);
+      const vt = T.invoiceTotals(vinv);
+      ok(vinv.voided === true && vt.status === 'Voided', 'void: voidInvoice marks it Voided');
+      ok(vt.total === 0 && vt.balance === 0, 'void: a voided invoice is $0 off the books (total & balance zeroed)');
+      ok(vrent.invoiceId === null && (vinv.rentalIds || []).length === 0, 'void: unlinks the rental so it is free to re-invoice');
+      ok(T.invoiceVoidable(vinv) === false, 'void: an already-voided invoice is not voidable again');
+      ok(T.invoiceVoidable({ invoiceId: 'X', amountPaid: 200, lineItems: [] }) === false, 'void: an invoice with a payment is NOT voidable (refund-first)');
+      T.DATA.invoices = T.DATA.invoices.filter((i) => i.invoiceId !== 'VOIDTEST1'); T.IDX.invoice.delete('VOIDTEST1');   // cleanup — keep later counts clean
+      T.DATA.rentals = T.DATA.rentals.filter((r) => r.rentalId !== 'VOIDRENT1'); T.IDX.rental.delete('VOIDRENT1');
+    }
+
     // 3) per-unit status derivation off the shared window (date-robust via TODAY_ISO)
     const today = T.TODAY_ISO;
     ok(T.unitStatus({ startDate: today }, { status: 'Reserved' }) === 'Reserved', 'Reserved + today window stays Reserved (Today/Tomorrow retired → flags)');
