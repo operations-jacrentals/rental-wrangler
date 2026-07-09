@@ -429,16 +429,18 @@ STOP-gated).*
 |--------|---------|-----------------------|
 | **Auth & session** | `auth`, `saveSession`, `getSession` | verify the team password; persist/restore a device session |
 | **Data sync** | `load`, `seed`, `sync` | hydrate all entities · seed a fresh DB · apply incremental upserts/deletes |
-| **Config & Views** | `getConfig`, `setConfig`, `getViews`, `setViews` | admin Settings Board (`APP-09`) + company-wide saved Views |
+| **Config & Views** | `getConfig`, `setConfig`, `getViews`, `setViews`, `getGroupOrder`, `setGroupOrder` | admin Settings Board (`APP-09`) + company-wide saved Views · per-role KPI/board group order |
 | **Team chat** | `getChats`, `setChats` | the internal dock (`APP-22`) message store |
+| **Customer comms** | `commsAliases`, `commsThreads`, `messagesFor`, `sendCustomerMessage` | customer-facing email/SMS: sender aliases · thread list · a customer's messages · send one |
 | **Wrangler rail** | `getWranglerRail`, `setWranglerRail` | cross-device store of past Mr. Wrangler conversations (`§18g`) |
 | **Mr. Wrangler AI** | `wrangler` | proxies the chat to Claude (the API key lives server-side, never in the client) |
 | **Wrangler inbox** | `wranglerRequests`, `wranglerThread`, `wranglerComment`, `wranglerApprove`, `wranglerDismiss`, `wranglerFile`, `wranglerNotifications` | the in-app glitch/request pipeline (mirrors the GitHub issues from `wrangler-fix.yml`) |
 | **Files & media** | `uploadFile`, `uploadCapture`, `archiveAgreementMedia` | offload photos/video/signed-agreement media to Drive (see `docs/backend-snippets/archiveAgreementMedia.md`) |
+| **GPS** | `gpsToken` | hand the client a short-lived token for the GPS provider proxy endpoints |
 | **Stripe — cards/bank** | `stripePubKey`, `stripeSetupIntent`, `stripeSaveCard`, `stripeSetDefault`, `stripeRemoveCard`, `stripeBankSetupIntent`, `stripeSaveBank`, `stripeVerifyBank` | card/ACH on file via Stripe (secret key server-side) |
-| **Stripe — charging** | `stripeChargeInvoice`, `stripeFinalizeInvoice`, `recordManualPayment` | charge / finalize an invoice · log a manual payment |
+| **Stripe — charging** | `stripeChargeInvoice`, `stripeFinalizeInvoice`, `recordManualPayment`, `recordManualRefund`, `stripeRefundInvoice`, `stripeLockInvoice`, `stripeUnlockInvoice` | charge / finalize an invoice · log a manual payment · cash/check or Stripe refund · lock/unlock an invoice during payment |
 | **Membership** | `membershipEnroll`, `membershipCancel`, `membershipReactivate` | the subscription lifecycle (`APP-09` economics) |
-| **Misc** | `mapsKey`, `feedback` | hand the client the Maps key · file user feedback |
+| **Misc** | `mapsKey`, `feedback`, `perfReport` | hand the client the Maps key · file user feedback · client perf-vitals beacon |
 
 ## Backend reverse index — "I need to…"
 | I need to… | Where |

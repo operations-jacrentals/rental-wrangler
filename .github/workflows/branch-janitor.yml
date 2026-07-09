@@ -63,7 +63,7 @@ jobs:
           while IFS= read -r b; do
             [ -z "$b" ] && continue
             case "$b" in
-              main|staging|area/*) continue ;;   # never touch the structure
+              main|staging|area/*|backup/*) continue ;;   # never touch the structure
             esac
             grep -qxF "$b" merged.txt || continue   # must have a merged PR
             grep -qxF "$b" open.txt   && continue   # but no open PR

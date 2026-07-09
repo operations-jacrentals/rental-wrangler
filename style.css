@@ -389,8 +389,6 @@ input { font-family: inherit; }
 .is-phone .tab { min-height: 40px; }                                            /* §M2 open-record item tabs are draggable handles — give them a touch grab target */
 .is-phone .popup-head .x { width: 40px; height: 40px; }                         /* sheet close ✕ (was 30) */
 .is-phone .mdot { width: 38px; height: 22px; }                                  /* column indicator dots (column also changes by toggle tap / footer swipe) */
-.is-phone .chat-tag .x { position: relative; }                                  /* tag remove ✕ keeps its 14px look… */
-.is-phone .chat-tag .x::before { content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; }   /* …but a 40px hit box */
 /* §M-touch — the hover-reveal tab close ✕ has no touch alternative, so force it visible
    on phones (a phone has no :hover). The card-header / row hover TOOLS are deliberately
    HIDDEN on touch instead (PR #316) — their actions have touch paths (double-tap anchor,
@@ -638,32 +636,6 @@ select.lf-in { appearance: none; cursor: pointer; }
 .disp-today { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: var(--accent); background: var(--accent-soft); padding: 2px 7px; border-radius: 99px; }
 .disp-jump { font-size: 11px; color: var(--accent); background: none; border: none; cursor: pointer; text-decoration: underline; }
 .disp-count { font-size: 11px; color: var(--txt-3); white-space: nowrap; }
-.disp-route { position: relative; padding: 6px 12px 18px 34px; overflow-y: auto; }
-.disp-stop { position: relative; display: flex; align-items: center; gap: 9px; }
-.js-disp-stop { background: linear-gradient(180deg, var(--card-head), var(--card)); border: 1px solid var(--line); border-radius: 11px; padding: 9px 11px; margin: 7px 0; cursor: pointer; }
-.js-disp-stop:hover { border-color: var(--accent-line); }
-.js-disp-stop.disp-dragging { opacity: .4; }
-/* directional route arrow between stops */
-.js-disp-stop:not(:last-child)::after, .disp-home:not(:last-child)::after { content: '▼'; position: absolute; left: 26px; bottom: -14px; font-size: 10px; color: var(--accent); opacity: .65; z-index: 1; }
-.disp-grip { color: var(--txt-3); cursor: grab; font-size: 13px; flex: 0 0 auto; }
-.disp-seq { font-size: 10px; font-weight: 800; color: var(--txt-3); width: 12px; text-align: center; flex: 0 0 auto; }
-.disp-time { width: 50px; flex: 0 0 auto; height: 28px; text-align: center; border: 1px solid var(--line); border-radius: 7px; background: var(--bg-2, var(--panel)); color: var(--txt); font: inherit; font-size: 12px; font-weight: 700; }
-.disp-time:focus { border-color: var(--accent-line); outline: none; }
-.disp-ico { width: 30px; height: 30px; flex: 0 0 auto; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 14px; color: #fff; }
-/* the D/R letter must stay white on the colored disc — beat the generic .c-blue/.c-brown text color (style.css §pills) */
-.disp-ico.c-blue { background: var(--blue); color: #fff; } .disp-ico.c-brown { background: var(--brown, #9a6a3a); color: #fff; }
-.disp-ico.home { background: var(--bg-2, var(--panel)); border: 1px solid var(--line); font-size: 15px; }
-.disp-bd { flex: 1; min-width: 0; }
-.disp-unit { font-weight: 700; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.disp-task { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--txt-3); margin-left: 4px; }
-.disp-sub { font-size: 11.5px; color: var(--txt-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.disp-addr { color: var(--blue); text-decoration: underline; cursor: pointer; }
-.disp-deadline { flex: 0 0 auto; font-size: 10.5px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .4px; }
-.disp-deadline.today { color: var(--accent); }
-.disp-deadline.over { color: var(--red); -webkit-text-fill-color: color-mix(in srgb, var(--red) 65%, white); text-shadow: 0 0 3px var(--red), 0 0 7px color-mix(in srgb, var(--red) 60%, transparent); }
-.disp-home { padding: 4px 11px; }
-.disp-home .disp-unit { font-size: 12px; color: var(--txt-2); font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; }
-.disp-home .disp-sub { font-size: 10.5px; }
 .disp-empty { padding: 40px 24px; text-align: center; color: var(--txt-3); }
 .disp-empty svg { width: 30px; height: 30px; opacity: .5; }
 .disp-empty p { font-size: 14px; color: var(--txt-2); margin: 10px 0 4px; }
@@ -1112,27 +1084,7 @@ select.lf-in { appearance: none; cursor: pointer; }
 .kv .v.big { font-size: 15px; }
 .kv .v.muted { color: var(--txt-3); font-weight: 500; }
 .kv.derived > .v, .kv.derived .sfx, .derived { font-style: italic; }   /* rule 13/20/21/27: derived/formulaic values italic */
-/* Active-Status spectrum bar (§6.2 #8) — fill = % active (clipped), same as the
-   list-view row background; the % is overlaid on the right. */
-.active-bar { position: relative; width: 100%; height: 16px; border-radius: 8px; background: var(--track); overflow: hidden; margin-top: 2px; }
-.active-bar.wide { height: 22px; margin-top: 0; }                  /* full-width customer activity bar (§12.1) */
 .detail-badges { gap: 7px; }
-.active-spectrum { position: absolute; inset: 0; background: linear-gradient(90deg, var(--red), var(--orange), var(--yellow), var(--green)); }
-.active-lbl { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); font-size: 10px; font-weight: 700; color: var(--txt); text-shadow: 0 1px 2px rgba(0,0,0,.55); }
-
-/* §12.1 Activity GAUGE — bipolar −100…+100 (Jac, Phase 6). A steel data-plate track
-   with a caution-yellow zero notch at center; the stage-colored fill grows out from
-   center toward the value; a stamped condensed stage label rides the left. */
-.active-bar.bipolar { height: 26px; border-radius: 7px; background: linear-gradient(180deg,#1b2129,#0c0e11);
-  border: 1px solid var(--line); box-shadow: inset 0 1px 2px rgba(0,0,0,.55); }
-.active-bar.bipolar .ab-tick { position: absolute; top: 5px; bottom: 5px; width: 1px; background: rgba(255,255,255,.13); }
-.active-bar.bipolar .ab-zero { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; transform: translateX(-1px); background: rgba(245,197,66,.75); z-index: 2; }
-.active-bar.bipolar .ab-fill { position: absolute; top: 3px; bottom: 3px; min-width: 2px; border-radius: 3px; box-shadow: 0 1px 4px rgba(0,0,0,.45); transition: left .3s ease, width .3s ease; }
-.active-bar.bipolar .ab-fill.deep { background-image: repeating-linear-gradient(135deg, rgba(0,0,0,.34) 0 4px, transparent 4px 8px); }   /* Lost Customer — danger hazard over deep red */
-.active-bar.bipolar .ab-stage { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); z-index: 3;
-  font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 700; font-size: 11px; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.85); }
-.active-bar.bipolar .active-lbl { z-index: 3; font-family: 'Saira Condensed', system-ui, sans-serif; letter-spacing: .5px; font-size: 11px; }
-@media (prefers-reduced-motion: reduce) { .active-bar.bipolar .ab-fill { transition: none; } }
 
 /* §12.1 CUSTOMER ACTIVITY panel (Jac 2026-06-14) — spend-by-month chart with the
    rental cadence (Last Rental · Next Expected · Today) folded onto the timeline. */
@@ -1271,7 +1223,7 @@ select.lf-in { appearance: none; cursor: pointer; }
    he figures out the rest). Tapping it files the ticket; then it reads as done. */
 .wr-actbtn { display: inline-flex; align-items: center; gap: 6px; margin-top: 9px; cursor: pointer;
   height: 30px; padding: 0 13px; border: none; border-radius: 8px;
-  background: linear-gradient(180deg, #ff9036, #ff7a1a); color: #1a1205;
+  background: linear-gradient(180deg, #ff9038, var(--accent)); color: #1a1205;
   font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 700; font-size: 11.5px;
   letter-spacing: 1.1px; text-transform: uppercase; white-space: nowrap;
   box-shadow: 0 1px 0 rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .25); }
@@ -1287,7 +1239,7 @@ select.lf-in { appearance: none; cursor: pointer; }
   border: 1.5px solid var(--accent-line, #ff7a1a); background: rgba(255, 122, 26, .08); color: var(--txt);
   font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 700; font-size: 11.5px;
   letter-spacing: 1.1px; text-transform: uppercase; white-space: normal; text-align: left; }
-.wr-askbtn:hover { background: linear-gradient(180deg, #ff9036, #ff7a1a); color: #1a1205; border-color: transparent; }
+.wr-askbtn:hover { background: linear-gradient(180deg, #ff9038, var(--accent)); color: #1a1205; border-color: transparent; }
 .wr-askbtn:active { transform: translateY(1px); }
 .wr-askbtn:focus-visible { outline: 2px solid var(--accent-line, #ff7a1a); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .wr-askbtn:active { transform: none; } }
@@ -1510,13 +1462,6 @@ select.lf-in { appearance: none; cursor: pointer; }
 .rail-sp { flex: 1 1 auto; }
 .rail-ico { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: none; background: none; color: var(--txt-3); cursor: pointer; padding: 0; border-radius: 6px; }
 .rail-ico svg { width: 15px; height: 15px; } .rail-ico:hover { color: var(--txt); background: rgba(255,255,255,.06); }
-.chat-tag { display: inline-flex; align-items: center; gap: 6px; max-width: 152px; padding: 4px 5px 4px 9px; border-radius: 8px; font-size: 11.5px; font-weight: 700;
-  background: var(--panel); border: 1px solid var(--line); color: var(--txt); }
-.chat-tag .ct-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: var(--tagc, var(--txt-3)); box-shadow: 0 0 7px 0 var(--tagc, transparent); }
-.chat-tag.c-red { --tagc: var(--red); } .chat-tag.c-yellow { --tagc: var(--yellow); } .chat-tag.c-green { --tagc: var(--green); }
-.chat-tag .ct-lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-tag .x { display: inline-flex; width: 14px; height: 14px; opacity: .5; cursor: pointer; border: none; background: none; color: inherit; padding: 0; }
-.chat-tag .x:hover { opacity: 1; }
 /* ─ thread ─ */
 .chat-feed { flex: 1 1 auto; overflow-y: auto; padding: 12px 11px; display: flex; flex-direction: column; gap: 10px; min-height: 120px; }
 .chat-empty { color: var(--txt-3); font-size: 12.5px; text-align: center; padding: 30px 14px; line-height: 1.5; }
@@ -2045,44 +1990,14 @@ body.is-phone .set-tab { width: auto; border-left: 0; border-bottom: 2px solid t
 body.is-phone .set-tab.on { border-left: 0; border-bottom-color: var(--accent); }
 body.is-phone .set-tab-l { flex: 0 0 auto; }
 
-/* §13.3 Card Graph view — data-plate analytics (Phase 4) */
-.gv-popup { width: 780px; max-width: 94vw; height: auto; max-height: 88vh; }
-.gv-body { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; }
-/* In-column graph view (toggled inside a card column, not a popup). The column is
-   narrow, so the 4-col tile grid collapses to 2 and the wide/lead tiles span full. */
-.gv-card { display: flex; flex-direction: column; gap: 12px; padding: 10px 12px; overflow: auto; }
-.gv-card .gv-grid { grid-template-columns: repeat(2, 1fr); }
-.gv-card .gv-lead, .gv-card .gv-wide, .gv-card .gv-units { grid-column: span 2; }
-.gv-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-.gv-tile { background: linear-gradient(180deg, var(--card-head), var(--card)); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; min-width: 0; }
-.gv-tile-h { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; font-size: 11.5px; color: var(--txt-3); margin-bottom: 10px; }
-.gv-count { color: var(--txt-3); font-weight: 700; }
-.gv-num { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
-.gv-num-v { font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 46px; font-weight: 800; line-height: 1; color: var(--accent); }
-.gv-num-l { font-size: 10.5px; text-transform: uppercase; letter-spacing: 1px; color: var(--txt-3); margin-top: 6px; }
-.gv-lead { grid-column: span 3; }
-.gv-lead-row { display: grid; grid-template-columns: 18px 1fr auto auto; align-items: center; gap: 10px; padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
-.gv-lead-row:last-child { border-bottom: none; }
-.gv-lead-n { color: var(--txt-3); font-weight: 700; font-size: 11px; }
-.gv-lead-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gv-lead-mech { font-size: 11px; color: var(--txt-3); }
-.gv-lead-c { font-weight: 800; color: var(--red); -webkit-text-fill-color: color-mix(in srgb, var(--red) 65%, white); text-shadow: 0 0 3px var(--red), 0 0 7px color-mix(in srgb, var(--red) 60%, transparent); }
-.gv-pie { display: flex; flex-direction: column; align-items: center; }
-.gv-pie svg { display: block; }
 .gv-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 10px; justify-content: center; }
 .gv-leg { font-size: 11px; color: var(--txt-2); display: inline-flex; align-items: center; gap: 5px; }
 .gv-leg i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
 .gv-leg b { color: var(--txt); }
-.gv-wide { grid-column: span 2; }
 .gv-bars { display: flex; align-items: flex-end; gap: 8px; height: 120px; }
 .gv-barcol { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; min-width: 0; }
 .gv-bar-n { font-size: 10px; color: var(--txt-3); font-weight: 700; height: 14px; }
 .gv-bar-track { flex: 1; width: 70%; display: flex; align-items: flex-end; }
-.gv-bar-fill { position: relative; width: 100%; min-height: 2px; border-radius: 4px 4px 0 0; }
-/* §13.4 Revenue-by-Status: a red cap on the bar = the uncollected (unpaid + refunded) share */
-.gv-bar-red { position: absolute; top: 0; left: 0; right: 0; min-height: 2px; background: var(--red); border-radius: 4px 4px 0 0; box-shadow: 0 0 8px color-mix(in srgb, var(--red) 45%, transparent); }
-.gv-bars .gv-barcol.on .gv-bar-red { background: var(--red); }   /* stay red even when the bar is the active filter (orange) */
-.gv-revbars .gv-bar-n { color: var(--txt); font-weight: 700; }
 .gv-bar-x { font-size: 10px; color: var(--txt-3); margin-top: 5px; text-transform: uppercase; letter-spacing: .4px; }
 /* Shop front-page STACKED bars: each bar's fill is a column of clickable segments
    (Services = overdue/due, Work Orders = woPhase journey). Registry colors per segment;
@@ -2627,28 +2542,14 @@ select.nc-in { cursor: pointer; }
 .nc-popup .popup-body { overflow-y: auto; }
 .nc-sec-title { display: flex; align-items: center; gap: 9px; font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.3px; color: var(--txt-2); margin: 17px 0 10px; }
 .nc-sec-title::after { content: ''; flex: 1; height: 1px; background: var(--line); }
-/* Account packet (Jac 2026-06-12): uniform tiles — selfie + card side by side,
-   signature full width; each = header (+✓ when done) · preview · action. */
-.nc-packet { display: flex; flex-direction: column; gap: 10px; }
-.nc-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.nc-tile { background: var(--bg-2); border: 1px solid var(--line-soft); border-radius: 12px; padding: 11px 12px; display: flex; flex-direction: column; gap: 9px; }
-.nc-tile.done { border-color: color-mix(in srgb, var(--good, #1a9f57) 45%, var(--line-soft)); }
-.nc-tile-head { display: flex; align-items: center; }
 .nc-cap-lbl { font-size: 11px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .3px; }
-.nc-ok { margin-left: auto; color: var(--good, #1a9f57); font-weight: 800; font-size: 13px; }
 .nc-thumb { width: 100%; height: 84px; object-fit: cover; border-radius: 9px; border: 1px solid var(--line); background: var(--panel); }
 .nc-thumb.sig { object-fit: contain; background: #fff; }
-.nc-thumb.empty { display: inline-flex; align-items: center; justify-content: center; color: var(--txt-3); font-size: 11px; }
 .nc-sigpad { width: 100%; height: 96px; border-radius: 9px; border: 1px solid var(--accent-line); background: #fff; touch-action: none; cursor: crosshair; }
-.nc-tile-act { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.nc-tile-act .pill, .nc-tile-act label.pill { font-size: 11px; padding: 6px 11px; cursor: pointer; }
-.nc-ag-note { font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--txt-3); }
-.nc-ag-ok { font-weight: 700; text-transform: none; letter-spacing: 0; color: var(--good, #1a9f57); }
 .nc-agreement { max-height: 168px; overflow-y: auto; white-space: pre-wrap; font-size: 11.5px; line-height: 1.5; color: var(--txt-2); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 13px; -webkit-overflow-scrolling: touch; }
 .nc-ag-meta { font-size: 12px; font-weight: 700; color: var(--txt-2); margin: 0 0 9px; }
 .nc-ag-sigline { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
 .nc-ag-sigline .nc-thumb.sig { max-height: 72px; }
-.nc-thumb.empty.good { color: var(--good, #1a9f57); font-weight: 700; }
 
 /* ── §7.1b card-bound agreements — the tabbed account/per-card form ── */
 .nc-tabbody { overflow-y: auto; }
@@ -2970,7 +2871,6 @@ body.rw-inspect .seg, body.rw-inspect .jnode, body.rw-inspect .c-titlecard { cur
 body.rw-inspect .pill:hover, body.rw-inspect .add-field:hover, body.rw-inspect .flag:hover,
 body.rw-inspect .linkname:hover, body.rw-inspect .req:hover, body.rw-inspect .seg:hover,
 body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset: 2px; }
-.iconbtn.on { color: var(--accent); border-color: var(--accent-line); background: var(--accent-soft); }
 /* Rulebook overlay rows */
 .rb-row { display: grid; grid-template-columns: 44px 200px 1fr; gap: 12px; align-items: center;
   padding: 9px 2px; border-bottom: 1px solid var(--line-soft); }
@@ -3102,20 +3002,6 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 /* NOTES = heading-only line, no panel box, no label (filled→top, empty→bottom) */
 .nsec { display: flex; align-items: center; gap: 9px; padding: 1px 2px; }
 .nsec .kv { flex: 1; }
-
-/* DAY TIMELINE — the rental window split into day cells; labels only first/last;
-   gate status + naked italic price·rate centered; time stacks above the end date */
-.timeline { position: relative; height: 50px; border-radius: 12px; border: 1px solid var(--line); display: flex; align-items: stretch; overflow: hidden; cursor: pointer; background: var(--panel-2); }
-.timeline .day { flex: 1; position: relative; border-right: 1px solid var(--line); }
-.timeline .day:last-child { border-right: none; }
-.timeline .day.past { background: var(--tint, var(--green-bg)); }   /* elapsed-tint follows the rental status */
-.tl-over { position: absolute; inset: 0; display: flex; align-items: center; padding: 0 11px; pointer-events: none; }
-.tl-over .d1, .tl-over .d2 { font-weight: 800; font-size: 12.5px; }
-.tl-over .d2 { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; }
-.tl-over .mid { position: absolute; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
-.tl-over .tm { color: var(--txt-2); font-size: 10.5px; font-weight: 600; }
-.tl-over .pill, .tl-over .rate { pointer-events: auto; }
-.tl-over .rate { font-size: 10px; font-weight: 700; font-style: italic; color: var(--txt-2); }
 
 /* YARD / TRANSPORT JOURNEYS — nodes + over-line content. White box = required
    video still owed · captured Start = green "On Rent" · End = yellow "Returned" ·
@@ -3519,7 +3405,6 @@ body { font-variant-numeric: tabular-nums; }
 /* ec-red: official flagging-red text treatment — --red halo bleeds into 65%-red+white fill, no hard seam. */
 .cr-name.ec-red,
 .rcc-uname.ec-red,
-.ur-name.ec-red,
 .catr-name.ec-red,
 .uc-name.ec-red,
 .rcc-bal.overdue,
@@ -3672,23 +3557,6 @@ body.is-phone .card[data-card="units"] .list { grid-template-columns: repeat(2, 
 .uc-slot .pill { width: 100%; font-size: 10px; padding: 0 8px; gap: 4px; letter-spacing: .1px; justify-content: center; align-items: center; }   /* icon + label ride together, centred as one group; NO overflow:hidden here (the label handles its own ellipsis) so nothing clips the glyphs */
 .uc-slot .pill svg { flex: 0 0 auto; }
 .uc-slot .pill .t { overflow: hidden; text-overflow: ellipsis; min-width: 0; line-height: 1.5; }   /* line-height ≥ glyph height so the ellipsis clip is horizontal-only — a tight 1.0 line sliced the letter bottoms. The line-box is flex-centred, so caps sit optically centred without a nudge. */
-.ur { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 8px 11px 8px 8px; border-right: 3px solid var(--ur-hl, var(--line)); }
-.ur-cat { flex: 0 0 auto; width: 22px; height: 22px; color: var(--txt-2); display: flex; align-items: center; justify-content: center; }
-.ur-cat svg { width: 19px; height: 19px; display: block; }
-.ur-id { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 1px 8px; justify-content: flex-end; }
-.ur-name { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
-.ur-sub { font-size: 11.5px; color: var(--txt-2); white-space: nowrap; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-/* two pill slots in a 2-column equal-width grid → every row's pills align to the same x-positions.
-   Must use a FIXED width (not min-width) — fr units in an auto-sized flex child resolve per-column,
-   producing unequal widths. A definite width makes 1fr = exactly half. */
-.ur-pills { flex: 0 0 196px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.ur-pill-slot { display: flex; align-items: center; justify-content: center; }
-.ur-pill-slot .pill { width: 100%; text-align: center; justify-content: center; overflow: hidden; }
-.ur-pill-slot .pill .t { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-@container (max-width: 340px) {
-  .ur-id { flex-direction: column; align-items: flex-start; gap: 1px; }
-  .ur-pills { grid-template-columns: 1fr; flex-basis: 90px; }
-}
 /* ── CATEGORY MINI-CARD (catr) — Jac 2026-06-25: the category as a vertical unit
    data-plate. The Categories .list lays these out as a grid — 3-across when the
    column is wide, folding to 2 (then 1) as it narrows (auto-fill / minmax). Each
@@ -3707,33 +3575,33 @@ body.is-phone .card[data-card="units"] .list { grid-template-columns: repeat(2, 
 .catr-cat { flex: 0 0 auto; width: 18px; height: 18px; color: var(--txt-2); display: flex; align-items: center; justify-content: center; }
 .catr-cat svg { width: 17px; height: 17px; display: block; }
 /* ── CATEGORY GLYPH HOVER MOTION (Jac, 2026-07-03; extended to unit mini-cards
-   2026-07-07) — hovering the unit row (.ur), the unit mini-card (.ucard), or the
+   2026-07-07) — hovering the unit mini-card (.ucard) or the
    category mini-card (.catr) nudges its category icon with a short, per-family CSS-only
    move (one crisp beat, no bounce/loop — same .12s control timing as the rest of the
    system). `mo-none` (the box/unmatched fallback) is deliberately inert. ── */
 .cat-glyph { display: inline-flex; transition: transform .12s cubic-bezier(.2,.7,.2,1), color .12s ease; }
-.ur:hover .mo-dig,     .ucard:hover .mo-dig,     .catr:hover .mo-dig     { transform: translateY(1.5px) rotate(-8deg); }
-.ur:hover .mo-chop,    .ucard:hover .mo-chop,    .catr:hover .mo-chop    { transform: rotate(-14deg); }
-.ur:hover .mo-spin,    .ucard:hover .mo-spin,    .catr:hover .mo-spin    { transform: rotate(80deg); }
-.ur:hover .mo-raise,   .ucard:hover .mo-raise,   .catr:hover .mo-raise   { transform: translateY(-1.5px) rotate(7deg); }
-.ur:hover .mo-snap,    .ucard:hover .mo-snap,    .catr:hover .mo-snap    { transform: scale(1.14); }
-.ur:hover .mo-press,   .ucard:hover .mo-press,   .catr:hover .mo-press   { transform: translateY(2px) scale(.94); }
-.ur:hover .mo-roll,    .ucard:hover .mo-roll,    .catr:hover .mo-roll    { transform: translateX(2px) rotate(14deg); }
-.ur:hover .mo-spark,   .ucard:hover .mo-spark,   .catr:hover .mo-spark   { transform: scale(1.16); }
-.ur:hover .mo-puff,    .ucard:hover .mo-puff,    .catr:hover .mo-puff    { transform: translateX(2px) scale(1.06); }
-.ur:hover .mo-drip,    .ucard:hover .mo-drip,    .catr:hover .mo-drip    { transform: translateY(2px) scale(.92); }
-.ur:hover .mo-slosh,   .ucard:hover .mo-slosh,   .catr:hover .mo-slosh   { transform: rotate(-9deg); }
-.ur:hover .mo-flicker, .ucard:hover .mo-flicker, .catr:hover .mo-flicker { transform: scale(1.1) rotate(-5deg); }
-.ur:hover .mo-pulse,   .ucard:hover .mo-pulse,   .catr:hover .mo-pulse   { transform: scale(1.12); }
-.ur:hover .mo-none,    .ucard:hover .mo-none,    .catr:hover .mo-none    { transform: none; }
+.ucard:hover .mo-dig,     .catr:hover .mo-dig     { transform: translateY(1.5px) rotate(-8deg); }
+.ucard:hover .mo-chop,    .catr:hover .mo-chop    { transform: rotate(-14deg); }
+.ucard:hover .mo-spin,    .catr:hover .mo-spin    { transform: rotate(80deg); }
+.ucard:hover .mo-raise,   .catr:hover .mo-raise   { transform: translateY(-1.5px) rotate(7deg); }
+.ucard:hover .mo-snap,    .catr:hover .mo-snap    { transform: scale(1.14); }
+.ucard:hover .mo-press,   .catr:hover .mo-press   { transform: translateY(2px) scale(.94); }
+.ucard:hover .mo-roll,    .catr:hover .mo-roll    { transform: translateX(2px) rotate(14deg); }
+.ucard:hover .mo-spark,   .catr:hover .mo-spark   { transform: scale(1.16); }
+.ucard:hover .mo-puff,    .catr:hover .mo-puff    { transform: translateX(2px) scale(1.06); }
+.ucard:hover .mo-drip,    .catr:hover .mo-drip    { transform: translateY(2px) scale(.92); }
+.ucard:hover .mo-slosh,   .catr:hover .mo-slosh   { transform: rotate(-9deg); }
+.ucard:hover .mo-flicker, .catr:hover .mo-flicker { transform: scale(1.1) rotate(-5deg); }
+.ucard:hover .mo-pulse,   .catr:hover .mo-pulse   { transform: scale(1.12); }
+.ucard:hover .mo-none,    .catr:hover .mo-none    { transform: none; }
 @media (prefers-reduced-motion: reduce) {
   .cat-glyph { transition: color .12s ease; }
-  .ur:hover .cat-glyph, .ucard:hover .cat-glyph, .catr:hover .cat-glyph { transform: none !important; }
+  .ucard:hover .cat-glyph, .catr:hover .cat-glyph { transform: none !important; }
 }
 
 /* ── ANIMATED CATEGORY GLYPHS (Jac, 2026-07-03) — the excavator / boom-lift / skid-steer
    families render CATEGORY_ANIM loops (icons-anim.js, converted from Jac's supplied
-   Lottie artwork). PAUSED at the rest pose until the parent row/card (.ur/.ucard/.catr)
+   Lottie artwork). PAUSED at the rest pose until the parent row/card (.ucard/.catr)
    is hovered (Jac, 2026-07-03: icons should NOT move until hovered, and never tint orange);
    currentColor strokes (.k2 = dimmed secondary); pivots work because the SVG nests
    translate(p) › animated group › translate(-a) at each Lottie anchor.
@@ -3763,7 +3631,6 @@ body.is-phone .card[data-card="units"] .list { grid-template-columns: repeat(2, 
 /* paused-until-hover MUST come after the animation shorthands above — the
    shorthand resets play-state to running, so declaration order is load-bearing. */
 .catanim [class*="bl-"], .catanim [class*="sk-"] { animation-play-state: paused; }
-.ur:hover .catanim [class*="bl-"], .ur:hover .catanim [class*="sk-"],
 .ucard:hover .catanim [class*="bl-"], .ucard:hover .catanim [class*="sk-"],
 .catr:hover .catanim [class*="bl-"], .catr:hover .catanim [class*="sk-"] { animation-play-state: running; }
 @media (prefers-reduced-motion: reduce) {
@@ -3941,6 +3808,7 @@ body.dragging .row.drop-ok { opacity: 1; }
   --steel-1:#1b222c; --steel-2:#0d1116;
   --rivet:#4a525e; --rivet-pit:#0b0f14;
   --tan:#c2925a; --tan-deep:#8a5a2b;
+  --rentals-stripe:#147a47;   /* deep green, deliberately darkened from --green/#34d399 (#26) — not tied to --green */
 }
 /* the yard floor — faint orange dawn-glow + a brushed diagonal mill texture */
 [data-theme="yard"] body {
@@ -3960,7 +3828,7 @@ body.dragging .row.drop-ok { opacity: 1; }
 }
 /* Each card type stamps its own hazard color, always paired with black. */
 [data-theme="yard"] .col > .card[data-card="customers"]  { --stripe: var(--blue,  #5b9dff); }
-[data-theme="yard"] .col > .card[data-card="rentals"]    { --stripe: #147a47; }   /* deep green (darkened from the bright #34d399 per #26) */
+[data-theme="yard"] .col > .card[data-card="rentals"]    { --stripe: var(--rentals-stripe); }   /* deep green (darkened from the bright #34d399 per #26) */
 [data-theme="yard"] .col > .card[data-card="units"]      { --stripe: var(--yellow,#f5c542); }
 [data-theme="yard"] .col > .card[data-card="categories"] { --stripe: var(--accent,#ff7a1a); }
 [data-theme="yard"] .col > .card[data-card="invoices"]   { --stripe: var(--red,   #ff4242); }
@@ -4024,6 +3892,7 @@ body.dragging .row.drop-ok { opacity: 1; }
   --steel-1:#1b222c; --steel-2:#0d1116;
   --rivet:#9fb6d6; --rivet-pit:#0b0f14;          /* the one tweak: rivets pick up the blue */
   --tan:#c2925a; --tan-deep:#8a5a2b;
+  --rentals-stripe:#147a47;   /* deep green, deliberately darkened from --green/#34d399 (#26) — not tied to --green */
 }
 [data-theme="bluedsteel"] body {                  /* the FLOOR = a dark version of the blued steel (Jac):
                                                      the Metal027 plate under a heavy dark wash + a soft blue dawn-glow */
@@ -4056,7 +3925,7 @@ body.dragging .row.drop-ok { opacity: 1; }
 }
 [data-theme="bluedsteel"] .row:hover { border-color: var(--accent-line); }
 [data-theme="bluedsteel"] .col > .card[data-card="customers"]  { --stripe: var(--blue,  #5b9dff); }
-[data-theme="bluedsteel"] .col > .card[data-card="rentals"]    { --stripe: #147a47; }
+[data-theme="bluedsteel"] .col > .card[data-card="rentals"]    { --stripe: var(--rentals-stripe); }
 [data-theme="bluedsteel"] .col > .card[data-card="units"]      { --stripe: var(--yellow,#f5c542); }
 [data-theme="bluedsteel"] .col > .card[data-card="categories"] { --stripe: var(--accent,#ff7a1a); }
 [data-theme="bluedsteel"] .col > .card[data-card="invoices"]   { --stripe: var(--red,   #ff4242); }
