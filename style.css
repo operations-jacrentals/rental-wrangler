@@ -651,8 +651,22 @@ select.lf-in { appearance: none; cursor: pointer; }
 .disp-arrow-dot { fill: var(--accent); }
 .disp-arrow-hit { pointer-events: stroke; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .js-disp-arrowpt { transition: none; } .js-disp-arrowpt.armed { transform: none; } }
-/* ── §2.3 OFFICE COCKPIT MAP (Phase 2 re-parents this into the Trips card) ──── */
-.dispm { position: absolute; inset: 0; }                                   /* the map is the whole pane */
+/* ── §2.1 TRIPS LIVE-MAP PANEL — the map singleton in a collapsible ~260px band at the
+   top of the card body; the trip list scrolls beneath it, the footer stays pinned. ──── */
+.card-body.cal-body { overflow: hidden; }                                  /* panel + footer pin; the list scrolls between them */
+.cal-body > .list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.cal-body > .list > * { flex: 0 0 auto; }                                  /* rows keep natural height — a height-constrained flex column would compress them before scrolling */
+.trips-map { position: relative; height: 260px; flex: 0 0 auto; border-bottom: 1px solid var(--line); }
+.dispm { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }   /* the map fills the panel; flex centers the pre-mount loading tag (the mounted map's own nodes are absolute, unaffected) */
+.trips-map .map-tag { position: static; max-width: 82%; text-align: center; line-height: 1.4; }
+/* MAP OFFLINE plate (spec §2.1) — the transport editor's .ph recipe at panel size:
+   faint hazard-stripe field, stamped label, one-line Geist hint. Never an empty pane. */
+.trips-map-ph { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 0 18px;
+  background: repeating-linear-gradient(135deg, rgba(245,197,66,.05) 0 13px, rgba(20,24,29,.5) 13px 26px), radial-gradient(circle at 50% 40%, rgba(255,122,26,.10), transparent 62%), var(--panel-2); }
+/* §2.2b Google Maps handoff — rides the panel (map or plate) when a trip is focused */
+.trips-gmaps { position: absolute; right: 8px; bottom: 8px; z-index: 4; display: inline-flex; align-items: center; background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 4px 11px; box-shadow: var(--chip-shadow); }
+.trips-gmaps .linkname { font-size: 11.5px; white-space: nowrap; display: inline-flex; align-items: center; }
+.is-phone .trips-gmaps .linkname { min-height: 36px; }   /* §M-touch: the ANCHOR is the tap target (the chip's padding tops it up past 44) */
 
 /* ── Trips card — day-grouped trip rows (spec 2026-07-09 §2.2 + §2.2b, Phase 1/1b) ──
    Rows route through the universal .row/.row-1/.row-2 template (APP-14); only the

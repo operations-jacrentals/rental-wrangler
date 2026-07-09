@@ -7560,21 +7560,43 @@ function memberCardEl(member, session) {
   if (SHOP_TYPES.includes(member)) return shopCardEl({ id: 'shop', title: MEMBER_TITLE[member] }, session, member);
   return cardEl(GRID_CARD_BY_ID[member], session);
 }
-/* Trips card body (spec 2026-07-09 §2.2, Phase 1) — a native list card: a mini-search
-   listbar + day-grouped trip rows, same skeleton as every other card (Units/Rentals/…).
-   'calendar' is card-stateless (no session.cards.calendar — Phase 0), so this hand-rolls
-   the pieces listView()/cardEl() normally wire up, using state.calSearch for the search
-   text instead of a per-card cs. No title bar — the column tab already says "Trips". */
+/* Trips card body (spec 2026-07-09 §2.1/§2.2, Phase 1/2) — a native list card: a
+   mini-search listbar (+ the map toggle in the graph-button slot) over a collapsible
+   live-map panel + day-grouped trip rows. 'calendar' is card-stateless (no
+   session.cards.calendar — Phase 0), so this hand-rolls the pieces listView()/cardEl()
+   normally wire up, using state.calSearch for the search text instead of a per-card cs.
+   No title bar — the column tab already says "Trips". */
 function calendarCardEl(session) {
   const node = el('div', 'card' + (state.searchMode ? ' search-glow' : ''));
   node.dataset.card = 'calendar';
   const body = el('div', 'card-body cal-body');
   const q = (state.calSearch || '').trim();
+  const mapOpen = tripsMapOpen();
   const bar = el('div', 'listbar');
-  bar.innerHTML = `<div class="mini-searchwrap${q ? ' has-query' : ''}">
+  bar.innerHTML = `
+    <button class="bv-btn js-tripsmap${mapOpen ? ' on' : ''}" data-tip="${mapOpen ? 'Hide the live map' : 'Live map'}">${I.graph}</button>
+    <div class="mini-searchwrap${q ? ' has-query' : ''}">
     <input class="mini-search" placeholder="Search trips…" value="${esc(state.calSearch || '')}" data-card="calendar" />
   </div>`;
   body.appendChild(bar);
+  // §2.1 the live-map panel — open by default everywhere, remembered per device. The map
+  // singleton mounts into .js-dispmount after render (mountDispatchMap, the render pipeline
+  // already calls it). Offline (#local), or a failed Maps load → the stamped MAP OFFLINE
+  // plate (the transport editor's .ph pattern) — never an empty black pane (spec §2.1).
+  if (mapOpen) {
+    const panel = el('div', 'trips-map');
+    const live = !isLocalDemo() && !_dispMapFailed;
+    // §2.2b handoff: a focused trip puts "Open in Google Maps" on the panel — directions to
+    // the pin (lat,lng), or the address string while unpinned. Works from the plate too:
+    // when OUR map is down, the handoff to the real Google Maps app still drives the day.
+    const ft = state.dispFocusId ? tripsFor().find((x) => x.id === state.dispFocusId) : null;
+    const dest = ft ? ((ft.pin && Number.isFinite(ft.pin.lat)) ? `${ft.pin.lat},${ft.pin.lng}` : (ft.addr ? encodeURIComponent(ft.addr) : '')) : '';
+    const gmaps = dest ? `<span class="trips-gmaps">${linkName('Open in Google Maps', { href: `https://www.google.com/maps/dir/?api=1&destination=${dest}`, ext: true })}</span>` : '';
+    panel.innerHTML = live
+      ? `<div class="dispm js-dispmount" data-day="${esc(state.dispatchDay || TODAY_ISO)}">${mapsReady() ? '' : '<span class="map-spin" aria-hidden="true"></span><span class="map-tag">Loading dispatch map…</span>'}</div>${gmaps}`
+      : `<div class="trips-map-ph"><span class="map-pin" aria-hidden="true">${ICO_PIN}</span><span class="map-tag stamp" style="font-size:11px;color:var(--accent)">Map offline</span><span class="map-sub">The run below still drives the day.</span></div>${gmaps}`;
+    body.appendChild(panel);
+  }
   let trips = tripsFor();
   if (q) trips = trips.filter((t) => tripMatches(t, q));
   trips = [...trips].sort(tripSort);
@@ -9219,14 +9241,15 @@ function dispatchFocusStop(stopId) {
   document.querySelectorAll('.row[data-card="calendar"].trip-focus').forEach((n) => n.classList.remove('trip-focus'));
   document.querySelectorAll(`.row[data-card="calendar"][data-rec="${esc1}"]`).forEach((n) => n.classList.add('trip-focus'));
 }
-/* §2.2b — destination (town) tap: jump the inline live map to this trip. Flips to the
-   trip's own day (the map + focus lookups run per-day), rings the row, and pans the map
-   when one is mounted. No map (offline/#local, or the panel not shipped/collapsed) →
-   the row ring is the whole (quiet) response — never an error path. Phase 2 opens the
-   collapsed map panel from here. */
+/* §2.2b — destination (town) tap: jump the inline live map to this trip. Opens the
+   map panel if collapsed (§2.1), flips to the trip's own day (the map + focus lookups
+   run per-day), rings the row, and pans the map once mounted. Offline/#local (the
+   plate, no live map) → the row ring + the panel's Google Maps handoff are the whole
+   (quiet) response — never an error path. */
 function tripTownGo(stopId, day) {
   if (day) state.dispatchDay = day;
   state.dispFocusId = stopId;
+  if (!tripsMapOpen()) { tripsMapSetOpen(true); _dispMapFailed = false; }   // a collapsed panel opens (and retries a failed load)
   render();
   dispatchFocusStop(stopId);
 }
@@ -9237,12 +9260,18 @@ function tripTownGo(stopId, day) {
 /* §2.3 OFFICE COCKPIT MAP. The Map is a SINGLETON (_dispMapEl) RE-PARENTED into the
    fresh mount point each render (render() rebuilds the DOM) so it never reloads/flickers;
    only pins/route/truck refresh. Stops without a stored sitePin are geocoded via Places
-   (the key has Places, not Geocoding) and cached. */
+   (the key has Places, not Geocoding) and cached. Phase 2 (spec §2.1): the map rides a
+   collapsible ~260px panel at the top of the Trips card — open by default everywhere,
+   remembered per device; offline/#local shows the stamped MAP OFFLINE plate instead. */
+const tripsMapOpen = () => { try { const v = localStorage.getItem('jactec.tripsMap'); return v == null ? true : v === '1'; } catch (e) { return true; } };
+const tripsMapSetOpen = (on) => { try { localStorage.setItem('jactec.tripsMap', on ? '1' : '0'); } catch (e) {} };
+const isLocalDemo = () => (location.hash || '').toLowerCase().includes('local');
+let _dispMapFailed = false;   // a genuine Maps load failure → the panel flips to the plate (re-opening the panel retries)
 let _dispMap = null, _dispView = null, _dispMarkers = [], _dispRoute = null, _dispGeo = {}, _dispGeoPending = {};
 function mountDispatchMap() {
   const mount = document.querySelector('.js-dispmount'); if (!mount) return;
   if (mount.querySelector('.gm-style')) return;                 // already mounted in this DOM
-  if (!mapsReady()) { loadGoogleMaps().then((g) => { if (g) render(); }); return; }
+  if (!mapsReady()) { loadGoogleMaps().then((g) => { if (!g) _dispMapFailed = true; render(); }); return; }   // failure → re-render swaps the loading tag for the MAP OFFLINE plate
   // render() rebuilds the DOM, so mount fresh into the new node each render (the proven
   // transport-editor pattern); remember the user's pan/zoom so a re-render never resets it.
   const first = !_dispView;
@@ -14465,6 +14494,8 @@ function onClick(e) {
   if (closest('.js-disp-today')) { e.stopPropagation(); state.dispatchDay = TODAY_ISO; return render(); }
   // §2.2b Trips row — destination (town) tap: jump the live map to this trip
   if (closest('.js-trip-town')) { e.stopPropagation(); const b = closest('.js-trip-town'); return tripTownGo(b.dataset.id, b.dataset.day); }
+  // §2.1 Trips — map panel toggle (the graph-button slot); re-opening retries a failed Maps load
+  if (closest('.js-tripsmap')) { e.stopPropagation(); const on = !tripsMapOpen(); tripsMapSetOpen(on); if (on) _dispMapFailed = false; return render(); }
   // §2.3 free-form route arrows — these win over the stop-open below (the icon lives inside the row)
   if (closest('.js-disp-stop') && !closest('.js-disp-time') && !closest('.disp-grip') && !closest('.js-site-go')) { e.stopPropagation(); return anchorRecord('rentals', closest('.js-disp-stop').dataset.rec); }
   if (closest('.js-disp-tok') && !closest('.dt-time') && !closest('.dt-grip') && !closest('.js-site-go') && !closest('.pill')) { e.stopPropagation(); return dispatchFocusStop(closest('.js-disp-tok').dataset.id); }   // §2.3 cockpit: tap a rail stop → focus it on the map (the customer pill opens the rental)
