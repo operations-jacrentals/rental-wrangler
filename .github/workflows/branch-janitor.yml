@@ -55,8 +55,11 @@ jobs:
       - name: Prune merged task branches (never main/staging/area/*)
         run: |
           set -euo pipefail
-          gh pr list -R "$REPO" --state merged --limit 1000 --json headRefName -q '.[].headRefName' | sort -u > merged.txt
-          gh pr list -R "$REPO" --state open   --limit 1000 --json headRefName -q '.[].headRefName' | sort -u > open.txt
+          # #552 audit item 18: --paginate (not a --limit cap) so the "never delete a branch
+          # with an open PR" guard can't be defeated by a stale/reused branch name falling
+          # outside a fixed-size window once the repo passes 1000 PRs.
+          gh pr list -R "$REPO" --state merged --paginate --json headRefName -q '.[].headRefName' | sort -u > merged.txt
+          gh pr list -R "$REPO" --state open   --paginate --json headRefName -q '.[].headRefName' | sort -u > open.txt
           gh api "repos/$REPO/branches?per_page=100" --paginate -q '.[].name' | sort -u > live.txt
           echo "live=$(wc -l < live.txt) merged-PRs=$(wc -l < merged.txt) open-PRs=$(wc -l < open.txt)"
           deleted=0
@@ -138,7 +141,7 @@ jobs:
             wrangler/card-error-surfacing
           "
           # runtime safety nets, independent of the embedded list
-          gh pr list -R "$REPO" --state open --limit 1000 --json headRefName -q '.[].headRefName' | sort -u > open.txt
+          gh pr list -R "$REPO" --state open --paginate --json headRefName -q '.[].headRefName' | sort -u > open.txt
           gh api "repos/$REPO/branches?per_page=100" --paginate -q '.[].name' | sort -u > live.txt
           mode="DRY-RUN"; [ "${EXECUTE:-false}" = "true" ] && mode="DELETE"
           echo "mode=$mode  (open-PRs=$(wc -l < open.txt), live branches=$(wc -l < live.txt))"

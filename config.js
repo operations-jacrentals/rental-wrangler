@@ -292,19 +292,6 @@ export const FLAG_META = {
 /** Severity rank for sorting/highest-wins. Higher = more severe. */
 export const FLAG_SEVERITY_RANK = { red: 3, yellow: 2, green: 1 };
 
-/* ── Legacy → canonical import map (SPEC §8 / §13; used by the import layer) ─ */
-export const LEGACY_MAP = {
-  rentalStatus: { 'Quoting': 'Quote', 'Return': 'Returned', 'End': 'End Rent', 'Refunded': 'Cancelled' },
-  transportType: { '🚚🔄': 'Round-Trip', '🚚🔻': 'Delivery', '🚚🔼': 'Recovery' },
-  woPhase: {
-    'NEW': 'Part Needed?', 'Done!!': 'Complete', '🙏🔩': 'Part Needed', '🚫🔩': 'No Part Needed',
-    '🔩✅📬': 'Part is Local', '🔩🔄📬': 'Part Ordered', '@Retailer': 'Part is Local', '@Dealer': 'Part is Local',
-    'Hrs': 'Complete',
-  },
-  marker: { 'NCP': 'Ready', '?': 'Not Ready', '❌': 'Failed', '': 'Ready' },
-  store: { 'SUL': 'Sulphur', 'BMT': 'Sulphur', 'Pick One': 'Sulphur' },
-};
-
 /* ── Transport-on-status: when does the truck icon show? (SPEC §8) ────────── */
 const TRUCK_STATUSES = new Set(['Tomorrow', 'Today', 'Reserved', 'On Rent']);
 export function showsTruck(rentalStatus, transportType) {

@@ -26,6 +26,13 @@ the task. To work one: `git checkout <branch>`, refresh it from its area
 ## Notes
 - **#4 Memberships** is parked but unspecified — needs a concrete task (state
   machine? member pricing gating? renewals / Paid-Until? unlimited transport?).
+- **Timeline Selector** (app.js §13.4, `graphViewsFor`/`openGvWinMenu`) — a per-
+  chart time-window filter (7/30/90/180/360 days, or All time) that's fully
+  built but never wired to any graph view (`v.timed` is never set `true`).
+  Kept in the code intentionally (Jac, 2026-07-09 pre-promotion audit follow-
+  up: "I have a lot in mind for this. Leave it in the UI but add a task for
+  later completion.") — needs a concrete spec for which graph(s) should get
+  it before it's wired up.
 - **`area/comms-notifications`** is a new area created off `staging` for #9 + #11
   (they share send plumbing — templates, triggers, delivery status).
 - Safety backup of the pre-reset `staging` tip lives at branch

@@ -5826,7 +5826,11 @@ const CARD_COLUMNS = {
     C('price', 'Price', 'money', (r) => rentalPrice(r)?.price ?? null),
     C('status', 'Status', 'badge', (r) => rentalDisplayStatus(r), { set: 'rentalStatus' }),
     C('window', 'Window', 'date', (r) => r.startDate || '', { cell: (r) => (r.startDate || r.endDate) ? esc(fmtWindow(r.startDate, r.endDate)) : '—' }),
-    C('invoice', 'Invoice', 'badge', (r) => { const inv = r.invoiceId && IDX.invoice.get(r.invoiceId); return inv ? invoiceTotals(inv).status : ''; }, { set: 'invoiceStatus' }),
+    // #552 audit item 8: rentalActiveInvoice() reads the LATEST §28cap chunk (same
+    // convention billWOToInvoice/extension-billing already use), not just r.invoiceId
+    // (the first chunk) — a long rental's badge no longer goes stale once a
+    // continuation invoice is created.
+    C('invoice', 'Invoice', 'badge', (r) => { const inv = rentalActiveInvoice(r); return inv ? invoiceTotals(inv).status : ''; }, { set: 'invoiceStatus' }),
   ],
   customers: [
     C('name', 'Customer', 'text', (c) => c.name),
@@ -6466,12 +6470,21 @@ function refundLines(inv) {
 /* Does this rental's invoice line(s) for a unit carry a refund? Drives the cross-card
    strikethrough on the rental (Jac 2026-06-23) — a refunded unit/transport shows on
    the rental itself, not only inside the invoice. unitId null = the whole rental. */
+// #552 audit item 8: walks the WHOLE §28cap chunk series (rentalInvoices), not just
+// r.invoiceId (the first chunk) — a refund on a continuation invoice was previously
+// invisible here. Falls back to r.invoiceId directly if the series lookup comes up
+// empty, mirroring rentalActiveInvoice()'s same safety net.
 function rentalLineRefund(r, unitId) {
-  if (!r || !r.invoiceId) return { refunded: false, fully: false };
-  const inv = IDX.invoice.get(r.invoiceId); if (!inv) return { refunded: false, fully: false };
-  const mine = (inv.lineItems || []).filter((li) => li.ref === r.rentalId && (unitId == null || li.unitId === unitId) && (li.kind === 'rental' || li.kind === 'transport'));
+  if (!r) return { refunded: false, fully: false };
+  const invs = rentalInvoices(r);
+  const list = invs.length ? invs : (r.invoiceId ? [IDX.invoice.get(r.invoiceId)].filter(Boolean) : []);
+  if (!list.length) return { refunded: false, fully: false };
+  const mine = [];
+  list.forEach((inv) => (inv.lineItems || []).forEach((li) => {
+    if (li.ref === r.rentalId && (unitId == null || li.unitId === unitId) && (li.kind === 'rental' || li.kind === 'transport')) mine.push([inv, li]);
+  }));
   if (!mine.length) return { refunded: false, fully: false };
-  return { refunded: mine.some((li) => lineRefunded(inv, li)), fully: mine.every((li) => lineFullyRefunded(inv, li)) };
+  return { refunded: mine.some(([inv, li]) => lineRefunded(inv, li)), fully: mine.every(([inv, li]) => lineFullyRefunded(inv, li)) };
 }
 /* Jac ─ Site ─ Jac transport journey under an invoice rental line. +Log Delivery /
    +Log Recovery ARE the same captures as the yard tool's +Start/+End (one event,
@@ -8212,7 +8225,14 @@ function legacyKpiRaw(roleId) {
   const f = fleetInsp();
   const c = (v) => ({ v, unit: '' }), usd = (v) => ({ v, unit: '$' });
   if (roleId === 'mechanic') return [c(f.Ready + f['Not Ready']), c(W.filter((w) => w.phase === 'Complete').length), c(W.filter((w) => (w.lineItems || []).some((li) => (li.cost || 0) > 0 || (li.hours || 0) > 0) && w.billCustomer === 'Yes').length)];
-  if (roleId === 'mtech') return [c(R.length - R.filter((r) => r.fieldCall).length), c(f.Ready), c(N.filter((n) => !n.woId).length)];
+  if (roleId === 'mtech') {
+    // #552 audit item 9: WO Rate ring's raw value now mirrors kpiPct's exact numerator
+    // (30-day window, inspections WITH a woId) — was counting all-time inspections
+    // WITHOUT one, moving opposite the percentage and popping the celebration on the
+    // wrong events.
+    const cutoff = new Date(TODAY.getTime() - 30 * 86400000).toISOString().slice(0, 10);
+    return [c(R.length - R.filter((r) => r.fieldCall).length), c(f.Ready), c(N.filter((n) => (n.date || '') >= cutoff && n.woId).length)];
+  }
   if (roleId === 'driver') return [c(R.filter((r) => ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)).length), c(N.filter((n) => n.wash === 'Yes').length), c(drivingScoreValue() || 0)];
   if (roleId === 'office') return [usd(INV.reduce((a, i) => a + invoiceTotals(i).paid - (Number(i.refundedAmount) || 0), 0)), c(R.filter((r) => ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)).length), c(0)];
   if (roleId === 'sales') {
@@ -8315,13 +8335,11 @@ function headerEl() {
 }
 /* Theme cycle: dark → yard → light → dark. The bottom-bar button shows the icon
    + tooltip of the theme you'll switch TO next (matching the old sun/moon convention). */
+// #552 audit follow-up (2026-07-09): dark/ranch/light removed — dormant, unreachable
+// via the live toggle (Jac: "we only have one theme... the others can be removed").
 const THEME_NEXT = {
   yard:       { next: 'bluedsteel', icon: I.bluesteel, tip: 'Blued Steel' },
   bluedsteel: { next: 'yard',       icon: I.hardhat,   tip: 'Yard mode' },
-  // dormant fallbacks — the live toggle is the Yard ⇄ Blued Steel flip; any stale stored theme recovers to Yard
-  dark:  { next: 'yard', icon: I.hardhat, tip: 'Yard mode' },
-  ranch: { next: 'yard', icon: I.hardhat, tip: 'Yard mode' },
-  light: { next: 'yard', icon: I.hardhat, tip: 'Yard mode' },
 };
 /** The action toolbar — pinned to the LEFT of the bottom comms band (the
  *  conversation rail fills the middle, bell + inbox sit at the right). On phones
@@ -14233,11 +14251,14 @@ let dragLayer = null, dragArc = null, chatDropPad = null, zipZones = null, zipDw
    hard money/safety gates live in the §16 mutations and re-fire on drop. */
 const DROP_MATRIX = {
   units: {
-    rentals: (u, r) => u.fleetStatus === 'Active' && r.unitId !== u.unitId,                       // §9 — non-Active units aren't rentable
+    // #552 audit item 11: rentalHasUnit() scans the WHOLE r.units[] (not just the
+    // legacy-primary r.unitId), so a non-primary unit already linked to a multi-unit
+    // rental no longer visually lights up as a valid drop target.
+    rentals: (u, r) => u.fleetStatus === 'Active' && !rentalHasUnit(r, u.unitId),                 // §9 — non-Active units aren't rentable
     invoices: (u, i) => !i.locked && !!unbilledOpenWOForUnit(u.unitId),                           // §7.6 — needs a billable open WO
   },
   rentals: {
-    units: (r, u) => u.fleetStatus === 'Active' && r.unitId !== u.unitId,
+    units: (r, u) => u.fleetStatus === 'Active' && !rentalHasUnit(r, u.unitId),
     invoices: (r, i) => !i.locked && !r.invoiceId && (!i.customerId || !r.customerId || i.customerId === r.customerId),   // §7.5 — one invoice per rental + customer scoping
     customers: (r, c) => r.customerId !== c.customerId && !/Blacklist/i.test(c.accountType || ''),                        // §9 blacklist
   },
@@ -15119,7 +15140,7 @@ function onClick(e) {
   if (closest('.js-ring')) return openOverlay({ kind: 'role', role: closest('.js-ring').dataset.role });
   if (closest('.js-roadmap')) return openOverlay({ kind: 'roadmap' });
   if (closest('.js-close')) return closeOverlay();
-  if (closest('.js-theme')) { state.theme = (THEME_NEXT[state.theme] || THEME_NEXT.dark).next; try { localStorage.setItem('jactec.theme', state.theme); } catch (e) {} if (state.overlay && state.overlay.kind !== 'addCard') renderOverlay(); render(); return; }
+  if (closest('.js-theme')) { state.theme = (THEME_NEXT[state.theme] || THEME_NEXT.yard).next; try { localStorage.setItem('jactec.theme', state.theme); } catch (e) {} if (state.overlay && state.overlay.kind !== 'addCard') renderOverlay(); render(); return; }
   if (closest('.js-qr')) return shareSession();
   if (closest('.js-previews') || closest('.js-roweye')) { e.stopPropagation(); state.previewsOn = !state.previewsOn; if (!state.previewsOn) hideHoverPreview(); try { localStorage.setItem('jactec.previewsOff', state.previewsOn ? '0' : '1'); } catch (e) {} toast(state.previewsOn ? 'Hover previews on.' : 'Hover previews off — every eye runs red.'); return render(); }
   if (closest('.js-hotkeys')) return openOverlay({ kind: 'hotkeys' });

@@ -1,184 +1,115 @@
-# Pre-promotion audit — parked findings (2026-07-09)
+# Pre-promotion audit — findings tracker (2026-07-09)
 
-Source: 19-agent adversarial line-by-line audit of `staging` (branch `wrangler-fix/pr552-batch`,
-content-identical to `origin/staging`), run before PR #552's staging→main promotion per Jac's
-explicit "before, not after" instruction. 54 findings confirmed after verification (0 critical /
-7 high / 20 medium / 27 low). 23 were mechanical/zero-risk and fixed in PR #554.
+Source: 19-agent adversarial line-by-line audit of `staging` before PR #552's promotion to
+`main`. 54 findings confirmed after verification (0 critical / 7 high / 20 medium / 27 low).
 
-**UPDATE (same day):** all 7 HIGH items below were then also resolved — Jac chose to work
-through them one at a time via popup rather than leave them parked — and shipped in PR #556.
-Item 17 (branch-janitor's `backup/*` guard) was actually part of the #554 batch, cross-referenced
-here only because item 23 is related. Both are left in place below, marked done, for the record.
-**21 MEDIUM/LOW items remain genuinely parked** — those still need a judgment call, touch
-money/auth semantics lightly enough not to be urgent, or need more investigation than a
-pre-promotion pass should absorb.
+**Status as of end-of-day 2026-07-09: 51 of 54 resolved.** 23 mechanical/zero-risk fixes shipped
+in PR #554. The 7 HIGH items shipped in PR #556 (Jac worked through each via popup rather than
+leave them parked). The remaining 21 MEDIUM/LOW items were then *also* worked through
+("let's fix all of them, go!") — all but 3 are now resolved too. Items 16, 20, and 21 below
+remain genuinely open (16 was attempted and reverted — see its entry for why).
 
-Legend: **file:line** — one-line verdict. Full evidence trail is in the audit transcript if needed.
+Legend: **file:line** — one-line verdict.
 
 ---
 
-## HIGH — money / auth / security (7) — ✅ ALL FIXED, shipped in PR #556
+## ✅ RESOLVED — HIGH (7, shipped PR #556)
 
-1. **app.js:1662, 1673 (`setTransportType`, `armTransportNode`)** — Transport-type changes reprice
-   an invoice's transport line (via `syncTransportLine`), and the dedicated editor (`openTransportEdit`)
-   explicitly gates this behind `canMoney()` ("a site/leg edit reprices transport — money tier, whole
-   edit"). But the segmented-control (`.js-ttype`) and route-rail (`.js-tnode`) controls call
-   `setTransportType`/`armTransportNode` directly with **no** role check — a mechanic/driver-tier
-   login (both legitimately view the rental detail for dispatch) can reprice transport. Needs a call:
-   add `canMoney()` to these two paths, or decide the money-repricing action itself should be
-   restricted differently (e.g. require confirmation, or split "which stops" from "what it costs").
-
-2. **app.js:12817 (`wrValidatePlan`)** — The `update` branch enforces the Office/Admin money-tier gate
-   for any `WR_MONEY_FIELDS` field; the `create` branch has no equivalent check. Mr. Wrangler (the AI)
-   could create a category or expense with attacker-influenced rate/amount fields regardless of the
-   requesting role. Needs the same gate added to `create`, but worth a careful pass over the whole
-   Acts chapter (APP-28) in case other actions have the same update-gated/create-ungated asymmetry.
-
-3. **app.js:18304 (WO header phase-pill dropdown)** — Can jump a work order straight to `Complete`
-   with no confirmation, which directly violates the CLAUDE.md rule "changing a WO part/task line to
-   Complete must NOT complete the work order — only the blue Complete WO button does." This is a
-   documented invariant being broken in a live control; recommend prioritizing this one first among
-   the parked items even though it needs UI/flow judgment (block the dropdown from offering
-   `Complete`, or intercept and redirect to the real Complete-WO flow).
-
-4. **app.js:17359 (`openPayInvoice`/`chargeInvoiceFlow`/`refundInvoiceFlow`/`recordManualPayment`)** —
-   Missing the defense-in-depth `canMoney()` check that every sibling money action in the same click
-   dispatcher has inline. Likely low exploitability if the entry points are themselves gated elsewhere,
-   but worth confirming and closing the gap explicitly rather than relying on gating upstream.
-
-5. **app.js:18918 (`billWOToInvoice`)** — The quick "Bill" button on a WO card can add a line to a
-   pricing-locked invoice, bypassing the §7.5 lock gate enforced everywhere else. Money-integrity bug;
-   needs the same lock check every other billing path uses.
-
-6. **ci/check-design-md.mjs:71** — The `components:` block parser only recognizes a single-line
-   component definition; a multi-line entry is silently dropped from validation with no error/warning.
-   This is a CI-gate correctness bug (the gate whose job is to keep `DESIGN.md` honest can silently
-   skip real content) rather than a live-app risk — still worth a fix, lower urgency than 1-5.
-
-7. **`.github/workflows/wrangler-fix.yml:67`** — The autonomous Wrangler-fix agent's prompt embeds
-   `github.event.issue.title`/`.body` verbatim (confirmed: only in the `prompt:` string, never in a
-   `run:` shell step — no direct shell-injection path, see item 48 below). But the audit flagged a
-   concrete secret-exfiltration consequence worth your read: with `--allowedTools Bash` and a PAT in
-   `GH_TOKEN`, a maliciously crafted issue body could attempt to instruct the agent to read/leak the
-   PAT or API key via a crafted PR/comment. The existing mitigations (CI-gated auto-merge, "never
-   weaken money/card/auth" instruction, STOP-and-ask-Jac on ambiguity) are real but don't specifically
-   address prompt-injection-driven secret exfiltration. Worth a design pass if/when this workflow is
-   switched on for real (currently inert pending secrets).
+1. **Transport-type money gate** (app.js `setTransportType`/`armTransportNode`) — now requires
+   `canMoney()`, matching the address editor's existing gate.
+2. **Wrangler create-gate** (`wrValidatePlan`) — `create` ops now strip money fields below money
+   tier, same as `update` already did.
+3. **WO Complete/Cancel redesign** — the header status pill is now a read-only derived display
+   (`woBottleneck`), not a dropdown; a Cancel gate was added to line items (blocked if the line
+   still carries cost).
+4. **Payment-flow defense-in-depth** — `openPayInvoice`/`chargeInvoiceFlow`/`refundInvoiceFlow`/
+   `recordManualPayment`(`postManualPayment`) all now re-check `canMoney()` internally.
+5. **`billWOToInvoice` rewrite** — bills to the invoice carrying the rental that needed the WO
+   specifically, falls through to a fresh invoice if that one's locked/paid.
+6. **`check-design-md.mjs` fail-loud fix** — a wrapped component spec now hard-errors instead of
+   silently escaping validation.
+7. **`wrangler-fix.yml` prompt-hardening** — untrusted-data framing + standing no-secrets
+   instruction added. Exploitability checked: repo is public, but the trigger label can only be
+   attached by an existing collaborator; the in-app reporter requires a human "Submit new issue"
+   click, never auto-files.
 
 ---
 
-## MEDIUM (13)
+## ✅ RESOLVED — MEDIUM/LOW (shipped same day, 2026-07-09, no PR # yet at time of writing)
 
-8. **app.js:6472 (`rentalLineRefund`)** + **app.js:5830 (rentals card "Invoice" column)** — Same root
-   cause, bundle together: both only look at `r.invoiceId` (the rental's *first* §28-cap chunk
-   invoice), so a refund or status change on a continuation invoice (chunk #2+) is invisible to the
-   refund UI and the Invoice column/footer counts. The fix shape already exists in the codebase
-   (`rentalInvoices(r)` walks the whole series, already used a few lines away in the same renderer) —
-   this is a real gap in the r4 chunk-billing area, worth doing as one focused fix.
-
-9. **app.js:8217 (`legacyKpiRaw`, mtech "WO Rate" ring)** — The raw/gamification value moves opposite
-   to the percentage it's supposed to mirror (counts all-time inspections *without* a WO instead of
-   30-day inspections *with* one), so the score-pop celebration fires on the wrong events. Cosmetic/
-   gamification only, but a real inversion bug — needs the raw computation's windowing to match the
-   percentage computation's windowing.
-
-10. **app.js:9688 (§13.4 Timeline Selector)** — Confirmed permanently unreachable: `v.timed` is never
-    set `true` anywhere, so this whole window-picker feature (button, menu, handlers, ~160 lines) can
-    never render. Product decision, not a bug fix: either finish wiring it or delete it as dead UI.
-
-11. **app.js:14230 (`DROP_MATRIX` units↔rentals validators)** — Uses the legacy single-unit `r.unitId`
-    instead of checking all of `r.units[]`, so a non-primary unit already linked to a multi-unit rental
-    still visually lights up as a valid drag-drop target (the real link function still blocks the actual
-    drop with a toast, so no data corruption — just a misleading visual).
-
-12. **app.js:18321 (`setWoLinePhase`)** — Derives the WO's displayed phase from whichever open line
-    happens to be *last* in array order, not the worst-severity bottleneck (`woBottleneck()` elsewhere
-    does this correctly via `WO_SEV` sort). Can show a misleadingly mild status on the WO header. Same
-    subsystem as item 3 (WO phase) — consider fixing together.
-
-13. **config.js:295 (`LEGACY_MAP`)** — Confirmed zero consumers anywhere in the frontend. Per the
-    project's own dead-code-report caveat, string-dispatch/import-script usage can hide a real
-    reference — cross-check against `tools/import-real-data.ps1` before deleting; this is exactly the
-    class of "looks dead statically, might be load-bearing for CSV import" case that needs a human
-    check rather than an automated one.
-
-14. **ci/check-design-md.mjs:130** — The drift guard downgrades to an advisory `WARN` (not a build-
-    failing `ERR`) when a mapped `style.css :root` variable can't be found at all — arguably the most
-    common real-world drift case (a renamed/removed token) escapes the gate whose entire job is to
-    catch exactly that. All 24 currently-mapped vars happen to still resolve, so this hasn't bitten yet.
-
-15. **ci/logic-test.mjs:1132 and :654** — Two dead assertions (never execute due to fixture state):
-    the "PO on file unblocks On Rent" rental-rule check, and the sale-price engine's "cost basis"
-    regression check. Both were empirically confirmed dead (instrumented + run through the real
-    Playwright harness). This means two money/pricing code paths have zero regression coverage despite
-    a passing-green test file — worth fixing the fixtures so these actually exercise the intended path.
-
-16. **tools/gen-code-map.mjs:88 and tools/dead-code-scan.mjs:59** — Both banner-parsers pair up
-    chapter-boundary rule-lines by flat array position with no proximity/validity check, contradicting
-    `gen-code-map.mjs`'s own docstring ("a banner is a cluster of rule lines within 3 lines of each
-    other"). A stray 6+-`═` line anywhere in the codebase would silently desync chapter titles/ranges
-    in the generated docs, with `--check` unable to catch it (it only checks the desynced *output* is
-    self-consistent, not that the desync happened). Tooling-only, no live-app impact, but worth
-    hardening since these generators are trusted for navigation.
-
-17. **`.github/workflows/branch-janitor.yml:66`** — ✅ *fixed in PR #554* — listed here only because
-    the sibling item below (23) is related and still parked.
-
-18. **docs/handoffs/perf-report-backend.gs:31** — Writes client-controlled strings (build/device/role)
-    straight into Sheet cells with no formula-injection sanitization (no leading-apostrophe guard
-    against a value starting with `=`/`+`/`-`/`@`). This is a *reference snippet*, not live code — only
-    matters if/when re-pasted to the real backend — but worth fixing the tracked snippet so the next
-    paste-deploy doesn't carry the gap forward.
-
-19. **docs/handoffs/membership-billing-additions.gs:14** — Still shows the dispatch snippet gating on
-    the superseded name-keyed `MONEY_ROLES` map rather than the tier-based `roleMoneyOk_` that
-    `role-tiers-backend.gs` says replaced it. Same class as item 26 below (cash-payment snippet). Both
-    are reference-doc staleness, not live-backend bugs (assuming the live migration already happened),
-    but risk being pasted back verbatim by a future session that pattern-matches on the wrong file.
+8. **`rentalLineRefund` + rentals "Invoice" column** (app.js) — both now walk the whole §28cap
+   chunk series (`rentalInvoices`/`rentalActiveInvoice`) instead of only the first chunk.
+9. **mtech "WO Rate" gamification ring** (`legacyKpiRaw`) — raw value now uses the same 30-day
+   window + same-direction count as the percentage it's supposed to mirror.
+11. **`DROP_MATRIX` units↔rentals validators** — now use `rentalHasUnit()` (checks the whole
+    `r.units[]`) instead of the legacy single-unit `r.unitId`.
+12. **`setWoLinePhase`'s phase derivation** — resolved as a side effect of item 3: the function no
+    longer writes `w.phase` at all (that's now purely a derived display), so the wrong-derivation
+    bug has no code path left to occur on.
+13. **`LEGACY_MAP`** (config.js) — deleted. Verified zero references anywhere in the frontend
+    *and* in `tools/import-real-data.ps1` (the one plausible "import layer" in the repo) before
+    removing.
+14. **`check-design-md.mjs` drift guard** — a missing mapped `:root` var now hard-errors instead
+    of just warning.
+15. **2 dead test assertions** (`ci/logic-test.mjs`) — both fixture bugs fixed (synthetic PO'd
+    invoice; synthetic unit with `trueCost` set) so both now actually execute every run.
+16. **`gen-code-map.mjs` + `dead-code-scan.mjs` banner-pairing** — ⚠ **attempted, reverted.** Tried
+    a max-gap validity check between a banner's open/close rule lines, but real banners in this
+    file routinely carry 10-30+ lines of descriptive prose (the deleted ranch-theme banner alone
+    spanned 13), so any gap threshold tight enough to catch a genuinely stray line also rejects
+    the vast majority of real banners — confirmed by running it against the actual file (`--check`
+    started failing with 20+ banner-id mismatches). Reverted to the original pairing logic rather
+    than ship something broken. The underlying finding is still real (no proximity/validity check
+    at all) but a line-count heuristic isn't the right fix for this codebase's banner-size
+    distribution — would need a smarter check (e.g. comparing against the previous known-good
+    banner count) or just isn't worth hardening against a failure mode with zero real occurrences.
+17. **`branch-janitor.yml`'s `backup/*` guard** — fixed earlier, in PR #554.
+18. **`perf-report-backend.gs` formula-injection guard** — fixed in the tracked snippet (leading-
+    apostrophe guard on `t1()`) and **queued** in `BACKEND-DEPLOY-QUEUE.md` (#3) — **not yet
+    deployed live**, needs the usual `/clasp` STOP-gate before it ships.
+19. **`membership-billing-additions.gs` stale gate** — corrected `MONEY_ROLES[role]` →
+    `roleMoneyOk_(role)` in the snippet. **⚠ New finding while fixing this**: a live Code.gs read
+    (via the Drive connector) found **none** of `membershipEnroll_`/`membershipCancel_`/
+    `membershipReactivate_`/`membershipBillingCron` actually exist in the bound script, despite
+    this file's header claiming "DEPLOYED LIVE 2026-06-25 (version 46)." Flagged at the top of
+    that file — needs Jac to confirm whether this is a versioning mismatch (deployed web-app
+    version vs. bound-script content) or the app-driven membership system genuinely isn't live.
+22. **`--good` CSS token / light theme** — resolved differently than originally scoped: Jac opted
+    to delete the light theme entirely (confirmed dormant/unreachable) rather than define
+    `--good` for it. Also deleted the `ranch` theme (same dormant class, ~25 rule-blocks) per
+    Jac's "the others can be removed." **⚠ New finding**: the whole theme-TOGGLE mechanism turned
+    out to be unreachable too — no `.js-theme` button ever renders in the UI (only its click-
+    handler exists), so even the documented Yard⇄Blued-Steel cycle can never fire; the app is
+    permanently on `bluedsteel`. Not touched — Jac may want to revisit whether to finish wiring a
+    real toggle button or clean up `THEME_NEXT`/`yard` CSS too.
+23. **`branch-janitor.yml` pagination** — both `gh pr list` calls (the daily prune job AND the
+    one-time stranded-branch cleanup job) now use `--paginate` instead of `--limit 1000`.
+24. **`cash-payment-backend.gs` stale gate** — corrected to `roleMoneyOk_(role)`; confirmed this
+    one **is** live and matches (unlike item 19's discrepancy).
+25. **Missing Stripe/gpsToken backend snippets** — written from a live Code.gs read via the Drive
+    connector: `docs/handoffs/stripe-actions-backend.gs` (dispatch table + 2 representative
+    handlers) and `docs/handoffs/gps-token-proxy-backend.gs`. **⚠ New finding while writing the
+    gpsToken snippet**: the live `gpsToken_` has a hardcoded plaintext password fallback baked
+    into the source (justified in-line as "server-side + gitignored, never served publicly," which
+    is true for the public-repo vector but means the credential can't be fully rotated without an
+    editor edit). Flagged in the new snippet file, not fixed (would need a live backend deploy).
 
 ---
 
-## LOW (8)
+## ⏳ STILL OPEN (2)
 
-20. **config.js:26 (`colorVar`/`colorBgVar`)** — Documented as the mandatory color-resolution API in
-    the file's own header comment, but zero call sites; app.js reimplements the same template-literal
-    pattern inline dozens of times instead. Not necessarily "delete" — could also mean "go retrofit the
-    inline call sites to use the documented helper," which is a bigger, deliberate cleanup, not a
-    park-and-forget deletion.
+20. **`colorVar()`/`colorBgVar()`** (config.js) — documented as the mandatory color-resolution
+    API but zero call sites. **Parked at Jac's explicit direction** ("park this as a design thing
+    to look at later") — not touched.
 
-21. **style.css:1944 (`!important` on `.set-planned-sub`)** — Papers over a specificity conflict that
-    scoping the selector (`.set-planned p.set-planned-sub`) would resolve cleanly. Low risk but touches
-    live rendering, so flagged rather than auto-fixed.
-
-22. **style.css:2753 (`--good` token)** — Referenced with a hardcoded fallback in 5 places but never
-    defined in `:root`/`[data-theme="light"]`, so it always renders the literal fallback and never
-    themes per-mode like its sibling status colors do. Fixing means choosing dark/light values — a
-    design-token decision, not a mechanical one.
-
-23. **`.github/workflows/branch-janitor.yml:58`** — `gh pr list --limit 1000` on both merged/open
-    queries isn't paginated (unlike the `gh api .../branches --paginate` call in the same file); at
-    >1000 PRs a stale/reused branch name could theoretically slip past the "never delete a branch with
-    an open PR" guard. Not urgent at current repo scale, but a real latent gap in an unattended daily
-    job — worth switching to `--paginate` when convenient.
-
-24. **docs/handoffs/cash-payment-backend.gs:17** — Same staleness class as item 19: dispatch snippet
-    still shows the pre-tier-redesign `MONEY_ROLES[role]` gate rather than `roleMoneyOk_(role)`.
-
-25. **Backend contract coverage gaps (informational, no file to edit)** — Two backend action families
-    the frontend calls have **no** tracked reference snippet at all in `docs/handoffs/`: all 10 Stripe
-    actions (`stripePubKey` through `stripeFinalizeInvoice` — the single largest unverifiable,
-    money-critical backend surface in this whole review) and the `gpsToken` GAS-side proxy action. This
-    isn't a bug — the live `Code.gs` may implement these correctly — but there's no way to verify from
-    this repo, and no snippet to hand a future session. Worth writing reference snippets for both next
-    time you're in the Apps Script editor.
+21. **`style.css:1944` `!important` on `.set-planned-sub`** — papers over a specificity conflict
+    that scoping the selector would resolve cleanly. Not part of today's fix pass; low risk but
+    touches live rendering, so still flagged rather than auto-fixed.
 
 ---
 
 ## Dropped (not real findings — kept for completeness)
 
-- `.github/workflows/branch-janitor.yml:55` and `wrangler-fix.yml:79` — the audit's F17 pass explicitly
-  went looking for GitHub Actions script-injection (untrusted `${{ github.event.* }}` interpolated into
-  a `run:` shell step) and came back clean on both files: neither ever puts issue/PR title, body, or
-  labels into a `run:` step — `wrangler-fix.yml` only interpolates them into the Claude action's
-  `prompt:` string (a different, already-acknowledged risk — see HIGH item 7). Recorded here so the
-  question doesn't get re-asked, not because either needs action.
+- `.github/workflows/branch-janitor.yml:55` and `wrangler-fix.yml:79` — the audit's F17 pass
+  explicitly went looking for GitHub Actions script-injection and came back clean on both files.
+  Recorded here so the question doesn't get re-asked.
