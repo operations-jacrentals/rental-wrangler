@@ -2419,7 +2419,6 @@ function sweepEmptyDrafts(keepId) {
   for (let i = DATA.invoices.length - 1; i >= 0; i--) {
     const inv = DATA.invoices[i];
     if (inv.invoiceId !== keepId && isEmptyMockDraft('invoices', inv)) {
-      (inv.rentalIds || []).forEach((rid) => { const r = IDX.rental.get(rid); if (r && r.invoiceId === inv.invoiceId) r.invoiceId = ''; });
       IDX.invoice.delete(inv.invoiceId); DATA.invoices.splice(i, 1);
     }
   }
@@ -5601,7 +5600,6 @@ const ROWS = {
     const fc = getEntityColor('customers', c);
     const isMember = c.accountType === 'Member' || c.accountType === 'Business Member';
     const nameColor = (fc === 'red' || fc === 'yellow') ? `var(--${fc})` : fc === 'gray' ? 'var(--txt-3)' : (fc === 'green' && isMember) ? 'var(--green)' : 'var(--txt)';
-    const acct = getStatus('customerAccountType', c.accountType || 'Non-Business');
     const sub = c.phone ? esc(c.phone) : '';
 
     // Pay status AS A NUMBER (Jac — no "New Customer" text): owed balance → yellow before
@@ -5752,8 +5750,6 @@ const ROWS = {
   workOrders: (w) => {
     const unit = IDX.unit.get(w.unitId);
     const cust = w.customerId ? IDX.customer.get(w.customerId) : null;
-    const partsCost = (w.lineItems || []).reduce((a, li) => a + (Number(li.cost) || 0), 0);
-    const labor = (w.lineItems || []).reduce((a, li) => a + (Number(li.hours) || 0), 0) || w.laborHours || 0;
     const priceIfBilled = woBillable(w);
     return `<div class="row-1"><span class="r-title">${esc(`${unit?.name || '—'} — ${w.woReport}`)}</span>
         <span class="r-fields"><span>${fmtShortDate(w.date)}</span></span></div>
@@ -6441,12 +6437,10 @@ function allocLines(inv) {
    so a fully-refunded line drops out of BOTH panels and locks by absence. Works for
    cash/check lump payments too: itemPaid returns the full line amount on a paid-in-full
    invoice even with no explicit allocation. */
-/* MONEY GATE — the per-line / partial refund UI (#125) stays OFF until the backend honors
-   `amountCents` on recordManualRefund / stripeRefundInvoice. The current backend ignores it
-   and refunds the FULL captured charge, and ALL environments share ONE backend + Stripe — so
-   sending a partial now would over-refund real money. With this false the Refund button keeps
-   today's safe full-invoice behavior untouched. Flip to true ONLY after deploying the
-   partial-refund backend (docs/handoffs/partial-refunds-backend.md). */
+/* MONEY GATE — the per-line / partial refund UI (#125). The backend now honors `amountCents`
+   on recordManualRefund / stripeRefundInvoice (partial-refund backend deployed, see
+   docs/handoffs/partial-refunds-backend.md), so this stays ON: the Refund button assigns the
+   refund by line via o.refundAlloc instead of always refunding the full captured charge. */
 const PARTIAL_REFUNDS_ENABLED = true;
 function itemRefunded(inv, li) {
   if (!inv || !inv.refundAllocations) return 0;
@@ -7956,7 +7950,7 @@ const PLUS_NEW = new Set(['rentals', 'invoices', 'customers']);
    APP-19 · §11 HEADER, KPI & BOTTOM BAR
    ════════════════════════════════════════════════════════════════════════ */
 /** Apple-style band coloring (§11): 0-25 red · 25-50 orange · 50-75 yellow ·
- *  75-100 green · 95-100 glowing green. */
+ *  75-90 green · 90-100 glowing green. */
 function bandColor(pct) {
   if (pct >= 90) return { color: 'green', glow: true };
   if (pct >= 75) return { color: 'green', glow: false };
@@ -7965,7 +7959,7 @@ function bandColor(pct) {
   return { color: 'red', glow: false };
 }
 /** Three concentric Apple-style progress rings — one per role KPI, each colored by
- *  its OWN value band, glowing when ≥95% (outer = most important, §11). */
+ *  its OWN value band, glowing when ≥90% (outer = most important, §11). */
 function ring3SVG(vals, _color, { size = 48, center } = {}) {
   const big = size >= 100;
   const sw = big ? 13 : 4.6, gap = big ? 7 : 2.4, pad = big ? 16 : 5;
@@ -8501,7 +8495,7 @@ function newChat(opts) {
   // Creator = admin (tracked by `by`) — that alone grants them visibility + control, so
   // members starts empty ("default no one"); the admin adds people deliberately.
   const c = { id: 'CHAT' + (state.seq++), title: opts.title || '', members: opts.members ? [...opts.members] : [], messages: [], seen: { [commentUserKey()]: Date.now() }, by: commentUserKey() };
-  state.chat.chats.push(c); state.chat.activeId = c.id; pushChatsSoon(); return c;
+  state.chat.chats.push(c); state.chat.activeId = c.id; state.chat.draft = ''; pushChatsSoon(); return c;
 }
 // ── Team-chat identity + ownership (2026-07-08) ──
 // The current user resolved to a roster person, by matching the typed login name to a
@@ -9578,7 +9572,7 @@ function gvBuckets(days) {
    so the chart drives the rows. Same-column toggles OR together. Each view
    remembers its selection (cs.graphSel); first open of a pie/bars view defaults to
    its smallest non-empty slice. In-column graphs are retired (§13.6
-   Round-Up) except the Shop 'all' stackbars worklist below. ════════════════════════════════════════════════════ */
+   Round-Up) except the Units 'all' stackbars worklist below. ════════════════════════════════════════════════════ */
 const gvClampIdx = (idx, n) => (n ? ((((idx || 0) % n) + n) % n) : 0);
 const gvKey = (card, v) => card + ':' + v.key;
 const gvSegOn = (cs, col, value) => (cs.filterTerms || []).some((t) => t.g && t.col === col && String(t.value) === String(value));
@@ -9821,13 +9815,13 @@ function ruNavigate(card, col, value, seg) {
 }
 // ── Money rollups (range-aware; the §13.5 cutoff-only versions retire in Phase E) ──
 function ruCatMoney(rg) {
-  const rev = {}, cnt = {}, exp = {}, basis = {};
+  const rev = {}, exp = {}, basis = {};
   DATA.rentals.forEach((rr) => {
     if (ruBounded(rg) && !ruIn(rr.startDate, rg)) return;
     const us = rentalUnits(rr).map((eu) => IDX.unit.get(eu.unitId)).filter((u) => u && u.categoryId);
     if (!us.length) return;
     const share = ((rentalPrice(rr) || {}).price || 0) / us.length;
-    us.forEach((u) => { rev[u.categoryId] = (rev[u.categoryId] || 0) + share; cnt[u.categoryId] = (cnt[u.categoryId] || 0) + 1; });
+    us.forEach((u) => { rev[u.categoryId] = (rev[u.categoryId] || 0) + share; });
   });
   DATA.workOrders.forEach((w) => {
     if (w.cancelled) return; if (ruBounded(rg) && !ruIn(w.date, rg)) return;
@@ -9836,7 +9830,7 @@ function ruCatMoney(rg) {
     if (c) exp[u.categoryId] = (exp[u.categoryId] || 0) + c;
   });
   DATA.units.forEach((u) => { if (!u.categoryId) return; const b = Number(u.trueCost) || Number(u.purchasePrice) || 0; if (b) basis[u.categoryId] = (basis[u.categoryId] || 0) + b; });
-  return { rev, cnt, exp, basis };
+  return { rev, exp, basis };
 }
 function ruRevByCat(rg) {
   const A = ruCatMoney(rg), green = ruColor('--green'), red = ruColor('--red');
@@ -15867,8 +15861,8 @@ function handlePillX(xEl) {
     reindexDraft('rentals', rec);
     toast(rentalUnitIds(rec).length ? `${u?.name || 'Unit'} removed.` : 'Unit removed — drag one on.'); return render();
   } else if (kind === 'unit-swap') {
-    rec.unitId = null; if (entity === 'rentals') rec.categoryId = null;
-    toast(entity === 'rentals' ? 'Unit removed — drag a replacement on.' : 'Unit removed.'); return render();
+    rec.unitId = null;
+    toast('Unit removed.'); return render();
   } else if (kind === 'cust-swap') {
     rec.customerId = null; toast('Customer removed — drag a replacement on (or quick-add one).'); return render();
   } else if (kind === 'inv-remove') {
@@ -18952,8 +18946,6 @@ function addWOToInvoice(invoiceId, woId) {
   if (!inv || !w) return;
   // a WO bills once — block a duplicate line on any invoice (§7.6)
   if (DATA.invoices.some((i) => (i.lineItems || []).some((li) => li.kind === 'WO' && li.ref === woId))) { toast('This work order is already billed to an invoice.'); return; }
-  const partsCost = (w.lineItems || []).reduce((a, li) => a + (Number(li.cost) || 0), 0);
-  const labor = (w.lineItems || []).reduce((a, li) => a + (Number(li.hours) || 0), 0) || w.laborHours || 0;
   const amount = woBillable(w);
   inv.lineItems.push({ kind: 'WO', ref: woId, lid: lineLid(), label: `${w.woReport} · ${IDX.unit.get(w.unitId)?.name || ''}`, amount });
   w.billCustomer = 'Yes'; if (!w.customerId) w.customerId = inv.customerId;
@@ -19188,7 +19180,7 @@ async function gpsFleetStatus() {
   const down = new Set();
 
   // Hapn
-  if (val(devicesR) === null) down.add('hapn');
+  if (val(devicesR) === null || val(statusR) === null) down.add('hapn');
   const starterStates = val(starterR)?.result?.states || {};
   const statusMap = {};
   gpsUnwrap(val(statusR)).forEach((s) => { if (s?.imei) statusMap[s.imei] = s; });
