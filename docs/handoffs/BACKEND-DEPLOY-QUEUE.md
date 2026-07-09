@@ -57,6 +57,10 @@
     trigger vs. Sheets-backed storage), not a one-liner.
   - **This closes the full 32-finding backend audit for real this time** (4 critical + 7 high +
     16 medium + 4/5 low — the 5th low is parked by design, not an oversight).
+  - **✅ DEPLOYED + VERIFIED 2026-07-09 (v88).** All patches confirmed present in the live version,
+    anonymous access intact. Only the queued team-chat-privacy hardening remains undeployed
+    (intentionally, gated on the new frontend branch) — every other backend audit finding is now
+    live in production.
 
 ## ⏳ QUEUED, READY TO DEPLOY INDEPENDENTLY — seed gate + recordCharge_ dedup (2026-07-09)
 - **What (2 fixes, no frontend coordination needed, unlike the chat-privacy item below):**
