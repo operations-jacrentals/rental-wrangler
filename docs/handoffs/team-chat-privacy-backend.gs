@@ -27,6 +27,14 @@
  * deploy independently anymore (the current live frontend never sends `me`, so it
  * would suddenly see empty chats / have writes rejected) — deploy this in the SAME
  * rollout as claude/internal-chat-updates-vq6p7b, not before.
+ *
+ * UPDATED AGAIN 2026-07-09 (same audit, HIGH finding): chatMergeMsgs_ didn't
+ * validate that an incoming message's `by` field matched the authenticated
+ * `me` — any authorized participant could inject a message object claiming
+ * to be from a DIFFERENT member. Fixed below (now takes `me`, drops any
+ * incoming message whose `by` doesn't match). Also folded in: setChats_'s
+ * `id` now goes through deformula_() (already shipped live separately —
+ * keeping this queued file in sync so deploying it later doesn't regress it).
  * ───────────────────────────────────────────────────────────────────────── */
 
 // Can this caller SEE this chat? Admin (creator) or a listed member. A legacy chat
@@ -40,10 +48,16 @@ function chatCanSee_(c, me, rosterId) {
 }
 
 // Union messages by id (never lose a concurrent poster's message), oldest-first.
-function chatMergeMsgs_(existing, incoming) {
+// me: reject any incoming message whose `by` doesn't match the caller — you can
+// only ever inject messages asserting YOUR OWN authorship, never someone else's.
+function chatMergeMsgs_(existing, incoming, me) {
   var out = (existing || []).slice(), have = {};
   out.forEach(function (m) { if (m && m.id) have[m.id] = true; });
-  (incoming || []).forEach(function (m) { if (m && m.id && !have[m.id]) { out.push(m); have[m.id] = true; } });
+  (incoming || []).forEach(function (m) {
+    if (!m || !m.id || have[m.id]) return;
+    if (String(m.by) !== String(me)) return;
+    out.push(m); have[m.id] = true;
+  });
   out.sort(function (a, b) { return (a.at || 0) - (b.at || 0); });
   return out;
 }
@@ -89,7 +103,7 @@ function chatAuthorizeWrite_(existing, inc, me, rosterId) {
   if (me == null) return null;                               // no identity asserted → reject
   if (!existing) return (String(inc.by) === String(me)) ? inc : null;   // create only your own
   if (existing.by && String(existing.by) === String(me)) {  // owner (admin)
-    inc.messages = chatMergeMsgs_(existing.messages, inc.messages);
+    inc.messages = chatMergeMsgs_(existing.messages, inc.messages, me);
     inc.seen = chatMergeSeen_(existing.seen, inc.seen);
     return inc;
   }
@@ -97,7 +111,7 @@ function chatAuthorizeWrite_(existing, inc, me, rosterId) {
   var amMember = rosterId != null && mem.indexOf(String(rosterId)) !== -1;
   if (!amMember) return null;                                // not a participant → reject
   var next = {}, k; for (k in existing) next[k] = existing[k];   // start from the SERVER copy
-  next.messages = chatMergeMsgs_(existing.messages, inc.messages);
+  next.messages = chatMergeMsgs_(existing.messages, inc.messages, me);
   // a member may only touch THEIR OWN view-state — seen[me] + their own mute — never others'
   var seen = {}, sk; for (sk in (existing.seen || {})) seen[sk] = existing.seen[sk];
   if (inc.seen && inc.seen[me] != null && (inc.seen[me] > (seen[me] || 0))) seen[me] = inc.seen[me];
@@ -123,7 +137,7 @@ function setChats_(body, role) {
     var idMap = rowIndexById(s), appends = [];
     chats.forEach(function (inc) {
       if (!inc || !inc.id) return;
-      var id = String(inc.id), row = idMap[id], existing = null;
+      var id = deformula_(String(inc.id)), row = idMap[id], existing = null;
       if (row) { try { existing = JSON.parse(s.getRange(row, 2).getValue()); } catch (e) {} }
       var toStore = chatAuthorizeWrite_(existing, inc, me, rosterId);
       if (!toStore) return;                                  // unauthorized / rejected — skip

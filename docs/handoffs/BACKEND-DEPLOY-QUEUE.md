@@ -36,8 +36,27 @@
     instead of capping at just the last one (was silently under-refunding).
   - `wranglerReply_` + `wranglerFile_` gain a shared **global 100/day** cap (Jac's call — one
     combined counter, not per-role, tunable via `WRANGLER_DAILY_CAP` Script Property).
-  - **This closes the full 32-finding backend audit** (4 critical + 16 medium — 5 low items were
-    dead-code/no-op findings, not tracked for deploy).
+- **✅ Caught a gap 2026-07-09: the 7 HIGH findings had been skipped entirely** (only criticals +
+  mediums were fixed in the first pass). All 6 outstanding ones now fixed and pushed to HEAD too
+  (the 7th, doSeed clearing missing entities, was already resolved as a side effect of the seed
+  critical fix). Full detail in `docs/handoffs/backend-audit-2026-07-09-remaining-high-low.gs`:
+  - `sendCustomerMessage` added to WRITE_ACTIONS (was GET-reachable)
+  - `chatMergeMsgs_` now validates an incoming message's `by` against the caller's `me` (was a
+    chat-impersonation gap) — also backported into the queued team-chat-privacy replacement file
+    so it isn't lost when that eventually ships
+  - `wranglerComment_`'s resume-a-paused-build logic now requires Admin+ tier, not any signed-in role
+  - `stripeSaveBank_` actually persists to `cust.achAccounts` now (was a complete no-op write)
+  - `recordManualRefund_` (+ self-caught: my own earlier `stripeRefundInvoice_` rewrite had the
+    same bug) reject an explicit non-positive `amountCents` instead of silently refunding in full
+  - `sendCustomerMessage_`'s dedup + quiet-hours checks are unconditional now, not just for
+    `auto:true` callers (Jac's call)
+  - Also fixed 4 of 5 LOW findings alongside these: dead `MONEY_ROLES`/`ADMIN_ROLES` removed,
+    `saveConfigFromBody` rejects a blank role key, `saveGroupOrderFromBody` gets a size cap,
+    `stripeChargeInvoice_`'s dead `passedAch` var removed. The 5th LOW (`saveSession_` has no
+    expiry on its Script Properties entries) is **parked** — needs a real design call (new
+    trigger vs. Sheets-backed storage), not a one-liner.
+  - **This closes the full 32-finding backend audit for real this time** (4 critical + 7 high +
+    16 medium + 4/5 low — the 5th low is parked by design, not an oversight).
 
 ## ⏳ QUEUED, READY TO DEPLOY INDEPENDENTLY — seed gate + recordCharge_ dedup (2026-07-09)
 - **What (2 fixes, no frontend coordination needed, unlike the chat-privacy item below):**
