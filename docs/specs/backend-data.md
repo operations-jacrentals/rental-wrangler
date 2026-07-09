@@ -20,6 +20,58 @@ These resolve the §11 Open Questions and the §3 central gate question (D3).
 
 ---
 
+## Shipped status (2026-07-09)
+
+> Reconciliation pass against `docs/handoffs/BACKEND-DEPLOY-QUEUE.md` (the authoritative deploy
+> tracker), `docs/handoffs/audit-2026-07-09-parked-findings.md`, and
+> `docs/handoffs/membership-billing-additions.gs`. This section doesn't rewrite anything below —
+> it's a status check. Look for inline **[SHIPPED 2026-07-09]** / **[DEVIATED]** /
+> **[STILL PLANNED]** markers at the specific §s this pass touched.
+
+- **Backend security audit — CLOSED.** A dedicated 8-agent adversarial backend security audit
+  found 32 findings (4 critical, 7 high, 16 medium, 5 low), on top of the earlier 19-agent
+  pre-promotion audit of PR #552 (54 findings, tracked in `audit-2026-07-09-parked-findings.md`;
+  51/54 resolved as of that doc, and most of what remained there is superseded by the fixes
+  below). **All but ONE finding from the backend security audit are now fixed and deployed live**
+  (backend versions **v83–v88** per `BACKEND-DEPLOY-QUEUE.md`'s deploy recipe). The one parked
+  item: **`saveSession_`'s missing Script Properties expiry** (§2.7 auth/session actions) — stored
+  sessions don't auto-expire; parked pending a design decision, not yet fixed.
+- **OQ-1 (§3.2, §11) — the spec's central open question — is SHIPPED, not merely decided.**
+  Per-role passwords + server-side tier enforcement are **live** (`role-tiers-backend.gs`,
+  deployed 2026-06-26 era, reconfirmed live during the 2026-07-09 audit pass). **§3.2's
+  "authorization is CLIENT-SIDE today" framing and the §2.9 D3 drift row are now OUTDATED** — see
+  the inline markers. What's left of OQ-1 is narrower than originally scoped: per-ACTION tier maps
+  for future Phase-2 actions as they land, not the keystone gate itself.
+- **Production incident — membership billing backend, root-caused and fixed 2026-07-09.** The
+  app-driven membership functions (`membershipEnroll_`/`membershipCancel_`/`membershipReactivate_`/
+  `membershipBillingCron`, §2.7) were **silently deleted from the live backend 11 minutes after
+  they first shipped on 2026-06-25** — a v46→v48 regression where a same-night redeploy was built
+  from a stale pre-merge `Code.js` snapshot. `membership-billing-additions.gs`'s own header claim
+  of "DEPLOYED LIVE 2026-06-25 (v46)" was true for only ~11 minutes; confirmed via the Apps Script
+  REST API's version history. Zero organic usage in that live window (zero `MINV-` invoices, zero
+  `membership:true` invoices) so no revenue/data impact. Re-spliced and redeployed; the daily
+  billing trigger is installed. The frontend call sites (`app.js` ~3762/3780/3813) were live the
+  whole time and now hit working handlers again. **This is the sharpest real-world illustration of
+  drift risk D2 (§2.9) to date** — no backend version/schema stamp meant the regression was
+  invisible for weeks.
+- **Team-chat privacy (§2.7 `getChats`/`setChats`, §12.2) — two-stage, only stage 1 is live.**
+  Stage 1 (scoped reads + authorized writes) shipped live 2026-07-08. The backend audit then found
+  stage 1's old-client back-compat fallback (unscoped when `body.me` is absent) is a **universal
+  bypass**, not just a compat shim — any caller could omit `me` and read/tamper with every chat.
+  The fix (dropping the unscoped fallback) is **prepared in
+  `docs/handoffs/team-chat-privacy-backend.gs` but NOT yet deployed** — gated on the frontend
+  branch that sends `me`/`rosterId` on every call landing first. **[STILL PLANNED]**
+- **`seed` action hardening (§3.1, §7.4, R1) — SHIPPED.** The audit found the backend `seed`
+  action had no server-side role check — any signed-in role (not just admin) could invoke the
+  whole-DB-replace action directly, even though the frontend `#reseed` entry point was already
+  admin-gated. Now requires Admin+ server-side, closing that client/server gap.
+- **`recordCharge_` dedup (§5.4, R12, OQ-14) — SHIPPED, narrower than OQ-14 as scoped.** A repeat
+  call for an already-recorded Stripe PaymentIntent now no-ops instead of re-inflating
+  `amountPaid` — real double-charge/double-count hardening, but not the proposed per-charge
+  idempotency-key scheme. OQ-14 as originally written is still open.
+
+---
+
 ## 1. Goal & Problem
 
 ### What this area is for
@@ -102,6 +154,13 @@ A Google Sheets cell is hard-capped at **50 000 chars** and the backend writes e
 
 ### 2.7 The action catalog (shipped — full list in CODE-MAP Part III)
 `backendCall` makes ~40 distinct actions today, grouped: **auth/session** (`auth, saveSession, getSession`), **data sync** (`load, seed, sync`), **config/views** (`getConfig, setConfig, getViews, setViews`), **team chat** (`getChats, setChats`), **wrangler rail** (`getWranglerRail, setWranglerRail`), **Wrangler AI** (`wrangler`), **wrangler inbox** (`wranglerRequests, wranglerThread, wranglerComment, wranglerApprove, wranglerDismiss, wranglerFile, wranglerNotifications`), **files/media** (`uploadFile, uploadCapture, archiveAgreementMedia`), **Stripe cards/bank** (`stripePubKey, stripeSetupIntent, stripeSaveCard, stripeSetDefault, stripeRemoveCard, stripeBankSetupIntent, stripeSaveBank, stripeVerifyBank`), **Stripe charging** (`stripeChargeInvoice, stripeFinalizeInvoice, recordManualPayment`), **membership** (`membershipEnroll, membershipCancel, membershipReactivate`), **misc** (`mapsKey, feedback`).
+
+**[DEVIATED — incident, now re-SHIPPED 2026-07-09]** The **membership** actions above were
+silently absent from the live backend from ~11 minutes after their 2026-06-25 ship until
+2026-07-09 (v46→v48 regression — see "Shipped status" above); this catalog entry describes the
+now-restored contract, not a continuously-live one. **`saveSession`/`getSession` — [STILL
+PLANNED]:** `saveSession_` has no Script Properties expiry on stored sessions — the one open
+finding from the 2026-07-09 backend security audit, parked pending a design decision.
 
 ### 2.8 Deploy & source (shipped)
 - `Code.gs` is **gitignored** (the public repo is served by Pages and the source holds passwords / `DEFAULT_CONFIG`). It ships via **`/clasp`** (additive, STOP-gated) from a private mirror repo, never git. See `docs/backend-clasp-setup.md`.
