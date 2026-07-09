@@ -369,6 +369,8 @@ It has **no Wrangler-specific knowledge** and **never changes** — that is what
 | `wranglerFile` | `{ title, body, label, images }` | `{ ok, number }` — files the GitHub issue server-side (token in Script Property) |
 | `wranglerNotifications` | `{}` | resolved-issue notifications |
 | `getWranglerRail`/`setWranglerRail` | `{ roleKey, … }` | cross-device rail (partial) |
+| **[PLANNED, not in this table]** `getWranglerChatsAll`/`getWranglerChat`/`appendWranglerMessage`/`setWranglerDriver` | Developer-tier only (`wrOpsDevOK_`) | Wrangler Ops live-chat bridge — documented `docs/handoffs/wrangler-ops-backend.gs`, **not yet deployed** (see "Shipped status" near the top). |
+| **[PLANNED, not in this table]** implicit change to `wranglerReply_`/`wranglerFile_` | — | a new `wranglerRateLimitOk_()` helper adds a shared **GLOBAL 100/day cap** across both — see "Shipped status"; **not yet deployed / not on `main`**. |
 
 ### 5.3 External integrations
 
@@ -406,22 +408,25 @@ The dock is **steel-panel** chrome with the safety-orange accent reserved for th
 
 Existing stamped controls: `js-kpi-refine` `data-r="R17"` (`app.js:3833`), `js-req-approve` `data-r="R17"`, `js-req-dismiss` `data-r="R18"` (`app.js:7672`). **Any new or changed Wrangler control MUST carry a `data-r` stamp** and pass the R0 flash-lint + `gen-rule-usage --check`. 
 
-**Verified against the live markup (`app.js:7687` compose row, `app.js:7641` apply row):** the dock's three core controls are **currently UNSTAMPED** — `js-wr-send` (`.wr-send`, the ignition control), `js-wr-attach` (`.wr-attach` paperclip), and `js-wr-apply` (`.wr-actbtn-build`, the consequential-write confirm). The dock predates full R-coverage. This is real rulebook drift to close in v1 polish:
+~~**Verified against the live markup (`app.js:7687` compose row, `app.js:7641` apply row):** the dock's three core controls are **currently UNSTAMPED** — `js-wr-send` (`.wr-send`, the ignition control), `js-wr-attach` (`.wr-attach` paperclip), and `js-wr-apply` (`.wr-actbtn-build`, the consequential-write confirm). The dock predates full R-coverage. This is real rulebook drift to close in v1 polish:~~
+
+**[2026-07-09] All three are now stamped** (current anchors — `app.js:8991` apply row, `app.js:9050` compose row; the `7687`/`7641` anchors above are stale, see the anchor-drift note in "Shipped status"):
 
 | Control | `app.js` | Current | Proposed stamp | Note |
 |---|---|---|---|---|
-| Send (`js-wr-send`) | 7687 | **unstamped** | `R17` (ignition/primary action) | the safety-orange ignition control — the one place boldness is spent |
-| Attach (`js-wr-attach`) | 7687 | **unstamped** | the file/image-picker stamp (confirm which R) | a `<label>`-wrapped file input |
-| Apply (`js-wr-apply`) | 7641 | **unstamped** | `R17` (commit/confirm) | the preview→Apply consequential-write confirm — the highest-stakes unstamped control |
-| ask_user option chips | dock | (depends on render) | `R18`/`R17` | tappable disambiguation chips |
+| Send (`js-wr-send`) | ~~7687~~ 9050 | ~~unstamped~~ **`data-r="R17"`** | `R17` (ignition/primary action) | the safety-orange ignition control — the one place boldness is spent |
+| Attach (`js-wr-attach`) | ~~7687~~ 9050 | ~~unstamped~~ **`data-r="R21"`** | the file/image-picker stamp (confirm which R) | a `<label>`-wrapped file input |
+| Apply (`js-wr-apply`) | ~~7641~~ 8991 | ~~unstamped~~ **`data-r="R17"`** | `R17` (commit/confirm) | the preview→Apply consequential-write confirm — the highest-stakes unstamped control |
+| ask_user option chips | dock | (depends on render) | `R18`/`R17` | tappable disambiguation chips — status not re-verified in this pass |
+| **[NEW, 2026-07-09]** Paused banner (`.wr-paused`) | 9045 | **`data-r="R30"`** (new rulebook entry) | — | Wrangler Ops "you're paused" plate — not anticipated by this spec at all |
 
-**Open Question §11.Q7:** assign `data-r` stamps to `js-wr-send`/`js-wr-attach`/`js-wr-apply` (and the ask_user chips) so the dock fully complies and `gen-rule-usage --check` + R0 flash-lint cover it. **Note:** stamping these is a *touched-UI* change, so per CLAUDE.md it must run through `jactec-ui` and regenerate `rule-usage.js` (drop `--check`) — the CI guards will otherwise fail.
+**Open Question §11.Q7 — `[RESOLVED + SHIPPED]`:** assign `data-r` stamps to `js-wr-send`/`js-wr-attach`/`js-wr-apply` (and the ask_user chips) so the dock fully complies and `gen-rule-usage --check` + R0 flash-lint cover it. **Note:** stamping these is a *touched-UI* change, so per CLAUDE.md it must run through `jactec-ui` and regenerate `rule-usage.js` (drop `--check`) — the CI guards will otherwise fail.
 
 ### 6.3 WINDOW_CATALOG (existing + needed)
 
-Existing entries: `requests` (Requests inbox — *Mr. Wrangler · approvals*), `notifications` (*Mr. Wrangler · resolved*), `feedback` (*Mr. Wrangler · report*), `role` (Role KPIs). **`ci/check-window-catalog.mjs` fails CI if a popup is added/removed without a catalog entry** — so any new Wrangler popup (e.g. a dedicated booking-preview or a rail-browser overlay) must be catalogued.
+Existing entries: `requests` (Requests inbox — *Mr. Wrangler · approvals*), `notifications` (*Mr. Wrangler · resolved*), `feedback` (*Mr. Wrangler · report*), `role` (Role KPIs). **`ci/check-window-catalog.mjs` fails CI if a popup is added/removed without a catalog entry** — so any new Wrangler popup (e.g. a dedicated booking-preview or a rail-browser overlay) must be catalogued. **[NEW, 2026-07-09] A fifth Wrangler popup landed and IS catalogued:** `wranglerOps` (*Developer · live chats*, `app.js:12350`) — the Wrangler Ops inbox from §"Shipped status" above.
 
-**Open Question §11.Q8:** the **dock itself is not a `WINDOW_CATALOG` popup** (it's a persistent dock, not an overlay) — confirm that's the intended boundary and the catalog only covers the inbox/notifications/feedback overlays.
+**Open Question §11.Q8:** the **dock itself is not a `WINDOW_CATALOG` popup** (it's a persistent dock, not an overlay) — confirm that's the intended boundary and the catalog only covers the inbox/notifications/feedback overlays. **[2026-07-09] Still true — the new Wrangler Ops popup followed this exact boundary (catalogued as a popup; the dock it sits beside stayed uncatalogued), so Q8's assumed boundary held under a real new case.**
 
 ### 6.4 States
 
