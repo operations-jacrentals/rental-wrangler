@@ -23,11 +23,12 @@ import { pie as d3pie, arc as d3arc } from './vendor/d3-shape.min.js';         /
 import { AGREEMENTS, AGREEMENT_VERSIONS, AGREEMENT_CURRENT } from './agreements.js';
 import { ico, I, CARD_ICON, RING_ICON, CATEGORY_ICON } from './icons.js';
 import { CATEGORY_ANIM } from './icons-anim.js';
+import { CATEGORY_FRAMES } from './icons-frames.js';
 import {
   getStatus, STATUS, ROLES, ROLE_TIERS, tierRank, BUILTIN_ROLE_TIERS, GRID_CARDS, BACKOFFICE_BOARDS, SORT_FIELDS,
   SHOP_TYPES, SHOP_SEGMENTS, COLUMNS, COLUMN_OF,
-  legacyTransportPrice, computeTransportPrice, isFueledType, legsForType, YARD_ORIGIN, GOOGLE_MAPS_KEY,
-  fmtWindow, fmtShortDate, showsTruck, parseISO, TODAY_ISO, invoiceShort, TRANSPORT_MAP,
+  legacyTransportPrice, computeTransportPrice, isFueledType, legsForType, YARD_ORIGIN, GOOGLE_MAPS_KEY, GPS_BACKEND_URL,
+  fmtWindow, fmtShortDate, showsTruck, parseISO, TODAY_ISO, refreshTodayISO, invoiceShort, TRANSPORT_MAP,
   FLAG_META, FLAG_SEVERITY_RANK, INSURANCE_COVERAGE_TYPES,
 } from './config.js';
 
@@ -75,8 +76,11 @@ const money = (n) => { if (n == null) return '—'; const v = Math.round(Number(
 // printed/paid figure reads what's actually owed, to the cent, even on whole dollars.
 const money2 = (n) => (n == null ? '—' : '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 const num = (n) => (n == null ? '—' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 1 }));
-const TODAY = parseISO(TODAY_ISO);
+let TODAY = parseISO(TODAY_ISO);   // live: refreshToday() rolls it over so an all-day-open tab never stamps yesterday
 const dayDiff = (a, b) => Math.round((b - a) / 86400000);
+// Keep "today" current on a long-lived tab. TODAY_ISO is an ESM live binding, so
+// every call-time reader picks up the new day for free; TODAY (a Date) is re-derived here.
+function refreshToday() { if (refreshTodayISO()) { TODAY = parseISO(TODAY_ISO); } }
 
 const SINGULAR = { customers: 'customer', rentals: 'rental', units: 'unit', invoices: 'invoice', categories: 'category', workOrders: 'workOrder', inspections: 'inspection', serviceOrders: 'unit' };
 
@@ -252,7 +256,7 @@ function rentalStatusDisplay(r) {
   const ss = rentalUnitStatuses(r);
   // COLOR is flag-driven (R/Y/G/gray, SPEC flag-color-system); the LABEL stays the
   // lifecycle status. Mixed-unit rentals keep the gray "mix" label + gray color.
-  if (ss.length <= 1) { const k = ss[0] || rentalDisplayStatus(r); const st = getStatus('rentalStatus', k); return { label: st.label, color: getEntityColor('rentals', r), key: k, mixed: false }; }
+  if (ss.length <= 1) { const k = ss[0] || rentalDisplayStatus(r); const st = getStatus('rentalStatus', k); const label = overdueOutStatus(k, r.endDate) ? 'Overdue' : st.label; return { label, color: getEntityColor('rentals', r), key: k, mixed: false }; }
   return { label: ss.join('/'), color: 'gray', key: null, mixed: true };
 }
 /* TERMINAL = the unit has reached an end state (Returned, or Cancelled/No Show —
@@ -746,7 +750,7 @@ function reindexRentalLinks() {
   DATA.units.forEach((u) => IDX.search.set('units:' + u.unitId, searchBlob('units', u)));
   DATA.categories.forEach((c) => IDX.search.set('categories:' + c.categoryId, searchBlob('categories', c)));
 }
-const idOf   = (card, rec) => rec && rec[{ customers: 'customerId', rentals: 'rentalId', categories: 'categoryId', units: 'unitId', invoices: 'invoiceId', workOrders: 'woId', inspections: 'inspectionId', serviceOrders: 'unitId', vendors: 'vendorId', parts: 'partId', expenses: 'expenseId', files: 'fileId' }[card]];   // null-safe: a dangling ref resolves to undefined, never a render crash (matches recOf)
+const idOf   = (card, rec) => rec && rec[{ customers: 'customerId', rentals: 'rentalId', categories: 'categoryId', units: 'unitId', invoices: 'invoiceId', workOrders: 'woId', inspections: 'inspectionId', serviceOrders: 'unitId', vendors: 'vendorId', parts: 'partId', expenses: 'expenseId', files: 'fileId', calendar: 'id' }[card]];   // null-safe: a dangling ref resolves to undefined, never a render crash (matches recOf) — calendar = a derived Trip (tripsFor), keyed by its dispatchStopId
 const recOf  = (card, id) => ({ customers: IDX.customer, rentals: IDX.rental, categories: IDX.category, units: IDX.unit, invoices: IDX.invoice, workOrders: IDX.wo, inspections: IDX.insp, serviceOrders: IDX.unit, vendors: IDX.vendor, expenses: IDX.expense, parts: IDX.part, files: IDX.file }[card])?.get(id);
 
 /* ── §5 comprehensive search blob — ONE source of truth for what's searchable.
@@ -1030,7 +1034,7 @@ function createContinuationInvoice(r, covStart, covEnd) {
  *  full-window − billedSeries), so an already-billed — even PAID — sub-tier day counts toward
  *  the blended rate instead of being re-billed. Positive only (refund-first: a paid chunk is
  *  never reduced). Without fullWin the added segment is priced standalone (OFF path, #444). */
-function billChunkUnits(inv, r, ns, ne, prevEnd, retro, kind, contInvId, fullWin) {
+function billChunkUnits(inv, r, ns, ne, prevEnd, retro, kind, contInvId, fullWin, emitZero) {
   let delta = 0, count = 0;
   rentalUnits(r).forEach((eu) => {
     if (unitVoided(r, eu)) return;
@@ -1050,7 +1054,11 @@ function billChunkUnits(inv, r, ns, ne, prevEnd, retro, kind, contInvId, fullWin
       const d = unitExtensionDelta(inv, r, eu, ns, ne, prevEnd, retro);
       amount = d.amount; rate = d.rate;
     }
-    if (amount > 0.005) {
+    // Extension/continuation deltas only post when they actually charge (>0). But on the INITIAL
+    // multi-chunk build (emitZero — createInvoiceForRental) always emit one line per unit even at
+    // $0, matching the ≤28-day single-chunk rentalLineItems path — else a >28-day rental whose units
+    // sit on an unpriced category (catRatesUnset) creates a completely empty invoice (#537).
+    if (amount > 0.005 || (emitZero && amount > -0.005)) {
       const tail = kind === 'extension' ? ` · Extension → ${fmtShortDate(ne)}` : (contInvId ? ` · Ext of ${invoiceShort(contInvId)}` : '');
       inv.lineItems.push({ kind, ref: r.rentalId, unitId: eu.unitId, lid: lineLid(), label: `${u.name} · ${rate}${tail}`, amount });
       delta += amount; count++;
@@ -1374,11 +1382,14 @@ function loadGoogleMaps() {
     if (mapsReady()) return google.maps;
     await new Promise((res, rej) => {
       const s = document.createElement('script');
-      s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&libraries=places&loading=async`;
+      // §2.7 Auto-Run (spec 2026-07-09) needs google.maps.DirectionsService, which lives in
+      // the 'routes' library under the modern importLibrary loader — added here (the ONE
+      // shared bootstrap call) alongside 'places', never a second script tag.
+      s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&libraries=places,routes&loading=async`;
       s.async = true; s.onload = res; s.onerror = () => rej(new Error('maps-load'));
       document.head.appendChild(s);
     });
-    if (window.google && google.maps && google.maps.importLibrary) { try { await Promise.all([google.maps.importLibrary('maps'), google.maps.importLibrary('places'), google.maps.importLibrary('marker')]); } catch (e) {} }
+    if (window.google && google.maps && google.maps.importLibrary) { try { await Promise.all([google.maps.importLibrary('maps'), google.maps.importLibrary('places'), google.maps.importLibrary('marker'), google.maps.importLibrary('routes')]); } catch (e) {} }
     return mapsReady() ? google.maps : null;                       // only "loaded" if the services we actually use are up
   })().then((g) => { afterMapsLoad(g); return g; }).catch(() => { afterMapsLoad(null); return null; });
   return _mapsPromise;
@@ -1732,6 +1743,14 @@ let availWin = null;   // {start,end,time,selfId} set each render while the cale
 /* §20 physically-OUT statuses — the machine is in the customer's hands until it's
    Returned (Reserved/Today/Tomorrow = not yet picked up; Returned = back in the yard). */
 const OUT_RENTAL_STATUSES = new Set(['On Rent', 'End Rent', 'Off Rent']);
+/* §10 Overdue-out DISPLAY relabel (#509, approved by Jac): a unit still physically out
+   and reading On Rent / End Rent past its scheduled return DISPLAYS "Overdue" instead of
+   the stale lifecycle word. DISPLAY-ONLY — the STORED status is untouched (statuses are
+   user-selected, and the unit must stay "out" for availability/billing/transport). This
+   mirrors the start-side No-Show derivation (a Reserved rental whose start passed reads
+   "No Show") and rides on top of the #481 'off-rent-overdue' red flag/color. */
+const overdueOutStatus = (statusKey, endDate) =>
+  (statusKey === 'On Rent' || statusKey === 'End Rent') && !!endDate && endDate < TODAY_ISO;
 function rentalOverlaps(r, selS, selE, endISO) {
   const rs = parseISO(r.startDate), re = parseISO(endISO || r.endDate);
   if (!rs || !re || !selS || !selE) return false;
@@ -2086,12 +2105,17 @@ const state = {
   chat: { open: false, activeId: null, draft: '', chats: [] },   // §17 internal team dock (Phase 7): PERSISTENT chats (never deleted). Each = { id, tags, participants, messages, seen{userKey:lastViewedAt} }. Empty participants = dormant; reopen via a tagged element.
   wrangler: { open: false, min: false, id: null, messages: [], busy: false, error: '', draft: '', attach: [], files: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null },   // §18 Mr. Wrangler dock — id ties the live chat to its §18g rail snapshot; min collapses it to the header bar; survives minimize, restores conversation on reopen
   mobileCol: 0,               // §M1 — which column the phone shows (0 Yard · 1 Rentals · 2 Customers); drives swipe position + the per-column bottom strip
+  calSearch: '',               // Trips card mini-search (calendar is card-stateless — no session.cards.calendar — so this rides on state directly)
+  calOpenTrip: null,           // §2.2b cab sheet — the ONE trip row expanded to its unit-facts sheet (row-body tap toggles; second tap collapses)
+  autoRunFlags: null,          // §2.7 Auto-Run — { [tripId]: {reason:'unpinned'|'deadline', deadline?, projectedArrival?} }, session-only report on the last run (never a stored record field)
+  tripsSyncStatus: null,       // §2.3 Phase 4 — null until a push/pull to the backend succeeds this session; 'synced' after either does (footer falls back to "Offline — cached" otherwise — honest either way, since the local cache is the only thing on screen in both cases)
   woPartForm: null,           // woId whose "+ Add Part/Labor" inline form is open
   invLineForm: null,          // invoiceId whose "+ Add Custom" inline form is open
   invMergePick: null,         // invoiceId whose "Merge invoice" picker is open (consolidate unpaid bills)
   dashboard: false,           // §5.3/§11 Office Dispatch Time Grid (grid-swap mode)
   seq: 1,
-  invoiceSeq: maxInvoiceSeq(),   // monotonic invoice number — derived from the highest running number actually present (NOT .length: see maxInvoiceSeq)
+  invoiceSeq: maxInvoiceSeq(),   // per-MONTH running number — highest present this month (NOT .length: see maxInvoiceSeq)
+  invoiceSeqMonth: CFG.invoiceMonthKey(TODAY_ISO),   // the month this counter belongs to; nextInvoiceId resets invoiceSeq on a month rollover
   previewsOn: (() => { try { return localStorage.getItem('jactec.previewsOff') !== '1'; } catch (e) { return true; } })(),   // hover previews (per device)
   overbookOn: (() => { try { return localStorage.getItem('jactec.overbook') === '1'; } catch (e) { return false; } })(),   // §10 allow-overbooking policy (per device, default OFF — drag build)
   hapticsOff: (() => { try { return localStorage.getItem('jactec.hapticsOff') === '1'; } catch (e) { return false; } })(),   // §M-touch Vibration-API feedback (per device, default ON; Android-only, no-op on iOS)
@@ -2099,21 +2123,34 @@ const state = {
   settings: loadAdminSettings(),   // Settings Board admin customization (config.settings); mirrored to localStorage, applied at boot via applySettings()
 };
 const activeSession = () => (state.activeTabId ? state.tabs.find((t) => t.id === state.activeTabId)?.session : state.defaultSession) || state.defaultSession;
-/** Highest running number actually present across invoices, parsed from each id's
- *  leading digits (e.g. '07i02Ju26' -> 7). The counter MUST come from the data, not
- *  the array: `DATA.invoices.length` started from the seed file (4) and was never
- *  recomputed after loadFromBackend swapped in the real invoices, so every login it
- *  restarted low and minted 05i…/06i… numbers that already existed on the backend —
- *  duplicate "##i" prefixes that the 18s refresh poll then leap-frogged in. `.length`
- *  also shrinks on discard (breaking the "never reused" invariant) and doesn't grow
- *  when the poll pushes remote invoices in. Mirrors nextUnitId/nextCategoryId. */
+/** Highest running number for the CURRENT MONTH — the invoice counter resets monthly (Jac
+ *  2026-07-08). Each id is parsed via CFG.parseInvoice (handles the new ##MMDDYY form AND the
+ *  legacy ##iDDMmmYY), scoped to this month+year: July keeps counting up, August restarts at 1.
+ *  MUST come from the data, not `.length` — that restarted low each login and minted numbers
+ *  already on the backend (duplicate prefixes the 18s poll then leap-frogged in), and it shrinks
+ *  on discard, breaking the "never reused" invariant. Mirrors nextUnitId/nextCategoryId. */
 function maxInvoiceSeq() {
-  return (DATA.invoices || []).reduce((m, inv) => { const n = /^(\d+)i/.exec(String(inv.invoiceId || '')); return n ? Math.max(m, +n[1]) : m; }, 0);
+  const cur = CFG.invoiceMonthKey(TODAY_ISO);
+  return (DATA.invoices || []).reduce((m, inv) => { const p = CFG.parseInvoice(inv.invoiceId); return (p && p.monthKey === cur) ? Math.max(m, p.seq) : m; }, 0);
 }
+/** Invoice ids this session MINTED — lets the refresh poll tell an id COLLISION apart from
+ *  a normal remote edit. If a number we just minted already belonged to ANOTHER customer's
+ *  bill on the backend (an 18s-poll race — see the collision history above), the poll would
+ *  otherwise adopt their record in place and swap our invoice's customer + amount. Gating on
+ *  this set lets healInvoiceIdCollision re-issue OURS instead (§inv-collision, Jac 2026-07-07). */
+const mintedInvoiceIds = new Set();
 /** Next unique invoice id — a monotonic counter so deleting a Quote-stage invoice can't
- *  reuse a number. Always jumps past the current max in the data, so it can't collide
- *  with invoices loaded at login or pushed in by the live-refresh poll mid-session. */
-const nextInvoiceId = () => { state.invoiceSeq = Math.max(state.invoiceSeq || 0, maxInvoiceSeq()) + 1; return CFG.invoiceId(TODAY_ISO, state.invoiceSeq); };
+ *  reuse a number. Jumps past the current max in the data AND past any id already in the
+ *  local index, so it can't collide with invoices loaded at login or pushed in by the
+ *  live-refresh poll. (A same-day number minted by ANOTHER session before it has polled in
+ *  can't be seen here — that residual race is caught downstream by healInvoiceIdCollision.) */
+const nextInvoiceId = () => {
+  const monthKey = CFG.invoiceMonthKey(TODAY_ISO);
+  if (state.invoiceSeqMonth !== monthKey) { state.invoiceSeqMonth = monthKey; state.invoiceSeq = 0; }   // per-month counter: drop the session high-water on a month rollover
+  let seq = Math.max(state.invoiceSeq || 0, maxInvoiceSeq());
+  let id; do { id = CFG.invoiceId(TODAY_ISO, ++seq); } while (IDX.invoice && IDX.invoice.has(id));
+  state.invoiceSeq = seq; mintedInvoiceIds.add(id); return id;
+};
 
 /* ── session actions ──────────────────────────────────────────────────────
    `recType` is only meaningful for the Shop card (which holds inspections /
@@ -2148,6 +2185,10 @@ function setAnchor(session, card, recId, recType, opts = {}) {
   const m = entityCardOf(card, recType), col = columnOfMember(m);
   if (col && session.cols) session.cols[col] = m;
   ackComments(rec);   // anchoring opens the record in standard → viewing = acknowledged (Phase 6)
+  // Opening a mapped unit's detail should never show a snapshot that's gone stale from being
+  // idle elsewhere — freshen it here (same 60s staleness gate the fleet popups use), on top of
+  // the 30s poll that keeps it current WHILE you stay on the unit (Jac 2026-07-08).
+  if (entityCard === 'units' && gpsToken && rec && rec.gpsProvider && rec.gpsDeviceId && (gpsLiveAt === 0 || Date.now() - gpsLiveAt > 60000)) refreshGpsLive();
 }
 
 function anchorRecord(card, recId, recType) {
@@ -2227,7 +2268,7 @@ function closeAll() {
   // Clearing the item-tab rail returns to a clean slate, so the search bars must
   // go with it — both the global one (query + pinned filter pills) and every
   // per-card mini-search on the now-active default session (these stayed filled).
-  state.searchMode = false; state.query = ''; state.filterTerms = [];
+  state.searchMode = false; state.query = ''; state.filterTerms = []; state.calSearch = '';
   for (const c of GRID_CARDS) { const ccs = state.defaultSession.cards[c.id]; if (ccs) { ccs.search = ''; ccs.filterTerms = []; ccs.listLimit = undefined; } }
   state.winEdit = null; state.datesearch = null;
   render();
@@ -2362,7 +2403,9 @@ function cardRecordAt(target) {
     return SHOP_TYPES.includes(pc) ? { card: 'shop', recId: pill.dataset.pillRec, recType: pc } : { card: pc, recId: pill.dataset.pillRec, recType: null };
   }
   const row = target.closest && target.closest('.row');
-  if (row && row.dataset.rec) return { card: row.dataset.card, recId: row.dataset.rec, recType: row.dataset.type || null };
+  // Trips rows have no detail view yet (Phase 1, derived-only) — pills inside them still
+  // resolve above (a customer/unit/driver pill navigates); the bare row resolves to nothing.
+  if (row && row.dataset.rec && row.dataset.card !== 'calendar') return { card: row.dataset.card, recId: row.dataset.rec, recType: row.dataset.type || null };
   const cardNode = target.closest && target.closest('.card');
   if (cardNode) {
     const dc = cardNode.dataset.card;
@@ -4290,7 +4333,12 @@ const FLAG_COND = {
     'no-card':          (r) => { const c = IDX.customer.get(r.customerId); return !!c && cardFlag(c) === 'none'; },
     'unsigned-card':    (r) => { const c = IDX.customer.get(r.customerId); if (!c || !hasValidCard(c)) return false; return !cardCurrentSigning(c, defaultCard(c)); },
     'unit-failed':      (r) => rentalUnitRecords(r).some((u) => u.inspectionStatus === 'Failed'),
-    'off-rent-overdue': (r) => r.status === 'Off Rent',
+    // §10 Overdue Return — fires on the stored Off Rent status AND on any rental still
+    // physically OUT (On/End Rent) whose scheduled return has passed. Mirrors the start-side
+    // `no-show` derivation and the same OUT_RENTAL_STATUSES + endDate<TODAY "overdue out" test
+    // the availability engine already uses (rentalsOverlappingUnit, categoryUnavailReason), so a
+    // window that ended without the unit coming back stops reading plain-green "On Rent".
+    'off-rent-overdue': (r) => r.status === 'Off Rent' || (OUT_RENTAL_STATUSES.has(r.status) && !!r.endDate && r.endDate < TODAY_ISO),
     'no-show':          (r) => r.status === 'Reserved' && !!r.startDate && parseISO(r.startDate) < TODAY,
     'starts-today':     (r) => r.status === 'Reserved' && !!r.startDate && dayDiff(TODAY, parseISO(r.startDate)) === 0,
     'starts-tomorrow':  (r) => r.status === 'Reserved' && !!r.startDate && dayDiff(TODAY, parseISO(r.startDate)) === 1,
@@ -4518,10 +4566,14 @@ function closeX(js, { data, hover } = {}) {
 function reqBtn(label, { js, data, icon } = {}) {
   return `<button class="req${js ? ' ' + js : ''}" data-r="R6"${dataAttrs(data)}>${icon || ''}${esc(label)}</button>`;
 }
-/** R7: a hyperlink — blue, italic, permanent underline; navigates when card/rec given. */
-function linkName(label, { card, recId, js, data } = {}) {
+/** R7: a hyperlink — blue, italic, permanent underline; navigates when card/rec given.
+ *  href → a REAL <a> (tel:, external maps…); ext adds target=_blank rel=noopener;
+ *  icon rides left of the label (dimmed to text weight by the .linkname svg rule). */
+function linkName(label, { card, recId, js, data, href, ext, icon } = {}) {
   const nav = card ? ` data-pill-card="${card}" data-pill-rec="${esc(recId)}"` : '';
-  return `<span class="linkname${js ? ' ' + js : ''}" data-r="R7"${nav}${dataAttrs(data)}>${esc(label)}</span>`;
+  const body = `${icon || ''}${esc(label)}`;
+  if (href) return `<a class="linkname${js ? ' ' + js : ''}" data-r="R7" href="${esc(href)}"${ext ? ' target="_blank" rel="noopener"' : ''}${dataAttrs(data)}>${body}</a>`;
+  return `<span class="linkname${js ? ' ' + js : ''}" data-r="R7"${nav}${dataAttrs(data)}>${body}</span>`;
 }
 /** R9: a title mini-flag + the ≤2-row stack that matches the 30px title chip. */
 function flagEl(label, color, { icon, card, recId, title, alert, sect } = {}) {
@@ -4621,6 +4673,18 @@ function openCtxMenuAt(target, x, y) {
   if (!target || !target.closest) return;
   if (target.closest('input, textarea, .inline-input')) return;
   const card = target.closest('.card'); if (!card && !target.closest('.overlay .popup')) return;
+  // §2.3 Phase 3 — right-click / long-press on a Trips row body opens the trip's own
+  // Merge/Split menu (openTripMenu), not the generic Wrangler record menu below: a
+  // derived/materialized Trip isn't a real card record. Excludes linked-record pills,
+  // real links, and the per-leg controls so THEIR own right-click behavior (e.g. a
+  // rental pill's "+Target" link actions) still works exactly as it did before —
+  // this only claims the row's own dead space (badge/time/town/spacer/Done/⋯), the
+  // SAME area whose left-click already toggles the cab sheet.
+  const tripRow = target.closest('.row[data-card="calendar"]');
+  if (tripRow && !target.closest('[data-pill-card], a[href], .dt-time, .js-stop-driver, .js-trip-driver')) {
+    openTripMenu(tripRow.dataset.rec, tripRow.dataset.day, tripRow);
+    return;
+  }
   // §13.4 — inside an OPEN graph view, right-click/long-press the panel (or the Views & sort
   // control above it) opens the graph-chrome menu instead of the per-element Wrangler menu,
   // so the filter pills / sort can be hidden and Reset.
@@ -4770,6 +4834,7 @@ const RULE_META = {
   R23: ['Tooltip', 'data-tip → the one styled tip', 'every hover hint goes through data-tip — a native title attribute is a violation'],
   R24: ['Close ✕', 'closeX', 'red circle · white ✕ — the deliberate close/remove; hover-reveal variant on tabs'],
   R25: ['Sync banner', 'renderSyncBanner / #sync-banner', 'persistent “Not saving” plate — red hazard-stripe danger cap; raised when the backend sync is failing, hides on recovery. The ONE non-toast alert; lives on <body>, outside #app'],
+  R26: ['Due-Today banner', 'renderSchedBanner / #sched-banner', 'top-of-screen reminder plate — caution-YELLOW hazard-stripe cap; lists the scheduled actions due today (customer · note · time), each customer an R2 link. Manual X only (never auto-clears), dismissal sticks for the session (sessionStorage). Like R25 it lives on <body>, outside #app'],
 };
 /* ════════════ APP-12 · DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
    The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
@@ -5063,7 +5128,16 @@ function categoryIconFor(name) {
   else if (/heat|furnace/.test(n)) key = 'heater';
   else if (/saw|cut|chainsaw|chipper|trowel|float|buffer|sander|tiller|sod|splitter|jack.?hammer|metal.?break|pallet.?jack|snake|blade/.test(n)) key = 'saw';
   if (CATEGORY_ANIM[key]) return `<span class="cat-glyph">${CATEGORY_ANIM[key]}</span>`;
+  if (CATEGORY_FRAMES[key]) return `<span class="cat-glyph">${catFramesSvg(CATEGORY_FRAMES[key])}</span>`;
   return `<span class="cat-glyph ${CATEGORY_MOTION[key]}">${CATEGORY_ICON[key]}</span>`;
+}
+// Renders a 2- or 3-frame hover sprite (icons-frames.js) as one <svg> with each
+// frame in its own <g class="cf">, hard-cut via CSS steps() — see "CATEGORY FRAME
+// SPRITES" in style.css. Frame count varies per family (buggy/dumptrailer are
+// 2-frame redesigns, not padded to 3) so the wrapper class carries the count.
+function catFramesSvg(frames) {
+  const groups = frames.map((body, i) => `<g class="cf cf${i + 1}">${body}</g>`).join('');
+  return `<svg class="catframes cf-n${frames.length}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${groups}</svg>`;
 }
 /* The unit row's RENTAL+INSPECTION pill — the "driving button" (Jac 2026-07-03).
    It says what you can DO with the unit right now: AVAILABLE (passed, active, free),
@@ -5104,8 +5178,19 @@ function unitPrimaryState(u) {
   if (ar) {   // tied to a rental → stage + window dates
     const win = cardWindow(ar.startDate, ar.endDate);
     const failed = u.inspectionStatus === 'Failed';
-    const status = failed ? 'Field Call' : rentalDisplayStatus(ar);   // breakdown mid-rental = field call, not "Failed"
-    return { label: win ? `${status} · ${win}` : status, color: (failed || unitOverbooked(u.unitId)) ? 'red' : insp.color };
+    let status = failed ? 'Field Call' : rentalDisplayStatus(ar);   // breakdown mid-rental = field call, not "Failed"
+    // §10 Overdue Return (#509) — an out unit whose scheduled return has passed reads RED
+    // and its pill word flips to "Overdue" (approved by Jac), mirroring the rental-entity
+    // flag #481 added (FLAG_COND 'off-rent-overdue') and the availability engine's per-unit
+    // overdue-out test (rentalsOverlappingUnit). Without this the unit's headline pill stayed
+    // inspection-color green reading "On Rent" while its rental card already showed overdue —
+    // the same "still ON RENT after the return date" gap, on the unit side. Stored status is
+    // untouched (display-only relabel, per overdueOutStatus).
+    const eu = unitEntry(ar, u.unitId);
+    const euStatus = eu ? unitStatus(ar, eu) : ar.status;
+    const overdueOut = OUT_RENTAL_STATUSES.has(euStatus) && !!ar.endDate && ar.endDate < TODAY_ISO;
+    if (!failed && overdueOutStatus(euStatus, ar.endDate)) status = 'Overdue';
+    return { label: win ? `${status} · ${win}` : status, color: (failed || unitOverbooked(u.unitId) || overdueOut) ? 'red' : insp.color };
   }
   if (u.inspectionStatus === 'Failed') return { label: 'Failed', color: 'red' };
   if (u.inspectionStatus === 'Not Ready') return { label: 'Not Ready', color: 'yellow' };
@@ -5141,8 +5226,11 @@ const FLAG_SEV = { red: 2, yellow: 1, gray: 0 };
 function unitCardFlags(u) {
   const f = [];
   if (unitOverbooked(u.unitId)) f.push({ label: 'Overbooked', color: 'red', alert: true });
-  if (u.gpsStatus === 'Not Reporting') f.push({ label: 'No GPS', color: 'red' });
-  else if (u.gpsStatus === 'Verify') f.push({ label: 'GPS?', color: 'yellow' });
+  const gsFlag = unitGpsStatus(u);   // live-derived (falls back to stored) — §5 step 3
+  if (gsFlag) {
+    if (gsFlag.status === 'Not Reporting') f.push({ label: 'No GPS', color: 'red' });
+    else if (gsFlag.status === 'Verify') f.push({ label: 'GPS?', color: 'yellow' });
+  }
   if (u.fleetStatus && u.fleetStatus !== 'Active') { const fs = getStatus('unitFleetStatus', u.fleetStatus); f.push({ label: fs.label, color: fs.color }); }
   // The border now mirrors the two pills, so surface the warnings the pills DON'T show
   // (Jac 2026-07-01): a due/past-due SERVICE that an open WO is hiding in pill 2, and a
@@ -5167,13 +5255,24 @@ function rowEl(card, rec) {
   if (card === 'customers' && /Blacklist/i.test(rec.accountType || '')) extra += ' unavailable';   // §9 blacklisted → red
   // §10 — under an active rental window, tint every unavailable unit/category red
   if (availWin && availUnavailable(card, rec)) extra += ' unavailable';
+  if (card === 'calendar' && rec.done) extra += ' trip-done';   // Trips: a done run stays visible, dimmed (spec §2.2)
+  if (card === 'calendar' && state.calOpenTrip === id) extra += ' trip-open';       // §2.2b cab sheet expanded
+  if (card === 'calendar' && state.dispFocusId === id) extra += ' trip-focus';      // focused on the live map — the neon "you are here" ring survives a re-render
   const node = el('div', 'row' + extra);
   node.dataset.card = card; node.dataset.rec = id;
-  node.innerHTML = `${rowViz(card, rec)}${commentMarkerHtml(card, rec)}
+  // Trips rows (Phase 3, spec §2.3): stamp the trip's own day (merge/drop is same-day
+  // only) and re-enable native drag — Phase 1 removed it (no target to drop ONTO yet);
+  // dragging one trip row onto another now MERGES them (drop-target styling below,
+  // wired in the §15c-adjacent drag block near the grp-hd reorder listeners).
+  if (card === 'calendar') { node.dataset.day = rec.day; node.draggable = true; }
+  // Trips rows have no detail view yet (Phase 1, derived-only) — eye-preview / new-tab
+  // open a "record" that doesn't exist, so they're dropped rather than wired to crash.
+  const actions = card === 'calendar' ? '' : `
     <div class="r-actions">
       <button class="rbtn js-roweye${state.previewsOn ? '' : ' off'}" data-tip="${state.previewsOn ? 'Hover: preview · Click: previews OFF app-wide' : 'Previews are OFF — click to turn on'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
       <button class="rbtn js-newtab" data-tip="Open in new tab (+)">${I.plus}</button>
-    </div>
+    </div>`;
+  node.innerHTML = `${rowViz(card, rec)}${commentMarkerHtml(card, rec)}${actions}
     <div class="row-content">${inner}</div>`;
   return node;
 }
@@ -5471,6 +5570,90 @@ const ROWS = {
         ${svcPills(top, true)}
         ${ar ? statusPill('rentalStatus', rentalDisplayStatus(ar), { card: 'rentals', recId: ar.rentalId }) : ''}
       </div>`;
+  },
+
+  /* ── TRIPS (née Calendar/dispatch cockpit) — spec 2026-07-09 §2.2 + §2.2b + §2.3,
+     Phase 1/1b/3: one row per Trip (derived OR materialized), and the row IS the cab
+     view. Anatomy: kind badge · tap-to-edit time (ONE per trip, even merged — spec
+     §2.3) · destination TOWN of the PRIMARY (first) stop · customer refPill · one
+     unit pill per stop (sequence-numbered once merged) · driver pill (R5b +Driver;
+     a merged trip's driver reassigns EVERY leg together — js-trip-driver — vs a
+     single leg's own js-stop-driver) · tap-to-call tel: link · +Log Delivery/Recovery
+     for the primary stop (the SAME journey capture path — D7 stamp free; other stops'
+     log actions live in the cab sheet) · the ⋯ menu (Merge trip…/Split out…, spec
+     §2.3 touch-parity guardrail — the non-drag path). Tapping the row BODY toggles
+     the cab sheet. Row content only — rowEl() supplies the card frame + drag wiring. */
+  calendar: (t) => {
+    const r = IDX.rental.get(t.rentalId);
+    const cu = r && r.customerId ? IDX.customer.get(r.customerId) : null;
+    const multi = t.stops.length > 1;
+    // §2.3 driver — a merged trip's ONE driver reassigns every leg together (D6: no
+    // redundant trip-level field, so a shown driver can never disagree with a leg's
+    // own). A single-stop trip keeps the exact Phase-1 per-leg control.
+    const driverChip = multi
+      ? (t.driverId
+        ? `<button class="catr-slot js-trip-driver" data-id="${esc(t.id)}" data-day="${esc(t.day)}" data-tip="Driver on this trip (${t.stops.length} stops) — tap to change">${badge(driverName(t.driverId), 'navy')}</button>`
+        : (driverRoster().length ? `<button class="catr-slot js-trip-driver" data-r="R5b" data-id="${esc(t.id)}" data-day="${esc(t.day)}" data-tip="Assign a driver to this trip"><span class="add-field anchor" data-r="R5b" style="height:20px;font-size:10px">+Driver</span></button>` : ''))
+      : (t.driverId
+        ? `<button class="catr-slot js-stop-driver" data-id="${esc(t.id)}" data-rec="${esc(t.rentalId)}" data-unit="${esc(t.unitId || '')}" data-task="${esc(t.task)}" data-tip="Driver on this leg — tap to change">${badge(driverName(t.driverId), 'navy')}</button>`
+        : (driverRoster().length ? `<button class="catr-slot js-stop-driver" data-r="R5b" data-id="${esc(t.id)}" data-rec="${esc(t.rentalId)}" data-unit="${esc(t.unitId || '')}" data-task="${esc(t.task)}" data-tip="Assign a driver to this leg"><span class="add-field anchor" data-r="R5b" style="height:20px;font-size:10px">+Driver</span></button>` : ''));
+    // §2.3 row-2 — one unit pill per stop; a merged trip numbers the sequence (the
+    // implicit array order IS the run order — spec §2.3, within-trip drag-reorder
+    // skipped as a documented nice-to-have).
+    const stopsHtml = t.stops.map((s, i) => `${multi ? `<span class="trip-seq-n" data-tip="Stop ${i + 1} of ${t.stops.length} — ${esc(s.task)}">${i + 1}</span>` : ''}${s.unitId ? unitPill(s.unitId) : ''}`).join('');
+    // §2.2b destination = the PRIMARY stop's TOWN, compact; tap jumps the live map to this trip.
+    const town = tripTown(t.addr);
+    const townHtml = town ? `<button class="trip-town trip-tap js-trip-town${t.pin ? '' : ' nopin'}" data-id="${esc(t.id)}" data-day="${esc(t.day)}" data-tip="${esc(t.addr)} — tap to see this run on the live map">${t.pin ? '' : '⚠ '}${esc(town)}</button>` : '';
+    // §2.2b call the customer — a REAL tel: anchor (R7), no detour through Customers.
+    const callHtml = (cu && cu.phone && telHref(cu.phone)) ? linkName(cu.phone, { href: telHref(cu.phone), icon: I.phone, js: 'trip-tap' }) : '';
+    // §2.2b log completion from the row — the journey's js-yard flow verbatim (yardCapture
+    // → the capture overlay → saveYardCapture → D7 driver stamp). Done → the stamp clock.
+    // Scoped to the PRIMARY stop only — the rest of a merged trip's stops log from the
+    // cab sheet (one level down), so the row stays lean regardless of stop count.
+    const capKey = t.task === 'Deliver' ? 'startCapture' : 'endCapture';
+    const src = r ? (unitEntry(r, t.unitId) || r) : null;
+    const clock = t.done && src && src[capKey] ? src[capKey].clock : '';
+    const logHtml = t.done
+      ? (clock ? badge(`Logged ${clock}`, 'green') : '')
+      : (t.task === 'Deliver'
+        ? addBtn('Log Delivery', { link: true, icon: I.video, js: 'js-yard trip-tap', data: { cap: 'start', rec: t.rentalId, unit: t.unitId || '' } })
+        : addBtn('Log Recovery', { link: true, icon: I.video, js: 'js-yard trip-tap', data: { cap: 'end', rec: t.rentalId, unit: t.unitId || '' } }));
+    // §2.3 the ⋯ menu — Merge trip…/Split out…, the non-drag/touch-parity path
+    // (dispatch-ux-research 2026-07-06: "drag-only" is a named anti-pattern). Always
+    // on (simplest — no hover-reveal state to keep in sync with the phone rule).
+    const menuBtn = `<button class="trip-more js-trip-menu" data-id="${esc(t.id)}" data-day="${esc(t.day)}" data-tip="Merge or split this trip">⋯</button>`;
+    // §2.2b cab sheet — unit facts one level down: unit pill · fuel · weight (R3b facts).
+    // Phase 3: every stop PAST the primary also carries its own +Log action here (the
+    // primary's own log action already rides row-3 above) — one code path either way.
+    const cab = state.calOpenTrip === t.id ? `<div class="trip-cab">${t.stops.map((s, i) => {
+      const u = IDX.unit.get(s.unitId); if (!u) return '';
+      const cat = IDX.category.get(u.categoryId);
+      const sr = i > 0 ? IDX.rental.get(s.rentalId) : null;
+      const sSrc = sr ? (unitEntry(sr, s.unitId) || sr) : null;
+      const sCapKey = s.task === 'Deliver' ? 'startCapture' : 'endCapture';
+      const sDone = i > 0 && stopDone(s);
+      const sClock = sDone && sSrc && sSrc[sCapKey] ? sSrc[sCapKey].clock : '';
+      const stopLogHtml = i === 0 ? '' : (
+        sDone
+          ? (sClock ? badge(`Logged ${sClock}`, 'green') : '')
+          : (s.task === 'Deliver'
+            ? addBtn('Log Delivery', { link: true, icon: I.video, js: 'js-yard trip-tap', data: { cap: 'start', rec: s.rentalId, unit: s.unitId || '' } })
+            : addBtn('Log Recovery', { link: true, icon: I.video, js: 'js-yard trip-tap', data: { cap: 'end', rec: s.rentalId, unit: s.unitId || '' } })));
+      const seqNum = multi ? `<span class="trip-seq-n" data-tip="Stop ${i + 1} of ${t.stops.length} — ${esc(s.task)}">${i + 1}</span>` : '';
+      return `<div class="trip-cab-line">${seqNum}${multi ? badge(s.task, s.task === 'Deliver' ? 'blue' : 'brown') : ''}${unitPill(s.unitId)}${cat && cat.fuelType ? badge(String(cat.fuelType).toUpperCase()) : ''}${badge(u.weight ? String(u.weight).toUpperCase() : 'NO WEIGHT')}${stopLogHtml}</div>`;
+    }).join('')}</div>` : '';
+    return `<div class="row-1">
+        ${badge(t.task, t.task === 'Deliver' ? 'blue' : 'brown')}
+        <input class="dt-time js-disp-time" data-id="${esc(t.id)}" data-day="${esc(t.day)}" value="${esc(t.time || '')}" placeholder="—:—" maxlength="8" aria-label="Stop time" data-tip="Set the stop time — reorders the run" />
+        ${townHtml}
+        <span class="spacer"></span>
+        ${autoRunFlagHtml(t)}
+        ${t.done ? badge('Done', 'green') : ''}
+        ${menuBtn}
+      </div>
+      <div class="row-2">${refPill('rentals', t.rentalId, t.cust)}${stopsHtml}${driverChip}</div>
+      <div class="trip-r3">${callHtml}<span class="spacer"></span>${logHtml}</div>
+      ${cab}`;
   },
 };
 
@@ -6414,10 +6597,31 @@ const DETAIL = {
       ${efld('units', u, 'unitId', 'weight', 'Weight')}
       <div class="kv"><span class="v inline-edit" data-edit="unitHours" data-rec="${u.unitId}">${num(u.currentHours)} HRS</span></div>
     </div></div>`;
+    // GPS connect wizard (spec §5a) — mapping now happens through a guided popup
+    // (provider → identify → confirmed live signal) instead of hand-typing gpsProvider/
+    // gpsDeviceId; the "No GPS" badge grows a +Connect add, an already-mapped unit gets
+    // a quiet Reconnect affordance beside its provider · device-id.
+    const gpsMapped = !!(u.gpsProvider && u.gpsDeviceId);
+    const gsUnit = unitGpsStatus(u);   // live-derived status (§5 step 3); null = untracked
+    const gpsStale = gsUnit && !gsUnit.live && gpsMapped;   // backend unreachable → showing last-known
+    // §5 step 4 — enriched, on-open live detail from the fleet snapshot (last seen + map +
+    // engine). Only when we have LIVE data for this unit; the 30s view poll keeps it fresh.
+    const gpsM = (gsUnit && gsUnit.live) ? gsUnit.machine : null;
+    const gpsMapHref = (gpsM && gpsM.lat != null && gpsM.lng != null) ? `https://www.google.com/maps?q=${gpsM.lat},${gpsM.lng}` : '';
+    const gpsSeen = gpsM ? gpsRelTime(gpsM.lastSeen) : '';
     const gps = `<div class="section"><h4>GPS</h4><div class="fieldstack">
-      ${kvPills(u.gpsStatus ? statusPill('gpsStatus', u.gpsStatus, { focal: true }) : badge('No GPS'))}
+      ${kvPills((gsUnit ? statusPill('gpsStatus', gsUnit.status, { focal: true }) : badge('No GPS')) + (gpsMapped ? '' : addBtn('Connect GPS', { link: true, js: 'js-gps-connect', data: { rec: u.unitId } })))}
+      ${gpsStale ? `<div class="kv" style="justify-content:center"><span class="muted" style="font-size:11px">Last known — live link down</span></div>` : ''}
+      ${gpsM ? `<div class="kv" style="justify-content:center;gap:8px;flex-wrap:wrap">
+        ${gpsSeen ? `<span class="muted" style="font-size:11px">Last seen ${esc(gpsSeen)}</span>` : ''}
+        ${gpsMapHref ? `<a class="gps-maplink" href="${gpsMapHref}" target="_blank" rel="noopener">${esc(gpsM.address || 'View on map')}</a>` : ''}
+        ${badge(gpsM.engineOn ? 'Engine On' : 'Engine Off', gpsM.engineOn ? 'green' : 'gray')}
+      </div>` : ''}
+      ${gpsMapped ? `<div class="kv"><span class="v muted" style="font-size:11px">${esc(u.gpsProvider)} · ${esc(u.gpsDeviceId)}</span>${ghostPill('Reconnect', { js: 'js-gps-connect', data: { rec: u.unitId } })}</div>` : ''}
       ${efld('units', u, 'unitId', 'gpsType', 'GPS unit/type')}
       ${efld('units', u, 'unitId', 'gpsPlacement', 'Placement')}
+      ${gpsShutdownControl(u, gpsM)}
+      ${gpsMapped ? gpsFeedHtml(u) : ''}
     </div></div>`;
     /* COVERAGE — the yard's own equipment insurance on this unit (spec equipment-insurance
        Phase 1, Jac 2026-06-29). STATUS + riders are open to every role (a driver must know a
@@ -7195,13 +7399,48 @@ const GROUP_DEFS = {
     { key: 'Collections', color: 'red' }, { key: 'Late', color: 'red' }, { key: 'Unpaid', color: 'yellow' },
     { key: 'Partial', color: 'yellow' }, { key: 'Not Due', color: 'blue' }, { key: 'Paid', color: 'green' }, { key: 'Refunded', color: 'gray' },
   ] },
+  /* Trips (spec 2026-07-09 §2.2) — day buckets, not status buckets. keyOf returns 'Today' /
+     'Tomorrow' / the trip's own ISO day (any other future day) / 'Earlier' (past — trailing,
+     default-collapsed below). `sections` is a FUNCTION of the bucketed keys (not a fixed list —
+     unlike every other card, the "days present" are only known once the rows are bucketed):
+     Today/Tomorrow lead, future days sort chronologically (ISO strings sort = date order), the
+     bucket's own ISO day rides as the key (stable across renders — a display label would drift
+     year to year) with the 'SAT JUL 12'-style label carried separately for the header text.
+     groupSuffix rides the done/total fraction onto the header label (e.g. "· 3 · 2 done"). */
+  calendar: {
+    keyOf: (t) => (t.day === TODAY_ISO ? 'Today' : t.day === addDaysISO(TODAY_ISO, 1) ? 'Tomorrow' : t.day > TODAY_ISO ? t.day : 'Earlier'),
+    sections: (keys) => {
+      const future = keys.filter((k) => k !== 'Today' && k !== 'Tomorrow' && k !== 'Earlier').sort();
+      return [
+        { key: 'Today', color: 'red' },
+        { key: 'Tomorrow', color: 'yellow' },
+        ...future.map((iso) => ({ key: iso, label: dispatchDayLabel(iso).toUpperCase(), color: 'purple' })),
+        { key: 'Earlier', color: 'gray' },
+      ];
+    },
+    groupSuffix: (group) => { const done = group.filter((t) => t.done).length; return done ? `${done} done` : ''; },
+    // §2.7 Auto-Run — one button per RUNNABLE day (never 'Earlier', a mixed bag of past days
+    // with no single day to run), and only while the group still has work left to sequence.
+    headerExtra: (group, key) => {
+      if (key === 'Earlier' || !group.some((t) => !t.done)) return '';
+      const day = key === 'Today' ? TODAY_ISO : key === 'Tomorrow' ? addDaysISO(TODAY_ISO, 1) : key;
+      return actionPill('commit', 'Auto-Run', { js: 'js-autorun', data: { day } });
+    },
+  },
 };
-// Collapsed groups, remembered per device: { "<card>:<groupKey>": 1 }.
+// Collapsed groups, remembered per device: { "<card>:<groupKey>": true|false }. Absent = the
+// card's own default (every card defaults OPEN except Trips' Earlier bucket — spec §2.2 — which
+// starts collapsed until the dispatcher opens it; hasOwnProperty (not a truthy check) so an
+// explicit "expanded" (stored false) sticks, distinct from "never touched" (falls to the default).
 const COLLAPSED_GROUPS = (() => { try { return JSON.parse(localStorage.getItem('jactec.collapsedGroups') || '{}'); } catch (e) { return {}; } })();
-const groupCollapsed = (card, key) => !!COLLAPSED_GROUPS[card + ':' + key];
+const groupDefaultCollapsed = (card, key) => card === 'calendar' && key === 'Earlier';
+const groupCollapsed = (card, key) => {
+  const k = card + ':' + key;
+  return Object.prototype.hasOwnProperty.call(COLLAPSED_GROUPS, k) ? !!COLLAPSED_GROUPS[k] : groupDefaultCollapsed(card, key);
+};
 function toggleGroupCollapsed(card, key) {
   const k = card + ':' + key;
-  if (COLLAPSED_GROUPS[k]) delete COLLAPSED_GROUPS[k]; else COLLAPSED_GROUPS[k] = 1;
+  COLLAPSED_GROUPS[k] = !groupCollapsed(card, key);
   try { localStorage.setItem('jactec.collapsedGroups', JSON.stringify(COLLAPSED_GROUPS)); } catch (e) {}
 }
 /* Custom GROUP ORDER — drag-to-reorder a card's group headers (Jac 2026-07-04),
@@ -7240,8 +7479,12 @@ function appendGroupedSections(list, rows, cs, card) {
   const limit = cs.listLimit || VIRT_CAP;
   const buckets = new Map();
   for (const rec of rows) { const k = def.keyOf(rec) || '—'; if (!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(rec); }
-  const known = new Set(def.sections.map((s) => s.key));
-  let secs = def.sections.filter((s) => buckets.has(s.key))
+  // `sections` is usually a fixed list (status buckets known ahead of time); Trips' day
+  // buckets aren't known until the rows are bucketed, so it may be a FUNCTION of the
+  // bucketed keys instead — backward compatible with every existing card's fixed array.
+  const defSections = typeof def.sections === 'function' ? def.sections([...buckets.keys()]) : def.sections;
+  const known = new Set(defSections.map((s) => s.key));
+  let secs = defSections.filter((s) => buckets.has(s.key))
     .concat([...buckets.keys()].filter((k) => !known.has(k)).map((k) => ({ key: k, color: 'gray' })));   // leftover keys → trailing gray group (never dropped)
   const custom = customGroupOrder(card);
   if (custom) {
@@ -7258,7 +7501,9 @@ function appendGroupedSections(list, rows, cs, card) {
     hd.dataset.card = card; hd.dataset.group = sec.key;
     hd.draggable = true;   // drag-to-reorder (native DnD — matches the dispatch-rail stop reorder pattern)
     hd.setAttribute('style', `--sec:var(--${sec.color})`);
-    hd.innerHTML = `<span class="grp-grip" data-tip="Drag to reorder">⠿</span><span class="grp-chev">${I.chevR}</span><span class="grp-label">${esc(sec.label || sec.key)} · ${group.length}</span>`;
+    const suffix = def.groupSuffix ? def.groupSuffix(group) : '';   // e.g. Trips' "2 done" riding the count (spec §2.2)
+    const extra = def.headerExtra ? def.headerExtra(group, sec.key) : '';   // e.g. Trips' per-day AUTO-RUN button (spec §2.7)
+    hd.innerHTML = `<span class="grp-grip" data-tip="Drag to reorder">⠿</span><span class="grp-chev">${I.chevR}</span><span class="grp-label">${esc(sec.label || sec.key)} · ${group.length}${suffix ? ' · ' + esc(suffix) : ''}</span>${extra}`;
     list.appendChild(hd);
     if (collapsed) continue;   // header only — cards hidden, and they don't consume the window
     const canShow = limit - shown;
@@ -7295,12 +7540,13 @@ function detailTitle(card, rec) {
 const GRID_CARD_BY_ID = Object.fromEntries(GRID_CARDS.map((c) => [c.id, c]));
 const MEMBER_TITLE = (() => {
   const m = {}; GRID_CARDS.forEach((c) => { m[c.id] = c.title; });
-  SHOP_SEGMENTS.forEach((s) => { m[s.id] = s.label; }); m.calendar = 'Calendar'; return m;
+  SHOP_SEGMENTS.forEach((s) => { m[s.id] = s.label; }); m.calendar = 'Trips'; return m;
 })();
-const memberIcon = (m) => (m === 'calendar' ? I.grid : (CARD_ICON[m] || ''));
+const memberIcon = (m) => (m === 'calendar' ? I.truck : (CARD_ICON[m] || ''));
 // Tab row count for a member (search-aware; mirrors the card's own count chip).
 function memberCount(member, session) {
-  if (member === 'calendar') return dispatchEvents().length;
+  // Trips: upcoming not-done only — a done or past run is history, not a pending count.
+  if (member === 'calendar') return dispatchEvents().filter((ev) => ev.date >= TODAY_ISO && !stopDone(ev)).length;
   if (SHOP_TYPES.includes(member)) { try { return (shopItemsByType(session)[member] || []).length; } catch { return 0; } }
   try { let r = listFor(member, session); if (member === 'units') r = unitsVisible(r, session.cards.units); if (member === 'rentals') r = rentalsVisible(r, session, session.cards.rentals); return r.length; } catch { return 0; }
 }
@@ -7409,12 +7655,59 @@ function memberCardEl(member, session) {
   if (SHOP_TYPES.includes(member)) return shopCardEl({ id: 'shop', title: MEMBER_TITLE[member] }, session, member);
   return cardEl(GRID_CARD_BY_ID[member], session);
 }
+/* Trips card body (spec 2026-07-09 §2.1/§2.2, Phase 1/2) — a native list card: a
+   mini-search listbar (+ the map toggle in the graph-button slot) over a collapsible
+   live-map panel + day-grouped trip rows. 'calendar' is card-stateless (no
+   session.cards.calendar — Phase 0), so this hand-rolls the pieces listView()/cardEl()
+   normally wire up, using state.calSearch for the search text instead of a per-card cs.
+   No title bar — the column tab already says "Trips". */
 function calendarCardEl(session) {
   const node = el('div', 'card' + (state.searchMode ? ' search-glow' : ''));
   node.dataset.card = 'calendar';
-  // no card title — the column tab already says "Calendar" (#2.3)
   const body = el('div', 'card-body cal-body');
-  body.innerHTML = dispatchGridBody();
+  const q = (state.calSearch || '').trim();
+  const mapOpen = tripsMapOpen();
+  const bar = el('div', 'listbar');
+  bar.innerHTML = `
+    <button class="bv-btn js-tripsmap${mapOpen ? ' on' : ''}" data-tip="${mapOpen ? 'Hide the live map' : 'Live map'}">${I.graph}</button>
+    <div class="mini-searchwrap${q ? ' has-query' : ''}">
+    <input class="mini-search" placeholder="Search trips…" value="${esc(state.calSearch || '')}" data-card="calendar" />
+  </div>`;
+  body.appendChild(bar);
+  // §2.1 the live-map panel — open by default everywhere, remembered per device. The map
+  // singleton mounts into .js-dispmount after render (mountDispatchMap, the render pipeline
+  // already calls it). Offline (#local), or a failed Maps load → the stamped MAP OFFLINE
+  // plate (the transport editor's .ph pattern) — never an empty black pane (spec §2.1).
+  if (mapOpen) {
+    const panel = el('div', 'trips-map');
+    const live = !isLocalDemo() && !_dispMapFailed;
+    // §2.2b handoff: a focused trip puts "Open in Google Maps" on the panel — directions to
+    // the pin (lat,lng), or the address string while unpinned. Works from the plate too:
+    // when OUR map is down, the handoff to the real Google Maps app still drives the day.
+    const ft = state.dispFocusId ? tripsFor().find((x) => x.id === state.dispFocusId) : null;
+    const dest = ft ? ((ft.pin && Number.isFinite(ft.pin.lat)) ? `${ft.pin.lat},${ft.pin.lng}` : (ft.addr ? encodeURIComponent(ft.addr) : '')) : '';
+    const gmaps = dest ? `<span class="trips-gmaps">${linkName('Open in Google Maps', { href: `https://www.google.com/maps/dir/?api=1&destination=${dest}`, ext: true })}</span>` : '';
+    panel.innerHTML = live
+      ? `<div class="dispm js-dispmount" data-day="${esc(state.dispatchDay || TODAY_ISO)}">${mapsReady() ? '' : '<span class="map-spin" aria-hidden="true"></span><span class="map-tag">Loading dispatch map…</span>'}</div>${gmaps}`
+      : `<div class="trips-map-ph"><span class="map-pin" aria-hidden="true">${ICO_PIN}</span><span class="map-tag stamp" style="font-size:11px;color:var(--accent)">Map offline</span><span class="map-sub">The run below still drives the day.</span></div>${gmaps}`;
+    body.appendChild(panel);
+  }
+  let trips = tripsFor();
+  if (q) trips = trips.filter((t) => tripMatches(t, q));
+  trips = [...trips].sort(tripSort);
+  const list = el('div', 'list');
+  if (!trips.length) {
+    const label = q ? 'No Matching Trips' : 'No Hauls On The Books';
+    const hint = q ? `No trips match "${q}".` : 'Rentals with delivery or recovery land here on their own.';
+    list.innerHTML = `<div class="trip-empty"><span class="trip-empty-label">${esc(label)}</span><span class="trip-empty-hint">${esc(hint)}</span></div>`;
+  } else {
+    appendGroupedSections(list, trips, {}, 'calendar');
+  }
+  body.appendChild(list);
+  const foot = el('div', 'disp-foot');
+  const sync = tripsSyncFooter();   // §2.3 Phase 4 — real sync state, replaces the Phase 1 static placeholder
+  foot.innerHTML = `<span class="disp-offdot${sync.synced ? ' on' : ''}"></span><span class="disp-offline${sync.synced ? ' on' : ''}">${esc(sync.label)}</span>`;
+  body.appendChild(foot);
   node.appendChild(body);
   return node;
 }
@@ -7845,7 +8138,7 @@ function legacyKpiPct(roleId) {
     const scheduled = R.filter((r) => !['Quote', 'Cancelled', 'No Show'].includes(r.status)).length;
     const washes = N.filter((n) => n.wash === 'Yes').length;
     const washReq = N.filter((n) => n.wash === 'Yes' || n.wash === 'No').length;
-    return [pctOf(delivered, scheduled), pctOf(washes, washReq), null];        // Driving Score = GPS backend
+    return [pctOf(delivered, scheduled), pctOf(washes, washReq), drivingScoreValue()];   // Driving Score = fleet Bouncie safety score (null until loaded)
   }
   if (roleId === 'office') {
     const billed = INV.reduce((a, i) => a + invoiceTotals(i).total, 0);
@@ -7879,7 +8172,7 @@ const KPI_HELP = {
   'WO Rate (20% goal)':     'Progress toward the goal: 20% of the last 30 days’ inspections spawning a work order is healthy (catching problems). Full ring at 20%.',
   'On-Time':                'Rentals you actually delivered/handled ÷ rentals scheduled (excludes quotes, cancels, no-shows).',
   'Wash Completion':        'Of the units flagged for a wash, how many got washed (washed ÷ wash-requested).',
-  'Driving Score':          'Driving-safety score from the GPS backend — placeholder until that’s connected.',
+  'Driving Score':          'Fleet driving-safety score from Bouncie truck trips (hard braking/acceleration per mile + speeding) over the last few weeks — a team metric, 100 = clean. Blank until trips load or if no trucks report.',
   'Invoice Collection Rate':'Of all money invoiced, how much you’ve collected (dollars collected ÷ dollars billed).',
   'Show Rate':              'Of customers who reserved, how many actually showed up (not a No-Show).',
   'Reputation':             'Reputation score from customer email reviews — placeholder until the email backend is connected.',
@@ -8026,7 +8319,7 @@ function legacyKpiRaw(roleId) {
   const c = (v) => ({ v, unit: '' }), usd = (v) => ({ v, unit: '$' });
   if (roleId === 'mechanic') return [c(f.Ready + f['Not Ready']), c(W.filter((w) => w.phase === 'Complete').length), c(W.filter((w) => (w.lineItems || []).some((li) => (li.cost || 0) > 0 || (li.hours || 0) > 0) && w.billCustomer === 'Yes').length)];
   if (roleId === 'mtech') return [c(R.length - R.filter((r) => r.fieldCall).length), c(f.Ready), c(N.filter((n) => !n.woId).length)];
-  if (roleId === 'driver') return [c(R.filter((r) => ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)).length), c(N.filter((n) => n.wash === 'Yes').length), c(0)];
+  if (roleId === 'driver') return [c(R.filter((r) => ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)).length), c(N.filter((n) => n.wash === 'Yes').length), c(drivingScoreValue() || 0)];
   if (roleId === 'office') return [usd(INV.reduce((a, i) => a + invoiceTotals(i).paid - (Number(i.refundedAmount) || 0), 0)), c(R.filter((r) => ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)).length), c(0)];
   if (roleId === 'sales') {
     const ym = TODAY_ISO.slice(0, 7);
@@ -8098,7 +8391,9 @@ function headerEl() {
   const nu = unseenNotifs();
   const notifBtn = `<button class="iconbtn js-notifications" data-tip="Notifications">${I.bell}${nu ? `<span class="bb-badge">${nu > 9 ? '9+' : nu}</span>` : ''}</button>`;
   const ruBtn = `<button class="iconbtn js-ru-open" data-tip="The Round-Up — the reports board">${I.graph}</button>`;
-  const topBar = `<div class="top-toolbar">${ruBtn}${notifBtn}${bottomBarInner()}</div>`;
+  const tn = visibleTransportAlerts().length;   // #515 transport reminders
+  const trBtn = `<button class="iconbtn js-transport-alerts" data-tip="Transports due — call the customer">${I.truck}${tn ? `<span class="bb-badge">${tn > 9 ? '9+' : tn}</span>` : ''}</button>`;
+  const topBar = `<div class="top-toolbar">${ruBtn}${trBtn}${notifBtn}${bottomBarInner()}</div>`;
   // Decluttered top: logo + rings on one row, the tool bar across the next.
   h.innerHTML = `
     <button class="logo js-logo" aria-label="Jac Rentals"></button>
@@ -8149,6 +8444,12 @@ function bottomBarInner(opts = {}) {
     <button class="iconbtn js-chat-toggle${state.chat.open ? ' on' : ''}" data-tip="New team chat — flagged comments + tagged context">${I.chat}${(() => { const n = chatUnreadCount(); return n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''; })()}</button>
     <button class="iconbtn js-wrangler" data-tip="New chat with Mr. Wrangler — ask the yard AI, or report a bug" style="font-size:16px">🤠</button>
     ${opts.noInbox ? '' : `<button class="iconbtn js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${wranglerRequests.length ? `<span class="bb-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : ''}</button>`}
+    <button class="iconbtn js-gps-health" data-tip="Tracker Health — every GPS device across the fleet">${I.truck}</button>
+    <button class="iconbtn js-gps-fleet" data-tip="Fleet Map — every GPS tracker on a live map">${I.grid}</button>
+    <button class="iconbtn js-gps-roundup" data-tip="Round Up Trackers — bulk-match the fleet to live GPS devices">${I.list}</button>
+    <button class="iconbtn js-gps-issues" data-tip="GPS Issues — every tracker that needs attention">${I.alert}</button>
+    <button class="iconbtn js-gps-utilization" data-tip="Fleet Utilization — real hours/miles per unit, from the trackers">${I.graph}</button>
+    <button class="iconbtn js-gps-bouncie-trucks" data-tip="Pull Bouncie Trucks — onboard any new Bouncie vehicle as a Truck-category unit">${CARD_ICON.units}</button>
     <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
     ${devUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
     <button class="iconbtn js-inspect${state.inspect ? ' on' : ''}" data-tip="Design Inspector — hover names the rule, click copies the reference">${I.search}</button>
@@ -8172,7 +8473,10 @@ function bottomBarEl() {
 function commsUtilsEl() {
   const nu = unseenNotifs();
   const notifBadge = nu ? `<span class="fab-badge">${nu > 9 ? '9+' : nu}</span>` : '';
-  return `<button class="fab js-notifications" data-tip="Notifications — resolved fixes">${I.bell}${notifBadge}</button>`;
+  const tn = visibleTransportAlerts().length;
+  const trBadge = tn ? `<span class="fab-badge">${tn > 9 ? '9+' : tn}</span>` : '';   // #515 — deliveries/pickups due to call
+  return `<button class="fab js-transport-alerts" data-tip="Transports due — call the customer">${I.truck}${trBadge}</button>`
+    + `<button class="fab js-notifications" data-tip="Notifications — resolved fixes">${I.bell}${notifBadge}</button>`;
 }
 // The conversation rail: Wrangler + Team channels (split by a thin divider, no section
 // labels), each conversation a SEPARATE tab. 🤠 Wrangler — one tab per OPEN request
@@ -8670,7 +8974,8 @@ async function wranglerRailLoad() {
   }
   try {
     const all = await wrStore.listChats();
-    state.wranglerRail = (all || []).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    const dismissed = loadDismissedChats();
+    state.wranglerRail = (all || []).filter((c) => c && !dismissed.has(c.id)).sort((a, b) => (b.ts || 0) - (a.ts || 0));   // never re-show a dismissed chat (defense-in-depth vs a cached remote winner)
     await wrPruneOldChats();   // §18g auto-janitor: drop plain chats past the retention window
     if (state.wranglerRail.length) render();
   } catch (e) { toast('⚠ Couldn’t load chat history — ' + ((e && e.message) || 'storage error')); }
@@ -8697,15 +9002,24 @@ function wranglerRailSnapshot() {
 function wranglerNewChat(seed) {
   openWranglerDock(Object.assign({ messages: [], draft: '', attach: [], files: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null, id: wranglerNewId() }, seed || {}));
 }
+// §18g dismissal tombstones — the rail syncs cross-device (setWranglerRail / getWranglerRail),
+// so removing a chat from local state + IndexedDB alone lets the union-merge (mergeWranglerRails)
+// pull it straight back from the backend on the next login. This device-local set records what
+// the operator dismissed here so a stale or remote copy can never resurrect it. (Mirrors §246.)
+const WR_DISMISS_KEY = 'jactec.wranglerRailDismissed';
+const loadDismissedChats = () => { try { return new Set(JSON.parse(localStorage.getItem(WR_DISMISS_KEY) || '[]')); } catch (e) { return new Set(); } };
+const saveDismissedChats = (set) => { try { localStorage.setItem(WR_DISMISS_KEY, JSON.stringify([...set].slice(-500))); } catch (e) {} };   // ids only; cap the tail so it stays tiny
 // §18g REMOVE a Mr. Wrangler conversation entirely (the × on its rail tab) — closing the dock
 // only snapshots a chat back onto the rail, so this is the only way to actually clear one. If the
 // chat is the one open in the dock, close the dock WITHOUT re-snapshotting it.
 function wrRailRemove(id) {
   if (!id) return;
+  const s = loadDismissedChats(); s.add(id); saveDismissedChats(s);   // tombstone the dismissal so a cross-device merge can't bring it back
   const o = state.wrangler;
   if (o.id === id) { o.open = false; o.min = false; o.id = null; o.messages = []; o.reqNumber = null; o.reqTitle = null; o.reqUrl = null; }   // drop the live one; cleared so it isn't re-snapshotted on the next open
   state.wranglerRail = (state.wranglerRail || []).filter((c) => c.id !== id);
   try { wrStore.delChat(id); } catch (e) {}   // also from IndexedDB so it doesn't reload next boot
+  pushWranglerRailSoon();                      // propagate the removal to the backend rail, else getWranglerRail re-serves it on the next login
   render();
 }
 // Re-open a stored conversation from the rail.
@@ -8820,9 +9134,13 @@ function hkDemoInner(d) {
   return '<div class="hk-card"><i class="hit"></i><i></i></div><span class="hk-ring r1"></span>' + ptr;       // click → row lights
 }
 
-/* ── §5.3/§11 Office Dispatch Time Grid ──────────────────────────────────────
+/* ── §5.3/§11/§2.3 Trips (née Office Dispatch Time Grid) ──────────────────────
    Every transport task (Deliver at the rental's start, Pick up at its end) for
-   active rentals, grouped by day so the Office sees what trucks go where/when. */
+   active rentals, grouped by day so the Office sees what trucks go where/when.
+   Phase 1 (spec 2026-07-09) retired the map-cockpit card body (dispatchGridBody)
+   for a native day-grouped trip list (calendarCardEl/tripsFor, APP-18); this
+   derivation cluster + the map singleton (mountDispatchMap/refreshDispatchMap)
+   stay — Phase 2 re-parents the map into the new card. */
 /* Driver roster (spec rentals-dispatch D6, Jac 2026-06-29): the Settings → Team Roster rows
    whose role reads Driver (fallback: the whole roster when nobody is tagged Driver yet).
    Rows predating stable ids fall back to name as the ref. */
@@ -8851,13 +9169,9 @@ function dispatchEvents() {
   });
   return out.sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
 }
-// Body-only dispatch grid (stats + day groups) — rendered inside the Calendar
-// card body in the middle column. Pure derivation; dispatchEvents() unchanged.
-/* §2.3 DISPATCH — the Calendar card is a DAILY DRIVER TIMELINE (Phase 6, Jac):
-   the day's transports, auto-filled from rentals, as an ordered route from the
-   yard and back. D = Deliver, R = Recover, 🏠 = JAC. Drag a stop to reorder the
-   run; type a time; the date rides as a bold-red deadline. Order + times are
-   per-device (localStorage). */
+/* §2.3 DISPATCH — the Trips card (Phase 6/spec 2026-07-09): the day's transports,
+   auto-filled from rentals. D = Deliver, R = Pick up. Order + times are per-device
+   (localStorage) until Phase 3/4 materialize a Trip + sync it. */
 const dispatchStopId = (ev) => `${ev.rentalId}|${ev.unitId || ''}|${ev.task}`;
 const _lsJSON = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}'); } catch (e) { return {}; } };
 const _lsSave = (k, o) => { try { localStorage.setItem(k, JSON.stringify(o)); } catch (e) {} };
@@ -8904,6 +9218,85 @@ function assignStopDriver(rentalId, unitId, task, driverId) {
   reindex('rentals', r);
   return true;
 }
+/* §2.3 Trip materialization store (Phase 3, spec 2026-07-09 §2.3) — mirrors
+   dispatchSchedLS's shape (additive localStorage today; Phase 4 promotes the SAME
+   shape to a synced backend slice with stale-rev rejection, so this is a drop-in
+   swap). Keyed by day, then by a STABLE tripId (assigned once — see tripsFor()):
+     { [day]: { [tripId]: { time, order:[{rentalId,unitId,task}], rev } } }
+   Deliberately carries NO trip-level driverId (D6 "one fact, one place" — see
+   tripMerge/tripSplit below): a trip's driver is always read off its stops' own
+   per-leg driverId via assignStopDriver, never cached here where it could drift out
+   of sync with what a leg actually has. */
+const tripsLS = () => _lsJSON('jactec.trips');
+function tripsSaveDay(day, dayStore) { const all = tripsLS(); all[day] = dayStore; _lsSave('jactec.trips', all); }
+/* §2.3 Phase 4 (spec 2026-07-09 Phase 4, LOCKED contract) — backend sync layer around the
+   local cache above. tripsLS()/tripsSaveDay() stay the source renders always read (instant,
+   no network wait); this only pushes/pulls in the background. Mirrors saveGroupOrder/
+   loadGroupOrderFromBackend's own pattern (the backendPassword guard, the debounced push via
+   backendCall, the try/catch-silently-keep-local-cache pull) — adapted to PER-TRIP
+   granularity (setTrip takes one trip at a time, not a whole-day bulk) and the stale-rev
+   conflict case getGroupOrder never had to handle. Debounced PER (day,tripId), not one shared
+   timer like groupOrderSaveTimer — more than one trip can be touched by a single edit
+   (tripSplit writes two records at once), and a single shared timer would drop all but the
+   last of them. */
+const tripSyncTimers = {};   // `${day}|${tripId}` → setTimeout handle
+function tripPushSoon(day, tripId) {
+  if (typeof backendPassword === 'undefined' || !backendPassword) return;   // demo/offline (#local) → the local cache is the only source of truth, never reach the backend
+  const key = day + '|' + tripId;
+  clearTimeout(tripSyncTimers[key]);
+  tripSyncTimers[key] = setTimeout(() => tripPushNow(day, tripId), 600);
+}
+async function tripPushNow(day, tripId) {
+  const rec = (tripsLS()[day] || {})[tripId];
+  if (!rec) return;   // merged/split away locally before the debounce fired — nothing left to push
+  try {
+    const r = await backendCall('setTrip', { day, tripId, time: rec.time, order: rec.order, rev: rec.rev || 0 });
+    if (r && r.ok) {
+      // re-read fresh — another edit (or the stale-rev path below) may have landed while this awaited
+      const store = tripsLS();
+      if (store[day] && store[day][tripId]) { store[day][tripId] = { ...store[day][tripId], rev: r.rev }; tripsSaveDay(day, store[day]); }
+      state.tripsSyncStatus = 'synced';
+      render();
+    } else if (r && !r.ok && r.error === 'stale-rev' && r.current) {
+      // A concurrent dispatcher won the race — never silently overwrite their edit with ours;
+      // adopt the server's version instead and tell the operator why their view just changed.
+      const store = tripsLS();
+      const dayStore = store[day] || (store[day] = {});
+      dayStore[tripId] = { time: r.current.time, order: r.current.order, rev: r.current.rev };
+      tripsSaveDay(day, dayStore);
+      toast('Someone else updated this trip — refreshed');
+      render();
+    }
+  } catch (e) { /* offline/network hiccup → local cache stands; the next edit retries */ }
+}
+/* Boot: pull the WHOLE trips store once at login (mirrors loadGroupOrderFromBackend) — server
+   wins (another device's dispatcher may have edited since this device's local cache was last
+   written). No-op in #local/offline (same backendPassword guard as every other sync path). */
+async function loadTripsFromBackend() {
+  if (typeof backendPassword === 'undefined' || !backendPassword) return;
+  try {
+    const r = await backendCall('getTrips');
+    if (r && r.ok && r.trips && typeof r.trips === 'object') {
+      _lsSave('jactec.trips', r.trips);
+      state.tripsSyncStatus = 'synced';
+      render();
+    }
+  } catch (e) { /* offline → keep local cache */ }
+}
+/* §2.3 Phase 4 — the Trips card footer's live sync state (replaces the Phase 1 static
+   placeholder). 'Synced · rev N' (N = the highest rev among TODAY's materialized trips) only
+   once a push or pull has actually succeeded THIS session; otherwise "Offline — cached" —
+   honest whether that's genuine #local/offline or just "online but hasn't synced yet", since
+   the local cache is the only thing on screen either way. */
+function tripsSyncFooter() {
+  const online = typeof backendPassword !== 'undefined' && !!backendPassword;
+  if (online && state.tripsSyncStatus === 'synced') {
+    const today = tripsLS()[TODAY_ISO] || {};
+    const revs = Object.values(today).map((t) => t.rev || 0);
+    return { synced: true, label: revs.length ? `Synced · rev ${Math.max(...revs)}` : 'Synced' };
+  }
+  return { synced: false, label: 'Offline — cached' };
+}
 // Which driver lanes the dispatcher has open, per device (a VIEW pref, not data — D5:
 // "the dispatcher clicks which drivers to show"). Pruned against the live roster on read.
 const dispatchLanesLS = () => { const v = _lsJSON('jactec.dispatchLanes'); const ids = Array.isArray(v.show) ? v.show : []; const roster = driverRoster().map((d) => d.id); return ids.filter((id) => roster.includes(id)); };
@@ -8945,6 +9338,218 @@ function stopDone(ev) {
   return ev.task === 'Deliver' ? !!src.startCapture : !!src.endCapture;
 }
 const dispatchNextId = (stops) => { const n = stops.find((s) => !stopDone(s)); return n ? n.id : null; };
+/* ── APP-23b Trips derivation (spec 2026-07-09 §2.3, Phase 1/3) ────────────────
+   tripsFor(): every dispatchEvents() event is a potential stop. An UNTOUCHED trip
+   stays pure derivation — one event = one trip, recomputed fresh every render, so a
+   cancelled rental's trip vanishes for free. The moment dispatch touches one (merge,
+   split, or a time edit — tripMerge/tripSplit/the js-disp-time handler) it
+   MATERIALIZES into tripsLS(), keyed by day + a STABLE tripId (assigned once, usually
+   the first-merged stop's own dispatchStopId — it does NOT chase order[0] through
+   later merges/splits). From then on tripsFor() reads that record's order/membership
+   (and time, once set) instead of deriving fresh; driver stays derived off the
+   PRIMARY (order[0]) stop's own per-leg driverId either way (D6 — see tripMerge).
+   Read-time hygiene (spec §2.3): a materialized stop whose rental/leg no longer
+   exists is dropped; a trip left with zero live stops is discarded. Both are computed
+   fresh on every read here — nothing is ever rewritten back to the store for this
+   ("GC on read, not write" — keeps it simple). */
+function tripsFor() {
+  const legacyTimes = dispatchTimesLS();
+  const sched = dispatchSchedLS();
+  const events = dispatchEvents();
+  const evById = new Map(events.map((ev) => [dispatchStopId(ev), ev]));
+  const timeOf = (ev) => {
+    const id = dispatchStopId(ev), lane = ev.driverId || 'pool', day = ev.date;
+    const daySched = sched[day] || {};
+    const lt = daySched[lane] && daySched[lane].times ? daySched[lane].times[id] : undefined;
+    return lt !== undefined ? lt : (legacyTimes[id] ?? ev.time ?? '');
+  };
+  const store = tripsLS();
+  const consumed = new Set();   // stop ids already rendered via a materialized trip below
+  const out = [];
+  for (const day of Object.keys(store)) {
+    for (const tripId of Object.keys(store[day] || {})) {
+      const rec = store[day][tripId] || {};
+      const order = (Array.isArray(rec.order) ? rec.order : []).filter((s) => evById.has(dispatchStopId(s)));
+      if (!order.length) continue;   // every stop orphaned → the trip itself is discarded (read-time GC)
+      consumed.add(tripId);
+      order.forEach((s) => consumed.add(dispatchStopId(s)));
+      const primaryEv = evById.get(dispatchStopId(order[0]));
+      const time = rec.time !== undefined ? rec.time : timeOf(primaryEv);
+      const done = order.every((s) => stopDone(evById.get(dispatchStopId(s))));
+      out.push({
+        id: tripId, day, time, driverId: primaryEv.driverId || null,
+        stops: order.map((s) => ({ rentalId: s.rentalId, unitId: s.unitId, task: s.task })),
+        done,
+        task: primaryEv.task, color: primaryEv.color, rentalId: primaryEv.rentalId, unitId: primaryEv.unitId,
+        cust: primaryEv.cust, unit: primaryEv.unit, addr: primaryEv.addr, pin: primaryEv.pin,
+      });
+    }
+  }
+  events.forEach((ev) => {
+    const id = dispatchStopId(ev);
+    if (consumed.has(id)) return;   // already rendered above, as part of a materialized trip
+    out.push({
+      id, day: ev.date, time: timeOf(ev), driverId: ev.driverId || null,
+      stops: [{ rentalId: ev.rentalId, unitId: ev.unitId, task: ev.task }],
+      done: stopDone(ev),
+      task: ev.task, color: ev.color, rentalId: ev.rentalId, unitId: ev.unitId, cust: ev.cust, unit: ev.unit, addr: ev.addr, pin: ev.pin,
+    });
+  });
+  return out;
+}
+/* §2.3 a trip's label for a merge picker / activity-log line: town + primary customer. */
+const tripLabel = (t) => `${t.task || ''} · ${tripTown(t.addr) || 'no address'} — ${t.cust || 'Unknown'}`.trim();
+/* §2.3 Trip merge ("double up") — same-day only (a mismatch no-ops with a toast, never
+   silently accepted). Materializes both sides if not already: the target's stop(s)
+   stay first, the source's append in sequence, and the target keeps its time. Every
+   stop in the merged trip is synced to the TARGET's driver via assignStopDriver — D6
+   "one fact, one place": the row shows one driver for the whole run, so that has to be
+   true of every leg, never a cached trip-level value that could disagree with one.
+   Logs on every affected rental — both merged-into (target) and merged-from (source). */
+function tripMerge(day, targetId, sourceId) {
+  if (targetId === sourceId) return false;
+  const trips = tripsFor();
+  const target = trips.find((t) => t.id === targetId && t.day === day);
+  const source = trips.find((t) => t.id === sourceId);
+  if (!target || !source) return false;
+  if (source.day !== target.day) { toast('Trips must run the same day to merge.'); return false; }
+  const store = tripsLS();
+  const dayStore = store[day] || (store[day] = {});
+  const targetRec = dayStore[targetId];
+  const mergedOrder = (targetRec ? targetRec.order : target.stops).concat(source.stops);
+  const targetDriverId = target.driverId || null;
+  mergedOrder.forEach((s) => assignStopDriver(s.rentalId, s.unitId, s.task, targetDriverId));
+  dayStore[targetId] = { time: targetRec ? targetRec.time : target.time, order: mergedOrder, rev: (targetRec ? targetRec.rev || 0 : 0) + 1 };
+  delete dayStore[sourceId];   // fully absorbed into the target — no delete op in the setTrip contract, so the source's own last-synced backend record is left as-is (Phase 4 scope)
+  tripsSaveDay(day, dayStore);
+  tripPushSoon(day, targetId);   // §2.3 Phase 4 — sync the merged target; the absorbed source has nothing left locally to push
+  const targetR = IDX.rental.get(target.rentalId);
+  if (targetR) logAction(targetR, `Trip merge — ${tripLabel(source)} folded into this run (now ${mergedOrder.length} stops)`);
+  const logged = new Set();
+  source.stops.forEach((s) => {
+    if (logged.has(s.rentalId)) return; logged.add(s.rentalId);
+    const r = IDX.rental.get(s.rentalId);
+    if (r) logAction(r, `Trip merge — folded into ${tripLabel(target)}'s run`);
+  });
+  return true;
+}
+/* §2.3 Trip split ("split out") — the picked stop returns to being its own
+   single-stop trip, materialized at the SAME day. Default (documented, spec §2.3
+   left this ambiguous): no set time — we don't know when the newly-independent stop
+   should run until the dispatcher re-sets it, and a fabricated time would be
+   dishonest (a "no set time" stop already pins to the top of its day, spec §2.2, so
+   it stays visible and easy to fix). The driver is left exactly as-is: a merged trip
+   already synced every leg to the same driver at merge time (see tripMerge), so the
+   split stop simply keeps running with whichever driver that was — nothing forced. */
+function tripSplit(day, tripId, stopId) {
+  const trips = tripsFor();
+  const trip = trips.find((t) => t.id === tripId && t.day === day);
+  if (!trip || trip.stops.length < 2) return false;
+  const idx = trip.stops.findIndex((s) => dispatchStopId(s) === stopId);
+  if (idx === -1) return false;
+  const removed = trip.stops[idx];
+  const remaining = trip.stops.filter((_, i) => i !== idx);
+  const store = tripsLS();
+  const dayStore = store[day] || (store[day] = {});
+  const curRec = dayStore[tripId];
+  const removedId = dispatchStopId(removed);
+  // The departing stop's OWN natural id can equal the trip's CURRENT key — the common
+  // case: tripId still equals its original primary stop's id, and THAT'S the stop being
+  // split out (it's the first, default option in the picker). The vacated key belongs
+  // to whichever stop naturally owns it, so the trip staying behind takes a fresh
+  // stable id (its own new primary's) instead of colliding with the departing stop for
+  // the old one — writing both to the SAME key would silently drop the remaining stops.
+  const remainingId = removedId === tripId ? dispatchStopId(remaining[0]) : tripId;
+  if (remainingId !== tripId) delete dayStore[tripId];
+  dayStore[remainingId] = { time: curRec ? curRec.time : trip.time, order: remaining, rev: (curRec ? curRec.rev || 0 : 0) + 1 };
+  dayStore[removedId] = { time: '', order: [removed], rev: 0 };
+  tripsSaveDay(day, dayStore);
+  tripPushSoon(day, remainingId);   // §2.3 Phase 4 — both halves of a split are new/changed records, both sync
+  tripPushSoon(day, removedId);
+  const removedR = IDX.rental.get(removed.rentalId);
+  const remainR = remaining.length ? IDX.rental.get(remaining[0].rentalId) : null;
+  if (removedR) logAction(removedR, `Trip split — ${removed.task === 'Deliver' ? 'delivery' : 'recovery'} split out into its own run`);
+  if (remainR && remainR !== removedR) logAction(remainR, 'Trip split — a stop split off this run into its own trip');
+  return true;
+}
+/* §2.3 multi-stop trip driver — reassigns EVERY leg in the trip together (mirrors the
+   sync tripMerge does at merge time — D6, one fact, one place: a merged trip shows
+   ONE driver, so setting it has to keep every leg truthfully in step, never a
+   redundant trip-level field). Single-stop trips keep the existing per-leg
+   js-stop-driver control (assignStopDriver called directly) untouched. */
+function assignTripDriver(tripId, day, driverId) {
+  const t = tripsFor().find((x) => x.id === tripId && x.day === day);
+  if (!t) return false;
+  let changed = false;
+  t.stops.forEach((s) => { if (assignStopDriver(s.rentalId, s.unitId, s.task, driverId)) changed = true; });
+  return changed;
+}
+// The live trip row for a given trip id (stable across re-renders while it's on screen) —
+// used to (re)anchor the Merge/Split dropdown when it advances to a second-level picker.
+const tripRowAnchor = (id) => { const q = (window.CSS && CSS.escape) ? CSS.escape(id) : id; return document.querySelector(`.row[data-card="calendar"][data-rec="${q}"]`); };
+/* §2.3 Trips — the Merge/Split action menu (spec §2.3 touch-parity guardrail,
+   dispatch-ux-research 2026-07-06's named "drag-only" anti-pattern): reached from the
+   row's own ⋯ button (works with a tap — the phone path, no right-click there) AND
+   from right-click/long-press anywhere on the row body (wired in openCtxMenuAt).
+   openDropdown, not the generic R20 openCtxMenu — a Trip isn't a real card record,
+   and this is a "pick one of these" list exactly like the existing +Driver picker. */
+function openTripMenu(tripId, day, anchorEl) {
+  const trip = tripsFor().find((t) => t.id === tripId && t.day === day);
+  if (!trip) return;
+  const hasOthers = tripsFor().some((t) => t.day === day && t.id !== tripId);
+  const items = [];
+  if (hasOthers) items.push(`<button class="dd-item js-trip-mergepick-open" data-id="${esc(tripId)}" data-day="${esc(day)}">Merge trip…</button>`);
+  if (trip.stops.length > 1) items.push(`<button class="dd-item js-trip-splitpick-open" data-id="${esc(tripId)}" data-day="${esc(day)}">Split out…</button>`);
+  if (!items.length) { toast(trip.stops.length > 1 ? 'No other trips today to merge with.' : 'Nothing to split — this trip has one stop.'); return; }
+  openDropdown(anchorEl, items.join(''));
+}
+function openTripMergePicker(tripId, day, anchorEl) {
+  const others = tripsFor().filter((t) => t.day === day && t.id !== tripId);
+  if (!others.length) { toast('No other trips today to merge with.'); return; }
+  const html = others.map((t) => `<button class="dd-item js-trip-merge-pick" data-target="${esc(tripId)}" data-source="${esc(t.id)}" data-day="${esc(day)}">${esc(tripLabel(t))}</button>`).join('');
+  openDropdown(anchorEl, html);
+}
+function openTripSplitPicker(tripId, day, anchorEl) {
+  const trip = tripsFor().find((t) => t.id === tripId && t.day === day);
+  if (!trip || trip.stops.length < 2) return;
+  const html = trip.stops.map((s) => {
+    const sr = IDX.rental.get(s.rentalId); const su = IDX.unit.get(s.unitId);
+    const cust = sr ? (IDX.customer.get(sr.customerId)?.name || '') : '';
+    return `<button class="dd-item js-trip-split-pick" data-id="${esc(tripId)}" data-day="${esc(day)}" data-stop="${esc(dispatchStopId(s))}">${esc(s.task)} — ${esc(su ? su.name : 'unit')}${cust ? ' · ' + esc(cust) : ''}</button>`;
+  }).join('');
+  openDropdown(anchorEl, html);
+}
+/* §2.2b destination town — the 2nd-from-last comma segment before the state, once a
+   trailing country is dropped ("265 Callie Ln, Orange, TX, USA" → "Orange"). The last
+   segment must LOOK like a state (2 letters, optional zip) or we can't trust the shape —
+   fall back to the truncated raw address so an odd site string still reads. */
+function tripTown(addr) {
+  addr = String(addr || '').trim(); if (!addr) return '';
+  const parts = addr.split(',').map((s) => s.trim()).filter(Boolean);
+  if (parts.length && /^(usa|united states)$/i.test(parts[parts.length - 1])) parts.pop();
+  if (parts.length >= 2 && /^[A-Za-z]{2}(\s+\d{5}(-\d{4})?)?$/.test(parts[parts.length - 1])) return parts[parts.length - 2];
+  return addr.length > 26 ? addr.slice(0, 25).trimEnd() + '…' : addr;
+}
+/* tel: href from a formatted phone ("(337) 214-5001" → tel:+13372145001). Blank/unparseable → ''. */
+const telHref = (phone) => { const d = String(phone || '').replace(/\D/g, ''); return d ? `tel:${d.length === 10 ? '+1' + d : (d.length === 11 && d[0] === '1' ? '+' + d : d)}` : ''; };
+/* Trips mini-search (calendar has no IDX.search blob — it's derived, not a stored
+   record — so this is a direct substring match, not the shared rowMatches/blobMatches
+   AND-term engine every other card's search bar uses). */
+function tripMatches(t, query) {
+  const q = query.trim().toLowerCase(); if (!q) return true;
+  const blob = [t.cust, t.unit, t.addr, t.task, driverName(t.driverId), t.time].filter(Boolean).join(' ').toLowerCase();
+  return blob.includes(q);
+}
+/* Within a day: no-time trips pinned to the top, then chronological by minute (spec
+   §2.2). A numeric-minute compare, not dispatchDayStops' order-array/string fallback —
+   Phase 1 has no manual drag-reorder to feed an order array (removed; comes back in
+   Phase 3 against the materialized store), so that half of the old comparator never fires. */
+function tripSort(a, b) {
+  if (a.day !== b.day) return a.day < b.day ? -1 : 1;
+  const ma = timeToMin(a.time), mb = timeToMin(b.time);
+  if ((ma == null) !== (mb == null)) return ma == null ? -1 : 1;
+  return ma == null ? 0 : ma - mb;
+}
 function dispatchTruckPos(stops) {   // v1 seam — swapped for live telematics (~next week, Jac)
   const done = stops.filter(stopDone);
   const last = done[done.length - 1];
@@ -8960,102 +9565,51 @@ function timeToMin(t) {
   return m ? (+m[1]) * 60 + (+m[2]) : null;
 }
 function fmtClock(t) { const mn = timeToMin(t); if (mn == null) return '—:—'; let h = Math.floor(mn / 60); const m = mn % 60; const ap = h < 12 ? 'a' : 'p'; h = h % 12 || 12; return `${h}:${String(m).padStart(2, '0')}${ap}`; }
-// §2.3 cockpit: tapping a stop FOCUSES it on the map (pan + highlight) — never leaves the
-// cockpit. Opening the full rental is the customer link inside the stop (refPill). No flicker
-// (pan + a class toggle, not a full render).
+// §2.3/§2.2b: FOCUS a stop on the live map (pan + highlight) — never leaves the card.
+// Opening the full rental is the customer refPill in the row. No flicker (pan + a
+// class toggle, not a full render).
 function dispatchFocusStop(stopId) {
   const day = state.dispatchDay || TODAY_ISO;
   const s = dispatchDayStops(day).find((x) => x.id === stopId); if (!s) return;
   state.dispFocusId = stopId;   // remember the focused stop so the highlight survives a re-render
   const pos = (s.pin && Number.isFinite(s.pin.lat)) ? s.pin : _dispGeo[s.addr];
   if (_dispMap && pos) { _dispMap.panTo(pos); if (_dispMap.getZoom() < 14) _dispMap.setZoom(14); }
-  document.querySelectorAll('.disp-tok.focus').forEach((n) => n.classList.remove('focus'));
   const esc1 = (window.CSS && CSS.escape) ? CSS.escape(stopId) : stopId.replace(/["\\]/g, '\\$&');
-  document.querySelectorAll(`.disp-tok[data-id="${esc1}"]`).forEach((tok) => tok.classList.add('focus'));   // the token exists in BOTH the merged strip and its lane
+  // trips row — the neon "you are here" ring rides the focused trip's row
+  document.querySelectorAll('.row[data-card="calendar"].trip-focus').forEach((n) => n.classList.remove('trip-focus'));
+  document.querySelectorAll(`.row[data-card="calendar"][data-rec="${esc1}"]`).forEach((n) => n.classList.add('trip-focus'));
 }
-/* §2.3 DISPATCH = the OFFICE COCKPIT (Phase 1, Jac): a FULL-PANE live map of the day's
-   run + a minimal schedule rail floating on the right that widens on hover/focus to
-   adjust the run ("No set time" pinned on top). Stops auto-fill from rentals; the map
-   draws the route + truck; every stop reads its KIND (deliver=blue / recover=brown) and
-   the NEXT stop is marked, on BOTH map + rail. Live board — no "send"; edits auto-notify.
-   Phase 1b: drag a token to retime (today it's type-the-time). */
-function dispatchGridBody() {
-  const day = state.dispatchDay || TODAY_ISO;
-  const stops = dispatchDayStops(day);
-  const isToday = day === TODAY_ISO;
-  const allUpcoming = dispatchEvents().filter((e) => e.date >= TODAY_ISO).length;
-  const head = `<div class="disp-head">
-    <button class="disp-nav js-disp-day" data-dir="-1" data-tip="Previous day">‹</button>
-    <div class="disp-date"><b>${esc(dispatchDayLabel(day))}</b>${isToday ? '<span class="disp-today">Today</span>' : '<button class="disp-jump js-disp-today">Today</button>'}</div>
-    <button class="disp-nav js-disp-day" data-dir="1" data-tip="Next day">›</button>
-    <span class="spacer"></span>
-    <span class="disp-count">${stops.length} stop${stops.length === 1 ? '' : 's'}${allUpcoming ? ` · ${allUpcoming} upcoming` : ''}</span>
-  </div>`;
-  if (!stops.length) return `${head}<div class="disp-empty">${I.truck}<p>No transports on this day.</p><span>Rentals with Delivery / Round-Trip / Recovery land here automatically — flip days with ‹ ›.</span></div>`;
-
-  const nextId = dispatchNextId(stops);
-  const scheduled = stops.filter((s) => timeToMin(s.time) != null);
-  const unscheduled = stops.filter((s) => timeToMin(s.time) == null);   // §2.3 "No set time" pinned to the TOP of the rail (Jac)
-  const tokenEl = (s, inDriverLane) => {
-    const kind = dispatchKind(s);
-    const done = stopDone(s), isNext = s.id === nextId;
-    const flag = done ? badge('Done', 'green') : (isNext ? `<span class="dt-next">${I.truck} Next</span>` : '');
-    const driverChip = inDriverLane ? '' : (s.driverId   // inside a driver's lane the lane IS the driver — don't repeat it
-      ? `<button class="catr-slot js-stop-driver" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-task="${esc(s.task)}" data-tip="Driver on this leg — tap to change">${badge(driverName(s.driverId), 'navy')}</button>`
-      : (driverRoster().length ? `<button class="catr-slot js-stop-driver" data-r="R5b" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-task="${esc(s.task)}" data-tip="Assign a driver to this leg"><span class="add-field anchor" style="height:20px;font-size:10px">+Driver</span></button>` : ''));
-    return `<div class="disp-tok js-disp-tok kind-${kind}${done ? ' done' : ''}${isNext ? ' next' : ''}${s.id === state.dispFocusId ? ' focus' : ''}${s.pin ? '' : ' nopin'}" draggable="true" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-lane="${esc(s.lane)}" data-task="${esc(s.task)}">
-      <div class="dt-rail"><span class="dt-dot"></span><b class="dt-mini">${timeToMin(s.time) != null ? esc(fmtClock(s.time)) : '—'}</b></div>
-      <div class="dt-full">
-        <div class="dt-r1"><span class="dt-grip" data-tip="Drag to reorder — or drop on a driver's lane to assign">⠿</span><input class="dt-time js-disp-time" data-id="${esc(s.id)}" data-lane="${esc(s.lane)}" value="${esc(s.time || '')}" placeholder="—:—" maxlength="8" aria-label="Stop time" data-tip="Set the stop time — reorders the run" /><span class="spacer"></span>${flag}</div>
-        <div class="dt-r2">${badge(kind === 'deliver' ? 'Deliver' : 'Recover', kind === 'deliver' ? 'blue' : 'brown')}${refPill('rentals', s.rentalId, s.cust)}${s.unitId ? unitPill(s.unitId) : ''}${driverChip}</div>
-        ${s.addr ? `<div class="dt-addr js-site-go" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-tip="Open the site / set the map pin">${s.pin ? '' : '⚠ '}${esc(s.addr)}</div>` : ''}
-      </div>
-    </div>`;
-  };
-  const sec = (t) => `<div class="dr-sec">${t}</div>`;
-  const listOf = (arr, inDriverLane) => {
-    const un = arr.filter((s) => timeToMin(s.time) == null), schd = arr.filter((s) => timeToMin(s.time) != null);   // "No set time" pinned on top, same law as the merged rail
-    const tok = (s) => tokenEl(s, inDriverLane);
-    return (un.length ? sec('No set time') + un.map(tok).join('') : '') + (schd.length ? (un.length ? sec('Scheduled') : '') + schd.map(tok).join('') : '');
-  };
-  const railRows = (unscheduled.length ? sec('No set time') + unscheduled.map(tokenEl).join('') : '')
-    + (scheduled.length ? (unscheduled.length ? sec('Scheduled') : '') + scheduled.map(tokenEl).join('') : '');
-  // D5 driver lanes — the same rail shape repeated per driver on the same map surface.
-  // Collapsed stays the one 90px strip; expanded shows the Unassigned pool + the lanes the
-  // dispatcher picked (+Lanes), panning horizontally past ~3. Solo view (no lanes picked)
-  // is EXACTLY the pre-lane rail, so the owner-operator flow is untouched.
-  const roster = driverRoster(), shown = dispatchLanesLS(), laned = shown.length > 0;
-  const lanesBtn = roster.length ? `<button class="catr-slot js-disp-lanes" data-r="R5b" data-tip="Corral the run into driver lanes — pick who's showing"><span class="add-field anchor" style="height:20px;font-size:10px">${laned ? `Lanes · ${shown.length}` : '+Lanes'}</span></button>` : '';
-  const laneEl = (key) => {
-    const ls = dispatchLaneStops(day, key, stops);
-    const isPool = key === 'pool';
-    const done = ls.filter(stopDone).length;
-    const iso = state.dispLaneIso === key;
-    const roundup = isPool && ls.length && shown.length ? actionPill('commit', 'Round up', { js: 'js-disp-roundup', h: 20 }) : '';
-    // header: name + done/total progress (the Onfleet fraction); click = isolate this run on the map.
-    // Round up rides the TOP OF THE POOL LIST ("round up everything below"), not the crowded head.
-    return `<div class="dr-lane${isPool ? ' pool' : ''}" data-lane="${esc(key)}">
-      <div class="dl-head js-disp-laneiso${iso ? ' iso' : ''}" data-lane="${esc(key)}" data-tip="${iso ? 'Showing only this run on the map — tap to show all' : 'Tap to trace only this run on the map · drop a stop here to hand it over'}"><span class="dl-name">${isPool ? 'Unassigned' : esc(driverName(key))}</span><span class="spacer"></span>${badge(`${done}/${ls.length}`, ls.length && done === ls.length ? 'green' : 'gray')}</div>
-      <div class="dl-list">${roundup}${listOf(ls, !isPool) || `<div class="dl-empty">${isPool ? 'Every stop is assigned' : 'Drag a stop here to assign'}</div>`}</div>
-    </div>`;
-  };
-  const lanesRow = laned ? `<div class="dr-lanes">${laneEl('pool')}${shown.map(laneEl).join('')}</div>` : '';
-  const rail = `<div class="disprail js-disprail${laned ? ' lanes' : ''}" data-day="${esc(day)}" tabindex="0" style="--dr-lanes:${shown.length + 1}" data-tip="${laned ? 'Hover to work the driver lanes' : 'Hover to adjust the run'}">
-    <div class="dr-head"><span class="dr-chev">‹</span><span class="dr-title">${laned ? 'Runs' : 'Run'} · ${stops.length} stop${stops.length === 1 ? '' : 's'}</span><span class="spacer"></span>${lanesBtn}</div>
-    ${lanesRow}<div class="dr-list">${railRows}</div>
-  </div>`;
-  const foot = `<div class="disp-foot"><span class="disp-livedot"></span><span class="disp-live">Live · auto-notifies the driver on change</span></div>`;
-  return `${head}<div class="disp-cockpit"><div class="dispm js-dispmount" data-day="${esc(day)}"></div>${rail}</div>${foot}`;
+/* §2.2b — destination (town) tap: jump the inline live map to this trip. Opens the
+   map panel if collapsed (§2.1), flips to the trip's own day (the map + focus lookups
+   run per-day), rings the row, and pans the map once mounted. Offline/#local (the
+   plate, no live map) → the row ring + the panel's Google Maps handoff are the whole
+   (quiet) response — never an error path. */
+function tripTownGo(stopId, day) {
+  if (day) state.dispatchDay = day;
+  state.dispFocusId = stopId;
+  if (!tripsMapOpen()) { tripsMapSetOpen(true); _dispMapFailed = false; }   // a collapsed panel opens (and retries a failed load)
+  render();
+  dispatchFocusStop(stopId);
 }
+/* dispatchGridBody() — the map-cockpit card body (full-pane map + hover-expand rail +
+   driver lanes) — RETIRED here (Trips card phase 1, spec 2026-07-09): calendarCardEl
+   now renders day-grouped trip rows via tripsFor()/GROUP_DEFS.calendar instead. The
+   map singleton below stays intact — Phase 2 re-parents it into the new card body. */
 /* §2.3 OFFICE COCKPIT MAP. The Map is a SINGLETON (_dispMapEl) RE-PARENTED into the
    fresh mount point each render (render() rebuilds the DOM) so it never reloads/flickers;
    only pins/route/truck refresh. Stops without a stored sitePin are geocoded via Places
-   (the key has Places, not Geocoding) and cached. */
+   (the key has Places, not Geocoding) and cached. Phase 2 (spec §2.1): the map rides a
+   collapsible ~260px panel at the top of the Trips card — open by default everywhere,
+   remembered per device; offline/#local shows the stamped MAP OFFLINE plate instead. */
+const tripsMapOpen = () => { try { const v = localStorage.getItem('jactec.tripsMap'); return v == null ? true : v === '1'; } catch (e) { return true; } };
+const tripsMapSetOpen = (on) => { try { localStorage.setItem('jactec.tripsMap', on ? '1' : '0'); } catch (e) {} };
+const isLocalDemo = () => (location.hash || '').toLowerCase().includes('local');
+let _dispMapFailed = false;   // a genuine Maps load failure → the panel flips to the plate (re-opening the panel retries)
 let _dispMap = null, _dispView = null, _dispMarkers = [], _dispRoute = null, _dispGeo = {}, _dispGeoPending = {};
 function mountDispatchMap() {
   const mount = document.querySelector('.js-dispmount'); if (!mount) return;
   if (mount.querySelector('.gm-style')) return;                 // already mounted in this DOM
-  if (!mapsReady()) { loadGoogleMaps().then((g) => { if (g) render(); }); return; }
+  if (!mapsReady()) { loadGoogleMaps().then((g) => { if (!g) _dispMapFailed = true; render(); }); return; }   // failure → re-render swaps the loading tag for the MAP OFFLINE plate
   // render() rebuilds the DOM, so mount fresh into the new node each render (the proven
   // transport-editor pattern); remember the user's pan/zoom so a re-render never resets it.
   const first = !_dispView;
@@ -9068,6 +9622,10 @@ function mountDispatchMap() {
   requestAnimationFrame(repaint); setTimeout(repaint, 250);
   refreshDispatchMap(mount.dataset.day || state.dispatchDay || TODAY_ISO, first);
 }
+// A stop/trip's resolved lat/lng — a stored sitePin wins, else the geocode cache (_dispGeo,
+// keyed by address). Shared by the map (below) AND §2.7 Auto-Run (which only optimizes
+// stops this resolves — an unpinned stop is excluded from the route call, never guessed at).
+const dispatchPinOf = (s) => (s.pin && Number.isFinite(s.pin.lat)) ? s.pin : _dispGeo[s.addr];
 function refreshDispatchMap(day, fit) {
   if (!_dispMap) return;
   const stops = dispatchDayStops(day), nextId = dispatchNextId(stops);
@@ -9080,15 +9638,14 @@ function refreshDispatchMap(day, fit) {
   const bounds = new google.maps.LatLngBounds(); bounds.extend(YARD_CENTER);
   _dispMarkers.push(new google.maps.Marker({ map: _dispMap, position: YARD_CENTER, title: 'JAC Yard · Sulphur', zIndex: 5,
     icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 5, fillColor: '#ff7a1a', fillOpacity: 1, strokeColor: '#1a1205', strokeWeight: 2 } }));
-  const posOf = (s) => (s.pin && Number.isFinite(s.pin.lat)) ? s.pin : _dispGeo[s.addr];
   const need = []; let placed = 0;
   stops.forEach((s) => {
-    const p = posOf(s);
+    const p = dispatchPinOf(s);
     if (p) { placeDispatchPin(s, p, s.id === nextId, stopDone(s)); bounds.extend(p); placed++; }
     else if (s.addr) need.push(s);
   });
   // the route path follows routeStops' OWN order (lane order under isolation, merged run otherwise)
-  const path = [YARD_CENTER, ...routeStops.map(posOf).filter(Boolean), YARD_CENTER];
+  const path = [YARD_CENTER, ...routeStops.map(dispatchPinOf).filter(Boolean), YARD_CENTER];
   _dispRoute = new google.maps.Polyline({ map: _dispMap, path, strokeColor: '#ff7a1a', strokeOpacity: .9, strokeWeight: 3 });   // straight legs — no Directions/quota
   _dispMarkers.push(new google.maps.Marker({ map: _dispMap, position: dispatchTruckPos(routeStops), title: 'Driver', zIndex: 999,
     icon: { path: google.maps.SymbolPath.CIRCLE, scale: 9, fillColor: '#18b6ff', fillOpacity: .22, strokeColor: '#18b6ff', strokeWeight: 2 } }));
@@ -9123,6 +9680,201 @@ async function dispGeocode(addr, day) {
   } catch (e) { /* geocode failed → the stop stays unplaced this pass; pinned/known stops still render, and a later refresh retries */ }
   finally { delete _dispGeoPending[addr]; }   // always clear pending so a failed lookup can retry
 }
+
+/* ── §2.7 AUTO-RUN (spec 2026-07-09 §2.7, plan Phase 3b) ──────────────────────
+   The day-header AUTO-RUN button (R17 blue commit — it rearranges, takes no money):
+   re-sequences each driver's not-done PINNED trips (+ the unassigned pool, as its OWN
+   run — never mixed with a driver's) into the most drive-efficient order via Directions
+   `optimizeWaypoints`, repairs that order against every deadline (autoRunRepair, pure —
+   see below), then writes the result straight into the SAME Phase 3 trips store the
+   dt-time/merge/split paths already write to (tripSetTime) — no parallel "auto-run
+   order" concept, so it's editable/reversible through the exact same controls a
+   dispatcher already has. A stop with no resolved lat/lng (dispatchPinOf) never reaches
+   the optimizer; it keeps its existing time and gets an R9b alert flag instead of being
+   silently skipped. The network call (DirectionsService) is reached ONLY from the live
+   button click — ci/logic-test.mjs exercises autoRunRepair directly with fixture leg
+   durations, never through here, so CI never makes a real Google Directions request. */
+const AUTORUN_DAY_START_SEC = 7 * 3600;       // 7:00 AM — nominal truck-leaves-the-yard time for a run
+const AUTORUN_EOD_DEADLINE_SEC = 17 * 3600;   // 5:00 PM — implied deadline for a same-day rental promise with no set time (see autoRunAnchorsFor)
+const AUTORUN_LOAD_BUFFER_SEC = 15 * 60;      // fixed load/unload dwell per stop (ramps, chains, walk-around)
+
+/* Materializes a trip's time exactly like the row's own dt-time input does (js-disp-time,
+   below) — ONE write path for "the trip's time changed", whether a dispatcher typed it or
+   Auto-Run computed it, so both are equally a normal, reversible edit to the Phase 3 store. */
+function tripSetTime(day, tripId, time) {
+  const trip = tripsFor().find((x) => x.id === tripId && x.day === day);
+  if (!trip) return false;
+  const store = tripsLS();
+  const dayStore = store[day] || (store[day] = {});
+  const cur = dayStore[tripId];
+  dayStore[tripId] = { time, order: cur ? cur.order : trip.stops.slice(), rev: (cur ? cur.rev || 0 : 0) + 1 };
+  tripsSaveDay(day, dayStore);
+  tripPushSoon(day, tripId);   // §2.3 Phase 4 — debounced sync of this one trip's new time
+  return true;
+}
+
+/* Deadline anchors for a day's runs (spec §2.7: "stops with a set time, AND stops belonging
+   to rentals with a start/end date that implies an arrival deadline"). Every trip passed in
+   already belongs to the day being run (tripsFor's own day field — a Deliver trip's rental
+   startDate or a Pick up trip's rental endDate), so a trip with NO set time still carries an
+   implied promise: it must go out sometime that business day. A set time (dt-time, `t.time`)
+   is the harder, tighter anchor; blank falls back to the nominal end-of-business-day — a
+   safety net that only ever bites a genuinely overloaded run, never a real per-stop
+   appointment. Pure — seconds-since-midnight in, seconds-since-midnight out. */
+function autoRunAnchorsFor(trips) {
+  return (trips || []).map((t) => {
+    const setMin = timeToMin(t.time);
+    return { stopId: t.id, deadline: setMin != null ? setMin * 60 : AUTORUN_EOD_DEADLINE_SEC };
+  });
+}
+
+/* §2.7 deadline-repair pass — PURE, no Google/network calls, fully unit-testable with
+   fixture data (ci/logic-test.mjs). `order` = the optimizer's proposed stop sequence
+   (objects carrying a stable `.id`, or plain id strings — either works). `legDurationsSeconds[i]`
+   = drive seconds to REACH POSITION i (from the yard if i===0, else from whatever occupies
+   position i-1) — POSITION-indexed, not stop-identity-indexed: DirectionsService returns the
+   legs of ONE route, not a full pairwise distance matrix, so reassigning a stop to an earlier
+   SLOT reuses that slot's already-known drive-time budget rather than guessing a brand-new
+   door-to-door distance. A useful side effect: the arrival time at a given POSITION becomes
+   fully determined by the leg durations + the buffer alone, independent of which stop ends up
+   there — which keeps this whole pass a small, deterministic, single construction (no
+   iterative "bump and recheck," so it can never oscillate/loop on a genuine conflict).
+   `anchors` = [{stopId, deadline}] (deadline = seconds since midnight the stop must arrive
+   by). `loadBufferSeconds` = the fixed dwell added at every stop before departing to the next.
+
+   Algorithm: find every anchor that's ALREADY late in the GIVEN `order` (never touch one
+   that's already on time — spec: "for any anchor whose accumulated-arrival time WOULD exceed
+   its deadline"); pull just those to the front, tightest-deadline-first (earliest-deadline-
+   first is the standard optimal/stable rule for single-track feasibility — a looser anchor
+   never steals a tighter one's slot); everything else keeps its natural relative order behind
+   them. Pulling one stop forward can still push a DIFFERENT, previously-fine anchor's arrival
+   later — the final violations pass re-checks EVERY anchor in its landed position, so a
+   newly-created conflict is always caught, never silently dropped. An anchor that's still late
+   even at the very front of the run is unsatisfiable: it's left at the front anyway (the
+   earliest a truck could possibly reach it) and reported as a violation — a late plan is
+   shown, never shipped as if it were on time. */
+function autoRunRepair(order, legDurationsSeconds, anchors, loadBufferSeconds) {
+  const idOf = (s) => (s && typeof s === 'object') ? s.id : s;
+  const buf = loadBufferSeconds || 0;
+  const natural = (order || []).slice();
+  const n = natural.length;
+  const legFor = (i) => (legDurationsSeconds && legDurationsSeconds[i]) || 0;
+  // position-indexed fixed arrival times (see the block comment above — independent of WHICH
+  // stop sits at a position, only of the position itself).
+  const arrPos = [];
+  { let t = AUTORUN_DAY_START_SEC; for (let i = 0; i < n; i++) { t += legFor(i); arrPos.push(t); t += buf; } }
+  const deadlineOf = new Map((anchors || []).filter((a) => a && a.stopId != null && a.deadline != null).map((a) => [a.stopId, a.deadline]));
+
+  const lateIds = new Set();   // anchors that are ALREADY late in the natural order — the only ones this pass ever moves
+  natural.forEach((s, i) => { const id = idOf(s); if (deadlineOf.has(id) && arrPos[i] > deadlineOf.get(id)) lateIds.add(id); });
+
+  let seq;
+  if (!lateIds.size) {
+    seq = natural;   // nothing late → the optimizer's order stands untouched (covers "no anchors" too)
+  } else {
+    const late = natural.filter((s) => lateIds.has(idOf(s))).sort((a, b) => deadlineOf.get(idOf(a)) - deadlineOf.get(idOf(b)));   // earliest-deadline-first
+    const rest = natural.filter((s) => !lateIds.has(idOf(s)));
+    seq = late.concat(rest);
+  }
+
+  const violations = [];
+  seq.forEach((s, i) => {
+    const id = idOf(s); if (!deadlineOf.has(id)) return;
+    const deadline = deadlineOf.get(id);
+    if (arrPos[i] > deadline) violations.push({ stopId: id, deadline, projectedArrival: arrPos[i] });
+  });
+  return { order: seq, violations, arrivals: arrPos.slice() };   // `arrivals[p]` — the caller writes these straight back as real clock times
+}
+
+// seconds-since-midnight → "9:00 AM" (matches the seed data's r.startTime shape; timeToMin parses it right back).
+function secToClock(totalSec) {
+  const totalMin = Math.round(totalSec / 60) % (24 * 60);
+  const h24 = Math.floor(totalMin / 60), m = totalMin % 60;
+  const ap = h24 < 12 ? 'AM' : 'PM';
+  let h12 = h24 % 12; if (h12 === 0) h12 = 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${ap}`;
+}
+
+/* R9b alert flag riding a trip row after an Auto-Run pass — 'unpinned' (excluded from the
+   optimizer, never reordered) or 'deadline' (repaired as best it could, still projected late).
+   Session-only (state.autoRunFlags, cleared/replaced on the NEXT Auto-Run for that day, and
+   per-stop on a manual time edit — js-disp-time below) — it's a report on the last run, not a
+   stored record field. */
+function autoRunFlagHtml(t) {
+  const f = state.autoRunFlags && state.autoRunFlags[t.id]; if (!f) return '';
+  if (f.reason === 'unpinned') return flagEl('No Pin', 'red', { alert: true, title: 'Auto-Run skipped this stop — no located address to route. Set a site pin (the transport editor), or move it manually.' });
+  return flagEl('Late', 'red', { alert: true, title: `Auto-Run couldn't fit this stop by its deadline (${secToClock(f.deadline)}) — best projected arrival ${secToClock(f.projectedArrival)}. Move it manually or adjust the day.` });
+}
+
+/* The AUTO-RUN click (§2.7): per DRIVER (+ the pool as its own run), 2+ pinned not-done stops
+   → DirectionsService optimizeWaypoints (yard → stops → yard) → autoRunRepair → write times.
+   Runs are independent per driver/pool — never merged into one optimized order. Every network
+   failure (REQUEST_DENIED, no key, offline) fails gracefully with a toast; never a raw console
+   error as the only signal, never a silent no-op. */
+async function autoRunDay(day) {
+  const dayTrips = tripsFor().filter((t) => t.day === day && !t.done);
+  if (!dayTrips.length) { toast('Nothing to Auto-Run — every stop today is already done.'); return; }
+
+  const g = await loadGoogleMaps();
+  if (!g || !mapsReady()) { toast("Auto-Run needs the live map, which is offline right now — see the map panel."); return; }
+  try { if (google.maps.importLibrary) await google.maps.importLibrary('routes'); } catch (e) { /* fall through to the hard check below */ }
+  if (typeof google.maps.DirectionsService !== 'function') { toast('Auto-Run needs Google Directions, which isn\'t available right now.'); return; }
+
+  const groups = new Map();
+  dayTrips.forEach((t) => { const k = t.driverId || 'pool'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(t); });
+
+  const svc = new google.maps.DirectionsService();
+  const flags = {};
+  const loggedRentals = new Set();
+  let ranAny = false, deniedAny = false;
+
+  for (const groupTrips of groups.values()) {
+    const pinned = groupTrips.filter((t) => dispatchPinOf(t));
+    const unpinned = groupTrips.filter((t) => !dispatchPinOf(t));
+    unpinned.forEach((t) => { flags[t.id] = { reason: 'unpinned' }; });
+    if (pinned.length < 2) continue;   // nothing to optimize for this run (spec: the optimizer call needs 2+ pinned stops)
+
+    let result;
+    try {
+      result = await svc.route({
+        origin: YARD_CENTER, destination: YARD_CENTER, travelMode: google.maps.TravelMode.DRIVING,
+        optimizeWaypoints: true,
+        waypoints: pinned.map((t) => ({ location: dispatchPinOf(t), stopover: true })),
+      });
+    } catch (e) { deniedAny = true; continue; }
+    const route = result && result.routes && result.routes[0];
+    if (!route || !Array.isArray(route.waypoint_order) || !Array.isArray(route.legs)) { deniedAny = true; continue; }
+    ranAny = true;
+
+    const optimized = route.waypoint_order.map((idx) => pinned[idx]);
+    const legSecs = route.legs.slice(0, optimized.length).map((l) => (l.duration && l.duration.value) || 0);
+    const anchors = autoRunAnchorsFor(optimized);
+    const { order: repaired, violations, arrivals } = autoRunRepair(optimized, legSecs, anchors, AUTORUN_LOAD_BUFFER_SEC);
+    violations.forEach((v) => { flags[v.stopId] = { reason: 'deadline', deadline: v.deadline, projectedArrival: v.projectedArrival }; });
+
+    repaired.forEach((t, i) => {
+      tripSetTime(day, t.id, secToClock(arrivals[i]));
+      const r = IDX.rental.get(t.rentalId);
+      if (r && !loggedRentals.has(r.rentalId)) { loggedRentals.add(r.rentalId); logAction(r, "Auto-Run reordered the day's run for a more efficient route"); }
+    });
+  }
+
+  // Replace only THIS day's flags (a stale flag from an earlier Auto-Run on a DIFFERENT day
+  // is left alone) — clear every trip we just considered, then merge in whatever's still flagged.
+  state.autoRunFlags = state.autoRunFlags || {};
+  dayTrips.forEach((t) => { delete state.autoRunFlags[t.id]; });
+  Object.assign(state.autoRunFlags, flags);
+  if (!Object.keys(state.autoRunFlags).length) state.autoRunFlags = null;
+
+  if (!ranAny) {
+    toast(deniedAny ? "Auto-Run couldn't reach Google Directions — try again in a moment." : 'Nothing to Auto-Run — need 2+ located stops in at least one run.');
+    return render();
+  }
+  const flagged = Object.keys(flags).length;
+  toast(`Auto-Run optimized the day's route${flagged ? ` — ${flagged} stop${flagged === 1 ? '' : 's'} flagged` : ''}.`);
+  render();
+}
+
 /** The status badge shown on an item tab (replaces the old datapoint sub-text). */
 function tabBadge(card, rec) {
   const b = (set, val) => { const s = getStatus(set, val); return badge(s.label, s.color); };
@@ -10098,6 +10850,7 @@ function renderOverlay() {
 
   _ovLastKind = o.kind;
   if (o.kind === 'roundup') { ruMountCharts(); if (o.section && !o._scrolled) { o._scrolled = true; document.querySelector(`.ru-sec[data-sec="${o.section}"]`)?.scrollIntoView({ block: 'start' }); } }
+  if (o.kind === 'gpsFleet') mountGpsFleetMap(o);   // Phase 2 M1 — mount/refresh the live map after the popup DOM lands
   if (o.kind === 'partform') document.querySelector('.overlay .js-pf2-desc')?.focus();   // Jac: Part/Task field focused by default
   if (o.kind === 'newCustomer') setupSignaturePad();
   if (o.kind === 'payment') { setupPayAlloc(); setupRefundAlloc(); }   // live counters for the §19 pay + §19b refund allocation rows
@@ -10213,6 +10966,519 @@ function buildPopupEl(o, overlay, opts = {}) {
       body: `<div class="lc-body"><div class="lc-line">Add <b>${esc(srcT)}</b> to <b>${esc(tgtT)}</b>?</div>${linkPriceText(o.srcCard, srcRec, o.targetCard, tgtRec)}</div>`,
       foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill(isMoney ? 'money' : 'commit', isMoney ? 'Confirm — bill it' : 'Confirm', { js: 'js-link-confirm' })}`,
     });
+    overlay.appendChild(pop);
+  } else if (o.kind === 'gpsConnect') {
+    // §5a — the connect-a-device wizard: provider → identify the device → live
+    // first-contact poll → save. gpsProvider/gpsDeviceId are written to the unit ONLY
+    // once contact is confirmed (or an explicit "Save anyway" override) — never a
+    // hand-typed, unverified mapping. State lives on the overlay (o.step/o.provider/…);
+    // the async pieces (device-list load, the poll loop, the write) are gpsConnectLoadDevices
+    // / gpsConnectStartPoll+gpsConnectPollTick / gpsConnectSave, just above the GPS client.
+    const u = IDX.unit.get(o.unitId);
+    if (!u) { return false; }
+    o.step = o.step || 'provider'; o.provider = o.provider || 'Hapn';
+    const stepNum = { provider: 1, identify: 2, poll: 3 }[o.step] || 1;
+    const stepLbl = o.step === 'identify' ? (o.provider === 'Hapn' ? 'Identify the tracker' : 'Pick the machine') : (o.step === 'poll' ? 'Confirm signal' : 'Provider');
+    let body, foot;
+
+    if (o.step === 'provider') {
+      body = `
+        <div class="kpi-cap" style="margin-bottom:9px">${stepNum} · ${esc(stepLbl)}</div>
+        ${segCtl(GPS_PROVIDERS.map((p) => ({ label: p, js: 'js-gps-provider', data: { val: p }, on: o.provider === p ? 'orange' : '' })))}
+        <p class="set-note" style="margin-top:10px">${o.provider === 'Hapn'
+          ? 'Wrangle in a tracker by IMEI — read it off the hardware. It must already be activated on the Hapn account.'
+          : `Round up a machine already authorized on the ${esc(o.provider)} account — nothing to activate here.`}</p>`;
+      foot = `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', 'Continue', { js: 'js-gps-continue' })}`;
+    } else if (o.step === 'identify' && o.provider === 'Hapn') {
+      body = `
+        <div class="kpi-cap" style="margin-bottom:9px">${stepNum} · ${esc(stepLbl)}</div>
+        <input class="lf-in js-gps-imei-input" style="width:100%" placeholder="Tracker IMEI" value="${esc(o.imei || '')}">
+        <p class="set-note" style="margin-top:8px">Printed on the tracker — a technician reads it off the hardware.</p>`;
+      foot = `${ghostPill('Back', { js: 'js-gps-back' })}${actionPill('commit', 'Continue', { js: 'js-gps-identify-continue' })}`;
+    } else if (o.step === 'identify') {
+      const q = (o.deviceQuery || '').trim().toLowerCase();
+      const all = o.devices || [];
+      const list = q ? all.filter((raw) => `${gpsRawDeviceLabel(o.provider, raw)} ${gpsRawDeviceSub(o.provider, raw)}`.toLowerCase().includes(q)) : all;
+      const rows = list.map((raw) => {
+        const id = gpsRawDeviceId(o.provider, raw), label = gpsRawDeviceLabel(o.provider, raw), sub = gpsRawDeviceSub(o.provider, raw);
+        return `<button type="button" class="gps-dev-row js-gps-device-pick" data-r="R2" data-devid="${esc(id)}" data-devlabel="${esc(label)}">${CARD_ICON.units}<span class="gdr-name">${esc(label)}</span>${sub ? `<span class="gdr-sub">${esc(sub)}</span>` : ''}</button>`;
+      }).join('');
+      body = `
+        <div class="kpi-cap" style="margin-bottom:9px">${stepNum} · ${esc(stepLbl)}</div>
+        <div class="bv-searchwrap" style="width:100%;margin:0 0 10px"><span class="s-icon">${I.search}</span><input class="bv-query js-gps-search" placeholder="Search ${esc(o.provider)} machines…" value="${esc(o.deviceQuery || '')}"></div>
+        ${o.devicesLoading ? `<div class="set-loading" style="min-height:140px"><div class="set-loading-bar" aria-hidden="true"></div><div class="set-loading-lbl">Rounding up ${esc(o.provider)} machines…</div></div>`
+          : o.devicesError ? `<p class="set-err" style="text-align:left">${esc(o.devicesError)}</p>`
+          : list.length ? `<div class="gps-dev-list">${rows}</div>`
+          : `<p class="muted" style="font-size:12px">No ${q ? 'matching' : 'authorized'} machines${q ? ` for “${esc(o.deviceQuery)}”` : ' on this account yet'}.</p>`}`;
+      foot = ghostPill('Back', { js: 'js-gps-back' });
+    } else {   // 'poll' — the live first-contact confirmation (§5a step 3)
+      const UI = {
+        waiting:   { color: 'yellow', icon: I.search, label: 'Waiting for signal…' },
+        seen:      { color: 'yellow', icon: I.search, label: 'Device seen — confirming…' },
+        reporting: { color: 'green',  icon: '✓',       label: 'Reporting' },
+        timeout:   { color: 'red',    icon: I.alert,   label: 'Not responding yet' },
+      }[o.pollState] || { color: 'yellow', icon: I.search, label: 'Waiting for signal…' };
+      const sub = o.pollState === 'reporting' ? 'Live contact confirmed — ready to save.'
+        : o.pollState === 'timeout' ? 'Check the tracker’s power/signal — Save anyway if it may just be catching up.'
+        : `Attempt ${o.pollAttempt || 0} of ${o.pollMax || 8}`;
+      body = `
+        <div class="kpi-cap" style="margin-bottom:9px">${stepNum} · ${esc(stepLbl)}</div>
+        <div class="set-loading" style="min-height:160px">
+          <span class="gps-poll-ic c-${UI.color}">${UI.icon}</span>
+          ${(o.pollState === 'waiting' || o.pollState === 'seen') ? '<div class="set-loading-bar" aria-hidden="true"></div>' : ''}
+          <div class="set-loading-lbl">${esc(UI.label)}</div>
+          <p class="set-note">${esc(sub)}</p>
+        </div>`;
+      foot = o.pollState === 'reporting'
+        ? `${ghostPill('Back', { js: 'js-gps-back' })}${actionPill('commit', 'Save', { js: 'js-gps-save' })}`
+        : o.pollState === 'timeout'
+          ? `${ghostPill('Back', { js: 'js-gps-back' })}${ghostPill('Try again', { js: 'js-gps-poll-retry' })}${actionPill('danger', 'Save anyway', { js: 'js-gps-save-anyway' })}`
+          : ghostPill('Cancel', { js: 'js-close' });
+    }
+
+    const pop = el('div', 'popup'); pop.style.width = '400px';
+    pop.innerHTML = popupShell({ icon: CARD_ICON.units || '', title: 'Connect GPS Device', tag: `Unit · GPS · ${u.name}`, body, foot });
+    overlay.appendChild(pop);
+  } else if (o.kind === 'gpsHealth') {
+    // Phase 2 M2 — TRACKER HEALTH: every GPS device across all four providers, mapping-
+    // INDEPENDENT, bucketed by ping freshness with the dark ones pinned top. Renders off the
+    // live snapshot already in memory; also the login/account canary (empty list vs degraded
+    // banner vs devices-with-no-mapping tells you which layer is dark).
+    o.q = o.q || ''; o.bucket = o.bucket || 'all';
+    const roster = gpsConfigured() ? gpsFleetRoster() : [];
+    const q = o.q.trim().toLowerCase();
+    const matchRow = (r) => !q || `${r.name} ${r.serial || ''} ${gpsProvLabel(r.provider)} ${r.unit ? r.unit.name : ''}`.toLowerCase().includes(q);
+    const ORDER = { 'Not Reporting': 0, 'Verify': 1, 'Reporting': 2 };
+    const shown = roster.filter(matchRow).filter((r) => o.bucket === 'all' || r.status === o.bucket)
+      .sort((a, b) => (ORDER[a.status] - ORDER[b.status]) || gpsProvLabel(a.provider).localeCompare(gpsProvLabel(b.provider)) || a.name.localeCompare(b.name));
+    const nAll = roster.length, nMapped = roster.filter((r) => r.unit).length, nUnmapped = nAll - nMapped;
+    const nOff = roster.filter((r) => r.status === 'Not Reporting').length;
+
+    const rowHtml = (r) => `<div class="gpsh-row">
+      <span class="gpsh-prov">${badge(gpsProvLabel(r.provider))}</span>
+      <span class="gpsh-name">${esc(r.name)}${r.serial ? `<span class="gpsh-ser">${esc(r.serial)}</span>` : ''}</span>
+      <span class="gpsh-stat">${statusPill('gpsStatus', r.status)}</span>
+      <span class="gpsh-eng">${badge(r.engineOn ? 'Engine On' : 'Engine Off', r.engineOn ? 'green' : 'gray')}</span>
+      <span class="gpsh-seen muted">${r.lastSeen ? esc(gpsRelTime(r.lastSeen)) : '—'}</span>
+      <span class="gpsh-map">${r.unit ? refPill('units', r.unit.unitId, r.unit.name) : badge('Unmapped', 'yellow')}</span>
+    </div>`;
+
+    const bucketCtl = segCtl([
+      { label: `All ${nAll}`, js: 'js-gpsh-bucket', data: { val: 'all' }, on: o.bucket === 'all' ? 'orange' : '' },
+      { label: `Down ${nOff}`, js: 'js-gpsh-bucket', data: { val: 'Not Reporting' }, on: o.bucket === 'Not Reporting' ? 'orange' : '' },
+      { label: 'Verify', js: 'js-gpsh-bucket', data: { val: 'Verify' }, on: o.bucket === 'Verify' ? 'orange' : '' },
+      { label: 'Reporting', js: 'js-gpsh-bucket', data: { val: 'Reporting' }, on: o.bucket === 'Reporting' ? 'orange' : '' },
+    ]);
+    const degraded = !gpsConfigured() ? 'GPS backend isn’t configured (GPS_BACKEND_URL).'
+      : gpsLiveErr ? 'Live link down — showing the last good snapshot.'
+      : (gpsLiveAt === 0) ? 'No snapshot yet — the fleet is still checking in (or GPS login hasn’t returned a token).'
+      : '';
+    const body = `
+      <div class="gpsh-head">
+        <div class="gpsh-counts"><span class="gpsh-big">${nAll}</span> ${nAll === 1 ? 'device' : 'devices'} · ${nMapped} mapped · ${nUnmapped} unmapped</div>
+        <div class="gpsh-tools">
+          <div class="bv-searchwrap gpsh-search"><span class="s-icon">${I.search}</span><input class="bv-query js-gpsh-search" placeholder="Find a tracker…" value="${esc(o.q)}"></div>
+          <button class="iconbtn iconbtn-bare js-gpsh-refresh" data-tip="Refresh the snapshot">${I.refresh || '⟳'}</button>
+        </div>
+      </div>
+      ${degraded ? `<div class="gpsh-banner">${esc(degraded)}</div>` : ''}
+      <div class="gpsh-bucketrow">${bucketCtl}${nAll ? ghostPill('Export CSV', { js: 'js-gpsh-csv', tip: 'Download this roster as CSV' }) : ''}</div>
+      <div class="gpsh-list">
+        ${shown.length ? shown.map(rowHtml).join('') : `<div class="gpsh-empty">${nAll ? 'No trackers match that search.' : 'No trackers reporting on any provider account yet. If the GPS login was just deployed, sign out and back in; otherwise check the provider connections on the backend.'}</div>`}
+      </div>`;
+    const pop = el('div', 'popup gpsh-popup'); pop.style.width = '620px';
+    pop.innerHTML = popupShell({ icon: I.truck || '', title: 'Tracker Health', tag: 'Fleet · GPS roster', body });
+    overlay.appendChild(pop);
+  } else if (o.kind === 'gpsIssues') {
+    // Phase 3 — GPS ISSUES / ALERTS: the fault/connectivity complement to Tracker Health
+    // (gpsHealth, same roster source — gpsFleetRoster(), mapping-independent). Instead of
+    // every device, this view DERIVES an issues list and shows only devices that need
+    // attention — a clean fleet renders empty, that's the point. Only flags signals that
+    // actually exist on the normalized machine (gpsNormalize): mil (Bouncie check-engine),
+    // status from gpsDeviceFresh (Not Reporting/Verify), and battery voltage (Hapn external
+    // voltage / Deere batteryVoltage — guarded to a plausible 12V range so a percentage or
+    // null never misreads as low). Same degraded/canary banner language as gpsHealth.
+    o.q = o.q || '';
+    const roster = gpsConfigured() ? gpsFleetRoster() : [];
+    const withIssues = roster.map((r) => ({ r, issues: gpsRowIssues(r) })).filter((x) => x.issues.length);
+    const q = o.q.trim().toLowerCase();
+    const matchRow = (x) => !q || `${x.r.name} ${x.r.serial || ''} ${gpsProvLabel(x.r.provider)} ${x.r.unit ? x.r.unit.name : ''}`.toLowerCase().includes(q);
+    const rowSev = (x) => x.issues.reduce((m, i) => Math.max(m, i.sev), 0);
+    const shown = withIssues.filter(matchRow)
+      .sort((a, b) => (rowSev(b) - rowSev(a)) || gpsProvLabel(a.r.provider).localeCompare(gpsProvLabel(b.r.provider)) || a.r.name.localeCompare(b.r.name));
+    const nAll = withIssues.length;
+
+    const rowHtml = (x) => { const r = x.r; return `<div class="gpsi-row">
+      <span class="gpsi-prov">${badge(gpsProvLabel(r.provider))}</span>
+      <span class="gpsi-name">${esc(r.name)}${r.serial ? `<span class="gpsi-ser">${esc(r.serial)}</span>` : ''}</span>
+      <span class="gpsi-issues">${x.issues.map((i) => badge(i.label, i.color)).join('')}</span>
+      <span class="gpsi-seen muted">${r.lastSeen ? esc(gpsRelTime(r.lastSeen)) : '—'}</span>
+      <span class="gpsi-map">${r.unit ? refPill('units', r.unit.unitId, r.unit.name) : badge('Unmapped', 'yellow')}</span>
+    </div>`; };
+
+    const degraded = !gpsConfigured() ? 'GPS backend isn’t configured (GPS_BACKEND_URL).'
+      : gpsLiveErr ? 'Live link down — showing the last good snapshot.'
+      : (gpsLiveAt === 0) ? 'No snapshot yet — the fleet is still checking in (or GPS login hasn’t returned a token).'
+      : '';
+    const emptyMsg = !roster.length
+      ? 'No trackers reporting on any provider account yet. If the GPS login was just deployed, sign out and back in; otherwise check the provider connections on the backend.'
+      : (nAll === 0 ? 'No GPS issues — every reporting tracker looks healthy.' : 'No issues match that search.');
+    const body = `
+      <div class="gpsi-head">
+        <div class="gpsi-counts"><span class="gpsi-big">${nAll}</span> ${nAll === 1 ? 'device needs' : 'devices need'} attention</div>
+        <div class="gpsi-tools">
+          <div class="bv-searchwrap gpsi-search"><span class="s-icon">${I.search}</span><input class="bv-query js-gpsi-search" placeholder="Find a tracker…" value="${esc(o.q)}"></div>
+          <button class="iconbtn iconbtn-bare js-gpsi-refresh" data-tip="Refresh the snapshot">${I.refresh || '⟳'}</button>
+        </div>
+      </div>
+      ${degraded ? `<div class="gpsi-banner">${esc(degraded)}</div>` : ''}
+      <div class="gpsi-list">
+        ${shown.length ? shown.map(rowHtml).join('') : `<div class="gpsi-empty">${esc(emptyMsg)}</div>`}
+      </div>`;
+    const pop = el('div', 'popup gpsi-popup'); pop.style.width = '620px';
+    pop.innerHTML = popupShell({ icon: I.alert || '', title: 'GPS Issues', tag: 'Fleet · GPS alerts', body });
+    overlay.appendChild(pop);
+  } else if (o.kind === 'gpsFleet') {
+    // Phase 2 M1 — FLEET MAP: every GPS tracker plotted on a live Google map, mapping-
+    // independent (same gpsFleetRoster() source as Tracker Health). Wide two-pane popup —
+    // a map pane (mounted after render by mountGpsFleetMap, afterRender hook below) + an
+    // asset sidebar so the map still degrades gracefully to a roster-only view offline/no-key
+    // (mapsReady() false) or pre-snapshot (same canary banner language as gpsHealth).
+    o.q = o.q || ''; o.filter = o.filter || 'all'; o.sel = o.sel || '';
+    const roster = gpsConfigured() ? gpsFleetRoster() : [];
+    const q = o.q.trim().toLowerCase();
+    const matchRow = (r) => !q || `${r.name} ${r.serial || ''} ${gpsProvLabel(r.provider)} ${r.unit ? r.unit.name : ''}`.toLowerCase().includes(q);
+    const matchFilter = (r) => o.filter === 'all' || (o.filter === 'running' ? r.engineOn : !r.engineOn);
+    const shown = roster.filter(matchRow).filter(matchFilter)
+      .sort((a, b) => gpsProvLabel(a.provider).localeCompare(gpsProvLabel(b.provider)) || a.name.localeCompare(b.name));
+    const nAll = roster.length, nRunning = roster.filter((r) => r.engineOn).length;
+
+    const rowHtml = (r) => `<button class="gpsfm-row${o.sel === r.key ? ' sel' : ''} js-gpsfm-row" data-key="${esc(r.key)}">
+      <div class="gpsfm-row-top">
+        <span class="gpsfm-name">${esc(r.name)}${r.serial ? `<span class="gpsfm-ser">${esc(r.serial)}</span>` : ''}</span>
+      </div>
+      <div class="gpsfm-row-mid">${badge(gpsProvLabel(r.provider))}${badge(r.engineOn ? 'Engine On' : 'Engine Off', r.engineOn ? 'green' : 'gray')}</div>
+      <div class="gpsfm-row-bot">
+        ${statusPill('gpsStatus', r.status)}
+        <span class="gpsfm-seen">${r.lastSeen ? esc(gpsRelTime(r.lastSeen)) : '—'}</span>
+      </div>
+      <div class="gpsfm-row-map">${r.unit ? refPill('units', r.unit.unitId, r.unit.name) : badge('Unmapped', 'yellow')}</div>
+    </button>`;
+
+    const filterCtl = segCtl([
+      { label: `All ${nAll}`, js: 'js-gpsfm-filter', data: { val: 'all' }, on: o.filter === 'all' ? 'orange' : '' },
+      { label: `Running ${nRunning}`, js: 'js-gpsfm-filter', data: { val: 'running' }, on: o.filter === 'running' ? 'orange' : '' },
+      { label: `Stopped ${nAll - nRunning}`, js: 'js-gpsfm-filter', data: { val: 'stopped' }, on: o.filter === 'stopped' ? 'orange' : '' },
+    ]);
+    const banners = [
+      !mapsReady() ? 'Live map needs the Google Maps key — showing the roster.' : '',
+      !gpsConfigured() ? 'GPS backend isn’t configured (GPS_BACKEND_URL).'
+        : gpsLiveErr ? 'Live link down — showing the last good snapshot.'
+        : (gpsLiveAt === 0) ? 'No snapshot yet — the fleet is still checking in (or GPS login hasn’t returned a token).'
+        : '',
+    ].filter(Boolean);
+    const body = `
+      <div class="gpsfm-toolbar">
+        <div class="gpsfm-counts"><span class="gpsfm-big">${nAll}</span> ${nAll === 1 ? 'device' : 'devices'} · ${nRunning} running</div>
+        <div class="gpsfm-tools">
+          <div class="bv-searchwrap gpsfm-search"><span class="s-icon">${I.search}</span><input class="bv-query js-gpsfm-search" placeholder="Find a tracker…" value="${esc(o.q)}"></div>
+          ${filterCtl}
+          <button class="iconbtn iconbtn-bare js-gpsfm-refresh" data-tip="Refresh the snapshot">${I.refresh || '⟳'}</button>
+        </div>
+      </div>
+      ${banners.map((b) => `<div class="gpsfm-banner">${esc(b)}</div>`).join('')}
+      <div class="gpsfm-layout">
+        <div class="gpsfm-map js-gpsfm-map">${!mapsReady() ? `<div class="gpsfm-map-ph"><div class="gpsfm-map-ph-plate"><span class="map-pin" aria-hidden="true">${ICO_PIN}</span><span class="map-sub">Live map needs the Google Maps key.<br>The roster on the right still shows every tracker.</span></div></div>` : ''}</div>
+        <div class="gpsfm-side">
+          <div class="gpsfm-list">
+            ${shown.length ? shown.map(rowHtml).join('') : `<div class="gpsfm-empty">${nAll ? 'No trackers match that search.' : 'No trackers reporting on any provider account yet. If the GPS login was just deployed, sign out and back in; otherwise check the provider connections on the backend.'}</div>`}
+          </div>
+        </div>
+      </div>`;
+    const pop = el('div', 'popup gpsfm-popup');
+    pop.innerHTML = popupShell({ icon: I.truck || '', title: 'Fleet Map', tag: 'Fleet · GPS live', body, bodyClass: 'gpsfm-body' });
+    overlay.appendChild(pop);
+  } else if (o.kind === 'gpsRoundup') {
+    // Phase 2 M5 — ROUND UP TRACKERS: the bulk-onboarding review table over
+    // gpsMatchFleet(). SCAN (gpsRoundupScan) → REVIEW bucketed by tier → per-row
+    // override/confirm → APPLY (gpsApplyMappings) writes gpsProvider/gpsDeviceId per
+    // unit, mirroring gpsConnectSave but batched, with per-unit partial-failure
+    // surfacing (R25 hazard style — a half-applied batch must never read "done").
+    // Hapn rows (the shutdown-capable provider) can't be Applied until their
+    // side-by-side confirm has been acknowledged — gpsDeviceId drives the remote
+    // starter relay, so a wrong bulk map cuts the wrong starter.
+    o.q = o.q || ''; o.sel = o.sel || {}; o.overrideDevice = o.overrideDevice || {}; o.confirmed = o.confirmed || {};
+    const rows = gpsRoundupRows(o);
+    const q = o.q.trim().toLowerCase();
+    const rowText = (r) => { const u = IDX.unit.get(r.unitId); return `${u ? u.name : ''} ${r.device ? (r.device.name || '') : ''} ${r.device ? (r.device.serialNumber || '') : ''}`.toLowerCase(); };
+    const matchRow = (r) => !q || rowText(r).includes(q);
+    const byTier = { confident: [], probable: [], look: [], conflict: [], manual: [] };
+    rows.filter(matchRow).forEach((r) => (byTier[r.tier] || byTier.look).push(r));
+
+    // ── per-row detail sub-renderers (closures over o — same idiom as gpsHealth/gpsFleet's rowHtml) ──
+    const pollHtml = () => {
+      const UI = {
+        waiting:   { color: 'yellow', icon: I.search, label: 'Waiting for signal…' },
+        seen:      { color: 'yellow', icon: I.search, label: 'Device seen — confirming…' },
+        reporting: { color: 'green',  icon: '✓',       label: 'Reporting' },
+        timeout:   { color: 'red',    icon: I.alert,   label: 'Not responding yet' },
+      }[o.pollState] || { color: 'yellow', icon: I.search, label: 'Waiting for signal…' };
+      return `<div class="gpsru-poll">
+        <span class="gps-poll-ic c-${UI.color}">${UI.icon}</span>
+        <div class="gpsru-poll-txt">
+          <div class="gpsru-poll-lbl">${esc(UI.label)}</div>
+          <div class="muted" style="font-size:11px">${o.pollState === 'timeout' ? 'It may just be catching up — try again, or confirm from the last-known data above.' : `Attempt ${o.pollAttempt || 0} of ${o.pollMax || 8}`}</div>
+        </div>
+        ${o.pollState === 'timeout' ? ghostPill('Try again', { js: 'js-gpsru-poll-start', data: { rec: o.pollUnitId } }) : ''}
+      </div>`;
+    };
+    const swapHtml = (r) => {
+      const provider = o.swapProvider || 'Hapn';
+      const sq = (o.swapQuery || '').trim().toLowerCase();
+      const takenByOther = new Set();
+      for (const u of (DATA.units || [])) if (u.gpsProvider && u.gpsDeviceId && u.unitId !== r.unitId) takenByOther.add(String(u.gpsDeviceId));
+      for (const [uid, ov1] of Object.entries(o.overrideDevice || {})) if (uid !== r.unitId && ov1) takenByOther.add(ov1.deviceId);
+      const list = (o.devices || []).filter((d) => String(d.source || '').toLowerCase() === provider.toLowerCase())
+        .filter((d) => !takenByOther.has(gpsDevKey(d)))
+        .filter((d) => !sq || `${d.name || ''} ${d.serialNumber || ''}`.toLowerCase().includes(sq))
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      const devRows = list.map((d) => `<button type="button" class="gps-dev-row js-gpsru-swap-pick" data-r="R2" data-rec="${esc(r.unitId)}" data-devid="${esc(gpsDevKey(d))}">${CARD_ICON.units}<span class="gdr-name">${esc(d.name || gpsDevKey(d))}</span>${d.serialNumber ? `<span class="gdr-sub">S/N ${esc(d.serialNumber)}</span>` : ''}</button>`).join('');
+      return `<div class="gpsru-detail">
+        ${segCtl(GPS_PROVIDERS.map((p) => ({ label: p, js: 'js-gpsru-swap-provider', data: { rec: r.unitId, val: p }, on: provider === p ? 'orange' : '' })))}
+        <div class="bv-searchwrap" style="width:100%;margin:9px 0"><span class="s-icon">${I.search}</span><input class="bv-query js-gpsru-swap-search" placeholder="Search ${esc(provider)} devices…" value="${esc(o.swapQuery || '')}"></div>
+        ${devRows ? `<div class="gps-dev-list">${devRows}</div>` : `<p class="muted" style="font-size:12px">No ${sq ? 'matching' : 'available'} ${esc(provider)} devices${(o.devices || []).length ? '' : ' — scan first'}.</p>`}
+        <div class="gpsru-detail-actions"><span class="spacer"></span>${ghostPill('Cancel', { js: 'js-gpsru-swap-cancel' })}</div>
+      </div>`;
+    };
+    const expandHtml = (r) => {
+      if (o.expandedMode === 'swap') return swapHtml(r);
+      if (!r.deviceId) return `<div class="gpsru-detail">
+        <p class="muted" style="font-size:12.5px">No tracker picked yet for this unit.</p>
+        <div class="gpsru-detail-actions">${ghostPill('Pick a device', { js: 'js-gpsru-swap-open', data: { rec: r.unitId } })}</div>
+      </div>`;
+      const u = IDX.unit.get(r.unitId);
+      const dev = r.device;
+      const mapHref = (dev && dev.lat != null && dev.lng != null) ? `https://www.google.com/maps?q=${dev.lat},${dev.lng}` : '';
+      const isHapn = String(r.provider || '').toLowerCase() === 'hapn';
+      const confirmed = !!(o.confirmed && o.confirmed[r.unitId]);
+      const polling = o.step === 'poll' && o.pollUnitId === r.unitId;
+      return `<div class="gpsru-detail">
+        <div class="gpsru-confirm-grid">
+          <div class="gpsru-plate">
+            <div class="gpsru-plate-cap">Unit</div>
+            <div class="gpsru-plate-name">${esc(u ? u.name : r.unitId)}</div>
+            <div class="gpsru-plate-sub muted">${esc([u && u.serial ? 'S/N ' + u.serial : '', u && u.make, u && u.model].filter(Boolean).join(' · ') || '—')}</div>
+          </div>
+          <div class="gpsru-plate">
+            <div class="gpsru-plate-cap">Device</div>
+            <div class="gpsru-plate-name">${dev ? esc(dev.name || r.deviceId) : '<span class="muted">No device</span>'}</div>
+            <div class="gpsru-plate-sub muted">${dev && dev.serialNumber ? 'S/N ' + esc(dev.serialNumber) : '—'}</div>
+            ${dev && dev.lastSeen ? `<div class="gpsru-plate-sub muted">Last seen ${esc(gpsRelTime(dev.lastSeen))}</div>` : ''}
+            ${mapHref ? `<a class="gps-maplink" href="${mapHref}" target="_blank" rel="noopener">${esc((dev && dev.address) || 'View on map')}</a>` : ''}
+          </div>
+        </div>
+        ${polling ? pollHtml() : `<div class="gpsru-detail-actions">
+          ${ghostPill('Test live signal', { js: 'js-gpsru-poll-start', data: { rec: r.unitId } })}
+          ${ghostPill('Swap device', { js: 'js-gpsru-swap-open', data: { rec: r.unitId } })}
+          ${ghostPill('Unmap', { js: 'js-gpsru-unmap', data: { rec: r.unitId } })}
+          <span class="spacer"></span>
+          ${confirmed ? badge('Match confirmed', 'green') : actionPill('commit', 'Confirm match', { js: 'js-gpsru-confirm', data: { rec: r.unitId } })}
+        </div>`}
+        ${isHapn ? `<p class="gpsru-hazard-note">Hapn drives the remote starter relay — this pairing must be confirmed before it can be Applied.</p>` : ''}
+      </div>`;
+    };
+    const rowHtml = (r) => {
+      const u = IDX.unit.get(r.unitId);
+      const uSub = u ? [u.serial ? `S/N ${u.serial}` : '', u.make, u.model].filter(Boolean).join(' · ') : '';
+      const dev = r.device;
+      const devStatus = dev ? gpsDeviceFresh(dev) : null;
+      const devSeen = dev && dev.lastSeen ? gpsRelTime(dev.lastSeen) : null;
+      const isHapn = String(r.provider || '').toLowerCase() === 'hapn';
+      const confirmed = !!(o.confirmed && o.confirmed[r.unitId]);
+      const needsConfirm = isHapn && !confirmed;
+      const checked = !!o.sel[r.unitId];
+      const expanded = o.expandedUnitId === r.unitId;
+      const reasonsText = r.overridden ? (r.tier === 'manual' ? 'Picked by hand' : 'Swapped by hand') : (r.reasons || []).join(', ');
+      return `<div class="gpsru-row${r.tier === 'conflict' ? ' conflict' : ''}${needsConfirm ? ' needsconfirm' : ''}${expanded ? ' expanded' : ''}">
+        <div class="gpsru-row-main">
+          <label class="gpsru-check"><input type="checkbox" class="js-gpsru-tick" data-rec="${esc(r.unitId)}"${checked ? ' checked' : ''}></label>
+          <div class="gpsru-unit"><span class="gpsru-unit-name">${esc(u ? u.name : r.unitId)}</span>${uSub ? `<span class="gpsru-unit-sub">${esc(uSub)}</span>` : ''}</div>
+          <span class="gpsru-arrow" aria-hidden="true">${I.chevR}</span>
+          <div class="gpsru-dev">
+            ${dev ? `${badge(gpsProvLabel(r.provider))}<span class="gpsru-dev-name">${esc(dev.name || r.deviceId)}</span>${dev.serialNumber ? `<span class="gpsru-dev-ser">${esc(dev.serialNumber)}</span>` : ''}`
+              : `<span class="gpsru-dev-missing muted">No device selected</span>`}
+          </div>
+          <div class="gpsru-meta">
+            ${devStatus ? statusPill('gpsStatus', devStatus) : ''}
+            ${devSeen ? `<span class="gpsru-seen muted">${esc(devSeen)}</span>` : ''}
+            ${reasonsText ? `<span class="gpsru-reasons muted">${esc(reasonsText)}</span>` : ''}
+          </div>
+          <div class="gpsru-actions">
+            ${needsConfirm ? badge('Confirm required', 'yellow') : (isHapn ? badge('Confirmed', 'green') : '')}
+            ${ghostPill(expanded ? 'Close' : (r.deviceId ? 'Review' : 'Pick device'), { js: r.deviceId ? 'js-gpsru-expand' : 'js-gpsru-swap-open', data: { rec: r.unitId } })}
+          </div>
+        </div>
+        ${expanded ? expandHtml(r) : ''}
+      </div>`;
+    };
+    const bucket = (label, color, list, note) => list.length ? `<div class="gpsru-bucket">
+      <div class="gpsru-bucket-head"><span class="gpsru-bucket-lbl c-${color}">${esc(label)} · ${list.length}</span>${note ? `<span class="gpsru-bucket-note muted">${esc(note)}</span>` : ''}</div>
+      ${list.map(rowHtml).join('')}
+    </div>` : '';
+    const resultHtml = () => {
+      const { results } = o.applyResult;
+      const okN = results.filter((x) => x.ok).length, fails = results.filter((x) => !x.ok);
+      return `<div class="gpsru-result${fails.length ? ' haswarn' : ''}">
+        <div class="gpsru-result-head">
+          <span class="gpsru-result-stamp">${fails.length ? `${okN} applied · ${fails.length} need attention` : `${okN} applied`}</span>
+          ${closeX('js-gpsru-dismiss-result')}
+        </div>
+        ${fails.length ? `<ul class="gpsru-result-list">${fails.map((x) => `<li><b>${esc(x.name || x.unitId)}</b> — ${esc(x.reason || 'not applied')}</li>`).join('')}</ul>` : ''}
+      </div>`;
+    };
+
+    let body;
+    if (!o.scanned) {
+      body = `<div class="gpsru-cta">
+        <p class="gpsru-cta-txt">Round up every unmapped, active unit against the live tracker fleet — a proposed pairing per unit, sorted by how sure the match is. Nothing writes until you Apply.</p>
+        ${o.scanError ? `<p class="set-err">${esc(o.scanError)}</p>` : ''}
+        ${actionPill('commit', 'Scan the Yard', { js: 'js-gpsru-scan' })}
+      </div>`;
+    } else if (o.scanning) {
+      body = `<div class="set-loading" style="min-height:220px">
+        <div class="set-loading-bar" aria-hidden="true"></div>
+        <div class="set-loading-lbl">Rounding up the fleet…</div>
+        <p class="set-note">Pulling every provider's live device list and matching it against the open units.</p>
+      </div>`;
+    } else {
+      const m = o.match || { proposals: [], unmatchedUnits: [], unmatchedDevices: [] };
+      const degraded = !gpsConfigured() ? 'GPS backend isn’t configured (GPS_BACKEND_URL).'
+        : gpsLiveErr ? 'Live link down — the scan used the last good snapshot.'
+        : (gpsLiveAt === 0) ? 'No snapshot yet — try scanning again in a moment.'
+        : '';
+      const noMatchUnits = m.unmatchedUnits.filter((uid) => !o.overrideDevice[uid]).map((uid) => IDX.unit.get(uid)).filter(Boolean)
+        .filter((u) => !q || u.name.toLowerCase().includes(q));
+      const noMatchDevices = m.unmatchedDevices.filter((d) => !q || `${d.name || ''}`.toLowerCase().includes(q));
+      const nProposed = m.proposals.length + byTier.manual.length;
+      const totallyEmpty = !(m.proposals.length || m.unmatchedUnits.length || m.unmatchedDevices.length);
+      body = `
+        <div class="gpsru-head">
+          <div class="gpsru-counts"><span class="gpsru-big">${nProposed}</span> proposed · ${m.unmatchedUnits.length} unit${m.unmatchedUnits.length === 1 ? '' : 's'} unmatched · ${m.unmatchedDevices.length} device${m.unmatchedDevices.length === 1 ? '' : 's'} unclaimed</div>
+          <div class="gpsru-tools">
+            <div class="bv-searchwrap gpsru-search"><span class="s-icon">${I.search}</span><input class="bv-query js-gpsru-search" placeholder="Find a unit or tracker…" value="${esc(o.q)}"></div>
+            <button class="iconbtn iconbtn-bare js-gpsru-scan" data-tip="Re-scan the yard">${I.refresh || '⟳'}</button>
+          </div>
+        </div>
+        ${degraded ? `<div class="gpsru-banner">${esc(degraded)}</div>` : ''}
+        ${o.applyResult ? resultHtml() : ''}
+        ${totallyEmpty ? `<div class="gpsru-empty">No unmapped, active units or live trackers found — the fleet is already wrangled, or nothing’s reporting yet.</div>` : `
+          ${bucket('Confident', 'green', byTier.confident, 'Serial match — pre-ticked')}
+          ${bucket('Probable', 'gray', byTier.probable, 'Strong signal — check before applying')}
+          ${bucket('Needs a Look', 'yellow', byTier.look, 'Weak signal — eyeball it')}
+          ${bucket('Conflict', 'red', byTier.conflict, 'Two units claim one tracker — never pre-ticked')}
+          ${bucket('Manually Assigned', 'blue', byTier.manual, 'Picked from the unmatched list below')}
+          ${noMatchUnits.length ? `<div class="gpsru-bucket">
+            <div class="gpsru-bucket-head"><span class="gpsru-bucket-lbl c-gray">No-Match Units · ${noMatchUnits.length}</span><span class="gpsru-bucket-note muted">No tracker proposed — pick one by hand</span></div>
+            ${noMatchUnits.map((u) => `<div class="gpsru-row gpsru-nomatch-row">
+              <div class="gpsru-row-main">
+                <span class="gpsru-check"></span>
+                <div class="gpsru-unit"><span class="gpsru-unit-name">${esc(u.name)}</span>${(u.serial || u.make) ? `<span class="gpsru-unit-sub">${esc([u.serial ? 'S/N ' + u.serial : '', u.make, u.model].filter(Boolean).join(' · '))}</span>` : ''}</div>
+                <span class="gpsru-arrow" aria-hidden="true"></span>
+                <div class="gpsru-dev"><span class="gpsru-dev-missing muted">No tracker matched</span></div>
+                <div class="gpsru-meta"></div>
+                <div class="gpsru-actions">${addBtn('Pick device', { js: 'js-gpsru-swap-open', data: { rec: u.unitId }, line: true, h: 26 })}</div>
+              </div>
+              ${o.expandedUnitId === u.unitId ? expandHtml({ unitId: u.unitId, provider: o.swapProvider || 'Hapn', deviceId: '', device: null, reasons: [] }) : ''}
+            </div>`).join('')}
+          </div>` : ''}
+          ${noMatchDevices.length ? `<div class="gpsru-bucket">
+            <div class="gpsru-bucket-head"><span class="gpsru-bucket-lbl c-gray">No-Match Devices · ${noMatchDevices.length}</span><span class="gpsru-bucket-note muted">Reporting, but no unit claims them — informational only</span></div>
+            <div class="gpsru-nomatch-devs">${noMatchDevices.map((d) => `<span class="gpsru-nomatch-dev">${badge(gpsProvLabel(d.provider))}<span>${esc(d.name || d.key)}</span></span>`).join('')}</div>
+          </div>` : ''}
+        `}`;
+    }
+    const nTicked = Object.values(o.sel).filter(Boolean).length;
+    const foot = (o.scanned && !o.scanning)
+      ? `${ghostPill('Close', { js: 'js-close' })}${o.lastApply ? ghostPill('Undo last apply', { js: 'js-gpsru-undo' }) : ''}<span class="spacer"></span><button class="pill c-commit js-gpsru-apply${nTicked ? '' : ' is-disabled'}" data-r="R17"${nTicked ? '' : ' disabled aria-disabled="true"'}>${nTicked ? `Apply ${nTicked}` : 'Apply'}</button>`
+      : ghostPill('Close', { js: 'js-close' });
+    const pop = el('div', 'popup gpsru-popup');
+    pop.innerHTML = popupShell({ icon: I.list || '', title: 'Round Up Trackers', tag: 'Fleet · GPS onboarding', body, foot });
+    overlay.appendChild(pop);
+  } else if (o.kind === 'gpsUtilization') {
+    // Phase 4 — FLEET UTILIZATION: real, provider-sourced actual-usage rollup (hours/miles
+    // a mapped unit ACTUALLY ran, over a selectable window). Pure visibility — no target
+    // hrs/day, no over/under-capacity math (that data doesn't exist yet). gpsUtilScan does
+    // the I/O (fans gpsUsageDaily across every mapped unit); gpsUtilRollup (PURE) turns the
+    // result into the two tables rendered below.
+    o.days = o.days || 30;
+    const dayCtl = segCtl([
+      { label: '7d', js: 'js-gpsu-days', data: { val: 7 }, on: o.days === 7 ? 'orange' : '' },
+      { label: '30d', js: 'js-gpsu-days', data: { val: 30 }, on: o.days === 30 ? 'orange' : '' },
+      { label: '90d', js: 'js-gpsu-days', data: { val: 90 }, on: o.days === 90 ? 'orange' : '' },
+    ]);
+
+    let body;
+    if (!o.scanned) {
+      body = `<div class="gpsu-cta">
+        <p class="gpsu-cta-txt">Pull real hours/miles for every GPS-mapped unit over the last ${o.days} days, straight from the trackers — no targets, just what actually ran.</p>
+        <div class="gpsu-cta-days">${dayCtl}</div>
+        ${o.scanError ? `<p class="set-err">${esc(o.scanError)}</p>` : ''}
+        ${actionPill('commit', 'Scan Usage', { js: 'js-gpsu-scan' })}
+      </div>`;
+    } else if (o.scanning) {
+      body = `<div class="set-loading" style="min-height:220px">
+        <div class="set-loading-bar" aria-hidden="true"></div>
+        <div class="set-loading-lbl">Pulling usage history…</div>
+        <p class="set-note">Querying every mapped tracker's daily usage for the last ${o.days} days.</p>
+      </div>`;
+    } else if (!gpsConfigured() || o.scanError) {
+      body = `<div class="gpsu-banner">${esc(o.scanError || 'GPS backend isn’t configured (GPS_BACKEND_URL).')}</div>
+        <div class="gpsu-cta"><p class="gpsu-cta-txt">Once the backend’s reachable, scan again to pull real usage.</p>${actionPill('commit', 'Try Again', { js: 'js-gpsu-scan' })}</div>`;
+    } else {
+      const roll = o.roll || { perUnit: [], perCategory: [], unmappedCount: 0 };
+      const anyMiles = roll.perUnit.some((r) => r.miles > 0.005);
+      const nMapped = roll.perUnit.length;
+      const catRow = (c) => `<div class="gpsu-cat-row">
+        <span class="gpsu-cat-name">${esc(c.name)}</span>
+        <span class="gpsu-cat-count muted">${c.unitCount} unit${c.unitCount === 1 ? '' : 's'}</span>
+        <span class="gpsu-cat-hrs">${c.totalHours.toFixed(1)} hrs</span>
+        <span class="gpsu-cat-avg muted">${c.avgHoursPerDayPerUnit.toFixed(2)} hrs/day/unit</span>
+      </div>`;
+      const unitRow = (r) => `<div class="gpsu-row${r.failed ? ' failed' : ''}">
+        <span class="gpsu-u-name">${refPill('units', r.unitId, r.name)}</span>
+        <span class="gpsu-u-prov">${badge(gpsProvLabel(r.provider))}</span>
+        <span class="gpsu-u-cat muted">${esc(r.categoryName)}</span>
+        ${r.failed
+          ? `<span class="gpsu-u-fail">${badge('Couldn’t load', 'yellow')}</span><span></span><span></span>`
+          : `<span class="gpsu-u-hrs">${r.hours.toFixed(1)} hrs</span>
+             <span class="gpsu-u-hpd muted">${r.hoursPerDay.toFixed(2)} hrs/day</span>
+             ${anyMiles ? `<span class="gpsu-u-mi muted">${r.miles > 0.005 ? r.miles.toFixed(1) + ' mi' : '—'}</span>` : '<span></span>'}`}
+      </div>`;
+      body = `
+        <div class="gpsu-head">
+          <div class="gpsu-counts"><span class="gpsu-big">${nMapped}</span> mapped unit${nMapped === 1 ? '' : 's'} · last ${o.days} days</div>
+          <div class="gpsu-tools">
+            ${dayCtl}
+            <button class="iconbtn iconbtn-bare js-gpsu-scan" data-tip="Re-scan usage">${I.refresh || '⟳'}</button>
+          </div>
+        </div>
+        ${nMapped === 0 ? `<div class="gpsu-empty">No GPS-mapped units yet — nothing to show usage for. Round up trackers first, then scan again.</div>` : `
+          <div class="gpsu-section">
+            <div class="gpsu-section-lbl">By category · busiest first</div>
+            ${roll.perCategory.length ? roll.perCategory.map(catRow).join('') : `<div class="gpsu-empty">No usage reported for any mapped unit in this window.</div>`}
+          </div>
+          <div class="gpsu-section">
+            <div class="gpsu-section-lbl">By unit</div>
+            <div class="gpsu-table">${roll.perUnit.map(unitRow).join('')}</div>
+          </div>
+        `}
+        ${roll.unmappedCount ? `<div class="gpsu-foot-note">
+          <span>${roll.unmappedCount} unit${roll.unmappedCount === 1 ? ' isn’t' : 's aren’t'} mapped to a tracker yet.</span>
+          ${ghostPill('Round Up Trackers', { js: 'js-gpsu-goto-roundup' })}
+        </div>` : ''}`;
+    }
+    const pop = el('div', 'popup gpsu-popup');
+    pop.innerHTML = popupShell({ icon: I.graph || '', title: 'Fleet Utilization', tag: 'Fleet · GPS usage', body });
     overlay.appendChild(pop);
   } else if (o.kind === 'rulebook') {
     // THE VISUAL RULEBOOK (SPEC v8) — every example is emitted by the REAL
@@ -10502,6 +11768,36 @@ function buildPopupEl(o, overlay, opts = {}) {
       headRight: `<button class="iconbtn js-notif-refresh" data-tip="Refresh">${I.refresh || '⟳'}</button>`,
       bodyClass: 'req-wrap', body: inner, foot });
     overlay.appendChild(pop);
+  } else if (o.kind === 'transport-alerts') {
+    // Scheduled Transport Reminder Alerts (#515) — the deliveries/pickups DUE in the window,
+    // one dismissible "call the customer" card per leg. Live from transportAlerts() (→
+    // dispatchEvents, the same source as the Office run) so it can't drift; the footer segment
+    // adjusts the window (today + N days). Delivery = blue · Pickup = brown, matching the
+    // dispatch cockpit's kind colors. Re-derived on every render — no reload to see a new one.
+    const days = tralertDays();
+    const list = visibleTransportAlerts();
+    const relDay = (d) => (d === TODAY_ISO ? 'Today' : d === addDaysISO(TODAY_ISO, 1) ? 'Tomorrow' : dispatchDayLabel(d));
+    const spanNote = days === 0 ? 'today' : days === 1 ? 'today or tomorrow' : `in the next ${days + 1} days`;
+    const inner = !list.length
+      ? `<div class="req-empty"><span class="req-empty-ic">🚚</span><p>All clear.</p><span>No deliveries or pickups due ${spanNote}. Newly scheduled transports show up here on their own — no refresh needed.</span></div>`
+      : list.map((a) => {
+          const when = `${relDay(a.date)}${a.time ? ' · ' + fmtClock(a.time) : ' · no set time'}`;
+          const where = [a.unitId ? unitPill(a.unitId) : esc(a.unit), a.address ? esc(a.address) : ''].filter(Boolean).join(' · ');
+          return `<div class="req-card">
+              <div class="req-head">${badge(a.type, a.color)}<span class="req-title">${esc(a.customer)}</span><span class="spacer"></span><span class="req-await">${esc(when)}</span></div>
+              <div class="req-text">${where}</div>
+              <div class="req-acts"><span class="spacer"></span>${actionPill('blue', 'Called', { js: 'js-tralert-called', data: { key: a.key } })}</div>
+            </div>`;
+        }).join('');
+    const winSeg = segCtl([
+      { label: 'Today', js: 'js-tralert-win', data: { days: 0 }, on: days === 0 ? 'blue' : undefined },
+      { label: '+ Tomorrow', js: 'js-tralert-win', data: { days: 1 }, on: days === 1 ? 'blue' : undefined },
+      { label: 'This week', js: 'js-tralert-win', data: { days: 6 }, on: days >= 6 ? 'blue' : undefined },
+    ]);
+    const foot = `${winSeg}<span class="spacer"></span>${list.length ? ghostPill('Mark all called', { js: 'js-tralert-allcalled', tip: 'Clear every reminder in this window' }) : ''}`;
+    const pop = el('div', 'popup'); pop.style.width = '460px';
+    pop.innerHTML = popupShell({ icon: I.truck, title: `Transports Due${list.length ? ` · ${list.length}` : ''}`, tag: 'Dispatch · call the customer', bodyClass: 'req-wrap', body: inner, foot });
+    overlay.appendChild(pop);
   } else if (o.kind === 'hotkeys') {
     const rows = [
       { d: 'click',    n: 'Click',              t: 'Open a record to view it — in its own card, nothing else moves.' },
@@ -10605,9 +11901,11 @@ function buildPopupEl(o, overlay, opts = {}) {
     // carries Requests, so we add the Notifications bell.
     const nu = unseenNotifs();
     const notifBtn = `<button class="iconbtn js-notifications" data-tip="Notifications">${I.bell}<span>Notifications</span>${nu ? `<span class="bb-badge">${nu > 9 ? '9+' : nu}</span>` : ''}</button>`;
+    const tn = visibleTransportAlerts().length;   // #515 transport reminders
+    const trBtn = `<button class="iconbtn js-transport-alerts" data-tip="Transports due — call the customer">${I.truck}<span>Transports Due</span>${tn ? `<span class="bb-badge">${tn > 9 ? '9+' : tn}</span>` : ''}</button>`;
     const pop = el('div', 'popup'); pop.style.width = '360px';
     pop.innerHTML = popupShell({ icon: I.sliders || I.menu || '', title: 'Tools', tag: 'Yard · toolbox',
-      body: `<div class="tools-tray">${notifBtn}${bottomBarInner()}</div>` });
+      body: `<div class="tools-tray">${trBtn}${notifBtn}${bottomBarInner()}</div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'settings') {
     o.config = o.config || { roles: {}, admin: '' };
@@ -11016,6 +12314,12 @@ const WINDOW_CATALOG = [
   { kind: 'migrateUnits',  label: 'Round up missing units',  tag: 'Units · migrate',          sample: () => ({ plan: [{ name: 'Sample Unit', action: 'create', unitId: 'U000', categoryId: ((DATA.categories || [])[0] || {}).categoryId, count: 1 }] }) },
   { kind: 'comment',       label: 'Comment note',            tag: 'Note · comment',           sample: () => ({ card: 'units', recId: ((DATA.units || [])[0] || {}).unitId, recType: null, color: 'yellow' }) },
   { kind: 'linkConfirm',   label: 'Confirm link',            tag: 'Link · confirm',           sample: () => ({ srcCard: 'rentals', srcId: ((DATA.rentals || [])[0] || {}).rentalId, targetCard: 'invoices', targetId: ((DATA.invoices || [])[0] || {}).invoiceId }) },
+  { kind: 'gpsConnect',    label: 'Connect GPS device',      tag: 'Unit · GPS',                sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, step: 'provider', provider: 'Hapn' }) },
+  { kind: 'gpsHealth',     label: 'Tracker Health',          tag: 'Fleet · GPS roster',        sample: () => ({ q: '', bucket: 'all' }) },
+  { kind: 'gpsFleet',      label: 'Fleet Map',               tag: 'Fleet · GPS map',           sample: () => ({ q: '', filter: 'all', sel: '' }) },
+  { kind: 'gpsRoundup',    label: 'Round Up Trackers',       tag: 'Fleet · GPS onboarding',    sample: () => ({ scanned: false }) },
+  { kind: 'gpsIssues',     label: 'GPS Issues',              tag: 'Fleet · GPS alerts',        sample: () => ({ q: '' }) },
+  { kind: 'gpsUtilization', label: 'Fleet Utilization',      tag: 'Fleet · GPS usage',         sample: () => ({ days: 30, scanned: false }) },
   { kind: 'rulebook',      label: 'The R-Rulebook',          tag: 'SPEC v8 · design system',  sample: () => ({}) },
   { kind: 'partform',      label: 'Add / Edit Part · Task',  tag: 'Work order · line',         sample: () => ({ woId: ((DATA.workOrders || [])[0] || {}).woId }) },
   { kind: 'receiptform',   label: 'New / Edit Receipt',      tag: 'Expense · receipt',         sample: () => ({}) },
@@ -11024,6 +12328,7 @@ const WINDOW_CATALOG = [
   { kind: 'role',          label: 'Role KPIs',               tag: 'Role · scorecard',          sample: () => ({ role: (ROLES[0] || {}).id }) },
   { kind: 'requests',      label: 'Requests inbox',          tag: 'Mr. Wrangler · approvals',  sample: () => ({}) },
   { kind: 'notifications', label: 'Notifications',           tag: 'Mr. Wrangler · resolved',   sample: () => ({}) },
+  { kind: 'transport-alerts', label: 'Transports Due',       tag: 'Dispatch · call the customer', sample: () => ({}) },
   { kind: 'hotkeys',       label: 'Mouse shortcuts',         tag: 'Operator · controls',       sample: () => ({}) },
   { kind: 'roadmap',       label: 'Coming in 2026',          tag: 'Roadmap · the docket',      sample: () => ({}) },
   { kind: 'feedback',      label: 'Report a bug or request', tag: 'Mr. Wrangler · report',     sample: () => ({}) },
@@ -11109,7 +12414,7 @@ async function sendFeedback() {
    (action 'wrangler'); Code.gs calls api.anthropic.com with the key from a Script
    Property. Carries a compact data digest + (when opened from a record) its detail.
    ════════════════════════════════════════════════════════════════════════ */
-const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — you have live read TOOLS that search the FULL records: find_customers, find_units, find_categories, find_vendors, find_rentals, find_invoices, find_work_orders, check_unit_availability, and price_rental. Use them to look up anything specific. Below is a short orientation only (today's date, the totals, and the categories with their rates) — not the full lists. Don't guess at a record you can look up, and only say a fact is missing after a tool comes back empty. Never invent records, names, or numbers.\n\nHELPING & FIXING — you're the assistant living inside the app (think Claude, but for this yard). The user might ask a question, describe a problem, or paste something — work out what they need and help. If they describe a BUG or glitch in the app itself (something not working, a dead control, a wrong layout or behavior), reproduce it in your head; if you're missing a detail, ask ONE quick follow-up (what they tapped + what they expected). Once you can state a clear repro, FILE A FIX by ending your reply with this exact fenced block:\n```wrangler-action\n{\"action\":\"fix\",\"title\":\"<short title>\",\"report\":\"<clear repro: steps, expected vs actual, any element involved>\"}\n```\nThat auto-ships obvious bugs (a dead control, a typo, a plainly wrong value).\nBut if it's a CHANGE or improvement (not an obvious bug), do NOT file it blind — talk it through first: lay out a SHORT, concrete PLAN of exactly what you'd change and where, then ask if that's good or needs adjusting. When you put a concrete plan on the table, end with:\n```wrangler-action\n{\"action\":\"plan\",\"title\":\"<short title>\",\"plan\":\"<numbered steps: what changes, where, and the resulting UX>\"}\n```\nJac reviews that plan and taps Build only when it's right — so take his tweaks and re-propose the plan until he's happy. Emit a block ONLY when ready — a clear repro for a fix, or a concrete plan for a change — never while still gathering detail; keep your visible words short and natural and never mention JSON, blocks, labels, or buttons.\n\nACTING ON DATA — you can DO things, not just answer. You can ADD (create), UPDATE, or BULK-IMPORT items for the user: customers, units, categories, vendors, parts, expenses, inspections, and work orders (and update notes/PO on rentals). Hard limits, always: NEVER hard-delete a record, NEVER charge a card or run an ACH, NEVER refund, NEVER touch a balance directly, NEVER change roles / permissions / passwords (security), and NEVER complete a work order. If the user asks to add/change something, or hands you lead/customer data to import (pasted rows, a list, a spreadsheet they paste in), DO IT — never say you can't or that Jac has to build it. Ask any quick follow-up you genuinely need first (which field, how their columns map, what membership stage), then end your reply with:\n```wrangler-action\n{\"action\":\"data\",\"title\":\"<what this does>\",\"ops\":[{\"op\":\"import\",\"entity\":\"customers\",\"rows\":[{\"firstName\":\"..\",\"lastName\":\"..\",\"phone\":\"..\",\"email\":\"..\",\"membershipStage\":\"..\"}]},{\"op\":\"create\",\"entity\":\"customers\",\"fields\":{}},{\"op\":\"update\",\"entity\":\"units\",\"id\":\"U003\",\"fields\":{\"notes\":\"..\"}}]}\n```\nA wrangler-action block is the ONLY thing that triggers a write, so whenever you add, update, or import you MUST end the reply with the block. Simple, single, safe edits (e.g. add one unit, fix a phone number) are applied AUTOMATICALLY the moment you emit the block — you may speak about those as done (e.g. say you added the unit Termite). Bigger or money-sensitive ones — bulk imports, rate/pricing changes, and invoicing a rental — instead show the user a preview to review and Apply first, so word THOSE as a preview (e.g. tell them to look over the import and tap Apply) and don't claim they're saved. When unsure which it'll be, describe the change plainly without promising either; the app shows the user the right control. Never claim a save without emitting the block. If the user PASTES a long list of rows (not a file) too big for one reply, import a smaller batch and tell them how many rows are still to send (but for an ATTACHED CSV file, never inline rows like this — always use the csv-import op described below, which expands every row locally with no size limit); never claim a save you didn't actually emit in a block. Map their funnel/membership words to one of: Inbound Lead, Outbound Lead, Contacted, Not A No!, Payment Discussed, Paid. Editable fields are name/contact/address/industry/notes/account-type/membership+sales stage (customers); name/category/mechanic/notes/specs/fleet-status (units); name/description/fuel + rental rates (member-daily, 1-day, 7-day, 4-week, weekend) (categories); name/phone/email/address/website/contact/type/notes (vendors); name/status/qty/website/order-email/product-number/notes (parts); notes/po (rentals); vendor/date/amount/category/method/notes (expenses); unit/date/wash/bill-customer/description (inspections); unit/customer/report/type/description/mechanic/eta/labor-hours (work orders — you can create or edit one but you can NEVER complete it or set its phase; only the Complete WO button does that; a work order is service on a UNIT, so if the user names only the customer just pass the customer and I'll attach their on-rent unit — I ask which only if they have none or several out) — anything else (used-sale prices, balances, payments/refunds, cards/ACH, roles/passwords) you must decline for now and explain you can't touch money movement or security yet. NAMES vs IDS — you can refer to any customer, unit, category, or vendor BY NAME (and a customer by phone), and the app resolves it to the right record; the find_* tools return each record's [id] if you want to be exact. When you set a unit's category (categoryId) or a part's vendor (vendorId), pass the category/vendor NAME or its [id] — but it must already exist (look it up with find_categories/find_vendors if unsure); if it's NEW, create that category/vendor FIRST (a separate action) so the link resolves, otherwise the link is dropped. If a name matches more than one record, ask which one rather than guessing. The find_* tools search the FULL records (not a list), so never refuse or demand an id just because a customer or unit isn't in the orientation — look it up by name or phone with a find_* tool and act on what it returns. If you can name who/what the user means, resolve it and proceed; the preview catches a true miss. Ask (with ask_user) only when a lookup is genuinely ambiguous — two real matches — or you have no name at all. You CAN invoice an EXISTING rental: emit an operate op `{\"op\":\"operate\",\"name\":\"billRental\",\"params\":{\"rentalId\":\"R-104\"}}` — this builds the invoice from the live pricing engine (you NEVER invent line items or amounts), and only works if that rental has a customer, dates, and units and isn't already invoiced. You may pass `\"customer\":\"<name>\"` instead of a rental id and I'll bill that customer's MOST RECENT un-invoiced rental — so just emit it with the customer name; do NOT ask for a rental id, even if you can't see the rental in the orientation (the engine searches the full records and the preview shows which one). You can also RECORD a CASH or CHECK payment on an invoice: emit `{\"op\":\"operate\",\"name\":\"recordPayment\",\"params\":{\"invoiceId\":\"INV-104\",\"method\":\"cash\"}}` — add \"amount\" to pay part of the balance (omit it to pay the balance in full), and for a check include \"checkNum\"; or pass \"customer\":\"<name>\" instead of an invoice id to pay that customer's one open invoice. You can NEVER charge a card or run an ACH, you cannot REFUND, and you cannot create a from-scratch/standalone invoice. You can PUT UNITS ON RENT for a customer (create a reserved booking): emit `{\"op\":\"operate\",\"name\":\"startRental\",\"params\":{\"customer\":\"Cameron Miller\",\"units\":[\"3in Trash Pump\"],\"startDate\":\"2026-06-30\",\"days\":1,\"startTime\":\"10:00 AM\"}}` — give startDate plus EITHER a duration (\"days\": 1 for a one-day rental, which runs to the next morning and bills as 1 day) OR an explicit \"endDate\" for a set range, and pass the pickup \"startTime\" (e.g. \"10:00 AM\") whenever the user gives a time. ALWAYS include the time and the duration when stated — a one-day 10am rental is startDate that morning, days 1, startTime 10:00 AM. Optional transport `\"transport\":{\"type\":\"Delivery\",\"miles\":10,\"address\":\"..\"}`. DON'T INTERROGATE — a salesperson should be able to reserve from one short line. From a message like \"Cameron Miller getting a jack hammer Tuesday for 3 days 8am\", just emit the booking: resolve the customer, treat \"3 days\" as days:3, use 8:00 AM, and if the unit name matches several units DON'T ask which — the app auto-picks an available one and the user sees it in the preview to swap. Don't quibble about end-of-day vs last-full-day, and don't make the user choose between interchangeable units. Ask a question ONLY when you truly can't proceed: no matching customer, or no available unit for that window. DATES — a weekday name (\"Wednesday\", \"Tuesday\") ALWAYS means the NEXT upcoming one (today or later), NEVER a date that already passed; resolve it to that date and book — do NOT ask \"did you mean this coming Wednesday?\". Don't ask the user to confirm an obvious date reading. It's priced automatically by the engine; the customer's agreement signature and the payment are SEPARATE steps you don't do. It's refused if a unit isn't Active, the customer is blacklisted, the dates are bad, or a unit is already booked for that window.\n\nLARGE CSV IMPORTS — when the user attaches a CSV file you will see a compact summary: column headers, up to 5 sample rows, and the total row count. For any attached CSV with 2 or more rows, ALWAYS use the csv-import op (never the inline import op) and DO NOT re-emit all the rows yourself — instead emit a csv-import op with just the column mapping. The app expands every row locally, so nothing gets cut off no matter how big the file:\n\`\`\`wrangler-action\n{\"action\":\"data\",\"title\":\"Import 234 customers from leads.csv\",\"ops\":[{\"op\":\"csv-import\",\"entity\":\"customers\",\"mapping\":{\"First Name\":\"firstName\",\"Last Name\":\"lastName\",\"Mobile\":\"phone\",\"E-mail\":\"email\"},\"skipIfEmpty\":[\"firstName\",\"lastName\"]}]}\n\`\`\`\nThe mapping keys are the CSV column headers EXACTLY as shown in the summary. The values are app field names (firstName, lastName, phone, email, company, address, industry, accountNotes, accountType, membershipStage, usedSalesStage for customers). Set skipIfEmpty to app fields that must not be blank. Map every column that clearly lines up with an app field even if the names differ (\"Mobile\" -> \"phone\"). If you are unsure about a column, ask first.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
+const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — you have live read TOOLS that search the FULL records: find_customers, find_units, find_categories, find_vendors, find_rentals, find_transports, find_invoices, find_work_orders, check_unit_availability, and price_rental. Use them to look up anything specific. For \"what transports/deliveries/pickups are due today or tomorrow?\" use find_transports (it defaults to a today→tomorrow window and returns one leg per line — customer, unit, type, address, date, time); if it comes back empty, say plainly that nothing's due. Below is a short orientation only (today's date, the totals, and the categories with their rates) — not the full lists. Don't guess at a record you can look up, and only say a fact is missing after a tool comes back empty. Never invent records, names, or numbers.\n\nHELPING & FIXING — you're the assistant living inside the app (think Claude, but for this yard). The user might ask a question, describe a problem, or paste something — work out what they need and help. If they describe a BUG or glitch in the app itself (something not working, a dead control, a wrong layout or behavior), reproduce it in your head; if you're missing a detail, ask ONE quick follow-up (what they tapped + what they expected). Once you can state a clear repro, FILE A FIX by ending your reply with this exact fenced block:\n```wrangler-action\n{\"action\":\"fix\",\"title\":\"<short title>\",\"report\":\"<clear repro: steps, expected vs actual, any element involved>\"}\n```\nThat auto-ships obvious bugs (a dead control, a typo, a plainly wrong value).\nBut if it's a CHANGE or improvement (not an obvious bug), do NOT file it blind — talk it through first: lay out a SHORT, concrete PLAN of exactly what you'd change and where, then ask if that's good or needs adjusting. When you put a concrete plan on the table, end with:\n```wrangler-action\n{\"action\":\"plan\",\"title\":\"<short title>\",\"plan\":\"<numbered steps: what changes, where, and the resulting UX>\"}\n```\nJac reviews that plan and taps Build only when it's right — so take his tweaks and re-propose the plan until he's happy. Emit a block ONLY when ready — a clear repro for a fix, or a concrete plan for a change — never while still gathering detail; keep your visible words short and natural and never mention JSON, blocks, labels, or buttons.\n\nHONESTY — never imply you're doing something you can't actually do. If a task is beyond your tools — an engineering data repair, or anything money-moving or security you must never touch — say so plainly and briefly, and apologize; don't dress it up as progress. When you FILE a bug/fix for the team, say exactly that ('I've flagged this for the team') — do NOT say you're 'fixing it now', that it's 'in progress', or that the user should 'just ping you' as if you'll finish it; you filed a ticket, you did not perform the repair. Only speak of a change as done or under way when you've actually emitted a wrangler-action that performs it.\n\nACTING ON DATA — you can DO things, not just answer. You can ADD (create), UPDATE, or BULK-IMPORT items for the user: customers, units, categories, vendors, parts, expenses, inspections, and work orders (and update notes/PO on rentals). Hard limits, always: NEVER hard-delete a record, NEVER charge a card or run an ACH, NEVER refund, NEVER touch a balance directly, NEVER change roles / permissions / passwords (security), and NEVER complete a work order. If the user asks to add/change something, or hands you lead/customer data to import (pasted rows, a list, a spreadsheet they paste in), DO IT — never say you can't or that Jac has to build it. Ask any quick follow-up you genuinely need first (which field, how their columns map, what membership stage), then end your reply with:\n```wrangler-action\n{\"action\":\"data\",\"title\":\"<what this does>\",\"ops\":[{\"op\":\"import\",\"entity\":\"customers\",\"rows\":[{\"firstName\":\"..\",\"lastName\":\"..\",\"phone\":\"..\",\"email\":\"..\",\"membershipStage\":\"..\"}]},{\"op\":\"create\",\"entity\":\"customers\",\"fields\":{}},{\"op\":\"update\",\"entity\":\"units\",\"id\":\"U003\",\"fields\":{\"notes\":\"..\"}}]}\n```\nA wrangler-action block is the ONLY thing that triggers a write, so whenever you add, update, or import you MUST end the reply with the block. Simple, single, safe edits (e.g. add one unit, fix a phone number) are applied AUTOMATICALLY the moment you emit the block — you may speak about those as done (e.g. say you added the unit Termite). Bigger or money-sensitive ones — bulk imports, rate/pricing changes, and invoicing a rental — instead show the user a preview to review and Apply first, so word THOSE as a preview (e.g. tell them to look over the import and tap Apply) and don't claim they're saved. When unsure which it'll be, describe the change plainly without promising either; the app shows the user the right control. Never claim a save without emitting the block. If the user PASTES a long list of rows (not a file) too big for one reply, import a smaller batch and tell them how many rows are still to send (but for an ATTACHED CSV file, never inline rows like this — always use the csv-import op described below, which expands every row locally with no size limit); never claim a save you didn't actually emit in a block. Map their funnel/membership words to one of: Inbound Lead, Outbound Lead, Contacted, Not A No!, Payment Discussed, Paid. Editable fields are name/contact/address/industry/notes/account-type/membership+sales stage (customers); name/category/mechanic/notes/specs/fleet-status (units); name/description/fuel + rental rates (member-daily, 1-day, 7-day, 4-week, weekend) (categories); name/phone/email/address/website/contact/type/notes (vendors); name/status/qty/website/order-email/product-number/notes (parts); notes/po (rentals); vendor/date/amount/category/method/notes (expenses); unit/date/wash/bill-customer/description (inspections); unit/customer/report/type/description/mechanic/eta/labor-hours (work orders — you can create or edit one but you can NEVER complete it or set its phase; only the Complete WO button does that; a work order is service on a UNIT, so if the user names only the customer just pass the customer and I'll attach their on-rent unit — I ask which only if they have none or several out) — anything else (used-sale prices, balances, payments/refunds, cards/ACH, roles/passwords) you must decline for now and explain you can't touch money movement or security yet. NAMES vs IDS — you can refer to any customer, unit, category, or vendor BY NAME (and a customer by phone), and the app resolves it to the right record; the find_* tools return each record's [id] if you want to be exact. When you set a unit's category (categoryId) or a part's vendor (vendorId), pass the category/vendor NAME or its [id] — but it must already exist (look it up with find_categories/find_vendors if unsure); if it's NEW, create that category/vendor FIRST (a separate action) so the link resolves, otherwise the link is dropped. If a name matches more than one record, ask which one rather than guessing. The find_* tools search the FULL records (not a list), so never refuse or demand an id just because a customer or unit isn't in the orientation — look it up by name or phone with a find_* tool and act on what it returns. If you can name who/what the user means, resolve it and proceed; the preview catches a true miss. Ask (with ask_user) only when a lookup is genuinely ambiguous — two real matches — or you have no name at all. You CAN invoice an EXISTING rental: emit an operate op `{\"op\":\"operate\",\"name\":\"billRental\",\"params\":{\"rentalId\":\"R-104\"}}` — this builds the invoice from the live pricing engine (you NEVER invent line items or amounts), and only works if that rental has a customer, dates, and units and isn't already invoiced. You may pass `\"customer\":\"<name>\"` instead of a rental id and I'll bill that customer's MOST RECENT un-invoiced rental — so just emit it with the customer name; do NOT ask for a rental id, even if you can't see the rental in the orientation (the engine searches the full records and the preview shows which one). You can also RECORD a CASH or CHECK payment on an invoice: emit `{\"op\":\"operate\",\"name\":\"recordPayment\",\"params\":{\"invoiceId\":\"INV-104\",\"method\":\"cash\"}}` — add \"amount\" to pay part of the balance (omit it to pay the balance in full), and for a check include \"checkNum\"; or pass \"customer\":\"<name>\" instead of an invoice id to pay that customer's one open invoice. You can FIX a mislinked rental by UNLINKING its invoice — emit `{\"op\":\"operate\",\"name\":\"unlinkInvoice\",\"params\":{\"rentalId\":\"R-104\"}}` (or pass \"customer\":\"<name>\"); this clears the rental's invoice link (and the stale invoiced flag) so you can then re-bill it fresh with billRental. It's allowed only while $0 has been paid toward that rental on the invoice — if a payment is assigned there it must be refunded first, which you can't do. Use it to repair a rental stuck showing invoiced but pointing at the wrong or a vanished invoice. You can NEVER charge a card or run an ACH, you cannot REFUND, and you cannot create a from-scratch/standalone invoice. You can PUT UNITS ON RENT for a customer (create a reserved booking): emit `{\"op\":\"operate\",\"name\":\"startRental\",\"params\":{\"customer\":\"Cameron Miller\",\"units\":[\"3in Trash Pump\"],\"startDate\":\"2026-06-30\",\"days\":1,\"startTime\":\"10:00 AM\"}}` — give startDate plus EITHER a duration (\"days\": 1 for a one-day rental, which runs to the next morning and bills as 1 day) OR an explicit \"endDate\" for a set range, and pass the pickup \"startTime\" (e.g. \"10:00 AM\") whenever the user gives a time. ALWAYS include the time and the duration when stated — a one-day 10am rental is startDate that morning, days 1, startTime 10:00 AM. Optional transport `\"transport\":{\"type\":\"Delivery\",\"miles\":10,\"address\":\"..\"}`. DON'T INTERROGATE — a salesperson should be able to reserve from one short line. From a message like \"Cameron Miller getting a jack hammer Tuesday for 3 days 8am\", just emit the booking: resolve the customer, treat \"3 days\" as days:3, use 8:00 AM, and if the unit name matches several units DON'T ask which — the app auto-picks an available one and the user sees it in the preview to swap. Don't quibble about end-of-day vs last-full-day, and don't make the user choose between interchangeable units. Ask a question ONLY when you truly can't proceed: no matching customer, or no available unit for that window. DATES — a weekday name (\"Wednesday\", \"Tuesday\") ALWAYS means the NEXT upcoming one (today or later), NEVER a date that already passed; resolve it to that date and book — do NOT ask \"did you mean this coming Wednesday?\". Don't ask the user to confirm an obvious date reading. It's priced automatically by the engine; the customer's agreement signature and the payment are SEPARATE steps you don't do. It's refused if a unit isn't Active, the customer is blacklisted, the dates are bad, or a unit is already booked for that window.\n\nLARGE CSV IMPORTS — when the user attaches a CSV file you will see a compact summary: column headers, up to 5 sample rows, and the total row count. For any attached CSV with 2 or more rows, ALWAYS use the csv-import op (never the inline import op) and DO NOT re-emit all the rows yourself — instead emit a csv-import op with just the column mapping. The app expands every row locally, so nothing gets cut off no matter how big the file:\n\`\`\`wrangler-action\n{\"action\":\"data\",\"title\":\"Import 234 customers from leads.csv\",\"ops\":[{\"op\":\"csv-import\",\"entity\":\"customers\",\"mapping\":{\"First Name\":\"firstName\",\"Last Name\":\"lastName\",\"Mobile\":\"phone\",\"E-mail\":\"email\"},\"skipIfEmpty\":[\"firstName\",\"lastName\"]}]}\n\`\`\`\nThe mapping keys are the CSV column headers EXACTLY as shown in the summary. The values are app field names (firstName, lastName, phone, email, company, address, industry, accountNotes, accountType, membershipStage, usedSalesStage for customers). Set skipIfEmpty to app fields that must not be blank. Map every column that clearly lines up with an app field even if the names differ (\"Mobile\" -> \"phone\"). If you are unsure about a column, ask first.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
 // The digest is Mr. Wrangler's whole window into the yard, so it carries the ACTUAL
 // records (not just counts): category rates, each unit's type/status, each rental's
 // date window + customer, customer balances, and open invoices/WOs. Sections cap at
@@ -11311,6 +12616,25 @@ const WR_TOOL_IMPL = {
     if (input.status) { const s = String(input.status).toLowerCase(); list = list.filter((r) => String(r.status || '').toLowerCase() === s); }
     return { count: list.length, rentals: list.slice(0, WR_TOOL_LIMIT).map((r) => ({ id: r.rentalId, label: rentalUnitsLabel(r) || r.rentalName || '', customer: (IDX.customer.get(r.customerId) || {}).name || '', window: fmtWindow(r.startDate, r.endDate), status: r.status || '', invoiced: !!r.invoiceId })) };
   },
+  // Transports due — the scheduled delivery/pickup LEGS in a date window, straight from
+  // dispatchEvents() (the SAME source as the Office dispatch grid, so this never drifts from
+  // it): a Deliver leg on the rental's start date/time, a Pick up leg on its end date, per
+  // unit, skipping Cancelled/No-Show/Returned/Quote and Self-transport units. Default window
+  // is today→tomorrow so "what's due?" always covers same-day + next-day. `type` filters to
+  // 'Delivery' or 'Pickup'. One row per leg: customer, unit, type, address, date, time.
+  find_transports(input) {
+    const iso = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s || '');
+    let from = iso(input.from) ? input.from : TODAY_ISO;
+    let through = iso(input.through) ? input.through : addDaysISO(TODAY_ISO, 1);
+    if (from > through) { const t = from; from = through; through = t; }
+    const LEG = { Deliver: 'Delivery', 'Pick up': 'Pickup' };
+    const want = String(input.type || '').trim().toLowerCase();
+    let rows = dispatchEvents()
+      .filter((ev) => ev.date >= from && ev.date <= through)
+      .map((ev) => ({ rental: ev.rentalId, customer: ev.cust, unit: ev.unit, type: LEG[ev.task] || ev.task, address: ev.addr || '', date: ev.date, time: ev.time || '' }));
+    if (want) rows = rows.filter((r) => r.type.toLowerCase() === want);
+    return { count: rows.length, window: { from, through }, transports: rows.slice(0, WR_TOOL_LIMIT) };
+  },
   find_invoices(input) {
     let list = DATA.invoices || [];
     if (input.customer) { const c = wrResolveCustomer(input.customer).rec; if (!c) return { count: 0, invoices: [], note: `no customer matching “${input.customer}”` }; list = list.filter((i) => i.customerId === c.customerId); }
@@ -11364,15 +12688,16 @@ const WR_TOOLS = [
   { name: 'find_categories', description: 'Search equipment categories by name. Returns id, name, and all rental rates (memberDaily, rate1Day, rate7Day, rate4Wk, weekend).', input_schema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
   { name: 'find_vendors', description: 'Search vendors by name. Returns id, name, phone, type.', input_schema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
   { name: 'find_rentals', description: 'List rentals, filtered by customer (name/id), unit (name/id), and/or status. Returns id, units label, customer, window, status, and whether invoiced.', input_schema: { type: 'object', properties: { customer: { type: 'string' }, unit: { type: 'string' }, status: { type: 'string' } }, required: [] } },
+  { name: 'find_transports', description: 'List scheduled transport legs — deliveries and pickups DUE in a date window (the same dispatch data the Office run uses). Use this for "what transports are due today/tomorrow?", "any pickups today?", etc. Defaults to today through tomorrow when no dates are given, so it covers same-day + next-day together. Optionally filter by type ("Delivery" or "Pickup"). Dates are YYYY-MM-DD. Returns one row per leg: customer, unit, type, address, date, time.', input_schema: { type: 'object', properties: { type: { type: 'string', description: '"Delivery" or "Pickup" — omit for both' }, from: { type: 'string', description: 'window start YYYY-MM-DD (default today)' }, through: { type: 'string', description: 'window end YYYY-MM-DD (default tomorrow)' } }, required: [] } },
   { name: 'find_invoices', description: 'List invoices, optionally filtered by customer and/or onlyOpen=true. Returns id, customer, total, balance, status.', input_schema: { type: 'object', properties: { customer: { type: 'string' }, onlyOpen: { type: 'boolean' } }, required: [] } },
   { name: 'find_work_orders', description: 'List work orders, filtered by unit and/or customer. Returns id, unit, report, phase, type.', input_schema: { type: 'object', properties: { unit: { type: 'string' }, customer: { type: 'string' } }, required: [] } },
   { name: 'check_unit_availability', description: 'Check whether a unit is free for a date window. Returns available + any conflicting rentals. Dates are YYYY-MM-DD.', input_schema: { type: 'object', properties: { unit: { type: 'string' }, startDate: { type: 'string' }, endDate: { type: 'string' } }, required: ['unit', 'startDate', 'endDate'] } },
   { name: 'price_rental', description: 'Quote the price for renting one or more units over a window (uses the live pricing engine; member rates apply if the customer is given). Dates are YYYY-MM-DD. Read-only — does not create anything.', input_schema: { type: 'object', properties: { units: { type: 'array', items: { type: 'string' } }, startDate: { type: 'string' }, endDate: { type: 'string' }, customer: { type: 'string' } }, required: ['units', 'startDate', 'endDate'] } },
   { name: 'ask_user', description: "Ask the user ONE short follow-up question when you genuinely can't proceed — a real ambiguity (two customers match, which unit, missing a required detail). Pass a clear `question` and, when the choice is between known options, an `options` array (e.g. the matching customers) so they can just tap one. Use this SPARINGLY — never to confirm an obvious reading or something a find_* tool can answer. The user's answer comes back so you continue.", input_schema: { type: 'object', properties: { question: { type: 'string' }, options: { type: 'array', items: { type: 'string' } } }, required: ['question'] } },
   { name: 'note_on_issue', description: 'Add a comment to an issue that has ALREADY been filed (one from the ALREADY FILED list) instead of filing a duplicate. Use ONLY after the user chooses "Add my note to #NNN" in the DUPLICATE CHECK. Pass the issue `number` and a one-paragraph `text` summarizing their new report. Does NOT create a new issue.', input_schema: { type: 'object', properties: { number: { type: 'number', description: 'the existing issue number to comment on' }, text: { type: 'string', description: "one-paragraph summary of the user's report to append" } }, required: ['number', 'text'] } },
-  { name: 'apply_changes', description: "WRITE changes: create/update/import records or run an operation. Pass `ops` — the SAME op shapes documented above ({op:'create'|'update'|'import'|'csv-import', entity, fields|rows|id} and {op:'operate', name:'startRental'|'billRental'|'recordPayment', params}). It validates against the allowlist and the safety fences and RETURNS what resolved or got dropped, so if a link drops (e.g. a category that doesn't exist yet) you can create it first and call again. Safe single edits apply immediately; consequential ones (bulk, pricing, billing, payments, several records) are staged for the user to tap Apply — word those as a preview, never as saved. This is the ONLY write path — never charge a card/ACH, refund, touch a balance, change roles/passwords, hard-delete, or complete a WO.", input_schema: { type: 'object', properties: { title: { type: 'string', description: 'short label for the change' }, ops: { type: 'array', items: { type: 'object' }, description: 'the operations to apply' } }, required: ['ops'] } },
+  { name: 'apply_changes', description: "WRITE changes: create/update/import records or run an operation. Pass `ops` — the SAME op shapes documented above ({op:'create'|'update'|'import'|'csv-import', entity, fields|rows|id} and {op:'operate', name:'startRental'|'billRental'|'recordPayment'|'unlinkInvoice', params}). It validates against the allowlist and the safety fences and RETURNS what resolved or got dropped, so if a link drops (e.g. a category that doesn't exist yet) you can create it first and call again. Safe single edits apply immediately; consequential ones (bulk, pricing, billing, payments, several records) are staged for the user to tap Apply — word those as a preview, never as saved. This is the ONLY write path — never charge a card/ACH, refund, touch a balance, change roles/passwords, hard-delete, or complete a WO.", input_schema: { type: 'object', properties: { title: { type: 'string', description: 'short label for the change' }, ops: { type: 'array', items: { type: 'object' }, description: 'the operations to apply' } }, required: ['ops'] } },
 ];
-const WR_TOOLS_NOTE = "\n\nLOOKING THINGS UP — you have live read-only tools (find_customers, find_units, find_categories, find_vendors, find_rentals, find_invoices, find_work_orders, check_unit_availability, price_rental) that query the FULL records, not just the snapshot. PREFER them: when the user names a customer/unit/rental, look it up to confirm it exists and get its id before you answer or emit an action; check availability before booking; quote with price_rental rather than guessing. Don't ask the user for something a tool can find. For WRITES, prefer the apply_changes tool: call it with the ops array (same shapes as the wrangler-action block) and it returns exactly what resolved or got dropped, so you can fix a dropped link and try again — much better than emitting a blind block. Safe single edits auto-apply; consequential ones come back staged for the user's Apply (word those as a preview). You may still emit a wrangler-action block as a fallback, but don't ALSO emit one for a write you already made with apply_changes. When you truly need to disambiguate before acting, call ask_user (with tappable options when the choice is between known records) instead of guessing or burying the question in prose — but only when a tool can't resolve it.";
+const WR_TOOLS_NOTE = "\n\nLOOKING THINGS UP — you have live read-only tools (find_customers, find_units, find_categories, find_vendors, find_rentals, find_transports, find_invoices, find_work_orders, check_unit_availability, price_rental) that query the FULL records, not just the snapshot. PREFER them: when the user names a customer/unit/rental, look it up to confirm it exists and get its id before you answer or emit an action; check availability before booking; quote with price_rental rather than guessing. Don't ask the user for something a tool can find. For WRITES, prefer the apply_changes tool: call it with the ops array (same shapes as the wrangler-action block) and it returns exactly what resolved or got dropped, so you can fix a dropped link and try again — much better than emitting a blind block. Safe single edits auto-apply; consequential ones come back staged for the user's Apply (word those as a preview). You may still emit a wrangler-action block as a fallback, but don't ALSO emit one for a write you already made with apply_changes. When you truly need to disambiguate before acting, call ask_user (with tappable options when the choice is between known records) instead of guessing or burying the question in prose — but only when a tool can't resolve it.";
 // The agent loop: send → if the model calls tools, run them locally and feed results back →
 // repeat until it answers in plain text. opts.call is injectable for offline tests; it defaults
 // to the live backend pass-through. Degrades to a single shot against a backend with no tools
@@ -11952,6 +13277,39 @@ const WR_OPERATIONS = {
       return { entity: 'invoices', id: inv.invoiceId };   // bring the user to the invoice that was paid
     },
   },
+  unlinkInvoice: {
+    // Repair a mislinked rental — clear its invoiceId so it can be re-billed fresh (e.g. an invoice-number
+    // collision left it pointing at another customer's bill). Money-safe: mirrors the app's §7.4 inv-remove
+    // guard — refuse while ANY payment is allocated to THIS rental on that invoice (a refund is out of scope).
+    _pick(p) {
+      if (p && p.rentalId) { const r = IDX.rental.get(p.rentalId); return r ? { rental: r } : { issue: `no rental “${p.rentalId}”` }; }
+      const custRef = (p && (p.customer != null ? p.customer : p.customerId)) || '';
+      if (!custRef) return { issue: `which rental? give a rental id or the customer’s name` };
+      const cres = wrResolveCustomer(custRef);
+      if (cres.many) return { issue: `more than one customer matches “${custRef}” — which one?` };
+      if (!cres.rec) return { issue: `no customer matching “${custRef}”` };
+      const linked = (DATA.rentals || []).filter((r) => r.customerId === cres.rec.customerId && r.invoiceId);
+      if (!linked.length) return { issue: `no invoice-linked rental for ${cres.rec.name}` };
+      if (linked.length > 1) return { issue: `${cres.rec.name} has ${linked.length} invoice-linked rentals — say which rental id` };
+      return { rental: linked[0] };
+    },
+    validate(p) {
+      const pick = this._pick(p);
+      if (pick.issue) return { issue: pick.issue };
+      const r = pick.rental;
+      if (!r.invoiceId) return { issue: `rental ${r.rentalId} isn’t linked to an invoice` };
+      const inv = IDX.invoice.get(r.invoiceId);
+      if (inv && rentalAllocated(inv, r.rentalId) > 0.005) return { issue: `a payment is assigned to this rental on ${invoiceShort(r.invoiceId)} — that has to be refunded first, which I can’t do` };
+      return { summary: `unlink invoice ${invoiceShort(r.invoiceId)} from ${rentalUnitsLabel(r) || `rental ${r.rentalId}`} (frees it to re-bill)` };
+    },
+    apply(p) {
+      const pick = this._pick(p); if (pick.issue || !pick.rental) return null;
+      const r = pick.rental; const old = r.invoiceId;
+      r.invoiceId = null; reindex('rentals', r);
+      logAction(r, `Invoice ${invoiceShort(old)} unlinked — repair mislinked invoice (Mr. Wrangler)`);
+      return { entity: 'rentals', id: r.rentalId };
+    },
+  },
   startRental: {
     autoApply: true,   // a reservation just happens — no Apply tap (Jac); the user is then brought to the rental
     // Put unit(s) on rent for a customer — create a fully-formed RESERVED booking (priced by the engine on
@@ -12210,6 +13568,32 @@ function markNotifsSeen() { const mx = wranglerNotifs.reduce((a, n) => Math.max(
 function dismissNotif(num) { const s = loadDismissedNotifs(); s.add(num); saveDismissedNotifs(s); render(); if (state.overlay?.kind === 'notifications') renderOverlay(); }
 function dismissAllNotifs() { const s = loadDismissedNotifs(); wranglerNotifs.forEach((n) => s.add(n.number)); saveDismissedNotifs(s); render(); if (state.overlay?.kind === 'notifications') renderOverlay(); }
 function toggleNotifsMuted() { setNotifsMuted(!notifsMuted()); render(); if (state.overlay?.kind === 'notifications') renderOverlay(); }
+/* ── Scheduled Transport Reminder Alerts (#515) — the delivery/pickup LEGS due in the near
+   window, so the team calls the customer before the truck rolls. Derived LIVE from
+   dispatchEvents() (the SAME source as the Office dispatch grid + the find_transports tool,
+   so the reminder can't drift from the run) — every render re-derives, so a newly scheduled
+   transport shows without a reload. Window = today + N days ahead (default 1 = today→tomorrow,
+   matching the dispatch run), adjustable per-device. A "Called" dismiss clears one leg so it
+   won't nag again (§246 idiom), keyed per leg+date so a RESCHEDULE surfaces a fresh reminder;
+   the store self-prunes past-window keys so it can't grow forever. */
+const TRALERT_DAYS_KEY = 'jactec.transportAlertDays';       // per-device window: today + N days ahead
+const TRALERT_CALLED_KEY = 'jactec.transportAlertsCalled';  // leg keys the team has dismissed ("Called")
+const tralertDays = () => { try { const n = parseInt(localStorage.getItem(TRALERT_DAYS_KEY), 10); return Number.isFinite(n) ? Math.max(0, Math.min(6, n)) : 1; } catch (e) { return 1; } };
+const setTralertDays = (n) => { try { localStorage.setItem(TRALERT_DAYS_KEY, String(Math.max(0, Math.min(6, n)))); } catch (e) {} };
+const loadCalledAlerts = () => { try { return new Set(JSON.parse(localStorage.getItem(TRALERT_CALLED_KEY) || '[]')); } catch (e) { return new Set(); } };
+const saveCalledAlerts = (set) => { try { localStorage.setItem(TRALERT_CALLED_KEY, JSON.stringify([...set].filter((k) => String(k).split('|').pop() >= TODAY_ISO))); } catch (e) {} };
+const tralertKey = (ev) => `${ev.rentalId}|${ev.unitId || ''}|${ev.task}|${ev.date}`;   // per leg + date — a reschedule = a fresh reminder
+const TRALERT_LEG = { Deliver: 'Delivery', 'Pick up': 'Pickup' };
+function transportAlerts() {
+  const from = TODAY_ISO, through = addDaysISO(TODAY_ISO, tralertDays());
+  return dispatchEvents()
+    .filter((ev) => ev.date >= from && ev.date <= through)
+    .map((ev) => ({ key: tralertKey(ev), rentalId: ev.rentalId, unitId: ev.unitId, customer: ev.cust, unit: ev.unit,
+      type: TRALERT_LEG[ev.task] || ev.task, color: ev.color === 'blue' ? 'blue' : 'brown', address: ev.addr || '', date: ev.date, time: ev.time || '' }));
+}
+const visibleTransportAlerts = () => { const called = loadCalledAlerts(); return transportAlerts().filter((a) => !called.has(a.key)); };
+function callTransportAlert(key) { const s = loadCalledAlerts(); s.add(key); saveCalledAlerts(s); render(); if (state.overlay?.kind === 'transport-alerts') renderOverlay(); }
+function callAllTransportAlerts() { const s = loadCalledAlerts(); transportAlerts().forEach((a) => s.add(a.key)); saveCalledAlerts(s); render(); if (state.overlay?.kind === 'transport-alerts') renderOverlay(); }
 async function refreshWranglerNotifications() {
   if (typeof backendPassword === 'undefined' || !backendPassword || notifLoading) return;   // demo/offline → no feed
   notifLoading = true;
@@ -12418,7 +13802,7 @@ function setupSignaturePad() {
     cv.addEventListener('pointerleave', stash);
   });
 }
-const closeOverlay = () => { destroyCardElement(); stopAgCam(); try { if (_sigWin && !_sigWin.closed) _sigWin.close(); } catch (e) {} _sigWin = null; state.datepick = null; state.overlay = null; renderOverlay(); };
+const closeOverlay = () => { destroyCardElement(); stopAgCam(); try { if (_sigWin && !_sigWin.closed) _sigWin.close(); } catch (e) {} _sigWin = null; clearTimeout(_gpsPollTimer); state.datepick = null; state.overlay = null; renderOverlay(); };
 
 /* ── Back-office boards (§7.9–7.12): spreadsheet-style tables ─────────────── */
 function vendorTotals(vendorId) {
@@ -12909,6 +14293,7 @@ let renderCount = 0;
 const scrollMemo = {};   // persistent scroll positions, keyed `card|view` (list vs which record)
 function render() {
   const t0 = performance.now();
+  refreshToday();   // roll "today" over before painting — an all-day-open tab must never stamp/read yesterday
   hideTip(); hideHoverPreview();
   // Preserve each card's scroll position across the DOM swap, so recording an action
   // or editing a field doesn't dump you back at the top of a scrolled card (§0.6).
@@ -12981,6 +14366,7 @@ function render() {
   mountTransportEditor();   // inline transport editor: mount the live map + wire the address field
   mountWranglerDock();   // §18 wire paste + drag-drop image input on the wrangler dock after each render
   mountDispatchMap();   // §2.3 office cockpit: re-parent the singleton dispatch map + refresh pins/route/truck
+  renderSchedBanner();   // R26 — top "Due Today" scheduled-actions band (lives on <body>, survives the #app swap)
   ruMountStrips();   // §13.7 gauge strips — build each open strip's chart into its measured 25% box
   applyTitles();   // full text on hover wherever we truncate (custom ~0.5s tooltip)
   scoreTick();     // §11 gamification — pop +X over any ring whose metric just rose
@@ -13768,6 +15154,9 @@ function onClick(e) {
     return openOverlay({ kind: 'comment', card: hit.card, recId: hit.recId, recType: hit.recType, color: (last && last.color) || 'yellow', text: last ? last.text : '' });
   }
 
+  // R26 — dismiss the top "Due Today" scheduled-actions band (manual X only; sticks for the session)
+  if (closest('.js-sched-dismiss')) { e.stopPropagation(); dismissSchedBanner(); return; }
+
   // clicked card → orange-border focus (§0.1 visual feedback; applied immediately,
   // independent of whatever else this click does — anchor stays a separate action)
   const fc = closest('.card');
@@ -13935,6 +15324,18 @@ function onClick(e) {
   if (closest('.js-refund-confirm')) { e.stopPropagation(); return refundInvoiceFlow(closest('.js-refund-confirm').dataset.rec); }
   if (closest('.js-stop-driver')) { e.stopPropagation(); const b = closest('.js-stop-driver'); const ds = driverRoster(); if (!ds.length) { toast('Add drivers on Settings → Team Roster first.'); return; } const html = ds.map((d) => `<button class="dd-item js-stop-driver-pick" data-rec="${esc(b.dataset.rec)}" data-unit="${esc(b.dataset.unit)}" data-task="${esc(b.dataset.task)}" data-driver="${esc(d.id)}">${esc(d.name)}</button>`).join('') + `<button class="dd-item js-stop-driver-pick" data-rec="${esc(b.dataset.rec)}" data-unit="${esc(b.dataset.unit)}" data-task="${esc(b.dataset.task)}" data-driver="">— Unassign —</button>`; openDropdown(b, html, { align: 'left' }); return; }
   if (closest('.js-stop-driver-pick')) { e.stopPropagation(); const b = closest('.js-stop-driver-pick'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); assignStopDriver(b.dataset.rec, b.dataset.unit, b.dataset.task, b.dataset.driver || null); render(); return; }
+  // §2.3 Phase 3 — a MERGED trip's driver reassigns every leg together (assignTripDriver,
+  // D6 sync). Mirrors js-stop-driver/-pick exactly, just addressed by tripId+day.
+  if (closest('.js-trip-driver')) { e.stopPropagation(); const b = closest('.js-trip-driver'); const ds = driverRoster(); if (!ds.length) { toast('Add drivers on Settings → Team Roster first.'); return; } const html = ds.map((d) => `<button class="dd-item js-trip-driver-pick" data-id="${esc(b.dataset.id)}" data-day="${esc(b.dataset.day)}" data-driver="${esc(d.id)}">${esc(d.name)}</button>`).join('') + `<button class="dd-item js-trip-driver-pick" data-id="${esc(b.dataset.id)}" data-day="${esc(b.dataset.day)}" data-driver="">— Unassign —</button>`; openDropdown(b, html, { align: 'left' }); return; }
+  if (closest('.js-trip-driver-pick')) { e.stopPropagation(); const b = closest('.js-trip-driver-pick'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); assignTripDriver(b.dataset.id, b.dataset.day, b.dataset.driver || null); render(); return; }
+  // §2.3 Phase 3 — the row's ⋯ menu: Merge trip…/Split out… (openTripMenu), then a
+  // second-level picker (openDropdown re-anchors on the still-live row — tripRowAnchor —
+  // since the first dropdown's own trigger button is gone by the time this fires).
+  if (closest('.js-trip-menu')) { e.stopPropagation(); const b = closest('.js-trip-menu'); return openTripMenu(b.dataset.id, b.dataset.day, b); }
+  if (closest('.js-trip-mergepick-open')) { e.stopPropagation(); const b = closest('.js-trip-mergepick-open'); return openTripMergePicker(b.dataset.id, b.dataset.day, tripRowAnchor(b.dataset.id) || b); }
+  if (closest('.js-trip-splitpick-open')) { e.stopPropagation(); const b = closest('.js-trip-splitpick-open'); return openTripSplitPicker(b.dataset.id, b.dataset.day, tripRowAnchor(b.dataset.id) || b); }
+  if (closest('.js-trip-merge-pick')) { e.stopPropagation(); const b = closest('.js-trip-merge-pick'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); const ok = tripMerge(b.dataset.day, b.dataset.target, b.dataset.source); if (ok) toast('Trips merged — double up.'); return render(); }
+  if (closest('.js-trip-split-pick')) { e.stopPropagation(); const b = closest('.js-trip-split-pick'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); const ok = tripSplit(b.dataset.day, b.dataset.id, b.dataset.stop); if (ok) toast('Trip split out.'); return render(); }
   // D5 — pick which driver lanes are showing (a per-device view pref; '' = back to the solo rail)
   if (closest('.js-disp-lanes')) { e.stopPropagation(); const b = closest('.js-disp-lanes'); const ds = driverRoster(); if (!ds.length) { toast('Add drivers on Settings → Team Roster first.'); return; } const shown = dispatchLanesLS(); const html = ds.map((d) => `<button class="dd-item js-disp-lane-pick${shown.includes(d.id) ? ' on' : ''}" data-driver="${esc(d.id)}">${shown.includes(d.id) ? '✓ ' : ''}${esc(d.name)}</button>`).join('') + `<button class="dd-item js-disp-lane-pick" data-driver="">— Solo rail —</button>`; openDropdown(b, html, { align: 'left' }); return; }
   if (closest('.js-disp-lane-pick')) { e.stopPropagation(); const b = closest('.js-disp-lane-pick'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); const id = b.dataset.driver; if (!id) { dispatchLanesSave([]); state.dispLaneIso = null; } else { const shown = dispatchLanesLS(); dispatchLanesSave(shown.includes(id) ? shown.filter((x) => x !== id) : [...shown, id]); } render(); return; }
@@ -14103,6 +15504,10 @@ function onClick(e) {
   if (closest('.js-notif-dismiss')) { e.stopPropagation(); return dismissNotif(Number(closest('.js-notif-dismiss').dataset.num)); }   // §246 clear one
   if (closest('.js-notif-dismissall')) { e.stopPropagation(); return dismissAllNotifs(); }   // §246 clear all
   if (closest('.js-notif-mute')) { e.stopPropagation(); return toggleNotifsMuted(); }   // §246 mute/unmute the badge
+  if (closest('.js-transport-alerts')) { e.stopPropagation(); return openOverlay({ kind: 'transport-alerts' }); }   // #515 transport reminders — deliveries/pickups due
+  if (closest('.js-tralert-called')) { e.stopPropagation(); return callTransportAlert(closest('.js-tralert-called').dataset.key); }   // #515 dismiss one leg ("Called")
+  if (closest('.js-tralert-allcalled')) { e.stopPropagation(); return callAllTransportAlerts(); }   // #515 clear the whole window
+  if (closest('.js-tralert-win')) { e.stopPropagation(); setTralertDays(Number(closest('.js-tralert-win').dataset.days)); render(); renderOverlay(); return; }   // #515 adjust the window
   if (closest('.js-requests')) { e.stopPropagation(); openOverlay({ kind: 'requests' }); refreshWranglerRequests(); return; }   // §18e approval inbox
   if (closest('.js-req-refresh')) { e.stopPropagation(); return refreshWranglerRequests(); }
   if (closest('.js-req-chat')) { e.stopPropagation(); return openWranglerFromRequest(Number(closest('.js-req-chat').dataset.n)); }   // §18e continue the conversation
@@ -14155,6 +15560,10 @@ function onClick(e) {
   // §2.3 dispatch timeline — day nav + open a stop's rental (Phase 6)
   if (closest('.js-disp-day')) { e.stopPropagation(); state.dispatchDay = addDaysISO(state.dispatchDay || TODAY_ISO, Number(closest('.js-disp-day').dataset.dir)); return render(); }
   if (closest('.js-disp-today')) { e.stopPropagation(); state.dispatchDay = TODAY_ISO; return render(); }
+  // §2.2b Trips row — destination (town) tap: jump the live map to this trip
+  if (closest('.js-trip-town')) { e.stopPropagation(); const b = closest('.js-trip-town'); return tripTownGo(b.dataset.id, b.dataset.day); }
+  // §2.1 Trips — map panel toggle (the graph-button slot); re-opening retries a failed Maps load
+  if (closest('.js-tripsmap')) { e.stopPropagation(); const on = !tripsMapOpen(); tripsMapSetOpen(on); if (on) _dispMapFailed = false; return render(); }
   // §2.3 free-form route arrows — these win over the stop-open below (the icon lives inside the row)
   if (closest('.js-disp-stop') && !closest('.js-disp-time') && !closest('.disp-grip') && !closest('.js-site-go')) { e.stopPropagation(); return anchorRecord('rentals', closest('.js-disp-stop').dataset.rec); }
   if (closest('.js-disp-tok') && !closest('.dt-time') && !closest('.dt-grip') && !closest('.js-site-go') && !closest('.pill')) { e.stopPropagation(); return dispatchFocusStop(closest('.js-disp-tok').dataset.id); }   // §2.3 cockpit: tap a rail stop → focus it on the map (the customer pill opens the rental)
@@ -14385,6 +15794,10 @@ function onClick(e) {
   if (closest('.js-cardback')) { e.stopPropagation(); return cardBack(closest('.js-cardback').dataset.card); }
   if (closest('.js-cardfwd')) { e.stopPropagation(); return cardFwd(closest('.js-cardfwd').dataset.card); }
 
+  // §2.7 Trips AUTO-RUN — lives INSIDE a draggable, js-group-toggle-bearing day header, so
+  // this must be checked (and stopPropagation'd) before that generic toggle below.
+  if (closest('.js-autorun')) { e.stopPropagation(); autoRunDay(closest('.js-autorun').dataset.day); return; }
+
   if (closest('.js-group-toggle')) { const h = closest('.js-group-toggle'); e.stopPropagation(); toggleGroupCollapsed(h.dataset.card, h.dataset.group); return render(); }   // collapse/expand a card group (persists per device)
   if (closest('.js-showmore')) { const b = closest('.js-showmore'); e.stopPropagation(); const cs = activeSession().cards[b.dataset.card]; if (cs) { cs.listLimit = (cs.listLimit || VIRT_CAP) + SHOW_MORE_BATCH; render(); } return; }
   if (closest('.js-tolist')) { e.stopPropagation(); return cardToList(closest('.card').dataset.card); }
@@ -14417,6 +15830,239 @@ function onClick(e) {
   }
   if (closest('.js-link-confirm')) { e.stopPropagation(); return doLinkConfirm(); }
 
+  // Phase 2 M2 — Tracker Health roster (fleet-wide GPS device list)
+  if (closest('.js-gps-health')) {
+    e.stopPropagation();
+    if (gpsConfigured() && (gpsLiveAt === 0 || Date.now() - gpsLiveAt > 60000)) refreshGpsLive();   // freshen on open — re-renders when the snapshot lands
+    return openOverlay({ kind: 'gpsHealth', q: '', bucket: 'all' });
+  }
+  if (closest('.js-gpsh-bucket')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsHealth') return;
+    o.bucket = closest('.js-gpsh-bucket').dataset.val || 'all'; return renderOverlay();
+  }
+  if (closest('.js-gpsh-refresh')) { e.stopPropagation(); if (gpsConfigured()) refreshGpsLive(); return; }
+  if (closest('.js-gpsh-csv')) { e.stopPropagation(); return gpsRosterCsv(); }
+
+  // Phase 3 — GPS Issues (fault/connectivity complement to Tracker Health)
+  if (closest('.js-gps-issues')) {
+    e.stopPropagation();
+    if (gpsConfigured() && (gpsLiveAt === 0 || Date.now() - gpsLiveAt > 60000)) refreshGpsLive();   // freshen on open — re-renders when the snapshot lands
+    return openOverlay({ kind: 'gpsIssues', q: '' });
+  }
+  if (closest('.js-gpsi-refresh')) { e.stopPropagation(); if (gpsConfigured()) refreshGpsLive(); return; }
+
+  // Bouncie trucks → Truck-category units — a plain one-shot pull, not a wizard (spec
+  // docs/superpowers/specs/2026-07-09-bouncie-truck-units-design.md).
+  if (closest('.js-gps-bouncie-trucks')) { e.stopPropagation(); return gpsPullBouncieTrucks(); }
+
+  // Phase 4 — Fleet Utilization (real provider-sourced actual-usage rollup)
+  if (closest('.js-gps-utilization')) {
+    e.stopPropagation();
+    return openOverlay({ kind: 'gpsUtilization', days: 30, scanned: false, scanning: false, scanError: '', roll: null });
+  }
+  if (closest('.js-gpsu-scan')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'gpsUtilization') return; return gpsUtilizationScan(o); }
+  if (closest('.js-gpsu-days')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsUtilization') return;
+    const days = Number(closest('.js-gpsu-days').dataset.val) || 30;
+    if (days === o.days) return;
+    o.days = days; return gpsUtilizationScan(o);
+  }
+  if (closest('.js-gpsu-goto-roundup')) {
+    e.stopPropagation();
+    return openOverlay({ kind: 'gpsRoundup', scanned: false, scanning: false, scanError: '', match: null, devices: null,
+      q: '', sel: {}, overrideDevice: {}, confirmed: {}, expandedUnitId: null, expandedMode: 'confirm',
+      swapProvider: 'Hapn', swapQuery: '', applyResult: null, lastApply: null });
+  }
+
+  // Phase 2 M1 — Fleet Map (every GPS tracker on a live map, mapping-independent)
+  if (closest('.js-gps-fleet')) {
+    e.stopPropagation();
+    if (gpsConfigured() && (gpsLiveAt === 0 || Date.now() - gpsLiveAt > 60000)) refreshGpsLive();   // freshen on open — re-renders when the snapshot lands
+    return openOverlay({ kind: 'gpsFleet', q: '', filter: 'all', sel: '' });
+  }
+  if (closest('.js-gpsfm-filter')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsFleet') return;
+    o.filter = closest('.js-gpsfm-filter').dataset.val || 'all'; return renderOverlay();
+  }
+  if (closest('.js-gpsfm-refresh')) { e.stopPropagation(); if (gpsConfigured()) refreshGpsLive(); return; }
+  if (closest('.js-gpsfm-row')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsFleet') return;
+    o.sel = closest('.js-gpsfm-row').dataset.key || ''; return renderOverlay();
+  }
+
+  // Phase 2 M5 — Round Up Trackers (bulk-onboarding review table)
+  if (closest('.js-gps-roundup')) {
+    e.stopPropagation();
+    return openOverlay({ kind: 'gpsRoundup', scanned: false, scanning: false, scanError: '', match: null, devices: null,
+      q: '', sel: {}, overrideDevice: {}, confirmed: {}, expandedUnitId: null, expandedMode: 'confirm',
+      swapProvider: 'Hapn', swapQuery: '', applyResult: null, lastApply: null });
+  }
+  if (closest('.js-gpsru-scan')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'gpsRoundup') return; return gpsRoundupScan(o); }
+  if (closest('.js-gpsru-expand')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsRoundup') return;
+    const uid = closest('.js-gpsru-expand').dataset.rec;
+    if (o.step === 'poll') { clearTimeout(_gpsPollTimer); o.step = ''; o.pollUnitId = ''; }
+    o.expandedUnitId = (o.expandedUnitId === uid) ? null : uid;
+    o.expandedMode = 'confirm';
+    return renderOverlay();
+  }
+  if (closest('.js-gpsru-swap-open')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsRoundup') return;
+    const uid = closest('.js-gpsru-swap-open').dataset.rec;
+    const row = gpsRoundupRows(o).find((r) => r.unitId === uid);
+    if (o.step === 'poll') { clearTimeout(_gpsPollTimer); o.step = ''; o.pollUnitId = ''; }
+    o.expandedUnitId = uid; o.expandedMode = 'swap';
+    o.swapProvider = row ? gpsCanonProvider(row.provider) : 'Hapn'; o.swapQuery = '';
+    return renderOverlay();
+  }
+  if (closest('.js-gpsru-swap-cancel')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsRoundup') return;
+    o.expandedMode = 'confirm'; return renderOverlay();
+  }
+  if (closest('.js-gpsru-swap-provider')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsRoundup') return;
+    o.swapProvider = closest('.js-gpsru-swap-provider').dataset.val || 'Hapn'; o.swapQuery = '';
+    return renderOverlay();
+  }
+  if (closest('.js-gpsru-swap-pick')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsRoundup') return;
+    const btn = closest('.js-gpsru-swap-pick');
+    const uid = btn.dataset.rec, devId = btn.dataset.devid; if (!uid || !devId) return;
+    const dev = (o.devices || []).find((d) => gpsDevKey(d) === devId); if (!dev) return;
+    o.overrideDevice = o.overrideDevice || {};
+    o.overrideDevice[uid] = { provider: gpsCanonProvider(dev.source), deviceId: devId, label: dev.name || devId, device: dev };
+    o.confirmed = o.confirmed || {}; o.confirmed[uid] = false;   // device changed — must reconfirm
+    o.expandedMode = 'confirm';
+    return renderOverlay();
+  }
+  if (closest('.js-gpsru-unmap')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsRoundup') return;
+    const uid = closest('.js-gpsru-unmap').dataset.rec;
+    o.sel[uid] = false;
+    if (o.overrideDevice) delete o.overrideDevice[uid];
+    if (o.confirmed) delete o.confirmed[uid];
+    if (o.expandedUnitId === uid) o.expandedUnitId = null;
+    return renderOverlay();
+  }
+  if (closest('.js-gpsru-poll-start')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsRoundup') return;
+    const uid = closest('.js-gpsru-poll-start').dataset.rec;
+    const row = gpsRoundupRows(o).find((r) => r.unitId === uid); if (!row || !row.deviceId) return;
+    o.pollUnitId = uid; o.provider = row.provider; o.deviceId = row.deviceId; o.step = 'poll';
+    gpsConnectStartPoll(o);
+    return;
+  }
+  if (closest('.js-gpsru-confirm')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsRoundup') return;
+    const uid = closest('.js-gpsru-confirm').dataset.rec;
+    o.confirmed = o.confirmed || {}; o.confirmed[uid] = true;
+    return renderOverlay();
+  }
+  if (closest('.js-gpsru-dismiss-result')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'gpsRoundup') return; o.applyResult = null; return renderOverlay(); }
+  if (closest('.js-gpsru-apply')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsRoundup') return;
+    const rows = gpsRoundupRows(o);
+    const ticked = rows.filter((r) => o.sel[r.unitId]);
+    if (!ticked.length) return;
+    const blocked = ticked.filter((r) => String(r.provider).toLowerCase() === 'hapn' && !(o.confirmed && o.confirmed[r.unitId]));
+    const eligible = ticked.filter((r) => !blocked.includes(r));
+    const { results } = gpsApplyMappings(eligible);
+    const blockedResults = blocked.map((r) => ({ unitId: r.unitId, name: (IDX.unit.get(r.unitId) || {}).name || r.unitId, ok: false, reason: 'Needs the side-by-side confirm first — Hapn drives the remote starter' }));
+    const allResults = results.concat(blockedResults);
+    o.lastApply = { records: results.filter((x) => x.ok).map((x) => ({ unitId: x.unitId, prevProvider: x.prevProvider, prevDeviceId: x.prevDeviceId })), at: Date.now() };
+    o.applyResult = { results: allResults, at: Date.now() };
+    for (const r of ticked) delete o.sel[r.unitId];   // consumed — re-scan/re-tick to try again
+    render(); renderOverlay();
+    const okN = results.filter((x) => x.ok).length, failN = allResults.length - okN;
+    toast(failN ? `Wrangled ${okN} tracker${okN === 1 ? '' : 's'} onto units — ${failN} need attention below.` : `Wrangled ${okN} tracker${okN === 1 ? '' : 's'} onto units. ✓`);
+    return;
+  }
+  if (closest('.js-gpsru-undo')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsRoundup' || !o.lastApply) return;
+    const { results } = gpsUndoMappings(o.lastApply.records);
+    o.lastApply = null; o.applyResult = null;
+    render(); renderOverlay();
+    toast(`Undid ${results.length} tracker mapping${results.length === 1 ? '' : 's'}.`);
+    return;
+  }
+
+  // §5a — the connect-a-device wizard (gpsConnect popup)
+  if (closest('.js-gps-connect')) {
+    e.stopPropagation();
+    const uid = closest('.js-gps-connect').dataset.rec;
+    const u = IDX.unit.get(uid); if (!u) return;
+    return openOverlay({ kind: 'gpsConnect', unitId: uid, step: 'provider', provider: u.gpsProvider || 'Hapn',
+      imei: '', deviceQuery: '', devices: null, devicesLoading: false, devicesError: '',
+      deviceId: '', deviceLabel: '', pollState: 'idle', pollAttempt: 0, pollMax: 8, pollMachine: null, pollError: '' });
+  }
+  if (closest('.js-gps-provider')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+    const p = closest('.js-gps-provider').dataset.val; if (!p || p === o.provider) return;
+    o.provider = p; o.devices = null; o.devicesError = ''; o.deviceQuery = ''; o.imei = ''; o.deviceId = ''; o.deviceLabel = '';
+    return renderOverlay();
+  }
+  if (closest('.js-gps-continue')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+    o.step = 'identify';
+    renderOverlay();
+    if (o.provider !== 'Hapn') gpsConnectLoadDevices(o);   // fire-and-forget — self-guards on state.overlay
+    return;
+  }
+  if (closest('.js-gps-identify-continue')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+    const input = document.querySelector('.overlay .js-gps-imei-input');
+    const imei = ((input ? input.value : o.imei) || '').trim();
+    if (!imei) return flashOr('.overlay .js-gps-imei-input', 'Enter the tracker IMEI first.');
+    o.imei = imei; o.deviceId = imei; o.deviceLabel = imei; o.step = 'poll';
+    renderOverlay();
+    gpsConnectStartPoll(o);
+    return;
+  }
+  if (closest('.js-gps-device-pick')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+    const btn = closest('.js-gps-device-pick');
+    const devId = btn.dataset.devid || ''; if (!devId) return;
+    o.deviceId = devId; o.deviceLabel = btn.dataset.devlabel || devId; o.step = 'poll';
+    renderOverlay();
+    gpsConnectStartPoll(o);
+    return;
+  }
+  if (closest('.js-gps-back')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+    clearTimeout(_gpsPollTimer);
+    if (o.step === 'poll') { o.step = 'identify'; o.pollState = 'idle'; o.pollAttempt = 0; o.pollMachine = null; o.pollError = ''; }
+    else if (o.step === 'identify') { o.step = 'provider'; }
+    return renderOverlay();
+  }
+  if (closest('.js-gps-poll-retry')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return; return gpsConnectStartPoll(o); }
+  if (closest('.js-gps-save')) { e.stopPropagation(); return gpsConnectSave(false); }
+  if (closest('.js-gps-save-anyway')) { e.stopPropagation(); return gpsConnectSave(true); }
+  if (closest('.js-gps-events-refresh')) { e.stopPropagation(); const u = IDX.unit.get(closest('.js-gps-events-refresh').dataset.rec); if (u) { invalidateGpsEvents(u); render(); } return; }   // §6a — re-pull the device history feed
+  // §6/§7 — remote shutdown (Hapn starter-interrupt). Arm → confirm; role-gated + audited.
+  if (closest('.js-gps-arm')) { e.stopPropagation(); if (!canGpsShutdown()) return; const b = closest('.js-gps-arm'); return gpsArmShutdown(b.dataset.rec, b.dataset.dev); }
+  if (closest('.js-gps-disarm')) { e.stopPropagation(); return gpsDisarm(); }
+  if (closest('.js-gps-kill-confirm')) { e.stopPropagation(); if (!canGpsShutdown()) return; const b = closest('.js-gps-kill-confirm'); if (!_gpsArmed || _gpsArmed.unitId !== b.dataset.rec) return gpsDisarm(); return gpsFireShutdown(b.dataset.rec, b.dataset.dev, false); }   // enable=false → immobilize
+  if (closest('.js-gps-restore')) { e.stopPropagation(); if (!canGpsShutdown()) return; const b = closest('.js-gps-restore'); return gpsFireShutdown(b.dataset.rec, b.dataset.dev, true); }   // enable=true → restore
+
   // universal pill rule — single-click navigates; double-click anchors; ctrl+click = new
   // tab (handled by the early hotkey branch). Same discriminator as rows (#1).
   const pill = closest('[data-pill-card]');
@@ -14433,6 +16079,15 @@ function onClick(e) {
   // instead (the first click never opens — #10). Ctrl/Cmd+click = new tab (instant).
   const row = closest('.row');
   if (row) {
+    // §2.2b Trips cab sheet — tapping the row BODY (pills/time/town/log all returned
+    // above; the tel: anchor + time input are left to their own devices) toggles the
+    // trip's inline unit-facts sheet. One open at a time; a second tap collapses.
+    if (row.dataset.card === 'calendar') {
+      if (closest('.dt-time') || closest('a')) return;
+      e.stopPropagation();
+      state.calOpenTrip = state.calOpenTrip === row.dataset.rec ? null : row.dataset.rec;
+      return render();
+    }
     if (e.metaKey || e.ctrlKey) { e.preventDefault(); return openInNewTab(row.dataset.card, row.dataset.rec, row.dataset.type); }
     const rc = row.dataset.card, rr = row.dataset.rec, rt = row.dataset.type;
     document.querySelectorAll('.row.selected').forEach((n) => n.classList.remove('selected'));
@@ -15196,7 +16851,16 @@ function onInput(e) {
     return;
   }
   if (e.target.classList.contains('mini-search')) {
-    const card = e.target.dataset.card; const mcs = activeSession().cards[card]; mcs.search = e.target.value; mcs.listLimit = undefined;
+    const card = e.target.dataset.card;
+    // Trips (calendar) is card-stateless — no session.cards.calendar — its search text
+    // rides state.calSearch directly instead of a per-card cs (Phase 1, spec §2.2).
+    if (card === 'calendar') {
+      state.calSearch = e.target.value;
+      const sel = e.target.selectionStart; render();
+      const ms = document.querySelector('.mini-search[data-card="calendar"]'); if (ms) { ms.focus(); ms.setSelectionRange(sel, sel); }
+      return;
+    }
+    const mcs = activeSession().cards[card]; mcs.search = e.target.value; mcs.listLimit = undefined;
     // light re-render of just that card would be ideal; full render is fine at seed scale
     const sel = e.target.selectionStart; render();
     const ms = document.querySelector(`.mini-search[data-card="${card}"]`); if (ms) { ms.focus(); ms.setSelectionRange(sel, sel); }
@@ -15206,6 +16870,44 @@ function onInput(e) {
   if (e.target.classList.contains('js-fb-text')) { if (state.overlay?.kind === 'feedback') state.overlay.text = e.target.value; return; }
   if (e.target.classList.contains('js-cmt-text')) { if (state.overlay?.kind === 'comment') state.overlay.text = e.target.value; return; }
   if (e.target.classList.contains('js-wr-in')) { if (state.wrangler.open) state.wrangler.draft = e.target.value; return; }
+  // §5a connect wizard — Hapn IMEI (store only, no re-render; committed on Continue).
+  if (e.target.classList.contains('js-gps-imei-input')) { if (state.overlay?.kind === 'gpsConnect') state.overlay.imei = e.target.value; return; }
+  // §5a connect wizard — live device-list filter (re-render + restore caret, like js-files-query).
+  if (e.target.classList.contains('js-gps-search')) {
+    const o = state.overlay;
+    if (o?.kind === 'gpsConnect') { o.deviceQuery = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.overlay .js-gps-search'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
+    return;
+  }
+  // Phase 2 M2 — Tracker Health roster live filter (same caret-restore pattern)
+  if (e.target.classList.contains('js-gpsh-search')) {
+    const o = state.overlay;
+    if (o?.kind === 'gpsHealth') { o.q = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.overlay .js-gpsh-search'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
+    return;
+  }
+  // Phase 3 — GPS Issues live filter (same caret-restore pattern)
+  if (e.target.classList.contains('js-gpsi-search')) {
+    const o = state.overlay;
+    if (o?.kind === 'gpsIssues') { o.q = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.overlay .js-gpsi-search'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
+    return;
+  }
+  // Phase 2 M1 — Fleet Map live filter (same caret-restore pattern)
+  if (e.target.classList.contains('js-gpsfm-search')) {
+    const o = state.overlay;
+    if (o?.kind === 'gpsFleet') { o.q = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.overlay .js-gpsfm-search'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
+    return;
+  }
+  // Phase 2 M5 — Round Up Trackers review-table live filter (same caret-restore pattern)
+  if (e.target.classList.contains('js-gpsru-search')) {
+    const o = state.overlay;
+    if (o?.kind === 'gpsRoundup') { o.q = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.overlay .js-gpsru-search'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
+    return;
+  }
+  // Phase 2 M5 — per-row device-swap picker search
+  if (e.target.classList.contains('js-gpsru-swap-search')) {
+    const o = state.overlay;
+    if (o?.kind === 'gpsRoundup') { o.swapQuery = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.overlay .js-gpsru-swap-search'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
+    return;
+  }
   if (e.target.classList.contains('chat-input')) { state.chat.draft = e.target.value; return; }
   // Company Files live search → re-render the board popup and restore the caret.
   if (e.target.classList.contains('js-files-query')) {
@@ -15319,13 +17021,12 @@ function onChange(e) {
     reader.readAsDataURL(file);
     return;
   }
-  if (e.target.classList.contains('js-disp-time')) {   // §2.3 dispatch stop time — D6: stored under the stop's lane
-    const day = (e.target.closest('.disprail') && e.target.closest('.disprail').dataset.day) || state.dispatchDay || TODAY_ISO;
-    const laneKey = e.target.dataset.lane || 'pool';
+  if (e.target.classList.contains('js-disp-time')) {   // §2.3 Trips departure time (Phase 3) — a time edit MATERIALIZES the trip: it's one of the spec §2.3 "first touch" triggers, same as merge/split
+    const tripId = e.target.dataset.id;
+    const day = e.target.dataset.day || state.dispatchDay || TODAY_ISO;
     const v = e.target.value.trim();
-    const lane = schedLane(day, laneKey); lane.times[e.target.dataset.id] = v; schedSaveLane(day, laneKey, lane);
-    const t = dispatchTimesLS(); if (t[e.target.dataset.id] !== undefined) { delete t[e.target.dataset.id]; _lsSave('jactec.dispatchTimes', t); }   // retire the legacy flat key for this stop
-    if (e.target.closest('.disprail') && timeToMin(v) != null) render();   // cockpit: a complete time re-sorts the token on the rail = retime/reorder
+    if (tripSetTime(day, tripId, v) && state.autoRunFlags) delete state.autoRunFlags[tripId];   // §2.7 — a dispatcher hand-setting the time resolves whatever Auto-Run last flagged here
+    if (timeToMin(v) != null) render();   // a complete time re-sorts the trip within its day group
     return;
   }
   if (e.target.classList.contains('js-wr-file')) {   // §18d Mr. Wrangler attach — image or CSV/text
@@ -15352,6 +17053,12 @@ function onChange(e) {
     saveListLayout(card, layout);
     render(); renderOverlay();
     return;
+  }
+  // Phase 2 M5 — Round Up Trackers row tick (include/exclude a proposal from Apply).
+  if (e.target.classList.contains('js-gpsru-tick')) {
+    const o = state.overlay; if (!o || o.kind !== 'gpsRoundup') return;
+    o.sel = o.sel || {}; o.sel[e.target.dataset.rec] = e.target.checked;
+    return renderOverlay();
   }
   // Customer form selfie: capture (phone camera via capture="user", or upload) → compress → store.
   if (e.target.classList.contains('js-nc-selfie')) {
@@ -16446,7 +18153,7 @@ function createInvoiceForRental(rentalId) {
     if (ch.idx === 0) { id = cid; r.invoiceId = cid; }
     else inv.contOf = id;
     if (chunks.length === 1) { rentalLineItems(r).forEach((li) => inv.lineItems.push(li)); }   // unchanged single-invoice path
-    else billChunkUnits(inv, r, ch.start, ch.end, ch.start, retroPricingOn(), 'rental', ch.idx === 0 ? null : id);   // per-chunk rental line(s)
+    else billChunkUnits(inv, r, ch.start, ch.end, ch.start, retroPricingOn(), 'rental', ch.idx === 0 ? null : id, null, true);   // per-chunk rental line(s) — emitZero: one line per unit even at $0 (#537)
     if (ch.idx === 0) {   // transport + Rental Protection surcharge (F4b) billed once, on the primary chunk
       transportLineItems(r).forEach((li) => inv.lineItems.push(li));
       protectionLineItems(r).forEach((li) => inv.lineItems.push(li));
@@ -17242,6 +18949,1134 @@ async function backendCall(action, extra) {
   if (!res.ok && body && body.ok === undefined) body = { ok: false, error: 'http-' + res.status };
   return body;
 }
+
+/* ── GPS BACKEND CLIENT (WranglerGPS integration · spec docs/superpowers/specs/
+   2026-07-07-wrangler-gps-integration-design.md) ───────────────────────────────
+   Talks DIRECTLY to our own redeploy of the forked WranglerGPS telematics service
+   (GPS_BACKEND_URL — Node/Express + Postgres on Railway), NOT through the Apps
+   Script backend above: live location + ignition need real-time round-trips, and
+   proxying them through GAS would add latency and burn its URL-fetch quota (spec §4).
+   Separate service, separate auth (team password → x-auth-token, cached in memory).
+   Every call degrades gracefully — a GPS outage must never break the rest of the
+   app; the unit card still renders, just without live telemetry.
+
+   The four-provider fleet merge MIRRORS the fork's frontend hooks/useFleet.js so the
+   normalized machine shape stays identical to that already-debugged code — canonical
+   shape in docs/handoffs/wrangler-gps-backend-handoff.md §1. This is a sub-section of
+   the BACKEND SYNC chapter (backend I/O), not its own APP-NN chapter. */
+let gpsToken = '';                                        // in-memory session token; never persisted
+const gpsBase = () => (GPS_BACKEND_URL || '').replace(/\/$/, '');
+const gpsConfigured = () => !!gpsBase();
+
+/* One authed round-trip to the GPS backend. JSON in/out, 30s timeout (reuses
+   withTimeout). Throws a tagged Error on non-2xx (callers decide how to degrade);
+   never returns a failure disguised as success. */
+async function gpsFetch(path, opts = {}) {
+  if (!gpsConfigured()) throw new Error('gps-not-configured');
+  const headers = Object.assign({ 'x-auth-token': gpsToken }, opts.headers || {});
+  if (opts.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+  const res = await withTimeout(fetch(gpsBase() + path, Object.assign({}, opts, { headers })), 30000, 'GPS backend');
+  const text = await res.text();
+  let body = null; try { body = JSON.parse(text); } catch {}
+  if (!res.ok) { const e = new Error('gps-http-' + res.status); e.status = res.status; e.body = body; throw e; }
+  return body;
+}
+
+/* Silent GPS login on Rental Wrangler sign-in. The GPS team password NEVER touches the
+   public Pages client (config.js is world-readable and the GPS token can drive remote
+   engine shutdown) — instead our own Apps Script backend holds it in a Script Property,
+   logs in server-side, and hands back ONLY the token, which we cache in memory for the
+   session. Any signed-in role gets a token; per-role shutdown gating is enforced in the
+   UI + audited server-side (spec §7). Best-effort + never throws: a GPS-login failure
+   must NOT block main login. Requires GPS_BACKEND_URL (client, for the live data calls)
+   AND the GAS GPS_DASHBOARD_PASSWORD Script Property (server, for auth). */
+async function gpsLogin() {
+  gpsToken = '';
+  try {
+    if (!gpsConfigured()) return false;                 // no client GPS URL → no live data path → skip
+    const r = await backendCall('gpsToken');            // GAS proxy: password stays server-side, returns { ok, token }
+    if (r && r.ok && r.token) { gpsToken = r.token; return true; }
+    if (r && r.error && r.error !== 'gps-not-configured') logErr('gps', 'login: ' + r.error);   // property-unset is an expected pre-config state, not an error
+  } catch (e) { logErr('gps', 'login: ' + ((e && e.message) || e)); }
+  return false;
+}
+
+/* Hapn responses arrive in a few possible envelopes — same defensive unwrap useFleet
+   uses so a shape tweak upstream doesn't silently empty the fleet. */
+function gpsUnwrap(d) {
+  if (Array.isArray(d)) return d;
+  return (d && (d.result?.items || d.items || d.devices)) || [];
+}
+
+/* Coerce a provider's raw coordinate to a finite number or null — provider lat/lng are
+   untrusted strings/values; a non-numeric one must never reach a map href or marker. */
+const gpsNum = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
+/* Normalize one provider's raw record into the canonical machine shape (useFleet.js
+   §1). `extra` carries cross-call context (Hapn's status row + starter states). */
+function gpsNormalize(source, raw, extra = {}) {
+  if (source === 'hapn') {
+    const st = extra.status || {};
+    const lat = st.latitude ?? st.lat ?? null, lng = st.longitude ?? st.lng ?? null;
+    const speed = parseFloat(st.speed ?? 0) || 0;
+    const ap = raw.assetProfile || {};
+    return {
+      id: String(raw.imei || raw.id), source: 'hapn', imei: raw.imei ? String(raw.imei) : null,
+      name: String(raw.name || raw.imei || 'Unknown'),
+      serialNumber: ap.serialNumber ? String(ap.serialNumber) : null,   // M3 — carried for the onboarding matcher (assetProfile.serialNumber, per useFleet §1)
+      make: ap.make ? String(ap.make) : null,
+      model: ap.model ? String(ap.model) : (raw.model?.name ? String(raw.model.name) : null),
+      lat: lat != null ? parseFloat(lat) : null, lng: lng != null ? parseFloat(lng) : null,
+      speed, moving: speed > 0, engineOn: st.reportType !== '0' && !!st.sendTime,
+      lastSeen: st.sendTime ?? st.timestamp ?? raw.modified ?? null,
+      engineHours: st.hoursOfOperation ? parseFloat(st.hoursOfOperation) : null,
+      address: st.address ? String(st.address) : null,
+      battery: st.externalVoltage ?? st.battery ?? null,
+      starterEnabled: (extra.starterStates && raw.imei in extra.starterStates) ? extra.starterStates[raw.imei] : null,   // null = UNKNOWN (not "startable") — an unknown state must not hide the Restore control (§7)
+    };
+  }
+  if (source === 'deere') {
+    return {
+      id: String(raw.id || raw.principalId), source: 'deere', principalId: String(raw.principalId),
+      imei: null, name: String(raw.name || raw.serialNumber || 'JD Machine'),
+      serialNumber: raw.serialNumber ?? null,   // M3 — matcher key
+      make: raw.make ?? null, model: raw.model ?? null,
+      lat: gpsNum(raw.location?.lat), lng: gpsNum(raw.location?.lon),
+      speed: null, moving: false, engineOn: raw.engineState === 1,
+      lastSeen: raw.lastContact ?? null, engineHours: raw.engineHours ?? null,
+      battery: raw.batteryVoltage ?? null, address: null,
+    };
+  }
+  if (source === 'yanmar') {
+    return {
+      id: String(raw.id), source: 'yanmar', contractId: raw.contractId != null ? String(raw.contractId) : null,
+      imei: null, name: raw.name || 'Yanmar Machine', make: 'YANMAR', model: raw.model || null,
+      serialNumber: raw.serialNumber || null,   // M3 — matcher key
+      lat: gpsNum(raw.lat), lng: gpsNum(raw.lng), speed: null, moving: false,
+      engineOn: raw.engineOn ?? false, lastSeen: raw.lastSeen ?? null,
+      engineHours: raw.engineHours ?? null, address: raw.address ?? null,
+    };
+  }
+  if (source === 'bouncie') {
+    const stats = raw.stats || {}, loc = stats.location || {};
+    return {
+      id: String(raw.imei), source: 'bouncie', imei: String(raw.imei),
+      name: raw.nickName || `${raw.model?.year || ''} ${raw.model?.make || ''} ${raw.model?.name || ''}`.trim() || 'Vehicle',
+      serialNumber: null,   // M3 — Bouncie is VIN/IMEI-keyed, exposes no equipment serial; matcher falls back to name/make for these
+      make: raw.model?.make ?? null, model: raw.model?.name ?? null,
+      lat: gpsNum(loc.lat), lng: gpsNum(loc.lon), speed: stats.speed ?? null,
+      moving: (stats.speed ?? 0) > 0, engineOn: stats.isRunning ?? false,
+      lastSeen: stats.lastUpdated ?? null, engineHours: null, address: loc.address ?? null,
+      mil: stats.mil ?? null, odometer: stats.odometer ?? null, fuelLevel: stats.fuelLevel ?? null,
+    };
+  }
+  return null;
+}
+
+/* Full four-provider fleet snapshot, merged client-side (mirrors useFleet.js).
+   Partial-failure tolerant via allSettled — one provider down still returns the rest.
+   Returns a flat array of normalized machines; callers key by id/imei to drive the
+   real gpsStatus pill (spec §5). Deere/Yanmar/Bouncie machine lists are only fetched
+   when their status reports `authenticated` (matches useFleet's two-phase pattern). */
+async function gpsFleetStatus() {
+  const [devicesR, statusR, deereR, starterR, yanmarR, bouncieR] = await Promise.allSettled([
+    gpsFetch('/api/hapn/devices'),
+    gpsFetch('/api/hapn/fleet-status'),
+    gpsFetch('/api/deere/status'),
+    gpsFetch('/api/hapn/starter-status'),
+    gpsFetch('/api/yanmar/status'),
+    gpsFetch('/api/bouncie/status'),
+  ]);
+  const val = (r) => (r.status === 'fulfilled' ? r.value : null);
+  const out = [];
+
+  // Hapn
+  const starterStates = val(starterR)?.result?.states || {};
+  const statusMap = {};
+  gpsUnwrap(val(statusR)).forEach((s) => { if (s?.imei) statusMap[s.imei] = s; });
+  gpsUnwrap(val(devicesR)).forEach((d) => out.push(gpsNormalize('hapn', d, { status: statusMap[d.imei] || {}, starterStates })));
+
+  // Deere / Yanmar / Bouncie — only when authenticated (second-phase machine lists)
+  const phase2 = [];
+  if (val(deereR)?.authenticated)  phase2.push(gpsFetch('/api/deere/machines').then((d) => (d?.values || []).map((m) => gpsNormalize('deere', m))).catch(() => []));
+  if (val(yanmarR)?.authenticated) phase2.push(gpsFetch('/api/yanmar/machines').then((d) => (d?.machines || []).map((m) => gpsNormalize('yanmar', m))).catch(() => []));
+  if (val(bouncieR)?.authenticated) phase2.push(gpsFetch('/api/bouncie/vehicles').then((d) => (d?.vehicles || []).map((m) => gpsNormalize('bouncie', m))).catch(() => []));
+  (await Promise.all(phase2)).forEach((list) => list.forEach((m) => m && out.push(m)));
+
+  return out.filter(Boolean);
+}
+
+/* Live detail for ONE mapped device (the enriched GPS section, on popup open, spec §5).
+   Hapn has a direct per-device status endpoint; the others come from their machine
+   list filtered to the mapped id. Returns a normalized machine or null. */
+async function gpsUnitStatus(provider, deviceId) {
+  const p = String(provider || '').toLowerCase(); const key = String(deviceId || '');
+  if (!p || !key) return null;
+  if (p === 'hapn') {
+    const [devR, stR, starterR] = await Promise.allSettled([
+      gpsFetch(`/api/hapn/device/${encodeURIComponent(key)}/status`),
+      gpsFetch('/api/hapn/fleet-status'),
+      gpsFetch('/api/hapn/starter-status'),
+    ]);
+    const dev = (devR.status === 'fulfilled' && devR.value) ? devR.value : { imei: key };
+    const status = gpsUnwrap(stR.status === 'fulfilled' ? stR.value : null).find((s) => s?.imei === key) || (devR.status === 'fulfilled' ? devR.value : {}) || {};
+    const starterStates = (starterR.status === 'fulfilled' ? starterR.value : null)?.result?.states || {};
+    return gpsNormalize('hapn', dev.imei ? dev : { imei: key }, { status, starterStates });
+  }
+  const list = await gpsProviderDevices(p).catch(() => []);
+  const match = list.find((m) => String(m.id ?? m.principalId ?? m.contractId ?? m.imei) === key);
+  return match ? gpsNormalize(p, match) : null;
+}
+
+/* Provider machine/vehicle lists — powers the connect-wizard picker (spec §5a step 2)
+   for Deere/Yanmar/Bouncie, and gpsUnitStatus above. Raw provider records (the wizard
+   presents id + name for the operator to pick). */
+async function gpsProviderDevices(provider) {
+  switch (String(provider || '').toLowerCase()) {
+    case 'hapn':    return gpsUnwrap(await gpsFetch('/api/hapn/devices'));
+    case 'deere':   return (await gpsFetch('/api/deere/machines'))?.values || [];
+    case 'yanmar':  return (await gpsFetch('/api/yanmar/machines'))?.machines || [];
+    case 'bouncie': return (await gpsFetch('/api/bouncie/vehicles'))?.vehicles || [];
+    default: return [];
+  }
+}
+
+/* ── BOUNCIE TRUCKS → UNITS (design note docs/superpowers/specs/2026-07-09-bouncie-
+   truck-units-design.md) ─────────────────────────────────────────────────────────
+   Trucks are just units of a 'Truck' category — no new entity, no fleetStatus trick,
+   no onboarding wizard (Jac rejected an over-built earlier draft). A plain one-shot
+   toolbar action: pull Bouncie's vehicle list, create a Truck category if missing,
+   and onboard any vehicle whose imei isn't already a unit's gpsDeviceId under ANY
+   provider (never double-onboard a truck that's already mapped some other way).
+   PLAN is pure (fetch/DOM-free) so it's directly unit-testable; PULL does the I/O. */
+// `vehicles` = gpsNormalize('bouncie', raw) results; `units` = DATA.units (or a fixture).
+// Dedup key is gpsDeviceId alone, independent of provider — a truck could in theory
+// already be mapped through a different path, and re-onboarding it would fork the record.
+function gpsBounciePlan(vehicles, units) {
+  const mapped = new Set((units || []).filter((u) => u && u.gpsDeviceId).map((u) => String(u.gpsDeviceId)));
+  const toCreate = [], skip = [];
+  (vehicles || []).forEach((v) => {
+    if (!v || !v.imei) return;
+    if (mapped.has(String(v.imei))) { skip.push(v); return; }
+    mapped.add(String(v.imei));   // also guards two same-imei entries within one pull
+    toCreate.push(v);
+  });
+  return { toCreate, skip };
+}
+// THE WRITE — pure/sync (no network, no DOM), mirrors gpsApplyMappings as a directly
+// testable primitive. Creates the Truck category if missing (idempotent — a second
+// call finds the existing one by name and reuses it, never a duplicate) and one unit
+// per un-mapped vehicle. Returns a summary so the trigger below can toast honestly.
+function gpsApplyBouncieTrucks(vehicles) {
+  const { toCreate, skip } = gpsBounciePlan(vehicles, DATA.units);
+
+  let cat = DATA.categories.find((c) => c.name === 'Truck');
+  if (!cat) {
+    const cid = nextCategoryId();
+    cat = { categoryId: cid, name: 'Truck' };   // no rate1Day/rate7Day/rate4Wk/weekend/msrp/askPrice/bottomDollar/fuelType —
+    DATA.categories.push(cat); IDX.category.set(cid, cat); reindex('categories', cat);   // genuinely unset, same as any category missing that data
+    logAction(cat, 'Category added — Bouncie truck pull');
+  }
+
+  toCreate.forEach((v) => {
+    const uid = nextUnitId();
+    // fleetStatus 'Active' matches the normal new-unit default (quickAddUnitFromSearch/wrCreateUnit) —
+    // no Inactive trick, trucks show up in the Units card like everything else (spec §4).
+    // gpsProvider canonical-cased via gpsCanonProvider — gpsApplyMappings/gpsConnectSave are the
+    // documented "only writers" of this field and both fold to canonical case; matching that avoids
+    // a silent case mismatch (e.g. the connect-wizard's provider picker) for a THIRD writer.
+    const u = { unitId: uid, categoryId: cat.categoryId, name: v.name, make: v.make, model: v.model,
+      gpsProvider: gpsCanonProvider('bouncie'), gpsDeviceId: v.imei, fleetStatus: 'Active' };
+    DATA.units.push(u); IDX.unit.set(uid, u); reindex('units', u);
+    logAction(u, 'Added by Bouncie truck pull');
+  });
+
+  return { created: toCreate.length, skipped: skip.length, categoryId: cat.categoryId };
+}
+// The trigger (bottom toolbar button, §15 click handler) — fetch, normalize, write,
+// toast. Every path ends in an honest toast (never a silent no-op): not configured,
+// fetch failure (expected in offline/#local demo — no live GPS token), or a clean
+// created/skipped summary.
+async function gpsPullBouncieTrucks() {
+  if (!gpsConfigured()) { toast('GPS backend isn’t configured (GPS_BACKEND_URL).'); return; }
+  let raw;
+  try { raw = await gpsProviderDevices('bouncie'); }
+  catch (e) {
+    logErr('gps', 'bouncie truck pull: ' + ((e && e.message) || e));
+    toast('Couldn’t reach the GPS backend — check the connection and try again.');
+    return;
+  }
+  const vehicles = (Array.isArray(raw) ? raw : []).map((v) => gpsNormalize('bouncie', v)).filter(Boolean);
+  const res = gpsApplyBouncieTrucks(vehicles);
+  toast(`${res.created} truck${res.created === 1 ? '' : 's'} added${res.skipped ? `, ${res.skipped} already onboarded` : ''}.`);
+  if (res.created) render();
+}
+
+/* ── FLEET AUTO-MATCH (bulk-onboarding matcher · Phase 2 M4) ─────────────────────
+   A PURE, side-effect-free function: given RW units and a live device snapshot (the
+   gpsFleetStatus() shape), propose unit↔device mappings for the "Round Up Trackers"
+   review table. Serial-first scoring, a HARD make-family veto (a Bobcat unit never
+   maps to a Deere-make device), and 1:1 uniqueness. It NEVER writes and NEVER touches
+   the DOM — every proposal is a suggestion a human confirms before gpsConnectSave runs,
+   because gpsDeviceId is the key remote engine-shutdown relays off (a wrong map cuts the
+   wrong starter). Unit-tested in ci/logic-test.mjs; exposed on window.__rw. */
+
+// Canonical make family from a raw make string. Folds common OEM synonyms so 'JD' /
+// 'John Deere' / 'DEERE' all read 'deere'. '' → null (unknown, never vetoes).
+function gpsMakeFamily(make) {
+  const s = String(make || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!s) return null;
+  const FAM = [
+    ['deere', /(johndeere|deere|^jd$)/], ['yanmar', /yanmar/], ['bobcat', /bobcat/],
+    ['kubota', /kubota/], ['jcb', /jcb/], ['caterpillar', /(caterpillar|^cat[0-9]*$|^cat$)/],
+    ['case', /(caseih|^case)/], ['newholland', /newholland/], ['takeuchi', /takeuchi/],
+    ['komatsu', /komatsu/], ['volvo', /volvo/], ['ford', /ford/],
+    ['gm', /(chevrolet|chevy|gmc|^gm$)/], ['ram', /(^ram$|ramtruck|dodge)/], ['toyota', /toyota/],   // ^ram$ so heavy-equip brands like 'Rammer' don't fold into the Ram/Dodge truck family
+    ['genie', /genie/], ['jlg', /jlg/], ['ditchwitch', /ditchwitch/],
+    ['wacker', /(wacker|neuson)/], ['toro', /toro/],
+  ];
+  for (const [fam, re] of FAM) if (re.test(s)) return fam;
+  return s;   // unknown but non-empty → its own family (two different unknowns still veto)
+}
+
+// A device's implied make family: explicit device.make, else the provider brand for the
+// single-brand telematics (Deere/Yanmar). Hapn + Bouncie are multi-brand → no implied
+// family, so they never veto on make (they lean on serial/name instead).
+function gpsDeviceFamily(dev) {
+  const explicit = gpsMakeFamily(dev && dev.make);
+  if (explicit) return explicit;
+  if (dev && dev.source === 'deere') return 'deere';
+  if (dev && dev.source === 'yanmar') return 'yanmar';
+  return null;
+}
+
+const gpsNormTok = (s) => String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]/g, '');
+const gpsDevKey = (d) => String((d && (d.id ?? d.imei ?? d.principalId ?? d.contractId)) ?? '');
+
+// Score ONE (unit, device) pair. Returns { score, serial, reasons[] } or null if the
+// make-family veto fires (both makes known and different → never proposed).
+function gpsMatchScore(unit, dev) {
+  const uFam = gpsMakeFamily(unit && unit.make), dFam = gpsDeviceFamily(dev);
+  if (uFam && dFam && uFam !== dFam) return null;                     // HARD veto
+  let score = 0, serial = false, serialExact = false; const reasons = [];
+  const uSer = gpsNormTok(unit.serial), dSer = gpsNormTok(dev.serialNumber);
+  if (uSer && dSer) {                                                 // serial — the strong key
+    if (uSer === dSer) { score += 100; serial = true; serialExact = true; reasons.push('serial'); }
+    else if (uSer.length >= 6 && dSer.length >= 6 && (uSer.includes(dSer) || dSer.includes(uSer))) { score += 70; serial = true; reasons.push('serial~'); }  // substring only — NOT exact, so it can't reach the auto-trust 'confident' tier
+  }
+  if (uFam && dFam && uFam === dFam) { score += 20; reasons.push('make'); }
+  const uMod = gpsNormTok(unit.model);
+  if (uMod && uMod.length >= 3) {
+    const dMod = gpsNormTok(dev.model), dName = gpsNormTok(dev.name);
+    if ((dMod && (dMod.includes(uMod) || uMod.includes(dMod))) || (dName && dName.includes(uMod))) { score += 25; reasons.push('model'); }
+  }
+  const uName = gpsNormTok(unit.name);
+  if (uName && uName.length >= 3) {
+    const dName = gpsNormTok(dev.name), dNick = gpsNormTok(dev.nickName);
+    if (dName === uName || dNick === uName) { score += 30; reasons.push('name'); }
+    else if ((dName && dName.includes(uName)) || (dNick && dNick.includes(uName))) { score += 12; reasons.push('name~'); }
+  }
+  return score > 0 ? { score, serial, serialExact, reasons } : null;
+}
+
+/* Match a whole fleet. Greedy best-first with 1:1 enforcement + a runner-up margin, and
+   a per-device "contested" check so two units laying near-equal claim to one tracker land
+   in CONFLICT for a human to split (never silently assigned). Only UNMAPPED, non-Sold
+   units are proposed to (an existing mapping is never clobbered). Returns
+   { proposals[], unmatchedUnits[], unmatchedDevices[] }. proposal.tier ∈
+   confident · probable · look · conflict. */
+function gpsMatchFleet(units, devices, opts = {}) {
+  const CONFLICT_MARGIN = 25;
+  const openUnits = (units || []).filter((u) => u && u.unitId && !(u.gpsProvider && u.gpsDeviceId) && u.fleetStatus !== 'Sold');
+  const devs = (devices || []).filter((d) => d && gpsDevKey(d));
+
+  const pairs = [];
+  for (const u of openUnits) for (const d of devs) {
+    const sc = gpsMatchScore(u, d);
+    if (sc) pairs.push({ unitId: u.unitId, dk: gpsDevKey(d), device: d, score: sc.score, serial: sc.serial, serialExact: sc.serialExact, reasons: sc.reasons });
+  }
+  pairs.sort((a, b) => b.score - a.score);
+
+  // Index each unit's and each device's candidate pairs, already in global score order.
+  const byUnit = {}, byDev = {};
+  for (const p of pairs) { (byUnit[p.unitId] = byUnit[p.unitId] || []).push(p); (byDev[p.dk] = byDev[p.dk] || []).push(p); }
+
+  const takenUnit = new Set(), takenDev = new Set(); const proposals = [];
+  for (const p of pairs) {
+    if (takenUnit.has(p.unitId) || takenDev.has(p.dk)) continue;
+    // Runner-up + contested reasoned over the LIVE still-free state (never stale claims from
+    // an already-assigned unit/device — that blinded the old top-two check to genuine ties).
+    const runnerUp = (byUnit[p.unitId] || []).find((q) => q.dk !== p.dk && !takenDev.has(q.dk));   // this unit's best OTHER still-free device
+    const runnerScore = runnerUp ? runnerUp.score : 0;
+    const margin = p.score - runnerScore;
+    const rival = (byDev[p.dk] || []).find((q) => q.unitId !== p.unitId && !takenUnit.has(q.unitId));   // another still-free unit wanting THIS device
+    const contested = !!(rival && (p.score - rival.score) < CONFLICT_MARGIN);
+    let tier;
+    if (contested) tier = 'conflict';
+    else if (p.serialExact && p.score >= 100 && margin >= 30) tier = 'confident';   // ONLY an exact serial earns auto-trust
+    else if (p.score >= 45 && margin >= 20) tier = 'probable';
+    else tier = 'look';
+    proposals.push({ unitId: p.unitId, deviceId: p.dk, provider: p.device.source, device: p.device,
+      score: p.score, serial: p.serial, serialExact: p.serialExact, margin, contested, tier, reasons: p.reasons, runnerUp: runnerScore });
+    takenUnit.add(p.unitId); takenDev.add(p.dk);
+  }
+
+  const matchedUnits = new Set(proposals.map((x) => x.unitId));
+  const matchedDevs = new Set(proposals.map((x) => x.deviceId));
+  return {
+    proposals,
+    unmatchedUnits: openUnits.filter((u) => !matchedUnits.has(u.unitId)).map((u) => u.unitId),
+    unmatchedDevices: devs.filter((d) => !matchedDevs.has(gpsDevKey(d))).map((d) => ({ key: gpsDevKey(d), provider: String(d.source || ''), name: d.name || null })),
+  };
+}
+
+/* ── CONNECT-A-DEVICE WIZARD (spec §5a) — the gpsConnect popup's control layer.
+   The popup markup lives in buildPopupEl (o.kind === 'gpsConnect'); the pieces below
+   are the async/stateful bits a pure render function can't own: loading a provider's
+   device list, running the live first-contact poll, and the confirmed write to the
+   unit. Every async step re-checks `state.overlay === o` before touching it or
+   scheduling more work, so a closed/switched popup can never keep ticking. */
+const GPS_PROVIDERS = ['Hapn', 'Deere', 'Yanmar', 'Bouncie'];
+let _gpsPollTimer = null;   // module-level so closeOverlay/back-nav can always cancel it
+
+/* Pull an id/label/sub-line out of ONE provider's raw record shape (§5a step 2 — Hapn:
+   .imei/.name · Deere: .principalId/.name/.serialNumber · Yanmar: .id/.name · Bouncie:
+   .imei/.nickName/.model). Kept separate from gpsNormalize (which needs a live status
+   call too) so the picker list renders instantly off the device list alone. */
+function gpsRawDeviceId(provider, raw) {
+  switch (provider) {
+    case 'Deere':   return String(raw.principalId ?? raw.id ?? '');
+    case 'Yanmar':  return String(raw.id ?? '');
+    case 'Bouncie': return String(raw.imei ?? '');
+    default:        return String(raw.imei ?? raw.id ?? '');   // Hapn
+  }
+}
+function gpsRawDeviceLabel(provider, raw) {
+  switch (provider) {
+    case 'Deere':   return raw.name || raw.serialNumber || 'JD Machine';
+    case 'Yanmar':  return raw.name || 'Yanmar Machine';
+    case 'Bouncie': return raw.nickName || raw.model || 'Vehicle';
+    default:        return raw.name || raw.imei || 'Unnamed tracker';   // Hapn
+  }
+}
+function gpsRawDeviceSub(provider, raw) {
+  switch (provider) {
+    case 'Deere':   return raw.serialNumber ? `S/N ${raw.serialNumber}` : '';
+    case 'Bouncie': return raw.model ? String(raw.model) : '';
+    case 'Hapn':    return raw.imei ? `IMEI ${raw.imei}` : '';
+    default:        return '';
+  }
+}
+/* Load the searchable picker list for Deere/Yanmar/Bouncie (§5a step 2). Fire-and-
+   forget from the click handler that advances into the identify step; guards every
+   write behind `state.overlay === o` so a Back/close mid-flight can't stomp a newer
+   popup state. */
+async function gpsConnectLoadDevices(o) {
+  o.devicesLoading = true; o.devicesError = ''; o.devices = null; renderOverlay();
+  let list = [];
+  try { list = await gpsProviderDevices(String(o.provider || '').toLowerCase()); }
+  catch (e) {
+    if (state.overlay !== o) return;
+    o.devicesLoading = false; o.devicesError = 'Couldn’t reach the GPS backend — check the connection and try again.';
+    return renderOverlay();
+  }
+  if (state.overlay !== o) return;
+  o.devicesLoading = false; o.devices = Array.isArray(list) ? list : [];
+  renderOverlay();
+}
+/* Start (or restart) the live first-contact poll (§5a step 3): every 3s, up to
+   o.pollMax attempts. States: waiting → seen (first contact) → reporting (a SECOND
+   consecutive contacted poll — avoids confirming on a single flaky ping) → timeout
+   (cap hit, never confirmed twice). Always terminates — never a silent hang. */
+function gpsConnectStartPoll(o) {
+  clearTimeout(_gpsPollTimer);
+  o.pollState = 'waiting'; o.pollAttempt = 0; o.pollMax = o.pollMax || 8; o.pollMachine = null; o.pollError = '';   // cap must be set here — the roundup caller never sets pollMax, so an unset cap = infinite poll
+  renderOverlay();
+  gpsConnectPollTick(o);
+}
+async function gpsConnectPollTick(o) {
+  if (state.overlay !== o || o.step !== 'poll') return;   // popup closed/backed-out — self-cancel
+  o.pollAttempt += 1;
+  let machine = null;
+  try { machine = await gpsUnitStatus(String(o.provider || '').toLowerCase(), o.deviceId); }
+  catch (e) { o.pollError = (e && e.message) || 'gps-error'; }
+  if (state.overlay !== o || o.step !== 'poll') return;   // changed while the call was in flight
+  const contacted = !!(machine && (machine.lastSeen != null || (machine.lat != null && machine.lng != null)));
+  const wasSeen = o.pollState === 'seen';
+  o.pollMachine = machine;
+  if (contacted && wasSeen) { o.pollState = 'reporting'; return renderOverlay(); }   // 2nd consecutive contact — confirmed
+  if (o.pollAttempt >= o.pollMax) { o.pollState = 'timeout'; return renderOverlay(); }   // cap hit, never confirmed
+  o.pollState = contacted ? 'seen' : 'waiting';
+  renderOverlay();
+  _gpsPollTimer = setTimeout(() => gpsConnectPollTick(o), 3000);
+}
+/* Write gpsProvider/gpsDeviceId to the unit — ONLY on confirmed contact (pollState
+   'reporting') or an explicit "Save anyway" override (§5a step 4). */
+function gpsConnectSave(anyway) {
+  const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+  if (o.pollState !== 'reporting' && !anyway) return;
+  const u = IDX.unit.get(o.unitId); if (!u) return closeOverlay();
+  u.gpsProvider = o.provider; u.gpsDeviceId = o.deviceId;
+  reindex('units', u);
+  logAction(u, `GPS → ${o.provider} · ${o.deviceId}${o.pollState === 'reporting' ? ' (confirmed reporting)' : ' (saved without confirmed contact)'}`);
+  clearTimeout(_gpsPollTimer);
+  closeOverlay();
+  toast(o.pollState === 'reporting' ? `GPS connected — ${u.name} is reporting. ✓` : `GPS mapped — ${u.name} saved without confirmed signal yet.`);
+}
+
+/* ── ROUND UP TRACKERS (bulk onboarding · Phase 2 M5) ──────────────────────────────
+   The only WRITER of gpsProvider/gpsDeviceId at fleet scale — everything else here
+   (gpsMatchFleet, the picker helpers) only proposes. gpsRoundupScan pulls a fresh
+   live snapshot and runs the M4 matcher; gpsRoundupRows folds any per-row human
+   override (a device swap or a manual no-match pick) into the matcher's proposals for
+   the review table; gpsApplyMappings is the actual write — mirrors gpsConnectSave
+   (same u.gpsProvider/u.gpsDeviceId/reindex/logAction shape) but batched, with
+   PER-UNIT failure surfacing (R25 hazard style: a half-applied batch must never read
+   "done" — a silently-missing mapping is as safety-relevant as a wrong one) and an
+   in-batch dedupe guard (two ticked rows can never write the SAME device to two
+   different units). Never touches a work order. The mandatory Hapn side-by-side
+   confirm gate lives in the popup layer (buildPopupEl / the click handlers below) —
+   gpsApplyMappings itself is provider-agnostic and just writes what it's handed. */
+
+// gpsConnectSave writes the canonical-cased provider from GPS_PROVIDERS ('Hapn' etc,
+// matching gpsShutdownControl's strict `!== 'Hapn'` check); gpsMatchFleet's proposals
+// carry the LOWERCASE gpsNormalize `source` instead — fold back to canonical case here
+// so a bulk-onboarded Hapn unit's remote-shutdown control still lights up correctly.
+const GPS_PROVIDER_CANON = { hapn: 'Hapn', deere: 'Deere', yanmar: 'Yanmar', bouncie: 'Bouncie' };
+const gpsCanonProvider = (p) => GPS_PROVIDER_CANON[String(p || '').toLowerCase()] || (p || '');
+
+/* Kick off a scan: a fresh live snapshot (refreshGpsLive → gpsLive), then the M4
+   matcher over DATA.units + that snapshot. Re-checks state.overlay === o before
+   touching it, same self-guard as the connect wizard's async steps. */
+async function gpsRoundupScan(o) {
+  if (!o || o.kind !== 'gpsRoundup') return;
+  if (!gpsConfigured()) { o.scanned = true; o.scanning = false; o.scanError = 'GPS backend isn’t configured (GPS_BACKEND_URL).'; return renderOverlay(); }
+  o.scanning = true; o.scanError = ''; o.applyResult = null; renderOverlay();
+  await refreshGpsLive();
+  if (state.overlay !== o) return;   // popup closed mid-fetch
+  o.devices = gpsLive ? [...new Set(gpsLive.values())] : [];
+  o.match = gpsMatchFleet(DATA.units, o.devices);
+  o.sel = {}; for (const p of o.match.proposals) o.sel[p.unitId] = (p.tier === 'confident');
+  o.overrideDevice = {}; o.confirmed = {}; o.expandedUnitId = null; o.expandedMode = 'confirm';
+  o.scanned = true; o.scanning = false;
+  renderOverlay();
+}
+
+/* The review table's effective rows: the matcher's proposals with any per-row human
+   override folded in (device swapped, or a NO-MATCH unit manually paired) — a PURE
+   view merge, no state mutation. Overriding an existing proposal keeps its original
+   tier bucket (still the tier the matcher judged it); a brand-new pairing from the
+   unmatched-units list gets tier 'manual'. */
+function gpsRoundupRows(o) {
+  const m = o && o.match; if (!m) return [];
+  const ov = o.overrideDevice || {};
+  const rows = m.proposals.map((p) => {
+    const o2 = ov[p.unitId];
+    return o2 ? { ...p, deviceId: o2.deviceId, provider: o2.provider, device: o2.device || null, overridden: true } : { ...p };
+  });
+  for (const uid of m.unmatchedUnits) {
+    const o2 = ov[uid];
+    if (o2) rows.push({ unitId: uid, deviceId: o2.deviceId, provider: o2.provider, device: o2.device || null,
+      tier: 'manual', overridden: true, score: 0, margin: 0, contested: false, reasons: ['manual'], runnerUp: 0 });
+  }
+  return rows;
+}
+
+/* THE WRITE. `proposals` = the rows a human ticked (and, for Hapn, confirmed) —
+   filtering that decision is the popup's job; this stays a small, directly-testable
+   primitive. Re-validates EACH unit at write time (never trust the scan is still
+   fresh — Sold/already-mapped is a HARD skip, never a silent overwrite) and refuses
+   to write the same device to two different units within one call. Returns every
+   attempted unit's outcome — ok:true writes, ok:false explains why it didn't, so the
+   caller can never report "done" on a partial batch. Never touches DATA.workOrders. */
+function gpsApplyMappings(proposals) {
+  const results = []; const usedDevices = new Set();
+  // Devices already bound to a DIFFERENT existing unit — refuse to re-point a live starter
+  // relay from one machine to another (the in-batch check below only guards within this call).
+  const deviceOwner = new Map();
+  for (const eu of (DATA.units || [])) if (eu.gpsDeviceId) deviceOwner.set(String(eu.gpsDeviceId), eu.unitId);
+  for (const p of (proposals || [])) {
+    const u = IDX.unit.get(p.unitId);
+    if (!u) { results.push({ unitId: p.unitId, ok: false, reason: 'Unit not found' }); continue; }
+    if (u.fleetStatus === 'Sold') { results.push({ unitId: p.unitId, name: u.name, ok: false, reason: 'Unit is Sold — skipped' }); continue; }
+    if (u.gpsProvider && u.gpsDeviceId) { results.push({ unitId: p.unitId, name: u.name, ok: false, reason: 'Already mapped to a tracker — skipped' }); continue; }
+    if (!p.deviceId) { results.push({ unitId: p.unitId, name: u.name, ok: false, reason: 'No device selected' }); continue; }
+    if (usedDevices.has(p.deviceId)) { results.push({ unitId: p.unitId, name: u.name, ok: false, reason: 'That device is already assigned to another unit in this batch' }); continue; }
+    const owner = deviceOwner.get(String(p.deviceId));
+    if (owner && owner !== p.unitId) { results.push({ unitId: p.unitId, name: u.name, ok: false, reason: 'That tracker is already on another unit — unmap it there first' }); continue; }
+    const provider = gpsCanonProvider(p.provider);
+    const prevProvider = u.gpsProvider || '', prevDeviceId = u.gpsDeviceId || '';
+    u.gpsProvider = provider; u.gpsDeviceId = p.deviceId;
+    reindex('units', u);
+    logAction(u, `GPS → ${provider} · ${p.deviceId} (bulk round-up)`);
+    usedDevices.add(p.deviceId);
+    results.push({ unitId: p.unitId, name: u.name, ok: true, provider, deviceId: p.deviceId, prevProvider, prevDeviceId });
+  }
+  return { results };
+}
+/* Revert the pairs a gpsApplyMappings call just wrote (the popup's batch Undo).
+   `records` = the ok:true results' {unitId, prevProvider, prevDeviceId}. */
+function gpsUndoMappings(records) {
+  const results = [];
+  for (const r of (records || [])) {
+    const u = IDX.unit.get(r.unitId); if (!u) continue;
+    u.gpsProvider = r.prevProvider || ''; u.gpsDeviceId = r.prevDeviceId || '';
+    reindex('units', u);
+    logAction(u, 'GPS mapping undone (bulk round-up)');
+    results.push({ unitId: r.unitId, ok: true });
+  }
+  return { results };
+}
+
+/* Hapn starter-interrupt (the remote-shutdown relay, spec §6/§7). Cuts the STARTER so
+   the engine can't be RE-STARTED — it does NOT kill a running engine. Polarity matches
+   the original app (LiveTracking.jsx): `enabled:false` CUTS the starter (immobilize);
+   `enabled:true` RESTORES it. `by` = the acting role, recorded in the audit trail.
+   Hapn-only; the backend logs every attempt server-side (device_events, plan A3c). */
+async function gpsStarterInterrupt(imei, enabled, by) {
+  return gpsFetch(`/api/hapn/device/${encodeURIComponent(imei)}/starter-interrupt`, {
+    method: 'POST', body: JSON.stringify({ enabled: !!enabled, by: by || undefined }),
+  });
+}
+
+/* GPS status & alert history feed source (spec §6a). Reads the per-device event log
+   (plan A3c — the device_events table + route). Until A3c ships on the backend this
+   throws gps-http-404; callers render an empty/"history unavailable" state. */
+async function gpsDeviceEvents(source, key) {
+  return gpsFetch(`/api/device/${encodeURIComponent(source)}/${encodeURIComponent(key)}/events`);
+}
+
+/* ── LIVE gpsStatus (spec §5 step 3) ──────────────────────────────────────────
+   One fleet snapshot per app load (refreshGpsLive) → an in-memory map keyed by every
+   provider id type. `unitGpsStatus(u)` derives the DISPLAYED status from it (freshness
+   of the tracker's last ping), falling back to the STORED u.gpsStatus only when the
+   backend never answered — never presenting stale data as live without saying so.
+   No telemetry is copied into Sheets (spec §4): this map is memory-only, per session.
+   Thresholds are tracker-health, not machine-usage — a healthy tracker still sends
+   position pings (Hapn GTFRI) with the engine off, so a long silence = the tracker,
+   not the machine, is dark. Tunable. */
+const GPS_FRESH_MS = 6 * 3600 * 1000;    // last ping < 6h  → Reporting
+const GPS_STALE_MS = 72 * 3600 * 1000;   // < 72h → Verify; older/none → Not Reporting
+let gpsLive = null;      // Map(deviceKey → normalized machine) from the last good snapshot
+let gpsLiveAt = 0;       // ms of the last SUCCESSFUL snapshot (0 = never fetched)
+let gpsLiveErr = false;  // most recent refresh failed (we keep the last good map)
+
+async function refreshGpsLive() {
+  if (!gpsConfigured()) return;
+  let list;
+  try { list = await gpsFleetStatus(); }
+  catch (e) { gpsLiveErr = true; logErr('gps', 'fleet-status: ' + ((e && e.message) || e)); return; }
+  const map = new Map();
+  for (const m of (list || [])) {
+    if (!m) continue;
+    for (const k of [m.id, m.imei, m.principalId, m.contractId]) if (k != null) map.set(String(k), m);
+  }
+  gpsLive = map; gpsLiveAt = Date.now(); gpsLiveErr = false;
+  if (!booting) render();   // live data landed → refresh the pills
+}
+
+/** The live machine for a mapped unit, or null. */
+function unitGpsLiveMachine(u) {
+  if (!gpsLive || !u.gpsDeviceId) return null;
+  return gpsLive.get(String(u.gpsDeviceId)) || null;
+}
+/** Displayed GPS status: { status, live, asOf, mapped, machine? } or null (untracked).
+ *  live=true → derived from the fleet snapshot; live=false → stored-field fallback. */
+function unitGpsStatus(u) {
+  const mapped = !!(u.gpsProvider && u.gpsDeviceId);
+  if (mapped && gpsLiveAt > 0) {
+    const m = unitGpsLiveMachine(u);
+    if (!m) return { status: 'Not Reporting', live: true, asOf: gpsLiveAt, mapped: true };   // tracker absent from the snapshot
+    const t = m.lastSeen ? new Date(m.lastSeen).getTime() : NaN;
+    let status;
+    if (!Number.isNaN(t)) {
+      const age = Date.now() - t;
+      status = age < GPS_FRESH_MS ? 'Reporting' : age < GPS_STALE_MS ? 'Verify' : 'Not Reporting';
+    } else {
+      status = (m.lat != null && m.lng != null) ? 'Verify' : 'Not Reporting';   // seen once, no timestamp
+    }
+    return { status, live: true, asOf: gpsLiveAt, mapped: true, machine: m };
+  }
+  // backend never answered (or the unit isn't mapped) → fall back to the stored field
+  if (u.gpsStatus) return { status: u.gpsStatus, live: false, asOf: gpsLiveAt, mapped };
+  return null;
+}
+
+/* Short relative time for the "last seen" line (§5 step 4). */
+function gpsRelTime(ts) {
+  const t = ts ? new Date(ts).getTime() : NaN;
+  if (Number.isNaN(t)) return '';
+  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if (s < 60) return 'just now';
+  const m = Math.round(s / 60); if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60); if (h < 24) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
+
+/* Live refresh while VIEWING a mapped unit (§5 step 4). One global 30s tick that only
+   hits the backend when a mapped unit is the active tab's anchor — so it's scoped to
+   "you're looking at it," not an always-on fleet poll, and there's no per-popup interval
+   to leak (the tick self-checks). refreshGpsLive is one consolidated call for all four
+   providers, so this stays a single request, not N per-unit polls. */
+let _gpsViewTimer = null;
+function startGpsViewPoll() {
+  clearInterval(_gpsViewTimer);
+  _gpsViewTimer = setInterval(() => {
+    const a = activeSession() && activeSession().anchor;
+    if (!a || a.card !== 'units') return;                 // only while a unit is open
+    const u = IDX.unit.get(a.recId);
+    if (!u || !u.gpsProvider || !u.gpsDeviceId) return;   // ...and it's mapped to a tracker
+    refreshGpsLive();                                     // re-renders when the snapshot lands
+  }, 30000);
+}
+
+/* ── FLEET-WIDE GPS ROSTER (Tracker Health · Phase 2 M2) ──────────────────────────
+   The whole live snapshot as a flat, deduped device list — every tracker across all four
+   providers, INDEPENDENT of whether it's mapped to a unit yet. Powers the Tracker Health
+   roster, and doubles as the login/account canary: an empty list vs the degraded banner vs
+   devices-with-no-mapping tells you which layer is dark. Reuses the same freshness
+   thresholds as unitGpsStatus so a device reads the same status everywhere. */
+function gpsDeviceFresh(m) {
+  const t = m && m.lastSeen ? new Date(m.lastSeen).getTime() : NaN;
+  if (Number.isNaN(t)) return (m && m.lat != null && m.lng != null) ? 'Verify' : 'Not Reporting';
+  const age = Date.now() - t;
+  return age < GPS_FRESH_MS ? 'Reporting' : age < GPS_STALE_MS ? 'Verify' : 'Not Reporting';
+}
+function gpsFleetRoster() {
+  const byDevice = new Map();   // device key → the unit it's mapped to (mapped units only)
+  for (const u of (DATA.units || [])) if (u.gpsProvider && u.gpsDeviceId) byDevice.set(String(u.gpsDeviceId), u);
+  const machines = gpsLive ? [...new Set(gpsLive.values())] : [];   // dedupe: one machine is keyed under id/imei/…
+  return machines.map((m) => ({
+    key: gpsDevKey(m), machine: m, provider: String(m.source || ''),
+    name: m.name || gpsDevKey(m) || 'Tracker', serial: m.serialNumber || null,
+    status: gpsDeviceFresh(m), engineOn: !!m.engineOn, lastSeen: m.lastSeen || null,
+    unit: byDevice.get(gpsDevKey(m)) || null,
+  }));
+}
+const GPS_PROV_LABEL = { hapn: 'Hapn', deere: 'John Deere', yanmar: 'Yanmar', bouncie: 'Bouncie' };
+const gpsProvLabel = (p) => GPS_PROV_LABEL[String(p || '').toLowerCase()] || (p ? String(p) : 'GPS');
+
+/* ── GPS ISSUES (Phase 3) — derive a device's fault/connectivity issue chips from ONLY
+   the fields gpsNormalize actually carries. Not-Reporting/Verify come straight off
+   gpsDeviceFresh's own status (same freshness thresholds as everywhere else); the
+   >7-day case is folded INTO that same connectivity chip (never a second one — the
+   72h "Not Reporting" threshold is always crossed before the 7-day one, so they'd
+   always co-occur) with the day count as extra info. Battery is only ever flagged
+   when it's a plausible 12V-system reading — Hapn externalVoltage / Deere
+   batteryVoltage, both may be null — so a percentage or missing value never misreads
+   as low. mil (check-engine) only exists on Bouncie. Returns [] for a healthy device
+   (gpsIssues excludes those — the point of that view is "what needs attention"). */
+function gpsRowIssues(r) {
+  const issues = [];
+  const m = r.machine || {};
+  if (m.mil) issues.push({ label: 'Check Engine', color: 'red', sev: 3 });
+  let days = null;
+  if (r.lastSeen) { const t = new Date(r.lastSeen).getTime(); if (!Number.isNaN(t)) days = Math.floor((Date.now() - t) / 86400000); }
+  if (r.status === 'Not Reporting') {
+    issues.push({ label: (days != null && days >= 7) ? `Disconnected ${days}d` : 'Not Reporting', color: 'red', sev: 3 });
+  } else if (r.status === 'Verify') {
+    issues.push({ label: 'Verify', color: 'yellow', sev: 2 });
+  }
+  const batt = m.battery;
+  if (batt != null && Number(batt) > 5 && Number(batt) < 11.8) {
+    issues.push({ label: `Low Battery ${Number(batt).toFixed(1)}V`, color: 'yellow', sev: 2 });
+  }
+  return issues;
+}
+
+/* Export the roster as CSV (Tracker Health · M2). Client-side Blob download — the same
+   snapshot the roster renders, no extra backend round-trip. */
+function gpsRosterCsv() {
+  const rows = gpsFleetRoster();
+  const cell = (v) => {
+    let s = String(v == null ? '' : v);
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;   // neutralize spreadsheet formula injection — device names/serials are untrusted provider data
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const head = ['Provider', 'Device', 'Serial', 'Status', 'Engine', 'Last Seen', 'Mapped Unit'];
+  const lines = [head.join(',')].concat(rows.map((r) => [gpsProvLabel(r.provider), r.name, r.serial || '', r.status, r.engineOn ? 'On' : 'Off', r.lastSeen || '', r.unit ? r.unit.name : ''].map(cell).join(',')));
+  try {
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    const a = el('a'); a.href = URL.createObjectURL(blob); a.download = `tracker-health-${TODAY_ISO}.csv`;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  } catch (e) { toast('Could not build the CSV.'); }
+}
+
+/* ── FLEET UTILIZATION (Phase 4) — REAL, provider-sourced actual-usage rollup. Pure
+   visibility only: hours/miles a mapped unit ACTUALLY ran over a selectable window,
+   rolled up per category. Deliberately does NOT compute a target-hrs/day comparison or
+   over/under-capacity — that data doesn't exist yet, so we show only what the telematics
+   actually say. gpsUsageDaily is the one-device I/O call; gpsUtilScan fans it out across
+   every mapped unit (partial-failure tolerant, mirrors gpsFleetStatus/gpsRoundupScan —
+   one dead device must never blank the whole report); gpsUtilRollup is the PURE brain
+   (no fetch/DOM) that turns a units array + a pre-fetched usage map into the two rollup
+   tables the popup renders. Unit-tested in ci/logic-test.mjs; exposed on window.__rw. */
+
+/* One device's daily usage over [startISO, endISO) from the backend's already-populated
+   history (Hapn: engine_sessions DB table, hourly cron-backfilled; Deere/Yanmar: live
+   provider history APIs; Bouncie: live trip history, currently 0 for both linked trucks —
+   a known gap, not something to work around here). Lets it throw on failure — callers
+   (gpsUtilScan) handle partial failure via allSettled, same idiom as gpsFleetStatus. */
+async function gpsUsageDaily(provider, deviceId, startISO, endISO) {
+  return gpsFetch('/api/usage/daily?source=' + encodeURIComponent(String(provider || '').toLowerCase())
+    + '&key=' + encodeURIComponent(deviceId) + '&start=' + encodeURIComponent(startISO) + '&end=' + encodeURIComponent(endISO));
+}
+
+/* THE PURE ROLLUP. `units` = RW units array; `usageByUnitId` = a plain object/Map of
+   {unitId: {hours, miles, days, failed}} the caller already fetched — no I/O in here;
+   `windowDays` = the size (in days) of the window that usage was fetched over (default
+   30, matching gpsUtilScan's default). Only units with BOTH gpsProvider and gpsDeviceId
+   are counted toward perUnit/perCategory (an unmapped unit only bumps unmappedCount); a
+   Sold unit is excluded even if mapped — it's not fleet capacity, mirroring the same
+   exclusion gpsMatchFleet/gpsApplyMappings apply. `hoursPerDay` divides by the requested
+   WINDOW length, never by the count of days that actually had data — "how hard is this
+   thing really running" needs the full-window denominator, not a nonzero-days one (a
+   unit idle 29 of 30 days should read ~0.33 hrs/day, not inflate off the one day it
+   moved). A FAILED fetch (usage.failed) still gets a perUnit row (failed:true) so a
+   human can see the gap, but its hours are EXCLUDED from the category sum — a silent 0
+   would read as "this thing never runs" when really we just couldn't ask it; a missing
+   data point must never quietly become a zero. */
+function gpsUtilRollup(units, usageByUnitId, windowDays = 30) {
+  const usage = usageByUnitId instanceof Map
+    ? (id) => usageByUnitId.get(id)
+    : (id) => (usageByUnitId || {})[id];
+  windowDays = Math.max(1, Number(windowDays) || 30);
+
+  const perUnit = [];
+  const catAgg = new Map();   // categoryId → { categoryId, name, unitCount, totalHours, totalMiles }
+  let unmappedCount = 0;
+
+  for (const u of (units || [])) {
+    if (u.fleetStatus === 'Sold') continue;   // Sold equipment isn't fleet capacity — never rolled up
+    if (!(u.gpsProvider && u.gpsDeviceId)) { unmappedCount++; continue; }
+
+    const cat = IDX.category ? IDX.category.get(u.categoryId) : null;
+    const categoryId = u.categoryId || '';
+    const categoryName = (cat && cat.name) || 'Uncategorized';
+    const rec = usage(u.unitId) || null;
+    const failed = !!(rec && rec.failed);
+    const hours = failed ? 0 : Number((rec && rec.hours) || 0);
+    const miles = failed ? 0 : Number((rec && rec.miles) || 0);
+
+    perUnit.push({
+      unitId: u.unitId, name: u.name, categoryId, categoryName,
+      provider: gpsCanonProvider(u.gpsProvider), hours, miles,
+      hoursPerDay: failed ? 0 : hours / windowDays, failed,
+    });
+
+    if (failed) continue;   // gap, not a real zero — excluded from the category sum (still listed above)
+    if (!catAgg.has(categoryId)) catAgg.set(categoryId, { categoryId, name: categoryName, unitCount: 0, totalHours: 0, totalMiles: 0 });
+    const c = catAgg.get(categoryId);
+    c.unitCount += 1; c.totalHours += hours; c.totalMiles += miles;
+  }
+
+  const perCategory = [...catAgg.values()]
+    .map((c) => ({ ...c, avgHoursPerDayPerUnit: c.unitCount ? (c.totalHours / windowDays) / c.unitCount : 0 }))
+    .sort((a, b) => b.totalHours - a.totalHours);
+
+  return { perUnit, perCategory, unmappedCount };
+}
+
+/* THE I/O SCAN. Computes the ISO window from `days`, fires gpsUsageDaily for every
+   mapped + non-Sold unit via allSettled (one dead device must never blank the report),
+   then hands the built usage map to the pure rollup above. A failed fetch never silently
+   becomes a zero — it's recorded with failed:true so gpsUtilRollup can exclude it from
+   the category sum while still surfacing the gap per-unit. */
+async function gpsUtilScan(days) {
+  const win = Math.max(1, Number(days) || 30);
+  const endD = new Date(TODAY_ISO + 'T00:00:00');
+  const startD = new Date(endD.getTime() - win * 86400000);
+  const startISO = startD.toISOString().slice(0, 10), endISO = endD.toISOString().slice(0, 10);
+
+  const mapped = (DATA.units || []).filter((u) => u.gpsProvider && u.gpsDeviceId && u.fleetStatus !== 'Sold');
+  const results = await Promise.allSettled(mapped.map((u) => gpsUsageDaily(u.gpsProvider, u.gpsDeviceId, startISO, endISO)));
+
+  const usageByUnitId = {};
+  mapped.forEach((u, i) => {
+    const r = results[i];
+    if (r.status === 'fulfilled' && r.value) {
+      usageByUnitId[u.unitId] = { hours: Number(r.value.hours) || 0, miles: Number(r.value.miles) || 0, days: r.value.days || [], failed: false };
+    } else {
+      usageByUnitId[u.unitId] = { hours: 0, miles: 0, days: [], failed: true };
+    }
+  });
+
+  return gpsUtilRollup(DATA.units, usageByUnitId, win);
+}
+
+/* Popup-state driver for gpsUtilScan (mirrors gpsRoundupScan's shape) — sets the
+   loading state, runs the scan, and re-checks state.overlay === o before writing back
+   so a closed/switched popup can never keep ticking. */
+async function gpsUtilizationScan(o) {
+  if (!o || o.kind !== 'gpsUtilization') return;
+  if (!gpsConfigured()) { o.scanned = true; o.scanning = false; o.scanError = 'GPS backend isn’t configured (GPS_BACKEND_URL).'; o.roll = null; return renderOverlay(); }
+  o.scanning = true; o.scanError = ''; renderOverlay();
+  let roll = null;
+  try { roll = await gpsUtilScan(o.days); }
+  catch (e) {
+    if (state.overlay !== o) return;
+    o.scanning = false; o.scanned = true; o.scanError = 'Couldn’t reach the GPS backend — check the connection and try again.'; o.roll = null;
+    return renderOverlay();
+  }
+  if (state.overlay !== o) return;   // popup closed mid-fetch
+  o.roll = roll; o.scanned = true; o.scanning = false;
+  renderOverlay();
+}
+
+/* ── FLEET MAP (Phase 2 M1) — every GPS tracker plotted on a live Google map, mapping-
+   INDEPENDENT (same gpsFleetRoster() source as Tracker Health). Singleton map, re-parented
+   into the fresh .js-gpsfm-map mount point each render (the proven mountDispatchMap /
+   mountTransportEditor pattern) so it never reloads/flickers — only markers refresh.
+   Degrades exactly like those: if !mapsReady() this just returns and the popup's own
+   markup already shows the roster-only placeholder, no live/offline branching needed here. */
+let _gpsFleetMap = null, _gpsFleetMarkers = [], _gpsFleetView = null, _gpsFleetSel = null;
+function mountGpsFleetMap(o) {
+  const mount = document.querySelector('.js-gpsfm-map'); if (!mount) return;
+  if (!mapsReady()) {
+    loadGoogleMaps().then((g) => {
+      if (!g) return;                                                              // no key / offline — stays roster-only, never an error
+      if (state.overlay === o && state.overlay.kind === 'gpsFleet') renderOverlay();   // re-check the SAME popup is still open before touching it
+    });
+    return;
+  }
+  try {
+    // renderOverlay rebuilds the popup DOM, so the mount is a fresh node each render — build a
+    // map into it, but RESTORE the user's pan/zoom (persisted on 'idle') so a re-render / the
+    // 30s live refresh never snaps the view back. Fit-to-fleet happens ONLY the first time we
+    // ever mount (before a saved view exists) — mirrors the dispatch map's _dispView pattern.
+    let freshFit = false;
+    if (!mount.querySelector('.gm-style')) {
+      freshFit = !_gpsFleetView;
+      _gpsFleetMap = new google.maps.Map(mount, { center: (_gpsFleetView && _gpsFleetView.center) || YARD_CENTER, zoom: (_gpsFleetView && _gpsFleetView.zoom) || 10, disableDefaultUI: true, zoomControl: true, gestureHandling: 'greedy', clickableIcons: false });
+      _gpsFleetMap.addListener('idle', () => { const c = _gpsFleetMap.getCenter(); if (c) _gpsFleetView = { center: { lat: c.lat(), lng: c.lng() }, zoom: _gpsFleetMap.getZoom() }; });
+      const repaint = () => { try { google.maps.event.trigger(_gpsFleetMap, 'resize'); } catch (e2) {} };   // first-open 0×0 paint fix
+      requestAnimationFrame(repaint); setTimeout(repaint, 250);
+    }
+    if (!_gpsFleetMap) return;
+    _gpsFleetMarkers.forEach((m) => m.setMap(null)); _gpsFleetMarkers = [];
+    const roster = gpsConfigured() ? gpsFleetRoster() : [];
+    const onColor = ruColor('--green'), offColor = ruColor('--gray'), ink = ruColor('--on-orange'), accent = ruColor('--accent');
+    const bounds = new google.maps.LatLngBounds(); let placed = 0, selPos = null;
+    roster.forEach((r) => {
+      const m = r.machine;
+      if (!m || m.lat == null || m.lng == null) return;
+      const pos = { lat: m.lat, lng: m.lng };
+      const sel = o.sel && o.sel === r.key;
+      if (sel) selPos = pos;
+      const mk = new google.maps.Marker({
+        map: _gpsFleetMap, position: pos, zIndex: sel ? 900 : (r.engineOn ? 50 : 10),
+        title: `${r.name} · ${gpsProvLabel(r.provider)} · ${r.engineOn ? 'Engine On' : 'Engine Off'}`,
+        icon: { path: google.maps.SymbolPath.CIRCLE, scale: sel ? 11 : 7, fillColor: r.engineOn ? onColor : offColor, fillOpacity: 1, strokeColor: sel ? accent : ink, strokeWeight: sel ? 3 : 2 },
+      });
+      mk.addListener('click', () => { o.sel = r.key; renderOverlay(); });
+      _gpsFleetMarkers.push(mk);
+      bounds.extend(pos); placed++;
+    });
+    // Pan to a NEWLY-selected device; otherwise fit only on the very first mount — never on a
+    // plain re-render, which would fight the user's pan/zoom (the reported bug).
+    const selChanged = !!o.sel && o.sel !== _gpsFleetSel; _gpsFleetSel = o.sel || null;
+    if (selPos && selChanged) { _gpsFleetMap.panTo(selPos); if (_gpsFleetMap.getZoom() < 14) _gpsFleetMap.setZoom(14); }
+    else if (placed && freshFit) _gpsFleetMap.fitBounds(bounds, 46);   // only fit once a real device is located (single-point fit zooms absurdly)
+  } catch (e) { /* never strand the popup on a half-mounted map — the sidebar roster still renders */ }
+}
+
+/* ── GPS STATUS & ALERT HISTORY FEED (spec §6a) ───────────────────────────────
+   A read-only, chat-feed-styled timeline in a mapped unit's GPS section, fetched
+   from the device_events log (backend plan A3c) lazily on first render and cached
+   per device. Degrades gracefully — until A3c is deployed, gpsDeviceEvents 404s and
+   the feed shows "history unavailable," never an error. Shows shutdown commands (the
+   safety audit) today; provider alerts + status transitions accrue as those writers
+   land. Cache is invalidated after a shutdown command so the audit shows immediately. */
+const _gpsEvents = new Map();   // key `${provider}:${deviceId}` → { state, events, at, error }
+const gpsEventsKey = (u) => `${String(u.gpsProvider || '').toLowerCase()}:${u.gpsDeviceId}`;
+function ensureGpsEvents(u) {
+  if (!u.gpsProvider || !u.gpsDeviceId || !gpsConfigured()) return null;
+  const key = gpsEventsKey(u);
+  const hit = _gpsEvents.get(key);
+  if (hit) return hit;
+  const entry = { state: 'loading', events: [], at: 0, error: '' };
+  _gpsEvents.set(key, entry);
+  gpsDeviceEvents(String(u.gpsProvider).toLowerCase(), u.gpsDeviceId)
+    .then((r) => { entry.state = 'loaded'; entry.events = (r && r.events) || []; entry.at = Date.now(); })
+    .catch((e) => { entry.state = 'error'; entry.error = (e && e.status === 404) ? 'notdeployed' : 'error'; })
+    .finally(() => render());   // async — safe; re-renders once the fetch settles
+  return entry;
+}
+function invalidateGpsEvents(u) { if (u && u.gpsProvider && u.gpsDeviceId) _gpsEvents.delete(gpsEventsKey(u)); }
+
+/* One event → its feed row (icon + text + timestamp, colored by severity). */
+function gpsEventRow(ev) {
+  const d = ev.detail || {};
+  let icon, color, text;
+  if (ev.type === 'shutdown_command') {
+    const failed = d.outcome === 'failed';
+    const immob = d.action === 'immobilize' || d.enabled === false;   // enabled:false = starter cut
+    icon = failed ? I.alert : (immob ? I.lock : I.lockOpen);
+    color = failed ? 'red' : (immob ? 'red' : 'green');
+    text = `${immob ? 'Starter cut — immobilized' : 'Starter restored'}${failed ? ' · FAILED' : ''}${ev.actor ? ` · ${esc(ev.actor)}` : ''}`;
+  } else if (ev.type === 'alert') {
+    icon = I.alert; color = d.severity === 'critical' ? 'red' : 'yellow';
+    text = esc(d.message || d.text || 'Alert');
+  } else {   // status_change
+    const to = d.to || d.status || '';
+    color = (getStatus('gpsStatus', to) || {}).color || 'gray';
+    icon = I.bell; text = `Status → ${esc(to)}`;
+  }
+  return `<div class="gps-feed-row"><span class="gfr-ic c-${color}">${icon}</span><span class="gfr-txt">${text}</span><span class="gfr-ts">${esc(gpsEventTime(ev.at))}</span></div>`;
+}
+function gpsEventTime(at) {
+  const d = at ? new Date(at) : null;
+  if (!d || Number.isNaN(d.getTime())) return '';
+  const hh = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return `${fmtShortDate(d.toISOString())} · ${fmtClock(hh)}`;
+}
+/* LIVE alert rows merged into the feed from the current fleet snapshot (§6a). Today:
+   Bouncie check-engine (mil/DTCs) — the one provider-alert shape we have cleanly. Hapn
+   `/device/:imei/alerts` + Yanmar `/machine/:id/alerts` live-fetch merge is a follow-up
+   (their response shapes need real samples to normalize safely). */
+function gpsLiveAlertRows(u) {
+  const m = unitGpsLiveMachine(u);
+  if (!m) return [];
+  const rows = [];
+  if (m.source === 'bouncie' && m.mil && m.mil.milOn) {
+    const dtcs = m.mil.qualifiedDtcList || [];
+    const at = m.mil.lastUpdated || null;
+    if (dtcs.length) {
+      dtcs.forEach((d) => {
+        const name = Array.isArray(d.name) ? d.name.join(', ') : (d.name || 'Check engine');
+        rows.push(gpsEventRow({ type: 'alert', at, detail: { severity: 'critical', message: `Check engine · ${d.code || ''} ${name}`.replace(/\s+/g, ' ').trim() } }));
+      });
+    } else {
+      rows.push(gpsEventRow({ type: 'alert', at, detail: { severity: 'critical', message: 'Check engine light on' } }));
+    }
+  }
+  return rows;
+}
+
+/* The whole feed block for a mapped unit's GPS section — live alerts on top of the
+   durable device_events history. */
+function gpsFeedHtml(u) {
+  const e = ensureGpsEvents(u);
+  if (!e) return '';   // unmapped or GPS not configured
+  const head = `<div class="gps-feed-head"><span class="gfh-lbl">GPS History</span>${ghostPill('Refresh', { js: 'js-gps-events-refresh', data: { rec: u.unitId } })}</div>`;
+  const liveRows = gpsLiveAlertRows(u).join('');
+  const evRows = (e.state === 'loaded') ? e.events.map(gpsEventRow).join('') : '';
+  const note = e.state === 'loading' ? 'Reading signal history…'
+    : e.state === 'error' ? (e.error === 'notdeployed' ? 'History not available yet.' : 'Couldn’t load history — try Refresh.')
+      : '';
+  const body = (liveRows || evRows)
+    ? liveRows + evRows + (note ? `<div class="gps-feed-empty">${note}</div>` : '')
+    : `<div class="gps-feed-empty">${note || 'No GPS events yet.'}</div>`;
+  return `<div class="gps-feed-wrap">${head}<div class="gps-feed">${body}</div></div>`;
+}
+
+/* ── REMOTE SHUTDOWN (Hapn starter-interrupt · spec §6/§7) ────────────────────
+   Authority (Jac 2026-07-07): Owner/Admin + Manager + Mechanic/M.Tech ONLY. The
+   control is ABSENT from the DOM for every other role (D5 omit-don't-hide), never
+   merely disabled. IMPORTANT — this is a CLIENT-side gate + a server-side AUDIT (who
+   did it), NOT a server-ENFORCED per-role permission: the GPS backend authenticates
+   one shared team token and can't tell Rental Wrangler roles apart. So it's an
+   accountability control among trusted internal staff, not a boundary against an
+   untrusted actor — a truly enforced gate needs per-role backend auth (follow-up).
+   Immobilize is a two-step ARM → CONFIRM (auto-disarms) so it can't fire by accident;
+   restore is the safe direction, one deliberate tap. */
+const GPS_SHUTDOWN_ROLES = ['owner', 'admin', 'manager', 'mechanic', 'mtech'];
+function canGpsShutdown() { return GPS_SHUTDOWN_ROLES.includes(String(currentRole || '').toLowerCase()); }
+
+let _gpsArmed = null;      // { unitId, deviceId } — the currently ARMED immobilize
+let _gpsArmTimer = null;
+function gpsArmShutdown(unitId, deviceId) {
+  clearTimeout(_gpsArmTimer);
+  _gpsArmed = { unitId, deviceId };
+  render();
+  _gpsArmTimer = setTimeout(() => { _gpsArmed = null; render(); }, 4000);   // auto-disarm after 4s
+}
+function gpsDisarm() { clearTimeout(_gpsArmTimer); _gpsArmed = null; render(); }
+/* enable=false → CUT the starter (immobilize); enable=true → RESTORE. Explicit
+   success/failure toast, no auto-retry; the backend audits both outcomes. */
+async function gpsFireShutdown(unitId, deviceId, enable) {
+  clearTimeout(_gpsArmTimer); _gpsArmed = null;
+  const u = IDX.unit.get(unitId);
+  const nm = u ? u.name : deviceId;
+  try {
+    await gpsStarterInterrupt(deviceId, enable, `${currentUser || 'unknown'} · ${currentRole || 'operator'}`);   // audit WHO (person) fired the starter cut, not just the shared role
+    toast(enable ? `Starter restored — ${nm} can start.` : `Starter CUT — ${nm} immobilized.`);
+  } catch (e) {
+    toast(`Shutdown command FAILED — no change to ${nm}. (${(e && e.message) || 'error'})`);
+  }
+  if (u) invalidateGpsEvents(u);   // refresh the audit feed (success AND failure were logged)
+  refreshGpsLive();                // pull the new starter state
+  render();
+}
+
+/* The shutdown control for a mapped Hapn unit — Hapn-only + role-gated (absent for
+   others). `machine` = the live machine (for the current starter state), may be null. */
+function gpsShutdownControl(u, machine) {
+  if (u.gpsProvider !== 'Hapn' || !u.gpsDeviceId || !canGpsShutdown()) return '';
+  const state = machine ? machine.starterEnabled : undefined;   // true = startable · false = cut · null/undefined = unknown
+  const immobilized = state === false;
+  const unknown = state == null;
+  if (immobilized) {   // safe direction — one deliberate tap
+    return `<div class="kv" style="justify-content:center">${actionPill('commit', 'Restore starter', { js: 'js-gps-restore', data: { rec: u.unitId, dev: u.gpsDeviceId } })}</div>`;
+  }
+  const armed = _gpsArmed && _gpsArmed.unitId === u.unitId;
+  return `<div class="gps-hazard${armed ? ' hot' : ''}">
+    <div class="gh-cap"></div>
+    <div class="gh-row">
+      ${armed
+    ? `${actionPill('danger', 'Confirm — cut starter', { js: 'js-gps-kill-confirm', data: { rec: u.unitId, dev: u.gpsDeviceId } })}${ghostPill('Disarm', { js: 'js-gps-disarm' })}`
+    : actionPill('danger', 'Immobilize', { js: 'js-gps-arm', data: { rec: u.unitId, dev: u.gpsDeviceId } })}
+    </div>
+    ${unknown && !armed ? `<div class="kv" style="justify-content:center;margin-top:2px">${ghostPill('Restore starter', { js: 'js-gps-restore', data: { rec: u.unitId, dev: u.gpsDeviceId } })}</div>` : ''}
+    <div class="gh-note">${armed ? 'Cuts the starter — the engine can’t be re-started. Auto-disarms.' : (unknown ? 'Live starter state unknown — Immobilize, or Restore if it may already be cut.' : 'Owner/Manager/Mechanic only · cuts the starter (not a running engine)')}</div>
+  </div>`;
+}
+
+/* ── FLEET DRIVING SCORE (spec §5 step 7) ─────────────────────────────────────
+   Lights the driver scorecard's stubbed "Driving Score" ring with real Bouncie
+   trip data. It's a FLEET/TEAM metric (like the other two driver rings — delivery
+   rate, wash rate — which are also fleet-wide, not per-individual): telematics is
+   per-truck and Rental Wrangler has no driver↔trip attribution, so a per-DRIVER
+   score isn't honestly computable — a fleet safety score is. 100 = clean driving;
+   we penalize hard-braking + hard-acceleration per 100 mi and a speeding-trip share.
+   Weights are a conservative, TUNABLE v1 (Jac's to adjust). null until loaded / when
+   there are no Bouncie trucks or trips — never a faked number. */
+const DS_PENALTY_PER_100MI = 4;    // each hard event per 100 mi ≈ −4 pts
+const DS_SPEEDING_MPH = 80;        // a trip whose maxSpeed exceeds this counts as speeding
+const DS_SPEEDING_WEIGHT = 20;     // up to −20 pts for an all-speeding record
+const DS_WINDOW_DAYS = 21;         // rolling window of trips to score
+let _drivingScore = null;          // 0–100 fleet score, or null (unknown/unavailable)
+let _drivingScoreAt = 0;
+const drivingScoreValue = () => _drivingScore;
+
+async function refreshDrivingScore() {
+  if (!gpsConfigured()) return;
+  try {
+    const vehicles = await gpsProviderDevices('bouncie').catch(() => []);
+    if (!vehicles.length) { _drivingScore = null; _drivingScoreAt = Date.now(); return; }
+    const sinceISO = new Date(Date.now() - DS_WINDOW_DAYS * 86400000).toISOString();
+    const untilISO = new Date().toISOString();
+    let hard = 0, miles = 0, trips = 0, speeding = 0;
+    for (const v of vehicles) {
+      const imei = v.imei || v.id; if (!imei) continue;
+      let r; try {
+        r = await gpsFetch(`/api/bouncie/vehicle/${encodeURIComponent(imei)}/trips?starts-after=${encodeURIComponent(sinceISO)}&ends-before=${encodeURIComponent(untilISO)}`);
+      } catch { continue; }   // one truck's failure never poisons the fleet score
+      for (const t of ((r && r.trips) || [])) {
+        trips++;
+        hard += (Number(t.hardBrakingCount ?? t.hardBrakingCounts) || 0) + (Number(t.hardAccelerationCount ?? t.hardAccelerationCounts) || 0);
+        miles += Number(t.distance ?? t.tripDistance) || 0;
+        if ((Number(t.maxSpeed) || 0) > DS_SPEEDING_MPH) speeding++;
+      }
+    }
+    if (!trips || miles <= 0) { _drivingScore = null; _drivingScoreAt = Date.now(); return; }   // no data → honest null, not 0
+    const hardPer100 = (hard / miles) * 100;
+    const speedShare = speeding / trips;
+    _drivingScore = Math.max(0, Math.min(100, Math.round(100 - hardPer100 * DS_PENALTY_PER_100MI - speedShare * DS_SPEEDING_WEIGHT)));
+    _drivingScoreAt = Date.now();
+  } catch (e) { logErr('gps', 'driving-score: ' + ((e && e.message) || e)); }
+  if (!booting) render();
+}
+
 const dataSnapshot = () => { const s = {}; PERSIST_KEYS.forEach((k) => { s[k] = DATA[k] || []; }); return s; };
 async function loadFromBackend() {
   const r = await backendCall('load');
@@ -17292,6 +20127,34 @@ function computeChanges() {
 // NEVER delete on refresh (a transient blip can't wipe data).
 const IDX_MAP = { categories: 'category', units: 'unit', customers: 'customer', invoices: 'invoice', rentals: 'rental', workOrders: 'wo', inspections: 'insp', vendors: 'vendor', parts: 'part', companyFiles: 'file', expenses: 'expense' };
 let refreshing = false, refreshTimer = null;
+/** §inv-collision (Jac 2026-07-07) — TRUE when a remote invoice shares an id WE minted this
+ *  session but is a genuinely DIFFERENT bill (no rental in common). That means our new
+ *  invoice number was already taken by another customer's invoice on the backend — the 18s
+ *  poll would otherwise overwrite our bill's customer + amount with theirs. Gated on
+ *  mintedInvoiceIds AND on a disjoint rental link, so a normal remote EDIT of our own bill
+ *  (added line, even a customer reassignment that keeps the rental link) is never mistaken
+ *  for a collision. Membership invoices carry no rentalIds, so they're excluded here. */
+function isInvoiceIdCollision(id, local, remote) {
+  if (!mintedInvoiceIds.has(id)) return false;
+  const mine = local.rentalIds || []; if (!mine.length) return false;
+  const theirs = new Set(remote.rentalIds || []);
+  return !mine.some((rid) => theirs.has(rid));   // no shared rental → not our bill → a collision
+}
+/** Re-issue OUR colliding invoice a fresh number, repoint its rental link + continuation
+ *  chain, and let the pre-existing bill keep the old id locally — so neither invoice is lost
+ *  (the poll's default adopt-in-place would silently replace ours with theirs). */
+function healInvoiceIdCollision(oldId, local, remote, saved) {
+  const freshId = nextInvoiceId();                       // guaranteed free (bumps past the local max + index)
+  IDX.invoice.delete(oldId);
+  local.invoiceId = freshId; IDX.invoice.set(freshId, local); reindex('invoices', local);   // move OUR bill to the fresh id
+  (DATA.rentals || []).forEach((r) => { if (String(r.invoiceId) === oldId) { r.invoiceId = freshId; reindex('rentals', r); } });
+  (DATA.invoices || []).forEach((iv) => { if (iv !== local && String(iv.contOf) === oldId) iv.contOf = freshId; });
+  logAction(local, `Number reissued ${invoiceShort(oldId)} → ${invoiceShort(freshId)} — ${invoiceShort(oldId)} was already used by another bill`);
+  DATA.invoices.push(remote); IDX.invoice.set(oldId, remote); reindex('invoices', remote);   // the pre-existing bill takes the old id
+  saved.set(oldId, JSON.stringify(remote));               // remote matches the backend → clean; freshId isn't in `saved` → our bill re-saves under it
+  toast(`Invoice ${invoiceShort(oldId)} clashed with an existing bill — yours was reissued as ${invoiceShort(freshId)}.`);
+  saveSoon();                                             // persist the re-id + the repointed rental
+}
 async function refreshFromBackend() {
   if (refreshing || booting || !backendPassword || saving || savePending || !lastSaved) return;
   if (document.hidden || DRAG.active || DRAG.armed || state.winEdit || state.overlay || hoverNode) return;   // don't disrupt active work
@@ -17312,6 +20175,9 @@ async function refreshFromBackend() {
         if (!local) { DATA[k].push(remote); IDX[IDX_MAP[k]]?.set(id, remote); reindex(k, remote); saved.set(id, rjs); applied++; return; }   // new record from another user
         const ljs = JSON.stringify(local);
         if (ljs === rjs) { saved.set(id, rjs); return; }
+        if (k === 'invoices' && isInvoiceIdCollision(id, local, remote)) {   // §inv-collision — our minted number already belonged to a different bill; re-issue ours, keep both
+          healInvoiceIdCollision(id, local, remote, saved); applied++; return;
+        }
         if (saved.get(id) === ljs) {   // local is CLEAN (no pending edit) → adopt the remote version in place (keeps IDX refs)
           Object.keys(local).forEach((kk) => { if (!(kk in remote)) delete local[kk]; });
           Object.assign(local, remote); reindex(k, local); saved.set(id, rjs); applied++;
@@ -17332,7 +20198,7 @@ async function refreshFromBackend() {
   } catch (e) { /* offline / blip → retry next tick */ }
   finally { refreshing = false; }
 }
-function startRefreshPoll() { clearInterval(refreshTimer); refreshTimer = setInterval(refreshFromBackend, 18000); }
+function startRefreshPoll() { clearInterval(refreshTimer); refreshTimer = setInterval(() => { refreshToday(); refreshFromBackend(); }, 18000); }
 
 // ── Team-chat sync (Jac 2026-06-15) ────────────────────────────────────────
 // Chat threads were browser-local, so one user's chat never reached another (a
@@ -17393,17 +20259,19 @@ async function loadChats() {
 // localAhead. The caller applies it to state + the IndexedDB cache.
 let railPushTimer = null, lastRailJson = null;
 function mergeWranglerRails(local, remote) {
-  const byId = new Map((local || []).map((c) => [c.id, c]));
+  const dismissed = loadDismissedChats();                                   // chats the operator dismissed on THIS device — never resurrect them
+  const byId = new Map((local || []).filter((c) => c && !dismissed.has(c.id)).map((c) => [c.id, c]));
   let changed = false, localAhead = false;
   (remote || []).forEach((rc) => {
     if (!rc || !rc.id) return;
+    if (dismissed.has(rc.id)) { localAhead = true; return; }                // dismissed here → drop it and flag a corrective push to clean the backend rail
     const lc = byId.get(rc.id);
     if (!lc) { byId.set(rc.id, rc); changed = true; }                       // a chat from another device
     else if ((rc.ts || 0) > (lc.ts || 0)) { byId.set(rc.id, rc); changed = true; }   // remote is newer → wins
     else if ((lc.ts || 0) > (rc.ts || 0)) { localAhead = true; }            // we're newer → push up
   });
   const remoteIds = new Set((remote || []).map((c) => c && c.id));
-  if ((local || []).some((c) => c && !remoteIds.has(c.id))) localAhead = true;   // a local-only chat → push up
+  if ((local || []).some((c) => c && !dismissed.has(c.id) && !remoteIds.has(c.id))) localAhead = true;   // a local-only chat → push up
   const merged = [...byId.values()].sort((a, b) => (b.ts || 0) - (a.ts || 0));
   return { merged, changed, localAhead };
 }
@@ -17420,11 +20288,12 @@ async function loadWranglerRail() {
   try {
     const r = await backendCall('getWranglerRail');
     if (!r || !r.ok || !Array.isArray(r.chats)) return;
+    const dismissed = loadDismissedChats();
     const localBefore = state.wranglerRail;
     const { merged, changed, localAhead } = mergeWranglerRails(localBefore, r.chats);
     if (changed) {
       const beforeById = new Map(localBefore.map((c) => [c.id, c]));
-      for (const rc of r.chats) { const lc = beforeById.get(rc.id); if (rc && rc.id && (!lc || (rc.ts || 0) > (lc.ts || 0))) { try { await wrStore.putChat(rc); } catch (e) {} } }   // cache the remote winners
+      for (const rc of r.chats) { const lc = beforeById.get(rc.id); if (rc && rc.id && !dismissed.has(rc.id) && (!lc || (rc.ts || 0) > (lc.ts || 0))) { try { await wrStore.putChat(rc); } catch (e) {} } }   // cache the remote winners (never a dismissed one)
       state.wranglerRail = merged; render();
     }
     if (localAhead) pushWranglerRailSoon(); else lastRailJson = JSON.stringify(state.wranglerRail);
@@ -17553,6 +20422,75 @@ function renderSyncBanner() {
   document.body.classList.add('sync-failing');
   requestAnimationFrame(() => el.classList.add('show'));
 }
+
+/* ── R26 — "Due Today" scheduled-actions banner (#517) ────────────────────────
+   Scheduled actions are customer.activityLog entries stamped `Scheduled: <note> @
+   <date> <time>` (see the schedule popup save). On the day of the action (from
+   midnight / app-open, since TODAY_ISO is fixed at load) we surface every one due
+   today as a dismissible top band — the reminder Jac asked for. Manual X only:
+   it NEVER auto-clears when the time passes or the action is logged. The dismiss
+   sticks for the browser session (sessionStorage, keyed to today's set) so a
+   refresh can't ghost it back, but a fresh app-open shows it again. Lives on
+   <body>, outside #app, like the R25 sync band. */
+function parseSchedText(text) {
+  const body = String(text || '').replace(/^Scheduled:\s*/, '');
+  // the popup appends " @ YYYY-MM-DD H:MM AM" — anchor on that tail so a note that
+  // itself contains "@" is never mistaken for the separator.
+  const m = /\s*@\s*\d{4}-\d{2}-\d{2}\s+(\d{1,2}:\d{2}\s*[AP]M)\s*$/i.exec(body);
+  return { note: (m ? body.slice(0, m.index) : body).trim() || 'Follow-up', time: m ? m[1].replace(/\s+/g, ' ').toUpperCase() : '' };
+}
+function schedActionsDueToday() {
+  const out = [];
+  (DATA.customers || []).forEach((c) => {
+    (c.activityLog || []).forEach((a) => {
+      if (a && a.when === TODAY_ISO && /^Scheduled:/.test(a.text || '')) {
+        const p = parseSchedText(a.text);
+        out.push({ customerId: c.customerId, name: fullName(c) || c.company || 'Customer', note: p.note, time: p.time });
+      }
+    });
+  });
+  return out.sort((a, b) => (timeToMin(a.time) ?? 1e9) - (timeToMin(b.time) ?? 1e9));   // earliest first, untimed last
+}
+const SCHED_DISMISS_KEY = 'jactec.schedBannerDismissed';
+const schedBannerSig = (items) => TODAY_ISO + '|' + items.map((i) => `${i.customerId}:${i.note}@${i.time}`).sort().join('~');
+function dismissSchedBanner() {
+  try { sessionStorage.setItem(SCHED_DISMISS_KEY, schedBannerSig(schedActionsDueToday())); } catch (e) {}
+  renderSchedBanner();
+}
+function renderSchedBanner() {
+  const items = schedActionsDueToday();
+  const sig = schedBannerSig(items);
+  let dismissed = false; try { dismissed = sessionStorage.getItem(SCHED_DISMISS_KEY) === sig; } catch (e) {}
+  let node = document.getElementById('sched-banner');
+  if (!items.length || dismissed) {   // nothing due, or the operator dismissed today's set
+    if (node) node.remove();
+    document.body.classList.remove('sched-due');
+    document.body.style.removeProperty('--sched-band');
+    return;
+  }
+  if (node && node.dataset.sig === sig) return;   // same set already on screen → don't thrash
+  const rows = items.map((i) =>
+    `<div class="scb-row">`
+    + `<span class="pill ref link scb-cust" data-r="R2" data-pill-card="customers" data-pill-rec="${esc(i.customerId)}" data-tip="${esc(i.name)}">${CARD_ICON.customers}${esc(i.name)}</span>`
+    + `<span class="scb-note">${esc(i.note)}</span>`
+    + (i.time ? `<span class="scb-time">${esc(i.time)}</span>` : `<span class="scb-time scb-anytime">Any time</span>`)
+    + `</div>`).join('');
+  const html = `<span class="scb-stripe" aria-hidden="true"></span>`
+    + `<div class="scb-plate"><span class="scb-stamp">${I.bell}<span>Due Today</span></span><span class="scb-count">${items.length}</span></div>`
+    + `<div class="scb-list">${rows}</div>`
+    + closeX('js-sched-dismiss');
+  if (!node) {
+    node = document.createElement('div');
+    node.id = 'sched-banner'; node.dataset.r = 'R26';
+    node.setAttribute('role', 'status'); node.setAttribute('aria-live', 'polite');
+    document.body.appendChild(node);
+  }
+  node.dataset.sig = sig;
+  node.innerHTML = html;
+  document.body.classList.add('sched-due');
+  // reserve the exact band height so the banner never covers the yard/header (variable rows)
+  requestAnimationFrame(() => { const n = document.getElementById('sched-banner'); if (n) document.body.style.setProperty('--sched-band', n.offsetHeight + 'px'); });
+}
 // Safety net: a debounced save that hasn't flushed yet — or a large bulk-import sync
 // still in flight — would be lost silently if the page closes/reloads first (#164).
 // If anything is still un-persisted, kick a final flush and let the browser show its
@@ -17564,7 +20502,7 @@ window.addEventListener('beforeunload', (e) => {
   e.preventDefault(); e.returnValue = '';
 });
 function renderLogin(msg) {
-  $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4?v=20260702a" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="login-form">
+  $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4?v=20260708a" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="login-form">
     <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
     <div class="login-plate">
       <img class="login-logo" src="assets/jac-rentals-logo.jpg" alt="Jac Rentals" />
@@ -17590,6 +20528,7 @@ function finishLoad() {
   buildIndexes(); state.cascade = createCascade(DATA); booting = false; render();
   // (views no longer pull from the backend — personal per-device "my views", spec search-views D2)
   loadGroupOrderFromBackend();                                  // pull THIS role's saved card-group order
+  loadTripsFromBackend();                                       // §2.3 Phase 4 — pull the trips store (getTrips), server wins at boot
   salePricingAutoApply();                                       // used-sale price engine, auto mode (manager+ sessions only)
   loadChats();                                                  // pull the shared team-chat threads (§ team-chat sync)
   wranglerRailLoad();                                           // load the Mr. Wrangler rail from IndexedDB (+ one-time localStorage migration)
@@ -17647,7 +20586,7 @@ async function attemptLogin() {
   if (!name) { const errEl = document.getElementById('login-err'); if (errEl) errEl.textContent = 'Please enter your name (edits are logged under it).'; document.getElementById('login-name')?.focus(); return; }
   if (!pw) return;
   backendPassword = pw;
-  const btn = document.getElementById('login-go'); if (btn) { btn.textContent = 'Signing in…'; btn.disabled = true; }
+  const btn = document.getElementById('login-go'); if (btn) { btn.textContent = 'Wrangling the herd…'; btn.disabled = true; }
   // Roll the Mr. Wrangler intro behind the box while the (slow) backend load runs — a little entertainment for the wait.
   const screen = document.querySelector('.login-screen'); if (screen) screen.classList.add('signing-in');
   // The Saddle Up click is a genuine user gesture, so unmuting here lets the intro's
@@ -17668,6 +20607,7 @@ async function attemptLogin() {
     try { localStorage.setItem('jactec.user', name); } catch {}
     try { sessionStorage.setItem('jactec.role', role); } catch {}
     sessionStorage.setItem('jactec.pw', pw);
+    gpsLogin().then((ok) => { if (ok) { refreshGpsLive(); startGpsViewPoll(); refreshDrivingScore(); } });   // silent GPS login (§5, via GAS token proxy) → live snapshot (step 3) + view-scoped refresh (step 4) + fleet driving score (step 7); fire-and-forget, never blocks main login
     await loadFromBackend();
     finishLoad();
     applyShopRoleLanding();   // shop roles (Mechanic / M.Tech) land on the Shop graph
@@ -17861,6 +20801,41 @@ function boot() {
     if (grpDragOverEl) { grpDragOverEl.classList.remove('grp-dragover'); grpDragOverEl = null; }
     document.querySelectorAll('.grp-dragging').forEach((n) => n.classList.remove('grp-dragging'));
   });
+  // §2.3 Phase 3 — drag one Trip row onto another to MERGE them (the desktop path;
+  // the ⋯ menu / right-click / long-press — openTripMenu — is the touch-parity
+  // equivalent, spec §2.3 + the dispatch-ux-research "drag-only" anti-pattern guardrail).
+  // Same self-contained native-DnD pattern as the grp-hd reorder just above.
+  let tripDragId = null, tripDragDay = null, tripDragOverEl = null;
+  document.addEventListener('dragstart', (e) => {
+    const row = e.target.closest && e.target.closest('.row[data-card="calendar"]'); if (!row) return;
+    tripDragId = row.dataset.rec; tripDragDay = row.dataset.day;
+    if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', tripDragId); } catch (x) {} }
+    row.classList.add('trip-dragging');
+  });
+  document.addEventListener('dragover', (e) => {
+    if (!tripDragId) return;
+    const row = e.target.closest && e.target.closest('.row[data-card="calendar"]');
+    if (!row || row.dataset.rec === tripDragId) { if (tripDragOverEl) { tripDragOverEl.classList.remove('trip-dragover'); tripDragOverEl = null; } return; }
+    e.preventDefault();
+    if (tripDragOverEl !== row) { if (tripDragOverEl) tripDragOverEl.classList.remove('trip-dragover'); row.classList.add('trip-dragover'); tripDragOverEl = row; }
+  });
+  document.addEventListener('drop', (e) => {
+    if (!tripDragId) return;
+    const row = e.target.closest && e.target.closest('.row[data-card="calendar"]');
+    const dragId = tripDragId, dragDay = tripDragDay;
+    tripDragId = null; tripDragDay = null;
+    if (tripDragOverEl) { tripDragOverEl.classList.remove('trip-dragover'); tripDragOverEl = null; }
+    if (!row || row.dataset.rec === dragId) return;
+    e.preventDefault();
+    if (row.dataset.day !== dragDay) { toast('Trips must run the same day to merge.'); return; }   // same-day only — never a silent cross-day accept
+    const ok = tripMerge(row.dataset.day, row.dataset.rec, dragId);
+    if (ok) { haptic([12, 30, 12]); toast('Trips merged — double up.'); render(); }
+  });
+  document.addEventListener('dragend', () => {
+    tripDragId = null; tripDragDay = null;
+    document.querySelectorAll('.trip-dragging').forEach((n) => n.classList.remove('trip-dragging'));
+    if (tripDragOverEl) { tripDragOverEl.classList.remove('trip-dragover'); tripDragOverEl = null; }
+  });
   // Ctrl/Cmd+G — collapse or expand EVERY visible group in one keystroke (Jac
   // 2026-07-04): if any is expanded, collapse them all; once all are collapsed,
   // the same keystroke expands them all back.
@@ -17921,6 +20896,7 @@ function boot() {
     }
     // §5.4 (per-card) — same Enter-to-pin / Backspace-to-pop on a card's list search.
     if (e.target.classList.contains('mini-search') && e.target.dataset.card && !e.target.classList.contains('js-history-search')) {
+      if (e.target.dataset.card === 'calendar') return;   // Trips search is a plain filter, no filter-term pinning (Phase 1 scope; no session.cards.calendar to pin against)
       const card = e.target.dataset.card; const cs = activeSession().cards[card];
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -18064,15 +21040,20 @@ function exposeTestApi() {
     window.__rw = { DATA, IDX, TODAY_ISO, itemPaid, lineKey, rentalUnits, unitEntry, isPrimaryUnit, linkActionsFor, linkActionPossible, DROP_MATRIX,
       unitStatus, rentalUnitStatuses, unitsUniform, rentalStatusDisplay, rentalMirrorStatus, rentalDisplayStatus,
       allUnitsTerminal, unitTerminal, unitVoided, rentalCleared, rentalLineItems, transportLineItems, extensionPreview, billExtension, unitBilledRental, unitBilledSeries, retroPricingOn, rentalInvoices, rentalActiveInvoice, invoiceChunks, createInvoiceForRental, syncRentalPrimary,
+      nextInvoiceId, maxInvoiceSeq, mintedInvoiceIds, isInvoiceIdCollision, healInvoiceIdCollision, reindex,
+      CFG, invoiceShort,
       addUnitToRental, removeUnitFromRental, removeUnitInvoiceLine, unitLinePaid, invoiceTotals, allocLines,
       rentalAllocated, itemRefunded, itemRefundable, lineRefunded, lineFullyRefunded, refundLines, rentalLineRefund, applyPayment, unitRentalPrice, rentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
-      wrValidatePlan, applyWranglerData, wrPlanNeedsApply, wrPlanSummary, wrFunnel, wrResolveCustomer, wrResolveUnit, wrResolveCategory, wrResolveVendor, wrResolvePart, wrResolveRental, wrChatFormat, wrFocusRecord, wrRecLabel, activeSession, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv, wrRunAgent, wrApplyChangesTool, wranglerDigest, wrPruneOldChats, WR_CHAT_RETAIN_DAYS, WR_TOOL_IMPL, WR_TOOLS,
+      wrValidatePlan, applyWranglerData, wrPlanNeedsApply, wrPlanSummary, wrFunnel, wrResolveCustomer, wrResolveUnit, wrResolveCategory, wrResolveVendor, wrResolvePart, wrResolveRental, wrChatFormat, wrFocusRecord, wrRecLabel, activeSession, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv, wrRunAgent, wrApplyChangesTool, wranglerDigest, wrPruneOldChats, WR_CHAT_RETAIN_DAYS, WR_TOOL_IMPL, WR_TOOLS, WR_OPERATIONS,
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, setRole: (r) => { currentRole = r || ''; render(); },
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, saveYardCapture, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsUtilRollup, gpsBounciePlan, gpsApplyBouncieTrucks, nextCategoryId, nextUnitId, logAction, setRole: (r) => { currentRole = r || ''; render(); },
+      tripsLS, tripMerge, tripSplit, assignTripDriver, tripLabel, assignStopDriver, tripSetTime,
+      tripPushSoon, tripPushNow, loadTripsFromBackend, tripsSyncFooter, setBackendPassword: (pw) => { backendPassword = pw || ''; },   // §2.3 Phase 4 sync — the setter is test-only (mirrors setRole), letting logic-test.mjs exercise the online path via a mocked window.fetch, never a real backend
+      autoRunRepair, autoRunAnchorsFor, secToClock, AUTORUN_DAY_START_SEC, AUTORUN_EOD_DEADLINE_SEC, AUTORUN_LOAD_BUFFER_SEC, dispatchPinOf,
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }
