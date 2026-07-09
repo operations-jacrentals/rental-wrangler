@@ -284,6 +284,8 @@ Roles are customizable; gates compare **tiers** (`tierRank`), not names. The fiv
 | **Admin / Developer** (admin/developer) | Settings → Integrations: enable/disable the feed, see last-poll health, edit the yard fence. Secrets (GPSWOX token) live server-side only; the panel shows **status, never the secret** (§5). |
 
 ### 3.2 Gate matrix — who can do what (the enforcement contract)
+> **[2026-07-09] Superseded by later decisions.** D2 (§ "✅ Decisions — 2026-06-29") opened exact coordinates to all staff, overriding the money-tier coord row below. Jac further declined the manager-only asset-protection gate for the fleet views on 2026-07-08 — **the shipped Fleet Map / Tracker Health / GPS Issues / Fleet Utilization popups are all-signed-in-roles**, not manager+, overriding the Tracking-board row below too. The `gpsAckStray`/`gpsConfig`/`gpsTestConn` rows are moot — none of those actions were built.
+
 Every row below is a **tier compare** (`tierRank(role) >= tierRank(X)`), never a name match, so a renamed/custom role inherits the gate by its mapped tier. **Read gates are UI-conditioned (front-end); WRITE/money-adjacent gates are ENFORCED server-side** (a hidden button is not a gate — the action re-checks the password tier).
 
 | Capability | Min tier | Enforced where | Note |
@@ -585,6 +587,8 @@ score = 100 - clamp( w_speed*speedingEvents + w_harsh*harshEvents , 0, 100 )   /
 ## 11. Open Questions (for Jac)
 
 > **Resolved 2026-06-29:** §11.5/11.13 → D1 (track trucks + drivers; trucks are first-class GPS assets) · §11.6/11.15 → D2 (coords open to all staff) · §11.10 → D3 (telematics auto-updates hours + manual override) · §11.16 → D4 (build comms SMS before GPS stray alerts). Adopted: §11.1/2/3/4/7/11/12/14. **§11.9** Driving Score is now **per-driver** (multi-driver). See the Decisions block up top.
+>
+> **[2026-07-09] Build reality vs. these resolutions:** D1 (trucks as first-class GPS assets, `dispatchTruckPos` reading a truck's own device) did **not** ship — the dispatch truck-position seam is untouched (§6.3/§9). D2 (coords open to all staff) **did** ship, and was reaffirmed/extended on 2026-07-08 to all Phase 2 fleet views. D3 (telematics auto-updates `currentHours`) did **not** ship — hours are still fully manual. D4 (SMS before stray alerts) is moot for now since stray alerts themselves were never built. §11.9's per-driver resolution did **not** ship — Driving Score is fleet-level, with an explicit in-code rationale (no driver↔trip attribution). §11.1/2/3/4 (hysteresis, reconcile wizard, stray ledger, breadcrumbs) are all moot — stray/geofencing wasn't built, so nothing in that space needed a wizard, ledger, or history yet. §11.7 (poll vs. webhook) is moot — the shipped design uses neither, it's a direct client→Railway pull, not a GAS poll. §11.11 (write target) is moot — nothing is written back onto the units tab per-poll; live data is read at render time, never stored.
 
 1. **Stray hysteresis / fence radius.** How many consecutive out-of-fence fixes before we cry "stray," and what default yard radius (250 m?) and jobsite radius (500 m?)? Tighter = faster theft signal but more false alarms on big jobsites.
 2. **Manual-status reconcile at go-live.** When the feed turns on, mapped units get feed-driven status. Confirm the rule: *blank `gpsDeviceId` = feed ignores it, keeps manual.* Do you want a one-time "map devices" wizard, or hand-enter `gpsDeviceId` on each unit card?

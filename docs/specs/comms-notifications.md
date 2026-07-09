@@ -502,7 +502,7 @@ ACTION: runReminderSweep         (time-driven; GAS installable trigger / cron)
 
 All new UI in the **yard data-plate** language: dark steel panels (`linear-gradient(180deg,#1b2129,#0c0e11)`), ONE safety-orange `--accent #ff7a1a` for ignition/primary, hi-vis hazard-stripe (`repeating-linear-gradient(135deg, var(--yellow) 0 13px, #14181d 13px 26px)`) reserved for the send-confirm/danger affordance, Saira Condensed stamped labels, corner rivets, leather-tan ranch seasoning mostly in copy. **Run every screen below through the `jactec-ui` skill before building.** Every new element gets a **`data-r` stamp**; every new popup gets a **`WINDOW_CATALOG` entry**.
 
-### 6.1 Send-from-record affordance (manual, Phase 1)
+### 6.1 Send-from-record affordance (manual, Phase 1) — **NOT built as spec'd (2026-07-09)**: no confirm plate exists; `sendInvoiceText`/`sendInvoiceEmail` send immediately (toast only). See the Phase 1 reality-check note in §8.
 
 The existing "Text quote / Email quote" buttons stay where they are (invoice detail) but gain a **confirmation plate** when a server send is available:
 
@@ -574,7 +574,7 @@ No **automated** send fires outside `quietHours` (default 20:00–08:00 America/
 
 A customer-facing body may include `invoiceTotals(inv).total` ONLY. The template var allowlist **excludes** `bottomDollar`, any `cost`, any `margin`. This is a hard server-side filter on `sendCustomerMessage.vars` — an unknown var name is dropped, not interpolated.
 
-### 7.4 Reputation KPI derivation (lights up the null ring)
+### 7.4 Reputation KPI derivation (lights up the null ring) — **still PLANNED as of 2026-07-09**: the ring is now at `app.js:8300`/`8330` (line numbers shifted since drafting) and still returns `null`; no review source, Phase 3 not started.
 
 Office ring 3 (`app.js:7130`) currently `null`. Once a review channel + source exists:
 
@@ -595,23 +595,51 @@ Reputation = (Σ review stars / (5 × review count)) × 100      // % of max
 
 ## 8. Phasing & Milestones
 
-### Phase 1 — Real server send + delivery log (MVP)
+### Phase 1 — Real server send + delivery log (MVP) — **✅ SHIPPED 2026-07-06, confirmed live 2026-07-09 (backend prod v66–v70)**, BUILT DIFFERENTLY than drafted here
 **In scope:** `sendCustomerMessage` + `messageStatus` actions; provider wired (one channel — **SMS first**, OPEN Q-3); the send-confirm plate replacing the bare deep-link for **manual quote send**; the `messages` log + the comms strip on invoice/rental detail; deep-link kept as the no-provider fallback; consent fields read (opt-out respected) even if not yet editable.
 **Out of scope:** automation/cron, reminders, reviews, settings pane.
 
-### Phase 2 — Notification preferences + reminder engine
+> **Reality check (2026-07-09):** `sendCustomerMessage` shipped for **both** SMS (Twilio-or-Mocean,
+> auto-selected server-side) **and** email (Gmail send-as aliases, D7 picker) — broader than
+> "SMS first." `messageStatus` (webhook/poll status reconciliation) was **not** built — status
+> is `sent`/`failed` at send time only, no `delivered`/`replied` reconciliation loop yet. The
+> **send-confirm plate described in §6.1 was NOT built** — `sendInvoiceText`/`sendInvoiceEmail`
+> (`app.js:18549`/`18573`) call `sendCustomerMessage` directly with a toast, no preview/confirm
+> step (the D7 FROM-picker dropdown is the only intermediate step, and only when >1 alias
+> exists). The delivery log exists (`messages` tab + `messagesFor`) but surfaces via the comms
+> rail's per-customer thread view, not a dedicated "comms strip" under invoice/rental history
+> as §6.2 describes. Consent-read/opt-out-respected: shipped as drafted.
+
+### Phase 2 — Notification preferences + reminder engine — **🔲 PLANNED, not started as of 2026-07-09**
 **In scope:** fill the Settings → Notifications stub (admin); `settings.notifications` slice; `runReminderSweep` GAS trigger; start/return/balance reminders; quiet hours; quote auto-followup; consent surface editable.
 **Out of scope:** reviews, dispatch ETA, inbound replies UI.
 
-### Phase 3 — Inbound, dispatch ETA, reviews / Reputation
+### Phase 3 — Inbound, dispatch ETA, reviews / Reputation — **🔲 PLANNED, not started as of 2026-07-09**
 **In scope:** `inboundMessage` webhook (STOP handling + reply surfacing into chat/bell); `dispatch-eta` send wired to rentals-dispatch; `review-request` send + review source + the Reputation KPI lit.
 **Out of scope:** marketing campaigns (→ `marketing` area), AI-drafted messages (→ `wrangler-ai`).
+
+> **Note:** the internal "on-demand + scheduled transport-due alerts" (#515,
+> `transportAlerts()`, `app.js:13596`) that shipped 2026-07-09 is **not** this Phase 3
+> `dispatch-eta` item — it's a staff-facing "call the customer" reminder overlay, not an
+> automated customer-facing SMS. `dispatch-eta` as spec'd here remains unbuilt.
 
 ---
 
 ## 9. Acceptance Criteria
 
 Each criterion is phrased so a test (or a manual repro on `localhost:9147`) can pass/fail it. **AC-2 through AC-6 are the gate criteria** — they must be asserted server-side, not just in the UI.
+
+> **2026-07-09 status check:** AC-1 is now true in production (with the §6.1/§8 caveat that
+> there's no confirm plate — the send fires directly). AC-2/AC-4/AC-5's *behavior* is
+> implemented server-side per `docs/handoffs/customer-sms-backend.gs` (isolation check, var
+> allowlist by construction — server-derived vals only, opted-out hard-block), but **none of
+> them are actually covered by `ci/logic-test.mjs`** — the enforcement logic lives entirely in
+> the gitignored `Code.gs`, which this repo's CI cannot unit-test; "the test pins whichever
+> answer" language in AC-3 never got resolved into an actual test either. AC-3's money-gate
+> premise doesn't apply as drafted — D2 shipped "no tier gate" for all customer sends (see the
+> Decisions block up top), so `staff` can fire quotes too. AC-6 (dedup) is implemented
+> (`dedupKey` in `sendCustomerMessage_`) but likewise untested in `ci/logic-test.mjs`. AC-8
+> (Notifications pane) has not happened — still a stub, so this criterion has not started.
 
 1. **Manual send (Phase 1):** with a live provider, "Text quote" calls `sendCustomerMessage` server-side, returns a `providerId`, appends a `messages` row `status:'sent'`, and the invoice history shows a (masked) line. With **no** provider, the same button opens the device `sms:` deep-link (fallback intact, no console error). *Test: `ci/smoke.mjs` boots with no provider and the deep-link path is reachable.*
 2. **Isolation (server):** `sendCustomerMessage` with a `recId` whose owner ≠ `customerId` returns `{ok:false, reason:'isolation'}` and makes **no** provider call. A client-supplied `to` is ignored; the recipient is always resolved from `customerId`. *Test: `ci/logic-test.mjs` unit over the resolve/assert helper.*

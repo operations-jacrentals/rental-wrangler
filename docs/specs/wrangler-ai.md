@@ -12,7 +12,119 @@
 - **D1 — Gate Wrangler's money ops + rate edits to the money tier (Q1/Q1b).** `billRental`, `recordPayment` (cash/check), **and** category rental-rate edits (`memberDaily`/`rate1Day`/`rate7Day`/`rate4Wk`/`weekend`) now require `roleTier(currentRole) >= tierRank('money')`, matching the in-app human-flow gate. A below-tier role's money/rate op via Wrangler is **refused with a clear message and produces no write**. This closes the privilege-escalation back door (Wrangler must never bypass a gate the human UI enforces). **Pin both the gate and the boundary case in `ci/logic-test.mjs`** so it can't drift. The hard fences (no card/ACH/refund/balance/`bottomDollar`/`msrp`/`askPrice`/`priceEach`/WO-`phase`/role/delete) stay exactly as-is on top of this.
 - **D2 — PII in the Track B repro packet: keep the issues repo private + scope the token (Q2).** No transcript redaction (preserve full repro fidelity); instead the `wrangler-fix`/`wrangler-request` issues live in a **private repo** and the auto-fixer's token is **scoped only to that repo**. Document this as a hard requirement in `wrangler-pipeline.md` — if the issues repo is ever public, the filing path must be disabled until redaction lands.
 - **D3 — Track B autonomy: FULL until 2026-07-30, then re-decide (Q3).** Keep **full auto-merge-on-green → Pages deploy** with no human in the loop, including money/auth/data-gate code paths, **through July 30, 2026**. The one-click revert PR + the 3 CI gates remain the safety net. **On/after 2026-07-30, re-prompt Jac** with the hold-for-review question (a "hold for human review" label on patches touching money/auth/gate code, auto-detected by changed file/region). Leave a dated TODO in `wrangler-pipeline.md` and the roadmap so this resurfaces.
-- **D4 — Carry forward draft defaults for the non-fork questions:** `startRental` keeps auto-apply (Q6); add a **Wrangler-provenance tag** on `billRental`/`recordPayment` money paths so an auditor can distinguish a Wrangler-assisted entry from a human one (Q13 — matters more now that D1 gates but doesn't forbid); add the **prompt-injection corpus case** to `ci/logic-test.mjs` (Q12); confirm the KPI `adminPw` never enters a transcript/rail/issue (Q10); stamp the dock controls `js-wr-send`/`js-wr-attach`/`js-wr-apply` + ask_user chips and regen `rule-usage.js` (Q7); dock stays exempt from `WINDOW_CATALOG` as a persistent surface (Q8).
+- **D4 — Carry forward draft defaults for the non-fork questions:** `startRental` keeps auto-apply (Q6); add a **Wrangler-provenance tag** on `billRental`/`recordPayment` money paths so an auditor can distinguish a Wrangler-assisted entry from a human one (Q13 — matters more now that D1 gates but doesn't forbid); add the **prompt-injection corpus case** to `ci/logic-test.mjs` (Q12); confirm the KPI `adminPw` never enters a transcript/rail/issue (Q10); stamp the dock controls `js-wr-send`/`js-wr-attach`/`js-wr-apply` + ask_user chips and regen `rule-usage.js` (Q7); dock stays exempt from `WINDOW_CATALOG` as a persistent surface (Q8). **[2026-07-09: D1 and Q13 are now SHIPPED CODE, not just a decision — Q7's stamps also landed. See "Shipped status" below.]**
+
+---
+
+## Shipped status (2026-07-09)
+
+> Reconciliation pass, run after today's `staging` → `main` promotion (PR #552,
+> commit `2ff471e`) plus the same-day "wrangler fix" batch already ahead of it in
+> `main`'s linear history. This section is a status overlay on top of §1–§12 below —
+> it doesn't rewrite them; where useful, a marker was also dropped inline (§3.1, §11).
+> Everything below was checked directly against `app.js` on `main` as checked out.
+> No git ref beyond `main` HEAD was assumed live.
+
+**Confirmed SHIPPED, full-stack, on `main`:**
+- **D1 — money-tier gate, now code, not just a decision.** `wrValidatePlan` refuses
+  any `operate` op flagged `money:true` (`billRental`, `recordPayment`) and rate
+  edits unless `canMoney()` — `app.js:13028-13036`, the guard comment cites this
+  spec's D1 by name. Refusal message: *"invoicing and payments are Office/Admin
+  only — this login can't move money through Mr. Wrangler."* §3.1/§11 Q1 & Q1b →
+  **RESOLVED + SHIPPED**, not merely decided.
+- **D4/Q13 — Wrangler-provenance tag on money ops.** `billRental` stamps
+  `logAction(inv, 'Invoiced via Mr. Wrangler')` (`app.js:13243`); `recordPayment`
+  stamps `` `${amount} ${method} payment recorded via Mr. Wrangler` ``
+  (`app.js:13285`). §11 Q13 → **RESOLVED + SHIPPED**.
+- **Q7 — dock rulebook coverage.** The three controls §6.2 flagged as unstamped are
+  now stamped: `js-wr-send` → `R17` (`app.js:9050`), `js-wr-attach` → `R21`
+  (`app.js:9050`), `js-wr-apply` → `R17` (`app.js:8991`). §6.2/§11 Q7 →
+  **RESOLVED + SHIPPED**.
+- **Three "Wrangler fixes" from today's promotion, already on `main` ahead of PR
+  #552:**
+  - Overdue-return flag/relabel (#509/#512) — `overdueOutStatus()`
+    (`app.js:1765-1771`, `5666-5677`); this is the `off-rent-overdue` display rule
+    §2/§7's baseline already assumes but never itemizes — worth naming explicitly.
+  - History-date-drift fix on a long-open tab (#541/#543) — a pure bug fix with no
+    §2/§7 capability-shape change; no spec anchor needed.
+  - Dismissed Mr. Wrangler chats no longer reappearing (#535) — hardens the
+    existing §18g dismissal-tombstone path this spec doesn't currently name
+    (`loadDismissedChats`/`WR_DISMISS_KEY`, `app.js:9302-9309`, re-applied at
+    `app.js:9268-9269`).
+
+**NEW capability — not described anywhere in this spec (built 2026-07-09, after
+this draft):**
+- **Wrangler Ops — Developer-tier live-chat bridge ("take the wheel").**
+  `openWranglerOps()` (`app.js:20939`), gated by `devUnlocked()` (tier ≥
+  developer, `app.js:16506`); toolbar entry `js-wrangler-ops` (`app.js:8608`,
+  hidden below Developer tier). Lists every role's live Mr. Wrangler chat
+  (`getWranglerChatsAll`); a developer can post a turn as human — "take the
+  wheel" (`driver:'human'`) — or **release to AI**
+  (`wranglerOpsRelease`/`setWranglerDriver`). Polls every
+  `WR_OPS_POLL_MS = 7000` ms (`app.js:20937`, `wranglerOpsPollTick`) — no
+  websockets, consistent with this spec's "no server-push on GAS" stance
+  (§5.4/§10). The customer dock shows a red hazard-stripe **paused banner**
+  (`.wr-paused`, new rulebook stamp **R30**, `app.js:9045`) and goes read-only
+  (guarded again at `app.js:12755`, belt-and-suspenders against an AI call
+  firing while paused) whenever `driver === 'human'`. **Escalate → Claude Code**
+  (`wranglerOpsEscalate`, `app.js:20980`) reuses the EXISTING `wranglerFile` /
+  Thread Mirror pipeline verbatim — no new escalation machinery, in the spirit of
+  this spec's §5.2/§9 write-path-convergence criteria. The popup itself IS
+  catalogued (`WINDOW_CATALOG` kind `'wranglerOps'`, `app.js:12350`) — §6.3's
+  `check-window-catalog.mjs` gate holds.
+  - **Frontend: SHIPPED on `main`.** **Backend: PLANNED, not deployed.** The four
+    new actions it depends on (`getWranglerChatsAll`, `getWranglerChat`,
+    `appendWranglerMessage`, `setWranglerDriver`) are documented only
+    (`docs/handoffs/wrangler-ops-backend.gs`); the design doc
+    (`docs/superpowers/specs/2026-07-09-wrangler-ops-chat-bridge-design.md`)
+    states outright: *"Until that backend deploy lands, the new UI is present but
+    the backend calls it makes will return a generic failure... it does not
+    regress anything currently live."* Treat Wrangler Ops as **frontend-shipped /
+    backend-pending** until Jac runs the `/clasp` deploy — the same split flagged
+    below for the rate limit.
+  - Out of scope for this reconciliation pass to fully model in §2/§4/§9/§11 (that
+    would be a rewrite, not an annotation) — flagging its existence and status is
+    the goal here.
+
+**PENDING BACKEND DEPLOY — do not read as shipped end-to-end:**
+- **Global Wrangler rate limit.** A new `wranglerRateLimitOk_()` helper enforces a
+  **shared GLOBAL cap of 100/day** (not per-role) across `wranglerReply_` (paid
+  Claude calls, §5.1) and `wranglerFile_` (GitHub issue filing, §5.2/§5.3) — "Jac's
+  call" per its commit message. Written and pushed to the backend's `HEAD` via
+  service account in `docs/handoffs/backend-audit-2026-07-09-final-6-fixes.gs`,
+  closing out the pre-promotion backend audit
+  (`docs/handoffs/audit-2026-07-09-parked-findings.md`). **As of this
+  reconciliation that commit is NOT reachable from `main`** — it (and its
+  immediate follow-up) sit on `origin/staging` / `origin/wrangler-fix/pr552-batch`,
+  one promotion cycle *ahead of* today's staging→main promotion (PR #552). Its own
+  commit message says: *"Pushed to HEAD via service account, confirmed present;
+  still needs Jac's editor deploy."* Nothing in `app.js` references a rate-limit
+  reason today (confirmed by grep) — this is a pure `Code.gs`-side change,
+  invisible client-side until deployed. This spec currently has **no section on
+  rate limiting at all** (§5.3/§5.4 don't mention a cap) — add one once live.
+  **Known follow-up gap, not yet fixed anywhere:** `wranglerErrMsg`
+  (`app.js:12556`) already maps any backend error string matching `rate.?limit` to
+  *"Mr. Wrangler's getting rate-limited — give him a few seconds and ask again"*
+  (§5.4) — that copy will read as actively wrong for a **daily** cap once this
+  ships (a few seconds won't help); it needs its own reason string, not reuse of
+  the existing per-request rate-limit copy.
+
+**Unconfirmed from this repo (org/infra decisions, no code signal to check):**
+- **D2** (private issues repo + scoped auto-fixer token) and **D3** (Track B full
+  autonomy through 2026-07-30) are GitHub-org/repo-settings calls, not `app.js`/
+  `Code.gs` state — this pass had no way to verify either from the checkout.
+  Treat as **decided (2026-06-29), live status unverified**.
+
+**Housekeeping — `app.js:NNNN` anchors throughout §2/§5/§6 are stale.** The file
+has grown ~2,500–2,900 lines since this spec was drafted (e.g. `wrValidatePlan`
+is cited at `app.js:10435`, actually `app.js:13028`; `WR_EDITABLE` cited at
+`app.js:10318`, actually `app.js:12909`; `parseWranglerAction` cited at
+`app.js:10263`, actually `app.js:12856`). Function/const names are still correct
+— only the line numbers drifted. Not corrected line-by-line in this pass (would
+be a rewrite, not an annotation); flagging so a future edit re-anchors against
+`docs/CODE-MAP.md`'s current APP-27 (`app.js:9642`, `WRANGLER_SYSTEM`/
+`wranglerSend`/`parseWranglerAction`) and APP-28 (`app.js:9907`, `wrValidatePlan`/
+`WR_EDITABLE`) chapter starts instead of hardcoded absolute lines.
 
 ---
 

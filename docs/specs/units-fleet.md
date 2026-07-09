@@ -1,6 +1,6 @@
 # Units / Fleet — SPEC v1 (DRAFT)
 
-**Date:** 2026-06-28 (updated 2026-07-08)
+**Date:** 2026-06-28 (updated 2026-07-08; status reconciled against shipped `main` 2026-07-09)
 **Status:** DRAFT — for critique
 **Area branch:** `area/units-fleet`
 **Task branch:** `units-fleet/spec` (proposed)
@@ -500,8 +500,8 @@ Per the roadmap (`docs/specs/AREAS-ROADMAP.md` §2), Units / Fleet **depends on*
 - `fleet-spread` — would extend the single-yard unit spine across locations.
 
 ### 12.2 What must land / be decided first
-1. **Q1 (margin-floor display gate)** — resolve before any wider pricing-visibility work; it's a security decision, kept on the main session, and gates both the `bottomDollar` number and the ROI% that encodes it. Recommended v1 path is a pure client-side display gate (no `backend-data` change); **Q10** (server-withheld floor) is the heavier alternative and is jointly owned with `backend-data`.
-2. **Q11** (gating the three unit cost fields `trueCost`/`purchasePrice`/`purchaseDate`) — decide alongside Q1 since they also feed ROI and are the same staff-visibility concern.
+1. **Q1 (margin-floor display gate)** — resolve before any wider pricing-visibility work; it's a security decision, kept on the main session, and gates both the `bottomDollar` number and the ROI% that encodes it. Recommended v1 path is a pure client-side display gate (no `backend-data` change); **Q10** (server-withheld floor) is the heavier alternative and is jointly owned with `backend-data`. — ✅ **SHIPPED 2026-07-09**, recommended path taken (display gate, no `backend-data` change).
+2. **Q11** (gating the three unit cost fields `trueCost`/`purchasePrice`/`purchaseDate`) — decide alongside Q1 since they also feed ROI and are the same staff-visibility concern. — ⚠️ **SHIPPED 2026-07-09 for 2 of 3 fields**; `purchaseDate` still open, see Shipped status table.
 3. **`maintenance-shop`** inspection-checklist contract — the unit card *invokes* `checklistRequired`/the inspection flow; keep the contract stable.
 4. **`backend-data`** sync — already shipped; **no new action needed for v1** (Q1's display gate is client-only; only Q10 or an admin-tunable gate tier would touch `setConfig`).
 5. **`gps-tracking`** — only when live telematics is built does `gpsStatus` change ownership; until then this area's manual GPS edit stands.

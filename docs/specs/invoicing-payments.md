@@ -22,6 +22,77 @@ These resolve the §11 Open Questions and amend §3 / §5 / §6 / §8.
 
 ---
 
+## Shipped status (2026-07-09)
+
+Reality-check pass against the batch promoted `staging` → `main` today (PR #552, plus the
+pre-promotion audit fix batches #554/#556/#557/#559 and the Customer Details reorg #566).
+Cross-checked against live `app.js`/`config.js`. Inline `[2026-07-09]` notes are dropped at
+the specific sections below; this is the fast-scan summary.
+
+- **SHIPPED — Invoice-id format v2 (month-first + per-month counter).** `invoiceId()` now
+  emits `##MMDDYY` (e.g. `228JY0826`, pill `228JY`) — **not** the `INV.06.07.26.001` example
+  in §4.1, which is now stale. Counter resets per calendar month (`invoiceSeq`/
+  `invoiceSeqMonth`, `maxInvoiceSeq()` `app.js:2248`, `nextInvoiceId()` `app.js:2263`). Legacy
+  `##iDDMmmYY` ids still parse (`invoiceShort`, `config.js:555`).
+- **SHIPPED — Invoice-id collision prevention + repair.** `mintedInvoiceIds`,
+  `isInvoiceIdCollision`, `healInvoiceIdCollision` all live (`app.js:21784` export list) — a
+  collided id can be detected and repaired, with an honest failure path if it can't be.
+- **SHIPPED — Full-bleed kraft printable invoice.** The print doc dropped the flat white
+  ledger look for a full-bleed kraft "yard log" page (`@page` margin 0, kraft carried on the
+  root canvas + body, its own inner padding instead of page margin). Not described anywhere
+  in §6 yet — read §6.2's "Print / PDF" line as covering this new treatment.
+- **SHIPPED — `invoiceDocHtml(inv, {interactive})` shared render (`app.js:18403`).** Extracted
+  from the former `printInvoice` so the screen (embedded, interactive) and print (byte-
+  identical, no opts) views can never diverge. Not mentioned anywhere in the spec below —
+  it's the mechanism behind the Customer Details reorg (next item).
+- **SHIPPED — Retro re-tier fix (#425).** Extending a rental across a rate-tier boundary now
+  re-tiers correctly even when the active invoice is already PAID IN FULL — previously a paid
+  1-day→7-day extension billed daily+weekly instead of just the weekly rate (over-charged).
+  `billSpillRetro` now credits everything already billed for the unit across the whole series;
+  mirrored in `previewExtensionDelta`; never reopens/re-prices the settled paid line (§7.4's
+  refund-first rule intact). Locked by `ci/logic-test.mjs` §32c.
+- **SHIPPED — Empty->28-day-rental invoice fix (#537/#538).** Billing an all-No-Show rental
+  now REFUSES instead of minting a silent invoice with no line items (`createInvoiceForRental`
+  counts billable lines, not just units); re-dating a rental now restores missing unit lines on
+  its invoice.
+- **MAJOR STATUS FLIP — Partial / per-line refunds are LIVE, not gated.**
+  `PARTIAL_REFUNDS_ENABLED = true` at `app.js:6702` (was `false` when this spec was written).
+  The additive backend contract in `docs/handoffs/partial-refunds-backend.md` is deployed;
+  `refundInvoiceFlow` (`app.js:18184`) now sends a cap-validated `amountCents` + the per-line
+  `refundAlloc` split whenever the flag is on. **This flips §2.2, §2.3 ("No partial refund in
+  production"), §5.1/§5.3 ("today; full only" / "Proposed ADDITIVE actions"), §8 Phase 2,
+  Decision D1, and Open Q1 from PLANNED/PARKED to SHIPPED** — see the inline annotation at
+  each. Caveat: no separate "verified on a real test invoice" writeup was found in this repo
+  confirming D1's deploy→verify→flip sequence was followed in that order — worth a quick
+  confirmation from whoever flipped the flag.
+- **ARCHITECTURE CHANGE — the standalone Invoice card is RETIRED; invoices now live embedded
+  in Customer Details.** `'invoices'` is dropped from `config.js` `COLUMNS.right`/`COLUMN_OF`
+  (data model / `ROW_META` / `DETAIL.invoices` all kept — this is a UI re-home, not a data
+  change). A scrollable `customerInvoicesSection(c, cs)` (`app.js:3905`) renders inside
+  Customer Details: a manager summary strip + accordion rows that expand (one at a time) into
+  the interactive `invoiceDocHtml` sheet. Every invoice cross-link now routes through one
+  `pillTo('invoices')` special-case → `openInvoice(invId)` (`app.js:2742`), which reveals the
+  customer, scrolls to the section, and expands the row. **§6 and §6.1 below still describe the
+  retired standalone-grid-card architecture ("Surfaces live on the Invoices grid card") — read
+  that as historical.** The money-actions row, ledger block, status pill, and payment-popup
+  content they describe are still accurate; only the surface they're mounted on changed.
+- **NOT independently verifiable here — backend security-audit fixes on invoices.** Reported
+  shipped as part of today's promotion: (1) an idempotent no-op guard on `recordCharge_`
+  against duplicate PaymentIntent recording, (2) the price-lock seal freezing the customer's
+  tax-exempt flag at lock time instead of re-reading live customer state, (3)
+  `stripeRefundInvoice_` walking ALL charges on a multi-charge invoice instead of only the
+  last one, (4) refund `amountCents` validation rejecting an explicit non-positive value
+  instead of silently treating it as "refund everything." `backend/Code.gs` is gitignored and
+  never committed, so none of these four are directly checkable from this repo. The closest
+  tracked evidence is `docs/handoffs/stripe-actions-backend.gs` (an AS-BUILT reference pulled
+  from live Code.gs on 2026-07-09), which documents idempotency-keyed charge calls and an
+  `invoiceSealOk_` integrity re-check on `stripeChargeInvoice_` — consistent with (1)/(2) — but
+  it explicitly does **not** reproduce `stripeRefundInvoice_` verbatim, so (3)/(4) have no
+  citable source in this repo. **Gap: no handoff doc captures the refund-side fixes** — worth
+  asking for one (or a live Code.gs diff) before treating them as fully proven here.
+
+---
+
 ## 1. Goal & Problem
 
 **What this area is for.** Invoicing/Payments is the money spine of Rental Wrangler. Every other card (Rentals, Shop/WOs, Memberships, Customers) eventually *bills into* an invoice, and an invoice is the only place money is collected, recorded, or returned. It turns the priced rental window, the billable work order, and the membership enrollment into a single customer‑facing document with a subtotal, Louisiana sales tax, a due date, an aging status, and a payment/refund history.
@@ -60,9 +131,16 @@ Anchors: `APP-04` (`app.js:841`, derivations/pricing), `APP-05` (`app.js:942`, e
 
 ### 2.2 Partial / parked
 
+> **[2026-07-09] STATUS FLIP — SHIPPED, not parked.** `PARTIAL_REFUNDS_ENABLED = true` as of
+> today (`app.js:6702`); the backend now honors `amountCents` per
+> `docs/handoffs/partial-refunds-backend.md`. The row below is left as written (it accurately
+> describes the pre‑flip state) with the flip called out here rather than rewritten — see
+> "Shipped status (2026‑07‑09)" above for the full picture and the one open caveat (no tracked
+> "verified on a real invoice" writeup).
+
 | Capability | State | Where |
 |---|---|---|
-| **Per‑line / partial refunds** | **Built client‑side, GATED OFF** | `PARTIAL_REFUNDS_ENABLED = false` `app.js:5548`. The refund‑allocation UI (`refundSectionHtml`, `setupRefundAlloc`, `resolveRefund`, `itemRefunded/itemRefundable/lineFullyRefunded`) exists; flag stays false until the backend honors `amountCents` on `recordManualRefund` / `stripeRefundInvoice`. ALL environments share ONE backend + Stripe, so sending a partial now would over‑refund REAL money. |
+| **Per‑line / partial refunds** | ~~Built client‑side, GATED OFF~~ **SHIPPED LIVE (2026‑07‑09)** | `PARTIAL_REFUNDS_ENABLED = true` `app.js:6702` (was `false` `app.js:5548` when this spec was written). The refund‑allocation UI (`refundSectionHtml`, `setupRefundAlloc`, `resolveRefund`, `itemRefunded/itemRefundable/lineFullyRefunded`) is live; `refundInvoiceFlow` (`app.js:18184`) now sends the cap‑validated `amountCents` + per‑line split to `recordManualRefund` / `stripeRefundInvoice`. |
 | **Per‑line payment allocation** | **Shipped** | `allocLines`/`allocSectionHtml`/`setupPayAlloc`/`allocCharge`; `inv.allocations { lid: preTaxDollars }`. |
 | **ACH micro‑deposit verify** | Shipped, but "store now / verify later" | bank lands `verified:false`; charging gated on `verified`. |
 
@@ -73,7 +151,7 @@ Anchors: `APP-04` (`app.js:841`, derivations/pricing), `APP-05` (`app.js:942`, e
 - No scheduled/auto‑charge (every charge is a manual Office/Admin tap).
 - No dunning automation (aging tiers are computed + colored, but no automated reminders — see `comms-notifications`).
 - No write‑off / bad‑debt status (an invoice can sit in `Collections` forever; nothing retires it short of refund).
-- No partial **refund** in production (gated, §2.2).
+- ~~No partial **refund** in production (gated, §2.2).~~ **[2026-07-09] SHIPPED** — see §2.2 and "Shipped status (2026‑07‑09)" above; `PARTIAL_REFUNDS_ENABLED = true`.
 
 ---
 
@@ -142,7 +220,7 @@ Schema‑less Sheets row mirrored as a JS object. Fields observed in live code/s
 
 | Field | Owner | Type | Meaning |
 |---|---|---|---|
-| `invoiceId` | id | string | `invoiceId(iso, seq)` → e.g. `INV.06.07.26.001`; seed uses short `NNiDDMmYY`. |
+| `invoiceId` | id | string | `invoiceId(iso, seq)` → e.g. `INV.06.07.26.001`; seed uses short `NNiDDMmYY`. **[2026-07-09] STALE EXAMPLE** — live format is now `##MMDDYY` (e.g. `228JY0826`, pill `228JY`), month‑first with a per‑month counter; legacy ids still parse (`invoiceShort`, `config.js:555`). See "Shipped status (2026‑07‑09)" above. |
 | `customerId` | client | string | FK → customer (nullable on a fresh draft). |
 | `rentalIds` | client | string[] | FKs → rentals billed (a series chunk lists one). |
 | `date` | client | ISO | invoice date. |

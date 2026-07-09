@@ -215,6 +215,10 @@ This is acceptable for a small trusted team behind one password, but it means **
 - There is **no customer self-service / row-isolated tenant build today** — the whole DB loads for every signed-in operator. A customer portal (out of scope here; `mobile-remote` area) would need true row-level isolation, which the current "load everything" model does not provide.
 
 ### 3.4 Money / pricing-floor gating at the data layer
+> **[DEVIATED — partial]** Money-*action* gating is now server-enforced (§3.2, OQ-1 shipped
+> 2026-07-09). The field-level `load`-payload redaction question below (OQ-6) is a separate,
+> narrower question and is **not** confirmed shipped — this table still describes the current
+> (client-hide-only) exposure for the fields themselves.
 - `bottomDollar` and `msrp`/`askPrice` (category pricing floors, `data.js:25`) ride in the `categories` entity and are **loaded for every role** — visibility is gated *only* client-side (the margin/floor display gate lives in the rendering areas, not here). The backend ships them to everyone. **OQ-6:** should the floor fields be stripped from the `load` payload for sub-`money` tiers (server-side redaction), or is client-side hide sufficient given §3.2?
 - Money-moving actions (`stripeChargeInvoice`, `recordManualPayment`, …) are gated by `canMoney` client-side. Per §3.2, server-side enforcement is OQ-1.
 
@@ -398,7 +402,7 @@ All money (tax 10.75%, aging tiers, 28-day series, allocations) is derived in `A
 - Optional ambient sync pulse (OQ-9) and/or admin Health plate (OQ-10).
 
 ### Phase 3 — Hardening (only if Jac wants the trust boundary tightened)
-- Server-side tier enforcement and/or per-role passwords (OQ-1).
+- Server-side tier enforcement and/or per-role passwords (OQ-1). **[SHIPPED 2026-07-09]** — live via `role-tiers-backend.gs`; see "Shipped status" above.
 - Server-side floor-field redaction for sub-`money` tiers (OQ-6).
 - Append-only server audit log (OQ-8).
 - Signed/expiring Drive media URLs (OQ-7).
@@ -446,13 +450,13 @@ Concrete, testable. CI-gate impact noted; recall port 8000 → **9147** before r
 | R4 | **Lost concurrent edit** — last-clean-writer-wins drops a field another user set on the same record. | High | record-level clean-check; OQ-11 (field-level merge for money) |
 | R5 | **50k cell jam** — one bloated record aborts the all-or-nothing `sync`. | High | offload-to-Drive + `holdOversized` (§2.6) |
 | R6 | **Id collision** across devices (two offline quotes minting the same id). | Medium | time-salted ids (`R-NEW…`, `app.js:14826`); reindex by id |
-| R7 | **Authorization bypass** — a password-holder POSTs a money/admin action their UI hides. | Medium (by-design today) | client gates are UX; OQ-1 for server enforcement |
+| R7 | **Authorization bypass** — a password-holder POSTs a money/admin action their UI hides. | **[DEVIATED — SHIPPED 2026-07-09]** Lower than before (was Medium/by-design) | server-side tier enforcement is now live (`role-tiers-backend.gs`, OQ-1 shipped — see "Shipped status" above); residual: per-ACTION tier maps still need adding for new Phase-2 actions as they land |
 | R8 | **GAS quota / cold-start latency** stalls login or sync. | Medium | defensive parse; backoff; `health` probe (OQ-4) |
 | R9 | **Backend/frontend version skew** after a partial deploy. | Medium | probe fallback today; `backendVersion` (OQ-2) |
 | R10 | **Audit trail loss** — a record's `actions[]` is overwritten by a sync, losing who-did-what. | Low/Medium | append-only server audit (OQ-8) |
 | R11 | **Refresh disrupts active work** (mid-drag/mid-type adoption). | Low | extensive guards in `refreshFromBackend` (§2.4) — keep them |
 | R12 | **Double-charge** — a money action returns an *ambiguous* failure (`http-500` mid-charge) and the client re-fires it. | Critical | money actions are NEVER on the sync-backoff retry path (§5.4); an ambiguous charge result surfaces to the operator, who confirms before re-charging; Stripe idempotency keys (OQ-14) would harden this |
-| R13 | **Password compromise** — the single shared password leaks; the only revocation is rotating it for the whole team. | High | rotate-and-redeploy (OQ-13); no per-device revocation today |
+| R13 | **Password compromise** — the single shared password leaks; the only revocation is rotating it for the whole team. | **[PARTIALLY DEVIATED 2026-07-09]** Lower than before (was High) | per-role passwords are now live — a compromised role's password can be rotated without disrupting the others (partial OQ-13 fix); still no per-device session revocation, and `saveSession_` has no Script Properties expiry (parked finding from the 2026-07-09 audit) |
 | R14 | **Offline write queue is in-memory only** — un-flushed dirty edits live in JS memory; a tab crash (not a clean close) before `beforeunload` fires loses them. | Medium | `beforeunload` flush + unsaved-changes prompt (§2.5) covers clean close; a true offline-durable queue (IndexedDB) is `frontend-performance` scope, OQ-15 |
 | R15 | **`migrateCustomers` boot-storm** — a legacy DB dirties many records on first load, triggering one large `sync` that could brush the 50k/batch limits. | Low | one-shot `saveSoon` (§4.3) + `holdOversized` isolation; warned-once oversize tracking |
 
@@ -464,7 +468,7 @@ Concrete, testable. CI-gate impact noted; recall port 8000 → **9147** before r
 
 > Seed list: none captured in the code-grounding map — all questions below were generated from the live code. Each is a real fork with trade-offs for Jac to settle.
 
-**OQ-1 — Authorization: keep the single team password (client-side gates only), or enforce tiers server-side?**
+**OQ-1 — Authorization: keep the single team password (client-side gates only), or enforce tiers server-side? [SHIPPED 2026-07-09]** Resolved to option (b)/(c) and deployed — per-role passwords + server-side tier enforcement are live (`role-tiers-backend.gs`). See "Shipped status" above. What remains open is narrower: per-ACTION tier maps for new Phase-2 actions as they land.
 Today one password gates everything and the server trusts the client to hide money/admin actions (§3.2, D3). Options: (a) **keep as-is** — simplest, fine for a small trusted team, but client gates are UX not security; (b) **per-role passwords** — the `auth` action returns a tier, each action checks it server-side; (c) **a single password + server-side tier check on sensitive actions only** (`stripe*`, `setConfig`, `seed`). Trade-off: (b)/(c) are real security but add `Code.gs` complexity and a credential-management burden. *Recommend surfacing before any "wants" area assumes the gate.*
 
 **OQ-2 — Add an explicit `backendVersion`/capability action, or keep probing "unknown action"?**
@@ -500,10 +504,10 @@ Record-level last-writer-wins (§7.2) is fine for most entities but two operator
 **OQ-12 — Fix D1 (the `wranglerComment` label drift) in this area's spec, or defer to `wrangler-ai`?**
 It's a backend `Code.gs` fix (remove `wrangler-needs-jac` on answer) that lives at this seam but belongs conceptually to `wrangler-ai`. Recommend fixing here (it's small, additive, and this area owns `Code.gs` deploy) but tracking it under both.
 
-**OQ-13 — Password lifecycle: is rotate-and-redeploy an acceptable revocation story, or do we need per-device/per-role credentials?**
+**OQ-13 — Password lifecycle: is rotate-and-redeploy an acceptable revocation story, or do we need per-device/per-role credentials? [PARTIALLY SHIPPED 2026-07-09]** Option (b), per-role passwords, is live (ties to OQ-1, shipped) — a compromised/departed role's password can now be rotated without disrupting the other roles. Option (c), a device-session registry with server-side revoke, is not confirmed built; the 2026-07-09 backend audit's one remaining open finding (`saveSession_` has no Script Properties expiry) is directly related — see "Shipped status" above.
 Today the only way to revoke access (a lost phone, a departed hand) is to change the single team password and have everyone re-enter it. There is no per-device session kill. Options: (a) **keep rotate-only** — dead simple, fine until headcount/turnover grows; (b) **per-role passwords** (ties OQ-1) — lets you revoke a role without disrupting others; (c) a **device-session registry** (`saveSession`/`getSession` already exist) with a server-side revoke list. Trade-off: (b)/(c) are real `Code.gs` work and a credential-management burden for a 1-admin shop. *Surface before any field-device rollout.*
 
-**OQ-14 — Should money actions carry a Stripe idempotency key to make a retry safe?**
+**OQ-14 — Should money actions carry a Stripe idempotency key to make a retry safe? [PARTIALLY ADDRESSED 2026-07-09]** The 2026-07-09 backend audit shipped a narrower, related fix: `recordCharge_` now no-ops on a repeat call for an already-recorded PaymentIntent instead of re-inflating `amountPaid`. The full per-charge idempotency-key scheme described below is still open.
 Today money actions are simply kept off the auto-retry path (R12) and an ambiguous result surfaces to the operator. A Stripe **idempotency key** (a per-charge nonce the backend forwards to Stripe) would make even an accidental re-fire a no-op, hardening against double-charge at the source. Cost: the frontend mints a nonce per charge attempt and the `Code.gs` charge handler forwards it; small, additive, and strictly safer. *Recommend yes for `stripeChargeInvoice` / `recordManualPayment` if/when the charge path is next touched.*
 
 **OQ-15 — Do we want a durable (IndexedDB) offline write queue, or is the in-memory queue + `beforeunload` prompt enough?**
@@ -518,8 +522,8 @@ Un-flushed dirty edits live only in JS memory; a clean close is covered by the `
 
 ### 12.2 What this area depends on
 - **`wrangler-ai`** — shares the `Code.gs` deploy surface and owns the inbox actions (D1/OQ-12); the `wrangler` proxy action lives here but is authored there.
-- **`comms-notifications`** — the team-chat (`getChats/setChats`) and wrangler-rail sync ride this layer; any new outbound channel (server-side SMS/email) is a new additive action here.
-- **`memberships`** — `membershipEnroll/Cancel/Reactivate` are additive actions on this seam.
+- **`comms-notifications`** — the team-chat (`getChats/setChats`) and wrangler-rail sync ride this layer; any new outbound channel (server-side SMS/email) is a new additive action here. **[DEVIATED — see "Shipped status" above]** stage-1 scoping shipped 2026-07-08; the privacy-hardening fix (closing the unscoped-fallback bypass) is prepared but not deployed, blocked on a frontend branch.
+- **`memberships`** — `membershipEnroll/Cancel/Reactivate` are additive actions on this seam. **[incident, now re-SHIPPED — see "Shipped status" above]** these were live 2026-06-25, silently regressed 11 minutes later, and were root-caused + redeployed 2026-07-09.
 - **`security-cameras`** — if camera stream URLs/credentials are ever stored, they pass through this contract (and raise a fresh secret-handling question).
 - **`design-system`** — the R25 banner and any new plate must run through `/jactec-ui` + the R-rulebook.
 

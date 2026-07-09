@@ -23,6 +23,76 @@ These resolve the §11 Open Questions.
 
 ---
 
+## Shipped status (2026-07-09)
+
+Status-marker convention used below: **SHIPPED/LIVE**, **PLANNED**, **DEVIATED**.
+This section is a reality-check pass — it annotates, it does not replace, §2/§8 below.
+
+- **INCIDENT — Phase-2 billing cron regression, found + fixed today.** §5.4/§8 describe
+  `membershipBillingCron` as "PROPOSED, not built" — that text is now **stale**. It (and
+  `membershipEnroll_`/`membershipCancel_`/`membershipReactivate_`) actually **shipped live
+  as v46 on 2026-06-25**, then was **silently deleted 11 minutes later by v48** (a same-day
+  redeploy built from a stale pre-merge `Code.js` snapshot that didn't include the new
+  block). The regression sat undetected for two weeks. Root-caused 2026-07-09 by pulling the
+  Apps Script REST API's version history and binary-searching for the exact version the
+  functions disappeared. **Re-spliced and redeployed live (v84)**; the daily trigger installer
+  was renamed `installMembershipBillingCron` (dropped the trailing underscore — Apps Script's
+  editor hides any `_`-suffixed function from its manual-Run picker, which had made the
+  original installer unrunnable from the UI) and re-run. End-to-end dispatch check today
+  confirms enroll/cancel/reactivate are live and money-gated correctly and the trigger is
+  installed. **Impact check: zero.** The live dataset shows zero `MINV-` invoices, zero
+  `membership:true` invoices, and zero customers with any app-driven billing field
+  populated from the outage window — the feature had no organic usage in its 11-minute
+  live window, so no customer was ever double-billed or left unbilled. **Net effect: §5.4's
+  Phase-2 cron is now SHIPPED/LIVE**, not proposed — see the inline tags below. (Full
+  write-up: `docs/handoffs/membership-billing-additions.gs`, header + `docs/handoffs/
+  audit-2026-07-09-parked-findings.md` item 19 and its 2026-07-09 follow-up entry.)
+
+- **Idempotency hardening (2026-07-09) — a DIFFERENT code path, not §5.1's enroll idempotency.**
+  `membershipActivate_`'s Stripe idempotency key (part of the older, **dormant**
+  Stripe-*Subscription* membership system — `membershipActivate_` / `membershipDailySweep` /
+  `stripeWebhook_` — which this spec does **not** otherwise document, since the shipped/live
+  engine described here is the app-driven one) was scoped to the calendar day
+  (`todayIso_()`); a retry that crossed midnight got a different key, so Stripe treated it as
+  a new request — a real duplicate-subscription risk. Fixed by dropping the day-scoping
+  entirely; Stripe's own ~24h idempotency window now governs key reuse correctly. This does
+  **not** touch or resolve §5.1's enroll idempotency gap or **OQ #12** (client- vs
+  server-owned idempotency token for `membershipEnroll`) — that remains open; the live
+  `membershipEnroll_` still writes a fresh invoice on every call with no existing-cycle
+  check. (Source: `docs/handoffs/backend-audit-2026-07-09-final-6-fixes.gs`, item #14.)
+
+- **UI reorg (customers-crm, 2026-07-08) — extends D5, DEVIATED from §6's diagram.**
+  `membershipSectionHtml` (§2.1, §6.1) was **retired**. Membership + Used Sales were folded
+  into one Rental-∣-Equipment-Sales funnel toggle on the customer card; membership
+  state/economics now render via `membershipMetaHtml` inside the Rental funnel body, and the
+  lifecycle actions (Cancel / Pay-Cancellation / Print Agreement) now render via
+  `membershipActionsHtml` **inside the account-level agreement popup** (`o.kind ===
+  'agreement'`), alongside the enroll trigger D5 already moved there. Money gates are
+  preserved verbatim (`canMoney()`, same handlers). This is primarily a `customers-crm.md`
+  concern; flagged here because it invalidates §6's card-diagram and the `app.js` anchors in
+  §2.1's Membership-card-section row. See inline `[DEVIATED]` tags below.
+
+- **Cron system-actor note (OQ #13).** The live cron calls `stripeChargeInvoice_` as a direct
+  in-process function call (not through the `handle()` HTTP action router), passing `'Owner'`
+  only as an attribution label for ledger/history rows — there is no separate authorization
+  gate for it to bypass, since `membershipBillingCron` is absent from the dispatch table and
+  reachable only via the installed time-trigger. That satisfies §3.2's "not reachable from the
+  interactive `backendCall` surface" requirement. Whether a dedicated narrow "billing-system"
+  capability (OQ #13 option (a)) is still wanted for cleaner blast-radius separation, versus
+  today's synthetic-actor-label approach (option (b)), remains **open** — not resolved by
+  today's fix.
+
+- **Backlog cross-check — do not conflate.** `backlog.md` still lists **"#4 Memberships —
+  needs detail"** as parked/unspecified ("state machine? member pricing gating? renewals /
+  Paid-Until? unlimited transport?"). Those four concepts are the **Phase-1 engine**
+  capabilities §2.1 already marks shipped (`membershipStatus`'s 5-state machine,
+  `isActiveMember`'s pricing gate, `paidUntil`, `unlimitedTransport`) — already-shipped
+  reality, not backlog #4's ask. Backlog #4 is a **separate, still-unscoped** future task and
+  is **not** touched or resolved by today's incident fix or hardening; this pass does not
+  attempt to give it detail.
+
+---
+
 ## 1. Goal & Problem
 
 ### 1.1 What this area is for
@@ -69,7 +139,7 @@ system **as canon** — what exists, where, and what is explicitly deferred.
 | Rental Protection (rental side) | `rentalProtectionRate()`, `rentalProtectionAmount(r)` | `app.js:3190–3196` | Account-level surcharge = % of the rental's **equipment** subtotal; members **and** non-members. |
 | Economics (F7) | `membershipFeeRevenue`, `membershipEconomics`, `membershipEconomicsHtml` | `app.js:3203–3239` | Fee revenue, member-rate vs retail counterfactual, derived discount + net. Internal-only. |
 | Cancellation Invoice lookup | `membershipCancellationInvoice(c)` | `app.js:3241–3244` | Finds the outstanding `membershipCancellation` invoice with a balance. |
-| Membership card section (F6) | `membershipSectionHtml(c)` | `app.js:3246–3278` | Lifecycle badges, grace countdown, plan/add-on badges, economics, money-gated actions. |
+| Membership card section (F6) | `membershipSectionHtml(c)` | `app.js:3246–3278` | **[DEVIATED 2026-07-08 — see "Shipped status" above]** Retired by the customers-crm funnel reorg; split into `membershipMetaHtml` (state/economics, now in the Rental funnel body) + `membershipActionsHtml` (lifecycle actions, now in the account-level agreement popup). Money gates unchanged. |
 | Enroll/cancel/reactivate orchestration (F5) | `openMembershipEnroll`, `memApplyActive`, `membershipEnrollCommit`, `membershipCancel`, `membershipReactivate` | `app.js:3298–3389` | Demo path (client-side) + PROD path (backend-wired). |
 | Enroll overlay UI | `renderOverlay → o.kind === 'membershipEnroll'` | `app.js:8989–9032` | Plan seg, add-on toggles, start date, auto-renew, live tote, ignition Enroll button. |
 | `WINDOW_CATALOG` entry | `membershipEnroll` | `app.js:9826` | Catalogued popup (passes `ci/check-window-catalog.mjs`). |
@@ -98,7 +168,7 @@ called** today (`app.js:3334 / 3352 / 3385`). The contract is described in §5.
 
 | Deferred item | Why / where it goes |
 |---|---|
-| **Auto-renewal billing cron** (`membershipBillingCron`) | The recurring per-cycle charge is designed (prior-art §5) but **not deployed**. `autoRenew` is captured but no server time-trigger advances `paidUntil`. **This is the single biggest gap** — see §8 Phase 2. |
+| **Auto-renewal billing cron** (`membershipBillingCron`) | **[SHIPPED/LIVE 2026-07-09 — this row is now stale, kept for history]** Originally deployed 2026-06-25 (v46), silently deleted 11 min later by a bad splice (v48), undetected for two weeks, root-caused + re-spliced + redeployed live (v84) on 2026-07-09; daily trigger installed. No customer impact from the outage window (zero organic usage). See "Shipped status (2026-07-09)" above and §5.4/§8 below. |
 | **$2,000/mo Rental Protection damage-claim accounting** | Cap is surfaced informationally only; claim draw-down/reset lives on a separate branch `memberships/protection-claims`. |
 | **Public website self-enrollment** | Backend actions are designed as a reusable seam; no public UI. |
 | **Dunning beyond 7-day grace** | Escalating SMS/email reminders route through `area/comms-notifications`. |
@@ -308,7 +378,7 @@ Response (consumed `app.js:3386`): `{ ok, status:'active', charge }`.
   success set `accountType` back to Member, `paidUntil = commitmentEnd`,
   `prepaid = true` (rides to term, no further charges).
 
-### 5.4 `membershipBillingCron` (PROPOSED — Phase 2, not built)
+### 5.4 `membershipBillingCron` (**SHIPPED/LIVE as of 2026-07-09, v84** — see "Shipped status" above; below kept as the design record)
 
 A daily Apps Script **time-trigger** (additive, ships via `/clasp`):
 1. Find members where `paidUntil <= today` AND `prepaid !== true`.
@@ -386,6 +456,13 @@ corner rivets, with a **light ranch seasoning in the copy** ("Saddle Up — Enro
 "Membership active — saddle up! ✓").
 
 ### 6.1 Membership section on the customer card (F6, `app.js:3246`)
+
+> **[DEVIATED 2026-07-08]** This diagram documents the pre-reorg combined section. The
+> customers-crm funnel reorg retired `membershipSectionHtml` and split it: badges/economics
+> now live in the Rental-side funnel body, and the `[ Saddle Up — Enroll ]` / `[ Cancel ]` /
+> `[ Pay Cancellation ]` / `[Print Agmt]` row now lives in the account-level agreement popup
+> (`membershipActionsHtml`). See "Shipped status (2026-07-09)" above; kept below as the
+> original design record.
 
 ```
 ┌─ MEMBERSHIP ──────────────────────────────┐
@@ -572,7 +649,7 @@ Protection (rental side + account toggle), economics block, Cancellation-Invoice
 reactivation, funnel "Signed" relabel, backend-wired enroll/cancel/reactivate,
 demo + PROD dual path.
 
-### Phase 2 — Auto-renewal billing (PROPOSED, the headline gap)
+### Phase 2 — Auto-renewal billing (**SHIPPED/LIVE 2026-07-09, v84** — see "Shipped status" above; text below is the original design record)
 - `membershipBillingCron` daily time-trigger (§5.4): per-cycle invoice + charge,
   `paidUntil` advance, Past Due → grace → Lapse automation, `autoRenew` roll at term.
 - Attributed, append-only History on **every** charge (success AND decline) +
@@ -652,6 +729,13 @@ demo + PROD dual path.
 ## 11. Open Questions
 
 > **Resolved 2026-06-29:** OQ #2 → D1 (cron; prior-art decided) · OQ #3 → D2 (amend agreement, no proration) · OQ #5 → D3 (auto-renew OFF) · OQ #16/#1 → D4 (keep Sales authority, now server-enforced) · **+ D5 placement fix (sign-up moves to the account-level agreement popup).** Adopted: grace 7d, narrow cron actor, server idempotency, economics never customer-facing, revenue rolls into the ring. See the Decisions block up top.
+>
+> **Confirmed 2026-07-09:** OQ #2's D1 choice (app-driven cron) is now **actually deployed and
+> live** (v84), not just decided — see "Shipped status (2026-07-09)" above. Still genuinely
+> open, unaffected by today's fixes: OQ #3 (proration text vs. code — the amend-agreement half
+> of D2 hasn't shipped), OQ #12 (enroll idempotency owner — the app-driven `membershipEnroll_`
+> still has no existing-cycle dedupe), and OQ #13 (dedicated system-actor capability vs. the
+> live code's synthetic `'Owner'` attribution label — see the cron system-actor note above).
 
 1. **Admin vs. Office money authority.** UI gate today is `canMoney()` (the `money`
    tier and above — Office, **Sales** (see OQ #16), Manager, Admin, Owner-bridge).
@@ -661,7 +745,9 @@ demo + PROD dual path.
    out.) **— surface, don't silently loosen.** (The specific Sales-tier inclusion is
    OQ #16.)
 
-2. **Billing automation model (Phase 2).** Three forks:
+2. **Billing automation model (Phase 2).** [Resolved via D1 (cron); **confirmed live/deployed
+   2026-07-09, v84** — see "Shipped status" above. Kept below as the original design record.]
+   Three forks:
    (a) app-driven daily **cron** (prior-art choice, no webhooks, simple, but charges
    only run when the script trigger fires);
    (b) **lazy on-open** billing (charge when staff opens the account — no trigger,
@@ -721,7 +807,10 @@ demo + PROD dual path.
     keying is authoritative but needs the server to read existing invoices first.)
     Same question applies to the Phase-2 cron's per-cycle keying.
 
-13. **System-actor authority shape (Phase 2).** The cron must charge without an
+13. **System-actor authority shape (Phase 2).** [**Still open as of 2026-07-09** — the live
+    cron uses option (b), a synthetic `'Owner'` attribution label, not a dedicated capability;
+    see the cron system-actor note in "Shipped status (2026-07-09)" above. Not resolved by
+    today's incident fix.] The cron must charge without an
     interactive money-role user (§3.2). Do we (a) give the Apps Script project a
     dedicated narrow "billing-system" capability that can ONLY run renewal-charge +
     lapse, or (b) reuse the money path with a synthetic actor flag? (a) is safer
