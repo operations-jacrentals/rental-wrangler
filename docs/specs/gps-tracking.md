@@ -551,18 +551,20 @@ score = 100 - clamp( w_speed*speedingEvents + w_harsh*harshEvents , 0, 100 )   /
 
 ## 9. Acceptance Criteria
 
-- [ ] A unit with a valid `gpsDeviceId` and a fresh fix renders `gpsStatus: Reporting` (green) **set by the feed**, plus a "Last seen" stamp — with no human touching the field.
-- [ ] A device silent past `staleMinutes` flips the unit to `Not Reporting` automatically; the existing `gps-offline` red flag fires and colors the unit pill — **no flag-code change**.
-- [ ] A unit with blank `gpsDeviceId` is untouched by the feed and renders exactly as today.
-- [ ] `gpsSnapshot` / `gpsHealth` / `gpsTestConn` responses **contain no GPSWOX token** and no secret-shaped string (assert in a logic test that greps the serialized response).
-- [ ] `gpsConfig` (or the folded `setConfig`) and `gpsTestConn` **reject** a session-only password and require the **admin** password; `gpsSnapshot` requires (only) a valid session password and rejects an empty/wrong one. (Gate test — both the accept and the reject path.)
-- [ ] A **sub-money-tier** caller's `gpsSnapshot` for an **on-rent** unit returns **no exact `lat/lng`** (status + `site` only); a money+ caller gets coords. (Field-trim gate test, per the §11.15 decision.)
-- [ ] A simulated provider-fetch failure leaves every unit's `gpsStatus`/position **unchanged** (no fleet-wide flip to `Not Reporting`) and only sets `gpsHealth.lastError`. (Resilience test.)
-- [ ] Settings → Integrations shows live health ("Last poll …") and a working Test-connection without revealing the secret.
-- [ ] `dispatchTruckPos` uses live position when present, falls back to last-done-stop when not — the dispatch map never blanks on a missing feed.
-- [ ] (Phase 2) A machine moved outside its fence sets `gpsStray`, surfaces the red stray banner, and Acknowledge clears the nag.
-- [ ] (Phase 3) Driving Score ring shows a real number; `KPI_HELP` text updated.
-- **CI gates:** `node ci/smoke.mjs` + `node ci/logic-test.mjs` pass (add logic tests for §7.1 derivation + the no-token assertion + the admin-pw gate). New Tracking popup ⇒ **`ci/check-window-catalog.mjs`** updated. New buttons/pills/banner ⇒ **`gen-rule-usage`** regenerated (drop `--check`). New chapter banner (if a GPS chapter is added to app.js) ⇒ **`tools/gen-code-map.mjs`** regenerated. Cache-bust `?v=` bumped on deploy. Port 8000→9147 swap before running gates.
+> **[2026-07-09] Checked against the shipped app.** Checkboxes below reflect the shipped WranglerGPS architecture, not the literal GPSWOX mechanism each line describes — see each note.
+
+- [x] A unit with a valid `gpsDeviceId` and a fresh fix renders `gpsStatus: Reporting` (green) **set by the feed** — SHIPPED, differently: `gpsProvider`+`gpsDeviceId` join key, client-derived from the live snapshot's freshness (`<6h`), not server-written.
+- [x] A device silent past `staleMinutes` flips the unit to `Not Reporting` automatically; `gps-offline` fires with no flag-code change — SHIPPED, with different thresholds (`<72h` Verify, older/absent Not Reporting).
+- [x] A unit with blank `gpsDeviceId` is untouched by the feed and renders exactly as today — SHIPPED (blank = unmapped = "No GPS").
+- [ ] `gpsSnapshot` / `gpsHealth` / `gpsTestConn` responses **contain no GPSWOX token** and no secret-shaped string — N/A, none of these actions exist. Analogous property holds for the shipped `gpsToken` action (returns only a derived token, never the password) but is untested by this criterion's literal grep.
+- [ ] `gpsConfig` (or `setConfig`) and `gpsTestConn` reject a session-only password / require admin; `gpsSnapshot` requires a valid session password — N/A, none of these actions exist; not superseded by an equivalent gate (see "GPS Issues" — no per-role backend gate on shutdown either, a documented known limitation).
+- [ ] A sub-money-tier caller's `gpsSnapshot` for an on-rent unit returns no exact `lat/lng` — **NOT BUILT, and superseded by decision**: Jac's Decision D2 (§ "✅ Decisions — 2026-06-29 critique") opened exact coordinates to all staff, and the Phase 2 fleet views are explicitly all-roles (2026-07-08) — this criterion's premise was overridden, not missed.
+- [ ] A simulated provider-fetch failure leaves `gpsStatus`/position unchanged, only sets `gpsHealth.lastError` — PARTIAL: the shipped client falls back to the stored field ("Last known — live link down") rather than flipping status when the backend is unreachable (same intent), but there is no `gpsHealth.lastError` field or resilience test for it.
+- [ ] Settings → Integrations shows live health and a working Test-connection — **NOT BUILT** (still a note-only stub).
+- [ ] `dispatchTruckPos` uses live position when present, falls back to last-done-stop when not — **NOT BUILT** (still the unswapped v1 placeholder, confirmed at app.js:9602).
+- [ ] (Phase 2) A machine moved outside its fence sets `gpsStray`, surfaces the red stray banner, Acknowledge clears it — **NOT BUILT** (no geofencing/stray code exists).
+- [x] (Phase 3) Driving Score ring shows a real number; `KPI_HELP` text updated — SHIPPED, differently: fleet-level score, not per-driver (see §7.4 note above).
+- **CI gates:** — largely followed for what did ship: the six new GPS popups (`gpsConnect`, `gpsHealth`, `gpsFleet`, `gpsRoundup`, `gpsIssues`, `gpsUtilization`) each have a `WINDOW_CATALOG` entry and `data-r` stamps per the project's standing R-rulebook gate; `gpsMatchFleet`/`gpsUtilRollup` are unit-tested in `ci/logic-test.mjs`. No logic test exists for a "no secret in response" assertion (the §5 actions it targets were never built) or an admin-pw gate test (none of the shipped GPS actions are admin-gated — only `gpsToken`, which is role-gated more loosely, see the known-limitations note above).
 
 ---
 

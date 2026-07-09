@@ -495,7 +495,7 @@ Per the roadmap (`docs/specs/AREAS-ROADMAP.md` §2), Units / Fleet **depends on*
 - `invoicing-payments` — per-unit billing line `unitId`.
 - `maintenance-shop` — WOs/inspections/service hang off `unitId`; this card renders open-WO sections + the inspection segctl.
 - `financials-kpi` — Ready Rate / Healthy Fleet / Parts Breakeven read fleet/inspection state and unit economics.
-- `automated-pricing` — reads the category rates this area owns.
+- `automated-pricing` — reads the category rates this area owns. **Note (2026-07-09):** a "sale-price engine" also shipped (`salePricingCfg`/`salePriceSuggest`/`salePricingAutoApply`, `app.js:1824`–`1862`, tagged in-code as spec `automated-pricing` D1/D3, not this spec) that *writes* `bottomDollar`/`askPrice` — fields this spec's §4.2 lists as owned here. Manager+-gated (approve or full-auto mode); out of scope for this reconciliation pass, flagged only because it touches fields §3.3/§7.5 describe as this area's.
 - `gps-tracking` — consumes `gpsType/Placement/Status` and the `gps-offline`/`gps-verify` flags.
 - `fleet-spread` — would extend the single-yard unit spine across locations.
 

@@ -171,7 +171,7 @@ finding from the 2026-07-09 backend security audit, parked pending a design deci
 |---|---|---|---|
 | D1 | `wranglerComment` resume path ADDs `wrangler-fix` but does **not** remove `wrangler-needs-jac` → answered cards stay stuck "Needs your answer". Frontend `wranglerClearNeedsAnswer` is a local-only stopgap; a hard refresh re-surfaces it. | Open (needs `Code.gs` redeploy) | `docs/wrangler-inbox-backend.md:176` |
 | D2 | Backend has no schema/version stamp — the frontend can't detect "this backend predates action X" except by probing for an "unknown action" reply (see `attemptLogin` `auth` fallback, `app.js:16076`). | Open | §5.6 |
-| D3 | No server-side enforcement of role tiers — the password is a **single team password**; the `auth` action *returns* a role but no action is gated on it server-side. All authorization is client-side today. | Open / by-design? | §3 |
+| D3 | No server-side enforcement of role tiers — the password is a **single team password**; the `auth` action *returns* a role but no action is gated on it server-side. All authorization is client-side today. | **[DEVIATED — SHIPPED 2026-07-09]** Was Open/by-design; now resolved — per-role passwords + server-side tier enforcement are live (`role-tiers-backend.gs`). See "Shipped status" above and §3.2. | §3 |
 
 ---
 
@@ -190,6 +190,11 @@ finding from the 2026-07-09 backend security audit, parked pending a design deci
 Tiers come from the role-system redesign (`ROLE_TIERS`, `config.js:326`): `staff < money < manager < admin < developer`, compared by `tierRank`.
 
 ### 3.2 The central gate question — authorization is CLIENT-SIDE today (D3)
+> **[DEVIATED — SHIPPED 2026-07-09]** This section describes the pre-2026-06-26 state. Per-role
+> passwords + server-side tier enforcement (`role-tiers-backend.gs`) are now **live** — see
+> "Shipped status" above. The description below is kept as the historical rationale for D1;
+> its "authorization is client-side today" framing is superseded.
+
 **This is the single most important open decision in this spec.** Today:
 - A **single shared team password** gates *all* `backendCall`s. Anyone with it can call any action.
 - The `auth` action *returns* the caller's role (`attemptLogin`, `app.js:16076`) but the server does **not** refuse a `sync`/`stripeChargeInvoice`/`setConfig` based on tier — the *frontend* hides the affordance (`canMoney`, `adminUnlocked()`).
