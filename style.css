@@ -2899,6 +2899,7 @@ body { font-variant-numeric: tabular-nums; }
    rental, pay status that isn't Paid/Current. Slow + gentle, not the lint alarm. */
 @keyframes flagPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 .flag.alert, .pill.alert { animation: flagPulse 1.6s ease-in-out infinite; }   /* R9b flashing flags · R4b flashing pills */
+@media (prefers-reduced-motion: reduce) { .flag.alert, .pill.alert { animation: none; } }
 /* §12.1 rapid action entry: field left, R14 mode toggle right, under the active bar */
 .act-entry { display: flex; gap: 8px; align-items: center; }
 .act-entry .act-in { flex: 1; height: 28px; background: var(--bg-2); border: 1px solid var(--line);
@@ -3177,6 +3178,10 @@ body.is-phone .card[data-card="units"] .list { grid-template-columns: repeat(2, 
 .grp-hd::after { content: ''; flex: 1 1 auto; border-top: 1.5px dashed var(--sec, var(--line)); opacity: .5; }
 .grp-hd:hover .grp-label, .grp-hd:hover .grp-chev { filter: brightness(1.2); }
 @media (prefers-reduced-motion: reduce) { .grp-chev svg { transition: none; } }
+/* §2.7 Trips AUTO-RUN — an actionPill (R17) living inside the day header; the header's own
+   grip/chevron/label are already stamped Saira caps, so the button picks up the same voice
+   here (the builder itself stays plain body-font everywhere else it's used). */
+.grp-hd .pill.c-commit { flex: 0 0 auto; height: 17px; padding: 0 8px; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-size: 9.5px; cursor: pointer; }
 /* Red group header (Needs Attention / No Show / Unpaid / Collections / Late) — raw
    --red at this tiny 7.9px stamped size read illegible (Jac 2026-07-03). Same lighter
    mix as the danger card name, NO glow — a halo would blur type this small even worse. */

@@ -1843,6 +1843,136 @@ try {
       T.__state.settings.employees = preEmpP3;
     }
 
+    // §Trips Phase 3b (spec 2026-07-09 §2.7) — Auto-Run's deadline-repair pass. PURE fixture
+    // data only (leg durations + anchors) — the real optimizer call (DirectionsService) is
+    // reached ONLY from a live click (autoRunDay in app.js) and never exercised here, so this
+    // suite never makes a network call.
+    {
+      const START = T.AUTORUN_DAY_START_SEC, BUF = T.AUTORUN_LOAD_BUFFER_SEC;
+      const mk = (id) => ({ id });
+      const arrivalsFor = (legs) => { const out = []; let t = START; legs.forEach((l) => { t += l; out.push(t); t += BUF; }); return out; };
+
+      // 1) NO ANCHORS AT ALL — the optimizer's own order is returned untouched.
+      {
+        const order = [mk('a'), mk('b'), mk('c')];
+        const legs = [600, 500, 700];
+        const r = T.autoRunRepair(order, legs, [], BUF);
+        ok(r.order.map((s) => s.id).join(',') === 'a,b,c', 'AUTORUN-repair: no anchors → the pure optimizer order is preserved exactly');
+        ok(r.violations.length === 0, 'AUTORUN-repair: no anchors → no violations');
+        const exp = arrivalsFor(legs);
+        ok(r.arrivals.every((v, i) => v === exp[i]), 'AUTORUN-repair: arrivals[] match the position-indexed leg+buffer math');
+      }
+
+      // 2) ANCHOR RESPECTED — already on-time in the natural order → never touched.
+      {
+        const order = [mk('a'), mk('b'), mk('c')];
+        const legs = [600, 500, 700];
+        const arr = arrivalsFor(legs);
+        const anchors = [{ stopId: 'c', deadline: arr[2] + 3600 }];   // an hour of slack — comfortably on time
+        const r = T.autoRunRepair(order, legs, anchors, BUF);
+        ok(r.order.map((s) => s.id).join(',') === 'a,b,c', 'AUTORUN-repair: an anchor already on-time is left exactly where the optimizer put it');
+        ok(r.violations.length === 0, 'AUTORUN-repair: an on-time anchor never appears in violations');
+      }
+
+      // 3) VIOLATION PULLED EARLIER — a late anchor is pulled to a slot that satisfies it.
+      {
+        const order = [mk('a'), mk('b'), mk('c')];
+        const legs = [600, 500, 700];
+        const arr = arrivalsFor(legs);
+        const anchors = [{ stopId: 'b', deadline: arr[0] }];   // late at its natural slot 1; fits at slot 0
+        const r = T.autoRunRepair(order, legs, anchors, BUF);
+        ok(r.order[0].id === 'b', 'AUTORUN-repair: a late anchor is pulled to the earliest slot that satisfies its deadline');
+        ok(r.violations.length === 0, 'AUTORUN-repair: pulling it earlier resolves the violation entirely');
+        ok(r.order.map((s) => s.id).sort().join(',') === 'a,b,c', 'AUTORUN-repair: every stop still present after the reorder — nothing dropped');
+      }
+
+      // 4) UNSATISFIABLE DEADLINE — still late even at the front of the run → flagged, never silently shipped.
+      {
+        const order = [mk('a'), mk('b'), mk('c')];
+        const legs = [600, 500, 700];
+        const arr = arrivalsFor(legs);
+        const anchors = [{ stopId: 'c', deadline: arr[0] - 1 }];   // earlier than the FIRST possible arrival — impossible
+        const r = T.autoRunRepair(order, legs, anchors, BUF);
+        ok(r.order[0].id === 'c', 'AUTORUN-repair: an unsatisfiable anchor is still pulled to the front — the earliest a truck could possibly get there');
+        ok(r.violations.length === 1 && r.violations[0].stopId === 'c', 'AUTORUN-repair: an unsatisfiable deadline is flagged, never silently shipped late');
+        ok(r.violations[0].projectedArrival === arr[0], 'AUTORUN-repair: the violation reports the BEST-CASE front-of-run arrival, not the original unmoved one');
+      }
+
+      // 5) MULTIPLE ANCHORS, both satisfiable together — earliest-deadline-first ordering.
+      {
+        const order = [mk('a'), mk('b'), mk('c'), mk('d'), mk('e')];
+        const legs = [300, 300, 300, 300, 300];
+        const arr = arrivalsFor(legs);
+        const anchors = [
+          { stopId: 'd', deadline: arr[1] },   // fits at slot 1
+          { stopId: 'b', deadline: arr[0] },   // tighter — only fits at slot 0
+        ];
+        const r = T.autoRunRepair(order, legs, anchors, BUF);
+        ok(r.order[0].id === 'b' && r.order[1].id === 'd', 'AUTORUN-repair: multiple anchors resolve earliest-deadline-first — the tighter promise claims the earlier slot');
+        ok(r.violations.length === 0, 'AUTORUN-repair: both anchors satisfied together, no violations');
+        ok(r.order.map((s) => s.id).sort().join(',') === 'a,b,c,d,e', 'AUTORUN-repair: all five stops still present after a multi-anchor repair');
+      }
+
+      // 6) MULTIPLE ANCHORS, genuinely conflicting — one wins its slot, the loser is flagged (never dropped).
+      {
+        const order = [mk('a'), mk('b'), mk('c'), mk('d')];
+        const legs = [300, 300, 300, 300];
+        const arr = arrivalsFor(legs);
+        // 'a' is fine right where the optimizer put it (slot 0); 'c' is late and can ONLY fit at
+        // slot 0 too — pulling c to the front necessarily bumps a back into lateness.
+        const anchors = [{ stopId: 'a', deadline: arr[0] }, { stopId: 'c', deadline: arr[0] }];
+        const r = T.autoRunRepair(order, legs, anchors, BUF);
+        ok(r.order[0].id === 'c', 'AUTORUN-repair: conflict — c was actually late in the natural order and gets pulled to the front');
+        ok(r.violations.length === 1 && r.violations[0].stopId === 'a', 'AUTORUN-repair: the side-effect violation on a (bumped back by c\'s pull) is still caught, not silently dropped');
+      }
+    }
+
+    // §Trips Phase 3b anchor derivation — a SET time is the hard anchor; blank falls back to
+    // the nominal end-of-business-day (every trip passed in already belongs to the day being run).
+    {
+      const trips = [{ id: 't1', time: '9:00 AM' }, { id: 't2', time: '' }, { id: 't3', time: '1:30 PM' }];
+      const byId = Object.fromEntries(T.autoRunAnchorsFor(trips).map((a) => [a.stopId, a.deadline]));
+      ok(byId.t1 === 9 * 3600, 'AUTORUN-anchors: a set "9:00 AM" time → a 9:00 AM deadline');
+      ok(byId.t3 === 13 * 3600 + 1800, 'AUTORUN-anchors: a set "1:30 PM" time → a 1:30 PM deadline');
+      ok(byId.t2 === T.AUTORUN_EOD_DEADLINE_SEC, 'AUTORUN-anchors: no set time → the nominal end-of-business-day safety net');
+    }
+
+    // §Trips Phase 3b row flag — an R9b alert flag rides the row after an Auto-Run pass. Pure
+    // DOM-string rendering (tripRowHTML) only — no card render / map mount, so this never risks
+    // touching the live Google Maps bootstrap.
+    {
+      const trips = T.tripsFor();
+      const anyOpen = trips.find((x) => !x.done);
+      ok(!!anyOpen, 'AUTORUN-row fixture: at least one not-done trip exists in the demo seed');
+      if (anyOpen) {
+        const preFlags = T.__state.autoRunFlags;
+        T.__state.autoRunFlags = { [anyOpen.id]: { reason: 'unpinned' } };
+        let html = T.tripRowHTML(anyOpen);
+        ok(/data-r="R9b"/.test(html) && html.includes('No Pin'), 'AUTORUN-row: an unpinned stop renders a stamped R9b alert flag reading "No Pin"');
+        T.__state.autoRunFlags = { [anyOpen.id]: { reason: 'deadline', deadline: 9 * 3600, projectedArrival: 10 * 3600 } };
+        html = T.tripRowHTML(anyOpen);
+        ok(/data-r="R9b"/.test(html) && html.includes('Late'), 'AUTORUN-row: a deadline violation renders a stamped R9b alert flag reading "Late"');
+        const otherTrip = trips.find((x) => x.id !== anyOpen.id);
+        if (otherTrip) ok(!T.tripRowHTML(otherTrip).includes('data-r="R9b"'), 'AUTORUN-row: a flag on one trip never bleeds onto another trip\'s row');
+        T.__state.autoRunFlags = preFlags;
+      }
+    }
+
+    // §Trips Phase 3b tripSetTime — the ONE materialize path shared by the row's own dt-time
+    // input and Auto-Run's apply step, so both write through identically to the Phase 3 store.
+    {
+      const t = T.tripsFor().find((x) => !x.done);
+      if (t) {
+        const wrote = T.tripSetTime(t.day, t.id, '11:45 AM');
+        ok(wrote === true, 'AUTORUN-tripSetTime: materializes a found trip and returns true');
+        const after = T.tripsFor().find((x) => x.id === t.id && x.day === t.day);
+        ok(!!after && after.time === '11:45 AM', 'AUTORUN-tripSetTime: the trip reads back the written time');
+        const missed = T.tripSetTime(t.day, 'NOT-A-REAL-TRIP-ID', '9:00 AM');
+        ok(missed === false, 'AUTORUN-tripSetTime: an unknown trip id returns false and writes nothing');
+        localStorage.removeItem('jactec.trips');   // cleanup — don't leak into any later test
+      }
+    }
+
     return out;
   });
 

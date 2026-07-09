@@ -1382,11 +1382,14 @@ function loadGoogleMaps() {
     if (mapsReady()) return google.maps;
     await new Promise((res, rej) => {
       const s = document.createElement('script');
-      s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&libraries=places&loading=async`;
+      // §2.7 Auto-Run (spec 2026-07-09) needs google.maps.DirectionsService, which lives in
+      // the 'routes' library under the modern importLibrary loader — added here (the ONE
+      // shared bootstrap call) alongside 'places', never a second script tag.
+      s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&libraries=places,routes&loading=async`;
       s.async = true; s.onload = res; s.onerror = () => rej(new Error('maps-load'));
       document.head.appendChild(s);
     });
-    if (window.google && google.maps && google.maps.importLibrary) { try { await Promise.all([google.maps.importLibrary('maps'), google.maps.importLibrary('places'), google.maps.importLibrary('marker')]); } catch (e) {} }
+    if (window.google && google.maps && google.maps.importLibrary) { try { await Promise.all([google.maps.importLibrary('maps'), google.maps.importLibrary('places'), google.maps.importLibrary('marker'), google.maps.importLibrary('routes')]); } catch (e) {} }
     return mapsReady() ? google.maps : null;                       // only "loaded" if the services we actually use are up
   })().then((g) => { afterMapsLoad(g); return g; }).catch(() => { afterMapsLoad(null); return null; });
   return _mapsPromise;
@@ -2104,6 +2107,7 @@ const state = {
   mobileCol: 0,               // §M1 — which column the phone shows (0 Yard · 1 Rentals · 2 Customers); drives swipe position + the per-column bottom strip
   calSearch: '',               // Trips card mini-search (calendar is card-stateless — no session.cards.calendar — so this rides on state directly)
   calOpenTrip: null,           // §2.2b cab sheet — the ONE trip row expanded to its unit-facts sheet (row-body tap toggles; second tap collapses)
+  autoRunFlags: null,          // §2.7 Auto-Run — { [tripId]: {reason:'unpinned'|'deadline', deadline?, projectedArrival?} }, session-only report on the last run (never a stored record field)
   woPartForm: null,           // woId whose "+ Add Part/Labor" inline form is open
   invLineForm: null,          // invoiceId whose "+ Add Custom" inline form is open
   invMergePick: null,         // invoiceId whose "Merge invoice" picker is open (consolidate unpaid bills)
@@ -5635,6 +5639,7 @@ const ROWS = {
         <input class="dt-time js-disp-time" data-id="${esc(t.id)}" data-day="${esc(t.day)}" value="${esc(t.time || '')}" placeholder="—:—" maxlength="8" aria-label="Stop time" data-tip="Set the stop time — reorders the run" />
         ${townHtml}
         <span class="spacer"></span>
+        ${autoRunFlagHtml(t)}
         ${t.done ? badge('Done', 'green') : ''}
         ${menuBtn}
       </div>
@@ -7385,6 +7390,13 @@ const GROUP_DEFS = {
       ];
     },
     groupSuffix: (group) => { const done = group.filter((t) => t.done).length; return done ? `${done} done` : ''; },
+    // §2.7 Auto-Run — one button per RUNNABLE day (never 'Earlier', a mixed bag of past days
+    // with no single day to run), and only while the group still has work left to sequence.
+    headerExtra: (group, key) => {
+      if (key === 'Earlier' || !group.some((t) => !t.done)) return '';
+      const day = key === 'Today' ? TODAY_ISO : key === 'Tomorrow' ? addDaysISO(TODAY_ISO, 1) : key;
+      return actionPill('commit', 'Auto-Run', { js: 'js-autorun', data: { day } });
+    },
   },
 };
 // Collapsed groups, remembered per device: { "<card>:<groupKey>": true|false }. Absent = the
@@ -7461,7 +7473,8 @@ function appendGroupedSections(list, rows, cs, card) {
     hd.draggable = true;   // drag-to-reorder (native DnD — matches the dispatch-rail stop reorder pattern)
     hd.setAttribute('style', `--sec:var(--${sec.color})`);
     const suffix = def.groupSuffix ? def.groupSuffix(group) : '';   // e.g. Trips' "2 done" riding the count (spec §2.2)
-    hd.innerHTML = `<span class="grp-grip" data-tip="Drag to reorder">⠿</span><span class="grp-chev">${I.chevR}</span><span class="grp-label">${esc(sec.label || sec.key)} · ${group.length}${suffix ? ' · ' + esc(suffix) : ''}</span>`;
+    const extra = def.headerExtra ? def.headerExtra(group, sec.key) : '';   // e.g. Trips' per-day AUTO-RUN button (spec §2.7)
+    hd.innerHTML = `<span class="grp-grip" data-tip="Drag to reorder">⠿</span><span class="grp-chev">${I.chevR}</span><span class="grp-label">${esc(sec.label || sec.key)} · ${group.length}${suffix ? ' · ' + esc(suffix) : ''}</span>${extra}`;
     list.appendChild(hd);
     if (collapsed) continue;   // header only — cards hidden, and they don't consume the window
     const canShow = limit - shown;
@@ -9502,6 +9515,10 @@ function mountDispatchMap() {
   requestAnimationFrame(repaint); setTimeout(repaint, 250);
   refreshDispatchMap(mount.dataset.day || state.dispatchDay || TODAY_ISO, first);
 }
+// A stop/trip's resolved lat/lng — a stored sitePin wins, else the geocode cache (_dispGeo,
+// keyed by address). Shared by the map (below) AND §2.7 Auto-Run (which only optimizes
+// stops this resolves — an unpinned stop is excluded from the route call, never guessed at).
+const dispatchPinOf = (s) => (s.pin && Number.isFinite(s.pin.lat)) ? s.pin : _dispGeo[s.addr];
 function refreshDispatchMap(day, fit) {
   if (!_dispMap) return;
   const stops = dispatchDayStops(day), nextId = dispatchNextId(stops);
@@ -9514,15 +9531,14 @@ function refreshDispatchMap(day, fit) {
   const bounds = new google.maps.LatLngBounds(); bounds.extend(YARD_CENTER);
   _dispMarkers.push(new google.maps.Marker({ map: _dispMap, position: YARD_CENTER, title: 'JAC Yard · Sulphur', zIndex: 5,
     icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 5, fillColor: '#ff7a1a', fillOpacity: 1, strokeColor: '#1a1205', strokeWeight: 2 } }));
-  const posOf = (s) => (s.pin && Number.isFinite(s.pin.lat)) ? s.pin : _dispGeo[s.addr];
   const need = []; let placed = 0;
   stops.forEach((s) => {
-    const p = posOf(s);
+    const p = dispatchPinOf(s);
     if (p) { placeDispatchPin(s, p, s.id === nextId, stopDone(s)); bounds.extend(p); placed++; }
     else if (s.addr) need.push(s);
   });
   // the route path follows routeStops' OWN order (lane order under isolation, merged run otherwise)
-  const path = [YARD_CENTER, ...routeStops.map(posOf).filter(Boolean), YARD_CENTER];
+  const path = [YARD_CENTER, ...routeStops.map(dispatchPinOf).filter(Boolean), YARD_CENTER];
   _dispRoute = new google.maps.Polyline({ map: _dispMap, path, strokeColor: '#ff7a1a', strokeOpacity: .9, strokeWeight: 3 });   // straight legs — no Directions/quota
   _dispMarkers.push(new google.maps.Marker({ map: _dispMap, position: dispatchTruckPos(routeStops), title: 'Driver', zIndex: 999,
     icon: { path: google.maps.SymbolPath.CIRCLE, scale: 9, fillColor: '#18b6ff', fillOpacity: .22, strokeColor: '#18b6ff', strokeWeight: 2 } }));
@@ -9557,6 +9573,200 @@ async function dispGeocode(addr, day) {
   } catch (e) { /* geocode failed → the stop stays unplaced this pass; pinned/known stops still render, and a later refresh retries */ }
   finally { delete _dispGeoPending[addr]; }   // always clear pending so a failed lookup can retry
 }
+
+/* ── §2.7 AUTO-RUN (spec 2026-07-09 §2.7, plan Phase 3b) ──────────────────────
+   The day-header AUTO-RUN button (R17 blue commit — it rearranges, takes no money):
+   re-sequences each driver's not-done PINNED trips (+ the unassigned pool, as its OWN
+   run — never mixed with a driver's) into the most drive-efficient order via Directions
+   `optimizeWaypoints`, repairs that order against every deadline (autoRunRepair, pure —
+   see below), then writes the result straight into the SAME Phase 3 trips store the
+   dt-time/merge/split paths already write to (tripSetTime) — no parallel "auto-run
+   order" concept, so it's editable/reversible through the exact same controls a
+   dispatcher already has. A stop with no resolved lat/lng (dispatchPinOf) never reaches
+   the optimizer; it keeps its existing time and gets an R9b alert flag instead of being
+   silently skipped. The network call (DirectionsService) is reached ONLY from the live
+   button click — ci/logic-test.mjs exercises autoRunRepair directly with fixture leg
+   durations, never through here, so CI never makes a real Google Directions request. */
+const AUTORUN_DAY_START_SEC = 7 * 3600;       // 7:00 AM — nominal truck-leaves-the-yard time for a run
+const AUTORUN_EOD_DEADLINE_SEC = 17 * 3600;   // 5:00 PM — implied deadline for a same-day rental promise with no set time (see autoRunAnchorsFor)
+const AUTORUN_LOAD_BUFFER_SEC = 15 * 60;      // fixed load/unload dwell per stop (ramps, chains, walk-around)
+
+/* Materializes a trip's time exactly like the row's own dt-time input does (js-disp-time,
+   below) — ONE write path for "the trip's time changed", whether a dispatcher typed it or
+   Auto-Run computed it, so both are equally a normal, reversible edit to the Phase 3 store. */
+function tripSetTime(day, tripId, time) {
+  const trip = tripsFor().find((x) => x.id === tripId && x.day === day);
+  if (!trip) return false;
+  const store = tripsLS();
+  const dayStore = store[day] || (store[day] = {});
+  const cur = dayStore[tripId];
+  dayStore[tripId] = { time, order: cur ? cur.order : trip.stops.slice(), rev: (cur ? cur.rev || 0 : 0) + 1 };
+  tripsSaveDay(day, dayStore);
+  return true;
+}
+
+/* Deadline anchors for a day's runs (spec §2.7: "stops with a set time, AND stops belonging
+   to rentals with a start/end date that implies an arrival deadline"). Every trip passed in
+   already belongs to the day being run (tripsFor's own day field — a Deliver trip's rental
+   startDate or a Pick up trip's rental endDate), so a trip with NO set time still carries an
+   implied promise: it must go out sometime that business day. A set time (dt-time, `t.time`)
+   is the harder, tighter anchor; blank falls back to the nominal end-of-business-day — a
+   safety net that only ever bites a genuinely overloaded run, never a real per-stop
+   appointment. Pure — seconds-since-midnight in, seconds-since-midnight out. */
+function autoRunAnchorsFor(trips) {
+  return (trips || []).map((t) => {
+    const setMin = timeToMin(t.time);
+    return { stopId: t.id, deadline: setMin != null ? setMin * 60 : AUTORUN_EOD_DEADLINE_SEC };
+  });
+}
+
+/* §2.7 deadline-repair pass — PURE, no Google/network calls, fully unit-testable with
+   fixture data (ci/logic-test.mjs). `order` = the optimizer's proposed stop sequence
+   (objects carrying a stable `.id`, or plain id strings — either works). `legDurationsSeconds[i]`
+   = drive seconds to REACH POSITION i (from the yard if i===0, else from whatever occupies
+   position i-1) — POSITION-indexed, not stop-identity-indexed: DirectionsService returns the
+   legs of ONE route, not a full pairwise distance matrix, so reassigning a stop to an earlier
+   SLOT reuses that slot's already-known drive-time budget rather than guessing a brand-new
+   door-to-door distance. A useful side effect: the arrival time at a given POSITION becomes
+   fully determined by the leg durations + the buffer alone, independent of which stop ends up
+   there — which keeps this whole pass a small, deterministic, single construction (no
+   iterative "bump and recheck," so it can never oscillate/loop on a genuine conflict).
+   `anchors` = [{stopId, deadline}] (deadline = seconds since midnight the stop must arrive
+   by). `loadBufferSeconds` = the fixed dwell added at every stop before departing to the next.
+
+   Algorithm: find every anchor that's ALREADY late in the GIVEN `order` (never touch one
+   that's already on time — spec: "for any anchor whose accumulated-arrival time WOULD exceed
+   its deadline"); pull just those to the front, tightest-deadline-first (earliest-deadline-
+   first is the standard optimal/stable rule for single-track feasibility — a looser anchor
+   never steals a tighter one's slot); everything else keeps its natural relative order behind
+   them. Pulling one stop forward can still push a DIFFERENT, previously-fine anchor's arrival
+   later — the final violations pass re-checks EVERY anchor in its landed position, so a
+   newly-created conflict is always caught, never silently dropped. An anchor that's still late
+   even at the very front of the run is unsatisfiable: it's left at the front anyway (the
+   earliest a truck could possibly reach it) and reported as a violation — a late plan is
+   shown, never shipped as if it were on time. */
+function autoRunRepair(order, legDurationsSeconds, anchors, loadBufferSeconds) {
+  const idOf = (s) => (s && typeof s === 'object') ? s.id : s;
+  const buf = loadBufferSeconds || 0;
+  const natural = (order || []).slice();
+  const n = natural.length;
+  const legFor = (i) => (legDurationsSeconds && legDurationsSeconds[i]) || 0;
+  // position-indexed fixed arrival times (see the block comment above — independent of WHICH
+  // stop sits at a position, only of the position itself).
+  const arrPos = [];
+  { let t = AUTORUN_DAY_START_SEC; for (let i = 0; i < n; i++) { t += legFor(i); arrPos.push(t); t += buf; } }
+  const deadlineOf = new Map((anchors || []).filter((a) => a && a.stopId != null && a.deadline != null).map((a) => [a.stopId, a.deadline]));
+
+  const lateIds = new Set();   // anchors that are ALREADY late in the natural order — the only ones this pass ever moves
+  natural.forEach((s, i) => { const id = idOf(s); if (deadlineOf.has(id) && arrPos[i] > deadlineOf.get(id)) lateIds.add(id); });
+
+  let seq;
+  if (!lateIds.size) {
+    seq = natural;   // nothing late → the optimizer's order stands untouched (covers "no anchors" too)
+  } else {
+    const late = natural.filter((s) => lateIds.has(idOf(s))).sort((a, b) => deadlineOf.get(idOf(a)) - deadlineOf.get(idOf(b)));   // earliest-deadline-first
+    const rest = natural.filter((s) => !lateIds.has(idOf(s)));
+    seq = late.concat(rest);
+  }
+
+  const violations = [];
+  seq.forEach((s, i) => {
+    const id = idOf(s); if (!deadlineOf.has(id)) return;
+    const deadline = deadlineOf.get(id);
+    if (arrPos[i] > deadline) violations.push({ stopId: id, deadline, projectedArrival: arrPos[i] });
+  });
+  return { order: seq, violations, arrivals: arrPos.slice() };   // `arrivals[p]` — the caller writes these straight back as real clock times
+}
+
+// seconds-since-midnight → "9:00 AM" (matches the seed data's r.startTime shape; timeToMin parses it right back).
+function secToClock(totalSec) {
+  const totalMin = Math.round(totalSec / 60) % (24 * 60);
+  const h24 = Math.floor(totalMin / 60), m = totalMin % 60;
+  const ap = h24 < 12 ? 'AM' : 'PM';
+  let h12 = h24 % 12; if (h12 === 0) h12 = 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${ap}`;
+}
+
+/* R9b alert flag riding a trip row after an Auto-Run pass — 'unpinned' (excluded from the
+   optimizer, never reordered) or 'deadline' (repaired as best it could, still projected late).
+   Session-only (state.autoRunFlags, cleared/replaced on the NEXT Auto-Run for that day, and
+   per-stop on a manual time edit — js-disp-time below) — it's a report on the last run, not a
+   stored record field. */
+function autoRunFlagHtml(t) {
+  const f = state.autoRunFlags && state.autoRunFlags[t.id]; if (!f) return '';
+  if (f.reason === 'unpinned') return flagEl('No Pin', 'red', { alert: true, title: 'Auto-Run skipped this stop — no located address to route. Set a site pin (the transport editor), or move it manually.' });
+  return flagEl('Late', 'red', { alert: true, title: `Auto-Run couldn't fit this stop by its deadline (${secToClock(f.deadline)}) — best projected arrival ${secToClock(f.projectedArrival)}. Move it manually or adjust the day.` });
+}
+
+/* The AUTO-RUN click (§2.7): per DRIVER (+ the pool as its own run), 2+ pinned not-done stops
+   → DirectionsService optimizeWaypoints (yard → stops → yard) → autoRunRepair → write times.
+   Runs are independent per driver/pool — never merged into one optimized order. Every network
+   failure (REQUEST_DENIED, no key, offline) fails gracefully with a toast; never a raw console
+   error as the only signal, never a silent no-op. */
+async function autoRunDay(day) {
+  const dayTrips = tripsFor().filter((t) => t.day === day && !t.done);
+  if (!dayTrips.length) { toast('Nothing to Auto-Run — every stop today is already done.'); return; }
+
+  const g = await loadGoogleMaps();
+  if (!g || !mapsReady()) { toast("Auto-Run needs the live map, which is offline right now — see the map panel."); return; }
+  try { if (google.maps.importLibrary) await google.maps.importLibrary('routes'); } catch (e) { /* fall through to the hard check below */ }
+  if (typeof google.maps.DirectionsService !== 'function') { toast('Auto-Run needs Google Directions, which isn\'t available right now.'); return; }
+
+  const groups = new Map();
+  dayTrips.forEach((t) => { const k = t.driverId || 'pool'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(t); });
+
+  const svc = new google.maps.DirectionsService();
+  const flags = {};
+  const loggedRentals = new Set();
+  let ranAny = false, deniedAny = false;
+
+  for (const groupTrips of groups.values()) {
+    const pinned = groupTrips.filter((t) => dispatchPinOf(t));
+    const unpinned = groupTrips.filter((t) => !dispatchPinOf(t));
+    unpinned.forEach((t) => { flags[t.id] = { reason: 'unpinned' }; });
+    if (pinned.length < 2) continue;   // nothing to optimize for this run (spec: the optimizer call needs 2+ pinned stops)
+
+    let result;
+    try {
+      result = await svc.route({
+        origin: YARD_CENTER, destination: YARD_CENTER, travelMode: google.maps.TravelMode.DRIVING,
+        optimizeWaypoints: true,
+        waypoints: pinned.map((t) => ({ location: dispatchPinOf(t), stopover: true })),
+      });
+    } catch (e) { deniedAny = true; continue; }
+    const route = result && result.routes && result.routes[0];
+    if (!route || !Array.isArray(route.waypoint_order) || !Array.isArray(route.legs)) { deniedAny = true; continue; }
+    ranAny = true;
+
+    const optimized = route.waypoint_order.map((idx) => pinned[idx]);
+    const legSecs = route.legs.slice(0, optimized.length).map((l) => (l.duration && l.duration.value) || 0);
+    const anchors = autoRunAnchorsFor(optimized);
+    const { order: repaired, violations, arrivals } = autoRunRepair(optimized, legSecs, anchors, AUTORUN_LOAD_BUFFER_SEC);
+    violations.forEach((v) => { flags[v.stopId] = { reason: 'deadline', deadline: v.deadline, projectedArrival: v.projectedArrival }; });
+
+    repaired.forEach((t, i) => {
+      tripSetTime(day, t.id, secToClock(arrivals[i]));
+      const r = IDX.rental.get(t.rentalId);
+      if (r && !loggedRentals.has(r.rentalId)) { loggedRentals.add(r.rentalId); logAction(r, "Auto-Run reordered the day's run for a more efficient route"); }
+    });
+  }
+
+  // Replace only THIS day's flags (a stale flag from an earlier Auto-Run on a DIFFERENT day
+  // is left alone) — clear every trip we just considered, then merge in whatever's still flagged.
+  state.autoRunFlags = state.autoRunFlags || {};
+  dayTrips.forEach((t) => { delete state.autoRunFlags[t.id]; });
+  Object.assign(state.autoRunFlags, flags);
+  if (!Object.keys(state.autoRunFlags).length) state.autoRunFlags = null;
+
+  if (!ranAny) {
+    toast(deniedAny ? "Auto-Run couldn't reach Google Directions — try again in a moment." : 'Nothing to Auto-Run — need 2+ located stops in at least one run.');
+    return render();
+  }
+  const flagged = Object.keys(flags).length;
+  toast(`Auto-Run optimized the day's route${flagged ? ` — ${flagged} stop${flagged === 1 ? '' : 's'} flagged` : ''}.`);
+  render();
+}
+
 /** The status badge shown on an item tab (replaces the old datapoint sub-text). */
 function tabBadge(card, rec) {
   const b = (set, val) => { const s = getStatus(set, val); return badge(s.label, s.color); };
@@ -14956,6 +15166,10 @@ function onClick(e) {
   if (closest('.js-cardback')) { e.stopPropagation(); return cardBack(closest('.js-cardback').dataset.card); }
   if (closest('.js-cardfwd')) { e.stopPropagation(); return cardFwd(closest('.js-cardfwd').dataset.card); }
 
+  // §2.7 Trips AUTO-RUN — lives INSIDE a draggable, js-group-toggle-bearing day header, so
+  // this must be checked (and stopPropagation'd) before that generic toggle below.
+  if (closest('.js-autorun')) { e.stopPropagation(); autoRunDay(closest('.js-autorun').dataset.day); return; }
+
   if (closest('.js-group-toggle')) { const h = closest('.js-group-toggle'); e.stopPropagation(); toggleGroupCollapsed(h.dataset.card, h.dataset.group); return render(); }   // collapse/expand a card group (persists per device)
   if (closest('.js-showmore')) { const b = closest('.js-showmore'); e.stopPropagation(); const cs = activeSession().cards[b.dataset.card]; if (cs) { cs.listLimit = (cs.listLimit || VIRT_CAP) + SHOW_MORE_BATCH; render(); } return; }
   if (closest('.js-tolist')) { e.stopPropagation(); return cardToList(closest('.card').dataset.card); }
@@ -15912,14 +16126,7 @@ function onChange(e) {
     const tripId = e.target.dataset.id;
     const day = e.target.dataset.day || state.dispatchDay || TODAY_ISO;
     const v = e.target.value.trim();
-    const trip = tripsFor().find((x) => x.id === tripId && x.day === day);
-    if (trip) {
-      const store = tripsLS();
-      const dayStore = store[day] || (store[day] = {});
-      const cur = dayStore[tripId];
-      dayStore[tripId] = { time: v, order: cur ? cur.order : trip.stops.slice(), rev: (cur ? cur.rev || 0 : 0) + 1 };
-      tripsSaveDay(day, dayStore);
-    }
+    if (tripSetTime(day, tripId, v) && state.autoRunFlags) delete state.autoRunFlags[tripId];   // §2.7 — a dispatcher hand-setting the time resolves whatever Auto-Run last flagged here
     if (timeToMin(v) != null) render();   // a complete time re-sorts the trip within its day group
     return;
   }
@@ -18809,7 +19016,8 @@ function exposeTestApi() {
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
       companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, saveYardCapture, setRole: (r) => { currentRole = r || ''; render(); },
-      tripsLS, tripMerge, tripSplit, assignTripDriver, tripLabel, assignStopDriver,
+      tripsLS, tripMerge, tripSplit, assignTripDriver, tripLabel, assignStopDriver, tripSetTime,
+      autoRunRepair, autoRunAnchorsFor, secToClock, AUTORUN_DAY_START_SEC, AUTORUN_EOD_DEADLINE_SEC, AUTORUN_LOAD_BUFFER_SEC, dispatchPinOf,
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }
