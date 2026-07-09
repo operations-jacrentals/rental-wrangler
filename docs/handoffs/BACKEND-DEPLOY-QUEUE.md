@@ -7,6 +7,28 @@
 > with full deploymentConfig, immediate JSON probe) — see /clasp SKILL.md §AMENDED. The
 > editor click is the FALLBACK/recovery path, no longer the only go-live.
 
+## ⏳ PUSHED, AWAITING EDITOR DEPLOY — membership regression fix (2026-07-09)
+- **What:** re-splices the app-driven membership block (`membershipEnroll_`/`membershipCancel_`/
+  `membershipReactivate_`/`membershipBillingCron` + ~15 helpers + the 3 dispatch lines) that was
+  silently deleted in v48 (2026-06-25T23:21:35Z, 11 minutes after it first shipped in v46) — see
+  `docs/handoffs/membership-billing-additions.gs` for the full root-cause trace (pulled directly
+  from the Apps Script version history via the REST API, service account, read-only).
+- **Confirmed no retroactive cleanup needed:** pulled the live production dataset (2,245
+  customers, 185 invoices) and checked every angle — zero `MINV-` invoices, zero
+  `membership:true` invoices, zero customers with any app-driven billing field populated
+  (`paidCadence`/`commitmentStart`/`commitmentEnd`/`paidUntil`/`stripeSubId`). The feature had no
+  organic production usage in its 11-minute live window or since, so there's no missed-billing or
+  stuck-customer fallout to reconcile.
+- **Content pushed to HEAD** (service account, content-only, safe — does NOT affect the live
+  `/exec` URL): confirmed via a fresh HEAD read that all 5 membership markers are present and
+  `node --check` passes.
+- **REMAINING STEPS (Jac, editor):**
+  1. Apps Script editor → Deploy → Manage deployments → Edit the prod deployment → **New
+     version**, Execute as **Me (operations@jacrentals.com)**, Who has access **Anyone** → Deploy.
+  2. Run → `installMembershipBillingCron_` once (creates the daily 3am billing trigger — can't be
+     done via the API push, must run from the editor).
+  3. Verify: `curl -sS -L -H 'Content-Type: text/plain;charset=utf-8' --data '{"action":"auth","password":"__wrong__"}' "$EXEC_URL"` → expect `{"ok":false,"error":"unauthorized"}` (anonymous access intact).
+
 ## ✅ DEPLOYED — team-chat privacy (2026-07-08, Jac editor deploy)
 - **What:** `getChats_` / `setChats_` replaced with scoped + authorized versions (+ helpers
   `chatCanSee_` / `chatMergeMsgs_` / `chatMergeSeen_` / `chatAuthorizeWrite_`). Team-chat
