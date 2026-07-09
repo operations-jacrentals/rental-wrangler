@@ -219,8 +219,8 @@ Op shapes: `{op:'create'|'update'|'import'|'csv-import', entity, fields|rows|id}
 
 | Op | Gate | What it does |
 |---|---|---|
-| `billRental` | preview (consequential) | Builds the invoice from the **live pricing engine** (`createInvoiceForRental`) — never invents line items. Picks the customer's most-recent un-invoiced rental if no id. |
-| `recordPayment` | preview | Records **cash or check only** via `postManualPayment`; backend caps at the live balance. Never a card/ACH; never a refund. |
+| `billRental` | preview (consequential) — **[+ 2026-07-09] `canMoney()` required first, or refused before the preview is even offered** | Builds the invoice from the **live pricing engine** (`createInvoiceForRental`) — never invents line items. Picks the customer's most-recent un-invoiced rental if no id. |
+| `recordPayment` | preview — **[+ 2026-07-09] `canMoney()` required first, or refused before the preview is even offered** | Records **cash or check only** via `postManualPayment`; backend caps at the live balance. Never a card/ACH; never a refund. |
 | `startRental` | **`autoApply:true`** | Creates a Reserved booking honoring the human gates (fleet-Active, blacklist, overbooking, valid window); brings the user to the rental. Agreement + payment stay separate human steps. |
 | *(no others)* | — | Standalone invoices, refunds, card charges, ACH are **refused**. |
 
@@ -402,7 +402,7 @@ A single bottom-right **`.wrangler-dock`** (`app.js:11686`). Header bar, request
 
 The dock is **steel-panel** chrome with the safety-orange accent reserved for the send/ignition control. The voice is the **ranch twist done right** — *"wrangling an answer"*, *"🤠 Done — …"*, *"Mr. Wrangler's on it"* — leather-tan seasoning lives in copy, not a western skin.
 
-### 6.2 R-rulebook stamps (existing + needed)
+### 6.2 R-rulebook stamps (existing + needed) `[RESOLVED + SHIPPED 2026-07-09 — see below and §11.Q7]`
 
 Existing stamped controls: `js-kpi-refine` `data-r="R17"` (`app.js:3833`), `js-req-approve` `data-r="R17"`, `js-req-dismiss` `data-r="R18"` (`app.js:7672`). **Any new or changed Wrangler control MUST carry a `data-r` stamp** and pass the R0 flash-lint + `gen-rule-usage --check`. 
 
