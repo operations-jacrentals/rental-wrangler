@@ -1,9 +1,24 @@
 /* ════════════════════════════════════════════════════════════════════════
+ * ⚠ UNVERIFIED AS OF 2026-07-09 — this file's header claims "DEPLOYED LIVE
+ * 2026-06-25 (version 46)", but a live Code.gs read via the Drive connector
+ * that day found ZERO occurrences of membershipEnroll_, membershipCancel_,
+ * membershipReactivate_, membershipBillingCron, or MEM_TERM_MONTHS anywhere
+ * in the bound script — only the older Stripe-Subscription membershipActivate_
+ * path exists live. Either the deployed web-app version differs from the
+ * bound-script content this read saw (Apps Script versioning — a deploy can
+ * be pinned to an older version than the editor's current content), or the
+ * app-driven membership system documented below is NOT actually live despite
+ * this header. Flagged to Jac (#552 audit follow-up, 2026-07-09) — do not
+ * trust the "DEPLOYED LIVE" claim below until that's confirmed one way or
+ * the other. The gate-name correction (MONEY_ROLES → roleMoneyOk_) below is
+ * still applied for whenever this does get deployed for real.
+ * ════════════════════════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════════════════════════
  * MEMBERSHIP — app-driven billing backend. DEPLOYED LIVE 2026-06-25 (version 46)
  * to the prod deployment via clasp. This file is the tracked, secret-free record of
  * the code that is live in Code.gs (which is gitignored). Reconciled against the real
  * backend helpers (readRecord_/writeRecord_/computeInvoiceCents_/stripeChargeInvoice_/
- * appendLedger_/getConfigObj/ss()/tryLock_/todayIso_/TAX_RATE_SERVER/MONEY_ROLES).
+ * appendLedger_/getConfigObj/ss()/tryLock_/todayIso_/TAX_RATE_SERVER/roleMoneyOk_).
  *
  * NOTE: the backend ALSO has a separate, dormant Stripe-SUBSCRIPTION membership system
  * (membershipActivate_ / membershipDailySweep / stripeWebhook_). Per Jac (2026-06-25) we
@@ -11,9 +26,9 @@
  * the two never overlap.
  *
  * ── DISPATCH (spliced into handle(), right after the membershipActivate line ~184) ──
- *   if (action === 'membershipEnroll')     return json(MONEY_ROLES[role] ? membershipEnroll_(body, role)     : { ok:false, error:'forbidden' });
- *   if (action === 'membershipCancel')     return json(MONEY_ROLES[role] ? membershipCancel_(body, role)     : { ok:false, error:'forbidden' });
- *   if (action === 'membershipReactivate') return json(MONEY_ROLES[role] ? membershipReactivate_(body, role) : { ok:false, error:'forbidden' });
+ *   if (action === 'membershipEnroll')     return json(roleMoneyOk_(role) ? membershipEnroll_(body, role)     : { ok:false, error:'forbidden' });
+ *   if (action === 'membershipCancel')     return json(roleMoneyOk_(role) ? membershipCancel_(body, role)     : { ok:false, error:'forbidden' });
+ *   if (action === 'membershipReactivate') return json(roleMoneyOk_(role) ? membershipReactivate_(body, role) : { ok:false, error:'forbidden' });
  *
  * ── REMAINING MANUAL STEP: install the daily trigger (clasp run can't — no API-exec deploy).
  *   In the Apps Script editor: Run → installMembershipBillingCron_   (creates a daily 3am trigger)

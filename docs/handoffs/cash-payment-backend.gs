@@ -14,8 +14,12 @@
  * This file is the tracked source of truth — NO secrets. Two edits to Code.gs:
  *
  * EDIT 1 — dispatch (in handle(), right after the membershipActivate line):
- *   if (action === 'recordManualPayment') return json(MONEY_ROLES[role] ? recordManualPayment_(body, role) : { ok: false, error: 'forbidden' });
- *   if (action === 'recordManualRefund')  return json(MONEY_ROLES[role] ? recordManualRefund_(body, role) : { ok: false, error: 'forbidden' });
+ *   if (action === 'recordManualPayment') return json(roleMoneyOk_(role) ? recordManualPayment_(body, role) : { ok: false, error: 'forbidden' });
+ *   if (action === 'recordManualRefund')  return json(roleMoneyOk_(role) ? recordManualRefund_(body, role) : { ok: false, error: 'forbidden' });
+ *
+ * CONFIRMED against the live Code.gs (Drive read, 2026-07-09): both dispatch
+ * lines already use roleMoneyOk_ in production — this file was stale (still
+ * showed the pre-migration MONEY_ROLES[role] form), now corrected to match.
  *
  * EDIT 2 — paste the two functions below (anywhere top-level; e.g. after the
  * Stripe section). They reuse existing helpers: readRecord_, writeRecord_,
