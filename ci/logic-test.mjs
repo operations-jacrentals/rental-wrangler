@@ -2188,6 +2188,66 @@ try {
       T.IDX.category.delete(cat.categoryId);
     }
 
+    // === Bouncie trucks → Truck-category units (design note docs/superpowers/specs/
+    // 2026-07-09-bouncie-truck-units-design.md). gpsBounciePlan is PURE (no writes,
+    // no network — the fetch/normalize step is a thin wrapper exercised via the UI
+    // trigger, not here); gpsApplyBouncieTrucks is the write, mirroring gpsApplyMappings
+    // as a directly-testable primitive. ===
+    {
+      const mkV = (imei, extra) => ({ source: 'bouncie', imei, name: 'Truck ' + imei, make: 'Ford', model: 'F-150', ...extra });
+
+      // (a) PLAN — pure dedup: the already-mapped imei is excluded regardless of WHICH
+      // provider mapped it (dedup key is gpsDeviceId alone, per spec "any provider").
+      {
+        const vehicles = [mkV('BNC-1'), mkV('BNC-2'), mkV('BNC-3')];
+        const fixtureUnits = [{ unitId: 'U-BNCX', gpsProvider: 'Hapn', gpsDeviceId: 'BNC-2' }];
+        const plan = T.gpsBounciePlan(vehicles, fixtureUnits);
+        ok(plan.toCreate.length === 2 && plan.toCreate.every((v) => v.imei !== 'BNC-2'), 'bouncie plan: an imei already mapped (even under a different provider) is excluded from toCreate');
+        ok(plan.skip.length === 1 && plan.skip[0].imei === 'BNC-2', 'bouncie plan: the already-mapped vehicle lands in skip');
+      }
+
+      // (b) PLAN — a repeated imei within the SAME pull is only created once
+      {
+        const plan2 = T.gpsBounciePlan([mkV('BNC-DUP'), mkV('BNC-DUP')], []);
+        ok(plan2.toCreate.length === 1 && plan2.skip.length === 1, 'bouncie plan: a duplicate imei within one pull is created once, the repeat is skipped');
+      }
+
+      // (c)/(d) APPLY — the real write, end to end, including idempotent re-runs
+      {
+        const before = T.DATA.categories.filter((c) => c.name === 'Truck').length;
+        ok(before === 0, 'bouncie apply: no pre-existing Truck category in the demo fleet (test precondition)');
+
+        const res1 = T.gpsApplyBouncieTrucks([mkV('BNC-A1', { name: 'Yard Truck 1' }), mkV('BNC-A2', { name: 'Yard Truck 2' })]);
+        ok(res1.created === 2 && res1.skipped === 0, 'bouncie apply: both unmapped vehicles created, none skipped');
+
+        const cats = T.DATA.categories.filter((c) => c.name === 'Truck');
+        ok(cats.length === 1, 'bouncie apply: exactly one Truck category created');
+        const cat = cats[0];
+        ok(cat.rate1Day === undefined && cat.fuelType === undefined, 'bouncie apply: the Truck category has no rate/fuelType fields — genuinely unset, not zeroed (spec §1)');
+
+        const created = T.DATA.units.filter((u) => u.gpsDeviceId === 'BNC-A1' || u.gpsDeviceId === 'BNC-A2');
+        ok(created.length === 2 && created.every((u) => T.IDX.unit.get(u.unitId) === u), 'bouncie apply: both new units land in DATA.units and IDX.unit');
+        ok(created.every((u) => u.categoryId === cat.categoryId), 'bouncie apply: both units carry the Truck category id');
+        ok(created.every((u) => u.gpsProvider === 'Bouncie'), 'bouncie apply: gpsProvider is canonical-cased "Bouncie" (matches gpsApplyMappings/gpsConnectSave), not lowercase');
+        ok(created.every((u) => u.fleetStatus === 'Active'), 'bouncie apply: fleetStatus defaults to Active — no Inactive trick (spec §4)');
+        ok(created.every((u) => u.weight === undefined && u.serial === undefined && u.inspectionStatus === undefined), 'bouncie apply: no invented weight/serial/inspectionStatus (spec §5)');
+
+        // second pull: one already-onboarded imei + one genuinely new one
+        const res2 = T.gpsApplyBouncieTrucks([mkV('BNC-A1', { name: 'Yard Truck 1' }), mkV('BNC-B1', { name: 'Yard Truck 3' })]);
+        ok(res2.created === 1 && res2.skipped === 1, 'bouncie apply: second run creates only the new truck, skips the already-onboarded one');
+        ok(T.DATA.categories.filter((c) => c.name === 'Truck').length === 1, 'bouncie apply: the Truck category is NOT duplicated on a second run (idempotent)');
+        ok(res2.categoryId === cat.categoryId, 'bouncie apply: the second run reuses the SAME Truck category id');
+
+        // cleanup — the suite mutates shared DATA
+        ['BNC-A1', 'BNC-A2', 'BNC-B1'].forEach((imei) => {
+          const u = T.DATA.units.find((x) => x.gpsDeviceId === imei); if (!u) return;
+          T.IDX.unit.delete(u.unitId); const i = T.DATA.units.indexOf(u); if (i >= 0) T.DATA.units.splice(i, 1);
+        });
+        T.IDX.category.delete(cat.categoryId);
+        const ci = T.DATA.categories.indexOf(cat); if (ci >= 0) T.DATA.categories.splice(ci, 1);
+      }
+    }
+
     return out;
   });
 

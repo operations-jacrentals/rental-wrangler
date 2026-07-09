@@ -8447,6 +8447,7 @@ function bottomBarInner(opts = {}) {
     <button class="iconbtn js-gps-roundup" data-tip="Round Up Trackers — bulk-match the fleet to live GPS devices">${I.list}</button>
     <button class="iconbtn js-gps-issues" data-tip="GPS Issues — every tracker that needs attention">${I.alert}</button>
     <button class="iconbtn js-gps-utilization" data-tip="Fleet Utilization — real hours/miles per unit, from the trackers">${I.graph}</button>
+    <button class="iconbtn js-gps-bouncie-trucks" data-tip="Pull Bouncie Trucks — onboard any new Bouncie vehicle as a Truck-category unit">${CARD_ICON.units}</button>
     <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
     ${devUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
     <button class="iconbtn js-inspect${state.inspect ? ' on' : ''}" data-tip="Design Inspector — hover names the rule, click copies the reference">${I.search}</button>
@@ -15777,6 +15778,10 @@ function onClick(e) {
   }
   if (closest('.js-gpsi-refresh')) { e.stopPropagation(); if (gpsConfigured()) refreshGpsLive(); return; }
 
+  // Bouncie trucks → Truck-category units — a plain one-shot pull, not a wizard (spec
+  // docs/superpowers/specs/2026-07-09-bouncie-truck-units-design.md).
+  if (closest('.js-gps-bouncie-trucks')) { e.stopPropagation(); return gpsPullBouncieTrucks(); }
+
   // Phase 4 — Fleet Utilization (real provider-sourced actual-usage rollup)
   if (closest('.js-gps-utilization')) {
     e.stopPropagation();
@@ -19061,6 +19066,77 @@ async function gpsProviderDevices(provider) {
   }
 }
 
+/* ── BOUNCIE TRUCKS → UNITS (design note docs/superpowers/specs/2026-07-09-bouncie-
+   truck-units-design.md) ─────────────────────────────────────────────────────────
+   Trucks are just units of a 'Truck' category — no new entity, no fleetStatus trick,
+   no onboarding wizard (Jac rejected an over-built earlier draft). A plain one-shot
+   toolbar action: pull Bouncie's vehicle list, create a Truck category if missing,
+   and onboard any vehicle whose imei isn't already a unit's gpsDeviceId under ANY
+   provider (never double-onboard a truck that's already mapped some other way).
+   PLAN is pure (fetch/DOM-free) so it's directly unit-testable; PULL does the I/O. */
+// `vehicles` = gpsNormalize('bouncie', raw) results; `units` = DATA.units (or a fixture).
+// Dedup key is gpsDeviceId alone, independent of provider — a truck could in theory
+// already be mapped through a different path, and re-onboarding it would fork the record.
+function gpsBounciePlan(vehicles, units) {
+  const mapped = new Set((units || []).filter((u) => u && u.gpsDeviceId).map((u) => String(u.gpsDeviceId)));
+  const toCreate = [], skip = [];
+  (vehicles || []).forEach((v) => {
+    if (!v || !v.imei) return;
+    if (mapped.has(String(v.imei))) { skip.push(v); return; }
+    mapped.add(String(v.imei));   // also guards two same-imei entries within one pull
+    toCreate.push(v);
+  });
+  return { toCreate, skip };
+}
+// THE WRITE — pure/sync (no network, no DOM), mirrors gpsApplyMappings as a directly
+// testable primitive. Creates the Truck category if missing (idempotent — a second
+// call finds the existing one by name and reuses it, never a duplicate) and one unit
+// per un-mapped vehicle. Returns a summary so the trigger below can toast honestly.
+function gpsApplyBouncieTrucks(vehicles) {
+  const { toCreate, skip } = gpsBounciePlan(vehicles, DATA.units);
+
+  let cat = DATA.categories.find((c) => c.name === 'Truck');
+  if (!cat) {
+    const cid = nextCategoryId();
+    cat = { categoryId: cid, name: 'Truck' };   // no rate1Day/rate7Day/rate4Wk/weekend/msrp/askPrice/bottomDollar/fuelType —
+    DATA.categories.push(cat); IDX.category.set(cid, cat); reindex('categories', cat);   // genuinely unset, same as any category missing that data
+    logAction(cat, 'Category added — Bouncie truck pull');
+  }
+
+  toCreate.forEach((v) => {
+    const uid = nextUnitId();
+    // fleetStatus 'Active' matches the normal new-unit default (quickAddUnitFromSearch/wrCreateUnit) —
+    // no Inactive trick, trucks show up in the Units card like everything else (spec §4).
+    // gpsProvider canonical-cased via gpsCanonProvider — gpsApplyMappings/gpsConnectSave are the
+    // documented "only writers" of this field and both fold to canonical case; matching that avoids
+    // a silent case mismatch (e.g. the connect-wizard's provider picker) for a THIRD writer.
+    const u = { unitId: uid, categoryId: cat.categoryId, name: v.name, make: v.make, model: v.model,
+      gpsProvider: gpsCanonProvider('bouncie'), gpsDeviceId: v.imei, fleetStatus: 'Active' };
+    DATA.units.push(u); IDX.unit.set(uid, u); reindex('units', u);
+    logAction(u, 'Added by Bouncie truck pull');
+  });
+
+  return { created: toCreate.length, skipped: skip.length, categoryId: cat.categoryId };
+}
+// The trigger (bottom toolbar button, §15 click handler) — fetch, normalize, write,
+// toast. Every path ends in an honest toast (never a silent no-op): not configured,
+// fetch failure (expected in offline/#local demo — no live GPS token), or a clean
+// created/skipped summary.
+async function gpsPullBouncieTrucks() {
+  if (!gpsConfigured()) { toast('GPS backend isn’t configured (GPS_BACKEND_URL).'); return; }
+  let raw;
+  try { raw = await gpsProviderDevices('bouncie'); }
+  catch (e) {
+    logErr('gps', 'bouncie truck pull: ' + ((e && e.message) || e));
+    toast('Couldn’t reach the GPS backend — check the connection and try again.');
+    return;
+  }
+  const vehicles = (Array.isArray(raw) ? raw : []).map((v) => gpsNormalize('bouncie', v)).filter(Boolean);
+  const res = gpsApplyBouncieTrucks(vehicles);
+  toast(`${res.created} truck${res.created === 1 ? '' : 's'} added${res.skipped ? `, ${res.skipped} already onboarded` : ''}.`);
+  if (res.created) render();
+}
+
 /* ── FLEET AUTO-MATCH (bulk-onboarding matcher · Phase 2 M4) ─────────────────────
    A PURE, side-effect-free function: given RW units and a live device snapshot (the
    gpsFleetStatus() shape), propose unit↔device mappings for the "Round Up Trackers"
@@ -20899,7 +20975,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, saveYardCapture, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsUtilRollup, logAction, setRole: (r) => { currentRole = r || ''; render(); },
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, saveYardCapture, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsUtilRollup, gpsBounciePlan, gpsApplyBouncieTrucks, nextCategoryId, nextUnitId, logAction, setRole: (r) => { currentRole = r || ''; render(); },
       tripsLS, tripMerge, tripSplit, assignTripDriver, tripLabel, assignStopDriver, tripSetTime,
       autoRunRepair, autoRunAnchorsFor, secToClock, AUTORUN_DAY_START_SEC, AUTORUN_EOD_DEADLINE_SEC, AUTORUN_LOAD_BUFFER_SEC, dispatchPinOf,
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
