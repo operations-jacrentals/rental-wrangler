@@ -1984,6 +1984,469 @@ try {
       T.IDX.invoice.delete(far.invoiceId); T.IDX.invoice.delete(cur.invoiceId);
     }
 
+    // §Trips (spec 2026-07-09) — derived trips, day buckets, and the §2.2b driver row
+    // actions (tel: link · town-parse · +Log via the SAME journey capture path, D7 stamp).
+    {
+      // derived generation: one trip per dispatch event, id = the stop id, done tracks the capture
+      const evs = T.dispatchEvents();
+      const trips = T.tripsFor();
+      ok(trips.length === evs.length, `TRIPS: one derived trip per dispatch event (${trips.length}/${evs.length})`);
+      const tMU = trips.find((x) => x.rentalId === 'R-MU' && x.unitId === 'U007');
+      ok(!!tMU && tMU.id === 'R-MU|U007|Deliver' && tMU.done === true, 'TRIPS: trip id = dispatchStopId; done follows the start capture');
+      ok(trips.every((x) => x.stops.length === 1 && x.stops[0].rentalId === x.rentalId), 'TRIPS: phase-1 derived trip carries exactly its own stop');
+      // §2.2b town parse: city = 2nd-from-last segment before the state; country dropped; fallback truncates
+      ok(T.tripTown('265 Callie Ln, Orange, TX, USA') === 'Orange', 'TRIPS-town: street, city, state, country → city');
+      ok(T.tripTown('Lake Charles, LA, USA') === 'Lake Charles', 'TRIPS-town: city, state, country → city');
+      ok(T.tripTown('1200 Ryan St, Lake Charles, LA') === 'Lake Charles', 'TRIPS-town: no country → still the city');
+      ok(T.tripTown('The old pit off Hwy 27') === 'The old pit off Hwy 27', 'TRIPS-town: no state shape → raw address falls through');
+      // §2.2b tel: link — formatted phone strips to +1 digits
+      ok(T.telHref('(337) 214-5001') === 'tel:+13372145001', 'TRIPS-call: "(337) 214-5001" → tel:+13372145001');
+      ok(T.telHref('') === '', 'TRIPS-call: blank phone → no href');
+      const tA = trips.find((x) => x.rentalId === 'R-A');
+      const rowA = T.tripRowHTML(tA);
+      ok(rowA.includes('href="tel:+13372145001"') && /data-r="R7"/.test(rowA), 'TRIPS-row: the customer phone rides the row as a stamped R7 tel: anchor');
+      ok(rowA.includes('js-trip-town') && rowA.includes('>⚠ Orange<'), 'TRIPS-row: destination = the town, ⚠ while unpinned');
+      ok(rowA.includes('js-yard') && rowA.includes('data-cap="start"') && rowA.includes('+Log Delivery'), 'TRIPS-row: not-done Deliver carries +Log Delivery on the journey js-yard path');
+      const rowMU = T.tripRowHTML(tMU);
+      ok(!rowMU.includes('js-yard') && /Logged 8:42 AM/.test(rowMU), 'TRIPS-row: done trip shows the capture clock instead of the action');
+      // §2.2b D7 — capture opened FROM THE ROW stamps the assigned leg driver (one code path)
+      const preEmp = T.__state.settings.employees;
+      T.__state.settings.employees = [{ id: 'EMPTRP', name: 'Row Hauler', role: 'Driver', phone: '', note: '' }];
+      // R0 lint regression (Phase 5, 2026-07-09): a single-stop trip's +Driver anchor
+      // (js-stop-driver, unassigned) is wrapped in a stamped catr-slot BUTTON, but the
+      // R0 flash-lint checks the .add-field SPAN itself, not an ancestor — it had no
+      // data-r of its own and pulsed red under body.rw-lint on a live Trips card.
+      const unassignedRowA = T.tripRowHTML(tA);
+      ok(/class="add-field anchor" data-r="R5b"/.test(unassignedRowA), 'TRIPS-row R0: js-stop-driver\'s +Driver anchor (single-stop, unassigned) carries its OWN data-r stamp, not just its wrapping button\'s');
+      const rMU = T.IDX.rental.get('R-MU');
+      const eu7 = T.unitEntry(rMU, 'U007');
+      const snap = { rec: eu7.recoveryDriverId, st: eu7.status, endEu: eu7.endCapture, endR: rMU.endCapture, prim: rMU.status };
+      eu7.recoveryDriverId = 'EMPTRP';
+      T.yardCapture('R-MU', 'end', 'U007');   // = the row's +Log Recovery tap
+      ok(T.__state.overlay && T.__state.overlay.kind === 'capture' && T.__state.overlay.cap === 'end' && T.__state.overlay.unitId === 'U007', 'TRIPS-log: the row action opens the journey capture overlay (one code path)');
+      T.saveYardCapture();
+      ok(!!eu7.endCapture && eu7.endCapture.driver === 'Row Hauler', 'TRIPS-log: capture from the row stamps the assigned leg driver (D7)');
+      ok(T.unitStatus(rMU, eu7) === 'Returned', 'TRIPS-log: the end capture moved the unit to Returned (same status path as the journey)');
+      // restore the demo seed exactly (status, captures, driver, roster)
+      eu7.endCapture = snap.endEu; rMU.endCapture = snap.endR; eu7.status = snap.st; eu7.recoveryDriverId = snap.rec;
+      T.syncRentalPrimary(rMU); T.reindex('rentals', rMU);
+      T.__state.settings.employees = preEmp;
+      T.__state.overlay = null; T.__state.calOpenTrip = null;
+    }
+
+    // §Trips Phase 3 (spec 2026-07-09 §2.3) — trip materialization + merge/split.
+    // Two synthetic same-day Deliver trips (their OWN units[] array — the flat-field
+    // legacy shape has no deliveryDriverId/recoveryDriverId for assignStopDriver to
+    // read/write, so a real units[] entry is required to exercise the driver sync).
+    {
+      const day = T.TODAY_ISO;
+      const preEmpP3 = T.__state.settings.employees;
+      const mkTripRental = (id, unitId, custId, addr) => ({
+        rentalId: id, customerId: custId, unitId, categoryId: T.DATA.units.find((u) => u.unitId === unitId)?.categoryId || null,
+        rentalName: id, startDate: day, endDate: day, startTime: '9:00 AM', status: 'Reserved',
+        transportType: 'Delivery', deliveryAddress: addr, po: '', invoiceId: null, mock: true,
+        units: [{ unitId, status: 'Reserved', startHours: null, returnHours: null, startCapture: null, endCapture: null, fcCapture: null,
+          transportType: 'Delivery', deliveryAddress: addr, recoveryAddress: '', sitePin: null, transportMiles: null, transportDriveMin: null,
+          deliveryDriverId: null, recoveryDriverId: null }],
+      });
+      const trA = mkTripRental('TRIP-TEST-A', 'U004', 'C0009', '100 Test Rd, Merge City, TX, USA');
+      const trB = mkTripRental('TRIP-TEST-B', 'U024', 'C0016', '200 Test Rd, Merge City, TX, USA');
+      T.DATA.rentals.push(trA, trB); T.IDX.rental.set(trA.rentalId, trA); T.IDX.rental.set(trB.rentalId, trB);
+      T.reindex('rentals', trA); T.reindex('rentals', trB);
+      T.__state.settings.employees = [{ id: 'EMPMERGE', name: 'Merge Hauler', role: 'Driver', phone: '', note: '' }];
+
+      let trips = T.tripsFor();
+      const tA = trips.find((x) => x.rentalId === 'TRIP-TEST-A');
+      const tB = trips.find((x) => x.rentalId === 'TRIP-TEST-B');
+      ok(!!tA && !!tB && tA.day === day && tB.day === day && tA.stops.length === 1 && tB.stops.length === 1, 'TRIPS-P3 fixture: two same-day derived (unmaterialized) trips exist');
+
+      T.assignStopDriver('TRIP-TEST-A', 'U004', 'Deliver', 'EMPMERGE');   // A has a driver BEFORE the merge, so the sync is actually exercised
+
+      // MERGE: B's stop appends into A; A's time/driver are KEPT; B stops existing as its own trip
+      const okMerge = T.tripMerge(day, tA.id, tB.id);
+      ok(okMerge === true, 'TRIPS-P3 merge: tripMerge returns true');
+      trips = T.tripsFor();
+      const merged = trips.find((x) => x.id === tA.id && x.day === day);
+      ok(!!merged && merged.stops.length === 2 && merged.stops[0].rentalId === 'TRIP-TEST-A' && merged.stops[1].rentalId === 'TRIP-TEST-B', `TRIPS-P3 merge: the merged trip carries both stops in order (${merged && merged.stops.length})`);
+      ok(!trips.some((x) => x.id === tB.id), 'TRIPS-P3 merge: the source no longer exists as its own trip');
+      ok(merged.driverId === 'EMPMERGE', 'TRIPS-P3 merge: the merged trip shows the TARGET\'s driver');
+      const euB = T.unitEntry(trB, 'U024');
+      ok(euB.deliveryDriverId === 'EMPMERGE', 'TRIPS-P3 merge: the incoming leg is synced to the target driver (D6 — one fact, one place)');
+      ok(trA.actions.some((a) => /Trip merge/.test(a.text)) && trB.actions.some((a) => /Trip merge/.test(a.text)), 'TRIPS-P3 merge: logAction fires on BOTH the merged-into and merged-from rentals');
+
+      // R0 lint regression (Phase 5, 2026-07-09) — the multi-stop sibling of the
+      // js-stop-driver fix above: js-trip-driver's own +Driver anchor also had no
+      // data-r of its own. Briefly clear the driver so the anchor (not the assigned-
+      // driver badge) renders, then restore it — the split assertion further down
+      // expects B to still carry EMPMERGE.
+      ok(T.assignTripDriver(tA.id, day, null) === true, 'TRIPS-P3 R0-fixture: driver cleared off the merged trip so its +Driver anchor renders');
+      const unassignedMerged = T.tripRowHTML(T.tripsFor().find((x) => x.id === tA.id && x.day === day));
+      ok(/class="add-field anchor" data-r="R5b"/.test(unassignedMerged), 'TRIPS-row R0: js-trip-driver\'s +Driver anchor (multi-stop, unassigned) carries its OWN data-r stamp, not just its wrapping button\'s');
+      ok(T.assignTripDriver(tA.id, day, 'EMPMERGE') === true, 'TRIPS-P3 R0-fixture: driver restored to EMPMERGE (the split assertion below depends on it)');
+
+      // CROSS-DAY: a merge attempt against a different-day trip no-ops (never a silent accept)
+      const d3 = new Date(day + 'T00:00:00'); d3.setDate(d3.getDate() + 3);
+      const day2 = d3.toISOString().slice(0, 10);
+      const trC = mkTripRental('TRIP-TEST-C', 'U006', 'C0009', '300 Test Rd, Merge City, TX, USA');
+      trC.startDate = day2; trC.endDate = day2; trC.units[0].deliveryAddress = trC.deliveryAddress;
+      T.DATA.rentals.push(trC); T.IDX.rental.set(trC.rentalId, trC); T.reindex('rentals', trC);
+      const tC = T.tripsFor().find((x) => x.rentalId === 'TRIP-TEST-C');
+      ok(!!tC && tC.day === day2 && tC.day !== day, 'TRIPS-P3 fixture: a third trip exists on a DIFFERENT day');
+      const okCross = T.tripMerge(day, tA.id, tC.id);
+      ok(okCross === false, 'TRIPS-P3 cross-day: tripMerge refuses a cross-day pair (returns false, toasts — never silently accepted)');
+      ok(T.tripsFor().find((x) => x.id === tA.id && x.day === day).stops.length === 2, 'TRIPS-P3 cross-day: the target trip is untouched by the refused merge');
+
+      // SPLIT: reverses the merge — B's stop returns to being its own single-stop trip
+      const stopIdB = T.dispatchStopId({ rentalId: 'TRIP-TEST-B', unitId: 'U024', task: 'Deliver' });
+      const okSplit = T.tripSplit(day, tA.id, stopIdB);
+      ok(okSplit === true, 'TRIPS-P3 split: tripSplit returns true');
+      trips = T.tripsFor();
+      const afterSplitA = trips.find((x) => x.id === tA.id && x.day === day);
+      ok(!!afterSplitA && afterSplitA.stops.length === 1 && afterSplitA.stops[0].rentalId === 'TRIP-TEST-A', 'TRIPS-P3 split: the target trip is back down to its own single stop');
+      const splitOut = trips.find((x) => x.id === stopIdB && x.day === day);
+      ok(!!splitOut && splitOut.stops.length === 1 && splitOut.stops[0].rentalId === 'TRIP-TEST-B', 'TRIPS-P3 split: the removed stop is its own trip again');
+      ok(splitOut.time === '', 'TRIPS-P3 split: the split-out stop defaults to NO set time (documented — honest over fabricated)');
+      const euB2 = T.unitEntry(trB, 'U024');
+      ok(euB2.deliveryDriverId === 'EMPMERGE', 'TRIPS-P3 split: the split-out stop KEEPS the driver it already had (untouched, not force-cleared)');
+      ok(trB.actions.some((a) => /Trip split/.test(a.text)), 'TRIPS-P3 split: logAction fires on the split-out rental');
+
+      // SPLIT-THE-PRIMARY regression: the picker lists EVERY stop, including the one
+      // that originally named the trip (tripId still equals ITS natural id at this
+      // point — it's the first, default option) — splitting THAT one out must not
+      // collide the "stop staying behind" and the "stop leaving" onto the same store
+      // key and silently drop data (a real bug this exact case caught pre-fix).
+      T.tripMerge(day, tA.id, stopIdB);   // re-merge B back into A
+      const stopIdA = T.dispatchStopId({ rentalId: 'TRIP-TEST-A', unitId: 'U004', task: 'Deliver' });
+      ok(stopIdA === tA.id, 'TRIPS-P3 split-primary fixture: A\'s natural stop id still equals the trip\'s key (the collision precondition)');
+      const okSplitPrimary = T.tripSplit(day, tA.id, stopIdA);
+      ok(okSplitPrimary === true, 'TRIPS-P3 split-primary: tripSplit returns true when splitting out the trip\'s OWN original stop');
+      trips = T.tripsFor();
+      const splitPrimaryOut = trips.find((x) => x.id === stopIdA && x.day === day);
+      ok(!!splitPrimaryOut && splitPrimaryOut.stops.length === 1 && splitPrimaryOut.stops[0].rentalId === 'TRIP-TEST-A', 'TRIPS-P3 split-primary: A is its own trip again, under its natural id');
+      const survivor = trips.find((x) => x.day === day && x.stops.length === 1 && x.stops[0].rentalId === 'TRIP-TEST-B');
+      ok(!!survivor && survivor.id !== tA.id, 'TRIPS-P3 split-primary: B SURVIVES as its own trip (not silently dropped) under a fresh id, since its old key was reclaimed by A');
+      ok(trips.filter((x) => x.day === day && (x.rentalId === 'TRIP-TEST-A' || x.stops.some((s) => s.rentalId === 'TRIP-TEST-A') || x.stops.some((s) => s.rentalId === 'TRIP-TEST-B'))).reduce((n, x) => n + x.stops.length, 0) === 2, 'TRIPS-P3 split-primary: exactly 2 stops total survive across both trips (none lost)');
+      ok(survivor.id === stopIdB, 'TRIPS-P3 split-primary: B lands back on its OWN familiar natural id (deterministic, not arbitrary) — A and B are independent single-stop trips again, same shape as right after the plain split above');
+
+      // ORPHAN DROP + EMPTY GC (read-time hygiene): re-merge, then delete B's rental —
+      // its stop must vanish from the trip on read; then delete A's too — the whole
+      // materialized trip (now zero live stops) must be discarded entirely on read.
+      T.tripMerge(day, tA.id, stopIdB);
+      T.DATA.rentals = T.DATA.rentals.filter((r) => r.rentalId !== 'TRIP-TEST-B');
+      T.IDX.rental.delete('TRIP-TEST-B');
+      trips = T.tripsFor();
+      const afterOrphan = trips.find((x) => x.id === tA.id && x.day === day);
+      ok(!!afterOrphan && afterOrphan.stops.length === 1 && afterOrphan.stops[0].rentalId === 'TRIP-TEST-A', 'TRIPS-P3 orphan: a deleted rental drops its stop from the trip on read');
+      ok(!trips.some((x) => x.stops.some((s) => s.rentalId === 'TRIP-TEST-B')), 'TRIPS-P3 orphan: the orphaned stop never resurfaces as its own trip either');
+      T.DATA.rentals = T.DATA.rentals.filter((r) => r.rentalId !== 'TRIP-TEST-A');
+      T.IDX.rental.delete('TRIP-TEST-A');
+      trips = T.tripsFor();
+      ok(!trips.some((x) => x.id === tA.id), 'TRIPS-P3 empty GC: a trip left with zero live stops is discarded entirely on read');
+
+      // cleanup — remaining fixture rental + the materialized store, so no later test sees it
+      T.DATA.rentals = T.DATA.rentals.filter((r) => r.rentalId !== 'TRIP-TEST-C');
+      T.IDX.rental.delete('TRIP-TEST-C');
+      localStorage.removeItem('jactec.trips');
+      T.__state.settings.employees = preEmpP3;
+    }
+
+    // §Trips Phase 3b (spec 2026-07-09 §2.7) — Auto-Run's deadline-repair pass. PURE fixture
+    // data only (leg durations + anchors) — the real optimizer call (DirectionsService) is
+    // reached ONLY from a live click (autoRunDay in app.js) and never exercised here, so this
+    // suite never makes a network call.
+    {
+      const START = T.AUTORUN_DAY_START_SEC, BUF = T.AUTORUN_LOAD_BUFFER_SEC;
+      const mk = (id) => ({ id });
+      const arrivalsFor = (legs) => { const out = []; let t = START; legs.forEach((l) => { t += l; out.push(t); t += BUF; }); return out; };
+
+      // 1) NO ANCHORS AT ALL — the optimizer's own order is returned untouched.
+      {
+        const order = [mk('a'), mk('b'), mk('c')];
+        const legs = [600, 500, 700];
+        const r = T.autoRunRepair(order, legs, [], BUF);
+        ok(r.order.map((s) => s.id).join(',') === 'a,b,c', 'AUTORUN-repair: no anchors → the pure optimizer order is preserved exactly');
+        ok(r.violations.length === 0, 'AUTORUN-repair: no anchors → no violations');
+        const exp = arrivalsFor(legs);
+        ok(r.arrivals.every((v, i) => v === exp[i]), 'AUTORUN-repair: arrivals[] match the position-indexed leg+buffer math');
+      }
+
+      // 2) ANCHOR RESPECTED — already on-time in the natural order → never touched.
+      {
+        const order = [mk('a'), mk('b'), mk('c')];
+        const legs = [600, 500, 700];
+        const arr = arrivalsFor(legs);
+        const anchors = [{ stopId: 'c', deadline: arr[2] + 3600 }];   // an hour of slack — comfortably on time
+        const r = T.autoRunRepair(order, legs, anchors, BUF);
+        ok(r.order.map((s) => s.id).join(',') === 'a,b,c', 'AUTORUN-repair: an anchor already on-time is left exactly where the optimizer put it');
+        ok(r.violations.length === 0, 'AUTORUN-repair: an on-time anchor never appears in violations');
+      }
+
+      // 3) VIOLATION PULLED EARLIER — a late anchor is pulled to a slot that satisfies it.
+      {
+        const order = [mk('a'), mk('b'), mk('c')];
+        const legs = [600, 500, 700];
+        const arr = arrivalsFor(legs);
+        const anchors = [{ stopId: 'b', deadline: arr[0] }];   // late at its natural slot 1; fits at slot 0
+        const r = T.autoRunRepair(order, legs, anchors, BUF);
+        ok(r.order[0].id === 'b', 'AUTORUN-repair: a late anchor is pulled to the earliest slot that satisfies its deadline');
+        ok(r.violations.length === 0, 'AUTORUN-repair: pulling it earlier resolves the violation entirely');
+        ok(r.order.map((s) => s.id).sort().join(',') === 'a,b,c', 'AUTORUN-repair: every stop still present after the reorder — nothing dropped');
+      }
+
+      // 4) UNSATISFIABLE DEADLINE — still late even at the front of the run → flagged, never silently shipped.
+      {
+        const order = [mk('a'), mk('b'), mk('c')];
+        const legs = [600, 500, 700];
+        const arr = arrivalsFor(legs);
+        const anchors = [{ stopId: 'c', deadline: arr[0] - 1 }];   // earlier than the FIRST possible arrival — impossible
+        const r = T.autoRunRepair(order, legs, anchors, BUF);
+        ok(r.order[0].id === 'c', 'AUTORUN-repair: an unsatisfiable anchor is still pulled to the front — the earliest a truck could possibly get there');
+        ok(r.violations.length === 1 && r.violations[0].stopId === 'c', 'AUTORUN-repair: an unsatisfiable deadline is flagged, never silently shipped late');
+        ok(r.violations[0].projectedArrival === arr[0], 'AUTORUN-repair: the violation reports the BEST-CASE front-of-run arrival, not the original unmoved one');
+      }
+
+      // 5) MULTIPLE ANCHORS, both satisfiable together — earliest-deadline-first ordering.
+      {
+        const order = [mk('a'), mk('b'), mk('c'), mk('d'), mk('e')];
+        const legs = [300, 300, 300, 300, 300];
+        const arr = arrivalsFor(legs);
+        const anchors = [
+          { stopId: 'd', deadline: arr[1] },   // fits at slot 1
+          { stopId: 'b', deadline: arr[0] },   // tighter — only fits at slot 0
+        ];
+        const r = T.autoRunRepair(order, legs, anchors, BUF);
+        ok(r.order[0].id === 'b' && r.order[1].id === 'd', 'AUTORUN-repair: multiple anchors resolve earliest-deadline-first — the tighter promise claims the earlier slot');
+        ok(r.violations.length === 0, 'AUTORUN-repair: both anchors satisfied together, no violations');
+        ok(r.order.map((s) => s.id).sort().join(',') === 'a,b,c,d,e', 'AUTORUN-repair: all five stops still present after a multi-anchor repair');
+      }
+
+      // 6) MULTIPLE ANCHORS, genuinely conflicting — one wins its slot, the loser is flagged (never dropped).
+      {
+        const order = [mk('a'), mk('b'), mk('c'), mk('d')];
+        const legs = [300, 300, 300, 300];
+        const arr = arrivalsFor(legs);
+        // 'a' is fine right where the optimizer put it (slot 0); 'c' is late and can ONLY fit at
+        // slot 0 too — pulling c to the front necessarily bumps a back into lateness.
+        const anchors = [{ stopId: 'a', deadline: arr[0] }, { stopId: 'c', deadline: arr[0] }];
+        const r = T.autoRunRepair(order, legs, anchors, BUF);
+        ok(r.order[0].id === 'c', 'AUTORUN-repair: conflict — c was actually late in the natural order and gets pulled to the front');
+        ok(r.violations.length === 1 && r.violations[0].stopId === 'a', 'AUTORUN-repair: the side-effect violation on a (bumped back by c\'s pull) is still caught, not silently dropped');
+      }
+    }
+
+    // §Trips Phase 3b anchor derivation — a SET time is the hard anchor; blank falls back to
+    // the nominal end-of-business-day (every trip passed in already belongs to the day being run).
+    {
+      const trips = [{ id: 't1', time: '9:00 AM' }, { id: 't2', time: '' }, { id: 't3', time: '1:30 PM' }];
+      const byId = Object.fromEntries(T.autoRunAnchorsFor(trips).map((a) => [a.stopId, a.deadline]));
+      ok(byId.t1 === 9 * 3600, 'AUTORUN-anchors: a set "9:00 AM" time → a 9:00 AM deadline');
+      ok(byId.t3 === 13 * 3600 + 1800, 'AUTORUN-anchors: a set "1:30 PM" time → a 1:30 PM deadline');
+      ok(byId.t2 === T.AUTORUN_EOD_DEADLINE_SEC, 'AUTORUN-anchors: no set time → the nominal end-of-business-day safety net');
+    }
+
+    // §Trips Phase 3b row flag — an R9b alert flag rides the row after an Auto-Run pass. Pure
+    // DOM-string rendering (tripRowHTML) only — no card render / map mount, so this never risks
+    // touching the live Google Maps bootstrap.
+    {
+      const trips = T.tripsFor();
+      const anyOpen = trips.find((x) => !x.done);
+      ok(!!anyOpen, 'AUTORUN-row fixture: at least one not-done trip exists in the demo seed');
+      if (anyOpen) {
+        const preFlags = T.__state.autoRunFlags;
+        T.__state.autoRunFlags = { [anyOpen.id]: { reason: 'unpinned' } };
+        let html = T.tripRowHTML(anyOpen);
+        ok(/data-r="R9b"/.test(html) && html.includes('No Pin'), 'AUTORUN-row: an unpinned stop renders a stamped R9b alert flag reading "No Pin"');
+        T.__state.autoRunFlags = { [anyOpen.id]: { reason: 'deadline', deadline: 9 * 3600, projectedArrival: 10 * 3600 } };
+        html = T.tripRowHTML(anyOpen);
+        ok(/data-r="R9b"/.test(html) && html.includes('Late'), 'AUTORUN-row: a deadline violation renders a stamped R9b alert flag reading "Late"');
+        const otherTrip = trips.find((x) => x.id !== anyOpen.id);
+        if (otherTrip) ok(!T.tripRowHTML(otherTrip).includes('data-r="R9b"'), 'AUTORUN-row: a flag on one trip never bleeds onto another trip\'s row');
+        T.__state.autoRunFlags = preFlags;
+      }
+    }
+
+    // §Trips Phase 3b tripSetTime — the ONE materialize path shared by the row's own dt-time
+    // input and Auto-Run's apply step, so both write through identically to the Phase 3 store.
+    {
+      const t = T.tripsFor().find((x) => !x.done);
+      if (t) {
+        const wrote = T.tripSetTime(t.day, t.id, '11:45 AM');
+        ok(wrote === true, 'AUTORUN-tripSetTime: materializes a found trip and returns true');
+        const after = T.tripsFor().find((x) => x.id === t.id && x.day === t.day);
+        ok(!!after && after.time === '11:45 AM', 'AUTORUN-tripSetTime: the trip reads back the written time');
+        const missed = T.tripSetTime(t.day, 'NOT-A-REAL-TRIP-ID', '9:00 AM');
+        ok(missed === false, 'AUTORUN-tripSetTime: an unknown trip id returns false and writes nothing');
+        localStorage.removeItem('jactec.trips');   // cleanup — don't leak into any later test
+      }
+    }
+
+    // §Trips Phase 4 (spec 2026-07-09 Phase 4, LOCKED contract) — the frontend half of the
+    // backend-synced trips slice: getTrips/setTrip, per-trip rev, stale-rev rejection. The
+    // harness boots #local (backendPassword=''), so the online path is exercised via the
+    // test-only setBackendPassword() setter plus a window.fetch mock that intercepts
+    // backendCall's own fetch — this suite NEVER makes a real network call. backendPassword
+    // and window.fetch are both restored to their #local defaults before this block ends, so
+    // no later test in this file can accidentally reach a real backend.
+    {
+      const t0 = T.tripsFor().find((x) => !x.done);
+      ok(!!t0, 'TRIPS-P4 fixture: at least one not-done derived trip exists to materialize/sync');
+      if (t0) {
+        const day = t0.day, tripId = t0.id;
+        const origFetch = window.fetch;
+        let fetchCalls = [];
+        const mockFetch = (respond) => (url, opts) => {
+          fetchCalls.push(JSON.parse(opts.body));
+          return Promise.resolve({ ok: true, text: () => Promise.resolve(JSON.stringify(respond())) });
+        };
+
+        // Fixture materialization ALWAYS happens with backendPassword '' (offline): tripSetTime
+        // is real production code and — now that Phase 4 is wired in — it fires its OWN
+        // internal tripPushSoon() as a side effect whenever backendPassword is truthy. If that
+        // ran here it would arm a real 600ms-debounced timer that fires later in this block
+        // against whatever fetch mock happens to be active AT THAT LATER MOMENT — a stray extra
+        // backendCall this suite must never make. Keeping password '' during every fixture edit
+        // (only flipping it on right around the deliberate push/pull call under test, then back
+        // off) is what guarantees each mock only ever sees the ONE call it's testing for.
+
+        // (a) SUCCESS — a push updates the cache's rev to the server's returned newRev, and
+        // flips the sync-status flag so the footer can report it.
+        T.tripSetTime(day, tripId, '9:15 AM');   // materialize locally first (Phase 3's own optimistic write) — offline, no stray push armed
+        T.setBackendPassword('TEST-PW');
+        window.fetch = mockFetch(() => ({ ok: true, rev: 42 }));
+        await T.tripPushNow(day, tripId);
+        ok(fetchCalls.length === 1 && fetchCalls[0].action === 'setTrip' && fetchCalls[0].day === day && fetchCalls[0].tripId === tripId, `TRIPS-P4 push: setTrip is called once with the touched day/tripId (${fetchCalls.length} call(s))`);
+        ok(Number.isFinite(fetchCalls[0].rev), 'TRIPS-P4 push: the payload carries a numeric rev (the caller\'s last-known)');
+        ok(T.tripsLS()[day][tripId].rev === 42, 'TRIPS-P4 push: a successful response adopts the server\'s returned rev into the local cache');
+        ok(T.__state.tripsSyncStatus === 'synced', 'TRIPS-P4 push: a successful push flips tripsSyncStatus to synced');
+        T.setBackendPassword('');   // back offline before the next fixture edit
+
+        // (b) STALE-REV — the server rejects; the cache is overwritten with the server's
+        // `current`, discarding the client's own (now-stale) local edit — never silently
+        // keep a possibly-conflicting local copy.
+        T.tripSetTime(day, tripId, '11:45 AM');   // a second local edit (offline) — the client's soon-to-be-stale attempt
+        T.setBackendPassword('TEST-PW');
+        fetchCalls = [];
+        const serverCurrent = { time: '3:15 PM', order: t0.stops.slice(), rev: 99 };
+        window.fetch = mockFetch(() => ({ ok: false, error: 'stale-rev', current: serverCurrent }));
+        const preToast = document.getElementById('toast').textContent;
+        await T.tripPushNow(day, tripId);
+        const afterStale = T.tripsLS()[day][tripId];
+        ok(afterStale.time === '3:15 PM' && afterStale.rev === 99, `TRIPS-P4 stale-rev: the cache is overwritten with the server's current (time="${afterStale.time}", rev=${afterStale.rev}), not the client's stale "11:45 AM" edit`);
+        const toastMsg = document.getElementById('toast').textContent;
+        ok(toastMsg !== preToast && /Someone else updated this trip — refreshed/.test(toastMsg), `TRIPS-P4 stale-rev: toasts that a concurrent edit won the race (got "${toastMsg}")`);
+        T.setBackendPassword('');
+
+        // (c) PULL — loadTripsFromBackend merges a getTrips response into the local cache.
+        localStorage.removeItem('jactec.trips');
+        const pulled = { [day]: { [tripId]: { time: '2:00 PM', order: t0.stops.slice(), rev: 7 } } };
+        T.setBackendPassword('TEST-PW');
+        fetchCalls = [];
+        window.fetch = mockFetch(() => ({ ok: true, trips: pulled }));
+        await T.loadTripsFromBackend();
+        ok(fetchCalls.length === 1 && fetchCalls[0].action === 'getTrips', 'TRIPS-P4 pull: getTrips is called with no extra input');
+        const pulledRec = (T.tripsLS()[day] || {})[tripId];
+        ok(!!pulledRec && pulledRec.time === '2:00 PM' && pulledRec.rev === 7, `TRIPS-P4 pull: loadTripsFromBackend merges the getTrips response into the local cache (${JSON.stringify(pulledRec)})`);
+        ok(T.__state.tripsSyncStatus === 'synced', 'TRIPS-P4 pull: a successful pull also flips tripsSyncStatus to synced');
+        T.setBackendPassword('');
+
+        // (d) OFFLINE/#local — no backendPassword → the backend is never reached (push OR
+        // pull), and the local cache remains the only source of truth.
+        localStorage.removeItem('jactec.trips');
+        T.__state.tripsSyncStatus = null;
+        fetchCalls = [];
+        window.fetch = mockFetch(() => { throw new Error('backendCall must never fire while offline'); });
+        T.tripSetTime(day, tripId, '4:00 PM');          // backendPassword is already '' here — no internal push armed either
+        T.tripPushSoon(day, tripId);                    // debounced — the offline guard must return before ever arming the timer
+        await new Promise((r) => setTimeout(r, 650));   // > the 600ms debounce — proves no timer was armed, not just that we didn't wait long enough
+        await T.loadTripsFromBackend();
+        ok(fetchCalls.length === 0, `TRIPS-P4 offline: backendCall is never reached while backendPassword is empty (push AND pull) — ${fetchCalls.length} call(s) leaked`);
+        ok(T.tripsLS()[day][tripId].time === '4:00 PM', 'TRIPS-P4 offline: the local write stands untouched — the local cache is the only source of truth');
+
+        // §2.3 Phase 4 footer — pure, so directly testable without a DOM render. Uses its own
+        // controlled fixture trips (not t0/day) so it doesn't depend on TODAY_ISO having a
+        // real dispatch trip in the demo seed.
+        {
+          T.setBackendPassword('');
+          T.__state.tripsSyncStatus = null;
+          localStorage.removeItem('jactec.trips');
+          const off = T.tripsSyncFooter();
+          ok(off.synced === false && off.label === 'Offline — cached', `TRIPS-P4 footer: offline/not-yet-synced shows "Offline — cached" (got "${off.label}")`);
+
+          T.setBackendPassword('TEST-PW');
+          T.__state.tripsSyncStatus = 'synced';
+          localStorage.setItem('jactec.trips', JSON.stringify({ [T.TODAY_ISO]: { fx1: { time: '9:00 AM', order: [], rev: 3 }, fx2: { time: '10:00 AM', order: [], rev: 11 } } }));
+          const on = T.tripsSyncFooter();
+          ok(on.synced === true && on.label === 'Synced · rev 11', `TRIPS-P4 footer: synced shows the HIGHEST rev among today's trips (got "${on.label}")`);
+        }
+
+        // restore #local defaults so nothing later in this suite can reach a real backend
+        window.fetch = origFetch;
+        T.setBackendPassword('');
+        T.__state.tripsSyncStatus = null;
+        localStorage.removeItem('jactec.trips');
+      }
+    }
+
+    // === Bouncie trucks → Truck-category units (design note docs/superpowers/specs/
+    // 2026-07-09-bouncie-truck-units-design.md). gpsBounciePlan is PURE (no writes,
+    // no network — the fetch/normalize step is a thin wrapper exercised via the UI
+    // trigger, not here); gpsApplyBouncieTrucks is the write, mirroring gpsApplyMappings
+    // as a directly-testable primitive. ===
+    {
+      const mkV = (imei, extra) => ({ source: 'bouncie', imei, name: 'Truck ' + imei, make: 'Ford', model: 'F-150', ...extra });
+
+      // (a) PLAN — pure dedup: the already-mapped imei is excluded regardless of WHICH
+      // provider mapped it (dedup key is gpsDeviceId alone, per spec "any provider").
+      {
+        const vehicles = [mkV('BNC-1'), mkV('BNC-2'), mkV('BNC-3')];
+        const fixtureUnits = [{ unitId: 'U-BNCX', gpsProvider: 'Hapn', gpsDeviceId: 'BNC-2' }];
+        const plan = T.gpsBounciePlan(vehicles, fixtureUnits);
+        ok(plan.toCreate.length === 2 && plan.toCreate.every((v) => v.imei !== 'BNC-2'), 'bouncie plan: an imei already mapped (even under a different provider) is excluded from toCreate');
+        ok(plan.skip.length === 1 && plan.skip[0].imei === 'BNC-2', 'bouncie plan: the already-mapped vehicle lands in skip');
+      }
+
+      // (b) PLAN — a repeated imei within the SAME pull is only created once
+      {
+        const plan2 = T.gpsBounciePlan([mkV('BNC-DUP'), mkV('BNC-DUP')], []);
+        ok(plan2.toCreate.length === 1 && plan2.skip.length === 1, 'bouncie plan: a duplicate imei within one pull is created once, the repeat is skipped');
+      }
+
+      // (c)/(d) APPLY — the real write, end to end, including idempotent re-runs
+      {
+        const before = T.DATA.categories.filter((c) => c.name === 'Truck').length;
+        ok(before === 0, 'bouncie apply: no pre-existing Truck category in the demo fleet (test precondition)');
+
+        const res1 = T.gpsApplyBouncieTrucks([mkV('BNC-A1', { name: 'Yard Truck 1' }), mkV('BNC-A2', { name: 'Yard Truck 2' })]);
+        ok(res1.created === 2 && res1.skipped === 0, 'bouncie apply: both unmapped vehicles created, none skipped');
+
+        const cats = T.DATA.categories.filter((c) => c.name === 'Truck');
+        ok(cats.length === 1, 'bouncie apply: exactly one Truck category created');
+        const cat = cats[0];
+        ok(cat.rate1Day === undefined && cat.fuelType === undefined, 'bouncie apply: the Truck category has no rate/fuelType fields — genuinely unset, not zeroed (spec §1)');
+
+        const created = T.DATA.units.filter((u) => u.gpsDeviceId === 'BNC-A1' || u.gpsDeviceId === 'BNC-A2');
+        ok(created.length === 2 && created.every((u) => T.IDX.unit.get(u.unitId) === u), 'bouncie apply: both new units land in DATA.units and IDX.unit');
+        ok(created.every((u) => u.categoryId === cat.categoryId), 'bouncie apply: both units carry the Truck category id');
+        ok(created.every((u) => u.gpsProvider === 'Bouncie'), 'bouncie apply: gpsProvider is canonical-cased "Bouncie" (matches gpsApplyMappings/gpsConnectSave), not lowercase');
+        ok(created.every((u) => u.fleetStatus === 'Active'), 'bouncie apply: fleetStatus defaults to Active — no Inactive trick (spec §4)');
+        ok(created.every((u) => u.weight === undefined && u.serial === undefined && u.inspectionStatus === undefined), 'bouncie apply: no invented weight/serial/inspectionStatus (spec §5)');
+
+        // second pull: one already-onboarded imei + one genuinely new one
+        const res2 = T.gpsApplyBouncieTrucks([mkV('BNC-A1', { name: 'Yard Truck 1' }), mkV('BNC-B1', { name: 'Yard Truck 3' })]);
+        ok(res2.created === 1 && res2.skipped === 1, 'bouncie apply: second run creates only the new truck, skips the already-onboarded one');
+        ok(T.DATA.categories.filter((c) => c.name === 'Truck').length === 1, 'bouncie apply: the Truck category is NOT duplicated on a second run (idempotent)');
+        ok(res2.categoryId === cat.categoryId, 'bouncie apply: the second run reuses the SAME Truck category id');
+
+        // cleanup — the suite mutates shared DATA
+        ['BNC-A1', 'BNC-A2', 'BNC-B1'].forEach((imei) => {
+          const u = T.DATA.units.find((x) => x.gpsDeviceId === imei); if (!u) return;
+          T.IDX.unit.delete(u.unitId); const i = T.DATA.units.indexOf(u); if (i >= 0) T.DATA.units.splice(i, 1);
+        });
+        T.IDX.category.delete(cat.categoryId);
+        const ci = T.DATA.categories.indexOf(cat); if (ci >= 0) T.DATA.categories.splice(ci, 1);
+      }
+    }
+
     // ── §552 promotion-review fixes — lock r1 (PII scrub), r3 (collections gate), r4 (chunk split) ──
     // r1 — the customer-safe printed-invoice log never leaks Collections/Recall notes or the acting staff role
     {

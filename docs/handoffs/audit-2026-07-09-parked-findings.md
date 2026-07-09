@@ -114,17 +114,37 @@ Legend: **file:line** — one-line verdict.
   reason maybe?"). Confirmed: yes — the live comment cites Jac's own 2026-07-08 decision
   ("minimal steps, secrets-exposure OK — Code.js is server-side + gitignored, never served
   publicly"). Left as-is, not changed.
-- **Membership deployment discrepancy — escalated, not yet resolved.** Traced the full git
-  history: PR #344 (2026-06-25) and its handoff doc confidently claim the app-driven membership
-  backend (`membershipEnroll_`/`membershipCancel_`/`membershipReactivate_`/
-  `membershipBillingCron`) was deployed live as v46, and wired the **frontend** to call those
-  actions in prod — that frontend wiring is still live today (app.js:3762/3780/3813). But two
-  independent fresh Drive pulls confirm those functions do NOT exist in the live Code.gs right
-  now. Leading theory: a later backend deploy (there were several after 6/25) used a stale local
-  Code.gs as its splice base and silently reverted this. **This looks like membership
-  enroll/cancel/reactivate may be broken in production right now** — needs Jac's confirmation
-  (checking a later deploy session's transcript, or a live prod test) before anyone tries to
-  "fix" the tracked doc further.
+- **Membership deployment discrepancy — ROOT-CAUSE CONFIRMED (2026-07-09, later same day).**
+  Pulled the Apps Script project's real version history + historical content directly via the
+  REST API (`projects.versions.list` / `projects.getContent`, service-account auth, read-only —
+  no deploy risk). Binary-searched every version 46→82 for the membership function names, then
+  diffed the two adjacent versions where the answer flipped:
+  - **v46** (2026-06-25T23:09:17Z, "membership app-driven billing: enroll/cancel/reactivate +
+    daily cron") and **v47** (23:10:16Z) — membership functions present, confirmed.
+  - **v48** (23:21:35Z, "redeploy: #256 POST-guard") — membership functions **gone**, and gone
+    in every version since, through **v82** (2026-07-08, the version live today).
+  - The v47→v48 diff shows v48 legitimately adding the #255 grace-anchor fix, #256's POST-guard
+    dispatch check, the `deformula_()` formula-injection guard, and the #250 webhook-token guard
+    — all real, intentional, still correctly live. But the same push also deleted the 3
+    `membershipEnroll`/`membershipCancel`/`membershipReactivate` dispatch lines and the entire
+    ~176-line app-driven membership function block. The older Stripe-subscription membership
+    path (`membershipActivate_`/`membershipDailySweep`/`membershipLedger_`) is untouched in both
+    versions — this only hit the app-driven system from v46.
+  - **Root cause:** the #255/#256/#250 push was built from a local `Code.js` snapshot taken
+    *before* v46's membership merge; `projects.updateContent` is a full-file overwrite, not a
+    merge, so pushing that stale base silently reverted everything after it — including a
+    feature that had shipped 11 minutes earlier.
+  - **Impact:** confirmed broken in production continuously since 2026-06-25T23:21:35Z (~13.5
+    days as of 2026-07-09). The frontend (app.js, the same three call sites) has been calling
+    these three actions the entire time; every call has been hitting `unknown action` server-side.
+  - **✅ FIX DEPLOYED + VERIFIED (2026-07-09, v84).** Re-spliced into live `Code.gs`, pushed via
+    service account, deployed by Jac through the editor (v83, then v84 after fixing an unrelated
+    trailing-underscore naming bug that hid the trigger-installer from the Run dropdown). Live
+    Customers data checked first for fallout: zero `MINV-` invoices, zero `membership:true`
+    invoices, zero customers with any app-driven billing field populated — the feature had no
+    organic usage in its 11-minute original window, so no revenue was lost and no reconciliation
+    is needed. End-to-end dispatch verified live (see `BACKEND-DEPLOY-QUEUE.md`). Regression fully
+    closed.
 
 ---
 

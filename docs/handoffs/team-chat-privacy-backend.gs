@@ -15,16 +15,26 @@
  * cryptographic boundary (a crafted request could assert another identity). True
  * per-person privacy would need per-user auth (separate logins), a bigger change.
  *
- * BACK-COMPAT: when body.me is absent (an OLD client), both handlers behave
- * exactly as before (return all / trust the write) — so a new backend + old
- * client keeps working, and a new client + old backend keeps working (the old
- * backend ignores the extra fields). Safe to deploy independently.
+ * ⚠ UPDATED 2026-07-09 (backend audit, CRITICAL finding, confirmed): the original
+ * BACK-COMPAT design below — "body.me absent → treat as an old client, fall back
+ * to unscoped read / trust-all write" — is a universal bypass, not just an
+ * old-client shim: the server can't tell a genuinely old client from ANY current
+ * caller who simply omits `me`. Since the new frontend that sends me/rosterId on
+ * every call (branch claude/internal-chat-updates-vq6p7b) hasn't shipped yet, this
+ * means the scoping this feature was built for has never actually been active in
+ * production for anyone. Fix: the back-compat fallback is REMOVED below — both
+ * handlers now always scope/authorize by `me`, full stop. This is NOT safe to
+ * deploy independently anymore (the current live frontend never sends `me`, so it
+ * would suddenly see empty chats / have writes rejected) — deploy this in the SAME
+ * rollout as claude/internal-chat-updates-vq6p7b, not before.
  *
- * Wire into doPost's action switch (unchanged names — this just replaces the two
- * function bodies):
- *   if (action === 'getChats')  return json(getChats_(body, role));
- *   if (action === 'setChats')  return json(setChats_(body, role));
- * Reuses ss()/rowIndexById()/LockService and TEAMCHATS_TAB from Code.gs.
+ * UPDATED AGAIN 2026-07-09 (same audit, HIGH finding): chatMergeMsgs_ didn't
+ * validate that an incoming message's `by` field matched the authenticated
+ * `me` — any authorized participant could inject a message object claiming
+ * to be from a DIFFERENT member. Fixed below (now takes `me`, drops any
+ * incoming message whose `by` doesn't match). Also folded in: setChats_'s
+ * `id` now goes through deformula_() (already shipped live separately —
+ * keeping this queued file in sync so deploying it later doesn't regress it).
  * ───────────────────────────────────────────────────────────────────────── */
 
 // Can this caller SEE this chat? Admin (creator) or a listed member. A legacy chat
@@ -38,10 +48,16 @@ function chatCanSee_(c, me, rosterId) {
 }
 
 // Union messages by id (never lose a concurrent poster's message), oldest-first.
-function chatMergeMsgs_(existing, incoming) {
+// me: reject any incoming message whose `by` doesn't match the caller — you can
+// only ever inject messages asserting YOUR OWN authorship, never someone else's.
+function chatMergeMsgs_(existing, incoming, me) {
   var out = (existing || []).slice(), have = {};
   out.forEach(function (m) { if (m && m.id) have[m.id] = true; });
-  (incoming || []).forEach(function (m) { if (m && m.id && !have[m.id]) { out.push(m); have[m.id] = true; } });
+  (incoming || []).forEach(function (m) {
+    if (!m || !m.id || have[m.id]) return;
+    if (String(m.by) !== String(me)) return;
+    out.push(m); have[m.id] = true;
+  });
   out.sort(function (a, b) { return (a.at || 0) - (b.at || 0); });
   return out;
 }
@@ -56,9 +72,10 @@ function chatMergeSeen_(existing, incoming) {
   return out;
 }
 
-/* ── Scoped read: only the chats this caller may see. Old client (no me) → all. ── */
+/* ── Scoped read: only the chats this caller may see. ALWAYS scoped — no me → sees
+ * only legacy chats with no recorded owner (chatCanSee_'s own back-compat rule). ── */
 function getChats_(body, role) {
-  var me = body && body.me, rosterId = body && body.rosterId, scoped = (me != null);
+  var me = body && body.me, rosterId = body && body.rosterId;
   var s = ss().getSheetByName(TEAMCHATS_TAB), out = [];
   if (s) {
     var last = s.getLastRow();
@@ -67,7 +84,7 @@ function getChats_(body, role) {
       for (var i = 0; i < vals.length; i++) {
         try {
           var c = JSON.parse(vals[i][0]);
-          if (c && c.id && (!scoped || chatCanSee_(c, me, rosterId))) out.push(c);
+          if (c && c.id && chatCanSee_(c, me, rosterId)) out.push(c);
         } catch (e) {}
       }
     }
@@ -76,20 +93,17 @@ function getChats_(body, role) {
 }
 
 /* ── Authorized write: decide what actually gets stored for each incoming chat. ──
- * Old client (no me): legacy trust, but still union messages.
+ * No me (no asserted identity): rejected outright — no more "old client" trust-all.
  * New chat: only its stated owner may create it.
  * Existing + caller is owner: full update (messages unioned).
  * Existing + caller is a member (per the SERVER copy): may append messages + remove
  *   THEMSELVES; may NOT change title/owner or other members (no injecting/tampering).
  * Existing + caller is neither: rejected. */
 function chatAuthorizeWrite_(existing, inc, me, rosterId) {
-  if (me == null) {                                          // old client — preserve prior behavior
-    if (existing) inc.messages = chatMergeMsgs_(existing.messages, inc.messages);
-    return inc;
-  }
+  if (me == null) return null;                               // no identity asserted → reject
   if (!existing) return (String(inc.by) === String(me)) ? inc : null;   // create only your own
   if (existing.by && String(existing.by) === String(me)) {  // owner (admin)
-    inc.messages = chatMergeMsgs_(existing.messages, inc.messages);
+    inc.messages = chatMergeMsgs_(existing.messages, inc.messages, me);
     inc.seen = chatMergeSeen_(existing.seen, inc.seen);
     return inc;
   }
@@ -97,7 +111,7 @@ function chatAuthorizeWrite_(existing, inc, me, rosterId) {
   var amMember = rosterId != null && mem.indexOf(String(rosterId)) !== -1;
   if (!amMember) return null;                                // not a participant → reject
   var next = {}, k; for (k in existing) next[k] = existing[k];   // start from the SERVER copy
-  next.messages = chatMergeMsgs_(existing.messages, inc.messages);
+  next.messages = chatMergeMsgs_(existing.messages, inc.messages, me);
   // a member may only touch THEIR OWN view-state — seen[me] + their own mute — never others'
   var seen = {}, sk; for (sk in (existing.seen || {})) seen[sk] = existing.seen[sk];
   if (inc.seen && inc.seen[me] != null && (inc.seen[me] > (seen[me] || 0))) seen[me] = inc.seen[me];
@@ -123,7 +137,7 @@ function setChats_(body, role) {
     var idMap = rowIndexById(s), appends = [];
     chats.forEach(function (inc) {
       if (!inc || !inc.id) return;
-      var id = String(inc.id), row = idMap[id], existing = null;
+      var id = deformula_(String(inc.id)), row = idMap[id], existing = null;
       if (row) { try { existing = JSON.parse(s.getRange(row, 2).getValue()); } catch (e) {} }
       var toStore = chatAuthorizeWrite_(existing, inc, me, rosterId);
       if (!toStore) return;                                  // unauthorized / rejected — skip

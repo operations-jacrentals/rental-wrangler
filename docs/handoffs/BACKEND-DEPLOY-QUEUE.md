@@ -7,6 +7,130 @@
 > with full deploymentConfig, immediate JSON probe) — see /clasp SKILL.md §AMENDED. The
 > editor click is the FALLBACK/recovery path, no longer the only go-live.
 
+## ⏳ PUSHED, AWAITING EDITOR DEPLOY — 10 medium audit fixes (2026-07-09)
+- **What:** 10 of the 16 MEDIUM findings from the backend audit, auto-fixed per Jac's "fix the
+  mechanical ones" call. Full detail in `docs/handoffs/backend-audit-2026-07-09-medium-fixes.gs`:
+  - `wrangler` + `adminSetProps` added to WRITE_ACTIONS (were GET-reachable)
+  - `deformula_()` formula-injection guard added to: `feedback_`'s type field, `setChats_`'s id,
+    `setWranglerRail_`'s id, `writeRecord_`/`doSeed`/`doSync`'s id column (every sync/seed write),
+    and `perfReport_`'s `t1()` (this one was already written+queued once before but never
+    actually deployed — now actually live)
+  - Lock added around `getConfigObj()`/`backfillRoles_`'s writes and
+    `stripeSetDefault_`/`stripeRemoveCard_`'s read-modify-write
+  - **⚠ Bigger than the others:** `sendCustomerMessage_`'s SMS daily-cap race needed a real
+    restructure (reserve-then-send-then-finalize under a lock, since holding the lock across the
+    Twilio/Mocean/Gmail network call would violate this file's own lock discipline) — worth an
+    extra look before deploying, not a one-liner like the rest.
+- **Pushed to HEAD** (service account, content-only), confirmed present, `node --check` passes.
+- **Not yet deployed** — awaiting Jac's go, same editor flow as the previous two batches.
+- **✅ Remaining 6 mediums — all fixed, pushed to HEAD, node --check passes.** Full detail in
+  `docs/handoffs/backend-audit-2026-07-09-final-6-fixes.gs`:
+  - `getConfigObj()` no longer wipes all custom role passwords when `admin` is falsy but `roles`
+    is intact — repairs just `admin`, matching the file's own stated intent.
+  - Invoice price-lock seal now pins the customer's `salesTaxExempt` flag too (frozen into
+    `inv.taxExempt` at first-charge time, not a signature-format change — doesn't affect any
+    already-locked invoice's seal check).
+  - `membershipActivate_`'s Stripe idempotency key dropped its calendar-day scoping (was creating
+    real duplicate subscriptions on a retry that crossed midnight).
+  - `stripeRefundInvoice_` now walks ALL charges on a multi-charge invoice for a "full" refund
+    instead of capping at just the last one (was silently under-refunding).
+  - `wranglerReply_` + `wranglerFile_` gain a shared **global 100/day** cap (Jac's call — one
+    combined counter, not per-role, tunable via `WRANGLER_DAILY_CAP` Script Property).
+- **✅ Caught a gap 2026-07-09: the 7 HIGH findings had been skipped entirely** (only criticals +
+  mediums were fixed in the first pass). All 6 outstanding ones now fixed and pushed to HEAD too
+  (the 7th, doSeed clearing missing entities, was already resolved as a side effect of the seed
+  critical fix). Full detail in `docs/handoffs/backend-audit-2026-07-09-remaining-high-low.gs`:
+  - `sendCustomerMessage` added to WRITE_ACTIONS (was GET-reachable)
+  - `chatMergeMsgs_` now validates an incoming message's `by` against the caller's `me` (was a
+    chat-impersonation gap) — also backported into the queued team-chat-privacy replacement file
+    so it isn't lost when that eventually ships
+  - `wranglerComment_`'s resume-a-paused-build logic now requires Admin+ tier, not any signed-in role
+  - `stripeSaveBank_` actually persists to `cust.achAccounts` now (was a complete no-op write)
+  - `recordManualRefund_` (+ self-caught: my own earlier `stripeRefundInvoice_` rewrite had the
+    same bug) reject an explicit non-positive `amountCents` instead of silently refunding in full
+  - `sendCustomerMessage_`'s dedup + quiet-hours checks are unconditional now, not just for
+    `auto:true` callers (Jac's call)
+  - Also fixed 4 of 5 LOW findings alongside these: dead `MONEY_ROLES`/`ADMIN_ROLES` removed,
+    `saveConfigFromBody` rejects a blank role key, `saveGroupOrderFromBody` gets a size cap,
+    `stripeChargeInvoice_`'s dead `passedAch` var removed. The 5th LOW (`saveSession_` has no
+    expiry on its Script Properties entries) is **parked** — needs a real design call (new
+    trigger vs. Sheets-backed storage), not a one-liner.
+  - **This closes the full 32-finding backend audit for real this time** (4 critical + 7 high +
+    16 medium + 4/5 low — the 5th low is parked by design, not an oversight).
+  - **✅ DEPLOYED + VERIFIED 2026-07-09 (v88).** All patches confirmed present in the live version,
+    anonymous access intact. Only the queued team-chat-privacy hardening remains undeployed
+    (intentionally, gated on the new frontend branch) — every other backend audit finding is now
+    live in production.
+
+## ⏳ QUEUED, READY TO DEPLOY INDEPENDENTLY — seed gate + recordCharge_ dedup (2026-07-09)
+- **What (2 fixes, no frontend coordination needed, unlike the chat-privacy item below):**
+  1. **`seed` gated to Admin+.** Any signed-in role could trigger a full destructive database
+     replace before — the app's UI only ever fires it from the admin-only `#reseed` bootstrap
+     flow, now the backend enforces that too (`isAdmin(pw)` check at dispatch, matching
+     `getConfig`/`feedbackList`/`setViews`'s existing pattern). `load`/`sync` unchanged.
+  2. **`doSeed` no longer wipes an entity absent from the payload.** Was: an entity key missing
+     from the client's `data` object got treated as "empty it" (`s.clear()` ran regardless) — a
+     future `ENTITIES`/`PERSIST_KEYS` drift would silently delete a whole entity's rows on the
+     next reseed. Now skips any entity not present as a key in `data`.
+  3. **`recordCharge_` de-dup guard.** A retry with an already-recorded PaymentIntent id
+     (network hiccup, double-click) inflated `amountPaid` a second time with no matching second
+     Stripe charge — bookkeeping bug, not a real double-charge (Stripe's own idempotency key
+     prevents that), but real. Now a repeat call for an already-recorded charge is an idempotent
+     no-op.
+- **Prepared** in `docs/handoffs/backend-audit-2026-07-09-critical-fixes.gs`, `node --check` passes.
+- **✅ PUSHED to HEAD 2026-07-09** (service account, content-only, confirmed present in a fresh
+  HEAD read). **REMAINING STEP (Jac, editor):** Deploy → Manage deployments → Edit prod →
+  New version → Deploy. No trigger install needed this time (unlike the membership fix) — these
+  are pure logic changes, nothing to install. Verify after: anonymous-access curl check, and
+  confirm `seed` now returns `{"ok":false,"error":"forbidden"}` for a non-admin password.
+
+## ⏳ QUEUED, GATED ON FRONTEND — team-chat privacy hardening (2026-07-09)
+- **What:** the 8-agent backend audit (2026-07-09) confirmed CRITICAL: `getChats_`/
+  `chatAuthorizeWrite_`'s original "old client → unscoped fallback" back-compat design is a
+  universal bypass — any caller (not just a genuinely old client) can omit `body.me` to read
+  every team chat and overwrite any chat's ownership/members. Worse: the new frontend that
+  always sends `me`/`rosterId` (`claude/internal-chat-updates-vq6p7b`) hasn't shipped yet, so
+  this scoping has never actually been active in production for anyone.
+- **Fix prepared** in `docs/handoffs/team-chat-privacy-backend.gs`: back-compat fallback removed
+  from both handlers — `getChats_` always scopes via `chatCanSee_`, `chatAuthorizeWrite_` rejects
+  any write with no asserted `me`. `node --check` passes.
+- **⛔ NOT safe to deploy independently** — the CURRENT live frontend never sends `me`, so
+  deploying this alone would make every team member's chats disappear / writes get silently
+  rejected. **Must ship in the same rollout as `claude/internal-chat-updates-vq6p7b`.** Jac's
+  call (2026-07-09): fix now, coordinate the deploy with that frontend branch landing — not
+  deployed yet, no STOP-gate go-ahead given for the live push.
+
+## ⏳ PUSHED, AWAITING EDITOR DEPLOY — membership regression fix (2026-07-09)
+- **What:** re-splices the app-driven membership block (`membershipEnroll_`/`membershipCancel_`/
+  `membershipReactivate_`/`membershipBillingCron` + ~15 helpers + the 3 dispatch lines) that was
+  silently deleted in v48 (2026-06-25T23:21:35Z, 11 minutes after it first shipped in v46) — see
+  `docs/handoffs/membership-billing-additions.gs` for the full root-cause trace (pulled directly
+  from the Apps Script version history via the REST API, service account, read-only).
+- **Confirmed no retroactive cleanup needed:** pulled the live production dataset (2,245
+  customers, 185 invoices) and checked every angle — zero `MINV-` invoices, zero
+  `membership:true` invoices, zero customers with any app-driven billing field populated
+  (`paidCadence`/`commitmentStart`/`commitmentEnd`/`paidUntil`/`stripeSubId`). The feature had no
+  organic production usage in its 11-minute live window or since, so there's no missed-billing or
+  stuck-customer fallout to reconcile.
+- **Content pushed to HEAD** (service account, content-only, safe — does NOT affect the live
+  `/exec` URL): confirmed via a fresh HEAD read that all 5 membership markers are present and
+  `node --check` passes.
+- **✅ DONE 2026-07-09: v83 ("Massive Audit") deployed by Jac.** Verified live: membership
+  markers present in v83's content, anonymous access intact (`{"ok":false,"error":"unauthorized"}`
+  on a bad password, not HTML/403).
+- **⚠ Found + fixed after that deploy:** `installMembershipBillingCron_` didn't show up in the
+  editor's Run dropdown — Apps Script hides any function ending in `_` from that picker (private-
+  helper convention). Renamed to `installMembershipBillingCron` (no underscore, matching the
+  existing `installUnitDailyTrigger` precedent), re-pushed to HEAD.
+- **✅ FULLY DEPLOYED + VERIFIED 2026-07-09 (v84).** Jac re-deployed, refreshed, ran
+  `installMembershipBillingCron` (execution log: completed, no errors — trigger installed).
+  End-to-end verification: `auth` with a money-tier password → `{"ok":true,"role":"developer",
+  "money":true}`; `membershipEnroll`/`membershipCancel`/`membershipReactivate` each called with a
+  deliberately nonexistent customerId → `{"ok":false,"error":"customer-not-found"}` (proves the
+  dispatch is live, the money gate passed, and the function body executed — zero writes, zero
+  Stripe calls, since the code returns before any write when the customer doesn't exist).
+  Anonymous access confirmed intact throughout. **Regression fully closed.**
+
 ## ✅ DEPLOYED — team-chat privacy (2026-07-08, Jac editor deploy)
 - **What:** `getChats_` / `setChats_` replaced with scoped + authorized versions (+ helpers
   `chatCanSee_` / `chatMergeMsgs_` / `chatMergeSeen_` / `chatAuthorizeWrite_`). Team-chat
