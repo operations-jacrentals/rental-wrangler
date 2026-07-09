@@ -146,15 +146,49 @@ Once resolved: front-end wiring is just calling the existing `gpsFetch`/
 "last seen" stamp, stale/unreachable → capture-seam fallback. No Script
 Properties, no new OAuth flow, no `/clasp` deploy for this piece.
 
-- GAS `Code.js` (gitignored — ships via `/clasp`, ADDITIVE only): `getTrips` /
-  `setTrips` with stale-rev conflict rejection, keyed per day. Queue through the
-  backend-deploy runbook; **STOP for Jac before prod deploy**.
-- Front-end: sync layer mirroring `getGroupOrder` (debounced push, boot pull,
-  `#local`/offline → cache only); footer states `Synced · rev N` / `Offline — cached`
-  / conflict → re-pull + toast.
-- Retire `dispatchOrderLS`/`dispatchTimesLS` as sources of truth (cache only).
-- **Verify:** two-client conflict simulated in logic test (rev rejection path);
-  gates green. **Commit:** "Trips card phase 4: backend-synced trips slice (D3)".
+**Contract (locked 2026-07-09, matches the seam Phase 3 already left —
+`tripsLS()`/`tripsSaveDay()`, app.js ~9219, store shape
+`{ [day]: { [tripId]: {time, order, rev} } }`):**
+
+- `getTrips` — no input. Response: `{ ok:true, trips: { [day]: { [tripId]:
+  {time, order, rev} } } }` — the whole store, small payload (mirrors
+  `getGroupOrder`'s simplicity; no day-scoping needed at this data size).
+- `setTrip` — **per-trip, not per-day-bulk** (matches how merge/split/time-edit
+  already mutate one trip at a time). Input: `{ day, tripId, time, order, rev }`
+  where `rev` is the CALLER's last-known rev (0/absent for a brand-new trip).
+  - Success: stored rev matches (or trip is new) → write, **increment rev**,
+    respond `{ ok:true, rev:newRev }`.
+  - Conflict: stored rev differs → **reject**, respond `{ ok:false,
+    error:'stale-rev', current:{time,order,rev} }` (never silently overwrite
+    a concurrent dispatcher's edit).
+- GAS `Code.js` (gitignored — ships via `/clasp`, ADDITIVE only). Queue through
+  the backend-deploy runbook; **STOP for Jac before prod deploy** — built and
+  tested via `/clasp` on the main session, not delegated (auth/deploy gate).
+
+**Front-end (delegable, well-scoped against the contract above):**
+- `tripsLS()`/`tripsSaveDay()` stay as the **local cache** (renders always read
+  it — instant, no network wait). Every write path that currently calls
+  `tripsSaveDay` (merge/split/time-edit) additionally: (1) update the cache
+  optimistically as today, (2) debounced-push `setTrip` for the touched
+  trip(s), (3) on success sync the cache's `rev` to the server's, (4) on
+  `stale-rev` overwrite that trip's cache entry with the server's `current`,
+  toast "Someone else updated this trip — refreshed", re-render.
+- Boot: `loadTripsFromBackend()` (mirrors `loadGroupOrderFromBackend`) pulls
+  `getTrips` once at login, merges into the cache (server wins at boot — local
+  storage may be stale). No-op in `#local`/offline (mirrors the existing
+  `backendPassword` guard).
+- Trips card footer: `Synced · rev N` (last successful push) / `Offline —
+  cached` (no `backendPassword`, matches `#local`) — replaces the current
+  placeholder footer text.
+- Retire `dispatchOrderLS`/`dispatchTimesLS` as anything but the already-legacy
+  fallback they're documented as (no behavior change needed — they're already
+  read-only fallbacks per Phase 3's own comment).
+- **Verify:** two-client conflict simulated in logic test (client A's `rev`
+  stale by the time it pushes → `stale-rev` returned → cache overwritten with
+  server state, no data loss); gates green.
+- **Commit:** "Trips card phase 4: backend-synced trips slice (D3)" — front-end
+  piece can commit/push independently of the backend deploy (graceful offline
+  degradation until the action is actually live).
 
 ## Phase 5 — Polish + handoff
 
