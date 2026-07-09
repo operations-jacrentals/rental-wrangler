@@ -57,12 +57,13 @@ Every UI phase runs through `jactec-ui` (screenshot + self-critique before Jac s
 ## Phase 1b — Driver row actions (spec §2.2b)
 
 - Row gains: customer phone as `tel:` link (R7 `linkName` voice, phone glyph —
-  resolve via `IDX.customer`); **Navigate ↗** on the address (Google Maps
-  directions URL — pin lat,lng when present, else the address string;
-  `target="_blank" rel="noopener"`); **+Log Delivery / +Log Recovery** action
-  reusing the journey capture (`openCapture`/`openOverlay kind:'capture'` with
-  the row's rentalId/unitId/cap) — one code path, D7 stamp intact. Done rows
-  show the capture clock instead.
+  resolve via `IDX.customer`); **destination as the TOWN** (parse city from the
+  address — 2nd-from-last comma segment before the state; fallback truncated
+  address) whose tap opens-if-collapsed the map panel and focuses that trip
+  (`dispatchFocusStop`) — NO separate navigate link (Jac); **+Log Delivery /
+  +Log Recovery** action reusing the journey capture (`openOverlay
+  kind:'capture'` with the row's rentalId/unitId/cap) — one code path, D7
+  stamp intact. Done rows show the capture clock instead.
 - Phone pass: all three thumb-reachable in the row, ≥44px, no hover.
 - **Cab sheet (spec §2.2b):** row tap (non-pill target) toggles an inline
   expansion — one line per unit: `unitPill` · fuel type (category `fuelType`)
@@ -81,6 +82,9 @@ Every UI phase runs through `jactec-ui` (screenshot + self-critique before Jac s
   last state per device (`jactec.tripsMap` localStorage).
 - Maps not ready/failed → stamped **MAP OFFLINE** plate (hazard-stripe edge, mirrors
   the transport editor `.ph`/`mapFailed` pattern). `#local` always shows the plate.
+- **"Open in Google Maps" button on the panel** when a trip is focused (spec
+  §2.2b revised): directions URL to the focused pin (lat,lng) or address string
+  — the driver's turn-by-turn handoff lives on the map, not the row.
 - **Verify:** offline plate renders in `#local` (screenshot); no empty-black pane;
   gates green. **Commit:** "Trips card phase 2: collapsible live-map panel + offline plate".
 

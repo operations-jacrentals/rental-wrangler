@@ -101,10 +101,16 @@ must carry the driver's whole loop, thumb-reachable on a phone:
 - **Call the customer:** the customer's phone number rides the row as a
   tap-to-call `tel:` link (R7 hyperlink voice, phone glyph + number). No detour
   through the Customers card.
-- **Navigate to the destination:** the address line gains a **Navigate ↗**
-  affordance that launches Google Maps directions to the pin (or the address
-  string when no pin) in the native maps app — external R7 link, distinct from
-  the existing in-app "open the site / set the pin" tap.
+- **Destination (revised — Jac, 2026-07-09):** no separate Navigate link. The
+  row shows the destination compactly — the **town** parsed from the address
+  ("Lake Charles"), falling back to a truncated address when no city parses.
+  Tapping it **jumps the inline live map to that trip** — opens the map panel
+  if collapsed, pans/zooms to the pin and highlights the route (the existing
+  `dispatchFocusStop` behavior). The handoff to turn-by-turn lives **on the
+  map**: when a trip is focused, the map panel shows a **"Open in Google
+  Maps"** button (directions to the focused pin — or the address string when
+  unpinned) that jumps the driver to the actual Google Maps app. One nav
+  concept, anchored where the map already is.
 - **Log completion from the row:** an action on the row — **+Log Delivery** /
   **+Log Recovery** (matching the journey-node labels) — opens the SAME capture
   overlay the rental journey uses (`openOverlay kind:'capture'` →
