@@ -17,8 +17,7 @@
  *     mistake.
  *   - But v48 ALSO removes the 3 membershipEnroll/Cancel/Reactivate dispatch
  *     lines AND the entire ~176-line app-driven membership block (every
- *     function below this banner: memAddMonthsIso_ through
- *     installMembershipBillingCron_).
+ *     function below this banner: memAddMonthsIso_ through installMembershipBillingCron).
  *   - The older Stripe-subscription membership path (membershipActivate_ /
  *     membershipDailySweep / membershipLedger_) is UNAFFECTED — present in
  *     both v47 and v48, still live today. Only the app-driven system below
@@ -54,8 +53,12 @@
  *   if (action === 'membershipReactivate') return json(roleMoneyOk_(role) ? membershipReactivate_(body, role) : { ok:false, error:'forbidden' });
  *
  * ── REMAINING MANUAL STEP: install the daily trigger (clasp run can't — no API-exec deploy).
- *   In the Apps Script editor: Run → installMembershipBillingCron_   (creates a daily 3am trigger)
+ *   In the Apps Script editor: Run → installMembershipBillingCron   (creates a daily 3am trigger)
  *   — or Triggers (clock icon) → Add Trigger → membershipBillingCron · Time-driven · Day timer · 3am.
+ *   NOTE (2026-07-09): this installer function is named WITHOUT a trailing underscore on purpose
+ *   — Apps Script's editor hides any function ending in "_" from the Run dropdown (private-helper
+ *   convention), so a trailing underscore here would make it unrunnable from the UI. Matches the
+ *   existing installUnitDailyTrigger precedent elsewhere in this file.
  * ════════════════════════════════════════════════════════════════════════ */
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -231,5 +234,5 @@ function memLapse_(c) {
   memPatchCustomer_(c.customerId, { paidUntil: memYestIso_(), graceUntil: memYestIso_(), prepaid: false });
   memLedger_(cxlId, c.customerId, 0, c.stripeId, 'cron', 'membership-lapse');
 }
-// Install ONCE from the Apps Script editor (Run → installMembershipBillingCron_):
-function installMembershipBillingCron_() { ScriptApp.newTrigger('membershipBillingCron').timeBased().everyDays(1).atHour(3).create(); }
+// Install ONCE from the Apps Script editor (Run → installMembershipBillingCron):
+function installMembershipBillingCron() { ScriptApp.newTrigger('membershipBillingCron').timeBased().everyDays(1).atHour(3).create(); }

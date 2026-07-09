@@ -22,11 +22,17 @@
 - **Content pushed to HEAD** (service account, content-only, safe — does NOT affect the live
   `/exec` URL): confirmed via a fresh HEAD read that all 5 membership markers are present and
   `node --check` passes.
-- **REMAINING STEPS (Jac, editor):**
-  1. Apps Script editor → Deploy → Manage deployments → Edit the prod deployment → **New
-     version**, Execute as **Me (operations@jacrentals.com)**, Who has access **Anyone** → Deploy.
-  2. Run → `installMembershipBillingCron_` once (creates the daily 3am billing trigger — can't be
-     done via the API push, must run from the editor).
+- **✅ DONE 2026-07-09: v83 ("Massive Audit") deployed by Jac.** Verified live: membership
+  markers present in v83's content, anonymous access intact (`{"ok":false,"error":"unauthorized"}`
+  on a bad password, not HTML/403).
+- **⚠ Found + fixed after that deploy:** `installMembershipBillingCron_` didn't show up in the
+  editor's Run dropdown — Apps Script hides any function ending in `_` from that picker (private-
+  helper convention). Renamed to `installMembershipBillingCron` (no underscore, matching the
+  existing `installUnitDailyTrigger` precedent), re-pushed to HEAD. **REMAINING STEPS (Jac,
+  editor):**
+  1. Deploy → Manage deployments → Edit prod → **New version** again (picks up the rename).
+  2. Refresh the editor tab (the Run dropdown is client-cached), then Run →
+     `installMembershipBillingCron` once (creates the daily 3am billing trigger).
   3. Verify: `curl -sS -L -H 'Content-Type: text/plain;charset=utf-8' --data '{"action":"auth","password":"__wrong__"}' "$EXEC_URL"` → expect `{"ok":false,"error":"unauthorized"}` (anonymous access intact).
 
 ## ✅ DEPLOYED — team-chat privacy (2026-07-08, Jac editor deploy)
