@@ -3611,6 +3611,29 @@ body.is-phone .card[data-card="units"] .list { grid-template-columns: repeat(2, 
 @media (prefers-reduced-motion: reduce) {
   .catanim *, .catanim { animation: none !important; }
 }
+/* ── CATEGORY FRAME SPRITES (Jac, 2026-07-07) — 2-3 hand-drawn poses per family
+   (icons-frames.js, drawn directly in Figma) hard-cut via steps() instead of a
+   continuous transform loop ("three frames... a motion picture... simpler than
+   full JS" — Jac). Each frame is a real distinct drawing, not a CSS transform of
+   one shape. `cf-n2`/`cf-n3` size the cycle to however many frames a family
+   actually has — buggy/dumptrailer are 2-frame redesigns, not padded to 3.
+   Paused until hover, same trigger set as .catanim. Frame 1 is always the rest
+   pose, so idle rendering is identical to a plain static icon. ── */
+.catframes .cf { opacity: 0; }
+.cf-n3 .cf1 { animation: cf-cycle3 .9s steps(1,end) infinite; animation-play-state: paused; }
+.cf-n3 .cf2 { animation: cf-cycle3 .9s steps(1,end) infinite; animation-play-state: paused; animation-delay: .3s; }
+.cf-n3 .cf3 { animation: cf-cycle3 .9s steps(1,end) infinite; animation-play-state: paused; animation-delay: .6s; }
+@keyframes cf-cycle3 { 0% { opacity: 1; } 33.33% { opacity: 1; } 33.34% { opacity: 0; } 100% { opacity: 0; } }
+.cf-n2 .cf1 { animation: cf-cycle2 .9s steps(1,end) infinite; animation-play-state: paused; }
+.cf-n2 .cf2 { animation: cf-cycle2 .9s steps(1,end) infinite; animation-play-state: paused; animation-delay: .45s; }
+@keyframes cf-cycle2 { 0% { opacity: 1; } 49.99% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 0; } }
+/* paused-until-hover MUST come after the animation shorthands above — same
+   load-bearing ordering as .catanim (the shorthand resets play-state to running). */
+.ur:hover .catframes .cf, .ucard:hover .catframes .cf, .catr:hover .catframes .cf { animation-play-state: running; }
+@media (prefers-reduced-motion: reduce) {
+  .catframes .cf { animation: none !important; }
+  .catframes .cf1 { opacity: 1 !important; }
+}
 .catr-name { flex: 1 1 auto; min-width: 0; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 13px; line-height: 1.1; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 /* the availability row in the rulebook R3b pill language: a full-width LEAD pill
    (N Avail / Next date / None·reason) over a PASS · NR · FAIL trio. Each slot is the

@@ -23,6 +23,7 @@ import { pie as d3pie, arc as d3arc } from './vendor/d3-shape.min.js';         /
 import { AGREEMENTS, AGREEMENT_VERSIONS, AGREEMENT_CURRENT } from './agreements.js';
 import { ico, I, CARD_ICON, RING_ICON, CATEGORY_ICON } from './icons.js';
 import { CATEGORY_ANIM } from './icons-anim.js';
+import { CATEGORY_FRAMES } from './icons-frames.js';
 import {
   getStatus, STATUS, ROLES, ROLE_TIERS, tierRank, BUILTIN_ROLE_TIERS, GRID_CARDS, BACKOFFICE_BOARDS, SORT_FIELDS,
   SHOP_TYPES, COLUMNS, COLUMN_OF,
@@ -5370,7 +5371,16 @@ function categoryIconFor(name) {
   else if (/heat|furnace/.test(n)) key = 'heater';
   else if (/saw|cut|chainsaw|chipper|trowel|float|buffer|sander|tiller|sod|splitter|jack.?hammer|metal.?break|pallet.?jack|snake|blade/.test(n)) key = 'saw';
   if (CATEGORY_ANIM[key]) return `<span class="cat-glyph">${CATEGORY_ANIM[key]}</span>`;
+  if (CATEGORY_FRAMES[key]) return `<span class="cat-glyph">${catFramesSvg(CATEGORY_FRAMES[key])}</span>`;
   return `<span class="cat-glyph ${CATEGORY_MOTION[key]}">${CATEGORY_ICON[key]}</span>`;
+}
+// Renders a 2- or 3-frame hover sprite (icons-frames.js) as one <svg> with each
+// frame in its own <g class="cf">, hard-cut via CSS steps() — see "CATEGORY FRAME
+// SPRITES" in style.css. Frame count varies per family (buggy/dumptrailer are
+// 2-frame redesigns, not padded to 3) so the wrapper class carries the count.
+function catFramesSvg(frames) {
+  const groups = frames.map((body, i) => `<g class="cf cf${i + 1}">${body}</g>`).join('');
+  return `<svg class="catframes cf-n${frames.length}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${groups}</svg>`;
 }
 /* The unit row's RENTAL+INSPECTION pill — the "driving button" (Jac 2026-07-03).
    It says what you can DO with the unit right now: AVAILABLE (passed, active, free),
