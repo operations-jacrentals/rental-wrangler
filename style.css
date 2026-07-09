@@ -698,6 +698,19 @@ select.lf-in { appearance: none; cursor: pointer; }
 .row[data-card="calendar"] .trip-tap { display: inline-flex; align-items: center; min-height: 26px; }
 .is-phone .row[data-card="calendar"] .trip-tap { min-height: 44px; }
 .is-phone .row[data-card="calendar"] .dt-time { min-height: 44px; }
+/* §2.3 Phase 3 — the ⋯ Merge/Split menu trigger. A real <button>, always visible (no
+   hover-reveal state to keep in sync with the phone rule); ≥44px on phones. */
+.row[data-card="calendar"] .trip-more { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 22px; height: 22px; border-radius: 8px; background: none; border: none; color: var(--txt-2); font-size: 15px; font-weight: 800; letter-spacing: 1px; line-height: 1; cursor: pointer; }
+.row[data-card="calendar"] .trip-more:hover { background: var(--panel-2); color: var(--accent); }
+.row[data-card="calendar"] .trip-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.is-phone .row[data-card="calendar"] .trip-more { width: 44px; height: 44px; }
+/* §2.3 Phase 3 — a merged trip's stop sequence number (row-2 + the cab sheet): the
+   array order IS the run order. Plain R3b-adjacent fact chip, not a status pill. */
+.row[data-card="calendar"] .trip-seq-n { display: inline-flex; align-items: center; justify-content: center; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 999px; background: var(--panel-2); color: var(--txt-3); font-size: 9.5px; font-weight: 800; flex: 0 0 auto; }
+/* §2.3 Phase 3 — drag one trip row onto another to merge (desktop; the ⋯ menu is the
+   touch-parity path). Blue = commit-intent (R17 language), never orange (R2/selected). */
+.row[data-card="calendar"].trip-dragging { opacity: .4; }
+.row[data-card="calendar"].trip-dragover { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: var(--chip-radius); }
 /* Trips footer — honest sync status (spec §2.1 "false trust signals"): no "auto-notifies"
    claim until D3 sync ships (Phase 4); a quiet gray stamp instead of the green live-dot. */
 .disp-foot { flex: 0 0 auto; display: flex; align-items: center; gap: 7px; padding: 7px 12px; border-top: 1px solid var(--line); font-size: 10.5px; color: var(--txt-3); }

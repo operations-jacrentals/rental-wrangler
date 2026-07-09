@@ -4664,6 +4664,18 @@ function openCtxMenuAt(target, x, y) {
   if (!target || !target.closest) return;
   if (target.closest('input, textarea, .inline-input')) return;
   const card = target.closest('.card'); if (!card && !target.closest('.overlay .popup')) return;
+  // §2.3 Phase 3 — right-click / long-press on a Trips row body opens the trip's own
+  // Merge/Split menu (openTripMenu), not the generic Wrangler record menu below: a
+  // derived/materialized Trip isn't a real card record. Excludes linked-record pills,
+  // real links, and the per-leg controls so THEIR own right-click behavior (e.g. a
+  // rental pill's "+Target" link actions) still works exactly as it did before —
+  // this only claims the row's own dead space (badge/time/town/spacer/Done/⋯), the
+  // SAME area whose left-click already toggles the cab sheet.
+  const tripRow = target.closest('.row[data-card="calendar"]');
+  if (tripRow && !target.closest('[data-pill-card], a[href], .dt-time, .js-stop-driver, .js-trip-driver')) {
+    openTripMenu(tripRow.dataset.rec, tripRow.dataset.day, tripRow);
+    return;
+  }
   // §13.4 — inside an OPEN graph view, right-click/long-press the panel (or the Views & sort
   // control above it) opens the graph-chrome menu instead of the per-element Wrangler menu,
   // so the filter pills / sort can be hidden and Reset.
@@ -5236,6 +5248,11 @@ function rowEl(card, rec) {
   if (card === 'calendar' && state.dispFocusId === id) extra += ' trip-focus';      // focused on the live map — the neon "you are here" ring survives a re-render
   const node = el('div', 'row' + extra);
   node.dataset.card = card; node.dataset.rec = id;
+  // Trips rows (Phase 3, spec §2.3): stamp the trip's own day (merge/drop is same-day
+  // only) and re-enable native drag — Phase 1 removed it (no target to drop ONTO yet);
+  // dragging one trip row onto another now MERGES them (drop-target styling below,
+  // wired in the §15c-adjacent drag block near the grp-hd reorder listeners).
+  if (card === 'calendar') { node.dataset.day = rec.day; node.draggable = true; }
   // Trips rows have no detail view yet (Phase 1, derived-only) — eye-preview / new-tab
   // open a "record" that doesn't exist, so they're dropped rather than wired to crash.
   const actions = card === 'calendar' ? '' : `
@@ -5543,27 +5560,44 @@ const ROWS = {
       </div>`;
   },
 
-  /* ── TRIPS (née Calendar/dispatch cockpit) — spec 2026-07-09 §2.2 + §2.2b, Phase 1/1b:
-     one row per derived Trip, and the row IS the cab view. Anatomy: kind badge ·
-     tap-to-edit time · destination TOWN (tap → focus on the live map) · customer
-     refPill · unit pill · driver pill (R5b +Driver, reused verbatim from the retired
-     lane rail) · tap-to-call tel: link · +Log Delivery/Recovery (the SAME journey
-     capture path — D7 stamp free) or the capture clock once done. Tapping the row
-     BODY toggles the cab sheet (unit facts, one level down). Row content only —
-     rowEl() supplies the card frame (and skips eye/new-tab actions for this card). */
+  /* ── TRIPS (née Calendar/dispatch cockpit) — spec 2026-07-09 §2.2 + §2.2b + §2.3,
+     Phase 1/1b/3: one row per Trip (derived OR materialized), and the row IS the cab
+     view. Anatomy: kind badge · tap-to-edit time (ONE per trip, even merged — spec
+     §2.3) · destination TOWN of the PRIMARY (first) stop · customer refPill · one
+     unit pill per stop (sequence-numbered once merged) · driver pill (R5b +Driver;
+     a merged trip's driver reassigns EVERY leg together — js-trip-driver — vs a
+     single leg's own js-stop-driver) · tap-to-call tel: link · +Log Delivery/Recovery
+     for the primary stop (the SAME journey capture path — D7 stamp free; other stops'
+     log actions live in the cab sheet) · the ⋯ menu (Merge trip…/Split out…, spec
+     §2.3 touch-parity guardrail — the non-drag path). Tapping the row BODY toggles
+     the cab sheet. Row content only — rowEl() supplies the card frame + drag wiring. */
   calendar: (t) => {
     const r = IDX.rental.get(t.rentalId);
     const cu = r && r.customerId ? IDX.customer.get(r.customerId) : null;
-    const driverChip = t.driverId
-      ? `<button class="catr-slot js-stop-driver" data-id="${esc(t.id)}" data-rec="${esc(t.rentalId)}" data-unit="${esc(t.unitId || '')}" data-task="${esc(t.task)}" data-tip="Driver on this leg — tap to change">${badge(driverName(t.driverId), 'navy')}</button>`
-      : (driverRoster().length ? `<button class="catr-slot js-stop-driver" data-r="R5b" data-id="${esc(t.id)}" data-rec="${esc(t.rentalId)}" data-unit="${esc(t.unitId || '')}" data-task="${esc(t.task)}" data-tip="Assign a driver to this leg"><span class="add-field anchor" style="height:20px;font-size:10px">+Driver</span></button>` : '');
-    // §2.2b destination = the TOWN, compact; tap jumps the inline live map to this trip.
+    const multi = t.stops.length > 1;
+    // §2.3 driver — a merged trip's ONE driver reassigns every leg together (D6: no
+    // redundant trip-level field, so a shown driver can never disagree with a leg's
+    // own). A single-stop trip keeps the exact Phase-1 per-leg control.
+    const driverChip = multi
+      ? (t.driverId
+        ? `<button class="catr-slot js-trip-driver" data-id="${esc(t.id)}" data-day="${esc(t.day)}" data-tip="Driver on this trip (${t.stops.length} stops) — tap to change">${badge(driverName(t.driverId), 'navy')}</button>`
+        : (driverRoster().length ? `<button class="catr-slot js-trip-driver" data-r="R5b" data-id="${esc(t.id)}" data-day="${esc(t.day)}" data-tip="Assign a driver to this trip"><span class="add-field anchor" style="height:20px;font-size:10px">+Driver</span></button>` : ''))
+      : (t.driverId
+        ? `<button class="catr-slot js-stop-driver" data-id="${esc(t.id)}" data-rec="${esc(t.rentalId)}" data-unit="${esc(t.unitId || '')}" data-task="${esc(t.task)}" data-tip="Driver on this leg — tap to change">${badge(driverName(t.driverId), 'navy')}</button>`
+        : (driverRoster().length ? `<button class="catr-slot js-stop-driver" data-r="R5b" data-id="${esc(t.id)}" data-rec="${esc(t.rentalId)}" data-unit="${esc(t.unitId || '')}" data-task="${esc(t.task)}" data-tip="Assign a driver to this leg"><span class="add-field anchor" style="height:20px;font-size:10px">+Driver</span></button>` : ''));
+    // §2.3 row-2 — one unit pill per stop; a merged trip numbers the sequence (the
+    // implicit array order IS the run order — spec §2.3, within-trip drag-reorder
+    // skipped as a documented nice-to-have).
+    const stopsHtml = t.stops.map((s, i) => `${multi ? `<span class="trip-seq-n" data-tip="Stop ${i + 1} of ${t.stops.length} — ${esc(s.task)}">${i + 1}</span>` : ''}${s.unitId ? unitPill(s.unitId) : ''}`).join('');
+    // §2.2b destination = the PRIMARY stop's TOWN, compact; tap jumps the live map to this trip.
     const town = tripTown(t.addr);
     const townHtml = town ? `<button class="trip-town trip-tap js-trip-town${t.pin ? '' : ' nopin'}" data-id="${esc(t.id)}" data-day="${esc(t.day)}" data-tip="${esc(t.addr)} — tap to see this run on the live map">${t.pin ? '' : '⚠ '}${esc(town)}</button>` : '';
     // §2.2b call the customer — a REAL tel: anchor (R7), no detour through Customers.
     const callHtml = (cu && cu.phone && telHref(cu.phone)) ? linkName(cu.phone, { href: telHref(cu.phone), icon: I.phone, js: 'trip-tap' }) : '';
     // §2.2b log completion from the row — the journey's js-yard flow verbatim (yardCapture
     // → the capture overlay → saveYardCapture → D7 driver stamp). Done → the stamp clock.
+    // Scoped to the PRIMARY stop only — the rest of a merged trip's stops log from the
+    // cab sheet (one level down), so the row stays lean regardless of stop count.
     const capKey = t.task === 'Deliver' ? 'startCapture' : 'endCapture';
     const src = r ? (unitEntry(r, t.unitId) || r) : null;
     const clock = t.done && src && src[capKey] ? src[capKey].clock : '';
@@ -5572,20 +5606,39 @@ const ROWS = {
       : (t.task === 'Deliver'
         ? addBtn('Log Delivery', { link: true, icon: I.video, js: 'js-yard trip-tap', data: { cap: 'start', rec: t.rentalId, unit: t.unitId || '' } })
         : addBtn('Log Recovery', { link: true, icon: I.video, js: 'js-yard trip-tap', data: { cap: 'end', rec: t.rentalId, unit: t.unitId || '' } }));
+    // §2.3 the ⋯ menu — Merge trip…/Split out…, the non-drag/touch-parity path
+    // (dispatch-ux-research 2026-07-06: "drag-only" is a named anti-pattern). Always
+    // on (simplest — no hover-reveal state to keep in sync with the phone rule).
+    const menuBtn = `<button class="trip-more js-trip-menu" data-id="${esc(t.id)}" data-day="${esc(t.day)}" data-tip="Merge or split this trip">⋯</button>`;
     // §2.2b cab sheet — unit facts one level down: unit pill · fuel · weight (R3b facts).
-    const cab = state.calOpenTrip === t.id ? `<div class="trip-cab">${t.stops.map((s) => {
+    // Phase 3: every stop PAST the primary also carries its own +Log action here (the
+    // primary's own log action already rides row-3 above) — one code path either way.
+    const cab = state.calOpenTrip === t.id ? `<div class="trip-cab">${t.stops.map((s, i) => {
       const u = IDX.unit.get(s.unitId); if (!u) return '';
       const cat = IDX.category.get(u.categoryId);
-      return `<div class="trip-cab-line">${unitPill(s.unitId)}${cat && cat.fuelType ? badge(String(cat.fuelType).toUpperCase()) : ''}${badge(u.weight ? String(u.weight).toUpperCase() : 'NO WEIGHT')}</div>`;
+      const sr = i > 0 ? IDX.rental.get(s.rentalId) : null;
+      const sSrc = sr ? (unitEntry(sr, s.unitId) || sr) : null;
+      const sCapKey = s.task === 'Deliver' ? 'startCapture' : 'endCapture';
+      const sDone = i > 0 && stopDone(s);
+      const sClock = sDone && sSrc && sSrc[sCapKey] ? sSrc[sCapKey].clock : '';
+      const stopLogHtml = i === 0 ? '' : (
+        sDone
+          ? (sClock ? badge(`Logged ${sClock}`, 'green') : '')
+          : (s.task === 'Deliver'
+            ? addBtn('Log Delivery', { link: true, icon: I.video, js: 'js-yard trip-tap', data: { cap: 'start', rec: s.rentalId, unit: s.unitId || '' } })
+            : addBtn('Log Recovery', { link: true, icon: I.video, js: 'js-yard trip-tap', data: { cap: 'end', rec: s.rentalId, unit: s.unitId || '' } })));
+      const seqNum = multi ? `<span class="trip-seq-n" data-tip="Stop ${i + 1} of ${t.stops.length} — ${esc(s.task)}">${i + 1}</span>` : '';
+      return `<div class="trip-cab-line">${seqNum}${multi ? badge(s.task, s.task === 'Deliver' ? 'blue' : 'brown') : ''}${unitPill(s.unitId)}${cat && cat.fuelType ? badge(String(cat.fuelType).toUpperCase()) : ''}${badge(u.weight ? String(u.weight).toUpperCase() : 'NO WEIGHT')}${stopLogHtml}</div>`;
     }).join('')}</div>` : '';
     return `<div class="row-1">
         ${badge(t.task, t.task === 'Deliver' ? 'blue' : 'brown')}
-        <input class="dt-time js-disp-time" data-id="${esc(t.id)}" data-day="${esc(t.day)}" data-lane="${esc(t.driverId || 'pool')}" value="${esc(t.time || '')}" placeholder="—:—" maxlength="8" aria-label="Stop time" data-tip="Set the stop time — reorders the run" />
+        <input class="dt-time js-disp-time" data-id="${esc(t.id)}" data-day="${esc(t.day)}" value="${esc(t.time || '')}" placeholder="—:—" maxlength="8" aria-label="Stop time" data-tip="Set the stop time — reorders the run" />
         ${townHtml}
         <span class="spacer"></span>
         ${t.done ? badge('Done', 'green') : ''}
+        ${menuBtn}
       </div>
-      <div class="row-2">${refPill('rentals', t.rentalId, t.cust)}${t.unitId ? unitPill(t.unitId) : ''}${driverChip}</div>
+      <div class="row-2">${refPill('rentals', t.rentalId, t.cust)}${stopsHtml}${driverChip}</div>
       <div class="trip-r3">${callHtml}<span class="spacer"></span>${logHtml}</div>
       ${cab}`;
   },
@@ -9116,6 +9169,17 @@ function assignStopDriver(rentalId, unitId, task, driverId) {
   reindex('rentals', r);
   return true;
 }
+/* §2.3 Trip materialization store (Phase 3, spec 2026-07-09 §2.3) — mirrors
+   dispatchSchedLS's shape (additive localStorage today; Phase 4 promotes the SAME
+   shape to a synced backend slice with stale-rev rejection, so this is a drop-in
+   swap). Keyed by day, then by a STABLE tripId (assigned once — see tripsFor()):
+     { [day]: { [tripId]: { time, order:[{rentalId,unitId,task}], rev } } }
+   Deliberately carries NO trip-level driverId (D6 "one fact, one place" — see
+   tripMerge/tripSplit below): a trip's driver is always read off its stops' own
+   per-leg driverId via assignStopDriver, never cached here where it could drift out
+   of sync with what a leg actually has. */
+const tripsLS = () => _lsJSON('jactec.trips');
+function tripsSaveDay(day, dayStore) { const all = tripsLS(); all[day] = dayStore; _lsSave('jactec.trips', all); }
 // Which driver lanes the dispatcher has open, per device (a VIEW pref, not data — D5:
 // "the dispatcher clicks which drivers to show"). Pruned against the live roster on read.
 const dispatchLanesLS = () => { const v = _lsJSON('jactec.dispatchLanes'); const ids = Array.isArray(v.show) ? v.show : []; const roster = driverRoster().map((d) => d.id); return ids.filter((id) => roster.includes(id)); };
@@ -9157,29 +9221,183 @@ function stopDone(ev) {
   return ev.task === 'Deliver' ? !!src.startCapture : !!src.endCapture;
 }
 const dispatchNextId = (stops) => { const n = stops.find((s) => !stopDone(s)); return n ? n.id : null; };
-/* ── APP-23b Trips derivation (spec 2026-07-09 §2.3, Phase 1) ─────────────────
-   tripsFor(): every dispatchEvents() event becomes its own derived Trip — no
-   materialized record yet (Phase 3), so a cancelled rental's trip vanishes for
-   free on the next render. One event = one trip in Phase 1 (merge/split, which
-   turns several stops into one trip, is Phase 3). Time resolution mirrors
-   dispatchDayStops exactly (per-lane schedule → legacy flat key → the rental's
-   own time) so a dispatcher's prior edits under the old cockpit carry over. */
+/* ── APP-23b Trips derivation (spec 2026-07-09 §2.3, Phase 1/3) ────────────────
+   tripsFor(): every dispatchEvents() event is a potential stop. An UNTOUCHED trip
+   stays pure derivation — one event = one trip, recomputed fresh every render, so a
+   cancelled rental's trip vanishes for free. The moment dispatch touches one (merge,
+   split, or a time edit — tripMerge/tripSplit/the js-disp-time handler) it
+   MATERIALIZES into tripsLS(), keyed by day + a STABLE tripId (assigned once, usually
+   the first-merged stop's own dispatchStopId — it does NOT chase order[0] through
+   later merges/splits). From then on tripsFor() reads that record's order/membership
+   (and time, once set) instead of deriving fresh; driver stays derived off the
+   PRIMARY (order[0]) stop's own per-leg driverId either way (D6 — see tripMerge).
+   Read-time hygiene (spec §2.3): a materialized stop whose rental/leg no longer
+   exists is dropped; a trip left with zero live stops is discarded. Both are computed
+   fresh on every read here — nothing is ever rewritten back to the store for this
+   ("GC on read, not write" — keeps it simple). */
 function tripsFor() {
   const legacyTimes = dispatchTimesLS();
   const sched = dispatchSchedLS();
-  return dispatchEvents().map((ev) => {
+  const events = dispatchEvents();
+  const evById = new Map(events.map((ev) => [dispatchStopId(ev), ev]));
+  const timeOf = (ev) => {
     const id = dispatchStopId(ev), lane = ev.driverId || 'pool', day = ev.date;
     const daySched = sched[day] || {};
     const lt = daySched[lane] && daySched[lane].times ? daySched[lane].times[id] : undefined;
-    const time = lt !== undefined ? lt : (legacyTimes[id] ?? ev.time ?? '');
-    return {
-      id, day, time, driverId: ev.driverId || null,
+    return lt !== undefined ? lt : (legacyTimes[id] ?? ev.time ?? '');
+  };
+  const store = tripsLS();
+  const consumed = new Set();   // stop ids already rendered via a materialized trip below
+  const out = [];
+  for (const day of Object.keys(store)) {
+    for (const tripId of Object.keys(store[day] || {})) {
+      const rec = store[day][tripId] || {};
+      const order = (Array.isArray(rec.order) ? rec.order : []).filter((s) => evById.has(dispatchStopId(s)));
+      if (!order.length) continue;   // every stop orphaned → the trip itself is discarded (read-time GC)
+      consumed.add(tripId);
+      order.forEach((s) => consumed.add(dispatchStopId(s)));
+      const primaryEv = evById.get(dispatchStopId(order[0]));
+      const time = rec.time !== undefined ? rec.time : timeOf(primaryEv);
+      const done = order.every((s) => stopDone(evById.get(dispatchStopId(s))));
+      out.push({
+        id: tripId, day, time, driverId: primaryEv.driverId || null,
+        stops: order.map((s) => ({ rentalId: s.rentalId, unitId: s.unitId, task: s.task })),
+        done,
+        task: primaryEv.task, color: primaryEv.color, rentalId: primaryEv.rentalId, unitId: primaryEv.unitId,
+        cust: primaryEv.cust, unit: primaryEv.unit, addr: primaryEv.addr, pin: primaryEv.pin,
+      });
+    }
+  }
+  events.forEach((ev) => {
+    const id = dispatchStopId(ev);
+    if (consumed.has(id)) return;   // already rendered above, as part of a materialized trip
+    out.push({
+      id, day: ev.date, time: timeOf(ev), driverId: ev.driverId || null,
       stops: [{ rentalId: ev.rentalId, unitId: ev.unitId, task: ev.task }],
       done: stopDone(ev),
-      // convenience fields (derived-only in Phase 1 — Phase 3's materialized shape is additive, not this)
       task: ev.task, color: ev.color, rentalId: ev.rentalId, unitId: ev.unitId, cust: ev.cust, unit: ev.unit, addr: ev.addr, pin: ev.pin,
-    };
+    });
   });
+  return out;
+}
+/* §2.3 a trip's label for a merge picker / activity-log line: town + primary customer. */
+const tripLabel = (t) => `${t.task || ''} · ${tripTown(t.addr) || 'no address'} — ${t.cust || 'Unknown'}`.trim();
+/* §2.3 Trip merge ("double up") — same-day only (a mismatch no-ops with a toast, never
+   silently accepted). Materializes both sides if not already: the target's stop(s)
+   stay first, the source's append in sequence, and the target keeps its time. Every
+   stop in the merged trip is synced to the TARGET's driver via assignStopDriver — D6
+   "one fact, one place": the row shows one driver for the whole run, so that has to be
+   true of every leg, never a cached trip-level value that could disagree with one.
+   Logs on every affected rental — both merged-into (target) and merged-from (source). */
+function tripMerge(day, targetId, sourceId) {
+  if (targetId === sourceId) return false;
+  const trips = tripsFor();
+  const target = trips.find((t) => t.id === targetId && t.day === day);
+  const source = trips.find((t) => t.id === sourceId);
+  if (!target || !source) return false;
+  if (source.day !== target.day) { toast('Trips must run the same day to merge.'); return false; }
+  const store = tripsLS();
+  const dayStore = store[day] || (store[day] = {});
+  const targetRec = dayStore[targetId];
+  const mergedOrder = (targetRec ? targetRec.order : target.stops).concat(source.stops);
+  const targetDriverId = target.driverId || null;
+  mergedOrder.forEach((s) => assignStopDriver(s.rentalId, s.unitId, s.task, targetDriverId));
+  dayStore[targetId] = { time: targetRec ? targetRec.time : target.time, order: mergedOrder, rev: (targetRec ? targetRec.rev || 0 : 0) + 1 };
+  delete dayStore[sourceId];   // fully absorbed into the target
+  tripsSaveDay(day, dayStore);
+  const targetR = IDX.rental.get(target.rentalId);
+  if (targetR) logAction(targetR, `Trip merge — ${tripLabel(source)} folded into this run (now ${mergedOrder.length} stops)`);
+  const logged = new Set();
+  source.stops.forEach((s) => {
+    if (logged.has(s.rentalId)) return; logged.add(s.rentalId);
+    const r = IDX.rental.get(s.rentalId);
+    if (r) logAction(r, `Trip merge — folded into ${tripLabel(target)}'s run`);
+  });
+  return true;
+}
+/* §2.3 Trip split ("split out") — the picked stop returns to being its own
+   single-stop trip, materialized at the SAME day. Default (documented, spec §2.3
+   left this ambiguous): no set time — we don't know when the newly-independent stop
+   should run until the dispatcher re-sets it, and a fabricated time would be
+   dishonest (a "no set time" stop already pins to the top of its day, spec §2.2, so
+   it stays visible and easy to fix). The driver is left exactly as-is: a merged trip
+   already synced every leg to the same driver at merge time (see tripMerge), so the
+   split stop simply keeps running with whichever driver that was — nothing forced. */
+function tripSplit(day, tripId, stopId) {
+  const trips = tripsFor();
+  const trip = trips.find((t) => t.id === tripId && t.day === day);
+  if (!trip || trip.stops.length < 2) return false;
+  const idx = trip.stops.findIndex((s) => dispatchStopId(s) === stopId);
+  if (idx === -1) return false;
+  const removed = trip.stops[idx];
+  const remaining = trip.stops.filter((_, i) => i !== idx);
+  const store = tripsLS();
+  const dayStore = store[day] || (store[day] = {});
+  const curRec = dayStore[tripId];
+  const removedId = dispatchStopId(removed);
+  // The departing stop's OWN natural id can equal the trip's CURRENT key — the common
+  // case: tripId still equals its original primary stop's id, and THAT'S the stop being
+  // split out (it's the first, default option in the picker). The vacated key belongs
+  // to whichever stop naturally owns it, so the trip staying behind takes a fresh
+  // stable id (its own new primary's) instead of colliding with the departing stop for
+  // the old one — writing both to the SAME key would silently drop the remaining stops.
+  const remainingId = removedId === tripId ? dispatchStopId(remaining[0]) : tripId;
+  if (remainingId !== tripId) delete dayStore[tripId];
+  dayStore[remainingId] = { time: curRec ? curRec.time : trip.time, order: remaining, rev: (curRec ? curRec.rev || 0 : 0) + 1 };
+  dayStore[removedId] = { time: '', order: [removed], rev: 0 };
+  tripsSaveDay(day, dayStore);
+  const removedR = IDX.rental.get(removed.rentalId);
+  const remainR = remaining.length ? IDX.rental.get(remaining[0].rentalId) : null;
+  if (removedR) logAction(removedR, `Trip split — ${removed.task === 'Deliver' ? 'delivery' : 'recovery'} split out into its own run`);
+  if (remainR && remainR !== removedR) logAction(remainR, 'Trip split — a stop split off this run into its own trip');
+  return true;
+}
+/* §2.3 multi-stop trip driver — reassigns EVERY leg in the trip together (mirrors the
+   sync tripMerge does at merge time — D6, one fact, one place: a merged trip shows
+   ONE driver, so setting it has to keep every leg truthfully in step, never a
+   redundant trip-level field). Single-stop trips keep the existing per-leg
+   js-stop-driver control (assignStopDriver called directly) untouched. */
+function assignTripDriver(tripId, day, driverId) {
+  const t = tripsFor().find((x) => x.id === tripId && x.day === day);
+  if (!t) return false;
+  let changed = false;
+  t.stops.forEach((s) => { if (assignStopDriver(s.rentalId, s.unitId, s.task, driverId)) changed = true; });
+  return changed;
+}
+// The live trip row for a given trip id (stable across re-renders while it's on screen) —
+// used to (re)anchor the Merge/Split dropdown when it advances to a second-level picker.
+const tripRowAnchor = (id) => { const q = (window.CSS && CSS.escape) ? CSS.escape(id) : id; return document.querySelector(`.row[data-card="calendar"][data-rec="${q}"]`); };
+/* §2.3 Trips — the Merge/Split action menu (spec §2.3 touch-parity guardrail,
+   dispatch-ux-research 2026-07-06's named "drag-only" anti-pattern): reached from the
+   row's own ⋯ button (works with a tap — the phone path, no right-click there) AND
+   from right-click/long-press anywhere on the row body (wired in openCtxMenuAt).
+   openDropdown, not the generic R20 openCtxMenu — a Trip isn't a real card record,
+   and this is a "pick one of these" list exactly like the existing +Driver picker. */
+function openTripMenu(tripId, day, anchorEl) {
+  const trip = tripsFor().find((t) => t.id === tripId && t.day === day);
+  if (!trip) return;
+  const hasOthers = tripsFor().some((t) => t.day === day && t.id !== tripId);
+  const items = [];
+  if (hasOthers) items.push(`<button class="dd-item js-trip-mergepick-open" data-id="${esc(tripId)}" data-day="${esc(day)}">Merge trip…</button>`);
+  if (trip.stops.length > 1) items.push(`<button class="dd-item js-trip-splitpick-open" data-id="${esc(tripId)}" data-day="${esc(day)}">Split out…</button>`);
+  if (!items.length) { toast(trip.stops.length > 1 ? 'No other trips today to merge with.' : 'Nothing to split — this trip has one stop.'); return; }
+  openDropdown(anchorEl, items.join(''));
+}
+function openTripMergePicker(tripId, day, anchorEl) {
+  const others = tripsFor().filter((t) => t.day === day && t.id !== tripId);
+  if (!others.length) { toast('No other trips today to merge with.'); return; }
+  const html = others.map((t) => `<button class="dd-item js-trip-merge-pick" data-target="${esc(tripId)}" data-source="${esc(t.id)}" data-day="${esc(day)}">${esc(tripLabel(t))}</button>`).join('');
+  openDropdown(anchorEl, html);
+}
+function openTripSplitPicker(tripId, day, anchorEl) {
+  const trip = tripsFor().find((t) => t.id === tripId && t.day === day);
+  if (!trip || trip.stops.length < 2) return;
+  const html = trip.stops.map((s) => {
+    const sr = IDX.rental.get(s.rentalId); const su = IDX.unit.get(s.unitId);
+    const cust = sr ? (IDX.customer.get(sr.customerId)?.name || '') : '';
+    return `<button class="dd-item js-trip-split-pick" data-id="${esc(tripId)}" data-day="${esc(day)}" data-stop="${esc(dispatchStopId(s))}">${esc(s.task)} — ${esc(su ? su.name : 'unit')}${cust ? ' · ' + esc(cust) : ''}</button>`;
+  }).join('');
+  openDropdown(anchorEl, html);
 }
 /* §2.2b destination town — the 2nd-from-last comma segment before the state, once a
    trailing country is dropped ("265 Callie Ln, Orange, TX, USA" → "Orange"). The last
@@ -14268,6 +14486,18 @@ function onClick(e) {
   if (closest('.js-refund-confirm')) { e.stopPropagation(); return refundInvoiceFlow(closest('.js-refund-confirm').dataset.rec); }
   if (closest('.js-stop-driver')) { e.stopPropagation(); const b = closest('.js-stop-driver'); const ds = driverRoster(); if (!ds.length) { toast('Add drivers on Settings → Team Roster first.'); return; } const html = ds.map((d) => `<button class="dd-item js-stop-driver-pick" data-rec="${esc(b.dataset.rec)}" data-unit="${esc(b.dataset.unit)}" data-task="${esc(b.dataset.task)}" data-driver="${esc(d.id)}">${esc(d.name)}</button>`).join('') + `<button class="dd-item js-stop-driver-pick" data-rec="${esc(b.dataset.rec)}" data-unit="${esc(b.dataset.unit)}" data-task="${esc(b.dataset.task)}" data-driver="">— Unassign —</button>`; openDropdown(b, html, { align: 'left' }); return; }
   if (closest('.js-stop-driver-pick')) { e.stopPropagation(); const b = closest('.js-stop-driver-pick'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); assignStopDriver(b.dataset.rec, b.dataset.unit, b.dataset.task, b.dataset.driver || null); render(); return; }
+  // §2.3 Phase 3 — a MERGED trip's driver reassigns every leg together (assignTripDriver,
+  // D6 sync). Mirrors js-stop-driver/-pick exactly, just addressed by tripId+day.
+  if (closest('.js-trip-driver')) { e.stopPropagation(); const b = closest('.js-trip-driver'); const ds = driverRoster(); if (!ds.length) { toast('Add drivers on Settings → Team Roster first.'); return; } const html = ds.map((d) => `<button class="dd-item js-trip-driver-pick" data-id="${esc(b.dataset.id)}" data-day="${esc(b.dataset.day)}" data-driver="${esc(d.id)}">${esc(d.name)}</button>`).join('') + `<button class="dd-item js-trip-driver-pick" data-id="${esc(b.dataset.id)}" data-day="${esc(b.dataset.day)}" data-driver="">— Unassign —</button>`; openDropdown(b, html, { align: 'left' }); return; }
+  if (closest('.js-trip-driver-pick')) { e.stopPropagation(); const b = closest('.js-trip-driver-pick'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); assignTripDriver(b.dataset.id, b.dataset.day, b.dataset.driver || null); render(); return; }
+  // §2.3 Phase 3 — the row's ⋯ menu: Merge trip…/Split out… (openTripMenu), then a
+  // second-level picker (openDropdown re-anchors on the still-live row — tripRowAnchor —
+  // since the first dropdown's own trigger button is gone by the time this fires).
+  if (closest('.js-trip-menu')) { e.stopPropagation(); const b = closest('.js-trip-menu'); return openTripMenu(b.dataset.id, b.dataset.day, b); }
+  if (closest('.js-trip-mergepick-open')) { e.stopPropagation(); const b = closest('.js-trip-mergepick-open'); return openTripMergePicker(b.dataset.id, b.dataset.day, tripRowAnchor(b.dataset.id) || b); }
+  if (closest('.js-trip-splitpick-open')) { e.stopPropagation(); const b = closest('.js-trip-splitpick-open'); return openTripSplitPicker(b.dataset.id, b.dataset.day, tripRowAnchor(b.dataset.id) || b); }
+  if (closest('.js-trip-merge-pick')) { e.stopPropagation(); const b = closest('.js-trip-merge-pick'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); const ok = tripMerge(b.dataset.day, b.dataset.target, b.dataset.source); if (ok) toast('Trips merged — double up.'); return render(); }
+  if (closest('.js-trip-split-pick')) { e.stopPropagation(); const b = closest('.js-trip-split-pick'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); const ok = tripSplit(b.dataset.day, b.dataset.id, b.dataset.stop); if (ok) toast('Trip split out.'); return render(); }
   // D5 — pick which driver lanes are showing (a per-device view pref; '' = back to the solo rail)
   if (closest('.js-disp-lanes')) { e.stopPropagation(); const b = closest('.js-disp-lanes'); const ds = driverRoster(); if (!ds.length) { toast('Add drivers on Settings → Team Roster first.'); return; } const shown = dispatchLanesLS(); const html = ds.map((d) => `<button class="dd-item js-disp-lane-pick${shown.includes(d.id) ? ' on' : ''}" data-driver="${esc(d.id)}">${shown.includes(d.id) ? '✓ ' : ''}${esc(d.name)}</button>`).join('') + `<button class="dd-item js-disp-lane-pick" data-driver="">— Solo rail —</button>`; openDropdown(b, html, { align: 'left' }); return; }
   if (closest('.js-disp-lane-pick')) { e.stopPropagation(); const b = closest('.js-disp-lane-pick'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); const id = b.dataset.driver; if (!id) { dispatchLanesSave([]); state.dispLaneIso = null; } else { const shown = dispatchLanesLS(); dispatchLanesSave(shown.includes(id) ? shown.filter((x) => x !== id) : [...shown, id]); } render(); return; }
@@ -15678,15 +15908,18 @@ function onChange(e) {
     reader.readAsDataURL(file);
     return;
   }
-  if (e.target.classList.contains('js-disp-time')) {   // §2.3 dispatch stop time — D6: stored under the stop's lane
-    // Trips rows carry their own day (data-day) — they have no .disprail wrapper to read it
-    // from (retired, Phase 1); the .disprail/state.dispatchDay fallbacks stay for the map's
-    // own affordances (Phase 2) in case a day isn't stamped directly on the input.
-    const day = e.target.dataset.day || (e.target.closest('.disprail') && e.target.closest('.disprail').dataset.day) || state.dispatchDay || TODAY_ISO;
-    const laneKey = e.target.dataset.lane || 'pool';
+  if (e.target.classList.contains('js-disp-time')) {   // §2.3 Trips departure time (Phase 3) — a time edit MATERIALIZES the trip: it's one of the spec §2.3 "first touch" triggers, same as merge/split
+    const tripId = e.target.dataset.id;
+    const day = e.target.dataset.day || state.dispatchDay || TODAY_ISO;
     const v = e.target.value.trim();
-    const lane = schedLane(day, laneKey); lane.times[e.target.dataset.id] = v; schedSaveLane(day, laneKey, lane);
-    const t = dispatchTimesLS(); if (t[e.target.dataset.id] !== undefined) { delete t[e.target.dataset.id]; _lsSave('jactec.dispatchTimes', t); }   // retire the legacy flat key for this stop
+    const trip = tripsFor().find((x) => x.id === tripId && x.day === day);
+    if (trip) {
+      const store = tripsLS();
+      const dayStore = store[day] || (store[day] = {});
+      const cur = dayStore[tripId];
+      dayStore[tripId] = { time: v, order: cur ? cur.order : trip.stops.slice(), rev: (cur ? cur.rev || 0 : 0) + 1 };
+      tripsSaveDay(day, dayStore);
+    }
     if (timeToMin(v) != null) render();   // a complete time re-sorts the trip within its day group
     return;
   }
@@ -18326,6 +18559,41 @@ function boot() {
     if (grpDragOverEl) { grpDragOverEl.classList.remove('grp-dragover'); grpDragOverEl = null; }
     document.querySelectorAll('.grp-dragging').forEach((n) => n.classList.remove('grp-dragging'));
   });
+  // §2.3 Phase 3 — drag one Trip row onto another to MERGE them (the desktop path;
+  // the ⋯ menu / right-click / long-press — openTripMenu — is the touch-parity
+  // equivalent, spec §2.3 + the dispatch-ux-research "drag-only" anti-pattern guardrail).
+  // Same self-contained native-DnD pattern as the grp-hd reorder just above.
+  let tripDragId = null, tripDragDay = null, tripDragOverEl = null;
+  document.addEventListener('dragstart', (e) => {
+    const row = e.target.closest && e.target.closest('.row[data-card="calendar"]'); if (!row) return;
+    tripDragId = row.dataset.rec; tripDragDay = row.dataset.day;
+    if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', tripDragId); } catch (x) {} }
+    row.classList.add('trip-dragging');
+  });
+  document.addEventListener('dragover', (e) => {
+    if (!tripDragId) return;
+    const row = e.target.closest && e.target.closest('.row[data-card="calendar"]');
+    if (!row || row.dataset.rec === tripDragId) { if (tripDragOverEl) { tripDragOverEl.classList.remove('trip-dragover'); tripDragOverEl = null; } return; }
+    e.preventDefault();
+    if (tripDragOverEl !== row) { if (tripDragOverEl) tripDragOverEl.classList.remove('trip-dragover'); row.classList.add('trip-dragover'); tripDragOverEl = row; }
+  });
+  document.addEventListener('drop', (e) => {
+    if (!tripDragId) return;
+    const row = e.target.closest && e.target.closest('.row[data-card="calendar"]');
+    const dragId = tripDragId, dragDay = tripDragDay;
+    tripDragId = null; tripDragDay = null;
+    if (tripDragOverEl) { tripDragOverEl.classList.remove('trip-dragover'); tripDragOverEl = null; }
+    if (!row || row.dataset.rec === dragId) return;
+    e.preventDefault();
+    if (row.dataset.day !== dragDay) { toast('Trips must run the same day to merge.'); return; }   // same-day only — never a silent cross-day accept
+    const ok = tripMerge(row.dataset.day, row.dataset.rec, dragId);
+    if (ok) { haptic([12, 30, 12]); toast('Trips merged — double up.'); render(); }
+  });
+  document.addEventListener('dragend', () => {
+    tripDragId = null; tripDragDay = null;
+    document.querySelectorAll('.trip-dragging').forEach((n) => n.classList.remove('trip-dragging'));
+    if (tripDragOverEl) { tripDragOverEl.classList.remove('trip-dragover'); tripDragOverEl = null; }
+  });
   // Ctrl/Cmd+G — collapse or expand EVERY visible group in one keystroke (Jac
   // 2026-07-04): if any is expanded, collapse them all; once all are collapsed,
   // the same keystroke expands them all back.
@@ -18541,6 +18809,7 @@ function exposeTestApi() {
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
       companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, saveYardCapture, setRole: (r) => { currentRole = r || ''; render(); },
+      tripsLS, tripMerge, tripSplit, assignTripDriver, tripLabel, assignStopDriver,
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }

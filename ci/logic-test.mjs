@@ -1737,6 +1737,112 @@ try {
       T.__state.overlay = null; T.__state.calOpenTrip = null;
     }
 
+    // §Trips Phase 3 (spec 2026-07-09 §2.3) — trip materialization + merge/split.
+    // Two synthetic same-day Deliver trips (their OWN units[] array — the flat-field
+    // legacy shape has no deliveryDriverId/recoveryDriverId for assignStopDriver to
+    // read/write, so a real units[] entry is required to exercise the driver sync).
+    {
+      const day = T.TODAY_ISO;
+      const preEmpP3 = T.__state.settings.employees;
+      const mkTripRental = (id, unitId, custId, addr) => ({
+        rentalId: id, customerId: custId, unitId, categoryId: T.DATA.units.find((u) => u.unitId === unitId)?.categoryId || null,
+        rentalName: id, startDate: day, endDate: day, startTime: '9:00 AM', status: 'Reserved',
+        transportType: 'Delivery', deliveryAddress: addr, po: '', invoiceId: null, mock: true,
+        units: [{ unitId, status: 'Reserved', startHours: null, returnHours: null, startCapture: null, endCapture: null, fcCapture: null,
+          transportType: 'Delivery', deliveryAddress: addr, recoveryAddress: '', sitePin: null, transportMiles: null, transportDriveMin: null,
+          deliveryDriverId: null, recoveryDriverId: null }],
+      });
+      const trA = mkTripRental('TRIP-TEST-A', 'U004', 'C0009', '100 Test Rd, Merge City, TX, USA');
+      const trB = mkTripRental('TRIP-TEST-B', 'U024', 'C0016', '200 Test Rd, Merge City, TX, USA');
+      T.DATA.rentals.push(trA, trB); T.IDX.rental.set(trA.rentalId, trA); T.IDX.rental.set(trB.rentalId, trB);
+      T.reindex('rentals', trA); T.reindex('rentals', trB);
+      T.__state.settings.employees = [{ id: 'EMPMERGE', name: 'Merge Hauler', role: 'Driver', phone: '', note: '' }];
+
+      let trips = T.tripsFor();
+      const tA = trips.find((x) => x.rentalId === 'TRIP-TEST-A');
+      const tB = trips.find((x) => x.rentalId === 'TRIP-TEST-B');
+      ok(!!tA && !!tB && tA.day === day && tB.day === day && tA.stops.length === 1 && tB.stops.length === 1, 'TRIPS-P3 fixture: two same-day derived (unmaterialized) trips exist');
+
+      T.assignStopDriver('TRIP-TEST-A', 'U004', 'Deliver', 'EMPMERGE');   // A has a driver BEFORE the merge, so the sync is actually exercised
+
+      // MERGE: B's stop appends into A; A's time/driver are KEPT; B stops existing as its own trip
+      const okMerge = T.tripMerge(day, tA.id, tB.id);
+      ok(okMerge === true, 'TRIPS-P3 merge: tripMerge returns true');
+      trips = T.tripsFor();
+      const merged = trips.find((x) => x.id === tA.id && x.day === day);
+      ok(!!merged && merged.stops.length === 2 && merged.stops[0].rentalId === 'TRIP-TEST-A' && merged.stops[1].rentalId === 'TRIP-TEST-B', `TRIPS-P3 merge: the merged trip carries both stops in order (${merged && merged.stops.length})`);
+      ok(!trips.some((x) => x.id === tB.id), 'TRIPS-P3 merge: the source no longer exists as its own trip');
+      ok(merged.driverId === 'EMPMERGE', 'TRIPS-P3 merge: the merged trip shows the TARGET\'s driver');
+      const euB = T.unitEntry(trB, 'U024');
+      ok(euB.deliveryDriverId === 'EMPMERGE', 'TRIPS-P3 merge: the incoming leg is synced to the target driver (D6 — one fact, one place)');
+      ok(trA.actions.some((a) => /Trip merge/.test(a.text)) && trB.actions.some((a) => /Trip merge/.test(a.text)), 'TRIPS-P3 merge: logAction fires on BOTH the merged-into and merged-from rentals');
+
+      // CROSS-DAY: a merge attempt against a different-day trip no-ops (never a silent accept)
+      const d3 = new Date(day + 'T00:00:00'); d3.setDate(d3.getDate() + 3);
+      const day2 = d3.toISOString().slice(0, 10);
+      const trC = mkTripRental('TRIP-TEST-C', 'U006', 'C0009', '300 Test Rd, Merge City, TX, USA');
+      trC.startDate = day2; trC.endDate = day2; trC.units[0].deliveryAddress = trC.deliveryAddress;
+      T.DATA.rentals.push(trC); T.IDX.rental.set(trC.rentalId, trC); T.reindex('rentals', trC);
+      const tC = T.tripsFor().find((x) => x.rentalId === 'TRIP-TEST-C');
+      ok(!!tC && tC.day === day2 && tC.day !== day, 'TRIPS-P3 fixture: a third trip exists on a DIFFERENT day');
+      const okCross = T.tripMerge(day, tA.id, tC.id);
+      ok(okCross === false, 'TRIPS-P3 cross-day: tripMerge refuses a cross-day pair (returns false, toasts — never silently accepted)');
+      ok(T.tripsFor().find((x) => x.id === tA.id && x.day === day).stops.length === 2, 'TRIPS-P3 cross-day: the target trip is untouched by the refused merge');
+
+      // SPLIT: reverses the merge — B's stop returns to being its own single-stop trip
+      const stopIdB = T.dispatchStopId({ rentalId: 'TRIP-TEST-B', unitId: 'U024', task: 'Deliver' });
+      const okSplit = T.tripSplit(day, tA.id, stopIdB);
+      ok(okSplit === true, 'TRIPS-P3 split: tripSplit returns true');
+      trips = T.tripsFor();
+      const afterSplitA = trips.find((x) => x.id === tA.id && x.day === day);
+      ok(!!afterSplitA && afterSplitA.stops.length === 1 && afterSplitA.stops[0].rentalId === 'TRIP-TEST-A', 'TRIPS-P3 split: the target trip is back down to its own single stop');
+      const splitOut = trips.find((x) => x.id === stopIdB && x.day === day);
+      ok(!!splitOut && splitOut.stops.length === 1 && splitOut.stops[0].rentalId === 'TRIP-TEST-B', 'TRIPS-P3 split: the removed stop is its own trip again');
+      ok(splitOut.time === '', 'TRIPS-P3 split: the split-out stop defaults to NO set time (documented — honest over fabricated)');
+      const euB2 = T.unitEntry(trB, 'U024');
+      ok(euB2.deliveryDriverId === 'EMPMERGE', 'TRIPS-P3 split: the split-out stop KEEPS the driver it already had (untouched, not force-cleared)');
+      ok(trB.actions.some((a) => /Trip split/.test(a.text)), 'TRIPS-P3 split: logAction fires on the split-out rental');
+
+      // SPLIT-THE-PRIMARY regression: the picker lists EVERY stop, including the one
+      // that originally named the trip (tripId still equals ITS natural id at this
+      // point — it's the first, default option) — splitting THAT one out must not
+      // collide the "stop staying behind" and the "stop leaving" onto the same store
+      // key and silently drop data (a real bug this exact case caught pre-fix).
+      T.tripMerge(day, tA.id, stopIdB);   // re-merge B back into A
+      const stopIdA = T.dispatchStopId({ rentalId: 'TRIP-TEST-A', unitId: 'U004', task: 'Deliver' });
+      ok(stopIdA === tA.id, 'TRIPS-P3 split-primary fixture: A\'s natural stop id still equals the trip\'s key (the collision precondition)');
+      const okSplitPrimary = T.tripSplit(day, tA.id, stopIdA);
+      ok(okSplitPrimary === true, 'TRIPS-P3 split-primary: tripSplit returns true when splitting out the trip\'s OWN original stop');
+      trips = T.tripsFor();
+      const splitPrimaryOut = trips.find((x) => x.id === stopIdA && x.day === day);
+      ok(!!splitPrimaryOut && splitPrimaryOut.stops.length === 1 && splitPrimaryOut.stops[0].rentalId === 'TRIP-TEST-A', 'TRIPS-P3 split-primary: A is its own trip again, under its natural id');
+      const survivor = trips.find((x) => x.day === day && x.stops.length === 1 && x.stops[0].rentalId === 'TRIP-TEST-B');
+      ok(!!survivor && survivor.id !== tA.id, 'TRIPS-P3 split-primary: B SURVIVES as its own trip (not silently dropped) under a fresh id, since its old key was reclaimed by A');
+      ok(trips.filter((x) => x.day === day && (x.rentalId === 'TRIP-TEST-A' || x.stops.some((s) => s.rentalId === 'TRIP-TEST-A') || x.stops.some((s) => s.rentalId === 'TRIP-TEST-B'))).reduce((n, x) => n + x.stops.length, 0) === 2, 'TRIPS-P3 split-primary: exactly 2 stops total survive across both trips (none lost)');
+      ok(survivor.id === stopIdB, 'TRIPS-P3 split-primary: B lands back on its OWN familiar natural id (deterministic, not arbitrary) — A and B are independent single-stop trips again, same shape as right after the plain split above');
+
+      // ORPHAN DROP + EMPTY GC (read-time hygiene): re-merge, then delete B's rental —
+      // its stop must vanish from the trip on read; then delete A's too — the whole
+      // materialized trip (now zero live stops) must be discarded entirely on read.
+      T.tripMerge(day, tA.id, stopIdB);
+      T.DATA.rentals = T.DATA.rentals.filter((r) => r.rentalId !== 'TRIP-TEST-B');
+      T.IDX.rental.delete('TRIP-TEST-B');
+      trips = T.tripsFor();
+      const afterOrphan = trips.find((x) => x.id === tA.id && x.day === day);
+      ok(!!afterOrphan && afterOrphan.stops.length === 1 && afterOrphan.stops[0].rentalId === 'TRIP-TEST-A', 'TRIPS-P3 orphan: a deleted rental drops its stop from the trip on read');
+      ok(!trips.some((x) => x.stops.some((s) => s.rentalId === 'TRIP-TEST-B')), 'TRIPS-P3 orphan: the orphaned stop never resurfaces as its own trip either');
+      T.DATA.rentals = T.DATA.rentals.filter((r) => r.rentalId !== 'TRIP-TEST-A');
+      T.IDX.rental.delete('TRIP-TEST-A');
+      trips = T.tripsFor();
+      ok(!trips.some((x) => x.id === tA.id), 'TRIPS-P3 empty GC: a trip left with zero live stops is discarded entirely on read');
+
+      // cleanup — remaining fixture rental + the materialized store, so no later test sees it
+      T.DATA.rentals = T.DATA.rentals.filter((r) => r.rentalId !== 'TRIP-TEST-C');
+      T.IDX.rental.delete('TRIP-TEST-C');
+      localStorage.removeItem('jactec.trips');
+      T.__state.settings.employees = preEmpP3;
+    }
+
     return out;
   });
 
