@@ -54,6 +54,21 @@ Every UI phase runs through `jactec-ui` (screenshot + self-critique before Jac s
   gates green; footer honest (`Offline — cached` placeholder until Phase 4 sync).
 - **Commit:** "Trips card phase 1: day-grouped trip rows replace the cockpit".
 
+## Phase 1b — Driver row actions (spec §2.2b)
+
+- Row gains: customer phone as `tel:` link (R7 `linkName` voice, phone glyph —
+  resolve via `IDX.customer`); **Navigate ↗** on the address (Google Maps
+  directions URL — pin lat,lng when present, else the address string;
+  `target="_blank" rel="noopener"`); **+Log Delivery / +Log Recovery** action
+  reusing the journey capture (`openCapture`/`openOverlay kind:'capture'` with
+  the row's rentalId/unitId/cap) — one code path, D7 stamp intact. Done rows
+  show the capture clock instead.
+- Phone pass: all three thumb-reachable in the row, ≥44px, no hover.
+- `ci/logic-test.mjs`: row exposes tel/nav hrefs; capture opened from the row
+  stamps the assigned driver (D7) — same asserts as the journey path.
+- **Verify:** gates + phone screenshot. **Commit:** "Trips card phase 1b: driver
+  row actions (call · navigate · log)".
+
 ## Phase 2 — Map panel
 
 - Top-of-body collapsible panel (~260px): re-parent the existing `_dispMapEl`

@@ -93,6 +93,27 @@ cockpit.
 - **Ordering within a day:** no-time trips pinned top, then by departure time; manual
   drag-reorder within a day persists to the trips slice (below), not localStorage.
 
+### 2.2b Driver interaction — the row IS the cab view (Jac, 2026-07-09 follow-up)
+
+Up to now the driver had to open the rental itself to log a trip. The trips row
+must carry the driver's whole loop, thumb-reachable on a phone:
+
+- **Call the customer:** the customer's phone number rides the row as a
+  tap-to-call `tel:` link (R7 hyperlink voice, phone glyph + number). No detour
+  through the Customers card.
+- **Navigate to the destination:** the address line gains a **Navigate ↗**
+  affordance that launches Google Maps directions to the pin (or the address
+  string when no pin) in the native maps app — external R7 link, distinct from
+  the existing in-app "open the site / set the pin" tap.
+- **Log completion from the row:** an action on the row — **+Log Delivery** /
+  **+Log Recovery** (matching the journey-node labels) — opens the SAME capture
+  overlay the rental journey uses (`openOverlay kind:'capture'` →
+  `saveYardCapture`), so evidence attach, the Drive upload path, and the D7
+  driver stamp are one code path. A done row shows the stamp clock instead of
+  the action.
+- Driver-lens floor: on phones all three sit inside the row without expanding
+  anything; targets ≥44px; no hover.
+
 ### 2.3 The Trip layer (scope B — approved)
 - **Model:** every transport order added to a rental surfaces as its own trip by
   default — a Delivery trip and a Retrieval trip. **Invoice line items are untouched;
