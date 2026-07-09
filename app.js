@@ -7351,12 +7351,13 @@ function detailTitle(card, rec) {
 const GRID_CARD_BY_ID = Object.fromEntries(GRID_CARDS.map((c) => [c.id, c]));
 const MEMBER_TITLE = (() => {
   const m = {}; GRID_CARDS.forEach((c) => { m[c.id] = c.title; });
-  SHOP_SEGMENTS.forEach((s) => { m[s.id] = s.label; }); m.calendar = 'Calendar'; return m;
+  SHOP_SEGMENTS.forEach((s) => { m[s.id] = s.label; }); m.calendar = 'Trips'; return m;
 })();
-const memberIcon = (m) => (m === 'calendar' ? I.grid : (CARD_ICON[m] || ''));
+const memberIcon = (m) => (m === 'calendar' ? I.truck : (CARD_ICON[m] || ''));
 // Tab row count for a member (search-aware; mirrors the card's own count chip).
 function memberCount(member, session) {
-  if (member === 'calendar') return dispatchEvents().length;
+  // Trips: upcoming not-done only — a done or past run is history, not a pending count.
+  if (member === 'calendar') return dispatchEvents().filter((ev) => ev.date >= TODAY_ISO && !stopDone(ev)).length;
   if (SHOP_TYPES.includes(member)) { try { return (shopItemsByType(session)[member] || []).length; } catch { return 0; } }
   try { let r = listFor(member, session); if (member === 'units') r = unitsVisible(r, session.cards.units); if (member === 'rentals') r = rentalsVisible(r, session, session.cards.rentals); return r.length; } catch { return 0; }
 }

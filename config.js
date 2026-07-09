@@ -407,7 +407,7 @@ export const COLUMNS = [
 ];
 export const COLUMN_OF = {
   units: 'left', categories: 'left', inspections: 'left', serviceOrders: 'left', workOrders: 'left', shop: 'left',
-  rentals: 'middle', invoices: 'right', customers: 'right',
+  rentals: 'middle', calendar: 'middle', invoices: 'right', customers: 'right',
 };
 
 /* ── In-card sort fields (SPEC §12 locked table) ─────────────────────────── */
