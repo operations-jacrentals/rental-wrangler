@@ -1721,6 +1721,12 @@ try {
       // §2.2b D7 — capture opened FROM THE ROW stamps the assigned leg driver (one code path)
       const preEmp = T.__state.settings.employees;
       T.__state.settings.employees = [{ id: 'EMPTRP', name: 'Row Hauler', role: 'Driver', phone: '', note: '' }];
+      // R0 lint regression (Phase 5, 2026-07-09): a single-stop trip's +Driver anchor
+      // (js-stop-driver, unassigned) is wrapped in a stamped catr-slot BUTTON, but the
+      // R0 flash-lint checks the .add-field SPAN itself, not an ancestor — it had no
+      // data-r of its own and pulsed red under body.rw-lint on a live Trips card.
+      const unassignedRowA = T.tripRowHTML(tA);
+      ok(/class="add-field anchor" data-r="R5b"/.test(unassignedRowA), 'TRIPS-row R0: js-stop-driver\'s +Driver anchor (single-stop, unassigned) carries its OWN data-r stamp, not just its wrapping button\'s');
       const rMU = T.IDX.rental.get('R-MU');
       const eu7 = T.unitEntry(rMU, 'U007');
       const snap = { rec: eu7.recoveryDriverId, st: eu7.status, endEu: eu7.endCapture, endR: rMU.endCapture, prim: rMU.status };
@@ -1776,6 +1782,16 @@ try {
       const euB = T.unitEntry(trB, 'U024');
       ok(euB.deliveryDriverId === 'EMPMERGE', 'TRIPS-P3 merge: the incoming leg is synced to the target driver (D6 — one fact, one place)');
       ok(trA.actions.some((a) => /Trip merge/.test(a.text)) && trB.actions.some((a) => /Trip merge/.test(a.text)), 'TRIPS-P3 merge: logAction fires on BOTH the merged-into and merged-from rentals');
+
+      // R0 lint regression (Phase 5, 2026-07-09) — the multi-stop sibling of the
+      // js-stop-driver fix above: js-trip-driver's own +Driver anchor also had no
+      // data-r of its own. Briefly clear the driver so the anchor (not the assigned-
+      // driver badge) renders, then restore it — the split assertion further down
+      // expects B to still carry EMPMERGE.
+      ok(T.assignTripDriver(tA.id, day, null) === true, 'TRIPS-P3 R0-fixture: driver cleared off the merged trip so its +Driver anchor renders');
+      const unassignedMerged = T.tripRowHTML(T.tripsFor().find((x) => x.id === tA.id && x.day === day));
+      ok(/class="add-field anchor" data-r="R5b"/.test(unassignedMerged), 'TRIPS-row R0: js-trip-driver\'s +Driver anchor (multi-stop, unassigned) carries its OWN data-r stamp, not just its wrapping button\'s');
+      ok(T.assignTripDriver(tA.id, day, 'EMPMERGE') === true, 'TRIPS-P3 R0-fixture: driver restored to EMPMERGE (the split assertion below depends on it)');
 
       // CROSS-DAY: a merge attempt against a different-day trip no-ops (never a silent accept)
       const d3 = new Date(day + 'T00:00:00'); d3.setDate(d3.getDate() + 3);

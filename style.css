@@ -689,6 +689,15 @@ select.lf-in { appearance: none; cursor: pointer; }
 .row[data-card="calendar"] .trip-r3 .add-field { white-space: nowrap; gap: 5px; }
 .row[data-card="calendar"] .trip-r3 .add-field svg { width: 14px; height: 14px; flex: 0 0 auto; }   /* dim the glyph to the label's weight — the unsized ico() SVG was out-shouting it */
 .linkname svg { width: 12px; height: 12px; vertical-align: -2px; margin-right: 3px; }
+/* Phase 5 polish: the tel: link, +Log Delivery/Recovery, and the driver pill/+Driver
+   anchor never got a :focus-visible ring — the shared builders (.linkname/.add-field/
+   .catr-slot) don't carry one app-wide, so this is scoped to the Trips row only (the
+   accessibility gate is per-element; a site-wide pass on those builders is out of
+   scope for this verification pass). The map panel's "Open in Google Maps" handoff
+   (also a .linkname, lives outside the row) gets the same ring. */
+.row[data-card="calendar"] .linkname:focus-visible, .row[data-card="calendar"] .add-field:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.row[data-card="calendar"] .catr-slot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.trips-gmaps .linkname:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 /* §2.2b cab sheet — unit facts one level down (unit pill · fuel · weight), saddle-stitch top */
 .row[data-card="calendar"] .trip-cab { margin-top: 7px; padding-top: 7px; border-top: 1px dashed color-mix(in srgb, var(--tan, #c2925a) 60%, transparent); display: flex; flex-direction: column; gap: 5px; }
 .row[data-card="calendar"] .trip-cab-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -704,6 +713,16 @@ select.lf-in { appearance: none; cursor: pointer; }
 .row[data-card="calendar"] .trip-more:hover { background: var(--panel-2); color: var(--accent); }
 .row[data-card="calendar"] .trip-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .is-phone .row[data-card="calendar"] .trip-more { width: 44px; height: 44px; }
+/* §M-touch — Phase 5 polish: the day-header AUTO-RUN pill (§2.7, the only user of
+   .grp-hd .pill.c-commit) and the merge/split picker's dd-items (openTripMergePicker/
+   openTripSplitPicker — trip-specific classes, NOT the shared .dd-item used by every
+   other picker in the app) missed the touch-floor pass Phase 1b gave the rest of the
+   row; phone measured 82×17 / 230×28. Scoped narrowly so the generic dropdown-menu
+   item used elsewhere (driver picker, view picker, context menus) is untouched. */
+.is-phone .grp-hd .pill.c-commit { min-width: 44px; min-height: 44px; }
+.is-phone .js-trip-merge-pick, .is-phone .js-trip-split-pick,
+.is-phone .js-trip-mergepick-open, .is-phone .js-trip-splitpick-open { min-height: 44px; }
+.grp-hd .pill.c-commit:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }   /* same gap — AUTO-RUN had no focus ring */
 /* §2.3 Phase 3 — a merged trip's stop sequence number (row-2 + the cab sheet): the
    array order IS the run order. Plain R3b-adjacent fact chip, not a status pill. */
 .row[data-card="calendar"] .trip-seq-n { display: inline-flex; align-items: center; justify-content: center; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 999px; background: var(--panel-2); color: var(--txt-3); font-size: 9.5px; font-weight: 800; flex: 0 0 auto; }

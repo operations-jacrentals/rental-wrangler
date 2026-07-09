@@ -5593,10 +5593,10 @@ const ROWS = {
     const driverChip = multi
       ? (t.driverId
         ? `<button class="catr-slot js-trip-driver" data-id="${esc(t.id)}" data-day="${esc(t.day)}" data-tip="Driver on this trip (${t.stops.length} stops) — tap to change">${badge(driverName(t.driverId), 'navy')}</button>`
-        : (driverRoster().length ? `<button class="catr-slot js-trip-driver" data-r="R5b" data-id="${esc(t.id)}" data-day="${esc(t.day)}" data-tip="Assign a driver to this trip"><span class="add-field anchor" style="height:20px;font-size:10px">+Driver</span></button>` : ''))
+        : (driverRoster().length ? `<button class="catr-slot js-trip-driver" data-r="R5b" data-id="${esc(t.id)}" data-day="${esc(t.day)}" data-tip="Assign a driver to this trip"><span class="add-field anchor" data-r="R5b" style="height:20px;font-size:10px">+Driver</span></button>` : ''))
       : (t.driverId
         ? `<button class="catr-slot js-stop-driver" data-id="${esc(t.id)}" data-rec="${esc(t.rentalId)}" data-unit="${esc(t.unitId || '')}" data-task="${esc(t.task)}" data-tip="Driver on this leg — tap to change">${badge(driverName(t.driverId), 'navy')}</button>`
-        : (driverRoster().length ? `<button class="catr-slot js-stop-driver" data-r="R5b" data-id="${esc(t.id)}" data-rec="${esc(t.rentalId)}" data-unit="${esc(t.unitId || '')}" data-task="${esc(t.task)}" data-tip="Assign a driver to this leg"><span class="add-field anchor" style="height:20px;font-size:10px">+Driver</span></button>` : ''));
+        : (driverRoster().length ? `<button class="catr-slot js-stop-driver" data-r="R5b" data-id="${esc(t.id)}" data-rec="${esc(t.rentalId)}" data-unit="${esc(t.unitId || '')}" data-task="${esc(t.task)}" data-tip="Assign a driver to this leg"><span class="add-field anchor" data-r="R5b" style="height:20px;font-size:10px">+Driver</span></button>` : ''));
     // §2.3 row-2 — one unit pill per stop; a merged trip numbers the sequence (the
     // implicit array order IS the run order — spec §2.3, within-trip drag-reorder
     // skipped as a documented nice-to-have).
