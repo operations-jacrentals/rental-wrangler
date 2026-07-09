@@ -171,19 +171,41 @@ Reachable (2.4). Standard touch rows ≥44 px; zero hover dependence. Map open b
 collapsible; reorder + merge via the existing long-press drag engine; ⋯ menu for
 right-click parity. Haptics on drop, per the app's drag patterns.
 
-### 2.6 Live truck position — Bouncie (Jac, 2026-07-09 follow-up)
+### 2.6 Live truck position — Bouncie (Jac, 2026-07-09 follow-up; integration path corrected 2026-07-09)
 
 The truck marker stops being a guess. `dispatchTruckPos` (today: last done pin,
 else the yard — an explicit v1 seam) upgrades to **live telematics from
-Bouncie**: a GAS backend action `getTruckPos` proxies the Bouncie API (OAuth
-credentials live in Script Properties — NEVER the repo, the front-end is
-public via Pages). The map panel polls it (~20s while open); the marker gains
-a "last seen h:mm" stamp. Bouncie unreachable/stale → fall back to the
+Bouncie**: a GAS backend action `getTruckPos` calls the Bouncie API
+(`api.bouncie.dev/v1/vehicles`) **directly** — GAS owns the OAuth
+authorization-code exchange and token storage itself, ported from a working
+reference implementation (a friend's `wranglergps` telematics-aggregator repo,
+inspected read-only for its Bouncie route/token-manager logic — not a runtime
+dependency; Jac doesn't hold login credentials for that separately-hosted
+service, so this build does not call it). Jac's own Bouncie OAuth app
+(`bouncie-to-wrangler-gps`, already registered under his account) gets a
+**new redirect URI added** pointing at our GAS web app's own callback,
+alongside the reference app's existing ones. Client id/secret live in Script
+Properties — NEVER the repo, the front-end is public via Pages.
+
+**One-time setup (Jac, at Phase 4 build time):** add the new redirect URI in
+Bouncie's developer portal, then visit the authorize URL once to approve
+access — GAS's callback captures the code, exchanges it, and stores the
+resulting access/refresh tokens in Script Properties.
+
+**Refresh-token rotation gotcha (carried over from the reference
+implementation's own hard-won fix):** Bouncie's refresh tokens rotate on
+every use — a naive refresh-on-401 without guarding against concurrent
+refreshes can invalidate the token entirely (this bit the reference app for
+its Deere integration too). `getTruckPos` must serialize/guard its refresh
+path, not fire a bare refresh on every stale-token hit.
+
+The map panel polls `getTruckPos` (~20s while open); the marker gains a
+"last seen h:mm" stamp. Bouncie unreachable/stale → fall back to the
 capture-based seam silently — the marker never lies about freshness (stale
 stamp shows gray).
 
-Needs from Jac at build time: the Bouncie API credential and the
-vehicle-to-truck/driver mapping. Backend action is additive (`/clasp` STOP
+Needs from Jac at build time: the vehicle-to-truck/driver mapping (which
+Bouncie `imei` is which truck). Backend action is additive (`/clasp` STOP
 gate, rides the Phase 4 deploy).
 
 ### 2.7 Auto-Run — efficient order that respects the deadlines (Jac, 2026-07-09)
