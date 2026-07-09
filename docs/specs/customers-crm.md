@@ -39,6 +39,77 @@ Full design + rationale: [`docs/superpowers/specs/2026-07-08-customer-details-in
 
 ---
 
+## Shipped status (2026-07-09)
+
+On 2026-07-09 a large batch — including the "Customer Details reorg" — promoted from
+`staging` to `main` (production). This section is a reality-check pass against the rest of
+this doc; the prose below is left as originally written (per Jac: annotate, don't rewrite),
+so treat the items here as canon-overriding wherever they conflict with older section text.
+Inline `[2026-07-09: …]` markers at the affected sections point back here.
+
+- **SHIPPED — Invoice card retirement.** The standalone `invoices` grid column is gone from
+  `COLUMN_OF` / the column-tab UI (config.js:401 comment: *"no 'invoices' — links route via
+  openInvoice() into Customer Details"*); `GRID_CARDS` (config.js:358) still lists `invoices`
+  as an entity definition (kept for `SORT_FIELDS`, `DETAIL.invoices`, routing/cascade), but it
+  is no longer a selectable card. Invoices now render as an embedded, scrollable, accordion
+  section (`customerInvoicesSection`, app.js:3905) directly under Customer Details — not
+  documented anywhere in §2/§6 of this spec (written pre-reorg, 2026-06-28).
+- **SHIPPED — Programs funnel (was: two separate Membership + Used Sales blocks).** §2.4's
+  "two independent funnels, both rendered as the gate-timeline dropdown" is now ONE section
+  (`funnelSectionHtml`, app.js:3812): a centered R14 segmented toggle — **Rental | Equipment
+  Sales** — IS the header, each tab wearing an RYG urgency dot (`naDotClass`) for its own
+  dated Next Actions. `usedSalesStage` / `membershipStage` remain separate data fields
+  (§2.4/§4.1's data model is still accurate) — only the *UI* merged into one toggle.
+- **SHIPPED — Action Board replaced by per-funnel Next Actions + Action Log.** §2.2's "Action
+  header/entry" and "Activity columns" (logged LEFT / scheduled RIGHT) rows are retired for
+  Customers; dated RYG Next Actions with Done(✓)/Cancel(✕)/+Action live inside each funnel tab
+  (`nextActionsHtml`), backed by a collapsible per-tab Action Log (`actionLogHtml`). The
+  underlying `activityLog[]` shape gained additive optional keys (`scope`, `outcome`,
+  `closedWhen`) — not a breaking schema change, §4.5's additive-only rule held.
+- **SHIPPED — Membership lifecycle actions moved into the agreement popup.** Cancel
+  Membership / Pay Cancellation / Print Agreement (`membershipActionsHtml`, app.js:3723) now
+  render inside the existing `agreement` `WINDOW_CATALOG` popup, not the card body. The
+  `canMoney()` gate on Cancel/Pay-Cancellation is preserved verbatim (Print Agreement stays
+  ungated). No new `WINDOW_CATALOG` row was needed (reused the existing `agreement` kind) —
+  §6.7's catalog list is still accurate as written. Enrollment was already relocated into this
+  same popup in an earlier change (no duplicate enroll button exists).
+- **SHIPPED — Equipment Sales buyer-criteria fields.** `desiredAge`, `desiredHours`
+  (`custMetaField`, app.js:3808) and `interestedMakes[]` (Make-OR-Category interest, alongside
+  the existing `interestedCategoryIds[]`) are real, persisted fields (app.js:3825-3830; seeded
+  in the new-customer scaffolds). **Not documented** in §4.1's data-model table — add these
+  three rows there.
+- **NOT SHIPPED — placeholder only — Sales card ("PR2").** `salesCardEl` (app.js:8039) is a
+  bespoke "coming soon" plate occupying the grid slot the retired Invoice card vacated
+  (`sales: 'right'` in the column map, config.js:401). No list/detail view, no data model — the
+  real Sales dashboard/work-manager is an explicitly deferred future PR. Not mentioned
+  anywhere else in this spec (out of scope when it was written).
+- **STILL PLANNED — unaffected by this promotion — §6.2a Payment Methods gate-visibility
+  fix.** `cardTabBody` / `achTabBody` (app.js:643-676) still render card/ACH rows (brand,
+  last4, Sign, Make-default, remove ✕) unconditionally to any viewer; only the `+Card`/`+ACH`
+  add buttons stay `canMoney()`-gated. §3.2 item 1's "gate gap to close" and §11 Q5 are **still
+  open**.
+- **STILL PLANNED — `_digest` live recompute.** No `recomputeDigests` action or client-side
+  recompute pass exists in app.js today. §2.6 / §4.2 / §5.2 / §8 Phase-1 item 1 are all still
+  aspirational, unchanged by this promotion.
+- **STILL PLANNED / open question — `payStatus` derivation (§7.3, §11 Q2).** Still a
+  stored/seeded field, not derived from open invoices.
+- **BUILT DIFFERENTLY THAN SPEC'D — Blacklist (§6.3, §11 Q3).** Shipped (app.js:15489-15490,
+  7342-7344) as a direct action pill on the Account section ("Blacklist" / "Lift blacklist",
+  double-click-to-arm confirm, `blacklistedAt` + `activityLog` audit entry) — matching the
+  top-of-doc **D3 decision** (any signed-in user, no tier gate) rather than §6.3's body text
+  (which still describes a manager+-gated red hazard-stripe popup confirm; that prose predates
+  D3 and was never reconciled with it). `Blacklisted` is still **absent from
+  `NC_ACCOUNT_TYPES`** (app.js:17641) — §2.8's gap row is still accurate for the *account-type
+  pill* specifically, even though the standalone blacklist action now exists and works.
+- **R-rulebook numbers assigned:** `R28` = the account button (`acctBtn`, app.js:3802-3804)
+  that opens the agreement popup; `R29` = the invoice status/action menu pill
+  (`invoiceStatMenu`, app.js:3891). Both were renumbered from an earlier draft's R27/R28 due to
+  staging drift. `R30` was separately claimed by the concurrent Wrangler-Ops paused banner
+  (app.js:9045) — unrelated to this area; noted here only so `Rxx` placeholders still in
+  §6.2a/§6.3/§6.4 aren't accidentally assigned R30 later.
+
+---
+
 ## 1. Goal & Problem
 
 ### 1.1 What this area is for
@@ -76,6 +147,14 @@ history block is **DERIVED in production but seeded static today** (see §2.6). 
 (`paidUntil`, `paidCadence`, `unlimitedTransport`, `paidFees`) and `custom{}`.
 
 ### 2.2 The detail renderer — `customers:` (app.js:6087–6168) — SHIPPED
+
+> **[2026-07-09: render order below is SUPERSEDED — see "Shipped status" above.]** The
+> 2026-07-08 Customer Details reorg changed the order to: title → filled Notes → the ONE
+> Programs funnel section (toggle = header) → embedded Invoices → activity chart → Account →
+> Comms → Payment Methods → empty Notes → History (`DETAIL.customers`, app.js:7364-7375). The
+> "Membership + Used Sales" two-column row and the separate "Action header/entry" / "Activity
+> columns" rows in the table below no longer exist as such — folded into the funnel toggle's
+> per-tab Next Actions + Action Log.
 
 Render order, top to bottom:
 
@@ -116,6 +195,12 @@ the ranch-twist reference implementation** (tan dashed series).
 
 ### 2.4 Dual funnels — `gateTimeline` / `openFunnelDropdown` (app.js:11383–11508) — SHIPPED
 
+> **[2026-07-09: SHIPPED, but UI merged — see "Shipped status" above.]** The stage dropdowns
+> (`gateTimeline`) described here are still used to *change* a stage, but the customer-detail
+> presentation is now the single Programs toggle (`funnelSectionHtml`, app.js:3812) — Rental |
+> Equipment Sales tabs, each with an RYG dot — not two side-by-side blocks. Data model below is
+> unchanged.
+
 Two independent funnels per customer, both rendered as the gate-timeline dropdown:
 
 - **Used Sales** (`usedSalesStage`) — `funnelStage` order, free choice.
@@ -139,6 +224,9 @@ persists behind the scenes and the popup flips to edit-in-place so a card can be
 without a second Save. `applyCustomerLink` re-anchors a Quote/invoice that spawned the create.
 
 ### 2.6 `_digest` — STATIC TODAY (data.js:54–57 note)
+
+> **[2026-07-09: still STILL PLANNED — unchanged by the 2026-07-09 promotion.]** No
+> `recomputeDigests` action or client-side recompute pass exists in app.js today.
 
 `_digest{ totalPaid, visits, years, avgFrequencyDays, activePct, firstInvoice, lastInvoice }`
 is the seed of the cadence engine, the spend chart, History, and the Sales/Office KPIs
@@ -203,7 +291,8 @@ split isn't yet built, the surface stays money-tier until Jac rules otherwise (�
 
 ### 3.2 Gates this area MUST honor (do not loosen silently)
 
-1. **Money gate (`canMoney()`).** The Payment Methods section's add/charge/default/remove
+1. **[2026-07-09: STILL PLANNED — this gap is NOT closed by the 2026-07-09 promotion; see
+   "Shipped status" above.]** **Money gate (`canMoney()`).** The Payment Methods section's add/charge/default/remove
    actions, taking payment, and the spend `_digest` are money-tier. Today `cardTabBody` already
    wraps **only the `+Card` add button** in `canMoney()` (app.js:643) — note the **card *rows*
    themselves (brand, last4, "Make default", "Sign", remove ✕) render unconditionally** today.
@@ -276,6 +365,8 @@ repairs colliding card ids.
 | `achAccounts[]` | obj[] | Stripe | `{ id, bankName, last4, accountType, verified, isDefault, mandate }` |
 | `usedSalesStage` / `membershipStage` | enum | funnels | `funnelStage` order |
 | `interestedCategoryIds[]` | str[] | dropdown | category refs |
+| `interestedMakes[]` *(missing from this table, SHIPPED 2026-07-09)* | str[] | Equipment Sales tab | Make-OR-Category interest, alongside `interestedCategoryIds[]` (app.js:3825–3830) |
+| `desiredAge` / `desiredHours` *(missing from this table, SHIPPED 2026-07-09)* | str | Equipment Sales tab | buyer-criteria fields, click-to-edit (`custMetaField`, app.js:3808) |
 | `salesAction` | str | sales | next-action hint |
 | `activityLog[]` | obj[] | `logAction` | `{ when, text }`; `^Scheduled:` = a follow-up |
 | `accountNotes` (+`accountNotesColor`) | str | notes | R12 |
@@ -409,6 +500,10 @@ series — it's the area's signature ranch touch. Voice: "Round up" / "due to re
 
 ### 6.2a Payment Methods — gate-visibility fix (NEW behavior on an existing block)
 
+> **[2026-07-09: STILL PLANNED — not part of the 2026-07-09 promotion.]** `cardTabBody` /
+> `achTabBody` (app.js:643–676) still render rows unconditionally; only the add buttons are
+> gated. This section's proposal is unbuilt.
+
 Today only `+Card` is `canMoney()`-wrapped (app.js:643); the card/ACH **rows** render to any
 viewer. Reshape `paymentMethodsSection` so that under **sub-money tier the whole block collapses**
 to a single stamped line — Saira Condensed, muted: `PAYMENT METHODS · MONEY-TIER` (or simply hide
@@ -420,6 +515,14 @@ the section header's count + body). Money-tier and above see the full Cards/ACH 
 - No new popup, so **no `WINDOW_CATALOG` change** for this item.
 
 ### 6.3 Proposed: Blacklist + account-state action (NEW, gated)
+
+> **[2026-07-09: BUILT — but DIFFERENTLY than this section describes; see "Shipped status"
+> above.]** A blacklist action shipped (app.js:15489–15490, 7342–7344) as a direct pill with a
+> double-click-to-arm confirm, matching the top-of-doc **D3 decision** (any signed-in user, no
+> manager+ gate, no hazard-stripe popup) — not the manager+-gated red hazard-stripe confirm
+> popup this section still describes below (that prose predates D3 and was never reconciled).
+> `Blacklisted` remains absent from `NC_ACCOUNT_TYPES` (app.js:17641), so the account-type-pill
+> half of this proposal is still unbuilt.
 
 Add `Blacklisted` to the account-type pills (it already exists in `customerAccountType`
 config.js:113 but is absent from `NC_ACCOUNT_TYPES` app.js:14040). Setting it fires a **manager+
@@ -486,6 +589,9 @@ Must walk only this customer's `DATA.invoices` (`amountPaid`, `date`) and `DATA.
 
 ### 7.3 Pay status (canon)
 
+> **[2026-07-09: still open / STILL PLANNED — §11 Q2 unresolved.]** `payStatus` remains a
+> stored/seeded field; no derive-from-open-invoices pass exists.
+
 `customerPayStatus`: Current(green) / Unpaid(red) / Partial(yellow) / New Customer(blue).
 Drives the customer flag (`unpaid-balance`, `partial-balance`) and the rental `unpaid-balance`
 flag. **Open Question (§11 Q2):** is `payStatus` a stored field or should it be *derived* from
@@ -520,9 +626,12 @@ identity verification only; it is not a money field and never gates pricing.
 ### Phase 1 — MVP (close the canon gaps)
 
 1. **Live `_digest` recompute** (§4.2, §5.2) — client-side on load + after invoice/rental
-   mutation. *Biggest value; unblocks accurate cadence + KPIs.*
-2. **Wire `Blacklisted`** into account-type with a manager+ gate (§6.3).
-3. **`payStatus` audit** — decide stored vs derived (§7.3) and make it consistent.
+   mutation. *Biggest value; unblocks accurate cadence + KPIs.* **[2026-07-09: STILL PLANNED.]**
+2. **Wire `Blacklisted`** into account-type with a manager+ gate (§6.3). **[2026-07-09: BUILT
+   DIFFERENTLY — a no-tier-gate direct action shipped per the D3 decision, not this manager+
+   pill/popup; the account-type-pill half is still unbuilt — see "Shipped status" above.]**
+3. **`payStatus` audit** — decide stored vs derived (§7.3) and make it consistent. **[2026-07-09:
+   STILL an open question — still stored, not derived.]**
 
 **In scope v1:** recompute, blacklist wiring, the gate decisions.
 **Out of scope v1:** customer merge, PII export/delete, contact-outcome on follow-ups,
