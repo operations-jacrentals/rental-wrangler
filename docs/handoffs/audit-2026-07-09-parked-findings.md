@@ -3,15 +3,21 @@
 Source: 19-agent adversarial line-by-line audit of `staging` (branch `wrangler-fix/pr552-batch`,
 content-identical to `origin/staging`), run before PR #552's staging→main promotion per Jac's
 explicit "before, not after" instruction. 54 findings confirmed after verification (0 critical /
-7 high / 20 medium / 27 low). 24 were mechanical/zero-risk and already fixed + pushed to this
-branch. The 28 below need a judgment call, touch money/auth/WO-completion semantics, or need
-more investigation than a pre-promotion pass should absorb — parked for Jac.
+7 high / 20 medium / 27 low). 23 were mechanical/zero-risk and fixed in PR #554.
+
+**UPDATE (same day):** all 7 HIGH items below were then also resolved — Jac chose to work
+through them one at a time via popup rather than leave them parked — and shipped in PR #556.
+Item 17 (branch-janitor's `backup/*` guard) was actually part of the #554 batch, cross-referenced
+here only because item 23 is related. Both are left in place below, marked done, for the record.
+**21 MEDIUM/LOW items remain genuinely parked** — those still need a judgment call, touch
+money/auth semantics lightly enough not to be urgent, or need more investigation than a
+pre-promotion pass should absorb.
 
 Legend: **file:line** — one-line verdict. Full evidence trail is in the audit transcript if needed.
 
 ---
 
-## HIGH — money / auth / security (7)
+## HIGH — money / auth / security (7) — ✅ ALL FIXED, shipped in PR #556
 
 1. **app.js:1662, 1673 (`setTransportType`, `armTransportNode`)** — Transport-type changes reprice
    an invoice's transport line (via `syncTransportLine`), and the dedicated editor (`openTransportEdit`)
@@ -115,8 +121,8 @@ Legend: **file:line** — one-line verdict. Full evidence trail is in the audit 
     self-consistent, not that the desync happened). Tooling-only, no live-app impact, but worth
     hardening since these generators are trusted for navigation.
 
-17. **`.github/workflows/branch-janitor.yml:66`** — *(fixed — see commit)* listed here only because
-    the sibling item below is related and parked.
+17. **`.github/workflows/branch-janitor.yml:66`** — ✅ *fixed in PR #554* — listed here only because
+    the sibling item below (23) is related and still parked.
 
 18. **docs/handoffs/perf-report-backend.gs:31** — Writes client-controlled strings (build/device/role)
     straight into Sheet cells with no formula-injection sanitization (no leading-apostrophe guard
