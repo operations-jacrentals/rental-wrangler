@@ -28,12 +28,15 @@
 - **⚠ Found + fixed after that deploy:** `installMembershipBillingCron_` didn't show up in the
   editor's Run dropdown — Apps Script hides any function ending in `_` from that picker (private-
   helper convention). Renamed to `installMembershipBillingCron` (no underscore, matching the
-  existing `installUnitDailyTrigger` precedent), re-pushed to HEAD. **REMAINING STEPS (Jac,
-  editor):**
-  1. Deploy → Manage deployments → Edit prod → **New version** again (picks up the rename).
-  2. Refresh the editor tab (the Run dropdown is client-cached), then Run →
-     `installMembershipBillingCron` once (creates the daily 3am billing trigger).
-  3. Verify: `curl -sS -L -H 'Content-Type: text/plain;charset=utf-8' --data '{"action":"auth","password":"__wrong__"}' "$EXEC_URL"` → expect `{"ok":false,"error":"unauthorized"}` (anonymous access intact).
+  existing `installUnitDailyTrigger` precedent), re-pushed to HEAD.
+- **✅ FULLY DEPLOYED + VERIFIED 2026-07-09 (v84).** Jac re-deployed, refreshed, ran
+  `installMembershipBillingCron` (execution log: completed, no errors — trigger installed).
+  End-to-end verification: `auth` with a money-tier password → `{"ok":true,"role":"developer",
+  "money":true}`; `membershipEnroll`/`membershipCancel`/`membershipReactivate` each called with a
+  deliberately nonexistent customerId → `{"ok":false,"error":"customer-not-found"}` (proves the
+  dispatch is live, the money gate passed, and the function body executed — zero writes, zero
+  Stripe calls, since the code returns before any write when the customer doesn't exist).
+  Anonymous access confirmed intact throughout. **Regression fully closed.**
 
 ## ✅ DEPLOYED — team-chat privacy (2026-07-08, Jac editor deploy)
 - **What:** `getChats_` / `setChats_` replaced with scoped + authorized versions (+ helpers

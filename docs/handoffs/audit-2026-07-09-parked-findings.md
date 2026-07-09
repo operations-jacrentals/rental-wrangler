@@ -137,10 +137,14 @@ Legend: **file:line** — one-line verdict.
   - **Impact:** confirmed broken in production continuously since 2026-06-25T23:21:35Z (~13.5
     days as of 2026-07-09). The frontend (app.js, the same three call sites) has been calling
     these three actions the entire time; every call has been hitting `unknown action` server-side.
-  - **Fix ready, not yet deployed:** `docs/handoffs/membership-billing-additions.gs` has the full
-    block (gate already corrected to `roleMoneyOk_`) ready to re-splice into the current live
-    `Code.gs` — same additive-queue recipe as any other backend item, STOP-gated on Jac's
-    go-ahead before it ships.
+  - **✅ FIX DEPLOYED + VERIFIED (2026-07-09, v84).** Re-spliced into live `Code.gs`, pushed via
+    service account, deployed by Jac through the editor (v83, then v84 after fixing an unrelated
+    trailing-underscore naming bug that hid the trigger-installer from the Run dropdown). Live
+    Customers data checked first for fallout: zero `MINV-` invoices, zero `membership:true`
+    invoices, zero customers with any app-driven billing field populated — the feature had no
+    organic usage in its 11-minute original window, so no revenue was lost and no reconciliation
+    is needed. End-to-end dispatch verified live (see `BACKEND-DEPLOY-QUEUE.md`). Regression fully
+    closed.
 
 ---
 
