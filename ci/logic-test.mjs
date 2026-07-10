@@ -81,6 +81,25 @@ try {
       ok(T.rentalLineRefund({ rentalId: 'Z', invoiceId: null }).refunded === false, 'rentalLineRefund: no invoice → not refunded');
     }
 
+    // 2c) VOID unpaid invoice (Jac 2026-07-09, #579) — unlink the rental, retire to a $0 off-books record
+    {
+      const vinv = { invoiceId: 'VOIDTEST1', customerId: null, rentalIds: ['VOIDRENT1'], amountPaid: 0, lineItems: [{ kind: 'custom', lid: 'VL1', ref: null, amount: 500 }] };
+      const vrent = { rentalId: 'VOIDRENT1', invoiceId: 'VOIDTEST1', units: [], status: 'Quote' };
+      T.DATA.invoices.push(vinv); T.IDX.invoice.set('VOIDTEST1', vinv);
+      T.DATA.rentals.push(vrent); T.IDX.rental.set('VOIDRENT1', vrent);
+      ok(T.invoiceVoidable(vinv) === true, 'void: a $0-paid, unlocked invoice is voidable');
+      ok(T.invoiceTotals(vinv).total > 0, 'void: pre-void the invoice carries a live total');
+      T.voidInvoice(vinv);
+      const vt = T.invoiceTotals(vinv);
+      ok(vinv.voided === true && vt.status === 'Voided', 'void: voidInvoice marks it Voided');
+      ok(vt.total === 0 && vt.balance === 0, 'void: a voided invoice is $0 off the books (total & balance zeroed)');
+      ok(vrent.invoiceId === null && (vinv.rentalIds || []).length === 0, 'void: unlinks the rental so it is free to re-invoice');
+      ok(T.invoiceVoidable(vinv) === false, 'void: an already-voided invoice is not voidable again');
+      ok(T.invoiceVoidable({ invoiceId: 'X', amountPaid: 200, lineItems: [] }) === false, 'void: an invoice with a payment is NOT voidable (refund-first)');
+      T.DATA.invoices = T.DATA.invoices.filter((i) => i.invoiceId !== 'VOIDTEST1'); T.IDX.invoice.delete('VOIDTEST1');   // cleanup — keep later counts clean
+      T.DATA.rentals = T.DATA.rentals.filter((r) => r.rentalId !== 'VOIDRENT1'); T.IDX.rental.delete('VOIDRENT1');
+    }
+
     // 3) per-unit status derivation off the shared window (date-robust via TODAY_ISO)
     const today = T.TODAY_ISO;
     ok(T.unitStatus({ startDate: today }, { status: 'Reserved' }) === 'Reserved', 'Reserved + today window stays Reserved (Today/Tomorrow retired → flags)');
@@ -1957,8 +1976,23 @@ try {
       T.DATA.rentals.push(r2); T.IDX.rental.set('DIAG-UR2', r2); T.DATA.invoices.push(i2); T.IDX.invoice.set('DIAG-UI2', i2); T.reindex('rentals', r2); T.reindex('invoices', i2);
       const v2 = T.WR_OPERATIONS.unlinkInvoice.validate({ rentalId: 'DIAG-UR2' });
       ok(!!v2.issue && /payment|refund/i.test(v2.issue), 'unlinkInvoice: refuses while a payment is allocated to the rental (money-safe)');
-      T.DATA.rentals = T.DATA.rentals.filter((x) => x !== r1 && x !== r2); T.DATA.invoices = T.DATA.invoices.filter((x) => x !== i1 && x !== i2);
-      T.IDX.rental.delete('DIAG-UR1'); T.IDX.rental.delete('DIAG-UR2'); T.IDX.invoice.delete('DIAG-UI1'); T.IDX.invoice.delete('DIAG-UI2');
+      // (d) #581 regression — the rental is linked via the invoice's rentalIds SERIES list (what rentalInvoices()
+      // + the detail chip read), which is the real linkage. Unlink must clear BOTH sides so rentalInvoices()
+      // stops returning it (else the chip lingers and +Invoice stays blocked after a "clean" unlink).
+      const r3 = { rentalId: 'DIAG-UR3', customerId: cust.customerId, invoiceId: 'DIAG-UI3', status: 'Reserved', mock: true };
+      const i3 = { invoiceId: 'DIAG-UI3', customerId: cust.customerId, rentalIds: ['DIAG-UR3'], date: T.TODAY_ISO, amountPaid: 0, lineItems: [{ kind: 'rental', ref: 'DIAG-UR3', lid: 'UL3', amount: 89 }], mock: true };
+      T.DATA.rentals.push(r3); T.IDX.rental.set('DIAG-UR3', r3); T.DATA.invoices.push(i3); T.IDX.invoice.set('DIAG-UI3', i3); T.reindex('rentals', r3); T.reindex('invoices', i3);
+      T.WR_OPERATIONS.unlinkInvoice.apply({ rentalId: 'DIAG-UR3' });
+      ok(!r3.invoiceId && !i3.rentalIds.includes('DIAG-UR3') && T.rentalInvoices(r3).length === 0, 'unlinkInvoice: full detach — clears BOTH the invoiceId pointer AND the rentalIds series link (#581)');
+      // (e) #581 — a rental left linked ONLY via rentalIds (invoiceId already null, the stuck state) can still be repaired
+      const r4 = { rentalId: 'DIAG-UR4', customerId: cust.customerId, invoiceId: null, status: 'Reserved', mock: true };
+      const i4 = { invoiceId: 'DIAG-UI4', customerId: cust.customerId, rentalIds: ['DIAG-UR4'], date: T.TODAY_ISO, amountPaid: 0, lineItems: [{ kind: 'rental', ref: 'DIAG-UR4', lid: 'UL4', amount: 89 }], mock: true };
+      T.DATA.rentals.push(r4); T.IDX.rental.set('DIAG-UR4', r4); T.DATA.invoices.push(i4); T.IDX.invoice.set('DIAG-UI4', i4); T.reindex('rentals', r4); T.reindex('invoices', i4);
+      ok(!T.WR_OPERATIONS.unlinkInvoice.validate({ rentalId: 'DIAG-UR4' }).issue, 'unlinkInvoice: a rentalIds-only link (invoiceId already null) still validates for repair (#581)');
+      T.WR_OPERATIONS.unlinkInvoice.apply({ rentalId: 'DIAG-UR4' });
+      ok(T.rentalInvoices(r4).length === 0, 'unlinkInvoice: repairs a rentalIds-only stuck rental (#581)');
+      T.DATA.rentals = T.DATA.rentals.filter((x) => x !== r1 && x !== r2 && x !== r3 && x !== r4); T.DATA.invoices = T.DATA.invoices.filter((x) => x !== i1 && x !== i2 && x !== i3 && x !== i4);
+      T.IDX.rental.delete('DIAG-UR1'); T.IDX.rental.delete('DIAG-UR2'); T.IDX.rental.delete('DIAG-UR3'); T.IDX.rental.delete('DIAG-UR4'); T.IDX.invoice.delete('DIAG-UI1'); T.IDX.invoice.delete('DIAG-UI2'); T.IDX.invoice.delete('DIAG-UI3'); T.IDX.invoice.delete('DIAG-UI4');
     }
 
     // §inv-id-format (Jac 2026-07-08) — new ##MMDDYY id (no 'i', month up front, counter PER MONTH);

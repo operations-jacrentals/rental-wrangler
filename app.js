@@ -1706,6 +1706,11 @@ function invoiceTotals(inv) {
   const paid = Number(inv.amountPaid) || 0;
   const balance = total - paid;
   let status;
+  // Voided (Jac 2026-07-09): an unlinked, unpaid invoice retired to a $0 record. It's OFF
+  // every book — zero the money magnitudes here (the ONE chokepoint) so no AR balance,
+  // billed-revenue, aging or collection-rate metric ever counts it; the line items survive on
+  // the record for the audit trail. Voiding is gated to $0-paid, so paid is always 0.
+  if (inv.voided) return { subtotal: 0, tax: 0, total: 0, exempt, paid: 0, balance: 0, status: 'Voided' };
   if (inv.refunded) status = 'Refunded';
   else if (total > 0 && paid >= total) status = 'Paid';   // money arrived — Paid beats a queued placement
   // Stored collections marker beats the derived aging tier (spec collections §7.1, Jac 2026-06-29):
@@ -4779,7 +4784,7 @@ function getEntityFlags(entityType, rec) {
 function entityArchived(entityType, rec) {
   if (!rec) return false;
   if (entityType === 'rentals') return rentalCleared(rec);
-  if (entityType === 'invoices') return rec.refunded === true || invoiceTotals(rec).status === 'Refunded' || invoiceCollectionsActive(rec);   // in-collections = off the active books (gray)
+  if (entityType === 'invoices') return rec.voided === true || rec.refunded === true || invoiceTotals(rec).status === 'Refunded' || invoiceCollectionsActive(rec);   // voided / refunded / in-collections = off the active books (gray)
   return false;
 }
 /** Computed status color: 'gray' (archived) · highest active-flag severity · 'green'. */
@@ -7624,6 +7629,15 @@ const DETAIL = {
             ? `${badge(`Paid${i.paymentMethod ? ' · ' + i.paymentMethod : ''}`, 'green')}${actionPill('danger', 'Refund', { js: 'js-pay-invoice', data: { rec: i.invoiceId } })}`
             : `${actionPill('money', hasCardOnFile(cust) ? (t.paid > 0 ? 'Pay balance ' : 'Pay ') + money2(t.balance) : 'Take payment', { js: 'js-pay-invoice', data: { rec: i.invoiceId } })}${hasCardOnFile(cust) ? `<span class="muted" style="font-size:11px">${esc(cardLabel(cust))}</span>` : ''}`)
       : '') + colCell;
+    // Void (Jac 2026-07-09): an UNPAID invoice ($0 assigned) can be voided — unlinks its rental
+    // so the slot frees to re-invoice and retires this to a $0 auditable record (no hard-delete).
+    // Money-safe by construction (invoiceVoidable = $0-paid, unlocked, un-refunded, not in collections).
+    // If a payment IS assigned, the button hides and points to refund-first.
+    const voidCell = (canMoney()
+      ? invoiceVoidable(i)
+        ? actionPill('danger', 'Void invoice', { js: 'js-void-invoice', h: 26, data: { rec: i.invoiceId } })
+        : (t.paid > 0.005 && !i.refunded && !i.voided ? `<span class="muted" style="font-size:11px" data-tip="A payment is assigned — refund it first, then you can void this invoice.">Refund to void</span>` : '')
+      : '');
     const lineForm = `<div class="lineform"><input class="lf-in js-lf-label" placeholder="Custom line description" /><div class="lineform-row"><input class="lf-in js-lf-amt" type="number" min="0" placeholder="Amount $" /></div><div class="pillrow" style="justify-content:flex-end">${ghostPill('Cancel', { js: 'js-line-cancel' })}${actionPill('commit', 'Add line', { js: 'js-line-save', data: { rec: i.invoiceId } })}</div></div>`;
     // Merge (#64): a customer's other UNPAID invoices can fold into this one. Money-safe
     // by construction — only $0-paid, unlocked, un-refunded bills qualify (invoiceMergeable).
@@ -7651,7 +7665,7 @@ const DETAIL = {
           ${ledgerRow('Paid', `${money2(t.paid)} / ${money2(t.total)}`)}
           ${ledgerRow(`Due${i.dueDate ? ' · ' + fmtShortDate(i.dueDate) : ''}`, money2(t.balance), 'due')}
           ${!locked ? `<div class="kv" style="justify-content:flex-end;align-items:center;gap:7px;margin-top:2px"><span class="derived" style="font-size:11px">Set due date</span><input type="date" class="js-due-date" data-rec="${esc(i.invoiceId)}" value="${esc(i.dueDate || '')}" style="font-size:11px;color:var(--txt);background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:3px 7px;color-scheme:dark"></div>` : ''}
-          ${payCell ? `<div class="pillrow" style="justify-content:flex-end;margin-top:9px">${payCell}</div>` : ''}
+          ${(payCell || voidCell) ? `<div class="pillrow" style="justify-content:flex-end;margin-top:9px">${payCell}${voidCell}</div>` : ''}
           <div class="pillrow" style="justify-content:flex-end;margin-top:9px">${ghostPill('🖨 Print', { js: 'js-print-invoice', data: { rec: i.invoiceId }, tip: 'Edge-to-edge already. For a fully clean page, turn off “Headers & footers” in the print dialog (Chrome remembers it).' })}${ghostPill('✉ Send Email', { js: 'js-send-email', data: { rec: i.invoiceId }, disabled: !cust || !cust.email, tip: !cust ? 'No customer on file' : !cust.email ? 'No email on file' : '' })}${ghostPill('💬 Send Text', { js: 'js-send-text', data: { rec: i.invoiceId }, disabled: !cust || !cust.phone, tip: !cust ? 'No customer on file' : !cust.phone ? 'No phone on file' : '' })}</div>
         </div>
       </div></div>`;
@@ -13935,9 +13949,19 @@ const WR_OPERATIONS = {
     },
   },
   unlinkInvoice: {
-    // Repair a mislinked rental — clear its invoiceId so it can be re-billed fresh (e.g. an invoice-number
-    // collision left it pointing at another customer's bill). Money-safe: mirrors the app's §7.4 inv-remove
-    // guard — refuse while ANY payment is allocated to THIS rental on that invoice (a refund is out of scope).
+    // Repair a mislinked rental — fully detach it from its invoice(s) so it can be re-billed fresh (e.g. an
+    // invoice-number collision left it pointing at another customer's bill). A rental links to an invoice TWO
+    // ways — the legacy r.invoiceId pointer AND the invoice's rentalIds series list — and rentalInvoices()
+    // (what the detail chip + +Invoice affordance read) keys off rentalIds. So we must clear BOTH sides, or
+    // clearing invoiceId alone leaves the chip lingering and blocks re-invoicing (#581). Mirrors the full
+    // detach in inv-remove / voidInvoice. Money-safe: mirrors the app's §7.4 inv-remove guard — refuse while
+    // ANY payment is allocated to THIS rental on a linked invoice (a refund is out of scope).
+    _linked(r) {   // every invoice this rental is on, via either linkage mechanism
+      const invs = rentalInvoices(r).slice();
+      const legacy = r.invoiceId ? IDX.invoice.get(r.invoiceId) : null;
+      if (legacy && !invs.includes(legacy)) invs.push(legacy);
+      return invs;
+    },
     _pick(p) {
       if (p && p.rentalId) { const r = IDX.rental.get(p.rentalId); return r ? { rental: r } : { issue: `no rental “${p.rentalId}”` }; }
       const custRef = (p && (p.customer != null ? p.customer : p.customerId)) || '';
@@ -13945,7 +13969,7 @@ const WR_OPERATIONS = {
       const cres = wrResolveCustomer(custRef);
       if (cres.many) return { issue: `more than one customer matches “${custRef}” — which one?` };
       if (!cres.rec) return { issue: `no customer matching “${custRef}”` };
-      const linked = (DATA.rentals || []).filter((r) => r.customerId === cres.rec.customerId && r.invoiceId);
+      const linked = (DATA.rentals || []).filter((r) => r.customerId === cres.rec.customerId && this._linked(r).length);
       if (!linked.length) return { issue: `no invoice-linked rental for ${cres.rec.name}` };
       if (linked.length > 1) return { issue: `${cres.rec.name} has ${linked.length} invoice-linked rentals — say which rental id` };
       return { rental: linked[0] };
@@ -13954,16 +13978,21 @@ const WR_OPERATIONS = {
       const pick = this._pick(p);
       if (pick.issue) return { issue: pick.issue };
       const r = pick.rental;
-      if (!r.invoiceId) return { issue: `rental ${r.rentalId} isn’t linked to an invoice` };
-      const inv = IDX.invoice.get(r.invoiceId);
-      if (inv && rentalAllocated(inv, r.rentalId) > 0.005) return { issue: `a payment is assigned to this rental on ${invoiceShort(r.invoiceId)} — that has to be refunded first, which I can’t do` };
-      return { summary: `unlink invoice ${invoiceShort(r.invoiceId)} from ${rentalUnitsLabel(r) || `rental ${r.rentalId}`} (frees it to re-bill)` };
+      const invs = this._linked(r);
+      if (!invs.length) return { issue: `rental ${r.rentalId} isn’t linked to an invoice` };
+      const paid = invs.find((inv) => rentalAllocated(inv, r.rentalId) > 0.005);
+      if (paid) return { issue: `a payment is assigned to this rental on ${invoiceShort(paid.invoiceId)} — that has to be refunded first, which I can’t do` };
+      return { summary: `unlink invoice ${invs.map((iv) => invoiceShort(iv.invoiceId)).join(', ')} from ${rentalUnitsLabel(r) || `rental ${r.rentalId}`} (frees it to re-bill)` };
     },
     apply(p) {
       const pick = this._pick(p); if (pick.issue || !pick.rental) return null;
-      const r = pick.rental; const old = r.invoiceId;
+      const r = pick.rental; const invs = this._linked(r);
+      const label = invs.map((iv) => invoiceShort(iv.invoiceId)).join(', ') || invoiceShort(r.invoiceId);
+      // FULL detach — drop the rental from every invoice's rentalIds series list AND clear the legacy
+      // pointer, so rentalInvoices() (the chip / +Invoice source) stops returning it (#581).
+      invs.forEach((inv) => { inv.rentalIds = (inv.rentalIds || []).filter((id) => id !== r.rentalId); reindex('invoices', inv); });
       r.invoiceId = null; reindex('rentals', r);
-      logAction(r, `Invoice ${invoiceShort(old)} unlinked — repair mislinked invoice (Mr. Wrangler)`);
+      logAction(r, `Invoice ${label} unlinked — repair mislinked invoice (Mr. Wrangler)`);
       return { entity: 'rentals', id: r.rentalId };
     },
   },
@@ -16198,6 +16227,13 @@ function onClick(e) {
     reindex('invoices', inv); toast(`${invoiceShort(inv.invoiceId)} recalled — back on the aging ladder.`);
     return;
   }
+  if (closest('.js-void-invoice')) {
+    e.stopPropagation();
+    if (!canMoney()) { toast('Voiding an invoice is Office/Admin only.'); return; }
+    const inv = IDX.invoice.get(closest('.js-void-invoice').dataset.rec); if (!inv) return;
+    if (!invoiceVoidable(inv)) { toast('Can’t void — this invoice has a payment, a price lock, or is in collections. Refund / unlock first.'); return; }
+    return voidInvoice(inv);
+  }
   if (closest('.js-lock-invoice')) { e.stopPropagation(); return lockInvoiceFlow(closest('.js-lock-invoice').dataset.rec, true); }
   if (closest('.js-unlock-invoice')) { e.stopPropagation(); return lockInvoiceFlow(closest('.js-unlock-invoice').dataset.rec, false); }
   if (closest('.js-ring')) return openOverlay({ kind: 'role', role: closest('.js-ring').dataset.role });
@@ -17000,9 +17036,15 @@ function handlePillX(xEl) {
   } else if (kind === 'cust-swap') {
     rec.customerId = null; toast('Customer removed — drag a replacement on (or quick-add one).'); return render();
   } else if (kind === 'inv-remove') {
-    const inv = IDX.invoice.get(rec.invoiceId);
-    if (inv && rentalAllocated(inv, rec.rentalId) > 0) { toast('Blocked: a payment is assigned to this rental — refund it first to unlink (§7.4).'); return; }
-    rec.invoiceId = null; toast('Invoice unlinked.'); render();
+    // Full detach of this rental from its invoice(s). A rental links TWO ways — the legacy r.invoiceId
+    // pointer AND the invoice's rentalIds series list (what rentalInvoices() / this chip read) — so clear
+    // BOTH, or the chip lingers and +Invoice stays blocked after a "clean" unlink (#581). Money-safe:
+    // refuse while a payment is allocated to this rental on any linked invoice (§7.4).
+    const linkedInvs = rentalInvoices(rec).slice(); const legacyInv = rec.invoiceId ? IDX.invoice.get(rec.invoiceId) : null;
+    if (legacyInv && !linkedInvs.includes(legacyInv)) linkedInvs.push(legacyInv);
+    if (linkedInvs.some((inv) => rentalAllocated(inv, rec.rentalId) > 0)) { toast('Blocked: a payment is assigned to this rental — refund it first to unlink (§7.4).'); return; }
+    linkedInvs.forEach((inv) => { inv.rentalIds = (inv.rentalIds || []).filter((id) => id !== rec.rentalId); reindex('invoices', inv); });
+    rec.invoiceId = null; reindex('rentals', rec); toast('Invoice unlinked.'); render();
   } else if (kind === 'inv-cust-remove') {
     if (invoiceTotals(rec).paid > 0) { toast('Blocked: invoice has a payment — customer locked (§7.5).'); return; }
     rec.customerId = null; toast('Customer removed — drag a replacement onto the invoice (or quick-add one).'); return render();
@@ -19079,6 +19121,7 @@ function invoiceAmendments(inv) {
  *  red (past due). Drives the date stamp, hazard stripe, Balance Due and the Paid stamp. */
 function prInvoiceInk(inv, t) {
   const tt = t || invoiceTotals(inv);
+  if (inv.voided || tt.status === 'Voided') return 'is-refunded';       // voided = off the books (gray), NOT paid-green
   if (inv.refunded || tt.status === 'Refunded') return 'is-refunded';   // settled by refund, NOT paid-green (#552-r2)
   if (tt.balance <= 0.005) return 'is-paid';
   return /^(Late|Collections)/.test(tt.status) ? 'is-due' : 'is-open';
@@ -19095,8 +19138,9 @@ function invoiceDocHtml(inv, opts = {}) {
   const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
   const groups = invoicePrintGroups(inv);
   const refunded = t.refunded || t.status === 'Refunded';
+  const voided = inv.voided || t.status === 'Voided';   // a $0 off-the-books record — never a Paid stamp
   const refAmt = Number(inv.refundedAmount) || 0;
-  const paid = t.balance <= 0.005 && t.total > 0 && !refunded;   // a refunded invoice reads $0 balance but is NOT "Paid in Full" (#552-r2)
+  const paid = t.balance <= 0.005 && t.total > 0 && !refunded && !voided;   // a refunded/voided invoice reads $0 balance but is NOT "Paid in Full" (#552-r2)
   const ink = prInvoiceInk(inv, t);   // is-paid (green) / is-open (yellow) / is-due (red) / is-refunded (gray)
   const bigDate = (fmtShortDate(inv.date) || '').toUpperCase();
   const brandName = companyName().replace(/([a-z])([A-Z])/g, '$1 $2');   // "JacRentals" → "Jac Rentals" (proper case, spaced)
@@ -19161,7 +19205,7 @@ function invoiceDocHtml(inv, opts = {}) {
       <div class="pr-summary">
         <div class="pr-cust">
           ${custPhoto ? `<img class="pr-cust-photo" src="${esc(custPhoto)}" alt="" />` : ''}
-          ${paid ? `<div class="pr-stamp${custPhoto ? ' on-photo' : ''}" aria-hidden="true">Paid in Full</div>` : refunded ? `<div class="pr-stamp${custPhoto ? ' on-photo' : ''}" aria-hidden="true">Refunded</div>` : ''}
+          ${paid ? `<div class="pr-stamp${custPhoto ? ' on-photo' : ''}" aria-hidden="true">Paid in Full</div>` : voided ? `<div class="pr-stamp${custPhoto ? ' on-photo' : ''}" aria-hidden="true">Voided</div>` : refunded ? `<div class="pr-stamp${custPhoto ? ' on-photo' : ''}" aria-hidden="true">Refunded</div>` : ''}
         </div>
         <div class="pr-tot">
           <div><span>Grand Subtotal</span><span>${money2(t.subtotal)}</span></div>
@@ -20152,6 +20196,30 @@ function addWOToInvoice(invoiceId, woId) {
    already does for empty drafts. Same customer only. */
 function invoiceMergeable(i) {
   return !!i && !!i.customerId && !i.locked && !i.refunded && !i.achProcessing && (Number(i.amountPaid) || 0) === 0 && !invoiceCollectionsActive(i);   // in-collections invoices are frozen (spec collections §7.3)
+}
+/* Voidable (Jac 2026-07-09) = an UNPAID invoice safe to retire: nothing paid, unlocked,
+   un-refunded, no ACH in flight, not already voided, not in collections. Same money-safety
+   floor as invoiceMergeable (which DELETES a $0-paid bill) — voiding is strictly gentler: it
+   keeps the record. No customer required (a customer-less draft can still be voided). */
+function invoiceVoidable(i) {
+  return !!i && !i.voided && !i.locked && !i.refunded && !i.achProcessing && (Number(i.amountPaid) || 0) === 0 && !invoiceCollectionsActive(i);
+}
+/* Void an unpaid invoice: unlink every rental it holds (clearing the stale invoiced flag so the
+   slot frees to re-invoice), then mark it Voided. NEVER touches a payment/allocation/lock/refund
+   — invoiceVoidable already proved $0 is assigned. The record survives (no delete) as a $0
+   auditable Voided invoice; invoiceTotals zeroes its money so it's off every book. */
+function voidInvoice(inv) {
+  if (!invoiceVoidable(inv)) return;
+  // Detach ALL linked rentals (both the rentalIds series link AND any legacy r.invoiceId pointer)
+  // so rentalInvoices() no longer returns it and +Invoice reopens — mirrors inv-line-remove's full detach.
+  DATA.rentals.forEach((r) => { if (r.invoiceId === inv.invoiceId) { r.invoiceId = null; reindex('rentals', r); logAction(r, `Unlinked — ${invoiceShort(inv.invoiceId)} voided (free to re-invoice)`); } });
+  inv.rentalIds = [];
+  delete inv.mock;                 // a voided record is permanent — never sweepable as an empty draft
+  inv.voided = true; inv.voidedAt = new Date().toISOString(); inv.voidedBy = currentRole || '';
+  logAction(inv, `Voided by ${currentRole || 'operator'} — unlinked from rental, retired to a $0 record (no delete)`);
+  reindex('invoices', inv);
+  toast(`${invoiceShort(inv.invoiceId)} voided — the rental's free to re-invoice.`);
+  render();
 }
 /* Fold the absorbed invoice's lines into the keeper, relink its rentals, then delete
    it. (The 1.2s sync diff sees the vanished id and pushes a backend delete — §18b.) */
@@ -22584,7 +22652,7 @@ function exposeTestApi() {
       rentalAllocated, itemRefunded, itemRefundable, lineRefunded, lineFullyRefunded, refundLines, rentalLineRefund, applyPayment, unitRentalPrice, rentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck, billWOToInvoice, billWOToInvoiceExplicit, activeRentalForUnit,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
-      wrValidatePlan, applyWranglerData, wrPlanNeedsApply, wrPlanSummary, wrFunnel, wrResolveCustomer, wrResolveUnit, wrResolveCategory, wrResolveVendor, wrResolvePart, wrResolveRental, wrChatFormat, wrFocusRecord, wrRecLabel, activeSession, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv, wrRunAgent, wrApplyChangesTool, wranglerDigest, wrPruneOldChats, WR_CHAT_RETAIN_DAYS, WR_TOOL_IMPL, WR_TOOLS, WR_OPERATIONS,
+      wrValidatePlan, applyWranglerData, wrPlanNeedsApply, wrPlanSummary, wrFunnel, wrResolveCustomer, wrResolveUnit, wrResolveCategory, wrResolveVendor, wrResolvePart, wrResolveRental, wrChatFormat, wrFocusRecord, wrRecLabel, activeSession, invoiceMergeable, mergeInvoiceInto, invoiceVoidable, voidInvoice, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv, wrRunAgent, wrApplyChangesTool, wranglerDigest, wrPruneOldChats, WR_CHAT_RETAIN_DAYS, WR_TOOL_IMPL, WR_TOOLS, WR_OPERATIONS,
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
