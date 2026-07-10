@@ -3071,6 +3071,23 @@ body { font-variant-numeric: tabular-nums; }
 .sigpad { height: 74px; border-radius: 8px; border: 1px dashed var(--line); background: var(--panel-2); position: relative; }
 .sigpad .base { position: absolute; left: 12px; right: 12px; bottom: 20px; border-top: 1px solid var(--line); }
 .terms { height: 70px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); padding: 9px 11px; font-size: 11px; color: var(--txt-2); line-height: 1.5; }
+/* Phase 2b — the live account-type toggle-menu, live capture previews, and the enroll tote. */
+.actype-menu { position: relative; margin-top: 4px; display: flex; flex-direction: column; gap: 3px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); padding: 4px; box-shadow: var(--chip-shadow); }
+.actype-opt { font: inherit; font-size: 12px; text-align: left; padding: 7px 9px; border-radius: 7px; border: 0; background: transparent; color: var(--txt-2); cursor: pointer; }
+.actype-opt:hover { background: var(--panel-2); } .actype-opt.on { color: var(--accent); font-weight: 700; }
+.selfie-img { width: 100%; height: 74px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
+.picklabel { cursor: pointer; }
+.sigpad.has-sig { display: flex; align-items: center; justify-content: center; padding: 4px; }
+.sig-img { max-width: 100%; max-height: 100%; }
+.sigpad.js-sign-popout { display: flex; align-items: center; justify-content: center; font: inherit; color: var(--txt-3); font-size: 11px; cursor: pointer; }
+.sigpad.js-sign-popout:hover { border-color: var(--accent-line); color: var(--accent); }
+.datefield-in { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 11px; color: var(--txt); font: inherit; font-size: 12.5px; width: 100%; }
+.datefield-in:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tote { border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); padding: 9px 11px; display: flex; flex-direction: column; gap: 4px; margin-top: 12px; }
+.tote .ln { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--txt-2); }
+.tote .ln b { color: var(--txt); font-variant-numeric: tabular-nums; }
+.tote .ln.total { border-top: 1px dashed var(--line); padding-top: 6px; margin-top: 1px; font-size: 13px; } .tote .ln.total b { font-weight: 800; }
+.charge-note { font-size: 11px; color: var(--txt-3); font-style: italic; margin: 8px 0 0; } .charge-note b { color: var(--accent); font-style: normal; }
 .ao-foot { display: flex; align-items: center; gap: 9px; }
 .ag-meta { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--txt-3); }
 .ag-meta .ag-metasep { width: 1px; height: 12px; background: var(--line); }

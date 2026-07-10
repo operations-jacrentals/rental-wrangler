@@ -2099,6 +2099,7 @@ const state = {
   custInvMenu: {},            // §3.3 which expanded invoice's status/action menu is open — { [customerId]: invoiceId }
   custAcctOpen: {},           // Phase 1 (2026-07-10 account/agreements redesign, D19) — is the top-of-card Account section expanded? { [customerId]: true }; collapsed by default, view-local
   custAgOpen: {},             // Phase 1 — which Agreements row is expanded inside the Account section — { [customerId]: cardId | '__new__' | null } (one open at a time, mirrors custInvOpen); '__new__' = the +Agreement/Card creation panel
+  custAgDraft: {},            // Phase 2b — the in-progress NEW-agreement draft — { [customerId]: {accountType, startDate, selfie, signature} }; view-local, cleared on sign/cancel
   woPartForm: null,           // woId whose "+ Add Part/Labor" inline form is open
   invLineForm: null,          // invoiceId whose "+ Add Custom" inline form is open
   invMergePick: null,         // invoiceId whose "Merge invoice" picker is open (consolidate unpaid bills)
@@ -2320,7 +2321,7 @@ function openStandard(card, recId, recType) {
   cs.mode = 'standard'; cs.recId = recId; cs.recType = recType || null; cs.graphView = false;   // opening a record exits the in-column graph view
   if (card === 'customers' && state.funnelTab) delete state.funnelTab[recId];   // §3.5 — a fresh customer open resets the funnel toggle to Rental
   if (card === 'customers') { if (state.custInvOpen) delete state.custInvOpen[recId]; if (state.custInvMenu) delete state.custInvMenu[recId]; }   // §3.3 — collapse the embedded Invoices accordion on a fresh open (openInvoice re-sets it after)
-  if (card === 'customers') { if (state.custAcctOpen) delete state.custAcctOpen[recId]; if (state.custAgOpen) delete state.custAgOpen[recId]; }   // Phase 1 — collapse the Account section + its Agreements accordion on a fresh open
+  if (card === 'customers') { if (state.custAcctOpen) delete state.custAcctOpen[recId]; if (state.custAgOpen) delete state.custAgOpen[recId]; if (state.custAgDraft) delete state.custAgDraft[recId]; }   // Phase 1/2b — collapse the Account section + its Agreements accordion + any in-progress draft on a fresh open
   ackComments(recOf(entityCardOf(card, recType), recId));   // viewing = acknowledged (Phase 6)
   // §10 + #54 — opening a Category while the rental-window picker is live (a window's
   // picked, so availWin is set) pivots the left column to Units, pre-filled with the
@@ -3835,29 +3836,53 @@ function agreementExpandedHtml(c, k) {
     + `<div class="ao-body">${body}</div>`
     + `</div>`;
 }
-// D3/D16 "creating a new agreement" panel (mockup state 3) — UI SHELL. Selfie/signature
-// capture, the ACCOUNT TYPE dropdown, and the Start Date field render as inert previews
-// (Phase 2 wires them — dateField/agCaptureBlock are both state.overlay-bound today, and
-// this row lives in the main render(), not a popup, so their real wiring needs that
-// mechanism extended to non-overlay callers — flagged in the build report). Cancel is
-// real (collapses back to the row list); Save/Start Membership are no-op stubs.
+// Phase 2b — the in-progress new-agreement draft (view-local, state.custAgDraft). Seeded from
+// the customer's CURRENT type; nothing here touches c.accountType until agreementSignCommit.
+function agDraft(c) {
+  state.custAgDraft = state.custAgDraft || {};
+  if (!state.custAgDraft[c.customerId]) state.custAgDraft[c.customerId] = { accountType: c.accountType || 'Non-Business', startDate: '', selfie: (c.pendingCapture && c.pendingCapture.selfie) || '', signature: (c.pendingCapture && c.pendingCapture.signature) || '', actypeOpen: false };
+  return state.custAgDraft[c.customerId];
+}
+// D3/D16 "creating a new agreement" panel — LIVE (Phase 2b). ACCOUNT TYPE is a toggle-menu
+// (D4 — changes the DRAFT only, never c.accountType, until Sign). Start Date is a real date
+// input (D6 — required + gates Sign for a Member type). Signature reuses the EXISTING popout
+// signature window (openSignatureWindow/onSigMessage, generalized to target this draft when no
+// overlay is open — the popout itself is unchanged, same feature). Selfie reuses the EXISTING
+// file-picker fallback path (the same one used when live camera capture isn't available),
+// generalized the same way — the live-camera-preview capture tile is deferred (flagged for a
+// follow-up pass; the underlying camera-stream engine is deeply state.overlay-bound and is
+// reused elsewhere, so this pass doesn't touch it to avoid risking that shared code).
 function agreementNewHtml(c) {
-  const acct = getStatus('customerAccountType', c.accountType || 'Non-Business');
-  const isMember = /member/i.test(acct.label);
-  const key = requiredAgreementKey(c);
+  const d = agDraft(c);
+  const isMember = /Member/i.test(d.accountType);
+  const key = /Member/i.test(d.accountType) ? 'membership' : 'rental';
   const ag = AGREEMENTS[key] || AGREEMENTS.rental;
+  const acctLabel = getStatus('customerAccountType', d.accountType).label;
+  const actypeMenu = d.actypeOpen
+    ? `<div class="actype-menu">${NC_ACCOUNT_TYPES.map((t) => `<button type="button" class="actype-opt js-ag-actype-opt${t === d.accountType ? ' on' : ''}" data-rec="${esc(c.customerId)}" data-val="${esc(t)}">${esc(getStatus('customerAccountType', t).label)}</button>`).join('')}</div>`
+    : '';
+  const fee = isMember ? membershipFee({ plan: 'Monthly', addOns: { transport: false, protection: !!c.rentalProtection } }, membershipPricing()) : null;
+  const tote = fee ? `<div class="tote">`
+    + `<div class="ln"><span>${esc(acctLabel)} · Monthly base</span><b>${money2(fee.base)}</b></div>`
+    + (fee.protection ? `<div class="ln"><span>Rental Protection · ${membershipPricing().protectionPct}%</span><b>${money2(fee.protection)}</b></div>` : '')
+    + `<div class="ln"><span>Tax · ${(TAX_RATE * 100).toFixed(2)}%</span><b>${money2(fee.tax)}</b></div>`
+    + `<div class="ln total"><span>First charge</span><b>${money2(fee.total)}</b></div>`
+    + `</div>` : '';
+  const cardLbl = defaultCard(c) ? cardLabel(c) : 'no card on file yet';
+  const chargeNote = fee ? `<p class="charge-note">${defaultCard(c) ? `Card <b>${esc(cardLbl)}</b>` : `<b style="color:var(--yellow)">Add a card</b>`} will be charged <b>${money2(fee.total)}</b>${d.startDate ? ` on ${esc(fmtShortDate(d.startDate) || d.startDate)}` : ' once a Start Date is set'}${d.startDate && d.startDate <= TODAY_ISO ? ' (now)' : ', then monthly'}.</p>` : '';
   return `<div class="ag-open new">`
     + `<div class="ao-bar"><span class="ao-lbl">New Agreement</span><span class="unsaved">Unsaved</span><span class="sp"></span><button class="ao-collapse js-ag-collapse" data-rec="${esc(c.customerId)}" data-tip="Cancel">${I.chev}</button></div>`
     + `<div class="ao-body">`
     + `<div class="ao-row">`
-    + `<div class="ao-cell"><span class="ao-cap">Account Type</span><button type="button" class="actype-dd js-ag-actype" data-rec="${esc(c.customerId)}" data-tip="Phase 2 — live account-type dropdown (D4)"><b>${esc(acct.label)}</b><span class="cv">${I.chev}</span></button></div>`
-    + `<div class="ao-cell"><span class="ao-cap">Start Date <span class="anno">gates signing</span></span><button type="button" class="datefield js-ag-startdate" data-rec="${esc(c.customerId)}" data-tip="Phase 2 — schedules the first charge (D6/D7)">${CARD_ICON.rentals}<span>Pick a date</span></button></div>`
+    + `<div class="ao-cell"><span class="ao-cap">Account Type</span><button type="button" class="actype-dd js-ag-actype" data-rec="${esc(c.customerId)}"><b>${esc(acctLabel)}</b><span class="cv">${I.chev}</span></button>${actypeMenu}</div>`
+    + `<div class="ao-cell"><span class="ao-cap">Start Date${isMember ? ' <span class="anno">gates signing</span>' : ''}</span><input type="date" class="datefield-in js-ag-startdate-in" data-rec="${esc(c.customerId)}" value="${esc(d.startDate)}"></div>`
     + `</div>`
     + `<div class="packet">`
-    + `<div class="pcell"><span class="ao-cap">Selfie</span><div class="selfie">Capture on save</div></div>`
-    + `<div class="pcell"><span class="ao-cap">Signature</span><div class="sigpad"><div class="base"></div></div></div>`
+    + `<div class="pcell"><span class="ao-cap">Selfie</span>${d.selfie ? `<img class="selfie-img" src="${esc(d.selfie)}" alt="selfie">` : `<label class="selfie picklabel">Tap to add<input type="file" accept="image/*" capture="user" class="js-ag-selfie-pick" data-rec="${esc(c.customerId)}" hidden></label>`}</div>`
+    + `<div class="pcell"><span class="ao-cap">Signature</span>${d.signature ? `<div class="sigpad has-sig"><img class="sig-img" src="${esc(d.signature)}" alt="signature"></div>` : `<button type="button" class="sigpad js-sign-popout" data-rec="${esc(c.customerId)}" data-title="${esc(ag.title)}"><span class="ph">Open signature window</span></button>`}</div>`
     + `</div>`
     + `<div><span class="ao-cap ao-cap-block">${esc(ag.title)} · Terms</span><div class="terms">${esc((ag.text || '').slice(0, 420))}…</div></div>`
+    + tote + chargeNote
     + `<div class="ao-foot">${ghostPill('Cancel', { js: 'js-ag-collapse', data: { rec: c.customerId } })}<span class="sp"></span>`
     + `${actionPill('commit', 'Save', { js: 'js-ag-save', data: { rec: c.customerId } })}`
     + `<button class="pill ignition js-ag-start" data-r="R17" data-rec="${esc(c.customerId)}">${isMember ? 'Start Membership' : 'Sign'}</button>`
@@ -3878,6 +3903,73 @@ function customerAgreementsSection(c) {
   return `<hr class="ag-divide">`
     + `<div class="ag-head"><h5>Agreements</h5></div>`
     + `<div class="ag-scroll">${addRow}${rows}${creating ? agreementNewHtml(c) : ''}</div>`;
+}
+/* Phase 2b (spec §4, D4-D8) — the atomic sign=enroll commit. This is the ONE place a signed
+   agreement can change c.accountType (closes the original bug — D4). For a Member type: creates
+   the first invoice now, stamps the deferred-charge markers (scheduledChargeDate/chargeCardId —
+   the Phase-4 seam), and either charges immediately (start date today/past) or leaves it for the
+   cron (future start date) — Jac's confirmed rule, 2026-07-10: "card isn't charged until the start
+   date; if start date is today, charge now." Plan/add-ons default to Monthly + the account's
+   existing rentalProtection toggle — the approved mockup's inline panel has no plan/add-ons picker,
+   so this is a scoping call, flagged for Jac's review, not a silent invention: an Annual option or a
+   Transport add-on toggle can be added to this same panel later without touching the commit logic. */
+function agreementSignCommit(custId) {
+  const c = IDX.customer.get(custId); if (!c) return;
+  const d = agDraft(c);
+  const isMember = /Member/i.test(d.accountType);
+  if (!d.signature) { toast('Capture a signature before signing.'); return; }
+  if (isMember && !d.startDate) { toast('Pick a Start Date before signing (D6) — the charge can\'t be scheduled without it.'); return; }
+  const card = defaultCard(c);
+  if (isMember && !card) { toast('Add a card on file before enrolling.'); return; }
+
+  const oldType = c.accountType;
+  c.accountType = d.accountType;   // the ONLY write site for a signed account-type change (D4)
+  if (card) signCardAgreement(c, card, d.signature, d.selfie);
+  else c.pendingCapture = { selfie: d.selfie, signature: d.signature };   // no card yet — held (mirrors the existing pre-card pattern)
+
+  if (isMember) {
+    const plan = 'Monthly';   // [scoping call — see header comment]
+    const pricing = membershipPricing();
+    const fee = membershipFee({ plan, addOns: { transport: false, protection: !!c.rentalProtection } }, pricing);
+    const lines = [{ kind: 'membership', ref: c.customerId, lid: lineLid(), label: `Membership · ${plan} base`, amount: fee.base }];
+    if (fee.protection) lines.push({ kind: 'membership', ref: c.customerId, lid: lineLid(), label: `Rental Protection · ${pricing.protectionPct}%`, amount: fee.protection });
+    const inv = buildMembershipInvoice(c, lines, { date: d.startDate, due: d.startDate });
+    inv.scheduledChargeDate = d.startDate; inv.chargeScheduled = true; inv.chargeCardId = card.id;   // Phase-4 cron seam
+    c.paidCadence = plan === 'Annual' ? 'Yearly' : 'Monthly';
+    c.commitmentStart = d.startDate; c.commitmentEnd = addMonthsISO(d.startDate, MEMBERSHIP_MONTHS);
+    c.autoRenew = false; c.addOns = { transport: false, protection: !!c.rentalProtection };
+    c.prepaid = false; c.paidUntil = '';   // Pending (T2.5) until the charge clears
+    reindex('customers', c);
+    logAction(c, `Membership enrolled — ${plan} (agreement signed, starts ${d.startDate})`);
+    delete state.custAgDraft[custId]; if (state.custAgOpen) state.custAgOpen[custId] = null;
+    if (d.startDate <= TODAY_ISO) { render(); agreementChargeNow(custId, inv.invoiceId); }   // charge NOW — Jac's confirmed rule
+    else { render(); toast(`Signed — first charge of ${money2(fee.total)} scheduled for ${fmtShortDate(d.startDate) || d.startDate}.`); }
+    return;
+  }
+  reindex('customers', c);
+  logAction(c, `Account type: ${oldType} → ${d.accountType} (agreement signed)`);
+  delete state.custAgDraft[custId]; if (state.custAgOpen) state.custAgOpen[custId] = null;
+  render(); toast('Agreement signed.');
+}
+/* Charge a just-signed, start-date-is-today membership invoice — mirrors membershipEnrollCommit's
+   demo/PROD split (app.js ~L4090) verbatim so the money path is identical, just entered from the
+   inline agreement flow instead of the retired enroll overlay. On a cleared charge, sets paidUntil
+   (Pending → Active, T2.5); on decline, the invoice stays UNPAID and the account stays Pending until
+   the Phase-4 cron retries — it does NOT revert accountType (the agreement is signed; only the
+   charge is outstanding, same as a Past-Due renewal). */
+async function agreementChargeNow(custId, invoiceId) {
+  const c = IDX.customer.get(custId); if (!c) return;
+  const inv = IDX.invoice.get(invoiceId); if (!inv) return;
+  try {
+    if (memIsDemo()) {
+      markInvoicePaidLocal(inv, 'Card (demo)');
+      c.paidUntil = addMonthsISO(TODAY_ISO, c.paidCadence === 'Yearly' ? 12 : 1);
+      reindex('customers', c); render(); toast('Membership active — saddle up! ✓'); return;
+    }
+    const r = await backendCall('membershipEnroll', { customerId: c.customerId, plan: c.paidCadence === 'Yearly' ? 'Yearly' : 'Monthly', addOns: c.addOns || {}, startDate: inv.date, autoRenew: !!c.autoRenew });
+    if (r && r.ok && r.status === 'active') { c.paidUntil = r.paidUntil || addMonthsISO(TODAY_ISO, c.paidCadence === 'Yearly' ? 12 : 1); reindex('customers', c); render(); toast('Membership active — saddle up! ✓'); return; }
+    render(); toast((r && r.status === 'incomplete') ? (friendlyPayErr(r.charge) || 'Charge declined — the invoice stays unpaid; the cron will retry.') : ((r && friendlyPayErr(r)) || 'Charge failed — try again from the invoice.'));
+  } catch (e) { render(); toast('Network error — the invoice stays unpaid; try charging it from the Invoices section.'); }
 }
 const BLOCK_TYPE_LABEL = { blacklist: 'Blacklisted', 'invoice-hold': 'Held — invoice(s) unpaid', 'failed-payment': 'Payment failed', 'no-card': 'No card on file' };
 // D17 — Block Account, bottom-RIGHT (spec §6, T3.1). No block → opens the blockPicker (Blacklist
@@ -12837,17 +12929,20 @@ function captureAgSelfie() {
    so the operator's normal Save/Sign commits them — no separate Done step in the popout.
    Any pointer/digitizer device draws on it (finger, stylus, or a USB/Bluetooth pen pad the
    OS exposes as a pointer); pen pressure varies the line width. */
-let _sigWin = null, _sigMsgWired = false;
+let _sigWin = null, _sigMsgWired = false, _sigWinCustId = null;
 function onSigMessage(e) {
   if (e.origin !== location.origin) return;   // same-origin only
   const d = e.data || {}; if (d.type !== 'rw-signature' || typeof d.dataURL !== 'string') return;
-  const o = state.overlay; if (o) { captureSignature(o, d.dataURL); scheduleFinalizeSign(o); }   // auto-save the draft; finalize once the pen rests (if it completes the card)
+  const o = state.overlay;
+  if (o) { captureSignature(o, d.dataURL); scheduleFinalizeSign(o); }   // existing overlay path — auto-save the draft; finalize once the pen rests
+  else if (_sigWinCustId) { const c = IDX.customer.get(_sigWinCustId); if (c) { agDraft(c).signature = d.dataURL; render(); } return; }   // Phase 2b — the inline new-agreement draft; unchanged popout, just a new target
   const cv = document.querySelector('.overlay .nc-sigpad'); if (!cv) return;
   const ctx = cv.getContext('2d'), img = new Image();
   img.onload = () => { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); ctx.drawImage(img, 0, 0, cv.width, cv.height); cv.dataset.drawn = '1'; };
   img.src = d.dataURL;
 }
-function openSignatureWindow(title) {
+function openSignatureWindow(title, custId) {
+  _sigWinCustId = custId || null;
   if (!_sigMsgWired) { window.addEventListener('message', onSigMessage); _sigMsgWired = true; }
   try { if (_sigWin && !_sigWin.closed) { _sigWin.focus(); return; } } catch (e) {}
   const w = window.open('', 'rwSignPad', 'width=760,height=560');
@@ -14425,7 +14520,7 @@ function onClick(e) {
   if (closest('.js-ncsign-pdf')) { e.stopPropagation(); const b = closest('.js-ncsign-pdf'); return openSignedPdf(state.overlay.editId, b.dataset.card, b.dataset.sig); }
   if (closest('.js-nc-selfie-clear')) { e.stopPropagation(); ncSyncInputs(); state.overlay.draft.selfie = ''; renderOverlay(); return; }
   if (closest('.js-nc-sig-clearpad')) { e.stopPropagation(); const o = state.overlay; if (o) clearCaptureSignature(o); const cv = document.querySelector('.overlay .nc-sigpad'); if (cv) { const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); cv.dataset.drawn = ''; } return; }
-  if (closest('.js-sign-popout')) { e.preventDefault(); e.stopPropagation(); openSignatureWindow(closest('.js-sign-popout').dataset.title); return; }
+  if (closest('.js-sign-popout')) { e.preventDefault(); e.stopPropagation(); const b = closest('.js-sign-popout'); openSignatureWindow(b.dataset.title, b.dataset.rec || null); return; }
   if (closest('.js-ag-selfie')) {   // selfie tile: one-tap snap off the live feed; Retake clears it; no camera → native picker
     const o = state.overlay; if (!o) return;
     const tile = closest('.js-ag-selfie');
@@ -14485,12 +14580,18 @@ function onClick(e) {
   // no-op stubs (real enrollment/charge is Phase 2; block-gate enforcement is Phase 3).
   if (closest('.js-acct-toggle')) { e.stopPropagation(); const rec = closest('.js-acct-toggle').dataset.rec; state.custAcctOpen = state.custAcctOpen || {}; state.custAcctOpen[rec] = !state.custAcctOpen[rec]; return render(); }
   if (closest('.js-ag-row')) { e.stopPropagation(); const b = closest('.js-ag-row'); const rec = b.dataset.rec, card = b.dataset.card; state.custAgOpen = state.custAgOpen || {}; state.custAgOpen[rec] = (state.custAgOpen[rec] === card) ? null : card; return render(); }
-  if (closest('.js-ag-collapse')) { e.stopPropagation(); const rec = closest('.js-ag-collapse').dataset.rec; if (state.custAgOpen) state.custAgOpen[rec] = null; return render(); }
+  if (closest('.js-ag-collapse')) { e.stopPropagation(); const rec = closest('.js-ag-collapse').dataset.rec; if (state.custAgOpen && state.custAgOpen[rec] === '__new__' && state.custAgDraft) delete state.custAgDraft[rec]; if (state.custAgOpen) state.custAgOpen[rec] = null; return render(); }
   if (closest('.js-ag-add')) { e.stopPropagation(); const rec = closest('.js-ag-add').dataset.rec; state.custAgOpen = state.custAgOpen || {}; state.custAgOpen[rec] = '__new__'; return render(); }
-  if (closest('.js-ag-save')) { e.stopPropagation(); toast('Saving a draft agreement arrives in Phase 2.'); return; }              // *Phase 2: buildMembershipInvoice / draft persistence (D9)
-  if (closest('.js-ag-start')) { e.stopPropagation(); toast('Sign & enroll arrives in Phase 2/3.'); return; }                     // *Phase 2/3: atomic sign = enroll + scheduled charge (D5-D8)
-  if (closest('.js-ag-actype')) { e.stopPropagation(); toast('The live Account-Type dropdown arrives in Phase 2.'); return; }     // *Phase 2: per-agreement ACCOUNT TYPE dropdown (D4)
-  if (closest('.js-ag-startdate')) { e.stopPropagation(); toast('The Start-Date picker arrives in Phase 2.'); return; }           // *Phase 2: gates the signature (D6) — dateField needs overlay context, see report
+  if (closest('.js-ag-save')) {   // Phase 2b (D9) — hold the captured pieces without signing (mirrors the existing pre-card pendingCapture bucket); does NOT write accountType — only Sign/Start Membership can (keeps D4's bug closure intact)
+    e.stopPropagation(); const rec = closest('.js-ag-save').dataset.rec; const c = IDX.customer.get(rec); const d = state.custAgDraft && state.custAgDraft[rec];
+    if (c && d && (d.selfie || d.signature)) { c.pendingCapture = { selfie: d.selfie || c.pendingCapture?.selfie || '', signature: d.signature || c.pendingCapture?.signature || '' }; reindex('customers', c); }
+    if (state.custAgOpen) state.custAgOpen[rec] = null; if (state.custAgDraft) delete state.custAgDraft[rec];
+    render(); toast('Draft saved — pick up signing later from the same +Agreement/Card row.'); return;
+  }
+  if (closest('.js-ag-start')) { e.stopPropagation(); return agreementSignCommit(closest('.js-ag-start').dataset.rec); }   // Phase 2b (D5-D8) — atomic sign = enroll
+  if (closest('.js-ag-actype-opt')) { e.stopPropagation(); const b = closest('.js-ag-actype-opt'); const c = IDX.customer.get(b.dataset.rec); if (!c) return; agDraft(c).accountType = b.dataset.val; agDraft(c).actypeOpen = false; return render(); }
+  if (closest('.js-ag-actype')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-ag-actype').dataset.rec); if (!c) return; const d = agDraft(c); d.actypeOpen = !d.actypeOpen; return render(); }
+  if (closest('.js-ag-selfie-pick')) { return; }   // native <input type=file> — handled by its own 'change' event (onChange), not a click delegate
   if (closest('.js-acct-po')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-acct-po').dataset.rec); if (c) { c.requiresPO = !c.requiresPO; reindex('customers', c); } return render(); }
   if (closest('.js-acct-prot')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-acct-prot').dataset.rec); if (c) { c.rentalProtection = !c.rentalProtection; reindex('customers', c); } return render(); }
   if (closest('.js-acct-netdays')) { e.stopPropagation(); const b = closest('.js-acct-netdays'); return openOverlay({ kind: 'managerPw', custId: b.dataset.rec, pwAction: 'netTerms', pwVal: b.dataset.val, busy: false, error: '' }); }   // D22 — ANY Net Terms change is Manager-password gated
@@ -15885,6 +15986,19 @@ function onInput(e) {
 
 /* change events — native <input type="date"> / <select> on draft details. */
 function onChange(e) {
+  // Phase 2b — the new-agreement draft's Start Date (D6 — gates Sign for a Member type)
+  if (e.target.classList.contains('js-ag-startdate-in')) {
+    const c = IDX.customer.get(e.target.dataset.rec); if (!c) return;
+    agDraft(c).startDate = e.target.value || ''; render(); return;
+  }
+  // Phase 2b — selfie via the EXISTING file-picker fallback (same feature as the live-camera
+  // tile's "no camera" path elsewhere), targeting the draft instead of state.overlay.
+  if (e.target.classList.contains('js-ag-selfie-pick')) {
+    const c = IDX.customer.get(e.target.dataset.rec); const f = e.target.files && e.target.files[0]; if (!c || !f) return;
+    const rd = new FileReader();
+    rd.onload = () => { downscaleImage(rd.result, 340, 0.5, (out) => { if (!out) { toast('Could not read that image.'); return; } agDraft(c).selfie = out; render(); }); };
+    rd.readAsDataURL(f); return;
+  }
   // Settings Board — relabel a status (commit on blur/enter; the value/role stays locked)
   if (e.target.classList.contains('js-set-label')) {
     const o = state.overlay; if (!o) return;
