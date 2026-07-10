@@ -312,6 +312,21 @@ function cardSignState(c, k) { return cardAuthorized(c, k) ? 'authorized' : (car
 /* 'complete' | 'stale' (a finalized signing exists but for the wrong account type → re-sign)
    | 'in-progress' (a card exists but is missing the selfie and/or a matching signature) */
 function cardCaptureState(c, k) { if (cardComplete(c, k)) return 'complete'; if (cardSignings(k).length && !cardCurrentSigning(c, k)) return 'stale'; return 'in-progress'; }
+/* Phase-0 (2026-07-10 account/agreements redesign) — collapsed agreement-row card indicator (spec D18).
+   Returns { text, tone } where tone ∈ green|yellow|red. Healthy card → brand-initial + '-' + last4
+   ('V-2261'/'M-2261'); else a status string. The charge-outcome states (PAYMENT FAILED/BANK BLOCKED/
+   DISPUTED) read k.lastChargeOutcome, a field Phase-3 writes — until then a card with no marker reads
+   healthy (documented coupling; the branch is present, just dormant). */
+function cardIndicator(c, k) {
+  if (!k) return { text: 'NO CARD', tone: 'red' };
+  const oc = k.lastChargeOutcome || '';                         // Phase-3 field; '' today
+  if (oc === 'failed')   return { text: 'PAYMENT FAILED', tone: 'red' };
+  if (oc === 'blocked')  return { text: 'BANK BLOCKED',   tone: 'red' };
+  if (oc === 'disputed') return { text: 'DISPUTED',       tone: 'red' };
+  if (cardExpired(k))     return { text: 'EXPIRED',       tone: 'red' };
+  if (cardExpiringSoon(k)) return { text: 'EXPIRING SOON', tone: 'yellow' };
+  return { text: `${(k.brand || '?').charAt(0).toUpperCase()}-${k.last4 || '????'}`, tone: 'green' };
+}
 /* Resolve a signing's frozen title/text from the version registry (storage-light:
    the signing stores only `version`, not the ~6–8 KB text). Falls back to a baked
    `text`/`title` on legacy records, then to the current agreement for its key. */
@@ -353,6 +368,28 @@ function cardGateReason(cust) {
   if (!hasValidCard(cust)) return 'no valid card on file';
   if (accountAgreementsBlocked(cust)) { const n = unsignedCardCount(cust); return `${n} card${n > 1 ? 's' : ''} not complete (needs selfie + signature for the current account type)`; }
   return '';
+}
+/* Phase-0 (2026-07-10 account/agreements redesign) — the account BLOCK model (spec §6, D11-D14).
+   Derives the single active block or null. The two AUTOMATIC types are derived (never stored, so no
+   stale state): `no-card` (no valid card) and `failed-payment` (a NON-membership invoice whose last
+   charge failed and still carries a balance — membership charge failures are EXCLUDED per D11, they
+   only walk the pricing lifecycle). The two MANUAL types are read from stored `c.block`: `blacklist`
+   (Owner-set hard ban, D13) and `invoice-hold` (staff picks invoices that must be paid to auto-
+   unblock, D12 — resolves itself once those balances clear). Precedence: blacklist → invoice-hold →
+   failed-payment → no-card. `i.chargeFailed` is a Phase-3 field; until then failed-payment is dormant.
+   NOT wired into the rental gate yet (Phase 3 does that + the per-action Manager override). */
+function accountBlock(c) {
+  if (!c) return null;
+  const b = c.block || null;
+  if (b && b.type === 'blacklist') return { type: 'blacklist', reason: 'Account blacklisted', setBy: b.setBy || '' };
+  if (b && b.type === 'invoice-hold') {
+    const ids = (b.invoiceIds || []).filter((id) => { const inv = IDX.invoice.get(id); return inv && invoiceTotals(inv).balance > 0.005; });
+    if (ids.length) return { type: 'invoice-hold', invoiceIds: ids, reason: 'Held until the selected invoice(s) are paid' };
+  }
+  const failed = DATA.invoices.filter((i) => i.customerId === c.customerId && !i.membership && i.chargeFailed && invoiceTotals(i).balance > 0.005);
+  if (failed.length) return { type: 'failed-payment', invoiceIds: failed.map((i) => i.invoiceId), reason: 'A payment failed — any successful payment on the account clears it' };
+  if (!hasValidCard(c)) return { type: 'no-card', reason: 'No valid card on file' };
+  return null;
 }
 /* Signing-form glyphs (existing inline marks, hoisted to module scope so the
    per-card tab AND the account-level "held draft" share one capture form). */
@@ -3448,6 +3485,20 @@ function membershipStatus(c) {
    apply only to an Active or in-grace member — refused to Incomplete AND lapsed, in both
    the quote and the invoice line. Past Due keeps the rate through the grace window. */
 const isActiveMember = (c) => { const s = membershipStatus(c); return s === 'Active' || s === 'Past Due'; };
+/* Phase-0 (2026-07-10 account/agreements redesign) — the collapsed agreement-row's leading label
+   (spec D18): a MEMBERSHIP status for a membership agreement, else '' (the caller then shows the plain
+   account-type label). Returns UPPERCASE status words. PENDING (signed, start date in the future, not
+   yet charged) and RENEWAL FAILED depend on Phase-2/3 agreement fields (`ag.startDate`/`ag.charged`,
+   `c.renewalFailed`) — gated behind field presence so this is correct today and lights up as the data
+   lands. */
+function membershipRowStatus(c, ag) {
+  const at = (ag && ag.accountType) || (c && c.accountType) || '';
+  if (!/Member/i.test(at)) return '';                                              // not a membership agreement → caller shows account type
+  if (ag && ag.startDate && ag.startDate > TODAY_ISO && !ag.charged) return 'MEMBERSHIP PENDING';
+  const s = membershipStatus(c);
+  if (s === 'Past Due' && c && c.renewalFailed) return 'MEMBERSHIP RENEWAL FAILED';
+  return { Active: 'MEMBER', Incomplete: 'MEMBERSHIP INCOMPLETE', 'Past Due': 'MEMBERSHIP PAST DUE', Lapsed: 'MEMBERSHIP LAPSED', None: '' }[s] || '';
+}
 /* Rental Protection (F4) — an account-level surcharge (spec §2.1), available to members
    AND non-members. The rate is the Owner-settable protection % (shared with the membership
    add-on). rentalProtectionAmount = that % of the rental's EQUIPMENT subtotal (rental lines
