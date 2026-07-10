@@ -3098,6 +3098,12 @@ body { font-variant-numeric: tabular-nums; }
 .ag-selfie, .ag-sigthumb { height: 64px; width: 100%; border-radius: 8px; border: 1px solid var(--line); object-fit: cover; background: var(--panel-2); }
 .ag-selfie.empty { display: flex; align-items: center; justify-content: center; color: var(--txt-3); font-size: 18px; }
 .acct-microcopy { font-size: 11px; color: var(--txt-3); margin: 10px 2px 0; }
+/* T2.6 — the derived stats folded in from the retired old account section (Total paid / Visits /
+   Customer-for / Rents-every / rented categories). Left-aligned here (its old home was a right-
+   aligned column; this flat context reads better left-aligned). */
+.acct-stats { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
+.acct-stats .rented-cats { width: 100%; justify-content: flex-start; margin-top: 4px; }
+.acct-stats .rented-cats .rc-flags { justify-content: flex-start; }
 
 .ag-foot { display: flex; align-items: center; margin-top: 11px; }
 /* D17 — Block Account, bottom-right: R17 danger intent, outline treatment (a milder

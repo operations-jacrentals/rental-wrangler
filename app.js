@@ -4013,6 +4013,19 @@ function acctBlockFoot(c) {
       : actionPill('danger', 'Block Account', { js: 'js-block-account', data: { rec: c.customerId }, h: 28 });   // invoice-hold: still offer the picker to add/replace a manual block
   return `<div class="ag-foot">${stateBadge}<span class="sp"></span>${lift}</div>`;
 }
+// T2.6 (2026-07-10) — the derived read-only stats the OLD account section's right column carried
+// (Total paid/Visits/Customer-for/Rents-every-N-days/rented categories), folded in here so retiring
+// that section (below) doesn't drop them.
+function acctStatsHtml(c) {
+  const d = c._digest || {};
+  const rentedCatIds = [...new Set(DATA.rentals.filter((r) => r.customerId === c.customerId)
+    .map((r) => r.categoryId || IDX.unit.get(r.unitId)?.categoryId).filter(Boolean))];
+  const rentedFlags = rentedCatIds.map((id) => { const cat = IDX.category.get(id); return cat ? flagEl(cat.name, 'gray', { icon: CARD_ICON.categories, card: 'categories', recId: id }) : ''; }).filter(Boolean).join('');
+  return `<div class="acct-stats">`
+    + `${kv(money(d.totalPaid), { pfx: 'Total', derived: true })}${kv(`${d.visits || 0}`, { pfx: 'Visits', derived: true })}${kv(`${d.years || 0} yrs`, { pfx: 'Customer for', derived: true })}${kv(`every ${d.avgFrequencyDays || 0} days`, { pfx: 'Rents', derived: true })}`
+    + (rentedFlags ? `<div class="rented-cats"><span class="pfx">Rented</span><span class="rc-flags">${rentedFlags}</span></div>` : '')
+    + `</div>`;
+}
 function acctBodyHtml(c) {
   return `<div class="acct-fgrid">`
     + acctField(c, 'firstName', 'First name', 'Add first name')
@@ -4022,9 +4035,11 @@ function acctBodyHtml(c) {
     + acctField(c, 'email', 'Email', 'Add email')
     + acctField(c, 'industry', 'Industry', 'Add industry')
     + acctField(c, 'idNumber', "Driver's License / ID", 'Add ID number')
+    + acctField(c, 'address', 'Address', 'Add address', { wide: true })   // T2.6 — was only in the old (now-retired) account section; folded in here
     + `</div>`
     + `<div class="acct-notesrow">${acctField(c, 'accountNotes', 'Notes', 'Add account notes', { wide: true })}</div>`   // D15 — its own row, under Driver's License
     + acctTermsLine(c)
+    + acctStatsHtml(c)
     + customerAgreementsSection(c)
     + acctBlockFoot(c);
 }
@@ -7169,38 +7184,12 @@ const DETAIL = {
 
   /* ── CUSTOMERS — fully built (§12.1 standard mode: contact · account · funnels) ── */
   customers: (c, cs) => {
-    const d = c._digest || {};
-    const isMember = /Member/.test(c.accountType || '') && c.accountType !== 'Member Incomplete';
-    const acct = getStatus('customerAccountType', c.accountType || 'Non-Business');
-    const yr = (iso) => `${fmtShortDate(iso)}, ${parseISO(iso).getFullYear()}`;
-
-    // §7.1 — every contact/account detail is click-to-edit (auto-saves via the persist hook)
-    // R5: empty fields render the dashed "+Thing" add (no "Add", no space after +)
-    const efield = (f, ph, wrap) => { const val = c[f]; const thing = ph.replace(/^Add\s+/i, ''); const lbl = thing.charAt(0).toUpperCase() + thing.slice(1); return `<div class="kv"><span class="v inline-edit" data-edit="custField" data-field="${f}" data-rec="${c.customerId}" data-ph="${esc(ph)}"${wrap ? ' style="white-space:normal"' : ''}>${val ? esc(val) : `<span class="add-field" data-r="R5c">+${esc(lbl)}</span>`}</span></div>`; };
-    const acctSelfie = latestCustomerSelfie(c);   // newest agreement selfie → faded Account backdrop (retired the tiny thumb)
-    const agPill = c.agreementSignedAt ? `<button class="pill c-green js-view-agreement" data-r="R3" data-rec="${c.customerId}" data-tip="View signed agreement">${esc(AGREEMENTS[c.agreementType]?.title || 'Agreement')} ✓</button>` : '';
-    // every category this customer has EVER rented → R9 flags (ink+icon, no badge) — Jac 2026-06-12
-    const rentedCatIds = [...new Set(DATA.rentals.filter((r) => r.customerId === c.customerId)
-      .map((r) => r.categoryId || IDX.unit.get(r.unitId)?.categoryId).filter(Boolean))];
-    const rentedFlags = rentedCatIds.map((id) => { const cat = IDX.category.get(id); return cat ? flagEl(cat.name, 'gray', { icon: CARD_ICON.categories, card: 'categories', recId: id }) : ''; }).filter(Boolean).join('');
-    /* Jac 2026-06-12: Contact + Account MERGED — LEFT = entered fields, RIGHT = facts + derived (card anatomy) */
-    const account = `<div class="section${acctSelfie ? ' has-photo' : ''}">${acctSelfie ? `<div class="sec-photo" style="--photo:url('${esc(acctSelfie)}')"></div>` : ''}<h4>Account</h4>
-      <div class="split">
-        <div class="side">
-          <div class="kv2">${efield('firstName', 'First name')}${efield('lastName', 'Last name')}</div>
-          ${efield('phone', 'Add phone')}${efield('email', 'Add email')}
-          ${efield('company', 'Add company')}${efield('industry', 'Add industry')}
-          ${efield('address', 'Add address', true)}
-        </div>
-        <div class="side r">
-          ${kvPills(`${badge(acct.label, acct.color)}${c.requiresPO ? badge('PO Required', 'yellow') : ''}${c.rentalProtection ? badge('Protected', 'blue') : ''}${agPill}`)}
-          ${kv(money(d.totalPaid), { pfx: 'Total', derived: true })}
-          ${kv(`${d.visits || 0}`, { pfx: 'Visits', derived: true })}
-          ${kv(`${d.years || 0} yrs`, { pfx: 'Customer for', derived: true })}
-          ${kv(`every ${d.avgFrequencyDays || 0} days`, { pfx: 'Rents', derived: true })}
-          ${rentedFlags ? `<div class="rented-cats"><span class="pfx">Rented</span><span class="rc-flags">${rentedFlags}</span></div>` : ''}
-        </div>
-      </div></div>`;
+    // T2.6 (2026-07-10) — the old merged Contact+Account section (LEFT entered fields / RIGHT
+    // facts+derived) is RETIRED: its editable fields are now the Phase-1 Account section
+    // (customerAccountSection, top of card), and its derived stats/rented-flags are folded into
+    // acctStatsHtml (called from there). `paymentMethodsSection` below is DELIBERATELY KEPT — it
+    // carries real, not-yet-replicated functionality (ACH/bank-account management; card nickname/
+    // make-default/remove) that the new Agreements accordion is still a read-only viewer for.
     // Jac 2026-06-12: NO badge row — account type + pay status are R9 title flags,
     // the account gate (R1) rides the title row. Selfie + agreement live in ACCOUNT.
     const title = `<span class="d-title">${esc(fullName(c)) || 'New Customer'}</span>`;
@@ -7220,7 +7209,6 @@ const DETAIL = {
       ${funnelSectionHtml(c)}
       ${customerInvoicesSection(c, cs)}
       ${activeBar}
-      ${account}
       ${paymentMethodsSection(c)}
       ${notes.bottom}
       ${historySection('customers', c, cs)}
