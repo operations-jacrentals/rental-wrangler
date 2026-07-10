@@ -10998,7 +10998,9 @@ function buildPopupEl(o, overlay, opts = {}) {
     const cards = custRec ? customerCards(custRec) : [];
     const tab = (o.tab && (o.tab === 'account' || cards.some((k) => k.id === o.tab))) ? o.tab : 'account';
     const indOpts = NC_INDUSTRIES.map((i) => `<option value="${esc(i)}"></option>`).join('');
-    const acctPills = NC_ACCOUNT_TYPES.map((t) => `<button type="button" class="nc-pill js-nc-acct${t === d.accountType ? ' on' : ''}" data-val="${esc(t)}">${esc(getStatus('customerAccountType', t).label)}</button>`).join('');
+    // Account-type PICKER removed (2026-07-10 bug-class closure): a Member type can NEVER be set here —
+    // Non-Business/Business derive from Company, and Member/Business Member are granted only through a
+    // signed agreement + first invoice (openMembershipEnroll today; the inline agreement flow in Phase 2b).
     const nameVal = (d.name != null && d.name !== '') ? d.name : `${d.firstName || ''} ${d.lastName || ''}`.trim();
     // The card rail IS the header (no title). Account tab + a tab per card (signed dot) + a +Card add.
     const railTabs = `<div class="ag-tabs" role="tablist">
@@ -11026,7 +11028,6 @@ function buildPopupEl(o, overlay, opts = {}) {
               ${(() => { const set = d.rentalProtection === true || d.rentalProtection === false; return `<button type="button" class="nc-po js-nc-rp${d.rentalProtection === true ? ' on' : ''}${set ? '' : ' req'}" aria-pressed="${d.rentalProtection === true ? 'true' : 'false'}" data-tip="${set ? (d.rentalProtection ? 'Rental Protection on — +' + (membershipPricing().protectionPct) + '% on every rental, covers damages to the monthly cap' : 'No Rental Protection — every rental shows the not-enabled reminder') : 'Answer required before saving — does this account carry Rental Protection?'}">PROT ${set ? (d.rentalProtection ? 'Yes' : 'No') : '?'}</button>`; })()}
             </div>
           </div>
-          <div class="nc-field nc-wide"><span>Account type</span><div class="nc-pills">${acctPills}</div></div>
           <label class="nc-field"><span>Driver’s license / ID #</span><input class="nc-in" data-f="idNumber" value="${esc(d.idNumber || '')}" autocomplete="off" /></label>
           <label class="nc-field"><span>Payment terms — Net days</span><input class="nc-in" data-f="netDays" type="number" min="0" max="${companyMaxNetDays()}" value="${d.netDays != null && d.netDays !== '' ? esc(d.netDays) : ''}" placeholder="0 = COD" autocomplete="off" /><span class="nc-hint">0 = Cash on delivery · max ${companyMaxNetDays()} days (set in Settings → Company)</span></label>
         </div>
@@ -11956,7 +11957,13 @@ const WR_ACCT = ['Non-Business', 'Business', 'Non-Business Member', 'Business Me
 function wrAccount(v) {
   if (!v) return '';
   const n = String(v).toLowerCase();
-  return WR_ACCT.find((a) => a.toLowerCase() === n) || (/member/.test(n) ? (/business/.test(n) ? 'Business Member' : 'Non-Business Member') : /business/.test(n) ? 'Business' : '');
+  // Member types are NEVER settable via Wrangler chat / CSV import — membership is granted ONLY
+  // through a signed agreement + first invoice (spec §5.1, D2; bug-class closure 2026-07-10). A
+  // member-ish input is refused (''), not mapped to a Member value; the caller then skips the field
+  // so an existing member is never silently downgraded either.
+  if (/member/.test(n)) return '';
+  if (/business/.test(n)) return /non/.test(n) ? 'Non-Business' : 'Business';
+  return '';
 }
 const WR_EDITABLE = {   // safe fields only — card/ACH rails, balances, auth, and WO-completion are deliberately absent.
   // Rollout: Stage 1 wired create for the everyday entities; Stage 2a adds category RENTAL RATES (the agreed
@@ -12056,7 +12063,7 @@ function wrCleanFields(entity, obj) {
     if (!ent.fields.includes(k)) { skipped.push(k); return; }   // outside the allowlist → refused
     let v = obj[k];
     if (k === 'membershipStage' || k === 'usedSalesStage') v = wrFunnel(v) || v;
-    if (k === 'accountType') v = wrAccount(v) || 'Non-Business';
+    if (k === 'accountType') { const a = wrAccount(v); if (!a) { skipped.push(k); return; } v = a; }   // refuse Member / unrecognized — never downgrade an existing member to a default
     if (WR_NUMERIC.has(k)) { const n = Number(v); if (!Number.isFinite(n) || n < 0) { skipped.push(k); return; } v = n; }   // numeric fields → finite, non-negative or dropped
     if (WR_FK[k] && typeof v === 'string' && v.trim()) { const r = WR_FK[k].resolve(v); if (r.rec) v = r.rec[WR_FK[k].idKey]; else { skipped.push(k); return; } }   // FK by name → real id, or drop (never store a name as an id)
     out[k] = typeof v === 'string' ? v.trim() : v;
@@ -14352,7 +14359,7 @@ function onClick(e) {
   if (closest('.js-insp-add')) { e.stopPropagation(); const o=state.overlay; if(!o)return; const d=o.inspDraft||{label:'',type:'toggle',options:[]}; const el2=document.querySelector('.settings-popup .js-insp-label'); const label=((d.label!=null?d.label:(el2?el2.value:''))||'').trim(); if(!label){ if(el2)el2.focus(); toast('Type a checklist item first.'); return; } const type=d.type||'toggle'; if(type==='select' && !((d.options||[]).length)){ toast('Add at least one dropdown option.'); return; } const cfg=ensureInspDraft(o, o.inspFam); cfg.items=cfg.items||[]; const item={ id:'ck_'+(label.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'')||'item')+'_'+Math.random().toString(36).slice(2,5), label, type }; if(type==='select') item.options=(d.options||[]).map((op)=>({label:op.label, fail:!!op.fail})); else if(type!=='file') item.fail = d.fail || inspFailDefault(type); if(type!=='file' && d.evidence && d.evidence!=='none') item.evidence=d.evidence; cfg.items.push(item); o.inspDraft={label:'',type:'toggle',options:[],fail:inspFailDefault('toggle')}; rerenderSettingsPane(); return; }
   if (closest('.js-insp-remove')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-insp-remove'); if (o) { const cfg = ensureInspDraft(o, b.dataset.cat); cfg.items = (cfg.items || []).filter((it) => it.id !== b.dataset.id); rerenderSettingsPane(); } return; }
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
-  if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
+  // (js-nc-acct account-type picker removed 2026-07-10 — Member types only via a signed agreement; bug-class closure)
   if (closest('.js-nc-po')) { e.stopPropagation(); ncSyncInputs(); const o = state.overlay; o.draft.requiresPO = (o.draft.requiresPO === true) ? false : true; if (o.editId) { const c = IDX.customer.get(o.editId); if (c) { c.requiresPO = o.draft.requiresPO; reindex('customers', c); } } renderOverlay(); return; }
   if (closest('.js-nc-rp')) { e.stopPropagation(); ncSyncInputs(); const o = state.overlay; o.draft.rentalProtection = (o.draft.rentalProtection === true) ? false : true; if (o.editId) { const c = IDX.customer.get(o.editId); if (c) { c.rentalProtection = o.draft.rentalProtection; reindex('customers', c); } } renderOverlay(); return; }   // F4 — Rental Protection account toggle (mirrors PO)
   // §7.1b card-bound agreements: tab rail + per-card signing
