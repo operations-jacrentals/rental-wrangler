@@ -3811,9 +3811,20 @@ body.is-phone .card[data-card="units"] .list { grid-template-columns: repeat(2, 
 .grp-chev { flex: 0 0 auto; display: inline-flex; color: var(--sec, var(--txt-2)); }
 .grp-chev svg { width: 11px; height: 11px; transform: rotate(90deg); transition: transform .15s ease; }   /* expanded → points down */
 .grp-hd.is-collapsed .grp-chev svg { transform: rotate(0deg); }                                           /* collapsed → points right */
-.grp-label { flex: 0 0 auto; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; font-size: 9.1px; line-height: 1; color: var(--sec, var(--txt-2)); }   /* +15% back up from 7.9px (Jac 2026-07-04) */
-.grp-hd::after { content: ''; flex: 1 1 auto; border-top: 1.5px dashed var(--sec, var(--line)); opacity: .5; }
+.grp-label { flex: 0 0 auto; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; font-size: 11px; line-height: 1; color: var(--sec, var(--txt-2)); }   /* +20% up from 9.1px, landing on the existing 11px rung (Jac 2026-07-10) */
+.grp-hd::after { content: ''; flex: 1 1 auto; border-top: 2px solid var(--sec, var(--line)); opacity: .5; }   /* solid (was dashed) + +20% thicker (1.5px → 2px, the next rung on the line-weight scale — Jac 2026-07-10) */
 .grp-hd:hover .grp-label, .grp-hd:hover .grp-chev { filter: brightness(1.2); }
+/* Group RAIL (Jac 2026-07-10) — a vertical guide down the left edge of each group's rows,
+   companion to the header's line above. Rows already carry a full 1px --line box border;
+   this thickens just the left edge to --line-soft 2px so consecutive rows in a run read as
+   one continuous rail, breaking naturally at each .grp-hd (which isn't a .row, so it carries
+   no rail) — that gives the "per group" segmentation for free, no extra markup. Zero added
+   padding (it redraws the existing border pixel, doesn't grow the box). Scoped to the
+   single-column stacked-row lists (Customers/Invoices/Trips) — NOT the grid-of-card lists
+   (Units/Rentals), where a per-tile left edge would double up against each ucard's own 2px
+   border and read as noise, not a rail, across wrapped grid columns. */
+.list:has(> .grp-hd) > .row { border-left-width: 2px; border-left-color: var(--line-soft); }
+.card[data-card="units"] .list > .row, .card[data-card="rentals"] .list > .row { border-left-width: 1px; border-left-color: var(--line); }
 @media (prefers-reduced-motion: reduce) { .grp-chev svg { transition: none; } }
 /* §2.7 Trips AUTO-RUN — an actionPill (R17) living inside the day header; the header's own
    grip/chevron/label are already stamped Saira caps, so the button picks up the same voice
