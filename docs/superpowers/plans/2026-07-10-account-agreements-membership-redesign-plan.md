@@ -171,10 +171,10 @@ The **Phase 2↔Phase 4 seam** (deferred-charge markers) is defined here and con
   5. Apply membership fields (mirror `memApplyActive`, `app.js:3778`): `paidCadence`, `commitmentStart/End`,
      `addOns`, `autoRenew`, `unlimitedTransport`/`rentalProtection` per add-ons — **but leave `paidUntil`
      empty** so pricing isn't granted before the charge clears.
-  6. **Charge timing decision `[CONFIRM w/ Jac]`:** `startDate <= today` → charge immediately at sign
-     (reuse the `stripeChargeInvoice` money path, same as `membershipEnrollCommit`) so same-day starts
-     activate instantly; `startDate` future → defer to the cron. Both write the SAME invoice + markers; the
-     cron is idempotent (never re-charges a paid invoice). Recommended default; confirm before building.
+  6. **Charge timing — CONFIRMED (Jac, 2026-07-10):** the card is NOT charged until the start date; if the
+     start date is **today**, charge **now**. So `startDate <= today` → charge immediately at sign (reuse the
+     `stripeChargeInvoice` money path, same as `membershipEnrollCommit`); `startDate` future → defer to the
+     cron. Both write the SAME invoice + markers; the cron is idempotent (never re-charges a paid invoice).
 - **T2.5 — `membershipStatus` gains `Pending`** (`app.js:3436`). Add, right after the `Member` check:
   a scheduled-but-uncharged future enrollment (`commitmentStart > TODAY_ISO && !paidUntil`) → `'Pending'`.
   `isActiveMember` (`app.js:3450`) stays `Active|Past Due` only → **Pending grants NO member pricing** until
