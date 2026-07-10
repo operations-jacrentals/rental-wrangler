@@ -198,6 +198,13 @@ The **Phase 2↔Phase 4 seam** (deferred-charge markers) is defined here and con
   dirty agreement draft (`state.custAgOpen` + a dirty flag `⟶P1`), intercept with "Save Changes?"
   (Save / Discard / stay). Reuse the existing `backGuard`/`syncBackGuard` machinery (`app.js` §12,
   ~`10090`). Contextual prompt, not a permanent bar (D27).
+- **T2.6 — Retire the overlapping old sections (Jac decision, 2026-07-10).** Once the new section is
+  functional (T2.1–T2.4 wired), remove the old `account` section's duplicated editable fields (`app.js:7045`,
+  the `.split` LEFT column) and the standalone `paymentMethodsSection` (`app.js:668`, now represented as the
+  Agreements accordion) from `DETAIL.customers` (`app.js:7081-7082`). **Fold the derived stats** the old
+  right column carried (Total paid, Visits, Customer-for, Rents-every-N-days, rented-category flags,
+  `app.js:7053-7059`) into the new Account section so nothing is lost. Do NOT do this before the new section
+  is functional (would replace working card management with a read-only shell).
 - **Acceptance (Phase 2 = the bug is CLOSED):** `grep` proves no path sets a Member `accountType` except the
   agreement-sign handler; Wrangler + CSV reject Member; a future-start signed member reads **Pending** with
   **retail** pricing until charged; logic-test covers enroll→pending→active + the two sibling refusals.
