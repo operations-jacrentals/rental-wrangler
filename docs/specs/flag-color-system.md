@@ -189,7 +189,7 @@ Severity column: 🔴 = red, 🟡 = yellow.
 | `no-card` | No Card | 🔴 | Customer has no payment method on file |
 | `unsigned-card` | Unsigned Card | 🔴 | Card on file but not yet signed |
 | `unit-failed` | Unit Failed Inspection | 🔴 | The rented unit's `unitInspectionStatus` is `Failed` |
-| `off-rent-overdue` | Overdue Return | 🔴 | Rental status is `Off Rent` (window ended, unit not yet back) |
+| `off-rent-overdue` | Overdue Return | 🔴 | Rental status is `Off Rent`, OR the rental is still out (`On Rent`/`End Rent`) and its `endDate` has already passed (window ended, unit not yet back) |
 | `starts-today` | Starts Today | 🟡 | Status is `Reserved` and start date is today |
 | `starts-tomorrow` | Starts Tomorrow | 🟡 | Status is `Reserved` and start date is tomorrow |
 | `end-rent` | Returning Today | 🟡 | Status is `End Rent` (final day of rental window) |

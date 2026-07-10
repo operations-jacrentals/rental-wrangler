@@ -7,7 +7,7 @@ description: >
   machine in the yard: quiet steel surfaces, ONE safety-orange ignition accent, a hi-vis
   hazard-stripe signature, stamped Saira Condensed labels, corner rivets, and a light
   wrangler/ranch seasoning carried mostly in copy. This file is the portable, machine-
-  readable projection of style.css :root + the app's RULE_META (R0–R24); jactec-ui is the
+  readable projection of style.css :root + the app's RULE_META (R0–R25); jactec-ui is the
   enforcement layer that builds and polices it. Tokens below are the DARK default; the
   light / yard / ranch themes override the SAME names (see style.css).
 colors:
@@ -103,7 +103,7 @@ stripe as the signature, stamped condensed labels, a light wrangler twist in the
 
 The system is already encoded in the codebase — this file is its **portable projection**,
 not a second canon. Tokens here mirror `style.css :root`; the component catalog mirrors
-the app's `RULE_META` (R0–R24). **Extend the system, never invent a parallel one.** When
+the app's `RULE_META` (R0–R25). **Extend the system, never invent a parallel one.** When
 in doubt, match what's there and speak in rule numbers.
 
 ## Colors
@@ -193,6 +193,7 @@ intent → rule → builder; **extend the builder, never hand-roll markup.** The
 | **R22** | Date picker | `dateField` | The ONE app-styled calendar. Native pickers are banned. |
 | **R23** | Tooltip | `data-tip` | Every hover hint; a native `title=` is an R0 violation. |
 | **R24** | Close ✕ | `closeX` | Red circle · white ✕. |
+| **R25** | Sync banner | `renderSyncBanner` | The persistent “Not saving” plate — red hazard-stripe cap; the ONE non-toast alert, lives on `<body>`. |
 
 The `components` tokens above carry each element's color/type/radius; borders, dashes, and
 gradients (the orange ref-pill outline, blue/gray add dashes, the ignition gradient face)
