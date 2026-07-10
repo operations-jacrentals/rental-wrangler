@@ -965,10 +965,17 @@ function transportLineItems(r) {
  *  is billed as a FRESH rental of just the added days (prevEnd→newEnd), originals frozen. */
 function retroPricingOn() { return ((state.settings && state.settings.company) || {}).retroactivePricing !== false; }
 /** Dollars already billed for a unit's rental TIME on an invoice (rental + extension
- *  lines for that unit) — the baseline retroactive pricing diffs against. */
-function unitBilledRental(inv, rentalId, unitId) {
+ *  lines for that unit) — the baseline retroactive pricing diffs against. On a
+ *  SINGLE-unit rental, match on the rental alone (not unitId) — a unit SWAP (remove
+ *  old + add new) keeps the old unit's PAID line in place (refund-first, §7.4) but
+ *  re-tags nothing, so a strict unitId match would make that money invisible to every
+ *  later extension/credit calc, re-billing the customer for time they already paid
+ *  for under the equipment's old name (Jac bug 2026-07-10). A genuine multi-unit
+ *  rental keeps strict per-unit matching — each unit's own payment stays its own. */
+function unitBilledRental(inv, r, unitId) {
+  const singleUnit = rentalUnits(r).length <= 1;
   return (inv.lineItems || []).reduce((a, li) =>
-    a + ((li.ref === rentalId && li.unitId === unitId && (li.kind === 'rental' || li.kind === 'extension')) ? (Number(li.amount) || 0) : 0), 0);
+    a + ((li.ref === r.rentalId && (singleUnit || li.unitId === unitId) && (li.kind === 'rental' || li.kind === 'extension')) ? (Number(li.amount) || 0) : 0), 0);
 }
 /** The per-unit extension charge for a window change, honoring the retroactive setting.
  *  `prevEnd` = the end date BEFORE this extension (the standalone segment's start when OFF).
@@ -977,7 +984,7 @@ function unitExtensionDelta(inv, r, eu, ns, ne, prevEnd, retro) {
   const u = IDX.unit.get(eu.unitId); if (!u) return { amount: 0, rate: '—' };
   if (retro) {                                              // cheapest(full window) − already billed
     const p = rentalPrice({ categoryId: u.categoryId, startDate: ns, endDate: ne, customerId: r.customerId });
-    return { amount: Math.round(((p ? p.price : 0) - unitBilledRental(inv, r.rentalId, eu.unitId)) * 100) / 100, rate: p ? p.rate : '—' };
+    return { amount: Math.round(((p ? p.price : 0) - unitBilledRental(inv, r, eu.unitId)) * 100) / 100, rate: p ? p.rate : '—' };
   }
   // OFF — price ONLY the added segment (prevEnd → newEnd) as a fresh rental; originals frozen.
   const p = (prevEnd && ne > prevEnd) ? rentalPrice({ categoryId: u.categoryId, startDate: prevEnd, endDate: ne, customerId: r.customerId }) : null;
@@ -1019,7 +1026,7 @@ function invoiceChunks(startISO, endISO) {
   return out.length ? out : [{ idx: 0, start: startISO, end: endISO, days: Math.max(1, total) }];
 }
 /** Dollars already billed for a unit's TIME across the WHOLE rental series. */
-function unitBilledSeries(r, unitId) { return rentalInvoices(r).reduce((a, inv) => a + unitBilledRental(inv, r.rentalId, unitId), 0); }
+function unitBilledSeries(r, unitId) { return rentalInvoices(r).reduce((a, inv) => a + unitBilledRental(inv, r, unitId), 0); }
 /** Open a continuation invoice for [covStart,covEnd] (a fresh ≤28-day chunk). */
 function createContinuationInvoice(r, covStart, covEnd) {
   const id = nextInvoiceId();
@@ -17088,10 +17095,17 @@ function handlePillX(xEl) {
     } else {
       rec.lineItems.splice(idx, 1);
       if (li.kind === 'rental') {
-        // last unit on the rental → detach the whole rental from the invoice (legacy single-unit path)
         rec.lineItems = rec.lineItems.filter((l) => !(l.kind === 'transport' && l.ref === li.ref));
-        rec.rentalIds = (rec.rentalIds || []).filter((id) => id !== li.ref);
-        if (r2 && r2.invoiceId === rec.invoiceId) { r2.invoiceId = null; reindex('rentals', r2); logAction(r2, `Removed from invoice ${invoiceShort(rec.invoiceId)}`); }
+        // Detach the whole rental from the invoice ONLY when no other line still bills it (legacy
+        // single-unit path) — a rental can carry more than one 'rental' line on the SAME invoice
+        // (e.g. an original paid line plus a later added-then-removed one), and severing rentalIds/
+        // invoiceId unconditionally orphans the invoice's OWN remaining paid line for this rental,
+        // making it invisible to every future extension credit calc (Jac bug 2026-07-10 — Kerrigan).
+        const stillBilled = rec.lineItems.some((l) => l.ref === li.ref);
+        if (!stillBilled) {
+          rec.rentalIds = (rec.rentalIds || []).filter((id) => id !== li.ref);
+          if (r2 && r2.invoiceId === rec.invoiceId) { r2.invoiceId = null; reindex('rentals', r2); logAction(r2, `Removed from invoice ${invoiceShort(rec.invoiceId)}`); }
+        }
       }
     }
     logAction(rec, `Removed ${li.kind === 'rental' ? 'rental' : 'line'}: ${li.label} (${money(li.amount)})`);
@@ -19467,6 +19481,12 @@ function createInvoiceForRental(rentalId) {
   if (!r.customerId) { flashOr('[data-slot="customer"]', 'The Quote needs a customer first — drag one on (or quick-add).'); return; }
   if (!r.startDate || !r.endDate) { flashOr('.rdcal, .timeline, .statusbar.draftwin', 'Set the rental window first.'); return; }
   if (!rentalUnitIds(r).length) { flashOr('.stall-empty, [data-slot="unit"]', 'Add at least one unit before invoicing.'); return; }
+  // Money-safe duplicate guard (Jac bug 2026-07-10 — Kerrigan): this mints a FRESH invoice
+  // billed at the full window price with no credit for anything already paid — correct only
+  // when the rental has never been invoiced. If a prior invoice already covers this rental
+  // (even one r.invoiceId no longer points at — e.g. after an unlink), the right tool is the
+  // extension flow (bills only the delta, retro-priced), never a second fresh invoice.
+  if (rentalInvoices(r).length) { flashOr('[data-slot="unit"]', 'This rental already has an invoice — extend its window to bill more (never +Invoice again).'); return; }
   // §20 voided units aren't billed — so a rental where EVERY unit is No Show/Cancelled would
   // mint a silently-EMPTY invoice (Jac bug 2026-07-06: a stale Reserved rental derives No Show
   // → rentalLineItems() filters everything → attached invoice with zero lines). Refuse loudly
