@@ -3826,8 +3826,8 @@ function custMetaField(c, field, label, ph) {
 function funnelSectionHtml(c) {
   const tab = (state.funnelTab && state.funnelTab[c.customerId]) || 'rental';
   const seg = segCtl([
-    { label: `Rental <span class="seg-dot ${naDotClass(c, 'rental')}"></span>`, js: 'js-funnel-tab', data: { rec: c.customerId, tab: 'rental' }, on: tab === 'rental' ? 'accent' : null },
-    { label: `Equipment Sales <span class="seg-dot ${naDotClass(c, 'usedSales')}"></span>`, js: 'js-funnel-tab', data: { rec: c.customerId, tab: 'usedSales' }, on: tab === 'usedSales' ? 'accent' : null },
+    { label: 'Rental', js: `js-funnel-tab ${naDotClass(c, 'rental')}`, data: { rec: c.customerId, tab: 'rental' }, on: tab === 'rental' ? 'accent' : null },
+    { label: 'Equipment Sales', js: `js-funnel-tab ${naDotClass(c, 'usedSales')}`, data: { rec: c.customerId, tab: 'usedSales' }, on: tab === 'usedSales' ? 'accent' : null },
   ]);
   let body;
   if (tab === 'rental') {
@@ -12592,7 +12592,7 @@ function buildPopupEl(o, overlay, opts = {}) {
     // The card rail IS the header (no title). Account tab + a tab per card (signed dot) + a +Card add.
     const railTabs = `<div class="ag-tabs" role="tablist">
       <button type="button" class="ag-tab js-nc-tab${tab === 'account' ? ' on' : ''}" data-tab="account">Account</button>
-      ${cards.map((k) => `<button type="button" class="ag-tab js-nc-tab${tab === k.id ? ' on' : ''}" data-tab="${esc(k.id)}"><span class="ag-dot ${{ complete: 'ok', 'in-progress': 'mid', stale: 'bad' }[cardCaptureState(custRec, k)]}"></span>${esc(brandName(k.brand))} ••${esc(k.last4)}</button>`).join('')}
+      ${cards.map((k) => `<button type="button" class="ag-tab js-nc-tab${tab === k.id ? ' on' : ''} ${{ complete: 'ok', 'in-progress': 'mid', stale: 'bad' }[cardCaptureState(custRec, k)]}" data-tab="${esc(k.id)}">${esc(brandName(k.brand))} ••${esc(k.last4)}</button>`).join('')}
       ${canMoney() ? addBtn('Card', { link: true, js: 'js-add-card', data: { rec: o.editId || '' } }) : ''}
     </div>`;
     const headRail = `${railTabs}<span class="spacer"></span>${isEdit ? `<button class="iconbtn iconbtn-bare js-nc-qr" data-tip="Open on phone">${I.qr}</button>` : ''}`;
