@@ -2086,6 +2086,8 @@ const state = {
   actLogOpen: {},             // §3.8 per-funnel Action Log open state — { ['<custId>|<scope>']: true }
   custInvOpen: {},            // §3.3 embedded Invoices accordion — { [customerId]: invoiceId } (one open at a time); view-local, reset on a fresh customer open
   custInvMenu: {},            // §3.3 which expanded invoice's status/action menu is open — { [customerId]: invoiceId }
+  custAcctOpen: {},           // Phase 1 (2026-07-10 account/agreements redesign, D19) — is the top-of-card Account section expanded? { [customerId]: true }; collapsed by default, view-local
+  custAgOpen: {},             // Phase 1 — which Agreements row is expanded inside the Account section — { [customerId]: cardId | '__new__' | null } (one open at a time, mirrors custInvOpen); '__new__' = the +Agreement/Card creation panel
   woPartForm: null,           // woId whose "+ Add Part/Labor" inline form is open
   invLineForm: null,          // invoiceId whose "+ Add Custom" inline form is open
   invMergePick: null,         // invoiceId whose "Merge invoice" picker is open (consolidate unpaid bills)
@@ -2307,6 +2309,7 @@ function openStandard(card, recId, recType) {
   cs.mode = 'standard'; cs.recId = recId; cs.recType = recType || null; cs.graphView = false;   // opening a record exits the in-column graph view
   if (card === 'customers' && state.funnelTab) delete state.funnelTab[recId];   // §3.5 — a fresh customer open resets the funnel toggle to Rental
   if (card === 'customers') { if (state.custInvOpen) delete state.custInvOpen[recId]; if (state.custInvMenu) delete state.custInvMenu[recId]; }   // §3.3 — collapse the embedded Invoices accordion on a fresh open (openInvoice re-sets it after)
+  if (card === 'customers') { if (state.custAcctOpen) delete state.custAcctOpen[recId]; if (state.custAgOpen) delete state.custAgOpen[recId]; }   // Phase 1 — collapse the Account section + its Agreements accordion on a fresh open
   ackComments(recOf(entityCardOf(card, recType), recId));   // viewing = acknowledged (Phase 6)
   // §10 + #54 — opening a Category while the rental-window picker is live (a window's
   // picked, so availWin is set) pivots the left column to Units, pre-filled with the
@@ -3699,6 +3702,209 @@ function funnelSectionHtml(c) {
     + `<div class="funnel-body">${body}</div>`
     + `</div>`;
 }
+/* ── Phase 1 (2026-07-10 Account/Agreements + Membership redesign, spec §3/§7b
+   D19-D27, plan T1.1-T1.4) — the new top-of-card ACCOUNT section. UI SHELL:
+   render + expand/collapse state + a Manager-password prompt SHELL only. The
+   per-agreement ACCOUNT TYPE dropdown, the Start-Date sign-gate, and the
+   atomic sign=enroll charge are Phase 2 (spec §4); the block-gate ENFORCEMENT
+   (this section only renders the block picker, it doesn't gate anything yet)
+   is Phase 3 (spec §6). Mirrors customerInvoicesSection below: one-open-at-a-
+   time accordion, same row/expand mechanic, its own view-local state keys
+   (state.custAcctOpen, state.custAgOpen — declared alongside custInvOpen).
+   Consumes the dormant Phase-0 helpers cardIndicator/membershipRowStatus/
+   accountBlock (app.js ~L320/L381/L3494) — this is their first live caller. ── */
+// D20 — the collapsed bar's overtaking type-chip: the worst membership/agreement
+// status when one applies, else the plain account-type badge. { text, tone }.
+function acctSummaryChip(c) {
+  const st = membershipRowStatus(c, null);   // '' unless a membership account (agreement-level fields land in Phase 2 — dormant until then)
+  if (st) {
+    const tone = /RENEWAL FAILED|LAPSED/i.test(st) ? 'bad' : /PENDING|INCOMPLETE/i.test(st) ? 'pend' : /PAST DUE/i.test(st) ? 'warn' : 'ok';
+    return { text: st, tone };
+  }
+  const acct = getStatus('customerAccountType', c.accountType || 'Non-Business');
+  return { text: acct.label, tone: { green: 'ok', yellow: 'warn', red: 'bad', purple: 'pend' }[acct.color] || 'ok' };
+}
+// A compact click-to-edit account field (module-level twin of DETAIL.customers' efield,
+// laid out in the new dense .acct-fgrid). Reuses the SAME data-edit="custField" inline-
+// edit mechanism as every other customer field in the app — no new edit surface.
+function acctField(c, field, label, ph, { wide } = {}) {
+  const val = c[field];
+  const thing = ph.replace(/^Add\s+/i, '');
+  return `<label class="acct-f${wide ? ' wide' : ''}"><span>${esc(label)}</span>`
+    + `<span class="v inline-edit" data-edit="custField" data-field="${esc(field)}" data-rec="${esc(c.customerId)}" data-ph="${esc(ph)}">${val ? esc(val) : `<span class="add-field" data-r="R5c">+${esc(thing)}</span>`}</span>`
+    + `</label>`;
+}
+// D24 — Rental Protection's one-line explainer, member vs non-member copy (the real %
+// off membershipPricing(), never hardcoded).
+const acctProtectionCopy = (c) => {
+  const pct = membershipPricing().protectionPct;
+  return isActiveMember(c)
+    ? `<b>Rental Protection</b> adds ${pct}% and covers damages up to $1,000/month per unit.`
+    : `<b>Rental Protection</b> adds ${pct}% and covers up to $1,000 in damages per unit.`;
+};
+const NET_TERMS_OPTS = ['None', '7d', '15d', '30d', '60d', '90d'];
+// D22/D23 — NET TERMS · PO · PROTECTION share one line. NET TERMS is a segCtl (R14 — a
+// joined group of mutually-exclusive options): picking one does NOT write netDays
+// directly — ANY change is Manager-password gated (D22), so it opens the managerPw shell
+// with the pending value; PO/Protection are single toggleChips (R29) — plain operational
+// booleans, not money/gate fields, so they write straight through.
+function acctTermsLine(c) {
+  const cur = (c.netDays == null || c.netDays === '' || Number(c.netDays) === 0) ? 'None' : `${c.netDays}d`;
+  const netSeg = segCtl(NET_TERMS_OPTS.map((opt) => ({
+    label: esc(opt), js: 'js-acct-netdays', data: { rec: c.customerId, val: opt }, on: opt === cur ? 'accent' : null,
+  })));
+  const po = toggleChip('PO', !!c.requiresPO, { js: 'js-acct-po', data: { rec: c.customerId }, tone: 'yellow' });
+  const prot = toggleChip('Protection', !!c.rentalProtection, { js: 'js-acct-prot', data: { rec: c.customerId }, tone: 'green' });
+  return `<div class="acct-termsline">`
+    + `<span class="acct-cap">Net Terms</span>${netSeg}`
+    + `<span class="acct-lock" data-tip="Any change needs a Manager password">${AG_LOCK}</span>`
+    + `<span class="acct-sep"></span>${po}${prot}`
+    + `</div>`
+    + (c.rentalProtection ? `<p class="acct-prot-note">${acctProtectionCopy(c)}</p>` : '');
+}
+// D18 collapsed agreement-row order: [Account Type | membership STATUS] · [Signed Date |
+// red flags NOT SIGNED/NO SELFIE] · [card indicator] · chevron. One row per card (today's
+// agreement container — see cardSignings/cardCurrentSigning ~L297-299); a customer-level
+// Agreement record (spec Phase 0 shape) lands in a later phase.
+function agreementRowHtml(c, k) {
+  const sg = cardCurrentSigning(c, k);
+  const rowStatus = membershipRowStatus(c, null);
+  const acct = getStatus('customerAccountType', c.accountType || 'Non-Business');
+  const isStatus = !!rowStatus;
+  const ttlText = rowStatus || acct.label;
+  const tone = isStatus
+    ? (/RENEWAL FAILED|LAPSED/i.test(rowStatus) ? 'bad' : /PENDING|INCOMPLETE/i.test(rowStatus) ? 'pend' : /PAST DUE/i.test(rowStatus) ? 'warn' : 'ok')
+    : ({ green: 'ok', yellow: 'warn', red: 'bad', purple: 'pend' }[acct.color] || 'ok');
+  const ind = cardIndicator(c, k);
+  const indTone = ind.tone === 'green' ? 'ok' : ind.tone;
+  const flags = [];
+  if (!sg) flags.push('NOT SIGNED');
+  if (!cardHasSelfie(k)) flags.push('NO SELFIE');
+  const midSlot = flags.length
+    ? `<span class="rflags">${flags.map((f) => `<span class="rflag">${esc(f)}</span>`).join('')}</span>`
+    : `<span class="ag-sub">Signed ${esc(sg.signedAt || '—')}</span>`;
+  return `<div class="ag-row js-ag-row" data-rec="${esc(c.customerId)}" data-card="${esc(k.id)}" data-tip="Open agreement">`
+    + `<span class="ag-stat ${tone}"></span>`
+    + `<span class="ag-ttl${isStatus ? ' status ' + tone : ''}">${esc(ttlText)}</span>`
+    + midSlot
+    + `<span class="cind ${indTone}">${esc(ind.text)}</span>`
+    + `<span class="ag-chev">${I.chev}</span>`
+    + `</div>`;
+}
+// Expanded EXISTING agreement (read-only viewer) — mirrors the newCustomer overlay's
+// 'authorized'/'in-progress' card-tab content (~L10823-10839) so the two surfaces stay
+// visually identical. Live capture (agCaptureBlock) is overlay-bound (state.overlay) —
+// wiring it to open inline here without an overlay is Phase 2; for now the in-progress
+// state deep-links to the existing card-capture form via js-edit-customer.
+function agreementExpandedHtml(c, k) {
+  const meta = `${k.isDefault ? 'Default · ' : ''}${brandName(k.brand)} ••${esc(k.last4 || '')}${k.expMonth ? ' · exp ' + k.expMonth + '/' + String(k.expYear).slice(-2) : ''}`;
+  const st = cardSignState(c, k);
+  let body;
+  if (st === 'authorized') {
+    const sg = cardCurrentSigning(c, k);
+    body = `<div class="ag-meta">${esc(meta)}<span class="ag-metasep"></span>${badge('Authorized', 'green')}</div>`
+      + `<div class="ag-signed"><span class="ag-lock">${AG_LOCK}</span><span class="t"><b>${esc(signingTitle(sg))}</b> · signed ${esc(sg.signedAt || '—')}</span></div>`
+      + `<div class="ag-packet">`
+      + `<div class="ag-pcell"><div class="ag-pcap">Selfie</div>${signingSelfieSrc(sg) ? `<img class="ag-selfie" src="${esc(signingSelfieSrc(sg))}" alt="selfie on file">` : '<div class="ag-selfie empty">—</div>'}</div>`
+      + `<div class="ag-pcell"><div class="ag-pcap">Signature</div>${signingSignatureSrc(sg) ? `<img class="ag-sigthumb" src="${esc(signingSignatureSrc(sg))}" alt="signature on file">` : '<div class="ag-sigthumb"></div>'}</div>`
+      + `</div>`
+      + `<p class="muted acct-microcopy">🔒 Locked — the exact agreement accepted on this card. Re-signing happens only on a new card or an account-type change.</p>`;
+  } else {
+    body = `<div class="ag-meta">${esc(meta)}<span class="ag-metasep"></span>${badge(st === 'stale' ? 'Re-sign' : 'In progress', st === 'stale' ? 'yellow' : 'gray')}</div>`
+      + capProgress([{ label: 'Card', done: true }, { label: 'Selfie', done: cardHasSelfie(k) }, { label: 'Signature', done: cardHasSignature(c, k) }])
+      + `<p class="acct-microcopy">Finish this card's signing from the <button class="linkname js-edit-customer" data-r="R7" data-rec="${esc(c.customerId)}">customer form</button>.</p>`;
+  }
+  return `<div class="ag-open">`
+    + `<div class="ao-bar"><span class="ao-lbl">Agreement</span><span class="sp"></span><button class="ao-collapse js-ag-collapse" data-rec="${esc(c.customerId)}" data-tip="Collapse">${I.chev}</button></div>`
+    + `<div class="ao-body">${body}</div>`
+    + `</div>`;
+}
+// D3/D16 "creating a new agreement" panel (mockup state 3) — UI SHELL. Selfie/signature
+// capture, the ACCOUNT TYPE dropdown, and the Start Date field render as inert previews
+// (Phase 2 wires them — dateField/agCaptureBlock are both state.overlay-bound today, and
+// this row lives in the main render(), not a popup, so their real wiring needs that
+// mechanism extended to non-overlay callers — flagged in the build report). Cancel is
+// real (collapses back to the row list); Save/Start Membership are no-op stubs.
+function agreementNewHtml(c) {
+  const acct = getStatus('customerAccountType', c.accountType || 'Non-Business');
+  const isMember = /member/i.test(acct.label);
+  const key = requiredAgreementKey(c);
+  const ag = AGREEMENTS[key] || AGREEMENTS.rental;
+  return `<div class="ag-open new">`
+    + `<div class="ao-bar"><span class="ao-lbl">New Agreement</span><span class="unsaved">Unsaved</span><span class="sp"></span><button class="ao-collapse js-ag-collapse" data-rec="${esc(c.customerId)}" data-tip="Cancel">${I.chev}</button></div>`
+    + `<div class="ao-body">`
+    + `<div class="ao-row">`
+    + `<div class="ao-cell"><span class="ao-cap">Account Type</span><button type="button" class="actype-dd js-ag-actype" data-rec="${esc(c.customerId)}" data-tip="Phase 2 — live account-type dropdown (D4)"><b>${esc(acct.label)}</b><span class="cv">${I.chev}</span></button></div>`
+    + `<div class="ao-cell"><span class="ao-cap">Start Date <span class="anno">gates signing</span></span><button type="button" class="datefield js-ag-startdate" data-rec="${esc(c.customerId)}" data-tip="Phase 2 — schedules the first charge (D6/D7)">${CARD_ICON.rentals}<span>Pick a date</span></button></div>`
+    + `</div>`
+    + `<div class="packet">`
+    + `<div class="pcell"><span class="ao-cap">Selfie</span><div class="selfie">Capture on save</div></div>`
+    + `<div class="pcell"><span class="ao-cap">Signature</span><div class="sigpad"><div class="base"></div></div></div>`
+    + `</div>`
+    + `<div><span class="ao-cap ao-cap-block">${esc(ag.title)} · Terms</span><div class="terms">${esc((ag.text || '').slice(0, 420))}…</div></div>`
+    + `<div class="ao-foot">${ghostPill('Cancel', { js: 'js-ag-collapse', data: { rec: c.customerId } })}<span class="sp"></span>`
+    + `${actionPill('commit', 'Save', { js: 'js-ag-save', data: { rec: c.customerId } })}`
+    + `<button class="pill ignition js-ag-start" data-r="R17" data-rec="${esc(c.customerId)}">${isMember ? 'Start Membership' : 'Sign'}</button>`
+    + `</div>`
+    + `</div>`
+    + `</div>`;
+}
+// D16 — the Agreements list: `+Agreement/Card` as the TOP add-row (hidden while creating,
+// D26), then one collapsed row per card (D18), the open one expanding inline (push-down,
+// mirrors the Invoices accordion mechanic 1:1).
+function customerAgreementsSection(c) {
+  const cards = customerCards(c);
+  const openKey = (state.custAgOpen && state.custAgOpen[c.customerId]) || null;
+  const creating = openKey === '__new__';
+  const rows = cards.map((k) => (k.id === openKey ? agreementExpandedHtml(c, k) : agreementRowHtml(c, k))).join('')
+    || '<div class="ag-empty muted">No agreements or cards on file yet.</div>';
+  const addRow = creating ? '' : addBtn('Agreement / Card', { link: true, js: 'js-ag-add', h: 30, data: { rec: c.customerId } });
+  return `<hr class="ag-divide">`
+    + `<div class="ag-head"><h5>Agreements</h5></div>`
+    + `<div class="ag-scroll">${addRow}${rows}${creating ? agreementNewHtml(c) : ''}</div>`;
+}
+// D17 — Block Account, bottom-RIGHT. Opens the Manager/Owner-password SHELL (D12/D13);
+// the real block-type picker (Blacklist vs invoice-hold) + the Owner-tier check on a bare
+// Blacklist are Phase 3 (spec §6).
+function acctBlockFoot(c) {
+  const b = accountBlock(c);
+  const label = b ? `Blocked — ${b.type}` : 'Block Account';
+  return `<div class="ag-foot"><span class="sp"></span>${actionPill('danger', label, { js: 'js-block-account', data: { rec: c.customerId }, h: 28 })}</div>`;
+}
+function acctBodyHtml(c) {
+  return `<div class="acct-fgrid">`
+    + acctField(c, 'firstName', 'First name', 'Add first name')
+    + acctField(c, 'lastName', 'Last name', 'Add last name')
+    + acctField(c, 'company', 'Company', 'Add company')
+    + acctField(c, 'phone', 'Phone', 'Add phone')
+    + acctField(c, 'email', 'Email', 'Add email')
+    + acctField(c, 'industry', 'Industry', 'Add industry')
+    + acctField(c, 'idNumber', "Driver's License / ID", 'Add ID number')
+    + `</div>`
+    + `<div class="acct-notesrow">${acctField(c, 'accountNotes', 'Notes', 'Add account notes', { wide: true })}</div>`   // D15 — its own row, under Driver's License
+    + acctTermsLine(c)
+    + customerAgreementsSection(c)
+    + acctBlockFoot(c);
+}
+// D19 — the whole section: collapsed by default, a one-line summary bar (D20's type-chip
+// overtakes on a membership/agreement status); expand reveals acctBodyHtml.
+function customerAccountSection(c) {
+  const open = !!(state.custAcctOpen && state.custAcctOpen[c.customerId]);
+  const chip = acctSummaryChip(c);
+  const bits = [c.company, c.phone, c.email].filter(Boolean);
+  const summary = bits.length
+    ? bits.map((s, i) => (i === 0 ? `<b>${esc(s)}</b>` : `<span class="acct-dot">·</span>${esc(s)}`)).join('')
+    : '<i>No contact info yet</i>';
+  return `<div class="acct${open ? ' open' : ''}">`
+    + `<div class="acct-bar js-acct-toggle" data-rec="${esc(c.customerId)}">`
+    + `<span class="acct-lbl">Account</span>`
+    + `<span class="acct-sum">${summary}</span>`
+    + `<span class="type-chip ${chip.tone}">${esc(chip.text)}</span>`
+    + `<span class="acct-chev">${I.chev}</span>`
+    + `</div>`
+    + (open ? `<div class="acct-body">${acctBodyHtml(c)}</div>` : '')
+    + `</div>`;
+}
 /* ── §3.2/§3.3 — the embedded per-customer Invoices section (replaces the retired
    standalone Invoice card). A manager summary strip over a bounded scroll region of
    invoice rows; a row expands accordion-style (one open at a time) into the interactive
@@ -4887,6 +5093,14 @@ function actionPill(kind, label, { js, data, h } = {}) {
 function ghostPill(label, { js, data, tip, disabled } = {}) {
   return `<button class="pill ghost${disabled ? ' is-disabled' : ''}${js && !disabled ? ' ' + js : ''}" data-r="R18"${dataAttrs(data)}${tip ? ` data-tip="${esc(tip)}"` : ''}${disabled ? ' aria-disabled="true"' : ''}>${esc(label)}</button>`;
 }
+/** R29: a single interactive TOGGLE CHIP — ONE pill that flips an account-level on/off
+ *  flag (PO required, Rental Protection). Distinct from R14 (a GROUP of mutually-exclusive
+ *  options riding one joined control): this is a lone control whose own fill communicates
+ *  its state — off = quiet outline, on = the registry `tone` color fill. (2026-07-10
+ *  Account/Agreements redesign, D22-D24.) */
+function toggleChip(label, on, { js, data, tone = 'accent' } = {}) {
+  return `<button class="chip-toggle${on ? ` on tone-${tone}` : ''}${js ? ' ' + js : ''}" data-r="R29"${dataAttrs(data)} aria-pressed="${on ? 'true' : 'false'}">${esc(label)}</button>`;
+}
 /** The popup PLATE — every overlay's shell, so they all read as one bolted data-plate.
  *  Hazard cap (red `danger` variant for abort/destroy) + corner rivets + stamped Saira
  *  head (ignition icon · uppercase title · micro tag) + scrollable body + optional sticky
@@ -4944,6 +5158,7 @@ const RULE_META = {
   R26: ['Due-Today banner', 'renderSchedBanner / #sched-banner', 'top-of-screen reminder plate — caution-YELLOW hazard-stripe cap; lists the scheduled actions due today (customer · note · time), each customer an R2 link. Manual X only (never auto-clears), dismissal sticks for the session (sessionStorage). Like R25 it lives on <body>, outside #app'],
   R27: ['Account button', 'acctBtn', 'the stamped button on the customer funnel gate row — label = the account TYPE (Contractor/Business/Member…); opens the agreements window (same js-view-agreement access as the signed-agreement pill). Neutral steel chip, not an ignition/status color.'],
   R28: ['Invoice action menu', 'invoiceStatMenu', 'the expanded-invoice header control: a hazard-stripe status pill (green solid = paid · yellow-stripe = partial · red-stripe = due; goes SOLID while its menu is open) that DOUBLES as the Pay · Print · Send · Refund action menu. A pressable-status control like R1, but it opens actions rather than advancing a status. Pay/Refund reuse the canMoney()-gated payment window.'],
+  R29: ['Toggle chip', 'toggleChip', 'a single interactive on/off pill (PO required, Rental Protection) — off = quiet outline, on = the registry tone color fill. Distinct from R14: ONE control, not a joined group of options.'],
 };
 /* ════════════ APP-12 · DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
    The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
@@ -5066,7 +5281,7 @@ const RB_TABS = [
   { id: 'pills', label: 'Pills & Flags', intro: 'The status vocabulary — every colored chip and exactly what it’s allowed to mean.',
     items: [{ r: 'R1' }, { r: 'R2' }, { r: 'R3' }, { r: 'R3b' }, { r: 'R4' }, { r: 'R4b' }, { r: 'R9' }, { r: 'R9b' }] },
   { id: 'fields', label: 'Fields & Adds', intro: 'Where you type, link, and add.',
-    items: [{ r: 'R5' }, { r: 'R5b' }, { r: 'R5c' }, { r: 'R6' }, { r: 'R7' }, { r: 'R8' }, { r: 'R14' }, { r: 'R22' }] },
+    items: [{ r: 'R5' }, { r: 'R5b' }, { r: 'R5c' }, { r: 'R6' }, { r: 'R7' }, { r: 'R8' }, { r: 'R14' }, { r: 'R22' }, { r: 'R29' }] },
   { id: 'actions', label: 'Actions', intro: 'Buttons that DO something — colored by intent.',
     items: [{ r: 'R17' }, { r: 'R18' }, { r: 'R24' }, { r: 'R27' }, { r: 'R28' }] },
   { id: 'upload', label: 'Upload & Capture', intro: 'Add-file zones and photo/site captures.',
@@ -6858,6 +7073,7 @@ const DETAIL = {
        membership/used-sales columns AND the Action Board are folded into funnelSectionHtml. */
     return `<div class="detail">
       <div class="detail-head">${title}</div>
+      ${customerAccountSection(c)}
       ${notes.top}
       ${funnelSectionHtml(c)}
       ${customerInvoicesSection(c, cs)}
@@ -10883,6 +11099,25 @@ function buildPopupEl(o, overlay, opts = {}) {
         ${c.signature ? `<div class="nc-ag-sigline"><span class="nc-cap-lbl">Signature</span><img class="nc-thumb sig" src="${esc(c.signature)}" alt="signature" /></div>` : ''}
         ${lifecycle ? `<div class="ag-lifecycle-wrap"><span class="nc-cap-lbl">Membership</span>${lifecycle}</div>` : ''}` });
     overlay.appendChild(pop);
+  } else if (o.kind === 'managerPw') {
+    // Phase 1 SHELL (2026-07-10 Account/Agreements redesign, D13/D14/D22) — visual only.
+    // The real Owner/Manager password VERIFICATION + the action it authorizes (writing
+    // c.block for Block Account, writing c.netDays for a Net Terms change) are Phase 2/3
+    // (spec §6, D11-D14). Confirm here just closes — see js-mgrpw-confirm.
+    const cust = IDX.customer.get(o.custId);
+    const actionLabel = o.pwAction === 'block' ? 'Blocking this account'
+      : o.pwAction === 'netTerms' ? `Setting Net Terms to ${o.pwVal || 'None'}`
+        : 'This action';
+    const pop = el('div', 'popup'); pop.style.width = '360px';
+    pop.innerHTML = popupShell({
+      icon: AG_LOCK, title: 'Manager Password', tag: 'Account · authorize',
+      body: `
+        <p class="muted" style="margin:0 0 12px">${cust ? esc(fullName(cust)) + ' — ' : ''}${esc(actionLabel)} requires a Manager password.</p>
+        <input type="password" class="nc-in js-mgrpw-input" placeholder="Manager password" autocomplete="off" style="width:100%">
+        ${o.error ? `<div class="login-err" style="margin-top:10px">${esc(o.error)}</div>` : ''}`,
+      foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', 'Authorize', { js: 'js-mgrpw-confirm' })}`,
+    });
+    overlay.appendChild(pop);
   } else if (o.kind === 'checklist') {
     // Required-checklist takeover (Settings → Inspections): replaces the sheet until completed;
     // closing keeps it as a pending inspection. Any item Fail → overall Fail → existing auto-WO.
@@ -11169,6 +11404,7 @@ const WINDOW_CATALOG = [
   { kind: 'verifyAch',     label: 'Verify ACH',              tag: 'Customer · verify ACH',     sample: () => { const c = (DATA.customers || []).find((x) => (x.achAccounts || []).length); return c ? { customerId: c.customerId, bankId: c.achAccounts[0].id } : {}; } },
   { kind: 'payment',       label: 'Take Payment',            tag: 'Invoice · payment',         sample: () => ({ invoiceId: ((DATA.invoices || [])[0] || {}).invoiceId }) },
   { kind: 'membershipEnroll', label: 'Membership Enrollment', tag: 'Customer · enroll',         sample: () => ({ custId: ((DATA.customers || [])[0] || {}).customerId, plan: 'Monthly', addOns: { transport: false, protection: false }, autoRenew: false, startDate: TODAY_ISO, busy: false, error: '' }) },
+  { kind: 'managerPw',     label: 'Manager password (account gate)', tag: 'Account · manager override', sample: () => ({ custId: ((DATA.customers || [])[0] || {}).customerId, pwAction: 'block', pwVal: '' }) },
 ];
 /* Build an INERT preview popup for a catalog kind (or null if a record guard trips
    or it throws). Reuses buildPopupEl with {preview:true} — the REAL popup — into a
@@ -14184,6 +14420,23 @@ function onClick(e) {
   if (closest('.js-inv-collapse')) { e.stopPropagation(); const cu = closest('.js-inv-collapse').dataset.cust; if (state.custInvOpen) state.custInvOpen[cu] = null; if (state.custInvMenu) state.custInvMenu[cu] = null; return render(); }
   if (closest('.js-inv-add-pill')) { e.stopPropagation(); const b = closest('.js-inv-add-pill'); if (state.linking && state.linking.targetCard === 'invoices') { e.preventDefault(); return linkCreateInvoice(b.dataset.cust); } return; }   // §3.4 — otherwise drag-only (hidden except mid-drag)
   if (closest('.js-inv-row')) { e.stopPropagation(); const b = closest('.js-inv-row'); if (state.linking && state.linking.targetCard === 'invoices' && b.dataset.rec) { e.preventDefault(); return openLinkConfirm(b.dataset.rec); }   /* §3.4 — pick this invoice as the menu-link target */ const cu = b.dataset.cust, rec = b.dataset.rec; state.custInvOpen = state.custInvOpen || {}; state.custInvOpen[cu] = (state.custInvOpen[cu] === rec) ? null : rec; if (state.custInvMenu) state.custInvMenu[cu] = null; return render(); }
+  // ── Phase 1 (2026-07-10 Account/Agreements redesign, T1.1-T1.4) — the new top-of-card
+  // Account section: open/close + its embedded Agreements accordion (mirrors the Invoices
+  // pattern above) + the field toggles. UI SHELL — the starred handlers below are Phase 2/3
+  // no-op stubs (real enrollment/charge is Phase 2; block-gate enforcement is Phase 3).
+  if (closest('.js-acct-toggle')) { e.stopPropagation(); const rec = closest('.js-acct-toggle').dataset.rec; state.custAcctOpen = state.custAcctOpen || {}; state.custAcctOpen[rec] = !state.custAcctOpen[rec]; return render(); }
+  if (closest('.js-ag-row')) { e.stopPropagation(); const b = closest('.js-ag-row'); const rec = b.dataset.rec, card = b.dataset.card; state.custAgOpen = state.custAgOpen || {}; state.custAgOpen[rec] = (state.custAgOpen[rec] === card) ? null : card; return render(); }
+  if (closest('.js-ag-collapse')) { e.stopPropagation(); const rec = closest('.js-ag-collapse').dataset.rec; if (state.custAgOpen) state.custAgOpen[rec] = null; return render(); }
+  if (closest('.js-ag-add')) { e.stopPropagation(); const rec = closest('.js-ag-add').dataset.rec; state.custAgOpen = state.custAgOpen || {}; state.custAgOpen[rec] = '__new__'; return render(); }
+  if (closest('.js-ag-save')) { e.stopPropagation(); toast('Saving a draft agreement arrives in Phase 2.'); return; }              // *Phase 2: buildMembershipInvoice / draft persistence (D9)
+  if (closest('.js-ag-start')) { e.stopPropagation(); toast('Sign & enroll arrives in Phase 2/3.'); return; }                     // *Phase 2/3: atomic sign = enroll + scheduled charge (D5-D8)
+  if (closest('.js-ag-actype')) { e.stopPropagation(); toast('The live Account-Type dropdown arrives in Phase 2.'); return; }     // *Phase 2: per-agreement ACCOUNT TYPE dropdown (D4)
+  if (closest('.js-ag-startdate')) { e.stopPropagation(); toast('The Start-Date picker arrives in Phase 2.'); return; }           // *Phase 2: gates the signature (D6) — dateField needs overlay context, see report
+  if (closest('.js-acct-po')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-acct-po').dataset.rec); if (c) { c.requiresPO = !c.requiresPO; reindex('customers', c); } return render(); }
+  if (closest('.js-acct-prot')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-acct-prot').dataset.rec); if (c) { c.rentalProtection = !c.rentalProtection; reindex('customers', c); } return render(); }
+  if (closest('.js-acct-netdays')) { e.stopPropagation(); const b = closest('.js-acct-netdays'); return openOverlay({ kind: 'managerPw', custId: b.dataset.rec, pwAction: 'netTerms', pwVal: b.dataset.val }); }   // D22 — ANY Net Terms change is Manager-password gated
+  if (closest('.js-block-account')) { e.stopPropagation(); const rec = closest('.js-block-account').dataset.rec; return openOverlay({ kind: 'managerPw', custId: rec, pwAction: 'block' }); }   // D12/D13 — Block Account
+  if (closest('.js-mgrpw-confirm')) { e.stopPropagation(); toast('Manager-password verification + the real action land in Phase 2/3.'); return closeOverlay(); }   // *Phase 2/3: verify against Owner/Manager tier + apply the pending action (D13/D14)
   if (closest('.js-pay-invoice')) { e.stopPropagation(); return openPayInvoice(closest('.js-pay-invoice').dataset.rec); }
   if (closest('.js-pay-pick')) { e.stopPropagation(); if (state.overlay) { const b = closest('.js-pay-pick'); state.overlay.selectedCardId = b.dataset.card || b.dataset.bank; renderOverlay(); } return; }
   if (closest('.js-pay-method')) { e.stopPropagation(); if (state.overlay) { const nb = document.querySelector('.overlay .js-check-num'); if (nb) state.overlay.checkNum = nb.value.trim(); state.overlay.method = closest('.js-pay-method').dataset.method; state.overlay.error = ''; renderOverlay(); } return; }
