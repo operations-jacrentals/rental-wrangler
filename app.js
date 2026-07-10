@@ -3930,14 +3930,17 @@ function customerAgreementsSection(c) {
     + `<div class="ag-scroll">${addRow}${rows}${creating ? agreementNewHtml(c) : ''}</div>`;
 }
 /* Phase 2b (spec §4, D4-D8) — the atomic sign=enroll commit. This is the ONE place a signed
-   agreement can change c.accountType (closes the original bug — D4). For a Member type: creates
-   the first invoice now, stamps the deferred-charge markers (scheduledChargeDate/chargeCardId —
-   the Phase-4 seam), and either charges immediately (start date today/past) or leaves it for the
-   cron (future start date) — Jac's confirmed rule, 2026-07-10: "card isn't charged until the start
-   date; if start date is today, charge now." Plan/add-ons default to Monthly + the account's
-   existing rentalProtection toggle — the approved mockup's inline panel has no plan/add-ons picker,
-   so this is a scoping call, flagged for Jac's review, not a silent invention: an Annual option or a
-   Transport add-on toggle can be added to this same panel later without touching the commit logic. */
+   agreement can change c.accountType (closes the original bug — D4). Mirrors membershipEnrollCommit's
+   demo/PROD split (app.js ~L4281) verbatim so the money path is identical: PROD never fabricates a
+   local invoice — the backend (membershipEnroll_) creates it, and for a future start date it now
+   lands the member fields immediately without charging, leaving the daily membershipBillingCron to
+   pick up the first charge on start day (2026-07-10 backend patch closes that gap server-side —
+   see membershipEnroll_/membershipBillingCron in the Apps Script project). Jac's confirmed rule:
+   "card isn't charged until the start date; if start date is today, charge now." Plan/add-ons
+   default to Monthly + the account's existing rentalProtection toggle — the approved mockup's inline
+   panel has no plan/add-ons picker, so this is a scoping call, flagged for Jac's review, not a silent
+   invention: an Annual option or a Transport add-on toggle can be added later without touching the
+   commit logic. */
 function agreementSignCommit(custId) {
   const c = IDX.customer.get(custId); if (!c) return;
   const d = agDraft(c);
@@ -3956,19 +3959,25 @@ function agreementSignCommit(custId) {
     const plan = 'Monthly';   // [scoping call — see header comment]
     const pricing = membershipPricing();
     const fee = membershipFee({ plan, addOns: { transport: false, protection: !!c.rentalProtection } }, pricing);
-    const lines = [{ kind: 'membership', ref: c.customerId, lid: lineLid(), label: `Membership · ${plan} base`, amount: fee.base }];
-    if (fee.protection) lines.push({ kind: 'membership', ref: c.customerId, lid: lineLid(), label: `Rental Protection · ${pricing.protectionPct}%`, amount: fee.protection });
-    const inv = buildMembershipInvoice(c, lines, { date: d.startDate, due: d.startDate });
-    inv.scheduledChargeDate = d.startDate; inv.chargeScheduled = true; inv.chargeCardId = card.id;   // Phase-4 cron seam
     c.paidCadence = plan === 'Annual' ? 'Yearly' : 'Monthly';
     c.commitmentStart = d.startDate; c.commitmentEnd = addMonthsISO(d.startDate, MEMBERSHIP_MONTHS);
     c.autoRenew = false; c.addOns = { transport: false, protection: !!c.rentalProtection };
     c.prepaid = false; c.paidUntil = '';   // Pending (T2.5) until the charge clears
-    reindex('customers', c);
     logAction(c, `Membership enrolled — ${plan} (agreement signed, starts ${d.startDate})`);
     delete state.custAgDraft[custId]; if (state.custAgOpen) state.custAgOpen[custId] = null;
-    if (d.startDate <= TODAY_ISO) { render(); agreementChargeNow(custId, inv.invoiceId); }   // charge NOW — Jac's confirmed rule
-    else { render(); toast(`Signed — first charge of ${money2(fee.total)} scheduled for ${fmtShortDate(d.startDate) || d.startDate}.`); }
+    if (d.startDate <= TODAY_ISO) {
+      if (memIsDemo()) {   // #local — no backend to charge; build + pay the invoice right here (mirrors membershipEnrollCommit's demo branch)
+        const lines = [{ kind: 'membership', ref: c.customerId, lid: lineLid(), label: `Membership · ${plan} base`, amount: fee.base }];
+        if (fee.protection) lines.push({ kind: 'membership', ref: c.customerId, lid: lineLid(), label: `Rental Protection · ${pricing.protectionPct}%`, amount: fee.protection });
+        const inv = buildMembershipInvoice(c, lines, { date: d.startDate, due: d.startDate });
+        markInvoicePaidLocal(inv, 'Card (demo)');
+        c.paidUntil = addMonthsISO(d.startDate, plan === 'Annual' ? 12 : 1);
+        reindex('customers', c); render(); toast('Membership active — saddle up! ✓'); return;
+      }
+      reindex('customers', c); render(); agreementChargeNow(custId, d.startDate);   // PROD — the backend creates the invoice, charges the card, sets paidUntil
+      return;
+    }
+    reindex('customers', c); render(); toast(`Signed — first charge of ${money2(fee.total)} scheduled for ${fmtShortDate(d.startDate) || d.startDate}.`);
     return;
   }
   reindex('customers', c);
@@ -3976,25 +3985,20 @@ function agreementSignCommit(custId) {
   delete state.custAgDraft[custId]; if (state.custAgOpen) state.custAgOpen[custId] = null;
   render(); toast('Agreement signed.');
 }
-/* Charge a just-signed, start-date-is-today membership invoice — mirrors membershipEnrollCommit's
-   demo/PROD split (app.js ~L4090) verbatim so the money path is identical, just entered from the
-   inline agreement flow instead of the retired enroll overlay. On a cleared charge, sets paidUntil
-   (Pending → Active, T2.5); on decline, the invoice stays UNPAID and the account stays Pending until
-   the Phase-4 cron retries — it does NOT revert accountType (the agreement is signed; only the
-   charge is outstanding, same as a Past-Due renewal). */
-async function agreementChargeNow(custId, invoiceId) {
+/* Charge a just-signed, start-date-is-today membership invoice — PROD only (demo mode is handled
+   inline by agreementSignCommit, matching membershipEnrollCommit's demo/PROD split, app.js ~L4281).
+   The backend creates the invoice, charges the card, and sets paidUntil server-side; no local
+   invoice is fabricated here. On a cleared charge, sets paidUntil (Pending → Active, T2.5); on
+   decline, the account stays Pending until the daily membershipBillingCron retries — it does NOT
+   revert accountType (the agreement is signed; only the charge is outstanding, same as a Past-Due
+   renewal). */
+async function agreementChargeNow(custId, startDate) {
   const c = IDX.customer.get(custId); if (!c) return;
-  const inv = IDX.invoice.get(invoiceId); if (!inv) return;
   try {
-    if (memIsDemo()) {
-      markInvoicePaidLocal(inv, 'Card (demo)');
-      c.paidUntil = addMonthsISO(TODAY_ISO, c.paidCadence === 'Yearly' ? 12 : 1);
-      reindex('customers', c); render(); toast('Membership active — saddle up! ✓'); return;
-    }
-    const r = await backendCall('membershipEnroll', { customerId: c.customerId, plan: c.paidCadence === 'Yearly' ? 'Yearly' : 'Monthly', addOns: c.addOns || {}, startDate: inv.date, autoRenew: !!c.autoRenew });
+    const r = await backendCall('membershipEnroll', { customerId: c.customerId, plan: c.paidCadence === 'Yearly' ? 'Yearly' : 'Monthly', addOns: c.addOns || {}, startDate, autoRenew: !!c.autoRenew });
     if (r && r.ok && r.status === 'active') { c.paidUntil = r.paidUntil || addMonthsISO(TODAY_ISO, c.paidCadence === 'Yearly' ? 12 : 1); reindex('customers', c); render(); toast('Membership active — saddle up! ✓'); return; }
     render(); toast((r && r.status === 'incomplete') ? (friendlyPayErr(r.charge) || 'Charge declined — the invoice stays unpaid; the cron will retry.') : ((r && friendlyPayErr(r)) || 'Charge failed — try again from the invoice.'));
-  } catch (e) { render(); toast('Network error — the invoice stays unpaid; try charging it from the Invoices section.'); }
+  } catch (e) { render(); toast('Network error — try again from the Invoices section.'); }
 }
 const BLOCK_TYPE_LABEL = { blacklist: 'Blacklisted', 'invoice-hold': 'Held — invoice(s) unpaid', 'failed-payment': 'Payment failed', 'no-card': 'No card on file' };
 // D17 — Block Account, bottom-RIGHT (spec §6, T3.1). No block → opens the blockPicker (Blacklist
