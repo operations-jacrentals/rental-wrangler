@@ -3051,6 +3051,10 @@ body { font-variant-numeric: tabular-nums; }
 .ao-bar .sp, .ag-foot .sp, .ao-foot .sp { flex: 1; }
 .ao-collapse { color: var(--txt-3); background: none; border: 0; cursor: pointer; display: inline-flex; }
 .ao-collapse:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Size the I.chev SVGs (mirrors .ir-chev/.io-collapse) — without this the library glyph collapses to
+   0×0 and the expand/collapse affordances (incl. the ONLY close on the expanded-agreement viewer) vanish. */
+.acct-chev svg, .ag-chev svg { width: 15px; height: 15px; }
+.ao-collapse svg { width: 14px; height: 14px; }
 .ao-body { padding: 12px; display: flex; flex-direction: column; gap: 12px; }
 .ao-row { display: flex; gap: 11px; }
 .ao-cell { flex: 1; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
