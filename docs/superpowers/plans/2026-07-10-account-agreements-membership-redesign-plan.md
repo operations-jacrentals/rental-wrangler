@@ -247,6 +247,23 @@ the Owner-vs-Manager tier, and the per-action (non-persistent) override.
   (no regression — verify the existing card-gate still behaves); a failed MEMBERSHIP charge does NOT block
   delivery. **Drive all of these in the browser before merging** (this gate can't be unit-tested alone).
 
+**STATUS (2026-07-10) — T3.1-T3.4 built, on `customers-crm/account-agreements-redesign`:**
+- T3.1: `blockPicker` popup shipped — Blacklist (`requireAdmin`, Admin/Owner tier) / Invoice-hold (staff-tier,
+  pick open invoices). `verifyTierOrPassword(minTier, pw)` added (reuses the existing tier ladder + the ONE
+  backend admin password — **no separate Manager/Owner password was built**, per Jac's confirmed call).
+- T3.2: **corrected before wiring** — `accountBlock`'s failed-payment check was originally per-invoice; fixed
+  to a customer-level `c.chargeFailedAt` flag so ANY successful payment anywhere clears it (Jac's Q3 answer).
+  `markChargeFailed()` fires only on a DEFINITE decline (never network/timeout), never on a membership invoice.
+- T3.3: wired into `setRentalStatus`/`setUnitStatus`/`yardCapture`. Blacklist hard-stop REACTIVATES a
+  pre-existing, previously-dormant `/Blacklist/i` check (nothing wrote that string before T3.1). **no-card was
+  deliberately left on the existing Admin-tier/persistent card gate** (stricter than D14's Manager-tier ask —
+  extending it would have weakened a working control). New Manager-tier/non-persistent coverage added only for
+  failed-payment/invoice-hold via `accountBlockGate()`/`accountBlockOverride()`.
+- T3.4: no extra code needed — already satisfied by derivation (accountBlock recomputes fresh) + T3.1's lift
+  control.
+- **A Sonnet browser-verification agent is driving the 9-step test plan above right now** (worktree-isolated).
+  Do not merge/promote until that report comes back clean — this is the core rental gate.
+
 ## Build order rationale
 0 → 1 give a stable data + UI base. 2 and 3 (the money/auth core, the actual bug closure) land next
 on that base. 4 (backend) can proceed in parallel once 2 defines the contract. 5/6 are value/polish.
