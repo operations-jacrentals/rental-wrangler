@@ -226,10 +226,19 @@ The **Phase 2↔Phase 4 seam** (deferred-charge markers) is defined here and con
   2. The live-camera selfie tile (vs. the file-picker fallback currently wired) — a scoped follow-up.
 - **T2.2/T2.3 (Phase 2a, done):** bypass + siblings closed (see commit `4bc2430`).
 - **T2.5 (done):** `Pending` status (commit `c097a9b`).
-- **T2.4 (unsaved-changes guard) and T2.6 (retire overlapping old sections): NOT started.** T2.6 in
-  particular now has everything it was waiting on (T2.1 is functional) — next in queue.
-- **A Sonnet browser-verification agent is being launched for the sign=enroll flow** (worktree-isolated) —
-  do not merge/promote until it comes back clean, same standard as Phase 1 and Phase 3.
+- **T2.4 (done, commit `7a0316c`):** unsaved-changes guard via `guardAgLeave`/`agDraftDirty`. Uses
+  `window.confirm` (OK saves + proceeds, Cancel keeps editing) — deliberately simpler than a custom
+  3-button Save/Discard/Stay popup; loses a true "discard and leave anyway" option. Flagged, not hidden.
+- **T2.6 (done, commit `97ce018`) — with a correction to this plan's own wording:** the old account
+  fields are retired and their derived stats (Total paid/Visits/Customer-for/rented-flags) are folded
+  in, plus the `address` field that Phase 1 had missed (would've been silently dropped). **BUT
+  `paymentMethodsSection` was deliberately KEPT, not retired** — it carries real functionality
+  (ACH/bank-account management, card nickname/make-default/remove) the new Agreements accordion
+  doesn't replicate (still a read-only viewer). Retiring it as originally planned would have been a
+  functional regression, not just de-duplication — this plan's T2.6 wording undersold that risk.
+- **Phase 2 (T2.1-T2.6) and Phase 3 (T3.1-T3.4) are now FULLY BUILT.** Two Sonnet browser-verification
+  agents are running (Phase 3 gate, Phase 2b sign=enroll, both worktree-isolated) — do not
+  merge/promote until BOTH come back clean.
 
 ### Phase 3 tasks (account-block delivery gate) · MAIN (auth/gate — build WITH Jac's live verification)
 Recon (2026-07-10): the On-Rent/delivery gate ALREADY exists — `cardGateBlocked(cust)` (`app.js:365`)
