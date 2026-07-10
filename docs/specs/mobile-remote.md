@@ -18,10 +18,79 @@ yard, in the cab, and (eventually) in the customer's hand.
 
 ---
 
+## Shipped status (2026-07-09)
+
+Reconciliation pass after the 2026-07-09 staging→main promotion. Markers used
+below and inline in this doc: **✅ SHIPPED** (matches this spec), **⚙️ BUILT
+DIFFERENTLY** (live, but diverges from what's written — note explains how),
+**🆕 SHIPPED, NOT SPEC'D** (live capability this spec never described), **⛔
+STILL PLANNED** (spec accurately describes it as unbuilt).
+
+- **Half A (internal reflow) — ✅ SHIPPED**, including two items §8 still lists
+  as future "in scope" work:
+  - **A1 install nudge — ✅ SHIPPED.** `beforeinstallprompt` capture, once-
+    after-2nd-visit gate, `installNudge` overlay (app.js:12024), catalog entry
+    (app.js:12338), boot wiring (app.js:21420–21431).
+  - **A2 offline shell (service worker) — ✅ SHIPPED.** `sw.js` (shell
+    allowlist, stale-while-revalidate, cache name keyed to the `?v=` token per
+    R13), registered production-origin-only by `swInit` (app.js:14473), plus an
+    "update ready" reload toast this spec doesn't mention.
+  - A3 (tablet polish) and A4 (push) — ⛔ still planned, matches spec (out of
+    v1).
+- **Footer dock — ⚙️ BUILT DIFFERENTLY.** §2.1/§6.1 describe one segmented
+  card-toggle bar + a dot nav. Shipped instead: **three independent
+  per-column toggle bars** (`MOBILE_TOGGLE_GROUPS`, app.js:8685 — left
+  Units/Categories, middle Rentals/Calendar, right Customers/Sales), rendered
+  by `mobileDockEl` (app.js:8713). Dot-nav markup is gone; only a now-dead
+  `[data-mcol]` click handler remains (app.js:15618), still commented `§M1 dot
+  nav`.
+- **Swipe stepping between main cards — ✅ SHIPPED**, and matches §7.1's rule
+  more cleanly than the old 3-column model implied: footer swipe steps only
+  `MAIN_CARDS = ['units','rentals','customers']` (app.js:8691), folding a
+  sub-card to its parent first via `mainCardOfMember` (app.js:8693); wired in
+  the swipe handler at app.js:21458.
+- **Role-based landing card — 🆕 SHIPPED, NOT SPEC'D.** `ROLE_LANDING` +
+  `applyRoleLanding` (app.js:21337–21357, called from `attemptLogin` at
+  app.js:21388) lands each role on both its desktop column reveal and its
+  phone active column at login (mechanic/M.Tech → Units service lens, office →
+  Rentals, sales → Customers, driver → the Calendar sub-card). This spec never
+  described a landing-card concept — worth folding into §2.1/§6.1 as canon on
+  the next revision.
+- **Shop card — retired app-wide 2026-07-07, not merely "hidden from mobile
+  nav."** `GRID_CARDS` (config.js:353) no longer includes it on **either**
+  desktop or mobile; Work Orders/Service Orders/Inspections live in each
+  Unit's detail view now, `SHOP_TYPES` survives only as routing vocabulary.
+  §1's "Shop · Invoices · Customers" and the §2.1 role table's "Shop card"
+  mention are stale (see inline notes below). Invoices similarly folded into
+  Customer Details on 2026-07-08 — also predates and is broader than this
+  spec's scope.
+- **Offline banner + "last synced" money stamp (§6.1, §11.14) — ⛔ STILL
+  PLANNED as specifically described.** The SW (A2) ships, and a generic red
+  "⚠ Not saving" sync-failure banner exists (`R25`/`renderSyncBanner`,
+  app.js:21163), but there is no dedicated hazard-stripe "Working offline —
+  last synced HH:MM" banner and no per-money-figure freshness stamp. AC 6 (§9)
+  is only partially met — see inline note.
+- **Half B (customer self-service portal) — ⛔ STILL PLANNED, spec accurate.**
+  Zero occurrences of `customerPortal*`, `portalCall`, or `portalGrants`
+  anywhere in `app.js`. §2.3/§5.2/§6.2/Phase B remain correct as unbuilt — no
+  reconciliation needed there.
+- **§11.15 (`mobileCol` string/int bug) — appears RESOLVED.** The
+  string-assigning reset path this question cites (app.js:2142) no longer
+  exists there (now `saveSort`); every current write to `state.mobileCol` is
+  numeric (`COLUMNS.findIndex(...)` or `+dataset.mcol`), and it still
+  initializes as the integer `0` (app.js:2222). Recommend closing the question
+  unless someone finds a remaining string-assignment path.
+
+---
+
 ## 1. Goal & Problem
 
 Rental Wrangler is built for **JacRentals** as a desktop-first ops console (a
 3-column yard grid: Units · Categories · Rentals / Shop · Invoices · Customers).
+*(Note, 2026-07-09: Shop and Invoices have since been retired as standalone
+grid cards — folded into Unit detail and Customer Details respectively; see
+"Shipped status" above. This line is stale but left intact as historical
+context.)*
 But the people who generate the data are rarely at a desk:
 
 - **Yard/field hands** (mechanics, M.Tech, drivers) walk units, run inspections,
@@ -40,7 +109,7 @@ Two halves, very different maturity:
 
 | Half | Maturity | This spec's job |
 |---|---|---|
-| **A — Internal mobile reflow** (M0–M3) | substantially shipped | Document as **canon**, close the remaining gaps (offline/service-worker, tablet polish, gesture edge-cases). |
+| **A — Internal mobile reflow** (M0–M3) | substantially shipped — **A1/A2 also shipped as of 2026-07-09** (see "Shipped status"); remaining gap is tablet polish + gesture edge-cases | Document as **canon**, close the remaining gaps (offline/service-worker ✅ done 2026-07-09, tablet polish, gesture edge-cases). |
 | **B — Customer self-service portal** | **unbuilt** | Greenfield design: data gates, auth model, screens, backend contract — the bulk of the open questions. |
 
 Why it matters: half A is what keeps the field crew on the app at all; half B is a
@@ -64,7 +133,7 @@ layer, **no separate mobile render path**) from
 | Responsive grid 3 → 2 → 1 columns | `style.css §M0` (style.css:300+) | ✅ shipped |
 | Single-column phone grid (no 3-wide scroll track; JS owns horizontal) | `style.css` `.is-phone .grid` | ✅ shipped |
 | `state.mobileCol` (0 Yard · 1 Rentals · 2 Customers) | app.js:1920 | ✅ shipped |
-| Per-column bottom dock + card-toggle bar + dot nav (`§M1`) | `style.css §M1`; dock app.js:7499–7522 | ✅ shipped |
+| Per-column bottom dock + card-toggle bar + dot nav (`§M1`) | `style.css §M1`; dock app.js:7499–7522 | ⚙️ shipped, BUILT DIFFERENTLY (2026-07-09): now **3 independent per-column toggle bars** (`MOBILE_TOGGLE_GROUPS`, app.js:8685; `mobileDockEl`, app.js:8713), not one bar; dot-nav markup removed, only a dead `[data-mcol]` click handler remains (app.js:15618) — see "Shipped status" above |
 | Swipe nav: footer swipe = change column; grid swipe = card Back/Forward | `boot` pointer listeners app.js:16118–16147 | ✅ shipped |
 | Bottom-sheet overlays + winpicker/date-picker sheets (`§M3`) | `style.css §M3`; `dismissTopSheet`/popstate app.js:16115 | ✅ shipped |
 | Touch-target floor (≥44px) on interactive controls (`§M-touch`) | `style.css §M-touch` | ✅ shipped |
@@ -78,6 +147,11 @@ layer, **no separate mobile render path**) from
 | Phone record-card fixes (drop operator name, timeline reflow, hide wr-rail) | `style.css §M5` | ✅ shipped |
 | **PWA manifest** (standalone, theme-color, 192/512 + maskable icons) | `manifest.webmanifest`; `index.html:12` | ✅ shipped |
 
+*(🆕 2026-07-09, not originally in this spec: role-based landing —
+`ROLE_LANDING`/`applyRoleLanding`, app.js:21337 — sets each role's initial
+desktop column reveal AND phone active column at login. See "Shipped status"
+above.)*
+
 **Haptics detail (canon):** `haptic()` no-ops when `state.hapticsOff`, when
 `'vibrate'` is absent (iOS — vibration is Android-only), or under
 `prefers-reduced-motion`. One pulse on a committed action; `[12,30,12]` for a
@@ -88,9 +162,9 @@ success tick, `[35,25,35]` for an abort buzz, single short ticks (`8`/`10`) for
 
 | Gap | Evidence | Note |
 |---|---|---|
-| **No service worker** | no `serviceWorker.register` anywhere; manifest only | App is **online-only**. A dead-zone yard load = blank. The roadmap calls this out explicitly. |
+| ~~No service worker~~ — **✅ RESOLVED 2026-07-09** | `sw.js` + `swInit` (app.js:14473) now register a SW, production-origin only | Was: app is online-only, dead-zone load = blank. Now: A2 shipped — see "Shipped status" above. |
 | **External-chats strip is a shell** | 2026-06-14 design §M1 | Customer/vendor SMS/email slot exists but is dark — blocked on `comms-notifications` backend. |
-| **No "Add to Home Screen" prompt / install affordance** | none found | Manifest exists but nothing surfaces install. |
+| ~~No "Add to Home Screen" prompt / install affordance~~ — **✅ RESOLVED 2026-07-09** | `installNudge` overlay + `beforeinstallprompt` capture (app.js:12024, 21420–21431) | Was: manifest exists but nothing surfaces install. Now: A1 shipped — see "Shipped status" above. |
 | **Tablet (2-col) is "un-broken," not polished** | 2026-06-14 scope | Rentals/dispatch + Customers got no first-class phone polish by design. |
 | **Push notifications** | none | Manifest + no SW = no Web Push. |
 
@@ -129,7 +203,7 @@ the fallback when a backend predates `settings.roleMeta`):
 
 | Role (built-in) | Default tier | Primary mobile use |
 |---|---|---|
-| Mechanic | staff | Shop card, WOs, inspections, team chat — **heaviest phone user** |
+| Mechanic | staff | Shop card *(retired 2026-07-07 — now Units' service lens, see "Shipped status")*, WOs, inspections, team chat — **heaviest phone user** |
 | M.Tech | staff | Inspections, ready-rate, units |
 | Driver | staff | Rentals/dispatch read, wash, team chat |
 | Office | money | Quotes, take-a-card, invoices, customers |
@@ -383,8 +457,8 @@ These are **canon, documented here so Jac can critique the live behavior**:
 
 | New surface | Design | R-stamp / catalog |
 |---|---|---|
-| **Offline banner** | a thin hazard-stripe (yellow) bar pinned under the header: "Working offline — last synced 9:14 AM." Steel, stamped Saira. | reuse the existing toast/banner stamp if one exists; else stamp + regen `rule-usage.js`. **Not a popup** → no `WINDOW_CATALOG`. |
-| **Install / Add-to-Home-Screen nudge** | a one-time dismissible **bottom sheet** (steel, rivets, orange "Saddle up — add to home screen" primary). Honors `beforeinstallprompt` on Android; iOS shows a stamped illustration of the Share→Add flow. | **New popup → `WINDOW_CATALOG` entry required** + `check-window-catalog` update; `data-r` on its buttons. |
+| **Offline banner** — ⛔ STILL PLANNED as specifically described (2026-07-09) | a thin hazard-stripe (yellow) bar pinned under the header: "Working offline — last synced 9:14 AM." Steel, stamped Saira. | Not built this way. The only live banner is the unrelated generic red "⚠ Not saving" `R25` sync-failure banner (app.js:21163) — different trigger, copy, and purpose. reuse the existing toast/banner stamp if one exists; else stamp + regen `rule-usage.js`. **Not a popup** → no `WINDOW_CATALOG`. |
+| **Install / Add-to-Home-Screen nudge** — **✅ SHIPPED 2026-07-09** | a one-time dismissible **bottom sheet** (steel, rivets, orange "Saddle up — add to home screen" primary). Honors `beforeinstallprompt` on Android; iOS shows a stamped illustration of the Share→Add flow. | Catalogued as `installNudge` (`WINDOW_CATALOG` entry app.js:12338); overlay app.js:12024; boot wiring app.js:21420–21431. **New popup → `WINDOW_CATALOG` entry required** + `check-window-catalog` update; `data-r` on its buttons. |
 
 ### 6.2 Half B — customer self-service portal (greenfield)
 
@@ -490,13 +564,15 @@ formula crosses the boundary.
   haptics as shipped behavior.
 - **A1 — Install affordance.** `beforeinstallprompt` capture + the
   Add-to-Home-Screen bottom sheet (Android) and the iOS Share→Add illustration.
-  *In scope.*
+  *In scope.* — **✅ SHIPPED 2026-07-09**, see "Shipped status" above.
 - **A2 — Offline shell (service worker).** Register a SW that caches the static
   SPA shell (`index.html`, `app.js`, `style.css`, `config.js`, `data.js`, fonts,
   icons) for an instant + dead-zone-tolerant load; an **offline banner**; a
   cache-version keyed to the `?v=` deploy token so a release still busts cleanly.
   **Read-through to the live backend stays online-only in v1** (no offline
-  writes). *In scope, high-value.*
+  writes). *In scope, high-value.* — **✅ SHIPPED 2026-07-09** for the SW +
+  cache-versioning; the **offline banner** sub-piece is NOT built as described
+  (see §6.1 note) — see "Shipped status" above.
 - **A3 — Tablet (2-col) polish + Rentals/dispatch phone pass.** *Out of v1*
   unless Jac pulls it in.
 - **A4 — Push notifications.** *Out of v1* (needs SW + push backend).
@@ -531,10 +607,15 @@ backend), portal payments.
 4. Touch targets ≥44px on all `.is-phone` interactive controls; iOS field-focus
    never zooms.
 5. **A1:** the install sheet appears once, is dismissible, never re-nags, and is
-   stamped + catalogued (`check-window-catalog` passes).
+   stamped + catalogued (`check-window-catalog` passes). — ✅ met by code as of
+   2026-07-09 (`installNudge`, catalog entry app.js:12338); not independently
+   re-verified live in this pass.
 6. **A2:** with the network killed after first load, the app shell loads from
    cache and shows the offline banner; a new deploy (`?v=` bump) still serves new
-   bytes (cache version follows the token).
+   bytes (cache version follows the token). — ⚙️ PARTIAL as of 2026-07-09: the
+   SW shell-cache + cache-version-follows-token half is confirmed in `sw.js`;
+   the specific "offline banner" is not implemented as described (only the
+   unrelated `R25` sync-failure banner exists) — see §6.1 note.
 
 ### Half B
 
@@ -709,6 +790,13 @@ new phone-column code could trip on. Should this spec's A-phase work normalize
 `mobileCol` to always be an integer index (with a `COLUMN_OF`/name→index helper
 at the reset site)? **Draft: yes — normalize to an integer in A1, it's a cheap
 de-risk; surface to Jac since it touches shipped canon.**
+
+**Status 2026-07-09: appears RESOLVED.** The string-assigning reset path this
+question cites at app.js:2142 no longer exists there (that line is now inside
+`saveSort`); every current write to `state.mobileCol` found in `app.js` is
+numeric, and it still initializes as the integer `0` (app.js:2222).
+Recommend closing this question unless someone finds a remaining
+string-assignment path.
 
 ---
 
