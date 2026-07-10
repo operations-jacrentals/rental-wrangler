@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sample Quote &amp; Invoice — JacRentals</title>
+<meta name="robots" content="index,follow" />
+<style>
+  :root{
+    --bg:#f7f6f3; --panel:#ffffff; --ink:#1c2126; --ink2:#4c555f; --line:#e3e0d9;
+    --accent:#c25a2b; --accent-ink:#7a3a1a;
+    --serif:'Iowan Old Style','Palatino Linotype',Georgia,'Times New Roman',serif;
+    --sans:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#14171b; --panel:#1b1f24; --ink:#e7ebf0; --ink2:#a3acb6; --line:#2b3138; --accent:#e08a52; --accent-ink:#e08a52; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.6;font-size:17px}
+  .wrap{max-width:720px;margin:0 auto;padding:0 22px 80px}
+  header{border-bottom:3px solid var(--accent);margin-bottom:34px;padding:34px 0 18px}
+  .mark{font-family:var(--sans);font-weight:800;letter-spacing:.5px;font-size:15px;text-transform:uppercase;color:var(--accent-ink)}
+  h1{font-family:var(--serif);font-weight:600;font-size:38px;line-height:1.1;margin:10px 0 6px;text-wrap:balance}
+  .eff{color:var(--ink2);font-size:14px;margin:0}
+  h2{font-family:var(--serif);font-weight:600;font-size:23px;margin:38px 0 8px}
+  p{margin:0 0 14px;color:var(--ink)} p.lead{color:var(--ink2)}
+  ul{margin:0 0 14px;padding-left:22px} li{margin:0 0 8px}
+  .callout{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;padding:14px 18px;margin:18px 0}
+  a{color:var(--accent-ink);text-decoration:underline}
+  strong{font-weight:700}
+  footer{margin-top:46px;padding-top:18px;border-top:1px solid var(--line);color:var(--ink2);font-size:14px}
+  .doc{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px 22px;margin:18px 0}
+  .doc h3{font-family:var(--serif);font-weight:600;font-size:20px;margin:0 0 4px}
+  .doc .sub{color:var(--ink2);font-size:13px;margin:0 0 14px}
+  table{width:100%;border-collapse:collapse;font-size:15px;margin:0 0 8px}
+  th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line)}
+  th{color:var(--ink2);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .total{display:flex;justify-content:space-between;align-items:baseline;margin-top:10px;font-size:15px}
+  .total .amt{font-family:var(--serif);font-weight:600;font-size:24px}
+  .badge{display:inline-block;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;
+    background:var(--accent);color:#fff;border-radius:5px;padding:2px 8px;vertical-align:middle;margin-left:6px}
+  @media (prefers-color-scheme: dark){ .badge{color:#14171b} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="mark">JacRentals</div>
+    <h1>Sample Quote &amp; Invoice</h1>
+    <p class="eff">Heavy-equipment rental · Sulphur, Louisiana</p>
+  </header>
+
+  <div class="callout">
+    <p style="margin:0"><strong>This is a public sample.</strong> When a JacRentals customer receives a service text about a quote or invoice, this is the kind of page the link in that message opens. The details below use <strong>example data, not a real customer</strong> — it is published here so anyone (including messaging reviewers) can see what our links show, without a login.</p>
+  </div>
+
+  <div class="doc">
+    <h3>Rental Quote <span class="badge">Sample</span></h3>
+    <p class="sub">Quote #04i07Ju26 · Prepared for a sample customer · Valid 14 days</p>
+    <table>
+      <thead><tr><th>Equipment</th><th>Period</th><th class="num">Rate</th><th class="num">Amount</th></tr></thead>
+      <tbody>
+        <tr><td>12k Excavator — Yanmar ViO55</td><td>1 day</td><td class="num">$1.11/day</td><td class="num">$1.11</td></tr>
+      </tbody>
+    </table>
+    <div class="total"><span>Estimated total</span><span class="amt">$1.11</span></div>
+  </div>
+
+  <div class="doc">
+    <h3>Invoice / Balance <span class="badge">Sample</span></h3>
+    <p class="sub">Invoice #04i07Ju26 · Due Jul 20, 2026</p>
+    <table>
+      <thead><tr><th>Description</th><th class="num">Amount</th></tr></thead>
+      <tbody>
+        <tr><td>Equipment rental — 12k Excavator</td><td class="num">$1,150.00</td></tr>
+        <tr><td>Delivery &amp; pickup</td><td class="num">$90.00</td></tr>
+      </tbody>
+    </table>
+    <div class="total"><span>Balance due</span><span class="amt">$1,240.00</span></div>
+  </div>
+
+  <h2>About our text messages</h2>
+  <p>JacRentals sends <strong>service (transactional) text messages</strong> only to customers who provided their mobile number and agreed to receive them when renting equipment or opening an account, in person or over the phone. Messages relate to your own rentals — quotes and totals, reservation and return-date reminders, delivery and pickup (ETA) alerts, and invoice and balance notices.</p>
+  <div class="callout">
+    <p style="margin:0"><strong>Message frequency varies</strong> with your rental activity. <strong>Message and data rates may apply.</strong> Reply <strong>STOP</strong> to opt out at any time, or <strong>HELP</strong> for help.</p>
+  </div>
+  <p>See our <a href="./sms-terms.html">Text Message Terms</a> and <a href="./privacy.html">Privacy Policy</a>. We do not sell or share your mobile number or messaging consent with third parties or affiliates for their marketing purposes.</p>
+
+  <h2>Contact us</h2>
+  <p>JacRentals — Sulphur, Louisiana<br>
+  Email: <a href="mailto:operations@jacrentals.com">operations@jacrentals.com</a><br>
+  Web: <a href="https://www.jacrentals.com/">www.jacrentals.com</a></p>
+
+  <footer>© 2026 JacRentals. Sample page for illustration; figures are example data, not a real customer quote or invoice.</footer>
+</div>
+</body>
+</html>
