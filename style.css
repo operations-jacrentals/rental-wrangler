@@ -2626,8 +2626,14 @@ select.nc-in { cursor: pointer; }
 .ag-tabs .add-field { align-self: center; margin-bottom: 2px; }
 .ag-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
 .ag-dot.ok { background: var(--green); }
-.ag-dot.mid { background: var(--yellow); box-shadow: 0 0 0 3px var(--yellow-bg); }   /* §7.1c in-progress */
+.ag-dot.mid { background: var(--yellow); box-shadow: 0 0 0 3px var(--yellow-bg); }   /* wrops-row live indicator */
 .ag-dot.bad { background: var(--red); box-shadow: 0 0 0 3px var(--red-bg), 0 0 6px color-mix(in srgb, var(--red) 40%, transparent); }
+/* §7.1c / Phase 6 (2026-07-10 dot->background sweep) — card capture status reads via the TAB's
+   own background tint (not a corner dot), same soft-bg + solid-ink treatment as .c-green/.c-yellow/.c-red. */
+.ag-tab.ok { background: var(--green-bg); color: var(--green); }
+.ag-tab.mid { background: var(--yellow-bg); color: var(--yellow); }   /* in-progress */
+.ag-tab.bad { background: var(--red-bg); color: var(--red); box-shadow: 0 0 6px color-mix(in srgb, var(--red) 25%, transparent); }
+.ag-tab.on.ok, .ag-tab.on.mid, .ag-tab.on.bad { color: var(--txt); }   /* selected: the underline already marks "active" — status still reads via background alone */
 /* short status banner — a thin red hazard rail, calm body */
 .ag-banner { position: relative; padding: 9px 13px 9px 20px; border-radius: 10px; margin: 2px 0 16px; font-size: 12.5px; font-weight: 600; }
 .ag-banner.bad { background: var(--red-bg); border: 1px solid var(--accent-line); border-color: var(--red); color: var(--red); -webkit-text-fill-color: color-mix(in srgb, var(--red) 65%, white); text-shadow: 0 0 3px var(--red), 0 0 7px color-mix(in srgb, var(--red) 60%, transparent); box-shadow: 0 0 6px color-mix(in srgb, var(--red) 25%, transparent); }
@@ -3374,12 +3380,15 @@ body { font-variant-numeric: tabular-nums; }
 .funnel-hd { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 13px; }
 .funnel-hd .fh-rule { flex: 1; border-top: 1.5px dashed var(--tan, #c2925a); opacity: .4; }   /* saddle-stitch flanks (ranch seasoning) */
 .funnel-sec .seg button.on-accent { background: var(--accent); color: var(--on-orange); }     /* selected tab = the ONE orange (rule #3) */
-.seg .seg-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
-.seg .seg-dot.due { background: var(--red); box-shadow: 0 0 0 2px color-mix(in srgb, var(--red) 30%, transparent); }
-.seg .seg-dot.soon { background: var(--yellow); }
-.seg .seg-dot.ok { background: var(--green); }
-.seg button.on-accent .seg-dot.soon { background: #1a1205; }   /* keep the dot legible on the orange selected tab */
-.seg button.on-accent .seg-dot.ok { background: #04150d; }
+/* Phase 6 (2026-07-10 dot->background sweep) — next-action urgency reads via the segment's own
+   background tint (not a corner dot), same soft-bg + solid-ink treatment as .c-green/.c-yellow/.c-red. */
+.funnel-sec .seg button.due { background: var(--red-bg); color: var(--red); }
+.funnel-sec .seg button.soon { background: var(--yellow-bg); color: var(--yellow); }
+.funnel-sec .seg button.ok { background: var(--green-bg); color: var(--green); }
+.funnel-sec .seg button.on-accent.due,
+.funnel-sec .seg button.on-accent.soon,
+.funnel-sec .seg button.on-accent.ok { background: var(--accent); color: var(--on-orange); }   /* selected always wins the fill — orange stays the ONE selection signal */
+.funnel-sec .seg button.on-accent.due { box-shadow: inset 0 0 0 2px var(--red); }   /* due still surfaces even on the active tab, matching the prior un-muted red dot */
 
 .fb-toprow { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 /* R28 — the account button: a neutral steel chip, stamped label = the account type */
