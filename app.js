@@ -4195,10 +4195,10 @@ function invoiceStatMenu(i, c, open) {
 }
 function invoiceExpandedHtml(i, c, cs, menuOpen) {
   return `<div class="inv-open">`
-    + `<div class="io-bar"><div class="io-bar-top">`
+    + `<div class="io-bar"><div class="io-bar-top js-inv-collapse" data-cust="${esc(c.customerId)}" data-tip="Collapse">`
     + `<span class="io-id">${esc(invoiceShort(i.invoiceId))}</span>`
     + invoiceStatMenu(i, c, menuOpen)
-    + `<button class="io-collapse js-inv-collapse" data-cust="${esc(c.customerId)}" data-tip="Collapse">${I.chev}</button>`
+    + `<button class="io-collapse" data-tip="Collapse">${I.chev}</button>`
     + `</div></div>`
     + `<div class="io-sheet-wrap">${invoiceDocHtml(i, { interactive: true })}</div>`
     + `</div>`;
@@ -14667,9 +14667,11 @@ function onClick(e) {
   if (closest('.js-inv-view')) { e.stopPropagation(); const b = closest('.js-inv-view'); state.custInvView = state.custInvView || {}; state.custInvView[b.dataset.rec] = b.dataset.val; if (state.custInvOpen) state.custInvOpen[b.dataset.rec] = null; if (state.custInvMenu) state.custInvMenu[b.dataset.rec] = null; return render(); }
   if (closest('.js-kpi-mode')) { e.stopPropagation(); const rec = closest('.js-kpi-mode').dataset.rec; state.custKpiMode = state.custKpiMode || {}; state.custKpiMode[rec] = !state.custKpiMode[rec]; return render(); }
   // §3.3 — embedded Invoices accordion (Customer Details). Row toggles open (one at a
-  // time); the status pill toggles its action menu; the header ✕ collapses. All view-local.
+  // time); the status pill toggles its action menu; clicking anywhere else in the open
+  // invoice's header (not just the chevron) collapses it — excluding the status menu's
+  // own dropdown (io-menu-wrap), whose Pay/Print/Refund items need the click themselves.
   if (closest('.js-inv-statmenu')) { e.stopPropagation(); const b = closest('.js-inv-statmenu'); const cu = b.dataset.cust, rec = b.dataset.rec; state.custInvMenu = state.custInvMenu || {}; state.custInvMenu[cu] = (state.custInvMenu[cu] === rec) ? null : rec; return render(); }
-  if (closest('.js-inv-collapse')) { e.stopPropagation(); const cu = closest('.js-inv-collapse').dataset.cust; if (state.custInvOpen) state.custInvOpen[cu] = null; if (state.custInvMenu) state.custInvMenu[cu] = null; return render(); }
+  if (closest('.js-inv-collapse') && !closest('.io-menu-wrap')) { e.stopPropagation(); const cu = closest('.js-inv-collapse').dataset.cust; if (state.custInvOpen) state.custInvOpen[cu] = null; if (state.custInvMenu) state.custInvMenu[cu] = null; return render(); }
   if (closest('.js-inv-add-pill')) { e.stopPropagation(); const b = closest('.js-inv-add-pill'); if (state.linking && state.linking.targetCard === 'invoices') { e.preventDefault(); return linkCreateInvoice(b.dataset.cust); } return; }   // §3.4 — otherwise drag-only (hidden except mid-drag)
   if (closest('.js-inv-row')) { e.stopPropagation(); const b = closest('.js-inv-row'); if (state.linking && state.linking.targetCard === 'invoices' && b.dataset.rec) { e.preventDefault(); return openLinkConfirm(b.dataset.rec); }   /* §3.4 — pick this invoice as the menu-link target */ const cu = b.dataset.cust, rec = b.dataset.rec; state.custInvOpen = state.custInvOpen || {}; state.custInvOpen[cu] = (state.custInvOpen[cu] === rec) ? null : rec; if (state.custInvMenu) state.custInvMenu[cu] = null; return render(); }
   // ── Phase 1 (2026-07-10 Account/Agreements redesign, T1.1-T1.4) — the new top-of-card

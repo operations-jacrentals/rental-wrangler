@@ -3252,7 +3252,7 @@ body { font-variant-numeric: tabular-nums; }
 .inv-open { border: 1px solid var(--accent-line); border-radius: 12px; background: var(--card);
   box-shadow: 0 0 0 1px var(--accent-soft); overflow: hidden; }
 .io-bar { background: linear-gradient(180deg, var(--card-head), var(--panel-2)); padding: 11px 13px; border-bottom: 1px solid var(--line); }
-.io-bar-top { display: flex; align-items: center; gap: 9px; }
+.io-bar-top { display: flex; align-items: center; gap: 9px; cursor: pointer; }   /* clicking anywhere in the header collapses (not just the chevron) */
 .io-id { font-family: ui-monospace, monospace; font-weight: 800; font-size: 14px; }
 .io-collapse { width: 24px; height: 24px; border-radius: 7px; border: 1px solid var(--line); background: var(--panel); color: var(--txt-3);
   cursor: pointer; display: grid; place-items: center; flex: 0 0 auto; }
