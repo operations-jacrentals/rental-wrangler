@@ -155,6 +155,53 @@ new UI). Each task ends by regenerating `rule-usage.js` + `WINDOW_CATALOG` as ne
 - Verify each: `node ci/smoke.mjs`, `node ci/gen-rule-usage.mjs --check`,
   `node ci/check-window-catalog.mjs`.
 
+### Phase 2 tasks (sign-is-enrollment + close the bypass) · MAIN (money/gate)
+Depends on Phase 1's agreement record + sign action. Anchors marked `⟶P1` bind once Phase 1 lands.
+The **Phase 2↔Phase 4 seam** (deferred-charge markers) is defined here and consumed by the cron.
+
+- **T2.1 — Sign = enroll (atomic).** In Phase 1's agreement sign handler `⟶P1`, when the agreement's
+  `accountType` is a Member type:
+  1. Require `startDate` (server-authoritative echo of the D6 button gate).
+  2. Fee via `membershipFee({plan, addOns})` (`app.js:3417`).
+  3. Create the first invoice via `buildMembershipInvoice(c, lines, {date:startDate, due:startDate})`
+     (`app.js:3765`), `membership:true`, `kind:'membership'` lines (mirror `membershipEnrollCommit`
+     lines, `app.js:3798-3800`).
+  4. **Deferred-charge seam (Phase-4 cron consumes this):** stamp the invoice
+     `inv.scheduledChargeDate = startDate; inv.chargeScheduled = true; inv.chargeCardId = <agreement card>`.
+  5. Apply membership fields (mirror `memApplyActive`, `app.js:3778`): `paidCadence`, `commitmentStart/End`,
+     `addOns`, `autoRenew`, `unlimitedTransport`/`rentalProtection` per add-ons — **but leave `paidUntil`
+     empty** so pricing isn't granted before the charge clears.
+  6. **Charge timing decision `[CONFIRM w/ Jac]`:** `startDate <= today` → charge immediately at sign
+     (reuse the `stripeChargeInvoice` money path, same as `membershipEnrollCommit`) so same-day starts
+     activate instantly; `startDate` future → defer to the cron. Both write the SAME invoice + markers; the
+     cron is idempotent (never re-charges a paid invoice). Recommended default; confirm before building.
+- **T2.5 — `membershipStatus` gains `Pending`** (`app.js:3436`). Add, right after the `Member` check:
+  a scheduled-but-uncharged future enrollment (`commitmentStart > TODAY_ISO && !paidUntil`) → `'Pending'`.
+  `isActiveMember` (`app.js:3450`) stays `Active|Past Due` only → **Pending grants NO member pricing** until
+  the cron charges on the start date and sets `paidUntil` → `Active`. Update the status→label maps
+  (incl. Phase-0 `membershipRowStatus`). Verify: logic-test — a future-start signed member reads Pending,
+  gets retail pricing, then Active after a simulated charge.
+- **T2.2 — Remove the raw account-type bypass** (closes the original bug). Account type is no longer
+  directly settable:
+  - Remove the `js-nc-acct` pills from the account UI (`acctPills`/`NC_ACCOUNT_TYPES`, `app.js:10734`/`15764`)
+    and neuter the handler (`app.js:14068`) + the `saveNewCustomer` writes (`app.js:15835`/`15851`).
+  - New/edited customers **derive** non-member type: `company ? 'Business' : 'Non-Business'` (reuse the
+    existing company→Business auto-promote, `app.js:17104`/`18148`). **Member types ONLY via a signed
+    agreement (T2.1).**
+  - Retire `openMembershipEnroll` (`app.js:3771`) + the `membershipEnroll` overlay (`app.js:10207`) —
+    absorbed into the agreement sign flow; removing it kills the second enroll surface (a second bypass).
+- **T2.3 — Close the Wrangler/CSV siblings.** In `wrAccount` (`app.js:11669`), clamp to **non-member only**:
+  a `/member/i` input returns `''` (dropped), never maps to a Member value. Result: `wrCleanFields`
+  (`app.js:11766`) refuses `accountType: "Business Member"` from chat + CSV. Verify: an UPDATE/import with a
+  member value leaves `accountType` unchanged (skipped), not silently granted.
+- **T2.4 — Unsaved-changes guard (D10).** On collapsing an open agreement or leaving the customer card with a
+  dirty agreement draft (`state.custAgOpen` + a dirty flag `⟶P1`), intercept with "Save Changes?"
+  (Save / Discard / stay). Reuse the existing `backGuard`/`syncBackGuard` machinery (`app.js` §12,
+  ~`10090`). Contextual prompt, not a permanent bar (D27).
+- **Acceptance (Phase 2 = the bug is CLOSED):** `grep` proves no path sets a Member `accountType` except the
+  agreement-sign handler; Wrangler + CSV reject Member; a future-start signed member reads **Pending** with
+  **retail** pricing until charged; logic-test covers enroll→pending→active + the two sibling refusals.
+
 ## Build order rationale
 0 → 1 give a stable data + UI base. 2 and 3 (the money/auth core, the actual bug closure) land next
 on that base. 4 (backend) can proceed in parallel once 2 defines the contract. 5/6 are value/polish.
