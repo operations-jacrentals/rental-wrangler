@@ -223,7 +223,9 @@ supersedes the earlier `[NEEDS CONFIRM]` interpretation below with the final, Ja
   several rounds):** the tile's real number **never changes**. Toggling ON adds, per affected tile:
   (1) a small **arrow directly right of the number** — green `▼` (member savings) or red `▲` (retail
   penalty); (2) a **diff figure inline next to the label**, e.g. `Open ▼  −$433` on one line, tile
-  value unchanged above it. Only the **Open** and **Paid YTD** dollar tiles get arrows/deltas —
+  value unchanged above it. Only the **Open** and **1YR AVG** (renamed from Paid YTD, 2026-07-10:
+  a trailing-365-day paid total smoothed to a monthly run-rate — Paid YTD reset toward $0 every
+  January, 1YR AVG never does) dollar tiles get arrows/deltas —
   **#Invoices and Avg-pay are rate-independent, no arrows**. Reuses the existing member-vs-retail math
   (`membershipEconomics` ~`app.js:3208`, `memberDaily` rates) — the same math the removed always-on
   economics block used, now surfaced on demand as a pitch. **Replaces** that always-on block entirely

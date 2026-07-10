@@ -4111,20 +4111,20 @@ function invViewToggle(c) {
   ]);
 }
 /* invs = the CUSTOMER-WIDE invoice list (always — Open/All only filters the ROW LIST below this
-   strip, never these aggregates; Paid YTD in particular must stay a true lifetime figure, not
+   strip, never these aggregates; 1YR AVG in particular must stay computed off the full list, not
    collapse to ~0 when the 'Open' filter hides every already-paid invoice). Member-Mode (R29
    toggleChip, reused verbatim from Phase 3) is ON by default for a member (the retention/
    cancel-penalty pitch) and OFF by default for a non-member (the join pitch) — spec §7b. */
 function invSummaryStrip(invs, c) {
-  const yr = TODAY.getFullYear();
-  let open = 0, paidYtd = 0; const payDays = [];
+  let open = 0, paid12mo = 0; const payDays = [];
   invs.forEach((i) => {
     const t = invoiceTotals(i);
     open += Math.max(0, t.balance);
     const d = parseISO(i.date);
-    if (d && d.getFullYear() === yr) paidYtd += Math.max(0, t.paid);
+    if (d) { const age = dayDiff(d, TODAY); if (age >= 0 && age < 365) paid12mo += Math.max(0, t.paid); }
     if (t.paid > 0.005 && i.paidAt && d) { const diff = dayDiff(d, parseISO(i.paidAt)); if (diff >= 0 && diff < 3650) payDays.push(diff); }
   });
+  const avg1yr = paid12mo / 12;   // 1YR AVG — trailing-365-day paid total smoothed to a monthly run-rate (never resets to ~0 at New Year's like a calendar YTD would)
   const avg = payDays.length ? Math.round(payDays.reduce((a, b) => a + b, 0) / payDays.length) : null;
   state.custKpiMode = state.custKpiMode || {};
   if (state.custKpiMode[c.customerId] == null) state.custKpiMode[c.customerId] = isActiveMember(c);
@@ -4140,7 +4140,7 @@ function invSummaryStrip(invs, c) {
   return `<div class="inv-kpi-row"><div class="inv-summary">`
     + chip(money2(open), 'Open', open > 0.005 ? 'due' : '', open)
     + chip(String(invs.length), invs.length === 1 ? 'Invoice' : 'Invoices', '')
-    + chip(money2(paidYtd), 'Paid YTD', 'paid', paidYtd)
+    + chip(money2(avg1yr), '1YR AVG', 'paid', avg1yr)
     + chip(avg == null ? '—' : avg + 'd', 'Avg pay', '')
     + `</div>${mmBtn}</div>`;
 }
