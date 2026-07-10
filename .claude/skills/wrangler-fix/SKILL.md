@@ -103,6 +103,28 @@ born — just masks the defect. **No fix without a cited root cause.**
    body with the root cause + `Closes #<n>`, then `gh pr merge --auto --squash` so it
    goes live when CI is green.
 
+9. **Sync the fix back into its owning area branch(es) — same session, right after it
+   lands, never deferred.** A fix shipped straight to `main` and never merged back into
+   the `area/<domain>` that owns this code (route it with the `start` skill's
+   `references/branch-map.md`) leaves that area permanently out of sync with what's live
+   — and the drift compounds silently: the NEXT session to refresh that area from `main`
+   (per the `start` skill's routing step) doesn't get a clean fast-forward, it hits a real,
+   hand-resolvable merge conflict, because the area's own in-flight feature work and the
+   bypassed fix both touched the same file with no shared history between them. This isn't
+   hypothetical — it's exactly what happened on 2026-07-10: five areas had each
+   independently accumulated un-synced `main` fixes, and reconciling all five in one
+   sitting required real semantic merges (e.g. `area/invoicing-payments`'s "yard log"
+   invoice-print redesign had to be hand-integrated with `main`'s void/refund stamp
+   logic on the very same function). Do this the moment the squash-merge lands:
+   - `git fetch origin`
+   - `git checkout area/<domain>` (or each area, if the fix plausibly touched more than one)
+   - `git merge --no-edit origin/main` — done immediately, this should be a clean
+     fast-forward-ish merge, not a stale multi-week one.
+   - `git push origin area/<domain>`
+   - **If this merge conflicts even when done immediately, STOP and surface it** — don't
+     guess at a resolution just to get unblocked; that's the same "don't guess" discipline
+     as the rest of this skill, just applied to the area sync instead of the fix itself.
+
 ## Guardrails
 - **Ask yourself first: "Should I use one of our skills for this?"** Reach for the fitting
   skill before you freehand — `jactec-ui` for ANY UI element (screen, column, card, pill,
