@@ -2,6 +2,12 @@
 
 **Spec:** `docs/superpowers/specs/2026-07-10-account-agreements-membership-redesign-design.md`
 **Branch:** `customers-crm/account-agreements-redesign` (off `area/customers-crm`)
+
+**⚠ Cross-session overlap flag (Jac, 2026-07-10):** a separate concurrent debug session is touching
+GPS + invoice + refund code. Phase 3 (T3.2) of THIS branch also touches `applyPayment`/
+`chargeInvoiceFlow` (adds `markChargeFailed()` + the `chargeFailedAt` clear-on-payment logic,
+`app.js` ~L390-405 and inside `applyPayment`). **Check for merge conflicts or semantic overlap in
+those two functions specifically before merging either branch into `area/customers-crm`.**
 **Build discipline:** UI → `/jactec-ui` (yard data-plate); money/auth gates stay on main (CLAUDE.md
 Auto-delegation); backend cron ships via `/clasp` (go-live is Jac's editor deploy). R-Rulebook +
 `WINDOW_CATALOG` + `rule-usage.js` kept current; all five CI gates green before each area merge.
