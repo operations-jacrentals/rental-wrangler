@@ -15,6 +15,7 @@ Keeps the session list to what's actually live. A chat is "done" when its task b
    - NEVER flag the **current** session, or any session whose task branch still has an **open PR** or no PR at all.
 3. **Present the candidates** as a short table — title · last activity · branch status — and ask which to archive (`AskUserQuestion`, multi-select). Default selection = the clearly-done ones; let Jac deselect.
 4. **Archive** the confirmed ones with `mcp__ccd_session_mgmt__archive_session`. Report what was archived and what was kept.
+5. **Sweep the Wrangler inbox — remove already-resolved tasks (Jac, 2026-06-28).** The in-app approval inbox is fed by the **open** GitHub issues labeled `wrangler-fix` / `wrangler-request`. A request whose work has already shipped (its PR merged, or the change is otherwise live) but whose issue is still open **lingers in Jac's inbox as a stale task**. So: list open `wrangler-fix`/`wrangler-request` issues, cross-check each against merged PRs / the live code, and for the ones that are **clearly already resolved**, **close the issue** (a short "shipped in #NNN — closing" comment) so it drops off the inbox. Same confirm-first discipline as archiving: present the resolved-looking ones as a short list and only close the ones Jac confirms. Never close an issue that's still `wrangler-needs-jac` (awaiting his answer) or still building.
 
 ## Rules
 - **Never archive without explicit confirmation.** Archiving is reversible, but surprise is not welcome.
