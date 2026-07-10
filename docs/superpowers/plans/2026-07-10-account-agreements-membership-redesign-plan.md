@@ -81,18 +81,24 @@ lapse; system-actor authority; bounded retries; ambiguous-timeout re-check. Enro
 future `startDate` and schedules. **Must NOT set the delivery-block flag on membership failure.**
 - **Acceptance:** dry-run in the GAS editor on a test row; STOP-gate before prod per `/clasp`.
 
-## Phase 5 — KPI Member-Mode sales toggle + Invoices/Transactions toggle · /jactec-ui + MAIN math
-- Remove always-on economics block; add **Member-Mode/Non-Member-Mode** button (spec §7b) —
-  dollar tiles (Open/Paid YTD/Avg Pay) recompute to opposite rate via `membershipEconomics`
-  (~`app.js:3208`); #Invoices unchanged. (Optional "you save $X" delta — confirm.)
-- **Invoices/Transactions toggle** replacing the section title (§7a): Transactions = flattened
-  payments across the customer's invoices.
-- **Acceptance:** toggle math matches member/retail; logic-test for the recompute.
+## Phase 5 — KPI Member-Mode sales toggle + Open/All/Transactions toggle · /jactec-ui + MAIN math
+
+**STATUS (2026-07-10): DONE, commit `28c84da`.** Built against the approved v6 mockup
+(`docs/specs/assets/member-mode-mock.html`) — see spec §7a/§7b for the final (mockup-corrected)
+design: the tile NUMBER never changes; Member-Mode only adds an arrow (green savings / red
+penalty) + an inline delta. `kpiModeDelta()` is a documented approximation (proportional ratio
+from `membershipEconomics`), not an audited per-invoice reconciliation. Open/All/Transactions
+(R14 segCtl) replaces the "Invoices" title; Transactions flattens `inv.payments[]` (with the
+existing legacy fallback) into its own KPI row. Math verified in a standalone harness.
 
 ## Phase 6 — Design-system dot→background sweep · /jactec-ui (area/design-system conventions)
 Every toggle using a colored status dot → red/green/yellow background (spec §7c). Enumerate
 dot-bearing toggles; convert uniformly; preserve focus/AA/reduced-motion.
 - **Acceptance:** no dot-toggles remain; visual self-critique per jactec-ui.
+- **Scoping note (2026-07-10):** the spec explicitly says this sweep is "not scoped to this
+  card" — it's a codebase-wide design-system pass, not specific to Account/Agreements. Given the
+  size of this PR already, recommend this ships as its OWN follow-up task/PR against
+  `area/design-system`, rather than further expanding this one. Not started.
 
 ## Phase 7 — Close-out
 Sync `docs/specs/customers-crm.md` + `memberships.md` to shipped reality; `/role` audit (delegable
