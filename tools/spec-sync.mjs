@@ -183,7 +183,9 @@ function seed() {
     const marker = join(tmpdir(), `rw-spec-marker-${process.pid}.md`);
     writeFileSync(marker, MARKER_TEXT);
     const blob = git(['hash-object', '-w', marker]);
-    git(['update-index', '--add', '--cacheinfo', `100644,${blob},${SPEC_DIR}/_MASTER-SPEC.md`], { env });
+    // Marker lives at the branch ROOT, outside SPEC_DIR, so `down` (scoped to
+    // docs/specs) never drags it into an area tree.
+    git(['update-index', '--add', '--cacheinfo', `100644,${blob},_MASTER-SPEC.md`], { env });
     rmSync(marker, { force: true });
     const tree = git(['write-tree'], { env });
     const commit = git(['commit-tree', tree, '-m', 'Seed master-spec: spec-only shared surface for cross-area sync']);
