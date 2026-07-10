@@ -31,6 +31,7 @@
 | `area/sales-growth` | Quotes, outside/inside sales, equipment/used-equipment sales, marketing, pipeline depth, lead handling | "quote", "sales", "equipment sale", "used sale", "marketing", "pipeline", "lead" |
 | `area/maps-location` | Maps integration, the dispatch map/cockpit, address capture/geocoding, drive-time + city-lookup transport pricing (§10) | "map", "address", "drive time", "route", "geocode", "location", "cockpit" |
 | `area/search-views` | Global search (incl. phone-number + natural-date tokens), filters/pinned chips, saved Views menu, anchored-card navigation, list/dispatcher rows, toolbar | "search", "filter", "find", "navigation", "list view", "saved view", "chip", "toolbar" |
+| `area/session-ops` | The `/start` skill + session startup, the branch-flow preflight (`tools/branch-preflight.mjs`), the spec-sync / `master-spec` tooling (`tools/spec-sync.mjs`), and other session-orchestration / dev-process tooling that no domain area owns | "start skill", "session startup", "spec sync", "master-spec", "branch preflight", "session tooling", "dev process", "promotion flow" |
 
 **Rules for routing**
 - Pick the single best area. If two genuinely overlap (e.g. a dispatch feature that's mostly a map), name both and let Jac choose via `AskUserQuestion`.
