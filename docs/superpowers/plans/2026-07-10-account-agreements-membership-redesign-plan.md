@@ -209,6 +209,44 @@ The **Phase 2↔Phase 4 seam** (deferred-charge markers) is defined here and con
   agreement-sign handler; Wrangler + CSV reject Member; a future-start signed member reads **Pending** with
   **retail** pricing until charged; logic-test covers enroll→pending→active + the two sibling refusals.
 
+### Phase 3 tasks (account-block delivery gate) · MAIN (auth/gate — build WITH Jac's live verification)
+Recon (2026-07-10): the On-Rent/delivery gate ALREADY exists — `cardGateBlocked(cust)` (`app.js:365`)
+enforced at booking (`app.js:15163`, `15193`) + delivery (`app.js:15328`), with an existing per-rental
+override: `requireAdmin(reason, onOk)` (`app.js:15115`) sets `r.cardOverride` and proceeds
+(`app.js:15127-29`). Phase 3 EXTENDS this proven pattern — it does not invent a new gate. **Mirror
+`cardGateBlocked` exactly** to keep the risk low; the only genuinely new bits are the block-type data,
+the Owner-vs-Manager tier, and the per-action (non-persistent) override.
+
+- **T3.1 — Block-type picker (replaces the Phase-1 `js-block-account` → `managerPw` stub, `app.js:14450`).**
+  On Block Account, open a picker: **Blacklist** (bare, no invoice) or **Invoice-hold** (select which of the
+  customer's open invoices must be paid). Writes `c.block = {type, invoiceIds?, setBy, setAt}` (the shape
+  `accountBlock()` already reads, `app.js:381`). **Bare Blacklist requires the OWNER tier** (D13) — gate it
+  through the existing admin/role machinery (`requireAdmin`/`adminUnlocked`, `app.js:15115`/`14850`), escalated
+  to Owner; invoice-hold is a lower staff tier.
+- **T3.2 — `chargeFailed` marker (makes `accountBlock`'s failed-payment branch live, D11).** Where a card
+  charge fails (`friendlyPayErr` sites: `app.js:16442`/`16452`/`16516`/`16525`), set `inv.chargeFailed = true`
+  on the rental invoice; **clear it on any successful payment** on the account. **Membership invoices are
+  EXCLUDED** (accountBlock already filters `!i.membership`, D11) — a failed membership charge never trips the
+  delivery block.
+- **T3.3 — Extend the gate (the high-stakes change — verify live).** At the 3 gate points (`15163`/`15193`/
+  `15328`), add `accountBlock(cust)` alongside `cardGateBlocked`. On a block:
+  - `blacklist` → **hard stop, Owner-only override** (NOT Manager — D14); surface the reason, no per-action
+    Manager bypass.
+  - `no-card` / `failed-payment` / `invoice-hold` → **Manager-password per-action override** (D14): prompt via
+    the `requireAdmin` machinery escalated to Manager tier, **but do NOT persist** the override (unlike
+    `r.cardOverride`) — each attempt re-prompts. Use a transient (non-stored) pass, or clear it immediately
+    after the one action.
+  - **Fail-safe:** if the block state is ambiguous, block (don't allow). Never weaken the existing
+    `cardGateBlocked` conditions — only ADD to them.
+- **T3.4 — Auto-unblock (derived, no code needed for two types).** `no-card` clears when a valid card is added,
+  `failed-payment` clears when any account payment succeeds, `invoice-hold` clears when the selected invoices
+  are paid — all already derived by `accountBlock()`. Only `blacklist` is a stored state lifted by an
+  Owner-tier action (add a lift control near the block button, Owner-gated).
+- **Acceptance:** a blacklisted account's rental attempt is a hard stop (only Owner overrides); a no-card /
+  failed-payment / invoice-hold account re-prompts a Manager EVERY attempt; a clean account books normally
+  (no regression — verify the existing card-gate still behaves); a failed MEMBERSHIP charge does NOT block
+  delivery. **Drive all of these in the browser before merging** (this gate can't be unit-tested alone).
+
 ## Build order rationale
 0 → 1 give a stable data + UI base. 2 and 3 (the money/auth core, the actual bug closure) land next
 on that base. 4 (backend) can proceed in parallel once 2 defines the contract. 5/6 are value/polish.
