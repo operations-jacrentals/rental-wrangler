@@ -8889,13 +8889,10 @@ function wrChatResolved(c) {
   return filed.length > 0 && filed.every((n) => !wranglerRequests.some((rq) => rq.number === n));
 }
 // §M1 — phone-only per-column bottom strip: Yard→internal chat · Rentals→tool bar · Customers→external chats (shell).
-// §M1/§M3 — the active phone column's card id (state.cards key), for the grid Back/Fwd swipe.
-function activeMobileCard() {
-  const colObj = COLUMNS[Math.max(0, Math.min(2, state.mobileCol))];
-  const s = activeSession();
-  return (s.cols && s.cols[colObj.id]) || colObj.default;
-}
-// §M1 — the card the phone is currently showing (the active column's member).
+// §M1 — the card the phone is currently showing (the active column's member). Also what the
+// grid swipe folds through mainCardOfMember() — it's the same "what am I on" state regardless
+// of whether the swipe started in the footer or the grid (2026-07-10: activeMobileCard(), a
+// byte-identical twin used only by the old grid Back/Fwd swipe, was removed as dead code).
 function currentMobileMember() {
   const colObj = COLUMNS[Math.max(0, Math.min(2, state.mobileCol))];
   const s = activeSession();
@@ -8933,7 +8930,8 @@ function goToCard(member) {
 // every group, stays icon-only (keeps 3 narrow toggles from fighting each other for label
 // width). Tap an icon to jump straight to that card's list. The card's search/sort row is
 // moved DOWN into .mdock-searchslot by render(). Swipe the dock left/right to step through
-// the 3 MAIN cards; the grid swipe is Back/Forward.
+// the 3 MAIN cards; a grid swipe does the same (2026-07-10: swipe Back/Forward retired,
+// the jog buttons cover that — see the pointerup handler in boot()).
 function mobileDockEl() {
   const cur = currentMobileMember();
   const barHtml = (members) => {
@@ -11379,7 +11377,7 @@ function wirePopupDrag(overlay) {
    remain. Closing by other means (Esc/✕/backdrop) consumes the dangling entry so the
    stack stays balanced. Phone-only — desktop keeps Esc/click. Wired in boot(). ── */
 let backGuard = false, backConsuming = false;
-let swipeFired = false;   // §M1/§M3 — a footer (column) or grid (Back/Fwd) swipe sets this so the trailing click is swallowed once
+let swipeFired = false;   // §M1/§M3 — a footer or grid section-switch swipe sets this so the trailing click is swallowed once
 function anyDismissable() { return !!(state.overlay || state.datesearch || state.chat.open || state.wrangler.open); }
 function dismissTopSheet() {
   if (state.datesearch) { closeDateSearch(); return true; }
@@ -15459,8 +15457,8 @@ function initDrag() {
    • holding STILL ~500ms = the right-click/context menu (armMenuTimer),
    • a quick press-and-release never arms past the click discriminator (= tap/action). ── */
 // §M3 — touch DRAG is now a long-press: a press must be HELD ~300ms before a horizontal
-// move lifts a drag. A quick horizontal flick (before this fires) is a Back/Forward swipe
-// instead (see the grid swipe tracker in boot). Frees the horizontal axis for navigation.
+// move lifts a drag. A quick horizontal flick (before this fires) is a section-switch swipe
+// instead (see the swipe tracker in boot). Frees the horizontal axis for navigation.
 function armReadyTimer(arm) { return setTimeout(() => { if (DRAG.armed === arm) arm.ready = true; }, 300); }
 function armMenuTimer(arm) {   // §M3 — hold-still opens the context menu: touch long-press OR mouse click-and-hold (the right-click equivalent). On phones this is now the PRIMARY linking entry (menu-driven linking replaced drag, 2026-06-29).
   return setTimeout(() => {
@@ -15946,7 +15944,7 @@ function dispatchDrop(p, t) {
 }
 
 function onClick(e) {
-  if (swipeFired) { swipeFired = false; e.stopPropagation(); e.preventDefault(); return; }   // §M1/§M3 — swallow the click that ends a column / Back-Fwd swipe
+  if (swipeFired) { swipeFired = false; e.stopPropagation(); e.preventDefault(); return; }   // §M1/§M3 — swallow the click that ends a section-switch swipe
   const t = e.target;
   const closest = (sel) => t.closest(sel);
 
@@ -22267,15 +22265,17 @@ function boot() {
     if (backConsuming) { backConsuming = false; return; }
     if (anyDismissable()) { backGuard = false; dismissTopSheet(); }   // entry already popped by the browser → re-pushed by render if more remain
   });
-  // §M1/§M3 — phone horizontal swipes. On the FOOTER dock: change column (the only place
-  // columns change now). On the GRID/column: Back/Forward of the active card. A real drag
-  // (long-press then move) is excluded; a fired swipe swallows the trailing click.
+  // §M1/§M3 — phone horizontal swipes: from EITHER the footer dock OR a record's grid, step
+  // to the next/previous MAIN_CARDS section (Units → Rentals → Customers) — same action
+  // either way now (Jac, 2026-07-10: swipe-based Back/Forward through view history is
+  // retired — "not needed, we have buttons" — the jog Back/Forward buttons (cardJog →
+  // .js-cardback/.js-cardfwd) still cover that). A real drag (long-press then move) is
+  // excluded; a fired swipe swallows the trailing click.
   let swipeStart = null;
   document.addEventListener('pointerdown', (e) => {
     if (!document.body.classList.contains('is-phone')) { swipeStart = null; return; }
-    const inFooter = !!(e.target.closest && e.target.closest('.mobile-dock'));
-    const inGrid = !inFooter && !!(e.target.closest && e.target.closest('.grid'));
-    swipeStart = (inFooter || inGrid) ? { x: e.clientX, y: e.clientY, id: e.pointerId, footer: inFooter } : null;
+    const inSwipeZone = !!(e.target.closest && (e.target.closest('.mobile-dock') || e.target.closest('.grid')));
+    swipeStart = inSwipeZone ? { x: e.clientX, y: e.clientY, id: e.pointerId } : null;
   }, true);
   document.addEventListener('pointerup', (e) => {
     const s = swipeStart; swipeStart = null;
@@ -22283,15 +22283,9 @@ function boot() {
     const dx = e.clientX - s.x, dy = e.clientY - s.y;
     if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.3) return;            // not a clean horizontal swipe
     swipeFired = true;                                                             // swallow the trailing click (row/toggle)
-    if (s.footer) {
-      const cur = mainCardOfMember(currentMobileMember()); let i = MAIN_CARDS.indexOf(cur); if (i < 0) i = 0;   // fold a sub-card to its main card first; left → next, right → previous
-      const next = Math.max(0, Math.min(MAIN_CARDS.length - 1, i + (dx < 0 ? 1 : -1)));
-      if (next !== i) { goToCard(MAIN_CARDS[next]); haptic(8); }
-    } else {
-      const card = activeMobileCard();
-      if (dx > 0) cardBack(card); else cardFwd(card);                              // swipe right → Back, left → Forward
-      haptic(8);
-    }
+    const cur = mainCardOfMember(currentMobileMember()); let i = MAIN_CARDS.indexOf(cur); if (i < 0) i = 0;   // fold a sub-card to its main card first; left → next, right → previous
+    const next = Math.max(0, Math.min(MAIN_CARDS.length - 1, i + (dx < 0 ? 1 : -1)));
+    if (next !== i) { goToCard(MAIN_CARDS[next]); haptic(8); }
   }, true);
   initDrag();   // §15c drag & drop link engine — #drag-layer singleton + document pointer listeners
   try { loadGoogleMaps(); } catch (e) {}   // §2.3 warm the Maps SDK at boot so the dispatch cockpit + transport editor open instantly (no first-open wait / "load it twice")
