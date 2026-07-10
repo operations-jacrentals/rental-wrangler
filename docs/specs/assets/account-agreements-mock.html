@@ -1,0 +1,351 @@
+<title>Account / Agreements — Phase 1 Preview</title>
+<style>
+  :root{
+    --accent:#ff7a1a; --accent-soft:rgba(255,122,26,.14); --accent-line:rgba(255,122,26,.5); --on-orange:#1a1205;
+    --bg:#0b0c0f; --bg-2:#101216; --panel:#15171c; --panel-2:#1b1e24; --card:#14161b; --card-head:#191c22;
+    --line:#262a31; --line-soft:#1f232a; --txt:#e9edf4; --txt-2:#a7afbc; --txt-3:#6b7480; --track:#22262e;
+    --green:#34d399; --green-bg:rgba(53,138,93,.16); --yellow:#f5c542; --yellow-bg:rgba(255,224,0,.15);
+    --red:#ff4242; --red-bg:rgba(255,16,64,.13); --blue:#5b9dff; --blue-bg:rgba(91,157,255,.14);
+    --purple:#b07cf5; --gray:#8b94a3; --tan:#c2925a; --tan-deep:#8a5a2b; --add:#18b6ff;
+    --radius:16px; --chip-radius:12px; --shadow:0 18px 50px -24px rgba(0,0,0,.75);
+    --font:"Geist",-apple-system,"Segoe UI",sans-serif; --stamp:"Saira Condensed","Oswald","Arial Narrow",var(--font);
+  }
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){
+      --bg:#eef1f6; --bg-2:#e6eaf1; --panel:#ffffff; --panel-2:#eef1f6; --card:#ffffff; --card-head:#eef1f6;
+      --line:#cfd6e1; --line-soft:#e1e6ee; --txt:#141821; --txt-2:#414b5a; --txt-3:#69727f; --on-orange:#2a1400;
+      --green:#0c8f5f; --yellow:#956f00; --red:#d52a2a; --blue:#1864d6; --purple:#7a37c9; --gray:#566072;
+      --green-bg:rgba(12,143,95,.12); --yellow-bg:rgba(149,111,0,.13); --red-bg:rgba(213,42,42,.10);
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#eef1f6; --bg-2:#e6eaf1; --panel:#ffffff; --panel-2:#eef1f6; --card:#ffffff; --card-head:#eef1f6;
+    --line:#cfd6e1; --line-soft:#e1e6ee; --txt:#141821; --txt-2:#414b5a; --txt-3:#69727f; --on-orange:#2a1400;
+    --green:#0c8f5f; --yellow:#956f00; --red:#d52a2a; --blue:#1864d6; --purple:#7a37c9; --gray:#566072;
+    --green-bg:rgba(12,143,95,.12); --yellow-bg:rgba(149,111,0,.13); --red-bg:rgba(213,42,42,.10);
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:radial-gradient(1200px 500px at 50% -10%, rgba(255,122,26,.05), transparent 60%), var(--bg);
+    color:var(--txt); font-family:var(--font); -webkit-font-smoothing:antialiased; padding:26px 16px 60px; }
+  .wrap{ max-width:520px; margin:0 auto; }
+
+  .pv-head{ text-align:center; margin-bottom:20px; }
+  .pv-eyebrow{ font-family:var(--stamp); text-transform:uppercase; letter-spacing:2px; font-weight:800; font-size:11px; color:var(--accent); }
+  .pv-title{ font-family:var(--stamp); text-transform:uppercase; letter-spacing:1.2px; font-weight:800; font-size:21px; margin:4px 0 6px; text-wrap:balance; }
+  .pv-sub{ font-size:12.5px; color:var(--txt-3); line-height:1.55; max-width:46ch; margin:0 auto; }
+  .state-cap{ font-family:var(--stamp); text-transform:uppercase; letter-spacing:1.5px; font-weight:800; font-size:10px; color:var(--tan);
+    margin:24px 2px 8px; display:flex; align-items:center; gap:8px; }
+  .state-cap::after{ content:""; flex:1; border-top:1px dashed var(--tan); opacity:.5; }
+
+  .card{ position:relative; background:linear-gradient(180deg,#1b2129,#0c0e11); border:1px solid var(--line); border-radius:var(--radius);
+    box-shadow:var(--shadow); padding:15px 14px 14px; overflow:hidden; }
+  :root[data-theme="light"] .card{ background:linear-gradient(180deg,#ffffff,#eef1f6); }
+  @media (prefers-color-scheme: light){ :root:not([data-theme="dark"]) .card{ background:linear-gradient(180deg,#ffffff,#eef1f6); } }
+  .card::before{ content:""; position:absolute; top:0; left:0; right:0; height:5px;
+    background:repeating-linear-gradient(135deg, var(--yellow) 0 13px, #14181d 13px 26px); opacity:.9; }
+  .rivet{ position:absolute; width:6px; height:6px; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #6b7480, #191c22 70%); box-shadow:0 0 0 1px rgba(0,0,0,.5), inset 0 0 1px rgba(255,255,255,.4); }
+  .rivet.tl{top:12px;left:12px} .rivet.tr{top:12px;right:12px} .rivet.bl{bottom:12px;left:12px} .rivet.br{bottom:12px;right:12px}
+
+  .cust-name{ font-weight:800; font-size:16px; letter-spacing:.2px; margin:2px 2px 12px; }
+
+  /* ── ACCOUNT section (collapsible, top of card) ── */
+  .acct{ background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .acct-bar{ display:flex; align-items:center; gap:9px; padding:10px 12px; cursor:pointer; background:linear-gradient(180deg,var(--card-head),var(--panel)); }
+  .acct-bar .lbl{ font-family:var(--stamp); text-transform:uppercase; letter-spacing:1px; font-weight:800; font-size:11px; color:var(--txt-3); flex:0 0 auto; }
+  .acct-sum{ flex:1; min-width:0; font-size:12px; color:var(--txt-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .acct-sum b{ color:var(--txt); font-weight:700; }
+  .acct-sum .dot{ color:var(--txt-3); margin:0 6px; }
+  .type-chip{ font-family:var(--stamp); text-transform:uppercase; letter-spacing:.6px; font-size:9.5px; font-weight:700; flex:0 0 auto;
+    padding:3px 8px; border-radius:999px; }
+  .type-chip.ok{ color:var(--green); background:var(--green-bg); }
+  .type-chip.warn{ color:var(--yellow); background:var(--yellow-bg); }
+  .type-chip.pend{ color:var(--purple); background:color-mix(in srgb,var(--purple) 16%,transparent); }
+  .type-chip.bad{ color:var(--red); background:var(--red-bg); }
+  .acct-chev{ color:var(--txt-3); flex:0 0 auto; transition:transform .12s ease; }
+  .acct.open .acct-chev{ transform:rotate(180deg); }
+  .acct-body{ padding:12px; border-top:1px solid var(--line-soft); }
+
+  /* compact fields (denser than before) */
+  .fgrid{ display:grid; grid-template-columns:1fr 1fr; gap:8px 12px; }
+  .f{ display:flex; flex-direction:column; gap:3px; min-width:0; }
+  .f > span{ font-size:9.5px; font-weight:700; color:var(--txt-3); text-transform:uppercase; letter-spacing:.4px; font-family:var(--stamp); }
+  .f input{ background:var(--panel-2); border:1px solid var(--line); border-radius:8px; color:var(--txt); font:inherit; font-size:12px; padding:6px 9px; width:100%; }
+  .f input:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+
+  /* protection toggle row (own row + explainer) */
+  .prot-row{ margin-top:10px; }
+  .toggle-line{ display:flex; align-items:center; gap:10px; }
+  .toggle-line .cap{ font-size:9.5px; font-weight:700; color:var(--txt-3); text-transform:uppercase; letter-spacing:.4px; font-family:var(--stamp); flex:0 0 auto; }
+  .seg{ display:inline-flex; border:1px solid var(--line); border-radius:999px; overflow:hidden; background:var(--panel-2); }
+  .seg button{ font-family:var(--stamp); text-transform:uppercase; letter-spacing:.6px; font-size:10px; font-weight:700; color:var(--txt-3);
+    background:transparent; border:0; padding:6px 12px; cursor:pointer; }
+  .seg button.on{ color:var(--green); background:var(--green-bg); }
+  .seg button.on.off{ color:var(--txt-2); background:var(--panel); }
+  .prot-note{ font-size:11px; color:var(--txt-3); font-style:italic; margin:7px 2px 0; }
+  .prot-note b{ color:var(--green); font-style:normal; }
+  .po-row{ margin-top:9px; }
+  .po-row .seg button.on{ color:var(--yellow); background:var(--yellow-bg); }
+
+  /* one-line Net Terms · PO · Protection */
+  .terms-line{ display:flex; align-items:center; gap:7px; margin-top:10px; flex-wrap:wrap; }
+  .tl-cap{ font-family:var(--stamp); text-transform:uppercase; letter-spacing:.4px; font-size:9.5px; font-weight:700; color:var(--txt-3); flex:0 0 auto; }
+  .nchips{ display:flex; gap:4px; }
+  .nchip{ font-family:var(--stamp); text-transform:uppercase; letter-spacing:.3px; font-size:10px; font-weight:700; padding:4px 8px; border-radius:999px;
+    border:1px solid var(--line); background:var(--panel-2); color:var(--txt-3); cursor:pointer; }
+  .nchip:hover{ border-color:var(--accent-line); }
+  .nchip.on{ color:var(--accent); border-color:var(--accent-line); background:var(--accent-soft); }
+  .lock{ display:inline-flex; align-items:center; color:var(--txt-3); flex:0 0 auto; }
+  .tl-sep{ width:1px; align-self:stretch; background:var(--line); margin:1px 3px; flex:0 0 auto; }
+  .tchip{ font-family:var(--stamp); text-transform:uppercase; letter-spacing:.5px; font-size:10px; font-weight:700; padding:5px 11px; border-radius:999px;
+    border:1px solid var(--line); background:var(--panel-2); color:var(--txt-3); cursor:pointer; }
+  .tchip:hover{ border-color:var(--accent-line); }
+  .tchip.po.on{ color:var(--yellow); border-color:color-mix(in srgb,var(--yellow) 45%,transparent); background:var(--yellow-bg); }
+  .tchip.prot.on{ color:var(--green); border-color:color-mix(in srgb,var(--green) 45%,transparent); background:var(--green-bg); }
+  .notes-f{ margin-top:10px; }
+  .notes-f input{ background:var(--panel-2); border:1px solid var(--line); border-radius:8px; color:var(--txt); font:inherit; font-size:12px; padding:6px 9px; width:100%; }
+
+  .ag-divide{ border:0; border-top:1px dashed var(--tan); opacity:.5; margin:14px 0 10px; }
+  .ag-head{ display:flex; align-items:center; justify-content:space-between; margin:0 2px 8px; }
+  .ag-head h5{ margin:0; font-family:var(--stamp); text-transform:uppercase; letter-spacing:1px; font-size:11px; color:var(--txt-3); font-weight:700; }
+
+  .add-field{ color:var(--add); font-weight:700; border:1px dashed color-mix(in srgb,var(--add) 55%,transparent); border-radius:10px; padding:0 12px; height:32px;
+    display:flex; align-items:center; gap:8px; background:transparent; font:inherit; font-size:12px; cursor:pointer; width:100%; justify-content:center; }
+  .add-field:hover{ border-color:var(--add); filter:brightness(1.08); }
+  .ag-scroll{ display:flex; flex-direction:column; gap:6px; margin-top:6px; }
+
+  /* collapsed agreement row — ONE line */
+  .ag-row{ display:flex; align-items:center; gap:9px; padding:9px 10px; border:1px solid var(--line); border-radius:10px;
+    background:linear-gradient(180deg,var(--card-head),var(--card)); cursor:pointer; transition:border-color .12s ease, filter .12s ease; }
+  .ag-row:hover{ border-color:var(--accent-line); filter:brightness(1.05); }
+  .ag-stat{ width:3px; align-self:stretch; border-radius:3px; flex:0 0 auto; margin:-1px 0; background:var(--gray); }
+  .ag-stat.ok{ background:var(--green); } .ag-stat.warn{ background:var(--yellow); } .ag-stat.bad{ background:var(--red); } .ag-stat.pend{ background:var(--purple); }
+  .ag-ttl{ font-weight:800; font-size:12.5px; letter-spacing:.2px; flex:0 0 auto; white-space:nowrap; }
+  .ag-ttl.status{ font-family:var(--stamp); text-transform:uppercase; letter-spacing:.7px; font-size:12px; font-weight:800; }
+  .ag-ttl.pend{ color:var(--purple); } .ag-ttl.bad{ color:var(--red); }
+  .ag-sub{ flex:1; min-width:0; font-size:11px; color:var(--txt-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ag-sub.no{ font-style:italic; }
+  .cind{ font-weight:700; font-size:11px; letter-spacing:.2px; flex:0 0 auto; white-space:nowrap; }
+  .cind.ok{ color:var(--green); } .cind.warn{ color:var(--yellow); } .cind.bad{ color:var(--red); }
+  .rflags{ flex:1; min-width:0; display:flex; gap:9px; align-items:center; }
+  .rflag{ font-family:var(--stamp); text-transform:uppercase; letter-spacing:.5px; font-size:9px; font-weight:700; color:var(--red); white-space:nowrap; }
+  .ag-chev{ color:var(--txt-3); flex:0 0 auto; }
+
+  /* expanded / creating a new agreement */
+  .ag-open{ border:1px solid var(--accent-line); border-radius:11px; background:var(--card); box-shadow:0 0 0 1px var(--accent-soft); overflow:hidden; }
+  .ao-bar{ background:linear-gradient(180deg,var(--card-head),var(--panel-2)); padding:9px 12px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:9px; }
+  .ao-bar .lbl{ font-family:var(--stamp); text-transform:uppercase; letter-spacing:1px; font-weight:800; font-size:11.5px; }
+  .ao-bar .unsaved{ font-family:var(--stamp); text-transform:uppercase; letter-spacing:.8px; font-size:9px; font-weight:700; color:var(--yellow);
+    border:1px solid color-mix(in srgb,var(--yellow) 45%,transparent); background:var(--yellow-bg); border-radius:999px; padding:2px 8px; }
+  .ao-bar .sp{ flex:1; } .ao-collapse{ color:var(--txt-3); background:none; border:0; cursor:pointer; }
+  .ao-body{ padding:12px; display:flex; flex-direction:column; gap:12px; }
+  .ao-row{ display:flex; gap:11px; }
+  .ao-cell{ flex:1; display:flex; flex-direction:column; gap:5px; min-width:0; }
+  .ao-cap{ font-family:var(--stamp); text-transform:uppercase; letter-spacing:.6px; font-size:10px; color:var(--txt-3); font-weight:700; }
+  .dd{ display:flex; align-items:center; justify-content:space-between; gap:8px; background:var(--panel-2); border:1px solid var(--accent-line); border-radius:8px; padding:8px 11px; cursor:pointer; }
+  .dd b{ font-weight:800; font-size:12.5px; color:var(--accent); } .dd .cv{ color:var(--txt-3); }
+  .datef{ display:flex; align-items:center; gap:8px; background:var(--panel-2); border:1px solid var(--line); border-radius:8px; padding:8px 11px; }
+  .datef.req{ border-color:var(--accent); box-shadow:0 0 0 1px var(--accent-soft); }
+  .datef svg{ color:var(--txt-3); flex:0 0 auto; } .datef input{ background:none; border:0; color:var(--txt); font:inherit; font-size:12.5px; width:100%; outline:none; }
+  .packet{ display:flex; gap:11px; }
+  .pcell{ flex:1; } .pcell .ao-cap{ display:block; margin-bottom:5px; }
+  .selfie{ height:74px; border-radius:8px; border:1px solid var(--line); background:repeating-linear-gradient(45deg, var(--panel-2) 0 8px, var(--panel) 8px 16px);
+    display:flex; align-items:center; justify-content:center; color:var(--txt-3); font-size:10px; font-family:var(--stamp); letter-spacing:1px; text-transform:uppercase; }
+  .sigpad{ height:74px; border-radius:8px; border:1px dashed var(--line); background:var(--panel-2); position:relative; }
+  .sigpad .ink{ position:absolute; left:14px; right:14px; bottom:24px; color:var(--txt-2); font-family:"Segoe Script","Bradley Hand",cursive; font-size:21px; }
+  .sigpad .base{ position:absolute; left:12px; right:12px; bottom:20px; border-top:1px solid var(--line); }
+  .terms{ height:70px; overflow:auto; border:1px solid var(--line); border-radius:8px; background:var(--panel-2); padding:9px 11px; font-size:11px; color:var(--txt-2); line-height:1.5; }
+  .terms h6{ margin:0 0 3px; font-size:11px; color:var(--txt); font-weight:800; }
+  .tote{ border:1px solid var(--line); border-radius:8px; background:var(--panel-2); padding:9px 11px; display:flex; flex-direction:column; gap:4px; }
+  .tote .ln{ display:flex; justify-content:space-between; font-size:11.5px; color:var(--txt-2); }
+  .tote .ln b{ color:var(--txt); font-variant-numeric:tabular-nums; }
+  .tote .ln.total{ border-top:1px dashed var(--line); padding-top:6px; margin-top:1px; font-size:13px; } .tote .ln.total b{ font-weight:800; }
+  .charge-note{ font-size:11px; color:var(--txt-3); font-style:italic; margin:0; } .charge-note b{ color:var(--accent); font-style:normal; }
+  .ao-foot{ display:flex; align-items:center; gap:9px; }
+  .ao-foot .sp{ flex:1; }
+  .ghost{ font:inherit; font-size:12px; color:var(--txt-2); background:transparent; border:1px solid var(--line); border-radius:999px; padding:8px 15px; cursor:pointer; }
+  .save{ font:inherit; font-size:12px; font-weight:700; color:#fff; background:var(--blue); border:0; border-radius:999px; padding:8px 15px; cursor:pointer; }
+  .ignition{ font-family:var(--stamp); text-transform:uppercase; letter-spacing:1px; font-weight:800; font-size:12px; color:var(--on-orange);
+    background:linear-gradient(180deg,#ff9038,var(--accent)); border:0; border-radius:999px; padding:9px 16px; cursor:pointer; box-shadow:0 6px 16px -6px var(--accent), inset 0 1px 0 rgba(255,255,255,.4); }
+
+  .ag-foot{ display:flex; align-items:center; margin-top:11px; } .ag-foot .sp{ flex:1; }
+  .block-btn{ font-family:var(--stamp); text-transform:uppercase; letter-spacing:1px; font-weight:700; font-size:11px; color:var(--red);
+    background:transparent; border:1px solid color-mix(in srgb,var(--red) 55%,transparent); border-radius:999px; padding:8px 14px; cursor:pointer; }
+  .block-btn:hover{ background:var(--red-bg); }
+  .anno{ font-family:var(--stamp); text-transform:uppercase; letter-spacing:.8px; font-size:8.5px; font-weight:700; color:var(--tan-deep);
+    border:1px solid color-mix(in srgb,var(--tan) 45%,transparent); background:color-mix(in srgb,var(--tan) 12%,transparent); border-radius:5px; padding:1px 5px; margin-left:6px; vertical-align:middle; }
+  .legend{ margin-top:26px; border:1px dashed var(--line); border-radius:12px; padding:14px 16px; }
+  .legend h4{ margin:0 0 8px; font-family:var(--stamp); text-transform:uppercase; letter-spacing:1px; font-size:11px; color:var(--txt-3); }
+  .legend ul{ margin:0; padding-left:16px; } .legend li{ font-size:12px; color:var(--txt-2); line-height:1.7; } .legend b{ color:var(--txt); }
+  .legend code{ font-family:ui-monospace,monospace; font-size:11px; color:var(--tan); }
+  :focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  @media (max-width:460px){ .fgrid{ grid-template-columns:1fr; } .ao-row,.packet{ flex-direction:column; } }
+</style>
+
+<div class="wrap">
+  <div class="pv-head">
+    <div class="pv-eyebrow">Phase 1 Preview · v2</div>
+    <h1 class="pv-title">Account &amp; Agreements — Rebuilt</h1>
+    <p class="pv-sub">Account moves to the top of the card, collapsed to a one-line summary by default. Expand it for compact fields + the agreements. Signing a member agreement IS the enrollment.</p>
+  </div>
+
+  <!-- STATE 1: collapsed (default) -->
+  <div class="state-cap">Default — collapsed</div>
+  <div class="card">
+    <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
+    <div class="cust-name">Jacob Cameron</div>
+    <div class="acct">
+      <div class="acct-bar">
+        <span class="lbl">Account</span>
+        <span class="acct-sum"><b>Jac Rentals</b><span class="dot">·</span>(409) 679-5133<span class="dot">·</span>jacob@jacrentals.com</span>
+        <span class="type-chip bad">Renewal Failed</span>
+        <span class="acct-chev">▾</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATE 2: expanded -->
+  <div class="state-cap">Expanded</div>
+  <div class="card">
+    <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
+    <div class="cust-name">Jacob Cameron</div>
+    <div class="acct open">
+      <div class="acct-bar">
+        <span class="lbl">Account</span>
+        <span class="acct-sum"><b>Jac Rentals</b><span class="dot">·</span>(409) 679-5133<span class="dot">·</span>jacob@jacrentals.com</span>
+        <span class="type-chip bad">Renewal Failed</span>
+        <span class="acct-chev" style="transform:rotate(180deg)">▾</span>
+      </div>
+      <div class="acct-body">
+        <div class="fgrid">
+          <label class="f"><span>Name *</span><input value="Jacob Cameron"></label>
+          <label class="f"><span>Company</span><input value="Jac Rentals"></label>
+          <label class="f"><span>Phone *</span><input value="(409) 679-5133"></label>
+          <label class="f"><span>Email</span><input value="jacob@jacrentals.com"></label>
+          <label class="f"><span>Industry</span><input value="Construction"></label>
+          <label class="f"><span>Driver's License / ID</span><input value="LA-4471908"></label>
+        </div>
+
+        <div class="terms-line">
+          <span class="tl-cap">Net Terms</span>
+          <div class="nchips">
+            <button class="nchip on">None</button><button class="nchip">7d</button><button class="nchip">15d</button><button class="nchip">30d</button><button class="nchip">60d</button><button class="nchip">90d</button>
+          </div>
+          <span class="lock" title="Any change needs a Manager password">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+          </span>
+          <span class="tl-sep"></span>
+          <button class="tchip po">PO</button>
+          <button class="tchip prot on">Protection</button>
+        </div>
+        <p class="prot-note"><b>Rental Protection</b> adds 15% and covers damages up to $1,000/month per unit. <span class="anno">member copy — non-member: "up to $1,000 in damages per unit"</span></p>
+
+        <div class="notes-f"><input placeholder="Account notes…"></div>
+
+        <hr class="ag-divide">
+        <div class="ag-head"><h5>Agreements</h5><span class="anno">rows, one line each</span></div>
+        <div class="ag-scroll">
+          <button class="add-field"><span style="font-size:15px">＋</span> Agreement / Card</button>
+
+          <div class="ag-row">
+            <span class="ag-stat ok"></span>
+            <span class="ag-ttl">Business Member</span>
+            <span class="ag-sub">Signed Jun 11, 2026</span>
+            <span class="cind ok">V-2261</span>
+            <span class="ag-chev">▾</span>
+          </div>
+          <div class="ag-row">
+            <span class="ag-stat bad"></span>
+            <span class="ag-ttl">Non-Business</span>
+            <span class="rflags"><span class="rflag">Not Signed</span><span class="rflag">No Selfie</span></span>
+            <span class="cind ok">M-2261</span>
+            <span class="ag-chev">▾</span>
+          </div>
+          <div class="ag-row">
+            <span class="ag-stat pend"></span>
+            <span class="ag-ttl status pend">Membership Pending</span>
+            <span class="ag-sub">Signed Jul 10 · starts Aug 1</span>
+            <span class="cind ok">M-8342</span>
+            <span class="ag-chev">▾</span>
+          </div>
+          <div class="ag-row">
+            <span class="ag-stat bad"></span>
+            <span class="ag-ttl status bad">Renewal Failed</span>
+            <span class="ag-sub">Signed Jan 04, 2026</span>
+            <span class="cind bad">Payment Failed</span>
+            <span class="ag-chev">▾</span>
+          </div>
+        </div>
+
+        <div class="ag-foot"><span class="sp"></span><button class="block-btn">Block Account</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATE 3: creating a new agreement -->
+  <div class="state-cap">Creating a new agreement</div>
+  <div class="card">
+    <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
+    <div class="cust-name">Jacob Cameron</div>
+    <div class="acct open">
+      <div class="acct-bar">
+        <span class="lbl">Account</span>
+        <span class="acct-sum"><b>Jac Rentals</b><span class="dot">·</span>(409) 679-5133</span>
+        <span class="type-chip bad">Renewal Failed</span>
+        <span class="acct-chev" style="transform:rotate(180deg)">▾</span>
+      </div>
+      <div class="acct-body">
+        <div class="ag-head"><h5>Agreements</h5><span class="anno">add-row hidden while creating</span></div>
+        <div class="ag-scroll">
+          <!-- +Agreement/Card row is HIDDEN here (user is inside a new agreement) -->
+          <div class="ag-open">
+            <div class="ao-bar">
+              <span class="lbl">New Agreement</span><span class="unsaved">Unsaved</span>
+              <span class="sp"></span><button class="ao-collapse" aria-label="Collapse">▲</button>
+            </div>
+            <div class="ao-body">
+              <div class="ao-row">
+                <div class="ao-cell"><span class="ao-cap">Account Type</span><div class="dd"><b>Business Member</b><span class="cv">▾</span></div></div>
+                <div class="ao-cell"><span class="ao-cap">Start Date <span class="anno">gates signing</span></span>
+                  <div class="datef req"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><input value="Aug 1, 2026"></div>
+                </div>
+              </div>
+              <div class="packet">
+                <div class="pcell"><span class="ao-cap">Selfie</span><div class="selfie">Captured ✓</div></div>
+                <div class="pcell"><span class="ao-cap">Signature</span><div class="sigpad"><div class="ink">Jacob Cameron</div><div class="base"></div></div></div>
+              </div>
+              <div><span class="ao-cap" style="display:block;margin-bottom:5px">Membership Agreement · Terms</span>
+                <div class="terms"><h6>JacRentals Membership Agreement</h6>Member authorizes the card on file to be charged the membership fee on the start date and at each renewal until cancelled. Member rate and Unlimited Transport apply only while active…</div>
+              </div>
+              <div class="tote">
+                <div class="ln"><span>Business Member · Monthly base</span><b>$299.00</b></div>
+                <div class="ln"><span>Unlimited Transport</span><b>$500.00</b></div>
+                <div class="ln"><span>Tax · 10.75%</span><b>$85.93</b></div>
+                <div class="ln total"><span>First charge</span><b>$884.93</b></div>
+              </div>
+              <p class="charge-note">Card <b>V-2261</b> charged <b>$884.93 on Aug 1</b>, then monthly.</p>
+              <div class="ao-foot">
+                <button class="ghost">Cancel</button>
+                <span class="sp"></span>
+                <button class="save">Save</button>
+                <button class="ignition">Start Membership</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <h4>What changed from v1</h4>
+    <ul>
+      <li><b>Account is now top-of-card &amp; collapsed by default</b> — one-line summary (company · phone · email + type). Expand for the compact fields.</li>
+      <li><b>Rental Protection</b> is its own row, a real toggle, with a one-line explainer when on.</li>
+      <li><b>Rows are one line</b> — the membership status <b>overtakes</b> the title (<code>Membership Pending</code>, <code>Renewal Failed</code>); a plain active member just reads its type. Card-on-file is colored text, no box.</li>
+      <li><b>Collapsed summary chip</b> is overtaken by the <b>worst agreement status</b> when present (here <code>Renewal Failed</code>, red) — otherwise it shows the account type.</li>
+      <li><b>NOT SIGNED · NO SELFIE · NO CARD</b> are grouped <b>red flags</b> on the row (same treatment).</li>
+      <li><b>Footer</b> is compact: <b>Cancel · Save · Start Membership</b>. The <b>+Agreement/Card</b> add-row hides while you're inside a new agreement.</li>
+    </ul>
+  </div>
+</div>
