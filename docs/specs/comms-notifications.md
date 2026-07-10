@@ -9,6 +9,96 @@
 
 ---
 
+## ✅ Addendum — 2026-07-07 (Jac, PM): D9 SINGLE-OPEN + ALL FOUR CATEGORIES LIVE
+
+Two revisions to D8, both Jac's direct calls:
+
+- **SINGLE-OPEN LAW (revokes D8's "multiple at once"):** at most ONE conversation
+  popup is open at any time, across ALL categories. Opening any conversation — a
+  rail tab click, an ALL-menu **Open**, the R20 context menu, the profile Comms
+  section, or a chip summoning a remembered session — closes whatever popup was
+  open first. Tabs stay plural on the rail; the POPUP is singular. A session
+  remembers only its LAST-open conversation, so a chip re-summon restores exactly
+  one popup. (Jac: "Open one and the previous closes.")
+- **Team + Mr. Wrangler migrate onto the engine NOW (Phase B lands in this same
+  branch/PR):** the D8 bridge chips (which still toggled the old docks) become
+  real rail sessions, and the old bottom-bar team-chat dock and Mr. Wrangler dock
+  SURFACES retire. Their message machinery (stores, send paths, seen/unread
+  logic, backend sync) is REUSED, not rebuilt:
+  - **Team:** tabs = the existing team chats (`CHAT…` records; title = the chat's
+    tag/label). Popup = that chat's feed + composer riding the existing store +
+    `chatSend`/`chatMarkSeen`. ALL menu lists chats (Open / End — End hides the
+    chat from the rail and marks it ended client-side like customer threads; any
+    new message or ALL-menu Open resurrects). A **+ New chat** affordance in the
+    ALL menu reuses `newChat()`.
+  - **Mr. Wrangler:** tabs = the wrangler chat sessions the dock already keeps
+    (the wranglerRail snapshot/load store). Popup = the wrangler feed + composer
+    riding the existing send machinery (`wranglerSend` et al.) — attachments/
+    tools buttons come along only where the existing composer markup can be
+    reused as-is; anything that can't reuse cleanly stays a dock-only feature
+    dropped with the dock (Jac favors the simpler rail). **+ New chat** in the
+    ALL menu = `wranglerNewChat()` routed onto the rail.
+  - **Chips get real status dots** (worst-of, registry grammar): Red = unseen
+    (team `chatUnreadCount` / wrangler unseen), Yellow = last message isn't
+    yours (awaiting your reply), Green = otherwise. Same rules the customer
+    categories already apply.
+
+## ✅ Addendum — 2026-07-07 (Jac): D8 THE COMMS RAIL (supersedes D5's single-dock surface)
+
+Approved via clickable mock v3 (claude.ai/code/artifact/d802e634-a9f9-41cf-a016-0cf0f863be9a).
+D6 (channel per message) and D7 (email FROM picker) stand; the SURFACE changes:
+
+- **Four categories, never mixed on the rail:** Team · Texts · Email · Mr. Wrangler. One
+  category's session on the rail at a time.
+- **The bottom-left toolbar is the control surface:** four glyph chips (Lucide-sourced,
+  NEVER emoji), each wearing its category's WORST status as a corner dot. Click a chip →
+  that category's LAST SESSION (tabs + previously-open popups) lands on the rail; click it
+  again or click a sibling chip → clean sweep. Login = empty rail ("quiet start" is
+  inherent — nothing shows until the user reaches).
+- **Session tabs** (Chrome-tab metaphor, per-device persisted like the item-tab rail):
+  conversation name + status LEFT EDGE. The tab's ✕ HIDES it from the rail only — it
+  never ends a conversation.
+- **The ALL tab sits FIRST (leftmost)** in every session: dashed/blue, opens the
+  un-ended-conversations menu — status dot + name + snippet + **Open** (primary, blue) /
+  **End** (secondary, ghost) per row.
+- **Popups are Messenger-style:** each opens ABOVE ITS OWN TAB, multiple at once; hazard
+  cap; header = status dot + category stamp + name + **End** (secondary) top-right.
+- **Open/End language everywhere — never "Close".** Ending removes the conversation from
+  the All list and rail; the full history persists server-side forever (phone-contact
+  model) and resurrects on any new message or right-click restart.
+- **Status grammar (registry semantics):** Red = Unseen · Yellow = Reply? (seen, awaiting
+  your reply) · Green = Replied. Applied to toolbar chips (worst-of-category), tabs
+  (left edge), and menu rows (dots).
+- **Bubbles = Apple feel (Jac's explicit palette exception, 2026-07-07):** operator
+  messages in iMessage blue #0A84FF with white ink; customer replies in a soft orange
+  tint. Bubble radius 16px with the Apple corner-notch.
+- **Starting conversations:** the R20 context menu on any customer grows Text… / Email… /
+  Ask Mr. Wrangler about… entries.
+- **Customer profile:** a compact **Comms section** — last exchange per channel + Open +
+  End — while sends keep stamping the History timeline as today.
+- **Scope: all four categories, one system** — the old team-chat dock button, Mr. Wrangler
+  dock button, and their bottom-bar clutter retire into this rail (migration may land in
+  two PRs: rail engine + customer channels first, team/wrangler adapters second — but the
+  METAPHOR ships whole).
+
+## ✅ Addendum — 2026-07-06 (Jac): customer THREADS in the chat dock
+
+- **D5 · Customer conversations live in the bottom chat rail** — the same dock surface as
+  team chat / Mr. Wrangler: a per-customer THREAD the operator talks in, not just one-shot
+  sends. Two-way: inbound replies (SMS via the Mocean inbound webhook; email via the
+  operations@ inbox) land in the customer's thread.
+- **D6 · Channel per message: text OR email**, picked in the composer. SMS rides the
+  Phase-1 `sendCustomerMessage` pipe; email is a sibling channel through the same gates
+  (isolation, allowlist, consent, quiet-hours-for-automated, cap, server-only log).
+- **D7 · Email FROM picker.** Sending an email offers a dropdown of the app's CONNECTED
+  addresses so the operator chooses which one it goes out as. Implementation direction:
+  the backend runs as operations@jacrentals.com — GmailApp send-as ALIASES are the
+  "connected emails" (server enumerates `GmailApp.getAliases()`; adding an address =
+  adding a Gmail send-as alias, no new OAuth). Server validates the chosen from against
+  the alias list (client choice is advisory, never trusted).
+- **Scope note:** this IS Phase 2 (with the reminder sweep + STOP webhook + Settings →
+  Notifications pane). Phase 1 (the one-shot SMS pipe) shipped 2026-07-06.
+
 ## ✅ Decisions — 2026-06-29 critique (Jac)
 
 These resolve the §11 Open Questions. **Priority note:** Jac wants this built **before GPS** (the SMS channel is the prerequisite for GPS stray alerts, `gps-tracking` D4) — and it also unblocks the dead Reputation KPI.
@@ -49,22 +139,26 @@ A glance at the bell or the chat dock tells the team what needs a human; the cus
 
 The live system is documented here **as canon**. Three sub-systems exist; only the first two are real channels.
 
-### 2.1 SHIPPED — Internal team chat (`APP-23`, app.js:7541)
+### 2.1 SHIPPED — Internal team chat (`APP-23`) — RESHAPED 2026-07-08
 
-A bottom-dock chat built on Phase-6 record comments.
+Reshaped from the Phase-6-comment dock into **user-created, titled, member-scoped threads**
+riding the v3 comms rail. Full design + rationale:
+`docs/superpowers/specs/2026-07-08-team-chat-rail-update-design.md`.
 
 | Piece | Where | Behavior |
 |---|---|---|
-| Comment feed | `chatComments()` app.js:7548 | Every `rec.comments[]` across customers/rentals/units/invoices/workOrders/categories, flattened into a "what's flagged" feed. |
-| Threads | `state.chat.chats[]` | Each chat = `{ id, tags[], participants[], messages[], seen{} }`. Threads are **never deleted** — a 0-participant chat goes dormant and is reopened via a tagged element. |
-| Tags | `chat.tags[]` | Colored chips referencing a record (`{card, recId}`); a thread "carries its own context." Added by right-click / long-press / drag-in. |
-| Roles | `chat.participants[]` | Role buttons toggle who's included (`chatToggleRole` app.js:7955). Default = all `ROLES`. |
-| Unread | `chatUnreadCount()` 7554, `chatUnseenForRec()` 7561 | Per-user `seen{}` map drives a re-flash on tagged elements and an unread count. |
-| Send | `chatSend()` app.js:7945 | Pushes a message `{id, by, when, at, text}`, marks self-seen, debounced sync, haptic tick. |
-| Sync | `pushChats/loadChats/mergeChats` app.js:15755–15807 | Mirrored through the backend `teamChats` Sheet tab. **UNION by id** (threads, messages, tags, participants) so two users never clobber. `setChats/getChats` GAS actions. |
-| Backend | `docs/handoffs/wrangler-rail-sync-backend.gs` | `getChats_/setChats_` upsert-only, never delete; one row per chat `[id, json]`. |
+| Threads | `state.chat.chats[]` | Each chat = `{ id, title, members[rosterId], messages[{…,refs?}], seen{}, by, muted[] }`. User-created + **titled** (editable in the window header); **never deleted**. Legacy `{tags,participants}` chats normalize on load (`normalizeTeamChat`). |
+| Ownership | `chatIsAdmin` · `chat.by` | The creator is the chat's **admin** — only they add/remove members or rename. Members get a read-only member list and can **voluntarily leave** (`chatLeave`). |
+| Members | `chatMemberBarHtml` | Named people from **Settings → Team Roster** (`settings.employees`), grouped by role; **default none**. Identity binds the login name → roster person (`myRosterId`, case-insensitive); an unbound login sees all (fallback). |
+| Copy → paste | `copyElement` · `state.held` · message `refs` | Right-click a record → **Copy to chat** (or drag onto the chat pad) → paste as a **live, clickable chip** (`chatRefChipHtml`; a deleted record greys out). Mr. Wrangler paste sets the chat's *focused record* instead (`wranglerContext`). **Internal-only** — never surfaces in a customer text/email composer. Retired the old right-click "start a chat" seed. |
+| Gear menu | `chatSettingsMenu` | Mark as read · Mute (per-user; a muted chat never raises a status dot) · Rename/End (admin) · Leave (member). |
+| Status | `commsTeamStatus` | Per-tab red/yellow/green = unseen / reply? / replied (muted → quiet). |
+| Flagged overview | `chatComments()` | The "what's flagged" record-comment feed still shows when no chat is open — its fate (Notifications / landing / drop) is **deferred**. |
+| Sync | `pushChats/loadChats/mergeChats` + `reconcileScopedChats` | Backend `teamChats` tab. Messages **union by id**; `title`/`members` are **admin-authoritative** (adopt the server's value unless a local edit is unpushed) so a Leave/kick/rename isn't clobbered by a racing poll. Client sends its identity (`me`/`rosterId`) and prunes scoped-out chats live. |
+| Backend privacy | `docs/handoffs/team-chat-privacy-backend.gs` (**DEPLOYED 2026-07-08**) | `getChats_` scopes reads to admin+members; `setChats_` authorizes writes (non-member self-leave only + own view-state, no injecting/tampering). Back-compatible (absent identity = old client → prior behavior). Identity is client-asserted behind the team password — a real filter for normal use, **not a crypto boundary** (true per-person privacy needs per-user auth). |
 
-`commentUserKey()` identifies the author (role/device-derived). Avatars: deterministic color + initials (`chatAvatarColor`, `chatInitials`).
+`commentUserKey()` identifies the author. Avatars: deterministic color + initials
+(`chatAvatarColor`, `chatInitials`).
 
 ### 2.2 SHIPPED — Mr.-Wrangler notification bell (§18f, app.js:10915)
 
@@ -122,7 +216,7 @@ Permissions key off **tiers** (`ROLE_TIERS`, config.js:326 — `staff`/`money`/`
 
 | Capability | Min tier | Server-enforced? | Rationale |
 |---|---|---|---|
-| Read/post in team chat | `staff` (1) | password gate (signed-in) | Any signed-in role; per-thread `participants[]` further scopes visibility. |
+| Read/post in team chat | `staff` (1) | password gate (signed-in) | Any signed-in role; a chat is scoped to its **admin + members** — enforced server-side by `getChats_`/`setChats_` (2026-07-08), not just the client. |
 | See the resolved-fix bell | `staff` (1) | n/a (read-only mirror) | Read-only system feed, no customer data. |
 | Approve Mr.-Wrangler requests | `manager` (3) | yes (existing) | Existing `canApproveRequests` app.js:10895. |
 | **Send a customer QUOTE** (exposes a committed price) | `money` (2) | **YES — `sendCustomerMessage` re-checks tier server-side** | Commits a price to the customer; a price commitment is a money action. Office/Sales are `money`. |
@@ -144,7 +238,7 @@ Permissions key off **tiers** (`ROLE_TIERS`, config.js:326 — `staff`/`money`/`
   2. assert that `recId`'s owner **equals** the supplied `customerId` (reject `{ok:false, reason:'isolation'}` on mismatch — a tampered client cannot send Customer A's record to Customer B);
   3. treat any client-supplied `to` as advisory/ignored (**OPEN Q-7**: forbid ad-hoc recipients entirely in v1).
 - **Inbound** (STOP/replies) is matched back to a customer **by the sending phone number** server-side; an inbound from an unknown number is logged but **never auto-attached** to an arbitrary customer (anti-spoof, see §10).
-- **Team chat** is internal-only and already role-scoped by `participants[]`; no customer ever sees it, and no customer PII is *authored into* a chat thread by this area (a reply-surface ping references the customer by id/name only — **OPEN Q-5**).
+- **Team chat** is internal-only and **server-side member-scoped** (admin + members, via `getChats_`/`setChats_`, 2026-07-08 — identity client-asserted behind the team password); no customer ever sees it, and no customer PII is *authored into* a chat thread by this area (a reply-surface ping references the customer by id/name only — **OPEN Q-5**).
 
 ### 3.3 Money / pricing-floor gating
 
@@ -164,7 +258,7 @@ Schema-less Sheets + additive JSON fields. Nothing renames or drops existing fie
 |---|---|---|
 | Customer | `customerId`, `phone`, `email`, `firstName`, `name`, `accountType`, `netDays` | `newCustomer` draft, app.js:9815 |
 | Invoice | `invoiceId`, `customerId`, `total` (via `invoiceTotals`) | app.js:14761 |
-| Chat thread | `{ id, tags[], participants[], messages[], seen{} }` | `state.chat.chats` |
+| Chat thread | `{ id, title, members[rosterId], messages[{…,refs?}], seen{}, by, muted[] }` | `state.chat.chats` |
 | Notif (system) | `{ number, title, verdict, url, closedAt, merged }` | `wranglerNotifs` |
 
 ### 4.2 Proposed — additive customer fields (consent)
@@ -252,8 +346,8 @@ Backend = Google Apps Script, schema-less Sheets, **additive actions** on the si
 
 | Action | Body | Returns | Notes |
 |---|---|---|---|
-| `getChats` | — | `{ ok, chats[] }` | team chat, all rows |
-| `setChats` | `{ chats }` | `{ ok, saved }` | upsert-only, never delete |
+| `getChats` | `{ me, rosterId }` | `{ ok, chats[] }` | team chat, **scoped to the caller** (admin + members); absent identity = old client → all rows |
+| `setChats` | `{ chats, me, rosterId }` | `{ ok, saved }` | **authorized** upsert (2026-07-08): owner=full, member=self-leave + own view-state + message-append, non-member=reject; messages unioned; never deletes |
 | `wranglerNotifications` | — | `{ ok, notifications[] }` | resolved-fix feed |
 | `wranglerRequests` / `wranglerApprove` / `wranglerDismiss` | — / `{number}` | `{ ok, … }` | requests inbox |
 
