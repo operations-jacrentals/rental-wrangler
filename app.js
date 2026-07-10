@@ -81,6 +81,10 @@ const dayDiff = (a, b) => Math.round((b - a) / 86400000);
 // Keep "today" current on a long-lived tab. TODAY_ISO is an ESM live binding, so
 // every call-time reader picks up the new day for free; TODAY (a Date) is re-derived here.
 function refreshToday() { if (refreshTodayISO()) { TODAY = parseISO(TODAY_ISO); } }
+/* Trailing debounce: returns a scheduler you call with a thunk each time — it cancels
+   any pending thunk and reschedules, so only the LAST call in a burst actually runs.
+   Used to keep typing snappy on inputs whose reaction is expensive (a full render()). */
+function debounce(ms) { let t; return (fn) => { clearTimeout(t); t = setTimeout(fn, ms); }; }
 
 const SINGULAR = { customers: 'customer', rentals: 'rental', units: 'unit', invoices: 'invoice', categories: 'category', workOrders: 'workOrder', inspections: 'inspection', serviceOrders: 'unit', models: 'model' };
 
@@ -2769,11 +2773,13 @@ function openInvoice(invId) {
 }
 
 /* ── global search (§5.4) ────────────────────────────────────────────────── */
-function setQuery(q) {
-  state.query = q;
-  recomputeSearchMode();
-  render();
-}
+function setQueryValue(q) { state.query = q; recomputeSearchMode(); }
+function setQuery(q) { setQueryValue(q); render(); }
+// Keystrokes debounce the (expensive, full-app) render — every character updates
+// state.query immediately, but the DOM rebuild waits for a pause in typing, so the
+// input never blocks on a re-render mid-keystroke. Click-driven callers (a saved
+// search, a filter chip) still go through the synchronous setQuery() above.
+const scheduleGlobalSearchRender = debounce(150);
 /** Clear any "Show more" expansion on every card of the active session. */
 function resetListLimits() { const s = activeSession(); if (s && s.cards) Object.values(s.cards).forEach((cs) => { cs.listLimit = undefined; }); }
 // Any search/filter-set change restarts each card at 60 rows (keeps typing snappy
@@ -17931,25 +17937,32 @@ function completeWOAttempt(woId) {
   openOverlay({ kind: 'wodone', woId });           // "Are you sure? Not all items are completed."
 }
 
+// Re-render debounced, then land focus + cursor back on `findEl()` (the input gets
+// torn down and recreated by the full-app render, same as the old synchronous path).
+function debouncedSearchRerender(schedule, renderFn, findEl) {
+  schedule(() => {
+    const el2 = findEl(); const sel = el2 ? el2.selectionStart : null;
+    renderFn();
+    const el3 = findEl(); if (el3 && sel != null) { el3.focus(); el3.setSelectionRange(sel, sel); }
+  });
+}
+const scheduleHistorySearchRender = debounce(150);
+const scheduleMiniSearchRender = debounce(150);
 function onInput(e) {
   if (e.target.id === 'globalsearch') {
-    const sel = e.target.selectionStart;
-    setQuery(e.target.value);                      // re-renders; the input is recreated
-    const gs = document.getElementById('globalsearch');
-    if (gs) { gs.focus(); gs.setSelectionRange(sel, sel); }
+    setQueryValue(e.target.value);
+    debouncedSearchRerender(scheduleGlobalSearchRender, render, () => document.getElementById('globalsearch'));
     return;
   }
   if (e.target.classList.contains('js-history-search')) {
     if (state.overlay?.kind === 'board') {   // vendor detail in the board popup — history search rides the overlay state
       state.overlay.historySearch = e.target.value;
-      const sel = e.target.selectionStart; renderOverlay();
-      const hs = document.querySelector('.overlay .js-history-search'); if (hs) { hs.focus(); hs.setSelectionRange(sel, sel); }
+      debouncedSearchRerender(scheduleHistorySearchRender, renderOverlay, () => document.querySelector('.overlay .js-history-search'));
       return;
     }
     const card = e.target.closest('.card')?.dataset.card; if (!card) return;
     activeSession().cards[card].historySearch = e.target.value;
-    const sel = e.target.selectionStart; render();
-    const hs = document.querySelector(`.card[data-card="${card}"] .js-history-search`); if (hs) { hs.focus(); hs.setSelectionRange(sel, sel); }
+    debouncedSearchRerender(scheduleHistorySearchRender, render, () => document.querySelector(`.card[data-card="${card}"] .js-history-search`));
     return;
   }
   if (e.target.classList.contains('mini-search')) {
@@ -17958,14 +17971,11 @@ function onInput(e) {
     // rides state.calSearch directly instead of a per-card cs (Phase 1, spec §2.2).
     if (card === 'calendar') {
       state.calSearch = e.target.value;
-      const sel = e.target.selectionStart; render();
-      const ms = document.querySelector('.mini-search[data-card="calendar"]'); if (ms) { ms.focus(); ms.setSelectionRange(sel, sel); }
+      debouncedSearchRerender(scheduleMiniSearchRender, render, () => document.querySelector('.mini-search[data-card="calendar"]'));
       return;
     }
     const mcs = activeSession().cards[card]; mcs.search = e.target.value; mcs.listLimit = undefined;
-    // light re-render of just that card would be ideal; full render is fine at seed scale
-    const sel = e.target.selectionStart; render();
-    const ms = document.querySelector(`.mini-search[data-card="${card}"]`); if (ms) { ms.focus(); ms.setSelectionRange(sel, sel); }
+    debouncedSearchRerender(scheduleMiniSearchRender, render, () => document.querySelector(`.mini-search[data-card="${card}"]`));
     return;
   }
   // Feedback description → store as they type (so a re-render keeps it).
@@ -21493,8 +21503,7 @@ async function refreshDrivingScore() {
 }
 
 const dataSnapshot = () => { const s = {}; PERSIST_KEYS.forEach((k) => { s[k] = DATA[k] || []; }); return s; };
-async function loadFromBackend() {
-  const r = await backendCall('load');
+function applyLoadResponse(r) {
   if (!r || !r.ok) throw new Error((r && r.error) || 'load-failed');
   const data = r.data || {};
   // Apply whatever the backend holds. We do NOT auto-seed on empty anymore — that
@@ -21510,6 +21519,7 @@ async function loadFromBackend() {
     applySettings(r.settings);
   }
 }
+async function loadFromBackend() { applyLoadResponse(await backendCall('load')); }
 
 // ── Incremental persistence (diff-based sync) ──────────────────────────────
 // Whole-state seed doesn't scale (≈1.7 MB / 10 s at real volume). Instead we keep
@@ -22244,9 +22254,15 @@ async function attemptLogin() {
   // audio play under the browser's autoplay policy (a muted-only clip would stay silent).
   const vid = document.getElementById('login-video'); if (vid) { try { vid.muted = false; const p = vid.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
   try {
+    // 'auth' (role lookup) and 'load' (full dataset) each independently validate the
+    // password server-side and neither's response feeds the other's request, so they
+    // don't need to run back to back — firing 'load' immediately, before awaiting
+    // 'auth', turns two serial GAS round-trips (the slow part of login) into one.
+    const loadPromise = backendCall('load');
+    loadPromise.catch(() => {});   // a network-level rejection here is handled where loadPromise is awaited below; this just keeps it from surfacing as an unhandled rejection if an early 'auth' throw skips that await
     // Ask the backend for the role. The role-aware backend returns it; an older
     // backend (pre-roles) replies "unknown action" → we proceed without a role
-    // (single-password mode). loadFromBackend then validates the password either way.
+    // (single-password mode). loadPromise then validates the password either way.
     let role = '';
     try {
       const a = await backendCall('auth');
@@ -22259,7 +22275,7 @@ async function attemptLogin() {
     try { sessionStorage.setItem('jactec.role', role); } catch {}
     sessionStorage.setItem('jactec.pw', pw);
     gpsLogin().then((ok) => { if (ok) { refreshGpsLive(); startGpsViewPoll(); refreshDrivingScore(); } });   // silent GPS login (§5, via GAS token proxy) → live snapshot (step 3) + view-scoped refresh (step 4) + fleet driving score (step 7); fire-and-forget, never blocks main login
-    await loadFromBackend();
+    applyLoadResponse(await loadPromise);
     finishLoad();
     applyRoleLanding();   // each role lands on its default main/sub-card
   } catch (e) {
