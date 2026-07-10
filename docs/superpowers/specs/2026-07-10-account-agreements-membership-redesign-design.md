@@ -78,9 +78,22 @@ only ever happens through a signed Agreement).
   invoice-selection is a lower-tier staff action.
 - **D14 — Manager password override, per-action.** Attempting a rental on a blocked account
   pops a **Manager-password** prompt authorizing **only that one action**. Every subsequent
-  attempt re-prompts — intentionally repetitive, no persistent bypass. (Interpretation pending
-  Jac: applies to blacklisted accounts too, or is Blacklist a hard stop no manager can
-  override? — see Open Questions.)
+  attempt re-prompts — intentionally repetitive, no persistent bypass. **A Blacklist is Owner-tier
+  (D13) and is NOT Manager-overridable** — Manager per-action override covers `no-card`,
+  `failed-payment`, and `invoice-hold` only.
+- **D15 — Notes is its own row.** `+Notes` sits as its own row **under Driver's License** in the
+  account fields (pulled out of the current NOTES·PO·PROTECTION grouping).
+- **D16 — `+Agreement/Card` is the top add-row** *inside* the scrollable Agreements list,
+  styled identically to the `+Customer` / `+Rental` add-row pattern (blue add-row pinned at the
+  top of the scroll list) — not a detached button.
+- **D17 — Block Account button sits bottom-RIGHT** of the Account section (not bottom-left).
+- **D18 — Collapsed agreement row field order** (left → right):
+  1. **Account Type** — OR, if it's a membership agreement, its **status** (e.g. `MEMBERSHIP
+     PENDING`, `MEMBERSHIP RENEWAL FAILED`, …).
+  2. **Signed Date** — or `NOT SIGNED`.
+  3. **Card indicator** — `V-2261` (Visa) / `M-2261` (Mastercard) [letter-dash-last4], OR a card
+     status: `NO CARD`, `PAYMENT FAILED`, `EXPIRED`, `EXPIRING SOON`, `BANK BLOCKED`, `DISPUTED`, …
+  4. **`NO SELFIE`** flag (when the selfie is missing).
 
 ---
 
@@ -93,20 +106,27 @@ routed through `/jactec-ui` at build time).
 ┌─ ACCOUNT ─────────────────────────────────────────────┐
 │  NAME    Jacob Cameron      COMPANY  Jac Rentals        │  ← merged-in account fields
 │  PHONE   (409) 679-5133     EMAIL    jacob@…            │     (were behind the old popup)
-│  INDUSTRY …                 NOTES·PO·PROTECTION …       │
+│  INDUSTRY …                 PO · PROTECTION …           │
 │  DRIVER'S LICENSE …         PAYMENT TERMS — NET DAYS …  │
+│  [ + Notes … ]                                          │  ← D15: own row under Driver's License
 │  ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄  │
-│  AGREEMENTS                          [ + Agreement/Card ]│  ← blue secondary, top of rows
+│  AGREEMENTS  (scrollable)                               │
 │  ┌───────────────────────────────────────────────────┐ │
-│  │ ● VISA ••2261 · Business Member · signed Jun 11    │ │  ← collapsed row (richer than tab)
+│  │ [ + Agreement/Card ]                                │ │  ← D16: top add-row, like +Customer
+│  │ ● Business Member · Jun 11 · V-2261                 │ │  ← D18 collapsed order (see below)
 │  ├───────────────────────────────────────────────────┤ │
 │  │ ▼ (expanded) selfie · agreement · terms · signature│ │  ← push-down inline expand
 │  │   ACCOUNT TYPE [ Business Member ▾ ]   Start Date […]│ │     (like Invoices rows)
 │  │   [ Sign ]  (blocked until Start Date if Member)    │ │
 │  └───────────────────────────────────────────────────┘ │
-│  [ Block account ]                                      │  ← manual block button (D12/D13)
+│                                     [ Block account ]   │  ← D17: bottom-RIGHT
 └────────────────────────────────────────────────────────┘
 ```
+
+**Collapsed agreement row (D18), left → right:**
+`[Account Type | membership STATUS]` · `[Signed Date | NOT SIGNED]` ·
+`[V-2261 | M-2261 | NO CARD | PAYMENT FAILED | EXPIRED | EXPIRING SOON | BANK BLOCKED | DISPUTED]` ·
+`[NO SELFIE]`
 
 - Row expand mirrors the Invoices inline-row mechanic (find the existing push-down expand
   in the Invoices section and reuse its structure/animation).
@@ -169,8 +189,10 @@ on the customer record with a typed reason:
 | `blacklist` | Manual, no invoice selection | Only the existing blacklist-lift path | **Owner password** (D13) |
 | `invoice-hold` | Manual, staff selects invoice(s) | The selected invoice(s) are paid → auto-unblock | staff (lower tier) |
 
-- **Rental attempt on any blocked account** → Manager-password popup authorizing that one
-  action (D14). No persistent unblock.
+- **Rental attempt on a blocked account** → Manager-password popup authorizing that one action
+  (D14). No persistent unblock. **Exception: a `blacklist` block is Owner-tier and is NOT
+  Manager-overridable** — only `no-card`, `failed-payment`, and `invoice-hold` accept the
+  Manager per-action override.
 - **Membership charge failures are excluded** from `failed-payment` (D11).
 - Reuse the existing `roleTier`/`canMoney` machinery (`app.js:15890`) for the Owner/Manager
   password tiers; do not invent a parallel auth path.
@@ -215,9 +237,8 @@ These three came up earlier and haven't been pinned. My interpretation below; re
 
 ## 9. Open questions
 
-1. **D14 scope:** does the Manager per-action override apply to Blacklisted accounts too, or is
-   Blacklist a hard stop no manager can override? (Owner set it per D13 — should only Owner
-   override it?)
+1. ~~D14 scope vs Blacklist~~ — **RESOLVED (2026-07-10):** Blacklist is Owner-tier; Manager
+   override does not reach it (D14).
 2. §7a/7b/7c — the three `[NEEDS CONFIRM]` items above.
 3. Migration: existing members created via the old bypass (e.g. Matt Bellon) — data remediation
    is separate from this code change (flagged in triage; Jac handling account-side).
