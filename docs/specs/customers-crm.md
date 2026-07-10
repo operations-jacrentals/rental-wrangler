@@ -108,6 +108,57 @@ Inline `[2026-07-09: …]` markers at the affected sections point back here.
   (app.js:9045) — unrelated to this area; noted here only so `Rxx` placeholders still in
   §6.2a/§6.3/§6.4 aren't accidentally assigned R30 later.
 
+## Shipped status (2026-07-10) — Account/Agreements redesign + membership auto-enroll
+
+A same-day batch on `customers-crm/account-agreements-redesign` (PR #584 → `area/customers-crm`,
+not yet merged as of this note) closed a real bug — staff could set a customer to `Business
+Member` via a raw account-type picker with zero invoice/charge/cadence — and rebuilt the
+surrounding Account/Agreements UI, membership enrollment, and the account-block gate. Full spec:
+`docs/superpowers/specs/2026-07-10-account-agreements-membership-redesign-design.md` (D1-D27);
+plan: `docs/superpowers/plans/2026-07-10-account-agreements-membership-redesign-plan.md`.
+
+- **R-numbers shifted again since the 2026-07-09 note above — that note is now STALE.** Current
+  reality: `R27` = `acctBtn` (not R28), `R28` = `invoiceStatMenu`/`js-inv-statmenu` (not R29),
+  `R29` = the new `toggleChip` builder (Member-Mode / Net-Terms chips, app.js ~5341). `rule-usage.js`
+  (generated, `ci/gen-rule-usage.mjs --check`) is the source of truth going forward — treat any
+  prose R-number here as a snapshot, not canon.
+- **SHIPPED — account type can now ONLY change via a signed agreement (`agreementSignCommit`,
+  app.js).** The raw account-type picker + its `js-nc-acct` handler are removed; Wrangler/CSV
+  import clamp to non-member (`wrAccount`). This is the actual bug fix — every account-type
+  change now requires a captured signature, and for a Member type, a Start Date + a card on file.
+- **SHIPPED — Account section + Agreements accordion** (`customerAccountSection`,
+  `customerAgreementsSection`, app.js) replace the old top-of-card account fields.
+  `paymentMethodsSection` was **deliberately kept, not retired** — it still owns real ACH/card
+  management (nickname, make-default, remove) the new accordion doesn't replicate (read-only).
+- **SHIPPED — `Pending` membership status** (`membershipStatus`) for a signed-but-future-dated
+  enrollment: card isn't charged until the Start Date; if Start Date is today, it charges
+  immediately. **Backend now enforces this too** (2026-07-10 patch to `membershipEnroll_` /
+  `membershipBillingCron` in the Apps Script project) — a deferred enrollment lands the member
+  account-type + commitment fields immediately without charging, and the daily cron picks up the
+  first charge on the Start Date via `commitmentStart`/`paidUntil` (fields that already existed;
+  no invented schema). The frontend's sign=enroll commit was corrected to match this real
+  contract — PROD never fabricates a local invoice (the backend creates it), fixing what would
+  otherwise have been a permanently-unpaid phantom invoice for every future-dated enrollment.
+- **SHIPPED — account-block delivery gate** (`accountBlock`, `blockPicker`,
+  `accountBlockGate`/`accountBlockOverride`): `blacklist` (Owner-tier, hard stop, no per-action
+  bypass) and `invoice-hold` (staff-tier, resolves when the held invoices clear) are new manual
+  block types; `no-card` / `failed-payment` are derived and extend (never weaken) the pre-existing
+  `cardGateBlocked` gate. A failed **membership** charge specifically does NOT trip this gate
+  (D11) — only a declined rental/other invoice does, via a customer-level `c.chargeFailedAt` flag
+  cleared by ANY successful payment on the account (not per-invoice).
+- **SHIPPED — KPI strip rework** (`invSummaryStrip`): Member-Mode sales toggle (arrows + inline
+  delta, the underlying tile number never changes) + an Open/All/Transactions view toggle
+  (replaces the plain "Invoices" title). "Paid YTD" was renamed **"1YR AVG"** and changed from a
+  calendar-year sum (reset toward $0 every January) to a trailing-365-day total divided by 12 — a
+  smoothed monthly run-rate that never resets.
+- **SHIPPED — invoice accordion: click anywhere in an open invoice's header to collapse it**, not
+  just the chevron (excludes the status-menu's own dropdown, which still needs its own click for
+  Pay/Print/Refund).
+- **Design-system Phase 6 (dot→background sweep) shipped SEPARATELY**, PR #588 →
+  `area/design-system` (merged) → `staging` (live) — out of scope for this doc/area; see that
+  plan's Phase 6 note. Only 2 of 6 dot-bearing toggles found codebase-wide were in scope (the two
+  genuine 3-state red/yellow/green status toggles); 4 category-color pickers were left alone.
+
 ---
 
 ## 1. Goal & Problem

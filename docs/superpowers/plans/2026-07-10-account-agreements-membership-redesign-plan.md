@@ -81,6 +81,19 @@ lapse; system-actor authority; bounded retries; ambiguous-timeout re-check. Enro
 future `startDate` and schedules. **Must NOT set the delivery-block flag on membership failure.**
 - **Acceptance:** dry-run in the GAS editor on a test row; STOP-gate before prod per `/clasp`.
 
+**STATUS (2026-07-10): DONE, LIVE.** Recon corrected an earlier stale assumption —
+`membershipBillingCron`/`installMembershipBillingCron`/`membershipDailySweep` already existed
+and correctly handle recurring renewals; the actual gap was narrower: `membershipEnroll_` always
+charged immediately regardless of `startDate`, and the cron never picked up a first charge (it
+always skipped records with no `paidUntil`). Additive patch: `membershipEnroll_` gets a new
+`start > today` branch that lands the member account-type + commitment fields immediately without
+charging (logs `membership-enroll-deferred`); `membershipBillingCron` now distinguishes
+first-charge-due (`!paidUntil && commitmentStart ≤ today`) from not-yet-started from
+already-paid-ahead, and bases the resulting `paidUntil` off `commitmentStart` (not `today`) for
+that first charge. Both reuse existing fields — no invented schema. Pushed via the
+service-account script (`gas-deploy-service-account.mjs push`, content-only/safe), Jac redeployed
+from the Apps Script editor, verified live (anonymous `/exec` still answers correctly post-deploy).
+
 ## Phase 5 — KPI Member-Mode sales toggle + Open/All/Transactions toggle · /jactec-ui + MAIN math
 
 **STATUS (2026-07-10): DONE, commit `28c84da`.** Built against the approved v6 mockup
@@ -98,7 +111,20 @@ dot-bearing toggles; convert uniformly; preserve focus/AA/reduced-motion.
 - **Scoping note (2026-07-10):** the spec explicitly says this sweep is "not scoped to this
   card" — it's a codebase-wide design-system pass, not specific to Account/Agreements. Given the
   size of this PR already, recommend this ships as its OWN follow-up task/PR against
-  `area/design-system`, rather than further expanding this one. Not started.
+  `area/design-system`, rather than further expanding this one.
+
+**STATUS (2026-07-10): DONE.** Shipped as its own PR (#588, `design-system/dot-to-background-toggles`
+→ `area/design-system`, merged) → `staging` (live, verified via curl against the mirror site).
+Scope was narrowed with Jac first: of 6 dot-bearing interactive families found, only the 2 genuine
+3-state red/yellow/green **status** toggles converted — the customer funnel toggle's next-action
+urgency (`funnelSectionHtml`, was `seg-dot`) and the card-capture signing-progress tabs (`.ag-tab`,
+was `ag-dot`). The other 4 (chat-rail tabs, chat-member toggle buttons, the note color-tag picker,
+the comment-flag picker) use dots for 6-color category coding, not status, and were left alone.
+Both converted components use the existing soft-bg + solid-ink convention
+(`--red-bg`/`--yellow-bg`/`--green-bg`, matching `.c-green`/`.c-yellow`/`.c-red`); the selected
+funnel segment stays solid orange (rule #3) with a thin inset ring for `due` so it isn't lost when
+that segment is also active. Self-critiqued via screenshots (dark theme, the app's only theme) —
+all states legible, no visual bugs.
 
 ## Phase 7 — Close-out
 Sync `docs/specs/customers-crm.md` + `memberships.md` to shipped reality; `/role` audit (delegable
