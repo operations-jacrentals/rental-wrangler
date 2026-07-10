@@ -370,14 +370,17 @@ function cardGateReason(cust) {
   return '';
 }
 /* Phase-0 (2026-07-10 account/agreements redesign) — the account BLOCK model (spec §6, D11-D14).
-   Derives the single active block or null. The two AUTOMATIC types are derived (never stored, so no
-   stale state): `no-card` (no valid card) and `failed-payment` (a NON-membership invoice whose last
-   charge failed and still carries a balance — membership charge failures are EXCLUDED per D11, they
-   only walk the pricing lifecycle). The two MANUAL types are read from stored `c.block`: `blacklist`
-   (Owner-set hard ban, D13) and `invoice-hold` (staff picks invoices that must be paid to auto-
-   unblock, D12 — resolves itself once those balances clear). Precedence: blacklist → invoice-hold →
-   failed-payment → no-card. `i.chargeFailed` is a Phase-3 field; until then failed-payment is dormant.
-   NOT wired into the rental gate yet (Phase 3 does that + the per-action Manager override). */
+   Derives the single active block or null. The two AUTOMATIC types are derived (never stale-stored):
+   `no-card` (no valid card) and `failed-payment` (a real decline on a NON-membership charge — membership
+   charge failures are EXCLUDED per D11, they only walk the pricing lifecycle). The two MANUAL types are
+   read from stored `c.block`: `blacklist` (Owner-set hard ban, D13) and `invoice-hold` (staff picks
+   invoices that must be paid to auto-unblock, D12 — resolves itself once those balances clear).
+   Precedence: blacklist → invoice-hold → failed-payment → no-card.
+   `failed-payment` is a CUSTOMER-level flag (`c.chargeFailedAt`), not per-invoice: per Jac's explicit
+   call (2026-07-10 Q3), ANY successful payment anywhere on the account clears it — paying off the
+   specific invoice that declined is NOT required. `c.chargeFailedAt`/`applyPayment`'s clear are Phase-3
+   fields; until Phase 3 writes them, failed-payment is dormant. NOT wired into the rental gate yet
+   (Phase 3 does that + the per-action Manager override). */
 function accountBlock(c) {
   if (!c) return null;
   const b = c.block || null;
@@ -386,10 +389,18 @@ function accountBlock(c) {
     const ids = (b.invoiceIds || []).filter((id) => { const inv = IDX.invoice.get(id); return inv && invoiceTotals(inv).balance > 0.005; });
     if (ids.length) return { type: 'invoice-hold', invoiceIds: ids, reason: 'Held until the selected invoice(s) are paid' };
   }
-  const failed = DATA.invoices.filter((i) => i.customerId === c.customerId && !i.membership && i.chargeFailed && invoiceTotals(i).balance > 0.005);
-  if (failed.length) return { type: 'failed-payment', invoiceIds: failed.map((i) => i.invoiceId), reason: 'A payment failed — any successful payment on the account clears it' };
+  if (c.chargeFailedAt) return { type: 'failed-payment', reason: 'A payment failed — any successful payment on the account clears it' };
   if (!hasValidCard(c)) return { type: 'no-card', reason: 'No valid card on file' };
   return null;
+}
+/* Phase 3 (T3.2) — mark a REAL decline on a rental (non-membership) invoice charge. Call ONLY from a
+   definite backend/Stripe decline response — NEVER from a network/timeout/ambiguous path (spec §5.5:
+   those are UNKNOWN, never assumed a failure). CUSTOMER-level, not per-invoice, per Jac's call
+   (2026-07-10 Q3): any successful payment anywhere on the account clears it (see applyPayment below). */
+function markChargeFailed(invoiceId) {
+  const inv = IDX.invoice.get(invoiceId); if (!inv || inv.membership) return;   // membership failures are pricing-only (D11) — never a delivery block
+  const c = inv.customerId ? IDX.customer.get(inv.customerId) : null; if (!c) return;
+  c.chargeFailedAt = TODAY_ISO; reindex('customers', c);
 }
 /* Signing-form glyphs (existing inline marks, hoisted to module scope so the
    per-card tab AND the account-level "held draft" share one capture form). */
@@ -16610,12 +16621,12 @@ async function chargeInvoiceFlow(invoiceId) {
         const f = await backendCall('stripeFinalizeInvoice', { invoiceId, paymentIntentId: r.paymentIntentId });
         if (!live()) return;
         if (f && f.ok) { done(f); return; }
-        fail(friendlyPayErr(f)); return;
+        markChargeFailed(invoiceId); fail(friendlyPayErr(f)); return;   // real decline after 3DS (T3.2)
       }
-      fail('Card authentication was not completed.'); return;
+      fail('Card authentication was not completed.'); return;   // ambiguous (auth abandoned) — not a decline
     }
-    fail(friendlyPayErr(r));
-  } catch (e) { fail('Network error — try again.'); }
+    markChargeFailed(invoiceId); fail(friendlyPayErr(r));   // real decline (T3.2)
+  } catch (e) { fail('Network error — try again.'); }   // network/timeout is UNKNOWN, never marked failed (spec §5.5)
 }
 // Refund the captured amount back to the card (full). Reduces amountPaid; a full
 // refund flips the invoice to Refunded. The server is authoritative.
@@ -16666,6 +16677,11 @@ function applyPayment(invoiceId, r, alloc, refundAlloc) {
   if (refundAlloc) { inv.refundAllocations = inv.refundAllocations || {}; Object.entries(refundAlloc).forEach(([k, v]) => { inv.refundAllocations[k] = (Number(inv.refundAllocations[k]) || 0) + v; }); }
   if (inv.refunded) inv.allocations = {};   // a full refund releases every payment line assignment
   reindex('invoices', inv);
+  // Phase 3 (T3.2) — a successful payment (card, ACH, cash, or check — applyPayment is the single
+  // success handler for all of them) clears a failed-payment block ANYWHERE on the account (D11 /
+  // Jac's Q3 call), not just on the invoice that originally declined. A refund is not a successful
+  // payment, so it does NOT clear the flag.
+  if (!r.refundedCents && inv.customerId) { const c = IDX.customer.get(inv.customerId); if (c && c.chargeFailedAt) { delete c.chargeFailedAt; reindex('customers', c); } }
   const after = invoiceTotals(inv).status;
   logAction(inv, r.refundedCents != null ? `Refunded ${money((r.refundedCents || 0) / 100)} — ${before} → ${after}` : `Payment — ${before} → ${after} (${r.paymentMethod || 'card'})`);
   render();
