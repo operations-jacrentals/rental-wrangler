@@ -4078,7 +4078,40 @@ function invPayState(t) {
   return { cls: 'due', word: t.status };   // Unpaid / Not Due / Late* / Collections
 }
 const invoiceOneLine = (i) => { const l = (i.lineItems || []).map((x) => x.label).filter(Boolean); return l.length ? l.join(' · ') : (i.membership ? 'Membership' : 'No line items yet'); };
-function invSummaryStrip(invs) {
+/* Phase 5 (spec §7b) — the Member-Mode sales-pitch delta. Reuses membershipEconomics' lifetime
+   member-vs-retail comparison (~app.js:3555 by name, membershipEconomics) as a RATIO, applied
+   proportionally to the visible Open/Paid-YTD dollar figures. This is a deliberate APPROXIMATION
+   for a quick sales pitch, not an authoritative per-invoice reconciliation — an exact figure would
+   need re-deriving rates for each specific invoice's rental window at the opposite membership
+   state, which the approved mockup didn't ask for (it showed one illustrative delta, not audited
+   math). Returns null when there's no rental history to compare (nothing to pitch). */
+function kpiModeDelta(c, amount) {
+  if (!(amount > 0.005)) return null;
+  const econ = membershipEconomics(c); if (!econ) return null;
+  if (isActiveMember(c)) {
+    if (!(econ.memberRev > 0)) return null;
+    const delta = amount * (econ.retailRev / econ.memberRev - 1);
+    return delta > 0.005 ? { sign: '+', amount: delta, tone: 'b' } : null;   // Non-Member Mode → retail penalty (red)
+  }
+  if (!(econ.retailRev > 0)) return null;
+  const delta = amount * (1 - econ.memberRev / econ.retailRev);
+  return delta > 0.005 ? { sign: '−', amount: delta, tone: 'g' } : null;   // Member Mode → member savings (green)
+}
+// Phase 5 — Open/All/Transactions (R14 segCtl, replaces the plain "Invoices" title).
+function invViewToggle(c) {
+  const view = (state.custInvView && state.custInvView[c.customerId]) || 'all';
+  return segCtl([
+    { label: 'Open', js: 'js-inv-view', data: { rec: c.customerId, val: 'open' }, on: view === 'open' ? 'accent' : null },
+    { label: 'All', js: 'js-inv-view', data: { rec: c.customerId, val: 'all' }, on: view === 'all' ? 'accent' : null },
+    { label: 'Transactions', js: 'js-inv-view', data: { rec: c.customerId, val: 'transactions' }, on: view === 'transactions' ? 'accent' : null },
+  ]);
+}
+/* invs = the CUSTOMER-WIDE invoice list (always — Open/All only filters the ROW LIST below this
+   strip, never these aggregates; Paid YTD in particular must stay a true lifetime figure, not
+   collapse to ~0 when the 'Open' filter hides every already-paid invoice). Member-Mode (R29
+   toggleChip, reused verbatim from Phase 3) is ON by default for a member (the retention/
+   cancel-penalty pitch) and OFF by default for a non-member (the join pitch) — spec §7b. */
+function invSummaryStrip(invs, c) {
   const yr = TODAY.getFullYear();
   let open = 0, paidYtd = 0; const payDays = [];
   invs.forEach((i) => {
@@ -4089,13 +4122,51 @@ function invSummaryStrip(invs) {
     if (t.paid > 0.005 && i.paidAt && d) { const diff = dayDiff(d, parseISO(i.paidAt)); if (diff >= 0 && diff < 3650) payDays.push(diff); }
   });
   const avg = payDays.length ? Math.round(payDays.reduce((a, b) => a + b, 0) / payDays.length) : null;
-  const chip = (v, l, cls) => `<div class="kchip${cls ? ' ' + cls : ''}"><span class="kc-v">${esc(v)}</span><span class="kc-l">${esc(l)}</span></div>`;
-  return `<div class="inv-summary">`
-    + chip(money2(open), 'Open', open > 0.005 ? 'due' : '')
+  state.custKpiMode = state.custKpiMode || {};
+  if (state.custKpiMode[c.customerId] == null) state.custKpiMode[c.customerId] = isActiveMember(c);
+  const mmOn = state.custKpiMode[c.customerId];
+  const chip = (v, l, cls, amt) => {
+    const d = (mmOn && amt != null) ? kpiModeDelta(c, amt) : null;
+    const arrow = d ? `<span class="arr ${d.tone}">${d.tone === 'g' ? '▼' : '▲'}</span>` : '';
+    const deltaLbl = d ? `<span class="kc-delta ${d.tone}">${d.sign}${money2(d.amount)}</span>` : '';
+    return `<div class="kchip${cls ? ' ' + cls : ''}"><span class="kc-v">${esc(v)}${arrow}</span><span class="kc-l">${esc(l)}${deltaLbl}</span></div>`;
+  };
+  const mmTone = mmOn ? (isActiveMember(c) ? 'red' : 'green') : 'accent';
+  const mmBtn = toggleChip(isActiveMember(c) ? 'Non Member Mode' : 'Member Mode', mmOn, { js: 'js-kpi-mode', data: { rec: c.customerId }, tone: mmTone });
+  return `<div class="inv-kpi-row"><div class="inv-summary">`
+    + chip(money2(open), 'Open', open > 0.005 ? 'due' : '', open)
     + chip(String(invs.length), invs.length === 1 ? 'Invoice' : 'Invoices', '')
-    + chip(money2(paidYtd), 'Paid YTD', 'paid')
+    + chip(money2(paidYtd), 'Paid YTD', 'paid', paidYtd)
     + chip(avg == null ? '—' : avg + 'd', 'Avg pay', '')
-    + `</div>`;
+    + `</div>${mmBtn}</div>`;
+}
+// Phase 5 — the flattened Transactions view: every payment (+ refund) across this customer's
+// invoices, newest first. Uses inv.payments[] where present; falls back to a single synthetic
+// "Paid" row (mirrors invoiceDocHtml's own paymentRows fallback, app.js ~L17150) for legacy/demo
+// invoices that predate that array. Rows are read-only in this pass (no click-to-open yet).
+function invTransactionsHtml(c) {
+  const invs = invoicesForCustomer(c);
+  const txns = [];
+  invs.forEach((i) => {
+    const t = invoiceTotals(i);
+    if ((i.payments || []).length) i.payments.forEach((pmt) => txns.push({ invoiceId: i.invoiceId, at: pmt.at || i.paidAt || i.date, amount: (Number(pmt.amountCents) || 0) / 100, type: pmt.type, checkNum: pmt.checkNum, refund: false }));
+    else if (t.paid > 0.005) txns.push({ invoiceId: i.invoiceId, at: i.paidAt || i.date, amount: t.paid, type: i.paymentMethod || 'Payment', refund: false });
+    if (i.refunded && (Number(i.refundedAmount) || 0) > 0.005) txns.push({ invoiceId: i.invoiceId, at: i.paidAt || i.date, amount: Number(i.refundedAmount) || 0, type: 'Refund', refund: true });
+  });
+  txns.sort((a, b) => (parseISO(b.at) || 0) - (parseISO(a.at) || 0));
+  const collected = txns.reduce((s, x) => s + (x.refund ? 0 : x.amount), 0);
+  const refundCount = txns.filter((x) => x.refund).length, payCount = txns.length - refundCount;
+  const avg = payCount ? collected / payCount : 0;
+  const chip = (v, l, cls) => `<div class="kchip${cls ? ' ' + cls : ''}"><span class="kc-v">${esc(v)}</span><span class="kc-l">${esc(l)}</span></div>`;
+  const kpi = `<div class="inv-kpi-row"><div class="inv-summary">${chip(money2(collected), 'Collected', 'paid')}${chip(String(payCount), 'Payments', '')}${chip(money2(avg), 'Avg', '')}${chip(String(refundCount), 'Refunds', refundCount ? 'due' : '')}</div></div>`;
+  const methodLabel = (type, checkNum) => type === 'cash' ? 'Cash' : type === 'check' ? ('Check' + (checkNum ? ' #' + esc(String(checkNum)) : '')) : type === 'ach-pending' ? 'ACH (pending)' : type === 'charge' ? 'Card' : type === 'Refund' ? 'Refund' : esc(String(type || 'Payment'));
+  const rows = txns.length ? txns.map((x) => `<div class="inv-row">`
+    + `<span class="ir-stat ${x.refund ? 'part' : 'paid'}"></span>`
+    + `<span class="ir-id">${esc(invoiceShort(x.invoiceId))}</span>`
+    + `<span class="ir-mid"><span class="ir-desc">${methodLabel(x.type, x.checkNum)}</span><span class="ir-date">${esc(fmtShortDate(x.at) || '—')}</span></span>`
+    + `<span class="ir-amt ${x.refund ? 'part' : 'paid'}">${x.refund ? '−' : ''}${esc(money2(x.amount))}</span>`
+    + `</div>`).join('') : '<div class="inv-empty muted">No transactions for this customer yet.</div>';
+  return { kpi, rows };
 }
 /* R28 — the status pill that DOUBLES as the action menu. Its fill = pay state (green solid
    paid · yellow-stripe partial · red-stripe due); solid while its menu is open. Pay/Refund
@@ -4129,7 +4200,14 @@ function invoiceExpandedHtml(i, c, cs, menuOpen) {
     + `</div>`;
 }
 function customerInvoicesSection(c, cs) {
-  const invs = invoicesForCustomer(c);
+  const view = (state.custInvView && state.custInvView[c.customerId]) || 'all';
+  const toggle = invViewToggle(c);
+  if (view === 'transactions') {
+    const { kpi, rows } = invTransactionsHtml(c);
+    return `<div class="section inv-sec" data-cust="${esc(c.customerId)}"><h4>${toggle}</h4>${kpi}<div class="inv-scroll">${rows}</div></div>`;
+  }
+  const allInvs = invoicesForCustomer(c);   // KPI strip is ALWAYS customer-wide — see invSummaryStrip's header comment
+  const invs = view === 'open' ? allInvs.filter((i) => invoiceTotals(i).balance > 0.005) : allInvs;
   const openId = (state.custInvOpen && state.custInvOpen[c.customerId]) || null;
   const menuId = (state.custInvMenu && state.custInvMenu[c.customerId]) || null;
   const body = invs.length ? invs.map((i) => {
@@ -4148,7 +4226,7 @@ function customerInvoicesSection(c, cs) {
       + `<span class="ir-amt ${ps.cls}">${esc(amt)}<small>${esc(ps.word)}</small></span>`
       + `<span class="ir-chev">${I.chev}</span>`
       + `</div>`;
-  }).join('') : '<div class="inv-empty muted">No invoices for this customer yet.</div>';
+  }).join('') : `<div class="inv-empty muted">No ${view === 'open' ? 'open ' : ''}invoices for this customer yet.</div>`;
   // §3.4 — the standalone Invoice card is retired, so invoice-building re-homes HERE: the
   // rows + the expanded invoice are desktop drag drop-targets, and this transient +Invoice
   // pill creates a fresh invoice for THIS customer from a released rental/WO/unit (or a tap
@@ -4157,8 +4235,8 @@ function customerInvoicesSection(c, cs) {
   const linkingInv = !!(state.linking && state.linking.targetCard === 'invoices');
   const addPill = addBtn('Invoice', { link: true, icon: CARD_ICON.invoices, h: 26,
     js: 'inv-add-pill js-inv-add-pill' + (linkingInv ? ' linking-show' : ''), data: { cust: c.customerId } });
-  return `<div class="section inv-sec" data-cust="${esc(c.customerId)}"><h4>Invoices</h4>`
-    + (invs.length ? invSummaryStrip(invs) : '')
+  return `<div class="section inv-sec" data-cust="${esc(c.customerId)}"><h4>${toggle}</h4>`
+    + (allInvs.length ? invSummaryStrip(allInvs, c) : '')
     + `<div class="inv-scroll${openId ? ' expanded' : ''}">${body}</div>`
     + addPill
     + `</div>`;
@@ -14581,6 +14659,9 @@ function onClick(e) {
   if (closest('.js-bank-verify')) { e.stopPropagation(); const b = closest('.js-bank-verify'); return openVerifyBank(b.dataset.rec, b.dataset.bank); }
   if (closest('.js-ach-verify-save')) { e.stopPropagation(); return verifyAchFlow(closest('.js-ach-verify-save')); }
   if (closest('.js-ach-check')) { e.stopPropagation(); const b = closest('.js-ach-check'); return checkAchStatus(b.dataset.rec, b.dataset.pi); }
+  // Phase 5 — Open/All/Transactions view + the Member-Mode sales toggle (spec §7a/§7b).
+  if (closest('.js-inv-view')) { e.stopPropagation(); const b = closest('.js-inv-view'); state.custInvView = state.custInvView || {}; state.custInvView[b.dataset.rec] = b.dataset.val; if (state.custInvOpen) state.custInvOpen[b.dataset.rec] = null; if (state.custInvMenu) state.custInvMenu[b.dataset.rec] = null; return render(); }
+  if (closest('.js-kpi-mode')) { e.stopPropagation(); const rec = closest('.js-kpi-mode').dataset.rec; state.custKpiMode = state.custKpiMode || {}; state.custKpiMode[rec] = !state.custKpiMode[rec]; return render(); }
   // §3.3 — embedded Invoices accordion (Customer Details). Row toggles open (one at a
   // time); the status pill toggles its action menu; the header ✕ collapses. All view-local.
   if (closest('.js-inv-statmenu')) { e.stopPropagation(); const b = closest('.js-inv-statmenu'); const cu = b.dataset.cust, rec = b.dataset.rec; state.custInvMenu = state.custInvMenu || {}; state.custInvMenu[cu] = (state.custInvMenu[cu] === rec) ? null : rec; return render(); }

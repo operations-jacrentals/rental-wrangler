@@ -3017,6 +3017,18 @@ body { font-variant-numeric: tabular-nums; }
 .chip-toggle.on.tone-yellow { color: var(--yellow); border-color: color-mix(in srgb, var(--yellow) 45%, transparent); background: var(--yellow-bg); }
 .chip-toggle.on.tone-green { color: var(--green); border-color: color-mix(in srgb, var(--green) 45%, transparent); background: var(--green-bg); }
 .chip-toggle.on.tone-accent { color: var(--accent); border-color: var(--accent-line); background: var(--accent-soft); }
+.chip-toggle.on.tone-red { color: var(--red); border-color: color-mix(in srgb, var(--red) 45%, transparent); background: var(--red-bg); }   /* Phase 5 — Non-Member-Mode ON (cancel-penalty pitch) */
+
+/* Phase 5 (spec §7b) — the KPI row wrapper (NOT .kpi-row, already used by the KPI-ring dashboard)
+   pairs .inv-summary with the Member-Mode toggle chip; the arrow + inline delta live INSIDE an
+   existing .kchip, never changing its real .kc-v number. */
+.inv-kpi-row { display: flex; align-items: center; gap: 9px; margin: -2px 0 12px; }
+.inv-kpi-row .inv-summary { margin: 0; flex: 1; }
+.inv-kpi-row .chip-toggle { flex: 0 0 auto; white-space: nowrap; }
+.kchip .kc-v .arr, .kchip .arr { font-size: 9px; margin-left: 2px; }
+.arr.g { color: var(--green); } .arr.b { color: var(--red); }
+.kchip .kc-l .kc-delta { margin-left: 5px; font-weight: 800; }
+.kc-delta.g { color: var(--green); } .kc-delta.b { color: var(--red); }
 
 /* D16 — Agreements list */
 .ag-divide { border: 0; border-top: 1px dashed var(--tan, #c2925a); opacity: .5; margin: 14px 0 10px; }
