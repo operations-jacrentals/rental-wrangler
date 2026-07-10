@@ -3478,6 +3478,11 @@ function membershipStatus(c) {
   const at = c.accountType || '';
   if (!/Member/.test(at)) return 'None';
   if (at === 'Member Incomplete') return 'Incomplete';
+  // Pending (spec §7.2 / Phase 2 T2.5): a signed enrollment whose start date is still in the future and
+  // whose first charge hasn't cleared — commitment set, but no paidUntil yet. Grants NO member pricing
+  // (isActiveMember stays Active|Past Due only); the Phase-4 cron flips it Active when it charges on the
+  // start date. Checked BEFORE the grandfather clause below (a Pending member DOES carry paidCadence).
+  if (c.commitmentStart && c.commitmentStart > TODAY_ISO && !c.paidUntil) return 'Pending';
   if (!(c.paidUntil || c.paidCadence || c.commitmentEnd)) return 'Active';   // legacy/grandfathered member — no subscription data yet
   if (c.prepaid) return 'Active';
   if (c.paidUntil && c.paidUntil >= TODAY_ISO) return 'Active';
@@ -3500,7 +3505,7 @@ function membershipRowStatus(c, ag) {
   if (ag && ag.startDate && ag.startDate > TODAY_ISO && !ag.charged) return 'MEMBERSHIP PENDING';
   const s = membershipStatus(c);
   if (s === 'Past Due' && c && c.renewalFailed) return 'MEMBERSHIP RENEWAL FAILED';
-  return { Active: 'MEMBER', Incomplete: 'MEMBERSHIP INCOMPLETE', 'Past Due': 'MEMBERSHIP PAST DUE', Lapsed: 'MEMBERSHIP LAPSED', None: '' }[s] || '';
+  return { Active: 'MEMBER', Pending: 'MEMBERSHIP PENDING', Incomplete: 'MEMBERSHIP INCOMPLETE', 'Past Due': 'MEMBERSHIP PAST DUE', Lapsed: 'MEMBERSHIP LAPSED', None: '' }[s] || '';
 }
 /* Rental Protection (F4) — an account-level surcharge (spec §2.1), available to members
    AND non-members. The rate is the Owner-settable protection % (shared with the membership
