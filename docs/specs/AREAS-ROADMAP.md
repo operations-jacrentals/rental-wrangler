@@ -41,12 +41,21 @@ Shipped to `staging` (never `main`), per-area against the 2026-06-29 decisions:
 
 ## What this is
 
-Per-area specs are the unit of design work (one `docs/specs/<slug>.md` per area, written
-one at a time and living on its `area/<slug>` branch). **This file is the thin index above
-them** — it holds the priority order, a one-line scope per area, the *current code state*
-(so each spec starts from a real baseline, not a guess), the key code anchors, and the
-cross-area dependencies. As each per-area spec is written it gets linked from the **Spec**
-column below.
+Per-area specs are the unit of design work (one `docs/specs/<slug>.md` per area). **This file
+is the thin index above them** — it holds the priority order, a one-line scope per area, the
+*current code state* (so each spec starts from a real baseline, not a guess), the key code
+anchors, and the cross-area dependencies. As each per-area spec is written it gets linked from
+the **Spec** column below.
+
+**Specs are shared LIVE across parallel projects (Jac, 2026-07-10).** A spec's authoritative
+copy promotes with its code (`area/<slug>` → `staging` → `main`), but because many projects
+run simultaneously, waiting for publish means areas can't see each other's in-flight design
+changes. The **`master-spec` branch** (spec-only — carries just `docs/specs/`) is the shared
+*pre-publish* surface: every session pulls it at start (`node tools/spec-sync.mjs down`) and
+pushes its spec deltas up every ~2h and before ending (`node tools/spec-sync.mjs up "…"`). The
+tool is path-scoped (never drags code) and only pushes files you changed (never clobbers a
+sibling area). This is the reliable landing path for cross-area spec impact that the old manual
+"reconciliation → per-area fanout PR" flow left open. See `.claude/skills/start` → §2b + §4.
 
 Each area's "Today" line and anchors were mapped directly against the live codebase
 (`app.js` / `config.js` / `data.js` / `docs/`) on 2026-06-28.
