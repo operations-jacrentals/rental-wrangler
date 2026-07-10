@@ -234,6 +234,40 @@ These three came up earlier and haven't been pinned. My interpretation below; re
 
 ---
 
+## 7b. Phase 1 UI — APPROVED mockup (Jac, 2026-07-10)
+
+Approved from the artifact preview (`scratchpad/account-agreements-mockup.html`, v4). These refine/extend
+§3 and are the build target for Phase 1.
+
+- **D19 — Account section moves to the TOP of the customer card, collapsed by default.** Collapsed = a
+  one-line summary strip: `Company · Phone · Email` + a status chip + expand chevron. Expand reveals the
+  fields + agreements + block button. (Removes the duplicate phone/email line under the customer name.)
+- **D20 — Collapsed summary chip is overtaken by the WORST agreement status** when one is present
+  (e.g. red `Renewal Failed`, purple `Membership Pending`), else it shows the account type (green
+  `Business Member`).
+- **D21 — Compact fields, not big inputs.** Name/Company/Phone/Email/Industry/Driver's-License in a dense
+  2-col grid (small inputs). This is the space Jac flagged as over-large.
+- **D22 — "Payment Terms" → "NET TERMS", as manager-gated chips.** Chips: `None`(default) `7d` `15d` `30d`
+  `60d` `90d`. **ANY change requires a Manager password** (lock glyph on the control). Replaces the free
+  text input.
+- **D23 — NET TERMS · PO · PROTECTION share ONE line** (reclaims a vertical row) — pulled out of the field
+  grid into a single control row.
+- **D24 — Rental Protection = a toggle with a one-line explainer beneath when ON.** Copy is
+  membership-dependent:
+  - **Member:** "Rental Protection adds 15% and covers damages up to $1,000/month per unit."
+  - **Non-member:** "Rental Protection adds 15% and covers up to $1,000 in damages per unit." (flat cap, no
+    monthly reset.)
+- **D25 — Agreement rows are ONE line.** The membership **status overtakes the title** (`MEMBERSHIP
+  PENDING`, `RENEWAL FAILED`); a plain active member just reads its account type; `Member` alone is never
+  shown as a status. `NOT SIGNED` / `NO SELFIE` / `NO CARD` are grouped **red flags** (stamped red). The
+  card-on-file indicator is **colored text** (green/yellow/red — `V-2261`/`M-2261` or a state word), **no
+  boxed chip**. Row stripe follows worst state.
+- **D26 — `+Agreement/Card` add-row hides while a new agreement is open** (you're inside it).
+- **D27 — New-agreement footer = `Cancel · Save · Start Membership`** (compact; no tall guard bar, no
+  "Saddle Up — Sign & Enroll"). **Save** keeps a draft without enrolling; **Start Membership** does the
+  sign+enroll+schedule (label is contextual — "Sign" for a non-member agreement). The D10 unsaved-changes
+  guard appears **contextually on leave**, not as a permanent bar.
+
 ## 8. Scope / sequencing
 
 - **Front-end (app.js / style.css):** new Account section, Agreements rows + inline expand,
