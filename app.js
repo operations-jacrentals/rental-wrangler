@@ -8908,7 +8908,14 @@ const MOBILE_TOGGLE_GROUPS = [
   { col: 'middle', members: ['rentals', 'calendar'] },
   { col: 'right',  members: ['customers', 'sales'] },
 ];
-// The 3 MAIN cards, left→right — what the footer swipe steps between (never a sub-card).
+// §M1/§M3 — the FULL ordered swipe sequence, incl. sub-cards, derived (never hardcoded)
+// from MOBILE_TOGGLE_GROUPS so it stays correct if that list ever changes: left-to-right,
+// main-then-sub per column → ['units','categories','rentals','calendar','customers','sales'].
+// This is what a FOOTER swipe steps through (Jac, 2026-07-10 refinement — swiping the dock
+// should reach the ACTUAL next card, subs included, not just the 3 mains).
+const MOBILE_SWIPE_ORDER = MOBILE_TOGGLE_GROUPS.flatMap((g) => g.members);
+// The 3 MAIN cards, left→right — what a swipe ANYWHERE ELSE (grid/list/detail) steps between
+// (never a sub-card); the footer swipe uses MOBILE_SWIPE_ORDER above instead.
 const MAIN_CARDS = ['units', 'rentals', 'customers'];
 // Which main card a member (incl. a sub-card) belongs to.
 function mainCardOfMember(m) {
@@ -8930,8 +8937,10 @@ function goToCard(member) {
 // every group, stays icon-only (keeps 3 narrow toggles from fighting each other for label
 // width). Tap an icon to jump straight to that card's list. The card's search/sort row is
 // moved DOWN into .mdock-searchslot by render(). Swipe the dock left/right to step through
-// the 3 MAIN cards; a grid swipe does the same (2026-07-10: swipe Back/Forward retired,
-// the jog buttons cover that — see the pointerup handler in boot()).
+// the FULL MOBILE_SWIPE_ORDER sequence incl. sub-cards; a swipe anywhere ELSE (the grid) instead
+// steps through the 3 MAIN cards only (2026-07-10 refinement — two different swipe zones, see
+// the pointerup handler in boot(); swipe Back/Forward through history stays retired, the jog
+// buttons cover that).
 function mobileDockEl() {
   const cur = currentMobileMember();
   const barHtml = (members) => {
@@ -22265,17 +22274,25 @@ function boot() {
     if (backConsuming) { backConsuming = false; return; }
     if (anyDismissable()) { backGuard = false; dismissTopSheet(); }   // entry already popped by the browser → re-pushed by render if more remain
   });
-  // §M1/§M3 — phone horizontal swipes: from EITHER the footer dock OR a record's grid, step
-  // to the next/previous MAIN_CARDS section (Units → Rentals → Customers) — same action
-  // either way now (Jac, 2026-07-10: swipe-based Back/Forward through view history is
-  // retired — "not needed, we have buttons" — the jog Back/Forward buttons (cardJog →
-  // .js-cardback/.js-cardfwd) still cover that). A real drag (long-press then move) is
-  // excluded; a fired swipe swallows the trailing click.
+  // §M1/§M3 — phone horizontal swipes: TWO different behaviors depending on where the swipe
+  // STARTS (Jac, 2026-07-10 refinement — "swiping should work on any mobile screen, not just
+  // in details. Swiping the footer should bring you to the ACTUAL next card, including
+  // subcards. Swiping anywhere else switches your MAIN card."):
+  //   - footer (.mobile-dock): steps through MOBILE_SWIPE_ORDER — the FULL sequence incl.
+  //     sub-cards (units→categories→rentals→calendar→customers→sales), with wraparound.
+  //   - everywhere else (.grid — the whole content area, list OR record view): steps
+  //     through MAIN_CARDS only (Units → Rentals → Customers), folding a sub-card to its
+  //     main first — unchanged from the prior grid-swipe behavior.
+  // (swipe-based Back/Forward through view history is retired — "not needed, we have
+  // buttons" — the jog Back/Forward buttons (cardJog → .js-cardback/.js-cardfwd) cover
+  // that). A real drag (long-press then move) is excluded; a fired swipe swallows the
+  // trailing click.
   let swipeStart = null;
   document.addEventListener('pointerdown', (e) => {
     if (!document.body.classList.contains('is-phone')) { swipeStart = null; return; }
-    const inSwipeZone = !!(e.target.closest && (e.target.closest('.mobile-dock') || e.target.closest('.grid')));
-    swipeStart = inSwipeZone ? { x: e.clientX, y: e.clientY, id: e.pointerId } : null;
+    const footer = !!(e.target.closest && e.target.closest('.mobile-dock'));
+    const grid = !footer && !!(e.target.closest && e.target.closest('.grid'));
+    swipeStart = (footer || grid) ? { x: e.clientX, y: e.clientY, id: e.pointerId, footer } : null;
   }, true);
   document.addEventListener('pointerup', (e) => {
     const s = swipeStart; swipeStart = null;
@@ -22283,9 +22300,16 @@ function boot() {
     const dx = e.clientX - s.x, dy = e.clientY - s.y;
     if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.3) return;            // not a clean horizontal swipe
     swipeFired = true;                                                             // swallow the trailing click (row/toggle)
-    const cur = mainCardOfMember(currentMobileMember()); let i = MAIN_CARDS.indexOf(cur); if (i < 0) i = 0;   // fold a sub-card to its main card first; left → next, right → previous
-    const next = Math.max(0, Math.min(MAIN_CARDS.length - 1, i + (dx < 0 ? 1 : -1)));
-    if (next !== i) { goToCard(MAIN_CARDS[next]); haptic(8); }
+    if (s.footer) {
+      const order = MOBILE_SWIPE_ORDER;
+      let i = order.indexOf(currentMobileMember()); if (i < 0) i = 0;              // left → next, right → previous, wraps around
+      const next = (i + (dx < 0 ? 1 : -1) + order.length) % order.length;
+      goToCard(order[next]); haptic(8);
+    } else {
+      const cur = mainCardOfMember(currentMobileMember()); let i = MAIN_CARDS.indexOf(cur); if (i < 0) i = 0;   // fold a sub-card to its main card first; left → next, right → previous
+      const next = Math.max(0, Math.min(MAIN_CARDS.length - 1, i + (dx < 0 ? 1 : -1)));
+      if (next !== i) { goToCard(MAIN_CARDS[next]); haptic(8); }
+    }
   }, true);
   initDrag();   // §15c drag & drop link engine — #drag-layer singleton + document pointer listeners
   try { loadGoogleMaps(); } catch (e) {}   // §2.3 warm the Maps SDK at boot so the dispatch cockpit + transport editor open instantly (no first-open wait / "load it twice")
