@@ -3,5 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "JacTec Rental Wrangler — vanilla-JS rental-fleet ops SPA (static)."
+  "description": "JacTec Rental Wrangler — vanilla-JS rental-fleet ops SPA (static).",
+  "dependencies": {
+    "playwright": "^1.61.1"
+  }
 }

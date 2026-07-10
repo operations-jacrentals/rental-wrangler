@@ -43,6 +43,15 @@ export const STRIPE_PUBLISHABLE_KEY = 'pk_live_51TdOu3DEE4GXf0zT7xBP4KQ5vxK21P8n
  * Property GOOGLE_MAPS_KEY via backendCall('mapsKey')); empty → offline/mock map. */
 export const GOOGLE_MAPS_KEY = 'AIzaSyBDI79RRj31RTWfHFUNWQZ5AO4wHLihIc8';
 
+/* ── WranglerGPS backend URL (telematics integration, spec 2026-07-07) ─────────
+ * Our OWN redeploy of the forked WranglerGPS service (Node/Express + Postgres on
+ * Railway) — the live-telemetry backend the GPS section talks to directly. Public
+ * by design, exactly like GOOGLE_MAPS_KEY above: the URL alone is useless without
+ * the team password (POST /auth/login → x-auth-token on every call). Empty string
+ * disables the integration cleanly (the app renders without live GPS). Swap this if
+ * the service moves (e.g. behind a gps.jacrentals.com custom domain). */
+export const GPS_BACKEND_URL = 'https://wranglergps-production-c2ad.up.railway.app';
+
 /* ── Status registry (SPEC §8 canonical values + §6.2 #7 colors) ──────────
  * STATUS[set][value] = { label, color }. `slug` and `value` are derived.
  * Every set the app renders a pill for lives here. Legacy→canonical import
@@ -100,6 +109,9 @@ const RAW_STATUS = {
     'Sent to Collections': { label: 'In Collections', color: 'gray' },
     'Paid':        { label: 'Paid',        color: 'green'  },
     'Refunded':    { label: 'Refunded',    color: 'gray'   },
+    // Voided (Jac 2026-07-09): an unpaid invoice unlinked from its rental & retired to a
+    // $0 record — off the active books (gray), keeps the audit trail instead of a delete gap.
+    'Voided':      { label: 'Voided',      color: 'gray'   },
   },
   customerPayStatus: {
     'Current':      { label: 'Current',      color: 'green' },
@@ -122,6 +134,7 @@ const RAW_STATUS = {
     'Part is Local':  { label: 'Part is Local',  color: 'yellow' },
     'Part in Stock':  { label: 'Part in Stock',  color: 'green'  },
     'Part Ordered':   { label: 'Part Ordered',   color: 'blue'   },
+    'Cancel':         { label: 'Cancelled',      color: 'gray'   },
     'Complete':       { label: 'Complete',       color: 'green'  },
   },
   woType: {
@@ -282,19 +295,6 @@ export const FLAG_META = {
 /** Severity rank for sorting/highest-wins. Higher = more severe. */
 export const FLAG_SEVERITY_RANK = { red: 3, yellow: 2, green: 1 };
 
-/* ── Legacy → canonical import map (SPEC §8 / §13; used by the import layer) ─ */
-export const LEGACY_MAP = {
-  rentalStatus: { 'Quoting': 'Quote', 'Return': 'Returned', 'End': 'End Rent', 'Refunded': 'Cancelled' },
-  transportType: { '🚚🔄': 'Round-Trip', '🚚🔻': 'Delivery', '🚚🔼': 'Recovery' },
-  woPhase: {
-    'NEW': 'Part Needed?', 'Done!!': 'Complete', '🙏🔩': 'Part Needed', '🚫🔩': 'No Part Needed',
-    '🔩✅📬': 'Part is Local', '🔩🔄📬': 'Part Ordered', '@Retailer': 'Part is Local', '@Dealer': 'Part is Local',
-    'Hrs': 'Complete',
-  },
-  marker: { 'NCP': 'Ready', '?': 'Not Ready', '❌': 'Failed', '': 'Ready' },
-  store: { 'SUL': 'Sulphur', 'BMT': 'Sulphur', 'Pick One': 'Sulphur' },
-};
-
 /* ── Transport-on-status: when does the truck icon show? (SPEC §8) ────────── */
 const TRUCK_STATUSES = new Set(['Tomorrow', 'Today', 'Reserved', 'On Rent']);
 export function showsTruck(rentalStatus, transportType) {
@@ -397,11 +397,11 @@ export const BACKOFFICE_BOARDS = [
 export const COLUMNS = [
   { id: 'left',   default: 'units',     members: ['units', 'categories'] },
   { id: 'middle', default: 'rentals',   members: ['rentals', 'calendar'] },
-  { id: 'right',  default: 'customers', members: ['customers', 'invoices'] },
+  { id: 'right',  default: 'customers', members: ['customers', 'sales'] },   // invoices retired (embedded in Customer Details); 2nd slot reserved for the upcoming 'sales' card ("coming soon" placeholder until PR 2)
 ];
 export const COLUMN_OF = {
   units: 'left', categories: 'left',
-  rentals: 'middle', invoices: 'right', customers: 'right',
+  rentals: 'middle', calendar: 'middle', customers: 'right', sales: 'right',   // no 'invoices' — links route via openInvoice() into Customer Details; 'sales' is a bespoke card (like 'calendar'), not in GRID_CARDS
 };
 
 /* ── In-card sort fields (SPEC §12 locked table) ─────────────────────────── */
@@ -543,25 +543,61 @@ export function fmtShortDate(iso) {
   return `${MONTH_SHORT[d.getMonth()]} ${pad2(d.getDate())}`;
 }
 
-/** Invoice ID format ##iDDMmmYY — running number, 'i', day, 2-letter month abbrev,
- *  2-digit year (e.g. #1 on 2026-02-20 -> '01i20Fe26'). Date suffix is always 6 chars. */
+/** Invoice ID format ##MMDDYY (Jac 2026-07-08) — running number that resets PER MONTH,
+ *  2-letter UPPERCASE month abbrev, day, 2-digit year (e.g. the 228th July-2026 invoice on
+ *  the 8th -> '228JY0826'). No 'i' separator — the digit→letter→digit boundary parses it.
+ *  Legacy ids are the old ##iDDMmmYY form; invoiceShort / parseInvoice handle both so nothing
+ *  minted before the switch breaks. */
 export function invoiceId(iso, seq) {
   const d = parseISO(iso) || new Date(2026, 0, 1);
   const yy = String(d.getFullYear()).slice(-2);
-  return `${pad2(seq)}i${pad2(d.getDate())}${MONTH_ABBR[d.getMonth()]}${yy}`;
+  return `${pad2(seq)}${MONTH_ABBR[d.getMonth()].toUpperCase()}${pad2(d.getDate())}${yy}`;
 }
-/** Short label for an invoice id — the leading "##i" (everything before the 6-char
- *  DDMmmYY date suffix), so it works regardless of the running-number's digit count. */
-export const invoiceShort = (id) => { id = String(id || ''); return id.length > 6 ? id.slice(0, -6) : id; };
+/** Short pill label — number + month ("228JY"): drop the 4-char DDYY tail on a NEW-format id;
+ *  legacy ##iDDMmmYY ids drop their 6-char date suffix -> "##i". */
+export const invoiceShort = (id) => {
+  id = String(id || '');
+  if (/^\d+[A-Za-z]{2}\d{4}$/.test(id)) return id.slice(0, -4);   // NEW ##MMDDYY -> ##MM
+  return id.length > 6 ? id.slice(0, -6) : id;                    // legacy ##iDDMmmYY -> ##i
+};
+/** Month+year key that scopes the per-month invoice counter (e.g. 'JY26' for July 2026). */
+export function invoiceMonthKey(iso) {
+  const d = parseISO(iso) || new Date(2026, 0, 1);
+  return MONTH_ABBR[d.getMonth()].toUpperCase() + String(d.getFullYear()).slice(-2);
+}
+/** Parse any invoice id -> { seq, monthKey } | null. Handles the NEW ##MMDDYY form AND the
+ *  legacy ##iDDMmmYY form, so the per-month counter counts both across the transition. */
+export function parseInvoice(id) {
+  id = String(id || '');
+  let x = /^(\d+)([A-Za-z]{2})\d{2}(\d{2})$/.exec(id);      // NEW: seq, month, day, year
+  if (x) return { seq: +x[1], monthKey: x[2].toUpperCase() + x[3] };
+  x = /^(\d+)i\d{2}([A-Za-z]{2})(\d{2})$/.exec(id);         // legacy: seq, 'i', day, month, year
+  if (x) return { seq: +x[1], monthKey: x[2].toUpperCase() + x[3] };
+  return null;
+}
 
 /* ── Misc constants ──────────────────────────────────────────────────────── */
 // Live "today" — the real local date, so the window picker, Today/Tomorrow badges,
 // invoice aging, the monthly Revenue Goal, and weekend rates all track the actual day.
 // (Was a frozen demo date '2026-06-07'; seeded demo rentals now read relative to today.)
-export const TODAY_ISO = (() => {
+const computeTodayISO = () => {
   const d = new Date(), p = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-})();
+};
+// LIVE, not frozen: an always-on shop machine keeps the SPA open across midnight,
+// which used to leave TODAY_ISO stuck on the load day — so every new action/inspection/
+// WO stamp got yesterday's date while nowClock() read the live time (History showed
+// e.g. "Jul 07 · 11:59 AM" for a Jul 08 event). refreshTodayISO() rolls it over; the
+// app calls it on render + the refresh poll, and ESM live bindings hand the fresh value
+// to every importer that reads TODAY_ISO at call time.
+export let TODAY_ISO = computeTodayISO();
+/** Re-evaluate "today"; returns true only when the calendar day actually rolled over. */
+export function refreshTodayISO() {
+  const next = computeTodayISO();
+  if (next === TODAY_ISO) return false;
+  TODAY_ISO = next;
+  return true;
+}
 export const REVENUE_GOAL_DEFAULT = 150000; // SPEC §10 Revenue Goal default
 export const PERF_BUDGET_MS = 100;          // SPEC §3 hard interaction budget
 export const PERF_VITALS_ON = true;         // master kill-switch for Web-Vitals/render instrumentation (spec frontend-performance P0)

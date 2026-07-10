@@ -43,7 +43,17 @@ ONLY. The go-live deploy happens in the Apps Script EDITOR** (learned the hard w
 - Push tool: **`docs/handoffs/gas-deploy-service-account.mjs`** — `projects.getContent` to
   pull the LIVE code (splice additively into `~/rw-backend`), `projects.updateContent` to
   push HEAD. Content-only, safe. No clasp involved.
-- **⛔ NEVER deploy via the REST API:** `projects.deployments.update` on this web app
+- **✅ AMENDED 2026-07-06 (late session): the REST-API deploy WORKS when done right.** The
+  earlier outage came from an incomplete deploymentConfig, not the API itself. The working
+  recipe (rehearsed on a sacrificial deployment, then used for prod v66–v70 the same night):
+  `projects.versions.create` → `projects.deployments.update` on the PROD deployment id with
+  a FULL deploymentConfig `{scriptId, versionNumber, description}`, authorized as the SA
+  **impersonating operations@** — anonymous access survives (verified by the JSON probe
+  immediately after, every time). ALWAYS: (1) rehearse pattern available in the session
+  scratchpad scripts; (2) probe `?action=load&password=__wrong__` right after — expect JSON
+  `{"ok":false,...}`; HTML = broken → editor rollback. The editor path below remains the
+  fallback and the recovery tool.
+- **⛔ The ORIGINAL 2026-07-06-morning warning (superseded above, kept for history):** `projects.deployments.update` on this web app
   **breaks its anonymous access** — the entryPoint still *reports* `ANYONE_ANONYMOUS` but
   the `/exec` URL 403s for anonymous callers, i.e. **the live backend goes DOWN** — and an
   API rollback does NOT fix it (confirmed live 2026-07-06; brief prod outage). The script's
