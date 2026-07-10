@@ -2670,7 +2670,7 @@ function deferOrAnchor(key, singleFn, anchor) {
     return anchorOrToggle(anchor.card, anchor.recId, anchor.recType);   // 2nd tap on the anchored record un-anchors (toggle)
   }
   if (pendingRowClick) clearTimeout(pendingRowClick.timer);
-  pendingRowClick = { key, anchor, timer: setTimeout(() => { pendingRowClick = null; singleFn(); }, DBL_MS) };
+  pendingRowClick = { key, timer: setTimeout(() => { pendingRowClick = null; singleFn(); }, DBL_MS) };
 }
 /* Hover preview (#1): a short hover on a list row or a link pill floats a glance at
  * that record's Standard view beside the cursor. Display-only — never anchors/cascades. */
@@ -15506,13 +15506,6 @@ function dragDown(e) {
   if (bail && !(bail.classList && bail.classList.contains('pill') && bail.dataset.pillCard === 'units' && bail.dataset.pillRec)) return;
   const src = dragSourceAt(e.target);
   if (!src) return;
-  // #368 — this exact record already has a click pending from deferOrAnchor (i.e. this
-  // press is the TRAILING click of a double-click-to-anchor). Don't arm a drag for it: any
-  // hand jitter during that quick 2nd press/release used to clear >6px, so dragMove read it
-  // as a drag-lift, cancelDrag()'d over dead space, and the one-shot click-swallow (15445)
-  // ate the very click that should have anchored — the discriminator's 2nd click never
-  // arrived. A first click (nothing pending yet) still arms normally, so real drags are unaffected.
-  if (pendingRowClick && pendingRowClick.anchor && pendingRowClick.anchor.card === src.card && String(pendingRowClick.anchor.recId) === String(src.rec)) return;
   DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;                    // seed the ghost/hit-test point — a touch long-press may fire with NO move first
   const armed = { card: src.card, rec: src.rec, x: e.clientX, y: e.clientY, pointerId: e.pointerId, touch: e.pointerType === 'touch', lp: null, rdy: null, ready: e.pointerType !== 'touch' };
   armed.lp = armMenuTimer(armed);                        // §M3 — hold still → context menu (mouse + touch)
