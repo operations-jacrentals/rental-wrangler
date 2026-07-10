@@ -203,28 +203,31 @@ on the customer record with a typed reason:
 
 ---
 
-## 7. Open / deferred UI items — **[NEEDS CONFIRM]**
+## 7. Deferred UI items — Phase 5/6 build targets
 
-These three came up earlier and haven't been pinned. My interpretation below; react in review.
+7a/7b APPROVED via artifact mockup (`scratchpad/member-mode-mockup.html`, v6, 2026-07-10) — this
+supersedes the earlier `[NEEDS CONFIRM]` interpretation below with the final, Jac-reviewed design.
 
-- **7a — Invoices/Transactions toggle.** Replace the "INVOICES" section title with a two-way
-  toggle. *Invoices* = current grouped-by-invoice list. *Transactions* = flattened list of
-  every transaction (payment) across all of this customer's invoices (one invoice can have
-  many). **[NEEDS CONFIRM]** exact columns of the Transactions view.
+- **7a — Open / All / Transactions toggle** (was "Invoices/Transactions", widened to a 3-way — Jac,
+  2026-07-10). Replaces the "INVOICES" section title. **Open** = unpaid invoices only. **All** = every
+  invoice (today's default grouped-by-invoice list). **Transactions** = flattened list of every
+  payment across this customer's invoices (one invoice can have several payments) — its own KPI row
+  (Collected/Payments/Avg/Refunds, not the Open/Invoices/Paid-YTD/Avg-pay row).
 - **7b — Member-Mode / Non-Member-Mode KPI toggle — a SALES TOOL** (Jac, 2026-07-10). Purpose:
-  quickly establish the dollar value of a membership — to **retain** a current member (show what
-  they'd be paying at retail = what they're saving) or **convert** a lead/non-member (show what
-  they'd pay as a member = the savings on the table). A button on the far right of the KPI row
-  (Open / #Invoices / Paid YTD / Avg Pay); labeled "Member Mode" for a non-member, "Non Member
-  Mode" for a member. Toggling recomputes the tiles to the *opposite* membership state, reusing
-  the existing member-vs-retail math (`membershipEconomics` ~`app.js:3208`, `memberDaily` rates)
-  — the same math as the removed always-on economics block, now surfaced on demand as a pitch.
-  This **replaces** the always-on membership-economics block ("$0 membership fees / member-rate
-  rentals / retail equivalent / member discount / net program"), removed from its location.
-  **Interpretation (confirm):** the **dollar** tiles recompute (Open $, Paid YTD, Avg Pay) to the
-  opposite rate; **#Invoices stays** (count is rate-independent). The value delta = difference
-  between the two modes. **[NEEDS CONFIRM]** only the exact tile set + whether to also show an
-  explicit "you save $X" delta line.
+  quickly establish the dollar value of a membership — to **retain** a current member (show the
+  retail-price penalty of cancelling) or **convert** a lead/non-member (show the member-rate savings).
+  A button on the far right of the KPI row; labeled "Member Mode" for a non-member (default OFF —
+  toggling ON is the join pitch), "Non Member Mode" for a member (default **ON** — toggling OFF is
+  the retention/cancel-penalty pitch).
+  **FINAL treatment (v6, supersedes the earlier tile-recompute idea — Jac corrected this across
+  several rounds):** the tile's real number **never changes**. Toggling ON adds, per affected tile:
+  (1) a small **arrow directly right of the number** — green `▼` (member savings) or red `▲` (retail
+  penalty); (2) a **diff figure inline next to the label**, e.g. `Open ▼  −$433` on one line, tile
+  value unchanged above it. Only the **Open** and **Paid YTD** dollar tiles get arrows/deltas —
+  **#Invoices and Avg-pay are rate-independent, no arrows**. Reuses the existing member-vs-retail math
+  (`membershipEconomics` ~`app.js:3208`, `memberDaily` rates) — the same math the removed always-on
+  economics block used, now surfaced on demand as a pitch. **Replaces** that always-on block entirely
+  ("$0 membership fees / member-rate rentals / retail equivalent / member discount / net program").
 - **7c — Colored-dot → red/green/yellow background — applies to ANY toggle that has the dots**
   (Jac, 2026-07-10). Not scoped to this card: every toggle currently using a colored status **dot**
   gets the dot replaced by a red/green/yellow **background color** on the toggle itself. This is a
