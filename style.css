@@ -3088,6 +3088,13 @@ body { font-variant-numeric: tabular-nums; }
    Manager/Owner password step). */
 .ag-foot .pill.c-danger { background: transparent; border: 1px solid color-mix(in srgb, var(--red) 55%, transparent); color: var(--red); }
 .ag-foot .pill.c-danger:hover { background: var(--red-bg); }
+/* Phase 3 (T3.1) — the blockPicker popup: the pick-a-mode row + the invoice-hold checklist. */
+.blockpick-opts { display: flex; flex-direction: column; gap: 8px; }
+.blockpick-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
+.blockpick-row { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2); cursor: pointer; font-size: 12.5px; }
+.blockpick-row:hover { border-color: var(--accent-line); }
+.blockpick-row .id { font-weight: 700; color: var(--txt-2); }
+.blockpick-row .amt { margin-left: auto; font-weight: 800; font-variant-numeric: tabular-nums; }
 .anno { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: .8px; font-size: 8.5px; font-weight: 700; color: var(--tan-deep, #8a5a2b);
   border: 1px solid color-mix(in srgb, var(--tan, #c2925a) 45%, transparent); background: color-mix(in srgb, var(--tan, #c2925a) 12%, transparent);
   border-radius: 5px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }

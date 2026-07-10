@@ -3879,13 +3879,22 @@ function customerAgreementsSection(c) {
     + `<div class="ag-head"><h5>Agreements</h5></div>`
     + `<div class="ag-scroll">${addRow}${rows}${creating ? agreementNewHtml(c) : ''}</div>`;
 }
-// D17 — Block Account, bottom-RIGHT. Opens the Manager/Owner-password SHELL (D12/D13);
-// the real block-type picker (Blacklist vs invoice-hold) + the Owner-tier check on a bare
-// Blacklist are Phase 3 (spec §6).
+const BLOCK_TYPE_LABEL = { blacklist: 'Blacklisted', 'invoice-hold': 'Held — invoice(s) unpaid', 'failed-payment': 'Payment failed', 'no-card': 'No card on file' };
+// D17 — Block Account, bottom-RIGHT (spec §6, T3.1). No block → opens the blockPicker (Blacklist
+// vs invoice-hold). A manual blacklist shows its state + an Admin/Owner-tier "Lift" (D13/T3.4) —
+// 'owner' already maps to the admin tier (config.js BUILTIN_ROLE_TIERS), so lifting reuses
+// requireAdmin, not a separate Owner password. The other three types are DERIVED (accountBlock,
+// app.js ~L381) and self-clear — shown as a read-only badge, no lift control.
 function acctBlockFoot(c) {
   const b = accountBlock(c);
-  const label = b ? `Blocked — ${b.type}` : 'Block Account';
-  return `<div class="ag-foot"><span class="sp"></span>${actionPill('danger', label, { js: 'js-block-account', data: { rec: c.customerId }, h: 28 })}</div>`;
+  if (!b) return `<div class="ag-foot"><span class="sp"></span>${actionPill('danger', 'Block Account', { js: 'js-block-account', data: { rec: c.customerId }, h: 28 })}</div>`;
+  const stateBadge = badge(BLOCK_TYPE_LABEL[b.type] || b.type, 'red');
+  const lift = b.type === 'blacklist'
+    ? actionPill('danger', 'Lift Blacklist', { js: 'js-lift-blacklist', data: { rec: c.customerId }, h: 28 })
+    : b.type === 'no-card' || b.type === 'failed-payment'
+      ? `<span class="muted acct-microcopy">clears automatically</span>`
+      : actionPill('danger', 'Block Account', { js: 'js-block-account', data: { rec: c.customerId }, h: 28 });   // invoice-hold: still offer the picker to add/replace a manual block
+  return `<div class="ag-foot">${stateBadge}<span class="sp"></span>${lift}</div>`;
 }
 function acctBodyHtml(c) {
   return `<div class="acct-fgrid">`
@@ -11117,23 +11126,49 @@ function buildPopupEl(o, overlay, opts = {}) {
         ${lifecycle ? `<div class="ag-lifecycle-wrap"><span class="nc-cap-lbl">Membership</span>${lifecycle}</div>` : ''}` });
     overlay.appendChild(pop);
   } else if (o.kind === 'managerPw') {
-    // Phase 1 SHELL (2026-07-10 Account/Agreements redesign, D13/D14/D22) — visual only.
-    // The real Owner/Manager password VERIFICATION + the action it authorizes (writing
-    // c.block for Block Account, writing c.netDays for a Net Terms change) are Phase 2/3
-    // (spec §6, D11-D14). Confirm here just closes — see js-mgrpw-confirm.
+    // Phase 3 (T3.1/T3.3, spec D14/D22) — the Manager-TIER authorization shell, reused for two
+    // non-persistent single-action gates: a Net Terms change (pwAction:'netTerms') and the
+    // per-action rental-gate override (pwAction:'rentalOverride' — every attempt re-prompts, D14).
+    // Passes immediately if the current user is already Manager-tier+; otherwise verifies the SAME
+    // backend password requireAdmin uses (no separate Manager password exists — Jac's call,
+    // 2026-07-10). See js-mgrpw-confirm for the verify + apply.
     const cust = IDX.customer.get(o.custId);
-    const actionLabel = o.pwAction === 'block' ? 'Blocking this account'
-      : o.pwAction === 'netTerms' ? `Setting Net Terms to ${o.pwVal || 'None'}`
+    const actionLabel = o.pwAction === 'netTerms' ? `Setting Net Terms to ${o.pwVal || 'None'}`
+      : o.pwAction === 'rentalOverride' ? (o.pwReason || 'Booking past an account block')
         : 'This action';
     const pop = el('div', 'popup'); pop.style.width = '360px';
     pop.innerHTML = popupShell({
       icon: AG_LOCK, title: 'Manager Password', tag: 'Account · authorize',
       body: `
-        <p class="muted" style="margin:0 0 12px">${cust ? esc(fullName(cust)) + ' — ' : ''}${esc(actionLabel)} requires a Manager password.</p>
+        <p class="muted" style="margin:0 0 12px">${cust ? esc(fullName(cust)) + ' — ' : ''}${esc(actionLabel)} requires Manager authorization.</p>
         <input type="password" class="nc-in js-mgrpw-input" placeholder="Manager password" autocomplete="off" style="width:100%">
         ${o.error ? `<div class="login-err" style="margin-top:10px">${esc(o.error)}</div>` : ''}`,
-      foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', 'Authorize', { js: 'js-mgrpw-confirm' })}`,
+      foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', o.busy ? 'Checking…' : 'Authorize', { js: o.busy ? '' : 'js-mgrpw-confirm' })}`,
     });
+    overlay.appendChild(pop);
+  } else if (o.kind === 'blockPicker') {
+    // Phase 3 (T3.1, spec D12/D13) — Block Account entry: Blacklist (Admin/Owner-tier,
+    // js-bp-blacklist → requireAdmin) or Invoice-hold (staff-tier — pick the invoice(s) that
+    // must be paid to auto-unblock, js-bp-confirm-hold). No password for Invoice-hold; it's the
+    // lower-tier action per D12.
+    const cust = IDX.customer.get(o.custId);
+    const invs = cust ? invoicesForCustomer(cust).filter((i) => invoiceTotals(i).balance > 0.005) : [];
+    const sel = o.selIds || [];
+    let body, foot;
+    if (o.mode === 'hold') {
+      body = `<p class="muted" style="margin:0 0 10px">Pick the invoice(s) that must be paid to auto-unblock this account.</p>`
+        + (invs.length
+          ? `<div class="blockpick-list">${invs.map((i) => `<label class="blockpick-row"><input type="checkbox" class="js-bp-inv" data-inv="${esc(i.invoiceId)}"${sel.includes(i.invoiceId) ? ' checked' : ''}><span class="id">${esc(invoiceShort(i.invoiceId))}</span><span class="amt">${money2(invoiceTotals(i).balance)}</span></label>`).join('')}</div>`
+          : `<p class="muted">No open invoices on this account.</p>`);
+      foot = `${ghostPill('Back', { js: 'js-bp-mode-pick' })}${actionPill('commit', 'Confirm Hold', { js: 'js-bp-confirm-hold' })}`;
+    } else {
+      body = `<p class="muted" style="margin:0 0 12px">${cust ? esc(fullName(cust)) + ' — ' : 'This account'} choose how to block it.</p>
+        <div class="blockpick-opts">${ghostPill('Hold until invoice(s) paid', { js: 'js-bp-mode-hold' })}${actionPill('danger', 'Blacklist (permanent)', { js: 'js-bp-blacklist' })}</div>
+        ${o.error ? `<div class="login-err" style="margin-top:10px">${esc(o.error)}</div>` : ''}`;
+      foot = ghostPill('Cancel', { js: 'js-close' });
+    }
+    const pop = el('div', 'popup'); pop.style.width = '380px';
+    pop.innerHTML = popupShell({ icon: AG_LOCK, title: 'Block Account', tag: 'Account · block', body, foot });
     overlay.appendChild(pop);
   } else if (o.kind === 'checklist') {
     // Required-checklist takeover (Settings → Inspections): replaces the sheet until completed;
@@ -11421,7 +11456,8 @@ const WINDOW_CATALOG = [
   { kind: 'verifyAch',     label: 'Verify ACH',              tag: 'Customer · verify ACH',     sample: () => { const c = (DATA.customers || []).find((x) => (x.achAccounts || []).length); return c ? { customerId: c.customerId, bankId: c.achAccounts[0].id } : {}; } },
   { kind: 'payment',       label: 'Take Payment',            tag: 'Invoice · payment',         sample: () => ({ invoiceId: ((DATA.invoices || [])[0] || {}).invoiceId }) },
   { kind: 'membershipEnroll', label: 'Membership Enrollment', tag: 'Customer · enroll',         sample: () => ({ custId: ((DATA.customers || [])[0] || {}).customerId, plan: 'Monthly', addOns: { transport: false, protection: false }, autoRenew: false, startDate: TODAY_ISO, busy: false, error: '' }) },
-  { kind: 'managerPw',     label: 'Manager password (account gate)', tag: 'Account · manager override', sample: () => ({ custId: ((DATA.customers || [])[0] || {}).customerId, pwAction: 'block', pwVal: '' }) },
+  { kind: 'managerPw',     label: 'Manager password (account gate)', tag: 'Account · manager override', sample: () => ({ custId: ((DATA.customers || [])[0] || {}).customerId, pwAction: 'netTerms', pwVal: 'None', busy: false, error: '' }) },
+  { kind: 'blockPicker',   label: 'Block Account (Blacklist / invoice-hold)', tag: 'Account · block', sample: () => ({ custId: ((DATA.customers || [])[0] || {}).customerId, mode: 'pick', selIds: [], error: '' }) },
 ];
 /* Build an INERT preview popup for a catalog kind (or null if a record guard trips
    or it throws). Reuses buildPopupEl with {preview:true} — the REAL popup — into a
@@ -14457,9 +14493,65 @@ function onClick(e) {
   if (closest('.js-ag-startdate')) { e.stopPropagation(); toast('The Start-Date picker arrives in Phase 2.'); return; }           // *Phase 2: gates the signature (D6) — dateField needs overlay context, see report
   if (closest('.js-acct-po')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-acct-po').dataset.rec); if (c) { c.requiresPO = !c.requiresPO; reindex('customers', c); } return render(); }
   if (closest('.js-acct-prot')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-acct-prot').dataset.rec); if (c) { c.rentalProtection = !c.rentalProtection; reindex('customers', c); } return render(); }
-  if (closest('.js-acct-netdays')) { e.stopPropagation(); const b = closest('.js-acct-netdays'); return openOverlay({ kind: 'managerPw', custId: b.dataset.rec, pwAction: 'netTerms', pwVal: b.dataset.val }); }   // D22 — ANY Net Terms change is Manager-password gated
-  if (closest('.js-block-account')) { e.stopPropagation(); const rec = closest('.js-block-account').dataset.rec; return openOverlay({ kind: 'managerPw', custId: rec, pwAction: 'block' }); }   // D12/D13 — Block Account
-  if (closest('.js-mgrpw-confirm')) { e.stopPropagation(); toast('Manager-password verification + the real action land in Phase 2/3.'); return closeOverlay(); }   // *Phase 2/3: verify against Owner/Manager tier + apply the pending action (D13/D14)
+  if (closest('.js-acct-netdays')) { e.stopPropagation(); const b = closest('.js-acct-netdays'); return openOverlay({ kind: 'managerPw', custId: b.dataset.rec, pwAction: 'netTerms', pwVal: b.dataset.val, busy: false, error: '' }); }   // D22 — ANY Net Terms change is Manager-password gated
+  if (closest('.js-block-account')) { e.stopPropagation(); const rec = closest('.js-block-account').dataset.rec; return openOverlay({ kind: 'blockPicker', custId: rec, mode: 'pick', selIds: [], error: '' }); }   // D12/D13 — Block Account entry
+  if (closest('.js-mgrpw-confirm')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'managerPw' || o.busy) return;
+    const pw = (document.querySelector('.overlay .js-mgrpw-input') || {}).value || '';
+    o.busy = true; o.error = ''; renderOverlay();
+    (async () => {
+      const ok = await verifyTierOrPassword('manager', pw);
+      if (state.overlay !== o) return;
+      if (!ok) { o.busy = false; o.error = 'Not a valid Manager override.'; renderOverlay(); return; }
+      const c = IDX.customer.get(o.custId);
+      if (c && o.pwAction === 'netTerms') {
+        const days = o.pwVal === 'None' ? 0 : (parseInt(o.pwVal, 10) || 0);
+        const old = c.netDays; c.netDays = days; reindex('customers', c);
+        logAction(c, `Net Terms: ${old == null || old === '' ? 'None' : old + 'd'} → ${o.pwVal} (Manager override)`);
+        closeOverlay(); render(); toast(`Net Terms set to ${o.pwVal}.`); return;
+      }
+      const onOk = o.onOk;   // rentalOverride path — the caller supplies what "authorized" means (T3.3)
+      closeOverlay();
+      if (typeof onOk === 'function') onOk();
+    })();
+    return;
+  }
+  if (closest('.js-bp-mode-hold')) { e.stopPropagation(); const o = state.overlay; if (o) { o.mode = 'hold'; renderOverlay(); } return; }
+  if (closest('.js-bp-mode-pick')) { e.stopPropagation(); const o = state.overlay; if (o) { o.mode = 'pick'; o.error = ''; renderOverlay(); } return; }
+  if (closest('.js-bp-inv')) { e.stopPropagation(); const o = state.overlay; if (!o) return; const id = closest('.js-bp-inv').dataset.inv; o.selIds = o.selIds || []; const i = o.selIds.indexOf(id); if (i >= 0) o.selIds.splice(i, 1); else o.selIds.push(id); renderOverlay(); return; }
+  if (closest('.js-bp-confirm-hold')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'blockPicker') return;
+    if (!(o.selIds || []).length) { toast('Pick at least one invoice to hold on.'); return; }
+    const c = IDX.customer.get(o.custId); if (!c) return closeOverlay();
+    c.block = { type: 'invoice-hold', invoiceIds: [...o.selIds], setBy: currentRole || 'staff', setAt: TODAY_ISO };
+    reindex('customers', c); logAction(c, `Account held — ${o.selIds.length} invoice(s) must be paid to auto-unblock`);
+    closeOverlay(); render(); toast('Account held until those invoices are paid.');
+    return;
+  }
+  if (closest('.js-bp-blacklist')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'blockPicker') return;
+    const custId = o.custId;
+    requireAdmin('Blacklisting this account is permanent — only an Admin/Owner password lifts it.', () => {
+      const c = IDX.customer.get(custId); if (!c) return;
+      c.block = { type: 'blacklist', setBy: currentRole || 'admin', setAt: TODAY_ISO };
+      reindex('customers', c); logAction(c, 'Account BLACKLISTED (Admin/Owner authorization)');
+      closeOverlay(); render(); toast('Account blacklisted.');
+    });
+    return;
+  }
+  if (closest('.js-lift-blacklist')) {
+    e.stopPropagation();
+    const rec = closest('.js-lift-blacklist').dataset.rec;
+    requireAdmin('Lifting a Blacklist requires an Admin/Owner password.', () => {
+      const c = IDX.customer.get(rec); if (!c) return;
+      delete c.block; reindex('customers', c); logAction(c, 'Blacklist lifted (Admin/Owner authorization)');
+      render(); toast('Blacklist lifted.');
+    });
+    return;
+  }
   if (closest('.js-pay-invoice')) { e.stopPropagation(); return openPayInvoice(closest('.js-pay-invoice').dataset.rec); }
   if (closest('.js-pay-pick')) { e.stopPropagation(); if (state.overlay) { const b = closest('.js-pay-pick'); state.overlay.selectedCardId = b.dataset.card || b.dataset.bank; renderOverlay(); } return; }
   if (closest('.js-pay-method')) { e.stopPropagation(); if (state.overlay) { const nb = document.querySelector('.overlay .js-check-num'); if (nb) state.overlay.checkNum = nb.value.trim(); state.overlay.method = closest('.js-pay-method').dataset.method; state.overlay.error = ''; renderOverlay(); } return; }
@@ -15130,6 +15222,22 @@ async function requireAdmin(reason, onOk) {
   if (!backendPassword) { onOk(); return; }          // demo: no backend to verify against
   try { const r = await backendCall('getConfig', { password: pw }); if (r && r.ok) onOk(); else toast('Not an Admin password — override denied.'); }
   catch (e) { toast('Couldn’t verify the password — try again.'); }
+}
+/* Phase 3 (2026-07-10 account/agreements redesign) — the app has role TIERS + ONE verifiable
+   backend password (no separate "Manager password" / "Owner password" secret exists). Per Jac's
+   confirmed call (2026-07-10): reuse the tier ladder + the existing admin password rather than
+   invent a new auth surface. `minTier` gates who passes WITHOUT a prompt; if the current user is
+   below that tier, the SAME backend password (verified the same way requireAdmin does) authorizes
+   the one action. Demo/offline (no backendPassword) always passes — matches every other money gate
+   in the app. Used for: the D14 per-action Manager override on a blocked rental, the D22 Net-Terms
+   change, and (at minTier='admin') the D13 Blacklist set/lift — 'owner' already maps to the admin
+   tier (config.js BUILTIN_ROLE_TIERS), so there is no separate Owner password to build. */
+async function verifyTierOrPassword(minTier, pw) {
+  if (roleTier(currentRole) >= tierRank(minTier)) return true;
+  if (!backendPassword) return true;   // demo/offline — no backend to verify against, matches requireAdmin
+  if (!pw) return false;
+  try { const r = await backendCall('getConfig', { password: pw }); return !!(r && r.ok); }
+  catch (e) { return false; }
 }
 /** Block on no-valid-card: Admin override unblocks this rental + logs it. */
 function cardOverrideRental(rentalId, val) {
