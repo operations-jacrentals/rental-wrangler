@@ -3843,6 +3843,31 @@ function agDraft(c) {
   if (!state.custAgDraft[c.customerId]) state.custAgDraft[c.customerId] = { accountType: c.accountType || 'Non-Business', startDate: '', selfie: (c.pendingCapture && c.pendingCapture.selfie) || '', signature: (c.pendingCapture && c.pendingCapture.signature) || '', actypeOpen: false };
   return state.custAgDraft[c.customerId];
 }
+// D10 — the unsaved-changes guard. A draft is "dirty" once anything differs from its pristine
+// seed: the account type was changed, a Start Date was picked, or a selfie/signature was captured.
+function agDraftDirty(c) {
+  const d = state.custAgDraft && state.custAgDraft[c.customerId]; if (!d) return false;
+  return d.accountType !== (c.accountType || 'Non-Business') || !!d.startDate || !!d.selfie || !!d.signature;
+}
+// Hold the draft's captured pieces (mirrors js-ag-save — does NOT write accountType, D4 stays intact).
+function agDraftHold(c) {
+  const d = state.custAgDraft && state.custAgDraft[c.customerId]; if (!d) return;
+  if (d.selfie || d.signature) { c.pendingCapture = { selfie: d.selfie || c.pendingCapture?.selfie || '', signature: d.signature || c.pendingCapture?.signature || '' }; reindex('customers', c); }
+}
+/* D10/D27 — contextual (not a permanent bar): fires ONLY when leaving a dirty '__new__' draft —
+   collapsing it, switching to a different agreement row, or collapsing the whole Account section.
+   `window.confirm` is a deliberate, minimal choice over a custom 3-button popup (matches the
+   existing precedent at requireAdmin's window.prompt) — OK saves the draft (hold) and proceeds;
+   Cancel keeps editing (aborts the leave). Note: this loses a true 3rd "discard and leave anyway"
+   option vs. a custom popup — flagged as a scoping call, not a silent omission. */
+function guardAgLeave(rec, proceed) {
+  const c = IDX.customer.get(rec);
+  if (c && state.custAgOpen && state.custAgOpen[rec] === '__new__' && agDraftDirty(c)) {
+    if (window.confirm('Save changes to this agreement draft before leaving?\n\nOK = save the draft · Cancel = keep editing')) { agDraftHold(c); delete state.custAgDraft[rec]; proceed(); }
+    return;   // Cancel (or OK, already handled above) — either way don't fall through to a second proceed()
+  }
+  proceed();
+}
 // D3/D16 "creating a new agreement" panel — LIVE (Phase 2b). ACCOUNT TYPE is a toggle-menu
 // (D4 — changes the DRAFT only, never c.accountType, until Sign). Start Date is a real date
 // input (D6 — required + gates Sign for a Member type). Signature reuses the EXISTING popout
@@ -14578,9 +14603,9 @@ function onClick(e) {
   // Account section: open/close + its embedded Agreements accordion (mirrors the Invoices
   // pattern above) + the field toggles. UI SHELL — the starred handlers below are Phase 2/3
   // no-op stubs (real enrollment/charge is Phase 2; block-gate enforcement is Phase 3).
-  if (closest('.js-acct-toggle')) { e.stopPropagation(); const rec = closest('.js-acct-toggle').dataset.rec; state.custAcctOpen = state.custAcctOpen || {}; state.custAcctOpen[rec] = !state.custAcctOpen[rec]; return render(); }
-  if (closest('.js-ag-row')) { e.stopPropagation(); const b = closest('.js-ag-row'); const rec = b.dataset.rec, card = b.dataset.card; state.custAgOpen = state.custAgOpen || {}; state.custAgOpen[rec] = (state.custAgOpen[rec] === card) ? null : card; return render(); }
-  if (closest('.js-ag-collapse')) { e.stopPropagation(); const rec = closest('.js-ag-collapse').dataset.rec; if (state.custAgOpen && state.custAgOpen[rec] === '__new__' && state.custAgDraft) delete state.custAgDraft[rec]; if (state.custAgOpen) state.custAgOpen[rec] = null; return render(); }
+  if (closest('.js-acct-toggle')) { e.stopPropagation(); const rec = closest('.js-acct-toggle').dataset.rec; return guardAgLeave(rec, () => { state.custAcctOpen = state.custAcctOpen || {}; state.custAcctOpen[rec] = !state.custAcctOpen[rec]; render(); }); }
+  if (closest('.js-ag-row')) { e.stopPropagation(); const b = closest('.js-ag-row'); const rec = b.dataset.rec, card = b.dataset.card; return guardAgLeave(rec, () => { state.custAgOpen = state.custAgOpen || {}; state.custAgOpen[rec] = (state.custAgOpen[rec] === card) ? null : card; render(); }); }
+  if (closest('.js-ag-collapse')) { e.stopPropagation(); const rec = closest('.js-ag-collapse').dataset.rec; return guardAgLeave(rec, () => { if (state.custAgOpen) state.custAgOpen[rec] = null; render(); }); }
   if (closest('.js-ag-add')) { e.stopPropagation(); const rec = closest('.js-ag-add').dataset.rec; state.custAgOpen = state.custAgOpen || {}; state.custAgOpen[rec] = '__new__'; return render(); }
   if (closest('.js-ag-save')) {   // Phase 2b (D9) — hold the captured pieces without signing (mirrors the existing pre-card pendingCapture bucket); does NOT write accountType — only Sign/Start Membership can (keeps D4's bug closure intact)
     e.stopPropagation(); const rec = closest('.js-ag-save').dataset.rec; const c = IDX.customer.get(rec); const d = state.custAgDraft && state.custAgDraft[rec];
