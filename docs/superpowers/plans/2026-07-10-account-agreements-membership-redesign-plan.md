@@ -96,6 +96,65 @@ and — when Jac promotes — the two-step staging deploy + Staging E2E.
 
 ---
 
+---
+
+## DETAILED TASKS — writing-plans grade (Phases 0–1)
+Anchors corrected from recon (2026-07-10) — this branch's `app.js` is ~2600 lines offset from
+earlier explorations. Each task: exact anchor, complete change, verify command, commit. Later
+phases expand to this grade as we reach them (avoids stale exact-code across a 7-phase program).
+
+### Reused patterns (recon facts the tasks build on)
+- **Embedded accordion section to MIRROR for Agreements:** `customerInvoicesSection` (3717) →
+  `invoiceExpandedHtml` (3707) → one-open state `state.custInvOpen` (2050); row toggle handler
+  `js-inv-row` (14135), collapse `js-inv-collapse` (14133). Agreements get a parallel
+  `customerAgreementsSection` + `state.custAgOpen`.
+- **KPI row = `invSummaryStrip` (3667)** — the ONE function 7b's Member-Mode toggle wraps.
+- **Member-vs-retail math already exists:** `membershipEconomics` (3473) → `{feeRevenue,
+  memberRev, retailRev, discount, net}`.
+- **Signing model (3291-3355):** cards carry append-only `agreements[]`; `requiredAgreementKey`
+  (3297) picks rental|membership by account type; `cardCurrentSigning`/`cardComplete`/
+  `cardAuthorized` gate authorization. The new per-agreement ACCOUNT TYPE dropdown must keep this
+  invariant (changing type re-derives the required signing).
+- **Bypass to remove:** `NC_ACCOUNT_TYPES` (15764) pills → `js-nc-acct` handler (14068) →
+  `saveNewCustomer` writes `accountType` (15835/15851). Siblings: `wrAccount`/`WR_ACCT` (11668-72)
+  + `WR_EDITABLE.customers` (11679).
+
+### Phase 0 tasks (pure helpers + data model) · MAIN, logic-test-covered
+- **T0.1 — Card-indicator helper.** Add `cardIndicator(c, k)` near the card helpers (after 314):
+  returns `{ text, tone }` — `V-2261`/`M-2261` (brand-initial + `-` + last4) for a healthy card,
+  else a status string (`EXPIRED`/`EXPIRING SOON` from existing `cardExpired`/`cardExpiringSoon`
+  281-282; `NO CARD` when none). Failure states (`PAYMENT FAILED`/`BANK BLOCKED`/`DISPUTED`) read a
+  new `k.lastChargeOutcome` field — **stub to healthy until Phase 3 writes that field** (documented
+  coupling; don't fake it). Verify: `node ci/logic-test.mjs` new case maps brand→initial + states.
+- **T0.2 — Membership row-status string.** Add `membershipRowStatus(c, ag)` → the D18 collapsed
+  label: `MEMBERSHIP PENDING` (signed, `ag.startDate` future, uncharged), `MEMBERSHIP RENEWAL
+  FAILED` (Past Due from cron), else `membershipStatus(c)` (3436). PENDING/RENEWAL-FAILED depend on
+  the Phase-2 agreement/scheduled-charge fields — **gate those branches behind field presence** so
+  the helper is correct now and lights up as data arrives. Verify: logic-test derivation cases.
+- **T0.3 — Block-state model.** Add derivation `accountBlock(c)` → `{type, invoiceIds?, reason}`
+  where `type ∈ no-card|failed-payment|blacklist|invoice-hold|null`. `no-card` derives from
+  `!hasValidCard(c)`; `failed-payment` from any invoice with a failed-charge marker unpaid;
+  `blacklist`/`invoice-hold` read stored `c.block`. Keep the two automatic types DERIVED (no stale
+  state); persist only the two manual types. Do NOT wire it into the rental gate yet (Phase 3).
+  Verify: logic-test cases for each branch + the membership-charge-failure EXCLUSION (D11).
+
+### Phase 1 tasks (Account section UI) · /jactec-ui (UI code authored IN that skill, not here)
+Structure + anchors are fixed here; the **markup/CSS is authored through `/jactec-ui`** (hard rule —
+new UI). Each task ends by regenerating `rule-usage.js` + `WINDOW_CATALOG` as needed.
+- **T1.1** — New `customerAgreementsSection(c)` mirroring `customerInvoicesSection` (3717): the
+  scrollable list, `state.custAgOpen[c.customerId]` one-open state, collapsed rows in **D18 order**
+  via T0.1/T0.2 helpers, `+Agreement/Card` as the **top add-row** (mirror `addBtn('Invoice',…)`
+  3744 / the `+Customer`/`+Rental` add-rows).
+- **T1.2** — Expanded agreement row (mirror `invoiceExpandedHtml` 3707): selfie + agreement + terms
+  + signature + ACCOUNT TYPE dropdown + Start Date, reusing `agCaptureBlock`/`heldSignBlock`
+  (referenced 10788/10810) capture UI.
+- **T1.3** — Merge the account FIELDS (name/company/…/DL/net-days) inline into this section; **+Notes
+  as its own row under Driver's License** (D15). Retire the `newCustomer` account-tab popup body
+  (10744-10767); keep only the **Add Card** modal (10796-10814) → `WINDOW_CATALOG` entry.
+- **T1.4** — **Block Account** button, bottom-**right** (D17).
+- Verify each: `node ci/smoke.mjs`, `node ci/gen-rule-usage.mjs --check`,
+  `node ci/check-window-catalog.mjs`.
+
 ## Build order rationale
 0 → 1 give a stable data + UI base. 2 and 3 (the money/auth core, the actual bug closure) land next
 on that base. 4 (backend) can proceed in parallel once 2 defines the contract. 5/6 are value/polish.

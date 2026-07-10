@@ -71,8 +71,12 @@ only ever happens through a signed Agreement).
   - **Failed *membership* charges are exempt** — they stay pricing-only (Past Due → grace →
     Lapsed per today's rules) and do **not** trip the delivery block.
 - **D12 — Manual block button** in the Account section. When staff manually block, they choose
-  either **Blacklist** (existing state/lingo + existing lift path, `app.js:16179`) **or**
-  select the specific **invoice(s)** that must be paid to auto-unblock.
+  either **Blacklist** **or** select the specific **invoice(s)** that must be paid to auto-unblock.
+  **Correction (recon 2026-07-10):** `'Blacklisted'` currently exists ONLY as a status color/label
+  (`config.js:113`) — nothing in app.js writes it and there is **no lift handler**. So Blacklist
+  set + lift is **net-new** here (build from scratch), not a reuse of existing infrastructure.
+  Every account-type gate reads it via `/Blacklist/i.test(c.accountType)` (app.js:4459/5301/…),
+  so writing the field is enough to fire the existing read-side gates.
 - **D13 — Owner password for a bare Blacklist.** Manually Blacklisting **without** an invoice
   selection (a hard ban with no auto-unblock) requires the **Owner password**. A block *with*
   invoice-selection is a lower-tier staff action.
