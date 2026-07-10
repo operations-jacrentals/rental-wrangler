@@ -209,6 +209,22 @@ The **Phase 2↔Phase 4 seam** (deferred-charge markers) is defined here and con
   agreement-sign handler; Wrangler + CSV reject Member; a future-start signed member reads **Pending** with
   **retail** pricing until charged; logic-test covers enroll→pending→active + the two sibling refusals.
 
+**STATUS (2026-07-10) — T2.1/T2.5 built (2b), T2.2/T2.3 built (2a); T2.4/T2.6 still open:**
+- **T2.1 (Phase 2b, done):** `agreementSignCommit()` is the ONE write site for a signed account-type change.
+  Signature via the existing popout window (generalized target only); selfie via the existing file-picker
+  fallback (same, generalized target only) — the **live-camera-preview tile was deliberately left
+  untouched** (deeply `state.overlay`-bound, shared with the working +Card flow; flagged as a follow-up, not
+  rushed blind). **Two open items needing Jac's product input, not invented silently:**
+  1. No Annual-vs-Monthly / Transport-add-on picker in the inline panel (defaults: Monthly + inherits the
+     account's existing Rental Protection toggle) — the approved mockup didn't show one; add later if wanted.
+  2. The live-camera selfie tile (vs. the file-picker fallback currently wired) — a scoped follow-up.
+- **T2.2/T2.3 (Phase 2a, done):** bypass + siblings closed (see commit `4bc2430`).
+- **T2.5 (done):** `Pending` status (commit `c097a9b`).
+- **T2.4 (unsaved-changes guard) and T2.6 (retire overlapping old sections): NOT started.** T2.6 in
+  particular now has everything it was waiting on (T2.1 is functional) — next in queue.
+- **A Sonnet browser-verification agent is being launched for the sign=enroll flow** (worktree-isolated) —
+  do not merge/promote until it comes back clean, same standard as Phase 1 and Phase 3.
+
 ### Phase 3 tasks (account-block delivery gate) · MAIN (auth/gate — build WITH Jac's live verification)
 Recon (2026-07-10): the On-Rent/delivery gate ALREADY exists — `cardGateBlocked(cust)` (`app.js:365`)
 enforced at booking (`app.js:15163`, `15193`) + delivery (`app.js:15328`), with an existing per-rental
