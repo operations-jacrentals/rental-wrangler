@@ -15131,6 +15131,65 @@ function render() {
   perfRecordRender(dt);   // histogram (P0) — arithmetic only, no DOM work
   if (dt > CFG.PERF_BUDGET_MS) console.warn(`[perf] render ${renderCount} took ${dt.toFixed(1)}ms (budget ${CFG.PERF_BUDGET_MS}ms)`);
 }
+/* Lean re-render used ONLY while typing in the GLOBAL search bar. Rebuilds just the
+   results grid (+ the phone dock's listbar / desktop footer counts) and deliberately
+   leaves the HEADER — and with it the live, focused #globalsearch node — mounted and
+   UNTOUCHED. A full render() tears down all of #app (header included), destroying and
+   recreating the focused input; on a phone that recreation interrupts the OS key-repeat
+   (hold-backspace dies after one delete) and swallows keystrokes that land during the
+   swap. Not rebuilding the header keeps the input node continuously connected, so focus,
+   caret, key-repeat and in-flight keys all survive untouched. The header's own
+   search-tools (the Clear ✕, the placeholder) refresh on the next full render(); the
+   has-query highlight is toggled in place below so it stays honest mid-type. Anything a
+   search can't change while you type (KPI header, docks, maps, comms) is left as-is. */
+function renderResults() {
+  const app = $('#app');
+  const oldGrid = app && app.querySelector(':scope > .grid');
+  if (!oldGrid) { render(); return; }                 // not on the grid surface → full render is correct
+  refreshToday();
+  const scrollOld = {};
+  document.querySelectorAll('.card[data-card]').forEach((c) => {
+    const b = c.querySelector('.card-body'); if (!b) return;
+    const v = c.dataset.view || 'list'; scrollOld[c.dataset.card] = v;
+    scrollMemo[c.dataset.card + '|' + v] = b.scrollTop;
+  });
+  availWin = activeDraftWindow();
+  const session = activeSession();
+  const phone = document.body.classList.contains('is-phone');
+  const grid = el('div', 'grid');
+  const shown = phone ? [COLUMNS[Math.max(0, Math.min(2, state.mobileCol))]] : COLUMNS;
+  for (const col of shown) grid.appendChild(columnEl(col, session));
+  oldGrid.replaceWith(grid);
+  if (phone) {   // re-home the freshly-built listbar into the dock, exactly as render() does
+    const oldDock = app.querySelector(':scope > .mobile-dock');
+    const dock = mobileDockEl();
+    if (oldDock) oldDock.replaceWith(dock); else app.appendChild(dock);
+    const lb = grid.querySelector('.listbar');
+    if (lb) dock.querySelector('.mdock-searchslot').appendChild(lb);
+    else {
+      const cardNode = grid.querySelector('.card[data-card]');
+      const dc = cardNode && cardNode.dataset.card, cs = dc && activeSession().cards[dc];
+      if (cs && cs.mode === 'standard') {
+        const jog = cardJog(dc, cs);
+        if (jog) { const bar = el('div', 'listbar mdock-jogbar'); bar.innerHTML = jog; dock.querySelector('.mdock-searchslot').appendChild(bar); }
+      }
+    }
+  } else {
+    const bb = app.querySelector(':scope > .bottombar');
+    if (bb) bb.replaceWith(bottomBarEl());
+  }
+  document.querySelectorAll('.card[data-card]').forEach((c) => {   // restore scroll by view (mirrors render())
+    const b = c.querySelector('.card-body'); if (!b) return;
+    const cardId = c.dataset.card, v = c.dataset.view || 'list', key = cardId + '|' + v;
+    if (v === scrollOld[cardId] || v === 'list') b.scrollTop = scrollMemo[key] || 0;
+    else b.scrollTop = 0;
+  });
+  const sw = document.querySelector('.searchwrap');   // keep the search box's has-query highlight honest without rebuilding the header
+  if (sw) sw.classList.toggle('has-query', !!(state.query.trim() || state.filterTerms.length));
+  ruMountStrips();      // §13.7 — re-mount any open gauge strip's chart into the rebuilt grid
+  mountDispatchMap();   // §2.3 — re-parent the singleton dispatch map if its card is in the rebuilt grid
+  applyTitles();
+}
 /** Flag any element that's actually truncated with data-tip (full text) so the
  *  custom app-styled tooltip can show it on hover. Nothing lost to ellipsis. */
 function applyTitles() {
@@ -17937,32 +17996,31 @@ function completeWOAttempt(woId) {
   openOverlay({ kind: 'wodone', woId });           // "Are you sure? Not all items are completed."
 }
 
-// Re-render debounced, then land focus + cursor back on `findEl()` (the input gets
-// torn down and recreated by the full-app render, same as the old synchronous path).
-function debouncedSearchRerender(schedule, renderFn, findEl) {
-  schedule(() => {
-    const el2 = findEl(); const sel = el2 ? el2.selectionStart : null;
-    renderFn();
-    const el3 = findEl(); if (el3 && sel != null) { el3.focus(); el3.setSelectionRange(sel, sel); }
-  });
-}
-const scheduleHistorySearchRender = debounce(150);
-const scheduleMiniSearchRender = debounce(150);
 function onInput(e) {
   if (e.target.id === 'globalsearch') {
+    // The state updates on every keystroke; the (debounced) re-render rebuilds ONLY the
+    // results grid via renderResults(), leaving THIS input node mounted — so no focus/
+    // caret restore is needed and the phone's key-repeat + in-flight keys are never lost.
     setQueryValue(e.target.value);
-    debouncedSearchRerender(scheduleGlobalSearchRender, render, () => document.getElementById('globalsearch'));
+    scheduleGlobalSearchRender(renderResults);
     return;
   }
+  // The per-card list / history searches recreate their own (in-grid) input on render, so
+  // they can't ride renderResults() (it rebuilds the grid). They stay on the ORIGINAL
+  // synchronous per-keystroke render + caret-restore — each filters one card's list (far
+  // cheaper than the global scan), and staying synchronous avoids the async-recreate
+  // keystroke-drop that debouncing a full render would introduce on a focused in-grid input.
   if (e.target.classList.contains('js-history-search')) {
     if (state.overlay?.kind === 'board') {   // vendor detail in the board popup — history search rides the overlay state
       state.overlay.historySearch = e.target.value;
-      debouncedSearchRerender(scheduleHistorySearchRender, renderOverlay, () => document.querySelector('.overlay .js-history-search'));
+      const sel = e.target.selectionStart; renderOverlay();
+      const hs = document.querySelector('.overlay .js-history-search'); if (hs) { hs.focus(); hs.setSelectionRange(sel, sel); }
       return;
     }
     const card = e.target.closest('.card')?.dataset.card; if (!card) return;
     activeSession().cards[card].historySearch = e.target.value;
-    debouncedSearchRerender(scheduleHistorySearchRender, render, () => document.querySelector(`.card[data-card="${card}"] .js-history-search`));
+    const sel = e.target.selectionStart; render();
+    const hs = document.querySelector(`.card[data-card="${card}"] .js-history-search`); if (hs) { hs.focus(); hs.setSelectionRange(sel, sel); }
     return;
   }
   if (e.target.classList.contains('mini-search')) {
@@ -17971,11 +18029,13 @@ function onInput(e) {
     // rides state.calSearch directly instead of a per-card cs (Phase 1, spec §2.2).
     if (card === 'calendar') {
       state.calSearch = e.target.value;
-      debouncedSearchRerender(scheduleMiniSearchRender, render, () => document.querySelector('.mini-search[data-card="calendar"]'));
+      const sel = e.target.selectionStart; render();
+      const ms = document.querySelector('.mini-search[data-card="calendar"]'); if (ms) { ms.focus(); ms.setSelectionRange(sel, sel); }
       return;
     }
     const mcs = activeSession().cards[card]; mcs.search = e.target.value; mcs.listLimit = undefined;
-    debouncedSearchRerender(scheduleMiniSearchRender, render, () => document.querySelector(`.mini-search[data-card="${card}"]`));
+    const sel = e.target.selectionStart; render();
+    const ms = document.querySelector(`.mini-search[data-card="${card}"]`); if (ms) { ms.focus(); ms.setSelectionRange(sel, sel); }
     return;
   }
   // Feedback description → store as they type (so a re-render keeps it).
