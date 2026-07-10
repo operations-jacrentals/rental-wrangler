@@ -24,7 +24,7 @@ Shipped to `staging` (never `main`), per-area against the 2026-06-29 decisions:
 | `units-fleet` | bottomDollar+ROI display gated to money; cost-field edits money-locked (D1/D2) |
 | `maps-location` | Transport/site edit money-gated (D1) |
 | `memberships` | Sign-up moved to the account-level agreement popup (D5) |
-| `invoicing-payments` | Merged lines carry `originInvoiceId`; No-Show billing refusal + re-date line restore + sweep can't eat linked invoices (2026-07-06 bug chain) |
+| `invoicing-payments` | Merged lines carry `fromInv` (origin-invoice ref, renamed from the proposed `originInvoiceId` — shipped via the Print/PDF redesign 2026-07-08, doubles as the collections audit trail); No-Show billing refusal + re-date line restore + sweep can't eat linked invoices (2026-07-06 bug chain) |
 | `search-views` | Personal per-device My Views, sort captured, any role saves (D1-D3) |
 | `collections` | Phase 1: queue → gray In-Collections off aging, auto-blacklist+recall, merge/refund freeze, back-office board (outbound = Phase 2, blocked on backend trust) |
 | `equipment-insurance` | Phase 1: unit.insurance{} coverage config, 3-rider catalog, coverage flags, premium/insured-value admin-only, Insurance expense category |

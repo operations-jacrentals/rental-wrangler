@@ -16,6 +16,15 @@
  *
  * WIRE-UP: add to handle()'s router:
  *     if (action === 'perfReport') return perfReport_(body);
+ *
+ * ⚠ FIX PENDING DEPLOY (#552 audit, 2026-07-09) — CONFIRMED live via Drive read:
+ * `t1()` truncates `build`/`device`/`role` to a length cap but never neutralizes
+ * a leading =/+/-/@, so a crafted client value opens the door to Sheets/Excel
+ * formula injection for anyone who later opens/exports the `_perf` tab. Low
+ * severity (metrics tab, no money/PII), but free to close. `t1()` below is
+ * the FIXED version — one line added, everything else unchanged from live.
+ * NOT deployed by this session — queued in BACKEND-DEPLOY-QUEUE.md, needs the
+ * usual /clasp STOP-gate before it goes live.
  */
 var PERF_TAB = '_perf';
 var PERF_MAX_ROWS = 5000;   // rolling window — the sink can never bloat the file
@@ -27,7 +36,11 @@ function perfReport_(body) {
     var v = (body && body.vitals) || {};
     var r = (body && body.renders) || {};
     var n1 = function (x) { x = Number(x); return isFinite(x) ? x : ''; };
-    var t1 = function (x, cap) { return String(x == null ? '' : x).slice(0, cap || 40); };
+    var t1 = function (x, cap) {
+      var s2 = String(x == null ? '' : x).slice(0, cap || 40);
+      if (/^[=+\-@]/.test(s2)) s2 = "'" + s2;   // formula-injection guard: force plain text, don't let a leading =/+/-/@ get evaluated
+      return s2;
+    };
     s.appendRow([
       new Date(), t1(body && body.build), t1(body && body.device, 10), t1(body && body.role, 24),
       n1(v.lcp), n1(v.inp), n1(v.cls), n1(r.p50), n1(r.p95), n1(r.over), n1(r.n),

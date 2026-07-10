@@ -50,9 +50,18 @@ else if (!colorKeys.has('primary')) ERR('frontmatter: required `colors.primary` 
 
 // ── (1b) Components: broken refs + contrast ────────────────────────────────
 const referenced = { colors: new Set(), rounded: new Set(), typography: new Set(), spacing: new Set() };
-const comps = (blocks.components ? blocks.components.body : [])
-  .map((l) => l.match(/^\s{2}([\w-]+):\s*\{(.*)\}\s*(?:#.*)?$/)).filter(Boolean)
-  .map((m) => ({ name: m[1], spec: m[2] }));
+// #552 audit item 6: a component spec that wraps onto a 2nd line used to fail the
+// single-line regex silently (no match → filtered out → skipped from EVERY check
+// below, including the AA-contrast hard-fail gate) with the script still exiting 0.
+// Fail loud instead: anything that looks like a started `name: {` with no closing
+// `}` on the same line is a build error, not a silent skip.
+const comps = [];
+for (const l of (blocks.components ? blocks.components.body : [])) {
+  const full = l.match(/^\s{2}([\w-]+):\s*\{(.*)\}\s*(?:#.*)?$/);
+  if (full) { comps.push({ name: full[1], spec: full[2] }); continue; }
+  const started = l.match(/^\s{2}([\w-]+):\s*\{/);
+  if (started) ERR(`component \`${started[1]}\`: spans multiple lines — keep its { ... } spec on one line (a wrapped entry is otherwise silently exempted from validation)`);
+}
 
 const lum = (hex) => {
   const c = hex.replace('#', '');
@@ -127,7 +136,9 @@ const norm = (v) => v.toLowerCase().replace(/\s+/g, '')
 let mapped = 0;
 for (const [cv, dk] of Object.entries(MAP)) {
   const want = cssVar[cv], got = colors[dk];
-  if (want == null) { WARN(`drift map: style.css ${cv} (→ ${dk}) not found in :root — update the map`); continue; }
+  // #552 audit item 14: a mapped var vanishing from :root (renamed/removed) is real
+  // drift, arguably the most common kind — this must fail the build, not just warn.
+  if (want == null) { ERR(`drift: style.css ${cv} (→ colors.${dk}) not found in :root — update the map or restore the token`); continue; }
   if (got == null) { ERR(`drift: DESIGN.md colors.${dk} missing — style.css ${cv} = ${want}`); continue; }
   if (norm(want) !== norm(got)) ERR(`drift: colors.${dk} = "${got}" ≠ style.css ${cv} = "${want}"`);
   else mapped++;

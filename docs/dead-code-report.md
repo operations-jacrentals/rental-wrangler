@@ -4,7 +4,22 @@
 
 ## app.js
 
-_No unreferenced top-level symbols found._
+**APP-07** — §4 STATE & SESSIONS — one normalized object + the session model (SPEC §0.1)
+
+- `matchesSearch` — app.js:2745
+
+**APP-22** — §17 INTERNAL TEAM DOCK (Jac, Phase 7) — a bottom-bar chat built on the Phase-6
+
+- `wrRailRemove` — app.js:9043
+- `laneKeyOf` — app.js:9262
+
+**APP-23** — §13.3 CARD GRAPH VIEW — RETIRED (2026-07-03). The per-card tile
+
+- `gvWinCutoff` — app.js:9558
+
+**APP-37** — §18b BACKEND SYNC — Google Sheets via the Apps Script web app
+
+- `GPS_SHUTDOWN_ROLES` — app.js:20024
 
 ## config.js
 
@@ -32,7 +47,7 @@ _No unreferenced top-level symbols found._
 
 ---
 
-_Scanned 1172 module-scope definitions; 0 unreferenced candidate(s)._
+_Scanned 1581 module-scope definitions; 5 unreferenced candidate(s)._
 
 ## Future: real execution coverage (follow-up)
 
