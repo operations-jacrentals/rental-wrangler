@@ -207,18 +207,26 @@ These three came up earlier and haven't been pinned. My interpretation below; re
   toggle. *Invoices* = current grouped-by-invoice list. *Transactions* = flattened list of
   every transaction (payment) across all of this customer's invoices (one invoice can have
   many). **[NEEDS CONFIRM]** exact columns of the Transactions view.
-- **7b — Member-Mode / Non-Member-Mode KPI toggle.** A button on the far right of the KPI row
-  (Open / #Invoices / Paid YTD / Avg Pay). Labeled "Member Mode" for a non-member, "Non Member
-  Mode" for a member. Toggling recomputes the KPI tiles to the *opposite* membership state,
-  reusing existing member-vs-retail math (`membershipEconomics` ~`app.js:3208`, `memberDaily`
-  rates). This **replaces** the always-on membership-economics block (the "$0 membership fees /
-  member-rate rentals / retail equivalent / member discount / net program" block), which is
-  removed from its current location. **[NEEDS CONFIRM]** exactly which KPI tiles recompute and
-  the precise formula (dictation was garbled).
-- **7c — Colored-dot → red/green/yellow background.** On the toggles, replace indicator dots
-  with a red/green/yellow **background color** on the toggle itself. **[NEEDS CONFIRM]** which
-  toggles/dots this covers (the new Invoices/Transactions toggle, Member-Mode toggle, both, or
-  other existing dot indicators on the card).
+- **7b — Member-Mode / Non-Member-Mode KPI toggle — a SALES TOOL** (Jac, 2026-07-10). Purpose:
+  quickly establish the dollar value of a membership — to **retain** a current member (show what
+  they'd be paying at retail = what they're saving) or **convert** a lead/non-member (show what
+  they'd pay as a member = the savings on the table). A button on the far right of the KPI row
+  (Open / #Invoices / Paid YTD / Avg Pay); labeled "Member Mode" for a non-member, "Non Member
+  Mode" for a member. Toggling recomputes the tiles to the *opposite* membership state, reusing
+  the existing member-vs-retail math (`membershipEconomics` ~`app.js:3208`, `memberDaily` rates)
+  — the same math as the removed always-on economics block, now surfaced on demand as a pitch.
+  This **replaces** the always-on membership-economics block ("$0 membership fees / member-rate
+  rentals / retail equivalent / member discount / net program"), removed from its location.
+  **Interpretation (confirm):** the **dollar** tiles recompute (Open $, Paid YTD, Avg Pay) to the
+  opposite rate; **#Invoices stays** (count is rate-independent). The value delta = difference
+  between the two modes. **[NEEDS CONFIRM]** only the exact tile set + whether to also show an
+  explicit "you save $X" delta line.
+- **7c — Colored-dot → red/green/yellow background — applies to ANY toggle that has the dots**
+  (Jac, 2026-07-10). Not scoped to this card: every toggle currently using a colored status **dot**
+  gets the dot replaced by a red/green/yellow **background color** on the toggle itself. This is a
+  **design-system sweep** (route through `/jactec-ui` / `area/design-system` conventions; enumerate
+  the dot-bearing toggles at build time and convert them uniformly). Reduced-motion / contrast
+  (visible focus, AA) preserved.
 
 ---
 
