@@ -15250,6 +15250,26 @@ function cardOverrideRental(rentalId, val) {
     setRentalStatus(rentalId, val);
   });
 }
+/* Phase 3 (T3.3, spec D11/D14) — the account-level block gate, a DISTINCT axis from the card/
+   agreement gate above. `no-card` is already covered there (Admin-tier, persistent override —
+   STRICTER than D14's Manager-tier ask, so left untouched: never weaken an existing gate).
+   `blacklist` is a hard stop with NO override, checked inline at each call site (reactivating
+   the pre-existing, previously-dormant §9 `/Blacklist/i` check — nothing ever set that string
+   until Phase 3's blockPicker). That leaves `failed-payment` and `invoice-hold` uncovered by
+   anything today — this is their gate: a D14 per-action Manager override, verified the same way
+   managerPw does. Critically NON-PERSISTENT — `bypassAccountBlock` is a plain function-call
+   argument threaded through the retry, never written to the record, so every future attempt
+   re-prompts (Jac, 2026-07-10: "that's the point"). */
+function accountBlockGate(cust) {
+  const ab = accountBlock(cust);
+  return (ab && (ab.type === 'failed-payment' || ab.type === 'invoice-hold')) ? ab : null;
+}
+function accountBlockOverride(cust, onOk) {
+  const ab = accountBlockGate(cust);
+  openOverlay({ kind: 'managerPw', custId: cust ? cust.customerId : null, pwAction: 'rentalOverride',
+    pwReason: `${cust ? cust.name : 'This customer'} — ${ab ? ab.reason : 'account block'}.`,
+    busy: false, error: '', onOk });
+}
 /* Admin "Rental Rules" (Settings → Rental Rules) — HARD-BLOCK On Rent until every
    requirement an admin marked Required is met. Pure + defensive: with no rules set
    (the default) it always returns null, so the On Rent flow is byte-for-byte today's. */
@@ -15269,19 +15289,25 @@ function rentalRuleBlock(r, cust, val) {
   if (req('po') && !(inv && inv.po)) return 'Rental rule: a PO number on the invoice is required before On Rent.';
   return null;
 }
-function setRentalStatus(rentalId, val) {
+function setRentalStatus(rentalId, val, opts = {}) {
   const r = IDX.rental.get(rentalId);
   if (!r) return;
   const cust = r.customerId ? IDX.customer.get(r.customerId) : null;
   // §9 hard gates
   if (val === 'On Rent' && !r.invoiceId) { flashOr('.js-create-invoice', 'Blocked: "On Rent" requires a linked invoice (§9).'); return; }
-  if (['On Rent', 'Reserved'].includes(val) && cust && /Blacklist/i.test(cust.accountType || '')) { toast('Blocked: customer is blacklisted (§9).'); return; }
+  if (['On Rent', 'Reserved'].includes(val) && cust && (accountBlock(cust)?.type === 'blacklist' || /Blacklist/i.test(cust.accountType || ''))) { toast('Blocked: customer is blacklisted (§9).'); return; }
   const _rb = rentalRuleBlock(r, cust, val); if (_rb) { flashOr('.js-add-card', _rb); return; }   // admin Rental Rules — hard block
   // §14 — a booking requires a valid card that is SIGNED for the current account
   // type; any unsigned card blocks. An Admin can override. (Charging is never gated.)
   if (BOOKING_STATUSES.includes(val) && cardGateBlocked(cust) && !r.cardOverride) {
     toast(`${cust.name} — ${cardGateReason(cust)}. Admin override required.`);
     return cardOverrideRental(rentalId, val);
+  }
+  // Phase 3 (T3.3) — the account-block gate (failed-payment / invoice-hold); no-card + blacklist
+  // are already handled above. Manager-tier, per-action, never persisted (see accountBlockGate).
+  if (BOOKING_STATUSES.includes(val) && !opts.bypassAccountBlock) {
+    const abg = accountBlockGate(cust);
+    if (abg) { toast(`${cust.name} — ${abg.reason}. Manager authorization required.`); accountBlockOverride(cust, () => setRentalStatus(rentalId, val, { bypassAccountBlock: true })); return; }
   }
   const wasVoided = ['No Show', 'Cancelled'].includes(r.status);
   r.status = val;
@@ -15302,14 +15328,20 @@ function setRentalStatus(rentalId, val) {
 }
 /* §20 set ONE unit's status (the per-unit gate). Diverging from its siblings locks
    the master gate to the mix label; re-converging frees it. Same §9 gates per unit. */
-function setUnitStatus(rentalId, unitId, val) {
+function setUnitStatus(rentalId, unitId, val, opts = {}) {
   const r = IDX.rental.get(rentalId); if (!r) return;
   const eu = unitEntry(r, unitId); if (!eu) return;
   const cust = r.customerId ? IDX.customer.get(r.customerId) : null;
   if (val === 'On Rent' && !r.invoiceId) { flashOr('.js-create-invoice', 'Blocked: "On Rent" requires a linked invoice (§9).'); return; }
-  if (['On Rent', 'Reserved'].includes(val) && cust && /Blacklist/i.test(cust.accountType || '')) { toast('Blocked: customer is blacklisted (§9).'); return; }
+  if (['On Rent', 'Reserved'].includes(val) && cust && (accountBlock(cust)?.type === 'blacklist' || /Blacklist/i.test(cust.accountType || ''))) { toast('Blocked: customer is blacklisted (§9).'); return; }
   { const _rb = rentalRuleBlock(r, cust, val); if (_rb) { toast(_rb); return; } }   // admin Rental Rules — hard block
   if (BOOKING_STATUSES.includes(val) && cardGateBlocked(cust) && !r.cardOverride) { toast(`${cust.name} — ${cardGateReason(cust)}. Admin override required.`); return; }
+  // Phase 3 (T3.3) — account-block gate (failed-payment / invoice-hold); no-card + blacklist
+  // are already handled above. Manager-tier, per-action, never persisted.
+  if (BOOKING_STATUSES.includes(val) && !opts.bypassAccountBlock) {
+    const abg = accountBlockGate(cust);
+    if (abg) { toast(`${cust.name} — ${abg.reason}. Manager authorization required.`); accountBlockOverride(cust, () => setUnitStatus(rentalId, unitId, val, { bypassAccountBlock: true })); return; }
+  }
   // §20 No-Show / Cancel: don't commit the terminal status while a payment is
   // assigned to the unit (it would count toward Complete yet stay billed) — block first.
   if ((val === 'No Show' || val === 'Cancelled') && unitLinePaid(r, unitId)) { toast('That unit has an assigned payment — refund it before No Show/Cancel.'); return; }
@@ -15439,12 +15471,22 @@ function setUnitCapture(r, eu, key, stamp) {
   if (eu) eu[key] = stamp;
   if (!eu || isPrimaryUnit(r, eu)) r[key] = stamp;   // mirror the primary onto r.* for pre-#20 readers
 }
-function yardCapture(rentalId, cap, unitId) {
+function yardCapture(rentalId, cap, unitId, opts = {}) {
   const r = IDX.rental.get(rentalId); if (!r) return;
   const cur = captureUnit(r, unitId) || r;
   // §14 a delivery log goes On Rent — block the driver up front when the account's
   // card/agreement gate isn't clear (the journey node reads locked, not dead).
-  if (cap === 'start') { const gc = r.customerId ? IDX.customer.get(r.customerId) : null; if (cardGateBlocked(gc) && !r.cardOverride) { toast(`🔒 ${gc.name} — ${cardGateReason(gc)}. Sign the card before logging a delivery.`); return; } }
+  if (cap === 'start') {
+    const gc = r.customerId ? IDX.customer.get(r.customerId) : null;
+    if (gc && (accountBlock(gc)?.type === 'blacklist' || /Blacklist/i.test(gc.accountType || ''))) { toast(`🔒 ${gc.name} — blacklisted. Delivery blocked.`); return; }
+    if (cardGateBlocked(gc) && !r.cardOverride) { toast(`🔒 ${gc.name} — ${cardGateReason(gc)}. Sign the card before logging a delivery.`); return; }
+    // Phase 3 (T3.3) — account-block gate (failed-payment / invoice-hold), same Manager-tier,
+    // per-action, non-persisted override as the booking-status gates above.
+    if (!opts.bypassAccountBlock) {
+      const abg = accountBlockGate(gc);
+      if (abg) { toast(`🔒 ${gc.name} — ${abg.reason}. Manager authorization required.`); accountBlockOverride(gc, () => yardCapture(rentalId, cap, unitId, { bypassAccountBlock: true })); return; }
+    }
+  }
   if (cap === 'start' && cur.startCapture) return toast('Start already captured — video on file.');
   if (cap === 'end' && cur.endCapture) return toast('End already captured — video on file.');
   if (cap === 'end' && !cur.startCapture) return flashOr('.js-yard[data-cap="start"]', 'Log the Start/Delivery first.');
