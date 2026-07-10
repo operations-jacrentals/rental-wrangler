@@ -22574,7 +22574,18 @@ function boot() {
     if (e.key === 'Escape') dismissTopSheet();
   });
   // mouse hotkeys (§0.1): double-click a row = anchor; right-click = Back
-  const hotkeyGuard = (e) => e.target.closest('.inline-edit, input, textarea, select, .pill, button, .x') || state.winEdit;
+  // #10b — `state.winEdit` is NOT a modal flag (comment at its declaration: "NOT a
+  // modal") since the 2026-06-25 inline-window-editor rebuild (88e47c8): opening ANY
+  // rental's Standard view arms it and nothing but Save/closeAll ever clears it, so it
+  // stays truthy for the rest of the tab's life once a single rental has been viewed —
+  // long after that rental (and its picker) are off-screen. Only `.anchor` (set while a
+  // start day is picked, mid-range-select) is the truly-mid-pick signal; the ctx-menu
+  // path already narrows on it this way (Jac B5, 2026-06-15 — see line ~5199) so
+  // right-click-Back keeps working once the picker is merely present, not mid-pick.
+  // This dblclick guard used the old blanket flag and was never updated to match,
+  // silently killing double-click-to-anchor everywhere for the rest of the tab the
+  // moment any rental had ever been opened.
+  const hotkeyGuard = (e) => e.target.closest('.inline-edit, input, textarea, select, .pill, button, .x') || (state.winEdit && state.winEdit.anchor);
   document.addEventListener('dblclick', (e) => {
     if (hotkeyGuard(e)) return;
     if (e.target.closest('.row')) return;                 // rows are handled by the click discriminator (#10)
@@ -22606,7 +22617,7 @@ function boot() {
     // The row EYE is the one button that IS a preview trigger.
     if (!e.target.closest('.js-roweye') && (e.target.closest('.pill.gate, .js-status-pill, button, .x, .seg, .add-field, .dropdown-menu') || document.querySelector('.dropdown-menu'))) { clearTimeout(hoverTimer); return; }
     const t = hoverTarget(e.target);
-    if (!t || state.overlay || state.winEdit) return;
+    if (!t || state.overlay || (state.winEdit && state.winEdit.anchor)) return;   // #10b — winEdit alone isn't "mid-pick" (see the dblclick hotkeyGuard note above); only .anchor is
     clearTimeout(hoverGrace);            // re-entering a row cancels a pending close
     if (t === hoverEl) return;
     hoverEl = t; hideHoverPreview();
