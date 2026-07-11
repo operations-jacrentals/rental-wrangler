@@ -3429,7 +3429,9 @@ body { font-variant-numeric: tabular-nums; }
 .acct-f { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .acct-f.wide { grid-column: 1 / -1; }
 .acct-f > span { font-size: 9.5px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .4px; font-family: 'Saira Condensed', var(--font); }
-.acct-f .v.inline-edit { font-size: 12px; padding: 6px 9px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; display: block; }
+.acct-f .v.inline-edit { font-size: 12px; padding: 6px 9px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; display: flex; align-items: center; min-height: 32px; min-width: 0; }
+.acct-f .v.inline-edit > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-f .v.inline-edit:hover { border-color: var(--accent-line); }   /* empty or filled — the whole box invites the tap-to-edit */
 .acct-notesrow { margin-top: 8px; }
 
 /* D22/D23 — NET TERMS · PO · PROTECTION on one line */

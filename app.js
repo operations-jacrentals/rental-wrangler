@@ -3963,9 +3963,12 @@ function acctSummaryChip(c) {
 // edit mechanism as every other customer field in the app — no new edit surface.
 function acctField(c, field, label, ph, { wide } = {}) {
   const val = c[field];
-  const thing = ph.replace(/^Add\s+/i, '');
+  // Empty = a plain empty box (still tap-to-edit — the .inline-edit click opens the editor), NOT a
+  // dashed "+Label" add-button: that chip cluttered the dense 2-col grid and looked like a nested
+  // box (Jac 2026-07-11 — "leave the empty fields empty"). Uniform box height keeps empty + filled
+  // aligned; the stamped label above already says what the field is.
   return `<label class="acct-f${wide ? ' wide' : ''}"><span>${esc(label)}</span>`
-    + `<span class="v inline-edit" data-edit="custField" data-field="${esc(field)}" data-rec="${esc(c.customerId)}" data-ph="${esc(ph)}">${val ? esc(val) : `<span class="add-field" data-r="R5c">+${esc(thing)}</span>`}</span>`
+    + `<span class="v inline-edit" data-edit="custField" data-field="${esc(field)}" data-rec="${esc(c.customerId)}" data-ph="${esc(ph)}">${val ? esc(val) : ''}</span>`
     + `</label>`;
 }
 // D24 — Rental Protection's one-line explainer, member vs non-member copy (the real %
