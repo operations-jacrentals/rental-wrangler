@@ -8381,6 +8381,16 @@ function listView(cardDef, session) {
     wrap.appendChild(chip);
   }
 
+  wrap.appendChild(cardListEl(cardDef, session));
+  return wrap;
+}
+/* The rows-only `.list` element of a card's list view — factored out of listView so a
+   mini-search keystroke can rebuild ONLY the rows (renderCardList) without touching the
+   .listbar / its focused input. Owns the filter → visibility → sort → window/group pipeline
+   and the empty-state prompts; the sort/search bar + filter chips stay in listView. */
+function cardListEl(cardDef, session) {
+  const card = cardDef.id;
+  const cs = session.cards[card];
   let rows = listFor(card, session);
   if (card === 'units') rows = unitsVisible(rows, cs);   // default: Active only — hide non-Active fleet (or reveal via the sort) (#2/#34)
   if (card === 'rentals') rows = rentalsVisible(rows, session, cs);   // default: live work queue — cleared (all-terminal) rentals hidden; cascade/search/"Completed" sort reveal
@@ -8439,8 +8449,7 @@ function listView(cardDef, session) {
   } else {
     appendWindowed(list, rows, cs, card, (rec) => list.appendChild(rowEl(card, rec)));
   }
-  wrap.appendChild(list);
-  return wrap;
+  return list;
 }
 const PLUS_NEW = new Set(['rentals', 'invoices', 'customers']);
 
@@ -15230,6 +15239,28 @@ function renderResults() {
   mountDispatchMap();   // §2.3 — re-parent the singleton dispatch map if its card is in the rebuilt grid
   applyTitles();
 }
+/* §perf — lean per-card list re-render, the CARD-search twin of renderResults() (which
+   serves the GLOBAL bar). Used ONLY while typing in a card's .mini-search: rebuilds just
+   THAT card's .list (rows) via the shared cardListEl builder and swaps it in, leaving the
+   .listbar — and its focused .mini-search input — mounted, so focus/caret/key-repeat survive
+   and NO full render() (all columns + docks + maps + KPI rings + applyTitles) fires per
+   keystroke. Falls back to a full render() whenever the surgical path can't apply (card
+   off-screen, not a plain list, graph view). Debounced like the global bar so fast typing
+   coalesces (scheduleCardListRender). */
+const scheduleCardListRender = debounce(150);
+function renderCardList(card) {
+  const session = activeSession();
+  const cs = session.cards[card];
+  const cardNode = document.querySelector(`.card[data-card="${card}"]`);
+  const cardDef = GRID_CARD_BY_ID[card];
+  if (!cardNode || !cardDef || !cs || cs.mode !== 'list' || cs.graphView) { render(); return; }   // not a plain on-screen list → full render
+  const body = cardNode.querySelector('.card-body');
+  const oldList = body && body.querySelector('.list');
+  if (!body || !oldList) { render(); return; }
+  oldList.replaceWith(cardListEl(cardDef, session));   // rebuild ONLY the rows; the input stays mounted → focus/caret untouched
+  body.scrollTop = 0;   // new query → show results from the top (mirrors the full-render list reset)
+  applyTitles();        // re-arm truncation tooltips on the fresh rows (rAF-deferred, hover-only — no cost on touch)
+}
 /** Flag any element that's actually truncated with data-tip (full text) so the
  *  custom app-styled tooltip can show it on hover. Nothing lost to ellipsis. */
 function applyTitles() {
@@ -18052,11 +18083,12 @@ function onInput(e) {
     scheduleGlobalSearchRender(renderResults);
     return;
   }
-  // The per-card list / history searches recreate their own (in-grid) input on render, so
-  // they can't ride renderResults() (it rebuilds the grid). They stay on the ORIGINAL
-  // synchronous per-keystroke render + caret-restore — each filters one card's list (far
-  // cheaper than the global scan), and staying synchronous avoids the async-recreate
-  // keystroke-drop that debouncing a full render would introduce on a focused in-grid input.
+  // The per-card list search (.mini-search) now rides its OWN lean twin of renderResults():
+  // renderCardList() rebuilds only that card's .list rows and leaves the .listbar input
+  // mounted (§perf) — so it's debounced + keystroke-safe like the global bar, no longer a
+  // full render() per keystroke. The record HISTORY search (js-history-search) stays on the
+  // original synchronous render + caret-restore below — it's a small in-record list, and its
+  // input isn't a stable standalone node to keep mounted (rebuilt with the record body).
   if (e.target.classList.contains('js-history-search')) {
     if (state.overlay?.kind === 'board') {   // vendor detail in the board popup — history search rides the overlay state
       state.overlay.historySearch = e.target.value;
@@ -18081,8 +18113,13 @@ function onInput(e) {
       return;
     }
     const mcs = activeSession().cards[card]; mcs.search = e.target.value; mcs.listLimit = undefined;
-    const sel = e.target.selectionStart; render();
-    const ms = document.querySelector(`.mini-search[data-card="${card}"]`); if (ms) { ms.focus(); ms.setSelectionRange(sel, sel); }
+    // §perf — the input stays mounted (renderCardList rebuilds only the rows), so keep the
+    // has-query affordance honest in place, then schedule a lean rows-only re-render instead
+    // of a full render() per keystroke — the same reuse-the-input pattern the global bar uses
+    // via renderResults(). No caret restore needed: this input is never destroyed.
+    const sw = e.target.closest('.mini-searchwrap');
+    if (sw) sw.classList.toggle('has-query', !!(e.target.value.trim() || (mcs.filterTerms || []).length));
+    scheduleCardListRender(() => renderCardList(card));
     return;
   }
   // Feedback description → store as they type (so a re-render keeps it).
