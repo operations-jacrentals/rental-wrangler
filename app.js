@@ -317,6 +317,21 @@ function cardSignState(c, k) { return cardAuthorized(c, k) ? 'authorized' : (car
 /* 'complete' | 'stale' (a finalized signing exists but for the wrong account type → re-sign)
    | 'in-progress' (a card exists but is missing the selfie and/or a matching signature) */
 function cardCaptureState(c, k) { if (cardComplete(c, k)) return 'complete'; if (cardSignings(k).length && !cardCurrentSigning(c, k)) return 'stale'; return 'in-progress'; }
+/* Phase-0 (2026-07-10 account/agreements redesign) — collapsed agreement-row card indicator (spec D18).
+   Returns { text, tone } where tone ∈ green|yellow|red. Healthy card → brand-initial + '-' + last4
+   ('V-2261'/'M-2261'); else a status string. The charge-outcome states (PAYMENT FAILED/BANK BLOCKED/
+   DISPUTED) read k.lastChargeOutcome, a field Phase-3 writes — until then a card with no marker reads
+   healthy (documented coupling; the branch is present, just dormant). */
+function cardIndicator(c, k) {
+  if (!k) return { text: 'NO CARD', tone: 'red' };
+  const oc = k.lastChargeOutcome || '';                         // Phase-3 field; '' today
+  if (oc === 'failed')   return { text: 'PAYMENT FAILED', tone: 'red' };
+  if (oc === 'blocked')  return { text: 'BANK BLOCKED',   tone: 'red' };
+  if (oc === 'disputed') return { text: 'DISPUTED',       tone: 'red' };
+  if (cardExpired(k))     return { text: 'EXPIRED',       tone: 'red' };
+  if (cardExpiringSoon(k)) return { text: 'EXPIRING SOON', tone: 'yellow' };
+  return { text: `${(k.brand || '?').charAt(0).toUpperCase()}-${k.last4 || '????'}`, tone: 'green' };
+}
 /* Resolve a signing's frozen title/text from the version registry (storage-light:
    the signing stores only `version`, not the ~6–8 KB text). Falls back to a baked
    `text`/`title` on legacy records, then to the current agreement for its key. */
@@ -358,6 +373,39 @@ function cardGateReason(cust) {
   if (!hasValidCard(cust)) return 'no valid card on file';
   if (accountAgreementsBlocked(cust)) { const n = unsignedCardCount(cust); return `${n} card${n > 1 ? 's' : ''} not complete (needs selfie + signature for the current account type)`; }
   return '';
+}
+/* Phase-0 (2026-07-10 account/agreements redesign) — the account BLOCK model (spec §6, D11-D14).
+   Derives the single active block or null. The two AUTOMATIC types are derived (never stale-stored):
+   `no-card` (no valid card) and `failed-payment` (a real decline on a NON-membership charge — membership
+   charge failures are EXCLUDED per D11, they only walk the pricing lifecycle). The two MANUAL types are
+   read from stored `c.block`: `blacklist` (Owner-set hard ban, D13) and `invoice-hold` (staff picks
+   invoices that must be paid to auto-unblock, D12 — resolves itself once those balances clear).
+   Precedence: blacklist → invoice-hold → failed-payment → no-card.
+   `failed-payment` is a CUSTOMER-level flag (`c.chargeFailedAt`), not per-invoice: per Jac's explicit
+   call (2026-07-10 Q3), ANY successful payment anywhere on the account clears it — paying off the
+   specific invoice that declined is NOT required. `c.chargeFailedAt`/`applyPayment`'s clear are Phase-3
+   fields; until Phase 3 writes them, failed-payment is dormant. NOT wired into the rental gate yet
+   (Phase 3 does that + the per-action Manager override). */
+function accountBlock(c) {
+  if (!c) return null;
+  const b = c.block || null;
+  if (b && b.type === 'blacklist') return { type: 'blacklist', reason: 'Account blacklisted', setBy: b.setBy || '' };
+  if (b && b.type === 'invoice-hold') {
+    const ids = (b.invoiceIds || []).filter((id) => { const inv = IDX.invoice.get(id); return inv && invoiceTotals(inv).balance > 0.005; });
+    if (ids.length) return { type: 'invoice-hold', invoiceIds: ids, reason: 'Held until the selected invoice(s) are paid' };
+  }
+  if (c.chargeFailedAt) return { type: 'failed-payment', reason: 'A payment failed — any successful payment on the account clears it' };
+  if (!hasValidCard(c)) return { type: 'no-card', reason: 'No valid card on file' };
+  return null;
+}
+/* Phase 3 (T3.2) — mark a REAL decline on a rental (non-membership) invoice charge. Call ONLY from a
+   definite backend/Stripe decline response — NEVER from a network/timeout/ambiguous path (spec §5.5:
+   those are UNKNOWN, never assumed a failure). CUSTOMER-level, not per-invoice, per Jac's call
+   (2026-07-10 Q3): any successful payment anywhere on the account clears it (see applyPayment below). */
+function markChargeFailed(invoiceId) {
+  const inv = IDX.invoice.get(invoiceId); if (!inv || inv.membership) return;   // membership failures are pricing-only (D11) — never a delivery block
+  const c = inv.customerId ? IDX.customer.get(inv.customerId) : null; if (!c) return;
+  c.chargeFailedAt = TODAY_ISO; reindex('customers', c);
 }
 /* Signing-form glyphs (existing inline marks, hoisted to module scope so the
    per-card tab AND the account-level "held draft" share one capture form). */
@@ -2243,6 +2291,9 @@ const state = {
   actLogOpen: {},             // §3.8 per-funnel Action Log open state — { ['<custId>|<scope>']: true }
   custInvOpen: {},            // §3.3 embedded Invoices accordion — { [customerId]: invoiceId } (one open at a time); view-local, reset on a fresh customer open
   custInvMenu: {},            // §3.3 which expanded invoice's status/action menu is open — { [customerId]: invoiceId }
+  custAcctOpen: {},           // Phase 1 (2026-07-10 account/agreements redesign, D19) — is the top-of-card Account section expanded? { [customerId]: true }; collapsed by default, view-local
+  custAgOpen: {},             // Phase 1 — which Agreements row is expanded inside the Account section — { [customerId]: cardId | '__new__' | null } (one open at a time, mirrors custInvOpen); '__new__' = the +Agreement/Card creation panel
+  custAgDraft: {},            // Phase 2b — the in-progress NEW-agreement draft — { [customerId]: {accountType, startDate, selfie, signature} }; view-local, cleared on sign/cancel
   calSearch: '',               // Trips card mini-search (calendar is card-stateless — no session.cards.calendar — so this rides on state directly)
   calOpenTrip: null,           // §2.2b cab sheet — the ONE trip row expanded to its unit-facts sheet (row-body tap toggles; second tap collapses)
   autoRunFlags: null,          // §2.7 Auto-Run — { [tripId]: {reason:'unpinned'|'deadline', deadline?, projectedArrival?} }, session-only report on the last run (never a stored record field)
@@ -2475,6 +2526,7 @@ function openStandard(card, recId, recType) {
   cs.mode = 'standard'; cs.recId = recId; cs.recType = recType || null; cs.graphView = false;   // opening a record exits the in-column graph view
   if (card === 'customers' && state.funnelTab) delete state.funnelTab[recId];   // §3.5 — a fresh customer open resets the funnel toggle to Rental
   if (card === 'customers') { if (state.custInvOpen) delete state.custInvOpen[recId]; if (state.custInvMenu) delete state.custInvMenu[recId]; }   // §3.3 — collapse the embedded Invoices accordion on a fresh open (openInvoice re-sets it after)
+  if (card === 'customers') { if (state.custAcctOpen) delete state.custAcctOpen[recId]; if (state.custAgOpen) delete state.custAgOpen[recId]; if (state.custAgDraft) delete state.custAgDraft[recId]; }   // Phase 1/2b — collapse the Account section + its Agreements accordion + any in-progress draft on a fresh open
   ackComments(recOf(entityCardOf(card, recType), recId));   // viewing = acknowledged (Phase 6)
   // §10 + #54 — opening a Category while the rental-window picker is live (a window's
   // picked, so availWin is set) pivots the left column to Units, pre-filled with the
@@ -2677,7 +2729,7 @@ function rowOpen(card, recId, recType) {
 function deferOrAnchor(key, singleFn, anchor) {
   if (pendingRowClick && pendingRowClick.key === key) {
     clearTimeout(pendingRowClick.timer); pendingRowClick = null;
-    if (anchor && anchor.card === 'invoices') return openInvoice(anchor.recId);   // §3.4 invoice card retired → double-click routes to the embedded invoice too (matches the single-click pillTo redirect)
+    if (anchor && anchor.card === 'invoices') return openInvoice(anchor.recId);   // invoice card retired → double-click routes to the embedded invoice too (matches the single-click pillTo redirect)
     return anchorOrToggle(anchor.card, anchor.recId, anchor.recType);   // 2nd tap on the anchored record un-anchors (toggle)
   }
   if (pendingRowClick) clearTimeout(pendingRowClick.timer);
@@ -3654,6 +3706,11 @@ function membershipStatus(c) {
   const at = c.accountType || '';
   if (!/Member/.test(at)) return 'None';
   if (at === 'Member Incomplete') return 'Incomplete';
+  // Pending (spec §7.2 / Phase 2 T2.5): a signed enrollment whose start date is still in the future and
+  // whose first charge hasn't cleared — commitment set, but no paidUntil yet. Grants NO member pricing
+  // (isActiveMember stays Active|Past Due only); the Phase-4 cron flips it Active when it charges on the
+  // start date. Checked BEFORE the grandfather clause below (a Pending member DOES carry paidCadence).
+  if (c.commitmentStart && c.commitmentStart > TODAY_ISO && !c.paidUntil) return 'Pending';
   if (!(c.paidUntil || c.paidCadence || c.commitmentEnd)) return 'Active';   // legacy/grandfathered member — no subscription data yet
   if (c.prepaid) return 'Active';
   if (c.paidUntil && c.paidUntil >= TODAY_ISO) return 'Active';
@@ -3664,6 +3721,20 @@ function membershipStatus(c) {
    apply only to an Active or in-grace member — refused to Incomplete AND lapsed, in both
    the quote and the invoice line. Past Due keeps the rate through the grace window. */
 const isActiveMember = (c) => { const s = membershipStatus(c); return s === 'Active' || s === 'Past Due'; };
+/* Phase-0 (2026-07-10 account/agreements redesign) — the collapsed agreement-row's leading label
+   (spec D18): a MEMBERSHIP status for a membership agreement, else '' (the caller then shows the plain
+   account-type label). Returns UPPERCASE status words. PENDING (signed, start date in the future, not
+   yet charged) and RENEWAL FAILED depend on Phase-2/3 agreement fields (`ag.startDate`/`ag.charged`,
+   `c.renewalFailed`) — gated behind field presence so this is correct today and lights up as the data
+   lands. */
+function membershipRowStatus(c, ag) {
+  const at = (ag && ag.accountType) || (c && c.accountType) || '';
+  if (!/Member/i.test(at)) return '';                                              // not a membership agreement → caller shows account type
+  if (ag && ag.startDate && ag.startDate > TODAY_ISO && !ag.charged) return 'MEMBERSHIP PENDING';
+  const s = membershipStatus(c);
+  if (s === 'Past Due' && c && c.renewalFailed) return 'MEMBERSHIP RENEWAL FAILED';
+  return { Active: 'MEMBER', Pending: 'MEMBERSHIP PENDING', Incomplete: 'MEMBERSHIP INCOMPLETE', 'Past Due': 'MEMBERSHIP PAST DUE', Lapsed: 'MEMBERSHIP LAPSED', None: '' }[s] || '';
+}
 /* Rental Protection (F4) — an account-level surcharge (spec §2.1), available to members
    AND non-members. The rate is the Owner-settable protection % (shared with the membership
    add-on). rentalProtectionAmount = that % of the rental's EQUIPMENT subtotal (rental lines
@@ -3744,9 +3815,11 @@ function membershipMetaHtml(c) {
 }
 /* Lifecycle actions — re-homed into the agreements window (§3.7). MONEY-gate PRESERVED
    verbatim: Cancel / Pay-Cancellation are canMoney()-gated (same gate as the invoice
-   Pay/Charge/Refund row + Add-Card); Print Agreement is not money-gated so every role
-   sees it. Enrollment already lives in the agreements-window foot (enrollFoot). Handlers
-   (js-mem-cancel/paycxl/print-magreement) are UNCHANGED and re-check canMoney(). */
+   Pay/Charge/Refund row + Add-Card); Print Agreement is not money-gated so every role sees
+   it. Enroll was retired from here (2026-07-10) — it bypassed the signed-agreement gate
+   entirely; enrollment now happens ONLY via agreementSignCommit's inline sign=enroll flow.
+   Handlers (js-mem-cancel/paycxl/print-magreement) are UNCHANGED and re-check canMoney() as
+   defence-in-depth. */
 function membershipActionsHtml(c) {
   const status = membershipStatus(c);
   const isMem = status === 'Active' || status === 'Past Due';
@@ -3863,6 +3936,355 @@ function funnelSectionHtml(c) {
     + `<div class="funnel-body">${body}</div>`
     + `</div>`;
 }
+/* ── Phase 1 (2026-07-10 Account/Agreements + Membership redesign, spec §3/§7b
+   D19-D27, plan T1.1-T1.4) — the new top-of-card ACCOUNT section. UI SHELL:
+   render + expand/collapse state + a Manager-password prompt SHELL only. The
+   per-agreement ACCOUNT TYPE dropdown, the Start-Date sign-gate, and the
+   atomic sign=enroll charge are Phase 2 (spec §4); the block-gate ENFORCEMENT
+   (this section only renders the block picker, it doesn't gate anything yet)
+   is Phase 3 (spec §6). Mirrors customerInvoicesSection below: one-open-at-a-
+   time accordion, same row/expand mechanic, its own view-local state keys
+   (state.custAcctOpen, state.custAgOpen — declared alongside custInvOpen).
+   Consumes the dormant Phase-0 helpers cardIndicator/membershipRowStatus/
+   accountBlock (app.js ~L320/L381/L3494) — this is their first live caller. ── */
+// D20 — the collapsed bar's overtaking type-chip: the worst membership/agreement
+// status when one applies, else the plain account-type badge. { text, tone }.
+function acctSummaryChip(c) {
+  const st = membershipRowStatus(c, null);   // '' unless a membership account (agreement-level fields land in Phase 2 — dormant until then)
+  if (st) {
+    const tone = /RENEWAL FAILED|LAPSED/i.test(st) ? 'bad' : /PENDING|INCOMPLETE/i.test(st) ? 'pend' : /PAST DUE/i.test(st) ? 'warn' : 'ok';
+    return { text: st, tone };
+  }
+  const acct = getStatus('customerAccountType', c.accountType || 'Non-Business');
+  return { text: acct.label, tone: { green: 'ok', yellow: 'warn', red: 'bad', purple: 'pend' }[acct.color] || 'ok' };
+}
+// A compact click-to-edit account field (module-level twin of DETAIL.customers' efield,
+// laid out in the new dense .acct-fgrid). Reuses the SAME data-edit="custField" inline-
+// edit mechanism as every other customer field in the app — no new edit surface.
+function acctField(c, field, label, ph, { wide } = {}) {
+  const val = c[field];
+  const thing = ph.replace(/^Add\s+/i, '');
+  return `<label class="acct-f${wide ? ' wide' : ''}"><span>${esc(label)}</span>`
+    + `<span class="v inline-edit" data-edit="custField" data-field="${esc(field)}" data-rec="${esc(c.customerId)}" data-ph="${esc(ph)}">${val ? esc(val) : `<span class="add-field" data-r="R5c">+${esc(thing)}</span>`}</span>`
+    + `</label>`;
+}
+// D24 — Rental Protection's one-line explainer, member vs non-member copy (the real %
+// off membershipPricing(), never hardcoded).
+const acctProtectionCopy = (c) => {
+  const pct = membershipPricing().protectionPct;
+  return isActiveMember(c)
+    ? `<b>Rental Protection</b> adds ${pct}% and covers damages up to $1,000/month per unit.`
+    : `<b>Rental Protection</b> adds ${pct}% and covers up to $1,000 in damages per unit.`;
+};
+const NET_TERMS_OPTS = ['None', '7d', '15d', '30d', '60d', '90d'];
+// D22/D23 — NET TERMS · PO · PROTECTION share one line. NET TERMS is a segCtl (R14 — a
+// joined group of mutually-exclusive options): picking one does NOT write netDays
+// directly — ANY change is Manager-password gated (D22), so it opens the managerPw shell
+// with the pending value; PO/Protection are single toggleChips (R31) — plain operational
+// booleans, not money/gate fields, so they write straight through.
+function acctTermsLine(c) {
+  const cur = (c.netDays == null || c.netDays === '' || Number(c.netDays) === 0) ? 'None' : `${c.netDays}d`;
+  const netSeg = segCtl(NET_TERMS_OPTS.map((opt) => ({
+    label: esc(opt), js: 'js-acct-netdays', data: { rec: c.customerId, val: opt }, on: opt === cur ? 'accent' : null,
+  })));
+  const po = toggleChip('PO', !!c.requiresPO, { js: 'js-acct-po', data: { rec: c.customerId }, tone: 'yellow' });
+  const prot = toggleChip('Protection', !!c.rentalProtection, { js: 'js-acct-prot', data: { rec: c.customerId }, tone: 'green' });
+  return `<div class="acct-termsline">`
+    + `<span class="acct-cap">Net Terms</span>${netSeg}`
+    + `<span class="acct-lock" data-tip="Any change needs a Manager password">${AG_LOCK}</span>`
+    + `<span class="acct-sep"></span>${po}${prot}`
+    + `</div>`
+    + (c.rentalProtection ? `<p class="acct-prot-note">${acctProtectionCopy(c)}</p>` : '');
+}
+// D18 collapsed agreement-row order: [Account Type | membership STATUS] · [Signed Date |
+// red flags NOT SIGNED/NO SELFIE] · [card indicator] · chevron. One row per card (today's
+// agreement container — see cardSignings/cardCurrentSigning ~L297-299); a customer-level
+// Agreement record (spec Phase 0 shape) lands in a later phase.
+function agreementRowHtml(c, k) {
+  const sg = cardCurrentSigning(c, k);
+  const rowStatus = membershipRowStatus(c, null);
+  const acct = getStatus('customerAccountType', c.accountType || 'Non-Business');
+  const isStatus = !!rowStatus;
+  const ttlText = rowStatus || acct.label;
+  const tone = isStatus
+    ? (/RENEWAL FAILED|LAPSED/i.test(rowStatus) ? 'bad' : /PENDING|INCOMPLETE/i.test(rowStatus) ? 'pend' : /PAST DUE/i.test(rowStatus) ? 'warn' : 'ok')
+    : ({ green: 'ok', yellow: 'warn', red: 'bad', purple: 'pend' }[acct.color] || 'ok');
+  const ind = cardIndicator(c, k);
+  const indTone = ind.tone === 'green' ? 'ok' : ind.tone;
+  const flags = [];
+  if (!sg) flags.push('NOT SIGNED');
+  if (!cardHasSelfie(k)) flags.push('NO SELFIE');
+  const midSlot = flags.length
+    ? `<span class="rflags">${flags.map((f) => `<span class="rflag">${esc(f)}</span>`).join('')}</span>`
+    : `<span class="ag-sub">Signed ${esc(sg.signedAt || '—')}</span>`;
+  return `<div class="ag-row js-ag-row" data-rec="${esc(c.customerId)}" data-card="${esc(k.id)}" data-tip="Open agreement">`
+    + `<span class="ag-stat ${tone}"></span>`
+    + `<span class="ag-ttl${isStatus ? ' status ' + tone : ''}">${esc(ttlText)}</span>`
+    + midSlot
+    + `<span class="cind ${indTone}">${esc(ind.text)}</span>`
+    + `<span class="ag-chev">${I.chev}</span>`
+    + `</div>`;
+}
+// Expanded EXISTING agreement (read-only viewer) — mirrors the newCustomer overlay's
+// 'authorized'/'in-progress' card-tab content (~L10823-10839) so the two surfaces stay
+// visually identical. Live capture (agCaptureBlock) is overlay-bound (state.overlay) —
+// wiring it to open inline here without an overlay is Phase 2; for now the in-progress
+// state deep-links to the existing card-capture form via js-edit-customer.
+function agreementExpandedHtml(c, k) {
+  const meta = `${k.isDefault ? 'Default · ' : ''}${brandName(k.brand)} ••${esc(k.last4 || '')}${k.expMonth ? ' · exp ' + k.expMonth + '/' + String(k.expYear).slice(-2) : ''}`;
+  const st = cardSignState(c, k);
+  let body;
+  if (st === 'authorized') {
+    const sg = cardCurrentSigning(c, k);
+    body = `<div class="ag-meta">${esc(meta)}<span class="ag-metasep"></span>${badge('Authorized', 'green')}</div>`
+      + `<div class="ag-signed"><span class="ag-lock">${AG_LOCK}</span><span class="t"><b>${esc(signingTitle(sg))}</b> · signed ${esc(sg.signedAt || '—')}</span></div>`
+      + `<div class="ag-packet">`
+      + `<div class="ag-pcell"><div class="ag-pcap">Selfie</div>${signingSelfieSrc(sg) ? `<img class="ag-selfie" src="${esc(signingSelfieSrc(sg))}" alt="selfie on file">` : '<div class="ag-selfie empty">—</div>'}</div>`
+      + `<div class="ag-pcell"><div class="ag-pcap">Signature</div>${signingSignatureSrc(sg) ? `<img class="ag-sigthumb" src="${esc(signingSignatureSrc(sg))}" alt="signature on file">` : '<div class="ag-sigthumb"></div>'}</div>`
+      + `</div>`
+      + `<p class="muted acct-microcopy">🔒 Locked — the exact agreement accepted on this card. Re-signing happens only on a new card or an account-type change.</p>`;
+  } else {
+    body = `<div class="ag-meta">${esc(meta)}<span class="ag-metasep"></span>${badge(st === 'stale' ? 'Re-sign' : 'In progress', st === 'stale' ? 'yellow' : 'gray')}</div>`
+      + capProgress([{ label: 'Card', done: true }, { label: 'Selfie', done: cardHasSelfie(k) }, { label: 'Signature', done: cardHasSignature(c, k) }])
+      + `<p class="acct-microcopy">Finish this card's signing from the <button class="linkname js-edit-customer" data-r="R7" data-rec="${esc(c.customerId)}">customer form</button>.</p>`;
+  }
+  return `<div class="ag-open">`
+    + `<div class="ao-bar"><span class="ao-lbl">Agreement</span><span class="sp"></span><button class="ao-collapse js-ag-collapse" data-rec="${esc(c.customerId)}" data-tip="Collapse">${I.chev}</button></div>`
+    + `<div class="ao-body">${body}</div>`
+    + `</div>`;
+}
+// Phase 2b — the in-progress new-agreement draft (view-local, state.custAgDraft). Seeded from
+// the customer's CURRENT type; nothing here touches c.accountType until agreementSignCommit.
+function agDraft(c) {
+  state.custAgDraft = state.custAgDraft || {};
+  if (!state.custAgDraft[c.customerId]) state.custAgDraft[c.customerId] = { accountType: c.accountType || 'Non-Business', startDate: '', selfie: (c.pendingCapture && c.pendingCapture.selfie) || '', signature: (c.pendingCapture && c.pendingCapture.signature) || '', actypeOpen: false };
+  return state.custAgDraft[c.customerId];
+}
+// D10 — the unsaved-changes guard. A draft is "dirty" once anything differs from its pristine
+// seed: the account type was changed, a Start Date was picked, or a selfie/signature was captured.
+function agDraftDirty(c) {
+  const d = state.custAgDraft && state.custAgDraft[c.customerId]; if (!d) return false;
+  return d.accountType !== (c.accountType || 'Non-Business') || !!d.startDate || !!d.selfie || !!d.signature;
+}
+// Hold the draft's captured pieces (mirrors js-ag-save — does NOT write accountType, D4 stays intact).
+function agDraftHold(c) {
+  const d = state.custAgDraft && state.custAgDraft[c.customerId]; if (!d) return;
+  if (d.selfie || d.signature) { c.pendingCapture = { selfie: d.selfie || c.pendingCapture?.selfie || '', signature: d.signature || c.pendingCapture?.signature || '' }; reindex('customers', c); }
+}
+/* D10/D27 — contextual (not a permanent bar): fires ONLY when leaving a dirty '__new__' draft —
+   collapsing it, switching to a different agreement row, or collapsing the whole Account section.
+   `window.confirm` is a deliberate, minimal choice over a custom 3-button popup (matches the
+   existing precedent at requireAdmin's window.prompt) — OK saves the draft (hold) and proceeds;
+   Cancel keeps editing (aborts the leave). Note: this loses a true 3rd "discard and leave anyway"
+   option vs. a custom popup — flagged as a scoping call, not a silent omission. */
+function guardAgLeave(rec, proceed) {
+  const c = IDX.customer.get(rec);
+  if (c && state.custAgOpen && state.custAgOpen[rec] === '__new__' && agDraftDirty(c)) {
+    if (window.confirm('Save changes to this agreement draft before leaving?\n\nOK = save the draft · Cancel = keep editing')) { agDraftHold(c); delete state.custAgDraft[rec]; proceed(); }
+    return;   // Cancel (or OK, already handled above) — either way don't fall through to a second proceed()
+  }
+  proceed();
+}
+// D3/D16 "creating a new agreement" panel — LIVE (Phase 2b). ACCOUNT TYPE is a toggle-menu
+// (D4 — changes the DRAFT only, never c.accountType, until Sign). Start Date is a real date
+// input (D6 — required + gates Sign for a Member type). Signature reuses the EXISTING popout
+// signature window (openSignatureWindow/onSigMessage, generalized to target this draft when no
+// overlay is open — the popout itself is unchanged, same feature). Selfie reuses the EXISTING
+// file-picker fallback path (the same one used when live camera capture isn't available),
+// generalized the same way — the live-camera-preview capture tile is deferred (flagged for a
+// follow-up pass; the underlying camera-stream engine is deeply state.overlay-bound and is
+// reused elsewhere, so this pass doesn't touch it to avoid risking that shared code).
+function agreementNewHtml(c) {
+  const d = agDraft(c);
+  const isMember = /Member/i.test(d.accountType);
+  const key = /Member/i.test(d.accountType) ? 'membership' : 'rental';
+  const ag = AGREEMENTS[key] || AGREEMENTS.rental;
+  const acctLabel = getStatus('customerAccountType', d.accountType).label;
+  const actypeMenu = d.actypeOpen
+    ? `<div class="actype-menu">${NC_ACCOUNT_TYPES.map((t) => `<button type="button" class="actype-opt js-ag-actype-opt${t === d.accountType ? ' on' : ''}" data-rec="${esc(c.customerId)}" data-val="${esc(t)}">${esc(getStatus('customerAccountType', t).label)}</button>`).join('')}</div>`
+    : '';
+  const fee = isMember ? membershipFee({ plan: 'Monthly', addOns: { transport: false, protection: !!c.rentalProtection } }, membershipPricing()) : null;
+  const tote = fee ? `<div class="tote">`
+    + `<div class="ln"><span>${esc(acctLabel)} · Monthly base</span><b>${money2(fee.base)}</b></div>`
+    + (fee.protection ? `<div class="ln"><span>Rental Protection · ${membershipPricing().protectionPct}%</span><b>${money2(fee.protection)}</b></div>` : '')
+    + `<div class="ln"><span>Tax · ${(TAX_RATE * 100).toFixed(2)}%</span><b>${money2(fee.tax)}</b></div>`
+    + `<div class="ln total"><span>First charge</span><b>${money2(fee.total)}</b></div>`
+    + `</div>` : '';
+  const cardLbl = defaultCard(c) ? cardLabel(c) : 'no card on file yet';
+  const chargeNote = fee ? `<p class="charge-note">${defaultCard(c) ? `Card <b>${esc(cardLbl)}</b>` : `<b style="color:var(--yellow)">Add a card</b>`} will be charged <b>${money2(fee.total)}</b>${d.startDate ? ` on ${esc(fmtShortDate(d.startDate) || d.startDate)}` : ' once a Start Date is set'}${d.startDate && d.startDate <= TODAY_ISO ? ' (now)' : ', then monthly'}.</p>` : '';
+  return `<div class="ag-open new">`
+    + `<div class="ao-bar"><span class="ao-lbl">New Agreement</span><span class="unsaved">Unsaved</span><span class="sp"></span><button class="ao-collapse js-ag-collapse" data-rec="${esc(c.customerId)}" data-tip="Cancel">${I.chev}</button></div>`
+    + `<div class="ao-body">`
+    + `<div class="ao-row">`
+    + `<div class="ao-cell"><span class="ao-cap">Account Type</span><button type="button" class="actype-dd js-ag-actype" data-rec="${esc(c.customerId)}"><b>${esc(acctLabel)}</b><span class="cv">${I.chev}</span></button>${actypeMenu}</div>`
+    + `<div class="ao-cell"><span class="ao-cap">Start Date${isMember ? ' <span class="anno">gates signing</span>' : ''}</span><input type="date" class="datefield-in js-ag-startdate-in" data-rec="${esc(c.customerId)}" value="${esc(d.startDate)}"></div>`
+    + `</div>`
+    + `<div class="packet">`
+    + `<div class="pcell"><span class="ao-cap">Selfie</span>${d.selfie ? `<img class="selfie-img" src="${esc(d.selfie)}" alt="selfie">` : `<label class="selfie picklabel">Tap to add<input type="file" accept="image/*" capture="user" class="js-ag-selfie-pick" data-rec="${esc(c.customerId)}" hidden></label>`}</div>`
+    + `<div class="pcell"><span class="ao-cap">Signature</span>${d.signature ? `<div class="sigpad has-sig"><img class="sig-img" src="${esc(d.signature)}" alt="signature"></div>` : `<button type="button" class="sigpad js-sign-popout" data-rec="${esc(c.customerId)}" data-title="${esc(ag.title)}"><span class="ph">Open signature window</span></button>`}</div>`
+    + `</div>`
+    + `<div><span class="ao-cap ao-cap-block">${esc(ag.title)} · Terms</span><div class="terms">${esc((ag.text || '').slice(0, 420))}…</div></div>`
+    + tote + chargeNote
+    + `<div class="ao-foot">${ghostPill('Cancel', { js: 'js-ag-collapse', data: { rec: c.customerId } })}<span class="sp"></span>`
+    + `${actionPill('commit', 'Save', { js: 'js-ag-save', data: { rec: c.customerId } })}`
+    + `<button class="pill ignition js-ag-start" data-r="R17" data-rec="${esc(c.customerId)}">${isMember ? 'Start Membership' : 'Sign'}</button>`
+    + `</div>`
+    + `</div>`
+    + `</div>`;
+}
+// D16 — the Agreements list: `+Agreement/Card` as the TOP add-row (hidden while creating,
+// D26), then one collapsed row per card (D18), the open one expanding inline (push-down,
+// mirrors the Invoices accordion mechanic 1:1).
+function customerAgreementsSection(c) {
+  const cards = customerCards(c);
+  const openKey = (state.custAgOpen && state.custAgOpen[c.customerId]) || null;
+  const creating = openKey === '__new__';
+  const rows = cards.map((k) => (k.id === openKey ? agreementExpandedHtml(c, k) : agreementRowHtml(c, k))).join('')
+    || '<div class="ag-empty muted">No agreements or cards on file yet.</div>';
+  const addRow = creating ? '' : addBtn('Agreement / Card', { link: true, js: 'js-ag-add', h: 30, data: { rec: c.customerId } });
+  return `<hr class="ag-divide">`
+    + `<div class="ag-head"><h5>Agreements</h5></div>`
+    + `<div class="ag-scroll">${addRow}${rows}${creating ? agreementNewHtml(c) : ''}</div>`;
+}
+/* Phase 2b (spec §4, D4-D8) — the atomic sign=enroll commit. This is the ONE AND ONLY place a
+   signed agreement can change c.accountType (closes the original bug — D4; the legacy Saddle Up
+   enroll button/overlay that also bypassed this was retired 2026-07-10, round 2 of the same
+   closure). Mirrors the old membershipEnrollCommit's demo/PROD split verbatim so the money path
+   is identical: PROD never fabricates a local invoice — the backend (membershipEnroll_) creates
+   it, and for a future start date it now
+   lands the member fields immediately without charging, leaving the daily membershipBillingCron to
+   pick up the first charge on start day (2026-07-10 backend patch closes that gap server-side —
+   see membershipEnroll_/membershipBillingCron in the Apps Script project). Jac's confirmed rule:
+   "card isn't charged until the start date; if start date is today, charge now." Plan/add-ons
+   default to Monthly + the account's existing rentalProtection toggle — the approved mockup's inline
+   panel has no plan/add-ons picker, so this is a scoping call, flagged for Jac's review, not a silent
+   invention: an Annual option or a Transport add-on toggle can be added later without touching the
+   commit logic. */
+function agreementSignCommit(custId) {
+  const c = IDX.customer.get(custId); if (!c) return;
+  const d = agDraft(c);
+  const isMember = /Member/i.test(d.accountType);
+  if (!d.signature) { toast('Capture a signature before signing.'); return; }
+  if (isMember && !d.startDate) { toast('Pick a Start Date before signing (D6) — the charge can\'t be scheduled without it.'); return; }
+  const card = defaultCard(c);
+  if (isMember && !card) { toast('Add a card on file before enrolling.'); return; }
+
+  const oldType = c.accountType;
+  c.accountType = d.accountType;   // the ONLY write site for a signed account-type change (D4)
+  if (card) signCardAgreement(c, card, d.signature, d.selfie);
+  else c.pendingCapture = { selfie: d.selfie, signature: d.signature };   // no card yet — held (mirrors the existing pre-card pattern)
+
+  if (isMember) {
+    const plan = 'Monthly';   // [scoping call — see header comment]
+    const pricing = membershipPricing();
+    const fee = membershipFee({ plan, addOns: { transport: false, protection: !!c.rentalProtection } }, pricing);
+    c.paidCadence = plan === 'Annual' ? 'Yearly' : 'Monthly';
+    c.commitmentStart = d.startDate; c.commitmentEnd = addMonthsISO(d.startDate, MEMBERSHIP_MONTHS);
+    c.autoRenew = false; c.addOns = { transport: false, protection: !!c.rentalProtection };
+    c.prepaid = false; c.paidUntil = '';   // Pending (T2.5) until the charge clears
+    logAction(c, `Membership enrolled — ${plan} (agreement signed, starts ${d.startDate})`);
+    delete state.custAgDraft[custId]; if (state.custAgOpen) state.custAgOpen[custId] = null;
+    if (d.startDate <= TODAY_ISO) {
+      if (memIsDemo()) {   // #local — no backend to charge; build + pay the invoice right here (mirrors the old membershipEnrollCommit's demo branch)
+        const lines = [{ kind: 'membership', ref: c.customerId, lid: lineLid(), label: `Membership · ${plan} base`, amount: fee.base }];
+        if (fee.protection) lines.push({ kind: 'membership', ref: c.customerId, lid: lineLid(), label: `Rental Protection · ${pricing.protectionPct}%`, amount: fee.protection });
+        const inv = buildMembershipInvoice(c, lines, { date: d.startDate, due: d.startDate });
+        markInvoicePaidLocal(inv, 'Card (demo)');
+        c.paidUntil = addMonthsISO(d.startDate, plan === 'Annual' ? 12 : 1);
+        reindex('customers', c); render(); toast('Membership active — saddle up! ✓'); return;
+      }
+      reindex('customers', c); render(); agreementChargeNow(custId, d.startDate);   // PROD — the backend creates the invoice, charges the card, sets paidUntil
+      return;
+    }
+    reindex('customers', c); render(); toast(`Signed — first charge of ${money2(fee.total)} scheduled for ${fmtShortDate(d.startDate) || d.startDate}.`);
+    return;
+  }
+  reindex('customers', c);
+  logAction(c, `Account type: ${oldType} → ${d.accountType} (agreement signed)`);
+  delete state.custAgDraft[custId]; if (state.custAgOpen) state.custAgOpen[custId] = null;
+  render(); toast('Agreement signed.');
+}
+/* Charge a just-signed, start-date-is-today membership invoice — PROD only (demo mode is handled
+   inline by agreementSignCommit, matching the old membershipEnrollCommit's demo/PROD split).
+   The backend creates the invoice, charges the card, and sets paidUntil server-side; no local
+   invoice is fabricated here. On a cleared charge, sets paidUntil (Pending → Active, T2.5); on
+   decline, the account stays Pending until the daily membershipBillingCron retries — it does NOT
+   revert accountType (the agreement is signed; only the charge is outstanding, same as a Past-Due
+   renewal). */
+async function agreementChargeNow(custId, startDate) {
+  const c = IDX.customer.get(custId); if (!c) return;
+  try {
+    const r = await backendCall('membershipEnroll', { customerId: c.customerId, plan: c.paidCadence === 'Yearly' ? 'Yearly' : 'Monthly', addOns: c.addOns || {}, startDate, autoRenew: !!c.autoRenew });
+    if (r && r.ok && r.status === 'active') { c.paidUntil = r.paidUntil || addMonthsISO(TODAY_ISO, c.paidCadence === 'Yearly' ? 12 : 1); reindex('customers', c); render(); toast('Membership active — saddle up! ✓'); return; }
+    render(); toast((r && r.status === 'incomplete') ? (friendlyPayErr(r.charge) || 'Charge declined — the invoice stays unpaid; the cron will retry.') : ((r && friendlyPayErr(r)) || 'Charge failed — try again from the invoice.'));
+  } catch (e) { render(); toast('Network error — try again from the Invoices section.'); }
+}
+const BLOCK_TYPE_LABEL = { blacklist: 'Blacklisted', 'invoice-hold': 'Held — invoice(s) unpaid', 'failed-payment': 'Payment failed', 'no-card': 'No card on file' };
+// D17 — Block Account, bottom-RIGHT (spec §6, T3.1). No block → opens the blockPicker (Blacklist
+// vs invoice-hold). A manual blacklist shows its state + an Admin/Owner-tier "Lift" (D13/T3.4) —
+// 'owner' already maps to the admin tier (config.js BUILTIN_ROLE_TIERS), so lifting reuses
+// requireAdmin, not a separate Owner password. The other three types are DERIVED (accountBlock,
+// app.js ~L381) and self-clear — shown as a read-only badge, no lift control.
+function acctBlockFoot(c) {
+  const b = accountBlock(c);
+  if (!b) return `<div class="ag-foot"><span class="sp"></span>${actionPill('danger', 'Block Account', { js: 'js-block-account', data: { rec: c.customerId }, h: 28 })}</div>`;
+  const stateBadge = badge(BLOCK_TYPE_LABEL[b.type] || b.type, 'red');
+  const lift = b.type === 'blacklist'
+    ? actionPill('danger', 'Lift Blacklist', { js: 'js-lift-blacklist', data: { rec: c.customerId }, h: 28 })
+    : b.type === 'no-card' || b.type === 'failed-payment'
+      ? `<span class="muted acct-microcopy">clears automatically</span>`
+      : actionPill('danger', 'Block Account', { js: 'js-block-account', data: { rec: c.customerId }, h: 28 });   // invoice-hold: still offer the picker to add/replace a manual block
+  return `<div class="ag-foot">${stateBadge}<span class="sp"></span>${lift}</div>`;
+}
+// T2.6 (2026-07-10) — the derived read-only stats the OLD account section's right column carried
+// (Total paid/Visits/Customer-for/Rents-every-N-days/rented categories), folded in here so retiring
+// that section (below) doesn't drop them.
+function acctStatsHtml(c) {
+  const d = c._digest || {};
+  const rentedCatIds = [...new Set(DATA.rentals.filter((r) => r.customerId === c.customerId)
+    .map((r) => r.categoryId || IDX.unit.get(r.unitId)?.categoryId).filter(Boolean))];
+  const rentedFlags = rentedCatIds.map((id) => { const cat = IDX.category.get(id); return cat ? flagEl(cat.name, 'gray', { icon: CARD_ICON.categories, card: 'categories', recId: id }) : ''; }).filter(Boolean).join('');
+  return `<div class="acct-stats">`
+    + `${kv(money(d.totalPaid), { pfx: 'Total', derived: true })}${kv(`${d.visits || 0}`, { pfx: 'Visits', derived: true })}${kv(`${d.years || 0} yrs`, { pfx: 'Customer for', derived: true })}${kv(`every ${d.avgFrequencyDays || 0} days`, { pfx: 'Rents', derived: true })}`
+    + (rentedFlags ? `<div class="rented-cats"><span class="pfx">Rented</span><span class="rc-flags">${rentedFlags}</span></div>` : '')
+    + `</div>`;
+}
+function acctBodyHtml(c) {
+  return `<div class="acct-fgrid">`
+    + acctField(c, 'firstName', 'First name', 'Add first name')
+    + acctField(c, 'lastName', 'Last name', 'Add last name')
+    + acctField(c, 'company', 'Company', 'Add company')
+    + acctField(c, 'phone', 'Phone', 'Add phone')
+    + acctField(c, 'email', 'Email', 'Add email')
+    + acctField(c, 'industry', 'Industry', 'Add industry')
+    + acctField(c, 'idNumber', "Driver's License / ID", 'Add ID number')
+    + acctField(c, 'address', 'Address', 'Add address', { wide: true })   // T2.6 — was only in the old (now-retired) account section; folded in here
+    + `</div>`
+    + `<div class="acct-notesrow">${acctField(c, 'accountNotes', 'Notes', 'Add account notes', { wide: true })}</div>`   // D15 — its own row, under Driver's License
+    + acctTermsLine(c)
+    + acctStatsHtml(c)
+    + customerAgreementsSection(c)
+    + acctBlockFoot(c);
+}
+// D19 — the whole section: collapsed by default, a one-line summary bar (D20's type-chip
+// overtakes on a membership/agreement status); expand reveals acctBodyHtml.
+function customerAccountSection(c) {
+  const open = !!(state.custAcctOpen && state.custAcctOpen[c.customerId]);
+  const chip = acctSummaryChip(c);
+  const bits = [c.company, c.phone, c.email].filter(Boolean);
+  const summary = bits.length
+    ? bits.map((s, i) => (i === 0 ? `<b>${esc(s)}</b>` : `<span class="acct-dot">·</span>${esc(s)}`)).join('')
+    : '<i>No contact info yet</i>';
+  return `<div class="acct${open ? ' open' : ''}">`
+    + `<div class="acct-bar js-acct-toggle" data-rec="${esc(c.customerId)}">`
+    + `<span class="acct-lbl">Account</span>`
+    + `<span class="acct-sum">${summary}</span>`
+    + `<span class="type-chip ${chip.tone}">${esc(chip.text)}</span>`
+    + `<span class="acct-chev">${I.chev}</span>`
+    + `</div>`
+    + (open ? `<div class="acct-body">${acctBodyHtml(c)}</div>` : '')
+    + `</div>`;
+}
 /* ── §3.2/§3.3 — the embedded per-customer Invoices section (replaces the retired
    standalone Invoice card). A manager summary strip over a bounded scroll region of
    invoice rows; a row expands accordion-style (one open at a time) into the interactive
@@ -3879,26 +4301,97 @@ function invPayState(t) {
   return { cls: 'due', word: t.status };   // Unpaid / Not Due / Late* / Collections
 }
 const invoiceOneLine = (i) => { const l = (i.lineItems || []).map((x) => x.label).filter(Boolean); return l.length ? l.join(' · ') : (i.membership ? 'Membership' : 'No line items yet'); };
-function invSummaryStrip(invs) {
-  const yr = TODAY.getFullYear();
-  let open = 0, paidYtd = 0; const payDays = [];
+/* Phase 5 (spec §7b) — the Member-Mode sales-pitch delta. Reuses membershipEconomics' lifetime
+   member-vs-retail comparison (~app.js:3555 by name, membershipEconomics) as a RATIO, applied
+   proportionally to the visible Open/Paid-YTD dollar figures. This is a deliberate APPROXIMATION
+   for a quick sales pitch, not an authoritative per-invoice reconciliation — an exact figure would
+   need re-deriving rates for each specific invoice's rental window at the opposite membership
+   state, which the approved mockup didn't ask for (it showed one illustrative delta, not audited
+   math). Returns null when there's no rental history to compare (nothing to pitch). */
+function kpiModeDelta(c, amount) {
+  if (!(amount > 0.005)) return null;
+  const econ = membershipEconomics(c); if (!econ) return null;
+  if (isActiveMember(c)) {
+    if (!(econ.memberRev > 0)) return null;
+    const delta = amount * (econ.retailRev / econ.memberRev - 1);
+    return delta > 0.005 ? { sign: '+', amount: delta, tone: 'b' } : null;   // Non-Member Mode → retail penalty (red)
+  }
+  if (!(econ.retailRev > 0)) return null;
+  const delta = amount * (1 - econ.memberRev / econ.retailRev);
+  return delta > 0.005 ? { sign: '−', amount: delta, tone: 'g' } : null;   // Member Mode → member savings (green)
+}
+// Phase 5 — Open/All/Transactions (R14 segCtl, replaces the plain "Invoices" title).
+function invViewToggle(c) {
+  const view = (state.custInvView && state.custInvView[c.customerId]) || 'all';
+  return segCtl([
+    { label: 'Open', js: 'js-inv-view', data: { rec: c.customerId, val: 'open' }, on: view === 'open' ? 'accent' : null },
+    { label: 'All', js: 'js-inv-view', data: { rec: c.customerId, val: 'all' }, on: view === 'all' ? 'accent' : null },
+    { label: 'Transactions', js: 'js-inv-view', data: { rec: c.customerId, val: 'transactions' }, on: view === 'transactions' ? 'accent' : null },
+  ]);
+}
+/* invs = the CUSTOMER-WIDE invoice list (always — Open/All only filters the ROW LIST below this
+   strip, never these aggregates; 1YR AVG in particular must stay computed off the full list, not
+   collapse to ~0 when the 'Open' filter hides every already-paid invoice). Member-Mode (R31
+   toggleChip, reused verbatim from Phase 3) is ON by default for a member (the retention/
+   cancel-penalty pitch) and OFF by default for a non-member (the join pitch) — spec §7b. */
+function invSummaryStrip(invs, c) {
+  let open = 0, paid12mo = 0; const payDays = [];
   invs.forEach((i) => {
     const t = invoiceTotals(i);
     open += Math.max(0, t.balance);
     const d = parseISO(i.date);
-    if (d && d.getFullYear() === yr) paidYtd += Math.max(0, t.paid);
+    if (d) { const age = dayDiff(d, TODAY); if (age >= 0 && age < 365) paid12mo += Math.max(0, t.paid); }
     if (t.paid > 0.005 && i.paidAt && d) { const diff = dayDiff(d, parseISO(i.paidAt)); if (diff >= 0 && diff < 3650) payDays.push(diff); }
   });
+  const avg1yr = paid12mo / 12;   // 1YR AVG — trailing-365-day paid total smoothed to a monthly run-rate (never resets to ~0 at New Year's like a calendar YTD would)
   const avg = payDays.length ? Math.round(payDays.reduce((a, b) => a + b, 0) / payDays.length) : null;
-  const chip = (v, l, cls) => `<div class="kchip${cls ? ' ' + cls : ''}"><span class="kc-v">${esc(v)}</span><span class="kc-l">${esc(l)}</span></div>`;
-  return `<div class="inv-summary">`
-    + chip(money2(open), 'Open', open > 0.005 ? 'due' : '')
+  state.custKpiMode = state.custKpiMode || {};
+  if (state.custKpiMode[c.customerId] == null) state.custKpiMode[c.customerId] = isActiveMember(c);
+  const mmOn = state.custKpiMode[c.customerId];
+  const chip = (v, l, cls, amt) => {
+    const d = (mmOn && amt != null) ? kpiModeDelta(c, amt) : null;
+    const arrow = d ? `<span class="arr ${d.tone}">${d.tone === 'g' ? '▼' : '▲'}</span>` : '';
+    const deltaLbl = d ? `<span class="kc-delta ${d.tone}">${d.sign}${money2(d.amount)}</span>` : '';
+    return `<div class="kchip${cls ? ' ' + cls : ''}"><span class="kc-v">${esc(v)}${arrow}</span><span class="kc-l">${esc(l)}${deltaLbl}</span></div>`;
+  };
+  const mmTone = mmOn ? (isActiveMember(c) ? 'red' : 'green') : 'accent';
+  const mmBtn = toggleChip(isActiveMember(c) ? 'Non Member Mode' : 'Member Mode', mmOn, { js: 'js-kpi-mode', data: { rec: c.customerId }, tone: mmTone });
+  return `<div class="inv-kpi-row"><div class="inv-summary">`
+    + chip(money2(open), 'Open', open > 0.005 ? 'due' : '', open)
     + chip(String(invs.length), invs.length === 1 ? 'Invoice' : 'Invoices', '')
-    + chip(money2(paidYtd), 'Paid YTD', 'paid')
+    + chip(money2(avg1yr), '1YR AVG', 'paid', avg1yr)
     + chip(avg == null ? '—' : avg + 'd', 'Avg pay', '')
-    + `</div>`;
+    + `</div>${mmBtn}</div>`;
 }
-/* R29 — the status pill that DOUBLES as the action menu. Its fill = pay state (green solid
+// Phase 5 — the flattened Transactions view: every payment (+ refund) across this customer's
+// invoices, newest first. Uses inv.payments[] where present; falls back to a single synthetic
+// "Paid" row (mirrors invoiceDocHtml's own paymentRows fallback, app.js ~L17150) for legacy/demo
+// invoices that predate that array. Rows are read-only in this pass (no click-to-open yet).
+function invTransactionsHtml(c) {
+  const invs = invoicesForCustomer(c);
+  const txns = [];
+  invs.forEach((i) => {
+    const t = invoiceTotals(i);
+    if ((i.payments || []).length) i.payments.forEach((pmt) => txns.push({ invoiceId: i.invoiceId, at: pmt.at || i.paidAt || i.date, amount: (Number(pmt.amountCents) || 0) / 100, type: pmt.type, checkNum: pmt.checkNum, refund: false }));
+    else if (t.paid > 0.005) txns.push({ invoiceId: i.invoiceId, at: i.paidAt || i.date, amount: t.paid, type: i.paymentMethod || 'Payment', refund: false });
+    if (i.refunded && (Number(i.refundedAmount) || 0) > 0.005) txns.push({ invoiceId: i.invoiceId, at: i.paidAt || i.date, amount: Number(i.refundedAmount) || 0, type: 'Refund', refund: true });
+  });
+  txns.sort((a, b) => (parseISO(b.at) || 0) - (parseISO(a.at) || 0));
+  const collected = txns.reduce((s, x) => s + (x.refund ? 0 : x.amount), 0);
+  const refundCount = txns.filter((x) => x.refund).length, payCount = txns.length - refundCount;
+  const avg = payCount ? collected / payCount : 0;
+  const chip = (v, l, cls) => `<div class="kchip${cls ? ' ' + cls : ''}"><span class="kc-v">${esc(v)}</span><span class="kc-l">${esc(l)}</span></div>`;
+  const kpi = `<div class="inv-kpi-row"><div class="inv-summary">${chip(money2(collected), 'Collected', 'paid')}${chip(String(payCount), 'Payments', '')}${chip(money2(avg), 'Avg', '')}${chip(String(refundCount), 'Refunds', refundCount ? 'due' : '')}</div></div>`;
+  const methodLabel = (type, checkNum) => type === 'cash' ? 'Cash' : type === 'check' ? ('Check' + (checkNum ? ' #' + esc(String(checkNum)) : '')) : type === 'ach-pending' ? 'ACH (pending)' : type === 'charge' ? 'Card' : type === 'Refund' ? 'Refund' : esc(String(type || 'Payment'));
+  const rows = txns.length ? txns.map((x) => `<div class="inv-row">`
+    + `<span class="ir-stat ${x.refund ? 'part' : 'paid'}"></span>`
+    + `<span class="ir-id">${esc(invoiceShort(x.invoiceId))}</span>`
+    + `<span class="ir-mid"><span class="ir-desc">${methodLabel(x.type, x.checkNum)}</span><span class="ir-date">${esc(fmtShortDate(x.at) || '—')}</span></span>`
+    + `<span class="ir-amt ${x.refund ? 'part' : 'paid'}">${x.refund ? '−' : ''}${esc(money2(x.amount))}</span>`
+    + `</div>`).join('') : '<div class="inv-empty muted">No transactions for this customer yet.</div>';
+  return { kpi, rows };
+}
+/* R28 — the status pill that DOUBLES as the action menu. Its fill = pay state (green solid
    paid · yellow-stripe partial · red-stripe due); solid while its menu is open. Pay/Refund
    dispatch the SAME js-pay-invoice opener the card used (canMoney()-gated identically);
    Print = js-print-invoice; Send is disabled ("soon") — the consent-gated comms path isn't
@@ -3921,16 +4414,23 @@ function invoiceStatMenu(i, c, open) {
 }
 function invoiceExpandedHtml(i, c, cs, menuOpen) {
   return `<div class="inv-open">`
-    + `<div class="io-bar"><div class="io-bar-top">`
+    + `<div class="io-bar"><div class="io-bar-top js-inv-collapse" data-cust="${esc(c.customerId)}" data-tip="Collapse">`
     + `<span class="io-id">${esc(invoiceShort(i.invoiceId))}</span>`
     + invoiceStatMenu(i, c, menuOpen)
-    + `<button class="io-collapse js-inv-collapse" data-cust="${esc(c.customerId)}" data-tip="Collapse">${I.chev}</button>`
+    + `<button class="io-collapse" data-tip="Collapse">${I.chev}</button>`
     + `</div></div>`
     + `<div class="io-sheet-wrap">${invoiceDocHtml(i, { interactive: true })}</div>`
     + `</div>`;
 }
 function customerInvoicesSection(c, cs) {
-  const invs = invoicesForCustomer(c);
+  const view = (state.custInvView && state.custInvView[c.customerId]) || 'all';
+  const toggle = invViewToggle(c);
+  if (view === 'transactions') {
+    const { kpi, rows } = invTransactionsHtml(c);
+    return `<div class="section inv-sec" data-cust="${esc(c.customerId)}"><h4>${toggle}</h4>${kpi}<div class="inv-scroll">${rows}</div></div>`;
+  }
+  const allInvs = invoicesForCustomer(c);   // KPI strip is ALWAYS customer-wide — see invSummaryStrip's header comment
+  const invs = view === 'open' ? allInvs.filter((i) => invoiceTotals(i).balance > 0.005) : allInvs;
   const openId = (state.custInvOpen && state.custInvOpen[c.customerId]) || null;
   const menuId = (state.custInvMenu && state.custInvMenu[c.customerId]) || null;
   const body = invs.length ? invs.map((i) => {
@@ -3949,7 +4449,7 @@ function customerInvoicesSection(c, cs) {
       + `<span class="ir-amt ${ps.cls}">${esc(amt)}<small>${esc(ps.word)}</small></span>`
       + `<span class="ir-chev">${I.chev}</span>`
       + `</div>`;
-  }).join('') : '<div class="inv-empty muted">No invoices for this customer yet.</div>';
+  }).join('') : `<div class="inv-empty muted">No ${view === 'open' ? 'open ' : ''}invoices for this customer yet.</div>`;
   // §3.4 — the standalone Invoice card is retired, so invoice-building re-homes HERE: the
   // rows + the expanded invoice are desktop drag drop-targets, and this transient +Invoice
   // pill creates a fresh invoice for THIS customer from a released rental/WO/unit (or a tap
@@ -3958,8 +4458,8 @@ function customerInvoicesSection(c, cs) {
   const linkingInv = !!(state.linking && state.linking.targetCard === 'invoices');
   const addPill = addBtn('Invoice', { link: true, icon: CARD_ICON.invoices, h: 26,
     js: 'inv-add-pill js-inv-add-pill' + (linkingInv ? ' linking-show' : ''), data: { cust: c.customerId } });
-  return `<div class="section inv-sec" data-cust="${esc(c.customerId)}"><h4>Invoices</h4>`
-    + (invs.length ? invSummaryStrip(invs) : '')
+  return `<div class="section inv-sec" data-cust="${esc(c.customerId)}"><h4>${toggle}</h4>`
+    + (allInvs.length ? invSummaryStrip(allInvs, c) : '')
     + `<div class="inv-scroll${openId ? ' expanded' : ''}">${body}</div>`
     + addPill
     + `</div>`;
@@ -3983,53 +4483,7 @@ function buildMembershipInvoice(c, lines, { cancellation = false, date = TODAY_I
   DATA.invoices.push(inv); IDX.invoice.set(id, inv); reindex('invoices', inv);
   return inv;
 }
-function openMembershipEnroll(custId) {
-  const c = IDX.customer.get(custId); if (!c) return;
-  openOverlay({ kind: 'membershipEnroll', custId, plan: 'Monthly', addOns: { transport: false, protection: !!c.rentalProtection }, autoRenew: false, startDate: TODAY_ISO, busy: false, error: '' });
-}
 const memIsDemo = () => (typeof backendPassword === 'undefined' || !backendPassword);
-// Apply the Active member fields locally (the server is authoritative for the PROTECTED
-// paidUntil/graceUntil — set them here for an immediate UI, they round-trip via the backend).
-function memApplyActive(c, o, start, paidUntil) {
-  c.accountType = memberAccountType(c);
-  c.paidCadence = (o.plan === 'Annual' ? 'Yearly' : 'Monthly');
-  c.commitmentStart = start; c.commitmentEnd = addMonthsISO(start, MEMBERSHIP_MONTHS);
-  c.autoRenew = !!o.autoRenew; c.addOns = { transport: !!o.addOns.transport, protection: !!o.addOns.protection };
-  if (o.addOns.transport) c.unlimitedTransport = true;
-  if (o.addOns.protection) c.rentalProtection = true;
-  c.prepaid = false; c.graceUntil = ''; c.paidUntil = paidUntil;
-  reindex('customers', c);
-  logAction(c, `Membership enrolled — ${o.plan}${o.addOns.transport ? ' + Transport' : ''}${o.addOns.protection ? ' + Protection' : ''}`);
-}
-async function membershipEnrollCommit() {
-  const o = state.overlay; if (!o || o.kind !== 'membershipEnroll' || o.busy) return;
-  const c = IDX.customer.get(o.custId); if (!c) return;
-  if (!(hasCardOnFile(c) && hasValidCard(c))) { o.error = 'A valid card on file is required to charge the membership.'; renderOverlay(); flashOr('.overlay .js-me-commit', 'Add a card on file first.'); return; }
-  const start = o.startDate || TODAY_ISO;
-  o.busy = true; o.error = ''; renderOverlay();
-  try {
-    if (memIsDemo()) {   // #local — client-side invoice + simulated charge (no backend)
-      const pricing = membershipPricing(), fee = membershipFee({ plan: o.plan, addOns: o.addOns }, pricing);
-      const lines = [{ kind: 'membership', ref: c.customerId, lid: lineLid(), label: `Membership · ${o.plan} base`, amount: fee.base }];
-      if (fee.transport) lines.push({ kind: 'membership', ref: c.customerId, lid: lineLid(), label: 'Unlimited Transport', amount: fee.transport });
-      if (fee.protection) lines.push({ kind: 'membership', ref: c.customerId, lid: lineLid(), label: `Rental Protection · ${pricing.protectionPct}%`, amount: fee.protection });
-      const inv = buildMembershipInvoice(c, lines, { date: start, due: start });
-      markInvoicePaidLocal(inv, 'Card (demo)');
-      memApplyActive(c, o, start, addMonthsISO(start, o.plan === 'Annual' ? 12 : 1));
-      closeOverlay(); render(); toast('Membership active — saddle up! ✓'); return;
-    }
-    // PROD — the backend creates the invoice, charges the card, and sets the protected fields server-side
-    const r = await backendCall('membershipEnroll', { customerId: c.customerId, plan: (o.plan === 'Annual' ? 'Yearly' : 'Monthly'), addOns: o.addOns, startDate: start, autoRenew: !!o.autoRenew });
-    if (state.overlay !== o) return;
-    if (r && r.ok && r.status === 'active') {
-      memApplyActive(c, o, start, r.paidUntil || addMonthsISO(start, o.plan === 'Annual' ? 12 : 1));
-      closeOverlay(); render(); toast('Membership active — saddle up! ✓'); return;
-    }
-    o.busy = false;
-    o.error = (r && r.status === 'incomplete') ? (friendlyPayErr(r.charge) || 'Charge declined — the account stays Member Incomplete until payment clears.') : ((r && friendlyPayErr(r)) || 'Enrollment failed — try again.');
-    renderOverlay();
-  } catch (e) { if (state.overlay === o) { o.busy = false; o.error = 'Network error — try again.'; renderOverlay(); } }
-}
 async function membershipCancel(custId) {
   const c = IDX.customer.get(custId); if (!c) return;
   const status = membershipStatus(c);
@@ -5303,6 +5757,14 @@ function ghostPill(label, { js, data, tip, disabled, icon } = {}) {
   const tipAttr = icon ? (tip || label) : tip;
   return `<button class="pill ghost${icon ? ' icon-only' : ''}${disabled ? ' is-disabled' : ''}${js && !disabled ? ' ' + js : ''}" data-r="R18"${dataAttrs(data)}${tipAttr ? ` data-tip="${esc(tipAttr)}"` : ''}${icon ? ` aria-label="${esc(label)}"` : ''}${disabled ? ' aria-disabled="true"' : ''}>${icon || esc(label)}</button>`;
 }
+/** R31: a single interactive TOGGLE CHIP — ONE pill that flips an account-level on/off
+ *  flag (PO required, Rental Protection). Distinct from R14 (a GROUP of mutually-exclusive
+ *  options riding one joined control): this is a lone control whose own fill communicates
+ *  its state — off = quiet outline, on = the registry `tone` color fill. (2026-07-10
+ *  Account/Agreements redesign, D22-D24.) */
+function toggleChip(label, on, { js, data, tone = 'accent' } = {}) {
+  return `<button class="chip-toggle${on ? ` on tone-${tone}` : ''}${js ? ' ' + js : ''}" data-r="R31"${dataAttrs(data)} aria-pressed="${on ? 'true' : 'false'}">${esc(label)}</button>`;
+}
 /** The popup PLATE — every overlay's shell, so they all read as one bolted data-plate.
  *  Hazard cap (red `danger` variant for abort/destroy) + corner rivets + stamped Saira
  *  head (ignition icon · uppercase title · micro tag) + scrollable body + optional sticky
@@ -5362,6 +5824,7 @@ const RULE_META = {
   R28: ['Account button', 'acctBtn', 'the stamped button on the customer funnel gate row — label = the account TYPE (Contractor/Business/Member…); opens the agreements window (same js-view-agreement access as the signed-agreement pill). Neutral steel chip, not an ignition/status color.'],
   R29: ['Invoice action menu', 'invoiceStatMenu', 'the expanded-invoice header control: a hazard-stripe status pill (green solid = paid · yellow-stripe = partial · red-stripe = due; goes SOLID while its menu is open) that DOUBLES as the Pay · Print · Send · Refund action menu. A pressable-status control like R1, but it opens actions rather than advancing a status. Pay/Refund reuse the canMoney()-gated payment window.'],
   R30: ['Paused banner', '.wr-paused (wranglerDockBodyHtml)', 'red hazard-stripe plate inside the Mr. Wrangler dock/rail window — raised when a Developer-tier operator takes the wheel (Wrangler Ops live jump-in, §18i); the composer goes read-only until released'],
+  R31: ['Toggle chip', 'toggleChip', 'a single interactive on/off pill (PO required, Rental Protection) — off = quiet outline, on = the registry tone color fill. Distinct from R14: ONE control, not a joined group of options.'],
 };
 /* ════════════ APP-12 · DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
    The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
@@ -5484,7 +5947,7 @@ const RB_TABS = [
   { id: 'pills', label: 'Pills & Flags', intro: 'The status vocabulary — every colored chip and exactly what it’s allowed to mean.',
     items: [{ r: 'R1' }, { r: 'R2' }, { r: 'R3' }, { r: 'R3b' }, { r: 'R4' }, { r: 'R4b' }, { r: 'R9' }, { r: 'R9b' }] },
   { id: 'fields', label: 'Fields & Adds', intro: 'Where you type, link, and add.',
-    items: [{ r: 'R5' }, { r: 'R5b' }, { r: 'R5c' }, { r: 'R6' }, { r: 'R7' }, { r: 'R8' }, { r: 'R14' }, { r: 'R22' }] },
+    items: [{ r: 'R5' }, { r: 'R5b' }, { r: 'R5c' }, { r: 'R6' }, { r: 'R7' }, { r: 'R8' }, { r: 'R14' }, { r: 'R22' }, { r: 'R31' }] },
   { id: 'actions', label: 'Actions', intro: 'Buttons that DO something — colored by intent.',
     items: [{ r: 'R17' }, { r: 'R18' }, { r: 'R24' }, { r: 'R26' }, { r: 'R28' }, { r: 'R29' }] },
   { id: 'upload', label: 'Upload & Capture', intro: 'Add-file zones and photo/site captures.',
@@ -7452,41 +7915,12 @@ const DETAIL = {
 
   /* ── CUSTOMERS — fully built (§12.1 standard mode: contact · account · funnels) ── */
   customers: (c, cs) => {
-    const d = c._digest || {};
-    const isMember = /Member/.test(c.accountType || '') && c.accountType !== 'Member Incomplete';
-    const acct = getStatus('customerAccountType', c.accountType || 'Non-Business');
-    const yr = (iso) => `${fmtShortDate(iso)}, ${parseISO(iso).getFullYear()}`;
-
-    // §7.1 — every contact/account detail is click-to-edit (auto-saves via the persist hook)
-    // R5: empty fields render the dashed "+Thing" add (no "Add", no space after +)
-    const efield = (f, ph, wrap) => { const val = c[f]; const thing = ph.replace(/^Add\s+/i, ''); const lbl = thing.charAt(0).toUpperCase() + thing.slice(1); return `<div class="kv"><span class="v inline-edit" data-edit="custField" data-field="${f}" data-rec="${c.customerId}" data-ph="${esc(ph)}"${wrap ? ' style="white-space:normal"' : ''}>${val ? esc(val) : `<span class="add-field" data-r="R5c">+${esc(lbl)}</span>`}</span></div>`; };
-    const acctSelfie = latestCustomerSelfie(c);   // newest agreement selfie → faded Account backdrop (retired the tiny thumb)
-    const agPill = c.agreementSignedAt ? `<button class="pill c-green js-view-agreement" data-r="R3" data-rec="${c.customerId}" data-tip="View signed agreement">${esc(AGREEMENTS[c.agreementType]?.title || 'Agreement')} ✓</button>` : '';
-    // every category this customer has EVER rented → R9 flags (ink+icon, no badge) — Jac 2026-06-12
-    const rentedCatIds = [...new Set(DATA.rentals.filter((r) => r.customerId === c.customerId)
-      .map((r) => r.categoryId || IDX.unit.get(r.unitId)?.categoryId).filter(Boolean))];
-    const rentedFlags = rentedCatIds.map((id) => { const cat = IDX.category.get(id); return cat ? flagEl(cat.name, 'gray', { icon: CARD_ICON.categories, card: 'categories', recId: id }) : ''; }).filter(Boolean).join('');
-    /* Jac 2026-06-12: Contact + Account MERGED — LEFT = entered fields, RIGHT = facts + derived (card anatomy) */
-    const account = `<div class="section${acctSelfie ? ' has-photo' : ''}">${acctSelfie ? `<div class="sec-photo" style="--photo:url('${esc(acctSelfie)}')"></div>` : ''}<h4>Account</h4>
-      <div class="split">
-        <div class="side">
-          <div class="kv2">${efield('firstName', 'First name')}${efield('lastName', 'Last name')}</div>
-          ${efield('phone', 'Add phone')}${efield('email', 'Add email')}
-          ${efield('company', 'Add company')}${efield('industry', 'Add industry')}
-          ${efield('address', 'Add address', true)}
-        </div>
-        <div class="side r">
-          ${kvPills(`${badge(acct.label, acct.color)}${c.requiresPO ? badge('PO Required', 'yellow') : ''}${c.rentalProtection ? badge('Protected', 'blue') : ''}${agPill}`)}
-          <div class="kv" style="justify-content:flex-end">${c.accountType === 'Blacklisted'
-            ? ghostPill('Lift blacklist', { js: 'js-blacklist-lift', h: 24, data: { rec: c.customerId } })
-            : actionPill('danger', 'Blacklist', { js: 'js-blacklist', h: 24, data: { rec: c.customerId } })}</div>
-          ${kv(money(d.totalPaid), { pfx: 'Total', derived: true })}
-          ${kv(`${d.visits || 0}`, { pfx: 'Visits', derived: true })}
-          ${kv(`${d.years || 0} yrs`, { pfx: 'Customer for', derived: true })}
-          ${kv(`every ${d.avgFrequencyDays || 0} days`, { pfx: 'Rents', derived: true })}
-          ${rentedFlags ? `<div class="rented-cats"><span class="pfx">Rented</span><span class="rc-flags">${rentedFlags}</span></div>` : ''}
-        </div>
-      </div></div>`;
+    // T2.6 (2026-07-10) — the old merged Contact+Account section (LEFT entered fields / RIGHT
+    // facts+derived) is RETIRED: its editable fields are now the Phase-1 Account section
+    // (customerAccountSection, top of card), and its derived stats/rented-flags are folded into
+    // acctStatsHtml (called from there). `paymentMethodsSection` below is DELIBERATELY KEPT — it
+    // carries real, not-yet-replicated functionality (ACH/bank-account management; card nickname/
+    // make-default/remove) that the new Agreements accordion is still a read-only viewer for.
     // Jac 2026-06-12: NO badge row — account type + pay status are R9 title flags,
     // the account gate (R1) rides the title row. Selfie + agreement live in ACCOUNT.
     const title = `<span class="d-title">${esc(fullName(c)) || 'New Customer'}</span>`;
@@ -7501,12 +7935,11 @@ const DETAIL = {
        membership/used-sales columns AND the Action Board are folded into funnelSectionHtml. */
     return `<div class="detail">
       <div class="detail-head">${title}</div>
+      ${customerAccountSection(c)}
       ${notes.top}
       ${funnelSectionHtml(c)}
       ${customerInvoicesSection(c, cs)}
       ${activeBar}
-      ${account}
-      ${commsCustSectionHtml(c)}
       ${paymentMethodsSection(c)}
       ${notes.bottom}
       ${historySection('customers', c, cs)}
@@ -11512,50 +11945,6 @@ function buildPopupEl(o, overlay, opts = {}) {
           </table>
         </div>` });
     overlay.appendChild(pop);
-  } else if (o.kind === 'membershipEnroll') {
-    // F5 — membership enrollment. Plan + add-ons + start date + auto-renew → live total,
-    // charged on the saved card (the account goes Active only on a cleared charge).
-    const c = IDX.customer.get(o.custId);
-    const pricing = membershipPricing();
-    const fee = membershipFee({ plan: o.plan, addOns: o.addOns }, pricing);
-    const cad = o.plan === 'Annual' ? '/yr' : '/mo';
-    const ready = !!(c && hasCardOnFile(c) && hasValidCard(c));
-    const signed = c && c.membershipStage === 'Signed';
-    const planSeg = segCtl([
-      { label: 'Monthly', js: 'js-me-plan', data: { val: 'Monthly' }, on: o.plan === 'Monthly' ? 'green' : '' },
-      { label: 'Annual', js: 'js-me-plan', data: { val: 'Annual' }, on: o.plan === 'Annual' ? 'green' : '' },
-    ]);
-    const onoff = (k, on, money1) => segCtl([
-      { label: 'No', js: `js-me-${k}`, data: { val: '0' }, on: !on ? 'gray' : '' },
-      { label: money1 ? `Yes · ${money1}` : 'Yes', js: `js-me-${k}`, data: { val: '1' }, on: on ? 'green' : '' },
-    ]);
-    const tPrice = money2(o.plan === 'Annual' ? pricing.annualTransport : pricing.monthlyTransport) + cad;
-    const pPrice = pricing.protectionPct + '% of base';
-    const row = (label, ctl) => `<div class="me-row"><span class="kpi-cap">${label}</span>${ctl}</div>`;
-    const lineRow = (label, amt) => amt ? `<div class="me-line"><span>${esc(label)}</span><b class="derived">${money2(amt)}</b></div>` : '';
-    const gateNote = ready
-      ? `<p class="set-note">Charges <strong>${esc(cardLabel(c))}</strong> now. ${signed ? '' : 'Heads-up: membership agreement not yet on file — sign it from a card when you can.'}</p>`
-      : `<p class="set-note" style="color:var(--yellow)">No valid card on file — add one before enrolling (the charge needs it).</p>`;
-    const body = `
-      ${row('Plan', planSeg)}
-      ${row('Unlimited Transport', onoff('transport', o.addOns.transport, tPrice))}
-      ${row('Rental Protection', onoff('protection', o.addOns.protection, pPrice))}
-      ${row('Auto-Renew at term end', segCtl([{ label: 'No', js: 'js-me-autorenew', data: { val: '0' }, on: !o.autoRenew ? 'gray' : '' }, { label: 'Yes', js: 'js-me-autorenew', data: { val: '1' }, on: o.autoRenew ? 'navy' : '' }]))}
-      ${row('Start date', dateField('startDate', o.startDate, { ph: 'Starts today' }))}
-      <div class="me-tote">
-        ${lineRow(`${o.plan} base`, fee.base)}
-        ${lineRow('Unlimited Transport', fee.transport)}
-        ${lineRow(`Rental Protection · ${pricing.protectionPct}%`, fee.protection)}
-        ${lineRow('Tax · 10.75%', fee.tax)}
-        <div class="me-line me-total"><span>First charge</span><b>${money2(fee.total)}</b></div>
-      </div>
-      ${gateNote}
-      ${o.error ? `<p class="set-err" style="text-align:center">${esc(o.error)}</p>` : ''}`;
-    const foot = `<button class="pill ghost js-close" data-r="R18">Cancel</button>
-      <button class="pill ignition js-me-commit" data-r="R17"${(!ready || o.busy) ? ' disabled aria-disabled="true"' : ''}>${o.busy ? 'Charging…' : 'Enroll &amp; Charge ' + money2(fee.total)}</button>`;
-    const pop = el('div', 'popup'); pop.style.width = '430px';
-    pop.innerHTML = popupShell({ icon: I.horseshoe || CARD_ICON.customers || '', title: 'Saddle Up — Membership', tag: `Customer · enroll`, body, foot });
-    overlay.appendChild(pop);
   } else if (o.kind === 'wranglerOps') {
     // §18i Wrangler Ops — the Developer-tier inbox for the live chat bridge: every open
     // Mr. Wrangler conversation, a full transcript + jump-in composer, and the Phase 6
@@ -12607,7 +12996,10 @@ function buildPopupEl(o, overlay, opts = {}) {
     const cards = custRec ? customerCards(custRec) : [];
     const tab = (o.tab && (o.tab === 'account' || cards.some((k) => k.id === o.tab))) ? o.tab : 'account';
     const indOpts = NC_INDUSTRIES.map((i) => `<option value="${esc(i)}"></option>`).join('');
-    const acctPills = NC_ACCOUNT_TYPES.map((t) => `<button type="button" class="nc-pill js-nc-acct${t === d.accountType ? ' on' : ''}" data-val="${esc(t)}">${esc(getStatus('customerAccountType', t).label)}</button>`).join('');
+    // Account-type PICKER removed (2026-07-10 bug-class closure): a Member type can NEVER be set here —
+    // Non-Business/Business derive from Company, and Member/Business Member are granted only through
+    // agreementSignCommit's inline sign=enroll flow (the legacy Saddle Up enroll button/overlay that
+    // bypassed this was retired the same day, round 2 of the same closure).
     const nameVal = (d.name != null && d.name !== '') ? d.name : `${d.firstName || ''} ${d.lastName || ''}`.trim();
     // The card rail IS the header (no title). Account tab + a tab per card (signed dot) + a +Card add.
     const railTabs = `<div class="ag-tabs" role="tablist">
@@ -12635,7 +13027,6 @@ function buildPopupEl(o, overlay, opts = {}) {
               ${(() => { const set = d.rentalProtection === true || d.rentalProtection === false; return `<button type="button" class="nc-po js-nc-rp${d.rentalProtection === true ? ' on' : ''}${set ? '' : ' req'}" aria-pressed="${d.rentalProtection === true ? 'true' : 'false'}" data-tip="${set ? (d.rentalProtection ? 'Rental Protection on — +' + (membershipPricing().protectionPct) + '% on every rental, covers damages to the monthly cap' : 'No Rental Protection — every rental shows the not-enabled reminder') : 'Answer required before saving — does this account carry Rental Protection?'}">PROT ${set ? (d.rentalProtection ? 'Yes' : 'No') : '?'}</button>`; })()}
             </div>
           </div>
-          <div class="nc-field nc-wide"><span>Account type</span><div class="nc-pills">${acctPills}</div></div>
           <label class="nc-field"><span>Driver’s license / ID #</span><input class="nc-in" data-f="idNumber" value="${esc(d.idNumber || '')}" autocomplete="off" /></label>
           <label class="nc-field"><span>Payment terms — Net days</span><input class="nc-in" data-f="netDays" type="number" min="0" max="${companyMaxNetDays()}" value="${d.netDays != null && d.netDays !== '' ? esc(d.netDays) : ''}" placeholder="0 = COD" autocomplete="off" /><span class="nc-hint">0 = Cash on delivery · max ${companyMaxNetDays()} days (set in Settings → Company)</span></label>
         </div>
@@ -12695,24 +13086,63 @@ function buildPopupEl(o, overlay, opts = {}) {
     const c = IDX.customer.get(o.recId);
     if (!c) { return false; }
     const ag = AGREEMENTS[c.agreementType] || AGREEMENTS.rental;
-    // Membership SIGN-UP lives here, at the account-level agreement (spec memberships D5,
-    // Jac 2026-06-29) — not in the customer card's Membership status section. Money-gated
-    // like every enroll path; the js-mem-enroll handler re-checks canMoney() as defence.
-    const magStatus = membershipStatus(c);
-    const magIsMem = magStatus === 'Active' || magStatus === 'Past Due';
-    const enrollFoot = (!magIsMem && canMoney()) ? `<button class="pill ignition js-mem-enroll" data-r="R17" data-rec="${c.customerId}">${magStatus === 'Incomplete' ? 'Complete Enrollment' : 'Saddle Up — Enroll'}</button>` : '';
-    // §3.7 — the membership lifecycle actions (Cancel / Pay-Cancellation / Print Agreement)
-    // live HERE now (they act on the agreement). MONEY-gate PRESERVED: membershipActionsHtml
-    // keeps the exact canMoney() gate + the js-mem-cancel/paycxl/print-magreement handlers.
+    // §3.7 — the membership lifecycle actions live HERE now (they act on the agreement).
+    // MONEY-gate PRESERVED: membershipActionsHtml keeps the exact canMoney() gate + the
+    // js-mem-cancel/paycxl/print-magreement handlers (unchanged). Enroll retired 2026-07-10.
     const lifecycle = membershipActionsHtml(c);
     const pop = el('div', 'popup nc-popup');
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: ag.title, tag: 'Customer · agreement',
-      foot: `<button class="pill ghost js-close" data-r="R18">Close</button>${enrollFoot}<button class="pill ignition js-edit-customer" data-r="R17" data-rec="${c.customerId}">Edit account</button>`,
+      foot: `<button class="pill ghost js-close" data-r="R18">Close</button><button class="pill ignition js-edit-customer" data-r="R17" data-rec="${c.customerId}">Edit account</button>`,
       body: `
         <div class="nc-ag-meta">${esc(fullName(c))}${c.agreementSignedAt ? ` · accepted ${esc(c.agreementSignedAt)}` : ' · not yet signed'}</div>
         <div class="nc-agreement" tabindex="0">${esc(ag.text)}</div>
         ${c.signature ? `<div class="nc-ag-sigline"><span class="nc-cap-lbl">Signature</span><img class="nc-thumb sig" src="${esc(c.signature)}" alt="signature" /></div>` : ''}
         ${lifecycle ? `<div class="ag-lifecycle-wrap"><span class="nc-cap-lbl">Membership</span>${lifecycle}</div>` : ''}` });
+    overlay.appendChild(pop);
+  } else if (o.kind === 'managerPw') {
+    // Phase 3 (T3.1/T3.3, spec D14/D22) — the Manager-TIER authorization shell, reused for two
+    // non-persistent single-action gates: a Net Terms change (pwAction:'netTerms') and the
+    // per-action rental-gate override (pwAction:'rentalOverride' — every attempt re-prompts, D14).
+    // Passes immediately if the current user is already Manager-tier+; otherwise verifies the SAME
+    // backend password requireAdmin uses (no separate Manager password exists — Jac's call,
+    // 2026-07-10). See js-mgrpw-confirm for the verify + apply.
+    const cust = IDX.customer.get(o.custId);
+    const actionLabel = o.pwAction === 'netTerms' ? `Setting Net Terms to ${o.pwVal || 'None'}`
+      : o.pwAction === 'rentalOverride' ? (o.pwReason || 'Booking past an account block')
+        : 'This action';
+    const pop = el('div', 'popup'); pop.style.width = '360px';
+    pop.innerHTML = popupShell({
+      icon: AG_LOCK, title: 'Manager Password', tag: 'Account · authorize',
+      body: `
+        <p class="muted" style="margin:0 0 12px">${cust ? esc(fullName(cust)) + ' — ' : ''}${esc(actionLabel)} requires Manager authorization.</p>
+        <input type="password" class="nc-in js-mgrpw-input" placeholder="Manager password" autocomplete="off" style="width:100%">
+        ${o.error ? `<div class="login-err" style="margin-top:10px">${esc(o.error)}</div>` : ''}`,
+      foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', o.busy ? 'Checking…' : 'Authorize', { js: o.busy ? '' : 'js-mgrpw-confirm' })}`,
+    });
+    overlay.appendChild(pop);
+  } else if (o.kind === 'blockPicker') {
+    // Phase 3 (T3.1, spec D12/D13) — Block Account entry: Blacklist (Admin/Owner-tier,
+    // js-bp-blacklist → requireAdmin) or Invoice-hold (staff-tier — pick the invoice(s) that
+    // must be paid to auto-unblock, js-bp-confirm-hold). No password for Invoice-hold; it's the
+    // lower-tier action per D12.
+    const cust = IDX.customer.get(o.custId);
+    const invs = cust ? invoicesForCustomer(cust).filter((i) => invoiceTotals(i).balance > 0.005) : [];
+    const sel = o.selIds || [];
+    let body, foot;
+    if (o.mode === 'hold') {
+      body = `<p class="muted" style="margin:0 0 10px">Pick the invoice(s) that must be paid to auto-unblock this account.</p>`
+        + (invs.length
+          ? `<div class="blockpick-list">${invs.map((i) => `<label class="blockpick-row"><input type="checkbox" class="js-bp-inv" data-inv="${esc(i.invoiceId)}"${sel.includes(i.invoiceId) ? ' checked' : ''}><span class="id">${esc(invoiceShort(i.invoiceId))}</span><span class="amt">${money2(invoiceTotals(i).balance)}</span></label>`).join('')}</div>`
+          : `<p class="muted">No open invoices on this account.</p>`);
+      foot = `${ghostPill('Back', { js: 'js-bp-mode-pick' })}${actionPill('commit', 'Confirm Hold', { js: 'js-bp-confirm-hold' })}`;
+    } else {
+      body = `<p class="muted" style="margin:0 0 12px">${cust ? esc(fullName(cust)) + ' — ' : 'This account'} choose how to block it.</p>
+        <div class="blockpick-opts">${ghostPill('Hold until invoice(s) paid', { js: 'js-bp-mode-hold' })}${actionPill('danger', 'Blacklist (permanent)', { js: 'js-bp-blacklist' })}</div>
+        ${o.error ? `<div class="login-err" style="margin-top:10px">${esc(o.error)}</div>` : ''}`;
+      foot = ghostPill('Cancel', { js: 'js-close' });
+    }
+    const pop = el('div', 'popup'); pop.style.width = '380px';
+    pop.innerHTML = popupShell({ icon: AG_LOCK, title: 'Block Account', tag: 'Account · block', body, foot });
     overlay.appendChild(pop);
   } else if (o.kind === 'collectionsSend') {
     // Queue an invoice for Collections (spec collections Phase 1 — LOCAL queue; the outbound
@@ -13058,7 +13488,8 @@ const WINDOW_CATALOG = [
   { kind: 'addAch',        label: 'Add bank account',        tag: 'Customer · ACH bank',       sample: () => ({ customerId: ((DATA.customers || [])[0] || {}).customerId }) },
   { kind: 'verifyAch',     label: 'Verify ACH',              tag: 'Customer · verify ACH',     sample: () => { const c = (DATA.customers || []).find((x) => (x.achAccounts || []).length); return c ? { customerId: c.customerId, bankId: c.achAccounts[0].id } : {}; } },
   { kind: 'payment',       label: 'Take Payment',            tag: 'Invoice · payment',         sample: () => ({ invoiceId: ((DATA.invoices || [])[0] || {}).invoiceId }) },
-  { kind: 'membershipEnroll', label: 'Membership Enrollment', tag: 'Customer · enroll',         sample: () => ({ custId: ((DATA.customers || [])[0] || {}).customerId, plan: 'Monthly', addOns: { transport: false, protection: false }, autoRenew: false, startDate: TODAY_ISO, busy: false, error: '' }) },
+  { kind: 'managerPw',    label: 'Manager password (account gate)', tag: 'Account · manager override', sample: () => ({ custId: ((DATA.customers || [])[0] || {}).customerId, pwAction: 'netTerms', pwVal: 'None', busy: false, error: '' }) },
+  { kind: 'blockPicker',   label: 'Block Account (Blacklist / invoice-hold)', tag: 'Account · block', sample: () => ({ custId: ((DATA.customers || [])[0] || {}).customerId, mode: 'pick', selIds: [], error: '' }) },
   { kind: 'wranglerOps',   label: 'Wrangler Ops',            tag: 'Developer · live chats',    sample: () => ({ loading: false, err: '', chats: [], openId: null, msgs: [], driver: 'ai', draft: '', busy: false }) },
 ];
 /* Build an INERT preview popup for a catalog kind (or null if a record guard trips
@@ -13620,7 +14051,13 @@ const WR_ACCT = ['Non-Business', 'Business', 'Non-Business Member', 'Business Me
 function wrAccount(v) {
   if (!v) return '';
   const n = String(v).toLowerCase();
-  return WR_ACCT.find((a) => a.toLowerCase() === n) || (/member/.test(n) ? (/business/.test(n) ? 'Business Member' : 'Non-Business Member') : /business/.test(n) ? 'Business' : '');
+  // Member types are NEVER settable via Wrangler chat / CSV import — membership is granted ONLY
+  // through a signed agreement + first invoice (spec §5.1, D2; bug-class closure 2026-07-10). A
+  // member-ish input is refused (''), not mapped to a Member value; the caller then skips the field
+  // so an existing member is never silently downgraded either.
+  if (/member/.test(n)) return '';
+  if (/business/.test(n)) return /non/.test(n) ? 'Non-Business' : 'Business';
+  return '';
 }
 const WR_EDITABLE = {   // safe fields only — card/ACH rails, balances, auth, and WO-completion are deliberately absent.
   // Rollout: Stage 1 wired create for the everyday entities; Stage 2a adds category RENTAL RATES (the agreed
@@ -13720,7 +14157,7 @@ function wrCleanFields(entity, obj) {
     if (!ent.fields.includes(k)) { skipped.push(k); return; }   // outside the allowlist → refused
     let v = obj[k];
     if (k === 'membershipStage' || k === 'usedSalesStage') v = wrFunnel(v) || v;
-    if (k === 'accountType') v = wrAccount(v) || 'Non-Business';
+    if (k === 'accountType') { const a = wrAccount(v); if (!a) { skipped.push(k); return; } v = a; }   // refuse Member / unrecognized — never downgrade an existing member to a default
     if (WR_NUMERIC.has(k)) { const n = Number(v); if (!Number.isFinite(n) || n < 0) { skipped.push(k); return; } v = n; }   // numeric fields → finite, non-negative or dropped
     if (WR_FK[k] && typeof v === 'string' && v.trim()) { const r = WR_FK[k].resolve(v); if (r.rec) v = r.rec[WR_FK[k].idKey]; else { skipped.push(k); return; } }   // FK by name → real id, or drop (never store a name as an id)
     out[k] = typeof v === 'string' ? v.trim() : v;
@@ -14476,17 +14913,20 @@ function captureAgSelfie() {
    so the operator's normal Save/Sign commits them — no separate Done step in the popout.
    Any pointer/digitizer device draws on it (finger, stylus, or a USB/Bluetooth pen pad the
    OS exposes as a pointer); pen pressure varies the line width. */
-let _sigWin = null, _sigMsgWired = false;
+let _sigWin = null, _sigMsgWired = false, _sigWinCustId = null;
 function onSigMessage(e) {
   if (e.origin !== location.origin) return;   // same-origin only
   const d = e.data || {}; if (d.type !== 'rw-signature' || typeof d.dataURL !== 'string') return;
-  const o = state.overlay; if (o) { captureSignature(o, d.dataURL); scheduleFinalizeSign(o); }   // auto-save the draft; finalize once the pen rests (if it completes the card)
+  const o = state.overlay;
+  if (o) { captureSignature(o, d.dataURL); scheduleFinalizeSign(o); }   // existing overlay path — auto-save the draft; finalize once the pen rests
+  else if (_sigWinCustId) { const c = IDX.customer.get(_sigWinCustId); if (c) { agDraft(c).signature = d.dataURL; render(); } return; }   // Phase 2b — the inline new-agreement draft; unchanged popout, just a new target
   const cv = document.querySelector('.overlay .nc-sigpad'); if (!cv) return;
   const ctx = cv.getContext('2d'), img = new Image();
   img.onload = () => { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); ctx.drawImage(img, 0, 0, cv.width, cv.height); cv.dataset.drawn = '1'; };
   img.src = d.dataURL;
 }
-function openSignatureWindow(title) {
+function openSignatureWindow(title, custId) {
+  _sigWinCustId = custId || null;
   if (!_sigMsgWired) { window.addEventListener('message', onSigMessage); _sigMsgWired = true; }
   try { if (_sigWin && !_sigWin.closed) { _sigWin.focus(); return; } } catch (e) {}
   const w = window.open('', 'rwSignPad', 'width=760,height=560');
@@ -16204,7 +16644,7 @@ function onClick(e) {
   if (closest('.js-insp-add')) { e.stopPropagation(); const o=state.overlay; if(!o)return; const d=o.inspDraft||{label:'',type:'toggle',options:[]}; const el2=document.querySelector('.settings-popup .js-insp-label'); const label=((d.label!=null?d.label:(el2?el2.value:''))||'').trim(); if(!label){ if(el2)el2.focus(); toast('Type a checklist item first.'); return; } const type=d.type||'toggle'; if(type==='select' && !((d.options||[]).length)){ toast('Add at least one dropdown option.'); return; } const cfg=ensureInspDraft(o, o.inspFam); cfg.items=cfg.items||[]; const item={ id:'ck_'+(label.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'')||'item')+'_'+Math.random().toString(36).slice(2,5), label, type }; if(type==='select') item.options=(d.options||[]).map((op)=>({label:op.label, fail:!!op.fail})); else if(type!=='file') item.fail = d.fail || inspFailDefault(type); if(type!=='file' && d.evidence && d.evidence!=='none') item.evidence=d.evidence; cfg.items.push(item); o.inspDraft={label:'',type:'toggle',options:[],fail:inspFailDefault('toggle')}; rerenderSettingsPane(); return; }
   if (closest('.js-insp-remove')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-insp-remove'); if (o) { const cfg = ensureInspDraft(o, b.dataset.cat); cfg.items = (cfg.items || []).filter((it) => it.id !== b.dataset.id); rerenderSettingsPane(); } return; }
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
-  if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
+  // (js-nc-acct account-type picker removed 2026-07-10 — Member types only via a signed agreement; bug-class closure)
   if (closest('.js-nc-po')) { e.stopPropagation(); ncSyncInputs(); const o = state.overlay; o.draft.requiresPO = (o.draft.requiresPO === true) ? false : true; if (o.editId) { const c = IDX.customer.get(o.editId); if (c) { c.requiresPO = o.draft.requiresPO; reindex('customers', c); } } renderOverlay(); return; }
   if (closest('.js-nc-rp')) { e.stopPropagation(); ncSyncInputs(); const o = state.overlay; o.draft.rentalProtection = (o.draft.rentalProtection === true) ? false : true; if (o.editId) { const c = IDX.customer.get(o.editId); if (c) { c.rentalProtection = o.draft.rentalProtection; reindex('customers', c); } } renderOverlay(); return; }   // F4 — Rental Protection account toggle (mirrors PO)
   // §7.1b card-bound agreements: tab rail + per-card signing
@@ -16218,7 +16658,7 @@ function onClick(e) {
   if (closest('.js-ncsign-pdf')) { e.stopPropagation(); const b = closest('.js-ncsign-pdf'); return openSignedPdf(state.overlay.editId, b.dataset.card, b.dataset.sig); }
   if (closest('.js-nc-selfie-clear')) { e.stopPropagation(); ncSyncInputs(); state.overlay.draft.selfie = ''; renderOverlay(); return; }
   if (closest('.js-nc-sig-clearpad')) { e.stopPropagation(); const o = state.overlay; if (o) clearCaptureSignature(o); const cv = document.querySelector('.overlay .nc-sigpad'); if (cv) { const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); cv.dataset.drawn = ''; } return; }
-  if (closest('.js-sign-popout')) { e.preventDefault(); e.stopPropagation(); openSignatureWindow(closest('.js-sign-popout').dataset.title); return; }
+  if (closest('.js-sign-popout')) { e.preventDefault(); e.stopPropagation(); const b = closest('.js-sign-popout'); openSignatureWindow(b.dataset.title, b.dataset.rec || null); return; }
   if (closest('.js-ag-selfie')) {   // selfie tile: one-tap snap off the live feed; Retake clears it; no camera → native picker
     const o = state.overlay; if (!o) return;
     const tile = closest('.js-ag-selfie');
@@ -16231,15 +16671,12 @@ function onClick(e) {
   if (closest('.js-edit-customer')) { e.stopPropagation(); return openCustomerForm(closest('.js-edit-customer').dataset.rec); }
   if (closest('.js-view-agreement')) { e.stopPropagation(); const cust = IDX.customer.get(closest('.js-view-agreement').dataset.rec); if (cust) openOverlay({ kind: 'agreement', recId: cust.customerId }); return; }
   if (closest('.js-print-magreement')) { e.stopPropagation(); openMembershipAgreementPdf(closest('.js-print-magreement').dataset.rec); return; }
-  // F5 — membership enroll / cancel / reactivate + the enrollment dialog controls
-  if (closest('.js-mem-enroll')) { e.stopPropagation(); if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; } return openMembershipEnroll(closest('.js-mem-enroll').dataset.rec); }
+  // F5 — membership cancel / reactivate. Enroll was retired here (2026-07-10, D4 bug-class
+  // closure round 2): the legacy js-mem-enroll button bypassed the signed-agreement gate
+  // entirely (no signature/selfie/start-date check) — account-type can now ONLY change via
+  // agreementSignCommit's inline sign=enroll flow.
   if (closest('.js-mem-cancel')) { e.stopPropagation(); if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; } return membershipCancel(closest('.js-mem-cancel').dataset.rec); }
   if (closest('.js-mem-paycxl')) { e.stopPropagation(); if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; } return membershipReactivate(closest('.js-mem-paycxl').dataset.rec); }
-  if (closest('.js-me-plan')) { e.stopPropagation(); const o = state.overlay; if (o) { o.plan = closest('.js-me-plan').dataset.val; renderOverlay(); } return; }
-  if (closest('.js-me-transport')) { e.stopPropagation(); const o = state.overlay; if (o) { o.addOns.transport = closest('.js-me-transport').dataset.val === '1'; renderOverlay(); } return; }
-  if (closest('.js-me-protection')) { e.stopPropagation(); const o = state.overlay; if (o) { o.addOns.protection = closest('.js-me-protection').dataset.val === '1'; renderOverlay(); } return; }
-  if (closest('.js-me-autorenew')) { e.stopPropagation(); const o = state.overlay; if (o) { o.autoRenew = closest('.js-me-autorenew').dataset.val === '1'; renderOverlay(); } return; }
-  if (closest('.js-me-commit')) { e.stopPropagation(); if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; } return membershipEnrollCommit(); }
   if (closest('.js-add-card')) {
     e.stopPropagation();
     if (!canMoney()) { toast('Cards on file are Office/Admin only.'); return; }   // §14 card-on-file is Office/Admin only — same gate as Pay/Charge/Refund (canMoney)
@@ -16266,12 +16703,96 @@ function onClick(e) {
   if (closest('.js-bank-verify')) { e.stopPropagation(); const b = closest('.js-bank-verify'); return openVerifyBank(b.dataset.rec, b.dataset.bank); }
   if (closest('.js-ach-verify-save')) { e.stopPropagation(); return verifyAchFlow(closest('.js-ach-verify-save')); }
   if (closest('.js-ach-check')) { e.stopPropagation(); const b = closest('.js-ach-check'); return checkAchStatus(b.dataset.rec, b.dataset.pi); }
+  // Phase 5 — Open/All/Transactions view + the Member-Mode sales toggle (spec §7a/§7b).
+  if (closest('.js-inv-view')) { e.stopPropagation(); const b = closest('.js-inv-view'); state.custInvView = state.custInvView || {}; state.custInvView[b.dataset.rec] = b.dataset.val; if (state.custInvOpen) state.custInvOpen[b.dataset.rec] = null; if (state.custInvMenu) state.custInvMenu[b.dataset.rec] = null; return render(); }
+  if (closest('.js-kpi-mode')) { e.stopPropagation(); const rec = closest('.js-kpi-mode').dataset.rec; state.custKpiMode = state.custKpiMode || {}; state.custKpiMode[rec] = !state.custKpiMode[rec]; return render(); }
   // §3.3 — embedded Invoices accordion (Customer Details). Row toggles open (one at a
-  // time); the status pill toggles its action menu; the header ✕ collapses. All view-local.
+  // time); the status pill toggles its action menu; clicking anywhere else in the open
+  // invoice's header (not just the chevron) collapses it — excluding the status menu's
+  // own dropdown (io-menu-wrap), whose Pay/Print/Refund items need the click themselves.
   if (closest('.js-inv-statmenu')) { e.stopPropagation(); const b = closest('.js-inv-statmenu'); const cu = b.dataset.cust, rec = b.dataset.rec; state.custInvMenu = state.custInvMenu || {}; state.custInvMenu[cu] = (state.custInvMenu[cu] === rec) ? null : rec; return render(); }
-  if (closest('.js-inv-collapse')) { e.stopPropagation(); const cu = closest('.js-inv-collapse').dataset.cust; if (state.custInvOpen) state.custInvOpen[cu] = null; if (state.custInvMenu) state.custInvMenu[cu] = null; return render(); }
+  if (closest('.js-inv-collapse') && !closest('.io-menu-wrap')) { e.stopPropagation(); const cu = closest('.js-inv-collapse').dataset.cust; if (state.custInvOpen) state.custInvOpen[cu] = null; if (state.custInvMenu) state.custInvMenu[cu] = null; return render(); }
   if (closest('.js-inv-add-pill')) { e.stopPropagation(); const b = closest('.js-inv-add-pill'); if (state.linking && state.linking.targetCard === 'invoices') { e.preventDefault(); return linkCreateInvoice(b.dataset.cust); } return; }   // §3.4 — otherwise drag-only (hidden except mid-drag)
   if (closest('.js-inv-row')) { e.stopPropagation(); const b = closest('.js-inv-row'); if (state.linking && state.linking.targetCard === 'invoices' && b.dataset.rec) { e.preventDefault(); return openLinkConfirm(b.dataset.rec); }   /* §3.4 — pick this invoice as the menu-link target */ const cu = b.dataset.cust, rec = b.dataset.rec; state.custInvOpen = state.custInvOpen || {}; state.custInvOpen[cu] = (state.custInvOpen[cu] === rec) ? null : rec; if (state.custInvMenu) state.custInvMenu[cu] = null; return render(); }
+  // ── Phase 1 (2026-07-10 Account/Agreements redesign, T1.1-T1.4) — the new top-of-card
+  // Account section: open/close + its embedded Agreements accordion (mirrors the Invoices
+  // pattern above) + the field toggles. UI SHELL — the starred handlers below are Phase 2/3
+  // no-op stubs (real enrollment/charge is Phase 2; block-gate enforcement is Phase 3).
+  if (closest('.js-acct-toggle')) { e.stopPropagation(); const rec = closest('.js-acct-toggle').dataset.rec; return guardAgLeave(rec, () => { state.custAcctOpen = state.custAcctOpen || {}; state.custAcctOpen[rec] = !state.custAcctOpen[rec]; render(); }); }
+  if (closest('.js-ag-row')) { e.stopPropagation(); const b = closest('.js-ag-row'); const rec = b.dataset.rec, card = b.dataset.card; return guardAgLeave(rec, () => { state.custAgOpen = state.custAgOpen || {}; state.custAgOpen[rec] = (state.custAgOpen[rec] === card) ? null : card; render(); }); }
+  if (closest('.js-ag-collapse')) { e.stopPropagation(); const rec = closest('.js-ag-collapse').dataset.rec; return guardAgLeave(rec, () => { if (state.custAgOpen) state.custAgOpen[rec] = null; render(); }); }
+  if (closest('.js-ag-add')) { e.stopPropagation(); const rec = closest('.js-ag-add').dataset.rec; state.custAgOpen = state.custAgOpen || {}; state.custAgOpen[rec] = '__new__'; return render(); }
+  if (closest('.js-ag-save')) {   // Phase 2b (D9) — hold the captured pieces without signing (mirrors the existing pre-card pendingCapture bucket); does NOT write accountType — only Sign/Start Membership can (keeps D4's bug closure intact)
+    e.stopPropagation(); const rec = closest('.js-ag-save').dataset.rec; const c = IDX.customer.get(rec); const d = state.custAgDraft && state.custAgDraft[rec];
+    if (c && d && (d.selfie || d.signature)) { c.pendingCapture = { selfie: d.selfie || c.pendingCapture?.selfie || '', signature: d.signature || c.pendingCapture?.signature || '' }; reindex('customers', c); }
+    if (state.custAgOpen) state.custAgOpen[rec] = null; if (state.custAgDraft) delete state.custAgDraft[rec];
+    render(); toast('Draft saved — pick up signing later from the same +Agreement/Card row.'); return;
+  }
+  if (closest('.js-ag-start')) { e.stopPropagation(); return agreementSignCommit(closest('.js-ag-start').dataset.rec); }   // Phase 2b (D5-D8) — atomic sign = enroll
+  if (closest('.js-ag-actype-opt')) { e.stopPropagation(); const b = closest('.js-ag-actype-opt'); const c = IDX.customer.get(b.dataset.rec); if (!c) return; agDraft(c).accountType = b.dataset.val; agDraft(c).actypeOpen = false; return render(); }
+  if (closest('.js-ag-actype')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-ag-actype').dataset.rec); if (!c) return; const d = agDraft(c); d.actypeOpen = !d.actypeOpen; return render(); }
+  if (closest('.js-ag-selfie-pick')) { return; }   // native <input type=file> — handled by its own 'change' event (onChange), not a click delegate
+  if (closest('.js-acct-po')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-acct-po').dataset.rec); if (c) { c.requiresPO = !c.requiresPO; reindex('customers', c); } return render(); }
+  if (closest('.js-acct-prot')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-acct-prot').dataset.rec); if (c) { c.rentalProtection = !c.rentalProtection; reindex('customers', c); } return render(); }
+  if (closest('.js-acct-netdays')) { e.stopPropagation(); const b = closest('.js-acct-netdays'); return openOverlay({ kind: 'managerPw', custId: b.dataset.rec, pwAction: 'netTerms', pwVal: b.dataset.val, busy: false, error: '' }); }   // D22 — ANY Net Terms change is Manager-password gated
+  if (closest('.js-block-account')) { e.stopPropagation(); const rec = closest('.js-block-account').dataset.rec; return openOverlay({ kind: 'blockPicker', custId: rec, mode: 'pick', selIds: [], error: '' }); }   // D12/D13 — Block Account entry
+  if (closest('.js-mgrpw-confirm')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'managerPw' || o.busy) return;
+    const pw = (document.querySelector('.overlay .js-mgrpw-input') || {}).value || '';
+    o.busy = true; o.error = ''; renderOverlay();
+    (async () => {
+      const ok = await verifyTierOrPassword('manager', pw);
+      if (state.overlay !== o) return;
+      if (!ok) { o.busy = false; o.error = 'Not a valid Manager override.'; renderOverlay(); return; }
+      const c = IDX.customer.get(o.custId);
+      if (c && o.pwAction === 'netTerms') {
+        const days = o.pwVal === 'None' ? 0 : (parseInt(o.pwVal, 10) || 0);
+        const old = c.netDays; c.netDays = days; reindex('customers', c);
+        logAction(c, `Net Terms: ${old == null || old === '' ? 'None' : old + 'd'} → ${o.pwVal} (Manager override)`);
+        closeOverlay(); render(); toast(`Net Terms set to ${o.pwVal}.`); return;
+      }
+      const onOk = o.onOk;   // rentalOverride path — the caller supplies what "authorized" means (T3.3)
+      closeOverlay();
+      if (typeof onOk === 'function') onOk();
+    })();
+    return;
+  }
+  if (closest('.js-bp-mode-hold')) { e.stopPropagation(); const o = state.overlay; if (o) { o.mode = 'hold'; renderOverlay(); } return; }
+  if (closest('.js-bp-mode-pick')) { e.stopPropagation(); const o = state.overlay; if (o) { o.mode = 'pick'; o.error = ''; renderOverlay(); } return; }
+  if (closest('.js-bp-inv')) { e.stopPropagation(); const o = state.overlay; if (!o) return; const id = closest('.js-bp-inv').dataset.inv; o.selIds = o.selIds || []; const i = o.selIds.indexOf(id); if (i >= 0) o.selIds.splice(i, 1); else o.selIds.push(id); renderOverlay(); return; }
+  if (closest('.js-bp-confirm-hold')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'blockPicker') return;
+    if (!(o.selIds || []).length) { toast('Pick at least one invoice to hold on.'); return; }
+    const c = IDX.customer.get(o.custId); if (!c) return closeOverlay();
+    c.block = { type: 'invoice-hold', invoiceIds: [...o.selIds], setBy: currentRole || 'staff', setAt: TODAY_ISO };
+    reindex('customers', c); logAction(c, `Account held — ${o.selIds.length} invoice(s) must be paid to auto-unblock`);
+    closeOverlay(); render(); toast('Account held until those invoices are paid.');
+    return;
+  }
+  if (closest('.js-bp-blacklist')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'blockPicker') return;
+    const custId = o.custId;
+    requireAdmin('Blacklisting this account is permanent — only an Admin/Owner password lifts it.', () => {
+      const c = IDX.customer.get(custId); if (!c) return;
+      c.block = { type: 'blacklist', setBy: currentRole || 'admin', setAt: TODAY_ISO };
+      reindex('customers', c); logAction(c, 'Account BLACKLISTED (Admin/Owner authorization)');
+      closeOverlay(); render(); toast('Account blacklisted.');
+    });
+    return;
+  }
+  if (closest('.js-lift-blacklist')) {
+    e.stopPropagation();
+    const rec = closest('.js-lift-blacklist').dataset.rec;
+    requireAdmin('Lifting a Blacklist requires an Admin/Owner password.', () => {
+      const c = IDX.customer.get(rec); if (!c) return;
+      delete c.block; reindex('customers', c); logAction(c, 'Blacklist lifted (Admin/Owner authorization)');
+      render(); toast('Blacklist lifted.');
+    });
+    return;
+  }
   if (closest('.js-pay-invoice')) { e.stopPropagation(); return openPayInvoice(closest('.js-pay-invoice').dataset.rec); }
   if (closest('.js-pay-pick')) { e.stopPropagation(); if (state.overlay) { const b = closest('.js-pay-pick'); state.overlay.selectedCardId = b.dataset.card || b.dataset.bank; renderOverlay(); } return; }
   if (closest('.js-pay-method')) { e.stopPropagation(); if (state.overlay) { const nb = document.querySelector('.overlay .js-check-num'); if (nb) state.overlay.checkNum = nb.value.trim(); state.overlay.method = closest('.js-pay-method').dataset.method; state.overlay.error = ''; renderOverlay(); } return; }
@@ -17381,6 +17902,22 @@ async function requireAdmin(reason, onOk) {
   try { const r = await backendCall('getConfig', { password: pw }); if (r && r.ok) onOk(); else toast('Not an Admin password — override denied.'); }
   catch (e) { toast('Couldn’t verify the password — try again.'); }
 }
+/* Phase 3 (2026-07-10 account/agreements redesign) — the app has role TIERS + ONE verifiable
+   backend password (no separate "Manager password" / "Owner password" secret exists). Per Jac's
+   confirmed call (2026-07-10): reuse the tier ladder + the existing admin password rather than
+   invent a new auth surface. `minTier` gates who passes WITHOUT a prompt; if the current user is
+   below that tier, the SAME backend password (verified the same way requireAdmin does) authorizes
+   the one action. Demo/offline (no backendPassword) always passes — matches every other money gate
+   in the app. Used for: the D14 per-action Manager override on a blocked rental, the D22 Net-Terms
+   change, and (at minTier='admin') the D13 Blacklist set/lift — 'owner' already maps to the admin
+   tier (config.js BUILTIN_ROLE_TIERS), so there is no separate Owner password to build. */
+async function verifyTierOrPassword(minTier, pw) {
+  if (roleTier(currentRole) >= tierRank(minTier)) return true;
+  if (!backendPassword) return true;   // demo/offline — no backend to verify against, matches requireAdmin
+  if (!pw) return false;
+  try { const r = await backendCall('getConfig', { password: pw }); return !!(r && r.ok); }
+  catch (e) { return false; }
+}
 /** Block on no-valid-card: Admin override unblocks this rental + logs it. */
 function cardOverrideRental(rentalId, val) {
   const r = IDX.rental.get(rentalId); if (!r) return;
@@ -17391,6 +17928,26 @@ function cardOverrideRental(rentalId, val) {
     if (cust) logAction(cust, 'Admin override used to book past the card/agreement gate');
     setRentalStatus(rentalId, val);
   });
+}
+/* Phase 3 (T3.3, spec D11/D14) — the account-level block gate, a DISTINCT axis from the card/
+   agreement gate above. `no-card` is already covered there (Admin-tier, persistent override —
+   STRICTER than D14's Manager-tier ask, so left untouched: never weaken an existing gate).
+   `blacklist` is a hard stop with NO override, checked inline at each call site (reactivating
+   the pre-existing, previously-dormant §9 `/Blacklist/i` check — nothing ever set that string
+   until Phase 3's blockPicker). That leaves `failed-payment` and `invoice-hold` uncovered by
+   anything today — this is their gate: a D14 per-action Manager override, verified the same way
+   managerPw does. Critically NON-PERSISTENT — `bypassAccountBlock` is a plain function-call
+   argument threaded through the retry, never written to the record, so every future attempt
+   re-prompts (Jac, 2026-07-10: "that's the point"). */
+function accountBlockGate(cust) {
+  const ab = accountBlock(cust);
+  return (ab && (ab.type === 'failed-payment' || ab.type === 'invoice-hold')) ? ab : null;
+}
+function accountBlockOverride(cust, onOk) {
+  const ab = accountBlockGate(cust);
+  openOverlay({ kind: 'managerPw', custId: cust ? cust.customerId : null, pwAction: 'rentalOverride',
+    pwReason: `${cust ? cust.name : 'This customer'} — ${ab ? ab.reason : 'account block'}.`,
+    busy: false, error: '', onOk });
 }
 /* Admin "Rental Rules" (Settings → Rental Rules) — HARD-BLOCK On Rent until every
    requirement an admin marked Required is met. Pure + defensive: with no rules set
@@ -17411,19 +17968,25 @@ function rentalRuleBlock(r, cust, val) {
   if (req('po') && !(inv && inv.po)) return 'Rental rule: a PO number on the invoice is required before On Rent.';
   return null;
 }
-function setRentalStatus(rentalId, val) {
+function setRentalStatus(rentalId, val, opts = {}) {
   const r = IDX.rental.get(rentalId);
   if (!r) return;
   const cust = r.customerId ? IDX.customer.get(r.customerId) : null;
   // §9 hard gates
   if (val === 'On Rent' && !r.invoiceId) { flashOr('.js-create-invoice', 'Blocked: "On Rent" requires a linked invoice (§9).'); return; }
-  if (['On Rent', 'Reserved'].includes(val) && cust && /Blacklist/i.test(cust.accountType || '')) { toast('Blocked: customer is blacklisted (§9).'); return; }
+  if (['On Rent', 'Reserved'].includes(val) && cust && (accountBlock(cust)?.type === 'blacklist' || /Blacklist/i.test(cust.accountType || ''))) { toast('Blocked: customer is blacklisted (§9).'); return; }
   const _rb = rentalRuleBlock(r, cust, val); if (_rb) { flashOr('.js-add-card', _rb); return; }   // admin Rental Rules — hard block
   // §14 — a booking requires a valid card that is SIGNED for the current account
   // type; any unsigned card blocks. An Admin can override. (Charging is never gated.)
   if (BOOKING_STATUSES.includes(val) && cardGateBlocked(cust) && !r.cardOverride) {
     toast(`${cust.name} — ${cardGateReason(cust)}. Admin override required.`);
     return cardOverrideRental(rentalId, val);
+  }
+  // Phase 3 (T3.3) — the account-block gate (failed-payment / invoice-hold); no-card + blacklist
+  // are already handled above. Manager-tier, per-action, never persisted (see accountBlockGate).
+  if (BOOKING_STATUSES.includes(val) && !opts.bypassAccountBlock) {
+    const abg = accountBlockGate(cust);
+    if (abg) { toast(`${cust.name} — ${abg.reason}. Manager authorization required.`); accountBlockOverride(cust, () => setRentalStatus(rentalId, val, { bypassAccountBlock: true })); return; }
   }
   const wasVoided = ['No Show', 'Cancelled'].includes(r.status);
   r.status = val;
@@ -17444,14 +18007,20 @@ function setRentalStatus(rentalId, val) {
 }
 /* §20 set ONE unit's status (the per-unit gate). Diverging from its siblings locks
    the master gate to the mix label; re-converging frees it. Same §9 gates per unit. */
-function setUnitStatus(rentalId, unitId, val) {
+function setUnitStatus(rentalId, unitId, val, opts = {}) {
   const r = IDX.rental.get(rentalId); if (!r) return;
   const eu = unitEntry(r, unitId); if (!eu) return;
   const cust = r.customerId ? IDX.customer.get(r.customerId) : null;
   if (val === 'On Rent' && !r.invoiceId) { flashOr('.js-create-invoice', 'Blocked: "On Rent" requires a linked invoice (§9).'); return; }
-  if (['On Rent', 'Reserved'].includes(val) && cust && /Blacklist/i.test(cust.accountType || '')) { toast('Blocked: customer is blacklisted (§9).'); return; }
+  if (['On Rent', 'Reserved'].includes(val) && cust && (accountBlock(cust)?.type === 'blacklist' || /Blacklist/i.test(cust.accountType || ''))) { toast('Blocked: customer is blacklisted (§9).'); return; }
   { const _rb = rentalRuleBlock(r, cust, val); if (_rb) { toast(_rb); return; } }   // admin Rental Rules — hard block
   if (BOOKING_STATUSES.includes(val) && cardGateBlocked(cust) && !r.cardOverride) { toast(`${cust.name} — ${cardGateReason(cust)}. Admin override required.`); return; }
+  // Phase 3 (T3.3) — account-block gate (failed-payment / invoice-hold); no-card + blacklist
+  // are already handled above. Manager-tier, per-action, never persisted.
+  if (BOOKING_STATUSES.includes(val) && !opts.bypassAccountBlock) {
+    const abg = accountBlockGate(cust);
+    if (abg) { toast(`${cust.name} — ${abg.reason}. Manager authorization required.`); accountBlockOverride(cust, () => setUnitStatus(rentalId, unitId, val, { bypassAccountBlock: true })); return; }
+  }
   // §20 No-Show / Cancel: don't commit the terminal status while a payment is
   // assigned to the unit (it would count toward Complete yet stay billed) — block first.
   if ((val === 'No Show' || val === 'Cancelled') && unitLinePaid(r, unitId)) { toast('That unit has an assigned payment — refund it before No Show/Cancel.'); return; }
@@ -17601,12 +18170,22 @@ function setUnitCapture(r, eu, key, stamp) {
   if (eu) eu[key] = stamp;
   if (!eu || isPrimaryUnit(r, eu)) r[key] = stamp;   // mirror the primary onto r.* for pre-#20 readers
 }
-function yardCapture(rentalId, cap, unitId) {
+function yardCapture(rentalId, cap, unitId, opts = {}) {
   const r = IDX.rental.get(rentalId); if (!r) return;
   const cur = captureUnit(r, unitId) || r;
   // §14 a delivery log goes On Rent — block the driver up front when the account's
   // card/agreement gate isn't clear (the journey node reads locked, not dead).
-  if (cap === 'start') { const gc = r.customerId ? IDX.customer.get(r.customerId) : null; if (cardGateBlocked(gc) && !r.cardOverride) { toast(`🔒 ${gc.name} — ${cardGateReason(gc)}. Sign the card before logging a delivery.`); return; } }
+  if (cap === 'start') {
+    const gc = r.customerId ? IDX.customer.get(r.customerId) : null;
+    if (gc && (accountBlock(gc)?.type === 'blacklist' || /Blacklist/i.test(gc.accountType || ''))) { toast(`🔒 ${gc.name} — blacklisted. Delivery blocked.`); return; }
+    if (cardGateBlocked(gc) && !r.cardOverride) { toast(`🔒 ${gc.name} — ${cardGateReason(gc)}. Sign the card before logging a delivery.`); return; }
+    // Phase 3 (T3.3) — account-block gate (failed-payment / invoice-hold), same Manager-tier,
+    // per-action, non-persisted override as the booking-status gates above.
+    if (!opts.bypassAccountBlock) {
+      const abg = accountBlockGate(gc);
+      if (abg) { toast(`🔒 ${gc.name} — ${abg.reason}. Manager authorization required.`); accountBlockOverride(gc, () => yardCapture(rentalId, cap, unitId, { bypassAccountBlock: true })); return; }
+    }
+  }
   if (cap === 'start' && cur.startCapture) return toast('Start already captured — video on file.');
   if (cap === 'end' && cur.endCapture) return toast('End already captured — video on file.');
   if (cap === 'end' && !cur.startCapture) return flashOr('.js-yard[data-cap="start"]', 'Log the Start/Delivery first.');
@@ -18146,6 +18725,19 @@ function onInput(e) {
 
 /* change events — native <input type="date"> / <select> on draft details. */
 function onChange(e) {
+  // Phase 2b — the new-agreement draft's Start Date (D6 — gates Sign for a Member type)
+  if (e.target.classList.contains('js-ag-startdate-in')) {
+    const c = IDX.customer.get(e.target.dataset.rec); if (!c) return;
+    agDraft(c).startDate = e.target.value || ''; render(); return;
+  }
+  // Phase 2b — selfie via the EXISTING file-picker fallback (same feature as the live-camera
+  // tile's "no camera" path elsewhere), targeting the draft instead of state.overlay.
+  if (e.target.classList.contains('js-ag-selfie-pick')) {
+    const c = IDX.customer.get(e.target.dataset.rec); const f = e.target.files && e.target.files[0]; if (!c || !f) return;
+    const rd = new FileReader();
+    rd.onload = () => { downscaleImage(rd.result, 340, 0.5, (out) => { if (!out) { toast('Could not read that image.'); return; } agDraft(c).selfie = out; render(); }); };
+    rd.readAsDataURL(f); return;
+  }
   // Settings Board — relabel a status (commit on blur/enter; the value/role stays locked)
   if (e.target.classList.contains('js-set-label')) {
     const o = state.overlay; if (!o) return;
@@ -19053,12 +19645,12 @@ async function chargeInvoiceFlow(invoiceId) {
         const f = await backendCall('stripeFinalizeInvoice', { invoiceId, paymentIntentId: r.paymentIntentId });
         if (!live()) return;
         if (f && f.ok) { done(f); return; }
-        fail(friendlyPayErr(f)); return;
+        markChargeFailed(invoiceId); fail(friendlyPayErr(f)); return;   // real decline after 3DS (T3.2)
       }
-      fail('Card authentication was not completed.'); return;
+      fail('Card authentication was not completed.'); return;   // ambiguous (auth abandoned) — not a decline
     }
-    fail(friendlyPayErr(r));
-  } catch (e) { fail('Network error — try again.'); }
+    markChargeFailed(invoiceId); fail(friendlyPayErr(r));   // real decline (T3.2)
+  } catch (e) { fail('Network error — try again.'); }   // network/timeout is UNKNOWN, never marked failed (spec §5.5)
 }
 // Refund the captured amount back to the card (full). Reduces amountPaid; a full
 // refund flips the invoice to Refunded. The server is authoritative.
@@ -19112,6 +19704,11 @@ function applyPayment(invoiceId, r, alloc, refundAlloc) {
   if (refundAlloc) { inv.refundAllocations = inv.refundAllocations || {}; Object.entries(refundAlloc).forEach(([k, v]) => { inv.refundAllocations[k] = (Number(inv.refundAllocations[k]) || 0) + v; }); }
   if (inv.refunded) inv.allocations = {};   // a full refund releases every payment line assignment
   reindex('invoices', inv);
+  // Phase 3 (T3.2) — a successful payment (card, ACH, cash, or check — applyPayment is the single
+  // success handler for all of them) clears a failed-payment block ANYWHERE on the account (D11 /
+  // Jac's Q3 call), not just on the invoice that originally declined. A refund is not a successful
+  // payment, so it does NOT clear the flag.
+  if (!r.refundedCents && inv.customerId) { const c = IDX.customer.get(inv.customerId); if (c && c.chargeFailedAt) { delete c.chargeFailedAt; reindex('customers', c); } }
   const after = invoiceTotals(inv).status;
   logAction(inv, r.refundedCents != null ? `Refunded ${money((r.refundedCents || 0) / 100)} — ${before} → ${after}` : `Payment — ${before} → ${after} (${r.paymentMethod || 'card'})`);
   render();
@@ -22841,7 +23438,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsUtilRollup, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsUtilRollup, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
       tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, saveYardCapture, nextCategoryId, nextUnitId,
       tripsLS, tripMerge, tripSplit, assignTripDriver, tripLabel, assignStopDriver, tripSetTime,
       tripPushSoon, tripPushNow, loadTripsFromBackend, tripsSyncFooter, setBackendPassword: (pw) => { backendPassword = pw || ''; },   // §2.3 Phase 4 sync — the setter is test-only (mirrors setRole), letting logic-test.mjs exercise the online path via a mocked window.fetch, never a real backend

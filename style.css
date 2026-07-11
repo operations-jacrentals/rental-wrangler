@@ -1884,13 +1884,6 @@ select.inline-input:focus-visible { outline: 2px solid var(--accent); outline-of
 .co-memprice > .kpi-cap { grid-column: 1 / -1; letter-spacing: 2px; }
 /* F7 — membership economics: derived stat rows under a saddle-stitch divider (ranch seasoning). */
 .mem-econ { width: 100%; margin-top: 8px; padding-top: 8px; border-top: 1.5px dashed var(--tan, #c2925a); display: flex; flex-direction: column; gap: 2px; }
-/* F5 — membership enrollment dialog: label + control rows, then a stamped charge tote. */
-.me-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--line); }
-.me-row > .kpi-cap { color: var(--txt-2); letter-spacing: 1.4px; }
-.me-tote { margin-top: 12px; padding: 11px 13px; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--chip-radius, 12px); display: flex; flex-direction: column; gap: 4px; }
-.me-line { display: flex; align-items: baseline; justify-content: space-between; font-size: 13px; color: var(--txt-2); }
-.me-line.me-total { margin-top: 5px; padding-top: 7px; border-top: 1.5px dashed var(--tan, #c2925a); font-family: 'Saira Condensed', sans-serif; text-transform: uppercase; letter-spacing: 1.5px; color: var(--txt); }
-.me-line.me-total b { color: var(--accent); font-size: 16px; }
 .set-err { align-self: center; color: var(--red); font-size: 12px; font-weight: 600; margin-right: 4px; }
 /* Roles & Logins — passwords masked by default; this toggles reveal (stamped, not a native control). */
 .set-reveal-row { display: flex; justify-content: flex-end; margin: -2px 0 8px; }
@@ -3398,6 +3391,173 @@ body { font-variant-numeric: tabular-nums; }
   cursor: pointer; flex: 0 0 auto; }
 .acct-btn:hover { border-color: var(--accent-line); color: var(--accent); }
 .acct-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   Phase 1 (2026-07-10 Account/Agreements redesign, spec §3/§7b D19-D27) — the
+   new top-of-card ACCOUNT section. Ported from the approved mockup
+   (docs/specs/assets/account-agreements-mock.html) — same shapes, tokens-only
+   colors, renamed where the mockup's bare class names collided with existing
+   app classes (.card/.f/.seg/.dd/.ghost/.ignition/.cap/.dot/.lock/…). ── */
+.acct { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin-bottom: 12px; }
+.acct-bar { display: flex; align-items: center; gap: 9px; padding: 10px 12px; cursor: pointer;
+  background: linear-gradient(180deg, var(--card-head), var(--panel)); }
+.acct-bar:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.acct-lbl { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: 1px; font-weight: 800;
+  font-size: 11px; color: var(--txt-3); flex: 0 0 auto; }
+.acct-sum { flex: 1; min-width: 0; font-size: 12px; color: var(--txt-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acct-sum b { color: var(--txt); font-weight: 700; }
+.acct-dot { color: var(--txt-3); margin: 0 6px; }
+.type-chip { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: .6px; font-size: 9.5px; font-weight: 700;
+  flex: 0 0 auto; padding: 3px 8px; border-radius: 999px; }
+.type-chip.ok { color: var(--green); background: var(--green-bg); }
+.type-chip.warn { color: var(--yellow); background: var(--yellow-bg); }
+.type-chip.pend { color: var(--purple); background: var(--purple-bg); }
+.type-chip.bad { color: var(--red); background: var(--red-bg); }
+.acct-chev { color: var(--txt-3); flex: 0 0 auto; transition: transform .12s ease; display: inline-flex; }
+.acct.open .acct-chev { transform: rotate(180deg); }
+.acct-body { padding: 12px; border-top: 1px solid var(--line-soft, var(--line)); }
+
+/* compact fields — the dense 2-col grid (D21) */
+.acct-fgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+.acct-f { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.acct-f.wide { grid-column: 1 / -1; }
+.acct-f > span { font-size: 9.5px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .4px; font-family: 'Saira Condensed', var(--font); }
+.acct-f .v.inline-edit { font-size: 12px; padding: 6px 9px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; display: block; }
+.acct-notesrow { margin-top: 8px; }
+
+/* D22/D23 — NET TERMS · PO · PROTECTION on one line */
+.acct-termsline { display: flex; align-items: center; gap: 7px; margin-top: 10px; flex-wrap: wrap; }
+.acct-cap { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: .4px; font-size: 9.5px; font-weight: 700; color: var(--txt-3); flex: 0 0 auto; }
+.acct-lock { display: inline-flex; align-items: center; color: var(--txt-3); flex: 0 0 auto; }
+.acct-sep { width: 1px; align-self: stretch; background: var(--line); margin: 1px 3px; flex: 0 0 auto; }
+.acct-prot-note { font-size: 11px; color: var(--txt-3); font-style: italic; margin: 7px 2px 0; }
+.acct-prot-note b { color: var(--green); font-style: normal; }
+/* R31 — the single interactive toggle chip (PO / Protection) */
+.chip-toggle { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: .5px; font-size: 10px; font-weight: 700;
+  padding: 5px 11px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel-2); color: var(--txt-3); cursor: pointer; }
+.chip-toggle:hover { border-color: var(--accent-line); }
+.chip-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chip-toggle.on.tone-yellow { color: var(--yellow); border-color: color-mix(in srgb, var(--yellow) 45%, transparent); background: var(--yellow-bg); }
+.chip-toggle.on.tone-green { color: var(--green); border-color: color-mix(in srgb, var(--green) 45%, transparent); background: var(--green-bg); }
+.chip-toggle.on.tone-accent { color: var(--accent); border-color: var(--accent-line); background: var(--accent-soft); }
+.chip-toggle.on.tone-red { color: var(--red); border-color: color-mix(in srgb, var(--red) 45%, transparent); background: var(--red-bg); }   /* Phase 5 — Non-Member-Mode ON (cancel-penalty pitch) */
+
+/* Phase 5 (spec §7b) — the KPI row wrapper (NOT .kpi-row, already used by the KPI-ring dashboard)
+   pairs .inv-summary with the Member-Mode toggle chip; the arrow + inline delta live INSIDE an
+   existing .kchip, never changing its real .kc-v number. */
+.inv-kpi-row { display: flex; align-items: center; gap: 9px; margin: -2px 0 12px; }
+.inv-kpi-row .inv-summary { margin: 0; flex: 1; }
+.inv-kpi-row .chip-toggle { flex: 0 0 auto; white-space: nowrap; }
+.kchip .kc-v .arr, .kchip .arr { font-size: 9px; margin-left: 2px; }
+.arr.g { color: var(--green); } .arr.b { color: var(--red); }
+.kchip .kc-l .kc-delta { margin-left: 5px; font-weight: 800; }
+.kc-delta.g { color: var(--green); } .kc-delta.b { color: var(--red); }
+
+/* D16 — Agreements list */
+.ag-divide { border: 0; border-top: 1px dashed var(--tan, #c2925a); opacity: .5; margin: 14px 0 10px; }
+.ag-head { display: flex; align-items: center; justify-content: space-between; margin: 0 2px 8px; }
+.ag-head h5 { margin: 0; font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var(--txt-3); font-weight: 700; }
+.ag-scroll { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.ag-empty { font-size: 12px; padding: 8px 2px; }
+
+/* D18 — collapsed agreement row, ONE line */
+.ag-row { display: flex; align-items: center; gap: 9px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px;
+  background: linear-gradient(180deg, var(--card-head), var(--card)); cursor: pointer; transition: border-color .12s ease, filter .12s ease; }
+.ag-row:hover { border-color: var(--accent-line); filter: brightness(1.05); }
+.ag-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ag-stat { width: 3px; align-self: stretch; border-radius: 3px; flex: 0 0 auto; margin: -1px 0; background: var(--gray); }
+.ag-stat.ok { background: var(--green); } .ag-stat.warn { background: var(--yellow); } .ag-stat.bad { background: var(--red); } .ag-stat.pend { background: var(--purple); }
+.ag-ttl { font-weight: 800; font-size: 12.5px; letter-spacing: .2px; flex: 0 0 auto; white-space: nowrap; }
+.ag-ttl.status { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: .7px; font-size: 12px; font-weight: 800; }
+.ag-ttl.status.pend { color: var(--purple); } .ag-ttl.status.bad { color: var(--red); } .ag-ttl.status.warn { color: var(--yellow); } .ag-ttl.status.ok { color: var(--green); }
+.ag-sub { flex: 1; min-width: 0; font-size: 11px; color: var(--txt-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cind { font-weight: 700; font-size: 11px; letter-spacing: .2px; flex: 0 0 auto; white-space: nowrap; }
+.cind.ok { color: var(--green); } .cind.warn { color: var(--yellow); } .cind.bad { color: var(--red); }
+.rflags { flex: 1; min-width: 0; display: flex; gap: 9px; align-items: center; }
+.rflag { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: .5px; font-size: 9px; font-weight: 700; color: var(--red); white-space: nowrap; }
+.ag-chev { color: var(--txt-3); flex: 0 0 auto; display: inline-flex; }
+
+/* expanded agreement row (existing signed OR new-agreement creation) */
+.ag-open { border: 1px solid var(--accent-line); border-radius: 11px; background: var(--card); box-shadow: 0 0 0 1px var(--accent-soft); overflow: hidden; }
+.ao-bar { background: linear-gradient(180deg, var(--card-head), var(--panel-2)); padding: 9px 12px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 9px; }
+.ao-bar .ao-lbl { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: 1px; font-weight: 800; font-size: 11.5px; }
+.ao-bar .unsaved { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: .8px; font-size: 9px; font-weight: 700; color: var(--yellow);
+  border: 1px solid color-mix(in srgb, var(--yellow) 45%, transparent); background: var(--yellow-bg); border-radius: 999px; padding: 2px 8px; }
+.ao-bar .sp, .ag-foot .sp, .ao-foot .sp { flex: 1; }
+.ao-collapse { color: var(--txt-3); background: none; border: 0; cursor: pointer; display: inline-flex; }
+.ao-collapse:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Size the I.chev SVGs (mirrors .ir-chev/.io-collapse) — without this the library glyph collapses to
+   0×0 and the expand/collapse affordances (incl. the ONLY close on the expanded-agreement viewer) vanish. */
+.acct-chev svg, .ag-chev svg { width: 15px; height: 15px; }
+.ao-collapse svg { width: 14px; height: 14px; }
+.ao-body { padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+.ao-row { display: flex; gap: 11px; }
+.ao-cell { flex: 1; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.ao-cap { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: .6px; font-size: 10px; color: var(--txt-3); font-weight: 700; }
+.ao-cap-block { display: block; margin-bottom: 5px; }
+.actype-dd { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--panel-2); border: 1px solid var(--accent-line);
+  border-radius: 8px; padding: 8px 11px; cursor: pointer; font: inherit; width: 100%; text-align: left; }
+.actype-dd b { font-weight: 800; font-size: 12.5px; color: var(--accent); } .actype-dd .cv { color: var(--txt-3); }
+.actype-dd:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.packet { display: flex; gap: 11px; }
+.packet .pcell { flex: 1; } .packet .pcell .ao-cap { display: block; margin-bottom: 5px; }
+.selfie { height: 74px; border-radius: 8px; border: 1px solid var(--line); background: repeating-linear-gradient(45deg, var(--panel-2) 0 8px, var(--panel) 8px 16px);
+  display: flex; align-items: center; justify-content: center; color: var(--txt-3); font-size: 10px; font-family: 'Saira Condensed', var(--font); letter-spacing: 1px; text-transform: uppercase; }
+.sigpad { height: 74px; border-radius: 8px; border: 1px dashed var(--line); background: var(--panel-2); position: relative; }
+.sigpad .base { position: absolute; left: 12px; right: 12px; bottom: 20px; border-top: 1px solid var(--line); }
+.terms { height: 70px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); padding: 9px 11px; font-size: 11px; color: var(--txt-2); line-height: 1.5; }
+/* Phase 2b — the live account-type toggle-menu, live capture previews, and the enroll tote. */
+.actype-menu { position: relative; margin-top: 4px; display: flex; flex-direction: column; gap: 3px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); padding: 4px; box-shadow: var(--chip-shadow); }
+.actype-opt { font: inherit; font-size: 12px; text-align: left; padding: 7px 9px; border-radius: 7px; border: 0; background: transparent; color: var(--txt-2); cursor: pointer; }
+.actype-opt:hover { background: var(--panel-2); } .actype-opt.on { color: var(--accent); font-weight: 700; }
+.selfie-img { width: 100%; height: 74px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
+.picklabel { cursor: pointer; }
+.sigpad.has-sig { display: flex; align-items: center; justify-content: center; padding: 4px; }
+.sig-img { max-width: 100%; max-height: 100%; }
+.sigpad.js-sign-popout { display: flex; align-items: center; justify-content: center; font: inherit; color: var(--txt-3); font-size: 11px; cursor: pointer; }
+.sigpad.js-sign-popout:hover { border-color: var(--accent-line); color: var(--accent); }
+.datefield-in { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 11px; color: var(--txt); font: inherit; font-size: 12.5px; width: 100%; }
+.datefield-in:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tote { border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); padding: 9px 11px; display: flex; flex-direction: column; gap: 4px; margin-top: 12px; }
+.tote .ln { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--txt-2); }
+.tote .ln b { color: var(--txt); font-variant-numeric: tabular-nums; }
+.tote .ln.total { border-top: 1px dashed var(--line); padding-top: 6px; margin-top: 1px; font-size: 13px; } .tote .ln.total b { font-weight: 800; }
+.charge-note { font-size: 11px; color: var(--txt-3); font-style: italic; margin: 8px 0 0; } .charge-note b { color: var(--accent); font-style: normal; }
+.ao-foot { display: flex; align-items: center; gap: 9px; }
+.ag-meta { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--txt-3); }
+.ag-meta .ag-metasep { width: 1px; height: 12px; background: var(--line); }
+.ag-signed { display: flex; align-items: center; gap: 8px; font-size: 12px; margin-top: 8px; }
+.ag-signed .ag-lock { color: var(--green); display: inline-flex; flex: 0 0 auto; }
+.ag-packet { display: flex; gap: 11px; margin-top: 10px; }
+.ag-pcell { flex: 1; } .ag-pcap { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--txt-3); font-weight: 700; margin-bottom: 5px; }
+.ag-selfie, .ag-sigthumb { height: 64px; width: 100%; border-radius: 8px; border: 1px solid var(--line); object-fit: cover; background: var(--panel-2); }
+.ag-selfie.empty { display: flex; align-items: center; justify-content: center; color: var(--txt-3); font-size: 18px; }
+.acct-microcopy { font-size: 11px; color: var(--txt-3); margin: 10px 2px 0; }
+/* T2.6 — the derived stats folded in from the retired old account section (Total paid / Visits /
+   Customer-for / Rents-every / rented categories). Left-aligned here (its old home was a right-
+   aligned column; this flat context reads better left-aligned). */
+.acct-stats { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
+.acct-stats .rented-cats { width: 100%; justify-content: flex-start; margin-top: 4px; }
+.acct-stats .rented-cats .rc-flags { justify-content: flex-start; }
+
+.ag-foot { display: flex; align-items: center; margin-top: 11px; }
+/* D17 — Block Account, bottom-right: R17 danger intent, outline treatment (a milder
+   accessor into the block flow, not the destructive confirm itself — that's the
+   Manager/Owner password step). */
+.ag-foot .pill.c-danger { background: transparent; border: 1px solid color-mix(in srgb, var(--red) 55%, transparent); color: var(--red); }
+.ag-foot .pill.c-danger:hover { background: var(--red-bg); }
+/* Phase 3 (T3.1) — the blockPicker popup: the pick-a-mode row + the invoice-hold checklist. */
+.blockpick-opts { display: flex; flex-direction: column; gap: 8px; }
+.blockpick-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
+.blockpick-row { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2); cursor: pointer; font-size: 12.5px; }
+.blockpick-row:hover { border-color: var(--accent-line); }
+.blockpick-row .id { font-weight: 700; color: var(--txt-2); }
+.blockpick-row .amt { margin-left: auto; font-weight: 800; font-variant-numeric: tabular-nums; }
+.anno { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: .8px; font-size: 8.5px; font-weight: 700; color: var(--tan-deep, #8a5a2b);
+  border: 1px solid color-mix(in srgb, var(--tan, #c2925a) 45%, transparent); background: color-mix(in srgb, var(--tan, #c2925a) 12%, transparent);
+  border-radius: 5px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
+@media (max-width: 460px) { .acct-fgrid { grid-template-columns: 1fr; } .ao-row, .packet { flex-direction: column; } }
+
 .funnel-fields { margin-top: 11px; gap: 5px; }
 .funnel-sublabel { margin-top: 11px; margin-bottom: 3px; font-family: 'Saira Condensed', var(--font); text-transform: uppercase;
   letter-spacing: 1px; font-size: 9.5px; color: var(--txt-3); font-weight: 700; }
@@ -3515,7 +3675,7 @@ body { font-variant-numeric: tabular-nums; }
 .inv-open { border: 1px solid var(--accent-line); border-radius: 12px; background: var(--card);
   box-shadow: 0 0 0 1px var(--accent-soft); overflow: hidden; }
 .io-bar { background: linear-gradient(180deg, var(--card-head), var(--panel-2)); padding: 11px 13px; border-bottom: 1px solid var(--line); }
-.io-bar-top { display: flex; align-items: center; gap: 9px; }
+.io-bar-top { display: flex; align-items: center; gap: 9px; cursor: pointer; }   /* clicking anywhere in the header collapses (not just the chevron) */
 .io-id { font-family: ui-monospace, monospace; font-weight: 800; font-size: 14px; }
 .io-collapse { width: 24px; height: 24px; border-radius: 7px; border: 1px solid var(--line); background: var(--panel); color: var(--txt-3);
   cursor: pointer; display: grid; place-items: center; flex: 0 0 auto; }
