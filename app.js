@@ -4940,8 +4940,8 @@ function unruledElements() {
 }
 /** R22: the deliberate close/remove ✕ — a red circle, white ✕. `hover:true` reveals
  *  it only on the container's hover (tabs/rows); otherwise always on. Reusable. */
-function closeX(js, { data, hover } = {}) {
-  return `<button class="close-x${hover ? ' hoveronly' : ''}${js ? ' ' + js : ''}" data-r="R24"${dataAttrs(data)} data-tip="Close">${I.x}</button>`;
+function closeX(js, { data, hover, tip } = {}) {
+  return `<button class="close-x${hover ? ' hoveronly' : ''}${js ? ' ' + js : ''}" data-r="R24"${dataAttrs(data)} data-tip="${esc(tip || 'Close')}">${I.x}</button>`;
 }
 /** R26: MANUAL LINK — icon-only ghost circle, opens a service task's cited OEM
  *  manual page in a new tab (Jac 2026-07-07: every model task now carries a
@@ -8771,6 +8771,7 @@ const ROADMAP_AREAS = [
 ];
 function headerEl() {
   const h = el('div', 'header');
+  const isPhone = document.body.classList.contains('is-phone');   // §M6 — phone drops the global search + reshapes the tab rail / close-all
   const roleRing = (id, label, vals, color) => `<button class="kpi-ring js-ring" data-role="${id}">
       <span class="ring-wrap">${ring3SVG(vals, color, { size: 64 })}</span>
       <span class="ring-label">${esc(label)}</span>
@@ -8793,9 +8794,11 @@ function headerEl() {
     <div class="kpis">${rings}</div>
     ${topBar}
     <div class="header-right">
-      <div class="hr-top">
+      <div class="hr-top${state.tabs.length ? ' has-tabs' : ''}">
         <div class="header-tabs tabstrip">${tabStrip(state.tabs)}</div>
-        ${state.tabs.length ? `<span class="closeall-slot">${ghostPill('Close all', { js: 'js-closeall-menu', tip: 'Close all tabs' })}</span>` : ''}
+        ${state.tabs.length ? `<span class="closeall-slot">${isPhone
+          ? closeX('js-closeall-menu', { tip: 'Close all tabs' })
+          : ghostPill('Close all', { js: 'js-closeall-menu', tip: 'Close all tabs' })}</span>` : ''}
         <span class="spacer"></span>
         ${currentUser ? `<span class="hello-name">${esc(currentUser)}</span>` : ''}
       </div>
@@ -15058,6 +15061,22 @@ function setFocusedCard(cardId) {
    ════════════════════════════════════════════════════════════════════════ */
 let renderCount = 0;
 const scrollMemo = {};   // persistent scroll positions, keyed `card|view` (list vs which record)
+// §M6 — phone chrome reflow (Jac 2026-07-11): the global "Search everything…" bar is dropped
+// (CSS-hidden) and the phone reads as two zones — TOP = nav/context, BOTTOM = tools:
+//   • the card TOGGLES (.mdock-row) + the per-card SEARCH/SORT row (.mdock-searchslot) rise
+//     into the header, right under the item-tab rail, where the global search used to sit;
+//   • the TOOL BAR (.top-toolbar) drops into the bottom dock, where the toggles used to be.
+// Node relocation only — every builder still emits its usual markup (desktop untouched); this
+// just re-homes three nodes. The card-toggle-bar swipe zone follows the toggles (see boot()).
+function reflowPhoneChrome(header, dock) {
+  const hr = header.querySelector('.header-right');
+  const toggles = dock.querySelector('.mdock-row');
+  const searchslot = dock.querySelector('.mdock-searchslot');
+  const toolbar = header.querySelector('.top-toolbar');
+  if (hr && toggles) hr.appendChild(toggles);         // card toggles → header (replaces the dropped global search)
+  if (hr && searchslot) hr.appendChild(searchslot);   // per-card search/sort → right under the toggles
+  if (toolbar) dock.appendChild(toolbar);             // tool bar → bottom dock (where the toggles were)
+}
 function render() {
   const t0 = performance.now();
   refreshToday();   // roll "today" over before painting — an all-day-open tab must never stamp/read yesterday
@@ -15082,19 +15101,19 @@ function render() {
   const grid = el('div', 'grid');
   const shown = phone ? [COLUMNS[Math.max(0, Math.min(2, state.mobileCol))]] : COLUMNS;
   for (const col of shown) grid.appendChild(columnEl(col, session));
-  // §M1 — desktop keeps the bottom toolbar; on phone the tools open up across the top header instead.
+  // §M1 — desktop keeps the bottom toolbar; on phone the tools open up across the bottom dock instead (§M6).
   if (phone) $('#app').replaceChildren(header, grid);
   else $('#app').replaceChildren(header, grid, bottomBarEl());
   if (phone) {
     const dock = mobileDockEl();
     $('#app').appendChild(dock);
-    // §M1 — move the active card's list search/sort row DOWN into the footer (it sits with
-    // the card switcher). Same node → its delegated handlers keep working. Record view has
-    // no listbar, so the slot stays empty (CSS hides it).
+    // §M1 — move the active card's list search/sort row into the dock's search slot. Same node
+    // → its delegated handlers keep working. Record view has no listbar, so the slot stays
+    // empty (CSS hides it). §M6 re-homes the slot (+ the toggles) up into the header afterward.
     const lb = grid.querySelector('.listbar');
     if (lb) dock.querySelector('.mdock-searchslot').appendChild(lb);
     else {   // §M — Standard (record) view has no listbar; keep the Back/Fwd jog in the SAME
-      // bottom-dock spot List view uses, instead of letting it sit up in the card header.
+      // slot List view uses, instead of letting it sit up in the card header.
       const cardNode = grid.querySelector('.card[data-card]');
       const dc = cardNode && cardNode.dataset.card, cs = dc && activeSession().cards[dc];
       if (cs && cs.mode === 'standard') {
@@ -15102,6 +15121,7 @@ function render() {
         if (jog) { const bar = el('div', 'listbar mdock-jogbar'); bar.innerHTML = jog; dock.querySelector('.mdock-searchslot').appendChild(bar); }
       }
     }
+    reflowPhoneChrome(header, dock);   // §M6 — toggles + search rise into the header; the tool bar drops into the dock
   }
   // restore scroll by VIEW: same view → keep your spot; back to a list → return to the
   // row you left; opened a record → top of Standard view (a targeted link scrolls itself after).
@@ -15157,6 +15177,10 @@ function render() {
    has-query highlight is toggled in place below so it stays honest mid-type. Anything a
    search can't change while you type (KPI header, docks, maps, comms) is left as-is. */
 function renderResults() {
+  // §M6 — the global search bar is dropped on phones, so this lean re-render (only ever
+  // triggered by typing in #globalsearch) can't fire there; if it somehow does, a full
+  // render() keeps the §M6 chrome reflow intact (this path doesn't rebuild the header/dock).
+  if (document.body.classList.contains('is-phone')) { render(); return; }
   const app = $('#app');
   const oldGrid = app && app.querySelector(':scope > .grid');
   if (!oldGrid) { render(); return; }                 // not on the grid surface → full render is correct
@@ -22421,8 +22445,9 @@ function boot() {
   // STARTS (Jac, 2026-07-10 refinement — "swiping should work on any mobile screen, not just
   // in details. Swiping the footer should bring you to the ACTUAL next card, including
   // subcards. Swiping anywhere else switches your MAIN card."):
-  //   - footer (.mobile-dock): steps through MOBILE_SWIPE_ORDER — the FULL sequence incl.
-  //     sub-cards (units→categories→rentals→calendar→customers→sales), with wraparound.
+  //   - the card-toggle bar (.mdock-row — §M6 relocated it into the header): steps through
+  //     MOBILE_SWIPE_ORDER — the FULL sequence incl. sub-cards
+  //     (units→categories→rentals→calendar→customers→sales), with wraparound.
   //   - everywhere else (.grid — the whole content area, list OR record view): steps
   //     through MAIN_CARDS only (Units → Rentals → Customers), folding a sub-card to its
   //     main first — unchanged from the prior grid-swipe behavior.
@@ -22433,7 +22458,7 @@ function boot() {
   let swipeStart = null;
   document.addEventListener('pointerdown', (e) => {
     if (!document.body.classList.contains('is-phone')) { swipeStart = null; return; }
-    const footer = !!(e.target.closest && e.target.closest('.mobile-dock'));
+    const footer = !!(e.target.closest && e.target.closest('.mdock-row'));   // §M6 — the card-toggle bar (now in the header) carries the full-sequence swipe
     const grid = !footer && !!(e.target.closest && e.target.closest('.grid'));
     swipeStart = (footer || grid) ? { x: e.clientX, y: e.clientY, id: e.pointerId, footer } : null;
   }, true);
