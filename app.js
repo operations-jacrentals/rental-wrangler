@@ -23191,7 +23191,21 @@ function boot() {
   // index, not by resetting the member). Sub-cards (Categories/Calendar/Sales) stay reachable via
   // the dock's tap nav + the in-column tabs. A record drag (long-press → DRAG.active) is excluded;
   // touch-action:pan-y frees the horizontal axis so this never fights vertical scroll.
-  const PAGE = { on: false, id: null, x0: 0, y0: 0, locked: false, edge: false, fromEdge: false, dir: 0, nIdx: -1, grid: null, ghost: null, w: 1, lastX: 0, lastT: 0, vx: 0 };
+  const PAGE = { on: false, id: null, x0: 0, y0: 0, locked: false, edge: false, fromEdge: false, dir: 0, nIdx: -1, grid: null, ghost: null, w: 1, lastX: 0, lastT: 0, vx: 0, settling: false, pending: null };
+  let pageTimer = null;
+  // §M3 — land a committed page. Drops the ghost FIRST, THEN renders the real column — because
+  // render()'s scroll-save reads every `.card[data-card]` in the DOM, and the ghost is a freshly
+  // built card (scrollTop 0); if it's still mounted it clobbers the returning card's saved scroll
+  // in scrollMemo → the "always jumps to the top when I come back" bug. Flushable: a rapid
+  // follow-up swipe calls this to finish the previous glide instantly before starting its own, so
+  // gestures never overlap and renders never stack (the "bog + jump on fast left-right" bug).
+  function pageFinalize() {
+    if (!PAGE.pending) return;
+    if (pageTimer) { clearTimeout(pageTimer); pageTimer = null; }
+    const { gh, nIdx } = PAGE.pending; PAGE.pending = null; PAGE.settling = false;
+    if (gh) gh.remove();
+    state.mobileCol = nIdx; render();
+  }
   function pageCleanup(settle) {
     const g = PAGE.grid, gh = PAGE.ghost;
     if (g) { if (settle) { g.classList.add('paging-settle'); g.style.transform = 'translateX(0)'; } else { g.classList.remove('paging-settle'); g.style.transform = ''; } }
@@ -23208,8 +23222,12 @@ function boot() {
   const EDGE_ZONE = 30;
   document.addEventListener('pointerdown', (e) => {
     if (!document.body.classList.contains('is-phone') || DRAG.active || DRAG.armed || document.body.classList.contains('sheet-open')) { PAGE.on = false; return; }   // no paging while a sheet/overlay owns the screen
+    if (PAGE.settling) pageFinalize();   // §M3 — a rapid follow-up swipe: land the previous glide NOW so this touch reads the SETTLED DOM (no overlapping gesture on the gliding grid, no stacked renders)
     const fromEdge = e.clientX <= EDGE_ZONE || e.clientX >= window.innerWidth - EDGE_ZONE;
-    if (!fromEdge && !(e.target.closest && (e.target.closest('.grid') || e.target.closest('.mobile-dock')))) { PAGE.on = false; return; }   // middle drags still need to start on the grid/dock; an edge drag can start over anything
+    if (!fromEdge) {   // middle drags must start on the grid/dock; an edge drag can start over anything. elementFromPoint (not e.target) so the hit-test is correct even after the flush-render above.
+      const tgt = document.elementFromPoint(e.clientX, e.clientY);
+      if (!(tgt && tgt.closest && (tgt.closest('.grid') || tgt.closest('.mobile-dock')))) { PAGE.on = false; return; }
+    }
     PAGE.on = true; PAGE.id = e.pointerId; PAGE.x0 = e.clientX; PAGE.y0 = e.clientY; PAGE.fromEdge = fromEdge;
     PAGE.locked = false; PAGE.edge = false; PAGE.lastX = e.clientX; PAGE.lastT = e.timeStamp; PAGE.vx = 0;
   }, true);
@@ -23219,19 +23237,19 @@ function boot() {
     const dx = e.clientX - PAGE.x0, dy = e.clientY - PAGE.y0;
     if (!PAGE.locked) {
       const adx = Math.abs(dx), ady = Math.abs(dy);
-      const need = PAGE.fromEdge ? 6 : 10;                                         // edge engages almost immediately; a middle drag reads a touch longer for a clean direction
+      const need = PAGE.fromEdge ? 6 : 8;                                          // decide a touch sooner so we lock before native scroll commits
       if (adx < need && ady < need) return;                                        // deadzone — no clear intent yet
-      // §M3 — RELAXED horizontal test (Jac: the old `ady >= adx` kill made the swipe
-      // near-impossible to start). Edge swipes engage on just a hint of horizontal; middle
-      // swipes engage unless the motion is CLEARLY vertical (~>1.25:1), then hand off to
-      // native scroll. Engaging easily is safe: a drag that doesn't clear ~35% just rubber-
-      // bands back (pageEnd), so an accidental peek is self-correcting.
-      const horizontal = PAGE.fromEdge ? (adx >= ady * 0.4) : (adx * 1.25 >= ady);
+      // §M3 — FORGIVING diagonal (Jac): engage unless the motion is STRONGLY vertical. Edge
+      // swipes engage on ~any horizontal hint (adx ≥ 0.4·ady); middle swipes tolerate up to a
+      // ~2:1 vertical diagonal (adx·2 ≥ ady) before handing off to native scroll. Over-eager
+      // is safe — a peek that doesn't clear ~35% rubber-bands back (pageEnd), so it self-corrects.
+      const horizontal = PAGE.fromEdge ? (adx >= ady * 0.4) : (adx * 2 >= ady);
       if (!horizontal) { PAGE.on = false; return; }                               // vertical-dominant → leave it to native scroll
       const idx = Math.max(0, Math.min(2, state.mobileCol));
       PAGE.dir = dx < 0 ? 1 : -1;                                                  // drag left → next screen, drag right → previous
       PAGE.nIdx = idx + PAGE.dir;
       PAGE.grid = document.querySelector('#app > .grid'); if (!PAGE.grid) { PAGE.on = false; return; }
+      PAGE.grid.classList.remove('paging-settle'); PAGE.grid.style.transform = '';   // clear any lingering glide (e.g. a just-cancelled rubber-back) so this drag follows the finger, not a transition
       const r = PAGE.grid.getBoundingClientRect(); PAGE.w = r.width || 1;
       document.body.classList.add('is-paging');                                    // freeze the card-body scroll for the gesture
       if (PAGE.nIdx < 0 || PAGE.nIdx > 2) { PAGE.edge = true; }                    // at an end — rubber-band, no neighbour
@@ -23267,7 +23285,8 @@ function boot() {
     haptic(8);
     document.body.classList.remove('is-paging');
     PAGE.on = false; PAGE.locked = false; PAGE.ghost = null; PAGE.grid = null;
-    setTimeout(() => { state.mobileCol = nIdx; render(); gh.remove(); }, 210);     // land the real column at rest, then drop the ghost
+    PAGE.settling = true; PAGE.pending = { gh, nIdx };                             // guard the settle window so no new gesture grabs the gliding grid
+    pageTimer = setTimeout(pageFinalize, 210);                                     // after the .21s glide, land the real column (ghost dropped first — see pageFinalize)
   };
   document.addEventListener('pointerup', pageEnd, true);
   document.addEventListener('pointercancel', (e) => { if (PAGE.on) pageCleanup(true); }, true);
