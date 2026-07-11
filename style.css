@@ -430,7 +430,14 @@ body.is-phone { touch-action: manipulation; }
 .is-phone .card-jog .jog-btn { min-width: 46px; min-height: 44px; }
 .is-phone .card-jog .jog-btn svg { width: 20px; height: 20px; }
 /* single active column — no 3-wide scroll track (the grid swipe is Back/Forward, §M3) */
-.is-phone .grid { display: block; overflow: hidden; padding: 12px 8px 4px; touch-action: pan-y; }   /* vertical scroll native; JS owns the horizontal swipe (Back/Forward) */
+.is-phone .grid { display: block; overflow: hidden; padding: 12px 8px 4px; touch-action: pan-y; will-change: transform; }   /* vertical scroll native; JS owns the horizontal paging drag */
+/* §M3 interactive main-screen paging (Jac 2026-07-11) — the drag translates the live grid + a
+   fixed ghost of the neighbour screen; .paging-settle carries the snap-back / commit glide. */
+.paging-settle { transition: transform .21s cubic-bezier(.22, .61, .36, 1); }
+.paging-ghost { z-index: 30; overflow: hidden; pointer-events: none; background: var(--bg); box-sizing: border-box; will-change: transform; }
+body.is-paging { overflow: hidden; }
+body.is-paging .grid, body.is-paging .card-body { touch-action: none; overflow: hidden !important; }   /* freeze the vertical scroll for the duration of a horizontal page */
+@media (prefers-reduced-motion: reduce) { .paging-settle { transition: transform .01s linear; } }
 .is-phone .col { flex: 1 1 auto; padding: 0; height: 100%; }
 /* the global tool tray rendered as a phone sheet (§M1 footer → Tools) */
 .tools-tray { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -3422,7 +3429,9 @@ body { font-variant-numeric: tabular-nums; }
 .acct-f { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .acct-f.wide { grid-column: 1 / -1; }
 .acct-f > span { font-size: 9.5px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .4px; font-family: 'Saira Condensed', var(--font); }
-.acct-f .v.inline-edit { font-size: 12px; padding: 6px 9px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; display: block; }
+.acct-f .v.inline-edit { font-size: 12px; padding: 6px 9px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; display: flex; align-items: center; min-height: 32px; min-width: 0; }
+.acct-f .v.inline-edit > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-f .v.inline-edit:hover { border-color: var(--accent-line); }   /* empty or filled — the whole box invites the tap-to-edit */
 .acct-notesrow { margin-top: 8px; }
 
 /* D22/D23 — NET TERMS · PO · PROTECTION on one line */
@@ -3556,7 +3565,9 @@ body { font-variant-numeric: tabular-nums; }
 .anno { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: .8px; font-size: 8.5px; font-weight: 700; color: var(--tan-deep, #8a5a2b);
   border: 1px solid color-mix(in srgb, var(--tan, #c2925a) 45%, transparent); background: color-mix(in srgb, var(--tan, #c2925a) 12%, transparent);
   border-radius: 5px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
-@media (max-width: 460px) { .acct-fgrid { grid-template-columns: 1fr; } .ao-row, .packet { flex-direction: column; } }
+/* Account fields stay 2-up on phones (Jac 2026-07-11) — short fields pair, wide ones (email/address/notes) span. Only drop to 1 col on the very narrowest handsets so inputs never crush. */
+@media (max-width: 340px) { .acct-fgrid { grid-template-columns: 1fr; } }
+@media (max-width: 460px) { .ao-row, .packet { flex-direction: column; } }
 
 .funnel-fields { margin-top: 11px; gap: 5px; }
 .funnel-sublabel { margin-top: 11px; margin-bottom: 3px; font-family: 'Saira Condensed', var(--font); text-transform: uppercase;
@@ -3723,7 +3734,9 @@ body { font-variant-numeric: tabular-nums; }
   .io-sheet-wrap .pr-brand { font-size: 21px; letter-spacing: .3px; }
   .io-sheet-wrap .pr-sub { font-size: 9.5px; letter-spacing: 1px; }
   .io-sheet-wrap .pr-datestamp { font-size: 22px; letter-spacing: .5px; }
-  .io-sheet-wrap .pr-meta { grid-template-columns: 1fr; gap: 0; }
+  .io-sheet-wrap .pr-meta { column-gap: 13px; }   /* stay 2-up on mobile to match desktop (Jac 2026-07-11) — just tighten the print-page gap so it fits the narrow sheet */
+  .io-sheet-wrap .pr-meta > div { gap: 8px; min-width: 0; }
+  .io-sheet-wrap .pr-meta > div > :last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .io-sheet-wrap .pr-summary { flex-direction: column; align-items: stretch; gap: 12px; }
   .io-sheet-wrap .pr-cust { margin-right: 0; justify-content: center; }
   .io-sheet-wrap .pr-cust-photo { width: 84px; height: 84px; }

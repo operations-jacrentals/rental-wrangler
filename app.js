@@ -3963,9 +3963,12 @@ function acctSummaryChip(c) {
 // edit mechanism as every other customer field in the app — no new edit surface.
 function acctField(c, field, label, ph, { wide } = {}) {
   const val = c[field];
-  const thing = ph.replace(/^Add\s+/i, '');
+  // Empty = a plain empty box (still tap-to-edit — the .inline-edit click opens the editor), NOT a
+  // dashed "+Label" add-button: that chip cluttered the dense 2-col grid and looked like a nested
+  // box (Jac 2026-07-11 — "leave the empty fields empty"). Uniform box height keeps empty + filled
+  // aligned; the stamped label above already says what the field is.
   return `<label class="acct-f${wide ? ' wide' : ''}"><span>${esc(label)}</span>`
-    + `<span class="v inline-edit" data-edit="custField" data-field="${esc(field)}" data-rec="${esc(c.customerId)}" data-ph="${esc(ph)}">${val ? esc(val) : `<span class="add-field" data-r="R5c">+${esc(thing)}</span>`}</span>`
+    + `<span class="v inline-edit" data-edit="custField" data-field="${esc(field)}" data-rec="${esc(c.customerId)}" data-ph="${esc(ph)}">${val ? esc(val) : ''}</span>`
     + `</label>`;
 }
 // D24 — Rental Protection's one-line explainer, member vs non-member copy (the real %
@@ -4255,7 +4258,7 @@ function acctBodyHtml(c) {
     + acctField(c, 'lastName', 'Last name', 'Add last name')
     + acctField(c, 'company', 'Company', 'Add company')
     + acctField(c, 'phone', 'Phone', 'Add phone')
-    + acctField(c, 'email', 'Email', 'Add email')
+    + acctField(c, 'email', 'Email', 'Add email', { wide: true })
     + acctField(c, 'industry', 'Industry', 'Add industry')
     + acctField(c, 'idNumber', "Driver's License / ID", 'Add ID number')
     + acctField(c, 'address', 'Address', 'Add address', { wide: true })   // T2.6 — was only in the old (now-retired) account section; folded in here
@@ -23027,43 +23030,81 @@ function boot() {
     if (backConsuming) { backConsuming = false; return; }
     if (anyDismissable()) { backGuard = false; dismissTopSheet(); }   // entry already popped by the browser → re-pushed by render if more remain
   });
-  // §M1/§M3 — phone horizontal swipes: TWO different behaviors depending on where the swipe
-  // STARTS (Jac, 2026-07-10 refinement — "swiping should work on any mobile screen, not just
-  // in details. Swiping the footer should bring you to the ACTUAL next card, including
-  // subcards. Swiping anywhere else switches your MAIN card."):
-  //   - footer (.mobile-dock): steps through MOBILE_SWIPE_ORDER — the FULL sequence incl.
-  //     sub-cards (units→categories→rentals→calendar→customers→sales), with wraparound.
-  //   - everywhere else (.grid — the whole content area, list OR record view): steps
-  //     through MAIN_CARDS only (Units → Rentals → Customers), folding a sub-card to its
-  //     main first — unchanged from the prior grid-swipe behavior.
-  // (swipe-based Back/Forward through view history is retired — "not needed, we have
-  // buttons" — the jog Back/Forward buttons (cardJog → .js-cardback/.js-cardfwd) cover
-  // that). A real drag (long-press then move) is excluded; a fired swipe swallows the
-  // trailing click.
-  let swipeStart = null;
+  // §M1/§M3 — phone horizontal paging (Jac, 2026-07-11 — supersedes the 2026-07-10 two-zone
+  // fire-on-release swipe): ONE interactive drag anywhere in the grid OR dock pages the 3 MAIN
+  // screens (Units → Rentals → Customers), Apple-homescreen style. Sub-cards
+  // (Categories/Calendar/Sales) are reached by the dock's tap nav + the in-column tabs, not by
+  // swipe. Swipe-based Back/Forward through view history stays retired (the jog buttons cover it).
+  // See the PAGE controller below.
+  // §M1/§M3 — INTERACTIVE main-screen paging (Jac 2026-07-11): a real Apple-homescreen drag.
+  // Physically drag the next/prev MAIN screen (Units · Rentals · Customers) into view following
+  // the finger; release past ~35% of the width (or a flick) to COMMIT, else it snaps back — so
+  // you can peek at the next screen and change your mind mid-drag. The neighbour column is rendered
+  // live into a fixed ghost panel (columnEl) so you literally see it slide in; on commit render()
+  // lands the real column at rest. Each screen keeps its own sub-card state (we page by column
+  // index, not by resetting the member). Sub-cards (Categories/Calendar/Sales) stay reachable via
+  // the dock's tap nav + the in-column tabs. A record drag (long-press → DRAG.active) is excluded;
+  // touch-action:pan-y frees the horizontal axis so this never fights vertical scroll.
+  const PAGE = { on: false, id: null, x0: 0, y0: 0, locked: false, edge: false, dir: 0, nIdx: -1, grid: null, ghost: null, w: 1, lastX: 0, lastT: 0, vx: 0 };
+  function pageCleanup(settle) {
+    const g = PAGE.grid, gh = PAGE.ghost;
+    if (g) { if (settle) { g.classList.add('paging-settle'); g.style.transform = 'translateX(0)'; } else { g.classList.remove('paging-settle'); g.style.transform = ''; } }
+    if (gh) { if (settle) { gh.classList.add('paging-settle'); gh.style.transform = `translateX(${PAGE.dir * 100}%)`; setTimeout(() => gh.remove(), 260); } else gh.remove(); }
+    if (g && settle) setTimeout(() => { if (PAGE.grid !== g) return; g.classList.remove('paging-settle'); g.style.transform = ''; }, 260);
+    document.body.classList.remove('is-paging');
+    PAGE.on = false; PAGE.locked = false; PAGE.edge = false; PAGE.ghost = null; PAGE.grid = null; PAGE.dir = 0; PAGE.nIdx = -1;
+  }
   document.addEventListener('pointerdown', (e) => {
-    if (!document.body.classList.contains('is-phone')) { swipeStart = null; return; }
-    const footer = !!(e.target.closest && e.target.closest('.mobile-dock'));
-    const grid = !footer && !!(e.target.closest && e.target.closest('.grid'));
-    swipeStart = (footer || grid) ? { x: e.clientX, y: e.clientY, id: e.pointerId, footer } : null;
+    if (!document.body.classList.contains('is-phone') || DRAG.active || DRAG.armed) { PAGE.on = false; return; }
+    if (!(e.target.closest && (e.target.closest('.grid') || e.target.closest('.mobile-dock')))) { PAGE.on = false; return; }
+    PAGE.on = true; PAGE.id = e.pointerId; PAGE.x0 = e.clientX; PAGE.y0 = e.clientY;
+    PAGE.locked = false; PAGE.edge = false; PAGE.lastX = e.clientX; PAGE.lastT = e.timeStamp; PAGE.vx = 0;
   }, true);
-  document.addEventListener('pointerup', (e) => {
-    const s = swipeStart; swipeStart = null;
-    if (!s || e.pointerId !== s.id || DRAG.active || DRAG.suppressClick) return;   // a real drag is not a swipe
-    const dx = e.clientX - s.x, dy = e.clientY - s.y;
-    if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.3) return;            // not a clean horizontal swipe
-    swipeFired = true;                                                             // swallow the trailing click (row/toggle)
-    if (s.footer) {
-      const order = MOBILE_SWIPE_ORDER;
-      let i = order.indexOf(currentMobileMember()); if (i < 0) i = 0;              // left → next, right → previous, wraps around
-      const next = (i + (dx < 0 ? 1 : -1) + order.length) % order.length;
-      goToCard(order[next]); haptic(8);
-    } else {
-      const cur = mainCardOfMember(currentMobileMember()); let i = MAIN_CARDS.indexOf(cur); if (i < 0) i = 0;   // fold a sub-card to its main card first; left → next, right → previous
-      const next = Math.max(0, Math.min(MAIN_CARDS.length - 1, i + (dx < 0 ? 1 : -1)));
-      if (next !== i) { goToCard(MAIN_CARDS[next]); haptic(8); }
+  document.addEventListener('pointermove', (e) => {
+    if (!PAGE.on || e.pointerId !== PAGE.id) return;
+    if (DRAG.active) { pageCleanup(false); return; }                               // a record drag took over → abandon paging
+    const dx = e.clientX - PAGE.x0, dy = e.clientY - PAGE.y0;
+    if (!PAGE.locked) {
+      if (Math.abs(dx) < 7 && Math.abs(dy) < 7) return;                            // wait for a clear intent
+      if (Math.abs(dy) >= Math.abs(dx)) { PAGE.on = false; return; }               // vertical-dominant → leave it to native scroll
+      const idx = Math.max(0, Math.min(2, state.mobileCol));
+      PAGE.dir = dx < 0 ? 1 : -1;                                                  // drag left → next screen, drag right → previous
+      PAGE.nIdx = idx + PAGE.dir;
+      PAGE.grid = document.querySelector('#app > .grid'); if (!PAGE.grid) { PAGE.on = false; return; }
+      const r = PAGE.grid.getBoundingClientRect(); PAGE.w = r.width || 1;
+      document.body.classList.add('is-paging');                                    // freeze the card-body scroll for the gesture
+      if (PAGE.nIdx < 0 || PAGE.nIdx > 2) { PAGE.edge = true; }                    // at an end — rubber-band, no neighbour
+      else {
+        const gh = el('div', 'grid paging-ghost');
+        gh.style.cssText = `position:fixed;left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;transform:translateX(${PAGE.dir * 100}%);`;
+        gh.appendChild(columnEl(COLUMNS[PAGE.nIdx], activeSession()));
+        document.body.appendChild(gh); PAGE.ghost = gh;
+      }
+      PAGE.locked = true;
     }
-  }, true);
+    const now = e.timeStamp; if (now > PAGE.lastT) { PAGE.vx = (e.clientX - PAGE.lastX) / (now - PAGE.lastT); PAGE.lastX = e.clientX; PAGE.lastT = now; }
+    if (e.cancelable) e.preventDefault();
+    const d = PAGE.edge ? dx * 0.28 : dx;                                          // rubber-band resistance at the ends
+    PAGE.grid.style.transform = `translateX(${d}px)`;
+    if (PAGE.ghost) PAGE.ghost.style.transform = `translateX(calc(${PAGE.dir * 100}% + ${d}px))`;
+  }, { passive: false, capture: true });
+  const pageEnd = (e) => {
+    if (!PAGE.on || (e.pointerId != null && e.pointerId !== PAGE.id)) return;
+    const dx = e.clientX - PAGE.x0;
+    if (!PAGE.locked || PAGE.edge || !PAGE.ghost) { pageCleanup(true); return; }
+    const commit = Math.abs(dx) > PAGE.w * 0.35 || (PAGE.vx * PAGE.dir < -0.45);   // past 35% OR a flick in the drag direction
+    if (!commit) { pageCleanup(true); return; }
+    swipeFired = true;                                                             // swallow the trailing click that ends the drag
+    const g = PAGE.grid, gh = PAGE.ghost, nIdx = PAGE.nIdx, dir = PAGE.dir;
+    g.classList.add('paging-settle'); gh.classList.add('paging-settle');
+    g.style.transform = `translateX(${-dir * 100}%)`; gh.style.transform = 'translateX(0)';   // finish the slide
+    haptic(8);
+    document.body.classList.remove('is-paging');
+    PAGE.on = false; PAGE.locked = false; PAGE.ghost = null; PAGE.grid = null;
+    setTimeout(() => { state.mobileCol = nIdx; render(); gh.remove(); }, 210);     // land the real column at rest, then drop the ghost
+  };
+  document.addEventListener('pointerup', pageEnd, true);
+  document.addEventListener('pointercancel', (e) => { if (PAGE.on) pageCleanup(true); }, true);
   initDrag();   // §15c drag & drop link engine — #drag-layer singleton + document pointer listeners
   try { loadGoogleMaps(); } catch (e) {}   // §2.3 warm the Maps SDK at boot so the dispatch cockpit + transport editor open instantly (no first-open wait / "load it twice")
   // R0 flash-lint: ON by default — violations self-report by pulsing (SPEC v8)
