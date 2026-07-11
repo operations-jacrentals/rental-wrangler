@@ -8381,6 +8381,16 @@ function listView(cardDef, session) {
     wrap.appendChild(chip);
   }
 
+  wrap.appendChild(cardListEl(cardDef, session));
+  return wrap;
+}
+/* The rows-only `.list` element of a card's list view — factored out of listView so a
+   mini-search keystroke can rebuild ONLY the rows (renderCardList) without touching the
+   .listbar / its focused input. Owns the filter → visibility → sort → window/group pipeline
+   and the empty-state prompts; the sort/search bar + filter chips stay in listView. */
+function cardListEl(cardDef, session) {
+  const card = cardDef.id;
+  const cs = session.cards[card];
   let rows = listFor(card, session);
   if (card === 'units') rows = unitsVisible(rows, cs);   // default: Active only — hide non-Active fleet (or reveal via the sort) (#2/#34)
   if (card === 'rentals') rows = rentalsVisible(rows, session, cs);   // default: live work queue — cleared (all-terminal) rentals hidden; cascade/search/"Completed" sort reveal
@@ -8439,8 +8449,7 @@ function listView(cardDef, session) {
   } else {
     appendWindowed(list, rows, cs, card, (rec) => list.appendChild(rowEl(card, rec)));
   }
-  wrap.appendChild(list);
-  return wrap;
+  return list;
 }
 const PLUS_NEW = new Set(['rentals', 'invoices', 'customers']);
 
@@ -8771,6 +8780,7 @@ const ROADMAP_AREAS = [
 ];
 function headerEl() {
   const h = el('div', 'header');
+  const isPhone = document.body.classList.contains('is-phone');   // §M6 — phone drops the global search + reshapes the tab rail / close-all
   const roleRing = (id, label, vals, color) => `<button class="kpi-ring js-ring" data-role="${id}">
       <span class="ring-wrap">${ring3SVG(vals, color, { size: 64 })}</span>
       <span class="ring-label">${esc(label)}</span>
@@ -8793,9 +8803,9 @@ function headerEl() {
     <div class="kpis">${rings}</div>
     ${topBar}
     <div class="header-right">
-      <div class="hr-top">
+      <div class="hr-top${state.tabs.length ? ' has-tabs' : ''}">
         <div class="header-tabs tabstrip">${tabStrip(state.tabs)}</div>
-        ${state.tabs.length ? `<span class="closeall-slot">${ghostPill('Close all', { js: 'js-closeall-menu', tip: 'Close all tabs' })}</span>` : ''}
+        ${state.tabs.length && !isPhone ? `<span class="closeall-slot">${ghostPill('Close all', { js: 'js-closeall-menu', tip: 'Close all tabs' })}</span>` : ''}${/* §M6 — no close-all on phones (Jac): each tab keeps its own ✕; the rail stays tabs-only */ ''}
         <span class="spacer"></span>
         ${currentUser ? `<span class="hello-name">${esc(currentUser)}</span>` : ''}
       </div>
@@ -15058,6 +15068,26 @@ function setFocusedCard(cardId) {
    ════════════════════════════════════════════════════════════════════════ */
 let renderCount = 0;
 const scrollMemo = {};   // persistent scroll positions, keyed `card|view` (list vs which record)
+// §M6 — phone chrome reflow (Jac 2026-07-11): the global "Search everything…" bar is dropped
+// (CSS-hidden); the phone reads top→bottom as HEADER (logo/rings · card toggles · per-card
+// search) then a bottom DOCK stacking the item-tab rail ABOVE the tool bar:
+//   • the card TOGGLES (.mdock-row) + the per-card SEARCH/SORT row (.mdock-searchslot) rise
+//     into the header, where the global search used to sit;
+//   • the item-tab rail (.hr-top) drops to the bottom dock, sitting just above…
+//   • the TOOL BAR (.top-toolbar), which drops in last (Jac: tab trailer above the tools).
+// Node relocation only — every builder still emits its usual markup (desktop untouched); this
+// just re-homes four nodes. The card-toggle-bar swipe zone follows the toggles (see boot()).
+function reflowPhoneChrome(header, dock) {
+  const hr = header.querySelector('.header-right');
+  const hrTop = hr && hr.querySelector('.hr-top');    // the item-tab rail ("trailer")
+  const toggles = dock.querySelector('.mdock-row');
+  const searchslot = dock.querySelector('.mdock-searchslot');
+  const toolbar = header.querySelector('.top-toolbar');
+  if (hr && toggles) hr.appendChild(toggles);         // card toggles → header (replaces the dropped global search)
+  if (hr && searchslot) hr.appendChild(searchslot);   // per-card search/sort → right under the toggles
+  if (hrTop) dock.appendChild(hrTop);                 // item-tab rail → bottom dock, above the tool bar
+  if (toolbar) dock.appendChild(toolbar);             // tool bar → bottom dock, last (below the rail)
+}
 function render() {
   const t0 = performance.now();
   refreshToday();   // roll "today" over before painting — an all-day-open tab must never stamp/read yesterday
@@ -15082,19 +15112,19 @@ function render() {
   const grid = el('div', 'grid');
   const shown = phone ? [COLUMNS[Math.max(0, Math.min(2, state.mobileCol))]] : COLUMNS;
   for (const col of shown) grid.appendChild(columnEl(col, session));
-  // §M1 — desktop keeps the bottom toolbar; on phone the tools open up across the top header instead.
+  // §M1 — desktop keeps the bottom toolbar; on phone the tools open up across the bottom dock instead (§M6).
   if (phone) $('#app').replaceChildren(header, grid);
   else $('#app').replaceChildren(header, grid, bottomBarEl());
   if (phone) {
     const dock = mobileDockEl();
     $('#app').appendChild(dock);
-    // §M1 — move the active card's list search/sort row DOWN into the footer (it sits with
-    // the card switcher). Same node → its delegated handlers keep working. Record view has
-    // no listbar, so the slot stays empty (CSS hides it).
+    // §M1 — move the active card's list search/sort row into the dock's search slot. Same node
+    // → its delegated handlers keep working. Record view has no listbar, so the slot stays
+    // empty (CSS hides it). §M6 re-homes the slot (+ the toggles) up into the header afterward.
     const lb = grid.querySelector('.listbar');
     if (lb) dock.querySelector('.mdock-searchslot').appendChild(lb);
     else {   // §M — Standard (record) view has no listbar; keep the Back/Fwd jog in the SAME
-      // bottom-dock spot List view uses, instead of letting it sit up in the card header.
+      // slot List view uses, instead of letting it sit up in the card header.
       const cardNode = grid.querySelector('.card[data-card]');
       const dc = cardNode && cardNode.dataset.card, cs = dc && activeSession().cards[dc];
       if (cs && cs.mode === 'standard') {
@@ -15102,6 +15132,7 @@ function render() {
         if (jog) { const bar = el('div', 'listbar mdock-jogbar'); bar.innerHTML = jog; dock.querySelector('.mdock-searchslot').appendChild(bar); }
       }
     }
+    reflowPhoneChrome(header, dock);   // §M6 — toggles + search rise into the header; the tool bar drops into the dock
   }
   // restore scroll by VIEW: same view → keep your spot; back to a list → return to the
   // row you left; opened a record → top of Standard view (a targeted link scrolls itself after).
@@ -15157,6 +15188,10 @@ function render() {
    has-query highlight is toggled in place below so it stays honest mid-type. Anything a
    search can't change while you type (KPI header, docks, maps, comms) is left as-is. */
 function renderResults() {
+  // §M6 — the global search bar is dropped on phones, so this lean re-render (only ever
+  // triggered by typing in #globalsearch) can't fire there; if it somehow does, a full
+  // render() keeps the §M6 chrome reflow intact (this path doesn't rebuild the header/dock).
+  if (document.body.classList.contains('is-phone')) { render(); return; }
   const app = $('#app');
   const oldGrid = app && app.querySelector(':scope > .grid');
   if (!oldGrid) { render(); return; }                 // not on the grid surface → full render is correct
@@ -15203,6 +15238,28 @@ function renderResults() {
   ruMountStrips();      // §13.7 — re-mount any open gauge strip's chart into the rebuilt grid
   mountDispatchMap();   // §2.3 — re-parent the singleton dispatch map if its card is in the rebuilt grid
   applyTitles();
+}
+/* §perf — lean per-card list re-render, the CARD-search twin of renderResults() (which
+   serves the GLOBAL bar). Used ONLY while typing in a card's .mini-search: rebuilds just
+   THAT card's .list (rows) via the shared cardListEl builder and swaps it in, leaving the
+   .listbar — and its focused .mini-search input — mounted, so focus/caret/key-repeat survive
+   and NO full render() (all columns + docks + maps + KPI rings + applyTitles) fires per
+   keystroke. Falls back to a full render() whenever the surgical path can't apply (card
+   off-screen, not a plain list, graph view). Debounced like the global bar so fast typing
+   coalesces (scheduleCardListRender). */
+const scheduleCardListRender = debounce(150);
+function renderCardList(card) {
+  const session = activeSession();
+  const cs = session.cards[card];
+  const cardNode = document.querySelector(`.card[data-card="${card}"]`);
+  const cardDef = GRID_CARD_BY_ID[card];
+  if (!cardNode || !cardDef || !cs || cs.mode !== 'list' || cs.graphView) { render(); return; }   // not a plain on-screen list → full render
+  const body = cardNode.querySelector('.card-body');
+  const oldList = body && body.querySelector('.list');
+  if (!body || !oldList) { render(); return; }
+  oldList.replaceWith(cardListEl(cardDef, session));   // rebuild ONLY the rows; the input stays mounted → focus/caret untouched
+  body.scrollTop = 0;   // new query → show results from the top (mirrors the full-render list reset)
+  applyTitles();        // re-arm truncation tooltips on the fresh rows (rAF-deferred, hover-only — no cost on touch)
 }
 /** Flag any element that's actually truncated with data-tip (full text) so the
  *  custom app-styled tooltip can show it on hover. Nothing lost to ellipsis. */
@@ -18026,11 +18083,12 @@ function onInput(e) {
     scheduleGlobalSearchRender(renderResults);
     return;
   }
-  // The per-card list / history searches recreate their own (in-grid) input on render, so
-  // they can't ride renderResults() (it rebuilds the grid). They stay on the ORIGINAL
-  // synchronous per-keystroke render + caret-restore — each filters one card's list (far
-  // cheaper than the global scan), and staying synchronous avoids the async-recreate
-  // keystroke-drop that debouncing a full render would introduce on a focused in-grid input.
+  // The per-card list search (.mini-search) now rides its OWN lean twin of renderResults():
+  // renderCardList() rebuilds only that card's .list rows and leaves the .listbar input
+  // mounted (§perf) — so it's debounced + keystroke-safe like the global bar, no longer a
+  // full render() per keystroke. The record HISTORY search (js-history-search) stays on the
+  // original synchronous render + caret-restore below — it's a small in-record list, and its
+  // input isn't a stable standalone node to keep mounted (rebuilt with the record body).
   if (e.target.classList.contains('js-history-search')) {
     if (state.overlay?.kind === 'board') {   // vendor detail in the board popup — history search rides the overlay state
       state.overlay.historySearch = e.target.value;
@@ -18055,8 +18113,13 @@ function onInput(e) {
       return;
     }
     const mcs = activeSession().cards[card]; mcs.search = e.target.value; mcs.listLimit = undefined;
-    const sel = e.target.selectionStart; render();
-    const ms = document.querySelector(`.mini-search[data-card="${card}"]`); if (ms) { ms.focus(); ms.setSelectionRange(sel, sel); }
+    // §perf — the input stays mounted (renderCardList rebuilds only the rows), so keep the
+    // has-query affordance honest in place, then schedule a lean rows-only re-render instead
+    // of a full render() per keystroke — the same reuse-the-input pattern the global bar uses
+    // via renderResults(). No caret restore needed: this input is never destroyed.
+    const sw = e.target.closest('.mini-searchwrap');
+    if (sw) sw.classList.toggle('has-query', !!(e.target.value.trim() || (mcs.filterTerms || []).length));
+    scheduleCardListRender(() => renderCardList(card));
     return;
   }
   // Feedback description → store as they type (so a re-render keeps it).
@@ -22421,8 +22484,9 @@ function boot() {
   // STARTS (Jac, 2026-07-10 refinement — "swiping should work on any mobile screen, not just
   // in details. Swiping the footer should bring you to the ACTUAL next card, including
   // subcards. Swiping anywhere else switches your MAIN card."):
-  //   - footer (.mobile-dock): steps through MOBILE_SWIPE_ORDER — the FULL sequence incl.
-  //     sub-cards (units→categories→rentals→calendar→customers→sales), with wraparound.
+  //   - the card-toggle bar (.mdock-row — §M6 relocated it into the header): steps through
+  //     MOBILE_SWIPE_ORDER — the FULL sequence incl. sub-cards
+  //     (units→categories→rentals→calendar→customers→sales), with wraparound.
   //   - everywhere else (.grid — the whole content area, list OR record view): steps
   //     through MAIN_CARDS only (Units → Rentals → Customers), folding a sub-card to its
   //     main first — unchanged from the prior grid-swipe behavior.
@@ -22433,7 +22497,7 @@ function boot() {
   let swipeStart = null;
   document.addEventListener('pointerdown', (e) => {
     if (!document.body.classList.contains('is-phone')) { swipeStart = null; return; }
-    const footer = !!(e.target.closest && e.target.closest('.mobile-dock'));
+    const footer = !!(e.target.closest && e.target.closest('.mdock-row'));   // §M6 — the card-toggle bar (now in the header) carries the full-sequence swipe
     const grid = !footer && !!(e.target.closest && e.target.closest('.grid'));
     swipeStart = (footer || grid) ? { x: e.clientX, y: e.clientY, id: e.pointerId, footer } : null;
   }, true);

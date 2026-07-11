@@ -440,8 +440,30 @@ body.is-phone { touch-action: manipulation; }
 /* Header: drop the big operator name on phones (no room) so the open-record tabs +
    active tab stop overflowing the right edge. */
 .is-phone .hello-name { display: none; }
-.is-phone .hr-top { min-width: 0; min-height: 0; }   /* collapse the empty open-tabs row so the search sits tight under the rings */
+.is-phone .hr-top { min-width: 0; min-height: 0; }   /* collapse the empty open-tabs row so what follows sits tight under the rings */
 .is-phone .header-right { gap: 5px; }
+/* ── §M6 — phone chrome reflow (Jac 2026-07-11): drop the global search; card toggles +
+   per-card search rise into the header; the tool bar drops to the bottom dock. Two zones —
+   TOP = nav/context, BOTTOM = tools. Node moves live in reflowPhoneChrome(); styling here. ── */
+/* 1 · drop the global "Search everything…" bar on phones (the node stays for desktop/JS refs) */
+.is-phone .header-right > .toolbar { display: none; }
+/* 2 · card toggles, now in the header — shed the dock's edge padding so they align to the
+   header's 12px gutter; keep the pointer-owned horizontal swipe (native vertical scroll). */
+.is-phone .header-right > .mdock-row { padding: 2px 0 0; touch-action: pan-y; }
+/* 2b · per-card search/sort row, right under the toggles — no wrapper band, header gutters only */
+.is-phone .header-right > .mdock-searchslot .listbar { padding: 6px 0 2px; }
+/* 3 · the item-tab rail ("trailer") + tool bar both live in the bottom dock (Jac): the rail
+   sits ABOVE the tool bar. The dock carries the border-top + panel bg + bottom safe-area pad. */
+.is-phone .mobile-dock > .top-toolbar { padding: 8px; touch-action: auto; }
+/* 4 · item-tab rail (task 4) — a recessed data-plate band; tabs scroll full-width. No
+   close-all on phones (Jac) — each tab carries its own ✕. Only styled when there ARE tabs
+   (.has-tabs) so an empty rail collapses to nothing in the dock. */
+.is-phone .mobile-dock > .hr-top.has-tabs { margin: 8px 8px 0; }                /* inset the band from the dock edges */
+.is-phone .hr-top.has-tabs { align-items: center; gap: 6px; padding: 4px 5px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--chip-shadow); }
+.is-phone .hr-top .spacer { display: none; }                                    /* rail = tabs only, nothing trailing */
+.is-phone .hr-top.has-tabs .header-tabs { flex: 1 1 auto; min-width: 0; }
+.is-phone .hr-top .tab { min-height: 44px; }                                    /* touch floor */
 /* Rental window header: the Not-Ready blocker + status gate were wrapping on top of
    each other (and the dates). Make the bar taller, pin the dates to the TOP corners,
    and drop the status row to the BOTTOM — full width, centered, no overlap. */
