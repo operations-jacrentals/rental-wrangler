@@ -81,6 +81,10 @@ const dayDiff = (a, b) => Math.round((b - a) / 86400000);
 // Keep "today" current on a long-lived tab. TODAY_ISO is an ESM live binding, so
 // every call-time reader picks up the new day for free; TODAY (a Date) is re-derived here.
 function refreshToday() { if (refreshTodayISO()) { TODAY = parseISO(TODAY_ISO); } }
+/* Trailing debounce: returns a scheduler you call with a thunk each time — it cancels
+   any pending thunk and reschedules, so only the LAST call in a burst actually runs.
+   Used to keep typing snappy on inputs whose reaction is expensive (a full render()). */
+function debounce(ms) { let t; return (fn) => { clearTimeout(t); t = setTimeout(fn, ms); }; }
 
 const SINGULAR = { customers: 'customer', rentals: 'rental', units: 'unit', invoices: 'invoice', categories: 'category', workOrders: 'workOrder', inspections: 'inspection', serviceOrders: 'unit', models: 'model' };
 
@@ -965,10 +969,17 @@ function transportLineItems(r) {
  *  is billed as a FRESH rental of just the added days (prevEnd→newEnd), originals frozen. */
 function retroPricingOn() { return ((state.settings && state.settings.company) || {}).retroactivePricing !== false; }
 /** Dollars already billed for a unit's rental TIME on an invoice (rental + extension
- *  lines for that unit) — the baseline retroactive pricing diffs against. */
-function unitBilledRental(inv, rentalId, unitId) {
+ *  lines for that unit) — the baseline retroactive pricing diffs against. On a
+ *  SINGLE-unit rental, match on the rental alone (not unitId) — a unit SWAP (remove
+ *  old + add new) keeps the old unit's PAID line in place (refund-first, §7.4) but
+ *  re-tags nothing, so a strict unitId match would make that money invisible to every
+ *  later extension/credit calc, re-billing the customer for time they already paid
+ *  for under the equipment's old name (Jac bug 2026-07-10). A genuine multi-unit
+ *  rental keeps strict per-unit matching — each unit's own payment stays its own. */
+function unitBilledRental(inv, r, unitId) {
+  const singleUnit = rentalUnits(r).length <= 1;
   return (inv.lineItems || []).reduce((a, li) =>
-    a + ((li.ref === rentalId && li.unitId === unitId && (li.kind === 'rental' || li.kind === 'extension')) ? (Number(li.amount) || 0) : 0), 0);
+    a + ((li.ref === r.rentalId && (singleUnit || li.unitId === unitId) && (li.kind === 'rental' || li.kind === 'extension')) ? (Number(li.amount) || 0) : 0), 0);
 }
 /** The per-unit extension charge for a window change, honoring the retroactive setting.
  *  `prevEnd` = the end date BEFORE this extension (the standalone segment's start when OFF).
@@ -977,7 +988,7 @@ function unitExtensionDelta(inv, r, eu, ns, ne, prevEnd, retro) {
   const u = IDX.unit.get(eu.unitId); if (!u) return { amount: 0, rate: '—' };
   if (retro) {                                              // cheapest(full window) − already billed
     const p = rentalPrice({ categoryId: u.categoryId, startDate: ns, endDate: ne, customerId: r.customerId });
-    return { amount: Math.round(((p ? p.price : 0) - unitBilledRental(inv, r.rentalId, eu.unitId)) * 100) / 100, rate: p ? p.rate : '—' };
+    return { amount: Math.round(((p ? p.price : 0) - unitBilledRental(inv, r, eu.unitId)) * 100) / 100, rate: p ? p.rate : '—' };
   }
   // OFF — price ONLY the added segment (prevEnd → newEnd) as a fresh rental; originals frozen.
   const p = (prevEnd && ne > prevEnd) ? rentalPrice({ categoryId: u.categoryId, startDate: prevEnd, endDate: ne, customerId: r.customerId }) : null;
@@ -1019,7 +1030,7 @@ function invoiceChunks(startISO, endISO) {
   return out.length ? out : [{ idx: 0, start: startISO, end: endISO, days: Math.max(1, total) }];
 }
 /** Dollars already billed for a unit's TIME across the WHOLE rental series. */
-function unitBilledSeries(r, unitId) { return rentalInvoices(r).reduce((a, inv) => a + unitBilledRental(inv, r.rentalId, unitId), 0); }
+function unitBilledSeries(r, unitId) { return rentalInvoices(r).reduce((a, inv) => a + unitBilledRental(inv, r, unitId), 0); }
 /** Open a continuation invoice for [covStart,covEnd] (a fresh ≤28-day chunk). */
 function createContinuationInvoice(r, covStart, covEnd) {
   const id = nextInvoiceId();
@@ -2670,7 +2681,7 @@ function deferOrAnchor(key, singleFn, anchor) {
     return anchorOrToggle(anchor.card, anchor.recId, anchor.recType);   // 2nd tap on the anchored record un-anchors (toggle)
   }
   if (pendingRowClick) clearTimeout(pendingRowClick.timer);
-  pendingRowClick = { key, timer: setTimeout(() => { pendingRowClick = null; singleFn(); }, DBL_MS) };
+  pendingRowClick = { key, anchor, timer: setTimeout(() => { pendingRowClick = null; singleFn(); }, DBL_MS) };
 }
 /* Hover preview (#1): a short hover on a list row or a link pill floats a glance at
  * that record's Standard view beside the cursor. Display-only — never anchors/cascades. */
@@ -2769,11 +2780,13 @@ function openInvoice(invId) {
 }
 
 /* ── global search (§5.4) ────────────────────────────────────────────────── */
-function setQuery(q) {
-  state.query = q;
-  recomputeSearchMode();
-  render();
-}
+function setQueryValue(q) { state.query = q; recomputeSearchMode(); }
+function setQuery(q) { setQueryValue(q); render(); }
+// Keystrokes debounce the (expensive, full-app) render — every character updates
+// state.query immediately, but the DOM rebuild waits for a pause in typing, so the
+// input never blocks on a re-render mid-keystroke. Click-driven callers (a saved
+// search, a filter chip) still go through the synchronous setQuery() above.
+const scheduleGlobalSearchRender = debounce(150);
 /** Clear any "Show more" expansion on every card of the active session. */
 function resetListLimits() { const s = activeSession(); if (s && s.cards) Object.values(s.cards).forEach((cs) => { cs.listLimit = undefined; }); }
 // Any search/filter-set change restarts each card at 60 rows (keeps typing snappy
@@ -3826,8 +3839,8 @@ function custMetaField(c, field, label, ph) {
 function funnelSectionHtml(c) {
   const tab = (state.funnelTab && state.funnelTab[c.customerId]) || 'rental';
   const seg = segCtl([
-    { label: `Rental <span class="seg-dot ${naDotClass(c, 'rental')}"></span>`, js: 'js-funnel-tab', data: { rec: c.customerId, tab: 'rental' }, on: tab === 'rental' ? 'accent' : null },
-    { label: `Equipment Sales <span class="seg-dot ${naDotClass(c, 'usedSales')}"></span>`, js: 'js-funnel-tab', data: { rec: c.customerId, tab: 'usedSales' }, on: tab === 'usedSales' ? 'accent' : null },
+    { label: 'Rental', js: `js-funnel-tab ${naDotClass(c, 'rental')}`, data: { rec: c.customerId, tab: 'rental' }, on: tab === 'rental' ? 'accent' : null },
+    { label: 'Equipment Sales', js: `js-funnel-tab ${naDotClass(c, 'usedSales')}`, data: { rec: c.customerId, tab: 'usedSales' }, on: tab === 'usedSales' ? 'accent' : null },
   ]);
   let body;
   if (tab === 'rental') {
@@ -8766,16 +8779,14 @@ function headerEl() {
   const comingPlate = `<button class="coming-plate js-roadmap" data-tip="What's coming in 2026" aria-label="Coming 2026 — open the roadmap">
       <span class="cp-stamp">Coming <b>2026</b></span>
     </button>`;
-  const ruPlate = `<button class="ru-plate js-ru-open" data-tip="The Round-Up — the reports board" aria-label="Open the Round-Up reports board">${I.graph}<span>Round-Up</span></button>`;
   const rings = ROLES.map((role) => roleRing(role.id, role.label, kpiFor(role.id), role.color)).join('') + comingPlate;
   // §M1 — phone-only TOP TOOLBAR: the full tool set opened up across the top of the screen
-  // (logo + rings stay on their own row above it). Notifications + Requests live here too.
-  const nu = unseenNotifs();
-  const notifBtn = `<button class="iconbtn js-notifications" data-tip="Notifications">${I.bell}${nu ? `<span class="bb-badge">${nu > 9 ? '9+' : nu}</span>` : ''}</button>`;
-  const ruBtn = `<button class="iconbtn js-ru-open" data-tip="The Round-Up — the reports board">${I.graph}</button>`;
-  const tn = visibleTransportAlerts().length;   // #515 transport reminders
-  const trBtn = `<button class="iconbtn js-transport-alerts" data-tip="Transports due — call the customer">${I.truck}${tn ? `<span class="bb-badge">${tn > 9 ? '9+' : tn}</span>` : ''}</button>`;
-  const topBar = `<div class="top-toolbar">${ruBtn}${trBtn}${notifBtn}${bottomBarInner()}</div>`;
+  // (logo + rings stay on their own row above it). Comms (requests/transport alerts/
+  // notifications) collapses behind the bell — kept LAST so it lands far-right, same as the
+  // desktop bottom band's bb-utils slot (Jac: comms sits at the far right of the bar). Tools
+  // (QR/previews/hotkeys/GPS fleet tools/dev+admin tools) collapse behind the wrench inside
+  // bottomBarInner. Round-Up ("Reports") moved off this bar entirely — it's a logo-menu row now.
+  const topBar = `<div class="top-toolbar">${bottomBarInner()}${commsBellBtn()}</div>`;
   // Decluttered top: logo + rings on one row, the tool bar across the next.
   h.innerHTML = `
     <button class="logo js-logo" aria-label="Jac Rentals"></button>
@@ -8786,7 +8797,6 @@ function headerEl() {
         <div class="header-tabs tabstrip">${tabStrip(state.tabs)}</div>
         ${state.tabs.length ? `<span class="closeall-slot">${ghostPill('Close all', { js: 'js-closeall-menu', tip: 'Close all tabs' })}</span>` : ''}
         <span class="spacer"></span>
-        ${ruPlate}
         ${currentUser ? `<span class="hello-name">${esc(currentUser)}</span>` : ''}
       </div>
       <div class="toolbar">
@@ -8806,54 +8816,90 @@ function headerEl() {
 // in the UI, so the whole Yard<->Blued-Steel cycle was unreachable dead code.
 // The app is hardcoded to bluedsteel (state.theme below).
 /** The action toolbar — pinned to the LEFT of the bottom comms band (the
- *  conversation rail fills the middle, bell + inbox sit at the right). On phones
- *  this same set opens up across the top header, so the inbox stays here (the
- *  desktop band passes {noInbox} since its right utils zone carries it). */
-function bottomBarInner(opts = {}) {
+ *  conversation rail fills the middle, the Comms bell sits at the right — see
+ *  commsBellBtn, placed by the caller: headerEl / commsUtilsEl). On phones this
+ *  same set opens up across the top header. Reorg (Jac 2026-07-10): the dozen-plus
+ *  bare tool icons this bar used to carry (QR / previews / hotkeys / the six GPS
+ *  fleet tools / dev+admin tools) now collapse behind ONE Tools wrench — only
+ *  Receipt (the most-used action) stays a bare icon. Requests/Transport
+ *  alerts/Notifications moved off this bar entirely, onto the Comms bell (they
+ *  don't need an {opts} passthrough here — the bell reads its own {noInbox}). */
+function bottomBarInner() {
   // rules 5/6: LEFT = labeled actions (icon LEADS label, no "+"), Wash joins them;
   // RIGHT (after divider) = icon-only utilities. The +New collapse button is dropped (Jac).
   return `
     ${commsChipsHtml()}
     <button class="iconbtn js-newitem" data-new="receipt">${CARD_ICON.expenses}Receipt</button>
     <span class="bb-sep"></span>
-    <button class="iconbtn js-qr" data-tip="Share session (QR)">${I.qr}</button>
-    <button class="iconbtn${state.previewsOn ? '' : ' off'} js-previews" data-tip="${state.previewsOn ? 'Hover previews: on' : 'Hover previews: off'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
-    ${opts.noInbox ? '' : `<button class="iconbtn js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${wranglerRequests.length ? `<span class="bb-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : ''}</button>`}
-    <button class="iconbtn js-gps-health" data-tip="Tracker Health — every GPS device across the fleet">${I.truck}</button>
-    <button class="iconbtn js-gps-fleet" data-tip="Fleet Map — every GPS tracker on a live map">${I.grid}</button>
-    <button class="iconbtn js-gps-roundup" data-tip="Round Up Trackers — bulk-match the fleet to live GPS devices">${I.list}</button>
-    <button class="iconbtn js-gps-issues" data-tip="GPS Issues — every tracker that needs attention">${I.alert}</button>
-    <button class="iconbtn js-gps-utilization" data-tip="Fleet Utilization — real hours/miles per unit, from the trackers">${I.graph}</button>
-    <button class="iconbtn js-gps-bouncie-trucks" data-tip="Pull Bouncie Trucks — onboard any new Bouncie vehicle as a Truck-category unit">${CARD_ICON.units}</button>
-    <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
-    ${devUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
-    <button class="iconbtn js-inspect${state.inspect ? ' on' : ''}" data-tip="Design Inspector — hover names the rule, click copies the reference">${I.search}</button>
-    <button class="iconbtn js-rulebook" data-tip="The R-Rulebook — visual design reference (SPEC v8)">${I.doc}</button>
-    <button class="iconbtn js-wrangler-ops" data-tip="Wrangler Ops — every live Mr. Wrangler chat; jump in or escalate to Claude Code">${I.lasso}</button>` : ''}
-    ${adminUnlocked() ? `<button class="iconbtn js-photo-sweep" data-tip="Offload base64 photos to Drive — one-shot migration to de-bloat the payload">${I.camera}</button>` : ''}`;
+    ${toolsBtn()}`;
+}
+/** Tools wrench — QR / hover-previews / hotkeys, the six GPS fleet tools, plus
+ *  dev-unlocked (lint / inspect / rulebook / wrangler ops) and admin-unlocked
+ *  (photo sweep) tools. One trigger instead of a flat run of icon-only buttons. */
+function toolsMenuRows() {
+  const item = (js, icon, label, on) => `<button class="dd-item ${js}${on ? ' on' : ''}"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${icon}</span>${esc(label)}</button>`;
+  let html = item('js-qr', I.qr, 'Share session (QR)')
+    + item('js-previews', state.previewsOn ? I.eye : I.eyeOff, state.previewsOn ? 'Hover previews: on' : 'Hover previews: off', state.previewsOn)
+    + item('js-hotkeys', I.mouse, 'Mouse & keyboard shortcuts');
+  html += `<div class="dd-sec-lbl">GPS / Fleet</div>`
+    + item('js-gps-health', I.truck, 'Tracker Health')
+    + item('js-gps-fleet', I.grid, 'Fleet Map')
+    + item('js-gps-roundup', I.list, 'Round Up Trackers')
+    + item('js-gps-issues', I.alert, 'GPS Issues')
+    + item('js-gps-utilization', I.graph, 'Fleet Utilization')
+    + item('js-gps-bouncie-trucks', CARD_ICON.units, 'Pull Bouncie Trucks');
+  if (devUnlocked()) {
+    html += `<div class="menu-sep"></div>`
+      + item('js-lint', I.eye, 'Design lint (R0)', document.body.classList.contains('rw-lint'))
+      + item('js-inspect', I.search, 'Design Inspector', state.inspect)
+      + item('js-rulebook', I.doc, 'The R-Rulebook')
+      + item('js-wrangler-ops', I.lasso, 'Wrangler Ops');
+  }
+  if (adminUnlocked()) html += `<div class="menu-sep"></div>` + item('js-photo-sweep', I.camera, 'Photo sweep to Drive');
+  return html;
+}
+function openToolsMenu(anchorEl) { openDropdown(anchorEl, `<div class="dd-sec">Tools</div>${toolsMenuRows()}`, { align: 'right' }); }
+function toolsBtn() {
+  return `<button class="iconbtn js-tools-menu" data-tip="Tools — QR, previews, hotkeys, GPS fleet tools${devUnlocked() ? ', dev tools' : ''}">${CARD_ICON.workOrders}</button>`;
+}
+/** Comms bell — Requests, Transport alerts, and Notifications, one direct-jump
+ *  row each with its own count; badges roll up onto the bell itself. (Chat and
+ *  Mr. Wrangler stay on their own direct-access comms chips, left of Receipt —
+ *  they're already grouped, not part of the flat-icon clutter this menu clears
+ *  up.) Requests joins the bell only where there's no comms rail to surface open
+ *  threads (phone — desktop keeps Requests on the rail, {noInbox}). Sits LAST in
+ *  both bars so it's always the far-right item (Jac 2026-07-10). */
+function commsBellCount(opts = {}) {
+  return unseenNotifs() + visibleTransportAlerts().length + (opts.noInbox ? 0 : wranglerRequests.length);
+}
+function commsMenuRows(opts = {}) {
+  const item = (js, icon, label, n) => `<button class="dd-item ${js}"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${icon}</span>${esc(label)}${n ? `<span class="c-count" style="margin-left:auto">${n > 9 ? '9+' : n}</span>` : ''}</button>`;
+  return (opts.noInbox ? '' : item('js-requests', I.inbox, 'Requests for your OK', wranglerRequests.length))
+    + item('js-transport-alerts', I.truck, 'Transports due', visibleTransportAlerts().length)
+    + item('js-notifications', I.bell, 'Notifications', unseenNotifs());
+}
+function openCommsMenu(anchorEl, opts = {}) { openDropdown(anchorEl, `<div class="dd-sec">Comms</div>${commsMenuRows(opts)}`, { align: 'right' }); }
+function commsBellBtn(opts = {}) {
+  const n = commsBellCount(opts);
+  const cls = opts.fab ? 'fab' : 'iconbtn', badgeCls = opts.fab ? 'fab-badge' : 'bb-badge';
+  return `<button class="${cls} js-comms-menu${opts.noInbox ? ' js-comms-noinbox' : ''}" data-tip="Comms — requests, transport alerts, notifications">${I.bell}${n ? `<span class="${badgeCls}">${n > 9 ? '9+' : n}</span>` : ''}</button>`;
 }
 // §18g/§17/D9 — the bottom COMMS BAND: toolbar (with the four comms chips) pinned
 // left · the conversation rail fills the middle (idle = the actionable Mr. Wrangler
-// request tabs; a summoned category session otherwise) · the bell at the right.
+// request tabs; a summoned category session otherwise) · the Comms bell at the
+// far right (Jac 2026-07-10).
 function bottomBarEl() {
   const bar = el('div', 'bottombar');
-  bar.innerHTML = `<div class="bb-tools">${bottomBarInner({ noInbox: true })}</div>`
+  bar.innerHTML = `<div class="bb-tools">${bottomBarInner()}</div>`
     + `<div class="comms-rail" role="tablist" aria-label="Conversations">${commsRailEl()}</div>`
     + `<div class="bb-utils">${commsUtilsEl()}</div>`;
   return bar;
 }
-// The right-hand utility of the comms band — just the notification bell now. The
-// Requests inbox is retired on desktop: every open request is a tab in the rail (open
-// it to Approve/Dismiss). The inbox still exists for phones (top toolbar), which have
-// no rail. (resolved-fix feed = the bell.)
-function commsUtilsEl() {
-  const nu = unseenNotifs();
-  const notifBadge = nu ? `<span class="fab-badge">${nu > 9 ? '9+' : nu}</span>` : '';
-  const tn = visibleTransportAlerts().length;
-  const trBadge = tn ? `<span class="fab-badge">${tn > 9 ? '9+' : tn}</span>` : '';   // #515 — deliveries/pickups due to call
-  return `<button class="fab js-transport-alerts" data-tip="Transports due — call the customer">${I.truck}${trBadge}</button>`
-    + `<button class="fab js-notifications" data-tip="Notifications — resolved fixes">${I.bell}${notifBadge}</button>`;
-}
+// The right-hand utility of the comms band — the Comms bell (requests / transport
+// alerts / notifications). Requests stays off the bell here: every open request is
+// already a tab in the rail (open it to Approve/Dismiss). The bell's Requests row
+// only appears on phone (top toolbar), which has no rail.
+function commsUtilsEl() { return commsBellBtn({ fab: true, noInbox: true }); }
 // The conversation rail. Idle (no chip summoned) it carries ONLY the open Mr. Wrangler
 // REQUEST tabs (needs-answer = red · needs-your-OK = yellow; they replaced the desktop
 // Requests inbox — each opens its own conversation window with Approve/Dismiss). All
@@ -8889,13 +8935,10 @@ function wrChatResolved(c) {
   return filed.length > 0 && filed.every((n) => !wranglerRequests.some((rq) => rq.number === n));
 }
 // §M1 — phone-only per-column bottom strip: Yard→internal chat · Rentals→tool bar · Customers→external chats (shell).
-// §M1/§M3 — the active phone column's card id (state.cards key), for the grid Back/Fwd swipe.
-function activeMobileCard() {
-  const colObj = COLUMNS[Math.max(0, Math.min(2, state.mobileCol))];
-  const s = activeSession();
-  return (s.cols && s.cols[colObj.id]) || colObj.default;
-}
-// §M1 — the card the phone is currently showing (the active column's member).
+// §M1 — the card the phone is currently showing (the active column's member). Also what the
+// grid swipe folds through mainCardOfMember() — it's the same "what am I on" state regardless
+// of whether the swipe started in the footer or the grid (2026-07-10: activeMobileCard(), a
+// byte-identical twin used only by the old grid Back/Fwd swipe, was removed as dead code).
 function currentMobileMember() {
   const colObj = COLUMNS[Math.max(0, Math.min(2, state.mobileCol))];
   const s = activeSession();
@@ -8911,7 +8954,14 @@ const MOBILE_TOGGLE_GROUPS = [
   { col: 'middle', members: ['rentals', 'calendar'] },
   { col: 'right',  members: ['customers', 'sales'] },
 ];
-// The 3 MAIN cards, left→right — what the footer swipe steps between (never a sub-card).
+// §M1/§M3 — the FULL ordered swipe sequence, incl. sub-cards, derived (never hardcoded)
+// from MOBILE_TOGGLE_GROUPS so it stays correct if that list ever changes: left-to-right,
+// main-then-sub per column → ['units','categories','rentals','calendar','customers','sales'].
+// This is what a FOOTER swipe steps through (Jac, 2026-07-10 refinement — swiping the dock
+// should reach the ACTUAL next card, subs included, not just the 3 mains).
+const MOBILE_SWIPE_ORDER = MOBILE_TOGGLE_GROUPS.flatMap((g) => g.members);
+// The 3 MAIN cards, left→right — what a swipe ANYWHERE ELSE (grid/list/detail) steps between
+// (never a sub-card); the footer swipe uses MOBILE_SWIPE_ORDER above instead.
 const MAIN_CARDS = ['units', 'rentals', 'customers'];
 // Which main card a member (incl. a sub-card) belongs to.
 function mainCardOfMember(m) {
@@ -8933,7 +8983,10 @@ function goToCard(member) {
 // every group, stays icon-only (keeps 3 narrow toggles from fighting each other for label
 // width). Tap an icon to jump straight to that card's list. The card's search/sort row is
 // moved DOWN into .mdock-searchslot by render(). Swipe the dock left/right to step through
-// the 3 MAIN cards; the grid swipe is Back/Forward.
+// the FULL MOBILE_SWIPE_ORDER sequence incl. sub-cards; a swipe anywhere ELSE (the grid) instead
+// steps through the 3 MAIN cards only (2026-07-10 refinement — two different swipe zones, see
+// the pointerup handler in boot(); swipe Back/Forward through history stays retired, the jog
+// buttons cover that).
 function mobileDockEl() {
   const cur = currentMobileMember();
   const barHtml = (members) => {
@@ -11379,7 +11432,7 @@ function wirePopupDrag(overlay) {
    remain. Closing by other means (Esc/✕/backdrop) consumes the dangling entry so the
    stack stays balanced. Phone-only — desktop keeps Esc/click. Wired in boot(). ── */
 let backGuard = false, backConsuming = false;
-let swipeFired = false;   // §M1/§M3 — a footer (column) or grid (Back/Fwd) swipe sets this so the trailing click is swallowed once
+let swipeFired = false;   // §M1/§M3 — a footer or grid section-switch swipe sets this so the trailing click is swallowed once
 function anyDismissable() { return !!(state.overlay || state.datesearch || state.chat.open || state.wrangler.open); }
 function dismissTopSheet() {
   if (state.datesearch) { closeDateSearch(); return true; }
@@ -12518,16 +12571,13 @@ function buildPopupEl(o, overlay, opts = {}) {
       <div class="popup-body board-body bv-body">${o.customize ? bvCustomizePanel(o.card) : ''}${boardViewTable(o, session)}</div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'tools') {
-    // §M1 — the global tool tray (the desktop bottom bar) as a phone sheet. Notifications +
-    // Requests live here on phone (their floating FABs are hidden) — bottomBarInner already
-    // carries Requests, so we add the Notifications bell.
-    const nu = unseenNotifs();
-    const notifBtn = `<button class="iconbtn js-notifications" data-tip="Notifications">${I.bell}<span>Notifications</span>${nu ? `<span class="bb-badge">${nu > 9 ? '9+' : nu}</span>` : ''}</button>`;
-    const tn = visibleTransportAlerts().length;   // #515 transport reminders
-    const trBtn = `<button class="iconbtn js-transport-alerts" data-tip="Transports due — call the customer">${I.truck}<span>Transports Due</span>${tn ? `<span class="bb-badge">${tn > 9 ? '9+' : tn}</span>` : ''}</button>`;
+    // §M1 — the global tool tray (the desktop bottom bar) as a phone sheet. Same
+    // builders as everywhere else: bottomBarInner (comms chips, Receipt, the Tools
+    // wrench) plus the Comms bell (requests/transport alerts/notifications), kept
+    // last so it lands far-right here too (Jac 2026-07-10).
     const pop = el('div', 'popup'); pop.style.width = '360px';
-    pop.innerHTML = popupShell({ icon: I.sliders || I.menu || '', title: 'Tools', tag: 'Yard · toolbox',
-      body: `<div class="tools-tray">${trBtn}${notifBtn}${bottomBarInner()}</div>` });
+    pop.innerHTML = popupShell({ icon: CARD_ICON.workOrders || I.sliders || I.menu || '', title: 'Tools', tag: 'Yard · toolbox',
+      body: `<div class="tools-tray">${bottomBarInner()}${commsBellBtn()}</div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'settings') {
     o.config = o.config || { roles: {}, admin: '' };
@@ -12562,7 +12612,7 @@ function buildPopupEl(o, overlay, opts = {}) {
     // The card rail IS the header (no title). Account tab + a tab per card (signed dot) + a +Card add.
     const railTabs = `<div class="ag-tabs" role="tablist">
       <button type="button" class="ag-tab js-nc-tab${tab === 'account' ? ' on' : ''}" data-tab="account">Account</button>
-      ${cards.map((k) => `<button type="button" class="ag-tab js-nc-tab${tab === k.id ? ' on' : ''}" data-tab="${esc(k.id)}"><span class="ag-dot ${{ complete: 'ok', 'in-progress': 'mid', stale: 'bad' }[cardCaptureState(custRec, k)]}"></span>${esc(brandName(k.brand))} ••${esc(k.last4)}</button>`).join('')}
+      ${cards.map((k) => `<button type="button" class="ag-tab js-nc-tab${tab === k.id ? ' on' : ''} ${{ complete: 'ok', 'in-progress': 'mid', stale: 'bad' }[cardCaptureState(custRec, k)]}" data-tab="${esc(k.id)}">${esc(brandName(k.brand))} ••${esc(k.last4)}</button>`).join('')}
       ${canMoney() ? addBtn('Card', { link: true, js: 'js-add-card', data: { rec: o.editId || '' } }) : ''}
     </div>`;
     const headRail = `${railTabs}<span class="spacer"></span>${isEdit ? `<button class="iconbtn iconbtn-bare js-nc-qr" data-tip="Open on phone">${I.qr}</button>` : ''}`;
@@ -13042,6 +13092,10 @@ const STANDALONE_SURFACES = [
     preview: () => `<div style="display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;padding:6px 10px;background:var(--bg-2);min-width:280px">`
       + `<span style="display:inline-flex;color:var(--txt-3)">${I.search}</span>`
       + `<input class="search" placeholder="Search everything…" style="border:none;background:none;outline:none;color:var(--txt);flex:1;min-width:0" disabled>${badge('Type · Excavator')}</div>` },
+  { label: 'Comms bell menu', tag: 'Toolbar · requests · alerts · notifications', loc: 'app.js · commsMenuRows / openCommsMenu',
+    preview: () => `<div class="dropdown-menu" style="position:static;display:inline-block;min-width:220px;box-shadow:none"><div class="dd-sec">Comms</div>${commsMenuRows()}</div>` },
+  { label: 'Tools wrench menu', tag: 'Toolbar · QR · previews · hotkeys · GPS · dev tools', loc: 'app.js · toolsMenuRows / openToolsMenu',
+    preview: () => `<div class="dropdown-menu" style="position:static;display:inline-block;min-width:220px;box-shadow:none"><div class="dd-sec">Tools</div>${toolsMenuRows()}</div>` },
 ];
 /* ── §15 in-app feedback: bug/request → queued to the backend Feedback tab ── */
 function feedbackContext() {
@@ -15091,6 +15145,65 @@ function render() {
   perfRecordRender(dt);   // histogram (P0) — arithmetic only, no DOM work
   if (dt > CFG.PERF_BUDGET_MS) console.warn(`[perf] render ${renderCount} took ${dt.toFixed(1)}ms (budget ${CFG.PERF_BUDGET_MS}ms)`);
 }
+/* Lean re-render used ONLY while typing in the GLOBAL search bar. Rebuilds just the
+   results grid (+ the phone dock's listbar / desktop footer counts) and deliberately
+   leaves the HEADER — and with it the live, focused #globalsearch node — mounted and
+   UNTOUCHED. A full render() tears down all of #app (header included), destroying and
+   recreating the focused input; on a phone that recreation interrupts the OS key-repeat
+   (hold-backspace dies after one delete) and swallows keystrokes that land during the
+   swap. Not rebuilding the header keeps the input node continuously connected, so focus,
+   caret, key-repeat and in-flight keys all survive untouched. The header's own
+   search-tools (the Clear ✕, the placeholder) refresh on the next full render(); the
+   has-query highlight is toggled in place below so it stays honest mid-type. Anything a
+   search can't change while you type (KPI header, docks, maps, comms) is left as-is. */
+function renderResults() {
+  const app = $('#app');
+  const oldGrid = app && app.querySelector(':scope > .grid');
+  if (!oldGrid) { render(); return; }                 // not on the grid surface → full render is correct
+  refreshToday();
+  const scrollOld = {};
+  document.querySelectorAll('.card[data-card]').forEach((c) => {
+    const b = c.querySelector('.card-body'); if (!b) return;
+    const v = c.dataset.view || 'list'; scrollOld[c.dataset.card] = v;
+    scrollMemo[c.dataset.card + '|' + v] = b.scrollTop;
+  });
+  availWin = activeDraftWindow();
+  const session = activeSession();
+  const phone = document.body.classList.contains('is-phone');
+  const grid = el('div', 'grid');
+  const shown = phone ? [COLUMNS[Math.max(0, Math.min(2, state.mobileCol))]] : COLUMNS;
+  for (const col of shown) grid.appendChild(columnEl(col, session));
+  oldGrid.replaceWith(grid);
+  if (phone) {   // re-home the freshly-built listbar into the dock, exactly as render() does
+    const oldDock = app.querySelector(':scope > .mobile-dock');
+    const dock = mobileDockEl();
+    if (oldDock) oldDock.replaceWith(dock); else app.appendChild(dock);
+    const lb = grid.querySelector('.listbar');
+    if (lb) dock.querySelector('.mdock-searchslot').appendChild(lb);
+    else {
+      const cardNode = grid.querySelector('.card[data-card]');
+      const dc = cardNode && cardNode.dataset.card, cs = dc && activeSession().cards[dc];
+      if (cs && cs.mode === 'standard') {
+        const jog = cardJog(dc, cs);
+        if (jog) { const bar = el('div', 'listbar mdock-jogbar'); bar.innerHTML = jog; dock.querySelector('.mdock-searchslot').appendChild(bar); }
+      }
+    }
+  } else {
+    const bb = app.querySelector(':scope > .bottombar');
+    if (bb) bb.replaceWith(bottomBarEl());
+  }
+  document.querySelectorAll('.card[data-card]').forEach((c) => {   // restore scroll by view (mirrors render())
+    const b = c.querySelector('.card-body'); if (!b) return;
+    const cardId = c.dataset.card, v = c.dataset.view || 'list', key = cardId + '|' + v;
+    if (v === scrollOld[cardId] || v === 'list') b.scrollTop = scrollMemo[key] || 0;
+    else b.scrollTop = 0;
+  });
+  const sw = document.querySelector('.searchwrap');   // keep the search box's has-query highlight honest without rebuilding the header
+  if (sw) sw.classList.toggle('has-query', !!(state.query.trim() || state.filterTerms.length));
+  ruMountStrips();      // §13.7 — re-mount any open gauge strip's chart into the rebuilt grid
+  mountDispatchMap();   // §2.3 — re-parent the singleton dispatch map if its card is in the rebuilt grid
+  applyTitles();
+}
 /** Flag any element that's actually truncated with data-tip (full text) so the
  *  custom app-styled tooltip can show it on hover. Nothing lost to ellipsis. */
 function applyTitles() {
@@ -15459,8 +15572,8 @@ function initDrag() {
    • holding STILL ~500ms = the right-click/context menu (armMenuTimer),
    • a quick press-and-release never arms past the click discriminator (= tap/action). ── */
 // §M3 — touch DRAG is now a long-press: a press must be HELD ~300ms before a horizontal
-// move lifts a drag. A quick horizontal flick (before this fires) is a Back/Forward swipe
-// instead (see the grid swipe tracker in boot). Frees the horizontal axis for navigation.
+// move lifts a drag. A quick horizontal flick (before this fires) is a section-switch swipe
+// instead (see the swipe tracker in boot). Frees the horizontal axis for navigation.
 function armReadyTimer(arm) { return setTimeout(() => { if (DRAG.armed === arm) arm.ready = true; }, 300); }
 function armMenuTimer(arm) {   // §M3 — hold-still opens the context menu: touch long-press OR mouse click-and-hold (the right-click equivalent). On phones this is now the PRIMARY linking entry (menu-driven linking replaced drag, 2026-06-29).
   return setTimeout(() => {
@@ -15506,6 +15619,13 @@ function dragDown(e) {
   if (bail && !(bail.classList && bail.classList.contains('pill') && bail.dataset.pillCard === 'units' && bail.dataset.pillRec)) return;
   const src = dragSourceAt(e.target);
   if (!src) return;
+  // #368 — this exact record already has a click pending from deferOrAnchor (i.e. this
+  // press is the TRAILING click of a double-click-to-anchor). Don't arm a drag for it: any
+  // hand jitter during that quick 2nd press/release used to clear >6px, so dragMove read it
+  // as a drag-lift, cancelDrag()'d over dead space, and the one-shot click-swallow (15445)
+  // ate the very click that should have anchored — the discriminator's 2nd click never
+  // arrived. A first click (nothing pending yet) still arms normally, so real drags are unaffected.
+  if (pendingRowClick && pendingRowClick.anchor && pendingRowClick.anchor.card === src.card && String(pendingRowClick.anchor.recId) === String(src.rec)) return;
   DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;                    // seed the ghost/hit-test point — a touch long-press may fire with NO move first
   const armed = { card: src.card, rec: src.rec, x: e.clientX, y: e.clientY, pointerId: e.pointerId, touch: e.pointerType === 'touch', lp: null, rdy: null, ready: e.pointerType !== 'touch' };
   armed.lp = armMenuTimer(armed);                        // §M3 — hold still → context menu (mouse + touch)
@@ -15946,7 +16066,7 @@ function dispatchDrop(p, t) {
 }
 
 function onClick(e) {
-  if (swipeFired) { swipeFired = false; e.stopPropagation(); e.preventDefault(); return; }   // §M1/§M3 — swallow the click that ends a column / Back-Fwd swipe
+  if (swipeFired) { swipeFired = false; e.stopPropagation(); e.preventDefault(); return; }   // §M1/§M3 — swallow the click that ends a section-switch swipe
   const t = e.target;
   const closest = (sel) => t.closest(sel);
 
@@ -16015,6 +16135,8 @@ function onClick(e) {
 
   // header / chrome
   if (closest('.js-logo')) return openLogoMenu(closest('.js-logo'));
+  if (closest('.js-comms-menu')) { e.stopPropagation(); const b = closest('.js-comms-menu'); return openCommsMenu(b, { noInbox: b.classList.contains('js-comms-noinbox') }); }
+  if (closest('.js-tools-menu')) { e.stopPropagation(); return openToolsMenu(closest('.js-tools-menu')); }
   if (closest('.js-switch-user')) { e.stopPropagation(); return switchUser(); }
   if (closest('.js-open-settings')) { e.stopPropagation(); return openSettings(); }
   if (closest('.js-set-reveal')) { e.stopPropagation(); const o = state.overlay; if (o) { captureLoginEdits(o); o.revealPw = !o.revealPw; reSettings(); } return; }   // toggle masked role passwords
@@ -16239,13 +16361,14 @@ function onClick(e) {
   if (closest('.js-ring')) return openOverlay({ kind: 'role', role: closest('.js-ring').dataset.role });
   if (closest('.js-roadmap')) return openOverlay({ kind: 'roadmap' });
   if (closest('.js-close')) return closeOverlay();
-  if (closest('.js-qr')) return shareSession();
-  if (closest('.js-previews') || closest('.js-roweye')) { e.stopPropagation(); state.previewsOn = !state.previewsOn; if (!state.previewsOn) hideHoverPreview(); try { localStorage.setItem('jactec.previewsOff', state.previewsOn ? '0' : '1'); } catch (e) {} toast(state.previewsOn ? 'Hover previews on.' : 'Hover previews off — every eye runs red.'); return render(); }
-  if (closest('.js-hotkeys')) return openOverlay({ kind: 'hotkeys' });
+  if (closest('.js-qr')) { closeMenus(); return shareSession(); }
+  if (closest('.js-previews') || closest('.js-roweye')) { e.stopPropagation(); state.previewsOn = !state.previewsOn; if (!state.previewsOn) hideHoverPreview(); try { localStorage.setItem('jactec.previewsOff', state.previewsOn ? '0' : '1'); } catch (e) {} toast(state.previewsOn ? 'Hover previews on.' : 'Hover previews off — every eye runs red.'); closeMenus(); return render(); }
+  if (closest('.js-hotkeys')) { closeMenus(); return openOverlay({ kind: 'hotkeys' }); }
   if (closest('.js-lint')) {   // R0 flash-lint toggle — persists per device
     const on = document.body.classList.toggle('rw-lint');
     try { localStorage.setItem('jactec.lint', on ? '1' : '0'); } catch (err) {}
     toast(on ? 'Design lint ON — anything flashing bypassed the UI builders.' : 'Design lint off.');
+    closeMenus();
     return render();
   }
   if (closest('.js-inspect')) {   // Design Inspector — hover names rules, click copies references
@@ -16253,6 +16376,7 @@ function onClick(e) {
     document.body.classList.toggle('rw-inspect', state.inspect);
     if (!state.inspect) { const t = document.getElementById('rw-tip'); if (t) t.style.display = 'none'; }
     toast(state.inspect ? '🔍 Inspector ON — hover anything to see its rule; CLICK to copy the reference for Claude. (Esc exits.)' : 'Inspector off.');
+    closeMenus();
     return render();
   }
   if (closest('.js-rbtab')) { e.stopPropagation(); if (state.overlay) state.overlay.rbTab = closest('.js-rbtab').dataset.tab; return renderOverlay(); }
@@ -16302,13 +16426,13 @@ function onClick(e) {
     }
     return;
   }
-  if (closest('.js-rulebook')) return openOverlay({ kind: 'rulebook' });
-  if (closest('.js-wrangler-ops')) { e.stopPropagation(); return openWranglerOps(); }   // §18i Developer-tier only (button is hidden below that tier; devUnlocked() is re-checked inside)
+  if (closest('.js-rulebook')) { closeMenus(); return openOverlay({ kind: 'rulebook' }); }
+  if (closest('.js-wrangler-ops')) { e.stopPropagation(); closeMenus(); return openWranglerOps(); }   // §18i Developer-tier only (button is hidden below that tier; devUnlocked() is re-checked inside)
   if (closest('.js-wrops-open')) { e.stopPropagation(); return wranglerOpsOpenChat(closest('.js-wrops-open').dataset.id); }   // §18i open a chat in the inbox
   if (closest('.js-wrops-send')) { e.stopPropagation(); const i = document.querySelector('.overlay .js-wrops-in'); return wranglerOpsSend(i ? i.value : ''); }   // §18i send a turn / take the wheel
   if (closest('.js-wrops-release')) { e.stopPropagation(); return wranglerOpsRelease(); }   // §18i hand the wheel back to the AI
   if (closest('.js-wrops-escalate')) { e.stopPropagation(); return wranglerOpsEscalate(); }   // §18i (Phase 6) escalate the open chat to Claude Code via the existing Thread Mirror
-  if (closest('.js-photo-sweep')) { e.stopPropagation(); return sweepPhotosToDrive(); }   // admin one-shot: offload base64 photos → Drive
+  if (closest('.js-photo-sweep')) { e.stopPropagation(); closeMenus(); return sweepPhotosToDrive(); }   // admin one-shot: offload base64 photos → Drive
   if (closest('.js-feedback')) { e.stopPropagation(); return wranglerNewChat(); }   // §18d folded: the old bug/request form is now the one Mr. Wrangler chat
   // §17 internal team dock
   if (closest('[data-mcol]')) { e.stopPropagation(); state.mobileCol = +closest('[data-mcol]').dataset.mcol; return render(); }   // §M1 dot nav
@@ -16359,16 +16483,16 @@ function onClick(e) {
   if (closest('[data-wr-unfocus]')) { e.stopPropagation(); const o = state.wrangler; o.card = null; o.recId = null; o.recType = null; return render(); }   // clear the focused record (paste context)
   if (closest('.js-wr-unfile')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.files) { o.files.splice(Number(closest('.js-wr-unfile').dataset.i), 1); render(); } return; }   // §18d drop a pending file attachment
   if (closest('[data-wrc-needs]')) { e.stopPropagation(); return openWranglerFromRequest(Number(closest('[data-wrc-needs]').dataset.wrcNeeds)); }   // §18g rail: a flashing "needs you" request → reopen it seeded from the request (D9: lands on the rail window)
-  if (closest('.js-notifications')) { e.stopPropagation(); openOverlay({ kind: 'notifications' }); markNotifsSeen(); refreshWranglerNotifications(); return; }   // §18f notification bell — in-app resolved-fix feed
+  if (closest('.js-notifications')) { e.stopPropagation(); closeMenus(); openOverlay({ kind: 'notifications' }); markNotifsSeen(); refreshWranglerNotifications(); return; }   // §18f notification bell — in-app resolved-fix feed
   if (closest('.js-notif-refresh')) { e.stopPropagation(); return refreshWranglerNotifications(); }
   if (closest('.js-notif-dismiss')) { e.stopPropagation(); return dismissNotif(Number(closest('.js-notif-dismiss').dataset.num)); }   // §246 clear one
   if (closest('.js-notif-dismissall')) { e.stopPropagation(); return dismissAllNotifs(); }   // §246 clear all
   if (closest('.js-notif-mute')) { e.stopPropagation(); return toggleNotifsMuted(); }   // §246 mute/unmute the badge
-  if (closest('.js-transport-alerts')) { e.stopPropagation(); return openOverlay({ kind: 'transport-alerts' }); }   // #515 transport reminders — deliveries/pickups due
+  if (closest('.js-transport-alerts')) { e.stopPropagation(); closeMenus(); return openOverlay({ kind: 'transport-alerts' }); }   // #515 transport reminders — deliveries/pickups due
   if (closest('.js-tralert-called')) { e.stopPropagation(); return callTransportAlert(closest('.js-tralert-called').dataset.key); }   // #515 dismiss one leg ("Called")
   if (closest('.js-tralert-allcalled')) { e.stopPropagation(); return callAllTransportAlerts(); }   // #515 clear the whole window
   if (closest('.js-tralert-win')) { e.stopPropagation(); setTralertDays(Number(closest('.js-tralert-win').dataset.days)); render(); renderOverlay(); return; }   // #515 adjust the window
-  if (closest('.js-requests')) { e.stopPropagation(); openOverlay({ kind: 'requests' }); refreshWranglerRequests(); return; }   // §18e approval inbox
+  if (closest('.js-requests')) { e.stopPropagation(); closeMenus(); openOverlay({ kind: 'requests' }); refreshWranglerRequests(); return; }   // §18e approval inbox
   if (closest('.js-req-refresh')) { e.stopPropagation(); return refreshWranglerRequests(); }
   if (closest('.js-req-chat')) { e.stopPropagation(); return openWranglerFromRequest(Number(closest('.js-req-chat').dataset.n)); }   // §18e continue the conversation
   if (closest('.js-req-approve')) { e.stopPropagation(); return approveRequest(Number(closest('.js-req-approve').dataset.n)); }
@@ -16397,7 +16521,7 @@ function onClick(e) {
   if (closest('.js-gvwin-opt')) { e.stopPropagation(); const b = closest('.js-gvwin-opt'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); const cs = activeSession().cards[b.dataset.card]; if (cs) { gvStripTerms(cs); cs.listLimit = undefined; } saveGvWin(b.dataset.src, Number(b.dataset.win)); return render(); }   // §13.4 pick a window → clear stale bucket filters + re-render
   if (closest('.js-rus-tab')) { e.stopPropagation(); const b = closest('.js-rus-tab'); const cs = activeSession().cards[b.dataset.card]; if (cs) { (cs.rusTab = cs.rusTab || {})[b.dataset.src] = b.dataset.panel; render(); } return; }   // §13.7 strip panel tab
   if (closest('.js-rus-per')) { e.stopPropagation(); const k = closest('.js-rus-per').dataset.k; ruSave(k === 'all' ? { k: 'all', a: null, b: null } : { k }); return render(); }   // §13.7 strip rail → the same global range the board reads
-  if (closest('.js-ru-open')) { e.stopPropagation(); return openOverlay({ kind: 'roundup', section: closest('.js-ru-open').dataset.section || null }); }   // §13.6 Round-Up
+  if (closest('.js-ru-open')) { e.stopPropagation(); closeMenus(); return openOverlay({ kind: 'roundup', section: closest('.js-ru-open').dataset.section || null }); }   // §13.6 Round-Up — logo-menu row now, labeled "Reports" (Jac 2026-07-10)
   if (closest('.js-ru-per')) { e.stopPropagation(); const k = closest('.js-ru-per').dataset.k; ruSave(k === 'all' ? { k: 'all', a: null, b: null } : { k }); return renderOverlay(); }
   if (closest('.js-ru-custom')) { e.stopPropagation(); const o = state.overlay; if (o) { o.ruCustomOpen = !o.ruCustomOpen; if (o.ruCustomOpen) { const r = ruResolve(); o.ruFrom = o.ruFrom || r.a || TODAY_ISO; o.ruTo = o.ruTo || (r.b ? addDaysISO(r.b, -1) : TODAY_ISO); } else state.datepick = null; } return renderOverlay(); }
   if (closest('.js-ru-apply')) { e.stopPropagation(); return ruApplyCustom(state.overlay); }
@@ -16734,7 +16858,7 @@ function onClick(e) {
 
   // Phase 2 M2 — Tracker Health roster (fleet-wide GPS device list)
   if (closest('.js-gps-health')) {
-    e.stopPropagation();
+    e.stopPropagation(); closeMenus();
     if (gpsConfigured() && (gpsLiveAt === 0 || Date.now() - gpsLiveAt > 60000)) refreshGpsLive();   // freshen on open — re-renders when the snapshot lands
     return openOverlay({ kind: 'gpsHealth', q: '', bucket: 'all' });
   }
@@ -16748,7 +16872,7 @@ function onClick(e) {
 
   // Phase 3 — GPS Issues (fault/connectivity complement to Tracker Health)
   if (closest('.js-gps-issues')) {
-    e.stopPropagation();
+    e.stopPropagation(); closeMenus();
     if (gpsConfigured() && (gpsLiveAt === 0 || Date.now() - gpsLiveAt > 60000)) refreshGpsLive();   // freshen on open — re-renders when the snapshot lands
     return openOverlay({ kind: 'gpsIssues', q: '' });
   }
@@ -16756,11 +16880,11 @@ function onClick(e) {
 
   // Bouncie trucks → Truck-category units — a plain one-shot pull, not a wizard (spec
   // docs/superpowers/specs/2026-07-09-bouncie-truck-units-design.md).
-  if (closest('.js-gps-bouncie-trucks')) { e.stopPropagation(); return gpsPullBouncieTrucks(); }
+  if (closest('.js-gps-bouncie-trucks')) { e.stopPropagation(); closeMenus(); return gpsPullBouncieTrucks(); }
 
   // Phase 4 — Fleet Utilization (real provider-sourced actual-usage rollup)
   if (closest('.js-gps-utilization')) {
-    e.stopPropagation();
+    e.stopPropagation(); closeMenus();
     return openOverlay({ kind: 'gpsUtilization', days: 30, scanned: false, scanning: false, scanError: '', roll: null });
   }
   if (closest('.js-gpsu-scan')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'gpsUtilization') return; return gpsUtilizationScan(o); }
@@ -16780,7 +16904,7 @@ function onClick(e) {
 
   // Phase 2 M1 — Fleet Map (every GPS tracker on a live map, mapping-independent)
   if (closest('.js-gps-fleet')) {
-    e.stopPropagation();
+    e.stopPropagation(); closeMenus();
     if (gpsConfigured() && (gpsLiveAt === 0 || Date.now() - gpsLiveAt > 60000)) refreshGpsLive();   // freshen on open — re-renders when the snapshot lands
     return openOverlay({ kind: 'gpsFleet', q: '', filter: 'all', sel: '' });
   }
@@ -16798,7 +16922,7 @@ function onClick(e) {
 
   // Phase 2 M5 — Round Up Trackers (bulk-onboarding review table)
   if (closest('.js-gps-roundup')) {
-    e.stopPropagation();
+    e.stopPropagation(); closeMenus();
     return openOverlay({ kind: 'gpsRoundup', scanned: false, scanning: false, scanError: '', match: null, devices: null,
       q: '', sel: {}, overrideDevice: {}, confirmed: {}, expandedUnitId: null, expandedMode: 'confirm',
       swapProvider: 'Hapn', swapQuery: '', applyResult: null, lastApply: null });
@@ -17062,10 +17186,17 @@ function handlePillX(xEl) {
     } else {
       rec.lineItems.splice(idx, 1);
       if (li.kind === 'rental') {
-        // last unit on the rental → detach the whole rental from the invoice (legacy single-unit path)
         rec.lineItems = rec.lineItems.filter((l) => !(l.kind === 'transport' && l.ref === li.ref));
-        rec.rentalIds = (rec.rentalIds || []).filter((id) => id !== li.ref);
-        if (r2 && r2.invoiceId === rec.invoiceId) { r2.invoiceId = null; reindex('rentals', r2); logAction(r2, `Removed from invoice ${invoiceShort(rec.invoiceId)}`); }
+        // Detach the whole rental from the invoice ONLY when no other line still bills it (legacy
+        // single-unit path) — a rental can carry more than one 'rental' line on the SAME invoice
+        // (e.g. an original paid line plus a later added-then-removed one), and severing rentalIds/
+        // invoiceId unconditionally orphans the invoice's OWN remaining paid line for this rental,
+        // making it invisible to every future extension credit calc (Jac bug 2026-07-10 — Kerrigan).
+        const stillBilled = rec.lineItems.some((l) => l.ref === li.ref);
+        if (!stillBilled) {
+          rec.rentalIds = (rec.rentalIds || []).filter((id) => id !== li.ref);
+          if (r2 && r2.invoiceId === rec.invoiceId) { r2.invoiceId = null; reindex('rentals', r2); logAction(r2, `Removed from invoice ${invoiceShort(rec.invoiceId)}`); }
+        }
       }
     }
     logAction(rec, `Removed ${li.kind === 'rental' ? 'rental' : 'line'}: ${li.label} (${money(li.amount)})`);
@@ -17888,12 +18019,18 @@ function completeWOAttempt(woId) {
 
 function onInput(e) {
   if (e.target.id === 'globalsearch') {
-    const sel = e.target.selectionStart;
-    setQuery(e.target.value);                      // re-renders; the input is recreated
-    const gs = document.getElementById('globalsearch');
-    if (gs) { gs.focus(); gs.setSelectionRange(sel, sel); }
+    // The state updates on every keystroke; the (debounced) re-render rebuilds ONLY the
+    // results grid via renderResults(), leaving THIS input node mounted — so no focus/
+    // caret restore is needed and the phone's key-repeat + in-flight keys are never lost.
+    setQueryValue(e.target.value);
+    scheduleGlobalSearchRender(renderResults);
     return;
   }
+  // The per-card list / history searches recreate their own (in-grid) input on render, so
+  // they can't ride renderResults() (it rebuilds the grid). They stay on the ORIGINAL
+  // synchronous per-keystroke render + caret-restore — each filters one card's list (far
+  // cheaper than the global scan), and staying synchronous avoids the async-recreate
+  // keystroke-drop that debouncing a full render would introduce on a focused in-grid input.
   if (e.target.classList.contains('js-history-search')) {
     if (state.overlay?.kind === 'board') {   // vendor detail in the board popup — history search rides the overlay state
       state.overlay.historySearch = e.target.value;
@@ -17918,7 +18055,6 @@ function onInput(e) {
       return;
     }
     const mcs = activeSession().cards[card]; mcs.search = e.target.value; mcs.listLimit = undefined;
-    // light re-render of just that card would be ideal; full render is fine at seed scale
     const sel = e.target.selectionStart; render();
     const ms = document.querySelector(`.mini-search[data-card="${card}"]`); if (ms) { ms.focus(); ms.setSelectionRange(sel, sel); }
     return;
@@ -18191,6 +18327,7 @@ function openLogoMenu(anchorEl) {
   const userLine = `<div class="menu-user"><span class="mu-name">${esc(currentUser || 'Signed in')}</span>${currentRole ? `<span class="mu-role">${esc(currentRole)}</span>` : ''}</div>
     <button class="dd-item js-switch-user"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${I.back}</span>Switch user</button>
     <button class="dd-item js-open-settings"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${I.grid}</span>Settings${adminUnlocked() ? '' : ' <span class="muted" style="font-size:10px;margin-left:2px">Admin</span>'}</button>
+    <button class="dd-item js-ru-open"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${I.graph}</span>Reports</button>
     <div class="menu-sep"></div>`;
   openDropdown(anchorEl, userLine + boards + team);
 }
@@ -19441,6 +19578,12 @@ function createInvoiceForRental(rentalId) {
   if (!r.customerId) { flashOr('[data-slot="customer"]', 'The Quote needs a customer first — drag one on (or quick-add).'); return; }
   if (!r.startDate || !r.endDate) { flashOr('.rdcal, .timeline, .statusbar.draftwin', 'Set the rental window first.'); return; }
   if (!rentalUnitIds(r).length) { flashOr('.stall-empty, [data-slot="unit"]', 'Add at least one unit before invoicing.'); return; }
+  // Money-safe duplicate guard (Jac bug 2026-07-10 — Kerrigan): this mints a FRESH invoice
+  // billed at the full window price with no credit for anything already paid — correct only
+  // when the rental has never been invoiced. If a prior invoice already covers this rental
+  // (even one r.invoiceId no longer points at — e.g. after an unlink), the right tool is the
+  // extension flow (bills only the delta, retro-priced), never a second fresh invoice.
+  if (rentalInvoices(r).length) { flashOr('[data-slot="unit"]', 'This rental already has an invoice — extend its window to bill more (never +Invoice again).'); return; }
   // §20 voided units aren't billed — so a rental where EVERY unit is No Show/Cancelled would
   // mint a silently-EMPTY invoice (Jac bug 2026-07-06: a stale Reserved rental derives No Show
   // → rentalLineItems() filters everything → attached invoice with zero lines). Refuse loudly
@@ -21447,8 +21590,7 @@ async function refreshDrivingScore() {
 }
 
 const dataSnapshot = () => { const s = {}; PERSIST_KEYS.forEach((k) => { s[k] = DATA[k] || []; }); return s; };
-async function loadFromBackend() {
-  const r = await backendCall('load');
+function applyLoadResponse(r) {
   if (!r || !r.ok) throw new Error((r && r.error) || 'load-failed');
   const data = r.data || {};
   // Apply whatever the backend holds. We do NOT auto-seed on empty anymore — that
@@ -21464,6 +21606,7 @@ async function loadFromBackend() {
     applySettings(r.settings);
   }
 }
+async function loadFromBackend() { applyLoadResponse(await backendCall('load')); }
 
 // ── Incremental persistence (diff-based sync) ──────────────────────────────
 // Whole-state seed doesn't scale (≈1.7 MB / 10 s at real volume). Instead we keep
@@ -21759,9 +21902,10 @@ function wranglerDockPollStart() {
 }
 
 /* ── §18i Wrangler Ops inbox — the DEVELOPER side (kind:'wranglerOps' popup). Entry:
-   a Developer-tier-only toolbar button (bottomBarInner, beside Lint/Inspector/Rulebook)
-   — invisible below that tier, so the popup itself needs no separate gate screen; the
-   backend re-checks the tier per call regardless (never trust the client alone). ── */
+   a Developer-tier-only row in the Tools wrench menu (toolsMenuRows, beside Lint/
+   Inspector/Rulebook) — invisible below that tier, so the popup itself needs no
+   separate gate screen; the backend re-checks the tier per call regardless (never
+   trust the client alone). ── */
 const WR_OPS_POLL_MS = 7000;
 let _wrOpsPollTimer = null;
 function openWranglerOps() {
@@ -22197,9 +22341,15 @@ async function attemptLogin() {
   // audio play under the browser's autoplay policy (a muted-only clip would stay silent).
   const vid = document.getElementById('login-video'); if (vid) { try { vid.muted = false; const p = vid.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
   try {
+    // 'auth' (role lookup) and 'load' (full dataset) each independently validate the
+    // password server-side and neither's response feeds the other's request, so they
+    // don't need to run back to back — firing 'load' immediately, before awaiting
+    // 'auth', turns two serial GAS round-trips (the slow part of login) into one.
+    const loadPromise = backendCall('load');
+    loadPromise.catch(() => {});   // a network-level rejection here is handled where loadPromise is awaited below; this just keeps it from surfacing as an unhandled rejection if an early 'auth' throw skips that await
     // Ask the backend for the role. The role-aware backend returns it; an older
     // backend (pre-roles) replies "unknown action" → we proceed without a role
-    // (single-password mode). loadFromBackend then validates the password either way.
+    // (single-password mode). loadPromise then validates the password either way.
     let role = '';
     try {
       const a = await backendCall('auth');
@@ -22212,7 +22362,7 @@ async function attemptLogin() {
     try { sessionStorage.setItem('jactec.role', role); } catch {}
     sessionStorage.setItem('jactec.pw', pw);
     gpsLogin().then((ok) => { if (ok) { refreshGpsLive(); startGpsViewPoll(); refreshDrivingScore(); } });   // silent GPS login (§5, via GAS token proxy) → live snapshot (step 3) + view-scoped refresh (step 4) + fleet driving score (step 7); fire-and-forget, never blocks main login
-    await loadFromBackend();
+    applyLoadResponse(await loadPromise);
     finishLoad();
     applyRoleLanding();   // each role lands on its default main/sub-card
   } catch (e) {
@@ -22267,15 +22417,25 @@ function boot() {
     if (backConsuming) { backConsuming = false; return; }
     if (anyDismissable()) { backGuard = false; dismissTopSheet(); }   // entry already popped by the browser → re-pushed by render if more remain
   });
-  // §M1/§M3 — phone horizontal swipes. On the FOOTER dock: change column (the only place
-  // columns change now). On the GRID/column: Back/Forward of the active card. A real drag
-  // (long-press then move) is excluded; a fired swipe swallows the trailing click.
+  // §M1/§M3 — phone horizontal swipes: TWO different behaviors depending on where the swipe
+  // STARTS (Jac, 2026-07-10 refinement — "swiping should work on any mobile screen, not just
+  // in details. Swiping the footer should bring you to the ACTUAL next card, including
+  // subcards. Swiping anywhere else switches your MAIN card."):
+  //   - footer (.mobile-dock): steps through MOBILE_SWIPE_ORDER — the FULL sequence incl.
+  //     sub-cards (units→categories→rentals→calendar→customers→sales), with wraparound.
+  //   - everywhere else (.grid — the whole content area, list OR record view): steps
+  //     through MAIN_CARDS only (Units → Rentals → Customers), folding a sub-card to its
+  //     main first — unchanged from the prior grid-swipe behavior.
+  // (swipe-based Back/Forward through view history is retired — "not needed, we have
+  // buttons" — the jog Back/Forward buttons (cardJog → .js-cardback/.js-cardfwd) cover
+  // that). A real drag (long-press then move) is excluded; a fired swipe swallows the
+  // trailing click.
   let swipeStart = null;
   document.addEventListener('pointerdown', (e) => {
     if (!document.body.classList.contains('is-phone')) { swipeStart = null; return; }
-    const inFooter = !!(e.target.closest && e.target.closest('.mobile-dock'));
-    const inGrid = !inFooter && !!(e.target.closest && e.target.closest('.grid'));
-    swipeStart = (inFooter || inGrid) ? { x: e.clientX, y: e.clientY, id: e.pointerId, footer: inFooter } : null;
+    const footer = !!(e.target.closest && e.target.closest('.mobile-dock'));
+    const grid = !footer && !!(e.target.closest && e.target.closest('.grid'));
+    swipeStart = (footer || grid) ? { x: e.clientX, y: e.clientY, id: e.pointerId, footer } : null;
   }, true);
   document.addEventListener('pointerup', (e) => {
     const s = swipeStart; swipeStart = null;
@@ -22284,13 +22444,14 @@ function boot() {
     if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.3) return;            // not a clean horizontal swipe
     swipeFired = true;                                                             // swallow the trailing click (row/toggle)
     if (s.footer) {
+      const order = MOBILE_SWIPE_ORDER;
+      let i = order.indexOf(currentMobileMember()); if (i < 0) i = 0;              // left → next, right → previous, wraps around
+      const next = (i + (dx < 0 ? 1 : -1) + order.length) % order.length;
+      goToCard(order[next]); haptic(8);
+    } else {
       const cur = mainCardOfMember(currentMobileMember()); let i = MAIN_CARDS.indexOf(cur); if (i < 0) i = 0;   // fold a sub-card to its main card first; left → next, right → previous
       const next = Math.max(0, Math.min(MAIN_CARDS.length - 1, i + (dx < 0 ? 1 : -1)));
       if (next !== i) { goToCard(MAIN_CARDS[next]); haptic(8); }
-    } else {
-      const card = activeMobileCard();
-      if (dx > 0) cardBack(card); else cardFwd(card);                              // swipe right → Back, left → Forward
-      haptic(8);
     }
   }, true);
   initDrag();   // §15c drag & drop link engine — #drag-layer singleton + document pointer listeners
@@ -22527,7 +22688,18 @@ function boot() {
     if (e.key === 'Escape') dismissTopSheet();
   });
   // mouse hotkeys (§0.1): double-click a row = anchor; right-click = Back
-  const hotkeyGuard = (e) => e.target.closest('.inline-edit, input, textarea, select, .pill, button, .x') || state.winEdit;
+  // #10b — `state.winEdit` is NOT a modal flag (comment at its declaration: "NOT a
+  // modal") since the 2026-06-25 inline-window-editor rebuild (88e47c8): opening ANY
+  // rental's Standard view arms it and nothing but Save/closeAll ever clears it, so it
+  // stays truthy for the rest of the tab's life once a single rental has been viewed —
+  // long after that rental (and its picker) are off-screen. Only `.anchor` (set while a
+  // start day is picked, mid-range-select) is the truly-mid-pick signal; the ctx-menu
+  // path already narrows on it this way (Jac B5, 2026-06-15 — see line ~5199) so
+  // right-click-Back keeps working once the picker is merely present, not mid-pick.
+  // This dblclick guard used the old blanket flag and was never updated to match,
+  // silently killing double-click-to-anchor everywhere for the rest of the tab the
+  // moment any rental had ever been opened.
+  const hotkeyGuard = (e) => e.target.closest('.inline-edit, input, textarea, select, .pill, button, .x') || (state.winEdit && state.winEdit.anchor);
   document.addEventListener('dblclick', (e) => {
     if (hotkeyGuard(e)) return;
     if (e.target.closest('.row')) return;                 // rows are handled by the click discriminator (#10)
@@ -22559,7 +22731,7 @@ function boot() {
     // The row EYE is the one button that IS a preview trigger.
     if (!e.target.closest('.js-roweye') && (e.target.closest('.pill.gate, .js-status-pill, button, .x, .seg, .add-field, .dropdown-menu') || document.querySelector('.dropdown-menu'))) { clearTimeout(hoverTimer); return; }
     const t = hoverTarget(e.target);
-    if (!t || state.overlay || state.winEdit) return;
+    if (!t || state.overlay || (state.winEdit && state.winEdit.anchor)) return;   // #10b — winEdit alone isn't "mid-pick" (see the dblclick hotkeyGuard note above); only .anchor is
     clearTimeout(hoverGrace);            // re-entering a row cancels a pending close
     if (t === hoverEl) return;
     hoverEl = t; hideHoverPreview();

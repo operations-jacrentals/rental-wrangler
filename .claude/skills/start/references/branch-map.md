@@ -8,6 +8,10 @@
 - Naming: task branch is `<domain>/<task>` (e.g. `invoicing-payments/refund-rounding`), **NOT** `area/<domain>/<task>` — git won't nest a branch under an existing branch's name.
 - `main` is protected (PR + CI required); never commit straight to it. `staging` is where areas converge and get debugged before promotion.
 
+**Two guarantees so the flow actually holds (Jac, 2026-07-10)**
+- **`tools/branch-preflight.mjs` (SessionStart hook)** runs every session on every machine. It live-`ls-remote`s so it never mistakes a shallow-clone's missing tracking refs for "staging/area branches don't exist" (they almost always do), tells you where the current branch sits in `task → area → staging → main`, warns if you're on `main`/`staging`, and `--ensure` creates `staging`/`master-spec` if genuinely missing. This is the enforcement a skill alone can't provide — the harness runs it, not Claude.
+- **`master-spec` (spec-only branch) + `tools/spec-sync.mjs`** is the live shared spec surface: because many projects run at once, per-area specs are pushed here in-flight (`up`) and pulled by everyone (`down`) so areas see each other's design changes *before* they publish. It carries ONLY `docs/specs/` (never drags code) and the tool only pushes files you changed (never clobbers a sibling). It does **not** replace promotion — authoritative specs still ride `area → staging → main` with their code; `master-spec` is the draft/visibility layer. Never hand-edit it or merge it into a code branch.
+
 **Routing table** — match the user's described work to an area:
 
 | Area branch | Covers | Route here when they say… |
@@ -27,6 +31,7 @@
 | `area/sales-growth` | Quotes, outside/inside sales, equipment/used-equipment sales, marketing, pipeline depth, lead handling | "quote", "sales", "equipment sale", "used sale", "marketing", "pipeline", "lead" |
 | `area/maps-location` | Maps integration, the dispatch map/cockpit, address capture/geocoding, drive-time + city-lookup transport pricing (§10) | "map", "address", "drive time", "route", "geocode", "location", "cockpit" |
 | `area/search-views` | Global search (incl. phone-number + natural-date tokens), filters/pinned chips, saved Views menu, anchored-card navigation, list/dispatcher rows, toolbar | "search", "filter", "find", "navigation", "list view", "saved view", "chip", "toolbar" |
+| `area/session-ops` | The `/start` skill + session startup, the branch-flow preflight (`tools/branch-preflight.mjs`), the spec-sync / `master-spec` tooling (`tools/spec-sync.mjs`), and other session-orchestration / dev-process tooling that no domain area owns | "start skill", "session startup", "spec sync", "master-spec", "branch preflight", "session tooling", "dev process", "promotion flow" |
 
 **Rules for routing**
 - Pick the single best area. If two genuinely overlap (e.g. a dispatch feature that's mostly a map), name both and let Jac choose via `AskUserQuestion`.

@@ -2519,16 +2519,59 @@ try {
         });
         r.invoiceId = 'R4-INV0';
         ok(chunks.length >= 2, `r4: a >28-day window forms a multi-chunk series (${chunks.length} chunks)`);
-        const bBefore = invs.reduce((a, iv) => a + T.unitBilledRental(iv, 'R4-CHUNK', uB.unitId), 0);
+        const bBefore = invs.reduce((a, iv) => a + T.unitBilledRental(iv, r, uB.unitId), 0);
         ok(bBefore === 0, 'r4: unit B starts unbilled across the series');
         T.syncRentalLines(r);
-        const chunksWithB = invs.filter((iv) => T.unitBilledRental(iv, 'R4-CHUNK', uB.unitId) > 0.005).length;
+        const chunksWithB = invs.filter((iv) => T.unitBilledRental(iv, r, uB.unitId) > 0.005).length;
         ok(chunksWithB === invs.length, `r4: the re-added unit bills on EVERY chunk, not just chunk #1 (${chunksWithB}/${invs.length})`);
         const aDupes = invs.some((iv) => iv.lineItems.filter((li) => li.kind === 'rental' && li.unitId === uA.unitId).length > 1);
         ok(!aDupes, 'r4: the already-billed unit A is not double-billed by the re-sync');
         invs.forEach((iv) => { T.DATA.invoices = T.DATA.invoices.filter((x) => x !== iv); T.IDX.invoice.delete(iv.invoiceId); });
         T.DATA.rentals = T.DATA.rentals.filter((x) => x !== r); T.IDX.rental.delete('R4-CHUNK');
       } else { ok(true, 'r4: skipped — demo seed lacks 2 priced active units'); }
+    }
+    // r5 — a unit SWAP on a single-unit rental must not orphan the old unit's PAID line from
+    // billing-credit math (Jac bug 2026-07-10 — Kerrigan: paid $890 as "Lazy", swapped to
+    // "Caroline", every later extension then thought Caroline had never been billed a cent)
+    {
+      const priced5 = (T.DATA.units || []).filter((u) => u.fleetStatus === 'Active' && u.categoryId
+        && (() => { const p = T.rentalPrice({ categoryId: u.categoryId, startDate: '2099-09-01', endDate: '2099-09-08', customerId: 'C0009' }); return p && p.price > 0; })());
+      if (priced5.length >= 2) {
+        const uA = priced5[0], uB = priced5.find((u) => u.unitId !== uA.unitId);
+        const priceA = T.rentalPrice({ categoryId: uA.categoryId, startDate: '2099-09-01', endDate: '2099-09-08', customerId: 'C0009' });
+        const r = { rentalId: 'R5-SWAP', customerId: 'C0009', rentalName: 'unit swap', startDate: '2099-09-01', endDate: '2099-09-08', startTime: '', status: 'On Rent', transportType: 'Self', deliveryAddress: '', po: '', invoiceId: 'R5-INV', units: [{ unitId: uA.unitId, status: 'On Rent', transportType: 'Self', deliveryAddress: '', recoveryAddress: '', transportMiles: 0, startCapture: null, endCapture: null, fcCapture: null }], notes: '', actions: [], mock: true };
+        T.DATA.rentals.push(r); T.IDX.rental.set('R5-SWAP', r);
+        const iv = { invoiceId: 'R5-INV', customerId: 'C0009', rentalIds: [], date: T.TODAY_ISO, dueDate: T.TODAY_ISO, po: '', amountPaid: priceA.price, lineItems: [{ kind: 'rental', ref: 'R5-SWAP', unitId: uA.unitId, lid: 'r5a', label: uA.name, amount: priceA.price }], allocations: { r5a: priceA.price }, paid: true, covOf: 'R5-SWAP', covStart: '2099-09-01', covEnd: '2099-09-08', mock: true };
+        T.DATA.invoices.push(iv); T.IDX.invoice.set('R5-INV', iv);
+        // swap: remove uA (money-safe path keeps its PAID line, per §7.4) then add uB
+        T.removeUnitFromRental(r, uA.unitId, { silent: true });
+        T.addUnitToRental(r, uB.unitId);
+        ok(T.rentalUnits(r).length === 1 && T.rentalUnits(r)[0].unitId === uB.unitId, 'r5: the swap leaves exactly the new unit on the rental');
+        ok(iv.lineItems.some((li) => li.unitId === uA.unitId), 'r5: the old unit\'s PAID line survives the swap (refund-first, §7.4)');
+        const credited = T.unitBilledRental(iv, r, uB.unitId);
+        ok(Math.abs(credited - priceA.price) < 0.01, `r5: the new unit's billing-credit calc sees the old unit's paid amount (credited $${credited}, expected $${priceA.price})`);
+        // a same-category multi-unit rental must NOT get this cross-unit credit — each unit's
+        // payment stays its own (r4 above already locks the >1-unit chunk-split path; this
+        // confirms unitBilledRental itself keeps strict per-unit matching once >1 unit is on)
+        T.addUnitToRental(r, uA.unitId);
+        const creditedMulti = T.unitBilledRental(iv, r, uB.unitId);
+        ok(creditedMulti === 0, `r5: once the rental is genuinely multi-unit again, cross-unit credit stops (credited $${creditedMulti}, expected $0)`);
+        T.DATA.invoices = T.DATA.invoices.filter((x) => x !== iv); T.IDX.invoice.delete('R5-INV');
+        T.DATA.rentals = T.DATA.rentals.filter((x) => x !== r); T.IDX.rental.delete('R5-SWAP');
+      } else { ok(true, 'r5: skipped — demo seed lacks 2 priced active units'); }
+    }
+    // r6 — createInvoiceForRental refuses a 2nd fresh invoice when one is already linked
+    // (Jac bug 2026-07-10 — Kerrigan: two duplicate full-price invoices minted a day apart)
+    {
+      const iv6 = { invoiceId: 'R6-INV', customerId: 'C0009', rentalIds: ['R6-DUP'], date: T.TODAY_ISO, dueDate: T.TODAY_ISO, po: '', amountPaid: 0, lineItems: [{ kind: 'rental', ref: 'R6-DUP', unitId: 'U001', lid: 'r6a', label: 'test', amount: 500 }], covOf: 'R6-DUP', mock: true };
+      T.DATA.invoices.push(iv6); T.IDX.invoice.set('R6-INV', iv6);
+      const r6 = { rentalId: 'R6-DUP', customerId: 'C0009', rentalName: 'dup guard', startDate: '2099-09-01', endDate: '2099-09-08', startTime: '', status: 'On Rent', transportType: 'Self', deliveryAddress: '', po: '', invoiceId: null, units: [{ unitId: 'U001', status: 'On Rent', transportType: 'Self', deliveryAddress: '', recoveryAddress: '', transportMiles: 0, startCapture: null, endCapture: null, fcCapture: null }], notes: '', actions: [], mock: true };
+      T.DATA.rentals.push(r6); T.IDX.rental.set('R6-DUP', r6);
+      const countBefore = T.DATA.invoices.length;
+      T.createInvoiceForRental('R6-DUP');   // r6.invoiceId is null (mirrors an unlinked rental) but rentalInvoices() still finds iv6 via rentalIds
+      ok(T.DATA.invoices.length === countBefore, 'r6: no duplicate invoice is created when one is already linked via rentalIds');
+      T.DATA.invoices = T.DATA.invoices.filter((x) => x !== iv6); T.IDX.invoice.delete('R6-INV');
+      T.DATA.rentals = T.DATA.rentals.filter((x) => x !== r6); T.IDX.rental.delete('R6-DUP');
     }
 
     // ── #552 pre-promotion audit — lock the 7 HIGH-severity fixes (WO gates, transport
