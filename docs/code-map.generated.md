@@ -4,7 +4,7 @@
 
 # Code Atlas — generated chapter index (Part I · The Frontend)
 
-## app.js — 23422 lines, 38 chapters
+## app.js — 23435 lines, 38 chapters
 
 | ID | Lines | Anchors | Chapter title | Key symbols |
 |----|------:|---------|---------------|-------------|
@@ -37,15 +37,15 @@
 | APP-27 | 13076–13560 | §18 | §18 MR. WRANGLER — the in-app AI (Claude via the Apps Script backend). | WRANGLER_SYSTEM, wranglerDigest, wrIssueIndex, wranglerContext, WR_DEDUP_NOTE, wranglerAttachAny, wranglerAttachFile, parseCsvFile, wranglerAttachTextFile, wranglerImageBlock, wranglerErrMsg, WR_TOOL_LIMIT, …(+11) |
 | APP-28 | 13561–14721 | — | Mr. Wrangler ACTS on your data (Jac 2026-06-16) | WR_FUNNEL, wrFunnel, WR_ACCT, wrAccount, WR_EDITABLE, WR_REQUIRED, WR_NUMERIC, WR_MONEY_FIELDS, wrPlanNeedsApply, WR_IDX, wrGet, wrNorm, …(+111) |
 | APP-29 | 14722–15007 | §13 | §13 DROPDOWNS — openDropdown + status/fleet/funnel/sort menus | GTI, GATE_ICON, GATE_TL, GTCHK, gateTimeline, openDropdown, openStatusDropdown, openFleetDropdown, setUnitFleet, openReconcileDropdown, setExpenseReconcile, MEMBERSHIP_FUNNEL_ORDER, …(+18) |
-| APP-30 | 15008–15262 | §14 | §14 RENDER PIPELINE + toast | renderCount, scrollMemo, render, renderResults, applyTitles, HOVER_CAPABLE, initTooltip, hideTip, swInit, PERF, perfInit, perfRecordRender, …(+1) |
-| APP-31 | 15263–15266 | §15 | §15 EVENT HANDLERS — onClick/onInput/onChange (single listener tree) | — |
-| APP-32 | 15267–17441 | §15c | §15c DRAG & DROP LINK ENGINE (DRAGDROP-DESIGN.md) — custom pointer engine. | DRAG, DRAG_SOURCES, INV_LINEABLE, dragLayer, DROP_MATRIX, woDroppableToInvoice, invoiceUnitIds, LINK_TARGET_LABEL, linkRoleAllows, linkActionPossible, linkActionsFor, enterLinking, …(+55) |
-| APP-33 | 17442–18550 | §16 | §16 ACTIONS / MUTATIONS — every state change funnels through here | setUnitCondition, pendingInspForUnit, openChecklist, completeChecklist, setUnitWash, sellUnit, captureUnit, setUnitCapture, yardCapture, saveYardCapture, uploadCaptureMedia, offloadPhotoNow, …(+44) |
-| APP-34 | 18551–19853 | §17 | §17 STRIPE / PAYMENTS — card-on-file + invoice charging (client side). | _stripe, _pubKey, ensurePubKey, getStripe, canMoney, brandName, hasCardOnFile, commitAction, cardOneLabel, cardLabel, friendlyPayErr, openAddCard, …(+84) |
-| APP-35 | 19854–20336 | §5.4d | §5.4d — DATE SEARCH PICKER. A standalone calendar that REUSES the rental | openDateSearch, closeDateSearch, dsMonth, dsToday, dsClear, dsPickDay, dsDone, dateSearchEl, positionDateSearch, setInspWash, setInspResult, recordServiceCompletion, …(+21) |
-| APP-36 | 20337–20339 | §18 | §18 PERSISTENCE & BOOT | — |
-| APP-37 | 20340–22871 | §18b | §18b BACKEND SYNC — Google Sheets via the Apps Script web app | BACKEND_URL, PERSIST_KEYS, backendPassword, booting, saveTimer, driveViewUrl, backendCall, gpsToken, gpsBase, gpsConfigured, gpsFetch, gpsLogin, …(+159) |
-| APP-38 | 22872–23422 | — | D8/D9 THE COMMS RAIL (spec comms-notifications D8 + D9, Jac | COMMS_CAT_META, commsOnline, commsSess, commsCatOfChannel, commsThreads, commsThreadsAt, refreshCommsThreads, commsThreadChannel, commsThreadsFor, commsConvStatus, COMMS_ST_RANK, commsCatWorst, …(+33) |
+| APP-30 | 15008–15275 | §14 | §14 RENDER PIPELINE + toast | renderCount, scrollMemo, render, renderResults, _titlesRaf, applyTitles, HOVER_CAPABLE, initTooltip, hideTip, swInit, PERF, perfInit, …(+2) |
+| APP-31 | 15276–15279 | §15 | §15 EVENT HANDLERS — onClick/onInput/onChange (single listener tree) | — |
+| APP-32 | 15280–17454 | §15c | §15c DRAG & DROP LINK ENGINE (DRAGDROP-DESIGN.md) — custom pointer engine. | DRAG, DRAG_SOURCES, INV_LINEABLE, dragLayer, DROP_MATRIX, woDroppableToInvoice, invoiceUnitIds, LINK_TARGET_LABEL, linkRoleAllows, linkActionPossible, linkActionsFor, enterLinking, …(+55) |
+| APP-33 | 17455–18563 | §16 | §16 ACTIONS / MUTATIONS — every state change funnels through here | setUnitCondition, pendingInspForUnit, openChecklist, completeChecklist, setUnitWash, sellUnit, captureUnit, setUnitCapture, yardCapture, saveYardCapture, uploadCaptureMedia, offloadPhotoNow, …(+44) |
+| APP-34 | 18564–19866 | §17 | §17 STRIPE / PAYMENTS — card-on-file + invoice charging (client side). | _stripe, _pubKey, ensurePubKey, getStripe, canMoney, brandName, hasCardOnFile, commitAction, cardOneLabel, cardLabel, friendlyPayErr, openAddCard, …(+84) |
+| APP-35 | 19867–20349 | §5.4d | §5.4d — DATE SEARCH PICKER. A standalone calendar that REUSES the rental | openDateSearch, closeDateSearch, dsMonth, dsToday, dsClear, dsPickDay, dsDone, dateSearchEl, positionDateSearch, setInspWash, setInspResult, recordServiceCompletion, …(+21) |
+| APP-36 | 20350–20352 | §18 | §18 PERSISTENCE & BOOT | — |
+| APP-37 | 20353–22884 | §18b | §18b BACKEND SYNC — Google Sheets via the Apps Script web app | BACKEND_URL, PERSIST_KEYS, backendPassword, booting, saveTimer, driveViewUrl, backendCall, gpsToken, gpsBase, gpsConfigured, gpsFetch, gpsLogin, …(+159) |
+| APP-38 | 22885–23435 | — | D8/D9 THE COMMS RAIL (spec comms-notifications D8 + D9, Jac | COMMS_CAT_META, commsOnline, commsSess, commsCatOfChannel, commsThreads, commsThreadsAt, refreshCommsThreads, commsThreadChannel, commsThreadsFor, commsConvStatus, COMMS_ST_RANK, commsCatWorst, …(+33) |
 
 ## config.js — 605 lines, 0 chapters
 
