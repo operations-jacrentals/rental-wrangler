@@ -15205,11 +15205,24 @@ function renderResults() {
   applyTitles();
 }
 /** Flag any element that's actually truncated with data-tip (full text) so the
- *  custom app-styled tooltip can show it on hover. Nothing lost to ellipsis. */
+ *  custom app-styled tooltip can show it on hover. Nothing lost to ellipsis.
+ *  Perf (Jac 2026-07-11): the data-tips here are consumed ONLY by the hover tooltip
+ *  (initTooltip), which itself early-returns on !HOVER_CAPABLE and mid-drag. So on a
+ *  touch device or during a drag, this whole-DOM scrollWidth/clientWidth sweep — a
+ *  forced synchronous reflow that ran on EVERY render — was setting tooltips nothing
+ *  could ever show. Skip on the exact condition the consumer uses, and defer the sweep
+ *  into a rAF so it never blocks the render's critical path (the tip only appears ~0.5s
+ *  after hover, so a frame's delay is invisible). Coalesces rapid re-renders too. */
+let _titlesRaf = 0;
 function applyTitles() {
-  document.querySelectorAll('.r-title, .r-fields span, .tab-name, .c-title, .kv > .v, .pill').forEach((e) => {
-    if (e.scrollWidth > e.clientWidth + 1) e.setAttribute('data-tip', e.textContent.trim());
-    else if (e.hasAttribute('data-tip')) e.removeAttribute('data-tip');
+  if (!HOVER_CAPABLE || DRAG.active) return;   // no hover tooltip on touch / mid-drag → nothing to measure for
+  if (_titlesRaf) cancelAnimationFrame(_titlesRaf);
+  _titlesRaf = requestAnimationFrame(() => {
+    _titlesRaf = 0;
+    document.querySelectorAll('.r-title, .r-fields span, .tab-name, .c-title, .kv > .v, .pill').forEach((e) => {
+      if (e.scrollWidth > e.clientWidth + 1) e.setAttribute('data-tip', e.textContent.trim());
+      else if (e.hasAttribute('data-tip')) e.removeAttribute('data-tip');
+    });
   });
 }
 
