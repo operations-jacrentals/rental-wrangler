@@ -23049,7 +23049,7 @@ function boot() {
   function pageCleanup(settle) {
     const g = PAGE.grid, gh = PAGE.ghost;
     if (g) { if (settle) { g.classList.add('paging-settle'); g.style.transform = 'translateX(0)'; } else { g.classList.remove('paging-settle'); g.style.transform = ''; } }
-    if (gh) { if (settle) { gh.classList.add('paging-settle'); gh.style.transform = `translateX(${PAGE.dir * 100}%)`; setTimeout(() => gh.remove(), 260); } else gh.remove(); }
+    if (gh) { if (settle) { gh.classList.add('paging-settle'); gh.style.transform = 'translateX(0)'; setTimeout(() => gh.remove(), 260); } else gh.remove(); }   // rest = off-screen (positioned via `left`); glide back there on cancel
     if (g && settle) setTimeout(() => { if (PAGE.grid !== g) return; g.classList.remove('paging-settle'); g.style.transform = ''; }, 260);
     document.body.classList.remove('is-paging');
     PAGE.on = false; PAGE.locked = false; PAGE.edge = false; PAGE.ghost = null; PAGE.grid = null; PAGE.dir = 0; PAGE.nIdx = -1;
@@ -23076,7 +23076,12 @@ function boot() {
       if (PAGE.nIdx < 0 || PAGE.nIdx > 2) { PAGE.edge = true; }                    // at an end — rubber-band, no neighbour
       else {
         const gh = el('div', 'grid paging-ghost');
-        gh.style.cssText = `position:fixed;left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;transform:translateX(${PAGE.dir * 100}%);`;
+        // Position the neighbour flush-adjacent to the LIVE grid via `left` (its exact right/left
+        // edge) and give it translateX(0) at rest. During the drag BOTH the grid and this ghost get
+        // the SAME translateX, so they move as one rigid unit — the seam between them can never
+        // widen/narrow (the earlier bug: two elements with different % vs px transforms drifted).
+        const off = PAGE.dir === 1 ? (r.left + r.width) : (r.left - r.width);
+        gh.style.cssText = `position:fixed;left:${off}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;transform:translateX(0);`;
         gh.appendChild(columnEl(COLUMNS[PAGE.nIdx], activeSession()));
         document.body.appendChild(gh); PAGE.ghost = gh;
       }
@@ -23084,9 +23089,9 @@ function boot() {
     }
     const now = e.timeStamp; if (now > PAGE.lastT) { PAGE.vx = (e.clientX - PAGE.lastX) / (now - PAGE.lastT); PAGE.lastX = e.clientX; PAGE.lastT = now; }
     if (e.cancelable) e.preventDefault();
-    const d = PAGE.edge ? dx * 0.28 : dx;                                          // rubber-band resistance at the ends
+    const d = Math.round(PAGE.edge ? dx * 0.28 : dx);                              // whole pixels + one shared value → no sub-pixel seam shimmer between the two layers
     PAGE.grid.style.transform = `translateX(${d}px)`;
-    if (PAGE.ghost) PAGE.ghost.style.transform = `translateX(calc(${PAGE.dir * 100}% + ${d}px))`;
+    if (PAGE.ghost) PAGE.ghost.style.transform = `translateX(${d}px)`;             // IDENTICAL transform to the grid → they move as one rigid unit
   }, { passive: false, capture: true });
   const pageEnd = (e) => {
     if (!PAGE.on || (e.pointerId != null && e.pointerId !== PAGE.id)) return;
@@ -23095,9 +23100,9 @@ function boot() {
     const commit = Math.abs(dx) > PAGE.w * 0.35 || (PAGE.vx * PAGE.dir < -0.45);   // past 35% OR a flick in the drag direction
     if (!commit) { pageCleanup(true); return; }
     swipeFired = true;                                                             // swallow the trailing click that ends the drag
-    const g = PAGE.grid, gh = PAGE.ghost, nIdx = PAGE.nIdx, dir = PAGE.dir;
+    const g = PAGE.grid, gh = PAGE.ghost, nIdx = PAGE.nIdx, dir = PAGE.dir, slide = -dir * PAGE.w;
     g.classList.add('paging-settle'); gh.classList.add('paging-settle');
-    g.style.transform = `translateX(${-dir * 100}%)`; gh.style.transform = 'translateX(0)';   // finish the slide
+    g.style.transform = `translateX(${slide}px)`; gh.style.transform = `translateX(${slide}px)`;   // both glide the same distance → the ghost lands exactly where the grid was, rigid to the end
     haptic(8);
     document.body.classList.remove('is-paging');
     PAGE.on = false; PAGE.locked = false; PAGE.ghost = null; PAGE.grid = null;
