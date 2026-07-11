@@ -24,7 +24,7 @@
   `§3`) that ties back to SPEC v8. *We never renumber `§`* — the IDs are the
   stable handle; the `§`s are preserved as-is. The IDs are **stamped into the
   banner comments**, so `grep "APP-19" app.js` jumps straight to that chapter
-  (here, the Shop card). The generator verifies each stamp still matches its
+  (here, Header & KPI). The generator verifies each stamp still matches its
   file order, so a stray reorder fails `--check`.
 - The chapters do **not** sit in reading order in the file (history bolted later
   features in wherever they fit — e.g. `§13.3/§13.4` land before `§12`, and `§17`
@@ -118,7 +118,7 @@ visible element is stamped `data-r="Rxx"`. Change how things **look** here.*
 
 ## Act IV — The Cards: rows, columns, details, grid, shop
 *The six-card grid and everything inside a card: the list rows, the column
-registry + totals, the standard-view detail renderers, and the merged Shop card.*
+registry + totals, and the standard-view detail renderers.*
 
 - **`APP-13 · §6 List Rows** — `app.js:4335`. Row metadata + the universal row
   template. `ROW_META`, `rowViz`, `categoryIconFor`.
@@ -134,42 +134,43 @@ registry + totals, the standard-view detail renderers, and the merged Shop card.
   windowed render, the 3-column shell entry.
 - **`APP-18 · 3-Column Layout** — `app.js:6371`. The display-only 3-wide shell
   over the cards. `columnEl`, `memberCardEl`, `goToCard`, mobile card switching.
-- **`APP-19 · §10 Shop Card** — `app.js:6652`. Work Orders + Service Orders +
-  Inspections merged into one card. `shopItemsByType`, `shopUrgency`,
-  `shopCardEl`, `shopRowColor`.
+- *(Shop card retired 2026-07-07 — Work Orders, Service Orders and Inspections
+  live inside each Unit's detail view; the mechanic worklist is the Units card's
+  stackbars graph + Service-Due sort. References to the 3 entity types open the
+  owning unit.)*
 
 ## Act V — Header, KPIs, Comms & Graphs
 *The top band (logo + KPI rings), the bottom comms band, the admin KPI engine,
 and the per-card graph overlay.*
 
-- **`APP-20 · §11 Header, KPI & Bottom Bar** — `app.js:6846`. `bandColor`,
+- **`APP-19 · §11 Header, KPI & Bottom Bar** — `app.js:6846`. `bandColor`,
   `ringsSVG`, `fleetInsp`, the header/bottom-bar builders.
-- **`APP-21 · §11b KPI Metric Engine** — `app.js:6970`. Admin-definable KPIs +
+- **`APP-20 · §11b KPI Metric Engine** — `app.js:6970`. Admin-definable KPIs +
   rings. `kpiEval`, `KPI_DEFAULTS`, `kpiBand`. _Debug here when:_ a ring shows the
   wrong percentage.
-- **`APP-22 · Coming 2026** — `app.js:7140`. The roadmap morale plate + the
+- **`APP-21 · Coming 2026** — `app.js:7140`. The roadmap morale plate + the
   bottom-bar/comms shell + mobile card nav. `ROADMAP_ITEMS`, `bottomBarEl`,
   `goToCard`.
-- **`APP-23 · §17 Internal Team Dock** — `app.js:7350`. The bottom-bar team chat
+- **`APP-22 · §17 Internal Team Dock** — `app.js:7350`. The bottom-bar team chat
   (the "Phase 7" dock). `newChat`, `openChat`, `chatFeed`, `chatUnreadCount`.
-- **`APP-24 · §13.3 Card Graph View** — `app.js:8121`. The per-card charts
+- **`APP-23 · §13.3 Card Graph View** — `app.js:8121`. The per-card charts
   overlay. `pieSVG`, `gvBars`, `gvPieTile`, `unitGraphData`.
-- **`APP-25 · §13.4 Graph Carousel** — `app.js:8227`. The per-card graph as a
+- **`APP-24 · §13.4 Graph Carousel** — `app.js:8227`. The per-card graph as a
   swipeable deck. `graphViewsFor`, `gvOpen`, `toggleGraphSeg`.
 
 ## Act VI — Overlays & Mr. Wrangler
 *Every popup/board, the window catalog, and the in-app AI that can read and act
 on your data.*
 
-- **`APP-26 · §12 Overlays & Boards** — `app.js:8673`. `renderOverlay` + the
+- **`APP-25 · §12 Overlays & Boards** — `app.js:8673`. `renderOverlay` + the
   back-office board popups + `buildPopupEl`. _Debug here when:_ a popup won't open
   or dismiss.
-- **`APP-27 · RB-Windows Catalog** — `app.js:9547`. The Rulebook "Windows" tab
+- **`APP-26 · RB-Windows Catalog** — `app.js:9547`. The Rulebook "Windows" tab
   index of every popup (`WINDOW_CATALOG`, gated by `ci/check-window-catalog.mjs`).
   _Edit here when:_ you add or remove a popup window (CI fails otherwise).
-- **`APP-28 · §18 Mr. Wrangler** — `app.js:9642`. The AI chat (Claude via the
+- **`APP-27 · §18 Mr. Wrangler** — `app.js:9642`. The AI chat (Claude via the
   Apps Script backend). `WRANGLER_SYSTEM`, `wranglerSend`, `parseWranglerAction`.
-- **`APP-29 · Mr. Wrangler Acts** — `app.js:9907`. The allow-listed data actions
+- **`APP-28 · Mr. Wrangler Acts** — `app.js:9907`. The allow-listed data actions
   the AI can preview/apply. `wrValidatePlan`, `wrCreateCustomer`, `WR_EDITABLE`.
   _Security-sensitive — keep edits on the main session._
 
@@ -177,28 +178,28 @@ on your data.*
 *The single render pipeline and the one listener tree; how clicks, drags, and the
 date picker turn into actions.*
 
-- **`APP-30 · §13 Dropdowns** — `app.js:10590`. The shared floating dropdown +
+- **`APP-29 · §13 Dropdowns** — `app.js:10590`. The shared floating dropdown +
   status/fleet/funnel/sort menus + the gate timeline. `openDropdown`,
   `openStatusDropdown`, `gateTimeline`.
-- **`APP-31 · §14 Render Pipeline + toast** — `app.js:10860`. `render`,
+- **`APP-30 · §14 Render Pipeline + toast** — `app.js:10860`. `render`,
   `applyTitles`, tooltips, `toast`. _The heartbeat: every state change ends here._
-- **`APP-32 · §15 Event Handlers** — `app.js:10985`. The single click/input/change
+- **`APP-31 · §15 Event Handlers** — `app.js:10985`. The single click/input/change
   listener tree (delegated). _Debug here when:_ a click does nothing.
-- **`APP-33 · §15c Drag & Drop Link Engine** — `app.js:10989`. The custom pointer
+- **`APP-32 · §15c Drag & Drop Link Engine** — `app.js:10989`. The custom pointer
   engine (link by drag, the cancel arc, haptics). `initDrag`, `DROP_MATRIX`,
   `dragDown`. _Debug here when:_ a drag-link won't drop.
-- **`APP-36 · §5.4d Date Search Picker** — `app.js:14367`. The standalone
+- **`APP-35 · §5.4d Date Search Picker** — `app.js:14367`. The standalone
   calendar that reuses the rental window grid. `openDateSearch`, `dsPickDay`.
 
 ## Act VIII — Mutations & Money Movement
 *Where state actually changes, and where real money moves through Stripe. Highest
 blast radius — read the chapter before editing.*
 
-- **`APP-34 · §16 Actions / Mutations** — `app.js:12428`. Every state change
+- **`APP-33 · §16 Actions / Mutations** — `app.js:12428`. Every state change
   funnels through here: condition/wash, captures, WO/invoice lines, +New, the
   logo menu. `commitAction` lives in Act VIII's neighbor below. _Edit here when:_
   changing what an action *does* to state.
-- **`APP-35 · §17 Stripe / Payments** — `app.js:13339`. Card-on-file + invoice
+- **`APP-34 · §17 Stripe / Payments** — `app.js:13339`. Card-on-file + invoice
   charging (client side). `getStripe`, `canMoney`, `openAddCard`,
   `friendlyPayErr`. _Security/auth-sensitive — `canMoney` gates money to
   Office/Admin; keep edits on the main session._
@@ -207,11 +208,22 @@ blast radius — read the chapter before editing.*
 *How the app saves: localStorage + the Google Apps Script web app over the Sheet
 that is the real database.*
 
-- **`APP-37 · §18 Persistence & Boot** — `app.js:14808`. The boot sequence entry.
-- **`APP-38 · §18b Backend Sync** — `app.js:14811`. The Apps Script web-app
+- **`APP-36 · §18 Persistence & Boot** — `app.js:14808`. The boot sequence entry.
+- **`APP-37 · §18b Backend Sync** — `app.js:14811`. The Apps Script web-app
   client: load on sign-in, debounced save, snapshots. `BACKEND_URL`,
   `backendCall`, `loadFromBackend`, `dataSnapshot`, `PERSIST_KEYS`. _Debug here
   when:_ data won't save/load or the password gate fails.
+- **`APP-39 · D8/D9 The Comms Rail** — the four-category comms surface on the
+  bottom bar (spec `comms-notifications.md` D8 + D9): the Team · Texts · Email ·
+  Mr. Wrangler toolbar chips (each wearing its category's worst status dot),
+  per-device session tabs (`state.commsRail`, `jactec.commsRail`), the SINGLE
+  open conversation window above its own tab (D9 single-open law — `lastOpen`),
+  the ALL menu (Open / End / + New chat), freeform sends (`commsSend` →
+  `sendCustomerMessage`), the R20 Text…/Email… entries, and the customer-profile
+  Comms section (`commsCustSectionHtml`). Team and Mr. Wrangler are LIVE rail
+  sessions riding the APP-23 chat store and the APP-28 wrangler machinery — the
+  old docks survive as phone-only bottom sheets. _Debug here when:_ a chip, rail
+  tab, comms window, or customer thread misbehaves.
 
 ---
 
@@ -270,17 +282,16 @@ _Edit here when:_ changing any visual style. Run new/changed UI through
 | How a pill/button/field is built | `APP-10` | `app.js:3679` |
 | A list column or its total | `APP-15` | `app.js:4724` |
 | What an open record card shows | `APP-16` | `app.js:4921` |
-| The Shop card (WO/SO/Inspections) | `APP-19` | `app.js:6652` |
-| A KPI ring's math | `APP-21` / `CFG` | `app.js:6970` / `config.js:301` |
-| The team chat dock | `APP-23` | `app.js:7350` |
-| A popup that won't open/dismiss | `APP-26` | `app.js:8673` |
-| Adding/removing a popup window | `APP-27` | `app.js:9547` (`WINDOW_CATALOG`) |
-| Mr. Wrangler's behavior or actions | `APP-28`/`APP-29` | `app.js:9642` / `app.js:9907` |
-| A click that does nothing | `APP-32` | `app.js:10985` (event tree) |
-| A drag-link that won't drop | `APP-33` | `app.js:10989` |
-| What an action does to state | `APP-34` | `app.js:12428` |
-| Card-on-file / charging / money gate | `APP-35` | `app.js:13339` (`canMoney`) |
-| Saving/loading data, backend sync | `APP-38` | `app.js:14811` (`backendCall`) |
+| A KPI ring's math | `APP-20` / `CFG` | `app.js:6970` / `config.js:301` |
+| The team chat dock | `APP-22` | `app.js:7350` |
+| A popup that won't open/dismiss | `APP-25` | `app.js:8673` |
+| Adding/removing a popup window | `APP-26` | `app.js:9547` (`WINDOW_CATALOG`) |
+| Mr. Wrangler's behavior or actions | `APP-27`/`APP-28` | `app.js:9642` / `app.js:9907` |
+| A click that does nothing | `APP-31` | `app.js:10985` (event tree) |
+| A drag-link that won't drop | `APP-32` | `app.js:10989` |
+| What an action does to state | `APP-33` | `app.js:12428` |
+| Card-on-file / charging / money gate | `APP-34` | `app.js:13339` (`canMoney`) |
+| Saving/loading data, backend sync | `APP-37` | `app.js:14811` (`backendCall`) |
 | Any visual style | `style.css` | grep the region header above |
 | A constant/registry (role, card, flag) | `config.js` | grep the section header above |
 | Pill-click cascade filtering | `CASC` | `cascade.js` |
@@ -322,7 +333,7 @@ status check that protects the trunk. It runs six steps, in order:
 | Boot smoke | `node ci/smoke.mjs` | the app actually boots (headless Chromium) | `ci/smoke.mjs` |
 | Logic regression | `node ci/logic-test.mjs` | money + multi-unit math stays correct (the big one, ~85 KB) | `ci/logic-test.mjs` |
 | Rulebook catalog | `node ci/gen-rule-usage.mjs --check` | `rule-usage.js` matches the `data-r` stamps | `ci/gen-rule-usage.mjs` |
-| Window catalog | `node ci/check-window-catalog.mjs` | `WINDOW_CATALOG` covers every popup (`APP-27`) | `ci/check-window-catalog.mjs` |
+| Window catalog | `node ci/check-window-catalog.mjs` | `WINDOW_CATALOG` covers every popup (`APP-26`) | `ci/check-window-catalog.mjs` |
 | DESIGN.md sync | `node ci/check-design-md.mjs` | `DESIGN.md` is valid + in sync with `style.css` | `ci/check-design-md.mjs` |
 
 > Playwright (`smoke`, `logic-test`) runs in CI, **not** locally on Jac's
@@ -401,7 +412,7 @@ the live handlers, use the Drive connector or `clasp` (see
 STOP-gated).*
 
 ## How the frontend talks to it (the one entry point)
-- **`APP-38 · §18b Backend Sync** (`app.js:14811`) is the *only* caller.
+- **`APP-37 · §18b Backend Sync** (`app.js:14811`) is the *only* caller.
   `backendCall(action, extra)` POSTs `{ action, password, ...extra }` as
   `text/plain` (dodges the GAS CORS preflight) to **`BACKEND_URL`**
   (`app.js:14817`). Every call is gated by the team **password**.
@@ -418,21 +429,23 @@ STOP-gated).*
 |--------|---------|-----------------------|
 | **Auth & session** | `auth`, `saveSession`, `getSession` | verify the team password; persist/restore a device session |
 | **Data sync** | `load`, `seed`, `sync` | hydrate all entities · seed a fresh DB · apply incremental upserts/deletes |
-| **Config & Views** | `getConfig`, `setConfig`, `getViews`, `setViews` | admin Settings Board (`APP-09`) + company-wide saved Views |
-| **Team chat** | `getChats`, `setChats` | the internal dock (`APP-23`) message store |
+| **Config & Views** | `getConfig`, `setConfig`, `getViews`, `setViews`, `getGroupOrder`, `setGroupOrder` | admin Settings Board (`APP-09`) + company-wide saved Views · per-role KPI/board group order |
+| **Team chat** | `getChats`, `setChats` | the internal dock (`APP-22`) message store |
+| **Customer comms** | `commsAliases`, `commsThreads`, `messagesFor`, `sendCustomerMessage` | customer-facing email/SMS: sender aliases · thread list · a customer's messages · send one |
 | **Wrangler rail** | `getWranglerRail`, `setWranglerRail` | cross-device store of past Mr. Wrangler conversations (`§18g`) |
 | **Mr. Wrangler AI** | `wrangler` | proxies the chat to Claude (the API key lives server-side, never in the client) |
 | **Wrangler inbox** | `wranglerRequests`, `wranglerThread`, `wranglerComment`, `wranglerApprove`, `wranglerDismiss`, `wranglerFile`, `wranglerNotifications` | the in-app glitch/request pipeline (mirrors the GitHub issues from `wrangler-fix.yml`) |
 | **Files & media** | `uploadFile`, `uploadCapture`, `archiveAgreementMedia` | offload photos/video/signed-agreement media to Drive (see `docs/backend-snippets/archiveAgreementMedia.md`) |
+| **GPS** | `gpsToken` | hand the client a short-lived token for the GPS provider proxy endpoints |
 | **Stripe — cards/bank** | `stripePubKey`, `stripeSetupIntent`, `stripeSaveCard`, `stripeSetDefault`, `stripeRemoveCard`, `stripeBankSetupIntent`, `stripeSaveBank`, `stripeVerifyBank` | card/ACH on file via Stripe (secret key server-side) |
-| **Stripe — charging** | `stripeChargeInvoice`, `stripeFinalizeInvoice`, `recordManualPayment` | charge / finalize an invoice · log a manual payment |
+| **Stripe — charging** | `stripeChargeInvoice`, `stripeFinalizeInvoice`, `recordManualPayment`, `recordManualRefund`, `stripeRefundInvoice`, `stripeLockInvoice`, `stripeUnlockInvoice` | charge / finalize an invoice · log a manual payment · cash/check or Stripe refund · lock/unlock an invoice during payment |
 | **Membership** | `membershipEnroll`, `membershipCancel`, `membershipReactivate` | the subscription lifecycle (`APP-09` economics) |
-| **Misc** | `mapsKey`, `feedback` | hand the client the Maps key · file user feedback |
+| **Misc** | `mapsKey`, `feedback`, `perfReport` | hand the client the Maps key · file user feedback · client perf-vitals beacon |
 
 ## Backend reverse index — "I need to…"
 | I need to… | Where |
 |------------|-------|
-| Change how the client calls the backend | `APP-38` (`app.js:14811`) |
+| Change how the client calls the backend | `APP-37` (`app.js:14811`) |
 | Add a backend action | add the handler in `Code.gs` (deploy via `/clasp`) **and** a `backendCall('…')` in `app.js` |
 | Read the live server code | Drive connector / `clasp` — `docs/backend-clasp-setup.md` |
 | Deploy the backend | the `/clasp` skill (additive only, STOPs before prod) |
