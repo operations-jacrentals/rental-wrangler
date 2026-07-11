@@ -3459,6 +3459,7 @@ body { font-variant-numeric: tabular-nums; }
 .wo-open .type-chip { flex: 0 0 auto; }
 .ir-woreport { color: var(--txt); font-weight: 700; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wo-open-body { padding: 11px 13px; display: flex; flex-direction: column; gap: 9px; }
+.wo-add { margin: 0 0 9px; }   /* +Work Order rides ABOVE the rows (Jac) — R5b secondary blue */
 
 /* compact fields — the dense 2-col grid (D21) */
 .acct-fgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }

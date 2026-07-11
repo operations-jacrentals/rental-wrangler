@@ -7279,8 +7279,8 @@ function workOrdersSection(u) {
     ? wos.map((w) => (w.woId === openId ? woExpandedHtml(w) : woRowHtml(w))).join('')
     : '<div class="inv-empty muted">No open work orders.</div>';
   return `<div class="section wo-sec"><h4>Work Orders${wos.length ? ` <span class="hmuted">· ${wos.length}</span>` : ''}</h4>`
+    + `<div class="add-row wo-add">${addBtn('Work Order', { js: 'js-new-wo-unit', link: true, data: { rec: u.unitId } })}</div>`
     + `<div class="inv-scroll wo-scroll">${rows}</div>`
-    + `<div class="add-row">${addBtn('Work Order', { js: 'js-new-wo-unit', link: true, data: { rec: u.unitId } })}</div>`
     + `</div>`;
 }
 /* Per-unit SERVICES section (Shop retirement, Jac 2026-07-07): the recurring
