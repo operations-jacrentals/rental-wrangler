@@ -18,7 +18,7 @@
   <!-- Cache-busting: bump ?v= on EVERY deploy so a new release loads immediately on
        desktop + mobile instead of serving a stale cached app.js/style.css (GitHub Pages
        sends max-age=600 with no per-file hashing). See CLAUDE.md → Deploy & gates. -->
-  <link rel="stylesheet" href="style.css?v=20260711c" />
+  <link rel="stylesheet" href="style.css?v=20260711d" />
   <!-- Stripe.js (must load from js.stripe.com for PCI SAQ-A; card data stays in Stripe's iframe) -->
   <script src="https://js.stripe.com/v3/"></script>
 </head>
@@ -37,8 +37,8 @@
   </script>
 
   <!-- Static catalog of which fields/elements use each design rule (rulebook index). -->
-  <script src="rule-usage.js?v=20260711c"></script>
-  <script type="module" src="app.js?v=20260711c"></script>
+  <script src="rule-usage.js?v=20260711d"></script>
+  <script type="module" src="app.js?v=20260711d"></script>
   <!-- DEV ONLY (localhost): reload when Claude bumps dev-version.txt — i.e. only
        when a FINISHED, verified edit batch lands (Jac: no mid-edit reloads).
        Never runs on app.jacrentals.com. Pauses while typing in a field. -->

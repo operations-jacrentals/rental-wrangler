@@ -3423,6 +3423,15 @@ body { font-variant-numeric: tabular-nums; }
 .acct-chev { color: var(--txt-3); flex: 0 0 auto; transition: transform .12s ease; display: inline-flex; }
 .acct.open .acct-chev { transform: rotate(180deg); }
 .acct-body { padding: 12px; border-top: 1px solid var(--line-soft, var(--line)); }
+/* Reused by the Unit-detail Service-order + Work-order collapse bars (same .acct
+   shell as customer Account): a faded status-photo scrim behind the plate, a neutral
+   status chip for a cancelled WO, and the expanded WO's report+flags header row. */
+.acct.has-photo { position: relative; }
+.acct.has-photo > :not(.sec-photo) { position: relative; z-index: 1; }
+.type-chip.mute { color: var(--gray); background: var(--gray-bg); }
+.wo-openhead { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; font-size: 13px; }
+.wo-openhead .inline-edit { min-width: 0; }
+.wo-openhead .right { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; }
 
 /* compact fields — the dense 2-col grid (D21) */
 .acct-fgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }

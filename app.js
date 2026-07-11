@@ -2294,6 +2294,8 @@ const state = {
   custAcctOpen: {},           // Phase 1 (2026-07-10 account/agreements redesign, D19) — is the top-of-card Account section expanded? { [customerId]: true }; collapsed by default, view-local
   custAgOpen: {},             // Phase 1 — which Agreements row is expanded inside the Account section — { [customerId]: cardId | '__new__' | null } (one open at a time, mirrors custInvOpen); '__new__' = the +Agreement/Card creation panel
   custAgDraft: {},            // Phase 2b — the in-progress NEW-agreement draft — { [customerId]: {accountType, startDate, selfie, signature} }; view-local, cleared on sign/cancel
+  svcSecOpen: {},             // Unit detail — is the Services (service-order) section expanded? { [unitId]: true }; collapsed by default (mirrors custAcctOpen), view-local, reset on a fresh unit open
+  woSecOpen: {},              // Unit detail — which Work Orders are expanded — { [woId]: true }; each collapsed by default, view-local, reset on a fresh unit open
   calSearch: '',               // Trips card mini-search (calendar is card-stateless — no session.cards.calendar — so this rides on state directly)
   calOpenTrip: null,           // §2.2b cab sheet — the ONE trip row expanded to its unit-facts sheet (row-body tap toggles; second tap collapses)
   autoRunFlags: null,          // §2.7 Auto-Run — { [tripId]: {reason:'unpinned'|'deadline', deadline?, projectedArrival?} }, session-only report on the last run (never a stored record field)
@@ -2527,6 +2529,7 @@ function openStandard(card, recId, recType) {
   if (card === 'customers' && state.funnelTab) delete state.funnelTab[recId];   // §3.5 — a fresh customer open resets the funnel toggle to Rental
   if (card === 'customers') { if (state.custInvOpen) delete state.custInvOpen[recId]; if (state.custInvMenu) delete state.custInvMenu[recId]; }   // §3.3 — collapse the embedded Invoices accordion on a fresh open (openInvoice re-sets it after)
   if (card === 'customers') { if (state.custAcctOpen) delete state.custAcctOpen[recId]; if (state.custAgOpen) delete state.custAgOpen[recId]; if (state.custAgDraft) delete state.custAgDraft[recId]; }   // Phase 1/2b — collapse the Account section + its Agreements accordion + any in-progress draft on a fresh open
+  if (card === 'units') { if (state.svcSecOpen) delete state.svcSecOpen[recId]; if (state.woSecOpen) openWOsForUnit(recId).forEach((w) => delete state.woSecOpen[w.woId]); }   // collapse the Services section + this unit's Work Orders on a fresh open (mirrors the Account collapse above)
   ackComments(recOf(entityCardOf(card, recType), recId));   // viewing = acknowledged (Phase 6)
   // §10 + #54 — opening a Category while the rental-window picker is live (a window's
   // picked, so availWin is set) pivots the left column to Units, pre-filled with the
@@ -7163,6 +7166,24 @@ function woStaleEmpty(w) {
   return !w.cancelled && w.phase !== 'Complete' && !(w.lineItems || []).length
     && !!w.date && dayDiff(parseISO(w.date), TODAY) > STALE_WO_DAYS;
 }
+/* Collapsible detail section — mirrors the customer Account collapse bar (D19): a
+   one-line summary bar (stamped label + summary + status chip + chevron) that
+   expands to reveal its body. Collapsed by default; state is view-local and reset
+   on a fresh record open. Reuses the .acct* classes for pixel parity with Account.
+   `summary` is raw HTML (caller escapes its pieces); `chip` = {text, tone} or null;
+   `bg` = an optional faded photo-backdrop URL (the .has-photo scrim, same as .section). */
+function collapseSection({ open, toggleCls, rec, extraCls = '', lbl, summary, chip, body, bg }) {
+  return `<div class="acct${open ? ' open' : ''}${extraCls ? ' ' + extraCls : ''}${bg ? ' has-photo' : ''}">`
+    + (bg ? `<div class="sec-photo" style="--photo:url('${esc(bg)}')"></div>` : '')
+    + `<div class="acct-bar ${toggleCls}" data-rec="${esc(rec)}" aria-expanded="${open}">`
+    + `<span class="acct-lbl">${esc(lbl)}</span>`
+    + `<span class="acct-sum">${summary}</span>`
+    + (chip ? `<span class="type-chip ${chip.tone}">${esc(chip.text)}</span>` : '')
+    + `<span class="acct-chev">${I.chev}</span>`
+    + `</div>`
+    + (open ? `<div class="acct-body">${body}</div>` : '')
+    + `</div>`;
+}
 function woSectionHtml(w) {
   const bn = woBottleneck(w);
   const secColor = bn.color === 'red' ? 'red' : bn.color === 'green' ? 'green' : 'yellow';
@@ -7197,9 +7218,17 @@ function woSectionHtml(w) {
   const dateFlag = stale
     ? flagEl('No lines', 'yellow', { alert: true, title: staleTip })
     : flagEl(fmtShortDate(w.date), 'gray');
-  return `<div class="section sec-${secColor} wo-${w.woId}${woBg ? ' has-photo' : ''}" data-wo="${w.woId}">${woBg ? `<div class="sec-photo" style="--photo:url('${esc(woBg)}')"></div>` : ''}
-    <h4 class="h-name"><span style="font-weight:800;margin-right:1px">WO:</span> <span class="inline-edit" data-edit="field" data-card="workOrders" data-field="woReport" data-rec="${w.woId}" data-ph="Report">${esc(w.woReport)}</span>
-      <span class="right">${flagsStack([typeFlag, dateFlag], 24)}</span></h4>
+  // COLLAPSED-BY-DEFAULT (mirrors the customer Account section): a one-line bar
+  // whose status chip = the bottleneck phase, colored by the WO's live urgency; the
+  // full body (report edit + flags + line items + foot) rides behind the chevron.
+  const open = !!(state.woSecOpen && state.woSecOpen[w.woId]);
+  const report = (w.woReport || '').trim();
+  const summary = `<b>${report ? esc(report) : 'No report'}</b><span class="acct-dot">·</span>${esc(fmtShortDate(w.date))}`;
+  const chip = w.cancelled
+    ? { text: 'Cancelled', tone: 'mute' }
+    : { text: bottleIdx >= 0 ? getStatus('woPhase', w.lineItems[bottleIdx].phase).label : 'Ready', tone: { red: 'bad', yellow: 'warn', green: 'ok' }[secColor] };
+  const body = `<div class="wo-openhead"><span style="font-weight:800;margin-right:1px">WO:</span> <span class="inline-edit" data-edit="field" data-card="workOrders" data-field="woReport" data-rec="${w.woId}" data-ph="Report">${esc(w.woReport)}</span>
+      <span class="right">${flagsStack([typeFlag, dateFlag], 24)}</span></div>
     <div class="wototals">${addBtn('Part/Task', { anchor: true, js: 'js-add-part', h: 26, data: { rec: w.woId } })}<span class="derived">${money(parts)} parts + ${hrs} hrs</span></div>
     ${lines || '<div class="kv"><span class="muted" style="font-size:12px">No line items yet</span></div>'}
     <div class="wofoot">
@@ -7207,8 +7236,8 @@ function woSectionHtml(w) {
       ${w.cancelled
         ? `<span class="pill c-gray" style="height:26px;font-size:11px" data-tip="This work order is cancelled">Cancelled</span>${actionPill('commit', 'Reopen WO', { js: 'js-wo-reopen', h: 26, data: { rec: w.woId } })}`
         : `${addBtn('Invoice', { link: true, icon: CARD_ICON.invoices, js: 'js-bill-wo', h: 26, data: { rec: w.woId } })}<button class="pill ghost js-wo-cancel" data-r="R18" data-rec="${esc(w.woId)}" style="height:26px;font-size:11px">Cancel WO</button>${actionPill('commit', 'Complete WO', { js: `js-wo-complete ramp${bn.color === 'green' ? ' ready' : ''}`, h: 26, data: { rec: w.woId } })}`}
-    </div>
-  </div>`;
+    </div>`;
+  return collapseSection({ open, toggleCls: 'js-wo-sec-toggle', rec: w.woId, extraCls: `wo-${w.woId} sec-${secColor}`, lbl: 'WO', summary, chip, body, bg: woBg });
 }
 /* Per-unit SERVICES section (Shop retirement, Jac 2026-07-07): the recurring
    countdown list — wash pinned to the top, then most-urgent first — with the
@@ -7248,8 +7277,15 @@ function serviceTasksHtml(u, { title = 'Services' } = {}) {
     : '';
   // section tint = worst NON-wash, NON-snoozed task (snooze silences the section too — Jac's law)
   const worst = rows.find((s) => s.taskId !== 'svc-wash' && !svcSnoozedUntil(u, s.taskId)) || rows[0];
-  const tint = worst && ['red', 'yellow', 'green'].includes(worst.color) ? ` sec-${worst.color}` : '';
-  return `<div class="section${tint}"><h4>${esc(title)}</h4><div class="hlog">${list}</div>${more}</div>`;
+  // COLLAPSED-BY-DEFAULT (mirrors the customer Account section): a one-line bar whose
+  // status chip = the worst task's live service status; the task list rides behind the chevron.
+  const open = !!(state.svcSecOpen && state.svcSecOpen[u.unitId]);
+  const chip = worst && ['red', 'yellow', 'green'].includes(worst.color)
+    ? { text: getStatus('serviceStatus', worst.status).label, tone: { red: 'bad', yellow: 'warn', green: 'ok' }[worst.color] }
+    : { text: 'Up to date', tone: 'ok' };
+  const summary = `<b>${rows.length} task${rows.length === 1 ? '' : 's'}</b>${worst ? `<span class="acct-dot">·</span>${esc(worst.name)}` : ''}`;
+  const body = `<div class="hlog">${list}</div>${more}`;
+  return collapseSection({ open, toggleCls: 'js-svc-sec-toggle', rec: u.unitId, lbl: title, summary, chip, body });
 }
 /* ITEM BALANCE — every invoice line item carries its own balance. A partial
    payment is assigned per line item through the payment popup; allocations are
@@ -7768,7 +7804,8 @@ const DETAIL = {
       ${svcSec}
       ${woSecs}
       <div class="add-row">${addBtn('Work Order', { js: 'js-new-wo-unit', link: true, data: { rec: u.unitId } })}</div>
-      <div class="detail-cols">${specs}${gps}</div>
+      ${specs}
+      ${gps}
       ${coverage}
       ${investment}
       ${notes.bottom}
@@ -16722,6 +16759,8 @@ function onClick(e) {
   // pattern above) + the field toggles. UI SHELL — the starred handlers below are Phase 2/3
   // no-op stubs (real enrollment/charge is Phase 2; block-gate enforcement is Phase 3).
   if (closest('.js-acct-toggle')) { e.stopPropagation(); const rec = closest('.js-acct-toggle').dataset.rec; return guardAgLeave(rec, () => { state.custAcctOpen = state.custAcctOpen || {}; state.custAcctOpen[rec] = !state.custAcctOpen[rec]; render(); }); }
+  if (closest('.js-svc-sec-toggle')) { e.stopPropagation(); const rec = closest('.js-svc-sec-toggle').dataset.rec; state.svcSecOpen = state.svcSecOpen || {}; state.svcSecOpen[rec] = !state.svcSecOpen[rec]; return render(); }   // Unit detail — collapse/expand the Services (service-order) section
+  if (closest('.js-wo-sec-toggle')) { e.stopPropagation(); const rec = closest('.js-wo-sec-toggle').dataset.rec; state.woSecOpen = state.woSecOpen || {}; state.woSecOpen[rec] = !state.woSecOpen[rec]; return render(); }   // Unit detail — collapse/expand one Work Order
   if (closest('.js-ag-row')) { e.stopPropagation(); const b = closest('.js-ag-row'); const rec = b.dataset.rec, card = b.dataset.card; return guardAgLeave(rec, () => { state.custAgOpen = state.custAgOpen || {}; state.custAgOpen[rec] = (state.custAgOpen[rec] === card) ? null : card; render(); }); }
   if (closest('.js-ag-collapse')) { e.stopPropagation(); const rec = closest('.js-ag-collapse').dataset.rec; return guardAgLeave(rec, () => { if (state.custAgOpen) state.custAgOpen[rec] = null; render(); }); }
   if (closest('.js-ag-add')) { e.stopPropagation(); const rec = closest('.js-ag-add').dataset.rec; state.custAgOpen = state.custAgOpen || {}; state.custAgOpen[rec] = '__new__'; return render(); }
