@@ -4940,8 +4940,8 @@ function unruledElements() {
 }
 /** R22: the deliberate close/remove ✕ — a red circle, white ✕. `hover:true` reveals
  *  it only on the container's hover (tabs/rows); otherwise always on. Reusable. */
-function closeX(js, { data, hover, tip } = {}) {
-  return `<button class="close-x${hover ? ' hoveronly' : ''}${js ? ' ' + js : ''}" data-r="R24"${dataAttrs(data)} data-tip="${esc(tip || 'Close')}">${I.x}</button>`;
+function closeX(js, { data, hover } = {}) {
+  return `<button class="close-x${hover ? ' hoveronly' : ''}${js ? ' ' + js : ''}" data-r="R24"${dataAttrs(data)} data-tip="Close">${I.x}</button>`;
 }
 /** R26: MANUAL LINK — icon-only ghost circle, opens a service task's cited OEM
  *  manual page in a new tab (Jac 2026-07-07: every model task now carries a
@@ -8796,9 +8796,7 @@ function headerEl() {
     <div class="header-right">
       <div class="hr-top${state.tabs.length ? ' has-tabs' : ''}">
         <div class="header-tabs tabstrip">${tabStrip(state.tabs)}</div>
-        ${state.tabs.length ? `<span class="closeall-slot">${isPhone
-          ? closeX('js-closeall-menu', { tip: 'Close all tabs' })
-          : ghostPill('Close all', { js: 'js-closeall-menu', tip: 'Close all tabs' })}</span>` : ''}
+        ${state.tabs.length && !isPhone ? `<span class="closeall-slot">${ghostPill('Close all', { js: 'js-closeall-menu', tip: 'Close all tabs' })}</span>` : ''}${/* §M6 — no close-all on phones (Jac): each tab keeps its own ✕; the rail stays tabs-only */ ''}
         <span class="spacer"></span>
         ${currentUser ? `<span class="hello-name">${esc(currentUser)}</span>` : ''}
       </div>
@@ -15062,20 +15060,24 @@ function setFocusedCard(cardId) {
 let renderCount = 0;
 const scrollMemo = {};   // persistent scroll positions, keyed `card|view` (list vs which record)
 // §M6 — phone chrome reflow (Jac 2026-07-11): the global "Search everything…" bar is dropped
-// (CSS-hidden) and the phone reads as two zones — TOP = nav/context, BOTTOM = tools:
+// (CSS-hidden); the phone reads top→bottom as HEADER (logo/rings · card toggles · per-card
+// search) then a bottom DOCK stacking the item-tab rail ABOVE the tool bar:
 //   • the card TOGGLES (.mdock-row) + the per-card SEARCH/SORT row (.mdock-searchslot) rise
-//     into the header, right under the item-tab rail, where the global search used to sit;
-//   • the TOOL BAR (.top-toolbar) drops into the bottom dock, where the toggles used to be.
+//     into the header, where the global search used to sit;
+//   • the item-tab rail (.hr-top) drops to the bottom dock, sitting just above…
+//   • the TOOL BAR (.top-toolbar), which drops in last (Jac: tab trailer above the tools).
 // Node relocation only — every builder still emits its usual markup (desktop untouched); this
-// just re-homes three nodes. The card-toggle-bar swipe zone follows the toggles (see boot()).
+// just re-homes four nodes. The card-toggle-bar swipe zone follows the toggles (see boot()).
 function reflowPhoneChrome(header, dock) {
   const hr = header.querySelector('.header-right');
+  const hrTop = hr && hr.querySelector('.hr-top');    // the item-tab rail ("trailer")
   const toggles = dock.querySelector('.mdock-row');
   const searchslot = dock.querySelector('.mdock-searchslot');
   const toolbar = header.querySelector('.top-toolbar');
   if (hr && toggles) hr.appendChild(toggles);         // card toggles → header (replaces the dropped global search)
   if (hr && searchslot) hr.appendChild(searchslot);   // per-card search/sort → right under the toggles
-  if (toolbar) dock.appendChild(toolbar);             // tool bar → bottom dock (where the toggles were)
+  if (hrTop) dock.appendChild(hrTop);                 // item-tab rail → bottom dock, above the tool bar
+  if (toolbar) dock.appendChild(toolbar);             // tool bar → bottom dock, last (below the rail)
 }
 function render() {
   const t0 = performance.now();
