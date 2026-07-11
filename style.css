@@ -3451,9 +3451,14 @@ body { font-variant-numeric: tabular-nums; }
 .acct.has-photo { position: relative; }
 .acct.has-photo > :not(.sec-photo) { position: relative; z-index: 1; }
 .type-chip.mute { color: var(--gray); background: var(--gray-bg); }
-.wo-openhead { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; font-size: 13px; }
-.wo-openhead .inline-edit { min-width: 0; }
-.wo-openhead .right { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+/* Work Orders section — accordion rows inside ONE .section, mirroring customer
+   Invoices (reuses .inv-row / .inv-open / .ir-* / .io-* ). An open WO's header
+   collapses only via the ✕ chevron (its report stays inline-editable, so the whole
+   bar can't be the toggle), and its body stacks flags → line items → totals → foot. */
+.wo-open .io-bar-top { cursor: default; }
+.wo-open .type-chip { flex: 0 0 auto; }
+.ir-woreport { color: var(--txt); font-weight: 700; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wo-open-body { padding: 11px 13px; display: flex; flex-direction: column; gap: 9px; }
 
 /* compact fields — the dense 2-col grid (D21) */
 .acct-fgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
