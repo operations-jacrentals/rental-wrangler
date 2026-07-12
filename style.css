@@ -433,7 +433,7 @@ body.is-phone { touch-action: manipulation; }
 .is-phone .grid { display: block; overflow: hidden; padding: 12px 8px 4px; touch-action: pan-y; will-change: transform; }   /* vertical scroll native; JS owns the horizontal paging drag */
 /* §M3 interactive main-screen paging (Jac 2026-07-11) — the drag translates the live grid + a
    fixed ghost of the neighbour screen; .paging-settle carries the snap-back / commit glide. */
-.paging-settle { transition: transform .21s cubic-bezier(.22, .61, .36, 1); }
+.paging-settle { transition: transform .32s cubic-bezier(.22, .61, .36, 1); }   /* Jac: slower, smoother SLIDE on release (was .21s — "slams into place"); keep the JS pageFinalize/cleanup timers (320/370ms) in step */
 .paging-ghost { z-index: 30; overflow: hidden; pointer-events: none; background: var(--bg); box-sizing: border-box; will-change: transform; }
 body.is-paging { overflow: hidden; }
 body.is-paging .grid, body.is-paging .card-body { touch-action: none; overflow: hidden !important; }   /* freeze the vertical scroll for the duration of a horizontal page */

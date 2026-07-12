@@ -15636,14 +15636,15 @@ function render() {
   const shown = phone ? [COLUMNS[Math.max(0, Math.min(2, state.mobileCol))]] : COLUMNS;
   for (const col of shown) grid.appendChild(columnEl(col, session));
   // §M1 — desktop keeps the bottom toolbar; on phone the tools open up across the bottom dock instead (§M6).
-  if (phone) $('#app').replaceChildren(header, grid);
-  else $('#app').replaceChildren(header, grid, bottomBarEl());
   if (phone) {
+    // Assemble the WHOLE phone chrome off-DOM, then connect once. CRITICAL ordering: the
+    // listbar move (into the dock slot) and reflowPhoneChrome (§M6 — toggles/search rise into
+    // the header, tool bar drops into the dock) must both run while header/grid/dock are still
+    // DETACHED. Previously the grid was connected first ($('#app').replaceChildren(header,grid))
+    // and only THEN was the listbar relocated + chrome reflowed — so the page painted a frame
+    // with the toolbar still inside the card before it jumped up/down (the "double-show / shifts
+    // up" flash). reflowPhoneChrome does pure node moves (no layout reads), so it's safe detached.
     const dock = mobileDockEl();
-    $('#app').appendChild(dock);
-    // §M1 — move the active card's list search/sort row into the dock's search slot. Same node
-    // → its delegated handlers keep working. Record view has no listbar, so the slot stays
-    // empty (CSS hides it). §M6 re-homes the slot (+ the toggles) up into the header afterward.
     const lb = grid.querySelector('.listbar');
     if (lb) dock.querySelector('.mdock-searchslot').appendChild(lb);
     else {   // §M — Standard (record) view has no listbar; keep the Back/Fwd jog in the SAME
@@ -15655,7 +15656,10 @@ function render() {
         if (jog) { const bar = el('div', 'listbar mdock-jogbar'); bar.innerHTML = jog; dock.querySelector('.mdock-searchslot').appendChild(bar); }
       }
     }
-    reflowPhoneChrome(header, dock);   // §M6 — toggles + search rise into the header; the tool bar drops into the dock
+    reflowPhoneChrome(header, dock);   // §M6 — run while detached (pure node moves, no layout reads)
+    $('#app').replaceChildren(header, grid, dock);   // single connect → the toolbar is never painted in-card
+  } else {
+    $('#app').replaceChildren(header, grid, bottomBarEl());
   }
   // restore scroll by VIEW: same view → keep your spot; back to a list → return to the
   // row you left; opened a record → top of Standard view (a targeted link scrolls itself after).
@@ -23209,8 +23213,8 @@ function boot() {
   function pageCleanup(settle) {
     const g = PAGE.grid, gh = PAGE.ghost;
     if (g) { if (settle) { g.classList.add('paging-settle'); g.style.transform = 'translateX(0)'; } else { g.classList.remove('paging-settle'); g.style.transform = ''; } }
-    if (gh) { if (settle) { gh.classList.add('paging-settle'); gh.style.transform = 'translateX(0)'; setTimeout(() => gh.remove(), 260); } else gh.remove(); }   // rest = off-screen (positioned via `left`); glide back there on cancel
-    if (g && settle) setTimeout(() => { if (PAGE.grid !== g) return; g.classList.remove('paging-settle'); g.style.transform = ''; }, 260);
+    if (gh) { if (settle) { gh.classList.add('paging-settle'); gh.style.transform = 'translateX(0)'; setTimeout(() => gh.remove(), 370); } else gh.remove(); }   // rest = off-screen (positioned via `left`); glide back there on cancel (370 = .32s glide + slack)
+    if (g && settle) setTimeout(() => { if (PAGE.grid !== g) return; g.classList.remove('paging-settle'); g.style.transform = ''; }, 370);
     document.body.classList.remove('is-paging');
     PAGE.on = false; PAGE.locked = false; PAGE.edge = false; PAGE.ghost = null; PAGE.grid = null; PAGE.dir = 0; PAGE.nIdx = -1;
   }
@@ -23237,7 +23241,7 @@ function boot() {
     const dx = e.clientX - PAGE.x0, dy = e.clientY - PAGE.y0;
     if (!PAGE.locked) {
       const adx = Math.abs(dx), ady = Math.abs(dy);
-      const need = PAGE.fromEdge ? 6 : 8;                                          // decide a touch sooner so we lock before native scroll commits
+      const need = PAGE.fromEdge ? 5 : 6;                                          // decide a touch sooner so we lock before native scroll commits (Jac: engage on a lighter swipe — lowered from 6/8; the 2:1 horizontal ratio below still guards vertical scroll)
       if (adx < need && ady < need) return;                                        // deadzone — no clear intent yet
       // §M3 — FORGIVING diagonal (Jac): engage unless the motion is STRONGLY vertical. Edge
       // swipes engage on ~any horizontal hint (adx ≥ 0.4·ady); middle swipes tolerate up to a
@@ -23276,7 +23280,7 @@ function boot() {
     if (!PAGE.on || (e.pointerId != null && e.pointerId !== PAGE.id)) return;
     const dx = e.clientX - PAGE.x0;
     if (!PAGE.locked || PAGE.edge || !PAGE.ghost) { pageCleanup(true); return; }
-    const commit = Math.abs(dx) > PAGE.w * 0.35 || (PAGE.vx * PAGE.dir < -0.45);   // past 35% OR a flick in the drag direction
+    const commit = Math.abs(dx) > PAGE.w * 0.22 || (PAGE.vx * PAGE.dir < -0.30);   // past 22% OR a light flick in the drag direction (Jac: a lesser swipe should trigger — lowered from 35% / -0.45)
     if (!commit) { pageCleanup(true); return; }
     swipeFired = true;                                                             // swallow the trailing click that ends the drag
     const g = PAGE.grid, gh = PAGE.ghost, nIdx = PAGE.nIdx, dir = PAGE.dir, slide = -dir * PAGE.w;
@@ -23286,7 +23290,7 @@ function boot() {
     document.body.classList.remove('is-paging');
     PAGE.on = false; PAGE.locked = false; PAGE.ghost = null; PAGE.grid = null;
     PAGE.settling = true; PAGE.pending = { gh, nIdx };                             // guard the settle window so no new gesture grabs the gliding grid
-    pageTimer = setTimeout(pageFinalize, 210);                                     // after the .21s glide, land the real column (ghost dropped first — see pageFinalize)
+    pageTimer = setTimeout(pageFinalize, 320);                                     // after the .32s glide, land the real column (ghost dropped first — see pageFinalize). Kept == the .paging-settle CSS duration (Jac: slower, smoother slide — was 210/.21s)
   };
   document.addEventListener('pointerup', pageEnd, true);
   document.addEventListener('pointercancel', (e) => { if (PAGE.on) pageCleanup(true); }, true);
