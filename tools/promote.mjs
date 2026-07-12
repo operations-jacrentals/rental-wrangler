@@ -1,0 +1,201 @@
+#!/usr/bin/env node
+// promote.mjs — Gate 2 of the two-gate trunk-based workflow: trunk (main) -> production.
+//
+// *** DRAFT — go-live pipeline not yet wired; activate per plan Phase 0. This script  ***
+// *** publishes to production when run with --yes; do not run until Phase 0           ***
+// *** (production branch + Pages source) is set up and Jac confirms.                  ***
+//
+// See: docs/superpowers/plans/2026-07-12-dev-workflow-trunk-based-redesign-plan.md (§1.3)
+//      docs/superpowers/specs/2026-07-12-dev-workflow-trunk-based-redesign-design.md
+//
+// WHY THIS EXISTS
+// Once Phase 0 lands, production Pages stops tracking `main` directly — it serves a
+// `production` release-pointer branch instead. That's what makes Gate 1 ("merge it",
+// feature -> main) safe to run without going live: `main` can run ahead of production,
+// holding blessed-but-not-live work. Gate 2 ("promote it") is the ONLY thing that moves
+// the live site — it fast-forwards `production` to the exact commit already approved on
+// `main` (byte-identical to what was reviewed on staging, per the one-feature-at-a-time
+// flow this plan assumes). That makes this the irreversible go-live step, so it gets the
+// same caution posture as the /clasp production deploy: preview first (commit range +
+// diffstat), a hard STOP-gate behind an explicit --yes, a fast-forward-only push (no
+// --force, ever), then a live-bytes check afterward instead of just trusting the push —
+// the same "a stale snapshot no browser refresh fixes, only a re-sync/re-verify does"
+// trap called out for the staging mirror in CLAUDE.md applies here too.
+//
+// USAGE
+//   node tools/promote.mjs           # PREVIEW ONLY — shows what would go live, does nothing
+//   node tools/promote.mjs --yes     # promote: fast-forward + push `production`, then verify live
+//
+// SAFETY
+//   Without --yes this script only fetches + prints a preview and exits — it never
+//   pushes. With --yes it still refuses to move `production` unless the fast-forward is
+//   clean (production must be a strict ancestor of main); a diverged/rewritten production
+//   is left untouched and reported so a human can reconcile it manually — there is no
+//   --force path in this script. Never echoes secrets (none are needed for this step).
+
+import { execFileSync } from 'node:child_process';
+
+// TODO(jac): confirm — the release-pointer branch Pages serves as PRODUCTION (plan Phase 0.2/0.3).
+const PRODUCTION_BRANCH = 'production';
+// TODO(jac): confirm — the trunk branch Gate 1 ("merge it") lands on.
+const TRUNK = 'main';
+// TODO(jac): confirm — the live site's public URL (what Pages serves for PRODUCTION_BRANCH).
+const LIVE_URL = 'https://app.jacrentals.com';
+
+const REMOTE = 'origin';
+const ARGV = process.argv.slice(2);
+const CONFIRMED = ARGV.includes('--yes');
+
+function git(args, opts = {}) {
+  return execFileSync('git', args, { encoding: 'utf8', ...opts }).trim();
+}
+function gitTry(args, opts = {}) {
+  try { return { ok: true, out: git(args, opts) }; }
+  catch (e) { return { ok: false, out: (e.stdout || '') + (e.stderr || ''), err: e }; }
+}
+function lines(s) { return s.split('\n').map(x => x.trim()).filter(Boolean); }
+
+function fail(msg) {
+  console.error(`promote: ${msg}`);
+  process.exit(1);
+}
+
+const ROOT = git(['rev-parse', '--show-toplevel']);
+process.chdir(ROOT);
+
+// --- Step 1: fetch both refs fresh, so the preview can never be stale -------
+console.log(`promote: fetching ${REMOTE}/${TRUNK} and ${REMOTE}/${PRODUCTION_BRANCH}…`);
+const fetchTrunk = gitTry(['fetch', REMOTE, TRUNK]);
+if (!fetchTrunk.ok) fail(`could not fetch ${REMOTE}/${TRUNK}:\n${fetchTrunk.out}`);
+
+const fetchProd = gitTry(['fetch', REMOTE, PRODUCTION_BRANCH]);
+if (!fetchProd.ok) {
+  fail(
+    `could not fetch ${REMOTE}/${PRODUCTION_BRANCH} — it may not exist yet.\n${fetchProd.out}\n` +
+    `promote: this is expected until plan Phase 0.2 creates it:\n` +
+    `  git branch ${PRODUCTION_BRANCH} ${REMOTE}/${TRUNK} && git push ${REMOTE} ${PRODUCTION_BRANCH}\n` +
+    `promote: (and Phase 0.3 must repoint Pages to it) before this script can run.`
+  );
+}
+
+const trunkRef = `${REMOTE}/${TRUNK}`;
+const prodRef = `${REMOTE}/${PRODUCTION_BRANCH}`;
+const trunkSha = git(['rev-parse', trunkRef]);
+const prodSha = git(['rev-parse', prodRef]);
+
+// --- Step 2: preview — print EXACTLY what would go live, before doing anything ---
+if (trunkSha === prodSha) {
+  console.log(`promote: ${PRODUCTION_BRANCH} already matches ${TRUNK} (${prodSha.slice(0, 8)}) — nothing to promote.`);
+  process.exit(0);
+}
+
+const range = `${prodRef}..${trunkRef}`;
+const commitLog = lines(git(['log', '--oneline', range]));
+const diffStat = lines(git(['diff', '--stat', prodRef, trunkRef]));
+
+console.log('');
+console.log('='.repeat(72));
+console.log(`promote: THIS WILL GO LIVE at ${LIVE_URL}`);
+console.log('='.repeat(72));
+console.log(`  ${PRODUCTION_BRANCH} (${prodSha.slice(0, 8)})  ->  ${TRUNK} (${trunkSha.slice(0, 8)})`);
+console.log(`  ${commitLog.length} commit(s) in range ${range}:`);
+commitLog.forEach(c => console.log('    ' + c));
+console.log('  Files changed:');
+diffStat.forEach(l => console.log('    ' + l));
+console.log('='.repeat(72));
+
+// --- Step 3: hard STOP-gate — mirrors the /clasp prod-deploy posture ---------
+if (!CONFIRMED) {
+  console.log('');
+  console.log('promote: PREVIEW ONLY — no changes made, nothing was pushed.');
+  console.log('promote: *** this is an irreversible go-live step ***');
+  console.log('promote: re-run with --yes ONLY after Jac has explicitly said "promote it" for the range above.');
+  process.exit(0);
+}
+
+console.log('');
+console.log('promote: --yes given — proceeding with the promotion above.');
+
+// --- Step 4: refuse anything that is not a clean fast-forward ---------------
+const ff = gitTry(['merge-base', '--is-ancestor', prodRef, trunkRef]);
+if (!ff.ok) {
+  fail(
+    `${PRODUCTION_BRANCH} is NOT an ancestor of ${TRUNK} — production has diverged ` +
+    `(hotfixed directly, or rewritten) and cannot fast-forward safely.\n` +
+    `promote: refusing to push. A human must reconcile ${PRODUCTION_BRANCH} manually ` +
+    `(rebase the divergence onto ${TRUNK}, or deliberately reset ${PRODUCTION_BRANCH}) ` +
+    `before promote.mjs can run again. There is no --force path in this script.`
+  );
+}
+
+// --- Step 5: fast-forward + push production ----------------------------------
+// Pushes the trunk's exact commit straight to refs/heads/production without needing a
+// local checkout of `production` — git only accepts this as an ordinary (non-force)
+// push because Step 4 already proved it is a fast-forward.
+console.log(`promote: pushing ${trunkRef} -> ${REMOTE}/${PRODUCTION_BRANCH}…`);
+const push = gitTry(['push', REMOTE, `${trunkRef}:refs/heads/${PRODUCTION_BRANCH}`]);
+if (!push.ok) {
+  fail(
+    `push rejected:\n${push.out}\n` +
+    `promote: ${PRODUCTION_BRANCH} may have moved since the preview above — re-run for a fresh preview.`
+  );
+}
+console.log(`promote: pushed. ${PRODUCTION_BRANCH} now at ${trunkSha.slice(0, 8)}. ${LIVE_URL} should update shortly.`);
+
+// --- Step 6: verify the live site actually serves the new bytes -------------
+// The ?v= cache-bust token (bumped on every deploy per CLAUDE.md) is the one
+// generic, feature-agnostic marker this script can check without knowing what any
+// given promotion actually changed. The token itself lives in index.html's script/
+// link tags (not inside app.js's own bytes), so: pull the expected token from the
+// promoted commit's index.html, confirm the LIVE index.html reports the same token,
+// and confirm the live app.js is reachable at that exact versioned URL.
+function extractVersionToken(html) {
+  const m = html.match(/app\.js\?v=([A-Za-z0-9._-]+)/);
+  return m ? m[1] : null;
+}
+
+const expectedHtml = git(['show', `${trunkRef}:index.html`]);
+const expectedToken = extractVersionToken(expectedHtml);
+if (!expectedToken) {
+  console.log('promote: WARNING — could not find an app.js?v= token in the promoted index.html; skipping live-bytes verification.');
+  console.log('promote: push succeeded. Verify the live site manually.');
+  process.exit(0);
+}
+
+console.log(`promote: verifying ${LIVE_URL} serves ?v=${expectedToken}…`);
+
+let liveHtml;
+try {
+  liveHtml = execFileSync('curl', ['-sS', '-L', '--max-time', '15', `${LIVE_URL}/index.html`], { encoding: 'utf8' });
+} catch (e) {
+  console.log(`promote: WARNING — could not curl ${LIVE_URL}/index.html to verify (${e.message}).`);
+  console.log('promote: push succeeded, but live-bytes verification could not run. Verify manually:');
+  console.log(`  curl -s ${LIVE_URL}/index.html | grep 'app.js?v='`);
+  process.exit(0);
+}
+
+const liveToken = extractVersionToken(liveHtml);
+if (liveToken !== expectedToken) {
+  console.log(`promote: WARNING — live site not updated yet. Expected ?v=${expectedToken}, got ?v=${liveToken || '(not found)'}.`);
+  console.log('promote: push succeeded — Pages can take ~1 min to propagate. Re-check shortly:');
+  console.log(`  curl -s ${LIVE_URL}/index.html | grep 'app.js?v='`);
+  process.exit(0); // the push itself succeeded; this is a propagation-timing warning, not a script failure
+}
+
+let assetStatus = null;
+try {
+  assetStatus = execFileSync(
+    'curl', ['-sS', '-o', '/dev/null', '-w', '%{http_code}', '--max-time', '15', `${LIVE_URL}/app.js?v=${expectedToken}`],
+    { encoding: 'utf8' }
+  ).trim();
+} catch (e) {
+  console.log(`promote: index.html confirmed at ?v=${expectedToken}, but could not fetch app.js to double-check (${e.message}).`);
+  process.exit(0);
+}
+
+if (assetStatus === '200') {
+  console.log(`promote: ✅ live site confirmed serving ?v=${expectedToken} (app.js -> HTTP 200). Promotion complete.`);
+} else {
+  console.log(`promote: WARNING — index.html is at ?v=${expectedToken}, but app.js?v=${expectedToken} returned HTTP ${assetStatus}.`);
+  console.log('promote: push succeeded; investigate the asset response before telling Jac it is fully live.');
+}
