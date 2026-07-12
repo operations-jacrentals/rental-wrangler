@@ -602,3 +602,18 @@ export const REVENUE_GOAL_DEFAULT = 150000; // SPEC §10 Revenue Goal default
 export const PERF_BUDGET_MS = 100;          // SPEC §3 hard interaction budget
 export const PERF_VITALS_ON = true;         // master kill-switch for Web-Vitals/render instrumentation (spec frontend-performance P0)
 export const PERF_SAMPLE_RATE = 1;          // fraction of sessions that flush a perfReport (1 = all, tune down at scale)
+
+/* ── Feature flags (dev-workflow trunk-based redesign D5, spec 2026-07-12) ──
+ * Scaffold ONLY — nothing is wired to a key yet, no behavior changes here.
+ * What it's for: when a big feature REPLACEMENT ships, land the new code path
+ * ALONGSIDE the old one, gated on FEATURES[key]. Default OFF keeps the old
+ * path live in production; flipping the key to true is the rollout switch,
+ * and flipping it back is the instant rollback — no code surgery either way.
+ * Delete the old path only once the new one has proven out. Small/low-risk
+ * changes skip this scaffold entirely and merge plainly.
+ * CAVEAT — this is NOT a secrecy mechanism: on a public Pages site, a flag
+ * disables EXECUTION, not VISIBILITY — flagged code still ships readable in
+ * the public bundle. Never gate a secret or a security/auth check on this. */
+export const FEATURES = {
+  // add keys here as a big replacement starts, e.g. exampleBigReplacement: false
+};
