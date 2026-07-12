@@ -8707,9 +8707,24 @@ function columnEl(col, session) {
 function colTabsEl(col, active, session) {
   // Jac 2026-06-12: the toggle CHIP stays centered; the nav cluster sits OUTSIDE
   // it, parked at the row's right edge (.tabrow wraps both).
+  // §M7 (Jac 2026-07-12): on PHONE, each column's header carries the FULL card-toggle bar (all
+  // cards, in their 3 column groups) — not just this column's 2 sub-cards — so from anywhere you
+  // can swipe OR tap the exact card and get zipped to it. This column's current card is the one
+  // highlighted. Desktop keeps its own 2-tab col-tabs.
+  const phone = document.body.classList.contains('is-phone');
   const bar = el('div', 'tabrow');
-  bar.innerHTML = `<div class="col-tabs">${colTabButtonsHtml(col, active, session)}</div>` + colActionsHtml(active, session);
+  const toggles = phone ? mobileNavHtml(active) : `<div class="col-tabs">${colTabButtonsHtml(col, active, session)}</div>`;
+  bar.innerHTML = toggles + colActionsHtml(active, session);
   return bar;
+}
+// §M7 — the full phone card-toggle bar (all cards, grouped by column), rendered atop each
+// column with `active` (that column's current card) highlighted. Tapping a toggle → the
+// [data-gocard] handler zips to that card (smooth-scroll to its column, switching the sub-card
+// if needed). Reuses the .mcard-bar / .mcard-tog segmented styling.
+function mobileNavHtml(active) {
+  const group = (members) => `<div class="mcard-bar">` + members.map((m) =>
+    `<button class="mcard-tog${m === active ? ' on' : ''}" data-gocard="${m}" data-tip="${esc(MEMBER_TITLE[m] || m)}"><span class="mct-ico">${memberIcon(m)}</span>${m === active ? `<span class="mct-lbl">${esc(MEMBER_TITLE[m] || m)}</span>` : ''}</button>`).join('') + `</div>`;
+  return `<div class="col-tabs mnav">` + MOBILE_TOGGLE_GROUPS.map((g) => group(g.members)).join('') + `</div>`;
 }
 /* The coltab buttons themselves (no wrapper) — shared by the desktop in-card tab row
    (colTabsEl) AND the phone footer (mobileDockEl), so a toggle looks identical in both. */
@@ -9318,7 +9333,7 @@ function headerEl() {
   h.innerHTML = `
     <button class="logo js-logo" aria-label="Jac Rentals"></button>
     <div class="kpis">${rings}</div>
-    ${topBar}
+    ${isPhone ? '' /* §M7 — the tool bar lives at the FOOTER on phone (mobileToolbarEl), not the top */ : topBar}
     <div class="header-right">
       <div class="hr-top${state.tabs.length ? ' has-tabs' : ''}">
         <div class="header-tabs tabstrip">${tabStrip(state.tabs)}</div>
@@ -9521,15 +9536,14 @@ function goToCard(member) {
 // sync in boot()). Sub-cards are no longer dock entries — they're in-card tabs now. Every
 // button carries its label in the DOM; CSS shows only the active one, so the scroll sync can
 // flip `.on` with a class toggle instead of a re-render.
-function mobileDockEl() {
-  const activeIdx = Math.max(0, Math.min(COLUMNS.length - 1, state.mobileCol));
-  const s = activeSession();
-  const btns = COLUMNS.map((colObj, i) => {
-    const member = (s.cols && s.cols[colObj.id]) || colObj.default;
-    return `<button class="mcard-tog${i === activeIdx ? ' on' : ''}" data-mcol="${i}" data-tip="${esc(MEMBER_TITLE[member] || member)}"><span class="mct-ico">${memberIcon(member)}</span><span class="mct-lbl">${esc(MEMBER_TITLE[member] || member)}</span></button>`;
-  }).join('');
-  const d = el('div', 'mobile-dock');
-  d.innerHTML = `<div class="mdock-row">${btns}</div>`;
+// §M7 (Jac 2026-07-12) — the phone FOOTER is the TOOL BAR (the same tools desktop keeps in its
+// bottom band: the bb-tools cluster + the comms bell), thumb-reachable at the bottom. Card
+// navigation moved OFF the footer and up into each column's own toggle header (mobileNavHtml) —
+// so the footer is tools-only again. (This is the top-toolbar content, relocated to the bottom;
+// headerEl omits it from the top on phone.)
+function mobileToolbarEl() {
+  const d = el('div', 'mobile-toolbar');
+  d.innerHTML = `<div class="top-toolbar">${bottomBarInner()}${commsBellBtn()}</div>`;
   return d;
 }
 /* ════════════════════════════════════════════════════════════════════════
@@ -15632,7 +15646,7 @@ function render() {
   const grid = el('div', 'grid');
   for (const col of COLUMNS) grid.appendChild(columnEl(col, session));
   if (phone) {
-    $('#app').replaceChildren(header, grid, mobileDockEl());
+    $('#app').replaceChildren(header, grid, mobileToolbarEl());
     // Snap the track to the active column with NO animation (a state-driven column change must
     // land instantly, not glide). rAF so the flex track has laid out and offsetLeft is real.
     const target = Math.max(0, Math.min(COLUMNS.length - 1, state.mobileCol));
@@ -17104,7 +17118,18 @@ function onClick(e) {
     return;
   }
   if (closest('.js-mtools')) { e.stopPropagation(); return openOverlay({ kind: 'tools' }); }   // §M1 phone footer → the global tool tray as a sheet
-  if (closest('[data-gocard]')) { e.stopPropagation(); return goToCard(closest('[data-gocard]').dataset.gocard); }   // §M1 footer card-toggle bar → jump to that card
+  if (closest('[data-gocard]')) {   // §M7 — a column-header toggle: zip to that card. If it's already the card shown in its column, smooth-scroll the snap track there (the nice "zip"); if it switches a sub-card, goToCard re-renders + lands on it.
+    e.stopPropagation();
+    const member = closest('[data-gocard]').dataset.gocard, col = COLUMN_OF[member];
+    const i = COLUMNS.findIndex((c) => c.id === col);
+    const s = activeSession(); const grid = document.querySelector('#app > .grid');
+    if (grid && i >= 0 && s.cols && s.cols[col] === member && grid.children[i]) {
+      state.mobileCol = i;
+      grid.scrollTo({ left: grid.children[i].offsetLeft, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+      return;
+    }
+    return goToCard(member);
+  }
   if (closest('.js-ext-chat')) { e.stopPropagation(); return toast('External customer & vendor chats arrive with the messaging backend.'); }
   if (closest('.js-chat-close')) { e.stopPropagation(); state.chat.open = false; return render(); }
   if (closest('.js-chat-back')) { e.stopPropagation(); state.chat.activeId = null; return render(); }   // back to the all-flags overview (chat persists)
@@ -23182,7 +23207,8 @@ function boot() {
     const idx = Math.max(0, Math.min(COLUMNS.length - 1, Math.round(grid.scrollLeft / w)));
     if (idx === mcolLast) return;
     mcolLast = idx; state.mobileCol = idx;
-    document.querySelectorAll('.mobile-dock .mcard-tog').forEach((b, i) => b.classList.toggle('on', i === idx));
+    // Each column's own toggle header highlights that column's card statically, so nothing to
+    // repaint on scroll — we just keep state.mobileCol in step (zip-zones, links, etc. read it).
   }
   document.addEventListener('scroll', (e) => {
     if (!(e.target && e.target.classList && e.target.classList.contains('grid'))) return;
