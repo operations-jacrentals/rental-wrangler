@@ -23265,7 +23265,14 @@ function boot() {
         // widen/narrow (the earlier bug: two elements with different % vs px transforms drifted).
         const off = PAGE.dir === 1 ? (r.left + r.width) : (r.left - r.width);
         gh.style.cssText = `position:fixed;left:${off}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;transform:translateX(0);`;
-        gh.appendChild(columnEl(COLUMNS[PAGE.nIdx], activeSession()));
+        const gcol = columnEl(COLUMNS[PAGE.nIdx], activeSession());
+        // §M6 parity: on a committed phone screen the per-card search/sort bar (.listbar) is
+        // lifted OUT of the card up into the header — the live grid we're paging already has
+        // none in-card. columnEl() builds it in-card, so strip it from the ghost too; otherwise
+        // the incoming preview shows a stray sub-header (the "Start date" sort bar) the real
+        // screen won't have once it commits. The header itself doesn't slide, so nothing is lost.
+        gcol.querySelectorAll('.listbar').forEach((lb) => lb.remove());
+        gh.appendChild(gcol);
         document.body.appendChild(gh); PAGE.ghost = gh;
       }
       PAGE.locked = true;
