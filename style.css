@@ -342,6 +342,12 @@ input { font-family: inherit; }
 .mcard-bar .mcard-tog { flex: 1 1 0; }
 .mcard-bar .mcard-tog.on { flex: 0 1 auto; min-width: 0; }   /* was 0 0 auto — let a long active label shrink+ellipsis on a narrow (320–360px) bar instead of overflow-clipping (#552-r14) */
 .mcard-tog:not(.on):active { background: rgba(255,255,255,.06); }
+/* §M7 — the dock is now 3 column buttons directly in .mdock-row (no .mcard-bar wrapper): share
+   the width evenly, and show ONLY the active button's label (every button carries its label in
+   the DOM so the scroll sync can flip which one shows with a class toggle, no re-render). */
+.mdock-row > .mcard-tog { flex: 1 1 0; border-radius: 11px; background: var(--panel-2); border: 1px solid var(--line); box-shadow: var(--chip-shadow); }
+.mdock-row > .mcard-tog.on { flex: 1.4 1 0; background: var(--accent); border-color: var(--accent); color: var(--on-orange, #1a1205); }   /* selected column = ignition orange + dark ink (beats the panel-2 base above) */
+.mdock-row > .mcard-tog:not(.on) .mct-lbl { display: none; }
 .mdock-act { flex: 0 0 auto; position: relative; }
 /* ── §M2 Mobile drag — the chat drop-zone is the BOTTOM EDGE (full width) on phones,
    mirroring the L/R edges used to switch columns. The cancel-arc is hidden (release in
@@ -429,16 +435,16 @@ body.is-phone { touch-action: manipulation; }
 .is-phone .card-jog { height: 44px; }                                           /* un-clip the 26px container so the bigger jog buttons actually show */
 .is-phone .card-jog .jog-btn { min-width: 46px; min-height: 44px; }
 .is-phone .card-jog .jog-btn svg { width: 20px; height: 20px; }
-/* single active column — no 3-wide scroll track (the grid swipe is Back/Forward, §M3) */
-.is-phone .grid { display: block; overflow: hidden; padding: 12px 8px 4px; touch-action: pan-y; will-change: transform; }   /* vertical scroll native; JS owns the horizontal paging drag */
-/* §M3 interactive main-screen paging (Jac 2026-07-11) — the drag translates the live grid + a
-   fixed ghost of the neighbour screen; .paging-settle carries the snap-back / commit glide. */
-.paging-settle { transition: transform .32s cubic-bezier(.22, .61, .36, 1); }   /* Jac: slower, smoother SLIDE on release (was .21s — "slams into place"); keep the JS pageFinalize/cleanup timers (320/370ms) in step */
-.paging-ghost { z-index: 30; overflow: hidden; pointer-events: none; background: var(--bg); box-sizing: border-box; will-change: transform; }
-body.is-paging { overflow: hidden; }
-body.is-paging .grid, body.is-paging .card-body { touch-action: none; overflow: hidden !important; }   /* freeze the vertical scroll for the duration of a horizontal page */
-@media (prefers-reduced-motion: reduce) { .paging-settle { transition: transform .01s linear; } }
-.is-phone .col { flex: 1 1 auto; padding: 0; height: 100%; }
+/* ── §M7 — phone paging is NATIVE horizontal scroll-snap (Jac 2026-07-12, replaces the §M3
+   ghost engine). The grid is a horizontal snap track (like the desktop's sideways pan, but the
+   browser snaps onto a card); each column is one full-width page. render() sets scrollLeft to
+   the active column, a dock tap scroll-snaps there smoothly, and a scroll listener syncs
+   state.mobileCol. No JS transforms, no ghost, no glide timers. touch-action stays default so
+   the browser disambiguates: a horizontal drag pans the track, a vertical one the card-body. ── */
+.is-phone .grid { display: flex; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch; scrollbar-width: none; padding: 12px 0 4px; }
+.is-phone .grid::-webkit-scrollbar { display: none; }
+.is-phone .col { flex: 0 0 100%; scroll-snap-align: start; padding: 0 8px; height: 100%; box-sizing: border-box; }
 /* the global tool tray rendered as a phone sheet (§M1 footer → Tools) */
 .tools-tray { display: flex; flex-wrap: wrap; gap: 8px; }
 .tools-tray .iconbtn { flex: 0 0 auto; min-height: 44px; }
