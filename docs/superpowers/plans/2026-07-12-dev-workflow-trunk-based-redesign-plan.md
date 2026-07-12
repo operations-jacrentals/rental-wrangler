@@ -97,6 +97,22 @@ Concrete edits (staged as their own reviewed change, since they alter how every 
 - **`CLAUDE.md`**: rewrite "Deploy & gates" (branch flow + spec-sync) to the trunk + two-gate model; keep the CI-gate list and cache-bust note (until Phase 6).
 - **`tools/branch-preflight.mjs`**: reduce to trunk + worktree hygiene (or retire).
 
+### §5a Skill rewrites — `start` + the end-of-session skill (Jac, 2026-07-12: "take note on HOW")
+
+The session-lifecycle pair needs a rewrite for the trunk model. Capturing the approach here so it isn't lost:
+
+- **`start` skill** (rewrite, well-scoped against this design):
+  - STRIP: the "route to a task branch off an `area/<domain>`" flow, the `branch-map.md` area catalogue, the `master-spec` `down`-at-start / `up`-every-2h obligations + the ~2h spec-sync self-timer, and the `branch-preflight --ensure` area/master-spec logic.
+  - ADD: "cut a short feature branch (or `claude --worktree <task>`) off the **trunk**"; the two-gate deploy loop (`deploy-staging` → review URL → "merge it" → wait → "promote it"); the `FEATURES` feature-flag note for big replacements; keep the toolchain probe, memory recall, and the working-discipline/model-triage rules.
+
+- **End-of-session skill** — REPLACES `tidy-sessions`, which Jac flags 2026-07-12 as "**has not been very useful**" (it only lists/archives finished chats). Reconceive it from *archive-only* into an active **wrap-up / land-the-work** skill:
+  - Verify the session's work is committed + pushed + has a PR (branch hygiene).
+  - Report state plainly: what's **merged to the trunk** vs **promoted to production** vs **still pending** — so a session never ends in a fuzzy "is this shipped?" state.
+  - Clean up the **worktree** (`git worktree remove`) once the branch is merged.
+  - Write a short **handoff note** into the session folder.
+  - THEN offer to archive the chat (the old tidy-sessions job) as the last step, not the only step.
+  - **Open — needs Jac (see the fork below):** exactly what made `tidy-sessions` unhelpful, and what he most wants an end skill to *do*, drives the rewrite's shape. Recorded pending his answer.
+
 ## Phase 6 — Optional hardening (later)
 
 - **Content-hashed asset filenames** via a small CI hashing step (rename `app.<hash>.js` / rewrite `index.html`) to retire the manual `?v=` bump while staying build-free.
