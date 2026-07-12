@@ -409,6 +409,17 @@ body.is-phone { touch-action: manipulation; }
 .is-phone .winpicker .wp-time input[type="time"] { height: 40px; }
 @keyframes sheetUp { from { transform: translateY(100%); } to { transform: none; } }
 @media (prefers-reduced-motion: reduce) { .is-phone .popup, .is-phone .winpicker { animation: none; } }
+/* ── §M1 — phone column-switch slide. Switching the active column (swipe or dock tap) used
+   to snap the new column in instantly ("slams into place"); now it SLIDES in from the swipe
+   side. 'r' = a forward step (swipe left / next card) enters from the right, 'l' = a back
+   step from the left. Crisp ease-out, no overshoot; reduced-motion drops to the rest pose.
+   .is-phone .grid is overflow:hidden and the body clips sideways, so the off-screen start
+   is never visible as a scrollbar. ── */
+@keyframes mColInR { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes mColInL { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+.is-phone .grid.mcol-in-r { animation: mColInR .26s cubic-bezier(.22, .61, .36, 1) both; }
+.is-phone .grid.mcol-in-l { animation: mColInL .26s cubic-bezier(.22, .61, .36, 1) both; }
+@media (prefers-reduced-motion: reduce) { .is-phone .grid.mcol-in-r, .is-phone .grid.mcol-in-l { animation: none; } }
 /* ── §M4 — phone header: logo + ALL FIVE KPI rings share the TOP row (rings shrunk to
    fit), and the global search wraps to its own full-width row underneath. ── */
 .is-phone .header { flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 12px 0; }   /* unified to the 8/12 rhythm (Jac 2026-06-23) */

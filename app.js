@@ -8971,6 +8971,12 @@ function mainCardOfMember(m) {
 // §M1 — jump straight to a card (flattens the 3-column model on phones): set the column +
 // member, flip the visible column, and show that card's LIST.
 function goToCard(member) {
+  // §M1 — direction for the slide-in: a swipe already set pendingColSlide (authoritative,
+  // handles wrap); a non-swipe caller (dock tap, link) infers it from sequence position.
+  if (!pendingColSlide) {
+    const order = MOBILE_SWIPE_ORDER, from = order.indexOf(currentMobileMember()), to = order.indexOf(member);
+    if (from >= 0 && to >= 0 && to !== from) pendingColSlide = to > from ? 'r' : 'l';
+  }
   const s = activeSession(); const col = COLUMN_OF[member];
   if (s.cols && col) s.cols[col] = member;
   const idx = COLUMNS.findIndex((c) => c.id === col); if (idx >= 0) state.mobileCol = idx;
@@ -11433,6 +11439,7 @@ function wirePopupDrag(overlay) {
    stack stays balanced. Phone-only — desktop keeps Esc/click. Wired in boot(). ── */
 let backGuard = false, backConsuming = false;
 let swipeFired = false;   // §M1/§M3 — a footer or grid section-switch swipe sets this so the trailing click is swallowed once
+let pendingColSlide = '';   // §M1 — 'r'/'l' set by a swipe or goToCard so the NEXT phone render slides the new column in from that side (see render()); consumed + cleared there
 function anyDismissable() { return !!(state.overlay || state.datesearch || state.chat.open || state.wrangler.open); }
 function dismissTopSheet() {
   if (state.datesearch) { closeDateSearch(); return true; }
@@ -15083,14 +15090,13 @@ function render() {
   const shown = phone ? [COLUMNS[Math.max(0, Math.min(2, state.mobileCol))]] : COLUMNS;
   for (const col of shown) grid.appendChild(columnEl(col, session));
   // §M1 — desktop keeps the bottom toolbar; on phone the tools open up across the top header instead.
-  if (phone) $('#app').replaceChildren(header, grid);
-  else $('#app').replaceChildren(header, grid, bottomBarEl());
   if (phone) {
+    // §M1 — move the active card's list search/sort row DOWN into the footer dock (it sits
+    // with the card switcher). CRITICAL: do this while BOTH grid and dock are still off-DOM,
+    // BEFORE the replaceChildren swap — otherwise the page paints one frame with the toolbar
+    // still inside the card, then it jumps to the dock (the "double-show / shifts up" flash).
+    // Same node moved → its delegated handlers keep working. Record view has no listbar.
     const dock = mobileDockEl();
-    $('#app').appendChild(dock);
-    // §M1 — move the active card's list search/sort row DOWN into the footer (it sits with
-    // the card switcher). Same node → its delegated handlers keep working. Record view has
-    // no listbar, so the slot stays empty (CSS hides it).
     const lb = grid.querySelector('.listbar');
     if (lb) dock.querySelector('.mdock-searchslot').appendChild(lb);
     else {   // §M — Standard (record) view has no listbar; keep the Back/Fwd jog in the SAME
@@ -15102,6 +15108,12 @@ function render() {
         if (jog) { const bar = el('div', 'listbar mdock-jogbar'); bar.innerHTML = jog; dock.querySelector('.mdock-searchslot').appendChild(bar); }
       }
     }
+    // §M1 — a swipe / card switch slides the new column in from the swipe side (consume+clear).
+    if (pendingColSlide) { grid.classList.add(pendingColSlide === 'r' ? 'mcol-in-r' : 'mcol-in-l'); pendingColSlide = ''; }
+    $('#app').replaceChildren(header, grid, dock);
+  } else {
+    pendingColSlide = '';   // desktop never slides — don't let a stale flag leak into a later phone render
+    $('#app').replaceChildren(header, grid, bottomBarEl());
   }
   // restore scroll by VIEW: same view → keep your spot; back to a list → return to the
   // row you left; opened a record → top of Standard view (a targeted link scrolls itself after).
@@ -15173,11 +15185,9 @@ function renderResults() {
   const grid = el('div', 'grid');
   const shown = phone ? [COLUMNS[Math.max(0, Math.min(2, state.mobileCol))]] : COLUMNS;
   for (const col of shown) grid.appendChild(columnEl(col, session));
-  oldGrid.replaceWith(grid);
-  if (phone) {   // re-home the freshly-built listbar into the dock, exactly as render() does
+  if (phone) {   // re-home the listbar into the dock BEFORE connecting the grid (same flash-avoidance as render())
     const oldDock = app.querySelector(':scope > .mobile-dock');
     const dock = mobileDockEl();
-    if (oldDock) oldDock.replaceWith(dock); else app.appendChild(dock);
     const lb = grid.querySelector('.listbar');
     if (lb) dock.querySelector('.mdock-searchslot').appendChild(lb);
     else {
@@ -15188,7 +15198,10 @@ function renderResults() {
         if (jog) { const bar = el('div', 'listbar mdock-jogbar'); bar.innerHTML = jog; dock.querySelector('.mdock-searchslot').appendChild(bar); }
       }
     }
+    oldGrid.replaceWith(grid);                                    // grid now carries no in-card listbar → nothing flashes
+    if (oldDock) oldDock.replaceWith(dock); else app.appendChild(dock);
   } else {
+    oldGrid.replaceWith(grid);
     const bb = app.querySelector(':scope > .bottombar');
     if (bb) bb.replaceWith(bottomBarEl());
   }
@@ -22441,8 +22454,9 @@ function boot() {
     const s = swipeStart; swipeStart = null;
     if (!s || e.pointerId !== s.id || DRAG.active || DRAG.suppressClick) return;   // a real drag is not a swipe
     const dx = e.clientX - s.x, dy = e.clientY - s.y;
-    if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.3) return;            // not a clean horizontal swipe
+    if (Math.abs(dx) < 35 || Math.abs(dx) < Math.abs(dy) * 1.3) return;            // not a clean horizontal swipe (35px = a lighter flick triggers; keep the 1.3× ratio so a vertical scroll never counts)
     swipeFired = true;                                                             // swallow the trailing click (row/toggle)
+    pendingColSlide = dx < 0 ? 'r' : 'l';                                          // §M1 — swipe left (next) slides the new column in from the right; swipe right (prev) from the left
     if (s.footer) {
       const order = MOBILE_SWIPE_ORDER;
       let i = order.indexOf(currentMobileMember()); if (i < 0) i = 0;              // left → next, right → previous, wraps around
