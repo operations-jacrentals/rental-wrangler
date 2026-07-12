@@ -105,13 +105,12 @@ The session-lifecycle pair needs a rewrite for the trunk model. Capturing the ap
   - STRIP: the "route to a task branch off an `area/<domain>`" flow, the `branch-map.md` area catalogue, the `master-spec` `down`-at-start / `up`-every-2h obligations + the ~2h spec-sync self-timer, and the `branch-preflight --ensure` area/master-spec logic.
   - ADD: "cut a short feature branch (or `claude --worktree <task>`) off the **trunk**"; the two-gate deploy loop (`deploy-staging` → review URL → "merge it" → wait → "promote it"); the `FEATURES` feature-flag note for big replacements; keep the toolchain probe, memory recall, and the working-discipline/model-triage rules.
 
-- **End-of-session skill** — REPLACES `tidy-sessions`, which Jac flags 2026-07-12 as "**has not been very useful**" (it only lists/archives finished chats). Reconceive it from *archive-only* into an active **wrap-up / land-the-work** skill:
-  - Verify the session's work is committed + pushed + has a PR (branch hygiene).
-  - Report state plainly: what's **merged to the trunk** vs **promoted to production** vs **still pending** — so a session never ends in a fuzzy "is this shipped?" state.
-  - Clean up the **worktree** (`git worktree remove`) once the branch is merged.
-  - Write a short **handoff note** into the session folder.
-  - THEN offer to archive the chat (the old tidy-sessions job) as the last step, not the only step.
-  - **Open — needs Jac (see the fork below):** exactly what made `tidy-sessions` unhelpful, and what he most wants an end skill to *do*, drives the rewrite's shape. Recorded pending his answer.
+- **End-of-session skill** — REPLACES `tidy-sessions`, which Jac flags 2026-07-12 as "**has not been very useful**" (it only lists/archives finished chats). Jac's chosen shape (2026-07-12) is a **capture-and-close-out** skill, NOT a land/promote skill. Four jobs, in order:
+  1. **Report shipped-state** plainly — what's **merged to the trunk** vs **promoted to production** vs **still pending / uncommitted** — so a session never ends in a fuzzy "did this actually ship?" state.
+  2. **Catch loose work before it's lost** — scan the session for ideas, features, or half-done threads that should live on for later, and **move each onto its own branch** (a parked feature branch / follow-up) so closing the chat never drops a good idea or unfinished piece. This is the job Jac most wanted and the one `tidy-sessions` never did.
+  3. **Guard against premature archive** — if anything is pending, parked, or uncommitted, the session should **NOT** be archived; say so and stop, rather than sweeping it away.
+  4. **Archive the chat reliably** — the old `tidy-sessions` job, done well, as the **last** step and only once 1–3 are clean.
+  - De-scoped per Jac's picks: it does **not** drive the two gates / promote, and does not itself "land" the work beyond reporting + parking. Worktree cleanup + a handoff note fold into steps 1/4.
 
 ## Phase 6 — Optional hardening (later)
 
