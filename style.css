@@ -445,6 +445,20 @@ body.is-phone { touch-action: manipulation; }
   -webkit-overflow-scrolling: touch; scrollbar-width: none; padding: 12px 0 4px; }
 .is-phone .grid::-webkit-scrollbar { display: none; }
 .is-phone .col { flex: 0 0 100%; scroll-snap-align: start; padding: 0 8px; height: 100%; box-sizing: border-box; }
+/* §M7 — the full card-toggle nav atop each phone column (all cards in their 3 groups; this
+   column's card is the .on one). The 3 segmented groups share the row and scroll if tight. */
+.is-phone .col-tabs.mnav { display: flex; gap: 6px; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; padding: 0; }
+.is-phone .col-tabs.mnav::-webkit-scrollbar { display: none; }
+.is-phone .col-tabs.mnav .mcard-bar { flex: 1 1 0; }
+/* icon-only — 6 toggles in one row leaves no room for a label without ugly truncation; the
+   orange .on icon is the "you are here" (the card below names itself), so drop the labels. */
+.is-phone .col-tabs.mnav .mct-lbl { display: none; }
+.is-phone .col-tabs.mnav .mcard-tog { padding: 0 6px; }
+/* §M7 — phone FOOTER tool bar (tools back at the bottom, thumb-reachable; nav is in the column
+   headers now). Mirrors the old dock's bottom chrome: border-top, panel bg, safe-area pad. */
+.is-phone .mobile-toolbar { flex: 0 0 auto; border-top: 1px solid var(--line); background: var(--panel);
+  padding: 6px 8px max(6px, env(safe-area-inset-bottom)); }
+.is-phone .mobile-toolbar .top-toolbar { order: 0; margin: 0; padding: 0; }
 /* the global tool tray rendered as a phone sheet (§M1 footer → Tools) */
 .tools-tray { display: flex; flex-wrap: wrap; gap: 8px; }
 .tools-tray .iconbtn { flex: 0 0 auto; min-height: 44px; }
