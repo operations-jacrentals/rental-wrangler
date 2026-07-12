@@ -8691,15 +8691,16 @@ function columnEl(col, session) {
   // stamp the VIEW identity (list vs which record) so render() keys scroll memory by it
   const cs = card.dataset.card && session.cards ? session.cards[card.dataset.card] : null;
   card.dataset.view = (cs && cs.mode === 'standard' && cs.recId != null) ? `${cs.recType || ''}:${cs.recId}` : 'list';
-  if (!document.body.classList.contains('is-phone')) card.insertBefore(colTabsEl(col, active, session), card.firstChild);   // toggles live INSIDE the card top on desktop; on phones they move to the footer dock (§M1)
-  // Desktop: freeze the search/sort bar out of the scroll too — a full-width card
-  // header so the card-body scrollbar runs ONLY through the list below it, never in
-  // a gutter alongside the bar (the "funny" gap). On phones render() relocates the bar to the bottom dock instead.
-  if (!document.body.classList.contains('is-phone')) {
-    const lb = card.querySelector('.card-body .listbar'), body = card.querySelector('.card-body');
-    if (lb && body) card.insertBefore(lb, body);
-    const st = card.querySelector('.card-body .rus'); if (st && body) card.insertBefore(st, body);   // §13.7 — flex-basis 25% resolves against .card, the full column
-  }
+  // Each column carries its OWN sub-card tab strip + search/sort bar inside its card top —
+  // on desktop AND phone alike (§M7 native scroll-snap paging: the phone shows all 3 columns
+  // in a horizontal snap track, so each one owns its toolbar and scrolls with it, exactly like
+  // desktop — no more lifting the active card's bar into a shared header). The freeze-out of the
+  // bar (full-width card header, so the card-body scrollbar runs only through the list, not a
+  // gutter beside the bar) applies on phone too.
+  card.insertBefore(colTabsEl(col, active, session), card.firstChild);
+  const lb = card.querySelector('.card-body .listbar'), body = card.querySelector('.card-body');
+  if (lb && body) card.insertBefore(lb, body);
+  const st = card.querySelector('.card-body .rus'); if (st && body) card.insertBefore(st, body);   // §13.7 — flex-basis 25% resolves against .card, the full column
   wrap.appendChild(card);
   return wrap;
 }
@@ -9325,7 +9326,7 @@ function headerEl() {
         <span class="spacer"></span>
         ${currentUser ? `<span class="hello-name">${esc(currentUser)}</span>` : ''}
       </div>
-      <div class="toolbar">
+      ${isPhone ? '' /* §M7 — no global search on mobile (Jac): each card keeps its own in-card search */ : `<div class="toolbar">
         <div class="searchwrap ${state.filterTerms.length ? 'has-terms' : ''}${state.query.trim() || state.filterTerms.length ? ' has-query' : ''}">
           ${state.filterTerms.length > 1 ? closeX('js-clear') : ''}
           <span class="s-icon">${I.search}</span>
@@ -9333,7 +9334,7 @@ function headerEl() {
           <input id="globalsearch" class="search" placeholder="${state.filterTerms.length ? 'Add filter — type, Enter to pin…' : 'Search everything…'}" value="${esc(state.query)}" />
           ${(state.query || state.filterTerms.length) ? `<div class="search-tools"><button class="search-tool js-clear" data-tip="Clear">${I.x}</button></div>` : ''}
         </div>
-      </div>
+      </div>`}
     </div>`;
   return h;
 }
@@ -9513,18 +9514,22 @@ function goToCard(member) {
 // steps through the 3 MAIN cards only (2026-07-10 refinement — two different swipe zones, see
 // the pointerup handler in boot(); swipe Back/Forward through history stays retired, the jog
 // buttons cover that).
+// §M7 — the phone footer is a THREE-column switcher/indicator (one button per desktop column:
+// Units · Rentals · Customers), each showing that column's current member icon+label. Tap a
+// button → smooth scroll-snaps the track to that column (the [data-mcol] handler in onClick);
+// the button for whichever column you're snapped to wears `.on` (kept in step by the scrollend
+// sync in boot()). Sub-cards are no longer dock entries — they're in-card tabs now. Every
+// button carries its label in the DOM; CSS shows only the active one, so the scroll sync can
+// flip `.on` with a class toggle instead of a re-render.
 function mobileDockEl() {
-  const cur = currentMobileMember();
-  const barHtml = (members) => {
-    const btns = members.map((m) => {
-      const on = m === cur;
-      return `<button class="mcard-tog${on ? ' on' : ''}" data-gocard="${m}" data-tip="${esc(MEMBER_TITLE[m] || m)}"><span class="mct-ico">${memberIcon(m)}</span>${on ? `<span class="mct-lbl">${esc(MEMBER_TITLE[m] || m)}</span>` : ''}</button>`;
-    }).join('');
-    return `<div class="mcard-bar">${btns}</div>`;
-  };
-  const groups = MOBILE_TOGGLE_GROUPS.map((g) => barHtml(g.members)).join('');
+  const activeIdx = Math.max(0, Math.min(COLUMNS.length - 1, state.mobileCol));
+  const s = activeSession();
+  const btns = COLUMNS.map((colObj, i) => {
+    const member = (s.cols && s.cols[colObj.id]) || colObj.default;
+    return `<button class="mcard-tog${i === activeIdx ? ' on' : ''}" data-mcol="${i}" data-tip="${esc(MEMBER_TITLE[member] || member)}"><span class="mct-ico">${memberIcon(member)}</span><span class="mct-lbl">${esc(MEMBER_TITLE[member] || member)}</span></button>`;
+  }).join('');
   const d = el('div', 'mobile-dock');
-  d.innerHTML = `<div class="mdock-searchslot"></div><div class="mdock-row">${groups}</div>`;
+  d.innerHTML = `<div class="mdock-row">${btns}</div>`;
   return d;
 }
 /* ════════════════════════════════════════════════════════════════════════
@@ -15600,17 +15605,6 @@ const scrollMemo = {};   // persistent scroll positions, keyed `card|view` (list
 //   • the TOOL BAR (.top-toolbar), which drops in last (Jac: item-tab rail above the tools).
 // Node relocation only — every builder still emits its usual markup (desktop untouched); this
 // just re-homes four nodes. The card-toggle-bar swipe zone follows the toggles (see boot()).
-function reflowPhoneChrome(header, dock) {
-  const hr = header.querySelector('.header-right');
-  const hrTop = hr && hr.querySelector('.hr-top');    // the item-tab rail
-  const toggles = dock.querySelector('.mdock-row');
-  const searchslot = dock.querySelector('.mdock-searchslot');
-  const toolbar = header.querySelector('.top-toolbar');
-  if (hr && toggles) hr.appendChild(toggles);         // card toggles → header (replaces the dropped global search)
-  if (hr && searchslot) hr.appendChild(searchslot);   // per-card search/sort → right under the toggles
-  if (hrTop) dock.appendChild(hrTop);                 // item-tab rail → bottom dock, above the tool bar
-  if (toolbar) dock.appendChild(toolbar);             // tool bar → bottom dock, last (below the rail)
-}
 function render() {
   const t0 = performance.now();
   refreshToday();   // roll "today" over before painting — an all-day-open tab must never stamp/read yesterday
@@ -15628,36 +15622,21 @@ function render() {
   // blank frame between teardown and rebuild — kills the flash on anchor/cascade.
   const header = headerEl();
   const session = activeSession();
-  // 3-column layout: each column paints its one active member card (+ a tab strip).
-  // §M1 — on phones we paint ONLY the active column (no 3-wide scroll track): a horizontal
-  // swipe is Back/Forward now, and the column is changed from the footer dock instead.
+  // 3-column layout: each column paints its one active member card (+ its own tab strip).
+  // §M7 — phones now paint ALL THREE columns into a horizontal scroll-snap track (like the
+  // desktop's sideways pan, but the browser snaps onto a card). No single-active-column, no
+  // custom paging engine, no §M6 header reflow — each column owns its toolbar and scrolls with
+  // it. The dock is a 3-way column switcher/indicator; state.mobileCol is synced FROM the
+  // scroll position (see the scrollend sync wired in boot()).
   const phone = document.body.classList.contains('is-phone');
   const grid = el('div', 'grid');
-  const shown = phone ? [COLUMNS[Math.max(0, Math.min(2, state.mobileCol))]] : COLUMNS;
-  for (const col of shown) grid.appendChild(columnEl(col, session));
-  // §M1 — desktop keeps the bottom toolbar; on phone the tools open up across the bottom dock instead (§M6).
+  for (const col of COLUMNS) grid.appendChild(columnEl(col, session));
   if (phone) {
-    // Assemble the WHOLE phone chrome off-DOM, then connect once. CRITICAL ordering: the
-    // listbar move (into the dock slot) and reflowPhoneChrome (§M6 — toggles/search rise into
-    // the header, tool bar drops into the dock) must both run while header/grid/dock are still
-    // DETACHED. Previously the grid was connected first ($('#app').replaceChildren(header,grid))
-    // and only THEN was the listbar relocated + chrome reflowed — so the page painted a frame
-    // with the toolbar still inside the card before it jumped up/down (the "double-show / shifts
-    // up" flash). reflowPhoneChrome does pure node moves (no layout reads), so it's safe detached.
-    const dock = mobileDockEl();
-    const lb = grid.querySelector('.listbar');
-    if (lb) dock.querySelector('.mdock-searchslot').appendChild(lb);
-    else {   // §M — Standard (record) view has no listbar; keep the Back/Fwd jog in the SAME
-      // slot List view uses, instead of letting it sit up in the card header.
-      const cardNode = grid.querySelector('.card[data-card]');
-      const dc = cardNode && cardNode.dataset.card, cs = dc && activeSession().cards[dc];
-      if (cs && cs.mode === 'standard') {
-        const jog = cardJog(dc, cs);
-        if (jog) { const bar = el('div', 'listbar mdock-jogbar'); bar.innerHTML = jog; dock.querySelector('.mdock-searchslot').appendChild(bar); }
-      }
-    }
-    reflowPhoneChrome(header, dock);   // §M6 — run while detached (pure node moves, no layout reads)
-    $('#app').replaceChildren(header, grid, dock);   // single connect → the toolbar is never painted in-card
+    $('#app').replaceChildren(header, grid, mobileDockEl());
+    // Snap the track to the active column with NO animation (a state-driven column change must
+    // land instantly, not glide). rAF so the flex track has laid out and offsetLeft is real.
+    const target = Math.max(0, Math.min(COLUMNS.length - 1, state.mobileCol));
+    requestAnimationFrame(() => { const c = grid.children[target]; if (c) grid.scrollLeft = c.offsetLeft; });
   } else {
     $('#app').replaceChildren(header, grid, bottomBarEl());
   }
@@ -17116,7 +17095,14 @@ function onClick(e) {
   if (closest('.js-photo-sweep')) { e.stopPropagation(); closeMenus(); return sweepPhotosToDrive(); }   // admin one-shot: offload base64 photos → Drive
   if (closest('.js-feedback')) { e.stopPropagation(); return wranglerNewChat(); }   // §18d folded: the old bug/request form is now the one Mr. Wrangler chat
   // §17 internal team dock
-  if (closest('[data-mcol]')) { e.stopPropagation(); state.mobileCol = +closest('[data-mcol]').dataset.mcol; return render(); }   // §M1 dot nav
+  if (closest('[data-mcol]')) {   // §M7 — dock column switcher: smooth scroll-snap the track to that column (no re-render; scrollend sync updates state + .on)
+    e.stopPropagation();
+    const i = Math.max(0, Math.min(COLUMNS.length - 1, +closest('[data-mcol]').dataset.mcol));
+    const grid = document.querySelector('#app > .grid'); const c = grid && grid.children[i];
+    if (c) grid.scrollTo({ left: c.offsetLeft, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    else { state.mobileCol = i; render(); }
+    return;
+  }
   if (closest('.js-mtools')) { e.stopPropagation(); return openOverlay({ kind: 'tools' }); }   // §M1 phone footer → the global tool tray as a sheet
   if (closest('[data-gocard]')) { e.stopPropagation(); return goToCard(closest('[data-gocard]').dataset.gocard); }   // §M1 footer card-toggle bar → jump to that card
   if (closest('.js-ext-chat')) { e.stopPropagation(); return toast('External customer & vendor chats arrive with the messaging backend.'); }
@@ -23180,127 +23166,29 @@ function boot() {
     if (backConsuming) { backConsuming = false; return; }
     if (anyDismissable()) { backGuard = false; dismissTopSheet(); }   // entry already popped by the browser → re-pushed by render if more remain
   });
-  // §M1/§M3 — phone horizontal paging (Jac, 2026-07-11 — supersedes the 2026-07-10 two-zone
-  // fire-on-release swipe): ONE interactive drag anywhere in the grid OR dock pages the 3 MAIN
-  // screens (Units → Rentals → Customers), Apple-homescreen style. Sub-cards
-  // (Categories/Calendar/Sales) are reached by the dock's tap nav + the in-column tabs, not by
-  // swipe. Swipe-based Back/Forward through view history stays retired (the jog buttons cover it).
-  // See the PAGE controller below.
-  // §M1/§M3 — INTERACTIVE main-screen paging (Jac 2026-07-11): a real Apple-homescreen drag.
-  // Physically drag the next/prev MAIN screen (Units · Rentals · Customers) into view following
-  // the finger; release past ~35% of the width (or a flick) to COMMIT, else it snaps back — so
-  // you can peek at the next screen and change your mind mid-drag. The neighbour column is rendered
-  // live into a fixed ghost panel (columnEl) so you literally see it slide in; on commit render()
-  // lands the real column at rest. Each screen keeps its own sub-card state (we page by column
-  // index, not by resetting the member). Sub-cards (Categories/Calendar/Sales) stay reachable via
-  // the dock's tap nav + the in-column tabs. A record drag (long-press → DRAG.active) is excluded;
-  // touch-action:pan-y frees the horizontal axis so this never fights vertical scroll.
-  const PAGE = { on: false, id: null, x0: 0, y0: 0, locked: false, edge: false, fromEdge: false, dir: 0, nIdx: -1, grid: null, ghost: null, w: 1, lastX: 0, lastT: 0, vx: 0, settling: false, pending: null };
-  let pageTimer = null;
-  // §M3 — land a committed page. Drops the ghost FIRST, THEN renders the real column — because
-  // render()'s scroll-save reads every `.card[data-card]` in the DOM, and the ghost is a freshly
-  // built card (scrollTop 0); if it's still mounted it clobbers the returning card's saved scroll
-  // in scrollMemo → the "always jumps to the top when I come back" bug. Flushable: a rapid
-  // follow-up swipe calls this to finish the previous glide instantly before starting its own, so
-  // gestures never overlap and renders never stack (the "bog + jump on fast left-right" bug).
-  function pageFinalize() {
-    if (!PAGE.pending) return;
-    if (pageTimer) { clearTimeout(pageTimer); pageTimer = null; }
-    const { gh, nIdx } = PAGE.pending; PAGE.pending = null; PAGE.settling = false;
-    if (gh) gh.remove();
-    state.mobileCol = nIdx; render();
+  // §M7 — native scroll-snap paging (Jac 2026-07-12, supersedes the custom PAGE ghost engine):
+  // the phone grid is a horizontal scroll-snap track of the 3 columns (render() + CSS §M7). The
+  // BROWSER owns the drag/momentum/snap — no ghost, no glide timers, no commit thresholds. All
+  // that's left is keeping state.mobileCol (+ the dock's "you are here" highlight) in step with
+  // whichever column the user has snapped to, so everything keyed to mobileCol (zip-zones,
+  // cross-column links, the dock) stays correct. Cheap: an rAF-throttled scroll listener reads
+  // scrollLeft and, only when the snapped index changes, updates state + toggles the dock .on —
+  // no re-render. (scroll is captured because it doesn't bubble.)
+  let mcolRaf = 0, mcolLast = -1;
+  function syncMobileColFromScroll() {
+    const grid = document.querySelector('#app > .grid');
+    if (!grid || !document.body.classList.contains('is-phone')) return;
+    const w = grid.clientWidth || 1;
+    const idx = Math.max(0, Math.min(COLUMNS.length - 1, Math.round(grid.scrollLeft / w)));
+    if (idx === mcolLast) return;
+    mcolLast = idx; state.mobileCol = idx;
+    document.querySelectorAll('.mobile-dock .mcard-tog').forEach((b, i) => b.classList.toggle('on', i === idx));
   }
-  function pageCleanup(settle) {
-    const g = PAGE.grid, gh = PAGE.ghost;
-    if (g) { if (settle) { g.classList.add('paging-settle'); g.style.transform = 'translateX(0)'; } else { g.classList.remove('paging-settle'); g.style.transform = ''; } }
-    if (gh) { if (settle) { gh.classList.add('paging-settle'); gh.style.transform = 'translateX(0)'; setTimeout(() => gh.remove(), 370); } else gh.remove(); }   // rest = off-screen (positioned via `left`); glide back there on cancel (370 = .32s glide + slack)
-    if (g && settle) setTimeout(() => { if (PAGE.grid !== g) return; g.classList.remove('paging-settle'); g.style.transform = ''; }, 370);
-    document.body.classList.remove('is-paging');
-    PAGE.on = false; PAGE.locked = false; PAGE.edge = false; PAGE.ghost = null; PAGE.grid = null; PAGE.dir = 0; PAGE.nIdx = -1;
-  }
-  // §M3 — how close to the L/R screen edge a drag must START to count as an iOS-style
-  // "back-swipe": from the edge, paging engages near-instantly (the reliable entry Jac
-  // asked for). An edge-started horizontal drag doesn't trip native vertical scroll, so no
-  // overlay/gutter is needed (which would swallow taps + edge scrolling) — this is a pure
-  // start-position test.
-  const EDGE_ZONE = 30;
-  document.addEventListener('pointerdown', (e) => {
-    if (!document.body.classList.contains('is-phone') || DRAG.active || DRAG.armed || document.body.classList.contains('sheet-open')) { PAGE.on = false; return; }   // no paging while a sheet/overlay owns the screen
-    if (PAGE.settling) pageFinalize();   // §M3 — a rapid follow-up swipe: land the previous glide NOW so this touch reads the SETTLED DOM (no overlapping gesture on the gliding grid, no stacked renders)
-    const fromEdge = e.clientX <= EDGE_ZONE || e.clientX >= window.innerWidth - EDGE_ZONE;
-    if (!fromEdge) {   // middle drags must start on the grid/dock; an edge drag can start over anything. elementFromPoint (not e.target) so the hit-test is correct even after the flush-render above.
-      const tgt = document.elementFromPoint(e.clientX, e.clientY);
-      if (!(tgt && tgt.closest && (tgt.closest('.grid') || tgt.closest('.mobile-dock')))) { PAGE.on = false; return; }
-    }
-    PAGE.on = true; PAGE.id = e.pointerId; PAGE.x0 = e.clientX; PAGE.y0 = e.clientY; PAGE.fromEdge = fromEdge;
-    PAGE.locked = false; PAGE.edge = false; PAGE.lastX = e.clientX; PAGE.lastT = e.timeStamp; PAGE.vx = 0;
+  document.addEventListener('scroll', (e) => {
+    if (!(e.target && e.target.classList && e.target.classList.contains('grid'))) return;
+    if (mcolRaf) return;
+    mcolRaf = requestAnimationFrame(() => { mcolRaf = 0; syncMobileColFromScroll(); });
   }, true);
-  document.addEventListener('pointermove', (e) => {
-    if (!PAGE.on || e.pointerId !== PAGE.id) return;
-    if (DRAG.active) { pageCleanup(false); return; }                               // a record drag took over → abandon paging
-    const dx = e.clientX - PAGE.x0, dy = e.clientY - PAGE.y0;
-    if (!PAGE.locked) {
-      const adx = Math.abs(dx), ady = Math.abs(dy);
-      const need = PAGE.fromEdge ? 5 : 6;                                          // decide a touch sooner so we lock before native scroll commits (Jac: engage on a lighter swipe — lowered from 6/8; the 2:1 horizontal ratio below still guards vertical scroll)
-      if (adx < need && ady < need) return;                                        // deadzone — no clear intent yet
-      // §M3 — FORGIVING diagonal (Jac): engage unless the motion is STRONGLY vertical. Edge
-      // swipes engage on ~any horizontal hint (adx ≥ 0.4·ady); middle swipes tolerate up to a
-      // ~2:1 vertical diagonal (adx·2 ≥ ady) before handing off to native scroll. Over-eager
-      // is safe — a peek that doesn't clear ~35% rubber-bands back (pageEnd), so it self-corrects.
-      const horizontal = PAGE.fromEdge ? (adx >= ady * 0.4) : (adx * 2 >= ady);
-      if (!horizontal) { PAGE.on = false; return; }                               // vertical-dominant → leave it to native scroll
-      const idx = Math.max(0, Math.min(2, state.mobileCol));
-      PAGE.dir = dx < 0 ? 1 : -1;                                                  // drag left → next screen, drag right → previous
-      PAGE.nIdx = idx + PAGE.dir;
-      PAGE.grid = document.querySelector('#app > .grid'); if (!PAGE.grid) { PAGE.on = false; return; }
-      PAGE.grid.classList.remove('paging-settle'); PAGE.grid.style.transform = '';   // clear any lingering glide (e.g. a just-cancelled rubber-back) so this drag follows the finger, not a transition
-      const r = PAGE.grid.getBoundingClientRect(); PAGE.w = r.width || 1;
-      document.body.classList.add('is-paging');                                    // freeze the card-body scroll for the gesture
-      if (PAGE.nIdx < 0 || PAGE.nIdx > 2) { PAGE.edge = true; }                    // at an end — rubber-band, no neighbour
-      else {
-        const gh = el('div', 'grid paging-ghost');
-        // Position the neighbour flush-adjacent to the LIVE grid via `left` (its exact right/left
-        // edge) and give it translateX(0) at rest. During the drag BOTH the grid and this ghost get
-        // the SAME translateX, so they move as one rigid unit — the seam between them can never
-        // widen/narrow (the earlier bug: two elements with different % vs px transforms drifted).
-        const off = PAGE.dir === 1 ? (r.left + r.width) : (r.left - r.width);
-        gh.style.cssText = `position:fixed;left:${off}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;transform:translateX(0);`;
-        const gcol = columnEl(COLUMNS[PAGE.nIdx], activeSession());
-        // §M6 parity: on a committed phone screen the per-card search/sort bar (.listbar) is
-        // lifted OUT of the card up into the header — the live grid we're paging already has
-        // none in-card. columnEl() builds it in-card, so strip it from the ghost too; otherwise
-        // the incoming preview shows a stray sub-header (the "Start date" sort bar) the real
-        // screen won't have once it commits. The header itself doesn't slide, so nothing is lost.
-        gcol.querySelectorAll('.listbar').forEach((lb) => lb.remove());
-        gh.appendChild(gcol);
-        document.body.appendChild(gh); PAGE.ghost = gh;
-      }
-      PAGE.locked = true;
-    }
-    const now = e.timeStamp; if (now > PAGE.lastT) { PAGE.vx = (e.clientX - PAGE.lastX) / (now - PAGE.lastT); PAGE.lastX = e.clientX; PAGE.lastT = now; }
-    if (e.cancelable) e.preventDefault();
-    const d = Math.round(PAGE.edge ? dx * 0.28 : dx);                              // whole pixels + one shared value → no sub-pixel seam shimmer between the two layers
-    PAGE.grid.style.transform = `translateX(${d}px)`;
-    if (PAGE.ghost) PAGE.ghost.style.transform = `translateX(${d}px)`;             // IDENTICAL transform to the grid → they move as one rigid unit
-  }, { passive: false, capture: true });
-  const pageEnd = (e) => {
-    if (!PAGE.on || (e.pointerId != null && e.pointerId !== PAGE.id)) return;
-    const dx = e.clientX - PAGE.x0;
-    if (!PAGE.locked || PAGE.edge || !PAGE.ghost) { pageCleanup(true); return; }
-    const commit = Math.abs(dx) > PAGE.w * 0.22 || (PAGE.vx * PAGE.dir < -0.30);   // past 22% OR a light flick in the drag direction (Jac: a lesser swipe should trigger — lowered from 35% / -0.45)
-    if (!commit) { pageCleanup(true); return; }
-    swipeFired = true;                                                             // swallow the trailing click that ends the drag
-    const g = PAGE.grid, gh = PAGE.ghost, nIdx = PAGE.nIdx, dir = PAGE.dir, slide = -dir * PAGE.w;
-    g.classList.add('paging-settle'); gh.classList.add('paging-settle');
-    g.style.transform = `translateX(${slide}px)`; gh.style.transform = `translateX(${slide}px)`;   // both glide the same distance → the ghost lands exactly where the grid was, rigid to the end
-    haptic(8);
-    document.body.classList.remove('is-paging');
-    PAGE.on = false; PAGE.locked = false; PAGE.ghost = null; PAGE.grid = null;
-    PAGE.settling = true; PAGE.pending = { gh, nIdx };                             // guard the settle window so no new gesture grabs the gliding grid
-    pageTimer = setTimeout(pageFinalize, 320);                                     // after the .32s glide, land the real column (ghost dropped first — see pageFinalize). Kept == the .paging-settle CSS duration (Jac: slower, smoother slide — was 210/.21s)
-  };
-  document.addEventListener('pointerup', pageEnd, true);
-  document.addEventListener('pointercancel', (e) => { if (PAGE.on) pageCleanup(true); }, true);
   initDrag();   // §15c drag & drop link engine — #drag-layer singleton + document pointer listeners
   try { loadGoogleMaps(); } catch (e) {}   // §2.3 warm the Maps SDK at boot so the dispatch cockpit + transport editor open instantly (no first-open wait / "load it twice")
   // R0 flash-lint: ON by default — violations self-report by pulsing (SPEC v8)
