@@ -2135,10 +2135,8 @@ body.is-phone .set-tab-l { flex: 0 0 auto; }
 @media (prefers-reduced-motion: reduce) { .gv-bars .gv-barcol:hover .gv-bar-fill { filter: none; } }
 
 /* ── §13.6 The Round-Up — full-screen reporting board ─────────────────────── */
-.ru-plate { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border: 1px solid var(--line); border-radius: 10px; background: linear-gradient(180deg, var(--panel-2), var(--panel)); color: var(--txt-2); font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 700; font-size: 11px; cursor: pointer; align-self: center; }
-.ru-plate svg { width: 14px; height: 14px; }
-.ru-plate:hover { color: var(--txt); border-color: var(--accent-line); }
-.ru-plate:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* .ru-plate (the old standalone header button) retired 2026-07-10 — the entry
+   point is now a "Reports" row in the logo menu (.dd-item js-ru-open). */
 .ru-popup { width: 94vw; height: 90vh; max-width: 1500px; }
 .ru-head .ru-tag { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 700; font-size: 11px; color: var(--txt-3); margin-left: 4px; }
 .ru-body { padding: 0; overflow: hidden; display: flex; }
@@ -2628,8 +2626,14 @@ select.nc-in { cursor: pointer; }
 .ag-tabs .add-field { align-self: center; margin-bottom: 2px; }
 .ag-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
 .ag-dot.ok { background: var(--green); }
-.ag-dot.mid { background: var(--yellow); box-shadow: 0 0 0 3px var(--yellow-bg); }   /* §7.1c in-progress */
+.ag-dot.mid { background: var(--yellow); box-shadow: 0 0 0 3px var(--yellow-bg); }   /* wrops-row live indicator */
 .ag-dot.bad { background: var(--red); box-shadow: 0 0 0 3px var(--red-bg), 0 0 6px color-mix(in srgb, var(--red) 40%, transparent); }
+/* §7.1c / Phase 6 (2026-07-10 dot->background sweep) — card capture status reads via the TAB's
+   own background tint (not a corner dot), same soft-bg + solid-ink treatment as .c-green/.c-yellow/.c-red. */
+.ag-tab.ok { background: var(--green-bg); color: var(--green); }
+.ag-tab.mid { background: var(--yellow-bg); color: var(--yellow); }   /* in-progress */
+.ag-tab.bad { background: var(--red-bg); color: var(--red); box-shadow: 0 0 6px color-mix(in srgb, var(--red) 25%, transparent); }
+.ag-tab.on.ok, .ag-tab.on.mid, .ag-tab.on.bad { color: var(--txt); }   /* selected: the underline already marks "active" — status still reads via background alone */
 /* short status banner — a thin red hazard rail, calm body */
 .ag-banner { position: relative; padding: 9px 13px 9px 20px; border-radius: 10px; margin: 2px 0 16px; font-size: 12.5px; font-weight: 600; }
 .ag-banner.bad { background: var(--red-bg); border: 1px solid var(--accent-line); border-color: var(--red); color: var(--red); -webkit-text-fill-color: color-mix(in srgb, var(--red) 65%, white); text-shadow: 0 0 3px var(--red), 0 0 7px color-mix(in srgb, var(--red) 60%, transparent); box-shadow: 0 0 6px color-mix(in srgb, var(--red) 25%, transparent); }
@@ -3376,12 +3380,15 @@ body { font-variant-numeric: tabular-nums; }
 .funnel-hd { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 13px; }
 .funnel-hd .fh-rule { flex: 1; border-top: 1.5px dashed var(--tan, #c2925a); opacity: .4; }   /* saddle-stitch flanks (ranch seasoning) */
 .funnel-sec .seg button.on-accent { background: var(--accent); color: var(--on-orange); }     /* selected tab = the ONE orange (rule #3) */
-.seg .seg-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
-.seg .seg-dot.due { background: var(--red); box-shadow: 0 0 0 2px color-mix(in srgb, var(--red) 30%, transparent); }
-.seg .seg-dot.soon { background: var(--yellow); }
-.seg .seg-dot.ok { background: var(--green); }
-.seg button.on-accent .seg-dot.soon { background: #1a1205; }   /* keep the dot legible on the orange selected tab */
-.seg button.on-accent .seg-dot.ok { background: #04150d; }
+/* Phase 6 (2026-07-10 dot->background sweep) — next-action urgency reads via the segment's own
+   background tint (not a corner dot), same soft-bg + solid-ink treatment as .c-green/.c-yellow/.c-red. */
+.funnel-sec .seg button.due { background: var(--red-bg); color: var(--red); }
+.funnel-sec .seg button.soon { background: var(--yellow-bg); color: var(--yellow); }
+.funnel-sec .seg button.ok { background: var(--green-bg); color: var(--green); }
+.funnel-sec .seg button.on-accent.due,
+.funnel-sec .seg button.on-accent.soon,
+.funnel-sec .seg button.on-accent.ok { background: var(--accent); color: var(--on-orange); }   /* selected always wins the fill — orange stays the ONE selection signal */
+.funnel-sec .seg button.on-accent.due { box-shadow: inset 0 0 0 2px var(--red); }   /* due still surfaces even on the active tab, matching the prior un-muted red dot */
 
 .fb-toprow { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 /* R28 — the account button: a neutral steel chip, stamped label = the account type */
@@ -3811,9 +3818,20 @@ body.is-phone .card[data-card="units"] .list { grid-template-columns: repeat(2, 
 .grp-chev { flex: 0 0 auto; display: inline-flex; color: var(--sec, var(--txt-2)); }
 .grp-chev svg { width: 11px; height: 11px; transform: rotate(90deg); transition: transform .15s ease; }   /* expanded → points down */
 .grp-hd.is-collapsed .grp-chev svg { transform: rotate(0deg); }                                           /* collapsed → points right */
-.grp-label { flex: 0 0 auto; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; font-size: 9.1px; line-height: 1; color: var(--sec, var(--txt-2)); }   /* +15% back up from 7.9px (Jac 2026-07-04) */
-.grp-hd::after { content: ''; flex: 1 1 auto; border-top: 1.5px dashed var(--sec, var(--line)); opacity: .5; }
+.grp-label { flex: 0 0 auto; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; font-size: 11px; line-height: 1; color: var(--sec, var(--txt-2)); }   /* +20% up from 9.1px, landing on the existing 11px rung (Jac 2026-07-10) */
+.grp-hd::after { content: ''; flex: 1 1 auto; border-top: 2px solid var(--sec, var(--line)); opacity: .5; }   /* solid (was dashed) + +20% thicker (1.5px → 2px, the next rung on the line-weight scale — Jac 2026-07-10) */
 .grp-hd:hover .grp-label, .grp-hd:hover .grp-chev { filter: brightness(1.2); }
+/* Group RAIL (Jac 2026-07-10) — a vertical guide down the left edge of each group's rows,
+   companion to the header's line above. Rows already carry a full 1px --line box border;
+   this thickens just the left edge to --line-soft 2px so consecutive rows in a run read as
+   one continuous rail, breaking naturally at each .grp-hd (which isn't a .row, so it carries
+   no rail) — that gives the "per group" segmentation for free, no extra markup. Zero added
+   padding (it redraws the existing border pixel, doesn't grow the box). Scoped to the
+   single-column stacked-row lists (Customers/Invoices/Trips) — NOT the grid-of-card lists
+   (Units/Rentals), where a per-tile left edge would double up against each ucard's own 2px
+   border and read as noise, not a rail, across wrapped grid columns. */
+.list:has(> .grp-hd) > .row { border-left-width: 2px; border-left-color: var(--line-soft); }
+.card[data-card="units"] .list > .row, .card[data-card="rentals"] .list > .row { border-left-width: 1px; border-left-color: var(--line); }
 @media (prefers-reduced-motion: reduce) { .grp-chev svg { transition: none; } }
 /* §2.7 Trips AUTO-RUN — an actionPill (R17) living inside the day header; the header's own
    grip/chevron/label are already stamped Saira caps, so the button picks up the same voice
@@ -4319,6 +4337,113 @@ body.dragging .row.drop-ok { opacity: 1; }
   text-transform:uppercase; letter-spacing:.8px; font-weight:800; font-size:14.5px;
 }
 [data-theme="bluedsteel"] .bottombar { margin-top: 2px; }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   THEME — "RANCH" (data-theme="ranch")  ·  real-leather western, 2026-06-14
+   ────────────────────────────────────────────────────────────────────────────
+   A PARALLEL, opt-in theme: the app rebuilt in tooled leather on a barn-wood
+   floor. Real CC0 textures (ambientCG: Leather033A oxblood · Leather004 buff ·
+   Leather029 pebble · Planks037A wood), used the way the popup/unit-card mocks
+   locked it: DARK oxblood cards carry LIGHT-buff content (sections/rows/inputs)
+   with dark ink + WHITE stamped labels; muted earthy status; blue = create;
+   Zilla-Slab stamped type. NO rope yet — clean saddle-stitch edges (a better
+   rope asset drops in here later). Textures load ONLY when ranch is active.
+
+   Reversible + additive: everything is scoped under [data-theme="ranch"] and
+   never touches the .anchored ring (background/position only on the card).
+   ════════════════════════════════════════════════════════════════════════════ */
+[data-theme="ranch"] {
+  --tex-card: url('assets/tex-leather-dark.jpg');
+  --tex-light: url('assets/tex-leather-light.jpg');
+  --tex-pebble: url('assets/tex-leather-pebble.jpg');
+  --tex-wood: url('assets/tex-wood.jpg');
+  --tex-rope: url('assets/tex-rope.jpg');
+  --cream: #f3e1b8;
+  /* surfaces — dark oxblood card/chrome, cream chrome text */
+  --bg:#241608; --bg-2:#2e1c0d; --panel:#34210f; --panel-2:#3e2814;
+  --card:#2a1709; --card-head:#321d0d;
+  --line:#6e4a28; --line-soft:#8a6a40;
+  --txt:#f3e1b8; --txt-2:#d3bd92; --txt-3:#ad9266; --track:#3a2614; --on-orange:#2a1606;
+  --accent:#d9772b; --accent-soft:rgba(217,119,43,.18); --accent-line:rgba(217,119,43,.55);
+  --orange:#d9772b; --orange-bg:rgba(217,119,43,.18);
+  --anchor-section:#3a2614;
+  --radius:16px; --chip-radius:11px;
+  --shadow:0 30px 64px -26px rgba(0,0,0,.82); --chip-shadow:0 5px 14px -8px rgba(0,0,0,.7);
+  /* muted, earthy status — still readable on both buff and leather */
+  --green:#6e8b40;  --green-bg:rgba(110,139,64,.22);
+  --yellow:#c79a35; --yellow-bg:rgba(199,154,53,.22);
+  --red:#a8412f;    --red-bg:rgba(168,65,47,.24);
+  --blue:#3f6298;   --blue-bg:rgba(63,98,152,.2);
+  --navy:#4a5f8a;   --navy-bg:rgba(74,95,138,.2);
+  --gray:#8a7a5e;   --gray-bg:rgba(138,122,94,.2);
+  --brown:#9a6a38;  --brown-bg:rgba(154,106,56,.22);
+}
+/* the barn-wood floor (header & bottom bar float transparent over it) */
+[data-theme="ranch"] html { background:#180f06; }
+[data-theme="ranch"] body {
+  background: linear-gradient(180deg, rgba(217,119,43,.05), transparent 30%), var(--tex-wood);
+  background-size: auto, 360px;
+}
+/* DARK oxblood leather column cards + a thin REAL-ROPE frame + dotted saddle-stitch */
+[data-theme="ranch"] .col > .card {
+  position: relative;
+  background: linear-gradient(180deg, rgba(255,228,188,.05), rgba(0,0,0,.3)), var(--tex-card);
+  background-size: auto, 360px; background-blend-mode: soft-light, normal;
+}
+/* ::after = thin rope frame (an OVERLAY, so the .anchored border-color stays intact) */
+[data-theme="ranch"] .col > .card::after {
+  content:''; position:absolute; inset:0; z-index:5; pointer-events:none; border-radius:inherit;
+  border:6px solid transparent; border-image:var(--tex-rope) 46 round;
+}
+/* ::before = the dotted saddle-stitch, riding just inside the rope */
+[data-theme="ranch"] .col > .card::before {
+  content:''; position:absolute; inset:11px; border-radius:9px; z-index:4; pointer-events:none;
+  border:2px dashed rgba(226,194,134,.42);
+}
+/* LIGHT-buff content surfaces — sections, rows, search/inputs — flip the text
+   tokens to dark ink (custom-prop cascade) and lay the buff hide underneath. */
+[data-theme="ranch"] .section,
+[data-theme="ranch"] .row,
+[data-theme="ranch"] .searchwrap,
+[data-theme="ranch"] .mini-searchwrap,
+[data-theme="ranch"] .lf-in,
+[data-theme="ranch"] .insp-desc {
+  --txt:#34251a; --txt-2:#6a533a; --txt-3:#9a7d50;
+  color:#34251a; border-color:#8a6a40;
+  background: linear-gradient(180deg, rgba(255,255,255,.1), rgba(70,45,20,.06)), var(--tex-light);
+  background-size: auto, 230px; background-blend-mode: normal;
+}
+[data-theme="ranch"] .row { box-shadow: 0 3px 9px -5px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.4); }
+[data-theme="ranch"] .row:hover { border-color: var(--accent-line); }
+/* pop-ups = dark leather, fields buff (handled above via .lf-in) */
+[data-theme="ranch"] .popup {
+  background: linear-gradient(180deg, rgba(255,228,188,.05), rgba(0,0,0,.3)), var(--tex-card);
+  background-size: auto, 360px; background-blend-mode: soft-light, normal;
+  border-color:#1f0f08;
+}
+[data-theme="ranch"] .popup-head { border-bottom-color:#6e4a28; }
+[data-theme="ranch"] .ctx-menu, [data-theme="ranch"] .dropdown-menu {
+  background: linear-gradient(180deg, rgba(0,0,0,.2), rgba(0,0,0,.34)), var(--tex-card); background-size:auto,300px;
+}
+/* ── Zilla-Slab stamped type (the western "stamped steel" voice) ── */
+[data-theme="ranch"] .coltab,
+[data-theme="ranch"] .ring-label,
+[data-theme="ranch"] .section > h4,
+[data-theme="ranch"] .popup-head h3 {
+  font-family:'Zilla Slab', system-ui, serif; text-transform:uppercase; letter-spacing:1px; font-weight:700;
+}
+[data-theme="ranch"] .c-titlecard .c-title {
+  font-family:'Zilla Slab', system-ui, serif; text-transform:uppercase; letter-spacing:.6px; font-weight:700;
+}
+[data-theme="ranch"] .coltab.on {
+  background: linear-gradient(180deg, #e58a34, var(--accent)); color: var(--on-orange);
+  box-shadow: inset 0 1px 0 rgba(255,235,200,.34), 0 3px 9px -4px rgba(217,119,43,.6);
+}
+/* the wrangler saddle-stitch under the deck */
+[data-theme="ranch"] .bottombar {
+  border-top: 1.5px dashed var(--tan);
+  border-image: repeating-linear-gradient(90deg, var(--tan) 0 7px, transparent 7px 13px) 1;
+}
 
 /* ── #109 printable invoice → a kraft "YARD LOG" page (2026-07-08): our logo, a stamped
    Saira header with a status-colored date stamp + hazard-stripe signature rule, each rental

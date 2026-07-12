@@ -17,7 +17,7 @@ These resolve the §11 Open Questions and **change the Saved-Views model** (§2.
 - **D2 · Replace shared Admin-curated Views with PERSONAL "my views" (resolves 11.4/11.6; reverses the §2.10 shared model).** Remove the single company-wide view set; **each login keeps its own private views.** Keyed by the logged-in identity: **per-role today** (per-role passwords — everyone sharing a role login shares its views), upgradable to **per-user** if individual logins arrive. Curating is open to the view's **owner** (no admin gate — they're personal). Backend: a per-identity views store (additive `getUserViews`/`setUserViews` keyed by the role/identity the server derives from the per-role password — `backend-data` D1). Migration: offer to seed each identity from the old shared set once, then they're personal (Jac to confirm seed-vs-drop). This also dissolves the shared-views LWW race (11.5) since views are per-identity.
 - **D3 · Keep substring matching, no relevance ranking (resolves 11.2).** Works well at yard scale; predictable + fast.
 
-**Defaults adopted:** 11.12 → keep the reverse-renter denorm capped at **name+company** (no phone/email/notes on fleet cards) · 11.14 → **add `ci/check-search-blob.mjs`** so a future blob edit can't silently fold a gated field (margin/`bottomDollar`/cost) — makes the §3.2 security invariant unskippable · 11.3 → defer `-prefix`/quoted text operators · 11.10 → defer index-scaling until felt · 11.7 → no margin/floor search column (money-gated `totColMatch` if ever) · 11.13 → search stays read-only (any bulk action re-asserts per-action gates).
+**Defaults adopted:** 11.12 → keep the reverse-renter denorm capped at **name+company** (no phone/email/notes on fleet cards) · 11.14 → **add `ci/check-search-blob.mjs`** so a future blob edit can't silently fold a gated field (margin/`bottomDollar`/cost) — makes the §3.2 security invariant unskippable · 11.3 → defer `-prefix`/quoted text operators · 11.10 → **partially resolved 2026-07-10**: the render-per-keystroke leg is fixed (a `debounce(150)` on `onInput`'s `render()` — see §2.11b); index-scanning/pre-tokenization stays deferred until felt · 11.7 → no margin/floor search column (money-gated `totColMatch` if ever) · 11.13 → search stays read-only (any bulk action re-asserts per-action gates).
 
 ---
 
@@ -122,6 +122,42 @@ Views are **company-wide / one shared set** (Jac 2026-06-13), synced to the back
 ### 2.11 Search-mode rendering (shipped)
 
 `recomputeSearchMode()` (`app.js:2339`) sets `state.searchMode` from `state.query`/`state.filterTerms` and resets every card's `listLimit` (so a new query restarts each card at its 60-row window). In search mode each card filters its own collection by `matchesSearch`; the Shop card fans across its sub-types (`shopItemsByType` `app.js:6867`). A global search therefore shows cross-card results **in place** — there is no separate dedicated results screen.
+
+### 2.11b Keystroke render debounce (shipped, 2026-07-10) — `onInput` (`app.js`), `debounce()` (`APP-02`)
+
+**The symptom Open-Q 11.10 predicted arrived.** Every keystroke in the global
+search bar (`#globalsearch`), a per-card `.mini-search`, or a `.js-history-search`
+used to fire a **full synchronous `render()`** (whole-`#app` teardown + rebuild)
+inline in `onInput` — no debounce existed anywhere in the codebase. Measured in a
+headless browser against the `#local` demo seed, the first keystroke alone blocked
+the main thread **~43 ms** (and grows with record count — the sync path already
+notes "≈1.7 MB at real volume"). Jac reported it as "typing forces users to wait."
+
+**Fix (minimal, no behavior change to results):** a generic trailing
+`debounce(ms)` helper (`APP-02`) now gates the expensive render. `onInput` splits
+into two steps: the **state** update (`state.query` via `setQueryValue()`, or the
+card's search text) still runs **synchronously on every keystroke** so nothing is
+lost, but the **`render()`** is scheduled through `debounce(150)` — a burst of
+typing collapses to a **single** render after a 150 ms pause. Focus + caret are
+restored after the deferred render via `debouncedSearchRerender(schedule, renderFn,
+findEl)` (the input is torn down and recreated by the full render, same as before).
+Click-driven callers (a saved-view apply, a filter chip) keep the **synchronous**
+`setQuery()` path — only keystroke bursts debounce. Verified: 0 renders mid-burst,
+exactly 1 after the pause; `state.query` still correct per keystroke.
+
+This **resolves Open-Q 11.10** for the render leg: the felt symptom was
+render-per-keystroke, not index scanning (the `IDX.search` blob lookup itself stays
+cheap), so the fix is a render debounce, not the trie/pre-tokenize work 11.10 also
+floated — that remains deferred until index scanning itself is the measured
+bottleneck. Cross-ref `frontend-performance` P2/P4 (windowing + `saveSoon`); this is
+the same "keep the one synchronous `render()` off the interaction critical path"
+discipline applied to the search input. **Note (cross-area, `backend-data`):** the
+same 2026-07-10 fix also parallelized login's two serial GAS round-trips —
+`attemptLogin()` now fires `backendCall('load')` concurrently with `backendCall('auth')`
+instead of awaiting `auth` first (neither request consumes the other's response; both
+still validate the password server-side). That change lives in the backend-sync path,
+not search — logged here only because it shipped in the same commit; its canonical
+home is `backend-data`.
 
 ### 2.12 Known gaps (partial / missing)
 
