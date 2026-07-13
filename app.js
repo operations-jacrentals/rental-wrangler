@@ -19448,7 +19448,7 @@ function friendlyPayErr(r) {
     'card_declined': 'The card was declined.', 'expired_card': 'That card is expired.', 'insufficient_funds': 'Insufficient funds.',
     'over-ceiling': 'Amount exceeds the per-charge limit — split it or charge manually.', 'bad-invoice-amount': 'Nothing is due on this invoice.',
     'forbidden': 'Only Office/Admin can take payments.', 'stripe-not-configured': 'Payments aren’t configured on the backend yet.',
-    'pm-customer-mismatch': 'That card isn’t linked to this customer.', 'setupintent-invalid': 'Card setup didn’t verify — try again.',
+    'pm-customer-mismatch': 'That payment method isn’t linked to this customer.', 'setupintent-invalid': 'Setup didn’t verify — try again.',
     'amount-mismatch': 'Amount changed during payment — flagged for review.', 'customer-mismatch': 'Payment didn’t match this customer.',
     'nothing-to-refund': 'Nothing has been paid on this invoice.', 'no-charge-to-refund': 'No card charge found to refund.',
     'refund-failed': 'The refund didn’t go through — try again.', 'invoice-refunded': 'This invoice was already refunded.',

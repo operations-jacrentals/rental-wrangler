@@ -1,5 +1,34 @@
 # Backend deploy queue — DEPLOYED (2026-07-06 late session); doc kept as the deploy runbook
 
+## ✅ DEPLOYED 2026-07-13 — ACH unblock: `stripeSaveBank_` PM-attachment guard
+- **Staged to HEAD** (service account push, content-only) + read-back verified, then **editor
+  redeploy by Jac**. Anonymous access confirmed intact afterward (wrong-password `auth` →
+  `{"ok":false,"error":"unauthorized"}`, HTTP 200 JSON — not 403/HTML). Live end-to-end ACH
+  add is Jac's in-app confirmation (needs live Stripe + selfie/signature consent).
+
+### (as-shipped) ACH unblock: `stripeSaveBank_` PM-attachment guard (2026-07-13)
+- **What:** ACH was categorically broken — every "Add bank account" save returned
+  `pm-customer-mismatch` ("That card isn't linked to this customer."). Root cause (proven,
+  live source pulled read-only): `stripeSaveBank_`'s second ownership check requires the
+  confirmed PaymentMethod to already be attached to the Stripe customer
+  (`pm.body.customer !== rec.stripeId`), but `stripeBankSetupIntent_` opens the SetupIntent
+  with `verification_method: microdeposits`, so after `confirmUsBankAccountSetup` the intent
+  is `requires_action` (not `succeeded`) and Stripe attaches the PM to the customer only "on
+  successful setup". Store-now-verify-later means the PM is unattached (`pm.customer` null)
+  on every fresh add → the guard fires 100% of the time.
+- **Fix** in `docs/handoffs/ach-pm-mismatch-fix.gs` (REPLACES `stripeSaveBank_` verbatim):
+  accept an unattached PM only when the SetupIntent binding above was verified
+  (`si.customer === rec.stripeId && si.payment_method === pmId`); still reject a PM attached
+  to a DIFFERENT customer, or an unattached PM with no SetupIntent proof. IDOR guard
+  preserved, not weakened. Additive — no signature/schema change. `node --check` passes.
+- **NOT yet staged to HEAD** — awaiting Jac's explicit go (money/auth-critical). Deploy flow:
+  pull live `Code.js` → splice this `stripeSaveBank_` → `node --check` → `push` HEAD via the
+  service account (content-only, safe) → **editor** redeploy (New version, Who has access:
+  Anyone). Verify after: anonymous curl returns JSON, then a real ACH add on a test customer
+  no longer errors. Frontend copy fix (card-worded error neutralized) ships separately on
+  `claude/ach-processing-issue-hu5mtj` (PR #601).
+
+
 > **STATUS UPDATE (2026-07-06 ~23:00):** the queue below IS LIVE (perfReport + unitDaily
 > + the trigger installed by Jac), plus the comms pipe (sendCustomerMessage SMS+email,
 > messagesFor, commsAliases, adminSetProps) — prod versions v66–v70. Deploys now run
