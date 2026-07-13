@@ -618,5 +618,5 @@ export const FEATURES = {
   // Card-search global mode — a globe toggle inside each grid-card search bar flips
   // between per-card and whole-yard search, replacing the giant #globalsearch bar.
   // Flag ON = the globe path (old bar removed); OFF = the old #globalsearch bar.
-  cardGlobalSearch: false,
+  cardGlobalSearch: true,
 };
