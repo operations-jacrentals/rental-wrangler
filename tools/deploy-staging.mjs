@@ -68,10 +68,9 @@ const STAGING_DEPLOY_KEY_PATH = process.env.STAGING_DEPLOY_KEY_PATH || ''; // pa
 const STAGING_DEPLOY_PAT = process.env.STAGING_DEPLOY_PAT || '';           // fine-scoped PAT, staging repo only
 
 // Refuse to deploy from these — a short feature branch is the whole point of Gate 1.
-// 'main' and 'trunk' both listed to span the main -> trunk rename (the trunk keeps its
-// no-deploy guard under either name). NB: STAGING_PAGES_BRANCH below is the STAGING repo's
-// own Pages branch — unrelated to this rename, leave it as 'main'.
-const PROTECTED_BRANCHES = ['main', 'trunk', 'production'];
+// NB: STAGING_PAGES_BRANCH below is the STAGING repo's own Pages branch (still 'main') —
+// unrelated to this repo's trunk, which was renamed main -> trunk.
+const PROTECTED_BRANCHES = ['trunk', 'production'];
 
 // ── small git helpers (same shape as tools/spec-sync.mjs) ──
 

@@ -18,8 +18,7 @@
 import { execFileSync } from 'node:child_process';
 
 const REMOTE = 'origin';
-// TRUNK is resolved dynamically inside main() (prefer 'trunk' if the remote has it, else 'main')
-// so this survives the main -> trunk rename with no code change.
+const TRUNK = 'trunk';          // the trunk branch (renamed main -> trunk, 2026-07-13)
 const RELEASE = 'production';   // the release-pointer branch GitHub Pages serves as PRODUCTION
 const NET_TIMEOUT = 8000;
 
@@ -40,11 +39,9 @@ function main() {
 
   // One best-effort network probe for the trunk + release branches. Offline is fine —
   // a live ls-remote so a shallow clone's missing local refs never read as "gone".
-  const ls = gitTry(['ls-remote', '--heads', REMOTE, 'main', 'trunk', RELEASE]);
+  const ls = gitTry(['ls-remote', '--heads', REMOTE, TRUNK, RELEASE]);
   const online = ls.ok;
   const has = (b) => online && new RegExp(`refs/heads/${b}$`, 'm').test(ls.out);
-  // main -> trunk rename transition: prefer 'trunk' once the remote has it, else 'main'.
-  const TRUNK = has('trunk') ? 'trunk' : 'main';
   const trunkUp = has(TRUNK);
   const releaseUp = has(RELEASE);
 
