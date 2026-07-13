@@ -1,13 +1,13 @@
-# DRAFT — Proposed `end-of-session` Skill
+# DRAFT — Proposed `end` Skill
 
-> **DRAFT — proposed end-of-session skill; activates with the trunk-workflow
+> **DRAFT — proposed end skill; activates with the trunk-workflow
 > migration (see the design/plan). Not yet a live skill.**
 
 This is a review draft only. It is **not** installed at `.claude/skills/` and
 nothing in the app invokes it. It becomes a real skill only when the
 trunk-based dev workflow lands (Phase 5, §5a of the plan below) and someone
 copies the proposed `SKILL.md` content into
-`.claude/skills/end-of-session/SKILL.md`, replacing
+`.claude/skills/end/SKILL.md`, replacing
 `.claude/skills/tidy-sessions/SKILL.md`. Nothing in this document touches the
 live skill.
 
@@ -29,11 +29,11 @@ Worktree cleanup and the handoff note aren't a fifth job; they fold into jobs
 
 ```markdown
 ---
-name: end-of-session
-description: Close out a Claude Code session on the trunk workflow — report what's actually shipped (merged to trunk vs promoted to production vs still pending/uncommitted), sweep loose ideas or half-done threads onto their own parked branches so nothing is lost, refuse to archive while anything is pending/parked/uncommitted, then archive the chat. Replaces tidy-sessions, which only archived. Use when a feature is done, a session is winding down, or chats pile up. Invoke with /end-of-session.
+name: end
+description: Close out a Claude Code session on the trunk workflow — report what's actually shipped (merged to trunk vs promoted to production vs still pending/uncommitted), sweep loose ideas or half-done threads onto their own parked branches so nothing is lost, refuse to archive while anything is pending/parked/uncommitted, then archive the chat. Replaces tidy-sessions, which only archived. Use when a feature is done, a session is winding down, or chats pile up. Invoke with /end.
 ---
 
-# /end-of-session — capture, close out, archive
+# /end — capture, close out, archive
 
 Closes a session properly on the trunk model: one `main` trunk, short-lived
 feature branches, a `production` release-pointer branch. Runs FOUR jobs,
@@ -96,7 +96,7 @@ cheap and reversible; dropping needs an explicit yes.
 5. **Note it** — open a draft PR so it's discoverable without merging:
    `gh pr create --draft --title "[parked] <slug>" --body "<what it is, why
    parked, what's left>"`. Draft PRs surface via `gh pr list --draft`, so a
-   later session (or the next `/end-of-session` run) can resurface stale
+   later session (or the next `/end` run) can resurface stale
    parked work instead of it rotting silently.
 6. **Return** to the branch you were on before parking — never leave the
    session sitting on a parked branch.
@@ -146,9 +146,9 @@ The old `tidy-sessions` job, unchanged in spirit:
 
 ## Open questions for Jac
 
-1. **Skill name / invocation** — `end-of-session`, invoked `/end-of-session`?
-   And should `/tidy-sessions` stick around as an alias during migration, or
-   get deleted outright once this lands?
+1. **Skill name — RESOLVED 2026-07-12 (Jac):** the skill is **`/end`**.
+   Open sub-question: keep `/tidy-sessions` as an alias during the migration, or
+   delete it outright once `/end` lands?
 2. **Parked-branch naming** — is `parked/<slug>` the right prefix, or would
    you rather namespace it under your own `claude/parked-<slug>` convention
    (matching how Claude Code already auto-names its own branches, e.g.
