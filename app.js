@@ -2315,6 +2315,7 @@ const state = {
   previewsOn: (() => { try { return localStorage.getItem('jactec.previewsOff') !== '1'; } catch (e) { return true; } })(),   // hover previews (per device)
   overbookOn: (() => { try { return localStorage.getItem('jactec.overbook') === '1'; } catch (e) { return false; } })(),   // §10 allow-overbooking policy (per device, default OFF — drag build)
   hapticsOff: (() => { try { return localStorage.getItem('jactec.hapticsOff') === '1'; } catch (e) { return false; } })(),   // §M-touch Vibration-API feedback (per device, default ON; Android-only, no-op on iOS)
+  loginMuted: (() => { try { return localStorage.getItem('jactec.loginMuted') === '1'; } catch (e) { return false; } })(),   // login intro-video audio (per device, default ON = sound plays on sign-in; only a MUTE choice persists)
   commsRail: loadCommsRail(),   // D8 THE COMMS RAIL — { cat, sessions } per device; cat always null at boot (empty rail at login)
   wranglerRail: [],   // §18g the bottom-right rail of past Mr. Wrangler conversations (per device), each a snapshot { id, title, ts, card, recId, recType, reqNumber, reqTitle, reqUrl, messages }. Loaded async from IndexedDB (wranglerRailLoad) — IndexedDB replaced the localStorage rail that silently overflowed.
   settings: loadAdminSettings(),   // Settings Board admin customization (config.settings); mirrored to localStorage, applied at boot via applySettings()
@@ -23115,11 +23116,27 @@ function renderLogin(msg) {
         <label class="login-lbl" for="login-pw">Team password</label>
         <input id="login-pw" type="password" class="login-input" placeholder="••••••••" autocomplete="current-password" />
       </div>
-      <button type="submit" class="login-btn" data-r="R17" id="login-go">Saddle Up?</button>
+      <div class="login-actions">
+        <button type="button" class="login-mute${state.loginMuted ? ' is-muted' : ''}" id="login-mute" aria-pressed="${state.loginMuted}" aria-label="Mute intro sound" data-tip="${state.loginMuted ? 'Intro sound off — tap to unmute' : 'Intro sound on — tap to mute'}">${state.loginMuted ? I.volumeOff : I.volume}</button>
+        <button type="submit" class="login-btn" data-r="R17" id="login-go">Saddle Up?</button>
+      </div>
       <div class="login-err" id="login-err">${msg ? esc(msg) : ''}</div>
     </div>
   </form></div>`;
   document.getElementById('login-form').addEventListener('submit', (e) => { e.preventDefault(); attemptLogin(); });
+  // Mute toggle (left of Saddle Up) — remembers a MUTE choice on this device so the
+  // intro stays silent next sign-in; default (no pref) plays sound. Applies live if
+  // the intro is already rolling behind the box.
+  const muteBtn = document.getElementById('login-mute');
+  if (muteBtn) muteBtn.addEventListener('click', () => {
+    state.loginMuted = !state.loginMuted;
+    try { localStorage.setItem('jactec.loginMuted', state.loginMuted ? '1' : '0'); } catch (e) {}
+    muteBtn.classList.toggle('is-muted', state.loginMuted);
+    muteBtn.setAttribute('aria-pressed', String(state.loginMuted));
+    muteBtn.setAttribute('data-tip', state.loginMuted ? 'Intro sound off — tap to unmute' : 'Intro sound on — tap to mute');
+    muteBtn.innerHTML = state.loginMuted ? I.volumeOff : I.volume;
+    const vid = document.getElementById('login-video'); if (vid) vid.muted = state.loginMuted;
+  });
   document.getElementById(currentUser ? 'login-pw' : 'login-name').focus();
 }
 function finishLoad() {
@@ -23209,7 +23226,8 @@ async function attemptLogin() {
   const screen = document.querySelector('.login-screen'); if (screen) screen.classList.add('signing-in');
   // The Saddle Up click is a genuine user gesture, so unmuting here lets the intro's
   // audio play under the browser's autoplay policy (a muted-only clip would stay silent).
-  const vid = document.getElementById('login-video'); if (vid) { try { vid.muted = false; const p = vid.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
+  // Honor the per-device mute choice — a muted preference keeps the intro silent.
+  const vid = document.getElementById('login-video'); if (vid) { try { vid.muted = state.loginMuted; const p = vid.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
   try {
     // 'auth' (role lookup) and 'load' (full dataset) each independently validate the
     // password server-side and neither's response feeds the other's request, so they
