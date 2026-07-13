@@ -446,14 +446,14 @@ body.is-phone { touch-action: manipulation; }
 .is-phone .grid::-webkit-scrollbar { display: none; }
 .is-phone .col { flex: 0 0 100%; scroll-snap-align: start; padding: 0 8px; height: 100%; box-sizing: border-box; }
 /* §M7 — the full card-toggle nav atop each phone column (all cards in their 3 groups; this
-   column's card is the .on one). The 3 segmented groups share the row and scroll if tight. */
+   column's card is the .on one — orange + LABELLED, like the toggle header we had before; the
+   others stay icon-only). Groups size to their content (NOT forced equal thirds) so the active
+   label shows in full; the row scrolls horizontally if it's ever too tight. */
 .is-phone .col-tabs.mnav { display: flex; gap: 6px; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; padding: 0; }
 .is-phone .col-tabs.mnav::-webkit-scrollbar { display: none; }
-.is-phone .col-tabs.mnav .mcard-bar { flex: 1 1 0; }
-/* icon-only — 6 toggles in one row leaves no room for a label without ugly truncation; the
-   orange .on icon is the "you are here" (the card below names itself), so drop the labels. */
-.is-phone .col-tabs.mnav .mct-lbl { display: none; }
-.is-phone .col-tabs.mnav .mcard-tog { padding: 0 6px; }
+.is-phone .col-tabs.mnav .mcard-bar { flex: 0 0 auto; }   /* content-sized, so the labelled active toggle keeps its width */
+.is-phone .col-tabs.mnav .mcard-tog.on { flex: 0 0 auto; min-width: 0; }   /* the active toggle keeps its natural width — don't shrink the label to "UN…"; the row scrolls if ever too tight */
+.is-phone .col-tabs.mnav .mcard-tog.on .mct-lbl { overflow: visible; text-overflow: clip; }
 /* §M7 — phone FOOTER tool bar (tools back at the bottom, thumb-reachable; nav is in the column
    headers now). Mirrors the old dock's bottom chrome: border-top, panel bg, safe-area pad. */
 .is-phone .mobile-toolbar { flex: 0 0 auto; border-top: 1px solid var(--line); background: var(--panel);
