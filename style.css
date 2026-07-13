@@ -447,19 +447,11 @@ body.is-phone { touch-action: manipulation; }
 /* §M7 — each phone column is a flex COLUMN: the two chip rows (toggle + search) sit ABOVE the
    card (fixed height, floating on the dark bg like the old §M6 header), and the card fills the
    rest so ONLY its own body scrolls. Chip rows are NOT inside the card's plate. */
-.is-phone .col { position: relative; flex: 0 0 100%; scroll-snap-align: start; padding: 0 8px; height: 100%; box-sizing: border-box;
-  display: flex; flex-direction: column; min-height: 0; }   /* position:relative anchors the floating .mjog pill (R32) */
+.is-phone .col { flex: 0 0 100%; scroll-snap-align: start; padding: 0 8px; height: 100%; box-sizing: border-box;
+  display: flex; flex-direction: column; min-height: 0; }
 .is-phone .col > .card { flex: 1 1 auto; min-height: 0; }
 .is-phone .col > .mdock-row { flex: 0 0 auto; padding: 4px 0 6px; }        /* toggle chips, above the card */
 .is-phone .col > .mdock-searchslot { flex: 0 0 auto; padding: 0 0 8px; }   /* search/graph/sort chips, above the card */
-/* §M7 / R32 — the floating Back/Forward jog pill: pinned to THIS column's bottom-right so the
-   snapped column's own history control is what shows (per-column, no scroll-sync). Reuses the
-   .card-jog chrome; lifted off the list with the card/popup elevation. The wrapper is
-   click-through (pointer-events:none) so only the small pill itself covers the list; it sits
-   above the phone tool bar, which owns the safe-area inset. */
-.is-phone .mjog { position: absolute; right: 12px; bottom: 12px; z-index: 6; pointer-events: none; }
-.is-phone .mjog .card-jog { pointer-events: auto; box-shadow: var(--shadow); }
-.is-phone .col.has-mjog .card-body { padding-bottom: 60px; }   /* last row scrolls clear of the pill */
 /* §M7 — rows carry touch-action:pan-y (§drag engine, so vertical scroll is native + the 400ms
    long-press can lift a row). But pan-y BLOCKS a horizontal swipe that starts on a row, so
    paging only worked from blank card area (and the touch leaked to the row as a hover — the unit
@@ -473,6 +465,10 @@ body.is-phone { touch-action: manipulation; }
    headers now). Mirrors the old dock's bottom chrome: border-top, panel bg, safe-area pad. */
 .is-phone .mobile-toolbar { flex: 0 0 auto; border-top: 1px solid var(--line); background: var(--panel);
   padding: 6px 8px max(6px, env(safe-area-inset-bottom)); }
+/* §M7 / R32 — the always-on Back/Forward jog at the LEADING edge of the phone footer bar
+   (reflects the snapped column's card, repainted on swipe). Reuses the .card-jog chrome; this
+   just seats it in the bar, ahead of the tool cluster. */
+.is-phone .mobile-toolbar .mfoot-jog { flex: 0 0 auto; display: flex; align-items: center; margin-right: 2px; }
 .is-phone .mobile-toolbar .top-toolbar { order: 0; margin: 0; padding: 0; }
 /* the global tool tray rendered as a phone sheet (§M1 footer → Tools) */
 .tools-tray { display: flex; flex-wrap: wrap; gap: 8px; }

@@ -2709,14 +2709,18 @@ function cardFwd(card) {
 // OR whenever it's showing a record (Standard view): a record can always step Back to its
 // List view even with no recorded history (Jac). Lives in the standard header and the
 // list-bar. Right-click on the card mirrors the Back arm (Task 2).
-function cardJog(card, cs) {
+function cardJog(card, cs, { always = false } = {}) {
   const inRecord = !!(cs && cs.mode === 'standard' && cs.recId != null);
-  if (!cs || (!cs.backStack.length && !cs.fwdStack.length && !inRecord)) return '';
+  // Normally the jog shows only when this card has its own history (or is showing a record).
+  // {always:true} keeps it mounted regardless — the phone FOOTER jog (Chrome-style: always
+  // present, each arm greys out when its stack is empty).
+  if (!always && (!cs || (!cs.backStack.length && !cs.fwdStack.length && !inRecord))) return '';
+  const back = cs ? cs.backStack.length : 0, fwd = cs ? cs.fwdStack.length : 0;
   const arm = (dir, on, ico, tip) =>
     `<button class="jog-btn js-card${dir}" data-card="${esc(card)}" ${on ? '' : 'disabled'} data-tip="${tip}" aria-label="${tip}">${ico}</button>`;
   return `<div class="card-jog" role="group" aria-label="View history" data-r="R32">`
-    + arm('back', cs.backStack.length || inRecord, I.chevL, 'Back')
-    + arm('fwd', cs.fwdStack.length, I.chevR, 'Forward')
+    + arm('back', back || inRecord, I.chevL, 'Back')
+    + arm('fwd', fwd, I.chevR, 'Forward')
     + `</div>`;
 }
 // Double-click-to-anchor discriminator (#10): a row's single-click OPEN is deferred a
@@ -5835,7 +5839,7 @@ const RULE_META = {
   R29: ['Invoice action menu', 'invoiceStatMenu', 'the expanded-invoice header control: a hazard-stripe status pill (green solid = paid · yellow-stripe = partial · red-stripe = due; goes SOLID while its menu is open) that DOUBLES as the Pay · Print · Send · Refund action menu. A pressable-status control like R1, but it opens actions rather than advancing a status. Pay/Refund reuse the canMoney()-gated payment window.'],
   R30: ['Paused banner', '.wr-paused (wranglerDockBodyHtml)', 'red hazard-stripe plate inside the Mr. Wrangler dock/rail window — raised when a Developer-tier operator takes the wheel (Wrangler Ops live jump-in, §18i); the composer goes read-only until released'],
   R31: ['Toggle chip', 'toggleChip', 'a single interactive on/off pill (PO required, Rental Protection) — off = quiet outline, on = the registry tone color fill. Distinct from R14: ONE control, not a joined group of options.'],
-  R32: ['Nav jog', 'cardJog / .card-jog · .mjog', 'the two-way Back/Forward view-history stepper: neutral steel pill, chevron arms split by a saddle-stitch seam, orange only on hover/press. Desktop rides the card header + list-bar; on phone it is the floating .mjog pill pinned to the bottom-right of the active column (record view can always step Back to its list).'],
+  R32: ['Nav jog', 'cardJog / .card-jog · .mfoot-jog', 'the two-way Back/Forward view-history stepper: neutral steel pill, chevron arms split by a saddle-stitch seam, orange only on hover/press. Desktop rides the card header + list-bar (shows only when the card has history). On phone it lives ALWAYS-ON at the leading edge of the footer tool bar — Chrome-style: each arm greys out when its stack is empty — and reflects the snapped column’s card (repainted on swipe).'],
 };
 /* ════════════ APP-12 · DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
    The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
@@ -8706,13 +8710,8 @@ function columnEl(col, session) {
     const lb = card.querySelector('.card-body .listbar');
     if (lb) { const slot = el('div', 'mdock-searchslot'); slot.appendChild(lb); wrap.appendChild(slot); }
     wrap.appendChild(card);
-    // §M / R32 — on phone the Back/Forward jog is the floating .mjog pill pinned to THIS
-    // column's bottom-right (per-column: the snapped column's own history control is what
-    // shows, no scroll-sync needed). Serves both list AND record view — the one mount that
-    // survives §M7 deleting the old bottom dock. Empty until the card has history or shows a
-    // record (cardJog returns '').
-    const jogHtml = cardJog(active, cs);
-    if (jogHtml) { wrap.classList.add('has-mjog'); const mjog = el('div', 'mjog'); mjog.innerHTML = jogHtml; wrap.appendChild(mjog); }
+    // §M/R32 — the phone Back/Forward jog is NOT in the column; it lives always-on in the
+    // footer tool bar (mobileToolbarEl → .mfoot-jog), reflecting the snapped column's card.
     return wrap;
   }
   // Desktop: the sub-card tab strip + search/sort bar live INSIDE the card top (a full-width card
@@ -8866,7 +8865,7 @@ function cardEl(cardDef, session) {
       : '';
     const head = el('div', 'card-head');
     head.innerHTML = `
-      ${document.body.classList.contains('is-phone') ? '' : cardJog(card, cs)}${/* §M/R32 — on phones the jog is the floating .mjog pill pinned per-column (columnEl), not the card header */ ''}
+      ${document.body.classList.contains('is-phone') ? '' : cardJog(card, cs)}${/* §M/R32 — on phones the jog lives always-on in the footer bar (mobileToolbarEl → .mfoot-jog), not the card header */ ''}
       <span class="c-titlecard"><span class="c-icon">${CARD_ICON[card] || ''}</span>${titleHtml}</span>
       ${commentMarkerHtml(card, stdRec)}
       ${headFlagsHtml(card, stdRec)}`;
@@ -8903,7 +8902,7 @@ function listView(cardDef, session) {
   const anchorName = cascaded ? (state.tabs.find((t) => t.session === session)?.label || 'anchor') : '';
   const cascChip = cascaded ? `<span class="casc-chip" data-tip="Cascaded from ${esc(anchorName)} — clear to browse all & add">🔗<span class="cc-name">${esc(anchorName)}</span>${closeX('js-uncascade', { data: { card } })}</span>` : '';
   bar.innerHTML = `
-    ${document.body.classList.contains('is-phone') ? '' /* §M/R32 — on phone the jog is the floating .mjog pill (columnEl), not the list-bar */ : cardJog(card, cs)}
+    ${document.body.classList.contains('is-phone') ? '' /* §M/R32 — on phone the jog lives always-on in the footer bar (.mfoot-jog), not the list-bar */ : cardJog(card, cs)}
     <button class="bv-btn js-cardgraph${cs.graphView ? ' on' : ''}" data-card="${card}" data-tip="${cs.graphView ? 'Back to list' : 'Graph view'}">${I.graph}</button>
     <div class="mini-searchwrap${cterms.length || cascChip ? ' has-terms' : ''}${cs.search.trim() || cterms.length ? ' has-query' : ''}">
       ${cascChip}${cterms.map((ft, i) => filterTermPill(ft, i, card)).join('')}
@@ -9560,9 +9559,19 @@ function goToCard(member) {
 // navigation moved OFF the footer and up into each column's own toggle header (mobileNavHtml) —
 // so the footer is tools-only again. (This is the top-toolbar content, relocated to the bottom;
 // headerEl omits it from the top on phone.)
+// The phone footer's always-on Back/Forward jog (R32) — reflects the SNAPPED column's card
+// (repainted on column change by syncMobileColFromScroll). Chrome-style: always mounted, each
+// arm greys when its stack is empty.
+function footerJogInner() {
+  const s = activeSession();
+  const col = COLUMNS[Math.max(0, Math.min(COLUMNS.length - 1, state.mobileCol))];
+  const member = (s.cols && s.cols[col.id]) || col.default;
+  const cs = s.cards ? s.cards[member] : null;
+  return cardJog(member, cs, { always: true });
+}
 function mobileToolbarEl() {
   const d = el('div', 'mobile-toolbar');
-  d.innerHTML = `<div class="top-toolbar">${bottomBarInner()}${commsBellBtn()}</div>`;
+  d.innerHTML = `<div class="top-toolbar"><div class="mfoot-jog">${footerJogInner()}</div>${bottomBarInner()}${commsBellBtn()}</div>`;
   return d;
 }
 /* ════════════════════════════════════════════════════════════════════════
@@ -23226,8 +23235,10 @@ function boot() {
     const idx = Math.max(0, Math.min(COLUMNS.length - 1, Math.round(grid.scrollLeft / w)));
     if (idx === mcolLast) return;
     mcolLast = idx; state.mobileCol = idx;
-    // Each column's own toggle header highlights that column's card statically, so nothing to
-    // repaint on scroll — we just keep state.mobileCol in step (zip-zones, links, etc. read it).
+    // Each column's own toggle header highlights that column's card statically. The footer jog
+    // (R32), though, is a GLOBAL bar reflecting the ACTIVE card, so repaint it on column change.
+    const fj = document.querySelector('.mobile-toolbar .mfoot-jog');
+    if (fj) fj.innerHTML = footerJogInner();
   }
   document.addEventListener('scroll', (e) => {
     if (!(e.target && e.target.classList && e.target.classList.contains('grid'))) return;

@@ -59,6 +59,22 @@ Two facts about today's mobile shape frame the fix:
    because it touches the balanced `backGuard` / `popstate` machinery (`app.js:11990`,
    `app.js:23201`).
 
+## Revision — 2026-07-13 (post-staging feedback from Jac)
+
+After reviewing the floating pill, Jac revised two decisions. The rest of the design (per-card
+model, `cardBack`/`cardFwd` reuse, R32 stamp, scope) stands.
+
+- **Placement → the footer.** Move the jog off the floating bottom-right pill and into the
+  **phone footer tool bar** (`mobileToolbarEl` → `.mfoot-jog`), at the leading (left) edge.
+  Because the footer is a *global* bar but the jog is *per-card*, it reflects the **snapped
+  column's** card and is repainted on swipe via `syncMobileColFromScroll`.
+- **Always-on, Chrome-style.** The jog is **always mounted** on phone (not only when there's
+  history). Each arm greys out (disabled) when its stack is empty — exactly like a browser's
+  Back/Forward. Implemented via a `cardJog(card, cs, { always:true })` option.
+
+Sections A–C below describe the superseded floating-pill approach; the shipped implementation
+follows this Revision.
+
 ## Design
 
 ### A. The control
