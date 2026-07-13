@@ -8691,33 +8691,31 @@ function columnEl(col, session) {
   // stamp the VIEW identity (list vs which record) so render() keys scroll memory by it
   const cs = card.dataset.card && session.cards ? session.cards[card.dataset.card] : null;
   card.dataset.view = (cs && cs.mode === 'standard' && cs.recId != null) ? `${cs.recType || ''}:${cs.recId}` : 'list';
-  // Each column carries its OWN sub-card tab strip + search/sort bar inside its card top —
-  // on desktop AND phone alike (§M7 native scroll-snap paging: the phone shows all 3 columns
-  // in a horizontal snap track, so each one owns its toolbar and scrolls with it, exactly like
-  // desktop — no more lifting the active card's bar into a shared header). The freeze-out of the
-  // bar (full-width card header, so the card-body scrollbar runs only through the list, not a
-  // gutter beside the bar) applies on phone too.
+  if (document.body.classList.contains('is-phone')) {
+    // §M7 — EXACTLY the pre-scroll-snap §M6 layout, verified against the old build: BOTH chip
+    // rows sit ABOVE the card, not inside it. The toggle chips (mobileNavEl → .mdock-row) and the
+    // search/graph/sort chips (the listbar in a .mdock-searchslot) float above the card; the card
+    // itself (hazard cap + list) sits below. The .col is a flex column so the card fills the rest
+    // and its body scrolls; the two chip rows are fixed-height at the top of the column.
+    wrap.appendChild(mobileNavEl(active));
+    const lb = card.querySelector('.card-body .listbar');
+    if (lb) { const slot = el('div', 'mdock-searchslot'); slot.appendChild(lb); wrap.appendChild(slot); }
+    wrap.appendChild(card);
+    return wrap;
+  }
+  // Desktop: the sub-card tab strip + search/sort bar live INSIDE the card top (a full-width card
+  // header, so the card-body scrollbar runs only through the list, not a gutter beside the bar).
   card.insertBefore(colTabsEl(col, active, session), card.firstChild);
   const lb = card.querySelector('.card-body .listbar'), body = card.querySelector('.card-body');
-  if (lb && body) {
-    // §M7 — on phone, wrap the relocated search/sort bar in .mdock-searchslot so the ORIGINAL
-    // "float on the dock" chip styling (graph · search · sort as separate chips, no wrapper band)
-    // renders it exactly as before. Desktop keeps the bar as a plain full-width card header.
-    if (document.body.classList.contains('is-phone')) { const slot = el('div', 'mdock-searchslot'); slot.appendChild(lb); card.insertBefore(slot, body); }
-    else card.insertBefore(lb, body);
-  }
+  if (lb && body) card.insertBefore(lb, body);
   const st = card.querySelector('.card-body .rus'); if (st && body) card.insertBefore(st, body);   // §13.7 — flex-basis 25% resolves against .card, the full column
   wrap.appendChild(card);
   return wrap;
 }
 function colTabsEl(col, active, session) {
   // Jac 2026-06-12: the toggle CHIP stays centered; the nav cluster sits OUTSIDE
-  // it, parked at the row's right edge (.tabrow wraps both).
-  // §M7 (Jac 2026-07-12): on PHONE each column's header IS the full card-toggle bar we had
-  // before — mobileNavEl(), an EXACT reproduction of mobileDockEl's 3 segmented chips — so you
-  // can swipe OR tap any card to zip to it, with this column's card the highlighted one. No
-  // actions cluster (it wasn't shown on phone before). Desktop keeps its 2-tab col-tabs + actions.
-  if (document.body.classList.contains('is-phone')) return mobileNavEl(active);
+  // it, parked at the row's right edge (.tabrow wraps both). (Desktop only — phone uses
+  // mobileNavEl above the card, §M7.)
   const bar = el('div', 'tabrow');
   bar.innerHTML = `<div class="col-tabs">${colTabButtonsHtml(col, active, session)}</div>` + colActionsHtml(active, session);
   return bar;
