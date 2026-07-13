@@ -474,6 +474,10 @@ body.is-phone { touch-action: manipulation; }
    headers now). Mirrors the old dock's bottom chrome: border-top, panel bg, safe-area pad. */
 .is-phone .mobile-toolbar { flex: 0 0 auto; border-top: 1px solid var(--line); background: var(--panel);
   padding: 6px 8px max(6px, env(safe-area-inset-bottom)); }
+/* §M7 / R32 — the always-on Back/Forward jog at the LEADING edge of the phone footer bar
+   (reflects the snapped column's card, repainted on swipe). Reuses the .card-jog chrome; this
+   just seats it in the bar, ahead of the tool cluster. */
+.is-phone .mobile-toolbar .mfoot-jog { flex: 0 0 auto; display: flex; align-items: center; margin-right: 2px; }
 .is-phone .mobile-toolbar .top-toolbar { order: 0; margin: 0; padding: 0; }
 /* the global tool tray rendered as a phone sheet (§M1 footer → Tools) */
 .tools-tray { display: flex; flex-wrap: wrap; gap: 8px; }
