@@ -288,7 +288,7 @@ input { font-family: inherit; }
 .mini-globe svg { width: 15px; height: 15px; }
 .mini-globe:hover { color: var(--txt); background: var(--panel-2); }
 .mini-globe:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.mini-globe.on, .mini-globe.on:hover { color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-line); }
+.mini-globe.on, .mini-globe.on:hover { color: var(--accent); background: transparent; box-shadow: none; }   /* engaged = just the orange glyph, no box (Jac) */
 .mini-searchwrap.globe-on { border-color: var(--accent-line); }   /* the whole bar reads engaged when its globe is on */
 @media (prefers-reduced-motion: no-preference) { .mini-globe { transition: color .12s, background-color .12s, box-shadow .12s; } }
 
