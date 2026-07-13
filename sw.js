@@ -14,6 +14,13 @@ const SHELL = ['./', './index.html', './app.js', './style.css', './config.js', '
   './cascade.js', './icons.js', './icons-anim.js', './agreements.js', './service-countdown.js',
   './rule-usage.js', './manifest.webmanifest'];
 const SHELL_SET = new Set(SHELL.map((p) => new URL(p, self.location.href).pathname));
+/* Standalone PUBLIC pages (SMS-compliance + business info) are their OWN documents, NOT the SPA
+ * shell. They must NEVER be served the cached index.html nav-fallback below — otherwise any visitor
+ * who has the app's SW installed (Jac, staff, a returning customer) navigating to one of these gets
+ * the login wall instead of the real page. That broke A2P campaign vetting: the carrier's business /
+ * opt-in URLs appeared to be a login screen (2026-07-13). Nav requests to these bypass the SW. */
+const PUBLIC = ['./about.html', './sample-quote.html', './opt-in.html', './privacy.html', './sms-terms.html'];
+const PUBLIC_SET = new Set(PUBLIC.map((p) => new URL(p, self.location.href).pathname));
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -28,6 +35,7 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;                    // third-party (Stripe/Maps/fonts/GAS) → network-only
   const isNav = req.mode === 'navigate';
+  if (isNav && PUBLIC_SET.has(url.pathname)) return;                  // standalone public page → network, NEVER the SPA shell
   if (!isNav && !SHELL_SET.has(url.pathname)) return;                 // not on the shell allowlist → network-only, never cached
   // stale-while-revalidate on the shell; navigation falls back to the cached index.html offline
   e.respondWith(caches.open(CACHE).then(async (c) => {
