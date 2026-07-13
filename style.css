@@ -282,6 +282,15 @@ input { font-family: inherit; }
 .mini-searchwrap .filt-term .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mini-searchwrap .ft-neg { width: 14px; height: 14px; }
 .mini-searchwrap .filt-term.neg .ft-neg::before { width: 7px; }
+/* R33 — card-search GLOBAL-MODE globe: icon-only toggle pinned right in the mini search bar.
+   Dim steel at rest → safety-orange when engaged (every grid-card globe lights in lockstep). */
+.mini-globe { flex: 0 0 auto; margin-left: auto; align-self: center; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 8px; color: var(--txt-3); background: transparent; }
+.mini-globe svg { width: 15px; height: 15px; }
+.mini-globe:hover { color: var(--txt); background: var(--panel-2); }
+.mini-globe:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mini-globe.on, .mini-globe.on:hover { color: var(--accent); background: transparent; box-shadow: none; }   /* engaged = just the orange glyph, no box (Jac) */
+.mini-searchwrap.globe-on { border-color: var(--accent-line); }   /* the whole bar reads engaged when its globe is on */
+@media (prefers-reduced-motion: no-preference) { .mini-globe { transition: color .12s, background-color .12s, box-shadow .12s; } }
 
 .closeall { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
 .closeall:hover { background: rgba(255,122,26,.22); }
@@ -465,6 +474,10 @@ body.is-phone { touch-action: manipulation; }
    headers now). Mirrors the old dock's bottom chrome: border-top, panel bg, safe-area pad. */
 .is-phone .mobile-toolbar { flex: 0 0 auto; border-top: 1px solid var(--line); background: var(--panel);
   padding: 6px 8px max(6px, env(safe-area-inset-bottom)); }
+/* §M7 / R32 — the always-on Back/Forward jog at the LEADING edge of the phone footer bar
+   (reflects the snapped column's card, repainted on swipe). Reuses the .card-jog chrome; this
+   just seats it in the bar, ahead of the tool cluster. */
+.is-phone .mobile-toolbar .mfoot-jog { flex: 0 0 auto; display: flex; align-items: center; margin-right: 2px; }
 .is-phone .mobile-toolbar .top-toolbar { order: 0; margin: 0; padding: 0; }
 /* the global tool tray rendered as a phone sheet (§M1 footer → Tools) */
 .tools-tray { display: flex; flex-wrap: wrap; gap: 8px; }
