@@ -5,6 +5,43 @@
 - **Branch:** `claude/update-specs-yesterday-y8tr3x` (design authored here; the migration itself lands incrementally — see §9).
 - **Scope:** How we develop and ship, end to end. Replaces the `task → area/<domain> → staging → main` branch chain + the `spec-sync`/`master-spec` machinery with mainstream trunk-based development, while **keeping Jac's staging approval gate**.
 
+## 0. Vocabulary + Intentions — READ THIS FIRST
+
+This section exists so a session that never saw the design conversation still ships with our exact language and intent. Read it before touching anything.
+
+### 0.1 Vocabulary (and what each replaces)
+
+| Term | What it means | Maps to / replaces |
+|---|---|---|
+| **Trunk** (`main`) | The one long-lived branch — the single source of truth | Replaces the ~19 `area/*` branches + the `task → area → staging → main` chain |
+| **Feature branch** | A short-lived, throwaway branch for one piece of work; merged back the same day (or dropped) and **deleted** | Replaces the *permanent* `area/*` branches |
+| **Merge / PR** | Folding a feature branch into the trunk; the PR runs the `smoke` gate | How work joins the trunk |
+| **Environment** | A *place* code runs (staging / production) — a **deploy target, NOT a branch** | The staging site + app.jacrentals.com |
+| **Deploy** | Put a build into an environment so it runs there | — |
+| **Promote** | Move the **exact same build** from staging to production — no rebuild, no re-merge | Replaces "merge `staging` → `main`" |
+| **Approval gate** | A human "OK" before something proceeds | The part Jac **keeps** |
+| **Feature flag** | A runtime on/off switch (a `FEATURES` map in `config.js`) so unfinished / replacement code sits in the trunk turned **off** | New tool (see D5) |
+| **Worktree** | A second working folder on the same repo, so a parallel agent works without colliding | Replaces "a long-lived branch per parallel session" |
+
+**Naming note (important):** here `main` **is the trunk** (the integration line), and **`production` is a separate release-pointer branch** that GitHub Pages serves as the live site. "production" is an environment/pointer — you never *merge a branch into* it; the promote step fast-forwards it.
+
+### 0.2 Intentions (the spirit — hold these, don't drift)
+
+- **The entire redesign has ONE goal: cut ceremony.** The area branches, `spec-sync`, `master-spec`, and the cron mirror were all workarounds for long-lived divergent branches. Fix the branching and the machinery dissolves. **Do not re-introduce ceremony** to solve a problem trunk + short branches already solves.
+- **Jac's explicit steer:** *"do exactly what the mainstream industry does, not pretend I'm smarter than them."* When in doubt, take the boring, standard, well-documented path.
+- **Keep the staging approval gate.** Jac reviews the running app and approves before it goes live. That gate is the whole point; only everything *upstream* of it got simplified.
+- **Two gates, both chat-driven:** "merge it" → trunk; "promote it" → production. Between them, work sits **blessed-but-not-live**. **Promote is ALWAYS Jac's explicit call**, never automatic.
+- **Review a feature BEFORE it joins the trunk**, so "I don't like it" means the branch never merges — nothing to undo (D2).
+- **Big replacements ride behind a feature flag** so backing out is a toggle, not code surgery (D5).
+- **Do NOT touch or "improve" the quality infrastructure:** the CI gates, R-rulebook stamping, Code-Atlas, `jactec-ui`, and the skills. Those are real, not ceremony.
+
+### 0.3 Non-obvious constraints (don't rediscover these the hard way)
+
+- **GitHub Pages serves one site per repo** → the staging site stays a **second repo** (`rental-wrangler-staging`), fed by a **push on deploy** (not a cron).
+- **`main` is branch-protected** → Claude can't push straight to it. That is *exactly why* `production` is a separate **unprotected** pointer branch the promote step is allowed to push to.
+- **The repo is PUBLIC** → a feature flag disables **execution, not visibility**; flagged code still ships readable in the bundle. Never gate a secret or an auth/security check on a flag.
+- **Promotion is "build once, deploy the same bytes"** — production runs the exact build reviewed on staging, never a rebuild or a second merge.
+
 ## 1. Problem / motivation
 
 The current workflow is a large, well-built workaround for one root choice: **long-lived branches used as environments.** There are ~19 permanent `area/*` branches, each drifting 500–800 commits from `main`, plus a 4-tier `task → area → staging → main` promotion chain, plus a custom `spec-sync` tool syncing a `docs/specs/` folder across a dedicated spec-only `master-spec` branch, plus a separate staging *mirror repo* synced by a 10-minute cron + a manual `gh workflow run sync-staging.yml` dispatch.
