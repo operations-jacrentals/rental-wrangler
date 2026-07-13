@@ -318,7 +318,7 @@ input { font-family: inherit; }
   background: var(--panel); padding: 0 0 max(6px, env(safe-area-inset-bottom)); touch-action: pan-y; }   /* pan-y lets our pointer swipe own the horizontal */
 /* the card's search/sort row, relocated here — a FULL-WIDTH band (edge to edge) */
 .mdock-searchslot:empty { display: none; }
-.is-phone .mdock-searchslot .listbar { position: static; margin: 0; padding: 4px 8px; gap: 8px;
+.is-phone .mdock-searchslot .listbar { position: static; margin: 0; padding: 4px 0; gap: 8px;
   background: none; border: none; box-shadow: none; }   /* no wrapper band — search/graph/sort chips float on the dock (Jac 2026-06-23) */
 /* search row — graph · search · sort all share ONE height via row-stretch (Jac 2026-06-23) */
 .is-phone .mdock-searchslot .listbar { align-items: stretch; }
