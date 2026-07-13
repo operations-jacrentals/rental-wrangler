@@ -137,3 +137,7 @@ Trunk-based development & branch lifetime: DORA (dora.dev/capabilities/trunk-bas
 - Cross-repo push mechanism for the staging site (deploy key vs PAT).
 - Whether to add **content-hashed asset filenames** to retire the manual `?v=` cache-bust token (a small CI hashing step can do this without adopting a full bundler, preserving the build-free posture).
 - Where feature-flag reads live in `app.js` and how `config.js` `FEATURES` defaults are set per environment.
+
+## 12. Correction (2026-07-13) — `main` was not the latest; a reconciliation phase is required
+
+This design assumed `main` was the integrated latest. At cutover it was not: the long-lived `staging` branch was ~1089 commits (26 files *net*) ahead, holding real unmerged features (Account/Agreements + Membership, Customer Details reorg, assorted fixes). Trunk-based development requires reconciling that pre-existing divergence onto `main` **first** — see the plan's **Phase 7 — Reconcile the pre-existing `staging` divergence**. The reconcile is feature-by-feature onto the trunk (NOT a `staging → production` promote), with the mobile scroll-snap paging work excluded (superseded by the separate frontend-performance session's side-scroll/swipe system).

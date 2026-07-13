@@ -133,3 +133,26 @@ The session-lifecycle pair needs a rewrite for the trunk model. Capturing the ap
 3. ⛔ 0.4 provide the cross-repo deploy key/PAT secret.
 4. Confirm branch names (`production` release pointer) and that "Claude does it from chat" promotion is the intended mechanism vs. adding the free native gate now.
 5. Green-light Phase 2's throwaway test feature.
+
+---
+
+## Phase 7 — Reconcile the pre-existing `staging` divergence into the trunk (added 2026-07-13)
+
+**Why this was missing.** Phases 0–6 assumed `main` was already the integrated latest. It wasn't. At cutover the long-lived `staging` branch was **~1089 commits ahead of `main`** (real *net* divergence: **26 files**), carrying features that never rode a `Promote staging → main` squash. Trunk-based development can't be "clean" until that pre-existing work is reconciled onto the trunk. (Surfaced 2026-07-13 when a `deploy-staging.mjs` run during the Phase-2 proof overwrote the staging *site*, which had been serving the `staging`-branch build — the branch itself was never at risk, and the site was restored from `staging`. The old cron mirror that used to publish the `staging` branch, `sync-staging.yml`, was already retired, which is also why the site had gone stale/behind the branch.)
+
+**Audit (2026-07-13).** Net divergence = 26 files. `main` was ahead only by the Phase-0–5 redesign commits. `staging` held:
+- ✅ **Account / Agreements + Membership auto-enrollment + payment-gate hardening** (design 2026-07-10) — *reconcile* (payment-gate = security-sensitive → main-session review, never delegated).
+- ✅ **Customer Details reorg** — retire the Invoice card, embed invoices, Rental|Equipment-Sales funnel toggle (design 2026-07-08) — *reconcile*.
+- ✅ **Assorted fixes/tweaks** — unit-detail accordions, KPI/invoice tweaks, a card-search perf fix, `design-system`/`rentals-dispatch` spec touches, `ci/logic-test.mjs` — *reconcile* (review first).
+- ❌ **Mobile scroll-snap paging** (design 2026-07-12) — *excluded*: superseded by the newer side-scroll/swipe system built in the separate **frontend-performance** session. Mobile stays that session's domain; this reconcile does not touch it.
+
+**Approach.**
+- **Reconcile-into-the-trunk, NOT `staging → production`.** `staging`↔`main` is not a fast-forward either way, and the 1089 commits are unaudited — a blind promote would ship regressions. Instead: bring each *wanted* feature onto `main`, then promote `main → production` the normal (Gate-2) way.
+- **Feature-by-feature, cleanest first, each its own trunk-flow PR** (feature branch → `deploy-staging` review → "merge it" → wait → "promote it"). Suggested order: **Customer Details reorg** (cleanest, a contiguous pre-mobile 07-08 block) → **Account/Membership** (largest; payment-gate care) → **assorted fixes**.
+- **Port net feature diffs against `main`'s current state — do NOT cherry-pick blindly.** The squash-merge history plus the interleaving of the *excluded* mobile commits (07-11→07-13) with wanted work (account-field tweaks, unit-detail, perf) make raw cherry-picks fragile. Port each feature's `app.js`/`style.css`/spec hunks onto `main`, run every gate, and review on staging before "merge it."
+
+**Guardrails.**
+- **Never delete or force-push `staging`** — those commits are the only copy of that history until reconciliation is complete and confirmed.
+- **Do not touch the frontend-performance area / mobile** (active in a separate session).
+- `STAGING_DEPLOY_PAT` never echoed/hardcoded.
+- The **A-vs-B** "where the combined accumulation surface lives" question (staging-as-preview vs staging-as-accumulation) is **deferred** until reconciliation lands: once `main` is the true latest, the separate combined surface largely dissolves and the staging URL can settle into the per-feature preview role (likely Option A).
