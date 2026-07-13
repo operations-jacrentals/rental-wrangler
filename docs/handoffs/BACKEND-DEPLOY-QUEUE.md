@@ -1,6 +1,12 @@
 # Backend deploy queue — DEPLOYED (2026-07-06 late session); doc kept as the deploy runbook
 
-## ⛔ QUEUED, STOP-GATED — ACH unblock: `stripeSaveBank_` PM-attachment guard (2026-07-13)
+## ✅ DEPLOYED 2026-07-13 — ACH unblock: `stripeSaveBank_` PM-attachment guard
+- **Staged to HEAD** (service account push, content-only) + read-back verified, then **editor
+  redeploy by Jac**. Anonymous access confirmed intact afterward (wrong-password `auth` →
+  `{"ok":false,"error":"unauthorized"}`, HTTP 200 JSON — not 403/HTML). Live end-to-end ACH
+  add is Jac's in-app confirmation (needs live Stripe + selfie/signature consent).
+
+### (as-shipped) ACH unblock: `stripeSaveBank_` PM-attachment guard (2026-07-13)
 - **What:** ACH was categorically broken — every "Add bank account" save returned
   `pm-customer-mismatch` ("That card isn't linked to this customer."). Root cause (proven,
   live source pulled read-only): `stripeSaveBank_`'s second ownership check requires the
