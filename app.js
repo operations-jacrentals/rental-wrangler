@@ -29,8 +29,12 @@ import {
   SHOP_TYPES, COLUMNS, COLUMN_OF,
   legacyTransportPrice, computeTransportPrice, isFueledType, legsForType, YARD_ORIGIN, GOOGLE_MAPS_KEY, GPS_BACKEND_URL,
   fmtWindow, fmtShortDate, showsTruck, parseISO, TODAY_ISO, refreshTodayISO, invoiceShort, TRANSPORT_MAP,
-  FLAG_META, FLAG_SEVERITY_RANK, INSURANCE_COVERAGE_TYPES,
+  FLAG_META, FLAG_SEVERITY_RANK, INSURANCE_COVERAGE_TYPES, FEATURES,
 } from './config.js';
+// Feature-flag reader (scaffold only, dev-workflow trunk-based redesign D5): a big
+// replacement's new code path checks flagOn('key') instead of running unconditionally,
+// so the old path stays live until the flag flips. No feature reads this yet.
+const flagOn = (k) => !!(FEATURES && FEATURES[k] === true);
 
 /* ════════════════════════════════════════════════════════════════════════
    APP-01 · §0.7 GLITCH CAPTURE — a small ring buffer of recent JS errors, so when you
