@@ -1649,20 +1649,28 @@ try {
       const ci = T.DATA.invoices.indexOf(cxl); if (ci >= 0) T.DATA.invoices.splice(ci, 1); T.IDX.invoice.delete(cxl.invoiceId);
     }
 
-    // === F5 — enrollment happy path (demo charge): card on file → Active + paid membership invoice ===
+    // === Phase 2b — sign=enroll happy path (demo charge): signed agreement, start date today,
+    // card on file → Active + paid membership invoice. Replaces the old F5 enrollment test
+    // (openMembershipEnroll/membershipEnrollCommit) — that legacy overlay bypassed the signed-
+    // agreement gate entirely (no signature/selfie/start-date check) and was retired 2026-07-10;
+    // agreementSignCommit is now the ONE path that can flip accountType to a Member type (D4). ===
     {
-      const c = { customerId: 'C-EN', accountType: 'Non-Business', company: '', membershipStage: 'Signed', cards: [{ id: 'K1', status: 'active', isDefault: true, stripePmId: 'pm_y', brand: 'visa', last4: '4242', expMonth: 12, expYear: 2099 }], activityLog: [] };
+      const c = { customerId: 'C-EN', accountType: 'Non-Business', company: '', rentalProtection: true, cards: [{ id: 'K1', status: 'active', isDefault: true, stripePmId: 'pm_y', brand: 'visa', last4: '4242', expMonth: 12, expYear: 2099 }], activityLog: [] };
       T.IDX.customer.set('C-EN', c);
-      T.openMembershipEnroll('C-EN');
-      T.__state.overlay.plan = 'Monthly'; T.__state.overlay.addOns = { transport: true, protection: true };
-      await T.membershipEnrollCommit();
-      ok(T.membershipStatus(c) === 'Active' && /Member/.test(c.accountType) && c.accountType !== 'Member Incomplete', 'enroll: a cleared charge flips the account to an Active member');
+      T.__state.custAgDraft = T.__state.custAgDraft || {};
+      T.__state.custAgDraft['C-EN'] = { accountType: 'Non-Business Member', startDate: T.TODAY_ISO, selfie: 'data:image/png;base64,x', signature: 'data:image/png;base64,y', actypeOpen: false };
+      T.agreementSignCommit('C-EN');
+      ok(T.membershipStatus(c) === 'Active' && /Member/.test(c.accountType) && c.accountType !== 'Member Incomplete', 'sign=enroll: a signed agreement with start date today flips the account to an Active member');
       const inv = T.DATA.invoices.find((i) => i.membership && i.customerId === 'C-EN');
-      ok(inv && T.invoiceTotals(inv).balance <= 0.005, 'enroll: a PAID membership invoice is created');
-      ok(c.unlimitedTransport === true && c.rentalProtection === true && c.paidCadence === 'Monthly' && c.commitmentEnd, 'enroll: add-ons + cadence + 12-mo commitment set on the account');
+      ok(inv && T.invoiceTotals(inv).balance <= 0.005, 'sign=enroll: a PAID membership invoice is created');
+      ok(c.rentalProtection === true && c.paidCadence === 'Monthly' && c.commitmentEnd, 'sign=enroll: cadence + 12-mo commitment set on the account (add-ons inherit the existing Protection toggle)');
       T.IDX.customer.delete('C-EN');
       if (inv) { const ix = T.DATA.invoices.indexOf(inv); if (ix >= 0) T.DATA.invoices.splice(ix, 1); T.IDX.invoice.delete(inv.invoiceId); }
-      T.__state.overlay = null;
+      delete T.__state.custAgDraft['C-EN'];
+    }
+    // === Phase 2b — the legacy enroll bypass must be GONE (2026-07-10 verification-agent finding) ===
+    {
+      ok(typeof T.openMembershipEnroll === 'undefined' && typeof T.membershipEnrollCommit === 'undefined', 'sign=enroll: the legacy Saddle Up enroll path (openMembershipEnroll/membershipEnrollCommit) is fully retired, not just unbuttoned');
     }
 
     // === units-fleet D3 — Sell a unit: sellUnit() sets the sale terms, and a SOLD

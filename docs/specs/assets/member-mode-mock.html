@@ -1,0 +1,191 @@
+<title>Member Mode + Open/All/Transactions — Phase 5 Preview</title>
+<style>
+  :root{
+    --accent:#ff7a1a; --accent-soft:rgba(255,122,26,.14); --accent-line:rgba(255,122,26,.5); --on-orange:#1a1205;
+    --bg:#0b0c0f; --panel:#15171c; --panel-2:#1b1e24; --card:#14161b; --card-head:#191c22;
+    --line:#262a31; --txt:#e9edf4; --txt-2:#a7afbc; --txt-3:#6b7480;
+    --green:#34d399; --green-bg:rgba(53,138,93,.16); --yellow:#f5c542; --yellow-bg:rgba(255,224,0,.15);
+    --red:#ff4242; --red-bg:rgba(255,16,64,.13); --blue:#5b9dff; --purple:#b07cf5; --gray:#8b94a3; --tan:#c2925a; --tan-deep:#8a5a2b;
+    --radius:16px; --shadow:0 18px 50px -24px rgba(0,0,0,.75);
+    --font:"Geist",-apple-system,"Segoe UI",sans-serif; --stamp:"Saira Condensed","Oswald","Arial Narrow",var(--font);
+  }
+  @media (prefers-color-scheme: light){ :root:not([data-theme="dark"]){
+    --bg:#eef1f6; --panel:#ffffff; --panel-2:#eef1f6; --card:#ffffff; --card-head:#eef1f6; --line:#cfd6e1;
+    --txt:#141821; --txt-2:#414b5a; --txt-3:#69727f; --on-orange:#2a1400;
+    --green:#0c8f5f; --yellow:#956f00; --red:#d52a2a; --blue:#1864d6; --purple:#7a37c9; --gray:#566072;
+    --green-bg:rgba(12,143,95,.12); --yellow-bg:rgba(149,111,0,.13); --red-bg:rgba(213,42,42,.10); } }
+  :root[data-theme="light"]{ --bg:#eef1f6; --panel:#ffffff; --panel-2:#eef1f6; --card:#ffffff; --card-head:#eef1f6; --line:#cfd6e1;
+    --txt:#141821; --txt-2:#414b5a; --txt-3:#69727f; --on-orange:#2a1400;
+    --green:#0c8f5f; --yellow:#956f00; --red:#d52a2a; --blue:#1864d6; --purple:#7a37c9; --gray:#566072;
+    --green-bg:rgba(12,143,95,.12); --yellow-bg:rgba(149,111,0,.13); --red-bg:rgba(213,42,42,.10); }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:radial-gradient(1200px 500px at 50% -10%, rgba(255,122,26,.05), transparent 60%), var(--bg);
+    color:var(--txt); font-family:var(--font); -webkit-font-smoothing:antialiased; padding:26px 16px 60px; }
+  .wrap{ max-width:520px; margin:0 auto; }
+  .pv-head{ text-align:center; margin-bottom:20px; }
+  .pv-eyebrow{ font-family:var(--stamp); text-transform:uppercase; letter-spacing:2px; font-weight:800; font-size:11px; color:var(--accent); }
+  .pv-title{ font-family:var(--stamp); text-transform:uppercase; letter-spacing:1.2px; font-weight:800; font-size:21px; margin:4px 0 6px; text-wrap:balance; }
+  .pv-sub{ font-size:12.5px; color:var(--txt-3); line-height:1.55; max-width:46ch; margin:0 auto; }
+  .state-cap{ font-family:var(--stamp); text-transform:uppercase; letter-spacing:1.5px; font-weight:800; font-size:10px; color:var(--tan);
+    margin:24px 2px 8px; display:flex; align-items:center; gap:8px; }
+  .state-cap::after{ content:""; flex:1; border-top:1px dashed var(--tan); opacity:.5; }
+
+  .card{ position:relative; background:linear-gradient(180deg,#1b2129,#0c0e11); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); padding:15px 14px; overflow:hidden; }
+  :root[data-theme="light"] .card{ background:linear-gradient(180deg,#ffffff,#eef1f6); }
+  @media (prefers-color-scheme: light){ :root:not([data-theme="dark"]) .card{ background:linear-gradient(180deg,#ffffff,#eef1f6); } }
+  .card::before{ content:""; position:absolute; top:0; left:0; right:0; height:5px; background:repeating-linear-gradient(135deg, var(--yellow) 0 13px, #14181d 13px 26px); opacity:.9; }
+  .section{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; }
+
+  /* OPEN · ALL · TRANSACTIONS three-way toggle */
+  .sec-toggle{ display:flex; justify-content:center; margin-bottom:11px; }
+  .seg{ display:inline-flex; border:1px solid var(--line); border-radius:999px; overflow:hidden; background:var(--panel-2); }
+  .seg button{ font-family:var(--stamp); text-transform:uppercase; letter-spacing:1px; font-size:11px; font-weight:800; color:var(--txt-3); background:transparent; border:0; padding:6px 15px; cursor:pointer; }
+  .seg button + button{ border-left:1px solid var(--line); }
+  .seg button.on{ background:var(--accent-soft); color:var(--accent); }
+
+  .kpi-row{ display:flex; align-items:stretch; gap:7px; }
+  .inv-summary{ display:flex; gap:7px; flex:1; }
+  .kchip{ flex:1; background:var(--panel-2); border:1px solid var(--line); border-radius:11px; padding:8px 6px; text-align:center; min-width:0; }
+  .kchip .kc-v{ display:flex; align-items:baseline; justify-content:center; gap:4px; font-size:16px; font-weight:800; letter-spacing:.2px; font-variant-numeric:tabular-nums; }
+  .kchip .kc-l{ display:flex; align-items:center; justify-content:center; gap:4px; font-family:var(--stamp); text-transform:uppercase; letter-spacing:.5px; font-size:9px; color:var(--txt-3); margin-top:2px; }
+  .kchip.due .kc-v{ color:var(--red); } .kchip.paid .kc-v{ color:var(--green); }
+  /* the flanking Member-Mode arrows (values DON'T flip; arrows show which way $ moves) */
+  .arr{ font-size:8px; line-height:1; }
+  .arr.g{ color:var(--green); } .arr.b{ color:var(--red); }
+  /* the diff number sits INLINE, right of the label, on the same second line (2-line tile, not 3) */
+  .kc-delta{ font-size:9px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .kc-delta.g{ color:var(--green); } .kc-delta.b{ color:var(--red); }
+
+  .mm-btn{ flex:0 0 auto; width:66px; border-radius:11px; border:1px solid var(--line); background:var(--panel-2); color:var(--txt-3);
+    font-family:var(--stamp); text-transform:uppercase; letter-spacing:.5px; font-weight:800; font-size:9.5px; line-height:1.15; cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; padding:6px 4px; text-align:center; }
+  .mm-btn .ic{ font-size:13px; }
+  .mm-btn.on-g{ background:var(--green-bg); color:var(--green); border-color:color-mix(in srgb,var(--green) 45%,transparent); }
+  .mm-btn.on-r{ background:var(--red-bg); color:var(--red); border-color:color-mix(in srgb,var(--red) 45%,transparent); }
+
+  .mm-banner{ margin-top:9px; display:flex; align-items:center; gap:8px; border-radius:9px; padding:8px 11px; }
+  .mm-banner.g{ background:var(--green-bg); border:1px solid color-mix(in srgb,var(--green) 40%,transparent); }
+  .mm-banner.r{ background:var(--red-bg); border:1px solid color-mix(in srgb,var(--red) 40%,transparent); }
+  .mm-banner .t{ font-size:11.5px; color:var(--txt-2); flex:1; }
+  .mm-banner .fig{ font-family:var(--stamp); text-transform:uppercase; letter-spacing:.5px; font-size:11px; font-weight:800; }
+  .mm-banner.g .fig{ color:var(--green); } .mm-banner.r .fig{ color:var(--red); }
+
+  .rows{ margin-top:11px; display:flex; flex-direction:column; gap:6px; }
+  .row{ display:flex; align-items:center; gap:9px; padding:9px 10px; border:1px solid var(--line); border-radius:10px; background:linear-gradient(180deg,var(--card-head),var(--card)); }
+  .row .stat{ width:3px; align-self:stretch; border-radius:3px; margin:-1px 0; }
+  .stat.due{ background:var(--red); } .stat.paid{ background:var(--green); } .stat.part{ background:var(--yellow); }
+  .row .id{ font-weight:800; font-size:11px; font-variant-numeric:tabular-nums; color:var(--txt-2); flex:0 0 auto; }
+  .row .mid{ flex:1; min-width:0; } .row .desc{ font-size:12px; font-weight:600; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .row .sub{ font-size:10.5px; color:var(--txt-3); }
+  .row .amt{ font-size:13px; font-weight:800; font-variant-numeric:tabular-nums; flex:0 0 auto; text-align:right; }
+  .row .amt small{ display:block; font-family:var(--stamp); text-transform:uppercase; letter-spacing:.5px; font-size:8.5px; font-weight:700; }
+  .amt.due{ color:var(--red); } .amt.paid{ color:var(--green); } .amt.part{ color:var(--yellow); }
+
+  .anno{ font-family:var(--stamp); text-transform:uppercase; letter-spacing:.8px; font-size:8.5px; font-weight:700; color:var(--tan-deep);
+    border:1px solid color-mix(in srgb,var(--tan) 45%,transparent); background:color-mix(in srgb,var(--tan) 12%,transparent); border-radius:5px; padding:1px 5px; margin-left:6px; vertical-align:middle; }
+  .legend{ margin-top:26px; border:1px dashed var(--line); border-radius:12px; padding:14px 16px; }
+  .legend h4{ margin:0 0 8px; font-family:var(--stamp); text-transform:uppercase; letter-spacing:1px; font-size:11px; color:var(--txt-3); }
+  .legend ul{ margin:0; padding-left:16px; } .legend li{ font-size:12px; color:var(--txt-2); line-height:1.7; } .legend b{ color:var(--txt); } .legend code{ font-family:ui-monospace,monospace; font-size:11px; color:var(--tan); }
+  :focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+</style>
+
+<div class="wrap">
+  <div class="pv-head">
+    <div class="pv-eyebrow">Phase 5 Preview · v2</div>
+    <h1 class="pv-title">Member Mode + Open / All / Transactions</h1>
+    <p class="pv-sub">Member Mode leaves the real numbers alone — it flanks each dollar label with green arrows (the savings) or red arrows (the cancel penalty). On by default for members; toggle it off to show them what leaving costs.</p>
+  </div>
+
+  <!-- STATE 0: baseline, Member Mode OFF — the real numbers, no arrows -->
+  <div class="state-cap">Non-member · Member Mode OFF — baseline</div>
+  <div class="card">
+    <div class="section">
+      <div class="sec-toggle"><div class="seg"><button class="on">Open</button><button>All</button><button>Transactions</button></div></div>
+      <div class="kpi-row">
+        <div class="inv-summary">
+          <div class="kchip due"><span class="kc-v">$1,285</span><span class="kc-l">Open</span></div>
+          <div class="kchip"><span class="kc-v">3</span><span class="kc-l">Invoices</span></div>
+          <div class="kchip paid"><span class="kc-v">$700</span><span class="kc-l">Paid YTD</span></div>
+          <div class="kchip"><span class="kc-v">14d</span><span class="kc-l">Avg pay</span></div>
+        </div>
+        <button class="mm-btn"><span class="ic">★</span>Member<br>Mode</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATE 1: SAME account + numbers, Member Mode ON — only arrows + banner added (green) -->
+  <div class="state-cap">Non-member · Member Mode ON — same numbers, arrows added</div>
+  <div class="card">
+    <div class="section">
+      <div class="sec-toggle"><div class="seg"><button class="on">Open</button><button>All</button><button>Transactions</button></div></div>
+      <div class="kpi-row">
+        <div class="inv-summary">
+          <div class="kchip due"><span class="kc-v">$1,285<span class="arr g">▼</span></span><span class="kc-l">Open<span class="kc-delta g">−$433</span></span></div>
+          <div class="kchip"><span class="kc-v">3</span><span class="kc-l">Invoices</span></div>
+          <div class="kchip paid"><span class="kc-v">$700<span class="arr g">▼</span></span><span class="kc-l">Paid YTD<span class="kc-delta g">−$236</span></span></div>
+          <div class="kchip"><span class="kc-v">14d</span><span class="kc-l">Avg pay</span></div>
+        </div>
+        <button class="mm-btn on-g"><span class="ic">★</span>Member<br>Mode</button>
+      </div>
+      <div class="mm-banner g"><span class="t">As a <b>member</b>, this account's rentals would cost less.</span><span class="fig">Save $433/mo</span></div>
+      <div class="rows">
+        <div class="row"><span class="stat due"></span><span class="id">06i</span><span class="mid"><span class="desc">Baba · 1-Day×1 · Transport</span><span class="sub">Issued Jun 15 · due Jun 29</span></span><span class="amt due">$631<small>Late</small></span></div>
+        <div class="row"><span class="stat due"></span><span class="id">04i</span><span class="mid"><span class="desc">Creole (Bobcat) · 1-Day×1</span><span class="sub">Issued Jun 11 · due Jun 25</span></span><span class="amt due">$653<small>Late</small></span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATE 2: MEMBER, Member Mode toggled OFF = the cancel penalty (red) -->
+  <div class="state-cap">Member · Non Member Mode — the cancel penalty</div>
+  <div class="card">
+    <div class="section">
+      <div class="sec-toggle"><div class="seg"><button>Open</button><button class="on">All</button><button>Transactions</button></div></div>
+      <div class="kpi-row">
+        <div class="inv-summary">
+          <div class="kchip due"><span class="kc-v">$852<span class="arr b">▲</span></span><span class="kc-l">Open<span class="kc-delta b">+$433</span></span></div>
+          <div class="kchip"><span class="kc-v">7</span><span class="kc-l">Invoices</span></div>
+          <div class="kchip paid"><span class="kc-v">$1,240<span class="arr b">▲</span></span><span class="kc-l">Paid YTD<span class="kc-delta b">+$580</span></span></div>
+          <div class="kchip"><span class="kc-v">9d</span><span class="kc-l">Avg pay</span></div>
+        </div>
+        <button class="mm-btn on-r"><span class="ic">★</span>Non-Mem<br>Mode</button>
+      </div>
+      <div class="mm-banner r"><span class="t">Drop the membership and these rentals jump to <b>retail</b>.</span><span class="fig">+$433/mo</span></div>
+      <div class="rows">
+        <div class="row"><span class="stat paid"></span><span class="id">11i</span><span class="mid"><span class="desc">Excavator · 7-Day×1</span><span class="sub">Issued Jun 02 · paid Jun 05</span></span><span class="amt paid">$980<small>Paid</small></span></div>
+        <div class="row"><span class="stat due"></span><span class="id">14i</span><span class="mid"><span class="desc">Skid Steer · 1-Day×2</span><span class="sub">Issued Jun 20 · due Jul 04</span></span><span class="amt due">$852<small>Open</small></span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATE 3: TRANSACTIONS view -->
+  <div class="state-cap">Transactions view</div>
+  <div class="card">
+    <div class="section">
+      <div class="sec-toggle"><div class="seg"><button>Open</button><button>All</button><button class="on">Transactions</button></div></div>
+      <div class="kpi-row">
+        <div class="inv-summary">
+          <div class="kchip paid"><span class="kc-v">$700</span><span class="kc-l">Collected</span></div>
+          <div class="kchip"><span class="kc-v">5</span><span class="kc-l">Payments</span></div>
+          <div class="kchip"><span class="kc-v">$140</span><span class="kc-l">Avg</span></div>
+          <div class="kchip"><span class="kc-v">1</span><span class="kc-l">Refunds</span></div>
+        </div>
+      </div>
+      <div class="rows">
+        <div class="row"><span class="stat paid"></span><span class="id">06i</span><span class="mid"><span class="desc">Card · Visa ••2261</span><span class="sub">Jun 20 · 10:41a</span></span><span class="amt paid">$300</span></div>
+        <div class="row"><span class="stat paid"></span><span class="id">06i</span><span class="mid"><span class="desc">Card · Visa ••2261 · partial</span><span class="sub">Jun 18 · 2:03p</span></span><span class="amt paid">$200</span></div>
+        <div class="row"><span class="stat paid"></span><span class="id">04i</span><span class="mid"><span class="desc">Cash</span><span class="sub">Jun 12 · 9:15a</span></span><span class="amt paid">$200</span></div>
+        <div class="row"><span class="stat part"></span><span class="id">04i</span><span class="mid"><span class="desc">Refund · Visa ••2261</span><span class="sub">Jun 08 · 4:40p</span></span><span class="amt part">−$1</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <h4>How it reads</h4>
+    <ul>
+      <li><b>The tile numbers never change.</b> Compare the first two cards — identical figures ($1,285 / 3 / $700 / 14d); Member Mode only <b>adds</b> the arrows (and the banner for the $ figure). It never recomputes or drops a number. <b style="color:var(--green)">green ▼</b> = member savings (join pitch), <b style="color:var(--red)">red ▲</b> = retail penalty (cancel deterrent).</li>
+      <li><b>On by default for members</b> (their baseline). Turning it <b>off</b> is the retention move — red arrows show how much leaving costs. For non-members it's off by default; turning it on is the pitch.</li>
+      <li><b>OPEN · ALL · TRANSACTIONS</b> replaces the section title. Open = unpaid invoices · All = every invoice · Transactions = each payment across them.</li>
+      <li><b>[NEEDS CONFIRM]</b> arrows sit on the two dollar tiles (Open, Paid YTD) only — <b>#Invoices &amp; Avg-pay don't change with rate</b>, so I left them arrow-less. Want arrows on all four anyway, or is this right?</li>
+    </ul>
+  </div>
+</div>

@@ -44,11 +44,18 @@ STILL PLANNED** (spec accurately describes it as unbuilt).
   by `mobileDockEl` (app.js:8713). Dot-nav markup is gone; only a now-dead
   `[data-mcol]` click handler remains (app.js:15618), still commented `§M1 dot
   nav`.
-- **Swipe stepping between main cards — ✅ SHIPPED**, and matches §7.1's rule
-  more cleanly than the old 3-column model implied: footer swipe steps only
-  `MAIN_CARDS = ['units','rentals','customers']` (app.js:8691), folding a
-  sub-card to its parent first via `mainCardOfMember` (app.js:8693); wired in
-  the swipe handler at app.js:21458.
+- **Swipe — ✅ SHIPPED, [2026-07-11] behavior changed (Jac, deliberate — not a bug fix).**
+  Two zones, two different steps now: the **footer dock** swipe steps the
+  FULL card sequence including sub-cards — `MOBILE_SWIPE_ORDER =
+  MOBILE_TOGGLE_GROUPS.flatMap(g => g.members)` = `['units','categories',
+  'rentals','calendar','customers','sales']` (app.js, derived from
+  `MOBILE_TOGGLE_GROUPS`), wrapping both directions via `goToCard`. Swiping
+  **anywhere else** (the grid — list view or a record's detail view alike)
+  steps only `MAIN_CARDS = ['units','rentals','customers']`, folding a
+  sub-card to its parent first via `mainCardOfMember` (app.js:8917-8920) —
+  this REPLACES the old "grid swipe = card Back/Forward" behavior (superseded
+  row below, §6.2). `cardBack`/`cardFwd` themselves are untouched and still
+  live on the on-screen Back/Forward jog buttons (`cardJog`, app.js:2642).
 - **Role-based landing card — 🆕 SHIPPED, NOT SPEC'D.** `ROLE_LANDING` +
   `applyRoleLanding` (app.js:21337–21357, called from `attemptLogin` at
   app.js:21388) lands each role on both its desktop column reveal and its
@@ -134,7 +141,7 @@ layer, **no separate mobile render path**) from
 | Single-column phone grid (no 3-wide scroll track; JS owns horizontal) | `style.css` `.is-phone .grid` | ✅ shipped |
 | `state.mobileCol` (0 Yard · 1 Rentals · 2 Customers) | app.js:1920 | ✅ shipped |
 | Per-column bottom dock + card-toggle bar + dot nav (`§M1`) | `style.css §M1`; dock app.js:7499–7522 | ⚙️ shipped, BUILT DIFFERENTLY (2026-07-09): now **3 independent per-column toggle bars** (`MOBILE_TOGGLE_GROUPS`, app.js:8685; `mobileDockEl`, app.js:8713), not one bar; dot-nav markup removed, only a dead `[data-mcol]` click handler remains (app.js:15618) — see "Shipped status" above |
-| Swipe nav: footer swipe = change column; grid swipe = card Back/Forward | `boot` pointer listeners app.js:16118–16147 | ✅ shipped |
+| Swipe nav: footer swipe = full card sequence (incl. sub-cards); grid swipe (anywhere else) = change MAIN card [2026-07-11, superseded "grid = Back/Forward"] | `boot` pointer listeners app.js:16118–16147 | ✅ shipped |
 | Bottom-sheet overlays + winpicker/date-picker sheets (`§M3`) | `style.css §M3`; `dismissTopSheet`/popstate app.js:16115 | ✅ shipped |
 | Touch-target floor (≥44px) on interactive controls (`§M-touch`) | `style.css §M-touch` | ✅ shipped |
 | Safe-area insets (`env(safe-area-inset-*)`) on dock/sheets | `style.css §M0/§M1/§M3` | ✅ shipped |
@@ -440,9 +447,11 @@ leather-tan ranch seasoning mostly in copy. Every new interactive element needs 
 
 These are **canon, documented here so Jac can critique the live behavior**:
 
-- **Single column on phone**; swipe the **footer dock** to change column
-  (Yard ↔ Rentals ↔ Customers), swipe the **grid** for card Back/Forward, with a
-  `haptic(8)` tick on each.
+- **Single column on phone**; swipe the **footer dock** to step the full card
+  sequence including sub-cards, swipe the **grid** (anywhere else) to switch
+  the main column (Yard ↔ Rentals ↔ Customers) — [2026-07-11] grid swipe no
+  longer does Back/Forward, see §2's swipe entry — with a `haptic(8)` tick on
+  each.
 - **Per-column bottom dock** = the relocated search/sort row + a segmented
   card-toggle bar (selected toggle goes **ignition orange** `--accent` with dark
   `--on-orange` ink) + dot nav. Saira labels on toggles.
@@ -514,8 +523,8 @@ One touch resolves to exactly one of: **scroll · column-swipe · card-swipe ·
 item-drag · element-action · context-menu**:
 
 - Vertical-first → native scroll.
-- Footer horizontal swipe (≥55px, and `|dx| ≥ |dy|·1.3`) → change column.
-- Grid horizontal swipe → card Back/Forward.
+- Footer horizontal swipe (≥55px, and `|dx| ≥ |dy|·1.3`) → step the full card sequence (incl. sub-cards).
+- Grid horizontal swipe (anywhere outside the footer) → change MAIN column [2026-07-11, was card Back/Forward].
 - Horizontal on a draggable element (long-press then move) → drag (zip-zones).
 - Hold-still ≥~500ms → context menu. Quick tap → element action.
 - A fired swipe swallows the trailing click (`swipeFired`); a real drag is not a
@@ -600,8 +609,9 @@ backend), portal payments.
 
 1. At 390×844 (`isMobile, hasTouch`) there is **zero horizontal scroll** on every
    column and every bottom-sheet.
-2. Footer swipe changes column; grid swipe does card Back/Forward; each fires one
-   `haptic` tick; a swipe never also triggers the row/toggle click.
+2. Footer swipe steps the full card sequence (incl. sub-cards); grid swipe
+   (anywhere else) changes the main column [2026-07-11, was card Back/Forward];
+   each fires one `haptic` tick; a swipe never also triggers the row/toggle click.
 3. Overlays render as bottom sheets; backdrop-tap and Android-back close the top
    sheet only; reduced-motion disables `sheetUp`.
 4. Touch targets ≥44px on all `.is-phone` interactive controls; iOS field-focus
