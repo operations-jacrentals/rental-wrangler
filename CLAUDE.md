@@ -58,6 +58,12 @@ Reference implementations: `.login-*` and `.cancel-arc` blocks in `style.css`.
 
 ## Deploy & gates
 
+- **Rename in progress — the trunk branch `main` is being renamed to `trunk` (Jac, 2026-07-13).**
+  Until the GitHub rename lands, the trunk branch is still literally named `main`; the tooling
+  already handles **both** names (CI triggers on `[main, trunk]`; `promote.mjs` /
+  `branch-preflight.mjs` resolve the trunk dynamically; `deploy-staging.mjs` + the branch-janitor
+  guard both). Once Jac renames it in the GitHub UI, a cleanup PR drops the `main` fallback and
+  sweeps the docs to `trunk`. Read "`main`" below as "the trunk branch (soon `trunk`)".
 - **Ship model — trunk + two chat-driven gates (2026-07-13).** `main` is the **trunk**:
   integrated but **NOT live**. Pages serves the separate **`production`** release-pointer
   branch, so a merge to `main` no longer goes live — only a `production` update does. Both
