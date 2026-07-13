@@ -50,10 +50,13 @@ import { tmpdir } from 'node:os';
 
 // ── Config — CONFIRM before the first real run (these are the Phase 0 blockers) ──
 
-// TODO(jac): confirm — the staging repo; its GitHub Pages serves the staging URL.
+// Confirmed 2026-07-13 — the staging repo; its GitHub Pages serves the staging URL
+// (https://operations-jacrentals.github.io/rental-wrangler-staging/).
 const STAGING_REPO = 'operations-jacrentals/rental-wrangler-staging';
 
-// TODO(jac): confirm — the branch staging's Pages source is configured to build from.
+// Confirmed 2026-07-13 — the branch staging's Pages source builds from. The staging
+// repo has exactly one branch, `main`, so a "deploy from a branch" Pages source can
+// only serve `main`.
 const STAGING_PAGES_BRANCH = 'main';
 
 // TODO(jac): confirm — which credential this session actually has (plan §0.4 offers
