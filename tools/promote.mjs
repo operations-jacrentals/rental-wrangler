@@ -37,8 +37,8 @@ import { execFileSync } from 'node:child_process';
 
 // TODO(jac): confirm — the release-pointer branch Pages serves as PRODUCTION (plan Phase 0.2/0.3).
 const PRODUCTION_BRANCH = 'production';
-// TODO(jac): confirm — the trunk branch Gate 1 ("merge it") lands on.
-const TRUNK = 'main';
+// The trunk branch Gate 1 ("merge it") lands on. Resolved dynamically below (after the git
+// helpers) to survive the main -> trunk rename: prefer 'trunk' once the remote has it, else 'main'.
 // TODO(jac): confirm — the live site's public URL (what Pages serves for PRODUCTION_BRANCH).
 const LIVE_URL = 'https://app.jacrentals.com';
 
@@ -62,6 +62,10 @@ function fail(msg) {
 
 const ROOT = git(['rev-parse', '--show-toplevel']);
 process.chdir(ROOT);
+
+// main -> trunk rename transition: use 'trunk' once the remote has it, else fall back to 'main'.
+// A transient ls-remote failure falls back to 'main'; the fetch below then surfaces a clear error.
+const TRUNK = ((gitTry(['ls-remote', '--heads', REMOTE, 'trunk']).out) || '').trim() ? 'trunk' : 'main';
 
 // --- Step 1: fetch both refs fresh, so the preview can never be stale -------
 console.log(`promote: fetching ${REMOTE}/${TRUNK} and ${REMOTE}/${PRODUCTION_BRANCH}…`);
