@@ -2900,10 +2900,12 @@ select.nc-in { cursor: pointer; }
 .login-screen.signing-in .login-video { opacity: .62; }
 .login-screen.signing-in { background: #0c0e11; }   /* let the video carry the backdrop, not the gradient */
 /* Loading feedback — the signature caution band barber-poles while the (slow) backend
-   load runs, so the wait reads as "working". A one-period diagonal shift (135° stripe,
-   26px period → 18.385px on each axis) loops seamlessly. */
-.login-screen.signing-in .login-box::before { animation: loginLoadStripe .9s linear infinite; }
-@keyframes loginLoadStripe { to { background-position: 18.385px 18.385px; } }
+   load runs, so the wait reads as "working". The 135° / 26px-period stripe tiles
+   SEAMLESSLY in a 26·√2 ≈ 36.77px square, so an explicit background-size + a one-whole-tile
+   horizontal shift loops with no seam. (A plain background-position nudge on the auto-sized
+   gradient exposed a tile-boundary seam inside the 10px band — the "doubled stripe" glitch.) */
+.login-screen.signing-in .login-box::before { background-size: 36.77px 36.77px; animation: loginLoadStripe .9s linear infinite; }
+@keyframes loginLoadStripe { to { background-position: 36.77px 0; } }
 @media (prefers-reduced-motion: reduce) {
   .login-video { display: none; }
   .login-screen.signing-in .login-box::before { animation: none; }   /* freeze the barber-pole */
