@@ -8699,7 +8699,13 @@ function columnEl(col, session) {
   // gutter beside the bar) applies on phone too.
   card.insertBefore(colTabsEl(col, active, session), card.firstChild);
   const lb = card.querySelector('.card-body .listbar'), body = card.querySelector('.card-body');
-  if (lb && body) card.insertBefore(lb, body);
+  if (lb && body) {
+    // §M7 — on phone, wrap the relocated search/sort bar in .mdock-searchslot so the ORIGINAL
+    // "float on the dock" chip styling (graph · search · sort as separate chips, no wrapper band)
+    // renders it exactly as before. Desktop keeps the bar as a plain full-width card header.
+    if (document.body.classList.contains('is-phone')) { const slot = el('div', 'mdock-searchslot'); slot.appendChild(lb); card.insertBefore(slot, body); }
+    else card.insertBefore(lb, body);
+  }
   const st = card.querySelector('.card-body .rus'); if (st && body) card.insertBefore(st, body);   // §13.7 — flex-basis 25% resolves against .card, the full column
   wrap.appendChild(card);
   return wrap;
@@ -8707,24 +8713,27 @@ function columnEl(col, session) {
 function colTabsEl(col, active, session) {
   // Jac 2026-06-12: the toggle CHIP stays centered; the nav cluster sits OUTSIDE
   // it, parked at the row's right edge (.tabrow wraps both).
-  // §M7 (Jac 2026-07-12): on PHONE, each column's header carries the FULL card-toggle bar (all
-  // cards, in their 3 column groups) — not just this column's 2 sub-cards — so from anywhere you
-  // can swipe OR tap the exact card and get zipped to it. This column's current card is the one
-  // highlighted. Desktop keeps its own 2-tab col-tabs.
-  const phone = document.body.classList.contains('is-phone');
+  // §M7 (Jac 2026-07-12): on PHONE each column's header IS the full card-toggle bar we had
+  // before — mobileNavEl(), an EXACT reproduction of mobileDockEl's 3 segmented chips — so you
+  // can swipe OR tap any card to zip to it, with this column's card the highlighted one. No
+  // actions cluster (it wasn't shown on phone before). Desktop keeps its 2-tab col-tabs + actions.
+  if (document.body.classList.contains('is-phone')) return mobileNavEl(active);
   const bar = el('div', 'tabrow');
-  const toggles = phone ? mobileNavHtml(active) : `<div class="col-tabs">${colTabButtonsHtml(col, active, session)}</div>`;
-  bar.innerHTML = toggles + colActionsHtml(active, session);
+  bar.innerHTML = `<div class="col-tabs">${colTabButtonsHtml(col, active, session)}</div>` + colActionsHtml(active, session);
   return bar;
 }
-// §M7 — the full phone card-toggle bar (all cards, grouped by column), rendered atop each
-// column with `active` (that column's current card) highlighted. Tapping a toggle → the
-// [data-gocard] handler zips to that card (smooth-scroll to its column, switching the sub-card
-// if needed). Reuses the .mcard-bar / .mcard-tog segmented styling.
-function mobileNavHtml(active) {
-  const group = (members) => `<div class="mcard-bar">` + members.map((m) =>
-    `<button class="mcard-tog${m === active ? ' on' : ''}" data-gocard="${m}" data-tip="${esc(MEMBER_TITLE[m] || m)}"><span class="mct-ico">${memberIcon(m)}</span>${m === active ? `<span class="mct-lbl">${esc(MEMBER_TITLE[m] || m)}</span>` : ''}</button>`).join('') + `</div>`;
-  return `<div class="col-tabs mnav">` + MOBILE_TOGGLE_GROUPS.map((g) => group(g.members)).join('') + `</div>`;
+// §M7 — the full phone card-toggle bar, byte-for-byte the pre-scroll-snap header (mobileDockEl's
+// `.mdock-row` of 3 `.mcard-bar` chips; active = icon+label orange, others icon-only), reusing
+// the SAME classes so the original CSS renders it identically — three separate chips. Tapping a
+// toggle → the [data-gocard] handler zips to that card's column (switching the sub-card if needed).
+function mobileNavEl(active) {
+  const barHtml = (members) => `<div class="mcard-bar">` + members.map((m) => {
+    const on = m === active;
+    return `<button class="mcard-tog${on ? ' on' : ''}" data-gocard="${m}" data-tip="${esc(MEMBER_TITLE[m] || m)}"><span class="mct-ico">${memberIcon(m)}</span>${on ? `<span class="mct-lbl">${esc(MEMBER_TITLE[m] || m)}</span>` : ''}</button>`;
+  }).join('') + `</div>`;
+  const d = el('div', 'mdock-row col-nav');
+  d.innerHTML = MOBILE_TOGGLE_GROUPS.map((g) => barHtml(g.members)).join('');
+  return d;
 }
 /* The coltab buttons themselves (no wrapper) — shared by the desktop in-card tab row
    (colTabsEl) AND the phone footer (mobileDockEl), so a toggle looks identical in both. */
