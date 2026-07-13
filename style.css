@@ -2899,7 +2899,15 @@ select.nc-in { cursor: pointer; }
 }
 .login-screen.signing-in .login-video { opacity: .62; }
 .login-screen.signing-in { background: #0c0e11; }   /* let the video carry the backdrop, not the gradient */
-@media (prefers-reduced-motion: reduce) { .login-video { display: none; } }
+/* Loading feedback — the signature caution band barber-poles while the (slow) backend
+   load runs, so the wait reads as "working". A one-period diagonal shift (135° stripe,
+   26px period → 18.385px on each axis) loops seamlessly. */
+.login-screen.signing-in .login-box::before { animation: loginLoadStripe .9s linear infinite; }
+@keyframes loginLoadStripe { to { background-position: 18.385px 18.385px; } }
+@media (prefers-reduced-motion: reduce) {
+  .login-video { display: none; }
+  .login-screen.signing-in .login-box::before { animation: none; }   /* freeze the barber-pole */
+}
 .login-box {
   position: relative; z-index: 1; width: 344px; padding: 0 0 26px; overflow: hidden;
   display: flex; flex-direction: column; align-items: center;
@@ -2938,6 +2946,22 @@ select.nc-in { cursor: pointer; }
   transition: filter .12s, transform .04s; }
 .login-btn:hover { filter: brightness(1.06); } .login-btn:active { transform: translateY(1px); }
 .login-btn:disabled { opacity: .6; cursor: default; }
+/* Saddle Up + the mute toggle share one row: the ignition flexes to fill, the mute
+   stays a compact square to its left. */
+.login-actions { display: flex; align-items: stretch; gap: 9px; width: 100%; margin-top: 5px; }
+.login-actions .login-btn { flex: 1 1 auto; width: auto; margin-top: 0; }
+/* Mute toggle — a quiet steel secondary matching the input wells (literal darks like the
+   rest of the plate, legible on it under any theme). Icon-only, so no data-r: a sibling of
+   the .js-roweye / .set-reveal utility toggles, not a lint-family pill. */
+.login-mute {
+  flex: 0 0 auto; width: 47px; height: 47px; display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 9px; border: 1px solid #2a313b; background: #0e1217; color: #b9c2cf;
+  cursor: pointer; transition: border-color .12s, box-shadow .12s, color .12s; }
+.login-mute svg { width: 20px; height: 20px; }
+.login-mute:hover { color: #eef2f6; border-color: #39424e; }
+.login-mute:active { transform: translateY(1px); }
+.login-mute.is-muted { color: #8b94a3; }   /* sound off = dimmed */
+.login-mute:focus-visible { outline: none; border-color: var(--accent, #ff7a1a); box-shadow: 0 0 0 3px rgba(255, 122, 26, .17); }
 .login-err { font-size: 12px; font-weight: 600; color: var(--red, #ff4242); text-align: center; margin-top: 11px; min-height: 14px; }
 @media (prefers-reduced-motion: no-preference) {
   .login-box { animation: plateIn .5s cubic-bezier(.2, .7, .2, 1) both; }
