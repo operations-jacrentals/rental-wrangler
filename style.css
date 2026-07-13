@@ -452,6 +452,13 @@ body.is-phone { touch-action: manipulation; }
 .is-phone .col > .card { flex: 1 1 auto; min-height: 0; }
 .is-phone .col > .mdock-row { flex: 0 0 auto; padding: 4px 0 6px; }        /* toggle chips, above the card */
 .is-phone .col > .mdock-searchslot { flex: 0 0 auto; padding: 0 0 8px; }   /* search/graph/sort chips, above the card */
+/* §M7 — rows carry touch-action:pan-y (§drag engine, so vertical scroll is native + the 400ms
+   long-press can lift a row). But pan-y BLOCKS a horizontal swipe that starts on a row, so
+   paging only worked from blank card area (and the touch leaked to the row as a hover — the unit
+   icons "moved"). In the phone snap track let rows pan BOTH axes: a horizontal drag scrolls the
+   track (paging), a vertical one the card-body; the long-press drag still arms on a held-still
+   press and then preventDefaults, so it's unaffected. */
+.is-phone .grid .row { touch-action: pan-x pan-y; }
 /* the toggle bar (mobileNavEl) reuses the ORIGINAL .mdock-row + .mcard-bar + .mcard-tog classes,
    so the pre-scroll-snap styling renders it identically: three separate chips, active orange. */
 /* §M7 — phone FOOTER tool bar (tools back at the bottom, thumb-reachable; nav is in the column
