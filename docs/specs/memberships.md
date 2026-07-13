@@ -9,6 +9,41 @@
 
 ---
 
+## Shipped status (2026-07-11) — enrollment reworked to sign=enroll; the old overlay retired
+
+The 2026-07-10/11 Account/Agreements redesign (spec
+`docs/superpowers/specs/2026-07-10-account-agreements-membership-redesign-design.md`,
+D1–D27; shipped to staging via `customers-crm/staging-reconcile`) **replaced the whole
+front-end enrollment path**. Treat the items here as canon-overriding wherever they
+conflict with §2/§5 body text below (which describes the retired overlay).
+
+- **SHIPPED — enrollment is now `agreementSignCommit`, the ONE place a signed agreement
+  can set a Member account type (D4 bug closure).** The legacy `openMembershipEnroll` /
+  `membershipEnrollCommit` / `memApplyActive` functions, the `membershipEnroll` overlay
+  (`o.kind === 'membershipEnroll'`), its `WINDOW_CATALOG` entry, and the "Saddle Up —
+  Enroll" / "Complete Enrollment" buttons (`js-mem-enroll`) were **all removed**. §2's
+  "Enroll overlay UI" rows (lines ~73–75) and D5's re-home plan are superseded — there is
+  no enroll overlay anymore; a Member type can only be granted by signing an agreement
+  inline in the Account/Agreements accordion (a captured signature + a Start Date + a card
+  on file are all required). This closed a real bypass twice: the raw account-type picker
+  (Phase 2a) and, on a later pass, the relocated `enrollFoot` button.
+- **SHIPPED — `Pending` membership status** (`membershipStatus`) for a signed-but-future-
+  dated enrollment: the card isn't charged until the Start Date; if the Start Date is
+  today, it charges immediately (Jac's confirmed rule).
+- **SHIPPED / LIVE BACKEND — the `membershipEnroll` action + `membershipBillingCron` now
+  handle deferred (future-dated) first charges.** `membershipEnroll_` gets a
+  `startDate > today` branch that lands the member fields immediately without charging
+  (ledger `membership-enroll-deferred`); `membershipBillingCron` picks up the first charge
+  on the Start Date, keyed off `commitmentStart`/`paidUntil` (existing fields, no new
+  schema). Pushed via the service-account script, redeployed from the Apps Script editor,
+  verified live 2026-07-10. §5.1's `membershipEnroll` contract still holds — the front end
+  calls it (via `agreementChargeNow`) for the same-day charge; the future-dated path is the
+  additive new branch.
+- **UNCHANGED — Cancel / Pay-Cancellation / Reactivate** (`membershipCancel`,
+  `membershipReactivate`) and the `canMoney()` gate on them. Only Enroll moved.
+
+---
+
 ## ✅ Decisions — 2026-06-29 critique (Jac)
 
 These resolve the §11 Open Questions.

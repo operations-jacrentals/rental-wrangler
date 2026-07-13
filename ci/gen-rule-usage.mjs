@@ -20,6 +20,7 @@ const clean = (s) => '+' + s.replace(/^\+?\s*(Add\s+)?/i, '');
 // addBtn('Label', { opts }) → R5b if link/line/anchor else R5c
 for (const m of src.matchAll(/addBtn\(\s*'([^']+)'\s*(?:,\s*\{([^}]*)\})?/g)) add(/\b(link|line|anchor)\b/.test(m[2] || '') ? 'R5b' : 'R5c', clean(m[1]));
 for (const m of src.matchAll(/reqBtn\(\s*'([^']+)'/g)) add('R6', m[1]);
+for (const m of src.matchAll(/toggleChip\(\s*'([^']+)'/g)) add('R29', m[1]);
 for (const m of src.matchAll(/linkName\(\s*'([^']+)'/g)) add('R7', m[1]);
 for (const m of src.matchAll(/flagEl\(\s*'([^']+)'(?:\s*,\s*'[^']*'\s*,\s*\{([^}]*)\})?/g)) add(/\balert\b/.test(m[2] || '') ? 'R9b' : 'R9', m[1]);
 for (const m of src.matchAll(/dPill\(\s*'([^']+)'(?:\s*,\s*'[^']*'\s*,\s*\{([^}]*)\})?/g)) add(/\balert\b/.test(m[2] || '') ? 'R4b' : 'R4', m[1]);
