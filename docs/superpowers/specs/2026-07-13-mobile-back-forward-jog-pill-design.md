@@ -11,9 +11,29 @@ has per-card view history — each of the 5 grid cards walks its **own** sequenc
 (`cs.backStack` / `cs.fwdStack`, capped at `HIST_CAP = 50`) via `cardBack(card)` /
 `cardFwd(card)` (`app.js:2677`), rendered as a two-chevron "jog" by `cardJog(card, cs)`
 (`app.js:2712`). On **desktop** the jog sits in the card header (`app.js:8861`) and again
-in list view (`app.js:8898`). On **phone** the header jog is deliberately dropped and the
-control is supposed to remount by the list bar (`app.js:15753`) — but in practice a phone
-user does not see a usable Back/Forward affordance.
+in list view (`app.js:8898`).
+
+### Proven root cause (wrangler-fix, 2026-07-13)
+
+The report is **correct**, and the phone behavior splits by view:
+
+- **List view still works** — `render()` → `columnEl()` lifts the card's `.listbar` (jog is
+  its first child, `app.js:8898`) into `.col > .mdock-searchslot` above the card
+  (`app.js:8705-8706`); no CSS hides it. But `cardJog` returns empty until that card has
+  history (`app.js:2714`), so a fresh list shows nothing.
+- **Record/detail view has no Back at all** — the card header suppresses the jog on phone
+  (`app.js:8861`) with a now-stale comment (*"on phones the jog rides the bottom dock"*).
+  The **§M7 scroll-snap refactor (2026-07-12)** deleted that bottom dock. The only code that
+  rebuilt a standalone record-view jog (`app.js:15752-15754`) is now **dead** — it lives in
+  `renderResults()`'s phone branch, which returns early on phone (`app.js:15725`) and calls a
+  `mobileDockEl()` that no longer exists. In record mode `cardEl` never builds a `.listbar`
+  (`app.js:8872`), so nothing carries the jog. **Net: drilling into a record on phone leaves
+  no visible way back.**
+
+**Origin:** §M7 removed the mobile bottom-dock the record-view jog depended on, but left the
+header suppression (`app.js:8861`) and the rebuild code (`app.js:15752`) behind as fossils.
+The floating pill is the correct root-cause fix: one mount that serves both views,
+independent of the deleted dock.
 
 Two facts about today's mobile shape frame the fix:
 
@@ -99,9 +119,16 @@ Run at build time through `/jactec-ui`.
   `WINDOW_CATALOG` entry is needed — the pill is not a popup window.
 - **Code touch points.**
   - `cardJog(card, cs)` (`app.js:2712`) gains a floating-pill variant (or a sibling builder
-    that renders the fixed pill for the active mobile column).
-  - The current phone list-bar mount (`app.js:15753`) is **replaced** by the floating pill.
-  - Desktop jog placements (`app.js:8861`, `app.js:8898`) are **untouched**.
+    that renders the fixed pill for the active mobile column, keyed to `state.mobileCol`).
+  - **List view:** on phone, suppress the inline `.listbar` jog (`app.js:8898`, which
+    `columnEl` lifts into `.mdock-searchslot` at `app.js:8705-8706`) so the pill is the
+    single control — not a duplicate.
+  - **Record view:** the pill is the *only* jog mount (today there is none — the deleted-dock
+    fossil). Update the stale suppression + comment at `app.js:8861`.
+  - Desktop jog placements (`app.js:8861` header, `app.js:8898` list-bar) are **untouched**.
+  - The orphaned rebuild block (`app.js:15740-15756`, incl. the undefined `mobileDockEl()`
+    call) is provably dead on the live path — flag for cleanup, but the core fix does not
+    depend on it; keep the fix minimal.
   - New `.mjog` CSS block in the `§M` mobile section of `style.css`; bottom scroll-padding on
     the phone card list; safe-area inset; focus ring; reduced-motion guard.
 - **Root-cause check first.** Because this was reported as *missing*, the build runs through
