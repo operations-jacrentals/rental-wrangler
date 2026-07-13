@@ -318,7 +318,7 @@ input { font-family: inherit; }
   background: var(--panel); padding: 0 0 max(6px, env(safe-area-inset-bottom)); touch-action: pan-y; }   /* pan-y lets our pointer swipe own the horizontal */
 /* the card's search/sort row, relocated here — a FULL-WIDTH band (edge to edge) */
 .mdock-searchslot:empty { display: none; }
-.is-phone .mdock-searchslot .listbar { position: static; margin: 0; padding: 8px; gap: 8px;
+.is-phone .mdock-searchslot .listbar { position: static; margin: 0; padding: 4px 0; gap: 8px;
   background: none; border: none; box-shadow: none; }   /* no wrapper band — search/graph/sort chips float on the dock (Jac 2026-06-23) */
 /* search row — graph · search · sort all share ONE height via row-stretch (Jac 2026-06-23) */
 .is-phone .mdock-searchslot .listbar { align-items: stretch; }
@@ -442,7 +442,7 @@ body.is-phone { touch-action: manipulation; }
    state.mobileCol. No JS transforms, no ghost, no glide timers. touch-action stays default so
    the browser disambiguates: a horizontal drag pans the track, a vertical one the card-body. ── */
 .is-phone .grid { display: flex; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch; scrollbar-width: none; padding: 12px 0 4px; }
+  -webkit-overflow-scrolling: touch; scrollbar-width: none; padding: 6px 0 4px; }
 .is-phone .grid::-webkit-scrollbar { display: none; }
 /* §M7 — each phone column is a flex COLUMN: the two chip rows (toggle + search) sit ABOVE the
    card (fixed height, floating on the dark bg like the old §M6 header), and the card fills the
@@ -450,8 +450,8 @@ body.is-phone { touch-action: manipulation; }
 .is-phone .col { flex: 0 0 100%; scroll-snap-align: start; padding: 0 8px; height: 100%; box-sizing: border-box;
   display: flex; flex-direction: column; min-height: 0; }
 .is-phone .col > .card { flex: 1 1 auto; min-height: 0; }
-.is-phone .col > .mdock-row { flex: 0 0 auto; padding: 4px 0 6px; }        /* toggle chips, above the card */
-.is-phone .col > .mdock-searchslot { flex: 0 0 auto; padding: 0 0 8px; }   /* search/graph/sort chips, above the card */
+.is-phone .col > .mdock-row { flex: 0 0 auto; padding: 2px 0 4px; }        /* toggle chips, above the card — tightened vertical rhythm (Jac 2026-07-13) */
+.is-phone .col > .mdock-searchslot { flex: 0 0 auto; padding: 0 0 4px; }   /* search/graph/sort chips, above the card — tightened (Jac 2026-07-13) */
 /* §M7 — rows carry touch-action:pan-y (§drag engine, so vertical scroll is native + the 400ms
    long-press can lift a row). But pan-y BLOCKS a horizontal swipe that starts on a row, so
    paging only worked from blank card area (and the touch leaked to the row as a hover — the unit
