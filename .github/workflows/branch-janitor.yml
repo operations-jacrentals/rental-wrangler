@@ -2,7 +2,7 @@ name: Branch janitor
 
 # Prunes merged task branches so the repo stays tidy on its own.
 # SAFE BY DESIGN: only deletes a branch that (a) is the head of a MERGED PR,
-# (b) has NO open PR, and (c) is NOT a structural branch (main / staging / area/*).
+# (b) has NO open PR, and (c) is NOT a structural branch (trunk / staging / area/*).
 # So long-lived chapters (area/*) and the trunk/integration branches are never touched.
 #
 # There is also a ONE-TIME, opt-in cleanup job (prune_stranded) for the branches the
@@ -52,7 +52,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
     steps:
-      - name: Prune merged task branches (never main/staging/area/*)
+      - name: Prune merged task branches (never trunk/staging/area/*)
         run: |
           set -euo pipefail
           # #552 audit item 18: --paginate (not a --limit cap) so the "never delete a branch
@@ -66,7 +66,7 @@ jobs:
           while IFS= read -r b; do
             [ -z "$b" ] && continue
             case "$b" in
-              main|staging|area/*|backup/*) continue ;;   # never touch the structure
+              trunk|staging|area/*|backup/*) continue ;;   # never touch the structure (trunk = post-rename default)
             esac
             grep -qxF "$b" merged.txt || continue   # must have a merged PR
             grep -qxF "$b" open.txt   && continue   # but no open PR
@@ -149,7 +149,7 @@ jobs:
           for b in $STRANDED; do
             [ -z "$b" ] && continue
             case "$b" in
-              main|staging|area/*|backup/*) echo "  GUARD skip (structural): $b"; skipped=$((skipped+1)); continue ;;
+              trunk|staging|area/*|backup/*) echo "  GUARD skip (structural): $b"; skipped=$((skipped+1)); continue ;;
             esac
             grep -qxF "$b" live.txt || { echo "  already gone: $b"; continue; }
             if grep -qxF "$b" open.txt; then echo "  GUARD skip (has open PR): $b"; skipped=$((skipped+1)); continue; fi

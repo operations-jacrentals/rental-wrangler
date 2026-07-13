@@ -37,14 +37,21 @@ import { execFileSync } from 'node:child_process';
 
 // TODO(jac): confirm — the release-pointer branch Pages serves as PRODUCTION (plan Phase 0.2/0.3).
 const PRODUCTION_BRANCH = 'production';
-// TODO(jac): confirm — the trunk branch Gate 1 ("merge it") lands on.
-const TRUNK = 'main';
+// The trunk branch Gate 1 ("merge it") lands on (branch renamed main -> trunk, 2026-07-13).
+const TRUNK = 'trunk';
 // TODO(jac): confirm — the live site's public URL (what Pages serves for PRODUCTION_BRANCH).
 const LIVE_URL = 'https://app.jacrentals.com';
+// The STAGING review site's public URL. Its live ?v= token MUST equal the trunk commit being
+// promoted — otherwise staging is showing something OTHER than what's about to go live, which
+// defeats the review gate. Enforced below so staging can never fall behind production.
+const STAGING_URL = 'https://operations-jacrentals.github.io/rental-wrangler-staging';
 
 const REMOTE = 'origin';
 const ARGV = process.argv.slice(2);
 const CONFIRMED = ARGV.includes('--yes');
+// Deliberate, loud override for when staging genuinely can't be verified (its Pages host is
+// down, etc.). Requires a conscious flag — the freshness gate never silently no-ops.
+const SKIP_STAGING_CHECK = ARGV.includes('--skip-staging-check');
 
 function git(args, opts = {}) {
   return execFileSync('git', args, { encoding: 'utf8', ...opts }).trim();
@@ -83,6 +90,11 @@ const prodRef = `${REMOTE}/${PRODUCTION_BRANCH}`;
 const trunkSha = git(['rev-parse', trunkRef]);
 const prodSha = git(['rev-parse', prodRef]);
 
+// The ?v= cache-bust token of the trunk commit we're about to promote — the one generic marker
+// we compare against BOTH staging (the freshness gate below) and the live site (Step 6).
+// extractVersionToken is a hoisted function declaration (defined lower), so it is callable here.
+const expectedToken = extractVersionToken(git(['show', `${trunkRef}:index.html`]));
+
 // --- Step 2: preview — print EXACTLY what would go live, before doing anything ---
 if (trunkSha === prodSha) {
   console.log(`promote: ${PRODUCTION_BRANCH} already matches ${TRUNK} (${prodSha.slice(0, 8)}) — nothing to promote.`);
@@ -104,6 +116,32 @@ console.log('  Files changed:');
 diffStat.forEach(l => console.log('    ' + l));
 console.log('='.repeat(72));
 
+// --- Step 2b: STAGING-FRESHNESS GATE ----------------------------------------
+// Staging must be showing the EXACT commit we're about to promote. If it's behind (or
+// unreachable), promoting would put production AHEAD of the review site — the drift this gate
+// exists to prevent (2026-07-13). Reported in the preview; ENFORCED under --yes (Step 3b).
+function fetchLiveToken(url) {
+  try {
+    const html = execFileSync('curl', ['-sS', '-L', '--max-time', '15', `${url}/index.html`], { encoding: 'utf8' });
+    return { token: extractVersionToken(html) };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+const staging = fetchLiveToken(STAGING_URL);
+const stagingFresh = !staging.error && !!expectedToken && staging.token === expectedToken;
+console.log('');
+if (!expectedToken) {
+  console.log('promote: staging freshness — ⚠️ no app.js?v= token in the promoted index.html; cannot verify.');
+} else if (staging.error) {
+  console.log(`promote: staging freshness — ⚠️ could not reach ${STAGING_URL} (${staging.error}).`);
+} else if (stagingFresh) {
+  console.log(`promote: staging freshness — ✅ staging serves ?v=${expectedToken}, matching the trunk commit.`);
+} else {
+  console.log(`promote: staging freshness — 🔴 STAGING IS BEHIND. Trunk = ?v=${expectedToken}, staging = ?v=${staging.token || '(none)'}.`);
+  console.log(`promote:   staging is NOT showing what you're about to promote — deploy this commit to staging and review it first.`);
+}
+
 // --- Step 3: hard STOP-gate — mirrors the /clasp prod-deploy posture ---------
 if (!CONFIRMED) {
   console.log('');
@@ -115,6 +153,21 @@ if (!CONFIRMED) {
 
 console.log('');
 console.log('promote: --yes given — proceeding with the promotion above.');
+
+// --- Step 3b: ENFORCE the staging-freshness gate before touching production ---
+if (!stagingFresh && !SKIP_STAGING_CHECK) {
+  fail(
+    `refusing to promote — staging is not confirmed fresh (see above). Promoting now would put ` +
+    `production AHEAD of the staging review site — exactly the drift this gate prevents.\n` +
+    `promote: fix it — from the merged feature branch run \`node tools/deploy-staging.mjs\`, confirm ` +
+    `staging serves ?v=${expectedToken || '(the trunk token)'}, then re-run promote.\n` +
+    `promote: if staging genuinely can't be reached (its host is down) and you accept the risk, ` +
+    `re-run with --skip-staging-check to override this deliberately.`
+  );
+}
+if (!stagingFresh && SKIP_STAGING_CHECK) {
+  console.log('promote: ⚠️ --skip-staging-check given — proceeding WITHOUT a fresh-staging confirmation (deliberate override).');
+}
 
 // --- Step 4: refuse anything that is not a clean fast-forward ---------------
 const ff = gitTry(['merge-base', '--is-ancestor', prodRef, trunkRef]);
@@ -154,8 +207,7 @@ function extractVersionToken(html) {
   return m ? m[1] : null;
 }
 
-const expectedHtml = git(['show', `${trunkRef}:index.html`]);
-const expectedToken = extractVersionToken(expectedHtml);
+// expectedToken was computed up front (used by the staging-freshness gate too).
 if (!expectedToken) {
   console.log('promote: WARNING — could not find an app.js?v= token in the promoted index.html; skipping live-bytes verification.');
   console.log('promote: push succeeded. Verify the live site manually.');

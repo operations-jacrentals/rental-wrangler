@@ -37,7 +37,7 @@ const LUCIDE = {
     volume: 'volume-2', volumeOff: 'volume-x',
     box: 'box', doc: 'file', copy: 'copy', lock: 'lock', lockOpen: 'lock-open',
     chevL: 'chevron-left', chevR: 'chevron-right', chat: 'message-circle',
-    linkOut: 'external-link',
+    linkOut: 'external-link', globe: 'globe',
     // D8 comms-rail toolbar chips (Team · Texts · Email · Mr. Wrangler)
     users: 'users', messageSquare: 'message-square', mail: 'mail', lasso: 'lasso',
   },
@@ -128,7 +128,7 @@ const ORDER = {
   I: ['circle', 'plus', 'search', 'x', 'filter', 'grid', 'truck', 'back', 'list', 'mark',
       'sun', 'moon', 'hardhat', 'horseshoe', 'bluesteel', 'qr', 'mouse', 'video', 'camera', 'phone',
       'droplet', 'table', 'graph', 'sliders', 'inbox', 'bell', 'alert', 'eye', 'eyeOff', 'feedback',
-      'box', 'doc', 'copy', 'lock', 'lockOpen', 'chev', 'chevL', 'chevR', 'chat', 'linkOut',
+      'box', 'doc', 'copy', 'lock', 'lockOpen', 'chev', 'chevL', 'chevR', 'chat', 'linkOut', 'globe',
       'users', 'messageSquare', 'mail', 'lasso', 'volume', 'volumeOff'],
   CARD_ICON: ['customers', 'rentals', 'categories', 'units', 'invoices', 'workOrders',
       'serviceOrders', 'inspections', 'inspectionsPending', 'shop', 'parts', 'vendors',

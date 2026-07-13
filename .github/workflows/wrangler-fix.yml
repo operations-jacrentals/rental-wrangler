@@ -4,7 +4,7 @@ name: Wrangler Fix — auto-patch a reported glitch
 # When a glitch is filed as an issue labelled "wrangler-fix", a Claude coding
 # agent reproduces it, patches the FRONTEND (app.js / style.css / index.html /
 # config.js), runs the 3 CI gates, opens a PR, and auto-merges it the moment CI
-# is green. Pages then deploys `main` to app.jacrentals.com. The one step the
+# is green. Pages then deploys `trunk` to app.jacrentals.com. The one step the
 # browser can't do — rewriting app.js and redeploying — happens here.
 #
 # ── SWITCH-ON (one-time, in the repo's GitHub settings) ───────────────────────
@@ -19,7 +19,7 @@ name: Wrangler Fix — auto-patch a reported glitch
 #      (Alternative: run `/install-github-app` to use the Claude GitHub App
 #       token instead of a PAT — same effect.)
 #   2. Settings → General → Pull Requests → ✓ Allow auto-merge.
-#   3. Settings → Branches → Add branch protection rule for `main`:
+#   3. Settings → Branches → Add branch protection rule for `trunk`:
 #        ✓ Require status checks to pass before merging
 #        → add the "smoke" check (from the "CI — boot check" workflow).
 #      This is the safety net: a fix reaches live ONLY after all 3 gates pass.
@@ -130,7 +130,7 @@ jobs:
               • Proven → make the MINIMAL fix that satisfies the cited rule (match the code +
                 the design language). Run all 3 gates (node ci/smoke.mjs · node ci/logic-test.mjs
                 · node ci/gen-rule-usage.mjs --check; regenerate rule-usage.js if usage changed).
-                Open a PR to `main` titled "Wrangler fix: <summary>" with body incl.
+                Open a PR to `trunk` titled "Wrangler fix: <summary>" with body incl.
                 "Closes #${{ github.event.issue.number }}", then `gh pr merge --auto --squash <pr>`.
               • Can't prove it / it contradicts the canon / it's ambiguous → do NOT ship.
                 Comment your verdict + why on #${{ github.event.issue.number }}; if it's a

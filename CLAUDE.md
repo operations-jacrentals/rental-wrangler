@@ -58,18 +58,18 @@ Reference implementations: `.login-*` and `.cancel-arc` blocks in `style.css`.
 
 ## Deploy & gates
 
-- **Ship model — trunk + two chat-driven gates (2026-07-13).** `main` is the **trunk**:
+- **Ship model — trunk + two chat-driven gates (2026-07-13; the trunk branch was renamed `main`→`trunk` on 2026-07-13).** `trunk` is the **trunk branch**:
   integrated but **NOT live**. Pages serves the separate **`production`** release-pointer
-  branch, so a merge to `main` no longer goes live — only a `production` update does. Both
+  branch, so a merge to `trunk` no longer goes live — only a `production` update does. Both
   gates run on Jac's say-so:
   - **Deploy to staging** — `node tools/deploy-staging.mjs` pushes the current feature
     branch's site files to the staging repo so Jac reviews the running app at the staging URL.
-  - **Gate 1, "merge it"** — feature branch → `main` (PR → squash-merge → delete branch);
-    integrated on the trunk, still not live. `main` is **branch-protected** (required
-    `smoke` CI check): feature branch → PR → squash-merge. NEVER `git push origin HEAD:main`
+  - **Gate 1, "merge it"** — feature branch → `trunk` (PR → squash-merge → delete branch);
+    integrated on the trunk, still not live. `trunk` is **branch-protected** (required
+    `smoke` CI check): feature branch → PR → squash-merge. NEVER `git push origin HEAD:trunk`
     (or `HEAD:production`) directly -- it will be rejected.
   - **Gate 2, "promote it"** — `node tools/promote.mjs --yes` fast-forwards `production` to
-    the approved `main` commit → app.jacrentals.com goes live. Run it with no args first for a
+    the approved `trunk` commit → app.jacrentals.com goes live. Run it with no args first for a
     read-only preview; it is fast-forward-only (never `--force`) and verifies the live `?v=`
     afterward. This is the ONLY step that changes the live site — **always Jac's explicit call.**
   - Big *replacements* ship behind a `FEATURES` flag in `config.js` (`flagOn()` reader) so

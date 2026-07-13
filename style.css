@@ -282,6 +282,15 @@ input { font-family: inherit; }
 .mini-searchwrap .filt-term .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mini-searchwrap .ft-neg { width: 14px; height: 14px; }
 .mini-searchwrap .filt-term.neg .ft-neg::before { width: 7px; }
+/* R33 — card-search GLOBAL-MODE globe: icon-only toggle pinned right in the mini search bar.
+   Dim steel at rest → safety-orange when engaged (every grid-card globe lights in lockstep). */
+.mini-globe { flex: 0 0 auto; margin-left: auto; align-self: center; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 8px; color: var(--txt-3); background: transparent; }
+.mini-globe svg { width: 15px; height: 15px; }
+.mini-globe:hover { color: var(--txt); background: var(--panel-2); }
+.mini-globe:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mini-globe.on, .mini-globe.on:hover { color: var(--accent); background: transparent; box-shadow: none; }   /* engaged = just the orange glyph, no box (Jac) */
+.mini-searchwrap.globe-on { border-color: var(--accent-line); }   /* the whole bar reads engaged when its globe is on */
+@media (prefers-reduced-motion: no-preference) { .mini-globe { transition: color .12s, background-color .12s, box-shadow .12s; } }
 
 .closeall { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
 .closeall:hover { background: rgba(255,122,26,.22); }
@@ -463,9 +472,17 @@ body.is-phone { touch-action: manipulation; }
    so the pre-scroll-snap styling renders it identically: three separate chips, active orange. */
 /* §M7 — phone FOOTER tool bar (tools back at the bottom, thumb-reachable; nav is in the column
    headers now). Mirrors the old dock's bottom chrome: border-top, panel bg, safe-area pad. */
-.is-phone .mobile-toolbar { flex: 0 0 auto; border-top: 1px solid var(--line); background: var(--panel);
+.is-phone .mobile-toolbar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--line); background: var(--panel);
   padding: 6px 8px max(6px, env(safe-area-inset-bottom)); }
-.is-phone .mobile-toolbar .top-toolbar { order: 0; margin: 0; padding: 0; }
+/* §M7 / R32 — the always-on Back/Forward jog: a proper CHIP (the base .card-jog — --panel bg +
+   --line border + radius + saddle-stitch seam, the same chip idiom as the .iconbtn tool buttons),
+   pinned to the bottom-RIGHT and never scrolling off. The chevrons are bright --txt when active,
+   greyed --txt-2 when the stack is empty (Chrome-style). Reflects the snapped column's card. */
+.is-phone .mobile-toolbar .mfoot-jog { flex: 0 0 auto; display: flex; align-items: center; }
+.is-phone .mobile-toolbar .mfoot-jog .jog-btn { color: var(--txt); min-width: 32px; }   /* snug around the glyph — not the bloated 46px */
+.is-phone .mobile-toolbar .mfoot-jog .jog-btn svg { width: 20px; height: 20px; }
+.is-phone .mobile-toolbar .mfoot-jog .jog-btn[disabled] { color: var(--txt-2); opacity: 1; }
+.is-phone .mobile-toolbar .top-toolbar { order: 0; margin: 0; padding: 0; flex: 1 1 auto; min-width: 0; overflow-x: auto; }
 /* the global tool tray rendered as a phone sheet (§M1 footer → Tools) */
 .tools-tray { display: flex; flex-wrap: wrap; gap: 8px; }
 .tools-tray .iconbtn { flex: 0 0 auto; min-height: 44px; }

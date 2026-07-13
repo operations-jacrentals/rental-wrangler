@@ -68,7 +68,9 @@ const STAGING_DEPLOY_KEY_PATH = process.env.STAGING_DEPLOY_KEY_PATH || ''; // pa
 const STAGING_DEPLOY_PAT = process.env.STAGING_DEPLOY_PAT || '';           // fine-scoped PAT, staging repo only
 
 // Refuse to deploy from these — a short feature branch is the whole point of Gate 1.
-const PROTECTED_BRANCHES = ['main', 'production'];
+// NB: STAGING_PAGES_BRANCH below is the STAGING repo's own Pages branch (still 'main') —
+// unrelated to this repo's trunk, which was renamed main -> trunk.
+const PROTECTED_BRANCHES = ['trunk', 'production'];
 
 // ── small git helpers (same shape as tools/spec-sync.mjs) ──
 
@@ -81,6 +83,9 @@ function gitTry(args, opts = {}) {
 }
 function lines(s) { return s.split('\n').map((x) => x.trim()).filter(Boolean); }
 function fail(msg) { console.error(msg); process.exit(1); }
+// Portable synchronous sleep (no deps, no event-loop turn needed) — used to wait out GitHub
+// Pages propagation between the live-bytes verification polls after a push.
+function sleepMs(ms) { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
 
 const ROOT = git(['rev-parse', '--show-toplevel']);
 process.chdir(ROOT);
@@ -388,7 +393,34 @@ function main() {
     console.log('deploy-staging: pushed.');
     console.log(`  staging URL:  https://${owner}.github.io/${repoName}/`);
     console.log(`  ?v= marker:   ${newToken}`);
-    console.log(`  verify with:  curl -s https://${owner}.github.io/${repoName}/index.html | grep ${newToken}`);
+
+    // Verify the LIVE staging site actually serves the new token — a push "succeeding" is NOT
+    // proof Pages updated. Poll (~1 min for Pages to propagate), then FAIL LOUDLY if it never
+    // catches up, so a deploy that silently didn't take can't be mistaken for a good one (the
+    // "staging serves an OLD file under a NEW token" trap CLAUDE.md warns about). This is what
+    // stops staging from drifting behind while a broken deploy looks green.
+    const indexUrl = `https://${owner}.github.io/${repoName}/index.html`;
+    let served = null;
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      try {
+        const html = execFileSync('curl', ['-sS', '-L', '--max-time', '15', indexUrl], { encoding: 'utf8' });
+        const m = html.match(/app\.js\?v=([A-Za-z0-9._-]+)/);
+        served = m ? m[1] : null;
+      } catch { served = null; }
+      if (served === newToken) break;
+      if (attempt < 5) {
+        console.log(`deploy-staging: live staging not serving ?v=${newToken} yet (got ?v=${served || 'n/a'}); waiting for Pages…`);
+        sleepMs(12000);
+      }
+    }
+    if (served === newToken) {
+      console.log(`deploy-staging: ✅ verified — live staging is serving ?v=${newToken}.`);
+    } else {
+      console.error(`deploy-staging: 🔴 push succeeded but live staging is NOT serving ?v=${newToken} after ~1 min (got ?v=${served || 'unreachable'}).`);
+      console.error('deploy-staging: staging did not take — it may be misconfigured or serving a stale build. Do NOT treat this deploy as done.');
+      console.error(`  re-check: curl -s ${indexUrl} | grep ${newToken}`);
+      process.exit(2);
+    }
   } finally {
     removeCloneDir(cloneDir);
   }

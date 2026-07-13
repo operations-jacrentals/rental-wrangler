@@ -1,12 +1,12 @@
 name: CI — boot check
 
-# Runs on every push/PR to main. Flags a broken version (syntax error or boot crash)
+# Runs on every push/PR to the trunk. Flags a broken version (syntax error or boot crash)
 # so it can be caught before it affects the live site (app.jacrentals.com).
 on:
   push:
-    branches: [main]
+    branches: [trunk]
   pull_request:
-    branches: [main]
+    branches: [trunk]
   workflow_dispatch:
 
 jobs:
