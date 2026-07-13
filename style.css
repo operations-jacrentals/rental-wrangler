@@ -463,20 +463,21 @@ body.is-phone { touch-action: manipulation; }
    so the pre-scroll-snap styling renders it identically: three separate chips, active orange. */
 /* §M7 — phone FOOTER tool bar (tools back at the bottom, thumb-reachable; nav is in the column
    headers now). Mirrors the old dock's bottom chrome: border-top, panel bg, safe-area pad. */
-.is-phone .mobile-toolbar { flex: 0 0 auto; border-top: 1px solid var(--line); background: var(--panel);
+.is-phone .mobile-toolbar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--line); background: var(--panel);
   padding: 6px 8px max(6px, env(safe-area-inset-bottom)); }
-/* §M7 / R32 — the always-on Back/Forward jog at the LEADING edge of the phone footer bar
-   (reflects the snapped column's card, repainted on swipe). The card's steel-pill form
-   CAMOUFLAGES here — its --panel fill matches the --panel bar (1.07:1) and the --line border is
-   only 1.24:1 — so in the footer it drops the pill and renders as bare chevron GLYPHS, the same
-   idiom as the bar's other icon buttons (Chrome-style back/forward). The glyph is the signal:
-   enabled --txt-2 ≈ 8:1 on the bar, disabled --txt-3 at full opacity ≈ 3.8:1 — clearly greyed
-   but present, not the near-invisible .32 the card pill uses. */
-.is-phone .mobile-toolbar .mfoot-jog { flex: 0 0 auto; display: flex; align-items: center; margin-right: 2px; }
+/* §M7 / R32 — the always-on Back/Forward jog, pinned to the bottom-RIGHT of the phone footer as
+   a NON-scrolling sibling of the tool row, so it can never scroll off-screen (reflects the
+   snapped column's card, repainted on swipe). The card's steel-pill form CAMOUFLAGES here — its
+   --panel fill matches the --panel bar (1.07:1) and the --line border is only 1.24:1 — so in the
+   footer it drops the pill and renders as bare chevron GLYPHS, the same idiom as the bar's other
+   icon buttons (Chrome-style back/forward). The glyph is the signal: enabled --txt-2 ≈ 8:1 on the
+   bar, disabled --txt-3 at full opacity ≈ 3.8:1 — clearly greyed but present, not the
+   near-invisible .32 the card pill uses. */
+.is-phone .mobile-toolbar .mfoot-jog { flex: 0 0 auto; display: flex; align-items: center; }
 .is-phone .mobile-toolbar .mfoot-jog .card-jog { background: transparent; border-color: transparent; box-shadow: none; }
 .is-phone .mobile-toolbar .mfoot-jog .jog-btn + .jog-btn { border-left: none; }   /* no saddle-stitch seam — bare glyphs */
 .is-phone .mobile-toolbar .mfoot-jog .jog-btn[disabled] { color: var(--txt-3); opacity: 1; }   /* greyed but present (~3.8:1) */
-.is-phone .mobile-toolbar .top-toolbar { order: 0; margin: 0; padding: 0; }
+.is-phone .mobile-toolbar .top-toolbar { order: 0; margin: 0; padding: 0; flex: 1 1 auto; min-width: 0; }   /* tools scroll in the space left of the pinned jog */
 /* the global tool tray rendered as a phone sheet (§M1 footer → Tools) */
 .tools-tray { display: flex; flex-wrap: wrap; gap: 8px; }
 .tools-tray .iconbtn { flex: 0 0 auto; min-height: 44px; }

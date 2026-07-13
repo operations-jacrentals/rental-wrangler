@@ -5839,7 +5839,7 @@ const RULE_META = {
   R29: ['Invoice action menu', 'invoiceStatMenu', 'the expanded-invoice header control: a hazard-stripe status pill (green solid = paid · yellow-stripe = partial · red-stripe = due; goes SOLID while its menu is open) that DOUBLES as the Pay · Print · Send · Refund action menu. A pressable-status control like R1, but it opens actions rather than advancing a status. Pay/Refund reuse the canMoney()-gated payment window.'],
   R30: ['Paused banner', '.wr-paused (wranglerDockBodyHtml)', 'red hazard-stripe plate inside the Mr. Wrangler dock/rail window — raised when a Developer-tier operator takes the wheel (Wrangler Ops live jump-in, §18i); the composer goes read-only until released'],
   R31: ['Toggle chip', 'toggleChip', 'a single interactive on/off pill (PO required, Rental Protection) — off = quiet outline, on = the registry tone color fill. Distinct from R14: ONE control, not a joined group of options.'],
-  R32: ['Nav jog', 'cardJog / .card-jog · .mfoot-jog', 'the two-way Back/Forward view-history stepper. On desktop + in-card it is a neutral steel pill (chevron arms split by a saddle-stitch seam, orange only on hover/press) that shows only when the card has history. On phone it lives ALWAYS-ON at the leading edge of the footer tool bar — rendered as bare chevron glyphs (the steel pill camouflages on the same-tone bar), Chrome-style: each arm greys when its stack is empty — reflecting the snapped column’s card (repainted on swipe).'],
+  R32: ['Nav jog', 'cardJog / .card-jog · .mfoot-jog', 'the two-way Back/Forward view-history stepper. On desktop + in-card it is a neutral steel pill (chevron arms split by a saddle-stitch seam, orange only on hover/press) that shows only when the card has history. On phone it lives ALWAYS-ON pinned to the bottom-RIGHT of the footer tool bar — rendered as bare chevron glyphs (the steel pill camouflages on the same-tone bar), Chrome-style: each arm greys when its stack is empty — reflecting the snapped column’s card (repainted on swipe).'],
 };
 /* ════════════ APP-12 · DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
    The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
@@ -9571,7 +9571,9 @@ function footerJogInner() {
 }
 function mobileToolbarEl() {
   const d = el('div', 'mobile-toolbar');
-  d.innerHTML = `<div class="top-toolbar"><div class="mfoot-jog">${footerJogInner()}</div>${bottomBarInner()}${commsBellBtn()}</div>`;
+  // The jog is a SIBLING of the (horizontally-scrollable) tool row, pinned to the bottom-RIGHT
+  // so it can never scroll off-screen; the tools scroll in the space to its left.
+  d.innerHTML = `<div class="top-toolbar">${bottomBarInner()}${commsBellBtn()}</div><div class="mfoot-jog">${footerJogInner()}</div>`;
   return d;
 }
 /* ════════════════════════════════════════════════════════════════════════
