@@ -463,7 +463,7 @@ body.is-phone { touch-action: manipulation; }
    so the pre-scroll-snap styling renders it identically: three separate chips, active orange. */
 /* §M7 — phone FOOTER tool bar (tools back at the bottom, thumb-reachable; nav is in the column
    headers now). Mirrors the old dock's bottom chrome: border-top, panel bg, safe-area pad. */
-.is-phone .mobile-toolbar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--line); background: var(--panel);
+.is-phone .mobile-toolbar { flex: 0 0 auto; display: flex; align-items: center; gap: 0; border-top: 1px solid var(--line); background: var(--panel);
   padding: 6px 8px max(6px, env(safe-area-inset-bottom)); }
 /* §M7 / R32 — the always-on Back/Forward jog, pinned to the bottom-RIGHT of the phone footer as
    a NON-scrolling sibling of the tool row, so it can never scroll off-screen (reflects the
@@ -473,13 +473,14 @@ body.is-phone { touch-action: manipulation; }
    icon buttons (Chrome-style back/forward). The glyph is the signal: enabled --txt-2 ≈ 8:1 on the
    bar, disabled --txt-3 at full opacity ≈ 3.8:1 — clearly greyed but present, not the
    near-invisible .32 the card pill uses. */
-.is-phone .mobile-toolbar .mfoot-jog { flex: 0 0 auto; display: flex; align-items: center; }
+.is-phone .mobile-toolbar .mfoot-jog { flex: 0 0 auto; display: flex; align-items: center; position: relative; z-index: 2;
+  background: var(--panel); border-left: 1px solid var(--line); margin-left: -40px; padding-left: 48px; }   /* opaque bar-colored backing (+ divider) overlaps the scroll edge so a clipped tool chip is covered, not a "damaged" half-chip */
 .is-phone .mobile-toolbar .mfoot-jog .card-jog { background: transparent; border-color: transparent; box-shadow: none; }
 .is-phone .mobile-toolbar .mfoot-jog .jog-btn + .jog-btn { border-left: none; }   /* no saddle-stitch seam — bare glyphs */
 .is-phone .mobile-toolbar .mfoot-jog .jog-btn { color: var(--txt); }              /* enabled = bright, matching the footer's other icon buttons (--txt-2 read too timid) */
 .is-phone .mobile-toolbar .mfoot-jog .jog-btn svg { width: 24px; height: 24px; }  /* match the tool-icon scale */
 .is-phone .mobile-toolbar .mfoot-jog .jog-btn[disabled] { color: var(--txt-2); opacity: 1; }   /* greyed but clearly PRESENT (not the faint --txt-3) */
-.is-phone .mobile-toolbar .top-toolbar { order: 0; margin: 0; padding: 0; flex: 1 1 auto; min-width: 0; }   /* tools scroll in the space left of the pinned jog */
+.is-phone .mobile-toolbar .top-toolbar { order: 0; margin: 0; padding: 0; flex: 1 1 auto; min-width: 0; overflow-x: auto; }   /* tools scroll in the space left of the pinned jog (its opaque backing covers the scroll edge) */
 /* the global tool tray rendered as a phone sheet (§M1 footer → Tools) */
 .tools-tray { display: flex; flex-wrap: wrap; gap: 8px; }
 .tools-tray .iconbtn { flex: 0 0 auto; min-height: 44px; }
