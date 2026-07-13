@@ -282,6 +282,15 @@ input { font-family: inherit; }
 .mini-searchwrap .filt-term .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mini-searchwrap .ft-neg { width: 14px; height: 14px; }
 .mini-searchwrap .filt-term.neg .ft-neg::before { width: 7px; }
+/* R33 — card-search GLOBAL-MODE globe: icon-only toggle pinned right in the mini search bar.
+   Dim steel at rest → safety-orange when engaged (every grid-card globe lights in lockstep). */
+.mini-globe { flex: 0 0 auto; margin-left: auto; align-self: center; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 8px; color: var(--txt-3); background: transparent; }
+.mini-globe svg { width: 15px; height: 15px; }
+.mini-globe:hover { color: var(--txt); background: var(--panel-2); }
+.mini-globe:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mini-globe.on, .mini-globe.on:hover { color: var(--accent); background: transparent; box-shadow: none; }   /* engaged = just the orange glyph, no box (Jac) */
+.mini-searchwrap.globe-on { border-color: var(--accent-line); }   /* the whole bar reads engaged when its globe is on */
+@media (prefers-reduced-motion: no-preference) { .mini-globe { transition: color .12s, background-color .12s, box-shadow .12s; } }
 
 .closeall { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
 .closeall:hover { background: rgba(255,122,26,.22); }

@@ -1,6 +1,6 @@
 ---
 name: start
-description: Jac Rentals session startup routine — run at the top of a session with /start. Probes the toolchain (node/npm/clasp/gh/git + Playwright), orients on the current git branch vs the trunk (main), recalls relevant memory, proposes a short feature branch (or git worktree) off the trunk and a dated session-output folder — waiting for your OK before switching — then sets token-efficiency + role-aware working rules for the rest of the session.
+description: Jac Rentals session startup routine — run at the top of a session with /start. Probes the toolchain (node/npm/clasp/gh/git + Playwright), orients on the current git branch vs the trunk (trunk), recalls relevant memory, proposes a short feature branch (or git worktree) off the trunk and a dated session-output folder — waiting for your OK before switching — then sets token-efficiency + role-aware working rules for the rest of the session.
 ---
 
 # /start — Jac Rentals session startup
@@ -34,26 +34,26 @@ Also check that the app password secret is present (do NOT echo it):
 
 ## 2. Branch + status orientation
 - Run: `git branch --show-current`, `git status -sb`, `git log --oneline -5`.
-- Show how the current branch differs from the trunk: `git diff --stat origin/main...HEAD`.
+- Show how the current branch differs from the trunk: `git diff --stat origin/trunk...HEAD`.
 - Recall memory: read `MEMORY.md` and surface anything relevant to this session's topic (e.g. `[[jactec-skill-build-plan]]`, `[[jactec-tooling]]`, `[[jactec-design-prefs]]`).
-- **The SessionStart hook already oriented you.** It ran `tools/branch-preflight.mjs` (report-only) — a live `git ls-remote` — and printed where you sit relative to the trunk (`main`) and `production`. Read its report; don't re-derive branch state from a shallow clone's stale local refs.
+- **The SessionStart hook already oriented you.** It ran `tools/branch-preflight.mjs` (report-only) — a live `git ls-remote` — and printed where you sit relative to the trunk (`trunk`) and `production`. Read its report; don't re-derive branch state from a shallow clone's stale local refs.
 
 ### 2b. Docs are on the trunk — no spec-sync anymore
 - The SessionStart hook already ran `node tools/branch-preflight.mjs` (report-only). There's nothing to `--ensure` now — the trunk model has no shared `staging`/`master-spec` branches to create.
-- **Docs live on the trunk.** Specs, plans, and decisions are in `docs/` on `main` — just `git pull` (or fetch `origin/main`) to see the latest. The old `spec-sync` / `master-spec` cross-branch sync is retired; don't run it, and don't arm any ~2h spec-sync self-timer.
+- **Docs live on the trunk.** Specs, plans, and decisions are in `docs/` on `trunk` — just `git pull` (or fetch `origin/trunk`) to see the latest. The old `spec-sync` / `master-spec` cross-branch sync is retired; don't run it, and don't arm any ~2h spec-sync self-timer.
 
 ## 3. Cut a SHORT feature branch off the trunk — DO NOT switch without an OK
-The app uses **trunk-based development**: one trunk (`main`), short-lived **feature branches** cut off it, merged the same day and deleted. There is no per-area routing anymore.
-- **Propose a short feature branch** in one line (e.g. *"Invoicing refund rounding → branch `claude/refund-rounding` off `main`?"*). For a **parallel** session, propose a git **worktree** instead (`claude --worktree <task>`) — isolation without divergence. **WAIT for his OK** before switching.
+The app uses **trunk-based development**: one trunk (`trunk`), short-lived **feature branches** cut off it, merged the same day and deleted. There is no per-area routing anymore.
+- **Propose a short feature branch** in one line (e.g. *"Invoicing refund rounding → branch `claude/refund-rounding` off `trunk`?"*). For a **parallel** session, propose a git **worktree** instead (`claude --worktree <task>`) — isolation without divergence. **WAIT for his OK** before switching.
 - On OK, start from the latest trunk:
-  1. `git fetch origin main`
-  2. `git checkout -b claude/<task> origin/main`
+  1. `git fetch origin trunk`
+  2. `git checkout -b claude/<task> origin/trunk`
   3. Commit your work to the feature branch and push there.
 - **The two-gate deploy loop** (build → review → integrate → wait → go-live) — both gates run on Jac's say-so:
   1. **Deploy to staging** — `node tools/deploy-staging.mjs` pushes your feature branch's site files to the staging repo; Jac reviews the running app at the staging URL (`https://operations-jacrentals.github.io/rental-wrangler-staging/` — [[jactec-staging-url]]).
-  2. **Gate 1 — "merge it"** — run the local gates, open a PR to `main`, let CI (`smoke`) pass, squash-merge, delete the branch. Integrated on the trunk but **NOT live** (Pages serves the `production` release-pointer branch).
+  2. **Gate 1 — "merge it"** — run the local gates, open a PR to `trunk`, let CI (`smoke`) pass, squash-merge, delete the branch. Integrated on the trunk but **NOT live** (Pages serves the `production` release-pointer branch).
   3. **Wait** — as long as Jac likes; the trunk holds blessed-but-not-live work.
-  4. **Gate 2 — "promote it"** — `node tools/promote.mjs` (run bare first for a read-only preview, then `--yes`) fast-forwards `production` to the approved `main` commit → app.jacrentals.com goes live. This is the ONLY step that changes the live site; it is fast-forward-only and **always Jac's explicit call.**
+  4. **Gate 2 — "promote it"** — `node tools/promote.mjs` (run bare first for a read-only preview, then `--yes`) fast-forwards `production` to the approved `trunk` commit → app.jacrentals.com goes live. This is the ONLY step that changes the live site; it is fast-forward-only and **always Jac's explicit call.**
 - **Big replacements ride behind a `FEATURES` flag** in `config.js` (`flagOn()` reader) so backing out is a runtime toggle, not code surgery. (A flag hides execution, not source, on a public Pages site — never gate a secret/auth check on it.)
 - **The old `area/*` branches are FROZEN legacy — don't build on them.** ~19 `area/*` branches remain from the previous workflow; they're dormant (kept, not deleted — they carry large unaudited divergence and some hold live content, so a "what's stranded" audit precedes any cleanup). New work is always a feature branch off the trunk. `references/branch-map.md` is kept only as a **domain reference** (which domain owns which surface), not a routing target.
 - **Optional quick local look.** To eyeball your working tree before a staging deploy, serve it statically on `localhost:9147` (8000 is reserved). It's the dev-loop version of what `ci/smoke.mjs` does (a static server), minus Playwright:
@@ -103,21 +103,21 @@ The app uses **trunk-based development**: one trunk (`main`), short-lived **feat
 - **Specs:** after generating or changing a spec/feature/screen, offer to run the `/role` audit (now folded into `/jactec-ui` — § "The /role audit") to review it through the 15 role lenses.
 - **Something reported broken → `wrangler-fix` first.** Anything reported not-working or broken — an in-app `wrangler-fix`/`wrangler-request` issue OR Jac just saying it in-session — runs through the `wrangler-fix` skill before any code change: prove the claim against the canon (R-Rulebook, SPEC v8, docs, code) with citations, trace the symptom UP to its root cause, sweep for sibling bugs of the same class, fix only what's proven at the cause, then re-reproduce to confirm it failed-before/passes-after. No fix without a cited root cause.
 - **Efficiency:** `/audit` is available anytime; the ~1M-token auto-audit hook will also prompt a coaching report.
-- **Ship cadence — propose the gates, never auto-promote to live.** Build on the feature branch, then: **deploy to staging** (`deploy-staging.mjs`) for Jac's review → on **"merge it"** run the local gate set + PR to `main` + CI (`smoke`) + squash-merge (Gate 1, integrated but not live) → **wait** → on **"promote it"** run `promote.mjs` (Gate 2, `main → production`). **`production` is live at app.jacrentals.com — promoting is ALWAYS Jac's explicit call**, and the only step that changes the live site. Big replacements ride behind a `FEATURES` flag so a swap can be backed out with a toggle.
+- **Ship cadence — propose the gates, never auto-promote to live.** Build on the feature branch, then: **deploy to staging** (`deploy-staging.mjs`) for Jac's review → on **"merge it"** run the local gate set + PR to `trunk` + CI (`smoke`) + squash-merge (Gate 1, integrated but not live) → **wait** → on **"promote it"** run `promote.mjs` (Gate 2, `trunk → production`). **`production` is live at app.jacrentals.com — promoting is ALWAYS Jac's explicit call**, and the only step that changes the live site. Big replacements ride behind a `FEATURES` flag so a swap can be backed out with a toggle.
 - **Staging review — DRIVE THE RUNNING APP before "merge it" (don't trust unit tests alone).** After `deploy-staging.mjs` pushes your feature to the staging repo, verify the live staging site serves the new bytes (`curl -s https://operations-jacrentals.github.io/rental-wrangler-staging/index.html | grep <the new ?v= token deploy-staging printed>`), then drive it with **Claude-in-Chrome** (needs **no local install**, unlike Playwright): open the staging URL, log in (password from `$RW_PW` — **never hardcode or echo it**), and **exercise exactly what you built** end-to-end plus a known sanity flow — e.g. run a sample CSV through **Mr. Wrangler** and confirm the expected output, not merely that the page renders. No console/page errors on boot; the feature's visible result matches expectation; save a screenshot for the handoff. A red review STOPs the merge — fix on the feature branch, redeploy, re-check. `deploy-staging.mjs` is a direct push (no cron), so the staging URL updates within ~1 min.
 
 ## 5. Ready summary
 End with 3–4 lines: tools OK/missing, current branch + what's in flight, the proposed feature branch/folder (awaiting OK), and "what are we working on?"
 
 ## 6. Wrap-up — when a feature ships, or when the session winds down
-- **Report shipped-state plainly.** Say what's **merged to the trunk** (`main`, integrated but maybe not live) vs **promoted to production** (live) vs **still pending / uncommitted**, so a session never ends in a fuzzy "did this actually ship?" state.
+- **Report shipped-state plainly.** Say what's **merged to the trunk** (`trunk`, integrated but maybe not live) vs **promoted to production** (live) vs **still pending / uncommitted**, so a session never ends in a fuzzy "did this actually ship?" state.
 - **Catch loose work before it's lost.** Scan the session for ideas, half-done threads, or follow-ups worth keeping and **park each on its own branch** so closing the chat never drops a good idea or unfinished piece.
 - **Don't archive if anything's pending.** If work is parked, uncommitted, or awaiting a promote, say so and stop — don't sweep it away.
 - **Run `/tidy-sessions`** (or the end-of-session skill once it lands) only as the LAST step, once the above are clean — to archive finished/stale chats. It never touches the current chat or open-PR work.
 - **Handoff note.** Write a short note (what shipped, what's pending, which feature branch) into the session-output folder so the next chat — local or cloud — picks up cleanly.
 
 ## Conventions reference
-- **Branches (trunk-based):** cut a short feature branch `claude/<task>` (or a `claude --worktree <task>`) off **`main`** → build → `deploy-staging.mjs` → review on the staging URL → **"merge it"** (PR → `smoke` CI → squash-merge to `main`, integrated but NOT live) → **wait** → **"promote it"** (`promote.mjs` fast-forwards `production`; app.jacrentals.com goes live — Jac's explicit call only). `main` is the trunk (protected, PR + CI); `production` is the release pointer Pages serves. The ~19 `area/*` branches are frozen legacy, not routing targets (`references/branch-map.md` is now just a domain reference).
+- **Branches (trunk-based):** cut a short feature branch `claude/<task>` (or a `claude --worktree <task>`) off **`trunk`** → build → `deploy-staging.mjs` → review on the staging URL → **"merge it"** (PR → `smoke` CI → squash-merge to `trunk`, integrated but NOT live) → **wait** → **"promote it"** (`promote.mjs` fast-forwards `production`; app.jacrentals.com goes live — Jac's explicit call only). `trunk` is the trunk (protected, PR + CI); `production` is the release pointer Pages serves. The ~19 `area/*` branches are frozen legacy, not routing targets (`references/branch-map.md` is now just a domain reference).
 - **Backend:** ships via `/clasp`, never git. `Code.gs`/`Code.js` are gitignored (public repo). **Deploy auth is currently the service account (`GAS_SA_KEY_B64` + `docs/handoffs/gas-deploy-service-account.mjs`), not clasp OAuth** — clasp's `CLASPRC_JSON_B64` path is RAPT-blocked as of 2026-07-06 (see `/clasp`). Full runbook + queue: `docs/handoffs/BACKEND-DEPLOY-QUEUE.md`.
 - **Sibling skills:** `/clasp` (backend deploy), `/audit` (token + model-fit coaching), `/tidy-sessions` (archive finished chats), `/brainstorming` (design/spec before building — invoke before touching UI code), `/jactec-ui` (**the single design skill — mandatory for any UI**; absorbed the former `/frontend` aesthetic direction, the `mobile-*` skills, `/design-md`, and the `/role` spec audit), `webapp-testing`, `wrangler-fix`.
 - **At session end:** write a short handoff note (what changed, what's pending, which feature branch) into the session folder so the next chat — local or cloud — picks up cleanly.

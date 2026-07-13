@@ -615,5 +615,8 @@ export const PERF_SAMPLE_RATE = 1;          // fraction of sessions that flush a
  * disables EXECUTION, not VISIBILITY — flagged code still ships readable in
  * the public bundle. Never gate a secret or a security/auth check on this. */
 export const FEATURES = {
-  // add keys here as a big replacement starts, e.g. exampleBigReplacement: false
+  // Card-search global mode — a globe toggle inside each grid-card search bar flips
+  // between per-card and whole-yard search, replacing the giant #globalsearch bar.
+  // Flag ON = the globe path (old bar removed); OFF = the old #globalsearch bar.
+  cardGlobalSearch: true,
 };

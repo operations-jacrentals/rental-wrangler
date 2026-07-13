@@ -18,7 +18,7 @@
 import { execFileSync } from 'node:child_process';
 
 const REMOTE = 'origin';
-const TRUNK = 'main';
+const TRUNK = 'trunk';          // the trunk branch (renamed main -> trunk, 2026-07-13)
 const RELEASE = 'production';   // the release-pointer branch GitHub Pages serves as PRODUCTION
 const NET_TIMEOUT = 8000;
 

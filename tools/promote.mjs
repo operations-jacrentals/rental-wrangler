@@ -37,8 +37,8 @@ import { execFileSync } from 'node:child_process';
 
 // TODO(jac): confirm — the release-pointer branch Pages serves as PRODUCTION (plan Phase 0.2/0.3).
 const PRODUCTION_BRANCH = 'production';
-// TODO(jac): confirm — the trunk branch Gate 1 ("merge it") lands on.
-const TRUNK = 'main';
+// The trunk branch Gate 1 ("merge it") lands on (branch renamed main -> trunk, 2026-07-13).
+const TRUNK = 'trunk';
 // TODO(jac): confirm — the live site's public URL (what Pages serves for PRODUCTION_BRANCH).
 const LIVE_URL = 'https://app.jacrentals.com';
 
