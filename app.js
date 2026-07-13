@@ -5776,6 +5776,15 @@ function ghostPill(label, { js, data, tip, disabled, icon } = {}) {
 function toggleChip(label, on, { js, data, tone = 'accent' } = {}) {
   return `<button class="chip-toggle${on ? ` on tone-${tone}` : ''}${js ? ' ' + js : ''}" data-r="R31"${dataAttrs(data)} aria-pressed="${on ? 'true' : 'false'}">${esc(label)}</button>`;
 }
+/** R32: the GLOBAL-MODE globe — an icon-only toggle pinned to the right of a grid card's
+ *  search bar (card-search global mode, 2026-07-13). Flips that bar — and every grid-card
+ *  bar in lockstep — between per-card search and whole-yard "global" search: dim steel off,
+ *  safety-orange on. A scope-MODE toggle (like R31 but icon-only + it drives the shared
+ *  state.query), never a status color. Rendered only when flagOn('cardGlobalSearch'). */
+function globeToggle(card, on) {
+  const lbl = on ? 'Search this card only' : 'Round up the whole yard — search all cards';
+  return `<button class="mini-globe${on ? ' on' : ''} js-cardglobe" data-r="R32" data-card="${esc(card)}" aria-pressed="${on ? 'true' : 'false'}" aria-label="${esc(lbl)}" data-tip="${on ? 'Search this card only' : 'Round up the whole yard'}">${I.globe}</button>`;
+}
 /** The popup PLATE — every overlay's shell, so they all read as one bolted data-plate.
  *  Hazard cap (red `danger` variant for abort/destroy) + corner rivets + stamped Saira
  *  head (ignition icon · uppercase title · micro tag) + scrollable body + optional sticky
@@ -5836,6 +5845,7 @@ const RULE_META = {
   R29: ['Invoice action menu', 'invoiceStatMenu', 'the expanded-invoice header control: a hazard-stripe status pill (green solid = paid · yellow-stripe = partial · red-stripe = due; goes SOLID while its menu is open) that DOUBLES as the Pay · Print · Send · Refund action menu. A pressable-status control like R1, but it opens actions rather than advancing a status. Pay/Refund reuse the canMoney()-gated payment window.'],
   R30: ['Paused banner', '.wr-paused (wranglerDockBodyHtml)', 'red hazard-stripe plate inside the Mr. Wrangler dock/rail window — raised when a Developer-tier operator takes the wheel (Wrangler Ops live jump-in, §18i); the composer goes read-only until released'],
   R31: ['Toggle chip', 'toggleChip', 'a single interactive on/off pill (PO required, Rental Protection) — off = quiet outline, on = the registry tone color fill. Distinct from R14: ONE control, not a joined group of options.'],
+  R32: ['Global toggle', 'globeToggle', 'the icon-only globe pinned right in a grid card’s search bar — flips that bar, and every grid-card bar in lockstep, between per-card and whole-yard “global” search (dim steel off, safety-orange on). A scope-MODE toggle like R31 but icon-only + it drives the shared query; replaces the old giant #globalsearch bar. Behind FEATURES.cardGlobalSearch.'],
 };
 /* ════════════ APP-12 · DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
    The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
@@ -5958,7 +5968,7 @@ const RB_TABS = [
   { id: 'pills', label: 'Pills & Flags', intro: 'The status vocabulary — every colored chip and exactly what it’s allowed to mean.',
     items: [{ r: 'R1' }, { r: 'R2' }, { r: 'R3' }, { r: 'R3b' }, { r: 'R4' }, { r: 'R4b' }, { r: 'R9' }, { r: 'R9b' }] },
   { id: 'fields', label: 'Fields & Adds', intro: 'Where you type, link, and add.',
-    items: [{ r: 'R5' }, { r: 'R5b' }, { r: 'R5c' }, { r: 'R6' }, { r: 'R7' }, { r: 'R8' }, { r: 'R14' }, { r: 'R22' }, { r: 'R31' }] },
+    items: [{ r: 'R5' }, { r: 'R5b' }, { r: 'R5c' }, { r: 'R6' }, { r: 'R7' }, { r: 'R8' }, { r: 'R14' }, { r: 'R22' }, { r: 'R31' }, { r: 'R32' }] },
   { id: 'actions', label: 'Actions', intro: 'Buttons that DO something — colored by intent.',
     items: [{ r: 'R17' }, { r: 'R18' }, { r: 'R24' }, { r: 'R26' }, { r: 'R28' }, { r: 'R29' }] },
   { id: 'upload', label: 'Upload & Capture', intro: 'Add-file zones and photo/site captures.',
@@ -8895,12 +8905,24 @@ function listView(cardDef, session) {
   const cascaded = session.anchor && card !== session.anchor.card && session.cascade && !cs.released && !wave2ListOverride(card, session);
   const anchorName = cascaded ? (state.tabs.find((t) => t.session === session)?.label || 'anchor') : '';
   const cascChip = cascaded ? `<span class="casc-chip" data-tip="Cascaded from ${esc(anchorName)} — clear to browse all & add">🔗<span class="cc-name">${esc(anchorName)}</span>${closeX('js-uncascade', { data: { card } })}</span>` : '';
+  // R32 global mode — when the globe is engaged, every grid-card bar mirrors the ONE shared
+  // state.query + global filter-pills (the whole yard searches as one); otherwise it shows its
+  // own per-card cs.search + local pills (today's behavior). The globe stays a lockstep toggle.
+  const glob = flagOn('cardGlobalSearch') && state.globalMode;
+  const barPills = glob ? state.filterTerms.map((ft, i) => filterTermPill(ft, i, 'global')).join('')
+                        : cascChip + cterms.map((ft, i) => filterTermPill(ft, i, card)).join('');
+  const barVal = glob ? state.query : cs.search;
+  const barHasTerms = glob ? state.filterTerms.length : (cterms.length || cascChip);
+  const barHasQuery = glob ? (state.query.trim() || state.filterTerms.length) : (cs.search.trim() || cterms.length);
+  const barPlaceholder = glob ? (state.filterTerms.length ? 'Add filter — Enter to pin…' : 'Search everything…')
+                              : (cterms.length ? 'Add filter — Enter to pin…' : `Search ${esc(cardDef.title.toLowerCase())}…`);
   bar.innerHTML = `
     ${cardJog(card, cs)}
     <button class="bv-btn js-cardgraph${cs.graphView ? ' on' : ''}" data-card="${card}" data-tip="${cs.graphView ? 'Back to list' : 'Graph view'}">${I.graph}</button>
-    <div class="mini-searchwrap${cterms.length || cascChip ? ' has-terms' : ''}${cs.search.trim() || cterms.length ? ' has-query' : ''}">
-      ${cascChip}${cterms.map((ft, i) => filterTermPill(ft, i, card)).join('')}
-      <input class="mini-search" placeholder="${cterms.length ? 'Add filter — Enter to pin…' : `Search ${esc(cardDef.title.toLowerCase())}…`}" value="${esc(cs.search)}" data-card="${card}" />
+    <div class="mini-searchwrap${barHasTerms ? ' has-terms' : ''}${barHasQuery ? ' has-query' : ''}${glob ? ' globe-on' : ''}">
+      ${barPills}
+      <input class="mini-search" placeholder="${barPlaceholder}" value="${esc(barVal)}" data-card="${card}" />
+      ${flagOn('cardGlobalSearch') ? globeToggle(card, glob) : ''}
     </div>
     ${(cs.graphView && gvSortHidden(card)) ? '' : `<div class="sort">
       <button class="sortbtn js-sortmenu${av ? ' viewing' : ''}" data-card="${card}" data-tip="Views &amp; sort">${esc(av ? av.name : curField.label)} ${I.chev}</button>
@@ -9358,7 +9380,7 @@ function headerEl() {
         <span class="spacer"></span>
         ${currentUser ? `<span class="hello-name">${esc(currentUser)}</span>` : ''}
       </div>
-      ${isPhone ? '' /* §M7 — no global search on mobile (Jac): each card keeps its own in-card search */ : `<div class="toolbar">
+      ${isPhone || flagOn('cardGlobalSearch') ? '' /* §M7 — no global search on mobile; and when the R32 card-bar global mode is on, the globes replace this giant bar on desktop too */ : `<div class="toolbar">
         <div class="searchwrap ${state.filterTerms.length ? 'has-terms' : ''}${state.query.trim() || state.filterTerms.length ? ' has-query' : ''}">
           ${state.filterTerms.length > 1 ? closeX('js-clear') : ''}
           <span class="s-icon">${I.search}</span>
@@ -15798,6 +15820,19 @@ function renderCardList(card) {
   body.scrollTop = 0;   // new query → show results from the top (mirrors the full-render list reset)
   applyTitles();        // re-arm truncation tooltips on the fresh rows (rAF-deferred, hover-only — no cost on touch)
 }
+/* R32 global mode — while typing in ONE grid-card bar, the other bars' inputs stay mounted
+   (renderCardList rebuilds only rows), so live-mirror the shared query into them by hand so the
+   whole yard reads as one search. Cheap DOM-value sync, no header/grid rebuild. */
+function mirrorGlobeBars(exceptCard) {
+  for (const c of GRID_CARDS) {
+    if (c.id === exceptCard) continue;
+    const inp = document.querySelector(`.mini-search[data-card="${c.id}"]`);
+    if (!inp) continue;
+    if (inp.value !== state.query) inp.value = state.query;
+    const sw = inp.closest('.mini-searchwrap');
+    if (sw) sw.classList.toggle('has-query', !!(state.query.trim() || state.filterTerms.length));
+  }
+}
 /** Flag any element that's actually truncated with data-tip (full text) so the
  *  custom app-styled tooltip can show it on hover. Nothing lost to ellipsis.
  *  Perf (Jac 2026-07-11): the data-tips here are consumed ONLY by the hover tooltip
@@ -17224,6 +17259,15 @@ function onClick(e) {
   if (closest('.js-ff-save')) { e.stopPropagation(); return saveFileForm(); }
   if (closest('.js-vendor-tax')) { e.stopPropagation(); const b = closest('.js-vendor-tax'); const v = recOf('vendors', b.dataset.rec); if (v) { const ex = b.dataset.val === '1'; if (!!v.salesTaxExempt !== ex) { v.salesTaxExempt = ex; reindex('vendors', v); logAction(v, `Sales tax → ${ex ? 'Exempt' : 'Taxed'}`); } if (state.overlay?.kind === 'board') renderOverlay(); render(); } return; }
   if (closest('.js-cardgraph')) { e.stopPropagation(); const b = closest('.js-cardgraph'); const card = b.dataset.card, src = b.dataset.src || card; const cs = activeSession().cards[card]; if (!cs.graphView) { if (graphViewsFor(src)) return gvOpen(card, src); cs.graphView = true; return render(); } cs.graphView = false; return render(); }   // §13.7 gauge-strip toggle (Shop 'all': the stackbars worklist)
+  if (closest('.js-cardglobe')) {   // R32 — toggle card-search global mode; lights/dims EVERY grid-card globe in lockstep
+    e.stopPropagation();
+    const card = closest('.js-cardglobe').dataset.card, cs = activeSession().cards[card];
+    if (!state.globalMode) { state.globalMode = true; setQueryValue(cs.search || ''); render(); }   // ENGAGE — seed the shared query from THIS bar (searchMode stays off if empty → lit globe, no narrowing)
+    else { state.globalMode = false; state.query = ''; state.filterTerms = []; state.searchMode = false; resetListLimits(); render(); }   // DISENGAGE from any bar → each card restores its own (dormant) cs.search
+    const inp = document.querySelector(`.mini-search[data-card="${card}"]`);
+    if (inp) { inp.focus(); const n = inp.value.length; try { inp.setSelectionRange(n, n); } catch (_) {} }
+    return;
+  }
   if (closest('.js-gv-chev')) { e.stopPropagation(); const b = closest('.js-gv-chev'); return gvChevron(b.dataset.card, b.dataset.src || b.dataset.card, Number(b.dataset.dir)); }   // §13.4 cycle the active graph view
   if (closest('.js-gv-seg')) { e.stopPropagation(); const b = closest('.js-gv-seg'); return toggleGraphSeg(b.dataset.card, b.dataset.src || b.dataset.card, b.dataset.col, b.dataset.value, b.dataset.label); }   // §13.4 toggle a slice/bar/row/number → search entry
   if (closest('.js-gvwin')) { e.stopPropagation(); const b = closest('.js-gvwin'); return openGvWinMenu(b, b.dataset.card, b.dataset.src); }   // §13.4 open the timeline window menu
@@ -18820,6 +18864,22 @@ function onInput(e) {
       state.calSearch = e.target.value;
       const sel = e.target.selectionStart; render();
       const ms = document.querySelector('.mini-search[data-card="calendar"]'); if (ms) { ms.focus(); ms.setSelectionRange(sel, sel); }
+      return;
+    }
+    // R32 global mode — this bar drives the shared state.query. Re-narrow EVERY grid card
+    // (renderCardList keeps each input mounted) and mirror the query into the other bars; only
+    // the full-render fallback needs the caret restore below.
+    if (flagOn('cardGlobalSearch') && state.globalMode) {
+      const sel = e.target.selectionStart;
+      setQueryValue(e.target.value);
+      const sw = e.target.closest('.mini-searchwrap');
+      if (sw) sw.classList.toggle('has-query', !!(e.target.value.trim() || state.filterTerms.length));
+      scheduleGlobalSearchRender(() => {
+        GRID_CARDS.forEach((c) => renderCardList(c.id));
+        mirrorGlobeBars(card);
+        const inp = document.querySelector(`.mini-search[data-card="${card}"]`);
+        if (inp && document.activeElement !== inp) { inp.focus(); try { inp.setSelectionRange(sel, sel); } catch (_) {} }
+      });
       return;
     }
     const mcs = activeSession().cards[card]; mcs.search = e.target.value; mcs.listLimit = undefined;
@@ -23440,6 +23500,13 @@ function boot() {
     // §5.4 (per-card) — same Enter-to-pin / Backspace-to-pop on a card's list search.
     if (e.target.classList.contains('mini-search') && e.target.dataset.card && !e.target.classList.contains('js-history-search')) {
       if (e.target.dataset.card === 'calendar') return;   // Trips search is a plain filter, no filter-term pinning (Phase 1 scope; no session.cards.calendar to pin against)
+      // R32 global mode — this bar drives the shared query: Enter pins a GLOBAL filter term
+      // (mirrored into every bar), Backspace-on-empty pops it. Skip the per-card customers quick-add.
+      if (flagOn('cardGlobalSearch') && state.globalMode) {
+        if (e.key === 'Enter') { e.preventDefault(); addFilterTerm('global', e.target.value); return; }
+        if (e.key === 'Backspace' && !e.target.value && state.filterTerms.length) { e.preventDefault(); removeFilterTerm('global', state.filterTerms.length - 1); return; }
+        return;
+      }
       const card = e.target.dataset.card; const cs = activeSession().cards[card];
       if (e.key === 'Enter') {
         e.preventDefault();
