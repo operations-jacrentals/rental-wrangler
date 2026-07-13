@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sample Rental Quote — JacRentals</title>
+<meta name="description" content="An example of the rental quote page a JacRentals customer views from a service text message. Sample data only." />
+<style>
+  :root{
+    --bg:#f7f6f3; --panel:#ffffff; --ink:#1c2126; --ink2:#4c555f; --line:#e3e0d9;
+    --accent:#c25a2b; --accent-ink:#7a3a1a; --ok:#2f7d4f;
+    --serif:'Iowan Old Style','Palatino Linotype',Georgia,'Times New Roman',serif;
+    --sans:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#14171b; --panel:#1b1f24; --ink:#e7ebf0; --ink2:#a3acb6; --line:#2b3138; --accent:#e08a52; --accent-ink:#e08a52; --ok:#5fb98a; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.6;font-size:17px}
+  .wrap{max-width:680px;margin:0 auto;padding:0 22px 80px}
+  header{border-bottom:3px solid var(--accent);margin-bottom:24px;padding:34px 0 18px}
+  .mark{font-family:var(--sans);font-weight:800;letter-spacing:.5px;font-size:15px;text-transform:uppercase;color:var(--accent-ink)}
+  h1{font-family:var(--serif);font-weight:600;font-size:34px;line-height:1.1;margin:10px 0 6px;text-wrap:balance}
+  .eff{color:var(--ink2);font-size:14px;margin:0}
+  h2{font-family:var(--serif);font-weight:600;font-size:21px;margin:34px 0 8px}
+  p{margin:0 0 14px;color:var(--ink)}
+  a{color:var(--accent-ink);text-decoration:underline}
+  strong{font-weight:700}
+  .sample-note{background:var(--panel);border:1px dashed var(--accent);border-radius:8px;
+    padding:12px 16px;margin:0 0 22px;color:var(--ink2);font-size:14.5px}
+  .quote{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px;margin:8px 0}
+  .qhead{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 18px;
+    border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:14px}
+  .qhead .lbl{color:var(--ink2);font-size:13px;text-transform:uppercase;letter-spacing:.5px}
+  .qhead .val{font-weight:700}
+  table{width:100%;border-collapse:collapse;font-size:15.5px}
+  th,td{text-align:left;padding:9px 6px;border-bottom:1px solid var(--line)}
+  th{color:var(--ink2);font-size:13px;text-transform:uppercase;letter-spacing:.4px;font-weight:700}
+  td.num,th.num{text-align:right;white-space:nowrap}
+  tfoot td{border-bottom:0;font-weight:700;font-size:18px;padding-top:14px}
+  tfoot td.total{color:var(--accent-ink)}
+  .fine{font-size:13px;color:var(--ink2);margin:16px 0 0}
+  footer{margin-top:40px;padding-top:18px;border-top:1px solid var(--line);color:var(--ink2);font-size:14px}
+  footer a{color:var(--accent-ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="mark">JacRentals</div>
+    <h1>Rental Quote</h1>
+    <p class="eff">Heavy-equipment rental · Sulphur, Louisiana · (337) 607-1352</p>
+  </header>
+
+  <p class="sample-note"><strong>Example page.</strong> This is a sample of the quote a JacRentals
+    customer opens from a service text message. The details below are illustrative sample data — not a
+    real customer's quote.</p>
+
+  <div class="quote">
+    <div class="qhead">
+      <div><div class="lbl">Quote</div><div class="val">#04i07Ju26</div></div>
+      <div><div class="lbl">Prepared for</div><div class="val">Sample Customer</div></div>
+      <div><div class="lbl">Valid through</div><div class="val">Jul 14, 2026</div></div>
+    </div>
+
+    <table>
+      <thead>
+        <tr><th>Item</th><th class="num">Rate</th><th class="num">Qty</th><th class="num">Amount</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Mini Excavator — daily rental</td><td class="num">$285.00</td><td class="num">3 days</td><td class="num">$855.00</td></tr>
+        <tr><td>Delivery &amp; pickup (Sulphur area)</td><td class="num">$90.00</td><td class="num">1</td><td class="num">$90.00</td></tr>
+        <tr><td>Damage waiver</td><td class="num">$42.75</td><td class="num">1</td><td class="num">$42.75</td></tr>
+      </tbody>
+      <tfoot>
+        <tr><td colspan="3">Estimated total</td><td class="num total">$987.75</td></tr>
+      </tfoot>
+    </table>
+
+    <p class="fine">Estimate only; taxes and final charges are confirmed at contract. Questions about
+      this quote? Call us at <a href="tel:+13376071352">(337) 607-1352</a> or reply to your text.</p>
+  </div>
+
+  <h2>About these texts</h2>
+  <p>JacRentals sends service text messages only to customers who opted in. <strong>Message frequency
+    varies</strong> and <strong>message and data rates may apply.</strong> Reply <strong>STOP</strong>
+    to opt out, <strong>HELP</strong> for help. See our
+    <a href="./sms-terms.html">SMS Terms &amp; Conditions</a> and
+    <a href="./privacy.html">Privacy Policy</a>, or learn more <a href="./about.html">about JacRentals</a>.</p>
+
+  <footer>© 2026 JacRentals · Sulphur, Louisiana · <a href="tel:+13376071352">(337) 607-1352</a> ·
+    <a href="mailto:operations@jacrentals.com">operations@jacrentals.com</a></footer>
+</div>
+</body>
+</html>
