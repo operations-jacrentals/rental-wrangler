@@ -282,7 +282,7 @@ input { font-family: inherit; }
 .mini-searchwrap .filt-term .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mini-searchwrap .ft-neg { width: 14px; height: 14px; }
 .mini-searchwrap .filt-term.neg .ft-neg::before { width: 7px; }
-/* R32 — card-search GLOBAL-MODE globe: icon-only toggle pinned right in the mini search bar.
+/* R33 — card-search GLOBAL-MODE globe: icon-only toggle pinned right in the mini search bar.
    Dim steel at rest → safety-orange when engaged (every grid-card globe lights in lockstep). */
 .mini-globe { flex: 0 0 auto; margin-left: auto; align-self: center; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 8px; color: var(--txt-3); background: transparent; }
 .mini-globe svg { width: 15px; height: 15px; }

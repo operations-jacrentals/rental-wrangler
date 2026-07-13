@@ -2275,7 +2275,7 @@ const state = {
   theme: 'bluedsteel',   // Blued Steel is the only theme now — Yard mode removed (Jac 2026-06-15)
   query: '',
   searchMode: false,
-  globalMode: false,   // card-search global mode (R32): the globe toggle is engaged → every grid-card bar drives the shared state.query. Distinct from searchMode (which is false when the query is empty even while the globe is lit).
+  globalMode: false,   // card-search global mode (R33): the globe toggle is engaged → every grid-card bar drives the shared state.query. Distinct from searchMode (which is false when the query is empty even while the globe is lit).
   tabs: [],            // [{ id, card, recId, label, sub, color, session }]
   activeTabId: null,
   defaultSession: freshSession(),
@@ -5776,14 +5776,14 @@ function ghostPill(label, { js, data, tip, disabled, icon } = {}) {
 function toggleChip(label, on, { js, data, tone = 'accent' } = {}) {
   return `<button class="chip-toggle${on ? ` on tone-${tone}` : ''}${js ? ' ' + js : ''}" data-r="R31"${dataAttrs(data)} aria-pressed="${on ? 'true' : 'false'}">${esc(label)}</button>`;
 }
-/** R32: the GLOBAL-MODE globe — an icon-only toggle pinned to the right of a grid card's
+/** R33: the GLOBAL-MODE globe — an icon-only toggle pinned to the right of a grid card's
  *  search bar (card-search global mode, 2026-07-13). Flips that bar — and every grid-card
  *  bar in lockstep — between per-card search and whole-yard "global" search: dim steel off,
  *  safety-orange on. A scope-MODE toggle (like R31 but icon-only + it drives the shared
  *  state.query), never a status color. Rendered only when flagOn('cardGlobalSearch'). */
 function globeToggle(card, on) {
   const lbl = on ? 'Search this card only' : 'Round up the whole yard — search all cards';
-  return `<button class="mini-globe${on ? ' on' : ''} js-cardglobe" data-r="R32" data-card="${esc(card)}" aria-pressed="${on ? 'true' : 'false'}" aria-label="${esc(lbl)}" data-tip="${on ? 'Search this card only' : 'Round up the whole yard'}">${I.globe}</button>`;
+  return `<button class="mini-globe${on ? ' on' : ''} js-cardglobe" data-r="R33" data-card="${esc(card)}" aria-pressed="${on ? 'true' : 'false'}" aria-label="${esc(lbl)}" data-tip="${on ? 'Search this card only' : 'Round up the whole yard'}">${I.globe}</button>`;
 }
 /** The popup PLATE — every overlay's shell, so they all read as one bolted data-plate.
  *  Hazard cap (red `danger` variant for abort/destroy) + corner rivets + stamped Saira
@@ -5845,7 +5845,7 @@ const RULE_META = {
   R29: ['Invoice action menu', 'invoiceStatMenu', 'the expanded-invoice header control: a hazard-stripe status pill (green solid = paid · yellow-stripe = partial · red-stripe = due; goes SOLID while its menu is open) that DOUBLES as the Pay · Print · Send · Refund action menu. A pressable-status control like R1, but it opens actions rather than advancing a status. Pay/Refund reuse the canMoney()-gated payment window.'],
   R30: ['Paused banner', '.wr-paused (wranglerDockBodyHtml)', 'red hazard-stripe plate inside the Mr. Wrangler dock/rail window — raised when a Developer-tier operator takes the wheel (Wrangler Ops live jump-in, §18i); the composer goes read-only until released'],
   R31: ['Toggle chip', 'toggleChip', 'a single interactive on/off pill (PO required, Rental Protection) — off = quiet outline, on = the registry tone color fill. Distinct from R14: ONE control, not a joined group of options.'],
-  R32: ['Global toggle', 'globeToggle', 'the icon-only globe pinned right in a grid card’s search bar — flips that bar, and every grid-card bar in lockstep, between per-card and whole-yard “global” search (dim steel off, safety-orange on). A scope-MODE toggle like R31 but icon-only + it drives the shared query; replaces the old giant #globalsearch bar. Behind FEATURES.cardGlobalSearch.'],
+  R33: ['Global toggle', 'globeToggle', 'the icon-only globe pinned right in a grid card’s search bar — flips that bar, and every grid-card bar in lockstep, between per-card and whole-yard “global” search (dim steel off, safety-orange on). A scope-MODE toggle like R31 but icon-only + it drives the shared query; replaces the old giant #globalsearch bar. Behind FEATURES.cardGlobalSearch.'],
 };
 /* ════════════ APP-12 · DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
    The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
@@ -5968,7 +5968,7 @@ const RB_TABS = [
   { id: 'pills', label: 'Pills & Flags', intro: 'The status vocabulary — every colored chip and exactly what it’s allowed to mean.',
     items: [{ r: 'R1' }, { r: 'R2' }, { r: 'R3' }, { r: 'R3b' }, { r: 'R4' }, { r: 'R4b' }, { r: 'R9' }, { r: 'R9b' }] },
   { id: 'fields', label: 'Fields & Adds', intro: 'Where you type, link, and add.',
-    items: [{ r: 'R5' }, { r: 'R5b' }, { r: 'R5c' }, { r: 'R6' }, { r: 'R7' }, { r: 'R8' }, { r: 'R14' }, { r: 'R22' }, { r: 'R31' }, { r: 'R32' }] },
+    items: [{ r: 'R5' }, { r: 'R5b' }, { r: 'R5c' }, { r: 'R6' }, { r: 'R7' }, { r: 'R8' }, { r: 'R14' }, { r: 'R22' }, { r: 'R31' }, { r: 'R33' }] },
   { id: 'actions', label: 'Actions', intro: 'Buttons that DO something — colored by intent.',
     items: [{ r: 'R17' }, { r: 'R18' }, { r: 'R24' }, { r: 'R26' }, { r: 'R28' }, { r: 'R29' }] },
   { id: 'upload', label: 'Upload & Capture', intro: 'Add-file zones and photo/site captures.',
@@ -8905,7 +8905,7 @@ function listView(cardDef, session) {
   const cascaded = session.anchor && card !== session.anchor.card && session.cascade && !cs.released && !wave2ListOverride(card, session);
   const anchorName = cascaded ? (state.tabs.find((t) => t.session === session)?.label || 'anchor') : '';
   const cascChip = cascaded ? `<span class="casc-chip" data-tip="Cascaded from ${esc(anchorName)} — clear to browse all & add">🔗<span class="cc-name">${esc(anchorName)}</span>${closeX('js-uncascade', { data: { card } })}</span>` : '';
-  // R32 global mode — when the globe is engaged, every grid-card bar mirrors the ONE shared
+  // R33 global mode — when the globe is engaged, every grid-card bar mirrors the ONE shared
   // state.query + global filter-pills (the whole yard searches as one); otherwise it shows its
   // own per-card cs.search + local pills (today's behavior). The globe stays a lockstep toggle.
   const glob = flagOn('cardGlobalSearch') && state.globalMode;
@@ -8957,7 +8957,7 @@ function listView(cardDef, session) {
 function cardListEl(cardDef, session) {
   const card = cardDef.id;
   const cs = session.cards[card];
-  const glob = flagOn('cardGlobalSearch') && state.globalMode;   // R32 — global mode drives every card from the shared state.query (via listFor); the per-card cs.search is dormant
+  const glob = flagOn('cardGlobalSearch') && state.globalMode;   // R33 — global mode drives every card from the shared state.query (via listFor); the per-card cs.search is dormant
   let rows = listFor(card, session);
   if (card === 'units') rows = unitsVisible(rows, cs);   // default: Active only — hide non-Active fleet (or reveal via the sort) (#2/#34)
   if (card === 'rentals') rows = rentalsVisible(rows, session, cs);   // default: live work queue — cleared (all-terminal) rentals hidden; cascade/search/"Completed" sort reveal
@@ -8971,7 +8971,7 @@ function cardListEl(cardDef, session) {
     if (!reveal) rows = rows.filter((u) => u.fleetStatus === 'Active');
   }
   if (card === 'invoices' && cs.payMethod && cs.payMethod !== 'all') rows = rows.filter((i) => invMethodClass(i) === cs.payMethod);   // §337 stacks with search/status/sort
-  // R32 global mode — listFor() already narrowed every card by the shared query; skip the
+  // R33 global mode — listFor() already narrowed every card by the shared query; skip the
   // per-card cs.search filter so no card double-filters and each card's own search is preserved.
   if (!glob && (cs.search.trim() || (cs.filterTerms || []).length)) { rows = rows.filter((rec) => rowMatches(card, rec, cs.search, cs.filterTerms)); }
   rows = sortRows(card, rows, cs.sort);
@@ -8995,7 +8995,7 @@ function cardListEl(cardDef, session) {
   }
   if (!rows.length) {
     // a fruitless customer search offers a prefilled +New Customer (typed name/phone carries in)
-    // R32 — the per-card "+New from this search" empties are per-card affordances keyed off
+    // R33 — the per-card "+New from this search" empties are per-card affordances keyed off
     // cs.search; suppress them in global mode (the shared query drives, cs.search is dormant).
     if (!glob && card === 'customers' && cs.search.trim() && !session.anchor) {
       const en = el('div', 'empty-new');
@@ -9380,7 +9380,7 @@ function headerEl() {
         <span class="spacer"></span>
         ${currentUser ? `<span class="hello-name">${esc(currentUser)}</span>` : ''}
       </div>
-      ${isPhone || flagOn('cardGlobalSearch') ? '' /* §M7 — no global search on mobile; and when the R32 card-bar global mode is on, the globes replace this giant bar on desktop too */ : `<div class="toolbar">
+      ${isPhone || flagOn('cardGlobalSearch') ? '' /* §M7 — no global search on mobile; and when the R33 card-bar global mode is on, the globes replace this giant bar on desktop too */ : `<div class="toolbar">
         <div class="searchwrap ${state.filterTerms.length ? 'has-terms' : ''}${state.query.trim() || state.filterTerms.length ? ' has-query' : ''}">
           ${state.filterTerms.length > 1 ? closeX('js-clear') : ''}
           <span class="s-icon">${I.search}</span>
@@ -15820,7 +15820,7 @@ function renderCardList(card) {
   body.scrollTop = 0;   // new query → show results from the top (mirrors the full-render list reset)
   applyTitles();        // re-arm truncation tooltips on the fresh rows (rAF-deferred, hover-only — no cost on touch)
 }
-/* R32 global mode — while typing in ONE grid-card bar, the other bars' inputs stay mounted
+/* R33 global mode — while typing in ONE grid-card bar, the other bars' inputs stay mounted
    (renderCardList rebuilds only rows), so live-mirror the shared query into them by hand so the
    whole yard reads as one search. Cheap DOM-value sync, no header/grid rebuild. */
 function mirrorGlobeBars(exceptCard) {
@@ -17259,7 +17259,7 @@ function onClick(e) {
   if (closest('.js-ff-save')) { e.stopPropagation(); return saveFileForm(); }
   if (closest('.js-vendor-tax')) { e.stopPropagation(); const b = closest('.js-vendor-tax'); const v = recOf('vendors', b.dataset.rec); if (v) { const ex = b.dataset.val === '1'; if (!!v.salesTaxExempt !== ex) { v.salesTaxExempt = ex; reindex('vendors', v); logAction(v, `Sales tax → ${ex ? 'Exempt' : 'Taxed'}`); } if (state.overlay?.kind === 'board') renderOverlay(); render(); } return; }
   if (closest('.js-cardgraph')) { e.stopPropagation(); const b = closest('.js-cardgraph'); const card = b.dataset.card, src = b.dataset.src || card; const cs = activeSession().cards[card]; if (!cs.graphView) { if (graphViewsFor(src)) return gvOpen(card, src); cs.graphView = true; return render(); } cs.graphView = false; return render(); }   // §13.7 gauge-strip toggle (Shop 'all': the stackbars worklist)
-  if (closest('.js-cardglobe')) {   // R32 — toggle card-search global mode; lights/dims EVERY grid-card globe in lockstep
+  if (closest('.js-cardglobe')) {   // R33 — toggle card-search global mode; lights/dims EVERY grid-card globe in lockstep
     e.stopPropagation();
     const card = closest('.js-cardglobe').dataset.card, cs = activeSession().cards[card];
     if (!state.globalMode) { state.globalMode = true; setQueryValue(cs.search || ''); render(); }   // ENGAGE — seed the shared query from THIS bar (searchMode stays off if empty → lit globe, no narrowing)
@@ -18866,7 +18866,7 @@ function onInput(e) {
       const ms = document.querySelector('.mini-search[data-card="calendar"]'); if (ms) { ms.focus(); ms.setSelectionRange(sel, sel); }
       return;
     }
-    // R32 global mode — this bar drives the shared state.query. Re-narrow EVERY grid card
+    // R33 global mode — this bar drives the shared state.query. Re-narrow EVERY grid card
     // (renderCardList keeps each input mounted) and mirror the query into the other bars; only
     // the full-render fallback needs the caret restore below.
     if (flagOn('cardGlobalSearch') && state.globalMode) {
@@ -23500,7 +23500,7 @@ function boot() {
     // §5.4 (per-card) — same Enter-to-pin / Backspace-to-pop on a card's list search.
     if (e.target.classList.contains('mini-search') && e.target.dataset.card && !e.target.classList.contains('js-history-search')) {
       if (e.target.dataset.card === 'calendar') return;   // Trips search is a plain filter, no filter-term pinning (Phase 1 scope; no session.cards.calendar to pin against)
-      // R32 global mode — this bar drives the shared query: Enter pins a GLOBAL filter term
+      // R33 global mode — this bar drives the shared query: Enter pins a GLOBAL filter term
       // (mirrored into every bar), Backspace-on-empty pops it. Skip the per-card customers quick-add.
       if (flagOn('cardGlobalSearch') && state.globalMode) {
         if (e.key === 'Enter') { e.preventDefault(); addFilterTerm('global', e.target.value); return; }
