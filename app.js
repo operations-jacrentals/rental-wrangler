@@ -2714,7 +2714,7 @@ function cardJog(card, cs) {
   if (!cs || (!cs.backStack.length && !cs.fwdStack.length && !inRecord)) return '';
   const arm = (dir, on, ico, tip) =>
     `<button class="jog-btn js-card${dir}" data-card="${esc(card)}" ${on ? '' : 'disabled'} data-tip="${tip}" aria-label="${tip}">${ico}</button>`;
-  return `<div class="card-jog" role="group" aria-label="View history">`
+  return `<div class="card-jog" role="group" aria-label="View history" data-r="R32">`
     + arm('back', cs.backStack.length || inRecord, I.chevL, 'Back')
     + arm('fwd', cs.fwdStack.length, I.chevR, 'Forward')
     + `</div>`;
@@ -5835,6 +5835,7 @@ const RULE_META = {
   R29: ['Invoice action menu', 'invoiceStatMenu', 'the expanded-invoice header control: a hazard-stripe status pill (green solid = paid · yellow-stripe = partial · red-stripe = due; goes SOLID while its menu is open) that DOUBLES as the Pay · Print · Send · Refund action menu. A pressable-status control like R1, but it opens actions rather than advancing a status. Pay/Refund reuse the canMoney()-gated payment window.'],
   R30: ['Paused banner', '.wr-paused (wranglerDockBodyHtml)', 'red hazard-stripe plate inside the Mr. Wrangler dock/rail window — raised when a Developer-tier operator takes the wheel (Wrangler Ops live jump-in, §18i); the composer goes read-only until released'],
   R31: ['Toggle chip', 'toggleChip', 'a single interactive on/off pill (PO required, Rental Protection) — off = quiet outline, on = the registry tone color fill. Distinct from R14: ONE control, not a joined group of options.'],
+  R32: ['Nav jog', 'cardJog / .card-jog · .mjog', 'the two-way Back/Forward view-history stepper: neutral steel pill, chevron arms split by a saddle-stitch seam, orange only on hover/press. Desktop rides the card header + list-bar; on phone it is the floating .mjog pill pinned to the bottom-right of the active column (record view can always step Back to its list).'],
 };
 /* ════════════ APP-12 · DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
    The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
@@ -5959,7 +5960,7 @@ const RB_TABS = [
   { id: 'fields', label: 'Fields & Adds', intro: 'Where you type, link, and add.',
     items: [{ r: 'R5' }, { r: 'R5b' }, { r: 'R5c' }, { r: 'R6' }, { r: 'R7' }, { r: 'R8' }, { r: 'R14' }, { r: 'R22' }, { r: 'R31' }] },
   { id: 'actions', label: 'Actions', intro: 'Buttons that DO something — colored by intent.',
-    items: [{ r: 'R17' }, { r: 'R18' }, { r: 'R24' }, { r: 'R26' }, { r: 'R28' }, { r: 'R29' }] },
+    items: [{ r: 'R17' }, { r: 'R18' }, { r: 'R24' }, { r: 'R26' }, { r: 'R28' }, { r: 'R29' }, { r: 'R32' }] },
   { id: 'upload', label: 'Upload & Capture', intro: 'Add-file zones and photo/site captures.',
     items: [{ r: 'R21' }, { f: 'upload-capture' }] },
   { id: 'data', label: 'Data & Behaviors', intro: 'Visualizations, plus the app’s behaviors — it flashes instead of erroring, right-clicks, tooltips, and self-lints.',
@@ -8705,6 +8706,13 @@ function columnEl(col, session) {
     const lb = card.querySelector('.card-body .listbar');
     if (lb) { const slot = el('div', 'mdock-searchslot'); slot.appendChild(lb); wrap.appendChild(slot); }
     wrap.appendChild(card);
+    // §M / R32 — on phone the Back/Forward jog is the floating .mjog pill pinned to THIS
+    // column's bottom-right (per-column: the snapped column's own history control is what
+    // shows, no scroll-sync needed). Serves both list AND record view — the one mount that
+    // survives §M7 deleting the old bottom dock. Empty until the card has history or shows a
+    // record (cardJog returns '').
+    const jogHtml = cardJog(active, cs);
+    if (jogHtml) { wrap.classList.add('has-mjog'); const mjog = el('div', 'mjog'); mjog.innerHTML = jogHtml; wrap.appendChild(mjog); }
     return wrap;
   }
   // Desktop: the sub-card tab strip + search/sort bar live INSIDE the card top (a full-width card
@@ -8858,7 +8866,7 @@ function cardEl(cardDef, session) {
       : '';
     const head = el('div', 'card-head');
     head.innerHTML = `
-      ${document.body.classList.contains('is-phone') ? '' : cardJog(card, cs)}${/* §M — on phones the jog rides the bottom dock (where List view keeps it), not the card header */ ''}
+      ${document.body.classList.contains('is-phone') ? '' : cardJog(card, cs)}${/* §M/R32 — on phones the jog is the floating .mjog pill pinned per-column (columnEl), not the card header */ ''}
       <span class="c-titlecard"><span class="c-icon">${CARD_ICON[card] || ''}</span>${titleHtml}</span>
       ${commentMarkerHtml(card, stdRec)}
       ${headFlagsHtml(card, stdRec)}`;
@@ -8895,7 +8903,7 @@ function listView(cardDef, session) {
   const anchorName = cascaded ? (state.tabs.find((t) => t.session === session)?.label || 'anchor') : '';
   const cascChip = cascaded ? `<span class="casc-chip" data-tip="Cascaded from ${esc(anchorName)} — clear to browse all & add">🔗<span class="cc-name">${esc(anchorName)}</span>${closeX('js-uncascade', { data: { card } })}</span>` : '';
   bar.innerHTML = `
-    ${cardJog(card, cs)}
+    ${document.body.classList.contains('is-phone') ? '' /* §M/R32 — on phone the jog is the floating .mjog pill (columnEl), not the list-bar */ : cardJog(card, cs)}
     <button class="bv-btn js-cardgraph${cs.graphView ? ' on' : ''}" data-card="${card}" data-tip="${cs.graphView ? 'Back to list' : 'Graph view'}">${I.graph}</button>
     <div class="mini-searchwrap${cterms.length || cascChip ? ' has-terms' : ''}${cs.search.trim() || cterms.length ? ' has-query' : ''}">
       ${cascChip}${cterms.map((ft, i) => filterTermPill(ft, i, card)).join('')}
