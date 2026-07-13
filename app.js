@@ -2275,6 +2275,7 @@ const state = {
   theme: 'bluedsteel',   // Blued Steel is the only theme now — Yard mode removed (Jac 2026-06-15)
   query: '',
   searchMode: false,
+  globalMode: false,   // card-search global mode (R32): the globe toggle is engaged → every grid-card bar drives the shared state.query. Distinct from searchMode (which is false when the query is empty even while the globe is lit).
   tabs: [],            // [{ id, card, recId, label, sub, color, session }]
   activeTabId: null,
   defaultSession: freshSession(),
@@ -2422,7 +2423,7 @@ function openInTab(card, recId, recType, opts = {}) {
   if (opts.seedHistory) { const dst = tab.session.cards[opts.seedHistory.card]; if (dst) { dst.backStack = opts.seedHistory.stack.slice(-HIST_CAP); dst.fwdStack = []; } }
   state.tabs.push(tab);
   state.activeTabId = tab.id;                       // FOREGROUND — switch to it
-  state.searchMode = false; state.query = '';
+  state.searchMode = false; state.query = ''; state.globalMode = false;
   render();
 }
 
@@ -2444,13 +2445,13 @@ function tabMeta(card, recId, rec, recType) {
 }
 function switchTab(id) {
   if (state.activeTabId === id) { resetToAnchor(id); return; }   // active tab = RESET to the anchored view (Jac), not close
-  state.activeTabId = id; state.searchMode = false; state.query = ''; render();
+  state.activeTabId = id; state.searchMode = false; state.query = ''; state.globalMode = false; render();
 }
 // Item Tab as a reset: re-cascade every card + reopen the anchored item's detail.
 function resetToAnchor(id) {
   const tab = state.tabs.find((t) => t.id === id);
   if (tab && tab.session.anchor) { const a = tab.session.anchor; setAnchor(tab.session, a.card, a.recId, a.recType); }   // clears releases/searches too
-  state.searchMode = false; state.query = ''; render();
+  state.searchMode = false; state.query = ''; state.globalMode = false; render();
 }
 function closeTab(id) {
   const i = state.tabs.findIndex((t) => t.id === id);
@@ -2464,7 +2465,7 @@ function closeAll() {
   // Clearing the item-tab rail returns to a clean slate, so the search bars must
   // go with it — both the global one (query + pinned filter pills) and every
   // per-card mini-search on the now-active default session (these stayed filled).
-  state.searchMode = false; state.query = ''; state.filterTerms = []; state.calSearch = '';
+  state.searchMode = false; state.query = ''; state.globalMode = false; state.filterTerms = []; state.calSearch = '';
   for (const c of GRID_CARDS) { const ccs = state.defaultSession.cards[c.id]; if (ccs) { ccs.search = ''; ccs.filterTerms = []; ccs.listLimit = undefined; } }
   state.winEdit = null; state.datesearch = null;
   render();
@@ -2851,7 +2852,7 @@ function resetListLimits() { const s = activeSession(); if (s && s.cards) Object
 // Any search/filter-set change restarts each card at 60 rows (keeps typing snappy
 // and a new query doesn't inherit a previous "Show more" expansion).
 function recomputeSearchMode() { state.searchMode = !!(state.query.trim() || state.filterTerms.length); resetListLimits(); }
-function clearSearch() { state.query = ''; state.filterTerms = []; state.searchMode = false; resetListLimits(); render(); }
+function clearSearch() { state.query = ''; state.filterTerms = []; state.searchMode = false; state.globalMode = false; resetListLimits(); render(); }
 /** Core matcher (§5.4): blob must include the live query AND satisfy every pinned
     term — an include term (neg:false) must be present, a NOT term (neg:true) absent. */
 function blobMatches(blob, query, terms) {
@@ -8934,6 +8935,7 @@ function listView(cardDef, session) {
 function cardListEl(cardDef, session) {
   const card = cardDef.id;
   const cs = session.cards[card];
+  const glob = flagOn('cardGlobalSearch') && state.globalMode;   // R32 — global mode drives every card from the shared state.query (via listFor); the per-card cs.search is dormant
   let rows = listFor(card, session);
   if (card === 'units') rows = unitsVisible(rows, cs);   // default: Active only — hide non-Active fleet (or reveal via the sort) (#2/#34)
   if (card === 'rentals') rows = rentalsVisible(rows, session, cs);   // default: live work queue — cleared (all-terminal) rentals hidden; cascade/search/"Completed" sort reveal
@@ -8947,7 +8949,9 @@ function cardListEl(cardDef, session) {
     if (!reveal) rows = rows.filter((u) => u.fleetStatus === 'Active');
   }
   if (card === 'invoices' && cs.payMethod && cs.payMethod !== 'all') rows = rows.filter((i) => invMethodClass(i) === cs.payMethod);   // §337 stacks with search/status/sort
-  if (cs.search.trim() || (cs.filterTerms || []).length) { rows = rows.filter((rec) => rowMatches(card, rec, cs.search, cs.filterTerms)); }
+  // R32 global mode — listFor() already narrowed every card by the shared query; skip the
+  // per-card cs.search filter so no card double-filters and each card's own search is preserved.
+  if (!glob && (cs.search.trim() || (cs.filterTerms || []).length)) { rows = rows.filter((rec) => rowMatches(card, rec, cs.search, cs.filterTerms)); }
   rows = sortRows(card, rows, cs.sort);
   // §10 — while a rental window is in scope, order Units: available+Ready, available+Not
   // Ready, available+Failed, then anything unavailable. Categories: available first.
@@ -8969,11 +8973,13 @@ function cardListEl(cardDef, session) {
   }
   if (!rows.length) {
     // a fruitless customer search offers a prefilled +New Customer (typed name/phone carries in)
-    if (card === 'customers' && cs.search.trim() && !session.anchor) {
+    // R32 — the per-card "+New from this search" empties are per-card affordances keyed off
+    // cs.search; suppress them in global mode (the shared query drives, cs.search is dormant).
+    if (!glob && card === 'customers' && cs.search.trim() && !session.anchor) {
       const en = el('div', 'empty-new');
       en.innerHTML = `<div class="empty">No customer matches “${esc(cs.search.trim())}”.</div><button class="bigbtn js-new-cust-search">${I.plus} New Customer “${esc(cs.search.trim())}”</button>`;
       list.appendChild(en);
-    } else if ((card === 'units' || card === 'categories') && cs.search.trim() && !session.anchor) {
+    } else if (!glob && (card === 'units' || card === 'categories') && cs.search.trim() && !session.anchor) {
       // a fruitless Units/Categories search offers a prefilled +New one — the typed name carries
       // straight into the new record, which opens in Standard view to fill in inline (Jac).
       const q = cs.search.trim();
