@@ -1,38 +1,71 @@
 ---
 name: promote
-description: Gate 2 of the two-gate workflow — promote the approved trunk commit to PRODUCTION (go live) via tools/promote.mjs. Use ONLY when Jac explicitly says "promote it". Preview first (bare), then --yes. REFUSES to promote if staging is behind the trunk commit (staging must never fall behind production). Invoke with /promote.
+description: STEP 3 / Gate 2 of the ship flow (/deploy → /merge → /promote) — promote the trunk commit to PRODUCTION (go live) via tools/promote.mjs. Use ONLY when Jac says "promote it". Preview first, then --yes. ALWAYS runs /merge (which runs /deploy) first if the work isn't on trunk yet. REFUSES to promote unless staging matches trunk. Invoke with /promote.
 ---
 
-# /promote — take the approved trunk commit LIVE (Gate 2)
+# /promote — take the trunk commit LIVE (Gate 2, "promote it")
 
-`production` is the release-pointer branch GitHub Pages serves at app.jacrentals.com. Promoting
-fast-forwards `production` to the exact `trunk` commit already reviewed on staging and merged via
-Gate 1. **This is the ONLY step that changes the live site — always Jac's explicit call.**
+## The flow — all three gates share this (know it cold)
+
+```
+   FEATURE BRANCH ──/deploy──▶  STAGING      (review mirror — pushes to NOTHING)
+        │
+      /merge   (Gate 1: squash the feature branch INTO trunk)
+        │
+        ▼
+      TRUNK  ──/promote──▶  PRODUCTION        (Gate 2: fast-forward trunk → production = LIVE)
+ (integrated,
+  not live)
+```
+
+- Your **feature branch is the one source**: `/deploy` copies its files to the **staging
+  review site**, and `/merge` folds it into **trunk**.
+- **Staging pushes to nothing** — it's a dead-end copy you look at, never a step between trunk
+  and production.
+- **trunk → production (`/promote`) is the only thing that goes live.**
+
+**Ordered gates — ALWAYS backfill the earlier steps first.** The gates run strictly in the order
+**/deploy → /merge → /promote**. Whichever skill you're invoked as, FIRST confirm the steps
+before it are done; if they are NOT, do them (in order) and THEN your own step — even if Jac
+jumps straight to the last one.
+- **/deploy** — step 1, no predecessor (just needs a feature branch with the work committed).
+- **/merge** — needs **/deploy** first. Missing → run `/deploy`, then merge.
+- **/promote** — needs **/merge** (on trunk) + fresh staging. Missing → run `/merge` (which
+  backfills `/deploy`), then promote.
+
+## Ensure predecessors first — /merge (and /deploy)
+Before you promote anything, confirm the earlier steps are done; if not, backfill them **in
+order** and only then promote:
+1. **Is the thing Jac wants live actually merged to trunk?** If it's still on a feature branch
+   (not on trunk), **run `/merge` first** — and `/merge` itself runs `/deploy` if the feature
+   was never deployed/reviewed. Do NOT promote work that isn't on trunk.
+2. **Is staging fresh?** `promote.mjs` refuses to promote unless the live staging `?v=` equals
+   the trunk commit's `?v=` (so you never ship what staging never showed). If the work went
+   `/deploy → /merge` in order, staging already matches (the feature deploy IS what got merged).
+   If staging is behind, deploy the trunk commit to staging first (a short branch off trunk →
+   `/deploy` → land its `?v=` bump on trunk) — don't reach for the override blindly.
+
+**So if Jac says just "promote it" with nothing done yet:** the chain is **/promote → /merge →
+/deploy**, then back up it — deploy, review, merge, promote. Never skip straight to the push.
+
+## This step — go live
+1. **Preview:** `node tools/promote.mjs` (bare) — prints the `production → trunk` commit range +
+   diffstat + the **staging-freshness** line (✅ matches / 🔴 behind / ⚠️ unreachable). Read it;
+   if 🔴, fix staging first (above), don't force it.
+2. **Confirm with Jac** the exact range shown is what "promote it" means.
+3. **Go live:** `node tools/promote.mjs --yes` — enforces the staging gate + a fast-forward-only
+   push of `production`, then **verifies the LIVE site serves the new `?v=`** (`app.js` → HTTP
+   200). Report the ✅ line. If Pages lags, re-check in ~1 min:
+   `curl -s https://app.jacrentals.com/index.html | grep 'app.js?v='`.
 
 ## Hard rules
 - **Only on Jac's explicit "promote it".** Never promote proactively.
-- **Preview first, always.** Run bare (no `--yes`) to print exactly what would go live — commit
-  range, diffstat, and the staging-freshness result — then STOP.
-- **Staging must not be behind.** `promote.mjs` refuses to promote unless the LIVE staging `?v=`
-  equals the trunk commit's `?v=`. If staging is stale, the promote is BLOCKED — that guard is
-  what keeps staging from falling behind production. Fix it by `/deploy`-ing the merged commit to
-  staging first, then re-run. (Override only if staging genuinely can't be reached and Jac accepts
-  the risk: `--skip-staging-check`, which prints loud.)
-- **Fast-forward only.** If `production` diverged (hotfixed directly / rewritten), the script
-  refuses — a human reconciles it. There is no `--force` path.
-
-## Steps
-1. **Preview:** `node tools/promote.mjs`
-   - Prints the `production → trunk` commit range + diffstat, and the **staging-freshness** line
-     (✅ matches / 🔴 behind / ⚠️ unreachable). Read it. If 🔴, do NOT promote — `/deploy` first.
-2. **Confirm with Jac** that the exact range shown is what "promote it" means.
-3. **Go live:** `node tools/promote.mjs --yes`
-   - Enforces the staging gate + the fast-forward, pushes `production`, then **verifies the LIVE
-     site serves the new `?v=`** and that `app.js?v=` returns HTTP 200. Report the ✅ line to Jac.
-4. If the live-bytes check warns (Pages lag), re-check in ~1 min:
-   `curl -s https://app.jacrentals.com/index.html | grep 'app.js?v='`.
+- **Preview first, always.** Then `--yes`.
+- **Fast-forward only** (no `--force`); if `production` diverged, the script refuses — a human
+  reconciles it.
+- **Irreversible go-live** — `/promote` is the ONLY step that changes app.jacrentals.com.
+- Deliberate override only if staging genuinely can't be reached: `--skip-staging-check` (loud).
 
 ## After
-Production is live. Note the promoted `?v=` in the handoff. When the NEXT feature's `/deploy`
-lands on staging, staging moves ahead of production again — that's correct: staging should
-always LEAD, never lag.
+Production is live. Note the promoted `?v=` in the handoff. When the next feature's `/deploy`
+lands on staging, staging moves ahead of production again — correct: staging always LEADS.
