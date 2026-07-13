@@ -476,7 +476,9 @@ body.is-phone { touch-action: manipulation; }
 .is-phone .mobile-toolbar .mfoot-jog { flex: 0 0 auto; display: flex; align-items: center; }
 .is-phone .mobile-toolbar .mfoot-jog .card-jog { background: transparent; border-color: transparent; box-shadow: none; }
 .is-phone .mobile-toolbar .mfoot-jog .jog-btn + .jog-btn { border-left: none; }   /* no saddle-stitch seam — bare glyphs */
-.is-phone .mobile-toolbar .mfoot-jog .jog-btn[disabled] { color: var(--txt-3); opacity: 1; }   /* greyed but present (~3.8:1) */
+.is-phone .mobile-toolbar .mfoot-jog .jog-btn { color: var(--txt); }              /* enabled = bright, matching the footer's other icon buttons (--txt-2 read too timid) */
+.is-phone .mobile-toolbar .mfoot-jog .jog-btn svg { width: 24px; height: 24px; }  /* match the tool-icon scale */
+.is-phone .mobile-toolbar .mfoot-jog .jog-btn[disabled] { color: var(--txt-2); opacity: 1; }   /* greyed but clearly PRESENT (not the faint --txt-3) */
 .is-phone .mobile-toolbar .top-toolbar { order: 0; margin: 0; padding: 0; flex: 1 1 auto; min-width: 0; }   /* tools scroll in the space left of the pinned jog */
 /* the global tool tray rendered as a phone sheet (§M1 footer → Tools) */
 .tools-tray { display: flex; flex-wrap: wrap; gap: 8px; }
