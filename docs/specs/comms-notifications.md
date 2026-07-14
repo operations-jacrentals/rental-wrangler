@@ -9,6 +9,27 @@
 
 ---
 
+## ✅ Addendum — 2026-07-14 (Jac): TWILIO GO-LIVE + SEND WINDOW 6am–8pm + ADMIN OVERRIDE
+
+Twilio was **approved and taken LIVE** (2026-07-13/14). Changes now in production (backend **v92**):
+
+- **Twilio is the primary SMS provider** (Mocean stays the fallback). The backend auto-selects
+  Twilio whenever `TWILIO_SID` / `TWILIO_TOKEN` / `TWILIO_FROM` are present in Script Properties
+  (no `SMS_PROVIDER` pin needed). Creds were set live via the `adminSetProps` action (not the
+  editor), validated against Twilio's API (number is SMS-capable). Confirmed end-to-end with a
+  real test text (`provider:twilio, status:sent`).
+- **Send window is now 6am–8pm America/Chicago** (was 08:00–20:00). Jac: *"earlier texts for
+  employee use."* `smsQuietNow_()` is `h < 6 || h >= 20`.
+- **Quiet hours apply to EVERY send — manual and automated** (this supersedes §7.2's *"a manual
+  send always goes"*, and continues the 2026-07-09 audit's unconditional-quiet decision). The
+  one escape: an **admin** may pass `override:true` on a **manual** send (never the automated
+  sweep — a client flag can't lift it for `auto`) as a deliberate "send anyway."
+- **New admin read-only action `smsProviderStatus`** — reports provider config *presence*
+  (booleans only, never a value) for the Settings → Integrations LIVE/OFFLINE pill (§6.3) and to
+  confirm creds without a send.
+- **Deferred (Jac's note):** finer *"controls to respect people's quiet time"* (per-recipient /
+  per-event quiet windows) land in the Phase-2 Notifications pane.
+
 ## ✅ Addendum — 2026-07-07 (Jac, PM): D9 SINGLE-OPEN + ALL FOUR CATEGORIES LIVE
 
 Two revisions to D8, both Jac's direct calls:
@@ -497,7 +518,7 @@ Reminders are **derived from existing flags/dates**, not a new clock per event:
 
 ### 7.2 Quiet hours
 
-No **automated** send fires outside `quietHours` (default 20:00–08:00 America/Chicago — Sulphur, LA is Central; **OPEN Q-10** confirm TZ). A **manual** send always goes (a human chose). Deferred sends queue to the next allowed window.
+No send fires outside the **6am–8pm America/Chicago** window — Sulphur, LA is Central (`quietHours` = outside 06:00–20:00). **UPDATED 2026-07-14 (see top addendum):** quiet hours now apply to **every** send, manual and automated — the earlier *"a manual send always goes"* is superseded. The single escape is an **admin** `override:true` on a **manual** send (never the automated sweep). Deferred automated sends queue to the next allowed window. (Window was 08:00–20:00 before 2026-07-14; widened to 06:00 for early employee use. **OPEN Q-10** TZ confirmed = America/Chicago.)
 
 ### 7.3 Money exposure rule
 

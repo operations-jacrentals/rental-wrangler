@@ -1,5 +1,11 @@
 /* Customer SMS — backend addition (comms-notifications Phase 1, spec D1/D2/D3, 2026-07-06)
  *
+ * ⚠ PARTIALLY SUPERSEDED (2026-07-14) — this is the PHASE-1 snapshot. The DEPLOYED backend has
+ *   since changed: quiet hours now apply to EVERY send on a 6am–8pm window with an admin
+ *   `override:true` escape; Twilio is the LIVE primary provider (creds set via adminSetProps);
+ *   and a new `smsProviderStatus` action exists. For the current state trust
+ *   docs/handoffs/comms-twilio-golive-2026-07-14.gs (v92) over the quiet-hours lines below.
+ *
  * ADDITIVE splice for Code.gs (gitignored; pushed via the service-account path —
  * see docs/handoffs/BACKEND-DEPLOY-QUEUE.md; go-live is Jac's editor deploy).
  * Server-side customer channels: SMS via MoceanAPI (spec D1) + EMAIL via GmailApp
