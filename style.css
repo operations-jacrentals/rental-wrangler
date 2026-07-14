@@ -2053,6 +2053,32 @@ select.inline-input:focus-visible { outline: 2px solid var(--accent); outline-of
 .notif-cadence { font-size: 11px; font-style: italic; color: var(--txt-3); margin-top: -3px; }   /* R8 idiom — italic = a computed readback, not typed */
 .notif-card .rm-stitch { margin: 9px 0; }   /* tighten the saddle-stitch to this card's row rhythm (row pad 9–11) */
 body.is-phone .notif-row { flex-wrap: wrap; }
+/* ── "Text The Crew" broadcast composer (Phase C) ─────────────────────────────
+   A manager+ modal: role-grouped roster picker (reuses the team-chat .rtab chips) +
+   message box + per-recipient send results. Steel data-plate, no new signature beat —
+   the ignition Send in the foot is the one orange note. */
+.cb-intro { font-size: 12px; line-height: 1.45; color: var(--txt-2); margin-bottom: 4px; }
+.cb-sec-head { display: flex; align-items: baseline; gap: 8px; margin: 4px 0 2px; }
+.cb-cap { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.4px; font-weight: 800; font-size: 10.5px; color: var(--txt-3); }
+.cb-count { font-family: 'Saira Condensed', system-ui, sans-serif; letter-spacing: .6px; font-size: 11px; font-weight: 700; color: var(--txt-2); }
+.cb-sec-head .spacer { flex: 1; }
+.cb-roster { background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--chip-radius, 12px); max-height: 210px; overflow: auto; }
+.cb-roster .rtab.is-off { opacity: .6; cursor: default; }
+.cb-roster .rtab.is-off:hover { background: none; }
+.cb-off { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .5px; font-size: 9px; font-weight: 700; color: var(--yellow); margin-left: 3px; }
+.cb-msg { width: 100%; }
+.cb-meta { display: flex; align-items: baseline; gap: 10px; margin-top: 5px; }
+.cb-meta .cb-win { flex: 1; text-align: right; font-size: 10.5px; font-style: italic; color: var(--txt-3); }
+.cb-ovr { margin-top: 9px; }
+.cb-results { margin-top: 11px; display: flex; flex-direction: column; gap: 4px; background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--chip-radius, 12px); padding: 8px 10px; }
+.cb-res-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.cb-res-ic { display: inline-flex; flex: 0 0 auto; }
+.cb-res-ic svg { width: 14px; height: 14px; }
+.cb-res-row.ok .cb-res-ic { color: var(--green); }
+.cb-res-row.bad .cb-res-ic { color: var(--red); }
+.cb-res-nm { flex: 1; min-width: 0; font-weight: 600; color: var(--txt); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cb-res-meta { flex: 0 0 auto; font-size: 11px; color: var(--txt-3); }
+.cb-empty { font-size: 12px; line-height: 1.5; color: var(--txt-3); background: var(--bg-2); border: 1px dashed var(--line); border-radius: var(--chip-radius, 12px); padding: 14px 15px; text-align: center; }
 /* Company tab */
 .co-form { display: flex; flex-direction: column; gap: 12px; max-width: 440px; }
 .co-fld { display: flex; flex-direction: column; gap: 3px; }
