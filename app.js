@@ -3739,6 +3739,27 @@ function membershipStatus(c) {
    apply only to an Active or in-grace member — refused to Incomplete AND lapsed, in both
    the quote and the invoice line. Past Due keeps the rate through the grace window. */
 const isActiveMember = (c) => { const s = membershipStatus(c); return s === 'Active' || s === 'Past Due'; };
+/* Office-facing membership-BILLING health (Jac 2026-07-14). A member's billing is "set up" when an
+   upcoming (due today or later) unpaid membership invoice is waiting — the backend pre-creates the next
+   cycle's invoice on enroll and after each charge. This surfaces the two states the office must chase,
+   detected from the invoices (NOT membershipStatus — a grandfathered member with no billing fields reads
+   'Active'). Returns null (no flag) or { label, tip, alert }; alert=true PULSES (R9b) for the urgent tier.
+     • 'No Billing'  (alert/flash) — a Member with NO upcoming membership invoice at all (never enrolled /
+                      linkage missing — the Brandon/Emily gap).
+     • 'Payment Due' (steady)      — an enrolled member whose membership invoice is overdue & unpaid (grace/decline).
+   NOT flagged: a member intentionally finishing their term (autoRenew === false, still paid through today). */
+function membershipBillingFlag(c) {
+  if (!c) return null;
+  const at = c.accountType || '';
+  if (!/Member/.test(at) || at === 'Member Incomplete') return null;                 // only full members
+  const memUnpaid = DATA.invoices.filter((i) => i && i.membership && !i.membershipCancellation
+    && i.customerId === c.customerId && invoiceTotals(i).balance > 0.005);
+  const overdue = memUnpaid.some((i) => String(i.dueDate || i.date || '') < TODAY_ISO);
+  if (overdue) return { label: 'Payment Due', alert: false, tip: 'Membership invoice overdue and unpaid — chase the payment (member is in grace/decline).' };
+  if (memUnpaid.some((i) => String(i.dueDate || i.date || '') >= TODAY_ISO)) return null;   // healthy — next invoice waiting
+  if (c.autoRenew === false && c.paidUntil && String(c.paidUntil) >= TODAY_ISO) return null; // intentionally finishing the term
+  return { label: 'No Billing', alert: true, tip: 'Member has no upcoming membership invoice — billing isn’t set up. Enroll them so the cycle bills.' };
+}
 /* Phase-0 (2026-07-10 account/agreements redesign) — the collapsed agreement-row's leading label
    (spec D18): a MEMBERSHIP status for a membership agreement, else '' (the caller then shows the plain
    account-type label). Returns UPPERCASE status words. PENDING (signed, start date in the future, not
@@ -7753,9 +7774,11 @@ function headFlagsHtml(card, rec) {
     const noCard = cardFlag(rec) === 'none';
     const unsignedCard = !noCard && accountAgreementsBlocked(rec);   // §7.1b has cards but one isn't signed for the current type
     const acctDone = customerCards(rec).length > 0 && accountAgreementsOk(rec);
+    const memBill = membershipBillingFlag(rec);   // office membership-billing warning (R9/R9b)
     return flagsStack([rec.phone ? flagEl(rec.phone, 'gray') : '', flagEl(acct.label, acct.color, { icon: CARD_ICON.customers })])
       + flagsStack([pay ? flagEl(pay.label, pay.color, { icon: CARD_ICON.invoices, alert: payBad }) : '', rSt ? flagEl(rSt.label, rSt.color, { icon: CARD_ICON.rentals, card: 'rentals', recId: activeR.rentalId, alert: true }) : ''])
       + (noCard ? flagsStack([flagEl('No Card', 'red', { alert: true, sect: 'sec-cards' })]) : unsignedCard ? flagsStack([flagEl('Unsigned Card', 'red', { alert: true, sect: 'sec-cards' })]) : '')
+      + (memBill ? flagsStack([flagEl(memBill.label, 'red', { icon: CARD_ICON.invoices, alert: memBill.alert, title: memBill.tip })]) : '')
       + `<span style="margin-left:auto">${gatePillRaw(acctDone ? 'Account' : 'Incomplete', acctDone ? 'green' : 'yellow', 'js-edit-customer', { rec: rec.customerId }, true)}</span>`;
   }
   if (card === 'categories') {
