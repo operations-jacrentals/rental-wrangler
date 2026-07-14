@@ -1,26 +1,33 @@
 # Backend deploy queue — DEPLOYED (2026-07-06 late session); doc kept as the deploy runbook
 
-## ⏳ PUSHED + VERSIONED — AWAITING JAC'S EDITOR DEPLOY (2026-07-14) — Twilio inbound webhook (v101)
-- **Backend v101 — Twilio inbound webhook.** Two anonymous handlers on the existing `?wh=` router
-  (mirrors the Stripe hook). `twilioInbound_` — an inbound SMS: matches the sender to a customer OR a
-  roster hand **by normalized phone**, and on a STOP/START keyword flips that party's
-  `commsConsent.sms`; logs every reply (dedup by SID) so it lands in the customer thread + opt-outs are
-  visible. Returns empty TwiML (no auto-reply, no PII). `twilioStatus_` — the delivery-status callback:
-  reconciles the outbound row `sent → delivered/failed` (matched by `providerId` = SID; never downgrades
-  a terminal delivered/failed). Additive; `node --check` passes; red-teamed (2 medium + 3 low findings all
-  fixed: log-with-`consentPending` on lock contention, terminal-status downgrade guard, atomic dedup,
-  phone-based roster re-match, customer-first documented).
-- **🔒 SECURITY — set `TWILIO_WH_KEY` BEFORE wiring (required here, unlike Stripe).** GAS can't read the
-  `X-Twilio-Signature` header, so auth is a URL token. Stripe defaults open because it re-fetches state;
-  this hook ACTS on the payload (flips consent), so gate it:
-  1. Pick a long random secret → set Script Property **`TWILIO_WH_KEY`** (via `adminSetProps` or the editor; never commit it).
-  2. Deploy: point the live deployment (`…trNlObZw`) at **v101** (anon access must stay intact — verify `smsProviderStatus` still returns JSON after).
-  3. Twilio Console → the number's **"A MESSAGE COMES IN"** (HTTP POST) →
-     `…/exec?wh=twilioIn&whk=<TWILIO_WH_KEY>` ; and the **statusCallback** →
-     `…/exec?wh=twilioStatus&whk=<TWILIO_WH_KEY>`.
-  4. Test: text **STOP** from a number matching a test customer → confirm `commsConsent.sms` flips to
-     `opted-out` (a later send returns `opted-out`); **START** flips it back; send one message + confirm
-     its row reaches `delivered`.
+## 🅗 BUILT + HELD (2026-07-14) — comms v102 (opt-out sync + delivery receipts)
+- **Backend v102 — NOT pushed, NOT versioned.** Two additive comms enhancements: `syncCarrierOptOut_`
+  (on Twilio error **21610** → flip `commsConsent.sms` to opted-out, so records reflect carrier-level STOPs
+  the webhook never sees) + `twilioSmsPayload_` (attach a per-message `StatusCallback` so delivery receipts
+  reach `twilioStatus_`). Code parked verbatim in `docs/handoffs/comms-v102-optout-delivery.gs`.
+- **WHY HELD:** the shared `Code.gs` HEAD has **DIVERGED** — a concurrent session pushed a large
+  phone-identity auth feature (spec `2026-07-13-text-link-identity`: authStart/authVerify/session tokens,
+  `pidRole_`/`pidAdmin_` gates, `pidReconcileRoster_`). GAS versions snapshot the WHOLE HEAD, so versioning
+  v102 now would bundle these comms changes with that in-progress, unreviewed auth work into one deployable
+  version. Held to avoid shipping someone else's half-built auth in a "comms" version.
+- **UN-HOLD when** the phone-identity feature is versioned + deployed (i.e. the live baseline): pull HEAD
+  fresh, splice the two helpers + the 4 one-line hooks (per the `.gs`), `node --check`, push → version →
+  editor-deploy → anon-access check.
+
+## ✅ DEPLOYED + WIRED 2026-07-14 — Twilio inbound webhook (v101, Jac deployed)
+- **v101 live + verified.** `twilioInbound_` (reply capture + STOP/START sync, URL-token gated via
+  `TWILIO_WH_KEY`) + `twilioStatus_` (delivery reconcile). Red-teamed (2 med + 3 low fixed). Anon access
+  confirmed intact after deploy (`smsProviderStatus` → JSON).
+- **Wiring (done):** `TWILIO_WH_KEY` set as a Script Property. The number is a **Sender in a Messaging
+  Service**, so the inbound webhook lives on the SERVICE → Integration → Incoming Messages → **"Send a
+  webhook"** = `…/exec?wh=twilioIn&whk=<key>` (NOT the number's "A message comes in" field). Verified live:
+  a non-keyword reply ("Testing") logged an inbound row against C0991. ✅
+- **STOP/START = Advanced Opt-Out (carrier).** Twilio's OPT-OUT tab consumes STOP/START/HELP and does NOT
+  forward them to the webhook (confirmed: STOP → Twilio's canned "unsubscribed" reply, no inbound row). So
+  the webhook's keyword-sync branch won't fire for them — expected + compliant (the number is blocked at the
+  carrier). Our records will reflect these opt-outs via the **v102 21610 sync (held, above)**.
+- **Delivery receipts: not live yet** — we send `From:<number>` directly (bypassing the Messaging Service),
+  so no Twilio-side callback config applies; needs the **v102 `StatusCallback` payload (held, above)**.
 
 ## ✅ DEPLOYED 2026-07-14 — comms Phase C dedup (v100, Jac deployed) + full notification test
 - **Backend v100 — content-aware dedup for the crew broadcast.** `sendStaffMessage_`'s dedup key for a
