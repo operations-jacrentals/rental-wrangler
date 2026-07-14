@@ -619,4 +619,21 @@ export const FEATURES = {
   // between per-card and whole-yard search, replacing the giant #globalsearch bar.
   // Flag ON = the globe path (old bar removed); OFF = the old #globalsearch bar.
   cardGlobalSearch: true,
+  // Phone-verified device identity — per-person staff logins that replace the shared
+  // role-passwords (spec 2026-07-13-text-link-identity). ON = per-person mode (SMS code
+  // verify → personal device trusted 30d / shared device takes a PIN each session);
+  // OFF = today's shared team-password login. The BACKEND enforces the real auth
+  // independently — this flag only switches the login EXPERIENCE, never the gate.
+  phoneIdentity: false,
+};
+
+/* Phone-identity client constants (non-secret — display/UX only; the backend owns the
+ * authoritative TTLs, hashing, and attempt caps). Safe to ship in the public bundle. */
+export const PHONE_IDENTITY = {
+  codeLen: 6,               // digits in an SMS verification code
+  pinMinLen: 4,             // minimum PIN length on a shared device
+  pinMaxLen: 8,
+  trustDays: 30,            // how long a personal device stays trusted before re-verify
+  codeTtlMin: 10,           // verification-code lifetime (a login someone's waiting on)
+  linkTtlMin: 45,           // enrollment/welcome link lifetime
 };

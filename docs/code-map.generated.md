@@ -47,7 +47,7 @@
 | APP-37 | 21639–24237 | §18b | §18b BACKEND SYNC — Google Sheets via the Apps Script web app | BACKEND_URL, PERSIST_KEYS, backendPassword, booting, saveTimer, driveViewUrl, backendCall, gpsToken, gpsBase, gpsConfigured, gpsFetch, gpsLogin, …(+163) |
 | APP-38 | 24238–24788 | — | D8/D9 THE COMMS RAIL (spec comms-notifications D8 + D9, Jac | COMMS_CAT_META, commsOnline, commsSess, commsCatOfChannel, commsThreads, commsThreadsAt, refreshCommsThreads, commsThreadChannel, commsThreadsFor, commsConvStatus, COMMS_ST_RANK, commsCatWorst, …(+33) |
 
-## config.js — 623 lines, 0 chapters
+## config.js — 640 lines, 0 chapters
 
 Chapter **CFG** — no internal banners, the whole file is one chapter.
 
