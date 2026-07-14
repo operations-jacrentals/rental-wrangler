@@ -4691,7 +4691,7 @@ function settingsTeamPane(o) {
   const note = flagOn('phoneIdentity')
     ? 'Per-person logins are ON — this roster is the login list. Each hand needs a name, phone, and role; they set their own PIN from a texted code. Removing someone cuts their access on the next save.'
     : 'The crew — name, role, phone, note. No credentials or compliance PII lives here (dropped from scope, Jac 2026-06-29).';
-  return `<div class="set-pane"><div class="muted" style="font-size:11.5px;margin-bottom:9px">${esc(note)}</div>${rows || '<div class="muted" style="font-size:12px">No hands on the roster yet.</div>'}<div class="kv pillrow" style="margin-top:9px">${addBtn('Employee', { link: true, js: 'js-emp-add' })}</div></div>`;
+  return `<div class="set-pane"><div class="muted" style="font-size:11.5px;margin-bottom:9px">${esc(note)}</div>${rows || '<div class="muted" style="font-size:12px">No hands on the roster yet.</div>'}<div class="kv pillrow" style="margin-top:9px">${addBtn('Employee', { link: true, js: 'js-emp-add' })}${showAuth ? `<button type="button" class="emp-act js-emp-blast" data-tip="Text a one-time setup code to every hand on the roster at once (cutover)">Text everyone a setup code</button>` : ''}</div></div>`;
 }
 /* ── Settings → Notifications (Phase A control center — design spec
    docs/superpowers/specs/2026-07-14-notifications-pane-design.md) ────────────────────
@@ -17408,6 +17408,8 @@ function onClick(e) {
   // unsaved row has no server enrollment yet → authStart returns sent:false, so we say "save first".
   if (closest('.js-emp-code')) { e.stopPropagation(); const id = closest('.js-emp-code').dataset.id; toast('Texting a setup code…'); backendCall('authStart', { personId: id, purpose: 'enroll' }).then((r) => toast(r && r.ok && r.sent ? 'Setup code texted.' : 'Could not text a code — save the roster first, and check their phone number.')).catch(() => toast('Could not reach the backend.')); return; }
   if (closest('.js-emp-signout')) { e.stopPropagation(); const id = closest('.js-emp-signout').dataset.id; backendCall('authRevoke', { personId: id }).then((r) => toast(r && r.ok ? 'Signed out on all their devices.' : 'Could not sign them out (admin only).')).catch(() => toast('Could not reach the backend.')); return; }
+  // Phase-4 cutover: text every rostered hand a one-time setup code at once (authEnrollBlast, admin-gated backend).
+  if (closest('.js-emp-blast')) { e.stopPropagation(); toast('Texting setup codes to the crew…'); backendCall('authEnrollBlast', {}).then((r) => toast(r && r.ok ? `Setup codes sent to ${r.sent} hand${r.sent === 1 ? '' : 's'}${r.skipped ? ` (${r.skipped} skipped — no phone on file)` : ''}.` : 'Could not send the blast (admin only).')).catch(() => toast('Could not reach the backend.')); return; }
   // Settings → Notifications: single on/off toggles (R31) write straight into the draft
   // (via a dot-path — see notifSet). captureNotificationEdits runs FIRST so an unsaved
   // numeric edit sitting in the live DOM isn't lost when reSettings() repaints the
