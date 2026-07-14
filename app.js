@@ -4746,8 +4746,8 @@ function ensureProviderStatus(o) {
   if (!backendPassword) { o._provStatus = { offline: true }; return; }
   o._provLoading = true;
   backendCall('smsProviderStatus')
-    .then((r) => { o._provLoading = false; o._provStatus = (r && typeof r === 'object') ? r : { ok: false }; reSettings(); })
-    .catch(() => { o._provLoading = false; o._provStatus = { ok: false }; reSettings(); });
+    .then((r) => { o._provLoading = false; o._provStatus = (r && typeof r === 'object') ? r : { ok: false }; captureNotificationEdits(o); reSettings(); })
+    .catch(() => { o._provLoading = false; o._provStatus = { ok: false }; captureNotificationEdits(o); reSettings(); });
 }
 // The SMS pill reads the ACTIVE provider (Twilio primary, Mocean fallback — the backend
 // auto-selects, v92) rather than assuming Twilio. Gmail has no config-presence flag in
@@ -4777,8 +4777,8 @@ function settingsNotificationsPane(o) {
   ensureProviderStatus(o);
   const div = '<div class="rm-stitch"></div>';
   const tgl = (label, path, on, tone = 'green') => toggleChip(label, on, { js: 'js-notif-toggle', data: { path }, tone });
-  const numFld = (cap, path, val, dflt) => `<label class="kpi-fld kpi-fld-sm"><span class="kpi-cap">${esc(cap)}</span><input class="kpi-tgt" data-notif="${esc(path)}" data-notif-default="${dflt}" value="${esc(val)}" inputmode="numeric" autocomplete="off"/></label>`;
-  const remRow = (label, path, cadenceFn, cap, fieldPath, val, dflt) => `<div class="notif-row">${tgl(label, `${path}.enabled`, notifGet(n, `${path}.enabled`))}${numFld(cap, fieldPath, val, dflt)}</div><div class="notif-cadence">${esc(cadenceFn(val))}</div>`;
+  const numFld = (cap, path, val, dflt, aria) => `<label class="kpi-fld kpi-fld-sm"><span class="kpi-cap">${esc(cap)}</span><input class="kpi-tgt" data-notif="${esc(path)}" data-notif-default="${dflt}" value="${esc(val)}" inputmode="numeric" autocomplete="off" aria-label="${esc(aria || cap)}"/></label>`;
+  const remRow = (label, path, cadenceFn, cap, fieldPath, val, dflt) => `<div class="notif-row">${tgl(label, `${path}.enabled`, notifGet(n, `${path}.enabled`))}${numFld(cap, fieldPath, val, dflt, `${label} — ${cap}`)}</div><div class="notif-cadence">${esc(cadenceFn(val))}</div>`;
 
   const cInternal = `<div class="notif-card"><div class="notif-card-body">
     <div class="notif-card-head">${I.bell}Internal</div>
@@ -4810,7 +4810,7 @@ function settingsNotificationsPane(o) {
 
   const cReview = `<div class="notif-card"><div class="notif-card-body">
     <div class="notif-card-head">${STATUS_ICONS.star}Reviews</div>
-    <div class="notif-row">${tgl('Review Request', 'customer.review.enabled', n.customer.review.enabled)}${numFld('DELAY (DAYS)', 'customer.review.delayDays', n.customer.review.delayDays, 2)}</div>
+    <div class="notif-row">${tgl('Review Request', 'customer.review.enabled', n.customer.review.enabled)}${numFld('DELAY (DAYS)', 'customer.review.delayDays', n.customer.review.delayDays, 2, 'Review request — delay days')}</div>
     <div class="notif-cadence">${esc(notifReviewCadence(n.customer.review.delayDays))}</div>
     <div class="notif-sub">Asks after a completed rental — the send itself, and the Reputation KPI it feeds, are Phase D.</div>
   </div></div>`;
@@ -4831,15 +4831,15 @@ function settingsNotificationsPane(o) {
       <div class="notif-row">${kv(notifPriorityLabel(n.channels.priority), { pfx: 'Send Priority', derived: true })}</div>
       ${div}
       <div class="notif-row"><span class="notif-label">Customer Window</span>
-        <label class="kpi-fld kpi-fld-sm"><span class="kpi-cap">FROM</span><select class="kpi-tgt" data-notif="channels.windows.customer.start">${notifHourOpts(w.customer.start)}</select></label>
-        <label class="kpi-fld kpi-fld-sm"><span class="kpi-cap">TO</span><select class="kpi-tgt" data-notif="channels.windows.customer.end">${notifHourOpts(w.customer.end)}</select></label>
+        <label class="kpi-fld kpi-fld-sm"><span class="kpi-cap">FROM</span><select class="kpi-tgt" data-notif="channels.windows.customer.start" aria-label="Customer window start hour">${notifHourOpts(w.customer.start)}</select></label>
+        <label class="kpi-fld kpi-fld-sm"><span class="kpi-cap">TO</span><select class="kpi-tgt" data-notif="channels.windows.customer.end" aria-label="Customer window end hour">${notifHourOpts(w.customer.end)}</select></label>
       </div>
       <div class="notif-row"><span class="notif-label">Staff Window</span>
-        <label class="kpi-fld kpi-fld-sm"><span class="kpi-cap">FROM</span><select class="kpi-tgt" data-notif="channels.windows.staff.start">${notifHourOpts(w.staff.start)}</select></label>
-        <label class="kpi-fld kpi-fld-sm"><span class="kpi-cap">TO</span><select class="kpi-tgt" data-notif="channels.windows.staff.end">${notifHourOpts(w.staff.end)}</select></label>
+        <label class="kpi-fld kpi-fld-sm"><span class="kpi-cap">FROM</span><select class="kpi-tgt" data-notif="channels.windows.staff.start" aria-label="Staff window start hour">${notifHourOpts(w.staff.start)}</select></label>
+        <label class="kpi-fld kpi-fld-sm"><span class="kpi-cap">TO</span><select class="kpi-tgt" data-notif="channels.windows.staff.end" aria-label="Staff window end hour">${notifHourOpts(w.staff.end)}</select></label>
       </div>
       ${div}
-      <div class="notif-row">${tgl('After-Hours Override', 'channels.adminOverride', n.channels.adminOverride, 'yellow')}${numFld('DAILY CAP', 'channels.dailyCap', n.channels.dailyCap, 50)}</div>
+      <div class="notif-row">${tgl('After-Hours Override', 'channels.adminOverride', n.channels.adminOverride, 'yellow')}${numFld('DAILY CAP', 'channels.dailyCap', n.channels.dailyCap, 50, 'Daily send cap')}</div>
       <div class="notif-sub">Admins can send anyway after hours on a manual text; the daily cap applies across both audiences.</div>
     </div>
   </div>`;
