@@ -1253,7 +1253,8 @@ try {
     ok(T.pageDefaultSlice('statuses').key === 'status' && T.pageDefaultSlice('kpis').key === 'kpis', 'each tab resets only its own settings slice');
     const cfReset = T.pageDefaultSlice('fields').value;
     ok(Array.isArray(cfReset.customers) && cfReset.customers.length === 0 && Array.isArray(cfReset.units), 'Reset page (Custom Fields) empties every entity, not just the active one');
-    ok(T.pageDefaultSlice('logins') === null && T.pageDefaultSlice('notifications') === null, 'tabs with no settings slice (Logins/planned) have no Reset page');
+    ok(T.pageDefaultSlice('logins') === null, 'Logins has no settings slice (no Reset page)');
+    ok(T.pageDefaultSlice('notifications') && T.pageDefaultSlice('notifications').key === 'notifications', 'Notifications now resets its own settings slice (Phase A fills the stub)');
 
     // 29) §5.4d DATE SEARCH — overlap (rentals), point-in-range (dated cards), invoice
     //     either/or, no-op on date-less cards, negation — all through the real matchers.

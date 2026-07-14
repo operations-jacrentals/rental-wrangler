@@ -2036,6 +2036,23 @@ select.inline-input:focus-visible { outline: 2px solid var(--accent); outline-of
 .kpi-preview { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 10px 4px; align-self: stretch; }
 .kpi-preview-l { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-size: 9.5px; font-weight: 700; color: var(--txt-3); }
 .wr-kpi-readback { font-family: ui-monospace, monospace; font-size: 10.5px; color: var(--txt-3); margin: 3px 0 6px; line-height: 1.4; }
+/* Settings → Notifications (Phase A control center, spec 2026-07-14) — six stamped
+   steel cards; reuses .set-rolecard's panel recipe + .rm-stitch (saddle-stitch, tan) row
+   dividers + .kpi-fld/.kpi-cap/.kpi-tgt for numeric + hour-select fields (already themed,
+   already has a focus ring). Channels alone wears the hazard cap — the ONE signature
+   beat on this pane; everything else stays quiet steel. */
+.notif-card { border: 1px solid var(--line); border-radius: var(--radius, 16px); background: var(--panel-2); margin-bottom: 12px; overflow: hidden; }
+.notif-card:last-child { margin-bottom: 0; }
+.notif-cap { height: 5px; background: repeating-linear-gradient(135deg, var(--yellow) 0 13px, #14181d 13px 26px); }
+.notif-card-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 9px; }
+.notif-card-head { display: flex; align-items: center; gap: 7px; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.4px; font-weight: 800; font-size: 12.5px; color: var(--txt); }
+.notif-card-head svg { width: 15px; height: 15px; color: var(--txt-2); }
+.notif-row { display: flex; align-items: center; gap: 10px; }
+.notif-row .notif-label { flex: 1 1 auto; min-width: 110px; font-size: 12.5px; font-weight: 600; color: var(--txt); }
+.notif-sub { font-size: 11px; line-height: 1.4; color: var(--txt-3); }
+.notif-cadence { font-size: 11px; font-style: italic; color: var(--txt-3); margin-top: -3px; }   /* R8 idiom — italic = a computed readback, not typed */
+.notif-card .rm-stitch { margin: 9px 0; }   /* tighten the saddle-stitch to this card's row rhythm (row pad 9–11) */
+body.is-phone .notif-row { flex-wrap: wrap; }
 /* Company tab */
 .co-form { display: flex; flex-direction: column; gap: 12px; max-width: 440px; }
 .co-fld { display: flex; flex-direction: column; gap: 3px; }
