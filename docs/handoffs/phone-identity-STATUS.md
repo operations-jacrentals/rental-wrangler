@@ -24,13 +24,38 @@ the app), shared device takes a PIN each session. No passwords.
 **None of Phases 1–4 has been RUN.** Cloud session couldn't deploy the backend or drive a
 browser. It's flag-guarded so it's safe, but **correctness is unverified.** Resume order:
 
-1. **Deploy the backend (STOP-gate, Jac's call).** The auth handlers in
-   `phone-identity-backend.gs` must be pasted/merged into the gitignored `Code.gs` per the
-   inline "ROUTER WIRING" block (add the `auth*` actions to `handle()`, the `sessionToken`
-   line, the `WRITE_ACTIONS` keys, and the `pidReconcileRoster_` hook in `saveConfigFromBody`).
-   Push via the **service-account** path (`docs/handoffs/gas-deploy-service-account.mjs`,
-   `GAS_IMPERSONATE_SUBJECT=operations@jacrentals.com`) → **go-live is Jac's Apps Script editor
-   deploy** (a REST deploy breaks anonymous access). Confirm a real test text first.
+1. **Deploy the backend (STOP-gate, Jac's call) — NOT a blind push; needs careful review.**
+   The auth handlers in `phone-identity-backend.gs` merge into the gitignored `Code.gs`. The
+   live code was pulled + mapped on 2026-07-14; all helper deps exist. **Exact integration map
+   (live `Code.js` line numbers as of the 2026-07-14 pull — re-grep before applying):**
+   - **Append** every `phone-identity-backend.gs` function (drop its trailing ROUTER-WIRING
+     comment block) to the end of `Code.js`.
+   - In `handle()` **after line 132** (`var pw = ..., action = ...`): insert
+     `var pidCaller = body.sessionToken ? pidResolveCaller_(body.sessionToken) : null;` + the 7
+     `auth*` dispatch lines (`authStart/authVerify/authLoginPin/authResume/authSetPin` public;
+     `authRevoke`/`authEnrollBlast` pass the effective role) + two helpers
+     `pidRole_()` (`pidCaller ? pidCaller.role : roleForPassword(pw)`) and
+     `pidAdmin_()` (`pidCaller ? pidCaller.tier >= ROLE_TIER_RANK.admin : isAdmin(pw)`).
+   - **Change these existing gates** so a session authorizes (pw path unchanged when no token):
+     line 144 `getConfig` + 145 `setConfig` `isAdmin(pw)`→`pidAdmin_()`; line 148
+     `var role = roleForPassword(pw)`→`var role = pidRole_();`; and the `isAdmin(pw)` gates at
+     runReminderSweep (153), adminSetProps (154), setViews (167), feedbackList (183)→`pidAdmin_()`.
+   - **VERIFY** the inner functions that take/re-check `pw` don't independently reject a session:
+     `adminSetProps_(body,pw)`, `sendCustomerMessage_(body,role,pw)`, `messagesFor_`,
+     `smsProviderStatus_(pw)`, and **the `load` action gate** (find it — the frontend's boot
+     `backendCall('load')` must succeed for a per-person session).
+   - In `saveConfigFromBody` (909): capture `prevEmp` before `saveConfigObj`, then call
+     `pidReconcileRoster_(prevEmp, (clean.settings||{}).employees||[])` before returning (the
+     roster-remove cascade).
+   - `node --check Code.js` → **STOP, show Jac the diff** → push HEAD via
+     `GAS_SA_KEY_B64=$GAS_SA_KEY_B64 GAS_IMPERSONATE_SUBJECT=operations@jacrentals.com node
+     docs/handoffs/gas-deploy-service-account.mjs push` → **Jac's editor go-live** (New version,
+     Who has access: Anyone) → verify anonymous JSON:
+     `POST {"action":"auth","password":"__wrong__"}` → expect `{"ok":false,...}` (HTML = broken).
+   - **No safe pre-deploy test exists** (clasp RAPT-blocked; REST deploy guarded/breaks anon
+     access) → the editor review + the post-deploy JSON probe ARE the test. Best done in a
+     focused session with Jac live at the editor. Pull the live code first:
+     `node <scratch>/getContent.mjs` (service-account `projects.getContent` → `~/rw-backend`).
 2. **Deploy the branch to staging** (`/deploy`) with the flag temporarily ON for the test.
 3. **Drive the whole flow end-to-end** (Claude-in-Chrome): enroll a test roster person → text
    code → verify → personal (30-day) path; shared path → Set PIN → PIN login; self-serve "text
