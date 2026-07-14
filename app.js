@@ -3168,6 +3168,7 @@ function pageDefaultSlice(tab) {
     case 'requirements': return { key: 'rentalRules', value: {} };
     case 'fields': return { key: 'customFields', value: { customers: [], units: [], rentals: [], invoices: [] } };
     case 'inspections': return { key: 'inspections', value: Object.fromEntries([...new Set((DATA.categories || []).map((c) => inspFamilyKey(c)))].map((k) => [k, { required: false, items: (INSP_DEFAULTS[k] || []).map((i) => ({ ...i })) }])) };
+    case 'notifications': return { key: 'notifications', value: JSON.parse(JSON.stringify(NOTIF_DEFAULTS)) };
     default: return null;   // Logins / planned tabs have no resettable slice
   }
 }
@@ -3209,6 +3210,10 @@ async function undoLastSettings() {
 // Company identity (Settings → Company). Read-through with shipped fallbacks, so an empty
 // config keeps every surface exactly as it ships today.
 const companyCfg = () => (state.settings && state.settings.company) || {};
+// Notifications (Settings → Notifications). Read-through of the SAVED config for any
+// live-app read; the editor pane itself deep-fills against NOTIF_DEFAULTS via
+// ensureNotifDraft/mergeNotifDefaults (below) so an absent field never crashes it.
+const notificationsCfg = () => (state.settings && state.settings.notifications) || {};
 // Admin-defined custom fields per entity (Settings → Custom Fields). Values live schema-less
 // on the record (rec.custom[fieldId]); an empty config means no extra fields anywhere.
 const customFieldsFor = (entity) => ((state.settings && state.settings.customFields) || {})[entity] || [];
@@ -4571,7 +4576,7 @@ const SETTINGS_TABS = [
   { id: 'kpis',          label: 'KPIs & Rings',     icon: STATUS_ICONS.gauge,     v1: true },
   { id: 'flags',         label: 'Flags & Alerts',   icon: STATUS_ICONS.alert,     v1: true },
   { id: 'team',          label: 'Team Roster',      icon: I.lock,                 v1: true },
-  { id: 'notifications', label: 'Notifications',    icon: I.bell,                 note: 'Team chat on/off, driver dispatch alerts, customer reminders & cadence.' },
+  { id: 'notifications', label: 'Notifications',    icon: I.bell,                 v1: true },
   { id: 'integrations',  label: 'Integrations',     icon: STATUS_ICONS.zap,       note: 'Stripe, Maps, telematics feed — references & toggles (secrets stay server-side).' },
 ];
 const draftStatusOv = (o, set, val) => (((o.draftSettings || {}).status || {})[set] || {})[val] || {};
@@ -4659,6 +4664,189 @@ function settingsTeamPane(o) {
     ${closeX('js-emp-del', { data: { i } })}</div>`).join('');
   return `<div class="set-pane"><div class="muted" style="font-size:11.5px;margin-bottom:9px">The crew — name, role, phone, note. No credentials or compliance PII lives here (dropped from scope, Jac 2026-06-29).</div>${rows || '<div class="muted" style="font-size:12px">No hands on the roster yet.</div>'}<div class="kv pillrow" style="margin-top:9px">${addBtn('Hand', { link: true, js: 'js-emp-add' })}</div></div>`;
 }
+/* ── Settings → Notifications (Phase A control center — design spec
+   docs/superpowers/specs/2026-07-14-notifications-pane-design.md) ────────────────────
+   Fills the former "Planned" stub. Rides settings.notifications (additive; the backend
+   v92 smsQuietNow_/sendCustomerMessage_ already READ channels.windows — this pane is
+   what WRITES it). Every toggle persists intent immediately on Save; the engines that
+   ACT on the customer reminder sweep (Phase B) and the crew SMS channel (Phase C) are
+   inert until their own builds land — Phase A only locks in the settings they'll read.
+   Six stamped cards: Internal · Customer reminders · Crew alerts · Reviews · Dispatch ·
+   Channels. Channels alone wears the hazard cap (the ONE signature beat here). */
+const NOTIF_DEFAULTS = {
+  internal: { teamChat: true, bell: true },
+  channels: {
+    priority: ['sms', 'email'],
+    windows: { customer: { start: 8, end: 20 }, staff: { start: 6, end: 20 } },   // hours 0–23, Central
+    dailyCap: 50,
+    adminOverride: true,
+  },
+  customer: {
+    dispatchEta: false,
+    reminders: {
+      start:   { enabled: false, leadDays: 1 },
+      return:  { enabled: false, leadDays: 1 },
+      balance: { enabled: false, afterDueDays: 3 },
+    },
+    review: { enabled: false, delayDays: 2 },
+  },
+  staff: {
+    driverAssigned: { enabled: false },
+    woAssigned:     { enabled: false },
+    scheduleChange: { enabled: false },
+  },
+};
+// Deep-fill a settings.notifications draft against NOTIF_DEFAULTS so an absent key (or
+// a config saved before a field existed) never crashes the pane. Arrays (channels.
+// priority) replace wholesale rather than merge index-by-index; `false` is a real,
+// explicitly-set value (not "missing"), so the leaf case checks `undefined`, not truthy.
+function mergeNotifDefaults(val, def) {
+  if (Array.isArray(def)) return (Array.isArray(val) && val.length) ? val.slice() : def.slice();
+  if (def && typeof def === 'object') {
+    const out = {};
+    Object.keys(def).forEach((k) => { out[k] = mergeNotifDefaults(val && typeof val === 'object' ? val[k] : undefined, def[k]); });
+    return out;
+  }
+  return val !== undefined ? val : def;
+}
+const notifGet = (n, path) => path.split('.').reduce((a, k) => (a == null ? a : a[k]), n);
+function notifSet(n, path, v) {
+  const p = path.split('.'); let o = n;
+  for (let i = 0; i < p.length - 1; i++) { o[p[i]] = (o[p[i]] && typeof o[p[i]] === 'object') ? o[p[i]] : {}; o = o[p[i]]; }
+  o[p[p.length - 1]] = v;
+}
+// Lazy-init (mirrors draftSettingsObj) + deep-fill the notifications slice; returns the
+// SAME object reference every call so a toggle handler can mutate it in place.
+function ensureNotifDraft(o) {
+  if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {}));
+  o.draftSettings.notifications = mergeNotifDefaults(o.draftSettings.notifications, NOTIF_DEFAULTS);
+  return o.draftSettings.notifications;
+}
+// Free-text/number notif fields (lead days, hour windows, daily cap) commit on Save —
+// or a tab switch, or any toggle click in this same pane — rather than per-keystroke.
+// Mirrors captureTeamEdits exactly, just keyed by a dot-path (data-notif) instead of a
+// roster row index.
+function captureNotificationEdits(o) {
+  const root = document.querySelector('.settings-popup .popup-body'); if (!root) return;
+  const inputs = root.querySelectorAll('[data-notif]'); if (!inputs.length) return;
+  const n = ensureNotifDraft(o);
+  inputs.forEach((el) => {
+    const path = el.dataset.notif;
+    if (el.tagName === 'SELECT') { notifSet(n, path, Number(el.value)); return; }
+    const raw = String(el.value).trim(), num = Number(raw);
+    notifSet(n, path, (raw && isFinite(num)) ? num : Number(el.dataset.notifDefault || 0));
+  });
+}
+// Kick the ONE admin-read-only provider check (v92 smsProviderStatus) the first time the
+// pane renders; caches on the overlay so a repaint never re-fires it. Demo/offline (no
+// backendPassword) skips the network call entirely — a neutral offline pill, never a
+// fabricated LIVE claim.
+function ensureProviderStatus(o) {
+  if (o._provStatus || o._provLoading) return;
+  if (!backendPassword) { o._provStatus = { offline: true }; return; }
+  o._provLoading = true;
+  backendCall('smsProviderStatus')
+    .then((r) => { o._provLoading = false; o._provStatus = (r && typeof r === 'object') ? r : { ok: false }; captureNotificationEdits(o); reSettings(); })
+    .catch(() => { o._provLoading = false; o._provStatus = { ok: false }; captureNotificationEdits(o); reSettings(); });
+}
+// The SMS pill reads the ACTIVE provider (Twilio primary, Mocean fallback — the backend
+// auto-selects, v92) rather than assuming Twilio. Gmail has no config-presence flag in
+// smsProviderStatus (GmailApp sends as the shop's own account — nothing to configure or
+// go offline), so it's a plain "always on" fact chip, never fabricated as LIVE/OFFLINE
+// off data the endpoint doesn't report (see the build report for this call-out).
+function notifSmsBadge(prov) {
+  if (!prov) return badge('SMS — checking…', 'gray');
+  if (prov.offline) return badge('SMS — offline (demo)', 'gray');
+  if (prov.ok === false) return badge('SMS — offline', 'red');
+  const key = prov.provider === 'mocean' ? 'mocean' : 'twilio';
+  const label = key === 'mocean' ? 'Mocean' : 'Twilio';
+  const cfgd = !!(prov[key] && prov[key].configured);
+  return cfgd ? badge(`${label} (SMS) · Live`, 'green') : badge(`${label} (SMS) · Offline`, 'red');
+}
+const notifEmailBadge = () => `<span data-tip="Sent via the shop's own Gmail — no separate provider to configure or go offline">${badge('Gmail (Email) · Always On', 'gray')}</span>`;
+const notifPriorityLabel = (arr) => ((Array.isArray(arr) && arr.length) ? arr : ['sms', 'email']).map((c) => (c === 'sms' ? 'SMS' : c === 'email' ? 'Email' : esc(c))).join(' → ');
+const notifHourOpts = (val) => Array.from({ length: 24 }, (_, h) => `<option value="${h}"${h === val ? ' selected' : ''}>${esc(to12(String(h).padStart(2, '0') + ':00'))}</option>`).join('');
+// Plain-English cadence readbacks (the stamped "cadence summary" line under each
+// lead/delay stepper) — one function per audience since "before a start/return" vs.
+// "after a due date" vs. "after a return" all read differently in plain English.
+const notifLeadCadence = (n) => (n <= 0 ? 'Reminds the same day' : n === 1 ? 'Reminds the day before' : `Reminds ${n} days before`) + ` — ${n}-day lead`;
+const notifAfterCadence = (n) => (n <= 0 ? "Reminds the day it's due" : n === 1 ? 'Reminds a day after the due date' : `Reminds ${n} days after the due date`) + ` — ${n}-day follow-up`;
+const notifReviewCadence = (n) => (n <= 0 ? 'Asks the day of return' : n === 1 ? 'Asks the day after return' : `Asks ${n} days after return`) + ` — ${n}-day delay`;
+function settingsNotificationsPane(o) {
+  const n = ensureNotifDraft(o);
+  ensureProviderStatus(o);
+  const div = '<div class="rm-stitch"></div>';
+  const tgl = (label, path, on, tone = 'green') => toggleChip(label, on, { js: 'js-notif-toggle', data: { path }, tone });
+  const numFld = (cap, path, val, dflt, aria) => `<label class="kpi-fld kpi-fld-sm"><span class="kpi-cap">${esc(cap)}</span><input class="kpi-tgt" data-notif="${esc(path)}" data-notif-default="${dflt}" value="${esc(val)}" inputmode="numeric" autocomplete="off" aria-label="${esc(aria || cap)}"/></label>`;
+  const remRow = (label, path, cadenceFn, cap, fieldPath, val, dflt) => `<div class="notif-row">${tgl(label, `${path}.enabled`, notifGet(n, `${path}.enabled`))}${numFld(cap, fieldPath, val, dflt, `${label} — ${cap}`)}</div><div class="notif-cadence">${esc(cadenceFn(val))}</div>`;
+
+  const cInternal = `<div class="notif-card"><div class="notif-card-body">
+    <div class="notif-card-head">${I.bell}Internal</div>
+    <div class="notif-row">${tgl('Team Chat', 'internal.teamChat', n.internal.teamChat)}${tgl('Bell Alerts', 'internal.bell', n.internal.bell)}</div>
+    <div class="notif-sub">The in-app team chat and the header bell — the shop's own signal, independent of SMS/email.</div>
+  </div></div>`;
+
+  const cReminders = `<div class="notif-card"><div class="notif-card-body">
+    <div class="notif-card-head">${I.messageSquare}Customer Reminders</div>
+    ${remRow('Rental Starts', 'customer.reminders.start', notifLeadCadence, 'LEAD (DAYS)', 'customer.reminders.start.leadDays', n.customer.reminders.start.leadDays, 1)}
+    ${div}
+    ${remRow('Rental Returns', 'customer.reminders.return', notifLeadCadence, 'LEAD (DAYS)', 'customer.reminders.return.leadDays', n.customer.reminders.return.leadDays, 1)}
+    ${div}
+    ${remRow('Balance Overdue', 'customer.reminders.balance', notifAfterCadence, 'AFTER (DAYS)', 'customer.reminders.balance.afterDueDays', n.customer.reminders.balance.afterDueDays, 3)}
+    <div class="notif-sub">Reminders lock in here now — the sweep that actually sends them (Phase B) isn't installed yet.</div>
+  </div></div>`;
+
+  const cCrew = `<div class="notif-card"><div class="notif-card-body">
+    <div class="notif-card-head">${I.users}Crew Alerts</div>
+    <div class="notif-row">${tgl('Driver Assigned', 'staff.driverAssigned.enabled', n.staff.driverAssigned.enabled)}</div>
+    ${div}
+    <div class="notif-row">${tgl('Work Order Assigned', 'staff.woAssigned.enabled', n.staff.woAssigned.enabled)}</div>
+    ${div}
+    <div class="notif-row">${tgl('Schedule Change', 'staff.scheduleChange.enabled', n.staff.scheduleChange.enabled)}</div>
+    ${div}
+    <div class="notif-row">${ghostPill('Text The Crew', { disabled: true, tip: 'Coming with the crew channel' })}</div>
+    <div class="notif-sub">These fire once the crew SMS channel ships (Phase C) — the toggles just lock in intent now.</div>
+  </div></div>`;
+
+  const cReview = `<div class="notif-card"><div class="notif-card-body">
+    <div class="notif-card-head">${STATUS_ICONS.star}Reviews</div>
+    <div class="notif-row">${tgl('Review Request', 'customer.review.enabled', n.customer.review.enabled)}${numFld('DELAY (DAYS)', 'customer.review.delayDays', n.customer.review.delayDays, 2, 'Review request — delay days')}</div>
+    <div class="notif-cadence">${esc(notifReviewCadence(n.customer.review.delayDays))}</div>
+    <div class="notif-sub">Asks after a completed rental — the send itself, and the Reputation KPI it feeds, are Phase D.</div>
+  </div></div>`;
+
+  const cDispatch = `<div class="notif-card"><div class="notif-card-body">
+    <div class="notif-card-head">${I.truck}Dispatch</div>
+    <div class="notif-row">${tgl('On The Way Text', 'customer.dispatchEta', n.customer.dispatchEta)}</div>
+    <div class="notif-sub">Texts customers when their unit's on the way — the trigger lands in Phase D; this locks in the setting now.</div>
+  </div></div>`;
+
+  const w = n.channels.windows;
+  const cChannels = `<div class="notif-card">
+    <div class="notif-cap"></div>
+    <div class="notif-card-body">
+      <div class="notif-card-head">${STATUS_ICONS.zap}Channels</div>
+      <div class="notif-row">${notifSmsBadge(o._provStatus)}${notifEmailBadge()}</div>
+      ${div}
+      <div class="notif-row">${kv(notifPriorityLabel(n.channels.priority), { pfx: 'Send Priority', derived: true })}</div>
+      ${div}
+      <div class="notif-row"><span class="notif-label">Customer Window</span>
+        <label class="kpi-fld kpi-fld-sm"><span class="kpi-cap">FROM</span><select class="kpi-tgt" data-notif="channels.windows.customer.start" aria-label="Customer window start hour">${notifHourOpts(w.customer.start)}</select></label>
+        <label class="kpi-fld kpi-fld-sm"><span class="kpi-cap">TO</span><select class="kpi-tgt" data-notif="channels.windows.customer.end" aria-label="Customer window end hour">${notifHourOpts(w.customer.end)}</select></label>
+      </div>
+      <div class="notif-row"><span class="notif-label">Staff Window</span>
+        <label class="kpi-fld kpi-fld-sm"><span class="kpi-cap">FROM</span><select class="kpi-tgt" data-notif="channels.windows.staff.start" aria-label="Staff window start hour">${notifHourOpts(w.staff.start)}</select></label>
+        <label class="kpi-fld kpi-fld-sm"><span class="kpi-cap">TO</span><select class="kpi-tgt" data-notif="channels.windows.staff.end" aria-label="Staff window end hour">${notifHourOpts(w.staff.end)}</select></label>
+      </div>
+      ${div}
+      <div class="notif-row">${tgl('After-Hours Override', 'channels.adminOverride', n.channels.adminOverride, 'yellow')}${numFld('DAILY CAP', 'channels.dailyCap', n.channels.dailyCap, 50, 'Daily send cap')}</div>
+      <div class="notif-sub">Admins can send anyway after hours on a manual text; the daily cap applies across both audiences.</div>
+    </div>
+  </div>`;
+
+  return `<div class="set-pane-head"><h4>Notifications</h4><p>Round up who hears what, and when. Every toggle saves right away — the reminder sweep (Phase B) and the crew SMS channel (Phase C) read these settings once they ship.</p></div>
+    ${cInternal}${cReminders}${cCrew}${cReview}${cDispatch}${cChannels}`;
+}
 function settingsPaneFor(o) {
   if (o.tab === 'statuses') return settingsStatusesPane(o);
   if (o.tab === 'logins') return settingsLoginsPane(o);
@@ -4669,6 +4857,7 @@ function settingsPaneFor(o) {
   if (o.tab === 'inspections') return settingsInspectionsPane(o);
   if (o.tab === 'flags') return settingsFlagsPane(o);
   if (o.tab === 'team') return settingsTeamPane(o);
+  if (o.tab === 'notifications') return settingsNotificationsPane(o);
   return settingsPlannedPane(SETTINGS_TABS.find((t) => t.id === o.tab));
 }
 function settingsBoardHtml(o) {
@@ -16812,7 +17001,7 @@ function onClick(e) {
   if (closest('.js-overbook')) { e.stopPropagation(); const on = closest('.js-overbook').dataset.val === '1'; state.overbookOn = on; try { localStorage.setItem('jactec.overbook', on ? '1' : '0'); } catch (err) {} toast(on ? 'Overbooking allowed — conflicting links get a pulsing red Overbooked flag.' : 'Overbooking blocked — a conflicting unit drop is refused.'); reSettings(); return; }
   if (closest('.js-haptics')) { e.stopPropagation(); const on = closest('.js-haptics').dataset.val === '1'; state.hapticsOff = !on; try { localStorage.setItem('jactec.hapticsOff', on ? '0' : '1'); } catch (err) {} if (on) haptic([12, 30, 12]); reSettings(); return; }   // §M-touch — toggle + a sample buzz when turning ON
   // Settings Board — tab rail + Statuses & Icons editing
-  if (closest('.js-set-tab')) { e.stopPropagation(); const o = state.overlay; if (o) { captureLoginEdits(o); captureTeamEdits(o); o.tab = closest('.js-set-tab').dataset.tab; o.iconFor = null; o.error = null; o.resetArm = false; reSettings(); } return; }
+  if (closest('.js-set-tab')) { e.stopPropagation(); const o = state.overlay; if (o) { captureLoginEdits(o); captureTeamEdits(o); captureNotificationEdits(o); o.tab = closest('.js-set-tab').dataset.tab; o.iconFor = null; o.error = null; o.resetArm = false; reSettings(); } return; }
   if (closest('.js-set-pick')) { e.stopPropagation(); const o = state.overlay; if (o) { o.setSel = closest('.js-set-pick').dataset.set; o.iconFor = null; reSettings(); } return; }
   if (closest('.js-set-color')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-set-color'); if (o) { setDraftStatus(o, b.dataset.set, b.dataset.val, { color: b.dataset.color }); reSettings(); } return; }
   if (closest('.js-set-icon-open')) { e.stopPropagation(); const o = state.overlay, k = closest('.js-set-icon-open').dataset.key; if (o) { o.iconFor = o.iconFor === k ? null : k; reSettings(); } return; }
@@ -17049,6 +17238,11 @@ function onClick(e) {
   if (closest('.js-flag-sev')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'settings') return; const b = closest('.js-flag-sev'); captureTeamEdits(o); if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {})); const ov = o.draftSettings.flagOverrides || (o.draftSettings.flagOverrides = {}); const m = ov[b.dataset.ent] || (ov[b.dataset.ent] = {}); const cur = m[b.dataset.id] || {}; const def = (FLAG_META[b.dataset.ent] || []).find((f) => f.id === b.dataset.id); if (def && def.severity === b.dataset.sev) delete cur.severity; else cur.severity = b.dataset.sev; delete cur.off; if (Object.keys(cur).length) m[b.dataset.id] = cur; else delete m[b.dataset.id]; reSettings(); return; }
   if (closest('.js-emp-add')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'settings') return; captureTeamEdits(o); if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {})); (o.draftSettings.employees || (o.draftSettings.employees = [])).push({ id: 'EMP' + Math.random().toString(36).slice(2, 8).toUpperCase(), name: '', role: (ROLES[0] && (ROLES[0].label || ROLES[0].id)) || '', phone: '', note: '' }); reSettings(); return; }
   if (closest('.js-emp-del')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'settings') return; const i = Number(closest('.js-emp-del').dataset.i); captureTeamEdits(o); (o.draftSettings.employees || []).splice(i, 1); reSettings(); return; }
+  // Settings → Notifications: single on/off toggles (R31) write straight into the draft
+  // (via a dot-path — see notifSet). captureNotificationEdits runs FIRST so an unsaved
+  // numeric edit sitting in the live DOM isn't lost when reSettings() repaints the
+  // pane's HTML from draft (same reason js-flag-ov/js-emp-add capture before mutating).
+  if (closest('.js-notif-toggle')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'settings') return; captureNotificationEdits(o); const n = ensureNotifDraft(o); const path = closest('.js-notif-toggle').dataset.path; notifSet(n, path, !notifGet(n, path)); reSettings(); return; }
   if (closest('.js-sales-schedule')) { e.stopPropagation(); return openOverlay({ kind: 'schedule', customerId: closest('.js-sales-schedule').dataset.rec }); }
   if (closest('.js-install-go')) { e.stopPropagation(); try { localStorage.setItem('jactec.installNudged', '1'); } catch (er) {} const ev = state._installEvt; closeOverlay(); if (ev) { ev.prompt(); } return; }
   if (closest('.js-install-later')) { e.stopPropagation(); try { localStorage.setItem('jactec.installNudged', '1'); } catch (er) {} closeOverlay(); return; }
@@ -19223,6 +19417,7 @@ async function saveSettings() {
   const o = state.overlay; if (!o || o.kind !== 'settings') return;
   const root = document.querySelector('.settings-popup .popup-body'); if (!root) return;
   captureTeamEdits(o);   // roster inputs → draft
+  captureNotificationEdits(o);   // notifications lead-day/cap/window inputs → draft
   // Audit trail for flag disables (spec design-system D1): a turned-off safety flag must be traceable.
   if (o.draftSettings && o.draftSettings.flagOverrides) {
     const prevOv = (state.settings && state.settings.flagOverrides) || {};
