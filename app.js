@@ -4825,8 +4825,10 @@ function settingsNotificationsPane(o) {
     ${div}
     <div class="notif-row">${tgl('Schedule Change', 'staff.scheduleChange.enabled', n.staff.scheduleChange.enabled)}</div>
     ${div}
-    <div class="notif-row">${ghostPill('Text The Crew', { disabled: true, tip: 'Coming with the crew channel' })}</div>
-    <div class="notif-sub">These fire once the crew SMS channel ships (Phase C) — the toggles just lock in intent now.</div>
+    <div class="notif-row">${(!currentRole || roleTier(currentRole) >= tierRank('manager'))
+      ? `<button class="pill ignition js-crew-broadcast" data-r="R17">${I.users} Text The Crew</button>`
+      : ghostPill('Text The Crew', { disabled: true, tip: 'Managers and up can text the crew' })}</div>
+    <div class="notif-sub">Text the crew now, straight from here. The three alerts above fire on their own once their triggers land — the toggles lock in intent.</div>
   </div></div>`;
 
   const cReview = `<div class="notif-card"><div class="notif-card-body">
@@ -13294,6 +13296,10 @@ function buildPopupEl(o, overlay, opts = {}) {
         <div class="fb-ctx muted">Auto-attached so Claude can reproduce it: <b>${esc(ctx.view)}</b> · ${esc(ctx.role || 'no role')} · ${esc(ctx.viewport)}</div>
         ${o.error ? `<div class="login-err" style="text-align:left;margin-top:8px">${esc(o.error)}</div>` : ''}` });
     overlay.appendChild(pop);
+  } else if (o.kind === 'crewBroadcast') {
+    const pop = el('div', 'popup cb-popup'); pop.style.width = '480px';
+    pop.innerHTML = crewBroadcastHtml(o);
+    overlay.appendChild(pop);
   } else if (o.kind === 'board') {
     const board = BACKOFFICE_BOARDS.find((b) => b.id === o.board);
     const pop = el('div', 'popup board-popup');
@@ -13852,6 +13858,7 @@ const WINDOW_CATALOG = [
   { kind: 'hotkeys',       label: 'Mouse shortcuts',         tag: 'Operator · controls',       sample: () => ({}) },
   { kind: 'roadmap',       label: 'Coming in 2026',          tag: 'Roadmap · the docket',      sample: () => ({}) },
   { kind: 'feedback',      label: 'Report a bug or request', tag: 'Mr. Wrangler · report',     sample: () => ({}) },
+  { kind: 'crewBroadcast', label: 'Text the crew',           tag: 'Crew · broadcast',          sample: () => ({ sel: [], text: '' }) },
   { kind: 'board',         label: 'Back-office board',       tag: 'Back office · records',     sample: () => ({ board: (BACKOFFICE_BOARDS[0] || {}).id }) },
   { kind: 'roundup',       label: 'The Round-Up',            tag: 'Reports · board',           sample: () => ({}) },
   { kind: 'boardview',     label: 'Board View',              tag: 'Card · board view',         sample: () => ({ card: 'units', query: '', sort: {}, calc: {}, colOrder: null, extraRows: [], cellData: {}, seq: 0 }) },
@@ -13934,6 +13941,108 @@ async function sendFeedback() {
     closeOverlay();
     toast(o.fbType === 'Bug' ? 'Bug report sent — thanks. Claude will reproduce + fix it.' : `${o.fbType || 'Request'} sent — Claude will run it by you before changing anything.`);
   } catch (e) { o.busy = false; o.error = 'Couldn’t send — check your connection and try again.'; renderOverlay(); }
+}
+/* ── Phase C · "Text The Crew" broadcast composer ─────────────────────────────
+   Manager+ picks roster hands + types a message → sendStaffMessage_('staff-broadcast')
+   per rosterId. The client sends a stable roster REF (em.id||em.name), NEVER a phone —
+   the backend resolves the number and owns every gate (manager+, crew consent, staff
+   window, daily cap, dedup). Phone-less / opted-out hands are shown but can't be picked.
+   Launched from the Notifications pane's Crew Alerts card; the settings overlay is stashed
+   on `o.returnTo` so a manager lands back in the pane (unsaved toggle drafts intact). */
+const CB_BLOCK_LABEL = { 'no-phone': 'No phone', 'opted-out': 'Opted out' };
+const CB_REASON_LABEL = {
+  'opted-out': 'Opted out', 'no-phone': 'No phone on file', 'no-recipient': 'No phone on file',
+  'quiet-hours': 'Outside staff hours', cap: 'Daily cap reached', duplicate: 'Already texted today',
+  'not-configured': 'SMS not set up', provider: 'Carrier rejected it', forbidden: 'Not permitted',
+  network: 'Connection issue', empty: 'No message', 'unknown-template': 'Send error', busy: 'Busy — try again',
+};
+// The roster as pickable recipients: stable ref, role color, and a `blocked` reason
+// (no phone / opted-out) that dims the chip and bars selection. Deduped by ref so a
+// name-collision doesn't double a single hand (mirrors the backend's first-match).
+function crewBroadcastEmps() {
+  const emps = (state.settings && state.settings.employees) || [];
+  const rmap = ROLE_BY_LABEL();
+  const seen = new Set(); const out = [];
+  emps.forEach((em) => {
+    const name = (em.name || '').trim(); if (!name) return;
+    const rid = String(em.id || em.name || ''); if (!rid || seen.has(rid)) return; seen.add(rid);
+    const consent = (em.commsConsent && em.commsConsent.sms) || 'unknown';
+    const hasPhone = /\d/.test(String(em.phone || ''));
+    const blocked = !hasPhone ? 'no-phone' : consent === 'opted-out' ? 'opted-out' : null;
+    out.push({ rid, name, role: em.role || 'Crew', rc: (rmap[em.role] && rmap[em.role].color) || 'gray', blocked });
+  });
+  return out;
+}
+function crewBroadcastHtml(o) {
+  const list = crewBroadcastEmps();
+  const sel = new Set((o.sel || []).map(String));
+  const sendable = list.filter((e) => !e.blocked);
+  const nSel = sendable.filter((e) => sel.has(e.rid)).length;
+  const n = mergeNotifDefaults((state.settings && state.settings.notifications) || {}, NOTIF_DEFAULTS);
+  const sw = n.channels.windows.staff;
+  const winTxt = `${to12(String(sw.start).padStart(2, '0') + ':00')} – ${to12(String(sw.end).padStart(2, '0') + ':00')}`;
+  const isAdmin = !currentRole || roleTier(currentRole) >= tierRank('admin');
+  let picker;
+  if (!list.length) {
+    picker = `<div class="cb-empty">No hands on the roster yet — add crew in <b>Settings → Team Roster</b>, then round 'em up here.</div>`;
+  } else {
+    const byRole = new Map();
+    list.forEach((e) => { const k = e.role || 'Crew'; if (!byRole.has(k)) byRole.set(k, []); byRole.get(k).push(e); });
+    const grps = [...byRole.entries()].map(([role, ppl]) => {
+      const chips = ppl.map((e) => {
+        const on = sel.has(e.rid); const off = !!e.blocked;
+        const tip = off ? `${e.name} — ${CB_BLOCK_LABEL[e.blocked] || 'unavailable'}` : `${e.name} — ${on ? 'tap to drop' : 'tap to add'}`;
+        const stamp = off ? `<span class="cb-off">${esc(CB_BLOCK_LABEL[e.blocked] || '')}</span>` : '';
+        return `<button class="rtab js-cb-member${on ? ' on' : ''}${off ? ' is-off' : ''}" data-rid="${esc(e.rid)}" style="--rc:var(--${e.rc})" data-tip="${esc(tip)}"${off ? ' aria-disabled="true"' : ` aria-pressed="${on ? 'true' : 'false'}"`}><span class="rtab-dot"></span><span class="rtab-l">${esc(e.name)}</span>${stamp}</button>`;
+      }).join('');
+      return `<div class="mrole-grp"><span class="mrole-h">${esc(role)}</span><div class="mrole-chips">${chips}</div></div>`;
+    }).join('');
+    picker = `<div class="chat-rolebar chat-memberbar cb-roster" role="group" aria-label="Pick who to text">${grps}</div>`;
+  }
+  const allOn = sendable.length && sendable.every((e) => sel.has(e.rid));
+  const allBtn = sendable.length ? ghostPill(allOn ? 'Clear' : 'Select all', { js: 'js-cb-all' }) : '';
+  const results = (o.results || []).length ? `<div class="cb-results">${o.results.map((r) =>
+    `<div class="cb-res-row ${r.ok ? 'ok' : 'bad'}"><span class="cb-res-ic">${r.ok ? STATUS_ICONS.check : STATUS_ICONS.x}</span><span class="cb-res-nm">${esc(r.name)}</span><span class="cb-res-meta">${r.ok ? esc(r.maskedTo || 'Sent') : esc(CB_REASON_LABEL[r.reason] || 'Couldn’t send')}</span></div>`).join('')}</div>` : '';
+  const text = o.text || '';
+  const body = `
+    <div class="cb-intro">Round up the hands who need to hear it — each gets one text, straight to their phone.</div>
+    <div class="cb-sec-head"><span class="cb-cap">To — the crew</span><span class="cb-count">${nSel} of ${sendable.length}</span><span class="spacer"></span>${allBtn}</div>
+    ${picker}
+    <div class="cb-sec-head"><span class="cb-cap">Message</span></div>
+    <textarea class="insp-desc cb-msg js-cb-text" maxlength="600" rows="4" placeholder="What do the hands need to know? Keep it short — it lands as a text." aria-label="Broadcast message">${esc(text)}</textarea>
+    <div class="cb-meta"><span class="cb-count js-cb-count">${text.length}/600</span><span class="cb-win">Sends now if it's inside the staff window · ${esc(winTxt)}</span></div>
+    ${isAdmin ? `<div class="cb-ovr">${toggleChip('Send after-hours (admin)', !!o.override, { js: 'js-cb-ovr', tone: 'yellow' })}</div>` : ''}
+    ${results}
+    ${o.error ? `<div class="login-err" style="text-align:left;margin-top:8px">${esc(o.error)}</div>` : ''}`;
+  const canSend = !o.busy && sendable.length && nSel > 0;
+  const foot = `${ghostPill('Close', { js: 'js-cb-close' })}<button class="pill ignition js-cb-send" data-r="R17"${canSend ? '' : ' disabled'}>${o.busy ? 'Sending…' : (nSel > 0 ? `Send to ${nSel}` : 'Send')}</button>`;
+  return popupShell({ icon: I.users, title: 'Text The Crew', tag: 'Crew · broadcast', body, foot, closeJs: 'js-cb-close' });
+}
+async function sendCrewBroadcast() {
+  const o = state.overlay; if (!o || o.kind !== 'crewBroadcast') return;
+  const ta = document.querySelector('.overlay .js-cb-text'); if (ta) o.text = ta.value;
+  const text = (o.text || '').trim();
+  const byRid = new Map(crewBroadcastEmps().map((e) => [e.rid, e]));
+  const targets = (o.sel || []).map(String).filter((rid) => { const e = byRid.get(rid); return e && !e.blocked; });
+  if (!text) { o.error = 'Write the message first.'; return renderOverlay(); }
+  if (!targets.length) { o.error = 'Pick at least one hand to text.'; return renderOverlay(); }
+  o.busy = true; o.error = ''; o.results = null; renderOverlay();
+  const results = [];
+  for (const rid of targets) {
+    const em = byRid.get(rid); let r;
+    try {
+      if (typeof backendPassword !== 'undefined' && backendPassword) {
+        r = await backendCall('sendStaffMessage', { template: 'staff-broadcast', text, rosterId: rid, override: !!o.override });
+      } else { r = { ok: false, reason: 'not-configured' }; }   // demo build — no live backend to send through
+    } catch (e) { r = { ok: false, reason: 'network' }; }
+    results.push({ rid, name: em.name, ok: !!(r && r.ok), reason: (r && r.reason) || '', maskedTo: (r && r.maskedTo) || '' });
+  }
+  o.busy = false; o.results = results;
+  const okN = results.filter((x) => x.ok).length;
+  if (okN === results.length) {   // clean sweep — drop back to the pane with a confirmation
+    const ret = o.returnTo; state.overlay = ret || null; renderOverlay();
+    toast(`Texted ${okN} hand${okN === 1 ? '' : 's'}.`);
+  } else renderOverlay();   // partial — keep the composer open so the misses are visible
 }
 /* ════════════════════════════════════════════════════════════════════════
    APP-27 · §18 MR. WRANGLER — the in-app AI (Claude via the Apps Script backend).
@@ -17291,6 +17400,8 @@ function onClick(e) {
   // numeric edit sitting in the live DOM isn't lost when reSettings() repaints the
   // pane's HTML from draft (same reason js-flag-ov/js-emp-add capture before mutating).
   if (closest('.js-notif-toggle')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'settings') return; captureNotificationEdits(o); const n = ensureNotifDraft(o); const path = closest('.js-notif-toggle').dataset.path; notifSet(n, path, !notifGet(n, path)); reSettings(); return; }
+  // "Text The Crew" launcher — stash the settings overlay (with any unsaved notif draft captured) as returnTo so the composer's Close lands back in the pane, edits intact.
+  if (closest('.js-crew-broadcast')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'settings') return; if (currentRole && roleTier(currentRole) < tierRank('manager')) { toast('Managers and up can text the crew.'); return; } captureNotificationEdits(o); openOverlay({ kind: 'crewBroadcast', sel: [], text: '', returnTo: o }); return; }
   if (closest('.js-sales-schedule')) { e.stopPropagation(); return openOverlay({ kind: 'schedule', customerId: closest('.js-sales-schedule').dataset.rec }); }
   if (closest('.js-install-go')) { e.stopPropagation(); try { localStorage.setItem('jactec.installNudged', '1'); } catch (er) {} const ev = state._installEvt; closeOverlay(); if (ev) { ev.prompt(); } return; }
   if (closest('.js-install-later')) { e.stopPropagation(); try { localStorage.setItem('jactec.installNudged', '1'); } catch (er) {} closeOverlay(); return; }
@@ -17477,6 +17588,12 @@ function onClick(e) {
   if (closest('[data-cmt-color]')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'comment') { const ta = document.querySelector('.overlay .js-cmt-text'); if (ta) o.text = ta.value; o.color = closest('[data-cmt-color]').dataset.cmtColor; renderOverlay(); } return; }
   if (closest('.js-cmt-save')) { e.stopPropagation(); return saveCommentOverlay(); }
   if (closest('.js-fb-send')) { e.stopPropagation(); return sendFeedback(); }
+  // ── Phase C · "Text The Crew" composer ── capture the typed message before each repaint so a chip/toggle tap never eats it.
+  if (closest('.js-cb-close')) { e.stopPropagation(); const o = state.overlay; const ret = o && o.returnTo; if (ret) { state.overlay = ret; renderOverlay(); } else closeOverlay(); return; }
+  if (closest('.js-cb-member')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'crewBroadcast') return; const btn = closest('.js-cb-member'); if (btn.classList.contains('is-off')) return; const ta = document.querySelector('.overlay .js-cb-text'); if (ta) o.text = ta.value; const rid = String(btn.dataset.rid); const sel = new Set((o.sel || []).map(String)); if (sel.has(rid)) sel.delete(rid); else sel.add(rid); o.sel = [...sel]; renderOverlay(); return; }
+  if (closest('.js-cb-all')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'crewBroadcast') return; const ta = document.querySelector('.overlay .js-cb-text'); if (ta) o.text = ta.value; const sendable = crewBroadcastEmps().filter((x) => !x.blocked).map((x) => x.rid); const cur = (o.sel || []).map(String); const allOn = sendable.length && sendable.every((rid) => cur.includes(rid)); o.sel = allOn ? [] : sendable; renderOverlay(); return; }
+  if (closest('.js-cb-ovr')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'crewBroadcast') return; const ta = document.querySelector('.overlay .js-cb-text'); if (ta) o.text = ta.value; o.override = !o.override; renderOverlay(); return; }
+  if (closest('.js-cb-send')) { e.stopPropagation(); return sendCrewBroadcast(); }
   if (closest('.js-wr-ask')) { e.stopPropagation(); const o = state.wrangler; if (o.ask && o.ask.resolve) o.ask.resolve(closest('.js-wr-ask').dataset.ans); return; }   // §18 tap an ask_user option → resumes the loop with that answer
   if (closest('.js-wr-send')) { e.stopPropagation(); return wranglerSend(); }   // §18 Mr. Wrangler
   if (closest('.js-wr-min')) { e.stopPropagation(); state.wrangler.min = !state.wrangler.min; return render(); }   // §18 collapse/expand the wrangler dock to its header bar, in place
@@ -19157,6 +19274,7 @@ function onInput(e) {
   }
   // Feedback description → store as they type (so a re-render keeps it).
   if (e.target.classList.contains('js-fb-text')) { if (state.overlay?.kind === 'feedback') state.overlay.text = e.target.value; return; }
+  if (e.target.classList.contains('js-cb-text')) { if (state.overlay?.kind === 'crewBroadcast') { state.overlay.text = e.target.value; const c = document.querySelector('.overlay .js-cb-count'); if (c) c.textContent = `${e.target.value.length}/600`; } return; }
   if (e.target.classList.contains('js-cmt-text')) { if (state.overlay?.kind === 'comment') state.overlay.text = e.target.value; return; }
   if (e.target.classList.contains('js-wr-in')) { if (state.wrangler.open) state.wrangler.draft = e.target.value; return; }
   if (e.target.classList.contains('js-wrops-in')) { if (state.overlay?.kind === 'wranglerOps') state.overlay.draft = e.target.value; return; }   // §18i keep the composer draft through poll re-renders
