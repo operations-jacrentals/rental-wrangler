@@ -1,5 +1,23 @@
 # Backend deploy queue — DEPLOYED (2026-07-06 late session); doc kept as the deploy runbook
 
+## ⏳ PUSHED + VERSIONED — AWAITING JAC'S EDITOR DEPLOY (2026-07-14) — comms Phase B + C-core
+- **Backend v98 — Phase B: customer reminder sweep.** `runReminderSweep_` (start/return/balance;
+  fire-once date-equality → no daily spam, no catch-up; **safe-by-default: every toggle off → 0 sends**),
+  `reminder-balance` template, `{balance}`/`{dueDate}` vars, `runReminderSweepNow` admin action
+  (**DRY-RUN by default**), `installReminderSweepTrigger` (auto-timed inside the customer window).
+  Adversarially reviewed — 5 fixes applied (membership + in-collections invoices skipped; one balance
+  text per customer; cap-abort; window-aware trigger hour). Dry-run validated live (candidates:0, 0 sends).
+- **Backend v99 — Phase C core: crew SMS broadcast.** `sendStaffMessage_` — manual "text the crew"
+  (**manager+** gate via the router, `rosterId` isolation, crew consent, staff window, cap, dedup) + a
+  `messagesFor_` guard so crew-text bodies never surface through the customer projection. `/role`-audited
+  + adversarially reviewed (BLOCKER + 3 fixes applied). The record-derived job templates, the 4
+  auto-triggers, and the frontend broadcast composer are a **separate scoped effort** (triggers need
+  `doSync` surgery + a WO roster-picker — see `docs/superpowers/plans/2026-07-14-notifications-BCD-plan.md`).
+- **ACTIVATION (Jac, editor — supervised):** **v99 supersedes v98** (v99's HEAD includes B), so one
+  deploy — point the live deployment (`…trNlObZw`) at **v99** — lands both. Then, supervised: **B** →
+  `runReminderSweepNow{dryRun:true}` → enable the reminder toggles you want → `installReminderSweepTrigger()`;
+  **C** → a broadcast test to a roster member via `sendStaffMessage`. **Nothing fires unattended.**
+
 ## ✅ DEPLOYED 2026-07-14 — comms: Twilio GO-LIVE + send window/override (v92)
 - **What:** Twilio approved & taken live. Backend **v92**: `smsQuietNow_` window widened to
   **6am–8pm** Central; quiet hours now gate **every** send with an **admin `override:true`**
