@@ -3080,6 +3080,14 @@ select.nc-in { cursor: pointer; }
   border-radius: 9px; border: 1px solid #2a313b; background: #0e1217; color: var(--txt, #e8edf2); font-weight: 700; font-size: 14px; transition: border-color .12s, box-shadow .12s; }
 .login-pick-btn:hover { border-color: #39424e; }
 .login-pick-btn:focus-visible { outline: none; border-color: var(--accent, #ff7a1a); box-shadow: 0 0 0 3px rgba(255, 122, 26, .17); }
+/* Settings → Team Roster per-person auth actions (Phase 3, phone-identity mode) — a small
+   quiet steel button matching the .set-input wells; not a lint-family element, so no data-r. */
+.emp-act { height: 28px; padding: 0 11px; cursor: pointer; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--panel-2, #12161c); color: var(--txt-2);
+  font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 600; font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase;
+  transition: border-color .12s, color .12s; }
+.emp-act:hover { color: var(--txt); border-color: var(--accent-line, var(--accent)); }
+.emp-act:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* §7.1 — R5 ADD affordance: dashed "+Thing" (no word "Add", no space after +) */
 .add-field { color: var(--txt-2); font-weight: 700; border: 1px dashed var(--line); border-radius: 11px; padding: 0 12px; height: 30px; display: inline-flex; align-items: center; background: transparent; font-family: inherit; font-size: 13px; cursor: pointer; }
