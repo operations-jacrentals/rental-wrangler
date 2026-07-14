@@ -2036,6 +2036,23 @@ select.inline-input:focus-visible { outline: 2px solid var(--accent); outline-of
 .kpi-preview { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 10px 4px; align-self: stretch; }
 .kpi-preview-l { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-size: 9.5px; font-weight: 700; color: var(--txt-3); }
 .wr-kpi-readback { font-family: ui-monospace, monospace; font-size: 10.5px; color: var(--txt-3); margin: 3px 0 6px; line-height: 1.4; }
+/* Settings → Notifications (Phase A control center, spec 2026-07-14) — six stamped
+   steel cards; reuses .set-rolecard's panel recipe + .rm-stitch (saddle-stitch, tan) row
+   dividers + .kpi-fld/.kpi-cap/.kpi-tgt for numeric + hour-select fields (already themed,
+   already has a focus ring). Channels alone wears the hazard cap — the ONE signature
+   beat on this pane; everything else stays quiet steel. */
+.notif-card { border: 1px solid var(--line); border-radius: var(--radius, 16px); background: var(--panel-2); margin-bottom: 12px; overflow: hidden; }
+.notif-card:last-child { margin-bottom: 0; }
+.notif-cap { height: 5px; background: repeating-linear-gradient(135deg, var(--yellow) 0 13px, #14181d 13px 26px); }
+.notif-card-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 9px; }
+.notif-card-head { display: flex; align-items: center; gap: 7px; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.4px; font-weight: 800; font-size: 12.5px; color: var(--txt); }
+.notif-card-head svg { width: 15px; height: 15px; color: var(--txt-2); }
+.notif-row { display: flex; align-items: center; gap: 10px; }
+.notif-row .notif-label { flex: 1 1 auto; min-width: 110px; font-size: 12.5px; font-weight: 600; color: var(--txt); }
+.notif-sub { font-size: 11px; line-height: 1.4; color: var(--txt-3); }
+.notif-cadence { font-size: 11px; font-style: italic; color: var(--txt-3); margin-top: -3px; }   /* R8 idiom — italic = a computed readback, not typed */
+.notif-card .rm-stitch { margin: 9px 0; }   /* tighten the saddle-stitch to this card's row rhythm (row pad 9–11) */
+body.is-phone .notif-row { flex-wrap: wrap; }
 /* Company tab */
 .co-form { display: flex; flex-direction: column; gap: 12px; max-width: 440px; }
 .co-fld { display: flex; flex-direction: column; gap: 3px; }
@@ -2916,7 +2933,17 @@ select.nc-in { cursor: pointer; }
 }
 .login-screen.signing-in .login-video { opacity: .62; }
 .login-screen.signing-in { background: #0c0e11; }   /* let the video carry the backdrop, not the gradient */
-@media (prefers-reduced-motion: reduce) { .login-video { display: none; } }
+/* Loading feedback — the signature caution band barber-poles while the (slow) backend
+   load runs, so the wait reads as "working". The 135° / 26px-period stripe tiles
+   SEAMLESSLY in a 26·√2 ≈ 36.77px square, so an explicit background-size + a one-whole-tile
+   horizontal shift loops with no seam. (A plain background-position nudge on the auto-sized
+   gradient exposed a tile-boundary seam inside the 10px band — the "doubled stripe" glitch.) */
+.login-screen.signing-in .login-box::before { background-size: 36.77px 36.77px; animation: loginLoadStripe .9s linear infinite; }
+@keyframes loginLoadStripe { to { background-position: 36.77px 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .login-video { display: none; }
+  .login-screen.signing-in .login-box::before { animation: none; }   /* freeze the barber-pole */
+}
 .login-box {
   position: relative; z-index: 1; width: 344px; padding: 0 0 26px; overflow: hidden;
   display: flex; flex-direction: column; align-items: center;
@@ -2955,7 +2982,50 @@ select.nc-in { cursor: pointer; }
   transition: filter .12s, transform .04s; }
 .login-btn:hover { filter: brightness(1.06); } .login-btn:active { transform: translateY(1px); }
 .login-btn:disabled { opacity: .6; cursor: default; }
+/* Saddle Up + the mute toggle share one row: the ignition flexes to fill, the mute
+   stays a compact square to its left. */
+.login-actions { display: flex; align-items: stretch; gap: 9px; width: 100%; margin-top: 5px; }
+.login-actions .login-btn { flex: 1 1 auto; width: auto; margin-top: 0; }
+/* Mute toggle — a quiet steel secondary matching the input wells (literal darks like the
+   rest of the plate, legible on it under any theme). Icon-only, so no data-r: a sibling of
+   the .js-roweye / .set-reveal utility toggles, not a lint-family pill. */
+.login-mute {
+  flex: 0 0 auto; width: 47px; height: 47px; display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 9px; border: 1px solid #2a313b; background: #0e1217; color: #b9c2cf;
+  cursor: pointer; transition: border-color .12s, box-shadow .12s, color .12s; }
+.login-mute svg { width: 20px; height: 20px; }
+.login-mute:hover { color: #eef2f6; border-color: #39424e; }
+.login-mute:active { transform: translateY(1px); }
+.login-mute.is-muted { color: #8b94a3; }   /* sound off = dimmed */
+.login-mute:focus-visible { outline: none; border-color: var(--accent, #ff7a1a); box-shadow: 0 0 0 3px rgba(255, 122, 26, .17); }
+/* Show-password eye — sits inside the Team password field (icon-only utility toggle like
+   .set-reveal / .login-mute; not a lint-family element, so no data-r). */
+.login-pw-wrap { position: relative; width: 100%; }
+.login-pw-wrap .login-input { padding-right: 42px; }   /* clear the eye */
+.login-pw-eye {
+  position: absolute; top: 0; right: 0; height: 44px; width: 40px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: none; cursor: pointer; color: #8b94a3; transition: color .12s; }
+.login-pw-eye svg { width: 18px; height: 18px; }
+.login-pw-eye:hover { color: #eef2f6; }
+.login-pw-eye:focus-visible { outline: 2px solid var(--accent, #ff7a1a); outline-offset: -3px; border-radius: 7px; color: #eef2f6; }
 .login-err { font-size: 12px; font-weight: 600; color: var(--red, #ff4242); text-align: center; margin-top: 11px; min-height: 14px; }
+/* Env badge — a hazard-caution stamp on any NON-production build (the staging mirror or
+   localhost, which serve the SAME files as production) so you always know which app you're
+   testing. Never rendered on app.jacrentals.com; pointer-events:none so it never blocks. */
+.env-badge {
+  position: fixed; z-index: 90; left: 12px; bottom: 12px; pointer-events: none;
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 800; font-size: 11px;
+  letter-spacing: 2.5px; text-transform: uppercase; color: var(--yellow, #f5c542);
+  padding: 5px 11px 5px 9px; border-radius: 7px;
+  background: linear-gradient(180deg, #1b2129, #0c0e11);
+  border: 1px solid #2a313b; box-shadow: 0 7px 20px -7px #000; }
+.env-badge::before {   /* hi-vis hazard chip — the signature motif, in miniature */
+  content: ''; width: 13px; height: 13px; border-radius: 3px;
+  background: repeating-linear-gradient(135deg, var(--yellow, #f5c542) 0 4px, #14181d 4px 8px); }
+.env-badge.env-local { color: var(--tan, #c2925a); }   /* localhost = leather-tan, distinct from staging yellow */
+.env-badge.env-local::before { background: repeating-linear-gradient(135deg, var(--tan, #c2925a) 0 4px, #14181d 4px 8px); }
 @media (prefers-reduced-motion: no-preference) {
   .login-box { animation: plateIn .5s cubic-bezier(.2, .7, .2, 1) both; }
   @keyframes plateIn { from { opacity: 0; transform: translateY(11px) scale(.985); } to { opacity: 1; transform: none; } }

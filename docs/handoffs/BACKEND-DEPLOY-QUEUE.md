@@ -1,5 +1,21 @@
 # Backend deploy queue — DEPLOYED (2026-07-06 late session); doc kept as the deploy runbook
 
+## ✅ DEPLOYED 2026-07-14 — comms: Twilio GO-LIVE + send window/override (v92)
+- **What:** Twilio approved & taken live. Backend **v92**: `smsQuietNow_` window widened to
+  **6am–8pm** Central; quiet hours now gate **every** send with an **admin `override:true`**
+  escape on manual sends; new admin read-only **`smsProviderStatus`** action (config presence,
+  booleans only). Full deltas + remaining roadmap: `docs/handoffs/comms-twilio-golive-2026-07-14.gs`.
+- **Creds:** `TWILIO_SID/TOKEN/FROM` set LIVE via the `adminSetProps` action (not the editor),
+  validated against Twilio's API (number SMS-capable). Confirmed end-to-end with a real test text
+  (`provider:twilio, status:sent`, delivered to the test handset). Secrets stay in Script
+  Properties only — never in the repo, never echoed.
+- **Deploy flow (as-shipped, and a lesson):** service-account `push` updates HEAD only — it does
+  **not** create a version, so the version-pinned live deployment (…trNlObZw) saw nothing until a
+  version existed. Did: push HEAD → `projects.versions.create` (v92, **safe** via API) → **Jac
+  pointed …trNlObZw at v92 from the EDITOR** (deployments.update via API is still the anon-access
+  landmine — editor only). Anonymous access confirmed intact after (`smsProviderStatus` returns
+  JSON, not 403/HTML).
+
 ## ✅ DEPLOYED 2026-07-13 — ACH unblock: `stripeSaveBank_` PM-attachment guard
 - **Staged to HEAD** (service account push, content-only) + read-back verified, then **editor
   redeploy by Jac**. Anonymous access confirmed intact afterward (wrong-password `auth` →

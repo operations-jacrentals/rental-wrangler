@@ -19,6 +19,13 @@ Also check that the app password secret is present (do NOT echo it):
 [Environment]::GetEnvironmentVariable("RW_PW", "User") -ne ""
 # True = set; False = missing (Staging review login won't work)
 ```
+- **`RW_PW` is an environment SECRET — never a repo value.** It's the team/staging login
+  password, and that login gates the live GAS + Sheets backend and its **real customer PII**,
+  so it lives ONLY as an environment variable: set it in the cloud environment's settings
+  alongside `STAGING_DEPLOY_PAT` / `GAS_SA_KEY_B64` (on a local Windows box, a User env var).
+  If the check above prints missing/`False`, the staging-review login can't run this session —
+  add it there, don't work around it. **NEVER** hardcode or echo the value: the repo is public
+  via Pages, so a password committed to it (even in a skill file) is a permanent PII leak.
 - **Backend deploy auth = check `GAS_SA_KEY_B64`, NOT clasp (Jac, 2026-07-06 — clasp's OAuth is currently broken).** Confirmed: even a **brand-new** clasp token, minted fresh in a **cloud** session, fails `invalid_grant / invalid_rapt` immediately — this is a Google Workspace re-auth policy on the `cloud-platform` scope, enforced server-side per call, and no amount of re-`clasp login`-ing fixes it. **Do not re-attempt `clasp login` as a troubleshooting step** — it will not work until the Workspace admin changes that policy.
   ```bash
   [ -n "$GAS_SA_KEY_B64" ] && echo "service-account deploy: READY" || echo "service-account deploy: NOT SET (backend deploys blocked)"
