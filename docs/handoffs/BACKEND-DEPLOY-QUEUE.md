@@ -1,22 +1,35 @@
 # Backend deploy queue — DEPLOYED (2026-07-06 late session); doc kept as the deploy runbook
 
-## ⏳ PUSHED + VERSIONED — AWAITING JAC'S EDITOR DEPLOY (2026-07-14) — comms Phase B + C-core
+## ⏳ PUSHED + VERSIONED — AWAITING JAC'S EDITOR DEPLOY (2026-07-14) — comms Phase C dedup
+- **Backend v100 — content-aware dedup for the crew broadcast.** `sendStaffMessage_`'s dedup key
+  for a MANUAL broadcast (`isFree`) now folds a short MD5 content hash of the message into
+  `staff|broadcast|<rosterId>|<day>|<hash>`. Effect: two DIFFERENT broadcasts to the same hand in
+  one day both send (the old by-day key silently swallowed the second); an identical double-tap /
+  retry is still deduped. Future job templates (non-free) keep the strict by-day key — one
+  driver-assigned / wo-assigned per hand per day is the intended ceiling there. Additive; `node
+  --check` passes. Pairs with the LIVE frontend composer (#625, promoted to production 2026-07-14).
+- **ACTIVATION (Jac, editor):** point the live deployment (`…trNlObZw`) at **v100**. No dry-run
+  needed — it only changes a dedup key; the roster is empty, so no crew text fires regardless.
+  Nothing sends unattended.
+
+## ✅ DEPLOYED 2026-07-14 — comms Phase B + C-core (v99, Jac deployed)
 - **Backend v98 — Phase B: customer reminder sweep.** `runReminderSweep_` (start/return/balance;
   fire-once date-equality → no daily spam, no catch-up; **safe-by-default: every toggle off → 0 sends**),
   `reminder-balance` template, `{balance}`/`{dueDate}` vars, `runReminderSweepNow` admin action
   (**DRY-RUN by default**), `installReminderSweepTrigger` (auto-timed inside the customer window).
-  Adversarially reviewed — 5 fixes applied (membership + in-collections invoices skipped; one balance
-  text per customer; cap-abort; window-aware trigger hour). Dry-run validated live (candidates:0, 0 sends).
+  Adversarially reviewed — 5 fixes applied. Dry-run validated live (candidates:0, 0 sends).
 - **Backend v99 — Phase C core: crew SMS broadcast.** `sendStaffMessage_` — manual "text the crew"
   (**manager+** gate via the router, `rosterId` isolation, crew consent, staff window, cap, dedup) + a
   `messagesFor_` guard so crew-text bodies never surface through the customer projection. `/role`-audited
-  + adversarially reviewed (BLOCKER + 3 fixes applied). The record-derived job templates, the 4
-  auto-triggers, and the frontend broadcast composer are a **separate scoped effort** (triggers need
-  `doSync` surgery + a WO roster-picker — see `docs/superpowers/plans/2026-07-14-notifications-BCD-plan.md`).
-- **ACTIVATION (Jac, editor — supervised):** **v99 supersedes v98** (v99's HEAD includes B), so one
-  deploy — point the live deployment (`…trNlObZw`) at **v99** — lands both. Then, supervised: **B** →
-  `runReminderSweepNow{dryRun:true}` → enable the reminder toggles you want → `installReminderSweepTrigger()`;
-  **C** → a broadcast test to a roster member via `sendStaffMessage`. **Nothing fires unattended.**
+  + adversarially reviewed (BLOCKER + 3 fixes applied). **v99's HEAD included B**, so pointing the live
+  deployment at v99 landed both. Validated live: `sendStaffMessage` empty probe → `reason:'empty'`;
+  `messagesFor{customerId:"undefined"}` → `{ok:true,messages:[]}`.
+- **Frontend composer SHIPPED (#625) — the "Text The Crew" modal is LIVE on production** (Settings →
+  Notifications → Crew Alerts). Roster is empty today, so it opens to the "add crew" state.
+- **REMAINING (Jac-supervised, not yet done):** enable the Phase B reminder toggles +
+  `installReminderSweepTrigger()` after a real dry-run; a live crew-broadcast test once a hand is on
+  the roster. The 3 auto-triggers + Phase D are a separate scoped effort — see
+  `docs/superpowers/plans/2026-07-14-notifications-BCD-plan.md`.
 
 ## ✅ DEPLOYED 2026-07-14 — comms: Twilio GO-LIVE + send window/override (v92)
 - **What:** Twilio approved & taken live. Backend **v92**: `smsQuietNow_` window widened to
