@@ -23121,7 +23121,7 @@ function renderLogin(msg) {
       </div>
       <div class="login-actions">
         <button type="button" class="login-mute${state.loginMuted ? ' is-muted' : ''}" id="login-mute" aria-pressed="${state.loginMuted}" aria-label="Mute intro sound" data-tip="${state.loginMuted ? 'Intro sound off — tap to unmute' : 'Intro sound on — tap to mute'}">${state.loginMuted ? I.volumeOff : I.volume}</button>
-        <button type="submit" class="login-btn" data-r="R17" id="login-go">Saddle Up</button>
+        <button type="submit" class="login-btn" data-r="R17" id="login-go">Saddle Up?</button>
       </div>
       <div class="login-err" id="login-err">${msg ? esc(msg) : ''}</div>
     </div>
