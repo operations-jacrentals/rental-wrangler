@@ -23114,11 +23114,14 @@ function renderLogin(msg) {
       </div>
       <div class="login-field">
         <label class="login-lbl" for="login-pw">Team password</label>
-        <input id="login-pw" type="password" class="login-input" placeholder="••••••••" autocomplete="current-password" />
+        <div class="login-pw-wrap">
+          <input id="login-pw" type="password" class="login-input" placeholder="••••••••" autocomplete="current-password" />
+          <button type="button" class="login-pw-eye" id="login-pw-eye" aria-label="Show password" data-tip="Show password">${I.eye}</button>
+        </div>
       </div>
       <div class="login-actions">
         <button type="button" class="login-mute${state.loginMuted ? ' is-muted' : ''}" id="login-mute" aria-pressed="${state.loginMuted}" aria-label="Mute intro sound" data-tip="${state.loginMuted ? 'Intro sound off — tap to unmute' : 'Intro sound on — tap to mute'}">${state.loginMuted ? I.volumeOff : I.volume}</button>
-        <button type="submit" class="login-btn" data-r="R17" id="login-go">Saddle Up?</button>
+        <button type="submit" class="login-btn" data-r="R17" id="login-go">Saddle Up</button>
       </div>
       <div class="login-err" id="login-err">${msg ? esc(msg) : ''}</div>
     </div>
@@ -23136,6 +23139,17 @@ function renderLogin(msg) {
     muteBtn.setAttribute('data-tip', state.loginMuted ? 'Intro sound off — tap to unmute' : 'Intro sound on — tap to mute');
     muteBtn.innerHTML = state.loginMuted ? I.volumeOff : I.volume;
     const vid = document.getElementById('login-video'); if (vid) vid.muted = state.loginMuted;
+  });
+  // Show/hide the team password — the eye toggle inside the field.
+  const eyeBtn = document.getElementById('login-pw-eye');
+  if (eyeBtn) eyeBtn.addEventListener('click', () => {
+    const pw = document.getElementById('login-pw'); if (!pw) return;
+    const show = pw.type === 'password';
+    pw.type = show ? 'text' : 'password';
+    eyeBtn.innerHTML = show ? I.eyeOff : I.eye;
+    eyeBtn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    eyeBtn.setAttribute('data-tip', show ? 'Hide password' : 'Show password');
+    pw.focus();
   });
   document.getElementById(currentUser ? 'login-pw' : 'login-name').focus();
 }
@@ -23265,6 +23279,32 @@ function applyViewportClass() {
   document.body.classList.toggle('is-phone', window.matchMedia('(max-width: 640px)').matches);
   document.body.classList.toggle('is-narrow', window.matchMedia('(max-width: 1024px)').matches);
 }
+// ── Which deployment am I running on? — so a STAGING / LOCAL build is unmistakable, and so
+//    the backend warm-up only runs where it helps. Production is the ONE app.jacrentals.com;
+//    the GitHub Pages staging mirror + localhost are non-prod (same signal as swInit). ──
+const APP_ENV = location.hostname === 'app.jacrentals.com' ? 'production'
+  : /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? 'local'
+  : 'staging';
+// A caution stamp on any non-prod build (fixed corner, never interactive) so you always know
+// which app you're testing — the staging mirror serves the SAME files as production.
+function mountEnvBadge() {
+  if (APP_ENV === 'production' || document.getElementById('env-badge')) return;
+  const b = document.createElement('div');
+  b.id = 'env-badge';
+  b.className = 'env-badge env-' + APP_ENV;
+  b.textContent = APP_ENV === 'local' ? 'LOCAL' : 'STAGING';
+  b.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(b);
+}
+// Warm the (cold-starting ~1-5s) Apps Script container while the login screen is up, so the
+// post-Saddle-Up 'load' hits a warm backend. `no-cors` → the response is OPAQUE and UNUSED
+// (the frontend can't read it, so no data exposure) and no password is sent. Fire-and-forget;
+// never blocks boot or surfaces an error.
+let _backendWarmed = false;
+function warmBackend() {
+  if (_backendWarmed) return; _backendWarmed = true;
+  try { fetch(BACKEND_URL, { method: 'GET', mode: 'no-cors', cache: 'no-store' }).catch(() => {}); } catch (e) {}
+}
 function boot() {
   // Recovery hatch: app.jacrentals.com/#reset-settings (or #safe-mode) wipes saved customizations
   // before they apply — the guaranteed way back if a bad setting ever breaks the screen.
@@ -23274,6 +23314,7 @@ function boot() {
   } catch (e) {}
   applySettings();   // Settings Board: apply admin status overrides (color/icon) before the first render
   if (settingsReverted) setTimeout(() => { try { toast('Customizations reset to defaults (recovery mode).'); } catch (e) {} }, 800);
+  mountEnvBadge();   // STAGING / LOCAL caution stamp (no-op on production) — know which app you're in
   initTooltip();
   // §13.5 — the Units graph legend was removed (hover names each slice); its donut slices /
   // trajectory buckets are SVG, so make a focused one keyboard-activatable (Enter/Space → filter).
@@ -23649,6 +23690,7 @@ function boot() {
     loadFromBackend().then(finishLoad)
       .catch(() => { backendPassword = ''; sessionStorage.removeItem('jactec.pw'); renderLogin('Please sign in again.'); });
   } else {
+    warmBackend();   // no cached password → the login screen is about to show; warm the backend during entry so 'load' after Saddle Up hits a hot container
     renderLogin();
   }
 }

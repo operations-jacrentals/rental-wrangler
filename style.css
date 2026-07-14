@@ -2981,7 +2981,34 @@ select.nc-in { cursor: pointer; }
 .login-mute:active { transform: translateY(1px); }
 .login-mute.is-muted { color: #8b94a3; }   /* sound off = dimmed */
 .login-mute:focus-visible { outline: none; border-color: var(--accent, #ff7a1a); box-shadow: 0 0 0 3px rgba(255, 122, 26, .17); }
+/* Show-password eye — sits inside the Team password field (icon-only utility toggle like
+   .set-reveal / .login-mute; not a lint-family element, so no data-r). */
+.login-pw-wrap { position: relative; width: 100%; }
+.login-pw-wrap .login-input { padding-right: 42px; }   /* clear the eye */
+.login-pw-eye {
+  position: absolute; top: 0; right: 0; height: 44px; width: 40px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: none; cursor: pointer; color: #8b94a3; transition: color .12s; }
+.login-pw-eye svg { width: 18px; height: 18px; }
+.login-pw-eye:hover { color: #eef2f6; }
+.login-pw-eye:focus-visible { outline: 2px solid var(--accent, #ff7a1a); outline-offset: -3px; border-radius: 7px; color: #eef2f6; }
 .login-err { font-size: 12px; font-weight: 600; color: var(--red, #ff4242); text-align: center; margin-top: 11px; min-height: 14px; }
+/* Env badge — a hazard-caution stamp on any NON-production build (the staging mirror or
+   localhost, which serve the SAME files as production) so you always know which app you're
+   testing. Never rendered on app.jacrentals.com; pointer-events:none so it never blocks. */
+.env-badge {
+  position: fixed; z-index: 90; left: 12px; bottom: 12px; pointer-events: none;
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 800; font-size: 11px;
+  letter-spacing: 2.5px; text-transform: uppercase; color: var(--yellow, #f5c542);
+  padding: 5px 11px 5px 9px; border-radius: 7px;
+  background: linear-gradient(180deg, #1b2129, #0c0e11);
+  border: 1px solid #2a313b; box-shadow: 0 7px 20px -7px #000; }
+.env-badge::before {   /* hi-vis hazard chip — the signature motif, in miniature */
+  content: ''; width: 13px; height: 13px; border-radius: 3px;
+  background: repeating-linear-gradient(135deg, var(--yellow, #f5c542) 0 4px, #14181d 4px 8px); }
+.env-badge.env-local { color: var(--tan, #c2925a); }   /* localhost = leather-tan, distinct from staging yellow */
+.env-badge.env-local::before { background: repeating-linear-gradient(135deg, var(--tan, #c2925a) 0 4px, #14181d 4px 8px); }
 @media (prefers-reduced-motion: no-preference) {
   .login-box { animation: plateIn .5s cubic-bezier(.2, .7, .2, 1) both; }
   @keyframes plateIn { from { opacity: 0; transform: translateY(11px) scale(.985); } to { opacity: 1; transform: none; } }
