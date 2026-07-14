@@ -29,7 +29,7 @@ import {
   SHOP_TYPES, COLUMNS, COLUMN_OF,
   legacyTransportPrice, computeTransportPrice, isFueledType, legsForType, YARD_ORIGIN, GOOGLE_MAPS_KEY, GPS_BACKEND_URL,
   fmtWindow, fmtShortDate, showsTruck, parseISO, TODAY_ISO, refreshTodayISO, invoiceShort, TRANSPORT_MAP,
-  FLAG_META, FLAG_SEVERITY_RANK, INSURANCE_COVERAGE_TYPES, FEATURES,
+  FLAG_META, FLAG_SEVERITY_RANK, INSURANCE_COVERAGE_TYPES, FEATURES, PHONE_IDENTITY,
 } from './config.js';
 // Feature-flag reader (scaffold only, dev-workflow trunk-based redesign D5): a big
 // replacement's new code path checks flagOn('key') instead of running unconditionally,
@@ -21658,6 +21658,7 @@ function driveViewUrl(res) {
 async function backendCall(action, extra) {
   // text/plain avoids a CORS preflight that GAS web apps can't answer
   const payload = Object.assign({ action, password: backendPassword }, extra || {});
+  if (flagOn('phoneIdentity') && backendPassword) payload.sessionToken = backendPassword;   // per-person mode: the device/session token authorizes each call (backend prefers it over `password`); a no-op while the flag is OFF
   const res = await fetch(BACKEND_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
   // A backend error page (GAS 500/quota/auth HTML) is NOT JSON — res.json() throws, callers
   // catch it, and a real card/charge failure gets masked as a generic "Network error". Parse
@@ -23463,6 +23464,7 @@ window.addEventListener('beforeunload', (e) => {
   e.preventDefault(); e.returnValue = '';
 });
 function renderLogin(msg) {
+  if (flagOn('phoneIdentity')) return renderPhoneLogin(msg);   // per-person login flow (Phase 2); the shared-password screen below is the flag-OFF path
   if (state.commsRail) { state.commsRail.cat = null; state.commsRail.sessions && Object.values(state.commsRail.sessions).forEach((s) => { s.menuOpen = false; }); }   // D8 — clock-in = an EMPTY rail (sessions persist per device, nothing summons itself)
   $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4?v=20260708a" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="login-form">
     <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
@@ -23518,6 +23520,7 @@ function renderLogin(msg) {
 function finishLoad() {
   snapshotSaved();                                              // baseline = what the backend currently holds
   buildIndexes(); state.cascade = createCascade(DATA); booting = false; render();
+  if (flagOn('phoneIdentity')) { try { const emp = ((state.settings || {}).employees) || []; localStorage.setItem('jactec.pidRoster', JSON.stringify(emp.map((e) => ({ id: e.id, name: e.name })))); } catch (e) {} }   // cache non-secret roster names for the shared-device name-pick
   // (views no longer pull from the backend — personal per-device "my views", spec search-views D2)
   loadGroupOrderFromBackend();                                  // pull THIS role's saved card-group order
   loadTripsFromBackend();                                       // §2.3 Phase 4 — pull the trips store (getTrips), server wins at boot
@@ -23633,6 +23636,146 @@ async function attemptLogin() {
     backendPassword = ''; sessionStorage.removeItem('jactec.pw'); sessionStorage.removeItem('jactec.role');
     renderLogin(/unauthorized/i.test(String(e && e.message)) ? 'That password wasn’t recognized.' : "Couldn't reach the database. Check your connection and try again.");
   }
+}
+
+/* ══════════════ PHONE-VERIFIED DEVICE IDENTITY — login flow (Phase 2) ══════════════
+   flagOn('phoneIdentity'): identify by phone → one-time SMS code → "shared device?" →
+   PERSONAL (trusted 30 days, login = open the app) or SHARED (a PIN each session). No
+   passwords. EVERY entry point is flag-gated, so the shared-password screen above is
+   byte-for-byte untouched while the flag is OFF. Backend contract:
+   docs/handoffs/phone-identity-backend.gs. NOTE: unverified until the backend deploys —
+   the /jactec-ui screenshot self-critique + the end-to-end drive run on staging after
+   Jac's editor go-live. ══════════════════════════════════════════════════════════════ */
+const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', _role: '' };
+function pidTokenGet() { try { return localStorage.getItem('jactec.pidToken') || sessionStorage.getItem('jactec.pidToken') || ''; } catch (e) { return ''; } }
+function pidTokenSet(tok, personal) { try { if (personal) { localStorage.setItem('jactec.pidToken', tok); sessionStorage.removeItem('jactec.pidToken'); } else { sessionStorage.setItem('jactec.pidToken', tok); localStorage.removeItem('jactec.pidToken'); } } catch (e) {} }
+function pidTokenClear() { try { localStorage.removeItem('jactec.pidToken'); sessionStorage.removeItem('jactec.pidToken'); } catch (e) {} }
+function pidRosterCache() { try { return JSON.parse(localStorage.getItem('jactec.pidRoster') || '[]'); } catch (e) { return []; } }
+// The verified token becomes the per-call credential: a truthy backendPassword keeps every
+// existing online-guard working, and backendCall sends it as sessionToken (backend prefers it).
+function pidAdopt(r, tok, personal) {
+  backendPassword = tok; currentRole = (r && r.role) || pidUI._role || ''; currentUser = (r && r.name) || pidUI.name || '';
+  pidTokenSet(tok, personal);
+  try { sessionStorage.setItem('jactec.role', currentRole); localStorage.setItem('jactec.user', currentUser); } catch (e) {}
+}
+function pidLoadFail() { pidTokenClear(); backendPassword = ''; pidUI.step = 'identify'; renderPhoneLogin("Couldn't reach the database. Try again."); }
+function pidEnter() { const s = document.querySelector('.login-screen'); if (s) s.classList.add('signing-in'); loadFromBackend().then(finishLoad).then(applyRoleLanding).catch(pidLoadFail); }
+// Boot (flag on): resume a trusted device, else show the phone login.
+function phoneBoot() {
+  const tok = pidTokenGet();
+  if (!tok) { warmBackend(); return renderPhoneLogin(); }
+  backendCall('authResume', { token: tok }).then((r) => {
+    if (r && r.ok) { pidAdopt(r, tok, !!(function () { try { return localStorage.getItem('jactec.pidToken'); } catch (e) { return null; } })()); pidEnter(); }
+    else { pidTokenClear(); backendPassword = ''; warmBackend(); renderPhoneLogin(); }
+  }).catch(() => { warmBackend(); renderPhoneLogin(); });
+}
+function pidErr(msg) { pidUI.err = msg || ''; const e = document.getElementById('pid-err'); if (e) e.textContent = pidUI.err; return null; }
+async function pidCall(btnId, fn) {
+  const btn = document.getElementById(btnId), prev = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Working…'; }
+  try { const r = await fn(); if (btn) { btn.disabled = false; btn.textContent = prev; } return r; }
+  catch (e) { if (btn) { btn.disabled = false; btn.textContent = prev; } pidErr("Couldn't reach the database. Try again."); return null; }
+}
+function renderPhoneLogin(msg) {
+  if (msg != null) pidUI.err = msg;
+  const P = PHONE_IDENTITY, step = pidUI.step, roster = pidRosterCache();
+  let inner = '';
+  if (step === 'identify') {
+    inner = `<div class="login-field"><label class="login-lbl" for="pid-phone">Mobile number</label>
+        <input id="pid-phone" class="login-input" type="tel" inputmode="tel" autocomplete="tel" placeholder="(337) 555-0100" value="${esc(pidUI._phone)}" /></div>
+      <button type="submit" class="login-btn" data-r="R17" id="pid-send">Text my code</button>
+      ${roster.length ? `<button type="button" class="login-ghost" id="pid-topin">Sign in with a PIN</button>` : ''}`;
+  } else if (step === 'device') {
+    inner = `<div class="login-hint">Code sent to ${esc(pidUI.name || 'you')} · ${esc(pidUI.masked)}</div>
+      <div class="login-ask">Is this a shared device?</div>
+      <div class="login-choice">
+        <button type="button" class="login-choice-btn" data-kind="personal"><span class="lc-t">My phone</span><span class="lc-s">Stays signed in ${P.trustDays} days</span></button>
+        <button type="button" class="login-choice-btn" data-kind="shared"><span class="lc-t">Shared computer</span><span class="lc-s">A PIN each time</span></button>
+      </div>`;
+  } else if (step === 'code') {
+    inner = `<div class="login-hint">Enter the ${P.codeLen}-digit code sent to ${esc(pidUI.masked)}</div>
+      <div class="login-field"><input id="pid-code" class="login-input login-otp" inputmode="numeric" autocomplete="one-time-code" maxlength="${P.codeLen}" placeholder="000000" /></div>
+      <button type="submit" class="login-btn" data-r="R17" id="pid-verify">Verify</button>
+      <button type="button" class="login-ghost" id="pid-resend">Resend code</button>`;
+  } else if (step === 'setpin') {
+    inner = `<div class="login-hint">Set a PIN for this shared computer, ${esc(pidUI.name || 'partner')}</div>
+      <div class="login-field"><input id="pid-pin" class="login-input login-otp" inputmode="numeric" autocomplete="new-password" maxlength="${P.pinMaxLen}" placeholder="New PIN" /></div>
+      <div class="login-field"><input id="pid-pin2" class="login-input login-otp" inputmode="numeric" autocomplete="new-password" maxlength="${P.pinMaxLen}" placeholder="Confirm PIN" /></div>
+      <button type="submit" class="login-btn" data-r="R17" id="pid-savepin">Set PIN &amp; sign in</button>`;
+  } else if (step === 'pinpick') {
+    inner = `<div class="login-ask">Who's signing in?</div>
+      <div class="login-pick">${roster.map((p) => `<button type="button" class="login-pick-btn" data-id="${esc(p.id)}">${esc(p.name || '—')}</button>`).join('') || '<div class="login-hint">No one saved on this device yet — use your phone.</div>'}</div>
+      <button type="button" class="login-ghost" id="pid-tophone">Use my phone instead</button>`;
+  } else if (step === 'pin') {
+    inner = `<div class="login-hint">PIN for ${esc(pidUI.name || 'you')}</div>
+      <div class="login-field"><input id="pid-loginpin" class="login-input login-otp" inputmode="numeric" autocomplete="off" maxlength="${P.pinMaxLen}" placeholder="PIN" /></div>
+      <button type="submit" class="login-btn" data-r="R17" id="pid-signin">Saddle Up?</button>
+      <button type="button" class="login-ghost" id="pid-needcode">Forgot PIN — text me a code</button>`;
+  }
+  $('#app').innerHTML = `<div class="login-screen"><form class="login-box" id="pid-form" autocomplete="off">
+    <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
+    <div class="login-plate">
+      <img class="login-logo" src="assets/jac-rentals-logo.jpg" alt="Jac Rentals" />
+      <div class="login-title">Rental Wrangler</div>
+      <div class="login-sub">JacRentals · Sulphur, LA</div>
+      ${inner}
+      <div class="login-err" id="pid-err">${pidUI.err ? esc(pidUI.err) : ''}</div>
+    </div></form></div>`;
+  pidWire();
+}
+function pidWire() {
+  const step = pidUI.step, form = document.getElementById('pid-form');
+  if (form) form.addEventListener('submit', (e) => { e.preventDefault();
+    if (step === 'identify') pidDoStart(false);
+    else if (step === 'code') pidDoVerify();
+    else if (step === 'setpin') pidDoSetPin();
+    else if (step === 'pin') pidDoLoginPin(); });
+  const on = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener('click', fn); };
+  on('pid-topin', () => { pidUI.step = 'pinpick'; renderPhoneLogin(''); });
+  on('pid-tophone', () => { pidUI.step = 'identify'; renderPhoneLogin(''); });
+  on('pid-resend', () => pidDoStart(true));
+  on('pid-needcode', () => { pidUI.step = 'identify'; pidUI._phone = ''; renderPhoneLogin(''); });
+  document.querySelectorAll('.login-choice-btn').forEach((b) => b.addEventListener('click', () => { pidUI.kind = b.getAttribute('data-kind'); pidUI.step = 'code'; renderPhoneLogin(''); }));
+  document.querySelectorAll('.login-pick-btn').forEach((b) => b.addEventListener('click', () => { pidUI.personId = b.getAttribute('data-id'); const r = pidRosterCache().find((x) => String(x.id) === String(pidUI.personId)); pidUI.name = r ? r.name : ''; pidUI.step = 'pin'; renderPhoneLogin(''); }));
+  const focusId = { identify: 'pid-phone', code: 'pid-code', setpin: 'pid-pin', pin: 'pid-loginpin' }[step];
+  if (focusId) { const el = document.getElementById(focusId); if (el) el.focus(); }
+}
+async function pidDoStart(resend) {
+  const phone = resend ? pidUI._phone : (document.getElementById('pid-phone')?.value || '').trim();
+  if (!phone) return pidErr('Enter your mobile number.');
+  pidUI._phone = phone;
+  const r = await pidCall(resend ? 'pid-resend' : 'pid-send', () => backendCall('authStart', { phone, purpose: 'login' }));
+  if (!r) return;
+  if (r.ok && r.sent) { pidUI.personId = r.personId; pidUI.name = r.name || ''; pidUI.masked = r.masked || ''; pidUI.err = ''; if (!resend) pidUI.step = 'device'; renderPhoneLogin(''); }
+  else pidErr("If that number's on the roster, a code is on its way — check your phone.");
+}
+async function pidDoVerify() {
+  const code = (document.getElementById('pid-code')?.value || '').replace(/\D/g, '');
+  if (code.length !== PHONE_IDENTITY.codeLen) return pidErr(`Enter the ${PHONE_IDENTITY.codeLen}-digit code.`);
+  const r = await pidCall('pid-verify', () => backendCall('authVerify', { personId: pidUI.personId, code, deviceKind: pidUI.kind }));
+  if (!r) return;
+  if (!r.ok) return pidErr(r.error === 'bad-code' ? `That code didn't match${r.left != null ? ` — ${r.left} left` : ''}.` : r.error === 'expired' ? 'That code expired — resend a fresh one.' : r.error === 'too-many' ? 'Too many tries — resend a fresh code.' : 'Could not verify — resend a code.');
+  pidUI._role = r.role || ''; pidUI._tok = r.token || '';
+  const personal = pidUI.kind === 'personal';
+  if (!personal && !r.pinSet) { pidUI.step = 'setpin'; return renderPhoneLogin(''); }
+  pidAdopt(r, r.token, personal); pidEnter();
+}
+async function pidDoSetPin() {
+  const pin = (document.getElementById('pid-pin')?.value || '').replace(/\D/g, ''), pin2 = (document.getElementById('pid-pin2')?.value || '').replace(/\D/g, '');
+  if (pin.length < PHONE_IDENTITY.pinMinLen) return pidErr(`PIN must be at least ${PHONE_IDENTITY.pinMinLen} digits.`);
+  if (pin !== pin2) return pidErr("PINs don't match.");
+  const r = await pidCall('pid-savepin', () => backendCall('authSetPin', { personId: pidUI.personId, pin, token: pidUI._tok }));
+  if (!r) return;
+  if (!r.ok) return pidErr('Could not save the PIN — try again.');
+  pidAdopt({ role: pidUI._role, name: pidUI.name }, pidUI._tok, false); pidEnter();
+}
+async function pidDoLoginPin() {
+  const pin = (document.getElementById('pid-loginpin')?.value || '').replace(/\D/g, '');
+  if (!pin) return pidErr('Enter your PIN.');
+  const r = await pidCall('pid-signin', () => backendCall('authLoginPin', { personId: pidUI.personId, pin }));
+  if (!r) return;
+  if (!r.ok) return pidErr(r.error === 'locked' ? 'Locked for a bit — text yourself a code instead.' : r.error === 'no-pin' ? 'No PIN yet — text yourself a code to set one.' : r.error === 'bad-pin' ? `Wrong PIN${r.left != null ? ` — ${r.left} left` : ''}.` : 'Could not sign in.');
+  pidAdopt(r, r.token, false); pidEnter();
 }
 
 // §M0 — reflect the viewport width onto <body> so CSS + the gesture layer can key off
@@ -24046,6 +24189,9 @@ function boot() {
   if (hash.includes('local')) { return offlineBoot(); }     // #local — render from data.js, no backend
   if (hash.includes('reseed')) { return reseedFromFile(); }  // #reseed — REPLACE live data with the file
 
+  // Per-person login (flagOn('phoneIdentity')): resume a trusted device or show the phone
+  // login. Strictly gated — the shared-password gate below is the flag-OFF path, untouched.
+  if (flagOn('phoneIdentity')) { return phoneBoot(); }
   // §16 — gate on the shared password: load from the backend if we already have it
   // this session, otherwise show the login screen. The app only renders once data is in.
   if (backendPassword) {
