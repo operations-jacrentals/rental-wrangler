@@ -1,5 +1,11 @@
 # Notifications B / C / D — implementation plans (2026-07-14)
 
+> **STATUS (updated 2026-07-14):** Phase A shipped to trunk (#620). **Phase B BUILT** → backend **v98**
+> (reviewed, dry-run-validated). **Phase C CORE BUILT** → backend **v99** (the manual crew broadcast;
+> `/role`-audited + reviewed). Both are pushed + versioned, **awaiting Jac's editor deploy** (see
+> `BACKEND-DEPLOY-QUEUE.md`). REMAINING: C's frontend broadcast composer + the 3 auto-triggers (§C
+> below — triggers are a real lift), and all of Phase D. The plans below are the build guide for what's left.
+
 Ready-to-build plans for the phases that **fire real sends** or **need Jac's editor deploy /
 trigger install** — so we build + activate them together, supervised. Design: the companion
 `2026-07-14-notifications-pane-design.md`. Phase A (the pane) is built + staged this session.
