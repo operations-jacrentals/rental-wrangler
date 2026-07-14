@@ -13206,7 +13206,7 @@ function buildPopupEl(o, overlay, opts = {}) {
               return `<div class="req-card has-closex${needs ? ' req-needs' : ''}">
               <div class="req-head"><span class="req-num">${stat.ic} #${n.number}</span><span class="req-title">${esc(n.title)}</span><span class="spacer"></span><span class="pill c-${stat.color} req-state" data-r="R3b">${stat.pill}</span>${closeX('js-notif-dismiss', { data: { num: n.number }, hover: true })}</div>
               ${n.verdict ? `<div class="req-text">${esc(n.verdict).replace(/\n+/g, '<br>')}</div>` : `<div class="req-text muted">${needs ? 'Mr. Wrangler needs your call on this one.' : 'Resolved — refresh the app to see the change.'}</div>`}
-              <div class="req-acts"><span class="req-await">${stat.foot}</span><a class="req-link" href="${esc(n.url)}" target="_blank" rel="noopener">GitHub ↗</a></div>
+              <div class="req-acts"><button class="pill ${needs ? 'c-commit' : 'c-blue'} js-notif-open" data-r="R17" data-n="${n.number}">${needs ? '💬 Answer Mr. Wrangler' : '💬 Open chat'}</button>${needs ? '' : `<span class="req-await">${stat.foot}</span>`}<a class="req-link" href="${esc(n.url)}" target="_blank" rel="noopener">GitHub ↗</a></div>
             </div>`;
             }).join('')));
     const foot = backendPassword
@@ -15324,11 +15324,36 @@ function openWranglerFromRequest(n) {
   const msgs = messages.length ? messages.map((m) => ({ ...m })) : (report ? [{ role: 'user', content: report }] : []);
   if (rq.images && rq.images.length) { const fu = msgs.find((m) => m.role === 'user'); if (fu) fu.images = rq.images.slice(); }
   openWranglerDock({ id: 'req' + rq.number, messages: msgs, draft: '', attach: [], reqNumber: rq.number, reqTitle: rq.title, reqUrl: rq.url });
-  if (state.overlay?.kind === 'requests') closeOverlay();   // close the inbox overlay so the dock is visible
+  if (state.overlay && (state.overlay.kind === 'requests' || state.overlay.kind === 'notifications')) closeOverlay();   // close the inbox/bell overlay so the dock is visible
   if (typeof backendPassword !== 'undefined' && backendPassword) {
     backendCall('wranglerThread', { number: n }).then((r) => {
       if (r && r.ok && Array.isArray(r.messages) && r.messages.length && state.wrangler.reqNumber === n) {
         r.messages.forEach((m) => state.wrangler.messages.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.text || m.content || '', images: m.images || null }));
+        render();
+      }
+    }).catch(() => {});
+  }
+}
+/* Open ANY bell notification's Mr. Wrangler chat in-app (Jac 2026-07-14: "I should be able to
+   open the chat of any of them"). An open "needs you" item is still a live request → full re-seed
+   via openWranglerFromRequest (correct Answer/Dismiss bar). A resolved/closed item isn't in
+   wranglerRequests, so open a READ view seeded from the notification (title + verdict) and hydrate
+   from the server thread — WITHOUT a reqNumber, so a done fix never renders a bogus Approve/Dismiss
+   bar (openWranglerDock only sets reqNumber when passed, so we clear it explicitly with null). */
+function openWranglerFromNotif(num) {
+  if ((wranglerRequests || []).find((x) => x.number === num)) return openWranglerFromRequest(num);
+  const n = (wranglerNotifs || []).find((x) => x.number === num);
+  if (!n) return;
+  const wid = 'notif' + num;
+  const seed = [];
+  if (n.title) seed.push({ role: 'user', content: n.title });
+  if (n.verdict) seed.push({ role: 'assistant', content: n.verdict });
+  openWranglerDock({ id: wid, messages: seed, draft: '', attach: [], reqNumber: null, reqTitle: null, reqUrl: null });
+  if (state.overlay && state.overlay.kind === 'notifications') closeOverlay();   // close the bell so the chat is visible
+  if (typeof backendPassword !== 'undefined' && backendPassword) {
+    backendCall('wranglerThread', { number: num }).then((r) => {
+      if (r && r.ok && Array.isArray(r.messages) && r.messages.length && state.wrangler.id === wid) {
+        state.wrangler.messages = r.messages.map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.text || m.content || '', images: m.images || null }));
         render();
       }
     }).catch(() => {});
@@ -17586,6 +17611,7 @@ function onClick(e) {
   if (closest('.js-notif-dismiss')) { e.stopPropagation(); return dismissNotif(Number(closest('.js-notif-dismiss').dataset.num)); }   // §246 clear one
   if (closest('.js-notif-dismissall')) { e.stopPropagation(); return dismissAllNotifs(); }   // §246 clear all
   if (closest('.js-notif-mute')) { e.stopPropagation(); return toggleNotifsMuted(); }   // §246 mute/unmute the badge
+  if (closest('.js-notif-open')) { e.stopPropagation(); return openWranglerFromNotif(Number(closest('.js-notif-open').dataset.n)); }   // §18f open ANY notification's Mr. Wrangler chat in-app (needs → answer; resolved → read view)
   if (closest('.js-transport-alerts')) { e.stopPropagation(); closeMenus(); return openOverlay({ kind: 'transport-alerts' }); }   // #515 transport reminders — deliveries/pickups due
   if (closest('.js-tralert-called')) { e.stopPropagation(); return callTransportAlert(closest('.js-tralert-called').dataset.key); }   // #515 dismiss one leg ("Called")
   if (closest('.js-tralert-allcalled')) { e.stopPropagation(); return callAllTransportAlerts(); }   // #515 clear the whole window
