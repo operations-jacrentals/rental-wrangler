@@ -19,12 +19,29 @@ the app), shared device takes a PIN each session. No passwords.
 | 3 · Roster admin | `bccd497` | "+ Employee", per-person Text-code / Sign-out, roster=login-list note |
 | 4 · Cutover blast | `d8b9c51` | "Text everyone a setup code" (`authEnrollBlast`) |
 
-## ⚠️ NOT done — resume here
+## ✅ Backend DEPLOYED + verified — 2026-07-14
 
-**None of Phases 1–4 has been RUN.** Cloud session couldn't deploy the backend or drive a
-browser. It's flag-guarded so it's safe, but **correctness is unverified.** Resume order:
+Phase 1 backend is **live** (dormant behind the flag). Merged additively into `Code.js` per the
+map below, pushed to HEAD via the service account, Jac did the editor **New version** go-live.
+Verified against the live `/exec`: `auth` wrong-pw → `{ok:false,unauthorized}`; `auth` real pw →
+`{ok:true,role:Admin}` (**shared-password login intact**); `authStart` non-roster → `{ok:true,
+sent:false}`; `authResume` bogus token → `{ok:false,expired}`. Anonymous access healthy.
 
-1. **Deploy the backend (STOP-gate, Jac's call) — NOT a blind push; needs careful review.**
+**Pre-flip follow-ups (before flipping `phoneIdentity` ON):**
+- **Add the `auth*` actions to `WRITE_ACTIONS`** (POST-only hardening) — they currently dispatch
+  before the §256 POST guard, so they're GET-reachable. Harmless while dormant; do it in the next
+  backend touch. (Also verify `adminSetProps_` and other inner `pw`-rechecking functions honor a
+  per-person session — dormant-path items.)
+- **Drive the per-person flow end-to-end on staging** (deploy the branch with the flag temporarily
+  ON) — enroll a test roster person, code→verify→personal/shared/PIN, self-serve reset, per-person
+  Sign-out, remove→revoke, blast. Run the `/jactec-ui` screenshot self-critique. THEN flip.
+
+## ⚠️ Remaining — resume here
+
+Frontend Phases 2–4 are built but **not yet driven end-to-end** (needs the staging drive above).
+Original deploy map (kept for reference — the splice is already applied + live):
+
+1. **Deploy the backend — ✅ DONE 2026-07-14 (see above). Original map:**
    The auth handlers in `phone-identity-backend.gs` merge into the gitignored `Code.gs`. The
    live code was pulled + mapped on 2026-07-14; all helper deps exist. **Exact integration map
    (live `Code.js` line numbers as of the 2026-07-14 pull — re-grep before applying):**
