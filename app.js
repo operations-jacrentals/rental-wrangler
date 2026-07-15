@@ -20429,8 +20429,18 @@ async function checkAchStatus(invoiceId, piId) {
 // Charge an invoice off_session; on 3DS fall back to an on-session confirm, then
 // re-verify server-side before marking paid. The payment overlay has no Card
 // Element, so re-rendering it for busy/error states is safe.
+/* PO gate (customers-crm requiresPO, Jac 2026-07-15): a customer flagged "PO required"
+   must carry a PO # on the invoice before we SEND it to them or CHARGE A CARD against it —
+   a HARD block, beyond the advisory red "PO #" chip + the on-rent warning. Cash/check
+   payments (recordPayment) are unaffected; this only guards card charges + customer sends. */
+function invoicePoBlocked(inv) {
+  if (!inv) return false;
+  const c = inv.customerId ? IDX.customer.get(inv.customerId) : null;
+  return !!(c && c.requiresPO && !inv.po);
+}
 async function chargeInvoiceFlow(invoiceId) {
   if (!canMoney()) { toast('Pay/Charge/Refund is Office/Admin only.'); return; }   // #552 audit item 4: defence-in-depth
+  { const inv = IDX.invoice.get(invoiceId); if (invoicePoBlocked(inv)) { toast('PO required for this customer — add the PO # before charging a card.'); return; } }   // PO gate — hard-block the card charge until a PO # is on the invoice
   const o = state.overlay; if (!o || o.kind !== 'payment') return;
   const live = () => state.overlay === o;   // bail if the overlay changed/closed mid-await
   // §19: when the allocation rows are present, the gross + per-line split come
@@ -20853,6 +20863,7 @@ async function sendInvoiceEmail(invoiceId, anchorEl) {
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
   const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
   if (!cust || !cust.email) { toast('No email on file for this customer.'); return; }   // guard — button is disabled, this is belt-and-suspenders
+  if (invoicePoBlocked(inv)) { toast('PO required for this customer — add the PO # before sending.'); return; }   // PO gate — hard-block the send until a PO # is on the invoice
   if (!backendPassword) {   // demo/offline — the pre-pipe mailto path, unchanged
     const subject = `Quote from ${companyName()} – ${inv.invoiceId}`;
     window.location.href = `mailto:${encodeURIComponent(cust.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(invoiceQuoteSummary(inv))}`;
@@ -20877,6 +20888,7 @@ async function sendInvoiceText(invoiceId) {
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
   const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
   if (!cust || !cust.phone) { toast('No phone on file for this customer.'); return; }
+  if (invoicePoBlocked(inv)) { toast('PO required for this customer — add the PO # before sending.'); return; }   // PO gate — hard-block the send until a PO # is on the invoice
   if (!backendPassword) {   // demo/offline — the pre-pipe deep-link path, unchanged
     const t = invoiceTotals(inv);
     const first = cust.firstName || (cust.name || '').trim().split(/\s+/)[0] || 'there';
