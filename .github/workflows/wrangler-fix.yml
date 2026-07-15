@@ -43,6 +43,17 @@ on:
     # reporter, which files a pre-filled issue that already carries the label.
     types: [opened, labeled]
 
+# De-dupe the opened+labeled double-fire: the in-app reporter files an issue that
+# ALREADY carries the label, so GitHub emits BOTH `opened` and `labeled` for the
+# same issue — which otherwise starts two identical fix runs that race on the same
+# branch/PR (2× the API spend, and a real collision risk). One group per issue
+# with cancel-in-progress collapses them to a single run (the later event
+# supersedes the earlier), and also means a quick re-label restarts the fix
+# cleanly instead of stacking a second agent on top of the first.
+concurrency:
+  group: wrangler-fix-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
   pull-requests: write

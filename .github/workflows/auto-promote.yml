@@ -12,9 +12,14 @@ name: Auto-promote — take a merged Wrangler auto-fix live
 # there — this closes the last mile so an end-user's reported fix actually goes
 # live without them (or Jac) touching the deploy machinery.
 #
-# ONLY auto-fixes auto-promote. A human's merge to `trunk` carries no
-# `auto-promote` label, so it still waits for the human `/promote` (Gate 2) —
-# your two-gate control is untouched for everything except Wrangler auto-fixes.
+# ONLY auto-fixes TRIGGER an auto-promote. A human's merge to `trunk` carries no
+# `auto-promote` label, so it never triggers this job on its own — it still waits
+# for the human `/promote` (Gate 2). One caveat, made explicit: promote.mjs
+# fast-forwards `production` to the FULL `trunk` tip, so when an auto-fix does
+# promote, any CI-green human work already merged to trunk but not yet `/promote`d
+# rides live with it. That's safe (everything on trunk passed CI), and the final
+# step below leaves a heads-up comment on the PR listing anything that rode along,
+# so an auto-fix never takes other work live silently.
 #
 # HOW IT STAYS SAFE (fully machine-gated — no human review, but every gate must pass):
 #   1. `smoke` + `logic-test` CI already gated the merge to trunk (a broken fix
@@ -69,6 +74,15 @@ jobs:
         with:
           node-version: 20
 
+      - name: Record the production tip before promoting
+        # Baseline for the heads-up step below: where production sat BEFORE the
+        # fast-forward. Captured to $GITHUB_ENV now (before promote.mjs moves the
+        # ref) so we can diff old→new production afterward and report anything that
+        # rode live besides this auto-fix. FETCH_HEAD is reliable right after fetch.
+        run: |
+          git fetch origin production
+          echo "PROD_BEFORE=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_ENV"
+
       - name: Promote the merged auto-fix to production (go live)
         # promote.mjs: fetch trunk+production, verify staging is fresh, fast-forward
         # production -> trunk, then verify the live ?v= bytes. --yes runs it for real.
@@ -85,4 +99,40 @@ jobs:
             gh issue comment "$ISSUE" --body "✅ Shipped and **live** now — refresh the page to see it. — Mr. Wrangler"
           else
             echo "auto-promote: promoted, but found no 'Closes #<n>' in the PR body to comment on."
+          fi
+
+      - name: Heads-up if other trunk commits rode live with this auto-fix
+        # promote.mjs fast-forwards production to the whole trunk tip, so this
+        # auto-fix can carry CI-green work that was merged to trunk but deliberately
+        # left for a manual /promote. Safe (all of trunk passed CI) but it means
+        # "/promote is my gate" isn't strict — so leave a developer-facing audit
+        # trail on the PR when it happens. Never blocks: the fix already went live.
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.WRANGLER_PAT }}
+          PROD_BEFORE: ${{ env.PROD_BEFORE }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          git fetch origin production
+          PROD_AFTER=$(git rev-parse FETCH_HEAD)
+          # Fallback so an (unexpected) empty merge sha can't over-report every commit.
+          [ -z "$MERGE_SHA" ] && MERGE_SHA="$PROD_AFTER"
+          # Everything this promote took live, minus the auto-fix's own squash commit.
+          RODE=$(git log --no-merges --format='%H %h %s' "$PROD_BEFORE..$PROD_AFTER" \
+                   | grep -vi "^$MERGE_SHA " || true)
+          if [ -n "$RODE" ]; then
+            COUNT=$(printf '%s\n' "$RODE" | grep -c '')
+            {
+              echo "⚠️ **Heads-up — this auto-promote also took $COUNT other trunk commit(s) live.**"
+              echo
+              echo "\`promote.mjs\` fast-forwards \`production\` to the whole \`trunk\` tip, so work merged to trunk but not yet \`/promote\`d rode live with this auto-fix:"
+              echo
+              printf '%s\n' "$RODE" | sed -E 's/^[^ ]+ ([^ ]+) /- `\1` /'
+              echo
+              echo "All were CI-green on trunk, so nothing unverified shipped — but if you meant to hold any for a batched \`/promote\`, that's why they're live now."
+            } > "$RUNNER_TEMP/rode.md"
+            gh pr comment "$PR_NUMBER" --body-file "$RUNNER_TEMP/rode.md"
+          else
+            echo "auto-promote: no other commits rode along — clean single-fix promote."
           fi
