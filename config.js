@@ -624,7 +624,7 @@ export const FEATURES = {
   // verify → personal device trusted 30d / shared device takes a PIN each session);
   // OFF = today's shared team-password login. The BACKEND enforces the real auth
   // independently — this flag only switches the login EXPERIENCE, never the gate.
-  phoneIdentity: false,
+  phoneIdentity: true,
 };
 
 /* Phone-identity client constants (non-secret — display/UX only; the backend owns the
