@@ -1,16 +1,50 @@
 # Backend deploy queue — DEPLOYED (2026-07-06 late session); doc kept as the deploy runbook
 
-## ⏳ PUSHED + VERSIONED — AWAITING JAC'S EDITOR DEPLOY (2026-07-14) — comms Phase C dedup
-- **Backend v100 — content-aware dedup for the crew broadcast.** `sendStaffMessage_`'s dedup key
-  for a MANUAL broadcast (`isFree`) now folds a short MD5 content hash of the message into
-  `staff|broadcast|<rosterId>|<day>|<hash>`. Effect: two DIFFERENT broadcasts to the same hand in
-  one day both send (the old by-day key silently swallowed the second); an identical double-tap /
-  retry is still deduped. Future job templates (non-free) keep the strict by-day key — one
-  driver-assigned / wo-assigned per hand per day is the intended ceiling there. Additive; `node
-  --check` passes. Pairs with the LIVE frontend composer (#625, promoted to production 2026-07-14).
-- **ACTIVATION (Jac, editor):** point the live deployment (`…trNlObZw`) at **v100**. No dry-run
-  needed — it only changes a dedup key; the roster is empty, so no crew text fires regardless.
-  Nothing sends unattended.
+## ⏳ PUSHED + VERSIONED — AWAITING JAC'S EDITOR DEPLOY (2026-07-14) — Twilio inbound webhook (v101)
+- **Backend v101 — Twilio inbound webhook.** Two anonymous handlers on the existing `?wh=` router
+  (mirrors the Stripe hook). `twilioInbound_` — an inbound SMS: matches the sender to a customer OR a
+  roster hand **by normalized phone**, and on a STOP/START keyword flips that party's
+  `commsConsent.sms`; logs every reply (dedup by SID) so it lands in the customer thread + opt-outs are
+  visible. Returns empty TwiML (no auto-reply, no PII). `twilioStatus_` — the delivery-status callback:
+  reconciles the outbound row `sent → delivered/failed` (matched by `providerId` = SID; never downgrades
+  a terminal delivered/failed). Additive; `node --check` passes; red-teamed (2 medium + 3 low findings all
+  fixed: log-with-`consentPending` on lock contention, terminal-status downgrade guard, atomic dedup,
+  phone-based roster re-match, customer-first documented).
+- **🔒 SECURITY — set `TWILIO_WH_KEY` BEFORE wiring (required here, unlike Stripe).** GAS can't read the
+  `X-Twilio-Signature` header, so auth is a URL token. Stripe defaults open because it re-fetches state;
+  this hook ACTS on the payload (flips consent), so gate it:
+  1. Pick a long random secret → set Script Property **`TWILIO_WH_KEY`** (via `adminSetProps` or the editor; never commit it).
+  2. Deploy: point the live deployment (`…trNlObZw`) at **v101** (anon access must stay intact — verify `smsProviderStatus` still returns JSON after).
+  3. Twilio Console → the number's **"A MESSAGE COMES IN"** (HTTP POST) →
+     `…/exec?wh=twilioIn&whk=<TWILIO_WH_KEY>` ; and the **statusCallback** →
+     `…/exec?wh=twilioStatus&whk=<TWILIO_WH_KEY>`.
+  4. Test: text **STOP** from a number matching a test customer → confirm `commsConsent.sms` flips to
+     `opted-out` (a later send returns `opted-out`); **START** flips it back; send one message + confirm
+     its row reaches `delivered`.
+
+## ✅ DEPLOYED 2026-07-14 — comms Phase C dedup (v100, Jac deployed) + full notification test
+- **Backend v100 — content-aware dedup for the crew broadcast.** `sendStaffMessage_`'s dedup key for a
+  MANUAL broadcast (`isFree`) folds a short MD5 content hash into `staff|broadcast|<rosterId>|<day>|<hash>`
+  — two DIFFERENT broadcasts to a hand in one day both send; identical double-taps still dedup. Deployed +
+  verified live (anon access intact).
+- **End-to-end notification test (2026-07-14, to the Jacob Cameron / C0991 test record):** all four SMS
+  templates (quote $653.43, reminder-start, reminder-return, reminder-balance $631.28) **delivered to the
+  handset**; all four **email** siblings sent from operations@; the **crew broadcast** fired to a temp
+  roster hand (roster restored clean after). Every channel is proven end-to-end.
+
+### 🔲 Phase B auto-sweep activation (customer reminders) — Jac's supervised call
+Engine LIVE (v99); send path proven. Fires nothing until BOTH toggles on AND the cron installed:
+1. **Enable** the reminder(s) in **Settings → Notifications** → Save (enabling alone sends nothing).
+2. **Preview** — `runReminderSweepNow {dryRun:true}` → review who'd get texted today (masked + consent).
+3. **Live one-off** — `runReminderSweepNow {dryRun:false}` on a quiet day (only today's window matches).
+4. **Install cron** — run `installReminderSweepTrigger()` **from the editor** (creates the daily trigger,
+   auto-timed inside the customer window). Editor-only — not reachable via the web app.
+
+### 🔲 Company phone + "Office+ can adjust notifications" — Jac's call
+- Texts read "Call us." with no number until the yard phone is set in **Settings → Company**.
+- "Office+ adjusts notifications" needs an auth change: the pane is Admin-only today, and a naive loosening
+  of `setConfig` (a full-config replace carrying role + admin passwords) would expose credentials to Office
+  staff. Needs a notification-settings-only, Office-gated save path — a short spec before building.
 
 ## ✅ DEPLOYED 2026-07-14 — comms Phase B + C-core (v99, Jac deployed)
 - **Backend v98 — Phase B: customer reminder sweep.** `runReminderSweep_` (start/return/balance;

@@ -4689,12 +4689,13 @@ function settingsTeamPane(o) {
     <select class="set-input" data-emp="role" data-i="${i}" style="flex:1;min-width:90px">${roleOpts.map((r) => `<option${(em.role || '') === r ? ' selected' : ''}>${esc(r)}</option>`).join('')}</select>
     <input class="set-input" data-emp="phone" data-i="${i}" placeholder="Phone" value="${esc(em.phone || '')}" style="flex:1;min-width:90px" />
     <input class="set-input" data-emp="note" data-i="${i}" placeholder="Note" value="${esc(em.note || '')}" style="flex:2;min-width:110px" />
+    ${toggleChip(((em.commsConsent && em.commsConsent.sms) === 'opted-out') ? 'Texts off' : 'Texts OK', (em.commsConsent && em.commsConsent.sms) !== 'opted-out', { js: 'js-emp-consent', data: { i }, tone: 'green' })}
     ${closeX('js-emp-del', { data: { i } })}</div>${showAuth && em.id ? `<div class="set-row emp-auth" style="gap:7px;margin:-3px 0 8px;padding-left:2px">
     <button type="button" class="emp-act js-emp-code" data-id="${esc(em.id)}" data-tip="Text this hand a one-time setup code">Text setup code</button>
     <button type="button" class="emp-act js-emp-signout" data-id="${esc(em.id)}" data-tip="Sign them out on every device">Sign out everywhere</button></div>` : ''}`).join('');
   const note = flagOn('phoneIdentity')
     ? 'Per-person logins are ON — this roster is the login list. Each hand needs a name, phone, and role; they set their own PIN from a texted code. Removing someone cuts their access on the next save.'
-    : 'The crew — name, role, phone, note. No credentials or compliance PII lives here (dropped from scope, Jac 2026-06-29).';
+    : 'The crew — name, role, phone, note, and whether we can text them (a hand who opts out is skipped by every crew text). No credentials or compliance PII lives here (dropped from scope, Jac 2026-06-29).';
   return `<div class="set-pane"><div class="muted" style="font-size:11.5px;margin-bottom:9px">${esc(note)}</div>${rows || '<div class="muted" style="font-size:12px">No hands on the roster yet.</div>'}<div class="kv pillrow" style="margin-top:9px">${addBtn('Employee', { link: true, js: 'js-emp-add' })}${showAuth ? `<button type="button" class="emp-act js-emp-blast" data-tip="Text a one-time setup code to every hand on the roster at once (cutover)">Text everyone a setup code</button>` : ''}</div></div>`;
 }
 /* ── Settings → Notifications (Phase A control center — design spec
@@ -17414,6 +17415,8 @@ function onClick(e) {
   if (closest('.js-emp-signout')) { e.stopPropagation(); const id = closest('.js-emp-signout').dataset.id; backendCall('authRevoke', { personId: id }).then((r) => toast(r && r.ok ? 'Signed out on all their devices.' : 'Could not sign them out (admin only).')).catch(() => toast('Could not reach the backend.')); return; }
   // Phase-4 cutover: text every rostered hand a one-time setup code at once (authEnrollBlast, admin-gated backend).
   if (closest('.js-emp-blast')) { e.stopPropagation(); toast('Texting setup codes to the crew…'); backendCall('authEnrollBlast', {}).then((r) => toast(r && r.ok ? `Setup codes sent to ${r.sent} hand${r.sent === 1 ? '' : 's'}${r.skipped ? ` (${r.skipped} skipped — no phone on file)` : ''}.` : 'Could not send the blast (admin only).')).catch(() => toast('Could not reach the backend.')); return; }
+  // Crew SMS consent: capture typed roster edits first (mirror js-emp-del), then flip this hand's commsConsent.sms between opted-out and opted-in (unknown/absent counts as textable). Read server-side by sendStaffMessage_.
+  if (closest('.js-emp-consent')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'settings') return; const i = Number(closest('.js-emp-consent').dataset.i); captureTeamEdits(o); const emps = o.draftSettings.employees || []; if (emps[i]) { const cur = (emps[i].commsConsent && emps[i].commsConsent.sms) || 'unknown'; emps[i].commsConsent = Object.assign({}, emps[i].commsConsent, { sms: cur === 'opted-out' ? 'opted-in' : 'opted-out' }); } reSettings(); return; }
   // Settings → Notifications: single on/off toggles (R31) write straight into the draft
   // (via a dot-path — see notifSet). captureNotificationEdits runs FIRST so an unsaved
   // numeric edit sitting in the live DOM isn't lost when reSettings() repaints the
