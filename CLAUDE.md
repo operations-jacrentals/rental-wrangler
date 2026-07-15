@@ -57,6 +57,10 @@ say-so:
   run) fast-forwards `production` to the approved `trunk` commit → app.jacrentals.com goes
   live. Fast-forward-only; verifies the live `?v=` after; refuses if staging is behind. **The
   only step that changes the live site — always Jac's explicit call.**
+- **`/live`** — one word runs `/deploy → /merge → /promote` end to end and takes the feature
+  branch all the way live. Runs straight through (Jac: don't stop unless there's something to
+  see/know — a red gate or a surprise commit in the promote range). A **config-only** branch
+  (nothing served changes) ships by `/merge` alone — no deploy, no promote.
 - Big *replacements* ride behind a `FEATURES` flag in `config.js` (`flagOn()` reader) so
   backing a swap out is a runtime toggle. (A flag hides execution, not source, on public
   Pages — never gate a secret/auth check on it.)
