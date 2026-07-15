@@ -24039,7 +24039,7 @@ function pidAdopt(r, tok, personal) {
   try { sessionStorage.setItem('jactec.role', currentRole); localStorage.setItem('jactec.user', currentUser); } catch (e) {}
 }
 function pidLoadFail() { pidTokenClear(); backendPassword = ''; pidUI.step = 'identify'; renderPhoneLogin("Couldn't reach the database. Try again."); }
-function pidEnter() {
+function pidEnter(loadP) {
   const s = document.querySelector('.login-screen');
   if (s) {
     s.classList.add('signing-in');
@@ -24055,16 +24055,42 @@ function pidEnter() {
   // rejected, retry muted so the video still rolls — audio is the bonus, the video is the point.
   const vid = document.getElementById('login-video');
   if (vid) { try { vid.muted = state.loginMuted; const p = vid.play(); if (p && p.catch) p.catch(() => { vid.muted = true; const p2 = vid.play(); if (p2 && p2.catch) p2.catch(() => {}); }); } catch (e) {} }
-  loadFromBackend().then(finishLoad).then(applyRoleLanding).then(maybeReplayScan).catch(pidLoadFail);   // maybeReplayScan: replay a #u= decal scan parked before this login
+  (loadP || loadFromBackend()).then(finishLoad).then(applyRoleLanding).then(maybeReplayScan).catch(pidLoadFail);   // §instant-cache #650 loadP (parallel resume) + trunk's maybeReplayScan (#660 decal-scan replay)
+}
+// Boot splash — the signed-in resume paths (trusted-device token / cached same-tab
+// password) go straight to the backend, and #app sat EMPTY until the data landed: a
+// long black screen that read as broken (Jac 2026-07-15). Paint the plate immediately
+// in its signing-in state — the same barber-pole treatment the post-Saddle-Up load
+// shows — so the wait reads as "working". No inputs, and no intro video (its 2.4MB
+// fetch would compete with the load call); reduced-motion freezes the band as on login.
+function renderBootSplash() {
+  $('#app').innerHTML = `<div class="login-screen signing-in"><div class="login-box">
+    <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
+    <div class="login-plate">
+      <img class="login-logo" src="assets/jac-rentals-logo.jpg" alt="Jac Rentals" />
+      <div class="login-title">Rental Wrangler</div>
+      <div class="login-sub">JacRentals · Sulphur, LA</div>
+      <div class="login-hint" role="status">${currentUser ? 'Saddling up, ' + esc(currentUser) + '…' : 'Saddling up…'}</div>
+    </div></div></div>`;
 }
 // Boot (flag on): resume a trusted device, else show the phone login.
 function phoneBoot() {
   const tok = pidTokenGet();
   if (!tok) { warmBackend(); return renderPhoneLogin(); }
+  // Trusted-device resume used to await authResume THEN load with nothing painted in
+  // #app — a black screen for two serial backend round-trips (cold GAS ≈ 1–5s each).
+  // Paint the splash first, and fire the two calls in PARALLEL: both carry the token
+  // and are validated server-side per call, nothing applies until BOTH succeed, and a
+  // rejected resume discards the load result outright — the auth outcome is identical
+  // to the serial path, in roughly half the wall-clock.
+  renderBootSplash();
+  backendPassword = tok;                       // backendCall sends it as sessionToken on both calls
+  const loadP = backendCall('load');
+  loadP.catch(() => {});                       // may settle before pidEnter attaches the real handler — silence the interim rejection (the chain below still sees it)
   backendCall('authResume', { token: tok }).then((r) => {
-    if (r && r.ok) { pidAdopt(r, tok, !!(function () { try { return localStorage.getItem('jactec.pidToken'); } catch (e) { return null; } })()); pidEnter(); }
+    if (r && r.ok) { pidAdopt(r, tok, !!(function () { try { return localStorage.getItem('jactec.pidToken'); } catch (e) { return null; } })()); pidEnter(loadP.then(applyLoadResponse)); }
     else { pidTokenClear(); backendPassword = ''; warmBackend(); renderPhoneLogin(); }
-  }).catch(() => { warmBackend(); renderPhoneLogin(); });
+  }).catch(() => { backendPassword = ''; warmBackend(); renderPhoneLogin(); });
 }
 function pidErr(msg) { pidUI.err = msg || ''; const e = document.getElementById('pid-err'); if (e) e.textContent = pidUI.err; return null; }
 async function pidCall(btnId, fn) {
@@ -24816,6 +24842,7 @@ function boot() {
   // §16 — gate on the shared password: load from the backend if we already have it
   // this session, otherwise show the login screen. The app only renders once data is in.
   if (backendPassword) {
+    renderBootSplash();   // same-tab reload with a cached password: paint before the load round-trip (no black screen)
     loadFromBackend().then(finishLoad)
       .catch(() => { backendPassword = ''; sessionStorage.removeItem('jactec.pw'); renderLogin('Please sign in again.'); });
   } else {
