@@ -64,8 +64,8 @@ ONLY. The go-live deploy happens in the Apps Script EDITOR** (learned the hard w
 - Also unavailable: `scripts.run` (one-off function execution / trigger installs) 404s for
   service accounts even with delegation — a known Google wall. Editor **Run** is the path
   for trigger installs; don't burn a session retrying it.
-- **Full runbook + queue status: `docs/handoffs/BACKEND-DEPLOY-QUEUE.md`** (on
-  `area/backend-data` / `staging`, not `main` — `git fetch origin <branch>` first if missing).
+- **Full runbook + queue status: `docs/handoffs/BACKEND-DEPLOY-QUEUE.md`** (on `trunk`
+  — `git fetch origin trunk` first if missing).
 - Usage: `GAS_SA_KEY_B64=$GAS_SA_KEY_B64 GAS_IMPERSONATE_SUBJECT=operations@jacrentals.com \
   node docs/handoffs/gas-deploy-service-account.mjs push` → then hand Jac the editor-deploy
   step. Same STOP-gate rules — confirm the spliced diff with Jac before push, every time.

@@ -266,13 +266,15 @@ hairlines + zero radius + dense newspaper columns. We are none of them. Then:
 - [ ] Generic `transition: all .2s`, bouncy easing, scattered micro-interactions, or the template hero / ornamental 01·02·03 markers.
 - [ ] Ranch reading western-first; a treatment shipped in one theme only; a new rule with no `RULE_META` entry; missing `:focus-visible`; contrast under AA; meaning in color alone.
 
-## Gates before push (push to `main` = live)
+## Gates before merge (merge to `trunk` = integrated, NOT live)
 
 `node ci/smoke.mjs` · `node ci/logic-test.mjs` · `node ci/gen-rule-usage.mjs --check`
 (regenerate without `--check` only when rule USAGE changed) · **zero R0 violations** ·
-a self-critique screenshot pass. Deploy = feature branch → PR → squash-merge (main is
-branch-protected). Never push a failing gate or a red lint; never put model ids /
-secrets / passwords in the repo (it's public via Pages). Full pre-ship list:
+a self-critique screenshot pass. Ship = feature branch → `/deploy` (staging) → `/merge`
+(PR → `smoke` CI → squash-merge to `trunk`, branch-protected — integrated but NOT live)
+→ `/promote` (`trunk` → `production`, the only go-live). Never push a failing gate or a
+red lint; never put model ids / secrets / passwords in the repo (it's public via Pages).
+Full pre-ship list:
 [`references/checklists.md`](references/checklists.md).
 
 ---

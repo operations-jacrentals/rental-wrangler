@@ -35,7 +35,7 @@ Run this before showing Jac and before any push. If a box can't be ticked, it's 
 
 ## Process & ship
 - [ ] Token plan made first; design approved (if `brainstorming` opted in, spec saved to `docs/superpowers/specs/`).
-- [ ] Decisions asked via `AskUserQuestion` popup, not inline.
+- [ ] Decisions surfaced clearly — hybrid: formatted inline, a structured block, or a popup; lead with the outcome, no blobs.
 - [ ] Self-critique screenshot reviewed; "removed one accessory."
 - [ ] Gates green: `node ci/smoke.mjs` · `node ci/logic-test.mjs` · `node ci/gen-rule-usage.mjs --check` (regen without `--check` only if rule USAGE changed).
-- [ ] Ship via feature branch → PR → squash-merge to `main` (branch-protected; push = live). No model ids / secrets / passwords in the repo.
+- [ ] Ship via feature branch → `/deploy` → `/merge` (squash to `trunk`, branch-protected; integrated NOT live) → `/promote` (the only go-live). No model ids / secrets / passwords in the repo.

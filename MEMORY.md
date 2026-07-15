@@ -24,6 +24,15 @@
   needs the reasoning (supersedes "delegate heavily, always"). Haiku = mechanical/IO,
   Sonnet = scoped build, Opus = hard reasoning / stays on main, Fable = rare frontier
   escalation (2× Opus; only when Opus itself stalls and correctness ≫ cost).
+- **2026-07-15 — Auto-fix must reach LIVE in real time, autonomously.** End-users
+  report in-app; Mr. Wrangler fixes and runs the **full** pipeline (deploy → merge →
+  promote) with no user interaction, ending live — the end-user never sees git. The
+  trunk rename **broke** this (Pages serves `production`, so merge-to-trunk ≠ live);
+  restoring it needs the auto-fixer to run `promote` too. Safety = **fully
+  machine-gated**: smoke + logic CI, staging byte-verify, and the fresh-context
+  review must ALL pass; any failure hard-stops and pings Jac — never a broken fix to
+  live. Flipping the live auto-promote switch (`wrangler-fix.yml` + an automated
+  promote path) is Jac's explicit one-time go.
 
 ## Design prefs
 - Yard **"data-plate"** design language: dark industrial steel, **ONE** safety-orange
@@ -52,3 +61,6 @@
   `app.jacrentals.com` down. If Pro: canary staging → confirm → flip main + production
   (Jac's explicit trigger only). Memory ships public-safe either way, so this doesn't
   block anything.
+- **Auto-fix live pipeline** — design the `wrangler-fix.yml` + automated-promote
+  wiring so end-user reports reach a live fix autonomously (fully machine-gated).
+  Get Jac's explicit one-time go before enabling live auto-promote.
