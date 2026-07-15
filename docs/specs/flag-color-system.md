@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-23  
 **Status:** APPROVED (questions answered by Jac, ready to build)  
-**Area branch:** `area/design-system`  
+**Area branch:** `area/design-system` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.  
 **Task branch:** `design-system/flag-color-system`  
 **Scope:** All entities — Rentals, Units, WOs, Invoices, Customers
 

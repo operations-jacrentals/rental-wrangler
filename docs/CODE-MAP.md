@@ -324,7 +324,7 @@ served to the browser. Documentation only: these files are wired to GitHub by
 path, so the atlas describes where they live; it does not move or rename them.*
 
 ## Act W1 — The Gates (`.github/workflows/ci.yml` → `ci/`)
-The **`smoke`** job runs on every push/PR **to `main`** and is the required
+The **`smoke`** job runs on every push/PR **to `trunk`** and is the required
 status check that protects the trunk. It runs six steps, in order:
 
 | Step | Runs | What it guards | Source |
@@ -345,8 +345,8 @@ status check that protects the trunk. It runs six steps, in order:
 ## Act W2 — The Robots (`.github/workflows/`)
 - **`ci.yml`** — the gates above (job `smoke`).
 - **`branch-janitor.yml`** — daily (~07:17 UTC) prune of **merged** task
-  branches. Safe by design: never touches `main`, `staging`, or `area/*`, and
-  never a branch with an open PR.
+  branches. Safe by design: never touches `trunk`, `production`, or the frozen
+  `area/*`, and never a branch with an open PR.
 - **`wrangler-fix.yml`** — Mr. Wrangler's **Track B** auto-fix engine. An issue
   labelled `wrangler-fix` / `wrangler-request` → a Claude agent reproduces,
   patches the frontend, runs the gates, opens a PR, and auto-merges on green.

@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-28
 **Status:** DRAFT — for critique
-**Area branch:** `area/fleet-spread`
+**Area branch:** `area/fleet-spread` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.
 **Task branch:** `fleet-spread/spec` (proposed)
 **Maturity:** ⬜ Greenfield
 **Scope:** A **capital-allocation / portfolio advisor over equipment categories** — derive, per category, how many invested dollars are tied up (Σ unit `trueCost`/`purchasePrice`), the return those dollars earn (ROI, revenue-per-dollar, utilization), and the demand pressure against them (lost-demand misses + utilization trend), then rank categories and recommend **buy / hold / sell more** so the next dollar of fleet capital goes where supply is short of demand and the return is highest. Output feeds purchasing decisions and the `automated-pricing` sale-side engine. (Multi-yard locations and partner co-ownership are explicitly **out of scope** — parked as separate concerns, see the Redefinition block D2/D3.)

@@ -11,6 +11,7 @@ Thumbs.db
 !.claude/skills/
 !.claude/settings.json
 !.claude/hooks/
+!.claude/rules/
 .claude/skills/**/*.local.md
 .claude/skills/**/*.local.json
 

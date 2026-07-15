@@ -16,7 +16,34 @@
       "Bash(git merge:*)",
       "Bash(git diff:*)",
       "Bash(git stash:*)",
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git ls-remote:*)",
+      "Bash(git describe:*)",
       "Bash(gh:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(find:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(sort:*)",
+      "Bash(uniq:*)",
+      "Bash(cut:*)",
+      "Bash(sed:*)",
+      "Bash(awk:*)",
+      "Bash(diff:*)",
+      "Bash(tree:*)",
+      "Bash(du:*)",
+      "Bash(df:*)",
+      "Bash(pwd:*)",
+      "Bash(which:*)",
+      "Bash(mkdir:*)",
+      "Bash(jq:*)",
       "mcp__Claude_Preview__preview_start",
       "mcp__Claude_Preview__preview_eval",
       "mcp__Claude_Preview__preview_screenshot",
@@ -30,6 +57,22 @@
       "mcp__Claude_Preview__preview_fill",
       "mcp__Claude_Preview__preview_inspect",
       "mcp__Claude_Preview__preview_stop"
+    ],
+    "deny": [
+      "Edit(backend/**)",
+      "Write(backend/**)",
+      "Read(data.generated.js)",
+      "Edit(data.generated.js)",
+      "Write(data.generated.js)",
+      "Read(data.demo-backup.js)",
+      "Edit(data.demo-backup.js)",
+      "Write(data.demo-backup.js)",
+      "Read(test-creds.local.json)",
+      "Edit(test-creds.local.json)",
+      "Write(test-creds.local.json)",
+      "Read(JacTec-handoff/**/*.csv)",
+      "Edit(JacTec-handoff/**/*.csv)",
+      "Write(JacTec-handoff/**/*.csv)"
     ]
   },
   "hooks": {
@@ -53,6 +96,17 @@
           {
             "type": "command",
             "command": "node .claude/skills/audit/scripts/token-watch.mjs"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node $CLAUDE_PROJECT_DIR/.claude/hooks/guard-bash.mjs"
           }
         ]
       }

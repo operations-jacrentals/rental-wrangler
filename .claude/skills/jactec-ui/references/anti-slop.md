@@ -65,6 +65,6 @@ Where a brief explicitly asks for one of these, the brief wins. Ours never does.
 
 - If `brainstorming` is opted in, its HARD-GATE forbids writing code before a design
   + spec is presented, approved, and saved to `docs/superpowers/specs/`.
-- **Ask Jac any decision via the `AskUserQuestion` popup, never inline** (CLAUDE.md).
+- **Surface any decision to Jac clearly** (hybrid: inline / structured block / artifact / popup — CLAUDE.md).
 - Plan the token system FIRST (vendored `frontend` skill), then build, then
   **self-critique with a screenshot** and "remove one accessory" before showing Jac.

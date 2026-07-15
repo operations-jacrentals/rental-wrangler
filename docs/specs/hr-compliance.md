@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-28
 **Status:** DRAFT — for critique
-**Area branch:** `area/hr-compliance`
+**Area branch:** `area/hr-compliance` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.
 **Task branch:** `hr-compliance/spec` (proposed)
 **Maturity:** ⬜ Greenfield
 **Scope:** A first-class **Employee** record plus a **credential/certification expiry engine** (CDL, DOT medical card, MVR, equipment-type certs, training) that turns "is this person legal to drive/operate today?" into a live, flag-colored signal the dispatcher and shop can see before they assign work.

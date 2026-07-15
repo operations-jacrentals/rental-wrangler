@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-28
 **Status:** DRAFT — for critique
-**Area branch:** `area/financials-kpi`
+**Area branch:** `area/financials-kpi` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.
 **Task branch:** `financials-kpi/spec` (proposed)
 **Maturity:** ✅ Shipped
 **Scope:** The role-based KPI ring dashboard, the admin-definable KPI metric engine (safe DSL + Mr. Wrangler authoring), the gamification score-pops, the per-card graph overlays, and the company Revenue Goal — *not* the general ledger, P&L, or accounting export (that is `accounting`).

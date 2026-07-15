@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-28
 **Status:** DRAFT — for critique
-**Area branch:** `area/maps-location`
+**Area branch:** `area/maps-location` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.
 **Task branch:** `maps-location/spec` (proposed)
 **Maturity:** ✅ Shipped (this spec documents the live system as canon, then proposes the next thin layer)
 **Scope:** All Google Maps + geocoding + drive-distance integration — the inline transport editor, the dispatch cockpit map, the transport-pricing bridge, geocode caching, and the single referrer-locked browser key — described as the live system plus a small forward roadmap.

@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-28
 **Status:** DRAFT — for critique
-**Area branch:** `area/backend-data`
+**Area branch:** `area/backend-data` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.
 **Task branch:** `backend-data/spec` (proposed)
 **Maturity:** ✅ Shipped (documenting the live system as canon + the next hardening steps)
 **Scope:** The data contract between the SPA and the Google Apps Script / Sheets backend — the 11-entity schema, the single `backendCall` entry point, the diff-sync engine, the live multi-user polling refresh, and the rules every future backend action must honor.

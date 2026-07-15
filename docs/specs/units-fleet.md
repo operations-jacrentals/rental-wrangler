@@ -1,8 +1,8 @@
 # Units / Fleet — SPEC v1 (DRAFT)
 
-**Date:** 2026-06-28 (updated 2026-07-08; status reconciled against shipped `main` 2026-07-09)
+**Date:** 2026-06-28 (updated 2026-07-08; status reconciled against shipped `trunk` 2026-07-09)
 **Status:** DRAFT — for critique
-**Area branch:** `area/units-fleet`
+**Area branch:** `area/units-fleet` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.
 **Task branch:** `units-fleet/spec` (proposed)
 **Maturity:** ✅ Shipped (documenting the live system as canon + the next-slice decisions)
 **Scope:** Owns the Unit and Category records, their fleet/inspection/GPS/service statuses, availability-window logic, the Add Unit/Category quick-create, the fleet migration tool, and the unit & category detail cards (Specs, GPS, Investment, Inspection, Fleet Summary).
@@ -12,7 +12,7 @@
 ## Shipped status (2026-07-09)
 
 A large slice (this area's D1–D3/D9 gates + the Sell-a-unit flow, among other work) was promoted
-`staging` → `main` today. Verified against the live `app.js` on `main`:
+`staging` → `main` (renamed `trunk` on 2026-07-13) today. Verified against the live `app.js` on `main` (now `trunk`):
 
 | Item | Status | Note |
 |---|---|---|

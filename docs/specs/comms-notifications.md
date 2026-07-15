@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-28
 **Status:** DRAFT — for critique
-**Area branch:** `area/comms-notifications`
+**Area branch:** `area/comms-notifications` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.
 **Task branch:** `comms-notifications/spec` (proposed)
 **Maturity:** 🟡 Partial
 **Scope:** All comms channels — internal team chat, operator/system notifications (the resolved-fix bell), and **outbound customer messaging** (SMS/email for quotes, reminders, dispatch alerts, and reputation/review requests), plus the per-role notification preferences that govern them.

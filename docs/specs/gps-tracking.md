@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-28 · **Updated:** 2026-07-09 (staging → main promotion, PR #552 — see "Shipped status" below)
 **Status:** 🟢 LIVE ON MAIN (2026-07-09) — Phase 1 SHIPPED, Phase 2 (M0–M7) SHIPPED, Phase 3 partial (GPS Issues + an unplanned "Fleet Utilization" view both shipped) — geofencing/stray alerts still PLANNED
-**Area branch:** `area/wrangler-gps`
+**Area branch:** `area/wrangler-gps` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.
 **Maturity:** 🟢 Live (Phase 1 + Phase 2 + partial Phase 3) — promoted to production `main` 2026-07-09
 **Scope:** A live telematics layer for the fleet — real-time unit position, a self-healing `gpsStatus`, a per-unit status/alert history feed, role-gated **remote engine shutdown**, and the Driver "Driving Score" — sourced from **WranglerGPS**, a companion Node/Express + Postgres service (on our own Railway) that merges FOUR telematics providers. Phase 2 lifts this to fleet-wide pages (map, tracker health, issues, utilization reports).
 
@@ -22,7 +22,7 @@ We integrated a friend's standalone fleet-telematics app (**WranglerGPS**) inste
 - **Backend:** a **separate Node/Express + Postgres service** (the forked WranglerGPS, on Railway) — NOT an Apps Script `gpsPoll` action. The browser talks to it **directly** over HTTPS (`GPS_BACKEND_URL` in `config.js`) for all telemetry reads/writes, authed by an `x-auth-token`. **Auth is brokered server-side (see the 2026-07-08 note below): the browser never holds the GPS team password.** Apps Script/Sheets stays the system of record only for the unit↔tracker **mapping**; no telemetry is copied into Sheets.
 - **Status source:** `gpsStatus` is derived client-side from the live fleet snapshot's tracker-ping freshness (`<6h` Reporting · `<72h` Verify · older/absent Not Reporting), falling back to the stored field when the backend is unreachable ("Last known — live link down"). The `gps-offline`/`gps-verify` flags became truthful with zero flag-code change, exactly as the GPSWOX design intended — just a different source.
 
-### What Phase 1 shipped (all on `area/wrangler-gps`, rental-wrangler #508)
+### What Phase 1 shipped (all on the now-frozen `area/wrangler-gps` legacy branch, rental-wrangler #508)
 1. **GPS client module** — silent login, the four-provider fleet merge (mirrors the fork's `useFleet.js`), live status, shutdown, event reads.
 2. **Connect-a-device wizard** (`gpsConnect` popup) — provider picker → Hapn IMEI / searchable machine list for Deere·Yanmar·Bouncie → live "waiting → seen → ✓ Reporting" confirm → saves `gpsProvider`+`gpsDeviceId` only on confirmed contact.
 3. **Live-driven `gpsStatus`** on the unit pill + card flags.
@@ -99,10 +99,10 @@ session's branch is done and safe to archive.
 **Yanmar re-auth was deliberately parked last (Jac's call) and has NOT been started.**
 Per Jac (2026-07-08): when that work begins, it gets its **own fresh branch + its own
 PR** — never reopened on `claude/gps-rental-wrangler-integration-5dme8g` or appended to
-either merged `wranglergps` PR. Restart from `area/wrangler-gps` (rental-wrangler side,
-if any frontend touch-up is needed) / `main` (wranglergps backend side, if the Yanmar
-auth needs backend changes) at that time — same "restart the designated branch from the
-latest base" pattern used throughout this session. Scope, when picked up: Yanmar's
+either merged `wranglergps` PR. Restart from a fresh feature branch off `trunk` (rental-wrangler
+side, if any frontend touch-up is needed — `area/wrangler-gps` is now frozen legacy, not a
+routing target) / `main` (wranglergps backend side, if the Yanmar auth needs backend changes)
+at that time — same "restart from the latest base" pattern used throughout this session. Scope, when picked up: Yanmar's
 account shows `authenticated: false` on the GPS backend (0 devices vs. 25 across the
 other three providers) — needs a re-auth on the GPS backend's Yanmar OAuth (was linked
 under `sales@jacrentals.com`).

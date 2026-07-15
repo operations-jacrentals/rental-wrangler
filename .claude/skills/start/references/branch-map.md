@@ -1,6 +1,6 @@
 # Domain map — frozen `area/*` branches (reference only)
 
-**These are legacy labels, NOT routing targets.** The app used to be split into ~19 long-lived `area/*` branches, each owning a domain, and `/start` routed each session to a task branch off one. Under **trunk-based development** that routing is gone — all new work is a short feature branch (or worktree) off `main` (see the `start` skill §3).
+**These are legacy labels, NOT routing targets.** The app used to be split into ~19 long-lived `area/*` branches, each owning a domain, and `/start` routed each session to a task branch off one. Under **trunk-based development** that routing is gone — all new work is a short feature branch (or worktree) off `trunk` (see the `start` skill §3).
 
 The `area/*` branches are **frozen**: dormant, kept-not-deleted. They carry large unaudited divergence, and some still hold live content (e.g. `area/backend-data` had the backend deploy queue), so a "what's stranded / unmerged" audit must happen before any cleanup — do **not** bulk-delete them.
 
@@ -27,4 +27,4 @@ This file survives only as a **domain reference** — a map of which domain owns
 | `area/search-views` | Global search (incl. phone-number + natural-date tokens), filters/pinned chips, saved Views menu, anchored-card navigation, list/dispatcher rows, toolbar | "search", "filter", "find", "navigation", "list view", "saved view", "chip", "toolbar" |
 | `area/session-ops` | The `/start` skill + session startup, the branch preflight (`tools/branch-preflight.mjs`), and other session-orchestration / dev-process tooling that no domain area owns | "start skill", "session startup", "branch preflight", "session tooling", "dev process", "deploy flow" |
 
-> The retired GPS/wrangler-gps and other one-off `area/*` branches also exist as frozen labels; the list above is the durable domain set. When you need to reason about *where* a change belongs, use this map — then do the work on a feature branch off `main`, never on the `area/*` branch itself.
+> The retired GPS/wrangler-gps and other one-off `area/*` branches also exist as frozen labels; the list above is the durable domain set. When you need to reason about *where* a change belongs, use this map — then do the work on a feature branch off `trunk`, never on the `area/*` branch itself.

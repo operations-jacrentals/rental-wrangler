@@ -16,7 +16,7 @@
 
 ## Build log — 2026-07-06 autonomous sprint (staging drops 1–7, all gates green)
 
-Shipped to `staging` (never `main`), per-area against the 2026-06-29 decisions:
+Shipped to `trunk`, per-area against the 2026-06-29 decisions:
 
 | Area | Built |
 |---|---|
@@ -47,15 +47,11 @@ is the thin index above them** — it holds the priority order, a one-line scope
 anchors, and the cross-area dependencies. As each per-area spec is written it gets linked from
 the **Spec** column below.
 
-**Specs are shared LIVE across parallel projects (Jac, 2026-07-10).** A spec's authoritative
-copy promotes with its code (`area/<slug>` → `staging` → `main`), but because many projects
-run simultaneously, waiting for publish means areas can't see each other's in-flight design
-changes. The **`master-spec` branch** (spec-only — carries just `docs/specs/`) is the shared
-*pre-publish* surface: every session pulls it at start (`node tools/spec-sync.mjs down`) and
-pushes its spec deltas up every ~2h and before ending (`node tools/spec-sync.mjs up "…"`). The
-tool is path-scoped (never drags code) and only pushes files you changed (never clobbers a
-sibling area). This is the reliable landing path for cross-area spec impact that the old manual
-"reconciliation → per-area fanout PR" flow left open. See `.claude/skills/start` → §2b + §4.
+**Docs are on the trunk — no spec-sync anymore.** The old `master-spec` branch and
+`tools/spec-sync.mjs` down/up cross-branch sync are **retired**. Each spec's authoritative copy
+now lives in `docs/` on `trunk` — a plain `git pull` (or fetch `origin/trunk`) gets the latest;
+there is no ~2h push timer and nothing to pull "at session start" beyond the ordinary trunk sync.
+See `.claude/skills/start/SKILL.md` §2b.
 
 Each area's "Today" line and anchors were mapped directly against the live codebase
 (`app.js` / `config.js` / `data.js` / `docs/`) on 2026-06-28.
@@ -131,7 +127,7 @@ ones below it. 🆕 marks an area added 2026-06-28 (no `area/` branch cut yet).
 rental-window picker, extension billing, transport/delivery legs with inline Google Maps, and
 the dispatch cockpit (Calendar card) showing the day's run as a live map + reorderable rail.
 
-**Today.** Substantial shipped feature set on `main`: multi-unit event model, the rate-blend
+**Today.** Substantial shipped feature set on `trunk`: multi-unit event model, the rate-blend
 money engine (`rentalPrice`), the 28-day extension/invoice series, the inline transport editor,
 and the dispatch cockpit (live Google map + DnD rail + editable stop-times + telematics seam).
 *Unbuilt:* Phase 2 driver cab, Phase 3 live auto-notify.
@@ -413,4 +409,5 @@ cache-busting.
    dependencies, and the open questions surfaced during mapping.
 3. Offer the `/role` audit (folded into `/jactec-ui`) on the finished spec.
 4. Link the spec from the **Spec** column above and flip its checkbox.
-5. New 🆕 areas get their `area/<slug>` branch cut off `staging` when build work begins.
+5. `area/*` branches are frozen legacy — new work, including for 🆕 areas, is a short-lived
+   feature branch cut off `trunk` when build work begins.

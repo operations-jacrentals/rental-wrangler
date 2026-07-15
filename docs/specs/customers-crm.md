@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-28
 **Status:** DRAFT — for critique
-**Area branch:** `area/customers-crm`
+**Area branch:** `area/customers-crm` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.
 **Task branch:** `customers-crm/spec` (proposed)
 **Maturity:** ✅ Shipped
 **Scope:** The Customer record and everything that hangs off it — account/contact details, the dual sales funnels, the activity-cadence engine, card/ACH payment methods with card-bound agreements + selfie capture, and the new/edit overlay — documented AS CANON with proposed forward work.
@@ -155,7 +155,8 @@ plan: `docs/superpowers/plans/2026-07-10-account-agreements-membership-redesign-
   just the chevron (excludes the status-menu's own dropdown, which still needs its own click for
   Pay/Print/Refund).
 - **Design-system Phase 6 (dot→background sweep) shipped SEPARATELY**, PR #588 →
-  `area/design-system` (merged) → `staging` (live) — out of scope for this doc/area; see that
+  `area/design-system` (merged) → `staging` (live) — historical (pre-trunk-model routing;
+  `area/*` branches are now frozen legacy, not active routing targets) — out of scope for this doc/area; see that
   plan's Phase 6 note. Only 2 of 6 dot-bearing toggles found codebase-wide were in scope (the two
   genuine 3-state red/yellow/green status toggles); 4 category-color pickers were left alone.
 

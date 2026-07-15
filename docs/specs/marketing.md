@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-28
 **Status:** DRAFT — for critique
-**Area branch:** `area/marketing`
+**Area branch:** `area/marketing` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.
 **Task branch:** `marketing/spec` (proposed)
 **Maturity:** greenfield
 **Scope:** The demand-generation layer — turn fleet-utilization gaps, customer history, and seasonal demand into bookings via promotions, membership-enrollment drives, targeted outreach lists, and an acquisition-vs-retention measurement split — sitting *above* the Sales pipeline (`sales-growth`), never duplicating it.
@@ -55,7 +55,7 @@ The ranch seasoning fits, used sparingly and only in copy: *"Round up a list", "
 
 ## 2. Current State (Baseline)
 
-Marketing is **greenfield** — there is **no dedicated feature, no chapter, no board, no role-scoped surface**. The branch-map currently routes the keyword "marketing" → `area/sales-growth` (`branch-map.md:27`). What exists is adjacent substrate Marketing must build *on*, not reinvent.
+Marketing is **greenfield** — there is **no dedicated feature, no chapter, no board, no role-scoped surface**. The (now-frozen, reference-only) branch-map maps the keyword "marketing" → `area/sales-growth` (`branch-map.md:27`) — historical/informational only, not an active routing target under the trunk model. What exists is adjacent substrate Marketing must build *on*, not reinvent.
 
 ### 2.1 What exists today (adjacent substrate — anchors)
 
@@ -96,7 +96,7 @@ This is the single most important boundary in the spec. **Marketing must not re-
 | Sales/Revenue/Pipeline rings | `financials-kpi` engine, surfaced in Sales lens | Marketing adds **new** rings (utilization, acquisition split) inside the KPI allowlist. |
 | Quoting | `sales-growth` Phase 3 | Out of scope for Marketing. |
 
-> **Open structural question (Q1):** does Marketing stay folded into `sales-growth` (the branch-map's current routing) or split into its own `area/marketing` with its own surface? This spec is written as a **separable area** but every phase is designed to degrade gracefully into a `sales-growth` sub-tab if Jac folds it.
+> **Open structural question (Q1):** does Marketing stay folded into `sales-growth` (the branch-map's domain reference, historical/informational only — not an active routing target) or split into its own surface (`area/marketing` is frozen legacy, not a live branch to route to)? This spec is written as a **separable area** but every phase is designed to degrade gracefully into a `sales-growth` sub-tab if Jac folds it.
 
 ---
 
@@ -434,7 +434,7 @@ Outbound email/SMS deliverability, automated lead scoring, A/B testing, QuickBoo
 
 > No seed questions were captured for this area; all below are generated from the code and the role contract, surfaced for Jac. Each defaults to the **conservative** option until decided.
 
-1. **Q1 — Does Marketing stay folded into `sales-growth`, or split into its own `area/marketing` with its own surface?** The branch-map routes "marketing" → `sales-growth` (`branch-map.md:27`). Trade-off: a separate area gives the role a real home + a clean acquisition/utilization surface; folding avoids a near-duplicate area and keeps pipeline + demand-gen in one place. *This spec is written separable but degrades into a `sales-growth` sub-tab.*
+1. **Q1 — Does Marketing stay folded into `sales-growth`, or split into its own surface?** The (frozen, reference-only) branch-map maps "marketing" → `sales-growth` (`branch-map.md:27`) — historical/informational, not an active routing target; `area/marketing` itself is frozen legacy, not a live branch. Trade-off: a separate area gives the role a real home + a clean acquisition/utilization surface; folding avoids a near-duplicate area and keeps pipeline + demand-gen in one place. *This spec is written separable but degrades into a `sales-growth` sub-tab.*
 2. **Q2 — Add a real Marketing ring lens** to the 5 built-in `ROLES` (`config.js:301`) with its own three KPI rings (utilization / acquisition-split / pipeline), or run Marketing surfaces under the existing `sales`/`office` lenses? The persona exists in `role-roles.md` doc-only today. *Reminder (§3.1): a ROLES entry is only a ring set — it grants no authority.*
    - **Q2a — Gate by tier, not name (confirm).** Every Marketing money/PII gate compares `tierRank(currentTier)` (`config.js`), never `roleId === 'marketing'`, so a renamed/custom role or a Marketing login bumped to `money` behaves correctly. Conservative default: **yes, tier-based gates only**.
 3. **Q3 — Which TIER does a "Marketing" login carry?** Conservative default: **`staff`** — it sees operational utilization bars + segment **counts** but **no dollar column**; any $ revenue-at-risk / resulting-price / margin column requires **≥`money`**. The alternative (Marketing = `money`) would let it see margin — rejected as too loose for the persona's must-not-see list.

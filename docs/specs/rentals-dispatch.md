@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-28
 **Status:** DRAFT — for critique
-**Area branch:** `area/rentals-dispatch`
+**Area branch:** `area/rentals-dispatch` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.
 **Task branch:** `rentals-dispatch/spec` (proposed)
 **Maturity:** shipped
 **Scope:** Owns the full rental lifecycle (Quote → Return) — the multi-unit event model, the rate-blend money engine, the rental-window picker + extension billing, per-unit transport/delivery legs, and the dispatch cockpit (the Calendar card's live map + reorderable run rail), with the driver-cab and live-auto-notify phases still unbuilt.

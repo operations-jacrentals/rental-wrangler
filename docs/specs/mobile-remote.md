@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-28
 **Status:** DRAFT — for critique
-**Area branch:** `area/mobile-remote`
+**Area branch:** `area/mobile-remote` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.
 **Task branch:** `mobile-remote/spec` (proposed)
 **Maturity:** partial
 **Scope:** Own the phone/tablet responsive layer (reflow, swipe nav, touch

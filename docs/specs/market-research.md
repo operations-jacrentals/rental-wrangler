@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-28
 **Status:** DRAFT — for critique
-**Area branch:** `area/market-research`
+**Area branch:** `area/market-research` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.
 **Task branch:** `market-research/spec` (proposed)
 **Maturity:** Greenfield (nothing in code today)
 **Scope:** Capture, store, and surface external market intelligence — competitor / MSRP / auction / rental pricing, regional benchmarks, lost-demand misses, and demand trends — so JacRentals can make purchasing and pricing decisions from data instead of gut.

@@ -74,7 +74,7 @@ Pass the password via an env var (`RW_PW`); **never echo it or hardcode it** in 
 
 ## Frontend (the git repo) push workflow
 
-- Branch off `main`; **never push to `main`** (branch-protected, requires the
+- Branch off `trunk`; **never push to `trunk`** (branch-protected, requires the
   `smoke` CI check).
 - Gates before push (port 8000 is reserved → swap to 9147, run, then restore):
   ```sh
@@ -85,6 +85,9 @@ Pass the password via an env var (`RW_PW`); **never echo it or hardcode it** in 
 - Bump the shared `?v=` cache-bust token on `style.css` / `rule-usage.js` /
   `app.js` in `index.html`.
 - Push the feature branch → open a **draft PR** → squash-merge once `smoke` is green.
+  This reaches `trunk` (integrated, **NOT live**) — going live is a separate,
+  explicit call: `tools/promote.mjs` (Gate 2) fast-forwards `production`, which
+  Pages serves.
 - Never commit secrets / `DEFAULT_CONFIG` / passwords.
 
 ## Other tools
