@@ -28,13 +28,21 @@ Verified against the live `/exec`: `auth` wrong-pw → `{ok:false,unauthorized}`
 sent:false}`; `authResume` bogus token → `{ok:false,expired}`. Anonymous access healthy.
 
 **Pre-flip follow-ups (before flipping `phoneIdentity` ON):**
-- **Add the `auth*` actions to `WRITE_ACTIONS`** (POST-only hardening) — they currently dispatch
-  before the §256 POST guard, so they're GET-reachable. Harmless while dormant; do it in the next
-  backend touch. (Also verify `adminSetProps_` and other inner `pw`-rechecking functions honor a
-  per-person session — dormant-path items.)
-- **Drive the per-person flow end-to-end on staging** (deploy the branch with the flag temporarily
-  ON) — enroll a test roster person, code→verify→personal/shared/PIN, self-serve reset, per-person
-  Sign-out, remove→revoke, blast. Run the `/jactec-ui` screenshot self-critique. THEN flip.
+- ✅ **`auth*` actions are now POST-only** (added to `WRITE_ACTIONS`, dispatch moved after the §256
+  guard) — deployed + verified 2026-07-14 (GET `authStart` → `post-required`; POST still works).
+- ✅ **Per-person login verified end-to-end on staging** — personal login + code→verify, and
+  Developer-tier admin access after the roster role-picker fix (commit `fa12819`).
+- **Still to spot-check on staging:** shared-device PIN path, self-serve "Need a code?" reset,
+  Sign-out-everywhere, remove-a-person → access dies.
+- **Verify `adminSetProps_` + other inner `pw`-rechecking functions honor a per-person session**
+  (dormant-path item; a per-person admin using those niche actions would otherwise be rejected).
+- **Set up the real roster** — every active hand needs name + phone + role/tier (flag-OFF admin
+  data entry) before the flip.
+
+**Roster role → tier gotcha (fixed):** the roster role picker only offered the KPI-ring ROLES
+(staff/money), so a per-person user could never be Manager/Admin/Developer. Fixed by adding those
+to the picker (`fa12819`); `roleTier`/`roleTierRank_` already resolve them. Assign each person's
+tier via the picker while flag-OFF, before flipping.
 
 ## ⚠️ Remaining — resume here
 
