@@ -15091,6 +15091,7 @@ const WR_OPERATIONS = {
       const pick = this._pick(p);
       if (pick.issue) return { issue: pick.issue };
       const inv = pick.inv;
+      if (invoicePoBlocked(inv)) return { issue: `invoice ${inv.invoiceId} is for a PO-required customer — add the PO # to the invoice first` };   // PO gate — Block ALL (mirrors the UI commit gate)
       const method = String((p && p.method) || '').toLowerCase();
       if (method !== 'cash' && method !== 'check') return { issue: `payment method must be cash or check — I can't charge a card or run an ACH` };
       if (method === 'check' && !String((p && p.checkNum) || '').trim()) return { issue: `a check payment needs the check number` };
@@ -20430,9 +20431,10 @@ async function checkAchStatus(invoiceId, piId) {
 // re-verify server-side before marking paid. The payment overlay has no Card
 // Element, so re-rendering it for busy/error states is safe.
 /* PO gate (customers-crm requiresPO, Jac 2026-07-15): a customer flagged "PO required"
-   must carry a PO # on the invoice before we SEND it to them or CHARGE A CARD against it —
-   a HARD block, beyond the advisory red "PO #" chip + the on-rent warning. Cash/check
-   payments (recordPayment) are unaffected; this only guards card charges + customer sends. */
+   must carry a PO # on the invoice before ANY money moves on it OR it's sent to them — a
+   HARD block ("Block ALL"), beyond the advisory red "PO #" chip + the on-rent warning.
+   Guards EVERY payment path (card charge, cash, check — human UI + Mr. Wrangler) and both
+   customer-facing sends. cust.requiresPO && !inv.po. */
 function invoicePoBlocked(inv) {
   if (!inv) return false;
   const c = inv.customerId ? IDX.customer.get(inv.customerId) : null;
@@ -20577,6 +20579,7 @@ async function postManualPayment({ invoiceId, amountCents, method, checkNum }) {
 async function recordManualPayment(invoiceId) {
   const o = state.overlay; if (!o || o.kind !== 'payment') return;
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
+  if (invoicePoBlocked(inv)) { o.error = 'PO required for this customer — add the PO # before recording a payment.'; return renderOverlay(); }   // PO gate — Block ALL: cash/check blocked too until a PO # is on the invoice
   const numEl = document.querySelector('.overlay .js-check-num'); if (numEl) o.checkNum = numEl.value.trim();   // survive the error re-render
   const t = invoiceTotals(inv);
   const amtEl = document.querySelector('.overlay .js-manual-amt');
