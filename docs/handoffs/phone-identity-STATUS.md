@@ -24,6 +24,27 @@ the app), shared device takes a PIN each session. No passwords.
 `FEATURES.phoneIdentity` is **ON** in production (app.jacrentals.com, `?v=20260715b`). The
 whole crew is on per-person phone login. Flag-OFF remains the instant backout.
 
+## Tier gates → approval codes — 2026-07-15 (frontend built; backend §authz queued)
+
+With the shared password retired, every tier gate that fell back to "type the password"
+(Net Terms D22, rental-gate override D14, blacklist set/lift D13, card-gate override, admin
+inline pricing edits) was a dead end for below-tier users. The swap
+(branch `claude/tier-gate-phone-code-iupiwy`):
+- **Frontend:** the `managerPw` password popup became the **`tierAuth` shell** — below-tier
+  users pick the approving Manager/Admin off the Team Roster, the backend texts that person's
+  own phone a one-time 6-digit code, and entering it authorizes the single action. At/above
+  tier (or demo/offline) it's a plain confirm; flag-OFF keeps the legacy password input as the
+  backout. `requireAdmin` routes through the same shell (its `window.prompt` remains flag-OFF
+  only). Settings entry became a flat refusal below Admin (a whole admin surface backed by
+  server-tier-gated `setConfig` — a one-shot code can't honestly carry it).
+- **Backend:** `authzStart_`/`authzVerify_` in the mirror's §authz block — separate
+  `PID_AZCODE_`/`PID_AZRL_` namespaces (an approval code can never mint a session; a login code
+  can never approve), authenticated requester only, tier enforced at mint AND verify, single-use,
+  never returns a token. **Queued, not yet pushed/deployed** — see `BACKEND-DEPLOY-QUEUE.md`.
+  Until it deploys, below-tier gate attempts fail closed ("Couldn't text the code").
+- **Out of scope, flagged:** the pre-login `#reseed` recovery tool still prompts for the team
+  password (disaster-recovery path, backend-verified; needs its own call).
+
 ## Customizable crew-welcome + copy fix — 2026-07-15 (polish pass)
 
 The auto-enroll / blast / per-person send now text a **crew-welcome** (app link, **no

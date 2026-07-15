@@ -3130,6 +3130,12 @@ select.nc-in { cursor: pointer; }
   border-radius: 9px; border: 1px solid #2a313b; background: #0e1217; color: var(--txt, #e8edf2); font-weight: 700; font-size: 14px; transition: border-color .12s, box-shadow .12s; }
 .login-pick-btn:hover { border-color: #39424e; }
 .login-pick-btn:focus-visible { outline: none; border-color: var(--accent, #ff7a1a); box-shadow: 0 0 0 3px rgba(255, 122, 26, .17); }
+/* Tier-approval shell (tierAuth popup) — reuses the login pick/OTP shapes so "pick a person +
+   enter a texted code" reads the same everywhere; only the popup-context fit lives here. */
+.taz-role { color: var(--txt-3, #8b94a3); font-size: 11.5px; font-weight: 400; }
+.popup .login-pick { margin: 0; }
+.popup .login-otp { height: 40px; }
+.popup .login-hint { margin: 2px 0 10px; }
 /* Settings → Team Roster per-person auth actions (Phase 3, phone-identity mode) — a small
    quiet steel button matching the .set-input wells; not a lint-family element, so no data-r. */
 .emp-act { height: 28px; padding: 0 11px; cursor: pointer; border-radius: 8px;

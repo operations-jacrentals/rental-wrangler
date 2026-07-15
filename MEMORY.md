@@ -56,6 +56,11 @@
   failed/unverified staging deploy is a **HARD STOP** — never work around it.
 
 ## Open threads
+- **Tier-gate approval codes — backend §authz deploy pending.** The frontend swap (password
+  gates → Manager/Admin phone approval codes, branch `claude/tier-gate-phone-code-iupiwy`)
+  fails closed for below-tier users until `authzStart_`/`authzVerify_` are spliced + Jac's
+  editor deploy — see `docs/handoffs/BACKEND-DEPLOY-QUEUE.md` (top entry). The pre-login
+  `#reseed` tool still wants the retired team password — needs its own call.
 - **Repo privacy** — parked on Jac's GitHub billing-tier check. Pages-from-private
   needs GitHub Pro; Free forces public, and flipping private on Free takes
   `app.jacrentals.com` down. If Pro: canary staging → confirm → flip main + production
