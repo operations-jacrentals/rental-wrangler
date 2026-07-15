@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-28
 **Status:** DRAFT — for critique
-**Area branch:** `area/security-cameras`
+**Area branch:** `area/security-cameras` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.
 **Task branch:** `security-cameras/spec` (proposed)
 **Maturity:** ⬜ Greenfield (nothing built — this spec proposes the whole area from the existing maps/GPS/backend spine)
 **Scope:** Embed and surface live + recorded yard/property camera feeds inside Rental Wrangler so staff can watch the lot, verify a unit's position before/after a haul, and pull footage for an incident — without leaving the app or logging into the NVR's own console.

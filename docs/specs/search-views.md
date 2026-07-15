@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-28
 **Status:** DRAFT — for critique
-**Area branch:** `area/search-views`
+**Area branch:** `area/search-views` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.
 **Task branch:** `search-views/spec` (proposed)
 **Maturity:** shipped
 **Scope:** The app-wide find/filter/sort layer — the global search box, every card's mini-search, AND-narrowing filter chips (incl. NOT-terms and column-scoped chips), the availability live-token, the date/range picker, the cascade pill, per-card sort, and admin-curated Saved Views.

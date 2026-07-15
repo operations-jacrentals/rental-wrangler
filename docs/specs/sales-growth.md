@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-28
 **Status:** DRAFT — for critique
-**Area branch:** `area/sales-growth`
+**Area branch:** `area/sales-growth` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.
 **Task branch:** `sales-growth/spec` (proposed)
 **Maturity:** partial
 **Scope:** Owns the customer sales pipeline (used-equipment sales + membership sign-ups), the next-action follow-up loop, the Sales KPI ring, and the future growth toolkit (quoting, campaigns, referrals) that turns pipeline motion into booked revenue.

@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-28
 **Status:** DRAFT — for critique
-**Area branch:** `area/automated-pricing`
+**Area branch:** `area/automated-pricing` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.
 **Task branch:** `automated-pricing/spec` (proposed)
 **Maturity:** greenfield
 **Scope:** Add an engine that *proposes* (and, where Jac allows, *applies*) rental-rate changes — occupancy/utilization signals, seasonal rules, and AI-suggested adjustments — on top of today's fully-static per-category rates, always fenced by the bottom-dollar/margin floor and the Admin pricing gate.

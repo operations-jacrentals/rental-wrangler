@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-28
 **Status:** DRAFT — for critique
-**Area branch:** `area/frontend-performance`
+**Area branch:** `area/frontend-performance` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.
 **Task branch:** `frontend-performance/spec` (proposed)
 **Maturity:** partial
 **Scope:** The techniques and guardrails that keep the single-file SPA fast — render-budget enforcement, list windowing, image downscaling, debounced/diffed saves, the rAF drag loop, Drive-upload throttling, IndexedDB, cache-busting — plus the three missing legs (service worker / offline shell, code splitting, and Web Vitals instrumentation).

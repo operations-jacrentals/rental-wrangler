@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-28
 **Status:** DRAFT — for critique
-**Area branch:** `area/wrangler-ai`
+**Area branch:** `area/wrangler-ai` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.
 **Task branch:** `wrangler-ai/spec` (proposed)
 **Maturity:** shipped
 **Scope:** Owns Mr. Wrangler end-to-end — the chat dock, the system prompt, the agentic read/write tool loop, the action parse/apply/preview pipeline, the requests inbox, the Track B self-healing auto-fixer, and the cross-device rail.

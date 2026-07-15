@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-28
 **Status:** DRAFT — for critique
-**Area branch:** `area/memberships`
+**Area branch:** `area/memberships` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.
 **Task branch:** `memberships/spec` (proposed)
 **Maturity:** shipped
 **Scope:** The customer subscription lifecycle — enroll → bill → entitle → lapse/cancel/reactivate — with member-rate + Unlimited-Transport entitlement gates, Rental Protection, the Cancellation-Invoice mechanic, and per-customer economics.

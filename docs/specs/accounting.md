@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-28
 **Status:** DRAFT — for critique
-**Area branch:** `area/accounting`
+**Area branch:** `area/accounting` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.
 **Task branch:** `accounting/spec` (proposed)
 **Maturity:** partial
 **Scope:** Everything *above* the invoicing/payments layer — the cost/expense ledger, vendor spend, and the derived money picture (P&L, margins, tax/category reporting, chart of accounts, and any future QuickBooks/Xero export) that turns the yard's revenue and costs into a number Jac can act on.

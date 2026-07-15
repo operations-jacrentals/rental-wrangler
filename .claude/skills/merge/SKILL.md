@@ -48,12 +48,19 @@ point of Gate 1: you look at the running app before integrating it. Check:
    `node ci/gen-rule-usage.mjs --check`, `node ci/check-window-catalog.mjs`,
    `node tools/gen-code-map.mjs --check`. (Port 8000 is reserved → `sed -i 's/8000/9147/g'
    ci/smoke.mjs ci/logic-test.mjs`, run, then `git checkout -- ci/`.)
-2. **PR to `trunk`** (draft is fine); let CI (`smoke`) pass — `trunk` is branch-protected, so the
+2. **Fresh-context review — the safety net that replaces plan-reading.** Spawn a
+   **code-review subagent** (fresh context, no conversation history) on the diff
+   `git diff origin/trunk...HEAD`, scoped to correctness + requirement gaps (not style).
+   A reviewer that never watched the code get written catches what the writing context is
+   blind to. If it surfaces a real correctness bug, **stop and fix before the PR.** This
+   review is the enforced gate here: merges land via the PR/squash (not a local command a
+   hook can intercept), so the review discipline is what actually guards the merge.
+3. **PR to `trunk`** (draft is fine); let CI (`smoke`) pass — `trunk` is branch-protected, so the
    required check MUST be green before merge. Fix a red conflict with trunk first (a pure `?v=`
    token conflict resolves mechanically; anything substantive, resolve by hand).
-3. **Squash-merge** the PR into `trunk`. Integrated on the trunk but **NOT live** (Pages serves
+4. **Squash-merge** the PR into `trunk`. Integrated on the trunk but **NOT live** (Pages serves
    the separate `production` branch).
-4. **Delete the feature branch** (local + remote).
+5. **Delete the feature branch** (local + remote).
 
 ## After
 The work is on trunk, integrated but not live. The next gate is **/promote** (Gate 2) — always

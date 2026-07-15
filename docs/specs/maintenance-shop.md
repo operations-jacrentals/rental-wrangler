@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-28
 **Status:** DRAFT — for critique
-**Area branch:** `area/maintenance-shop`
+**Area branch:** `area/maintenance-shop` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.
 **Task branch:** `maintenance-shop/spec` (proposed)
 **Maturity:** shipped
 **Scope:** The merged Shop card (Work Orders, Service Orders, Inspections), the recurring-service countdown engine, WO lifecycle/parts/billing, the inspection → auto-WO cascade, and the parts/vendor back-office boards.

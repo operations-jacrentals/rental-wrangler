@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-29
 **Status:** DRAFT — for critique
-**Area branch:** `area/collections`
+**Area branch:** `area/collections` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.
 **Task branch:** `collections/spec` (proposed)
 **Maturity:** greenfield
 **Scope:** Turn the existing 120-day **Collections** aging tier (today only a red pill color) into an actionable feature — flag an uncollectable invoice, send it to a **3rd-party collections agency** via a server-held outbound integration, track its status, and reconcile any recovered amount back through the existing payment path, with accounting netting it out of active revenue as a recoverable receivable.

@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-29
 **Status:** DRAFT — for critique
-**Area branch:** `area/customer-portal`
+**Area branch:** `area/customer-portal` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.
 **Task branch:** `customer-portal/spec` (proposed)
 **Maturity:** greenfield
 **Scope:** An external, row-isolated, separately-authenticated self-service portal where a JacRentals customer signs in and sees ONLY their own account — live on-rent units on a Google Map, order/spend history, available units to book (incl. "feature rentals"), and a "flag for a field call" (pickup/delivery) request — without ever touching the internal console, another customer's data, or any internal pricing/PII.

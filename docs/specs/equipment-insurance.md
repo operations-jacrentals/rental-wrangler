@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-29
 **Status:** DRAFT — for critique
-**Area branch:** `area/equipment-insurance`
+**Area branch:** `area/equipment-insurance` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.
 **Task branch:** `equipment-insurance/spec` (proposed)
 **Maturity:** greenfield
 **Scope:** An owner-side, **per-unit** insurance/coverage configuration surface — the rental-company owner selects which units carry insurance and which **coverage/service types** each unit gets — plus the billing/entitlement that follows (premiums, covered-unit lookup, damage-claim routing), kept clearly distinct from the customer-facing membership **Rental Protection** add-on it must reconcile with.

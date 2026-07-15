@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-28
 **Status:** DRAFT — for critique
-**Area branch:** `area/design-system`
+**Area branch:** `area/design-system` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.
 **Task branch:** `design-system/spec` (proposed)
 **Maturity:** ✅ Shipped (deeply enforced)
 **Scope:** The visual language of Rental Wrangler and the machinery that enforces it — the token/theme layer, the R0–R25 stamped rulebook + one builder per rule, the flag-driven color engine, the admin Rulebook overlay (now including the live Windows catalog), `DESIGN.md`, the three CI drift guards, and the `jactec-ui` skill that builds and polices all of it.

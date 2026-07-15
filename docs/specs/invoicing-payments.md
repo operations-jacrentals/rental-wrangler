@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-28
 **Status:** DRAFT — for critique
-**Area branch:** `area/invoicing-payments`
+**Area branch:** `area/invoicing-payments` — FROZEN legacy branch (not a routing target); this spec's authoritative copy lives in `docs/` on `trunk`.
 **Task branch:** `invoicing-payments/spec` (proposed)
 **Maturity:** shipped
 **Scope:** The full invoice lifecycle (creation, line items, tax, aging, locking, merging, 28‑day series splitting) and every payment path (Stripe card/ACH, manual cash/check, refunds, card‑on‑file) — documented AS CANON, with the parked/gated edges surfaced for decision.
