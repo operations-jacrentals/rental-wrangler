@@ -19,6 +19,21 @@ the app), shared device takes a PIN each session. No passwords.
 | 3 · Roster admin | `bccd497` | "+ Employee", per-person Text-code / Sign-out, roster=login-list note |
 | 4 · Cutover blast | `d8b9c51` | "Text everyone a setup code" (`authEnrollBlast`) |
 
+## ✅ LIVE — cutover promoted 2026-07-15
+
+`FEATURES.phoneIdentity` is **ON** in production (app.jacrentals.com, `?v=20260715b`). The
+whole crew is on per-person phone login. Flag-OFF remains the instant backout.
+
+## Auto-enroll on roster add / number change — 2026-07-15 (backend)
+
+`pidReconcileRoster_` now, on a config save: **added** person w/ phone → auto-text a setup
+code; **number changed** → purge old device trust/PIN (re-verify on the new number) + text
+the new number; **removed** → purge (unchanged). New `pidCodeSms_` puts the app URL
+(`app.jacrentals.com`, override via `PID_APP_URL` prop) in the **enroll** text so a
+first-timer knows where to go (also upgrades the blast copy); native app-store links slot in
+later. Mirror updated (`phone-identity-backend.gs`); pushed to HEAD via service account —
+**go-live is Jac's editor New-version deploy.**
+
 ## ✅ Backend DEPLOYED + verified — 2026-07-14
 
 Phase 1 backend is **live** (dormant behind the flag). Merged additively into `Code.js` per the
