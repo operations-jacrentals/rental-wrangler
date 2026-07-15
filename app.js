@@ -15091,6 +15091,7 @@ const WR_OPERATIONS = {
       const pick = this._pick(p);
       if (pick.issue) return { issue: pick.issue };
       const inv = pick.inv;
+      if (invoicePoBlocked(inv)) return { issue: `invoice ${inv.invoiceId} is for a PO-required customer — add the PO # to the invoice first` };   // PO gate — Block ALL (mirrors the UI commit gate)
       const method = String((p && p.method) || '').toLowerCase();
       if (method !== 'cash' && method !== 'check') return { issue: `payment method must be cash or check — I can't charge a card or run an ACH` };
       if (method === 'check' && !String((p && p.checkNum) || '').trim()) return { issue: `a check payment needs the check number` };
@@ -17476,8 +17477,8 @@ function onClick(e) {
   if (closest('.js-ag-actype-opt')) { e.stopPropagation(); const b = closest('.js-ag-actype-opt'); const c = IDX.customer.get(b.dataset.rec); if (!c) return; agDraft(c).accountType = b.dataset.val; agDraft(c).actypeOpen = false; return render(); }
   if (closest('.js-ag-actype')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-ag-actype').dataset.rec); if (!c) return; const d = agDraft(c); d.actypeOpen = !d.actypeOpen; return render(); }
   if (closest('.js-ag-selfie-pick')) { return; }   // native <input type=file> — handled by its own 'change' event (onChange), not a click delegate
-  if (closest('.js-acct-po')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-acct-po').dataset.rec); if (c) { c.requiresPO = !c.requiresPO; reindex('customers', c); } return render(); }
-  if (closest('.js-acct-prot')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-acct-prot').dataset.rec); if (c) { c.rentalProtection = !c.rentalProtection; reindex('customers', c); } return render(); }
+  if (closest('.js-acct-po')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-acct-po').dataset.rec); if (c) { c.requiresPO = !c.requiresPO; reindex('customers', c); logAction(c, `PO required → ${c.requiresPO ? 'On' : 'Off'}`); } return render(); }   // logAction persists (saveSoon) + audits — inline toggle must save like the popup does
+  if (closest('.js-acct-prot')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-acct-prot').dataset.rec); if (c) { c.rentalProtection = !c.rentalProtection; reindex('customers', c); logAction(c, `Rental Protection → ${c.rentalProtection ? 'On' : 'Off'}`); } return render(); }   // sibling of the PO toggle — same persist fix (saveSoon via logAction)
   if (closest('.js-acct-netdays')) { e.stopPropagation(); const b = closest('.js-acct-netdays'); return openOverlay({ kind: 'managerPw', custId: b.dataset.rec, pwAction: 'netTerms', pwVal: b.dataset.val, busy: false, error: '' }); }   // D22 — ANY Net Terms change is Manager-password gated
   if (closest('.js-block-account')) { e.stopPropagation(); const rec = closest('.js-block-account').dataset.rec; return openOverlay({ kind: 'blockPicker', custId: rec, mode: 'pick', selIds: [], error: '' }); }   // D12/D13 — Block Account entry
   if (closest('.js-mgrpw-confirm')) {
@@ -20429,8 +20430,19 @@ async function checkAchStatus(invoiceId, piId) {
 // Charge an invoice off_session; on 3DS fall back to an on-session confirm, then
 // re-verify server-side before marking paid. The payment overlay has no Card
 // Element, so re-rendering it for busy/error states is safe.
+/* PO gate (customers-crm requiresPO, Jac 2026-07-15): a customer flagged "PO required"
+   must carry a PO # on the invoice before ANY money moves on it OR it's sent to them — a
+   HARD block ("Block ALL"), beyond the advisory red "PO #" chip + the on-rent warning.
+   Guards EVERY payment path (card charge, cash, check — human UI + Mr. Wrangler) and both
+   customer-facing sends. cust.requiresPO && !inv.po. */
+function invoicePoBlocked(inv) {
+  if (!inv) return false;
+  const c = inv.customerId ? IDX.customer.get(inv.customerId) : null;
+  return !!(c && c.requiresPO && !inv.po);
+}
 async function chargeInvoiceFlow(invoiceId) {
   if (!canMoney()) { toast('Pay/Charge/Refund is Office/Admin only.'); return; }   // #552 audit item 4: defence-in-depth
+  { const inv = IDX.invoice.get(invoiceId); if (invoicePoBlocked(inv)) { toast('PO required for this customer — add the PO # before charging a card.'); return; } }   // PO gate — hard-block the card charge until a PO # is on the invoice
   const o = state.overlay; if (!o || o.kind !== 'payment') return;
   const live = () => state.overlay === o;   // bail if the overlay changed/closed mid-await
   // §19: when the allocation rows are present, the gross + per-line split come
@@ -20567,6 +20579,7 @@ async function postManualPayment({ invoiceId, amountCents, method, checkNum }) {
 async function recordManualPayment(invoiceId) {
   const o = state.overlay; if (!o || o.kind !== 'payment') return;
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
+  if (invoicePoBlocked(inv)) { o.error = 'PO required for this customer — add the PO # before recording a payment.'; return renderOverlay(); }   // PO gate — Block ALL: cash/check blocked too until a PO # is on the invoice
   const numEl = document.querySelector('.overlay .js-check-num'); if (numEl) o.checkNum = numEl.value.trim();   // survive the error re-render
   const t = invoiceTotals(inv);
   const amtEl = document.querySelector('.overlay .js-manual-amt');
@@ -20853,6 +20866,7 @@ async function sendInvoiceEmail(invoiceId, anchorEl) {
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
   const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
   if (!cust || !cust.email) { toast('No email on file for this customer.'); return; }   // guard — button is disabled, this is belt-and-suspenders
+  if (invoicePoBlocked(inv)) { toast('PO required for this customer — add the PO # before sending.'); return; }   // PO gate — hard-block the send until a PO # is on the invoice
   if (!backendPassword) {   // demo/offline — the pre-pipe mailto path, unchanged
     const subject = `Quote from ${companyName()} – ${inv.invoiceId}`;
     window.location.href = `mailto:${encodeURIComponent(cust.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(invoiceQuoteSummary(inv))}`;
@@ -20877,6 +20891,7 @@ async function sendInvoiceText(invoiceId) {
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
   const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
   if (!cust || !cust.phone) { toast('No phone on file for this customer.'); return; }
+  if (invoicePoBlocked(inv)) { toast('PO required for this customer — add the PO # before sending.'); return; }   // PO gate — hard-block the send until a PO # is on the invoice
   if (!backendPassword) {   // demo/offline — the pre-pipe deep-link path, unchanged
     const t = invoiceTotals(inv);
     const first = cust.firstName || (cust.name || '').trim().split(/\s+/)[0] || 'there';
