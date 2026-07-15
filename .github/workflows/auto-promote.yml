@@ -1,0 +1,88 @@
+name: Auto-promote — take a merged Wrangler auto-fix live
+
+# ── Mr. Wrangler's go-live step ───────────────────────────────────────────────
+# When an auto-fix PR (opened by the wrangler-fix engine and carrying the
+# `auto-promote` label) squash-merges to `trunk`, this promotes that exact commit
+# to `production` so the fix reaches app.jacrentals.com in real time — with NO
+# human in the loop. It runs the same tools/promote.mjs a human runs for Gate 2.
+#
+# WHY THIS EXISTS
+# Under the trunk model, Pages serves `production`, so merging to `trunk` is NOT
+# live on its own. The wrangler-fix engine merges the fix to trunk but stops
+# there — this closes the last mile so an end-user's reported fix actually goes
+# live without them (or Jac) touching the deploy machinery.
+#
+# ONLY auto-fixes auto-promote. A human's merge to `trunk` carries no
+# `auto-promote` label, so it still waits for the human `/promote` (Gate 2) —
+# your two-gate control is untouched for everything except Wrangler auto-fixes.
+#
+# HOW IT STAYS SAFE (fully machine-gated — no human review, but every gate must pass):
+#   1. `smoke` + `logic-test` CI already gated the merge to trunk (a broken fix
+#      never reaches trunk, so it never reaches here).
+#   2. The fix's own branch already deployed to staging (in wrangler-fix.yml), so
+#      promote.mjs's staging-freshness gate passes AND staging stays in sync with
+#      production (no drift for the next human promote).
+#   3. promote.mjs is fast-forward-only (never --force) and verifies the live
+#      `?v=` bytes after pushing. If anything is off it fails — it never forces a
+#      half-broken state onto the live site.
+#   If any gate is red, this job fails and the fix stays at trunk (not live);
+#   surface it to Jac rather than forcing it live.
+#
+# ── OFF BY DEFAULT — this is Jac's one-time switch ────────────────────────────
+# The job no-ops until the repository VARIABLE `WRANGLER_AUTO_PROMOTE` is set to
+# the string 'true' (Settings → Secrets and variables → Actions → Variables tab).
+# Until then a merged auto-fix stops at trunk exactly like today — NOTHING reaches
+# the live customer app before Jac flips that variable. Flip it back to anything
+# else (or delete it) to instantly disable auto-go-live again.
+#
+# Also required (already needed by wrangler-fix.yml, no new secret):
+#   secrets.WRANGLER_PAT — fine-grained PAT, Contents: Read & write on this repo,
+#   so promote.mjs can fast-forward `production`.
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  promote:
+    # Gate: a merged auto-fix PR into trunk, and the switch is ON.
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == 'trunk' &&
+      contains(github.event.pull_request.labels.*.name, 'auto-promote') &&
+      vars.WRANGLER_AUTO_PROMOTE == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so promote.mjs can fetch trunk + production and compute
+          # the fast-forward. The PAT (Contents: write) authenticates the push to
+          # `production` that promote.mjs performs via `origin`.
+          fetch-depth: 0
+          token: ${{ secrets.WRANGLER_PAT }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Promote the merged auto-fix to production (go live)
+        # promote.mjs: fetch trunk+production, verify staging is fresh, fast-forward
+        # production -> trunk, then verify the live ?v= bytes. --yes runs it for real.
+        run: node tools/promote.mjs --yes
+
+      - name: Tell the reporter it's live
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.WRANGLER_PAT }}
+        run: |
+          # The merged PR body carries "Closes #<n>" pointing at the original report.
+          ISSUE=$(printf '%s' "${{ github.event.pull_request.body }}" | grep -oiE 'closes #[0-9]+' | grep -oE '[0-9]+' | head -1)
+          if [ -n "$ISSUE" ]; then
+            gh issue comment "$ISSUE" --body "✅ Shipped and **live** now — refresh the page to see it. — Mr. Wrangler"
+          else
+            echo "auto-promote: promoted, but found no 'Closes #<n>' in the PR body to comment on."
+          fi
