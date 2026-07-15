@@ -234,8 +234,8 @@ They sharpen the system; they don't replace it.
    colors, type roles, layout concept, and where the ONE signature beat lands.
    Confirm it dodges the three AI defaults (cream+serif+terracotta /
    near-black+acid-green / broadsheet hairlines). If `brainstorming` is opted in, its
-   HARD-GATE forbids code before an approved design+spec. **Ask Jac any decision via
-   the AskUserQuestion popup, never inline** (CLAUDE.md rule).
+   HARD-GATE forbids code before an approved design+spec. **Surface any decision to Jac
+   clearly** (hybrid: inline / structured block / artifact / popup — CLAUDE.md).
 1. **Structure** — right builders, right stamped elements, correct rules + data.
    Make it correct in rule language before styling.
 2. **Tidy** — one spacing scale, align everything to something, nested radii,
