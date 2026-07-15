@@ -3,9 +3,12 @@ name: Wrangler Fix — auto-patch a reported glitch
 # ── Mr. Wrangler's Track B engine ─────────────────────────────────────────────
 # When a glitch is filed as an issue labelled "wrangler-fix", a Claude coding
 # agent reproduces it, patches the FRONTEND (app.js / style.css / index.html /
-# config.js), runs the 3 CI gates, opens a PR, and auto-merges it the moment CI
-# is green. Pages then deploys `trunk` to app.jacrentals.com. The one step the
-# browser can't do — rewriting app.js and redeploying — happens here.
+# config.js), runs the 3 CI gates, deploys the fix to the staging site, opens an
+# `auto-promote`-labelled PR to `trunk`, and auto-merges it the moment CI is green.
+# Merging to `trunk` is integrated but NOT live (Pages serves `production`); the
+# sibling workflow auto-promote.yml then fast-forwards `production` so the fix
+# reaches app.jacrentals.com in real time. Rewriting app.js and taking it live —
+# the one thing the browser can't do — happens across these two workflows.
 #
 # ── SWITCH-ON (one-time, in the repo's GitHub settings) ───────────────────────
 #   1. Settings → Secrets and variables → Actions → New repository secret:
@@ -13,6 +16,8 @@ name: Wrangler Fix — auto-patch a reported glitch
 #        WRANGLER_PAT      = <a fine-grained PAT scoped to THIS repo, with:
 #                             Contents: Read & write · Pull requests: Read & write
 #                             · Issues: Read & write · Actions: Read>
+#        STAGING_DEPLOY_PAT = <the same staging-deploy PAT /deploy uses, so the
+#                             agent can publish the fix to the staging site>
 #      Why a PAT and not the built-in GITHUB_TOKEN? A PR opened by GITHUB_TOKEN
 #      does NOT trigger the CI workflow — so it could never go green and could
 #      never auto-merge. The PAT opens the PR as you, so CI runs normally.
@@ -22,10 +27,15 @@ name: Wrangler Fix — auto-patch a reported glitch
 #   3. Settings → Branches → Add branch protection rule for `trunk`:
 #        ✓ Require status checks to pass before merging
 #        → add the "smoke" check (from the "CI — boot check" workflow).
-#      This is the safety net: a fix reaches live ONLY after all 3 gates pass.
+#      This is the safety net: a fix reaches trunk ONLY after all gates pass.
+#   4. GO-LIVE SWITCH (drives auto-promote.yml): Settings → Secrets and variables →
+#        Actions → Variables tab → WRANGLER_AUTO_PROMOTE = true.
+#      Until this is 'true', a merged fix stops at trunk (integrated, not live) —
+#      NOTHING auto-reaches the live customer app. Flipping it is the deliberate
+#      "enable live auto-promote" action; unset it to disable go-live again.
 #
-# Until those are set, this workflow is inert (it just no-ops / errors on the
-# missing secret) — nothing ships without the switch-on above.
+# Until 1–3 are set this workflow is inert (no-op / errors on the missing secret).
+# Until 4 is set, merged fixes stop at trunk — nothing ships live without it.
 
 on:
   issues:
@@ -68,6 +78,9 @@ jobs:
           # gh uses this for PR/comment/merge ops. The PAT (not GITHUB_TOKEN) means
           # the PR it opens actually triggers CI, so auto-merge can go green.
           GH_TOKEN: ${{ secrets.WRANGLER_PAT }}
+          # deploy-staging.mjs uses this to publish the fix to the staging site, so
+          # auto-promote's staging-freshness gate passes and staging stays in sync.
+          STAGING_DEPLOY_PAT: ${{ secrets.STAGING_DEPLOY_PAT }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           # PAT (not GITHUB_TOKEN) so the PR it opens actually triggers CI.
@@ -130,8 +143,14 @@ jobs:
               • Proven → make the MINIMAL fix that satisfies the cited rule (match the code +
                 the design language). Run all 3 gates (node ci/smoke.mjs · node ci/logic-test.mjs
                 · node ci/gen-rule-usage.mjs --check; regenerate rule-usage.js if usage changed).
+                Then PUBLISH the fix to staging so the go-live step can verify it and staging
+                stays in sync: `node tools/deploy-staging.mjs` (it bumps the shared ?v= cache-bust
+                token for you and pushes to the staging site — do NOT bump ?v= by hand). Commit the
+                fix AND the bumped index.html together.
                 Open a PR to `trunk` titled "Wrangler fix: <summary>" with body incl.
-                "Closes #${{ github.event.issue.number }}", then `gh pr merge --auto --squash <pr>`.
+                "Closes #${{ github.event.issue.number }}", add the `auto-promote` label
+                (`gh pr edit <pr> --add-label auto-promote`) so the merged fix goes live, then
+                `gh pr merge --auto --squash <pr>`.
               • Can't prove it / it contradicts the canon / it's ambiguous → do NOT ship.
                 Comment your verdict + why on #${{ github.event.issue.number }}; if it's a
                 `wrangler-fix` you couldn't justify, relabel it `wrangler-request` so it lands

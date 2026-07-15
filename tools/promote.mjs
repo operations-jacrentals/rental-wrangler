@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 // promote.mjs — Gate 2 of the two-gate trunk-based workflow: trunk (main) -> production.
 //
-// *** DRAFT — go-live pipeline not yet wired; activate per plan Phase 0. This script  ***
-// *** publishes to production when run with --yes; do not run until Phase 0           ***
-// *** (production branch + Pages source) is set up and Jac confirms.                  ***
+// GO-LIVE step (Gate 2). With --yes this fast-forwards `production` to the approved trunk
+// commit — the live deploy. `production` exists and is kept in sync with trunk; Pages is
+// expected to serve it (per CLAUDE.md). ⚠️ Confirm Pages' source branch is `production`
+// before relying on auto-promote.yml: if Pages still serves `trunk`, merging is already live
+// and this step is a no-op. Run only on Jac's explicit "promote it", or from
+// .github/workflows/auto-promote.yml for a Wrangler auto-fix.
 //
 // See: docs/superpowers/plans/2026-07-12-dev-workflow-trunk-based-redesign-plan.md (§1.3)
 //      docs/superpowers/specs/2026-07-12-dev-workflow-trunk-based-redesign-design.md

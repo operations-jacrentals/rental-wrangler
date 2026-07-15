@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // deploy-staging.mjs — "put my feature on staging."
 //
-// DRAFT — pipeline not yet wired; activate per plan Phase 0. Do not run until
-// the staging deploy credential + repo are confirmed.
+// OPERATIONAL (2026-07-15) — the staging repo + STAGING_DEPLOY_PAT are confirmed and the
+// staging site serves live; this is the working Gate-1 review deploy (/deploy wraps it).
 //
 // WHY THIS EXISTS
 // Per the trunk-based redesign (see the two docs below), staging stops being a
