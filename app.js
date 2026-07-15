@@ -4676,7 +4676,11 @@ function settingsFlagsPane(o) {
 function settingsTeamPane(o) {
   if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {}));
   const emps = o.draftSettings.employees || [];
-  const roleOpts = ROLES.map((r) => r.label || r.id);
+  // Per-person permissions ride the role's TIER (roleTier / backend roleTierRank_). The KPI-ring
+  // ROLES only span staff/money, so the picker MUST also offer the higher-tier logins —
+  // otherwise no per-person user could be a Manager/Admin/Developer (they'd top out at Office =
+  // money, silently losing admin/dev access). Both roleTier and the backend already resolve these.
+  const roleOpts = [...ROLES.map((r) => r.label || r.id), 'Manager', 'Admin', 'Developer'];
   // Per-person auth controls surface only when phone-identity is ON and an admin is viewing —
   // the roster IS the login list in that mode (spec Phase 3). Off = today's plain crew list.
   const showAuth = flagOn('phoneIdentity') && adminUnlocked();
