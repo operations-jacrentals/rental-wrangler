@@ -111,6 +111,22 @@ function pidSendSms_(phoneRaw, text) {
   } catch (e) { return { ok: false, reason: 'fetch-error' }; }
 }
 
+/* Build the SMS body for a sign-in / setup code. The ENROLL variant (new hire, or a
+ * changed number) names the app and links it so a first-timer knows where to go; the
+ * login/reset variant stays terse (the person is already at the app). Override the URL
+ * with a PID_APP_URL Script Property. App-store download links for the native
+ * Android/iOS apps get appended to the enroll copy here once those ship. */
+function pidCodeSms_(code, purpose, ttlMs) {
+  var mins = Math.round(ttlMs / 60000);
+  if (purpose === 'enroll') {
+    var url = pidProps_().getProperty('PID_APP_URL') || 'https://app.jacrentals.com';
+    return 'JacRentals — Rental Wrangler: you\'re set up. Open ' + url + ' , enter your name, '
+         + 'then code ' + code + ' to finish (expires in ' + mins + ' min). Never share it.';
+    // TODO(native apps): append the Android/iOS store download links here when they ship.
+  }
+  return 'JacRentals: your sign-in code is ' + code + '. Expires in ' + mins + ' min. Never share it.';
+}
+
 /* ── ACTION: authStart — text a one-time code to a roster person's own phone ──
  * body: { personId? , phone? , purpose? ('login'|'reset'|'enroll') }.  UNAUTHENTICATED.
  * Roster-only, rate-limited. Generic response (no hard valid/invalid tell beyond `sent`). */
@@ -127,7 +143,7 @@ function authStart_(body) {
   var code = pidCode_(), salt = pidSalt_();
   var ttl = purpose === 'enroll' ? PID_LINK_TTL_MS : PID_CODE_TTL_MS;
   pidPut_('PID_CODE_' + pid, { hash: pidHash_(code, salt), salt: salt, purpose: purpose, exp: now + ttl, tries: 0 });
-  var send = pidSendSms_(person.phone, 'JacRentals: your sign-in code is ' + code + '. Expires in ' + Math.round(ttl / 60000) + ' min. Never share it.');
+  var send = pidSendSms_(person.phone, pidCodeSms_(code, purpose, ttl));
   if (!send.ok) return { ok: true, sent: false, reason: send.reason };
   rl.n += 1; rl.last = now; pidPut_('PID_RL_' + pid, rl);
   return { ok: true, sent: true, personId: pid, name: person.name || '', masked: smsMaskPhone_(person.phone) };
@@ -255,13 +271,36 @@ function pidPurgePerson_(pid) {
   pidDel_('PID_PINLOCK_' + pid); pidDel_('PID_RL_' + pid);
 }
 
-/* ── CASCADE HOOK (defense-in-depth): after a config save, purge any person no longer on
- *    the roster. Call pidReconcileRoster_(prevEmployees, nextEmployees) from within
- *    saveConfigFromBody, just before returning ok — so removing someone in Settings cuts
- *    their access even if the client never calls authRevoke. ── */
+/* ── CASCADE HOOK (defense-in-depth): reconcile per-person auth to the roster after a
+ *    config save. Call pidReconcileRoster_(prevEmployees, nextEmployees) from within
+ *    saveConfigFromBody, just before returning ok. Three transitions:
+ *      • REMOVED (id gone)        → pidPurgePerson_: cut device trust + PIN even if the
+ *                                   client never calls authRevoke.
+ *      • ADDED (new id w/ phone)  → auto-text a setup code so a new hire self-enrolls.
+ *      • NUMBER CHANGED           → purge the old device trust/PIN (the phone IS the
+ *                                   identity, so a moved number must re-prove possession)
+ *                                   then text the NEW number a fresh setup code.
+ *    A name-only edit sends nothing. Sends reuse authStart_(…,'enroll'): roster-scoped,
+ *    rate-limited, 45-min code. Runs AFTER saveConfigObj so authStart_ reads the new
+ *    roster; each send is guarded so one failure can't skip the rest of a bulk add. ── */
 function pidReconcileRoster_(prevList, nextList) {
+  var prevPhone = {};   // id → normalized phone at the previous save ('' if none)
+  (prevList || []).forEach(function (e) { if (e && e.id) prevPhone[String(e.id)] = smsNormalizePhone_(e.phone) || ''; });
   var live = {}; (nextList || []).forEach(function (e) { if (e && e.id) live[String(e.id)] = 1; });
+  // Removed → purge access.
   (prevList || []).forEach(function (e) { if (e && e.id && !live[String(e.id)]) pidPurgePerson_(String(e.id)); });
+  // Added, or number changed → (re)enroll: sign out old devices on a change, then send.
+  (nextList || []).forEach(function (e) {
+    if (!e || !e.id) return;
+    var id = String(e.id), toPhone = smsNormalizePhone_(e.phone) || '';
+    if (!toPhone) return;                                          // no textable number → nothing to send
+    var had = Object.prototype.hasOwnProperty.call(prevPhone, id);
+    if (had && prevPhone[id] === toPhone) return;                 // unchanged number → no text
+    try {
+      if (had && prevPhone[id] !== toPhone) pidPurgePerson_(id);  // number moved → re-verify on the new one
+      authStart_({ personId: id, purpose: 'enroll' });            // welcome / setup code to the (new) number
+    } catch (err) { /* one bad send must not skip the rest of the roster */ }
+  });
 }
 
 /* ============================================================================
