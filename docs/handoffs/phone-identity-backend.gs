@@ -116,15 +116,34 @@ function pidSendSms_(phoneRaw, text) {
  * login/reset variant stays terse (the person is already at the app). Override the URL
  * with a PID_APP_URL Script Property. App-store download links for the native
  * Android/iOS apps get appended to the enroll copy here once those ship. */
-function pidCodeSms_(code, purpose, ttlMs) {
-  var mins = Math.round(ttlMs / 60000);
-  if (purpose === 'enroll') {
-    var url = pidProps_().getProperty('PID_APP_URL') || 'https://app.jacrentals.com';
-    return 'JacRentals — Rental Wrangler: you\'re set up. Open ' + url + ' , enter your name, '
-         + 'then code ' + code + ' to finish (expires in ' + mins + ' min). Never share it.';
-    // TODO(native apps): append the Android/iOS store download links here when they ship.
-  }
-  return 'JacRentals: your sign-in code is ' + code + '. Expires in ' + mins + ' min. Never share it.';
+/* App URL used in crew messaging (override with a PID_APP_URL Script Property). */
+function pidAppUrl_() { return pidProps_().getProperty('PID_APP_URL') || 'https://app.jacrentals.com'; }
+
+/* Terse, FIXED sign-in code SMS — security/transactional, deliberately NOT customizable. */
+function pidCodeSms_(code, ttlMs) {
+  return 'JacRentals: your sign-in code is ' + code + '. Expires in ' + Math.round(ttlMs / 60000) + ' min. Never share it.';
+}
+
+/* Backend-authoritative default crew-welcome copy (mirrors config.js PHONE_IDENTITY.welcomeText);
+ * used when settings.phoneWelcome is blank. Tokens: {name}, {link}. */
+var PID_WELCOME_DEFAULT = "Saddle up, {name}! You're on the JacRentals crew. Open {link} and sign in with your mobile number to get rolling.";
+
+/* Build a hand's crew-welcome from the (admin-customizable) template + token substitution.
+ * NO login code — the phone-first sign-in issues that in-app when they enter their number. */
+function pidWelcomeText_(person) {
+  var tpl = '';
+  try { tpl = String((getConfigObj().settings || {}).phoneWelcome || ''); } catch (e) { tpl = ''; }
+  if (!tpl.trim()) tpl = PID_WELCOME_DEFAULT;
+  var name = (person && person.name ? String(person.name) : '').trim() || 'partner';
+  return tpl.replace(/\{name\}/g, name).replace(/\{link\}/g, pidAppUrl_());
+}
+
+/* Send the crew-welcome to one roster person. Roster-scoped, quiet-hours bypassed
+ * (transactional onboarding), and it does NOT touch the login-code rate-limit bucket — so a
+ * hand added seconds before opening the app still gets their in-app sign-in code cleanly. */
+function pidSendWelcome_(person) {
+  if (!person || !smsNormalizePhone_(person.phone)) return { ok: false, reason: 'no-phone' };
+  return pidSendSms_(person.phone, pidWelcomeText_(person));
 }
 
 /* ── ACTION: authStart — text a one-time code to a roster person's own phone ──
@@ -143,7 +162,7 @@ function authStart_(body) {
   var code = pidCode_(), salt = pidSalt_();
   var ttl = purpose === 'enroll' ? PID_LINK_TTL_MS : PID_CODE_TTL_MS;
   pidPut_('PID_CODE_' + pid, { hash: pidHash_(code, salt), salt: salt, purpose: purpose, exp: now + ttl, tries: 0 });
-  var send = pidSendSms_(person.phone, pidCodeSms_(code, purpose, ttl));
+  var send = pidSendSms_(person.phone, pidCodeSms_(code, ttl));
   if (!send.ok) return { ok: true, sent: false, reason: send.reason };
   rl.n += 1; rl.last = now; pidPut_('PID_RL_' + pid, rl);
   return { ok: true, sent: true, personId: pid, name: person.name || '', masked: smsMaskPhone_(person.phone) };
@@ -234,17 +253,20 @@ function authRevoke_(body, role) {
   return { ok: true };
 }
 
-/* ── ACTION: authEnrollBlast — text every rostered person a code (cutover; admin only) ── */
+/* ── ACTION: authEnrollBlast — text the crew-welcome (app link, NO code) to the roster.
+ * body: { personId? , token? }. Admin only. With personId → welcome just that one hand (the
+ * per-person "send invite" button); without → the whole-crew blast. ── */
 function authEnrollBlast_(body, role) {
+  body = body || {};
   if (roleTierRank_(role) < ROLE_TIER_RANK.admin) {
-    var caller = pidResolveCaller_((body || {}).token);
+    var caller = pidResolveCaller_(body.token);
     if (!caller || caller.tier < ROLE_TIER_RANK.admin) return { ok: false, error: 'forbidden' };
   }
   var list = pidRoster_(), sent = 0, skipped = 0;
+  if (body.personId != null) list = list.filter(function (e) { return e && String(e.id) === String(body.personId); });
   for (var i = 0; i < list.length; i++) {
-    if (!smsNormalizePhone_(list[i].phone)) { skipped++; continue; }
-    var r = authStart_({ personId: list[i].id, purpose: 'enroll' });
-    if (r && r.sent) sent++; else skipped++;
+    var r = pidSendWelcome_(list[i]);
+    if (r && r.ok) sent++; else skipped++;
   }
   return { ok: true, sent: sent, skipped: skipped };
 }
@@ -276,13 +298,15 @@ function pidPurgePerson_(pid) {
  *    saveConfigFromBody, just before returning ok. Three transitions:
  *      • REMOVED (id gone)        → pidPurgePerson_: cut device trust + PIN even if the
  *                                   client never calls authRevoke.
- *      • ADDED (new id w/ phone)  → auto-text a setup code so a new hire self-enrolls.
+ *      • ADDED (new id w/ phone)  → pidSendWelcome_: text the crew-welcome (app link, no
+ *                                   code) so a new hire knows where to sign in.
  *      • NUMBER CHANGED           → purge the old device trust/PIN (the phone IS the
  *                                   identity, so a moved number must re-prove possession)
- *                                   then text the NEW number a fresh setup code.
- *    A name-only edit sends nothing. Sends reuse authStart_(…,'enroll'): roster-scoped,
- *    rate-limited, 45-min code. Runs AFTER saveConfigObj so authStart_ reads the new
- *    roster; each send is guarded so one failure can't skip the rest of a bulk add. ── */
+ *                                   then welcome the NEW number.
+ *    A name-only edit sends nothing. The welcome carries NO login code and does NOT touch the
+ *    login rate-limit, so a hand can sign in immediately after being added. Runs AFTER
+ *    saveConfigObj so pidWelcomeText_ reads the fresh roster + template; each send is guarded
+ *    so one failure can't skip the rest of a bulk add. ── */
 function pidReconcileRoster_(prevList, nextList) {
   var prevPhone = {};   // id → normalized phone at the previous save ('' if none)
   (prevList || []).forEach(function (e) { if (e && e.id) prevPhone[String(e.id)] = smsNormalizePhone_(e.phone) || ''; });
@@ -298,7 +322,7 @@ function pidReconcileRoster_(prevList, nextList) {
     if (had && prevPhone[id] === toPhone) return;                 // unchanged number → no text
     try {
       if (had && prevPhone[id] !== toPhone) pidPurgePerson_(id);  // number moved → re-verify on the new one
-      authStart_({ personId: id, purpose: 'enroll' });            // welcome / setup code to the (new) number
+      pidSendWelcome_(e);                                          // crew-welcome (app link, no code) to the (new) number
     } catch (err) { /* one bad send must not skip the rest of the roster */ }
   });
 }

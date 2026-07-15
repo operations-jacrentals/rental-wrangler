@@ -3088,6 +3088,20 @@ select.nc-in { cursor: pointer; }
   transition: border-color .12s, color .12s; }
 .emp-act:hover { color: var(--txt); border-color: var(--accent-line, var(--accent)); }
 .emp-act:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Settings → Team Roster: the customizable crew-welcome SMS (phone-identity mode). A
+   saddle-stitch (tan dashed) top rule seasons it as its own wrangler block; the textarea
+   matches the .set-input wells. Not a lint-family element, so no data-r. */
+.emp-welcome { margin: 11px 0 3px; padding-top: 11px; border-top: 1px dashed color-mix(in srgb, var(--tan, #c2925a) 62%, transparent); }
+.emp-welcome-lbl { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.4px; font-weight: 700; font-size: 11.5px; color: var(--txt-2); margin-bottom: 6px; }
+.emp-welcome-ta { width: 100%; min-height: 60px; padding: 8px 10px; border-radius: 8px;
+  background: var(--panel); border: 1px solid var(--line); color: var(--txt);
+  font-family: var(--font); font-size: 13px; line-height: 1.45; resize: vertical; }
+.emp-welcome-ta::placeholder { color: var(--txt-3); }
+.emp-welcome-ta:focus { outline: none; border-color: var(--accent-line, var(--accent)); }
+.emp-welcome-foot { display: flex; align-items: flex-start; gap: 12px; margin-top: 7px; }
+.emp-welcome-tok { flex: 1; min-width: 0; font-size: 11px; line-height: 1.5; color: var(--txt-3); }
+.emp-welcome-tok em { font-style: normal; font-family: ui-monospace, monospace; color: var(--txt-2); }
+.emp-welcome-foot .emp-act { flex: 0 0 auto; }
 
 /* §7.1 — R5 ADD affordance: dashed "+Thing" (no word "Add", no space after +) */
 .add-field { color: var(--txt-2); font-weight: 700; border: 1px dashed var(--line); border-radius: 11px; padding: 0 12px; height: 30px; display: inline-flex; align-items: center; background: transparent; font-family: inherit; font-size: 13px; cursor: pointer; }

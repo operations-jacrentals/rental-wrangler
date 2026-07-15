@@ -4611,8 +4611,10 @@ function setDraftStatus(o, set, val, patch) {
 }
 function captureTeamEdits(o) {   // keep typed roster edits across re-renders + into Save
   const root = document.querySelector('.settings-popup .popup-body'); if (!root) return;
-  const inputs = root.querySelectorAll('.set-input[data-emp]'); if (!inputs.length) return;
   if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {}));
+  const wt = root.querySelector('[data-emp-welcome]');   // the customizable crew-welcome SMS (may exist with an empty roster)
+  if (wt) o.draftSettings.phoneWelcome = wt.value;
+  const inputs = root.querySelectorAll('.set-input[data-emp]'); if (!inputs.length) return;
   const emps = o.draftSettings.employees || (o.draftSettings.employees = []);
   inputs.forEach((i) => { const idx = Number(i.dataset.i); if (emps[idx]) emps[idx][i.dataset.emp] = i.value; });
 }
@@ -4691,12 +4693,21 @@ function settingsTeamPane(o) {
     <input class="set-input" data-emp="note" data-i="${i}" placeholder="Note" value="${esc(em.note || '')}" style="flex:2;min-width:110px" />
     ${toggleChip(((em.commsConsent && em.commsConsent.sms) === 'opted-out') ? 'Texts off' : 'Texts OK', (em.commsConsent && em.commsConsent.sms) !== 'opted-out', { js: 'js-emp-consent', data: { i }, tone: 'green' })}
     ${closeX('js-emp-del', { data: { i } })}</div>${showAuth && em.id ? `<div class="set-row emp-auth" style="gap:7px;margin:-3px 0 8px;padding-left:2px">
-    <button type="button" class="emp-act js-emp-code" data-id="${esc(em.id)}" data-tip="Text this hand a one-time setup code">Text setup code</button>
+    <button type="button" class="emp-act js-emp-code" data-id="${esc(em.id)}" data-tip="Text this hand the app link + welcome">Text app invite</button>
     <button type="button" class="emp-act js-emp-signout" data-id="${esc(em.id)}" data-tip="Sign them out on every device">Sign out everywhere</button></div>` : ''}`).join('');
   const note = flagOn('phoneIdentity')
     ? 'Per-person logins are ON — this roster is the login list. Each hand needs a name, phone, and role; they set their own PIN from a texted code. Removing someone cuts their access on the next save.'
     : 'The crew — name, role, phone, note, and whether we can text them (a hand who opts out is skipped by every crew text). No credentials or compliance PII lives here (dropped from scope, Jac 2026-06-29).';
-  return `<div class="set-pane"><div class="muted" style="font-size:11.5px;margin-bottom:9px">${esc(note)}</div>${rows || '<div class="muted" style="font-size:12px">No hands on the roster yet.</div>'}<div class="kv pillrow" style="margin-top:9px">${addBtn('Employee', { link: true, js: 'js-emp-add' })}${showAuth ? `<button type="button" class="emp-act js-emp-blast" data-tip="Text a one-time setup code to every hand on the roster at once (cutover)">Text everyone a setup code</button>` : ''}</div></div>`;
+  // Customizable crew-welcome SMS (phone-identity mode) — the text auto-sent on a new hire or
+  // a number change, and by the per-person / whole-crew invite buttons. Placeholder shows the
+  // shipped default so an admin sees what sends even before they edit it.
+  const welcomeDefault = (PHONE_IDENTITY && PHONE_IDENTITY.welcomeText) || '';
+  const welcomeVal = o.draftSettings.phoneWelcome || '';
+  const welcomeBlock = showAuth ? `<div class="emp-welcome">
+    <div class="emp-welcome-lbl">Crew welcome text</div>
+    <textarea class="emp-welcome-ta" data-emp-welcome rows="3" placeholder="${esc(welcomeDefault)}" data-tip="Sent to a hand when they're added or their number changes">${esc(welcomeVal)}</textarea>
+    <div class="emp-welcome-foot"><span class="emp-welcome-tok">Tokens <em>{name}</em> and <em>{link}</em> (the app link) fill in when it sends — no login code, they get that in the app.</span><button type="button" class="emp-act js-emp-welcome-reset" data-tip="Restore the default welcome wording">Reset to default</button></div></div>` : '';
+  return `<div class="set-pane"><div class="muted" style="font-size:11.5px;margin-bottom:9px">${esc(note)}</div>${rows || '<div class="muted" style="font-size:12px">No hands on the roster yet.</div>'}${welcomeBlock}<div class="kv pillrow" style="margin-top:9px">${addBtn('Employee', { link: true, js: 'js-emp-add' })}${showAuth ? `<button type="button" class="emp-act js-emp-blast" data-tip="Text the whole roster the app link + welcome">Round up the crew</button>` : ''}</div></div>`;
 }
 /* ── Settings → Notifications (Phase A control center — design spec
    docs/superpowers/specs/2026-07-14-notifications-pane-design.md) ────────────────────
@@ -17411,10 +17422,11 @@ function onClick(e) {
   // Phase-3 per-person auth actions (phone-identity mode) — act immediately against the SAVED
   // roster; the backend admin-gates them (docs/handoffs/phone-identity-backend.gs). A just-added
   // unsaved row has no server enrollment yet → authStart returns sent:false, so we say "save first".
-  if (closest('.js-emp-code')) { e.stopPropagation(); const id = closest('.js-emp-code').dataset.id; toast('Texting a setup code…'); backendCall('authStart', { personId: id, purpose: 'enroll' }).then((r) => toast(r && r.ok && r.sent ? 'Setup code texted.' : 'Could not text a code — save the roster first, and check their phone number.')).catch(() => toast('Could not reach the backend.')); return; }
+  if (closest('.js-emp-code')) { e.stopPropagation(); const id = closest('.js-emp-code').dataset.id; toast('Texting the app invite…'); backendCall('authEnrollBlast', { personId: id }).then((r) => toast(r && r.ok && r.sent ? 'App invite texted.' : 'Could not text the invite — save the roster first, and check their phone number.')).catch(() => toast('Could not reach the backend.')); return; }
+  if (closest('.js-emp-welcome-reset')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'settings') return; captureTeamEdits(o); o.draftSettings.phoneWelcome = (PHONE_IDENTITY && PHONE_IDENTITY.welcomeText) || ''; reSettings(); return; }
   if (closest('.js-emp-signout')) { e.stopPropagation(); const id = closest('.js-emp-signout').dataset.id; backendCall('authRevoke', { personId: id }).then((r) => toast(r && r.ok ? 'Signed out on all their devices.' : 'Could not sign them out (admin only).')).catch(() => toast('Could not reach the backend.')); return; }
-  // Phase-4 cutover: text every rostered hand a one-time setup code at once (authEnrollBlast, admin-gated backend).
-  if (closest('.js-emp-blast')) { e.stopPropagation(); toast('Texting setup codes to the crew…'); backendCall('authEnrollBlast', {}).then((r) => toast(r && r.ok ? `Setup codes sent to ${r.sent} hand${r.sent === 1 ? '' : 's'}${r.skipped ? ` (${r.skipped} skipped — no phone on file)` : ''}.` : 'Could not send the blast (admin only).')).catch(() => toast('Could not reach the backend.')); return; }
+  // Round up the crew: text every rostered hand the app link + welcome at once (authEnrollBlast, admin-gated backend).
+  if (closest('.js-emp-blast')) { e.stopPropagation(); toast('Rounding up the crew…'); backendCall('authEnrollBlast', {}).then((r) => toast(r && r.ok ? `App link sent to ${r.sent} hand${r.sent === 1 ? '' : 's'}${r.skipped ? ` (${r.skipped} skipped — no phone on file)` : ''}.` : 'Could not send the invite (admin only).')).catch(() => toast('Could not reach the backend.')); return; }
   // Crew SMS consent: capture typed roster edits first (mirror js-emp-del), then flip this hand's commsConsent.sms between opted-out and opted-in (unknown/absent counts as textable). Read server-side by sendStaffMessage_.
   if (closest('.js-emp-consent')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'settings') return; const i = Number(closest('.js-emp-consent').dataset.i); captureTeamEdits(o); const emps = o.draftSettings.employees || []; if (emps[i]) { const cur = (emps[i].commsConsent && emps[i].commsConsent.sms) || 'unknown'; emps[i].commsConsent = Object.assign({}, emps[i].commsConsent, { sms: cur === 'opted-out' ? 'opted-in' : 'opted-out' }); } reSettings(); return; }
   // Settings → Notifications: single on/off toggles (R31) write straight into the draft
