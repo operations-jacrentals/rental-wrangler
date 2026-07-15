@@ -196,6 +196,17 @@ delegation note, or a dedicated rule); `.claude/skills/start/SKILL.md` and
   and flipping private on Free takes `app.jacrentals.com` down). Memory ships
   public-safe either way, so this does not block v2. Safe order if Pro: canary
   staging → confirm → flip main + production (Jac's explicit trigger only).
+- **Auto-fix to live (Jac, 2026-07-15)** — Mr. Wrangler must give end-users
+  live fixes in real time, running the full pipeline (deploy → merge → promote)
+  autonomously with **no user interaction**. The trunk rename broke this (Pages
+  serves `production`; merge-to-trunk ≠ live), so restoring it needs the
+  auto-fixer to run `promote` too. Safety = **fully machine-gated** (CI +
+  staging-verify + the fresh-context review; any failure hard-stops and pings
+  Jac — never a broken fix to live). This PR's WS1a updated the `wrangler-fix`
+  skill + docs to the trunk model and recorded the intent; the actual
+  live-deploy automation (`wrangler-fix.yml` + an automated promote path) is a
+  **separate, Jac-gated** effort — enabling the live auto-promote switch is his
+  explicit one-time go (it touches the live site + secrets).
 - Retroactive restyle of existing UI (explicitly not wanted).
 
 ## 7. Open questions / risks
