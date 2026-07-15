@@ -636,4 +636,10 @@ export const PHONE_IDENTITY = {
   trustDays: 30,            // how long a personal device stays trusted before re-verify
   codeTtlMin: 10,           // verification-code lifetime (a login someone's waiting on)
   linkTtlMin: 45,           // enrollment/welcome link lifetime
+  // Default crew-welcome SMS (customizable in Settings → Team Roster; the backend is the
+  // authoritative default and substitutes the tokens at send time). Tokens: {name} = the
+  // hand's roster name (falls back to "partner"), {link} = the app URL. No login code —
+  // the phone-first sign-in issues that in-app when they enter their mobile number.
+  welcomeText:
+    "Saddle up, {name}! You're on the JacRentals crew. Open {link} and sign in with your mobile number to get rolling.",
 };

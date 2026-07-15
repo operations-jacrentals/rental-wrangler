@@ -24,6 +24,18 @@ the app), shared device takes a PIN each session. No passwords.
 `FEATURES.phoneIdentity` is **ON** in production (app.jacrentals.com, `?v=20260715b`). The
 whole crew is on per-person phone login. Flag-OFF remains the instant backout.
 
+## Customizable crew-welcome + copy fix — 2026-07-15 (polish pass)
+
+The auto-enroll / blast / per-person send now text a **crew-welcome** (app link, **no
+code**) instead of a code, fixing the phone-first copy ("enter your name" was wrong) AND the
+30-sec rate-limit snag (the welcome doesn't touch the login-code bucket). The welcome is
+**admin-editable** in Settings → Team Roster (`settings.phoneWelcome`, tokens `{name}`/`{link}`,
+Reset-to-default = `config.js PHONE_IDENTITY.welcomeText`); the backend `pidWelcomeText_` reads
+it, `pidSendWelcome_` sends it. The in-app sign-in **code** SMS is unchanged (security). Buttons
+relabeled to wrangler voice: "Round up the crew" / "Text app invite". `authEnrollBlast` now takes
+an optional `personId` (per-person invite). Backend mirror updated; needs the editor New-version
+deploy.
+
 ## Auto-enroll on roster add / number change — 2026-07-15 (backend)
 
 `pidReconcileRoster_` now, on a config save: **added** person w/ phone → auto-text a setup
