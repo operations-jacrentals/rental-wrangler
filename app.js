@@ -9698,7 +9698,10 @@ function bottomBarInner() {
  *  (photo sweep) tools. One trigger instead of a flat run of icon-only buttons. */
 function toolsMenuRows() {
   const item = (js, icon, label, on) => `<button class="dd-item ${js}${on ? ' on' : ''}"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${icon}</span>${esc(label)}</button>`;
-  let html = item('js-qr', I.qr, 'Share session (QR)')
+  // Manual Update — force the newest build past a stale mobile cache (Jac 2026-07-16).
+  let html = `<button class="dd-item js-app-update"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${STATUS_ICONS.refresh}</span>Check for updates<span style="margin-left:auto;color:var(--txt-3);font-size:11px;letter-spacing:.3px">v${esc(appVersion())}</span></button>`
+    + `<div class="menu-sep"></div>`;
+  html += item('js-qr', I.qr, 'Share session (QR)')
     + item('js-previews', state.previewsOn ? I.eye : I.eyeOff, state.previewsOn ? 'Hover previews: on' : 'Hover previews: off', state.previewsOn)
     + item('js-hotkeys', I.mouse, 'Mouse & keyboard shortcuts');
   html += `<div class="dd-sec-lbl">GPS / Fleet</div>`
@@ -16477,6 +16480,39 @@ function swInit() {
   } catch (e) {}
 }
 
+/* ── Manual "Update" (tools menu, Jac 2026-07-16) ─────────────────────────────────
+   Pages serves index.html with max-age=600 and no per-file hashing, and mobile Safari
+   pins it hard — so there was NO user-facing way to force the newest build (a shipped
+   fix could sit invisible on a cached device for a long while). This checks the live
+   build token, and if it's newer, clears the SW + caches and hard-reloads PAST the HTTP
+   cache (a throwaway ?_u= on the navigation busts Safari's cached index.html — the thing
+   that pins everyone to the old build). Same-version = a friendly "you're current". */
+function appVersion() { return (document.querySelector('script[src*="app.js?v="]')?.src.match(/v=([\w-]+)/) || [])[1] || 'dev'; }
+async function clearAppCaches() {
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for (const r of regs) { try { if (r.waiting) r.waiting.postMessage('skipWaiting'); await r.update(); } catch (e) {} }
+    }
+    if (self.caches && caches.keys) { const ks = await caches.keys(); await Promise.all(ks.map((k) => caches.delete(k))); }
+  } catch (e) {}
+}
+async function checkForUpdate() {
+  const cur = appVersion();
+  toast('Checking for a newer build…');
+  let latest = null;
+  try {
+    const res = await fetch('index.html?_=' + Date.now(), { cache: 'no-store' });   // no-store + unique query → always the LIVE index, never the cache
+    latest = ((await res.text()).match(/app\.js\?v=([\w-]+)/) || [])[1] || null;
+  } catch (e) { /* offline / unreachable */ }
+  if (!latest) { toast('Couldn’t reach the server — check your connection and try again.'); return; }
+  if (latest === cur) { toast(`You’re already on the latest build (${cur}). ✓`); return; }
+  toast(`New build ${latest} — updating…`);
+  await clearAppCaches();
+  const u = new URL(location.href); u.searchParams.set('_u', Date.now().toString(36));   // bust Safari's cached index.html
+  location.replace(u.toString());
+}
+
 const PERF = { lcp: null, inp: null, cls: 0, renders: [], over: 0, flushed: false };
 function perfInit() {
   if (!CFG.PERF_VITALS_ON || typeof PerformanceObserver === 'undefined') return;
@@ -17664,6 +17700,7 @@ function onClick(e) {
   if (closest('.js-qr')) { closeMenus(); return shareSession(); }
   if (closest('.js-previews') || closest('.js-roweye')) { e.stopPropagation(); state.previewsOn = !state.previewsOn; if (!state.previewsOn) hideHoverPreview(); try { localStorage.setItem('jactec.previewsOff', state.previewsOn ? '0' : '1'); } catch (e) {} toast(state.previewsOn ? 'Hover previews on.' : 'Hover previews off — every eye runs red.'); closeMenus(); return render(); }
   if (closest('.js-hotkeys')) { closeMenus(); return openOverlay({ kind: 'hotkeys' }); }
+  if (closest('.js-app-update')) { closeMenus(); return checkForUpdate(); }   // manual "Update" — force the newest build past a stale mobile cache
   if (closest('.js-lint')) {   // R0 flash-lint toggle — persists per device
     const on = document.body.classList.toggle('rw-lint');
     try { localStorage.setItem('jactec.lint', on ? '1' : '0'); } catch (err) {}
@@ -24026,6 +24063,8 @@ function warmBackend() {
   try { fetch(BACKEND_URL, { method: 'GET', mode: 'no-cors', cache: 'no-store' }).catch(() => {}); } catch (e) {}
 }
 function boot() {
+  // Tidy the URL after a manual Update (checkForUpdate adds ?_u=<t> to bust the cached index).
+  try { if (/[?&]_u=/.test(location.search)) history.replaceState(null, '', location.pathname + location.hash); } catch (e) {}
   // Recovery hatch: app.jacrentals.com/#reset-settings (or #safe-mode) wipes saved customizations
   // before they apply — the guaranteed way back if a bad setting ever breaks the screen.
   try {
