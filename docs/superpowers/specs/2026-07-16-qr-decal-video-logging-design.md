@@ -29,8 +29,8 @@ there is no enrollment workflow to build or train.
 
 - No native app, no account system, no per-decal secret tokens.
 - No in-app video trimming/editing, no push notifications.
-- No bulk decal-printing UI in this phase (a print sheet can come later; the
-  decal *layout* is settled here). Reprint-on-demand is a follow-up if wanted.
+- Bulk decal printing was previously out of scope but is now IN — see *Fleet QR
+  Codes export* below (added at Jac's request 2026-07-16).
 
 ## The two concerns this addresses (traceability)
 
@@ -201,7 +201,48 @@ Jac's Apps Script editor deploy.
   bulk print run. Nothing prints until the flow is verified on staging.
 - Freeze the `#u=<unitId>` scheme now so print artwork targets the final URL.
 
+## Fleet QR Codes export — Company Files (added 2026-07-16)
+
+A downloadable **"Fleet QR Codes"** artifact in **Company Files** (`DATA.companyFiles`,
+entity `files`, `IDX.file` app.js:768) with a print-ready decal for **every active
+unit**, so Jac prints the whole yard's decals at once.
+
+- **Active fleet only.** On the sheet: `unit.fleetStatus` ∈ {Active, Onboard,
+  Purchased, For Sale} (pending Jac confirm). Off: {Inactive, Sold}. A reactivated
+  unit reappears; a sold/inactivated one drops off. (`fleetStatus` values defined in
+  `config.js:86-93`; field read at app.js:6430 etc.)
+- **Always current.** New or reactivated units are included automatically.
+
+**Approach — on-demand generation.** A special always-current entry in Company Files
+that, at download time, builds the sheet from live fleet data. Current *by
+construction* — no stored file, no regeneration triggers, no stale-file risk.
+(Company Files today holds only uploaded blobs / links; a generate-on-download entry
+is new UI, `saveFileForm` app.js:19377.) A materialized-PDF alternative (backend job
+rewrites on each fleet change) is heavier and rejected unless a fixed archived /
+emailable file is later needed.
+
+**Real QR generation — vendored client-side encoder (decision).** The app has NO
+client-side QR encoder; its existing `kind:'qr'` overlay fetches a PNG from a
+third-party API (`api.qrserver.com`, app.js:12364) — external, online-only, unfit for
+permanent printable asset tags. We **vendor a small pinned MIT/ISC QR encoder** into
+`vendor/` (same pattern as `d3-shape`/`plot`) and generate real, scannable codes fully
+client-side — offline, in CI, self-controlled. **Shared infra:** it also produces the
+real test decal for the scan-flow staging review (Phase 6). Optional adjacent cleanup
+(not bundled unasked): repoint the existing share-session QR at the vendored encoder
+to drop the external dependency.
+
+**Data per decal:** immutable `unit.unitId` (→ `#u=<unitId>`; minted by `nextUnitId`,
+never recycled — app.js:19870), `unit.name` + category name
+(`IDX.category.get(unit.categoryId)?.name`) as the human fallback,
+`categoryIconFor(categoryName)` glyph.
+
+**Delivery:** a print-optimized layout (decals tiled per page) the browser prints /
+saves as PDF — no PDF library needed initially.
+
 ## Open items
 
-- None blocking. (Optional later: a bulk decal print-sheet generator; on-demand
-  reprint. Both are additive and out of scope for this phase.)
+- **Confirm the include-rule split** — which `fleetStatus` values appear on the Fleet
+  QR Codes sheet (proposed On: Active/Onboard/Purchased/For Sale; Off: Inactive/Sold).
+- Confirm on-demand generation vs. a materialized/stored PDF.
+- Optional later: a true PDF export (vendored PDF lib) if print-to-PDF isn't enough;
+  repointing the existing share-session QR at the vendored encoder.
