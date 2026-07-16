@@ -23290,7 +23290,10 @@ function cacheValid(env) {
 // after a real load applied it (Phase 1) — never from local edits.
 function cacheSnapshotEnvelope() {
   const data = {}; PERSIST_KEYS.forEach((k) => { data[k] = Array.isArray(DATA[k]) ? DATA[k] : []; });
-  return { cacheVer: CACHE_SCHEMA_VER, appVer: cacheAppVer(), tokenTag: cacheTokenTag(pidLocalToken()), savedAt: Date.now(), payload: { data, settings: state.settings || null } };
+  // role/user let the instant paint render the right role-view before authResume returns
+  // (cosmetic only — the BACKEND enforces the real gate; a tampered role is a 1s UI blip
+  // with no writes, since booting stays true until the confirmed load).
+  return { cacheVer: CACHE_SCHEMA_VER, appVer: cacheAppVer(), tokenTag: cacheTokenTag(pidLocalToken()), savedAt: Date.now(), role: currentRole || '', user: currentUser || '', payload: { data, settings: state.settings || null } };
 }
 // Persist the just-confirmed backend state as the snapshot — personal device + flag only.
 // LOUD but NON-FATAL: a write failure is logged, never toasted-as-error, never blocks the
@@ -23301,6 +23304,29 @@ function cachePersistSnapshot() {
   if (!cacheDeviceOk()) return;
   try { dataCache.write(cacheSnapshotEnvelope()).catch((e) => logErr('cache', 'write: ' + ((e && e.message) || e))); }
   catch (e) { logErr('cache', 'write: ' + ((e && e.message) || e)); }
+}
+// §instant-cache: paint the last confirmed snapshot as the REAL app immediately, so a
+// trusted reopen shows data instead of a splash while the backend load runs.
+// THE INVARIANT: leaves `booting = true` and does NOT call snapshotSaved() — the save
+// baseline is set ONLY by the real finishLoad(backend), and nothing persists while
+// booting, so a stale/corrupt cache can never become a save baseline or reach the Sheet.
+// The confirmed backend load replaces this the moment it lands.
+function paintFromCache(env) {
+  try {
+    if (env.role) currentRole = env.role;
+    if (env.user) currentUser = env.user;
+    applyLoadResponse({ ok: true, data: env.payload.data, settings: env.payload.settings });
+    buildIndexes(); state.cascade = createCascade(DATA);
+    render();
+    cacheRefreshing(true);
+  } catch (e) { logErr('cache', 'paint: ' + ((e && e.message) || e)); }
+}
+// The "refreshing" cue — a body class while cached data is up and the backend load is in
+// flight (Phase 3 styles it + adds the chip). Idempotent; cleared when fresh data lands.
+let _cacheRefreshing = false;
+function cacheRefreshing(on) {
+  _cacheRefreshing = !!on;
+  try { document.body.classList.toggle('rw-refreshing', _cacheRefreshing); } catch (e) {}
 }
 
 // ── Incremental persistence (diff-based sync) ──────────────────────────────
@@ -23981,6 +24007,7 @@ function renderLogin(msg) {
 function finishLoad() {
   snapshotSaved();                                              // baseline = what the backend currently holds
   buildIndexes(); state.cascade = createCascade(DATA); booting = false; render();
+  cacheRefreshing(false);                                       // §instant-cache: fresh backend data is in — drop the "refreshing" cue
   cachePersistSnapshot();                                       // §instant-cache: photograph this confirmed backend state (personal device + flag only)
   if (flagOn('phoneIdentity')) { try { const emp = ((state.settings || {}).employees) || []; localStorage.setItem('jactec.pidRoster', JSON.stringify(emp.map((e) => ({ id: e.id, name: e.name })))); } catch (e) {} }   // cache non-secret roster names for the shared-device name-pick
   // (views no longer pull from the backend — personal per-device "my views", spec search-views D2)
@@ -24176,10 +24203,23 @@ function phoneBoot() {
   backendPassword = tok;                       // backendCall sends it as sessionToken on both calls
   const loadP = backendCall('load');
   loadP.catch(() => {});                       // may settle before pidEnter attaches the real handler — silence the interim rejection (the chain below still sees it)
+  // §instant-cache: while the two backend calls run, paint the last snapshot as the REAL
+  // app (personal device + flag + a valid snapshot) so the reopen shows data, not a
+  // splash. `resumeSettled` guards against a fast backend that already finished — never
+  // paint a stale cache over fresh data. Nothing persists (booting stays true) until
+  // finishLoad(backend) below replaces this and sets the real baseline.
+  let resumeSettled = false;
+  if (cacheDeviceOk()) {
+    dataCache.read().then((env) => {
+      if (resumeSettled) return;
+      if (cacheValid(env)) paintFromCache(env);
+      else if (env) dataCache.wipe();          // a stale / foreign / malformed snapshot → discard, keep the splash
+    }).catch(() => {});
+  }
   backendCall('authResume', { token: tok }).then((r) => {
-    if (r && r.ok) { pidAdopt(r, tok, !!(function () { try { return localStorage.getItem('jactec.pidToken'); } catch (e) { return null; } })()); pidEnter(loadP.then(applyLoadResponse)); }
-    else { pidTokenClear(); backendPassword = ''; warmBackend(); renderPhoneLogin(); }
-  }).catch(() => { backendPassword = ''; warmBackend(); renderPhoneLogin(); });
+    if (r && r.ok) { resumeSettled = true; pidAdopt(r, tok, !!(function () { try { return localStorage.getItem('jactec.pidToken'); } catch (e) { return null; } })()); pidEnter(loadP.then(applyLoadResponse)); }
+    else { resumeSettled = true; cacheRefreshing(false); pidTokenClear(); backendPassword = ''; warmBackend(); renderPhoneLogin(); }   // rejected resume: pidTokenClear wipes the snapshot too
+  }).catch(() => { resumeSettled = true; cacheRefreshing(false); backendPassword = ''; warmBackend(); renderPhoneLogin(); });   // network blip: keep the token (+ its cache) for the next try
 }
 function pidErr(msg) { pidUI.err = msg || ''; const e = document.getElementById('pid-err'); if (e) e.textContent = pidUI.err; return null; }
 async function pidCall(btnId, fn) {
