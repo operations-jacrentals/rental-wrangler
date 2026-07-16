@@ -8052,11 +8052,15 @@ const DETAIL = {
       ${gpsShutdownControl(u, gpsM)}
       ${gpsMapped ? gpsFeedHtml(u) : ''}
     </div>`;
-    // GPS RYG = live connection health: tracking (green) / last-known signal down (yellow) /
-    // untracked, which is a neutral fact — a gray "No GPS" chip, no colored border.
-    const gpsSecColor = (gsUnit && gsUnit.live) ? 'green' : (gpsStale ? 'yellow' : '');
-    const gpsChip = (gsUnit && gsUnit.live) ? { text: 'Tracking', tone: 'ok' } : (gpsStale ? { text: 'Last known', tone: 'warn' } : { text: 'No GPS', tone: 'mute' });
-    const gps = collapseSection({ open: unitSecOpen(u, 'gps'), toggleCls: 'js-unit-sec', sec: 'gps', rec: u.unitId, lbl: 'GPS', summary: `<b>${gpsMapped ? esc(u.gpsProvider) : 'Not connected'}</b>${gpsSeen ? `<span class="acct-dot">·</span>${esc(gpsSeen)}` : ''}`, chip: gpsChip, body: gpsBody, extraCls: gpsSecColor ? 'sec-' + gpsSecColor : '' });
+    // GPS RYG follows the gpsStatus registry (Reporting=green · Verify=yellow · Not
+    // Reporting=red). A stale but otherwise-green link (showing last-known while the live
+    // feed is down) drops to yellow; an untracked unit reads red — no visibility is the
+    // worst tracking state, same rank as Not Reporting.
+    const gpsReg = gsUnit ? getStatus('gpsStatus', gsUnit.status) : null;
+    let gpsSecColor = gpsReg && ['green', 'yellow', 'red'].includes(gpsReg.color) ? gpsReg.color : 'red';
+    if (gpsStale && gpsSecColor === 'green') gpsSecColor = 'yellow';
+    const gpsChip = { text: gsUnit ? (gpsStale ? 'Last known' : gpsReg.label) : 'No GPS', tone: { green: 'ok', yellow: 'warn', red: 'bad' }[gpsSecColor] };
+    const gps = collapseSection({ open: unitSecOpen(u, 'gps'), toggleCls: 'js-unit-sec', sec: 'gps', rec: u.unitId, lbl: 'GPS', summary: `<b>${gpsMapped ? esc(u.gpsProvider) : 'Not connected'}</b>${gpsSeen ? `<span class="acct-dot">·</span>${esc(gpsSeen)}` : ''}`, chip: gpsChip, body: gpsBody, extraCls: 'sec-' + gpsSecColor });
     /* COVERAGE — the yard's own equipment insurance on this unit (spec equipment-insurance
        Phase 1, Jac 2026-06-29). STATUS + riders are open to every role (a driver must know a
        machine is uninsured before it leaves the yard); insurer/policy/dates render at ≥money;
