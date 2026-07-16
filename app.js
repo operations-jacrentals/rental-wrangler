@@ -7464,7 +7464,7 @@ function woStaleEmpty(w) {
    `summary` is raw HTML (caller escapes its pieces); `chip` = {text, tone} or null;
    `bg` = an optional faded photo-backdrop URL (the .has-photo scrim, same as .section). */
 function collapseSection({ open, toggleCls, rec, sec, extraCls = '', lbl, summary, chip, body, bg }) {
-  return `<div class="acct${open ? ' open' : ''}${extraCls ? ' ' + extraCls : ''}${bg ? ' has-photo' : ''}">`
+  return `<div class="acct usec${open ? ' open' : ''}${extraCls ? ' ' + extraCls : ''}${bg ? ' has-photo' : ''}">`
     + (bg ? `<div class="sec-photo" style="--photo:url('${esc(bg)}')"></div>` : '')
     + `<div class="acct-bar ${toggleCls}" data-rec="${esc(rec)}"${sec ? ` data-sec="${esc(sec)}"` : ''} aria-expanded="${open}">`
     + `<span class="acct-lbl">${esc(lbl)}</span>`

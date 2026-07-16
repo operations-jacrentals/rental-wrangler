@@ -3687,6 +3687,10 @@ body { font-variant-numeric: tabular-nums; }
 .acct.has-photo { position: relative; }
 .acct.has-photo > :not(.sec-photo) { position: relative; z-index: 1; }
 .type-chip.mute { color: var(--gray); background: var(--gray-bg); }
+/* Collapse-section plates (unit detail) drop their own margin-bottom — the parent
+   .detail is a flex column with gap:12px, so the extra margin doubled the gap to 24px
+   between stacked collapsed rows. One gap per boundary (Jac — no dead space). */
+.acct.usec { margin-bottom: 0; }
 /* Unit-detail collapsible sections carry their RYG status (R11) on BOTH the collapsed
    bar and the opened body — the .acct plate mirrors .section.sec-* (border + stamped
    label tint), so a red section reads red whether it's a row or expanded. */
