@@ -23885,8 +23885,11 @@ function pidEnter() {
     const go = s.querySelector('.login-btn'); if (go) go.textContent = 'Wrangling the herd…';
   }
   // Roll the Mr. Wrangler intro behind the box while the slow backend load runs (same treatment
-  // as the shared-password sign-in) — a little entertainment for the wait.
-  const vid = document.getElementById('login-video'); if (vid) { try { vid.muted = state.loginMuted; const p = vid.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
+  // as the shared-password sign-in) — a little entertainment for the wait. play() fires after the
+  // auth round-trip, so the tap's autoplay activation may have lapsed; if an unmuted play is
+  // rejected, retry muted so the video still rolls — audio is the bonus, the video is the point.
+  const vid = document.getElementById('login-video');
+  if (vid) { try { vid.muted = state.loginMuted; const p = vid.play(); if (p && p.catch) p.catch(() => { vid.muted = true; const p2 = vid.play(); if (p2 && p2.catch) p2.catch(() => {}); }); } catch (e) {} }
   loadFromBackend().then(finishLoad).then(applyRoleLanding).catch(pidLoadFail);
 }
 // Boot (flag on): resume a trusted device, else show the phone login.
@@ -23909,6 +23912,11 @@ function renderPhoneLogin(msg) {
   if (msg != null) pidUI.err = msg;
   const P = PHONE_IDENTITY, step = pidUI.step, roster = pidRosterCache();
   let inner = '';
+  // Intro-video mute toggle — the same control the classic sign-in carries, so the phone login
+  // keeps audio parity. Icon-only utility toggle (sibling of the password eye), NOT a lint-family
+  // pill → no data-r, matching the classic #login-mute. Rendered in the actions row of the steps
+  // that trigger sign-in (code / setpin / pin), right where the intro it mutes is about to play.
+  const muteBtn = `<button type="button" class="login-mute${state.loginMuted ? ' is-muted' : ''}" id="login-mute" aria-pressed="${state.loginMuted}" aria-label="Mute intro sound" data-tip="${state.loginMuted ? 'Intro sound off — tap to unmute' : 'Intro sound on — tap to mute'}">${state.loginMuted ? I.volumeOff : I.volume}</button>`;
   if (step === 'identify') {
     inner = `<div class="login-field"><label class="login-lbl" for="pid-phone">Mobile number</label>
         <input id="pid-phone" class="login-input" type="tel" inputmode="tel" autocomplete="tel" placeholder="(337) 555-0100" value="${esc(pidUI._phone)}" /></div>
@@ -23924,13 +23932,13 @@ function renderPhoneLogin(msg) {
   } else if (step === 'code') {
     inner = `<div class="login-hint">Enter the ${P.codeLen}-digit code sent to ${esc(pidUI.masked)}</div>
       <div class="login-field"><input id="pid-code" class="login-input login-otp" inputmode="numeric" autocomplete="one-time-code" maxlength="${P.codeLen}" placeholder="000000" /></div>
-      <button type="submit" class="login-btn" data-r="R17" id="pid-verify">Verify</button>
+      <div class="login-actions">${muteBtn}<button type="submit" class="login-btn" data-r="R17" id="pid-verify">Verify</button></div>
       <button type="button" class="login-ghost" id="pid-resend">Resend code</button>`;
   } else if (step === 'setpin') {
     inner = `<div class="login-hint">Set a PIN for this shared computer, ${esc(pidUI.name || 'partner')}</div>
       <div class="login-field"><input id="pid-pin" class="login-input login-otp" inputmode="numeric" autocomplete="new-password" maxlength="${P.pinMaxLen}" placeholder="New PIN" /></div>
       <div class="login-field"><input id="pid-pin2" class="login-input login-otp" inputmode="numeric" autocomplete="new-password" maxlength="${P.pinMaxLen}" placeholder="Confirm PIN" /></div>
-      <button type="submit" class="login-btn" data-r="R17" id="pid-savepin">Set PIN &amp; sign in</button>`;
+      <div class="login-actions">${muteBtn}<button type="submit" class="login-btn" data-r="R17" id="pid-savepin">Set PIN &amp; sign in</button></div>`;
   } else if (step === 'pinpick') {
     inner = `<div class="login-ask">Who's signing in?</div>
       <div class="login-pick">${roster.map((p) => `<button type="button" class="login-pick-btn" data-id="${esc(p.id)}">${esc(p.name || '—')}</button>`).join('') || '<div class="login-hint">No one saved on this device yet — use your phone.</div>'}</div>
@@ -23938,7 +23946,7 @@ function renderPhoneLogin(msg) {
   } else if (step === 'pin') {
     inner = `<div class="login-hint">PIN for ${esc(pidUI.name || 'you')}</div>
       <div class="login-field"><input id="pid-loginpin" class="login-input login-otp" inputmode="numeric" autocomplete="off" maxlength="${P.pinMaxLen}" placeholder="PIN" /></div>
-      <button type="submit" class="login-btn" data-r="R17" id="pid-signin">Saddle Up?</button>
+      <div class="login-actions">${muteBtn}<button type="submit" class="login-btn" data-r="R17" id="pid-signin">Saddle Up?</button></div>
       <button type="button" class="login-ghost" id="pid-needcode">Forgot PIN — text me a code</button>`;
   }
   $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4?v=20260708a" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="pid-form" autocomplete="off">
@@ -23966,6 +23974,18 @@ function pidWire() {
   on('pid-needcode', () => { pidUI.step = 'identify'; pidUI._phone = ''; renderPhoneLogin(''); });
   document.querySelectorAll('.login-choice-btn').forEach((b) => b.addEventListener('click', () => { pidUI.kind = b.getAttribute('data-kind'); pidUI.step = 'code'; renderPhoneLogin(''); }));
   document.querySelectorAll('.login-pick-btn').forEach((b) => b.addEventListener('click', () => { pidUI.personId = b.getAttribute('data-id'); const r = pidRosterCache().find((x) => String(x.id) === String(pidUI.personId)); pidUI.name = r ? r.name : ''; pidUI.step = 'pin'; renderPhoneLogin(''); }));
+  // Intro-video mute toggle — mirrors the classic sign-in's #login-mute handler: flip the
+  // per-device preference, restyle the button, and mute/unmute the live video if it's already rolling.
+  const muteEl = document.getElementById('login-mute');
+  if (muteEl) muteEl.addEventListener('click', () => {
+    state.loginMuted = !state.loginMuted;
+    try { localStorage.setItem('jactec.loginMuted', state.loginMuted ? '1' : '0'); } catch (e) {}
+    muteEl.classList.toggle('is-muted', state.loginMuted);
+    muteEl.setAttribute('aria-pressed', String(state.loginMuted));
+    muteEl.setAttribute('data-tip', state.loginMuted ? 'Intro sound off — tap to unmute' : 'Intro sound on — tap to mute');
+    muteEl.innerHTML = state.loginMuted ? I.volumeOff : I.volume;
+    const vid = document.getElementById('login-video'); if (vid) vid.muted = state.loginMuted;
+  });
   // Auto-submit the code the moment all 6 digits are in — no Verify tap needed. Also catches
   // the OS one-time-code autofill (it drops all 6 at once → instant sign-in). Kept digits-only
   // so a stray char can't desync the count; the in-flight guard stops a paste/autofill from
