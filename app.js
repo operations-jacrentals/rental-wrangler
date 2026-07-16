@@ -23324,9 +23324,20 @@ function paintFromCache(env) {
 // The "refreshing" cue — a body class while cached data is up and the backend load is in
 // flight (Phase 3 styles it + adds the chip). Idempotent; cleared when fresh data lands.
 let _cacheRefreshing = false;
+// Mount the cue ONCE (like mountEnvBadge / the sched-banner) — a persistent body-level node
+// toggled by the `rw-refreshing` body class, NOT created mid-render. Lives on <body> so a
+// render() can't wipe it.
+function mountRefreshCue() {
+  if (document.getElementById('cache-refreshing')) return;
+  const el = document.createElement('div');
+  el.id = 'cache-refreshing';
+  el.setAttribute('role', 'status'); el.setAttribute('aria-live', 'polite');
+  el.innerHTML = `<span class="cr-stripe" aria-hidden="true"></span><span>Refreshing</span>`;
+  document.body.appendChild(el);
+}
 function cacheRefreshing(on) {
   _cacheRefreshing = !!on;
-  try { document.body.classList.toggle('rw-refreshing', _cacheRefreshing); } catch (e) {}
+  try { mountRefreshCue(); document.body.classList.toggle('rw-refreshing', _cacheRefreshing); } catch (e) {}
 }
 
 // ── Incremental persistence (diff-based sync) ──────────────────────────────
@@ -24584,6 +24595,7 @@ function boot() {
   applySettings();   // Settings Board: apply admin status overrides (color/icon) before the first render
   if (settingsReverted) setTimeout(() => { try { toast('Customizations reset to defaults (recovery mode).'); } catch (e) {} }, 800);
   mountEnvBadge();   // STAGING / LOCAL caution stamp (no-op on production) — know which app you're in
+  mountRefreshCue();   // §instant-cache: persistent (hidden) "refreshing" cue, shown via the rw-refreshing body class
   initTooltip();
   // §13.5 — the Units graph legend was removed (hover names each slice); its donut slices /
   // trajectory buckets are SVG, so make a focused one keyboard-activatable (Enter/Space → filter).
