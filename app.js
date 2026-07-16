@@ -23874,7 +23874,21 @@ function pidAdopt(r, tok, personal) {
   try { sessionStorage.setItem('jactec.role', currentRole); localStorage.setItem('jactec.user', currentUser); } catch (e) {}
 }
 function pidLoadFail() { pidTokenClear(); backendPassword = ''; pidUI.step = 'identify'; renderPhoneLogin("Couldn't reach the database. Try again."); }
-function pidEnter() { const s = document.querySelector('.login-screen'); if (s) s.classList.add('signing-in'); loadFromBackend().then(finishLoad).then(applyRoleLanding).catch(pidLoadFail); }
+function pidEnter() {
+  const s = document.querySelector('.login-screen');
+  if (s) {
+    s.classList.add('signing-in');
+    // Hold every button in the busy state through the (second, slower) data load so it never
+    // flips back to a clickable "Verify"/"Saddle Up?" mid-sign-in — that flip read as "it failed,
+    // click again" (and a second click re-fired with a spent code). Jac, 2026-07-16.
+    s.querySelectorAll('.login-btn, .login-ghost').forEach((b) => { b.disabled = true; });
+    const go = s.querySelector('.login-btn'); if (go) go.textContent = 'Wrangling the herd…';
+  }
+  // Roll the Mr. Wrangler intro behind the box while the slow backend load runs (same treatment
+  // as the shared-password sign-in) — a little entertainment for the wait.
+  const vid = document.getElementById('login-video'); if (vid) { try { vid.muted = state.loginMuted; const p = vid.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
+  loadFromBackend().then(finishLoad).then(applyRoleLanding).catch(pidLoadFail);
+}
 // Boot (flag on): resume a trusted device, else show the phone login.
 function phoneBoot() {
   const tok = pidTokenGet();
@@ -23887,7 +23901,7 @@ function phoneBoot() {
 function pidErr(msg) { pidUI.err = msg || ''; const e = document.getElementById('pid-err'); if (e) e.textContent = pidUI.err; return null; }
 async function pidCall(btnId, fn) {
   const btn = document.getElementById(btnId), prev = btn ? btn.textContent : '';
-  if (btn) { btn.disabled = true; btn.textContent = 'Working…'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Wrangling the herd…'; }
   try { const r = await fn(); if (btn) { btn.disabled = false; btn.textContent = prev; } return r; }
   catch (e) { if (btn) { btn.disabled = false; btn.textContent = prev; } pidErr("Couldn't reach the database. Try again."); return null; }
 }
@@ -23927,7 +23941,7 @@ function renderPhoneLogin(msg) {
       <button type="submit" class="login-btn" data-r="R17" id="pid-signin">Saddle Up?</button>
       <button type="button" class="login-ghost" id="pid-needcode">Forgot PIN — text me a code</button>`;
   }
-  $('#app').innerHTML = `<div class="login-screen"><form class="login-box" id="pid-form" autocomplete="off">
+  $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4?v=20260708a" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="pid-form" autocomplete="off">
     <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
     <div class="login-plate">
       <img class="login-logo" src="assets/jac-rentals-logo.jpg" alt="Jac Rentals" />
