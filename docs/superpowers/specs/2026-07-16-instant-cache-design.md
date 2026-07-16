@@ -31,7 +31,7 @@ without widening the data-corruption or PII surface.
   load, not a growing store — nothing to evict.
 - **No encryption-at-rest.** The decryption key would have to live on the same
   device, so it's theater. The device-trust gate (below) is the real control.
-- **No caching on shared computers** or the plain-password path.
+- **No caching on shared devices** or the legacy team-password path.
 
 ## Prior incidents this design is shaped by
 
@@ -66,13 +66,21 @@ Everything else is in service of that sentence.
 
 ## Scope of the cache
 
-- **Device gate:** cache is read/written **only** when the device is the trusted
-  "My phone" type — the persistent 30-day `jactec.pidToken` in `localStorage`
-  (`pidTokenGet()` reading the *localStorage* token, not the sessionStorage one).
-  A **shared computer** (sessionStorage token, PIN each session) and the plain
-  shared-password path (`jactec.pw` in sessionStorage) **never** touch the cache —
-  their boot is today's behavior plus the login-intro video during the wait (see
-  "The shared-device wait" below).
+**Login model (context, Jac 2026-07-16):** the live login is now **phone-identity
+PIN** (`phoneIdentity: true`) — phone → SMS code → **personal** device (stays signed
+in) or **shared** device (a PIN each session). The old single **team-password**
+screen (`renderLogin`, `jactec.pw`) is **legacy** — the dormant flag-OFF fallback,
+not what operators use. So this whole design lives in the phone-identity world; the
+two device kinds it distinguishes are **personal** and **shared**.
+
+- **Device gate:** cache is read/written **only** on a **personal** device — the
+  persistent 30-day `jactec.pidToken` in `localStorage` (`pidTokenGet()` reading the
+  *localStorage* token, not the sessionStorage one). A **shared** device
+  (sessionStorage token, PIN each session) **never** touches the cache — its boot is
+  today's behavior plus the login-intro video during the wait (see "The shared-device
+  wait" below). The legacy team-password path, if the flag were ever OFF, also never
+  caches (its token lives in sessionStorage) — safe by the same gate, no special
+  case.
 - **What's cached:** the `load` response payload that fills the first paint — the
   `PERSIST_KEYS` data arrays plus the `settings` object — as **one** record.
   (Settings already persist to localStorage and apply pre-render; caching them in
@@ -203,10 +211,11 @@ in) there is no typing window and the fetch would compete with the immediate `lo
 and delay first paint — which is exactly why the splash omits it. Different path,
 opposite tradeoff.
 
-**The gap this closes:** the video is currently wired only into the shared-password
-`renderLogin`. The **phone-identity** login (`renderPhoneLogin`) — the current live
-flag (`phoneIdentity: true`) — has **no** video, so shared devices on the live app
-see no clip today. This spec adds it:
+**The gap this closes:** the video lives only in the **legacy** team-password
+`renderLogin`. The **live** login — phone-identity PIN (`renderPhoneLogin`) — has
+**no** video, so every operator on the current app (personal *and* shared) sees no
+clip today. Since PIN is now the real login, the video belongs on `renderPhoneLogin`.
+This spec adds it:
 
 - Add the `<video id="login-video" class="login-video" …
   src="assets/login-intro.mp4?v=…" muted loop playsinline preload="auto"
