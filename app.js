@@ -22101,42 +22101,33 @@ async function gpsUnitStatus(provider, deviceId) {
   return match ? gpsNormalize(p, match) : null;
 }
 
-/* ── TEMP DEBUG — Deere shape probe (#deere-probe) — REMOVE BEFORE MERGE ──────────
-   Answers: does /api/deere/machines carry live location/lastContact per machine (so the
-   connect poll + snapshot can confirm), or is live position only on the separate
-   /machine/:id/locations endpoint (→ the poll can NEVER confirm for Deere = the bug)?
-   Renders an on-screen, screenshot-able dump (Jac is on a phone, no devtools). Staging
-   only, triggered by the hash; never auto-runs. */
+/* ── TEMP DEBUG — GPS auth-flow probe — REMOVE BEFORE MERGE ───────────────────────
+   The backend is proven healthy server-side (token mints, Deere authenticated, 4 machines,
+   CORS allows staging), so the break is in the BROWSER's auth flow. This captures exactly
+   where it fails: the backendCall('gpsToken') mint, gpsLogin(), and the data call — with
+   secrets redacted to presence/length only. Auto-runs on staging (no hash needed). */
 async function deereProbe() {
   const out = {};
-  const errStr = (e) => 'ERROR: ' + ((e && e.message) || String(e)) + (e && e.status ? ` (status ${e.status})` : '');
-  // summarize an array-ish response to keys + count + one sample (keeps the dump phone-sized)
-  const shape = (v) => {
-    if (v == null || typeof v !== 'object') return v;
-    const arr = Array.isArray(v) ? v : (v.values || v.locations || v.events || v.data);
-    if (Array.isArray(arr)) return { keys: Array.isArray(v) ? '(array)' : Object.keys(v), count: arr.length, sample: arr[0] ?? null };
-    return { keys: Object.keys(v), value: v };
-  };
-  const capture = async (label, path, summarize) => {
-    try { const v = await gpsFetch(path); out[label] = summarize ? summarize(v) : v; }
-    catch (e) { out[label] = errStr(e); }
-  };
-  // 1) machines list — full first machine (the crux: does it carry live location/lastContact?)
-  let pid = null;
+  const redactErr = (e) => 'ERR: ' + ((e && e.message) || String(e)) + (e && e.status ? ` (status ${e.status})` : '');
+  const tok = (v) => (v ? `present(len ${String(v).length})` : 'EMPTY');
+  out.env = APP_ENV;
+  out.phoneIdentity = flagOn('phoneIdentity');
+  out.gpsConfigured = gpsConfigured();
+  out.backendPassword = tok(typeof backendPassword !== 'undefined' ? backendPassword : '');
+  out.gpsToken_before = tok(gpsToken);
+  // 1) the exact mint the browser does — does the GAS proxy return a token HERE?
   try {
-    const r = await gpsFetch('/api/deere/machines');
-    const vals = (r && r.values) || [];
-    const m0 = vals[0] || {};
-    out['1_machines'] = { count: vals.length, machine0: m0 };   // own equipment telemetry; no customer PII
-    pid = m0.principalId ?? m0.id ?? null;
-  } catch (e) { out['1_machines'] = errStr(e); }
-  // 2) per-machine live positions — is the position on THIS endpoint instead of the list?
-  if (pid != null) await capture('2_locations', `/api/deere/machine/${encodeURIComponent(pid)}/locations`, shape);
-  // 3) device_events — the Refresh/history-feed source; use a REAL mapped Deere unit's device id.
-  const mu = (DATA.units || []).find((u) => String(u.gpsProvider || '').toLowerCase() === 'deere' && u.gpsDeviceId);
-  const evKey = mu ? String(mu.gpsDeviceId) : (pid != null ? String(pid) : null);
-  out['3_events_for'] = mu ? `${mu.name} · ${evKey}` : `(no mapped Deere unit; using ${evKey})`;
-  if (evKey != null) await capture('3_device_events', `/api/device/deere/${encodeURIComponent(evKey)}/events`, shape);
+    const r = await backendCall('gpsToken');
+    out.gpsToken_call = { ok: !!(r && r.ok), error: (r && r.error) ?? '(none)', hasToken: !!(r && r.token) };
+  } catch (e) { out.gpsToken_call = redactErr(e); }
+  // 2) gpsLogin() — does it store the token?
+  try { out.gpsLogin_result = await gpsLogin(); } catch (e) { out.gpsLogin_result = redactErr(e); }
+  out.gpsToken_after = tok(gpsToken);
+  // 3) the data call the connect picker makes (goes through the 401 re-auth path)
+  try {
+    const m = await gpsFetch('/api/deere/machines');
+    out.deere_machines = { values: ((m && m.values) || []).length, keys: Object.keys(m || {}) };
+  } catch (e) { out.deere_machines = redactErr(e); }
   showDeereProbe(out);
 }
 function showDeereProbe(obj) {
@@ -23834,9 +23825,10 @@ function finishLoad() {
     history.replaceState(null, '', location.pathname + location.search);   // self-clear so a refresh can't re-fire
     if (adminUnlocked()) openMigrationPreview(); else toast('Admin unlock required to round up missing units.');
   }
-  // #deere-probe — TEMP DEBUG (REMOVE BEFORE MERGE): dump the Deere machines/locations shape.
-  if ((location.hash || '').toLowerCase().includes('deere-probe')) {
-    history.replaceState(null, '', location.pathname + location.search);
+  // TEMP DEBUG (REMOVE BEFORE MERGE): GPS auth-flow probe — auto-runs on STAGING (no hash to
+  // type), or anywhere via #deere-probe. Never on production.
+  if (APP_ENV === 'staging' || (location.hash || '').toLowerCase().includes('deere-probe')) {
+    if ((location.hash || '').toLowerCase().includes('deere-probe')) history.replaceState(null, '', location.pathname + location.search);
     deereProbe();
   }
   // #s=<id> — H1 session sharing: restore the open tabs saved by another device's QR.
