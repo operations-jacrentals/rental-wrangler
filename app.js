@@ -23816,6 +23816,11 @@ function finishLoad() {
   refreshWranglerNotifications();                               // §18f populate the notification-bell badge
   refreshCommsThreads();                                        // D8 comms rail — the chips wear their worst-of-category dots from clock-in (the rail itself stays empty)
   startRefreshPoll();                                           // live multi-user: poll for others' changes (§ refreshFromBackend)
+  // GPS silent login + live snapshot — runs for EVERY login mode. Previously this lived ONLY in
+  // the password-login handler, so a phone-identity login (the staging/production default) never
+  // minted a GPS token → the whole GPS section read "NO GPS" and every on-demand call started
+  // unauthenticated (Jac 2026-07-16). Fire-and-forget; gpsConfigured() no-ops when GPS is off.
+  if (gpsConfigured()) gpsLogin().then((ok) => { if (ok) { refreshGpsLive(); startGpsViewPoll(); refreshDrivingScore(); } });
   if (migrationDirty) { migrationDirty = false; saveSoon(); }   // push parsed first/last names up to the Sheet
   // #edit=<id> — desktop→phone handoff opens that customer's account form (§7.1).
   const em = (location.hash || '').match(/edit=([\w-]+)/i);
@@ -23919,9 +23924,8 @@ async function attemptLogin() {
     try { localStorage.setItem('jactec.user', name); } catch {}
     try { sessionStorage.setItem('jactec.role', role); } catch {}
     sessionStorage.setItem('jactec.pw', pw);
-    gpsLogin().then((ok) => { if (ok) { refreshGpsLive(); startGpsViewPoll(); refreshDrivingScore(); } });   // silent GPS login (§5, via GAS token proxy) → live snapshot (step 3) + view-scoped refresh (step 4) + fleet driving score (step 7); fire-and-forget, never blocks main login
     applyLoadResponse(await loadPromise);
-    finishLoad();
+    finishLoad();   // GPS silent-login now lives in finishLoad (runs for every login mode, not just this one)
     applyRoleLanding();   // each role lands on its default main/sub-card
   } catch (e) {
     backendPassword = ''; sessionStorage.removeItem('jactec.pw'); sessionStorage.removeItem('jactec.role');
