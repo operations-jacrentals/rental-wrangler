@@ -23292,6 +23292,16 @@ function cacheSnapshotEnvelope() {
   const data = {}; PERSIST_KEYS.forEach((k) => { data[k] = Array.isArray(DATA[k]) ? DATA[k] : []; });
   return { cacheVer: CACHE_SCHEMA_VER, appVer: cacheAppVer(), tokenTag: cacheTokenTag(pidLocalToken()), savedAt: Date.now(), payload: { data, settings: state.settings || null } };
 }
+// Persist the just-confirmed backend state as the snapshot — personal device + flag only.
+// LOUD but NON-FATAL: a write failure is logged, never toasted-as-error, never blocks the
+// app (next open simply uses the splash path). Called from finishLoad AFTER the backend
+// load applied — never from local edits, so the snapshot is always a photograph of a
+// known-good backend state.
+function cachePersistSnapshot() {
+  if (!cacheDeviceOk()) return;
+  try { dataCache.write(cacheSnapshotEnvelope()).catch((e) => logErr('cache', 'write: ' + ((e && e.message) || e))); }
+  catch (e) { logErr('cache', 'write: ' + ((e && e.message) || e)); }
+}
 
 // ── Incremental persistence (diff-based sync) ──────────────────────────────
 // Whole-state seed doesn't scale (≈1.7 MB / 10 s at real volume). Instead we keep
@@ -23971,6 +23981,7 @@ function renderLogin(msg) {
 function finishLoad() {
   snapshotSaved();                                              // baseline = what the backend currently holds
   buildIndexes(); state.cascade = createCascade(DATA); booting = false; render();
+  cachePersistSnapshot();                                       // §instant-cache: photograph this confirmed backend state (personal device + flag only)
   if (flagOn('phoneIdentity')) { try { const emp = ((state.settings || {}).employees) || []; localStorage.setItem('jactec.pidRoster', JSON.stringify(emp.map((e) => ({ id: e.id, name: e.name })))); } catch (e) {} }   // cache non-secret roster names for the shared-device name-pick
   // (views no longer pull from the backend — personal per-device "my views", spec search-views D2)
   loadGroupOrderFromBackend();                                  // pull THIS role's saved card-group order
@@ -24105,11 +24116,12 @@ async function attemptLogin() {
 const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', _role: '' };
 function pidTokenGet() { try { return localStorage.getItem('jactec.pidToken') || sessionStorage.getItem('jactec.pidToken') || ''; } catch (e) { return ''; } }
 function pidTokenSet(tok, personal) { try { if (personal) { localStorage.setItem('jactec.pidToken', tok); sessionStorage.removeItem('jactec.pidToken'); } else { sessionStorage.setItem('jactec.pidToken', tok); localStorage.removeItem('jactec.pidToken'); } } catch (e) {} }
-function pidTokenClear() { try { localStorage.removeItem('jactec.pidToken'); sessionStorage.removeItem('jactec.pidToken'); } catch (e) {} }
+function pidTokenClear() { try { localStorage.removeItem('jactec.pidToken'); sessionStorage.removeItem('jactec.pidToken'); } catch (e) {} try { dataCache.wipe(); } catch (e) {} }   // §instant-cache: logout clears the on-device snapshot
 function pidRosterCache() { try { return JSON.parse(localStorage.getItem('jactec.pidRoster') || '[]'); } catch (e) { return []; } }
 // The verified token becomes the per-call credential: a truthy backendPassword keeps every
 // existing online-guard working, and backendCall sends it as sessionToken (backend prefers it).
 function pidAdopt(r, tok, personal) {
+  try { dataCache.wipe(); } catch (e) {}   // §instant-cache: a new login never paints the prior person's snapshot (belt-and-suspenders to the tokenTag guard); finishLoad rewrites it for this person
   backendPassword = tok; currentRole = (r && r.role) || pidUI._role || ''; currentUser = (r && r.name) || pidUI.name || '';
   pidTokenSet(tok, personal);
   if (r && r.scanDeviceToken) scanTokenSet(r.scanDeviceToken);   // remember this device for decal scans (write-only token)
@@ -24527,7 +24539,7 @@ function boot() {
   // before they apply — the guaranteed way back if a bad setting ever breaks the screen.
   try {
     const h = (location.hash || '').toLowerCase();
-    if (h.includes('reset-settings') || h.includes('safe-mode')) { localStorage.removeItem('jactec.settings'); localStorage.removeItem('jactec.settings.prev'); state.settings = {}; settingsReverted = true; }
+    if (h.includes('reset-settings') || h.includes('safe-mode')) { localStorage.removeItem('jactec.settings'); localStorage.removeItem('jactec.settings.prev'); state.settings = {}; settingsReverted = true; try { dataCache.wipe(); } catch (e) {} }   // §instant-cache: the recovery hatch also nukes a poisoned snapshot
   } catch (e) {}
   applySettings();   // Settings Board: apply admin status overrides (color/icon) before the first render
   if (settingsReverted) setTimeout(() => { try { toast('Customizations reset to defaults (recovery mode).'); } catch (e) {} }, 800);
