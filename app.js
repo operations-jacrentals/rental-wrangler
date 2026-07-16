@@ -22101,6 +22101,46 @@ async function gpsUnitStatus(provider, deviceId) {
   return match ? gpsNormalize(p, match) : null;
 }
 
+/* ── TEMP DEBUG — Deere shape probe (#deere-probe) — REMOVE BEFORE MERGE ──────────
+   Answers: does /api/deere/machines carry live location/lastContact per machine (so the
+   connect poll + snapshot can confirm), or is live position only on the separate
+   /machine/:id/locations endpoint (→ the poll can NEVER confirm for Deere = the bug)?
+   Renders an on-screen, screenshot-able dump (Jac is on a phone, no devtools). Staging
+   only, triggered by the hash; never auto-runs. */
+async function deereProbe() {
+  const out = {};
+  try {
+    const r = await gpsFetch('/api/deere/machines');
+    const vals = (r && r.values) || [];
+    const m0 = vals[0] || {};
+    out.machines_topKeys = Object.keys(r || {});
+    out.machines_count = vals.length;
+    out.machine0 = m0;                                   // full first machine (own equipment telemetry; no customer PII)
+    const pid = m0.principalId ?? m0.id;
+    if (pid != null) {
+      try {
+        const loc = await gpsFetch(`/api/deere/machine/${encodeURIComponent(pid)}/locations`);
+        const arr = Array.isArray(loc) ? loc : (loc && loc.values) || (loc && loc.locations) || null;
+        out.locations_topKeys = loc && typeof loc === 'object' ? Object.keys(loc) : typeof loc;
+        out.locations_count = Array.isArray(arr) ? arr.length : null;
+        out.locations_sample = Array.isArray(arr) ? arr[0] : loc;
+      } catch (e2) { out.locations_error = ((e2 && e2.message) || String(e2)) + (e2 && e2.status ? ` (status ${e2.status})` : ''); }
+    }
+  } catch (e) {
+    out.machines_error = ((e && e.message) || String(e)) + (e && e.status ? ` (status ${e.status})` : '');
+  }
+  showDeereProbe(out);
+}
+function showDeereProbe(obj) {
+  let text; try { text = JSON.stringify(obj, null, 2); } catch { text = String(obj); }
+  if (text.length > 3000) text = text.slice(0, 3000) + '\n… (truncated)';
+  const d = document.createElement('div');
+  d.style.cssText = 'position:fixed;inset:0;z-index:99999;background:var(--bg,#0b0c0f);color:var(--txt,#e9edf4);padding:16px;overflow:auto;font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap;-webkit-user-select:text;user-select:text';
+  d.textContent = 'DEERE PROBE (temp debug — screenshot this)\n\n' + text + '\n\n(tap to close)';
+  d.addEventListener('click', () => d.remove());
+  document.body.appendChild(d);
+}
+
 /* Provider machine/vehicle lists — powers the connect-wizard picker (spec §5a step 2)
    for Deere/Yanmar/Bouncie, and gpsUnitStatus above. Raw provider records (the wizard
    presents id + name for the operator to pick). */
@@ -23785,6 +23825,11 @@ function finishLoad() {
   if ((location.hash || '').toLowerCase().includes('migrate-units')) {
     history.replaceState(null, '', location.pathname + location.search);   // self-clear so a refresh can't re-fire
     if (adminUnlocked()) openMigrationPreview(); else toast('Admin unlock required to round up missing units.');
+  }
+  // #deere-probe — TEMP DEBUG (REMOVE BEFORE MERGE): dump the Deere machines/locations shape.
+  if ((location.hash || '').toLowerCase().includes('deere-probe')) {
+    history.replaceState(null, '', location.pathname + location.search);
+    deereProbe();
   }
   // #s=<id> — H1 session sharing: restore the open tabs saved by another device's QR.
   const sm = (location.hash || '').match(/[#&]s=([\w-]+)/i);
