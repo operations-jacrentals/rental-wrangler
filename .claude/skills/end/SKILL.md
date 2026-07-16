@@ -45,10 +45,11 @@ tracked branch:
 - Any half-built function/file left mid-edit in the working tree that isn't
   part of the shipping diff.
 
-For each candidate, confirm with Jac (hybrid — a structured inline list or an
-`AskUserQuestion` popup) as a short list: **park it**, **keep working it now
-instead of ending the session**, or **drop it**. Default suggestion is park —
-it's cheap and reversible; dropping needs an explicit yes.
+For each candidate, confirm with Jac via an `AskUserQuestion` popup (one attempt; if
+it fails, present the same short list inline as lettered **A/B/C… + Other**) with the
+choices: **park it**, **keep working it now instead of ending the session**, or
+**drop it**. Default suggestion is park — it's cheap and reversible; dropping needs an
+explicit yes.
 
 **Mechanics for parking (every confirmed item):**
 1. **Name it** `parked/<short-kebab-slug>` — e.g. `parked/dark-mode-toggle`.
