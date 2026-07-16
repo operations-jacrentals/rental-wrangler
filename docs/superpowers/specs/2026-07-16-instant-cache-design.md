@@ -71,7 +71,8 @@ Everything else is in service of that sentence.
   (`pidTokenGet()` reading the *localStorage* token, not the sessionStorage one).
   A **shared computer** (sessionStorage token, PIN each session) and the plain
   shared-password path (`jactec.pw` in sessionStorage) **never** touch the cache —
-  their boot is exactly today's behavior.
+  their boot is today's behavior plus the login-intro video during the wait (see
+  "The shared-device wait" below).
 - **What's cached:** the `load` response payload that fills the first paint — the
   `PERSIST_KEYS` data arrays plus the `settings` object — as **one** record.
   (Settings already persist to localStorage and apply pre-render; caching them in
@@ -184,6 +185,42 @@ new `RULE_META` row + `rule-usage.js` regen if it introduces a lint-family eleme
 if it's a plain non-interactive status chip it rides R3b — decided at build time
 through `jactec-ui`).
 
+## The shared-device wait (the login intro video)
+
+Trusted devices now skip the wait entirely (instant cache). **Shared computers —
+and any genuine login — still wait** for the post-submit backend load. That wait
+gets the intro video (`assets/login-intro.mp4`) as entertainment. This completes the
+symmetry:
+
+> Trusted device → **instant cache**, no wait to fill.
+> Shared device → the **entertaining login-video wait**.
+
+**Why the video is free here (and was dropped from the #650 splash):** on a **login
+screen** the operator types their PIN/password first, so the 2.4 MB clip preloads
+during typing (`preload="auto"`) and plays during the post-submit `.signing-in` wait
+with nothing competing for bandwidth. On the **resume splash** (#650, already logged
+in) there is no typing window and the fetch would compete with the immediate `load`
+and delay first paint — which is exactly why the splash omits it. Different path,
+opposite tradeoff.
+
+**The gap this closes:** the video is currently wired only into the shared-password
+`renderLogin`. The **phone-identity** login (`renderPhoneLogin`) — the current live
+flag (`phoneIdentity: true`) — has **no** video, so shared devices on the live app
+see no clip today. This spec adds it:
+
+- Add the `<video id="login-video" class="login-video" …
+  src="assets/login-intro.mp4?v=…" muted loop playsinline preload="auto"
+  aria-hidden="true">` element to `renderPhoneLogin`, plus the mute toggle, mirroring
+  `renderLogin` and adapted to the phone-login layout (placement finalized through
+  `jactec-ui`).
+- In `pidEnter()` (which already adds `.signing-in`), play the video and honor
+  `state.loginMuted`, mirroring the `attemptLogin` video-play wiring.
+- No new CSS: the existing `.login-video` / `.signing-in .login-video` rules and the
+  `prefers-reduced-motion → .login-video { display:none }` rule already cover it.
+
+This is the **only** shared-device change; the cache itself still never touches a
+shared device.
+
 ## Cache lifecycle — write & wipe triggers
 
 **Write** (overwrite the single record): after every successful backend `load` on a
@@ -230,6 +267,9 @@ a broken or corrupted app.
 5. **Shared device never writes** — sessionStorage token; assert `dataCache` store
    stays empty across a full load.
 6. **Recovery hatch** — open with `#reset-settings`; assert the data cache is wiped.
+7. **Shared-device login video** — phone-identity login; assert the `<video>` is
+   present, plays on `.signing-in` (post-submit), honors `state.loginMuted`, and is
+   hidden under emulated `prefers-reduced-motion`.
 
 **Unit (via the exposed test API):** envelope validation predicate
 (valid / stale-schema / stale-app / wrong-tokenTag / malformed), device-gate
