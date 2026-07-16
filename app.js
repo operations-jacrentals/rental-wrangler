@@ -2300,6 +2300,7 @@ const state = {
   custAgOpen: {},             // Phase 1 — which Agreements row is expanded inside the Account section — { [customerId]: cardId | '__new__' | null } (one open at a time, mirrors custInvOpen); '__new__' = the +Agreement/Card creation panel
   custAgDraft: {},            // Phase 2b — the in-progress NEW-agreement draft — { [customerId]: {accountType, startDate, selfie, signature} }; view-local, cleared on sign/cancel
   svcSecOpen: {},             // Unit detail — is the Services (service-order) section expanded? { [unitId]: true }; collapsed by default (mirrors custAcctOpen), view-local, reset on a fresh unit open
+  unitSecOpen: {},            // Unit detail — which generic collapsible sections are expanded per unit: { [unitId]: { workorders|specs|gps|coverage|investment: true } }; all collapsed by default, view-local, reset on a fresh unit open (mirrors svcSecOpen)
   woRowOpen: {},              // Unit detail — which Work Order row is expanded (accordion, one per unit, mirrors custInvOpen) — { [unitId]: woId | null }; collapsed by default, view-local, reset on a fresh unit open
   calSearch: '',               // Trips card mini-search (calendar is card-stateless — no session.cards.calendar — so this rides on state directly)
   calOpenTrip: null,           // §2.2b cab sheet — the ONE trip row expanded to its unit-facts sheet (row-body tap toggles; second tap collapses)
@@ -2535,7 +2536,7 @@ function openStandard(card, recId, recType) {
   if (card === 'customers' && state.funnelTab) delete state.funnelTab[recId];   // §3.5 — a fresh customer open resets the funnel toggle to Rental
   if (card === 'customers') { if (state.custInvOpen) delete state.custInvOpen[recId]; if (state.custInvMenu) delete state.custInvMenu[recId]; }   // §3.3 — collapse the embedded Invoices accordion on a fresh open (openInvoice re-sets it after)
   if (card === 'customers') { if (state.custAcctOpen) delete state.custAcctOpen[recId]; if (state.custAgOpen) delete state.custAgOpen[recId]; if (state.custAgDraft) delete state.custAgDraft[recId]; }   // Phase 1/2b — collapse the Account section + its Agreements accordion + any in-progress draft on a fresh open
-  if (card === 'units') { if (state.svcSecOpen) delete state.svcSecOpen[recId]; if (state.woRowOpen) delete state.woRowOpen[recId]; }   // collapse the Services section + any open Work Order row on a fresh open (mirrors the Account/Invoices collapse above)
+  if (card === 'units') { if (state.svcSecOpen) delete state.svcSecOpen[recId]; if (state.unitSecOpen) delete state.unitSecOpen[recId]; if (state.woRowOpen) delete state.woRowOpen[recId]; }   // collapse the Services + Work Orders / Specs / GPS / Coverage / Investment sections + any open Work Order row on a fresh open (mirrors the Account/Invoices collapse above)
   ackComments(recOf(entityCardOf(card, recType), recId));   // viewing = acknowledged (Phase 6)
   // §10 + #54 — opening a Category while the rental-window picker is live (a window's
   // picked, so availWin is set) pivots the left column to Units, pre-filled with the
@@ -7462,10 +7463,10 @@ function woStaleEmpty(w) {
    on a fresh record open. Reuses the .acct* classes for pixel parity with Account.
    `summary` is raw HTML (caller escapes its pieces); `chip` = {text, tone} or null;
    `bg` = an optional faded photo-backdrop URL (the .has-photo scrim, same as .section). */
-function collapseSection({ open, toggleCls, rec, extraCls = '', lbl, summary, chip, body, bg }) {
+function collapseSection({ open, toggleCls, rec, sec, extraCls = '', lbl, summary, chip, body, bg }) {
   return `<div class="acct${open ? ' open' : ''}${extraCls ? ' ' + extraCls : ''}${bg ? ' has-photo' : ''}">`
     + (bg ? `<div class="sec-photo" style="--photo:url('${esc(bg)}')"></div>` : '')
-    + `<div class="acct-bar ${toggleCls}" data-rec="${esc(rec)}" aria-expanded="${open}">`
+    + `<div class="acct-bar ${toggleCls}" data-rec="${esc(rec)}"${sec ? ` data-sec="${esc(sec)}"` : ''} aria-expanded="${open}">`
     + `<span class="acct-lbl">${esc(lbl)}</span>`
     + `<span class="acct-sum">${summary}</span>`
     + (chip ? `<span class="type-chip ${chip.tone}">${esc(chip.text)}</span>` : '')
@@ -7474,6 +7475,10 @@ function collapseSection({ open, toggleCls, rec, extraCls = '', lbl, summary, ch
     + (open ? `<div class="acct-body">${body}</div>` : '')
     + `</div>`;
 }
+// Is one of the Unit-detail generic collapsible sections (Work Orders / Specs / GPS /
+// Coverage / Investment) expanded? All collapsed by default; state is view-local and
+// reset on a fresh unit open (mirrors svcSecOpen for the Services section).
+function unitSecOpen(u, id) { return !!(state.unitSecOpen && state.unitSecOpen[u.unitId] && state.unitSecOpen[u.unitId][id]); }
 // The bottleneck phase word shown on a WO row/chip: the worst open line's phase,
 // else 'Ready' when every line is done, else the WO-level phase for an empty WO.
 function woPhaseLabel(w, bottleIdx) {
@@ -7568,10 +7573,18 @@ function workOrdersSection(u) {
   const rows = wos.length
     ? wos.map((w) => (w.woId === openId ? woExpandedHtml(w) : woRowHtml(w))).join('')
     : '<div class="inv-empty muted">No open work orders.</div>';
-  return `<div class="section wo-sec"><h4>Work Orders${wos.length ? ` <span class="hmuted">· ${wos.length}</span>` : ''}</h4>`
-    + `<div class="add-row wo-add">${addBtn('Work Order', { js: 'js-new-wo-unit', link: true, data: { rec: u.unitId } })}</div>`
-    + `<div class="inv-scroll wo-scroll${openId ? ' expanded' : ''}">${rows}</div>`
-    + `</div>`;
+  // Section RYG (R11 on the collapse plate) = the worst OPEN work order's bottleneck;
+  // no open WOs reads green "Clear". Chip + border color follow it on the bar AND when open.
+  const worst = wos.reduce((c, w) => { const k = woBottleneck(w).color; const rank = { red: 3, yellow: 2, green: 1 }[k] || 0; return rank > c.rank ? { rank, color: k } : c; }, { rank: 0, color: null });
+  const secColor = wos.length ? (worst.color === 'red' ? 'red' : worst.color === 'green' ? 'green' : 'yellow') : 'green';
+  const chip = wos.length
+    ? { text: { red: 'Needs parts', yellow: 'In progress', green: 'Ready' }[secColor], tone: { red: 'bad', yellow: 'warn', green: 'ok' }[secColor] }
+    : { text: 'Clear', tone: 'ok' };
+  // +Work Order rides ABOVE the rows as a FULL-WIDTH add-row (Jac — like the +Rental / +Invoice
+  // add), not a centered pill; the rows live below it inside the section body.
+  const body = `<div class="wo-add-pill">${addBtn('Work Order', { js: 'js-new-wo-unit', link: true, data: { rec: u.unitId } })}</div>`
+    + `<div class="inv-scroll wo-scroll${openId ? ' expanded' : ''}">${rows}</div>`;
+  return collapseSection({ open: unitSecOpen(u, 'workorders'), toggleCls: 'js-unit-sec', sec: 'workorders', rec: u.unitId, lbl: 'Work Orders', summary: `<b>${wos.length} open</b>`, chip, body, extraCls: 'sec-' + secColor });
 }
 /* Per-unit SERVICES section (Shop retirement, Jac 2026-07-07): the recurring
    countdown list — wash pinned to the top, then most-urgent first — with the
@@ -7614,12 +7627,13 @@ function serviceTasksHtml(u, { title = 'Services' } = {}) {
   // COLLAPSED-BY-DEFAULT (mirrors the customer Account section): a one-line bar whose
   // status chip = the worst task's live service status; the task list rides behind the chevron.
   const open = !!(state.svcSecOpen && state.svcSecOpen[u.unitId]);
+  const secColor = worst && ['red', 'yellow', 'green'].includes(worst.color) ? worst.color : 'green';
   const chip = worst && ['red', 'yellow', 'green'].includes(worst.color)
     ? { text: getStatus('serviceStatus', worst.status).label, tone: { red: 'bad', yellow: 'warn', green: 'ok' }[worst.color] }
     : { text: 'Up to date', tone: 'ok' };
   const summary = `<b>${rows.length} task${rows.length === 1 ? '' : 's'}</b>${worst ? `<span class="acct-dot">·</span>${esc(worst.name)}` : ''}`;
   const body = `<div class="hlog">${list}</div>${more}`;
-  return collapseSection({ open, toggleCls: 'js-svc-sec-toggle', rec: u.unitId, lbl: title, summary, chip, body });
+  return collapseSection({ open, toggleCls: 'js-svc-sec-toggle', rec: u.unitId, lbl: title, summary, chip, body, extraCls: 'sec-' + secColor });
 }
 /* ITEM BALANCE — every invoice line item carries its own balance. A partial
    payment is assigned per line item through the payment popup; allocations are
@@ -8001,7 +8015,7 @@ const DETAIL = {
     const yr = (iso) => `${fmtShortDate(iso)}, ${parseISO(iso).getFullYear()}`;
     const makeModel = [u.year, u.make, u.model].filter(Boolean).join(' ');
 
-    const specs = `<div class="section"><h4>Specs</h4><div class="fieldstack">
+    const specsBody = `<div class="fieldstack">
       ${efld('units', u, 'unitId', 'categoryId', 'Category', { editKind: 'unitCategory', admin: true, link: true, fmt: (id) => IDX.category.get(id)?.name || 'Unknown category' })}
       ${efld('units', u, 'unitId', 'serial', 'Add serial', { pfx: 'S/N' })}
       ${efld('units', u, 'unitId', 'year', 'Year', { type: 'number' })}
@@ -8009,7 +8023,9 @@ const DETAIL = {
       ${efld('units', u, 'unitId', 'modelId', 'Model', { editKind: 'unitModel', admin: true, link: true, fmt: (id) => IDX.model.get(id)?.name || 'Unknown model' })}
       ${efld('units', u, 'unitId', 'weight', 'Weight')}
       <div class="kv"><span class="v inline-edit" data-edit="unitHours" data-rec="${u.unitId}">${num(u.currentHours)} HRS</span></div>
-    </div></div>`;
+    </div>`;
+    // Specs is a plain-fact section — no health status, so it reads a neutral green "OK".
+    const specs = collapseSection({ open: unitSecOpen(u, 'specs'), toggleCls: 'js-unit-sec', sec: 'specs', rec: u.unitId, lbl: 'Specs', summary: `<b>${esc(cat?.name || makeModel || 'Unit')}</b><span class="acct-dot">·</span>${num(u.currentHours)} HRS`, chip: { text: 'OK', tone: 'ok' }, body: specsBody, extraCls: 'sec-green' });
     // GPS connect wizard (spec §5a) — mapping now happens through a guided popup
     // (provider → identify → confirmed live signal) instead of hand-typing gpsProvider/
     // gpsDeviceId; the "No GPS" badge grows a +Connect add, an already-mapped unit gets
@@ -8022,7 +8038,7 @@ const DETAIL = {
     const gpsM = (gsUnit && gsUnit.live) ? gsUnit.machine : null;
     const gpsMapHref = (gpsM && gpsM.lat != null && gpsM.lng != null) ? `https://www.google.com/maps?q=${gpsM.lat},${gpsM.lng}` : '';
     const gpsSeen = gpsM ? gpsRelTime(gpsM.lastSeen) : '';
-    const gps = `<div class="section"><h4>GPS</h4><div class="fieldstack">
+    const gpsBody = `<div class="fieldstack">
       ${kvPills((gsUnit ? statusPill('gpsStatus', gsUnit.status, { focal: true }) : badge('No GPS')) + (gpsMapped ? '' : addBtn('Connect GPS', { link: true, js: 'js-gps-connect', data: { rec: u.unitId } })))}
       ${gpsStale ? `<div class="kv" style="justify-content:center"><span class="muted" style="font-size:11px">Last known — live link down</span></div>` : ''}
       ${gpsM ? `<div class="kv" style="justify-content:center;gap:8px;flex-wrap:wrap">
@@ -8035,7 +8051,12 @@ const DETAIL = {
       ${efld('units', u, 'unitId', 'gpsPlacement', 'Placement')}
       ${gpsShutdownControl(u, gpsM)}
       ${gpsMapped ? gpsFeedHtml(u) : ''}
-    </div></div>`;
+    </div>`;
+    // GPS RYG = live connection health: tracking (green) / last-known signal down (yellow) /
+    // untracked, which is a neutral fact — a gray "No GPS" chip, no colored border.
+    const gpsSecColor = (gsUnit && gsUnit.live) ? 'green' : (gpsStale ? 'yellow' : '');
+    const gpsChip = (gsUnit && gsUnit.live) ? { text: 'Tracking', tone: 'ok' } : (gpsStale ? { text: 'Last known', tone: 'warn' } : { text: 'No GPS', tone: 'mute' });
+    const gps = collapseSection({ open: unitSecOpen(u, 'gps'), toggleCls: 'js-unit-sec', sec: 'gps', rec: u.unitId, lbl: 'GPS', summary: `<b>${gpsMapped ? esc(u.gpsProvider) : 'Not connected'}</b>${gpsSeen ? `<span class="acct-dot">·</span>${esc(gpsSeen)}` : ''}`, chip: gpsChip, body: gpsBody, extraCls: gpsSecColor ? 'sec-' + gpsSecColor : '' });
     /* COVERAGE — the yard's own equipment insurance on this unit (spec equipment-insurance
        Phase 1, Jac 2026-06-29). STATUS + riders are open to every role (a driver must know a
        machine is uninsured before it leaves the yard); insurer/policy/dates render at ≥money;
@@ -8054,7 +8075,7 @@ const DETAIL = {
     const riderCtl = (covEditable && cov.covered)
       ? segCtl(covTypes.map((t) => ({ label: t.label, js: 'js-cov-type', data: { rec: u.unitId, id: t.id }, on: (ins.types || []).includes(t.id) ? 'green' : null })))
       : (cov.covered ? kvPills(riderBadges) : '');
-    const coverage = `<div class="section"><h4>Coverage</h4><div class="fieldstack centered">
+    const coverageBody = `<div class="fieldstack centered">
       <div class="kv" style="justify-content:center">${covToggle}</div>
       ${riderCtl ? `<div class="kv" style="justify-content:center">${riderCtl}</div>` : ''}
       ${cov.covered && canMoney() ? `
@@ -8064,7 +8085,11 @@ const DETAIL = {
       ${cov.covered && adminUnlocked() ? `
         ${efld('units', u, 'unitId', 'insurance.insuredValue', 'Insured value', { type: 'number', admin: true, fmt: money, sfx: 'insured value' })}
         ${efld('units', u, 'unitId', 'insurance.premium', 'Premium', { type: 'number', admin: true, fmt: money, sfx: `premium / ${ins.premiumCadence === 'Annual' ? 'yr' : 'mo'}` })}` : ''}
-    </div></div>`;
+    </div>`;
+    // Coverage RYG = insured (green) vs uninsured (yellow caution — a machine leaves the yard
+    // uninsured is worth a flag, not a hard-stop red).
+    const covRiderText = cov.covered ? (cov.types && cov.types.length ? `${cov.types.length} rider${cov.types.length === 1 ? '' : 's'}` : 'No riders') : 'No coverage';
+    const coverage = collapseSection({ open: unitSecOpen(u, 'coverage'), toggleCls: 'js-unit-sec', sec: 'coverage', rec: u.unitId, lbl: 'Coverage', summary: `<b>${covRiderText}</b>`, chip: cov.covered ? { text: 'Insured', tone: 'ok' } : { text: 'Uninsured', tone: 'warn' }, body: coverageBody, extraCls: cov.covered ? 'sec-green' : 'sec-yellow' });
     /* INVESTMENT — left = entry · right = derived, ordered per Jac:
        Total Revenue → Monthly → Work Orders → Profit · (ROI%) */
     const invested = Number(u.trueCost) || Number(u.purchasePrice) || 0;
@@ -8080,8 +8105,7 @@ const DETAIL = {
     const soldInfo = (u.fleetStatus === 'Sold' && canMoney() && (u.salePrice != null || u.saleDate))
       ? `${u.salePrice != null ? kv(money(u.salePrice), { pfx: 'Sale price', derived: true }) : ''}${u.saleDate ? kv(yr(u.saleDate), { pfx: 'Sale date', derived: true }) : ''}`
       : '';
-    const investment = `<div class="section"><h4>Investment</h4>
-      <div class="split">
+    const investmentBody = `<div class="split">
         <div class="side">
           ${efld('units', u, 'unitId', 'purchasePrice', 'Purchase price', { type: 'number', sfx: 'paid', fmt: money, money: true })}
           ${efld('units', u, 'unitId', 'purchaseDate', 'Purchase date', { type: 'date', sfx: 'purchased', fmt: yr })}
@@ -8096,7 +8120,10 @@ const DETAIL = {
           ${kv(`${money(profit)}${roi != null && canMoney() ? ` · (${roi}%)` : ''}`, { pfx: 'Profit', derived: true })}
         </div>
       </div>
-      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">${sellAction}${gatePill('unitFleetStatus', u.fleetStatus, 'js-fleetstatus', { rec: u.unitId })}</div></div>`;
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">${sellAction}${gatePill('unitFleetStatus', u.fleetStatus, 'js-fleetstatus', { rec: u.unitId })}</div>`;
+    // Investment is a plain-fact section — neutral green "OK". Summary shows ownership
+    // duration only (never a dollar/margin figure — that stays behind the money gate inside).
+    const investment = collapseSection({ open: unitSecOpen(u, 'investment'), toggleCls: 'js-unit-sec', sec: 'investment', rec: u.unitId, lbl: 'Investment', summary: `<b>${u.purchaseDate ? `Owned ${monthsOwned} mo` : 'No purchase data'}</b>`, chip: { text: 'OK', tone: 'ok' }, body: investmentBody, extraCls: 'sec-green' });
     /* INSPECTION — live condition + wash toggles, timestamp in the header */
     const li2 = latestInspForUnit(u.unitId);
     const stampDate = u.condAt || li2?.date || '';
@@ -17462,6 +17489,7 @@ function onClick(e) {
   // no-op stubs (real enrollment/charge is Phase 2; block-gate enforcement is Phase 3).
   if (closest('.js-acct-toggle')) { e.stopPropagation(); const rec = closest('.js-acct-toggle').dataset.rec; return guardAgLeave(rec, () => { state.custAcctOpen = state.custAcctOpen || {}; state.custAcctOpen[rec] = !state.custAcctOpen[rec]; render(); }); }
   if (closest('.js-svc-sec-toggle')) { e.stopPropagation(); const rec = closest('.js-svc-sec-toggle').dataset.rec; state.svcSecOpen = state.svcSecOpen || {}; state.svcSecOpen[rec] = !state.svcSecOpen[rec]; return render(); }   // Unit detail — collapse/expand the Services (service-order) section
+  if (closest('.js-unit-sec')) { e.stopPropagation(); const b = closest('.js-unit-sec'); const rec = b.dataset.rec, sec = b.dataset.sec; state.unitSecOpen = state.unitSecOpen || {}; state.unitSecOpen[rec] = state.unitSecOpen[rec] || {}; state.unitSecOpen[rec][sec] = !state.unitSecOpen[rec][sec]; return render(); }   // Unit detail — collapse/expand a generic detail section (Work Orders / Specs / GPS / Coverage / Investment)
   if (closest('.js-wo-row')) { e.stopPropagation(); const b = closest('.js-wo-row'); const un = b.dataset.unit, rec = b.dataset.rec; state.woRowOpen = state.woRowOpen || {}; state.woRowOpen[un] = (state.woRowOpen[un] === rec) ? null : rec; return render(); }   // Unit detail — open/collapse one Work Order row (accordion, mirrors js-inv-row)
   if (closest('.js-wo-collapse')) { e.stopPropagation(); const un = closest('.js-wo-collapse').dataset.unit; if (state.woRowOpen) state.woRowOpen[un] = null; return render(); }   // collapse the open Work Order row
   if (closest('.js-ag-row')) { e.stopPropagation(); const b = closest('.js-ag-row'); const rec = b.dataset.rec, card = b.dataset.card; return guardAgLeave(rec, () => { state.custAgOpen = state.custAgOpen || {}; state.custAgOpen[rec] = (state.custAgOpen[rec] === card) ? null : card; render(); }); }
@@ -20959,7 +20987,10 @@ function startNewWorkOrder(unitId) {
   const draft = { woId: id, unitId: u.unitId, customerId: null, woReport: 'New Work Order', woType: 'Manual', description: '', phase: 'Part Needed?', billCustomer: 'No', date: TODAY_ISO, eta: '', unitHoursAtCreation: u?.currentHours || 0, assignedMechanic: '', laborHours: 0, lineItems: [], mock: true };
   DATA.workOrders.push(draft); IDX.wo.set(id, draft); reindex('workOrders', draft);
   logAction(draft, 'Work order created');
-  // born on the Unit card (+Work Order above Specs/GPS) — the WO section appears in place
+  // born on the Unit card (+Work Order above Specs/GPS) — the WO section appears in place.
+  // Both the section and the new row collapse by default now, so open them so the draft shows.
+  state.unitSecOpen = state.unitSecOpen || {}; state.unitSecOpen[u.unitId] = state.unitSecOpen[u.unitId] || {}; state.unitSecOpen[u.unitId].workorders = true;
+  state.woRowOpen = state.woRowOpen || {}; state.woRowOpen[u.unitId] = id;
   render();
   attnFlash(`.card[data-card="units"] .wo-${id}`);
 }
