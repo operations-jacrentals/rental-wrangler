@@ -48,7 +48,7 @@
 | APP-38 | 23856–23862 | — | PHONE-VERIFIED DEVICE IDENTITY — login flow (Phase 2) | — |
 | APP-39 | 23863–25149 | — | const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', | pidUI, pidTokenGet, pidTokenSet, pidTokenClear, pidRosterCache, pidAdopt, pidLoadFail, pidEnter, phoneBoot, pidErr, pidCall, renderPhoneLogin, …(+65) |
 
-## config.js — 646 lines, 0 chapters
+## config.js — 653 lines, 0 chapters
 
 Chapter **CFG** — no internal banners, the whole file is one chapter.
 
