@@ -8055,7 +8055,9 @@ const DETAIL = {
     const riderCtl = (covEditable && cov.covered)
       ? segCtl(covTypes.map((t) => ({ label: t.label, js: 'js-cov-type', data: { rec: u.unitId, id: t.id }, on: (ins.types || []).includes(t.id) ? 'green' : null })))
       : (cov.covered ? kvPills(riderBadges) : '');
-    const covBlock = `<div class="section"><h4>Coverage</h4><div class="fieldstack centered">
+    // Coverage is JUST a toggle (Jac 2026-07-16) — no titled sub-card; the toggle (and, when
+    // insured, its riders + policy/premium fields) rides plainly at the top of the Investment body.
+    const covControls = `<div class="fieldstack centered" style="margin-bottom:12px">
       <div class="kv" style="justify-content:center">${covToggle}</div>
       ${riderCtl ? `<div class="kv" style="justify-content:center">${riderCtl}</div>` : ''}
       ${cov.covered && canMoney() ? `
@@ -8065,7 +8067,7 @@ const DETAIL = {
       ${cov.covered && adminUnlocked() ? `
         ${efld('units', u, 'unitId', 'insurance.insuredValue', 'Insured value', { type: 'number', admin: true, fmt: money, sfx: 'insured value' })}
         ${efld('units', u, 'unitId', 'insurance.premium', 'Premium', { type: 'number', admin: true, fmt: money, sfx: `premium / ${ins.premiumCadence === 'Annual' ? 'yr' : 'mo'}` })}` : ''}
-    </div></div>`;
+    </div>`;
     /* INVESTMENT — left = entry · right = derived, ordered per Jac:
        Total Revenue → Monthly → Work Orders → Profit · (ROI%) */
     const invested = Number(u.trueCost) || Number(u.purchasePrice) || 0;
@@ -8106,7 +8108,7 @@ const DETAIL = {
     const invChip = cov.covered ? { text: 'Insured', tone: 'ok' } : { text: 'Uninsured', tone: 'mute' };
     const invSummary = canMoney() ? `<b>${money(profit)}</b> profit${roi != null ? `<span class="acct-dot">·</span>${roi}% ROI` : ''}` : '';
     const invOpen = !!(state.invSecOpen && state.invSecOpen[u.unitId]);
-    const investment = collapseSection({ open: invOpen, toggleCls: 'js-inv-sec-toggle', rec: u.unitId, lbl: 'Investment', summary: invSummary, chip: invChip, body: covBlock + finBody });
+    const investment = collapseSection({ open: invOpen, toggleCls: 'js-inv-sec-toggle', rec: u.unitId, lbl: 'Investment', summary: invSummary, chip: invChip, body: covControls + finBody });
     /* INSPECTION — live condition + wash toggles, timestamp in the header */
     const li2 = latestInspForUnit(u.unitId);
     const stampDate = u.condAt || li2?.date || '';
