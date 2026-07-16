@@ -22109,26 +22109,34 @@ async function gpsUnitStatus(provider, deviceId) {
    only, triggered by the hash; never auto-runs. */
 async function deereProbe() {
   const out = {};
+  const errStr = (e) => 'ERROR: ' + ((e && e.message) || String(e)) + (e && e.status ? ` (status ${e.status})` : '');
+  // summarize an array-ish response to keys + count + one sample (keeps the dump phone-sized)
+  const shape = (v) => {
+    if (v == null || typeof v !== 'object') return v;
+    const arr = Array.isArray(v) ? v : (v.values || v.locations || v.events || v.data);
+    if (Array.isArray(arr)) return { keys: Array.isArray(v) ? '(array)' : Object.keys(v), count: arr.length, sample: arr[0] ?? null };
+    return { keys: Object.keys(v), value: v };
+  };
+  const capture = async (label, path, summarize) => {
+    try { const v = await gpsFetch(path); out[label] = summarize ? summarize(v) : v; }
+    catch (e) { out[label] = errStr(e); }
+  };
+  // 1) machines list — full first machine (the crux: does it carry live location/lastContact?)
+  let pid = null;
   try {
     const r = await gpsFetch('/api/deere/machines');
     const vals = (r && r.values) || [];
     const m0 = vals[0] || {};
-    out.machines_topKeys = Object.keys(r || {});
-    out.machines_count = vals.length;
-    out.machine0 = m0;                                   // full first machine (own equipment telemetry; no customer PII)
-    const pid = m0.principalId ?? m0.id;
-    if (pid != null) {
-      try {
-        const loc = await gpsFetch(`/api/deere/machine/${encodeURIComponent(pid)}/locations`);
-        const arr = Array.isArray(loc) ? loc : (loc && loc.values) || (loc && loc.locations) || null;
-        out.locations_topKeys = loc && typeof loc === 'object' ? Object.keys(loc) : typeof loc;
-        out.locations_count = Array.isArray(arr) ? arr.length : null;
-        out.locations_sample = Array.isArray(arr) ? arr[0] : loc;
-      } catch (e2) { out.locations_error = ((e2 && e2.message) || String(e2)) + (e2 && e2.status ? ` (status ${e2.status})` : ''); }
-    }
-  } catch (e) {
-    out.machines_error = ((e && e.message) || String(e)) + (e && e.status ? ` (status ${e.status})` : '');
-  }
+    out['1_machines'] = { count: vals.length, machine0: m0 };   // own equipment telemetry; no customer PII
+    pid = m0.principalId ?? m0.id ?? null;
+  } catch (e) { out['1_machines'] = errStr(e); }
+  // 2) per-machine live positions — is the position on THIS endpoint instead of the list?
+  if (pid != null) await capture('2_locations', `/api/deere/machine/${encodeURIComponent(pid)}/locations`, shape);
+  // 3) device_events — the Refresh/history-feed source; use a REAL mapped Deere unit's device id.
+  const mu = (DATA.units || []).find((u) => String(u.gpsProvider || '').toLowerCase() === 'deere' && u.gpsDeviceId);
+  const evKey = mu ? String(mu.gpsDeviceId) : (pid != null ? String(pid) : null);
+  out['3_events_for'] = mu ? `${mu.name} · ${evKey}` : `(no mapped Deere unit; using ${evKey})`;
+  if (evKey != null) await capture('3_device_events', `/api/device/deere/${encodeURIComponent(evKey)}/events`, shape);
   showDeereProbe(out);
 }
 function showDeereProbe(obj) {
