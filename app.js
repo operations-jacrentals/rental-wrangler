@@ -23216,6 +23216,83 @@ function applyLoadResponse(r) {
 }
 async function loadFromBackend() { applyLoadResponse(await backendCall('load')); }
 
+/* ══════════════ INSTANT CACHE — on-device data snapshot (spec 2026-07-16) ══════════════
+   A DISPLAY-ONLY photograph of the last confirmed backend load, so a PERSONAL (trusted)
+   device paints real data instantly on open, then reconciles with the live backend.
+   Modeled on wrStore (§18): its own IndexedDB DB, a thin promise wrapper that REJECTS
+   LOUDLY — no silent catch (the localStorage QuotaExceeded that silently vanished the
+   Wrangler rail must never recur). One store, one 'snapshot' record, overwritten each
+   load (no growth → no eviction engine).
+   THE INVARIANT: the cache is NEVER a save baseline (see paintFromCache) — a stale or
+   corrupt snapshot can change what you briefly SEE, never what is written to the Sheet.
+   Gated behind FEATURES.instantCache + a personal (localStorage) token; a shared device
+   (sessionStorage token, PIN each session) never caches → no PII at rest on it. */
+const DC_DB = 'jactec.datacache', DC_DB_VER = 1;
+// Bump CACHE_SCHEMA_VER in the SAME commit as any change to the shape of the PERSIST_KEYS
+// data (or the settings) the snapshot carries — a version miss DISCARDS the old snapshot
+// rather than painting a stale shape.
+const CACHE_SCHEMA_VER = 1;
+let _dcDbPromise = null;
+function dcDbOpen() {
+  if (_dcDbPromise) return _dcDbPromise;
+  _dcDbPromise = new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') { reject(new Error('no-indexeddb')); return; }
+    let req; try { req = indexedDB.open(DC_DB, DC_DB_VER); } catch (e) { reject(e); return; }
+    req.onupgradeneeded = () => { const db = req.result; if (!db.objectStoreNames.contains('snapshot')) db.createObjectStore('snapshot'); };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error('idb-open-failed'));
+  });
+  return _dcDbPromise;
+}
+function dcTx(mode, fn) {
+  return dcDbOpen().then((db) => new Promise((resolve, reject) => {
+    let tx, req;
+    try { tx = db.transaction('snapshot', mode); req = fn(tx.objectStore('snapshot')); } catch (e) { reject(e); return; }
+    tx.oncomplete = () => resolve(req ? req.result : undefined);
+    tx.onerror = () => reject(tx.error || new Error('idb-tx-error'));
+    tx.onabort = () => reject(tx.error || new Error('idb-abort'));
+  }));
+}
+const dataCache = {
+  read: () => dcTx('readonly', (os) => os.get('snapshot')).catch(() => null),   // absent / IDB-unavailable → null → boot falls to the splash path
+  write: (env) => dcTx('readwrite', (os) => os.put(env, 'snapshot')),           // REJECTS loudly — caller logs, non-fatal
+  wipe: () => dcTx('readwrite', (os) => os.clear()).catch(() => {}),            // best-effort clear (a failed wipe is caught by the read-time validity gate)
+};
+// This build's cache-bust token, read off the app.js <script> src — already bumped every
+// deploy, so a snapshot written by an OLDER build never matches the running one.
+function cacheAppVer() {
+  try { const s = document.querySelector('script[src*="app.js"]'); const m = s && (s.getAttribute('src') || '').match(/[?&]v=([^&#]+)/); return m ? m[1] : ''; } catch (e) { return ''; }
+}
+// The PERSONAL (persistent) token in localStorage — NOT the sessionStorage shared-device
+// token. The cache's whole existence is gated on this being present.
+function pidLocalToken() { try { return localStorage.getItem('jactec.pidToken') || ''; } catch (e) { return ''; } }
+// A short, NON-reversible tag of the trusted token — a same-device equality check so a
+// different person's login (different token) never paints the previous person's snapshot.
+// The raw token is never stored; it already lives in localStorage on this device, so this
+// widens nothing. djb2 → hex.
+function cacheTokenTag(tok) {
+  let h = 5381; const s = String(tok || '');
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(16);
+}
+// Read/write the cache ONLY on a personal device with the flag on.
+function cacheDeviceOk() { return flagOn('instantCache') && !!pidLocalToken(); }
+// A snapshot is safe to PAINT only if it parses AND matches this schema, this build, and
+// this device's current trusted token. Any miss → discard (caller wipes the bad record).
+function cacheValid(env) {
+  return !!(env && typeof env === 'object'
+    && env.cacheVer === CACHE_SCHEMA_VER
+    && env.appVer === cacheAppVer()
+    && env.tokenTag === cacheTokenTag(pidLocalToken())
+    && env.payload && env.payload.data && typeof env.payload.data === 'object');
+}
+// Build the envelope from the CURRENT (confirmed-backend) in-memory state. Called only
+// after a real load applied it (Phase 1) — never from local edits.
+function cacheSnapshotEnvelope() {
+  const data = {}; PERSIST_KEYS.forEach((k) => { data[k] = Array.isArray(DATA[k]) ? DATA[k] : []; });
+  return { cacheVer: CACHE_SCHEMA_VER, appVer: cacheAppVer(), tokenTag: cacheTokenTag(pidLocalToken()), savedAt: Date.now(), payload: { data, settings: state.settings || null } };
+}
+
 // ── Incremental persistence (diff-based sync) ──────────────────────────────
 // Whole-state seed doesn't scale (≈1.7 MB / 10 s at real volume). Instead we keep
 // a snapshot of what the backend last held and, on each flush, send only the
@@ -24908,6 +24985,7 @@ function exposeTestApi() {
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
       wrValidatePlan, applyWranglerData, wrPlanNeedsApply, wrPlanSummary, wrFunnel, wrResolveCustomer, wrResolveUnit, wrResolveCategory, wrResolveVendor, wrResolvePart, wrResolveRental, wrChatFormat, wrFocusRecord, wrRecLabel, activeSession, invoiceMergeable, mergeInvoiceInto, invoiceVoidable, voidInvoice, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv, wrRunAgent, wrApplyChangesTool, wranglerDigest, wrPruneOldChats, WR_CHAT_RETAIN_DAYS, WR_TOOL_IMPL, WR_TOOLS, WR_OPERATIONS,
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
+      dataCache, cacheValid, cacheDeviceOk, cacheTokenTag, cacheAppVer, cacheSnapshotEnvelope, CACHE_SCHEMA_VER, FEATURES,   // §instant-cache (spec 2026-07-16)
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
       companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsUtilRollup, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
