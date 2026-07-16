@@ -24,6 +24,16 @@
    shows the returned result.
 4. **Entry point is `boot()`** (`app.js:24028`) + its hash routing (~`app.js:24403`),
    ahead of the login-vs-app decision (`renderLogin` `app.js:23681`).
+5. **Backend goes live LAST (Jac, 2026-07-16), so the frontend must not depend on
+   it being live.** The whole scan flow rides behind a `FEATURES` flag
+   (`config.js`, `flagOn()`), shipping **dormant** — it can merge and promote with
+   the flag OFF and nothing in production breaks while `captureByScan` doesn't yet
+   exist. Staging is exercised via a **preview response** (all states) so Jac signs
+   off on the UX + decal before the backend. After Jac's `/clasp` push + editor
+   deploy, flip the flag ON (config-only) and do **one real confirmation scan**
+   before the print run. There is only one shared GAS backend behind staging and
+   production, so an additive `captureByScan` deployed early is dormant in prod
+   until the flag flips — but per Jac's call, the backend deploy stays last.
 
 ## Phase 1 — Scan boot route + three entry states (frontend)
 
@@ -99,17 +109,25 @@
   `node ci/check-window-catalog.mjs`, `node tools/gen-code-map.mjs --check`
   (+ `smoke`/`logic` in CI).
 
-## Phase 6 — Staging + real test decal
+## Phase 6 — Staging (preview) + test decal
 
 - `/deploy` → verify live bytes → generate a **real** scannable QR for a seeded
-  unit → drive scan→record→file (remembered vs. cold phone) → hand Jac a
-  scannable test decal. Red review = HARD STOP.
+  unit → drive scan→record on staging against a **preview response** (flag lets the
+  client short-circuit `captureByScan` to canned Start/End/Block/unknown results,
+  no real filing) so Jac walks every state + eyeballs the decal **before** the
+  backend exists. Red review = HARD STOP.
 
-## Phase 7 — Go live
+## Phase 7 — Go live (backend LAST)
 
-- `/live` ships the **frontend** (deploy → merge → promote — the promote is Jac's
-  explicit call; it touches auth). The **backend** goes live via `/clasp` push +
-  **Jac's Apps Script editor deploy** — outside the git gates by design.
+Order, honoring "backend deploy last":
+1. `/live` ships the **frontend with the `FEATURES` flag OFF** (deploy → merge →
+   promote — promote is Jac's explicit call; it touches auth). Dormant in prod;
+   nothing calls `captureByScan`.
+2. **Jac** `/clasp`-pushes + **editor-deploys** `captureByScan` + the login mint —
+   the last gate, Jac's click, outside the git gates by design.
+3. Flip the `FEATURES` flag **ON** (config-only branch → `/merge`, no promote of
+   served JS needed beyond the config bump) → **one real confirmation scan** →
+   then the print run.
 
 ## Delegation
 
