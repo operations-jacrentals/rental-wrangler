@@ -23966,6 +23966,18 @@ function pidWire() {
   on('pid-needcode', () => { pidUI.step = 'identify'; pidUI._phone = ''; renderPhoneLogin(''); });
   document.querySelectorAll('.login-choice-btn').forEach((b) => b.addEventListener('click', () => { pidUI.kind = b.getAttribute('data-kind'); pidUI.step = 'code'; renderPhoneLogin(''); }));
   document.querySelectorAll('.login-pick-btn').forEach((b) => b.addEventListener('click', () => { pidUI.personId = b.getAttribute('data-id'); const r = pidRosterCache().find((x) => String(x.id) === String(pidUI.personId)); pidUI.name = r ? r.name : ''; pidUI.step = 'pin'; renderPhoneLogin(''); }));
+  // Auto-submit the code the moment all 6 digits are in — no Verify tap needed. Also catches
+  // the OS one-time-code autofill (it drops all 6 at once → instant sign-in). Kept digits-only
+  // so a stray char can't desync the count; the in-flight guard stops a paste/autofill from
+  // double-firing the verify. Jac, 2026-07-16.
+  const codeEl = document.getElementById('pid-code');
+  if (codeEl) codeEl.addEventListener('input', () => {
+    const digits = codeEl.value.replace(/\D/g, '');
+    if (codeEl.value !== digits) codeEl.value = digits;
+    if (digits.length !== PHONE_IDENTITY.codeLen) return;
+    const b = document.getElementById('pid-verify'); if (b && b.disabled) return;   // a verify is already running — don't fire twice
+    pidDoVerify();
+  });
   const focusId = { identify: 'pid-phone', code: 'pid-code', setpin: 'pid-pin', pin: 'pid-loginpin' }[step];
   if (focusId) { const el = document.getElementById(focusId); if (el) el.focus(); }
 }
@@ -23983,7 +23995,8 @@ async function pidDoVerify() {
   if (code.length !== PHONE_IDENTITY.codeLen) return pidErr(`Enter the ${PHONE_IDENTITY.codeLen}-digit code.`);
   const r = await pidCall('pid-verify', () => backendCall('authVerify', { personId: pidUI.personId, code, deviceKind: pidUI.kind }));
   if (!r) return;
-  if (!r.ok) return pidErr(r.error === 'bad-code' ? `That code didn't match${r.left != null ? ` — ${r.left} left` : ''}.` : r.error === 'expired' ? 'That code expired — resend a fresh one.' : r.error === 'too-many' ? 'Too many tries — resend a fresh code.' : 'Could not verify — resend a code.');
+  if (!r.ok) { const el = document.getElementById('pid-code'); if (el) { el.value = ''; el.focus(); }   // clear the bad digits so a retype re-triggers the auto-submit (maxlength blocks editing a full field)
+    return pidErr(r.error === 'bad-code' ? `That code didn't match${r.left != null ? ` — ${r.left} left` : ''}.` : r.error === 'expired' ? 'That code expired — resend a fresh one.' : r.error === 'too-many' ? 'Too many tries — resend a fresh code.' : 'Could not verify — resend a code.'); }
   pidUI._role = r.role || ''; pidUI._tok = r.token || '';
   const personal = pidUI.kind === 'personal';
   if (!personal && !r.pinSet) { pidUI.step = 'setpin'; return renderPhoneLogin(''); }

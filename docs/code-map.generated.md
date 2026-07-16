@@ -4,7 +4,7 @@
 
 # Code Atlas — generated chapter index (Part I · The Frontend)
 
-## app.js — 25163 lines, 39 chapters
+## app.js — 25176 lines, 39 chapters
 
 | ID | Lines | Anchors | Chapter title | Key symbols |
 |----|------:|---------|---------------|-------------|
@@ -46,7 +46,7 @@
 | APP-36 | 21851–21853 | §18 | §18 PERSISTENCE & BOOT | — |
 | APP-37 | 21854–23855 | §18b | §18b BACKEND SYNC — Google Sheets via the Apps Script web app | BACKEND_URL, PERSIST_KEYS, backendPassword, booting, saveTimer, driveViewUrl, backendCall, gpsToken, gpsBase, gpsConfigured, gpsFetch, gpsLogin, …(+148) |
 | APP-38 | 23856–23862 | — | PHONE-VERIFIED DEVICE IDENTITY — login flow (Phase 2) | — |
-| APP-39 | 23863–25163 | — | const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', | pidUI, pidTokenGet, pidTokenSet, pidTokenClear, pidRosterCache, pidAdopt, pidLoadFail, pidEnter, phoneBoot, pidErr, pidCall, renderPhoneLogin, …(+65) |
+| APP-39 | 23863–25176 | — | const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', | pidUI, pidTokenGet, pidTokenSet, pidTokenClear, pidRosterCache, pidAdopt, pidLoadFail, pidEnter, phoneBoot, pidErr, pidCall, renderPhoneLogin, …(+65) |
 
 ## config.js — 646 lines, 0 chapters
 
