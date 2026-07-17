@@ -3687,7 +3687,20 @@ body { font-variant-numeric: tabular-nums; }
 .acct.has-photo { position: relative; }
 .acct.has-photo > :not(.sec-photo) { position: relative; z-index: 1; }
 .type-chip.mute { color: var(--gray); background: var(--gray-bg); }
-/* Work Orders section — accordion rows inside ONE .section, mirroring customer
+/* Collapse-section plates (unit detail) drop their own margin-bottom — the parent
+   .detail is a flex column with gap:12px, so the extra margin doubled the gap to 24px
+   between stacked collapsed rows. One gap per boundary (Jac — no dead space). */
+.acct.usec { margin-bottom: 0; }
+/* Unit-detail collapsible sections carry their RYG status (R11) on BOTH the collapsed
+   bar and the opened body — the .acct plate mirrors .section.sec-* (border + stamped
+   label tint), so a red section reads red whether it's a row or expanded. */
+.acct.sec-green { border-color: color-mix(in srgb, var(--green) 45%, transparent); }
+.acct.sec-green .acct-lbl { color: var(--green); }
+.acct.sec-yellow { border-color: color-mix(in srgb, var(--yellow) 45%, transparent); }
+.acct.sec-yellow .acct-lbl { color: var(--yellow); }
+.acct.sec-red { border-color: var(--red); box-shadow: 0 0 8px color-mix(in srgb, var(--red) 30%, transparent); }
+.acct.sec-red .acct-lbl { color: var(--red); text-shadow: 0 0 3px var(--red), 0 0 7px color-mix(in srgb, var(--red) 60%, transparent); }
+/* Work Orders section — accordion rows inside ONE collapse plate, mirroring customer
    Invoices (reuses .inv-row / .inv-open / .ir-* / .io-* ). An open WO's header
    collapses only via the ✕ chevron (its report stays inline-editable, so the whole
    bar can't be the toggle), and its body stacks flags → line items → totals → foot. */
@@ -3695,7 +3708,10 @@ body { font-variant-numeric: tabular-nums; }
 .wo-open .type-chip { flex: 0 0 auto; }
 .ir-woreport { color: var(--txt); font-weight: 700; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wo-open-body { padding: 11px 13px; display: flex; flex-direction: column; gap: 9px; }
-.wo-add { margin: 0 0 9px; }   /* +Work Order rides ABOVE the rows (Jac) — R5b secondary blue */
+/* +Work Order rides ABOVE the rows as a FULL-WIDTH dashed add-row (Jac — like the
+   +Rental / +Invoice add, spanning the width a regular row takes), not a centered pill. */
+.wo-add-pill { margin: 0 0 9px; }
+.wo-add-pill .add-field { width: 100%; justify-content: center; }
 
 /* compact fields — the dense 2-col grid (D21) */
 .acct-fgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
