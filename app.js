@@ -21380,6 +21380,29 @@ async function invoiceFontFaceCss() {
   } catch (e) { _invFontCss = ''; }
   return _invFontCss;
 }
+// Raw base64 (no data: prefix) of a blob — for handing an image to the backend email send.
+function blobToBase64(blob) {
+  return new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1] || ''); fr.onerror = rej; fr.readAsDataURL(blob); });
+}
+// Render the invoice sheet to a PNG blob for an email attachment. Reuses the open .pr-doc if it's
+// on screen; otherwise builds it OFF-SCREEN, renders, and cleans up. Returns null on ANY failure
+// (e.g. Firefox taints a foreignObject canvas) — so the email still sends WITHOUT an attachment and
+// the render never blocks the send.
+async function invoiceSheetPng(invoiceId) {
+  const inv = IDX.invoice.get(invoiceId); if (!inv) return null;
+  let temp = null;
+  try {
+    const onScreen = [...document.querySelectorAll('.pr-doc[data-inv]')].some((d) => d.dataset.inv === invoiceId);
+    if (!onScreen) {
+      temp = document.createElement('div');
+      temp.style.cssText = 'position:absolute;left:-99999px;top:0;width:640px;pointer-events:none';
+      temp.innerHTML = invoiceDocHtml(inv, { interactive: true });
+      document.body.appendChild(temp);
+    }
+    return await renderInvoicePng(invoiceId);
+  } catch (e) { return null; }
+  finally { if (temp) temp.remove(); }
+}
 // Plain-text quote summary for an emailed quote — mailto can't carry a PDF attachment,
 // so we inline the same figures the print doc shows (§12.5 line items + totals).
 function invoiceQuoteSummary(inv) {
@@ -21408,7 +21431,12 @@ async function commsAliasList() {
 async function emailQuoteSend(invoiceId, from) {
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
   toast('Sending email…');
-  let r; try { r = await backendCall('sendCustomerMessage', { channel: 'email', entity: 'invoice', recId: inv.invoiceId, customerId: inv.customerId, template: 'quote', from: from || '' }); }
+  // Attach the invoice sheet as a PNG (Jac 2026-07-17). Best-effort: a failed render (e.g. Firefox)
+  // just sends the email WITHOUT the image — never blocks the send. The backend re-resolves the
+  // recipient from the invoice's own customer, so the attachment can only reach that customer.
+  let attachment = null;
+  try { const png = await invoiceSheetPng(invoiceId); if (png) attachment = { name: `${invoiceShort(inv.invoiceId)}.png`, mimeType: 'image/png', dataB64: await blobToBase64(png) }; } catch (e) {}
+  let r; try { r = await backendCall('sendCustomerMessage', { channel: 'email', entity: 'invoice', recId: inv.invoiceId, customerId: inv.customerId, template: 'quote', from: from || '', attachment }); }
   catch (e) { r = { ok: false, reason: 'network' }; }
   if (r && r.ok) {
     logAction(inv, `Emailed quote to ${r.maskedTo || 'customer'}${r.fromUsed ? ` (from ${r.fromUsed})` : ''}`);
@@ -25505,7 +25533,7 @@ function exposeTestApi() {
       tripsLS, tripMerge, tripSplit, assignTripDriver, tripLabel, assignStopDriver, tripSetTime,
       tripPushSoon, tripPushNow, loadTripsFromBackend, tripsSyncFooter, setBackendPassword: (pw) => { backendPassword = pw || ''; },   // §2.3 Phase 4 sync — the setter is test-only (mirrors setRole), letting logic-test.mjs exercise the online path via a mocked window.fetch, never a real backend
       autoRunRepair, autoRunAnchorsFor, secToClock, AUTORUN_DAY_START_SEC, AUTORUN_EOD_DEADLINE_SEC, AUTORUN_LOAD_BUFFER_SEC, dispatchPinOf,
-      openCustomerForm, renderOverlay, render, printInvoice, invoiceDocHtml, renderInvoicePng, invoicePrintGroups, invoiceAmendments, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature,
+      openCustomerForm, renderOverlay, render, printInvoice, invoiceDocHtml, renderInvoicePng, invoiceSheetPng, invoicePrintGroups, invoiceAmendments, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature,
       wranglerSend, wranglerNewChat, openWranglerDock, wranglerDockPollTick, devUnlocked, openWranglerOps, wrOpsAgo, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }

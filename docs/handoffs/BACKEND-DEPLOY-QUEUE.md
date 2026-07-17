@@ -19,6 +19,22 @@
 - **Deploy flow:** the standard splice — pull live `Code.js` → append §authz functions + wire the
   router → `node --check` → STOP-gate (show Jac) → SA `push` HEAD → **Jac's editor New-version
   deploy** → verify anonymous JSON + a real approval round-trip on staging.
+## ⏳ READY TO PUSH — invoice email PNG attachment (2026-07-17)
+- **What:** `docs/handoffs/invoice-email-attachment-backend.gs` — a small ADDITIVE splice in
+  `sendCustomerMessage_` (email branch, right before `GmailApp.sendEmail`). The client
+  (`emailQuoteSend`, shipped on `claude/random-improvements-quivhs`) now renders the invoice sheet to
+  a PNG and passes `body.attachment = {name, mimeType:'image/png', dataB64}`; this patch decodes it to
+  a blob and adds `mailOpts.attachments`.
+- **Safety:** recipient is still server-resolved from the invoice's own customer (existing isolation
+  gate), so the image can only reach that customer; gated to `entity==='invoice'`, MIME-whitelisted
+  (png/jpeg), ~3MB size-capped, and a bad blob is dropped (never fails the send). Consent/quiet-hours/
+  cap/dedup all still run first, unchanged.
+- **Fail-safe until deployed:** the client sends the attachment field; the un-patched backend simply
+  ignores it → emails still send text-only (no regression). The image appears once this deploys.
+- **Deploy flow:** pull live `Code.js` → splice the block per the handoff header → `node --check` →
+  STOP-gate (show Jac) → SA `push` HEAD → **Jac's editor New-version deploy** → verify a real invoice
+  email arrives WITH the PNG on staging.
+
 ## ⏳ READY TO PUSH — membership dues PO-hold + create-ahead-regardless-of-payment (2026-07-17)
 - **What:** `docs/handoffs/2026-07-17-membership-po-advance-billing.gs` — additive splice against the LIVE
   membership block (reconciled 2026-07-17 against the live source pulled via the Drive connector; the live
