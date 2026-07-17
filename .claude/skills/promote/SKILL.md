@@ -57,6 +57,12 @@ order** and only then promote:
    push of `production`, then **verifies the LIVE site serves the new `?v=`** (`app.js` → HTTP
    200). Report the ✅ line. If Pages lags, re-check in ~1 min:
    `curl -s https://app.jacrentals.com/index.html | grep 'app.js?v='`.
+4. **Belt-and-suspenders slot release** (after the live-bytes ✅):
+   `node tools/staging-lease.mjs release --branch <b>` for the promoted feature's branch — `/merge`
+   should already have freed the slot, so this is just a sweep in case the merge's release was
+   skipped or missed. **Soft only:** a failure or an already-free slot is a no-op — never let it
+   block or unwind a completed promote. `promote.mjs` itself stays credential-free; this is a
+   separate `staging-lease.mjs` call.
 
 ## Hard rules
 - **Only on Jac's explicit "promote it".** Never promote proactively.
