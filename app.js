@@ -2301,6 +2301,7 @@ const state = {
   custAgOpen: {},             // Phase 1 — which Agreements row is expanded inside the Account section — { [customerId]: cardId | '__new__' | null } (one open at a time, mirrors custInvOpen); '__new__' = the +Agreement/Card creation panel
   custAgDraft: {},            // Phase 2b — the in-progress NEW-agreement draft — { [customerId]: {accountType, startDate, selfie, signature} }; view-local, cleared on sign/cancel
   svcSecOpen: {},             // Unit detail — is the Services (service-order) section expanded? { [unitId]: true }; collapsed by default (mirrors custAcctOpen), view-local, reset on a fresh unit open
+  unitSecOpen: {},            // Unit detail — which generic collapsible sections are expanded per unit: { [unitId]: { workorders|specs|gps|investment: true } }; all collapsed by default, view-local, reset on a fresh unit open (mirrors svcSecOpen). Coverage is folded into Investment (Jac 2026-07-16) — no separate 'coverage' key.
   woRowOpen: {},              // Unit detail — which Work Order row is expanded (accordion, one per unit, mirrors custInvOpen) — { [unitId]: woId | null }; collapsed by default, view-local, reset on a fresh unit open
   calSearch: '',               // Trips card mini-search (calendar is card-stateless — no session.cards.calendar — so this rides on state directly)
   calOpenTrip: null,           // §2.2b cab sheet — the ONE trip row expanded to its unit-facts sheet (row-body tap toggles; second tap collapses)
@@ -2536,7 +2537,7 @@ function openStandard(card, recId, recType) {
   if (card === 'customers' && state.funnelTab) delete state.funnelTab[recId];   // §3.5 — a fresh customer open resets the funnel toggle to Rental
   if (card === 'customers') { if (state.custInvOpen) delete state.custInvOpen[recId]; if (state.custInvMenu) delete state.custInvMenu[recId]; }   // §3.3 — collapse the embedded Invoices accordion on a fresh open (openInvoice re-sets it after)
   if (card === 'customers') { if (state.custAcctOpen) delete state.custAcctOpen[recId]; if (state.custAgOpen) delete state.custAgOpen[recId]; if (state.custAgDraft) delete state.custAgDraft[recId]; }   // Phase 1/2b — collapse the Account section + its Agreements accordion + any in-progress draft on a fresh open
-  if (card === 'units') { if (state.svcSecOpen) delete state.svcSecOpen[recId]; if (state.woRowOpen) delete state.woRowOpen[recId]; }   // collapse the Services section + any open Work Order row on a fresh open (mirrors the Account/Invoices collapse above)
+  if (card === 'units') { if (state.svcSecOpen) delete state.svcSecOpen[recId]; if (state.unitSecOpen) delete state.unitSecOpen[recId]; if (state.woRowOpen) delete state.woRowOpen[recId]; }   // collapse the Services + Work Orders / Specs / GPS / Investment sections + any open Work Order row on a fresh open (mirrors the Account/Invoices collapse above)
   ackComments(recOf(entityCardOf(card, recType), recId));   // viewing = acknowledged (Phase 6)
   // §10 + #54 — opening a Category while the rental-window picker is live (a window's
   // picked, so availWin is set) pivots the left column to Units, pre-filled with the
@@ -2676,6 +2677,21 @@ function applySnap(cs, snap) {
   if ('search' in snap) { cs.search = snap.search; cs.listLimit = snap.listLimit; }   // viewSnap → restore the narrowed list too
   restoreLayout(snap);                                                                // viewSnap → un-swap the column (bring the category cards back)
 }
+// Chrome-style Back "escape" (Jac 2026-07-17): the PHONE footer jog reflects the snapped
+// column's card, but drilling in via a fleet filter (js-fleet-filter) or an anchor both WIPE
+// that card's backStack — so Back had nothing to reverse and sat there dead (the reported bug).
+// When there's no view-history AND no record to drop, a Back instead clears whatever is
+// NARROWING the list (per-card fleet/search filter → session anchor/cascade → global search),
+// so Back always gets you back out. Phone-only — desktop keeps its search-bar ✕ and its
+// unchanged right-click-Back (this returns null off-phone, so both cardBack + cardJog no-op there).
+function jogBackEscape(cs, card) {
+  if (!cs || cs.backStack.length || (cs.mode === 'standard' && cs.recId != null)) return null;   // real history / record-drop wins
+  if (!document.body.classList.contains('is-phone')) return null;
+  if ((cs.filterTerms && cs.filterTerms.length) || (cs.search && cs.search.trim())) return 'filter';
+  if (activeSession().anchor) return 'anchor';
+  if (state.searchMode && (state.query.trim() || (state.filterTerms || []).length)) return 'search';
+  return null;
+}
 // Step this one card back / forward through its own history (other cards untouched).
 function cardBack(card) {
   const cs = activeSession().cards[card]; if (!cs) return;
@@ -2688,7 +2704,13 @@ function cardBack(card) {
       cs.mode = 'list'; cs.recId = null; cs.recType = null; cs.graphView = false;
       sweepEmptyDrafts();   // #8 — stepping back off a record sweeps any abandoned empty draft
       render();
+      return;
     }
+    // no history, no record to drop → step "back" OUT of whatever narrows this list (phone only)
+    const esc = jogBackEscape(cs, card);
+    if (esc === 'filter') { cs.filterTerms = []; cs.search = ''; afterFilterChange(card); }
+    else if (esc === 'anchor') clearAnchor();
+    else if (esc === 'search') clearSearch();
     return;
   }
   const prev = cs.backStack.pop();
@@ -2722,7 +2744,7 @@ function cardJog(card, cs, { always = false } = {}) {
   const arm = (dir, on, ico, tip) =>
     `<button class="jog-btn js-card${dir}" data-card="${esc(card)}" ${on ? '' : 'disabled'} data-tip="${tip}" aria-label="${tip}">${ico}</button>`;
   return `<div class="card-jog" role="group" aria-label="View history" data-r="R32">`
-    + arm('back', back || inRecord, I.chevL, 'Back')
+    + arm('back', back || inRecord || jogBackEscape(cs, card), I.chevL, 'Back')
     + arm('fwd', fwd, I.chevR, 'Forward')
     + `</div>`;
 }
@@ -6747,11 +6769,11 @@ const ROWS = {
       const dlabel = (nd && daysAhead >= 0 && daysAhead <= 7) ? DOW3[nd.getDay()] : fmtShortDate(next.iso).replace(' 0', ' ');
       const when = `${dlabel}${next.min != null ? ` ${compactClock(next.min)}` : ''}`;
       const nu = IDX.unit.get(next.unitId);
-      lead = `<button class="catr-slot js-cat-next" data-unit="${esc(next.unitId)}" data-tip="Next free: ${esc(nu ? nu.name : 'unit')} on ${esc(when)} (4-hr turnaround) — tap to open it">${badge(`Next ${when}`, 'red')}</button>${lostDemandBtn(c)}`;
+      lead = `<button class="catr-slot js-cat-next" data-unit="${esc(next.unitId)}" data-tip="Next free: ${esc(nu ? nu.name : 'unit')} on ${esc(when)} (4-hr turnaround) — tap to open it">${badge(`Next ${when}`, 'red')}</button>`;
     } else {
       // 0 free and no return date to show → tell the salesperson WHY in one word (Jac).
       const why = categoryUnavailReason(c.categoryId);
-      lead = `<div class="catr-slot catr-slot-none" data-tip="None available — ${esc(why.toLowerCase())}">${badge(`None · ${why}`, 'red')}</div>${lostDemandBtn(c)}`;
+      lead = `<div class="catr-slot catr-slot-none" data-tip="None available — ${esc(why.toLowerCase())}">${badge(`None · ${why}`, 'red')}</div>`;
     }
     // The three status pills (Passed · Not Ready · Failed inspection) filter Units to that
     // status in this category via the established js-fleet-filter path (like the detail mixbar).
@@ -6863,7 +6885,7 @@ const ROWS = {
     // §2.2b call the customer — a REAL tel: anchor (R7), no detour through Customers.
     const callHtml = (cu && cu.phone && telHref(cu.phone)) ? linkName(cu.phone, { href: telHref(cu.phone), icon: I.phone, js: 'trip-tap' }) : '';
     // §2.2b log completion from the row — the journey's js-yard flow verbatim (yardCapture
-    // → the capture overlay → saveYardCapture → D7 driver stamp). Done → the stamp clock.
+    // → the camera → commitYardCapture → D7 driver stamp). Done → the stamp clock.
     // Scoped to the PRIMARY stop only — the rest of a merged trip's stops log from the
     // cab sheet (one level down), so the row stays lean regardless of stop count.
     const capKey = t.task === 'Deliver' ? 'startCapture' : 'endCapture';
@@ -7463,10 +7485,10 @@ function woStaleEmpty(w) {
    on a fresh record open. Reuses the .acct* classes for pixel parity with Account.
    `summary` is raw HTML (caller escapes its pieces); `chip` = {text, tone} or null;
    `bg` = an optional faded photo-backdrop URL (the .has-photo scrim, same as .section). */
-function collapseSection({ open, toggleCls, rec, extraCls = '', lbl, summary, chip, body, bg }) {
-  return `<div class="acct${open ? ' open' : ''}${extraCls ? ' ' + extraCls : ''}${bg ? ' has-photo' : ''}">`
+function collapseSection({ open, toggleCls, rec, sec, extraCls = '', lbl, summary, chip, body, bg }) {
+  return `<div class="acct usec${open ? ' open' : ''}${extraCls ? ' ' + extraCls : ''}${bg ? ' has-photo' : ''}">`
     + (bg ? `<div class="sec-photo" style="--photo:url('${esc(bg)}')"></div>` : '')
-    + `<div class="acct-bar ${toggleCls}" data-rec="${esc(rec)}" aria-expanded="${open}">`
+    + `<div class="acct-bar ${toggleCls}" data-rec="${esc(rec)}"${sec ? ` data-sec="${esc(sec)}"` : ''} aria-expanded="${open}">`
     + `<span class="acct-lbl">${esc(lbl)}</span>`
     + `<span class="acct-sum">${summary}</span>`
     + (chip ? `<span class="type-chip ${chip.tone}">${esc(chip.text)}</span>` : '')
@@ -7475,6 +7497,10 @@ function collapseSection({ open, toggleCls, rec, extraCls = '', lbl, summary, ch
     + (open ? `<div class="acct-body">${body}</div>` : '')
     + `</div>`;
 }
+// Is one of the Unit-detail generic collapsible sections (Work Orders / Specs / GPS /
+// Coverage / Investment) expanded? All collapsed by default; state is view-local and
+// reset on a fresh unit open (mirrors svcSecOpen for the Services section).
+function unitSecOpen(u, id) { return !!(state.unitSecOpen && state.unitSecOpen[u.unitId] && state.unitSecOpen[u.unitId][id]); }
 // The bottleneck phase word shown on a WO row/chip: the worst open line's phase,
 // else 'Ready' when every line is done, else the WO-level phase for an empty WO.
 function woPhaseLabel(w, bottleIdx) {
@@ -7569,10 +7595,18 @@ function workOrdersSection(u) {
   const rows = wos.length
     ? wos.map((w) => (w.woId === openId ? woExpandedHtml(w) : woRowHtml(w))).join('')
     : '<div class="inv-empty muted">No open work orders.</div>';
-  return `<div class="section wo-sec"><h4>Work Orders${wos.length ? ` <span class="hmuted">· ${wos.length}</span>` : ''}</h4>`
-    + `<div class="add-row wo-add">${addBtn('Work Order', { js: 'js-new-wo-unit', link: true, data: { rec: u.unitId } })}</div>`
-    + `<div class="inv-scroll wo-scroll${openId ? ' expanded' : ''}">${rows}</div>`
-    + `</div>`;
+  // Section RYG (R11 on the collapse plate) = the worst OPEN work order's bottleneck;
+  // no open WOs reads green "Clear". Chip + border color follow it on the bar AND when open.
+  const worst = wos.reduce((c, w) => { const k = woBottleneck(w).color; const rank = { red: 3, yellow: 2, green: 1 }[k] || 0; return rank > c.rank ? { rank, color: k } : c; }, { rank: 0, color: null });
+  const secColor = wos.length ? (worst.color === 'red' ? 'red' : worst.color === 'green' ? 'green' : 'yellow') : 'green';
+  const chip = wos.length
+    ? { text: { red: 'Needs parts', yellow: 'In progress', green: 'Ready' }[secColor], tone: { red: 'bad', yellow: 'warn', green: 'ok' }[secColor] }
+    : { text: 'Clear', tone: 'ok' };
+  // +Work Order rides ABOVE the rows as a FULL-WIDTH add-row (Jac — like the +Rental / +Invoice
+  // add), not a centered pill; the rows live below it inside the section body.
+  const body = `<div class="wo-add-pill">${addBtn('Work Order', { js: 'js-new-wo-unit', link: true, data: { rec: u.unitId } })}</div>`
+    + `<div class="inv-scroll wo-scroll${openId ? ' expanded' : ''}">${rows}</div>`;
+  return collapseSection({ open: unitSecOpen(u, 'workorders'), toggleCls: 'js-unit-sec', sec: 'workorders', rec: u.unitId, lbl: 'Work Orders', summary: `<b>${wos.length} open</b>`, chip, body, extraCls: 'sec-' + secColor });
 }
 /* Per-unit SERVICES section (Shop retirement, Jac 2026-07-07): the recurring
    countdown list — wash pinned to the top, then most-urgent first — with the
@@ -7615,12 +7649,13 @@ function serviceTasksHtml(u, { title = 'Services' } = {}) {
   // COLLAPSED-BY-DEFAULT (mirrors the customer Account section): a one-line bar whose
   // status chip = the worst task's live service status; the task list rides behind the chevron.
   const open = !!(state.svcSecOpen && state.svcSecOpen[u.unitId]);
+  const secColor = worst && ['red', 'yellow', 'green'].includes(worst.color) ? worst.color : 'green';
   const chip = worst && ['red', 'yellow', 'green'].includes(worst.color)
     ? { text: getStatus('serviceStatus', worst.status).label, tone: { red: 'bad', yellow: 'warn', green: 'ok' }[worst.color] }
     : { text: 'Up to date', tone: 'ok' };
   const summary = `<b>${rows.length} task${rows.length === 1 ? '' : 's'}</b>${worst ? `<span class="acct-dot">·</span>${esc(worst.name)}` : ''}`;
   const body = `<div class="hlog">${list}</div>${more}`;
-  return collapseSection({ open, toggleCls: 'js-svc-sec-toggle', rec: u.unitId, lbl: title, summary, chip, body });
+  return collapseSection({ open, toggleCls: 'js-svc-sec-toggle', rec: u.unitId, lbl: title, summary, chip, body, extraCls: 'sec-' + secColor });
 }
 /* ITEM BALANCE — every invoice line item carries its own balance. A partial
    payment is assigned per line item through the payment popup; allocations are
@@ -8002,7 +8037,7 @@ const DETAIL = {
     const yr = (iso) => `${fmtShortDate(iso)}, ${parseISO(iso).getFullYear()}`;
     const makeModel = [u.year, u.make, u.model].filter(Boolean).join(' ');
 
-    const specs = `<div class="section"><h4>Specs</h4><div class="fieldstack">
+    const specsBody = `<div class="fieldstack">
       ${efld('units', u, 'unitId', 'categoryId', 'Category', { editKind: 'unitCategory', admin: true, link: true, fmt: (id) => IDX.category.get(id)?.name || 'Unknown category' })}
       ${efld('units', u, 'unitId', 'serial', 'Add serial', { pfx: 'S/N' })}
       ${efld('units', u, 'unitId', 'year', 'Year', { type: 'number' })}
@@ -8010,7 +8045,9 @@ const DETAIL = {
       ${efld('units', u, 'unitId', 'modelId', 'Model', { editKind: 'unitModel', admin: true, link: true, fmt: (id) => IDX.model.get(id)?.name || 'Unknown model' })}
       ${efld('units', u, 'unitId', 'weight', 'Weight')}
       <div class="kv"><span class="v inline-edit" data-edit="unitHours" data-rec="${u.unitId}">${num(u.currentHours)} HRS</span></div>
-    </div></div>`;
+    </div>`;
+    // Specs is a plain-fact section — no health status, so it reads a neutral green "OK".
+    const specs = collapseSection({ open: unitSecOpen(u, 'specs'), toggleCls: 'js-unit-sec', sec: 'specs', rec: u.unitId, lbl: 'Specs', summary: `<b>${esc(cat?.name || makeModel || 'Unit')}</b><span class="acct-dot">·</span>${num(u.currentHours)} HRS`, chip: { text: 'OK', tone: 'ok' }, body: specsBody, extraCls: 'sec-green' });
     // GPS connect wizard (spec §5a) — mapping now happens through a guided popup
     // (provider → identify → confirmed live signal) instead of hand-typing gpsProvider/
     // gpsDeviceId; the "No GPS" badge grows a +Connect add, an already-mapped unit gets
@@ -8023,7 +8060,7 @@ const DETAIL = {
     const gpsM = (gsUnit && gsUnit.live) ? gsUnit.machine : null;
     const gpsMapHref = (gpsM && gpsM.lat != null && gpsM.lng != null) ? `https://www.google.com/maps?q=${gpsM.lat},${gpsM.lng}` : '';
     const gpsSeen = gpsM ? gpsRelTime(gpsM.lastSeen) : '';
-    const gps = `<div class="section"><h4>GPS</h4><div class="fieldstack">
+    const gpsBody = `<div class="fieldstack">
       ${kvPills((gsUnit ? statusPill('gpsStatus', gsUnit.status, { focal: true }) : badge('No GPS')) + (gpsMapped ? '' : addBtn('Connect GPS', { link: true, js: 'js-gps-connect', data: { rec: u.unitId } })))}
       ${gpsStale ? `<div class="kv" style="justify-content:center"><span class="muted" style="font-size:11px">Last known — live link down</span></div>` : ''}
       ${gpsM ? `<div class="kv" style="justify-content:center;gap:8px;flex-wrap:wrap">
@@ -8036,7 +8073,16 @@ const DETAIL = {
       ${efld('units', u, 'unitId', 'gpsPlacement', 'Placement')}
       ${gpsShutdownControl(u, gpsM)}
       ${gpsMapped ? gpsFeedHtml(u) : ''}
-    </div></div>`;
+    </div>`;
+    // GPS RYG follows the gpsStatus registry (Reporting=green · Verify=yellow · Not
+    // Reporting=red). A stale but otherwise-green link (showing last-known while the live
+    // feed is down) drops to yellow; an untracked unit reads red — no visibility is the
+    // worst tracking state, same rank as Not Reporting.
+    const gpsReg = gsUnit ? getStatus('gpsStatus', gsUnit.status) : null;
+    let gpsSecColor = gpsReg && ['green', 'yellow', 'red'].includes(gpsReg.color) ? gpsReg.color : 'red';
+    if (gpsStale && gpsSecColor === 'green') gpsSecColor = 'yellow';
+    const gpsChip = { text: gsUnit ? (gpsStale ? 'Last known' : gpsReg.label) : 'No GPS', tone: { green: 'ok', yellow: 'warn', red: 'bad' }[gpsSecColor] };
+    const gps = collapseSection({ open: unitSecOpen(u, 'gps'), toggleCls: 'js-unit-sec', sec: 'gps', rec: u.unitId, lbl: 'GPS', summary: `<b>${gpsMapped ? esc(u.gpsProvider) : 'Not connected'}</b>${gpsSeen ? `<span class="acct-dot">·</span>${esc(gpsSeen)}` : ''}`, chip: gpsChip, body: gpsBody, extraCls: 'sec-' + gpsSecColor });
     /* COVERAGE — the yard's own equipment insurance on this unit (spec equipment-insurance
        Phase 1, Jac 2026-06-29). STATUS + riders are open to every role (a driver must know a
        machine is uninsured before it leaves the yard); insurer/policy/dates render at ≥money;
@@ -8055,7 +8101,10 @@ const DETAIL = {
     const riderCtl = (covEditable && cov.covered)
       ? segCtl(covTypes.map((t) => ({ label: t.label, js: 'js-cov-type', data: { rec: u.unitId, id: t.id }, on: (ins.types || []).includes(t.id) ? 'green' : null })))
       : (cov.covered ? kvPills(riderBadges) : '');
-    const coverage = `<div class="section"><h4>Coverage</h4><div class="fieldstack centered">
+    // Coverage folded into Investment (Jac 2026-07-16) — the toggle (+ riders/policy when insured)
+    // rides plainly at the TOP of the Investment body; no separate titled Coverage section.
+    const coverageBody = `<div class="fieldstack centered" style="margin-bottom:12px">
+
       <div class="kv" style="justify-content:center">${covToggle}</div>
       ${riderCtl ? `<div class="kv" style="justify-content:center">${riderCtl}</div>` : ''}
       ${cov.covered && canMoney() ? `
@@ -8065,7 +8114,7 @@ const DETAIL = {
       ${cov.covered && adminUnlocked() ? `
         ${efld('units', u, 'unitId', 'insurance.insuredValue', 'Insured value', { type: 'number', admin: true, fmt: money, sfx: 'insured value' })}
         ${efld('units', u, 'unitId', 'insurance.premium', 'Premium', { type: 'number', admin: true, fmt: money, sfx: `premium / ${ins.premiumCadence === 'Annual' ? 'yr' : 'mo'}` })}` : ''}
-    </div></div>`;
+    </div>`;
     /* INVESTMENT — left = entry · right = derived, ordered per Jac:
        Total Revenue → Monthly → Work Orders → Profit · (ROI%) */
     const invested = Number(u.trueCost) || Number(u.purchasePrice) || 0;
@@ -8081,8 +8130,8 @@ const DETAIL = {
     const soldInfo = (u.fleetStatus === 'Sold' && canMoney() && (u.salePrice != null || u.saleDate))
       ? `${u.salePrice != null ? kv(money(u.salePrice), { pfx: 'Sale price', derived: true }) : ''}${u.saleDate ? kv(yr(u.saleDate), { pfx: 'Sale date', derived: true }) : ''}`
       : '';
-    const investment = `<div class="section"><h4>Investment</h4>
-      <div class="split">
+    const investmentBody = `<div class="split">
+
         <div class="side">
           ${efld('units', u, 'unitId', 'purchasePrice', 'Purchase price', { type: 'number', sfx: 'paid', fmt: money, money: true })}
           ${efld('units', u, 'unitId', 'purchaseDate', 'Purchase date', { type: 'date', sfx: 'purchased', fmt: yr })}
@@ -8097,7 +8146,13 @@ const DETAIL = {
           ${kv(`${money(profit)}${roi != null && canMoney() ? ` · (${roi}%)` : ''}`, { pfx: 'Profit', derived: true })}
         </div>
       </div>
-      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">${sellAction}${gatePill('unitFleetStatus', u.fleetStatus, 'js-fleetstatus', { rec: u.unitId })}</div></div>`;
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">${sellAction}${gatePill('unitFleetStatus', u.fleetStatus, 'js-fleetstatus', { rec: u.unitId })}</div>`;
+    // Investment now HOLDS Coverage (Jac 2026-07-16): the coverage toggle + riders/policy ride at
+    // the top of the body; coverage STATUS is the section's chip + RYG color (green insured / yellow
+    // uninsured) so a driver still sees Insured/Uninsured at a glance without expanding — the
+    // uninsured-active card flag is untouched. Summary shows ownership duration only, never a
+    // dollar/margin figure (that stays behind the money gate inside the body).
+    const investment = collapseSection({ open: unitSecOpen(u, 'investment'), toggleCls: 'js-unit-sec', sec: 'investment', rec: u.unitId, lbl: 'Investment', summary: `<b>${u.purchaseDate ? `Owned ${monthsOwned} mo` : 'No purchase data'}</b>`, chip: cov.covered ? { text: 'Insured', tone: 'ok' } : { text: 'Uninsured', tone: 'warn' }, body: coverageBody + investmentBody, extraCls: cov.covered ? 'sec-green' : 'sec-yellow' });
     /* INSPECTION — live condition + wash toggles, timestamp in the header */
     const li2 = latestInspForUnit(u.unitId);
     const stampDate = u.condAt || li2?.date || '';
@@ -8108,13 +8163,13 @@ const DETAIL = {
       <h4>Inspection <span class="hmuted">· ${esc(stamp)}</span></h4>
       <div class="fieldstack">
         <div class="kv" style="justify-content:center">
-          ${checklistRequired(u)
-    ? `<button class="pill ignition js-open-checklist" data-rec="${u.unitId}" data-r="R17">${CARD_ICON.inspections} ${pendingInspForUnit(u.unitId) ? 'Resume inspection' : '+ Inspection'}</button>`
-    : segCtl([
+          ${segCtl([
             { label: '✓ Pass', js: 'js-cond', data: { rec: u.unitId, val: 'Pass' }, on: cond === 'Ready' ? 'green' : null },
             { label: 'Not Ready', js: 'js-cond', data: { rec: u.unitId, val: 'Not Ready' }, on: cond === 'Not Ready' ? 'yellow' : null },
             { label: '✕ Fail', js: 'js-cond', data: { rec: u.unitId, val: 'Fail' }, on: cond === 'Failed' ? 'red' : null },
           ])}
+        </div>
+        <div class="kv" style="justify-content:center">
           ${segCtl([
             { label: `${I.droplet} Wash`, js: 'js-washseg', data: { rec: u.unitId, val: 'Wash' }, on: u.washChoice === 'Wash' || u.washRequested ? 'yellow' : null },
             { label: "Don't Wash", js: 'js-washseg', data: { rec: u.unitId, val: 'DontWash' }, on: u.washChoice === 'DontWash' && !u.washRequested && !washedToday ? 'blue' : null },
@@ -8142,7 +8197,6 @@ const DETAIL = {
       ${woSec}
       ${specs}
       ${gps}
-      ${coverage}
       ${investment}
       ${notes.bottom}
       ${historySection('units', u, cs, hchips)}
@@ -8348,6 +8402,7 @@ const DETAIL = {
       ${st.forSale ? kvPills(badge(st.forSale + ' For Sale', 'purple')) : ''}
       ${kv(`${num(st.avgHours)} HRS`, { sfx: 'avg hours', derived: true })}
       ${(c.lostDemand || []).length ? kv(`${(c.lostDemand || []).length}`, { sfx: 'lost-demand asks', derived: true }) : ''}
+      ${kvPills(lostDemandBtn(c))}
       ${c.description ? kv(c.description, { wrap: true }) : ''}
     </div></div>`;
     // MODELS (Jac 2026-07-07): the category derives which models a unit can pick —
@@ -9699,7 +9754,10 @@ function bottomBarInner() {
  *  (photo sweep) tools. One trigger instead of a flat run of icon-only buttons. */
 function toolsMenuRows() {
   const item = (js, icon, label, on) => `<button class="dd-item ${js}${on ? ' on' : ''}"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${icon}</span>${esc(label)}</button>`;
-  let html = item('js-qr', I.qr, 'Share session (QR)')
+  // Manual Update — force the newest build past a stale mobile cache (Jac 2026-07-16).
+  let html = `<button class="dd-item js-app-update"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${STATUS_ICONS.refresh}</span>Check for updates<span style="margin-left:auto;color:var(--txt-3);font-size:11px;letter-spacing:.3px">v${esc(appVersion())}</span></button>`
+    + `<div class="menu-sep"></div>`;
+  html += item('js-qr', I.qr, 'Share session (QR)')
     + item('js-previews', state.previewsOn ? I.eye : I.eyeOff, state.previewsOn ? 'Hover previews: on' : 'Hover previews: off', state.previewsOn)
     + item('js-hotkeys', I.mouse, 'Mouse & keyboard shortcuts');
   html += `<div class="dd-sec-lbl">GPS / Fleet</div>`
@@ -13158,23 +13216,6 @@ function buildPopupEl(o, overlay, opts = {}) {
         <input class="lf-in js-rf-part" placeholder="Part Name" value="" style="width:100%;margin-bottom:4px">
         <p class="muted" style="font-size:11px;margin:4px 0 4px">✨ Empty fields are filled by Mr. Wrangler after saving: the photo is read for the vendor, amount, date and category.</p>` });
     overlay.appendChild(pop);
-  } else if (o.kind === 'capture') {
-    // v2 yard journey: every log opens this popup; with transport, the address
-    // + map pin ride the top so the driver sees the destination while logging.
-    const r = IDX.rental.get(o.rentalId);
-    const isDel = r && r.transportType && r.transportType !== 'Self';
-    const title = o.cap === 'fc' ? 'Log Field Call' : o.cap === 'start' ? (isDel ? 'Log Delivery' : 'Log Start') : (isDel ? 'Log Recovery' : 'Log End');
-    const pop = el('div', 'popup'); pop.style.width = '380px';
-    pop.innerHTML = popupShell({ icon: I.video, title, tag: o.cap === 'fc' ? 'Field call · log' : 'Yard journey · log',
-      foot: `${ghostPill('Cancel', { js: 'js-close' })}<button class="pill ignition js-cap-save" data-r="R17">${o.cap === 'fc' ? 'Log Field Call' : 'Log it'}</button>`,
-      body: `
-        ${r && r.deliveryAddress && o.cap !== 'fc' ? `
-        <div style="border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:10px">
-          <div style="padding:8px 11px;font-size:12.5px;display:flex;align-items:center;gap:7px"><span>📍</span><b>${esc(r.deliveryAddress)}</b></div>
-          <div class="site-map" style="height:96px">${r.sitePin && r.sitePin.lat != null ? '<span class="site-pin" style="left:50%;top:50%">📍</span>' : ''}<span class="map-tag">driver destination${r.sitePin && r.sitePin.lat != null ? ' — exact pin set' : ''}</span></div>
-        </div>` : ''}
-        <label class="cap-drop">${I.video} <span>${state.capFile ? '✓ video attached' : 'Tap to capture / attach the video'}</span><input type="file" accept="video/*,image/*" capture="environment" class="js-cap-file" style="display:none"></label>` });
-    overlay.appendChild(pop);
   } else if (o.kind === 'wodone') {
     // v2: Complete WO with open line items → warn, don't hard-block
     const w = IDX.wo.get(o.woId);
@@ -13678,27 +13719,31 @@ function buildPopupEl(o, overlay, opts = {}) {
       <div class="popup-foot"><button class="pill ghost js-ck-pending" data-r="R18">Keep as pending</button><button class="pill ignition js-ck-complete${allDone ? '' : ' is-disabled'}" data-r="R17">Complete inspection</button></div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'inspection') {
-    // §12.8 Failure report — triggered when an inspection is marked Failed: capture a
-    // photo/video + a description for the auto-created work order.
+    // §12.8 Inspection record. On a FAIL this is the failure report — photo/video + a description
+    // for the auto-created WO, plus the bill-customer gate. On a PASS (re-opened via
+    // openInspectionRecord — "click Pass again to view the done inspection") it drops the failure
+    // framing and the bill gate (nothing to charge) and reads as a clean inspection view.
     const n = IDX.insp.get(o.recId);
     if (!n) { return false; }
     const unit = IDX.unit.get(n.unitId);
     const ir = inspResult(n);
+    const passed = n.checklist === 'Pass';
     const isVideo = (n.photo || '').startsWith('data:video');
     const media = n.photo
-      ? `<div class="insp-photo">${isVideo ? `<video src="${esc(n.photo)}" controls></video>` : `<img src="${esc(n.photo)}" alt="failure photo">`}<label class="insp-rephoto">Replace<input type="file" accept="image/*,video/*" class="js-insp-photo" data-rec="${n.inspectionId}" hidden></label></div>`
+      ? `<div class="insp-photo">${isVideo ? `<video src="${esc(n.photo)}" controls></video>` : `<img src="${esc(n.photo)}" alt="inspection photo">`}<label class="insp-rephoto">Replace<input type="file" accept="image/*,video/*" class="js-insp-photo" data-rec="${n.inspectionId}" hidden></label></div>`
       : `<label class="insp-photo empty"><span>${I.video} Add photo / video</span><input type="file" accept="image/*,video/*" class="js-insp-photo" data-rec="${n.inspectionId}" hidden></label>`;
+    const descPh = passed ? 'Notes — condition, observations…' : 'Describe the failure (what’s wrong, parts needed)…';
     const pop = el('div', 'popup insp-popup');
-    pop.innerHTML = popupShell({ icon: CARD_ICON.inspections, title: `Failure report — ${unit?.name || '—'}`, tag: 'Inspection · failure', danger: true,
+    pop.innerHTML = popupShell({ icon: CARD_ICON.inspections, title: `${passed ? 'Inspection' : 'Failure report'} — ${unit?.name || '—'}`, tag: `Inspection · ${passed ? 'passed' : 'failure'}`, danger: !passed,
       foot: `<button class="pill ignition js-close" data-r="R17">Done</button>`,
       body: `
         <div class="pillrow" style="margin-bottom:12px">${unit ? unitPill(unit.unitId) : ''}<span class="pill c-${ir.color}">${esc(ir.label)}</span>${n.woId ? refPill('workOrders', n.woId, 'Work Order') : ''}<span class="muted" style="font-size:12px;margin-left:auto">${esc(fmtShortDate(n.date))}</span></div>
         ${media}
-        <textarea class="insp-desc js-insp-desc" data-rec="${n.inspectionId}" placeholder="Describe the failure (what's wrong, parts needed)…">${esc(n.description || '')}</textarea>
-        <div class="insp-gate" style="margin-top:12px"><span class="insp-gate-lbl">Charge the customer?</span>${segCtl([
+        <textarea class="insp-desc js-insp-desc" data-rec="${n.inspectionId}" placeholder="${esc(descPh)}">${esc(n.description || '')}</textarea>
+        ${passed ? '' : `<div class="insp-gate" style="margin-top:12px"><span class="insp-gate-lbl">Charge the customer?</span>${segCtl([
           { label: 'Bill', js: 'js-insp-bill', data: { rec: n.inspectionId, val: 'Yes' }, on: n.billCustomer === 'Yes' ? 'green' : null },
           { label: 'Don’t bill', js: 'js-insp-bill', data: { rec: n.inspectionId, val: 'No' }, on: n.billCustomer === 'No' ? 'gray' : null },
-        ], 'seg-bill')}</div>` });
+        ], 'seg-bill')}</div>`}` });
     overlay.appendChild(pop);
   } else if (o.kind === 'service') {
     // §7.7/§12.7 service completion — Hours at Completion · Date · Photo · Notes
@@ -13912,7 +13957,6 @@ const WINDOW_CATALOG = [
   { kind: 'modelSchedule', label: 'Model maintenance schedule', tag: 'Category · model',       sample: () => ({ modelId: ((DATA.models || [])[0] || {}).modelId }) },
   { kind: 'svctaskform',   label: 'Add / Edit schedule task', tag: 'Model · schedule',          sample: () => ({ modelId: ((DATA.models || [])[0] || {}).modelId, idx: null }) },
   { kind: 'receiptform',   label: 'New / Edit Receipt',      tag: 'Expense · receipt',         sample: () => ({}) },
-  { kind: 'capture',       label: 'Log yard journey',        tag: 'Yard journey · log',        sample: () => ({ rentalId: ((DATA.rentals || [])[0] || {}).rentalId, cap: 'start' }) },
   { kind: 'wodone',        label: 'Complete Work Order?',    tag: 'Work order · confirm',      sample: () => ({ woId: ((DATA.workOrders || [])[0] || {}).woId }) },
   { kind: 'role',          label: 'Role KPIs',               tag: 'Role · scorecard',          sample: () => ({ role: (ROLES[0] || {}).id }) },
   { kind: 'requests',      label: 'Requests inbox',          tag: 'Mr. Wrangler · approvals',  sample: () => ({}) },
@@ -16479,6 +16523,44 @@ function swInit() {
   } catch (e) {}
 }
 
+/* ── Manual "Update" (tools menu, Jac 2026-07-16) ─────────────────────────────────
+   Pages serves index.html with max-age=600 and no per-file hashing, and mobile Safari
+   pins it hard — so there was NO user-facing way to force the newest build (a shipped
+   fix could sit invisible on a cached device for a long while). This checks the live
+   build token, and if it's newer, clears the SW + caches and hard-reloads PAST the HTTP
+   cache (a throwaway ?_u= on the navigation busts Safari's cached index.html — the thing
+   that pins everyone to the old build). Same-version = a friendly "you're current". */
+function appVersion() { return (document.querySelector('script[src*="app.js?v="]')?.src.match(/v=([\w-]+)/) || [])[1] || 'dev'; }
+async function clearAppCaches() {
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for (const r of regs) { try { if (r.waiting) r.waiting.postMessage('skipWaiting'); await r.update(); } catch (e) {} }
+    }
+    if (self.caches && caches.keys) { const ks = await caches.keys(); await Promise.all(ks.map((k) => caches.delete(k))); }
+  } catch (e) {}
+}
+async function checkForUpdate() {
+  const cur = appVersion();
+  toast('Checking for a newer build…');
+  // CRITICAL: on production the SW (sw.js) serves the CACHED index.html for a plain fetch — it
+  // matches with ignoreSearch, so a ?_= cache-buster is ignored and a naive token check reads
+  // STALE bytes (→ a false "you're up to date" that never updates). Clear the SW + HTTP caches
+  // FIRST so the check below genuinely hits the network. (Staging/localhost have no SW, so this
+  // is a harmless no-op there; the one-time cache re-fill on an "already current" tap is fine.)
+  await clearAppCaches();
+  let latest = null;
+  try {
+    const res = await fetch('index.html?_=' + Date.now(), { cache: 'no-store' });
+    latest = ((await res.text()).match(/app\.js\?v=([\w-]+)/) || [])[1] || null;
+  } catch (e) { /* offline / unreachable */ }
+  if (!latest) { toast('Couldn’t reach the server — check your connection and try again.'); return; }
+  if (latest === cur) { toast(`You’re already on the latest build (${cur}). ✓`); return; }
+  toast(`New build ${latest} — updating…`);
+  const u = new URL(location.href); u.searchParams.set('_u', Date.now().toString(36));   // bust the cached index.html on reload
+  location.replace(u.toString());
+}
+
 const PERF = { lcp: null, inp: null, cls: 0, renders: [], over: 0, flushed: false };
 function perfInit() {
   if (!CFG.PERF_VITALS_ON || typeof PerformanceObserver === 'undefined') return;
@@ -17464,6 +17546,7 @@ function onClick(e) {
   // no-op stubs (real enrollment/charge is Phase 2; block-gate enforcement is Phase 3).
   if (closest('.js-acct-toggle')) { e.stopPropagation(); const rec = closest('.js-acct-toggle').dataset.rec; return guardAgLeave(rec, () => { state.custAcctOpen = state.custAcctOpen || {}; state.custAcctOpen[rec] = !state.custAcctOpen[rec]; render(); }); }
   if (closest('.js-svc-sec-toggle')) { e.stopPropagation(); const rec = closest('.js-svc-sec-toggle').dataset.rec; state.svcSecOpen = state.svcSecOpen || {}; state.svcSecOpen[rec] = !state.svcSecOpen[rec]; return render(); }   // Unit detail — collapse/expand the Services (service-order) section
+  if (closest('.js-unit-sec')) { e.stopPropagation(); const b = closest('.js-unit-sec'); const rec = b.dataset.rec, sec = b.dataset.sec; state.unitSecOpen = state.unitSecOpen || {}; state.unitSecOpen[rec] = state.unitSecOpen[rec] || {}; state.unitSecOpen[rec][sec] = !state.unitSecOpen[rec][sec]; return render(); }   // Unit detail — collapse/expand a generic detail section (Work Orders / Specs / GPS / Investment[+Coverage])
   if (closest('.js-wo-row')) { e.stopPropagation(); const b = closest('.js-wo-row'); const un = b.dataset.unit, rec = b.dataset.rec; state.woRowOpen = state.woRowOpen || {}; state.woRowOpen[un] = (state.woRowOpen[un] === rec) ? null : rec; return render(); }   // Unit detail — open/collapse one Work Order row (accordion, mirrors js-inv-row)
   if (closest('.js-wo-collapse')) { e.stopPropagation(); const un = closest('.js-wo-collapse').dataset.unit; if (state.woRowOpen) state.woRowOpen[un] = null; return render(); }   // collapse the open Work Order row
   if (closest('.js-ag-row')) { e.stopPropagation(); const b = closest('.js-ag-row'); const rec = b.dataset.rec, card = b.dataset.card; return guardAgLeave(rec, () => { state.custAgOpen = state.custAgOpen || {}; state.custAgOpen[rec] = (state.custAgOpen[rec] === card) ? null : card; render(); }); }
@@ -17666,6 +17749,7 @@ function onClick(e) {
   if (closest('.js-qr')) { closeMenus(); return shareSession(); }
   if (closest('.js-previews') || closest('.js-roweye')) { e.stopPropagation(); state.previewsOn = !state.previewsOn; if (!state.previewsOn) hideHoverPreview(); try { localStorage.setItem('jactec.previewsOff', state.previewsOn ? '0' : '1'); } catch (e) {} toast(state.previewsOn ? 'Hover previews on.' : 'Hover previews off — every eye runs red.'); closeMenus(); return render(); }
   if (closest('.js-hotkeys')) { closeMenus(); return openOverlay({ kind: 'hotkeys' }); }
+  if (closest('.js-app-update')) { closeMenus(); return checkForUpdate(); }   // manual "Update" — force the newest build past a stale mobile cache
   if (closest('.js-lint')) {   // R0 flash-lint toggle — persists per device
     const on = document.body.classList.toggle('rw-lint');
     try { localStorage.setItem('jactec.lint', on ? '1' : '0'); } catch (err) {}
@@ -18051,7 +18135,6 @@ function onClick(e) {
   if (closest('.js-ck-pending')) { e.stopPropagation(); closeOverlay(); toast('Inspection kept as pending — resume it anytime.'); return; }
   if (closest('.js-washseg')) { const b = closest('.js-washseg'); return setUnitWash(b.dataset.rec, b.dataset.val); }
   if (closest('.js-yard')) { const b = closest('.js-yard'); return yardCapture(b.dataset.rec, b.dataset.cap, b.dataset.unit); }
-  if (closest('.js-cap-save')) return saveYardCapture();
   // ── inline transport editor (replaces the old `site` popup) ──
   if (closest('.js-site-go')) { const b = closest('.js-site-go'); e.stopPropagation(); return openTransportEdit(b.dataset.rec, b.dataset.unit || null, 'delivery'); }   // legacy dispatch links still open the editor
   if (closest('.js-tedit-open')) { const b = closest('.js-tedit-open'); e.stopPropagation(); return openTransportEdit(b.dataset.rec, b.dataset.unit || null, b.dataset.leg || 'delivery'); }
@@ -18894,18 +18977,42 @@ function setUnitCondition(unitId, val) {
   const u = IDX.unit.get(unitId); if (!u) return;
   const lock = unitCondLock(u);
   if (lock) return flashOr(`.js-wo-complete[data-rec="${lock.woId}"]`, `🔒 Condition locked — WO “${lock.woReport}” is open from a ${lock.woType === 'Field Call' ? 'field call' : 'failed inspection'}. Complete it to update the condition.`);
-  // R19: Pass needs a wash decision first — glow the wash toggle instead of an error
-  const washedToday = (u.serviceLog || []).some((l) => l.taskId === 'svc-wash' && l.date === TODAY_ISO);
-  if (val === 'Pass' && !u.washChoice && !u.washRequested && !washedToday) return attnFlash('.seg-wash');
-  u.condAt = TODAY_ISO; u.condClock = nowClock();
-  if (val === 'Pass' || val === 'Fail') {
-    const n = newInspectionForUnit(u);
-    if (val === 'Fail') n.wash = n.wash || 'No';
-    return setInspResult(n.inspectionId, val);     // handles unit status, auto-WO + fail popup
+  // PASS is the gate (Jac 2026-07-17 — the confusing "+ Inspection" button is retired; the toggle
+  // IS the interface). Already Passed → Pass re-opens the done inspection to view; a checklist
+  // category → Pass opens the checklist takeover (completing it cascades to Pass); otherwise a
+  // direct pass, which still needs a wash decision first (R19 — glow the wash toggle, not an error).
+  if (val === 'Pass') {
+    if (u.inspectionStatus === 'Ready') return openInspectionRecord(unitId);
+    if (checklistRequired(u)) return openChecklist(unitId);
+    const washedToday = (u.serviceLog || []).some((l) => l.taskId === 'svc-wash' && l.date === TODAY_ISO);
+    if (!u.washChoice && !u.washRequested && !washedToday) return attnFlash('.seg-wash');
+    u.condAt = TODAY_ISO; u.condClock = nowClock();
+    return setInspResult(newInspectionForUnit(u).inspectionId, 'Pass');
   }
+  // FAIL: a unit that breaks while OUT ON RENT is a field call (red-flag the rental, roll a truck,
+  // show in dispatch); a yard unit with no active rental is a bench failed-inspection like before.
+  if (val === 'Fail') {
+    u.condAt = TODAY_ISO; u.condClock = nowClock();   // stamp the condition change on either path
+    const ar = activeRentalForUnit(unitId);
+    if (ar) return markFieldCall(ar.rentalId);        // on-rent breakdown → field call (truck roll + dispatch)
+    const n = newInspectionForUnit(u); n.wash = n.wash || 'No';
+    return setInspResult(n.inspectionId, 'Fail');     // yard bench fail: auto-WO + §12.8 photo/notes popup
+  }
+  // NOT READY resets the inspection back to pending.
+  u.condAt = TODAY_ISO; u.condClock = nowClock();
   u.inspectionStatus = 'Not Ready';
   reindex('units', u); logAction(u, 'Condition → Not Ready');
   toast('Condition → Not Ready'); reanchorRender();
+}
+/* Pass-again on a passed unit "gets back into" the completed inspection: a real checklist
+   record re-opens the takeover; a plain condition-pass opens the §12.8 record popup. */
+function openInspectionRecord(unitId) {
+  const u = IDX.unit.get(unitId); if (!u) return;
+  const n = latestInspForUnit(unitId);
+  if (!n) return checklistRequired(u) ? openChecklist(unitId) : toast('No inspection on record yet.');
+  const hasItems = !!(checklistFor(u) && n.items && typeof n.items === 'object' && Object.keys(n.items).length);
+  state.overlay = hasItems ? { kind: 'checklist', unitId, inspId: n.inspectionId } : { kind: 'inspection', recId: n.inspectionId };
+  render(); renderOverlay();
 }
 // A required-checklist inspection started but not yet completed (Jac: kept as Pending).
 function pendingInspForUnit(unitId) {
@@ -18967,7 +19074,8 @@ function sellUnit(unitId, price, date, note) {
   render();
 }
 /* yard journey: +Start/+Log Delivery and +End/+Log Recovery are the SAME capture
-   either way (one event, shared video); +FC = markFieldCall. Popup gates every log. */
+   either way (one event, shared video); +FC = markFieldCall. No popup — the tap fires
+   the camera and ending the video saves it; re-tapping a logged node re-records it. */
 /* §20 a capture is PER UNIT: cur = that unit's entry (fallback to the rental for
    safety). Logging a delivery/recovery moves just that unit's status. */
 const captureUnit = (r, unitId) => unitEntry(r, unitId);
@@ -18978,11 +19086,19 @@ function setUnitCapture(r, eu, key, stamp) {
 function yardCapture(rentalId, cap, unitId, opts = {}) {
   const r = IDX.rental.get(rentalId); if (!r) return;
   const cur = captureUnit(r, unitId) || r;
-  // §14 a delivery log goes On Rent — block the driver up front when the account's
-  // card/agreement gate isn't clear (the journey node reads locked, not dead).
-  if (cap === 'start') {
+  const key = cap === 'start' ? 'startCapture' : cap === 'end' ? 'endCapture' : 'fcCapture';
+  // A video already on file → this tap RE-RECORDS it (Jac: "delete that video in trade
+  // for a new one by doing the same process again"). A re-record only swaps the video —
+  // it must NOT move status again, re-run the §9 delivery gates, or re-raise a field call.
+  const replace = !!cur[key] || (cap === 'fc' && !!r.fieldCall);
+  // §14 a first Start/Delivery moves the unit On Rent — run the §9 gates UP FRONT so a
+  // blocked delivery never opens the camera (mirrors setRentalStatus/setUnitStatus so the
+  // driver is never made to record a video that would only then be rejected).
+  if (cap === 'start' && !replace) {
     const gc = r.customerId ? IDX.customer.get(r.customerId) : null;
+    if (!r.invoiceId) { flashOr('.js-create-invoice', 'Blocked: "On Rent" requires a linked invoice (§9).'); return; }
     if (gc && (accountBlock(gc)?.type === 'blacklist' || /Blacklist/i.test(gc.accountType || ''))) { toast(`🔒 ${gc.name} — blacklisted. Delivery blocked.`); return; }
+    const rb = rentalRuleBlock(r, gc, 'On Rent'); if (rb) { flashOr('.js-add-card', rb); return; }
     if (cardGateBlocked(gc) && !r.cardOverride) { toast(`🔒 ${gc.name} — ${cardGateReason(gc)}. Sign the card before logging a delivery.`); return; }
     // Phase 3 (T3.3) — account-block gate (failed-payment / invoice-hold), same Manager-tier,
     // per-action, non-persisted override as the booking-status gates above.
@@ -18991,45 +19107,63 @@ function yardCapture(rentalId, cap, unitId, opts = {}) {
       if (abg) { toast(`🔒 ${gc.name} — ${abg.reason}. Manager authorization required.`); accountBlockOverride(gc, () => yardCapture(rentalId, cap, unitId, { bypassAccountBlock: true })); return; }
     }
   }
-  if (cap === 'start' && cur.startCapture) return toast('Start already captured — video on file.');
-  if (cap === 'end' && cur.endCapture) return toast('End already captured — video on file.');
-  if (cap === 'end' && !cur.startCapture) return flashOr('.js-yard[data-cap="start"]', 'Log the Start/Delivery first.');
-  if (cap === 'fc' && (cur.fcCapture || r.fieldCall)) return toast('Field Call already logged.');
-  state.capFile = null;
-  openOverlay({ kind: 'capture', rentalId, cap, unitId: unitId || null });
+  // A first End/Recovery needs its Start/Delivery logged first (a re-record already has it).
+  if (cap === 'end' && !replace && !cur.startCapture) return flashOr('.js-yard[data-cap="start"]', 'Log the Start/Delivery first.');
+  // No popup — fire the camera straight from the tap; ending the video saves it. opts
+  // carries a manager's granted account-block override through to the commit's status move.
+  openYardCamera(rentalId, cap, unitId || null, opts);
 }
-function saveYardCapture() {
-  const o = state.overlay; if (!o || o.kind !== 'capture') return;
-  const r = IDX.rental.get(o.rentalId); if (!r) return closeOverlay();
-  const eu = captureUnit(r, o.unitId);
-  const uname = IDX.unit.get(o.unitId)?.name || '';
-  // The media NEVER rides the record (a Sheets cell caps at 50k chars) — the
-  // stamp persists immediately; the video uploads to Drive and only its URL
-  // lands on the stamp afterwards (uploadCapture backend action).
-  const file = state.capFile;
-  const eu0 = captureUnit(r, o.unitId) || (r.units || [])[0] || null;
-  const drvId = eu0 ? (o.cap === 'end' ? (eu0.recoveryDriverId || eu0.deliveryDriverId) : eu0.deliveryDriverId) : null;
+/* Fire the device camera straight from the yard-journey tap. The tap IS the user
+   gesture the browser needs to open the camera, so we synchronously create + click a
+   capture input; when the recording comes back we commit it — no confirm step. */
+function openYardCamera(rentalId, cap, unitId, opts = {}) {
+  const input = el('input'); input.type = 'file'; input.accept = 'video/*,image/*';
+  input.setAttribute('capture', 'environment'); input.style.display = 'none';
+  input.addEventListener('change', () => {
+    const f = input.files && input.files[0]; input.remove();
+    if (!f) return;   // camera dismissed with no recording — nothing logged
+    const rd = new FileReader();
+    rd.onload = () => commitYardCapture(rentalId, cap, unitId, rd.result, opts);
+    rd.onerror = () => toast('Could not read that video.');
+    rd.readAsDataURL(f);
+  });
+  document.body.appendChild(input); input.click();
+}
+function commitYardCapture(rentalId, cap, unitId, dataUrl, opts = {}) {
+  const r = IDX.rental.get(rentalId); if (!r) return;
+  const eu = captureUnit(r, unitId);
+  const tgt = eu || r;
+  const uname = IDX.unit.get(unitId)?.name || '';
+  const key = cap === 'start' ? 'startCapture' : cap === 'end' ? 'endCapture' : 'fcCapture';
+  // Re-record → swap the video only; keep the status where it is and don't re-raise the FC.
+  const replace = !!tgt[key] || (cap === 'fc' && !!r.fieldCall);
+  // The media NEVER rides the record (a Sheets cell caps at 50k chars) — the stamp
+  // persists immediately; the video uploads to Drive and only its URL lands on the
+  // stamp afterwards (uploadCapture backend action).
+  const eu0 = eu || (r.units || [])[0] || null;
+  const drvId = eu0 ? (cap === 'end' ? (eu0.recoveryDriverId || eu0.deliveryDriverId) : eu0.deliveryDriverId) : null;
   // Driver-stamped capture (spec rentals-dispatch D7): the assigned leg driver rides the stamp;
   // no assignment → the logged-in operator name, so the stamp is never anonymous.
   const stamp = { date: TODAY_ISO, clock: nowClock(), video: '', driver: drvId ? driverName(drvId) : (currentUser || currentRole || '') };
-  // move just this unit's status (or the whole rental when no unit context); a §9
-  // gate may block it, in which case the popup stays open.
+  // move just this unit's status (or the whole rental when no unit context); a first
+  // move can still hit a §9 gate, in which case we keep nothing.
   const moveStatus = (val) => {
-    if (o.unitId && eu) { setUnitStatus(o.rentalId, o.unitId, val); return unitStatus(r, eu) === val; }
-    setRentalStatus(o.rentalId, val); return r.status === val;
+    // carry a manager's granted account-block override (from yardCapture) into the status
+    // move so an authorized delivery isn't re-blocked and the recording lost.
+    if (unitId && eu) { setUnitStatus(rentalId, unitId, val, { bypassAccountBlock: opts.bypassAccountBlock }); return unitStatus(r, eu) === val; }
+    setRentalStatus(rentalId, val, { bypassAccountBlock: opts.bypassAccountBlock }); return r.status === val;
   };
-  if (o.cap === 'start') {
-    if (!moveStatus('On Rent')) return;
-    setUnitCapture(r, eu, 'startCapture', stamp); logAction(r, `${uname ? uname + ' — ' : ''}Start/Delivery video captured`);
-  } else if (o.cap === 'end') {
-    if (!moveStatus('Returned')) return;
-    setUnitCapture(r, eu, 'endCapture', stamp); logAction(r, `${uname ? uname + ' — ' : ''}End/Recovery video captured`);
-  } else if (o.cap === 'fc') {
+  if (cap === 'start') {
+    if (!replace && !moveStatus('On Rent')) return;
+    setUnitCapture(r, eu, 'startCapture', stamp); logAction(r, `${uname ? uname + ' — ' : ''}Start/Delivery video ${replace ? 're-captured' : 'captured'}`);
+  } else if (cap === 'end') {
+    if (!replace && !moveStatus('Returned')) return;
+    setUnitCapture(r, eu, 'endCapture', stamp); logAction(r, `${uname ? uname + ' — ' : ''}End/Recovery video ${replace ? 're-captured' : 'captured'}`);
+  } else if (cap === 'fc') {
     setUnitCapture(r, eu, 'fcCapture', stamp);
-    markFieldCall(o.rentalId);
+    if (!replace) markFieldCall(rentalId);
   }
-  uploadCaptureMedia(r, eu, o.cap, file);
-  state.capFile = null; state.overlay = null;
+  uploadCaptureMedia(r, eu, cap, dataUrl);
   const session = activeSession(); if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
   render(); renderOverlay();
 }
@@ -19630,15 +19764,6 @@ function onChange(e) {
     const rd = new FileReader();
     rd.onload = () => { downscaleImage(rd.result, 600, 0.5, (out) => { if (!out) { toast('Could not read that image.'); return; } state.receiptPhoto = out; renderOverlay(); }); };
     rd.onerror = () => toast('Could not read that image.');
-    rd.readAsDataURL(f);
-    return;
-  }
-  // v2 yard capture: attach the video/photo, re-render the popup to show ✓
-  if (e.target.classList.contains('js-cap-file')) {
-    const f = e.target.files && e.target.files[0]; if (!f) return;
-    const rd = new FileReader();
-    rd.onload = () => { state.capFile = rd.result; renderOverlay(); };
-    rd.onerror = () => toast('Could not read that file.');
     rd.readAsDataURL(f);
     return;
   }
@@ -20941,6 +21066,11 @@ async function lockInvoiceFlow(invoiceId, lock) {
 function startNewReceipt() {
   state.receiptPhoto = null;
   openOverlay({ kind: 'receiptform', expenseId: null });   // the record is only created on Save — Cancel leaves no stub
+  // Jac 2026-07-16: skip the extra tap — jump straight to the camera. openOverlay
+  // rendered the popup (and its capture input) synchronously, so this fires inside the
+  // button's live user gesture (a file input won't open otherwise). The popup renders
+  // behind the camera and is waiting when they finish OR cancel — no lost tap either way.
+  document.querySelector('.js-rf-file')?.click();
 }
 
 function startNewInspection(unitId) {
@@ -20962,7 +21092,10 @@ function startNewWorkOrder(unitId) {
   const draft = { woId: id, unitId: u.unitId, customerId: null, woReport: 'New Work Order', woType: 'Manual', description: '', phase: 'Part Needed?', billCustomer: 'No', date: TODAY_ISO, eta: '', unitHoursAtCreation: u?.currentHours || 0, assignedMechanic: '', laborHours: 0, lineItems: [], mock: true };
   DATA.workOrders.push(draft); IDX.wo.set(id, draft); reindex('workOrders', draft);
   logAction(draft, 'Work order created');
-  // born on the Unit card (+Work Order above Specs/GPS) — the WO section appears in place
+  // born on the Unit card (+Work Order above Specs/GPS) — the WO section appears in place.
+  // Both the section and the new row collapse by default now, so open them so the draft shows.
+  state.unitSecOpen = state.unitSecOpen || {}; state.unitSecOpen[u.unitId] = state.unitSecOpen[u.unitId] || {}; state.unitSecOpen[u.unitId].workorders = true;
+  state.woRowOpen = state.woRowOpen || {}; state.woRowOpen[u.unitId] = id;
   render();
   attnFlash(`.card[data-card="units"] .wo-${id}`);
 }
@@ -21906,14 +22039,33 @@ let gpsToken = '';                                        // in-memory session t
 const gpsBase = () => (GPS_BACKEND_URL || '').replace(/\/$/, '');
 const gpsConfigured = () => !!gpsBase();
 
+/* Re-mint a lapsed GPS token (Jac 2026-07-16). The token is minted ONCE at sign-in and
+   expires server-side; before this, a lapsed token 401'd EVERY subsequent call — fleet
+   snapshot ("NO GPS"), the history feed ("Couldn't load history"), the 30s view poll — and
+   nothing re-authenticated short of a full page reload, so the whole GPS section went dark
+   and a manual Refresh only re-fired the same dead token. gpsFetch now re-logs-in once on a
+   401 and retries; single-flight so N concurrent 401s share ONE login (the team password
+   stays server-side — gpsLogin proxies through GAS, never the public client). */
+let _gpsReloginInflight = null;
+function gpsRelogin() {
+  if (!_gpsReloginInflight) _gpsReloginInflight = gpsLogin().finally(() => { _gpsReloginInflight = null; });
+  return _gpsReloginInflight;
+}
+
 /* One authed round-trip to the GPS backend. JSON in/out, 30s timeout (reuses
    withTimeout). Throws a tagged Error on non-2xx (callers decide how to degrade);
-   never returns a failure disguised as success. */
-async function gpsFetch(path, opts = {}) {
+   never returns a failure disguised as success. `_retried` guards the single 401 re-auth. */
+async function gpsFetch(path, opts = {}, _retried = false) {
   if (!gpsConfigured()) throw new Error('gps-not-configured');
   const headers = Object.assign({ 'x-auth-token': gpsToken }, opts.headers || {});
   if (opts.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
   const res = await withTimeout(fetch(gpsBase() + path, Object.assign({}, opts, { headers })), 30000, 'GPS backend');
+  // §token-lapse — a 401 means the session token expired; re-authenticate ONCE and retry so a
+  // stale token heals everywhere (incl. the manual Refresh) instead of staying dark until reload.
+  if (res.status === 401 && !_retried) {
+    const ok = await gpsRelogin();
+    if (ok && gpsToken) return gpsFetch(path, opts, true);
+  }
   const text = await res.text();
   let body = null; try { body = JSON.parse(text); } catch {}
   if (!res.ok) { const e = new Error('gps-http-' + res.status); e.status = res.status; e.body = body; throw e; }
@@ -23749,6 +23901,11 @@ function finishLoad() {
   refreshWranglerNotifications();                               // §18f populate the notification-bell badge
   refreshCommsThreads();                                        // D8 comms rail — the chips wear their worst-of-category dots from clock-in (the rail itself stays empty)
   startRefreshPoll();                                           // live multi-user: poll for others' changes (§ refreshFromBackend)
+  // GPS silent login + live snapshot — runs for EVERY login mode. Previously this lived ONLY in
+  // the password-login handler, so a phone-identity login (the staging/production default) never
+  // minted a GPS token → the whole GPS section read "NO GPS" and every on-demand call started
+  // unauthenticated (Jac 2026-07-16). Fire-and-forget; gpsConfigured() no-ops when GPS is off.
+  if (gpsConfigured()) gpsLogin().then((ok) => { if (ok) { refreshGpsLive(); startGpsViewPoll(); refreshDrivingScore(); } });
   if (migrationDirty) { migrationDirty = false; saveSoon(); }   // push parsed first/last names up to the Sheet
   // #edit=<id> — desktop→phone handoff opens that customer's account form (§7.1).
   const em = (location.hash || '').match(/edit=([\w-]+)/i);
@@ -23846,9 +24003,8 @@ async function attemptLogin() {
     try { localStorage.setItem('jactec.user', name); } catch {}
     try { sessionStorage.setItem('jactec.role', role); } catch {}
     sessionStorage.setItem('jactec.pw', pw);
-    gpsLogin().then((ok) => { if (ok) { refreshGpsLive(); startGpsViewPoll(); refreshDrivingScore(); } });   // silent GPS login (§5, via GAS token proxy) → live snapshot (step 3) + view-scoped refresh (step 4) + fleet driving score (step 7); fire-and-forget, never blocks main login
     applyLoadResponse(await loadPromise);
-    finishLoad();
+    finishLoad();   // GPS silent-login now lives in finishLoad (runs for every login mode, not just this one)
     applyRoleLanding();   // each role lands on its default main/sub-card
     maybeReplayScan();    // a #u= decal scan parked pre-login → open the capture screen now (renders last, wins #app)
   } catch (e) {
@@ -23879,7 +24035,24 @@ function pidAdopt(r, tok, personal) {
   try { sessionStorage.setItem('jactec.role', currentRole); localStorage.setItem('jactec.user', currentUser); } catch (e) {}
 }
 function pidLoadFail() { pidTokenClear(); backendPassword = ''; pidUI.step = 'identify'; renderPhoneLogin("Couldn't reach the database. Try again."); }
-function pidEnter() { const s = document.querySelector('.login-screen'); if (s) s.classList.add('signing-in'); loadFromBackend().then(finishLoad).then(applyRoleLanding).then(maybeReplayScan).catch(pidLoadFail); }
+function pidEnter() {
+  const s = document.querySelector('.login-screen');
+  if (s) {
+    s.classList.add('signing-in');
+    // Hold every button in the busy state through the (second, slower) data load so it never
+    // flips back to a clickable "Verify"/"Saddle Up?" mid-sign-in — that flip read as "it failed,
+    // click again" (and a second click re-fired with a spent code). Jac, 2026-07-16.
+    s.querySelectorAll('.login-btn, .login-ghost').forEach((b) => { b.disabled = true; });
+    const go = s.querySelector('.login-btn'); if (go) go.textContent = 'Wrangling the herd…';
+  }
+  // Roll the Mr. Wrangler intro behind the box while the slow backend load runs (same treatment
+  // as the shared-password sign-in) — a little entertainment for the wait. play() fires after the
+  // auth round-trip, so the tap's autoplay activation may have lapsed; if an unmuted play is
+  // rejected, retry muted so the video still rolls — audio is the bonus, the video is the point.
+  const vid = document.getElementById('login-video');
+  if (vid) { try { vid.muted = state.loginMuted; const p = vid.play(); if (p && p.catch) p.catch(() => { vid.muted = true; const p2 = vid.play(); if (p2 && p2.catch) p2.catch(() => {}); }); } catch (e) {} }
+  loadFromBackend().then(finishLoad).then(applyRoleLanding).then(maybeReplayScan).catch(pidLoadFail);   // maybeReplayScan: replay a #u= decal scan parked before this login
+}
 // Boot (flag on): resume a trusted device, else show the phone login.
 function phoneBoot() {
   const tok = pidTokenGet();
@@ -23892,7 +24065,7 @@ function phoneBoot() {
 function pidErr(msg) { pidUI.err = msg || ''; const e = document.getElementById('pid-err'); if (e) e.textContent = pidUI.err; return null; }
 async function pidCall(btnId, fn) {
   const btn = document.getElementById(btnId), prev = btn ? btn.textContent : '';
-  if (btn) { btn.disabled = true; btn.textContent = 'Working…'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Wrangling the herd…'; }
   try { const r = await fn(); if (btn) { btn.disabled = false; btn.textContent = prev; } return r; }
   catch (e) { if (btn) { btn.disabled = false; btn.textContent = prev; } pidErr("Couldn't reach the database. Try again."); return null; }
 }
@@ -23900,6 +24073,11 @@ function renderPhoneLogin(msg) {
   if (msg != null) pidUI.err = msg;
   const P = PHONE_IDENTITY, step = pidUI.step, roster = pidRosterCache();
   let inner = '';
+  // Intro-video mute toggle — the same control the classic sign-in carries, so the phone login
+  // keeps audio parity. Icon-only utility toggle (sibling of the password eye), NOT a lint-family
+  // pill → no data-r, matching the classic #login-mute. Rendered in the actions row of the steps
+  // that trigger sign-in (code / setpin / pin), right where the intro it mutes is about to play.
+  const muteBtn = `<button type="button" class="login-mute${state.loginMuted ? ' is-muted' : ''}" id="login-mute" aria-pressed="${state.loginMuted}" aria-label="Mute intro sound" data-tip="${state.loginMuted ? 'Intro sound off — tap to unmute' : 'Intro sound on — tap to mute'}">${state.loginMuted ? I.volumeOff : I.volume}</button>`;
   if (step === 'identify') {
     inner = `<div class="login-field"><label class="login-lbl" for="pid-phone">Mobile number</label>
         <input id="pid-phone" class="login-input" type="tel" inputmode="tel" autocomplete="tel" placeholder="(337) 555-0100" value="${esc(pidUI._phone)}" /></div>
@@ -23915,13 +24093,13 @@ function renderPhoneLogin(msg) {
   } else if (step === 'code') {
     inner = `<div class="login-hint">Enter the ${P.codeLen}-digit code sent to ${esc(pidUI.masked)}</div>
       <div class="login-field"><input id="pid-code" class="login-input login-otp" inputmode="numeric" autocomplete="one-time-code" maxlength="${P.codeLen}" placeholder="000000" /></div>
-      <button type="submit" class="login-btn" data-r="R17" id="pid-verify">Verify</button>
+      <div class="login-actions">${muteBtn}<button type="submit" class="login-btn" data-r="R17" id="pid-verify">Confirm</button></div>
       <button type="button" class="login-ghost" id="pid-resend">Resend code</button>`;
   } else if (step === 'setpin') {
     inner = `<div class="login-hint">Set a PIN for this shared computer, ${esc(pidUI.name || 'partner')}</div>
       <div class="login-field"><input id="pid-pin" class="login-input login-otp" inputmode="numeric" autocomplete="new-password" maxlength="${P.pinMaxLen}" placeholder="New PIN" /></div>
       <div class="login-field"><input id="pid-pin2" class="login-input login-otp" inputmode="numeric" autocomplete="new-password" maxlength="${P.pinMaxLen}" placeholder="Confirm PIN" /></div>
-      <button type="submit" class="login-btn" data-r="R17" id="pid-savepin">Set PIN &amp; sign in</button>`;
+      <div class="login-actions">${muteBtn}<button type="submit" class="login-btn" data-r="R17" id="pid-savepin">Set PIN &amp; sign in</button></div>`;
   } else if (step === 'pinpick') {
     inner = `<div class="login-ask">Who's signing in?</div>
       <div class="login-pick">${roster.map((p) => `<button type="button" class="login-pick-btn" data-id="${esc(p.id)}">${esc(p.name || '—')}</button>`).join('') || '<div class="login-hint">No one saved on this device yet — use your phone.</div>'}</div>
@@ -23929,10 +24107,10 @@ function renderPhoneLogin(msg) {
   } else if (step === 'pin') {
     inner = `<div class="login-hint">PIN for ${esc(pidUI.name || 'you')}</div>
       <div class="login-field"><input id="pid-loginpin" class="login-input login-otp" inputmode="numeric" autocomplete="off" maxlength="${P.pinMaxLen}" placeholder="PIN" /></div>
-      <button type="submit" class="login-btn" data-r="R17" id="pid-signin">Saddle Up?</button>
+      <div class="login-actions">${muteBtn}<button type="submit" class="login-btn" data-r="R17" id="pid-signin">Saddle Up?</button></div>
       <button type="button" class="login-ghost" id="pid-needcode">Forgot PIN — text me a code</button>`;
   }
-  $('#app').innerHTML = `<div class="login-screen"><form class="login-box" id="pid-form" autocomplete="off">
+  $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4?v=20260708a" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="pid-form" autocomplete="off">
     <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
     <div class="login-plate">
       <img class="login-logo" src="assets/jac-rentals-logo.jpg" alt="Jac Rentals" />
@@ -23957,6 +24135,30 @@ function pidWire() {
   on('pid-needcode', () => { pidUI.step = 'identify'; pidUI._phone = ''; renderPhoneLogin(''); });
   document.querySelectorAll('.login-choice-btn').forEach((b) => b.addEventListener('click', () => { pidUI.kind = b.getAttribute('data-kind'); pidUI.step = 'code'; renderPhoneLogin(''); }));
   document.querySelectorAll('.login-pick-btn').forEach((b) => b.addEventListener('click', () => { pidUI.personId = b.getAttribute('data-id'); const r = pidRosterCache().find((x) => String(x.id) === String(pidUI.personId)); pidUI.name = r ? r.name : ''; pidUI.step = 'pin'; renderPhoneLogin(''); }));
+  // Intro-video mute toggle — mirrors the classic sign-in's #login-mute handler: flip the
+  // per-device preference, restyle the button, and mute/unmute the live video if it's already rolling.
+  const muteEl = document.getElementById('login-mute');
+  if (muteEl) muteEl.addEventListener('click', () => {
+    state.loginMuted = !state.loginMuted;
+    try { localStorage.setItem('jactec.loginMuted', state.loginMuted ? '1' : '0'); } catch (e) {}
+    muteEl.classList.toggle('is-muted', state.loginMuted);
+    muteEl.setAttribute('aria-pressed', String(state.loginMuted));
+    muteEl.setAttribute('data-tip', state.loginMuted ? 'Intro sound off — tap to unmute' : 'Intro sound on — tap to mute');
+    muteEl.innerHTML = state.loginMuted ? I.volumeOff : I.volume;
+    const vid = document.getElementById('login-video'); if (vid) vid.muted = state.loginMuted;
+  });
+  // Auto-submit the code the moment all 6 digits are in — no Verify tap needed. Also catches
+  // the OS one-time-code autofill (it drops all 6 at once → instant sign-in). Kept digits-only
+  // so a stray char can't desync the count; the in-flight guard stops a paste/autofill from
+  // double-firing the verify. Jac, 2026-07-16.
+  const codeEl = document.getElementById('pid-code');
+  if (codeEl) codeEl.addEventListener('input', () => {
+    const digits = codeEl.value.replace(/\D/g, '');
+    if (codeEl.value !== digits) codeEl.value = digits;
+    if (digits.length !== PHONE_IDENTITY.codeLen) return;
+    const b = document.getElementById('pid-verify'); if (b && b.disabled) return;   // a verify is already running — don't fire twice
+    pidDoVerify();
+  });
   const focusId = { identify: 'pid-phone', code: 'pid-code', setpin: 'pid-pin', pin: 'pid-loginpin' }[step];
   if (focusId) { const el = document.getElementById(focusId); if (el) el.focus(); }
 }
@@ -23974,7 +24176,8 @@ async function pidDoVerify() {
   if (code.length !== PHONE_IDENTITY.codeLen) return pidErr(`Enter the ${PHONE_IDENTITY.codeLen}-digit code.`);
   const r = await pidCall('pid-verify', () => backendCall('authVerify', { personId: pidUI.personId, code, deviceKind: pidUI.kind }));
   if (!r) return;
-  if (!r.ok) return pidErr(r.error === 'bad-code' ? `That code didn't match${r.left != null ? ` — ${r.left} left` : ''}.` : r.error === 'expired' ? 'That code expired — resend a fresh one.' : r.error === 'too-many' ? 'Too many tries — resend a fresh code.' : 'Could not verify — resend a code.');
+  if (!r.ok) { const el = document.getElementById('pid-code'); if (el) { el.value = ''; el.focus(); }   // clear the bad digits so a retype re-triggers the auto-submit (maxlength blocks editing a full field)
+    return pidErr(r.error === 'bad-code' ? `That code didn't match${r.left != null ? ` — ${r.left} left` : ''}.` : r.error === 'expired' ? 'That code expired — resend a fresh one.' : r.error === 'too-many' ? 'Too many tries — resend a fresh code.' : 'Could not verify — resend a code.'); }
   pidUI._role = r.role || ''; pidUI._tok = r.token || '';
   const personal = pidUI.kind === 'personal';
   if (!personal && !r.pinSet) { pidUI.step = 'setpin'; return renderPhoneLogin(''); }
@@ -24210,6 +24413,9 @@ function downloadFleetQRCodes() {
   w.focus(); setTimeout(() => { try { w.print(); } catch (e) {} }, 300);
 }
 function boot() {
+  // Tidy the URL after a manual Update (checkForUpdate adds ?_u=<t> to bust the cached index) —
+  // strip ONLY the _u param, preserving any others.
+  try { const sp = new URLSearchParams(location.search); if (sp.has('_u')) { sp.delete('_u'); const q = sp.toString(); history.replaceState(null, '', location.pathname + (q ? '?' + q : '') + location.hash); } } catch (e) {}
   // Recovery hatch: app.jacrentals.com/#reset-settings (or #safe-mode) wipes saved customizations
   // before they apply — the guaranteed way back if a bad setting ever breaks the screen.
   try {
@@ -24674,7 +24880,7 @@ function exposeTestApi() {
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
       companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsUtilRollup, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
-      tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, saveYardCapture, nextCategoryId, nextUnitId,
+      tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, openYardCamera, commitYardCapture, nextCategoryId, nextUnitId,
       tripsLS, tripMerge, tripSplit, assignTripDriver, tripLabel, assignStopDriver, tripSetTime,
       tripPushSoon, tripPushNow, loadTripsFromBackend, tripsSyncFooter, setBackendPassword: (pw) => { backendPassword = pw || ''; },   // §2.3 Phase 4 sync — the setter is test-only (mirrors setRole), letting logic-test.mjs exercise the online path via a mocked window.fetch, never a real backend
       autoRunRepair, autoRunAnchorsFor, secToClock, AUTORUN_DAY_START_SEC, AUTORUN_EOD_DEADLINE_SEC, AUTORUN_LOAD_BUFFER_SEC, dispatchPinOf,
