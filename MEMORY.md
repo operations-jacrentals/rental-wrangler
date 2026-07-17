@@ -388,6 +388,24 @@
   identical plain div rendered there; the login plate rendered fine). A headless
   artifact, not a real-browser defect — verify transient/fixed visual cues on the
   **staging drive** (real Chrome), not headless screenshots.
+- **A `workflow_dispatch` `smoke` check does NOT satisfy the branch-protection ruleset** (2026-07-17,
+  corrects the CI-`synchronize` note above) — dispatching `ci.yml` runs and turns `smoke` green on the
+  commit, but the merge STILL fails `405 … Required status check "smoke" is expected`: the ruleset only
+  counts a `smoke` from the **`pull_request`** event, not a manual dispatch. What actually unblocks the
+  merge is forcing a fresh `pull_request` run — push a commit (an empty `git commit --allow-empty`
+  re-trigger works), or close+reopen the PR (fires `reopened`). Dispatch is fine for a diagnostic/
+  self-review of the bytes, useless for clearing the gate.
+- **The deployed theme is `midnight` (blue-steel), NOT the base dark `:root`** (2026-07-17) — the live app
+  runs under a `[data-theme="midnight"]` set, so `.inv-row` & friends resolve tokens to midnight's values
+  (`--track #232b35`, `--panel-2 #1a2536`, `--line #283446`, `--chip-shadow …rgba(0,0,0,.78)`), not the
+  `:root` literals. Token-pure CSS adapts for free, but a computed-style assertion in a headless render
+  reads the MIDNIGHT hexes — don't assert against the `:root` values.
+- **Headless review of real UI without login = `#local` + the `window.__rw` bridge** (2026-07-17) — serve
+  the working tree on `127.0.0.1` (noProxy) and open `#local` (demo seed: no PII, no login). The app
+  exposes a test bridge at `window.__rw` (`DATA`, `IDX`, `openCustomerForm`, `render`, `__state`). To land
+  on a customer's embedded Invoices section (the `.inv-row` list), click the customer's LIST row via
+  `document.querySelector('[data-rec="<custId>"]').click()` — the delegated handler resolves the open.
+  `openCustomerForm(id)` opens the account EDIT form instead, which has no `.inv-row`.
 
 ## Open threads
 - **Cross-device user sync — SHIPPED LIVE + PROMOTED (2026-07-17, PRs #692+#702+#685, `?v=20260717ab`, flag
