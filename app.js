@@ -18127,7 +18127,6 @@ function onClick(e) {
   }
   // ── v2 build: condition/wash segs · yard captures · site popup · WO complete · history chips ──
   if (closest('.js-cond')) { const b = closest('.js-cond'); return setUnitCondition(b.dataset.rec, b.dataset.val); }
-  if (closest('.js-open-checklist')) { e.stopPropagation(); return openChecklist(closest('.js-open-checklist').dataset.rec); }
   if (closest('.js-ck-item')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-ck-item'); if (o && o.kind === 'checklist') { const n = IDX.insp.get(o.inspId); if (n) { n.items = n.items || {}; n.items[b.dataset.id] = b.dataset.val; renderOverlay(); } } return; }
   if (closest('.js-ck-evrm')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-ck-evrm'); if (o && o.kind === 'checklist') { const n = IDX.insp.get(o.inspId); if (n && n.itemEvidence && n.itemEvidence[b.dataset.id]) { n.itemEvidence[b.dataset.id].splice(Number(b.dataset.i), 1); saveSoon(); renderOverlay(); } } return; }
   if (closest('.js-ck-walkrm')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-ck-walkrm'); if (o && o.kind === 'checklist') { const n = IDX.insp.get(o.inspId); if (n && n.evidence) { n.evidence.splice(Number(b.dataset.i), 1); saveSoon(); renderOverlay(); } } return; }
@@ -19008,8 +19007,14 @@ function setUnitCondition(unitId, val) {
    record re-opens the takeover; a plain condition-pass opens the §12.8 record popup. */
 function openInspectionRecord(unitId) {
   const u = IDX.unit.get(unitId); if (!u) return;
-  const n = latestInspForUnit(unitId);
-  if (!n) return checklistRequired(u) ? openChecklist(unitId) : toast('No inspection on record yet.');
+  let n = latestInspForUnit(unitId);
+  if (!n) {
+    // A unit marked Ready with no inspection record on file (seed/legacy). Materialise a
+    // lightweight pass record so "click Pass again to view the done inspection" always lands
+    // on the real (pass-aware) view — never a dead-end toast, and never a blank pending
+    // checklist spun up for an already-passed unit.
+    n = newInspectionForUnit(u); n.checklist = 'Pass'; reindexDraft('inspections', n);
+  }
   const hasItems = !!(checklistFor(u) && n.items && typeof n.items === 'object' && Object.keys(n.items).length);
   state.overlay = hasItems ? { kind: 'checklist', unitId, inspId: n.inspectionId } : { kind: 'inspection', recId: n.inspectionId };
   render(); renderOverlay();
