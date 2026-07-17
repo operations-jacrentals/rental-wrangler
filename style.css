@@ -3166,6 +3166,34 @@ select.nc-in { cursor: pointer; }
   @keyframes plateIn { from { opacity: 0; transform: translateY(11px) scale(.985); } to { opacity: 1; transform: none; } }
 }
 
+/* ── §instant-cache — the "refreshing" cue ──────────────────────────────────────────
+   A non-blocking stamped chip shown while cached data is already on screen and the live
+   backend load is in flight. Same data-plate vocabulary as the env-badge (steel well,
+   Saira stamp) + the hi-vis hazard chip, but the chip BARBER-POLES so it reads as the
+   same "working" language as the sign-in load band. Fixed top-center, never intercepts a
+   click. Mounted/unmounted by cacheRefreshing(). */
+#cache-refreshing { display: none; }   /* hidden until the rw-refreshing body class shows it */
+body.rw-refreshing #cache-refreshing {
+  position: fixed; z-index: 8800; top: max(64px, calc(env(safe-area-inset-top) + 60px)); left: 50%; transform: translateX(-50%);   /* just below the header band; above all header chrome, below the 9000+ interactive floats (hover 9000 / dropdown 9100 / drag 9400). pointer-events:none, so it never intercepts */
+  display: inline-flex; align-items: center; gap: 8px; pointer-events: none;
+  font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 800; font-size: 11px;
+  letter-spacing: 2px; text-transform: uppercase; color: var(--txt-2, #b9c2cf);
+  padding: 5px 12px 5px 9px; border-radius: 999px;
+  background: linear-gradient(180deg, #1b2129, #0c0e11);
+  border: 1px solid #2a313b; box-shadow: 0 7px 20px -7px #000;
+}
+#cache-refreshing .cr-stripe {   /* the signature hazard chip, barber-poling while it loads */
+  content: ''; width: 13px; height: 13px; border-radius: 3px; flex: none;
+  background: repeating-linear-gradient(135deg, var(--yellow, #f5c542) 0 4px, #14181d 4px 8px);
+  background-size: 11.31px 11.31px;   /* 8·√2 — one whole tile, so the shift loops seamlessly */
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .45);
+}
+@media (prefers-reduced-motion: no-preference) {
+  #cache-refreshing .cr-stripe { animation: crStripe .8s linear infinite; }
+  @keyframes crStripe { to { background-position: 11.31px 0; } }
+}
+:root[data-theme="light"] #cache-refreshing { background: linear-gradient(180deg, #ffffff, #eef1f5); }
+
 /* ── LOGIN — phone-verified device identity states (Phase 2, flagOn('phoneIdentity')) —
    EXTEND the data-plate vocabulary above: same steel wells (#0e1217 / #2a313b), orange
    ignition (.login-btn), Saira-stamped labels. New: a masked-hint line, the code/PIN
