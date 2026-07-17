@@ -20970,6 +20970,11 @@ async function lockInvoiceFlow(invoiceId, lock) {
 function startNewReceipt() {
   state.receiptPhoto = null;
   openOverlay({ kind: 'receiptform', expenseId: null });   // the record is only created on Save — Cancel leaves no stub
+  // Jac 2026-07-16: skip the extra tap — jump straight to the camera. openOverlay
+  // rendered the popup (and its capture input) synchronously, so this fires inside the
+  // button's live user gesture (a file input won't open otherwise). The popup renders
+  // behind the camera and is waiting when they finish OR cancel — no lost tap either way.
+  document.querySelector('.js-rf-file')?.click();
 }
 
 function startNewInspection(unitId) {
