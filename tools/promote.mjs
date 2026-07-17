@@ -102,9 +102,15 @@ const CONFIRMED = ARGV.includes('--yes');
 // down, etc.). Requires a conscious flag — the freshness gate never silently no-ops.
 const SKIP_STAGING_CHECK = ARGV.includes('--skip-staging-check');
 // Optional human pin: `--slot N` checks that exact slot's URL instead of auto-resolving the
-// slot serving the trunk token. NaN (unset) → auto-resolve.
+// slot serving the trunk token. Unset → NaN → auto-resolve. An explicit `--slot` with a
+// missing/non-numeric value FAILS LOUDLY (never a silent downgrade to auto-scan — a pin the
+// user typed must be honored or rejected, matching slotTarget's throw-don't-fallback posture).
 const _slotIdx = ARGV.indexOf('--slot');
-const SLOT_ARG = _slotIdx >= 0 ? parseInt(ARGV[_slotIdx + 1], 10) : NaN;
+let SLOT_ARG = NaN;
+if (_slotIdx >= 0) {
+  SLOT_ARG = parseInt(ARGV[_slotIdx + 1], 10);
+  if (!Number.isInteger(SLOT_ARG)) fail(`--slot needs an integer slot id (got '${ARGV[_slotIdx + 1] ?? ''}').`);
+}
 
 function git(args, opts = {}) {
   return execFileSync('git', args, { encoding: 'utf8', ...opts }).trim();

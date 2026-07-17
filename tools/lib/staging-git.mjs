@@ -145,8 +145,9 @@ export function gitAuthed(args, cred, opts = {}) {
   } catch {
     throw new Error(
       `deploy-staging: git ${args[0]} against the staging remote failed (credential, network, or ` +
-      `repo/branch-name issue). Message withheld — it may echo the credential. Check ` +
-      `STAGING_REPO/STAGING_PAGES_BRANCH and the credential env var by hand.`
+      `repo/branch-name issue). Message withheld — it may echo the credential. Check the target ` +
+      `repo/branch (control branch → STAGING_REPO; a deploy → the acquired slot's SLOT_TARGETS ` +
+      `entry) and the credential env var by hand.`
     );
   }
 }
