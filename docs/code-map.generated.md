@@ -4,7 +4,7 @@
 
 # Code Atlas — generated chapter index (Part I · The Frontend)
 
-## app.js — 26217 lines, 41 chapters
+## app.js — 26267 lines, 41 chapters
 
 | ID | Lines | Anchors | Chapter title | Key symbols |
 |----|------:|---------|---------------|-------------|
@@ -47,8 +47,8 @@
 | APP-37 | 22454–23678 | §18b | §18b BACKEND SYNC — Google Sheets via the Apps Script web app | BACKEND_URL, PERSIST_KEYS, backendPassword, booting, saveTimer, driveViewUrl, backendCall, gpsToken, gpsBase, gpsConfigured, _gpsReloginInflight, gpsRelogin, …(+85) |
 | APP-38 | 23679–24606 | — | INSTANT CACHE — on-device data snapshot (spec 2026-07-16) | DC_DB, CACHE_SCHEMA_VER, _dcDbPromise, dcDbOpen, dcTx, dataCache, cacheAppVer, pidLocalToken, cacheTokenTag, cacheDeviceOk, cacheValid, cacheSnapshotEnvelope, …(+70) |
 | APP-39 | 24607–24613 | — | PHONE-VERIFIED DEVICE IDENTITY — login flow (Phase 2) | — |
-| APP-40 | 24614–24867 | — | const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', | pidUI, pidTokenGet, pidTokenSet, pidTokenClear, pidRosterCache, pidAdopt, pidLoadFail, pidEnter, renderBootSplash, phoneBoot, pidErr, pidCall, …(+11) |
-| APP-41 | 24868–26217 | — | SCAN-TO-LOG (QR DECAL → VIDEO) — standalone capture (FEATURES.qrScanLog) | pendingScan, scanActive, scanUI, scanEnabled, scanPreviewOn, scanTokenGet, scanTokenSet, scanTokenClear, maybeReplayScan, scanCall, scanPreviewResponse, renderScanCapture, …(+60) |
+| APP-40 | 24614–24917 | — | const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', | pidUI, pidTokenGet, pidTokenSet, pidTokenClear, pidRosterCache, pidAdopt, pidLoadFail, pidEnter, renderBootSplash, phoneBoot, pidErr, pidCall, …(+14) |
+| APP-41 | 24918–26267 | — | SCAN-TO-LOG (QR DECAL → VIDEO) — standalone capture (FEATURES.qrScanLog) | pendingScan, scanActive, scanUI, scanEnabled, scanPreviewOn, scanTokenGet, scanTokenSet, scanTokenClear, maybeReplayScan, scanCall, scanPreviewResponse, renderScanCapture, …(+60) |
 
 ## config.js — 664 lines, 0 chapters
 

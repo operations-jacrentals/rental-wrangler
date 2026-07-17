@@ -24845,16 +24845,66 @@ function applyViewportClass() {
 const APP_ENV = location.hostname === 'app.jacrentals.com' ? 'production'
   : /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? 'local'
   : 'staging';
-// A caution stamp on any non-prod build (fixed corner, never interactive) so you always know
-// which app you're testing — the staging mirror serves the SAME files as production.
+// The staging review pool is THREE slots — each its own GitHub Pages repo/URL serving the SAME
+// bytes, told apart only by path (/rental-wrangler-staging[-2|-3]/). Read the slot off the path
+// so every non-prod surface (badge, edge, tab title, favicon) can label WHICH slot this is.
+const APP_SLOT = (() => {
+  if (APP_ENV !== 'staging') return 0;
+  const m = location.pathname.match(/rental-wrangler-staging(?:-(\d+))?(?:\/|$)/);
+  if (!m) return 0;                  // a non-slot staging host — labeled plain "STAGING"
+  return m[1] ? Number(m[1]) : 1;    // bare "…-staging" = slot 1
+})();
+// Distinct browser-tab title on any non-prod build → the tab AND a saved desktop shortcut name
+// themselves per slot ("Staging 2 · Rental Wrangler"). Production keeps its clean title. Set at
+// module load (earliest possible) so a shortcut saved before first render still captures it.
+if (APP_ENV !== 'production') {
+  document.title = (APP_SLOT ? 'Staging ' + APP_SLOT
+    : APP_ENV === 'local' ? 'Local' : 'Staging') + ' · Rental Wrangler';
+}
+// The slot's identity color (theme-invariant --slot-N / --tan), read from the stylesheet so the
+// tokens stay the single source of truth for the runtime-drawn favicon.
+function slotColor() {
+  const name = APP_ENV === 'local' ? '--tan' : '--slot-' + (APP_SLOT || 1);
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || '#ffe000';
+}
+// A tinted favicon so the browser TAB (and the saved desktop-shortcut icon) is unmistakable per
+// slot: a steel plate carrying the slot color + its number ("1/2/3", "L" local, "S" slotless
+// staging). SVG data-URI — no asset build, tints straight from the token.
+function mountEnvFavicon() {
+  if (APP_ENV === 'production') return;
+  const glyph = APP_SLOT ? String(APP_SLOT) : (APP_ENV === 'local' ? 'L' : 'S');
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
+    + '<rect width="32" height="32" rx="7" fill="#0b0c0f"/>'
+    + '<rect x="3.5" y="3.5" width="25" height="25" rx="5.5" fill="' + slotColor() + '"/>'
+    + '<text x="16" y="24" text-anchor="middle" fill="#0b0c0f" '
+    + 'font-family="Saira Condensed,Arial Narrow,sans-serif" font-weight="800" font-size="22">'
+    + glyph + '</text></svg>';
+  const href = 'data:image/svg+xml,' + encodeURIComponent(svg);
+  let link = document.querySelector('link[rel="icon"]');
+  if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
+  link.setAttribute('type', 'image/svg+xml');
+  link.setAttribute('href', href);
+}
+// A caution stamp + a top edge bar on any non-prod build (fixed, never interactive) so you always
+// know which app — and WHICH staging slot — you're testing. The staging pool serves the SAME
+// files, so the slot number + color is the only tell.
 function mountEnvBadge() {
   if (APP_ENV === 'production' || document.getElementById('env-badge')) return;
+  const slotCls = ' env-' + APP_ENV + (APP_SLOT ? ' env-slot-' + APP_SLOT : '');
   const b = document.createElement('div');
   b.id = 'env-badge';
-  b.className = 'env-badge env-' + APP_ENV;
-  b.textContent = APP_ENV === 'local' ? 'LOCAL' : 'STAGING';
+  b.className = 'env-badge' + slotCls;
+  b.innerHTML = '<span>' + (APP_ENV === 'local' ? 'LOCAL' : 'STAGING') + '</span>'
+    + (APP_SLOT ? '<span class="env-badge-num">' + APP_SLOT + '</span>' : '');
   b.setAttribute('aria-hidden', 'true');
   document.body.appendChild(b);
+  const edge = document.createElement('div');
+  edge.id = 'env-edge';
+  edge.className = 'env-edge' + slotCls;
+  edge.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(edge);
+  mountEnvFavicon();
 }
 // Warm the (cold-starting ~1-5s) Apps Script container while the login screen is up, so the
 // post-Saddle-Up 'load' hits a warm backend. `no-cors` → the response is OPAQUE and UNUSED
