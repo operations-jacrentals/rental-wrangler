@@ -16210,6 +16210,7 @@ const scrollMemo = {};   // persistent scroll positions, keyed `card|view` (list
 // Node relocation only — every builder still emits its usual markup (desktop untouched); this
 // just re-homes four nodes. The card-toggle-bar swipe zone follows the toggles (see boot()).
 function render() {
+  if (scanActive) return;   // the scan-to-log capture screen owns #app in its own tab — never let a background loader / 18s poll render clobber it mid-flow
   const t0 = performance.now();
   refreshToday();   // roll "today" over before painting — an all-day-open tab must never stamp/read yesterday
   hideTip(); hideHoverPreview();
@@ -24036,6 +24037,7 @@ function warmBackend() {
    write-only scanDeviceToken (localStorage) OR a live session — NEVER pidToken (a full-access
    credential). Backend contract: docs/backend-snippets/captureByScan.md. Dormant until flag + backend. */
 let pendingScan = null;
+let scanActive = false;   // true once the scan capture screen owns #app — render() bails so nothing repaints over it
 const scanUI = { unitId: '', unitName: '', action: '', phase: '', reason: '' };
 // Activation: in PRODUCTION the scan route is inert until FEATURES.qrScanLog flips ON (after the
 // backend deploys); on the staging mirror + localhost it's always active for review — same files, so
@@ -24047,7 +24049,11 @@ function scanTokenGet() { try { return localStorage.getItem('jactec.scanDevice')
 function scanTokenSet(t) { try { if (t) localStorage.setItem('jactec.scanDevice', t); } catch (e) {} }
 function scanTokenClear() { try { localStorage.removeItem('jactec.scanDevice'); } catch (e) {} }
 // Replayed at the end of a login chain (after applyRoleLanding, so it renders LAST and wins #app).
-function maybeReplayScan() { if (pendingScan && scanEnabled()) { const u = pendingScan; pendingScan = null; renderScanCapture(u); } }
+function maybeReplayScan() {
+  let u = pendingScan;
+  if (!u) { try { u = sessionStorage.getItem('jactec.pendingScan') || ''; } catch (e) {} }   // recover a scan parked before a reload/backgrounding at the login step
+  if (u && scanEnabled()) { pendingScan = null; try { sessionStorage.removeItem('jactec.pendingScan'); } catch (e) {} renderScanCapture(u); }
+}
 // captureByScan is authorized by the scan token OR the session; the server resolves everything and
 // returns only equipment-level data (unit name + slot) or a block reason — never customer PII.
 function scanCall(extra) {
@@ -24064,6 +24070,7 @@ function scanPreviewResponse(extra) {
   return m === 'peek' ? { ok: true, unitName: id, action } : { ok: true, filedAs: action, unitName: id };
 }
 function renderScanCapture(unitId) {
+  scanActive = true;   // take over #app; render() now bails so background loaders / the refresh poll can't clobber this screen
   Object.assign(scanUI, { unitId, unitName: '', action: '', phase: 'loading', reason: '' });
   drawScanScreen();
   scanCall({ mode: 'peek' }).then((r) => {                       // resolve unit + intended slot (or block), no upload
@@ -24589,6 +24596,7 @@ function boot() {
       history.replaceState(null, '', location.pathname + location.search);
       if (scanTokenGet() || backendPassword || scanPreviewOn()) return renderScanCapture(su[1]);   // remembered/session, OR preview (no backend, no PII) → straight in
       pendingScan = su[1];   // cold PRODUCTION → fall through to the normal login gate below; replay after it
+      try { sessionStorage.setItem('jactec.pendingScan', su[1]); } catch (e) {}   // survive a reload / OS-backgrounding while sitting at the login screen
     }
   }
 

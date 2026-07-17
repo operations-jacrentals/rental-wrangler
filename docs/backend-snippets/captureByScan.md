@@ -32,9 +32,9 @@ reference contract + implementation to paste in.
   scanToken?,                   // lite mode: the device credential (no session)
   sessionToken?/password?,      // in-app mode: the normal session cred backendCall attaches
   mode?,                        // 'peek' → resolve only, no upload; else record+file
-  video?, videoName?, videoMime? // capture payload — SAME encoding the existing
-                                 //   uploadCapture path uses (align to that; TODO confirm base64 shape)
-  name? }                       // operator name if available (lite may omit)
+  dataUrl?, name? }             // capture payload: base64 data-URL video + a file name
+                                //   ('scan_<unitId>') — the SAME { dataUrl, name } shape the app's
+                                //   existing uploadCapture path sends (app.js uploadCaptureMedia)
 ```
 
 **Auth:** accept if EITHER (a) `scanToken` matches a non-revoked `ScanDevices` row,
@@ -112,7 +112,7 @@ function captureByScan(p) {
   if (p.mode === 'peek') return { ok:true, unitName:unitName, action:decided.action };
 
   // ---- record + file ----
-  var driveUrl = uploadCaptureToDrive_(p.video, p.videoName, p.videoMime);  // reuse existing Drive routine
+  var driveUrl = uploadCaptureToDrive_(p.dataUrl, p.name);  // reuse existing uploadCapture Drive routine — payload is { dataUrl, name }
   attachRentalJourneyVideo_(st.rentalId, unit.unitId, decided.action, driveUrl); // same as manual Log Start/End
   return { ok:true, filedAs:decided.action, unitName:unitName };
 }
@@ -133,7 +133,8 @@ function decideScanAction_(st) {
   routines — wire to the real names. `attachRentalJourneyVideo_` must land the media in
   the SAME structure the manual `uploadCapture` (cap start/end) flow writes, so scanned
   and manual videos are indistinguishable downstream.
-- Confirm the `video` payload encoding matches what the frontend sends (align with the
-  existing `uploadCapture` request shape).
+- The capture payload the frontend sends is `{ dataUrl, name }` (base64 data-URL video +
+  a file name) — the SAME shape as the app's existing `uploadCapture`. `uploadCaptureToDrive_`
+  must accept exactly that (not `video`/`videoName`/`videoMime`).
 - Register the three actions in the main `doPost` router; ensure `scanToken` auth is
   scoped to `captureByScan` ONLY.
