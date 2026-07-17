@@ -1759,7 +1759,21 @@ const invoiceCollectionsActive = (inv) => !!(inv && inv.collections && inv.colle
 /** Does ANOTHER invoice for this invoice's customer still sit in active Collections? Gates the
  *  recall-lifts-blacklist decision so one recall can't un-blacklist while a 2nd is live (#552-r3). */
 function collectionsHasOtherActive(inv) { return !!inv && (DATA.invoices || []).some((i2) => i2 !== inv && i2.customerId === inv.customerId && invoiceCollectionsActive(i2)); }
+// Render-scoped memo — reset at the top of render() and cleared to null at its end, so a call
+// OUTSIDE a render always recomputes fresh (zero staleness risk). These pure per-record derivations
+// (invoiceTotals · activeRentalForUnit · unitRepairCost · unitTotalRevenue) get called many times in
+// ONE render — group-bucketing over the full set, then the windowed row build, then flag/color — so
+// caching for the life of a single render kills the redundant recompute. The cache is thrown away and
+// rebuilt every render, so it can never serve stale data. (Jac 2026-07-17 snappiness)
+let RENDER_MEMO = null;
+function rmemo(bucket, key, compute) {
+  if (!RENDER_MEMO) return compute();
+  let m = RENDER_MEMO[bucket]; if (!m) m = RENDER_MEMO[bucket] = new Map();
+  if (m.has(key)) return m.get(key);
+  const v = compute(); m.set(key, v); return v;
+}
 function invoiceTotals(inv) {
+  return rmemo('invTotals', inv, () => {
   const subtotal = (inv.lineItems || []).reduce((a, li) => a + (Number(li.amount) || 0), 0);
   const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
   const exempt = !!(inv.taxExempt || cust?.salesTaxExempt);
@@ -1791,6 +1805,7 @@ function invoiceTotals(inv) {
     }
   }
   return { subtotal, tax, total, exempt, paid, balance, status };
+  });
 }
 
 /** The active rental driving a unit's mirrored Rental Status (excludes
@@ -1818,11 +1833,11 @@ function rentalRevStatus(r) {
 function activeRentalForUnit(unitId) {
   // §20 judge by the UNIT's OWN status, not the rental roll-up — a No-Show /
   // Returned unit on an otherwise-active rental is NOT actively renting.
-  return DATA.rentals.filter((r) => {
+  return rmemo('activeRental', unitId, () => DATA.rentals.filter((r) => {
     if (!rentalHasUnit(r, unitId) || r.status === 'Quote') return false;
     const eu = unitEntry(r, unitId);
     return ACTIVE_RENTAL.has(eu ? unitStatus(r, eu) : r.status);
-  }).sort((a, b) => (parseISO(a.startDate) || 0) - (parseISO(b.startDate) || 0))[0] || null;
+  }).sort((a, b) => (parseISO(a.startDate) || 0) - (parseISO(b.startDate) || 0))[0] || null);
 }
 
 /* ── §10 Availability Tool (derived, never stored) ──────────────────────────
@@ -2036,8 +2051,8 @@ function topServiceForUnit(unit) {
 }
 /** Total repair cost for a unit = Σ its WO line-item costs (SPEC §12.4). */
 function unitRepairCost(unitId) {
-  return DATA.workOrders.filter((w) => w.unitId === unitId)
-    .reduce((a, w) => a + (w.lineItems || []).reduce((s, li) => s + (Number(li.cost) || 0), 0), 0);
+  return rmemo('unitRepair', unitId, () => DATA.workOrders.filter((w) => w.unitId === unitId)
+    .reduce((a, w) => a + (w.lineItems || []).reduce((s, li) => s + (Number(li.cost) || 0), 0), 0));
 }
 /** §7.6 WO "Price if billed": tiered parts markup (by each part's cost) + $150/hr labor.
  *  Tiers (Jac 2026-06-07): ≤$50 ×2.0 · ≤$200 ×1.5 · ≤$1000 ×1.3 · >$1000 ×1.2. */
@@ -2051,8 +2066,8 @@ function woBillable(w) {
 }
 /** Total revenue a unit has earned = Σ its rentals' derived prices (SPEC §12.4). */
 function unitTotalRevenue(unitId) {
-  return DATA.rentals.filter((r) => rentalHasUnit(r, unitId))
-    .reduce((a, r) => { const p = unitRentalPrice(r, unitId); return a + (p ? p.price : 0); }, 0);   // §20 this unit's own line
+  return rmemo('unitRev', unitId, () => DATA.rentals.filter((r) => rentalHasUnit(r, unitId))
+    .reduce((a, r) => { const p = unitRentalPrice(r, unitId); return a + (p ? p.price : 0); }, 0));   // §20 this unit's own line
 }
 
 /** Inspection result (handles the pending state: no checklist yet = Not Ready). */
@@ -2248,6 +2263,24 @@ function loadCommsRail() {
   return rail;
 }
 function saveCommsRail() { try { localStorage.setItem(COMMS_LS_KEY, JSON.stringify({ sessions: state.commsRail.sessions })); } catch (e) {} }
+/* Clock-in = an EMPTY comms rail. Resets every in-memory flag that decides whether a chat
+   window or tab strip is summoned on screen — cat, each session's menuOpen + lastOpen, the
+   Mr. Wrangler dock (open/min) and the Team dock (open) — then persists the emptied rail so a
+   dismissed conversation can't resurrect from localStorage either. MUST run on EVERY path back
+   to login: the old one-liner lived BELOW renderLogin()'s `phoneIdentity` early-return, so under
+   the live phoneIdentity:true default it was dead code (never ran), and even on the flag-OFF path
+   it only cleared cat/menuOpen — never the dock or lastOpen flags that ride an in-memory Switch
+   User straight into the next operator's session. Exactly the "wired to the old login only" shape
+   as the GPS-token bug (MEMORY 2026-07-17). Called from both login screens + finishLoad. (Jac 2026-07-17) */
+function resetCommsRailForLogin() {
+  if (state.commsRail) {
+    state.commsRail.cat = null;
+    Object.values(state.commsRail.sessions || {}).forEach((s) => { s.menuOpen = false; s.lastOpen = null; });
+    saveCommsRail();
+  }
+  if (state.wrangler) { state.wrangler.open = false; state.wrangler.min = false; }
+  if (state.chat) state.chat.open = false;
+}
 /* 'Ended' conversations (spec D8: End ≠ delete — the full history persists forever;
    the conversation just leaves the All list + rail). A CLIENT-side per-device map of
    `id|channel` → ended-at epoch (D9: the timestamp lets Team/Wrangler chats RESURRECT
@@ -2300,6 +2333,7 @@ const state = {
   custAcctOpen: {},           // Phase 1 (2026-07-10 account/agreements redesign, D19) — is the top-of-card Account section expanded? { [customerId]: true }; collapsed by default, view-local
   custAgOpen: {},             // Phase 1 — which Agreements row is expanded inside the Account section — { [customerId]: cardId | '__new__' | null } (one open at a time, mirrors custInvOpen); '__new__' = the +Agreement/Card creation panel
   custAgDraft: {},            // Phase 2b — the in-progress NEW-agreement draft — { [customerId]: {accountType, startDate, selfie, signature} }; view-local, cleared on sign/cancel
+  custQuickAdd: { open: false, first: '', last: '', phone: '', funnel: 'N/A' },   // the Customers-list "+ New Customer" inline quick-add row (leads the list, mirrors +New Rental's .newrow) — collapsed/open + the single in-progress draft; view-local, reset on cancel/create
   svcSecOpen: {},             // Unit detail — is the Services (service-order) section expanded? { [unitId]: true }; collapsed by default (mirrors custAcctOpen), view-local, reset on a fresh unit open
   unitSecOpen: {},            // Unit detail — which generic collapsible sections are expanded per unit: { [unitId]: { workorders|specs|gps|investment: true } }; all collapsed by default, view-local, reset on a fresh unit open (mirrors svcSecOpen). Coverage is folded into Investment (Jac 2026-07-16) — no separate 'coverage' key.
   woRowOpen: {},              // Unit detail — which Work Order row is expanded (accordion, one per unit, mirrors custInvOpen) — { [unitId]: woId | null }; collapsed by default, view-local, reset on a fresh unit open
@@ -2522,6 +2556,7 @@ function sweepEmptyDrafts(keepId) {
   }
 }
 function openStandard(card, recId, recType) {
+  if (columnOfMember(card) === columnOfMember('customers')) resetCustQuickAdd();   // discard the +New Customer draft ONLY when the customers column is displaced (a customer/invoice detail) — not on a cross-column reference click that leaves the list visible (Jac 2026-07-17; scoped per review)
   const cs = activeSession().cards[card];
   if (cs && cs.mode === 'standard' && cs.recId != null) {
     if (String(cs.recId) === String(recId)) { render(); return; }            // already showing it — no-op
@@ -4364,7 +4399,6 @@ function customerAccountSection(c) {
     : '<i>No contact info yet</i>';
   return `<div class="acct${open ? ' open' : ''}">`
     + `<div class="acct-bar js-acct-toggle" data-rec="${esc(c.customerId)}">`
-    + `<span class="acct-lbl">Account</span>`
     + `<span class="acct-sum">${summary}</span>`
     + `<span class="type-chip ${chip.tone}">${esc(chip.text)}</span>`
     + `<span class="acct-chev">${I.chev}</span>`
@@ -5663,6 +5697,16 @@ function funnelPill(custId, which, stage) {
   const st = getStatus('funnelStage', stage);
   return `<span class="pill gate c-${st.color} js-funnel" data-r="R1" data-rec="${esc(custId)}" data-which="${which}">${I.chev}${esc(st.label)}</span>`;
 }
+/** R1: the SAME gate-pill shape as funnelPill, but for the Customers-list quick-add
+ *  DRAFT (no customerId exists yet) — opens openCustQuickAddFunnelDropdown, which
+ *  writes straight to state.custQuickAdd.funnel instead of a real record. */
+function custQuickAddFunnelPill(stage) {
+  const set = !!(stage && stage !== 'N/A');
+  const st = getStatus('funnelStage', stage || 'N/A');
+  // Unset reads as a short placeholder ("Lead?", gray) — its own inline label now that the
+  // stamped caps are gone; a real pick shows the stage in its registry color. (Jac 2026-07-17)
+  return `<span class="pill gate c-${set ? st.color : 'gray'} js-custqa-funnel" data-r="R1">${I.chev}${esc(set ? st.label : 'Lead?')}</span>`;
+}
 /** R4: a DERIVED pill — rides another pill in the same section; no bg/border,
  *  destination icon + ink color only; sits directly RIGHT of its parent. */
 function dPill(label, color, { card, recId, icon, title, alert } = {}) {
@@ -5980,7 +6024,12 @@ function openCtxMenuAt(target, x, y) {
   }
   // While the rental-window picker is open, keep right-click → BACK working; just suppress
   // the element context menu (it gets in the way of picking). (Jac B5, 2026-06-15)
-  const leaf = (state.winEdit && state.winEdit.anchor) ? null : target.closest('.pill, .add-field, .flag, .linkname, .inv-line-link, .req, .seg, button, .inline-edit, .jnode, .x, a, .d-title, .r-title, .derived');
+  // The Back/Forward jog is navigation CHROME, not a data leaf — its arms are <button>s,
+  // so a bare `button` in the leaf list below scooped them up and opened the element menu
+  // instead of going Back ("opens the menu even though I'm not clicking an element", Jac
+  // 2026-07-17). Treat the jog like card dead-space: fall through to the card-Back path.
+  const onJog = !!target.closest('.card-jog');
+  const leaf = (onJog || (state.winEdit && state.winEdit.anchor)) ? null : target.closest('.pill, .add-field, .flag, .linkname, .inv-line-link, .req, .seg, button, .inline-edit, .jnode, .x, a, .d-title, .r-title, .derived');
   const hit = leaf ? (ruleOf(leaf) || { r: null, el: leaf }) : null;
   if (hit) return openCtxMenu({ clientX: x, clientY: y }, hit);
   if (!card) return;
@@ -6115,7 +6164,7 @@ function popupShell({ icon, title, tag, danger, headRight = '', headRail = '', b
    visual Rulebook overlay. One row per rule: [name, builder, one-liner]. ── */
 const RULE_META = {
   R0:  ['Flash-lint', 'body.rw-lint (CSS)', 'un-stamped UI pulses red — it bypassed the builders'],
-  R1:  ['Gate pill', 'gatePill / gatePillRaw / funnelPill', 'a status DROPDOWN that moves the record forward — big shape + chevron'],
+  R1:  ['Gate pill', 'gatePill / gatePillRaw / funnelPill / custQuickAddFunnelPill', 'a status DROPDOWN that moves the record forward — big shape + chevron'],
   R2:  ['Linked pill', 'refPill / unitPill', 'orange outline + DESTINATION-card icon — opens a record; optional ✕'],
   R3:  ['Status badge', 'statusPill', 'informational STATUS: registry color, parent-card icon, hover underline — never an action'],
   R3b: ['Data chip', 'badge', 'a plain FACT (480 HRS, No GPS): gray, no icon, no hover — independent of R3'],
@@ -9315,6 +9364,32 @@ function listView(cardDef, session) {
   wrap.appendChild(cardListEl(cardDef, session));
   return wrap;
 }
+/* ADDITIVE inline single-line quick-add (Jac, 2026-07-17) — leads the Customers list,
+   mirroring the Rentals list's +New Rental .newrow/.bigbtn trigger; the EXISTING
+   search-bar quick-add (quickAddCustomerFromSearch) and the fruitless-search
+   js-new-cust-search prompt both stay untouched. Collapsed = the plain unstamped
+   .bigbtn (same as +New Rental — R5b language, not a lint-family element). Open =
+   ONE inline flex row: First · Last · Phone · the R1 funnel picker (draft-scoped,
+   defaults N/A) · a quiet Cancel (R18 ghostPill) · the "Wrangle" R17 ignition create
+   button, enabled only once First/Last/Phone are all filled and the phone looks real
+   (mirrors parseQuickCustomer's ≥7-digit check via custQuickAddValid). */
+function custQuickAddRowHtml() {
+  const d = state.custQuickAdd;
+  if (!d.open) return `<button class="bigbtn js-custqa-open">${I.plus} New Customer</button>`;
+  // No Cancel/Wrangle buttons, no stamped field captions (Jac 2026-07-17): the placeholders
+  // label the text fields and the funnel pill labels itself. First + Last + a ≥7-digit Phone,
+  // then a funnel PICK (any value incl N/A — the pick IS the 4th selection) auto-creates the
+  // customer and opens its detail view. A created customer — or navigating away — resets to the
+  // collapsed +New Customer button.
+  return `<div class="qa-cust">`
+    + `<div class="qa-cust-row">`
+    + `<div class="qa-field qa-first"><input type="text" class="qa-in js-custqa-first" placeholder="First name" value="${esc(d.first)}"></div>`
+    + `<div class="qa-field qa-last"><input type="text" class="qa-in js-custqa-last" placeholder="Last name" value="${esc(d.last)}"></div>`
+    + `<div class="qa-field qa-phone"><input type="tel" class="qa-in js-custqa-phone" placeholder="Phone" value="${esc(d.phone)}"></div>`
+    + `<div class="qa-field qa-funnel">${custQuickAddFunnelPill(d.funnel)}</div>`
+    + `</div>`
+    + `</div>`;
+}
 /* The rows-only `.list` element of a card's list view — factored out of listView so a
    mini-search keystroke can rebuild ONLY the rows (renderCardList) without touching the
    .listbar / its focused input. Owns the filter → visibility → sort → window/group pipeline
@@ -9356,6 +9431,14 @@ function cardListEl(cardDef, session) {
   if (card === 'rentals') {
     const nr = el('div', 'newrow');
     nr.innerHTML = `<button class="bigbtn js-newitem" data-new="rental">${I.plus} New Rental</button>`;
+    list.appendChild(nr);
+  }
+  // ADDITIVE inline quick-add (Jac 2026-07-17) — Customers always leads with its own
+  // +New Customer row, mirroring the Rentals block above; the search-bar quick-add and
+  // the fruitless-search prompt below are untouched, separate affordances.
+  if (card === 'customers') {
+    const nr = el('div', 'newrow');
+    nr.innerHTML = custQuickAddRowHtml();
     list.appendChild(nr);
   }
   if (!rows.length) {
@@ -9770,11 +9853,15 @@ function headerEl() {
  *  Receipt (the most-used action) stays a bare icon. Requests/Transport
  *  alerts/Notifications moved off this bar entirely, onto the Comms bell (they
  *  don't need an {opts} passthrough here — the bell reads its own {noInbox}). */
-function bottomBarInner() {
+function bottomBarInner(opts = {}) {
   // rules 5/6: LEFT = labeled actions (icon LEADS label, no "+"), Wash joins them;
   // RIGHT (after divider) = icon-only utilities. The +New collapse button is dropped (Jac).
+  // chips:false — the desktop footer now clusters ALL comms on the RIGHT (Jac 2026-07-17), so it
+  // omits the comms chips here and re-adds them in the right cluster (bottomBarEl). The phone
+  // top-toolbar + the tools-tray keep the chips inline (default true).
+  const chips = opts.chips !== false;
   return `
-    ${commsChipsHtml()}
+    ${chips ? commsChipsHtml() : ''}
     <button class="iconbtn js-newitem" data-new="receipt">${CARD_ICON.expenses}Receipt</button>
     <span class="bb-sep"></span>
     ${toolsBtn()}`;
@@ -9842,8 +9929,11 @@ function commsBellBtn(opts = {}) {
 // far right (Jac 2026-07-10).
 function bottomBarEl() {
   const bar = el('div', 'bottombar');
-  bar.innerHTML = `<div class="bb-tools">${bottomBarInner()}</div>`
+  // ALL comms live on the RIGHT now (Jac 2026-07-17): tools stay left, the conversation rail
+  // right-aligns its tabs (see .comms-rail justify-content), then the comms chips, then the bell.
+  bar.innerHTML = `<div class="bb-tools">${bottomBarInner({ chips: false })}</div>`
     + `<div class="comms-rail" role="tablist" aria-label="Conversations">${commsRailEl()}</div>`
+    + `<div class="bb-comms">${commsChipsHtml()}</div>`
     + `<div class="bb-utils">${commsUtilsEl()}</div>`;
   return bar;
 }
@@ -9923,6 +10013,7 @@ function mainCardOfMember(m) {
 // §M1 — jump straight to a card (flattens the 3-column model on phones): set the column +
 // member, flip the visible column, and show that card's LIST.
 function goToCard(member) {
+  if (member !== 'customers' && columnOfMember(member) === columnOfMember('customers')) resetCustQuickAdd();   // discard the +New Customer draft ONLY when the customers column is switched away (e.g. to Invoices) — never when returning to it, or switching a different column (Jac 2026-07-17; scoped per review)
   const s = activeSession(); const col = COLUMN_OF[member];
   if (s.cols && col) s.cols[col] = member;
   const idx = COLUMNS.findIndex((c) => c.id === col); if (idx >= 0) state.mobileCol = idx;
@@ -16168,6 +16259,17 @@ function setFunnelStage(custId, which, val) {
   document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
   render();
 }
+/* The Customers-list quick-add funnel picker — SAME gate-timeline body as
+ * openFunnelDropdown's membership branch (locks 'Signed', F3 — never a manual pick,
+ * new customer or not), but the pick writes to the in-progress state.custQuickAdd
+ * draft instead of a real customer record (openFunnelDropdown/setFunnelStage require
+ * one to already exist). */
+function openCustQuickAddFunnelDropdown(anchorEl) {
+  const cur = state.custQuickAdd.funnel || 'N/A';
+  const mk = (v, inner, sc) => `<button class="gt-row ${sc} js-custqa-funnel-pick" data-val="${esc(v)}">${inner}</button>`;
+  const html = gateTimeline('funnelStage', cur, 'Rental funnel', mk, { order: MEMBERSHIP_FUNNEL_ORDER, lock: new Set(['Signed']) });
+  openDropdown(anchorEl, html, { cls: 'gt' });
+}
 /* §12.1 interested categories — pick mode died (Wave 2): a plain dropdown now
    attaches a category to the customer (same pattern as the funnel dropdown). */
 function openIntCatDropdown(custId, anchorEl) {
@@ -16303,6 +16405,8 @@ const scrollMemo = {};   // persistent scroll positions, keyed `card|view` (list
 // just re-homes four nodes. The card-toggle-bar swipe zone follows the toggles (see boot()).
 function render() {
   if (scanActive) return;   // the scan-to-log capture screen owns #app in its own tab — never let a background loader / 18s poll render clobber it mid-flow
+  RENDER_MEMO = {};   // open the render-scoped derivation cache (rmemo) — lives for exactly this render (Jac 2026-07-17). After the early-return so a bailed render never opens a cache it won't close.
+  try {   // ALWAYS close the cache below (finally), even if the render body throws — else a crashed render would leave stale money math for out-of-render callers (invoiceTotals etc.) until the next clean render (fix per review)
   const t0 = performance.now();
   refreshToday();   // roll "today" over before painting — an all-day-open tab must never stamp/read yesterday
   hideTip(); hideHoverPreview();
@@ -16378,6 +16482,7 @@ function render() {
   renderCount++;
   perfRecordRender(dt);   // histogram (P0) — arithmetic only, no DOM work
   if (dt > CFG.PERF_BUDGET_MS) console.warn(`[perf] render ${renderCount} took ${dt.toFixed(1)}ms (budget ${CFG.PERF_BUDGET_MS}ms)`);
+  } finally { RENDER_MEMO = null; }   // close the cache — any derivation called OUTSIDE a render must always recompute fresh, even if the render body threw
 }
 /* Lean re-render used ONLY while typing in the GLOBAL search bar. Rebuilds just the
    results grid (+ the phone dock's listbar / desktop footer counts) and deliberately
@@ -18034,6 +18139,11 @@ function onClick(e) {
   if (closest('.js-bv-customize')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.customize = !o.customize; renderOverlay(); } return; }
   if (closest('.js-bv-resetlayout')) { e.stopPropagation(); const card = closest('.js-bv-resetlayout').dataset.card; saveListLayout(card, null); render(); renderOverlay(); return; }
   if (closest('.js-new-cust-search')) { e.stopPropagation(); const cs = activeSession().cards.customers; return startNewCustomer(parseCustomerSearch(cs.search)); }
+  // Customers-list inline quick-add row (ADDITIVE — the search-bar quick-add above is untouched):
+  // open/collapse + submit here; the funnel-pick option itself lives with the other dropdown
+  // handlers below (js-custqa-funnel-pick, next to js-setfunnel).
+  if (closest('.js-custqa-open')) { e.stopPropagation(); state.custQuickAdd.open = true; return render(); }
+  if (closest('.js-custqa-funnel')) { e.stopPropagation(); return openCustQuickAddFunnelDropdown(closest('.js-custqa-funnel')); }
   if (closest('.js-new-unit-search')) { e.stopPropagation(); return quickAddUnitFromSearch(activeSession().cards.units.search); }
   if (closest('.js-new-cat-search')) { e.stopPropagation(); return quickAddCategoryFromSearch(activeSession().cards.categories.search); }
   if (closest('.js-coltab')) {
@@ -18084,6 +18194,9 @@ function onClick(e) {
   // funnel stage pill → stage dropdown; set; +Add Category / Record / Schedule
   if (closest('.js-setfunnel')) { const b = closest('.js-setfunnel'); return setFunnelStage(b.dataset.rec, b.dataset.which, b.dataset.val); }
   if (closest('.js-funnel')) { const b = closest('.js-funnel'); e.stopPropagation(); return openFunnelDropdown(b.dataset.rec, b.dataset.which, b); }
+  // Customers-list quick-add draft's funnel pick — writes state.custQuickAdd.funnel (no
+  // customer record exists yet, so this can't ride js-setfunnel/setFunnelStage above).
+  if (closest('.js-custqa-funnel-pick')) { const b = closest('.js-custqa-funnel-pick'); state.custQuickAdd.funnel = b.dataset.val; document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); if (custQuickAddValid()) return custQuickAddCreate(); return render(); }   // the funnel PICK is the 4th selection (any value incl N/A) — with first/last/phone valid → create + open detail; else show the picked funnel
   if (closest('.js-fleet-filter')) {
     const b = closest('.js-fleet-filter'); e.stopPropagation();
     // A1 — the fleet-bar segment routes through the search bar as a removable pill (one
@@ -19831,6 +19944,16 @@ function onInput(e) {
     if (o?.kind === 'gpsRoundup') { o.swapQuery = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.overlay .js-gpsru-swap-search'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
     return;
   }
+  // Customers-list quick-add row — draft fields update state.custQuickAdd WITHOUT a render()
+  // (typing must keep focus). Typing NEVER creates; the funnel PICK is the completion trigger
+  // (js-custqa-funnel-pick), so a partial phone can't auto-fire mid-entry. (Jac 2026-07-17)
+  if (e.target.classList.contains('js-custqa-first') || e.target.classList.contains('js-custqa-last') || e.target.classList.contains('js-custqa-phone')) {
+    const d = state.custQuickAdd;
+    if (e.target.classList.contains('js-custqa-first')) d.first = e.target.value;
+    else if (e.target.classList.contains('js-custqa-last')) d.last = e.target.value;
+    else d.phone = e.target.value;
+    return;
+  }
   if (e.target.classList.contains('chat-input')) { state.chat.draft = e.target.value; return; }
   if (e.target.classList.contains('js-comms-in')) { commsDrafts.set(state.commsRail.cat + '|' + e.target.dataset.cust, e.target.value); return; }   // D8 window composer — draft survives re-renders
   // Company Files live search → re-render the board popup and restore the caret.
@@ -20168,6 +20291,41 @@ function quickAddCustomerFromSearch(value) {
   render();
   toast(`${c.name || 'Customer'} added — drag it onto a rental or invoice to link.`);
   return true;
+}
+/* Customers-list inline quick-add (Jac 2026-07-17, ADDITIVE — the search-bar quick-add
+ * above stays as-is). Enabled once First/Last/Phone are all filled AND the phone looks
+ * real — same ≥7-digit check as parseQuickCustomer's phone match, so the two quick-add
+ * paths agree on "looks like a phone number". */
+function custQuickAddValid() {
+  const d = state.custQuickAdd;
+  return !!(d.first.trim() && d.last.trim() && d.phone.replace(/\D/g, '').length >= 7);
+}
+// Discard the +New Customer draft (implicit cancel) — clearing it collapses the row back to the
+// +New Customer button. Called on a successful create AND whenever the user navigates AWAY from
+// the customers list without finishing (clicking a record → openStandard, switching cards →
+// goToCard). There is no Cancel button by design (Jac 2026-07-17). Guarded so it's a no-op when idle.
+function resetCustQuickAdd() {
+  const d = state.custQuickAdd;
+  if (d && (d.open || d.first || d.last || d.phone || (d.funnel && d.funnel !== 'N/A'))) {
+    state.custQuickAdd = { open: false, first: '', last: '', phone: '', funnel: 'N/A' };
+  }
+}
+/* Create + open — mirrors quickAddCustomerFromSearch's create-object field set verbatim,
+ * except membershipStage comes from the draft's own funnel picker (set DIRECTLY, never
+ * via setFunnelStage — it hard-rejects a manual 'Signed'/'Paid', and the funnel picker
+ * itself already locks 'Signed' the same way openFunnelDropdown does, F3) and usedSalesStage
+ * stays its ordinary 'N/A' default. Always opens the new customer in Standard view
+ * (openStandard), same "unlinked — drag it where it goes" landing as the search-bar path. */
+function custQuickAddCreate() {
+  if (!custQuickAddValid()) return;
+  const d = state.custQuickAdd;
+  const firstName = d.first.trim(), lastName = d.last.trim(), phone = d.phone.trim();
+  const id = nextCustomerId();
+  const c = { customerId: id, firstName, lastName, name: `${firstName} ${lastName}`.trim(), company: '', phone, email: '', address: '', industry: '', accountType: 'Non-Business', payStatus: 'New Customer', requiresPO: false, rentalProtection: false, accountNotes: '', stripeId: '', selfie: '', signature: '', agreementType: '', agreementSignedAt: '', interestedCategoryIds: [], interestedMakes: [], desiredAge: '', desiredHours: '', activityLog: [], usedSalesStage: 'N/A', membershipStage: d.funnel || 'N/A', _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' } };
+  DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c);
+  logAction(c, 'Customer quick-added');
+  resetCustQuickAdd();
+  openStandard('customers', id);
 }
 /* QUICK ADD — a fruitless Units/Categories search offers a +New button (the empty state).
    It creates the record with the typed text as its name and drops you into its Standard
@@ -24207,8 +24365,8 @@ window.addEventListener('beforeunload', (e) => {
   e.preventDefault(); e.returnValue = '';
 });
 function renderLogin(msg) {
+  resetCommsRailForLogin();   // D8 — clock-in = an EMPTY rail; BEFORE the phoneIdentity branch so BOTH login screens clear (this reset used to sit below the early-return = dead code on the live path — Jac 2026-07-17)
   if (flagOn('phoneIdentity')) return renderPhoneLogin(msg);   // per-person login flow (Phase 2); the shared-password screen below is the flag-OFF path
-  if (state.commsRail) { state.commsRail.cat = null; state.commsRail.sessions && Object.values(state.commsRail.sessions).forEach((s) => { s.menuOpen = false; }); }   // D8 — clock-in = an EMPTY rail (sessions persist per device, nothing summons itself)
   $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4?v=20260708a" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="login-form">
     <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
     <div class="login-plate">
@@ -24262,6 +24420,7 @@ function renderLogin(msg) {
 }
 function finishLoad() {
   snapshotSaved();                                              // baseline = what the backend currently holds
+  resetCommsRailForLogin();                                    // the visible fix for "old chats on login": empty the rail on EVERY login mode, before the first main render (Jac 2026-07-17)
   buildIndexes(); state.cascade = createCascade(DATA); booting = false; render();
   cacheRefreshing(false);                                       // §instant-cache: fresh backend data is in — drop the "refreshing" cue
   cachePersistSnapshot();                                       // §instant-cache: photograph this confirmed backend state (personal device + flag only)
@@ -24485,6 +24644,7 @@ async function pidCall(btnId, fn) {
   catch (e) { if (btn) { btn.disabled = false; btn.textContent = prev; } pidErr("Couldn't reach the database. Try again."); return null; }
 }
 function renderPhoneLogin(msg) {
+  resetCommsRailForLogin();   // clock-in = an EMPTY rail (covers a direct phone-login render, e.g. phoneBoot) — Jac 2026-07-17
   if (msg != null) pidUI.err = msg;
   const P = PHONE_IDENTITY, step = pidUI.step, roster = pidRosterCache();
   let inner = '';
@@ -25174,7 +25334,13 @@ function boot() {
     // card-to-List never fired. Dismiss it and re-resolve the row beneath the cursor.
     let target = e.target;
     if (target.closest('.hover-preview')) { hideHoverPreview(); target = document.elementFromPoint(e.clientX, e.clientY) || target; }
-    if (!target.closest('.card') && !target.closest('.overlay .popup')) return;
+    if (!target.closest('.card') && !target.closest('.overlay .popup')) {
+      // The phone footer jog (.card-jog inside .mobile-toolbar) sits OUTSIDE any .card, so
+      // this early-return used to let the NATIVE context menu leak on a long-press of
+      // Back/Forward. Swallow it for the jog specifically (tap still fires) (Jac 2026-07-17).
+      if (target.closest('.card-jog')) e.preventDefault();
+      return;
+    }
     e.preventDefault();
     if (performance.now() - lastTouchCtx < 700) return;                        // §M3 — our touch long-press already opened it; swallow the trailing native event
     hideHoverPreview();                                                        // clear any preview still mid-fuse so it can't reappear over the menu
