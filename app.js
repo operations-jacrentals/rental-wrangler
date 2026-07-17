@@ -13713,27 +13713,31 @@ function buildPopupEl(o, overlay, opts = {}) {
       <div class="popup-foot"><button class="pill ghost js-ck-pending" data-r="R18">Keep as pending</button><button class="pill ignition js-ck-complete${allDone ? '' : ' is-disabled'}" data-r="R17">Complete inspection</button></div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'inspection') {
-    // §12.8 Failure report — triggered when an inspection is marked Failed: capture a
-    // photo/video + a description for the auto-created work order.
+    // §12.8 Inspection record. On a FAIL this is the failure report — photo/video + a description
+    // for the auto-created WO, plus the bill-customer gate. On a PASS (re-opened via
+    // openInspectionRecord — "click Pass again to view the done inspection") it drops the failure
+    // framing and the bill gate (nothing to charge) and reads as a clean inspection view.
     const n = IDX.insp.get(o.recId);
     if (!n) { return false; }
     const unit = IDX.unit.get(n.unitId);
     const ir = inspResult(n);
+    const passed = n.checklist === 'Pass';
     const isVideo = (n.photo || '').startsWith('data:video');
     const media = n.photo
-      ? `<div class="insp-photo">${isVideo ? `<video src="${esc(n.photo)}" controls></video>` : `<img src="${esc(n.photo)}" alt="failure photo">`}<label class="insp-rephoto">Replace<input type="file" accept="image/*,video/*" class="js-insp-photo" data-rec="${n.inspectionId}" hidden></label></div>`
+      ? `<div class="insp-photo">${isVideo ? `<video src="${esc(n.photo)}" controls></video>` : `<img src="${esc(n.photo)}" alt="inspection photo">`}<label class="insp-rephoto">Replace<input type="file" accept="image/*,video/*" class="js-insp-photo" data-rec="${n.inspectionId}" hidden></label></div>`
       : `<label class="insp-photo empty"><span>${I.video} Add photo / video</span><input type="file" accept="image/*,video/*" class="js-insp-photo" data-rec="${n.inspectionId}" hidden></label>`;
+    const descPh = passed ? 'Notes — condition, observations…' : 'Describe the failure (what’s wrong, parts needed)…';
     const pop = el('div', 'popup insp-popup');
-    pop.innerHTML = popupShell({ icon: CARD_ICON.inspections, title: `Failure report — ${unit?.name || '—'}`, tag: 'Inspection · failure', danger: true,
+    pop.innerHTML = popupShell({ icon: CARD_ICON.inspections, title: `${passed ? 'Inspection' : 'Failure report'} — ${unit?.name || '—'}`, tag: `Inspection · ${passed ? 'passed' : 'failure'}`, danger: !passed,
       foot: `<button class="pill ignition js-close" data-r="R17">Done</button>`,
       body: `
         <div class="pillrow" style="margin-bottom:12px">${unit ? unitPill(unit.unitId) : ''}<span class="pill c-${ir.color}">${esc(ir.label)}</span>${n.woId ? refPill('workOrders', n.woId, 'Work Order') : ''}<span class="muted" style="font-size:12px;margin-left:auto">${esc(fmtShortDate(n.date))}</span></div>
         ${media}
-        <textarea class="insp-desc js-insp-desc" data-rec="${n.inspectionId}" placeholder="Describe the failure (what's wrong, parts needed)…">${esc(n.description || '')}</textarea>
-        <div class="insp-gate" style="margin-top:12px"><span class="insp-gate-lbl">Charge the customer?</span>${segCtl([
+        <textarea class="insp-desc js-insp-desc" data-rec="${n.inspectionId}" placeholder="${esc(descPh)}">${esc(n.description || '')}</textarea>
+        ${passed ? '' : `<div class="insp-gate" style="margin-top:12px"><span class="insp-gate-lbl">Charge the customer?</span>${segCtl([
           { label: 'Bill', js: 'js-insp-bill', data: { rec: n.inspectionId, val: 'Yes' }, on: n.billCustomer === 'Yes' ? 'green' : null },
           { label: 'Don’t bill', js: 'js-insp-bill', data: { rec: n.inspectionId, val: 'No' }, on: n.billCustomer === 'No' ? 'gray' : null },
-        ], 'seg-bill')}</div>` });
+        ], 'seg-bill')}</div>`}` });
     overlay.appendChild(pop);
   } else if (o.kind === 'service') {
     // §7.7/§12.7 service completion — Hours at Completion · Date · Photo · Notes
@@ -18982,11 +18986,11 @@ function setUnitCondition(unitId, val) {
   // FAIL: a unit that breaks while OUT ON RENT is a field call (red-flag the rental, roll a truck,
   // show in dispatch); a yard unit with no active rental is a bench failed-inspection like before.
   if (val === 'Fail') {
+    u.condAt = TODAY_ISO; u.condClock = nowClock();   // stamp the condition change on either path
     const ar = activeRentalForUnit(unitId);
-    if (ar) return markFieldCall(ar.rentalId);
-    u.condAt = TODAY_ISO; u.condClock = nowClock();
+    if (ar) return markFieldCall(ar.rentalId);        // on-rent breakdown → field call (truck roll + dispatch)
     const n = newInspectionForUnit(u); n.wash = n.wash || 'No';
-    return setInspResult(n.inspectionId, 'Fail');   // bench fail: auto-WO + §12.8 photo/notes popup
+    return setInspResult(n.inspectionId, 'Fail');     // yard bench fail: auto-WO + §12.8 photo/notes popup
   }
   // NOT READY resets the inspection back to pending.
   u.condAt = TODAY_ISO; u.condClock = nowClock();
