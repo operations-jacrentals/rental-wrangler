@@ -54,8 +54,7 @@ import { tmpdir } from 'node:os';
 // helpers this file used to define locally.
 import {
   git, gitTry, lines, fail, sleepMs,
-  STAGING_REPO, STAGING_PAGES_BRANCH,
-  resolveCredential, stagingRemoteUrl, gitEnv, gitAuthed,
+  resolveCredential, stagingRemoteUrl, gitEnv, gitAuthed, slotTarget,
 } from './lib/staging-git.mjs';
 // Step 7 — the staging-lease coordination layer. Acquire a slot (or auto-queue and wait)
 // before deploying, renew it on a verified live-bytes check, and release it only when
@@ -65,8 +64,8 @@ import { acquire as leaseAcquire, renew as leaseRenew, release as leaseRelease }
 import { writeMarkerAtomic, clearMarker, DEFAULT_TTL_MINUTES } from './lib/staging-control.mjs';
 
 // Refuse to deploy from these — a short feature branch is the whole point of Gate 1.
-// NB: STAGING_PAGES_BRANCH (imported above) is the STAGING repo's own Pages branch (still
-// 'main') — unrelated to this repo's trunk, which was renamed main -> trunk.
+// NB: a slot's own Pages branch (slotTarget().branch, still 'main' on every staging repo) is
+// unrelated to THIS repo's trunk, which was renamed main -> trunk.
 const PROTECTED_BRANCHES = ['trunk', 'production'];
 
 // ROOT/chdir are set inside main() (hoisted per plan [R7]) so that importing this module
@@ -268,12 +267,16 @@ function freshCloneDir() {
 }
 function removeCloneDir(dir) { rmSync(dir, { recursive: true, force: true }); }
 
-function cloneStaging(dir, cred) {
-  gitAuthed(['clone', '--depth', '1', '--branch', STAGING_PAGES_BRANCH, '--single-branch', stagingRemoteUrl(cred), dir], cred);
+// Clone/push the ACQUIRED slot's OWN site repo (target = slotTarget(slot.id)) — NOT a
+// hardcoded repo. This is what makes slots 2/3 serve their own bytes at their own URLs and
+// keeps two parallel deploys from clobbering one repo. (The control branch is untouched here —
+// it lives on slot 1's repo and is only ever touched by the lease layer.)
+function cloneStaging(dir, cred, target) {
+  gitAuthed(['clone', '--depth', '1', '--branch', target.branch, '--single-branch', stagingRemoteUrl(cred, target.repo), dir], cred);
 }
-function pushStaging(dir, cred) {
+function pushStaging(dir, cred, target) {
   // 'origin' already points at the authed URL from the clone above — no need to re-embed it.
-  gitAuthed(['push', 'origin', `HEAD:refs/heads/${STAGING_PAGES_BRANCH}`], cred, { cwd: dir });
+  gitAuthed(['push', 'origin', `HEAD:refs/heads/${target.branch}`], cred, { cwd: dir });
 }
 
 // Replace the clone's tracked files with exactly `files` (so a file removed from the
@@ -503,8 +506,11 @@ async function main() {
   const lease = { acquire: (o) => leaseAcquire(o, { cred }) };
   const slot = await acquireSlotOrQueue({ session: SESSION, branch, feature }, { lease });
   assertSlotShape(slot);
+  // Resolve the acquired slot → its OWN site repo/branch. slotTarget throws (never a silent
+  // slot-1 fallback) if the slot is unconfigured, so a bad slot can never push to the wrong repo.
+  const target = slotTarget(slot.id);
   _held = true; _heldIdent = { session: SESSION };
-  console.log(`deploy-staging: 🎟️  holding slot ${slot.id} → ${slot.url}`);
+  console.log(`deploy-staging: 🎟️  holding slot ${slot.id} → ${slot.url} (repo ${target.repo}#${target.branch})`);
 
   // Advisory marker (diagnostic-only, gitignored): token:null at acquire, filled on verified renew.
   try { writeMarkerAtomic({ slotId: slot.id, url: slot.url, session: SESSION, branch, feature, token: null, acquiredAt: Date.now() }); } catch { /* advisory only */ }
@@ -515,8 +521,8 @@ async function main() {
 
   const cloneDir = freshCloneDir();
   try {
-    console.log(`deploy-staging: cloning ${STAGING_REPO}#${STAGING_PAGES_BRANCH} …`);
-    cloneStaging(cloneDir, cred);
+    console.log(`deploy-staging: cloning ${target.repo}#${target.branch} …`);
+    cloneStaging(cloneDir, cred, target);
     syncFiles(cloneDir, files);
     git(['add', '-A'], { cwd: cloneDir });
     if (gitTry(['diff', '--cached', '--quiet'], { cwd: cloneDir }).ok) {
@@ -533,7 +539,7 @@ async function main() {
     // ── PUSH — from here the pack MAY have landed: HOLD the lease on ANY failure ([R8]). ──
     _landed = true;
     try {
-      pushStaging(cloneDir, cred);
+      pushStaging(cloneDir, cred, target);
     } catch (e) {
       console.error('deploy-staging: 🔴 push to staging failed AFTER the commit — the push is INDETERMINATE');
       console.error('deploy-staging: (the pack may already have been accepted). HOLDING the lease; TTL reclaims it if nothing landed.');

@@ -31,13 +31,48 @@ import { existsSync } from 'node:fs';
 
 // ── Config (verbatim from deploy-staging.mjs) ──
 
-// The staging repo; its GitHub Pages serves the staging URL
-// (https://operations-jacrentals.github.io/rental-wrangler-staging/).
-export const STAGING_REPO = 'operations-jacrentals/rental-wrangler-staging';
+// The GitHub org that owns every staging repo — one org, one Pages host.
+export const STAGING_ORG = 'operations-jacrentals';
 
-// The branch staging's Pages source builds from. The staging repo has exactly one
+// The staging repo; its GitHub Pages serves the staging URL
+// (https://operations-jacrentals.github.io/rental-wrangler-staging/). This is ALSO the
+// sole home of the `staging-control` coordination branch (the lease/queue state for ALL
+// slots lives here, never on the -2/-3 site repos), so STAGING_REPO stays pinned to slot 1.
+export const STAGING_REPO = `${STAGING_ORG}/rental-wrangler-staging`;
+
+// The branch staging's Pages source builds from. Each staging repo has exactly one
 // branch, `main`, so a "deploy from a branch" Pages source can only serve `main`.
 export const STAGING_PAGES_BRANCH = 'main';
+
+// A repo's project-Pages URL (trailing slash — matches how GitHub Pages canonicalizes a
+// project site). `operations-jacrentals/rental-wrangler-staging-2` →
+// `https://operations-jacrentals.github.io/rental-wrangler-staging-2/`.
+export function pagesUrlForRepo(repo) {
+  const [org, name] = String(repo).split('/');
+  return `https://${org}.github.io/${name}/`;
+}
+
+// The N=3 slot pool → each slot's OWN site repo + Pages branch. A deploy pushes the site to
+// the ACQUIRED slot's repo (so slots 2/3 serve their own bytes at their own URLs and two
+// sessions never clobber each other on one repo); the shared control branch always lives on
+// slot 1's STAGING_REPO. Slot 1 == the original single staging site (bookmark unchanged).
+// Turning on more lanes = provision the repo + Pages, add an entry here (a data change).
+export const SLOT_TARGETS = {
+  1: { repo: STAGING_REPO, branch: STAGING_PAGES_BRANCH },
+  2: { repo: `${STAGING_ORG}/rental-wrangler-staging-2`, branch: 'main' },
+  3: { repo: `${STAGING_ORG}/rental-wrangler-staging-3`, branch: 'main' },
+};
+
+// Resolve a slot id → its { repo, branch } deploy target. Throws (never a silent fallback to
+// slot 1) so a malformed/unconfigured slot can never send a deploy to the wrong repo.
+export function slotTarget(id) {
+  const t = SLOT_TARGETS[id];
+  if (!t) {
+    const have = Object.keys(SLOT_TARGETS).join(', ');
+    throw new Error(`staging: no deploy target configured for slot ${id} (have ${have}).`);
+  }
+  return t;
+}
 
 // The push credential — an SSH deploy key PATH (preferred when both are set: a leaked
 // key path is far safer to fail loudly with than a PAT, which can end up embedded in a
@@ -75,12 +110,15 @@ export function resolveCredential() {
   return null;
 }
 
-export function stagingRemoteUrl(cred) {
+// Build the authed remote URL for a staging repo. Defaults to STAGING_REPO (slot 1 / the
+// control branch's home), so every existing control-substrate caller is unchanged; the deploy
+// passes the ACQUIRED slot's repo (slotTarget().repo) to push a site to slots 2/3.
+export function stagingRemoteUrl(cred, repo = STAGING_REPO) {
   return cred.kind === 'ssh'
-    ? `git@github.com:${STAGING_REPO}.git`
+    ? `git@github.com:${repo}.git`
     // PAT embedded in the URL — never printed. Every command that uses this URL goes
     // through gitAuthed()/gitAuthedTry(), which never surface raw git stderr/argv/stdout.
-    : `https://x-access-token:${cred.token}@github.com/${STAGING_REPO}.git`;
+    : `https://x-access-token:${cred.token}@github.com/${repo}.git`;
 }
 
 // Delta 1 — prompt-suppression + locale pin. GIT_TERMINAL_PROMPT=0 (+ SSH BatchMode=yes)

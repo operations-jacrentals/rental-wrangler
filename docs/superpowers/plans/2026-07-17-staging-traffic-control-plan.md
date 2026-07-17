@@ -389,6 +389,16 @@ Touches only non-served tooling/config/skills → `/merge` alone (no `/deploy`, 
 6. `/merge` → PR → `smoke` CI (now runs both lease steps) → squash to trunk. Nothing to promote.
 
 ### 8.2 Later flip to N=3 (data + provisioning, no state-machine code change)
+
+> **LANDED 2026-07-17 (code):** steps 2–4 below are implemented on the N=3 branch. Confirmed
+> against the code that this is **more than a data flip**: step 3 (deploy-side slot→repo routing)
+> and the promote per-slot resolution were BOTH genuinely required, not already-done —
+> `deploy-staging.mjs` hardcoded slot 1's repo and `promote.mjs`'s `resolveStagingSlotUrl` always
+> returned slot 1's URL. Now: `SLOT_TARGETS`+`slotTarget()` in `tools/lib/staging-git.mjs`
+> (`SLOT_URLS` derived from it), deploy clones/pushes the acquired slot's repo, promote scans all
+> slots for the one serving the trunk token (or `--slot N`). No state-machine change; still `/merge`
+> alone. **Remaining = step 1 (provisioning) + the re-seed in step 2**, done when staging is idle.
+
 `slots` is an array from day one and eligibility is already `#ahead < #free`, so:
 1. **Provision two more Pages sites** (Jac): `rental-wrangler-staging-2`/`-3` (or two more Pages branches), each its own URL; bookmark all three.
 2. **Config:** add slot URLs — `SLOT_URLS = {1:…, 2:…, 3:…}` and `DEFAULT_N = 3` in `staging-control.mjs`; `node tools/staging-lease.mjs reset --slots 3` re-seeds `control.json` with 3 free slots.

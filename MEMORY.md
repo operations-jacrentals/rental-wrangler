@@ -237,13 +237,21 @@
   client-supplied `minTier` and aren't server-bound to a specific action — `authzVerify` grants
   no token/session so it's not exploitable beyond the app's existing client-trust model, but a
   future server-side `action→tier-floor` table would harden it (logged in phone-identity-STATUS.md).
-- **Staging Traffic Control is N-slot-ready but ships at N=1** (#672). Only ONE staging lane exists
-  (`rental-wrangler-staging`; `DEFAULT_N=1`, `SLOT_URLS={1:…}` in `tools/lib/staging-control.mjs`);
-  no `-2`/`-3` repos. Concurrent sessions queue on the single lease (30-min holder TTL). N=3 is
-  **deferred** and two-part: Jac provisions `rental-wrangler-staging-2`/`-3` Pages sites, then a
-  1-line data flip (`DEFAULT_N=3` + their `SLOT_URLS`) + re-seed the `staging-control` branch —
-  see plan §8.2 (`docs/superpowers/plans/2026-07-17-staging-traffic-control-plan.md`). Ships by
-  `/merge` alone (tools/ only).
+- **Staging Traffic Control N=3 — code LANDED 2026-07-17, awaiting provisioning + live re-seed**
+  (#672 shipped N=1 → this branch flips to N=3). N=3 was **NOT a 1-line data flip** (the earlier
+  note's framing was wrong — proved against §8.2): besides `DEFAULT_N=3` + `SLOT_URLS` (now
+  DERIVED from the new `SLOT_TARGETS` map in `staging-git.mjs`, single source of truth), a correct
+  3-lane needs **(a) deploy-side slot→repo routing** — `deploy-staging.mjs` hardcoded slot 1's repo
+  so every deploy pushed to `rental-wrangler-staging` regardless of the acquired slot (slots 2/3
+  would never get bytes; two sessions would clobber repo 1 = the exact bug this system prevents);
+  now `slotTarget(slot.id)` routes the clone/push to the acquired slot's OWN repo. **(b) promote
+  per-slot freshness** — `resolveStagingSlotUrl` always returned slot 1's URL; now it scans every
+  slot for the one serving the trunk `?v=` token (or honors `--slot N`). The shared `staging-control`
+  branch stays ONLY on slot 1's repo. **REMAINING (Jac):** provision `rental-wrangler-staging-2`/`-3`
+  (public, Pages source `main`, root) + grant `STAGING_DEPLOY_PAT` push access, THEN re-seed the live
+  control branch: `node tools/staging-lease.mjs reset --slots 3` — a **force-push, do it when staging
+  is IDLE** (it wipes the current holder + queue; e.g. at 09:07Z the branch had a live holder + 3
+  waiters). Ships by `/merge` alone (tools/ only). Plan §8.2.
 - **Repo privacy** — parked on Jac's GitHub billing-tier check. Pages-from-private
   needs GitHub Pro; Free forces public, and flipping private on Free takes
   `app.jacrentals.com` down. If Pro: canary staging → confirm → flip main + production

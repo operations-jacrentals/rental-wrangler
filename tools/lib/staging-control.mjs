@@ -21,6 +21,7 @@ import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import {
   git as plainGit, gitTry, lines, gitAuthed, gitAuthedTry, stagingRemoteUrl,
+  SLOT_TARGETS, pagesUrlForRepo,
 } from './staging-git.mjs';
 
 // ── constants ──
@@ -30,12 +31,15 @@ export const CONTROL_FILE = 'control.json';
 export const CONTROL_VERSION = 1;
 export const DEFAULT_TTL_MINUTES = 30;      // holder TTL — a holder does no work during Jac's review
 export const DEFAULT_QUEUE_TTL_SECONDS = 90; // waiter TTL (~3× the 30 s poll) — a live waiter proves liveness by polling
-export const DEFAULT_N = 1;                   // slot count today (single staging URL)
+export const DEFAULT_N = 3;                   // slot count: three parallel staging lanes
 
-// slot id → its own Pages URL. N=1 today; N=3 is a data change here + provisioning.
-export const SLOT_URLS = {
-  1: 'https://operations-jacrentals.github.io/rental-wrangler-staging/',
-};
+// slot id → its own Pages URL. Derived from the single source of truth (SLOT_TARGETS in
+// staging-git.mjs) so a slot's recorded control.json URL can never drift from where the
+// deploy actually pushes: SLOT_URLS[id] === pagesUrlForRepo(SLOT_TARGETS[id].repo). Slot 1
+// resolves to the original single staging URL (…/rental-wrangler-staging/), unchanged.
+export const SLOT_URLS = Object.fromEntries(
+  Object.entries(SLOT_TARGETS).map(([id, t]) => [Number(id), pagesUrlForRepo(t.repo)]),
+);
 
 // Explicit committer identity — there is NO ambient git identity on a clean container, so
 // every control commit stamps this pair via `-c user.name=/-c user.email=`.
