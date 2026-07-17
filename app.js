@@ -18980,26 +18980,27 @@ function yardCapture(rentalId, cap, unitId, opts = {}) {
   }
   // A first End/Recovery needs its Start/Delivery logged first (a re-record already has it).
   if (cap === 'end' && !replace && !cur.startCapture) return flashOr('.js-yard[data-cap="start"]', 'Log the Start/Delivery first.');
-  // No popup — fire the camera straight from the tap; ending the video saves it.
-  openYardCamera(rentalId, cap, unitId || null);
+  // No popup — fire the camera straight from the tap; ending the video saves it. opts
+  // carries a manager's granted account-block override through to the commit's status move.
+  openYardCamera(rentalId, cap, unitId || null, opts);
 }
 /* Fire the device camera straight from the yard-journey tap. The tap IS the user
    gesture the browser needs to open the camera, so we synchronously create + click a
    capture input; when the recording comes back we commit it — no confirm step. */
-function openYardCamera(rentalId, cap, unitId) {
+function openYardCamera(rentalId, cap, unitId, opts = {}) {
   const input = el('input'); input.type = 'file'; input.accept = 'video/*,image/*';
   input.setAttribute('capture', 'environment'); input.style.display = 'none';
   input.addEventListener('change', () => {
     const f = input.files && input.files[0]; input.remove();
     if (!f) return;   // camera dismissed with no recording — nothing logged
     const rd = new FileReader();
-    rd.onload = () => commitYardCapture(rentalId, cap, unitId, rd.result);
+    rd.onload = () => commitYardCapture(rentalId, cap, unitId, rd.result, opts);
     rd.onerror = () => toast('Could not read that video.');
     rd.readAsDataURL(f);
   });
   document.body.appendChild(input); input.click();
 }
-function commitYardCapture(rentalId, cap, unitId, dataUrl) {
+function commitYardCapture(rentalId, cap, unitId, dataUrl, opts = {}) {
   const r = IDX.rental.get(rentalId); if (!r) return;
   const eu = captureUnit(r, unitId);
   const tgt = eu || r;
@@ -19018,8 +19019,10 @@ function commitYardCapture(rentalId, cap, unitId, dataUrl) {
   // move just this unit's status (or the whole rental when no unit context); a first
   // move can still hit a §9 gate, in which case we keep nothing.
   const moveStatus = (val) => {
-    if (unitId && eu) { setUnitStatus(rentalId, unitId, val); return unitStatus(r, eu) === val; }
-    setRentalStatus(rentalId, val); return r.status === val;
+    // carry a manager's granted account-block override (from yardCapture) into the status
+    // move so an authorized delivery isn't re-blocked and the recording lost.
+    if (unitId && eu) { setUnitStatus(rentalId, unitId, val, { bypassAccountBlock: opts.bypassAccountBlock }); return unitStatus(r, eu) === val; }
+    setRentalStatus(rentalId, val, { bypassAccountBlock: opts.bypassAccountBlock }); return r.status === val;
   };
   if (cap === 'start') {
     if (!replace && !moveStatus('On Rent')) return;
