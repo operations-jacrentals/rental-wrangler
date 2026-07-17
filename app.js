@@ -23835,7 +23835,7 @@ async function attemptLogin() {
     let role = '';
     try {
       const a = await backendCall('auth');
-      if (a && a.ok) role = a.role || '';
+      if (a && a.ok) { role = a.role || ''; if (a.scanDeviceToken) scanTokenSet(a.scanDeviceToken); }   // remember this device for decal scans (write-only token)
       else if (a && /unauthorized/i.test(a.error || '')) throw new Error('unauthorized');
     } catch (e2) { if (/unauthorized/i.test(e2.message || '')) throw e2; }
     currentRole = role;
@@ -23847,6 +23847,7 @@ async function attemptLogin() {
     applyLoadResponse(await loadPromise);
     finishLoad();
     applyRoleLanding();   // each role lands on its default main/sub-card
+    maybeReplayScan();    // a #u= decal scan parked pre-login → open the capture screen now (renders last, wins #app)
   } catch (e) {
     backendPassword = ''; sessionStorage.removeItem('jactec.pw'); sessionStorage.removeItem('jactec.role');
     renderLogin(/unauthorized/i.test(String(e && e.message)) ? 'That password wasn’t recognized.' : "Couldn't reach the database. Check your connection and try again.");
@@ -23871,10 +23872,11 @@ function pidRosterCache() { try { return JSON.parse(localStorage.getItem('jactec
 function pidAdopt(r, tok, personal) {
   backendPassword = tok; currentRole = (r && r.role) || pidUI._role || ''; currentUser = (r && r.name) || pidUI.name || '';
   pidTokenSet(tok, personal);
+  if (r && r.scanDeviceToken) scanTokenSet(r.scanDeviceToken);   // remember this device for decal scans (write-only token)
   try { sessionStorage.setItem('jactec.role', currentRole); localStorage.setItem('jactec.user', currentUser); } catch (e) {}
 }
 function pidLoadFail() { pidTokenClear(); backendPassword = ''; pidUI.step = 'identify'; renderPhoneLogin("Couldn't reach the database. Try again."); }
-function pidEnter() { const s = document.querySelector('.login-screen'); if (s) s.classList.add('signing-in'); loadFromBackend().then(finishLoad).then(applyRoleLanding).catch(pidLoadFail); }
+function pidEnter() { const s = document.querySelector('.login-screen'); if (s) s.classList.add('signing-in'); loadFromBackend().then(finishLoad).then(applyRoleLanding).then(maybeReplayScan).catch(pidLoadFail); }
 // Boot (flag on): resume a trusted device, else show the phone login.
 function phoneBoot() {
   const tok = pidTokenGet();
@@ -24024,6 +24026,104 @@ let _backendWarmed = false;
 function warmBackend() {
   if (_backendWarmed) return; _backendWarmed = true;
   try { fetch(BACKEND_URL, { method: 'GET', mode: 'no-cors', cache: 'no-store' }).catch(() => {}); } catch (e) {}
+}
+/* ══════════════ SCAN-TO-LOG (QR DECAL → VIDEO) — standalone capture (FEATURES.qrScanLog) ══════════════
+   A #u=<unitId> decal scan opens this focused full-screen plate (mounted like renderLogin), records
+   ONE video, and files it to the unit's correct rental log — the SERVER (captureByScan) decides
+   start/end/block, so a remembered phone needs no session and never loads customer data. Auth is the
+   write-only scanDeviceToken (localStorage) OR a live session — NEVER pidToken (a full-access
+   credential). Backend contract: docs/backend-snippets/captureByScan.md. Dormant until flag + backend. */
+let pendingScan = null;
+const scanUI = { unitId: '', unitName: '', action: '', phase: '', reason: '' };
+// Activation: in PRODUCTION the scan route is inert until FEATURES.qrScanLog flips ON (after the
+// backend deploys); on the staging mirror + localhost it's always active for review — same files, so
+// we key off APP_ENV, not a committed flag. Preview = canned captureByScan responses (no backend):
+// forced by FEATURES.qrScanPreview and automatic off-production, so staging is walkable before deploy.
+const scanEnabled = () => flagOn('qrScanLog') || APP_ENV !== 'production';
+const scanPreviewOn = () => flagOn('qrScanPreview') || APP_ENV !== 'production';
+function scanTokenGet() { try { return localStorage.getItem('jactec.scanDevice') || ''; } catch (e) { return ''; } }
+function scanTokenSet(t) { try { if (t) localStorage.setItem('jactec.scanDevice', t); } catch (e) {} }
+function scanTokenClear() { try { localStorage.removeItem('jactec.scanDevice'); } catch (e) {} }
+// Replayed at the end of a login chain (after applyRoleLanding, so it renders LAST and wins #app).
+function maybeReplayScan() { if (pendingScan && scanEnabled()) { const u = pendingScan; pendingScan = null; renderScanCapture(u); } }
+// captureByScan is authorized by the scan token OR the session; the server resolves everything and
+// returns only equipment-level data (unit name + slot) or a block reason — never customer PII.
+function scanCall(extra) {
+  if (scanPreviewOn()) return Promise.resolve(scanPreviewResponse(extra || {}));   // staging/local or forced — canned, no backend
+  return backendCall('captureByScan', Object.assign({ unitId: scanUI.unitId, scanToken: scanTokenGet() }, extra || {}));
+}
+// Canned captureByScan responses for the staging review (FEATURES.qrScanPreview) — the unit-id suffix
+// drives the state so a handful of printed test decals exercise every branch. NOT a real code path.
+function scanPreviewResponse(extra) {
+  const id = String(scanUI.unitId || ''), m = extra.mode || 'record', last = id.slice(-1);
+  if (last === '4') return { ok: false, code: 'unit_not_found' };
+  if (last === '3') return { ok: true, blocked: true, unitName: id, reason: id + ' is reserved for later, not out today — nothing to log yet.' };
+  const action = last === '2' ? 'end' : 'start';
+  return m === 'peek' ? { ok: true, unitName: id, action } : { ok: true, filedAs: action, unitName: id };
+}
+function renderScanCapture(unitId) {
+  Object.assign(scanUI, { unitId, unitName: '', action: '', phase: 'loading', reason: '' });
+  drawScanScreen();
+  scanCall({ mode: 'peek' }).then((r) => {                       // resolve unit + intended slot (or block), no upload
+    if (r && r.ok) {
+      if (r.blocked) { scanUI.phase = 'blocked'; scanUI.reason = r.reason || 'Nothing to log for this unit right now.'; scanUI.unitName = r.unitName || ''; }
+      else { scanUI.phase = 'ready'; scanUI.unitName = r.unitName || unitId; scanUI.action = r.action || 'start'; }
+    } else if (r && r.code === 'unit_not_found') { scanUI.phase = 'notfound'; }
+    else if (r && /unauthorized/i.test(r.error || '')) { scanTokenClear(); pendingScan = unitId; warmBackend(); return renderLogin(); }
+    else { scanUI.phase = 'error'; }
+    drawScanScreen();
+  }).catch(() => { scanUI.phase = 'error'; drawScanScreen(); });
+}
+function scanRecord(file) {
+  if (!file) return;
+  const rd = new FileReader();
+  rd.onerror = () => { scanUI.phase = 'error'; drawScanScreen(); };
+  rd.onload = () => {
+    scanUI.phase = 'uploading'; drawScanScreen();
+    scanCall({ dataUrl: rd.result, name: 'scan_' + scanUI.unitId }).then((r) => {   // server re-resolves + files it
+      if (r && r.ok && r.filedAs) { scanUI.phase = 'done'; scanUI.action = r.filedAs; scanUI.unitName = r.unitName || scanUI.unitName; }
+      else if (r && r.blocked) { scanUI.phase = 'blocked'; scanUI.reason = r.reason || ''; }
+      else { scanUI.phase = 'error'; }
+      drawScanScreen();
+    }).catch(() => { scanUI.phase = 'error'; drawScanScreen(); });
+  };
+  rd.readAsDataURL(file);
+}
+function drawScanScreen() {
+  const u = scanUI, stamp = (t) => `<div class="scan-stamp">${esc(t)}</div>`;
+  let body = '';
+  if (u.phase === 'loading') {
+    body = `<div class="scan-unit">${esc(u.unitId)}</div>${stamp('Checking this unit…')}<div class="scan-spin">${I.video}</div>`;
+  } else if (u.phase === 'ready') {
+    const act = u.action === 'end' ? 'End · Return' : 'Start · Delivery';
+    body = `<div class="scan-unit">${esc(u.unitName)}</div><div class="scan-uid">${esc(u.unitId)}</div>${stamp('Recording the ' + act + ' video')}`
+      + `<label class="scan-rec" data-r="R17">${I.video}<span>Record</span><input type="file" accept="video/*" capture="environment" class="js-scan-file" hidden></label>`
+      + `<p class="scan-hint">Tap Record — your camera opens, then the video files itself. No On&nbsp;Rent / End&nbsp;Rent to choose.</p>`;
+  } else if (u.phase === 'uploading') {
+    body = `<div class="scan-unit">${esc(u.unitName || u.unitId)}</div>${stamp('Filing your video…')}<div class="scan-spin">${I.video}</div>`;
+  } else if (u.phase === 'done') {
+    const act = u.action === 'end' ? 'End · Return' : 'Start · Delivery';
+    body = `<div class="scan-ok">${I.check || '✓'}</div><div class="scan-unit">${esc(u.unitName || u.unitId)}</div>${stamp('Filed as the ' + act + ' video')}`
+      + `<button type="button" class="scan-ghost js-scan-again" data-r="R18">Record another</button>`
+      + `<p class="scan-hint">All set — you can close this window.</p>`;
+  } else if (u.phase === 'blocked') {
+    body = `<div class="scan-unit">${esc(u.unitName || u.unitId)}</div><div class="scan-block">${esc(u.reason || 'Nothing to log for this unit right now.')}</div>`
+      + `<button type="button" class="scan-ghost js-scan-retry" data-r="R18">Check again</button>`;
+  } else if (u.phase === 'notfound') {
+    body = `<div class="scan-unit">${esc(u.unitId)}</div><div class="scan-block">Unit not found — this decal may need re-linking.</div>`
+      + `<button type="button" class="scan-ghost js-scan-retry" data-r="R18">Try again</button>`;
+  } else {
+    body = `<div class="scan-unit">${esc(u.unitName || u.unitId)}</div><div class="scan-block">Couldn’t reach the yard. Check your signal and try again.</div>`
+      + `<button type="button" class="scan-ghost js-scan-retry" data-r="R18">Try again</button>`;
+  }
+  $('#app').innerHTML = `<div class="scan-screen"><div class="scan-box">`
+    + `<span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>`
+    + `<div class="scan-plate"><div class="scan-brand"><span class="scan-brandtxt">Jac<b>Rentals</b></span><span class="scan-tag">Scan to log</span></div>`
+    + `<div class="scan-body">${body}</div></div></div></div>`;
+  const f = document.querySelector('.js-scan-file');
+  if (f) f.addEventListener('change', (e) => scanRecord(e.target.files && e.target.files[0]));
+  const again = document.querySelector('.js-scan-again'); if (again) again.addEventListener('click', () => renderScanCapture(scanUI.unitId));
+  const retry = document.querySelector('.js-scan-retry'); if (retry) retry.addEventListener('click', () => renderScanCapture(scanUI.unitId));
 }
 function boot() {
   // Recovery hatch: app.jacrentals.com/#reset-settings (or #safe-mode) wipes saved customizations
@@ -24403,6 +24503,17 @@ function boot() {
   const hash = (location.hash || '').toLowerCase();
   if (hash.includes('local')) { return offlineBoot(); }     // #local — render from data.js, no backend
   if (hash.includes('reseed')) { return reseedFromFile(); }  // #reseed — REPLACE live data with the file
+  // #u=<unitId> — QR decal scan → log a video (FEATURES.qrScanLog). A remembered device (scan token)
+  // or a live session goes straight to the standalone capture; a cold phone falls through to whatever
+  // login is active (phone or shared-pw) with the scan parked, replayed after login (maybeReplayScan).
+  if (scanEnabled()) {
+    const su = (location.hash || '').match(/[#&]u=([\w-]+)/i);
+    if (su) {
+      history.replaceState(null, '', location.pathname + location.search);
+      if (scanTokenGet() || backendPassword) return renderScanCapture(su[1]);
+      pendingScan = su[1];   // cold → fall through to the normal login gate below; replay after it
+    }
+  }
 
   // Per-person login (flagOn('phoneIdentity')): resume a trusted device or show the phone
   // login. Strictly gated — the shared-password gate below is the flag-OFF path, untouched.

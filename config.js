@@ -631,7 +631,12 @@ export const FEATURES = {
   // captureByScan handler is deployed (Jac deploys the backend last); flipped ON only
   // after that deploy. The flag gates EXPERIENCE only — the real auth is the server-side
   // write-only scanDeviceToken check in captureByScan, never this flag.
-  qrScanLog: false,
+  qrScanLog: false,   // PRODUCTION switch (staging + localhost auto-enable via APP_ENV, so review needs no flip)
+  // Staging-review aid for the scan flow: when ON, the client short-circuits captureByScan to
+  // CANNED responses (no backend needed) so every state is walkable before the handler is deployed.
+  // Test-decal id suffix → state: …1 start · …2 end · …3 blocked · …4 not-found. OFF in production
+  // (real backend). Never a security surface — the real auth is always server-side.
+  qrScanPreview: false,
 };
 
 /* Phone-identity client constants (non-secret — display/UX only; the backend owns the
