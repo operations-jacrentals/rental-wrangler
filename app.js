@@ -4377,7 +4377,6 @@ function customerAccountSection(c) {
     : '<i>No contact info yet</i>';
   return `<div class="acct${open ? ' open' : ''}">`
     + `<div class="acct-bar js-acct-toggle" data-rec="${esc(c.customerId)}">`
-    + `<span class="acct-lbl">Account</span>`
     + `<span class="acct-sum">${summary}</span>`
     + `<span class="type-chip ${chip.tone}">${esc(chip.text)}</span>`
     + `<span class="acct-chev">${I.chev}</span>`
