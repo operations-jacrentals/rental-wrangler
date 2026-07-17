@@ -479,8 +479,8 @@ body.is-phone { touch-action: manipulation; }
    pinned to the bottom-RIGHT and never scrolling off. The chevrons are bright --txt when active,
    greyed --txt-2 when the stack is empty (Chrome-style). Reflects the snapped column's card. */
 .is-phone .mobile-toolbar .mfoot-jog { flex: 0 0 auto; display: flex; align-items: center; }
-.is-phone .mobile-toolbar .mfoot-jog .jog-btn { color: var(--txt); min-width: 32px; }   /* snug around the glyph — not the bloated 46px */
-.is-phone .mobile-toolbar .mfoot-jog .jog-btn svg { width: 20px; height: 20px; }
+.is-phone .mobile-toolbar .mfoot-jog .jog-btn { color: var(--txt); min-width: 54px; }   /* wide thumb target (Jac 2026-07-17) — the tools side-scroll to fit; height stays 44px so it's wider, not taller */
+.is-phone .mobile-toolbar .mfoot-jog .jog-btn svg { width: 23px; height: 23px; stroke-width: 2.75px; }   /* thicker, more legible chevrons */
 .is-phone .mobile-toolbar .mfoot-jog .jog-btn[disabled] { color: var(--txt-2); opacity: 1; }
 .is-phone .mobile-toolbar .top-toolbar { order: 0; margin: 0; padding: 0; flex: 1 1 auto; min-width: 0; overflow-x: auto; }
 /* the global tool tray rendered as a phone sheet (§M1 footer → Tools) */

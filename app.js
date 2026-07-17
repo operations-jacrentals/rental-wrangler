@@ -2676,6 +2676,21 @@ function applySnap(cs, snap) {
   if ('search' in snap) { cs.search = snap.search; cs.listLimit = snap.listLimit; }   // viewSnap → restore the narrowed list too
   restoreLayout(snap);                                                                // viewSnap → un-swap the column (bring the category cards back)
 }
+// Chrome-style Back "escape" (Jac 2026-07-17): the PHONE footer jog reflects the snapped
+// column's card, but drilling in via a fleet filter (js-fleet-filter) or an anchor both WIPE
+// that card's backStack — so Back had nothing to reverse and sat there dead (the reported bug).
+// When there's no view-history AND no record to drop, a Back instead clears whatever is
+// NARROWING the list (per-card fleet/search filter → session anchor/cascade → global search),
+// so Back always gets you back out. Phone-only — desktop keeps its search-bar ✕ and its
+// unchanged right-click-Back (this returns null off-phone, so both cardBack + cardJog no-op there).
+function jogBackEscape(cs, card) {
+  if (!cs || cs.backStack.length || (cs.mode === 'standard' && cs.recId != null)) return null;   // real history / record-drop wins
+  if (!document.body.classList.contains('is-phone')) return null;
+  if ((cs.filterTerms && cs.filterTerms.length) || (cs.search && cs.search.trim())) return 'filter';
+  if (activeSession().anchor) return 'anchor';
+  if (state.searchMode && (state.query.trim() || (state.filterTerms || []).length)) return 'search';
+  return null;
+}
 // Step this one card back / forward through its own history (other cards untouched).
 function cardBack(card) {
   const cs = activeSession().cards[card]; if (!cs) return;
@@ -2688,7 +2703,13 @@ function cardBack(card) {
       cs.mode = 'list'; cs.recId = null; cs.recType = null; cs.graphView = false;
       sweepEmptyDrafts();   // #8 — stepping back off a record sweeps any abandoned empty draft
       render();
+      return;
     }
+    // no history, no record to drop → step "back" OUT of whatever narrows this list (phone only)
+    const esc = jogBackEscape(cs, card);
+    if (esc === 'filter') { cs.filterTerms = []; cs.search = ''; afterFilterChange(card); }
+    else if (esc === 'anchor') clearAnchor();
+    else if (esc === 'search') clearSearch();
     return;
   }
   const prev = cs.backStack.pop();
@@ -2722,7 +2743,7 @@ function cardJog(card, cs, { always = false } = {}) {
   const arm = (dir, on, ico, tip) =>
     `<button class="jog-btn js-card${dir}" data-card="${esc(card)}" ${on ? '' : 'disabled'} data-tip="${tip}" aria-label="${tip}">${ico}</button>`;
   return `<div class="card-jog" role="group" aria-label="View history" data-r="R32">`
-    + arm('back', back || inRecord, I.chevL, 'Back')
+    + arm('back', back || inRecord || jogBackEscape(cs, card), I.chevL, 'Back')
     + arm('fwd', fwd, I.chevR, 'Forward')
     + `</div>`;
 }
@@ -6747,11 +6768,11 @@ const ROWS = {
       const dlabel = (nd && daysAhead >= 0 && daysAhead <= 7) ? DOW3[nd.getDay()] : fmtShortDate(next.iso).replace(' 0', ' ');
       const when = `${dlabel}${next.min != null ? ` ${compactClock(next.min)}` : ''}`;
       const nu = IDX.unit.get(next.unitId);
-      lead = `<button class="catr-slot js-cat-next" data-unit="${esc(next.unitId)}" data-tip="Next free: ${esc(nu ? nu.name : 'unit')} on ${esc(when)} (4-hr turnaround) — tap to open it">${badge(`Next ${when}`, 'red')}</button>${lostDemandBtn(c)}`;
+      lead = `<button class="catr-slot js-cat-next" data-unit="${esc(next.unitId)}" data-tip="Next free: ${esc(nu ? nu.name : 'unit')} on ${esc(when)} (4-hr turnaround) — tap to open it">${badge(`Next ${when}`, 'red')}</button>`;
     } else {
       // 0 free and no return date to show → tell the salesperson WHY in one word (Jac).
       const why = categoryUnavailReason(c.categoryId);
-      lead = `<div class="catr-slot catr-slot-none" data-tip="None available — ${esc(why.toLowerCase())}">${badge(`None · ${why}`, 'red')}</div>${lostDemandBtn(c)}`;
+      lead = `<div class="catr-slot catr-slot-none" data-tip="None available — ${esc(why.toLowerCase())}">${badge(`None · ${why}`, 'red')}</div>`;
     }
     // The three status pills (Passed · Not Ready · Failed inspection) filter Units to that
     // status in this category via the established js-fleet-filter path (like the detail mixbar).
@@ -6863,7 +6884,7 @@ const ROWS = {
     // §2.2b call the customer — a REAL tel: anchor (R7), no detour through Customers.
     const callHtml = (cu && cu.phone && telHref(cu.phone)) ? linkName(cu.phone, { href: telHref(cu.phone), icon: I.phone, js: 'trip-tap' }) : '';
     // §2.2b log completion from the row — the journey's js-yard flow verbatim (yardCapture
-    // → the capture overlay → saveYardCapture → D7 driver stamp). Done → the stamp clock.
+    // → the camera → commitYardCapture → D7 driver stamp). Done → the stamp clock.
     // Scoped to the PRIMARY stop only — the rest of a merged trip's stops log from the
     // cab sheet (one level down), so the row stays lean regardless of stop count.
     const capKey = t.task === 'Deliver' ? 'startCapture' : 'endCapture';
@@ -8380,6 +8401,7 @@ const DETAIL = {
       ${st.forSale ? kvPills(badge(st.forSale + ' For Sale', 'purple')) : ''}
       ${kv(`${num(st.avgHours)} HRS`, { sfx: 'avg hours', derived: true })}
       ${(c.lostDemand || []).length ? kv(`${(c.lostDemand || []).length}`, { sfx: 'lost-demand asks', derived: true }) : ''}
+      ${kvPills(lostDemandBtn(c))}
       ${c.description ? kv(c.description, { wrap: true }) : ''}
     </div></div>`;
     // MODELS (Jac 2026-07-07): the category derives which models a unit can pick —
@@ -13193,23 +13215,6 @@ function buildPopupEl(o, overlay, opts = {}) {
         <input class="lf-in js-rf-part" placeholder="Part Name" value="" style="width:100%;margin-bottom:4px">
         <p class="muted" style="font-size:11px;margin:4px 0 4px">✨ Empty fields are filled by Mr. Wrangler after saving: the photo is read for the vendor, amount, date and category.</p>` });
     overlay.appendChild(pop);
-  } else if (o.kind === 'capture') {
-    // v2 yard journey: every log opens this popup; with transport, the address
-    // + map pin ride the top so the driver sees the destination while logging.
-    const r = IDX.rental.get(o.rentalId);
-    const isDel = r && r.transportType && r.transportType !== 'Self';
-    const title = o.cap === 'fc' ? 'Log Field Call' : o.cap === 'start' ? (isDel ? 'Log Delivery' : 'Log Start') : (isDel ? 'Log Recovery' : 'Log End');
-    const pop = el('div', 'popup'); pop.style.width = '380px';
-    pop.innerHTML = popupShell({ icon: I.video, title, tag: o.cap === 'fc' ? 'Field call · log' : 'Yard journey · log',
-      foot: `${ghostPill('Cancel', { js: 'js-close' })}<button class="pill ignition js-cap-save" data-r="R17">${o.cap === 'fc' ? 'Log Field Call' : 'Log it'}</button>`,
-      body: `
-        ${r && r.deliveryAddress && o.cap !== 'fc' ? `
-        <div style="border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:10px">
-          <div style="padding:8px 11px;font-size:12.5px;display:flex;align-items:center;gap:7px"><span>📍</span><b>${esc(r.deliveryAddress)}</b></div>
-          <div class="site-map" style="height:96px">${r.sitePin && r.sitePin.lat != null ? '<span class="site-pin" style="left:50%;top:50%">📍</span>' : ''}<span class="map-tag">driver destination${r.sitePin && r.sitePin.lat != null ? ' — exact pin set' : ''}</span></div>
-        </div>` : ''}
-        <label class="cap-drop">${I.video} <span>${state.capFile ? '✓ video attached' : 'Tap to capture / attach the video'}</span><input type="file" accept="video/*,image/*" capture="environment" class="js-cap-file" style="display:none"></label>` });
-    overlay.appendChild(pop);
   } else if (o.kind === 'wodone') {
     // v2: Complete WO with open line items → warn, don't hard-block
     const w = IDX.wo.get(o.woId);
@@ -13951,7 +13956,6 @@ const WINDOW_CATALOG = [
   { kind: 'modelSchedule', label: 'Model maintenance schedule', tag: 'Category · model',       sample: () => ({ modelId: ((DATA.models || [])[0] || {}).modelId }) },
   { kind: 'svctaskform',   label: 'Add / Edit schedule task', tag: 'Model · schedule',          sample: () => ({ modelId: ((DATA.models || [])[0] || {}).modelId, idx: null }) },
   { kind: 'receiptform',   label: 'New / Edit Receipt',      tag: 'Expense · receipt',         sample: () => ({}) },
-  { kind: 'capture',       label: 'Log yard journey',        tag: 'Yard journey · log',        sample: () => ({ rentalId: ((DATA.rentals || [])[0] || {}).rentalId, cap: 'start' }) },
   { kind: 'wodone',        label: 'Complete Work Order?',    tag: 'Work order · confirm',      sample: () => ({ woId: ((DATA.workOrders || [])[0] || {}).woId }) },
   { kind: 'role',          label: 'Role KPIs',               tag: 'Role · scorecard',          sample: () => ({ role: (ROLES[0] || {}).id }) },
   { kind: 'requests',      label: 'Requests inbox',          tag: 'Mr. Wrangler · approvals',  sample: () => ({}) },
@@ -18128,7 +18132,6 @@ function onClick(e) {
   if (closest('.js-ck-pending')) { e.stopPropagation(); closeOverlay(); toast('Inspection kept as pending — resume it anytime.'); return; }
   if (closest('.js-washseg')) { const b = closest('.js-washseg'); return setUnitWash(b.dataset.rec, b.dataset.val); }
   if (closest('.js-yard')) { const b = closest('.js-yard'); return yardCapture(b.dataset.rec, b.dataset.cap, b.dataset.unit); }
-  if (closest('.js-cap-save')) return saveYardCapture();
   // ── inline transport editor (replaces the old `site` popup) ──
   if (closest('.js-site-go')) { const b = closest('.js-site-go'); e.stopPropagation(); return openTransportEdit(b.dataset.rec, b.dataset.unit || null, 'delivery'); }   // legacy dispatch links still open the editor
   if (closest('.js-tedit-open')) { const b = closest('.js-tedit-open'); e.stopPropagation(); return openTransportEdit(b.dataset.rec, b.dataset.unit || null, b.dataset.leg || 'delivery'); }
@@ -19068,7 +19071,8 @@ function sellUnit(unitId, price, date, note) {
   render();
 }
 /* yard journey: +Start/+Log Delivery and +End/+Log Recovery are the SAME capture
-   either way (one event, shared video); +FC = markFieldCall. Popup gates every log. */
+   either way (one event, shared video); +FC = markFieldCall. No popup — the tap fires
+   the camera and ending the video saves it; re-tapping a logged node re-records it. */
 /* §20 a capture is PER UNIT: cur = that unit's entry (fallback to the rental for
    safety). Logging a delivery/recovery moves just that unit's status. */
 const captureUnit = (r, unitId) => unitEntry(r, unitId);
@@ -19079,11 +19083,19 @@ function setUnitCapture(r, eu, key, stamp) {
 function yardCapture(rentalId, cap, unitId, opts = {}) {
   const r = IDX.rental.get(rentalId); if (!r) return;
   const cur = captureUnit(r, unitId) || r;
-  // §14 a delivery log goes On Rent — block the driver up front when the account's
-  // card/agreement gate isn't clear (the journey node reads locked, not dead).
-  if (cap === 'start') {
+  const key = cap === 'start' ? 'startCapture' : cap === 'end' ? 'endCapture' : 'fcCapture';
+  // A video already on file → this tap RE-RECORDS it (Jac: "delete that video in trade
+  // for a new one by doing the same process again"). A re-record only swaps the video —
+  // it must NOT move status again, re-run the §9 delivery gates, or re-raise a field call.
+  const replace = !!cur[key] || (cap === 'fc' && !!r.fieldCall);
+  // §14 a first Start/Delivery moves the unit On Rent — run the §9 gates UP FRONT so a
+  // blocked delivery never opens the camera (mirrors setRentalStatus/setUnitStatus so the
+  // driver is never made to record a video that would only then be rejected).
+  if (cap === 'start' && !replace) {
     const gc = r.customerId ? IDX.customer.get(r.customerId) : null;
+    if (!r.invoiceId) { flashOr('.js-create-invoice', 'Blocked: "On Rent" requires a linked invoice (§9).'); return; }
     if (gc && (accountBlock(gc)?.type === 'blacklist' || /Blacklist/i.test(gc.accountType || ''))) { toast(`🔒 ${gc.name} — blacklisted. Delivery blocked.`); return; }
+    const rb = rentalRuleBlock(r, gc, 'On Rent'); if (rb) { flashOr('.js-add-card', rb); return; }
     if (cardGateBlocked(gc) && !r.cardOverride) { toast(`🔒 ${gc.name} — ${cardGateReason(gc)}. Sign the card before logging a delivery.`); return; }
     // Phase 3 (T3.3) — account-block gate (failed-payment / invoice-hold), same Manager-tier,
     // per-action, non-persisted override as the booking-status gates above.
@@ -19092,45 +19104,63 @@ function yardCapture(rentalId, cap, unitId, opts = {}) {
       if (abg) { toast(`🔒 ${gc.name} — ${abg.reason}. Manager authorization required.`); accountBlockOverride(gc, () => yardCapture(rentalId, cap, unitId, { bypassAccountBlock: true })); return; }
     }
   }
-  if (cap === 'start' && cur.startCapture) return toast('Start already captured — video on file.');
-  if (cap === 'end' && cur.endCapture) return toast('End already captured — video on file.');
-  if (cap === 'end' && !cur.startCapture) return flashOr('.js-yard[data-cap="start"]', 'Log the Start/Delivery first.');
-  if (cap === 'fc' && (cur.fcCapture || r.fieldCall)) return toast('Field Call already logged.');
-  state.capFile = null;
-  openOverlay({ kind: 'capture', rentalId, cap, unitId: unitId || null });
+  // A first End/Recovery needs its Start/Delivery logged first (a re-record already has it).
+  if (cap === 'end' && !replace && !cur.startCapture) return flashOr('.js-yard[data-cap="start"]', 'Log the Start/Delivery first.');
+  // No popup — fire the camera straight from the tap; ending the video saves it. opts
+  // carries a manager's granted account-block override through to the commit's status move.
+  openYardCamera(rentalId, cap, unitId || null, opts);
 }
-function saveYardCapture() {
-  const o = state.overlay; if (!o || o.kind !== 'capture') return;
-  const r = IDX.rental.get(o.rentalId); if (!r) return closeOverlay();
-  const eu = captureUnit(r, o.unitId);
-  const uname = IDX.unit.get(o.unitId)?.name || '';
-  // The media NEVER rides the record (a Sheets cell caps at 50k chars) — the
-  // stamp persists immediately; the video uploads to Drive and only its URL
-  // lands on the stamp afterwards (uploadCapture backend action).
-  const file = state.capFile;
-  const eu0 = captureUnit(r, o.unitId) || (r.units || [])[0] || null;
-  const drvId = eu0 ? (o.cap === 'end' ? (eu0.recoveryDriverId || eu0.deliveryDriverId) : eu0.deliveryDriverId) : null;
+/* Fire the device camera straight from the yard-journey tap. The tap IS the user
+   gesture the browser needs to open the camera, so we synchronously create + click a
+   capture input; when the recording comes back we commit it — no confirm step. */
+function openYardCamera(rentalId, cap, unitId, opts = {}) {
+  const input = el('input'); input.type = 'file'; input.accept = 'video/*,image/*';
+  input.setAttribute('capture', 'environment'); input.style.display = 'none';
+  input.addEventListener('change', () => {
+    const f = input.files && input.files[0]; input.remove();
+    if (!f) return;   // camera dismissed with no recording — nothing logged
+    const rd = new FileReader();
+    rd.onload = () => commitYardCapture(rentalId, cap, unitId, rd.result, opts);
+    rd.onerror = () => toast('Could not read that video.');
+    rd.readAsDataURL(f);
+  });
+  document.body.appendChild(input); input.click();
+}
+function commitYardCapture(rentalId, cap, unitId, dataUrl, opts = {}) {
+  const r = IDX.rental.get(rentalId); if (!r) return;
+  const eu = captureUnit(r, unitId);
+  const tgt = eu || r;
+  const uname = IDX.unit.get(unitId)?.name || '';
+  const key = cap === 'start' ? 'startCapture' : cap === 'end' ? 'endCapture' : 'fcCapture';
+  // Re-record → swap the video only; keep the status where it is and don't re-raise the FC.
+  const replace = !!tgt[key] || (cap === 'fc' && !!r.fieldCall);
+  // The media NEVER rides the record (a Sheets cell caps at 50k chars) — the stamp
+  // persists immediately; the video uploads to Drive and only its URL lands on the
+  // stamp afterwards (uploadCapture backend action).
+  const eu0 = eu || (r.units || [])[0] || null;
+  const drvId = eu0 ? (cap === 'end' ? (eu0.recoveryDriverId || eu0.deliveryDriverId) : eu0.deliveryDriverId) : null;
   // Driver-stamped capture (spec rentals-dispatch D7): the assigned leg driver rides the stamp;
   // no assignment → the logged-in operator name, so the stamp is never anonymous.
   const stamp = { date: TODAY_ISO, clock: nowClock(), video: '', driver: drvId ? driverName(drvId) : (currentUser || currentRole || '') };
-  // move just this unit's status (or the whole rental when no unit context); a §9
-  // gate may block it, in which case the popup stays open.
+  // move just this unit's status (or the whole rental when no unit context); a first
+  // move can still hit a §9 gate, in which case we keep nothing.
   const moveStatus = (val) => {
-    if (o.unitId && eu) { setUnitStatus(o.rentalId, o.unitId, val); return unitStatus(r, eu) === val; }
-    setRentalStatus(o.rentalId, val); return r.status === val;
+    // carry a manager's granted account-block override (from yardCapture) into the status
+    // move so an authorized delivery isn't re-blocked and the recording lost.
+    if (unitId && eu) { setUnitStatus(rentalId, unitId, val, { bypassAccountBlock: opts.bypassAccountBlock }); return unitStatus(r, eu) === val; }
+    setRentalStatus(rentalId, val, { bypassAccountBlock: opts.bypassAccountBlock }); return r.status === val;
   };
-  if (o.cap === 'start') {
-    if (!moveStatus('On Rent')) return;
-    setUnitCapture(r, eu, 'startCapture', stamp); logAction(r, `${uname ? uname + ' — ' : ''}Start/Delivery video captured`);
-  } else if (o.cap === 'end') {
-    if (!moveStatus('Returned')) return;
-    setUnitCapture(r, eu, 'endCapture', stamp); logAction(r, `${uname ? uname + ' — ' : ''}End/Recovery video captured`);
-  } else if (o.cap === 'fc') {
+  if (cap === 'start') {
+    if (!replace && !moveStatus('On Rent')) return;
+    setUnitCapture(r, eu, 'startCapture', stamp); logAction(r, `${uname ? uname + ' — ' : ''}Start/Delivery video ${replace ? 're-captured' : 'captured'}`);
+  } else if (cap === 'end') {
+    if (!replace && !moveStatus('Returned')) return;
+    setUnitCapture(r, eu, 'endCapture', stamp); logAction(r, `${uname ? uname + ' — ' : ''}End/Recovery video ${replace ? 're-captured' : 'captured'}`);
+  } else if (cap === 'fc') {
     setUnitCapture(r, eu, 'fcCapture', stamp);
-    markFieldCall(o.rentalId);
+    if (!replace) markFieldCall(rentalId);
   }
-  uploadCaptureMedia(r, eu, o.cap, file);
-  state.capFile = null; state.overlay = null;
+  uploadCaptureMedia(r, eu, cap, dataUrl);
   const session = activeSession(); if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
   render(); renderOverlay();
 }
@@ -19731,15 +19761,6 @@ function onChange(e) {
     const rd = new FileReader();
     rd.onload = () => { downscaleImage(rd.result, 600, 0.5, (out) => { if (!out) { toast('Could not read that image.'); return; } state.receiptPhoto = out; renderOverlay(); }); };
     rd.onerror = () => toast('Could not read that image.');
-    rd.readAsDataURL(f);
-    return;
-  }
-  // v2 yard capture: attach the video/photo, re-render the popup to show ✓
-  if (e.target.classList.contains('js-cap-file')) {
-    const f = e.target.files && e.target.files[0]; if (!f) return;
-    const rd = new FileReader();
-    rd.onload = () => { state.capFile = rd.result; renderOverlay(); };
-    rd.onerror = () => toast('Could not read that file.');
     rd.readAsDataURL(f);
     return;
   }
@@ -24663,7 +24684,7 @@ function exposeTestApi() {
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
       companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsUtilRollup, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
-      tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, saveYardCapture, nextCategoryId, nextUnitId,
+      tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, openYardCamera, commitYardCapture, nextCategoryId, nextUnitId,
       tripsLS, tripMerge, tripSplit, assignTripDriver, tripLabel, assignStopDriver, tripSetTime,
       tripPushSoon, tripPushNow, loadTripsFromBackend, tripsSyncFooter, setBackendPassword: (pw) => { backendPassword = pw || ''; },   // §2.3 Phase 4 sync — the setter is test-only (mirrors setRole), letting logic-test.mjs exercise the online path via a mocked window.fetch, never a real backend
       autoRunRepair, autoRunAnchorsFor, secToClock, AUTORUN_DAY_START_SEC, AUTORUN_EOD_DEADLINE_SEC, AUTORUN_LOAD_BUFFER_SEC, dispatchPinOf,
