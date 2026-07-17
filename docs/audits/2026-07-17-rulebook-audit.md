@@ -87,6 +87,8 @@ elements becomes a one-builder edit instead of a hunt.
 | Six builders live outside APP-10 | app.js:2736, 3963, 4463, ~10255, 23708, 23761 | `cardJog`, `acctBtn`, `invoiceStatMenu`, `.wr-paused`, `renderSyncBanner`, `renderSchedBanner` — RULE_META catalogs them as §5 builders but they're defined elsewhere |
 | Rulebook's own R25 example is faked | app.js:13036 | The catalog's sync-banner demo is inline-styled HTML, breaking the file's own "every example is emitted by the REAL builder" claim (13001–13002) |
 | CLASS_RULE redundancy | app.js:6254 | `.kv.derived`→R8 listed before the broader `.derived`→R8 (harmless) |
+| **RULE_META credits a dead builder** | app.js:7752 | `miniJourneyHtml` is named as an R15 builder but has ZERO call sites — fully dead code; the live route UI is `stallRouteHtml`/`.rtrail2` |
+| R6's builder is display-case-only | app.js:5673 area | `reqBtn()`'s only real call is inside the Rulebook's own demo popup — the live R6 element (invoice PO field) is a hand-rolled stamp that bypasses it |
 
 ---
 
@@ -352,6 +354,8 @@ Confirmed dead weight found by inspection (independent of the class list):
 | `prompt()` money-line fallbacks | app.js:21629–21646 | unreachable dead code (see Strays) |
 | `.ru-plate` | style.css:2297 | referenced only by a "retired" comment — already fully removed |
 | **KPI MASK** | style.css:5007–5009 | `blur(12px)` unconditionally masks `.kpi-ring/.big-ring/.menu-team-ring` app-wide — presumably the "Coming 2026" hold, but it also blanks the standalone KPI popup and logo-menu Team ring. Needs Jac's confirmation that all three are intentionally on ice |
+| **`miniJourneyHtml`** | app.js:7752 | dead R15 builder (see §2) — definition + stale comment + RULE_META string are its only occurrences |
+| Liveness notes (2026-07-17 pass) | — | R33 `cardGlobalSearch` flag is ON by default with no override (live for everyone); `phoneIdentity` likewise ON (shared-password login is the dead fallback); env badge renders on staging/local only; R25/R27/R30 banners are condition/tier-gated but real |
 
 ---
 
