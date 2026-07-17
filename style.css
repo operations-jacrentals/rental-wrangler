@@ -91,6 +91,7 @@ input { font-family: inherit; }
    middle (scrolls) · bell+inbox at the right. No background, floats over the page. */
 .bottombar { flex: 0 0 auto; display: flex; align-items: center; justify-content: flex-start; gap: 12px; padding: 4px 14px 10px; background: transparent; }
 .bb-tools { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; }
+.bb-comms { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; }   /* comms chips, clustered on the RIGHT of the footer (Jac 2026-07-17) */
 .bb-utils { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
 .bb-utils .fab { width: 40px; height: 40px; }
 .bb-utils .fab svg { width: 19px; height: 19px; }
@@ -548,7 +549,13 @@ body.is-phone { touch-action: manipulation; }
 .coltab.on { background: var(--accent); color: var(--on-orange); }   /* selected = solid orange + DARK ink (rule 2) */
 .coltab.compact { padding: 7px 8px; gap: 3px; }   /* icon hugs its counter (Jac) */
 .coltab .ct-lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.coltab:not(.on) .ct-lbl { max-width: 74px; }     /* inactive labels truncate (Jac: "Categories…") */
+/* The SELECTED tab never clips the card you're looking at ("Units" was rendering "UN…"),
+   and it refuses to shrink so its inactive sibling ellipsizes first. Inactive labels lost
+   the old hard 74px cap — they show in full whenever the centered auto-track has room, so a
+   wide-enough screen truncates nothing, and ellipsize only when a column is cramped. (Jac 2026-07-17) */
+.coltab.on { flex: 0 0 auto; }
+.coltab.on .ct-lbl { max-width: none; overflow: visible; }
+.coltab:not(.on) { flex: 0 1 auto; }
 .coltab .ct-ico { display: inline-flex; flex: 0 0 auto; } .coltab .ct-ico svg { width: 16px; height: 16px; }
 .coltab .ct-n { font-size: 11px; font-weight: 700; color: var(--txt-3); background: var(--bg-2); padding: 1px 8px; border-radius: 999px; }
 .coltab.on .ct-n { color: var(--on-orange); background: rgba(0,0,0,.16); }
@@ -988,11 +995,11 @@ select.lf-in { appearance: none; cursor: pointer; }
 .gt-a .gt-lbl { color: var(--accent); font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 800; font-size: 13.5px; }
 
 /* ── §6.2 Item rows are cards/chips ──────────────────────────────────────── */
-.list { padding: 4px 8px 8px; display: flex; flex-direction: column; gap: 7px; }   /* even title→search→firstRow gaps (≈10px each) */
+.list { padding: 4px 8px 8px; display: flex; flex-direction: column; gap: 10px; }   /* +50% row rhythm (Jac 2026-07-17; was 7px) */
 .row {
   position: relative; overflow: hidden; cursor: pointer; container-type: inline-size;
   border-radius: 12px; border: 1px solid var(--line); background: var(--panel);
-  padding: 9px 11px; transition: border-color .12s, background .12s, transform .05s;
+  padding: 14px 17px; transition: border-color .12s, background .12s, transform .05s;   /* +50% line footprint (Jac 2026-07-17; was 9px 11px) */
 }
 .row:hover { border-color: var(--accent-line); }
 .row.selected { border-color: var(--accent-line); box-shadow: 0 0 0 1px var(--accent-line); }   /* click = orange highlight, no anchor (§0.2) */
@@ -1003,8 +1010,8 @@ select.lf-in { appearance: none; cursor: pointer; }
 /* §6.2 #2 — HARD two-row limit: Row 1 (title + fields) and Row 2 (pills only),
    both single-line; overflow clips rather than spilling to a third row. */
 .row-1 { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.row-1 .r-title { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
-.row-1 .r-fields { display: flex; gap: 10px; color: var(--txt-2); font-size: 12px; min-width: 0; overflow: hidden; flex: 0 1 auto; }
+.row-1 .r-title { font-size: 19.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }   /* +50% (Jac 2026-07-17; was 13px) */
+.row-1 .r-fields { display: flex; gap: 10px; color: var(--txt-2); font-size: 18px; min-width: 0; overflow: hidden; flex: 0 1 auto; }   /* +50% (Jac 2026-07-17; was 12px) */
 .row-1 .r-fields span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Customers: the name truncates first so the phone number stays fully visible */
 .card[data-card="customers"] .row-1 .r-fields { flex: 0 0 auto; }
@@ -1433,7 +1440,7 @@ select.lf-in { appearance: none; cursor: pointer; }
    OWN data-plate tab. Fills the band's middle and scrolls horizontally; the toolbar
    stays left, bell+inbox right. Tab = registry dot + Geist title; selected = the ONE
    safety-orange; a "needs your answer" tab flashes red. */
-.comms-rail { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 12px;
+.comms-rail { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 12px;
   overflow-x: auto; overflow-y: hidden; scrollbar-width: none; padding: 2px 2px; }   /* hide the scrollbar (still scrolls via wheel/trackpad) — matches .header-tabs */
 .comms-rail::-webkit-scrollbar { height: 0; width: 0; }
 .crail-group { flex: 0 0 auto; display: flex; align-items: center; gap: 7px; }
@@ -4148,10 +4155,10 @@ body.dragging[data-drag="workOrders"] .inv-add-pill,
    Half-height (Jac 2026-06-23): tight vertical padding; phone·type reflows UNDER the
    name only when the card gets narrow (container query). No right anchor → values
    pack left, dead space falls to the right. ── */
-.row[data-card="customers"] { padding-top: 4px; padding-bottom: 4px; }
+.row[data-card="customers"] { padding-top: 6px; padding-bottom: 6px; }   /* +50% (Jac 2026-07-17; was 4px) */
 .cr { display: flex; align-items: center; gap: 8px; min-width: 0; justify-content: flex-start; }
 .cr-id { flex: 0 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 8px; }
-.cr-name { flex: 0 1 auto; min-width: 0; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cr-name { flex: 0 1 auto; min-width: 0; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }   /* +50% (Jac 2026-07-17; was 13.5px) */
 /* ec-red: official flagging-red text treatment — --red halo bleeds into 65%-red+white fill, no hard seam. */
 .cr-name.ec-red,
 .rcc-uname.ec-red,
@@ -4248,6 +4255,27 @@ body.dragging[data-drag="workOrders"] .inv-add-pill,
   .cr-id { flex-direction: column; align-items: flex-start; gap: 1px; }
 }
 
+/* ── CUSTOMERS "+ NEW CUSTOMER" inline quick-add (Jac 2026-07-17) — leads the
+   Customers list, mirroring the Rentals list's .newrow/.bigbtn trigger; ADDITIVE next
+   to the existing search-bar quick-add. Collapsed = the plain .bigbtn (unstamped, same
+   as +New Rental). Open = a bordered plate (mirrors .ag-open's D16 Agreements chrome)
+   holding ONE flex row that keeps to a single line on desktop and wraps on narrow. ── */
+.qa-cust { border: 1px solid var(--accent-line); border-radius: 12px; background: var(--card); box-shadow: 0 0 0 1px var(--accent-soft); padding: 10px 12px; }
+.qa-cust-row { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.qa-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.qa-field.qa-first, .qa-field.qa-last { flex: 1 1 100px; }
+.qa-field.qa-phone { flex: 1 1 130px; }
+.qa-field.qa-funnel { flex: 0 0 auto; }
+.qa-in { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 11px; color: var(--txt); font: inherit; font-size: 12.5px; width: 100%; }
+.qa-in:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.qa-cust-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; margin-left: auto; }
+@media (max-width: 480px) {
+  .qa-cust-row { align-items: stretch; }
+  .qa-field.qa-first, .qa-field.qa-last, .qa-field.qa-phone { flex: 1 1 45%; }
+  .qa-field.qa-funnel, .qa-cust-actions { flex: 1 1 100%; }
+  .qa-cust-actions { justify-content: flex-end; }
+}
+
 /* ── UNIT ROW (ur): [status pills LEFT] · [cat icon] · [name · category·HRS RIGHT].
    Pills first → eye aligns status near the rental calendar center (Jac 2026-06-23).
    Equal-width pill slots so all rows share the same column rhythm. ── */
@@ -4280,9 +4308,9 @@ body.is-phone .card[data-card="units"] .list { grid-template-columns: repeat(2, 
 .grp-hd.grp-dragging { opacity: .4; }
 .grp-hd.grp-dragover::before { content: ''; position: absolute; left: 0; right: 0; top: -2px; height: 2px; background: var(--blue); border-radius: 2px; }   /* drop-line indicator — blue (commit-intent), never orange (reserved for selected/ignition/linked) */
 .grp-chev { flex: 0 0 auto; display: inline-flex; color: var(--sec, var(--txt-2)); }
-.grp-chev svg { width: 11px; height: 11px; transform: rotate(90deg); transition: transform .15s ease; }   /* expanded → points down */
+.grp-chev svg { width: 16.5px; height: 16.5px; transform: rotate(90deg); transition: transform .15s ease; }   /* +50% to match .grp-label (Jac 2026-07-17; was 11px) */
 .grp-hd.is-collapsed .grp-chev svg { transform: rotate(0deg); }                                           /* collapsed → points right */
-.grp-label { flex: 0 0 auto; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; font-size: 11px; line-height: 1; color: var(--sec, var(--txt-2)); }   /* +20% up from 9.1px, landing on the existing 11px rung (Jac 2026-07-10) */
+.grp-label { flex: 0 0 auto; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; font-size: 16.5px; line-height: 1; color: var(--sec, var(--txt-2)); }   /* +50% group titles (Jac 2026-07-17; was 11px) */
 .grp-hd::after { content: ''; flex: 1 1 auto; border-top: 2px solid var(--sec, var(--line)); opacity: .5; }   /* solid (was dashed) + +20% thicker (1.5px → 2px, the next rung on the line-weight scale — Jac 2026-07-10) */
 .grp-hd:hover .grp-label, .grp-hd:hover .grp-chev { filter: brightness(1.2); }
 /* Group RAIL (Jac 2026-07-10) — a vertical guide down the left edge of each group's rows,
