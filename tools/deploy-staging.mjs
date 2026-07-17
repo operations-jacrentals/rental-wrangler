@@ -457,6 +457,24 @@ async function main() {
 
   const DRY_RUN = process.argv.includes('--dry-run');
 
+  const files = deriveSiteFiles();
+  if (!files.length) fail('deploy-staging: derived an empty site-file list — something upstream is broken.');
+  console.log(`deploy-staging: ${files.length} site file(s) derived from index.html + the module/asset graph:`);
+  files.forEach((f) => console.log('   ' + f));
+
+  // ── --dry-run: bump ?v= locally, then STOP. A PURE LOCAL PREVIEW — it touches nothing remote,
+  // so it runs BEFORE the feature-branch guard AND the credential check (it needs neither). That
+  // also makes it work in a detached-HEAD checkout (a pull_request CI run checks out the merge ref
+  // detached, where `rev-parse --abbrev-ref HEAD` is "HEAD" and would otherwise trip
+  // assertFeatureBranch). The REAL deploy below still enforces the branch guard + credential. ──
+  if (DRY_RUN) {
+    const { oldToken, newToken } = bumpVersionToken(join(ROOT, 'index.html'));
+    console.log(`deploy-staging: bumped shared ?v= token ${oldToken} -> ${newToken} in index.html`);
+    console.log('deploy-staging: --dry-run — stopping before touching the staging repo (no lease acquired).');
+    console.log('                index.html was still bumped locally; `git checkout -- index.html` to revert.');
+    return 0;
+  }
+
   const branch = git(['rev-parse', '--abbrev-ref', 'HEAD']);
   assertFeatureBranch(branch);
 
@@ -464,20 +482,6 @@ async function main() {
   if (!cred) {
     console.log('deploy-staging: no staging deploy credential configured — nothing pushed.');
     console.log('                Set STAGING_DEPLOY_KEY_PATH or STAGING_DEPLOY_PAT once plan §0.4 is done, then re-run.');
-    return 0;
-  }
-
-  const files = deriveSiteFiles();
-  if (!files.length) fail('deploy-staging: derived an empty site-file list — something upstream is broken.');
-  console.log(`deploy-staging: ${files.length} site file(s) derived from index.html + the module/asset graph:`);
-  files.forEach((f) => console.log('   ' + f));
-
-  // ── --dry-run: bump ?v= locally, then STOP. NO lease, NO network. (Unchanged behaviour.) ──
-  if (DRY_RUN) {
-    const { oldToken, newToken } = bumpVersionToken(join(ROOT, 'index.html'));
-    console.log(`deploy-staging: bumped shared ?v= token ${oldToken} -> ${newToken} in index.html`);
-    console.log('deploy-staging: --dry-run — stopping before touching the staging repo (no lease acquired).');
-    console.log('                index.html was still bumped locally; `git checkout -- index.html` to revert.');
     return 0;
   }
 
