@@ -642,7 +642,7 @@ export const FEATURES = {
   // the live backend (spec 2026-07-16-instant-cache). Display-only: the cache is never
   // a save baseline, so it can't corrupt the Sheet; personal devices only (no PII at
   // rest on shared machines). ON = paint-from-cache path; OFF = today's splash + load.
-  instantCache: false,
+  instantCache: true,
 };
 
 /* Phone-identity client constants (non-secret — display/UX only; the backend owns the
