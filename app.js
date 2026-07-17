@@ -4054,10 +4054,15 @@ function acctTermsLine(c) {
   })));
   const po = toggleChip('PO', !!c.requiresPO, { js: 'js-acct-po', data: { rec: c.customerId }, tone: 'yellow' });
   const prot = toggleChip('Protection', !!c.rentalProtection, { js: 'js-acct-prot', data: { rec: c.customerId }, tone: 'green' });
+  // Membership dues PO exemption (spec 2026-07-17) — only meaningful for a member account that requires a PO.
+  // Off (default) = dues are exempt (charge without a PO); On = dues need a PO before charging (enforced server-side).
+  const duesPo = (/Member/i.test(c.accountType || '') && c.requiresPO)
+    ? `<span data-tip="On: this member's dues need a PO before charging. Off: dues are exempt from the account's PO requirement.">${toggleChip('Dues PO', !!c.duesRequirePO, { js: 'js-acct-duespo', data: { rec: c.customerId }, tone: 'yellow' })}</span>`
+    : '';
   return `<div class="acct-termsline">`
     + `<span class="acct-cap">Net Terms</span>${netSeg}`
     + `<span class="acct-lock" data-tip="Any change needs a Manager password">${AG_LOCK}</span>`
-    + `<span class="acct-sep"></span>${po}${prot}`
+    + `<span class="acct-sep"></span>${po}${prot}${duesPo}`
     + `</div>`
     + (c.rentalProtection ? `<p class="acct-prot-note">${acctProtectionCopy(c)}</p>` : '');
 }
@@ -4177,6 +4182,10 @@ function agreementNewHtml(c) {
     + `</div>` : '';
   const cardLbl = defaultCard(c) ? cardLabel(c) : 'no card on file yet';
   const chargeNote = fee ? `<p class="charge-note">${defaultCard(c) ? `Card <b>${esc(cardLbl)}</b>` : `<b style="color:var(--yellow)">Add a card</b>`} will be charged <b>${money2(fee.total)}</b>${d.startDate ? ` on ${esc(fmtShortDate(d.startDate) || d.startDate)}` : ' once a Start Date is set'}${d.startDate && d.startDate <= TODAY_ISO ? ' (now)' : ', then monthly'}.</p>` : '';
+  // Membership dues PO exemption (spec 2026-07-17) — shown only when the account requires a PO. Off (default) = exempt.
+  const duesPoLine = (isMember && c.requiresPO)
+    ? `<div class="ao-cell"><span class="ao-cap">Membership Dues PO</span>${toggleChip('Require PO', !!c.duesRequirePO, { js: 'js-acct-duespo', data: { rec: c.customerId }, tone: 'yellow' })}<span class="anno">${c.duesRequirePO ? 'dues need a PO before charging' : 'exempt — dues charge without a PO'}</span></div>`
+    : '';
   return `<div class="ag-open new">`
     + `<div class="ao-bar"><span class="ao-lbl">New Agreement</span><span class="unsaved">Unsaved</span><span class="sp"></span><button class="ao-collapse js-ag-collapse" data-rec="${esc(c.customerId)}" data-tip="Cancel">${I.chev}</button></div>`
     + `<div class="ao-body">`
@@ -4189,7 +4198,7 @@ function agreementNewHtml(c) {
     + `<div class="pcell"><span class="ao-cap">Signature</span>${d.signature ? `<div class="sigpad has-sig"><img class="sig-img" src="${esc(d.signature)}" alt="signature"></div>` : `<button type="button" class="sigpad js-sign-popout" data-rec="${esc(c.customerId)}" data-title="${esc(ag.title)}"><span class="ph">Open signature window</span></button>`}</div>`
     + `</div>`
     + `<div><span class="ao-cap ao-cap-block">${esc(ag.title)} · Terms</span><div class="terms">${esc((ag.text || '').slice(0, 420))}…</div></div>`
-    + tote + chargeNote
+    + duesPoLine + tote + chargeNote
     + `<div class="ao-foot">${ghostPill('Cancel', { js: 'js-ag-collapse', data: { rec: c.customerId } })}<span class="sp"></span>`
     + `${actionPill('commit', 'Save', { js: 'js-ag-save', data: { rec: c.customerId } })}`
     + `<button class="pill ignition js-ag-start" data-r="R17" data-rec="${esc(c.customerId)}">${isMember ? 'Start Membership' : 'Sign'}</button>`
@@ -17563,6 +17572,7 @@ function onClick(e) {
   if (closest('.js-ag-selfie-pick')) { return; }   // native <input type=file> — handled by its own 'change' event (onChange), not a click delegate
   if (closest('.js-acct-po')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-acct-po').dataset.rec); if (c) { c.requiresPO = !c.requiresPO; reindex('customers', c); logAction(c, `PO required → ${c.requiresPO ? 'On' : 'Off'}`); } return render(); }   // logAction persists (saveSoon) + audits — inline toggle must save like the popup does
   if (closest('.js-acct-prot')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-acct-prot').dataset.rec); if (c) { c.rentalProtection = !c.rentalProtection; reindex('customers', c); logAction(c, `Rental Protection → ${c.rentalProtection ? 'On' : 'Off'}`); } return render(); }   // sibling of the PO toggle — same persist fix (saveSoon via logAction)
+  if (closest('.js-acct-duespo')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-acct-duespo').dataset.rec); if (c) { c.duesRequirePO = !c.duesRequirePO; reindex('customers', c); logAction(c, `Membership dues PO → ${c.duesRequirePO ? 'On' : 'Off'}`); } return render(); }   // spec 2026-07-17 — membership dues-level PO exemption (persists via logAction→saveSoon; enforced server-side)
   if (closest('.js-acct-netdays')) { e.stopPropagation(); const b = closest('.js-acct-netdays'); return openOverlay({ kind: 'managerPw', custId: b.dataset.rec, pwAction: 'netTerms', pwVal: b.dataset.val, busy: false, error: '' }); }   // D22 — ANY Net Terms change is Manager-password gated
   if (closest('.js-block-account')) { e.stopPropagation(); const rec = closest('.js-block-account').dataset.rec; return openOverlay({ kind: 'blockPicker', custId: rec, mode: 'pick', selIds: [], error: '' }); }   // D12/D13 — Block Account entry
   if (closest('.js-mgrpw-confirm')) {
