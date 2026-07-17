@@ -1590,6 +1590,18 @@ try {
       ok(T.funnelCurrentStage(c, 'rental') === 'Lead', 'dated funnel: Rental stages are derived — reachFunnelStage never sets them by hand');
       c.usedSalesStage = "Don't Contact";   // an off-vocabulary value an AI-chat / CSV write could leave behind
       ok(T.funnelCurrentStage(c, 'equipment') === 'Lead', 'dated funnel: an off-vocabulary stored stage clamps to Lead (no -1 index → no silent overwrite on click)');
+      // === Dated-ACTION funnel (Jac 2026-07-17): a layer's action = an OPEN tagged next-action ("notes = actions") ===
+      const dOff = (n) => { const d = new Date(T.TODAY_ISO + 'T00:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+      c.activityLog = c.activityLog || [];
+      c.activityLog.push({ when: dOff(-2), text: `Scheduled: call them @ ${dOff(-2)} 9:00 AM`, scope: 'rental', fkey: 'member', stage: 'Contacted' });
+      const armed = T.funnelLayerAction(c, 'member', 'Contacted');
+      ok(!!armed && armed.fkey === 'member' && armed.stage === 'Contacted', 'action funnel: funnelLayerAction finds a layer\'s armed action by funnel+stage');
+      ok(T.funnelLayerAction(c, 'member', 'Signed') === null, 'action funnel: an unarmed layer has no action');
+      ok(T.naUrgency(dOff(-1)) === 'due' && T.naUrgency(dOff(1)) === 'soon' && T.naUrgency(dOff(5)) === 'ok', 'action funnel: urgency maps overdue→due(red), near→soon(yellow), far→ok(green)');
+      ok(T.funnelScope('member') === 'rental' && T.funnelScope('equipment') === 'usedSales' && T.funnelScope('rental') === 'rental', 'action funnel: Member+Rental file under the Rental scope, Equipment under usedSales');
+      ok(T.naOpenList(c, 'rental').some((x) => x.a === armed), 'action funnel: an armed action shows in the date-sorted queue for its scope');
+      armed.outcome = 'done'; armed.closedWhen = T.TODAY_ISO;
+      ok(T.funnelLayerAction(c, 'member', 'Contacted') === null, 'action funnel: a completed (✓) action no longer arms the layer');
       T.IDX.customer.delete('C-SIGN');
     }
 

@@ -3890,23 +3890,41 @@ body { font-variant-numeric: tabular-nums; }
 .dl-note { font-size: 11px; color: var(--txt-3); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1 1 auto; }
 .dl-dt { margin-left: auto; font-size: 11.5px; color: var(--txt-2); font-variant-numeric: tabular-nums; white-space: nowrap; flex: 0 0 auto; }
 .dl-dt.up { color: var(--txt-3); font-style: italic; }
-.dl.done { background: color-mix(in srgb, var(--green) 9%, var(--panel-2)); border-color: color-mix(in srgb, var(--green) 30%, var(--line)); }
-.dl.done .dl-dot { border-color: var(--green); color: var(--green); }
-.dl.cur { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); background: var(--accent-soft, color-mix(in srgb, var(--accent) 12%, transparent)); }
-.dl.cur .dl-nm { color: var(--txt); }
-.dl.cur .dl-dot { border-color: var(--accent); background: var(--accent); color: var(--on-orange); }
-.dl.up { opacity: .6; border-style: dashed; }
+/* REACHED, unarmed → quiet steel history (green is freed to mean "action on track"). */
+.dl.done { background: var(--panel-2); border-color: var(--line); opacity: .8; }
+.dl.done .dl-dot { border-color: var(--txt-3); color: var(--txt-3); }
+.dl.done.cur { opacity: 1; border-color: var(--accent-line, color-mix(in srgb, var(--accent) 50%, transparent)); }   /* the live position, unarmed */
+.dl.up { opacity: .55; border-style: dashed; }
 .dl.up:hover { opacity: .9; }
-/* WIN — the terminal membership/equipment layer, reached: a celebratory green finish line with a
-   gold star + soft glow (Jac 2026-07-17: "the Signed step isn't very celebratory"). */
-.dl.win { border-color: var(--green); box-shadow: 0 0 0 1px var(--green), 0 0 16px -3px color-mix(in srgb, var(--green) 60%, transparent);
-  background: linear-gradient(100deg, color-mix(in srgb, var(--green) 22%, var(--panel-2)), color-mix(in srgb, var(--green) 9%, var(--panel-2))); }
-.dl.win .dl-nm { color: var(--txt); font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: .7px; font-weight: 800; font-size: 13.5px; }
-.dl.win .dl-dot { width: 18px; height: 18px; border-color: var(--yellow, #f5c542); background: var(--yellow, #f5c542); color: #14181d; font-size: 12px;
-  box-shadow: 0 0 9px -1px color-mix(in srgb, var(--yellow, #f5c542) 75%, transparent); animation: winTwinkle 2.6s ease-in-out infinite; }
-.dl.win .dl-dt { color: var(--green); font-weight: 700; }
-@keyframes winTwinkle { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.14); } }
-@media (prefers-reduced-motion: reduce) { .dl.win .dl-dot { animation: none; } }
+.dl-plan { margin-left: auto; font-size: 10.5px; font-style: italic; color: var(--txt-3); font-family: 'Saira Condensed', var(--font); letter-spacing: .4px; text-transform: uppercase; flex: 0 0 auto; }
+.dl-now { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: .6px; font-size: 9px; font-weight: 800; color: var(--accent); border: 1px solid var(--accent-line, color-mix(in srgb, var(--accent) 50%, transparent)); border-radius: 4px; padding: 1px 5px; }
+/* ARMED — the layer carries a dated action: two lines, glowing red / yellow / green by its urgency
+   (naUrgency → due/soon/ok, the same thresholds the funnel tabs use). Green now means "on track". */
+.dl.act { flex-direction: column; align-items: stretch; gap: 5px; padding: 9px 12px 10px; }
+.dl-top { display: flex; align-items: center; gap: 9px; }
+.dl.act .dl-nm { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: .6px; font-weight: 800; font-size: 13px; }
+.dl-act { display: flex; align-items: center; gap: 8px; padding-left: 25px; }
+.dl-atxt { font-size: 12.5px; color: var(--txt); flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.dl-due { margin-left: auto; flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 800; font-family: 'Saira Condensed', var(--font); letter-spacing: .4px; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+.dl-due .dd { width: 7px; height: 7px; border-radius: 50%; }
+.dl.act.u-due  { border-color: var(--red); box-shadow: 0 0 0 1px var(--red), 0 0 15px -5px var(--red); background: var(--red-bg); }
+.dl.act.u-due  .dl-dot { border-color: var(--red); background: var(--red); color: #fff; }
+.dl.act.u-due  .dl-due { background: var(--red-bg); color: var(--red); } .dl.act.u-due .dd { background: var(--red); }
+.dl.act.u-soon { border-color: var(--yellow); box-shadow: 0 0 0 1px var(--yellow), 0 0 15px -5px var(--yellow); background: var(--yellow-bg); }
+.dl.act.u-soon .dl-dot { border-color: var(--yellow); background: var(--yellow); color: #1a1205; }
+.dl.act.u-soon .dl-due { background: var(--yellow-bg); color: var(--yellow); } .dl.act.u-soon .dd { background: var(--yellow); }
+.dl.act.u-ok   { border-color: var(--green); box-shadow: 0 0 0 1px var(--green), 0 0 14px -6px var(--green); background: var(--green-bg); }
+.dl.act.u-ok   .dl-dot { border-color: var(--green); background: var(--green); color: #04150d; }
+.dl.act.u-ok   .dl-due { background: var(--green-bg); color: var(--green); } .dl.act.u-ok .dd { background: var(--green); }
+/* CLOSED WON — Signed / Paid reached → a solid primary-blue plate (Jac 2026-07-17). Deepened so the
+   near-white stamp reads AA in both themes. */
+.dl.won { border-color: var(--blue); background: color-mix(in srgb, var(--blue) 62%, #05112a);
+  box-shadow: 0 0 0 1px var(--blue), 0 0 18px -6px var(--blue); }
+.dl.won .dl-nm { color: #eef4ff; font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: .7px; font-weight: 800; font-size: 13.5px; }
+.dl.won .dl-note { color: #cfe0ff; opacity: .9; }
+.dl.won .dl-dt { color: #dce8ff; font-weight: 700; }
+.dl.won .dl-dot { border-color: #eef4ff; background: #eef4ff; color: var(--blue); }
+.fl-actbtns { display: flex; gap: 8px; margin-top: 10px; }
 .dl-check { display: flex; align-items: center; gap: 9px; padding: 8px 12px; border: 1px dashed var(--accent-line, color-mix(in srgb, var(--accent) 50%, transparent));
   border-radius: 9px; background: color-mix(in srgb, var(--accent) 6%, transparent); cursor: pointer; margin: 1px 0; color: var(--txt-2); font: inherit; }
 .dl-check:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

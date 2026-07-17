@@ -4317,7 +4317,7 @@ function openFunnelLayerEdit(custId, key, stage) {
   const p = act ? parseSchedText(act.text) : null;
   openOverlay({ kind: 'funnelLayer', custId, fkey: key, stage,
     actWhen: act ? act.when : TODAY_ISO,
-    actTime: (p && to24(p.time)) || to24(nowHourLabel()) || '09:00',
+    actWhenTime: (p && to24(p.time)) || to24(nowHourLabel()) || '09:00',   // datefield writes the time to o[field+'Time']
     actNote: p ? p.note : '' });
 }
 // Save the layer's action = an OPEN scheduled next-action tagged to funnel+stage (create OR edit the
@@ -4328,7 +4328,7 @@ function saveFunnelLayer() {
   const c = IDX.customer.get(o.custId); if (!c) { closeOverlay(); return; }
   const date = o.actWhen; if (!date) { flashOr('.datefield', 'Pick a date first.'); return; }
   const note = (document.querySelector('.overlay .js-fl-note')?.value || '').trim();
-  const text = `Scheduled: ${note || 'follow-up'} @ ${date} ${to12(o.actTime || '09:00')}`;
+  const text = `Scheduled: ${note || 'follow-up'} @ ${date} ${to12(o.actWhenTime || '09:00')}`;
   c.activityLog = c.activityLog || [];
   const existing = funnelLayerAction(c, o.fkey, o.stage);
   if (existing) { existing.when = date; existing.text = text; existing.scope = funnelScope(o.fkey); existing.fkey = o.fkey; existing.stage = o.stage; }
@@ -6507,7 +6507,7 @@ const RULE_META = {
   R32: ['Nav jog', 'cardJog / .card-jog · .mfoot-jog', 'the two-way Back/Forward view-history stepper. On desktop + in-card it is a neutral steel pill (chevron arms split by a saddle-stitch seam, orange only on hover/press) that shows only when the card has history. On phone it lives ALWAYS-ON as a snug chip pinned to the bottom-RIGHT of the footer tool bar (matching the .iconbtn tool buttons), Chrome-style: bright chevrons that grey when their stack is empty — reflecting the snapped column’s card (repainted on swipe).'],
   R33: ['Global toggle', 'globeToggle', 'the icon-only globe pinned right in a grid card’s search bar — flips that bar, and every grid-card bar in lockstep, between per-card and whole-yard “global” search (dim steel off, safety-orange on). A scope-MODE toggle like R31 but icon-only + it drives the shared query; replaces the old giant #globalsearch bar. Behind FEATURES.cardGlobalSearch.'],
   R34: ['Wash cycle button', 'washBtn', 'one pressable status pill that advances a unit’s wash on each click — neutral “Wash?” → caution “Wash It!” (yellow, requested) → ready “✓ Washed” (green, logged) → click again un-marks today’s wash. Registry STATUS tones (green/yellow/gray), NOT action colors; a press-to-advance control like R1 but it cycles in place instead of opening a dropdown. Replaces the old Wash / Don’t Wash / Washed R14 toggle; wash no longer gates inspection Pass.'],
-  R35: ['Dated funnel', 'datedFunnelHtml / .dfunnel', 'the customer-detail funnel as a two-tab (Rental | Equipment Sales) stack of clickable DATED layers, narrowing like a real funnel — everyone sits in both tabs (a fresh customer at Lead). Each layer stamps the date it was reached (auto today, editable) + an optional note that truncates on the layer; auto layers (Reserved/Rented derived from live rentals, Signed) are padlocked. The Member Lead checkbox extends the Rental tab with the membership stages. Clicking an upcoming manual layer advances it; clicking a reached/auto layer opens the funnelLayer edit popup. Bespoke — layers are NOT .pill, the .dfunnel container carries the stamp.'],
+  R35: ['Dated-action funnel', 'datedFunnelHtml / .dfunnel', 'the customer-detail funnel as a two-tab (Rental | Equipment Sales) stack of clickable LAYERS, narrowing like a real funnel — everyone sits in both tabs (a fresh customer at Lead). Each layer is a SLOT for a dated next-action ("notes = actions"): arm any layer with an action (note + date) and it glows red/yellow/green by that date’s urgency (naUrgency) — several can be armed at once. A reached-but-unarmed layer is quiet steel history (a check + when it happened); the terminal Signed/Paid, once reached, is SOLID BLUE (closed won). Clicking a layer opens its action editor (arm/edit/complete, or Advance the customer here). The armed actions are the same scheduled entries as the date-sorted queue below. Rental Reserved/Rented history-dates derive from live rentals. Bespoke — layers are NOT .pill, the .dfunnel container carries the stamp.'],
 };
 /* ════════════ APP-12 · DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
    The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
@@ -14323,19 +14323,26 @@ function buildPopupEl(o, overlay, opts = {}) {
         <textarea class="insp-desc js-sell-note" placeholder="Buyer / notes (optional)…"></textarea>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'funnelLayer') {
-    // Idea D — edit one dated funnel layer: correct its date (unless a rental auto-date) + note.
+    // A layer's ACTION editor (Jac 2026-07-17: notes = actions). Arm/edit the dated next-action for
+    // this funnel+stage — it joins the queue below + drives the tab's urgency dot. Advancing the
+    // customer here is a separate, explicit button (2B); ✓/✕ log the armed action (never advance).
     const c = IDX.customer.get(o.custId);
     if (!c) { return false; }
     const st = getStatus('funnelStage', o.stage);
-    const derived = funnelDateDerived(o.fkey, o.stage);
-    if (o.funnelEditDate === undefined) o.funnelEditDate = funnelLayerDate(c, o.fkey, o.stage) || TODAY_ISO;
-    const dateRow = derived
-      ? `<label class="svc-field"><span>Date</span><div class="fl-autodate">${o.funnelEditDate ? esc(fmtShortDate(o.funnelEditDate)) : '—'} · set automatically from the rental</div></label>`
-      : `<label class="svc-field"><span>Date reached</span>${dateField('funnelEditDate', o.funnelEditDate)}</label>`;
+    const act = funnelLayerAction(c, o.fkey, o.stage);
+    const stages = FUNNELS[o.fkey].stages;
+    const ahead = o.fkey !== 'rental' && !isAutoStage(o.fkey, o.stage)
+      && stages.indexOf(o.stage) > stages.indexOf(funnelCurrentStage(c, o.fkey));
+    if (o.actWhen === undefined) o.actWhen = TODAY_ISO;
+    const doneRow = act
+      ? `<div class="fl-actbtns">${actionPill('commit', '✓ Done', { js: 'js-fl-done', data: { rec: o.custId } })}${actionPill('danger', '✕ Cancel', { js: 'js-fl-cancel', data: { rec: o.custId } })}</div>`
+      : '';
     const pop = el('div', 'popup'); pop.style.width = '340px';
-    pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: `${FUNNELS[o.fkey].label} · ${st.label}`, tag: 'Funnel · layer',
-      foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-commit js-fl-save" data-r="R17" data-rec="${esc(o.custId)}">Save</button>`,
-      body: `${dateRow}<label class="svc-field" style="margin-top:8px"><span>Note</span><textarea class="insp-desc js-fl-note" placeholder="add a note (truncates on the layer)…">${esc(o.funnelNote || '')}</textarea></label>` });
+    pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: `${FUNNELS[o.fkey].label} · ${st.label}`, tag: 'Funnel · next action',
+      foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button>${ahead ? `<button class="pill c-commit js-fl-advance" data-r="R17" data-rec="${esc(o.custId)}">Advance here</button>` : ''}<button class="pill ignition js-fl-save" data-r="R17" data-rec="${esc(o.custId)}">${act ? 'Save action' : 'Add action'}</button>`,
+      body: `<label class="svc-field"><span>Action date &amp; time</span>${dateField('actWhen', o.actWhen, { withTime: true, time: o.actWhenTime })}</label>`
+        + `<label class="svc-field" style="margin-top:8px"><span>Next action (the layer's note)</span><textarea class="insp-desc js-fl-note" placeholder="What's the move? (quote call, demo, e-sign…)">${esc(o.actNote || '')}</textarea></label>`
+        + doneRow });
     overlay.appendChild(pop);
   } else if (o.kind === 'splitUnit') {
     // §20 split — give one unit its own window on a NEW sibling rental, same invoice.
@@ -14512,7 +14519,7 @@ const WINDOW_CATALOG = [
   { kind: 'service',       label: 'Complete service',        tag: 'Service · complete',        sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, taskId: 'svc-wash' }) },
   { kind: 'schedule',      label: 'Schedule follow-up',      tag: 'Customer · follow-up',      sample: () => ({ customerId: ((DATA.customers || [])[0] || {}).customerId }) },
   { kind: 'sellUnit',      label: 'Sell a unit',             tag: 'Unit · sale',               sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, saleDate: TODAY_ISO }) },
-  { kind: 'funnelLayer',   label: 'Funnel layer edit',       tag: 'Funnel · layer',            sample: () => ({ custId: ((DATA.customers || [])[0] || {}).customerId, fkey: 'member', stage: 'Contacted', funnelEditDate: TODAY_ISO, funnelNote: '' }) },
+  { kind: 'funnelLayer',   label: 'Funnel layer action',     tag: 'Funnel · next action',      sample: () => ({ custId: ((DATA.customers || [])[0] || {}).customerId, fkey: 'member', stage: 'Contacted', actWhen: TODAY_ISO, actWhenTime: '09:00', actNote: '' }) },
   { kind: 'splitUnit',     label: 'Different dates (split)',  tag: 'Rental · split window',     sample: () => ({ rentalId: ((DATA.rentals || [])[0] || {}).rentalId, unitId: ((DATA.units || [])[0] || {}).unitId }) },
   { kind: 'addCard',       label: 'Add card',                tag: 'Customer · card on file',   sample: () => ({ customerId: ((DATA.customers || [])[0] || {}).customerId }) },
   { kind: 'addAch',        label: 'Add bank account',        tag: 'Customer · ACH bank',       sample: () => ({ customerId: ((DATA.customers || [])[0] || {}).customerId }) },
@@ -18649,16 +18656,11 @@ function onClick(e) {
   if (closest('.js-funnelmenu')) { const b = closest('.js-funnelmenu'); e.stopPropagation(); return openFunnelMenu(b.dataset.rec, b); }
   if (closest('.js-funnel-join')) { const b = closest('.js-funnel-join'); return toggleFunnelMembership(b.dataset.rec, b.dataset.funnel); }
   if (closest('.js-funnel-setstage')) { const b = closest('.js-funnel-setstage'); return pickFunnelStage(b.dataset.rec, b.dataset.funnel, b.dataset.val); }
-  // Idea D dated funnel: the two-tab toggle, a layer press (advance-or-edit), the Member Lead checkbox.
+  // Dated-action funnel: the two-tab toggle, a layer press (open its action editor), the Member Lead checkbox.
   if (closest('.js-funnel-tab')) { const b = closest('.js-funnel-tab'); e.stopPropagation(); state.funnelTab = state.funnelTab || {}; state.funnelTab[b.dataset.rec] = b.dataset.tab; return render(); }
   if (closest('.js-funnel-layer')) {
     const b = closest('.js-funnel-layer'); e.stopPropagation();
-    const rec = b.dataset.rec, fkey = b.dataset.fkey, stage = b.dataset.stage, c = IDX.customer.get(rec);
-    if (!c) return;
-    const stages = FUNNELS[fkey].stages, ci = stages.indexOf(funnelCurrentStage(c, fkey)), i = stages.indexOf(stage);
-    const manual = fkey !== 'rental' && !isAutoStage(fkey, stage);
-    if (manual && ci >= 0 && i > ci) return reachFunnelStage(rec, fkey, stage);   // upcoming manual layer → advance + stamp today (ci>=0: never advance off an unrecognized current)
-    return openFunnelLayerEdit(rec, fkey, stage);                       // reached / auto layer → edit date + note
+    return openFunnelLayerEdit(b.dataset.rec, b.dataset.fkey, b.dataset.stage);   // any layer → arm/edit its action (advancing is an explicit button inside)
   }
   if (closest('.js-member-lead')) { const b = closest('.js-member-lead'); e.stopPropagation(); return toggleMemberLead(b.dataset.rec); }
   // Customers-list quick-add draft's funnel pick — writes state.custQuickAdd.funnel a FUNNEL KEY
@@ -18692,7 +18694,9 @@ function onClick(e) {
   if (closest('.js-act-open')) { const b = closest('.js-act-open'); e.stopPropagation(); state.actMode = b.dataset.val; state.actOpen = b.dataset.rec; const rec = b.dataset.rec; render(); document.querySelector(`.js-act-in[data-rec="${rec}"]`)?.focus(); return; }
   if (closest('.js-schedule-save')) { const b = closest('.js-schedule-save'); e.stopPropagation(); const o = state.overlay; const root = b.closest('.popup'); const c = IDX.customer.get(b.dataset.rec); const date = o?.when, time = o?.whenTime || '09:00'; const note = (root.querySelector('.js-sch-note')?.value || '').trim(); if (!c || !date) { flashOr('.datefield', 'Pick a date first.'); return; } const scope = (o?.scope === 'usedSales') ? 'usedSales' : 'rental'; const text = `Scheduled: ${note || 'follow-up'} @ ${date} ${to12(time)}`; c.activityLog = c.activityLog || []; if (o?.editIdx != null && c.activityLog[o.editIdx]) { const ent = c.activityLog[o.editIdx]; ent.when = date; ent.text = text; ent.scope = scope; } else { c.activityLog.push({ when: date, text, scope }); } reindex('customers', c); toast(o?.editIdx != null ? 'Next action saved.' : 'Next action added.'); state.datepick = null; closeOverlay(); render(); }
   if (closest('.js-sell-save')) { const b = closest('.js-sell-save'); e.stopPropagation(); const o = state.overlay; const root = b.closest('.popup'); const price = root.querySelector('.js-sell-price')?.value; const date = o?.saleDate; const note = (root.querySelector('.js-sell-note')?.value || '').trim(); if (!date) { flashOr('.datefield', 'Pick a sale date first.'); return; } if (!price || Number(price) <= 0) { flashOr('.js-sell-price', 'Enter a sale price first.'); return; } return sellUnit(b.dataset.rec, price, date, note); }
-  if (closest('.js-fl-save')) { e.stopPropagation(); return saveFunnelLayer(); }   // Idea D — save a funnel layer's date + note
+  if (closest('.js-fl-done') || closest('.js-fl-cancel')) { e.stopPropagation(); const done = !!closest('.js-fl-done'); const b = closest('.js-fl-done') || closest('.js-fl-cancel'); return completeFunnelAction(b.dataset.rec, done); }   // ✓/✕ the layer's armed action (logs it; never advances)
+  if (closest('.js-fl-advance')) { const b = closest('.js-fl-advance'); e.stopPropagation(); const o = state.overlay; if (o) advanceFunnelLayer(o.custId, o.fkey, o.stage); return; }   // explicit advance — customer actually moved to this stage
+  if (closest('.js-fl-save')) { e.stopPropagation(); return saveFunnelLayer(); }   // save the layer's dated next-action
   // Wave 2 — empty slots on a Quote/invoice: the UNIT slot points you at the
   // Units list (drag IS the link path); the CUSTOMER slot opens quick-add-link.
   if (closest('.js-slot-unit')) {
@@ -20305,9 +20309,9 @@ function completeWOAttempt(woId) {
 }
 
 function onInput(e) {
-  // Idea D funnel-layer editor: keep the note synced to overlay state so opening the date
-  // picker (which re-renders the popup from o.funnelNote) never wipes a typed-but-unsaved note.
-  if (e.target.classList.contains('js-fl-note') && state.overlay?.kind === 'funnelLayer') { state.overlay.funnelNote = e.target.value; return; }
+  // Funnel-layer action editor: keep the action note synced to overlay state so opening the date
+  // picker (which re-renders the popup from o.actNote) never wipes a typed-but-unsaved note.
+  if (e.target.classList.contains('js-fl-note') && state.overlay?.kind === 'funnelLayer') { state.overlay.actNote = e.target.value; return; }
   if (e.target.id === 'globalsearch') {
     // The state updates on every keystroke; the (debounced) re-render rebuilds ONLY the
     // results grid via renderResults(), leaving THIS input node mounted — so no focus/
@@ -26321,7 +26325,7 @@ function exposeTestApi() {
       dataCache, cacheValid, cacheDeviceOk, cacheTokenTag, cacheAppVer, cacheSnapshotEnvelope, CACHE_SCHEMA_VER, FEATURES,   // §instant-cache (spec 2026-07-16)
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, pickFunnelStage, toggleFunnelMembership, rentalFunnelStage, funnelStageOf, inFunnel, inRental, hasRentalActivity, funnelTrackA, funnelTrackEquip, ensureFunnels, funnelMenuHtml, reachFunnelStage, toggleMemberLead, funnelCurrentStage, funnelLayerDate, funnelLayerNote, ensureFunnelLog, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsUtilRollup, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, pickFunnelStage, toggleFunnelMembership, rentalFunnelStage, funnelStageOf, inFunnel, inRental, hasRentalActivity, funnelTrackA, funnelTrackEquip, ensureFunnels, funnelMenuHtml, reachFunnelStage, toggleMemberLead, funnelCurrentStage, funnelLayerDate, funnelLayerNote, ensureFunnelLog, markMembershipSigned, funnelLayerAction, funnelScope, naUrgency, naOpenList, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsUtilRollup, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
       tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, openYardCamera, commitYardCapture, nextCategoryId, nextUnitId,
       tripsLS, tripMerge, tripSplit, assignTripDriver, tripLabel, assignStopDriver, tripSetTime,
       tripPushSoon, tripPushNow, loadTripsFromBackend, tripsSyncFooter, setBackendPassword: (pw) => { backendPassword = pw || ''; },   // §2.3 Phase 4 sync — the setter is test-only (mirrors setRole), letting logic-test.mjs exercise the online path via a mocked window.fetch, never a real backend
