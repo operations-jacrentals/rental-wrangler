@@ -19,6 +19,39 @@
 - **Deploy flow:** the standard splice — pull live `Code.js` → append §authz functions + wire the
   router → `node --check` → STOP-gate (show Jac) → SA `push` HEAD → **Jac's editor New-version
   deploy** → verify anonymous JSON + a real approval round-trip on staging.
+## ✅ DEPLOYED + VERIFIED 2026-07-17 — invoice email PNG attachment
+- **Status:** Jac editor-deployed the HEAD splice (New version). **Verified live 2026-07-17:**
+  (1) **Anon-access guard** — POST `{"action":"auth","password":"__wrong__"}` → `{"ok":false,
+  "error":"unauthorized"}` @ HTTP 200 (anonymous access intact — no editor rollback needed).
+  (2) **Full round-trip** — a real `sendCustomerMessage` email for test record **C0991** (Jacob
+  Cameron, jacob@jacrentals.com) with `attachment:{name,mimeType:'image/png',dataB64}` → `{ok:true}`;
+  the operations@ **Sent copy** (subject *"Quote 04i07Ju26 from JacRentals"*) carries the attachment
+  **`04i07Ju26.png`, mimeType `image/png`** (confirmed via the Gmail Sent record, not just the `ok:true`
+  return — the backend returns `ok:true` even when it drops a bad blob, so the Sent-side attachment is
+  the real proof). Recipient was **server-resolved** to C0991's own email (isolation gate held); the
+  quiet-hours gate was enforced (first send blocked `quiet-hours`; admin `override:true` cleared it).
+  The attach-splice (decode `dataB64` → blob → `mailOpts.attachments`) is proven end-to-end.
+- **Caveat:** the image in THIS verification send was a **synthetic** PNG — the cloud sandbox can't do
+  the real DOM/canvas/font render, so real-invoice **Saira/Geist fidelity** is covered by the separate
+  real-device Copy-as-image check, not this test. The BACKEND attach path is fully proven regardless.
+- **Test artifact left in live data:** one `sendCustomerMessage` (ok) on invoice `04i07Ju26` for the
+  **C0991 test record** → a backend comms-log row + a Sent/Inbox email in the jacrentals.com mailboxes.
+  Harmless (test record, $1.00 "Testing Square" invoice); left in place so Jac can eyeball the attachment.
+- **What:** `docs/handoffs/invoice-email-attachment-backend.gs` — a small ADDITIVE splice in
+  `sendCustomerMessage_` (email branch, right before `GmailApp.sendEmail`). The client
+  (`emailQuoteSend`, shipped on `claude/random-improvements-quivhs`) now renders the invoice sheet to
+  a PNG and passes `body.attachment = {name, mimeType:'image/png', dataB64}`; this patch decodes it to
+  a blob and adds `mailOpts.attachments`.
+- **Safety:** recipient is still server-resolved from the invoice's own customer (existing isolation
+  gate), so the image can only reach that customer; gated to `entity==='invoice'`, MIME-whitelisted
+  (png/jpeg), ~3MB size-capped, and a bad blob is dropped (never fails the send). Consent/quiet-hours/
+  cap/dedup all still run first, unchanged.
+- **Fail-safe until deployed:** the client sends the attachment field; the un-patched backend simply
+  ignores it → emails still send text-only (no regression). The image appears once this deploys.
+- **Deploy flow:** pull live `Code.js` → splice the block per the handoff header → `node --check` →
+  STOP-gate (show Jac) → SA `push` HEAD → **Jac's editor New-version deploy** → verify a real invoice
+  email arrives WITH the PNG on staging.
+
 ## ⏳ READY TO PUSH — membership dues PO-hold + create-ahead-regardless-of-payment (2026-07-17)
 - **What:** `docs/handoffs/2026-07-17-membership-po-advance-billing.gs` — additive splice against the LIVE
   membership block (reconciled 2026-07-17 against the live source pulled via the Drive connector; the live

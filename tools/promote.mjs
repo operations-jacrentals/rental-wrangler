@@ -43,6 +43,9 @@ import { join } from 'node:path';
 // Imported for value only — staging-control.mjs has no import-time side effects. promote stays
 // credential-free: it only ever curls these PUBLIC Pages URLs, never touches the control branch.
 import { SLOT_URLS } from './lib/staging-control.mjs';
+// Content-verified freshness — confirm a slot serves trunk's ACTUAL bytes (a content hash over
+// the files the ?v= token versions), not merely a matching, collision-prone token. See the lib.
+import { resolveFreshSlot, contentHash } from './lib/promote-freshness.mjs';
 
 // TODO(jac): confirm — the release-pointer branch Pages serves as PRODUCTION (plan Phase 0.2/0.3).
 const PRODUCTION_BRANCH = 'production';
@@ -68,31 +71,6 @@ function readMarkerToken() {
     const m = JSON.parse(readFileSync(p, 'utf8'));
     return m && m.token != null ? String(m.token) : null;
   } catch { return null; }
-}
-
-// Resolve which staging slot's URL the freshness gate should check.
-//   --slot N  → that slot's URL (a deliberate human pin).
-//   otherwise → SCAN every slot's live Pages URL and pick the one already serving the trunk
-//               token we're about to promote (that's the slot the feature was deployed+reviewed
-//               on). Resolving by the served token — NOT the /merge-deleted marker — is what
-//               makes the freshness gate correct at N>1 (§8.2 step 3). If no slot serves it, we
-//               return slot 1 so the existing gate reports "behind" (with per-slot detail).
-// Credential-free: only curls PUBLIC Pages URLs. At N=1 this collapses to the single slot, so
-// the verdict is byte-identical to before.
-function resolveStagingSlotUrl(expectedToken, slotArg) {
-  const ids = Object.keys(SLOT_URLS).map(Number).sort((a, b) => a - b);
-  if (Number.isInteger(slotArg)) {
-    const url = SLOT_URLS[slotArg];
-    if (!url) fail(`--slot ${slotArg} is not a configured staging slot (have ${ids.join(', ')}).`);
-    return { slotId: slotArg, url, resolvedBy: 'flag', probes: null };
-  }
-  if (expectedToken && ids.length > 1) {
-    const probes = ids.map((id) => ({ id, url: SLOT_URLS[id], token: fetchLiveToken(stripSlash(SLOT_URLS[id])).token }));
-    const hit = probes.find((p) => p.token === expectedToken);
-    if (hit) return { slotId: hit.id, url: hit.url, resolvedBy: 'token', probes };
-    return { slotId: ids[0], url: SLOT_URLS[ids[0]], resolvedBy: 'none-fresh', probes };
-  }
-  return { slotId: ids[0], url: SLOT_URLS[ids[0]], resolvedBy: 'default', probes: null };
 }
 
 const REMOTE = 'origin';
@@ -175,38 +153,69 @@ console.log('  Files changed:');
 diffStat.forEach(l => console.log('    ' + l));
 console.log('='.repeat(72));
 
-// --- Step 2b: STAGING-FRESHNESS GATE ----------------------------------------
-// Staging must be showing the EXACT commit we're about to promote. If it's behind (or
+// --- Step 2b: STAGING-FRESHNESS GATE (content-verified) ----------------------
+// Staging must be showing the EXACT bytes we're about to promote. If it's behind (or
 // unreachable), promoting would put production AHEAD of the review site — the drift this gate
-// exists to prevent (2026-07-13). Reported in the preview; ENFORCED under --yes (Step 3b).
-function fetchLiveToken(url) {
-  try {
-    const html = execFileSync('curl', ['-sS', '-L', '--max-time', '15', `${url}/index.html`], { encoding: 'utf8' });
-    return { token: extractVersionToken(html) };
-  } catch (e) {
-    return { error: e.message };
-  }
+// exists to prevent (2026-07-13). The ?v= token is only a cheap pre-filter; the AUTHORITY is a
+// content hash over the files the token versions (app.js/style.css/rule-usage.js) — so a token
+// collision (a different deploy that reached the same ?v=) can neither fake freshness nor steer
+// the pick to the wrong slot. Reported in the preview; ENFORCED under --yes (Step 3b).
+
+// Trunk's authoritative content hash. Read RAW (untrimmed) — hashing must see the exact bytes,
+// and git() trims. A missing file hashes as empty (→ never matches a present file).
+const expectedHash = contentHash((f) => {
+  try { return execFileSync('git', ['show', `${trunkRef}:${f}`], { encoding: 'utf8' }); }
+  catch { return null; }
+});
+
+// Probe a slot: its served ?v= token (from index.html) + a content hash over its served
+// FRESHNESS_FILES (fetched at the version the slot advertises). Untrimmed curls — hashing must
+// see exact bytes. A fetch failure → { error } (token) or an empty file in the hash (→ not fresh).
+function curlRaw(url) {
+  return execFileSync('curl', ['-sS', '-L', '--max-time', '20', url], { encoding: 'utf8' });
 }
-const slot = resolveStagingSlotUrl(expectedToken, SLOT_ARG);
-const slotName = `staging slot ${slot.slotId}`;
-const staging = fetchLiveToken(stripSlash(slot.url));
-const stagingFresh = !staging.error && !!expectedToken && staging.token === expectedToken;
+function probeSlot(id) {
+  const base = stripSlash(SLOT_URLS[id]);
+  let token;
+  try { token = extractVersionToken(curlRaw(`${base}/index.html`)); }
+  catch (e) { return { error: e.message }; }
+  const q = token ? `?v=${token}` : '';
+  const hash = contentHash((f) => { try { return curlRaw(`${base}/${f}${q}`); } catch { return null; } });
+  return { token, hash };
+}
+
+const resolved = resolveFreshSlot(
+  { expectedToken, expectedHash, slotArg: SLOT_ARG },
+  { slotIds: Object.keys(SLOT_URLS).map(Number), urlOf: (id) => SLOT_URLS[id], probe: probeSlot },
+);
+if (resolved.badPin) fail(`--slot ${resolved.slotId} is not a configured staging slot (have ${Object.keys(SLOT_URLS).join(', ')}).`);
+const slotName = `staging slot ${resolved.slotId}`;
+const stagingFresh = resolved.fresh;
+const shortHash = (h) => (h ? String(h).slice(0, 10) : '(none)');
 console.log('');
-if (!expectedToken) {
-  console.log('promote: staging freshness — ⚠️ no app.js?v= token in the promoted index.html; cannot verify.');
-} else if (staging.error) {
-  console.log(`promote: staging freshness — ⚠️ could not reach ${slotName} at ${slot.url} (${staging.error}).`);
+if (!expectedToken && !expectedHash) {
+  console.log('promote: staging freshness — ⚠️ no app.js?v= token / content in the promoted commit; cannot verify.');
 } else if (stagingFresh) {
-  const how = slot.resolvedBy === 'flag' ? ' (pinned via --slot)' : slot.resolvedBy === 'token' ? ' (auto-resolved by served token)' : '';
-  console.log(`promote: staging freshness — ✅ ${slotName} serves ?v=${expectedToken}, matching the trunk commit${how}.`);
+  const how = resolved.resolvedBy === 'flag' ? 'pinned via --slot' : 'auto-resolved by content';
+  const served = resolved.probe && resolved.probe.token;
+  // Normally the fresh slot's served token == trunk's token; show the served one only when it
+  // differs (same bytes deployed under a different ?v= bump) so the line is never misleading.
+  const tok = served && served !== expectedToken
+    ? `content verified; served ?v=${served}, trunk ?v=${expectedToken}`
+    : `?v=${expectedToken}, content verified`;
+  console.log(`promote: staging freshness — ✅ ${slotName} serves trunk's bytes (${tok}; ${how}).`);
+} else if (resolved.resolvedBy === 'collision') {
+  const p = resolved.probe;
+  console.log(`promote: staging freshness — 🔴 TOKEN COLLISION at ${slotName}: it serves ?v=${p.token} (matching trunk's token) but DIFFERENT bytes.`);
+  console.log(`promote:   trunk content ${shortHash(expectedHash)} ≠ ${slotName} content ${shortHash(p.hash)} — a different deploy reached the same ?v=.`);
+  console.log('promote:   re-deploy THIS commit to staging (node tools/deploy-staging.mjs) and review it before promoting.');
 } else {
-  console.log(`promote: staging freshness — 🔴 NO STAGING SLOT SERVES THE TRUNK TOKEN. Trunk = ?v=${expectedToken}.`);
-  // When we scanned every slot, show what each one is actually serving so it's obvious the
-  // feature was never deployed (or landed on a slot that has since been redeployed).
-  if (slot.probes) {
-    slot.probes.forEach((p) => console.log(`promote:   slot ${p.id} (${stripSlash(p.url)}) = ?v=${p.token || '(unreachable)'}`));
-  } else {
-    console.log(`promote:   ${slotName} = ?v=${staging.token || '(none)'}.`);
+  console.log(`promote: staging freshness — 🔴 NO STAGING SLOT SERVES TRUNK'S BYTES. Trunk = ?v=${expectedToken} / content ${shortHash(expectedHash)}.`);
+  if (resolved.probes) {
+    resolved.probes.forEach((p) => console.log(
+      `promote:   slot ${p.id} (${stripSlash(p.url)}) = ` +
+      `?v=${p.token || (p.error ? '(unreachable)' : '(none)')}${p.hash ? ` / content ${shortHash(p.hash)}` : ''}`,
+    ));
   }
   console.log('promote:   no slot is showing what you\'re about to promote — deploy this commit to staging and review it first.');
 }

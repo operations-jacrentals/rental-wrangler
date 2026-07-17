@@ -2719,6 +2719,95 @@ try {
       ok(T.wrOpsAgo(now - 2 * 86400000) === '2d', 'wrops#5: 2 days → "2d"');
     }
 
+    // ── §scan-reconcile — adoptScanCaptures(): a QR-decal scan is folded into its rental as a
+    //    FIRST-CLASS capture (stamped scan:true) + advances status like a manual Log Delivery/
+    //    Recovery, client-side, bypassing the §9 booking gates (records a physical fact). (2026-07-17)
+    {
+      const mk = (id, uid, status, extra = {}) => { const r = { rentalId: id, customerId: 'C0009', unitId: uid, categoryId: null, rentalName: id, startDate: T.TODAY_ISO, endDate: T.TODAY_ISO, status, transportType: 'Self', units: [{ unitId: uid, status }], invoiceId: null, actions: [], mock: true, ...extra }; T.DATA.rentals.push(r); T.IDX.rental.set(id, r); return r; };
+      const clean = (id) => { T.DATA.rentals = T.DATA.rentals.filter((r) => r.rentalId !== id); T.IDX.rental.delete(id); };
+
+      // 1) START adoption: Reserved + no invoice → stamps the capture (scan:true) + On Rent + FLAGS the missing invoice
+      const rA = mk('SC-ADOPT-A', 'U-SCA', 'Reserved');
+      const tsA = Date.now();
+      T.setScanCaps({ 'U-SCA|SC-ADOPT-A|start': { video: 'https://drive/v-a', ts: tsA } });
+      const chgA = T.adoptScanCaptures();
+      const euA = T.unitEntry(rA, 'U-SCA');
+      ok(chgA === true, 'scan-adopt: reports changed on a fresh adoption');
+      ok(euA.startCapture && euA.startCapture.video === 'https://drive/v-a' && euA.startCapture.scan === true, 'scan-adopt: START stamps the unit capture, marked scan:true');
+      ok(T.unitStatus(rA, euA) === 'On Rent', 'scan-adopt: START advances the unit to On Rent');
+      ok(rA.actions.some((a) => /no invoice/i.test(a.text)), 'scan-adopt: missing invoice is FLAGGED in the log, not blocked');
+      // §bug-4 — the capture date is stamped in LOCAL time (isoOf), matching the manual path's
+      // TODAY_ISO, NOT toISOString()'s UTC day (which would be tomorrow for an evening scan in a
+      // negative-offset yard). Contract assertion — in a UTC CI runtime both agree, but this guards
+      // the local-format contract + a gross regression; the TZ-specific proof is a standalone check.
+      { const d = new Date(tsA), p = (n) => String(n).padStart(2, '0'); const localYMD = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+        ok(euA.startCapture.date === localYMD, 'scan-adopt: capture date is stamped LOCAL (isoOf), matching the manual Log Delivery path'); }
+
+      // 2) Idempotent — a second run leaves an already-adopted slot (and its status) untouched
+      const capBefore = euA.startCapture;
+      const chgA2 = T.adoptScanCaptures();
+      ok(chgA2 === false && T.unitEntry(rA, 'U-SCA').startCapture === capBefore, 'scan-adopt: idempotent — a re-run never re-stamps or re-moves an adopted slot');
+
+      // 3) Manual wins — a capture already on the slot is NEVER overwritten by a scan
+      const rB = mk('SC-ADOPT-B', 'U-SCB', 'Reserved');
+      const manual = { date: T.TODAY_ISO, clock: '9:00 AM', video: 'https://drive/manual', driver: 'Sam' };
+      T.unitEntry(rB, 'U-SCB').startCapture = manual;
+      T.setScanCaps({ 'U-SCB|SC-ADOPT-B|start': { video: 'https://drive/v-b', ts: Date.now() } });
+      T.adoptScanCaptures();
+      ok(T.unitEntry(rB, 'U-SCB').startCapture === manual, 'scan-adopt: a manual capture wins — adoption never overwrites it');
+
+      // 4) END adoption: an out unit + end scan → Returned + endCapture
+      const rC = mk('SC-ADOPT-C', 'U-SCC', 'On Rent', { invoiceId: 'I-X' });
+      T.setScanCaps({ 'U-SCC|SC-ADOPT-C|end': { video: 'https://drive/v-c', ts: Date.now() } });
+      T.adoptScanCaptures();
+      const euC = T.unitEntry(rC, 'U-SCC');
+      ok(euC.endCapture && euC.endCapture.video === 'https://drive/v-c' && euC.endCapture.scan === true, 'scan-adopt: END stamps the recovery capture, marked scan:true');
+      ok(T.unitStatus(rC, euC) === 'Returned', 'scan-adopt: END advances an out unit to Returned');
+
+      // 5) END on a never-delivered (pre-delivery) unit → NOT adopted — stamping a recovery with
+      //    no delivery on file would paint a contradictory card, so leave it in ScanLog (§bug-3)
+      const rD = mk('SC-ADOPT-D', 'U-SCD', 'Reserved');
+      T.setScanCaps({ 'U-SCD|SC-ADOPT-D|end': { video: 'https://drive/v-d', ts: Date.now() } });
+      T.adoptScanCaptures();
+      const euD = T.unitEntry(rD, 'U-SCD');
+      ok(!euD.endCapture, 'scan-adopt: END on a never-delivered unit is NOT adopted (no delivery on file → skip)');
+      ok(T.unitStatus(rD, euD) === 'Reserved', 'scan-adopt: END on a never-delivered unit leaves status untouched');
+
+      // 6) An unknown rental in SCAN_CAPS is skipped cleanly (no throw)
+      T.setScanCaps({ 'U-GHOST|NO-SUCH-RENTAL|start': { video: 'x', ts: Date.now() } });
+      ok(T.adoptScanCaptures() === false, 'scan-adopt: a scan for an unknown rental is skipped, not fatal');
+
+      // 7) Backlog START on a derived-No-Show unit (Reserved, start date long past) → adopts +
+      //    On Rent (physical proof it went out; overrides the derived No-Show → card stays consistent) (§bug-3)
+      const rNS = mk('SC-ADOPT-NS', 'U-SNS', 'Reserved', { startDate: '2020-01-01', endDate: '2020-01-02' });
+      ok(T.unitStatus(rNS, T.unitEntry(rNS, 'U-SNS')) === 'No Show', 'scan-adopt: precondition — a past-date Reserved unit derives No Show');
+      T.setScanCaps({ 'U-SNS|SC-ADOPT-NS|start': { video: 'https://drive/v-ns', ts: Date.now() } });
+      T.adoptScanCaptures();
+      const euNS = T.unitEntry(rNS, 'U-SNS');
+      ok(euNS.startCapture && euNS.startCapture.video === 'https://drive/v-ns', 'scan-adopt: backlog START on a No-Show unit files the delivery video');
+      ok(T.unitStatus(rNS, euNS) === 'On Rent', 'scan-adopt: backlog START overrides the derived No-Show → On Rent (consistent card)');
+
+      // 8) A full backlog on ONE rental with keys enumerated END-before-START still ends Returned —
+      //    adoption orders start-before-end by ts regardless of key order (§bug-1 guard)
+      const rBK = mk('SC-ADOPT-BK', 'U-SBK', 'Reserved');
+      T.setScanCaps({ 'U-SBK|SC-ADOPT-BK|end': { video: 'https://drive/bk-end', ts: 2000 }, 'U-SBK|SC-ADOPT-BK|start': { video: 'https://drive/bk-start', ts: 1000 } });
+      T.adoptScanCaptures();
+      const euBK = T.unitEntry(rBK, 'U-SBK');
+      ok(euBK.startCapture && euBK.endCapture, 'scan-adopt: a full backlog files BOTH the delivery and recovery videos');
+      ok(T.unitStatus(rBK, euBK) === 'Returned', 'scan-adopt: start-before-end ordering — a delivered+recovered unit ends Returned, not stuck On Rent');
+
+      // 9) A manual capture MID-UPLOAD (video:'' before Drive resolves) is never clobbered by a scan (§bug-2)
+      const rMU = mk('SC-ADOPT-MU', 'U-SMU', 'On Rent', { invoiceId: 'I-Y' });
+      const inflight = { date: T.TODAY_ISO, clock: '8:00 AM', video: '', driver: 'Pat' };
+      T.unitEntry(rMU, 'U-SMU').startCapture = inflight;
+      T.setScanCaps({ 'U-SMU|SC-ADOPT-MU|start': { video: 'https://drive/scan-mu', ts: Date.now() } });
+      T.adoptScanCaptures();
+      ok(T.unitEntry(rMU, 'U-SMU').startCapture === inflight, "scan-adopt: an in-flight manual capture (video:'') is NOT overwritten by a scan");
+
+      T.setScanCaps({});   // reset the seam so no later test sees stray captures
+      ['SC-ADOPT-A', 'SC-ADOPT-B', 'SC-ADOPT-C', 'SC-ADOPT-D', 'SC-ADOPT-NS', 'SC-ADOPT-BK', 'SC-ADOPT-MU'].forEach(clean);
+    }
+
     return out;
   });
 

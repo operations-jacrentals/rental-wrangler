@@ -2872,8 +2872,9 @@ function cardFwd(card) {
 }
 // A Back/Forward jog RE-opens a view you already visited — so return to where you were
 // reading it, not the top. render() zeroes a record view on the assumption it's a fresh open
-// (§0.6, app.js:16297); the per-view scrollMemo still holds the offset (keyed recType:recId,
-// stable per record), so re-apply it AFTER render paints. A never-scrolled view has no entry
+// (§0.6, app.js:16297); the per-view scrollMemo still holds the offset (keyed card|<view>, the
+// view portion being recType:recId — stable per record), so re-apply it AFTER render paints. A
+// never-scrolled view has no entry
 // → stays at 0. (Fresh opens don't call this, so they still start at the top.)
 function restoreJogScroll(card) {
   const c = document.querySelector(`.card[data-card="${card}"]`);
@@ -7458,24 +7459,28 @@ function yardToolHtml(u) {
   const C = euT || r;   // §20 this unit's OWN captures (mirrors r.* for the primary)
   const st = getStatus('rentalStatus', euT ? unitStatus(r, euT) : rentalDisplayStatus(r));
   const isDel = !!(euT && euT.transportType && euT.transportType !== 'Self');   // §20 per-unit (was rental-level — diverged on multi-unit)
-  const startLbl = C.startCapture ? 'On Rent' : isDel ? '+Log Delivery' : '+Start';
-  const endLbl = C.endCapture ? 'Returned' : isDel ? '+Log Recovery' : '+End';
+  // A QR-decal scan is ADOPTED into the record as a first-class capture (adoptScanCaptures,
+  // marked scan:true), so the journey reads it straight off C.* like any manual capture — the
+  // `• Filed by QR scan` marker below just keys off that flag. No display-time join needed.
+  const startCap = C.startCapture, endCap = C.endCapture;
+  const startLbl = startCap ? 'On Rent' : isDel ? '+Log Delivery' : '+Start';
+  const endLbl = endCap ? 'Returned' : isDel ? '+Log Recovery' : '+End';
   const kindLbl = isDel ? getStatus('transportType', euT.transportType).label : '';
   const du = `data-unit="${esc(u.unitId)}"`;
   return `<div class="jtool"><div class="journey">
     <div class="jnode pre" style="cursor:default"><span class="jbox" style="color:var(--${st.color})">${CARD_ICON.rentals}</span><span class="jlbl" style="color:var(--${st.color})">${esc(st.label)}</span><span class="jts">${fmtShortDate(r.startDate)}${r.startTime ? ' · ' + esc(r.startTime) : ''}</span></div>
     <div class="jseg">
       <span class="jover"><span class="pill dvd c-orange" data-r="R4" data-pill-card="rentals" data-pill-rec="${esc(r.rentalId)}">${CARD_ICON.rentals}<span class="t">${esc(cust?.name || r.rentalName || 'Rental')}</span></span></span>
-      <span class="jline2 ${C.startCapture ? 'on' : ''}"></span>
+      <span class="jline2 ${startCap ? 'on' : ''}"></span>
       <span class="junder">${fmtShortDate(r.startDate)} – ${fmtShortDate(r.endDate)}</span>
       ${(() => { const addr = (euT && euT.deliveryAddress) || (isPrimaryUnit(r, euT) ? r.deliveryAddress : ''); return addr ? `<span class="jaddr js-site-go" data-rec="${esc(r.rentalId)}" ${du}>${esc(addr)}</span>` : (isDel ? `<span class="jaddr js-site-go" data-rec="${esc(r.rentalId)}" ${du}>+Address</span>` : ''); })()}
       ${kindLbl ? `<span class="jkind">${esc(kindLbl)}</span>` : ''}
     </div>
-    <div class="jnode ${C.startCapture ? 'done green' : ''} js-yard" data-cap="start" data-rec="${esc(r.rentalId)}" ${du}><span class="jbox">${C.startCapture ? '✓' : I.video}</span><span class="jlbl">${esc(startLbl)}</span><span class="jts">${esc(C.startCapture?.clock || '')}</span></div>
-    <div class="jseg"><span class="jover"></span><span class="jline2 ${C.endCapture || C.fcCapture ? 'on' : ''}"></span></div>
+    <div class="jnode ${startCap ? 'done green' : ''} js-yard" data-cap="start" data-rec="${esc(r.rentalId)}" ${du}${startCap?.scan ? ' data-tip="Filed by QR scan"' : ''}><span class="jbox">${startCap ? '✓' : I.video}</span><span class="jlbl">${esc(startLbl)}</span><span class="jts">${esc(startCap?.clock || '')}${startCap?.scan ? ' <span class="jscan">•</span>' : ''}</span></div>
+    <div class="jseg"><span class="jover"></span><span class="jline2 ${endCap || C.fcCapture ? 'on' : ''}"></span></div>
     <div class="jnode fc ${C.fcCapture || r.fieldCall ? 'done' : ''} js-yard" data-cap="fc" data-rec="${esc(r.rentalId)}" ${du}><span class="jbox">${I.video}</span><span class="jlbl">+FC</span><span class="jts">${esc(C.fcCapture?.clock || '')}</span></div>
-    <div class="jseg"><span class="jover"></span><span class="jline2 ${C.endCapture ? 'on' : ''}"></span></div>
-    <div class="jnode ${C.endCapture ? 'done yellow' : ''} js-yard" data-cap="end" data-rec="${esc(r.rentalId)}" ${du}><span class="jbox">${C.endCapture ? '✓' : I.video}</span><span class="jlbl">${esc(endLbl)}</span><span class="jts">${esc(C.endCapture?.clock || '')}</span></div>
+    <div class="jseg"><span class="jover"></span><span class="jline2 ${endCap ? 'on' : ''}"></span></div>
+    <div class="jnode ${endCap ? 'done yellow' : ''} js-yard" data-cap="end" data-rec="${esc(r.rentalId)}" ${du}${endCap?.scan ? ' data-tip="Filed by QR scan"' : ''}><span class="jbox">${endCap ? '✓' : I.video}</span><span class="jlbl">${esc(endLbl)}</span><span class="jts">${esc(endCap?.clock || '')}${endCap?.scan ? ' <span class="jscan">•</span>' : ''}</span></div>
   </div></div>`;
 }
 /* one open-WO section on the Units card: WO name = the title, type+date flags right,
@@ -11082,6 +11087,82 @@ async function loadTripsFromBackend() {
       render();
     }
   } catch (e) { /* offline → keep local cache */ }
+}
+/* Scan-sourced capture videos (QR-decal scans, SCAN-TO-LOG above) are filed server-side via
+   captureByScan into an append-only ScanLog (NOT onto the rental record, so a client sync can't
+   clobber the server write). SCAN_CAPS is the boot-pulled feed (getScanCaptures), keyed
+   "<unitId>|<rentalId>|<cap>" → { video, ts }. adoptScanCaptures() then folds each one INTO the
+   rental it belongs to — client-side, synced via the normal diff-sync — so downstream everything
+   reads it as an ordinary capture. Mirrors loadTripsFromBackend: same offline/local guard. */
+let SCAN_CAPS = {};
+async function loadScanCapturesFromBackend() {
+  if (typeof backendPassword === 'undefined' || !backendPassword) return;
+  try {
+    const r = await backendCall('getScanCaptures');
+    if (r && r.ok && r.captures && typeof r.captures === 'object') {
+      SCAN_CAPS = r.captures || {};
+      const changed = adoptScanCaptures();     // fold new scan videos into their rentals (stamp capture + advance status)
+      if (!booting && changed) render();
+    }
+  } catch (e) { /* offline → keep whatever SCAN_CAPS already holds (possibly empty) */ }
+}
+/* Fold each scan-filed video into its rental as a FIRST-CLASS capture: stamp the unit's
+   start/end capture (marked scan:true) and advance that unit's status the way a manual Log
+   Delivery/Recovery would — so the journey, the status pill, availability, billing and every
+   status-driven surface agree, with ZERO display/gate special-casing (they read cur.* like any
+   manual capture). Client-side + persisted through the normal diff-sync (reindex → saveSoon),
+   so it never clobbers a server write. Status is set DIRECTLY, bypassing the §9 booking gates —
+   the unit physically moved, so a scan records that fact; a missing invoice is FLAGGED in the
+   activity log, not blocked (Jac: don't stop a truck that already left). Idempotent: a slot that
+   already carries a video (a manual capture, or an earlier adoption) is left untouched, so this
+   re-runs harmlessly on every load and never fights a manual edit. §scan-reconcile. */
+function adoptScanCaptures() {
+  // Parse the flat SCAN_CAPS map, then process in CHRONOLOGICAL order (ts, with a start-before-
+  // end tiebreak) — never key order. A unit's START must be adopted before its END, or a full
+  // backlog (both scans landed before anyone opened the app) would advance Reserved → On Rent on
+  // the start AFTER the end already skipped its own status move, stranding the unit at On Rent
+  // forever (the endCapture is stamped, so idempotency then blocks the Returned move). §bug-1.
+  const entries = [];
+  for (const k in SCAN_CAPS) {
+    const cap = SCAN_CAPS[k]; if (!cap || !cap.video) continue;
+    const b1 = k.indexOf('|'); if (b1 < 0) continue;
+    const b2 = k.indexOf('|', b1 + 1); if (b2 < 0) continue;
+    const slot = k.slice(b2 + 1); if (slot !== 'start' && slot !== 'end') continue;
+    entries.push({ unitId: k.slice(0, b1), rentalId: k.slice(b1 + 1, b2), slot, video: cap.video, ts: cap.ts });
+  }
+  entries.sort((a, b) => (Number(new Date(a.ts)) - Number(new Date(b.ts))) || ((a.slot === 'end') - (b.slot === 'end')));
+  let changed = false;
+  for (const e of entries) {
+    const r = IDX.rental.get(e.rentalId); if (!r) continue;
+    const eu = unitEntry(r, e.unitId);
+    if (Array.isArray(r.units) ? !eu : String(r.unitId) !== String(e.unitId)) continue;   // must match the scanned unit
+    const tgt = eu || r, key = e.slot === 'start' ? 'startCapture' : 'endCapture';
+    if (tgt[key]) continue;   // ANY capture already on this slot wins — a manual stamp (even mid-upload, video:'' before Drive resolves), or an earlier adoption. Never overwrite it. §bug-2
+    // Adopt ONLY when the resulting (capture + status) stays self-consistent — else leave the scan
+    // in ScanLog rather than paint a contradictory card (a green "delivered" node over a "No Show"/
+    // "Reserved" pill). Read the STORED status, not the derived one, so a backlog delivery on a
+    // derived-No-Show unit (stored 'Reserved', start date passed) still advances to On Rent. §bug-3
+    const storedSt = (eu && eu.status) || r.status || 'Reserved';
+    if (e.slot === 'start') { if (['Returned', 'Cancelled', 'No Show'].includes(storedSt)) continue; }   // terminal → don't un-terminal
+    else { if (!OUT_RENTAL_STATUSES.has(storedSt) && storedSt !== 'Returned') continue; }             // recovery with no delivery on file → skip
+    let clock = '', date = TODAY_ISO;
+    // Derive date + clock in LOCAL time (isoOf, like the manual capture path's TODAY_ISO) — NOT
+    // toISOString(), whose UTC day would stamp tomorrow's date on an evening scan in a negative-
+    // offset yard (America/Chicago), diverging from the local `clock` on the same stamp. §bug-4
+    try { const d = new Date(e.ts); if (!isNaN(d.getTime())) { clock = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); date = isoOf(d); } } catch (err) {}
+    const drvId = eu ? (e.slot === 'end' ? (eu.recoveryDriverId || eu.deliveryDriverId) : eu.deliveryDriverId) : null;
+    setUnitCapture(r, eu, key, { date, clock, video: e.video, driver: drvId ? driverName(drvId) : '', scan: true });
+    if (e.slot === 'start' && !OUT_RENTAL_STATUSES.has(storedSt)) {   // pre-delivery → this scan delivered it
+      if (eu) { eu.status = 'On Rent'; syncRentalPrimary(r); } else { r.status = 'On Rent'; }
+      if (!r.invoiceId) logAction(r, '⚠ Delivered by QR scan — no invoice linked yet');
+    } else if (e.slot === 'end' && OUT_RENTAL_STATUSES.has(storedSt)) {   // out → this scan recovered it
+      if (eu) { eu.status = 'Returned'; syncRentalPrimary(r); } else { r.status = 'Returned'; }
+    }
+    logAction(r, `${IDX.unit.get(e.unitId)?.name || e.unitId} — ${e.slot === 'start' ? 'Delivery' : 'Recovery'} video filed by QR scan`);
+    reindex('rentals', r);   // → saveSoon() diff-syncs this client-side write (no clobber)
+    changed = true;
+  }
+  return changed;
 }
 /* §2.3 Phase 4 — the Trips card footer's live sync state (replaces the Phase 1 static
    placeholder). 'Synced · rev N' (N = the highest rev among TODAY's materialized trips) only
@@ -19568,6 +19649,8 @@ function yardCapture(rentalId, cap, unitId, opts = {}) {
   // A video already on file → this tap RE-RECORDS it (Jac: "delete that video in trade
   // for a new one by doing the same process again"). A re-record only swaps the video —
   // it must NOT move status again, re-run the §9 delivery gates, or re-raise a field call.
+  // (A scanned delivery/recovery is ADOPTED onto cur.* by adoptScanCaptures, so cur[key] is
+  // already set here — no scan-specific gate branch needed; it reads as a normal capture.)
   const replace = !!cur[key] || (cap === 'fc' && !!r.fieldCall);
   // §14 a first Start/Delivery moves the unit On Rent — run the §9 gates UP FRONT so a
   // blocked delivery never opens the camera (mirrors setRentalStatus/setUnitStatus so the
@@ -19614,6 +19697,7 @@ function commitYardCapture(rentalId, cap, unitId, dataUrl, opts = {}) {
   const uname = IDX.unit.get(unitId)?.name || '';
   const key = cap === 'start' ? 'startCapture' : cap === 'end' ? 'endCapture' : 'fcCapture';
   // Re-record → swap the video only; keep the status where it is and don't re-raise the FC.
+  // (A scanned capture is already adopted onto tgt.* by adoptScanCaptures — a normal capture here.)
   const replace = !!tgt[key] || (cap === 'fc' && !!r.fieldCall);
   // The media NEVER rides the record (a Sheets cell caps at 50k chars) — the stamp
   // persists immediately; the video uploads to Drive and only its URL lands on the
@@ -21487,14 +21571,15 @@ function printInvoice(invoiceId) {
 /* Copy the on-screen invoice sheet to the clipboard as a PNG (right-click → Copy as image,
    Jac 2026-07-17). Library-free rasterization: clone the live .pr-doc, inline every element's
    COMPUTED style (so no stylesheet / CSS-var resolution is needed inside the SVG), data-URI the
-   images so the canvas never taints, wrap the XHTML in an <svg><foreignObject>, paint it to a
-   canvas, hand the PNG blob to the clipboard. The blob is produced INSIDE a ClipboardItem promise
-   so the write still counts as the user's gesture on Safari. Fonts loaded via @font-face may fall
-   back to a system face inside the SVG (a known foreignObject limit) — layout/colors are faithful,
-   the typeface may not be; on any failure we fall back to a clear toast pointing at Save-as-PDF. */
+   images AND embed the real @font-face typefaces (a foreignObject renders in its own scope with no
+   page fonts — so we inline them), wrap the XHTML in an <svg><foreignObject>, paint it to a canvas,
+   hand the PNG blob to the clipboard. The blob is produced INSIDE a ClipboardItem promise so the
+   write still counts as the user's gesture on Safari. **Firefox** deliberately taints a canvas the
+   moment a foreignObject-bearing SVG is drawn (a security stance, no lib-free bypass) → toBlob
+   throws → we catch and point at Save-as-PDF. Works in Chromium + Safari. */
 function copyInvoiceImage(invoiceId) {
-  const fail = () => toast('Couldn’t copy the image on this browser — use 🖨 Save PDF instead.');
-  if (!(navigator.clipboard && window.ClipboardItem)) return fail();   // no clipboard-image support (e.g. older Firefox) → point at Save-as-PDF, don't waste a render
+  const fail = () => toast('Couldn’t copy the image on this browser (Firefox blocks it) — use 🖨 Save PDF instead.');
+  if (!(navigator.clipboard && window.ClipboardItem)) return fail();   // no clipboard-image support → point at Save-as-PDF, don't waste a render
   // Render INSIDE the ClipboardItem promise so the write still counts as the user's gesture on Safari.
   navigator.clipboard.write([new ClipboardItem({ 'image/png': renderInvoicePng(invoiceId) })])
     .then(() => toast('🖼 Invoice copied — paste it into a message, chat, or doc.'))
@@ -21508,6 +21593,8 @@ async function renderInvoicePng(invoiceId) {
   const clone = doc.cloneNode(true);
   inlineComputedStyles(doc, clone);   // resolve classes + CSS vars to concrete values
   await inlineDocImages(clone);       // <img src> → data: so drawImage doesn't taint the canvas
+  const fontCss = await invoiceFontFaceCss();   // embed the real Saira/Geist faces — a foreignObject has no page @font-face
+  if (fontCss) { const st = document.createElement('style'); st.textContent = fontCss; clone.insertBefore(st, clone.firstChild); }
   clone.style.boxShadow = 'none'; clone.style.borderRadius = '0'; clone.style.margin = '0'; clone.style.maxWidth = 'none'; clone.style.width = W + 'px';
   clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
   const xhtml = new XMLSerializer().serializeToString(clone);
@@ -21545,6 +21632,62 @@ async function inlineDocImages(root) {
     } catch (e) { im.removeAttribute('src'); }
   }));
 }
+let _invFontCssP = null;   // cached PROMISE of the self-contained @font-face block (real fonts, data-URI'd) for the copied/emailed image
+// The invoice sheet is Saira Condensed (stamps) + Geist (body), loaded from Google Fonts. An
+// <svg><foreignObject> renders in its OWN scope with no access to the page's @font-face, so its text
+// would fall back to a system face. Fetch the two families' LATIN woff2 once, inline them as data
+// URIs, and return a <style>-ready @font-face block for the rasterizer to embed — so the image
+// carries the real typefaces. We cache the in-FLIGHT promise (so a copy + an email fired together
+// share ONE CDN fetch, not two) and keep it only on SUCCESS: an offline/CDN-blocked first attempt
+// resolves to '' and clears the cache, so a later copy/email retries once the network returns
+// (instead of poisoning the whole session with an empty face block). The render silently uses the
+// fallback face whenever this returns ''.
+function invoiceFontFaceCss() {
+  if (_invFontCssP) return _invFontCssP;
+  const p = (async () => {
+    try {
+      const cssUrl = 'https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Saira+Condensed:wght@600;700;800&display=swap';
+      const css = await (await fetch(cssUrl)).text();
+      const faces = css.match(/\/\*\s*latin\s*\*\/\s*@font-face\s*{[^}]*}/g) || [];   // latin subset only — an invoice is latin text, keeps the SVG small
+      const inlined = await Promise.all(faces.map(async (face) => {
+        const m = face.match(/url\((https:\/\/[^)]+\.woff2)\)/);
+        if (!m) return '';
+        try {
+          const b = await (await fetch(m[1])).blob();
+          const uri = await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(b); });
+          return face.replace(m[1], uri);
+        } catch (e) { return ''; }
+      }));
+      return inlined.filter(Boolean).join('\n');
+    } catch (e) { return ''; }
+  })();
+  _invFontCssP = p;
+  p.then((css) => { if (!css) _invFontCssP = null; }, () => { _invFontCssP = null; });   // cache only a successful, non-empty result; a failed/empty fetch retries next time
+  return p;
+}
+// Raw base64 (no data: prefix) of a blob — for handing an image to the backend email send.
+function blobToBase64(blob) {
+  return new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1] || ''); fr.onerror = rej; fr.readAsDataURL(blob); });
+}
+// Render the invoice sheet to a PNG blob for an email attachment. Reuses the open .pr-doc if it's
+// on screen; otherwise builds it OFF-SCREEN, renders, and cleans up. Returns null on ANY failure
+// (e.g. Firefox taints a foreignObject canvas) — so the email still sends WITHOUT an attachment and
+// the render never blocks the send.
+async function invoiceSheetPng(invoiceId) {
+  const inv = IDX.invoice.get(invoiceId); if (!inv) return null;
+  let temp = null;
+  try {
+    const onScreen = [...document.querySelectorAll('.pr-doc[data-inv]')].some((d) => d.dataset.inv === invoiceId);
+    if (!onScreen) {
+      temp = document.createElement('div');
+      temp.style.cssText = 'position:absolute;left:-99999px;top:0;width:760px;pointer-events:none';   // match .pr-doc's 760px max-width so the emailed PNG scales like the on-screen sheet / copy-as-image
+      temp.innerHTML = invoiceDocHtml(inv, { interactive: true });
+      document.body.appendChild(temp);
+    }
+    return await renderInvoicePng(invoiceId);
+  } catch (e) { return null; }
+  finally { if (temp) temp.remove(); }
+}
 // Plain-text quote summary for an emailed quote — mailto can't carry a PDF attachment,
 // so we inline the same figures the print doc shows (§12.5 line items + totals).
 function invoiceQuoteSummary(inv) {
@@ -21573,7 +21716,12 @@ async function commsAliasList() {
 async function emailQuoteSend(invoiceId, from) {
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
   toast('Sending email…');
-  let r; try { r = await backendCall('sendCustomerMessage', { channel: 'email', entity: 'invoice', recId: inv.invoiceId, customerId: inv.customerId, template: 'quote', from: from || '' }); }
+  // Attach the invoice sheet as a PNG (Jac 2026-07-17). Best-effort: a failed render (e.g. Firefox)
+  // just sends the email WITHOUT the image — never blocks the send. The backend re-resolves the
+  // recipient from the invoice's own customer, so the attachment can only reach that customer.
+  let attachment = null;
+  try { const png = await invoiceSheetPng(invoiceId); if (png) attachment = { name: `${invoiceShort(inv.invoiceId)}.png`, mimeType: 'image/png', dataB64: await blobToBase64(png) }; } catch (e) {}
+  let r; try { r = await backendCall('sendCustomerMessage', { channel: 'email', entity: 'invoice', recId: inv.invoiceId, customerId: inv.customerId, template: 'quote', from: from || '', attachment }); }
   catch (e) { r = { ok: false, reason: 'network' }; }
   if (r && r.ok) {
     logAction(inv, `Emailed quote to ${r.maskedTo || 'customer'}${r.fromUsed ? ` (from ${r.fromUsed})` : ''}`);
@@ -24622,6 +24770,7 @@ function finishLoad() {
   // (views no longer pull from the backend — personal per-device "my views", spec search-views D2)
   loadGroupOrderFromBackend();                                  // pull THIS role's saved card-group order
   loadTripsFromBackend();                                       // §2.3 Phase 4 — pull the trips store (getTrips), server wins at boot
+  loadScanCapturesFromBackend();                                // pull QR-decal scan captures (getScanCaptures) to join into the yard journey
   salePricingAutoApply();                                       // used-sale price engine, auto mode (manager+ sessions only)
   loadChats();                                                  // pull the shared team-chat threads (§ team-chat sync)
   wranglerRailLoad();                                           // load the Mr. Wrangler rail from IndexedDB (+ one-time localStorage migration)
@@ -24982,16 +25131,66 @@ function applyViewportClass() {
 const APP_ENV = location.hostname === 'app.jacrentals.com' ? 'production'
   : /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? 'local'
   : 'staging';
-// A caution stamp on any non-prod build (fixed corner, never interactive) so you always know
-// which app you're testing — the staging mirror serves the SAME files as production.
+// The staging review pool is THREE slots — each its own GitHub Pages repo/URL serving the SAME
+// bytes, told apart only by path (/rental-wrangler-staging[-2|-3]/). Read the slot off the path
+// so every non-prod surface (badge, edge, tab title, favicon) can label WHICH slot this is.
+const APP_SLOT = (() => {
+  if (APP_ENV !== 'staging') return 0;
+  const m = location.pathname.match(/rental-wrangler-staging(?:-(\d+))?(?:\/|$)/);
+  if (!m) return 0;                  // a non-slot staging host — labeled plain "STAGING"
+  return m[1] ? Number(m[1]) : 1;    // bare "…-staging" = slot 1
+})();
+// Distinct browser-tab title on any non-prod build → the tab AND a saved desktop shortcut name
+// themselves per slot ("Staging 2 · Rental Wrangler"). Production keeps its clean title. Set at
+// module load (earliest possible) so a shortcut saved before first render still captures it.
+if (APP_ENV !== 'production') {
+  document.title = (APP_SLOT ? 'Staging ' + APP_SLOT
+    : APP_ENV === 'local' ? 'Local' : 'Staging') + ' · Rental Wrangler';
+}
+// The slot's identity color (theme-invariant --slot-N / --tan), read from the stylesheet so the
+// tokens stay the single source of truth for the runtime-drawn favicon.
+function slotColor() {
+  const name = APP_ENV === 'local' ? '--tan' : '--slot-' + (APP_SLOT || 1);
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || '#ffe000';
+}
+// A tinted favicon so the browser TAB (and the saved desktop-shortcut icon) is unmistakable per
+// slot: a steel plate carrying the slot color + its number ("1/2/3", "L" local, "S" slotless
+// staging). SVG data-URI — no asset build, tints straight from the token.
+function mountEnvFavicon() {
+  if (APP_ENV === 'production') return;
+  const glyph = APP_SLOT ? String(APP_SLOT) : (APP_ENV === 'local' ? 'L' : 'S');
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
+    + '<rect width="32" height="32" rx="7" fill="#0b0c0f"/>'
+    + '<rect x="3.5" y="3.5" width="25" height="25" rx="5.5" fill="' + slotColor() + '"/>'
+    + '<text x="16" y="24" text-anchor="middle" fill="#0b0c0f" '
+    + 'font-family="Saira Condensed,Arial Narrow,sans-serif" font-weight="800" font-size="22">'
+    + glyph + '</text></svg>';
+  const href = 'data:image/svg+xml,' + encodeURIComponent(svg);
+  let link = document.querySelector('link[rel="icon"]');
+  if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
+  link.setAttribute('type', 'image/svg+xml');
+  link.setAttribute('href', href);
+}
+// A caution stamp + a top edge bar on any non-prod build (fixed, never interactive) so you always
+// know which app — and WHICH staging slot — you're testing. The staging pool serves the SAME
+// files, so the slot number + color is the only tell.
 function mountEnvBadge() {
   if (APP_ENV === 'production' || document.getElementById('env-badge')) return;
+  const slotCls = ' env-' + APP_ENV + (APP_SLOT ? ' env-slot-' + APP_SLOT : '');
   const b = document.createElement('div');
   b.id = 'env-badge';
-  b.className = 'env-badge env-' + APP_ENV;
-  b.textContent = APP_ENV === 'local' ? 'LOCAL' : 'STAGING';
+  b.className = 'env-badge' + slotCls;
+  b.innerHTML = '<span>' + (APP_ENV === 'local' ? 'LOCAL' : 'STAGING') + '</span>'
+    + (APP_SLOT ? '<span class="env-badge-num">' + APP_SLOT + '</span>' : '');
   b.setAttribute('aria-hidden', 'true');
   document.body.appendChild(b);
+  const edge = document.createElement('div');
+  edge.id = 'env-edge';
+  edge.className = 'env-edge' + slotCls;
+  edge.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(edge);
+  mountEnvFavicon();
 }
 // Warm the (cold-starting ~1-5s) Apps Script container while the login screen is up, so the
 // post-Saddle-Up 'load' hits a warm backend. `no-cors` → the response is OPAQUE and UNUSED
@@ -25669,8 +25868,9 @@ function exposeTestApi() {
       tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, openYardCamera, commitYardCapture, nextCategoryId, nextUnitId,
       tripsLS, tripMerge, tripSplit, assignTripDriver, tripLabel, assignStopDriver, tripSetTime,
       tripPushSoon, tripPushNow, loadTripsFromBackend, tripsSyncFooter, setBackendPassword: (pw) => { backendPassword = pw || ''; },   // §2.3 Phase 4 sync — the setter is test-only (mirrors setRole), letting logic-test.mjs exercise the online path via a mocked window.fetch, never a real backend
+      adoptScanCaptures, setScanCaps: (m) => { SCAN_CAPS = m || {}; },   // §scan-reconcile — test seam: seed SCAN_CAPS then run adoption (logic-test)
       autoRunRepair, autoRunAnchorsFor, secToClock, AUTORUN_DAY_START_SEC, AUTORUN_EOD_DEADLINE_SEC, AUTORUN_LOAD_BUFFER_SEC, dispatchPinOf,
-      openCustomerForm, renderOverlay, render, printInvoice, invoiceDocHtml, renderInvoicePng, invoicePrintGroups, invoiceAmendments, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature,
+      openCustomerForm, renderOverlay, render, printInvoice, invoiceDocHtml, renderInvoicePng, invoiceSheetPng, invoicePrintGroups, invoiceAmendments, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature,
       wranglerSend, wranglerNewChat, openWranglerDock, wranglerDockPollTick, devUnlocked, openWranglerOps, wrOpsAgo, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }

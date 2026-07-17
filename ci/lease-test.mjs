@@ -480,7 +480,8 @@ async function run() {
     ok(!/stagingRemoteUrl\(cred\)\s*,\s*dir/.test(deploySrc), '4.22 deploy no longer clones the hardcoded default repo');
 
     const promoteSrc = readFileSync(new URL('../tools/promote.mjs', import.meta.url), 'utf8');
-    ok(/resolveStagingSlotUrl\(expectedToken,\s*SLOT_ARG\)/.test(promoteSrc), '4.22 promote resolves the slot by trunk token / --slot');
+    ok(/resolveFreshSlot\(/.test(promoteSrc), '4.22 promote resolves the slot via content-verified resolveFreshSlot (--slot / content)');
+    ok(/from '\.\/lib\/promote-freshness\.mjs'/.test(promoteSrc), '4.22 promote imports the content-freshness resolver');
     ok(/from '\.\/lib\/staging-control\.mjs'/.test(promoteSrc), '4.22 promote imports SLOT_URLS from the slot map');
     ok(!/const STAGING_URL\s*=/.test(promoteSrc), '4.22 promote no longer hardcodes a single STAGING_URL');
   });

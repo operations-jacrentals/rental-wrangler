@@ -56,12 +56,33 @@ OR (b) a valid session cred is present (existing password/role check). Else
 
 | unit rental status | result |
 |---|---|
-| `Today`, `Tomorrow` | `action='start'` (delivery video) |
 | `On Rent`, `End Rent` | `action='end'` (recovery video) |
+| `Today`/`Tomorrow` (i.e. `Reserved`, start today/tomorrow) **AND a delivery already on file** | `action='end'` (recovery video) |
+| `Today`/`Tomorrow` (`Reserved`, start today/tomorrow), no delivery yet | `action='start'` (delivery video) |
 | `Reserved` (future, not Today/Tomorrow) | blocked · `"<unitName> is reserved for <startDate>, not out today — nothing to log yet."` |
 | `Quote`, `Off Rent`, `Returned`, `Cancelled`, `No Show`, no active rental | blocked · `"<unitName> isn't on a rental or reservation right now — nothing to log."` |
 
 Out-wins tiebreak: if a unit is out AND has a future reservation, the out status wins → `end`.
+
+> **Derive start-vs-end from HISTORY, not stored status alone (`scanLoggedActions_`). §scan-reconcile.**
+> A scan files to the append-only `ScanLog` (below) and — by design, to avoid a client sync
+> clobbering a server write — **never advances the rental's stored status past `Reserved`**. So
+> "is this unit already delivered?" can't be read from the status field alone: a pure-scan flow
+> (staff never open the app to move the rental `On Rent`) would sit at `Reserved` forever, and a
+> second scan at pickup would wrongly re-derive `start`. `scanDeriveUnitStatus_` therefore treats
+> the unit as **delivered → `end`** when a delivery is already on file — a manual `startCapture`
+> stamp on the record **OR** an earlier `start` row in `ScanLog` (`scanLoggedActions_(unitId,
+> rentalId).start`). First scan → `start`; every scan after a logged delivery → `end`.
+>
+> The client then ADOPTS each scan capture into its rental (`app.js` `adoptScanCaptures`, run
+> from `loadScanCapturesFromBackend`): it stamps the unit's `startCapture`/`endCapture` (marked
+> `scan:true`) and advances that unit's status the way a manual Log Delivery/Recovery would —
+> client-side, persisted through the normal diff-sync (so it never clobbers a server write).
+> Downstream everything then reads a scan as an ordinary capture (journey, status pill,
+> availability, billing) with no display/gate special-casing. Status is set directly, bypassing
+> the §9 booking gates (the unit physically moved); a missing invoice is FLAGGED in the rental's
+> activity log, not blocked. Adoption is idempotent — a slot already carrying a video (manual, or
+> already-adopted) is left untouched — so it re-runs harmlessly and never fights a manual edit.
 
 > **Derive `Today`/`Tomorrow` from dates — don't read them raw.** In `config.js` these are
 > DERIVED display states; the STORED `rentalStatus` stays `Reserved` for a reservation whose
