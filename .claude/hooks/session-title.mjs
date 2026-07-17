@@ -3,32 +3,34 @@
  * SessionStart hook — set the session title to this session's open PR numbers.
  *
  * WHY THIS EXISTS
- * Jac wants the session title to read like "#669 · popup question format" and to
+ * Jac wants the session title to read like "#674 · popup question format" and to
  * follow the PRs this session opens. Only a SessionStart hook can set a title
  * (via hookSpecificOutput.sessionTitle), and it re-fires on every resume — so this
- * script re-derives the title each startup/resume from a best-effort record file
- * the assistant maintains. Instant mid-session updates are a separate one-tap
- * `/rename` (the model can't self-invoke slash commands); see CLAUDE.md.
+ * script re-derives the title from a best-effort record file the assistant maintains.
+ * Instant mid-session updates are a separate one-tap `/rename` (the model can't
+ * self-invoke slash commands); see CLAUDE.md / /start §4.
  * Design: docs/superpowers/specs/2026-07-17-session-title-pr-numbers-design.md
  *
  * CONTRACT / SAFETY
  *   - FAIL SAFE. Any error, missing file, or empty PR list => emit nothing and
  *     exit 0, leaving whatever title exists untouched. A title hook must never
  *     break session start.
- *   - Reads   .claude/.session-prs        (gitignored) — open PR numbers, one/line.
- *   - Marks   .claude/.session-title-set   (gitignored) — the last title WE emitted,
- *     so a hand-set `/rename` can be detected and respected (when the harness
- *     exposes the current title on stdin; if it doesn't, we set the title anyway —
- *     see RESPECT MANUAL RENAMES below).
+ *   - Reads  .claude/.session-prs        (gitignored) — open PR numbers, one/line.
+ *   - Marks  .claude/.session-title-set   (gitignored) — the PR SET we last titled
+ *     for. SessionStart stdin carries NO current title (documented fields are
+ *     session_id/source/transcript_path/permission_mode/hook_event_name/cwd), so we
+ *     can't read a live title to detect a hand-set /rename. Instead we key off the
+ *     PR set: once we've titled for a given set of open PRs we DON'T re-assert on
+ *     later resumes (leaving any manual rename intact); we only (re)assert when the
+ *     PR set actually changes — a PR opened or merged — or on first run.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 
-// ---- fail-safe scaffolding -------------------------------------------------
 function done() { process.exit(0); }                 // emit nothing, leave title as-is
-function setTitle(title, markerPath) {
-  try { writeFileSync(markerPath, title); } catch { /* marker is best-effort */ }
+function setTitle(title, markerPath, markerValue) {
+  try { writeFileSync(markerPath, markerValue); } catch { /* marker is best-effort */ }
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: { hookEventName: 'SessionStart', sessionTitle: title },
   }));
@@ -60,42 +62,38 @@ if (nums.length === 0) done();                        // no PRs recorded → no 
 // ---- derive the branch label ----------------------------------------------
 // claude/popup-question-format-1f0oz6 → "popup question format"
 //   • strip a leading "claude/" (or any "owner/") prefix
-//   • strip a trailing random id segment (has a digit, ~4-8 chars): "-1f0oz6"
+//   • strip a trailing Claude-generated random id segment, but KEEP a real
+//     word-with-version like "oauth2" / "node20" / "sha256" (letters-then-digits).
+//     A random id (e.g. "1f0oz6", "l8pjfd") has a digit but is NOT letters-then-
+//     digits; that's the discriminator. Rare miss: an id like "nyom46" that happens
+//     to be letters-then-digits is kept — harmless (an extra token, never a
+//     misleading truncation).
 //   • hyphens/underscores → spaces
-function label() {
-  let b = '';
+function labelFrom(branch) {
+  if (!branch || branch === 'HEAD') return '';
+  let b = branch.replace(/^[^/]+\//, '');             // drop "claude/" style prefix
+  const segs = b.split('-');
+  const last = segs[segs.length - 1];
+  const looksLikeId =
+    segs.length > 1 &&
+    /^[a-z0-9]{5,9}$/i.test(last) &&                  // right length + charset
+    /[0-9]/.test(last) &&                             // has a digit
+    /[a-z]/i.test(last) &&                            // has a letter
+    !/^[a-z]+[0-9]+$/i.test(last);                    // NOT a "word+version" like oauth2
+  if (looksLikeId) segs.pop();
+  return segs.join('-').replace(/[-_]+/g, ' ').trim();
+}
+function branchLabel() {
   try {
-    b = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'],
-      { encoding: 'utf8', timeout: 5000 }).trim();
+    return labelFrom(execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'],
+      { encoding: 'utf8', timeout: 5000 }).trim());
   } catch { return ''; }
-  if (!b || b === 'HEAD') return '';
-  b = b.replace(/^[^/]+\//, '');                      // drop "claude/" style prefix
-  b = b.replace(/-[a-z0-9]*[0-9][a-z0-9]*$/i, (m) =>  // drop trailing id if 4-8 chars
-    (m.length >= 5 && m.length <= 9 ? '' : m));
-  return b.replace(/[-_]+/g, ' ').trim();
 }
 
-const lbl = label();
+const lbl = branchLabel();
 const title = '#' + nums.join(', #') + (lbl ? ' · ' + lbl : '');
 
-// ---- RESPECT MANUAL RENAMES -----------------------------------------------
-// If the harness hands us the current title on stdin and it differs from the last
-// title WE set and isn't an auto pattern, Jac renamed it by hand → leave it alone.
-// If the current title isn't available, we can't tell, so we set ours (the feature
-// is the point); a hand-set name then survives only until the next resume.
-let stdin = {};
-try { stdin = JSON.parse(readFileSync(0, 'utf8') || '{}'); } catch { stdin = {}; }
-const current = String(
-  stdin.title || stdin.session_title || stdin.sessionTitle ||
-  (stdin.session && stdin.session.title) || '',
-).trim();
-
-if (current) {
-  const lastSet = readMaybe(MARK_FILE).trim();
-  const looksAuto = /^#[0-9]/.test(current)           // our "#669 · …" shape
-    || /-[0-9a-f]{2}$/i.test(current)                 // default "my-app-3f" shape
-    || current === lastSet;
-  if (current !== title && current !== lastSet && !looksAuto) done(); // manual rename → respect
-}
-
-setTitle(title, MARK_FILE);
+// ---- respect manual renames via the PR-SET marker -------------------------
+const key = nums.join(',');
+if (readMaybe(MARK_FILE).trim() === key) done();      // PR set unchanged → leave title alone
+setTitle(title, MARK_FILE, key);                      // first run or PR set changed → assert
