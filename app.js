@@ -238,6 +238,15 @@ function funnelLayerNote(c, key, stage) {
   const e = ensureFunnelLog(c)[key][stage];
   return (e && e.note) || '';
 }
+// ── Layer = a dated ACTION (Jac 2026-07-17: "notes = actions") ─────────────────────────────
+// A funnel layer's planned move is an OPEN scheduled next-action (an activityLog entry) tagged to
+// this exact funnel+stage. Several layers can be armed at once (plan the play by layer); each glows
+// red/yellow/green by its own due date. The same entries feed the date-sorted queue below the funnel.
+// The tab SCOPE a funnel files under — Rental + Member share the Rental tab (and its queue).
+const funnelScope = (key) => (key === 'equipment' ? 'usedSales' : 'rental');
+function funnelLayerAction(c, key, stage) {
+  return (c.activityLog || []).find((a) => naIsSched(a) && !a.outcome && a.fkey === key && a.stage === stage) || null;
+}
 let migrationDirty = false;
 /* One-time, idempotent: give every customer firstName/lastName parsed from `name`,
    then keep `name` as the derived "First Last" display. Runs on seed AND loaded data. */
@@ -4169,37 +4178,60 @@ function custMetaField(c, field, label, ph) {
   const val = c[field];
   return `<div class="kv"><span class="pfx">${esc(label)}</span><span class="v inline-edit" data-edit="custField" data-field="${esc(field)}" data-rec="${esc(c.customerId)}" data-ph="${esc(ph)}">${val ? esc(val) : `<span class="add-field" data-r="R5c">+${esc(label)}</span>`}</span></div>`;
 }
-/* R35 — the DATED FUNNEL (Idea D, Jac 2026-07-17). The customer-detail funnel is a two-tab
-   (Rental | Equipment Sales) stack of clickable dated LAYERS, narrowing like a real funnel.
-   Everyone is implicitly in both tabs (a fresh customer sits at 'Lead' in each); the "Member
-   Lead" checkbox extends the Rental tab with the membership stages. Clicking an UPCOMING manual
-   layer marks it reached + stamps today; clicking any REACHED layer (or an auto/rental layer)
-   opens a small editor to correct the date + drop a note (which truncates on the layer). Rental
-   Reserved/Rented dates DERIVE from live rentals. Bespoke — the .dfunnel container is stamped. */
+/* R35 — the DATED-ACTION FUNNEL (Idea D + action reshape, Jac 2026-07-17). A two-tab
+   (Rental | Equipment Sales) stack of clickable LAYERS, narrowing like a real funnel. Everyone is
+   implicitly in both tabs; the "Member Lead" checkbox extends the Rental tab with the membership
+   stages. Each layer is a SLOT for a dated next-action ("notes = actions"): arm any layer with an
+   action (note + date) and it glows red / yellow / green by that date's urgency — several can be
+   armed at once, so you plan the play by layer. A reached-but-unarmed layer is quiet steel history
+   (a check + when it happened); the terminal Signed/Paid, once reached, is SOLID BLUE — closed won.
+   Clicking a layer opens its action editor (arm/edit/complete the action, or advance the customer
+   here). Rental Reserved/Rented history-dates DERIVE from live rentals. Bespoke — .dfunnel stamped. */
 function funnelLayerHtml(c, key, stage, i, ci, offset, curId) {
   const st = getStatus('funnelStage', stage);
-  const auto = key === 'rental' || isAutoStage(key, stage);   // rental stages + Signed = auto (no manual reach)
-  // `cur` (the single orange "you are here") is the GLOBAL furthest layer when funnels are stacked
-  // (Rental → Member on the Rental tab), so only one bar lights up; `reached` stays per-funnel.
+  const auto = key === 'rental' || isAutoStage(key, stage);   // rental stages + Signed = derived history-dates
+  // `cur` = the GLOBAL furthest layer when funnels stack (Rental → Member on the Rental tab), so only
+  // one "now" tag shows; `reached` stays per-funnel.
   const cur = curId ? (key + ':' + stage === curId) : (i === ci);
-  const reached = i <= ci, upcoming = i > ci;
-  // The terminal membership/equipment layer, once reached, is a WIN — a green, starred, celebratory
-  // finish line (Jac 2026-07-17: "the Signed step isn't very celebratory"). Rental has no terminal win.
-  const isWin = reached && key !== 'rental' && i === FUNNELS[key].stages.length - 1;
-  const showLock = auto && stage !== 'Lead' && !isWin;   // Lead is the universal entry; a win wears a star, not a lock
-  const dateISO = funnelLayerDate(c, key, stage);
-  const note = funnelLayerNote(c, key, stage);
+  const reached = i <= ci;
+  const isWon = reached && key !== 'rental' && i === FUNNELS[key].stages.length - 1;   // Signed/Paid reached = closed won
+  const act = funnelLayerAction(c, key, stage);                                        // this layer's ARMED (open, dated) action
   const w = Math.max(56, 100 - (i + (offset || 0)) * 6);
-  const cls = isWin ? 'win' : (cur ? 'cur' : (reached ? 'done' : 'up'));
-  const tip = isWin ? 'Signed & sealed — click to edit date + note'
-    : upcoming ? (auto ? 'Set automatically from activity' : 'Click to mark reached — stamps today') : 'Click to edit date + note';
-  const dt = dateISO ? esc(fmtShortDate(dateISO)) : (upcoming ? 'reach ›' : '');
-  return `<button class="dl ${cls}${auto ? ' auto' : ''} js-funnel-layer" data-rec="${esc(c.customerId)}" data-fkey="${key}" data-stage="${esc(stage)}" data-tip="${tip}" style="width:${w}%">`
-    + `<span class="dl-dot">${isWin ? '★' : (reached && !cur ? '✓' : '')}</span>`
-    + `<span class="dl-nm">${esc(st.label)}</span>`
-    + (showLock ? `<span class="dl-lock">${I.lock}</span>` : '')
-    + (note ? `<span class="dl-note">· ${esc(note)}</span>` : '')
-    + `<span class="dl-dt${upcoming ? ' up' : ''}">${dt}</span></button>`;
+  const attrs = `data-rec="${esc(c.customerId)}" data-fkey="${key}" data-stage="${esc(stage)}" style="width:${w}%"`;
+  const nowTag = cur ? `<span class="dl-now">now</span>` : '';
+  // 1) ARMED — the layer carries an open, dated action → two lines, urgency-colored (unless it's the
+  //    closed-won terminal, which stays blue). This is where green now means "on track", not "done".
+  if (act && !isWon) {
+    const u = naUrgency(act.when), p = parseSchedText(act.text);
+    const dd = dayDiff(TODAY, parseISO(act.when));
+    const when = u === 'due' ? (dd === 0 ? 'Today' : `Late ${-dd}d`) : fmtShortDate(act.when);
+    return `<button class="dl act u-${u} js-funnel-layer" ${attrs} data-tip="Click to edit this action">`
+      + `<span class="dl-top"><span class="dl-dot">▸</span><span class="dl-nm">${esc(st.label)}</span>${nowTag}</span>`
+      + `<span class="dl-act"><span class="dl-atxt">${esc(p.note)}</span><span class="dl-due"><span class="dd"></span>${esc(when)}</span></span></button>`;
+  }
+  // 2) CLOSED WON — Signed / Paid reached → solid primary blue.
+  if (isWon) {
+    const dateISO = funnelLayerDate(c, key, stage), note = funnelLayerNote(c, key, stage);
+    return `<button class="dl won js-funnel-layer" ${attrs} data-tip="Closed won — click to edit">`
+      + `<span class="dl-dot">✓</span><span class="dl-nm">${esc(st.label)}</span>`
+      + (note ? `<span class="dl-note">· ${esc(note)}</span>` : '')
+      + `<span class="dl-dt">${dateISO ? esc(fmtShortDate(dateISO)) : ''}</span></button>`;
+  }
+  // 3) REACHED, unarmed — quiet steel history: a check + when it happened (green freed for urgency).
+  if (reached) {
+    const dateISO = funnelLayerDate(c, key, stage), note = funnelLayerNote(c, key, stage);
+    const showLock = auto && stage !== 'Lead';
+    return `<button class="dl done${cur ? ' cur' : ''} js-funnel-layer" ${attrs} data-tip="Click to plan the next action">`
+      + `<span class="dl-dot">✓</span><span class="dl-nm">${esc(st.label)}</span>`
+      + (showLock ? `<span class="dl-lock">${I.lock}</span>` : '')
+      + nowTag
+      + (note ? `<span class="dl-note">· ${esc(note)}</span>` : '')
+      + `<span class="dl-dt">${dateISO ? esc(fmtShortDate(dateISO)) : ''}</span></button>`;
+  }
+  // 4) UPCOMING, unarmed — a dashed slot inviting a planned action (or advancing here).
+  return `<button class="dl up js-funnel-layer" ${attrs} data-tip="Click to plan an action or advance here">`
+    + `<span class="dl-dot"></span><span class="dl-nm">${esc(st.label)}</span>`
+    + `<span class="dl-plan">+ action</span></button>`;
 }
 function datedFunnelHtml(c, key, offset, curId) {
   const stages = FUNNELS[key].stages;
@@ -4278,24 +4310,44 @@ function toggleMemberLead(custId) {
   toggleFunnelMembership(custId, 'member');
   if (!wasOn && inFunnel(c, 'member')) { const log = ensureFunnelLog(c).member; if (!log.Lead) log.Lead = {}; if (!log.Lead.date) log.Lead.date = TODAY_ISO; render(); }
 }
+// Open a layer's ACTION editor — prefill from the layer's armed action, or a fresh one for today.
 function openFunnelLayerEdit(custId, key, stage) {
   const c = IDX.customer.get(custId); if (!c) return;
-  openOverlay({ kind: 'funnelLayer', custId, fkey: key, stage, funnelEditDate: funnelLayerDate(c, key, stage) || TODAY_ISO, funnelNote: funnelLayerNote(c, key, stage) });
+  const act = funnelLayerAction(c, key, stage);
+  const p = act ? parseSchedText(act.text) : null;
+  openOverlay({ kind: 'funnelLayer', custId, fkey: key, stage,
+    actWhen: act ? act.when : TODAY_ISO,
+    actTime: (p && to24(p.time)) || to24(nowHourLabel()) || '09:00',
+    actNote: p ? p.note : '' });
 }
+// Save the layer's action = an OPEN scheduled next-action tagged to funnel+stage (create OR edit the
+// existing one). It joins the date-sorted queue below and drives the tab's urgency dot. Arming a
+// future layer does NOT advance the customer (2B) — that's the explicit Advance button.
 function saveFunnelLayer() {
   const o = state.overlay; if (!o || o.kind !== 'funnelLayer') return;
   const c = IDX.customer.get(o.custId); if (!c) { closeOverlay(); return; }
-  const noteVal = (document.querySelector('.overlay .js-fl-note')?.value || '').trim();
-  const log = ensureFunnelLog(c)[o.fkey]; if (!log[o.stage]) log[o.stage] = {};
-  if (!funnelDateDerived(o.fkey, o.stage) && o.funnelEditDate) log[o.stage].date = o.funnelEditDate;
-  if (noteVal) log[o.stage].note = noteVal; else delete log[o.stage].note;
-  // editing a manual layer that's ahead of the current stage also advances the stage field.
-  if (o.fkey !== 'rental' && !isAutoStage(o.fkey, o.stage)) {
-    const field = funnelStageField(o.fkey), stages = FUNNELS[o.fkey].stages;
-    if (stages.indexOf(o.stage) > stages.indexOf(funnelCurrentStage(c, o.fkey))) { c[field] = o.stage; ensureFunnels(c)[o.fkey] = true; }
-  }
-  logAction(c, `${FUNNELS[o.fkey].label} · ${getStatus('funnelStage', o.stage).label} updated`);
-  reindex('customers', c); closeOverlay();
+  const date = o.actWhen; if (!date) { flashOr('.datefield', 'Pick a date first.'); return; }
+  const note = (document.querySelector('.overlay .js-fl-note')?.value || '').trim();
+  const text = `Scheduled: ${note || 'follow-up'} @ ${date} ${to12(o.actTime || '09:00')}`;
+  c.activityLog = c.activityLog || [];
+  const existing = funnelLayerAction(c, o.fkey, o.stage);
+  if (existing) { existing.when = date; existing.text = text; existing.scope = funnelScope(o.fkey); existing.fkey = o.fkey; existing.stage = o.stage; }
+  else c.activityLog.push({ when: date, text, scope: funnelScope(o.fkey), fkey: o.fkey, stage: o.stage });
+  reindex('customers', c); toast(existing ? 'Action saved.' : 'Action added.'); state.datepick = null; closeOverlay(); render();
+}
+// Advance the customer to this manual stage (they actually moved) — a deliberate, separate step from
+// completing an action (2B). Stamps the history date; keeps the editor open so you can arm the next move.
+function advanceFunnelLayer(custId, key, stage) {
+  reachFunnelStage(custId, key, stage);
+  if (state.overlay && state.overlay.kind === 'funnelLayer') renderOverlay();
+}
+// ✓ Done / ✕ Cancel the layer's armed action — logs it to the Action Log; does NOT advance the stage (2B).
+function completeFunnelAction(custId, done) {
+  const o = state.overlay; if (!o || o.kind !== 'funnelLayer') return;
+  const c = IDX.customer.get(custId); if (!c) { closeOverlay(); return; }
+  const act = funnelLayerAction(c, o.fkey, o.stage);
+  if (act) { act.outcome = done ? 'done' : 'cancelled'; act.closedWhen = TODAY_ISO; reindex('customers', c); toast(done ? 'Action completed — logged.' : 'Action cancelled — logged.'); }
+  closeOverlay(); render();
 }
 /* ── Phase 1 (2026-07-10 Account/Agreements + Membership redesign, spec §3/§7b
    D19-D27, plan T1.1-T1.4) — the new top-of-card ACCOUNT section. UI SHELL:
