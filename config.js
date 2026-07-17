@@ -329,9 +329,12 @@ export const ROLES = [
  *   • Member  = the membership-signup pipeline (a continuation of Rental in the detail view).
  *   • Equipment = the equipment-SALES pipeline (no rental states). Terminal Paid (Member ends Signed). */
 export const FUNNELS = {
-  rental:    { label: 'Rental',    stages: ['Lead', 'Reserved', 'Rented'],                                          auto: ['Reserved', 'Rented'] },
-  member:    { label: 'Member',    stages: ['Lead', 'Contacted', 'Not A No!', 'Payment Discussed', 'Signed'],       auto: ['Signed'] },
-  equipment: { label: 'Equipment', stages: ['Lead', 'Contacted', 'Not A No!', 'Payment Discussed', 'Paid'],         auto: ['Paid'] },
+  rental:    { label: 'Rental',    stages: ['Lead', 'Reserved', 'Rented'],                                          auto: ['Reserved', 'Rented'] },   // Reserved/Rented DERIVED from live rentals
+  member:    { label: 'Member',    stages: ['Lead', 'Contacted', 'Not A No!', 'Payment Discussed', 'Signed'],       auto: ['Signed'] },               // Signed auto-set by signing the membership agreement (markMembershipSigned)
+  // Equipment 'Paid' stays a MANUAL terminal: there is no customer↔sale-invoice link today to auto-lock it on
+  // payment (sellUnit is fleet-level, no buyer; no 'sale' line-kind), so keeping it auto-only would make it
+  // unreachable. Flagged for Jac — wire an auto trigger later and move 'Paid' into `auto`.
+  equipment: { label: 'Equipment', stages: ['Lead', 'Contacted', 'Not A No!', 'Payment Discussed', 'Paid'],         auto: [] },
 };
 export const FUNNEL_KEYS = Object.keys(FUNNELS);   // ['rental','member','equipment']
 

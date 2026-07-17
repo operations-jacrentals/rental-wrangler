@@ -1557,14 +1557,20 @@ try {
       ok(c.membershipStage === 'Contacted', 'funnel: signing the RENTAL agreement does NOT touch the membership funnel');
       T.markMembershipSigned(c, 'membership');
       ok(c.membershipStage === 'Signed', 'funnel: signing the MEMBERSHIP agreement auto-advances the funnel to Signed');
-      // manual set of the terminal is refused for membership, but allowed for used-sales ('Paid')
+      // manual set of the terminal is refused for membership, but allowed for equipment ('Paid')
       c.membershipStage = 'Contacted';
-      T.setFunnelStage('C-SIGN', 'membership', 'Signed');
-      ok(c.membershipStage === 'Contacted', 'funnel: Signed cannot be set manually on the membership funnel');
-      T.setFunnelStage('C-SIGN', 'membership', 'Payment Discussed');
-      ok(c.membershipStage === 'Payment Discussed', 'funnel: a non-terminal membership stage IS settable manually');
-      T.setFunnelStage('C-SIGN', 'usedSales', 'Paid');
-      ok(c.usedSalesStage === 'Paid', 'funnel: used-sales keeps Paid as a normal manual terminal');
+      T.pickFunnelStage('C-SIGN', 'member', 'Signed');
+      ok(c.membershipStage === 'Contacted', 'funnel: Signed cannot be set manually on the Member funnel (auto stage)');
+      T.pickFunnelStage('C-SIGN', 'member', 'Payment Discussed');
+      ok(c.membershipStage === 'Payment Discussed', 'funnel: a non-terminal Member stage IS settable manually');
+      ok(c.funnels && c.funnels.member === true, 'funnel: picking a Member stage joins the Member funnel (explicit membership)');
+      T.pickFunnelStage('C-SIGN', 'equipment', 'Paid');
+      ok(c.usedSalesStage === 'Paid', 'funnel: Equipment keeps Paid a manual terminal (no auto-on-payment signal wired yet)');
+      // Rental funnel — derived from live rentals; a customer with none is not in it until forked/rented
+      ok(T.rentalFunnelStage(c) === 'Lead' && T.inFunnel(c, 'rental') === false, 'funnel: no rental activity → Rental stage Lead, not in the Rental funnel');
+      T.toggleFunnelMembership('C-SIGN', 'rental');
+      ok(T.inFunnel(c, 'rental') === true, 'funnel: a manual Rental prospect fork joins the Rental funnel');
+      ok(T.funnelStageOf(c, 'member') === 'Payment Discussed' && T.funnelStageOf(c, 'equipment') === 'Paid', 'funnel: funnelStageOf reads Member/Equipment from their stored stages');
       T.IDX.customer.delete('C-SIGN');
     }
 
