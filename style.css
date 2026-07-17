@@ -3781,6 +3781,9 @@ body { font-variant-numeric: tabular-nums; }
    convention. ── */
 .funnel-hd { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 13px; }
 .funnel-hd .fh-rule { flex: 1; border-top: 1.5px dashed var(--tan, #c2925a); opacity: .4; }   /* saddle-stitch flanks (ranch seasoning) */
+.funnel-hd.full { display: block; margin-bottom: 13px; }   /* full-width toggle sitting just above the funnel (Jac 2026-07-17 — matches the mockup) */
+.seg.funnel-full { display: flex; width: 100%; }
+.seg.funnel-full button { flex: 1; justify-content: center; height: 30px; font-size: 12px; }
 .funnel-sec .seg button.on-accent { background: var(--accent); color: var(--on-orange); }     /* selected tab = the ONE orange (rule #3) */
 /* Phase 6 (2026-07-10 dot->background sweep) — next-action urgency reads via the segment's own
    background tint (not a corner dot), same soft-bg + solid-ink treatment as .c-green/.c-yellow/.c-red. */
@@ -3894,6 +3897,16 @@ body { font-variant-numeric: tabular-nums; }
 .dl.cur .dl-dot { border-color: var(--accent); background: var(--accent); color: var(--on-orange); }
 .dl.up { opacity: .6; border-style: dashed; }
 .dl.up:hover { opacity: .9; }
+/* WIN — the terminal membership/equipment layer, reached: a celebratory green finish line with a
+   gold star + soft glow (Jac 2026-07-17: "the Signed step isn't very celebratory"). */
+.dl.win { border-color: var(--green); box-shadow: 0 0 0 1px var(--green), 0 0 16px -3px color-mix(in srgb, var(--green) 60%, transparent);
+  background: linear-gradient(100deg, color-mix(in srgb, var(--green) 22%, var(--panel-2)), color-mix(in srgb, var(--green) 9%, var(--panel-2))); }
+.dl.win .dl-nm { color: var(--txt); font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: .7px; font-weight: 800; font-size: 13.5px; }
+.dl.win .dl-dot { width: 18px; height: 18px; border-color: var(--yellow, #f5c542); background: var(--yellow, #f5c542); color: #14181d; font-size: 12px;
+  box-shadow: 0 0 9px -1px color-mix(in srgb, var(--yellow, #f5c542) 75%, transparent); animation: winTwinkle 2.6s ease-in-out infinite; }
+.dl.win .dl-dt { color: var(--green); font-weight: 700; }
+@keyframes winTwinkle { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.14); } }
+@media (prefers-reduced-motion: reduce) { .dl.win .dl-dot { animation: none; } }
 .dl-check { display: flex; align-items: center; gap: 9px; padding: 8px 12px; border: 1px dashed var(--accent-line, color-mix(in srgb, var(--accent) 50%, transparent));
   border-radius: 9px; background: color-mix(in srgb, var(--accent) 6%, transparent); cursor: pointer; margin: 1px 0; color: var(--txt-2); font: inherit; }
 .dl-check:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

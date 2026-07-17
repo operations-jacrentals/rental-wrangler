@@ -4183,15 +4183,19 @@ function funnelLayerHtml(c, key, stage, i, ci, offset, curId) {
   // (Rental → Member on the Rental tab), so only one bar lights up; `reached` stays per-funnel.
   const cur = curId ? (key + ':' + stage === curId) : (i === ci);
   const reached = i <= ci, upcoming = i > ci;
-  const showLock = auto && stage !== 'Lead';   // Lead is the universal entry, not a locked milestone
+  // The terminal membership/equipment layer, once reached, is a WIN — a green, starred, celebratory
+  // finish line (Jac 2026-07-17: "the Signed step isn't very celebratory"). Rental has no terminal win.
+  const isWin = reached && key !== 'rental' && i === FUNNELS[key].stages.length - 1;
+  const showLock = auto && stage !== 'Lead' && !isWin;   // Lead is the universal entry; a win wears a star, not a lock
   const dateISO = funnelLayerDate(c, key, stage);
   const note = funnelLayerNote(c, key, stage);
   const w = Math.max(56, 100 - (i + (offset || 0)) * 6);
-  const cls = cur ? 'cur' : (reached ? 'done' : 'up');
-  const tip = upcoming ? (auto ? 'Set automatically from activity' : 'Click to mark reached — stamps today') : 'Click to edit date + note';
+  const cls = isWin ? 'win' : (cur ? 'cur' : (reached ? 'done' : 'up'));
+  const tip = isWin ? 'Signed & sealed — click to edit date + note'
+    : upcoming ? (auto ? 'Set automatically from activity' : 'Click to mark reached — stamps today') : 'Click to edit date + note';
   const dt = dateISO ? esc(fmtShortDate(dateISO)) : (upcoming ? 'reach ›' : '');
   return `<button class="dl ${cls}${auto ? ' auto' : ''} js-funnel-layer" data-rec="${esc(c.customerId)}" data-fkey="${key}" data-stage="${esc(stage)}" data-tip="${tip}" style="width:${w}%">`
-    + `<span class="dl-dot">${reached && !cur ? '✓' : ''}</span>`
+    + `<span class="dl-dot">${isWin ? '★' : (reached && !cur ? '✓' : '')}</span>`
     + `<span class="dl-nm">${esc(st.label)}</span>`
     + (showLock ? `<span class="dl-lock">${I.lock}</span>` : '')
     + (note ? `<span class="dl-note">· ${esc(note)}</span>` : '')
@@ -4213,10 +4217,12 @@ function memberLeadRow(c) {
    plus the Member Lead extension on the Rental tab, and the tab's meta / Next-Actions / Log. */
 function funnelSectionHtml(c) {
   const tab = (state.funnelTab && state.funnelTab[c.customerId]) || 'rental';
+  // Full-width toggle sitting just above the funnel (Jac 2026-07-17 — matches the mockup); the
+  // account-type badge is dropped from here (it already lives in the Account section).
   const seg = segCtl([
     { label: 'Rental', js: `js-funnel-tab ${naDotClass(c, 'rental')}`, data: { rec: c.customerId, tab: 'rental' }, on: tab === 'rental' ? 'accent' : null },
     { label: 'Equipment Sales', js: `js-funnel-tab ${naDotClass(c, 'usedSales')}`, data: { rec: c.customerId, tab: 'usedSales' }, on: tab === 'usedSales' ? 'accent' : null },
-  ]);
+  ], 'funnel-full');
   let body;
   if (tab === 'rental') {
     const mem = inFunnel(c, 'member');
@@ -4231,16 +4237,14 @@ function funnelSectionHtml(c) {
       + memberLeadRow(c)
       + (mem ? datedFunnelHtml(c, 'member', FUNNELS.rental.stages.length + 1, curId) : '')
       + `</div>`;
-    body = `<div class="fb-toprow">${acctBtn(c)}</div>`
-      + stack
+    body = stack
       + (mem ? `<div class="fieldstack funnel-fields">${membershipMetaHtml(c)}</div>` : '')
       + nextActionsHtml(c, 'rental')
       + actionLogHtml(c, 'rental');
   } else {
     const intCats = (c.interestedCategoryIds || []).map((id) => { const cat = IDX.category.get(id); return cat ? refPill('categories', id, cat.name, { x: 'intcat-remove', xData: id, tag: 'Cat' }) : ''; }).join('');
     const intMakes = (c.interestedMakes || []).map((mk) => refPill(null, mk, mk, { x: 'intmake-remove', xData: mk, tag: 'Make', tone: 'tan' })).join('');
-    body = `<div class="fb-toprow">${acctBtn(c)}</div>`
-      + `<div class="dfunnel" data-r="R35">${datedFunnelHtml(c, 'equipment', 0)}</div>`
+    body = `<div class="dfunnel" data-r="R35">${datedFunnelHtml(c, 'equipment', 0)}</div>`
       + `<div class="fieldstack funnel-fields">${custMetaField(c, 'desiredAge', 'Desired Age', 'Add desired age')}${custMetaField(c, 'desiredHours', 'Desired Hours', 'Add desired hours')}</div>`
       + `<div class="funnel-sublabel">Interested in</div>`
       + `<div class="kv pillrow interested">${intCats}${intMakes}${addBtn('Make / Category', { link: true, js: 'js-addmakecat', h: 26, data: { rec: c.customerId } })}</div>`
@@ -4248,7 +4252,7 @@ function funnelSectionHtml(c) {
       + actionLogHtml(c, 'usedSales');
   }
   return `<div class="section funnel-sec">`
-    + `<div class="funnel-hd"><span class="fh-rule"></span>${seg}<span class="fh-rule"></span></div>`
+    + `<div class="funnel-hd full">${seg}</div>`
     + `<div class="funnel-body">${body}</div>`
     + `</div>`;
 }
@@ -8690,16 +8694,16 @@ const DETAIL = {
     const activeBar = customerActivityChart(c);
 
     const notes = notesSection('customers', c, 'customerId', 'accountNotes');
-    /* Jac order (2026-07-08 reorg): filled Notes ABOVE the funnel toggle (under the
-       title) → the ONE funnel section (RENTAL | EQUIPMENT SALES toggle IS the header;
-       each tab = funnel pill + account button + meta + Next-Actions list + Action Log)
-       → the Invoices section (sits directly BELOW the funnel, Jac 2026-07-08) → active
-       bar → Account → Comms → Cards → (empty Notes) → History. The old side-by-side
-       membership/used-sales columns AND the Action Board are folded into funnelSectionHtml. */
+    /* Jac order (2026-07-17): filled Notes ABOVE the Account section (right under the
+       title) → the Account section → the ONE funnel section (RENTAL | EQUIPMENT SALES
+       full-width toggle IS the header; each tab = the dated funnel + meta + Next-Actions
+       list + Action Log) → the Invoices section (sits directly BELOW the funnel) → active
+       bar → Comms → Cards → (empty Notes) → History. The old side-by-side membership/
+       used-sales columns AND the Action Board are folded into funnelSectionHtml. */
     return `<div class="detail">
       <div class="detail-head">${title}</div>
-      ${customerAccountSection(c)}
       ${notes.top}
+      ${customerAccountSection(c)}
       ${funnelSectionHtml(c)}
       ${customerInvoicesSection(c, cs)}
       ${activeBar}
