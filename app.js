@@ -20274,6 +20274,7 @@ function openLogoMenu(anchorEl) {
 // Switch user — clear this session's password/role (name stays remembered) → login.
 function switchUser() {
   document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
+  try { flushUserPrefsNow(); } catch (e) {}   // §cross-device-sync — push a pending prefs edit before the token is dropped
   backendPassword = ''; currentRole = ''; currentPersonId = ''; state.userPrefs = null; booting = true;   // §cross-device-sync — drop the leaving person's identity + synced doc so nothing pushes under the next person
   sessionStorage.removeItem('jactec.pw'); sessionStorage.removeItem('jactec.role');
   renderLogin();
@@ -24058,7 +24059,7 @@ async function refreshFromBackend() {
   } catch (e) { /* offline / blip → retry next tick */ }
   finally { refreshing = false; }
 }
-function startRefreshPoll() { clearInterval(refreshTimer); refreshTimer = setInterval(() => { refreshToday(); refreshFromBackend(); }, 18000); }
+function startRefreshPoll() { clearInterval(refreshTimer); refreshTimer = setInterval(() => { refreshToday(); refreshFromBackend(); if (syncOn() && !state.userPrefs) loadUserPrefs(); }, 18000); }   // §cross-device-sync — re-drive a prefs load that never hydrated (past the 5-try login cutoff) so a cold-GAS blip doesn't disable sync all session
 
 // ── Team-chat sync (Jac 2026-06-15) ────────────────────────────────────────
 // Chat threads were browser-local, so one user's chat never reached another (a
@@ -24258,7 +24259,13 @@ function syncMirrorGuard() {
   if (!syncOn()) return;
   try {
     const tag = syncMirrorTag(), prev = localStorage.getItem('jactec.syncMirrorTag') || '';
-    if (prev !== tag) { wipeSyncMirror(); resetSyncStateToDefault(); localStorage.setItem('jactec.syncMirrorTag', tag); }
+    // Wipe ONLY when a KNOWN DIFFERENT person synced on this device before. On a first-ever
+    // adopt (prev === '') the local mirror is THIS device's existing prefs — KEEP it so
+    // loadUserPrefs/seedUserPrefsFromLocal adopts it as the person's baseline, instead of
+    // silently deleting everyone's saved Views/dispatch/prefs on their first post-activation
+    // login (the wipe used to run before the seed could capture it).
+    if (prev && prev !== tag) { wipeSyncMirror(); resetSyncStateToDefault(); }
+    if (prev !== tag) localStorage.setItem('jactec.syncMirrorTag', tag);
   } catch (e) {}
 }
 
@@ -24280,6 +24287,10 @@ async function pushUserPrefs() {
   try { const r = await backendCall('setUserPrefs', { doc }); if (!r || !r.ok) Object.keys(doc).forEach((s) => { if (s !== 'v') _userPrefsDirty[s] = true; }); }
   catch (e) { Object.keys(doc).forEach((s) => { if (s !== 'v') _userPrefsDirty[s] = true; }); }   // offline → retry on the next change
 }
+// Immediate flush — cancel the 1.2s debounce and push any pending dirty sections RIGHT NOW, so
+// a change made inside the debounce window isn't lost when the session ends (logout / switch-
+// user / tab hidden or closed). Fire-and-forget; the payload's token is captured synchronously.
+function flushUserPrefsNow() { if (!syncOn() || !state.userPrefs) return; clearTimeout(_userPrefsTimer); pushUserPrefs(); }
 // Boot (finishLoad, once personId is known): server doc BEATS stale localStorage; an empty
 // server doc means first-ever sync → adopt this device's mirror as the person's baseline.
 async function loadUserPrefs(_try) {
@@ -24746,6 +24757,11 @@ window.addEventListener('beforeunload', (e) => {
   flushSave();
   e.preventDefault(); e.returnValue = '';
 });
+// §cross-device-sync — flush a pending prefs edit when the tab is hidden/closed (the 1.2s
+// debounce would otherwise drop a just-made change). visibilitychange fires while the page is
+// still alive so the async push can complete; pagehide is the close backstop.
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { try { flushUserPrefsNow(); } catch (e) {} } });
+window.addEventListener('pagehide', () => { try { flushUserPrefsNow(); } catch (e) {} });
 function renderLogin(msg) {
   resetCommsRailForLogin();   // D8 — clock-in = an EMPTY rail; BEFORE the phoneIdentity branch so BOTH login screens clear (this reset used to sit below the early-return = dead code on the live path — Jac 2026-07-17)
   if (flagOn('phoneIdentity')) return renderPhoneLogin(msg);   // per-person login flow (Phase 2); the shared-password screen below is the flag-OFF path
@@ -24948,7 +24964,7 @@ async function attemptLogin() {
 const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', _role: '' };
 function pidTokenGet() { try { return localStorage.getItem('jactec.pidToken') || sessionStorage.getItem('jactec.pidToken') || ''; } catch (e) { return ''; } }
 function pidTokenSet(tok, personal) { try { if (personal) { localStorage.setItem('jactec.pidToken', tok); sessionStorage.removeItem('jactec.pidToken'); } else { sessionStorage.setItem('jactec.pidToken', tok); localStorage.removeItem('jactec.pidToken'); } } catch (e) {} }
-function pidTokenClear() { try { localStorage.removeItem('jactec.pidToken'); sessionStorage.removeItem('jactec.pidToken'); } catch (e) {} try { dataCache.wipe(); } catch (e) {} try { if (syncOn()) { wipeSyncMirror(); localStorage.removeItem('jactec.syncMirrorTag'); } } catch (e) {} currentPersonId = ''; state.userPrefs = null; }   // §instant-cache: logout clears the on-device snapshot; §cross-device-sync: + the per-person prefs mirror + the in-memory doc so the next user on a shared device starts clean (Blocker 1). GUARDED on syncOn() — when userSync is OFF the mirror keys ARE the user's only (device-local) prefs, so a token-expiry relogin must NOT wipe them.
+function pidTokenClear() { try { flushUserPrefsNow(); } catch (e) {} try { localStorage.removeItem('jactec.pidToken'); sessionStorage.removeItem('jactec.pidToken'); } catch (e) {} try { dataCache.wipe(); } catch (e) {} currentPersonId = ''; state.userPrefs = null; }   // §instant-cache: logout clears the on-device snapshot. §cross-device-sync: flush any pending prefs, then drop identity + the in-memory doc — but do NOT wipe the mirror here. The login-time syncMirrorGuard (tag-guarded) is the SINGLE wipe point, so a load-fail relogin can't delete a never-backed-up mirror (which would then seed an empty baseline). Shared-device safety still holds: a DIFFERENT person's next login (prev !== tag) wipes it, exactly as switchUser already defers to.
 function pidRosterCache() { try { return JSON.parse(localStorage.getItem('jactec.pidRoster') || '[]'); } catch (e) { return []; } }
 // The verified token becomes the per-call credential: a truthy backendPassword keeps every
 // existing online-guard working, and backendCall sends it as sessionToken (backend prefers it).

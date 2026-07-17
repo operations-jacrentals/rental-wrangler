@@ -6,6 +6,20 @@
 > Keep it lean; the first ~200 lines are what a session actually leans on.
 
 ## Decisions
+- **2026-07-17 — Cross-device user sync SHIPPED LIVE (`userSync` ON, PRs #692+#702, `?v=20260717y`).**
+  A logged-in PERSON's prefs / saved Views / dispatcher route state / comms state / resume-column
+  follow them across devices, keyed on `personId` **resolved SERVER-SIDE from the session token**
+  (never a client value — the operator-isolation review held 0 findings). Hybrid store: additive
+  `getUserPrefs`/`setUserPrefs` blob (one row per personId, server field-merge) + `getGroupOrder`/
+  `getWranglerRail` re-keyed role→`personId` (namespaced `p:<id>` key reuses the handlers unchanged;
+  group-order seeds the role default then diverges, Wrangler rail starts fresh — fixes the
+  role-shared AI-history leak). CLIENT design = **per-section dirty flush** (only changed top-level
+  buckets are sent), which is structurally immune to the "whole-doc last-write-wins clobbers a bucket
+  a device lacks" class the concurrent #685 implementation wrestled with — so #692's client won and
+  **#685 was superseded**. `syncMirrorGuard` is the SINGLE tag-guarded wipe point (shared-device
+  Blocker 1). Backend shipped additive via `/clasp` (v112, editor deploy). Team-chat/comment
+  attribution re-key DEFERRED (spec §13 — see Open threads). Spec:
+  `docs/superpowers/specs/2026-07-17-cross-device-user-sync-design.md`.
 - **2026-07-17 — Invoice email/copy image thread CLOSED + LIVE.** (1) The **email-PNG attachment**
   backend splice (`sendCustomerMessage`, `entity:'invoice'` → decode `dataB64` → `mailOpts.attachments`)
   is DEPLOYED + VERIFIED — a real round-trip to the C0991 test record landed an `image/png` on the
@@ -137,6 +151,27 @@
 - Icons always come from a library (Lucide), never hand-drawn — see `.claude/rules/icons.md`.
 
 ## Gotchas
+- **A FEATURES-flag-gated "big replacement" can hide a data-loss bug in DORMANT code that only bites
+  on ACTIVATION (2026-07-17, cross-device sync).** Two silent data-loss paths passed `smoke`/`logic`/
+  syntax gates while `userSync` was OFF and were caught ONLY by fresh-context adversarial review of
+  the activation path: (1) `syncMirrorGuard` wiped the local mirror BEFORE `seedUserPrefsFromLocal`
+  could capture it → every existing user lost saved Views on their first post-flip login; (2)
+  `pidTokenClear` wiped on a cold-GAS login blip before anything was backed up. FIX PATTERN: make ONE
+  tag-guarded function the SINGLE wipe point (grep-prove it has exactly one caller), and wipe ONLY for
+  a KNOWN DIFFERENT person (`prev && prev !== tag`), never on first-adopt or same-person. Review the
+  ACTIVATION path of a flag-gated feature, not just the diff.
+- **A concurrent session may have already deployed the backend — pull-inspect-idempotency before a
+  `/clasp` push (2026-07-17).** The cross-device `clasp push` found `getUserPrefs`/`setUserPrefs`
+  ALREADY on live HEAD (a parallel session's compatible version), so only the additive group-order/
+  Wrangler-rail re-keys were pushed; a full push would have DUPLICATED `function getUserPrefs_`. The
+  deploy tool's `updateContent` REPLACES the whole project, so always `projects.getContent` the live
+  code first, splice with hard assertions (abort if the symbol already exists), and re-verify HEAD.
+- **The Bash pre-push guard false-fires on feature-branch DELETES.** `git push origin --delete
+  <feature-branch>` / `git push origin :<branch>` trips the "protected release branch" tripwire (it
+  matches the push shape, not the actual target) and aborts the whole command; the delete-push can also
+  disconnect through the proxy. Delete LOCAL branches with `git branch -D`; delete a merged REMOTE
+  branch in the GitHub UI — there is no branch-delete MCP tool. (Also: a busy `trunk` means `/live`
+  often needs 2-3 re-merge + re-deploy rounds — mechanical `?v=`/code-map conflicts only.)
 - **GAS service-account push 403s "Apps Script API not enabled" even after the USER toggles it On**
   (2026-07-17). `docs/handoffs/gas-deploy-service-account.mjs push` (impersonating
   operations@jacrentals.com) returns PERMISSION_DENIED "User has not enabled the Apps Script API"
@@ -319,6 +354,18 @@
   **staging drive** (real Chrome), not headless screenshots.
 
 ## Open threads
+- **Cross-device user sync — SHIPPED LIVE + PROMOTED (2026-07-17, PRs #692+#702, `?v=20260717y`, flag
+  `userSync` ON).** Prefs/Views/dispatch/comms/resume-column follow the PERSON across devices (see
+  the Decisions entry for the design). Verified by a 4-lens adversarial workflow (operator-isolation
+  held 0 findings) + two fresh-context reviews that each caught + fixed a real data-loss bug on the
+  activation path (see the "FEATURES-flag-gated data-loss" Gotcha). **Follow-ups:** (1) **team-chat /
+  record-comment attribution re-key** (`commentUserKey → personId`) DEFERRED — spec §13. It is NOT the
+  leak fix (the Wrangler-rail re-key is); doing it needs a backward-compat visibility ALIAS (server
+  `chatCanSee_` is `by === me` and creators aren't in `members`, so flipping the key hides every
+  pre-cutover chat from its creator), a `personId → name` DISPLAY lookup (raw ids otherwise render in
+  the comms rail), and a `seen`/`by` migration. Parked tracker: branch `parked/team-chat-attribution-rekey`
+  (draft PR). (2) **#685** (the concurrent whole-doc implementation) is SUPERSEDED — close its PR. (3)
+  **two-device functional test** (spec §9) is Jac's — the round-trip can't be driven headlessly here.
 - **QR scan-to-log — SHIPPED LIVE + PROMOTED (2026-07-17, PRs #660/#694/#697, `?v=20260717u`, flag `qrScanLog` ON).**
   A `#u=<unitId>` decal scan opens a focused capture screen, records ONE video, and files it to the
   unit's correct rental log — the SERVER derives Start (Today/Tomorrow) vs End (On/End Rent) vs Block,
