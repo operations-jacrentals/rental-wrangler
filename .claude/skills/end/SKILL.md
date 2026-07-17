@@ -109,7 +109,8 @@ The old `tidy-sessions` job, unchanged in spirit:
 - **Never skip ahead.** Job 4 cannot run before 1–3 are clean — that
   ordering is the whole point of replacing `tidy-sessions`.
 - **Never archive or park without confirmation.** Both are reversible, but
-  silent action isn't welcome — surface the choice (hybrid: inline or popup).
+  silent action isn't welcome — surface the choice via the `AskUserQuestion`
+  popup (one attempt; if it fails, the same choice inline as **A/B/C… + Other**).
 - **Never archive the active session.**
 - Default conservative throughout: unsure whether something's finished →
   leave it, ask.

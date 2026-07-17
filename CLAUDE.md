@@ -5,7 +5,7 @@ Vanilla-JS single-file app (`app.js`), `style.css`, `index.html`, `config.js`,
 `data.js`; Google Apps Script backend (schema-less Sheets, deployed by paste —
 `backend/` is gitignored, never served by Pages).
 
-**Contents:** [Interaction](#interaction-hybrid--jac-2026-07-15) ·
+**Contents:** [Interaction](#interaction-popup-first-single-attempt--jac-2026-07-16) ·
 [Design language](#design-language) · [Deploy & gates](#deploy--gates) ·
 [Don't](#dont) · [Delegation & model triage](#delegation--model-triage).
 Cross-session memory lives in **`MEMORY.md`** (read at `/start`); path-scoped detail
