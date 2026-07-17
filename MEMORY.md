@@ -149,8 +149,26 @@
   rivets, a light wrangler/ranch seasoning (voice-first). Run **all** new/changed UI
   through `/jactec-ui`. Don't retroactively restyle the existing site.
 - Icons always come from a library (Lucide), never hand-drawn — see `.claude/rules/icons.md`.
+- **Customers-list quick-add row is always-on and single-line (2026-07-17, #704).** The collapsed
+  blue "+New Customer" `.bigbtn` was traded for the always-visible inline fields (First·Last·Phone ·
+  the R1 "LEAD?" funnel gate) — no click to expand. All controls share ONE height via a scoped
+  `--qa-h: 34px` on `.qa-cust` (the `.qa-in` inputs + `.qa-cust .pill.gate`); **never** touch the
+  app-wide 22px `.pill.gate`. Row is `flex-wrap: nowrap` + `.qa-in { min-width: 0 }` so all four hold
+  one line through single-column pan mode; the `<480px` query re-enables wrap for the mobile stack.
 
 ## Gotchas
+- **In a cloud session, headless Chromium CANNOT reach external GitHub Pages URLs through the agent
+  proxy (2026-07-17).** Driving a staging/production URL with Playwright fails `net::ERR_CONNECTION_RESET`
+  even with `launch({ proxy: { server: $HTTPS_PROXY } })` — `curl` works (that's how `deploy-staging`
+  byte-verifies), Chromium doesn't. So the logged-in staging DRIVE can't be automated from a cloud run:
+  verify staging with `curl` (grep the served `app.js`/`style.css` for your change) + a `#local`
+  identical-bytes Playwright render, or use Jac's connected Claude-in-Chrome (his real browser).
+- **The browser CI gates (smoke/logic) CAN run in a CLOUD session — the desktop can't, the cloud can
+  (2026-07-17).** `npm install --no-save playwright@1.48.0`, then launch with
+  `executablePath: '/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell'`. The
+  pre-installed `chromium-1194` REMOVED `--headless=old` (which pinned PW 1.48 passes), so the full
+  chromium binary dies "Old Headless mode has been removed" — use the `headless_shell` build. Still
+  swap the reserved port 8000→9147 first (`sed`), run, then `git checkout -- ci/`.
 - **A FEATURES-flag-gated "big replacement" can hide a data-loss bug in DORMANT code that only bites
   on ACTIVATION (2026-07-17, cross-device sync).** Two silent data-loss paths passed `smoke`/`logic`/
   syntax gates while `userSync` was OFF and were caught ONLY by fresh-context adversarial review of
