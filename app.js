@@ -2721,6 +2721,7 @@ function cardBack(card) {
   if (cs.mode === 'standard' && cs.recId != null) ackComments(recOf(entityCardOf(card, cs.recType), cs.recId));
   sweepEmptyDrafts(cs.recId);   // #8 — sweep the abandoned empty draft we stepped away from (keep the one we land on)
   render();
+  restoreJogScroll(card);
 }
 function cardFwd(card) {
   const cs = activeSession().cards[card]; if (!cs || !cs.fwdStack.length) return;
@@ -2729,6 +2730,18 @@ function cardFwd(card) {
   applySnap(cs, nxt);
   if (cs.mode === 'standard' && cs.recId != null) ackComments(recOf(entityCardOf(card, cs.recType), cs.recId));
   render();
+  restoreJogScroll(card);
+}
+// A Back/Forward jog RE-opens a view you already visited — so return to where you were
+// reading it, not the top. render() zeroes a record view on the assumption it's a fresh open
+// (§0.6, app.js:16297); the per-view scrollMemo still holds the offset (keyed recType:recId,
+// stable per record), so re-apply it AFTER render paints. A never-scrolled view has no entry
+// → stays at 0. (Fresh opens don't call this, so they still start at the top.)
+function restoreJogScroll(card) {
+  const c = document.querySelector(`.card[data-card="${card}"]`);
+  const b = c && c.querySelector('.card-body'); if (!b) return;
+  const y = scrollMemo[card + '|' + (c.dataset.view || 'list')];
+  if (y) b.scrollTop = y;
 }
 // The stamped two-way "jog" — renders when this card has its own history this session,
 // OR whenever it's showing a record (Standard view): a record can always step Back to its
@@ -4492,6 +4505,7 @@ function invoiceExpandedHtml(i, c, cs, menuOpen) {
     + `<div class="io-bar"><div class="io-bar-top js-inv-collapse" data-cust="${esc(c.customerId)}" data-tip="Collapse">`
     + `<span class="io-id">${esc(invoiceShort(i.invoiceId))}</span>`
     + invoiceStatMenu(i, c, menuOpen)
+    + ghostPill('🖨 Save PDF', { js: 'js-print-invoice', data: { rec: i.invoiceId }, tip: 'Opens the print dialog — pick a printer or “Save as PDF”. For a clean page, turn off “Headers & footers”. Right-click the sheet for more.' })
     + `<button class="io-collapse" data-tip="Collapse">${I.chev}</button>`
     + `</div></div>`
     + `<div class="io-sheet-wrap">${invoiceDocHtml(i, { interactive: true })}</div>`
@@ -5908,12 +5922,23 @@ function openCtxMenu(e, hit) {
   const m = document.createElement('div');
   m.className = 'ctx-menu'; m.id = 'rw-ctx';
   const item = (act, label) => `<button class="dd-item" data-ctx="${act}">${label}</button>`;
+  // Invoice-sheet section — right-click the interactive .pr-doc (openCtxMenuAt passes hit.inv):
+  // the doc's own actions ride OUR standard menu (Jac 2026-07-17). Email is dropped when there's
+  // no address on file (dead action), matching the detail-view Send-Email gate.
+  const invRec = hit && hit.inv ? IDX.invoice.get(hit.inv) : null;
+  const invCust = invRec && invRec.customerId ? IDX.customer.get(invRec.customerId) : null;
+  const invSec = invRec ? [
+    item('invPrint', '🖨 Save as PDF / Print'),
+    invCust && invCust.email ? item('invEmail', '✉️ Email invoice') : '',
+    item('invCopyImg', '🖼 Copy as image'),
+    '<div class="menu-sep"></div>',
+  ].join('') : '';
   const linkSec = linkItems.length ? linkItems.map((a) => `<button class="dd-item" data-ctx="link:${a.target}">${CARD_ICON[a.target] || ''}${esc(a.label)}</button>`).join('') + '<div class="menu-sep"></div>' : '';
   // D8 comms block — on a customer, Text… / Email… start (or resurrect) that
   // conversation onto the rail. ('Ask Mr. Wrangler about…' rides D8 Phase B.)
   const ctxCust = ctxRecord && ctxRecord.card === 'customers' ? recOf('customers', ctxRecord.recId) : null;
   const commsSec = ctxCust ? `<button class="dd-item" data-ctx="commsText">${I.messageSquare}Text ${esc((ctxCust.firstName || fullName(ctxCust) || 'customer').trim().split(/\s+/)[0])}…</button><button class="dd-item" data-ctx="commsEmail">${I.mail}Email ${esc((ctxCust.firstName || fullName(ctxCust) || 'customer').trim().split(/\s+/)[0])}…</button><div class="menu-sep"></div>` : '';
-  m.innerHTML = commsSec + linkSec + [
+  m.innerHTML = invSec + commsSec + linkSec + [
     item('copy', '📋 Copy'), item('paste', '📥 Paste'),
     '<div class="menu-sep"></div>',
     item('gsearch', '🌐 Global Search'),
@@ -5959,6 +5984,13 @@ function openCtxMenuAt(target, x, y) {
   const hit = leaf ? (ruleOf(leaf) || { r: null, el: leaf }) : null;
   if (hit) return openCtxMenu({ clientX: x, clientY: y }, hit);
   if (!card) return;
+  // Right-click / long-press ON the interactive invoice sheet opens OUR standard menu with an
+  // invoice section (Print/Save-PDF · Email · Copy image) — NOT the "right-click = Back" collapse
+  // that made the doc unusable and swallowed the native menu (Jac 2026-07-17). A genuine leaf inside
+  // the doc (the PO inline-edit, a source-link ↗) already returned above, so it keeps its own menu.
+  // The print copy in #print-root carries no data-inv, so it's untouched.
+  const invDoc = target.closest('.pr-doc[data-inv]');
+  if (invDoc) return openCtxMenu({ clientX: x, clientY: y }, { r: null, el: target, inv: invDoc.dataset.inv });
   // §17b PHONE: a long-press on EMPTY space (row gaps, an open standard card) still opens
   // the menu on the record there, so linking works from ANYWHERE on a row/card — not just
   // a leaf. The right-click "go Back / clear anchor" on empty space stays a DESKTOP-only
@@ -6001,6 +6033,9 @@ function runCtxAction(act) {
   const tg = ctxTarget; closeCtxMenu(); document.removeEventListener('mousedown', ctxOutside);
   if (!tg) return;
   const el = tg.el;
+  if (act === 'invPrint') return printInvoice(tg.inv);                 // 🖨 → the yard-log print/Save-as-PDF dialog
+  if (act === 'invEmail') return sendInvoiceEmail(tg.inv, el);         // ✉️ → existing invoice-email path (server send, or mailto in demo)
+  if (act === 'invCopyImg') return copyInvoiceImage(tg.inv);           // 🖼 → rasterize the sheet to the clipboard as a PNG
   const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
   const editSpan = el.classList?.contains('inline-edit') ? el : (el.closest('.inline-edit') || el.querySelector?.('.inline-edit'));
   const setField = (v) => {
@@ -17550,7 +17585,7 @@ function onClick(e) {
   // invoice's header (not just the chevron) collapses it — excluding the status menu's
   // own dropdown (io-menu-wrap), whose Pay/Print/Refund items need the click themselves.
   if (closest('.js-inv-statmenu')) { e.stopPropagation(); const b = closest('.js-inv-statmenu'); const cu = b.dataset.cust, rec = b.dataset.rec; state.custInvMenu = state.custInvMenu || {}; state.custInvMenu[cu] = (state.custInvMenu[cu] === rec) ? null : rec; return render(); }
-  if (closest('.js-inv-collapse') && !closest('.io-menu-wrap')) { e.stopPropagation(); const cu = closest('.js-inv-collapse').dataset.cust; if (state.custInvOpen) state.custInvOpen[cu] = null; if (state.custInvMenu) state.custInvMenu[cu] = null; return render(); }
+  if (closest('.js-inv-collapse') && !closest('.io-menu-wrap') && !closest('.js-print-invoice')) { e.stopPropagation(); const cu = closest('.js-inv-collapse').dataset.cust; if (state.custInvOpen) state.custInvOpen[cu] = null; if (state.custInvMenu) state.custInvMenu[cu] = null; return render(); }   // header-click collapses — EXCEPT the status menu (.io-menu-wrap) or the Save-PDF pill (.js-print-invoice), which own their clicks
   if (closest('.js-inv-add-pill')) { e.stopPropagation(); const b = closest('.js-inv-add-pill'); if (state.linking && state.linking.targetCard === 'invoices') { e.preventDefault(); return linkCreateInvoice(b.dataset.cust); } return; }   // §3.4 — otherwise drag-only (hidden except mid-drag)
   if (closest('.js-inv-row')) { e.stopPropagation(); const b = closest('.js-inv-row'); if (state.linking && state.linking.targetCard === 'invoices' && b.dataset.rec) { e.preventDefault(); return openLinkConfirm(b.dataset.rec); }   /* §3.4 — pick this invoice as the menu-link target */ const cu = b.dataset.cust, rec = b.dataset.rec; state.custInvOpen = state.custInvOpen || {}; state.custInvOpen[cu] = (state.custInvOpen[cu] === rec) ? null : rec; if (state.custInvMenu) state.custInvMenu[cu] = null; return render(); }
   // ── Phase 1 (2026-07-10 Account/Agreements redesign, T1.1-T1.4) — the new top-of-card
@@ -20951,6 +20986,12 @@ function prLineParts(li) {
  *  MOST RECENT → oldest. rentalLog entries carry the rental name (which unit(s)). */
 function invoiceAmendments(inv) {
   const DENY = /pricing (un)?locked|mr\.?\s*wrangler|added by|••|\bach\b|\bcard\b|mechanic|assigned|\bgps\b|\bhours\b|collections?|recall|aging|blacklist/i;
+  // Billing / invoice-lifecycle events are logged onto the RENTAL too (createInvoiceForRental,
+  // the extension re-price, void/unlink), so they used to surface under Rental Log — an
+  // "Invoice NNN created" line reading like invoice history in the rental column (Jac 2026-07-17).
+  // Split by SUBJECT, not by which record stores the action: a rental action whose topic is the
+  // invoice moves to Invoice Log. Matched on the RAW text — scrub rewrites the wording below.
+  const INV_TOPIC = /^(Invoice |Continuation invoice |Extension |Added to invoice |Unlinked —)/i;
   const scrub = (a, rname) => {
     let text = String(a.text || '');
     if (!text || DENY.test(text)) return null;
@@ -20962,12 +21003,16 @@ function invoiceAmendments(inv) {
     return { when: a.when, clock: a.clock || '', seq: a.seq || 0, text, rname: rname || '' };
   };
   const recent = (x, y) => (x.when < y.when ? 1 : x.when > y.when ? -1 : (y.seq - x.seq));   // most recent → oldest
-  const invoiceLog = (inv.actions || []).map((a) => scrub(a)).filter(Boolean).sort(recent);
+  const invoiceLog = (inv.actions || []).map((a) => scrub(a)).filter(Boolean);
   const rentalLog = [];
   (inv.rentalIds || []).map((id) => IDX.rental.get(id)).filter(Boolean).forEach((r) => {
     const rname = rentalUnitsLabel(r) || r.rentalName || '';
-    (r.actions || []).forEach((a) => { const s = scrub(a, rname); if (s) rentalLog.push(s); });
+    (r.actions || []).forEach((a) => {
+      const s = scrub(a, rname); if (!s) return;
+      (INV_TOPIC.test(String(a.text || '')) ? invoiceLog : rentalLog).push(s);   // billing event → Invoice Log, physical rental event → Rental Log
+    });
   });
+  invoiceLog.sort(recent);
   rentalLog.sort(recent);
   return { invoiceLog, rentalLog };
 }
@@ -21041,7 +21086,7 @@ function invoiceDocHtml(inv, opts = {}) {
     : (inv.po ? `<div><span class="pr-k">PO</span><span class="pr-v">${esc(inv.po)}</span></div>` : '');
 
   return `
-    <div class="pr-doc ${ink}">
+    <div class="pr-doc ${ink}"${interactive ? ` data-inv="${esc(inv.invoiceId)}"` : ''}>
       <div class="pr-head">
         <div class="pr-brandwrap"><img class="pr-logo" src="assets/jac-rentals-logo.jpg" alt="${esc(brandName)}" /><div><div class="pr-brand">${esc(brandName)}</div><div class="pr-sub">${esc(companyTagline())}</div></div></div>
         <div class="pr-datestamp">${esc(bigDate)}</div>
@@ -21086,6 +21131,67 @@ function printInvoice(invoiceId) {
   const cleanup = () => { document.documentElement.classList.remove('printing'); document.body.classList.remove('printing'); window.removeEventListener('afterprint', cleanup); };
   window.addEventListener('afterprint', cleanup);
   window.print();
+}
+/* Copy the on-screen invoice sheet to the clipboard as a PNG (right-click → Copy as image,
+   Jac 2026-07-17). Library-free rasterization: clone the live .pr-doc, inline every element's
+   COMPUTED style (so no stylesheet / CSS-var resolution is needed inside the SVG), data-URI the
+   images so the canvas never taints, wrap the XHTML in an <svg><foreignObject>, paint it to a
+   canvas, hand the PNG blob to the clipboard. The blob is produced INSIDE a ClipboardItem promise
+   so the write still counts as the user's gesture on Safari. Fonts loaded via @font-face may fall
+   back to a system face inside the SVG (a known foreignObject limit) — layout/colors are faithful,
+   the typeface may not be; on any failure we fall back to a clear toast pointing at Save-as-PDF. */
+function copyInvoiceImage(invoiceId) {
+  const fail = () => toast('Couldn’t copy the image on this browser — use 🖨 Save PDF instead.');
+  if (!(navigator.clipboard && window.ClipboardItem)) return fail();   // no clipboard-image support (e.g. older Firefox) → point at Save-as-PDF, don't waste a render
+  // Render INSIDE the ClipboardItem promise so the write still counts as the user's gesture on Safari.
+  navigator.clipboard.write([new ClipboardItem({ 'image/png': renderInvoicePng(invoiceId) })])
+    .then(() => toast('🖼 Invoice copied — paste it into a message, chat, or doc.'))
+    .catch(fail);
+}
+async function renderInvoicePng(invoiceId) {
+  const doc = [...document.querySelectorAll('.pr-doc[data-inv]')].find((d) => d.dataset.inv === invoiceId);
+  if (!doc) throw new Error('invoice sheet not on screen');
+  const rect = doc.getBoundingClientRect();
+  const W = Math.ceil(rect.width), H = Math.ceil(rect.height);
+  const clone = doc.cloneNode(true);
+  inlineComputedStyles(doc, clone);   // resolve classes + CSS vars to concrete values
+  await inlineDocImages(clone);       // <img src> → data: so drawImage doesn't taint the canvas
+  clone.style.boxShadow = 'none'; clone.style.borderRadius = '0'; clone.style.margin = '0'; clone.style.maxWidth = 'none'; clone.style.width = W + 'px';
+  clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+  const xhtml = new XMLSerializer().serializeToString(clone);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><foreignObject x="0" y="0" width="${W}" height="${H}">${xhtml}</foreignObject></svg>`;
+  const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('svg render failed')); im.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg); });
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);   // cap the scale so a retina phone doesn't mint a giant canvas
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, W * dpr); canvas.height = Math.max(1, H * dpr);
+  const cx = canvas.getContext('2d'); cx.scale(dpr, dpr);
+  const bg = getComputedStyle(doc).backgroundColor;
+  cx.fillStyle = (bg && bg !== 'rgba(0, 0, 0, 0)') ? bg : '#f7f2ea';   // kraft fallback if the doc bg is transparent
+  cx.fillRect(0, 0, W, H);
+  cx.drawImage(img, 0, 0);
+  return await new Promise((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error('encode failed'))), 'image/png'));
+}
+// Deep-copy each element's computed style onto the clone (index-aligned — cloneNode preserves
+// structure). Concrete values mean the SVG needs no stylesheet or --var lookups.
+function inlineComputedStyles(src, dst) {
+  const cs = getComputedStyle(src);
+  let s = '';
+  for (let i = 0; i < cs.length; i++) { const p = cs[i]; s += `${p}:${cs.getPropertyValue(p)};`; }
+  dst.setAttribute('style', s);
+  const sc = src.children, dc = dst.children;
+  for (let i = 0; i < sc.length; i++) if (dc[i]) inlineComputedStyles(sc[i], dc[i]);
+}
+// Same-origin images (logo, customer selfie) → data URIs, so the rasterized canvas isn't tainted
+// (a tainted canvas can't be read back to a blob). An unfetchable image is dropped, not fatal.
+async function inlineDocImages(root) {
+  await Promise.all([...root.querySelectorAll('img')].map(async (im) => {
+    const src = im.getAttribute('src') || '';
+    if (!src || src.startsWith('data:')) return;
+    try {
+      const b = await (await fetch(src)).blob();
+      im.setAttribute('src', await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(b); }));
+    } catch (e) { im.removeAttribute('src'); }
+  }));
 }
 // Plain-text quote summary for an emailed quote — mailto can't carry a PDF attachment,
 // so we inline the same figures the print doc shows (§12.5 line items + totals).
@@ -25204,7 +25310,7 @@ function exposeTestApi() {
       tripsLS, tripMerge, tripSplit, assignTripDriver, tripLabel, assignStopDriver, tripSetTime,
       tripPushSoon, tripPushNow, loadTripsFromBackend, tripsSyncFooter, setBackendPassword: (pw) => { backendPassword = pw || ''; },   // §2.3 Phase 4 sync — the setter is test-only (mirrors setRole), letting logic-test.mjs exercise the online path via a mocked window.fetch, never a real backend
       autoRunRepair, autoRunAnchorsFor, secToClock, AUTORUN_DAY_START_SEC, AUTORUN_EOD_DEADLINE_SEC, AUTORUN_LOAD_BUFFER_SEC, dispatchPinOf,
-      openCustomerForm, renderOverlay, render, printInvoice, invoicePrintGroups, invoiceAmendments, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature,
+      openCustomerForm, renderOverlay, render, printInvoice, invoiceDocHtml, renderInvoicePng, invoicePrintGroups, invoiceAmendments, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature,
       wranglerSend, wranglerNewChat, openWranglerDock, wranglerDockPollTick, devUnlocked, openWranglerOps, wrOpsAgo, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }

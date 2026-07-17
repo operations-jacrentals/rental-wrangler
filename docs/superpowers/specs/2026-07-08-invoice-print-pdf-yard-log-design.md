@@ -66,6 +66,15 @@ kraft, justified because they only apply to large bold display text.
 **Invoice Log** (the invoice's own `actions`) and **Rental Log** (its rentals'
 `actions`, tagged with the rental name), each sorted **most-recent → oldest**.
 
+> **Amendment (2026-07-17) — split by SUBJECT, not by record.** Billing / invoice-lifecycle
+> events (`Invoice … created`, `Continuation invoice … opened`, `Extension billed/re-priced`,
+> `Added to invoice …`, `Unlinked — … voided`) are logged onto the *rental* too, so they used
+> to surface under Rental Log — an "Invoice NNN created" line reading like invoice history in the
+> rental column (Jac). `invoiceAmendments` now routes a rental action whose topic is the invoice
+> (matched on the RAW text via `INV_TOPIC`, before scrub rewrites it) into **Invoice Log**; only
+> physical-rental events (unit/customer/window, quote, transport, ratings) stay in **Rental Log**.
+> No data change — pure display classification.
+
 **Data-sensitivity gate (customer-facing surface):** the scrub drops internal ops
 detail — a DENY regex removes `pricing locked`, `Mr. Wrangler`, `Added by`, card/ACH,
 mechanic/GPS/hours lines, and the staff `by` field is never emitted — and translates
