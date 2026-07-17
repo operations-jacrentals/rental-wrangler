@@ -4396,21 +4396,27 @@ body.dragging[data-drag="workOrders"] .inv-add-pill,
   .cr-id { flex-direction: column; align-items: flex-start; gap: 1px; }
 }
 
-/* ── CUSTOMERS "+ NEW CUSTOMER" inline quick-add (Jac 2026-07-17) — leads the
-   Customers list, mirroring the Rentals list's .newrow/.bigbtn trigger; ADDITIVE next
-   to the existing search-bar quick-add. Collapsed = the plain .bigbtn (unstamped, same
-   as +New Rental). Open = a bordered plate (mirrors .ag-open's D16 Agreements chrome)
-   holding ONE flex row that keeps to a single line on desktop and wraps on narrow. ── */
-.qa-cust { border: 1px solid var(--accent-line); border-radius: 12px; background: var(--card); box-shadow: 0 0 0 1px var(--accent-soft); padding: 10px 12px; }
-.qa-cust-row { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+/* ── CUSTOMERS inline quick-add (Jac 2026-07-17) — leads the Customers list, mirroring
+   the Rentals list's .newrow; ADDITIVE next to the existing search-bar quick-add. The
+   fields are ALWAYS shown: a bordered plate (mirrors .ag-open's D16 Agreements chrome)
+   holding ONE flex row that stays a single line on every desktop/laptop width (nowrap +
+   the inputs shrink) and only stacks below the 480px mobile breakpoint — the blue +New
+   Customer .bigbtn was traded for these fields (Jac 2026-07-17). Every control in the row
+   shares one height (--qa-h) so the inputs and the R1 funnel gate line up. ── */
+.qa-cust { --qa-h: 34px; border: 1px solid var(--accent-line); border-radius: 12px; background: var(--card); box-shadow: 0 0 0 1px var(--accent-soft); padding: 10px 12px; }
+.qa-cust-row { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; }   /* nowrap keeps First·Last·Phone·gate on ONE line across desktop AND single-column pan mode; the 480px query below re-enables wrap for the mobile stack */
 .qa-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .qa-field.qa-first, .qa-field.qa-last { flex: 1 1 100px; }
 .qa-field.qa-phone { flex: 1 1 130px; }
 .qa-field.qa-funnel { flex: 0 0 auto; }
-.qa-in { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 11px; color: var(--txt); font: inherit; font-size: 12.5px; width: 100%; }
+.qa-in { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; height: var(--qa-h); padding: 0 11px; color: var(--txt); font: inherit; font-size: 12.5px; width: 100%; min-width: 0; }   /* min-width:0 lets the inputs shrink past their intrinsic size so nowrap can hold all four on one line instead of overflowing (Jac 2026-07-17) */
 .qa-in:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* The R1 funnel gate rides the row at the SAME height as the inputs (Jac 2026-07-17 —
+   the 22px global gate looked short next to the fields). Scoped to .qa-cust so the app-wide
+   .pill.gate height is untouched; only the height/padding grow, the gate keeps its R1 look. */
+.qa-cust .pill.gate { height: var(--qa-h); padding: 0 12px; }
 @media (max-width: 480px) {
-  .qa-cust-row { align-items: stretch; }
+  .qa-cust-row { flex-wrap: wrap; align-items: stretch; }   /* re-enable wrap so the fields stack: First+Last, Phone, then the full-width gate */
   .qa-field.qa-first, .qa-field.qa-last, .qa-field.qa-phone { flex: 1 1 45%; }
   .qa-field.qa-funnel { flex: 1 1 100%; }
 }
