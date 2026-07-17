@@ -111,6 +111,15 @@
   (4) The interactive `.pr-doc` now carries `data-inv`; right-click opens OUR standard menu
   (`openCtxMenuAt`→`openCtxMenu` invSec) with **Save-PDF · Email · Copy-as-image**, replacing the old
   right-click=Back collapse. `#print-root` stays `data-inv`-free → byte-identical print.
+- **2026-07-17 — Staging slots are self-identifying in-app** (#695). The 3-slot review pool
+  serves identical bytes, so each slot was indistinguishable once open (all stamped a plain
+  "STAGING"). `APP_SLOT` reads the slot (1/2/3) off `location.pathname`
+  (`/rental-wrangler-staging[-2|-3]/`) and gives each a theme-invariant safety color + number
+  across FOUR surfaces: the corner env badge (`STAGING · N`), a top-of-window edge bar, the
+  browser-tab title (`Staging N · Rental Wrangler` → a saved desktop shortcut names itself), and
+  a tinted SVG-data-URI favicon. Colors `--slot-1/2/3` (`#ffe000`/`#46c24f`/`#38b6d6`) live in
+  the BASE `:root` only (never overridden per theme) so a slot's color never shifts on a theme
+  toggle. Fully guarded off production (keeps its clean title + logo favicon); local = tan "L".
 
 ## Design prefs
 - Yard **"data-plate"** design language: dark industrial steel, **ONE** safety-orange
@@ -120,6 +129,19 @@
 - Icons always come from a library (Lucide), never hand-drawn — see `.claude/rules/icons.md`.
 
 ## Gotchas
+- **Shared-var CSS default must precede the override rules** (#695, 2026-07-17). When sibling
+  bare-class rules override a custom property (`.env-slot-N { --slot-c: … }`), the DEFAULT
+  (`.env-badge, .env-edge { --slot-c: var(--slot-1) }`) must be declared BEFORE them — at equal
+  specificity the later declaration wins, so a default placed AFTER the overrides silently makes
+  every element fall back to the default (the slot edge bar rendered slot-1 yellow on every slot).
+  No CI gate catches this; the fresh-context merge-gate review did.
+- **Staging lease is ONE-slot-per-session** (#695, 2026-07-17). The lease is keyed by
+  `CLAUDE_CODE_SESSION_ID` (renew-in-place) and `decideAcquire` grants the LOWEST free slot — so a
+  single session CANNOT target a specific slot and CANNOT hold >1 slot via normal re-deploys. To
+  refresh all three slots at once, deploy with distinct session tags
+  (`CLAUDE_CODE_SESSION_ID=…-r1/-r2/-r3`); or just let natural churn do it (post-merge every
+  trunk-based deploy self-identifies). A slot held by another ACTIVE session queues you rather than
+  clobbering — that's correct; wait for its TTL to lapse before refreshing it.
 - **Cloud sessions are ephemeral** (fresh clone, container reclaimed) — only
   git-committed work survives, and Claude Code's native auto-memory is machine-local
   so it won't carry over. Commit + push early.
