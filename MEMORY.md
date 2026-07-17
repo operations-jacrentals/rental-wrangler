@@ -21,6 +21,9 @@
   decisions/questions go through the `AskUserQuestion` popup. Try it **once**; never
   retry a failed popup. If that one popup fails, fall back to **inline** — the same
   question + same options as lettered **A/B/C… + Other** in a structured block.
+  **Batch related questions (up to 4/popup) and favor multiSelect** when answers
+  aren't mutually exclusive (Jac: *"I love the multiselect most"*); `/brainstorming`
+  now routes its clarifying questions through popups too.
 - **2026-07-15 — Delegation by cost-of-being-wrong** *and* whether the main thread
   needs the reasoning (supersedes "delegate heavily, always"). Haiku = mechanical/IO,
   Sonnet = scoped build, Opus = hard reasoning / stays on main, Fable = rare frontier

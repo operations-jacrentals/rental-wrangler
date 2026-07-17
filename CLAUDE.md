@@ -24,6 +24,10 @@ what Jac wants for all choices.
 - Lead with the outcome. An **artifact** is still the right call for anything
   comparative or visual (it renders in the cloud web app; a localhost preview does
   not) — the artifact *shows* the options, the popup (or its inline fallback) *asks*.
+- **Batch related questions and favor multiSelect** (Jac: *"I love the multiselect
+  most"*). One popup carries up to **4** questions — group related ones instead of
+  asking one at a time — and use **multiSelect** whenever the answers aren't mutually
+  exclusive. Applies everywhere, including `/brainstorming`'s clarifying questions.
 
 ## Design language
 
