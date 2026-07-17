@@ -21392,20 +21392,23 @@ function copyInvoiceImage(invoiceId) {
     .catch(fail);
 }
 async function renderInvoicePng(invoiceId) {
-  const doc = [...document.querySelectorAll('.pr-doc[data-inv]')].find((d) => d.dataset.inv === invoiceId);
-  if (!doc) throw new Error('invoice sheet not on screen');
-  // The raster paints ONCE, into boxes we freeze to px below (inlineComputedStyles). If a face decodes
-  // AFTER that single paint, a box sized under the on-screen face gets painted with a different-width
-  // fallback and text clips (notably the right-flush date stamp). So settle the fonts FIRST — embed the
-  // data-URI'd raster faces, decode them + the page faces — THEN measure and snapshot.
+  // Settle fonts FIRST — before we snapshot — so the freeze-measure and the one-shot SVG paint use the
+  // SAME face; otherwise a late-decoding fallback paints into boxes frozen under the on-screen face and
+  // text clips (notably the right-flush date stamp). On a cold cache these awaits are network-bound.
   const fontCss = await invoiceFontFaceCss();   // embed the real Saira/Geist faces — a foreignObject has no page @font-face
   try { if (document.fonts) { if (fontCss) await ensureEmbeddedFacesReady(fontCss); if (document.fonts.ready) await document.fonts.ready; } } catch (e) {}
+  // Resolve + snapshot the node AFTER the awaits, with NO async gap in between: a render() during a font
+  // await (e.g. the background poll applying a remote edit does a wholesale #app.replaceChildren) would
+  // detach a node captured earlier, and measuring/cloning a detached node yields a 0×0 blank PNG.
+  const doc = [...document.querySelectorAll('.pr-doc[data-inv]')].find((d) => d.dataset.inv === invoiceId);
+  if (!doc) throw new Error('invoice sheet not on screen');
   const rect = doc.getBoundingClientRect();
   const W = Math.ceil(rect.width), H = Math.ceil(rect.height);
+  const bg = getComputedStyle(doc).backgroundColor;   // capture now, while doc is known-connected — the only later read (fill) sits after an await
   const clone = doc.cloneNode(true);
   inlineComputedStyles(doc, clone);      // resolve classes + CSS vars to concrete values (index-aligned walk — must precede any clone mutation)
   normalizeCloneForRaster(doc, clone);   // a foreignObject drops ::before/::after — materialize them as real nodes so the ' · ' separators survive; strip screen-only edit affordances
-  await inlineDocImages(clone);          // <img src> → data: so drawImage doesn't taint the canvas
+  await inlineDocImages(clone);          // <img src> → data: so drawImage doesn't taint the canvas (operates on the detached clone only — safe past here)
   if (fontCss) { const st = document.createElement('style'); st.textContent = fontCss; clone.insertBefore(st, clone.firstChild); }
   clone.style.boxShadow = 'none'; clone.style.borderRadius = '0'; clone.style.margin = '0'; clone.style.maxWidth = 'none'; clone.style.width = W + 'px'; clone.style.height = H + 'px';
   clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
@@ -21416,8 +21419,7 @@ async function renderInvoicePng(invoiceId) {
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, W * dpr); canvas.height = Math.max(1, H * dpr);
   const cx = canvas.getContext('2d'); cx.scale(dpr, dpr);
-  const bg = getComputedStyle(doc).backgroundColor;
-  cx.fillStyle = (bg && bg !== 'rgba(0, 0, 0, 0)') ? bg : '#f7f2ea';   // kraft fallback if the doc bg is transparent
+  cx.fillStyle = (bg && bg !== 'rgba(0, 0, 0, 0)') ? bg : '#f7f2ea';   // kraft fallback if the doc bg is transparent (bg captured pre-await, above)
   cx.fillRect(0, 0, W, H);
   cx.drawImage(img, 0, 0);
   return await new Promise((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error('encode failed'))), 'image/png'));
