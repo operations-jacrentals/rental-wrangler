@@ -1557,6 +1557,10 @@ try {
       ok(c.membershipStage === 'Contacted', 'funnel: signing the RENTAL agreement does NOT touch the membership funnel');
       T.markMembershipSigned(c, 'membership');
       ok(c.membershipStage === 'Signed', 'funnel: signing the MEMBERSHIP agreement auto-advances the funnel to Signed');
+      ok(c.funnels && c.funnels.member === true, 'funnel: signing the membership agreement JOINS the Member funnel (else Signed hides)');
+      // a completed terminal (Signed) can't be dropped from the funnel by a chip misclick
+      T.toggleFunnelMembership('C-SIGN', 'member');
+      ok(c.funnels.member === true && c.membershipStage === 'Signed', 'funnel: cannot leave the Member funnel while at the Signed terminal (no silent wipe)');
       // manual set of the terminal is refused for membership, but allowed for equipment ('Paid')
       c.membershipStage = 'Contacted';
       T.pickFunnelStage('C-SIGN', 'member', 'Signed');

@@ -588,6 +588,7 @@ function attachHeldSigning(c, k) {
 function markMembershipSigned(c, key) {
   if (key !== 'membership' || !c || c.membershipStage === 'Signed') return;
   c.membershipStage = 'Signed';
+  ensureFunnels(c).member = true;   // funnel redesign: a signed member IS in the Member funnel — else the Signed terminal is hidden (funnelTrackA needs inFunnel('member'))
   logAction(c, 'Membership agreement signed → Signed');
 }
 function signCardAgreement(c, k, signature, selfie) {
@@ -16412,24 +16413,33 @@ function openFunnelMenu(custId, anchorEl) {
   const c = IDX.customer.get(custId); if (!c) return;
   openDropdown(anchorEl, funnelMenuHtml(c), { cls: 'funnelmenu' });
 }
-// A chip toggle keeps the menu OPEN (multi-select): re-render the app, then re-anchor the
-// menu to the freshly-rendered gate pill (a new DOM node → openDropdown opens clean, in place).
-function reopenFunnelMenu(custId) {
-  const a = document.querySelector(`.js-funnelmenu[data-rec="${custId}"]`);
-  if (a) openFunnelMenu(custId, a);
-  else document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
+// A chip toggle keeps the menu OPEN (multi-select). The menu lives on document.body and
+// SURVIVES render() (which only rebuilds #app), so rebuild its innerHTML IN PLACE instead of
+// re-anchoring — that keeps its screen position steady (no jump) and works no matter which of
+// several same-customer triggers opened it (the detail ladders, the two empty-state join
+// buttons, or the pipeline board's two funnel pills — all share one data-rec).
+function refreshFunnelMenuInPlace(custId) {
+  const c = IDX.customer.get(custId);
+  const menu = document.querySelector('.dropdown-menu.funnelmenu');
+  if (menu && c) menu.innerHTML = funnelMenuHtml(c);
 }
 function toggleFunnelMembership(custId, funnel) {
   const c = IDX.customer.get(custId); if (!c) return;
   if (funnel === 'rental' && hasRentalActivity(c)) { toast('Rental is set by live rentals — it can’t be removed.'); return; }
   const f = ensureFunnels(c);
-  const now = !f[funnel]; f[funnel] = now;
   const field = funnelStageField(funnel);   // Member/Equipment seed 'Lead' on join, reset to 'N/A' on leave; Rental's stage is derived
+  // Guard a completed terminal: leaving would silently wipe a real Signed (agreement) / Paid
+  // (sale) record back to N/A on a single misclick. Block it (mirrors the Rental activity lock).
+  if (f[funnel] && field) {
+    const terminal = FUNNELS[funnel].stages[FUNNELS[funnel].stages.length - 1];
+    if (c[field] === terminal) { toast(`${getStatus('funnelStage', terminal).label} is a completed ${FUNNELS[funnel].label} record — it can’t be removed from the funnel.`); return; }
+  }
+  const now = !f[funnel]; f[funnel] = now;
   if (field) { if (!now) c[field] = 'N/A'; else if (!c[field] || c[field] === 'N/A') c[field] = 'Lead'; }
   logAction(c, `${now ? 'Joined' : 'Left'} ${FUNNELS[funnel].label} funnel`);
   reindex('customers', c);
   render();
-  reopenFunnelMenu(custId);
+  refreshFunnelMenuInPlace(custId);
 }
 function pickFunnelStage(custId, funnel, stage) {
   const c = IDX.customer.get(custId); if (!c) return;
