@@ -239,10 +239,13 @@ never recycled — app.js:19870), `unit.name` + category name
 **Delivery:** a print-optimized layout (decals tiled per page) the browser prints /
 saves as PDF — no PDF library needed initially.
 
-## Open items
+## Decisions taken / open items
 
-- **Confirm the include-rule split** — which `fleetStatus` values appear on the Fleet
-  QR Codes sheet (proposed On: Active/Onboard/Purchased/For Sale; Off: Inactive/Sold).
-- Confirm on-demand generation vs. a materialized/stored PDF.
+- **Include-rule — BUILT with the recommended split** (`FLEET_QR_STATUSES`, app.js):
+  on the sheet = `fleetStatus` in Active/Onboard/Purchased/For Sale; off =
+  Inactive/Sold. A one-line change if Jac wants different.
+- **On-demand generation — BUILT:** the sheet builds from live fleet data at download
+  time (always current, no stored file, no backend).
 - Optional later: a true PDF export (vendored PDF lib) if print-to-PDF isn't enough;
-  repointing the existing share-session QR at the vendored encoder.
+  repointing the existing share-session QR at the vendored encoder to drop the
+  external `api.qrserver.com` dependency.
