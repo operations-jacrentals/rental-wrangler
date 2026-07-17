@@ -1575,6 +1575,19 @@ try {
       T.toggleFunnelMembership('C-SIGN', 'rental');
       ok(T.inFunnel(c, 'rental') === true, 'funnel: a manual Rental prospect fork joins the Rental funnel');
       ok(T.funnelStageOf(c, 'member') === 'Payment Discussed' && T.funnelStageOf(c, 'equipment') === 'Paid', 'funnel: funnelStageOf reads Member/Equipment from their stored stages');
+      // === Idea D — dated funnel: current-stage derivation, reach-with-stamp, layer notes, Member Lead ===
+      c.membershipStage = 'N/A'; c.usedSalesStage = 'N/A';
+      ok(T.funnelCurrentStage(c, 'member') === 'Lead' && T.funnelCurrentStage(c, 'equipment') === 'Lead', 'dated funnel: an unset stage reads as Lead (everyone sits at the top of both)');
+      T.reachFunnelStage('C-SIGN', 'equipment', 'Contacted');
+      ok(c.usedSalesStage === 'Contacted', 'dated funnel: reaching a layer advances the stage field');
+      ok(T.funnelLayerDate(c, 'equipment', 'Contacted') === T.TODAY_ISO, 'dated funnel: reaching a layer stamps today onto the layer');
+      T.reachFunnelStage('C-SIGN', 'equipment', 'Signed');   // 'Signed' isn't an equipment stage; only auto/rental are blocked — a non-member stage no-ops safely
+      ok(c.usedSalesStage === 'Contacted', 'dated funnel: reachFunnelStage ignores an off-funnel stage');
+      c.funnels.member = false; c.membershipStage = 'N/A';
+      T.toggleMemberLead('C-SIGN');
+      ok(T.inFunnel(c, 'member') === true && (T.funnelLayerDate(c, 'member', 'Lead') === T.TODAY_ISO), 'dated funnel: Member Lead checkbox joins the funnel + stamps the Lead date');
+      T.reachFunnelStage('C-SIGN', 'rental', 'Rented');
+      ok(T.funnelCurrentStage(c, 'rental') === 'Lead', 'dated funnel: Rental stages are derived — reachFunnelStage never sets them by hand');
       T.IDX.customer.delete('C-SIGN');
     }
 

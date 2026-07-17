@@ -194,6 +194,46 @@ function funnelTrackEquip(c) {
   const s = c.usedSalesStage || 'N/A';
   return FUNNELS.equipment.stages.map((st) => ({ funnel: 'equipment', stage: st, auto: isAutoStage('equipment', st), current: s === st }));
 }
+/* ── Dated funnel (Idea D, Jac 2026-07-17) — the customer detail shows the funnel as a
+   two-tab (Rental | Equipment Sales) stack of DATED layers. EVERYONE is implicitly in both
+   Rental and Equipment (a fresh customer just sits at 'Lead' in each); Member is the one opt-in
+   (the "Member Lead" checkbox = funnels.member) that EXTENDS the Rental funnel. Each layer
+   records the date it was reached + an optional note in c.funnelLog[funnel][stage] = {date,note}.
+   Rental Reserved/Rented dates DERIVE from the customer's live rentals (never a manual stamp);
+   Lead + all Member/Equipment dates are stored (stamped 'today' on reach, editable). */
+function ensureFunnelLog(c) {
+  if (!c) return { rental: {}, member: {}, equipment: {} };
+  if (!c.funnelLog || typeof c.funnelLog !== 'object') c.funnelLog = {};
+  FUNNEL_KEYS.forEach((k) => { if (!c.funnelLog[k] || typeof c.funnelLog[k] !== 'object') c.funnelLog[k] = {}; });
+  return c.funnelLog;
+}
+// The furthest-reached stage of a funnel: Rental derived from activity; Member/Equipment the
+// stored stage — and since everyone starts at the top, an empty/N/A stage reads as 'Lead'.
+function funnelCurrentStage(c, key) {
+  if (key === 'rental') return rentalFunnelStage(c);
+  const v = key === 'member' ? c.membershipStage : c.usedSalesStage;
+  return (!v || v === 'N/A') ? 'Lead' : v;
+}
+// earliest reserved / on-rent rental startDate for the Rental funnel's auto dates.
+function reservedRentalDate(c) {
+  const rs = customerRentals(c).filter((r) => r.status === 'Reserved' && r.startDate).sort((a, b) => parseISO(a.startDate) - parseISO(b.startDate));
+  return rs.length ? rs[0].startDate : '';
+}
+function onRentRentalDate(c) {
+  const rs = customerRentals(c).filter((r) => RENTAL_OUT.has(r.status) && r.startDate).sort((a, b) => parseISO(a.startDate) - parseISO(b.startDate));
+  return rs.length ? rs[0].startDate : '';
+}
+// A rental Reserved/Rented date is DERIVED and never editable; every other layer's date is stored.
+const funnelDateDerived = (key, stage) => key === 'rental' && (stage === 'Reserved' || stage === 'Rented');
+function funnelLayerDate(c, key, stage) {
+  if (funnelDateDerived(key, stage)) return stage === 'Reserved' ? reservedRentalDate(c) : onRentRentalDate(c);
+  const e = ensureFunnelLog(c)[key][stage];
+  return (e && e.date) || '';
+}
+function funnelLayerNote(c, key, stage) {
+  const e = ensureFunnelLog(c)[key][stage];
+  return (e && e.note) || '';
+}
 let migrationDirty = false;
 /* One-time, idempotent: give every customer firstName/lastName parsed from `name`,
    then keep `name` as the derived "First Last" display. Runs on seed AND loaded data. */
@@ -4123,66 +4163,126 @@ function custMetaField(c, field, label, ph) {
   const val = c[field];
   return `<div class="kv"><span class="pfx">${esc(label)}</span><span class="v inline-edit" data-edit="custField" data-field="${esc(field)}" data-rec="${esc(c.customerId)}" data-ph="${esc(ph)}">${val ? esc(val) : `<span class="add-field" data-r="R5c">+${esc(label)}</span>`}</span></div>`;
 }
-/* R35 — the funnel LADDER: a customer's stage journey as a row of rungs (arrows between),
-   the current rung lit, auto rungs (Reserved/Rented/Signed/Paid) locked. The whole ladder
-   is one press target that opens the adaptive funnel menu (js-funnelmenu). Bespoke — it is
-   NOT a .pill (so it stays out of the R0 lint family), the container carries the stamp. */
-function funnelRung(r) {
-  const st = getStatus('funnelStage', r.stage);
-  return `<span class="frung c-${st.color}${r.current ? ' current' : ''}${r.auto ? ' auto' : ''}">${esc(st.label)}${r.auto ? `<span class="fr-lock">${I.lock}</span>` : ''}</span>`;
+/* R35 — the DATED FUNNEL (Idea D, Jac 2026-07-17). The customer-detail funnel is a two-tab
+   (Rental | Equipment Sales) stack of clickable dated LAYERS, narrowing like a real funnel.
+   Everyone is implicitly in both tabs (a fresh customer sits at 'Lead' in each); the "Member
+   Lead" checkbox extends the Rental tab with the membership stages. Clicking an UPCOMING manual
+   layer marks it reached + stamps today; clicking any REACHED layer (or an auto/rental layer)
+   opens a small editor to correct the date + drop a note (which truncates on the layer). Rental
+   Reserved/Rented dates DERIVE from live rentals. Bespoke — the .dfunnel container is stamped. */
+function funnelLayerHtml(c, key, stage, i, ci, offset, curId) {
+  const st = getStatus('funnelStage', stage);
+  const auto = key === 'rental' || isAutoStage(key, stage);   // rental stages + Signed = auto (no manual reach)
+  // `cur` (the single orange "you are here") is the GLOBAL furthest layer when funnels are stacked
+  // (Rental → Member on the Rental tab), so only one bar lights up; `reached` stays per-funnel.
+  const cur = curId ? (key + ':' + stage === curId) : (i === ci);
+  const reached = i <= ci, upcoming = i > ci;
+  const showLock = auto && stage !== 'Lead';   // Lead is the universal entry, not a locked milestone
+  const dateISO = funnelLayerDate(c, key, stage);
+  const note = funnelLayerNote(c, key, stage);
+  const w = Math.max(56, 100 - (i + (offset || 0)) * 6);
+  const cls = cur ? 'cur' : (reached ? 'done' : 'up');
+  const tip = upcoming ? (auto ? 'Set automatically from activity' : 'Click to mark reached — stamps today') : 'Click to edit date + note';
+  const dt = dateISO ? esc(fmtShortDate(dateISO)) : (upcoming ? 'reach ›' : '');
+  return `<button class="dl ${cls}${auto ? ' auto' : ''} js-funnel-layer" data-rec="${esc(c.customerId)}" data-fkey="${key}" data-stage="${esc(stage)}" data-tip="${tip}" style="width:${w}%">`
+    + `<span class="dl-dot">${reached && !cur ? '✓' : ''}</span>`
+    + `<span class="dl-nm">${esc(st.label)}</span>`
+    + (showLock ? `<span class="dl-lock">${I.lock}</span>` : '')
+    + (note ? `<span class="dl-note">· ${esc(note)}</span>` : '')
+    + `<span class="dl-dt${upcoming ? ' up' : ''}">${dt}</span></button>`;
 }
-function funnelLadder(c, rungs) {
-  const pills = rungs.map((r, i) => `${i ? '<span class="fl-arw">›</span>' : ''}${funnelRung(r)}`).join('');
-  return `<div class="fladder js-funnelmenu" data-r="R35" data-rec="${esc(c.customerId)}" data-tip="Edit funnel">${pills}</div>`;
+function datedFunnelHtml(c, key, offset, curId) {
+  const stages = FUNNELS[key].stages;
+  const ci = stages.indexOf(funnelCurrentStage(c, key));
+  return stages.map((s, i) => funnelLayerHtml(c, key, s, i, ci, offset, curId)).join('');
 }
-const funnelJoinBtn = (c, label) => addBtn(label, { link: true, js: 'js-funnelmenu', data: { rec: c.customerId } });
-// A small urgency pip on a track header when that track's Next Actions are due/soon (carries
-// the signal the old per-tab RYG dot gave, now that the tabs are gone).
-function funnelUrgPip(c, scope) {
-  const u = naDotClass(c, scope);
-  return u === 'ok' ? '' : `<span class="ftk-urg ${u}" data-tip="${u === 'due' ? 'Action due or overdue' : 'Action due soon'}"></span>`;
+function memberLeadRow(c) {
+  const on = inFunnel(c, 'member');
+  return `<button class="dl-check${on ? ' on' : ''} js-member-lead" data-rec="${esc(c.customerId)}" data-tip="${on ? 'Untick to stop pursuing membership' : 'Tick to extend the funnel with the membership stages'}" style="width:79%">`
+    + `<span class="dl-box">${on ? '✓' : ''}</span><span class="dl-ck-t">Member Lead</span>`
+    + `<span class="dl-ck-h">${on ? 'extending ↓' : 'tick to extend'}</span></button>`;
 }
-function funnelTrackCard(dotCls, title, hint, urg, headExtra, inner) {
-  return `<div class="ftk">`
-    + `<div class="ftk-hd"><span class="ftk-dot ${dotCls}"></span><span class="ftk-nm">${esc(title)}</span>${urg}<span class="ftk-hint">${esc(hint)}</span>${headExtra || ''}</div>`
-    + `<div class="ftk-body">${inner}</div>`
-    + `</div>`;
-}
-/* Two-track customer funnel (redesign 2026-07-17, spec: customer-funnel-redesign) — replaces
-   the old Rental / Equipment-Sales 2-tab. Track A is the combined Rental→Member ladder (Member
-   stages appear only when Member is selected; Reserved/Rented only when the customer is rental-
-   active); Track B is the separate Equipment-sales ladder. Both edit through the ONE adaptive
-   funnel menu (funnelMenuHtml). Next Actions / Action Log keep their 'rental' | 'usedSales' scopes. */
+/* Dated two-tab funnel (Idea D). The R14 segmented toggle IS the section header (Rental |
+   Equipment Sales — everyone's in both); the tab body is the dated-layer stack for that funnel,
+   plus the Member Lead extension on the Rental tab, and the tab's meta / Next-Actions / Log. */
 function funnelSectionHtml(c) {
-  const trackA = funnelTrackA(c);
-  const equip = funnelTrackEquip(c);
-  const mem = inFunnel(c, 'member'), eq = inFunnel(c, 'equipment');
-  // ── Track A — Rental → Member ──
-  const titleA = mem ? 'Rental → Member' : 'Rental';
-  const hintA = mem ? 'membership continuation' : (inRental(c) ? 'rental only' : 'not started');
-  const aInner = trackA.length
-    ? funnelLadder(c, trackA)
+  const tab = (state.funnelTab && state.funnelTab[c.customerId]) || 'rental';
+  const seg = segCtl([
+    { label: 'Rental', js: `js-funnel-tab ${naDotClass(c, 'rental')}`, data: { rec: c.customerId, tab: 'rental' }, on: tab === 'rental' ? 'accent' : null },
+    { label: 'Equipment Sales', js: `js-funnel-tab ${naDotClass(c, 'usedSales')}`, data: { rec: c.customerId, tab: 'usedSales' }, on: tab === 'usedSales' ? 'accent' : null },
+  ]);
+  let body;
+  if (tab === 'rental') {
+    const mem = inFunnel(c, 'member');
+    // ONE current across the stacked Rental → Member journey: Member's position when Member is
+    // on (it's the furthest continuation), else Rental's — so exactly one layer lights orange.
+    const curId = mem ? 'member:' + funnelCurrentStage(c, 'member') : 'rental:' + funnelCurrentStage(c, 'rental');
+    const stack = `<div class="dfunnel" data-r="R35">`
+      + datedFunnelHtml(c, 'rental', 0, curId)
+      + memberLeadRow(c)
+      + (mem ? datedFunnelHtml(c, 'member', FUNNELS.rental.stages.length + 1, curId) : '')
+      + `</div>`;
+    body = `<div class="fb-toprow">${acctBtn(c)}</div>`
+      + stack
       + (mem ? `<div class="fieldstack funnel-fields">${membershipMetaHtml(c)}</div>` : '')
       + nextActionsHtml(c, 'rental')
-      + actionLogHtml(c, 'rental')
-    : `<div class="ftk-empty">Not a rental or member lead yet. ${funnelJoinBtn(c, 'Funnel')}</div>`;
-  const trackACard = funnelTrackCard('a', titleA, hintA, funnelUrgPip(c, 'rental'), acctBtn(c), aInner);
-  // ── Track B — Equipment ──
-  const intCats = (c.interestedCategoryIds || []).map((id) => { const cat = IDX.category.get(id); return cat ? refPill('categories', id, cat.name, { x: 'intcat-remove', xData: id, tag: 'Cat' }) : ''; }).join('');
-  const intMakes = (c.interestedMakes || []).map((mk) => refPill(null, mk, mk, { x: 'intmake-remove', xData: mk, tag: 'Make', tone: 'tan' })).join('');
-  const bInner = eq
-    ? funnelLadder(c, equip)
+      + actionLogHtml(c, 'rental');
+  } else {
+    const intCats = (c.interestedCategoryIds || []).map((id) => { const cat = IDX.category.get(id); return cat ? refPill('categories', id, cat.name, { x: 'intcat-remove', xData: id, tag: 'Cat' }) : ''; }).join('');
+    const intMakes = (c.interestedMakes || []).map((mk) => refPill(null, mk, mk, { x: 'intmake-remove', xData: mk, tag: 'Make', tone: 'tan' })).join('');
+    body = `<div class="fb-toprow">${acctBtn(c)}</div>`
+      + `<div class="dfunnel" data-r="R35">${datedFunnelHtml(c, 'equipment', 0)}</div>`
       + `<div class="fieldstack funnel-fields">${custMetaField(c, 'desiredAge', 'Desired Age', 'Add desired age')}${custMetaField(c, 'desiredHours', 'Desired Hours', 'Add desired hours')}</div>`
       + `<div class="funnel-sublabel">Interested in</div>`
       + `<div class="kv pillrow interested">${intCats}${intMakes}${addBtn('Make / Category', { link: true, js: 'js-addmakecat', h: 26, data: { rec: c.customerId } })}</div>`
       + nextActionsHtml(c, 'usedSales')
-      + actionLogHtml(c, 'usedSales')
-    : `<div class="ftk-empty">Not an equipment-sales lead. ${funnelJoinBtn(c, 'Equipment')}</div>`;
-  const trackBCard = funnelTrackCard('b', 'Equipment', eq ? 'separate sales track' : 'not started', funnelUrgPip(c, 'usedSales'), '', bInner);
+      + actionLogHtml(c, 'usedSales');
+  }
   return `<div class="section funnel-sec">`
-    + `<div class="funnel-hd"><span class="fh-rule"></span><span class="fh-title">Funnel</span><span class="fh-rule"></span></div>`
-    + `<div class="funnel-tracks">${trackACard}${trackBCard}</div>`
+    + `<div class="funnel-hd"><span class="fh-rule"></span>${seg}<span class="fh-rule"></span></div>`
+    + `<div class="funnel-body">${body}</div>`
     + `</div>`;
+}
+// ── Dated-funnel mutators (Idea D) ──
+// Reach an UPCOMING manual stage: set the current-stage field + stamp today. Rental stages and
+// auto terminals are derived, never reached by hand.
+function reachFunnelStage(custId, key, stage) {
+  const c = IDX.customer.get(custId); if (!c) return;
+  if (!FUNNELS[key] || !FUNNELS[key].stages.includes(stage)) return;   // only a real stage of this funnel
+  if (key === 'rental' || isAutoStage(key, stage)) return;
+  const field = funnelStageField(key); if (!field) return;
+  c[field] = stage;
+  const log = ensureFunnelLog(c)[key]; if (!log[stage]) log[stage] = {}; if (!log[stage].date) log[stage].date = TODAY_ISO;
+  ensureFunnels(c)[key] = true;
+  logAction(c, `${FUNNELS[key].label} → ${getStatus('funnelStage', stage).label}`);
+  reindex('customers', c); render();
+}
+// Member Lead checkbox — reuse the funnel-membership toggle (keeps the Signed terminal-wipe
+// guard); stamp the Member Lead date when first ticked so the 'Lead' layer carries a date.
+function toggleMemberLead(custId) {
+  const c = IDX.customer.get(custId); if (!c) return;
+  const wasOn = inFunnel(c, 'member');
+  toggleFunnelMembership(custId, 'member');
+  if (!wasOn && inFunnel(c, 'member')) { const log = ensureFunnelLog(c).member; if (!log.Lead) log.Lead = {}; if (!log.Lead.date) log.Lead.date = TODAY_ISO; render(); }
+}
+function openFunnelLayerEdit(custId, key, stage) {
+  const c = IDX.customer.get(custId); if (!c) return;
+  openOverlay({ kind: 'funnelLayer', custId, fkey: key, stage, funnelEditDate: funnelLayerDate(c, key, stage) || TODAY_ISO, funnelNote: funnelLayerNote(c, key, stage) });
+}
+function saveFunnelLayer() {
+  const o = state.overlay; if (!o || o.kind !== 'funnelLayer') return;
+  const c = IDX.customer.get(o.custId); if (!c) { closeOverlay(); return; }
+  const noteVal = (document.querySelector('.overlay .js-fl-note')?.value || '').trim();
+  const log = ensureFunnelLog(c)[o.fkey]; if (!log[o.stage]) log[o.stage] = {};
+  if (!funnelDateDerived(o.fkey, o.stage) && o.funnelEditDate) log[o.stage].date = o.funnelEditDate;
+  if (noteVal) log[o.stage].note = noteVal; else delete log[o.stage].note;
+  // editing a manual layer that's ahead of the current stage also advances the stage field.
+  if (o.fkey !== 'rental' && !isAutoStage(o.fkey, o.stage)) {
+    const field = funnelStageField(o.fkey), stages = FUNNELS[o.fkey].stages;
+    if (stages.indexOf(o.stage) > stages.indexOf(funnelCurrentStage(c, o.fkey))) { c[field] = o.stage; ensureFunnels(c)[o.fkey] = true; }
+  }
+  logAction(c, `${FUNNELS[o.fkey].label} · ${getStatus('funnelStage', o.stage).label} updated`);
+  reindex('customers', c); closeOverlay();
 }
 /* ── Phase 1 (2026-07-10 Account/Agreements + Membership redesign, spec §3/§7b
    D19-D27, plan T1.1-T1.4) — the new top-of-card ACCOUNT section. UI SHELL:
@@ -6342,7 +6442,7 @@ const RULE_META = {
   R32: ['Nav jog', 'cardJog / .card-jog · .mfoot-jog', 'the two-way Back/Forward view-history stepper. On desktop + in-card it is a neutral steel pill (chevron arms split by a saddle-stitch seam, orange only on hover/press) that shows only when the card has history. On phone it lives ALWAYS-ON as a snug chip pinned to the bottom-RIGHT of the footer tool bar (matching the .iconbtn tool buttons), Chrome-style: bright chevrons that grey when their stack is empty — reflecting the snapped column’s card (repainted on swipe).'],
   R33: ['Global toggle', 'globeToggle', 'the icon-only globe pinned right in a grid card’s search bar — flips that bar, and every grid-card bar in lockstep, between per-card and whole-yard “global” search (dim steel off, safety-orange on). A scope-MODE toggle like R31 but icon-only + it drives the shared query; replaces the old giant #globalsearch bar. Behind FEATURES.cardGlobalSearch.'],
   R34: ['Wash cycle button', 'washBtn', 'one pressable status pill that advances a unit’s wash on each click — neutral “Wash?” → caution “Wash It!” (yellow, requested) → ready “✓ Washed” (green, logged) → click again un-marks today’s wash. Registry STATUS tones (green/yellow/gray), NOT action colors; a press-to-advance control like R1 but it cycles in place instead of opening a dropdown. Replaces the old Wash / Don’t Wash / Washed R14 toggle; wash no longer gates inspection Pass.'],
-  R35: ['Funnel ladder', 'funnelLadder / .fladder', 'a customer’s funnel journey as a row of rungs (chevrons between), the current rung lit in its registry color and auto rungs (Reserved/Rented/Signed/Paid) locked with a padlock. The whole ladder is one press target that opens the ONE adaptive funnel menu (funnelMenuHtml — N/A · Leads chips · applicable Stages). Bespoke — the rungs are NOT .pill (kept out of the R0 lint family), the container carries the stamp. Track A = combined Rental→Member; Track B = Equipment.'],
+  R35: ['Dated funnel', 'datedFunnelHtml / .dfunnel', 'the customer-detail funnel as a two-tab (Rental | Equipment Sales) stack of clickable DATED layers, narrowing like a real funnel — everyone sits in both tabs (a fresh customer at Lead). Each layer stamps the date it was reached (auto today, editable) + an optional note that truncates on the layer; auto layers (Reserved/Rented derived from live rentals, Signed) are padlocked. The Member Lead checkbox extends the Rental tab with the membership stages. Clicking an upcoming manual layer advances it; clicking a reached/auto layer opens the funnelLayer edit popup. Bespoke — layers are NOT .pill, the .dfunnel container carries the stamp.'],
 };
 /* ════════════ APP-12 · DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
    The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
@@ -6479,7 +6579,7 @@ const RB_TABS = [
 const CLASS_RULE = [
   ['.c-titlecard', 'R10'], ['.nsec', 'R12'], ['.hvals', 'R13'], ['.history', 'R13'],
   ['.timeline', 'R16'], ['.jnode', 'R15'], ['.jseg', 'R15'], ['.journey', 'R15'],
-  ['.seg', 'R14'], ['.kv.derived', 'R8'], ['.derived', 'R8'], ['.file-drop', 'R21'], ['.datefield', 'R22'], ['.fladder', 'R35'], ['.section', 'R11'],
+  ['.seg', 'R14'], ['.kv.derived', 'R8'], ['.derived', 'R8'], ['.file-drop', 'R21'], ['.datefield', 'R22'], ['.dfunnel', 'R35'], ['.section', 'R11'],
 ];
 function ruleOf(target) {
   if (!target || !target.closest) return null;
@@ -14158,6 +14258,21 @@ function buildPopupEl(o, overlay, opts = {}) {
         <label class="svc-field" style="margin-top:8px"><span>Sale date</span>${dateField('saleDate', o.saleDate)}</label>
         <textarea class="insp-desc js-sell-note" placeholder="Buyer / notes (optional)…"></textarea>` });
     overlay.appendChild(pop);
+  } else if (o.kind === 'funnelLayer') {
+    // Idea D — edit one dated funnel layer: correct its date (unless a rental auto-date) + note.
+    const c = IDX.customer.get(o.custId);
+    if (!c) { return false; }
+    const st = getStatus('funnelStage', o.stage);
+    const derived = funnelDateDerived(o.fkey, o.stage);
+    if (o.funnelEditDate === undefined) o.funnelEditDate = funnelLayerDate(c, o.fkey, o.stage) || TODAY_ISO;
+    const dateRow = derived
+      ? `<label class="svc-field"><span>Date</span><div class="fl-autodate">${o.funnelEditDate ? esc(fmtShortDate(o.funnelEditDate)) : '—'} · set automatically from the rental</div></label>`
+      : `<label class="svc-field"><span>Date reached</span>${dateField('funnelEditDate', o.funnelEditDate)}</label>`;
+    const pop = el('div', 'popup'); pop.style.width = '340px';
+    pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: `${FUNNELS[o.fkey].label} · ${st.label}`, tag: 'Funnel · layer',
+      foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-commit js-fl-save" data-r="R17" data-rec="${esc(o.custId)}">Save</button>`,
+      body: `${dateRow}<label class="svc-field" style="margin-top:8px"><span>Note</span><textarea class="insp-desc js-fl-note" placeholder="add a note (truncates on the layer)…">${esc(o.funnelNote || '')}</textarea></label>` });
+    overlay.appendChild(pop);
   } else if (o.kind === 'splitUnit') {
     // §20 split — give one unit its own window on a NEW sibling rental, same invoice.
     const r = IDX.rental.get(o.rentalId), u = IDX.unit.get(o.unitId);
@@ -14333,6 +14448,7 @@ const WINDOW_CATALOG = [
   { kind: 'service',       label: 'Complete service',        tag: 'Service · complete',        sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, taskId: 'svc-wash' }) },
   { kind: 'schedule',      label: 'Schedule follow-up',      tag: 'Customer · follow-up',      sample: () => ({ customerId: ((DATA.customers || [])[0] || {}).customerId }) },
   { kind: 'sellUnit',      label: 'Sell a unit',             tag: 'Unit · sale',               sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, saleDate: TODAY_ISO }) },
+  { kind: 'funnelLayer',   label: 'Funnel layer edit',       tag: 'Funnel · layer',            sample: () => ({ custId: ((DATA.customers || [])[0] || {}).customerId, fkey: 'member', stage: 'Contacted', funnelEditDate: TODAY_ISO, funnelNote: '' }) },
   { kind: 'splitUnit',     label: 'Different dates (split)',  tag: 'Rental · split window',     sample: () => ({ rentalId: ((DATA.rentals || [])[0] || {}).rentalId, unitId: ((DATA.units || [])[0] || {}).unitId }) },
   { kind: 'addCard',       label: 'Add card',                tag: 'Customer · card on file',   sample: () => ({ customerId: ((DATA.customers || [])[0] || {}).customerId }) },
   { kind: 'addAch',        label: 'Add bank account',        tag: 'Customer · ACH bank',       sample: () => ({ customerId: ((DATA.customers || [])[0] || {}).customerId }) },
@@ -18468,6 +18584,18 @@ function onClick(e) {
   if (closest('.js-funnelmenu')) { const b = closest('.js-funnelmenu'); e.stopPropagation(); return openFunnelMenu(b.dataset.rec, b); }
   if (closest('.js-funnel-join')) { const b = closest('.js-funnel-join'); return toggleFunnelMembership(b.dataset.rec, b.dataset.funnel); }
   if (closest('.js-funnel-setstage')) { const b = closest('.js-funnel-setstage'); return pickFunnelStage(b.dataset.rec, b.dataset.funnel, b.dataset.val); }
+  // Idea D dated funnel: the two-tab toggle, a layer press (advance-or-edit), the Member Lead checkbox.
+  if (closest('.js-funnel-tab')) { const b = closest('.js-funnel-tab'); e.stopPropagation(); state.funnelTab = state.funnelTab || {}; state.funnelTab[b.dataset.rec] = b.dataset.tab; return render(); }
+  if (closest('.js-funnel-layer')) {
+    const b = closest('.js-funnel-layer'); e.stopPropagation();
+    const rec = b.dataset.rec, fkey = b.dataset.fkey, stage = b.dataset.stage, c = IDX.customer.get(rec);
+    if (!c) return;
+    const stages = FUNNELS[fkey].stages, ci = stages.indexOf(funnelCurrentStage(c, fkey)), i = stages.indexOf(stage);
+    const manual = fkey !== 'rental' && !isAutoStage(fkey, stage);
+    if (manual && i > ci) return reachFunnelStage(rec, fkey, stage);   // upcoming manual layer → advance + stamp today
+    return openFunnelLayerEdit(rec, fkey, stage);                       // reached / auto layer → edit date + note
+  }
+  if (closest('.js-member-lead')) { const b = closest('.js-member-lead'); e.stopPropagation(); return toggleMemberLead(b.dataset.rec); }
   // Customers-list quick-add draft's funnel pick — writes state.custQuickAdd.funnel a FUNNEL KEY
   // (no customer record exists yet, so it can't ride js-funnel-setstage/pickFunnelStage above).
   if (closest('.js-custqa-funnel-pick')) { const b = closest('.js-custqa-funnel-pick'); state.custQuickAdd.funnel = b.dataset.val; document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); if (custQuickAddValid()) return custQuickAddCreate(); return render(); }   // the funnel PICK is the 4th selection (any value incl N/A) — with first/last/phone valid → create + open detail; else show the picked funnel
@@ -18499,6 +18627,7 @@ function onClick(e) {
   if (closest('.js-act-open')) { const b = closest('.js-act-open'); e.stopPropagation(); state.actMode = b.dataset.val; state.actOpen = b.dataset.rec; const rec = b.dataset.rec; render(); document.querySelector(`.js-act-in[data-rec="${rec}"]`)?.focus(); return; }
   if (closest('.js-schedule-save')) { const b = closest('.js-schedule-save'); e.stopPropagation(); const o = state.overlay; const root = b.closest('.popup'); const c = IDX.customer.get(b.dataset.rec); const date = o?.when, time = o?.whenTime || '09:00'; const note = (root.querySelector('.js-sch-note')?.value || '').trim(); if (!c || !date) { flashOr('.datefield', 'Pick a date first.'); return; } const scope = (o?.scope === 'usedSales') ? 'usedSales' : 'rental'; const text = `Scheduled: ${note || 'follow-up'} @ ${date} ${to12(time)}`; c.activityLog = c.activityLog || []; if (o?.editIdx != null && c.activityLog[o.editIdx]) { const ent = c.activityLog[o.editIdx]; ent.when = date; ent.text = text; ent.scope = scope; } else { c.activityLog.push({ when: date, text, scope }); } reindex('customers', c); toast(o?.editIdx != null ? 'Next action saved.' : 'Next action added.'); state.datepick = null; closeOverlay(); render(); }
   if (closest('.js-sell-save')) { const b = closest('.js-sell-save'); e.stopPropagation(); const o = state.overlay; const root = b.closest('.popup'); const price = root.querySelector('.js-sell-price')?.value; const date = o?.saleDate; const note = (root.querySelector('.js-sell-note')?.value || '').trim(); if (!date) { flashOr('.datefield', 'Pick a sale date first.'); return; } if (!price || Number(price) <= 0) { flashOr('.js-sell-price', 'Enter a sale price first.'); return; } return sellUnit(b.dataset.rec, price, date, note); }
+  if (closest('.js-fl-save')) { e.stopPropagation(); return saveFunnelLayer(); }   // Idea D — save a funnel layer's date + note
   // Wave 2 — empty slots on a Quote/invoice: the UNIT slot points you at the
   // Units list (drag IS the link path); the CUSTOMER slot opens quick-add-link.
   if (closest('.js-slot-unit')) {
@@ -25864,7 +25993,7 @@ function exposeTestApi() {
       dataCache, cacheValid, cacheDeviceOk, cacheTokenTag, cacheAppVer, cacheSnapshotEnvelope, CACHE_SCHEMA_VER, FEATURES,   // §instant-cache (spec 2026-07-16)
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, pickFunnelStage, toggleFunnelMembership, rentalFunnelStage, funnelStageOf, inFunnel, inRental, hasRentalActivity, funnelTrackA, funnelTrackEquip, ensureFunnels, funnelMenuHtml, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsUtilRollup, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, pickFunnelStage, toggleFunnelMembership, rentalFunnelStage, funnelStageOf, inFunnel, inRental, hasRentalActivity, funnelTrackA, funnelTrackEquip, ensureFunnels, funnelMenuHtml, reachFunnelStage, toggleMemberLead, funnelCurrentStage, funnelLayerDate, funnelLayerNote, ensureFunnelLog, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsUtilRollup, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
       tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, openYardCamera, commitYardCapture, nextCategoryId, nextUnitId,
       tripsLS, tripMerge, tripSplit, assignTripDriver, tripLabel, assignStopDriver, tripSetTime,
       tripPushSoon, tripPushNow, loadTripsFromBackend, tripsSyncFooter, setBackendPassword: (pw) => { backendPassword = pw || ''; },   // §2.3 Phase 4 sync — the setter is test-only (mirrors setRole), letting logic-test.mjs exercise the online path via a mocked window.fetch, never a real backend
