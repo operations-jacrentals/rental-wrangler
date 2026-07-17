@@ -23,10 +23,15 @@ clean. Replaces `tidy-sessions`, which only did job 4.
 > Other**. Jac should never have to scan the inline report to find where to answer: state
 > the state concisely, then put the ask in the popup. **Favor multiSelect** where the
 > options aren't mutually exclusive (which loose items to park, which sessions to archive).
+> And `/end` **always ENDS on a popup** — the archive-candidates list (job 4) or, when
+> archive is blocked, the job-3 unblock choice — **never** on a prose report with the ask
+> buried in it. If a run has no popup at the end, it isn't finished.
 
 ## 1. Report shipped-state plainly
-Don't let the session end on a fuzzy "did this actually ship?". Check and
-state all three, even when a bucket is empty:
+Don't let the session end on a fuzzy "did this actually ship?". Keep this to a
+few **scannable lines — one per bucket**, not a wall; it's context for the popup
+that follows, never prose to hunt through for the ask. Check and state all three,
+even when a bucket is empty:
 - **PROMOTED (live):** `git log origin/production..origin/trunk --oneline` —
   empty means `trunk` IS what's live; anything listed is on the trunk but
   **not yet promoted**.
@@ -90,10 +95,15 @@ explicit yes.
 ## 3. Guard against premature archive
 If job 1 found anything PENDING/uncommitted, or job 2 found a loose thread
 that's still undecided (or Jac chose to keep working it now) — **do NOT
-archive**. State plainly what's outstanding and what would clear it (e.g.
-"commit `foo.js`," "confirm parking the CSV-export idea"), then stop. Same
-conservative posture `tidy-sessions` already applied to archiving itself,
-just moved one step earlier to cover the whole close-out.
+archive**. Don't dump the blockers as prose for Jac to parse: surface them in an
+`AskUserQuestion` popup — a one-line state summary above, then the actions that
+would clear each block as the options (e.g. **merge #669 now**, **promote it**,
+**park the CSV-export idea**, **leave it — I'll handle it**), **multiSelect** when
+several blocks are independent so Jac clears them in one shot. Jac picks the
+unblock action right there instead of hunting the report for what to do. One
+popup attempt; if it fails, the same choices inline as lettered **A/B/C… +
+Other**. Same conservative posture `tidy-sessions` applied to archiving, moved one
+step earlier to cover the whole close-out.
 
 ## 4. Archive the chat reliably — last step, only once 1–3 are clean
 The old `tidy-sessions` job, unchanged in spirit:
