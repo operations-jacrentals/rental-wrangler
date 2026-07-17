@@ -13,9 +13,11 @@ import {
 } from '../tools/staging-lease.mjs';
 import {
   serialize, defaultControl, commitControl, assertOnlyControlFileStaged, COMMIT_IDENTITY,
-  bootstrapControl, refetchControl,
+  bootstrapControl, refetchControl, SLOT_URLS, DEFAULT_N, slotUrl,
 } from '../tools/lib/staging-control.mjs';
-import { classifyPushFailure } from '../tools/lib/staging-git.mjs';
+import {
+  classifyPushFailure, SLOT_TARGETS, slotTarget, pagesUrlForRepo, STAGING_REPO,
+} from '../tools/lib/staging-git.mjs';
 import { readFileSync } from 'node:fs';
 
 const T0 = 1752800000000;
@@ -398,7 +400,9 @@ async function run() {
       const r = origPush(cred, dir);
       // After our seed bootstrap push has won (branch now exists), arm ONE concurrent winner
       // so the NEXT push (our acquire write) loses the CAS and forces a refetch-driven retry.
-      if (r.ok && !armed) { armed = true; this._armConcurrent((cur) => { cur.slots[0].holder = held('S-other', T0); return cur; }); }
+      // Fill EVERY seeded slot (bootstrap seeds DEFAULT_N of them) so the re-decide has no free
+      // slot to claim → the assertion's "queued at #1" holds regardless of N.
+      if (r.ok && !armed) { armed = true; this._armConcurrent((cur) => { cur.slots.forEach((s, i) => { s.holder = held(`S-other-${i}`, T0); }); return cur; }); }
       return r;
     };
     const r = await acquire(aopts('S-win'), { cred: CRED, git: fake, deps: fixedDeps });
@@ -422,6 +426,63 @@ async function run() {
     ok(cf.raced === false, '4.20 fatal blob with no "!" line → raced:false');
     // The classifier returns ONLY {raced} — the token-bearing stdout is never carried out.
     ok(!JSON.stringify(cr).includes(TOKEN) && !JSON.stringify(cf).includes(TOKEN), '4.20 classifier return carries NO token substring');
+  });
+
+  // 4.21 N=3 slot config — the data-flip: three lanes, each mapped to its OWN site repo, with
+  // SLOT_URLS derived from SLOT_TARGETS (single source of truth, no drift). Guards that slot 1
+  // still resolves to the ORIGINAL single staging URL (Jac's bookmark must never move) and that
+  // an unconfigured slot throws rather than silently falling back to slot 1.
+  await group('4.21', () => {
+    ok(DEFAULT_N === 3, '4.21 DEFAULT_N === 3 (three lanes on)');
+
+    const three = defaultControl(3);
+    ok(three.slots.length === 3, '4.21 defaultControl(3) seeds three slots');
+    ok(three.slots.map((s) => s.id).join(',') === '1,2,3', '4.21 slot ids are 1,2,3');
+    ok(three.slots.every((s) => s.holder === null), '4.21 all three slots seed free (holder null)');
+
+    // Slot 1 must stay byte-identical to the original single staging URL (bookmark stability).
+    ok(SLOT_URLS[1] === 'https://operations-jacrentals.github.io/rental-wrangler-staging/',
+      '4.21 slot 1 URL unchanged (…/rental-wrangler-staging/)');
+    ok(three.slots[0].url === SLOT_URLS[1], '4.21 seeded slot 1 url === SLOT_URLS[1]');
+
+    // SLOT_URLS is DERIVED from SLOT_TARGETS — assert they never drift.
+    const urlIds = Object.keys(SLOT_URLS).map(Number).sort((a, b) => a - b);
+    const tgtIds = Object.keys(SLOT_TARGETS).map(Number).sort((a, b) => a - b);
+    ok(urlIds.join(',') === tgtIds.join(',') && urlIds.join(',') === '1,2,3', '4.21 SLOT_URLS ids === SLOT_TARGETS ids === 1,2,3');
+    ok(urlIds.every((id) => SLOT_URLS[id] === pagesUrlForRepo(SLOT_TARGETS[id].repo)),
+      '4.21 every SLOT_URLS[id] === pagesUrlForRepo(SLOT_TARGETS[id].repo) (no URL↔repo drift)');
+
+    // Each slot maps to a DISTINCT repo (the whole point — no two lanes share a repo → no clobber).
+    const repos = tgtIds.map((id) => SLOT_TARGETS[id].repo);
+    ok(new Set(repos).size === 3, '4.21 the three slots map to three distinct repos');
+    ok(slotTarget(1).repo === STAGING_REPO && slotTarget(1).branch === 'main', '4.21 slot 1 → STAGING_REPO#main (control-branch home)');
+    ok(slotTarget(2).repo === 'operations-jacrentals/rental-wrangler-staging-2', '4.21 slot 2 → …-staging-2');
+    ok(slotTarget(3).repo === 'operations-jacrentals/rental-wrangler-staging-3', '4.21 slot 3 → …-staging-3');
+    ok(pagesUrlForRepo('operations-jacrentals/rental-wrangler-staging-2') === 'https://operations-jacrentals.github.io/rental-wrangler-staging-2/',
+      '4.21 pagesUrlForRepo builds the project-Pages URL with a trailing slash');
+
+    // Unconfigured slots throw — never a silent slot-1 fallback that would send a deploy to the
+    // wrong repo or check the wrong URL.
+    let threwT = null; try { slotTarget(4); } catch (e) { threwT = e; }
+    ok(!!threwT, '4.21 slotTarget(4) throws (no silent fallback for an unconfigured slot)');
+    let threwU = null; try { slotUrl(4); } catch (e) { threwU = e; }
+    ok(!!threwU, '4.21 slotUrl(4) throws (BAD_SLOT for an unconfigured slot)');
+  });
+
+  // 4.22 SOURCE-LINT — deploy/promote consumers actually route by the acquired/served slot.
+  // These are drift guards (the idiom of 4.18): the routing is network-side so it can't be
+  // exercised here, but a revert to the hardcoded-repo / hardcoded-URL behaviour must fail CI.
+  await group('4.22', () => {
+    const deploySrc = readFileSync(new URL('../tools/deploy-staging.mjs', import.meta.url), 'utf8');
+    ok(/slotTarget\(slot\.id\)/.test(deploySrc), '4.22 deploy resolves the acquired slot → slotTarget(slot.id)');
+    ok(/stagingRemoteUrl\(cred,\s*target\.repo\)/.test(deploySrc), '4.22 deploy clones the acquired slot\'s repo (stagingRemoteUrl(cred, target.repo))');
+    ok(/HEAD:refs\/heads\/\$\{target\.branch\}/.test(deploySrc), '4.22 deploy pushes to the acquired slot\'s branch');
+    ok(!/stagingRemoteUrl\(cred\)\s*,\s*dir/.test(deploySrc), '4.22 deploy no longer clones the hardcoded default repo');
+
+    const promoteSrc = readFileSync(new URL('../tools/promote.mjs', import.meta.url), 'utf8');
+    ok(/resolveStagingSlotUrl\(expectedToken,\s*SLOT_ARG\)/.test(promoteSrc), '4.22 promote resolves the slot by trunk token / --slot');
+    ok(/from '\.\/lib\/staging-control\.mjs'/.test(promoteSrc), '4.22 promote imports SLOT_URLS from the slot map');
+    ok(!/const STAGING_URL\s*=/.test(promoteSrc), '4.22 promote no longer hardcodes a single STAGING_URL');
   });
 }
 

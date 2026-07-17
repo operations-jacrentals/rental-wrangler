@@ -39,6 +39,10 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+// The N=3 slot pool's slot→URL map (single source of truth, derived from SLOT_TARGETS).
+// Imported for value only — staging-control.mjs has no import-time side effects. promote stays
+// credential-free: it only ever curls these PUBLIC Pages URLs, never touches the control branch.
+import { SLOT_URLS } from './lib/staging-control.mjs';
 
 // TODO(jac): confirm — the release-pointer branch Pages serves as PRODUCTION (plan Phase 0.2/0.3).
 const PRODUCTION_BRANCH = 'production';
@@ -46,34 +50,49 @@ const PRODUCTION_BRANCH = 'production';
 const TRUNK = 'trunk';
 // TODO(jac): confirm — the live site's public URL (what Pages serves for PRODUCTION_BRANCH).
 const LIVE_URL = 'https://app.jacrentals.com';
-// The STAGING review site's public URL. Its live ?v= token MUST equal the trunk commit being
-// promoted — otherwise staging is showing something OTHER than what's about to go live, which
-// defeats the review gate. Enforced below so staging can never fall behind production.
-const STAGING_URL = 'https://operations-jacrentals.github.io/rental-wrangler-staging';
-
 // The advisory lease marker deploy-staging writes at the repo root (diagnostic-only,
-// gitignored). promote NEVER requires it — it's usually already deleted by /merge — but when
-// present it names the slot the feature was deployed to and may carry the last verified ?v=
-// token, which enriches the freshness print and lets us flag marker/trunk drift.
+// gitignored). promote NEVER requires it — it's usually already deleted by /merge — and NEVER
+// resolves the slot URL from it (§8.2). It's read only for the optional marker/trunk drift note
+// when it happens to carry a last-verified ?v= token.
 const MARKER_FILE = '.staging-lease.json';
 
 // Normalize a base URL so `${base}/index.html` can never produce the `…staging//index.html`
-// double-slash bug (STAGING_URL / a slot url may or may not carry a trailing slash).
+// double-slash bug (a slot url may or may not carry a trailing slash).
 function stripSlash(u) { return String(u || '').replace(/\/+$/, ''); }
 
-// Resolve which staging slot's URL the freshness gate should check. At N=1 this is ALWAYS the
-// single STAGING_URL; the advisory marker (if present) only names the slot id and surfaces its
-// last verified token. Credential-free — reads a local file, never the control branch. N=3 is
-// the one deferred seam (resolve by expectedToken / --slot; see plan §8.2).
-function resolveStagingSlotUrl() {
-  let marker = null;
+// Read the advisory marker's last-verified token, if present — for the drift note ONLY.
+function readMarkerToken() {
   try {
     const p = join(ROOT, MARKER_FILE);
-    if (existsSync(p)) marker = JSON.parse(readFileSync(p, 'utf8'));
-  } catch { marker = null; }
-  const slotId = marker && Number.isInteger(marker.slotId) ? marker.slotId : 1;
-  const markerToken = marker && marker.token != null ? String(marker.token) : null;
-  return { url: STAGING_URL, slotId, markerToken };
+    if (!existsSync(p)) return null;
+    const m = JSON.parse(readFileSync(p, 'utf8'));
+    return m && m.token != null ? String(m.token) : null;
+  } catch { return null; }
+}
+
+// Resolve which staging slot's URL the freshness gate should check.
+//   --slot N  → that slot's URL (a deliberate human pin).
+//   otherwise → SCAN every slot's live Pages URL and pick the one already serving the trunk
+//               token we're about to promote (that's the slot the feature was deployed+reviewed
+//               on). Resolving by the served token — NOT the /merge-deleted marker — is what
+//               makes the freshness gate correct at N>1 (§8.2 step 3). If no slot serves it, we
+//               return slot 1 so the existing gate reports "behind" (with per-slot detail).
+// Credential-free: only curls PUBLIC Pages URLs. At N=1 this collapses to the single slot, so
+// the verdict is byte-identical to before.
+function resolveStagingSlotUrl(expectedToken, slotArg) {
+  const ids = Object.keys(SLOT_URLS).map(Number).sort((a, b) => a - b);
+  if (Number.isInteger(slotArg)) {
+    const url = SLOT_URLS[slotArg];
+    if (!url) fail(`--slot ${slotArg} is not a configured staging slot (have ${ids.join(', ')}).`);
+    return { slotId: slotArg, url, resolvedBy: 'flag', probes: null };
+  }
+  if (expectedToken && ids.length > 1) {
+    const probes = ids.map((id) => ({ id, url: SLOT_URLS[id], token: fetchLiveToken(stripSlash(SLOT_URLS[id])).token }));
+    const hit = probes.find((p) => p.token === expectedToken);
+    if (hit) return { slotId: hit.id, url: hit.url, resolvedBy: 'token', probes };
+    return { slotId: ids[0], url: SLOT_URLS[ids[0]], resolvedBy: 'none-fresh', probes };
+  }
+  return { slotId: ids[0], url: SLOT_URLS[ids[0]], resolvedBy: 'default', probes: null };
 }
 
 const REMOTE = 'origin';
@@ -82,6 +101,16 @@ const CONFIRMED = ARGV.includes('--yes');
 // Deliberate, loud override for when staging genuinely can't be verified (its Pages host is
 // down, etc.). Requires a conscious flag — the freshness gate never silently no-ops.
 const SKIP_STAGING_CHECK = ARGV.includes('--skip-staging-check');
+// Optional human pin: `--slot N` checks that exact slot's URL instead of auto-resolving the
+// slot serving the trunk token. Unset → NaN → auto-resolve. An explicit `--slot` with a
+// missing/non-numeric value FAILS LOUDLY (never a silent downgrade to auto-scan — a pin the
+// user typed must be honored or rejected, matching slotTarget's throw-don't-fallback posture).
+const _slotIdx = ARGV.indexOf('--slot');
+let SLOT_ARG = NaN;
+if (_slotIdx >= 0) {
+  SLOT_ARG = parseInt(ARGV[_slotIdx + 1], 10);
+  if (!Number.isInteger(SLOT_ARG)) fail(`--slot needs an integer slot id (got '${ARGV[_slotIdx + 1] ?? ''}').`);
+}
 
 function git(args, opts = {}) {
   return execFileSync('git', args, { encoding: 'utf8', ...opts }).trim();
@@ -158,7 +187,7 @@ function fetchLiveToken(url) {
     return { error: e.message };
   }
 }
-const slot = resolveStagingSlotUrl();
+const slot = resolveStagingSlotUrl(expectedToken, SLOT_ARG);
 const slotName = `staging slot ${slot.slotId}`;
 const staging = fetchLiveToken(stripSlash(slot.url));
 const stagingFresh = !staging.error && !!expectedToken && staging.token === expectedToken;
@@ -168,14 +197,23 @@ if (!expectedToken) {
 } else if (staging.error) {
   console.log(`promote: staging freshness — ⚠️ could not reach ${slotName} at ${slot.url} (${staging.error}).`);
 } else if (stagingFresh) {
-  console.log(`promote: staging freshness — ✅ ${slotName} serves ?v=${expectedToken}, matching the trunk commit.`);
+  const how = slot.resolvedBy === 'flag' ? ' (pinned via --slot)' : slot.resolvedBy === 'token' ? ' (auto-resolved by served token)' : '';
+  console.log(`promote: staging freshness — ✅ ${slotName} serves ?v=${expectedToken}, matching the trunk commit${how}.`);
 } else {
-  console.log(`promote: staging freshness — 🔴 ${slotName.toUpperCase()} IS BEHIND. Trunk = ?v=${expectedToken}, ${slotName} = ?v=${staging.token || '(none)'}.`);
-  console.log(`promote:   ${slotName} is NOT showing what you're about to promote — deploy this commit to staging and review it first.`);
+  console.log(`promote: staging freshness — 🔴 NO STAGING SLOT SERVES THE TRUNK TOKEN. Trunk = ?v=${expectedToken}.`);
+  // When we scanned every slot, show what each one is actually serving so it's obvious the
+  // feature was never deployed (or landed on a slot that has since been redeployed).
+  if (slot.probes) {
+    slot.probes.forEach((p) => console.log(`promote:   slot ${p.id} (${stripSlash(p.url)}) = ?v=${p.token || '(unreachable)'}`));
+  } else {
+    console.log(`promote:   ${slotName} = ?v=${staging.token || '(none)'}.`);
+  }
+  console.log('promote:   no slot is showing what you\'re about to promote — deploy this commit to staging and review it first.');
 }
 // Marker/trunk drift note — only when the advisory marker actually carries a token.
-if (slot.markerToken && expectedToken && slot.markerToken !== expectedToken) {
-  console.log(`promote:   note — the last-deploy marker recorded ?v=${slot.markerToken} for ${slotName}, which differs from the trunk token ?v=${expectedToken}.`);
+const markerToken = readMarkerToken();
+if (markerToken && expectedToken && markerToken !== expectedToken) {
+  console.log(`promote:   note — the last-deploy marker recorded ?v=${markerToken}, which differs from the trunk token ?v=${expectedToken}.`);
 }
 
 // --- Step 3: hard STOP-gate — mirrors the /clasp prod-deploy posture ---------

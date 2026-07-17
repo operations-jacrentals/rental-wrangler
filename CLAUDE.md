@@ -57,10 +57,14 @@ say-so:
   `main`); review the running app at the staging URL. It bumps the shared `?v=` and
   curl-verifies the live bytes. A failed/unverified deploy is a **HARD STOP** — staging
   must never fall behind. (`STAGING_DEPLOY_PAT` authenticates the push — never echo it.)
-  - **Staging traffic control** (`tools/staging-lease.mjs`, N=1): staging is one shared slot
-    guarded by a git-native lease — `control.json` on the non-served `staging-control` branch of
-    the staging repo. `/deploy` acquires the slot before pushing; a second session auto-queues and
-    deploys when the slot frees. **The 30-min holder TTL is the review budget** — a holder does no
+  - **Staging traffic control** (`tools/staging-lease.mjs`, N=3 — three parallel lanes): staging is
+    a pool of three slots guarded by a git-native lease — `control.json` on the non-served
+    `staging-control` branch of the staging repo. Each slot is its OWN Pages site/URL (slot 1 =
+    `rental-wrangler-staging`, slots 2/3 = `…-staging-2`/`-3`); a deploy pushes to the ACQUIRED
+    slot's repo and reviews THAT slot's URL (the one `/deploy` prints), never a fixed one. `/deploy`
+    acquires a slot before pushing; a fourth concurrent session auto-queues and deploys when a slot
+    frees. (Re-seed the pool with `staging-lease reset --slots N` — a force-push, staging-idle only.)
+    **The 30-min holder TTL is the review budget** — a holder does no
     work during Jac's review, so a review that outruns 30 min must re-run `/deploy` (idempotent —
     it renews the same slot in place) to refresh the lease. **`/deploy` exit 3 = staging BUSY, not
     broken** — contention, not a bad PAT: report the holder + ETA and re-run `/deploy`, never

@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // staging-lease.mjs — a git-native lease + waitlist over the shared staging environment.
 //
-// A counting semaphore of N slots (N=1 today) lives in control.json on the `staging-control`
-// branch of the staging repo. Two Claude sessions that both `/deploy` no longer clobber each
-// other: one acquires the slot, the other auto-queues and deploys when the slot frees. The
+// A counting semaphore of N slots (N=3 — three parallel staging lanes) lives in control.json
+// on the `staging-control` branch of the staging repo. Two Claude sessions that both `/deploy`
+// no longer clobber each other: each acquires its own slot (or auto-queues when all are held,
+// and deploys when one frees) — every slot is an independent Pages site with its own URL. The
 // only atomic primitive is git's non-fast-forward push rejection — see tools/lib/staging-control.mjs.
 //
 // This file is the CLI (`acquire|renew|release|status|reset|init`) + the pure decision core
