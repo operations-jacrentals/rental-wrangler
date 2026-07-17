@@ -129,6 +129,22 @@
 - Icons always come from a library (Lucide), never hand-drawn — see `.claude/rules/icons.md`.
 
 ## Gotchas
+- **GAS service-account push 403s "Apps Script API not enabled" even after the USER toggles it On**
+  (2026-07-17). `docs/handoffs/gas-deploy-service-account.mjs push` (impersonating
+  operations@jacrentals.com) returns PERMISSION_DENIED "User has not enabled the Apps Script API"
+  despite the user setting at script.google.com/home/usersettings being On — the API must be enabled on
+  the **service account's own Cloud project**, not just the impersonated user. clasp is separately
+  RAPT-blocked. Working fallback: hand Jac the exact snippet → they paste into the Apps Script editor +
+  Deploy. Health-probe the result with a plain GET to the `/exec` URL — a clean
+  `{"ok":false,"error":"unauthorized"}` JSON means the script COMPILED (a syntax error breaks every
+  endpoint with an HTML error page, not clean JSON).
+- **The port-swap `git checkout -- ci/` reverts REAL edits, not just the sed** (2026-07-17). The
+  CLAUDE.md port dance (`sed -i 's/8000/9147/g' ci/*.mjs`, run, `git checkout -- ci/`) discards ALL
+  uncommitted changes to those files — including genuine test additions to `ci/logic-test.mjs`. Commit
+  the test edits FIRST (then `git checkout` restores to the committed version), OR back the file up and
+  `cp` it back instead of `git checkout`. Also, local (CI-less) smoke/logic runs need a browser: point
+  Playwright at the installed Chromium — `chromium.launch({ executablePath:
+  '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' })`.
 - **Shared-var CSS default must precede the override rules** (#695, 2026-07-17). When sibling
   bare-class rules override a custom property (`.env-slot-N { --slot-c: … }`), the DEFAULT
   (`.env-badge, .env-edge { --slot-c: var(--slot-1) }`) must be declared BEFORE them — at equal
@@ -274,6 +290,32 @@
   **staging drive** (real Chrome), not headless screenshots.
 
 ## Open threads
+- **QR scan-to-log — SHIPPED LIVE + PROMOTED (2026-07-17, PRs #660/#694/#697, `?v=20260717u`, flag `qrScanLog` ON).**
+  A `#u=<unitId>` decal scan opens a focused capture screen, records ONE video, and files it to the
+  unit's correct rental log — the SERVER derives Start (Today/Tomorrow) vs End (On/End Rent) vs Block,
+  so staff never pick On/End Rent. Auth is a write-only `scanDeviceToken` (localStorage, minted at
+  login — NOT `pidToken`); lite mode never loads PII. The video files server-side into an **append-only
+  `ScanLog` sheet** (NOT the rental record → a client sync can't clobber it). On load the client
+  **ADOPTS** each scan into its rental as a first-class capture (`adoptScanCaptures`): stamps the unit's
+  start/end capture (marked `scan:true`) + **advances status** like a manual Log Delivery/Recovery
+  (Reserved→On Rent, out→Returned), client-side via the normal diff-sync so it never clobbers; sets
+  status DIRECTLY (bypasses the §9 booking gates — the unit physically moved) and **flags a missing
+  invoice, does NOT block** (Jac: don't stop a truck that already left); idempotent (a slot with any
+  video — manual, even mid-upload, or already adopted — is left alone). Backend `scanDeriveUnitStatus_`
+  also derives start-vs-end from scan HISTORY (`scanLoggedActions_`) as a fallback for a pure-field
+  backlog (two scans before any office reload). Also live: **Fleet QR Codes** export (Company Files →
+  print-ready decal sheet for every active/onboard/purchased/for-sale unit; excludes inactive/sold;
+  vendored offline `qrcode-generator`). Verified: 3 fresh-context reviews + a 4-lens adversarial
+  workflow (5 real bugs found+fixed across the rounds — incl. a UTC/local date-stamp bug, a start/end
+  batch-ordering strand, a manual mid-upload clobber, a "status stuck at Reserved" regression), 18
+  adoption cases in `ci/logic-test.mjs` (686/686). Contract: `docs/backend-snippets/captureByScan.md`.
+  **Follow-ups:** (1) **tap-to-play viewer** — tapping a capture node currently RE-records; no in-app
+  player exists (applies to scan + manual captures); Jac shipped now + deferred this. (2) **periodic
+  scan-capture re-pull** — adoption runs once per app load, so a scan arriving after the office's last
+  reload isn't status-advanced until the next reload; re-pulling on the refresh poll would keep status
+  fresh through the day (the backend history-derivation already covers CORRECTNESS — this is a
+  freshness nicety). (3) **real-world proof** — one phone test scan once a decal is printed (camera
+  can't be driven headlessly).
 - **Tier-gate approval codes — SHIPPED LIVE + PROMOTED (2026-07-17, PR #651, `?v=20260717m`).**
   The password tier gates (Net Terms D22, rental override D14, blacklist D13, card-gate override,
   admin inline pricing) now swap to Manager/Admin phone approval codes: below-tier user picks an
