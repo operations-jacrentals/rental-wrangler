@@ -96,7 +96,7 @@ const RAW_STATUS = {
     'Fail': { label: 'Fail', color: 'red'   },
   },
   invoiceStatus: {
-    'Not Due':     { label: 'Not Due',     color: 'blue'   },  // balance exists, due date not yet passed
+    'Not Due':     { label: 'Not Due',     color: 'yellow' },  // balance exists, due date not yet passed (RYG: not-yet-due = caution → red when due)
     'Unpaid':      { label: 'Unpaid',      color: 'red'    },
     'Partial':     { label: 'Partial',     color: 'orange' },
     'Late':        { label: 'Late',        color: 'red'    },
