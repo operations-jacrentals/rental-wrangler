@@ -16,10 +16,11 @@
   machinery.* Ships de-drift + hard gates, slim CLAUDE.md via path-scoped
   `.claude/rules/`, this committed memory, fresh-context review in `/merge`, and a
   hybrid interaction model. Spec: `docs/superpowers/specs/2026-07-15-session-workflow-v2-design.md`.
-- **2026-07-15 — Interaction is HYBRID** (supersedes "always ask via popups, never
-  inline", 2026-06-15). Formatted **inline** for exploration/nuance; a crisp
-  structured block for clean either/or; an **artifact** for comparative/visual.
-  Lead with the outcome; no massive bullet blobs.
+- **2026-07-16 — Interaction is POPUP-FIRST, single-attempt** (supersedes the
+  2026-07-15 HYBRID rule — Jac: *"the popup question format is WAY better."*). ALL
+  decisions/questions go through the `AskUserQuestion` popup. Try it **once**; never
+  retry a failed popup. If that one popup fails, fall back to **inline** — the same
+  question + same options as lettered **A/B/C… + Other** in a structured block.
 - **2026-07-15 — Delegation by cost-of-being-wrong** *and* whether the main thread
   needs the reasoning (supersedes "delegate heavily, always"). Haiku = mechanical/IO,
   Sonnet = scoped build, Opus = hard reasoning / stays on main, Fable = rare frontier
@@ -42,6 +43,13 @@
   code on entry (also catches the OS one-time-code autofill); and the code button reads
   **"Confirm"** (was "Verify"). Busy label unified to "Wrangling the herd…" across both
   login screens.
+
+- **2026-07-17 — Coverage folded into Investment; manual "Check for updates" button.**
+  Unit-detail Coverage is now a sub-block at the top of the **Investment** section (riding
+  #657's `unitSecOpen` RYG collapsible stack) — coverage status drives that section's chip +
+  border color (green insured / yellow uninsured); there is **no** separate Coverage section
+  (#659, Jac's call). Added a **"Check for updates"** row to the tools menu (#661) that clears
+  the SW + HTTP caches and hard-reloads past a stale cache — the escape hatch for pinned builds.
 
 ## Design prefs
 - Yard **"data-plate"** design language: dark industrial steel, **ONE** safety-orange
@@ -81,6 +89,19 @@
 - **The git proxy rejects delete-refspec pushes** (2026-07-17) — `git push origin --delete
   <branch>` / `:<branch>` throws "send-pack: unexpected disconnect" from a cloud session.
   Merged feature branches can't be deleted here; leave them for GitHub-side cleanup.
+- **GPS auth was wired to the OLD login only** (2026-07-17) — the "NO GPS / refresh broken"
+  bug: `gpsLogin()` (mint the GPS token) lived ONLY in the password-login handler, so the
+  phone-identity login (the staging/prod default) never minted a token → the whole GPS section
+  read "NO GPS" and the connect picker / Refresh started unauthenticated. Fix: GPS login now runs
+  in `finishLoad()` (every login mode), and `gpsFetch` re-authenticates once on a 401. **The GPS
+  backend was healthy the entire time** (token mints, Deere authenticates, CORS allows staging) —
+  verify the client-side token before ever blaming the backend.
+- **Mobile Safari pins index.html HARD** (2026-07-17) — a shipped fix can sit invisible on a
+  cached device (this ate an hour of "it's not working" that was really a stale build). A
+  `?fresh`-style query on the URL, a Private tab, or the tools-menu "Check for updates" busts it.
+  Subtle trap: the prod service worker serves cached index.html via an `ignoreSearch` match, so
+  an update CHECK must clear caches BEFORE fetching index.html or it reads stale bytes and falsely
+  reports "up to date."
 - **The phone-identity login can't be driven headlessly** (2026-07-17) — the live login
   is **SMS-gated** (a real code to a roster phone) and `app.js` is an **ES module** (login
   internals aren't on `window`), so you can't drive it past the "enter phone" step even
