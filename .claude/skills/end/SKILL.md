@@ -16,6 +16,14 @@ clean. Replaces `tidy-sessions`, which only did job 4.
 > `mcp__ccd_session_mgmt__*` on a desktop session; if it's absent (a cloud run),
 > say so and point Jac to archive in the Claude app.
 
+> **Every choice in `/end` is a popup — lead with it, never bury it.** The reports in
+> jobs 1–3 are context; the *decisions* (keep-working vs park vs drop, which loose items
+> to park, what to archive, whether to proceed) each go through an `AskUserQuestion`
+> popup — one attempt, and if it fails the same choice inline as lettered **A/B/C… +
+> Other**. Jac should never have to scan the inline report to find where to answer: state
+> the state concisely, then put the ask in the popup. **Favor multiSelect** where the
+> options aren't mutually exclusive (which loose items to park, which sessions to archive).
+
 ## 1. Report shipped-state plainly
 Don't let the session end on a fuzzy "did this actually ship?". Check and
 state all three, even when a bucket is empty:
