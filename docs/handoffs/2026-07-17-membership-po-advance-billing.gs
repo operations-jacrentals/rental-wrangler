@@ -86,9 +86,14 @@ function membershipEnroll_(body, role) {
   var plan = memIsAnnual_(body.plan) ? 'Yearly' : 'Monthly';
   var addOns = body.addOns || {}, p = memPricing_(), start = String(body.startDate || todayIso_());
   var built = memFeeLines_(plan, addOns, p);
-  // CHANGED: reuse a waiting unpaid dues invoice on a retry (e.g. after a PO was added to a held enroll)
-  // instead of minting a duplicate. Fresh enroll → none found → create one (due = start, as live).
-  var inv = memFindDueInvoice_(c.customerId, '') || memWriteInvoice_(c, built.lines, { date: todayIso_(), due: start });
+  // CHANGED: reuse a waiting invoice ONLY on a held-po retry — the customer is already 'Member Incomplete'
+  // (held enroll) AND has a waiting invoice whose due matches this start. Otherwise mint a fresh one. This
+  // scoping is deliberate: create-ahead now leaves future/stacked invoices on active members, so an
+  // unscoped memFindDueInvoice_(id,'') could grab a stacked-future or stale invoice and charge the WRONG
+  // amount / a year early (Opus review 2026-07-17, blocker 2).
+  var waiting = (c.accountType === 'Member Incomplete') ? memFindDueInvoice_(c.customerId, '') : null;
+  var inv = (waiting && String(waiting.dueDate || waiting.date || '') === start) ? waiting
+    : memWriteInvoice_(c, built.lines, { date: todayIso_(), due: start });
   if (!inv) return { ok: false, error: 'busy' };
   // deferred (future-dated) start: land member fields now, skip the charge — the cron charges on start day (UNCHANGED)
   if (start > todayIso_()) {
