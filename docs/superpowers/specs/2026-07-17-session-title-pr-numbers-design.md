@@ -1,14 +1,17 @@
 # Session title = PR numbers — design
 
-**Date:** 2026-07-17 · **Status:** design approved (implementation is a follow-up) ·
+**Date:** 2026-07-17 · **Status:** IMPLEMENTED 2026-07-17 (`.claude/hooks/session-title.mjs`
++ `SessionStart` wiring + the `/start` §4 workflow rule) ·
 **Origin:** Jac — *"I need the numbers in the session title… when more are created the
 session title should be updated."* Brainstormed 2026-07-17; capability verified against
 the Claude Code docs via the `claude-code-guide` agent.
 
-> **This is a design-only artifact.** It was written on the `claude/popup-question-format`
-> branch (#669) because that was this session's designated branch; the implementation
-> (hook + workflow rule) is a separate deliverable and can be routed to its own feature
-> branch → spec → plan → build cycle.
+> **Verify on next session start/resume:** two platform behaviors can only be confirmed
+> live — (a) that this harness actually consumes `hookSpecificOutput.sessionTitle`, and
+> (b) whether `SessionStart` stdin exposes the current title (needed for respect-manual-
+> rename; the hook degrades gracefully to "set anyway" if it doesn't). The script itself
+> is unit-tested across the empty / one-PR / multi-PR / manual-rename cases and fails safe
+> (any error or missing file → emits nothing, leaves the title untouched).
 
 ## Goal
 
@@ -61,9 +64,11 @@ update.
 - **`<label>` = branch de-slugified:** strip the `claude/` prefix and the trailing
   `-<id>` suffix, replace hyphens with spaces
   (`claude/popup-question-format-1f0oz6` → `popup question format`).
-- **Respect manual renames:** the hook sets the title **only** if the current title still
-  looks auto-managed (the default `dir-XX` pattern, or a title matching this hook's own
-  `#… · …` shape) — it never clobbers a name set by hand.
+- **Respect manual renames (as built):** `SessionStart` stdin carries no live title, so the
+  hook keys off the **PR set**. It records the PR set it last titled for (`.session-title-set`)
+  and, on a later resume with the *same* set, emits nothing — leaving a hand-set `/rename`
+  intact. It only re-asserts the auto-title when the open-PR set actually changes (a PR opened
+  or merged) or on first run.
 
 ### ③ The post-PR workflow rule (`CLAUDE.md` + `/start`)
 
@@ -82,7 +87,8 @@ PR created ──▶ assistant appends # to .session-prs ──▶ prints "/rena
                                                           │
                                               Jac taps it ▼  (instant title update)
 session resumed later ──▶ SessionStart(resume) hook reads .session-prs ──▶ sets title
-                          (skipped if Jac hand-renamed the session)
+                          (only when the PR set changed vs .session-title-set → a hand
+                           rename survives while the PR set is stable)
 PR merges/closes ──▶ assistant removes # from .session-prs ──▶ prints updated "/rename" line
 ```
 
@@ -93,16 +99,22 @@ PR merges/closes ──▶ assistant removes # from .session-prs ──▶ print
 - **Out:** arbitrary PRs the assistant didn't open; multi-branch reconciliation; a
   committed record; a live GitHub query in the hook; keeping merged PRs in the title.
 
-## Open implementation questions (resolve in the plan, not blocking design)
+## Open implementation questions — RESOLVED during build
 
-1. **Exact scratch path + `.gitignore` entry** — confirm `.claude/.session-prs` doesn't
-   collide with tracked `.claude/` content and is cleanly ignored.
-2. **Does the `SessionStart` hook input expose the current title?** Needed for the
-   respect-manual-rename check. If it does not, fall back to a **"last-title-I-set" marker
-   file**: the hook records the title it emits; on the next fire, if the live title differs
-   from that marker and isn't the default pattern, treat it as a manual rename and skip.
-3. **De-slugify edge cases** — branches not matching `claude/<slug>-<id>` (e.g. a
-   `parked/…` or bare name): fall back to the raw branch name as the label.
+1. **Scratch path + `.gitignore`** — `.claude/.session-prs` and `.claude/.session-title-set`,
+   both added to `.gitignore`; no collision with tracked `.claude/` content.
+2. **~~Does `SessionStart` stdin expose the current title?~~** — **No** (documented fields:
+   `session_id`, `source`, `transcript_path`, `permission_mode`, `hook_event_name`, `cwd`).
+   Respect-manual-rename uses the **PR-set marker** in ② instead of reading a live title.
+3. **De-slugify edge cases** — the trailing-id strip keeps a real `word+version` last segment
+   (`oauth2`, `node20`, `sha256`, `web3`, `ipv6`) and only drops a random-looking id
+   (`1f0oz6`, `l8pjfd`); a bare/no-suffix branch is used verbatim. Rare miss: an id shaped
+   like `word+digits` (`nyom46`) is kept — harmless (extra token, never a truncation).
+
+## Verify live (only observable on a real session)
+
+- That this harness consumes `hookSpecificOutput.sessionTitle` at all (the script is
+  unit-tested and fail-safe regardless).
 
 ## Testing
 

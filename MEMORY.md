@@ -24,6 +24,15 @@
   **Batch related questions (up to 4/popup) and favor multiSelect** when answers
   aren't mutually exclusive (Jac: *"I love the multiselect most"*); `/brainstorming`
   now routes its clarifying questions through popups too.
+- **2026-07-17 — Session title auto-tracks this session's PRs.** A `SessionStart` hook
+  (`.claude/hooks/session-title.mjs`) sets the title to `#<nums> · <branch-label>` from a
+  gitignored `.claude/.session-prs` the assistant maintains (append on PR-open, remove on
+  merge/close); fails safe, respects a manual `/rename`. On opening a PR also surface a
+  one-tap `/rename #… · <label>` (the model can't self-rename) for an instant update. Spec:
+  `docs/superpowers/specs/2026-07-17-session-title-pr-numbers-design.md`. Manual `/rename`
+  is respected via a **PR-set marker** (`.session-title-set`) — the hook only re-asserts the
+  title when the open-PR set changes, since SessionStart stdin carries no live title. **Verify
+  live:** that this harness actually consumes `hookSpecificOutput.sessionTitle`.
 - **2026-07-15 — Delegation by cost-of-being-wrong** *and* whether the main thread
   needs the reasoning (supersedes "delegate heavily, always"). Haiku = mechanical/IO,
   Sonnet = scoped build, Opus = hard reasoning / stays on main, Fable = rare frontier
