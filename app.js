@@ -24277,6 +24277,26 @@ function flushUserPrefs(section) {
   else ['prefs', 'views', 'dispatch', 'comms', 'session'].forEach((s) => { _userPrefsDirty[s] = true; });
   clearTimeout(_userPrefsTimer); _userPrefsTimer = setTimeout(pushUserPrefs, 1200);
 }
+// Flush any pending debounced change on tab-background/close (visibilitychange/pagehide) so an edit
+// made in the last ~1.2s isn't dropped by the debounce. Uses navigator.sendBeacon — a plain fetch
+// started during unload is aborted before it's sent; a beacon is queued by the browser and survives
+// the close. Mirrors backendCall's payload (sessionToken carries the auth). Best-effort, no response.
+function flushUserPrefsNow() {
+  try { clearTimeout(_userPrefsTimer); } catch (e) {}
+  if (!syncOn() || !state.userPrefs) return;
+  const dirty = _userPrefsDirty; const doc = {}; let any = false;
+  Object.keys(dirty).forEach((s) => { if (dirty[s] && state.userPrefs[s] !== undefined) { doc[s] = state.userPrefs[s]; any = true; } });
+  if (!any) return;
+  doc.v = state.userPrefs.v || 1; _userPrefsDirty = {};
+  try {
+    let queued = false;
+    if (navigator.sendBeacon) {
+      const payload = JSON.stringify({ action: 'setUserPrefs', password: backendPassword, sessionToken: backendPassword, doc });
+      queued = navigator.sendBeacon(BACKEND_URL, new Blob([payload], { type: 'text/plain;charset=utf-8' }));   // false = payload over the ~64KB / pending-queue limit
+    }
+    if (!queued) { Object.keys(doc).forEach((s) => { if (s !== 'v') _userPrefsDirty[s] = true; }); pushUserPrefs(); }   // no beacon OR beacon rejected → best-effort fetch, re-mark dirty
+  } catch (e) { /* best-effort — the change also re-flushes on the next edit */ }
+}
 async function pushUserPrefs() {
   if (!syncOn() || !state.userPrefs) return;
   const dirty = _userPrefsDirty; _userPrefsDirty = {};
@@ -24287,10 +24307,6 @@ async function pushUserPrefs() {
   try { const r = await backendCall('setUserPrefs', { doc }); if (!r || !r.ok) Object.keys(doc).forEach((s) => { if (s !== 'v') _userPrefsDirty[s] = true; }); }
   catch (e) { Object.keys(doc).forEach((s) => { if (s !== 'v') _userPrefsDirty[s] = true; }); }   // offline → retry on the next change
 }
-// Immediate flush — cancel the 1.2s debounce and push any pending dirty sections RIGHT NOW, so
-// a change made inside the debounce window isn't lost when the session ends (logout / switch-
-// user / tab hidden or closed). Fire-and-forget; the payload's token is captured synchronously.
-function flushUserPrefsNow() { if (!syncOn() || !state.userPrefs) return; clearTimeout(_userPrefsTimer); pushUserPrefs(); }
 // Boot (finishLoad, once personId is known): server doc BEATS stale localStorage; an empty
 // server doc means first-ever sync → adopt this device's mirror as the person's baseline.
 async function loadUserPrefs(_try) {
@@ -24300,6 +24316,9 @@ async function loadUserPrefs(_try) {
     const r = await backendCall('getUserPrefs');
     if (r && r.ok && r.doc && typeof r.doc === 'object' && Object.keys(r.doc).length) hydrateUserPrefs(r.doc);
     else seedUserPrefsFromLocal();                                   // no row yet → seed baseline from this device
+    // Announce the cutover ONCE per device: existing device-local prefs/saved-views can reset when
+    // sync turns on (a shared-device wipe leaves no server copy to restore) — nudge re-saving a view.
+    try { if (state.userPrefs && !localStorage.getItem('jactec.syncWelcomed')) { localStorage.setItem('jactec.syncWelcomed', '1'); toast('Cross-device sync is on — your settings now follow you across your devices. If a saved view is missing, just re-save it.'); } } catch (e) {}
   } catch (e) {
     // A transient blip at login must NOT disable sync for the whole session (state.userPrefs
     // would stay null and every stamp would silently no-op). Retry with backoff while still
