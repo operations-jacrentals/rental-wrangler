@@ -2555,6 +2555,7 @@ function sweepEmptyDrafts(keepId) {
   }
 }
 function openStandard(card, recId, recType) {
+  resetCustQuickAdd();   // clicking any record = navigate away from the customers list → discard the +New Customer draft (Jac 2026-07-17)
   const cs = activeSession().cards[card];
   if (cs && cs.mode === 'standard' && cs.recId != null) {
     if (String(cs.recId) === String(recId)) { render(); return; }            // already showing it — no-op
@@ -9346,10 +9347,10 @@ function custQuickAddRowHtml() {
   const d = state.custQuickAdd;
   if (!d.open) return `<button class="bigbtn js-custqa-open">${I.plus} New Customer</button>`;
   // No Cancel/Wrangle buttons, no stamped field captions (Jac 2026-07-17): the placeholders
-  // label the text fields and the funnel pill labels itself. Filling all four — first, last, a
-  // ≥7-digit phone, and a REAL funnel pick — auto-creates the customer and opens its detail
-  // view (custQuickAddReady → custQuickAddCreate). A created customer resets to the collapsed
-  // +New Customer button.
+  // label the text fields and the funnel pill labels itself. First + Last + a ≥7-digit Phone,
+  // then a funnel PICK (any value incl N/A — the pick IS the 4th selection) auto-creates the
+  // customer and opens its detail view. A created customer — or navigating away — resets to the
+  // collapsed +New Customer button.
   return `<div class="qa-cust">`
     + `<div class="qa-cust-row">`
     + `<div class="qa-field qa-first"><input type="text" class="qa-in js-custqa-first" placeholder="First name" value="${esc(d.first)}"></div>`
@@ -9979,6 +9980,7 @@ function mainCardOfMember(m) {
 // §M1 — jump straight to a card (flattens the 3-column model on phones): set the column +
 // member, flip the visible column, and show that card's LIST.
 function goToCard(member) {
+  resetCustQuickAdd();   // switching cards = navigate away from the customers list → discard the +New Customer draft (Jac 2026-07-17)
   const s = activeSession(); const col = COLUMN_OF[member];
   if (s.cols && col) s.cols[col] = member;
   const idx = COLUMNS.findIndex((c) => c.id === col); if (idx >= 0) state.mobileCol = idx;
@@ -18115,7 +18117,7 @@ function onClick(e) {
   if (closest('.js-funnel')) { const b = closest('.js-funnel'); e.stopPropagation(); return openFunnelDropdown(b.dataset.rec, b.dataset.which, b); }
   // Customers-list quick-add draft's funnel pick — writes state.custQuickAdd.funnel (no
   // customer record exists yet, so this can't ride js-setfunnel/setFunnelStage above).
-  if (closest('.js-custqa-funnel-pick')) { const b = closest('.js-custqa-funnel-pick'); state.custQuickAdd.funnel = b.dataset.val; document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); if (custQuickAddReady()) return custQuickAddCreate(); return render(); }   // all four filled → create + open detail; else re-render to show the picked funnel
+  if (closest('.js-custqa-funnel-pick')) { const b = closest('.js-custqa-funnel-pick'); state.custQuickAdd.funnel = b.dataset.val; document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); if (custQuickAddValid()) return custQuickAddCreate(); return render(); }   // the funnel PICK is the 4th selection (any value incl N/A) — with first/last/phone valid → create + open detail; else show the picked funnel
   if (closest('.js-fleet-filter')) {
     const b = closest('.js-fleet-filter'); e.stopPropagation();
     // A1 — the fleet-bar segment routes through the search bar as a removable pill (one
@@ -19766,15 +19768,13 @@ function onInput(e) {
     return;
   }
   // Customers-list quick-add row — draft fields update state.custQuickAdd WITHOUT a render()
-  // (typing must keep focus). When all four are filled (a real funnel pick is required, so this
-  // is only reachable once the funnel is set — never mid-typing in the normal order) → create +
-  // open detail. (Jac 2026-07-17)
+  // (typing must keep focus). Typing NEVER creates; the funnel PICK is the completion trigger
+  // (js-custqa-funnel-pick), so a partial phone can't auto-fire mid-entry. (Jac 2026-07-17)
   if (e.target.classList.contains('js-custqa-first') || e.target.classList.contains('js-custqa-last') || e.target.classList.contains('js-custqa-phone')) {
     const d = state.custQuickAdd;
     if (e.target.classList.contains('js-custqa-first')) d.first = e.target.value;
     else if (e.target.classList.contains('js-custqa-last')) d.last = e.target.value;
     else d.phone = e.target.value;
-    if (custQuickAddReady()) return custQuickAddCreate();
     return;
   }
   if (e.target.classList.contains('chat-input')) { state.chat.draft = e.target.value; return; }
@@ -20119,13 +20119,15 @@ function custQuickAddValid() {
   const d = state.custQuickAdd;
   return !!(d.first.trim() && d.last.trim() && d.phone.replace(/\D/g, '').length >= 7);
 }
-// All FOUR fields filled — first + last + a ≥7-digit phone + a REAL funnel pick ('N/A' is the
-// unset placeholder). This is the auto-create trigger (Jac 2026-07-17): the funnel starts 'N/A',
-// so while the text fields are being typed nothing is ready; the funnel pick — the natural last
-// step — is what completes the set and fires the create. That ordering means the phone's ≥7-digit
-// check can't auto-fire mid-typing in the normal First→Last→Phone→Funnel flow.
-function custQuickAddReady() {
-  return custQuickAddValid() && !!state.custQuickAdd.funnel && state.custQuickAdd.funnel !== 'N/A';
+// Discard the +New Customer draft (implicit cancel) — clearing it collapses the row back to the
+// +New Customer button. Called on a successful create AND whenever the user navigates AWAY from
+// the customers list without finishing (clicking a record → openStandard, switching cards →
+// goToCard). There is no Cancel button by design (Jac 2026-07-17). Guarded so it's a no-op when idle.
+function resetCustQuickAdd() {
+  const d = state.custQuickAdd;
+  if (d && (d.open || d.first || d.last || d.phone || (d.funnel && d.funnel !== 'N/A'))) {
+    state.custQuickAdd = { open: false, first: '', last: '', phone: '', funnel: 'N/A' };
+  }
 }
 /* Create + open — mirrors quickAddCustomerFromSearch's create-object field set verbatim,
  * except membershipStage comes from the draft's own funnel picker (set DIRECTLY, never
@@ -20141,7 +20143,7 @@ function custQuickAddCreate() {
   const c = { customerId: id, firstName, lastName, name: `${firstName} ${lastName}`.trim(), company: '', phone, email: '', address: '', industry: '', accountType: 'Non-Business', payStatus: 'New Customer', requiresPO: false, rentalProtection: false, accountNotes: '', stripeId: '', selfie: '', signature: '', agreementType: '', agreementSignedAt: '', interestedCategoryIds: [], interestedMakes: [], desiredAge: '', desiredHours: '', activityLog: [], usedSalesStage: 'N/A', membershipStage: d.funnel || 'N/A', _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' } };
   DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c);
   logAction(c, 'Customer quick-added');
-  state.custQuickAdd = { open: false, first: '', last: '', phone: '', funnel: 'N/A' };
+  resetCustQuickAdd();
   openStandard('customers', id);
 }
 /* QUICK ADD — a fruitless Units/Categories search offers a +New button (the empty state).
