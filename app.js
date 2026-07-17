@@ -4114,7 +4114,7 @@ function agreementExpandedHtml(c, k) {
       + `<p class="acct-microcopy">Finish this card's signing from the <button class="linkname js-edit-customer" data-r="R7" data-rec="${esc(c.customerId)}">customer form</button>.</p>`;
   }
   return `<div class="ag-open">`
-    + `<div class="ao-bar"><span class="ao-lbl">Agreement</span><span class="sp"></span><button class="ao-collapse js-ag-collapse" data-rec="${esc(c.customerId)}" data-tip="Collapse">${I.chev}</button></div>`
+    + `<div class="ao-bar js-ag-collapse" data-rec="${esc(c.customerId)}" data-tip="Collapse"><span class="ao-lbl">Agreement</span><span class="sp"></span><button class="ao-collapse js-ag-collapse" data-rec="${esc(c.customerId)}" data-tip="Collapse">${I.chev}</button></div>`
     + `<div class="ao-body">${body}</div>`
     + `</div>`;
 }
@@ -4363,7 +4363,8 @@ function invPayState(t) {
   if (t.status === 'Refunded') return { cls: 'part', word: 'Refunded' };
   if (t.status === 'Paid') return { cls: 'paid', word: 'Paid' };
   if (t.status === 'Partial') return { cls: 'part', word: 'Partial' };
-  return { cls: 'due', word: t.status };   // Unpaid / Not Due / Late* / Collections
+  if (t.status === 'Not Due') return { cls: 'notdue', word: 'Not Due' };   // calm blue (config registry) — a balance not yet due is NOT overdue-red
+  return { cls: 'due', word: t.status };   // Unpaid / Late* / Collections — genuinely due/overdue
 }
 const invoiceOneLine = (i) => { const l = (i.lineItems || []).map((x) => x.label).filter(Boolean); return l.length ? l.join(' · ') : (i.membership ? 'Membership' : 'No line items yet'); };
 /* Phase 5 (spec §7b) — the Member-Mode sales-pitch delta. Reuses membershipEconomics' lifetime
@@ -5858,7 +5859,7 @@ function flashOr(sel, msg) {
   toast(msg);
 }
 /** R20: the Wrangler CONTEXT MENU — right-click any element.
- *  Cut/Copy/Paste/Clear act on the field · Search/Global Search use the text ·
+ *  Cut/Copy/Paste act on the field · Global Search uses the text ·
  *  Replace opens the inline editor · Add Comment logs to History ·
  *  Ask Mr. Wrangler copies a debug reference for Claude. */
 let ctxTarget = null;
@@ -5902,11 +5903,11 @@ function openCtxMenu(e, hit) {
   const ctxCust = ctxRecord && ctxRecord.card === 'customers' ? recOf('customers', ctxRecord.recId) : null;
   const commsSec = ctxCust ? `<button class="dd-item" data-ctx="commsText">${I.messageSquare}Text ${esc((ctxCust.firstName || fullName(ctxCust) || 'customer').trim().split(/\s+/)[0])}…</button><button class="dd-item" data-ctx="commsEmail">${I.mail}Email ${esc((ctxCust.firstName || fullName(ctxCust) || 'customer').trim().split(/\s+/)[0])}…</button><div class="menu-sep"></div>` : '';
   m.innerHTML = commsSec + linkSec + [
-    item('cut', '✂️ Cut'), item('copy', '📋 Copy'), item('paste', '📥 Paste'), item('clear', '🧹 Clear'),
+    item('cut', '✂️ Cut'), item('copy', '📋 Copy'), item('paste', '📥 Paste'),
     '<div class="menu-sep"></div>',
-    item('search', '🔎 Search'), item('gsearch', '🌐 Global Search'), item('replace', '✏️ Replace'),
+    item('gsearch', '🌐 Global Search'), item('replace', '✏️ Replace'),
     '<div class="menu-sep"></div>',
-    item('comment', '💬 Add Comment'), item('copyel', '📋 Copy to chat'), item('wrangler', '🤠 Ask Mr. Wrangler'),
+    item('comment', '💬 Add Comment'), item('wrangler', '🤠 Ask Mr. Wrangler'),
   ].join('');
   document.body.appendChild(m);
   m.style.left = Math.min(e.clientX, window.innerWidth - 205) + 'px';
@@ -6002,14 +6003,7 @@ function runCtxAction(act) {
   };
   if (act === 'copy') { try { navigator.clipboard.writeText(text); } catch (err) {} return toast('📋 Copied.'); }
   if (act === 'cut') { try { navigator.clipboard.writeText(text); } catch (err) {} return setField(''); }
-  if (act === 'clear') return setField('');
   if (act === 'paste') { navigator.clipboard.readText().then((v) => setField(v)).catch(() => toast('Clipboard unavailable — paste into the field directly.')); return; }
-  if (act === 'search') {
-    const card = el.closest('.card')?.dataset.card;   // the grid card id — nearest [data-card] can be an entity span (workOrders/inspections) with no session card
-    const cs = card && activeSession().cards[card];
-    if (!cs) return setQuery(text);
-    cs.mode = 'list'; cs.search = text; cs.listLimit = undefined; render(); return;
-  }
   if (act === 'gsearch') return setQuery(text);
   if (act === 'replace') { if (editSpan) return startInlineEdit(editSpan); return toast('Not an editable field.'); }
   if (act === 'comment') {
@@ -6018,7 +6012,6 @@ function runCtxAction(act) {
     if (!hit) { toast('Right-click a record (or open one) to comment.'); return; }
     return openOverlay({ kind: 'comment', card: hit.card, recId: hit.recId, recType: hit.recType, color: 'yellow' });
   }
-  if (act === 'copyel') return copyElement(el);   // §17 — copy this element; paste it into a Team / Mr. Wrangler chat as a live chip
   if (act === 'wrangler') {
     const hit = cardRecordAt(el);   // §18 — open Mr. Wrangler dock, record-aware when a record is under the cursor
     return openWranglerDock({ messages: [], draft: '', attach: [], card: hit ? hit.card : null, recId: hit ? hit.recId : null, recType: hit ? hit.recType : null, reqNumber: null, reqTitle: null, reqUrl: null });
@@ -6102,7 +6095,7 @@ const RULE_META = {
   R17: ['Action pill', 'actionPill', 'commit = blue · money = green · danger = solid red; .locked = gated'],
   R18: ['Ghost', 'ghostPill', 'the ONE quiet action — Cancel / Close / Exit / Clear, or an icon-only row secondary (e.g. Duplicate)'],
   R19: ['Attention flash', 'attnFlash / flashOr', 'a glow that points AT the next action — replaces an error message when the fix is on screen'],
-  R20: ['Context menu', 'openCtxMenu (right-click · long-press)', 'right-click/long-press any element: Cut · Copy · Paste · Search · Replace · Add Comment · Ask Mr. Wrangler'],
+  R20: ['Context menu', 'openCtxMenu (right-click · long-press)', 'right-click/long-press any element: Cut · Copy · Paste · Global Search · Replace · Add Comment · Ask Mr. Wrangler'],
   R21: ['File drop', 'fileDrop', 'the MASSIVE popup add-file zone — R5b blue dashed at full size'],
   R22: ['Date picker', 'dateField', 'the ONE app-styled calendar for a single date/time (NOT the rental-window timeline)'],
   R23: ['Tooltip', 'data-tip → the one styled tip', 'every hover hint goes through data-tip — a native title attribute is a violation'],
@@ -6111,11 +6104,12 @@ const RULE_META = {
   R26: ['Manual link', 'sourceLinkBtn', 'small ghost-circle external-link icon beside a service task — opens its cited OEM manual page (task.sourceUrl) in a new tab; renders only when the task actually carries one'],
   R27: ['Due-Today banner', 'renderSchedBanner / #sched-banner', 'top-of-screen reminder plate — caution-YELLOW hazard-stripe cap; lists the scheduled actions due today (customer · note · time), each customer an R2 link. Manual X only (never auto-clears), dismissal sticks for the session (sessionStorage). Like R25 it lives on <body>, outside #app'],
   R28: ['Account button', 'acctBtn', 'the stamped button on the customer funnel gate row — label = the account TYPE (Contractor/Business/Member…); opens the agreements window (same js-view-agreement access as the signed-agreement pill). Neutral steel chip, not an ignition/status color.'],
-  R29: ['Invoice action menu', 'invoiceStatMenu', 'the expanded-invoice header control: a hazard-stripe status pill (green solid = paid · yellow-stripe = partial · red-stripe = due; goes SOLID while its menu is open) that DOUBLES as the Pay · Print · Send · Refund action menu. A pressable-status control like R1, but it opens actions rather than advancing a status. Pay/Refund reuse the canMoney()-gated payment window.'],
+  R29: ['Invoice action menu', 'invoiceStatMenu', 'the expanded-invoice header control: a hazard-stripe status pill (green solid = paid · yellow-stripe = partial · blue = not-yet-due · red-stripe = overdue; goes SOLID while its menu is open) that DOUBLES as the Pay · Print · Send · Refund action menu. A pressable-status control like R1, but it opens actions rather than advancing a status. Pay/Refund reuse the canMoney()-gated payment window.'],
   R30: ['Paused banner', '.wr-paused (wranglerDockBodyHtml)', 'red hazard-stripe plate inside the Mr. Wrangler dock/rail window — raised when a Developer-tier operator takes the wheel (Wrangler Ops live jump-in, §18i); the composer goes read-only until released'],
   R31: ['Toggle chip', 'toggleChip', 'a single interactive on/off pill (PO required, Rental Protection) — off = quiet outline, on = the registry tone color fill. Distinct from R14: ONE control, not a joined group of options.'],
   R32: ['Nav jog', 'cardJog / .card-jog · .mfoot-jog', 'the two-way Back/Forward view-history stepper. On desktop + in-card it is a neutral steel pill (chevron arms split by a saddle-stitch seam, orange only on hover/press) that shows only when the card has history. On phone it lives ALWAYS-ON as a snug chip pinned to the bottom-RIGHT of the footer tool bar (matching the .iconbtn tool buttons), Chrome-style: bright chevrons that grey when their stack is empty — reflecting the snapped column’s card (repainted on swipe).'],
   R33: ['Global toggle', 'globeToggle', 'the icon-only globe pinned right in a grid card’s search bar — flips that bar, and every grid-card bar in lockstep, between per-card and whole-yard “global” search (dim steel off, safety-orange on). A scope-MODE toggle like R31 but icon-only + it drives the shared query; replaces the old giant #globalsearch bar. Behind FEATURES.cardGlobalSearch.'],
+  R34: ['Wash cycle button', 'washBtn', 'one pressable status pill that advances a unit’s wash on each click — neutral “Wash?” → caution “Wash It!” (yellow, requested) → ready “✓ Washed” (green, logged) → click again un-marks today’s wash. Registry STATUS tones (green/yellow/gray), NOT action colors; a press-to-advance control like R1 but it cycles in place instead of opening a dropdown. Replaces the old Wash / Don’t Wash / Washed R14 toggle; wash no longer gates inspection Pass.'],
 };
 /* ════════════ APP-12 · DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
    The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
@@ -7549,7 +7543,7 @@ function woExpandedHtml(w) {
     ? { text: 'Cancelled', tone: 'mute' }
     : { text: woPhaseLabel(w, bottleIdx), tone: { red: 'bad', yellow: 'warn', green: 'ok' }[secColor] };
   return `<div class="inv-open wo-open wo-${w.woId}" data-wo="${w.woId}">`
-    + `<div class="io-bar"><div class="io-bar-top">`
+    + `<div class="io-bar"><div class="io-bar-top js-wo-collapse" data-unit="${esc(w.unitId)}" data-tip="Collapse">`
     + `<span class="ir-id">WO</span>`
     + `<span class="ir-mid"><span class="inline-edit ir-woreport" data-edit="field" data-card="workOrders" data-field="woReport" data-rec="${w.woId}" data-ph="Report">${esc(w.woReport)}</span><span class="ir-date">${esc(fmtShortDate(w.date))}</span></span>`
     + `<span class="type-chip ${chip.tone}">${esc(chip.text)}</span>`
@@ -8158,7 +8152,6 @@ const DETAIL = {
     const stampDate = u.condAt || li2?.date || '';
     const stamp = stampDate ? `${fmtShortDate(stampDate)}${u.condClock ? ' · ' + u.condClock : ''}` : '—';
     const cond = u.inspectionStatus;
-    const washedToday = (u.serviceLog || []).some((l) => l.taskId === 'svc-wash' && l.date === TODAY_ISO);
     const inspSec = `<div class="section sec-${cond === 'Ready' ? 'green' : cond === 'Failed' ? 'red' : 'yellow'}">
       <h4>Inspection <span class="hmuted">· ${esc(stamp)}</span></h4>
       <div class="fieldstack">
@@ -8169,13 +8162,7 @@ const DETAIL = {
             { label: '✕ Fail', js: 'js-cond', data: { rec: u.unitId, val: 'Fail' }, on: cond === 'Failed' ? 'red' : null },
           ])}
         </div>
-        <div class="kv" style="justify-content:center">
-          ${segCtl([
-            { label: `${I.droplet} Wash`, js: 'js-washseg', data: { rec: u.unitId, val: 'Wash' }, on: u.washChoice === 'Wash' || u.washRequested ? 'yellow' : null },
-            { label: "Don't Wash", js: 'js-washseg', data: { rec: u.unitId, val: 'DontWash' }, on: u.washChoice === 'DontWash' && !u.washRequested && !washedToday ? 'blue' : null },
-            { label: 'Washed', js: 'js-washseg', data: { rec: u.unitId, val: 'Washed' }, on: washedToday ? 'green' : null },
-          ], 'seg-wash')}
-        </div>
+        <div class="kv" style="justify-content:center">${washBtn(u)}</div>
         ${li2?.description ? `<div class="kv" style="justify-content:center"><span class="muted">Latest:</span> <span style="font-size:12.5px">${esc(li2.description)}</span></div>` : ''}
       </div>
     </div>`;
@@ -9754,27 +9741,30 @@ function bottomBarInner() {
  *  (photo sweep) tools. One trigger instead of a flat run of icon-only buttons. */
 function toolsMenuRows() {
   const item = (js, icon, label, on) => `<button class="dd-item ${js}${on ? ' on' : ''}"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${icon}</span>${esc(label)}</button>`;
-  // Manual Update — force the newest build past a stale mobile cache (Jac 2026-07-16).
-  let html = `<button class="dd-item js-app-update"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${STATUS_ICONS.refresh}</span>Check for updates<span style="margin-left:auto;color:var(--txt-3);font-size:11px;letter-spacing:.3px">v${esc(appVersion())}</span></button>`
-    + `<div class="menu-sep"></div>`;
-  html += item('js-qr', I.qr, 'Share session (QR)')
+  // Sectioned into collapsible FAMILIES, all collapsed on open (Jac 2026-07-17: the flat menu
+  // read as overwhelming). Native <details>/<summary> — same mechanic as the Rulebook's .rb-idx;
+  // the menu rebuilds on every open so each family always starts closed. Tier-gated families
+  // (Developer/Admin) render only when unlocked, exactly as before.
+  const fam = (name, rows) => `<details class="dd-fam"><summary class="dd-fam-h">${esc(name)}<span class="dd-fam-chev">${I.chev}</span></summary><div class="dd-fam-body">${rows}</div></details>`;
+  // General — the everyday tools + the manual cache-buster (force the newest build past a stale mobile cache, Jac 2026-07-16).
+  const general = `<button class="dd-item js-app-update"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${STATUS_ICONS.refresh}</span>Check for updates<span style="margin-left:auto;color:var(--txt-3);font-size:11px;letter-spacing:.3px">v${esc(appVersion())}</span></button>`
+    + item('js-qr', I.qr, 'Share session (QR)')
     + item('js-previews', state.previewsOn ? I.eye : I.eyeOff, state.previewsOn ? 'Hover previews: on' : 'Hover previews: off', state.previewsOn)
     + item('js-hotkeys', I.mouse, 'Mouse & keyboard shortcuts');
-  html += `<div class="dd-sec-lbl">GPS / Fleet</div>`
-    + item('js-gps-health', I.truck, 'Tracker Health')
+  const gps = item('js-gps-health', I.truck, 'Tracker Health')
     + item('js-gps-fleet', I.grid, 'Fleet Map')
     + item('js-gps-roundup', I.list, 'Round Up Trackers')
     + item('js-gps-issues', I.alert, 'GPS Issues')
     + item('js-gps-utilization', I.graph, 'Fleet Utilization')
     + item('js-gps-bouncie-trucks', CARD_ICON.units, 'Pull Bouncie Trucks');
+  let html = fam('General', general) + fam('GPS / Fleet', gps);
   if (devUnlocked()) {
-    html += `<div class="menu-sep"></div>`
-      + item('js-lint', I.eye, 'Design lint (R0)', document.body.classList.contains('rw-lint'))
+    html += fam('Developer', item('js-lint', I.eye, 'Design lint (R0)', document.body.classList.contains('rw-lint'))
       + item('js-inspect', I.search, 'Design Inspector', state.inspect)
       + item('js-rulebook', I.doc, 'The R-Rulebook')
-      + item('js-wrangler-ops', I.lasso, 'Wrangler Ops');
+      + item('js-wrangler-ops', I.lasso, 'Wrangler Ops'));
   }
-  if (adminUnlocked()) html += `<div class="menu-sep"></div>` + item('js-photo-sweep', I.camera, 'Photo sweep to Drive');
+  if (adminUnlocked()) html += fam('Admin', item('js-photo-sweep', I.camera, 'Photo sweep to Drive'));
   return html;
 }
 function openToolsMenu(anchorEl) { openDropdown(anchorEl, `<div class="dd-sec">Tools</div>${toolsMenuRows()}`, { align: 'right' }); }
@@ -10630,20 +10620,6 @@ const closeMenus = () => document.querySelectorAll('.dropdown-menu').forEach((n)
 function chatSetTitle(id, title) {
   const c = chatById(id); if (!c || !chatIsAdmin(c)) return;   // only the creator renames
   c.title = title; pushChatsSoon();
-}
-// Right-click → Copy to chat: HOLD this element so it can be pasted into an internal
-// (Team / Mr. Wrangler) chat as a live, clickable chip. Replaces the retired
-// "start a chat seeded from this element" flow (2026-07-08 rail spec) — the copied
-// element travels into any conversation, and every member can click through it.
-function copyElement(el) {
-  const hit = cardRecordAt(el);
-  if (!hit) { toast('Right-click a record to copy it into a chat.'); return; }
-  const ec = entityCardOf(hit.card, hit.recType), rec = recOf(ec, hit.recId);
-  if (!rec) { toast('Record not found.'); return; }
-  const label = ROW_META[ec] ? ROW_META[ec](rec).title : String(hit.recId);
-  state.held = { card: ec, recId: hit.recId, label };
-  render();
-  toast(`Copied “${label}” — paste it into a Team or Mr. Wrangler chat.`);
 }
 // Resolve a dragged payload into a chat tag — label from the record, color inherited
 // from any flag it already carries (else neutral). Granular-element sources (line/pill/
@@ -17548,7 +17524,7 @@ function onClick(e) {
   if (closest('.js-svc-sec-toggle')) { e.stopPropagation(); const rec = closest('.js-svc-sec-toggle').dataset.rec; state.svcSecOpen = state.svcSecOpen || {}; state.svcSecOpen[rec] = !state.svcSecOpen[rec]; return render(); }   // Unit detail — collapse/expand the Services (service-order) section
   if (closest('.js-unit-sec')) { e.stopPropagation(); const b = closest('.js-unit-sec'); const rec = b.dataset.rec, sec = b.dataset.sec; state.unitSecOpen = state.unitSecOpen || {}; state.unitSecOpen[rec] = state.unitSecOpen[rec] || {}; state.unitSecOpen[rec][sec] = !state.unitSecOpen[rec][sec]; return render(); }   // Unit detail — collapse/expand a generic detail section (Work Orders / Specs / GPS / Investment[+Coverage])
   if (closest('.js-wo-row')) { e.stopPropagation(); const b = closest('.js-wo-row'); const un = b.dataset.unit, rec = b.dataset.rec; state.woRowOpen = state.woRowOpen || {}; state.woRowOpen[un] = (state.woRowOpen[un] === rec) ? null : rec; return render(); }   // Unit detail — open/collapse one Work Order row (accordion, mirrors js-inv-row)
-  if (closest('.js-wo-collapse')) { e.stopPropagation(); const un = closest('.js-wo-collapse').dataset.unit; if (state.woRowOpen) state.woRowOpen[un] = null; return render(); }   // collapse the open Work Order row
+  if (closest('.js-wo-collapse') && !closest('.inline-edit')) { e.stopPropagation(); const un = closest('.js-wo-collapse').dataset.unit; if (state.woRowOpen) state.woRowOpen[un] = null; return render(); }   // collapse the open Work Order row — header-wide, but the inline-edit report stays editable
   if (closest('.js-ag-row')) { e.stopPropagation(); const b = closest('.js-ag-row'); const rec = b.dataset.rec, card = b.dataset.card; return guardAgLeave(rec, () => { state.custAgOpen = state.custAgOpen || {}; state.custAgOpen[rec] = (state.custAgOpen[rec] === card) ? null : card; render(); }); }
   if (closest('.js-ag-collapse')) { e.stopPropagation(); const rec = closest('.js-ag-collapse').dataset.rec; return guardAgLeave(rec, () => { if (state.custAgOpen) state.custAgOpen[rec] = null; render(); }); }
   if (closest('.js-ag-add')) { e.stopPropagation(); const rec = closest('.js-ag-add').dataset.rec; state.custAgOpen = state.custAgOpen || {}; state.custAgOpen[rec] = '__new__'; return render(); }
@@ -18132,7 +18108,7 @@ function onClick(e) {
   if (closest('.js-ck-walkrm')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-ck-walkrm'); if (o && o.kind === 'checklist') { const n = IDX.insp.get(o.inspId); if (n && n.evidence) { n.evidence.splice(Number(b.dataset.i), 1); saveSoon(); renderOverlay(); } } return; }
   if (closest('.js-ck-complete')) { e.stopPropagation(); return completeChecklist(); }
   if (closest('.js-ck-pending')) { e.stopPropagation(); closeOverlay(); toast('Inspection kept as pending — resume it anytime.'); return; }
-  if (closest('.js-washseg')) { const b = closest('.js-washseg'); return setUnitWash(b.dataset.rec, b.dataset.val); }
+  if (closest('.js-washcycle')) { return cycleUnitWash(closest('.js-washcycle').dataset.rec); }
   if (closest('.js-yard')) { const b = closest('.js-yard'); return yardCapture(b.dataset.rec, b.dataset.cap, b.dataset.unit); }
   // ── inline transport editor (replaces the old `site` popup) ──
   if (closest('.js-site-go')) { const b = closest('.js-site-go'); e.stopPropagation(); return openTransportEdit(b.dataset.rec, b.dataset.unit || null, 'delivery'); }   // legacy dispatch links still open the editor
@@ -18979,12 +18955,11 @@ function setUnitCondition(unitId, val) {
   // PASS is the gate (Jac 2026-07-17 — the confusing "+ Inspection" button is retired; the toggle
   // IS the interface). Already Passed → Pass re-opens the done inspection to view; a checklist
   // category → Pass opens the checklist takeover (completing it cascades to Pass); otherwise a
-  // direct pass, which still needs a wash decision first (R19 — glow the wash toggle, not an error).
+  // direct pass. Wash no longer gates Pass (Jac 2026-07-17 — the wash button is a pure request /
+  // complete tracker now, not a Pass prerequisite).
   if (val === 'Pass') {
     if (u.inspectionStatus === 'Ready') return openInspectionRecord(unitId);
     if (checklistRequired(u)) return openChecklist(unitId);
-    const washedToday = (u.serviceLog || []).some((l) => l.taskId === 'svc-wash' && l.date === TODAY_ISO);
-    if (!u.washChoice && !u.washRequested && !washedToday) return attnFlash('.seg-wash');
     u.condAt = TODAY_ISO; u.condClock = nowClock();
     return setInspResult(newInspectionForUnit(u).inspectionId, 'Pass');
   }
@@ -19047,6 +19022,49 @@ function completeChecklist() {
   state.overlay = null;                                   // close the takeover; a Fail re-opens the photo/notes popup
   setInspResult(n.inspectionId, failed.length ? 'Fail' : 'Pass');   // cascade onto the inspection section + auto-WO
   toast(failed.length ? `Inspection failed — work order opened for ${u.name}.` : `Inspection passed — ${u.name} marked Passed. ✓`);
+}
+/* R34: the WASH cycle button — one pressable pill that advances a unit's wash on each click:
+   neutral "Wash?" → caution "Wash It!" (yellow, requested) → ready "✓ Washed" (green, logged) →
+   click again un-marks today's wash. Registry STATUS tones (green/yellow/gray), NOT action colors.
+   Replaces the old Wash / Don't Wash / Washed 3-segment toggle (Jac 2026-07-17); wash no longer
+   gates inspection Pass. The washRequested / svc-wash serviceLog data model is unchanged, so every
+   derived consumer (service-due, Wash-Requested badge, KPIs, 100-HR countdown) keeps working. */
+function washBtn(u) {
+  const washedToday = (u.serviceLog || []).some((l) => l.taskId === 'svc-wash' && l.date === TODAY_ISO);
+  const st = washedToday
+    ? { tone: 'green', label: '✓ Washed', tip: 'Washed today — click to un-mark' }
+    : u.washRequested
+      ? { tone: 'yellow', label: `${I.droplet} Wash It!`, tip: 'Wash requested — click when it’s washed' }
+      : { tone: 'gray', label: 'Wash?', tip: 'Click to queue a wash' };
+  return `<button class="pill washbtn c-${st.tone} js-washcycle" data-r="R34" data-rec="${esc(u.unitId)}" data-tip="${esc(st.tip)}">${st.label}</button>`;
+}
+/* Advance the wash cycle one step per press (see washBtn / R34). */
+function cycleUnitWash(unitId) {
+  const u = IDX.unit.get(unitId); if (!u) return;
+  const washedToday = (u.serviceLog || []).some((l) => l.taskId === 'svc-wash' && l.date === TODAY_ISO);
+  if (washedToday) return uncompleteWash(unitId);             // ✓ Washed → un-mark (undo today's wash)
+  if (u.washRequested) return setUnitWash(unitId, 'Washed');  // Wash It! → log the wash (recordServiceCompletion)
+  return setUnitWash(unitId, 'Wash');                         // Wash? → queue the wash (washRequested = true)
+}
+/* Undo TODAY's wash (misclick recovery, Jac 2026-07-17): drop today's svc-wash log entry and roll
+   the 100-HR countdown back to the previous wash (or unwashed if none) — the exact inverse of
+   recordServiceCompletion for a same-day wash. Leaves washRequested false → the button reads "Wash?". */
+function uncompleteWash(unitId) {
+  const u = IDX.unit.get(unitId); if (!u) return;
+  const log = u.serviceLog || [];
+  let at = -1;
+  for (let i = log.length - 1; i >= 0; i--) { if (log[i].taskId === 'svc-wash' && log[i].date === TODAY_ISO) { at = i; break; } }
+  if (at < 0) return;
+  u.serviceLog = log.filter((_, i) => i !== at);
+  const prior = [...u.serviceLog].reverse().find((l) => l.taskId === 'svc-wash');
+  u.serviceCompletions = u.serviceCompletions || {};
+  if (prior) u.serviceCompletions['svc-wash'] = Number(prior.hours) || 0;
+  else delete u.serviceCompletions['svc-wash'];
+  u.washChoice = undefined; u.washRequested = false;
+  reindex('units', u);
+  logAction(u, 'Wash un-marked (undo)');
+  toast('Wash un-marked — countdown reopened.');
+  reanchorRender();
 }
 function setUnitWash(unitId, val) {
   const u = IDX.unit.get(unitId); if (!u) return;
