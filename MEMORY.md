@@ -264,21 +264,31 @@
   client-supplied `minTier` and aren't server-bound to a specific action — `authzVerify` grants
   no token/session so it's not exploitable beyond the app's existing client-trust model, but a
   future server-side `action→tier-floor` table would harden it (logged in phone-identity-STATUS.md).
-- **Staging Traffic Control N=3 — code LANDED 2026-07-17, awaiting provisioning + live re-seed**
-  (#672 shipped N=1 → this branch flips to N=3). N=3 was **NOT a 1-line data flip** (the earlier
-  note's framing was wrong — proved against §8.2): besides `DEFAULT_N=3` + `SLOT_URLS` (now
-  DERIVED from the new `SLOT_TARGETS` map in `staging-git.mjs`, single source of truth), a correct
-  3-lane needs **(a) deploy-side slot→repo routing** — `deploy-staging.mjs` hardcoded slot 1's repo
-  so every deploy pushed to `rental-wrangler-staging` regardless of the acquired slot (slots 2/3
-  would never get bytes; two sessions would clobber repo 1 = the exact bug this system prevents);
-  now `slotTarget(slot.id)` routes the clone/push to the acquired slot's OWN repo. **(b) promote
-  per-slot freshness** — `resolveStagingSlotUrl` always returned slot 1's URL; now it scans every
-  slot for the one serving the trunk `?v=` token (or honors `--slot N`). The shared `staging-control`
-  branch stays ONLY on slot 1's repo. **REMAINING (Jac):** provision `rental-wrangler-staging-2`/`-3`
-  (public, Pages source `main`, root) + grant `STAGING_DEPLOY_PAT` push access, THEN re-seed the live
-  control branch: `node tools/staging-lease.mjs reset --slots 3` — a **force-push, do it when staging
-  is IDLE** (it wipes the current holder + queue; e.g. at 09:07Z the branch had a live holder + 3
-  waiters). Ships by `/merge` alone (tools/ only). Plan §8.2.
+- **Staging Traffic Control N=3 — SHIPPED + LIVE 2026-07-17 (#684).** Three parallel staging lanes
+  are ON: `DEFAULT_N=3`; `SLOT_URLS` DERIVED from a new `SLOT_TARGETS` map in `staging-git.mjs`
+  (single source of truth); deploy routes clone/push to the ACQUIRED slot's OWN repo
+  (`slotTarget(slot.id)`) — NOT the hardcoded slot-1 repo, so slots 2/3 serve their own bytes and two
+  sessions never clobber one repo; promote resolves freshness per-slot. Slots: 1 =
+  `rental-wrangler-staging`, 2/3 = `…-staging-2`/`-3` (each its own public Pages site, source `main`);
+  the shared `staging-control` coordination branch stays ONLY on slot 1's repo. Live control branch
+  re-seeded to 3 slots (`node tools/staging-lease.mjs reset --slots 3`, now epoch 1) and slots 2/3
+  verified serving their own bytes at their own URLs. It was **NOT a "1-line data flip"** — deploy-side
+  slot→repo routing was the genuinely-deferred piece (§8.2 step 3). `reset --slots N` is a force-push;
+  run it staging-IDLE (it wipes the current holder + queue). Plan §8.2.
+- **Content-verified promote freshness — SHIPPED 2026-07-17 (#688).** The promote staging-freshness
+  gate was fooled by `?v=` token COLLISIONS (the token is hand-bumped, NOT content-derived → two
+  deploys can share one). Now a SHA-256 **content hash** over the files the token versions
+  (`app.js`/`style.css`/`rule-usage.js`, newline-normalized) is the AUTHORITY; the token is only a
+  pre-filter. Verdicts: ✅ *content verified* / 🔴 *TOKEN COLLISION* (right token, wrong bytes →
+  re-deploy) / 🔴 *no slot serves trunk's bytes*; `--slot N` pins (still hash-checked). Pure lib
+  `tools/lib/promote-freshness.mjs` + `ci/promote-test.mjs` (23 checks, wired into CI + gates). Minor
+  non-blocking cosmetic follow-ups left (a dead `!expectedToken && !expectedHash` guard; a
+  `--slot`-pinned collision prints the generic "no slot" line, not "TOKEN COLLISION") — reviewer-
+  confirmed NOT bugs; the `--yes` enforcement blocks correctly in every case.
+- **Gotcha — the cloud git-over-proxy CANNOT delete remote refs** (2026-07-17). `git push origin
+  --delete <branch>` fails every time with `send-pack: unexpected disconnect` / `Everything
+  up-to-date` (retries don't help — it's the proxy, not a real error). Delete merged feature branches
+  via the GitHub UI ("Delete branch" on the merged PR) instead; normal (non-delete) pushes work fine.
 - **Repo privacy** — parked on Jac's GitHub billing-tier check. Pages-from-private
   needs GitHub Pro; Free forces public, and flipping private on Free takes
   `app.jacrentals.com` down. If Pro: canary staging → confirm → flip main + production
