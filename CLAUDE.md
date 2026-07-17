@@ -81,6 +81,12 @@ say-so:
 `app.js` in `index.html` (Pages serves `max-age=600`, no per-file hashing). Don't add `?v=`
 to the ES-module imports inside `app.js`. (`deploy-staging.mjs` bumps it for you.)
 
+**Session title = this session's PRs.** On opening a PR, append its number to
+`.claude/.session-prs` (gitignored) and surface a one-tap `/rename #<nums> · <branch-label>`
+(the model can't self-`/rename`); remove it on merge/close. A `SessionStart` hook
+(`.claude/hooks/session-title.mjs`) re-derives the title each start/resume, respecting a
+manual rename. Full rule: `/start` §4.
+
 **R-rulebook:** every UI element is stamped `data-r="Rxx"`; regenerate `rule-usage.js` with
 `node ci/gen-rule-usage.mjs` when usage changes (`--check` is the CI drift + duplicate
 guard). New popups also need a `WINDOW_CATALOG` entry (`ci/check-window-catalog.mjs`). These

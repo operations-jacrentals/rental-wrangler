@@ -1,14 +1,17 @@
 # Session title = PR numbers — design
 
-**Date:** 2026-07-17 · **Status:** design approved (implementation is a follow-up) ·
+**Date:** 2026-07-17 · **Status:** IMPLEMENTED 2026-07-17 (`.claude/hooks/session-title.mjs`
++ `SessionStart` wiring + the `/start` §4 workflow rule) ·
 **Origin:** Jac — *"I need the numbers in the session title… when more are created the
 session title should be updated."* Brainstormed 2026-07-17; capability verified against
 the Claude Code docs via the `claude-code-guide` agent.
 
-> **This is a design-only artifact.** It was written on the `claude/popup-question-format`
-> branch (#669) because that was this session's designated branch; the implementation
-> (hook + workflow rule) is a separate deliverable and can be routed to its own feature
-> branch → spec → plan → build cycle.
+> **Verify on next session start/resume:** two platform behaviors can only be confirmed
+> live — (a) that this harness actually consumes `hookSpecificOutput.sessionTitle`, and
+> (b) whether `SessionStart` stdin exposes the current title (needed for respect-manual-
+> rename; the hook degrades gracefully to "set anyway" if it doesn't). The script itself
+> is unit-tested across the empty / one-PR / multi-PR / manual-rename cases and fails safe
+> (any error or missing file → emits nothing, leaves the title untouched).
 
 ## Goal
 

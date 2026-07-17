@@ -47,3 +47,8 @@ test-creds.local.json
 
 # transient scratch test harnesses (e.g. a subagent headless-serve check)
 tmp-*.mjs
+
+# Session-title hook state — open PR numbers + last title set. Session-scoped
+# (each cloud session gets its own clone), best-effort, NEVER committed.
+.claude/.session-prs
+.claude/.session-title-set
