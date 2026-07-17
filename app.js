@@ -25368,8 +25368,8 @@ function mountCommsPops() {
       // steady per window (commsWinKey) so it doesn't jump on re-render. Fall back to the tab.
       const key = cat + ':' + id;
       let left;
-      if (commsWinKey === key && commsWinLeft != null) left = commsWinLeft;
-      else if (commsOpenPt) left = Math.max(8, Math.min(commsOpenPt.x - w / 2, window.innerWidth - w - 8));
+      if (commsOpenPt) left = Math.max(8, Math.min(commsOpenPt.x - w / 2, window.innerWidth - w - 8));   // a fresh open click wins — reopening from a new spot lands there, not the last position
+      else if (commsWinKey === key && commsWinLeft != null) left = Math.max(8, Math.min(commsWinLeft, window.innerWidth - w - 8));   // no new click (re-render) → hold steady, re-clamped to the current viewport
       else left = Math.max(8, Math.min(tb.getBoundingClientRect().left - 30, window.innerWidth - w - 8));
       commsWinKey = key; commsWinLeft = left;
       node.style.left = left + 'px'; node.style.bottom = bottom + 'px';
@@ -25401,7 +25401,7 @@ function commsToggleCat(cat) {
   const rail = state.commsRail;
   if (rail.cat === cat) {                                // active icon: reveal the un-ended list first (replaces the old All chip), then a further click sweeps the rail clean
     const sc = rail.sessions[cat];
-    if (sc && !sc.menuOpen) { sc.menuOpen = true; saveCommsRail(); return render(); }
+    if (sc && !sc.menuOpen) { sc.menuOpen = true; if (sc.lastOpen != null) { sc.lastOpen = null; commsLeaveCat(cat); } saveCommsRail(); return render(); }   // reveal the list; tuck any open window so the list never renders on top of it
     rail.cat = null; if (sc) sc.menuOpen = false; commsLeaveCat(cat);
     saveCommsRail(); return render();
   }
