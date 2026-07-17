@@ -5,22 +5,25 @@ Vanilla-JS single-file app (`app.js`), `style.css`, `index.html`, `config.js`,
 `data.js`; Google Apps Script backend (schema-less Sheets, deployed by paste —
 `backend/` is gitignored, never served by Pages).
 
-**Contents:** [Interaction](#interaction-hybrid--jac-2026-07-15) ·
+**Contents:** [Interaction](#interaction-popup-first-single-attempt--jac-2026-07-16) ·
 [Design language](#design-language) · [Deploy & gates](#deploy--gates) ·
 [Don't](#dont) · [Delegation & model triage](#delegation--model-triage).
 Cross-session memory lives in **`MEMORY.md`** (read at `/start`); path-scoped detail
 lives in **`.claude/rules/`** (loads only when the relevant files are touched).
 
-## Interaction (hybrid — Jac, 2026-07-15)
+## Interaction (popup-first, single-attempt — Jac, 2026-07-16)
 
-Surface questions and decisions in whatever form reads clearest. This **supersedes**
-the old "always popups, never inline" rule:
-- **Formatted inline** for exploration and nuance (tables, tight sections,
-  blockquotes) — **lead with the outcome, never a wall of bullets.**
-- A crisp **structured block** for a clean either/or decision.
-- An **artifact** for anything comparative or visual (it renders in the cloud web app;
-  a localhost preview does not). See the mockup ladder under *Delegation*.
-- Popups (`AskUserQuestion`) stay available, but inline is favored.
+**Every decision and question goes through the `AskUserQuestion` popup.** This
+**supersedes** the 2026-07-15 "hybrid / inline-favored" rule — the popup format is
+what Jac wants for all choices.
+- **Try the popup exactly ONCE.** Do **NOT** retry a popup that fails — a stalled/
+  aborted permission stream is why sessions used to hang. One attempt, then fall back.
+- **If that one popup fails, fall back to INLINE** — the *same* question, the *same*
+  options as lettered choices (**A / B / C …**) plus an **Other**, in a crisp
+  structured block. No second popup.
+- Lead with the outcome. An **artifact** is still the right call for anything
+  comparative or visual (it renders in the cloud web app; a localhost preview does
+  not) — the artifact *shows* the options, the popup (or its inline fallback) *asks*.
 
 ## Design language
 

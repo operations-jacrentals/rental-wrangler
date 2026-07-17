@@ -136,6 +136,14 @@ skill (optionally a thin `context: fork` wrapper); `.claude/hooks/guard-bash.mjs
 
 ### WS5 — Interaction style (new — Jac's thread)
 
+> **⚠️ SUPERSEDED 2026-07-16** — the "Hybrid / inline-favored" default below was
+> reversed by Jac: *"the popup question format is WAY better."* Current rule is
+> **popup-first, single-attempt** — every decision/question goes through the
+> `AskUserQuestion` popup, tried **once**; if that one popup fails, fall back to
+> **inline** with the same options as lettered **A/B/C… + Other**, no popup retry.
+> See `CLAUDE.md` → *Interaction (popup-first, single-attempt)*. The mockup ladder
+> and delegation triage below still stand.
+
 **Goal:** kill the "massive blobs"; delegate deliberately, not dogmatically.
 
 **Communication default = Hybrid** (decided 2026-07-15). This **supersedes**

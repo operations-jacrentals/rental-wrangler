@@ -16,10 +16,11 @@
   machinery.* Ships de-drift + hard gates, slim CLAUDE.md via path-scoped
   `.claude/rules/`, this committed memory, fresh-context review in `/merge`, and a
   hybrid interaction model. Spec: `docs/superpowers/specs/2026-07-15-session-workflow-v2-design.md`.
-- **2026-07-15 — Interaction is HYBRID** (supersedes "always ask via popups, never
-  inline", 2026-06-15). Formatted **inline** for exploration/nuance; a crisp
-  structured block for clean either/or; an **artifact** for comparative/visual.
-  Lead with the outcome; no massive bullet blobs.
+- **2026-07-16 — Interaction is POPUP-FIRST, single-attempt** (supersedes the
+  2026-07-15 HYBRID rule — Jac: *"the popup question format is WAY better."*). ALL
+  decisions/questions go through the `AskUserQuestion` popup. Try it **once**; never
+  retry a failed popup. If that one popup fails, fall back to **inline** — the same
+  question + same options as lettered **A/B/C… + Other** in a structured block.
 - **2026-07-15 — Delegation by cost-of-being-wrong** *and* whether the main thread
   needs the reasoning (supersedes "delegate heavily, always"). Haiku = mechanical/IO,
   Sonnet = scoped build, Opus = hard reasoning / stays on main, Fable = rare frontier
