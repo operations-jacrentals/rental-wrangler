@@ -24001,7 +24001,7 @@ async function loadWranglerRail() {
    local behaviour: state.userPrefs stays null and every stamp/flush below early-returns. */
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 // Live only for a phone-identity session with a resolved person; else device-local.
-function syncOn() { return flagOn('phoneIdentity') && !!currentPersonId && !!backendPassword; }
+function syncOn() { return flagOn('userSync') && flagOn('phoneIdentity') && !!currentPersonId && !!backendPassword; }
 function normalizeUserPrefs(doc) {
   doc = (doc && typeof doc === 'object' && !Array.isArray(doc)) ? doc : {};
   const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v)) ? v : {};

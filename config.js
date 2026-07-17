@@ -643,6 +643,14 @@ export const FEATURES = {
   // a save baseline, so it can't corrupt the Sheet; personal devices only (no PII at
   // rest on shared machines). ON = paint-from-cache path; OFF = today's splash + load.
   instantCache: true,
+  // Cross-device user sync (spec 2026-07-17). ON = a logged-in person's display/sort prefs,
+  // saved Views, dispatcher route state, comms state, and resume-column follow them across
+  // devices — via the additive getUserPrefs/setUserPrefs blob + the personId-re-keyed
+  // group-order/Wrangler-rail; OFF = today's device-local localStorage (the layer no-ops).
+  // Ships OFF so the client can promote before/independent of the backend deploy; flip ON to
+  // roll out, back to OFF for instant rollback. Gates EXPERIENCE only — operator isolation is
+  // enforced server-side (personId resolved from the session token, never a client value).
+  userSync: false,
 };
 
 /* Phone-identity client constants (non-secret — display/UX only; the backend owns the

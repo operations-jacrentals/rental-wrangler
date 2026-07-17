@@ -4,6 +4,15 @@
  * per-PERSON sync (Code.gs is gitignored; this is the reviewable copy, per /clasp).
  * Spec: docs/superpowers/specs/2026-07-17-cross-device-user-sync-design.md (§4, §8, §12)
  *
+ * ⚠ DEPLOY STATUS (2026-07-17): `getUserPrefs_`/`setUserPrefs_` (+ their dispatch and the
+ * `setUserPrefs` WRITE_ACTIONS entry) were ALREADY deployed to HEAD by a concurrent session
+ * (a compatible contract: personId resolved server-side from the token, `body.doc`, per-top-
+ * level-bucket field-merge, returns {ok,doc}). So THIS change pushed ONLY the additive
+ * `pidSyncKey_` + `getGroupOrderResolved_` functions and the four group-order/Wrangler-rail
+ * dispatch re-keys — NOT the getUserPrefs/setUserPrefs blob below (kept here for reference;
+ * the live blob is the concurrent session's equivalent). Do NOT re-push the blob — it would
+ * duplicate `function getUserPrefs_`. Go-live remains Jac's Apps Script editor deploy.
+ *
  * WHAT (all keyed on personId, resolved SERVER-SIDE from the session token):
  *   1. NEW  getUserPrefs / setUserPrefs — a small per-person JSON "light state" blob
  *           (display/sort prefs, saved Views, dispatch route state, comms state, a
