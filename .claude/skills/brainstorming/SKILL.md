@@ -147,8 +147,8 @@ Wait for the user's response. If they request changes, make them and re-run the 
 
 ## Key Principles
 
-- **One question at a time** - Don't overwhelm with multiple questions
-- **Multiple choice preferred** - Easier to answer than open-ended when possible
+- **Batch related questions** - group into one `AskUserQuestion` popup (up to 4), don't drip one at a time; but don't dump everything either — iterate in rounds
+- **Popup + multiSelect preferred** - route questions through the popup; multiple-choice / multiSelect is easier to answer than open-ended, with an **Other** free-text escape (one attempt; inline **A/B/C… + Other** fallback if it fails)
 - **YAGNI ruthlessly** - Remove unnecessary features from all designs
 - **Explore alternatives** - Always propose 2-3 approaches before settling
 - **Incremental validation** - Present design, get approval before moving on

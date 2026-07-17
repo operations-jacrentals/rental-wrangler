@@ -118,8 +118,9 @@ The old `tidy-sessions` job, unchanged in spirit:
    (`ExitWorktree` / `git worktree remove`) so it doesn't linger as a stale
    checkout.
 4. Present candidates as a short table (title · last activity · branch
-   status) via `AskUserQuestion`; default-select the clearly-done ones, let
-   Jac deselect.
+   status) via `AskUserQuestion` (**multiSelect**; one attempt, and if it fails
+   the same list inline as lettered **A/B/C… + Other**); default-select the
+   clearly-done ones, let Jac deselect.
 5. Archive the confirmed ones with `mcp__ccd_session_mgmt__archive_session`.
    Report what was archived, what was kept, and what was cleaned up.
 
