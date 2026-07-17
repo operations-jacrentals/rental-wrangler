@@ -64,3 +64,9 @@
 - **Auto-fix live pipeline** — design the `wrangler-fix.yml` + automated-promote
   wiring so end-user reports reach a live fix autonomously (fully machine-gated).
   Get Jac's explicit one-time go before enabling live auto-promote.
+- **Multi-unit Field Call granularity** — when an inspection **Fail** on a unit
+  that's out on a *multi-unit* rental raises a Field Call, it flags the rental's
+  **primary** unit (`markFieldCall(rentalId)` uses `r.unitId`), not necessarily the
+  specific failed unit — matches how the yard `+FC` node already works app-wide.
+  Fine for single-unit rentals (the common case). Parked from the inspection-toggle
+  redesign (PR #662, 2026-07-17); revisit if per-unit field calls are needed.
