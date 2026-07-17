@@ -7497,7 +7497,7 @@ function caScrub(e) {
    as a static colored marker. Its color is the most-urgent UNREAD note (red>yellow>green),
    resting on the latest note's color once everything is read. ── */
 const COMMENT_SEV = { red: 3, yellow: 2, green: 1 };
-const commentUserKey = () => currentPersonId || currentUser || currentRole || 'me';   // §cross-device-sync — team-chat attribution follows the PERSON (fixes the role-shared cross-person mix); falls back to the legacy free-text key under shared-password login
+const commentUserKey = () => currentUser || currentRole || 'me';   // §cross-device-sync — team-chat/comment attribution re-key (currentPersonId) DEFERRED to a follow-up: flipping this hides pre-cutover chats from their creators (visibility is `by===me`, old `by`=name) and renders raw personIds where `by` is shown. Needs a backward-compat visibility alias + personId→name display lookup + seen migration. The role-shared leak is fixed by the Wrangler-rail personId re-key, which does not use this key. (spec §13)
 const recComments = (rec) => (rec && rec.comments) || [];
 function commentMarker(rec) {
   const all = recComments(rec); if (!all.length) return null;
@@ -20193,7 +20193,7 @@ function openLogoMenu(anchorEl) {
 // Switch user — clear this session's password/role (name stays remembered) → login.
 function switchUser() {
   document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
-  backendPassword = ''; currentRole = ''; booting = true;
+  backendPassword = ''; currentRole = ''; currentPersonId = ''; state.userPrefs = null; booting = true;   // §cross-device-sync — drop the leaving person's identity + synced doc so nothing pushes under the next person
   sessionStorage.removeItem('jactec.pw'); sessionStorage.removeItem('jactec.role');
   renderLogin();
 }
@@ -24031,6 +24031,18 @@ function resetSyncStateToDefault() {
   Object.keys(COLLAPSED_GROUPS).forEach((k) => delete COLLAPSED_GROUPS[k]);
   _ruRange = null; GLOBAL_VIEWS = null;
   if (state.commsRail) state.commsRail.sessions = {};
+  // Per-card sort is read into the session objects at module-init (freshSession -> loadSort),
+  // BEFORE any login, so a shared device holds the prior person's sort in memory. wipeSyncMirror
+  // has already cleared jactec.sort.* by the time this runs, so loadSort() now returns the true
+  // default. Reset the default session AND any open tab sessions so B never paints A's sort.
+  const resetCardSorts = (sess) => { if (sess && sess.cards) for (const c of GRID_CARDS) if (sess.cards[c.id]) sess.cards[c.id].sort = loadSort(c.id); };
+  resetCardSorts(state.defaultSession);
+  (state.tabs || []).forEach((t) => resetCardSorts(t.session));
+  // The previous person's synced doc must NOT survive into the new person's session — else an
+  // early edit (before loadUserPrefs resolves) would stamp A's leftover prefs and push them to
+  // B's backend row (userPrefsMerge_ is one-level-deep, so a whole-section flush carries A's
+  // sibling keys). Null it so every upSet*/upSync* no-ops until B's own doc loads.
+  state.userPrefs = null;
 }
 function syncMirrorTag() { return cacheTokenTag(currentPersonId || pidLocalToken()); }
 // Called at login once currentPersonId is set (pidAdopt). Keep this person's mirror; wipe a
@@ -24063,13 +24075,19 @@ async function pushUserPrefs() {
 }
 // Boot (finishLoad, once personId is known): server doc BEATS stale localStorage; an empty
 // server doc means first-ever sync → adopt this device's mirror as the person's baseline.
-async function loadUserPrefs() {
+async function loadUserPrefs(_try) {
   if (!syncOn()) return;                                             // legacy/no-person → device-local, no-op
+  _try = _try || 0;
   try {
     const r = await backendCall('getUserPrefs');
     if (r && r.ok && r.doc && typeof r.doc === 'object' && Object.keys(r.doc).length) hydrateUserPrefs(r.doc);
     else seedUserPrefsFromLocal();                                   // no row yet → seed baseline from this device
-  } catch (e) { /* offline → keep the device-local mirror already applied at boot */ }
+  } catch (e) {
+    // A transient blip at login must NOT disable sync for the whole session (state.userPrefs
+    // would stay null and every stamp would silently no-op). Retry with backoff while still
+    // unloaded; the guard stops once loaded or the person switches (syncOn/userPrefs change).
+    if (syncOn() && state.userPrefs === null && _try < 5) setTimeout(() => loadUserPrefs(_try + 1), 30000);
+  }
 }
 function collectSortMirror() {
   const out = {};
@@ -24722,7 +24740,7 @@ async function attemptLogin() {
 const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', _role: '' };
 function pidTokenGet() { try { return localStorage.getItem('jactec.pidToken') || sessionStorage.getItem('jactec.pidToken') || ''; } catch (e) { return ''; } }
 function pidTokenSet(tok, personal) { try { if (personal) { localStorage.setItem('jactec.pidToken', tok); sessionStorage.removeItem('jactec.pidToken'); } else { sessionStorage.setItem('jactec.pidToken', tok); localStorage.removeItem('jactec.pidToken'); } } catch (e) {} }
-function pidTokenClear() { try { localStorage.removeItem('jactec.pidToken'); sessionStorage.removeItem('jactec.pidToken'); } catch (e) {} try { dataCache.wipe(); } catch (e) {} try { wipeSyncMirror(); localStorage.removeItem('jactec.syncMirrorTag'); } catch (e) {} currentPersonId = ''; }   // §instant-cache: logout clears the on-device snapshot; §cross-device-sync: + the per-person prefs mirror so the next user on a shared device starts clean (Blocker 1)
+function pidTokenClear() { try { localStorage.removeItem('jactec.pidToken'); sessionStorage.removeItem('jactec.pidToken'); } catch (e) {} try { dataCache.wipe(); } catch (e) {} try { wipeSyncMirror(); localStorage.removeItem('jactec.syncMirrorTag'); } catch (e) {} currentPersonId = ''; state.userPrefs = null; }   // §instant-cache: logout clears the on-device snapshot; §cross-device-sync: + the per-person prefs mirror + the in-memory doc so the next user on a shared device starts clean (Blocker 1)
 function pidRosterCache() { try { return JSON.parse(localStorage.getItem('jactec.pidRoster') || '[]'); } catch (e) { return []; } }
 // The verified token becomes the per-call credential: a truthy backendPassword keeps every
 // existing online-guard working, and backendCall sends it as sessionToken (backend prefers it).

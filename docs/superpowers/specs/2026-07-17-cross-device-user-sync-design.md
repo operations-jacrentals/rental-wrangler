@@ -212,3 +212,27 @@ Ordered, each step independently verifiable:
 **Workflow shape (Ultracode):** step 4 fans out one agent per bucket (worktree-isolated so they
 don't collide on `app.js`), each wiring + self-verifying its bucket; steps 1-3/5-6 are the shared
 scaffold; a final adversarial-verify pass re-checks isolation + the mirror-wipe + no-orphan re-keys.
+
+## 13. Implementation deviations (2026-07-17, at build)
+
+Recorded so a future reader knows these were deliberate build-time calls, not drift. The
+adversarial-verify pass (operator-isolation lens **held**, 0 findings) surfaced them.
+
+- **Team-chat / record-comment attribution re-key DEFERRED (§4.2/§5 "commentUserKey → personId").**
+  Verification against the **live** backend showed §6's "only attribution changes… nothing is lost"
+  is not true for this key: team-chat visibility is `chatCanSee_` = `by === me` (creators are
+  **not** auto-added to `members`), and every pre-cutover chat's `by` is the free-text
+  `currentUser`/`currentRole`. Flipping `commentUserKey` to `personId` would make **`me` no longer
+  match `by`**, hiding every existing chat from its own creator (invisible + unwritable), and would
+  render raw ids (e.g. `E123`) wherever `by` is shown (comms-rail preview renders `last.by` raw).
+  It also affects record-comment `by`/`ack` and `seen` continuity. This attribution re-key is **not**
+  the cross-person leak fix — the role-shared **Wrangler-AI-rail** leak is fixed independently by
+  re-keying `getWranglerRail`/`setWranglerRail` to `personId` (server-side), which does not use
+  `commentUserKey`. So `commentUserKey` is left as-is in this change; a proper follow-up must add a
+  **backward-compat visibility alias** (server accepts the legacy identity alongside `personId`), a
+  **`personId → name` display lookup** at every render site, and a **`seen`/`by` migration**.
+- **Shared-device in-memory reset hardened (Blocker 1).** Beyond wiping the localStorage mirror, the
+  login-time `resetSyncStateToDefault()` also resets per-card `sort` (loaded into session objects at
+  module-init) and nulls `state.userPrefs` (so a prior person's doc can't be pushed under the next
+  person before their own doc loads). `switchUser()`/`pidTokenClear()` clear the same. `loadUserPrefs`
+  retries a failed login-time fetch so a transient blip doesn't disable sync for the session.
