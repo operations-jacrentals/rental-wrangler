@@ -4013,7 +4013,7 @@ function funnelSectionHtml(c) {
 }
 /* ── Phase 1 (2026-07-10 Account/Agreements + Membership redesign, spec §3/§7b
    D19-D27, plan T1.1-T1.4) — the new top-of-card ACCOUNT section. UI SHELL:
-   render + expand/collapse state + a Manager-password prompt SHELL only. The
+   render + expand/collapse state + a Manager-approval prompt SHELL only. The
    per-agreement ACCOUNT TYPE dropdown, the Start-Date sign-gate, and the
    atomic sign=enroll charge are Phase 2 (spec §4); the block-gate ENFORCEMENT
    (this section only renders the block picker, it doesn't gate anything yet)
@@ -4057,7 +4057,7 @@ const acctProtectionCopy = (c) => {
 const NET_TERMS_OPTS = ['None', '7d', '15d', '30d', '60d', '90d'];
 // D22/D23 — NET TERMS · PO · PROTECTION share one line. NET TERMS is a segCtl (R14 — a
 // joined group of mutually-exclusive options): picking one does NOT write netDays
-// directly — ANY change is Manager-password gated (D22), so it opens the managerPw shell
+// directly — ANY change is Manager-approval gated (D22), so it opens the tierAuth shell
 // with the pending value; PO/Protection are single toggleChips (R31) — plain operational
 // booleans, not money/gate fields, so they write straight through.
 function acctTermsLine(c) {
@@ -4067,10 +4067,15 @@ function acctTermsLine(c) {
   })));
   const po = toggleChip('PO', !!c.requiresPO, { js: 'js-acct-po', data: { rec: c.customerId }, tone: 'yellow' });
   const prot = toggleChip('Protection', !!c.rentalProtection, { js: 'js-acct-prot', data: { rec: c.customerId }, tone: 'green' });
+  // Membership dues PO exemption (spec 2026-07-17) — only meaningful for a member account that requires a PO.
+  // Off (default) = dues are exempt (charge without a PO); On = dues need a PO before charging (enforced server-side).
+  const duesPo = (/Member/i.test(c.accountType || '') && c.requiresPO)
+    ? `<span data-tip="On: this member's dues need a PO before charging. Off: dues are exempt from the account's PO requirement.">${toggleChip('Dues PO', !!c.duesRequirePO, { js: 'js-acct-duespo', data: { rec: c.customerId }, tone: 'yellow' })}</span>`
+    : '';
   return `<div class="acct-termsline">`
     + `<span class="acct-cap">Net Terms</span>${netSeg}`
-    + `<span class="acct-lock" data-tip="Any change needs a Manager password">${AG_LOCK}</span>`
-    + `<span class="acct-sep"></span>${po}${prot}`
+    + `<span class="acct-lock" data-tip="Any change needs Manager approval">${AG_LOCK}</span>`
+    + `<span class="acct-sep"></span>${po}${prot}${duesPo}`
     + `</div>`
     + (c.rentalProtection ? `<p class="acct-prot-note">${acctProtectionCopy(c)}</p>` : '');
 }
@@ -4127,7 +4132,7 @@ function agreementExpandedHtml(c, k) {
       + `<p class="acct-microcopy">Finish this card's signing from the <button class="linkname js-edit-customer" data-r="R7" data-rec="${esc(c.customerId)}">customer form</button>.</p>`;
   }
   return `<div class="ag-open">`
-    + `<div class="ao-bar"><span class="ao-lbl">Agreement</span><span class="sp"></span><button class="ao-collapse js-ag-collapse" data-rec="${esc(c.customerId)}" data-tip="Collapse">${I.chev}</button></div>`
+    + `<div class="ao-bar js-ag-collapse" data-rec="${esc(c.customerId)}" data-tip="Collapse"><span class="ao-lbl">Agreement</span><span class="sp"></span><button class="ao-collapse js-ag-collapse" data-rec="${esc(c.customerId)}" data-tip="Collapse">${I.chev}</button></div>`
     + `<div class="ao-body">${body}</div>`
     + `</div>`;
 }
@@ -4190,6 +4195,10 @@ function agreementNewHtml(c) {
     + `</div>` : '';
   const cardLbl = defaultCard(c) ? cardLabel(c) : 'no card on file yet';
   const chargeNote = fee ? `<p class="charge-note">${defaultCard(c) ? `Card <b>${esc(cardLbl)}</b>` : `<b style="color:var(--yellow)">Add a card</b>`} will be charged <b>${money2(fee.total)}</b>${d.startDate ? ` on ${esc(fmtShortDate(d.startDate) || d.startDate)}` : ' once a Start Date is set'}${d.startDate && d.startDate <= TODAY_ISO ? ' (now)' : ', then monthly'}.</p>` : '';
+  // Membership dues PO exemption (spec 2026-07-17) — shown only when the account requires a PO. Off (default) = exempt.
+  const duesPoLine = (isMember && c.requiresPO)
+    ? `<div class="ao-cell"><span class="ao-cap">Membership Dues PO</span>${toggleChip('Require PO', !!c.duesRequirePO, { js: 'js-acct-duespo', data: { rec: c.customerId }, tone: 'yellow' })}<span class="anno">${c.duesRequirePO ? 'dues need a PO before charging' : 'exempt — dues charge without a PO'}</span></div>`
+    : '';
   return `<div class="ag-open new">`
     + `<div class="ao-bar"><span class="ao-lbl">New Agreement</span><span class="unsaved">Unsaved</span><span class="sp"></span><button class="ao-collapse js-ag-collapse" data-rec="${esc(c.customerId)}" data-tip="Cancel">${I.chev}</button></div>`
     + `<div class="ao-body">`
@@ -4202,7 +4211,7 @@ function agreementNewHtml(c) {
     + `<div class="pcell"><span class="ao-cap">Signature</span>${d.signature ? `<div class="sigpad has-sig"><img class="sig-img" src="${esc(d.signature)}" alt="signature"></div>` : `<button type="button" class="sigpad js-sign-popout" data-rec="${esc(c.customerId)}" data-title="${esc(ag.title)}"><span class="ph">Open signature window</span></button>`}</div>`
     + `</div>`
     + `<div><span class="ao-cap ao-cap-block">${esc(ag.title)} · Terms</span><div class="terms">${esc((ag.text || '').slice(0, 420))}…</div></div>`
-    + tote + chargeNote
+    + duesPoLine + tote + chargeNote
     + `<div class="ao-foot">${ghostPill('Cancel', { js: 'js-ag-collapse', data: { rec: c.customerId } })}<span class="sp"></span>`
     + `${actionPill('commit', 'Save', { js: 'js-ag-save', data: { rec: c.customerId } })}`
     + `<button class="pill ignition js-ag-start" data-r="R17" data-rec="${esc(c.customerId)}">${isMember ? 'Start Membership' : 'Sign'}</button>`
@@ -4376,7 +4385,8 @@ function invPayState(t) {
   if (t.status === 'Refunded') return { cls: 'part', word: 'Refunded' };
   if (t.status === 'Paid') return { cls: 'paid', word: 'Paid' };
   if (t.status === 'Partial') return { cls: 'part', word: 'Partial' };
-  return { cls: 'due', word: t.status };   // Unpaid / Not Due / Late* / Collections
+  if (t.status === 'Not Due') return { cls: 'notdue', word: 'Not Due' };   // RYG caution yellow (matches the invoice sheet) — a balance not yet due is NOT overdue-red
+  return { cls: 'due', word: t.status };   // Unpaid / Late* / Collections — genuinely due/overdue
 }
 const invoiceOneLine = (i) => { const l = (i.lineItems || []).map((x) => x.label).filter(Boolean); return l.length ? l.join(' · ') : (i.membership ? 'Membership' : 'No line items yet'); };
 /* Phase 5 (spec §7b) — the Member-Mode sales-pitch delta. Reuses membershipEconomics' lifetime
@@ -4786,9 +4796,12 @@ const NOTIF_DEFAULTS = {
   // Return-rating follow-up message templates (Settings → Notifications → Rating Follow-ups).
   // {name} is filled with the customer's name; the office can still tweak per-send in the popup.
   ratingMsgs: {
-    thankYou: 'Thanks for renting with us, {name} — it was a pleasure! If we earned it, a quick review would mean a lot: [review link]',
+    thankYou: 'Thanks for renting with us, {name} — it was a pleasure! If we earned it, a quick review would mean a lot: {reviewLink}',
     apology: "Hi {name}, we're sorry your recent rental fell short. We want to make it right — please give our manager a call.",
   },
+  // The Google review link substituted for {reviewLink} in the thank-you follow-up (was a dead
+  // "[review link]" placeholder). Public URL — safe in the repo; editable via Settings later.
+  reviewUrl: 'https://g.page/r/CRaUc6tyqQOhEBM/review',
 };
 // Deep-fill a settings.notifications draft against NOTIF_DEFAULTS so an absent key (or
 // a config saved before a field existed) never crashes the pane. Arrays (channels.
@@ -5872,9 +5885,8 @@ function flashOr(sel, msg) {
   toast(msg);
 }
 /** R20: the Wrangler CONTEXT MENU — right-click any element.
- *  Cut/Copy/Paste/Clear act on the field · Search/Global Search use the text ·
- *  Replace opens the inline editor · Add Comment logs to History ·
- *  Ask Mr. Wrangler copies a debug reference for Claude. */
+ *  Copy/Paste act on the field · Global Search uses the text ·
+ *  Add Comment logs to History · Ask Mr. Wrangler copies a debug reference for Claude. */
 let ctxTarget = null;
 let ctxRecord = null;   // §17b — the record the menu opened on ({card, recId}), for the "+ Target" link actions
 // §13.4 graph-chrome right-click menu — tracks which card it was opened on so runCtxAction can act without
@@ -5927,11 +5939,11 @@ function openCtxMenu(e, hit) {
   const ctxCust = ctxRecord && ctxRecord.card === 'customers' ? recOf('customers', ctxRecord.recId) : null;
   const commsSec = ctxCust ? `<button class="dd-item" data-ctx="commsText">${I.messageSquare}Text ${esc((ctxCust.firstName || fullName(ctxCust) || 'customer').trim().split(/\s+/)[0])}…</button><button class="dd-item" data-ctx="commsEmail">${I.mail}Email ${esc((ctxCust.firstName || fullName(ctxCust) || 'customer').trim().split(/\s+/)[0])}…</button><div class="menu-sep"></div>` : '';
   m.innerHTML = invSec + commsSec + linkSec + [
-    item('cut', '✂️ Cut'), item('copy', '📋 Copy'), item('paste', '📥 Paste'), item('clear', '🧹 Clear'),
+    item('copy', '📋 Copy'), item('paste', '📥 Paste'),
     '<div class="menu-sep"></div>',
-    item('search', '🔎 Search'), item('gsearch', '🌐 Global Search'), item('replace', '✏️ Replace'),
+    item('gsearch', '🌐 Global Search'),
     '<div class="menu-sep"></div>',
-    item('comment', '💬 Add Comment'), item('copyel', '📋 Copy to chat'), item('wrangler', '🤠 Ask Mr. Wrangler'),
+    item('comment', '💬 Add Comment'), item('wrangler', '🤠 Ask Mr. Wrangler'),
   ].join('');
   document.body.appendChild(m);
   m.style.left = Math.min(e.clientX, window.innerWidth - 205) + 'px';
@@ -6036,24 +6048,14 @@ function runCtxAction(act) {
     input.blur();
   };
   if (act === 'copy') { try { navigator.clipboard.writeText(text); } catch (err) {} return toast('📋 Copied.'); }
-  if (act === 'cut') { try { navigator.clipboard.writeText(text); } catch (err) {} return setField(''); }
-  if (act === 'clear') return setField('');
   if (act === 'paste') { navigator.clipboard.readText().then((v) => setField(v)).catch(() => toast('Clipboard unavailable — paste into the field directly.')); return; }
-  if (act === 'search') {
-    const card = el.closest('.card')?.dataset.card;   // the grid card id — nearest [data-card] can be an entity span (workOrders/inspections) with no session card
-    const cs = card && activeSession().cards[card];
-    if (!cs) return setQuery(text);
-    cs.mode = 'list'; cs.search = text; cs.listLimit = undefined; render(); return;
-  }
   if (act === 'gsearch') return setQuery(text);
-  if (act === 'replace') { if (editSpan) return startInlineEdit(editSpan); return toast('Not an editable field.'); }
   if (act === 'comment') {
     // Phase 6 — open the colored-comment composer for the right-clicked record.
     const hit = cardRecordAt(el);
     if (!hit) { toast('Right-click a record (or open one) to comment.'); return; }
     return openOverlay({ kind: 'comment', card: hit.card, recId: hit.recId, recType: hit.recType, color: 'yellow' });
   }
-  if (act === 'copyel') return copyElement(el);   // §17 — copy this element; paste it into a Team / Mr. Wrangler chat as a live chip
   if (act === 'wrangler') {
     const hit = cardRecordAt(el);   // §18 — open Mr. Wrangler dock, record-aware when a record is under the cursor
     return openWranglerDock({ messages: [], draft: '', attach: [], card: hit ? hit.card : null, recId: hit ? hit.recId : null, recType: hit ? hit.recType : null, reqNumber: null, reqTitle: null, reqUrl: null });
@@ -6137,7 +6139,7 @@ const RULE_META = {
   R17: ['Action pill', 'actionPill', 'commit = blue · money = green · danger = solid red; .locked = gated'],
   R18: ['Ghost', 'ghostPill', 'the ONE quiet action — Cancel / Close / Exit / Clear, or an icon-only row secondary (e.g. Duplicate)'],
   R19: ['Attention flash', 'attnFlash / flashOr', 'a glow that points AT the next action — replaces an error message when the fix is on screen'],
-  R20: ['Context menu', 'openCtxMenu (right-click · long-press)', 'right-click/long-press any element: Cut · Copy · Paste · Search · Replace · Add Comment · Ask Mr. Wrangler'],
+  R20: ['Context menu', 'openCtxMenu (right-click · long-press)', 'right-click/long-press any element: Copy · Paste · Global Search · Add Comment · Ask Mr. Wrangler'],
   R21: ['File drop', 'fileDrop', 'the MASSIVE popup add-file zone — R5b blue dashed at full size'],
   R22: ['Date picker', 'dateField', 'the ONE app-styled calendar for a single date/time (NOT the rental-window timeline)'],
   R23: ['Tooltip', 'data-tip → the one styled tip', 'every hover hint goes through data-tip — a native title attribute is a violation'],
@@ -6146,11 +6148,12 @@ const RULE_META = {
   R26: ['Manual link', 'sourceLinkBtn', 'small ghost-circle external-link icon beside a service task — opens its cited OEM manual page (task.sourceUrl) in a new tab; renders only when the task actually carries one'],
   R27: ['Due-Today banner', 'renderSchedBanner / #sched-banner', 'top-of-screen reminder plate — caution-YELLOW hazard-stripe cap; lists the scheduled actions due today (customer · note · time), each customer an R2 link. Manual X only (never auto-clears), dismissal sticks for the session (sessionStorage). Like R25 it lives on <body>, outside #app'],
   R28: ['Account button', 'acctBtn', 'the stamped button on the customer funnel gate row — label = the account TYPE (Contractor/Business/Member…); opens the agreements window (same js-view-agreement access as the signed-agreement pill). Neutral steel chip, not an ignition/status color.'],
-  R29: ['Invoice action menu', 'invoiceStatMenu', 'the expanded-invoice header control: a hazard-stripe status pill (green solid = paid · yellow-stripe = partial · red-stripe = due; goes SOLID while its menu is open) that DOUBLES as the Pay · Print · Send · Refund action menu. A pressable-status control like R1, but it opens actions rather than advancing a status. Pay/Refund reuse the canMoney()-gated payment window.'],
+  R29: ['Invoice action menu', 'invoiceStatMenu', 'the expanded-invoice header control: a hazard-stripe status pill (green solid = paid · yellow-stripe = partial · solid yellow = not-yet-due · red-stripe = overdue; goes SOLID while its menu is open) that DOUBLES as the Pay · Print · Send · Refund action menu. A pressable-status control like R1, but it opens actions rather than advancing a status. Pay/Refund reuse the canMoney()-gated payment window.'],
   R30: ['Paused banner', '.wr-paused (wranglerDockBodyHtml)', 'red hazard-stripe plate inside the Mr. Wrangler dock/rail window — raised when a Developer-tier operator takes the wheel (Wrangler Ops live jump-in, §18i); the composer goes read-only until released'],
   R31: ['Toggle chip', 'toggleChip', 'a single interactive on/off pill (PO required, Rental Protection) — off = quiet outline, on = the registry tone color fill. Distinct from R14: ONE control, not a joined group of options.'],
   R32: ['Nav jog', 'cardJog / .card-jog · .mfoot-jog', 'the two-way Back/Forward view-history stepper. On desktop + in-card it is a neutral steel pill (chevron arms split by a saddle-stitch seam, orange only on hover/press) that shows only when the card has history. On phone it lives ALWAYS-ON as a snug chip pinned to the bottom-RIGHT of the footer tool bar (matching the .iconbtn tool buttons), Chrome-style: bright chevrons that grey when their stack is empty — reflecting the snapped column’s card (repainted on swipe).'],
   R33: ['Global toggle', 'globeToggle', 'the icon-only globe pinned right in a grid card’s search bar — flips that bar, and every grid-card bar in lockstep, between per-card and whole-yard “global” search (dim steel off, safety-orange on). A scope-MODE toggle like R31 but icon-only + it drives the shared query; replaces the old giant #globalsearch bar. Behind FEATURES.cardGlobalSearch.'],
+  R34: ['Wash cycle button', 'washBtn', 'one pressable status pill that advances a unit’s wash on each click — neutral “Wash?” → caution “Wash It!” (yellow, requested) → ready “✓ Washed” (green, logged) → click again un-marks today’s wash. Registry STATUS tones (green/yellow/gray), NOT action colors; a press-to-advance control like R1 but it cycles in place instead of opening a dropdown. Replaces the old Wash / Don’t Wash / Washed R14 toggle; wash no longer gates inspection Pass.'],
 };
 /* ════════════ APP-12 · DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
    The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
@@ -7584,7 +7587,7 @@ function woExpandedHtml(w) {
     ? { text: 'Cancelled', tone: 'mute' }
     : { text: woPhaseLabel(w, bottleIdx), tone: { red: 'bad', yellow: 'warn', green: 'ok' }[secColor] };
   return `<div class="inv-open wo-open wo-${w.woId}" data-wo="${w.woId}">`
-    + `<div class="io-bar"><div class="io-bar-top">`
+    + `<div class="io-bar"><div class="io-bar-top js-wo-collapse" data-unit="${esc(w.unitId)}" data-tip="Collapse">`
     + `<span class="ir-id">WO</span>`
     + `<span class="ir-mid"><span class="inline-edit ir-woreport" data-edit="field" data-card="workOrders" data-field="woReport" data-rec="${w.woId}" data-ph="Report">${esc(w.woReport)}</span><span class="ir-date">${esc(fmtShortDate(w.date))}</span></span>`
     + `<span class="type-chip ${chip.tone}">${esc(chip.text)}</span>`
@@ -8193,7 +8196,6 @@ const DETAIL = {
     const stampDate = u.condAt || li2?.date || '';
     const stamp = stampDate ? `${fmtShortDate(stampDate)}${u.condClock ? ' · ' + u.condClock : ''}` : '—';
     const cond = u.inspectionStatus;
-    const washedToday = (u.serviceLog || []).some((l) => l.taskId === 'svc-wash' && l.date === TODAY_ISO);
     const inspSec = `<div class="section sec-${cond === 'Ready' ? 'green' : cond === 'Failed' ? 'red' : 'yellow'}">
       <h4>Inspection <span class="hmuted">· ${esc(stamp)}</span></h4>
       <div class="fieldstack">
@@ -8204,13 +8206,7 @@ const DETAIL = {
             { label: '✕ Fail', js: 'js-cond', data: { rec: u.unitId, val: 'Fail' }, on: cond === 'Failed' ? 'red' : null },
           ])}
         </div>
-        <div class="kv" style="justify-content:center">
-          ${segCtl([
-            { label: `${I.droplet} Wash`, js: 'js-washseg', data: { rec: u.unitId, val: 'Wash' }, on: u.washChoice === 'Wash' || u.washRequested ? 'yellow' : null },
-            { label: "Don't Wash", js: 'js-washseg', data: { rec: u.unitId, val: 'DontWash' }, on: u.washChoice === 'DontWash' && !u.washRequested && !washedToday ? 'blue' : null },
-            { label: 'Washed', js: 'js-washseg', data: { rec: u.unitId, val: 'Washed' }, on: washedToday ? 'green' : null },
-          ], 'seg-wash')}
-        </div>
+        <div class="kv" style="justify-content:center">${washBtn(u)}</div>
         ${li2?.description ? `<div class="kv" style="justify-content:center"><span class="muted">Latest:</span> <span style="font-size:12.5px">${esc(li2.description)}</span></div>` : ''}
       </div>
     </div>`;
@@ -9788,30 +9784,33 @@ function bottomBarInner() {
  *  (photo sweep) tools. One trigger instead of a flat run of icon-only buttons. */
 function toolsMenuRows() {
   const item = (js, icon, label, on) => `<button class="dd-item ${js}${on ? ' on' : ''}"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${icon}</span>${esc(label)}</button>`;
-  // Manual Update — force the newest build past a stale mobile cache (Jac 2026-07-16).
-  let html = `<button class="dd-item js-app-update"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${STATUS_ICONS.refresh}</span>Check for updates<span style="margin-left:auto;color:var(--txt-3);font-size:11px;letter-spacing:.3px">v${esc(appVersion())}</span></button>`
-    + `<div class="menu-sep"></div>`;
-  html += item('js-qr', I.qr, 'Share session (QR)')
+  // Sectioned into collapsible FAMILIES, all collapsed on open (Jac 2026-07-17: the flat menu
+  // read as overwhelming). Native <details>/<summary> — same mechanic as the Rulebook's .rb-idx;
+  // the menu rebuilds on every open so each family always starts closed. Tier-gated families
+  // (Developer/Admin) render only when unlocked, exactly as before.
+  const fam = (name, rows) => `<details class="dd-fam"><summary class="dd-fam-h">${esc(name)}<span class="dd-fam-chev">${I.chev}</span></summary><div class="dd-fam-body">${rows}</div></details>`;
+  // General — the everyday tools + the manual cache-buster (force the newest build past a stale mobile cache, Jac 2026-07-16).
+  const general = `<button class="dd-item js-app-update"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${STATUS_ICONS.refresh}</span>Check for updates<span style="margin-left:auto;color:var(--txt-3);font-size:11px;letter-spacing:.3px">v${esc(appVersion())}</span></button>`
+    + item('js-qr', I.qr, 'Share session (QR)')
     + item('js-previews', state.previewsOn ? I.eye : I.eyeOff, state.previewsOn ? 'Hover previews: on' : 'Hover previews: off', state.previewsOn)
     + item('js-hotkeys', I.mouse, 'Mouse & keyboard shortcuts');
-  html += `<div class="dd-sec-lbl">GPS / Fleet</div>`
-    + item('js-gps-health', I.truck, 'Tracker Health')
+  const gps = item('js-gps-health', I.truck, 'Tracker Health')
     + item('js-gps-fleet', I.grid, 'Fleet Map')
     + item('js-gps-roundup', I.list, 'Round Up Trackers')
     + item('js-gps-issues', I.alert, 'GPS Issues')
     + item('js-gps-utilization', I.graph, 'Fleet Utilization')
     + item('js-gps-bouncie-trucks', CARD_ICON.units, 'Pull Bouncie Trucks');
+  let html = fam('General', general) + fam('GPS / Fleet', gps);
   if (devUnlocked()) {
-    html += `<div class="menu-sep"></div>`
-      + item('js-lint', I.eye, 'Design lint (R0)', document.body.classList.contains('rw-lint'))
+    html += fam('Developer', item('js-lint', I.eye, 'Design lint (R0)', document.body.classList.contains('rw-lint'))
       + item('js-inspect', I.search, 'Design Inspector', state.inspect)
       + item('js-rulebook', I.doc, 'The R-Rulebook')
-      + item('js-wrangler-ops', I.lasso, 'Wrangler Ops');
+      + item('js-wrangler-ops', I.lasso, 'Wrangler Ops'));
   }
-  if (adminUnlocked()) html += `<div class="menu-sep"></div>` + item('js-photo-sweep', I.camera, 'Photo sweep to Drive');
+  if (adminUnlocked()) html += fam('Admin', item('js-photo-sweep', I.camera, 'Photo sweep to Drive'));
   return html;
 }
-function openToolsMenu(anchorEl) { openDropdown(anchorEl, `<div class="dd-sec">Tools</div>${toolsMenuRows()}`, { align: 'right' }); }
+function openToolsMenu(anchorEl) { openDropdown(anchorEl, toolsMenuRows(), { align: 'right' }); }
 function toolsBtn() {
   return `<button class="iconbtn js-tools-menu" data-tip="Tools — QR, previews, hotkeys, GPS fleet tools${devUnlocked() ? ', dev tools' : ''}">${CARD_ICON.workOrders}</button>`;
 }
@@ -10664,20 +10663,6 @@ const closeMenus = () => document.querySelectorAll('.dropdown-menu').forEach((n)
 function chatSetTitle(id, title) {
   const c = chatById(id); if (!c || !chatIsAdmin(c)) return;   // only the creator renames
   c.title = title; pushChatsSoon();
-}
-// Right-click → Copy to chat: HOLD this element so it can be pasted into an internal
-// (Team / Mr. Wrangler) chat as a live, clickable chip. Replaces the retired
-// "start a chat seeded from this element" flow (2026-07-08 rail spec) — the copied
-// element travels into any conversation, and every member can click through it.
-function copyElement(el) {
-  const hit = cardRecordAt(el);
-  if (!hit) { toast('Right-click a record to copy it into a chat.'); return; }
-  const ec = entityCardOf(hit.card, hit.recType), rec = recOf(ec, hit.recId);
-  if (!rec) { toast('Record not found.'); return; }
-  const label = ROW_META[ec] ? ROW_META[ec](rec).title : String(hit.recId);
-  state.held = { card: ec, recId: hit.recId, label };
-  render();
-  toast(`Copied “${label}” — paste it into a Team or Mr. Wrangler chat.`);
 }
 // Resolve a dragged payload into a chat tag — label from the record, color inherited
 // from any flag it already carries (else neutral). Granular-element sources (line/pill/
@@ -13626,25 +13611,47 @@ function buildPopupEl(o, overlay, opts = {}) {
         ${c.signature ? `<div class="nc-ag-sigline"><span class="nc-cap-lbl">Signature</span><img class="nc-thumb sig" src="${esc(c.signature)}" alt="signature" /></div>` : ''}
         ${lifecycle ? `<div class="ag-lifecycle-wrap"><span class="nc-cap-lbl">Membership</span>${lifecycle}</div>` : ''}` });
     overlay.appendChild(pop);
-  } else if (o.kind === 'managerPw') {
-    // Phase 3 (T3.1/T3.3, spec D14/D22) — the Manager-TIER authorization shell, reused for two
-    // non-persistent single-action gates: a Net Terms change (pwAction:'netTerms') and the
-    // per-action rental-gate override (pwAction:'rentalOverride' — every attempt re-prompts, D14).
-    // Passes immediately if the current user is already Manager-tier+; otherwise verifies the SAME
-    // backend password requireAdmin uses (no separate Manager password exists — Jac's call,
-    // 2026-07-10). See js-mgrpw-confirm for the verify + apply.
-    const cust = IDX.customer.get(o.custId);
-    const actionLabel = o.pwAction === 'netTerms' ? `Setting Net Terms to ${o.pwVal || 'None'}`
-      : o.pwAction === 'rentalOverride' ? (o.pwReason || 'Booking past an account block')
-        : 'This action';
+  } else if (o.kind === 'tierAuth') {
+    // The TIER-AUTHORIZATION shell (2026-07-15 — supersedes the Manager-password prompt; the
+    // shared password is retired with per-person phone logins). One popup, four states:
+    //  · flag-OFF (phoneIdentity) → the legacy password input, byte-compatible backout path
+    //  · at/above o.minTier, or demo/offline → a plain confirm (the popup IS the deliberate step)
+    //  · below tier, step 'pick' → choose the approving Manager/Admin off the Team Roster;
+    //    tapping texts a one-time code to THEIR phone (authzStart — the destination is resolved
+    //    server-side from the roster, never client-supplied)
+    //  · step 'code' → enter the 6-digit approval code (authzVerify — burned single-use,
+    //    tier-checked at mint AND verify, never mints a session; approves THIS action only)
+    // Gates riding it: Net Terms (azAction 'netTerms', D22), the rental-gate override (D14,
+    // azAction 'rentalOverride'), and every requireAdmin callback (azAction 'custom' + onOk).
+    const cust = o.custId ? IDX.customer.get(o.custId) : null;
+    const tierLbl = tierRank(o.minTier || 'manager') >= tierRank('admin') ? 'Admin' : 'Manager';
+    const lead = `<p class="muted" style="margin:0 0 12px">${cust ? esc(fullName(cust)) + ' — ' : ''}${esc(tierAuthLabel(o))} needs ${tierLbl} approval.</p>`;
+    let body, foot;
+    if (!flagOn('phoneIdentity')) {
+      body = lead + `<input type="password" class="nc-in js-mgrpw-input" placeholder="${tierLbl} password" autocomplete="off" style="width:100%">`;
+      foot = `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', o.busy ? 'Checking…' : 'Authorize', { js: o.busy ? '' : 'js-mgrpw-confirm' })}`;
+    } else if (tierAuthSelfOk(o.minTier || 'manager')) {
+      body = lead + `<p class="muted" style="margin:0">Your call to make — confirm to proceed.</p>`;
+      foot = `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', 'Approve', { js: 'js-taz-approve' })}`;
+    } else if (o.step === 'code') {
+      body = lead
+        + `<div class="login-hint">Approval code texted to ${esc(o.approverName || 'the approver')}${o.masked ? ` · ${esc(o.masked)}` : ''}</div>`
+        + `<input class="nc-in login-otp js-taz-code" inputmode="numeric" autocomplete="one-time-code" maxlength="${PHONE_IDENTITY.codeLen}" placeholder="000000">`
+        + `<div style="margin-top:10px;text-align:center">${ghostPill('Text a fresh code', { js: o.busy ? '' : 'js-taz-resend' })}</div>`;
+      foot = `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', o.busy ? 'Checking…' : 'Approve', { js: o.busy ? '' : 'js-taz-approve' })}`;
+    } else {
+      const hands = tierAuthApprovers(o.minTier || 'manager');
+      body = lead + (hands.length
+        ? `<div class="login-hint" style="text-align:left;margin:0 0 8px">Who's approving? A one-time code texts to their own phone.</div>`
+          + `<div class="login-pick">${hands.map((h) => `<button type="button" class="login-pick-btn js-taz-pick" data-r="R17" data-id="${esc(h.id)}">${esc(h.name)}<span class="taz-role"> · ${esc(h.role || '')}</span></button>`).join('')}</div>`
+        : `<p class="muted" style="margin:0">No ${tierLbl}-tier hands on the roster — add one in Settings → Team Roster.</p>`);
+      foot = ghostPill('Cancel', { js: 'js-close' });
+    }
     const pop = el('div', 'popup'); pop.style.width = '360px';
     pop.innerHTML = popupShell({
-      icon: AG_LOCK, title: 'Manager Password', tag: 'Account · authorize',
-      body: `
-        <p class="muted" style="margin:0 0 12px">${cust ? esc(fullName(cust)) + ' — ' : ''}${esc(actionLabel)} requires Manager authorization.</p>
-        <input type="password" class="nc-in js-mgrpw-input" placeholder="Manager password" autocomplete="off" style="width:100%">
-        ${o.error ? `<div class="login-err" style="margin-top:10px">${esc(o.error)}</div>` : ''}`,
-      foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', o.busy ? 'Checking…' : 'Authorize', { js: o.busy ? '' : 'js-mgrpw-confirm' })}`,
+      icon: AG_LOCK, title: `${tierLbl} Approval`, tag: 'Account · approval',
+      body: `${body}${o.error ? `<div class="login-err" style="margin-top:10px">${esc(o.error)}</div>` : ''}`,
+      foot,
     });
     overlay.appendChild(pop);
   } else if (o.kind === 'blockPicker') {
@@ -14020,7 +14027,7 @@ const WINDOW_CATALOG = [
   { kind: 'addAch',        label: 'Add bank account',        tag: 'Customer · ACH bank',       sample: () => ({ customerId: ((DATA.customers || [])[0] || {}).customerId }) },
   { kind: 'verifyAch',     label: 'Verify ACH',              tag: 'Customer · verify ACH',     sample: () => { const c = (DATA.customers || []).find((x) => (x.achAccounts || []).length); return c ? { customerId: c.customerId, bankId: c.achAccounts[0].id } : {}; } },
   { kind: 'payment',       label: 'Take Payment',            tag: 'Invoice · payment',         sample: () => ({ invoiceId: ((DATA.invoices || [])[0] || {}).invoiceId }) },
-  { kind: 'managerPw',    label: 'Manager password (account gate)', tag: 'Account · manager override', sample: () => ({ custId: ((DATA.customers || [])[0] || {}).customerId, pwAction: 'netTerms', pwVal: 'None', busy: false, error: '' }) },
+  { kind: 'tierAuth',     label: 'Tier approval (manager/admin gate)', tag: 'Account · approval', sample: () => ({ custId: ((DATA.customers || [])[0] || {}).customerId, minTier: 'manager', azAction: 'netTerms', pwVal: 'None', step: 'pick', busy: false, error: '' }) },
   { kind: 'blockPicker',   label: 'Block Account (Blacklist / invoice-hold)', tag: 'Account · block', sample: () => ({ custId: ((DATA.customers || [])[0] || {}).customerId, mode: 'pick', selIds: [], error: '' }) },
   { kind: 'wranglerOps',   label: 'Wrangler Ops',            tag: 'Developer · live chats',    sample: () => ({ loading: false, err: '', chats: [], openId: null, msgs: [], driver: 'ai', draft: '', busy: false }) },
 ];
@@ -14058,7 +14065,7 @@ const STANDALONE_SURFACES = [
   { label: 'Comms bell menu', tag: 'Toolbar · requests · alerts · notifications', loc: 'app.js · commsMenuRows / openCommsMenu',
     preview: () => `<div class="dropdown-menu" style="position:static;display:inline-block;min-width:220px;box-shadow:none"><div class="dd-sec">Comms</div>${commsMenuRows()}</div>` },
   { label: 'Tools wrench menu', tag: 'Toolbar · QR · previews · hotkeys · GPS · dev tools', loc: 'app.js · toolsMenuRows / openToolsMenu',
-    preview: () => `<div class="dropdown-menu" style="position:static;display:inline-block;min-width:220px;box-shadow:none"><div class="dd-sec">Tools</div>${toolsMenuRows()}</div>` },
+    preview: () => `<div class="dropdown-menu" style="position:static;display:inline-block;min-width:220px;box-shadow:none">${toolsMenuRows()}</div>` },
 ];
 /* ── §15 in-app feedback: bug/request → queued to the backend Feedback tab ── */
 function feedbackContext() {
@@ -14131,7 +14138,13 @@ function notifRatingTemplate(key) {
   const m = (state.settings && state.settings.notifications && state.settings.notifications.ratingMsgs) || {};
   return (typeof m[key] === 'string' && m[key].trim()) ? m[key] : NOTIF_DEFAULTS.ratingMsgs[key];
 }
-const rrFillName = (tpl, nm) => String(tpl || '').replace(/\{name\}/g, nm);
+function notifReviewUrl() {
+  const n = state.settings && state.settings.notifications;
+  return (n && typeof n.reviewUrl === 'string' && n.reviewUrl.trim()) ? n.reviewUrl.trim() : NOTIF_DEFAULTS.reviewUrl;
+}
+// {name} → customer name; {reviewLink} → the shop's Google review URL. Blank-safe: an empty URL
+// drops the token (with its leading space) so the text never sends a bare "{reviewLink}".
+const rrFillName = (tpl, nm) => String(tpl || '').replace(/\{name\}/g, nm).replace(/ ?\{reviewLink\}/g, notifReviewUrl() ? ' ' + notifReviewUrl() : '');
 function rrActions(stars) {
   const b = rrBand(stars);
   if (b === 'good') return [{ id: 'thankYou', icon: STATUS_ICONS.star, desc: (nm) => `Text ${nm} a thank-you + a review link`,
@@ -16090,6 +16103,7 @@ function openDropdown(anchorEl, html, { align = 'left', cls = '' } = {}) {
   const off = (e) => { if (!dd.contains(e.target) && !anchorEl.contains(e.target)) { dd.remove(); document.removeEventListener('mousedown', off); } };
   dd._off = off;
   setTimeout(() => document.addEventListener('mousedown', off), 0);
+  dd.addEventListener('toggle', () => requestAnimationFrame(place), true);   // a collapsible <details> (e.g. the sectioned Tools menu) changed height → re-place so it can't spill off-screen
   return dd;
 }
 function openStatusDropdown(rentalId, anchorEl) {
@@ -17582,7 +17596,7 @@ function onClick(e) {
   if (closest('.js-svc-sec-toggle')) { e.stopPropagation(); const rec = closest('.js-svc-sec-toggle').dataset.rec; state.svcSecOpen = state.svcSecOpen || {}; state.svcSecOpen[rec] = !state.svcSecOpen[rec]; return render(); }   // Unit detail — collapse/expand the Services (service-order) section
   if (closest('.js-unit-sec')) { e.stopPropagation(); const b = closest('.js-unit-sec'); const rec = b.dataset.rec, sec = b.dataset.sec; state.unitSecOpen = state.unitSecOpen || {}; state.unitSecOpen[rec] = state.unitSecOpen[rec] || {}; state.unitSecOpen[rec][sec] = !state.unitSecOpen[rec][sec]; return render(); }   // Unit detail — collapse/expand a generic detail section (Work Orders / Specs / GPS / Investment[+Coverage])
   if (closest('.js-wo-row')) { e.stopPropagation(); const b = closest('.js-wo-row'); const un = b.dataset.unit, rec = b.dataset.rec; state.woRowOpen = state.woRowOpen || {}; state.woRowOpen[un] = (state.woRowOpen[un] === rec) ? null : rec; return render(); }   // Unit detail — open/collapse one Work Order row (accordion, mirrors js-inv-row)
-  if (closest('.js-wo-collapse')) { e.stopPropagation(); const un = closest('.js-wo-collapse').dataset.unit; if (state.woRowOpen) state.woRowOpen[un] = null; return render(); }   // collapse the open Work Order row
+  if (closest('.js-wo-collapse') && !closest('.inline-edit')) { e.stopPropagation(); const un = closest('.js-wo-collapse').dataset.unit; if (state.woRowOpen) state.woRowOpen[un] = null; return render(); }   // collapse the open Work Order row — header-wide, but the inline-edit report stays editable
   if (closest('.js-ag-row')) { e.stopPropagation(); const b = closest('.js-ag-row'); const rec = b.dataset.rec, card = b.dataset.card; return guardAgLeave(rec, () => { state.custAgOpen = state.custAgOpen || {}; state.custAgOpen[rec] = (state.custAgOpen[rec] === card) ? null : card; render(); }); }
   if (closest('.js-ag-collapse')) { e.stopPropagation(); const rec = closest('.js-ag-collapse').dataset.rec; return guardAgLeave(rec, () => { if (state.custAgOpen) state.custAgOpen[rec] = null; render(); }); }
   if (closest('.js-ag-add')) { e.stopPropagation(); const rec = closest('.js-ag-add').dataset.rec; state.custAgOpen = state.custAgOpen || {}; state.custAgOpen[rec] = '__new__'; return render(); }
@@ -17598,27 +17612,55 @@ function onClick(e) {
   if (closest('.js-ag-selfie-pick')) { return; }   // native <input type=file> — handled by its own 'change' event (onChange), not a click delegate
   if (closest('.js-acct-po')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-acct-po').dataset.rec); if (c) { c.requiresPO = !c.requiresPO; reindex('customers', c); logAction(c, `PO required → ${c.requiresPO ? 'On' : 'Off'}`); } return render(); }   // logAction persists (saveSoon) + audits — inline toggle must save like the popup does
   if (closest('.js-acct-prot')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-acct-prot').dataset.rec); if (c) { c.rentalProtection = !c.rentalProtection; reindex('customers', c); logAction(c, `Rental Protection → ${c.rentalProtection ? 'On' : 'Off'}`); } return render(); }   // sibling of the PO toggle — same persist fix (saveSoon via logAction)
-  if (closest('.js-acct-netdays')) { e.stopPropagation(); const b = closest('.js-acct-netdays'); return openOverlay({ kind: 'managerPw', custId: b.dataset.rec, pwAction: 'netTerms', pwVal: b.dataset.val, busy: false, error: '' }); }   // D22 — ANY Net Terms change is Manager-password gated
+  if (closest('.js-acct-duespo')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-acct-duespo').dataset.rec); if (c) { c.duesRequirePO = !c.duesRequirePO; reindex('customers', c); logAction(c, `Membership dues PO → ${c.duesRequirePO ? 'On' : 'Off'}`); } return render(); }   // spec 2026-07-17 — membership dues-level PO exemption (persists via logAction→saveSoon; enforced server-side)
+  if (closest('.js-acct-netdays')) { e.stopPropagation(); const b = closest('.js-acct-netdays'); return openOverlay({ kind: 'tierAuth', minTier: 'manager', custId: b.dataset.rec, azAction: 'netTerms', pwVal: b.dataset.val, step: 'pick', busy: false, error: '' }); }   // D22 — ANY Net Terms change is Manager-approval gated (tierAuth phone-code, replaces the retired managerPw password prompt)
   if (closest('.js-block-account')) { e.stopPropagation(); const rec = closest('.js-block-account').dataset.rec; return openOverlay({ kind: 'blockPicker', custId: rec, mode: 'pick', selIds: [], error: '' }); }   // D12/D13 — Block Account entry
-  if (closest('.js-mgrpw-confirm')) {
+  if (closest('.js-mgrpw-confirm')) {   // tierAuth, flag-OFF backout path only — the legacy password input
     e.stopPropagation();
-    const o = state.overlay; if (!o || o.kind !== 'managerPw' || o.busy) return;
+    const o = state.overlay; if (!o || o.kind !== 'tierAuth' || o.busy) return;
     const pw = (document.querySelector('.overlay .js-mgrpw-input') || {}).value || '';
     o.busy = true; o.error = ''; renderOverlay();
     (async () => {
-      const ok = await verifyTierOrPassword('manager', pw);
+      const ok = await verifyTierOrPassword(o.minTier || 'manager', pw);
       if (state.overlay !== o) return;
-      if (!ok) { o.busy = false; o.error = 'Not a valid Manager override.'; renderOverlay(); return; }
-      const c = IDX.customer.get(o.custId);
-      if (c && o.pwAction === 'netTerms') {
-        const days = o.pwVal === 'None' ? 0 : (parseInt(o.pwVal, 10) || 0);
-        const old = c.netDays; c.netDays = days; reindex('customers', c);
-        logAction(c, `Net Terms: ${old == null || old === '' ? 'None' : old + 'd'} → ${o.pwVal} (Manager override)`);
-        closeOverlay(); render(); toast(`Net Terms set to ${o.pwVal}.`); return;
-      }
-      const onOk = o.onOk;   // rentalOverride path — the caller supplies what "authorized" means (T3.3)
-      closeOverlay();
-      if (typeof onOk === 'function') onOk();
+      if (!ok) { o.busy = false; o.error = 'Not a valid override.'; renderOverlay(); return; }
+      tierAuthApply(o, '');
+    })();
+    return;
+  }
+  if (closest('.js-taz-pick')) {   // tierAuth — pick the approver; texts a one-time code to THEIR phone
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'tierAuth' || o.busy) return;
+    const id = closest('.js-taz-pick').dataset.id;
+    const hand = (((state.settings || {}).employees) || []).find((x) => x && String(x.id) === String(id));
+    o.approverId = id; o.approverName = hand ? hand.name : '';
+    tierAuthSendCode(o);
+    return;
+  }
+  if (closest('.js-taz-resend')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'tierAuth' || o.busy || !o.approverId) return;
+    tierAuthSendCode(o);
+    return;
+  }
+  if (closest('.js-taz-approve')) {   // tierAuth — self-tier confirm, or verify the texted approval code
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'tierAuth' || o.busy) return;
+    if (tierAuthSelfOk(o.minTier || 'manager')) { tierAuthApply(o, ''); return; }
+    const code = ((document.querySelector('.overlay .js-taz-code') || {}).value || '').replace(/\D/g, '');
+    if (code.length !== PHONE_IDENTITY.codeLen) { o.error = `Enter the ${PHONE_IDENTITY.codeLen}-digit code.`; renderOverlay(); return; }
+    o.busy = true; o.error = ''; renderOverlay();
+    (async () => {
+      let r = null;
+      try { r = await backendCall('authzVerify', { approverId: o.approverId, code, minTier: o.minTier || 'manager' }); } catch (err) {}
+      if (state.overlay !== o) return;
+      if (r && r.ok) { tierAuthApply(o, r.approver || o.approverName || ''); return; }
+      o.busy = false;
+      o.error = r && r.error === 'bad-code' ? `That code didn't match${r.left != null ? ` — ${r.left} left` : ''}.`
+        : r && r.error === 'expired' ? 'That code expired — text a fresh one.'
+        : r && r.error === 'too-many' ? 'Too many tries — text a fresh code.'
+        : "Couldn't verify the code — try again.";
+      renderOverlay();
     })();
     return;
   }
@@ -17639,10 +17681,10 @@ function onClick(e) {
     e.stopPropagation();
     const o = state.overlay; if (!o || o.kind !== 'blockPicker') return;
     const custId = o.custId;
-    requireAdmin('Blacklisting this account is permanent — only an Admin/Owner password lifts it.', () => {
+    requireAdmin('Blacklisting this account is permanent — Admin approval sets it, and only Admin approval lifts it.', (approver) => {
       const c = IDX.customer.get(custId); if (!c) return;
       c.block = { type: 'blacklist', setBy: currentRole || 'admin', setAt: TODAY_ISO };
-      reindex('customers', c); logAction(c, 'Account BLACKLISTED (Admin/Owner authorization)');
+      reindex('customers', c); logAction(c, `Account BLACKLISTED (Admin approval${approver ? ' — ' + approver : ''})`);
       closeOverlay(); render(); toast('Account blacklisted.');
     });
     return;
@@ -17650,9 +17692,9 @@ function onClick(e) {
   if (closest('.js-lift-blacklist')) {
     e.stopPropagation();
     const rec = closest('.js-lift-blacklist').dataset.rec;
-    requireAdmin('Lifting a Blacklist requires an Admin/Owner password.', () => {
+    requireAdmin('Lifting a Blacklist needs Admin approval.', (approver) => {
       const c = IDX.customer.get(rec); if (!c) return;
-      delete c.block; reindex('customers', c); logAction(c, 'Blacklist lifted (Admin/Owner authorization)');
+      delete c.block; reindex('customers', c); logAction(c, `Blacklist lifted (Admin approval${approver ? ' — ' + approver : ''})`);
       render(); toast('Blacklist lifted.');
     });
     return;
@@ -17893,16 +17935,16 @@ function onClick(e) {
   if (closest('.js-comms-chip')) { e.stopPropagation(); return commsToggleCat(closest('.js-comms-chip').dataset.cat); }
   if (closest('.js-comms-new')) { e.stopPropagation(); return commsNewChat(); }   // D9 ALL menu: + New chat (team → newChat(), wrangler → wranglerNewChat())
   if (closest('[data-comms-hide]')) { e.stopPropagation(); return commsHideTab(closest('[data-comms-hide]').dataset.commsHide); }   // ✕ hides from the rail only — never ends
-  if (closest('.js-comms-all')) { e.stopPropagation(); const s = commsSess(); if (s) { s.menuOpen = !s.menuOpen; saveCommsRail(); } return render(); }
   if (closest('.js-comms-menu-x')) { e.stopPropagation(); const s = commsSess(); if (s) { s.menuOpen = false; saveCommsRail(); } return render(); }
-  if (closest('[data-comms-tab]')) { e.stopPropagation(); return commsToggleTab(closest('[data-comms-tab]').dataset.commsTab); }
+  if (closest('[data-comms-tab]')) { e.stopPropagation(); commsOpenPt = { x: e.clientX }; return commsToggleTab(closest('[data-comms-tab]').dataset.commsTab); }
   if (closest('.js-comms-end')) { e.stopPropagation(); closeMenus(); return commsEndConv(closest('.js-comms-end').dataset.cust); }
-  if (closest('.js-comms-mopen')) { e.stopPropagation(); return commsOpenConv(state.commsRail.cat, closest('.js-comms-mopen').dataset.cust); }
   if (closest('.js-comms-mend')) { e.stopPropagation(); return commsEndConv(closest('.js-comms-mend').dataset.cust); }
+  if (closest('.js-comms-mrow')) { e.stopPropagation(); commsOpenPt = { x: e.clientX }; return commsOpenConv(state.commsRail.cat, closest('.js-comms-mrow').dataset.cust); }   // D9: click the whole ALL-list row to open (the End pill above intercepts its own click)
+  if (closest('.cp-head') && !closest('.comms-pop.comms-menu') && !closest('input, textarea')) { e.stopPropagation(); const s = commsSess(); if (s && s.lastOpen != null) return commsToggleTab(s.lastOpen); }   // click a conversation window's HEADER to collapse it — gear/End/rename intercept above; the ALL-list header + the rename input are excluded
   if (closest('.js-comms-send')) { e.stopPropagation(); return commsSend(closest('.js-comms-send').dataset.cust); }
   if (closest('.js-comms-from')) { e.stopPropagation(); return commsFromMenu(closest('.js-comms-from')); }
   if (closest('.js-comms-from-pick')) { e.stopPropagation(); const b = closest('.js-comms-from-pick'); commsFromSel.set(String(b.dataset.cust), b.dataset.from); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return render(); }
-  if (closest('.js-comms-copen')) { e.stopPropagation(); const b = closest('.js-comms-copen'); return commsOpenConv(commsCatOfChannel(b.dataset.channel), b.dataset.cust); }   // customer profile → Open
+  if (closest('.js-comms-copen')) { e.stopPropagation(); commsOpenPt = { x: e.clientX }; const b = closest('.js-comms-copen'); return commsOpenConv(commsCatOfChannel(b.dataset.channel), b.dataset.cust); }   // customer profile → Open
   if (closest('.js-comms-cend')) { e.stopPropagation(); const b = closest('.js-comms-cend'); return commsEndConv(b.dataset.cust, commsCatOfChannel(b.dataset.channel)); }     // customer profile → End
   if (closest('.js-fb-type')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.fbType = closest('.js-fb-type').dataset.val; renderOverlay(); } return; }
   if (closest('.js-fb-shot-x')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.shot = ''; renderOverlay(); } return; }
@@ -18166,7 +18208,7 @@ function onClick(e) {
   if (closest('.js-ck-walkrm')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-ck-walkrm'); if (o && o.kind === 'checklist') { const n = IDX.insp.get(o.inspId); if (n && n.evidence) { n.evidence.splice(Number(b.dataset.i), 1); saveSoon(); renderOverlay(); } } return; }
   if (closest('.js-ck-complete')) { e.stopPropagation(); return completeChecklist(); }
   if (closest('.js-ck-pending')) { e.stopPropagation(); closeOverlay(); toast('Inspection kept as pending — resume it anytime.'); return; }
-  if (closest('.js-washseg')) { const b = closest('.js-washseg'); return setUnitWash(b.dataset.rec, b.dataset.val); }
+  if (closest('.js-washcycle')) { return cycleUnitWash(closest('.js-washcycle').dataset.rec); }
   if (closest('.js-yard')) { const b = closest('.js-yard'); return yardCapture(b.dataset.rec, b.dataset.cap, b.dataset.unit); }
   // ── inline transport editor (replaces the old `site` popup) ──
   if (closest('.js-site-go')) { const b = closest('.js-site-go'); e.stopPropagation(); return openTransportEdit(b.dataset.rec, b.dataset.unit || null, 'delivery'); }   // legacy dispatch links still open the editor
@@ -18245,7 +18287,7 @@ function onClick(e) {
   if (closest('.js-sortdir')) { const card = closest('.js-sortdir').dataset.card; const cs = activeSession().cards[card]; cs.sort.dir = cs.sort.dir === 'asc' ? 'desc' : 'asc'; saveSort(card, cs.sort); render(); return; }
 
   // inline edit (click a value → input)
-  if (closest('.inline-edit')) { e.stopPropagation(); const _ie = closest('.inline-edit'); if (_ie.dataset.admin === '1' && !adminUnlocked()) return requireAdmin('Categories and pricing are Admin-only.', () => startInlineEdit(_ie)); if (_ie.dataset.money === '1' && !canMoney()) return toast('Cost fields are Office/Admin only.'); return startInlineEdit(_ie); }
+  if (closest('.inline-edit')) { e.stopPropagation(); const _ie = closest('.inline-edit'); if (_ie.dataset.admin === '1' && !adminUnlocked()) { const _k = { edit: _ie.dataset.edit || '', card: _ie.dataset.card || '', field: _ie.dataset.field || '', rec: _ie.dataset.rec || '' }; return requireAdmin('Categories and pricing are Admin-only.', () => { const n = Array.from(document.querySelectorAll('.inline-edit')).find((x) => (x.dataset.edit || '') === _k.edit && (x.dataset.card || '') === _k.card && (x.dataset.field || '') === _k.field && (x.dataset.rec || '') === _k.rec) || _ie; startInlineEdit(n); }); } if (_ie.dataset.money === '1' && !canMoney()) return toast('Cost fields are Office/Admin only.'); return startInlineEdit(_ie); }   // a live-refresh render() during the approval wait can orphan the saved span — re-find it by its FULL identifying tuple (edit+card+field+rec) so a sibling admin field on the same record can't be opened by mistake; fall back to the original node if it's still attached
 
   // X-to-swap / remove on pills (handle before the pill-open)
   const xEl = closest('.x');
@@ -18812,24 +18854,75 @@ function adminUnlocked() { return roleTier(currentRole) >= tierRank('admin'); }
 /** Dev/design tools (Lint / Inspector / Rulebook) — Developer tier only. */
 function devUnlocked() { return roleTier(currentRole) >= tierRank('developer'); }
 
-/** Verify an Admin password (reuses the Settings gate), then run onOk. Demo/offline → allowed. */
+/** Admin-tier gate. At/above Admin tier (or demo/offline) → straight through. Below tier:
+ *  flag-ON (phoneIdentity) → the tierAuth shell (an Admin approves with a one-time code texted
+ *  to their own phone); flag-OFF → the legacy Admin-password prompt (the backout path).
+ *  onOk receives the approver's roster name (when a code approved it) for audit strings. */
 async function requireAdmin(reason, onOk) {
-  const pw = adminUnlocked() ? backendPassword
-    : (window.prompt((reason ? reason + '\n\n' : '') + 'Enter an Admin password to override:') || '');
-  if (!pw && backendPassword) return;
-  if (!backendPassword) { onOk(); return; }          // demo: no backend to verify against
+  if (!backendPassword || adminUnlocked()) { onOk(); return; }   // demo/offline, or the tier already carries it
+  if (flagOn('phoneIdentity')) {
+    openOverlay({ kind: 'tierAuth', minTier: 'admin', azAction: 'custom', pwReason: reason, step: 'pick', busy: false, error: '', onOk });
+    return;
+  }
+  const pw = window.prompt((reason ? reason + '\n\n' : '') + 'Enter an Admin password to override:') || '';
+  if (!pw) return;
   try { const r = await backendCall('getConfig', { password: pw }); if (r && r.ok) onOk(); else toast('Not an Admin password — override denied.'); }
   catch (e) { toast('Couldn’t verify the password — try again.'); }
 }
-/* Phase 3 (2026-07-10 account/agreements redesign) — the app has role TIERS + ONE verifiable
-   backend password (no separate "Manager password" / "Owner password" secret exists). Per Jac's
-   confirmed call (2026-07-10): reuse the tier ladder + the existing admin password rather than
-   invent a new auth surface. `minTier` gates who passes WITHOUT a prompt; if the current user is
-   below that tier, the SAME backend password (verified the same way requireAdmin does) authorizes
-   the one action. Demo/offline (no backendPassword) always passes — matches every other money gate
-   in the app. Used for: the D14 per-action Manager override on a blocked rental, the D22 Net-Terms
-   change, and (at minTier='admin') the D13 Blacklist set/lift — 'owner' already maps to the admin
-   tier (config.js BUILTIN_ROLE_TIERS), so there is no separate Owner password to build. */
+/* ── Tier-gate approval by phone code (2026-07-15) — the shared password is retired; per-person
+   phone identity (spec 2026-07-13-text-link-identity §6) supplies the replacement. A below-tier
+   user picks a Manager/Admin off the Team Roster; the backend texts THAT person's own phone a
+   one-time 6-digit approval code (`authzStart` — the destination is always resolved server-side
+   from the roster, never client-supplied) and entering it authorizes the ONE action
+   (`authzVerify` — single-use, tier-checked at mint AND verify, never mints a session; a login
+   code can't approve and an approval code can't log in — separate backend namespaces).
+   At/above `minTier` (or demo/offline, matching every other money gate) it's a plain confirm.
+   Backend contract: docs/handoffs/phone-identity-backend.gs §authz. Used for: the D22 Net-Terms
+   change and D14 rental-gate override (manager), and every requireAdmin gate (admin) —
+   'owner' already maps to the admin tier (config.js BUILTIN_ROLE_TIERS). */
+function tierAuthSelfOk(minTier) { return !backendPassword || roleTier(currentRole) >= tierRank(minTier); }
+function tierAuthApprovers(minTier) {
+  return (((state.settings || {}).employees) || []).filter((e) => e && e.name && roleTier(e.role) >= tierRank(minTier));
+}
+function tierAuthLabel(o) {
+  return o.azAction === 'netTerms' ? `Setting Net Terms to ${o.pwVal || 'None'}` : (o.pwReason || 'This action');
+}
+/* Apply whatever the tierAuth shell was guarding. `approver` = the roster name that entered the
+   code ('' when the user's own tier / demo passed) — it lands in the audit log line. */
+function tierAuthApply(o, approver) {
+  const c = o.custId ? IDX.customer.get(o.custId) : null;
+  if (c && o.azAction === 'netTerms') {
+    const days = o.pwVal === 'None' ? 0 : (parseInt(o.pwVal, 10) || 0);
+    const old = c.netDays; c.netDays = days; reindex('customers', c);
+    logAction(c, `Net Terms: ${old == null || old === '' ? 'None' : old + 'd'} → ${o.pwVal} (Manager approval${approver ? ' — ' + approver : ''})`);
+    closeOverlay(); render(); toast(`Net Terms set to ${o.pwVal}.`); return;
+  }
+  const onOk = o.onOk;   // rentalOverride / requireAdmin path — the caller supplies what "approved" means
+  closeOverlay();
+  if (typeof onOk === 'function') onOk(approver || '');
+}
+/* Text (or re-text) the one-time approval code to the picked approver. Shared by pick + resend. */
+function tierAuthSendCode(o) {
+  o.busy = true; o.error = ''; renderOverlay();
+  (async () => {
+    let r = null;
+    try { r = await backendCall('authzStart', { approverId: o.approverId, minTier: o.minTier || 'manager', reason: tierAuthLabel(o) }); } catch (e) {}
+    if (state.overlay !== o) return;
+    o.busy = false;
+    if (r && r.ok && r.sent) { o.step = 'code'; o.masked = r.masked || ''; o.approverName = r.name || o.approverName || ''; o.error = ''; }
+    else {
+      o.error = r && r.reason === 'too-soon' ? 'Hold on — a code just went out. Give it 30 seconds.'
+        : r && r.reason === 'rate' ? 'Too many codes for them this hour — try again later.'
+        : r && (r.error === 'under-tier' || r.error === 'no-approver') ? `They can't approve this — pick a ${tierRank(o.minTier || 'manager') >= tierRank('admin') ? 'Admin' : 'Manager'}-tier hand.`
+        : "Couldn't text the code — try again.";
+    }
+    renderOverlay();
+  })();
+}
+/* The flag-OFF backout path only (phoneIdentity OFF → the legacy shared-password world).
+   `minTier` gates who passes WITHOUT a prompt; below that tier, the shared backend password
+   (verified the same way the legacy requireAdmin prompt does) authorizes the one action.
+   Demo/offline (no backendPassword) always passes — matches every other money gate. */
 async function verifyTierOrPassword(minTier, pw) {
   if (roleTier(currentRole) >= tierRank(minTier)) return true;
   if (!backendPassword) return true;   // demo/offline — no backend to verify against, matches requireAdmin
@@ -18841,10 +18934,10 @@ async function verifyTierOrPassword(minTier, pw) {
 function cardOverrideRental(rentalId, val) {
   const r = IDX.rental.get(rentalId); if (!r) return;
   const cust = r.customerId ? IDX.customer.get(r.customerId) : null;
-  requireAdmin(`${cust ? cust.name : 'This customer'} — ${cardGateReason(cust) || 'card gate'}. Booking is blocked.`, () => {
+  requireAdmin(`${cust ? cust.name : 'This customer'} — ${cardGateReason(cust) || 'card gate'}. Booking is blocked.`, (approver) => {
     r.cardOverride = true;
-    logAction(r, `Admin override — booked ${getStatus('rentalStatus', val).label} (${cardGateReason(cust) || 'card gate'})`);
-    if (cust) logAction(cust, 'Admin override used to book past the card/agreement gate');
+    logAction(r, `Admin override${approver ? ' (' + approver + ')' : ''} — booked ${getStatus('rentalStatus', val).label} (${cardGateReason(cust) || 'card gate'})`);
+    if (cust) logAction(cust, `Admin override used to book past the card/agreement gate${approver ? ' — approved by ' + approver : ''}`);
     setRentalStatus(rentalId, val);
   });
 }
@@ -18855,7 +18948,7 @@ function cardOverrideRental(rentalId, val) {
    the pre-existing, previously-dormant §9 `/Blacklist/i` check — nothing ever set that string
    until Phase 3's blockPicker). That leaves `failed-payment` and `invoice-hold` uncovered by
    anything today — this is their gate: a D14 per-action Manager override, verified the same way
-   managerPw does. Critically NON-PERSISTENT — `bypassAccountBlock` is a plain function-call
+   tierAuth does. Critically NON-PERSISTENT — `bypassAccountBlock` is a plain function-call
    argument threaded through the retry, never written to the record, so every future attempt
    re-prompts (Jac, 2026-07-10: "that's the point"). */
 function accountBlockGate(cust) {
@@ -18864,9 +18957,9 @@ function accountBlockGate(cust) {
 }
 function accountBlockOverride(cust, onOk) {
   const ab = accountBlockGate(cust);
-  openOverlay({ kind: 'managerPw', custId: cust ? cust.customerId : null, pwAction: 'rentalOverride',
+  openOverlay({ kind: 'tierAuth', minTier: 'manager', custId: cust ? cust.customerId : null, azAction: 'rentalOverride',
     pwReason: `${cust ? cust.name : 'This customer'} — ${ab ? ab.reason : 'account block'}.`,
-    busy: false, error: '', onOk });
+    step: 'pick', busy: false, error: '', onOk });
 }
 /* Admin "Rental Rules" (Settings → Rental Rules) — HARD-BLOCK On Rent until every
    requirement an admin marked Required is met. Pure + defensive: with no rules set
@@ -19013,12 +19106,11 @@ function setUnitCondition(unitId, val) {
   // PASS is the gate (Jac 2026-07-17 — the confusing "+ Inspection" button is retired; the toggle
   // IS the interface). Already Passed → Pass re-opens the done inspection to view; a checklist
   // category → Pass opens the checklist takeover (completing it cascades to Pass); otherwise a
-  // direct pass, which still needs a wash decision first (R19 — glow the wash toggle, not an error).
+  // direct pass. Wash no longer gates Pass (Jac 2026-07-17 — the wash button is a pure request /
+  // complete tracker now, not a Pass prerequisite).
   if (val === 'Pass') {
     if (u.inspectionStatus === 'Ready') return openInspectionRecord(unitId);
     if (checklistRequired(u)) return openChecklist(unitId);
-    const washedToday = (u.serviceLog || []).some((l) => l.taskId === 'svc-wash' && l.date === TODAY_ISO);
-    if (!u.washChoice && !u.washRequested && !washedToday) return attnFlash('.seg-wash');
     u.condAt = TODAY_ISO; u.condClock = nowClock();
     return setInspResult(newInspectionForUnit(u).inspectionId, 'Pass');
   }
@@ -19081,6 +19173,49 @@ function completeChecklist() {
   state.overlay = null;                                   // close the takeover; a Fail re-opens the photo/notes popup
   setInspResult(n.inspectionId, failed.length ? 'Fail' : 'Pass');   // cascade onto the inspection section + auto-WO
   toast(failed.length ? `Inspection failed — work order opened for ${u.name}.` : `Inspection passed — ${u.name} marked Passed. ✓`);
+}
+/* R34: the WASH cycle button — one pressable pill that advances a unit's wash on each click:
+   neutral "Wash?" → caution "Wash It!" (yellow, requested) → ready "✓ Washed" (green, logged) →
+   click again un-marks today's wash. Registry STATUS tones (green/yellow/gray), NOT action colors.
+   Replaces the old Wash / Don't Wash / Washed 3-segment toggle (Jac 2026-07-17); wash no longer
+   gates inspection Pass. The washRequested / svc-wash serviceLog data model is unchanged, so every
+   derived consumer (service-due, Wash-Requested badge, KPIs, 100-HR countdown) keeps working. */
+function washBtn(u) {
+  const washedToday = (u.serviceLog || []).some((l) => l.taskId === 'svc-wash' && l.date === TODAY_ISO);
+  const st = washedToday
+    ? { tone: 'green', label: '✓ Washed', tip: 'Washed today — click to un-mark' }
+    : u.washRequested
+      ? { tone: 'yellow', label: `${I.droplet} Wash It!`, tip: 'Wash requested — click when it’s washed' }
+      : { tone: 'gray', label: 'Wash?', tip: 'Click to queue a wash' };
+  return `<button class="pill washbtn c-${st.tone} js-washcycle" data-r="R34" data-rec="${esc(u.unitId)}" data-tip="${esc(st.tip)}">${st.label}</button>`;
+}
+/* Advance the wash cycle one step per press (see washBtn / R34). */
+function cycleUnitWash(unitId) {
+  const u = IDX.unit.get(unitId); if (!u) return;
+  const washedToday = (u.serviceLog || []).some((l) => l.taskId === 'svc-wash' && l.date === TODAY_ISO);
+  if (washedToday) return uncompleteWash(unitId);             // ✓ Washed → un-mark (undo today's wash)
+  if (u.washRequested) return setUnitWash(unitId, 'Washed');  // Wash It! → log the wash (recordServiceCompletion)
+  return setUnitWash(unitId, 'Wash');                         // Wash? → queue the wash (washRequested = true)
+}
+/* Undo TODAY's wash (misclick recovery, Jac 2026-07-17): drop today's svc-wash log entry and roll
+   the 100-HR countdown back to the previous wash (or unwashed if none) — the exact inverse of
+   recordServiceCompletion for a same-day wash. Leaves washRequested false → the button reads "Wash?". */
+function uncompleteWash(unitId) {
+  const u = IDX.unit.get(unitId); if (!u) return;
+  const log = u.serviceLog || [];
+  let at = -1;
+  for (let i = log.length - 1; i >= 0; i--) { if (log[i].taskId === 'svc-wash' && log[i].date === TODAY_ISO) { at = i; break; } }
+  if (at < 0) return;
+  u.serviceLog = log.filter((_, i) => i !== at);
+  const prior = [...u.serviceLog].reverse().find((l) => l.taskId === 'svc-wash');
+  u.serviceCompletions = u.serviceCompletions || {};
+  if (prior) u.serviceCompletions['svc-wash'] = Number(prior.hours) || 0;
+  else delete u.serviceCompletions['svc-wash'];
+  u.washChoice = undefined; u.washRequested = false;
+  reindex('units', u);
+  logAction(u, 'Wash un-marked (undo)');
+  toast('Wash un-marked — countdown reopened.');
+  reanchorRender();
 }
 function setUnitWash(unitId, val) {
   const u = IDX.unit.get(unitId); if (!u) return;
@@ -19935,10 +20070,14 @@ function switchUser() {
   sessionStorage.removeItem('jactec.pw'); sessionStorage.removeItem('jactec.role');
   renderLogin();
 }
-// Settings (Admin-only): manage the role passwords. Admin is already authed with the
-// admin password; a staff role must enter it. Loads the live config, then opens the editor.
+// Settings (Admin-tier): loads the live config, then opens the editor. Below-Admin with
+// per-person phone identity ON gets a plain refusal — Settings is a whole Admin surface
+// backed by the server-tier-gated setConfig, so a one-shot approval code can't honestly
+// carry it (unlike the single-action tierAuth gates); get re-tiered or round up an Admin.
+// Flag-OFF keeps the legacy Admin-password prompt (the backout path).
 async function openSettings() {
   document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
+  if (!adminUnlocked() && backendPassword && flagOn('phoneIdentity')) { toast('Settings is Admin-tier — round up an Admin, or have one re-tier your role.'); return; }
   const adminPw = adminUnlocked() ? backendPassword : (window.prompt('Settings is Admin-only.\nEnter the Admin password:') || '');
   if (!adminPw) return;
   // Open the shell immediately in a loading state so the wait is visible, not a frozen UI.
@@ -23322,6 +23461,130 @@ function applyLoadResponse(r) {
 }
 async function loadFromBackend() { applyLoadResponse(await backendCall('load')); }
 
+/* ══════════════ INSTANT CACHE — on-device data snapshot (spec 2026-07-16) ══════════════
+   A DISPLAY-ONLY photograph of the last confirmed backend load, so a PERSONAL (trusted)
+   device paints real data instantly on open, then reconciles with the live backend.
+   Modeled on wrStore (§18): its own IndexedDB DB, a thin promise wrapper that REJECTS
+   LOUDLY — no silent catch (the localStorage QuotaExceeded that silently vanished the
+   Wrangler rail must never recur). One store, one 'snapshot' record, overwritten each
+   load (no growth → no eviction engine).
+   THE INVARIANT: the cache is NEVER a save baseline (see paintFromCache) — a stale or
+   corrupt snapshot can change what you briefly SEE, never what is written to the Sheet.
+   Gated behind FEATURES.instantCache + a personal (localStorage) token; a shared device
+   (sessionStorage token, PIN each session) never caches → no PII at rest on it. */
+const DC_DB = 'jactec.datacache', DC_DB_VER = 1;
+// Bump CACHE_SCHEMA_VER in the SAME commit as any change to the shape of the PERSIST_KEYS
+// data (or the settings) the snapshot carries — a version miss DISCARDS the old snapshot
+// rather than painting a stale shape.
+const CACHE_SCHEMA_VER = 1;
+let _dcDbPromise = null;
+function dcDbOpen() {
+  if (_dcDbPromise) return _dcDbPromise;
+  _dcDbPromise = new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') { reject(new Error('no-indexeddb')); return; }
+    let req; try { req = indexedDB.open(DC_DB, DC_DB_VER); } catch (e) { reject(e); return; }
+    req.onupgradeneeded = () => { const db = req.result; if (!db.objectStoreNames.contains('snapshot')) db.createObjectStore('snapshot'); };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error('idb-open-failed'));
+  });
+  return _dcDbPromise;
+}
+function dcTx(mode, fn) {
+  return dcDbOpen().then((db) => new Promise((resolve, reject) => {
+    let tx, req;
+    try { tx = db.transaction('snapshot', mode); req = fn(tx.objectStore('snapshot')); } catch (e) { reject(e); return; }
+    tx.oncomplete = () => resolve(req ? req.result : undefined);
+    tx.onerror = () => reject(tx.error || new Error('idb-tx-error'));
+    tx.onabort = () => reject(tx.error || new Error('idb-abort'));
+  }));
+}
+const dataCache = {
+  read: () => dcTx('readonly', (os) => os.get('snapshot')).catch(() => null),   // absent / IDB-unavailable → null → boot falls to the splash path
+  write: (env) => dcTx('readwrite', (os) => os.put(env, 'snapshot')),           // REJECTS loudly — caller logs, non-fatal
+  wipe: () => dcTx('readwrite', (os) => os.clear()).catch(() => {}),            // best-effort clear (a failed wipe is caught by the read-time validity gate)
+};
+// This build's cache-bust token, read off the app.js <script> src — already bumped every
+// deploy, so a snapshot written by an OLDER build never matches the running one.
+function cacheAppVer() {
+  try { const s = document.querySelector('script[src*="app.js"]'); const m = s && (s.getAttribute('src') || '').match(/[?&]v=([^&#]+)/); return m ? m[1] : ''; } catch (e) { return ''; }
+}
+// The PERSONAL (persistent) token in localStorage — NOT the sessionStorage shared-device
+// token. The cache's whole existence is gated on this being present.
+function pidLocalToken() { try { return localStorage.getItem('jactec.pidToken') || ''; } catch (e) { return ''; } }
+// A short, NON-reversible tag of the trusted token — a same-device equality check so a
+// different person's login (different token) never paints the previous person's snapshot.
+// The raw token is never stored; it already lives in localStorage on this device, so this
+// widens nothing. djb2 → hex.
+function cacheTokenTag(tok) {
+  let h = 5381; const s = String(tok || '');
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(16);
+}
+// Read/write the cache ONLY on a personal device with the flag on.
+function cacheDeviceOk() { return flagOn('instantCache') && !!pidLocalToken(); }
+// A snapshot is safe to PAINT only if it parses AND matches this schema, this build, and
+// this device's current trusted token. Any miss → discard (caller wipes the bad record).
+function cacheValid(env) {
+  return !!(env && typeof env === 'object'
+    && env.cacheVer === CACHE_SCHEMA_VER
+    && env.appVer === cacheAppVer()
+    && env.tokenTag === cacheTokenTag(pidLocalToken())
+    && env.payload && env.payload.data && typeof env.payload.data === 'object');
+}
+// Build the envelope from the CURRENT (confirmed-backend) in-memory state. Called only
+// after a real load applied it (Phase 1) — never from local edits.
+function cacheSnapshotEnvelope() {
+  const data = {}; PERSIST_KEYS.forEach((k) => { data[k] = Array.isArray(DATA[k]) ? DATA[k] : []; });
+  // role/user let the instant paint render the right role-view before authResume returns
+  // (cosmetic only — the BACKEND enforces the real gate; a tampered role is a 1s UI blip
+  // with no writes, since booting stays true until the confirmed load).
+  return { cacheVer: CACHE_SCHEMA_VER, appVer: cacheAppVer(), tokenTag: cacheTokenTag(pidLocalToken()), savedAt: Date.now(), role: currentRole || '', user: currentUser || '', payload: { data, settings: state.settings || null } };
+}
+// Persist the just-confirmed backend state as the snapshot — personal device + flag only.
+// LOUD but NON-FATAL: a write failure is logged, never toasted-as-error, never blocks the
+// app (next open simply uses the splash path). Called from finishLoad AFTER the backend
+// load applied — never from local edits, so the snapshot is always a photograph of a
+// known-good backend state.
+function cachePersistSnapshot() {
+  if (!cacheDeviceOk()) return;
+  try { dataCache.write(cacheSnapshotEnvelope()).catch((e) => logErr('cache', 'write: ' + ((e && e.message) || e))); }
+  catch (e) { logErr('cache', 'write: ' + ((e && e.message) || e)); }
+}
+// §instant-cache: paint the last confirmed snapshot as the REAL app immediately, so a
+// trusted reopen shows data instead of a splash while the backend load runs.
+// THE INVARIANT: leaves `booting = true` and does NOT call snapshotSaved() — the save
+// baseline is set ONLY by the real finishLoad(backend), and nothing persists while
+// booting, so a stale/corrupt cache can never become a save baseline or reach the Sheet.
+// The confirmed backend load replaces this the moment it lands.
+function paintFromCache(env) {
+  try {
+    if (env.role) currentRole = env.role;
+    if (env.user) currentUser = env.user;
+    applyLoadResponse({ ok: true, data: env.payload.data, settings: env.payload.settings });
+    buildIndexes(); state.cascade = createCascade(DATA);
+    render();
+    cacheRefreshing(true);
+  } catch (e) { logErr('cache', 'paint: ' + ((e && e.message) || e)); }
+}
+// The "refreshing" cue — a body class while cached data is up and the backend load is in
+// flight (Phase 3 styles it + adds the chip). Idempotent; cleared when fresh data lands.
+let _cacheRefreshing = false;
+// Mount the cue ONCE (like mountEnvBadge / the sched-banner) — a persistent body-level node
+// toggled by the `rw-refreshing` body class, NOT created mid-render. Lives on <body> so a
+// render() can't wipe it.
+function mountRefreshCue() {
+  if (document.getElementById('cache-refreshing')) return;
+  const el = document.createElement('div');
+  el.id = 'cache-refreshing';
+  el.setAttribute('role', 'status'); el.setAttribute('aria-live', 'polite');
+  el.innerHTML = `<span class="cr-stripe" aria-hidden="true"></span><span>Refreshing</span>`;
+  document.body.appendChild(el);
+}
+function cacheRefreshing(on) {
+  _cacheRefreshing = !!on;
+  try { mountRefreshCue(); document.body.classList.toggle('rw-refreshing', _cacheRefreshing); } catch (e) {}
+}
+
 // ── Incremental persistence (diff-based sync) ──────────────────────────────
 // Whole-state seed doesn't scale (≈1.7 MB / 10 s at real volume). Instead we keep
 // a snapshot of what the backend last held and, on each flush, send only the
@@ -24000,6 +24263,8 @@ function renderLogin(msg) {
 function finishLoad() {
   snapshotSaved();                                              // baseline = what the backend currently holds
   buildIndexes(); state.cascade = createCascade(DATA); booting = false; render();
+  cacheRefreshing(false);                                       // §instant-cache: fresh backend data is in — drop the "refreshing" cue
+  cachePersistSnapshot();                                       // §instant-cache: photograph this confirmed backend state (personal device + flag only)
   if (flagOn('phoneIdentity')) { try { const emp = ((state.settings || {}).employees) || []; localStorage.setItem('jactec.pidRoster', JSON.stringify(emp.map((e) => ({ id: e.id, name: e.name })))); } catch (e) {} }   // cache non-secret roster names for the shared-device name-pick
   // (views no longer pull from the backend — personal per-device "my views", spec search-views D2)
   loadGroupOrderFromBackend();                                  // pull THIS role's saved card-group order
@@ -24134,18 +24399,19 @@ async function attemptLogin() {
 const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', _role: '' };
 function pidTokenGet() { try { return localStorage.getItem('jactec.pidToken') || sessionStorage.getItem('jactec.pidToken') || ''; } catch (e) { return ''; } }
 function pidTokenSet(tok, personal) { try { if (personal) { localStorage.setItem('jactec.pidToken', tok); sessionStorage.removeItem('jactec.pidToken'); } else { sessionStorage.setItem('jactec.pidToken', tok); localStorage.removeItem('jactec.pidToken'); } } catch (e) {} }
-function pidTokenClear() { try { localStorage.removeItem('jactec.pidToken'); sessionStorage.removeItem('jactec.pidToken'); } catch (e) {} }
+function pidTokenClear() { try { localStorage.removeItem('jactec.pidToken'); sessionStorage.removeItem('jactec.pidToken'); } catch (e) {} try { dataCache.wipe(); } catch (e) {} }   // §instant-cache: logout clears the on-device snapshot
 function pidRosterCache() { try { return JSON.parse(localStorage.getItem('jactec.pidRoster') || '[]'); } catch (e) { return []; } }
 // The verified token becomes the per-call credential: a truthy backendPassword keeps every
 // existing online-guard working, and backendCall sends it as sessionToken (backend prefers it).
 function pidAdopt(r, tok, personal) {
+  try { dataCache.wipe(); } catch (e) {}   // §instant-cache: a new login never paints the prior person's snapshot (belt-and-suspenders to the tokenTag guard); finishLoad rewrites it for this person
   backendPassword = tok; currentRole = (r && r.role) || pidUI._role || ''; currentUser = (r && r.name) || pidUI.name || '';
   pidTokenSet(tok, personal);
   if (r && r.scanDeviceToken) scanTokenSet(r.scanDeviceToken);   // remember this device for decal scans (write-only token)
   try { sessionStorage.setItem('jactec.role', currentRole); localStorage.setItem('jactec.user', currentUser); } catch (e) {}
 }
 function pidLoadFail() { pidTokenClear(); backendPassword = ''; pidUI.step = 'identify'; renderPhoneLogin("Couldn't reach the database. Try again."); }
-function pidEnter() {
+function pidEnter(loadP) {
   const s = document.querySelector('.login-screen');
   if (s) {
     s.classList.add('signing-in');
@@ -24161,16 +24427,55 @@ function pidEnter() {
   // rejected, retry muted so the video still rolls — audio is the bonus, the video is the point.
   const vid = document.getElementById('login-video');
   if (vid) { try { vid.muted = state.loginMuted; const p = vid.play(); if (p && p.catch) p.catch(() => { vid.muted = true; const p2 = vid.play(); if (p2 && p2.catch) p2.catch(() => {}); }); } catch (e) {} }
-  loadFromBackend().then(finishLoad).then(applyRoleLanding).then(maybeReplayScan).catch(pidLoadFail);   // maybeReplayScan: replay a #u= decal scan parked before this login
+  (loadP || loadFromBackend()).then(finishLoad).then(applyRoleLanding).then(maybeReplayScan).catch(pidLoadFail);   // §instant-cache #650 loadP (parallel resume) + trunk's maybeReplayScan (#660 decal-scan replay)
+}
+// Boot splash — the signed-in resume paths (trusted-device token / cached same-tab
+// password) go straight to the backend, and #app sat EMPTY until the data landed: a
+// long black screen that read as broken (Jac 2026-07-15). Paint the plate immediately
+// in its signing-in state — the same barber-pole treatment the post-Saddle-Up load
+// shows — so the wait reads as "working". No inputs, and no intro video (its 2.4MB
+// fetch would compete with the load call); reduced-motion freezes the band as on login.
+function renderBootSplash() {
+  $('#app').innerHTML = `<div class="login-screen signing-in"><div class="login-box">
+    <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
+    <div class="login-plate">
+      <img class="login-logo" src="assets/jac-rentals-logo.jpg" alt="Jac Rentals" />
+      <div class="login-title">Rental Wrangler</div>
+      <div class="login-sub">JacRentals · Sulphur, LA</div>
+      <div class="login-hint" role="status">${currentUser ? 'Saddling up, ' + esc(currentUser) + '…' : 'Saddling up…'}</div>
+    </div></div></div>`;
 }
 // Boot (flag on): resume a trusted device, else show the phone login.
 function phoneBoot() {
   const tok = pidTokenGet();
   if (!tok) { warmBackend(); return renderPhoneLogin(); }
+  // Trusted-device resume used to await authResume THEN load with nothing painted in
+  // #app — a black screen for two serial backend round-trips (cold GAS ≈ 1–5s each).
+  // Paint the splash first, and fire the two calls in PARALLEL: both carry the token
+  // and are validated server-side per call, nothing applies until BOTH succeed, and a
+  // rejected resume discards the load result outright — the auth outcome is identical
+  // to the serial path, in roughly half the wall-clock.
+  renderBootSplash();
+  backendPassword = tok;                       // backendCall sends it as sessionToken on both calls
+  const loadP = backendCall('load');
+  loadP.catch(() => {});                       // may settle before pidEnter attaches the real handler — silence the interim rejection (the chain below still sees it)
+  // §instant-cache: while the two backend calls run, paint the last snapshot as the REAL
+  // app (personal device + flag + a valid snapshot) so the reopen shows data, not a
+  // splash. `resumeSettled` guards against a fast backend that already finished — never
+  // paint a stale cache over fresh data. Nothing persists (booting stays true) until
+  // finishLoad(backend) below replaces this and sets the real baseline.
+  let resumeSettled = false;
+  if (cacheDeviceOk()) {
+    dataCache.read().then((env) => {
+      if (resumeSettled) return;
+      if (cacheValid(env)) paintFromCache(env);
+      else if (env) dataCache.wipe();          // a stale / foreign / malformed snapshot → discard, keep the splash
+    }).catch(() => {});
+  }
   backendCall('authResume', { token: tok }).then((r) => {
-    if (r && r.ok) { pidAdopt(r, tok, !!(function () { try { return localStorage.getItem('jactec.pidToken'); } catch (e) { return null; } })()); pidEnter(); }
-    else { pidTokenClear(); backendPassword = ''; warmBackend(); renderPhoneLogin(); }
-  }).catch(() => { warmBackend(); renderPhoneLogin(); });
+    if (r && r.ok) { resumeSettled = true; pidAdopt(r, tok, !!(function () { try { return localStorage.getItem('jactec.pidToken'); } catch (e) { return null; } })()); pidEnter(loadP.then(applyLoadResponse)); }
+    else { resumeSettled = true; cacheRefreshing(false); pidTokenClear(); backendPassword = ''; warmBackend(); renderPhoneLogin(); }   // rejected resume: pidTokenClear wipes the snapshot too
+  }).catch(() => { resumeSettled = true; cacheRefreshing(false); backendPassword = ''; warmBackend(); renderPhoneLogin(); });   // network blip: keep the token (+ its cache) for the next try
 }
 function pidErr(msg) { pidUI.err = msg || ''; const e = document.getElementById('pid-err'); if (e) e.textContent = pidUI.err; return null; }
 async function pidCall(btnId, fn) {
@@ -24530,11 +24835,12 @@ function boot() {
   // before they apply — the guaranteed way back if a bad setting ever breaks the screen.
   try {
     const h = (location.hash || '').toLowerCase();
-    if (h.includes('reset-settings') || h.includes('safe-mode')) { localStorage.removeItem('jactec.settings'); localStorage.removeItem('jactec.settings.prev'); state.settings = {}; settingsReverted = true; }
+    if (h.includes('reset-settings') || h.includes('safe-mode')) { localStorage.removeItem('jactec.settings'); localStorage.removeItem('jactec.settings.prev'); state.settings = {}; settingsReverted = true; try { dataCache.wipe(); } catch (e) {} }   // §instant-cache: the recovery hatch also nukes a poisoned snapshot
   } catch (e) {}
   applySettings();   // Settings Board: apply admin status overrides (color/icon) before the first render
   if (settingsReverted) setTimeout(() => { try { toast('Customizations reset to defaults (recovery mode).'); } catch (e) {} }, 800);
   mountEnvBadge();   // STAGING / LOCAL caution stamp (no-op on production) — know which app you're in
+  mountRefreshCue();   // §instant-cache: persistent (hidden) "refreshing" cue, shown via the rw-refreshing body class
   initTooltip();
   // §13.5 — the Units graph legend was removed (hover names each slice); its donut slices /
   // trajectory buckets are SVG, so make a focused one keyboard-activatable (Enter/Space → filter).
@@ -24597,6 +24903,14 @@ function boot() {
   // R0 flash-lint: ON by default — violations self-report by pulsing (SPEC v8)
   try { if (localStorage.getItem('jactec.lint') !== '0') document.body.classList.add('rw-lint'); } catch (err) {}
   document.addEventListener('click', onClick);
+  // #14 (Jac 2026-07-17): a click OUTSIDE the comms ALL-list menu tucks the menu away, but leaves
+  // any open conversation WINDOW alone (windows persist until deliberately closed). Excludes the
+  // menu itself and the comms chip that hosts it, so the chip's own click toggles instead of double-firing.
+  document.addEventListener('mousedown', (e) => {
+    const s = commsSess(); if (!s || !s.menuOpen) return;
+    if (e.target.closest && e.target.closest('.comms-pop.comms-menu, .js-comms-chip')) return;
+    s.menuOpen = false; saveCommsRail(); render();
+  });
   document.addEventListener('input', onInput);
   document.addEventListener('change', onChange);
   // §12.1 action entry v3 — Enter commits + field stays open (rapid entry);
@@ -24922,6 +25236,7 @@ function boot() {
   // §16 — gate on the shared password: load from the backend if we already have it
   // this session, otherwise show the login screen. The app only renders once data is in.
   if (backendPassword) {
+    renderBootSplash();   // same-tab reload with a cached password: paint before the load round-trip (no black screen)
     loadFromBackend().then(finishLoad)
       .catch(() => { backendPassword = ''; sessionStorage.removeItem('jactec.pw'); renderLogin('Please sign in again.'); });
   } else {
@@ -24987,6 +25302,7 @@ function exposeTestApi() {
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
       wrValidatePlan, applyWranglerData, wrPlanNeedsApply, wrPlanSummary, wrFunnel, wrResolveCustomer, wrResolveUnit, wrResolveCategory, wrResolveVendor, wrResolvePart, wrResolveRental, wrChatFormat, wrFocusRecord, wrRecLabel, activeSession, invoiceMergeable, mergeInvoiceInto, invoiceVoidable, voidInvoice, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv, wrRunAgent, wrApplyChangesTool, wranglerDigest, wrPruneOldChats, WR_CHAT_RETAIN_DAYS, WR_TOOL_IMPL, WR_TOOLS, WR_OPERATIONS,
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
+      dataCache, cacheValid, cacheDeviceOk, cacheTokenTag, cacheAppVer, cacheSnapshotEnvelope, CACHE_SCHEMA_VER, FEATURES,   // §instant-cache (spec 2026-07-16)
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
       companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsUtilRollup, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
@@ -25298,8 +25614,8 @@ function commsSessTabsHtml() {
       return tab(id, (c && fullName(c)) || String(id), commsConvStatus(byId.get(String(id)) || null, meta.channel));
     }).join('');
   }
-  const all = `<button class="crail-tab comms-all js-comms-all${sess.menuOpen ? ' is-active' : ''}" role="tab" aria-selected="${sess.menuOpen}" data-tip="Every un-ended ${meta.label} conversation — Open / End"><span class="crail-t">All · ${count}</span></button>`;
-  return `<div class="crail-group comms-group">${all}${tabs}</div>`;
+  // The old "All · N" chip is retired (Jac 2026-07-17) — the comms icon now hosts the un-ended list.
+  return `<div class="crail-group comms-group">${tabs || `<span class="crail-empty">No open ${esc(meta.label)} windows yet.</span>`}</div>`;
 }
 /* ── Messenger-style conversation window (above its own tab) ─────────────── */
 function commsPopupHtml(cat, t, id) {
@@ -25364,7 +25680,7 @@ function commsWranglerPopupHtml() {
    Mr. Wrangler list their chats too, with a + New chat at the foot) ────────── */
 function commsMenuHtml(cat) {
   const meta = COMMS_CAT_META[cat];
-  const row = (id, name, st, snip) => `<div class="cm-row"><span class="cp-dot c-${st}" aria-hidden="true"></span><span class="cm-who">${esc(name)}</span><span class="cm-snip">${esc(snip)}</span>${actionPill('commit', 'Open', { js: 'js-comms-mopen', h: 22, data: { cust: id } })}${ghostPill('End', { js: 'js-comms-mend', data: { cust: id }, tip: cat === 'team' || cat === 'wrangler' ? 'End it — the history stays stored' : 'End it — the history stays on the profile' })}</div>`;
+  const row = (id, name, st, snip) => `<div class="cm-row js-comms-mrow" data-cust="${esc(id)}" data-tip="Open"><span class="cp-dot c-${st}" aria-hidden="true"></span><span class="cm-who">${esc(name)}</span><span class="cm-snip">${esc(snip)}</span>${ghostPill('End', { js: 'js-comms-mend', data: { cust: id }, tip: cat === 'team' || cat === 'wrangler' ? 'End it — the history stays stored' : 'End it — the history stays on the profile' })}</div>`;
   let rows = '', empty = 'Nothing on the line — right-click a customer to start one.', newRow = '';
   if (cat === 'team') {
     rows = commsTeamChats().map((c) => {
@@ -25396,6 +25712,10 @@ function commsMenuHtml(cat) {
    most one conversation window across all categories — the session's lastOpen) —
    called at the end of render() while a session is summoned. Desktop-only
    (phones have no rail; the D8 mobile bottom-sheet reflow rides later). */
+// Comms window positioning (Jac 2026-07-17): open the conversation window over WHERE it was
+// summoned from (the click), not stacked on the left rail. commsOpenPt = the opening click's x;
+// commsWinKey/Left pin the window steady across re-renders until a different window opens.
+let commsOpenPt = null, commsWinKey = null, commsWinLeft = null;
 function mountCommsPops() {
   const cat = state.commsRail.cat;
   if (!cat || document.body.classList.contains('is-phone')) return;
@@ -25431,14 +25751,24 @@ function mountCommsPops() {
       const node = el('div', cls);
       node.innerHTML = html;
       if (cat === 'team') node.dataset.drop = 'chat';   // drag a record in = tag it into the chat (dock parity)
-      host.appendChild(node); place(node, tb, w);
+      host.appendChild(node);
+      // Open over the click that summoned it (commsOpenPt), not the left-packed rail tab; keep it
+      // steady per window (commsWinKey) so it doesn't jump on re-render. Fall back to the tab.
+      const key = cat + ':' + id;
+      let left;
+      if (commsOpenPt) left = Math.max(8, Math.min(commsOpenPt.x - w / 2, window.innerWidth - w - 8));   // a fresh open click wins — reopening from a new spot lands there, not the last position
+      else if (commsWinKey === key && commsWinLeft != null) left = Math.max(8, Math.min(commsWinLeft, window.innerWidth - w - 8));   // no new click (re-render) → hold steady, re-clamped to the current viewport
+      else left = Math.max(8, Math.min(tb.getBoundingClientRect().left - 30, window.innerWidth - w - 8));
+      commsWinKey = key; commsWinLeft = left;
+      node.style.left = left + 'px'; node.style.bottom = bottom + 'px';
       const feed = node.querySelector('.cp-feed, .wr-feed'); if (feed) feed.scrollTop = feed.scrollHeight;
     }
   }
   if (sess.menuOpen && (!COMMS_CAT_META[cat].channel || commsOnline())) {
-    const at = document.querySelector('.comms-rail .js-comms-all');
+    const at = document.querySelector(`.js-comms-chip[data-cat="${cat}"]`) || document.querySelector('.comms-rail');
     if (at) { const node = el('div', 'comms-pop comms-menu'); node.innerHTML = commsMenuHtml(cat); host.appendChild(node); place(node, at, 340); }
   }
+  commsOpenPt = null;   // one render-cycle scope — consumed by the window mount above
 }
 /* ── actions ─────────────────────────────────────────────────────────────── */
 /* Sweep a category's window off the rail when the rail leaves it (chip re-click,
@@ -25457,8 +25787,10 @@ function commsToggleCat(cat) {
     return wranglerNewChat();
   }
   const rail = state.commsRail;
-  if (rail.cat === cat) {                                // same chip again → sweep the rail clean
-    rail.cat = null; commsLeaveCat(cat);
+  if (rail.cat === cat) {                                // active icon: reveal the un-ended list first (replaces the old All chip), then a further click sweeps the rail clean
+    const sc = rail.sessions[cat];
+    if (sc && !sc.menuOpen) { sc.menuOpen = true; if (sc.lastOpen != null) { sc.lastOpen = null; commsLeaveCat(cat); } saveCommsRail(); return render(); }   // reveal the list; tuck any open window so the list never renders on top of it
+    rail.cat = null; if (sc) sc.menuOpen = false; commsLeaveCat(cat);
     saveCommsRail(); return render();
   }
   const prev = rail.cat;
@@ -25477,6 +25809,7 @@ function commsToggleCat(cat) {
     else if ((state.wranglerRail || []).some((c) => String(c.id) === idw)) { saveCommsRail(); return wranglerRailOpen(idw); }
     else s.lastOpen = null;
   }
+  s.menuOpen = !s.lastOpen;   // #15: land straight on the un-ended list when there's no window to restore — the comms icon hosts that menu
   saveCommsRail(); render();
 }
 function commsToggleTab(id) {

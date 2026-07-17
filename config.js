@@ -96,7 +96,7 @@ const RAW_STATUS = {
     'Fail': { label: 'Fail', color: 'red'   },
   },
   invoiceStatus: {
-    'Not Due':     { label: 'Not Due',     color: 'blue'   },  // balance exists, due date not yet passed
+    'Not Due':     { label: 'Not Due',     color: 'yellow' },  // balance exists, due date not yet passed (RYG: not-yet-due = caution → red when due)
     'Unpaid':      { label: 'Unpaid',      color: 'red'    },
     'Partial':     { label: 'Partial',     color: 'orange' },
     'Late':        { label: 'Late',        color: 'red'    },
@@ -637,6 +637,12 @@ export const FEATURES = {
   // Test-decal id suffix → state: …1 start · …2 end · …3 blocked · …4 not-found. OFF in production
   // (real backend). Never a security surface — the real auth is always server-side.
   qrScanPreview: false,
+  // Instant Cache — on a PERSONAL (trusted) device, paint the last known-good backend
+  // load from an on-device IndexedDB snapshot instantly on open, then reconcile with
+  // the live backend (spec 2026-07-16-instant-cache). Display-only: the cache is never
+  // a save baseline, so it can't corrupt the Sheet; personal devices only (no PII at
+  // rest on shared machines). ON = paint-from-cache path; OFF = today's splash + load.
+  instantCache: true,
 };
 
 /* Phone-identity client constants (non-secret — display/UX only; the backend owns the

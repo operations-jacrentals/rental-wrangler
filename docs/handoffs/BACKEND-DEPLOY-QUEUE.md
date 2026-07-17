@@ -1,5 +1,60 @@
 # Backend deploy queue — DEPLOYED (2026-07-06 late session); doc kept as the deploy runbook
 
+## ✅ DEPLOYED LIVE 2026-07-17 — §authz approval codes (tier-gate swap)
+- **What:** the frontend's tier gates (Net Terms D22, rental-gate override D14, blacklist
+  set/lift D13, card-gate override, admin inline pricing edits) no longer take the retired
+  shared password — a below-tier user now picks a Manager/Admin off the roster and the backend
+  texts THAT person's own phone a one-time 6-digit **approval code** that authorizes the ONE
+  action. Two additive handlers in `docs/handoffs/phone-identity-backend.gs` §authz:
+  **`authzStart_`** (authenticated requester; approver tier ≥ minTier enforced at mint, floored
+  at manager; own rate bucket `PID_AZRL_`; roster-resolved destination) and **`authzVerify_`**
+  (single-use burn, 5-try cap, 10-min TTL, tier re-checked at verify, `rec.need` must cover the
+  gate being asked; returns `{ok, approver}` — **never a token/session**). Separate `PID_AZCODE_`
+  namespace so a login code can't approve and an approval code can't log in. `pidPurgePerson_`
+  extended (+2 keys). Router: 2 dispatch lines (after `role` is computed) + 2 `WRITE_ACTIONS`
+  keys — see the ROUTER WIRING block in the mirror.
+- **Frontend:** ships on `claude/tier-gate-phone-code-iupiwy` (the tierAuth shell). **Fail-closed
+  until this deploys** — below-tier users see "Couldn't text the code" (no regression: the
+  password path was already a dead end with no password to type); at-tier users are unaffected.
+- **Deploy flow:** the standard splice — pull live `Code.js` → append §authz functions + wire the
+  router → `node --check` → STOP-gate (show Jac) → SA `push` HEAD → **Jac's editor New-version
+  deploy** → verify anonymous JSON + a real approval round-trip on staging.
+## ⏳ READY TO PUSH — membership dues PO-hold + create-ahead-regardless-of-payment (2026-07-17)
+- **What:** `docs/handoffs/2026-07-17-membership-po-advance-billing.gs` — additive splice against the LIVE
+  membership block (reconciled 2026-07-17 against the live source pulled via the Drive connector; the live
+  code is AHEAD of the old `membership-billing-additions.gs` record — it already has
+  `memEnsureNextInvoice_`/`memFindDueInvoice_`/the future-start branch). Spec:
+  `docs/superpowers/specs/2026-07-17-membership-po-advance-billing-design.md`.
+  - **Change 1 — PO-hold:** new `duesRequirePO` customer field (default falsey = exempt; set client-side in
+    the agreement / account line). When `requiresPO && duesRequirePO && !inv.po`, `membershipEnroll_` /
+    `membershipBillingCron` **HOLD** the dues charge — no charge, **no grace, no lapse** — until a PO is
+    added (or the toggle is turned off). Held ≠ declined.
+  - **Change 2 — create-ahead regardless of payment:** new `memEnsureInvoicesAhead_` creates every cycle's
+    dues invoice ~28 days before its due for EVERY active member each run (regardless of whether prior dues
+    are paid → open invoices stack, each month its own invoice) + the immediate next on a cleared charge.
+    **Annual is clamped to 28-days-before-renewal** (no year-early renewal invoice). Charge stays on the due
+    date; `paidUntil` advances only on a cleared charge. Cancellation/lapse unchanged.
+- **Edits:** 4 new helpers (`memAddDaysIso_`, `memDuesPoHeld_`, `memDuesInvoiceIndex_`,
+  `memEnsureInvoicesAhead_`) + full-replacement `membershipEnroll_` and `membershipBillingCron`. The old
+  `memEnsureNextInvoice_` calls are replaced by `memEnsureInvoicesAhead_` (leave the old fn defined-but-unused
+  or delete it — no other caller).
+- **Reviewed:** fresh-context Opus money-review 2026-07-17 — 2 blockers found + fixed (annual on-payment
+  horizon clamped to 28d; enroll reuse scoped to a `Member Incomplete` held-retry whose due matches `start`,
+  so it can't grab a stacked-future/stale invoice and mis-charge). Everything else confirmed sound (PO-hold
+  never lapses; stacking charges one/run with aligned `paidUntil`; idempotent creation; no live behavior
+  lost). `node --check` passes. One [CONSIDER] left as-is (a >18-cycle-behind member backfills over multiple
+  runs — self-heals; doesn't affect normal members).
+- **⚠ RECONCILE-AT-SPLICE:** diff against the live `membershipEnroll_`/`membershipBillingCron` before
+  overwriting (the live may carry a fix newer than the 2026-07-17 pull). Preserve the future-start `'pending'`
+  branch, prepaid/`stripeSubId` skips, term-complete roll, grace/lapse, and the first-charge `payBase` fallback.
+- **DEPLOY:** `/clasp` push (service account) → **Jac's Apps Script editor deploy** (NOT a REST deploy). No
+  new trigger install needed (the daily cron is already installed). **TEST on a staging test-member first:**
+  (1) a monthly member shows next month's invoice created ahead + charged on its due date; (2) a
+  `requiresPO`+`duesRequirePO` member's dues **hold** (created, not charged, no lapse) until a PO is added.
+- **Frontend companion (already on branch `claude/membership-po-advance-billing`, PR #668):** the
+  `duesRequirePO` toggle. Frontend ships via the normal `/deploy → /merge → /promote` gates independently.
+
+
 ## ⏳ PUSHED + VERSIONED — AWAITING JAC'S EDITOR DEPLOY (2026-07-14) — Twilio inbound webhook (v101)
 - **Backend v101 — Twilio inbound webhook.** Two anonymous handlers on the existing `?wh=` router
   (mirrors the Stripe hook). `twilioInbound_` — an inbound SMS: matches the sender to a customer OR a

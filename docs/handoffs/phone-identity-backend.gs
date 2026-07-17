@@ -271,6 +271,81 @@ function authEnrollBlast_(body, role) {
   return { ok: true, sent: sent, skipped: skipped };
 }
 
+/* ═══ APPROVAL CODES (§authz — tier-gate swap, 2026-07-15) ═══════════════════════════
+ * The shared password is retired, so the frontend's tier gates (Net Terms, rental-gate
+ * override, blacklist set/lift, card-gate override, admin inline edits) now get a
+ * SECOND-PERSON approval: a below-tier session picks a Manager/Admin off the roster,
+ * the backend texts a one-time code to THAT person's own phone, and entering it
+ * authorizes the ONE action. Security properties:
+ *  - SEPARATE namespace from login codes (PID_AZCODE_ vs PID_CODE_): authVerify never
+ *    reads an approval code (it can NEVER mint a session/device trust), and
+ *    authzVerify_ never reads a login code (a login text can never approve a gate).
+ *  - Requester must be AUTHENTICATED (session token, or a legacy role while the
+ *    shared-password path still exists) — no anonymous SMS pumping.
+ *  - Approver tier ≥ minTier is enforced server-side at BOTH mint and verify (and the
+ *    stored gate level must cover the one being verified), floored at manager.
+ *  - Single-use, 10-min TTL, 5-try burn, own rate-limit bucket (PID_AZRL_) so an
+ *    approval flurry can't starve the approver's own login codes.
+ *  - Returns { ok, approver } only — never a token, never a session.               ── */
+var PID_AZ_TTL_MS = 10 * 60 * 1000;   // approval-code lifetime (someone is standing there waiting)
+
+function pidAzNeed_(minTier) {   // clamp the client-named gate to a real tier, floored at manager
+  var need = ROLE_TIER_RANK[String(minTier || '').toLowerCase()] || 0;
+  return Math.max(need, ROLE_TIER_RANK.manager);
+}
+function pidAzRequesterOk_(body, role) {   // signed-in only: a per-person session, or a legacy pw role
+  if (pidResolveCaller_((body || {}).sessionToken)) return true;
+  return !!roleTierRank_(role);
+}
+
+/* ── ACTION: authzStart — text a one-time APPROVAL code to a Manager/Admin's own phone ──
+ * body: { approverId, minTier ('manager'|'admin'), reason }.  AUTHENTICATED requester. */
+function authzStart_(body, role) {
+  body = body || {};
+  if (!pidAzRequesterOk_(body, role)) return { ok: false, error: 'unauthorized' };
+  var need = pidAzNeed_(body.minTier);
+  var approver = pidPerson_({ personId: body.approverId });
+  if (!approver || !smsNormalizePhone_(approver.phone)) return { ok: false, error: 'no-approver' };
+  if (pidTierRank_(approver) < need) return { ok: false, error: 'under-tier' };   // never texts a code that couldn't approve
+  var pid = String(approver.id), now = Date.now();
+  var rl = pidGet_('PID_AZRL_' + pid) || { win: now, n: 0, last: 0 };
+  if (now - rl.win > 3600 * 1000) { rl.win = now; rl.n = 0; }
+  if (now - rl.last < PID_SEND_MIN_GAP) return { ok: true, sent: false, reason: 'too-soon' };
+  if (rl.n >= PID_SEND_HR_CAP) return { ok: true, sent: false, reason: 'rate' };
+  var code = pidCode_(), salt = pidSalt_();
+  var reason = String(body.reason || 'an action').slice(0, 120).replace(/[\r\n]+/g, ' ');
+  var caller = pidResolveCaller_(body.sessionToken);
+  var byName = caller ? (((pidPerson_({ personId: caller.personId }) || {}).name) || 'a teammate') : 'the office';
+  pidPut_('PID_AZCODE_' + pid, { hash: pidHash_(code, salt), salt: salt, need: need, exp: now + PID_AZ_TTL_MS, tries: 0 });
+  var send = pidSendSms_(approver.phone, 'JacRentals: approval code ' + code + ' — ' + reason + ' (asked by ' + byName + '). Expires in ' + Math.round(PID_AZ_TTL_MS / 60000) + ' min. Never share it.');
+  if (!send.ok) return { ok: true, sent: false, reason: send.reason };
+  rl.n += 1; rl.last = now; pidPut_('PID_AZRL_' + pid, rl);
+  return { ok: true, sent: true, approverId: pid, name: approver.name || '', masked: smsMaskPhone_(approver.phone) };
+}
+
+/* ── ACTION: authzVerify — burn the approval code; authorize the ONE action, no session ──
+ * body: { approverId, code, minTier }.  AUTHENTICATED requester. */
+function authzVerify_(body, role) {
+  body = body || {};
+  if (!pidAzRequesterOk_(body, role)) return { ok: false, error: 'unauthorized' };
+  var pid = String(body.approverId || ''); if (!pid) return { ok: false, error: 'bad-request' };
+  var rec = pidGet_('PID_AZCODE_' + pid);
+  if (!rec) return { ok: false, error: 'no-code' };
+  if (Date.now() > rec.exp) { pidDel_('PID_AZCODE_' + pid); return { ok: false, error: 'expired' }; }
+  if (rec.tries >= PID_CODE_MAXTRY) { pidDel_('PID_AZCODE_' + pid); return { ok: false, error: 'too-many' }; }
+  if (!pidEq_(pidHash_(String(body.code || ''), rec.salt), rec.hash)) {
+    rec.tries += 1; pidPut_('PID_AZCODE_' + pid, rec);
+    return { ok: false, error: 'bad-code', left: Math.max(0, PID_CODE_MAXTRY - rec.tries) };
+  }
+  pidDel_('PID_AZCODE_' + pid);                                   // burn — one action per code
+  var approver = pidPerson_({ personId: pid }); if (!approver) return { ok: false, error: 'gone' };
+  var need = pidAzNeed_(body.minTier);
+  // tier re-checked at verify (roster may have changed), and a code minted for a lower
+  // gate can never approve a higher one (rec.need must cover what's being asked now)
+  if (pidTierRank_(approver) < need || rec.need < need) return { ok: false, error: 'under-tier' };
+  return { ok: true, approver: approver.name || '' };             // NO token, NO session — the one action only
+}
+
 /* ── per-call authorization: resolve a bearer token → { personId, role, tier } or null.
  *    Checks device-trust first (30d), then session (12h). Prunes on expiry. ── */
 function pidResolveCaller_(token) {
@@ -291,6 +366,7 @@ function pidPurgePerson_(pid) {
   for (var i = 0; i < ix.length; i++) pidDel_(ix[i]);
   pidDel_('PID_IDX_' + pid); pidDel_('PID_PIN_' + pid); pidDel_('PID_CODE_' + pid);
   pidDel_('PID_PINLOCK_' + pid); pidDel_('PID_RL_' + pid);
+  pidDel_('PID_AZCODE_' + pid); pidDel_('PID_AZRL_' + pid);   // approval codes die with the person too
 }
 
 /* ── CASCADE HOOK (defense-in-depth): reconcile per-person auth to the roster after a
@@ -344,10 +420,14 @@ function pidReconcileRoster_(prevList, nextList) {
  *   if (action === 'authSetPin')     return json(authSetPin_(body));
  *   if (action === 'authRevoke')     return json(authRevoke_(body, role));
  *   if (action === 'authEnrollBlast')return json(authEnrollBlast_(body, role));
+ *   // §authz approval codes (tier-gate swap 2026-07-15) — AUTHENTICATED-requester,
+ *   // so dispatch these AFTER `role` is computed (they take it, like authRevoke):
+ *   if (action === 'authzStart')     return json(authzStart_(body, role));
+ *   if (action === 'authzVerify')    return json(authzVerify_(body, role));
  *
  * WRITE_ACTIONS (POST-only) — add these keys to the WRITE_ACTIONS literal:
  *   authStart:1, authVerify:1, authLoginPin:1, authResume:1, authSetPin:1,
- *   authRevoke:1, authEnrollBlast:1
+ *   authRevoke:1, authEnrollBlast:1, authzStart:1, authzVerify:1
  *
  * saveConfigFromBody() — capture the prior roster then reconcile after a successful save:
  *   var prevEmp = ((getConfigObj().settings||{}).employees) || [];

@@ -74,6 +74,31 @@
   failed-inspection. The shared §12.8 inspection popup is now **pass-aware** — it drops the
   "Failure report" title, danger styling, and "Charge the customer?" bill gate when the
   inspection passed. Reuses `segCtl` (R14); multi-unit field-call granularity is a parked thread.
+- **2026-07-17 — PO-required now actually enforces (PR #652, LIVE).** The account-line PO /
+  Protection toggles (`js-acct-po`/`js-acct-prot`) never called `saveSoon()`, so they reverted
+  on reload — the "PO required isn't working" bug (Mr. Wrangler had NOT fixed it). Fix: route
+  through `logAction` (persists + audits). Plus "Block ALL": a `requiresPO` customer with no PO
+  on the invoice is HARD-blocked from every money path (card charge, cash, check, the Wrangler
+  `recordPayment` op) and both sends (email/text), via the shared `invoicePoBlocked(inv)` choke
+  point. Refunds intentionally not gated.
+- **2026-07-17 — Membership dues: PO exemption + create-ahead-regardless-of-payment (PR #668
+  frontend LIVE + backend LIVE via editor deploy).** New `duesRequirePO` (default off = EXEMPT)
+  toggle in the membership agreement + account line (ungated — Jac: no phone-code gate). Backend
+  (`membershipEnroll_`/`membershipBillingCron`): when `requiresPO && duesRequirePO && !inv.po`
+  → HOLD dues (create invoice, no charge, **no grace/lapse**) until a PO is added — held ≠
+  declined. Dues invoices now created ahead of time for every active member each run REGARDLESS
+  of prior payment (open invoices stack, each month separate) + immediate-next on payment;
+  **annual clamped to 28-days-before-renewal** (never a year early). Charge on due date; cancel
+  still bills the leftover monthly term at once. Opus-reviewed (2 blockers fixed). Spec:
+  `docs/superpowers/specs/2026-07-17-membership-po-advance-billing-design.md`; backend recipe:
+  `docs/handoffs/2026-07-17-membership-po-advance-billing.gs`.
+- **2026-07-17 — Mobile-nav usability pass (#666 + #679, LIVE).** Phone footer Back/Forward jog
+  widened (32→54px) + thicker chevrons, height unchanged (was below the 44px touch floor); phone
+  Back now "escapes" a filtered/anchored list via the phone-only `jogBackEscape` (the fleet-filter
+  path AND `setAnchor` both wipe the card's backStack, which is why Back dead-ended before) —
+  scoped to NON-graph filter terms (`some(t => !t.g)` / clear keeps `.g`) so a graph-view selection
+  is left intact; `+Lost` (lost-demand capture) moved off the category mini-cards into Category
+  Details → Fleet Summary, single count carried on the `+Lost N` button. Polish nits fixed in #679.
 
 ## Design prefs
 - Yard **"data-plate"** design language: dark industrial steel, **ONE** safety-orange
@@ -86,11 +111,47 @@
 - **Cloud sessions are ephemeral** (fresh clone, container reclaimed) — only
   git-committed work survives, and Claude Code's native auto-memory is machine-local
   so it won't carry over. Commit + push early.
+- **The tracked backend record can LAG the live `Code.js`.** `docs/handoffs/membership-billing-additions.gs`
+  was a version behind live (live already had `memEnsureNextInvoice_`/`memFindDueInvoice_`/the
+  future-start branch). Before editing the backend, PULL LIVE first (Drive connector →
+  `download_file_content` on scriptId `1hw9A7Id3YIoiSCBkNFeDaKGRv-VtljFFIuBdQG5QULrgS0DjQhQ_2vyZ`,
+  project "Rental Wrangler Gate") and splice against it, then **diff the splice vs the pulled base
+  to prove only the intended functions changed** — that check is the guard against the v48-style
+  stale-base clobber. Push HEAD via `gas-deploy-service-account.mjs push` (subject
+  `operations@jacrentals.com`); go-live is Jac's editor deploy; verify anon access after (POST a
+  wrong-password `auth` → expect JSON `{ok:false}`, not HTML).
+- **CI (`ci.yml`) only fires on `pull_request` opened/synchronize + push-to-trunk — NOT
+  `ready_for_review`.** A draft PR's later pushes may not leave check runs on the head, and a
+  rebased head needs a fresh run: dispatch it with `actions_run_trigger run_workflow ci.yml`
+  on the branch. When trunk is churning (e.g. an Instant-Cache/mobile merge burst), expect the
+  merge to race — rebase again; the conflicts are only the generated files (`rule-usage.js`,
+  `docs/code-map.generated.md` → regenerate) + the `index.html` `?v=` token (take trunk's, then
+  re-`/deploy` to re-bump + re-sync staging before `/promote`).
+- **Hot-trunk livelock → use GitHub auto-merge (squash) to stop hand-racing.** When trunk moves
+  faster than a resolve→gates→push cycle (tier-gate ship, 2026-07-17: trunk advanced **3×** mid-
+  ship), stop chasing: resolve the (small) conflict, push, then enable **auto-merge squash** on
+  the PR — GitHub lands it the instant required CI passes + it's mergeable, so a later
+  non-conflicting trunk move can't reset you. Only a *new conflicting* change pauses it (re-
+  resolve). Recurring conflict shape is the same 1-hunk account-section combine (sibling's
+  toggle line + your handler line) + generated files + `?v=`. Squash-merge collapses the whole
+  branch (incl. any merge commits from re-merging trunk) into one clean trunk commit, so those
+  intermediate commits' unsigned/GitHub-authored status is moot — never `rebase --exec` to
+  "fix" merged-in trunk commits (rewrites shared history).
 - **Backend deploy** uses the service account (`GAS_SA_KEY_B64` + the service-account
   script), push only; go-live is Jac's Apps Script **editor** deploy. clasp OAuth is
   RAPT-blocked (2026-07-06) — don't retry `clasp login`.
 - **Port 8000 is reserved** — swap gates to 9147 before running
   (`sed -i 's/8000/9147/g' ci/smoke.mjs ci/logic-test.mjs`, run, `git checkout -- ci/`).
+- **Playwright in cloud: point at the headless-shell binary, and it CAN'T reach github.io.**
+  `chromium.launch()` needs `executablePath:
+  '/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell'` (the plain
+  `/opt/pw-browsers/chromium` path errors "Old Headless mode has been removed"). And headless
+  Chromium can't reach `github.io` through the agent proxy (`ERR_CONNECTION_RESET`; `curl`
+  works fine) — so you **can't browser-drive the live staging URL headless**. Verify a staging
+  deploy by `curl`-grepping the deployed `app.js`/`style.css` bytes instead, and validate feature
+  behavior by driving a LOCAL server (`#local` or a `page.route` mock of `script.google.com`)
+  plus live-backend `curl` probes. (Same install caveat as always: `npm i --no-save
+  playwright@1.48.0`; browsers are pre-provisioned, never `playwright install`.)
 - **Cache-bust** the shared `?v=` on `style.css` / `rule-usage.js` / `app.js` in
   `index.html` on every deploy.
 - **Staging is a direct push** (`tools/deploy-staging.mjs`); verify the live bytes. A
@@ -156,17 +217,33 @@
   commit that landed between your `/deploy` and merge isn't on staging. It's still the sanctioned
   bar (that commit was CI-gated + staged by its own session), but token-match ≠ full content-match
   — re-deploy trunk to staging if you need a faithful mirror before a go-live.
+- **Headless Chromium can silently fail to paint a specific fixed node** (2026-07-16) —
+  a `position:fixed` body-level element wouldn't composite in a `chrome-headless-shell`
+  screenshot even with every computed style correct and a provably paintable spot (an
+  identical plain div rendered there; the login plate rendered fine). A headless
+  artifact, not a real-browser defect — verify transient/fixed visual cues on the
+  **staging drive** (real Chrome), not headless screenshots.
 
 ## Open threads
-- **#666 mobile-nav pass — SHIPPED LIVE** (2026-07-17, `cc7dd7d`) — wider footer Back/Forward
-  jog + thicker chevrons (height unchanged); phone Back now "escapes" a filtered/anchored list
-  via the phone-only `jogBackEscape` (both the fleet-filter path and `setAnchor` wipe backStack,
-  which is why Back dead-ended before); `+Lost` moved off the category mini-cards into Category
-  Details → Fleet Summary. Went live inside a **sibling session's** trunk→production promote (not
-  a dedicated one — a good reminder that a trunk promote ships everyone's integrated backlog). Two
-  minor deferred nits remain: `jogBackEscape`'s `'filter'` branch clears graph-view `.g` terms
-  wholesale (phone edge case, harmless); Fleet Summary shows the lost-demand count twice (derived
-  stat + the `+Lost N` button label).
+- **Tier-gate approval codes — SHIPPED LIVE + PROMOTED (2026-07-17, PR #651, `?v=20260717m`).**
+  The password tier gates (Net Terms D22, rental override D14, blacklist D13, card-gate override,
+  admin inline pricing) now swap to Manager/Admin phone approval codes: below-tier user picks an
+  approver off the roster → 6-digit code texts to THEIR phone (`authzStart`/`authzVerify`, spliced
+  into live `Code.js` + editor-deployed + probe-verified) → authorizes the one action. At/above
+  tier or demo = plain confirm; flag-OFF keeps the legacy password input as rollback;
+  Settings-below-Admin = flat refusal (a one-shot code can't carry a server-tier-gated surface).
+  **Two follow-ups:** (1) the pre-login `#reseed` tool still prompts for the retired team password
+  — own small change; (2) *defense-in-depth (not a regression):* approval codes carry a
+  client-supplied `minTier` and aren't server-bound to a specific action — `authzVerify` grants
+  no token/session so it's not exploitable beyond the app's existing client-trust model, but a
+  future server-side `action→tier-floor` table would harden it (logged in phone-identity-STATUS.md).
+- **Staging Traffic Control is N-slot-ready but ships at N=1** (#672). Only ONE staging lane exists
+  (`rental-wrangler-staging`; `DEFAULT_N=1`, `SLOT_URLS={1:…}` in `tools/lib/staging-control.mjs`);
+  no `-2`/`-3` repos. Concurrent sessions queue on the single lease (30-min holder TTL). N=3 is
+  **deferred** and two-part: Jac provisions `rental-wrangler-staging-2`/`-3` Pages sites, then a
+  1-line data flip (`DEFAULT_N=3` + their `SLOT_URLS`) + re-seed the `staging-control` branch —
+  see plan §8.2 (`docs/superpowers/plans/2026-07-17-staging-traffic-control-plan.md`). Ships by
+  `/merge` alone (tools/ only).
 - **Repo privacy** — parked on Jac's GitHub billing-tier check. Pages-from-private
   needs GitHub Pro; Free forces public, and flipping private on Free takes
   `app.jacrentals.com` down. If Pro: canary staging → confirm → flip main + production
@@ -181,3 +258,24 @@
   specific failed unit — matches how the yard `+FC` node already works app-wide.
   Fine for single-unit rentals (the common case). Parked from the inspection-toggle
   redesign (PR #662, 2026-07-17); revisit if per-unit field calls are needed.
+- **Instant Cache — fast signed-in open** (SHIPPING 2026-07-17, flag ON, PR #653). On a
+  PERSONAL device, paint the last confirmed backend load from an on-device IndexedDB
+  snapshot instantly on a signed-in reopen, then reconcile with the live backend.
+  Display-only — **never a save baseline** (`paintFromCache` leaves `booting=true`, no
+  `snapshotSaved`), so a stale cache can't corrupt the Sheet; **personal devices only**
+  (a shared PIN device never caches → no PII at rest); schema/appVer/token-gated +
+  self-healing; behind `FEATURES.instantCache` (flipped ON — instant rollback stays a
+  one-line toggle). Ships with the black-screen boot fix (splash + parallel resume, ex-#650).
+  Reconciled with trunk #655 (`pidEnter` intro video), #659 (`gpsLogin` in `finishLoad`),
+  #660 (`maybeReplayScan`); the planned "shared-device login video" (Phase 4) was
+  **dropped** — #655 already shipped it. Spec + plan:
+  `docs/superpowers/{specs,plans}/2026-07-16-instant-cache-*.md`.
+- **Membership "held for PO" status display** (deferred from PR #668, 2026-07-17). A member whose
+  dues are PO-held sits with `paidUntil` in the past and no `graceUntil`, so the frontend
+  `memStatus` renders "Past Due" rather than a distinct "Held — needs PO" label. Backend hold
+  works correctly (no charge, no lapse); this is a UI-clarity nicety only. Small follow-up.
+- **Live-verify the membership billing on a real/test member** (2026-07-17). The PO-hold +
+  create-ahead billing is LIVE but couldn't be executed in-repo — sanity-check on a member: a
+  monthly member gets next month's invoice created ahead + charged on its due date; a
+  `requiresPO`+`duesRequirePO` member's dues hold (created, not charged, no lapse) until a PO is
+  added. Jac's call; `wrangler-fix` any miss.
