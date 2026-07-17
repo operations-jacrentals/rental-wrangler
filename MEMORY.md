@@ -115,8 +115,23 @@
   conflicts on nearly every concurrent merge — resolve mechanically
   (`git checkout --ours/--theirs index.html` to pick the forward token, then
   `node tools/gen-code-map.mjs`), never by hand-editing the generated map.
+- **CI's `pull_request` synchronize is unreliable + raw GitHub REST is 403** (2026-07-17) —
+  later pushes to a PR didn't always spawn a `smoke` run, so the branch-protected merge stalled
+  with no check. Fix: dispatch `ci.yml` via `workflow_dispatch` on the branch head (creates the
+  required `smoke` check on that commit). And you can't poll from bash — curl to api.github.com
+  is 403 ("GitHub access is not enabled"; the proxy routes GitHub only through the MCP `github`
+  tools) — poll with `mcp__github__actions_list` + a background `sleep` timer.
 
 ## Open threads
+- **#666 mobile-nav pass — SHIPPED LIVE** (2026-07-17, `cc7dd7d`) — wider footer Back/Forward
+  jog + thicker chevrons (height unchanged); phone Back now "escapes" a filtered/anchored list
+  via the phone-only `jogBackEscape` (both the fleet-filter path and `setAnchor` wipe backStack,
+  which is why Back dead-ended before); `+Lost` moved off the category mini-cards into Category
+  Details → Fleet Summary. Went live inside a **sibling session's** trunk→production promote (not
+  a dedicated one — a good reminder that a trunk promote ships everyone's integrated backlog). Two
+  minor deferred nits remain: `jogBackEscape`'s `'filter'` branch clears graph-view `.g` terms
+  wholesale (phone edge case, harmless); Fleet Summary shows the lost-demand count twice (derived
+  stat + the `+Lost N` button label).
 - **Repo privacy** — parked on Jac's GitHub billing-tier check. Pages-from-private
   needs GitHub Pro; Free forces public, and flipping private on Free takes
   `app.jacrentals.com` down. If Pro: canary staging → confirm → flip main + production
