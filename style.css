@@ -492,7 +492,7 @@ body.is-phone { touch-action: manipulation; }
 .is-phone .mobile-toolbar .mtile:active { transform: translateY(1px) scale(.985); }
 .is-phone .mobile-toolbar .mtile.on { background: var(--accent); border-color: var(--accent); color: var(--on-orange); }
 .is-phone .mobile-toolbar .mtile .mtile-ico { display: inline-flex; }
-.is-phone .mobile-toolbar .mtile .mtile-ico svg { width: 25px; height: 25px; }
+.is-phone .mobile-toolbar .mtile .mtile-ico svg { width: 34px; height: 34px; }   /* icon-only tiles — glyph fills the chip (Jac 2026-07-17) */
 .is-phone .mobile-toolbar .mtile.on .mtile-ico svg { color: var(--on-orange); }
 .is-phone .mobile-toolbar .mtile .mtile-lbl { font-family: "Saira Condensed", sans-serif; text-transform: uppercase;
   letter-spacing: .3px; font-size: 9.5px; font-weight: 800; font-stretch: condensed; color: var(--txt-2);
@@ -524,11 +524,31 @@ body.is-phone { touch-action: manipulation; }
   background: var(--panel); border: 1px solid var(--line); box-shadow: var(--chip-shadow); color: var(--txt-2);
   display: grid; place-items: center; position: relative; padding: 0; }
 .is-phone .mobile-toolbar .mfoot-urow .iconbtn svg { width: 21px; height: 21px; }
-/* the merged Customer menu (channel toggle + open threads) floats above the footer band */
-.is-phone .mobile-toolbar .comms-menu-m { position: absolute; left: 8px; right: 8px; bottom: calc(100% + 4px); z-index: 40;
-  background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
-  box-shadow: var(--shadow), 0 0 0 1px var(--accent-line); padding: 4px; }
-.is-phone .mobile-toolbar .comms-menu-m .cp-cap { display: none; }
+/* ── D8/D9 phone comms FULL-SCREEN (Messenger metaphor) — the summoned category fills the
+   viewport: the INBOX list (+ Text/Email toggle for customers), or an opened THREAD with a Back
+   chevron. Reuses the desktop rail builders; feed scrolls, composer pins above the home bar. ── */
+.is-phone .mcomms { position: fixed; inset: 0; z-index: 9000; background: var(--bg); display: flex; flex-direction: column; }
+.is-phone .mcomms-sheet { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.is-phone .mcomms .cp-cap { display: none; }
+/* inbox */
+.is-phone .mcomms-inbox .cp-head { padding: calc(env(safe-area-inset-top) + 12px) 14px 10px; }
+.is-phone .mcomms-inbox .cp-cat { font-size: 20px; }
+.is-phone .mcomms-inbox .cp-feed.cp-list { flex: 1 1 auto; min-height: 0; overflow: auto; padding-bottom: env(safe-area-inset-bottom); }
+.is-phone .mcomms-inbox .cm-row { padding: 13px 14px; }
+.is-phone .mcomms-inbox .cm-who { font-size: 15px; white-space: normal; }
+.is-phone .mcomms-inbox .comms-chan { margin: 10px 14px 6px; }
+/* thread */
+.is-phone .mcomms-back { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; color: var(--accent); font-weight: 700; font-size: 15px;
+  padding: calc(env(safe-area-inset-top) + 12px) 12px 4px; }
+.is-phone .mcomms-back svg { width: 26px; height: 26px; stroke-width: 2.4; }
+.is-phone .mcomms-thread .cp-head { padding: 2px 14px 10px; }
+.is-phone .mcomms-thread .cp-feed, .is-phone .mcomms-thread .chat-feed, .is-phone .mcomms-thread .wr-feed { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.is-phone .mcomms-thread .cp-compose, .is-phone .mcomms-thread .chat-compose, .is-phone .mcomms-thread .wr-compose {
+  flex: 0 0 auto; padding: 8px 12px calc(env(safe-area-inset-bottom) + 10px); border-top: 1px solid var(--line-soft); }
+/* team/wrangler bubbles ride the same tokens as the desktop rail windows — the operator's own
+   line is iMessage-blue; orange stays RESERVED for customer them-bubbles (D8 palette). */
+.is-phone .mcomms .cbub, .is-phone .mcomms .wr-msg.assistant .wr-bub { background: var(--bg-2); color: var(--txt); border: 1px solid var(--line); }
+.is-phone .mcomms .cbub.me { background: var(--bub-me); color: var(--on-bub-me); border: none; }
 /* the global tool tray rendered as a phone sheet (§M1 footer → Tools) */
 .tools-tray { display: flex; flex-wrap: wrap; gap: 8px; }
 .tools-tray .iconbtn { flex: 0 0 auto; min-height: 44px; }
