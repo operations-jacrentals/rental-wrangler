@@ -110,14 +110,17 @@ Replaces today's 2-tab (Rental / Equipment Sales) with a **two-track** view:
 
 ## Data model
 
-- `membershipStage` (existing) → repurposed as the **Member** funnel stage (`Lead … Signed`).
-- `usedSalesStage` (existing) → the **Equipment** funnel stage (`Lead … Paid`) — essentially
-  unchanged.
-- **Rental funnel** → largely **derived**: a customer is "in Rental" iff they have any
-  reservation/rental history; Reserved/Rented derive from live rental status. A small stored flag
-  (`rentalProspect`) covers the manual "marked Rental at quick-add before renting" case.
-- `isMember` — whether the customer is a member lead (reveals the Member continuation). Likely
-  **implied** by `membershipStage ≠ N/A` rather than a separate flag — to be settled in the plan.
+- **Explicit funnel membership (Jac 2026-07-17):** a customer stores **which funnels they're in** —
+  e.g. `funnels: { rental, member, equipment }` (or a `funnelsIn[]` set). Membership is a
+  deliberate selection (the "Leads" fork), **not** inferred from whether a stage is set — so a lead
+  can be "a Member" while their sales stage is still empty, and the three tracks stay independent.
+- **Member** stage → `membershipStage` (existing field, repurposed): `Lead … Signed`, manual, with
+  `Signed` auto on the membership agreement.
+- **Equipment** stage → `usedSalesStage` (existing): `Lead … Paid`, manual, with `Paid` auto on the
+  sale invoice.
+- **Rental** is a *selectable* fork like the others, but **past the fork its stage is derived** —
+  Reserved/Rented come from live rental status; a rental prospect with no activity sits at `Lead`.
+  **Auto-join:** the first reservation/rental sets `funnels.rental = true` if it wasn't already.
 
 ## Migration
 
@@ -132,12 +135,17 @@ Replaces today's 2-tab (Rental / Equipment Sales) with a **two-track** view:
 - The rental-activity records themselves (only how the funnel *reads* them).
 - How memberships/invoices are created (only how the funnel reflects them).
 
-## Open questions
+## Resolved (Jac 2026-07-17)
 
-1. `isMember`: separate stored flag vs. implied by `membershipStage ≠ N/A`?
-   (Lean: implied — "start a Member pipeline" sets `membershipStage = Lead`.)
-2. Does Rental ever need a manual stage beyond `Lead` (before activity), or is it purely
-   activity-driven once past `Lead`?
-3. `/role` audit pass (data-sensitivity / gate lenses) before implementation — the funnel is
-   lead-stage data, not pricing/margin, so expected low-risk, but confirm no membership-economics
-   detail leaks onto a customer-facing surface.
+1. Funnel membership is **explicit** — a stored selection (the "Leads" fork), **not** implied by a
+   non-N/A stage.
+2. **Rental** is a selectable fork; **past the fork its stages are derived** from rental activity
+   (no manual Reserved/Rented picks).
+
+## Open / for the plan
+
+- Exact storage shape for membership (`funnels{}` object vs. a `funnelsIn[]` set) and the migration
+  from today's `membershipStage`/`usedSalesStage` (which currently *imply* membership by being set).
+- `/role` audit pass (data-sensitivity / gate lenses) before implementation — the funnel is
+  lead-stage data, not pricing/margin, so expected low-risk, but confirm no membership-economics
+  detail leaks onto a customer-facing surface.
