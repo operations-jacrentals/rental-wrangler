@@ -34,6 +34,13 @@
   live. Flipping the live auto-promote switch (`wrangler-fix.yml` + an automated
   promote path) is Jac's explicit one-time go.
 
+- **2026-07-17 — Coverage folded into Investment; manual "Check for updates" button.**
+  Unit-detail Coverage is now a sub-block at the top of the **Investment** section (riding
+  #657's `unitSecOpen` RYG collapsible stack) — coverage status drives that section's chip +
+  border color (green insured / yellow uninsured); there is **no** separate Coverage section
+  (#659, Jac's call). Added a **"Check for updates"** row to the tools menu (#661) that clears
+  the SW + HTTP caches and hard-reloads past a stale cache — the escape hatch for pinned builds.
+
 ## Design prefs
 - Yard **"data-plate"** design language: dark industrial steel, **ONE** safety-orange
   accent (`#ff7a1a`), hi-vis hazard stripe signature, stamped Saira Condensed labels,
@@ -72,6 +79,19 @@
 - **The git proxy rejects delete-refspec pushes** (2026-07-17) — `git push origin --delete
   <branch>` / `:<branch>` throws "send-pack: unexpected disconnect" from a cloud session.
   Merged feature branches can't be deleted here; leave them for GitHub-side cleanup.
+- **GPS auth was wired to the OLD login only** (2026-07-17) — the "NO GPS / refresh broken"
+  bug: `gpsLogin()` (mint the GPS token) lived ONLY in the password-login handler, so the
+  phone-identity login (the staging/prod default) never minted a token → the whole GPS section
+  read "NO GPS" and the connect picker / Refresh started unauthenticated. Fix: GPS login now runs
+  in `finishLoad()` (every login mode), and `gpsFetch` re-authenticates once on a 401. **The GPS
+  backend was healthy the entire time** (token mints, Deere authenticates, CORS allows staging) —
+  verify the client-side token before ever blaming the backend.
+- **Mobile Safari pins index.html HARD** (2026-07-17) — a shipped fix can sit invisible on a
+  cached device (this ate an hour of "it's not working" that was really a stale build). A
+  `?fresh`-style query on the URL, a Private tab, or the tools-menu "Check for updates" busts it.
+  Subtle trap: the prod service worker serves cached index.html via an `ignoreSearch` match, so
+  an update CHECK must clear caches BEFORE fetching index.html or it reads stale bytes and falsely
+  reports "up to date."
 
 ## Open threads
 - **Repo privacy** — parked on Jac's GitHub billing-tier check. Pages-from-private
