@@ -21394,14 +21394,20 @@ function copyInvoiceImage(invoiceId) {
 async function renderInvoicePng(invoiceId) {
   const doc = [...document.querySelectorAll('.pr-doc[data-inv]')].find((d) => d.dataset.inv === invoiceId);
   if (!doc) throw new Error('invoice sheet not on screen');
+  // The raster paints ONCE, into boxes we freeze to px below (inlineComputedStyles). If a face decodes
+  // AFTER that single paint, a box sized under the on-screen face gets painted with a different-width
+  // fallback and text clips (notably the right-flush date stamp). So settle the fonts FIRST — embed the
+  // data-URI'd raster faces, decode them + the page faces — THEN measure and snapshot.
+  const fontCss = await invoiceFontFaceCss();   // embed the real Saira/Geist faces — a foreignObject has no page @font-face
+  try { if (document.fonts) { if (fontCss) await ensureEmbeddedFacesReady(fontCss); if (document.fonts.ready) await document.fonts.ready; } } catch (e) {}
   const rect = doc.getBoundingClientRect();
   const W = Math.ceil(rect.width), H = Math.ceil(rect.height);
   const clone = doc.cloneNode(true);
-  inlineComputedStyles(doc, clone);   // resolve classes + CSS vars to concrete values
-  await inlineDocImages(clone);       // <img src> → data: so drawImage doesn't taint the canvas
-  const fontCss = await invoiceFontFaceCss();   // embed the real Saira/Geist faces — a foreignObject has no page @font-face
+  inlineComputedStyles(doc, clone);      // resolve classes + CSS vars to concrete values (index-aligned walk — must precede any clone mutation)
+  normalizeCloneForRaster(doc, clone);   // a foreignObject drops ::before/::after — materialize them as real nodes so the ' · ' separators survive; strip screen-only edit affordances
+  await inlineDocImages(clone);          // <img src> → data: so drawImage doesn't taint the canvas
   if (fontCss) { const st = document.createElement('style'); st.textContent = fontCss; clone.insertBefore(st, clone.firstChild); }
-  clone.style.boxShadow = 'none'; clone.style.borderRadius = '0'; clone.style.margin = '0'; clone.style.maxWidth = 'none'; clone.style.width = W + 'px';
+  clone.style.boxShadow = 'none'; clone.style.borderRadius = '0'; clone.style.margin = '0'; clone.style.maxWidth = 'none'; clone.style.width = W + 'px'; clone.style.height = H + 'px';
   clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
   const xhtml = new XMLSerializer().serializeToString(clone);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><foreignObject x="0" y="0" width="${W}" height="${H}">${xhtml}</foreignObject></svg>`;
@@ -21425,6 +21431,34 @@ function inlineComputedStyles(src, dst) {
   dst.setAttribute('style', s);
   const sc = src.children, dc = dst.children;
   for (let i = 0; i < sc.length; i++) if (dc[i]) inlineComputedStyles(sc[i], dc[i]);
+}
+// Prep a cloned .pr-doc for rasterization. A <foreignObject> renders as a DISCONNECTED image with no
+// page stylesheet and no ::before/::after — so (1) materialize each pseudo-element's generated content
+// (the ' · ' card/line separators, style.css) as a REAL inline span, or it vanishes and adjacent text
+// glues together ("JUN 16"+"1 DAY" → "JUN 161 DAY"); and (2) strip the screen-only edit affordances
+// (the ↗ source link, the PO "Edit" pill) that shouldn't ride into a shared/emailed image. Reads
+// computed styles from the LIVE src (a detached clone reports none); mutates ONLY the clone, so the
+// on-screen sheet and the print doc are untouched. Runs right after inlineComputedStyles, while src and
+// clone still share shape (the pseudo-walk is index-aligned); the affordance strip runs after the walk.
+function normalizeCloneForRaster(src, clone) {
+  const inserts = [];   // defer insertion so the index-aligned parallel walk can't desync mid-walk
+  const walk = (s, c) => {
+    if (!s || !c) return;
+    for (const which of ['::before', '::after']) {
+      const cs = getComputedStyle(s, which);
+      const m = cs.content && /^["'](.*)["']$/.exec(cs.content);   // only simple string content (every .pr-doc pseudo is a text separator)
+      if (!m || m[1] === '') continue;
+      const sp = document.createElement('span');
+      sp.textContent = m[1];
+      sp.style.cssText = `font:${cs.font};color:${cs.color};letter-spacing:${cs.letterSpacing};white-space:pre;`;   // carry the pseudo's own text styling; pre keeps the separator's spaces
+      inserts.push([c, sp, which === '::before']);
+    }
+    const sc = s.children, cc = c.children;
+    for (let i = 0; i < sc.length; i++) walk(sc[i], cc[i]);
+  };
+  walk(src, clone);
+  for (const [parent, node, first] of inserts) parent.insertBefore(node, first ? parent.firstChild : null);   // insertBefore(_, null) === appendChild
+  clone.querySelectorAll('.pr-line-src, .pr-po-edit, .inline-edit, [data-edit]').forEach((n) => n.remove());
 }
 // Same-origin images (logo, customer selfie) → data URIs, so the rasterized canvas isn't tainted
 // (a tainted canvas can't be read back to a blob). An unfetchable image is dropped, not fatal.
@@ -21470,6 +21504,32 @@ function invoiceFontFaceCss() {
   _invFontCssP = p;
   p.then((css) => { if (!css) _invFontCssP = null; }, () => { _invFontCssP = null; });   // cache only a successful, non-empty result; a failed/empty fetch retries next time
   return p;
+}
+// Decode the data-URI'd @font-face blocks we embed for the raster INTO document.fonts before the
+// one-shot SVG paint, so the copied/emailed image paints the real faces instead of a late-decoding
+// fallback (which clips boxes frozen under the real face). Cached per css string so a repeat copy/email
+// doesn't re-register; best-effort — never throws, and a browser without FontFace just skips it.
+let _facesReadyKey = null, _facesReadyP = null;
+function ensureEmbeddedFacesReady(css) {
+  if (_facesReadyKey === css) return _facesReadyP;
+  _facesReadyKey = css;
+  _facesReadyP = (async () => {
+    if (!window.FontFace || !document.fonts) return;
+    const jobs = [];
+    const re = /@font-face\s*{([^}]*)}/g; let m;
+    while ((m = re.exec(css))) {
+      const b = m[1];
+      const fam = (b.match(/font-family:\s*([^;]+);/) || [])[1];
+      const src = (b.match(/src:\s*([^;]+?);\s*(?:}|$)/) || b.match(/src:\s*([^;]+);/) || [])[1];
+      if (!fam || !src) continue;
+      const desc = {};
+      const w = (b.match(/font-weight:\s*([^;]+);/) || [])[1]; if (w) desc.weight = w.trim();
+      const st = (b.match(/font-style:\s*([^;]+);/) || [])[1]; if (st) desc.style = st.trim();
+      try { const ff = new FontFace(fam.replace(/['"]/g, '').trim(), src.trim(), desc); document.fonts.add(ff); jobs.push(ff.load()); } catch (e) {}
+    }
+    try { await Promise.all(jobs); } catch (e) {}
+  })();
+  return _facesReadyP;
 }
 // Raw base64 (no data: prefix) of a blob — for handing an image to the backend email send.
 function blobToBase64(blob) {
