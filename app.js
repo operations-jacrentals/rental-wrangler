@@ -5677,9 +5677,9 @@ function funnelPill(custId, which, stage) {
 function custQuickAddFunnelPill(stage) {
   const set = !!(stage && stage !== 'N/A');
   const st = getStatus('funnelStage', stage || 'N/A');
-  // Unset reads as a placeholder ("Rental funnel", gray) — its own inline label now that the
+  // Unset reads as a short placeholder ("Lead?", gray) — its own inline label now that the
   // stamped caps are gone; a real pick shows the stage in its registry color. (Jac 2026-07-17)
-  return `<span class="pill gate c-${set ? st.color : 'gray'} js-custqa-funnel" data-r="R1">${I.chev}${esc(set ? st.label : 'Rental funnel')}</span>`;
+  return `<span class="pill gate c-${set ? st.color : 'gray'} js-custqa-funnel" data-r="R1">${I.chev}${esc(set ? st.label : 'Lead?')}</span>`;
 }
 /** R4: a DERIVED pill — rides another pill in the same section; no bg/border,
  *  destination icon + ink color only; sits directly RIGHT of its parent. */
