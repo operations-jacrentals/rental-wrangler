@@ -49,10 +49,11 @@ is uncommitted, cut/commit to a feature branch off trunk first
    gave up) — do **NOT** treat it as the HARD STOP / rotate-PAT case; handle it per "Exit 3"
    below. Any other non-zero (1 = auth/network/guard, 2 = pushed-but-verify-failed) / 🔴 / auth
    error → **HARD STOP** (below).
-3. **Review the running app** (after ✅): drive the staging URL with Claude-in-Chrome — log in
-   (`$RW_PW`, never echo it), exercise exactly what you built + a sanity flow, confirm no console
-   errors and the visible result matches. Save a screenshot. A red review STOPs the merge — fix
-   on the branch, `/deploy` again, re-check.
+3. **Review the running app** (after ✅): drive **the slot URL `/deploy` printed** with
+   Claude-in-Chrome (N=3: your deploy lands on slot 1, 2, or 3 — review THAT slot's URL, e.g.
+   `…/rental-wrangler-staging-2/`, never a fixed one) — log in (`$RW_PW`, never echo it), exercise
+   exactly what you built + a sanity flow, confirm no console errors and the visible result matches.
+   Save a screenshot. A red review STOPs the merge — fix on the branch, `/deploy` again, re-check.
 
 ## HARD STOP — a failed or unverified deploy
 If the script errors (expired PAT, network, wrong repo/branch) or the live-bytes check fails:
@@ -64,7 +65,8 @@ If the script errors (expired PAT, network, wrong repo/branch) or the live-bytes
   session start).
 
 ## Exit 3 — staging BUSY, not broken (do NOT rotate the PAT)
-Staging is a shared, single-slot review site guarded by a lease (`tools/staging-lease.mjs`). Exit
+Staging is a **3-slot pool (N=3)** guarded by a lease (`tools/staging-lease.mjs`) — each session
+gets its own lane (slot 1/2/3), each an independent Pages site/URL. Exit
 **3** means every slot is held by another session and the auto-queue wait gave up with no forward
 progress — the deploy is **queued or timed-out, NOT failed**. Nothing is wrong with the PAT, the
 host, or your branch.
