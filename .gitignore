@@ -47,3 +47,10 @@ test-creds.local.json
 
 # transient scratch test harnesses (e.g. a subagent headless-serve check)
 tmp-*.mjs
+
+# Staging-lease advisory marker — a diagnostic-only local dotfile written by
+# deploy-staging.mjs (holder slot/token for promote diagnostics). Never authoritative,
+# never served, must never be committed. The glob also covers the transient
+# `.staging-lease.json.<pid>.<ts>.tmp` written by the atomic temp+rename, which a
+# crash in the write→rename window could otherwise leave behind uncommittable.
+.staging-lease.json*

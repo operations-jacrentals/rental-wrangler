@@ -45,9 +45,11 @@ point of Gate 1: you look at the running app before integrating it. Check:
 
 ## This step — merge to trunk
 1. **Local gates green:** `node ci/smoke.mjs`, `node ci/logic-test.mjs`,
+   `node ci/lease-test.mjs`, `node ci/lease-deploy-test.mjs`,
    `node ci/gen-rule-usage.mjs --check`, `node ci/check-window-catalog.mjs`,
    `node tools/gen-code-map.mjs --check`. (Port 8000 is reserved → `sed -i 's/8000/9147/g'
-   ci/smoke.mjs ci/logic-test.mjs`, run, then `git checkout -- ci/`.)
+   ci/smoke.mjs ci/logic-test.mjs`, run, then `git checkout -- ci/`. The two `lease-*` suites
+   are pure-Node — **not** part of the port swap.)
 2. **Fresh-context review — the safety net that replaces plan-reading.** Spawn a
    **code-review subagent** (fresh context, no conversation history) on the diff
    `git diff origin/trunk...HEAD`, scoped to correctness + requirement gaps (not style).
@@ -60,7 +62,18 @@ point of Gate 1: you look at the running app before integrating it. Check:
    token conflict resolves mechanically; anything substantive, resolve by hand).
 4. **Squash-merge** the PR into `trunk`. Integrated on the trunk but **NOT live** (Pages serves
    the separate `production` branch).
-5. **Delete the feature branch** (local + remote).
+5. **Release the staging slot:** `node tools/staging-lease.mjs release --branch <feature-branch>`
+   — the review window is over, so free the slot the moment the feature is integrated. Release is
+   **by branch** (the merge process may be a different session than the one that `/deploy`ed it,
+   so a session-keyed release would miss). This is a **soft step**: if it fails (network, auth,
+   nothing to release), **WARN and keep going — a failed release NEVER fails the merge.** The
+   30-min holder TTL is the backstop that frees the slot regardless.
+   - **`not-held` / `not-holder` handoff:** if the release reports the branch didn't hold a slot,
+     the lease was **TTL-reclaimed during the review** (the review outran the 30-min budget, or
+     another session took the freed slot). Nothing is broken — but staging may no longer be
+     showing this feature. **Warn Jac and re-run `/deploy`** to re-land it on staging *before* any
+     `/promote`, so the promote-freshness gate has fresh bytes to check.
+6. **Delete the feature branch** (local + remote).
 
 ## After
 The work is on trunk, integrated but not live. The next gate is **/promote** (Gate 2) — always

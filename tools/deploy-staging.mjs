@@ -47,48 +47,33 @@ import {
 } from 'node:fs';
 import { join, dirname, extname, posix } from 'node:path';
 import { tmpdir } from 'node:os';
-
-// ── Config — CONFIRM before the first real run (these are the Phase 0 blockers) ──
-
-// Confirmed 2026-07-13 — the staging repo; its GitHub Pages serves the staging URL
-// (https://operations-jacrentals.github.io/rental-wrangler-staging/).
-const STAGING_REPO = 'operations-jacrentals/rental-wrangler-staging';
-
-// Confirmed 2026-07-13 — the branch staging's Pages source builds from. The staging
-// repo has exactly one branch, `main`, so a "deploy from a branch" Pages source can
-// only serve `main`.
-const STAGING_PAGES_BRANCH = 'main';
-
-// TODO(jac): confirm — which credential this session actually has (plan §0.4 offers
-// either an SSH deploy key or a fine-scoped PAT; this script supports both and prefers
-// the SSH key when both are set, since a leaked SSH key PATH is far safer to fail loudly
-// with than a PAT, which can end up embedded in a git remote URL — see gitAuthed()).
-// Neither set => clean no-op (see resolveCredential()), nothing is pushed.
-const STAGING_DEPLOY_KEY_PATH = process.env.STAGING_DEPLOY_KEY_PATH || ''; // path to the PRIVATE half of the deploy key
-const STAGING_DEPLOY_PAT = process.env.STAGING_DEPLOY_PAT || '';           // fine-scoped PAT, staging repo only
+// The credential/sanitizing git plumbing now lives in ONE place — tools/lib/staging-git.mjs
+// — shared with the staging-lease/control substrate so there is no split-brain copy of the
+// authed-remote handling. See that file for the two hardening deltas (prompt-suppression +
+// the porcelain CAS classifier). git/gitTry/lines/fail/sleepMs are byte-identical to the
+// helpers this file used to define locally.
+import {
+  git, gitTry, lines, fail, sleepMs,
+  STAGING_REPO, STAGING_PAGES_BRANCH,
+  resolveCredential, stagingRemoteUrl, gitEnv, gitAuthed,
+} from './lib/staging-git.mjs';
+// Step 7 — the staging-lease coordination layer. Acquire a slot (or auto-queue and wait)
+// before deploying, renew it on a verified live-bytes check, and release it only when
+// nothing landed. The advisory marker is diagnostic-only (gitignored). See the plan §5.7 / §6.
+import { pathToFileURL } from 'node:url';
+import { acquire as leaseAcquire, renew as leaseRenew, release as leaseRelease } from './staging-lease.mjs';
+import { writeMarkerAtomic, clearMarker, DEFAULT_TTL_MINUTES } from './lib/staging-control.mjs';
 
 // Refuse to deploy from these — a short feature branch is the whole point of Gate 1.
-// NB: STAGING_PAGES_BRANCH below is the STAGING repo's own Pages branch (still 'main') —
-// unrelated to this repo's trunk, which was renamed main -> trunk.
+// NB: STAGING_PAGES_BRANCH (imported above) is the STAGING repo's own Pages branch (still
+// 'main') — unrelated to this repo's trunk, which was renamed main -> trunk.
 const PROTECTED_BRANCHES = ['trunk', 'production'];
 
-// ── small git helpers (same shape as tools/spec-sync.mjs) ──
-
-function git(args, opts = {}) {
-  return execFileSync('git', args, { encoding: 'utf8', ...opts }).trim();
-}
-function gitTry(args, opts = {}) {
-  try { return { ok: true, out: git(args, opts) }; }
-  catch (e) { return { ok: false, out: (e.stdout || '') + (e.stderr || ''), err: e }; }
-}
-function lines(s) { return s.split('\n').map((x) => x.trim()).filter(Boolean); }
-function fail(msg) { console.error(msg); process.exit(1); }
-// Portable synchronous sleep (no deps, no event-loop turn needed) — used to wait out GitHub
-// Pages propagation between the live-bytes verification polls after a push.
-function sleepMs(ms) { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
-
-const ROOT = git(['rev-parse', '--show-toplevel']);
-process.chdir(ROOT);
+// ROOT/chdir are set inside main() (hoisted per plan [R7]) so that importing this module
+// for its exported seams (ci/lease-deploy-test.mjs) has NO side effects — no git call, no
+// chdir at import time. deriveSiteFiles/syncFiles/bumpVersionToken read this module-level
+// ROOT, which main() assigns before any of them run.
+let ROOT;
 
 // ── branch guard ──
 
@@ -99,45 +84,6 @@ function assertFeatureBranch(branch) {
   if (PROTECTED_BRANCHES.includes(branch)) {
     fail(`deploy-staging: refusing to run from '${branch}'. This is Gate-1 plumbing for a ` +
       `short-lived feature branch (see the plan) — check out a feature branch first.`);
-  }
-}
-
-// ── credential resolution + the sanitizing wrapper for network git calls ──
-
-function resolveCredential() {
-  if (STAGING_DEPLOY_KEY_PATH) {
-    if (!existsSync(STAGING_DEPLOY_KEY_PATH)) {
-      fail(`deploy-staging: STAGING_DEPLOY_KEY_PATH is set but no file exists at ${STAGING_DEPLOY_KEY_PATH}.`);
-    }
-    return { kind: 'ssh', keyPath: STAGING_DEPLOY_KEY_PATH };
-  }
-  if (STAGING_DEPLOY_PAT) return { kind: 'pat', token: STAGING_DEPLOY_PAT };
-  return null;
-}
-
-function stagingRemoteUrl(cred) {
-  return cred.kind === 'ssh'
-    ? `git@github.com:${STAGING_REPO}.git`
-    // PAT embedded in the URL — never printed. Every command that uses this URL goes
-    // through gitAuthed(), which never surfaces raw git stderr/argv on failure.
-    : `https://x-access-token:${cred.token}@github.com/${STAGING_REPO}.git`;
-}
-function gitEnv(cred) {
-  if (cred.kind !== 'ssh') return process.env;
-  return { ...process.env, GIT_SSH_COMMAND: `ssh -i ${JSON.stringify(cred.keyPath)} -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new` };
-}
-// Network operations against the staging remote ONLY. Deliberately swallows the
-// original error (it can carry the PAT via git's own "fatal: unable to access '<url>'"
-// text) and throws a sanitized one instead.
-function gitAuthed(args, cred, opts = {}) {
-  try {
-    return execFileSync('git', args, { encoding: 'utf8', env: gitEnv(cred), ...opts }).trim();
-  } catch {
-    throw new Error(
-      `deploy-staging: git ${args[0]} against the staging remote failed (credential, network, or ` +
-      `repo/branch-name issue). Message withheld — it may echo the credential. Check ` +
-      `STAGING_REPO/STAGING_PAGES_BRANCH and the credential env var by hand.`
-    );
   }
 }
 
@@ -343,9 +289,172 @@ function syncFiles(cloneDir, files) {
   }
 }
 
+// ── Step 7: staging-lease coordination (exported seams — injected in ci/lease-deploy-test.mjs) ──
+
+const QUEUE_POLL_MS = 30000;   // poll the lease ~every 30 s while queued
+const QUEUE_GRACE_MS = 60000;  // watchdog grace on top of the holder TTL
+const WATCHDOG_MS = DEFAULT_TTL_MINUTES * 60000 + QUEUE_GRACE_MS; // stalled-position give-up window
+
+function stripSlash(u) { return String(u || '').replace(/\/+$/, ''); }
+function last4(s) { return String(s || '').slice(-4) || '????'; }
+function ceilMin(ms) { const m = Math.ceil(ms / 60000); return m > 0 ? `~${m} min` : 'any moment'; }
+
+// A malformed acquired slot must NEVER send a deploy to an unknown target — throw (→ exit 1).
+export function assertSlotShape(slot) {
+  if (!slot || typeof slot !== 'object' || !Number.isInteger(slot.id) || typeof slot.url !== 'string' || !slot.url) {
+    throw new Error(`deploy-staging: acquired slot is malformed (${JSON.stringify(slot)}) — refusing to deploy to an unknown target.`);
+  }
+  return slot;
+}
+
+// One-time banner printed when the deploy first lands in the queue. Branches on whether any
+// holder is reported: when a slot is momentarily free but the caller is behind the FIFO head,
+// `holders` MAY be empty — render "a slot is free but N ahead", NEVER "Slot undefined".
+export function contentionBanner(q, now) {
+  const out = [];
+  if (q.holders && q.holders.length) {
+    const parts = q.holders
+      .slice()
+      .sort((a, b) => a.expiresAt - b.expiresAt)
+      .map((h) => `Slot ${h.slotId} held by …${last4(h.session)}${h.feature ? ` (${h.feature})` : ''}, frees ${ceilMin(h.expiresAt - now)}`);
+    out.push(`🔒 All staging slots busy — ${parts.join('; ')}.`);
+  } else {
+    const ahead = Math.max(0, (q.position || 1) - 1);
+    out.push(`🔒 Queued — a slot is free but ${ahead} ahead of you in line.`);
+  }
+  out.push(`Queued you at #${q.position} (${q.queueLen} in line); I'll deploy the moment a slot frees and ping you.`);
+  return out.join('\n');
+}
+
+// A per-poll progress line while waiting (position + soonest-free ETA).
+export function queueProgressLine(q, now) {
+  const eta = typeof q.etaMs === 'number' ? ceilMin(q.etaMs) : 'unknown';
+  return `staging queue: still #${q.position} of ${q.queueLen}, soonest slot frees ${eta}…`;
+}
+
+// The exit-3 message when the watchdog gives up with no forward progress. BUSY, not broken.
+export function queueTimeoutMessage(q) {
+  const pos = q && typeof q.position === 'number' ? `#${q.position}` : 'in line';
+  return `🔴 staging queue: no forward progress (${pos}) past the watchdog window — giving up. ` +
+    `Staging is BUSY, not broken: do NOT rotate the PAT. Re-run /deploy when you're ready.`;
+}
+
+// Acquire a slot, or auto-queue and poll until one frees. ALL effects are injected
+// (lease/sleep/now/log/exit) so the deploy-seam tests never touch the network. A transient
+// LEASE_CONTENTION is ridden out per poll (never aborts the wait); a genuine auth/network
+// throw propagates (never deploy lease-less). Forward progress (a falling queue position)
+// resets the watchdog deadline; a position stalled past the watchdog window ends the wait
+// with exit 3 (busy, not broken).
+export async function acquireSlotOrQueue(opts, deps = {}) {
+  const {
+    lease,
+    sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
+    now = () => Date.now(),
+    log = (...a) => console.log(...a),
+    exit = (code) => process.exit(code),
+    pollMs = QUEUE_POLL_MS,
+    watchdogMs = WATCHDOG_MS,
+  } = deps;
+
+  let bannered = false;
+  let bestPosition = Infinity;
+  // Wall-clock deadline anchor, armed on the first poll (elapsed = t - lastProgressAt).
+  // Init lazily to the first poll's clock so the watchdog measures ELAPSED time, not an
+  // absolute epoch — and so sustained LEASE_CONTENTION (which never yields a queued result
+  // to reset it) is still bounded by the watchdog, not an infinite loop (INV-11).
+  let lastProgressAt = null;
+
+  for (;;) {
+    const t = now();
+    if (lastProgressAt === null) lastProgressAt = t; // arm the deadline on the first poll
+
+    let res;
+    try {
+      res = await lease.acquire({ session: opts.session, branch: opts.branch, feature: opts.feature });
+    } catch (e) {
+      if (e && e.code === 'LEASE_CONTENTION') {
+        // Ride out the herd — but the watchdog is the ultimate bound: persistent contention
+        // that never returns a queued/acquired result must still give up (busy, not broken).
+        if (t - lastProgressAt > watchdogMs) {
+          log(queueTimeoutMessage(null));
+          exit(3);
+          return; // real process.exit never returns; a test's exit spy returns → stop looping
+        }
+        await sleep(pollMs);
+        continue;
+      }
+      throw e; // genuine auth/network — never deploy lease-less (→ main catch → exit 1)
+    }
+
+    if (res.status === 'acquired') {
+      if (bannered) log(`staging queue: ✅ a slot freed — deploying to slot ${res.slot.id}.`);
+      return res.slot;
+    }
+
+    if (!bannered) { log(contentionBanner(res, t)); bannered = true; }
+    else log(queueProgressLine(res, t));
+
+    if (typeof res.position === 'number' && res.position < bestPosition) {
+      bestPosition = res.position; lastProgressAt = t; // forward progress → reset the deadline
+    }
+    if (t - lastProgressAt > watchdogMs) {
+      log(queueTimeoutMessage(res));
+      exit(3);
+      return; // real process.exit never returns; a test's exit spy returns → stop looping
+    }
+    await sleep(pollMs);
+  }
+}
+
+// ── SIGINT/SIGTERM: best-effort release, pre-push ONLY (nothing landed), re-entrancy-guarded ──
+
+let _held = false;       // we currently hold a slot
+let _landed = false;     // a push has been attempted — the pack MAY have landed → HOLD, never release
+let _releasing = false;  // re-entrancy guard shared by the signal handler and the abort path
+let _heldIdent = null;   // { session } for release-BY-SESSION on abort ([R5])
+
+function installLeaseSignalRelease(cred) {
+  const handler = async () => {
+    if (_releasing) return; // re-entrancy guard — never double-release
+    _releasing = true;
+    if (_held && !_landed && _heldIdent) { // pre-push only: nothing landed → safe to release
+      // [R5] the deploy-error / SIGINT path releases BY SESSION only — never by branch.
+      // Passing branch would broaden decideRelease's match and could clear a DIFFERENT
+      // session that took over the same feature branch after a TTL reap.
+      try { await leaseRelease({ session: _heldIdent.session }, { cred }); } catch { /* best-effort; TTL backstops */ }
+      try { clearMarker(); } catch { /* advisory */ }
+    }
+    process.exit(130);
+  };
+  process.on('SIGINT', handler);
+  process.on('SIGTERM', handler);
+}
+
+// Renew the held lease after a verified deploy (or a nothing-to-push no-op) and stamp the
+// advisory marker with the live token. Surfaces a `not-held` result LOUDLY (INV-5): the slot
+// was TTL-reclaimed mid-deploy and staging may be overwritten at any moment.
+async function renewHeld(cred, session, slot, token) {
+  try {
+    const r = await leaseRenew({ session }, { cred });
+    if (r.status === 'not-held') {
+      console.error(`deploy-staging: ⚠️ LEASE EXPIRED — this session no longer holds slot ${slot.id} ` +
+        `(TTL-reclaimed during the deploy?). Staging may be overwritten by another session at any moment. ` +
+        `Re-run /deploy to reclaim the slot before telling Jac staging is ready.`);
+    } else {
+      console.log(`deploy-staging: 🔒 lease renewed — holding slot ${slot.id} until /merge or TTL.`);
+    }
+  } catch (e) {
+    console.error(`deploy-staging: ⚠️ could not renew the lease (${e && e.message ? e.message : e}); TTL still governs.`);
+  }
+  try { writeMarkerAtomic({ slotId: slot.id, url: slot.url, session, token, renewedAt: Date.now() }); } catch { /* advisory only */ }
+}
+
 // ── main ──
 
-function main() {
+async function main() {
+  ROOT = git(['rev-parse', '--show-toplevel']);
+  process.chdir(ROOT);
+
   const DRY_RUN = process.argv.includes('--dry-run');
 
   const branch = git(['rev-parse', '--abbrev-ref', 'HEAD']);
@@ -355,7 +464,7 @@ function main() {
   if (!cred) {
     console.log('deploy-staging: no staging deploy credential configured — nothing pushed.');
     console.log('                Set STAGING_DEPLOY_KEY_PATH or STAGING_DEPLOY_PAT once plan §0.4 is done, then re-run.');
-    return;
+    return 0;
   }
 
   const files = deriveSiteFiles();
@@ -363,17 +472,42 @@ function main() {
   console.log(`deploy-staging: ${files.length} site file(s) derived from index.html + the module/asset graph:`);
   files.forEach((f) => console.log('   ' + f));
 
-  const { oldToken, newToken } = bumpVersionToken(join(ROOT, 'index.html'));
-  console.log(`deploy-staging: bumped shared ?v= token ${oldToken} -> ${newToken} in index.html`);
-
+  // ── --dry-run: bump ?v= locally, then STOP. NO lease, NO network. (Unchanged behaviour.) ──
   if (DRY_RUN) {
-    console.log("deploy-staging: --dry-run — stopping before touching the staging repo.");
-    console.log("                index.html was still bumped locally; `git checkout -- index.html` to revert.");
-    return;
+    const { oldToken, newToken } = bumpVersionToken(join(ROOT, 'index.html'));
+    console.log(`deploy-staging: bumped shared ?v= token ${oldToken} -> ${newToken} in index.html`);
+    console.log('deploy-staging: --dry-run — stopping before touching the staging repo (no lease acquired).');
+    console.log('                index.html was still bumped locally; `git checkout -- index.html` to revert.');
+    return 0;
   }
 
+  const SESSION = process.env.CLAUDE_CODE_SESSION_ID || '';
+  if (!SESSION) {
+    fail('deploy-staging: CLAUDE_CODE_SESSION_ID is empty — cannot coordinate a staging lease. Re-run inside a session.');
+  }
+  const feature = branch.split('/').pop() || null;
+
+  // [R7] read-only compute (dirty/shortSha) BEFORE acquiring — a queue timeout then never
+  // leaves index.html dirty, because the ?v= bump happens only AFTER a slot is held.
   const dirty = git(['status', '--porcelain']).length > 0;
   const shortSha = gitTry(['rev-parse', '--short', 'HEAD']).out || 'nocommit';
+
+  installLeaseSignalRelease(cred);
+
+  // Acquire (or auto-queue → wait → acquire). Auth/network throws propagate (→ exit 1); a
+  // no-forward-progress watchdog ends the wait with exit 3 inside acquireSlotOrQueue.
+  const lease = { acquire: (o) => leaseAcquire(o, { cred }) };
+  const slot = await acquireSlotOrQueue({ session: SESSION, branch, feature }, { lease });
+  assertSlotShape(slot);
+  _held = true; _heldIdent = { session: SESSION };
+  console.log(`deploy-staging: 🎟️  holding slot ${slot.id} → ${slot.url}`);
+
+  // Advisory marker (diagnostic-only, gitignored): token:null at acquire, filled on verified renew.
+  try { writeMarkerAtomic({ slotId: slot.id, url: slot.url, session: SESSION, branch, feature, token: null, acquiredAt: Date.now() }); } catch { /* advisory only */ }
+
+  // [R7] bump AFTER the slot is held.
+  const { oldToken, newToken } = bumpVersionToken(join(ROOT, 'index.html'));
+  console.log(`deploy-staging: bumped shared ?v= token ${oldToken} -> ${newToken} in index.html`);
 
   const cloneDir = freshCloneDir();
   try {
@@ -382,24 +516,34 @@ function main() {
     syncFiles(cloneDir, files);
     git(['add', '-A'], { cwd: cloneDir });
     if (gitTry(['diff', '--cached', '--quiet'], { cwd: cloneDir }).ok) {
+      // Nothing to push — staging already serves these exact bytes, so our feature IS on
+      // staging. HOLD the lease (renew) and keep the review window; never release (nothing
+      // was abandoned). This is what keeps a /merge release right after a re-deploy safe.
       console.log('deploy-staging: staging already matches this working tree. Nothing to push.');
-      return;
+      await renewHeld(cred, SESSION, slot, newToken);
+      return 0;
     }
     const msg = `deploy: ${branch} @ ${shortSha}${dirty ? '+dirty' : ''} (?v=${newToken})`;
     git(['commit', '-m', msg], { cwd: cloneDir });
-    pushStaging(cloneDir, cred);
 
-    const [owner, repoName] = STAGING_REPO.split('/');
+    // ── PUSH — from here the pack MAY have landed: HOLD the lease on ANY failure ([R8]). ──
+    _landed = true;
+    try {
+      pushStaging(cloneDir, cred);
+    } catch (e) {
+      console.error('deploy-staging: 🔴 push to staging failed AFTER the commit — the push is INDETERMINATE');
+      console.error('deploy-staging: (the pack may already have been accepted). HOLDING the lease; TTL reclaims it if nothing landed.');
+      throw e; // → main-guard fail → exit 1; the pre-push release path is skipped because _landed is set
+    }
+
     console.log('deploy-staging: pushed.');
-    console.log(`  staging URL:  https://${owner}.github.io/${repoName}/`);
+    console.log(`  staging URL:  ${slot.url}`);
     console.log(`  ?v= marker:   ${newToken}`);
 
-    // Verify the LIVE staging site actually serves the new token — a push "succeeding" is NOT
+    // Verify the LIVE staging slot actually serves the new token — a push "succeeding" is NOT
     // proof Pages updated. Poll (~1 min for Pages to propagate), then FAIL LOUDLY if it never
-    // catches up, so a deploy that silently didn't take can't be mistaken for a good one (the
-    // "staging serves an OLD file under a NEW token" trap CLAUDE.md warns about). This is what
-    // stops staging from drifting behind while a broken deploy looks green.
-    const indexUrl = `https://${owner}.github.io/${repoName}/index.html`;
+    // catches up, so a deploy that silently didn't take can't be mistaken for a good one.
+    const indexUrl = `${stripSlash(slot.url)}/index.html`;
     let served = null;
     for (let attempt = 1; attempt <= 5; attempt++) {
       try {
@@ -414,20 +558,41 @@ function main() {
       }
     }
     if (served === newToken) {
-      console.log(`deploy-staging: ✅ verified — live staging is serving ?v=${newToken}.`);
-    } else {
-      console.error(`deploy-staging: 🔴 push succeeded but live staging is NOT serving ?v=${newToken} after ~1 min (got ?v=${served || 'unreachable'}).`);
-      console.error('deploy-staging: staging did not take — it may be misconfigured or serving a stale build. Do NOT treat this deploy as done.');
-      console.error(`  re-check: curl -s ${indexUrl} | grep ${newToken}`);
-      process.exit(2);
+      console.log(`deploy-staging: ✅ verified — live staging (slot ${slot.id}) is serving ?v=${newToken}.`);
+      // Verified live → renew (surface `not-held` LOUDLY) + stamp the marker with the live token.
+      await renewHeld(cred, SESSION, slot, newToken);
+      return 0;
     }
+    // Post-push verify failure → bytes ARE pushed → HOLD the lease ([R8]); exit 2 (unchanged).
+    console.error(`deploy-staging: 🔴 push succeeded but live staging (slot ${slot.id}) is NOT serving ?v=${newToken} after ~1 min (got ?v=${served || 'unreachable'}).`);
+    console.error('deploy-staging: staging did not take — it may be misconfigured or serving a stale build. Do NOT treat this deploy as done.');
+    console.error('deploy-staging: HOLDING the lease (bytes are pushed); TTL governs. Re-run /deploy after fixing Pages.');
+    console.error(`  re-check: curl -s ${indexUrl} | grep ${newToken}`);
+    // process.exit() terminates synchronously — the outer `finally { removeCloneDir }` never
+    // runs — so clean the clone dir up explicitly here to avoid leaking a temp clone per
+    // verify failure.
+    removeCloneDir(cloneDir);
+    process.exit(2);
+  } catch (e) {
+    // [R8] release ONLY when nothing landed (a pre-push abort). _landed → HOLD (TTL governs).
+    if (_held && !_landed && !_releasing) {
+      _releasing = true; // block the signal handler from a concurrent double-release
+      try {
+        // [R5] release BY SESSION only on the deploy-error path — the aborting process IS the
+        // session that acquired, so a session-exact match releases strictly its own hold and
+        // can never clear another session that took over the same branch after a TTL reap.
+        await leaseRelease({ session: SESSION }, { cred });
+        console.error(`deploy-staging: released slot ${slot.id} (deploy aborted before anything landed).`);
+        clearMarker();
+      } catch { /* best-effort; TTL is the backstop */ }
+    }
+    throw e;
   } finally {
     removeCloneDir(cloneDir);
   }
 }
 
-try {
-  main();
-} catch (e) {
-  fail(e && e.message ? e.message : String(e));
+// main-guard — run the CLI only when invoked directly, NOT when imported for the seams above.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().then((code) => process.exit(code || 0)).catch((e) => fail(e && e.message ? e.message : String(e)));
 }

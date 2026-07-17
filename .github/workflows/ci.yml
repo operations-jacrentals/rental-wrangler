@@ -37,6 +37,12 @@ jobs:
       - name: Logic regression suite (money + multi-unit)
         run: node ci/logic-test.mjs
 
+      - name: Staging-lease state machine (pure-Node, mocked git)
+        run: node ci/lease-test.mjs
+
+      - name: Staging-lease deploy seam (pure-Node, injected effects)
+        run: node ci/lease-deploy-test.mjs
+
       - name: Rulebook field catalog is current
         run: node ci/gen-rule-usage.mjs --check
 

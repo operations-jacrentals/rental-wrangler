@@ -53,6 +53,19 @@ say-so:
   `main`); review the running app at the staging URL. It bumps the shared `?v=` and
   curl-verifies the live bytes. A failed/unverified deploy is a **HARD STOP** — staging
   must never fall behind. (`STAGING_DEPLOY_PAT` authenticates the push — never echo it.)
+  - **Staging traffic control** (`tools/staging-lease.mjs`, N=1): staging is one shared slot
+    guarded by a git-native lease — `control.json` on the non-served `staging-control` branch of
+    the staging repo. `/deploy` acquires the slot before pushing; a second session auto-queues and
+    deploys when the slot frees. **The 30-min holder TTL is the review budget** — a holder does no
+    work during Jac's review, so a review that outruns 30 min must re-run `/deploy` (idempotent —
+    it renews the same slot in place) to refresh the lease. **`/deploy` exit 3 = staging BUSY, not
+    broken** — contention, not a bad PAT: report the holder + ETA and re-run `/deploy`, never
+    rotate the token. `/merge` releases the slot **by branch** (soft — TTL is the backstop); a
+    `not-held` at that point means the review outran the TTL → re-`/deploy` before `/promote`.
+    `reset --force` is a **loud, stop-the-world manual-recovery op** — it can drop a concurrent
+    acquire and wipe an in-flight holder (whose next `renew` then returns `not-held`); use only to
+    unwedge a corrupt/stuck `control.json`. The advisory marker `.staging-lease.json` is
+    diagnostic-only and gitignored.
 - **Gate 1 `/merge`** — feature branch → PR → `smoke` CI → squash-merge to `trunk`
   (integrated, still not live). `trunk` is **branch-protected**; **NEVER** `git push origin
   HEAD:trunk` (or `HEAD:production`) directly — it's rejected.
@@ -69,9 +82,11 @@ say-so:
   Pages — never gate a secret/auth check on it.)
 
 **Gates (must pass before push):** `node ci/smoke.mjs`, `node ci/logic-test.mjs`,
-`node ci/gen-rule-usage.mjs --check`, `node ci/check-window-catalog.mjs`,
-`node tools/gen-code-map.mjs --check`. Port 8000 is reserved — swap to 9147 first:
-`sed -i 's/8000/9147/g' ci/smoke.mjs ci/logic-test.mjs`, run, then `git checkout -- ci/`.
+`node ci/lease-test.mjs`, `node ci/lease-deploy-test.mjs`, `node ci/gen-rule-usage.mjs --check`,
+`node ci/check-window-catalog.mjs`, `node tools/gen-code-map.mjs --check`. Port 8000 is reserved —
+swap to 9147 first: `sed -i 's/8000/9147/g' ci/smoke.mjs ci/logic-test.mjs`, run, then `git
+checkout -- ci/`. The two `lease-*` suites are **pure-Node** (mocked git seam, no browser/server)
+— **excluded from the port swap** and never touch the network.
 
 **Cache-bust every deploy:** bump the shared `?v=` on `style.css`, `rule-usage.js`, and
 `app.js` in `index.html` (Pages serves `max-age=600`, no per-file hashing). Don't add `?v=`

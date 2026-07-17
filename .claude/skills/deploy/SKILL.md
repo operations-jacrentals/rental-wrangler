@@ -44,7 +44,10 @@ is uncommitted, cut/commit to a feature branch off trunk first
    `?v=` token in `index.html`, clones the staging repo, syncs, pushes, then **curl-verifies the
    live staging URL serves the new `?v=`** (polling ~1 min for Pages), exiting **non-zero** if it
    never catches up. `--dry-run` bumps locally and stops before touching the staging repo.
-2. **Read the exit code + the ✅/🔴 line.** ✅ verified → proceed to review. 🔴 / non-zero / auth
+2. **Read the exit code + the ✅/🔴 line.** ✅ verified (exit 0) → proceed to review. **Exit 3 is
+   special: staging is BUSY, not broken** (all slots held by other sessions and the queue wait
+   gave up) — do **NOT** treat it as the HARD STOP / rotate-PAT case; handle it per "Exit 3"
+   below. Any other non-zero (1 = auth/network/guard, 2 = pushed-but-verify-failed) / 🔴 / auth
    error → **HARD STOP** (below).
 3. **Review the running app** (after ✅): drive the staging URL with Claude-in-Chrome — log in
    (`$RW_PW`, never echo it), exercise exactly what you built + a sanity flow, confirm no console
@@ -59,6 +62,19 @@ If the script errors (expired PAT, network, wrong repo/branch) or the live-bytes
   rotating (a GitHub PAT with write access to the staging repo, **not** an app login password;
   never echo it). Note a rotated token only reaches a **fresh session** (env vars are fixed at
   session start).
+
+## Exit 3 — staging BUSY, not broken (do NOT rotate the PAT)
+Staging is a shared, single-slot review site guarded by a lease (`tools/staging-lease.mjs`). Exit
+**3** means every slot is held by another session and the auto-queue wait gave up with no forward
+progress — the deploy is **queued or timed-out, NOT failed**. Nothing is wrong with the PAT, the
+host, or your branch.
+- **Do NOT HARD STOP and do NOT ask Jac to rotate the token** — this is contention, not a
+  credential/host failure.
+- **Report it plainly:** which slot is held (session last-4 + feature) and the ETA the script
+  printed, and that you were queued. Then simply **re-run `/deploy`** — a freed slot (a holder's
+  `/merge` or its 30-min TTL) is claimed on the next acquire.
+- The deploy did **not** touch staging, so staging has NOT fallen behind — the "staging behind
+  production defeats the workflow" rule is not in play here.
 
 ## Then
 On a green deploy + review, the next gate is **/merge** ("merge it"). If Jac says "merge it"
