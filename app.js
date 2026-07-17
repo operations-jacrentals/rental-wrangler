@@ -2769,8 +2769,9 @@ function cardFwd(card) {
 }
 // A Back/Forward jog RE-opens a view you already visited — so return to where you were
 // reading it, not the top. render() zeroes a record view on the assumption it's a fresh open
-// (§0.6, app.js:16297); the per-view scrollMemo still holds the offset (keyed recType:recId,
-// stable per record), so re-apply it AFTER render paints. A never-scrolled view has no entry
+// (§0.6, app.js:16297); the per-view scrollMemo still holds the offset (keyed card|<view>, the
+// view portion being recType:recId — stable per record), so re-apply it AFTER render paints. A
+// never-scrolled view has no entry
 // → stays at 0. (Fresh opens don't call this, so they still start at the top.)
 function restoreJogScroll(card) {
   const c = document.querySelector(`.card[data-card="${card}"]`);
@@ -21354,31 +21355,38 @@ async function inlineDocImages(root) {
     } catch (e) { im.removeAttribute('src'); }
   }));
 }
-let _invFontCss = null;   // cached self-contained @font-face block (real fonts, data-URI'd) for the copied image
+let _invFontCssP = null;   // cached PROMISE of the self-contained @font-face block (real fonts, data-URI'd) for the copied/emailed image
 // The invoice sheet is Saira Condensed (stamps) + Geist (body), loaded from Google Fonts. An
 // <svg><foreignObject> renders in its OWN scope with no access to the page's @font-face, so its text
 // would fall back to a system face. Fetch the two families' LATIN woff2 once, inline them as data
-// URIs, and return a <style>-ready @font-face block for the rasterizer to embed — so the copied PNG
-// carries the real typefaces. Best-effort + cached: if the CDN is unreachable (offline/sandbox) we
-// return '' and the render silently uses the fallback face (unchanged from the first ship).
-async function invoiceFontFaceCss() {
-  if (_invFontCss != null) return _invFontCss;
-  try {
-    const cssUrl = 'https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Saira+Condensed:wght@600;700;800&display=swap';
-    const css = await (await fetch(cssUrl)).text();
-    const faces = css.match(/\/\*\s*latin\s*\*\/\s*@font-face\s*{[^}]*}/g) || [];   // latin subset only — an invoice is latin text, keeps the SVG small
-    const inlined = await Promise.all(faces.map(async (face) => {
-      const m = face.match(/url\((https:\/\/[^)]+\.woff2)\)/);
-      if (!m) return '';
-      try {
-        const b = await (await fetch(m[1])).blob();
-        const uri = await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(b); });
-        return face.replace(m[1], uri);
-      } catch (e) { return ''; }
-    }));
-    _invFontCss = inlined.filter(Boolean).join('\n');
-  } catch (e) { _invFontCss = ''; }
-  return _invFontCss;
+// URIs, and return a <style>-ready @font-face block for the rasterizer to embed — so the image
+// carries the real typefaces. We cache the in-FLIGHT promise (so a copy + an email fired together
+// share ONE CDN fetch, not two) and keep it only on SUCCESS: an offline/CDN-blocked first attempt
+// resolves to '' and clears the cache, so a later copy/email retries once the network returns
+// (instead of poisoning the whole session with an empty face block). The render silently uses the
+// fallback face whenever this returns ''.
+function invoiceFontFaceCss() {
+  if (_invFontCssP) return _invFontCssP;
+  const p = (async () => {
+    try {
+      const cssUrl = 'https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Saira+Condensed:wght@600;700;800&display=swap';
+      const css = await (await fetch(cssUrl)).text();
+      const faces = css.match(/\/\*\s*latin\s*\*\/\s*@font-face\s*{[^}]*}/g) || [];   // latin subset only — an invoice is latin text, keeps the SVG small
+      const inlined = await Promise.all(faces.map(async (face) => {
+        const m = face.match(/url\((https:\/\/[^)]+\.woff2)\)/);
+        if (!m) return '';
+        try {
+          const b = await (await fetch(m[1])).blob();
+          const uri = await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(b); });
+          return face.replace(m[1], uri);
+        } catch (e) { return ''; }
+      }));
+      return inlined.filter(Boolean).join('\n');
+    } catch (e) { return ''; }
+  })();
+  _invFontCssP = p;
+  p.then((css) => { if (!css) _invFontCssP = null; }, () => { _invFontCssP = null; });   // cache only a successful, non-empty result; a failed/empty fetch retries next time
+  return p;
 }
 // Raw base64 (no data: prefix) of a blob — for handing an image to the backend email send.
 function blobToBase64(blob) {
@@ -21395,7 +21403,7 @@ async function invoiceSheetPng(invoiceId) {
     const onScreen = [...document.querySelectorAll('.pr-doc[data-inv]')].some((d) => d.dataset.inv === invoiceId);
     if (!onScreen) {
       temp = document.createElement('div');
-      temp.style.cssText = 'position:absolute;left:-99999px;top:0;width:640px;pointer-events:none';
+      temp.style.cssText = 'position:absolute;left:-99999px;top:0;width:760px;pointer-events:none';   // match .pr-doc's 760px max-width so the emailed PNG scales like the on-screen sheet / copy-as-image
       temp.innerHTML = invoiceDocHtml(inv, { interactive: true });
       document.body.appendChild(temp);
     }
