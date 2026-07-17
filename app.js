@@ -21293,14 +21293,15 @@ function printInvoice(invoiceId) {
 /* Copy the on-screen invoice sheet to the clipboard as a PNG (right-click → Copy as image,
    Jac 2026-07-17). Library-free rasterization: clone the live .pr-doc, inline every element's
    COMPUTED style (so no stylesheet / CSS-var resolution is needed inside the SVG), data-URI the
-   images so the canvas never taints, wrap the XHTML in an <svg><foreignObject>, paint it to a
-   canvas, hand the PNG blob to the clipboard. The blob is produced INSIDE a ClipboardItem promise
-   so the write still counts as the user's gesture on Safari. Fonts loaded via @font-face may fall
-   back to a system face inside the SVG (a known foreignObject limit) — layout/colors are faithful,
-   the typeface may not be; on any failure we fall back to a clear toast pointing at Save-as-PDF. */
+   images AND embed the real @font-face typefaces (a foreignObject renders in its own scope with no
+   page fonts — so we inline them), wrap the XHTML in an <svg><foreignObject>, paint it to a canvas,
+   hand the PNG blob to the clipboard. The blob is produced INSIDE a ClipboardItem promise so the
+   write still counts as the user's gesture on Safari. **Firefox** deliberately taints a canvas the
+   moment a foreignObject-bearing SVG is drawn (a security stance, no lib-free bypass) → toBlob
+   throws → we catch and point at Save-as-PDF. Works in Chromium + Safari. */
 function copyInvoiceImage(invoiceId) {
-  const fail = () => toast('Couldn’t copy the image on this browser — use 🖨 Save PDF instead.');
-  if (!(navigator.clipboard && window.ClipboardItem)) return fail();   // no clipboard-image support (e.g. older Firefox) → point at Save-as-PDF, don't waste a render
+  const fail = () => toast('Couldn’t copy the image on this browser (Firefox blocks it) — use 🖨 Save PDF instead.');
+  if (!(navigator.clipboard && window.ClipboardItem)) return fail();   // no clipboard-image support → point at Save-as-PDF, don't waste a render
   // Render INSIDE the ClipboardItem promise so the write still counts as the user's gesture on Safari.
   navigator.clipboard.write([new ClipboardItem({ 'image/png': renderInvoicePng(invoiceId) })])
     .then(() => toast('🖼 Invoice copied — paste it into a message, chat, or doc.'))
@@ -21314,6 +21315,8 @@ async function renderInvoicePng(invoiceId) {
   const clone = doc.cloneNode(true);
   inlineComputedStyles(doc, clone);   // resolve classes + CSS vars to concrete values
   await inlineDocImages(clone);       // <img src> → data: so drawImage doesn't taint the canvas
+  const fontCss = await invoiceFontFaceCss();   // embed the real Saira/Geist faces — a foreignObject has no page @font-face
+  if (fontCss) { const st = document.createElement('style'); st.textContent = fontCss; clone.insertBefore(st, clone.firstChild); }
   clone.style.boxShadow = 'none'; clone.style.borderRadius = '0'; clone.style.margin = '0'; clone.style.maxWidth = 'none'; clone.style.width = W + 'px';
   clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
   const xhtml = new XMLSerializer().serializeToString(clone);
@@ -21350,6 +21353,32 @@ async function inlineDocImages(root) {
       im.setAttribute('src', await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(b); }));
     } catch (e) { im.removeAttribute('src'); }
   }));
+}
+let _invFontCss = null;   // cached self-contained @font-face block (real fonts, data-URI'd) for the copied image
+// The invoice sheet is Saira Condensed (stamps) + Geist (body), loaded from Google Fonts. An
+// <svg><foreignObject> renders in its OWN scope with no access to the page's @font-face, so its text
+// would fall back to a system face. Fetch the two families' LATIN woff2 once, inline them as data
+// URIs, and return a <style>-ready @font-face block for the rasterizer to embed — so the copied PNG
+// carries the real typefaces. Best-effort + cached: if the CDN is unreachable (offline/sandbox) we
+// return '' and the render silently uses the fallback face (unchanged from the first ship).
+async function invoiceFontFaceCss() {
+  if (_invFontCss != null) return _invFontCss;
+  try {
+    const cssUrl = 'https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Saira+Condensed:wght@600;700;800&display=swap';
+    const css = await (await fetch(cssUrl)).text();
+    const faces = css.match(/\/\*\s*latin\s*\*\/\s*@font-face\s*{[^}]*}/g) || [];   // latin subset only — an invoice is latin text, keeps the SVG small
+    const inlined = await Promise.all(faces.map(async (face) => {
+      const m = face.match(/url\((https:\/\/[^)]+\.woff2)\)/);
+      if (!m) return '';
+      try {
+        const b = await (await fetch(m[1])).blob();
+        const uri = await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(b); });
+        return face.replace(m[1], uri);
+      } catch (e) { return ''; }
+    }));
+    _invFontCss = inlined.filter(Boolean).join('\n');
+  } catch (e) { _invFontCss = ''; }
+  return _invFontCss;
 }
 // Plain-text quote summary for an emailed quote — mailto can't carry a PDF attachment,
 // so we inline the same figures the print doc shows (§12.5 line items + totals).
