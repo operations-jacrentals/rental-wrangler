@@ -10060,11 +10060,41 @@ function footerJogInner() {
   const cs = s.cards ? s.cards[member] : null;
   return cardJog(member, cs, { always: true });
 }
+// §M7 (Jac 2026-07-17) — the phone comms row: three BIG floating tiles (Team · Customers ·
+// Mr. Wrangler), each labeled + wearing its worst-status dot. Reuses .js-comms-chip so the same
+// click funnel fires (Customer → the channel menu). The icon-only chips stay a desktop idiom.
+function commsTilesHtml() {
+  const tile = (cat) => {
+    const meta = COMMS_CAT_META[cat];
+    const on = cat === 'customer' ? commsCustActive()
+      : cat === 'team' ? state.chat.open
+      : (state.wrangler.open && !state.wrangler.min);
+    const worst = cat === 'customer' ? commsCustWorst() : commsCatWorst(cat);
+    const label = cat === 'customer' ? 'Customers' : (cat === 'wrangler' ? 'Wrangler' : meta.label);
+    const mode = cat === 'customer' ? `<span class="mtile-mode">${commsCustCh === 'email' ? 'Email' : 'Text'}</span>` : '';
+    return `<button class="mtile js-comms-chip${on ? ' on' : ''}" data-cat="${cat}" aria-pressed="${on}" data-tip="${esc(meta.tip)}">`
+      + `${worst ? `<span class="mtile-dot c-${worst}" aria-hidden="true"></span>` : ''}`
+      + `<span class="mtile-ico">${meta.icon()}</span><span class="mtile-lbl">${esc(label)}</span>${mode}</button>`;
+  };
+  return `<div class="mfoot-comms" role="group" aria-label="Comms — Team, Customers, Mr. Wrangler">${COMMS_CHIP_CATS.map(tile).join('')}</div>`;
+}
+// §M7 — the phone FOOTER: a floating, backdrop-less comms band. Three big comms tiles fill the
+// left; the Back/Forward jog rides top-right with Receipt · Tools · notifications tucked under it
+// (all icon-only, same size). The merged Customer menu floats above the band when summoned.
 function mobileToolbarEl() {
   const d = el('div', 'mobile-toolbar');
-  // The jog is a SIBLING of the (horizontally-scrollable) tool row, pinned to the bottom-RIGHT
-  // so it can never scroll off-screen; the tools scroll in the space to its left.
-  d.innerHTML = `<div class="top-toolbar">${bottomBarInner()}${commsBellBtn()}</div><div class="mfoot-jog">${footerJogInner()}</div>`;
+  const cat = state.commsRail.cat;
+  const menuOpen = (cat === 'text' || cat === 'email') && state.commsRail.sessions[cat] && state.commsRail.sessions[cat].menuOpen;
+  const menuHtml = menuOpen ? `<div class="comms-pop comms-menu comms-menu-m">${commsMenuHtml(cat, { readonly: true })}</div>` : '';
+  d.innerHTML = menuHtml
+    + commsTilesHtml()
+    + `<div class="mfoot-utils">`
+    +   `<div class="mfoot-jog">${footerJogInner()}${commsBellBtn()}</div>`
+    +   `<div class="mfoot-urow">`
+    +     `<button class="iconbtn js-newitem" data-new="receipt" aria-label="New receipt" data-tip="New receipt">${CARD_ICON.expenses}</button>`
+    +     toolsBtn()
+    +   `</div>`
+    + `</div>`;
   return d;
 }
 /* ════════════════════════════════════════════════════════════════════════
@@ -18122,7 +18152,8 @@ function onClick(e) {
   if (closest('.js-chat-end')) { e.stopPropagation(); closeMenus(); return commsEndConv(closest('.js-chat-end').dataset.chat, 'team'); }   // admin ends the chat (phone-safe: cat pinned)
   if (closest('[data-chat-member]')) { e.stopPropagation(); return chatToggleMember(closest('[data-chat-member]').dataset.chatMember); }
   // D8/D9 THE COMMS RAIL — toolbar chips · session tabs · the single window · ALL menu
-  if (closest('.js-comms-chip')) { e.stopPropagation(); return commsToggleCat(closest('.js-comms-chip').dataset.cat); }
+  if (closest('.js-comms-chip')) { e.stopPropagation(); const cat = closest('.js-comms-chip').dataset.cat; return cat === 'customer' ? commsToggleCustomer() : commsToggleCat(cat); }
+  if (closest('.js-comms-ch')) { e.stopPropagation(); const ch = closest('.js-comms-ch').dataset.ch; setCommsCustCh(ch); return commsSummonChannel(ch); }
   if (closest('.js-comms-new')) { e.stopPropagation(); return commsNewChat(); }   // D9 ALL menu: + New chat (team → newChat(), wrangler → wranglerNewChat())
   if (closest('[data-comms-hide]')) { e.stopPropagation(); return commsHideTab(closest('[data-comms-hide]').dataset.commsHide); }   // ✕ hides from the rail only — never ends
   if (closest('.js-comms-menu-x')) { e.stopPropagation(); const s = commsSess(); if (s) { s.menuOpen = false; saveCommsRail(); } return render(); }
@@ -26059,6 +26090,10 @@ const COMMS_CAT_META = {
   team:     { label: 'Team',        icon: () => I.users,         channel: null,    tip: 'Team — the shop-floor chat' },
   text:     { label: 'Texts',       icon: () => I.messageSquare, channel: 'sms',   tip: 'Texts — customer SMS threads' },
   email:    { label: 'Email',       icon: () => I.mail,          channel: 'email', tip: 'Email — customer email threads' },
+  // D8 merged Customer chip — one button for texts + emails; the channel toggle lives in its
+  // menu. icon() follows the current channel (commsCustCh). Never used as a rail `cat` — the chip
+  // delegates to the real 'text'/'email' cats via commsToggleCustomer/commsSummonChannel.
+  customer: { label: 'Customers',   icon: () => (commsCustCh === 'email' ? I.mail : I.messageSquare), channel: null, tip: 'Customers — texts & emails in one place (toggle inside)' },
   wrangler: { label: 'Mr. Wrangler', icon: () => I.lasso,        channel: null,    tip: 'Mr. Wrangler — ask the yard AI, or report a bug' },
 };
 const commsOnline = () => typeof backendPassword !== 'undefined' && !!backendPassword;
@@ -26110,6 +26145,17 @@ function commsCatWorst(cat) {
   list.forEach((t) => { const s = commsConvStatus(t, COMMS_CAT_META[cat].channel); if (!worst || COMMS_ST_RANK[s] < COMMS_ST_RANK[worst]) worst = s; });
   return (!worst || worst === 'gray') ? 'green' : worst;   // nothing waiting = green (quiet line)
 }
+/* ── merged Customer chip (Jac 2026-07-17): Texts + Email collapse into ONE comms button;
+   a Text/Email toggle in its menu picks the channel. The underlying 'text'/'email' categories,
+   their sessions, threads and sends are UNCHANGED — this is a chip-row + menu presentation over
+   them. commsCustCh = which channel the merged chip currently wears (a per-device view pref). ── */
+const COMMS_CUSTCH_LS = 'jactec.commsCustCh';
+let commsCustCh = 'text';
+try { if (localStorage.getItem(COMMS_CUSTCH_LS) === 'email') commsCustCh = 'email'; } catch (e) {}
+const commsCustCat = () => (commsCustCh === 'email' ? 'email' : 'text');
+function setCommsCustCh(ch) { commsCustCh = ch === 'email' ? 'email' : 'text'; try { localStorage.setItem(COMMS_CUSTCH_LS, commsCustCh); } catch (e) {} }
+const commsCustActive = () => (state.commsRail.cat === 'text' || state.commsRail.cat === 'email');
+function commsCustWorst() { return [commsCatWorst('text'), commsCatWorst('email')].sort((a, b) => COMMS_ST_RANK[a] - COMMS_ST_RANK[b])[0]; }
 /* ── Team category (D9) — conversations derive from the APP-23 chat store ── */
 const commsChatLastAt = (c) => Math.max(0, ...(c.messages || []).map((m) => m.at || 0));
 function commsTeamChats() {   // every un-ended team chat, newest first (End resurrects on a newer message)
@@ -26188,18 +26234,20 @@ function commsAliasesEnsure() {     // lazy one-shot alias fetch for the email F
   commsAliasList().then((a) => { if (a && a.length) render(); });
 }
 /* ── the four toolbar chips (bottom-left, before the tool buttons) ────────── */
+const COMMS_CHIP_CATS = ['team', 'customer', 'wrangler'];   // D8 merged row — Texts+Email fold into 'customer'
 function commsChipsHtml() {
   const phone = document.body.classList.contains('is-phone');
   const chip = (cat) => {
     const meta = COMMS_CAT_META[cat];
-    // phones have no rail — the team/wrangler chips still bridge to their bottom-sheet docks there
-    const on = phone
-      ? (cat === 'team' ? state.chat.open : cat === 'wrangler' ? (state.wrangler.open && !state.wrangler.min) : state.commsRail.cat === cat)
+    // 'customer' is on whenever a customer channel (text OR email) is summoned; its dot rolls up both.
+    // phones have no rail — the team/wrangler chips still bridge to their bottom-sheet docks there.
+    const on = cat === 'customer' ? commsCustActive()
+      : phone ? (cat === 'team' ? state.chat.open : (state.wrangler.open && !state.wrangler.min))
       : state.commsRail.cat === cat;
-    const worst = commsCatWorst(cat);
+    const worst = cat === 'customer' ? commsCustWorst() : commsCatWorst(cat);
     return `<button class="iconbtn comms-chip js-comms-chip${on ? ' on' : ''}" data-cat="${cat}" data-tip="${esc(meta.tip)}" aria-pressed="${on}">${meta.icon()}${worst ? `<span class="cc-dot c-${worst}" aria-hidden="true"></span>` : ''}</button>`;
   };
-  return `<span class="comms-chips" role="group" aria-label="Comms — Team, Texts, Email, Mr. Wrangler">${COMMS_CATS.map(chip).join('')}</span><span class="bb-sep bb-stitch" aria-hidden="true"></span>`;
+  return `<span class="comms-chips" role="group" aria-label="Comms — Team, Customers, Mr. Wrangler">${COMMS_CHIP_CATS.map(chip).join('')}</span><span class="bb-sep bb-stitch" aria-hidden="true"></span>`;
 }
 /* ── the summoned session's tabs on the rail (ALL first, then conversations).
    D9: one builder, four categories — a tab's is-active means "this is THE open
@@ -26292,9 +26340,11 @@ function commsWranglerPopupHtml() {
 }
 /* ── the ALL menu: every un-ended conversation, Open / End per row (D9: Team and
    Mr. Wrangler list their chats too, with a + New chat at the foot) ────────── */
-function commsMenuHtml(cat) {
+function commsMenuHtml(cat, opts = {}) {
   const meta = COMMS_CAT_META[cat];
-  const row = (id, name, st, snip) => `<div class="cm-row js-comms-mrow" data-cust="${esc(id)}" data-tip="Open"><span class="cp-dot c-${st}" aria-hidden="true"></span><span class="cm-who">${esc(name)}</span><span class="cm-snip">${esc(snip)}</span>${ghostPill('End', { js: 'js-comms-mend', data: { cust: id }, tip: cat === 'team' || cat === 'wrangler' ? 'End it — the history stays stored' : 'End it — the history stays on the profile' })}</div>`;
+  const row = (id, name, st, snip) => opts.readonly
+    ? `<div class="cm-row cm-ro"><span class="cp-dot c-${st}" aria-hidden="true"></span><span class="cm-who">${esc(name)}</span><span class="cm-snip">${esc(snip)}</span></div>`
+    : `<div class="cm-row js-comms-mrow" data-cust="${esc(id)}" data-tip="Open"><span class="cp-dot c-${st}" aria-hidden="true"></span><span class="cm-who">${esc(name)}</span><span class="cm-snip">${esc(snip)}</span>${ghostPill('End', { js: 'js-comms-mend', data: { cust: id }, tip: cat === 'team' || cat === 'wrangler' ? 'End it — the history stays stored' : 'End it — the history stays on the profile' })}</div>`;
   let rows = '', empty = 'Nothing on the line — right-click a customer to start one.', newRow = '';
   if (cat === 'team') {
     rows = commsTeamChats().map((c) => {
@@ -26318,8 +26368,16 @@ function commsMenuHtml(cat) {
       return row(id, (c && fullName(c)) || id, commsConvStatus(t, meta.channel), (ch.lastDirection === 'inbound' ? 'them: ' : 'you: ') + (ch.lastSnippet || ''));
     }).join('');
   }
+  const isCust = cat === 'text' || cat === 'email';
+  const chanToggle = isCust ? `<div class="comms-chan" role="tablist" aria-label="Channel — text or email">
+      <button class="comms-chan-b js-comms-ch${commsCustCh === 'text' ? ' on' : ''}" data-ch="text" role="tab" aria-selected="${commsCustCh === 'text'}">${I.messageSquare}<span>Text</span></button>
+      <button class="comms-chan-b js-comms-ch${commsCustCh === 'email' ? ' on' : ''}" data-ch="email" role="tab" aria-selected="${commsCustCh === 'email'}">${I.mail}<span>Email</span></button>
+    </div>` : '';
+  const title = isCust ? 'Customers' : esc(meta.label);
+  const sub = isCust ? (commsCustCh === 'email' ? 'Emailing customers' : 'Texting customers') : 'Open &amp; un-ended';
   return `<div class="cp-cap" aria-hidden="true"></div>
-    <div class="cp-head"><span class="cp-cat">${esc(meta.label)}</span><span class="cp-who">Open &amp; un-ended</span><span class="spacer"></span><button class="cp-x js-comms-menu-x" aria-label="Tuck the list away" data-tip="Tuck away — nothing ends">${I.x}</button></div>
+    <div class="cp-head"><span class="cp-cat">${title}</span><span class="cp-who">${sub}</span><span class="spacer"></span><button class="cp-x js-comms-menu-x" aria-label="Tuck the list away" data-tip="Tuck away — nothing ends">${I.x}</button></div>
+    ${chanToggle}
     <div class="cp-feed cp-list">${rows || `<div class="cp-empty">${empty}</div>`}${newRow}</div>`;
 }
 /* Mount THE open window ABOVE its own tab (Messenger metaphor, D9 single-open: at
@@ -26379,7 +26437,7 @@ function mountCommsPops() {
     }
   }
   if (sess.menuOpen && (!COMMS_CAT_META[cat].channel || commsOnline())) {
-    const at = document.querySelector(`.js-comms-chip[data-cat="${cat}"]`) || document.querySelector('.comms-rail');
+    const at = document.querySelector(`.js-comms-chip[data-cat="${cat}"]`) || document.querySelector('.js-comms-chip[data-cat="customer"]') || document.querySelector('.comms-rail');
     if (at) { const node = el('div', 'comms-pop comms-menu'); node.innerHTML = commsMenuHtml(cat); host.appendChild(node); place(node, at, 340); }
   }
   commsOpenPt = null;   // one render-cycle scope — consumed by the window mount above
@@ -26391,6 +26449,27 @@ function commsLeaveCat(cat) {
   if (cat === 'wrangler' && state.wrangler.open && !document.body.classList.contains('is-phone')) {
     wranglerRailSnapshot(); state.wrangler.open = false; state.wrangler.min = false;
   }
+}
+// D8 merged Customer chip — summon a customer CHANNEL ('text'|'email') onto the rail and land
+// on its menu (the Text/Email toggle rides the menu head). One thin funnel over commsToggleCat's
+// summon logic so text/email keep behaving exactly as before.
+function commsSummonChannel(ch) {
+  const cat = ch === 'email' ? 'email' : 'text';
+  const rail = state.commsRail, prev = rail.cat;
+  if (prev && prev !== cat) commsLeaveCat(prev);
+  rail.cat = cat;
+  refreshCommsThreads();
+  const s = rail.sessions[cat];
+  s.menuOpen = true; s.lastOpen = null;   // show the list + toggle; no auto-opened window
+  saveCommsRail(); render();
+}
+// The Customer chip click: reveal the channel menu (with the toggle); a second tap sweeps it shut.
+function commsToggleCustomer() {
+  const rail = state.commsRail, cur = rail.cat, curSess = cur ? rail.sessions[cur] : null;
+  if (commsCustActive() && curSess && curSess.menuOpen) {   // open menu → close
+    rail.cat = null; curSess.menuOpen = false; commsLeaveCat(cur); saveCommsRail(); return render();
+  }
+  commsSummonChannel(commsCustCat());
 }
 function commsToggleCat(cat) {
   const phone = document.body.classList.contains('is-phone');

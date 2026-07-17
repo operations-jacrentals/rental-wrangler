@@ -478,19 +478,57 @@ body.is-phone { touch-action: manipulation; }
 .is-phone .grid .row { touch-action: pan-x pan-y; }
 /* the toggle bar (mobileNavEl) reuses the ORIGINAL .mdock-row + .mcard-bar + .mcard-tog classes,
    so the pre-scroll-snap styling renders it identically: three separate chips, active orange. */
-/* §M7 — phone FOOTER tool bar (tools back at the bottom, thumb-reachable; nav is in the column
-   headers now). Mirrors the old dock's bottom chrome: border-top, panel bg, safe-area pad. */
-.is-phone .mobile-toolbar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--line); background: var(--panel);
-  padding: 6px 8px max(6px, env(safe-area-inset-bottom)); }
-/* §M7 / R32 — the always-on Back/Forward jog: a proper CHIP (the base .card-jog — --panel bg +
-   --line border + radius + saddle-stitch seam, the same chip idiom as the .iconbtn tool buttons),
-   pinned to the bottom-RIGHT and never scrolling off. The chevrons are bright --txt when active,
-   greyed --txt-2 when the stack is empty (Chrome-style). Reflects the snapped column's card. */
-.is-phone .mobile-toolbar .mfoot-jog { flex: 0 0 auto; display: flex; align-items: center; }
-.is-phone .mobile-toolbar .mfoot-jog .jog-btn { color: var(--txt); min-width: 54px; }   /* wide thumb target (Jac 2026-07-17) — the tools side-scroll to fit; height stays 44px so it's wider, not taller */
-.is-phone .mobile-toolbar .mfoot-jog .jog-btn svg { width: 23px; height: 23px; stroke-width: 2.75px; }   /* thicker, more legible chevrons */
-.is-phone .mobile-toolbar .mfoot-jog .jog-btn[disabled] { color: var(--txt-2); opacity: 1; }
-.is-phone .mobile-toolbar .top-toolbar { order: 0; margin: 0; padding: 0; flex: 1 1 auto; min-width: 0; overflow-x: auto; }
+/* §M7 (Jac 2026-07-17) — phone FOOTER: a floating, backdrop-less comms band. No border, no panel
+   fill — the tiles float over the card like the column-header toggles. Doubled height so the three
+   comms tiles are big thumb targets; every footer element aligns top + bottom. */
+.is-phone .mobile-toolbar { position: relative; flex: 0 0 auto; display: flex; align-items: stretch; gap: 11px;
+  background: transparent; border: 0; padding: 8px 12px max(16px, env(safe-area-inset-bottom)); }
+/* the three big comms tiles (Team · Customers · Mr. Wrangler) — fill the full stack height */
+.is-phone .mobile-toolbar .mfoot-comms { flex: 1 1 auto; display: flex; gap: 9px; min-width: 0; align-items: stretch; }
+.is-phone .mobile-toolbar .mtile { position: relative; flex: 1 1 0; min-width: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 6px; min-height: 44px; border-radius: 19px; background: var(--panel-2);
+  border: 1px solid var(--line); box-shadow: var(--chip-shadow), 0 10px 26px -18px rgba(0,0,0,.9); color: var(--txt);
+  transition: transform .12s ease, background .12s ease, border-color .12s ease; }
+.is-phone .mobile-toolbar .mtile:active { transform: translateY(1px) scale(.985); }
+.is-phone .mobile-toolbar .mtile.on { background: var(--accent); border-color: var(--accent); color: var(--on-orange); }
+.is-phone .mobile-toolbar .mtile .mtile-ico { display: inline-flex; }
+.is-phone .mobile-toolbar .mtile .mtile-ico svg { width: 25px; height: 25px; }
+.is-phone .mobile-toolbar .mtile.on .mtile-ico svg { color: var(--on-orange); }
+.is-phone .mobile-toolbar .mtile .mtile-lbl { font-family: "Saira Condensed", sans-serif; text-transform: uppercase;
+  letter-spacing: .3px; font-size: 9.5px; font-weight: 800; font-stretch: condensed; color: var(--txt-2);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.is-phone .mobile-toolbar .mtile.on .mtile-lbl { color: var(--on-orange); }
+.is-phone .mobile-toolbar .mtile .mtile-mode { font-family: "Saira Condensed", sans-serif; text-transform: uppercase;
+  letter-spacing: .6px; font-size: 8.5px; font-weight: 800; margin-top: -3px; color: var(--txt-3); }
+.is-phone .mobile-toolbar .mtile.on .mtile-mode { color: var(--on-orange); opacity: .72; }
+.is-phone .mobile-toolbar .mtile .mtile-dot { position: absolute; top: 8px; right: 10px; width: 9px; height: 9px;
+  border-radius: 50%; box-shadow: 0 0 0 2px var(--panel-2); }
+.is-phone .mobile-toolbar .mtile.on .mtile-dot { box-shadow: 0 0 0 2px var(--accent); }
+.is-phone .mobile-toolbar .mtile-dot.c-red { background: var(--red); }
+.is-phone .mobile-toolbar .mtile-dot.c-yellow { background: var(--yellow); }
+.is-phone .mobile-toolbar .mtile-dot.c-green { background: var(--green); }
+/* utils column: Back/Forward jog + the notifications bell ride the top row; Receipt · Tools tuck
+   under them — all icon-only, all the same size (Jac: receipt reduced to an icon to match Tools). */
+.is-phone .mobile-toolbar .mfoot-utils { flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px; }
+.is-phone .mobile-toolbar .mfoot-jog { display: flex; gap: 8px; align-items: stretch; }
+.is-phone .mobile-toolbar .mfoot-jog .card-jog { flex: 1 1 0; min-width: 56px; height: 44px; }
+.is-phone .mobile-toolbar .mfoot-jog .jog-btn { flex: 1 1 0; min-width: 0; height: 44px; color: var(--txt); }
+.is-phone .mobile-toolbar .mfoot-jog .jog-btn svg { width: 22px; height: 22px; stroke-width: 2.75px; }
+.is-phone .mobile-toolbar .mfoot-jog .jog-btn[disabled] { color: var(--txt-3); opacity: 1; }
+.is-phone .mobile-toolbar .mfoot-jog > .iconbtn { flex: 0 0 44px; width: 44px; height: 44px; min-height: 44px; border-radius: 13px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--chip-shadow); color: var(--txt-2);
+  display: grid; place-items: center; position: relative; padding: 0; }
+.is-phone .mobile-toolbar .mfoot-jog > .iconbtn svg { width: 20px; height: 20px; }
+.is-phone .mobile-toolbar .mfoot-urow { display: flex; gap: 8px; }
+.is-phone .mobile-toolbar .mfoot-urow .iconbtn { flex: 1 1 0; min-width: 44px; height: 44px; min-height: 44px; border-radius: 13px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--chip-shadow); color: var(--txt-2);
+  display: grid; place-items: center; position: relative; padding: 0; }
+.is-phone .mobile-toolbar .mfoot-urow .iconbtn svg { width: 21px; height: 21px; }
+/* the merged Customer menu (channel toggle + open threads) floats above the footer band */
+.is-phone .mobile-toolbar .comms-menu-m { position: absolute; left: 8px; right: 8px; bottom: calc(100% + 4px); z-index: 40;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+  box-shadow: var(--shadow), 0 0 0 1px var(--accent-line); padding: 4px; }
+.is-phone .mobile-toolbar .comms-menu-m .cp-cap { display: none; }
 /* the global tool tray rendered as a phone sheet (§M1 footer → Tools) */
 .tools-tray { display: flex; flex-wrap: wrap; gap: 8px; }
 .tools-tray .iconbtn { flex: 0 0 auto; min-height: 44px; }
@@ -1577,6 +1615,14 @@ select.lf-in { appearance: none; cursor: pointer; }
 .cm-row .pill { flex: 0 0 auto; }
 .cm-who { flex: 0 0 auto; font-weight: 700; font-size: 12.5px; white-space: nowrap; }
 .cm-snip { flex: 1 1 auto; min-width: 0; color: var(--txt-2); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* D8 merged Customer menu — the Text/Email channel toggle riding the menu head (comms-local,
+   not the R14 .seg family). Active channel = ignition orange + dark ink. */
+.comms-chan { display: flex; gap: 4px; margin: 8px 10px 4px; padding: 4px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 12px; }
+.comms-chan-b { flex: 1 1 0; display: flex; align-items: center; justify-content: center; gap: 7px; height: 38px; border-radius: 9px; color: var(--txt-2); font-family: "Saira Condensed", sans-serif; text-transform: uppercase; letter-spacing: .8px; font-weight: 800; font-size: 12.5px; }
+.comms-chan-b svg { width: 17px; height: 17px; }
+.comms-chan-b.on { background: var(--accent); color: var(--on-orange); box-shadow: var(--chip-shadow); }
+.comms-chan-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cm-row.cm-ro { cursor: default; }   /* phone Customer menu rows are a preview (full-screen open ships next) */
 /* customer profile — the compact Comms section (one row per channel with history) */
 .comms-sec .comms-line { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
 .comms-sec .comms-line .pill { flex: 0 0 auto; }
