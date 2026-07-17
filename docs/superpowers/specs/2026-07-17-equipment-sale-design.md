@@ -104,6 +104,27 @@ inv.plan = {                                 // financed sales only
 - Trade-in credit.
 - A dedicated sales board (the pipeline board + Equipment track cover v1).
 
+## Build amendments (2026-07-17 — plan-review critique, mechanics corrections only)
+
+Adversarial plan review refuted two mechanics this spec asserted and tightened two details.
+**None of Jac's approved decisions change** — only the internal mechanisms:
+
+1. **"Existing Late/Not Due/Collections statuses work with no new status logic" — FALSE.**
+   `invoiceTotals` returns `'Partial'` whenever anything is paid, before the due-date aging
+   ladder ever runs — a financed sale would never read Late. The build adds a status branch:
+   a plan-carrying invoice with money in, a balance, and a lapsed due date derives the Late
+   tiers. (Behavior for all non-plan invoices unchanged.)
+2. **Void/un-sell mechanics.** A refund does not zero `amountPaid` (house rule keeps it and
+   derives from `inv.refunded`), and `invoiceVoidable` excludes refunded invoices — so
+   "refund first, then void" was unreachable. Corrected: a sale invoice becomes voidable when
+   **fully refunded**; Void remains the explicit act that un-sells (Jac's approved behavior,
+   working mechanism). A refund alone never un-sells.
+3. **Transport line kind is `'saleTransport'`**, not `'transport'` — rental transport
+   machinery keys `kind === 'transport'` lines by `ref = rentalId`; a distinct kind keeps
+   sale lines out of every rental sync path by construction.
+4. **Deposit + balance:** the wizard's Deposit shape collects the **pickup date** explicitly
+   and the single balance installment falls due on it (not on a cadence step).
+
 ## Gates & audits
 
 - `/role` audit before build (money surface: sale pricing uses cost/MSRP basis internally —
