@@ -8162,13 +8162,13 @@ const DETAIL = {
       <h4>Inspection <span class="hmuted">· ${esc(stamp)}</span></h4>
       <div class="fieldstack">
         <div class="kv" style="justify-content:center">
-          ${checklistRequired(u)
-    ? `<button class="pill ignition js-open-checklist" data-rec="${u.unitId}" data-r="R17">${CARD_ICON.inspections} ${pendingInspForUnit(u.unitId) ? 'Resume inspection' : '+ Inspection'}</button>`
-    : segCtl([
+          ${segCtl([
             { label: '✓ Pass', js: 'js-cond', data: { rec: u.unitId, val: 'Pass' }, on: cond === 'Ready' ? 'green' : null },
             { label: 'Not Ready', js: 'js-cond', data: { rec: u.unitId, val: 'Not Ready' }, on: cond === 'Not Ready' ? 'yellow' : null },
             { label: '✕ Fail', js: 'js-cond', data: { rec: u.unitId, val: 'Fail' }, on: cond === 'Failed' ? 'red' : null },
           ])}
+        </div>
+        <div class="kv" style="justify-content:center">
           ${segCtl([
             { label: `${I.droplet} Wash`, js: 'js-washseg', data: { rec: u.unitId, val: 'Wash' }, on: u.washChoice === 'Wash' || u.washRequested ? 'yellow' : null },
             { label: "Don't Wash", js: 'js-washseg', data: { rec: u.unitId, val: 'DontWash' }, on: u.washChoice === 'DontWash' && !u.washRequested && !washedToday ? 'blue' : null },
@@ -13718,27 +13718,31 @@ function buildPopupEl(o, overlay, opts = {}) {
       <div class="popup-foot"><button class="pill ghost js-ck-pending" data-r="R18">Keep as pending</button><button class="pill ignition js-ck-complete${allDone ? '' : ' is-disabled'}" data-r="R17">Complete inspection</button></div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'inspection') {
-    // §12.8 Failure report — triggered when an inspection is marked Failed: capture a
-    // photo/video + a description for the auto-created work order.
+    // §12.8 Inspection record. On a FAIL this is the failure report — photo/video + a description
+    // for the auto-created WO, plus the bill-customer gate. On a PASS (re-opened via
+    // openInspectionRecord — "click Pass again to view the done inspection") it drops the failure
+    // framing and the bill gate (nothing to charge) and reads as a clean inspection view.
     const n = IDX.insp.get(o.recId);
     if (!n) { return false; }
     const unit = IDX.unit.get(n.unitId);
     const ir = inspResult(n);
+    const passed = n.checklist === 'Pass';
     const isVideo = (n.photo || '').startsWith('data:video');
     const media = n.photo
-      ? `<div class="insp-photo">${isVideo ? `<video src="${esc(n.photo)}" controls></video>` : `<img src="${esc(n.photo)}" alt="failure photo">`}<label class="insp-rephoto">Replace<input type="file" accept="image/*,video/*" class="js-insp-photo" data-rec="${n.inspectionId}" hidden></label></div>`
+      ? `<div class="insp-photo">${isVideo ? `<video src="${esc(n.photo)}" controls></video>` : `<img src="${esc(n.photo)}" alt="inspection photo">`}<label class="insp-rephoto">Replace<input type="file" accept="image/*,video/*" class="js-insp-photo" data-rec="${n.inspectionId}" hidden></label></div>`
       : `<label class="insp-photo empty"><span>${I.video} Add photo / video</span><input type="file" accept="image/*,video/*" class="js-insp-photo" data-rec="${n.inspectionId}" hidden></label>`;
+    const descPh = passed ? 'Notes — condition, observations…' : 'Describe the failure (what’s wrong, parts needed)…';
     const pop = el('div', 'popup insp-popup');
-    pop.innerHTML = popupShell({ icon: CARD_ICON.inspections, title: `Failure report — ${unit?.name || '—'}`, tag: 'Inspection · failure', danger: true,
+    pop.innerHTML = popupShell({ icon: CARD_ICON.inspections, title: `${passed ? 'Inspection' : 'Failure report'} — ${unit?.name || '—'}`, tag: `Inspection · ${passed ? 'passed' : 'failure'}`, danger: !passed,
       foot: `<button class="pill ignition js-close" data-r="R17">Done</button>`,
       body: `
         <div class="pillrow" style="margin-bottom:12px">${unit ? unitPill(unit.unitId) : ''}<span class="pill c-${ir.color}">${esc(ir.label)}</span>${n.woId ? refPill('workOrders', n.woId, 'Work Order') : ''}<span class="muted" style="font-size:12px;margin-left:auto">${esc(fmtShortDate(n.date))}</span></div>
         ${media}
-        <textarea class="insp-desc js-insp-desc" data-rec="${n.inspectionId}" placeholder="Describe the failure (what's wrong, parts needed)…">${esc(n.description || '')}</textarea>
-        <div class="insp-gate" style="margin-top:12px"><span class="insp-gate-lbl">Charge the customer?</span>${segCtl([
+        <textarea class="insp-desc js-insp-desc" data-rec="${n.inspectionId}" placeholder="${esc(descPh)}">${esc(n.description || '')}</textarea>
+        ${passed ? '' : `<div class="insp-gate" style="margin-top:12px"><span class="insp-gate-lbl">Charge the customer?</span>${segCtl([
           { label: 'Bill', js: 'js-insp-bill', data: { rec: n.inspectionId, val: 'Yes' }, on: n.billCustomer === 'Yes' ? 'green' : null },
           { label: 'Don’t bill', js: 'js-insp-bill', data: { rec: n.inspectionId, val: 'No' }, on: n.billCustomer === 'No' ? 'gray' : null },
-        ], 'seg-bill')}</div>` });
+        ], 'seg-bill')}</div>`}` });
     overlay.appendChild(pop);
   } else if (o.kind === 'service') {
     // §7.7/§12.7 service completion — Hours at Completion · Date · Photo · Notes
@@ -18970,18 +18974,42 @@ function setUnitCondition(unitId, val) {
   const u = IDX.unit.get(unitId); if (!u) return;
   const lock = unitCondLock(u);
   if (lock) return flashOr(`.js-wo-complete[data-rec="${lock.woId}"]`, `🔒 Condition locked — WO “${lock.woReport}” is open from a ${lock.woType === 'Field Call' ? 'field call' : 'failed inspection'}. Complete it to update the condition.`);
-  // R19: Pass needs a wash decision first — glow the wash toggle instead of an error
-  const washedToday = (u.serviceLog || []).some((l) => l.taskId === 'svc-wash' && l.date === TODAY_ISO);
-  if (val === 'Pass' && !u.washChoice && !u.washRequested && !washedToday) return attnFlash('.seg-wash');
-  u.condAt = TODAY_ISO; u.condClock = nowClock();
-  if (val === 'Pass' || val === 'Fail') {
-    const n = newInspectionForUnit(u);
-    if (val === 'Fail') n.wash = n.wash || 'No';
-    return setInspResult(n.inspectionId, val);     // handles unit status, auto-WO + fail popup
+  // PASS is the gate (Jac 2026-07-17 — the confusing "+ Inspection" button is retired; the toggle
+  // IS the interface). Already Passed → Pass re-opens the done inspection to view; a checklist
+  // category → Pass opens the checklist takeover (completing it cascades to Pass); otherwise a
+  // direct pass, which still needs a wash decision first (R19 — glow the wash toggle, not an error).
+  if (val === 'Pass') {
+    if (u.inspectionStatus === 'Ready') return openInspectionRecord(unitId);
+    if (checklistRequired(u)) return openChecklist(unitId);
+    const washedToday = (u.serviceLog || []).some((l) => l.taskId === 'svc-wash' && l.date === TODAY_ISO);
+    if (!u.washChoice && !u.washRequested && !washedToday) return attnFlash('.seg-wash');
+    u.condAt = TODAY_ISO; u.condClock = nowClock();
+    return setInspResult(newInspectionForUnit(u).inspectionId, 'Pass');
   }
+  // FAIL: a unit that breaks while OUT ON RENT is a field call (red-flag the rental, roll a truck,
+  // show in dispatch); a yard unit with no active rental is a bench failed-inspection like before.
+  if (val === 'Fail') {
+    u.condAt = TODAY_ISO; u.condClock = nowClock();   // stamp the condition change on either path
+    const ar = activeRentalForUnit(unitId);
+    if (ar) return markFieldCall(ar.rentalId);        // on-rent breakdown → field call (truck roll + dispatch)
+    const n = newInspectionForUnit(u); n.wash = n.wash || 'No';
+    return setInspResult(n.inspectionId, 'Fail');     // yard bench fail: auto-WO + §12.8 photo/notes popup
+  }
+  // NOT READY resets the inspection back to pending.
+  u.condAt = TODAY_ISO; u.condClock = nowClock();
   u.inspectionStatus = 'Not Ready';
   reindex('units', u); logAction(u, 'Condition → Not Ready');
   toast('Condition → Not Ready'); reanchorRender();
+}
+/* Pass-again on a passed unit "gets back into" the completed inspection: a real checklist
+   record re-opens the takeover; a plain condition-pass opens the §12.8 record popup. */
+function openInspectionRecord(unitId) {
+  const u = IDX.unit.get(unitId); if (!u) return;
+  const n = latestInspForUnit(unitId);
+  if (!n) return checklistRequired(u) ? openChecklist(unitId) : toast('No inspection on record yet.');
+  const hasItems = !!(checklistFor(u) && n.items && typeof n.items === 'object' && Object.keys(n.items).length);
+  state.overlay = hasItems ? { kind: 'checklist', unitId, inspId: n.inspectionId } : { kind: 'inspection', recId: n.inspectionId };
+  render(); renderOverlay();
 }
 // A required-checklist inspection started but not yet completed (Jac: kept as Pending).
 function pendingInspForUnit(unitId) {
