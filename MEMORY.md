@@ -205,6 +205,11 @@
   **staging drive** (real Chrome), not headless screenshots.
 
 ## Open threads
+- **Tier-gate approval codes — backend §authz DEPLOYED LIVE (2026-07-17).** The password tier
+  gates (Net Terms, rental override, blacklist, card override, admin inline edits) now swap to
+  Manager/Admin phone approval codes (branch `claude/tier-gate-phone-code-iupiwy`).
+  `authzStart_`/`authzVerify_` are spliced into `Code.js` + editor-deployed + probe-verified
+  live. The pre-login `#reseed` tool still wants the retired team password — needs its own call.
 - **Repo privacy** — parked on Jac's GitHub billing-tier check. Pages-from-private
   needs GitHub Pro; Free forces public, and flipping private on Free takes
   `app.jacrentals.com` down. If Pro: canary staging → confirm → flip main + production

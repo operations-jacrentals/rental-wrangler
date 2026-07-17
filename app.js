@@ -4000,7 +4000,7 @@ function funnelSectionHtml(c) {
 }
 /* ── Phase 1 (2026-07-10 Account/Agreements + Membership redesign, spec §3/§7b
    D19-D27, plan T1.1-T1.4) — the new top-of-card ACCOUNT section. UI SHELL:
-   render + expand/collapse state + a Manager-password prompt SHELL only. The
+   render + expand/collapse state + a Manager-approval prompt SHELL only. The
    per-agreement ACCOUNT TYPE dropdown, the Start-Date sign-gate, and the
    atomic sign=enroll charge are Phase 2 (spec §4); the block-gate ENFORCEMENT
    (this section only renders the block picker, it doesn't gate anything yet)
@@ -4044,7 +4044,7 @@ const acctProtectionCopy = (c) => {
 const NET_TERMS_OPTS = ['None', '7d', '15d', '30d', '60d', '90d'];
 // D22/D23 — NET TERMS · PO · PROTECTION share one line. NET TERMS is a segCtl (R14 — a
 // joined group of mutually-exclusive options): picking one does NOT write netDays
-// directly — ANY change is Manager-password gated (D22), so it opens the managerPw shell
+// directly — ANY change is Manager-approval gated (D22), so it opens the tierAuth shell
 // with the pending value; PO/Protection are single toggleChips (R31) — plain operational
 // booleans, not money/gate fields, so they write straight through.
 function acctTermsLine(c) {
@@ -4061,7 +4061,7 @@ function acctTermsLine(c) {
     : '';
   return `<div class="acct-termsline">`
     + `<span class="acct-cap">Net Terms</span>${netSeg}`
-    + `<span class="acct-lock" data-tip="Any change needs a Manager password">${AG_LOCK}</span>`
+    + `<span class="acct-lock" data-tip="Any change needs Manager approval">${AG_LOCK}</span>`
     + `<span class="acct-sep"></span>${po}${prot}${duesPo}`
     + `</div>`
     + (c.rentalProtection ? `<p class="acct-prot-note">${acctProtectionCopy(c)}</p>` : '');
@@ -13576,25 +13576,47 @@ function buildPopupEl(o, overlay, opts = {}) {
         ${c.signature ? `<div class="nc-ag-sigline"><span class="nc-cap-lbl">Signature</span><img class="nc-thumb sig" src="${esc(c.signature)}" alt="signature" /></div>` : ''}
         ${lifecycle ? `<div class="ag-lifecycle-wrap"><span class="nc-cap-lbl">Membership</span>${lifecycle}</div>` : ''}` });
     overlay.appendChild(pop);
-  } else if (o.kind === 'managerPw') {
-    // Phase 3 (T3.1/T3.3, spec D14/D22) — the Manager-TIER authorization shell, reused for two
-    // non-persistent single-action gates: a Net Terms change (pwAction:'netTerms') and the
-    // per-action rental-gate override (pwAction:'rentalOverride' — every attempt re-prompts, D14).
-    // Passes immediately if the current user is already Manager-tier+; otherwise verifies the SAME
-    // backend password requireAdmin uses (no separate Manager password exists — Jac's call,
-    // 2026-07-10). See js-mgrpw-confirm for the verify + apply.
-    const cust = IDX.customer.get(o.custId);
-    const actionLabel = o.pwAction === 'netTerms' ? `Setting Net Terms to ${o.pwVal || 'None'}`
-      : o.pwAction === 'rentalOverride' ? (o.pwReason || 'Booking past an account block')
-        : 'This action';
+  } else if (o.kind === 'tierAuth') {
+    // The TIER-AUTHORIZATION shell (2026-07-15 — supersedes the Manager-password prompt; the
+    // shared password is retired with per-person phone logins). One popup, four states:
+    //  · flag-OFF (phoneIdentity) → the legacy password input, byte-compatible backout path
+    //  · at/above o.minTier, or demo/offline → a plain confirm (the popup IS the deliberate step)
+    //  · below tier, step 'pick' → choose the approving Manager/Admin off the Team Roster;
+    //    tapping texts a one-time code to THEIR phone (authzStart — the destination is resolved
+    //    server-side from the roster, never client-supplied)
+    //  · step 'code' → enter the 6-digit approval code (authzVerify — burned single-use,
+    //    tier-checked at mint AND verify, never mints a session; approves THIS action only)
+    // Gates riding it: Net Terms (azAction 'netTerms', D22), the rental-gate override (D14,
+    // azAction 'rentalOverride'), and every requireAdmin callback (azAction 'custom' + onOk).
+    const cust = o.custId ? IDX.customer.get(o.custId) : null;
+    const tierLbl = tierRank(o.minTier || 'manager') >= tierRank('admin') ? 'Admin' : 'Manager';
+    const lead = `<p class="muted" style="margin:0 0 12px">${cust ? esc(fullName(cust)) + ' — ' : ''}${esc(tierAuthLabel(o))} needs ${tierLbl} approval.</p>`;
+    let body, foot;
+    if (!flagOn('phoneIdentity')) {
+      body = lead + `<input type="password" class="nc-in js-mgrpw-input" placeholder="${tierLbl} password" autocomplete="off" style="width:100%">`;
+      foot = `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', o.busy ? 'Checking…' : 'Authorize', { js: o.busy ? '' : 'js-mgrpw-confirm' })}`;
+    } else if (tierAuthSelfOk(o.minTier || 'manager')) {
+      body = lead + `<p class="muted" style="margin:0">Your call to make — confirm to proceed.</p>`;
+      foot = `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', 'Approve', { js: 'js-taz-approve' })}`;
+    } else if (o.step === 'code') {
+      body = lead
+        + `<div class="login-hint">Approval code texted to ${esc(o.approverName || 'the approver')}${o.masked ? ` · ${esc(o.masked)}` : ''}</div>`
+        + `<input class="nc-in login-otp js-taz-code" inputmode="numeric" autocomplete="one-time-code" maxlength="${PHONE_IDENTITY.codeLen}" placeholder="000000">`
+        + `<div style="margin-top:10px;text-align:center">${ghostPill('Text a fresh code', { js: o.busy ? '' : 'js-taz-resend' })}</div>`;
+      foot = `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', o.busy ? 'Checking…' : 'Approve', { js: o.busy ? '' : 'js-taz-approve' })}`;
+    } else {
+      const hands = tierAuthApprovers(o.minTier || 'manager');
+      body = lead + (hands.length
+        ? `<div class="login-hint" style="text-align:left;margin:0 0 8px">Who's approving? A one-time code texts to their own phone.</div>`
+          + `<div class="login-pick">${hands.map((h) => `<button type="button" class="login-pick-btn js-taz-pick" data-r="R17" data-id="${esc(h.id)}">${esc(h.name)}<span class="taz-role"> · ${esc(h.role || '')}</span></button>`).join('')}</div>`
+        : `<p class="muted" style="margin:0">No ${tierLbl}-tier hands on the roster — add one in Settings → Team Roster.</p>`);
+      foot = ghostPill('Cancel', { js: 'js-close' });
+    }
     const pop = el('div', 'popup'); pop.style.width = '360px';
     pop.innerHTML = popupShell({
-      icon: AG_LOCK, title: 'Manager Password', tag: 'Account · authorize',
-      body: `
-        <p class="muted" style="margin:0 0 12px">${cust ? esc(fullName(cust)) + ' — ' : ''}${esc(actionLabel)} requires Manager authorization.</p>
-        <input type="password" class="nc-in js-mgrpw-input" placeholder="Manager password" autocomplete="off" style="width:100%">
-        ${o.error ? `<div class="login-err" style="margin-top:10px">${esc(o.error)}</div>` : ''}`,
-      foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', o.busy ? 'Checking…' : 'Authorize', { js: o.busy ? '' : 'js-mgrpw-confirm' })}`,
+      icon: AG_LOCK, title: `${tierLbl} Approval`, tag: 'Account · approval',
+      body: `${body}${o.error ? `<div class="login-err" style="margin-top:10px">${esc(o.error)}</div>` : ''}`,
+      foot,
     });
     overlay.appendChild(pop);
   } else if (o.kind === 'blockPicker') {
@@ -13970,7 +13992,7 @@ const WINDOW_CATALOG = [
   { kind: 'addAch',        label: 'Add bank account',        tag: 'Customer · ACH bank',       sample: () => ({ customerId: ((DATA.customers || [])[0] || {}).customerId }) },
   { kind: 'verifyAch',     label: 'Verify ACH',              tag: 'Customer · verify ACH',     sample: () => { const c = (DATA.customers || []).find((x) => (x.achAccounts || []).length); return c ? { customerId: c.customerId, bankId: c.achAccounts[0].id } : {}; } },
   { kind: 'payment',       label: 'Take Payment',            tag: 'Invoice · payment',         sample: () => ({ invoiceId: ((DATA.invoices || [])[0] || {}).invoiceId }) },
-  { kind: 'managerPw',    label: 'Manager password (account gate)', tag: 'Account · manager override', sample: () => ({ custId: ((DATA.customers || [])[0] || {}).customerId, pwAction: 'netTerms', pwVal: 'None', busy: false, error: '' }) },
+  { kind: 'tierAuth',     label: 'Tier approval (manager/admin gate)', tag: 'Account · approval', sample: () => ({ custId: ((DATA.customers || [])[0] || {}).customerId, minTier: 'manager', azAction: 'netTerms', pwVal: 'None', step: 'pick', busy: false, error: '' }) },
   { kind: 'blockPicker',   label: 'Block Account (Blacklist / invoice-hold)', tag: 'Account · block', sample: () => ({ custId: ((DATA.customers || [])[0] || {}).customerId, mode: 'pick', selIds: [], error: '' }) },
   { kind: 'wranglerOps',   label: 'Wrangler Ops',            tag: 'Developer · live chats',    sample: () => ({ loading: false, err: '', chats: [], openId: null, msgs: [], driver: 'ai', draft: '', busy: false }) },
 ];
@@ -17556,27 +17578,54 @@ function onClick(e) {
   if (closest('.js-acct-po')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-acct-po').dataset.rec); if (c) { c.requiresPO = !c.requiresPO; reindex('customers', c); logAction(c, `PO required → ${c.requiresPO ? 'On' : 'Off'}`); } return render(); }   // logAction persists (saveSoon) + audits — inline toggle must save like the popup does
   if (closest('.js-acct-prot')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-acct-prot').dataset.rec); if (c) { c.rentalProtection = !c.rentalProtection; reindex('customers', c); logAction(c, `Rental Protection → ${c.rentalProtection ? 'On' : 'Off'}`); } return render(); }   // sibling of the PO toggle — same persist fix (saveSoon via logAction)
   if (closest('.js-acct-duespo')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-acct-duespo').dataset.rec); if (c) { c.duesRequirePO = !c.duesRequirePO; reindex('customers', c); logAction(c, `Membership dues PO → ${c.duesRequirePO ? 'On' : 'Off'}`); } return render(); }   // spec 2026-07-17 — membership dues-level PO exemption (persists via logAction→saveSoon; enforced server-side)
-  if (closest('.js-acct-netdays')) { e.stopPropagation(); const b = closest('.js-acct-netdays'); return openOverlay({ kind: 'managerPw', custId: b.dataset.rec, pwAction: 'netTerms', pwVal: b.dataset.val, busy: false, error: '' }); }   // D22 — ANY Net Terms change is Manager-password gated
+  if (closest('.js-acct-netdays')) { e.stopPropagation(); const b = closest('.js-acct-netdays'); return openOverlay({ kind: 'tierAuth', minTier: 'manager', custId: b.dataset.rec, azAction: 'netTerms', pwVal: b.dataset.val, step: 'pick', busy: false, error: '' }); }   // D22 — ANY Net Terms change is Manager-approval gated (tierAuth phone-code, replaces the retired managerPw password prompt)
   if (closest('.js-block-account')) { e.stopPropagation(); const rec = closest('.js-block-account').dataset.rec; return openOverlay({ kind: 'blockPicker', custId: rec, mode: 'pick', selIds: [], error: '' }); }   // D12/D13 — Block Account entry
-  if (closest('.js-mgrpw-confirm')) {
+  if (closest('.js-mgrpw-confirm')) {   // tierAuth, flag-OFF backout path only — the legacy password input
     e.stopPropagation();
-    const o = state.overlay; if (!o || o.kind !== 'managerPw' || o.busy) return;
+    const o = state.overlay; if (!o || o.kind !== 'tierAuth' || o.busy) return;
     const pw = (document.querySelector('.overlay .js-mgrpw-input') || {}).value || '';
     o.busy = true; o.error = ''; renderOverlay();
     (async () => {
-      const ok = await verifyTierOrPassword('manager', pw);
+      const ok = await verifyTierOrPassword(o.minTier || 'manager', pw);
       if (state.overlay !== o) return;
-      if (!ok) { o.busy = false; o.error = 'Not a valid Manager override.'; renderOverlay(); return; }
-      const c = IDX.customer.get(o.custId);
-      if (c && o.pwAction === 'netTerms') {
-        const days = o.pwVal === 'None' ? 0 : (parseInt(o.pwVal, 10) || 0);
-        const old = c.netDays; c.netDays = days; reindex('customers', c);
-        logAction(c, `Net Terms: ${old == null || old === '' ? 'None' : old + 'd'} → ${o.pwVal} (Manager override)`);
-        closeOverlay(); render(); toast(`Net Terms set to ${o.pwVal}.`); return;
-      }
-      const onOk = o.onOk;   // rentalOverride path — the caller supplies what "authorized" means (T3.3)
-      closeOverlay();
-      if (typeof onOk === 'function') onOk();
+      if (!ok) { o.busy = false; o.error = 'Not a valid override.'; renderOverlay(); return; }
+      tierAuthApply(o, '');
+    })();
+    return;
+  }
+  if (closest('.js-taz-pick')) {   // tierAuth — pick the approver; texts a one-time code to THEIR phone
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'tierAuth' || o.busy) return;
+    const id = closest('.js-taz-pick').dataset.id;
+    const hand = (((state.settings || {}).employees) || []).find((x) => x && String(x.id) === String(id));
+    o.approverId = id; o.approverName = hand ? hand.name : '';
+    tierAuthSendCode(o);
+    return;
+  }
+  if (closest('.js-taz-resend')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'tierAuth' || o.busy || !o.approverId) return;
+    tierAuthSendCode(o);
+    return;
+  }
+  if (closest('.js-taz-approve')) {   // tierAuth — self-tier confirm, or verify the texted approval code
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'tierAuth' || o.busy) return;
+    if (tierAuthSelfOk(o.minTier || 'manager')) { tierAuthApply(o, ''); return; }
+    const code = ((document.querySelector('.overlay .js-taz-code') || {}).value || '').replace(/\D/g, '');
+    if (code.length !== PHONE_IDENTITY.codeLen) { o.error = `Enter the ${PHONE_IDENTITY.codeLen}-digit code.`; renderOverlay(); return; }
+    o.busy = true; o.error = ''; renderOverlay();
+    (async () => {
+      let r = null;
+      try { r = await backendCall('authzVerify', { approverId: o.approverId, code, minTier: o.minTier || 'manager' }); } catch (err) {}
+      if (state.overlay !== o) return;
+      if (r && r.ok) { tierAuthApply(o, r.approver || o.approverName || ''); return; }
+      o.busy = false;
+      o.error = r && r.error === 'bad-code' ? `That code didn't match${r.left != null ? ` — ${r.left} left` : ''}.`
+        : r && r.error === 'expired' ? 'That code expired — text a fresh one.'
+        : r && r.error === 'too-many' ? 'Too many tries — text a fresh code.'
+        : "Couldn't verify the code — try again.";
+      renderOverlay();
     })();
     return;
   }
@@ -17597,10 +17646,10 @@ function onClick(e) {
     e.stopPropagation();
     const o = state.overlay; if (!o || o.kind !== 'blockPicker') return;
     const custId = o.custId;
-    requireAdmin('Blacklisting this account is permanent — only an Admin/Owner password lifts it.', () => {
+    requireAdmin('Blacklisting this account is permanent — Admin approval sets it, and only Admin approval lifts it.', (approver) => {
       const c = IDX.customer.get(custId); if (!c) return;
       c.block = { type: 'blacklist', setBy: currentRole || 'admin', setAt: TODAY_ISO };
-      reindex('customers', c); logAction(c, 'Account BLACKLISTED (Admin/Owner authorization)');
+      reindex('customers', c); logAction(c, `Account BLACKLISTED (Admin approval${approver ? ' — ' + approver : ''})`);
       closeOverlay(); render(); toast('Account blacklisted.');
     });
     return;
@@ -17608,9 +17657,9 @@ function onClick(e) {
   if (closest('.js-lift-blacklist')) {
     e.stopPropagation();
     const rec = closest('.js-lift-blacklist').dataset.rec;
-    requireAdmin('Lifting a Blacklist requires an Admin/Owner password.', () => {
+    requireAdmin('Lifting a Blacklist needs Admin approval.', (approver) => {
       const c = IDX.customer.get(rec); if (!c) return;
-      delete c.block; reindex('customers', c); logAction(c, 'Blacklist lifted (Admin/Owner authorization)');
+      delete c.block; reindex('customers', c); logAction(c, `Blacklist lifted (Admin approval${approver ? ' — ' + approver : ''})`);
       render(); toast('Blacklist lifted.');
     });
     return;
@@ -18203,7 +18252,7 @@ function onClick(e) {
   if (closest('.js-sortdir')) { const card = closest('.js-sortdir').dataset.card; const cs = activeSession().cards[card]; cs.sort.dir = cs.sort.dir === 'asc' ? 'desc' : 'asc'; saveSort(card, cs.sort); render(); return; }
 
   // inline edit (click a value → input)
-  if (closest('.inline-edit')) { e.stopPropagation(); const _ie = closest('.inline-edit'); if (_ie.dataset.admin === '1' && !adminUnlocked()) return requireAdmin('Categories and pricing are Admin-only.', () => startInlineEdit(_ie)); if (_ie.dataset.money === '1' && !canMoney()) return toast('Cost fields are Office/Admin only.'); return startInlineEdit(_ie); }
+  if (closest('.inline-edit')) { e.stopPropagation(); const _ie = closest('.inline-edit'); if (_ie.dataset.admin === '1' && !adminUnlocked()) { const _k = { edit: _ie.dataset.edit || '', card: _ie.dataset.card || '', field: _ie.dataset.field || '', rec: _ie.dataset.rec || '' }; return requireAdmin('Categories and pricing are Admin-only.', () => { const n = Array.from(document.querySelectorAll('.inline-edit')).find((x) => (x.dataset.edit || '') === _k.edit && (x.dataset.card || '') === _k.card && (x.dataset.field || '') === _k.field && (x.dataset.rec || '') === _k.rec) || _ie; startInlineEdit(n); }); } if (_ie.dataset.money === '1' && !canMoney()) return toast('Cost fields are Office/Admin only.'); return startInlineEdit(_ie); }   // a live-refresh render() during the approval wait can orphan the saved span — re-find it by its FULL identifying tuple (edit+card+field+rec) so a sibling admin field on the same record can't be opened by mistake; fall back to the original node if it's still attached
 
   // X-to-swap / remove on pills (handle before the pill-open)
   const xEl = closest('.x');
@@ -18770,24 +18819,75 @@ function adminUnlocked() { return roleTier(currentRole) >= tierRank('admin'); }
 /** Dev/design tools (Lint / Inspector / Rulebook) — Developer tier only. */
 function devUnlocked() { return roleTier(currentRole) >= tierRank('developer'); }
 
-/** Verify an Admin password (reuses the Settings gate), then run onOk. Demo/offline → allowed. */
+/** Admin-tier gate. At/above Admin tier (or demo/offline) → straight through. Below tier:
+ *  flag-ON (phoneIdentity) → the tierAuth shell (an Admin approves with a one-time code texted
+ *  to their own phone); flag-OFF → the legacy Admin-password prompt (the backout path).
+ *  onOk receives the approver's roster name (when a code approved it) for audit strings. */
 async function requireAdmin(reason, onOk) {
-  const pw = adminUnlocked() ? backendPassword
-    : (window.prompt((reason ? reason + '\n\n' : '') + 'Enter an Admin password to override:') || '');
-  if (!pw && backendPassword) return;
-  if (!backendPassword) { onOk(); return; }          // demo: no backend to verify against
+  if (!backendPassword || adminUnlocked()) { onOk(); return; }   // demo/offline, or the tier already carries it
+  if (flagOn('phoneIdentity')) {
+    openOverlay({ kind: 'tierAuth', minTier: 'admin', azAction: 'custom', pwReason: reason, step: 'pick', busy: false, error: '', onOk });
+    return;
+  }
+  const pw = window.prompt((reason ? reason + '\n\n' : '') + 'Enter an Admin password to override:') || '';
+  if (!pw) return;
   try { const r = await backendCall('getConfig', { password: pw }); if (r && r.ok) onOk(); else toast('Not an Admin password — override denied.'); }
   catch (e) { toast('Couldn’t verify the password — try again.'); }
 }
-/* Phase 3 (2026-07-10 account/agreements redesign) — the app has role TIERS + ONE verifiable
-   backend password (no separate "Manager password" / "Owner password" secret exists). Per Jac's
-   confirmed call (2026-07-10): reuse the tier ladder + the existing admin password rather than
-   invent a new auth surface. `minTier` gates who passes WITHOUT a prompt; if the current user is
-   below that tier, the SAME backend password (verified the same way requireAdmin does) authorizes
-   the one action. Demo/offline (no backendPassword) always passes — matches every other money gate
-   in the app. Used for: the D14 per-action Manager override on a blocked rental, the D22 Net-Terms
-   change, and (at minTier='admin') the D13 Blacklist set/lift — 'owner' already maps to the admin
-   tier (config.js BUILTIN_ROLE_TIERS), so there is no separate Owner password to build. */
+/* ── Tier-gate approval by phone code (2026-07-15) — the shared password is retired; per-person
+   phone identity (spec 2026-07-13-text-link-identity §6) supplies the replacement. A below-tier
+   user picks a Manager/Admin off the Team Roster; the backend texts THAT person's own phone a
+   one-time 6-digit approval code (`authzStart` — the destination is always resolved server-side
+   from the roster, never client-supplied) and entering it authorizes the ONE action
+   (`authzVerify` — single-use, tier-checked at mint AND verify, never mints a session; a login
+   code can't approve and an approval code can't log in — separate backend namespaces).
+   At/above `minTier` (or demo/offline, matching every other money gate) it's a plain confirm.
+   Backend contract: docs/handoffs/phone-identity-backend.gs §authz. Used for: the D22 Net-Terms
+   change and D14 rental-gate override (manager), and every requireAdmin gate (admin) —
+   'owner' already maps to the admin tier (config.js BUILTIN_ROLE_TIERS). */
+function tierAuthSelfOk(minTier) { return !backendPassword || roleTier(currentRole) >= tierRank(minTier); }
+function tierAuthApprovers(minTier) {
+  return (((state.settings || {}).employees) || []).filter((e) => e && e.name && roleTier(e.role) >= tierRank(minTier));
+}
+function tierAuthLabel(o) {
+  return o.azAction === 'netTerms' ? `Setting Net Terms to ${o.pwVal || 'None'}` : (o.pwReason || 'This action');
+}
+/* Apply whatever the tierAuth shell was guarding. `approver` = the roster name that entered the
+   code ('' when the user's own tier / demo passed) — it lands in the audit log line. */
+function tierAuthApply(o, approver) {
+  const c = o.custId ? IDX.customer.get(o.custId) : null;
+  if (c && o.azAction === 'netTerms') {
+    const days = o.pwVal === 'None' ? 0 : (parseInt(o.pwVal, 10) || 0);
+    const old = c.netDays; c.netDays = days; reindex('customers', c);
+    logAction(c, `Net Terms: ${old == null || old === '' ? 'None' : old + 'd'} → ${o.pwVal} (Manager approval${approver ? ' — ' + approver : ''})`);
+    closeOverlay(); render(); toast(`Net Terms set to ${o.pwVal}.`); return;
+  }
+  const onOk = o.onOk;   // rentalOverride / requireAdmin path — the caller supplies what "approved" means
+  closeOverlay();
+  if (typeof onOk === 'function') onOk(approver || '');
+}
+/* Text (or re-text) the one-time approval code to the picked approver. Shared by pick + resend. */
+function tierAuthSendCode(o) {
+  o.busy = true; o.error = ''; renderOverlay();
+  (async () => {
+    let r = null;
+    try { r = await backendCall('authzStart', { approverId: o.approverId, minTier: o.minTier || 'manager', reason: tierAuthLabel(o) }); } catch (e) {}
+    if (state.overlay !== o) return;
+    o.busy = false;
+    if (r && r.ok && r.sent) { o.step = 'code'; o.masked = r.masked || ''; o.approverName = r.name || o.approverName || ''; o.error = ''; }
+    else {
+      o.error = r && r.reason === 'too-soon' ? 'Hold on — a code just went out. Give it 30 seconds.'
+        : r && r.reason === 'rate' ? 'Too many codes for them this hour — try again later.'
+        : r && (r.error === 'under-tier' || r.error === 'no-approver') ? `They can't approve this — pick a ${tierRank(o.minTier || 'manager') >= tierRank('admin') ? 'Admin' : 'Manager'}-tier hand.`
+        : "Couldn't text the code — try again.";
+    }
+    renderOverlay();
+  })();
+}
+/* The flag-OFF backout path only (phoneIdentity OFF → the legacy shared-password world).
+   `minTier` gates who passes WITHOUT a prompt; below that tier, the shared backend password
+   (verified the same way the legacy requireAdmin prompt does) authorizes the one action.
+   Demo/offline (no backendPassword) always passes — matches every other money gate. */
 async function verifyTierOrPassword(minTier, pw) {
   if (roleTier(currentRole) >= tierRank(minTier)) return true;
   if (!backendPassword) return true;   // demo/offline — no backend to verify against, matches requireAdmin
@@ -18799,10 +18899,10 @@ async function verifyTierOrPassword(minTier, pw) {
 function cardOverrideRental(rentalId, val) {
   const r = IDX.rental.get(rentalId); if (!r) return;
   const cust = r.customerId ? IDX.customer.get(r.customerId) : null;
-  requireAdmin(`${cust ? cust.name : 'This customer'} — ${cardGateReason(cust) || 'card gate'}. Booking is blocked.`, () => {
+  requireAdmin(`${cust ? cust.name : 'This customer'} — ${cardGateReason(cust) || 'card gate'}. Booking is blocked.`, (approver) => {
     r.cardOverride = true;
-    logAction(r, `Admin override — booked ${getStatus('rentalStatus', val).label} (${cardGateReason(cust) || 'card gate'})`);
-    if (cust) logAction(cust, 'Admin override used to book past the card/agreement gate');
+    logAction(r, `Admin override${approver ? ' (' + approver + ')' : ''} — booked ${getStatus('rentalStatus', val).label} (${cardGateReason(cust) || 'card gate'})`);
+    if (cust) logAction(cust, `Admin override used to book past the card/agreement gate${approver ? ' — approved by ' + approver : ''}`);
     setRentalStatus(rentalId, val);
   });
 }
@@ -18813,7 +18913,7 @@ function cardOverrideRental(rentalId, val) {
    the pre-existing, previously-dormant §9 `/Blacklist/i` check — nothing ever set that string
    until Phase 3's blockPicker). That leaves `failed-payment` and `invoice-hold` uncovered by
    anything today — this is their gate: a D14 per-action Manager override, verified the same way
-   managerPw does. Critically NON-PERSISTENT — `bypassAccountBlock` is a plain function-call
+   tierAuth does. Critically NON-PERSISTENT — `bypassAccountBlock` is a plain function-call
    argument threaded through the retry, never written to the record, so every future attempt
    re-prompts (Jac, 2026-07-10: "that's the point"). */
 function accountBlockGate(cust) {
@@ -18822,9 +18922,9 @@ function accountBlockGate(cust) {
 }
 function accountBlockOverride(cust, onOk) {
   const ab = accountBlockGate(cust);
-  openOverlay({ kind: 'managerPw', custId: cust ? cust.customerId : null, pwAction: 'rentalOverride',
+  openOverlay({ kind: 'tierAuth', minTier: 'manager', custId: cust ? cust.customerId : null, azAction: 'rentalOverride',
     pwReason: `${cust ? cust.name : 'This customer'} — ${ab ? ab.reason : 'account block'}.`,
-    busy: false, error: '', onOk });
+    step: 'pick', busy: false, error: '', onOk });
 }
 /* Admin "Rental Rules" (Settings → Rental Rules) — HARD-BLOCK On Rent until every
    requirement an admin marked Required is met. Pure + defensive: with no rules set
@@ -19935,10 +20035,14 @@ function switchUser() {
   sessionStorage.removeItem('jactec.pw'); sessionStorage.removeItem('jactec.role');
   renderLogin();
 }
-// Settings (Admin-only): manage the role passwords. Admin is already authed with the
-// admin password; a staff role must enter it. Loads the live config, then opens the editor.
+// Settings (Admin-tier): loads the live config, then opens the editor. Below-Admin with
+// per-person phone identity ON gets a plain refusal — Settings is a whole Admin surface
+// backed by the server-tier-gated setConfig, so a one-shot approval code can't honestly
+// carry it (unlike the single-action tierAuth gates); get re-tiered or round up an Admin.
+// Flag-OFF keeps the legacy Admin-password prompt (the backout path).
 async function openSettings() {
   document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
+  if (!adminUnlocked() && backendPassword && flagOn('phoneIdentity')) { toast('Settings is Admin-tier — round up an Admin, or have one re-tier your role.'); return; }
   const adminPw = adminUnlocked() ? backendPassword : (window.prompt('Settings is Admin-only.\nEnter the Admin password:') || '');
   if (!adminPw) return;
   // Open the shell immediately in a loading state so the wait is visible, not a frozen UI.
