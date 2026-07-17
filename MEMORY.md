@@ -92,6 +92,13 @@
   still bills the leftover monthly term at once. Opus-reviewed (2 blockers fixed). Spec:
   `docs/superpowers/specs/2026-07-17-membership-po-advance-billing-design.md`; backend recipe:
   `docs/handoffs/2026-07-17-membership-po-advance-billing.gs`.
+- **2026-07-17 — Mobile-nav usability pass (#666 + #679, LIVE).** Phone footer Back/Forward jog
+  widened (32→54px) + thicker chevrons, height unchanged (was below the 44px touch floor); phone
+  Back now "escapes" a filtered/anchored list via the phone-only `jogBackEscape` (the fleet-filter
+  path AND `setAnchor` both wipe the card's backStack, which is why Back dead-ended before) —
+  scoped to NON-graph filter terms (`some(t => !t.g)` / clear keeps `.g`) so a graph-view selection
+  is left intact; `+Lost` (lost-demand capture) moved off the category mini-cards into Category
+  Details → Fleet Summary, single count carried on the `+Lost N` button. Polish nits fixed in #679.
 
 ## Design prefs
 - Yard **"data-plate"** design language: dark industrial steel, **ONE** safety-orange
@@ -198,15 +205,6 @@
   **staging drive** (real Chrome), not headless screenshots.
 
 ## Open threads
-- **#666 mobile-nav pass — SHIPPED LIVE** (2026-07-17, `cc7dd7d`) — wider footer Back/Forward
-  jog + thicker chevrons (height unchanged); phone Back now "escapes" a filtered/anchored list
-  via the phone-only `jogBackEscape` (both the fleet-filter path and `setAnchor` wipe backStack,
-  which is why Back dead-ended before); `+Lost` moved off the category mini-cards into Category
-  Details → Fleet Summary. Went live inside a **sibling session's** trunk→production promote (not
-  a dedicated one — a good reminder that a trunk promote ships everyone's integrated backlog). Two
-  minor deferred nits remain: `jogBackEscape`'s `'filter'` branch clears graph-view `.g` terms
-  wholesale (phone edge case, harmless); Fleet Summary shows the lost-demand count twice (derived
-  stat + the `+Lost N` button label).
 - **Repo privacy** — parked on Jac's GitHub billing-tier check. Pages-from-private
   needs GitHub Pro; Free forces public, and flipping private on Free takes
   `app.jacrentals.com` down. If Pro: canary staging → confirm → flip main + production
