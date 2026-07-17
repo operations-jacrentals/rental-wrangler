@@ -2300,7 +2300,7 @@ const state = {
   custAgOpen: {},             // Phase 1 — which Agreements row is expanded inside the Account section — { [customerId]: cardId | '__new__' | null } (one open at a time, mirrors custInvOpen); '__new__' = the +Agreement/Card creation panel
   custAgDraft: {},            // Phase 2b — the in-progress NEW-agreement draft — { [customerId]: {accountType, startDate, selfie, signature} }; view-local, cleared on sign/cancel
   svcSecOpen: {},             // Unit detail — is the Services (service-order) section expanded? { [unitId]: true }; collapsed by default (mirrors custAcctOpen), view-local, reset on a fresh unit open
-  unitSecOpen: {},            // Unit detail — which generic collapsible sections are expanded per unit: { [unitId]: { workorders|specs|gps|coverage|investment: true } }; all collapsed by default, view-local, reset on a fresh unit open (mirrors svcSecOpen)
+  unitSecOpen: {},            // Unit detail — which generic collapsible sections are expanded per unit: { [unitId]: { workorders|specs|gps|investment: true } }; all collapsed by default, view-local, reset on a fresh unit open (mirrors svcSecOpen). Coverage is folded into Investment (Jac 2026-07-16) — no separate 'coverage' key.
   woRowOpen: {},              // Unit detail — which Work Order row is expanded (accordion, one per unit, mirrors custInvOpen) — { [unitId]: woId | null }; collapsed by default, view-local, reset on a fresh unit open
   calSearch: '',               // Trips card mini-search (calendar is card-stateless — no session.cards.calendar — so this rides on state directly)
   calOpenTrip: null,           // §2.2b cab sheet — the ONE trip row expanded to its unit-facts sheet (row-body tap toggles; second tap collapses)
@@ -2536,7 +2536,7 @@ function openStandard(card, recId, recType) {
   if (card === 'customers' && state.funnelTab) delete state.funnelTab[recId];   // §3.5 — a fresh customer open resets the funnel toggle to Rental
   if (card === 'customers') { if (state.custInvOpen) delete state.custInvOpen[recId]; if (state.custInvMenu) delete state.custInvMenu[recId]; }   // §3.3 — collapse the embedded Invoices accordion on a fresh open (openInvoice re-sets it after)
   if (card === 'customers') { if (state.custAcctOpen) delete state.custAcctOpen[recId]; if (state.custAgOpen) delete state.custAgOpen[recId]; if (state.custAgDraft) delete state.custAgDraft[recId]; }   // Phase 1/2b — collapse the Account section + its Agreements accordion + any in-progress draft on a fresh open
-  if (card === 'units') { if (state.svcSecOpen) delete state.svcSecOpen[recId]; if (state.unitSecOpen) delete state.unitSecOpen[recId]; if (state.woRowOpen) delete state.woRowOpen[recId]; }   // collapse the Services + Work Orders / Specs / GPS / Coverage / Investment sections + any open Work Order row on a fresh open (mirrors the Account/Invoices collapse above)
+  if (card === 'units') { if (state.svcSecOpen) delete state.svcSecOpen[recId]; if (state.unitSecOpen) delete state.unitSecOpen[recId]; if (state.woRowOpen) delete state.woRowOpen[recId]; }   // collapse the Services + Work Orders / Specs / GPS / Investment sections + any open Work Order row on a fresh open (mirrors the Account/Invoices collapse above)
   ackComments(recOf(entityCardOf(card, recType), recId));   // viewing = acknowledged (Phase 6)
   // §10 + #54 — opening a Category while the rental-window picker is live (a window's
   // picked, so availWin is set) pivots the left column to Units, pre-filled with the
@@ -8079,7 +8079,10 @@ const DETAIL = {
     const riderCtl = (covEditable && cov.covered)
       ? segCtl(covTypes.map((t) => ({ label: t.label, js: 'js-cov-type', data: { rec: u.unitId, id: t.id }, on: (ins.types || []).includes(t.id) ? 'green' : null })))
       : (cov.covered ? kvPills(riderBadges) : '');
-    const coverageBody = `<div class="fieldstack centered">
+    // Coverage folded into Investment (Jac 2026-07-16) — the toggle (+ riders/policy when insured)
+    // rides plainly at the TOP of the Investment body; no separate titled Coverage section.
+    const coverageBody = `<div class="fieldstack centered" style="margin-bottom:12px">
+
       <div class="kv" style="justify-content:center">${covToggle}</div>
       ${riderCtl ? `<div class="kv" style="justify-content:center">${riderCtl}</div>` : ''}
       ${cov.covered && canMoney() ? `
@@ -8090,10 +8093,6 @@ const DETAIL = {
         ${efld('units', u, 'unitId', 'insurance.insuredValue', 'Insured value', { type: 'number', admin: true, fmt: money, sfx: 'insured value' })}
         ${efld('units', u, 'unitId', 'insurance.premium', 'Premium', { type: 'number', admin: true, fmt: money, sfx: `premium / ${ins.premiumCadence === 'Annual' ? 'yr' : 'mo'}` })}` : ''}
     </div>`;
-    // Coverage RYG = insured (green) vs uninsured (yellow caution — a machine leaves the yard
-    // uninsured is worth a flag, not a hard-stop red).
-    const covRiderText = cov.covered ? (cov.types && cov.types.length ? `${cov.types.length} rider${cov.types.length === 1 ? '' : 's'}` : 'No riders') : 'No coverage';
-    const coverage = collapseSection({ open: unitSecOpen(u, 'coverage'), toggleCls: 'js-unit-sec', sec: 'coverage', rec: u.unitId, lbl: 'Coverage', summary: `<b>${covRiderText}</b>`, chip: cov.covered ? { text: 'Insured', tone: 'ok' } : { text: 'Uninsured', tone: 'warn' }, body: coverageBody, extraCls: cov.covered ? 'sec-green' : 'sec-yellow' });
     /* INVESTMENT — left = entry · right = derived, ordered per Jac:
        Total Revenue → Monthly → Work Orders → Profit · (ROI%) */
     const invested = Number(u.trueCost) || Number(u.purchasePrice) || 0;
@@ -8110,6 +8109,7 @@ const DETAIL = {
       ? `${u.salePrice != null ? kv(money(u.salePrice), { pfx: 'Sale price', derived: true }) : ''}${u.saleDate ? kv(yr(u.saleDate), { pfx: 'Sale date', derived: true }) : ''}`
       : '';
     const investmentBody = `<div class="split">
+
         <div class="side">
           ${efld('units', u, 'unitId', 'purchasePrice', 'Purchase price', { type: 'number', sfx: 'paid', fmt: money, money: true })}
           ${efld('units', u, 'unitId', 'purchaseDate', 'Purchase date', { type: 'date', sfx: 'purchased', fmt: yr })}
@@ -8125,9 +8125,12 @@ const DETAIL = {
         </div>
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">${sellAction}${gatePill('unitFleetStatus', u.fleetStatus, 'js-fleetstatus', { rec: u.unitId })}</div>`;
-    // Investment is a plain-fact section — neutral green "OK". Summary shows ownership
-    // duration only (never a dollar/margin figure — that stays behind the money gate inside).
-    const investment = collapseSection({ open: unitSecOpen(u, 'investment'), toggleCls: 'js-unit-sec', sec: 'investment', rec: u.unitId, lbl: 'Investment', summary: `<b>${u.purchaseDate ? `Owned ${monthsOwned} mo` : 'No purchase data'}</b>`, chip: { text: 'OK', tone: 'ok' }, body: investmentBody, extraCls: 'sec-green' });
+    // Investment now HOLDS Coverage (Jac 2026-07-16): the coverage toggle + riders/policy ride at
+    // the top of the body; coverage STATUS is the section's chip + RYG color (green insured / yellow
+    // uninsured) so a driver still sees Insured/Uninsured at a glance without expanding — the
+    // uninsured-active card flag is untouched. Summary shows ownership duration only, never a
+    // dollar/margin figure (that stays behind the money gate inside the body).
+    const investment = collapseSection({ open: unitSecOpen(u, 'investment'), toggleCls: 'js-unit-sec', sec: 'investment', rec: u.unitId, lbl: 'Investment', summary: `<b>${u.purchaseDate ? `Owned ${monthsOwned} mo` : 'No purchase data'}</b>`, chip: cov.covered ? { text: 'Insured', tone: 'ok' } : { text: 'Uninsured', tone: 'warn' }, body: coverageBody + investmentBody, extraCls: cov.covered ? 'sec-green' : 'sec-yellow' });
     /* INSPECTION — live condition + wash toggles, timestamp in the header */
     const li2 = latestInspForUnit(u.unitId);
     const stampDate = u.condAt || li2?.date || '';
@@ -8172,7 +8175,6 @@ const DETAIL = {
       ${woSec}
       ${specs}
       ${gps}
-      ${coverage}
       ${investment}
       ${notes.bottom}
       ${historySection('units', u, cs, hchips)}
@@ -17534,7 +17536,7 @@ function onClick(e) {
   // no-op stubs (real enrollment/charge is Phase 2; block-gate enforcement is Phase 3).
   if (closest('.js-acct-toggle')) { e.stopPropagation(); const rec = closest('.js-acct-toggle').dataset.rec; return guardAgLeave(rec, () => { state.custAcctOpen = state.custAcctOpen || {}; state.custAcctOpen[rec] = !state.custAcctOpen[rec]; render(); }); }
   if (closest('.js-svc-sec-toggle')) { e.stopPropagation(); const rec = closest('.js-svc-sec-toggle').dataset.rec; state.svcSecOpen = state.svcSecOpen || {}; state.svcSecOpen[rec] = !state.svcSecOpen[rec]; return render(); }   // Unit detail — collapse/expand the Services (service-order) section
-  if (closest('.js-unit-sec')) { e.stopPropagation(); const b = closest('.js-unit-sec'); const rec = b.dataset.rec, sec = b.dataset.sec; state.unitSecOpen = state.unitSecOpen || {}; state.unitSecOpen[rec] = state.unitSecOpen[rec] || {}; state.unitSecOpen[rec][sec] = !state.unitSecOpen[rec][sec]; return render(); }   // Unit detail — collapse/expand a generic detail section (Work Orders / Specs / GPS / Coverage / Investment)
+  if (closest('.js-unit-sec')) { e.stopPropagation(); const b = closest('.js-unit-sec'); const rec = b.dataset.rec, sec = b.dataset.sec; state.unitSecOpen = state.unitSecOpen || {}; state.unitSecOpen[rec] = state.unitSecOpen[rec] || {}; state.unitSecOpen[rec][sec] = !state.unitSecOpen[rec][sec]; return render(); }   // Unit detail — collapse/expand a generic detail section (Work Orders / Specs / GPS / Investment[+Coverage])
   if (closest('.js-wo-row')) { e.stopPropagation(); const b = closest('.js-wo-row'); const un = b.dataset.unit, rec = b.dataset.rec; state.woRowOpen = state.woRowOpen || {}; state.woRowOpen[un] = (state.woRowOpen[un] === rec) ? null : rec; return render(); }   // Unit detail — open/collapse one Work Order row (accordion, mirrors js-inv-row)
   if (closest('.js-wo-collapse')) { e.stopPropagation(); const un = closest('.js-wo-collapse').dataset.unit; if (state.woRowOpen) state.woRowOpen[un] = null; return render(); }   // collapse the open Work Order row
   if (closest('.js-ag-row')) { e.stopPropagation(); const b = closest('.js-ag-row'); const rec = b.dataset.rec, card = b.dataset.card; return guardAgLeave(rec, () => { state.custAgOpen = state.custAgOpen || {}; state.custAgOpen[rec] = (state.custAgOpen[rec] === card) ? null : card; render(); }); }
@@ -21985,14 +21987,33 @@ let gpsToken = '';                                        // in-memory session t
 const gpsBase = () => (GPS_BACKEND_URL || '').replace(/\/$/, '');
 const gpsConfigured = () => !!gpsBase();
 
+/* Re-mint a lapsed GPS token (Jac 2026-07-16). The token is minted ONCE at sign-in and
+   expires server-side; before this, a lapsed token 401'd EVERY subsequent call — fleet
+   snapshot ("NO GPS"), the history feed ("Couldn't load history"), the 30s view poll — and
+   nothing re-authenticated short of a full page reload, so the whole GPS section went dark
+   and a manual Refresh only re-fired the same dead token. gpsFetch now re-logs-in once on a
+   401 and retries; single-flight so N concurrent 401s share ONE login (the team password
+   stays server-side — gpsLogin proxies through GAS, never the public client). */
+let _gpsReloginInflight = null;
+function gpsRelogin() {
+  if (!_gpsReloginInflight) _gpsReloginInflight = gpsLogin().finally(() => { _gpsReloginInflight = null; });
+  return _gpsReloginInflight;
+}
+
 /* One authed round-trip to the GPS backend. JSON in/out, 30s timeout (reuses
    withTimeout). Throws a tagged Error on non-2xx (callers decide how to degrade);
-   never returns a failure disguised as success. */
-async function gpsFetch(path, opts = {}) {
+   never returns a failure disguised as success. `_retried` guards the single 401 re-auth. */
+async function gpsFetch(path, opts = {}, _retried = false) {
   if (!gpsConfigured()) throw new Error('gps-not-configured');
   const headers = Object.assign({ 'x-auth-token': gpsToken }, opts.headers || {});
   if (opts.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
   const res = await withTimeout(fetch(gpsBase() + path, Object.assign({}, opts, { headers })), 30000, 'GPS backend');
+  // §token-lapse — a 401 means the session token expired; re-authenticate ONCE and retry so a
+  // stale token heals everywhere (incl. the manual Refresh) instead of staying dark until reload.
+  if (res.status === 401 && !_retried) {
+    const ok = await gpsRelogin();
+    if (ok && gpsToken) return gpsFetch(path, opts, true);
+  }
   const text = await res.text();
   let body = null; try { body = JSON.parse(text); } catch {}
   if (!res.ok) { const e = new Error('gps-http-' + res.status); e.status = res.status; e.body = body; throw e; }
@@ -23828,6 +23849,11 @@ function finishLoad() {
   refreshWranglerNotifications();                               // §18f populate the notification-bell badge
   refreshCommsThreads();                                        // D8 comms rail — the chips wear their worst-of-category dots from clock-in (the rail itself stays empty)
   startRefreshPoll();                                           // live multi-user: poll for others' changes (§ refreshFromBackend)
+  // GPS silent login + live snapshot — runs for EVERY login mode. Previously this lived ONLY in
+  // the password-login handler, so a phone-identity login (the staging/production default) never
+  // minted a GPS token → the whole GPS section read "NO GPS" and every on-demand call started
+  // unauthenticated (Jac 2026-07-16). Fire-and-forget; gpsConfigured() no-ops when GPS is off.
+  if (gpsConfigured()) gpsLogin().then((ok) => { if (ok) { refreshGpsLive(); startGpsViewPoll(); refreshDrivingScore(); } });
   if (migrationDirty) { migrationDirty = false; saveSoon(); }   // push parsed first/last names up to the Sheet
   // #edit=<id> — desktop→phone handoff opens that customer's account form (§7.1).
   const em = (location.hash || '').match(/edit=([\w-]+)/i);
@@ -23925,9 +23951,8 @@ async function attemptLogin() {
     try { localStorage.setItem('jactec.user', name); } catch {}
     try { sessionStorage.setItem('jactec.role', role); } catch {}
     sessionStorage.setItem('jactec.pw', pw);
-    gpsLogin().then((ok) => { if (ok) { refreshGpsLive(); startGpsViewPoll(); refreshDrivingScore(); } });   // silent GPS login (§5, via GAS token proxy) → live snapshot (step 3) + view-scoped refresh (step 4) + fleet driving score (step 7); fire-and-forget, never blocks main login
     applyLoadResponse(await loadPromise);
-    finishLoad();
+    finishLoad();   // GPS silent-login now lives in finishLoad (runs for every login mode, not just this one)
     applyRoleLanding();   // each role lands on its default main/sub-card
   } catch (e) {
     backendPassword = ''; sessionStorage.removeItem('jactec.pw'); sessionStorage.removeItem('jactec.role');
