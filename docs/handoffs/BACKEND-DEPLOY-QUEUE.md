@@ -19,7 +19,13 @@
 - **Deploy flow:** the standard splice — pull live `Code.js` → append §authz functions + wire the
   router → `node --check` → STOP-gate (show Jac) → SA `push` HEAD → **Jac's editor New-version
   deploy** → verify anonymous JSON + a real approval round-trip on staging.
-## ⏳ READY TO PUSH — invoice email PNG attachment (2026-07-17)
+## 🟡 PUSHED TO HEAD — awaiting Jac's editor deploy — invoice email PNG attachment (2026-07-17)
+- **Status:** spliced against the LIVE `Code.js` (pulled via SA `getContent`, matched the snapshot
+  at `sendCustomerMessage_` 2446-2448), `node --check` passed, **pushed to HEAD via the service
+  account** (content-only — NOT live). **Go-live = Jac's editor deploy** (Deploy → Manage
+  deployments → Edit prod → New version, Execute as Me (operations@), Who has access: Anyone).
+  Verify after: POST `{"action":"auth","password":"__wrong__"}` to the exec URL → expect JSON
+  `{"ok":false,...}` (HTML/403 = anonymous access broke → editor rollback).
 - **What:** `docs/handoffs/invoice-email-attachment-backend.gs` — a small ADDITIVE splice in
   `sendCustomerMessage_` (email branch, right before `GmailApp.sendEmail`). The client
   (`emailQuoteSend`, shipped on `claude/random-improvements-quivhs`) now renders the invoice sheet to
