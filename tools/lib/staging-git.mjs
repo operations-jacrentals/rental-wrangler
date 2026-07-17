@@ -17,10 +17,14 @@
 //     gitAuthed it NEVER returns or logs raw git output — stdout carries the
 //     `To https://x-access-token:<PAT>@…` line, which must never surface.
 //
-// SECRET HANDLING (unchanged posture): the PAT is read from an env var and NEVER
-// logged. Every network op against the authed remote routes through gitAuthed /
-// gitAuthedTry, which discard the original error/stdout (git does not redact a token
-// embedded in a remote URL from its own messages) and surface only a sanitized value.
+// SECRET HANDLING: the PAT is read from an env var and NEVER logged. Every network op
+// against the authed remote routes through gitAuthed / gitAuthedTry, which run git with
+// `stdio: ['ignore','pipe','pipe']` so git's own stdout AND stderr are CAPTURED, never
+// inherited to the parent's streams — the `To https://x-access-token:<PAT>@…` line git
+// prints to stderr on a push can therefore never reach the console/logs. The captured
+// output is inspected in-process only for the porcelain `!` CAS flag and is otherwise
+// discarded; the sanitized wrappers surface only a fixed, token-free value. (This makes
+// the guarantee self-contained rather than resting on git's client-side userinfo redaction.)
 
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -97,7 +101,9 @@ export function gitEnv(cred) {
 // text) and throws a sanitized one instead.
 export function gitAuthed(args, cred, opts = {}) {
   try {
-    return execFileSync('git', args, { encoding: 'utf8', env: gitEnv(cred), ...opts }).trim();
+    // stdio: capture stdout, CAPTURE (not inherit) stderr — git's stderr can carry the
+    // token-bearing `To <PAT-url>` line, which must never reach the parent's console/logs.
+    return execFileSync('git', args, { encoding: 'utf8', env: gitEnv(cred), stdio: ['ignore', 'pipe', 'pipe'], ...opts }).trim();
   } catch {
     throw new Error(
       `deploy-staging: git ${args[0]} against the staging remote failed (credential, network, or ` +
@@ -132,7 +138,9 @@ export function classifyPushFailure(stdout) {
 //   { ok:false, raced:false, error }          — any other failure ⇒ sanitized Error, no raw output
 export function gitAuthedTry(args, cred, opts = {}) {
   try {
-    const out = execFileSync('git', args, { encoding: 'utf8', env: gitEnv(cred), ...opts });
+    // Capture BOTH streams (never inherit stderr) — see gitAuthed: git's stderr can echo the
+    // token-bearing remote URL. Only the porcelain stdout flags are read (classifyPushFailure).
+    const out = execFileSync('git', args, { encoding: 'utf8', env: gitEnv(cred), stdio: ['ignore', 'pipe', 'pipe'], ...opts });
     return { ok: true, out: out.trim() };
   } catch (e) {
     // Classify via the porcelain machine-stable flags on stdout (pure helper above). We parse
