@@ -2370,6 +2370,7 @@ function loadSort(card) {
 }
 function saveSort(card, sort) {
   try { localStorage.setItem(SORT_LS_KEY(card), JSON.stringify({ field: sort.field, dir: sort.dir })); } catch {}
+  upSetSort(card, sort);   // §cross-device-sync — the sort follows the person
 }
 // the entity-card a record belongs to (Shop holds 3 entity types via recType)
 const entityCardOf = (card, recType) => (card === 'shop' ? recType : card);
@@ -2406,7 +2407,7 @@ function loadCommsRail() {
   } catch (e) {}
   return rail;
 }
-function saveCommsRail() { try { localStorage.setItem(COMMS_LS_KEY, JSON.stringify({ sessions: state.commsRail.sessions })); } catch (e) {} }
+function saveCommsRail() { try { localStorage.setItem(COMMS_LS_KEY, JSON.stringify({ sessions: state.commsRail.sessions })); } catch (e) {} upSyncComms(); }   // §cross-device-sync — the open rail follows the person (reverses empty-rail-on-login, spec §7); boot-guarded so the login reset never pushes an empty rail up
 /* Clock-in = an EMPTY comms rail. Resets every in-memory flag that decides whether a chat
    window or tab strip is summoned on screen — cat, each session's menuOpen + lastOpen, the
    Mr. Wrangler dock (open/min) and the Team dock (open) — then persists the emptied rail so a
@@ -2445,8 +2446,8 @@ function commsIsEnded(id, channel, lastAt) {
   if (ts === undefined) return false;
   return !(typeof ts === 'number' && (lastAt || 0) > ts);
 }
-function commsEnd(customerId, channel) { const m = commsEndedMap(); m[String(customerId) + '|' + channel] = Date.now(); try { localStorage.setItem(COMMS_ENDED_KEY, JSON.stringify(m)); } catch (e) {} }
-function commsUnend(customerId, channel) { const m = commsEndedMap(); const k = String(customerId) + '|' + channel; if (k in m) { delete m[k]; try { localStorage.setItem(COMMS_ENDED_KEY, JSON.stringify(m)); } catch (e) {} } }
+function commsEnd(customerId, channel) { const m = commsEndedMap(); m[String(customerId) + '|' + channel] = Date.now(); try { localStorage.setItem(COMMS_ENDED_KEY, JSON.stringify(m)); } catch (e) {} upSyncComms(); }   // §cross-device-sync
+function commsUnend(customerId, channel) { const m = commsEndedMap(); const k = String(customerId) + '|' + channel; if (k in m) { delete m[k]; try { localStorage.setItem(COMMS_ENDED_KEY, JSON.stringify(m)); } catch (e) {} upSyncComms(); } }   // §cross-device-sync
 
 const state = {
   data: DATA,
@@ -2496,6 +2497,7 @@ const state = {
   overbookOn: (() => { try { return localStorage.getItem('jactec.overbook') === '1'; } catch (e) { return false; } })(),   // §10 allow-overbooking policy (per device, default OFF — drag build)
   hapticsOff: (() => { try { return localStorage.getItem('jactec.hapticsOff') === '1'; } catch (e) { return false; } })(),   // §M-touch Vibration-API feedback (per device, default ON; Android-only, no-op on iOS)
   loginMuted: (() => { try { return localStorage.getItem('jactec.loginMuted') === '1'; } catch (e) { return false; } })(),   // login intro-video audio (per device, default ON = sound plays on sign-in; only a MUTE choice persists)
+  userPrefs: null,   // §cross-device-sync — the per-person synced light-state doc; null = legacy/device-local (set in finishLoad once personId is known)
   commsRail: loadCommsRail(),   // D8 THE COMMS RAIL — { cat, sessions } per device; cat always null at boot (empty rail at login)
   wranglerRail: [],   // §18g the bottom-right rail of past Mr. Wrangler conversations (per device), each a snapshot { id, title, ts, card, recId, recType, reqNumber, reqTitle, reqUrl, messages }. Loaded async from IndexedDB (wranglerRailLoad) — IndexedDB replaced the localStorage rail that silently overflowed.
   settings: loadAdminSettings(),   // Settings Board admin customization (config.settings); mirrored to localStorage, applied at boot via applySettings()
@@ -7739,7 +7741,7 @@ function caScrub(e) {
    as a static colored marker. Its color is the most-urgent UNREAD note (red>yellow>green),
    resting on the latest note's color once everything is read. ── */
 const COMMENT_SEV = { red: 3, yellow: 2, green: 1 };
-const commentUserKey = () => currentUser || currentRole || 'me';
+const commentUserKey = () => currentUser || currentRole || 'me';   // §cross-device-sync — team-chat/comment attribution re-key (currentPersonId) DEFERRED to a follow-up: flipping this hides pre-cutover chats from their creators (visibility is `by===me`, old `by`=name) and renders raw personIds where `by` is shown. Needs a backward-compat visibility alias + personId→name display lookup + seen migration. The role-shared leak is fixed by the Wrangler-rail personId re-key, which does not use this key. (spec §13)
 const recComments = (rec) => (rec && rec.comments) || [];
 function commentMarker(rec) {
   const all = recComments(rec); if (!all.length) return null;
@@ -9209,6 +9211,7 @@ function toggleGroupCollapsed(card, key) {
   const k = card + ':' + key;
   COLLAPSED_GROUPS[k] = !groupCollapsed(card, key);
   try { localStorage.setItem('jactec.collapsedGroups', JSON.stringify(COLLAPSED_GROUPS)); } catch (e) {}
+  upSyncCollapsed();   // §cross-device-sync
 }
 /* Custom GROUP ORDER — drag-to-reorder a card's group headers (Jac 2026-07-04),
    remembered PER ROLE (Admin/Mechanic/Sales/... each keep their own order), synced
@@ -11095,6 +11098,7 @@ function schedSaveLane(day, laneKey, lane) {
   const all = dispatchSchedLS();
   (all[day] || (all[day] = {}))[laneKey] = lane;
   _lsSave('jactec.dispatchSchedule', all);
+  upSyncDispatch();   // §cross-device-sync — dispatcher route state follows the person
 }
 // Move a stop's schedule entries (time + order slot) when it changes lanes, so a re-assigned
 // stop keeps its set time and the old lane doesn't hold a ghost slot.
@@ -11281,7 +11285,7 @@ function tripsSyncFooter() {
 // Which driver lanes the dispatcher has open, per device (a VIEW pref, not data — D5:
 // "the dispatcher clicks which drivers to show"). Pruned against the live roster on read.
 const dispatchLanesLS = () => { const v = _lsJSON('jactec.dispatchLanes'); const ids = Array.isArray(v.show) ? v.show : []; const roster = driverRoster().map((d) => d.id); return ids.filter((id) => roster.includes(id)); };
-const dispatchLanesSave = (ids) => _lsSave('jactec.dispatchLanes', { show: ids });
+const dispatchLanesSave = (ids) => { _lsSave('jactec.dispatchLanes', { show: ids }); upSyncDispatch(); };   // §cross-device-sync
 const addDaysISO = (iso, n) => { const d = parseISO(iso); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
 const dispatchDayLabel = (iso) => { const d = parseISO(iso); return d ? d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : iso; };
 function dispatchDayStops(day) {
@@ -12086,7 +12090,7 @@ function ruResolve() {
   if (p.k === 'today') return { k: 'today', a: TODAY_ISO, b: tomorrow, label: 'Today' };
   return { k: p.k, a: uCutoff(p.k), b: tomorrow, label: p.label };
 }
-function ruSave(r) { _ruRange = r; try { localStorage.setItem('jactec.ruRange', JSON.stringify(r)); } catch (e) {} }
+function ruSave(r) { _ruRange = r; try { localStorage.setItem('jactec.ruRange', JSON.stringify(r)); } catch (e) {} upSetPref('ruRange', r); }   // §cross-device-sync
 function ruApplyCustom(o) {
   if (!o) return;
   const a = o.ruFrom, b = o.ruTo;
@@ -16720,8 +16724,8 @@ function loadViews(card) { return _viewsMap()[card] || []; }
 function saveViews(card, views) {
   const m = _viewsMap(); m[card] = views; GLOBAL_VIEWS = m;
   try { localStorage.setItem(VIEWS_LS_ALL, JSON.stringify(m)); } catch (e) {}
-  // No backend push — views are personal/per-device (D2). The getViews/setViews GAS
-  // actions stay deployed but unused (additive backend: nothing breaks by not calling them).
+  upSyncViews();   // §cross-device-sync — Views now follow the PERSON (reverses the 2026-06-29 device-local decision, spec §7); localStorage stays the offline mirror
+
 }
 // A view captures the WHOLE filter state — the live search text AND the pinned
 // filter chips (cs.filterTerms) — so ANY filter you build is saveable (Jac 2026-06-13).
@@ -17969,7 +17973,7 @@ function onClick(e) {
   if (closest('.js-settings-reset')) { e.stopPropagation(); const o = state.overlay; if (!o) return; if (o.resetArm) return resetAllSettings(); o.resetArm = true; reSettings(); return; }   // armed two-click confirm
   if (closest('.js-settings-undo')) { e.stopPropagation(); return undoLastSettings(); }
   if (closest('.js-overbook')) { e.stopPropagation(); const on = closest('.js-overbook').dataset.val === '1'; state.overbookOn = on; try { localStorage.setItem('jactec.overbook', on ? '1' : '0'); } catch (err) {} toast(on ? 'Overbooking allowed — conflicting links get a pulsing red Overbooked flag.' : 'Overbooking blocked — a conflicting unit drop is refused.'); reSettings(); return; }
-  if (closest('.js-haptics')) { e.stopPropagation(); const on = closest('.js-haptics').dataset.val === '1'; state.hapticsOff = !on; try { localStorage.setItem('jactec.hapticsOff', on ? '0' : '1'); } catch (err) {} if (on) haptic([12, 30, 12]); reSettings(); return; }   // §M-touch — toggle + a sample buzz when turning ON
+  if (closest('.js-haptics')) { e.stopPropagation(); const on = closest('.js-haptics').dataset.val === '1'; state.hapticsOff = !on; try { localStorage.setItem('jactec.hapticsOff', on ? '0' : '1'); } catch (err) {} upSetPref('hapticsOff', state.hapticsOff); if (on) haptic([12, 30, 12]); reSettings(); return; }   // §M-touch — toggle + a sample buzz when turning ON
   // Settings Board — tab rail + Statuses & Icons editing
   if (closest('.js-set-tab')) { e.stopPropagation(); const o = state.overlay; if (o) { captureLoginEdits(o); captureTeamEdits(o); captureNotificationEdits(o); o.tab = closest('.js-set-tab').dataset.tab; o.iconFor = null; o.error = null; o.resetArm = false; reSettings(); } return; }
   if (closest('.js-set-pick')) { e.stopPropagation(); const o = state.overlay; if (o) { o.setSel = closest('.js-set-pick').dataset.set; o.iconFor = null; reSettings(); } return; }
@@ -18317,7 +18321,7 @@ function onClick(e) {
   if (closest('.js-roadmap')) return openOverlay({ kind: 'roadmap' });
   if (closest('.js-close')) return closeOverlay();
   if (closest('.js-qr')) { closeMenus(); return shareSession(); }
-  if (closest('.js-previews') || closest('.js-roweye')) { e.stopPropagation(); state.previewsOn = !state.previewsOn; if (!state.previewsOn) hideHoverPreview(); try { localStorage.setItem('jactec.previewsOff', state.previewsOn ? '0' : '1'); } catch (e) {} toast(state.previewsOn ? 'Hover previews on.' : 'Hover previews off — every eye runs red.'); closeMenus(); return render(); }
+  if (closest('.js-previews') || closest('.js-roweye')) { e.stopPropagation(); state.previewsOn = !state.previewsOn; if (!state.previewsOn) hideHoverPreview(); try { localStorage.setItem('jactec.previewsOff', state.previewsOn ? '0' : '1'); } catch (e) {} upSetPref('previewsOff', !state.previewsOn); toast(state.previewsOn ? 'Hover previews on.' : 'Hover previews off — every eye runs red.'); closeMenus(); return render(); }
   if (closest('.js-hotkeys')) { closeMenus(); return openOverlay({ kind: 'hotkeys' }); }
   if (closest('.js-app-update')) { closeMenus(); return checkForUpdate(); }   // manual "Update" — force the newest build past a stale mobile cache
   if (closest('.js-lint')) {   // R0 flash-lint toggle — persists per device
@@ -20593,7 +20597,8 @@ function openLogoMenu(anchorEl) {
 // Switch user — clear this session's password/role (name stays remembered) → login.
 function switchUser() {
   document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
-  backendPassword = ''; currentRole = ''; booting = true;
+  try { flushUserPrefsNow(); } catch (e) {}   // §cross-device-sync — push a pending prefs edit before the token is dropped
+  backendPassword = ''; currentRole = ''; currentPersonId = ''; state.userPrefs = null; booting = true;   // §cross-device-sync — drop the leaving person's identity + synced doc so nothing pushes under the next person
   sessionStorage.removeItem('jactec.pw'); sessionStorage.removeItem('jactec.role');
   renderLogin();
 }
@@ -21715,16 +21720,25 @@ function copyInvoiceImage(invoiceId) {
     .catch(fail);
 }
 async function renderInvoicePng(invoiceId) {
+  // Settle fonts FIRST — before we snapshot — so the freeze-measure and the one-shot SVG paint use the
+  // SAME face; otherwise a late-decoding fallback paints into boxes frozen under the on-screen face and
+  // text clips (notably the right-flush date stamp). On a cold cache these awaits are network-bound.
+  const fontCss = await invoiceFontFaceCss();   // embed the real Saira/Geist faces — a foreignObject has no page @font-face
+  try { if (document.fonts) { if (fontCss) await ensureEmbeddedFacesReady(fontCss); if (document.fonts.ready) await document.fonts.ready; } } catch (e) {}
+  // Resolve + snapshot the node AFTER the awaits, with NO async gap in between: a render() during a font
+  // await (e.g. the background poll applying a remote edit does a wholesale #app.replaceChildren) would
+  // detach a node captured earlier, and measuring/cloning a detached node yields a 0×0 blank PNG.
   const doc = [...document.querySelectorAll('.pr-doc[data-inv]')].find((d) => d.dataset.inv === invoiceId);
   if (!doc) throw new Error('invoice sheet not on screen');
   const rect = doc.getBoundingClientRect();
   const W = Math.ceil(rect.width), H = Math.ceil(rect.height);
+  const bg = getComputedStyle(doc).backgroundColor;   // capture now, while doc is known-connected — the only later read (fill) sits after an await
   const clone = doc.cloneNode(true);
-  inlineComputedStyles(doc, clone);   // resolve classes + CSS vars to concrete values
-  await inlineDocImages(clone);       // <img src> → data: so drawImage doesn't taint the canvas
-  const fontCss = await invoiceFontFaceCss();   // embed the real Saira/Geist faces — a foreignObject has no page @font-face
+  inlineComputedStyles(doc, clone);      // resolve classes + CSS vars to concrete values (index-aligned walk — must precede any clone mutation)
+  normalizeCloneForRaster(doc, clone);   // a foreignObject drops ::before/::after — materialize them as real nodes so the ' · ' separators survive; strip screen-only edit affordances
+  await inlineDocImages(clone);          // <img src> → data: so drawImage doesn't taint the canvas (operates on the detached clone only — safe past here)
   if (fontCss) { const st = document.createElement('style'); st.textContent = fontCss; clone.insertBefore(st, clone.firstChild); }
-  clone.style.boxShadow = 'none'; clone.style.borderRadius = '0'; clone.style.margin = '0'; clone.style.maxWidth = 'none'; clone.style.width = W + 'px';
+  clone.style.boxShadow = 'none'; clone.style.borderRadius = '0'; clone.style.margin = '0'; clone.style.maxWidth = 'none'; clone.style.width = W + 'px'; clone.style.height = H + 'px';
   clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
   const xhtml = new XMLSerializer().serializeToString(clone);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><foreignObject x="0" y="0" width="${W}" height="${H}">${xhtml}</foreignObject></svg>`;
@@ -21733,8 +21747,7 @@ async function renderInvoicePng(invoiceId) {
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, W * dpr); canvas.height = Math.max(1, H * dpr);
   const cx = canvas.getContext('2d'); cx.scale(dpr, dpr);
-  const bg = getComputedStyle(doc).backgroundColor;
-  cx.fillStyle = (bg && bg !== 'rgba(0, 0, 0, 0)') ? bg : '#f7f2ea';   // kraft fallback if the doc bg is transparent
+  cx.fillStyle = (bg && bg !== 'rgba(0, 0, 0, 0)') ? bg : '#f7f2ea';   // kraft fallback if the doc bg is transparent (bg captured pre-await, above)
   cx.fillRect(0, 0, W, H);
   cx.drawImage(img, 0, 0);
   return await new Promise((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error('encode failed'))), 'image/png'));
@@ -21748,6 +21761,34 @@ function inlineComputedStyles(src, dst) {
   dst.setAttribute('style', s);
   const sc = src.children, dc = dst.children;
   for (let i = 0; i < sc.length; i++) if (dc[i]) inlineComputedStyles(sc[i], dc[i]);
+}
+// Prep a cloned .pr-doc for rasterization. A <foreignObject> renders as a DISCONNECTED image with no
+// page stylesheet and no ::before/::after — so (1) materialize each pseudo-element's generated content
+// (the ' · ' card/line separators, style.css) as a REAL inline span, or it vanishes and adjacent text
+// glues together ("JUN 16"+"1 DAY" → "JUN 161 DAY"); and (2) strip the screen-only edit affordances
+// (the ↗ source link, the PO "Edit" pill) that shouldn't ride into a shared/emailed image. Reads
+// computed styles from the LIVE src (a detached clone reports none); mutates ONLY the clone, so the
+// on-screen sheet and the print doc are untouched. Runs right after inlineComputedStyles, while src and
+// clone still share shape (the pseudo-walk is index-aligned); the affordance strip runs after the walk.
+function normalizeCloneForRaster(src, clone) {
+  const inserts = [];   // defer insertion so the index-aligned parallel walk can't desync mid-walk
+  const walk = (s, c) => {
+    if (!s || !c) return;
+    for (const which of ['::before', '::after']) {
+      const cs = getComputedStyle(s, which);
+      const m = cs.content && /^["'](.*)["']$/.exec(cs.content);   // only simple string content (every .pr-doc pseudo is a text separator)
+      if (!m || m[1] === '') continue;
+      const sp = document.createElement('span');
+      sp.textContent = m[1];
+      sp.style.cssText = `font:${cs.font};color:${cs.color};letter-spacing:${cs.letterSpacing};white-space:pre;`;   // carry the pseudo's own text styling; pre keeps the separator's spaces
+      inserts.push([c, sp, which === '::before']);
+    }
+    const sc = s.children, cc = c.children;
+    for (let i = 0; i < sc.length; i++) walk(sc[i], cc[i]);
+  };
+  walk(src, clone);
+  for (const [parent, node, first] of inserts) parent.insertBefore(node, first ? parent.firstChild : null);   // insertBefore(_, null) === appendChild
+  clone.querySelectorAll('.pr-line-src, .pr-po-edit, .inline-edit, [data-edit]').forEach((n) => n.remove());
 }
 // Same-origin images (logo, customer selfie) → data URIs, so the rasterized canvas isn't tainted
 // (a tainted canvas can't be read back to a blob). An unfetchable image is dropped, not fatal.
@@ -21793,6 +21834,32 @@ function invoiceFontFaceCss() {
   _invFontCssP = p;
   p.then((css) => { if (!css) _invFontCssP = null; }, () => { _invFontCssP = null; });   // cache only a successful, non-empty result; a failed/empty fetch retries next time
   return p;
+}
+// Decode the data-URI'd @font-face blocks we embed for the raster INTO document.fonts before the
+// one-shot SVG paint, so the copied/emailed image paints the real faces instead of a late-decoding
+// fallback (which clips boxes frozen under the real face). Cached per css string so a repeat copy/email
+// doesn't re-register; best-effort — never throws, and a browser without FontFace just skips it.
+let _facesReadyKey = null, _facesReadyP = null;
+function ensureEmbeddedFacesReady(css) {
+  if (_facesReadyKey === css) return _facesReadyP;
+  _facesReadyKey = css;
+  _facesReadyP = (async () => {
+    if (!window.FontFace || !document.fonts) return;
+    const jobs = [];
+    const re = /@font-face\s*{([^}]*)}/g; let m;
+    while ((m = re.exec(css))) {
+      const b = m[1];
+      const fam = (b.match(/font-family:\s*([^;]+);/) || [])[1];
+      const src = (b.match(/src:\s*([^;]+?);\s*(?:}|$)/) || b.match(/src:\s*([^;]+);/) || [])[1];
+      if (!fam || !src) continue;
+      const desc = {};
+      const w = (b.match(/font-weight:\s*([^;]+);/) || [])[1]; if (w) desc.weight = w.trim();
+      const st = (b.match(/font-style:\s*([^;]+);/) || [])[1]; if (st) desc.style = st.trim();
+      try { const ff = new FontFace(fam.replace(/['"]/g, '').trim(), src.trim(), desc); document.fonts.add(ff); jobs.push(ff.load()); } catch (e) {}
+    }
+    try { await Promise.all(jobs); } catch (e) {}
+  })();
+  return _facesReadyP;
 }
 // Raw base64 (no data: prefix) of a blob — for handing an image to the backend email send.
 function blobToBase64(blob) {
@@ -22095,6 +22162,7 @@ let actionSeq = 0;
 // logAction stamps the user + clock time so the record History reads "what · when · who".
 let currentUser = (() => { try { return localStorage.getItem('jactec.user') || ''; } catch { return ''; } })();
 let currentRole = (() => { try { return sessionStorage.getItem('jactec.role') || ''; } catch { return ''; } })();
+let currentPersonId = '';   // §cross-device-sync — the logged-in person's stable id (phone-identity); set in pidAdopt, '' under legacy login. The sync key; the backend re-resolves it server-side per call.
 function nowClock() { const d = new Date(); let h = d.getHours(); const ap = h < 12 ? 'AM' : 'PM'; h = h % 12 || 12; return `${h}:${String(d.getMinutes()).padStart(2, '0')} ${ap}`; }
 function logAction(rec, text) { if (!rec) return; rec.actions = rec.actions || []; rec.actions.push({ when: TODAY_ISO, clock: nowClock(), text, by: currentUser || '', seq: actionSeq++ }); saveSoon(); }
 // Humanize a field key + format a value for an audit line ("Phone: (337)… → (337)…").
@@ -24317,7 +24385,7 @@ async function refreshFromBackend() {
   } catch (e) { /* offline / blip → retry next tick */ }
   finally { refreshing = false; }
 }
-function startRefreshPoll() { clearInterval(refreshTimer); refreshTimer = setInterval(() => { refreshToday(); refreshFromBackend(); }, 18000); }
+function startRefreshPoll() { clearInterval(refreshTimer); refreshTimer = setInterval(() => { refreshToday(); refreshFromBackend(); if (syncOn() && !state.userPrefs) loadUserPrefs(); }, 18000); }   // §cross-device-sync — re-drive a prefs load that never hydrated (past the 5-try login cutoff) so a cold-GAS blip doesn't disable sync all session
 
 // ── Team-chat sync (Jac 2026-06-15) ────────────────────────────────────────
 // Chat threads were browser-local, so one user's chat never reached another (a
@@ -24454,6 +24522,186 @@ async function loadWranglerRail() {
     if (localAhead) pushWranglerRailSoon(); else lastRailJson = JSON.stringify(state.wranglerRail);
   } catch (e) { /* offline → the refresh poll retries */ }
 }
+
+/* ── CROSS-DEVICE USER SYNC — per-person light-state blob (§ BACKEND SYNC sub-section) ──
+   Spec: docs/superpowers/specs/2026-07-17-cross-device-user-sync-design.md (§4, §5, §8).
+   A logged-in PERSON's display/sort prefs, saved Views, dispatcher route state, comms
+   state, and a resume-where-you-left-off pointer follow them across devices — keyed on
+   personId, which the backend resolves SERVER-SIDE from the session token (the client
+   sends none; a body personId is only a hint the server validates). localStorage stays
+   the OFFLINE MIRROR so the app still works with no backend, and the mirror is TOKEN-
+   guarded on login (Blocker 1) so Person B on a shared device never paints Person A's
+   stale state. A legacy (shared-password / no-personId) login NO-OPS to today's device-
+   local behaviour: state.userPrefs stays null and every stamp/flush below early-returns. */
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+// Live only for a phone-identity session with a resolved person; else device-local.
+function syncOn() { return flagOn('userSync') && flagOn('phoneIdentity') && !!currentPersonId && !!backendPassword; }
+function normalizeUserPrefs(doc) {
+  doc = (doc && typeof doc === 'object' && !Array.isArray(doc)) ? doc : {};
+  const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v)) ? v : {};
+  return { v: doc.v || 1, prefs: obj(doc.prefs), views: obj(doc.views), dispatch: obj(doc.dispatch), comms: obj(doc.comms), session: obj(doc.session) };
+}
+
+// ── the localStorage keys that FOLLOW THE PERSON (wiped when a DIFFERENT person adopts a
+//    shared device, kept for the SAME person so an offline reopen still has their state) ──
+const SYNC_MIRROR_STATIC = ['jactec.previewsOff', 'jactec.hapticsOff', 'jactec.loginMuted',
+  'jactec.collapsedGroups', 'jactec.ruRange', 'jactec.views.all',
+  'jactec.dispatchOrder', 'jactec.dispatchTimes', 'jactec.dispatchSchedule', 'jactec.dispatchLanes',
+  'jactec.commsRail', 'jactec.commsEnded'];
+function wipeSyncMirror() {
+  try {
+    SYNC_MIRROR_STATIC.forEach((k) => localStorage.removeItem(k));
+    for (let i = localStorage.length - 1; i >= 0; i--) {   // per-card sort + legacy per-card views
+      const k = localStorage.key(i);
+      if (k && (k.indexOf('jactec.sort.') === 0 || k.indexOf('jactec.views.') === 0)) localStorage.removeItem(k);
+    }
+  } catch (e) {}
+}
+// Reset the IN-MEMORY sync-target state to neutral defaults — the module-init reads happen
+// pre-login, so a shared device would otherwise hold the prior person's values in `state`
+// until getUserPrefs resolves. Only runs when a DIFFERENT person adopts the device.
+function resetSyncStateToDefault() {
+  state.previewsOn = true; state.hapticsOff = false; state.loginMuted = false;
+  Object.keys(COLLAPSED_GROUPS).forEach((k) => delete COLLAPSED_GROUPS[k]);
+  _ruRange = null; GLOBAL_VIEWS = null;
+  if (state.commsRail) state.commsRail.sessions = {};
+  // Per-card sort is read into the session objects at module-init (freshSession -> loadSort),
+  // BEFORE any login, so a shared device holds the prior person's sort in memory. wipeSyncMirror
+  // has already cleared jactec.sort.* by the time this runs, so loadSort() now returns the true
+  // default. Reset the default session AND any open tab sessions so B never paints A's sort.
+  const resetCardSorts = (sess) => { if (sess && sess.cards) for (const c of GRID_CARDS) if (sess.cards[c.id]) sess.cards[c.id].sort = loadSort(c.id); };
+  resetCardSorts(state.defaultSession);
+  (state.tabs || []).forEach((t) => resetCardSorts(t.session));
+  // The previous person's synced doc must NOT survive into the new person's session — else an
+  // early edit (before loadUserPrefs resolves) would stamp A's leftover prefs and push them to
+  // B's backend row (userPrefsMerge_ is one-level-deep, so a whole-section flush carries A's
+  // sibling keys). Null it so every upSet*/upSync* no-ops until B's own doc loads.
+  state.userPrefs = null;
+}
+function syncMirrorTag() { return cacheTokenTag(currentPersonId || pidLocalToken()); }
+// Called at login once currentPersonId is set (pidAdopt). Keep this person's mirror; wipe a
+// DIFFERENT person's leftover mirror + reset in-memory (shared-device safety, Blocker 1 §5).
+function syncMirrorGuard() {
+  if (!syncOn()) return;
+  try {
+    const tag = syncMirrorTag(), prev = localStorage.getItem('jactec.syncMirrorTag') || '';
+    // Wipe ONLY when a KNOWN DIFFERENT person synced on this device before. On a first-ever
+    // adopt (prev === '') the local mirror is THIS device's existing prefs — KEEP it so
+    // loadUserPrefs/seedUserPrefsFromLocal adopts it as the person's baseline, instead of
+    // silently deleting everyone's saved Views/dispatch/prefs on their first post-activation
+    // login (the wipe used to run before the seed could capture it).
+    if (prev && prev !== tag) { wipeSyncMirror(); resetSyncStateToDefault(); }
+    if (prev !== tag) localStorage.setItem('jactec.syncMirrorTag', tag);
+  } catch (e) {}
+}
+
+// ── debounced writer (mirrors pushChatsSoon / pushWranglerRailSoon: 1200ms, boot-guarded) ──
+let _userPrefsTimer = null, _userPrefsDirty = {};
+function flushUserPrefs(section) {
+  if (booting || !syncOn()) return;                                   // device-local only; never push during boot/reset
+  if (section) _userPrefsDirty[section] = true;
+  else ['prefs', 'views', 'dispatch', 'comms', 'session'].forEach((s) => { _userPrefsDirty[s] = true; });
+  clearTimeout(_userPrefsTimer); _userPrefsTimer = setTimeout(pushUserPrefs, 1200);
+}
+async function pushUserPrefs() {
+  if (!syncOn() || !state.userPrefs) return;
+  const dirty = _userPrefsDirty; _userPrefsDirty = {};
+  const doc = {}; let any = false;
+  Object.keys(dirty).forEach((s) => { if (dirty[s] && state.userPrefs[s] !== undefined) { doc[s] = state.userPrefs[s]; any = true; } });
+  if (!any) return;
+  doc.v = state.userPrefs.v || 1;
+  try { const r = await backendCall('setUserPrefs', { doc }); if (!r || !r.ok) Object.keys(doc).forEach((s) => { if (s !== 'v') _userPrefsDirty[s] = true; }); }
+  catch (e) { Object.keys(doc).forEach((s) => { if (s !== 'v') _userPrefsDirty[s] = true; }); }   // offline → retry on the next change
+}
+// Immediate flush — cancel the 1.2s debounce and push any pending dirty sections RIGHT NOW, so
+// a change made inside the debounce window isn't lost when the session ends (logout / switch-
+// user / tab hidden or closed). Fire-and-forget; the payload's token is captured synchronously.
+function flushUserPrefsNow() { if (!syncOn() || !state.userPrefs) return; clearTimeout(_userPrefsTimer); pushUserPrefs(); }
+// Boot (finishLoad, once personId is known): server doc BEATS stale localStorage; an empty
+// server doc means first-ever sync → adopt this device's mirror as the person's baseline.
+async function loadUserPrefs(_try) {
+  if (!syncOn()) return;                                             // legacy/no-person → device-local, no-op
+  _try = _try || 0;
+  try {
+    const r = await backendCall('getUserPrefs');
+    if (r && r.ok && r.doc && typeof r.doc === 'object' && Object.keys(r.doc).length) hydrateUserPrefs(r.doc);
+    else seedUserPrefsFromLocal();                                   // no row yet → seed baseline from this device
+  } catch (e) {
+    // A transient blip at login must NOT disable sync for the whole session (state.userPrefs
+    // would stay null and every stamp would silently no-op). Retry with backoff while still
+    // unloaded; the guard stops once loaded or the person switches (syncOn/userPrefs change).
+    if (syncOn() && state.userPrefs === null && _try < 5) setTimeout(() => loadUserPrefs(_try + 1), 30000);
+  }
+}
+function collectSortMirror() {
+  const out = {};
+  try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.indexOf('jactec.sort.') === 0) { try { const v = JSON.parse(localStorage.getItem(k)); if (v && v.field) out[k.slice(12)] = { field: v.field, dir: v.dir }; } catch (e) {} } } } catch (e) {}
+  return out;
+}
+function seedUserPrefsFromLocal() {
+  if (!syncOn()) return;
+  state.userPrefs = {
+    v: 1,
+    prefs: { previewsOff: !state.previewsOn, hapticsOff: !!state.hapticsOff, loginMuted: !!state.loginMuted,
+      sort: collectSortMirror(), collapsedGroups: Object.assign({}, COLLAPSED_GROUPS), ruRange: ruRangeLoad() },
+    views: _viewsMap(),
+    dispatch: { order: _lsJSON('jactec.dispatchOrder'), schedule: _lsJSON('jactec.dispatchSchedule'), lanes: _lsJSON('jactec.dispatchLanes'), times: _lsJSON('jactec.dispatchTimes') },
+    comms: { ended: commsEndedMap(), rail: { sessions: (state.commsRail && state.commsRail.sessions) || {} } },
+    session: { col: state.mobileCol, mobileCol: state.mobileCol }
+  };
+  flushUserPrefs();                                                  // push the whole seeded doc up as the baseline
+}
+function hydrateUserPrefs(doc) {
+  state.userPrefs = normalizeUserPrefs(doc);
+  const p = state.userPrefs.prefs;
+  if ('previewsOff' in p) { state.previewsOn = !p.previewsOff; lsSet('jactec.previewsOff', p.previewsOff ? '1' : '0'); }
+  if ('hapticsOff' in p) { state.hapticsOff = !!p.hapticsOff; lsSet('jactec.hapticsOff', p.hapticsOff ? '1' : '0'); }
+  if ('loginMuted' in p) { state.loginMuted = !!p.loginMuted; lsSet('jactec.loginMuted', p.loginMuted ? '1' : '0'); }
+  if (p.collapsedGroups && typeof p.collapsedGroups === 'object') {
+    Object.keys(COLLAPSED_GROUPS).forEach((k) => delete COLLAPSED_GROUPS[k]);
+    Object.assign(COLLAPSED_GROUPS, p.collapsedGroups); lsSet('jactec.collapsedGroups', JSON.stringify(COLLAPSED_GROUPS));
+  }
+  if (p.ruRange && typeof p.ruRange === 'object') { _ruRange = p.ruRange; lsSet('jactec.ruRange', JSON.stringify(p.ruRange)); }
+  if (p.sort && typeof p.sort === 'object') {
+    Object.keys(p.sort).forEach((card) => {
+      const sv = p.sort[card]; if (!sv || !sv.field) return;
+      lsSet('jactec.sort.' + card, JSON.stringify({ field: sv.field, dir: sv.dir }));
+      const cs = state.defaultSession && state.defaultSession.cards && state.defaultSession.cards[card];
+      if (cs) cs.sort = { field: sv.field, dir: sv.dir };
+    });
+  }
+  if (state.userPrefs.views && Object.keys(state.userPrefs.views).length) { GLOBAL_VIEWS = null; lsSet('jactec.views.all', JSON.stringify(state.userPrefs.views)); }
+  const d = state.userPrefs.dispatch;
+  if (d.order) lsSet('jactec.dispatchOrder', JSON.stringify(d.order));
+  if (d.schedule) lsSet('jactec.dispatchSchedule', JSON.stringify(d.schedule));
+  if (d.lanes) lsSet('jactec.dispatchLanes', JSON.stringify(d.lanes));
+  if (d.times) lsSet('jactec.dispatchTimes', JSON.stringify(d.times));
+  const c = state.userPrefs.comms;
+  if (c.ended && typeof c.ended === 'object') lsSet('jactec.commsEnded', JSON.stringify(c.ended));
+  if (c.rail && c.rail.sessions && state.commsRail) {                // the open rail follows the user (§7 reversal)
+    state.commsRail.sessions = Object.assign(state.commsRail.sessions || {}, c.rail.sessions);
+    lsSet('jactec.commsRail', JSON.stringify({ sessions: state.commsRail.sessions }));
+  }
+  // session resume: getUserPrefs may resolve AFTER applyRoleLanding already ran, so apply the
+  // saved top-level column here too — but only if the user is still on the role-landing default
+  // (hasn't navigated since login), so a fast navigator isn't yanked back. Column only, no record.
+  const sv = state.userPrefs.session;
+  if (sv && Number.isInteger(sv.mobileCol) && sv.mobileCol >= 0 && sv.mobileCol < COLUMNS.length) {
+    const land = ROLE_LANDING[currentRole];
+    const landIdx = land ? COLUMNS.findIndex((c) => c.id === land.col) : 0;
+    if (state.mobileCol === landIdx) state.mobileCol = sv.mobileCol;
+  }
+  render();
+}
+// ── stamp helpers: called from each synced localStorage write-site to also update the
+//    person's doc + schedule a flush. All no-op for a legacy login (state.userPrefs null). ──
+function upSetPref(key, value) { const up = state.userPrefs; if (!up) return; (up.prefs || (up.prefs = {}))[key] = value; flushUserPrefs('prefs'); }
+function upSetSort(card, sort) { const up = state.userPrefs; if (!up || !sort || !sort.field) return; const pr = up.prefs || (up.prefs = {}); (pr.sort || (pr.sort = {}))[card] = { field: sort.field, dir: sort.dir }; flushUserPrefs('prefs'); }
+function upSyncCollapsed() { const up = state.userPrefs; if (!up) return; (up.prefs || (up.prefs = {})).collapsedGroups = Object.assign({}, COLLAPSED_GROUPS); flushUserPrefs('prefs'); }
+function upSyncViews() { const up = state.userPrefs; if (!up) return; up.views = _viewsMap(); flushUserPrefs('views'); }
+function upSyncDispatch() { const up = state.userPrefs; if (!up) return; up.dispatch = { order: _lsJSON('jactec.dispatchOrder'), schedule: _lsJSON('jactec.dispatchSchedule'), lanes: _lsJSON('jactec.dispatchLanes'), times: _lsJSON('jactec.dispatchTimes') }; flushUserPrefs('dispatch'); }
+function upSyncComms() { const up = state.userPrefs; if (!up) return; up.comms = { ended: commsEndedMap(), rail: { sessions: (state.commsRail && state.commsRail.sessions) || {} } }; flushUserPrefs('comms'); }
+function upSyncSession() { const up = state.userPrefs; if (!up || booting) return; up.session = { col: state.mobileCol, mobileCol: state.mobileCol }; flushUserPrefs('session'); }
 /* ── §18h Wrangler Ops — the developer live-chat bridge (from-spec re-implementation,
    2026-07-09, of the stale claude/mirror-wrangler-chats-l8pjfd branch). A Developer-tier
    operator (roleTier(currentRole) >= tierRank('developer') — the SAME gate as Design
@@ -24835,6 +25083,11 @@ window.addEventListener('beforeunload', (e) => {
   flushSave();
   e.preventDefault(); e.returnValue = '';
 });
+// §cross-device-sync — flush a pending prefs edit when the tab is hidden/closed (the 1.2s
+// debounce would otherwise drop a just-made change). visibilitychange fires while the page is
+// still alive so the async push can complete; pagehide is the close backstop.
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { try { flushUserPrefsNow(); } catch (e) {} } });
+window.addEventListener('pagehide', () => { try { flushUserPrefsNow(); } catch (e) {} });
 function renderLogin(msg) {
   resetCommsRailForLogin();   // D8 — clock-in = an EMPTY rail; BEFORE the phoneIdentity branch so BOTH login screens clear (this reset used to sit below the early-return = dead code on the live path — Jac 2026-07-17)
   if (flagOn('phoneIdentity')) return renderPhoneLogin(msg);   // per-person login flow (Phase 2); the shared-password screen below is the flag-OFF path
@@ -24870,6 +25123,7 @@ function renderLogin(msg) {
   if (muteBtn) muteBtn.addEventListener('click', () => {
     state.loginMuted = !state.loginMuted;
     try { localStorage.setItem('jactec.loginMuted', state.loginMuted ? '1' : '0'); } catch (e) {}
+    upSetPref('loginMuted', state.loginMuted);   // §cross-device-sync
     muteBtn.classList.toggle('is-muted', state.loginMuted);
     muteBtn.setAttribute('aria-pressed', String(state.loginMuted));
     muteBtn.setAttribute('data-tip', state.loginMuted ? 'Intro sound off — tap to unmute' : 'Intro sound on — tap to mute');
@@ -24897,7 +25151,8 @@ function finishLoad() {
   cachePersistSnapshot();                                       // §instant-cache: photograph this confirmed backend state (personal device + flag only)
   if (flagOn('phoneIdentity')) { try { const emp = ((state.settings || {}).employees) || []; localStorage.setItem('jactec.pidRoster', JSON.stringify(emp.map((e) => ({ id: e.id, name: e.name })))); } catch (e) {} }   // cache non-secret roster names for the shared-device name-pick
   // (views no longer pull from the backend — personal per-device "my views", spec search-views D2)
-  loadGroupOrderFromBackend();                                  // pull THIS role's saved card-group order
+  loadGroupOrderFromBackend();                                  // pull THIS person's saved card-group order (re-keyed role→personId server-side; seeds from the role default on first login)
+  loadUserPrefs();                                             // §cross-device-sync — pull this person's synced prefs/session/comms (server doc beats stale localStorage; no-op under legacy login)
   loadTripsFromBackend();                                       // §2.3 Phase 4 — pull the trips store (getTrips), server wins at boot
   loadScanCapturesFromBackend();                                // pull QR-decal scan captures (getScanCaptures) to join into the yard journey
   salePricingAutoApply();                                       // used-sale price engine, auto mode (manager+ sessions only)
@@ -24962,17 +25217,22 @@ const ROLE_LANDING = {
   driver:   { col: 'middle', member: 'calendar' },   // Calendar — the driver's day
 };
 function applyRoleLanding() {
-  const land = ROLE_LANDING[currentRole]; if (!land) return;
-  const s = activeSession(); if (!s) return;
-  const member = land.member || COLUMNS.find((c) => c.id === land.col).default;
-  if (s.cols) s.cols[land.col] = member;
-  const mc = s.cards[member];
-  if (mc) {
-    mc.mode = 'list'; mc.recId = null; mc.recType = null;
-    if (land.graphView) mc.graphView = true;
-    if (land.sort) mc.sort = land.sort;
+  const land = ROLE_LANDING[currentRole];
+  // §cross-device-sync — a saved top-level column ("resume where you left off"); column
+  // granularity only, NEVER a specific record, so no customer-facing screen is ever restored.
+  const sess = state.userPrefs && state.userPrefs.session;
+  const savedCol = (sess && Number.isInteger(sess.mobileCol) && sess.mobileCol >= 0 && sess.mobileCol < COLUMNS.length) ? sess.mobileCol : null;
+  if (!land && savedCol == null) return;                           // nothing to land on / resume
+  const s = activeSession();
+  if (land && s) {
+    const member = land.member || COLUMNS.find((c) => c.id === land.col).default;
+    if (s.cols) s.cols[land.col] = member;
+    const mc = s.cards[member];
+    if (mc) { mc.mode = 'list'; mc.recId = null; mc.recType = null; if (land.graphView) mc.graphView = true; if (land.sort) mc.sort = land.sort; }
   }
-  const idx = COLUMNS.findIndex((c) => c.id === land.col); if (idx >= 0) state.mobileCol = idx;   // phone: make that column the active one
+  // The saved column WINS over the role default (spec §5); else fall back to the role landing.
+  const idx = savedCol != null ? savedCol : (land ? COLUMNS.findIndex((c) => c.id === land.col) : -1);
+  if (idx >= 0) state.mobileCol = idx;                            // phone: make that column the active one
   render();
 }
 async function attemptLogin() {
@@ -25030,14 +25290,16 @@ async function attemptLogin() {
 const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', _role: '' };
 function pidTokenGet() { try { return localStorage.getItem('jactec.pidToken') || sessionStorage.getItem('jactec.pidToken') || ''; } catch (e) { return ''; } }
 function pidTokenSet(tok, personal) { try { if (personal) { localStorage.setItem('jactec.pidToken', tok); sessionStorage.removeItem('jactec.pidToken'); } else { sessionStorage.setItem('jactec.pidToken', tok); localStorage.removeItem('jactec.pidToken'); } } catch (e) {} }
-function pidTokenClear() { try { localStorage.removeItem('jactec.pidToken'); sessionStorage.removeItem('jactec.pidToken'); } catch (e) {} try { dataCache.wipe(); } catch (e) {} }   // §instant-cache: logout clears the on-device snapshot
+function pidTokenClear() { try { flushUserPrefsNow(); } catch (e) {} try { localStorage.removeItem('jactec.pidToken'); sessionStorage.removeItem('jactec.pidToken'); } catch (e) {} try { dataCache.wipe(); } catch (e) {} currentPersonId = ''; state.userPrefs = null; }   // §instant-cache: logout clears the on-device snapshot. §cross-device-sync: flush any pending prefs, then drop identity + the in-memory doc — but do NOT wipe the mirror here. The login-time syncMirrorGuard (tag-guarded) is the SINGLE wipe point, so a load-fail relogin can't delete a never-backed-up mirror (which would then seed an empty baseline). Shared-device safety still holds: a DIFFERENT person's next login (prev !== tag) wipes it, exactly as switchUser already defers to.
 function pidRosterCache() { try { return JSON.parse(localStorage.getItem('jactec.pidRoster') || '[]'); } catch (e) { return []; } }
 // The verified token becomes the per-call credential: a truthy backendPassword keeps every
 // existing online-guard working, and backendCall sends it as sessionToken (backend prefers it).
 function pidAdopt(r, tok, personal) {
   try { dataCache.wipe(); } catch (e) {}   // §instant-cache: a new login never paints the prior person's snapshot (belt-and-suspenders to the tokenTag guard); finishLoad rewrites it for this person
   backendPassword = tok; currentRole = (r && r.role) || pidUI._role || ''; currentUser = (r && r.name) || pidUI.name || '';
+  currentPersonId = String((r && r.personId) || pidUI.personId || '');   // §cross-device-sync — the sync key; the backend re-resolves it server-side per call, this is only the local hint/gate
   pidTokenSet(tok, personal);
+  syncMirrorGuard();   // §cross-device-sync — keep THIS person's local mirror (offline-safe reopen), wipe a DIFFERENT person's leftover on a shared device (Blocker 1)
   if (r && r.scanDeviceToken) scanTokenSet(r.scanDeviceToken);   // remember this device for decal scans (write-only token)
   try { sessionStorage.setItem('jactec.role', currentRole); localStorage.setItem('jactec.user', currentUser); } catch (e) {}
 }
@@ -25188,6 +25450,7 @@ function pidWire() {
   if (muteEl) muteEl.addEventListener('click', () => {
     state.loginMuted = !state.loginMuted;
     try { localStorage.setItem('jactec.loginMuted', state.loginMuted ? '1' : '0'); } catch (e) {}
+    upSetPref('loginMuted', state.loginMuted);   // §cross-device-sync
     muteEl.classList.toggle('is-muted', state.loginMuted);
     muteEl.setAttribute('aria-pressed', String(state.loginMuted));
     muteEl.setAttribute('data-tip', state.loginMuted ? 'Intro sound off — tap to unmute' : 'Intro sound on — tap to mute');
@@ -25570,6 +25833,7 @@ function boot() {
     const idx = Math.max(0, Math.min(COLUMNS.length - 1, Math.round(grid.scrollLeft / w)));
     if (idx === mcolLast) return;
     mcolLast = idx; state.mobileCol = idx;
+    upSyncSession();   // §cross-device-sync — remember the top-level column (resume where you left off)
     // Each column's own toggle header highlights that column's card statically. The footer jog
     // (R32), though, is a GLOBAL bar reflecting the ACTIVE card, so repaint it on column change.
     const fj = document.querySelector('.mobile-toolbar .mfoot-jog');
@@ -25654,7 +25918,7 @@ function boot() {
       const from = ids.indexOf(dragId); if (from !== -1) ids.splice(from, 1);
       const to = over && over.dataset.id !== dragId ? ids.indexOf(over.dataset.id) : ids.length;
       ids.splice(to < 0 ? ids.length : to, 0, dragId);
-      const ord = dispatchOrderLS(); ord[rail.dataset.day] = ids; _lsSave('jactec.dispatchOrder', ord);
+      const ord = dispatchOrderLS(); ord[rail.dataset.day] = ids; _lsSave('jactec.dispatchOrder', ord); upSyncDispatch();   // §cross-device-sync
     }
     state.dispFocusId = dragId; render();   // keep the moved stop highlighted so it stays trackable after the reorder
   });
