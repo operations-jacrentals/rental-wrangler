@@ -8107,13 +8107,13 @@ const DETAIL = {
       <h4>Inspection <span class="hmuted">· ${esc(stamp)}</span></h4>
       <div class="fieldstack">
         <div class="kv" style="justify-content:center">
-          ${checklistRequired(u)
-    ? `<button class="pill ignition js-open-checklist" data-rec="${u.unitId}" data-r="R17">${CARD_ICON.inspections} ${pendingInspForUnit(u.unitId) ? 'Resume inspection' : '+ Inspection'}</button>`
-    : segCtl([
+          ${segCtl([
             { label: '✓ Pass', js: 'js-cond', data: { rec: u.unitId, val: 'Pass' }, on: cond === 'Ready' ? 'green' : null },
             { label: 'Not Ready', js: 'js-cond', data: { rec: u.unitId, val: 'Not Ready' }, on: cond === 'Not Ready' ? 'yellow' : null },
             { label: '✕ Fail', js: 'js-cond', data: { rec: u.unitId, val: 'Fail' }, on: cond === 'Failed' ? 'red' : null },
           ])}
+        </div>
+        <div class="kv" style="justify-content:center">
           ${segCtl([
             { label: `${I.droplet} Wash`, js: 'js-washseg', data: { rec: u.unitId, val: 'Wash' }, on: u.washChoice === 'Wash' || u.washRequested ? 'yellow' : null },
             { label: "Don't Wash", js: 'js-washseg', data: { rec: u.unitId, val: 'DontWash' }, on: u.washChoice === 'DontWash' && !u.washRequested && !washedToday ? 'blue' : null },
@@ -18891,18 +18891,42 @@ function setUnitCondition(unitId, val) {
   const u = IDX.unit.get(unitId); if (!u) return;
   const lock = unitCondLock(u);
   if (lock) return flashOr(`.js-wo-complete[data-rec="${lock.woId}"]`, `🔒 Condition locked — WO “${lock.woReport}” is open from a ${lock.woType === 'Field Call' ? 'field call' : 'failed inspection'}. Complete it to update the condition.`);
-  // R19: Pass needs a wash decision first — glow the wash toggle instead of an error
-  const washedToday = (u.serviceLog || []).some((l) => l.taskId === 'svc-wash' && l.date === TODAY_ISO);
-  if (val === 'Pass' && !u.washChoice && !u.washRequested && !washedToday) return attnFlash('.seg-wash');
-  u.condAt = TODAY_ISO; u.condClock = nowClock();
-  if (val === 'Pass' || val === 'Fail') {
-    const n = newInspectionForUnit(u);
-    if (val === 'Fail') n.wash = n.wash || 'No';
-    return setInspResult(n.inspectionId, val);     // handles unit status, auto-WO + fail popup
+  // PASS is the gate (Jac 2026-07-17 — the confusing "+ Inspection" button is retired; the toggle
+  // IS the interface). Already Passed → Pass re-opens the done inspection to view; a checklist
+  // category → Pass opens the checklist takeover (completing it cascades to Pass); otherwise a
+  // direct pass, which still needs a wash decision first (R19 — glow the wash toggle, not an error).
+  if (val === 'Pass') {
+    if (u.inspectionStatus === 'Ready') return openInspectionRecord(unitId);
+    if (checklistRequired(u)) return openChecklist(unitId);
+    const washedToday = (u.serviceLog || []).some((l) => l.taskId === 'svc-wash' && l.date === TODAY_ISO);
+    if (!u.washChoice && !u.washRequested && !washedToday) return attnFlash('.seg-wash');
+    u.condAt = TODAY_ISO; u.condClock = nowClock();
+    return setInspResult(newInspectionForUnit(u).inspectionId, 'Pass');
   }
+  // FAIL: a unit that breaks while OUT ON RENT is a field call (red-flag the rental, roll a truck,
+  // show in dispatch); a yard unit with no active rental is a bench failed-inspection like before.
+  if (val === 'Fail') {
+    const ar = activeRentalForUnit(unitId);
+    if (ar) return markFieldCall(ar.rentalId);
+    u.condAt = TODAY_ISO; u.condClock = nowClock();
+    const n = newInspectionForUnit(u); n.wash = n.wash || 'No';
+    return setInspResult(n.inspectionId, 'Fail');   // bench fail: auto-WO + §12.8 photo/notes popup
+  }
+  // NOT READY resets the inspection back to pending.
+  u.condAt = TODAY_ISO; u.condClock = nowClock();
   u.inspectionStatus = 'Not Ready';
   reindex('units', u); logAction(u, 'Condition → Not Ready');
   toast('Condition → Not Ready'); reanchorRender();
+}
+/* Pass-again on a passed unit "gets back into" the completed inspection: a real checklist
+   record re-opens the takeover; a plain condition-pass opens the §12.8 record popup. */
+function openInspectionRecord(unitId) {
+  const u = IDX.unit.get(unitId); if (!u) return;
+  const n = latestInspForUnit(unitId);
+  if (!n) return checklistRequired(u) ? openChecklist(unitId) : toast('No inspection on record yet.');
+  const hasItems = !!(checklistFor(u) && n.items && typeof n.items === 'object' && Object.keys(n.items).length);
+  state.overlay = hasItems ? { kind: 'checklist', unitId, inspId: n.inspectionId } : { kind: 'inspection', recId: n.inspectionId };
+  render(); renderOverlay();
 }
 // A required-checklist inspection started but not yet completed (Jac: kept as Pending).
 function pendingInspForUnit(unitId) {
