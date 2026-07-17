@@ -4069,7 +4069,7 @@ body { font-variant-numeric: tabular-nums; }
 .io-statmenu.part { background: repeating-linear-gradient(135deg, var(--yellow) 0 11px, #14181d 11px 22px); }
 .io-statmenu.due  { background: repeating-linear-gradient(135deg, var(--red) 0 11px, #14181d 11px 22px); }
 .io-statmenu.paid { background: linear-gradient(180deg, var(--green), #1fae7f); color: var(--on-orange); text-shadow: none; }
-.io-statmenu.notdue { background: linear-gradient(180deg, var(--blue), color-mix(in srgb, var(--blue) 88%, #000)); }   /* Not Due — calm blue (config registry); a balance not yet due is NOT overdue-red */
+.io-statmenu.notdue { background: linear-gradient(180deg, #ffd766, var(--yellow)); color: var(--on-orange); text-shadow: none; }   /* Not Due — RYG caution yellow (matches the invoice sheet's is-open); a balance not yet due is NOT overdue-red */
 .io-statmenu.part.open { background: linear-gradient(180deg, #ffd766, var(--yellow)); color: var(--on-orange); text-shadow: none; }
 .io-statmenu.due.open  { background: linear-gradient(180deg, #ff6a6a, var(--red)); color: #fff; }
 .io-statmenu.open .cv { background: rgba(0,0,0,.22); transform: rotate(180deg); }

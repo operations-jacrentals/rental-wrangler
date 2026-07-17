@@ -4363,7 +4363,7 @@ function invPayState(t) {
   if (t.status === 'Refunded') return { cls: 'part', word: 'Refunded' };
   if (t.status === 'Paid') return { cls: 'paid', word: 'Paid' };
   if (t.status === 'Partial') return { cls: 'part', word: 'Partial' };
-  if (t.status === 'Not Due') return { cls: 'notdue', word: 'Not Due' };   // calm blue (config registry) — a balance not yet due is NOT overdue-red
+  if (t.status === 'Not Due') return { cls: 'notdue', word: 'Not Due' };   // RYG caution yellow (matches the invoice sheet) — a balance not yet due is NOT overdue-red
   return { cls: 'due', word: t.status };   // Unpaid / Late* / Collections — genuinely due/overdue
 }
 const invoiceOneLine = (i) => { const l = (i.lineItems || []).map((x) => x.label).filter(Boolean); return l.length ? l.join(' · ') : (i.membership ? 'Membership' : 'No line items yet'); };
@@ -5862,9 +5862,8 @@ function flashOr(sel, msg) {
   toast(msg);
 }
 /** R20: the Wrangler CONTEXT MENU — right-click any element.
- *  Cut/Copy/Paste act on the field · Global Search uses the text ·
- *  Replace opens the inline editor · Add Comment logs to History ·
- *  Ask Mr. Wrangler copies a debug reference for Claude. */
+ *  Copy/Paste act on the field · Global Search uses the text ·
+ *  Add Comment logs to History · Ask Mr. Wrangler copies a debug reference for Claude. */
 let ctxTarget = null;
 let ctxRecord = null;   // §17b — the record the menu opened on ({card, recId}), for the "+ Target" link actions
 // §13.4 graph-chrome right-click menu — tracks which card it was opened on so runCtxAction can act without
@@ -5906,9 +5905,9 @@ function openCtxMenu(e, hit) {
   const ctxCust = ctxRecord && ctxRecord.card === 'customers' ? recOf('customers', ctxRecord.recId) : null;
   const commsSec = ctxCust ? `<button class="dd-item" data-ctx="commsText">${I.messageSquare}Text ${esc((ctxCust.firstName || fullName(ctxCust) || 'customer').trim().split(/\s+/)[0])}…</button><button class="dd-item" data-ctx="commsEmail">${I.mail}Email ${esc((ctxCust.firstName || fullName(ctxCust) || 'customer').trim().split(/\s+/)[0])}…</button><div class="menu-sep"></div>` : '';
   m.innerHTML = commsSec + linkSec + [
-    item('cut', '✂️ Cut'), item('copy', '📋 Copy'), item('paste', '📥 Paste'),
+    item('copy', '📋 Copy'), item('paste', '📥 Paste'),
     '<div class="menu-sep"></div>',
-    item('gsearch', '🌐 Global Search'), item('replace', '✏️ Replace'),
+    item('gsearch', '🌐 Global Search'),
     '<div class="menu-sep"></div>',
     item('comment', '💬 Add Comment'), item('wrangler', '🤠 Ask Mr. Wrangler'),
   ].join('');
@@ -6005,10 +6004,8 @@ function runCtxAction(act) {
     input.blur();
   };
   if (act === 'copy') { try { navigator.clipboard.writeText(text); } catch (err) {} return toast('📋 Copied.'); }
-  if (act === 'cut') { try { navigator.clipboard.writeText(text); } catch (err) {} return setField(''); }
   if (act === 'paste') { navigator.clipboard.readText().then((v) => setField(v)).catch(() => toast('Clipboard unavailable — paste into the field directly.')); return; }
   if (act === 'gsearch') return setQuery(text);
-  if (act === 'replace') { if (editSpan) return startInlineEdit(editSpan); return toast('Not an editable field.'); }
   if (act === 'comment') {
     // Phase 6 — open the colored-comment composer for the right-clicked record.
     const hit = cardRecordAt(el);
@@ -6098,7 +6095,7 @@ const RULE_META = {
   R17: ['Action pill', 'actionPill', 'commit = blue · money = green · danger = solid red; .locked = gated'],
   R18: ['Ghost', 'ghostPill', 'the ONE quiet action — Cancel / Close / Exit / Clear, or an icon-only row secondary (e.g. Duplicate)'],
   R19: ['Attention flash', 'attnFlash / flashOr', 'a glow that points AT the next action — replaces an error message when the fix is on screen'],
-  R20: ['Context menu', 'openCtxMenu (right-click · long-press)', 'right-click/long-press any element: Cut · Copy · Paste · Global Search · Replace · Add Comment · Ask Mr. Wrangler'],
+  R20: ['Context menu', 'openCtxMenu (right-click · long-press)', 'right-click/long-press any element: Copy · Paste · Global Search · Add Comment · Ask Mr. Wrangler'],
   R21: ['File drop', 'fileDrop', 'the MASSIVE popup add-file zone — R5b blue dashed at full size'],
   R22: ['Date picker', 'dateField', 'the ONE app-styled calendar for a single date/time (NOT the rental-window timeline)'],
   R23: ['Tooltip', 'data-tip → the one styled tip', 'every hover hint goes through data-tip — a native title attribute is a violation'],
@@ -6107,7 +6104,7 @@ const RULE_META = {
   R26: ['Manual link', 'sourceLinkBtn', 'small ghost-circle external-link icon beside a service task — opens its cited OEM manual page (task.sourceUrl) in a new tab; renders only when the task actually carries one'],
   R27: ['Due-Today banner', 'renderSchedBanner / #sched-banner', 'top-of-screen reminder plate — caution-YELLOW hazard-stripe cap; lists the scheduled actions due today (customer · note · time), each customer an R2 link. Manual X only (never auto-clears), dismissal sticks for the session (sessionStorage). Like R25 it lives on <body>, outside #app'],
   R28: ['Account button', 'acctBtn', 'the stamped button on the customer funnel gate row — label = the account TYPE (Contractor/Business/Member…); opens the agreements window (same js-view-agreement access as the signed-agreement pill). Neutral steel chip, not an ignition/status color.'],
-  R29: ['Invoice action menu', 'invoiceStatMenu', 'the expanded-invoice header control: a hazard-stripe status pill (green solid = paid · yellow-stripe = partial · blue = not-yet-due · red-stripe = overdue; goes SOLID while its menu is open) that DOUBLES as the Pay · Print · Send · Refund action menu. A pressable-status control like R1, but it opens actions rather than advancing a status. Pay/Refund reuse the canMoney()-gated payment window.'],
+  R29: ['Invoice action menu', 'invoiceStatMenu', 'the expanded-invoice header control: a hazard-stripe status pill (green solid = paid · yellow-stripe = partial · solid yellow = not-yet-due · red-stripe = overdue; goes SOLID while its menu is open) that DOUBLES as the Pay · Print · Send · Refund action menu. A pressable-status control like R1, but it opens actions rather than advancing a status. Pay/Refund reuse the canMoney()-gated payment window.'],
   R30: ['Paused banner', '.wr-paused (wranglerDockBodyHtml)', 'red hazard-stripe plate inside the Mr. Wrangler dock/rail window — raised when a Developer-tier operator takes the wheel (Wrangler Ops live jump-in, §18i); the composer goes read-only until released'],
   R31: ['Toggle chip', 'toggleChip', 'a single interactive on/off pill (PO required, Rental Protection) — off = quiet outline, on = the registry tone color fill. Distinct from R14: ONE control, not a joined group of options.'],
   R32: ['Nav jog', 'cardJog / .card-jog · .mfoot-jog', 'the two-way Back/Forward view-history stepper. On desktop + in-card it is a neutral steel pill (chevron arms split by a saddle-stitch seam, orange only on hover/press) that shows only when the card has history. On phone it lives ALWAYS-ON as a snug chip pinned to the bottom-RIGHT of the footer tool bar (matching the .iconbtn tool buttons), Chrome-style: bright chevrons that grey when their stack is empty — reflecting the snapped column’s card (repainted on swipe).'],
@@ -9770,7 +9767,7 @@ function toolsMenuRows() {
   if (adminUnlocked()) html += fam('Admin', item('js-photo-sweep', I.camera, 'Photo sweep to Drive'));
   return html;
 }
-function openToolsMenu(anchorEl) { openDropdown(anchorEl, `<div class="dd-sec">Tools</div>${toolsMenuRows()}`, { align: 'right' }); }
+function openToolsMenu(anchorEl) { openDropdown(anchorEl, toolsMenuRows(), { align: 'right' }); }
 function toolsBtn() {
   return `<button class="iconbtn js-tools-menu" data-tip="Tools — QR, previews, hotkeys, GPS fleet tools${devUnlocked() ? ', dev tools' : ''}">${CARD_ICON.workOrders}</button>`;
 }
@@ -14003,7 +14000,7 @@ const STANDALONE_SURFACES = [
   { label: 'Comms bell menu', tag: 'Toolbar · requests · alerts · notifications', loc: 'app.js · commsMenuRows / openCommsMenu',
     preview: () => `<div class="dropdown-menu" style="position:static;display:inline-block;min-width:220px;box-shadow:none"><div class="dd-sec">Comms</div>${commsMenuRows()}</div>` },
   { label: 'Tools wrench menu', tag: 'Toolbar · QR · previews · hotkeys · GPS · dev tools', loc: 'app.js · toolsMenuRows / openToolsMenu',
-    preview: () => `<div class="dropdown-menu" style="position:static;display:inline-block;min-width:220px;box-shadow:none"><div class="dd-sec">Tools</div>${toolsMenuRows()}</div>` },
+    preview: () => `<div class="dropdown-menu" style="position:static;display:inline-block;min-width:220px;box-shadow:none">${toolsMenuRows()}</div>` },
 ];
 /* ── §15 in-app feedback: bug/request → queued to the backend Feedback tab ── */
 function feedbackContext() {
@@ -16041,6 +16038,7 @@ function openDropdown(anchorEl, html, { align = 'left', cls = '' } = {}) {
   const off = (e) => { if (!dd.contains(e.target) && !anchorEl.contains(e.target)) { dd.remove(); document.removeEventListener('mousedown', off); } };
   dd._off = off;
   setTimeout(() => document.addEventListener('mousedown', off), 0);
+  dd.addEventListener('toggle', () => requestAnimationFrame(place), true);   // a collapsible <details> (e.g. the sectioned Tools menu) changed height → re-place so it can't spill off-screen
   return dd;
 }
 function openStatusDropdown(rentalId, anchorEl) {
