@@ -24039,7 +24039,7 @@ function renderPhoneLogin(msg) {
   } else if (step === 'code') {
     inner = `<div class="login-hint">Enter the ${P.codeLen}-digit code sent to ${esc(pidUI.masked)}</div>
       <div class="login-field"><input id="pid-code" class="login-input login-otp" inputmode="numeric" autocomplete="one-time-code" maxlength="${P.codeLen}" placeholder="000000" /></div>
-      <div class="login-actions">${muteBtn}<button type="submit" class="login-btn" data-r="R17" id="pid-verify">Verify</button></div>
+      <div class="login-actions">${muteBtn}<button type="submit" class="login-btn" data-r="R17" id="pid-verify">Confirm</button></div>
       <button type="button" class="login-ghost" id="pid-resend">Resend code</button>`;
   } else if (step === 'setpin') {
     inner = `<div class="login-hint">Set a PIN for this shared computer, ${esc(pidUI.name || 'partner')}</div>
