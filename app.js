@@ -20,6 +20,7 @@ import * as CFG from './config.js';
 // import failure would kill the whole boot, so these ship in-repo like the Lucide icons).
 import * as Plot from './vendor/plot.min.js';                                  // Observable Plot 0.6.17 (ISC)
 import { pie as d3pie, arc as d3arc } from './vendor/d3-shape.min.js';         // d3-shape 3.2.0 (ISC) — donut geometry, Phase D
+import qrcode from './vendor/qrcode.min.js';   // qrcode-generator (MIT) — offline QR for the Fleet QR Codes export
 import { AGREEMENTS, AGREEMENT_VERSIONS, AGREEMENT_CURRENT } from './agreements.js';
 import { ico, I, CARD_ICON, RING_ICON, CATEGORY_ICON } from './icons.js';
 import { CATEGORY_ANIM } from './icons-anim.js';
@@ -13382,7 +13383,7 @@ function buildPopupEl(o, overlay, opts = {}) {
       <div class="popup-body"><div class="board-detail">${DETAIL[o.board](vrec, { historySearch: o.historySearch || '', histKind: o.histKind || null, partForm: o.partForm || false, backStack: [], mode: 'standard' })}</div></div>`;
     } else {
     pop.innerHTML = `
-      <div class="popup-head">${CARD_ICON[board.id] ? `<span class="c-icon" style="color:var(--accent);display:inline-flex">${CARD_ICON[board.id] || ''}</span>` : ''}<h3>${esc(board.title)}</h3><span class="c-count">${boardRows(board.id).length}</span>${board.id === 'files' ? addBtn('File', { link: true, js: 'js-file-add' }) : ''}${board.id === 'files' ? `<div class="bv-searchwrap"><span class="s-icon">${I.search}</span><input class="bv-query js-files-query" placeholder="Search files…" value="${esc(o.fileSearch || '')}" /></div>` : ''}<span class="spacer"></span><button class="x js-close">${I.x}</button></div>
+      <div class="popup-head">${CARD_ICON[board.id] ? `<span class="c-icon" style="color:var(--accent);display:inline-flex">${CARD_ICON[board.id] || ''}</span>` : ''}<h3>${esc(board.title)}</h3><span class="c-count">${boardRows(board.id).length}</span>${board.id === 'files' ? addBtn('File', { link: true, js: 'js-file-add' }) : ''}${board.id === 'files' && scanEnabled() ? ghostPill('Fleet QR Codes', { js: 'js-fleet-qr', tip: 'Print-ready QR decal sheet for every active fleet unit' }) : ''}${board.id === 'files' ? `<div class="bv-searchwrap"><span class="s-icon">${I.search}</span><input class="bv-query js-files-query" placeholder="Search files…" value="${esc(o.fileSearch || '')}" /></div>` : ''}<span class="spacer"></span><button class="x js-close">${I.x}</button></div>
       <div class="popup-body board-body">${o.pickTarget && board.id === 'parts' ? `<div class="muted board-pickhint">Tap <b>Attach</b> to add a catalog part to this service.</div>` : ''}${board.id === 'files' && o.fileForm ? `<div class="kv pillrow" style="gap:7px;margin:0 0 10px"><input class="lf-in js-ff-name" placeholder="File name" style="flex:2;min-width:140px"><input class="lf-in js-ff-link" placeholder="Link (URL)" style="flex:2;min-width:140px">${fileDrop(o.fileUpload ? '✓ ' + esc(o.fileUpload.name) : 'Upload photo / document', { js: 'js-ff-file', accept: 'image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt', done: !!o.fileUpload, icon: I.camera })}${ghostPill('Cancel', { js: 'js-ff-cancel' })}${actionPill('commit', 'Add file', { js: 'js-ff-save' })}</div>` : ''}${boardTable(board.id, o.fileSearch, o.pickTarget)}</div>`;
     }
     overlay.appendChild(pop);
@@ -17838,6 +17839,7 @@ function onClick(e) {
   if (closest('.js-file-add')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'board') { o.fileForm = !o.fileForm; o.fileUpload = null; renderOverlay(); } return; }   // §7.13: +File inline create (toggle)
   if (closest('.js-ff-cancel')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'board') { o.fileForm = false; o.fileUpload = null; renderOverlay(); } return; }
   if (closest('.js-ff-save')) { e.stopPropagation(); return saveFileForm(); }
+  if (closest('.js-fleet-qr')) { e.stopPropagation(); return downloadFleetQRCodes(); }   // Company Files → Fleet QR Codes print sheet (gated on scanEnabled() at the button)
   if (closest('.js-vendor-tax')) { e.stopPropagation(); const b = closest('.js-vendor-tax'); const v = recOf('vendors', b.dataset.rec); if (v) { const ex = b.dataset.val === '1'; if (!!v.salesTaxExempt !== ex) { v.salesTaxExempt = ex; reindex('vendors', v); logAction(v, `Sales tax → ${ex ? 'Exempt' : 'Taxed'}`); } if (state.overlay?.kind === 'board') renderOverlay(); render(); } return; }
   if (closest('.js-cardgraph')) { e.stopPropagation(); const b = closest('.js-cardgraph'); const card = b.dataset.card, src = b.dataset.src || card; const cs = activeSession().cards[card]; if (!cs.graphView) { if (graphViewsFor(src)) return gvOpen(card, src); cs.graphView = true; return render(); } cs.graphView = false; return render(); }   // §13.7 gauge-strip toggle (Shop 'all': the stackbars worklist)
   if (closest('.js-cardglobe')) {   // R33 — toggle card-search global mode; lights/dims EVERY grid-card globe in lockstep
@@ -24124,6 +24126,81 @@ function drawScanScreen() {
   if (f) f.addEventListener('change', (e) => scanRecord(e.target.files && e.target.files[0]));
   const again = document.querySelector('.js-scan-again'); if (again) again.addEventListener('click', () => renderScanCapture(scanUI.unitId));
   const retry = document.querySelector('.js-scan-retry'); if (retry) retry.addEventListener('click', () => renderScanCapture(scanUI.unitId));
+}
+// ── FLEET QR CODES — an on-demand print sheet of scan decals (Company Files card, gated
+//    scanEnabled()). Units still owned & in the fleet only — Inactive/Sold are retired, not
+//    scannable. Generated CLIENT-SIDE from live DATA.units at click time (no stored file, so
+//    it's always current) with the vendored qrcode-generator encoder (never a network call).
+const FLEET_QR_STATUSES = ['Active', 'Onboard', 'Purchased', 'For Sale'];   // excludes Inactive, Sold
+/** Each decal encodes the PERMANENT PRODUCTION scan URL — always the fixed app.jacrentals.com
+ *  base, NEVER location.origin — so a sheet printed from staging/localhost still resolves once
+ *  taped to the machine. Visual models the .scan-box/.login-box plate (dark steel, hazard-stripe
+ *  cap, stamped Saira Condensed labels); the QR itself always sits on a WHITE quiet-zone field —
+ *  the one hard print rule, never QR-on-dark. This is a standalone print document (own <style>,
+ *  like openSignedPdf/openMembershipAgreementPdf above), so it carries its own literal colors. */
+function downloadFleetQRCodes() {
+  const units = (DATA.units || []).filter((u) => u.unitId && FLEET_QR_STATUSES.includes(u.fleetStatus));
+  if (!units.length) { toast('No active units to print.'); return; }
+  const e2 = (t) => String(t == null ? '' : t).replace(/[&<>]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
+  const decal = (u) => {
+    const cat = IDX.category.get(u.categoryId);
+    let svg = '';
+    try {
+      const q = qrcode(0, 'M');
+      q.addData('https://app.jacrentals.com/#u=' + u.unitId);
+      q.make();
+      svg = q.createSvgTag({ cellSize: 5, margin: 2, scalable: true });
+    } catch (e) { svg = ''; }   // a malformed unitId still prints a legible fallback plate (id + name), no QR
+    return `<div class="qd-plate">
+      <div class="qd-hazard" aria-hidden="true"></div>
+      <div class="qd-body">
+        <div class="qd-qr">${svg}</div>
+        <div class="qd-name">${e2(u.name || u.unitId)}</div>
+        ${cat && cat.name ? `<div class="qd-cat">${e2(cat.name)}</div>` : ''}
+        <div class="qd-id">${e2(u.unitId)}</div>
+      </div>
+    </div>`;
+  };
+  const dateStr = new Date().toLocaleDateString();
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Fleet QR Codes — ${e2(dateStr)}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 22px; background: #dfe2e7; font-family: 'Saira Condensed', system-ui, sans-serif; }
+      .qd-head { display: flex; align-items: flex-end; justify-content: space-between; margin: 0 4px 16px; gap: 12px; flex-wrap: wrap; }
+      .qd-title { font-weight: 800; font-size: 21px; letter-spacing: 1.6px; text-transform: uppercase; color: #14181d; }
+      .qd-sub { font-size: 12px; letter-spacing: .6px; color: #5b6472; margin-top: 2px; }
+      .qd-print { font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 700; font-size: 12px; letter-spacing: 1.6px;
+        text-transform: uppercase; padding: 10px 20px; border-radius: 8px; border: none; cursor: pointer;
+        background: linear-gradient(180deg, #ff9038, #ff7a1a); color: #1a1205; }
+      .qd-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+      .qd-plate { position: relative; overflow: hidden; border-radius: 12px; background: linear-gradient(180deg, #1b2129, #13171d);
+        border: 1px solid #2a313b; break-inside: avoid; page-break-inside: avoid; }
+      .qd-hazard { height: 9px; width: 100%; background: repeating-linear-gradient(135deg, #f5c542 0 13px, #14181d 13px 26px); border-bottom: 1px solid #000; }
+      .qd-body { display: flex; flex-direction: column; align-items: center; padding: 14px 12px 16px; }
+      .qd-qr { background: #fff; border-radius: 8px; padding: 8px; width: 128px; height: 128px; display: flex; align-items: center; justify-content: center; }
+      .qd-qr svg { width: 112px; height: 112px; display: block; }
+      .qd-name { margin-top: 10px; font-weight: 800; font-size: 15px; letter-spacing: .4px; text-transform: uppercase; color: #eef2f6; text-align: center; }
+      .qd-cat { font-size: 10.5px; letter-spacing: 1.2px; text-transform: uppercase; color: #8b94a3; margin-top: 2px; }
+      .qd-id { margin-top: 6px; font-size: 13px; font-weight: 700; letter-spacing: 1.8px; color: #ff9038; }
+      @page { margin: 12mm; }
+      @media print {
+        body { background: #fff; padding: 0; }
+        .qd-print { display: none; }
+        .qd-grid { gap: 10px; }
+      }
+    </style></head><body>
+    <div class="qd-head">
+      <div><div class="qd-title">Fleet QR Codes</div><div class="qd-sub">${units.length} active unit${units.length === 1 ? '' : 's'} · generated ${e2(dateStr)}</div></div>
+      <button class="qd-print" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+    <div class="qd-grid">${units.map(decal).join('')}</div>
+    </body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) { toast('Allow pop-ups to download the QR sheet.'); return; }
+  w.document.write(html); w.document.close();
+  w.focus(); setTimeout(() => { try { w.print(); } catch (e) {} }, 300);
 }
 function boot() {
   // Recovery hatch: app.jacrentals.com/#reset-settings (or #safe-mode) wipes saved customizations
