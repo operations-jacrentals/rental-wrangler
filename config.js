@@ -650,7 +650,7 @@ export const FEATURES = {
   // Ships OFF so the client can promote before/independent of the backend deploy; flip ON to
   // roll out, back to OFF for instant rollback. Gates EXPERIENCE only — operator isolation is
   // enforced server-side (personId resolved from the session token, never a client value).
-  userSync: true,   // ON (2026-07-17) — #692 impl + tab-close flush & during-load-edit preserve; verified sound. Flip to false = instant rollback.
+  userSync: true,   // ON (2026-07-17) — #692 impl (isolation/clobber/retry verified sound) + a sendBeacon tab-close flush. Flip to false = instant rollback.
 };
 
 /* Phone-identity client constants (non-secret — display/UX only; the backend owns the

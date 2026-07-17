@@ -24252,7 +24252,7 @@ function resetSyncStateToDefault() {
   // early edit (before loadUserPrefs resolves) would stamp A's leftover prefs and push them to
   // B's backend row (userPrefsMerge_ is one-level-deep, so a whole-section flush carries A's
   // sibling keys). Null it so every upSet*/upSync* no-ops until B's own doc loads.
-  state.userPrefs = null; _userPrefsPreloadDirty = {};   // drop any prior person's pending pre-load edit flags too
+  state.userPrefs = null;
 }
 function syncMirrorTag() { return cacheTokenTag(currentPersonId || pidLocalToken()); }
 // Called at login once currentPersonId is set (pidAdopt). Keep this person's mirror; wipe a
@@ -24266,16 +24266,31 @@ function syncMirrorGuard() {
 }
 
 // ── debounced writer (mirrors pushChatsSoon / pushWranglerRailSoon: 1200ms, boot-guarded) ──
-let _userPrefsTimer = null, _userPrefsDirty = {}, _userPrefsPreloadDirty = {};   // preload-dirty = sections the user edited BEFORE the doc loaded (state.userPrefs still null); preserved on hydrate
+let _userPrefsTimer = null, _userPrefsDirty = {};
 function flushUserPrefs(section) {
   if (booting || !syncOn()) return;                                   // device-local only; never push during boot/reset
   if (section) _userPrefsDirty[section] = true;
   else ['prefs', 'views', 'dispatch', 'comms', 'session'].forEach((s) => { _userPrefsDirty[s] = true; });
   clearTimeout(_userPrefsTimer); _userPrefsTimer = setTimeout(pushUserPrefs, 1200);
 }
-// Push any pending debounced change IMMEDIATELY — wired to visibilitychange/pagehide so an edit
-// made in the last ~1.2s before a tab-close/background isn't dropped by the debounce.
-function flushUserPrefsNow() { try { clearTimeout(_userPrefsTimer); } catch (e) {} if (syncOn() && state.userPrefs) pushUserPrefs(); }
+// Flush any pending debounced change on tab-background/close (visibilitychange/pagehide) so an edit
+// made in the last ~1.2s isn't dropped by the debounce. Uses navigator.sendBeacon — a plain fetch
+// started during unload is aborted before it's sent; a beacon is queued by the browser and survives
+// the close. Mirrors backendCall's payload (sessionToken carries the auth). Best-effort, no response.
+function flushUserPrefsNow() {
+  try { clearTimeout(_userPrefsTimer); } catch (e) {}
+  if (!syncOn() || !state.userPrefs) return;
+  const dirty = _userPrefsDirty; const doc = {}; let any = false;
+  Object.keys(dirty).forEach((s) => { if (dirty[s] && state.userPrefs[s] !== undefined) { doc[s] = state.userPrefs[s]; any = true; } });
+  if (!any) return;
+  doc.v = state.userPrefs.v || 1; _userPrefsDirty = {};
+  try {
+    if (navigator.sendBeacon) {
+      const payload = JSON.stringify({ action: 'setUserPrefs', password: backendPassword, sessionToken: backendPassword, doc });
+      navigator.sendBeacon(BACKEND_URL, new Blob([payload], { type: 'text/plain;charset=utf-8' }));
+    } else { Object.keys(doc).forEach((s) => { if (s !== 'v') _userPrefsDirty[s] = true; }); pushUserPrefs(); }   // no beacon → best-effort fetch
+  } catch (e) { /* best-effort — the change also re-flushes on the next edit */ }
+}
 async function pushUserPrefs() {
   if (!syncOn() || !state.userPrefs) return;
   const dirty = _userPrefsDirty; _userPrefsDirty = {};
@@ -24310,31 +24325,21 @@ function collectSortMirror() {
   try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.indexOf('jactec.sort.') === 0) { try { const v = JSON.parse(localStorage.getItem(k)); if (v && v.field) out[k.slice(12)] = { field: v.field, dir: v.dir }; } catch (e) {} } } } catch (e) {}
   return out;
 }
-// Build one section of the doc from THIS device's current local state (shared by the seed path
-// and the during-load-edit preserve below).
-function _upBuildSection(s) {
-  if (s === 'prefs') return { previewsOff: !state.previewsOn, hapticsOff: !!state.hapticsOff, loginMuted: !!state.loginMuted,
-    sort: collectSortMirror(), collapsedGroups: Object.assign({}, COLLAPSED_GROUPS), ruRange: ruRangeLoad() };
-  if (s === 'views') return _viewsMap();
-  if (s === 'dispatch') return { order: _lsJSON('jactec.dispatchOrder'), schedule: _lsJSON('jactec.dispatchSchedule'), lanes: _lsJSON('jactec.dispatchLanes'), times: _lsJSON('jactec.dispatchTimes') };
-  if (s === 'comms') return { ended: commsEndedMap(), rail: { sessions: (state.commsRail && state.commsRail.sessions) || {} } };
-  if (s === 'session') return { col: state.mobileCol, mobileCol: state.mobileCol };
-  return {};
-}
 function seedUserPrefsFromLocal() {
   if (!syncOn()) return;
-  state.userPrefs = { v: 1, prefs: _upBuildSection('prefs'), views: _upBuildSection('views'), dispatch: _upBuildSection('dispatch'), comms: _upBuildSection('comms'), session: _upBuildSection('session') };
-  _userPrefsPreloadDirty = {};                                      // the seed already captured the whole local state, incl. any during-load edit
+  state.userPrefs = {
+    v: 1,
+    prefs: { previewsOff: !state.previewsOn, hapticsOff: !!state.hapticsOff, loginMuted: !!state.loginMuted,
+      sort: collectSortMirror(), collapsedGroups: Object.assign({}, COLLAPSED_GROUPS), ruRange: ruRangeLoad() },
+    views: _viewsMap(),
+    dispatch: { order: _lsJSON('jactec.dispatchOrder'), schedule: _lsJSON('jactec.dispatchSchedule'), lanes: _lsJSON('jactec.dispatchLanes'), times: _lsJSON('jactec.dispatchTimes') },
+    comms: { ended: commsEndedMap(), rail: { sessions: (state.commsRail && state.commsRail.sessions) || {} } },
+    session: { col: state.mobileCol, mobileCol: state.mobileCol }
+  };
   flushUserPrefs();                                                  // push the whole seeded doc up as the baseline
 }
 function hydrateUserPrefs(doc) {
   state.userPrefs = normalizeUserPrefs(doc);
-  // Preserve edits made DURING the load window: for a section the user touched before the server
-  // doc arrived (state.userPrefs was null so the stamp only hit localStorage + recorded here), keep
-  // THEIR local value — build it from local NOW, before the body below overwrites localStorage —
-  // instead of letting the server doc discard it; flush the preserved sections up afterward.
-  const pd = _userPrefsPreloadDirty; _userPrefsPreloadDirty = {};
-  ['prefs', 'views', 'dispatch', 'comms', 'session'].forEach((s) => { if (pd[s]) state.userPrefs[s] = _upBuildSection(s); });
   const p = state.userPrefs.prefs;
   if ('previewsOff' in p) { state.previewsOn = !p.previewsOff; lsSet('jactec.previewsOff', p.previewsOff ? '1' : '0'); }
   if ('hapticsOff' in p) { state.hapticsOff = !!p.hapticsOff; lsSet('jactec.hapticsOff', p.hapticsOff ? '1' : '0'); }
@@ -24374,17 +24379,16 @@ function hydrateUserPrefs(doc) {
     if (state.mobileCol === landIdx) state.mobileCol = sv.mobileCol;
   }
   render();
-  Object.keys(pd).forEach((s) => { if (pd[s]) flushUserPrefs(s); });   // push the preserved during-load edits up (server field-merges by section)
 }
 // ── stamp helpers: called from each synced localStorage write-site to also update the
 //    person's doc + schedule a flush. All no-op for a legacy login (state.userPrefs null). ──
-function upSetPref(key, value) { const up = state.userPrefs; if (!up) { _userPrefsPreloadDirty.prefs = true; return; } (up.prefs || (up.prefs = {}))[key] = value; flushUserPrefs('prefs'); }
-function upSetSort(card, sort) { if (!sort || !sort.field) return; const up = state.userPrefs; if (!up) { _userPrefsPreloadDirty.prefs = true; return; } const pr = up.prefs || (up.prefs = {}); (pr.sort || (pr.sort = {}))[card] = { field: sort.field, dir: sort.dir }; flushUserPrefs('prefs'); }
-function upSyncCollapsed() { const up = state.userPrefs; if (!up) { _userPrefsPreloadDirty.prefs = true; return; } (up.prefs || (up.prefs = {})).collapsedGroups = Object.assign({}, COLLAPSED_GROUPS); flushUserPrefs('prefs'); }
-function upSyncViews() { const up = state.userPrefs; if (!up) { _userPrefsPreloadDirty.views = true; return; } up.views = _viewsMap(); flushUserPrefs('views'); }
-function upSyncDispatch() { const up = state.userPrefs; if (!up) { _userPrefsPreloadDirty.dispatch = true; return; } up.dispatch = { order: _lsJSON('jactec.dispatchOrder'), schedule: _lsJSON('jactec.dispatchSchedule'), lanes: _lsJSON('jactec.dispatchLanes'), times: _lsJSON('jactec.dispatchTimes') }; flushUserPrefs('dispatch'); }
-function upSyncComms() { const up = state.userPrefs; if (!up) { _userPrefsPreloadDirty.comms = true; return; } up.comms = { ended: commsEndedMap(), rail: { sessions: (state.commsRail && state.commsRail.sessions) || {} } }; flushUserPrefs('comms'); }
-function upSyncSession() { if (booting) return; const up = state.userPrefs; if (!up) { _userPrefsPreloadDirty.session = true; return; } up.session = { col: state.mobileCol, mobileCol: state.mobileCol }; flushUserPrefs('session'); }
+function upSetPref(key, value) { const up = state.userPrefs; if (!up) return; (up.prefs || (up.prefs = {}))[key] = value; flushUserPrefs('prefs'); }
+function upSetSort(card, sort) { const up = state.userPrefs; if (!up || !sort || !sort.field) return; const pr = up.prefs || (up.prefs = {}); (pr.sort || (pr.sort = {}))[card] = { field: sort.field, dir: sort.dir }; flushUserPrefs('prefs'); }
+function upSyncCollapsed() { const up = state.userPrefs; if (!up) return; (up.prefs || (up.prefs = {})).collapsedGroups = Object.assign({}, COLLAPSED_GROUPS); flushUserPrefs('prefs'); }
+function upSyncViews() { const up = state.userPrefs; if (!up) return; up.views = _viewsMap(); flushUserPrefs('views'); }
+function upSyncDispatch() { const up = state.userPrefs; if (!up) return; up.dispatch = { order: _lsJSON('jactec.dispatchOrder'), schedule: _lsJSON('jactec.dispatchSchedule'), lanes: _lsJSON('jactec.dispatchLanes'), times: _lsJSON('jactec.dispatchTimes') }; flushUserPrefs('dispatch'); }
+function upSyncComms() { const up = state.userPrefs; if (!up) return; up.comms = { ended: commsEndedMap(), rail: { sessions: (state.commsRail && state.commsRail.sessions) || {} } }; flushUserPrefs('comms'); }
+function upSyncSession() { const up = state.userPrefs; if (!up || booting) return; up.session = { col: state.mobileCol, mobileCol: state.mobileCol }; flushUserPrefs('session'); }
 /* ── §18h Wrangler Ops — the developer live-chat bridge (from-spec re-implementation,
    2026-07-09, of the stale claude/mirror-wrangler-chats-l8pjfd branch). A Developer-tier
    operator (roleTier(currentRole) >= tierRank('developer') — the SAME gate as Design
