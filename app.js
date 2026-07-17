@@ -24510,8 +24510,8 @@ function boot() {
     const su = (location.hash || '').match(/[#&]u=([\w-]+)/i);
     if (su) {
       history.replaceState(null, '', location.pathname + location.search);
-      if (scanTokenGet() || backendPassword) return renderScanCapture(su[1]);
-      pendingScan = su[1];   // cold → fall through to the normal login gate below; replay after it
+      if (scanTokenGet() || backendPassword || scanPreviewOn()) return renderScanCapture(su[1]);   // remembered/session, OR preview (no backend, no PII) → straight in
+      pendingScan = su[1];   // cold PRODUCTION → fall through to the normal login gate below; replay after it
     }
   }
 
