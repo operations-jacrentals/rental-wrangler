@@ -74,6 +74,24 @@
   failed-inspection. The shared §12.8 inspection popup is now **pass-aware** — it drops the
   "Failure report" title, danger styling, and "Charge the customer?" bill gate when the
   inspection passed. Reuses `segCtl` (R14); multi-unit field-call granularity is a parked thread.
+- **2026-07-17 — PO-required now actually enforces (PR #652, LIVE).** The account-line PO /
+  Protection toggles (`js-acct-po`/`js-acct-prot`) never called `saveSoon()`, so they reverted
+  on reload — the "PO required isn't working" bug (Mr. Wrangler had NOT fixed it). Fix: route
+  through `logAction` (persists + audits). Plus "Block ALL": a `requiresPO` customer with no PO
+  on the invoice is HARD-blocked from every money path (card charge, cash, check, the Wrangler
+  `recordPayment` op) and both sends (email/text), via the shared `invoicePoBlocked(inv)` choke
+  point. Refunds intentionally not gated.
+- **2026-07-17 — Membership dues: PO exemption + create-ahead-regardless-of-payment (PR #668
+  frontend LIVE + backend LIVE via editor deploy).** New `duesRequirePO` (default off = EXEMPT)
+  toggle in the membership agreement + account line (ungated — Jac: no phone-code gate). Backend
+  (`membershipEnroll_`/`membershipBillingCron`): when `requiresPO && duesRequirePO && !inv.po`
+  → HOLD dues (create invoice, no charge, **no grace/lapse**) until a PO is added — held ≠
+  declined. Dues invoices now created ahead of time for every active member each run REGARDLESS
+  of prior payment (open invoices stack, each month separate) + immediate-next on payment;
+  **annual clamped to 28-days-before-renewal** (never a year early). Charge on due date; cancel
+  still bills the leftover monthly term at once. Opus-reviewed (2 blockers fixed). Spec:
+  `docs/superpowers/specs/2026-07-17-membership-po-advance-billing-design.md`; backend recipe:
+  `docs/handoffs/2026-07-17-membership-po-advance-billing.gs`.
 
 ## Design prefs
 - Yard **"data-plate"** design language: dark industrial steel, **ONE** safety-orange
@@ -86,6 +104,22 @@
 - **Cloud sessions are ephemeral** (fresh clone, container reclaimed) — only
   git-committed work survives, and Claude Code's native auto-memory is machine-local
   so it won't carry over. Commit + push early.
+- **The tracked backend record can LAG the live `Code.js`.** `docs/handoffs/membership-billing-additions.gs`
+  was a version behind live (live already had `memEnsureNextInvoice_`/`memFindDueInvoice_`/the
+  future-start branch). Before editing the backend, PULL LIVE first (Drive connector →
+  `download_file_content` on scriptId `1hw9A7Id3YIoiSCBkNFeDaKGRv-VtljFFIuBdQG5QULrgS0DjQhQ_2vyZ`,
+  project "Rental Wrangler Gate") and splice against it, then **diff the splice vs the pulled base
+  to prove only the intended functions changed** — that check is the guard against the v48-style
+  stale-base clobber. Push HEAD via `gas-deploy-service-account.mjs push` (subject
+  `operations@jacrentals.com`); go-live is Jac's editor deploy; verify anon access after (POST a
+  wrong-password `auth` → expect JSON `{ok:false}`, not HTML).
+- **CI (`ci.yml`) only fires on `pull_request` opened/synchronize + push-to-trunk — NOT
+  `ready_for_review`.** A draft PR's later pushes may not leave check runs on the head, and a
+  rebased head needs a fresh run: dispatch it with `actions_run_trigger run_workflow ci.yml`
+  on the branch. When trunk is churning (e.g. an Instant-Cache/mobile merge burst), expect the
+  merge to race — rebase again; the conflicts are only the generated files (`rule-usage.js`,
+  `docs/code-map.generated.md` → regenerate) + the `index.html` `?v=` token (take trunk's, then
+  re-`/deploy` to re-bump + re-sync staging before `/promote`).
 - **Backend deploy** uses the service account (`GAS_SA_KEY_B64` + the service-account
   script), push only; go-live is Jac's Apps Script **editor** deploy. clasp OAuth is
   RAPT-blocked (2026-07-06) — don't retry `clasp login`.
@@ -204,3 +238,12 @@
   #660 (`maybeReplayScan`); the planned "shared-device login video" (Phase 4) was
   **dropped** — #655 already shipped it. Spec + plan:
   `docs/superpowers/{specs,plans}/2026-07-16-instant-cache-*.md`.
+- **Membership "held for PO" status display** (deferred from PR #668, 2026-07-17). A member whose
+  dues are PO-held sits with `paidUntil` in the past and no `graceUntil`, so the frontend
+  `memStatus` renders "Past Due" rather than a distinct "Held — needs PO" label. Backend hold
+  works correctly (no charge, no lapse); this is a UI-clarity nicety only. Small follow-up.
+- **Live-verify the membership billing on a real/test member** (2026-07-17). The PO-hold +
+  create-ahead billing is LIVE but couldn't be executed in-repo — sanity-check on a member: a
+  monthly member gets next month's invoice created ahead + charged on its due date; a
+  `requiresPO`+`duesRequirePO` member's dues hold (created, not charged, no lapse) until a PO is
+  added. Jac's call; `wrangler-fix` any miss.

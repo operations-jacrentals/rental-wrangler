@@ -956,6 +956,17 @@ select.lf-in { appearance: none; cursor: pointer; }
 .closeall-slot { flex-shrink: 0; display: inline-flex; align-items: center; }
 .dropdown-menu .dd-item .x { margin-left: auto; opacity: .45; font-size: 12px; padding: 0 2px; }
 .dropdown-menu .dd-item .x:hover { opacity: 1; color: var(--red); }
+/* Tools-menu collapsible FAMILIES — native <details>, all closed on open (Jac 2026-07-17) ── */
+.dropdown-menu .dd-fam-h { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 9px; cursor: pointer; user-select: none; list-style: none;
+  font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: 1px; font-size: 10.5px; font-weight: 700; color: var(--txt-3); }
+.dropdown-menu .dd-fam-h::-webkit-details-marker { display: none; }
+.dropdown-menu .dd-fam-h:hover { background: var(--panel-2); color: var(--txt-2); }
+.dropdown-menu .dd-fam[open] > .dd-fam-h { color: var(--txt); }
+.dropdown-menu .dd-fam-h:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.dropdown-menu .dd-fam-chev { margin-left: auto; display: inline-flex; color: var(--txt-3); transition: transform .12s ease; }
+.dropdown-menu .dd-fam[open] > .dd-fam-h .dd-fam-chev { transform: rotate(180deg); }
+.dropdown-menu .dd-fam-body { padding-left: 6px; }
+@media (prefers-reduced-motion: reduce) { .dropdown-menu .dd-fam-chev { transition: none; } }
 /* ── Gate TIMELINE dropdown (the four ordered status gates) — steel panel + vertical
    hazard rail, NO orange halo (that stays for dialogs); monochrome progress states ── */
 .dropdown-menu.gt { width: max-content; min-width: 180px; max-width: 92vw; padding: 0; overflow: hidden; position: fixed; border: 1px solid var(--line); box-shadow: var(--shadow), 0 0 0 1px rgba(0,0,0,.4); }   /* MUST be position:fixed (a fixed box still anchors the absolute rail/connectors). `relative` here overrode the base .dropdown-menu's fixed → openDropdown's top/left measured from page flow, dumping the menu ~1 viewport below the fold (the "opens far below screen" bug). `width:max-content` hugs the widest row's label (the menu was a fixed 244px regardless of content); the max-width clamp keeps the width:100% rows from stretching it to the viewport. */
@@ -1076,6 +1087,11 @@ select.lf-in { appearance: none; cursor: pointer; }
 /* status color helper classes (set by registry color token) */
 .c-green  { background: var(--green-bg);  color: var(--green);  border-color: color-mix(in srgb, var(--green) 30%, transparent); }
 .c-yellow { background: var(--yellow-bg); color: var(--yellow); border-color: color-mix(in srgb, var(--yellow) 30%, transparent); }
+/* R34 wash cycle button — one pressable status-tone pill (registry green/yellow/gray), reuses .c-* fills. */
+.washbtn { cursor: pointer; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 15px;
+  font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: .8px; font-weight: 700; font-size: 11px; }
+.washbtn:hover { filter: brightness(1.08); }
+.washbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .c-red    { background: var(--red-bg);    color: var(--red);    border-color: color-mix(in srgb, var(--red) 30%, transparent); }
 .c-blue   { background: var(--blue-bg);   color: var(--blue);   border-color: color-mix(in srgb, var(--blue) 30%, transparent); }
 .c-navy   { background: var(--navy-bg);   color: var(--navy);   border-color: color-mix(in srgb, var(--navy) 30%, transparent); }
@@ -3794,10 +3810,11 @@ body { font-variant-numeric: tabular-nums; }
 .acct.sec-red { border-color: var(--red); box-shadow: 0 0 8px color-mix(in srgb, var(--red) 30%, transparent); }
 .acct.sec-red .acct-lbl { color: var(--red); text-shadow: 0 0 3px var(--red), 0 0 7px color-mix(in srgb, var(--red) 60%, transparent); }
 /* Work Orders section — accordion rows inside ONE collapse plate, mirroring customer
-   Invoices (reuses .inv-row / .inv-open / .ir-* / .io-* ). An open WO's header
-   collapses only via the ✕ chevron (its report stays inline-editable, so the whole
-   bar can't be the toggle), and its body stacks flags → line items → totals → foot. */
-.wo-open .io-bar-top { cursor: default; }
+   Invoices (reuses .inv-row / .inv-open / .ir-* / .io-* ). Clicking anywhere on an open
+   WO's header collapses it (like invoices); only the inline-edit report keeps a text
+   cursor and stays editable. Its body stacks flags → line items → totals → foot. */
+.wo-open .io-bar-top { cursor: pointer; }
+.wo-open .io-bar-top .inline-edit { cursor: text; }
 .wo-open .type-chip { flex: 0 0 auto; }
 .ir-woreport { color: var(--txt); font-weight: 700; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wo-open-body { padding: 11px 13px; display: flex; flex-direction: column; gap: 9px; }
@@ -3871,6 +3888,7 @@ body { font-variant-numeric: tabular-nums; }
 /* expanded agreement row (existing signed OR new-agreement creation) */
 .ag-open { border: 1px solid var(--accent-line); border-radius: 11px; background: var(--card); box-shadow: 0 0 0 1px var(--accent-soft); overflow: hidden; }
 .ao-bar { background: linear-gradient(180deg, var(--card-head), var(--panel-2)); padding: 9px 12px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 9px; }
+.ao-bar.js-ag-collapse { cursor: pointer; }   /* whole header collapses the open agreement (the new-agreement bar keeps its explicit Cancel) */
 .ao-bar .ao-lbl { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: 1px; font-weight: 800; font-size: 11.5px; }
 .ao-bar .unsaved { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: .8px; font-size: 9px; font-weight: 700; color: var(--yellow);
   border: 1px solid color-mix(in srgb, var(--yellow) 45%, transparent); background: var(--yellow-bg); border-radius: 999px; padding: 2px 8px; }
@@ -4085,6 +4103,7 @@ body { font-variant-numeric: tabular-nums; }
 .io-statmenu.part { background: repeating-linear-gradient(135deg, var(--yellow) 0 11px, #14181d 11px 22px); }
 .io-statmenu.due  { background: repeating-linear-gradient(135deg, var(--red) 0 11px, #14181d 11px 22px); }
 .io-statmenu.paid { background: linear-gradient(180deg, var(--green), #1fae7f); color: var(--on-orange); text-shadow: none; }
+.io-statmenu.notdue { background: linear-gradient(180deg, #ffd766, var(--yellow)); color: var(--on-orange); text-shadow: none; }   /* Not Due — RYG caution yellow (matches the invoice sheet's is-open); a balance not yet due is NOT overdue-red */
 .io-statmenu.part.open { background: linear-gradient(180deg, #ffd766, var(--yellow)); color: var(--on-orange); text-shadow: none; }
 .io-statmenu.due.open  { background: linear-gradient(180deg, #ff6a6a, var(--red)); color: #fff; }
 .io-statmenu.open .cv { background: rgba(0,0,0,.22); transform: rotate(180deg); }
