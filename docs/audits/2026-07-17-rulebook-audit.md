@@ -36,10 +36,13 @@ machinery works — for everything it can see.
 
 **The drift is in what the machinery can't see.** The R0 flash-lint polices six element
 families (`.pill .add-field .flag .linkname .inv-line-link .req`). Everything outside those
-families can be hand-rolled invisibly — and it is. The census found roughly **65 stray
-sites** (elements that duplicate an existing rule by hand), **~35 mavericks** (designed
-elements with no rule at all), and **~18 repeated patterns** (the same markup hand-built at
-2–22 sites that one builder each would collapse).
+families can be hand-rolled invisibly — and it is. The census found roughly **75 stray
+sites** (elements that duplicate an existing rule by hand), **~40 mavericks** (designed
+elements with no rule at all), and **~19 repeated patterns** (the same markup hand-built at
+2–22 sites that one builder each would collapse). On the CSS side, **79 of 1,268 defined
+classes are verified dead** (each candidate individually re-checked; the mechanical pass
+had flagged 284 — a 70% false-positive rate from dynamically-composed class names, which
+is why nothing here is reported un-verified).
 
 **Headline findings**
 
@@ -175,9 +178,16 @@ Consolidated from all sweeps, grouped by the rule each site belongs to.
 |---|---|
 | app.js:4471–4473 | R29 menu items use literal emoji ($, 🖨, ✉, ↩) |
 | app.js:4109 | literal 🔒 where the vendored `AG_LOCK` SVG is used 2 lines away |
-| app.js:3957 | unicode ▾/▸ where siblings use `I.chev` |
+| app.js:3957 | unicode ▾/▸ disclosure chevrons (Action-Log accordion — also carries no `data-r` at all) where siblings use `I.chev` |
 | app.js:5876–5879, 5904–5908 | R20 context-menu emoji icons |
 | app.js:11565–11566 | carousel chevrons hand-paste raw SVG paths duplicating vendored `I.chevL/R` |
+| app.js:9263 | sort-direction ▲/▼ glyphs — one line below a correct `I.chev` use |
+| app.js:15884/15889 | Board-View column-sort ▲/▼ glyphs (same element, second implementation) |
+| app.js:4417 | KPI delta chip ▲/▼ trend arrows (`.kchip .arr`) |
+| app.js:5305 | segCtl labels literally spell "▲ High / ▼ Low" — container is canon R14, label text embeds hand-drawn glyphs |
+
+A full app-wide glyph census found exactly these sites (plus one documentation glyph at
+6209 that isn't shipped UI) — one Lucide sweep covers both the ▲/▼ and ▾/▸ families.
 
 ### CSS recipe duplication (strays in the stylesheet)
 | Site | What |
@@ -201,6 +211,7 @@ outliers ride with the elements they're most like).
 | `trip-seq-n` stop-sequence chip | app.js:6880, 6919 | numbered route chip, duplicated |
 | Count-badge overlay | app.js:9095, 9794, 9802 | numeric unread/count bubble, built 3 ways |
 | Tri-state Yes/No/Required toggle (`nc-po`/`nc-rp`) | app.js:13518–13519 | neither R31 (binary) nor R6 (single state) fits |
+| KPI delta chip (`.kchip`/`.arr` trend arrow) | app.js:4417–4419 | an un-stamped sibling of R3b `badge` carrying a tone-colored trend arrow — no rule covers a "trend" atom |
 
 ### Fields & Adds
 | Element | Sites | Why homeless |
@@ -214,6 +225,8 @@ outliers ride with the elements they're most like).
 | Trips `dt-time` free-text time input | app.js:6924 | always-visible time field, distinct from R22 |
 | `rr-star` star-rating | style.css:2070–2096 | single-use today; flag if a second rating surface appears |
 | Mobile card-switch chips (`.mcard-tog`) | style.css:339–359 (+§M7) | a designed segmented toggle that never touches R14 `segCtl` — mobile's ONE recurring homeless pattern |
+| **Chevron-less `<select>` dropdowns** (`select.lf-in`) | root: style.css:585; call sites app.js:13654, 13851, 13852 | `appearance:none` strips the native chevron with NO replacement — the collectionsSend Reason and both ACH-type selects render visually identical to adjacent text inputs. `select.inline-input` (style.css:1765) solves the identical problem with a custom SVG chevron; the fix was never applied here. One CSS rule fixes all three sites |
+| Board-View `contenteditable` scratch cells | app.js:15899, 15900, 15907, 15908 | raw `contenteditable` `<td>`s — no styled-input treatment, invisible to every gate |
 
 ### Actions
 | Element | Sites | Why homeless |
@@ -245,8 +258,11 @@ outliers ride with the elements they're most like).
 | `mixSeg`/`mixBar`/`rentBar` | app.js:8387–8393 | proportional clickable status bar-as-filter |
 | Rentals-row 3-week mini-timeline | app.js:6572–6656 | row-embedded elapsed-tint timeline; R16 covers only the detail calendar |
 | GPS event feed row | app.js:23002 | bespoke alert/event feed row |
-| Trips/dispatch day-timeline (`.disp-*`) | style.css:680–830 | large bespoke surface over route concepts R15 owns |
 | Route-rail stepper (`.rtrail2`) | style.css §20 | linear stepper conceptually near R15, separate implementation |
+
+*(The `.disp-*` dispatch day-timeline, initially flagged here as a large bespoke maverick,
+turned out on verification to be mostly **dead CSS** — see §6. Only the small
+`disp-foot`/offline-indicator remnant is live; the shipped Trips UI is the `trip-*` family.)*
 
 ### Windows / Surfaces
 | Element | Sites | Why homeless |
@@ -256,6 +272,7 @@ outliers ride with the elements they're most like).
 | Chat bubble shell ×2 | `.cbub` 10068–10077 · `.wr-msg/.wr-bub` 10227 | Team vs Wrangler bubbles built independently |
 | Conversation/thread list row | `.cm-row` 25033 · `.wrops-row` 23578–23586 | dot+title+snippet+meta row, built twice |
 | Banner family gaps | `.sw-toast` 16505 · `linkBanner` 16749 · env badge 24185 · GPS degraded banners 12589/12636/12690 (copy-pasted ×3) | siblings of R25/R27 with no rule; the drag chrome (`.drag-ghost` 16977, `.cancel-arc` 16805, `.chat-drop` 16810, `.zip-zone` 17167) is likewise blessed (CLAUDE.md reference) but unnumbered |
+| Bare-tab document popouts | app.js:589 (signed-PDF view), 618 (membership-agreement print) — plus issue-filing fallbacks 15411, 23539 | app-generated documents rendered via raw `window.open` into unchromed tabs (the signature popout at 15669 at least links style.css). The generic external-link handler (17905) is legitimate — external URLs must open externally |
 | "Coming 2026" roadmap plate · Sales "Coming soon" placard | app.js:9694 · 9116 | morale/teaser plates, no rule |
 | Header & bottom-bar chrome | app.js:9686, 9809, 9930 | logo, tabstrip, hello-name, tool clusters — structural chrome, unhomed (KPI rings ARE canon via `RB_FOUNDATION`) |
 
@@ -291,16 +308,40 @@ Ranked by consolidation payoff (sites × traffic). **One builder each.**
 | 15 | Record-ref chip (chat/held/focus) | 3 | extend `refPill()` |
 | 16 | Month day-grid generation | 3 (21368, 21408, 21519) | one shared grid helper (date-search copies R16's look but not its code) |
 | 17 | Health-border mini-card | 3 | one mini-card renderer |
-| 18 | Count badge · chat bubbles · conversation rows · GPS degraded banner · tri-state toggle · charge/refund alloc mirrors · insert/remove affordances | 2–3 each | one builder each |
+| 18 | Raw ▲/▼/▾/▸ sort/trend/disclosure glyphs | 6 | one Lucide `sortArrow()`/`trendArrow()` sweep (fold with the chevron fixes) |
+| 19 | Count badge · chat bubbles · conversation rows · GPS degraded banner · tri-state toggle · charge/refund alloc mirrors · insert/remove affordances | 2–3 each | one builder each |
 
 ---
 
 ## 6 · Ghost CSS (verified)
 
-> **PENDING ROUND 2** — the mechanical pass flagged 284 candidates out of 1,268 defined
-> classes, but sample checks already caught false positives (dynamically-composed class
-> names). Verified dead / alive / uncertain counts and the confirmed-dead list land here
-> when the adversarial verification completes.
+The mechanical cross-reference flagged **284 of 1,268** defined classes as unused. Every
+candidate was then individually re-verified (greps for dynamic composition — `c-${color}`,
+`sec-${x}`, `nd-${dotColor}`, `el('div','…')` second-args, registry-value suffixes in
+config.js). Result:
+
+| Verdict | Count | Note |
+|---|---|---|
+| **Dead** | **79** | no reference anywhere, dynamic composition ruled out |
+| Alive | 201 | mostly dynamically-composed class names the parser can't see (e.g. `c-brown` via config.js `color:'brown'` → `c-${color}`) |
+| Borderline | 4 | `closeall` (base class never emitted — dead-leaning); `nd-green/red/white` (composed from record color fields — alive-leaning) |
+
+The 70% false-positive rate is the audit's own cautionary tale: **never trust an unverified
+"unused CSS" list in this codebase** — the class vocabulary is heavily template-composed.
+
+**The 79 verified-dead classes, grouped** (full list with line numbers:
+[`2026-07-17-ghost-css-verified-dead.txt`](2026-07-17-ghost-css-verified-dead.txt)):
+
+| Group | Classes | Note |
+|---|---|---|
+| `.disp-*` dispatch route/stop block | 25 classes, style.css:681–740 (+ `js-disp-arrowpt`) | an entire retired day-timeline UI (addr/arm/arrow/route/stop/seq/grip/head/nav…) — only `disp-foot`/`disp-offdot`/`disp-offline` are still live; the shipped Trips UI is the `trip-*` family. Biggest single dead block |
+| `.gv-*` graph leftovers | 8 (gv-empty, gv-lead-list, gv-numrow, gv-numtile, gv-pie-svg, gv-soon, gv-soon-ic, gv-units-scroll) | remnants of the retired APP-23 graph view / earlier carousel iterations |
+| `.act-*` action-log layout | 6 (act-col, act-col-lbl, act-cols, act-entry, act-half, act-head) | an older Action-Log layout |
+| Stall board / timeline overlays | 4 (stall-head, stall-right, tl-over, tl-blocker) | superseded stall-board chrome |
+| Trips/site picker leftovers | 7 (tjname, tjrow, tsec, tsec-label, site-map, site-pin, js-site-sug) | retired site-map picker |
+| Hotkeys demo | 3 (hk-click, hk-dbl, hk-dblright) | gesture-demo variants no longer rendered |
+| Zip/edge strays | 5 (zip-left, zip-right, estrip, estrip-l, estrip-r) | drag-zone predecessors |
+| Singles | 20: **badge**, col, c-head-right, add-row, ag-readbtn, pr-foot, invitem, unitchip, kv2, mdock-act, nc-pills, rd-blocker, rd-inv-total, rentalsec-foot, ring-ico, set-reveal, set-reveal-row, detail-badges, crail-div, ur | note `.badge` (style.css:1074): the R3b **builder** is named `badge()` but emits `.pill`-family classes — the CSS class `.badge` matches nothing. A perfect confusion-trap |
 
 Confirmed dead weight found by inspection (independent of the class list):
 
@@ -316,9 +357,38 @@ Confirmed dead weight found by inspection (independent of the class list):
 
 ## 7 · Round-2 fresh-lens findings
 
-> **PENDING ROUND 2** — native-control sweep (beyond the strays above), emission-site
-> coverage cross-check, other served files (icons.js, config.js, data.js…), and the
-> completeness critic's verdict land here.
+**Coverage is complete.** The emission-site lens traced all 121 `innerHTML`/
+`insertAdjacentHTML` sites in app.js to a classified surface; the completeness critic
+confirmed the beats tile app.js 1–25,326 with no hole (every seam manually checked), every
+surface kind in Jac's mandate is covered, and every cross-beat handoff was honored.
+
+**New findings the fresh lenses added** (already folded into §3/§4 above):
+
+- **Sort/trend glyph family** — raw ▲/▼ at app.js:4417, 9263, 15884 (+ ▾/▸ at 3957 and
+  glyphs-in-labels at 5305): the same icons.md violation recurring across three beats; one
+  Lucide sweep covers all of it.
+- **`select.lf-in` chevron-less dropdowns** — root cause style.css:585; three call sites
+  render dropdowns visually identical to text inputs. One CSS rule fixes all three.
+- **Board-View `contenteditable` cells** (×4) and **bare-tab `window.open` document
+  popouts** (×2 + 2 issue-filing fallbacks).
+- **No native `title=` tooltips anywhere** — R23 discipline is fully clean. No raw
+  `<select>` rule exists at all; usage varies rather than converging (a canon decision,
+  not a violation).
+
+**Other served files are clean.** icons.js / icons-anim.js are the documented, sanctioned
+icon registries; config.js / data.js / rule-usage.js / manifest / sw.js emit no UI — the
+"data-in-config, stamped-element-in-app.js" split holds everywhere. Five standalone public
+pages exist outside the SPA (`about/opt-in/privacy/sample-quote/sms-terms.html`, sw.js's
+PUBLIC allowlist) — out of this audit's scope by design; flagging their existence.
+
+**Contradictions between sweeps, adjudicated** (the census keeps ONE verdict; the dissent
+is recorded here):
+
+| Element | Split | Ruling |
+|---|---|---|
+| `toast()` | S8: maverick · S11: "foundations by design" | **Gap.** 100+ call sites, R25 defines itself against it, and Jac's mandate names notifications. Even if the decision lands "documented foundation", that decision isn't recorded anywhere today |
+| `.iconbtn` family | S5/S10: maverick · S11: "expected chrome" | **Gap.** The objective fact is the same species under ≥4 class names with R18's icon mode sitting unused — that's drift regardless of framing |
+| Tab-button family | S5/S10: maverick · S11: "`.tab` is a foundations primitive" | **Gap, smaller.** Navigation tabs may legitimately live outside R1–R33, but 4–5 independent implementations of one shape is the definition of a missing builder |
 
 ---
 
@@ -327,7 +397,7 @@ Confirmed dead weight found by inspection (independent of the class list):
 | Surface | Verdict |
 |---|---|
 | **Popups** (47 kinds) | All cataloged in `WINDOW_CATALOG`, zero drift (verified twice). Shells homed via `popupShell`; ~19 hand-rolled foot pairs + 7 hand-rolled heads (Strays); `returnRating` custom shell is a documented exception |
-| **Dropdowns** | `openDropdown`/`menu-dropdown` is a documented foundation (not R-numbered); gate-timeline (R1) homed; `.dd-item` rows hand-rolled 13+ sites; view-menu ✕ nested in a button |
+| **Dropdowns** | `openDropdown`/`menu-dropdown` is a documented foundation (not R-numbered); gate-timeline (R1) homed; `.dd-item` rows hand-rolled 13+ sites; view-menu ✕ nested in a button; three `select.lf-in` dropdowns render with zero chevron affordance (§7) |
 | **Menus** (logo, tools, bell, ALL) | Ride `openDropdown` — homed at foundation level; triggers (`.iconbtn`) unhomed |
 | **Right-click menu** | R20 `openCtxMenu` — homed; emoji icons violate icons.md |
 | **Chats** | Team dock + Wrangler dock + comms conversation windows: action buttons branded (R17/R18/R30 stamped); bubbles, ref-chips, tabs, dots, gear/✕ unhomed (Strays/Mavericks above) |
