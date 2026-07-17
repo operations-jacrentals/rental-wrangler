@@ -45,6 +45,27 @@ inline pricing edits) was a dead end for below-tier users. The swap
 - **Out of scope, flagged:** the pre-login `#reseed` recovery tool still prompts for the team
   password (disaster-recovery path, backend-verified; needs its own call).
 
+### Fresh-context review (pre-merge) — 1 fix applied, 1 hardening item logged
+- **FIXED — admin inline-edit re-find could open the wrong field.** The approval round-trip
+  re-finds the clicked span (a live-refresh `render()` during the code wait can orphan it), but
+  the selector matched only `data-edit`+`data-rec` — and `efld` stamps every admin field
+  `data-edit="field"`, so a category's 5 pricing fields (or a unit's 5 insurance fields) share
+  that + `data-rec`, differing only by `data-field`. It would re-open/save the FIRST sibling,
+  not the clicked one. Now matches the full `edit+card+field+rec` tuple (falls back to the
+  original node if still attached). `app.js` inline-edit handler.
+- **LOGGED (not a blocker) — approval codes aren't server-bound to a specific action.**
+  `authzStart`/`authzVerify` take a client-supplied `minTier`; the backend enforces approver
+  tier against that string but never learns WHICH action is being authorized. This is **not a
+  regression and not independently exploitable**: `authzVerify` returns no token/session (zero
+  backend capability), the gated mutations (netDays, blacklist) ride the normal authenticated
+  sync and were never server-tier-gated per-field (same as the shared-password era), and every
+  honest UI path already sends the correct `minTier` (netTerms/rentalOverride → manager,
+  requireAdmin → admin). The truly server-enforced surface (Settings/`setConfig`) is a flat
+  below-Admin refusal, no code path. **Future defense-in-depth:** have the backend derive the
+  required tier from a server-known action id (a fixed `action → tier-floor` table) instead of
+  trusting the client's `minTier` — part of a larger "server-enforce the client-trust gates"
+  effort, not this change.
+
 ## Customizable crew-welcome + copy fix — 2026-07-15 (polish pass)
 
 The auto-enroll / blast / per-person send now text a **crew-welcome** (app link, **no
