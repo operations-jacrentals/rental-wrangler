@@ -16,10 +16,11 @@
   machinery.* Ships de-drift + hard gates, slim CLAUDE.md via path-scoped
   `.claude/rules/`, this committed memory, fresh-context review in `/merge`, and a
   hybrid interaction model. Spec: `docs/superpowers/specs/2026-07-15-session-workflow-v2-design.md`.
-- **2026-07-15 — Interaction is HYBRID** (supersedes "always ask via popups, never
-  inline", 2026-06-15). Formatted **inline** for exploration/nuance; a crisp
-  structured block for clean either/or; an **artifact** for comparative/visual.
-  Lead with the outcome; no massive bullet blobs.
+- **2026-07-16 — Interaction is POPUP-FIRST, single-attempt** (supersedes the
+  2026-07-15 HYBRID rule — Jac: *"the popup question format is WAY better."*). ALL
+  decisions/questions go through the `AskUserQuestion` popup. Try it **once**; never
+  retry a failed popup. If that one popup fails, fall back to **inline** — the same
+  question + same options as lettered **A/B/C… + Other** in a structured block.
 - **2026-07-15 — Delegation by cost-of-being-wrong** *and* whether the main thread
   needs the reasoning (supersedes "delegate heavily, always"). Haiku = mechanical/IO,
   Sonnet = scoped build, Opus = hard reasoning / stays on main, Fable = rare frontier
@@ -33,6 +34,22 @@
   review must ALL pass; any failure hard-stops and pings Jac — never a broken fix to
   live. Flipping the live auto-promote switch (`wrangler-fix.yml` + an automated
   promote path) is Jac's explicit one-time go.
+- **2026-07-17 — Phone-login sign-in UX** (#655, #664). The per-person
+  (`phoneIdentity: true`) login now: holds the button at **"Wrangling the herd…"**
+  through the whole `pidEnter` data load (no flip-back to a clickable "Verify"/"Saddle
+  Up?" mid-sign-in — the old bug); plays the Mr. Wrangler intro **video** behind the
+  plate during sign-in (mute toggle **ported from the classic screen** for audio
+  parity, retries muted if unmuted autoplay is blocked); **auto-submits** the 6-digit
+  code on entry (also catches the OS one-time-code autofill); and the code button reads
+  **"Confirm"** (was "Verify"). Busy label unified to "Wrangling the herd…" across both
+  login screens.
+
+- **2026-07-17 — Coverage folded into Investment; manual "Check for updates" button.**
+  Unit-detail Coverage is now a sub-block at the top of the **Investment** section (riding
+  #657's `unitSecOpen` RYG collapsible stack) — coverage status drives that section's chip +
+  border color (green insured / yellow uninsured); there is **no** separate Coverage section
+  (#659, Jac's call). Added a **"Check for updates"** row to the tools menu (#661) that clears
+  the SW + HTTP caches and hard-reloads past a stale cache — the escape hatch for pinned builds.
 
 ## Design prefs
 - Yard **"data-plate"** design language: dark industrial steel, **ONE** safety-orange
@@ -54,6 +71,50 @@
   `index.html` on every deploy.
 - **Staging is a direct push** (`tools/deploy-staging.mjs`); verify the live bytes. A
   failed/unverified staging deploy is a **HARD STOP** — never work around it.
+- **Staging is ONE shared slot — parallel sessions clash** (2026-07-17). A concurrent
+  session's `/deploy` overwrites the staging mirror, which can trip `promote.mjs`'s
+  staging-freshness gate even when your trunk commit is clean and self-contained.
+  `--skip-staging-check` is the legitimate override *only* when your exact bytes were
+  already deployed + verified on staging before the stomp; otherwise re-deploy trunk first.
+- **Playwright browser gates DO run in a cloud session** (2026-07-17) — contradicts the
+  "browser gates only run in CI" note, which was about Jac's Windows desktop. Chromium is
+  pre-installed at `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`. `npm i --no-save
+  playwright@1.61.1`, then either `sed` the port to 9147 + inject `executablePath` into
+  `ci/smoke.mjs`/`ci/logic-test.mjs` (revert with `git checkout -- ci/`), or launch your own
+  script with `chromium.launch({ executablePath })`. smoke + logic-test both pass in-container.
+- **Self-scheduling tools are approval-gated in non-interactive cloud runs** (2026-07-17) —
+  `send_later` / `create_trigger` (claude-code-remote MCP) fail with "MCP tool call requires
+  approval". Fallback timer: a background Bash `sleep N; echo …` with `run_in_background`
+  re-invokes the session when it exits.
+- **The git proxy rejects delete-refspec pushes** (2026-07-17) — `git push origin --delete
+  <branch>` / `:<branch>` throws "send-pack: unexpected disconnect" from a cloud session.
+  Merged feature branches can't be deleted here; leave them for GitHub-side cleanup.
+- **GPS auth was wired to the OLD login only** (2026-07-17) — the "NO GPS / refresh broken"
+  bug: `gpsLogin()` (mint the GPS token) lived ONLY in the password-login handler, so the
+  phone-identity login (the staging/prod default) never minted a token → the whole GPS section
+  read "NO GPS" and the connect picker / Refresh started unauthenticated. Fix: GPS login now runs
+  in `finishLoad()` (every login mode), and `gpsFetch` re-authenticates once on a 401. **The GPS
+  backend was healthy the entire time** (token mints, Deere authenticates, CORS allows staging) —
+  verify the client-side token before ever blaming the backend.
+- **Mobile Safari pins index.html HARD** (2026-07-17) — a shipped fix can sit invisible on a
+  cached device (this ate an hour of "it's not working" that was really a stale build). A
+  `?fresh`-style query on the URL, a Private tab, or the tools-menu "Check for updates" busts it.
+  Subtle trap: the prod service worker serves cached index.html via an `ignoreSearch` match, so
+  an update CHECK must clear caches BEFORE fetching index.html or it reads stale bytes and falsely
+  reports "up to date."
+- **The phone-identity login can't be driven headlessly** (2026-07-17) — the live login
+  is **SMS-gated** (a real code to a roster phone) and `app.js` is an **ES module** (login
+  internals aren't on `window`), so you can't drive it past the "enter phone" step even
+  with Playwright, and you must **never** fire `authStart` on a real number (it texts a
+  real hand). Staging-review of login changes = **served-bytes verification**
+  (`curl … | grep`); the real end-to-end drive is Jac on a phone.
+- **Land merges through a degraded GitHub API with auto-merge** (2026-07-17) — during a
+  REST-API Major outage, `merge_pull_request` failed repeatedly, but
+  `enable_pr_auto_merge` (SQUASH) landed the PR once `smoke` passed **and** closed the
+  "trunk moved during CI → merge conflict" race. Corollary: the shared `?v=` token
+  conflicts on nearly every concurrent merge — resolve mechanically
+  (`git checkout --ours/--theirs index.html` to pick the forward token, then
+  `node tools/gen-code-map.mjs`), never by hand-editing the generated map.
 
 ## Open threads
 - **Repo privacy** — parked on Jac's GitHub billing-tier check. Pages-from-private

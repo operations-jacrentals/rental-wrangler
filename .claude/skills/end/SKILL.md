@@ -45,10 +45,11 @@ tracked branch:
 - Any half-built function/file left mid-edit in the working tree that isn't
   part of the shipping diff.
 
-For each candidate, confirm with Jac (hybrid — a structured inline list or an
-`AskUserQuestion` popup) as a short list: **park it**, **keep working it now
-instead of ending the session**, or **drop it**. Default suggestion is park —
-it's cheap and reversible; dropping needs an explicit yes.
+For each candidate, confirm with Jac via an `AskUserQuestion` popup (one attempt; if
+it fails, present the same short list inline as lettered **A/B/C… + Other**) with the
+choices: **park it**, **keep working it now instead of ending the session**, or
+**drop it**. Default suggestion is park — it's cheap and reversible; dropping needs an
+explicit yes.
 
 **Mechanics for parking (every confirmed item):**
 1. **Name it** `parked/<short-kebab-slug>` — e.g. `parked/dark-mode-toggle`.
@@ -108,7 +109,8 @@ The old `tidy-sessions` job, unchanged in spirit:
 - **Never skip ahead.** Job 4 cannot run before 1–3 are clean — that
   ordering is the whole point of replacing `tidy-sessions`.
 - **Never archive or park without confirmation.** Both are reversible, but
-  silent action isn't welcome — surface the choice (hybrid: inline or popup).
+  silent action isn't welcome — surface the choice via the `AskUserQuestion`
+  popup (one attempt; if it fails, the same choice inline as **A/B/C… + Other**).
 - **Never archive the active session.**
 - Default conservative throughout: unsure whether something's finished →
   leave it, ask.
