@@ -1456,7 +1456,7 @@ select.lf-in { appearance: none; cursor: pointer; }
    OWN data-plate tab. Fills the band's middle and scrolls horizontally; the toolbar
    stays left, bell+inbox right. Tab = registry dot + Geist title; selected = the ONE
    safety-orange; a "needs your answer" tab flashes red. */
-.comms-rail { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 12px;
+.comms-rail { flex: 0 1 auto; min-width: 0; margin-left: auto; display: flex; align-items: center; gap: 12px;
   overflow-x: auto; overflow-y: hidden; scrollbar-width: none; padding: 2px 2px; }   /* hide the scrollbar (still scrolls via wheel/trackpad) — matches .header-tabs */
 .comms-rail::-webkit-scrollbar { height: 0; width: 0; }
 .crail-group { flex: 0 0 auto; display: flex; align-items: center; gap: 7px; }

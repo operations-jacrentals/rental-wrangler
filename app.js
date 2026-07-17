@@ -2556,7 +2556,7 @@ function sweepEmptyDrafts(keepId) {
   }
 }
 function openStandard(card, recId, recType) {
-  resetCustQuickAdd();   // clicking any record = navigate away from the customers list → discard the +New Customer draft (Jac 2026-07-17)
+  if (columnOfMember(card) === columnOfMember('customers')) resetCustQuickAdd();   // discard the +New Customer draft ONLY when the customers column is displaced (a customer/invoice detail) — not on a cross-column reference click that leaves the list visible (Jac 2026-07-17; scoped per review)
   const cs = activeSession().cards[card];
   if (cs && cs.mode === 'standard' && cs.recId != null) {
     if (String(cs.recId) === String(recId)) { render(); return; }            // already showing it — no-op
@@ -9978,7 +9978,7 @@ function mainCardOfMember(m) {
 // §M1 — jump straight to a card (flattens the 3-column model on phones): set the column +
 // member, flip the visible column, and show that card's LIST.
 function goToCard(member) {
-  resetCustQuickAdd();   // switching cards = navigate away from the customers list → discard the +New Customer draft (Jac 2026-07-17)
+  if (member !== 'customers' && columnOfMember(member) === columnOfMember('customers')) resetCustQuickAdd();   // discard the +New Customer draft ONLY when the customers column is switched away (e.g. to Invoices) — never when returning to it, or switching a different column (Jac 2026-07-17; scoped per review)
   const s = activeSession(); const col = COLUMN_OF[member];
   if (s.cols && col) s.cols[col] = member;
   const idx = COLUMNS.findIndex((c) => c.id === col); if (idx >= 0) state.mobileCol = idx;
@@ -16349,6 +16349,7 @@ const scrollMemo = {};   // persistent scroll positions, keyed `card|view` (list
 function render() {
   if (scanActive) return;   // the scan-to-log capture screen owns #app in its own tab — never let a background loader / 18s poll render clobber it mid-flow
   RENDER_MEMO = {};   // open the render-scoped derivation cache (rmemo) — lives for exactly this render (Jac 2026-07-17). After the early-return so a bailed render never opens a cache it won't close.
+  try {   // ALWAYS close the cache below (finally), even if the render body throws — else a crashed render would leave stale money math for out-of-render callers (invoiceTotals etc.) until the next clean render (fix per review)
   const t0 = performance.now();
   refreshToday();   // roll "today" over before painting — an all-day-open tab must never stamp/read yesterday
   hideTip(); hideHoverPreview();
@@ -16424,7 +16425,7 @@ function render() {
   renderCount++;
   perfRecordRender(dt);   // histogram (P0) — arithmetic only, no DOM work
   if (dt > CFG.PERF_BUDGET_MS) console.warn(`[perf] render ${renderCount} took ${dt.toFixed(1)}ms (budget ${CFG.PERF_BUDGET_MS}ms)`);
-  RENDER_MEMO = null;   // close the cache — any derivation called OUTSIDE a render must always recompute fresh
+  } finally { RENDER_MEMO = null; }   // close the cache — any derivation called OUTSIDE a render must always recompute fresh, even if the render body threw
 }
 /* Lean re-render used ONLY while typing in the GLOBAL search bar. Rebuilds just the
    results grid (+ the phone dock's listbar / desktop footer counts) and deliberately
