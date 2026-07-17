@@ -3180,7 +3180,6 @@ select.nc-in { cursor: pointer; }
    testing. Never rendered on app.jacrentals.com; pointer-events:none so it never blocks. */
 .env-badge {
   position: fixed; z-index: 90; left: 12px; bottom: 12px; pointer-events: none;
-  --slot-c: var(--slot-1);   /* default staging color; .env-slot-N / .env-local override below */
   display: inline-flex; align-items: center; gap: 7px;
   font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 800; font-size: 11px;
   letter-spacing: 2.5px; text-transform: uppercase; color: var(--slot-c);
@@ -3196,8 +3195,11 @@ select.nc-in { cursor: pointer; }
   display: inline-grid; place-items: center; min-width: 15px; height: 15px; padding: 0 3px;
   margin-left: 1px; border-radius: 4px; letter-spacing: 0; font-size: 12px;
   background: var(--slot-c); color: var(--on-orange); }
-/* Slot IDENTITY color — one var shared by the badge, its chip, and the top edge bar. Bare-class
-   rules (equal specificity) placed AFTER the base so the specific slot wins by source order. */
+/* Slot IDENTITY color — one var shared by the badge, its chip, and the top edge bar. The DEFAULT
+   is declared FIRST (for both elements) so the bare-class overrides below — equal specificity —
+   win by source order. Any rule that sets a --slot-c default AFTER these would silently break the
+   distinction (all slots would fall back to slot 1), so keep every default above this line. */
+.env-badge, .env-edge { --slot-c: var(--slot-1); }   /* default; .env-slot-N / .env-local override */
 .env-slot-1 { --slot-c: var(--slot-1); }
 .env-slot-2 { --slot-c: var(--slot-2); }
 .env-slot-3 { --slot-c: var(--slot-3); }
@@ -3205,9 +3207,9 @@ select.nc-in { cursor: pointer; }
 /* Top-of-window edge bar — the strongest "which slot am I in?" signal when flipping between the
    saved desktop windows. A 3px hairline pinned above every top band (pointer-events:none, so it
    never intercepts). Non-prod only. */
-.env-edge {
+.env-edge {   /* --slot-c comes from the default + .env-slot-N rules ABOVE — never set it here */
   position: fixed; z-index: 9700; top: 0; left: 0; right: 0; height: 3px;
-  --slot-c: var(--slot-1); pointer-events: none;
+  pointer-events: none;
   background: var(--slot-c); box-shadow: 0 0 10px -1px var(--slot-c); }
 @media (prefers-reduced-motion: no-preference) {
   .login-box { animation: plateIn .5s cubic-bezier(.2, .7, .2, 1) both; }
