@@ -22101,45 +22101,6 @@ async function gpsUnitStatus(provider, deviceId) {
   return match ? gpsNormalize(p, match) : null;
 }
 
-/* ── TEMP DEBUG — GPS auth-flow probe — REMOVE BEFORE MERGE ───────────────────────
-   The backend is proven healthy server-side (token mints, Deere authenticated, 4 machines,
-   CORS allows staging), so the break is in the BROWSER's auth flow. This captures exactly
-   where it fails: the backendCall('gpsToken') mint, gpsLogin(), and the data call — with
-   secrets redacted to presence/length only. Auto-runs on staging (no hash needed). */
-async function deereProbe() {
-  const out = {};
-  const redactErr = (e) => 'ERR: ' + ((e && e.message) || String(e)) + (e && e.status ? ` (status ${e.status})` : '');
-  const tok = (v) => (v ? `present(len ${String(v).length})` : 'EMPTY');
-  out.env = APP_ENV;
-  out.phoneIdentity = flagOn('phoneIdentity');
-  out.gpsConfigured = gpsConfigured();
-  out.backendPassword = tok(typeof backendPassword !== 'undefined' ? backendPassword : '');
-  out.gpsToken_before = tok(gpsToken);
-  // 1) the exact mint the browser does — does the GAS proxy return a token HERE?
-  try {
-    const r = await backendCall('gpsToken');
-    out.gpsToken_call = { ok: !!(r && r.ok), error: (r && r.error) ?? '(none)', hasToken: !!(r && r.token) };
-  } catch (e) { out.gpsToken_call = redactErr(e); }
-  // 2) gpsLogin() — does it store the token?
-  try { out.gpsLogin_result = await gpsLogin(); } catch (e) { out.gpsLogin_result = redactErr(e); }
-  out.gpsToken_after = tok(gpsToken);
-  // 3) the data call the connect picker makes (goes through the 401 re-auth path)
-  try {
-    const m = await gpsFetch('/api/deere/machines');
-    out.deere_machines = { values: ((m && m.values) || []).length, keys: Object.keys(m || {}) };
-  } catch (e) { out.deere_machines = redactErr(e); }
-  showDeereProbe(out);
-}
-function showDeereProbe(obj) {
-  let text; try { text = JSON.stringify(obj, null, 2); } catch { text = String(obj); }
-  if (text.length > 3000) text = text.slice(0, 3000) + '\n… (truncated)';
-  const d = document.createElement('div');
-  d.style.cssText = 'position:fixed;inset:0;z-index:99999;background:var(--bg,#0b0c0f);color:var(--txt,#e9edf4);padding:16px;overflow:auto;font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap;-webkit-user-select:text;user-select:text';
-  d.textContent = 'DEERE PROBE (temp debug — screenshot this)\n\n' + text + '\n\n(tap to close)';
-  d.addEventListener('click', () => d.remove());
-  document.body.appendChild(d);
-}
-
 /* Provider machine/vehicle lists — powers the connect-wizard picker (spec §5a step 2)
    for Deere/Yanmar/Bouncie, and gpsUnitStatus above. Raw provider records (the wizard
    presents id + name for the operator to pick). */
@@ -23829,12 +23790,6 @@ function finishLoad() {
   if ((location.hash || '').toLowerCase().includes('migrate-units')) {
     history.replaceState(null, '', location.pathname + location.search);   // self-clear so a refresh can't re-fire
     if (adminUnlocked()) openMigrationPreview(); else toast('Admin unlock required to round up missing units.');
-  }
-  // TEMP DEBUG (REMOVE BEFORE MERGE): GPS auth-flow probe — auto-runs on STAGING (no hash to
-  // type), or anywhere via #deere-probe. Never on production.
-  if (APP_ENV === 'staging' || (location.hash || '').toLowerCase().includes('deere-probe')) {
-    if ((location.hash || '').toLowerCase().includes('deere-probe')) history.replaceState(null, '', location.pathname + location.search);
-    deereProbe();
   }
   // #s=<id> — H1 session sharing: restore the open tabs saved by another device's QR.
   const sm = (location.hash || '').match(/[#&]s=([\w-]+)/i);
