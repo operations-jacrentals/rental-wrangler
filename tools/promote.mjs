@@ -37,6 +37,8 @@
 //   --force path in this script. Never echoes secrets (none are needed for this step).
 
 import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 // TODO(jac): confirm — the release-pointer branch Pages serves as PRODUCTION (plan Phase 0.2/0.3).
 const PRODUCTION_BRANCH = 'production';
@@ -48,6 +50,31 @@ const LIVE_URL = 'https://app.jacrentals.com';
 // promoted — otherwise staging is showing something OTHER than what's about to go live, which
 // defeats the review gate. Enforced below so staging can never fall behind production.
 const STAGING_URL = 'https://operations-jacrentals.github.io/rental-wrangler-staging';
+
+// The advisory lease marker deploy-staging writes at the repo root (diagnostic-only,
+// gitignored). promote NEVER requires it — it's usually already deleted by /merge — but when
+// present it names the slot the feature was deployed to and may carry the last verified ?v=
+// token, which enriches the freshness print and lets us flag marker/trunk drift.
+const MARKER_FILE = '.staging-lease.json';
+
+// Normalize a base URL so `${base}/index.html` can never produce the `…staging//index.html`
+// double-slash bug (STAGING_URL / a slot url may or may not carry a trailing slash).
+function stripSlash(u) { return String(u || '').replace(/\/+$/, ''); }
+
+// Resolve which staging slot's URL the freshness gate should check. At N=1 this is ALWAYS the
+// single STAGING_URL; the advisory marker (if present) only names the slot id and surfaces its
+// last verified token. Credential-free — reads a local file, never the control branch. N=3 is
+// the one deferred seam (resolve by expectedToken / --slot; see plan §8.2).
+function resolveStagingSlotUrl() {
+  let marker = null;
+  try {
+    const p = join(ROOT, MARKER_FILE);
+    if (existsSync(p)) marker = JSON.parse(readFileSync(p, 'utf8'));
+  } catch { marker = null; }
+  const slotId = marker && Number.isInteger(marker.slotId) ? marker.slotId : 1;
+  const markerToken = marker && marker.token != null ? String(marker.token) : null;
+  return { url: STAGING_URL, slotId, markerToken };
+}
 
 const REMOTE = 'origin';
 const ARGV = process.argv.slice(2);
@@ -131,18 +158,24 @@ function fetchLiveToken(url) {
     return { error: e.message };
   }
 }
-const staging = fetchLiveToken(STAGING_URL);
+const slot = resolveStagingSlotUrl();
+const slotName = `staging slot ${slot.slotId}`;
+const staging = fetchLiveToken(stripSlash(slot.url));
 const stagingFresh = !staging.error && !!expectedToken && staging.token === expectedToken;
 console.log('');
 if (!expectedToken) {
   console.log('promote: staging freshness — ⚠️ no app.js?v= token in the promoted index.html; cannot verify.');
 } else if (staging.error) {
-  console.log(`promote: staging freshness — ⚠️ could not reach ${STAGING_URL} (${staging.error}).`);
+  console.log(`promote: staging freshness — ⚠️ could not reach ${slotName} at ${slot.url} (${staging.error}).`);
 } else if (stagingFresh) {
-  console.log(`promote: staging freshness — ✅ staging serves ?v=${expectedToken}, matching the trunk commit.`);
+  console.log(`promote: staging freshness — ✅ ${slotName} serves ?v=${expectedToken}, matching the trunk commit.`);
 } else {
-  console.log(`promote: staging freshness — 🔴 STAGING IS BEHIND. Trunk = ?v=${expectedToken}, staging = ?v=${staging.token || '(none)'}.`);
-  console.log(`promote:   staging is NOT showing what you're about to promote — deploy this commit to staging and review it first.`);
+  console.log(`promote: staging freshness — 🔴 ${slotName.toUpperCase()} IS BEHIND. Trunk = ?v=${expectedToken}, ${slotName} = ?v=${staging.token || '(none)'}.`);
+  console.log(`promote:   ${slotName} is NOT showing what you're about to promote — deploy this commit to staging and review it first.`);
+}
+// Marker/trunk drift note — only when the advisory marker actually carries a token.
+if (slot.markerToken && expectedToken && slot.markerToken !== expectedToken) {
+  console.log(`promote:   note — the last-deploy marker recorded ?v=${slot.markerToken} for ${slotName}, which differs from the trunk token ?v=${expectedToken}.`);
 }
 
 // --- Step 3: hard STOP-gate — mirrors the /clasp prod-deploy posture ---------
@@ -160,16 +193,16 @@ console.log('promote: --yes given — proceeding with the promotion above.');
 // --- Step 3b: ENFORCE the staging-freshness gate before touching production ---
 if (!stagingFresh && !SKIP_STAGING_CHECK) {
   fail(
-    `refusing to promote — staging is not confirmed fresh (see above). Promoting now would put ` +
+    `refusing to promote — ${slotName} is not confirmed fresh (see above). Promoting now would put ` +
     `production AHEAD of the staging review site — exactly the drift this gate prevents.\n` +
     `promote: fix it — from the merged feature branch run \`node tools/deploy-staging.mjs\`, confirm ` +
-    `staging serves ?v=${expectedToken || '(the trunk token)'}, then re-run promote.\n` +
+    `${slotName} serves ?v=${expectedToken || '(the trunk token)'}, then re-run promote.\n` +
     `promote: if staging genuinely can't be reached (its host is down) and you accept the risk, ` +
     `re-run with --skip-staging-check to override this deliberately.`
   );
 }
 if (!stagingFresh && SKIP_STAGING_CHECK) {
-  console.log('promote: ⚠️ --skip-staging-check given — proceeding WITHOUT a fresh-staging confirmation (deliberate override).');
+  console.log(`promote: ⚠️ --skip-staging-check given — proceeding WITHOUT a fresh-${slotName} confirmation (deliberate override).`);
 }
 
 // --- Step 4: refuse anything that is not a clean fast-forward ---------------

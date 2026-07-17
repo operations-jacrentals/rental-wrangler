@@ -139,6 +139,12 @@
   conflicts on nearly every concurrent merge — resolve mechanically
   (`git checkout --ours/--theirs index.html` to pick the forward token, then
   `node tools/gen-code-map.mjs`), never by hand-editing the generated map.
+- **CI's `pull_request` synchronize is unreliable + raw GitHub REST is 403** (2026-07-17) —
+  later pushes to a PR didn't always spawn a `smoke` run, so the branch-protected merge stalled
+  with no check. Fix: dispatch `ci.yml` via `workflow_dispatch` on the branch head (creates the
+  required `smoke` check on that commit). And you can't poll from bash — curl to api.github.com
+  is 403 ("GitHub access is not enabled"; the proxy routes GitHub only through the MCP `github`
+  tools) — poll with `mcp__github__actions_list` + a background `sleep` timer.
 - **The Bash guard false-positives on compound git commands** (2026-07-17) — a single Bash
   command containing BOTH `git push` AND a `trunk`/`production` token (e.g. a `git push …; git …
   origin/trunk` chain, or a `git merge-base --is-ancestor origin/trunk HEAD` check alongside a
@@ -150,8 +156,23 @@
   commit that landed between your `/deploy` and merge isn't on staging. It's still the sanctioned
   bar (that commit was CI-gated + staged by its own session), but token-match ≠ full content-match
   — re-deploy trunk to staging if you need a faithful mirror before a go-live.
+- **Headless Chromium can silently fail to paint a specific fixed node** (2026-07-16) —
+  a `position:fixed` body-level element wouldn't composite in a `chrome-headless-shell`
+  screenshot even with every computed style correct and a provably paintable spot (an
+  identical plain div rendered there; the login plate rendered fine). A headless
+  artifact, not a real-browser defect — verify transient/fixed visual cues on the
+  **staging drive** (real Chrome), not headless screenshots.
 
 ## Open threads
+- **#666 mobile-nav pass — SHIPPED LIVE** (2026-07-17, `cc7dd7d`) — wider footer Back/Forward
+  jog + thicker chevrons (height unchanged); phone Back now "escapes" a filtered/anchored list
+  via the phone-only `jogBackEscape` (both the fleet-filter path and `setAnchor` wipe backStack,
+  which is why Back dead-ended before); `+Lost` moved off the category mini-cards into Category
+  Details → Fleet Summary. Went live inside a **sibling session's** trunk→production promote (not
+  a dedicated one — a good reminder that a trunk promote ships everyone's integrated backlog). Two
+  minor deferred nits remain: `jogBackEscape`'s `'filter'` branch clears graph-view `.g` terms
+  wholesale (phone edge case, harmless); Fleet Summary shows the lost-demand count twice (derived
+  stat + the `+Lost N` button label).
 - **Repo privacy** — parked on Jac's GitHub billing-tier check. Pages-from-private
   needs GitHub Pro; Free forces public, and flipping private on Free takes
   `app.jacrentals.com` down. If Pro: canary staging → confirm → flip main + production
@@ -166,3 +187,15 @@
   specific failed unit — matches how the yard `+FC` node already works app-wide.
   Fine for single-unit rentals (the common case). Parked from the inspection-toggle
   redesign (PR #662, 2026-07-17); revisit if per-unit field calls are needed.
+- **Instant Cache — fast signed-in open** (SHIPPING 2026-07-17, flag ON, PR #653). On a
+  PERSONAL device, paint the last confirmed backend load from an on-device IndexedDB
+  snapshot instantly on a signed-in reopen, then reconcile with the live backend.
+  Display-only — **never a save baseline** (`paintFromCache` leaves `booting=true`, no
+  `snapshotSaved`), so a stale cache can't corrupt the Sheet; **personal devices only**
+  (a shared PIN device never caches → no PII at rest); schema/appVer/token-gated +
+  self-healing; behind `FEATURES.instantCache` (flipped ON — instant rollback stays a
+  one-line toggle). Ships with the black-screen boot fix (splash + parallel resume, ex-#650).
+  Reconciled with trunk #655 (`pidEnter` intro video), #659 (`gpsLogin` in `finishLoad`),
+  #660 (`maybeReplayScan`); the planned "shared-device login video" (Phase 4) was
+  **dropped** — #655 already shipped it. Spec + plan:
+  `docs/superpowers/{specs,plans}/2026-07-16-instant-cache-*.md`.
