@@ -156,6 +156,12 @@
   commit that landed between your `/deploy` and merge isn't on staging. It's still the sanctioned
   bar (that commit was CI-gated + staged by its own session), but token-match ≠ full content-match
   — re-deploy trunk to staging if you need a faithful mirror before a go-live.
+- **Headless Chromium can silently fail to paint a specific fixed node** (2026-07-16) —
+  a `position:fixed` body-level element wouldn't composite in a `chrome-headless-shell`
+  screenshot even with every computed style correct and a provably paintable spot (an
+  identical plain div rendered there; the login plate rendered fine). A headless
+  artifact, not a real-browser defect — verify transient/fixed visual cues on the
+  **staging drive** (real Chrome), not headless screenshots.
 
 ## Open threads
 - **#666 mobile-nav pass — SHIPPED LIVE** (2026-07-17, `cc7dd7d`) — wider footer Back/Forward
@@ -181,3 +187,15 @@
   specific failed unit — matches how the yard `+FC` node already works app-wide.
   Fine for single-unit rentals (the common case). Parked from the inspection-toggle
   redesign (PR #662, 2026-07-17); revisit if per-unit field calls are needed.
+- **Instant Cache — fast signed-in open** (SHIPPING 2026-07-17, flag ON, PR #653). On a
+  PERSONAL device, paint the last confirmed backend load from an on-device IndexedDB
+  snapshot instantly on a signed-in reopen, then reconcile with the live backend.
+  Display-only — **never a save baseline** (`paintFromCache` leaves `booting=true`, no
+  `snapshotSaved`), so a stale cache can't corrupt the Sheet; **personal devices only**
+  (a shared PIN device never caches → no PII at rest); schema/appVer/token-gated +
+  self-healing; behind `FEATURES.instantCache` (flipped ON — instant rollback stays a
+  one-line toggle). Ships with the black-screen boot fix (splash + parallel resume, ex-#650).
+  Reconciled with trunk #655 (`pidEnter` intro video), #659 (`gpsLogin` in `finishLoad`),
+  #660 (`maybeReplayScan`); the planned "shared-device login video" (Phase 4) was
+  **dropped** — #655 already shipped it. Spec + plan:
+  `docs/superpowers/{specs,plans}/2026-07-16-instant-cache-*.md`.
