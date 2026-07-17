@@ -43,6 +43,9 @@ jobs:
       - name: Staging-lease deploy seam (pure-Node, injected effects)
         run: node ci/lease-deploy-test.mjs
 
+      - name: Promote content-freshness resolver (pure-Node, injected probe)
+        run: node ci/promote-test.mjs
+
       - name: Rulebook field catalog is current
         run: node ci/gen-rule-usage.mjs --check
 
