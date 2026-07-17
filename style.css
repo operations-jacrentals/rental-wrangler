@@ -3487,6 +3487,7 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 .jnode.fc .jlbl { color: var(--red); }
 .jlbl { font-size: 9.5px; font-weight: 700; color: var(--txt-2); }
 .jts { font-size: 8.5px; color: var(--txt-3); font-variant-numeric: tabular-nums; min-height: 10px; }
+.jts .jscan { color: var(--accent); font-weight: 800; margin-left: 1px; }   /* scan-sourced capture marker — tasteful, tokens-only (jactec-ui) */
 .jseg { flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; gap: 2px; padding-top: 8px; min-width: 0; }
 .jseg .jover { font-size: 9px; font-weight: 700; color: var(--txt-2); white-space: nowrap; display: inline-flex; align-items: center; gap: 3px; min-height: 11px; max-width: 100%; }
 .jseg .jover.loglink { color: var(--txt); font-weight: 800; cursor: pointer; }
