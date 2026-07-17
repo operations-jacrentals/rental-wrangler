@@ -19,13 +19,24 @@
 - **Deploy flow:** the standard splice — pull live `Code.js` → append §authz functions + wire the
   router → `node --check` → STOP-gate (show Jac) → SA `push` HEAD → **Jac's editor New-version
   deploy** → verify anonymous JSON + a real approval round-trip on staging.
-## 🟡 PUSHED TO HEAD — awaiting Jac's editor deploy — invoice email PNG attachment (2026-07-17)
-- **Status:** spliced against the LIVE `Code.js` (pulled via SA `getContent`, matched the snapshot
-  at `sendCustomerMessage_` 2446-2448), `node --check` passed, **pushed to HEAD via the service
-  account** (content-only — NOT live). **Go-live = Jac's editor deploy** (Deploy → Manage
-  deployments → Edit prod → New version, Execute as Me (operations@), Who has access: Anyone).
-  Verify after: POST `{"action":"auth","password":"__wrong__"}` to the exec URL → expect JSON
-  `{"ok":false,...}` (HTML/403 = anonymous access broke → editor rollback).
+## ✅ DEPLOYED + VERIFIED 2026-07-17 — invoice email PNG attachment
+- **Status:** Jac editor-deployed the HEAD splice (New version). **Verified live 2026-07-17:**
+  (1) **Anon-access guard** — POST `{"action":"auth","password":"__wrong__"}` → `{"ok":false,
+  "error":"unauthorized"}` @ HTTP 200 (anonymous access intact — no editor rollback needed).
+  (2) **Full round-trip** — a real `sendCustomerMessage` email for test record **C0991** (Jacob
+  Cameron, jacob@jacrentals.com) with `attachment:{name,mimeType:'image/png',dataB64}` → `{ok:true}`;
+  the operations@ **Sent copy** (subject *"Quote 04i07Ju26 from JacRentals"*) carries the attachment
+  **`04i07Ju26.png`, mimeType `image/png`** (confirmed via the Gmail Sent record, not just the `ok:true`
+  return — the backend returns `ok:true` even when it drops a bad blob, so the Sent-side attachment is
+  the real proof). Recipient was **server-resolved** to C0991's own email (isolation gate held); the
+  quiet-hours gate was enforced (first send blocked `quiet-hours`; admin `override:true` cleared it).
+  The attach-splice (decode `dataB64` → blob → `mailOpts.attachments`) is proven end-to-end.
+- **Caveat:** the image in THIS verification send was a **synthetic** PNG — the cloud sandbox can't do
+  the real DOM/canvas/font render, so real-invoice **Saira/Geist fidelity** is covered by the separate
+  real-device Copy-as-image check, not this test. The BACKEND attach path is fully proven regardless.
+- **Test artifact left in live data:** one `sendCustomerMessage` (ok) on invoice `04i07Ju26` for the
+  **C0991 test record** → a backend comms-log row + a Sent/Inbox email in the jacrentals.com mailboxes.
+  Harmless (test record, $1.00 "Testing Square" invoice); left in place so Jac can eyeball the attachment.
 - **What:** `docs/handoffs/invoice-email-attachment-backend.gs` — a small ADDITIVE splice in
   `sendCustomerMessage_` (email branch, right before `GmailApp.sendEmail`). The client
   (`emailQuoteSend`, shipped on `claude/random-improvements-quivhs`) now renders the invoice sheet to
