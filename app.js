@@ -5673,8 +5673,11 @@ function funnelPill(custId, which, stage) {
  *  DRAFT (no customerId exists yet) — opens openCustQuickAddFunnelDropdown, which
  *  writes straight to state.custQuickAdd.funnel instead of a real record. */
 function custQuickAddFunnelPill(stage) {
+  const set = !!(stage && stage !== 'N/A');
   const st = getStatus('funnelStage', stage || 'N/A');
-  return `<span class="pill gate c-${st.color} js-custqa-funnel" data-r="R1">${I.chev}${esc(st.label)}</span>`;
+  // Unset reads as a placeholder ("Rental funnel", gray) — its own inline label now that the
+  // stamped caps are gone; a real pick shows the stage in its registry color. (Jac 2026-07-17)
+  return `<span class="pill gate c-${set ? st.color : 'gray'} js-custqa-funnel" data-r="R1">${I.chev}${esc(set ? st.label : 'Rental funnel')}</span>`;
 }
 /** R4: a DERIVED pill — rides another pill in the same section; no bg/border,
  *  destination icon + ink color only; sits directly RIGHT of its parent. */
@@ -9342,16 +9345,17 @@ function listView(cardDef, session) {
 function custQuickAddRowHtml() {
   const d = state.custQuickAdd;
   if (!d.open) return `<button class="bigbtn js-custqa-open">${I.plus} New Customer</button>`;
-  const valid = custQuickAddValid();
+  // No Cancel/Wrangle buttons, no stamped field captions (Jac 2026-07-17): the placeholders
+  // label the text fields and the funnel pill labels itself. Filling all four — first, last, a
+  // ≥7-digit phone, and a REAL funnel pick — auto-creates the customer and opens its detail
+  // view (custQuickAddReady → custQuickAddCreate). A created customer resets to the collapsed
+  // +New Customer button.
   return `<div class="qa-cust">`
     + `<div class="qa-cust-row">`
-    + `<div class="qa-field qa-first"><span class="ao-cap">First</span><input type="text" class="qa-in js-custqa-first" placeholder="First name" value="${esc(d.first)}"></div>`
-    + `<div class="qa-field qa-last"><span class="ao-cap">Last</span><input type="text" class="qa-in js-custqa-last" placeholder="Last name" value="${esc(d.last)}"></div>`
-    + `<div class="qa-field qa-phone"><span class="ao-cap">Phone</span><input type="tel" class="qa-in js-custqa-phone" placeholder="Phone" value="${esc(d.phone)}"></div>`
-    + `<div class="qa-field qa-funnel"><span class="ao-cap">Funnel</span>${custQuickAddFunnelPill(d.funnel)}</div>`
-    + `<div class="qa-cust-actions">${ghostPill('Cancel', { js: 'js-custqa-cancel' })}`
-    + `<button type="button" class="pill ignition qa-cust-submit${valid ? ' js-custqa-submit' : ' is-disabled'}" data-r="R17"${valid ? '' : ' aria-disabled="true"'}>Wrangle</button>`
-    + `</div>`
+    + `<div class="qa-field qa-first"><input type="text" class="qa-in js-custqa-first" placeholder="First name" value="${esc(d.first)}"></div>`
+    + `<div class="qa-field qa-last"><input type="text" class="qa-in js-custqa-last" placeholder="Last name" value="${esc(d.last)}"></div>`
+    + `<div class="qa-field qa-phone"><input type="tel" class="qa-in js-custqa-phone" placeholder="Phone" value="${esc(d.phone)}"></div>`
+    + `<div class="qa-field qa-funnel">${custQuickAddFunnelPill(d.funnel)}</div>`
     + `</div>`
     + `</div>`;
 }
@@ -18058,8 +18062,6 @@ function onClick(e) {
   // open/collapse + submit here; the funnel-pick option itself lives with the other dropdown
   // handlers below (js-custqa-funnel-pick, next to js-setfunnel).
   if (closest('.js-custqa-open')) { e.stopPropagation(); state.custQuickAdd.open = true; return render(); }
-  if (closest('.js-custqa-cancel')) { e.stopPropagation(); state.custQuickAdd = { open: false, first: '', last: '', phone: '', funnel: 'N/A' }; return render(); }
-  if (closest('.js-custqa-submit')) { e.stopPropagation(); return custQuickAddCreate(); }
   if (closest('.js-custqa-funnel')) { e.stopPropagation(); return openCustQuickAddFunnelDropdown(closest('.js-custqa-funnel')); }
   if (closest('.js-new-unit-search')) { e.stopPropagation(); return quickAddUnitFromSearch(activeSession().cards.units.search); }
   if (closest('.js-new-cat-search')) { e.stopPropagation(); return quickAddCategoryFromSearch(activeSession().cards.categories.search); }
@@ -18113,7 +18115,7 @@ function onClick(e) {
   if (closest('.js-funnel')) { const b = closest('.js-funnel'); e.stopPropagation(); return openFunnelDropdown(b.dataset.rec, b.dataset.which, b); }
   // Customers-list quick-add draft's funnel pick — writes state.custQuickAdd.funnel (no
   // customer record exists yet, so this can't ride js-setfunnel/setFunnelStage above).
-  if (closest('.js-custqa-funnel-pick')) { const b = closest('.js-custqa-funnel-pick'); state.custQuickAdd.funnel = b.dataset.val; document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return render(); }
+  if (closest('.js-custqa-funnel-pick')) { const b = closest('.js-custqa-funnel-pick'); state.custQuickAdd.funnel = b.dataset.val; document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); if (custQuickAddReady()) return custQuickAddCreate(); return render(); }   // all four filled → create + open detail; else re-render to show the picked funnel
   if (closest('.js-fleet-filter')) {
     const b = closest('.js-fleet-filter'); e.stopPropagation();
     // A1 — the fleet-bar segment routes through the search bar as a removable pill (one
@@ -19763,21 +19765,16 @@ function onInput(e) {
     if (o?.kind === 'gpsRoundup') { o.swapQuery = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.overlay .js-gpsru-swap-search'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
     return;
   }
-  // Customers-list quick-add row — draft fields update state.custQuickAdd WITHOUT a
-  // render() (typing must keep focus); the Wrangle button's enabled state is patched
-  // live in the DOM instead (mirrors setupPayAlloc's no-re-render recompute pattern).
+  // Customers-list quick-add row — draft fields update state.custQuickAdd WITHOUT a render()
+  // (typing must keep focus). When all four are filled (a real funnel pick is required, so this
+  // is only reachable once the funnel is set — never mid-typing in the normal order) → create +
+  // open detail. (Jac 2026-07-17)
   if (e.target.classList.contains('js-custqa-first') || e.target.classList.contains('js-custqa-last') || e.target.classList.contains('js-custqa-phone')) {
     const d = state.custQuickAdd;
     if (e.target.classList.contains('js-custqa-first')) d.first = e.target.value;
     else if (e.target.classList.contains('js-custqa-last')) d.last = e.target.value;
     else d.phone = e.target.value;
-    const btn = e.target.closest('.qa-cust')?.querySelector('.qa-cust-submit');
-    if (btn) {
-      const ok = custQuickAddValid();
-      btn.classList.toggle('js-custqa-submit', ok);
-      btn.classList.toggle('is-disabled', !ok);
-      if (ok) btn.removeAttribute('aria-disabled'); else btn.setAttribute('aria-disabled', 'true');
-    }
+    if (custQuickAddReady()) return custQuickAddCreate();
     return;
   }
   if (e.target.classList.contains('chat-input')) { state.chat.draft = e.target.value; return; }
@@ -20121,6 +20118,14 @@ function quickAddCustomerFromSearch(value) {
 function custQuickAddValid() {
   const d = state.custQuickAdd;
   return !!(d.first.trim() && d.last.trim() && d.phone.replace(/\D/g, '').length >= 7);
+}
+// All FOUR fields filled — first + last + a ≥7-digit phone + a REAL funnel pick ('N/A' is the
+// unset placeholder). This is the auto-create trigger (Jac 2026-07-17): the funnel starts 'N/A',
+// so while the text fields are being typed nothing is ready; the funnel pick — the natural last
+// step — is what completes the set and fires the create. That ordering means the phone's ≥7-digit
+// check can't auto-fire mid-typing in the normal First→Last→Phone→Funnel flow.
+function custQuickAddReady() {
+  return custQuickAddValid() && !!state.custQuickAdd.funnel && state.custQuickAdd.funnel !== 'N/A';
 }
 /* Create + open — mirrors quickAddCustomerFromSearch's create-object field set verbatim,
  * except membershipStage comes from the draft's own funnel picker (set DIRECTLY, never

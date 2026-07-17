@@ -4268,12 +4268,10 @@ body.dragging[data-drag="workOrders"] .inv-add-pill,
 .qa-field.qa-funnel { flex: 0 0 auto; }
 .qa-in { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 11px; color: var(--txt); font: inherit; font-size: 12.5px; width: 100%; }
 .qa-in:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.qa-cust-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; margin-left: auto; }
 @media (max-width: 480px) {
   .qa-cust-row { align-items: stretch; }
   .qa-field.qa-first, .qa-field.qa-last, .qa-field.qa-phone { flex: 1 1 45%; }
-  .qa-field.qa-funnel, .qa-cust-actions { flex: 1 1 100%; }
-  .qa-cust-actions { justify-content: flex-end; }
+  .qa-field.qa-funnel { flex: 1 1 100%; }
 }
 
 /* ── UNIT ROW (ur): [status pills LEFT] · [cat icon] · [name · category·HRS RIGHT].
