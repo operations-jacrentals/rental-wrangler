@@ -16500,16 +16500,21 @@ async function clearAppCaches() {
 async function checkForUpdate() {
   const cur = appVersion();
   toast('Checking for a newer build…');
+  // CRITICAL: on production the SW (sw.js) serves the CACHED index.html for a plain fetch — it
+  // matches with ignoreSearch, so a ?_= cache-buster is ignored and a naive token check reads
+  // STALE bytes (→ a false "you're up to date" that never updates). Clear the SW + HTTP caches
+  // FIRST so the check below genuinely hits the network. (Staging/localhost have no SW, so this
+  // is a harmless no-op there; the one-time cache re-fill on an "already current" tap is fine.)
+  await clearAppCaches();
   let latest = null;
   try {
-    const res = await fetch('index.html?_=' + Date.now(), { cache: 'no-store' });   // no-store + unique query → always the LIVE index, never the cache
+    const res = await fetch('index.html?_=' + Date.now(), { cache: 'no-store' });
     latest = ((await res.text()).match(/app\.js\?v=([\w-]+)/) || [])[1] || null;
   } catch (e) { /* offline / unreachable */ }
   if (!latest) { toast('Couldn’t reach the server — check your connection and try again.'); return; }
   if (latest === cur) { toast(`You’re already on the latest build (${cur}). ✓`); return; }
   toast(`New build ${latest} — updating…`);
-  await clearAppCaches();
-  const u = new URL(location.href); u.searchParams.set('_u', Date.now().toString(36));   // bust Safari's cached index.html
+  const u = new URL(location.href); u.searchParams.set('_u', Date.now().toString(36));   // bust the cached index.html on reload
   location.replace(u.toString());
 }
 
@@ -24063,8 +24068,9 @@ function warmBackend() {
   try { fetch(BACKEND_URL, { method: 'GET', mode: 'no-cors', cache: 'no-store' }).catch(() => {}); } catch (e) {}
 }
 function boot() {
-  // Tidy the URL after a manual Update (checkForUpdate adds ?_u=<t> to bust the cached index).
-  try { if (/[?&]_u=/.test(location.search)) history.replaceState(null, '', location.pathname + location.hash); } catch (e) {}
+  // Tidy the URL after a manual Update (checkForUpdate adds ?_u=<t> to bust the cached index) —
+  // strip ONLY the _u param, preserving any others.
+  try { const sp = new URLSearchParams(location.search); if (sp.has('_u')) { sp.delete('_u'); const q = sp.toString(); history.replaceState(null, '', location.pathname + (q ? '?' + q : '') + location.hash); } } catch (e) {}
   // Recovery hatch: app.jacrentals.com/#reset-settings (or #safe-mode) wipes saved customizations
   // before they apply — the guaranteed way back if a bad setting ever breaks the screen.
   try {
