@@ -48,6 +48,10 @@ Pause and bring it to Jac ONLY when there's something to see or decide:
    mid-ship. Stop, don't guess (canon rule).
 5. **The staging review itself looks wrong** — console errors, or the built result doesn't
    match what was asked. A red review STOPs the ship (fix on the branch, re-run).
+6. **`/deploy` exits 3 — staging is BUSY (queued/timed-out), not broken.** You can't `/merge`
+   without a completed, reviewed deploy, so **stop the `/live` chain cleanly here** — but frame it
+   as contention, **not** a failed gate: report the holder + ETA, don't rotate the PAT, and tell
+   Jac to re-run `/live` (or `/deploy`) once a slot frees. This is a clean pause, not a red stop.
 
 Outside these, keep moving.
 
