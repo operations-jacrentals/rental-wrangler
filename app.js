@@ -4773,9 +4773,12 @@ const NOTIF_DEFAULTS = {
   // Return-rating follow-up message templates (Settings → Notifications → Rating Follow-ups).
   // {name} is filled with the customer's name; the office can still tweak per-send in the popup.
   ratingMsgs: {
-    thankYou: 'Thanks for renting with us, {name} — it was a pleasure! If we earned it, a quick review would mean a lot: [review link]',
+    thankYou: 'Thanks for renting with us, {name} — it was a pleasure! If we earned it, a quick review would mean a lot: {reviewLink}',
     apology: "Hi {name}, we're sorry your recent rental fell short. We want to make it right — please give our manager a call.",
   },
+  // The Google review link substituted for {reviewLink} in the thank-you follow-up (was a dead
+  // "[review link]" placeholder). Public URL — safe in the repo; editable via Settings later.
+  reviewUrl: 'https://g.page/r/CRaUc6tyqQOhEBM/review',
 };
 // Deep-fill a settings.notifications draft against NOTIF_DEFAULTS so an absent key (or
 // a config saved before a field existed) never crashes the pane. Arrays (channels.
@@ -14073,7 +14076,13 @@ function notifRatingTemplate(key) {
   const m = (state.settings && state.settings.notifications && state.settings.notifications.ratingMsgs) || {};
   return (typeof m[key] === 'string' && m[key].trim()) ? m[key] : NOTIF_DEFAULTS.ratingMsgs[key];
 }
-const rrFillName = (tpl, nm) => String(tpl || '').replace(/\{name\}/g, nm);
+function notifReviewUrl() {
+  const n = state.settings && state.settings.notifications;
+  return (n && typeof n.reviewUrl === 'string' && n.reviewUrl.trim()) ? n.reviewUrl.trim() : NOTIF_DEFAULTS.reviewUrl;
+}
+// {name} → customer name; {reviewLink} → the shop's Google review URL. Blank-safe: an empty URL
+// drops the token (with its leading space) so the text never sends a bare "{reviewLink}".
+const rrFillName = (tpl, nm) => String(tpl || '').replace(/\{name\}/g, nm).replace(/ ?\{reviewLink\}/g, notifReviewUrl() ? ' ' + notifReviewUrl() : '');
 function rrActions(stars) {
   const b = rrBand(stars);
   if (b === 'good') return [{ id: 'thankYou', icon: STATUS_ICONS.star, desc: (nm) => `Text ${nm} a thank-you + a review link`,
@@ -17835,17 +17844,16 @@ function onClick(e) {
   if (closest('.js-comms-chip')) { e.stopPropagation(); return commsToggleCat(closest('.js-comms-chip').dataset.cat); }
   if (closest('.js-comms-new')) { e.stopPropagation(); return commsNewChat(); }   // D9 ALL menu: + New chat (team → newChat(), wrangler → wranglerNewChat())
   if (closest('[data-comms-hide]')) { e.stopPropagation(); return commsHideTab(closest('[data-comms-hide]').dataset.commsHide); }   // ✕ hides from the rail only — never ends
-  if (closest('.js-comms-all')) { e.stopPropagation(); const s = commsSess(); if (s) { s.menuOpen = !s.menuOpen; saveCommsRail(); } return render(); }
   if (closest('.js-comms-menu-x')) { e.stopPropagation(); const s = commsSess(); if (s) { s.menuOpen = false; saveCommsRail(); } return render(); }
-  if (closest('[data-comms-tab]')) { e.stopPropagation(); return commsToggleTab(closest('[data-comms-tab]').dataset.commsTab); }
+  if (closest('[data-comms-tab]')) { e.stopPropagation(); commsOpenPt = { x: e.clientX }; return commsToggleTab(closest('[data-comms-tab]').dataset.commsTab); }
   if (closest('.js-comms-end')) { e.stopPropagation(); closeMenus(); return commsEndConv(closest('.js-comms-end').dataset.cust); }
   if (closest('.js-comms-mend')) { e.stopPropagation(); return commsEndConv(closest('.js-comms-mend').dataset.cust); }
-  if (closest('.js-comms-mrow')) { e.stopPropagation(); return commsOpenConv(state.commsRail.cat, closest('.js-comms-mrow').dataset.cust); }   // D9: click the whole ALL-list row to open (the End pill above intercepts its own click)
+  if (closest('.js-comms-mrow')) { e.stopPropagation(); commsOpenPt = { x: e.clientX }; return commsOpenConv(state.commsRail.cat, closest('.js-comms-mrow').dataset.cust); }   // D9: click the whole ALL-list row to open (the End pill above intercepts its own click)
   if (closest('.cp-head') && !closest('.comms-pop.comms-menu') && !closest('input, textarea')) { e.stopPropagation(); const s = commsSess(); if (s && s.lastOpen != null) return commsToggleTab(s.lastOpen); }   // click a conversation window's HEADER to collapse it — gear/End/rename intercept above; the ALL-list header + the rename input are excluded
   if (closest('.js-comms-send')) { e.stopPropagation(); return commsSend(closest('.js-comms-send').dataset.cust); }
   if (closest('.js-comms-from')) { e.stopPropagation(); return commsFromMenu(closest('.js-comms-from')); }
   if (closest('.js-comms-from-pick')) { e.stopPropagation(); const b = closest('.js-comms-from-pick'); commsFromSel.set(String(b.dataset.cust), b.dataset.from); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return render(); }
-  if (closest('.js-comms-copen')) { e.stopPropagation(); const b = closest('.js-comms-copen'); return commsOpenConv(commsCatOfChannel(b.dataset.channel), b.dataset.cust); }   // customer profile → Open
+  if (closest('.js-comms-copen')) { e.stopPropagation(); commsOpenPt = { x: e.clientX }; const b = closest('.js-comms-copen'); return commsOpenConv(commsCatOfChannel(b.dataset.channel), b.dataset.cust); }   // customer profile → Open
   if (closest('.js-comms-cend')) { e.stopPropagation(); const b = closest('.js-comms-cend'); return commsEndConv(b.dataset.cust, commsCatOfChannel(b.dataset.channel)); }     // customer profile → End
   if (closest('.js-fb-type')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.fbType = closest('.js-fb-type').dataset.val; renderOverlay(); } return; }
   if (closest('.js-fb-shot-x')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.shot = ''; renderOverlay(); } return; }
@@ -24511,6 +24519,14 @@ function boot() {
   // R0 flash-lint: ON by default — violations self-report by pulsing (SPEC v8)
   try { if (localStorage.getItem('jactec.lint') !== '0') document.body.classList.add('rw-lint'); } catch (err) {}
   document.addEventListener('click', onClick);
+  // #14 (Jac 2026-07-17): a click OUTSIDE the comms ALL-list menu tucks the menu away, but leaves
+  // any open conversation WINDOW alone (windows persist until deliberately closed). Excludes the
+  // menu itself and the comms chip that hosts it, so the chip's own click toggles instead of double-firing.
+  document.addEventListener('mousedown', (e) => {
+    const s = commsSess(); if (!s || !s.menuOpen) return;
+    if (e.target.closest && e.target.closest('.comms-pop.comms-menu, .js-comms-chip')) return;
+    s.menuOpen = false; saveCommsRail(); render();
+  });
   document.addEventListener('input', onInput);
   document.addEventListener('change', onChange);
   // §12.1 action entry v3 — Enter commits + field stays open (rapid entry);
@@ -25212,8 +25228,8 @@ function commsSessTabsHtml() {
       return tab(id, (c && fullName(c)) || String(id), commsConvStatus(byId.get(String(id)) || null, meta.channel));
     }).join('');
   }
-  const all = `<button class="crail-tab comms-all js-comms-all${sess.menuOpen ? ' is-active' : ''}" role="tab" aria-selected="${sess.menuOpen}" data-tip="Every un-ended ${meta.label} conversation — Open / End"><span class="crail-t">All · ${count}</span></button>`;
-  return `<div class="crail-group comms-group">${all}${tabs}</div>`;
+  // The old "All · N" chip is retired (Jac 2026-07-17) — the comms icon now hosts the un-ended list.
+  return `<div class="crail-group comms-group">${tabs || `<span class="crail-empty">No open ${esc(meta.label)} windows yet.</span>`}</div>`;
 }
 /* ── Messenger-style conversation window (above its own tab) ─────────────── */
 function commsPopupHtml(cat, t, id) {
@@ -25310,6 +25326,10 @@ function commsMenuHtml(cat) {
    most one conversation window across all categories — the session's lastOpen) —
    called at the end of render() while a session is summoned. Desktop-only
    (phones have no rail; the D8 mobile bottom-sheet reflow rides later). */
+// Comms window positioning (Jac 2026-07-17): open the conversation window over WHERE it was
+// summoned from (the click), not stacked on the left rail. commsOpenPt = the opening click's x;
+// commsWinKey/Left pin the window steady across re-renders until a different window opens.
+let commsOpenPt = null, commsWinKey = null, commsWinLeft = null;
 function mountCommsPops() {
   const cat = state.commsRail.cat;
   if (!cat || document.body.classList.contains('is-phone')) return;
@@ -25345,14 +25365,24 @@ function mountCommsPops() {
       const node = el('div', cls);
       node.innerHTML = html;
       if (cat === 'team') node.dataset.drop = 'chat';   // drag a record in = tag it into the chat (dock parity)
-      host.appendChild(node); place(node, tb, w);
+      host.appendChild(node);
+      // Open over the click that summoned it (commsOpenPt), not the left-packed rail tab; keep it
+      // steady per window (commsWinKey) so it doesn't jump on re-render. Fall back to the tab.
+      const key = cat + ':' + id;
+      let left;
+      if (commsWinKey === key && commsWinLeft != null) left = commsWinLeft;
+      else if (commsOpenPt) left = Math.max(8, Math.min(commsOpenPt.x - w / 2, window.innerWidth - w - 8));
+      else left = Math.max(8, Math.min(tb.getBoundingClientRect().left - 30, window.innerWidth - w - 8));
+      commsWinKey = key; commsWinLeft = left;
+      node.style.left = left + 'px'; node.style.bottom = bottom + 'px';
       const feed = node.querySelector('.cp-feed, .wr-feed'); if (feed) feed.scrollTop = feed.scrollHeight;
     }
   }
   if (sess.menuOpen && (!COMMS_CAT_META[cat].channel || commsOnline())) {
-    const at = document.querySelector('.comms-rail .js-comms-all');
+    const at = document.querySelector(`.js-comms-chip[data-cat="${cat}"]`) || document.querySelector('.comms-rail');
     if (at) { const node = el('div', 'comms-pop comms-menu'); node.innerHTML = commsMenuHtml(cat); host.appendChild(node); place(node, at, 340); }
   }
+  commsOpenPt = null;   // one render-cycle scope — consumed by the window mount above
 }
 /* ── actions ─────────────────────────────────────────────────────────────── */
 /* Sweep a category's window off the rail when the rail leaves it (chip re-click,
@@ -25371,8 +25401,10 @@ function commsToggleCat(cat) {
     return wranglerNewChat();
   }
   const rail = state.commsRail;
-  if (rail.cat === cat) {                                // same chip again → sweep the rail clean
-    rail.cat = null; commsLeaveCat(cat);
+  if (rail.cat === cat) {                                // active icon: reveal the un-ended list first (replaces the old All chip), then a further click sweeps the rail clean
+    const sc = rail.sessions[cat];
+    if (sc && !sc.menuOpen) { sc.menuOpen = true; saveCommsRail(); return render(); }
+    rail.cat = null; if (sc) sc.menuOpen = false; commsLeaveCat(cat);
     saveCommsRail(); return render();
   }
   const prev = rail.cat;
@@ -25391,6 +25423,7 @@ function commsToggleCat(cat) {
     else if ((state.wranglerRail || []).some((c) => String(c.id) === idw)) { saveCommsRail(); return wranglerRailOpen(idw); }
     else s.lastOpen = null;
   }
+  s.menuOpen = !s.lastOpen;   // #15: land straight on the un-ended list when there's no window to restore — the comms icon hosts that menu
   saveCommsRail(); render();
 }
 function commsToggleTab(id) {
