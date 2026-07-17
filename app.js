@@ -2676,6 +2676,21 @@ function applySnap(cs, snap) {
   if ('search' in snap) { cs.search = snap.search; cs.listLimit = snap.listLimit; }   // viewSnap → restore the narrowed list too
   restoreLayout(snap);                                                                // viewSnap → un-swap the column (bring the category cards back)
 }
+// Chrome-style Back "escape" (Jac 2026-07-17): the PHONE footer jog reflects the snapped
+// column's card, but drilling in via a fleet filter (js-fleet-filter) or an anchor both WIPE
+// that card's backStack — so Back had nothing to reverse and sat there dead (the reported bug).
+// When there's no view-history AND no record to drop, a Back instead clears whatever is
+// NARROWING the list (per-card fleet/search filter → session anchor/cascade → global search),
+// so Back always gets you back out. Phone-only — desktop keeps its search-bar ✕ and its
+// unchanged right-click-Back (this returns null off-phone, so both cardBack + cardJog no-op there).
+function jogBackEscape(cs, card) {
+  if (!cs || cs.backStack.length || (cs.mode === 'standard' && cs.recId != null)) return null;   // real history / record-drop wins
+  if (!document.body.classList.contains('is-phone')) return null;
+  if ((cs.filterTerms && cs.filterTerms.length) || (cs.search && cs.search.trim())) return 'filter';
+  if (activeSession().anchor) return 'anchor';
+  if (state.searchMode && (state.query.trim() || (state.filterTerms || []).length)) return 'search';
+  return null;
+}
 // Step this one card back / forward through its own history (other cards untouched).
 function cardBack(card) {
   const cs = activeSession().cards[card]; if (!cs) return;
@@ -2688,7 +2703,13 @@ function cardBack(card) {
       cs.mode = 'list'; cs.recId = null; cs.recType = null; cs.graphView = false;
       sweepEmptyDrafts();   // #8 — stepping back off a record sweeps any abandoned empty draft
       render();
+      return;
     }
+    // no history, no record to drop → step "back" OUT of whatever narrows this list (phone only)
+    const esc = jogBackEscape(cs, card);
+    if (esc === 'filter') { cs.filterTerms = []; cs.search = ''; afterFilterChange(card); }
+    else if (esc === 'anchor') clearAnchor();
+    else if (esc === 'search') clearSearch();
     return;
   }
   const prev = cs.backStack.pop();
@@ -2722,7 +2743,7 @@ function cardJog(card, cs, { always = false } = {}) {
   const arm = (dir, on, ico, tip) =>
     `<button class="jog-btn js-card${dir}" data-card="${esc(card)}" ${on ? '' : 'disabled'} data-tip="${tip}" aria-label="${tip}">${ico}</button>`;
   return `<div class="card-jog" role="group" aria-label="View history" data-r="R32">`
-    + arm('back', back || inRecord, I.chevL, 'Back')
+    + arm('back', back || inRecord || jogBackEscape(cs, card), I.chevL, 'Back')
     + arm('fwd', fwd, I.chevR, 'Forward')
     + `</div>`;
 }
@@ -6747,11 +6768,11 @@ const ROWS = {
       const dlabel = (nd && daysAhead >= 0 && daysAhead <= 7) ? DOW3[nd.getDay()] : fmtShortDate(next.iso).replace(' 0', ' ');
       const when = `${dlabel}${next.min != null ? ` ${compactClock(next.min)}` : ''}`;
       const nu = IDX.unit.get(next.unitId);
-      lead = `<button class="catr-slot js-cat-next" data-unit="${esc(next.unitId)}" data-tip="Next free: ${esc(nu ? nu.name : 'unit')} on ${esc(when)} (4-hr turnaround) — tap to open it">${badge(`Next ${when}`, 'red')}</button>${lostDemandBtn(c)}`;
+      lead = `<button class="catr-slot js-cat-next" data-unit="${esc(next.unitId)}" data-tip="Next free: ${esc(nu ? nu.name : 'unit')} on ${esc(when)} (4-hr turnaround) — tap to open it">${badge(`Next ${when}`, 'red')}</button>`;
     } else {
       // 0 free and no return date to show → tell the salesperson WHY in one word (Jac).
       const why = categoryUnavailReason(c.categoryId);
-      lead = `<div class="catr-slot catr-slot-none" data-tip="None available — ${esc(why.toLowerCase())}">${badge(`None · ${why}`, 'red')}</div>${lostDemandBtn(c)}`;
+      lead = `<div class="catr-slot catr-slot-none" data-tip="None available — ${esc(why.toLowerCase())}">${badge(`None · ${why}`, 'red')}</div>`;
     }
     // The three status pills (Passed · Not Ready · Failed inspection) filter Units to that
     // status in this category via the established js-fleet-filter path (like the detail mixbar).
@@ -8380,6 +8401,7 @@ const DETAIL = {
       ${st.forSale ? kvPills(badge(st.forSale + ' For Sale', 'purple')) : ''}
       ${kv(`${num(st.avgHours)} HRS`, { sfx: 'avg hours', derived: true })}
       ${(c.lostDemand || []).length ? kv(`${(c.lostDemand || []).length}`, { sfx: 'lost-demand asks', derived: true }) : ''}
+      ${kvPills(lostDemandBtn(c))}
       ${c.description ? kv(c.description, { wrap: true }) : ''}
     </div></div>`;
     // MODELS (Jac 2026-07-07): the category derives which models a unit can pick —
