@@ -79,7 +79,9 @@ say-so:
   HEAD:trunk` (or `HEAD:production`) directly — it's rejected.
 - **Gate 2 `/promote`** — `node tools/promote.mjs` (bare = read-only preview; `--yes` to
   run) fast-forwards `production` to the approved `trunk` commit → app.jacrentals.com goes
-  live. Fast-forward-only; verifies the live `?v=` after; refuses if staging is behind. **The
+  live. Fast-forward-only; verifies the live `?v=` after; refuses unless a staging slot serves
+  trunk's **actual bytes** (a **content hash** over `app.js`/`style.css`/`rule-usage.js`, not just
+  a collision-prone `?v=` token — `--slot N` pins a slot). **The
   only step that changes the live site — always Jac's explicit call.**
 - **`/live`** — one word runs `/deploy → /merge → /promote` end to end and takes the feature
   branch all the way live. Runs straight through (Jac: don't stop unless there's something to
@@ -90,11 +92,12 @@ say-so:
   Pages — never gate a secret/auth check on it.)
 
 **Gates (must pass before push):** `node ci/smoke.mjs`, `node ci/logic-test.mjs`,
-`node ci/lease-test.mjs`, `node ci/lease-deploy-test.mjs`, `node ci/gen-rule-usage.mjs --check`,
-`node ci/check-window-catalog.mjs`, `node tools/gen-code-map.mjs --check`. Port 8000 is reserved —
+`node ci/lease-test.mjs`, `node ci/lease-deploy-test.mjs`, `node ci/promote-test.mjs`,
+`node ci/gen-rule-usage.mjs --check`, `node ci/check-window-catalog.mjs`,
+`node tools/gen-code-map.mjs --check`. Port 8000 is reserved —
 swap to 9147 first: `sed -i 's/8000/9147/g' ci/smoke.mjs ci/logic-test.mjs`, run, then `git
-checkout -- ci/`. The two `lease-*` suites are **pure-Node** (mocked git seam, no browser/server)
-— **excluded from the port swap** and never touch the network.
+checkout -- ci/`. The `lease-*` and `promote-test` suites are **pure-Node** (mocked git seam /
+injected probe, no browser/server) — **excluded from the port swap** and never touch the network.
 
 **Cache-bust every deploy:** bump the shared `?v=` on `style.css`, `rule-usage.js`, and
 `app.js` in `index.html` (Pages serves `max-age=600`, no per-file hashing). Don't add `?v=`

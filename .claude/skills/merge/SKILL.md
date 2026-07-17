@@ -45,11 +45,11 @@ point of Gate 1: you look at the running app before integrating it. Check:
 
 ## This step — merge to trunk
 1. **Local gates green:** `node ci/smoke.mjs`, `node ci/logic-test.mjs`,
-   `node ci/lease-test.mjs`, `node ci/lease-deploy-test.mjs`,
+   `node ci/lease-test.mjs`, `node ci/lease-deploy-test.mjs`, `node ci/promote-test.mjs`,
    `node ci/gen-rule-usage.mjs --check`, `node ci/check-window-catalog.mjs`,
    `node tools/gen-code-map.mjs --check`. (Port 8000 is reserved → `sed -i 's/8000/9147/g'
-   ci/smoke.mjs ci/logic-test.mjs`, run, then `git checkout -- ci/`. The two `lease-*` suites
-   are pure-Node — **not** part of the port swap.)
+   ci/smoke.mjs ci/logic-test.mjs`, run, then `git checkout -- ci/`. The `lease-*` and
+   `promote-test` suites are pure-Node — **not** part of the port swap.)
 2. **Fresh-context review — the safety net that replaces plan-reading.** Spawn a
    **code-review subagent** (fresh context, no conversation history) on the diff
    `git diff origin/trunk...HEAD`, scoped to correctness + requirement gaps (not style).

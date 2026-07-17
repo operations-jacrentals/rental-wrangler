@@ -39,11 +39,16 @@ order** and only then promote:
 1. **Is the thing Jac wants live actually merged to trunk?** If it's still on a feature branch
    (not on trunk), **run `/merge` first** — and `/merge` itself runs `/deploy` if the feature
    was never deployed/reviewed. Do NOT promote work that isn't on trunk.
-2. **Is staging fresh?** `promote.mjs` refuses to promote unless the live staging `?v=` equals
-   the trunk commit's `?v=` (so you never ship what staging never showed). If the work went
-   `/deploy → /merge` in order, staging already matches (the feature deploy IS what got merged).
-   If staging is behind, deploy the trunk commit to staging first (a short branch off trunk →
-   `/deploy` → land its `?v=` bump on trunk) — don't reach for the override blindly.
+2. **Is staging fresh? (content-verified)** `promote.mjs` refuses to promote unless a live
+   staging slot serves the trunk commit's **actual bytes** — a SHA-256 content hash over the
+   files the `?v=` token versions (`app.js`/`style.css`/`rule-usage.js`), not merely a matching
+   `?v=` token (which is hand-bumped and can COLLIDE — a different deploy reaching the same `?v=`
+   looks "fresh" on the token alone). The token is only a pre-filter; the hash is the authority.
+   The preview line reads ✅ *content verified* / 🔴 *TOKEN COLLISION* (right token, wrong bytes →
+   re-deploy) / 🔴 *no slot serves trunk's bytes*. `--slot N` pins a slot (still hash-checked).
+   If the work went `/deploy → /merge` in order, staging already matches (the feature deploy IS
+   what got merged). If it's behind/collided, deploy the trunk commit to staging first — don't
+   reach for the override blindly.
 
 **So if Jac says just "promote it" with nothing done yet:** the chain is **/promote → /merge →
 /deploy**, then back up it — deploy, review, merge, promote. Never skip straight to the push.
