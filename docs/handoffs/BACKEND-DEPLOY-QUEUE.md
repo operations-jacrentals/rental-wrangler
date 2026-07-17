@@ -1,5 +1,24 @@
 # Backend deploy queue — DEPLOYED (2026-07-06 late session); doc kept as the deploy runbook
 
+## ✅ DEPLOYED LIVE 2026-07-17 — §authz approval codes (tier-gate swap)
+- **What:** the frontend's tier gates (Net Terms D22, rental-gate override D14, blacklist
+  set/lift D13, card-gate override, admin inline pricing edits) no longer take the retired
+  shared password — a below-tier user now picks a Manager/Admin off the roster and the backend
+  texts THAT person's own phone a one-time 6-digit **approval code** that authorizes the ONE
+  action. Two additive handlers in `docs/handoffs/phone-identity-backend.gs` §authz:
+  **`authzStart_`** (authenticated requester; approver tier ≥ minTier enforced at mint, floored
+  at manager; own rate bucket `PID_AZRL_`; roster-resolved destination) and **`authzVerify_`**
+  (single-use burn, 5-try cap, 10-min TTL, tier re-checked at verify, `rec.need` must cover the
+  gate being asked; returns `{ok, approver}` — **never a token/session**). Separate `PID_AZCODE_`
+  namespace so a login code can't approve and an approval code can't log in. `pidPurgePerson_`
+  extended (+2 keys). Router: 2 dispatch lines (after `role` is computed) + 2 `WRITE_ACTIONS`
+  keys — see the ROUTER WIRING block in the mirror.
+- **Frontend:** ships on `claude/tier-gate-phone-code-iupiwy` (the tierAuth shell). **Fail-closed
+  until this deploys** — below-tier users see "Couldn't text the code" (no regression: the
+  password path was already a dead end with no password to type); at-tier users are unaffected.
+- **Deploy flow:** the standard splice — pull live `Code.js` → append §authz functions + wire the
+  router → `node --check` → STOP-gate (show Jac) → SA `push` HEAD → **Jac's editor New-version
+  deploy** → verify anonymous JSON + a real approval round-trip on staging.
 ## ⏳ READY TO PUSH — membership dues PO-hold + create-ahead-regardless-of-payment (2026-07-17)
 - **What:** `docs/handoffs/2026-07-17-membership-po-advance-billing.gs` — additive splice against the LIVE
   membership block (reconciled 2026-07-17 against the live source pulled via the Drive connector; the live

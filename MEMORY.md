@@ -127,11 +127,31 @@
   merge to race — rebase again; the conflicts are only the generated files (`rule-usage.js`,
   `docs/code-map.generated.md` → regenerate) + the `index.html` `?v=` token (take trunk's, then
   re-`/deploy` to re-bump + re-sync staging before `/promote`).
+- **Hot-trunk livelock → use GitHub auto-merge (squash) to stop hand-racing.** When trunk moves
+  faster than a resolve→gates→push cycle (tier-gate ship, 2026-07-17: trunk advanced **3×** mid-
+  ship), stop chasing: resolve the (small) conflict, push, then enable **auto-merge squash** on
+  the PR — GitHub lands it the instant required CI passes + it's mergeable, so a later
+  non-conflicting trunk move can't reset you. Only a *new conflicting* change pauses it (re-
+  resolve). Recurring conflict shape is the same 1-hunk account-section combine (sibling's
+  toggle line + your handler line) + generated files + `?v=`. Squash-merge collapses the whole
+  branch (incl. any merge commits from re-merging trunk) into one clean trunk commit, so those
+  intermediate commits' unsigned/GitHub-authored status is moot — never `rebase --exec` to
+  "fix" merged-in trunk commits (rewrites shared history).
 - **Backend deploy** uses the service account (`GAS_SA_KEY_B64` + the service-account
   script), push only; go-live is Jac's Apps Script **editor** deploy. clasp OAuth is
   RAPT-blocked (2026-07-06) — don't retry `clasp login`.
 - **Port 8000 is reserved** — swap gates to 9147 before running
   (`sed -i 's/8000/9147/g' ci/smoke.mjs ci/logic-test.mjs`, run, `git checkout -- ci/`).
+- **Playwright in cloud: point at the headless-shell binary, and it CAN'T reach github.io.**
+  `chromium.launch()` needs `executablePath:
+  '/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell'` (the plain
+  `/opt/pw-browsers/chromium` path errors "Old Headless mode has been removed"). And headless
+  Chromium can't reach `github.io` through the agent proxy (`ERR_CONNECTION_RESET`; `curl`
+  works fine) — so you **can't browser-drive the live staging URL headless**. Verify a staging
+  deploy by `curl`-grepping the deployed `app.js`/`style.css` bytes instead, and validate feature
+  behavior by driving a LOCAL server (`#local` or a `page.route` mock of `script.google.com`)
+  plus live-backend `curl` probes. (Same install caveat as always: `npm i --no-save
+  playwright@1.48.0`; browsers are pre-provisioned, never `playwright install`.)
 - **Cache-bust** the shared `?v=` on `style.css` / `rule-usage.js` / `app.js` in
   `index.html` on every deploy.
 - **Staging is a direct push** (`tools/deploy-staging.mjs`); verify the live bytes. A
@@ -205,6 +225,25 @@
   **staging drive** (real Chrome), not headless screenshots.
 
 ## Open threads
+- **Tier-gate approval codes — SHIPPED LIVE + PROMOTED (2026-07-17, PR #651, `?v=20260717m`).**
+  The password tier gates (Net Terms D22, rental override D14, blacklist D13, card-gate override,
+  admin inline pricing) now swap to Manager/Admin phone approval codes: below-tier user picks an
+  approver off the roster → 6-digit code texts to THEIR phone (`authzStart`/`authzVerify`, spliced
+  into live `Code.js` + editor-deployed + probe-verified) → authorizes the one action. At/above
+  tier or demo = plain confirm; flag-OFF keeps the legacy password input as rollback;
+  Settings-below-Admin = flat refusal (a one-shot code can't carry a server-tier-gated surface).
+  **Two follow-ups:** (1) the pre-login `#reseed` tool still prompts for the retired team password
+  — own small change; (2) *defense-in-depth (not a regression):* approval codes carry a
+  client-supplied `minTier` and aren't server-bound to a specific action — `authzVerify` grants
+  no token/session so it's not exploitable beyond the app's existing client-trust model, but a
+  future server-side `action→tier-floor` table would harden it (logged in phone-identity-STATUS.md).
+- **Staging Traffic Control is N-slot-ready but ships at N=1** (#672). Only ONE staging lane exists
+  (`rental-wrangler-staging`; `DEFAULT_N=1`, `SLOT_URLS={1:…}` in `tools/lib/staging-control.mjs`);
+  no `-2`/`-3` repos. Concurrent sessions queue on the single lease (30-min holder TTL). N=3 is
+  **deferred** and two-part: Jac provisions `rental-wrangler-staging-2`/`-3` Pages sites, then a
+  1-line data flip (`DEFAULT_N=3` + their `SLOT_URLS`) + re-seed the `staging-control` branch —
+  see plan §8.2 (`docs/superpowers/plans/2026-07-17-staging-traffic-control-plan.md`). Ships by
+  `/merge` alone (tools/ only).
 - **Repo privacy** — parked on Jac's GitHub billing-tier check. Pages-from-private
   needs GitHub Pro; Free forces public, and flipping private on Free takes
   `app.jacrentals.com` down. If Pro: canary staging → confirm → flip main + production
