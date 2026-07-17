@@ -2065,9 +2065,10 @@ try {
       const eu7 = T.unitEntry(rMU, 'U007');
       const snap = { rec: eu7.recoveryDriverId, st: eu7.status, endEu: eu7.endCapture, endR: rMU.endCapture, prim: rMU.status };
       eu7.recoveryDriverId = 'EMPTRP';
-      T.yardCapture('R-MU', 'end', 'U007');   // = the row's +Log Recovery tap
-      ok(T.__state.overlay && T.__state.overlay.kind === 'capture' && T.__state.overlay.cap === 'end' && T.__state.overlay.unitId === 'U007', 'TRIPS-log: the row action opens the journey capture overlay (one code path)');
-      T.saveYardCapture();
+      // v2 (no popup): the row's +Log Recovery tap fires the camera straight away, and the
+      // recording coming back commits via the SAME path the journey +End uses — one code
+      // path. A headless browser can't open a camera, so we drive that commit directly.
+      T.commitYardCapture('R-MU', 'end', 'U007', 'data:video/mp4;base64,AA==');   // = ending the video saves it
       ok(!!eu7.endCapture && eu7.endCapture.driver === 'Row Hauler', 'TRIPS-log: capture from the row stamps the assigned leg driver (D7)');
       ok(T.unitStatus(rMU, eu7) === 'Returned', 'TRIPS-log: the end capture moved the unit to Returned (same status path as the journey)');
       // restore the demo seed exactly (status, captures, driver, roster)

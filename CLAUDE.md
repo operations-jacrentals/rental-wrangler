@@ -5,22 +5,29 @@ Vanilla-JS single-file app (`app.js`), `style.css`, `index.html`, `config.js`,
 `data.js`; Google Apps Script backend (schema-less Sheets, deployed by paste —
 `backend/` is gitignored, never served by Pages).
 
-**Contents:** [Interaction](#interaction-hybrid--jac-2026-07-15) ·
+**Contents:** [Interaction](#interaction-popup-first-single-attempt--jac-2026-07-16) ·
 [Design language](#design-language) · [Deploy & gates](#deploy--gates) ·
 [Don't](#dont) · [Delegation & model triage](#delegation--model-triage).
 Cross-session memory lives in **`MEMORY.md`** (read at `/start`); path-scoped detail
 lives in **`.claude/rules/`** (loads only when the relevant files are touched).
 
-## Interaction (hybrid — Jac, 2026-07-15)
+## Interaction (popup-first, single-attempt — Jac, 2026-07-16)
 
-Surface questions and decisions in whatever form reads clearest. This **supersedes**
-the old "always popups, never inline" rule:
-- **Formatted inline** for exploration and nuance (tables, tight sections,
-  blockquotes) — **lead with the outcome, never a wall of bullets.**
-- A crisp **structured block** for a clean either/or decision.
-- An **artifact** for anything comparative or visual (it renders in the cloud web app;
-  a localhost preview does not). See the mockup ladder under *Delegation*.
-- Popups (`AskUserQuestion`) stay available, but inline is favored.
+**Every decision and question goes through the `AskUserQuestion` popup.** This
+**supersedes** the 2026-07-15 "hybrid / inline-favored" rule — the popup format is
+what Jac wants for all choices.
+- **Try the popup exactly ONCE.** Do **NOT** retry a popup that fails — a stalled/
+  aborted permission stream is why sessions used to hang. One attempt, then fall back.
+- **If that one popup fails, fall back to INLINE** — the *same* question, the *same*
+  options as lettered choices (**A / B / C …**) plus an **Other**, in a crisp
+  structured block. No second popup.
+- Lead with the outcome. An **artifact** is still the right call for anything
+  comparative or visual (it renders in the cloud web app; a localhost preview does
+  not) — the artifact *shows* the options, the popup (or its inline fallback) *asks*.
+- **Batch related questions and favor multiSelect** (Jac: *"I love the multiselect
+  most"*). One popup carries up to **4** questions — group related ones instead of
+  asking one at a time — and use **multiSelect** whenever the answers aren't mutually
+  exclusive. Applies everywhere, including `/brainstorming`'s clarifying questions.
 
 ## Design language
 
@@ -50,6 +57,19 @@ say-so:
   `main`); review the running app at the staging URL. It bumps the shared `?v=` and
   curl-verifies the live bytes. A failed/unverified deploy is a **HARD STOP** — staging
   must never fall behind. (`STAGING_DEPLOY_PAT` authenticates the push — never echo it.)
+  - **Staging traffic control** (`tools/staging-lease.mjs`, N=1): staging is one shared slot
+    guarded by a git-native lease — `control.json` on the non-served `staging-control` branch of
+    the staging repo. `/deploy` acquires the slot before pushing; a second session auto-queues and
+    deploys when the slot frees. **The 30-min holder TTL is the review budget** — a holder does no
+    work during Jac's review, so a review that outruns 30 min must re-run `/deploy` (idempotent —
+    it renews the same slot in place) to refresh the lease. **`/deploy` exit 3 = staging BUSY, not
+    broken** — contention, not a bad PAT: report the holder + ETA and re-run `/deploy`, never
+    rotate the token. `/merge` releases the slot **by branch** (soft — TTL is the backstop); a
+    `not-held` at that point means the review outran the TTL → re-`/deploy` before `/promote`.
+    `reset --force` is a **loud, stop-the-world manual-recovery op** — it can drop a concurrent
+    acquire and wipe an in-flight holder (whose next `renew` then returns `not-held`); use only to
+    unwedge a corrupt/stuck `control.json`. The advisory marker `.staging-lease.json` is
+    diagnostic-only and gitignored.
 - **Gate 1 `/merge`** — feature branch → PR → `smoke` CI → squash-merge to `trunk`
   (integrated, still not live). `trunk` is **branch-protected**; **NEVER** `git push origin
   HEAD:trunk` (or `HEAD:production`) directly — it's rejected.
@@ -66,13 +86,21 @@ say-so:
   Pages — never gate a secret/auth check on it.)
 
 **Gates (must pass before push):** `node ci/smoke.mjs`, `node ci/logic-test.mjs`,
-`node ci/gen-rule-usage.mjs --check`, `node ci/check-window-catalog.mjs`,
-`node tools/gen-code-map.mjs --check`. Port 8000 is reserved — swap to 9147 first:
-`sed -i 's/8000/9147/g' ci/smoke.mjs ci/logic-test.mjs`, run, then `git checkout -- ci/`.
+`node ci/lease-test.mjs`, `node ci/lease-deploy-test.mjs`, `node ci/gen-rule-usage.mjs --check`,
+`node ci/check-window-catalog.mjs`, `node tools/gen-code-map.mjs --check`. Port 8000 is reserved —
+swap to 9147 first: `sed -i 's/8000/9147/g' ci/smoke.mjs ci/logic-test.mjs`, run, then `git
+checkout -- ci/`. The two `lease-*` suites are **pure-Node** (mocked git seam, no browser/server)
+— **excluded from the port swap** and never touch the network.
 
 **Cache-bust every deploy:** bump the shared `?v=` on `style.css`, `rule-usage.js`, and
 `app.js` in `index.html` (Pages serves `max-age=600`, no per-file hashing). Don't add `?v=`
 to the ES-module imports inside `app.js`. (`deploy-staging.mjs` bumps it for you.)
+
+**Session title = this session's PRs.** On opening a PR, append its number to
+`.claude/.session-prs` (gitignored) and surface a one-tap `/rename #<nums> · <branch-label>`
+(the model can't self-`/rename`); remove it on merge/close. A `SessionStart` hook
+(`.claude/hooks/session-title.mjs`) re-derives the title each start/resume, respecting a
+manual rename. Full rule: `/start` §4.
 
 **R-rulebook:** every UI element is stamped `data-r="Rxx"`; regenerate `rule-usage.js` with
 `node ci/gen-rule-usage.mjs` when usage changes (`--check` is the CI drift + duplicate

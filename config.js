@@ -625,6 +625,24 @@ export const FEATURES = {
   // OFF = today's shared team-password login. The BACKEND enforces the real auth
   // independently — this flag only switches the login EXPERIENCE, never the gate.
   phoneIdentity: true,
+  // QR decal → scan-to-log video (spec/plan 2026-07-16). ON = the #u=<unitId> scan
+  // route + lite capture screen are active; OFF = the route is inert (nothing in
+  // production touches it). Ships OFF so the frontend can promote before the backend
+  // captureByScan handler is deployed (Jac deploys the backend last); flipped ON only
+  // after that deploy. The flag gates EXPERIENCE only — the real auth is the server-side
+  // write-only scanDeviceToken check in captureByScan, never this flag.
+  qrScanLog: false,   // PRODUCTION switch (staging + localhost auto-enable via APP_ENV, so review needs no flip)
+  // Staging-review aid for the scan flow: when ON, the client short-circuits captureByScan to
+  // CANNED responses (no backend needed) so every state is walkable before the handler is deployed.
+  // Test-decal id suffix → state: …1 start · …2 end · …3 blocked · …4 not-found. OFF in production
+  // (real backend). Never a security surface — the real auth is always server-side.
+  qrScanPreview: false,
+  // Instant Cache — on a PERSONAL (trusted) device, paint the last known-good backend
+  // load from an on-device IndexedDB snapshot instantly on open, then reconcile with
+  // the live backend (spec 2026-07-16-instant-cache). Display-only: the cache is never
+  // a save baseline, so it can't corrupt the Sheet; personal devices only (no PII at
+  // rest on shared machines). ON = paint-from-cache path; OFF = today's splash + load.
+  instantCache: true,
 };
 
 /* Phone-identity client constants (non-secret — display/UX only; the backend owns the

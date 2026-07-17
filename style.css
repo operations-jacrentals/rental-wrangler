@@ -479,8 +479,8 @@ body.is-phone { touch-action: manipulation; }
    pinned to the bottom-RIGHT and never scrolling off. The chevrons are bright --txt when active,
    greyed --txt-2 when the stack is empty (Chrome-style). Reflects the snapped column's card. */
 .is-phone .mobile-toolbar .mfoot-jog { flex: 0 0 auto; display: flex; align-items: center; }
-.is-phone .mobile-toolbar .mfoot-jog .jog-btn { color: var(--txt); min-width: 32px; }   /* snug around the glyph — not the bloated 46px */
-.is-phone .mobile-toolbar .mfoot-jog .jog-btn svg { width: 20px; height: 20px; }
+.is-phone .mobile-toolbar .mfoot-jog .jog-btn { color: var(--txt); min-width: 54px; }   /* wide thumb target (Jac 2026-07-17) — the tools side-scroll to fit; height stays 44px so it's wider, not taller */
+.is-phone .mobile-toolbar .mfoot-jog .jog-btn svg { width: 23px; height: 23px; stroke-width: 2.75px; }   /* thicker, more legible chevrons */
 .is-phone .mobile-toolbar .mfoot-jog .jog-btn[disabled] { color: var(--txt-2); opacity: 1; }
 .is-phone .mobile-toolbar .top-toolbar { order: 0; margin: 0; padding: 0; flex: 1 1 auto; min-width: 0; overflow-x: auto; }
 /* the global tool tray rendered as a phone sheet (§M1 footer → Tools) */
@@ -3086,6 +3086,65 @@ select.nc-in { cursor: pointer; }
 .login-pw-eye:hover { color: #eef2f6; }
 .login-pw-eye:focus-visible { outline: 2px solid var(--accent, #ff7a1a); outline-offset: -3px; border-radius: 7px; color: #eef2f6; }
 .login-err { font-size: 12px; font-weight: 600; color: var(--red, #ff4242); text-align: center; margin-top: 11px; min-height: 14px; }
+/* ══ SCAN-TO-LOG (QR decal → video) — standalone capture plate; models the .login-box plate ══ */
+.scan-screen {
+  min-height: 100vh; min-height: 100dvh;
+  display: flex; align-items: center; justify-content: center;
+  padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+  background:
+    radial-gradient(130% 90% at 50% -15%, rgba(255, 122, 26, .10), transparent 55%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, .012) 0 2px, transparent 2px 10px),
+    #0c0e11;
+}
+.scan-box {
+  position: relative; width: 344px; padding: 0 0 26px; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center;
+  background: linear-gradient(180deg, #1b2129, #13171d);
+  border: 1px solid #2a313b; border-radius: 16px;
+  box-shadow: 0 34px 90px -34px #000, inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+.scan-box::before {   /* the SIGNATURE — hi-vis caution band, same recipe as the login plate */
+  content: ''; height: 10px; width: 100%;
+  background: repeating-linear-gradient(135deg, var(--yellow, #f5c542) 0 13px, #14181d 13px 26px);
+  border-bottom: 1px solid #000;
+}
+.scan-box .rivet { position: absolute; width: 6px; height: 6px; border-radius: 50%; z-index: 12;
+  background: radial-gradient(circle at 35% 30%, #434c58, #0f1318); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .55); }
+.scan-box .rivet.tl { top: 20px; left: 14px; } .scan-box .rivet.tr { top: 20px; right: 14px; }
+.scan-box .rivet.bl { bottom: 13px; left: 14px; } .scan-box .rivet.br { bottom: 13px; right: 14px; }
+.scan-plate { display: flex; flex-direction: column; align-items: center; width: 100%; padding: 22px 30px 0; }
+.scan-brand { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; margin-bottom: 20px; }
+.scan-brandtxt { font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 800; font-size: 18px; letter-spacing: 1.2px; text-transform: uppercase; color: #eef2f6; }
+.scan-brandtxt b { color: inherit; }   /* wordmark stays steel — the RECORD ignition owns the one orange (R3) */
+.scan-tag { font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 9.5px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase;
+  color: var(--txt-3, #8b94a3); background: #0e1217; border: 1px solid #2a313b; padding: 3px 7px; border-radius: 5px; }
+.scan-body { display: flex; flex-direction: column; align-items: center; width: 100%; text-align: center; }
+.scan-unit { font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 800; font-size: 26px; letter-spacing: .4px; text-transform: uppercase; color: #eef2f6; line-height: 1.05; }
+.scan-uid { font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 1.6px; color: var(--txt-3, #8b94a3); margin-top: 3px; }
+.scan-stamp { font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 11px; font-weight: 600; letter-spacing: 1.8px; text-transform: uppercase; color: var(--txt-3, #8b94a3); margin: 14px 0 16px; }
+.scan-rec {   /* the ignition — hi-vis orange, dark ink; same treatment as the login button */
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px; cursor: pointer;
+  width: 100%; height: 56px; border-radius: 11px; border: none;
+  background: linear-gradient(180deg, #ff9038, var(--accent, #ff7a1a)); color: #1a1205;
+  font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 800; font-size: 19px; letter-spacing: 2.2px; text-transform: uppercase;
+  box-shadow: 0 7px 20px -7px rgba(255, 122, 26, .65), inset 0 1px 0 rgba(255, 255, 255, .35);
+  transition: filter .12s, transform .04s; }
+.scan-rec svg { width: 22px; height: 22px; }
+.scan-rec:hover { filter: brightness(1.06); } .scan-rec:active { transform: translateY(1px); }
+.scan-hint { font-size: 12px; line-height: 1.5; color: var(--txt-3, #8b94a3); margin: 15px 4px 0; }
+.scan-block { font-size: 13.5px; line-height: 1.5; color: #eef2f6; background: #0e1217; border: 1px solid #2a313b; border-radius: 10px; padding: 13px 14px; margin: 6px 0 16px; }
+.scan-ghost { background: none; border: 1px solid #2a313b; color: #b9c2cf; cursor: pointer;
+  height: 42px; padding: 0 20px; border-radius: 9px;
+  font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 700; font-size: 13px; letter-spacing: 1.6px; text-transform: uppercase;
+  transition: border-color .12s, color .12s; }
+.scan-ghost:hover { color: #eef2f6; border-color: #39424e; }
+.scan-rec:focus-visible, .scan-ghost:focus-visible { outline: 2px solid var(--accent, #ff7a1a); outline-offset: 2px; }
+.scan-spin { color: var(--accent, #ff7a1a); margin: 6px 0 4px; animation: scanPulse 1.1s ease-in-out infinite; }
+.scan-spin svg { width: 34px; height: 34px; }
+.scan-ok { color: var(--green, #3ecf6a); line-height: 1; margin-bottom: 8px; font-size: 40px; }
+.scan-ok svg { width: 40px; height: 40px; }
+@keyframes scanPulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .scan-spin { animation: none; } }
 /* Env badge — a hazard-caution stamp on any NON-production build (the staging mirror or
    localhost, which serve the SAME files as production) so you always know which app you're
    testing. Never rendered on app.jacrentals.com; pointer-events:none so it never blocks. */
@@ -3106,6 +3165,34 @@ select.nc-in { cursor: pointer; }
   .login-box { animation: plateIn .5s cubic-bezier(.2, .7, .2, 1) both; }
   @keyframes plateIn { from { opacity: 0; transform: translateY(11px) scale(.985); } to { opacity: 1; transform: none; } }
 }
+
+/* ── §instant-cache — the "refreshing" cue ──────────────────────────────────────────
+   A non-blocking stamped chip shown while cached data is already on screen and the live
+   backend load is in flight. Same data-plate vocabulary as the env-badge (steel well,
+   Saira stamp) + the hi-vis hazard chip, but the chip BARBER-POLES so it reads as the
+   same "working" language as the sign-in load band. Fixed top-center, never intercepts a
+   click. Mounted/unmounted by cacheRefreshing(). */
+#cache-refreshing { display: none; }   /* hidden until the rw-refreshing body class shows it */
+body.rw-refreshing #cache-refreshing {
+  position: fixed; z-index: 8800; top: max(64px, calc(env(safe-area-inset-top) + 60px)); left: 50%; transform: translateX(-50%);   /* just below the header band; above all header chrome, below the 9000+ interactive floats (hover 9000 / dropdown 9100 / drag 9400). pointer-events:none, so it never intercepts */
+  display: inline-flex; align-items: center; gap: 8px; pointer-events: none;
+  font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 800; font-size: 11px;
+  letter-spacing: 2px; text-transform: uppercase; color: var(--txt-2, #b9c2cf);
+  padding: 5px 12px 5px 9px; border-radius: 999px;
+  background: linear-gradient(180deg, #1b2129, #0c0e11);
+  border: 1px solid #2a313b; box-shadow: 0 7px 20px -7px #000;
+}
+#cache-refreshing .cr-stripe {   /* the signature hazard chip, barber-poling while it loads */
+  content: ''; width: 13px; height: 13px; border-radius: 3px; flex: none;
+  background: repeating-linear-gradient(135deg, var(--yellow, #f5c542) 0 4px, #14181d 4px 8px);
+  background-size: 11.31px 11.31px;   /* 8·√2 — one whole tile, so the shift loops seamlessly */
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .45);
+}
+@media (prefers-reduced-motion: no-preference) {
+  #cache-refreshing .cr-stripe { animation: crStripe .8s linear infinite; }
+  @keyframes crStripe { to { background-position: 11.31px 0; } }
+}
+:root[data-theme="light"] #cache-refreshing { background: linear-gradient(180deg, #ffffff, #eef1f5); }
 
 /* ── LOGIN — phone-verified device identity states (Phase 2, flagOn('phoneIdentity')) —
    EXTEND the data-plate vocabulary above: same steel wells (#0e1217 / #2a313b), orange
@@ -3693,7 +3780,20 @@ body { font-variant-numeric: tabular-nums; }
 .acct.has-photo { position: relative; }
 .acct.has-photo > :not(.sec-photo) { position: relative; z-index: 1; }
 .type-chip.mute { color: var(--gray); background: var(--gray-bg); }
-/* Work Orders section — accordion rows inside ONE .section, mirroring customer
+/* Collapse-section plates (unit detail) drop their own margin-bottom — the parent
+   .detail is a flex column with gap:12px, so the extra margin doubled the gap to 24px
+   between stacked collapsed rows. One gap per boundary (Jac — no dead space). */
+.acct.usec { margin-bottom: 0; }
+/* Unit-detail collapsible sections carry their RYG status (R11) on BOTH the collapsed
+   bar and the opened body — the .acct plate mirrors .section.sec-* (border + stamped
+   label tint), so a red section reads red whether it's a row or expanded. */
+.acct.sec-green { border-color: color-mix(in srgb, var(--green) 45%, transparent); }
+.acct.sec-green .acct-lbl { color: var(--green); }
+.acct.sec-yellow { border-color: color-mix(in srgb, var(--yellow) 45%, transparent); }
+.acct.sec-yellow .acct-lbl { color: var(--yellow); }
+.acct.sec-red { border-color: var(--red); box-shadow: 0 0 8px color-mix(in srgb, var(--red) 30%, transparent); }
+.acct.sec-red .acct-lbl { color: var(--red); text-shadow: 0 0 3px var(--red), 0 0 7px color-mix(in srgb, var(--red) 60%, transparent); }
+/* Work Orders section — accordion rows inside ONE collapse plate, mirroring customer
    Invoices (reuses .inv-row / .inv-open / .ir-* / .io-* ). An open WO's header
    collapses only via the ✕ chevron (its report stays inline-editable, so the whole
    bar can't be the toggle), and its body stacks flags → line items → totals → foot. */
@@ -3701,7 +3801,10 @@ body { font-variant-numeric: tabular-nums; }
 .wo-open .type-chip { flex: 0 0 auto; }
 .ir-woreport { color: var(--txt); font-weight: 700; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wo-open-body { padding: 11px 13px; display: flex; flex-direction: column; gap: 9px; }
-.wo-add { margin: 0 0 9px; }   /* +Work Order rides ABOVE the rows (Jac) — R5b secondary blue */
+/* +Work Order rides ABOVE the rows as a FULL-WIDTH dashed add-row (Jac — like the
+   +Rental / +Invoice add, spanning the width a regular row takes), not a centered pill. */
+.wo-add-pill { margin: 0 0 9px; }
+.wo-add-pill .add-field { width: 100%; justify-content: center; }
 
 /* compact fields — the dense 2-col grid (D21) */
 .acct-fgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
