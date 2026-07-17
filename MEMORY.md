@@ -21,6 +21,18 @@
   decisions/questions go through the `AskUserQuestion` popup. Try it **once**; never
   retry a failed popup. If that one popup fails, fall back to **inline** — the same
   question + same options as lettered **A/B/C… + Other** in a structured block.
+  **Batch related questions (up to 4/popup) and favor multiSelect** when answers
+  aren't mutually exclusive (Jac: *"I love the multiselect most"*); `/brainstorming`
+  now routes its clarifying questions through popups too.
+- **2026-07-17 — Session title auto-tracks this session's PRs.** A `SessionStart` hook
+  (`.claude/hooks/session-title.mjs`) sets the title to `#<nums> · <branch-label>` from a
+  gitignored `.claude/.session-prs` the assistant maintains (append on PR-open, remove on
+  merge/close); fails safe, respects a manual `/rename`. On opening a PR also surface a
+  one-tap `/rename #… · <label>` (the model can't self-rename) for an instant update. Spec:
+  `docs/superpowers/specs/2026-07-17-session-title-pr-numbers-design.md`. Manual `/rename`
+  is respected via a **PR-set marker** (`.session-title-set`) — the hook only re-asserts the
+  title when the open-PR set changes, since SessionStart stdin carries no live title. **Verify
+  live:** that this harness actually consumes `hookSpecificOutput.sessionTitle`.
 - **2026-07-15 — Delegation by cost-of-being-wrong** *and* whether the main thread
   needs the reasoning (supersedes "delegate heavily, always"). Haiku = mechanical/IO,
   Sonnet = scoped build, Opus = hard reasoning / stays on main, Fable = rare frontier
@@ -50,6 +62,18 @@
   border color (green insured / yellow uninsured); there is **no** separate Coverage section
   (#659, Jac's call). Added a **"Check for updates"** row to the tools menu (#661) that clears
   the SW + HTTP caches and hard-reloads past a stale cache — the escape hatch for pinned builds.
+- **2026-07-17 — Inspection toggle IS the interface** (#662, #676). The unit-card Inspection
+  section always shows the `Pass · Not Ready · Fail` segmented toggle (stacked on its own row
+  to match mobile); the old `+ Inspection` / `Resume inspection` checklist button is **retired**.
+  **Pass gates** the inspection: a required-checklist category opens the checklist takeover
+  (completion cascades to Pass); no checklist → a direct, wash-gated (R19) pass; already-passed →
+  Pass re-opens the completed inspection to **view** (`openInspectionRecord`, which materialises a
+  lightweight pass record if none is on file so it's never a dead-end, never a blank pending
+  checklist). **Not Ready** resets. **Fail** smart-routes: a unit out on an active rental →
+  `markFieldCall` (field call — red-flag the rental, dispatch); a yard unit → bench
+  failed-inspection. The shared §12.8 inspection popup is now **pass-aware** — it drops the
+  "Failure report" title, danger styling, and "Charge the customer?" bill gate when the
+  inspection passed. Reuses `segCtl` (R14); multi-unit field-call granularity is a parked thread.
 
 ## Design prefs
 - Yard **"data-plate"** design language: dark industrial steel, **ONE** safety-orange
@@ -115,6 +139,17 @@
   conflicts on nearly every concurrent merge — resolve mechanically
   (`git checkout --ours/--theirs index.html` to pick the forward token, then
   `node tools/gen-code-map.mjs`), never by hand-editing the generated map.
+- **The Bash guard false-positives on compound git commands** (2026-07-17) — a single Bash
+  command containing BOTH `git push` AND a `trunk`/`production` token (e.g. a `git push …; git …
+  origin/trunk` chain, or a `git merge-base --is-ancestor origin/trunk HEAD` check alongside a
+  push) is blocked as "Direct push to a protected release branch," even when the push targets a
+  feature branch. Run the push in its OWN command with no `trunk`/`production` token in the string.
+- **promote.mjs's staging gate matches the ?v= TOKEN, not content** (2026-07-17) — it passes when
+  live staging's `?v=` equals the trunk commit's `?v=`. On a fast-churning shared-staging trunk,
+  your feature's token can ride the squash onto trunk and match staging even though a concurrent
+  commit that landed between your `/deploy` and merge isn't on staging. It's still the sanctioned
+  bar (that commit was CI-gated + staged by its own session), but token-match ≠ full content-match
+  — re-deploy trunk to staging if you need a faithful mirror before a go-live.
 
 ## Open threads
 - **Repo privacy** — parked on Jac's GitHub billing-tier check. Pages-from-private

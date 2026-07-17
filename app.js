@@ -20,6 +20,7 @@ import * as CFG from './config.js';
 // import failure would kill the whole boot, so these ship in-repo like the Lucide icons).
 import * as Plot from './vendor/plot.min.js';                                  // Observable Plot 0.6.17 (ISC)
 import { pie as d3pie, arc as d3arc } from './vendor/d3-shape.min.js';         // d3-shape 3.2.0 (ISC) — donut geometry, Phase D
+import qrcode from './vendor/qrcode.min.js';   // qrcode-generator (MIT) — offline QR for the Fleet QR Codes export
 import { AGREEMENTS, AGREEMENT_VERSIONS, AGREEMENT_CURRENT } from './agreements.js';
 import { ico, I, CARD_ICON, RING_ICON, CATEGORY_ICON } from './icons.js';
 import { CATEGORY_ANIM } from './icons-anim.js';
@@ -13423,7 +13424,7 @@ function buildPopupEl(o, overlay, opts = {}) {
       <div class="popup-body"><div class="board-detail">${DETAIL[o.board](vrec, { historySearch: o.historySearch || '', histKind: o.histKind || null, partForm: o.partForm || false, backStack: [], mode: 'standard' })}</div></div>`;
     } else {
     pop.innerHTML = `
-      <div class="popup-head">${CARD_ICON[board.id] ? `<span class="c-icon" style="color:var(--accent);display:inline-flex">${CARD_ICON[board.id] || ''}</span>` : ''}<h3>${esc(board.title)}</h3><span class="c-count">${boardRows(board.id).length}</span>${board.id === 'files' ? addBtn('File', { link: true, js: 'js-file-add' }) : ''}${board.id === 'files' ? `<div class="bv-searchwrap"><span class="s-icon">${I.search}</span><input class="bv-query js-files-query" placeholder="Search files…" value="${esc(o.fileSearch || '')}" /></div>` : ''}<span class="spacer"></span><button class="x js-close">${I.x}</button></div>
+      <div class="popup-head">${CARD_ICON[board.id] ? `<span class="c-icon" style="color:var(--accent);display:inline-flex">${CARD_ICON[board.id] || ''}</span>` : ''}<h3>${esc(board.title)}</h3><span class="c-count">${boardRows(board.id).length}</span>${board.id === 'files' ? addBtn('File', { link: true, js: 'js-file-add' }) : ''}${board.id === 'files' && scanEnabled() ? ghostPill('Fleet QR Codes', { js: 'js-fleet-qr', tip: 'Print-ready QR decal sheet for every active fleet unit' }) : ''}${board.id === 'files' ? `<div class="bv-searchwrap"><span class="s-icon">${I.search}</span><input class="bv-query js-files-query" placeholder="Search files…" value="${esc(o.fileSearch || '')}" /></div>` : ''}<span class="spacer"></span><button class="x js-close">${I.x}</button></div>
       <div class="popup-body board-body">${o.pickTarget && board.id === 'parts' ? `<div class="muted board-pickhint">Tap <b>Attach</b> to add a catalog part to this service.</div>` : ''}${board.id === 'files' && o.fileForm ? `<div class="kv pillrow" style="gap:7px;margin:0 0 10px"><input class="lf-in js-ff-name" placeholder="File name" style="flex:2;min-width:140px"><input class="lf-in js-ff-link" placeholder="Link (URL)" style="flex:2;min-width:140px">${fileDrop(o.fileUpload ? '✓ ' + esc(o.fileUpload.name) : 'Upload photo / document', { js: 'js-ff-file', accept: 'image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt', done: !!o.fileUpload, icon: I.camera })}${ghostPill('Cancel', { js: 'js-ff-cancel' })}${actionPill('commit', 'Add file', { js: 'js-ff-save' })}</div>` : ''}${boardTable(board.id, o.fileSearch, o.pickTarget)}</div>`;
     }
     overlay.appendChild(pop);
@@ -16253,6 +16254,7 @@ const scrollMemo = {};   // persistent scroll positions, keyed `card|view` (list
 // Node relocation only — every builder still emits its usual markup (desktop untouched); this
 // just re-homes four nodes. The card-toggle-bar swipe zone follows the toggles (see boot()).
 function render() {
+  if (scanActive) return;   // the scan-to-log capture screen owns #app in its own tab — never let a background loader / 18s poll render clobber it mid-flow
   const t0 = performance.now();
   refreshToday();   // roll "today" over before painting — an all-day-open tab must never stamp/read yesterday
   hideTip(); hideHoverPreview();
@@ -17922,6 +17924,7 @@ function onClick(e) {
   if (closest('.js-file-add')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'board') { o.fileForm = !o.fileForm; o.fileUpload = null; renderOverlay(); } return; }   // §7.13: +File inline create (toggle)
   if (closest('.js-ff-cancel')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'board') { o.fileForm = false; o.fileUpload = null; renderOverlay(); } return; }
   if (closest('.js-ff-save')) { e.stopPropagation(); return saveFileForm(); }
+  if (closest('.js-fleet-qr')) { e.stopPropagation(); return downloadFleetQRCodes(); }   // Company Files → Fleet QR Codes print sheet (gated on scanEnabled() at the button)
   if (closest('.js-vendor-tax')) { e.stopPropagation(); const b = closest('.js-vendor-tax'); const v = recOf('vendors', b.dataset.rec); if (v) { const ex = b.dataset.val === '1'; if (!!v.salesTaxExempt !== ex) { v.salesTaxExempt = ex; reindex('vendors', v); logAction(v, `Sales tax → ${ex ? 'Exempt' : 'Taxed'}`); } if (state.overlay?.kind === 'board') renderOverlay(); render(); } return; }
   if (closest('.js-cardgraph')) { e.stopPropagation(); const b = closest('.js-cardgraph'); const card = b.dataset.card, src = b.dataset.src || card; const cs = activeSession().cards[card]; if (!cs.graphView) { if (graphViewsFor(src)) return gvOpen(card, src); cs.graphView = true; return render(); } cs.graphView = false; return render(); }   // §13.7 gauge-strip toggle (Shop 'all': the stackbars worklist)
   if (closest('.js-cardglobe')) {   // R33 — toggle card-search global mode; lights/dims EVERY grid-card globe in lockstep
@@ -18124,7 +18127,6 @@ function onClick(e) {
   }
   // ── v2 build: condition/wash segs · yard captures · site popup · WO complete · history chips ──
   if (closest('.js-cond')) { const b = closest('.js-cond'); return setUnitCondition(b.dataset.rec, b.dataset.val); }
-  if (closest('.js-open-checklist')) { e.stopPropagation(); return openChecklist(closest('.js-open-checklist').dataset.rec); }
   if (closest('.js-ck-item')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-ck-item'); if (o && o.kind === 'checklist') { const n = IDX.insp.get(o.inspId); if (n) { n.items = n.items || {}; n.items[b.dataset.id] = b.dataset.val; renderOverlay(); } } return; }
   if (closest('.js-ck-evrm')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-ck-evrm'); if (o && o.kind === 'checklist') { const n = IDX.insp.get(o.inspId); if (n && n.itemEvidence && n.itemEvidence[b.dataset.id]) { n.itemEvidence[b.dataset.id].splice(Number(b.dataset.i), 1); saveSoon(); renderOverlay(); } } return; }
   if (closest('.js-ck-walkrm')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-ck-walkrm'); if (o && o.kind === 'checklist') { const n = IDX.insp.get(o.inspId); if (n && n.evidence) { n.evidence.splice(Number(b.dataset.i), 1); saveSoon(); renderOverlay(); } } return; }
@@ -19005,8 +19007,14 @@ function setUnitCondition(unitId, val) {
    record re-opens the takeover; a plain condition-pass opens the §12.8 record popup. */
 function openInspectionRecord(unitId) {
   const u = IDX.unit.get(unitId); if (!u) return;
-  const n = latestInspForUnit(unitId);
-  if (!n) return checklistRequired(u) ? openChecklist(unitId) : toast('No inspection on record yet.');
+  let n = latestInspForUnit(unitId);
+  if (!n) {
+    // A unit marked Ready with no inspection record on file (seed/legacy). Materialise a
+    // lightweight pass record so "click Pass again to view the done inspection" always lands
+    // on the real (pass-aware) view — never a dead-end toast, and never a blank pending
+    // checklist spun up for an already-passed unit.
+    n = newInspectionForUnit(u); n.checklist = 'Pass'; reindexDraft('inspections', n);
+  }
   const hasItems = !!(checklistFor(u) && n.items && typeof n.items === 'object' && Object.keys(n.items).length);
   state.overlay = hasItems ? { kind: 'checklist', unitId, inspId: n.inspectionId } : { kind: 'inspection', recId: n.inspectionId };
   render(); renderOverlay();
@@ -23992,7 +24000,7 @@ async function attemptLogin() {
     let role = '';
     try {
       const a = await backendCall('auth');
-      if (a && a.ok) role = a.role || '';
+      if (a && a.ok) { role = a.role || ''; if (a.scanDeviceToken) scanTokenSet(a.scanDeviceToken); }   // remember this device for decal scans (write-only token)
       else if (a && /unauthorized/i.test(a.error || '')) throw new Error('unauthorized');
     } catch (e2) { if (/unauthorized/i.test(e2.message || '')) throw e2; }
     currentRole = role;
@@ -24003,6 +24011,7 @@ async function attemptLogin() {
     applyLoadResponse(await loadPromise);
     finishLoad();   // GPS silent-login now lives in finishLoad (runs for every login mode, not just this one)
     applyRoleLanding();   // each role lands on its default main/sub-card
+    maybeReplayScan();    // a #u= decal scan parked pre-login → open the capture screen now (renders last, wins #app)
   } catch (e) {
     backendPassword = ''; sessionStorage.removeItem('jactec.pw'); sessionStorage.removeItem('jactec.role');
     renderLogin(/unauthorized/i.test(String(e && e.message)) ? 'That password wasn’t recognized.' : "Couldn't reach the database. Check your connection and try again.");
@@ -24027,6 +24036,7 @@ function pidRosterCache() { try { return JSON.parse(localStorage.getItem('jactec
 function pidAdopt(r, tok, personal) {
   backendPassword = tok; currentRole = (r && r.role) || pidUI._role || ''; currentUser = (r && r.name) || pidUI.name || '';
   pidTokenSet(tok, personal);
+  if (r && r.scanDeviceToken) scanTokenSet(r.scanDeviceToken);   // remember this device for decal scans (write-only token)
   try { sessionStorage.setItem('jactec.role', currentRole); localStorage.setItem('jactec.user', currentUser); } catch (e) {}
 }
 function pidLoadFail() { pidTokenClear(); backendPassword = ''; pidUI.step = 'identify'; renderPhoneLogin("Couldn't reach the database. Try again."); }
@@ -24046,7 +24056,7 @@ function pidEnter() {
   // rejected, retry muted so the video still rolls — audio is the bonus, the video is the point.
   const vid = document.getElementById('login-video');
   if (vid) { try { vid.muted = state.loginMuted; const p = vid.play(); if (p && p.catch) p.catch(() => { vid.muted = true; const p2 = vid.play(); if (p2 && p2.catch) p2.catch(() => {}); }); } catch (e) {} }
-  loadFromBackend().then(finishLoad).then(applyRoleLanding).catch(pidLoadFail);
+  loadFromBackend().then(finishLoad).then(applyRoleLanding).then(maybeReplayScan).catch(pidLoadFail);   // maybeReplayScan: replay a #u= decal scan parked before this login
 }
 // Boot (flag on): resume a trusted device, else show the phone login.
 function phoneBoot() {
@@ -24227,6 +24237,185 @@ let _backendWarmed = false;
 function warmBackend() {
   if (_backendWarmed) return; _backendWarmed = true;
   try { fetch(BACKEND_URL, { method: 'GET', mode: 'no-cors', cache: 'no-store' }).catch(() => {}); } catch (e) {}
+}
+/* ══════════════ SCAN-TO-LOG (QR DECAL → VIDEO) — standalone capture (FEATURES.qrScanLog) ══════════════
+   A #u=<unitId> decal scan opens this focused full-screen plate (mounted like renderLogin), records
+   ONE video, and files it to the unit's correct rental log — the SERVER (captureByScan) decides
+   start/end/block, so a remembered phone needs no session and never loads customer data. Auth is the
+   write-only scanDeviceToken (localStorage) OR a live session — NEVER pidToken (a full-access
+   credential). Backend contract: docs/backend-snippets/captureByScan.md. Dormant until flag + backend. */
+let pendingScan = null;
+let scanActive = false;   // true once the scan capture screen owns #app — render() bails so nothing repaints over it
+const scanUI = { unitId: '', unitName: '', action: '', phase: '', reason: '' };
+// Activation: in PRODUCTION the scan route is inert until FEATURES.qrScanLog flips ON (after the
+// backend deploys); on the staging mirror + localhost it's always active for review — same files, so
+// we key off APP_ENV, not a committed flag. Preview = canned captureByScan responses (no backend):
+// forced by FEATURES.qrScanPreview and automatic off-production, so staging is walkable before deploy.
+const scanEnabled = () => flagOn('qrScanLog') || APP_ENV !== 'production';
+const scanPreviewOn = () => flagOn('qrScanPreview') || APP_ENV !== 'production';
+function scanTokenGet() { try { return localStorage.getItem('jactec.scanDevice') || ''; } catch (e) { return ''; } }
+function scanTokenSet(t) { try { if (t) localStorage.setItem('jactec.scanDevice', t); } catch (e) {} }
+function scanTokenClear() { try { localStorage.removeItem('jactec.scanDevice'); } catch (e) {} }
+// Replayed at the end of a login chain (after applyRoleLanding, so it renders LAST and wins #app).
+function maybeReplayScan() {
+  let u = pendingScan;
+  if (!u) { try { u = sessionStorage.getItem('jactec.pendingScan') || ''; } catch (e) {} }   // recover a scan parked before a reload/backgrounding at the login step
+  if (u && scanEnabled()) { pendingScan = null; try { sessionStorage.removeItem('jactec.pendingScan'); } catch (e) {} renderScanCapture(u); }
+}
+// captureByScan is authorized by the scan token OR the session; the server resolves everything and
+// returns only equipment-level data (unit name + slot) or a block reason — never customer PII.
+function scanCall(extra) {
+  if (scanPreviewOn()) return Promise.resolve(scanPreviewResponse(extra || {}));   // staging/local or forced — canned, no backend
+  return backendCall('captureByScan', Object.assign({ unitId: scanUI.unitId, scanToken: scanTokenGet() }, extra || {}));
+}
+// Canned captureByScan responses for the staging review (FEATURES.qrScanPreview) — the unit-id suffix
+// drives the state so a handful of printed test decals exercise every branch. NOT a real code path.
+function scanPreviewResponse(extra) {
+  const id = String(scanUI.unitId || ''), m = extra.mode || 'record', last = id.slice(-1);
+  if (last === '4') return { ok: false, code: 'unit_not_found' };
+  if (last === '3') return { ok: true, blocked: true, unitName: id, reason: id + ' is reserved for later, not out today — nothing to log yet.' };
+  const action = last === '2' ? 'end' : 'start';
+  return m === 'peek' ? { ok: true, unitName: id, action } : { ok: true, filedAs: action, unitName: id };
+}
+function renderScanCapture(unitId) {
+  scanActive = true;   // take over #app; render() now bails so background loaders / the refresh poll can't clobber this screen
+  Object.assign(scanUI, { unitId, unitName: '', action: '', phase: 'loading', reason: '' });
+  drawScanScreen();
+  scanCall({ mode: 'peek' }).then((r) => {                       // resolve unit + intended slot (or block), no upload
+    if (r && r.ok) {
+      if (r.blocked) { scanUI.phase = 'blocked'; scanUI.reason = r.reason || 'Nothing to log for this unit right now.'; scanUI.unitName = r.unitName || ''; }
+      else { scanUI.phase = 'ready'; scanUI.unitName = r.unitName || unitId; scanUI.action = r.action || 'start'; }
+    } else if (r && r.code === 'unit_not_found') { scanUI.phase = 'notfound'; }
+    else if (r && /unauthorized/i.test(r.error || '')) { scanTokenClear(); pendingScan = unitId; warmBackend(); return renderLogin(); }
+    else { scanUI.phase = 'error'; }
+    drawScanScreen();
+  }).catch(() => { scanUI.phase = 'error'; drawScanScreen(); });
+}
+function scanRecord(file) {
+  if (!file) return;
+  const rd = new FileReader();
+  rd.onerror = () => { scanUI.phase = 'error'; drawScanScreen(); };
+  rd.onload = () => {
+    scanUI.phase = 'uploading'; drawScanScreen();
+    scanCall({ dataUrl: rd.result, name: 'scan_' + scanUI.unitId }).then((r) => {   // server re-resolves + files it
+      if (r && r.ok && r.filedAs) { scanUI.phase = 'done'; scanUI.action = r.filedAs; scanUI.unitName = r.unitName || scanUI.unitName; }
+      else if (r && r.blocked) { scanUI.phase = 'blocked'; scanUI.reason = r.reason || ''; }
+      else { scanUI.phase = 'error'; }
+      drawScanScreen();
+    }).catch(() => { scanUI.phase = 'error'; drawScanScreen(); });
+  };
+  rd.readAsDataURL(file);
+}
+function drawScanScreen() {
+  const u = scanUI, stamp = (t) => `<div class="scan-stamp">${esc(t)}</div>`;
+  let body = '';
+  if (u.phase === 'loading') {
+    body = `<div class="scan-unit">${esc(u.unitId)}</div>${stamp('Checking this unit…')}<div class="scan-spin">${I.video}</div>`;
+  } else if (u.phase === 'ready') {
+    const act = u.action === 'end' ? 'End · Return' : 'Start · Delivery';
+    body = `<div class="scan-unit">${esc(u.unitName)}</div><div class="scan-uid">${esc(u.unitId)}</div>${stamp('Recording the ' + act + ' video')}`
+      + `<label class="scan-rec" data-r="R17">${I.video}<span>Record</span><input type="file" accept="video/*" capture="environment" class="js-scan-file" hidden></label>`
+      + `<p class="scan-hint">Tap Record — your camera opens, then the video files itself. No On&nbsp;Rent / End&nbsp;Rent to choose.</p>`;
+  } else if (u.phase === 'uploading') {
+    body = `<div class="scan-unit">${esc(u.unitName || u.unitId)}</div>${stamp('Filing your video…')}<div class="scan-spin">${I.video}</div>`;
+  } else if (u.phase === 'done') {
+    const act = u.action === 'end' ? 'End · Return' : 'Start · Delivery';
+    body = `<div class="scan-ok">${I.check || '✓'}</div><div class="scan-unit">${esc(u.unitName || u.unitId)}</div>${stamp('Filed as the ' + act + ' video')}`
+      + `<button type="button" class="scan-ghost js-scan-again" data-r="R18">Record another</button>`
+      + `<p class="scan-hint">All set — you can close this window.</p>`;
+  } else if (u.phase === 'blocked') {
+    body = `<div class="scan-unit">${esc(u.unitName || u.unitId)}</div><div class="scan-block">${esc(u.reason || 'Nothing to log for this unit right now.')}</div>`
+      + `<button type="button" class="scan-ghost js-scan-retry" data-r="R18">Check again</button>`;
+  } else if (u.phase === 'notfound') {
+    body = `<div class="scan-unit">${esc(u.unitId)}</div><div class="scan-block">Unit not found — this decal may need re-linking.</div>`
+      + `<button type="button" class="scan-ghost js-scan-retry" data-r="R18">Try again</button>`;
+  } else {
+    body = `<div class="scan-unit">${esc(u.unitName || u.unitId)}</div><div class="scan-block">Couldn’t reach the yard. Check your signal and try again.</div>`
+      + `<button type="button" class="scan-ghost js-scan-retry" data-r="R18">Try again</button>`;
+  }
+  $('#app').innerHTML = `<div class="scan-screen"><div class="scan-box">`
+    + `<span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>`
+    + `<div class="scan-plate"><div class="scan-brand"><span class="scan-brandtxt">Jac<b>Rentals</b></span><span class="scan-tag">Scan to log</span></div>`
+    + `<div class="scan-body">${body}</div></div></div></div>`;
+  const f = document.querySelector('.js-scan-file');
+  if (f) f.addEventListener('change', (e) => scanRecord(e.target.files && e.target.files[0]));
+  const again = document.querySelector('.js-scan-again'); if (again) again.addEventListener('click', () => renderScanCapture(scanUI.unitId));
+  const retry = document.querySelector('.js-scan-retry'); if (retry) retry.addEventListener('click', () => renderScanCapture(scanUI.unitId));
+}
+// ── FLEET QR CODES — an on-demand print sheet of scan decals (Company Files card, gated
+//    scanEnabled()). Units still owned & in the fleet only — Inactive/Sold are retired, not
+//    scannable. Generated CLIENT-SIDE from live DATA.units at click time (no stored file, so
+//    it's always current) with the vendored qrcode-generator encoder (never a network call).
+const FLEET_QR_STATUSES = ['Active', 'Onboard', 'Purchased', 'For Sale'];   // excludes Inactive, Sold
+/** Each decal encodes the PERMANENT PRODUCTION scan URL — always the fixed app.jacrentals.com
+ *  base, NEVER location.origin — so a sheet printed from staging/localhost still resolves once
+ *  taped to the machine. Visual models the .scan-box/.login-box plate (dark steel, hazard-stripe
+ *  cap, stamped Saira Condensed labels); the QR itself always sits on a WHITE quiet-zone field —
+ *  the one hard print rule, never QR-on-dark. This is a standalone print document (own <style>,
+ *  like openSignedPdf/openMembershipAgreementPdf above), so it carries its own literal colors. */
+function downloadFleetQRCodes() {
+  const units = (DATA.units || []).filter((u) => u.unitId && FLEET_QR_STATUSES.includes(u.fleetStatus));
+  if (!units.length) { toast('No active units to print.'); return; }
+  const e2 = (t) => String(t == null ? '' : t).replace(/[&<>]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
+  const decal = (u) => {
+    const cat = IDX.category.get(u.categoryId);
+    let svg = '';
+    try {
+      const q = qrcode(0, 'M');
+      q.addData('https://app.jacrentals.com/#u=' + u.unitId);
+      q.make();
+      svg = q.createSvgTag({ cellSize: 5, margin: 2, scalable: true });
+    } catch (e) { svg = ''; }   // a malformed unitId still prints a legible fallback plate (id + name), no QR
+    return `<div class="qd-plate">
+      <div class="qd-hazard" aria-hidden="true"></div>
+      <div class="qd-body">
+        <div class="qd-qr">${svg}</div>
+        <div class="qd-name">${e2(u.name || u.unitId)}</div>
+        ${cat && cat.name ? `<div class="qd-cat">${e2(cat.name)}</div>` : ''}
+        <div class="qd-id">${e2(u.unitId)}</div>
+      </div>
+    </div>`;
+  };
+  const dateStr = new Date().toLocaleDateString();
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Fleet QR Codes — ${e2(dateStr)}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 22px; background: #dfe2e7; font-family: 'Saira Condensed', system-ui, sans-serif; }
+      .qd-head { display: flex; align-items: flex-end; justify-content: space-between; margin: 0 4px 16px; gap: 12px; flex-wrap: wrap; }
+      .qd-title { font-weight: 800; font-size: 21px; letter-spacing: 1.6px; text-transform: uppercase; color: #14181d; }
+      .qd-sub { font-size: 12px; letter-spacing: .6px; color: #5b6472; margin-top: 2px; }
+      .qd-print { font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 700; font-size: 12px; letter-spacing: 1.6px;
+        text-transform: uppercase; padding: 10px 20px; border-radius: 8px; border: none; cursor: pointer;
+        background: linear-gradient(180deg, #ff9038, #ff7a1a); color: #1a1205; }
+      .qd-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+      .qd-plate { position: relative; overflow: hidden; border-radius: 12px; background: linear-gradient(180deg, #1b2129, #13171d);
+        border: 1px solid #2a313b; break-inside: avoid; page-break-inside: avoid; }
+      .qd-hazard { height: 9px; width: 100%; background: repeating-linear-gradient(135deg, #f5c542 0 13px, #14181d 13px 26px); border-bottom: 1px solid #000; }
+      .qd-body { display: flex; flex-direction: column; align-items: center; padding: 14px 12px 16px; }
+      .qd-qr { background: #fff; border-radius: 8px; padding: 8px; width: 128px; height: 128px; display: flex; align-items: center; justify-content: center; }
+      .qd-qr svg { width: 112px; height: 112px; display: block; }
+      .qd-name { margin-top: 10px; font-weight: 800; font-size: 15px; letter-spacing: .4px; text-transform: uppercase; color: #eef2f6; text-align: center; }
+      .qd-cat { font-size: 10.5px; letter-spacing: 1.2px; text-transform: uppercase; color: #8b94a3; margin-top: 2px; }
+      .qd-id { margin-top: 6px; font-size: 13px; font-weight: 700; letter-spacing: 1.8px; color: #ff9038; }
+      @page { margin: 12mm; }
+      @media print {
+        body { background: #fff; padding: 0; }
+        .qd-print { display: none; }
+        .qd-grid { gap: 10px; }
+      }
+    </style></head><body>
+    <div class="qd-head">
+      <div><div class="qd-title">Fleet QR Codes</div><div class="qd-sub">${units.length} active unit${units.length === 1 ? '' : 's'} · generated ${e2(dateStr)}</div></div>
+      <button class="qd-print" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+    <div class="qd-grid">${units.map(decal).join('')}</div>
+    </body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) { toast('Allow pop-ups to download the QR sheet.'); return; }
+  w.document.write(html); w.document.close();
+  w.focus(); setTimeout(() => { try { w.print(); } catch (e) {} }, 300);
 }
 function boot() {
   // Tidy the URL after a manual Update (checkForUpdate adds ?_u=<t> to bust the cached index) —
@@ -24609,6 +24798,18 @@ function boot() {
   const hash = (location.hash || '').toLowerCase();
   if (hash.includes('local')) { return offlineBoot(); }     // #local — render from data.js, no backend
   if (hash.includes('reseed')) { return reseedFromFile(); }  // #reseed — REPLACE live data with the file
+  // #u=<unitId> — QR decal scan → log a video (FEATURES.qrScanLog). A remembered device (scan token)
+  // or a live session goes straight to the standalone capture; a cold phone falls through to whatever
+  // login is active (phone or shared-pw) with the scan parked, replayed after login (maybeReplayScan).
+  if (scanEnabled()) {
+    const su = (location.hash || '').match(/[#&]u=([\w-]+)/i);
+    if (su) {
+      history.replaceState(null, '', location.pathname + location.search);
+      if (scanTokenGet() || backendPassword || scanPreviewOn()) return renderScanCapture(su[1]);   // remembered/session, OR preview (no backend, no PII) → straight in
+      pendingScan = su[1];   // cold PRODUCTION → fall through to the normal login gate below; replay after it
+      try { sessionStorage.setItem('jactec.pendingScan', su[1]); } catch (e) {}   // survive a reload / OS-backgrounding while sitting at the login screen
+    }
+  }
 
   // Per-person login (flagOn('phoneIdentity')): resume a trusted device or show the phone
   // login. Strictly gated — the shared-password gate below is the flag-OFF path, untouched.

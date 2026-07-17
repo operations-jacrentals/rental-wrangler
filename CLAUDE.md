@@ -24,6 +24,10 @@ what Jac wants for all choices.
 - Lead with the outcome. An **artifact** is still the right call for anything
   comparative or visual (it renders in the cloud web app; a localhost preview does
   not) — the artifact *shows* the options, the popup (or its inline fallback) *asks*.
+- **Batch related questions and favor multiSelect** (Jac: *"I love the multiselect
+  most"*). One popup carries up to **4** questions — group related ones instead of
+  asking one at a time — and use **multiSelect** whenever the answers aren't mutually
+  exclusive. Applies everywhere, including `/brainstorming`'s clarifying questions.
 
 ## Design language
 
@@ -91,6 +95,12 @@ checkout -- ci/`. The two `lease-*` suites are **pure-Node** (mocked git seam, n
 **Cache-bust every deploy:** bump the shared `?v=` on `style.css`, `rule-usage.js`, and
 `app.js` in `index.html` (Pages serves `max-age=600`, no per-file hashing). Don't add `?v=`
 to the ES-module imports inside `app.js`. (`deploy-staging.mjs` bumps it for you.)
+
+**Session title = this session's PRs.** On opening a PR, append its number to
+`.claude/.session-prs` (gitignored) and surface a one-tap `/rename #<nums> · <branch-label>`
+(the model can't self-`/rename`); remove it on merge/close. A `SessionStart` hook
+(`.claude/hooks/session-title.mjs`) re-derives the title each start/resume, respecting a
+manual rename. Full rule: `/start` §4.
 
 **R-rulebook:** every UI element is stamped `data-r="Rxx"`; regenerate `rule-usage.js` with
 `node ci/gen-rule-usage.mjs` when usage changes (`--check` is the CI drift + duplicate

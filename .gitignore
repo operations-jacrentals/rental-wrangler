@@ -54,3 +54,8 @@ tmp-*.mjs
 # `.staging-lease.json.<pid>.<ts>.tmp` written by the atomic temp+rename, which a
 # crash in the write→rename window could otherwise leave behind uncommittable.
 .staging-lease.json*
+
+# Session-title hook state — open PR numbers + last title set. Session-scoped
+# (each cloud session gets its own clone), best-effort, NEVER committed.
+.claude/.session-prs
+.claude/.session-title-set
