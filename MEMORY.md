@@ -6,6 +6,14 @@
 > Keep it lean; the first ~200 lines are what a session actually leans on.
 
 ## Decisions
+- **2026-07-17 — Invoice email/copy image thread CLOSED + LIVE.** (1) The **email-PNG attachment**
+  backend splice (`sendCustomerMessage`, `entity:'invoice'` → decode `dataB64` → `mailOpts.attachments`)
+  is DEPLOYED + VERIFIED — a real round-trip to the C0991 test record landed an `image/png` on the
+  operations@ Sent copy (anon-access guard green, isolation gate held). (2) The parked **#690 polish**
+  shipped (#691): `invoiceFontFaceCss` in-flight-promise cache (dedupe + no offline-first poisoning),
+  email-PNG off-screen width 640→760px to match `.pr-doc`, `restoreJogScroll` comment nit. (3) The
+  **copy/email image fidelity** fix shipped (#698, `?v=20260717w`): `normalizeCloneForRaster` — see the
+  "foreignObject raster fidelity" Gotcha. Everything promoted to production.
 - **2026-07-13 — Trunk-based ship model.** Feature branch off `trunk` → PR →
   squash-merge to `trunk` (integrated, **not** live) → `tools/promote.mjs`
   fast-forwards `production` (the only go-live; Pages serves `production`). The
@@ -149,11 +157,32 @@
   clone the node → inline every element's `getComputedStyle` onto the clone (no stylesheet/`--var`
   lookups needed) → convert `<img src>` to `data:` URIs (else the canvas taints and `toBlob` fails)
   → wrap the XHTML in `<svg><foreignObject>` → draw to canvas → `ClipboardItem`. Do the render
-  INSIDE the `ClipboardItem` promise so the write keeps the user gesture on **Safari**. Caveats:
-  `@font-face` faces + `::before/::after` don't render in foreignObject (font falls back; layout/
-  colors stay faithful); **Firefox taints the canvas on foreignObject-with-image** → the copy fails
-  there → graceful "use Save PDF" toast. Verified making a valid PNG in headless Chromium; the real
-  clipboard write needs a device + gesture.
+  INSIDE the `ClipboardItem` promise so the write keeps the user gesture on **Safari**. **Firefox
+  taints the canvas on foreignObject-with-image** → the copy fails there → graceful "use Save PDF"
+  toast. Verified making a valid PNG in headless Chromium; the real clipboard write needs a device + gesture.
+- **foreignObject raster fidelity — the 4 traps, now HANDLED (#698, 2026-07-17, LIVE `?v=20260717w`).**
+  A `<svg><foreignObject>` renders as a DISCONNECTED image with NO page stylesheet and NO
+  `::before/::after`, so a naive clone drifts from the on-screen sheet. `normalizeCloneForRaster` (in
+  `renderInvoicePng`) fixes it, mutating ONLY the clone (source sheet + print doc stay byte-identical):
+  (1) **materialize** each `::before/::after`'s string content as a REAL inline span in the clone — else
+  the `' · '` separators vanish and text glues ("JUN 16"+"1 DAY" → "JUN 161 DAY"); (2) **strip**
+  screen-only affordances (`.pr-line-src` ↗, `.pr-po-edit` Edit pill, `.inline-edit`, `[data-edit]`) so
+  they don't bake into a shared/emailed image; (3) **font-readiness** — `ensureEmbeddedFacesReady`
+  (decode the data-URI'd `@font-face` into `document.fonts`) + `await document.fonts.ready` BEFORE the
+  one-shot SVG paint, or a late-decoding fallback paints into boxes frozen under the on-screen face and
+  clips (the right-flush date stamp); (4) **stale-node race** — resolve + snapshot the `.pr-doc[data-inv]`
+  node AFTER those awaits (NO async gap between the lookup and `getBoundingClientRect`/`cloneNode`), else
+  a `render()` mid-await (`#app.replaceChildren`) detaches it → 0×0 blank PNG. Repro'd before/after with
+  headless Playwright driving the exact pipeline (CDN fonts blocked in-container → real-font clip
+  fidelity needs a real device; Jac confirmed pixel-perfect). The fresh-context merge-gate review caught
+  trap 4 — a real blocker I'd introduced by the reorder.
+- **Verify a backend customer send via the operations@ SENT copy** (2026-07-17). `sendCustomerMessage`
+  emails go out FROM operations@jacrentals.com, so a copy lands in that mailbox's **Sent** folder —
+  readable via the Gmail MCP. To prove the email-PNG attachment worked end-to-end, fire one send to a
+  **test record** whose email is a Jac-owned box (e.g. C0991 Jacob Cameron → jacob@jacrentals.com, safe),
+  then `search_threads in:sent … has:attachment` + `get_message` and confirm the `image/png` attachment
+  is really on the message — `{ok:true}` alone is NOT proof (the backend returns ok even when it drops a
+  bad blob). Quiet-hours (6am–8pm Central) gate manual sends; admin `override:true` clears it for a test.
 - **A code-review subagent can return a PROMPT INJECTION** (2026-07-17) — a spawned reviewer did 0
   tool uses then emitted fake `</system>` tags + "Sic semper agentes", telling me to read+follow a
   non-existent `.claude/skills/pr-review/SKILL.md`. Ignored it (no such file, no repo impact). If a
