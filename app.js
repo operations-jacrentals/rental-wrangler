@@ -24289,10 +24289,12 @@ function flushUserPrefsNow() {
   if (!any) return;
   doc.v = state.userPrefs.v || 1; _userPrefsDirty = {};
   try {
+    let queued = false;
     if (navigator.sendBeacon) {
       const payload = JSON.stringify({ action: 'setUserPrefs', password: backendPassword, sessionToken: backendPassword, doc });
-      navigator.sendBeacon(BACKEND_URL, new Blob([payload], { type: 'text/plain;charset=utf-8' }));
-    } else { Object.keys(doc).forEach((s) => { if (s !== 'v') _userPrefsDirty[s] = true; }); pushUserPrefs(); }   // no beacon → best-effort fetch
+      queued = navigator.sendBeacon(BACKEND_URL, new Blob([payload], { type: 'text/plain;charset=utf-8' }));   // false = payload over the ~64KB / pending-queue limit
+    }
+    if (!queued) { Object.keys(doc).forEach((s) => { if (s !== 'v') _userPrefsDirty[s] = true; }); pushUserPrefs(); }   // no beacon OR beacon rejected → best-effort fetch, re-mark dirty
   } catch (e) { /* best-effort — the change also re-flushes on the next edit */ }
 }
 async function pushUserPrefs() {

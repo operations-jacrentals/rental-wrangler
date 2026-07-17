@@ -4,7 +4,7 @@
 
 # Code Atlas — generated chapter index (Part I · The Frontend)
 
-## app.js — 26638 lines, 41 chapters
+## app.js — 26640 lines, 41 chapters
 
 | ID | Lines | Anchors | Chapter title | Key symbols |
 |----|------:|---------|---------------|-------------|
@@ -45,10 +45,10 @@
 | APP-35 | 22124–22606 | §5.4d | §5.4d — DATE SEARCH PICKER. A standalone calendar that REUSES the rental | openDateSearch, closeDateSearch, dsMonth, dsToday, dsClear, dsPickDay, dsDone, dateSearchEl, positionDateSearch, setInspWash, setInspResult, recordServiceCompletion, …(+21) |
 | APP-36 | 22607–22609 | §18 | §18 PERSISTENCE & BOOT | — |
 | APP-37 | 22610–23834 | §18b | §18b BACKEND SYNC — Google Sheets via the Apps Script web app | BACKEND_URL, PERSIST_KEYS, backendPassword, booting, saveTimer, driveViewUrl, backendCall, gpsToken, gpsBase, gpsConfigured, _gpsReloginInflight, gpsRelogin, …(+85) |
-| APP-38 | 23835–24972 | — | INSTANT CACHE — on-device data snapshot (spec 2026-07-16) | DC_DB, CACHE_SCHEMA_VER, _dcDbPromise, dcDbOpen, dcTx, dataCache, cacheAppVer, pidLocalToken, cacheTokenTag, cacheDeviceOk, cacheValid, cacheSnapshotEnvelope, …(+93) |
-| APP-39 | 24973–24979 | — | PHONE-VERIFIED DEVICE IDENTITY — login flow (Phase 2) | — |
-| APP-40 | 24980–25286 | — | const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', | pidUI, pidTokenGet, pidTokenSet, pidTokenClear, pidRosterCache, pidAdopt, pidLoadFail, pidEnter, renderBootSplash, phoneBoot, pidErr, pidCall, …(+14) |
-| APP-41 | 25287–26638 | — | SCAN-TO-LOG (QR DECAL → VIDEO) — standalone capture (FEATURES.qrScanLog) | pendingScan, scanActive, scanUI, scanEnabled, scanPreviewOn, scanTokenGet, scanTokenSet, scanTokenClear, maybeReplayScan, scanCall, scanPreviewResponse, renderScanCapture, …(+60) |
+| APP-38 | 23835–24974 | — | INSTANT CACHE — on-device data snapshot (spec 2026-07-16) | DC_DB, CACHE_SCHEMA_VER, _dcDbPromise, dcDbOpen, dcTx, dataCache, cacheAppVer, pidLocalToken, cacheTokenTag, cacheDeviceOk, cacheValid, cacheSnapshotEnvelope, …(+93) |
+| APP-39 | 24975–24981 | — | PHONE-VERIFIED DEVICE IDENTITY — login flow (Phase 2) | — |
+| APP-40 | 24982–25288 | — | const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', | pidUI, pidTokenGet, pidTokenSet, pidTokenClear, pidRosterCache, pidAdopt, pidLoadFail, pidEnter, renderBootSplash, phoneBoot, pidErr, pidCall, …(+14) |
+| APP-41 | 25289–26640 | — | SCAN-TO-LOG (QR DECAL → VIDEO) — standalone capture (FEATURES.qrScanLog) | pendingScan, scanActive, scanUI, scanEnabled, scanPreviewOn, scanTokenGet, scanTokenSet, scanTokenClear, maybeReplayScan, scanCall, scanPreviewResponse, renderScanCapture, …(+60) |
 
 ## config.js — 676 lines, 0 chapters
 
