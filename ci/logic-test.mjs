@@ -1588,6 +1588,8 @@ try {
       ok(T.inFunnel(c, 'member') === true && (T.funnelLayerDate(c, 'member', 'Lead') === T.TODAY_ISO), 'dated funnel: Member Lead checkbox joins the funnel + stamps the Lead date');
       T.reachFunnelStage('C-SIGN', 'rental', 'Rented');
       ok(T.funnelCurrentStage(c, 'rental') === 'Lead', 'dated funnel: Rental stages are derived — reachFunnelStage never sets them by hand');
+      c.usedSalesStage = "Don't Contact";   // an off-vocabulary value an AI-chat / CSV write could leave behind
+      ok(T.funnelCurrentStage(c, 'equipment') === 'Lead', 'dated funnel: an off-vocabulary stored stage clamps to Lead (no -1 index → no silent overwrite on click)');
       T.IDX.customer.delete('C-SIGN');
     }
 

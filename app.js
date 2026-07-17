@@ -212,7 +212,11 @@ function ensureFunnelLog(c) {
 function funnelCurrentStage(c, key) {
   if (key === 'rental') return rentalFunnelStage(c);
   const v = key === 'member' ? c.membershipStage : c.usedSalesStage;
-  return (!v || v === 'N/A') ? 'Lead' : v;
+  // Unset / N/A / any off-vocabulary legacy value (e.g. a "Don't Contact" left by an AI-chat or
+  // CSV write that never ran through the funnel UI) clamps to the entry, so indexOf is never -1 —
+  // otherwise every layer would read 'upcoming' and a click on the top layer would silently
+  // overwrite the stored value (fresh-context review, 2026-07-17).
+  return (!v || v === 'N/A' || !FUNNELS[key].stages.includes(v)) ? 'Lead' : v;
 }
 // earliest reserved / on-rent rental startDate for the Rental funnel's auto dates.
 function reservedRentalDate(c) {
@@ -4216,9 +4220,12 @@ function funnelSectionHtml(c) {
   let body;
   if (tab === 'rental') {
     const mem = inFunnel(c, 'member');
-    // ONE current across the stacked Rental → Member journey: Member's position when Member is
-    // on (it's the furthest continuation), else Rental's — so exactly one layer lights orange.
-    const curId = mem ? 'member:' + funnelCurrentStage(c, 'member') : 'rental:' + funnelCurrentStage(c, 'rental');
+    // ONE current across the stacked Rental → Member journey. The Member position wins ONLY once
+    // Member has moved past its 'Lead' entry — otherwise a Rented customer who just gets ticked
+    // "Member Lead" would visually jump backwards to the new Member-Lead layer (review fix); until
+    // then, the live Rental position (e.g. Rented) stays the highlighted current.
+    const memStage = funnelCurrentStage(c, 'member');
+    const curId = (mem && memStage !== 'Lead') ? 'member:' + memStage : 'rental:' + funnelCurrentStage(c, 'rental');
     const stack = `<div class="dfunnel" data-r="R35">`
       + datedFunnelHtml(c, 'rental', 0, curId)
       + memberLeadRow(c)
@@ -18596,7 +18603,7 @@ function onClick(e) {
     if (!c) return;
     const stages = FUNNELS[fkey].stages, ci = stages.indexOf(funnelCurrentStage(c, fkey)), i = stages.indexOf(stage);
     const manual = fkey !== 'rental' && !isAutoStage(fkey, stage);
-    if (manual && i > ci) return reachFunnelStage(rec, fkey, stage);   // upcoming manual layer → advance + stamp today
+    if (manual && ci >= 0 && i > ci) return reachFunnelStage(rec, fkey, stage);   // upcoming manual layer → advance + stamp today (ci>=0: never advance off an unrecognized current)
     return openFunnelLayerEdit(rec, fkey, stage);                       // reached / auto layer → edit date + note
   }
   if (closest('.js-member-lead')) { const b = closest('.js-member-lead'); e.stopPropagation(); return toggleMemberLead(b.dataset.rec); }
@@ -20244,6 +20251,9 @@ function completeWOAttempt(woId) {
 }
 
 function onInput(e) {
+  // Idea D funnel-layer editor: keep the note synced to overlay state so opening the date
+  // picker (which re-renders the popup from o.funnelNote) never wipes a typed-but-unsaved note.
+  if (e.target.classList.contains('js-fl-note') && state.overlay?.kind === 'funnelLayer') { state.overlay.funnelNote = e.target.value; return; }
   if (e.target.id === 'globalsearch') {
     // The state updates on every keystroke; the (debounced) re-render rebuilds ONLY the
     // results grid via renderResults(), leaving THIS input node mounted — so no focus/
