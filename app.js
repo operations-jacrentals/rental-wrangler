@@ -2687,7 +2687,7 @@ function applySnap(cs, snap) {
 function jogBackEscape(cs, card) {
   if (!cs || cs.backStack.length || (cs.mode === 'standard' && cs.recId != null)) return null;   // real history / record-drop wins
   if (!document.body.classList.contains('is-phone')) return null;
-  if ((cs.filterTerms && cs.filterTerms.length) || (cs.search && cs.search.trim())) return 'filter';
+  if ((cs.filterTerms && cs.filterTerms.some((t) => !t.g)) || (cs.search && cs.search.trim())) return 'filter';   // graph-view (.g) selection is the graph UI's to own — don't escape/clear it
   if (activeSession().anchor) return 'anchor';
   if (state.searchMode && (state.query.trim() || (state.filterTerms || []).length)) return 'search';
   return null;
@@ -2708,7 +2708,7 @@ function cardBack(card) {
     }
     // no history, no record to drop → step "back" OUT of whatever narrows this list (phone only)
     const esc = jogBackEscape(cs, card);
-    if (esc === 'filter') { cs.filterTerms = []; cs.search = ''; afterFilterChange(card); }
+    if (esc === 'filter') { cs.filterTerms = (cs.filterTerms || []).filter((t) => t.g); cs.search = ''; afterFilterChange(card); }   // keep graph-view (.g) terms; clear only the fleet/search filter
     else if (esc === 'anchor') clearAnchor();
     else if (esc === 'search') clearSearch();
     return;
@@ -8401,7 +8401,6 @@ const DETAIL = {
     const fleet = `<div class="section"><h4>Fleet Summary</h4><div class="fieldstack">
       ${st.forSale ? kvPills(badge(st.forSale + ' For Sale', 'purple')) : ''}
       ${kv(`${num(st.avgHours)} HRS`, { sfx: 'avg hours', derived: true })}
-      ${(c.lostDemand || []).length ? kv(`${(c.lostDemand || []).length}`, { sfx: 'lost-demand asks', derived: true }) : ''}
       ${kvPills(lostDemandBtn(c))}
       ${c.description ? kv(c.description, { wrap: true }) : ''}
     </div></div>`;
