@@ -6,6 +6,16 @@
 > Keep it lean; the first ~200 lines are what a session actually leans on.
 
 ## Decisions
+- **2026-07-18 — Rail toggle-swap + WRAP-AROUND SHIPPED LIVE (PR #718, `?v=20260718f`).** Two §M8
+  follow-ups: (1) the left toggle group now reads **Categories · Units** (was Units·Categories) in the
+  mobile chip bar (`MOBILE_TOGGLE_GROUPS`) + desktop tabs (`config COLUMNS`), matching the rail's
+  spatial order; the `default` shown card stays Units. (2) The ribbon **loops** — swipe past Sales →
+  Categories, past Categories → Sales — as an infinite carousel on the native scroll-snap track: 2
+  INERT edge clones (`inertRailClone`) bracket the 5 real panels, and a debounced scroll-settle
+  teleport (`teleportRailWrap`) jumps a reached clone to its real twin (same card → seamless). Calendar
+  stays off-rail. Additive — the 5 real panels behave exactly as before; clones + teleport only engage
+  at the wrap. Two fresh-context review rounds (see the clone/`data-card` Gotcha); rebased twice
+  mid-ship (#714 px→rem, #720 Staging Deck, #721 Trips).
 - **2026-07-18 — Mobile OBEYS iOS Dynamic Type — SHIPPED LIVE + PROMOTED (PR #714, `?v=20260718e`).**
   The app ignored the iOS Text-Size accessibility slider (Settings › Accessibility › Display & Text
   Size › Larger Text) because every font size was hard `px` (711 in `style.css`, 100 app-UI inline in
@@ -199,6 +209,17 @@
   one line through single-column pan mode; the `<480px` query re-enables wrap for the mobile stack.
 
 ## Gotchas
+- **DOM clones near the card grid must NOT carry a bare `data-card` (2026-07-18, §M8 wrap).** The
+  swipe-rail wrap clones (`inertRailClone`) keep `data-card` because CSS keys the card's list-grid
+  layout AND theme stripe on it — but that broke the DOM-uniqueness assumption of the ~30
+  `.card[data-card]` JS selectors. render()'s scroll-memo `querySelectorAll` loop double-counted the
+  cloned card (its `scrollTop 0`, processed LAST for whichever member is first in `MOBILE_RAIL`,
+  clobbered the real Categories scroll → reset-to-top on every render); and singular
+  `querySelector('.card[data-card="sales"]')` returned the LEAD clone (first in the DOM) → focus/jog hit
+  the invisible clone. Fix: stamp `data-clone="1"` on the clone card + scope the affected selectors with
+  `:not([data-clone])` (render()'s two scroll-memo loops, the zip-drop loop, `setFocusedCard`,
+  `restoreJogScroll`). A fresh-context review caught BOTH — cloneNode of a card-grid node is a landmine;
+  add the marker + scope in the SAME change.
 - **`-apple-system-body` is a FIXED ~13px on macOS Safari — NOT scaling like iOS (2026-07-18).** The
   iOS Dynamic Type rem-anchor MUST be scoped to touch devices (`@media (hover:none) and
   (pointer:coarse)`): bind `font:-apple-system-body` document-wide and macOS Safari shrinks the whole

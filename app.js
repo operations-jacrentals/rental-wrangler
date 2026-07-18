@@ -17230,6 +17230,11 @@ function initTooltip() {
   tipEl = el('div', 'tooltip'); document.body.appendChild(tipEl);
   document.addEventListener('mouseover', (e) => {
     if (!HOVER_CAPABLE || DRAG.active) return;   // §15c — no tooltips mid-drag; never on touch (first-tap hover)
+    // Hover-preload a customer comms thread (Texts/Email only) so the click opens instantly — a
+    // backstop for tabs the on-summon prefetch didn't reach. commsFetchMsgs is idempotent, so repeat
+    // mouseovers on the same tab are cheap no-ops; touch opens ride the on-open prefetch instead.
+    const ctab = e.target.closest('.comms-tab[data-comms-tab], .js-comms-mrow[data-cust]');
+    if (ctab && (state.commsRail.cat === 'text' || state.commsRail.cat === 'email')) commsFetchMsgs(ctab.dataset.commsTab || ctab.dataset.cust);
     const t = e.target.closest('[data-tip]');
     if (!t) return;
     clearTimeout(tipTimer);
@@ -26737,7 +26742,12 @@ function refreshCommsThreads(force) {
   commsThreadsLoading = true;
   backendCall('commsThreads').then((r) => {
     commsThreadsLoading = false;
-    if (r && r.ok && Array.isArray(r.threads)) { commsThreads = r.threads; commsThreadsAt = Date.now(); render(); }
+    if (r && r.ok && Array.isArray(r.threads)) {
+      commsThreads = r.threads; commsThreadsAt = Date.now();
+      const cat = state.commsRail.cat;
+      if (cat === 'text' || cat === 'email') commsPrefetchThreads(cat);   // warm the summoned category so every open is instant
+      render();
+    }
   }).catch(() => { commsThreadsLoading = false; });
 }
 /* A thread's presence in ONE channel. Backend ≥v75 sends a per-channel `channels`
@@ -26839,19 +26849,64 @@ function commsWranglerWorst() {
   commsWranglerConvs().forEach((x) => { const s = commsWranglerStatus(x); if (!worst || COMMS_ST_RANK[s] < COMMS_ST_RANK[worst]) worst = s; });
   return (!worst || worst === 'gray') ? 'green' : worst;
 }
-/* ── per-customer thread messages (messagesFor — bodies + maskedTo + fromUsed) ── */
-const commsMsgs = new Map();        // customerId -> { loading, at, messages }
+/* ── per-customer thread messages (messagesFor — bodies + maskedTo + fromUsed) ──
+   Opening a customer thread should feel INSTANT (Messenger metaphor, Jac 2026-07-18) — the
+   customer channels are the ONLY comms that hit the network to render (Team rides the APP-23
+   chat store, Mr. Wrangler rides state.wrangler — both local, both instant; the AI's reply is
+   the only thing that's allowed to take a beat). Three moves close the gap: (1) PREFETCH a
+   summoned category's thread bodies so the click lands on a cache hit (commsPrefetchThreads);
+   (2) HOVER-preload a tab (the §mouseover hook); (3) render the last message INSTANTLY from the
+   thread rollup while the full history hydrates in behind it (commsPopupHtml). entry.promise lets
+   the prefetch pump gate concurrency on the one slow GAS backend WITHOUT double-fetching —
+   commsFetchMsgs is idempotent, so a click simply reuses any in-flight prefetch and re-renders on
+   its completion. 30s cache; a stale re-open shows its old messages while it revalidates. */
+const commsMsgs = new Map();        // customerId -> { loading, at, messages, promise }
 function commsFetchMsgs(customerId, force) {
   if (!commsOnline()) return null;
-  let entry = commsMsgs.get(String(customerId));
-  if (entry && (entry.loading || (!force && Date.now() - entry.at < 30000))) return entry;
-  entry = { loading: true, at: entry ? entry.at : 0, messages: entry ? entry.messages : null };
-  commsMsgs.set(String(customerId), entry);
-  backendCall('messagesFor', { customerId }).then((r) => {
-    entry.loading = false;
+  const idS = String(customerId);
+  let entry = commsMsgs.get(idS);
+  if (entry && (entry.loading || (!force && Date.now() - entry.at < 30000))) return entry;   // in-flight or fresh → reuse (prefetch + click share one call)
+  entry = { loading: true, at: entry ? entry.at : 0, messages: entry ? entry.messages : null, promise: null };
+  commsMsgs.set(idS, entry);
+  entry.promise = backendCall('messagesFor', { customerId }).then((r) => {
+    entry.loading = false; entry.promise = null;
     if (r && r.ok && Array.isArray(r.messages)) { entry.messages = r.messages; entry.at = Date.now(); render(); }
-  }).catch(() => { entry.loading = false; });
+  }).catch(() => { entry.loading = false; entry.promise = null; });
   return entry;
+}
+/* Prefetch a summoned customer category's thread bodies so opening any tab is a cache hit. Capped
+   to the most-recently-active threads and drained a few lanes at a time — one GAS web app serves
+   every call, so a burst of dozens would just choke the backend and defeat the point. Idempotent +
+   cache-aware (skips anything already warm/in-flight), so it's safe to call on every summon/poll. */
+const COMMS_PREFETCH_CAP = 12;      // most-recent threads to warm per summon
+const COMMS_PREFETCH_LANES = 3;     // parallel messagesFor calls — keep the single GAS backend breathing
+let commsPrefetchQ = [], commsPrefetchLive = 0;
+function commsPrefetchThreads(cat) {
+  if (!commsOnline()) return;
+  const channel = COMMS_CAT_META[cat] && COMMS_CAT_META[cat].channel;
+  if (!channel || !commsThreads) return;
+  const now = Date.now();
+  commsThreadsFor(cat)
+    .slice()
+    .sort((a, b) => String(b.lastWhen || '').localeCompare(String(a.lastWhen || '')))   // most-recently-active first — the likeliest opens
+    .slice(0, COMMS_PREFETCH_CAP)
+    .forEach((t) => {
+      const id = String(t.customerId), e = commsMsgs.get(id);
+      if (e && (e.loading || now - e.at < 30000)) return;                                // already warm/in-flight — skip
+      if (!commsPrefetchQ.includes(id)) commsPrefetchQ.push(id);
+    });
+  commsPrefetchPump();
+}
+function commsPrefetchPump() {
+  while (commsPrefetchLive < COMMS_PREFETCH_LANES && commsPrefetchQ.length) {
+    const id = commsPrefetchQ.shift();
+    const e = commsMsgs.get(id);
+    if (e && (e.loading || Date.now() - e.at < 30000)) continue;                         // warmed since queued (a click/hover beat us) — drop it
+    const entry = commsFetchMsgs(id);
+    if (!entry || !entry.promise) continue;                                              // offline or instant cache hit — nothing to await
+    commsPrefetchLive++;
+    entry.promise.then(() => { commsPrefetchLive--; commsPrefetchPump(); });             // next lane once this body lands
+  }
 }
 const commsDrafts = new Map();      // `${cat}|${customerId}` -> composer draft (survives re-renders)
 const commsSending = new Set();     // in-flight send keys (disables the ignition)
@@ -26912,16 +26967,38 @@ function commsPopupHtml(cat, t, id) {
   const name = (c && fullName(c)) || String(id);
   const st = commsConvStatus(t, meta.channel);
   const entry = commsFetchMsgs(id);
+  const fmtWhen = (w) => { const d = w ? new Date(w) : null; return (d && !isNaN(d)) ? d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''; };
   const msgs = ((entry && entry.messages) || []).filter((m) => m.channel === meta.channel)
     .sort((a, b) => String(a.when || '').localeCompare(String(b.when || '')));
-  const stamp = (m) => { const d = m.when ? new Date(m.when) : null; return (d && !isNaN(d)) ? d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''; };
-  const rows = msgs.map((m) => {
-    const me = m.direction !== 'inbound';
-    const metaLine = me
-      ? [m.status === 'failed' ? '✕ Failed' : 'Sent', m.maskedTo || '', m.fromUsed ? 'from ' + m.fromUsed : '', stamp(m)].filter(Boolean).join(' · ')
-      : [name, stamp(m)].filter(Boolean).join(' · ');
-    return `<div class="cp-row${me ? ' me' : ''}"><div class="cp-cell"><div class="cp-bub${me ? ' me' : ''}${m.status === 'failed' ? ' failed' : ''}">${esc(m.body || m.subject || '(no text)')}</div><div class="cp-meta">${esc(metaLine)}</div></div></div>`;
-  }).join('') || `<div class="cp-empty">${entry && entry.loading ? 'Rounding up the thread…' : 'No messages yet — say the word.'}</div>`;
+  const bubble = (o) => `<div class="cp-row${o.me ? ' me' : ''}${o.preview ? ' cp-preview' : ''}"><div class="cp-cell"><div class="cp-bub${o.me ? ' me' : ''}${o.failed ? ' failed' : ''}">${esc(o.text)}</div><div class="cp-meta">${esc(o.meta)}</div></div></div>`;
+  let rows;
+  if (msgs.length) {
+    rows = msgs.map((m) => {
+      const me = m.direction !== 'inbound';
+      const metaLine = me
+        ? [m.status === 'failed' ? '✕ Failed' : 'Sent', m.maskedTo || '', m.fromUsed ? 'from ' + m.fromUsed : '', fmtWhen(m.when)].filter(Boolean).join(' · ')
+        : [name, fmtWhen(m.when)].filter(Boolean).join(' · ');
+      return bubble({ me, failed: m.status === 'failed', text: m.body || m.subject || '(no text)', meta: metaLine });
+    }).join('');
+  } else if (entry && entry.loading) {
+    // INSTANT open (Messenger metaphor, Jac 2026-07-18): the thread rollup ALREADY carries the last
+    // message — paint it the moment the window opens while the full history hydrates in behind it,
+    // instead of a blocking "Rounding up the thread…" spinner. Prefetch usually beats us here, so the
+    // full thread is already cached; this covers the cold thread (never opened, hover missed).
+    const ch = t && commsThreadChannel(t, meta.channel);
+    if (ch && ch.lastSnippet) {
+      const me = ch.lastDirection !== 'inbound';
+      const metaLine = me
+        ? [ch.lastStatus === 'failed' ? '✕ Failed' : 'Sent', fmtWhen(ch.lastWhen)].filter(Boolean).join(' · ')
+        : [name, fmtWhen(ch.lastWhen)].filter(Boolean).join(' · ');
+      rows = `<div class="cp-hydrate" aria-hidden="true">Rounding up the rest…</div>`
+        + bubble({ me, failed: ch.lastStatus === 'failed', text: ch.lastSnippet, meta: metaLine, preview: true });
+    } else {
+      rows = `<div class="cp-empty">Rounding up the thread…</div>`;   // no rollup snippet to preview (fresh, never-messaged thread)
+    }
+  } else {
+    rows = `<div class="cp-empty">No messages yet — say the word.</div>`;
+  }
   // D7 FROM picker — only for email, only when the shop has >1 connected alias
   let fromRow = '';
   if (meta.channel === 'email') {
@@ -27120,7 +27197,7 @@ function commsSummonChannel(ch) {
   const rail = state.commsRail, prev = rail.cat;
   if (prev && prev !== cat) commsLeaveCat(prev);
   rail.cat = cat;
-  refreshCommsThreads();
+  refreshCommsThreads(); commsPrefetchThreads(cat);   // warm bodies now (covers already-loaded threads the poll throttles past) + on the poll's return
   const s = rail.sessions[cat];
   s.menuOpen = true; s.lastOpen = null;   // show the list + toggle; no auto-opened window
   saveCommsRail(); render();
@@ -27145,7 +27222,7 @@ function commsToggleCat(cat) {
   }
   const prev = rail.cat;
   rail.cat = cat; if (prev) commsLeaveCat(prev);
-  if (COMMS_CAT_META[cat].channel) refreshCommsThreads();
+  if (COMMS_CAT_META[cat].channel) { refreshCommsThreads(); commsPrefetchThreads(cat); }   // warm the thread bodies so opening a tab is instant
   // summon the last session — its remembered LAST-open conversation is the ONE window restored
   const s = rail.sessions[cat];
   if (cat === 'team' && s.lastOpen) {
