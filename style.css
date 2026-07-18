@@ -440,6 +440,29 @@ body.is-phone { touch-action: manipulation; }
 .is-phone .winpicker { border-radius: 18px 18px 0 0; max-height: 92dvh; overflow: auto;
   padding-bottom: max(10px, env(safe-area-inset-bottom)); animation: sheetUp .2s cubic-bezier(.2,.7,.2,1); }
 .is-phone.sheet-open .card-body { overflow: hidden; }   /* §M3 lock the column scroll behind an open sheet */
+/* §M — MOBILE SIGNATURE SHEET. On a phone the "Open Window" pop-out is meaningless
+   (a phone has one screen — nothing to "escape" to) and rendered as a full tab with its
+   Clear/close controls pushed off-screen. Phones instead get an in-app bottom sheet that
+   covers ~half the viewport and dismisses by tapping the blank space above it (no ✕, Jac
+   2026-07-18). Steel plate + dashed paper pad + orange ink — the pop-out's look, reflowed. */
+.sig-sheet-backdrop { position: fixed; inset: 0; z-index: 9560; background: rgba(0,0,0,.55); }
+.sig-sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 9561;
+  height: 52vh; height: 52dvh;                         /* ~half the screen; dvh dodges the URL-bar lie (§M1) */
+  display: flex; flex-direction: column; gap: 10px; box-sizing: border-box;
+  padding: 10px 14px calc(12px + env(safe-area-inset-bottom));   /* clear the home indicator (§M1) */
+  background: var(--panel); border-top: 1px solid var(--line); border-radius: 18px 18px 0 0;
+  box-shadow: var(--shadow); animation: sheetUp .2s cubic-bezier(.2,.7,.2,1); }
+.sig-sheet-grip { width: 40px; height: 4px; border-radius: 999px; background: var(--line); margin: 0 auto; flex: 0 0 auto; }
+.sig-sheet-cap { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.6px;
+  font-size: 0.7353rem; font-weight: 700; color: var(--txt-2); text-align: center; flex: 0 0 auto; }   /* 12.5/17 — rem so it obeys iOS Dynamic Type (#714) */
+.sig-sheet-cap b { color: var(--txt); }
+/* paper-white pad — a deliberate literal (the signature exports to a white-background JPEG
+   and prints on white PDFs), matching .nc-sigpad / the pop-out .sw-pad. Not a themed surface. */
+.sig-sheet-pad { flex: 1 1 auto; width: 100%; min-height: 0; border: 1.5px dashed var(--line); border-radius: 14px;
+  background: #fff; touch-action: none; cursor: crosshair; }
+.sig-sheet-foot { display: flex; justify-content: flex-end; flex: 0 0 auto; }
+body.sig-sheet-open { overflow: hidden; }   /* lock the page behind the sheet (§M3), same as .sheet-open for the winpicker */
 /* the calendar (both the window picker AND the R22 single-date picker reuse .wp-*):
    on a full-width sheet the day cells get room, so make them tappable too */
 .is-phone .winpicker .wp-day { height: 42px; font-size: 0.8235rem; }                 /* was 30 */
@@ -482,6 +505,10 @@ body.is-phone { touch-action: manipulation; }
    rest so ONLY its own body scrolls. Chip rows are NOT inside the card's plate. */
 .is-phone .col { flex: 0 0 100%; scroll-snap-align: start; padding: 0 8px; height: 100%; box-sizing: border-box;
   display: flex; flex-direction: column; min-height: 0; }
+/* §M8 wrap — the two inert edge clones that make the ribbon loop (swipe past Sales → Categories,
+   past Categories → Sales). Visually identical to their real twin, but non-interactive: the
+   scroll-settle teleport swaps them for the real panel the instant they're reached. */
+.is-phone .col.rail-clone { pointer-events: none; }
 .is-phone .col > .card { flex: 1 1 auto; min-height: 0; }
 .is-phone .col > .mdock-row { flex: 0 0 auto; padding: 4px 0 6px; }        /* toggle chips, above the card */
 .is-phone .col > .mdock-searchslot { flex: 0 0 auto; padding: 0 0 8px; }   /* search/graph/sort chips, above the card */
@@ -828,10 +855,11 @@ select.lf-in { appearance: none; cursor: pointer; }
 .disp-arrow-hit { pointer-events: stroke; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .js-disp-arrowpt { transition: none; } .js-disp-arrowpt.armed { transform: none; } }
 /* ── §2.1 TRIPS LIVE-MAP PANEL — the map singleton in a collapsible ~260px band at the
-   top of the card body; the trip list scrolls beneath it, the footer stays pinned. ──── */
-.card-body.cal-body { overflow: hidden; }                                  /* panel + footer pin; the list scrolls between them */
-.cal-body > .list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-.cal-body > .list > * { flex: 0 0 auto; }                                  /* rows keep natural height — a height-constrained flex column would compress them before scrolling */
+   top of the .cal-scroll region; the map scrolls WITH the trip list (Jac 2026-07-18), and
+   the listbar (sticky) + footer stay pinned as the card's chrome. ──────────────────────── */
+.card-body.cal-body { overflow: hidden; }                                  /* listbar (sticky) + footer pin; the map+rows scroll region rides between them */
+.cal-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }   /* ONE scroll region: the live map scrolls WITH the trip rows (Jac 2026-07-18), not frozen above them */
+.cal-scroll > * { flex: 0 0 auto; }                                        /* map + rows keep natural height — a height-constrained flex column would compress them before scrolling */
 .trips-map { position: relative; height: 260px; flex: 0 0 auto; border-bottom: 1px solid var(--line); }
 .dispm { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }   /* the map fills the panel; flex centers the pre-mount loading tag (the mounted map's own nodes are absolute, unaffected) */
 .trips-map .map-tag { position: static; max-width: 82%; text-align: center; line-height: 1.4; }
