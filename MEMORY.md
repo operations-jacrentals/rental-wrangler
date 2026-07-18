@@ -6,6 +6,23 @@
 > Keep it lean; the first ~200 lines are what a session actually leans on.
 
 ## Decisions
+- **2026-07-17 — Cross-device user sync SHIPPED LIVE (`userSync` ON, PRs #692+#702+#685, `?v=20260717ab`).**
+  A logged-in PERSON's prefs / saved Views / dispatcher route state / comms state / resume-column
+  follow them across devices, keyed on `personId` **resolved SERVER-SIDE from the session token**
+  (never a client value — the operator-isolation review held 0 findings). Hybrid store: additive
+  `getUserPrefs`/`setUserPrefs` blob (one row per personId, server field-merge) + `getGroupOrder`/
+  `getWranglerRail` re-keyed role→`personId` (namespaced `p:<id>` key reuses the handlers unchanged;
+  group-order seeds the role default then diverges, Wrangler rail starts fresh — fixes the
+  role-shared AI-history leak). CLIENT design = **per-section dirty flush** (only changed top-level
+  buckets are sent), which is structurally immune to the "whole-doc last-write-wins clobbers a bucket
+  a device lacks" class the concurrent #685 implementation wrestled with — so #692's client won and
+  **#685's whole-doc client was superseded** — but its branch was then repurposed to ship a small
+  robustness pass on top of #692: a `navigator.sendBeacon` tab-close flush (#692's flush was a plain
+  fetch, which the browser ABORTS on a real close) + a one-time cutover toast (`?v=20260717ab`).
+  `syncMirrorGuard` is the SINGLE tag-guarded wipe point (shared-device
+  Blocker 1). Backend shipped additive via `/clasp` (v112, editor deploy). Team-chat/comment
+  attribution re-key DEFERRED (spec §13 — see Open threads). Spec:
+  `docs/superpowers/specs/2026-07-17-cross-device-user-sync-design.md`.
 - **2026-07-17 — Invoice email/copy image thread CLOSED + LIVE.** (1) The **email-PNG attachment**
   backend splice (`sendCustomerMessage`, `entity:'invoice'` → decode `dataB64` → `mailOpts.attachments`)
   is DEPLOYED + VERIFIED — a real round-trip to the C0991 test record landed an `image/png` on the
@@ -135,8 +152,62 @@
   rivets, a light wrangler/ranch seasoning (voice-first). Run **all** new/changed UI
   through `/jactec-ui`. Don't retroactively restyle the existing site.
 - Icons always come from a library (Lucide), never hand-drawn — see `.claude/rules/icons.md`.
+- **Customers-list quick-add row is always-on and single-line (2026-07-17, #704).** The collapsed
+  blue "+New Customer" `.bigbtn` was traded for the always-visible inline fields (First·Last·Phone ·
+  the R1 "LEAD?" funnel gate) — no click to expand. All controls share ONE height via a scoped
+  `--qa-h: 34px` on `.qa-cust` (the `.qa-in` inputs + `.qa-cust .pill.gate`); **never** touch the
+  app-wide 22px `.pill.gate`. Row is `flex-wrap: nowrap` + `.qa-in { min-width: 0 }` so all four hold
+  one line through single-column pan mode; the `<480px` query re-enables wrap for the mobile stack.
 
 ## Gotchas
+- **In a cloud session, headless Chromium CANNOT reach external GitHub Pages URLs through the agent
+  proxy (2026-07-17).** Driving a staging/production URL with Playwright fails `net::ERR_CONNECTION_RESET`
+  even with `launch({ proxy: { server: $HTTPS_PROXY } })` — `curl` works (that's how `deploy-staging`
+  byte-verifies), Chromium doesn't. So the logged-in staging DRIVE can't be automated from a cloud run:
+  verify staging with `curl` (grep the served `app.js`/`style.css` for your change) + a `#local`
+  identical-bytes Playwright render, or use Jac's connected Claude-in-Chrome (his real browser).
+- **The browser CI gates (smoke/logic) CAN run in a CLOUD session — the desktop can't, the cloud can
+  (2026-07-17).** `npm install --no-save playwright@1.48.0`, then launch with
+  `executablePath: '/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell'`. The
+  pre-installed `chromium-1194` REMOVED `--headless=old` (which pinned PW 1.48 passes), so the full
+  chromium binary dies "Old Headless mode has been removed" — use the `headless_shell` build. Still
+  swap the reserved port 8000→9147 first (`sed`), run, then `git checkout -- ci/`.
+- **A FEATURES-flag-gated "big replacement" can hide a data-loss bug in DORMANT code that only bites
+  on ACTIVATION (2026-07-17, cross-device sync).** Two silent data-loss paths passed `smoke`/`logic`/
+  syntax gates while `userSync` was OFF and were caught ONLY by fresh-context adversarial review of
+  the activation path: (1) `syncMirrorGuard` wiped the local mirror BEFORE `seedUserPrefsFromLocal`
+  could capture it → every existing user lost saved Views on their first post-flip login; (2)
+  `pidTokenClear` wiped on a cold-GAS login blip before anything was backed up. FIX PATTERN: make ONE
+  tag-guarded function the SINGLE wipe point (grep-prove it has exactly one caller), and wipe ONLY for
+  a KNOWN DIFFERENT person (`prev && prev !== tag`), never on first-adopt or same-person. Review the
+  ACTIVATION path of a flag-gated feature, not just the diff.
+- **A plain `fetch` started during page unload is ABORTED — use `navigator.sendBeacon` for tab-close
+  flushes (2026-07-17, #685).** A debounced sync had a plain-fetch flush wired to `visibilitychange`/
+  `pagehide`; on a real tab close the browser kills the in-flight fetch, so an edit in the last debounce
+  window (~1.2s) was silently lost. `sendBeacon(url, new Blob([json], {type:'text/plain;charset=utf-8'}))`
+  is queued by the browser and delivered AFTER the page is gone; `text/plain` keeps it CORS-safe (no
+  preflight) against a GAS endpoint. Check its BOOLEAN return — `false` = payload over the ~64KB / pending-
+  queue limit → re-mark dirty and fall back to a best-effort fetch so nothing is dropped. Match the normal
+  handler's auth fields + body shape exactly, since there's no response to inspect.
+- **Two concurrent sessions built the SAME feature end-to-end (2026-07-17, #685 vs #692 cross-device sync).**
+  Both implemented per-person sync independently (whole-doc vs per-section-dirty client); #692 merged first
+  and won on design, #685's client was superseded but its branch was salvaged into a robustness pass. Cost:
+  a duplicated build + a near-miss where #685 was briefly (wrongly) judged buggy from grepping for its OWN
+  function names against #692's code. LESSON: before building a sizable feature, scan open PRs/branches
+  (`list_pull_requests`, `git ls-remote`) for a concurrent duplicate; if found, reconcile to ONE canonical
+  impl early and repurpose the other branch (don't rebuild), and never assess impl A by grepping impl B's symbols.
+- **A concurrent session may have already deployed the backend — pull-inspect-idempotency before a
+  `/clasp` push (2026-07-17).** The cross-device `clasp push` found `getUserPrefs`/`setUserPrefs`
+  ALREADY on live HEAD (a parallel session's compatible version), so only the additive group-order/
+  Wrangler-rail re-keys were pushed; a full push would have DUPLICATED `function getUserPrefs_`. The
+  deploy tool's `updateContent` REPLACES the whole project, so always `projects.getContent` the live
+  code first, splice with hard assertions (abort if the symbol already exists), and re-verify HEAD.
+- **The Bash pre-push guard false-fires on feature-branch DELETES.** `git push origin --delete
+  <feature-branch>` / `git push origin :<branch>` trips the "protected release branch" tripwire (it
+  matches the push shape, not the actual target) and aborts the whole command; the delete-push can also
+  disconnect through the proxy. Delete LOCAL branches with `git branch -D`; delete a merged REMOTE
+  branch in the GitHub UI — there is no branch-delete MCP tool. (Also: a busy `trunk` means `/live`
+  often needs 2-3 re-merge + re-deploy rounds — mechanical `?v=`/code-map conflicts only.)
 - **GAS service-account push 403s "Apps Script API not enabled" even after the USER toggles it On**
   (2026-07-17). `docs/handoffs/gas-deploy-service-account.mjs push` (impersonating
   operations@jacrentals.com) returns PERMISSION_DENIED "User has not enabled the Apps Script API"
@@ -319,6 +390,19 @@
   **staging drive** (real Chrome), not headless screenshots.
 
 ## Open threads
+- **Cross-device user sync — SHIPPED LIVE + PROMOTED (2026-07-17, PRs #692+#702+#685, `?v=20260717ab`, flag
+  `userSync` ON).** Prefs/Views/dispatch/comms/resume-column follow the PERSON across devices (see
+  the Decisions entry for the design). Verified by a 4-lens adversarial workflow (operator-isolation
+  held 0 findings) + two fresh-context reviews that each caught + fixed a real data-loss bug on the
+  activation path (see the "FEATURES-flag-gated data-loss" Gotcha). **Follow-ups:** (1) **team-chat /
+  record-comment attribution re-key** (`commentUserKey → personId`) DEFERRED — spec §13. It is NOT the
+  leak fix (the Wrangler-rail re-key is); doing it needs a backward-compat visibility ALIAS (server
+  `chatCanSee_` is `by === me` and creators aren't in `members`, so flipping the key hides every
+  pre-cutover chat from its creator), a `personId → name` DISPLAY lookup (raw ids otherwise render in
+  the comms rail), and a `seen`/`by` migration. Parked tracker: branch `parked/team-chat-attribution-rekey`
+  (draft PR). (2) **#685** — its whole-doc client was superseded, but the branch shipped LIVE as a
+  robustness pass on #692 (a `sendBeacon` tab-close flush + one-time cutover toast, `?v=20260717ab`); DONE. (3)
+  **two-device functional test** (spec §9) is Jac's — the round-trip can't be driven headlessly here.
 - **QR scan-to-log — SHIPPED LIVE + PROMOTED (2026-07-17, PRs #660/#694/#697, `?v=20260717u`, flag `qrScanLog` ON).**
   A `#u=<unitId>` decal scan opens a focused capture screen, records ONE video, and files it to the
   unit's correct rental log — the SERVER derives Start (Today/Tomorrow) vs End (On/End Rent) vs Block,

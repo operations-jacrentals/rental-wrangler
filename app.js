@@ -2334,7 +2334,7 @@ const state = {
   custAcctOpen: {},           // Phase 1 (2026-07-10 account/agreements redesign, D19) — is the top-of-card Account section expanded? { [customerId]: true }; collapsed by default, view-local
   custAgOpen: {},             // Phase 1 — which Agreements row is expanded inside the Account section — { [customerId]: cardId | '__new__' | null } (one open at a time, mirrors custInvOpen); '__new__' = the +Agreement/Card creation panel
   custAgDraft: {},            // Phase 2b — the in-progress NEW-agreement draft — { [customerId]: {accountType, startDate, selfie, signature} }; view-local, cleared on sign/cancel
-  custQuickAdd: { open: false, first: '', last: '', phone: '', funnel: 'N/A' },   // the Customers-list "+ New Customer" inline quick-add row (leads the list, mirrors +New Rental's .newrow) — collapsed/open + the single in-progress draft; view-local, reset on cancel/create
+  custQuickAdd: { first: '', last: '', phone: '', funnel: 'N/A' },   // the Customers-list inline quick-add row (always shown at the top of the list, mirrors +New Rental's .newrow) — the single in-progress draft; view-local, cleared on create or navigate-away
   svcSecOpen: {},             // Unit detail — is the Services (service-order) section expanded? { [unitId]: true }; collapsed by default (mirrors custAcctOpen), view-local, reset on a fresh unit open
   unitSecOpen: {},            // Unit detail — which generic collapsible sections are expanded per unit: { [unitId]: { workorders|specs|gps|investment: true } }; all collapsed by default, view-local, reset on a fresh unit open (mirrors svcSecOpen). Coverage is folded into Investment (Jac 2026-07-16) — no separate 'coverage' key.
   woRowOpen: {},              // Unit detail — which Work Order row is expanded (accordion, one per unit, mirrors custInvOpen) — { [unitId]: woId | null }; collapsed by default, view-local, reset on a fresh unit open
@@ -9373,22 +9373,19 @@ function listView(cardDef, session) {
   return wrap;
 }
 /* ADDITIVE inline single-line quick-add (Jac, 2026-07-17) — leads the Customers list,
-   mirroring the Rentals list's +New Rental .newrow/.bigbtn trigger; the EXISTING
-   search-bar quick-add (quickAddCustomerFromSearch) and the fruitless-search
-   js-new-cust-search prompt both stay untouched. Collapsed = the plain unstamped
-   .bigbtn (same as +New Rental — R5b language, not a lint-family element). Open =
-   ONE inline flex row: First · Last · Phone · the R1 funnel picker (draft-scoped,
-   defaults N/A) · a quiet Cancel (R18 ghostPill) · the "Wrangle" R17 ignition create
-   button, enabled only once First/Last/Phone are all filled and the phone looks real
-   (mirrors parseQuickCustomer's ≥7-digit check via custQuickAddValid). */
+   mirroring the Rentals list's +New Rental .newrow trigger; the EXISTING search-bar
+   quick-add (quickAddCustomerFromSearch) and the fruitless-search js-new-cust-search
+   prompt both stay untouched. The fields are ALWAYS shown — the earlier collapsed blue
+   +New Customer .bigbtn was traded for the inline fields (Jac 2026-07-17), so the row is
+   its own always-on prompt. No Cancel/Wrangle buttons, no stamped field captions: the
+   placeholders label the text fields and the funnel pill labels itself. ONE inline flex
+   row — First · Last · Phone · the R1 funnel picker (draft-scoped, defaults N/A, same
+   height as the inputs). First + Last + a ≥7-digit Phone, then a funnel PICK (any value
+   incl N/A — the pick IS the 4th selection) auto-creates the customer and opens its
+   detail view; a created customer — or navigating away — just clears the draft back to
+   empty fields (mirrors parseQuickCustomer's ≥7-digit check via custQuickAddValid). */
 function custQuickAddRowHtml() {
   const d = state.custQuickAdd;
-  if (!d.open) return `<button class="bigbtn js-custqa-open">${I.plus} New Customer</button>`;
-  // No Cancel/Wrangle buttons, no stamped field captions (Jac 2026-07-17): the placeholders
-  // label the text fields and the funnel pill labels itself. First + Last + a ≥7-digit Phone,
-  // then a funnel PICK (any value incl N/A — the pick IS the 4th selection) auto-creates the
-  // customer and opens its detail view. A created customer — or navigating away — resets to the
-  // collapsed +New Customer button.
   return `<div class="qa-cust">`
     + `<div class="qa-cust-row">`
     + `<div class="qa-field qa-first"><input type="text" class="qa-in js-custqa-first" placeholder="First name" value="${esc(d.first)}"></div>`
@@ -18257,9 +18254,9 @@ function onClick(e) {
   if (closest('.js-bv-resetlayout')) { e.stopPropagation(); const card = closest('.js-bv-resetlayout').dataset.card; saveListLayout(card, null); render(); renderOverlay(); return; }
   if (closest('.js-new-cust-search')) { e.stopPropagation(); const cs = activeSession().cards.customers; return startNewCustomer(parseCustomerSearch(cs.search)); }
   // Customers-list inline quick-add row (ADDITIVE — the search-bar quick-add above is untouched):
-  // open/collapse + submit here; the funnel-pick option itself lives with the other dropdown
-  // handlers below (js-custqa-funnel-pick, next to js-setfunnel).
-  if (closest('.js-custqa-open')) { e.stopPropagation(); state.custQuickAdd.open = true; return render(); }
+  // the fields are always shown (no open/collapse — the blue +New Customer button was traded for
+  // them), so only the funnel gate needs a click handler here; the funnel-pick option itself lives
+  // with the other dropdown handlers below (js-custqa-funnel-pick, next to js-setfunnel).
   if (closest('.js-custqa-funnel')) { e.stopPropagation(); return openCustQuickAddFunnelDropdown(closest('.js-custqa-funnel')); }
   if (closest('.js-new-unit-search')) { e.stopPropagation(); return quickAddUnitFromSearch(activeSession().cards.units.search); }
   if (closest('.js-new-cat-search')) { e.stopPropagation(); return quickAddCategoryFromSearch(activeSession().cards.categories.search); }
@@ -20309,6 +20306,7 @@ function openLogoMenu(anchorEl) {
 // Switch user — clear this session's password/role (name stays remembered) → login.
 function switchUser() {
   document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
+  try { flushUserPrefsNow(); } catch (e) {}   // §cross-device-sync — push a pending prefs edit before the token is dropped
   backendPassword = ''; currentRole = ''; currentPersonId = ''; state.userPrefs = null; booting = true;   // §cross-device-sync — drop the leaving person's identity + synced doc so nothing pushes under the next person
   sessionStorage.removeItem('jactec.pw'); sessionStorage.removeItem('jactec.role');
   renderLogin();
@@ -20420,14 +20418,14 @@ function custQuickAddValid() {
   const d = state.custQuickAdd;
   return !!(d.first.trim() && d.last.trim() && d.phone.replace(/\D/g, '').length >= 7);
 }
-// Discard the +New Customer draft (implicit cancel) — clearing it collapses the row back to the
-// +New Customer button. Called on a successful create AND whenever the user navigates AWAY from
-// the customers list without finishing (clicking a record → openStandard, switching cards →
-// goToCard). There is no Cancel button by design (Jac 2026-07-17). Guarded so it's a no-op when idle.
+// Discard the inline quick-add draft (implicit cancel) — clears the always-shown fields back to
+// empty. Called on a successful create AND whenever the user navigates AWAY from the customers list
+// without finishing (clicking a record → openStandard, switching cards → goToCard). There is no
+// Cancel button by design (Jac 2026-07-17). Guarded so it's a no-op when the draft is already empty.
 function resetCustQuickAdd() {
   const d = state.custQuickAdd;
-  if (d && (d.open || d.first || d.last || d.phone || (d.funnel && d.funnel !== 'N/A'))) {
-    state.custQuickAdd = { open: false, first: '', last: '', phone: '', funnel: 'N/A' };
+  if (d && (d.first || d.last || d.phone || (d.funnel && d.funnel !== 'N/A'))) {
+    state.custQuickAdd = { first: '', last: '', phone: '', funnel: 'N/A' };
   }
 }
 /* Create + open — mirrors quickAddCustomerFromSearch's create-object field set verbatim,
@@ -24093,7 +24091,7 @@ async function refreshFromBackend() {
   } catch (e) { /* offline / blip → retry next tick */ }
   finally { refreshing = false; }
 }
-function startRefreshPoll() { clearInterval(refreshTimer); refreshTimer = setInterval(() => { refreshToday(); refreshFromBackend(); }, 18000); }
+function startRefreshPoll() { clearInterval(refreshTimer); refreshTimer = setInterval(() => { refreshToday(); refreshFromBackend(); if (syncOn() && !state.userPrefs) loadUserPrefs(); }, 18000); }   // §cross-device-sync — re-drive a prefs load that never hydrated (past the 5-try login cutoff) so a cold-GAS blip doesn't disable sync all session
 
 // ── Team-chat sync (Jac 2026-06-15) ────────────────────────────────────────
 // Chat threads were browser-local, so one user's chat never reached another (a
@@ -24293,7 +24291,13 @@ function syncMirrorGuard() {
   if (!syncOn()) return;
   try {
     const tag = syncMirrorTag(), prev = localStorage.getItem('jactec.syncMirrorTag') || '';
-    if (prev !== tag) { wipeSyncMirror(); resetSyncStateToDefault(); localStorage.setItem('jactec.syncMirrorTag', tag); }
+    // Wipe ONLY when a KNOWN DIFFERENT person synced on this device before. On a first-ever
+    // adopt (prev === '') the local mirror is THIS device's existing prefs — KEEP it so
+    // loadUserPrefs/seedUserPrefsFromLocal adopts it as the person's baseline, instead of
+    // silently deleting everyone's saved Views/dispatch/prefs on their first post-activation
+    // login (the wipe used to run before the seed could capture it).
+    if (prev && prev !== tag) { wipeSyncMirror(); resetSyncStateToDefault(); }
+    if (prev !== tag) localStorage.setItem('jactec.syncMirrorTag', tag);
   } catch (e) {}
 }
 
@@ -24304,6 +24308,26 @@ function flushUserPrefs(section) {
   if (section) _userPrefsDirty[section] = true;
   else ['prefs', 'views', 'dispatch', 'comms', 'session'].forEach((s) => { _userPrefsDirty[s] = true; });
   clearTimeout(_userPrefsTimer); _userPrefsTimer = setTimeout(pushUserPrefs, 1200);
+}
+// Flush any pending debounced change on tab-background/close (visibilitychange/pagehide) so an edit
+// made in the last ~1.2s isn't dropped by the debounce. Uses navigator.sendBeacon — a plain fetch
+// started during unload is aborted before it's sent; a beacon is queued by the browser and survives
+// the close. Mirrors backendCall's payload (sessionToken carries the auth). Best-effort, no response.
+function flushUserPrefsNow() {
+  try { clearTimeout(_userPrefsTimer); } catch (e) {}
+  if (!syncOn() || !state.userPrefs) return;
+  const dirty = _userPrefsDirty; const doc = {}; let any = false;
+  Object.keys(dirty).forEach((s) => { if (dirty[s] && state.userPrefs[s] !== undefined) { doc[s] = state.userPrefs[s]; any = true; } });
+  if (!any) return;
+  doc.v = state.userPrefs.v || 1; _userPrefsDirty = {};
+  try {
+    let queued = false;
+    if (navigator.sendBeacon) {
+      const payload = JSON.stringify({ action: 'setUserPrefs', password: backendPassword, sessionToken: backendPassword, doc });
+      queued = navigator.sendBeacon(BACKEND_URL, new Blob([payload], { type: 'text/plain;charset=utf-8' }));   // false = payload over the ~64KB / pending-queue limit
+    }
+    if (!queued) { Object.keys(doc).forEach((s) => { if (s !== 'v') _userPrefsDirty[s] = true; }); pushUserPrefs(); }   // no beacon OR beacon rejected → best-effort fetch, re-mark dirty
+  } catch (e) { /* best-effort — the change also re-flushes on the next edit */ }
 }
 async function pushUserPrefs() {
   if (!syncOn() || !state.userPrefs) return;
@@ -24324,6 +24348,9 @@ async function loadUserPrefs(_try) {
     const r = await backendCall('getUserPrefs');
     if (r && r.ok && r.doc && typeof r.doc === 'object' && Object.keys(r.doc).length) hydrateUserPrefs(r.doc);
     else seedUserPrefsFromLocal();                                   // no row yet → seed baseline from this device
+    // Announce the cutover ONCE per device: existing device-local prefs/saved-views can reset when
+    // sync turns on (a shared-device wipe leaves no server copy to restore) — nudge re-saving a view.
+    try { if (state.userPrefs && !localStorage.getItem('jactec.syncWelcomed')) { localStorage.setItem('jactec.syncWelcomed', '1'); toast('Cross-device sync is on — your settings now follow you across your devices. If a saved view is missing, just re-save it.'); } } catch (e) {}
   } catch (e) {
     // A transient blip at login must NOT disable sync for the whole session (state.userPrefs
     // would stay null and every stamp would silently no-op). Retry with backoff while still
@@ -24781,6 +24808,11 @@ window.addEventListener('beforeunload', (e) => {
   flushSave();
   e.preventDefault(); e.returnValue = '';
 });
+// §cross-device-sync — flush a pending prefs edit when the tab is hidden/closed (the 1.2s
+// debounce would otherwise drop a just-made change). visibilitychange fires while the page is
+// still alive so the async push can complete; pagehide is the close backstop.
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { try { flushUserPrefsNow(); } catch (e) {} } });
+window.addEventListener('pagehide', () => { try { flushUserPrefsNow(); } catch (e) {} });
 function renderLogin(msg) {
   resetCommsRailForLogin();   // D8 — clock-in = an EMPTY rail; BEFORE the phoneIdentity branch so BOTH login screens clear (this reset used to sit below the early-return = dead code on the live path — Jac 2026-07-17)
   if (flagOn('phoneIdentity')) return renderPhoneLogin(msg);   // per-person login flow (Phase 2); the shared-password screen below is the flag-OFF path
@@ -24983,7 +25015,7 @@ async function attemptLogin() {
 const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', _role: '' };
 function pidTokenGet() { try { return localStorage.getItem('jactec.pidToken') || sessionStorage.getItem('jactec.pidToken') || ''; } catch (e) { return ''; } }
 function pidTokenSet(tok, personal) { try { if (personal) { localStorage.setItem('jactec.pidToken', tok); sessionStorage.removeItem('jactec.pidToken'); } else { sessionStorage.setItem('jactec.pidToken', tok); localStorage.removeItem('jactec.pidToken'); } } catch (e) {} }
-function pidTokenClear() { try { localStorage.removeItem('jactec.pidToken'); sessionStorage.removeItem('jactec.pidToken'); } catch (e) {} try { dataCache.wipe(); } catch (e) {} try { if (syncOn()) { wipeSyncMirror(); localStorage.removeItem('jactec.syncMirrorTag'); } } catch (e) {} currentPersonId = ''; state.userPrefs = null; }   // §instant-cache: logout clears the on-device snapshot; §cross-device-sync: + the per-person prefs mirror + the in-memory doc so the next user on a shared device starts clean (Blocker 1). GUARDED on syncOn() — when userSync is OFF the mirror keys ARE the user's only (device-local) prefs, so a token-expiry relogin must NOT wipe them.
+function pidTokenClear() { try { flushUserPrefsNow(); } catch (e) {} try { localStorage.removeItem('jactec.pidToken'); sessionStorage.removeItem('jactec.pidToken'); } catch (e) {} try { dataCache.wipe(); } catch (e) {} currentPersonId = ''; state.userPrefs = null; }   // §instant-cache: logout clears the on-device snapshot. §cross-device-sync: flush any pending prefs, then drop identity + the in-memory doc — but do NOT wipe the mirror here. The login-time syncMirrorGuard (tag-guarded) is the SINGLE wipe point, so a load-fail relogin can't delete a never-backed-up mirror (which would then seed an empty baseline). Shared-device safety still holds: a DIFFERENT person's next login (prev !== tag) wipes it, exactly as switchUser already defers to.
 function pidRosterCache() { try { return JSON.parse(localStorage.getItem('jactec.pidRoster') || '[]'); } catch (e) { return []; } }
 // The verified token becomes the per-call credential: a truthy backendPassword keeps every
 // existing online-guard working, and backendCall sends it as sessionToken (backend prefers it).
