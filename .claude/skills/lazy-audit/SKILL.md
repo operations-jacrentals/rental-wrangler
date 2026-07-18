@@ -1,5 +1,5 @@
 ---
-name: rental-audit
+name: lazy-audit
 description: >-
   Persona-driven, source-grounded UX audit of a Rental Wrangler card or surface — walk it as a
   lazy, not-very-smart embodiment of a real role ("Denny" the dispatcher on the RENTALS card by
@@ -11,14 +11,14 @@ description: >-
   of a specific role — phrasings like "audit the X card as a dispatcher", "do a Denny audit on
   Units", "walk the invoices card as an AR clerk", "how easy is X to use / what's confusing /
   what's missing / what would trip someone up", "is this obvious enough for a tired shop hand",
-  or an explicit /rental-audit. It fans out lens-agents, ADVERSARIALLY VERIFIES every finding
+  or an explicit /lazy-audit. It fans out lens-agents, ADVERSARIALLY VERIFIES every finding
   against the byte-identical-to-production code, hunts the flows the lenses missed, and delivers a
   yard-data-plate artifact plus a summary. NOT for building/restyling UI (that's /jactec-ui), and
   NOT for triaging a single specific "X is broken" report (that's wrangler-fix) — this is a broad,
   role-lens usability sweep of a whole surface.
 ---
 
-# /rental-audit — the "Denny" persona audit
+# /lazy-audit — the "Denny" persona audit
 
 A usability audit that judges a surface the way its **weakest realistic user** would — not an
 expert who already knows the shortcuts, but a **lazy, not-very-smart person doing that job**. The

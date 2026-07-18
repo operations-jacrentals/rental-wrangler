@@ -1,5 +1,5 @@
 /*
- * /rental-audit — Step 3 verification workflow (TEMPLATE).
+ * /lazy-audit — Step 3 verification workflow (TEMPLATE).
  *
  * Adversarially verifies each audit finding against the byte-identical-to-production code,
  * and (optionally) runs completeness critics for the flows the lenses missed.
@@ -17,7 +17,7 @@
  */
 
 export const meta = {
-  name: 'rental-audit-verify',
+  name: 'lazy-audit-verify',
   description: 'Adversarially verify persona-audit findings against the code + hunt coverage gaps',
   phases: [
     { title: 'Verify', detail: 'refute-or-confirm each finding at its cited file:line' },
