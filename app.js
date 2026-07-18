@@ -6266,7 +6266,7 @@ function swipeSeg(items, activeIdx, cls) {
   const btns = items.map((it, i) =>
     `<button class="js-swipe-tab${it.cls ? ' ' + it.cls : ''}${i === activeIdx ? ' deck-on' : ''}" data-i="${i}"${it.tip ? ` data-tip="${esc(it.tip)}"` : ''}>${it.html || esc(it.label)}</button>`).join('');
   return `<span class="seg deck-seg swipe-seg${cls ? ' ' + cls : ''}" data-r="R14" style="--deck-tw:${(100 / n).toFixed(4)}%">`
-    + `<span class="deck-thumb" style="transform:translateX(${activeIdx * 100}%)"></span>${btns}</span>`;
+    + `<span class="deck-thumb" style="left:${(activeIdx * 100 / n).toFixed(4)}%"></span>${btns}</span>`;
 }
 // The nested scroll-snap track. `kind`+`recId` tell deckCommit which state key to write on
 // snap; `activeIdx` is where render() positions scrollLeft. The track carries the R36 stamp.
@@ -6292,7 +6292,7 @@ function deckPaint(track) {
   const thumb = seg.querySelector('.deck-thumb'), btns = seg.querySelectorAll('.js-swipe-tab');
   const n = track.children.length || 1, w = track.clientWidth || 1, max = track.scrollWidth - w;
   const ratio = max > 0 ? Math.max(0, Math.min(1, track.scrollLeft / max)) : 0;
-  if (thumb) thumb.style.transform = 'translateX(' + (ratio * (n - 1) * 100) + '%)';
+  if (thumb) thumb.style.left = (ratio * (n - 1) * 100 / n) + '%';   // move via `left`, NOT transform — a transformed/will-change thumb composites ABOVE the button label on iOS Safari (covered-label bug)
   const idx = Math.max(0, Math.min(n - 1, Math.round(ratio * (n - 1))));
   btns.forEach((b, i) => b.classList.toggle('deck-on', i === idx));
   if (idx !== (+track.dataset.active || 0)) { track.dataset.active = idx; haptic(8); deckCommit(track.dataset.deck, track.dataset.rec, idx); }
@@ -13005,8 +13005,9 @@ function syncBackGuard() {
 }
 // §M-pull (Feature B) — CLOSE the top phone sheet OUTRIGHT (a completed pull-down commits here).
 // Distinct from dismissTopSheet's STEP chain: for comms it exits the category regardless of the
-// thread/inbox level (pull = dismiss the surface; the left-edge swipe is what steps back). Honors
-// a locked required-modal (rate-the-return) — refuses + flashes and returns false so the sheet snaps back.
+// thread/inbox level (pull = dismiss the surface; the browser back-swipe, trapped by the history
+// guard → popstate → dismissTopSheet, is what steps back a level). Honors a locked required-modal
+// (rate-the-return) — refuses + flashes and returns false so the sheet snaps back.
 function closePhoneSheet() {
   if (state.datesearch) { closeDateSearch(); return true; }
   if (overlayLocked()) { attnFlash('.rr-stars'); toast('Rate the return first — it can’t be skipped.'); return false; }
@@ -13018,17 +13019,20 @@ function closePhoneSheet() {
   if (state.chat.open) { state.chat.open = false; render(); return true; }
   return false;
 }
-// §M-pull / §M-edge (Features B/C) — ONE pointer engine for the phone full-pane sheets:
-//   • PULL-DOWN to close (.mcomms · a full-pane .popup). The sheet follows the finger; past a
-//     distance threshold OR a downward flick it dismisses (closePhoneSheet), else it snaps back.
-//     Engages from the header ALWAYS, or from the body only when its scroller is at the top — so
-//     it never fights the message list. No grabber, no haptic (Jac's picks).
-//   • LEFT-EDGE BACK for comms: a rightward swipe starting in the left ~24px steps the comms
-//     back-chain (dismissTopSheet: thread→inbox→exit), IN ADDITION to pull-down.
-// Coexists with the R36 deck carousel (a mid-screen horizontal swipe) by ABANDONING the gesture
-// the instant it resolves as horizontal-but-not-edge, so native scroll-snap owns that swipe.
+// §M-pull (Feature B) — pointer engine for PULL-DOWN-TO-CLOSE on the phone full-pane sheets
+// (.mcomms · a full-pane .popup). The sheet follows the finger; past a distance threshold OR a
+// downward flick it dismisses (closePhoneSheet), else it snaps back. Engages from the header
+// ALWAYS (touch-action:none there so iOS hands us the drag instead of scrolling), or from the
+// body only when its scroller is at the top — so it never fights the message list. No grabber,
+// no haptic (Jac's picks).
+// LEFT-EDGE "BACK" is deliberately NOT a custom gesture here: iOS Safari's native edge-swipe
+// fires a history back, which syncBackGuard's dummy entry + the popstate handler already route to
+// dismissTopSheet (thread→inbox→exit). A custom edge handler only double-fired and fought the
+// browser (Jac 2026-07-18: "left edge → Home Screen THEN chat menu"), so it's removed.
+// Coexists with the R36 deck carousel (a mid-screen horizontal swipe): abandons the moment the
+// gesture resolves horizontal, so native scroll-snap owns that swipe.
 let _pg = null;
-const PULL_EDGE = 24, PULL_MIN = 6, PULL_THRESH = 110, PULL_FLICK = 0.6, EDGE_COMMIT = 60;
+const PULL_MIN = 6, PULL_THRESH = 110, PULL_FLICK = 0.6;
 function _sheetScroller(target, sheet) {
   let n = target;
   while (n && n !== sheet) {
@@ -13043,39 +13047,33 @@ function initPhoneSheetGestures() {
     if (_pg || !document.body.classList.contains('is-phone')) return;
     const sheet = e.target.closest && e.target.closest('.mcomms, #overlay-root .overlay .popup');
     if (!sheet) return;
-    const isComms = sheet.classList.contains('mcomms');
     const header = !!(e.target.closest && e.target.closest('.cp-head, .mcomms-back, .popup-head'));
     _pg = { sheet, x0: e.clientX, y0: e.clientY, t0: e.timeStamp, pid: e.pointerId, header,
-      scroller: _sheetScroller(e.target, sheet), isEdge: isComms && e.clientX <= PULL_EDGE, mode: null };
+      scroller: _sheetScroller(e.target, sheet), mode: null };
   }, true);
   document.addEventListener('pointermove', (e) => {
     if (!_pg || e.pointerId !== _pg.pid) return;
     const dx = e.clientX - _pg.x0, dy = e.clientY - _pg.y0, ax = Math.abs(dx), ay = Math.abs(dy);
     if (!_pg.mode) {
-      if (_pg.isEdge && dx > PULL_MIN && ax > ay) { _pg.mode = 'edge'; }
-      else if (dy > PULL_MIN && ay > ax && (_pg.header || !_pg.scroller || _pg.scroller.scrollTop <= 0)) { _pg.mode = 'pull'; }
-      else if (ax > PULL_MIN || ay > PULL_MIN) { _pg = null; return; }   // horizontal-non-edge, up, or body-not-at-top → let native scroll / the deck carousel own it
+      if (dy > PULL_MIN && ay > ax && (_pg.header || !_pg.scroller || _pg.scroller.scrollTop <= 0)) { _pg.mode = 'pull'; }
+      else if (ax > PULL_MIN || ay > PULL_MIN) { _pg = null; return; }   // horizontal, up, or body-not-at-top → let native scroll / the deck carousel own it
       else return;
       try { _pg.sheet.setPointerCapture(e.pointerId); } catch (_) {}
       _pg.sheet.classList.add('pulling');
     }
-    if (_pg.mode === 'pull') { _pg.sheet.style.transform = 'translateY(' + Math.max(0, dy * 0.7) + 'px)'; e.preventDefault(); }
-    else { _pg.sheet.style.transform = 'translateX(' + Math.max(0, dx * 0.4) + 'px)'; e.preventDefault(); }
+    _pg.sheet.style.transform = 'translateY(' + Math.max(0, dy * 0.7) + 'px)'; e.preventDefault();
   }, { capture: true, passive: false });
   const end = (e) => {
     if (!_pg || e.pointerId !== _pg.pid) return;
     const pg = _pg; _pg = null;
     try { pg.sheet.releasePointerCapture(e.pointerId); } catch (_) {}
-    const dx = e.clientX - pg.x0, dy = e.clientY - pg.y0, dt = (e.timeStamp - pg.t0) || 1;
+    const dy = e.clientY - pg.y0, dt = (e.timeStamp - pg.t0) || 1;
     pg.sheet.classList.remove('pulling');
     if (pg.mode === 'pull') {
       if (dy > PULL_THRESH || dy / dt > PULL_FLICK) {
         if (reduce()) { pg.sheet.style.transform = ''; closePhoneSheet(); }
         else { pg.sheet.style.transform = 'translateY(100%)'; setTimeout(() => closePhoneSheet(), 240); }
       } else pg.sheet.style.transform = '';
-    } else if (pg.mode === 'edge') {
-      pg.sheet.style.transform = '';
-      if (dx > EDGE_COMMIT || dx / dt > 0.5) dismissTopSheet();
     }
   };
   document.addEventListener('pointerup', end, true);
@@ -26987,7 +26985,7 @@ function commsMenuHtml(cat, opts = {}) {
     };
     const activeIdx = commsCustCh === 'email' ? 1 : 0;
     const seg = `<div class="comms-chan deck-seg" role="tablist" aria-label="Channel — text or email" style="--deck-tw:50%">`
-      + `<span class="deck-thumb" style="transform:translateX(${activeIdx * 100}%)"></span>`
+      + `<span class="deck-thumb" style="left:${activeIdx * 50}%"></span>`
       + `<button class="comms-chan-b js-swipe-tab${activeIdx === 0 ? ' deck-on' : ''}" data-i="0" role="tab" aria-selected="${commsCustCh === 'text'}">${I.messageSquare}<span>Text</span></button>`
       + `<button class="comms-chan-b js-swipe-tab${activeIdx === 1 ? ' deck-on' : ''}" data-i="1" role="tab" aria-selected="${commsCustCh === 'email'}">${I.mail}<span>Email</span></button></div>`;
     const track = swipeTrack('comms', '', activeIdx, [`<div class="cp-feed cp-list">${custRowsFor('text')}</div>`, `<div class="cp-feed cp-list">${custRowsFor('email')}</div>`]);

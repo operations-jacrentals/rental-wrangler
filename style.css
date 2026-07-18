@@ -559,8 +559,10 @@ body.is-phone { touch-action: manipulation; }
 /* the thumb-driven toggle: the orange fill is one sliding thumb (JS transforms it from
    scrollLeft), buttons go transparent so it shows through; .deck-on carries the active ink. */
 .is-phone .deck-seg { position: relative; isolation: isolate; display: flex; width: 100%; box-sizing: border-box; }
+/* the thumb moves via `left` (JS) — NOT transform/will-change, which iOS Safari promotes to a
+   compositing layer that paints ABOVE the button label (the covered-label bug). z-0 keeps it below. */
 .is-phone .deck-seg .deck-thumb { position: absolute; top: 0; bottom: 0; left: 0; z-index: 0;
-  width: var(--deck-tw, 50%); background: var(--accent); border-radius: 10px; pointer-events: none; will-change: transform; }
+  width: var(--deck-tw, 50%); background: var(--accent); border-radius: 10px; pointer-events: none; }
 .is-phone .deck-seg > button { flex: 1 1 0; min-height: 40px; justify-content: center; }
 .is-phone .deck-seg > button, .is-phone .deck-seg .comms-chan-b { position: relative; z-index: 1; background: transparent; }
 .is-phone .deck-seg > button.deck-on, .is-phone .deck-seg .comms-chan-b.deck-on { color: var(--on-orange); background: transparent; box-shadow: none; }
@@ -580,6 +582,9 @@ body.is-phone { touch-action: manipulation; }
 .is-phone .mcomms, .is-phone .overlay .popup { transition: transform .26s cubic-bezier(.22,.61,.36,1); }
 .is-phone .mcomms.pulling, .is-phone .overlay .popup.pulling { transition: none; }
 .is-phone .mcomms .cp-feed, .is-phone .mcomms .cp-list, .is-phone .swipe-pane, .is-phone .overlay .popup-body { overscroll-behavior: contain; }
+/* the header is the reliable pull-down grab zone — block the browser's own touch handling there so
+   our pointer drag owns the vertical gesture (iOS Safari otherwise hijacks it as a scroll). */
+.is-phone .mcomms .cp-head, .is-phone .mcomms .mcomms-back, .is-phone .overlay .popup .popup-head { touch-action: none; }
 @media (prefers-reduced-motion: reduce) { .is-phone .mcomms, .is-phone .overlay .popup { transition: none; } }
 /* the global tool tray rendered as a phone sheet (§M1 footer → Tools) */
 .tools-tray { display: flex; flex-wrap: wrap; gap: 8px; }
