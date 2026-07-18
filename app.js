@@ -9457,6 +9457,21 @@ function mobileRailPanelEl(member, session) {
   wrap.appendChild(card);
   return wrap;
 }
+// §M8 wrap (Jac 2026-07-18) — a visually-IDENTICAL but INERT copy of a rail panel, used to bracket
+// the ribbon's two ends so a swipe PAST Sales lands on a Categories clone (and past Categories on a
+// Sales clone); the scroll-settle teleport then swaps the clone for its real twin, so the loop is
+// seamless. cloneNode (no re-render, pixel-identical), pointer-events off (.rail-clone), aria-hidden,
+// and stripped of id/data-id so it never collides with the real panel's queries, clicks, drag, or
+// scroll-to targets. KEEPS data-card (theme stripe) + data-r (lint) so it still looks the part.
+function inertRailClone(realPanel) {
+  const c = realPanel.cloneNode(true);
+  c.classList.add('rail-clone');
+  c.setAttribute('aria-hidden', 'true');
+  c.dataset.clone = '1';
+  c.querySelectorAll('[id]').forEach((n) => n.removeAttribute('id'));
+  c.querySelectorAll('[data-id]').forEach((n) => n.removeAttribute('data-id'));
+  return c;
+}
 function colTabsEl(col, active, session) {
   // Jac 2026-06-12: the toggle CHIP stays centered; the nav cluster sits OUTSIDE
   // it, parked at the row's right edge (.tabrow wraps both). (Desktop only — phone uses
@@ -10308,7 +10323,7 @@ function currentMobileMember() {
 // Invoices retired 2026-07-08 — embedded in Customer Details; the 2nd right slot is the
 // upcoming Sales placeholder.)
 const MOBILE_TOGGLE_GROUPS = [
-  { col: 'left',   members: ['units', 'categories'] },
+  { col: 'left',   members: ['categories', 'units'] },   // Categories LEFT, Units RIGHT — matches the rail's spatial order (Jac 2026-07-18)
   { col: 'middle', members: ['rentals', 'calendar'] },
   { col: 'right',  members: ['customers', 'sales'] },
 ];
@@ -10322,7 +10337,10 @@ const MOBILE_TOGGLE_GROUPS = [
 // the RIGHT column's two take the two RIGHT slots (main Customers then sub Sales), the middle
 // contributes only Rentals (or the swapped-in Calendar). state.mobileCol stays the COLUMN index
 // (0–2) that every downstream reader (zip-zones, cross-column links, the footer jog, cross-device
-// session sync) is keyed to — it's DERIVED from the snapped rail card.
+// session sync) is keyed to — it's DERIVED from the snapped rail card. §M8 wrap (2026-07-18) — the
+// ribbon LOOPS: render() brackets these 5 with 2 inert edge clones (inertRailClone) and a scroll-
+// settle teleport (teleportRailWrap) jumps a reached clone to its real twin, so a swipe past Sales
+// lands on Categories and past Categories lands on Sales.
 const MOBILE_RAIL = ['categories', 'units', 'rentals', 'customers', 'sales'];
 // The live rail members for a session — the center slot follows the middle column's active member
 // so a tapped Calendar shows there (off-rail swap-in-place) instead of Rentals.
@@ -16945,13 +16963,23 @@ function render() {
   const grid = el('div', 'grid');
   // §M8 — phone paints the 5-card SWIPE RAIL (Categories·Units·Rentals·Customers·Sales, with
   // Calendar swapped into the center slot when active); desktop/tablet paint the 3 columns.
-  if (phone) for (const m of mobileRailMembers(session)) grid.appendChild(mobileRailPanelEl(m, session));
-  else for (const col of COLUMNS) grid.appendChild(columnEl(col, session));
+  if (phone) {
+    const panels = mobileRailMembers(session).map((m) => mobileRailPanelEl(m, session));
+    // §M8 wrap — bracket the ribbon with inert edge clones so a swipe past either end lands on a
+    // clone that teleports to the mirrored real panel (lead = Sales, left of Categories; trail =
+    // Categories, right of Sales). grid.children: [0]=lead clone · [1..5]=real · [6]=trail clone.
+    grid.appendChild(inertRailClone(panels[panels.length - 1]));
+    for (const p of panels) grid.appendChild(p);
+    grid.appendChild(inertRailClone(panels[0]));
+  } else {
+    for (const col of COLUMNS) grid.appendChild(columnEl(col, session));
+  }
   if (phone) {
     $('#app').replaceChildren(header, grid, mobileToolbarEl());
     // Snap the track to the card on screen with NO animation (a state-driven change must land
-    // instantly, not glide). rAF so the flex track has laid out and offsetLeft is real.
-    const target = mobileRailIndex(session);
+    // instantly, not glide). rAF so the flex track has laid out and offsetLeft is real. +1 skips
+    // the lead clone at index 0 so we land on the REAL panel.
+    const target = mobileRailIndex(session) + 1;
     requestAnimationFrame(() => { const c = grid.children[target]; if (c) grid.scrollLeft = c.offsetLeft; });
   } else {
     $('#app').replaceChildren(header, grid, bottomBarEl());
@@ -18530,9 +18558,10 @@ function onClick(e) {
     const member = closest('[data-gocard]').dataset.gocard, col = COLUMN_OF[member];
     const s = activeSession(); const grid = document.querySelector('#app > .grid');
     const railIdx = grid ? mobileRailMembers(s).indexOf(member) : -1;
-    if (grid && railIdx >= 0 && s.cols && s.cols[col] === member && grid.children[railIdx]) {
+    const panelIdx = railIdx + 1;   // §M8 wrap — real panels sit at grid.children[1..n]; [0] is the lead clone
+    if (grid && railIdx >= 0 && s.cols && s.cols[col] === member && grid.children[panelIdx]) {
       const ci = COLUMNS.findIndex((c) => c.id === col); if (ci >= 0) state.mobileCol = ci;
-      grid.scrollTo({ left: grid.children[railIdx].offsetLeft, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+      grid.scrollTo({ left: grid.children[panelIdx].offsetLeft, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
       return;
     }
     return goToCard(member);
@@ -25968,18 +25997,21 @@ function boot() {
   // cross-column links, the dock) stays correct. Cheap: an rAF-throttled scroll listener reads
   // scrollLeft and, only when the snapped index changes, updates state + toggles the dock .on —
   // no re-render. (scroll is captured because it doesn't bubble.)
-  let mcolRaf = 0, mcolLast = -1;
+  let mcolRaf = 0, mcolLast = -1, teleTimer = 0;
   function syncMobileColFromScroll() {
     const grid = document.querySelector('#app > .grid');
     if (!grid || !document.body.classList.contains('is-phone')) return;
     const w = grid.clientWidth || 1;
     const session = activeSession();
     const members = mobileRailMembers(session);
-    // §M8 — the track is the 5-card rail; read the snapped RAIL index (0–4) and fold it back to
-    // the COLUMN index (0–2) that everything downstream is keyed to. The active member of that
-    // column follows the swipe, so landing on Categories/Units/Customers/Sales updates cols[] —
-    // the chip highlight, cross-column links, the footer jog, and session sync all stay honest.
-    const railIdx = Math.max(0, Math.min(members.length - 1, Math.round(grid.scrollLeft / w)));
+    const n = members.length;
+    // §M8 — the track is the 5 real rail panels bracketed by 2 edge clones (§M8 wrap): grid.children
+    // = [0]=lead clone (mirrors real LAST) · [1..n]=real · [n+1]=trail clone (mirrors real FIRST).
+    // Read the snapped PANEL index (0..n+1), fold the clones back onto their real twin, then map to
+    // the COLUMN index (0–2) that everything downstream is keyed to. The active member follows the
+    // swipe, so cols[] (chip highlight, cross-column links, the footer jog, session sync) stays honest.
+    const panelIdx = Math.max(0, Math.min(n + 1, Math.round(grid.scrollLeft / w)));
+    const railIdx = panelIdx === 0 ? n - 1 : panelIdx === n + 1 ? 0 : panelIdx - 1;
     if (railIdx === mcolLast) return;
     mcolLast = railIdx;
     const member = members[railIdx], col = COLUMN_OF[member], colIdx = COLUMNS.findIndex((c) => c.id === col);
@@ -25990,8 +26022,24 @@ function boot() {
     const fj = document.querySelector('.mobile-toolbar .mfoot-jog');
     if (fj) fj.innerHTML = footerJogInner();
   }
+  // §M8 wrap — once the fling SETTLES on an edge clone, teleport (no-anim) to its mirrored REAL
+  // panel so the ribbon loops (swipe past Sales → Categories, past Categories → Sales). The clone
+  // shows the identical card, so the jump is invisible. Debounced on scroll-idle (never fires mid-
+  // fling — active scrolling keeps resetting the timer) and guarded to the EXACT clone snap point,
+  // so a normal panel is never nudged. prefers-reduced-motion is irrelevant: this is an instant set.
+  function teleportRailWrap() {
+    const grid = document.querySelector('#app > .grid');
+    if (!grid || !document.body.classList.contains('is-phone')) return;
+    const w = grid.clientWidth || 1;
+    const n = mobileRailMembers(activeSession()).length;
+    const panelIdx = Math.round(grid.scrollLeft / w);
+    if (Math.abs(grid.scrollLeft - panelIdx * w) > 2) return;   // not settled exactly on a snap point → skip
+    if (panelIdx === 0) grid.scrollLeft = n * w;                 // lead clone → real LAST (Sales)
+    else if (panelIdx === n + 1) grid.scrollLeft = w;           // trail clone → real FIRST (Categories)
+  }
   document.addEventListener('scroll', (e) => {
     if (!(e.target && e.target.classList && e.target.classList.contains('grid'))) return;
+    clearTimeout(teleTimer); teleTimer = setTimeout(teleportRailWrap, 90);   // §M8 wrap: teleport after the fling settles
     if (mcolRaf) return;
     mcolRaf = requestAnimationFrame(() => { mcolRaf = 0; syncMobileColFromScroll(); });
   }, true);

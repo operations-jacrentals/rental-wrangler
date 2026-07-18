@@ -466,6 +466,10 @@ body.is-phone { touch-action: manipulation; }
    rest so ONLY its own body scrolls. Chip rows are NOT inside the card's plate. */
 .is-phone .col { flex: 0 0 100%; scroll-snap-align: start; padding: 0 8px; height: 100%; box-sizing: border-box;
   display: flex; flex-direction: column; min-height: 0; }
+/* §M8 wrap — the two inert edge clones that make the ribbon loop (swipe past Sales → Categories,
+   past Categories → Sales). Visually identical to their real twin, but non-interactive: the
+   scroll-settle teleport swaps them for the real panel the instant they're reached. */
+.is-phone .col.rail-clone { pointer-events: none; }
 .is-phone .col > .card { flex: 1 1 auto; min-height: 0; }
 .is-phone .col > .mdock-row { flex: 0 0 auto; padding: 4px 0 6px; }        /* toggle chips, above the card */
 .is-phone .col > .mdock-searchslot { flex: 0 0 auto; padding: 0 0 8px; }   /* search/graph/sort chips, above the card */
