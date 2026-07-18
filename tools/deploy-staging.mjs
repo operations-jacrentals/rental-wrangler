@@ -503,6 +503,17 @@ async function deployDeck({ files, branch, cred, label, shortSha, dirty }) {
       const { manifest: nextManifest, dropIds } = addAndPrune(manifest, entry);
       mkdirSync(join(cloneDir, DECK_DIR), { recursive: true });
       writeFileSync(join(cloneDir, MANIFEST_PATH), serializeManifest(nextManifest));
+      // Stable launcher: d/index.html always redirects to the NEWEST deploy, so ONE permanent
+      // bookmark (…/rental-wrangler-staging/d/) always lands on the latest build + its in-app
+      // Staging switcher — never clobbered by slot deploys, always current.
+      const newestId = nextManifest.deploys[0].id;
+      writeFileSync(join(cloneDir, DECK_DIR, 'index.html'),
+        `<!doctype html><html lang="en"><meta charset="utf-8"><title>Staging deck</title>`
+        + `<meta http-equiv="refresh" content="0; url=./${newestId}/">`
+        + `<body style="background:#0b0c0f;color:#a7afbc;font:14px system-ui,sans-serif;padding:26px">`
+        + `<p>Opening the latest staging deploy… `
+        + `<a style="color:#ff7a1a" href="./${newestId}/">${newestId}</a></p>`
+        + `<script>location.replace('./${newestId}/')</script></body></html>\n`);
       for (const drop of dropIds) rmSync(join(cloneDir, DECK_DIR, drop), { recursive: true, force: true });
 
       // [R1] stage ONLY d/** (adds + mods + deletes) — root (slot-1 content) is never touched.
