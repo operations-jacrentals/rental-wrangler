@@ -46,6 +46,9 @@ jobs:
       - name: Promote content-freshness resolver (pure-Node, injected probe)
         run: node ci/promote-test.mjs
 
+      - name: Cache-bust token logic (pure-Node)
+        run: node ci/cachebust-test.mjs
+
       - name: Rulebook field catalog is current
         run: node ci/gen-rule-usage.mjs --check
 
@@ -54,6 +57,11 @@ jobs:
 
       - name: Code Atlas index is current
         run: node tools/gen-code-map.mjs --check
+
+      # Served-file change vs trunk MUST carry a ?v= bump, or production/the service
+      # worker serve stale cached bytes. Self-fetches trunk's tip (shallow-safe).
+      - name: Cache-bust token bumped when served files change
+        run: node ci/check-cachebust.mjs
 
       - name: DESIGN.md valid & in sync with style.css
         run: node ci/check-design-md.mjs

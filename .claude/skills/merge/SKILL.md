@@ -60,6 +60,15 @@ deploy** (a numbered `d/<feature>-<n>/` folder); under `--slots` it's a slot. Ch
    blind to. If it surfaces a real correctness bug, **stop and fix before the PR.** This
    review is the enforced gate here: merges land via the PR/squash (not a local command a
    hook can intercept), so the review discipline is what actually guards the merge.
+   - **Auto-bump the `?v=` cache-bust token (before the PR).** Run `node tools/bump-cachebust.mjs`
+     — it commits a `?v=` bump to the feature branch **iff** a served, versioned file
+     (`app.js`/`style.css`/`rule-usage.js`) changed vs trunk and the token wasn't already bumped
+     (a clean **no-op** otherwise — e.g. a config-only branch, or a slot deploy that already
+     bumped). This is what makes a **deck-mode** ship actually reach devices: production serves the
+     branch root with `max-age=600` and the service worker caches by `?v=`, so a served change
+     under an **unchanged** token serves stale bytes live. **Push the bump commit** so it rides
+     into the PR. The CI guard `ci/check-cachebust.mjs` (in the `smoke` job) **fails the merge** if
+     the bump was skipped, so this can't be forgotten.
 3. **PR to `trunk`** (draft is fine); let CI (`smoke`) pass — `trunk` is branch-protected, so the
    required check MUST be green before merge. Fix a red conflict with trunk first (a pure `?v=`
    token conflict resolves mechanically; anything substantive, resolve by hand).

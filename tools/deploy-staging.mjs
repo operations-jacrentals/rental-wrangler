@@ -69,6 +69,7 @@ import {
 // nothing landed. The advisory marker is diagnostic-only (gitignored). See the plan §5.7 / §6.
 import { pathToFileURL } from 'node:url';
 import { acquire as leaseAcquire, renew as leaseRenew, release as leaseRelease } from './staging-lease.mjs';
+import { bumpTokenInHtml } from './lib/cachebust.mjs';
 import { writeMarkerAtomic, clearMarker, DEFAULT_TTL_MINUTES } from './lib/staging-control.mjs';
 
 // Refuse to deploy from these — a short feature branch is the whole point of Gate 1.
@@ -213,57 +214,15 @@ function deriveSiteFiles() {
   return discovered.sort();
 }
 
-// ── the shared ?v= cache-bust token ──
+// ── the shared ?v= cache-bust token (format + bump logic live in ./lib/cachebust.mjs,
+// the ONE source shared with tools/bump-cachebust.mjs + ci/check-cachebust.mjs) ──
 
-function todayStamp() {
-  const d = new Date();
-  return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`;
-}
-// Matches the existing history in index.html: YYYYMMDD + an alpha suffix that
-// increments for repeat deploys the same day (…20260710e, 20260710f, 20260710g…).
-function incrementSuffix(s) {
-  if (!s) return 'a';
-  const arr = s.split('');
-  for (let i = arr.length - 1; i >= 0; i--) {
-    if (arr[i] !== 'z') { arr[i] = String.fromCharCode(arr[i].charCodeAt(0) + 1); return arr.join(''); }
-    arr[i] = 'a';
-  }
-  return 'a' + arr.join('');
-}
-function nextToken(oldToken) {
-  const today = todayStamp();
-  const m = /^(\d{8})([a-z]*)$/i.exec(oldToken);
-  if (!m || m[1] !== today) return today + 'a';
-  return today + incrementSuffix(m[2].toLowerCase());
-}
-
-// Bumps the ONE shared token across style.css/rule-usage.js/app.js in index.html.
-// Deliberately does NOT touch app.js's internal ES-module import specifiers (they never
-// carry ?v= — see CLAUDE.md: a relative import drops the query string, so a versioned +
-// unversioned copy of a sub-module would instantiate twice).
+// Bumps the ONE shared token across style.css/rule-usage.js/app.js in index.html on disk.
 function bumpVersionToken(indexHtmlAbs) {
-  const html = readFileSync(indexHtmlAbs, 'utf8');
-  const patterns = [
-    ['style.css', /(\bstyle\.css\?v=)([\w-]+)/],
-    ['rule-usage.js', /(\brule-usage\.js\?v=)([\w-]+)/],
-    ['app.js', /(\bapp\.js\?v=)([\w-]+)/],
-  ];
-  const tokens = new Set();
-  for (const [name, re] of patterns) {
-    const m = re.exec(html);
-    if (!m) fail(`deploy-staging: could not find a ?v= token on ${name} in index.html — the cache-bust pattern may have changed; update this script.`);
-    tokens.add(m[2]);
-  }
-  if (tokens.size !== 1) {
-    fail(`deploy-staging: style.css/rule-usage.js/app.js don't share one ?v= token in index.html ` +
-      `(found: ${[...tokens].join(', ')}) — CLAUDE.md requires one shared token. Fix index.html by hand first.`);
-  }
-  const oldToken = [...tokens][0];
-  const newToken = nextToken(oldToken);
-  let next = html;
-  for (const [, re] of patterns) next = next.replace(re, `$1${newToken}`);
-  writeFileSync(indexHtmlAbs, next);
-  return { oldToken, newToken };
+  const res = bumpTokenInHtml(readFileSync(indexHtmlAbs, 'utf8'));
+  if (res.error) fail(`deploy-staging: ${res.error} Fix index.html by hand first.`);
+  writeFileSync(indexHtmlAbs, res.html);
+  return { oldToken: res.oldToken, newToken: res.newToken };
 }
 
 // ── syncing files into a fresh clone of the staging repo ──
