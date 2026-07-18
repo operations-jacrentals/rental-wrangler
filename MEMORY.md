@@ -6,6 +6,21 @@
 > Keep it lean; the first ~200 lines are what a session actually leans on.
 
 ## Decisions
+- **2026-07-18 — Mobile OBEYS iOS Dynamic Type — SHIPPED LIVE + PROMOTED (PR #714, `?v=20260718e`).**
+  The app ignored the iOS Text-Size accessibility slider (Settings › Accessibility › Display & Text
+  Size › Larger Text) because every font size was hard `px` (711 in `style.css`, 100 app-UI inline in
+  `app.js`, zero `rem`) — an all-`px` page is *structurally* inert to Dynamic Type (only the
+  `-apple-system-*` keywords + relative units track the slider). Fix: `html` gets a **17px `rem`
+  anchor** (= the iOS default `-apple-system-body` size) so every `(Npx/17)rem` renders
+  **byte-identical** at the default Text Size and on every desktop browser; on **touch devices only**
+  (`@media (hover:none) and (pointer:coarse)`) the anchor binds to `font:-apple-system-body`, so the
+  slider resizes the whole app. Converted all font-size `px→rem` (÷17), incl. the funnel + swipe-rail
+  surfaces. SKIPPED the 4 popout/print-doc templates (signing/membership PDF, sign-pad, Fleet-QR sheet)
+  + chart/Stripe `fontSize` — separate window roots / fixed print surfaces. Default rendering unchanged;
+  only NEW behavior is scaling on iOS. Fresh-context review clean; gates green (logic 706/706). Rebased
+  mid-ship onto trunk (funnel #693 + swipe #713 had landed). **Follow-ups parked**
+  (`parked/dynamic-type-followups`, draft PR #723): (1) fixed-height controls may clip at the largest
+  iOS sizes; (2) min-legible floor at the smallest — both need a physical iPhone to tune.
 - **2026-07-18 — `/build` skill added** (merged to trunk, PR #716; config-only → production
   untouched). A pre-gate build step that sits BEFORE the ship flow (`/build → /deploy → /merge →
   /promote`): it takes the currently-outlined feature to **deploy-ready** (full CI gate set green,
@@ -184,6 +199,18 @@
   one line through single-column pan mode; the `<480px` query re-enables wrap for the mobile stack.
 
 ## Gotchas
+- **`-apple-system-body` is a FIXED ~13px on macOS Safari — NOT scaling like iOS (2026-07-18).** The
+  iOS Dynamic Type rem-anchor MUST be scoped to touch devices (`@media (hover:none) and
+  (pointer:coarse)`): bind `font:-apple-system-body` document-wide and macOS Safari shrinks the whole
+  app to ~13/17 of size. Desktop (incl. Mac Safari) keeps the flat `html{font-size:17px}` baseline;
+  only touch gets the scaling binding. (§M-a11y, PR #714.)
+- **iOS/proxied-GitHub CI: a DRAFT PR does NOT fire `ci.yml` (smoke), and marking it ready-for-review
+  doesn't either (2026-07-18).** Default `pull_request` types are `opened/synchronize/reopened` —
+  `ready_for_review` isn't one, and draft-`opened` didn't trigger a run in this cloud/proxied GitHub.
+  To get the required `smoke` check green on the head SHA: trigger `workflow_dispatch` on the branch
+  (`ci.yml` supports it) OR push a commit (`synchronize` fires it once the PR is non-draft). Also:
+  **remote branch DELETION is 403-blocked here** (creation/push is fine) — merged branches are left for
+  the daily branch-janitor to sweep. (PR #714.)
 - **In a cloud session, headless Chromium CANNOT reach external GitHub Pages URLs through the agent
   proxy (2026-07-17).** Driving a staging/production URL with Playwright fails `net::ERR_CONNECTION_RESET`
   even with `launch({ proxy: { server: $HTTPS_PROXY } })` — `curl` works (that's how `deploy-staging`
