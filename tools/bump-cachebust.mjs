@@ -60,7 +60,17 @@ function main() {
     return;
   }
 
-  // Bump the working-tree index.html (it should equal HEAD's at integration time).
+  // index.html must be clean first: the verdict came from the committed HEAD blob, so the bump
+  // has to start from that same token — a stray working-tree edit (e.g. a `--dry-run` bump left
+  // un-reverted) would otherwise bump from the wrong base and fold that stray diff into the commit.
+  const cleanUnstaged = gitTry(['diff', '--quiet', '--', 'index.html']) !== null;
+  const cleanStaged = gitTry(['diff', '--cached', '--quiet', '--', 'index.html']) !== null;
+  if (!cleanUnstaged || !cleanStaged) {
+    console.error('bump-cachebust: index.html has uncommitted changes — commit or revert them first, so the bump starts from the committed token.');
+    process.exit(1);
+  }
+
+  // Bump the (now-verified-clean) working-tree index.html — equals HEAD's at this point.
   const res = bumpTokenInHtml(readFileSync(INDEX, 'utf8'));
   if (res.error) { console.error(`bump-cachebust: ${res.error} Fix index.html by hand first.`); process.exit(1); }
   writeFileSync(INDEX, res.html);
@@ -68,12 +78,13 @@ function main() {
   console.log(`bump-cachebust: bumped shared ?v= token ${res.oldToken} → ${res.newToken} in index.html.`);
 
   if (noCommit) {
-    console.log('bump-cachebust: --no-commit — index.html left staged in the working tree (commit it before /merge).');
+    console.log('bump-cachebust: --no-commit — index.html left modified in the working tree (commit it before /merge).');
     return;
   }
-  git(['add', '--', 'index.html']);
-  git(['commit', '-m', `Cache-bust: bump ?v= to ${res.newToken} (served files changed vs trunk)`]);
-  console.log(`bump-cachebust: committed the bump. Push it so it rides through /merge → /promote to production.`);
+  // Scope the commit to index.html ONLY — a bare `git commit` would sweep in anything else already
+  // staged, shipping unrelated files under a misleading "Cache-bust" message (review catch).
+  git(['commit', '-m', `Cache-bust: bump ?v= to ${res.newToken} (served files changed vs trunk)`, '--', 'index.html']);
+  console.log(`bump-cachebust: committed the bump (index.html only). Push it so it rides through /merge → /promote to production.`);
 }
 
 main();

@@ -11,7 +11,7 @@
 // rule-usage.js, which the browser + service worker key on ?v=.
 export const VERSIONED = ['style.css', 'rule-usage.js', 'app.js'];
 
-const tokenRe = (name) => new RegExp(`(\\b${name.replace('.', '\\.')}\\?v=)([\\w-]+)`);
+const tokenRe = (name) => new RegExp(`(\\b${name.replace(/\./g, '\\.')}\\?v=)([\\w-]+)`);
 
 export function todayStamp(date = new Date()) {
   return `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, '0')}${String(date.getUTCDate()).padStart(2, '0')}`;
