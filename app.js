@@ -10195,7 +10195,10 @@ function toolsMenuRows() {
     + item('js-gps-issues', I.alert, 'GPS Issues')
     + item('js-gps-utilization', I.graph, 'Fleet Utilization')
     + item('js-gps-bouncie-trucks', CARD_ICON.units, 'Pull Bouncie Trucks');
-  let html = fam('General', general) + fam('GPS / Fleet', gps);
+  // Phone folds the (dropped) comms bell here: Requests · Transports due · Notifications, shown
+  // as an always-open Alerts section at the top so they never hide behind a collapsed family.
+  const alertRows = document.body.classList.contains('is-phone') ? commsMenuRows({ noInbox: false }) : '';
+  let html = (alertRows ? `<div class="dd-sec">Alerts</div>${alertRows}` : '') + fam('General', general) + fam('GPS / Fleet', gps);
   if (devUnlocked()) {
     html += fam('Developer', item('js-lint', I.eye, 'Design lint (R0)', document.body.classList.contains('rw-lint'))
       + item('js-inspect', I.search, 'Design Inspector', state.inspect)
@@ -10207,7 +10210,9 @@ function toolsMenuRows() {
 }
 function openToolsMenu(anchorEl) { openDropdown(anchorEl, toolsMenuRows(), { align: 'right' }); }
 function toolsBtn() {
-  return `<button class="iconbtn js-tools-menu" data-tip="Tools — QR, previews, hotkeys, GPS fleet tools${devUnlocked() ? ', dev tools' : ''}">${CARD_ICON.workOrders}</button>`;
+  const phone = document.body.classList.contains('is-phone');
+  const n = phone ? commsBellCount() : 0;   // phone folds the bell's alerts into Tools — badge the wrench so they still catch the eye
+  return `<button class="iconbtn js-tools-menu" data-tip="Tools${phone ? ' & alerts' : ''} — QR, previews, hotkeys, GPS fleet tools${devUnlocked() ? ', dev tools' : ''}">${CARD_ICON.workOrders}${n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''}</button>`;
 }
 /** Comms bell — Requests, Transport alerts, and Notifications, one direct-jump
  *  row each with its own count; badges roll up onto the bell itself. (Chat and
@@ -10360,11 +10365,38 @@ function footerJogInner() {
   const cs = s.cards ? s.cards[member] : null;
   return cardJog(member, cs, { always: true });
 }
+// §M7 (Jac 2026-07-17) — the phone comms row: three BIG floating tiles (Team · Customers ·
+// Mr. Wrangler), each labeled + wearing its worst-status dot. Reuses .js-comms-chip so the same
+// click funnel fires (Customer → the channel menu). The icon-only chips stay a desktop idiom.
+function commsTilesHtml() {
+  const tile = (cat) => {
+    const meta = COMMS_CAT_META[cat];
+    const on = cat === 'customer' ? commsCustActive() : state.commsRail.cat === cat;   // phone routes all three through the rail
+    const worst = cat === 'customer' ? commsCustWorst() : commsCatWorst(cat);
+    const label = cat === 'customer' ? 'Customers' : (cat === 'wrangler' ? 'Mr. Wrangler' : meta.label);
+    // icon-only tiles (Jac 2026-07-17) — labels dropped so the glyph fills the chip; aria-label carries the name
+    return `<button class="mtile js-comms-chip${on ? ' on' : ''}" data-cat="${cat}" aria-pressed="${on}" aria-label="${esc(label)}" data-tip="${esc(meta.tip)}">`
+      + `${worst ? `<span class="mtile-dot c-${worst}" aria-hidden="true"></span>` : ''}`
+      + `<span class="mtile-ico">${meta.icon()}</span></button>`;
+  };
+  return `<div class="mfoot-comms" role="group" aria-label="Comms — Team, Customers, Mr. Wrangler">${COMMS_CHIP_CATS.map(tile).join('')}</div>`;
+}
+// §M7 — the phone FOOTER: a floating, backdrop-less comms band. Three big comms tiles fill the
+// left; the Back/Forward jog rides top-right with Receipt · Tools · notifications tucked under it
+// (all icon-only, same size). The merged Customer menu floats above the band when summoned.
 function mobileToolbarEl() {
   const d = el('div', 'mobile-toolbar');
-  // The jog is a SIBLING of the (horizontally-scrollable) tool row, pinned to the bottom-RIGHT
-  // so it can never scroll off-screen; the tools scroll in the space to its left.
-  d.innerHTML = `<div class="top-toolbar">${bottomBarInner()}${commsBellBtn()}</div><div class="mfoot-jog">${footerJogInner()}</div>`;
+  // Jac 2026-07-17: bell dropped — its Requests/Transports/Notifications fold into the Tools menu
+  // (count badged on the wrench). Jog owns the top row (double-wide now Receipt+Tools share the row).
+  // Comms open FULL-SCREEN (mountMobileComms) — no inline menu rides the footer anymore.
+  d.innerHTML = commsTilesHtml()
+    + `<div class="mfoot-utils">`
+    +   `<div class="mfoot-jog">${footerJogInner()}</div>`
+    +   `<div class="mfoot-urow">`
+    +     `<button class="iconbtn js-newitem" data-new="receipt" aria-label="New receipt" data-tip="New receipt">${CARD_ICON.expenses}</button>`
+    +     toolsBtn()
+    +   `</div>`
+    + `</div>`;
   return d;
 }
 /* ════════════════════════════════════════════════════════════════════════
@@ -10446,11 +10478,10 @@ function openChat(id, msg) {
   chatShow(); render();
   if (msg) toast(msg);
 }
-/* D9 — the ONE way to surface the active team chat: phones keep the bottom-sheet dock;
-   desktop lands it on the comms rail as the Team session's SINGLE open window
-   (single-open law — summoning it closes whatever window was up). */
+/* D9 — the ONE way to surface the active team chat: it lands on the comms rail as the Team
+   session's SINGLE open window (single-open law). Desktop floats it above the rail; phone
+   renders that same rail state FULL-SCREEN (mountMobileComms) — no more bottom-sheet dock. */
 function chatShow() {
-  if (document.body.classList.contains('is-phone')) { state.chat.open = true; return; }
   const id = state.chat.activeId; if (!id) return;
   commsUnend(id, 'team');                           // any open resurrects an ended chat
   const rail = state.commsRail;
@@ -10983,17 +11014,16 @@ function openWranglerDock(opts) {
   if (opts.reqNumber !== undefined) w.reqNumber = opts.reqNumber;
   if (opts.reqTitle !== undefined) w.reqTitle = opts.reqTitle;
   if (opts.reqUrl !== undefined) w.reqUrl = opts.reqUrl;
-  // D9 — desktop has no floating dock anymore: the conversation lands on the comms
-  // rail as the Mr. Wrangler session's SINGLE open window (single-open law).
-  if (!document.body.classList.contains('is-phone')) {
-    const rail = state.commsRail;
-    if (rail.cat !== 'wrangler') { commsLeaveCat(rail.cat); rail.cat = 'wrangler'; }
-    const s = rail.sessions.wrangler;
-    s.lastOpen = String(w.id); s.menuOpen = false;
-    s.hidden = (s.hidden || []).filter((x) => String(x) !== String(w.id));
-    commsUnend(w.id, 'wrangler');                    // any open resurrects an ended chat
-    saveCommsRail();
-  }
+  // The conversation lands on the comms rail as the Mr. Wrangler session's SINGLE open window
+  // (single-open law) — desktop floats it, phone renders that SAME rail state full-screen
+  // (mountMobileComms reads sessions.wrangler.lastOpen), so this sync must run on both.
+  const rail = state.commsRail;
+  if (rail.cat !== 'wrangler') { commsLeaveCat(rail.cat); rail.cat = 'wrangler'; }
+  const s = rail.sessions.wrangler;
+  s.lastOpen = String(w.id); s.menuOpen = false;
+  s.hidden = (s.hidden || []).filter((x) => String(x) !== String(w.id));
+  commsUnend(w.id, 'wrangler');                    // any open resurrects an ended chat
+  saveCommsRail();
   render();
   setTimeout(() => { const i = document.querySelector('.wrangler-dock .js-wr-in'); if (i) i.focus(); const f = document.querySelector('.wrangler-dock .wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
 }
@@ -12862,12 +12892,17 @@ function wirePopupDrag(overlay) {
    stack stays balanced. Phone-only — desktop keeps Esc/click. Wired in boot(). ── */
 let backGuard = false, backConsuming = false;
 let swipeFired = false;   // §M1/§M3 — a footer or grid section-switch swipe sets this so the trailing click is swallowed once
-function anyDismissable() { return !!(state.overlay || state.datesearch || state.chat.open || state.wrangler.open); }
+function anyDismissable() { return !!(state.overlay || state.datesearch || state.chat.open || state.wrangler.open || (document.body.classList.contains('is-phone') && state.commsRail.cat)); }
 function dismissTopSheet() {
   if (state.datesearch) { closeDateSearch(); return true; }
   if (overlayLocked()) { attnFlash('.rr-stars'); toast('Rate the return first — it can’t be skipped.'); return true; }   // required modal: refuse Esc/back
   if (state.overlay) { closeOverlay(); return true; }
-  if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; render(); return true; }   // mirror js-wr-close
+  if (document.body.classList.contains('is-phone') && state.commsRail.cat) {   // phone full-screen comms: a thread backs to its inbox, the inbox closes the surface
+    const s = commsSess();
+    if (s && s.lastOpen != null) { s.lastOpen = null; s.menuOpen = true; saveCommsRail(); render(); return true; }
+    commsLeaveCat(state.commsRail.cat); state.commsRail.cat = null; if (s) s.menuOpen = false; saveCommsRail(); render(); return true;
+  }
+  if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; render(); return true; }   // mirror js-wr-close (desktop)
   if (state.chat.open) { state.chat.open = false; render(); return true; }                                    // mirror js-chat-close
   return false;
 }
@@ -16921,14 +16956,13 @@ function render() {
     if (!phone) positionDateSearch(fl);
   }
   // §M3 — lock the column scroll behind any open sheet/overlay/dock on phones
-  document.body.classList.toggle('sheet-open', !!(state.overlay || state.datesearch || state.chat.open || (state.wrangler.open && !state.wrangler.min)));   // a MINIMIZED Wrangler dock is a slim in-flow bar — it must NOT lock the page scroll (Jac, mobile)
+  document.body.classList.toggle('sheet-open', !!(state.overlay || state.datesearch || state.chat.open || (state.wrangler.open && !state.wrangler.min) || (document.body.classList.contains('is-phone') && state.commsRail.cat)));   // a MINIMIZED Wrangler dock is a slim in-flow bar — it must NOT lock the page scroll (Jac, mobile); a phone full-screen comms surface DOES lock the card behind it
   syncBackGuard();   // §M3 — keep the Android back-button guard in step with what's open
   // §17/§18 — the team + wrangler DOCKS are PHONE-only bottom sheets now (D9): desktop
   // retired both surfaces onto the comms rail (their machinery is shared, not the shell).
-  const _phoneDocks = document.body.classList.contains('is-phone');
-  if (_phoneDocks && state.chat.open) { const d = el('div', 'chat-dock', ''); d.dataset.drop = 'chat'; d.innerHTML = chatDockEl(); $('#app').appendChild(d); }
-  if (_phoneDocks && state.wrangler.open) { const d = el('div', 'wrangler-dock' + (state.chat.open ? ' wr-beside-chat' : '') + (state.wrangler.min ? ' wr-min' : '')); d.innerHTML = wranglerDockEl(); $('#app').appendChild(d); }
-  mountCommsPops();   // D8/D9 comms rail — the session's single open window floats above its own tab
+  // Phone comms is FULL-SCREEN now (mountMobileComms); the old phone-only chat/wrangler bottom-sheet docks are retired.
+  mountCommsPops();   // D8/D9 comms rail — desktop: the session's single open window floats above its own tab
+  mountMobileComms(); // D8/D9 comms — phone: the summoned category renders FULL-SCREEN (Messenger-style)
   // §18e/§17 — the bell + Requests inbox now live in the bottom comms band (bb-utils),
   // always visible; the docks float above it. (The old floating fab-stack is retired.)
   mountTransportEditor();   // inline transport editor: mount the live map + wire the address field
@@ -18498,10 +18532,12 @@ function onClick(e) {
   if (closest('.js-chat-end')) { e.stopPropagation(); closeMenus(); return commsEndConv(closest('.js-chat-end').dataset.chat, 'team'); }   // admin ends the chat (phone-safe: cat pinned)
   if (closest('[data-chat-member]')) { e.stopPropagation(); return chatToggleMember(closest('[data-chat-member]').dataset.chatMember); }
   // D8/D9 THE COMMS RAIL — toolbar chips · session tabs · the single window · ALL menu
-  if (closest('.js-comms-chip')) { e.stopPropagation(); return commsToggleCat(closest('.js-comms-chip').dataset.cat); }
+  if (closest('.js-comms-chip')) { e.stopPropagation(); const cat = closest('.js-comms-chip').dataset.cat; return cat === 'customer' ? commsToggleCustomer() : commsToggleCat(cat); }
+  if (closest('.js-comms-ch')) { e.stopPropagation(); const ch = closest('.js-comms-ch').dataset.ch; setCommsCustCh(ch); return commsSummonChannel(ch); }
   if (closest('.js-comms-new')) { e.stopPropagation(); return commsNewChat(); }   // D9 ALL menu: + New chat (team → newChat(), wrangler → wranglerNewChat())
   if (closest('[data-comms-hide]')) { e.stopPropagation(); return commsHideTab(closest('[data-comms-hide]').dataset.commsHide); }   // ✕ hides from the rail only — never ends
-  if (closest('.js-comms-menu-x')) { e.stopPropagation(); const s = commsSess(); if (s) { s.menuOpen = false; saveCommsRail(); } return render(); }
+  if (closest('.js-comms-menu-x')) { e.stopPropagation(); const s = commsSess(); if (s) s.menuOpen = false; if (document.body.classList.contains('is-phone')) { commsLeaveCat(state.commsRail.cat); state.commsRail.cat = null; } saveCommsRail(); return render(); }
+  if (closest('.js-mcomms-back')) { e.stopPropagation(); const s = commsSess(); if (s) { s.lastOpen = null; s.menuOpen = true; } saveCommsRail(); return render(); }
   if (closest('[data-comms-tab]')) { e.stopPropagation(); commsOpenPt = { x: e.clientX }; return commsToggleTab(closest('[data-comms-tab]').dataset.commsTab); }
   if (closest('.js-comms-end')) { e.stopPropagation(); closeMenus(); return commsEndConv(closest('.js-comms-end').dataset.cust); }
   if (closest('.js-comms-mend')) { e.stopPropagation(); return commsEndConv(closest('.js-comms-mend').dataset.cust); }
@@ -25942,7 +25978,7 @@ function boot() {
   // menu itself and the comms chip that hosts it, so the chip's own click toggles instead of double-firing.
   document.addEventListener('mousedown', (e) => {
     const s = commsSess(); if (!s || !s.menuOpen) return;
-    if (e.target.closest && e.target.closest('.comms-pop.comms-menu, .js-comms-chip')) return;
+    if (e.target.closest && e.target.closest('.comms-pop.comms-menu, .mcomms, .js-comms-chip')) return;   // .mcomms = phone full-screen comms; taps inside it must never self-dismiss (it IS the menu)
     s.menuOpen = false; saveCommsRail(); render();
   });
   document.addEventListener('input', onInput);
@@ -26486,6 +26522,10 @@ const COMMS_CAT_META = {
   team:     { label: 'Team',        icon: () => I.users,         channel: null,    tip: 'Team — the shop-floor chat' },
   text:     { label: 'Texts',       icon: () => I.messageSquare, channel: 'sms',   tip: 'Texts — customer SMS threads' },
   email:    { label: 'Email',       icon: () => I.mail,          channel: 'email', tip: 'Email — customer email threads' },
+  // D8 merged Customer chip — one button for texts + emails; the channel toggle lives in its
+  // menu. icon() follows the current channel (commsCustCh). Never used as a rail `cat` — the chip
+  // delegates to the real 'text'/'email' cats via commsToggleCustomer/commsSummonChannel.
+  customer: { label: 'Customers',   icon: () => (commsCustCh === 'email' ? I.mail : I.messageSquare), channel: null, tip: 'Customers — texts & emails in one place (toggle inside)' },
   wrangler: { label: 'Mr. Wrangler', icon: () => I.lasso,        channel: null,    tip: 'Mr. Wrangler — ask the yard AI, or report a bug' },
 };
 const commsOnline = () => typeof backendPassword !== 'undefined' && !!backendPassword;
@@ -26537,6 +26577,17 @@ function commsCatWorst(cat) {
   list.forEach((t) => { const s = commsConvStatus(t, COMMS_CAT_META[cat].channel); if (!worst || COMMS_ST_RANK[s] < COMMS_ST_RANK[worst]) worst = s; });
   return (!worst || worst === 'gray') ? 'green' : worst;   // nothing waiting = green (quiet line)
 }
+/* ── merged Customer chip (Jac 2026-07-17): Texts + Email collapse into ONE comms button;
+   a Text/Email toggle in its menu picks the channel. The underlying 'text'/'email' categories,
+   their sessions, threads and sends are UNCHANGED — this is a chip-row + menu presentation over
+   them. commsCustCh = which channel the merged chip currently wears (a per-device view pref). ── */
+const COMMS_CUSTCH_LS = 'jactec.commsCustCh';
+let commsCustCh = 'text';
+try { if (localStorage.getItem(COMMS_CUSTCH_LS) === 'email') commsCustCh = 'email'; } catch (e) {}
+const commsCustCat = () => (commsCustCh === 'email' ? 'email' : 'text');
+function setCommsCustCh(ch) { commsCustCh = ch === 'email' ? 'email' : 'text'; try { localStorage.setItem(COMMS_CUSTCH_LS, commsCustCh); } catch (e) {} }
+const commsCustActive = () => (state.commsRail.cat === 'text' || state.commsRail.cat === 'email');
+function commsCustWorst() { return [commsCatWorst('text'), commsCatWorst('email')].sort((a, b) => COMMS_ST_RANK[a] - COMMS_ST_RANK[b])[0]; }
 /* ── Team category (D9) — conversations derive from the APP-23 chat store ── */
 const commsChatLastAt = (c) => Math.max(0, ...(c.messages || []).map((m) => m.at || 0));
 function commsTeamChats() {   // every un-ended team chat, newest first (End resurrects on a newer message)
@@ -26615,18 +26666,17 @@ function commsAliasesEnsure() {     // lazy one-shot alias fetch for the email F
   commsAliasList().then((a) => { if (a && a.length) render(); });
 }
 /* ── the four toolbar chips (bottom-left, before the tool buttons) ────────── */
+const COMMS_CHIP_CATS = ['team', 'customer', 'wrangler'];   // D8 merged row — Texts+Email fold into 'customer'
 function commsChipsHtml() {
   const phone = document.body.classList.contains('is-phone');
   const chip = (cat) => {
     const meta = COMMS_CAT_META[cat];
-    // phones have no rail — the team/wrangler chips still bridge to their bottom-sheet docks there
-    const on = phone
-      ? (cat === 'team' ? state.chat.open : cat === 'wrangler' ? (state.wrangler.open && !state.wrangler.min) : state.commsRail.cat === cat)
-      : state.commsRail.cat === cat;
-    const worst = commsCatWorst(cat);
+    // 'customer' is on whenever a customer channel (text OR email) is summoned; its dot rolls up both.
+    const on = cat === 'customer' ? commsCustActive() : state.commsRail.cat === cat;
+    const worst = cat === 'customer' ? commsCustWorst() : commsCatWorst(cat);
     return `<button class="iconbtn comms-chip js-comms-chip${on ? ' on' : ''}" data-cat="${cat}" data-tip="${esc(meta.tip)}" aria-pressed="${on}">${meta.icon()}${worst ? `<span class="cc-dot c-${worst}" aria-hidden="true"></span>` : ''}</button>`;
   };
-  return `<span class="comms-chips" role="group" aria-label="Comms — Team, Texts, Email, Mr. Wrangler">${COMMS_CATS.map(chip).join('')}</span><span class="bb-sep bb-stitch" aria-hidden="true"></span>`;
+  return `<span class="comms-chips" role="group" aria-label="Comms — Team, Customers, Mr. Wrangler">${COMMS_CHIP_CATS.map(chip).join('')}</span><span class="bb-sep bb-stitch" aria-hidden="true"></span>`;
 }
 /* ── the summoned session's tabs on the rail (ALL first, then conversations).
    D9: one builder, four categories — a tab's is-active means "this is THE open
@@ -26719,9 +26769,11 @@ function commsWranglerPopupHtml() {
 }
 /* ── the ALL menu: every un-ended conversation, Open / End per row (D9: Team and
    Mr. Wrangler list their chats too, with a + New chat at the foot) ────────── */
-function commsMenuHtml(cat) {
+function commsMenuHtml(cat, opts = {}) {
   const meta = COMMS_CAT_META[cat];
-  const row = (id, name, st, snip) => `<div class="cm-row js-comms-mrow" data-cust="${esc(id)}" data-tip="Open"><span class="cp-dot c-${st}" aria-hidden="true"></span><span class="cm-who">${esc(name)}</span><span class="cm-snip">${esc(snip)}</span>${ghostPill('End', { js: 'js-comms-mend', data: { cust: id }, tip: cat === 'team' || cat === 'wrangler' ? 'End it — the history stays stored' : 'End it — the history stays on the profile' })}</div>`;
+  const row = (id, name, st, snip) => opts.readonly
+    ? `<div class="cm-row cm-ro"><span class="cp-dot c-${st}" aria-hidden="true"></span><span class="cm-who">${esc(name)}</span><span class="cm-snip">${esc(snip)}</span></div>`
+    : `<div class="cm-row js-comms-mrow" data-cust="${esc(id)}" data-tip="Open"><span class="cp-dot c-${st}" aria-hidden="true"></span><span class="cm-who">${esc(name)}</span><span class="cm-snip">${esc(snip)}</span>${ghostPill('End', { js: 'js-comms-mend', data: { cust: id }, tip: cat === 'team' || cat === 'wrangler' ? 'End it — the history stays stored' : 'End it — the history stays on the profile' })}</div>`;
   let rows = '', empty = 'Nothing on the line — right-click a customer to start one.', newRow = '';
   if (cat === 'team') {
     rows = commsTeamChats().map((c) => {
@@ -26745,8 +26797,16 @@ function commsMenuHtml(cat) {
       return row(id, (c && fullName(c)) || id, commsConvStatus(t, meta.channel), (ch.lastDirection === 'inbound' ? 'them: ' : 'you: ') + (ch.lastSnippet || ''));
     }).join('');
   }
+  const isCust = cat === 'text' || cat === 'email';
+  const chanToggle = isCust ? `<div class="comms-chan" role="tablist" aria-label="Channel — text or email">
+      <button class="comms-chan-b js-comms-ch${commsCustCh === 'text' ? ' on' : ''}" data-ch="text" role="tab" aria-selected="${commsCustCh === 'text'}">${I.messageSquare}<span>Text</span></button>
+      <button class="comms-chan-b js-comms-ch${commsCustCh === 'email' ? ' on' : ''}" data-ch="email" role="tab" aria-selected="${commsCustCh === 'email'}">${I.mail}<span>Email</span></button>
+    </div>` : '';
+  const title = isCust ? 'Customers' : esc(meta.label);
+  const sub = isCust ? (commsCustCh === 'email' ? 'Emailing customers' : 'Texting customers') : 'Open &amp; un-ended';
   return `<div class="cp-cap" aria-hidden="true"></div>
-    <div class="cp-head"><span class="cp-cat">${esc(meta.label)}</span><span class="cp-who">Open &amp; un-ended</span><span class="spacer"></span><button class="cp-x js-comms-menu-x" aria-label="Tuck the list away" data-tip="Tuck away — nothing ends">${I.x}</button></div>
+    <div class="cp-head"><span class="cp-cat">${title}</span><span class="cp-who">${sub}</span><span class="spacer"></span><button class="cp-x js-comms-menu-x" aria-label="Tuck the list away" data-tip="Tuck away — nothing ends">${I.x}</button></div>
+    ${chanToggle}
     <div class="cp-feed cp-list">${rows || `<div class="cp-empty">${empty}</div>`}${newRow}</div>`;
 }
 /* Mount THE open window ABOVE its own tab (Messenger metaphor, D9 single-open: at
@@ -26806,27 +26866,79 @@ function mountCommsPops() {
     }
   }
   if (sess.menuOpen && (!COMMS_CAT_META[cat].channel || commsOnline())) {
-    const at = document.querySelector(`.js-comms-chip[data-cat="${cat}"]`) || document.querySelector('.comms-rail');
+    const at = document.querySelector(`.js-comms-chip[data-cat="${cat}"]`) || document.querySelector('.js-comms-chip[data-cat="customer"]') || document.querySelector('.comms-rail');
     if (at) { const node = el('div', 'comms-pop comms-menu'); node.innerHTML = commsMenuHtml(cat); host.appendChild(node); place(node, at, 340); }
   }
   commsOpenPt = null;   // one render-cycle scope — consumed by the window mount above
+}
+// D8/D9 PHONE comms — the summoned category fills the screen (Messenger metaphor): the INBOX
+// (conversation list + the Text/Email toggle for customers) until a conversation is opened, then
+// the THREAD itself with a Back-to-inbox chevron. Reuses the exact builders desktop mounts on the
+// rail (commsMenuHtml / commsPopupHtml / commsTeamPopupHtml / commsWranglerPopupHtml), so composing,
+// sending, End, drafts and the toggle all keep working through their existing selectors.
+function mountMobileComms() {
+  if (!document.body.classList.contains('is-phone')) return;
+  const cat = state.commsRail.cat;
+  if (!cat) return;
+  const sess = state.commsRail.sessions[cat];
+  const openId = sess ? sess.lastOpen : null;
+  let inner = '';
+  if (openId != null) {
+    if (cat === 'team') inner = chatById(String(openId)) ? commsTeamPopupHtml(String(openId)) : '';
+    else if (cat === 'wrangler') inner = state.wrangler.open ? commsWranglerPopupHtml() : '';
+    else {
+      const t = commsThreadsFor(cat).find((x) => String(x.customerId) === String(openId)) || null;
+      inner = commsPopupHtml(cat, t, String(openId));
+    }
+  }
+  const host = el('div', 'mcomms');
+  if (inner) {
+    // the wrangler thread wrapper must wear .wrangler-dock — mountWranglerDock() (called each
+    // render) keys off it to hydrate image blobs + wire paste/drag-drop (parity with desktop).
+    const dockCls = cat === 'wrangler' ? ' wrangler-dock' : '';
+    host.innerHTML = `<div class="mcomms-sheet mcomms-thread${dockCls}"><button class="mcomms-back js-mcomms-back" aria-label="Back to the list">${I.chevL}<span>Back</span></button>${inner}</div>`;
+  } else {
+    host.innerHTML = `<div class="mcomms-sheet mcomms-inbox">${commsMenuHtml(cat)}</div>`;
+  }
+  $('#app').appendChild(host);
+  const feed = host.querySelector('.cp-feed:not(.cp-list), .chat-feed, .wr-feed');
+  if (feed) feed.scrollTop = feed.scrollHeight;
 }
 /* ── actions ─────────────────────────────────────────────────────────────── */
 /* Sweep a category's window off the rail when the rail leaves it (chip re-click,
    sibling chip, or any cross-category open — the single-open law's broom). */
 function commsLeaveCat(cat) {
-  if (cat === 'wrangler' && state.wrangler.open && !document.body.classList.contains('is-phone')) {
+  // Phone routes Mr. Wrangler through the rail full-screen now (not the old dock), so leaving the
+  // category must snapshot + close it on EVERY device — else state.wrangler.open never resets on
+  // phone and body.sheet-open locks the page scroll for the rest of the session.
+  if (cat === 'wrangler' && state.wrangler.open) {
     wranglerRailSnapshot(); state.wrangler.open = false; state.wrangler.min = false;
   }
 }
-function commsToggleCat(cat) {
-  const phone = document.body.classList.contains('is-phone');
-  if (phone && (cat === 'team' || cat === 'wrangler')) {
-    // phones have no rail — these chips keep bridging to the bottom-sheet docks (mobile reflow rides later)
-    if (cat === 'team') { state.chat.open = !state.chat.open; return render(); }
-    if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; return render(); }
-    return wranglerNewChat();
+// D8 merged Customer chip — summon a customer CHANNEL ('text'|'email') onto the rail and land
+// on its menu (the Text/Email toggle rides the menu head). One thin funnel over commsToggleCat's
+// summon logic so text/email keep behaving exactly as before.
+function commsSummonChannel(ch) {
+  const cat = ch === 'email' ? 'email' : 'text';
+  const rail = state.commsRail, prev = rail.cat;
+  if (prev && prev !== cat) commsLeaveCat(prev);
+  rail.cat = cat;
+  refreshCommsThreads();
+  const s = rail.sessions[cat];
+  s.menuOpen = true; s.lastOpen = null;   // show the list + toggle; no auto-opened window
+  saveCommsRail(); render();
+}
+// The Customer chip click: reveal the channel menu (with the toggle); a second tap sweeps it shut.
+function commsToggleCustomer() {
+  const rail = state.commsRail, cur = rail.cat, curSess = cur ? rail.sessions[cur] : null;
+  if (commsCustActive() && curSess && curSess.menuOpen) {   // open menu → close
+    rail.cat = null; curSess.menuOpen = false; commsLeaveCat(cur); saveCommsRail(); return render();
   }
+  commsSummonChannel(commsCustCat());
+}
+function commsToggleCat(cat) {
+  // Phone routes team/wrangler through the SAME rail as customer comms now (mountMobileComms
+  // renders it full-screen) — the old phone-only docks are retired.
   const rail = state.commsRail;
   if (rail.cat === cat) {                                // active icon: reveal the un-ended list first (replaces the old All chip), then a further click sweeps the rail clean
     const sc = rail.sessions[cat];

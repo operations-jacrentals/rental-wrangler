@@ -4,7 +4,7 @@
 
 # Code Atlas — generated chapter index (Part I · The Frontend)
 
-## app.js — 27035 lines, 41 chapters
+## app.js — 27147 lines, 41 chapters
 
 | ID | Lines | Anchors | Chapter title | Key symbols |
 |----|------:|---------|---------------|-------------|
@@ -28,27 +28,27 @@
 | APP-18 | 9367–9782 | — | 3-COLUMN LAYOUT (display-only shell over the existing cards). | GRID_CARD_BY_ID, MEMBER_TITLE, memberIcon, memberCount, unitsAlertCount, wave2ListOverride, columnEl, colTabsEl, mobileNavEl, colTabButtonsHtml, colActionsHtml, memberCardEl, …(+7) |
 | APP-19 | 9783–9907 | §11 | §11 HEADER, KPI & BOTTOM BAR | bandColor, ring3SVG, ringsSVG, pctOf, fleetInsp, legacyKpiPct, KPI_HELP |
 | APP-20 | 9908–10079 | §11b | §11b KPI METRIC ENGINE — admin-definable KPIs (Settings → KPIs & Rings). | KPI_ENTITY, KPI_DERIVED, KPI_TOKENS, kpiField, kpiVal, kpiCond, kpiRows, kpiAgg, kpiBand, kpiTarget, kpiEval, KPI_DEFAULTS, …(+11) |
-| APP-21 | 10080–10369 | — | COMING 2026 — the roadmap morale plate (Jac 2026-06-23) | ROADMAP_ITEMS, ROADMAP_AREAS, headerEl, bottomBarInner, toolsMenuRows, openToolsMenu, toolsBtn, commsBellCount, commsMenuRows, openCommsMenu, commsBellBtn, bottomBarEl, …(+11) |
-| APP-22 | 10370–11939 | §17 | §17 INTERNAL TEAM DOCK (Jac, Phase 7) — a bottom-bar chat built on the Phase-6 | chatComments, chatUnreadCount, chatById, activeChat, chatsTagging, chatMarkSeen, chatUnseenForRec, newChat, myRosterId, chatIsAdmin, chatAmMember, chatVisibleToMe, …(+135) |
-| APP-23 | 11940–11982 | §13.3 | §13.3 CARD GRAPH VIEW — RETIRED (2026-07-03). The per-card tile | GV_WIN_OPTS, GV_WIN_KEY, GV_WIN, loadGvWin, saveGvWin, gvWinLabel, gvWinCutoff, gvBuckets |
-| APP-24 | 11983–12825 | §13.4 | §13.4 GRAPH CAROUSEL (Jac 2026-06-16) — the per-card Graph is a deck of | gvClampIdx, gvKey, gvSegOn, gvSmallest, graphViewsFor, gvSaveCurrent, gvStripTerms, gvRestore, gvOpen, gvChevron, gvSyncClosed, toggleGraphSeg, …(+71) |
-| APP-25 | 12826–14475 | §12 | §12 OVERLAYS & BOARDS — renderOverlay kinds + back-office board popups | _ovScroll, _popDrag, wirePopupDrag, backGuard, swipeFired, anyDismissable, dismissTopSheet, syncBackGuard, renderOverlay, buildPopupEl, openOverlay |
-| APP-26 | 14476–14820 | — | RB-WINDOWS catalog (Jac 2026-06-22) — the admin Rulebook's index of | WINDOW_CATALOG, previewOverlayFor, STANDALONE_SURFACES, feedbackContext, sendFeedback, CB_BLOCK_LABEL, CB_REASON_LABEL, crewBroadcastEmps, RR_STAR_TIP, rrBand, RR_BAND_LABEL, notifRatingTemplate, …(+12) |
-| APP-27 | 14821–15305 | §18 | §18 MR. WRANGLER — the in-app AI (Claude via the Apps Script backend). | WRANGLER_SYSTEM, wranglerDigest, wrIssueIndex, wranglerContext, WR_DEDUP_NOTE, wranglerAttachAny, wranglerAttachFile, parseCsvFile, wranglerAttachTextFile, wranglerImageBlock, wranglerErrMsg, WR_TOOL_LIMIT, …(+11) |
-| APP-28 | 15306–16502 | — | Mr. Wrangler ACTS on your data (Jac 2026-06-16) | WR_FUNNEL, wrFunnel, WR_ACCT, wrAccount, WR_EDITABLE, WR_REQUIRED, WR_NUMERIC, WR_MONEY_FIELDS, wrPlanNeedsApply, WR_IDX, wrGet, wrNorm, …(+112) |
-| APP-29 | 16503–16852 | §13 | §13 DROPDOWNS — openDropdown + status/fleet/funnel/sort menus | GTI, GATE_ICON, GATE_TL, GTCHK, gateTimeline, openDropdown, openStatusDropdown, openFleetDropdown, setUnitFleet, openReconcileDropdown, setExpenseReconcile, funnelMenuChip, …(+23) |
-| APP-30 | 16853–17200 | §14 | §14 RENDER PIPELINE + toast | renderCount, scrollMemo, render, renderResults, scheduleCardListRender, renderCardList, mirrorGlobeBars, _titlesRaf, applyTitles, HOVER_CAPABLE, initTooltip, hideTip, …(+8) |
-| APP-31 | 17201–17204 | §15 | §15 EVENT HANDLERS — onClick/onInput/onChange (single listener tree) | — |
-| APP-32 | 17205–19680 | §15c | §15c DRAG & DROP LINK ENGINE (DRAGDROP-DESIGN.md) — custom pointer engine. | DRAG, DRAG_SOURCES, INV_LINEABLE, dragLayer, DROP_MATRIX, woDroppableToInvoice, invoiceUnitIds, LINK_TARGET_LABEL, linkRoleAllows, linkActionPossible, linkActionsFor, enterLinking, …(+63) |
-| APP-33 | 19681–20984 | §16 | §16 ACTIONS / MUTATIONS — every state change funnels through here | setUnitCondition, openInspectionRecord, pendingInspForUnit, openChecklist, completeChecklist, washBtn, cycleUnitWash, uncompleteWash, setUnitWash, sellUnit, captureUnit, setUnitCapture, …(+52) |
-| APP-34 | 20985–22518 | §17 | §17 STRIPE / PAYMENTS — card-on-file + invoice charging (client side). | _stripe, _pubKey, ensurePubKey, getStripe, canMoney, brandName, hasCardOnFile, commitAction, cardOneLabel, cardLabel, friendlyPayErr, openAddCard, …(+97) |
-| APP-35 | 22519–23001 | §5.4d | §5.4d — DATE SEARCH PICKER. A standalone calendar that REUSES the rental | openDateSearch, closeDateSearch, dsMonth, dsToday, dsClear, dsPickDay, dsDone, dateSearchEl, positionDateSearch, setInspWash, setInspResult, recordServiceCompletion, …(+21) |
-| APP-36 | 23002–23004 | §18 | §18 PERSISTENCE & BOOT | — |
-| APP-37 | 23005–24229 | §18b | §18b BACKEND SYNC — Google Sheets via the Apps Script web app | BACKEND_URL, PERSIST_KEYS, backendPassword, booting, saveTimer, driveViewUrl, backendCall, gpsToken, gpsBase, gpsConfigured, _gpsReloginInflight, gpsRelogin, …(+85) |
-| APP-38 | 24230–25369 | — | INSTANT CACHE — on-device data snapshot (spec 2026-07-16) | DC_DB, CACHE_SCHEMA_VER, _dcDbPromise, dcDbOpen, dcTx, dataCache, cacheAppVer, pidLocalToken, cacheTokenTag, cacheDeviceOk, cacheValid, cacheSnapshotEnvelope, …(+93) |
-| APP-39 | 25370–25376 | — | PHONE-VERIFIED DEVICE IDENTITY — login flow (Phase 2) | — |
-| APP-40 | 25377–25683 | — | const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', | pidUI, pidTokenGet, pidTokenSet, pidTokenClear, pidRosterCache, pidAdopt, pidLoadFail, pidEnter, renderBootSplash, phoneBoot, pidErr, pidCall, …(+14) |
-| APP-41 | 25684–27035 | — | SCAN-TO-LOG (QR DECAL → VIDEO) — standalone capture (FEATURES.qrScanLog) | pendingScan, scanActive, scanUI, scanEnabled, scanPreviewOn, scanTokenGet, scanTokenSet, scanTokenClear, maybeReplayScan, scanCall, scanPreviewResponse, renderScanCapture, …(+60) |
+| APP-21 | 10080–10401 | — | COMING 2026 — the roadmap morale plate (Jac 2026-06-23) | ROADMAP_ITEMS, ROADMAP_AREAS, headerEl, bottomBarInner, toolsMenuRows, openToolsMenu, toolsBtn, commsBellCount, commsMenuRows, openCommsMenu, commsBellBtn, bottomBarEl, …(+12) |
+| APP-22 | 10402–11969 | §17 | §17 INTERNAL TEAM DOCK (Jac, Phase 7) — a bottom-bar chat built on the Phase-6 | chatComments, chatUnreadCount, chatById, activeChat, chatsTagging, chatMarkSeen, chatUnseenForRec, newChat, myRosterId, chatIsAdmin, chatAmMember, chatVisibleToMe, …(+135) |
+| APP-23 | 11970–12012 | §13.3 | §13.3 CARD GRAPH VIEW — RETIRED (2026-07-03). The per-card tile | GV_WIN_OPTS, GV_WIN_KEY, GV_WIN, loadGvWin, saveGvWin, gvWinLabel, gvWinCutoff, gvBuckets |
+| APP-24 | 12013–12855 | §13.4 | §13.4 GRAPH CAROUSEL (Jac 2026-06-16) — the per-card Graph is a deck of | gvClampIdx, gvKey, gvSegOn, gvSmallest, graphViewsFor, gvSaveCurrent, gvStripTerms, gvRestore, gvOpen, gvChevron, gvSyncClosed, toggleGraphSeg, …(+71) |
+| APP-25 | 12856–14510 | §12 | §12 OVERLAYS & BOARDS — renderOverlay kinds + back-office board popups | _ovScroll, _popDrag, wirePopupDrag, backGuard, swipeFired, anyDismissable, dismissTopSheet, syncBackGuard, renderOverlay, buildPopupEl, openOverlay |
+| APP-26 | 14511–14855 | — | RB-WINDOWS catalog (Jac 2026-06-22) — the admin Rulebook's index of | WINDOW_CATALOG, previewOverlayFor, STANDALONE_SURFACES, feedbackContext, sendFeedback, CB_BLOCK_LABEL, CB_REASON_LABEL, crewBroadcastEmps, RR_STAR_TIP, rrBand, RR_BAND_LABEL, notifRatingTemplate, …(+12) |
+| APP-27 | 14856–15340 | §18 | §18 MR. WRANGLER — the in-app AI (Claude via the Apps Script backend). | WRANGLER_SYSTEM, wranglerDigest, wrIssueIndex, wranglerContext, WR_DEDUP_NOTE, wranglerAttachAny, wranglerAttachFile, parseCsvFile, wranglerAttachTextFile, wranglerImageBlock, wranglerErrMsg, WR_TOOL_LIMIT, …(+11) |
+| APP-28 | 15341–16537 | — | Mr. Wrangler ACTS on your data (Jac 2026-06-16) | WR_FUNNEL, wrFunnel, WR_ACCT, wrAccount, WR_EDITABLE, WR_REQUIRED, WR_NUMERIC, WR_MONEY_FIELDS, wrPlanNeedsApply, WR_IDX, wrGet, wrNorm, …(+112) |
+| APP-29 | 16538–16887 | §13 | §13 DROPDOWNS — openDropdown + status/fleet/funnel/sort menus | GTI, GATE_ICON, GATE_TL, GTCHK, gateTimeline, openDropdown, openStatusDropdown, openFleetDropdown, setUnitFleet, openReconcileDropdown, setExpenseReconcile, funnelMenuChip, …(+23) |
+| APP-30 | 16888–17234 | §14 | §14 RENDER PIPELINE + toast | renderCount, scrollMemo, render, renderResults, scheduleCardListRender, renderCardList, mirrorGlobeBars, _titlesRaf, applyTitles, HOVER_CAPABLE, initTooltip, hideTip, …(+8) |
+| APP-31 | 17235–17238 | §15 | §15 EVENT HANDLERS — onClick/onInput/onChange (single listener tree) | — |
+| APP-32 | 17239–19716 | §15c | §15c DRAG & DROP LINK ENGINE (DRAGDROP-DESIGN.md) — custom pointer engine. | DRAG, DRAG_SOURCES, INV_LINEABLE, dragLayer, DROP_MATRIX, woDroppableToInvoice, invoiceUnitIds, LINK_TARGET_LABEL, linkRoleAllows, linkActionPossible, linkActionsFor, enterLinking, …(+63) |
+| APP-33 | 19717–21020 | §16 | §16 ACTIONS / MUTATIONS — every state change funnels through here | setUnitCondition, openInspectionRecord, pendingInspForUnit, openChecklist, completeChecklist, washBtn, cycleUnitWash, uncompleteWash, setUnitWash, sellUnit, captureUnit, setUnitCapture, …(+52) |
+| APP-34 | 21021–22554 | §17 | §17 STRIPE / PAYMENTS — card-on-file + invoice charging (client side). | _stripe, _pubKey, ensurePubKey, getStripe, canMoney, brandName, hasCardOnFile, commitAction, cardOneLabel, cardLabel, friendlyPayErr, openAddCard, …(+97) |
+| APP-35 | 22555–23037 | §5.4d | §5.4d — DATE SEARCH PICKER. A standalone calendar that REUSES the rental | openDateSearch, closeDateSearch, dsMonth, dsToday, dsClear, dsPickDay, dsDone, dateSearchEl, positionDateSearch, setInspWash, setInspResult, recordServiceCompletion, …(+21) |
+| APP-36 | 23038–23040 | §18 | §18 PERSISTENCE & BOOT | — |
+| APP-37 | 23041–24265 | §18b | §18b BACKEND SYNC — Google Sheets via the Apps Script web app | BACKEND_URL, PERSIST_KEYS, backendPassword, booting, saveTimer, driveViewUrl, backendCall, gpsToken, gpsBase, gpsConfigured, _gpsReloginInflight, gpsRelogin, …(+85) |
+| APP-38 | 24266–25405 | — | INSTANT CACHE — on-device data snapshot (spec 2026-07-16) | DC_DB, CACHE_SCHEMA_VER, _dcDbPromise, dcDbOpen, dcTx, dataCache, cacheAppVer, pidLocalToken, cacheTokenTag, cacheDeviceOk, cacheValid, cacheSnapshotEnvelope, …(+93) |
+| APP-39 | 25406–25412 | — | PHONE-VERIFIED DEVICE IDENTITY — login flow (Phase 2) | — |
+| APP-40 | 25413–25719 | — | const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', | pidUI, pidTokenGet, pidTokenSet, pidTokenClear, pidRosterCache, pidAdopt, pidLoadFail, pidEnter, renderBootSplash, phoneBoot, pidErr, pidCall, …(+14) |
+| APP-41 | 25720–27147 | — | SCAN-TO-LOG (QR DECAL → VIDEO) — standalone capture (FEATURES.qrScanLog) | pendingScan, scanActive, scanUI, scanEnabled, scanPreviewOn, scanTokenGet, scanTokenSet, scanTokenClear, maybeReplayScan, scanCall, scanPreviewResponse, renderScanCapture, …(+70) |
 
 ## config.js — 697 lines, 0 chapters
 
