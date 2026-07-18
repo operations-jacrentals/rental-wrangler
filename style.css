@@ -1629,6 +1629,17 @@ select.lf-in { appearance: none; cursor: pointer; }
 .cp-bub.me { background: var(--bub-me); border-color: var(--bub-me); color: var(--on-bub-me); border-radius: 16px; border-bottom-right-radius: 5px; }
 .cp-bub.failed { border-color: var(--red); box-shadow: 0 0 0 1px color-mix(in srgb, var(--red) 45%, transparent); }
 .cp-meta { font-size: 0.5588rem; color: var(--txt-3); padding: 0 4px; }
+/* Instant-open hydrate (Jac 2026-07-18): opening a Texts/Email thread paints the last message the
+   moment the window opens (from the thread rollup) while the full history loads in behind it — the
+   thread feels instant, like Messenger. The preview bubble sits a touch dimmer than a settled
+   message; the stamped divider reads as "catching the rest up", steel-line, no extra orange. */
+.cp-preview { opacity: .74; }
+.cp-hydrate { align-self: center; display: flex; align-items: center; gap: 7px; margin: 3px 0 5px;
+  font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.6px;
+  font-weight: 700; font-size: 0.5588rem; color: var(--txt-3); white-space: nowrap; }
+.cp-hydrate::before, .cp-hydrate::after { content: ''; height: 1px; width: 20px; background: var(--line); }
+@media (prefers-reduced-motion: no-preference) { .cp-hydrate { animation: cpHydratePulse 1.15s ease-in-out infinite; } }
+@keyframes cpHydratePulse { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
 /* D7 FROM picker chip — email only, >1 connected alias */
 .cp-fromrow { padding: 7px 10px 0; border-top: 1px solid var(--line); flex: 0 0 auto; }
 .cp-from { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 3px 9px; border-radius: 999px; border: 1px dashed var(--line); background: var(--bg-2); color: var(--txt-2); font-size: 0.6471rem; overflow: hidden; }
