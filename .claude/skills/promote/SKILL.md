@@ -39,13 +39,16 @@ order** and only then promote:
 1. **Is the thing Jac wants live actually merged to trunk?** If it's still on a feature branch
    (not on trunk), **run `/merge` first** — and `/merge` itself runs `/deploy` if the feature
    was never deployed/reviewed. Do NOT promote work that isn't on trunk.
-2. **Is staging fresh? (content-verified)** `promote.mjs` refuses to promote unless a live
-   staging slot serves the trunk commit's **actual bytes** — a SHA-256 content hash over the
-   files the `?v=` token versions (`app.js`/`style.css`/`rule-usage.js`), not merely a matching
+2. **Is staging fresh? (content-verified)** `promote.mjs` refuses to promote unless staging serves
+   the trunk commit's **actual bytes** — a SHA-256 content hash over the files the `?v=` token
+   versions (`app.js`/`style.css`/`rule-usage.js`), checked against **either** the newest **deck
+   folder** (`d/<id>/` — the default path) **or** a live slot (`--slots`), not merely a matching
    `?v=` token (which is hand-bumped and can COLLIDE — a different deploy reaching the same `?v=`
    looks "fresh" on the token alone). The token is only a pre-filter; the hash is the authority.
-   The preview line reads ✅ *content verified* / 🔴 *TOKEN COLLISION* (right token, wrong bytes →
-   re-deploy) / 🔴 *no slot serves trunk's bytes*. `--slot N` pins a slot (still hash-checked).
+   The preview line reads ✅ *deck deploy `<id>` serves trunk's bytes (content verified)* / ✅
+   *content verified* (slot) / 🔴 *TOKEN COLLISION* (right token, wrong bytes → re-deploy) / 🔴 *no
+   deck deploy or slot serves trunk's bytes*. `--slot N` pins that one slot specifically (still
+   hash-checked) — pass it only when you need the slot path checked instead of the deck.
    If the work went `/deploy → /merge` in order, staging already matches (the feature deploy IS
    what got merged). If it's behind/collided, deploy the trunk commit to staging first — don't
    reach for the override blindly.
@@ -62,12 +65,13 @@ order** and only then promote:
    push of `production`, then **verifies the LIVE site serves the new `?v=`** (`app.js` → HTTP
    200). Report the ✅ line. If Pages lags, re-check in ~1 min:
    `curl -s https://app.jacrentals.com/index.html | grep 'app.js?v='`.
-4. **Belt-and-suspenders slot release** (after the live-bytes ✅):
+4. **Belt-and-suspenders slot release** (after the live-bytes ✅, `--slots` only):
    `node tools/staging-lease.mjs release --branch <b>` for the promoted feature's branch — `/merge`
    should already have freed the slot, so this is just a sweep in case the merge's release was
    skipped or missed. **Soft only:** a failure or an already-free slot is a no-op — never let it
    block or unwind a completed promote. `promote.mjs` itself stays credential-free; this is a
-   separate `staging-lease.mjs` call.
+   separate `staging-lease.mjs` call. Nothing to release when the work went through the default
+   deck path — deck deploys are ephemeral, pruned by retention, and never "held".
 
 ## Hard rules
 - **Only on Jac's explicit "promote it".** Never promote proactively.

@@ -52,36 +52,43 @@ touches only. If a glance reads "western" before "industrial rental yard," dial 
 is the integrated trunk branch but **NOT live**; Pages serves the separate **`production`**
 release-pointer branch — a merge to `trunk` no longer goes live. Both gates run on Jac's
 say-so:
-- **`/deploy`** (`tools/deploy-staging.mjs`) — push the feature branch's site files to the
-  staging repo (`operations-jacrentals/rental-wrangler-staging`, its own Pages branch
-  `main`); review the running app at the staging URL. It bumps the shared `?v=` and
-  curl-verifies the live bytes. A failed/unverified deploy is a **HARD STOP** — staging
-  must never fall behind. (`STAGING_DEPLOY_PAT` authenticates the push — never echo it.)
-  - **Staging traffic control** (`tools/staging-lease.mjs`, N=3 — three parallel lanes): staging is
-    a pool of three slots guarded by a git-native lease — `control.json` on the non-served
-    `staging-control` branch of the staging repo. Each slot is its OWN Pages site/URL (slot 1 =
-    `rental-wrangler-staging`, slots 2/3 = `…-staging-2`/`-3`); a deploy pushes to the ACQUIRED
-    slot's repo and reviews THAT slot's URL (the one `/deploy` prints), never a fixed one. `/deploy`
-    acquires a slot before pushing; a fourth concurrent session auto-queues and deploys when a slot
-    frees. (Re-seed the pool with `staging-lease reset --slots N` — a force-push, staging-idle only.)
-    **The 30-min holder TTL is the review budget** — a holder does no
-    work during Jac's review, so a review that outruns 30 min must re-run `/deploy` (idempotent —
-    it renews the same slot in place) to refresh the lease. **`/deploy` exit 3 = staging BUSY, not
-    broken** — contention, not a bad PAT: report the holder + ETA and re-run `/deploy`, never
-    rotate the token. `/merge` releases the slot **by branch** (soft — TTL is the backstop); a
-    `not-held` at that point means the review outran the TTL → re-`/deploy` before `/promote`.
-    `reset --force` is a **loud, stop-the-world manual-recovery op** — it can drop a concurrent
-    acquire and wipe an in-flight holder (whose next `renew` then returns `not-held`); use only to
-    unwedge a corrupt/stuck `control.json`. The advisory marker `.staging-lease.json` is
-    diagnostic-only and gitignored.
+- **`/deploy`** (`tools/deploy-staging.mjs`) — publish the feature branch's site files to the
+  staging repo (`operations-jacrentals/rental-wrangler-staging`, Pages branch `main`); review
+  the running app at the URL `/deploy` prints. A failed/unverified deploy is a **HARD STOP** —
+  staging must never fall behind. (`STAGING_DEPLOY_PAT` authenticates the push — never echo it.)
+  - **Staging Deck** — the **default** (2026-07-18; `tools/lib/staging-deck.mjs` core,
+    `ci/deck-test.mjs`). A deploy writes the site to an **immutable numbered folder** `d/<feature>-<n>/`
+    (feature = branch slug, n = per-feature sequence), rewrites the served manifest `d/deploys.json`
+    (newest-20, older folders pruned), and updates the `/d/` launcher — **all in one commit** with a
+    push-race **CAS-retry** loop. It prints a **deploy id** (e.g. `work-queue-92oeso-3`) and takes an
+    optional **`--label "<text>"`** (defaults to the HEAD commit subject) so Jac can tell deploys apart.
+    **No lease is acquired** — immutable paths mean nothing to arbitrate, so concurrent sessions never
+    contend. **`?v=` is NOT bumped** in deck mode — the unique folder path *is* the cache guarantee.
+    Verify: `/deploy` curl-checks the folder URL serves the expected app token. Two entry points for
+    Jac: the **stable launcher** `…/rental-wrangler-staging/d/` (bookmark once — always redirects to
+    the newest deploy, never goes stale), and a **dev-gated in-app `Staging ▾` switcher** (bottom-right
+    on staging builds) that lists recent deploys by label and jumps between them — Claude just names
+    the id/label to open.
+  - **Slot pool (`--slots`) — the BACKUP path** (`tools/staging-lease.mjs`, N=3 — three parallel
+    lanes; `lease-*` CI suites). `node tools/deploy-staging.mjs --slots` falls back to the old
+    lease-arbitrated pool of three slots guarded by `control.json` on the non-served
+    `staging-control` branch. Each slot is its OWN Pages site/URL (slot 1 = `rental-wrangler-staging`,
+    slots 2/3 = `…-staging-2`/`-3`); it bumps the shared `?v=`, acquires a slot before pushing, reviews
+    THAT slot's URL, and a fourth concurrent session auto-queues. **30-min holder TTL is the review
+    budget** — outrun it → re-run `/deploy --slots` (idempotent renew). **`--slots` exit 3 = staging
+    BUSY, not broken** — report the holder + ETA and re-run, never rotate the token. `/merge` releases
+    the slot **by branch** (soft — TTL is the backstop); a `not-held` means the review outran the TTL →
+    re-`/deploy --slots` before `/promote`. `reset --slots N` re-seeds the pool (force-push, idle only);
+    `reset --force` is a **loud, stop-the-world recovery op** — use only to unwedge a corrupt
+    `control.json`. The advisory marker `.staging-lease.json` is diagnostic-only and gitignored.
 - **Gate 1 `/merge`** — feature branch → PR → `smoke` CI → squash-merge to `trunk`
   (integrated, still not live). `trunk` is **branch-protected**; **NEVER** `git push origin
   HEAD:trunk` (or `HEAD:production`) directly — it's rejected.
 - **Gate 2 `/promote`** — `node tools/promote.mjs` (bare = read-only preview; `--yes` to
   run) fast-forwards `production` to the approved `trunk` commit → app.jacrentals.com goes
-  live. Fast-forward-only; verifies the live `?v=` after; refuses unless a staging slot serves
-  trunk's **actual bytes** (a **content hash** over `app.js`/`style.css`/`rule-usage.js`, not just
-  a collision-prone `?v=` token — `--slot N` pins a slot). **The
+  live. Fast-forward-only; verifies the live `?v=` after; refuses unless staging serves trunk's
+  **actual bytes** — a **content hash** over `app.js`/`style.css`/`rule-usage.js` matched against
+  the **newest deck folder** (default) or a slot (backup); `--slot N` pins a slot. **The
   only step that changes the live site — always Jac's explicit call.**
 - **`/live`** — one word runs `/deploy → /merge → /promote` end to end and takes the feature
   branch all the way live. Runs straight through (Jac: don't stop unless there's something to
