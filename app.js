@@ -25995,15 +25995,20 @@ function mountEnvFavicon() {
 // know which app — and WHICH staging slot — you're testing. The staging pool serves the SAME
 // files, so the slot number + color is the only tell.
 function mountEnvBadge() {
-  if (APP_ENV === 'production' || document.getElementById('env-badge')) return;
+  if (APP_ENV === 'production' || document.getElementById('env-edge')) return;
   const slotCls = ' env-' + APP_ENV + (APP_SLOT ? ' env-slot-' + APP_SLOT : '');
-  const b = document.createElement('div');
-  b.id = 'env-badge';
-  b.className = 'env-badge' + slotCls;
-  b.innerHTML = '<span>' + (APP_ENV === 'local' ? 'LOCAL' : 'STAGING') + '</span>'
-    + (APP_SLOT ? '<span class="env-badge-num">' + APP_SLOT + '</span>' : '');
-  b.setAttribute('aria-hidden', 'true');
-  document.body.appendChild(b);
+  // On the staging deck host the bottom-left "Staging ▾" switcher IS the env indicator, so skip
+  // the redundant STAGING badge pill there (Jac 2026-07-18). Keep it for LOCAL + the slot-2/3
+  // backup paths (no switcher there), and keep the top edge bar + favicon everywhere non-prod.
+  if (!isStagingHost()) {
+    const b = document.createElement('div');
+    b.id = 'env-badge';
+    b.className = 'env-badge' + slotCls;
+    b.innerHTML = '<span>' + (APP_ENV === 'local' ? 'LOCAL' : 'STAGING') + '</span>'
+      + (APP_SLOT ? '<span class="env-badge-num">' + APP_SLOT + '</span>' : '');
+    b.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(b);
+  }
   const edge = document.createElement('div');
   edge.id = 'env-edge';
   edge.className = 'env-edge' + slotCls;
