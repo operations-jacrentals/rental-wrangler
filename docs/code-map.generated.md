@@ -4,7 +4,7 @@
 
 # Code Atlas — generated chapter index (Part I · The Frontend)
 
-## app.js — 27174 lines, 41 chapters
+## app.js — 27236 lines, 41 chapters
 
 | ID | Lines | Anchors | Chapter title | Key symbols |
 |----|------:|---------|---------------|-------------|
@@ -35,20 +35,20 @@
 | APP-25 | 12872–14526 | §12 | §12 OVERLAYS & BOARDS — renderOverlay kinds + back-office board popups | _ovScroll, _popDrag, wirePopupDrag, backGuard, swipeFired, anyDismissable, dismissTopSheet, syncBackGuard, renderOverlay, buildPopupEl, openOverlay |
 | APP-26 | 14527–14871 | — | RB-WINDOWS catalog (Jac 2026-06-22) — the admin Rulebook's index of | WINDOW_CATALOG, previewOverlayFor, STANDALONE_SURFACES, feedbackContext, sendFeedback, CB_BLOCK_LABEL, CB_REASON_LABEL, crewBroadcastEmps, RR_STAR_TIP, rrBand, RR_BAND_LABEL, notifRatingTemplate, …(+12) |
 | APP-27 | 14872–15356 | §18 | §18 MR. WRANGLER — the in-app AI (Claude via the Apps Script backend). | WRANGLER_SYSTEM, wranglerDigest, wrIssueIndex, wranglerContext, WR_DEDUP_NOTE, wranglerAttachAny, wranglerAttachFile, parseCsvFile, wranglerAttachTextFile, wranglerImageBlock, wranglerErrMsg, WR_TOOL_LIMIT, …(+11) |
-| APP-28 | 15357–16553 | — | Mr. Wrangler ACTS on your data (Jac 2026-06-16) | WR_FUNNEL, wrFunnel, WR_ACCT, wrAccount, WR_EDITABLE, WR_REQUIRED, WR_NUMERIC, WR_MONEY_FIELDS, wrPlanNeedsApply, WR_IDX, wrGet, wrNorm, …(+112) |
-| APP-29 | 16554–16903 | §13 | §13 DROPDOWNS — openDropdown + status/fleet/funnel/sort menus | GTI, GATE_ICON, GATE_TL, GTCHK, gateTimeline, openDropdown, openStatusDropdown, openFleetDropdown, setUnitFleet, openReconcileDropdown, setExpenseReconcile, funnelMenuChip, …(+23) |
-| APP-30 | 16904–17253 | §14 | §14 RENDER PIPELINE + toast | renderCount, scrollMemo, render, renderResults, scheduleCardListRender, renderCardList, mirrorGlobeBars, _titlesRaf, applyTitles, HOVER_CAPABLE, initTooltip, hideTip, …(+8) |
-| APP-31 | 17254–17257 | §15 | §15 EVENT HANDLERS — onClick/onInput/onChange (single listener tree) | — |
-| APP-32 | 17258–19735 | §15c | §15c DRAG & DROP LINK ENGINE (DRAGDROP-DESIGN.md) — custom pointer engine. | DRAG, DRAG_SOURCES, INV_LINEABLE, dragLayer, DROP_MATRIX, woDroppableToInvoice, invoiceUnitIds, LINK_TARGET_LABEL, linkRoleAllows, linkActionPossible, linkActionsFor, enterLinking, …(+63) |
-| APP-33 | 19736–21039 | §16 | §16 ACTIONS / MUTATIONS — every state change funnels through here | setUnitCondition, openInspectionRecord, pendingInspForUnit, openChecklist, completeChecklist, washBtn, cycleUnitWash, uncompleteWash, setUnitWash, sellUnit, captureUnit, setUnitCapture, …(+52) |
-| APP-34 | 21040–22573 | §17 | §17 STRIPE / PAYMENTS — card-on-file + invoice charging (client side). | _stripe, _pubKey, ensurePubKey, getStripe, canMoney, brandName, hasCardOnFile, commitAction, cardOneLabel, cardLabel, friendlyPayErr, openAddCard, …(+97) |
-| APP-35 | 22574–23056 | §5.4d | §5.4d — DATE SEARCH PICKER. A standalone calendar that REUSES the rental | openDateSearch, closeDateSearch, dsMonth, dsToday, dsClear, dsPickDay, dsDone, dateSearchEl, positionDateSearch, setInspWash, setInspResult, recordServiceCompletion, …(+21) |
-| APP-36 | 23057–23059 | §18 | §18 PERSISTENCE & BOOT | — |
-| APP-37 | 23060–24284 | §18b | §18b BACKEND SYNC — Google Sheets via the Apps Script web app | BACKEND_URL, PERSIST_KEYS, backendPassword, booting, saveTimer, driveViewUrl, backendCall, gpsToken, gpsBase, gpsConfigured, _gpsReloginInflight, gpsRelogin, …(+85) |
-| APP-38 | 24285–25424 | — | INSTANT CACHE — on-device data snapshot (spec 2026-07-16) | DC_DB, CACHE_SCHEMA_VER, _dcDbPromise, dcDbOpen, dcTx, dataCache, cacheAppVer, pidLocalToken, cacheTokenTag, cacheDeviceOk, cacheValid, cacheSnapshotEnvelope, …(+93) |
-| APP-39 | 25425–25431 | — | PHONE-VERIFIED DEVICE IDENTITY — login flow (Phase 2) | — |
-| APP-40 | 25432–25738 | — | const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', | pidUI, pidTokenGet, pidTokenSet, pidTokenClear, pidRosterCache, pidAdopt, pidLoadFail, pidEnter, renderBootSplash, phoneBoot, pidErr, pidCall, …(+14) |
-| APP-41 | 25739–27174 | — | SCAN-TO-LOG (QR DECAL → VIDEO) — standalone capture (FEATURES.qrScanLog) | pendingScan, scanActive, scanUI, scanEnabled, scanPreviewOn, scanTokenGet, scanTokenSet, scanTokenClear, maybeReplayScan, scanCall, scanPreviewResponse, renderScanCapture, …(+70) |
+| APP-28 | 15357–16613 | — | Mr. Wrangler ACTS on your data (Jac 2026-06-16) | WR_FUNNEL, wrFunnel, WR_ACCT, wrAccount, WR_EDITABLE, WR_REQUIRED, WR_NUMERIC, WR_MONEY_FIELDS, wrPlanNeedsApply, WR_IDX, wrGet, wrNorm, …(+116) |
+| APP-29 | 16614–16963 | §13 | §13 DROPDOWNS — openDropdown + status/fleet/funnel/sort menus | GTI, GATE_ICON, GATE_TL, GTCHK, gateTimeline, openDropdown, openStatusDropdown, openFleetDropdown, setUnitFleet, openReconcileDropdown, setExpenseReconcile, funnelMenuChip, …(+23) |
+| APP-30 | 16964–17313 | §14 | §14 RENDER PIPELINE + toast | renderCount, scrollMemo, render, renderResults, scheduleCardListRender, renderCardList, mirrorGlobeBars, _titlesRaf, applyTitles, HOVER_CAPABLE, initTooltip, hideTip, …(+8) |
+| APP-31 | 17314–17317 | §15 | §15 EVENT HANDLERS — onClick/onInput/onChange (single listener tree) | — |
+| APP-32 | 17318–19797 | §15c | §15c DRAG & DROP LINK ENGINE (DRAGDROP-DESIGN.md) — custom pointer engine. | DRAG, DRAG_SOURCES, INV_LINEABLE, dragLayer, DROP_MATRIX, woDroppableToInvoice, invoiceUnitIds, LINK_TARGET_LABEL, linkRoleAllows, linkActionPossible, linkActionsFor, enterLinking, …(+63) |
+| APP-33 | 19798–21101 | §16 | §16 ACTIONS / MUTATIONS — every state change funnels through here | setUnitCondition, openInspectionRecord, pendingInspForUnit, openChecklist, completeChecklist, washBtn, cycleUnitWash, uncompleteWash, setUnitWash, sellUnit, captureUnit, setUnitCapture, …(+52) |
+| APP-34 | 21102–22635 | §17 | §17 STRIPE / PAYMENTS — card-on-file + invoice charging (client side). | _stripe, _pubKey, ensurePubKey, getStripe, canMoney, brandName, hasCardOnFile, commitAction, cardOneLabel, cardLabel, friendlyPayErr, openAddCard, …(+97) |
+| APP-35 | 22636–23118 | §5.4d | §5.4d — DATE SEARCH PICKER. A standalone calendar that REUSES the rental | openDateSearch, closeDateSearch, dsMonth, dsToday, dsClear, dsPickDay, dsDone, dateSearchEl, positionDateSearch, setInspWash, setInspResult, recordServiceCompletion, …(+21) |
+| APP-36 | 23119–23121 | §18 | §18 PERSISTENCE & BOOT | — |
+| APP-37 | 23122–24346 | §18b | §18b BACKEND SYNC — Google Sheets via the Apps Script web app | BACKEND_URL, PERSIST_KEYS, backendPassword, booting, saveTimer, driveViewUrl, backendCall, gpsToken, gpsBase, gpsConfigured, _gpsReloginInflight, gpsRelogin, …(+85) |
+| APP-38 | 24347–25486 | — | INSTANT CACHE — on-device data snapshot (spec 2026-07-16) | DC_DB, CACHE_SCHEMA_VER, _dcDbPromise, dcDbOpen, dcTx, dataCache, cacheAppVer, pidLocalToken, cacheTokenTag, cacheDeviceOk, cacheValid, cacheSnapshotEnvelope, …(+93) |
+| APP-39 | 25487–25493 | — | PHONE-VERIFIED DEVICE IDENTITY — login flow (Phase 2) | — |
+| APP-40 | 25494–25800 | — | const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', | pidUI, pidTokenGet, pidTokenSet, pidTokenClear, pidRosterCache, pidAdopt, pidLoadFail, pidEnter, renderBootSplash, phoneBoot, pidErr, pidCall, …(+14) |
+| APP-41 | 25801–27236 | — | SCAN-TO-LOG (QR DECAL → VIDEO) — standalone capture (FEATURES.qrScanLog) | pendingScan, scanActive, scanUI, scanEnabled, scanPreviewOn, scanTokenGet, scanTokenSet, scanTokenClear, maybeReplayScan, scanCall, scanPreviewResponse, renderScanCapture, …(+70) |
 
 ## config.js — 697 lines, 0 chapters
 

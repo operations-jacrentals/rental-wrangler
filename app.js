@@ -16302,6 +16302,66 @@ function openSignatureWindow(title, custId) {
       fit();})();<\/script></body></html>`);
   w.document.close();
 }
+/* Mobile signature SHEET — the phone alternative to openSignatureWindow. A phone has one
+   screen, so "pop out to a 2nd screen" is meaningless; the window rendered as a full tab
+   whose Clear/close controls fell off-screen (Jac: "no way to close"). Here the pad is an
+   in-app bottom sheet covering ~half the viewport that dismisses by tapping the blank space
+   above it (no ✕). Strokes save on every pen-rest (mirroring onSigMessage's targets) so a
+   tap-away keeps the signature. Lives on document.body so a render()/renderOverlay() behind
+   it can't wipe it mid-signing. */
+let _sigSheet = null;
+function teardownSigSheet() {
+  if (!_sigSheet) return null;
+  const ref = _sigSheet; _sigSheet = null;
+  try { ref.backdrop.remove(); ref.sheet.remove(); } catch (e) {}
+  document.body.classList.remove('sig-sheet-open');
+  document.removeEventListener('keydown', ref.onKey, true);
+  return ref;
+}
+function closeMobileSignSheet() {
+  const ref = teardownSigSheet(); if (!ref) return;
+  if (ref.overlay && state.overlay) renderOverlay();   // reflect the saved signature on the packet behind
+  else if (ref.custId) render();
+}
+function openMobileSignSheet(title, custId) {
+  teardownSigSheet();                                  // never stack two
+  const o = state.overlay || null;
+  const c = custId ? IDX.customer.get(custId) : null;
+  const t = esc(title || 'Rental Account Agreement');
+  const backdrop = el('div', 'sig-sheet-backdrop');
+  const sheet = el('div', 'sig-sheet',
+    `<div class="sig-sheet-grip" aria-hidden="true"></div>
+     <div class="sig-sheet-cap">Sign here — <b>${t}</b></div>
+     <canvas class="sig-sheet-pad"></canvas>
+     <div class="sig-sheet-foot">${ghostPill('Clear', { js: 'js-sig-sheet-clear' })}</div>`);
+  document.body.appendChild(backdrop); document.body.appendChild(sheet);
+  document.body.classList.add('sig-sheet-open');
+  const cv = sheet.querySelector('.sig-sheet-pad'), ctx = cv.getContext('2d');
+  const ink = (getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#ff7a1a').trim();
+  const fit = () => { const r = cv.getBoundingClientRect(); cv.width = Math.round(r.width); cv.height = Math.round(r.height);
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); ctx.strokeStyle = ink; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; };
+  // re-apply a signature already captured (re-open) so it isn't lost — same source as setupSignaturePad
+  let cur = '';
+  if (o) { const cc = captureCtx(o); cur = cc.k ? ((cardDraftSig(cc.k) || {}).signature || '') : ((cc.c && cc.c.pendingCapture && cc.c.pendingCapture.signature) || ''); }
+  else if (c) { cur = agDraft(c).signature || ''; }
+  requestAnimationFrame(() => { fit(); if (cur) { const im = new Image(); im.onload = () => { ctx.drawImage(im, 0, 0, cv.width, cv.height); cv.dataset.drawn = '1'; }; im.src = cur; } });
+  const save = () => { const dataURL = cv.toDataURL('image/jpeg', 0.8);
+    if (o) { captureSignature(o, dataURL); scheduleFinalizeSign(o); } else if (c) { agDraft(c).signature = dataURL; } };
+  let drawing = false, last = null;
+  const pos = (e) => { const b = cv.getBoundingClientRect(); return { x: (e.clientX - b.left) * (cv.width / b.width), y: (e.clientY - b.top) * (cv.height / b.height) }; };
+  cv.addEventListener('pointerdown', (e) => { e.preventDefault(); drawing = true; last = pos(e); cv.dataset.drawn = '1'; try { cv.setPointerCapture(e.pointerId); } catch (_) {} });
+  cv.addEventListener('pointermove', (e) => { if (!drawing) return; e.preventDefault(); const p = pos(e);
+    ctx.lineWidth = (e.pointerType === 'pen' && e.pressure > 0) ? (1.4 + e.pressure * 2.6) : 2.4; ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last = p; });
+  const up = () => { if (drawing) { drawing = false; save(); } };
+  cv.addEventListener('pointerup', up); cv.addEventListener('pointerleave', up);
+  sheet.querySelector('.js-sig-sheet-clear').addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation();
+    fit(); cv.dataset.drawn = ''; if (o) clearCaptureSignature(o); else if (c) agDraft(c).signature = ''; haptic(10); });
+  sheet.addEventListener('pointerdown', (e) => e.stopPropagation());   // taps ON the sheet never reach the app behind (only the backdrop closes)
+  backdrop.addEventListener('pointerdown', (e) => { e.preventDefault(); closeMobileSignSheet(); });   // tap the blank space above = dismiss (no ✕)
+  const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeMobileSignSheet(); } };
+  document.addEventListener('keydown', onKey, true);
+  _sigSheet = { backdrop, sheet, overlay: o, custId: custId || null, onKey };
+}
 // Wire the signature canvas for finger/stylus/mouse/pen drawing (white bg → JPEG export).
 function setupSignaturePad() {
   // Wire EVERY pad in the overlay (the capture can ride the card signing tab and/or
@@ -16326,7 +16386,7 @@ function setupSignaturePad() {
     cv.addEventListener('pointerleave', stash);
   });
 }
-const closeOverlay = () => { destroyCardElement(); stopAgCam(); try { if (_sigWin && !_sigWin.closed) _sigWin.close(); } catch (e) {} _sigWin = null; clearTimeout(_gpsPollTimer); state.datepick = null; state.overlay = null; renderOverlay(); };
+const closeOverlay = () => { destroyCardElement(); stopAgCam(); teardownSigSheet(); try { if (_sigWin && !_sigWin.closed) _sigWin.close(); } catch (e) {} _sigWin = null; clearTimeout(_gpsPollTimer); state.datepick = null; state.overlay = null; renderOverlay(); };
 
 /* ── Back-office boards (§7.9–7.12): spreadsheet-style tables ─────────────── */
 function vendorTotals(vendorId) {
@@ -18151,7 +18211,9 @@ function onClick(e) {
   if (closest('.js-ncsign-pdf')) { e.stopPropagation(); const b = closest('.js-ncsign-pdf'); return openSignedPdf(state.overlay.editId, b.dataset.card, b.dataset.sig); }
   if (closest('.js-nc-selfie-clear')) { e.stopPropagation(); ncSyncInputs(); state.overlay.draft.selfie = ''; renderOverlay(); return; }
   if (closest('.js-nc-sig-clearpad')) { e.stopPropagation(); const o = state.overlay; if (o) clearCaptureSignature(o); const cv = document.querySelector('.overlay .nc-sigpad'); if (cv) { const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); cv.dataset.drawn = ''; } return; }
-  if (closest('.js-sign-popout')) { e.preventDefault(); e.stopPropagation(); const b = closest('.js-sign-popout'); openSignatureWindow(b.dataset.title, b.dataset.rec || null); return; }
+  if (closest('.js-sign-popout')) { e.preventDefault(); e.stopPropagation(); const b = closest('.js-sign-popout');
+    if (document.body.classList.contains('is-phone')) openMobileSignSheet(b.dataset.title, b.dataset.rec || null);   // §M — phone: in-app half-height sheet, not a 2nd-screen window
+    else openSignatureWindow(b.dataset.title, b.dataset.rec || null); return; }
   if (closest('.js-ag-selfie')) {   // selfie tile: one-tap snap off the live feed; Retake clears it; no camera → native picker
     const o = state.overlay; if (!o) return;
     const tile = closest('.js-ag-selfie');
@@ -26415,7 +26477,7 @@ function exposeTestApi() {
       adoptScanCaptures, setScanCaps: (m) => { SCAN_CAPS = m || {}; },   // §scan-reconcile — test seam: seed SCAN_CAPS then run adoption (logic-test)
       autoRunRepair, autoRunAnchorsFor, secToClock, AUTORUN_DAY_START_SEC, AUTORUN_EOD_DEADLINE_SEC, AUTORUN_LOAD_BUFFER_SEC, dispatchPinOf,
       openCustomerForm, renderOverlay, render, printInvoice, invoiceDocHtml, renderInvoicePng, invoiceSheetPng, invoicePrintGroups, invoiceAmendments, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature,
-      wranglerSend, wranglerNewChat, openWranglerDock, wranglerDockPollTick, devUnlocked, openWranglerOps, wrOpsAgo, __state: state };   // UI drivers for headless screenshot/e2e tests
+      wranglerSend, wranglerNewChat, openWranglerDock, wranglerDockPollTick, devUnlocked, openWranglerOps, wrOpsAgo, openMobileSignSheet, closeMobileSignSheet, agDraft, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }
 }
