@@ -12935,8 +12935,9 @@ function wirePopupDrag(overlay) {
    stack stays balanced. Phone-only — desktop keeps Esc/click. Wired in boot(). ── */
 let backGuard = false, backConsuming = false;
 let swipeFired = false;   // §M1/§M3 — a footer or grid section-switch swipe sets this so the trailing click is swallowed once
-function anyDismissable() { return !!(state.overlay || state.datesearch || state.chat.open || state.wrangler.open || (document.body.classList.contains('is-phone') && state.commsRail.cat)); }
+function anyDismissable() { return !!(_sigSheet || state.overlay || state.datesearch || state.chat.open || state.wrangler.open || (document.body.classList.contains('is-phone') && state.commsRail.cat)); }
 function dismissTopSheet() {
+  if (_sigSheet) { closeMobileSignSheet(); return true; }   // §M — the signature sheet is the topmost surface: back/Esc closes it FIRST, not the overlay behind it
   if (state.datesearch) { closeDateSearch(); return true; }
   if (overlayLocked()) { attnFlash('.rr-stars'); toast('Rate the return first — it can’t be skipped.'); return true; }   // required modal: refuse Esc/back
   if (state.overlay) { closeOverlay(); return true; }
@@ -16347,8 +16348,9 @@ function teardownSigSheet() {
 }
 function closeMobileSignSheet() {
   const ref = teardownSigSheet(); if (!ref) return;
-  if (ref.overlay && state.overlay) renderOverlay();   // reflect the saved signature on the packet behind
+  if (ref.overlay && state.overlay) renderOverlay();   // reflect the saved signature on the packet behind (also re-syncs the back-guard)
   else if (ref.custId) render();
+  else syncBackGuard();   // targetless sheet has no re-render path — still balance the back-guard entry
 }
 function openMobileSignSheet(title, custId) {
   teardownSigSheet();                                  // never stack two
@@ -16388,6 +16390,7 @@ function openMobileSignSheet(title, custId) {
   const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeMobileSignSheet(); } };
   document.addEventListener('keydown', onKey, true);
   _sigSheet = { backdrop, sheet, overlay: o, custId: custId || null, onKey };
+  syncBackGuard();   // §M3 — join the Android hardware-back chain so back closes the sheet (openMobileSignSheet doesn't render(), so push the guard entry here)
 }
 // Wire the signature canvas for finger/stylus/mouse/pen drawing (white bg → JPEG export).
 function setupSignaturePad() {
