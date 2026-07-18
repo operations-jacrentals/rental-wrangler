@@ -98,11 +98,15 @@ identical to production (`?vXXXX`)" — and that guarantee is what lets every fi
 real production claim. If they *differ*, either audit `origin/production`'s bytes directly, or
 scope the audit to the working tree and state the caveat loudly.
 
-**Why not just drive the live site?** From a cloud session you can't: headless Chromium can't reach
-`github.io` through the agent proxy, and the live login is SMS-gated (per-person `phoneIdentity`).
-So a **source-grounded cognitive walkthrough is the faithful substitute**, not a downgrade — you're
-reading the exact code that renders the screen. If Jac wants a *live* drive too, that needs his
-connected Claude-in-Chrome (his real browser); offer it, don't fake it.
+**Want to also drive it live?** The **source-grounded cognitive walkthrough is the backbone** —
+fast, PII-free, and faithful to production's exact bytes (you're reading the code that renders the
+screen). A live drive is a strong complement to *confirm* findings, and it's available in **either
+seat** — use **/run-live** (its Step 0 picks the seat): locally you drive real production in the
+browser (the most faithful); in a **cloud** session its Node-fetch relay shim renders the real app
+on real records headlessly (read-only) — so "cloud can't reach the backend" is no longer true, the
+browser just needs the shim. (The live login is SMS-gated, which is why the dev-login/shim is how a
+headless drive signs in without a phone.) Keep real customer data OUT of the artifact/report — demo
+data for anything that ships, real data only for confirmation screenshots to Jac.
 
 Use the Code Atlas (`docs/CODE-MAP.md`, `grep APP-NN`) to find the surface's builders, rows,
 columns, detail renderer, actions, flags, and comms — hand those anchors to the lens-agents so they
@@ -187,8 +191,9 @@ from the accent) and re-author only the body for this audit. Structure:
 1. **Riveted masthead** — "The <surface>, as <persona> sees it" + the faithfulness/verification chips.
 2. **Persona ID badge** — the character + the 3 things they need.
 3. **The centerpiece: "As it ships" vs "Should-be"** — a *faithful mock* of the real card (built
-   from the code, since you can't screenshot the SMS-gated live app), problems pinned with numbered
-   markers, and the same data re-stacked to fix them beside it. Tie problem→fix by number.
+   from the code — you *can* screenshot the live app via /run-live, but keep real customer records
+   OUT of a shareable artifact, so reconstruct rather than paste a live capture), problems pinned
+   with numbered markers, and the same data re-stacked to fix them beside it. Tie problem→fix by number.
 4. **Report card** — findings grouped by the persona's questions, severity-tagged, cited. Mark
    verify verdicts (✓ confirmed / ≈ partial / �added-by-critic).
 5. **"The silent yard" placard** — the missing alerts/comms/team.
@@ -198,8 +203,8 @@ Redeploy the **same file path** to update the same artifact URL as verification 
 a new one.
 
 **Honesty rails (non-negotiable):**
-- The card mock is a **reconstruction, not a screenshot** — say so; the live login can't be driven
-  from here.
+- The card mock is a **reconstruction, not a screenshot** — say so. (You *can* drive the live app
+  via /run-live, but a shareable artifact must never carry real customer records — reconstruct.)
 - **Illustrative names only.** The live DB holds real customer PII — never render, commit, or paste
   a real record into the artifact, the repo, or the summary. Keep specific app-weakness findings in
   the (private) artifact + chat, **not** in committed skill/repo files (this repo is public).
