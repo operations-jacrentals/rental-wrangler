@@ -828,10 +828,11 @@ select.lf-in { appearance: none; cursor: pointer; }
 .disp-arrow-hit { pointer-events: stroke; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .js-disp-arrowpt { transition: none; } .js-disp-arrowpt.armed { transform: none; } }
 /* ── §2.1 TRIPS LIVE-MAP PANEL — the map singleton in a collapsible ~260px band at the
-   top of the card body; the trip list scrolls beneath it, the footer stays pinned. ──── */
-.card-body.cal-body { overflow: hidden; }                                  /* panel + footer pin; the list scrolls between them */
-.cal-body > .list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-.cal-body > .list > * { flex: 0 0 auto; }                                  /* rows keep natural height — a height-constrained flex column would compress them before scrolling */
+   top of the .cal-scroll region; the map scrolls WITH the trip list (Jac 2026-07-18), and
+   the listbar (sticky) + footer stay pinned as the card's chrome. ──────────────────────── */
+.card-body.cal-body { overflow: hidden; }                                  /* listbar (sticky) + footer pin; the map+rows scroll region rides between them */
+.cal-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }   /* ONE scroll region: the live map scrolls WITH the trip rows (Jac 2026-07-18), not frozen above them */
+.cal-scroll > * { flex: 0 0 auto; }                                        /* map + rows keep natural height — a height-constrained flex column would compress them before scrolling */
 .trips-map { position: relative; height: 260px; flex: 0 0 auto; border-bottom: 1px solid var(--line); }
 .dispm { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }   /* the map fills the panel; flex centers the pre-mount loading tag (the mounted map's own nodes are absolute, unaffected) */
 .trips-map .map-tag { position: static; max-width: 82%; text-align: center; line-height: 1.4; }

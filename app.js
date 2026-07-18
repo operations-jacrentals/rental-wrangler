@@ -9541,6 +9541,10 @@ function calendarCardEl(session) {
     <input class="mini-search" placeholder="Search trips…" value="${esc(state.calSearch || '')}" data-card="calendar" />
   </div>`;
   body.appendChild(bar);
+  // §scroll (Jac 2026-07-18) — the map panel + trip rows share ONE scroll region so the live
+  // map scrolls WITH the run instead of sitting frozen while the rows slide under it. The
+  // listbar (sticky) and the sync footer stay pinned as chrome; only this middle region scrolls.
+  const scroll = el('div', 'cal-scroll');
   // §2.1 the live-map panel — open by default everywhere, remembered per device. The map
   // singleton mounts into .js-dispmount after render (mountDispatchMap, the render pipeline
   // already calls it). Offline (#local), or a failed Maps load → the stamped MAP OFFLINE
@@ -9557,7 +9561,7 @@ function calendarCardEl(session) {
     panel.innerHTML = live
       ? `<div class="dispm js-dispmount" data-day="${esc(state.dispatchDay || TODAY_ISO)}">${mapsReady() ? '' : '<span class="map-spin" aria-hidden="true"></span><span class="map-tag">Loading dispatch map…</span>'}</div>${gmaps}`
       : `<div class="trips-map-ph"><span class="map-pin" aria-hidden="true">${ICO_PIN}</span><span class="map-tag stamp" style="font-size:0.6471rem;color:var(--accent)">Map offline</span><span class="map-sub">The run below still drives the day.</span></div>${gmaps}`;
-    body.appendChild(panel);
+    scroll.appendChild(panel);
   }
   let trips = tripsFor();
   if (q) trips = trips.filter((t) => tripMatches(t, q));
@@ -9570,7 +9574,8 @@ function calendarCardEl(session) {
   } else {
     appendGroupedSections(list, trips, {}, 'calendar');
   }
-  body.appendChild(list);
+  scroll.appendChild(list);
+  body.appendChild(scroll);
   const foot = el('div', 'disp-foot');
   const sync = tripsSyncFooter();   // §2.3 Phase 4 — real sync state, replaces the Phase 1 static placeholder
   foot.innerHTML = `<span class="disp-offdot${sync.synced ? ' on' : ''}"></span><span class="disp-offline${sync.synced ? ' on' : ''}">${esc(sync.label)}</span>`;
