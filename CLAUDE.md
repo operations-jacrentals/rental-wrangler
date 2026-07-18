@@ -52,6 +52,12 @@ touches only. If a glance reads "western" before "industrial rental yard," dial 
 is the integrated trunk branch but **NOT live**; Pages serves the separate **`production`**
 release-pointer branch — a merge to `trunk` no longer goes live. Both gates run on Jac's
 say-so:
+- **`/build`** (before the gates) — build the currently-outlined feature all the way to
+  **deploy-ready** (gates green, committed & pushed on the feature branch) **without stalling**:
+  it builds everything buildable, writes & pushes backend code (deferring only the go-live editor
+  deploy), and **defers** — never guesses — anything that needs Jac or is a money/auth/PII/
+  WO-completion/irreversible call, handing them back in one batched report + popup. Stops one step
+  short of `/deploy`.
 - **`/deploy`** (`tools/deploy-staging.mjs`) — push the feature branch's site files to the
   staging repo (`operations-jacrentals/rental-wrangler-staging`, its own Pages branch
   `main`); review the running app at the staging URL. It bumps the shared `?v=` and
