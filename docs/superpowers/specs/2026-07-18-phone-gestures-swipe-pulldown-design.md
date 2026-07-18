@@ -143,6 +143,16 @@ list).
 
 ## C · Left-edge back (comms)
 
+> **Implementation update (2026-07-18, device review).** A *custom* edge-swipe
+> handler was built as below but fought iOS Safari's native edge-swipe (which
+> fires a browser `back`) — on device it went to the Home Screen **then** the
+> chat menu (double action + history over-pop). It was **removed**: the app
+> already traps the browser back-swipe via `syncBackGuard`'s pushed history
+> entry + the `popstate` handler → `dismissTopSheet` (thread→inbox→exit), which
+> **is** exactly iOS's native left-edge-swipe. So Feature C now rides that
+> existing guard — no custom gesture, no OS conflict. The C.2 design below is
+> retained for the record.
+
 ### C.1 Scope
 
 While a **comms** surface is open on phone (any type — Team · Customers · Mr.
