@@ -6,6 +6,22 @@
 > Keep it lean; the first ~200 lines are what a session actually leans on.
 
 ## Decisions
+- **2026-07-18 — Phone GESTURES SHIPPED LIVE + PROMOTED (PR #725, `?v=20260718h`).** Three phone-only
+  native-app gestures; **desktop byte-identical**. (A) **Swipe-toggle decks (new rule R36)** — the
+  customer funnel (Rental↔Equipment Sales), Invoices (Open·All·Transactions), and the comms Text/Email
+  sheet become nested horizontal scroll-snap "decks": all panes render side-by-side, the R14 toggle's
+  fill becomes a `.deck-thumb` that RIDES the scroll (positioned via **`left`** in `deckPaint`), the
+  active tab commits on SNAP with NO re-render (`deckCommit`), a tab tap smooth-scrolls. Helpers
+  `swipeSeg`/`swipeTrack`/`deckPaint`/`deckCommit` by `segCtl`. The **funnel slider is RYG** (the active
+  tab's `naDotClass` tone via `DECK_TONE`, light ink) NOT orange — the accent clashed with the funnel's
+  red/yellow/green system; comms/invoices keep orange. Nests in the 5-card rail (each scroll listener
+  class-filtered `.grid` vs `.swipe-track`; `overscroll-behavior:contain` on the track stops an edge
+  swipe chain-scrolling/flipping the card). (B) **Pull-down-to-close** full-pane sheets
+  (`initPhoneSheetGestures`, TOUCH events) → `closePhoneSheet`. (C) **Left-edge back** for comms rides
+  the EXISTING `syncBackGuard`/popstate → `dismissTopSheet` (NOT a custom gesture). Spec:
+  `docs/superpowers/specs/2026-07-18-phone-gestures-swipe-pulldown-design.md`. **Deferred:**
+  winpicker/datesearch pull-down; swipe on the GPS Round-up/Fleet-map/Utilization + Transport-Alerts
+  toggle-sections (Jac: keep the first cut to the three).
 - **2026-07-18 — Rail toggle-swap + WRAP-AROUND SHIPPED LIVE (PR #718, `?v=20260718f`).** Two §M8
   follow-ups: (1) the left toggle group now reads **Categories · Units** (was Units·Categories) in the
   mobile chip bar (`MOBILE_TOGGLE_GROUPS`) + desktop tabs (`config COLUMNS`), matching the rail's
@@ -209,6 +225,29 @@
   one line through single-column pan mode; the `<480px` query re-enables wrap for the mobile stack.
 
 ## Gotchas
+- **iOS Safari composites a `transform`/`will-change` element ABOVE a non-promoted sibling's text**
+  (2026-07-18, #725). A sliding toggle "thumb" moved via `transform: translateX` + `will-change` painted
+  OVER the button LABEL on iOS (invisible label) even though it sat at z-index:0 below the z-index:1
+  buttons — headless Chromium never promoted it, so it looked fine locally and only broke on device.
+  Fix: move such a behind-the-text overlay via **`left`** (no layer promotion → normal paint order). Rule
+  of thumb: don't park a transformed/will-change sibling BEHIND text you need painted on top.
+- **iOS pull/drag gestures need TOUCH events with `{passive:false}` — not pointer events** (2026-07-18,
+  #725). Pull-down-to-close on pointer events worked from a `touch-action:none` header but NOT from an
+  at-top scroller (iOS claimed the touch as a scroll and ignored `pointermove` `preventDefault`). Rebuilt
+  on `touchmove {passive:false}` so `preventDefault()` actually stops the native scroll/rubber-band when
+  `scrollTop<=0` → the at-top pull works. Header grab still relies on `touch-action:none`.
+- **Don't build a custom left-edge "back" gesture on iOS — the history guard already IS one**
+  (2026-07-18, #725). iOS Safari's native left-edge-swipe fires a browser `back`; `syncBackGuard` pushes
+  a dummy history entry while a phone sheet is open and the `popstate` handler routes it to
+  `dismissTopSheet` (thread→inbox→exit). A custom edge handler double-fired + over-popped history → "left
+  edge went to the Home Screen THEN the chat menu." Removing it fixed it. Before writing a back gesture,
+  check it isn't already covered by the popstate guard.
+- **A pull-to-DISMISS animation must confirm the close will SUCCEED before gliding off-screen**
+  (2026-07-18, #725, fresh-context merge-review catch). The pull animated the sheet to `translateY(100%)`
+  then called `closePhoneSheet()` 240ms later — but it REFUSES a locked required-modal (rate-the-return)
+  without a render, stranding the sheet off-screen (soft-lock, no recovery). Check `overlayLocked()` (or
+  the close's boolean return) BEFORE committing the off-screen slide; snap back + flash instead. The
+  fresh-context reviewer caught this — the writing context was blind to it.
 - **DOM clones near the card grid must NOT carry a bare `data-card` (2026-07-18, §M8 wrap).** The
   swipe-rail wrap clones (`inertRailClone`) keep `data-card` because CSS keys the card's list-grid
   layout AND theme stripe on it — but that broke the DOM-uniqueness assumption of the ~30
