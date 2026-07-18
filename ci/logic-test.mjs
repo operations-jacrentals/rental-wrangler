@@ -1557,14 +1557,52 @@ try {
       ok(c.membershipStage === 'Contacted', 'funnel: signing the RENTAL agreement does NOT touch the membership funnel');
       T.markMembershipSigned(c, 'membership');
       ok(c.membershipStage === 'Signed', 'funnel: signing the MEMBERSHIP agreement auto-advances the funnel to Signed');
-      // manual set of the terminal is refused for membership, but allowed for used-sales ('Paid')
+      ok(c.funnels && c.funnels.member === true, 'funnel: signing the membership agreement JOINS the Member funnel (else Signed hides)');
+      ok(T.funnelLayerDate(c, 'member', 'Signed') === T.TODAY_ISO, 'funnel: auto-signing stamps the Signed reached-date so the blue closed-won layer shows when it happened');
+      // a completed terminal (Signed) can't be dropped from the funnel by a chip misclick
+      T.toggleFunnelMembership('C-SIGN', 'member');
+      ok(c.funnels.member === true && c.membershipStage === 'Signed', 'funnel: cannot leave the Member funnel while at the Signed terminal (no silent wipe)');
+      // manual set of the terminal is refused for membership, but allowed for equipment ('Paid')
       c.membershipStage = 'Contacted';
-      T.setFunnelStage('C-SIGN', 'membership', 'Signed');
-      ok(c.membershipStage === 'Contacted', 'funnel: Signed cannot be set manually on the membership funnel');
-      T.setFunnelStage('C-SIGN', 'membership', 'Payment Discussed');
-      ok(c.membershipStage === 'Payment Discussed', 'funnel: a non-terminal membership stage IS settable manually');
-      T.setFunnelStage('C-SIGN', 'usedSales', 'Paid');
-      ok(c.usedSalesStage === 'Paid', 'funnel: used-sales keeps Paid as a normal manual terminal');
+      T.pickFunnelStage('C-SIGN', 'member', 'Signed');
+      ok(c.membershipStage === 'Contacted', 'funnel: Signed cannot be set manually on the Member funnel (auto stage)');
+      T.pickFunnelStage('C-SIGN', 'member', 'Payment Discussed');
+      ok(c.membershipStage === 'Payment Discussed', 'funnel: a non-terminal Member stage IS settable manually');
+      ok(c.funnels && c.funnels.member === true, 'funnel: picking a Member stage joins the Member funnel (explicit membership)');
+      T.pickFunnelStage('C-SIGN', 'equipment', 'Paid');
+      ok(c.usedSalesStage === 'Paid', 'funnel: Equipment keeps Paid a manual terminal (no auto-on-payment signal wired yet)');
+      // Rental funnel — derived from live rentals; a customer with none is not in it until forked/rented
+      ok(T.rentalFunnelStage(c) === 'Lead' && T.inFunnel(c, 'rental') === false, 'funnel: no rental activity → Rental stage Lead, not in the Rental funnel');
+      T.toggleFunnelMembership('C-SIGN', 'rental');
+      ok(T.inFunnel(c, 'rental') === true, 'funnel: a manual Rental prospect fork joins the Rental funnel');
+      ok(T.funnelStageOf(c, 'member') === 'Payment Discussed' && T.funnelStageOf(c, 'equipment') === 'Paid', 'funnel: funnelStageOf reads Member/Equipment from their stored stages');
+      // === Idea D — dated funnel: current-stage derivation, reach-with-stamp, layer notes, Member Lead ===
+      c.membershipStage = 'N/A'; c.usedSalesStage = 'N/A';
+      ok(T.funnelCurrentStage(c, 'member') === 'Lead' && T.funnelCurrentStage(c, 'equipment') === 'Lead', 'dated funnel: an unset stage reads as Lead (everyone sits at the top of both)');
+      T.reachFunnelStage('C-SIGN', 'equipment', 'Contacted');
+      ok(c.usedSalesStage === 'Contacted', 'dated funnel: reaching a layer advances the stage field');
+      ok(T.funnelLayerDate(c, 'equipment', 'Contacted') === T.TODAY_ISO, 'dated funnel: reaching a layer stamps today onto the layer');
+      T.reachFunnelStage('C-SIGN', 'equipment', 'Signed');   // 'Signed' isn't an equipment stage; only auto/rental are blocked — a non-member stage no-ops safely
+      ok(c.usedSalesStage === 'Contacted', 'dated funnel: reachFunnelStage ignores an off-funnel stage');
+      c.funnels.member = false; c.membershipStage = 'N/A';
+      T.toggleMemberLead('C-SIGN');
+      ok(T.inFunnel(c, 'member') === true && (T.funnelLayerDate(c, 'member', 'Lead') === T.TODAY_ISO), 'dated funnel: Member Lead checkbox joins the funnel + stamps the Lead date');
+      T.reachFunnelStage('C-SIGN', 'rental', 'Rented');
+      ok(T.funnelCurrentStage(c, 'rental') === 'Lead', 'dated funnel: Rental stages are derived — reachFunnelStage never sets them by hand');
+      c.usedSalesStage = "Don't Contact";   // an off-vocabulary value an AI-chat / CSV write could leave behind
+      ok(T.funnelCurrentStage(c, 'equipment') === 'Lead', 'dated funnel: an off-vocabulary stored stage clamps to Lead (no -1 index → no silent overwrite on click)');
+      // === Dated-ACTION funnel (Jac 2026-07-17): a layer's action = an OPEN tagged next-action ("notes = actions") ===
+      const dOff = (n) => { const d = new Date(T.TODAY_ISO + 'T00:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+      c.activityLog = c.activityLog || [];
+      c.activityLog.push({ when: dOff(-2), text: `Scheduled: call them @ ${dOff(-2)} 9:00 AM`, scope: 'rental', fkey: 'member', stage: 'Contacted' });
+      const armed = T.funnelLayerAction(c, 'member', 'Contacted');
+      ok(!!armed && armed.fkey === 'member' && armed.stage === 'Contacted', 'action funnel: funnelLayerAction finds a layer\'s armed action by funnel+stage');
+      ok(T.funnelLayerAction(c, 'member', 'Signed') === null, 'action funnel: an unarmed layer has no action');
+      ok(T.naUrgency(dOff(-1)) === 'due' && T.naUrgency(dOff(1)) === 'soon' && T.naUrgency(dOff(5)) === 'ok', 'action funnel: urgency maps overdue→due(red), near→soon(yellow), far→ok(green)');
+      ok(T.funnelScope('member') === 'rental' && T.funnelScope('equipment') === 'usedSales' && T.funnelScope('rental') === 'rental', 'action funnel: Member+Rental file under the Rental scope, Equipment under usedSales');
+      ok(T.naOpenList(c, 'rental').some((x) => x.a === armed), 'action funnel: an armed action shows in the date-sorted queue for its scope');
+      armed.outcome = 'done'; armed.closedWhen = T.TODAY_ISO;
+      ok(T.funnelLayerAction(c, 'member', 'Contacted') === null, 'action funnel: a completed (✓) action no longer arms the layer');
       T.IDX.customer.delete('C-SIGN');
     }
 

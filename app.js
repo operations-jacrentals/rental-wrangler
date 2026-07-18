@@ -31,6 +31,7 @@ import {
   legacyTransportPrice, computeTransportPrice, isFueledType, legsForType, YARD_ORIGIN, GOOGLE_MAPS_KEY, GPS_BACKEND_URL,
   fmtWindow, fmtShortDate, showsTruck, parseISO, TODAY_ISO, refreshTodayISO, invoiceShort, TRANSPORT_MAP,
   FLAG_META, FLAG_SEVERITY_RANK, INSURANCE_COVERAGE_TYPES, FEATURES, PHONE_IDENTITY,
+  FUNNELS, FUNNEL_KEYS,
 } from './config.js';
 // Feature-flag reader (scaffold only, dev-workflow trunk-based redesign D5): a big
 // replacement's new code path checks flagOn('key') instead of running unconditionally,
@@ -108,6 +109,144 @@ function parseCustomerName(raw, existingCompany) {
   return { firstName: parts.shift() || '', lastName: parts.join(' '), company };
 }
 const fullName = (c) => `${c.firstName || ''} ${c.lastName || ''}`.trim() || c.name || '';
+/* ── Customer funnels (redesign 2026-07-17, spec: customer-funnel-redesign) ──
+   EXPLICIT membership: a customer stores WHICH funnels they're in on `funnels`
+   (booleans), independent of the stored stage — so a lead can be "a Member" while
+   their sales stage is still empty, and the three tracks stay independent. Rental
+   membership is special: `funnels.rental` is only the MANUAL rental-prospect fork;
+   an actual renter lights up live via inRental() reading their rental records
+   (Phase 2), so a renter needs no stored flag. FUNNEL_KEYS = ['rental','member','equipment']. */
+const blankFunnels = () => ({ rental: false, member: false, equipment: false });
+// Never assume the object exists (a backend record can arrive pre-migration): return a
+// live, initialized `c.funnels` so a writer can toggle a membership on it in place.
+function ensureFunnels(c) {
+  if (!c) return blankFunnels();
+  if (c.funnels == null || typeof c.funnels !== 'object') c.funnels = blankFunnels();
+  else FUNNEL_KEYS.forEach((k) => { if (typeof c.funnels[k] !== 'boolean') c.funnels[k] = !!c.funnels[k]; });
+  return c.funnels;
+}
+/* ── Funnel derivations (Phase 2, spec: customer-funnel-redesign) ────────────
+   The Rental funnel is ACTIVITY-DRIVEN: its stage is read live off the customer's
+   own rental records, never a manual pick. Member/Equipment stages are the stored
+   membershipStage/usedSalesStage. `inRental` is the auto-join rule of thumb — anyone
+   who has ever reserved/rented is in the Rental funnel (plus a manual prospect fork). */
+const RENTAL_OUT = new Set(['On Rent', 'End Rent', 'Off Rent']);   // physically out in the field → 'Rented'
+function customerRentals(c) {
+  const id = c && c.customerId; if (id == null) return [];
+  return DATA.rentals.filter((r) => r.customerId === id);
+}
+// Has the customer EVER reserved or rented? (Quote / Cancelled / No Show aren't a commitment.)
+function hasRentalActivity(c) {
+  return customerRentals(c).some((r) => r.status && r.status !== 'Quote' && r.status !== 'Cancelled' && r.status !== 'No Show');
+}
+// In the Rental funnel = an explicit rental-prospect fork OR real rental activity (Jac's rule of thumb).
+function inRental(c) {
+  return !!(c && (ensureFunnels(c).rental || hasRentalActivity(c)));
+}
+// Derived Rental stage: physically out → 'Rented'; a live Reserved → 'Reserved'; else 'Lead'.
+function rentalFunnelStage(c) {
+  const rs = customerRentals(c);
+  if (rs.some((r) => RENTAL_OUT.has(r.status))) return 'Rented';
+  if (rs.some((r) => r.status === 'Reserved'))  return 'Reserved';
+  return 'Lead';
+}
+// The current stage of a given funnel for a customer (Rental derived; Member/Equipment stored).
+function funnelStageOf(c, funnel) {
+  if (funnel === 'rental')    return rentalFunnelStage(c);
+  if (funnel === 'member')    return c.membershipStage || 'N/A';
+  if (funnel === 'equipment') return c.usedSalesStage || 'N/A';
+  return 'N/A';
+}
+// Is the customer in a given funnel? Rental is special (activity OR manual fork); the others are the stored flag.
+function inFunnel(c, funnel) {
+  return funnel === 'rental' ? inRental(c) : !!ensureFunnels(c)[funnel];
+}
+// Is `stage` an AUTO (locked, derived) stage for `funnel`? (Rental Reserved/Rented, Member Signed, Equipment Paid.)
+function isAutoStage(funnel, stage) {
+  const f = FUNNELS[funnel]; return !!(f && f.auto && f.auto.includes(stage));
+}
+// Which stored field a manual funnel writes its stage to (Rental is derived → no field).
+function funnelStageField(funnel) { return funnel === 'member' ? 'membershipStage' : funnel === 'equipment' ? 'usedSalesStage' : null; }
+/* The ONE source of truth both the adaptive menu (Phase 3) and the detail ladder (Phase 5)
+   render from, so they can never disagree. Track A is the combined Rental→Member ladder with
+   the spec's visibility rules baked in; Equipment is the separate track. Each rung:
+   { funnel, stage, auto, current } — `auto` = locked/derived, `current` = the live position. */
+function funnelTrackA(c) {
+  const inR = inRental(c), mem = inFunnel(c, 'member');
+  const rStage = rentalFunnelStage(c), memStage = c.membershipStage || 'N/A';
+  const rungs = [];
+  // Entry 'Lead': Member owns it (manual pick) when Member is on; else it's the derived rental entry.
+  if (mem) rungs.push({ funnel: 'member', stage: 'Lead', auto: false, current: memStage === 'Lead' });
+  else if (inR) rungs.push({ funnel: 'rental', stage: 'Lead', auto: true, current: rStage === 'Lead' });
+  // Rental auto stages — shown only when the customer is in the Rental funnel (activity or manual fork).
+  if (inR) {
+    rungs.push({ funnel: 'rental', stage: 'Reserved', auto: true, current: rStage === 'Reserved' });
+    rungs.push({ funnel: 'rental', stage: 'Rented',   auto: true, current: rStage === 'Rented' });
+  }
+  // Member continuation — shown only when Member is selected (spec's "no distraction" rule).
+  if (mem) {
+    ['Contacted', 'Not A No!', 'Payment Discussed', 'Signed'].forEach((s) => rungs.push({ funnel: 'member', stage: s, auto: isAutoStage('member', s), current: memStage === s }));
+  }
+  return rungs;
+}
+function funnelTrackEquip(c) {
+  if (!inFunnel(c, 'equipment')) return [];
+  const s = c.usedSalesStage || 'N/A';
+  return FUNNELS.equipment.stages.map((st) => ({ funnel: 'equipment', stage: st, auto: isAutoStage('equipment', st), current: s === st }));
+}
+/* ── Dated funnel (Idea D, Jac 2026-07-17) — the customer detail shows the funnel as a
+   two-tab (Rental | Equipment Sales) stack of DATED layers. EVERYONE is implicitly in both
+   Rental and Equipment (a fresh customer just sits at 'Lead' in each); Member is the one opt-in
+   (the "Member Lead" checkbox = funnels.member) that EXTENDS the Rental funnel. Each layer
+   records the date it was reached + an optional note in c.funnelLog[funnel][stage] = {date,note}.
+   Rental Reserved/Rented dates DERIVE from the customer's live rentals (never a manual stamp);
+   Lead + all Member/Equipment dates are stored (stamped 'today' on reach, editable). */
+function ensureFunnelLog(c) {
+  if (!c) return { rental: {}, member: {}, equipment: {} };
+  if (!c.funnelLog || typeof c.funnelLog !== 'object') c.funnelLog = {};
+  FUNNEL_KEYS.forEach((k) => { if (!c.funnelLog[k] || typeof c.funnelLog[k] !== 'object') c.funnelLog[k] = {}; });
+  return c.funnelLog;
+}
+// The furthest-reached stage of a funnel: Rental derived from activity; Member/Equipment the
+// stored stage — and since everyone starts at the top, an empty/N/A stage reads as 'Lead'.
+function funnelCurrentStage(c, key) {
+  if (key === 'rental') return rentalFunnelStage(c);
+  const v = key === 'member' ? c.membershipStage : c.usedSalesStage;
+  // Unset / N/A / any off-vocabulary legacy value (e.g. a "Don't Contact" left by an AI-chat or
+  // CSV write that never ran through the funnel UI) clamps to the entry, so indexOf is never -1 —
+  // otherwise every layer would read 'upcoming' and a click on the top layer would silently
+  // overwrite the stored value (fresh-context review, 2026-07-17).
+  return (!v || v === 'N/A' || !FUNNELS[key].stages.includes(v)) ? 'Lead' : v;
+}
+// earliest reserved / on-rent rental startDate for the Rental funnel's auto dates.
+function reservedRentalDate(c) {
+  const rs = customerRentals(c).filter((r) => r.status === 'Reserved' && r.startDate).sort((a, b) => parseISO(a.startDate) - parseISO(b.startDate));
+  return rs.length ? rs[0].startDate : '';
+}
+function onRentRentalDate(c) {
+  const rs = customerRentals(c).filter((r) => RENTAL_OUT.has(r.status) && r.startDate).sort((a, b) => parseISO(a.startDate) - parseISO(b.startDate));
+  return rs.length ? rs[0].startDate : '';
+}
+// A rental Reserved/Rented date is DERIVED and never editable; every other layer's date is stored.
+const funnelDateDerived = (key, stage) => key === 'rental' && (stage === 'Reserved' || stage === 'Rented');
+function funnelLayerDate(c, key, stage) {
+  if (funnelDateDerived(key, stage)) return stage === 'Reserved' ? reservedRentalDate(c) : onRentRentalDate(c);
+  const e = ensureFunnelLog(c)[key][stage];
+  return (e && e.date) || '';
+}
+function funnelLayerNote(c, key, stage) {
+  const e = ensureFunnelLog(c)[key][stage];
+  return (e && e.note) || '';
+}
+// ── Layer = a dated ACTION (Jac 2026-07-17: "notes = actions") ─────────────────────────────
+// A funnel layer's planned move is an OPEN scheduled next-action (an activityLog entry) tagged to
+// this exact funnel+stage. Several layers can be armed at once (plan the play by layer); each glows
+// red/yellow/green by its own due date. The same entries feed the date-sorted queue below the funnel.
+// The tab SCOPE a funnel files under — Rental + Member share the Rental tab (and its queue).
+const funnelScope = (key) => (key === 'equipment' ? 'usedSales' : 'rental');
+function funnelLayerAction(c, key, stage) {
+  return (c.activityLog || []).find((a) => naIsSched(a) && !a.outcome && a.fkey === key && a.stage === stage) || null;
+}
 let migrationDirty = false;
 /* One-time, idempotent: give every customer firstName/lastName parsed from `name`,
    then keep `name` as the derived "First Last" display. Runs on seed AND loaded data. */
@@ -184,6 +323,23 @@ function migrateCustomers() {
       c.funnelNAApplied = true; migrationDirty = true;
     }
     if (c.membershipStage === 'Paid') { c.membershipStage = 'Signed'; migrationDirty = true; }   // F3 — membership terminal relabeled Paid→Signed (auto-set by signing)
+    // ── Funnel redesign backfill (2026-07-17) — one-time per customer ──
+    // Collapse the legacy split-lead vocabulary onto the new unified 'Lead' entry
+    // stage, then derive EXPLICIT funnel membership from the stored stages: Member
+    // from membershipStage, Equipment from usedSalesStage. Rental stays a manual fork
+    // (false here) — real renters surface via inRental() at read time, so there is no
+    // O(customers×rentals) history scan on load. No stage values are otherwise changed.
+    if (c.funnels == null) {
+      ['membershipStage', 'usedSalesStage'].forEach((f) => {
+        if (c[f] === 'Inbound Lead' || c[f] === 'Outbound Lead') c[f] = 'Lead';
+      });
+      c.funnels = {
+        rental:    false,
+        member:    !!(c.membershipStage && c.membershipStage !== 'N/A'),
+        equipment: !!(c.usedSalesStage && c.usedSalesStage !== 'N/A'),
+      };
+      migrationDirty = true;
+    }
   });
 }
 /* ── §20 multi-unit rentals — "a Rental is an EVENT" ──
@@ -485,6 +641,8 @@ function attachHeldSigning(c, k) {
 function markMembershipSigned(c, key) {
   if (key !== 'membership' || !c || c.membershipStage === 'Signed') return;
   c.membershipStage = 'Signed';
+  ensureFunnels(c).member = true;   // funnel redesign: a signed member IS in the Member funnel — else the Signed terminal is hidden (funnelTrackA needs inFunnel('member'))
+  const log = ensureFunnelLog(c).member; if (!log.Signed) log.Signed = {}; if (!log.Signed.date) log.Signed.date = TODAY_ISO;   // stamp the reached-date so the blue closed-won layer shows when it happened (auto-sign has no reachFunnelStage path)
   logAction(c, 'Membership agreement signed → Signed');
 }
 function signCardAgreement(c, k, signature, selfie) {
@@ -2571,7 +2729,6 @@ function openStandard(card, recId, recType) {
   sweepEmptyDrafts(recId);   // #8 — leaving an empty draft deletes it
   pushCardHistory(cs);       // Task 1 — record the prior (list) view so Back can return
   cs.mode = 'standard'; cs.recId = recId; cs.recType = recType || null; cs.graphView = false;   // opening a record exits the in-column graph view
-  if (card === 'customers' && state.funnelTab) delete state.funnelTab[recId];   // §3.5 — a fresh customer open resets the funnel toggle to Rental
   if (card === 'customers') { if (state.custInvOpen) delete state.custInvOpen[recId]; if (state.custInvMenu) delete state.custInvMenu[recId]; }   // §3.3 — collapse the embedded Invoices accordion on a fresh open (openInvoice re-sets it after)
   if (card === 'customers') { if (state.custAcctOpen) delete state.custAcctOpen[recId]; if (state.custAgOpen) delete state.custAgOpen[recId]; if (state.custAgDraft) delete state.custAgDraft[recId]; }   // Phase 1/2b — collapse the Account section + its Agreements accordion + any in-progress draft on a fresh open
   if (card === 'units') { if (state.svcSecOpen) delete state.svcSecOpen[recId]; if (state.unitSecOpen) delete state.unitSecOpen[recId]; if (state.woRowOpen) delete state.woRowOpen[recId]; }   // collapse the Services + Work Orders / Specs / GPS / Investment sections + any open Work Order row on a fresh open (mirrors the Account/Invoices collapse above)
@@ -4022,22 +4179,105 @@ function custMetaField(c, field, label, ph) {
   const val = c[field];
   return `<div class="kv"><span class="pfx">${esc(label)}</span><span class="v inline-edit" data-edit="custField" data-field="${esc(field)}" data-rec="${esc(c.customerId)}" data-ph="${esc(ph)}">${val ? esc(val) : `<span class="add-field" data-r="R5c">+${esc(label)}</span>`}</span></div>`;
 }
+/* R35 — the DATED-ACTION FUNNEL (Idea D + action reshape, Jac 2026-07-17). A two-tab
+   (Rental | Equipment Sales) stack of clickable LAYERS, narrowing like a real funnel. Everyone is
+   implicitly in both tabs; the "Member Lead" checkbox extends the Rental tab with the membership
+   stages. Each layer is a SLOT for a dated next-action ("notes = actions"): arm any layer with an
+   action (note + date) and it glows red / yellow / green by that date's urgency — several can be
+   armed at once, so you plan the play by layer. A reached-but-unarmed layer is quiet steel history
+   (a check + when it happened); the terminal Signed/Paid, once reached, is SOLID BLUE — closed won.
+   Clicking a layer opens its action editor (arm/edit/complete the action, or advance the customer
+   here). Rental Reserved/Rented history-dates DERIVE from live rentals. Bespoke — .dfunnel stamped. */
+function funnelLayerHtml(c, key, stage, i, ci, offset, curId) {
+  const st = getStatus('funnelStage', stage);
+  const auto = key === 'rental' || isAutoStage(key, stage);   // rental stages + Signed = derived history-dates
+  // `cur` = the GLOBAL furthest layer when funnels stack (Rental → Member on the Rental tab), so only
+  // one "now" tag shows; `reached` stays per-funnel.
+  const cur = curId ? (key + ':' + stage === curId) : (i === ci);
+  const reached = i <= ci;
+  const isWon = reached && key !== 'rental' && i === FUNNELS[key].stages.length - 1;   // Signed/Paid reached = closed won
+  const act = funnelLayerAction(c, key, stage);                                        // this layer's ARMED (open, dated) action
+  const w = Math.max(56, 100 - (i + (offset || 0)) * 6);
+  const attrs = `data-rec="${esc(c.customerId)}" data-fkey="${key}" data-stage="${esc(stage)}" style="width:${w}%"`;
+  const nowTag = cur ? `<span class="dl-now">now</span>` : '';
+  // 1) ARMED — the layer carries an open, dated action → two lines, urgency-colored (unless it's the
+  //    closed-won terminal, which stays blue). This is where green now means "on track", not "done".
+  if (act && !isWon) {
+    const u = naUrgency(act.when), p = parseSchedText(act.text);
+    const dd = dayDiff(TODAY, parseISO(act.when));
+    const when = u === 'due' ? (dd === 0 ? 'Today' : `Late ${-dd}d`) : fmtShortDate(act.when);
+    return `<button class="dl act u-${u} js-funnel-layer" ${attrs} data-tip="Click to edit this action">`
+      + `<span class="dl-top"><span class="dl-dot">▸</span><span class="dl-nm">${esc(st.label)}</span>${nowTag}</span>`
+      + `<span class="dl-act"><span class="dl-atxt">${esc(p.note)}</span><span class="dl-due"><span class="dd"></span>${esc(when)}</span></span></button>`;
+  }
+  // 2) CLOSED WON — Signed / Paid reached → solid primary blue.
+  if (isWon) {
+    const dateISO = funnelLayerDate(c, key, stage), note = funnelLayerNote(c, key, stage);
+    return `<button class="dl won js-funnel-layer" ${attrs} data-tip="Closed won — click to edit">`
+      + `<span class="dl-dot">✓</span><span class="dl-nm">${esc(st.label)}</span>`
+      + (note ? `<span class="dl-note">· ${esc(note)}</span>` : '')
+      + `<span class="dl-dt">${dateISO ? esc(fmtShortDate(dateISO)) : ''}</span></button>`;
+  }
+  // 3) REACHED, unarmed — quiet steel history: a check + when it happened (green freed for urgency).
+  if (reached) {
+    const dateISO = funnelLayerDate(c, key, stage), note = funnelLayerNote(c, key, stage);
+    const showLock = auto && stage !== 'Lead';
+    return `<button class="dl done${cur ? ' cur' : ''} js-funnel-layer" ${attrs} data-tip="Click to plan the next action">`
+      + `<span class="dl-dot">✓</span><span class="dl-nm">${esc(st.label)}</span>`
+      + (showLock ? `<span class="dl-lock">${I.lock}</span>` : '')
+      + nowTag
+      + (note ? `<span class="dl-note">· ${esc(note)}</span>` : '')
+      + `<span class="dl-dt">${dateISO ? esc(fmtShortDate(dateISO)) : ''}</span></button>`;
+  }
+  // 4) UPCOMING, unarmed — a dashed slot inviting a planned action (or advancing here).
+  return `<button class="dl up js-funnel-layer" ${attrs} data-tip="Click to plan an action or advance here">`
+    + `<span class="dl-dot"></span><span class="dl-nm">${esc(st.label)}</span>`
+    + `<span class="dl-plan">+ action</span></button>`;
+}
+function datedFunnelHtml(c, key, offset, curId) {
+  const stages = FUNNELS[key].stages;
+  const ci = stages.indexOf(funnelCurrentStage(c, key));
+  return stages.map((s, i) => funnelLayerHtml(c, key, s, i, ci, offset, curId)).join('');
+}
+function memberLeadRow(c) {
+  const on = inFunnel(c, 'member');
+  return `<button class="dl-check${on ? ' on' : ''} js-member-lead" data-rec="${esc(c.customerId)}" data-tip="${on ? 'Untick to stop pursuing membership' : 'Tick to extend the funnel with the membership stages'}" style="width:79%">`
+    + `<span class="dl-box">${on ? '✓' : ''}</span><span class="dl-ck-t">Member Lead</span>`
+    + `<span class="dl-ck-h">${on ? 'extending ↓' : 'tick to extend'}</span></button>`;
+}
+/* Dated two-tab funnel (Idea D). The R14 segmented toggle IS the section header (Rental |
+   Equipment Sales — everyone's in both); the tab body is the dated-layer stack for that funnel,
+   plus the Member Lead extension on the Rental tab, and the tab's meta / Next-Actions / Log. */
 function funnelSectionHtml(c) {
   const tab = (state.funnelTab && state.funnelTab[c.customerId]) || 'rental';
+  // Full-width toggle sitting just above the funnel (Jac 2026-07-17 — matches the mockup); the
+  // account-type badge is dropped from here (it already lives in the Account section).
   const seg = segCtl([
     { label: 'Rental', js: `js-funnel-tab ${naDotClass(c, 'rental')}`, data: { rec: c.customerId, tab: 'rental' }, on: tab === 'rental' ? 'accent' : null },
     { label: 'Equipment Sales', js: `js-funnel-tab ${naDotClass(c, 'usedSales')}`, data: { rec: c.customerId, tab: 'usedSales' }, on: tab === 'usedSales' ? 'accent' : null },
-  ]);
+  ], 'funnel-full');
   let body;
   if (tab === 'rental') {
-    body = `<div class="fb-toprow">${funnelPill(c.customerId, 'membership', c.membershipStage || 'N/A')}${acctBtn(c)}</div>`
-      + `<div class="fieldstack funnel-fields">${membershipMetaHtml(c)}</div>`
+    const mem = inFunnel(c, 'member');
+    // ONE current across the stacked Rental → Member journey. The Member position wins ONLY once
+    // Member has moved past its 'Lead' entry — otherwise a Rented customer who just gets ticked
+    // "Member Lead" would visually jump backwards to the new Member-Lead layer (review fix); until
+    // then, the live Rental position (e.g. Rented) stays the highlighted current.
+    const memStage = funnelCurrentStage(c, 'member');
+    const curId = (mem && memStage !== 'Lead') ? 'member:' + memStage : 'rental:' + funnelCurrentStage(c, 'rental');
+    const stack = `<div class="dfunnel" data-r="R35">`
+      + datedFunnelHtml(c, 'rental', 0, curId)
+      + memberLeadRow(c)
+      + (mem ? datedFunnelHtml(c, 'member', FUNNELS.rental.stages.length + 1, curId) : '')
+      + `</div>`;
+    body = stack
+      + (mem ? `<div class="fieldstack funnel-fields">${membershipMetaHtml(c)}</div>` : '')
       + nextActionsHtml(c, 'rental')
       + actionLogHtml(c, 'rental');
   } else {
     const intCats = (c.interestedCategoryIds || []).map((id) => { const cat = IDX.category.get(id); return cat ? refPill('categories', id, cat.name, { x: 'intcat-remove', xData: id, tag: 'Cat' }) : ''; }).join('');
     const intMakes = (c.interestedMakes || []).map((mk) => refPill(null, mk, mk, { x: 'intmake-remove', xData: mk, tag: 'Make', tone: 'tan' })).join('');
-    body = `<div class="fb-toprow">${funnelPill(c.customerId, 'usedSales', c.usedSalesStage || 'N/A')}${acctBtn(c)}</div>`
+    body = `<div class="dfunnel" data-r="R35">${datedFunnelHtml(c, 'equipment', 0)}</div>`
       + `<div class="fieldstack funnel-fields">${custMetaField(c, 'desiredAge', 'Desired Age', 'Add desired age')}${custMetaField(c, 'desiredHours', 'Desired Hours', 'Add desired hours')}</div>`
       + `<div class="funnel-sublabel">Interested in</div>`
       + `<div class="kv pillrow interested">${intCats}${intMakes}${addBtn('Make / Category', { link: true, js: 'js-addmakecat', h: 26, data: { rec: c.customerId } })}</div>`
@@ -4045,9 +4285,70 @@ function funnelSectionHtml(c) {
       + actionLogHtml(c, 'usedSales');
   }
   return `<div class="section funnel-sec">`
-    + `<div class="funnel-hd"><span class="fh-rule"></span>${seg}<span class="fh-rule"></span></div>`
+    + `<div class="funnel-hd full">${seg}</div>`
     + `<div class="funnel-body">${body}</div>`
     + `</div>`;
+}
+// ── Dated-funnel mutators (Idea D) ──
+// Reach an UPCOMING manual stage: set the current-stage field + stamp today. Rental stages and
+// auto terminals are derived, never reached by hand.
+function reachFunnelStage(custId, key, stage) {
+  const c = IDX.customer.get(custId); if (!c) return;
+  if (!FUNNELS[key] || !FUNNELS[key].stages.includes(stage)) return;   // only a real stage of this funnel
+  if (key === 'rental' || isAutoStage(key, stage)) return;
+  const field = funnelStageField(key); if (!field) return;
+  c[field] = stage;
+  const log = ensureFunnelLog(c)[key]; if (!log[stage]) log[stage] = {}; if (!log[stage].date) log[stage].date = TODAY_ISO;
+  ensureFunnels(c)[key] = true;
+  logAction(c, `${FUNNELS[key].label} → ${getStatus('funnelStage', stage).label}`);
+  reindex('customers', c); render();
+}
+// Member Lead checkbox — reuse the funnel-membership toggle (keeps the Signed terminal-wipe
+// guard); stamp the Member Lead date when first ticked so the 'Lead' layer carries a date.
+function toggleMemberLead(custId) {
+  const c = IDX.customer.get(custId); if (!c) return;
+  const wasOn = inFunnel(c, 'member');
+  toggleFunnelMembership(custId, 'member');
+  if (!wasOn && inFunnel(c, 'member')) { const log = ensureFunnelLog(c).member; if (!log.Lead) log.Lead = {}; if (!log.Lead.date) log.Lead.date = TODAY_ISO; render(); }
+}
+// Open a layer's ACTION editor — prefill from the layer's armed action, or a fresh one for today.
+function openFunnelLayerEdit(custId, key, stage) {
+  const c = IDX.customer.get(custId); if (!c) return;
+  const act = funnelLayerAction(c, key, stage);
+  const p = act ? parseSchedText(act.text) : null;
+  openOverlay({ kind: 'funnelLayer', custId, fkey: key, stage,
+    actWhen: act ? act.when : TODAY_ISO,
+    actWhenTime: (p && to24(p.time)) || to24(nowHourLabel()) || '09:00',   // datefield writes the time to o[field+'Time']
+    actNote: p ? p.note : '' });
+}
+// Save the layer's action = an OPEN scheduled next-action tagged to funnel+stage (create OR edit the
+// existing one). It joins the date-sorted queue below and drives the tab's urgency dot. Arming a
+// future layer does NOT advance the customer (2B) — that's the explicit Advance button.
+function saveFunnelLayer() {
+  const o = state.overlay; if (!o || o.kind !== 'funnelLayer') return;
+  const c = IDX.customer.get(o.custId); if (!c) { closeOverlay(); return; }
+  const date = o.actWhen; if (!date) { flashOr('.datefield', 'Pick a date first.'); return; }
+  const note = (document.querySelector('.overlay .js-fl-note')?.value || '').trim();
+  const text = `Scheduled: ${note || 'follow-up'} @ ${date} ${to12(o.actWhenTime || '09:00')}`;
+  c.activityLog = c.activityLog || [];
+  const existing = funnelLayerAction(c, o.fkey, o.stage);
+  if (existing) { existing.when = date; existing.text = text; existing.scope = funnelScope(o.fkey); existing.fkey = o.fkey; existing.stage = o.stage; }
+  else c.activityLog.push({ when: date, text, scope: funnelScope(o.fkey), fkey: o.fkey, stage: o.stage });
+  reindex('customers', c); toast(existing ? 'Action saved.' : 'Action added.'); state.datepick = null; closeOverlay(); render();
+}
+// Advance the customer to this manual stage (they actually moved) — a deliberate, separate step from
+// completing an action (2B). Stamps the history date; keeps the editor open so you can arm the next move.
+function advanceFunnelLayer(custId, key, stage) {
+  reachFunnelStage(custId, key, stage);
+  if (state.overlay && state.overlay.kind === 'funnelLayer') renderOverlay();
+}
+// ✓ Done / ✕ Cancel the layer's armed action — logs it to the Action Log; does NOT advance the stage (2B).
+function completeFunnelAction(custId, done) {
+  const o = state.overlay; if (!o || o.kind !== 'funnelLayer') return;
+  const c = IDX.customer.get(custId); if (!c) { closeOverlay(); return; }
+  const act = funnelLayerAction(c, o.fkey, o.stage);
+  if (act) { act.outcome = done ? 'done' : 'cancelled'; act.closedWhen = TODAY_ISO; reindex('customers', c); toast(done ? 'Action completed — logged.' : 'Action cancelled — logged.'); }
+  closeOverlay(); render();
 }
 /* ── Phase 1 (2026-07-10 Account/Agreements + Membership redesign, spec §3/§7b
    D19-D27, plan T1.1-T1.4) — the new top-of-card ACCOUNT section. UI SHELL:
@@ -5695,20 +5996,21 @@ function unitStatusGate(r, eu) {
   const st = getStatus('rentalStatus', unitStatus(r, eu));
   return `<span class="pill gate c-${st.color} js-unit-status" data-r="R1" data-rec="${esc(r.rentalId)}" data-unit="${esc(eu.unitId)}">${I.chev}${esc(st.label)}</span>`;
 }
-/** R1: funnel-stage gate (§7.1). */
+/** R1: funnel-stage gate — displays a customer's stored stage (`which` picks the label the
+ *  caller passes in) and opens the ONE adaptive funnel menu (redesign 2026-07-17). Used by the
+ *  Sales pipeline board's Used-Equipment / Membership columns. */
 function funnelPill(custId, which, stage) {
   const st = getStatus('funnelStage', stage);
-  return `<span class="pill gate c-${st.color} js-funnel" data-r="R1" data-rec="${esc(custId)}" data-which="${which}">${I.chev}${esc(st.label)}</span>`;
+  return `<span class="pill gate c-${st.color} js-funnelmenu" data-r="R1" data-rec="${esc(custId)}">${I.chev}${esc(st.label)}</span>`;
 }
 /** R1: the SAME gate-pill shape as funnelPill, but for the Customers-list quick-add
- *  DRAFT (no customerId exists yet) — opens openCustQuickAddFunnelDropdown, which
- *  writes straight to state.custQuickAdd.funnel instead of a real record. */
-function custQuickAddFunnelPill(stage) {
-  const set = !!(stage && stage !== 'N/A');
-  const st = getStatus('funnelStage', stage || 'N/A');
-  // Unset reads as a short placeholder ("Lead?", gray) — its own inline label now that the
-  // stamped caps are gone; a real pick shows the stage in its registry color. (Jac 2026-07-17)
-  return `<span class="pill gate c-${set ? st.color : 'gray'} js-custqa-funnel" data-r="R1">${I.chev}${esc(set ? st.label : 'Lead?')}</span>`;
+ *  DRAFT (no customerId exists yet) — opens the single-select funnel menu, which writes
+ *  a FUNNEL KEY to state.custQuickAdd.funnel (funnel redesign 2026-07-17) instead of a
+ *  real record. Unset / N/A reads as a short "Lead?" placeholder; a real pick shows the
+ *  funnel name (blue = the Lead entry the new customer will land at). */
+function custQuickAddFunnelPill(funnel) {
+  const real = FUNNELS[funnel] ? funnel : null;
+  return `<span class="pill gate c-${real ? 'blue' : 'gray'} js-custqa-funnel" data-r="R1">${I.chev}${esc(real ? FUNNELS[real].label : 'Lead?')}</span>`;
 }
 /** R4: a DERIVED pill — rides another pill in the same section; no bg/border,
  *  destination icon + ink color only; sits directly RIGHT of its parent. */
@@ -6206,6 +6508,7 @@ const RULE_META = {
   R32: ['Nav jog', 'cardJog / .card-jog · .mfoot-jog', 'the two-way Back/Forward view-history stepper. On desktop + in-card it is a neutral steel pill (chevron arms split by a saddle-stitch seam, orange only on hover/press) that shows only when the card has history. On phone it lives ALWAYS-ON as a snug chip pinned to the bottom-RIGHT of the footer tool bar (matching the .iconbtn tool buttons), Chrome-style: bright chevrons that grey when their stack is empty — reflecting the snapped column’s card (repainted on swipe).'],
   R33: ['Global toggle', 'globeToggle', 'the icon-only globe pinned right in a grid card’s search bar — flips that bar, and every grid-card bar in lockstep, between per-card and whole-yard “global” search (dim steel off, safety-orange on). A scope-MODE toggle like R31 but icon-only + it drives the shared query; replaces the old giant #globalsearch bar. Behind FEATURES.cardGlobalSearch.'],
   R34: ['Wash cycle button', 'washBtn', 'one pressable status pill that advances a unit’s wash on each click — neutral “Wash?” → caution “Wash It!” (yellow, requested) → ready “✓ Washed” (green, logged) → click again un-marks today’s wash. Registry STATUS tones (green/yellow/gray), NOT action colors; a press-to-advance control like R1 but it cycles in place instead of opening a dropdown. Replaces the old Wash / Don’t Wash / Washed R14 toggle; wash no longer gates inspection Pass.'],
+  R35: ['Dated-action funnel', 'datedFunnelHtml / .dfunnel', 'the customer-detail funnel as a two-tab (Rental | Equipment Sales) stack of clickable LAYERS, narrowing like a real funnel — everyone sits in both tabs (a fresh customer at Lead). Each layer is a SLOT for a dated next-action ("notes = actions"): arm any layer with an action (note + date) and it glows red/yellow/green by that date’s urgency (naUrgency) — several can be armed at once. A reached-but-unarmed layer is quiet steel history (a check + when it happened); the terminal Signed/Paid, once reached, is SOLID BLUE (closed won). Clicking a layer opens its action editor (arm/edit/complete, or Advance the customer here). The armed actions are the same scheduled entries as the date-sorted queue below. Rental Reserved/Rented history-dates derive from live rentals. Bespoke — layers are NOT .pill, the .dfunnel container carries the stamp.'],
 };
 /* ════════════ APP-12 · DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
    The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
@@ -6334,7 +6637,7 @@ const RB_TABS = [
   { id: 'upload', label: 'Upload & Capture', intro: 'Add-file zones and photo/site captures.',
     items: [{ r: 'R21' }, { f: 'upload-capture' }] },
   { id: 'data', label: 'Data & Behaviors', intro: 'Visualizations, plus the app’s behaviors — it flashes instead of erroring, right-clicks, tooltips, and self-lints.',
-    items: [{ r: 'R16' }, { r: 'R15' }, { r: 'R13' }, { f: 'data-kpi' }, { f: 'data-gauge' }, { r: 'R19' }, { r: 'R25' }, { r: 'R20' }, { r: 'R23' }, { f: 'behavior-preview' }, { r: 'R0' }] },
+    items: [{ r: 'R16' }, { r: 'R15' }, { r: 'R35' }, { r: 'R13' }, { f: 'data-kpi' }, { f: 'data-gauge' }, { r: 'R19' }, { r: 'R25' }, { r: 'R20' }, { r: 'R23' }, { f: 'behavior-preview' }, { r: 'R0' }] },
 
   { id: 'windows', label: 'Windows', intro: 'Every pop-up window in the app, by kind. Expand one for a live preview, its fields, and a copy-paste edit reference — your map to wrangle any screen.', items: [] },
 ];
@@ -6342,7 +6645,7 @@ const RB_TABS = [
 const CLASS_RULE = [
   ['.c-titlecard', 'R10'], ['.nsec', 'R12'], ['.hvals', 'R13'], ['.history', 'R13'],
   ['.timeline', 'R16'], ['.jnode', 'R15'], ['.jseg', 'R15'], ['.journey', 'R15'],
-  ['.seg', 'R14'], ['.kv.derived', 'R8'], ['.derived', 'R8'], ['.file-drop', 'R21'], ['.datefield', 'R22'], ['.section', 'R11'],
+  ['.seg', 'R14'], ['.kv.derived', 'R8'], ['.derived', 'R8'], ['.file-drop', 'R21'], ['.datefield', 'R22'], ['.dfunnel', 'R35'], ['.section', 'R11'],
 ];
 function ruleOf(target) {
   if (!target || !target.closest) return null;
@@ -8444,16 +8747,16 @@ const DETAIL = {
     const activeBar = customerActivityChart(c);
 
     const notes = notesSection('customers', c, 'customerId', 'accountNotes');
-    /* Jac order (2026-07-08 reorg): filled Notes ABOVE the funnel toggle (under the
-       title) → the ONE funnel section (RENTAL | EQUIPMENT SALES toggle IS the header;
-       each tab = funnel pill + account button + meta + Next-Actions list + Action Log)
-       → the Invoices section (sits directly BELOW the funnel, Jac 2026-07-08) → active
-       bar → Account → Comms → Cards → (empty Notes) → History. The old side-by-side
-       membership/used-sales columns AND the Action Board are folded into funnelSectionHtml. */
+    /* Jac order (2026-07-17): filled Notes ABOVE the Account section (right under the
+       title) → the Account section → the ONE funnel section (RENTAL | EQUIPMENT SALES
+       full-width toggle IS the header; each tab = the dated funnel + meta + Next-Actions
+       list + Action Log) → the Invoices section (sits directly BELOW the funnel) → active
+       bar → Comms → Cards → (empty Notes) → History. The old side-by-side membership/
+       used-sales columns AND the Action Board are folded into funnelSectionHtml. */
     return `<div class="detail">
       <div class="detail-head">${title}</div>
-      ${customerAccountSection(c)}
       ${notes.top}
+      ${customerAccountSection(c)}
       ${funnelSectionHtml(c)}
       ${customerInvoicesSection(c, cs)}
       ${activeBar}
@@ -9897,7 +10200,10 @@ function toolsMenuRows() {
     + item('js-gps-issues', I.alert, 'GPS Issues')
     + item('js-gps-utilization', I.graph, 'Fleet Utilization')
     + item('js-gps-bouncie-trucks', CARD_ICON.units, 'Pull Bouncie Trucks');
-  let html = fam('General', general) + fam('GPS / Fleet', gps);
+  // Phone folds the (dropped) comms bell here: Requests · Transports due · Notifications, shown
+  // as an always-open Alerts section at the top so they never hide behind a collapsed family.
+  const alertRows = document.body.classList.contains('is-phone') ? commsMenuRows({ noInbox: false }) : '';
+  let html = (alertRows ? `<div class="dd-sec">Alerts</div>${alertRows}` : '') + fam('General', general) + fam('GPS / Fleet', gps);
   if (devUnlocked()) {
     html += fam('Developer', item('js-lint', I.eye, 'Design lint (R0)', document.body.classList.contains('rw-lint'))
       + item('js-inspect', I.search, 'Design Inspector', state.inspect)
@@ -9909,7 +10215,9 @@ function toolsMenuRows() {
 }
 function openToolsMenu(anchorEl) { openDropdown(anchorEl, toolsMenuRows(), { align: 'right' }); }
 function toolsBtn() {
-  return `<button class="iconbtn js-tools-menu" data-tip="Tools — QR, previews, hotkeys, GPS fleet tools${devUnlocked() ? ', dev tools' : ''}">${CARD_ICON.workOrders}</button>`;
+  const phone = document.body.classList.contains('is-phone');
+  const n = phone ? commsBellCount() : 0;   // phone folds the bell's alerts into Tools — badge the wrench so they still catch the eye
+  return `<button class="iconbtn js-tools-menu" data-tip="Tools${phone ? ' & alerts' : ''} — QR, previews, hotkeys, GPS fleet tools${devUnlocked() ? ', dev tools' : ''}">${CARD_ICON.workOrders}${n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''}</button>`;
 }
 /** Comms bell — Requests, Transport alerts, and Notifications, one direct-jump
  *  row each with its own count; badges roll up onto the bell itself. (Chat and
@@ -10073,11 +10381,38 @@ function footerJogInner() {
   const cs = s.cards ? s.cards[member] : null;
   return cardJog(member, cs, { always: true });
 }
+// §M7 (Jac 2026-07-17) — the phone comms row: three BIG floating tiles (Team · Customers ·
+// Mr. Wrangler), each labeled + wearing its worst-status dot. Reuses .js-comms-chip so the same
+// click funnel fires (Customer → the channel menu). The icon-only chips stay a desktop idiom.
+function commsTilesHtml() {
+  const tile = (cat) => {
+    const meta = COMMS_CAT_META[cat];
+    const on = cat === 'customer' ? commsCustActive() : state.commsRail.cat === cat;   // phone routes all three through the rail
+    const worst = cat === 'customer' ? commsCustWorst() : commsCatWorst(cat);
+    const label = cat === 'customer' ? 'Customers' : (cat === 'wrangler' ? 'Mr. Wrangler' : meta.label);
+    // icon-only tiles (Jac 2026-07-17) — labels dropped so the glyph fills the chip; aria-label carries the name
+    return `<button class="mtile js-comms-chip${on ? ' on' : ''}" data-cat="${cat}" aria-pressed="${on}" aria-label="${esc(label)}" data-tip="${esc(meta.tip)}">`
+      + `${worst ? `<span class="mtile-dot c-${worst}" aria-hidden="true"></span>` : ''}`
+      + `<span class="mtile-ico">${meta.icon()}</span></button>`;
+  };
+  return `<div class="mfoot-comms" role="group" aria-label="Comms — Team, Customers, Mr. Wrangler">${COMMS_CHIP_CATS.map(tile).join('')}</div>`;
+}
+// §M7 — the phone FOOTER: a floating, backdrop-less comms band. Three big comms tiles fill the
+// left; the Back/Forward jog rides top-right with Receipt · Tools · notifications tucked under it
+// (all icon-only, same size). The merged Customer menu floats above the band when summoned.
 function mobileToolbarEl() {
   const d = el('div', 'mobile-toolbar');
-  // The jog is a SIBLING of the (horizontally-scrollable) tool row, pinned to the bottom-RIGHT
-  // so it can never scroll off-screen; the tools scroll in the space to its left.
-  d.innerHTML = `<div class="top-toolbar">${bottomBarInner()}${commsBellBtn()}</div><div class="mfoot-jog">${footerJogInner()}</div>`;
+  // Jac 2026-07-17: bell dropped — its Requests/Transports/Notifications fold into the Tools menu
+  // (count badged on the wrench). Jog owns the top row (double-wide now Receipt+Tools share the row).
+  // Comms open FULL-SCREEN (mountMobileComms) — no inline menu rides the footer anymore.
+  d.innerHTML = commsTilesHtml()
+    + `<div class="mfoot-utils">`
+    +   `<div class="mfoot-jog">${footerJogInner()}</div>`
+    +   `<div class="mfoot-urow">`
+    +     `<button class="iconbtn js-newitem" data-new="receipt" aria-label="New receipt" data-tip="New receipt">${CARD_ICON.expenses}</button>`
+    +     toolsBtn()
+    +   `</div>`
+    + `</div>`;
   return d;
 }
 /* ════════════════════════════════════════════════════════════════════════
@@ -10159,11 +10494,10 @@ function openChat(id, msg) {
   chatShow(); render();
   if (msg) toast(msg);
 }
-/* D9 — the ONE way to surface the active team chat: phones keep the bottom-sheet dock;
-   desktop lands it on the comms rail as the Team session's SINGLE open window
-   (single-open law — summoning it closes whatever window was up). */
+/* D9 — the ONE way to surface the active team chat: it lands on the comms rail as the Team
+   session's SINGLE open window (single-open law). Desktop floats it above the rail; phone
+   renders that same rail state FULL-SCREEN (mountMobileComms) — no more bottom-sheet dock. */
 function chatShow() {
-  if (document.body.classList.contains('is-phone')) { state.chat.open = true; return; }
   const id = state.chat.activeId; if (!id) return;
   commsUnend(id, 'team');                           // any open resurrects an ended chat
   const rail = state.commsRail;
@@ -10696,17 +11030,16 @@ function openWranglerDock(opts) {
   if (opts.reqNumber !== undefined) w.reqNumber = opts.reqNumber;
   if (opts.reqTitle !== undefined) w.reqTitle = opts.reqTitle;
   if (opts.reqUrl !== undefined) w.reqUrl = opts.reqUrl;
-  // D9 — desktop has no floating dock anymore: the conversation lands on the comms
-  // rail as the Mr. Wrangler session's SINGLE open window (single-open law).
-  if (!document.body.classList.contains('is-phone')) {
-    const rail = state.commsRail;
-    if (rail.cat !== 'wrangler') { commsLeaveCat(rail.cat); rail.cat = 'wrangler'; }
-    const s = rail.sessions.wrangler;
-    s.lastOpen = String(w.id); s.menuOpen = false;
-    s.hidden = (s.hidden || []).filter((x) => String(x) !== String(w.id));
-    commsUnend(w.id, 'wrangler');                    // any open resurrects an ended chat
-    saveCommsRail();
-  }
+  // The conversation lands on the comms rail as the Mr. Wrangler session's SINGLE open window
+  // (single-open law) — desktop floats it, phone renders that SAME rail state full-screen
+  // (mountMobileComms reads sessions.wrangler.lastOpen), so this sync must run on both.
+  const rail = state.commsRail;
+  if (rail.cat !== 'wrangler') { commsLeaveCat(rail.cat); rail.cat = 'wrangler'; }
+  const s = rail.sessions.wrangler;
+  s.lastOpen = String(w.id); s.menuOpen = false;
+  s.hidden = (s.hidden || []).filter((x) => String(x) !== String(w.id));
+  commsUnend(w.id, 'wrangler');                    // any open resurrects an ended chat
+  saveCommsRail();
   render();
   setTimeout(() => { const i = document.querySelector('.wrangler-dock .js-wr-in'); if (i) i.focus(); const f = document.querySelector('.wrangler-dock .wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
 }
@@ -12575,12 +12908,17 @@ function wirePopupDrag(overlay) {
    stack stays balanced. Phone-only — desktop keeps Esc/click. Wired in boot(). ── */
 let backGuard = false, backConsuming = false;
 let swipeFired = false;   // §M1/§M3 — a footer or grid section-switch swipe sets this so the trailing click is swallowed once
-function anyDismissable() { return !!(state.overlay || state.datesearch || state.chat.open || state.wrangler.open); }
+function anyDismissable() { return !!(state.overlay || state.datesearch || state.chat.open || state.wrangler.open || (document.body.classList.contains('is-phone') && state.commsRail.cat)); }
 function dismissTopSheet() {
   if (state.datesearch) { closeDateSearch(); return true; }
   if (overlayLocked()) { attnFlash('.rr-stars'); toast('Rate the return first — it can’t be skipped.'); return true; }   // required modal: refuse Esc/back
   if (state.overlay) { closeOverlay(); return true; }
-  if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; render(); return true; }   // mirror js-wr-close
+  if (document.body.classList.contains('is-phone') && state.commsRail.cat) {   // phone full-screen comms: a thread backs to its inbox, the inbox closes the surface
+    const s = commsSess();
+    if (s && s.lastOpen != null) { s.lastOpen = null; s.menuOpen = true; saveCommsRail(); render(); return true; }
+    commsLeaveCat(state.commsRail.cat); state.commsRail.cat = null; if (s) s.menuOpen = false; saveCommsRail(); render(); return true;
+  }
+  if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; render(); return true; }   // mirror js-wr-close (desktop)
   if (state.chat.open) { state.chat.open = false; render(); return true; }                                    // mirror js-chat-close
   return false;
 }
@@ -14036,6 +14374,28 @@ function buildPopupEl(o, overlay, opts = {}) {
         <label class="svc-field" style="margin-top:8px"><span>Sale date</span>${dateField('saleDate', o.saleDate)}</label>
         <textarea class="insp-desc js-sell-note" placeholder="Buyer / notes (optional)…"></textarea>` });
     overlay.appendChild(pop);
+  } else if (o.kind === 'funnelLayer') {
+    // A layer's ACTION editor (Jac 2026-07-17: notes = actions). Arm/edit the dated next-action for
+    // this funnel+stage — it joins the queue below + drives the tab's urgency dot. Advancing the
+    // customer here is a separate, explicit button (2B); ✓/✕ log the armed action (never advance).
+    const c = IDX.customer.get(o.custId);
+    if (!c) { return false; }
+    const st = getStatus('funnelStage', o.stage);
+    const act = funnelLayerAction(c, o.fkey, o.stage);
+    const stages = FUNNELS[o.fkey].stages;
+    const ahead = o.fkey !== 'rental' && !isAutoStage(o.fkey, o.stage)
+      && stages.indexOf(o.stage) > stages.indexOf(funnelCurrentStage(c, o.fkey));
+    if (o.actWhen === undefined) o.actWhen = TODAY_ISO;
+    const doneRow = act
+      ? `<div class="fl-actbtns">${actionPill('commit', '✓ Done', { js: 'js-fl-done', data: { rec: o.custId } })}${actionPill('danger', '✕ Cancel', { js: 'js-fl-cancel', data: { rec: o.custId } })}</div>`
+      : '';
+    const pop = el('div', 'popup'); pop.style.width = '340px';
+    pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: `${FUNNELS[o.fkey].label} · ${st.label}`, tag: 'Funnel · next action',
+      foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button>${ahead ? `<button class="pill c-commit js-fl-advance" data-r="R17" data-rec="${esc(o.custId)}">Advance here</button>` : ''}<button class="pill ignition js-fl-save" data-r="R17" data-rec="${esc(o.custId)}">${act ? 'Save action' : 'Add action'}</button>`,
+      body: `<label class="svc-field"><span>Action date &amp; time</span>${dateField('actWhen', o.actWhen, { withTime: true, time: o.actWhenTime })}</label>`
+        + `<label class="svc-field" style="margin-top:8px"><span>Next action (the layer's note)</span><textarea class="insp-desc js-fl-note" placeholder="What's the move? (quote call, demo, e-sign…)">${esc(o.actNote || '')}</textarea></label>`
+        + doneRow });
+    overlay.appendChild(pop);
   } else if (o.kind === 'splitUnit') {
     // §20 split — give one unit its own window on a NEW sibling rental, same invoice.
     const r = IDX.rental.get(o.rentalId), u = IDX.unit.get(o.unitId);
@@ -14211,6 +14571,7 @@ const WINDOW_CATALOG = [
   { kind: 'service',       label: 'Complete service',        tag: 'Service · complete',        sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, taskId: 'svc-wash' }) },
   { kind: 'schedule',      label: 'Schedule follow-up',      tag: 'Customer · follow-up',      sample: () => ({ customerId: ((DATA.customers || [])[0] || {}).customerId }) },
   { kind: 'sellUnit',      label: 'Sell a unit',             tag: 'Unit · sale',               sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, saleDate: TODAY_ISO }) },
+  { kind: 'funnelLayer',   label: 'Funnel layer action',     tag: 'Funnel · next action',      sample: () => ({ custId: ((DATA.customers || [])[0] || {}).customerId, fkey: 'member', stage: 'Contacted', actWhen: TODAY_ISO, actWhenTime: '09:00', actNote: '' }) },
   { kind: 'splitUnit',     label: 'Different dates (split)',  tag: 'Rental · split window',     sample: () => ({ rentalId: ((DATA.rentals || [])[0] || {}).rentalId, unitId: ((DATA.units || [])[0] || {}).unitId }) },
   { kind: 'addCard',       label: 'Add card',                tag: 'Customer · card on file',   sample: () => ({ customerId: ((DATA.customers || [])[0] || {}).customerId }) },
   { kind: 'addAch',        label: 'Add bank account',        tag: 'Customer · ACH bank',       sample: () => ({ customerId: ((DATA.customers || [])[0] || {}).customerId }) },
@@ -15243,7 +15604,8 @@ function wrPlanSummary(plan) {
 }
 function wrCreateCustomer(f) {
   const id = nextCustomerId();
-  const c = { customerId: id, firstName: f.firstName || '', lastName: f.lastName || '', name: `${f.firstName || ''} ${f.lastName || ''}`.trim() || (f.company || 'New lead'), company: f.company || '', phone: f.phone || '', email: f.email || '', address: f.address || '', industry: f.industry || '', accountType: f.accountType || 'Non-Business', payStatus: 'New Customer', requiresPO: false, rentalProtection: false, accountNotes: f.accountNotes || '', stripeId: '', selfie: '', signature: '', agreementType: '', agreementSignedAt: '', interestedCategoryIds: [], interestedMakes: [], desiredAge: '', desiredHours: '', activityLog: [], usedSalesStage: f.usedSalesStage || 'Inbound Lead', membershipStage: f.membershipStage || 'Inbound Lead', _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' } };
+  const usedSalesStage = f.usedSalesStage || 'N/A', membershipStage = f.membershipStage || 'N/A';   // funnel redesign: 'N/A' default (the retired 'Inbound Lead'-for-everyone default is gone)
+  const c = { customerId: id, firstName: f.firstName || '', lastName: f.lastName || '', name: `${f.firstName || ''} ${f.lastName || ''}`.trim() || (f.company || 'New lead'), company: f.company || '', phone: f.phone || '', email: f.email || '', address: f.address || '', industry: f.industry || '', accountType: f.accountType || 'Non-Business', payStatus: 'New Customer', requiresPO: false, rentalProtection: false, accountNotes: f.accountNotes || '', stripeId: '', selfie: '', signature: '', agreementType: '', agreementSignedAt: '', interestedCategoryIds: [], interestedMakes: [], desiredAge: '', desiredHours: '', activityLog: [], usedSalesStage, membershipStage, funnels: { rental: false, member: membershipStage !== 'N/A', equipment: usedSalesStage !== 'N/A' }, _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' } };
   DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c); logAction(c, 'Added by Mr. Wrangler');
   return c;
 }
@@ -16335,38 +16697,90 @@ function setExpenseReconcile(expenseId, val) {
   document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
   render(); renderOverlay();
 }
-// F3: the membership funnel ends in 'Signed' (auto-set by signing the agreement) instead
-// of 'Paid'; 'Signed' is shown in the timeline but locked — never a manual choice.
-const MEMBERSHIP_FUNNEL_ORDER = ['N/A', 'Inbound Lead', 'Outbound Lead', "Don't Contact", 'Contacted', 'Not A No!', 'Payment Discussed', 'Signed'];
-function openFunnelDropdown(custId, which, anchorEl) {
-  const cust = IDX.customer.get(custId);
-  const cur = which === 'membership' ? cust?.membershipStage : cust?.usedSalesStage;
-  const title = which === 'membership' ? 'Membership funnel' : 'Used sales funnel';
-  const mk = (v, inner, sc) => `<button class="gt-row ${sc} js-setfunnel" data-rec="${esc(custId)}" data-which="${which}" data-val="${esc(v)}">${inner}</button>`;
-  const opts = which === 'membership' ? { order: MEMBERSHIP_FUNNEL_ORDER, lock: new Set(['Signed']) } : {};
-  const html = gateTimeline('funnelStage', cur || 'N/A', title, mk, opts);
-  openDropdown(anchorEl, html, { cls: 'gt' });
+/* ── Funnel redesign 2026-07-17 (spec: customer-funnel-redesign) — the ONE adaptive
+   menu, shared by the detail funnel section and the quick-add "Lead?" pill. It REPLACES
+   the old per-funnel gate-timeline dropdowns (openFunnelDropdown / setFunnelStage) with an
+   explicit-membership model:
+     • Leads  — three chips toggle funnels.* (multi-select in the detail view).
+     • Stages — only the rungs applicable to the customer's memberships + live rental
+                activity (funnelTrackA / funnelTrackEquip). Auto rungs (Reserved/Rented
+                derived, Signed on agreement-sign) render LOCKED — never a manual pick. ── */
+function funnelMenuChip(c, key) {
+  const on = inFunnel(c, key);
+  const actLock = key === 'rental' && hasRentalActivity(c);   // Rental is auto-joined by live rentals — can't be turned off
+  return `<button class="fm-chip${on ? ' on' : ''}${actLock ? ' lock' : ''} js-funnel-join" data-rec="${esc(c.customerId)}" data-funnel="${key}" aria-pressed="${on}"${actLock ? ' data-tip="In the Rental funnel from live rentals — can’t remove"' : ''}><span class="fm-dot"></span>${esc(FUNNELS[key].label)}</button>`;
 }
-function setFunnelStage(custId, which, val) {
+function funnelMenuStageRow(c, r) {
+  const st = getStatus('funnelStage', r.stage);
+  const bothA = r.funnel !== 'equipment' && inRental(c) && inFunnel(c, 'member');   // Track A carries two sub-funnels → tag which one
+  const tag = r.funnel === 'equipment' ? '' : (bothA ? (r.funnel === 'rental' ? 'Rental' : 'Member') : '');
+  const inner = `<span class="fm-sdot c-${st.color}"></span><span class="fm-snm">${esc(st.label)}</span>${r.auto ? `<span class="fm-lock">${I.lock}auto</span>` : ''}${tag ? `<span class="fm-tag">${esc(tag)}</span>` : ''}`;
+  if (r.auto) return `<div class="fm-stage auto${r.current ? ' current' : ''}">${inner}</div>`;
+  return `<button class="fm-stage pickable${r.current ? ' current' : ''} js-funnel-setstage" data-rec="${esc(c.customerId)}" data-funnel="${r.funnel}" data-val="${esc(r.stage)}">${inner}</button>`;
+}
+function funnelMenuHtml(c) {
+  const aRows = funnelTrackA(c).map((r) => funnelMenuStageRow(c, r)).join('');
+  const equip = funnelTrackEquip(c);
+  const eRows = equip.length ? `<div class="fm-sub">Equipment</div>${equip.map((r) => funnelMenuStageRow(c, r)).join('')}` : '';
+  const stages = (aRows || eRows) ? aRows + eRows : `<div class="fm-empty">Pick a funnel above to see its stages.</div>`;
+  const naOn = !inRental(c) && !inFunnel(c, 'member') && !inFunnel(c, 'equipment');
+  return `<span class="gt-haz"></span><div class="fm-cap">Funnel</div>`
+    + `<div class="fm-na${naOn ? ' on' : ''}">N/A — not in a funnel</div>`
+    + `<div class="fm-sec">Leads</div><div class="fm-leads">${FUNNEL_KEYS.map((k) => funnelMenuChip(c, k)).join('')}</div>`
+    + `<div class="fm-sec">Stages</div><div class="fm-stages">${stages}</div>`;
+}
+function openFunnelMenu(custId, anchorEl) {
+  const c = IDX.customer.get(custId); if (!c) return;
+  openDropdown(anchorEl, funnelMenuHtml(c), { cls: 'funnelmenu' });
+}
+// A chip toggle keeps the menu OPEN (multi-select). The menu lives on document.body and
+// SURVIVES render() (which only rebuilds #app), so rebuild its innerHTML IN PLACE instead of
+// re-anchoring — that keeps its screen position steady (no jump) and works no matter which of
+// several same-customer triggers opened it (the detail ladders, the two empty-state join
+// buttons, or the pipeline board's two funnel pills — all share one data-rec).
+function refreshFunnelMenuInPlace(custId) {
   const c = IDX.customer.get(custId);
-  if (!c) return;
-  if (which === 'membership' && (val === 'Signed' || val === 'Paid')) return;   // F3: membership terminal is auto-set by signing the agreement, never manual
-  const field = which === 'membership' ? 'membershipStage' : 'usedSalesStage';
-  if (c[field] !== val) { c[field] = val; logAction(c, `${which === 'membership' ? 'Membership' : 'Sales'} stage → ${getStatus('funnelStage', val).label}`); }   // audit: funnel moves were unlogged (Jac, Phase 7)
+  const menu = document.querySelector('.dropdown-menu.funnelmenu');
+  if (menu && c) menu.innerHTML = funnelMenuHtml(c);
+}
+function toggleFunnelMembership(custId, funnel) {
+  const c = IDX.customer.get(custId); if (!c) return;
+  if (funnel === 'rental' && hasRentalActivity(c)) { toast('Rental is set by live rentals — it can’t be removed.'); return; }
+  const f = ensureFunnels(c);
+  const field = funnelStageField(funnel);   // Member/Equipment seed 'Lead' on join, reset to 'N/A' on leave; Rental's stage is derived
+  // Guard a completed terminal: leaving would silently wipe a real Signed (agreement) / Paid
+  // (sale) record back to N/A on a single misclick. Block it (mirrors the Rental activity lock).
+  if (f[funnel] && field) {
+    const terminal = FUNNELS[funnel].stages[FUNNELS[funnel].stages.length - 1];
+    if (c[field] === terminal) { toast(`${getStatus('funnelStage', terminal).label} is a completed ${FUNNELS[funnel].label} record — it can’t be removed from the funnel.`); return; }
+  }
+  const now = !f[funnel]; f[funnel] = now;
+  if (field) { if (!now) c[field] = 'N/A'; else if (!c[field] || c[field] === 'N/A') c[field] = 'Lead'; }
+  logAction(c, `${now ? 'Joined' : 'Left'} ${FUNNELS[funnel].label} funnel`);
+  reindex('customers', c);
+  render();
+  refreshFunnelMenuInPlace(custId);
+}
+function pickFunnelStage(custId, funnel, stage) {
+  const c = IDX.customer.get(custId); if (!c) return;
+  if (isAutoStage(funnel, stage)) return;              // auto stages are derived, never a manual pick
+  const field = funnelStageField(funnel); if (!field) return;   // Rental has no manual stage
+  ensureFunnels(c)[funnel] = true;                     // picking a stage implies membership in that funnel
+  if (c[field] !== stage) { c[field] = stage; logAction(c, `${FUNNELS[funnel].label} stage → ${getStatus('funnelStage', stage).label}`); }
   reindex('customers', c);
   document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
   render();
 }
-/* The Customers-list quick-add funnel picker — SAME gate-timeline body as
- * openFunnelDropdown's membership branch (locks 'Signed', F3 — never a manual pick,
- * new customer or not), but the pick writes to the in-progress state.custQuickAdd
- * draft instead of a real customer record (openFunnelDropdown/setFunnelStage require
- * one to already exist). */
-function openCustQuickAddFunnelDropdown(anchorEl) {
-  const cur = state.custQuickAdd.funnel || 'N/A';
-  const mk = (v, inner, sc) => `<button class="gt-row ${sc} js-custqa-funnel-pick" data-val="${esc(v)}">${inner}</button>`;
-  const html = gateTimeline('funnelStage', cur, 'Rental funnel', mk, { order: MEMBERSHIP_FUNNEL_ORDER, lock: new Set(['Signed']) });
-  openDropdown(anchorEl, html, { cls: 'gt' });
+/* Quick-add "Lead?" pill (Customers-list inline add) — SINGLE-select: pick one funnel
+ * (or N/A) and the new customer is created at that funnel's 'Lead'. No record exists yet,
+ * so it writes state.custQuickAdd.funnel (a FUNNEL KEY now, not a stage) and — once
+ * first/last/phone are valid — the pick is the 4th field that fires custQuickAddCreate. */
+function openCustQuickAddFunnelMenu(anchorEl) {
+  const cur = state.custQuickAdd.funnel || '';
+  const chip = (key, label) => `<button class="fm-chip${cur === key ? ' on' : ''} js-custqa-funnel-pick" data-val="${esc(key)}"><span class="fm-dot"></span>${esc(label)}</button>`;
+  const html = `<span class="gt-haz"></span><div class="fm-cap">Add to funnel</div>`
+    + `<div class="fm-leads qa">${chip('rental', 'Rental')}${chip('member', 'Member')}${chip('equipment', 'Equipment')}${chip('N/A', 'N/A')}</div>`;
+  openDropdown(anchorEl, html, { cls: 'funnelmenu qa' });
 }
 /* §12.1 interested categories — pick mode died (Wave 2): a plain dropdown now
    attaches a category to the customer (same pattern as the funnel dropdown). */
@@ -16561,14 +16975,13 @@ function render() {
     if (!phone) positionDateSearch(fl);
   }
   // §M3 — lock the column scroll behind any open sheet/overlay/dock on phones
-  document.body.classList.toggle('sheet-open', !!(state.overlay || state.datesearch || state.chat.open || (state.wrangler.open && !state.wrangler.min)));   // a MINIMIZED Wrangler dock is a slim in-flow bar — it must NOT lock the page scroll (Jac, mobile)
+  document.body.classList.toggle('sheet-open', !!(state.overlay || state.datesearch || state.chat.open || (state.wrangler.open && !state.wrangler.min) || (document.body.classList.contains('is-phone') && state.commsRail.cat)));   // a MINIMIZED Wrangler dock is a slim in-flow bar — it must NOT lock the page scroll (Jac, mobile); a phone full-screen comms surface DOES lock the card behind it
   syncBackGuard();   // §M3 — keep the Android back-button guard in step with what's open
   // §17/§18 — the team + wrangler DOCKS are PHONE-only bottom sheets now (D9): desktop
   // retired both surfaces onto the comms rail (their machinery is shared, not the shell).
-  const _phoneDocks = document.body.classList.contains('is-phone');
-  if (_phoneDocks && state.chat.open) { const d = el('div', 'chat-dock', ''); d.dataset.drop = 'chat'; d.innerHTML = chatDockEl(); $('#app').appendChild(d); }
-  if (_phoneDocks && state.wrangler.open) { const d = el('div', 'wrangler-dock' + (state.chat.open ? ' wr-beside-chat' : '') + (state.wrangler.min ? ' wr-min' : '')); d.innerHTML = wranglerDockEl(); $('#app').appendChild(d); }
-  mountCommsPops();   // D8/D9 comms rail — the session's single open window floats above its own tab
+  // Phone comms is FULL-SCREEN now (mountMobileComms); the old phone-only chat/wrangler bottom-sheet docks are retired.
+  mountCommsPops();   // D8/D9 comms rail — desktop: the session's single open window floats above its own tab
+  mountMobileComms(); // D8/D9 comms — phone: the summoned category renders FULL-SCREEN (Messenger-style)
   // §18e/§17 — the bell + Requests inbox now live in the bottom comms band (bb-utils),
   // always visible; the docks float above it. (The old floating fab-stack is retired.)
   mountTransportEditor();   // inline transport editor: mount the live map + wire the address field
@@ -18138,10 +18551,12 @@ function onClick(e) {
   if (closest('.js-chat-end')) { e.stopPropagation(); closeMenus(); return commsEndConv(closest('.js-chat-end').dataset.chat, 'team'); }   // admin ends the chat (phone-safe: cat pinned)
   if (closest('[data-chat-member]')) { e.stopPropagation(); return chatToggleMember(closest('[data-chat-member]').dataset.chatMember); }
   // D8/D9 THE COMMS RAIL — toolbar chips · session tabs · the single window · ALL menu
-  if (closest('.js-comms-chip')) { e.stopPropagation(); return commsToggleCat(closest('.js-comms-chip').dataset.cat); }
+  if (closest('.js-comms-chip')) { e.stopPropagation(); const cat = closest('.js-comms-chip').dataset.cat; return cat === 'customer' ? commsToggleCustomer() : commsToggleCat(cat); }
+  if (closest('.js-comms-ch')) { e.stopPropagation(); const ch = closest('.js-comms-ch').dataset.ch; setCommsCustCh(ch); return commsSummonChannel(ch); }
   if (closest('.js-comms-new')) { e.stopPropagation(); return commsNewChat(); }   // D9 ALL menu: + New chat (team → newChat(), wrangler → wranglerNewChat())
   if (closest('[data-comms-hide]')) { e.stopPropagation(); return commsHideTab(closest('[data-comms-hide]').dataset.commsHide); }   // ✕ hides from the rail only — never ends
-  if (closest('.js-comms-menu-x')) { e.stopPropagation(); const s = commsSess(); if (s) { s.menuOpen = false; saveCommsRail(); } return render(); }
+  if (closest('.js-comms-menu-x')) { e.stopPropagation(); const s = commsSess(); if (s) s.menuOpen = false; if (document.body.classList.contains('is-phone')) { commsLeaveCat(state.commsRail.cat); state.commsRail.cat = null; } saveCommsRail(); return render(); }
+  if (closest('.js-mcomms-back')) { e.stopPropagation(); const s = commsSess(); if (s) { s.lastOpen = null; s.menuOpen = true; } saveCommsRail(); return render(); }
   if (closest('[data-comms-tab]')) { e.stopPropagation(); commsOpenPt = { x: e.clientX }; return commsToggleTab(closest('[data-comms-tab]').dataset.commsTab); }
   if (closest('.js-comms-end')) { e.stopPropagation(); closeMenus(); return commsEndConv(closest('.js-comms-end').dataset.cust); }
   if (closest('.js-comms-mend')) { e.stopPropagation(); return commsEndConv(closest('.js-comms-mend').dataset.cust); }
@@ -18240,11 +18655,12 @@ function onClick(e) {
   if (closest('.js-bv-customize')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.customize = !o.customize; renderOverlay(); } return; }
   if (closest('.js-bv-resetlayout')) { e.stopPropagation(); const card = closest('.js-bv-resetlayout').dataset.card; saveListLayout(card, null); render(); renderOverlay(); return; }
   if (closest('.js-new-cust-search')) { e.stopPropagation(); const cs = activeSession().cards.customers; return startNewCustomer(parseCustomerSearch(cs.search)); }
-  // Customers-list inline quick-add row (ADDITIVE — the search-bar quick-add above is untouched):
-  // the fields are always shown (no open/collapse — the blue +New Customer button was traded for
-  // them), so only the funnel gate needs a click handler here; the funnel-pick option itself lives
-  // with the other dropdown handlers below (js-custqa-funnel-pick, next to js-setfunnel).
-  if (closest('.js-custqa-funnel')) { e.stopPropagation(); return openCustQuickAddFunnelDropdown(closest('.js-custqa-funnel')); }
+  // Customers-list inline quick-add row (ADDITIVE — the search-bar quick-add above is untouched).
+  // The fields are always shown (trunk #704 — no open/collapse), so only the funnel gate needs a
+  // handler; it opens the funnel-KEY picker (js-custqa-funnel-pick lives with the other dropdown
+  // handlers below). Merge note: the funnel-redesign's funnel-KEY model (openCustQuickAddFunnelMenu)
+  // supersedes trunk's stage-based openCustQuickAddFunnelDropdown; #704's always-show UX is kept.
+  if (closest('.js-custqa-funnel')) { e.stopPropagation(); return openCustQuickAddFunnelMenu(closest('.js-custqa-funnel')); }
   if (closest('.js-new-unit-search')) { e.stopPropagation(); return quickAddUnitFromSearch(activeSession().cards.units.search); }
   if (closest('.js-new-cat-search')) { e.stopPropagation(); return quickAddCategoryFromSearch(activeSession().cards.categories.search); }
   if (closest('.js-coltab')) {
@@ -18292,11 +18708,19 @@ function onClick(e) {
   // status dropdown set
   if (closest('.js-setstatus')) { const b = closest('.js-setstatus'); setRentalStatus(b.dataset.rec, b.dataset.val); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return; }
   if (closest('.js-setunitstatus')) { const b = closest('.js-setunitstatus'); setUnitStatus(b.dataset.rec, b.dataset.unit, b.dataset.val); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return; }
-  // funnel stage pill → stage dropdown; set; +Add Category / Record / Schedule
-  if (closest('.js-setfunnel')) { const b = closest('.js-setfunnel'); return setFunnelStage(b.dataset.rec, b.dataset.which, b.dataset.val); }
-  if (closest('.js-funnel')) { const b = closest('.js-funnel'); e.stopPropagation(); return openFunnelDropdown(b.dataset.rec, b.dataset.which, b); }
-  // Customers-list quick-add draft's funnel pick — writes state.custQuickAdd.funnel (no
-  // customer record exists yet, so this can't ride js-setfunnel/setFunnelStage above).
+  // funnel — the ONE adaptive menu (redesign 2026-07-17): open it, toggle a Leads chip, pick a manual stage
+  if (closest('.js-funnelmenu')) { const b = closest('.js-funnelmenu'); e.stopPropagation(); return openFunnelMenu(b.dataset.rec, b); }
+  if (closest('.js-funnel-join')) { const b = closest('.js-funnel-join'); return toggleFunnelMembership(b.dataset.rec, b.dataset.funnel); }
+  if (closest('.js-funnel-setstage')) { const b = closest('.js-funnel-setstage'); return pickFunnelStage(b.dataset.rec, b.dataset.funnel, b.dataset.val); }
+  // Dated-action funnel: the two-tab toggle, a layer press (open its action editor), the Member Lead checkbox.
+  if (closest('.js-funnel-tab')) { const b = closest('.js-funnel-tab'); e.stopPropagation(); state.funnelTab = state.funnelTab || {}; state.funnelTab[b.dataset.rec] = b.dataset.tab; return render(); }
+  if (closest('.js-funnel-layer')) {
+    const b = closest('.js-funnel-layer'); e.stopPropagation();
+    return openFunnelLayerEdit(b.dataset.rec, b.dataset.fkey, b.dataset.stage);   // any layer → arm/edit its action (advancing is an explicit button inside)
+  }
+  if (closest('.js-member-lead')) { const b = closest('.js-member-lead'); e.stopPropagation(); return toggleMemberLead(b.dataset.rec); }
+  // Customers-list quick-add draft's funnel pick — writes state.custQuickAdd.funnel a FUNNEL KEY
+  // (no customer record exists yet, so it can't ride js-funnel-setstage/pickFunnelStage above).
   if (closest('.js-custqa-funnel-pick')) { const b = closest('.js-custqa-funnel-pick'); state.custQuickAdd.funnel = b.dataset.val; document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); if (custQuickAddValid()) return custQuickAddCreate(); return render(); }   // the funnel PICK is the 4th selection (any value incl N/A) — with first/last/phone valid → create + open detail; else show the picked funnel
   if (closest('.js-fleet-filter')) {
     const b = closest('.js-fleet-filter'); e.stopPropagation();
@@ -18312,8 +18736,6 @@ function onClick(e) {
   if (closest('.js-addmakecat')) { const b = closest('.js-addmakecat'); e.stopPropagation(); return openInterestDropdown(b.dataset.rec, b); }
   if (closest('.js-setintcat')) { const b = closest('.js-setintcat'); e.stopPropagation(); return addInterestedCategory(b.dataset.rec, b.dataset.val); }
   if (closest('.js-setintmake')) { const b = closest('.js-setintmake'); e.stopPropagation(); return addInterestedMake(b.dataset.rec, b.dataset.val); }
-  // §3.5 funnel toggle — view-local active tab, in-memory, keyed by customer (never persisted)
-  if (closest('.js-funnel-tab')) { const b = closest('.js-funnel-tab'); e.stopPropagation(); state.funnelTab = state.funnelTab || {}; state.funnelTab[b.dataset.rec] = b.dataset.tab; render(); return; }
   // §3.8 per-funnel Action Log — expandable, one open-state per (customer, scope)
   if (closest('.js-actlog-toggle')) { const b = closest('.js-actlog-toggle'); e.stopPropagation(); state.actLogOpen = state.actLogOpen || {}; const k = b.dataset.rec + '|' + b.dataset.scope; state.actLogOpen[k] = !state.actLogOpen[k]; render(); return; }
   // §3.6 Next Actions — ✓ Done / ✕ Cancel MUST be checked before the row's edit hit (they sit inside it)
@@ -18328,6 +18750,9 @@ function onClick(e) {
   if (closest('.js-act-open')) { const b = closest('.js-act-open'); e.stopPropagation(); state.actMode = b.dataset.val; state.actOpen = b.dataset.rec; const rec = b.dataset.rec; render(); document.querySelector(`.js-act-in[data-rec="${rec}"]`)?.focus(); return; }
   if (closest('.js-schedule-save')) { const b = closest('.js-schedule-save'); e.stopPropagation(); const o = state.overlay; const root = b.closest('.popup'); const c = IDX.customer.get(b.dataset.rec); const date = o?.when, time = o?.whenTime || '09:00'; const note = (root.querySelector('.js-sch-note')?.value || '').trim(); if (!c || !date) { flashOr('.datefield', 'Pick a date first.'); return; } const scope = (o?.scope === 'usedSales') ? 'usedSales' : 'rental'; const text = `Scheduled: ${note || 'follow-up'} @ ${date} ${to12(time)}`; c.activityLog = c.activityLog || []; if (o?.editIdx != null && c.activityLog[o.editIdx]) { const ent = c.activityLog[o.editIdx]; ent.when = date; ent.text = text; ent.scope = scope; } else { c.activityLog.push({ when: date, text, scope }); } reindex('customers', c); toast(o?.editIdx != null ? 'Next action saved.' : 'Next action added.'); state.datepick = null; closeOverlay(); render(); }
   if (closest('.js-sell-save')) { const b = closest('.js-sell-save'); e.stopPropagation(); const o = state.overlay; const root = b.closest('.popup'); const price = root.querySelector('.js-sell-price')?.value; const date = o?.saleDate; const note = (root.querySelector('.js-sell-note')?.value || '').trim(); if (!date) { flashOr('.datefield', 'Pick a sale date first.'); return; } if (!price || Number(price) <= 0) { flashOr('.js-sell-price', 'Enter a sale price first.'); return; } return sellUnit(b.dataset.rec, price, date, note); }
+  if (closest('.js-fl-done') || closest('.js-fl-cancel')) { e.stopPropagation(); const done = !!closest('.js-fl-done'); const b = closest('.js-fl-done') || closest('.js-fl-cancel'); return completeFunnelAction(b.dataset.rec, done); }   // ✓/✕ the layer's armed action (logs it; never advances)
+  if (closest('.js-fl-advance')) { const b = closest('.js-fl-advance'); e.stopPropagation(); const o = state.overlay; if (o) advanceFunnelLayer(o.custId, o.fkey, o.stage); return; }   // explicit advance — customer actually moved to this stage
+  if (closest('.js-fl-save')) { e.stopPropagation(); return saveFunnelLayer(); }   // save the layer's dated next-action
   // Wave 2 — empty slots on a Quote/invoice: the UNIT slot points you at the
   // Units list (drag IS the link path); the CUSTOMER slot opens quick-add-link.
   if (closest('.js-slot-unit')) {
@@ -19940,6 +20365,9 @@ function completeWOAttempt(woId) {
 }
 
 function onInput(e) {
+  // Funnel-layer action editor: keep the action note synced to overlay state so opening the date
+  // picker (which re-renders the popup from o.actNote) never wipes a typed-but-unsaved note.
+  if (e.target.classList.contains('js-fl-note') && state.overlay?.kind === 'funnelLayer') { state.overlay.actNote = e.target.value; return; }
   if (e.target.id === 'globalsearch') {
     // The state updates on every keystroke; the (debounced) re-render rebuilds ONLY the
     // results grid via renderResults(), leaving THIS input node mounted — so no focus/
@@ -20387,7 +20815,7 @@ function parseQuickCustomer(q) {
 function quickAddCustomerFromSearch(value) {
   const p = parseQuickCustomer(value); if (!p) return false;
   const id = nextCustomerId();
-  const c = { customerId: id, firstName: p.firstName, lastName: p.lastName, name: `${p.firstName} ${p.lastName}`.trim(), company: '', phone: p.phone, email: '', address: '', industry: '', accountType: 'Non-Business', payStatus: 'New Customer', requiresPO: false, rentalProtection: false, accountNotes: '', stripeId: '', selfie: '', signature: '', agreementType: '', agreementSignedAt: '', interestedCategoryIds: [], interestedMakes: [], desiredAge: '', desiredHours: '', activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A', _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' } };
+  const c = { customerId: id, firstName: p.firstName, lastName: p.lastName, name: `${p.firstName} ${p.lastName}`.trim(), company: '', phone: p.phone, email: '', address: '', industry: '', accountType: 'Non-Business', payStatus: 'New Customer', requiresPO: false, rentalProtection: false, accountNotes: '', stripeId: '', selfie: '', signature: '', agreementType: '', agreementSignedAt: '', interestedCategoryIds: [], interestedMakes: [], desiredAge: '', desiredHours: '', activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A', funnels: blankFunnels(), _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' } };
   DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c);
   logAction(c, 'Customer quick-added');
   const s = activeSession();
@@ -20415,20 +20843,23 @@ function resetCustQuickAdd() {
     state.custQuickAdd = { first: '', last: '', phone: '', funnel: 'N/A' };
   }
 }
-/* Create + open — mirrors quickAddCustomerFromSearch's create-object field set verbatim,
- * except membershipStage comes from the draft's own funnel picker (set DIRECTLY, never
- * via setFunnelStage — it hard-rejects a manual 'Signed'/'Paid', and the funnel picker
- * itself already locks 'Signed' the same way openFunnelDropdown does, F3) and usedSalesStage
- * stays its ordinary 'N/A' default. Always opens the new customer in Standard view
- * (openStandard), same "unlinked — drag it where it goes" landing as the search-bar path. */
+/* Create + open — mirrors quickAddCustomerFromSearch's field set, and applies the draft's
+ * single funnel pick (a FUNNEL KEY now, funnel redesign 2026-07-17): Member/Equipment join
+ * that funnel at its 'Lead' stage; Rental just joins (its stage is derived from live rentals);
+ * N/A / unset creates in no funnel. Always opens the new customer in Standard view (openStandard),
+ * same "unlinked — drag it where it goes" landing as the search-bar path. */
 function custQuickAddCreate() {
   if (!custQuickAddValid()) return;
   const d = state.custQuickAdd;
   const firstName = d.first.trim(), lastName = d.last.trim(), phone = d.phone.trim();
+  const key = FUNNELS[d.funnel] ? d.funnel : null;   // 'rental' | 'member' | 'equipment' — else no funnel
+  const funnels = blankFunnels(); if (key) funnels[key] = true;
+  const membershipStage = key === 'member' ? 'Lead' : 'N/A';
+  const usedSalesStage = key === 'equipment' ? 'Lead' : 'N/A';
   const id = nextCustomerId();
-  const c = { customerId: id, firstName, lastName, name: `${firstName} ${lastName}`.trim(), company: '', phone, email: '', address: '', industry: '', accountType: 'Non-Business', payStatus: 'New Customer', requiresPO: false, rentalProtection: false, accountNotes: '', stripeId: '', selfie: '', signature: '', agreementType: '', agreementSignedAt: '', interestedCategoryIds: [], interestedMakes: [], desiredAge: '', desiredHours: '', activityLog: [], usedSalesStage: 'N/A', membershipStage: d.funnel || 'N/A', _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' } };
+  const c = { customerId: id, firstName, lastName, name: `${firstName} ${lastName}`.trim(), company: '', phone, email: '', address: '', industry: '', accountType: 'Non-Business', payStatus: 'New Customer', requiresPO: false, rentalProtection: false, accountNotes: '', stripeId: '', selfie: '', signature: '', agreementType: '', agreementSignedAt: '', interestedCategoryIds: [], interestedMakes: [], desiredAge: '', desiredHours: '', activityLog: [], usedSalesStage, membershipStage, funnels, _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' } };
   DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c);
-  logAction(c, 'Customer quick-added');
+  logAction(c, key ? `Customer quick-added → ${FUNNELS[key].label} funnel` : 'Customer quick-added');
   resetCustQuickAdd();
   openStandard('customers', id);
 }
@@ -20524,7 +20955,7 @@ function quickSaveCustomer(o) {
     requiresPO: !!d.requiresPO, rentalProtection: !!d.rentalProtection, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
     idNumber: d.idNumber || '', netDays: normNetDays(d.netDays), custom: d.custom || {},
     agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '',
-    interestedCategoryIds: [], interestedMakes: [], desiredAge: '', desiredHours: '', activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A',
+    interestedCategoryIds: [], interestedMakes: [], desiredAge: '', desiredHours: '', activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A', funnels: blankFunnels(),
     _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' },
   };
   DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c);
@@ -20595,7 +21026,7 @@ function saveNewCustomer() {
     requiresPO: !!d.requiresPO, rentalProtection: !!d.rentalProtection, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
     idNumber: d.idNumber || '', netDays: normNetDays(d.netDays), custom: d.custom || {},
     agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '',
-    interestedCategoryIds: [], interestedMakes: [], desiredAge: '', desiredHours: '', activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A',
+    interestedCategoryIds: [], interestedMakes: [], desiredAge: '', desiredHours: '', activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A', funnels: blankFunnels(),
     _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' },
   };
   DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c);
@@ -25574,7 +26005,7 @@ function boot() {
   // menu itself and the comms chip that hosts it, so the chip's own click toggles instead of double-firing.
   document.addEventListener('mousedown', (e) => {
     const s = commsSess(); if (!s || !s.menuOpen) return;
-    if (e.target.closest && e.target.closest('.comms-pop.comms-menu, .js-comms-chip')) return;
+    if (e.target.closest && e.target.closest('.comms-pop.comms-menu, .mcomms, .js-comms-chip')) return;   // .mcomms = phone full-screen comms; taps inside it must never self-dismiss (it IS the menu)
     s.menuOpen = false; saveCommsRail(); render();
   });
   document.addEventListener('input', onInput);
@@ -25977,7 +26408,7 @@ function exposeTestApi() {
       dataCache, cacheValid, cacheDeviceOk, cacheTokenTag, cacheAppVer, cacheSnapshotEnvelope, CACHE_SCHEMA_VER, FEATURES,   // §instant-cache (spec 2026-07-16)
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsUtilRollup, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, pickFunnelStage, toggleFunnelMembership, rentalFunnelStage, funnelStageOf, inFunnel, inRental, hasRentalActivity, funnelTrackA, funnelTrackEquip, ensureFunnels, funnelMenuHtml, reachFunnelStage, toggleMemberLead, funnelCurrentStage, funnelLayerDate, funnelLayerNote, ensureFunnelLog, markMembershipSigned, funnelLayerAction, funnelScope, naUrgency, naOpenList, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsUtilRollup, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
       tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, openYardCamera, commitYardCapture, nextCategoryId, nextUnitId,
       tripsLS, tripMerge, tripSplit, assignTripDriver, tripLabel, assignStopDriver, tripSetTime,
       tripPushSoon, tripPushNow, loadTripsFromBackend, tripsSyncFooter, setBackendPassword: (pw) => { backendPassword = pw || ''; },   // §2.3 Phase 4 sync — the setter is test-only (mirrors setRole), letting logic-test.mjs exercise the online path via a mocked window.fetch, never a real backend
@@ -26118,6 +26549,10 @@ const COMMS_CAT_META = {
   team:     { label: 'Team',        icon: () => I.users,         channel: null,    tip: 'Team — the shop-floor chat' },
   text:     { label: 'Texts',       icon: () => I.messageSquare, channel: 'sms',   tip: 'Texts — customer SMS threads' },
   email:    { label: 'Email',       icon: () => I.mail,          channel: 'email', tip: 'Email — customer email threads' },
+  // D8 merged Customer chip — one button for texts + emails; the channel toggle lives in its
+  // menu. icon() follows the current channel (commsCustCh). Never used as a rail `cat` — the chip
+  // delegates to the real 'text'/'email' cats via commsToggleCustomer/commsSummonChannel.
+  customer: { label: 'Customers',   icon: () => (commsCustCh === 'email' ? I.mail : I.messageSquare), channel: null, tip: 'Customers — texts & emails in one place (toggle inside)' },
   wrangler: { label: 'Mr. Wrangler', icon: () => I.lasso,        channel: null,    tip: 'Mr. Wrangler — ask the yard AI, or report a bug' },
 };
 const commsOnline = () => typeof backendPassword !== 'undefined' && !!backendPassword;
@@ -26169,6 +26604,17 @@ function commsCatWorst(cat) {
   list.forEach((t) => { const s = commsConvStatus(t, COMMS_CAT_META[cat].channel); if (!worst || COMMS_ST_RANK[s] < COMMS_ST_RANK[worst]) worst = s; });
   return (!worst || worst === 'gray') ? 'green' : worst;   // nothing waiting = green (quiet line)
 }
+/* ── merged Customer chip (Jac 2026-07-17): Texts + Email collapse into ONE comms button;
+   a Text/Email toggle in its menu picks the channel. The underlying 'text'/'email' categories,
+   their sessions, threads and sends are UNCHANGED — this is a chip-row + menu presentation over
+   them. commsCustCh = which channel the merged chip currently wears (a per-device view pref). ── */
+const COMMS_CUSTCH_LS = 'jactec.commsCustCh';
+let commsCustCh = 'text';
+try { if (localStorage.getItem(COMMS_CUSTCH_LS) === 'email') commsCustCh = 'email'; } catch (e) {}
+const commsCustCat = () => (commsCustCh === 'email' ? 'email' : 'text');
+function setCommsCustCh(ch) { commsCustCh = ch === 'email' ? 'email' : 'text'; try { localStorage.setItem(COMMS_CUSTCH_LS, commsCustCh); } catch (e) {} }
+const commsCustActive = () => (state.commsRail.cat === 'text' || state.commsRail.cat === 'email');
+function commsCustWorst() { return [commsCatWorst('text'), commsCatWorst('email')].sort((a, b) => COMMS_ST_RANK[a] - COMMS_ST_RANK[b])[0]; }
 /* ── Team category (D9) — conversations derive from the APP-23 chat store ── */
 const commsChatLastAt = (c) => Math.max(0, ...(c.messages || []).map((m) => m.at || 0));
 function commsTeamChats() {   // every un-ended team chat, newest first (End resurrects on a newer message)
@@ -26247,18 +26693,17 @@ function commsAliasesEnsure() {     // lazy one-shot alias fetch for the email F
   commsAliasList().then((a) => { if (a && a.length) render(); });
 }
 /* ── the four toolbar chips (bottom-left, before the tool buttons) ────────── */
+const COMMS_CHIP_CATS = ['team', 'customer', 'wrangler'];   // D8 merged row — Texts+Email fold into 'customer'
 function commsChipsHtml() {
   const phone = document.body.classList.contains('is-phone');
   const chip = (cat) => {
     const meta = COMMS_CAT_META[cat];
-    // phones have no rail — the team/wrangler chips still bridge to their bottom-sheet docks there
-    const on = phone
-      ? (cat === 'team' ? state.chat.open : cat === 'wrangler' ? (state.wrangler.open && !state.wrangler.min) : state.commsRail.cat === cat)
-      : state.commsRail.cat === cat;
-    const worst = commsCatWorst(cat);
+    // 'customer' is on whenever a customer channel (text OR email) is summoned; its dot rolls up both.
+    const on = cat === 'customer' ? commsCustActive() : state.commsRail.cat === cat;
+    const worst = cat === 'customer' ? commsCustWorst() : commsCatWorst(cat);
     return `<button class="iconbtn comms-chip js-comms-chip${on ? ' on' : ''}" data-cat="${cat}" data-tip="${esc(meta.tip)}" aria-pressed="${on}">${meta.icon()}${worst ? `<span class="cc-dot c-${worst}" aria-hidden="true"></span>` : ''}</button>`;
   };
-  return `<span class="comms-chips" role="group" aria-label="Comms — Team, Texts, Email, Mr. Wrangler">${COMMS_CATS.map(chip).join('')}</span><span class="bb-sep bb-stitch" aria-hidden="true"></span>`;
+  return `<span class="comms-chips" role="group" aria-label="Comms — Team, Customers, Mr. Wrangler">${COMMS_CHIP_CATS.map(chip).join('')}</span><span class="bb-sep bb-stitch" aria-hidden="true"></span>`;
 }
 /* ── the summoned session's tabs on the rail (ALL first, then conversations).
    D9: one builder, four categories — a tab's is-active means "this is THE open
@@ -26351,9 +26796,11 @@ function commsWranglerPopupHtml() {
 }
 /* ── the ALL menu: every un-ended conversation, Open / End per row (D9: Team and
    Mr. Wrangler list their chats too, with a + New chat at the foot) ────────── */
-function commsMenuHtml(cat) {
+function commsMenuHtml(cat, opts = {}) {
   const meta = COMMS_CAT_META[cat];
-  const row = (id, name, st, snip) => `<div class="cm-row js-comms-mrow" data-cust="${esc(id)}" data-tip="Open"><span class="cp-dot c-${st}" aria-hidden="true"></span><span class="cm-who">${esc(name)}</span><span class="cm-snip">${esc(snip)}</span>${ghostPill('End', { js: 'js-comms-mend', data: { cust: id }, tip: cat === 'team' || cat === 'wrangler' ? 'End it — the history stays stored' : 'End it — the history stays on the profile' })}</div>`;
+  const row = (id, name, st, snip) => opts.readonly
+    ? `<div class="cm-row cm-ro"><span class="cp-dot c-${st}" aria-hidden="true"></span><span class="cm-who">${esc(name)}</span><span class="cm-snip">${esc(snip)}</span></div>`
+    : `<div class="cm-row js-comms-mrow" data-cust="${esc(id)}" data-tip="Open"><span class="cp-dot c-${st}" aria-hidden="true"></span><span class="cm-who">${esc(name)}</span><span class="cm-snip">${esc(snip)}</span>${ghostPill('End', { js: 'js-comms-mend', data: { cust: id }, tip: cat === 'team' || cat === 'wrangler' ? 'End it — the history stays stored' : 'End it — the history stays on the profile' })}</div>`;
   let rows = '', empty = 'Nothing on the line — right-click a customer to start one.', newRow = '';
   if (cat === 'team') {
     rows = commsTeamChats().map((c) => {
@@ -26377,8 +26824,16 @@ function commsMenuHtml(cat) {
       return row(id, (c && fullName(c)) || id, commsConvStatus(t, meta.channel), (ch.lastDirection === 'inbound' ? 'them: ' : 'you: ') + (ch.lastSnippet || ''));
     }).join('');
   }
+  const isCust = cat === 'text' || cat === 'email';
+  const chanToggle = isCust ? `<div class="comms-chan" role="tablist" aria-label="Channel — text or email">
+      <button class="comms-chan-b js-comms-ch${commsCustCh === 'text' ? ' on' : ''}" data-ch="text" role="tab" aria-selected="${commsCustCh === 'text'}">${I.messageSquare}<span>Text</span></button>
+      <button class="comms-chan-b js-comms-ch${commsCustCh === 'email' ? ' on' : ''}" data-ch="email" role="tab" aria-selected="${commsCustCh === 'email'}">${I.mail}<span>Email</span></button>
+    </div>` : '';
+  const title = isCust ? 'Customers' : esc(meta.label);
+  const sub = isCust ? (commsCustCh === 'email' ? 'Emailing customers' : 'Texting customers') : 'Open &amp; un-ended';
   return `<div class="cp-cap" aria-hidden="true"></div>
-    <div class="cp-head"><span class="cp-cat">${esc(meta.label)}</span><span class="cp-who">Open &amp; un-ended</span><span class="spacer"></span><button class="cp-x js-comms-menu-x" aria-label="Tuck the list away" data-tip="Tuck away — nothing ends">${I.x}</button></div>
+    <div class="cp-head"><span class="cp-cat">${title}</span><span class="cp-who">${sub}</span><span class="spacer"></span><button class="cp-x js-comms-menu-x" aria-label="Tuck the list away" data-tip="Tuck away — nothing ends">${I.x}</button></div>
+    ${chanToggle}
     <div class="cp-feed cp-list">${rows || `<div class="cp-empty">${empty}</div>`}${newRow}</div>`;
 }
 /* Mount THE open window ABOVE its own tab (Messenger metaphor, D9 single-open: at
@@ -26438,27 +26893,79 @@ function mountCommsPops() {
     }
   }
   if (sess.menuOpen && (!COMMS_CAT_META[cat].channel || commsOnline())) {
-    const at = document.querySelector(`.js-comms-chip[data-cat="${cat}"]`) || document.querySelector('.comms-rail');
+    const at = document.querySelector(`.js-comms-chip[data-cat="${cat}"]`) || document.querySelector('.js-comms-chip[data-cat="customer"]') || document.querySelector('.comms-rail');
     if (at) { const node = el('div', 'comms-pop comms-menu'); node.innerHTML = commsMenuHtml(cat); host.appendChild(node); place(node, at, 340); }
   }
   commsOpenPt = null;   // one render-cycle scope — consumed by the window mount above
+}
+// D8/D9 PHONE comms — the summoned category fills the screen (Messenger metaphor): the INBOX
+// (conversation list + the Text/Email toggle for customers) until a conversation is opened, then
+// the THREAD itself with a Back-to-inbox chevron. Reuses the exact builders desktop mounts on the
+// rail (commsMenuHtml / commsPopupHtml / commsTeamPopupHtml / commsWranglerPopupHtml), so composing,
+// sending, End, drafts and the toggle all keep working through their existing selectors.
+function mountMobileComms() {
+  if (!document.body.classList.contains('is-phone')) return;
+  const cat = state.commsRail.cat;
+  if (!cat) return;
+  const sess = state.commsRail.sessions[cat];
+  const openId = sess ? sess.lastOpen : null;
+  let inner = '';
+  if (openId != null) {
+    if (cat === 'team') inner = chatById(String(openId)) ? commsTeamPopupHtml(String(openId)) : '';
+    else if (cat === 'wrangler') inner = state.wrangler.open ? commsWranglerPopupHtml() : '';
+    else {
+      const t = commsThreadsFor(cat).find((x) => String(x.customerId) === String(openId)) || null;
+      inner = commsPopupHtml(cat, t, String(openId));
+    }
+  }
+  const host = el('div', 'mcomms');
+  if (inner) {
+    // the wrangler thread wrapper must wear .wrangler-dock — mountWranglerDock() (called each
+    // render) keys off it to hydrate image blobs + wire paste/drag-drop (parity with desktop).
+    const dockCls = cat === 'wrangler' ? ' wrangler-dock' : '';
+    host.innerHTML = `<div class="mcomms-sheet mcomms-thread${dockCls}"><button class="mcomms-back js-mcomms-back" aria-label="Back to the list">${I.chevL}<span>Back</span></button>${inner}</div>`;
+  } else {
+    host.innerHTML = `<div class="mcomms-sheet mcomms-inbox">${commsMenuHtml(cat)}</div>`;
+  }
+  $('#app').appendChild(host);
+  const feed = host.querySelector('.cp-feed:not(.cp-list), .chat-feed, .wr-feed');
+  if (feed) feed.scrollTop = feed.scrollHeight;
 }
 /* ── actions ─────────────────────────────────────────────────────────────── */
 /* Sweep a category's window off the rail when the rail leaves it (chip re-click,
    sibling chip, or any cross-category open — the single-open law's broom). */
 function commsLeaveCat(cat) {
-  if (cat === 'wrangler' && state.wrangler.open && !document.body.classList.contains('is-phone')) {
+  // Phone routes Mr. Wrangler through the rail full-screen now (not the old dock), so leaving the
+  // category must snapshot + close it on EVERY device — else state.wrangler.open never resets on
+  // phone and body.sheet-open locks the page scroll for the rest of the session.
+  if (cat === 'wrangler' && state.wrangler.open) {
     wranglerRailSnapshot(); state.wrangler.open = false; state.wrangler.min = false;
   }
 }
-function commsToggleCat(cat) {
-  const phone = document.body.classList.contains('is-phone');
-  if (phone && (cat === 'team' || cat === 'wrangler')) {
-    // phones have no rail — these chips keep bridging to the bottom-sheet docks (mobile reflow rides later)
-    if (cat === 'team') { state.chat.open = !state.chat.open; return render(); }
-    if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; return render(); }
-    return wranglerNewChat();
+// D8 merged Customer chip — summon a customer CHANNEL ('text'|'email') onto the rail and land
+// on its menu (the Text/Email toggle rides the menu head). One thin funnel over commsToggleCat's
+// summon logic so text/email keep behaving exactly as before.
+function commsSummonChannel(ch) {
+  const cat = ch === 'email' ? 'email' : 'text';
+  const rail = state.commsRail, prev = rail.cat;
+  if (prev && prev !== cat) commsLeaveCat(prev);
+  rail.cat = cat;
+  refreshCommsThreads();
+  const s = rail.sessions[cat];
+  s.menuOpen = true; s.lastOpen = null;   // show the list + toggle; no auto-opened window
+  saveCommsRail(); render();
+}
+// The Customer chip click: reveal the channel menu (with the toggle); a second tap sweeps it shut.
+function commsToggleCustomer() {
+  const rail = state.commsRail, cur = rail.cat, curSess = cur ? rail.sessions[cur] : null;
+  if (commsCustActive() && curSess && curSess.menuOpen) {   // open menu → close
+    rail.cat = null; curSess.menuOpen = false; commsLeaveCat(cur); saveCommsRail(); return render();
   }
+  commsSummonChannel(commsCustCat());
+}
+function commsToggleCat(cat) {
+  // Phone routes team/wrangler through the SAME rail as customer comms now (mountMobileComms
+  // renders it full-screen) — the old phone-only docks are retired.
   const rail = state.commsRail;
   if (rail.cat === cat) {                                // active icon: reveal the un-ended list first (replaces the old All chip), then a further click sweeps the rail clean
     const sc = rail.sessions[cat];
