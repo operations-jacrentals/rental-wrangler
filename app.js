@@ -9126,26 +9126,31 @@ function columnEl(col, session) {
   // stamp the VIEW identity (list vs which record) so render() keys scroll memory by it
   const cs = card.dataset.card && session.cards ? session.cards[card.dataset.card] : null;
   card.dataset.view = (cs && cs.mode === 'standard' && cs.recId != null) ? `${cs.recType || ''}:${cs.recId}` : 'list';
-  if (document.body.classList.contains('is-phone')) {
-    // §M7 — EXACTLY the pre-scroll-snap §M6 layout, verified against the old build: BOTH chip
-    // rows sit ABOVE the card, not inside it. The toggle chips (mobileNavEl → .mdock-row) and the
-    // search/graph/sort chips (the listbar in a .mdock-searchslot) float above the card; the card
-    // itself (hazard cap + list) sits below. The .col is a flex column so the card fills the rest
-    // and its body scrolls; the two chip rows are fixed-height at the top of the column.
-    wrap.appendChild(mobileNavEl(active));
-    const lb = card.querySelector('.card-body .listbar');
-    if (lb) { const slot = el('div', 'mdock-searchslot'); slot.appendChild(lb); wrap.appendChild(slot); }
-    wrap.appendChild(card);
-    // §M/R32 — the phone Back/Forward jog is NOT in the column; it lives always-on in the
-    // footer tool bar (mobileToolbarEl → .mfoot-jog), reflecting the snapped column's card.
-    return wrap;
-  }
-  // Desktop: the sub-card tab strip + search/sort bar live INSIDE the card top (a full-width card
+  // Phone builds its panels via mobileRailPanelEl (the §M8 5-card swipe rail); columnEl is the
+  // DESKTOP/tablet path only. The sub-card tab strip + search/sort bar live INSIDE the card top (a full-width card
   // header, so the card-body scrollbar runs only through the list, not a gutter beside the bar).
   card.insertBefore(colTabsEl(col, active, session), card.firstChild);
   const lb = card.querySelector('.card-body .listbar'), body = card.querySelector('.card-body');
   if (lb && body) card.insertBefore(lb, body);
   const st = card.querySelector('.card-body .rus'); if (st && body) card.insertBefore(st, body);   // §13.7 — flex-basis 25% resolves against .card, the full column
+  wrap.appendChild(card);
+  return wrap;
+}
+// §M8 — one phone SWIPE-RAIL panel for a SPECIFIC member (not a column's active member): the
+// same chip row + search slot + card that columnEl stacks per-column on desktop, but keyed to an
+// explicit card so the ribbon can place Categories/Units (and Customers/Sales) as their own
+// separate swipe stops. BOTH chip rows sit ABOVE the card (toggle chips + the search/graph/sort
+// listbar); the card (hazard cap + list) sits below and its body scrolls. Phone only — the
+// Back/Forward jog stays always-on in the footer tool bar (mobileToolbarEl → .mfoot-jog).
+function mobileRailPanelEl(member, session) {
+  const wrap = el('div', 'col'); wrap.dataset.col = COLUMN_OF[member] || '';
+  const card = memberCardEl(member, session);
+  // stamp the VIEW identity (list vs which record) so render() keys scroll memory by it
+  const cs = card.dataset.card && session.cards ? session.cards[card.dataset.card] : null;
+  card.dataset.view = (cs && cs.mode === 'standard' && cs.recId != null) ? `${cs.recType || ''}:${cs.recId}` : 'list';
+  wrap.appendChild(mobileNavEl(member));                                      // toggle chip row, this panel's card highlighted
+  const lb = card.querySelector('.card-body .listbar');
+  if (lb) { const slot = el('div', 'mdock-searchslot'); slot.appendChild(lb); wrap.appendChild(slot); }
   wrap.appendChild(card);
   return wrap;
 }
@@ -9982,10 +9987,8 @@ function wrChatResolved(c) {
   return filed.length > 0 && filed.every((n) => !wranglerRequests.some((rq) => rq.number === n));
 }
 // §M1 — phone-only per-column bottom strip: Yard→internal chat · Rentals→tool bar · Customers→external chats (shell).
-// §M1 — the card the phone is currently showing (the active column's member). Also what the
-// grid swipe folds through mainCardOfMember() — it's the same "what am I on" state regardless
-// of whether the swipe started in the footer or the grid (2026-07-10: activeMobileCard(), a
-// byte-identical twin used only by the old grid Back/Fwd swipe, was removed as dead code).
+// §M1/§M8 — the card the phone is currently showing (the active column's member). The §M8 swipe
+// rail reuses this as "what am I on": mobileRailIndex() snaps the track to this card's rail slot.
 function currentMobileMember() {
   const colObj = COLUMNS[Math.max(0, Math.min(2, state.mobileCol))];
   const s = activeSession();
@@ -10001,15 +10004,30 @@ const MOBILE_TOGGLE_GROUPS = [
   { col: 'middle', members: ['rentals', 'calendar'] },
   { col: 'right',  members: ['customers', 'sales'] },
 ];
-// §M1/§M3 — the FULL ordered swipe sequence, incl. sub-cards, derived (never hardcoded)
-// from MOBILE_TOGGLE_GROUPS so it stays correct if that list ever changes: left-to-right,
-// main-then-sub per column → ['units','categories','rentals','calendar','customers','sales'].
-// This is what a FOOTER swipe steps through (Jac, 2026-07-10 refinement — swiping the dock
-// should reach the ACTUAL next card, subs included, not just the 3 mains).
-const MOBILE_SWIPE_ORDER = MOBILE_TOGGLE_GROUPS.flatMap((g) => g.members);
-// The 3 MAIN cards, left→right — what a swipe ANYWHERE ELSE (grid/list/detail) steps between
-// (never a sub-card); the footer swipe uses MOBILE_SWIPE_ORDER above instead.
-const MAIN_CARDS = ['units', 'rentals', 'customers'];
+// §M8 (Jac 2026-07-18) — the phone SWIPE RAIL supersedes the old 3-column swipe: a single
+// left→right ribbon of 5 cards — Categories · Units · Rentals · Customers · Sales — so a swipe
+// steps card-by-card across the whole ribbon instead of column-by-column (one more swipe past
+// Units reaches Categories; one more past Customers reaches Sales). Calendar (the Office
+// Dispatch / Driver grid) is the ONE card OFF the rail: tapping its chip swaps it into the CENTER
+// slot in place of Rentals, so it's reachable but never a swipe stop. Spatial, not per-column:
+// the LEFT column's two cards take the two LEFT slots (sub Categories outboard of main Units),
+// the RIGHT column's two take the two RIGHT slots (main Customers then sub Sales), the middle
+// contributes only Rentals (or the swapped-in Calendar). state.mobileCol stays the COLUMN index
+// (0–2) that every downstream reader (zip-zones, cross-column links, the footer jog, cross-device
+// session sync) is keyed to — it's DERIVED from the snapped rail card.
+const MOBILE_RAIL = ['categories', 'units', 'rentals', 'customers', 'sales'];
+// The live rail members for a session — the center slot follows the middle column's active member
+// so a tapped Calendar shows there (off-rail swap-in-place) instead of Rentals.
+function mobileRailMembers(session) {
+  const mid = (session && session.cols && session.cols.middle) || 'rentals';
+  return MOBILE_RAIL.map((m) => (m === 'rentals' ? mid : m));
+}
+// Rail index (0–4) to snap the track to for the card currently on screen (= the active member of
+// the active column, via currentMobileMember); 0 if that card is somehow off the rail.
+function mobileRailIndex(session) {
+  const i = mobileRailMembers(session).indexOf(currentMobileMember());
+  return i < 0 ? 0 : i;
+}
 // Which main card a member (incl. a sub-card) belongs to.
 function mainCardOfMember(m) {
   const col = COLUMN_OF[m];
@@ -10030,11 +10048,9 @@ function goToCard(member) {
 // card the user is currently ON expands to icon + stamped label — every other icon, in
 // every group, stays icon-only (keeps 3 narrow toggles from fighting each other for label
 // width). Tap an icon to jump straight to that card's list. The card's search/sort row is
-// moved DOWN into .mdock-searchslot by render(). Swipe the dock left/right to step through
-// the FULL MOBILE_SWIPE_ORDER sequence incl. sub-cards; a swipe anywhere ELSE (the grid) instead
-// steps through the 3 MAIN cards only (2026-07-10 refinement — two different swipe zones, see
-// the pointerup handler in boot(); swipe Back/Forward through history stays retired, the jog
-// buttons cover that).
+// moved DOWN into .mdock-searchslot by render(). Swiping now steps through the §M8 5-card SWIPE
+// RAIL (Categories·Units·Rentals·Customers·Sales — MOBILE_RAIL); swipe Back/Forward through
+// history stays retired, the jog buttons cover that.
 // §M7 — the phone footer is a THREE-column switcher/indicator (one button per desktop column:
 // Units · Rentals · Customers), each showing that column's current member icon+label. Tap a
 // button → smooth scroll-snaps the track to that column (the [data-mcol] handler in onClick);
@@ -16513,12 +16529,15 @@ function render() {
   // scroll position (see the scrollend sync wired in boot()).
   const phone = document.body.classList.contains('is-phone');
   const grid = el('div', 'grid');
-  for (const col of COLUMNS) grid.appendChild(columnEl(col, session));
+  // §M8 — phone paints the 5-card SWIPE RAIL (Categories·Units·Rentals·Customers·Sales, with
+  // Calendar swapped into the center slot when active); desktop/tablet paint the 3 columns.
+  if (phone) for (const m of mobileRailMembers(session)) grid.appendChild(mobileRailPanelEl(m, session));
+  else for (const col of COLUMNS) grid.appendChild(columnEl(col, session));
   if (phone) {
     $('#app').replaceChildren(header, grid, mobileToolbarEl());
-    // Snap the track to the active column with NO animation (a state-driven column change must
-    // land instantly, not glide). rAF so the flex track has laid out and offsetLeft is real.
-    const target = Math.max(0, Math.min(COLUMNS.length - 1, state.mobileCol));
+    // Snap the track to the card on screen with NO animation (a state-driven change must land
+    // instantly, not glide). rAF so the flex track has laid out and offsetLeft is real.
+    const target = mobileRailIndex(session);
     requestAnimationFrame(() => { const c = grid.children[target]; if (c) grid.scrollLeft = c.offsetLeft; });
   } else {
     $('#app').replaceChildren(header, grid, bottomBarEl());
@@ -18093,14 +18112,14 @@ function onClick(e) {
     return;
   }
   if (closest('.js-mtools')) { e.stopPropagation(); return openOverlay({ kind: 'tools' }); }   // §M1 phone footer → the global tool tray as a sheet
-  if (closest('[data-gocard]')) {   // §M7 — a column-header toggle: zip to that card. If it's already the card shown in its column, smooth-scroll the snap track there (the nice "zip"); if it switches a sub-card, goToCard re-renders + lands on it.
+  if (closest('[data-gocard]')) {   // §M8 — a toggle chip: zip to that card. If it's already the card shown in its column, smooth-scroll the rail to its panel (the nice "zip"); otherwise goToCard re-renders + lands on it (a sub-card swap, incl. the off-rail Calendar into the center slot).
     e.stopPropagation();
     const member = closest('[data-gocard]').dataset.gocard, col = COLUMN_OF[member];
-    const i = COLUMNS.findIndex((c) => c.id === col);
     const s = activeSession(); const grid = document.querySelector('#app > .grid');
-    if (grid && i >= 0 && s.cols && s.cols[col] === member && grid.children[i]) {
-      state.mobileCol = i;
-      grid.scrollTo({ left: grid.children[i].offsetLeft, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    const railIdx = grid ? mobileRailMembers(s).indexOf(member) : -1;
+    if (grid && railIdx >= 0 && s.cols && s.cols[col] === member && grid.children[railIdx]) {
+      const ci = COLUMNS.findIndex((c) => c.id === col); if (ci >= 0) state.mobileCol = ci;
+      grid.scrollTo({ left: grid.children[railIdx].offsetLeft, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
       return;
     }
     return goToCard(member);
@@ -25523,12 +25542,20 @@ function boot() {
     const grid = document.querySelector('#app > .grid');
     if (!grid || !document.body.classList.contains('is-phone')) return;
     const w = grid.clientWidth || 1;
-    const idx = Math.max(0, Math.min(COLUMNS.length - 1, Math.round(grid.scrollLeft / w)));
-    if (idx === mcolLast) return;
-    mcolLast = idx; state.mobileCol = idx;
-    upSyncSession();   // §cross-device-sync — remember the top-level column (resume where you left off)
-    // Each column's own toggle header highlights that column's card statically. The footer jog
-    // (R32), though, is a GLOBAL bar reflecting the ACTIVE card, so repaint it on column change.
+    const session = activeSession();
+    const members = mobileRailMembers(session);
+    // §M8 — the track is the 5-card rail; read the snapped RAIL index (0–4) and fold it back to
+    // the COLUMN index (0–2) that everything downstream is keyed to. The active member of that
+    // column follows the swipe, so landing on Categories/Units/Customers/Sales updates cols[] —
+    // the chip highlight, cross-column links, the footer jog, and session sync all stay honest.
+    const railIdx = Math.max(0, Math.min(members.length - 1, Math.round(grid.scrollLeft / w)));
+    if (railIdx === mcolLast) return;
+    mcolLast = railIdx;
+    const member = members[railIdx], col = COLUMN_OF[member], colIdx = COLUMNS.findIndex((c) => c.id === col);
+    if (colIdx >= 0) state.mobileCol = colIdx;
+    if (session.cols && col) session.cols[col] = member;
+    upSyncSession();   // §cross-device-sync — remember where you left off (resume there)
+    // The footer jog (R32) is a GLOBAL bar reflecting the ACTIVE card, so repaint it on any step.
     const fj = document.querySelector('.mobile-toolbar .mfoot-jog');
     if (fj) fj.innerHTML = footerJogInner();
   }
