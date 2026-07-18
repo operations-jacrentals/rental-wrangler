@@ -35,11 +35,14 @@ jumps straight to the last one.
 
 ## Ensure predecessor first — /deploy
 Before merging, the feature must have been **deployed to staging and reviewed** — that's the
-point of Gate 1: you look at the running app before integrating it. Check:
+point of Gate 1: you look at the running app before integrating it. By default that's a **deck
+deploy** (a numbered `d/<feature>-<n>/` folder); under `--slots` it's a slot. Check:
 - **Change touches SERVED site files** (`app.js`/`style.css`/`index.html`/`*.html`/`assets/`…):
-  staging must be showing THIS feature — the live staging `?v=` matches this branch's
-  `index.html` `?v=` (`deploy-staging` prints it). If staging is stale/behind → **run `/deploy`
-  first**, get the review, THEN merge. Never merge an un-reviewed feature.
+  staging must be showing THIS feature — for a deck deploy, the newest deploy for this feature's
+  branch matches the branch's current commit (the deploy id/label `/deploy` printed); under
+  `--slots`, the live staging `?v=` matches this branch's `index.html` `?v=` (`deploy-staging`
+  prints it). If staging is stale/behind → **run `/deploy` first**, get the review, THEN merge.
+  Never merge an un-reviewed feature.
 - **Change touches ONLY non-served files** (skills, CI, tools, docs — not served by Pages):
   there's nothing for staging to show, so skip the deploy step and merge directly.
 
@@ -62,7 +65,10 @@ point of Gate 1: you look at the running app before integrating it. Check:
    token conflict resolves mechanically; anything substantive, resolve by hand).
 4. **Squash-merge** the PR into `trunk`. Integrated on the trunk but **NOT live** (Pages serves
    the separate `production` branch).
-5. **Release the staging slot:** `node tools/staging-lease.mjs release --branch <feature-branch>`
+5. **Release the staging slot (`--slots` only — skip entirely in deck mode):** deck deploys are
+   ephemeral (pruned by retention, never "held"), so when the feature was reviewed via the
+   default deck path there is **no slot to release** — skip straight to step 6. If the feature
+   was deployed with `--slots`: `node tools/staging-lease.mjs release --branch <feature-branch>`
    — the review window is over, so free the slot the moment the feature is integrated. Release is
    **by branch** (the merge process may be a different session than the one that `/deploy`ed it,
    so a session-keyed release would miss). This is a **soft step**: if it fails (network, auth,

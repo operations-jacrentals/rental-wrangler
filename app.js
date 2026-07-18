@@ -612,7 +612,7 @@ function heldSignBlock(o, custRec, d) {
   const p = (custRec && custRec.pendingCapture) || {};   // §7.1c pre-card held pieces (saddle onto the first card)
   return `<div class="ag-capcap" style="margin:16px 2px 8px">Signed agreement</div>
     ${capProgress([{ label: 'Card', done: false }, { label: 'Selfie', done: !!p.selfie }, { label: 'Signature', done: !!p.signature }])}
-    <p class="muted" style="font-size:11px;margin:2px 2px 0">Selfie &amp; signature save now and saddle onto the first card you add; On-Rent &amp; delivery unlock once that card is complete.</p>
+    <p class="muted" style="font-size:0.6471rem;margin:2px 2px 0">Selfie &amp; signature save now and saddle onto the first card you add; On-Rent &amp; delivery unlock once that card is complete.</p>
     ${agCaptureBlock(o, ag, 'account')}`;
 }
 /* Move an account-level HELD signing onto a freshly-added card — the draft's FROZEN
@@ -870,7 +870,7 @@ function cardTabBody(c) {
       ${k.isDefault ? badge('Default', 'blue') : actionPill('commit', 'Make default', { js: 'js-card-default', data: { rec: c.customerId, card: k.id } })}
       <button class="x js-card-remove" data-rec="${c.customerId}" data-card="${k.id}" data-tip="Remove card">${I.x}</button>
     </div>`;
-  }).join('') : '<span class="muted" style="font-size:12px">No cards on file.</span>';
+  }).join('') : '<span class="muted" style="font-size:0.7059rem">No cards on file.</span>';
   return `<div class="cards-list">${rows}</div>
     ${canMoney() ? `<div style="margin-top:10px">${addBtn('Card', { link: true, js: 'js-add-card', data: { rec: c.customerId } })}</div>` : ''}`;
 }
@@ -883,11 +883,11 @@ function achTabBody(c) {
       ${k.verified ? badge('Verified', 'green') : actionPill('commit', 'Verify', { js: 'js-bank-verify', data: { rec: c.customerId, bank: k.id } })}
       ${k.isDefault ? badge('Default', 'blue') : actionPill('commit', 'Make default', { js: 'js-bank-default', data: { rec: c.customerId, bank: k.id } })}
       <button class="x js-bank-remove" data-rec="${c.customerId}" data-bank="${k.id}" data-tip="Remove bank account">${I.x}</button>
-    </div>`).join('') : '<span class="muted" style="font-size:12px">No bank accounts on file.</span>';
+    </div>`).join('') : '<span class="muted" style="font-size:0.7059rem">No bank accounts on file.</span>';
   return `<div class="cards-list">${rows}</div>
     ${!canMoney() ? ''
       : consent ? `<div style="margin-top:10px">${addBtn('ACH', { link: true, js: 'js-add-ach', data: { rec: c.customerId } })}</div>`
-                : '<span class="muted" style="font-size:11px">Capture a selfie + signature (Edit account) before adding a bank account.</span>'}`;
+                : '<span class="muted" style="font-size:0.6471rem">Capture a selfie + signature (Edit account) before adding a bank account.</span>'}`;
 }
 
 /* §19 stable-key migration: give every existing invoice line a `lid` and remap
@@ -1678,15 +1678,15 @@ function transportEditorHtml() {
   const live = mapsReady();
   const who = u ? esc(u.name) + ' · ' : '';
   return `<div class="tedit sec" data-r="R5b">
-    <div class="tedit-head"><span class="stamp">Set ${te.leg === 'recovery' ? 'recovery' : 'delivery'} site</span><span class="muted" style="font-size:10.5px">${who}drag the pin for the exact driver drop</span></div>
+    <div class="tedit-head"><span class="stamp">Set ${te.leg === 'recovery' ? 'recovery' : 'delivery'} site</span><span class="muted" style="font-size:0.6176rem">${who}drag the pin for the exact driver drop</span></div>
     <div class="tedit-map js-tmap${live ? '' : ' ph'}">${live ? '' : (((GOOGLE_MAPS_KEY || _mapsKey) && !te.mapFailed)
       ? `<span class="map-spin" aria-hidden="true"></span><span class="map-tag">Loading dispatch map…</span>`
-      : `<span class="map-pin" aria-hidden="true">${ICO_PIN}</span><span class="map-tag stamp" style="font-size:11px;color:var(--accent)">${te.mapFailed ? 'Live map unavailable' : 'Offline'} · city-tier pricing</span><span class="map-sub">${te.mapFailed ? 'Type the site address below — pricing falls back to city tiers. Reopen the editor to retry the live map.' : 'Type the site address below — the live map &amp; exact mileage come online once the dispatch key is set.'}</span>`)}</div>
+      : `<span class="map-pin" aria-hidden="true">${ICO_PIN}</span><span class="map-tag stamp" style="font-size:0.6471rem;color:var(--accent)">${te.mapFailed ? 'Live map unavailable' : 'Offline'} · city-tier pricing</span><span class="map-sub">${te.mapFailed ? 'Type the site address below — pricing falls back to city tiers. Reopen the editor to retry the live map.' : 'Type the site address below — the live map &amp; exact mileage come online once the dispatch key is set.'}</span>`)}</div>
     <input class="lf-in js-taddr" placeholder="Site address — start typing…" value="${esc(te.addr || '')}" autocomplete="off" spellcheck="false" aria-label="Site address">
     <div class="js-tsug tedit-sug" role="listbox"></div>
     <div class="tedit-foot">
       <span class="muted tedit-hint">↑↓ choose · Tab/Enter set · Esc cancel</span>
-      <span class="muted js-te-dist" style="font-size:10.5px;margin-left:8px"></span>
+      <span class="muted js-te-dist" style="font-size:0.6176rem;margin-left:8px"></span>
       <span class="spacer"></span>
       ${ghostPill('Cancel', { js: 'js-tedit-cancel' })}
       ${actionPill('commit', 'Set address', { js: 'js-tedit-save' })}
@@ -2110,7 +2110,7 @@ function salePricingAutoApply() {
    the generic sync). Volume of asks per category feeds purchasing/fleet-spread decisions. */
 function lostDemandBtn(c) {
   const n = (c.lostDemand || []).length;
-  return `<button class="catr-slot js-lost-demand" data-r="R5b" data-cat="${esc(c.categoryId)}" data-tip="A customer wanted one and none were free — log the lost ask${n ? ` (${n} logged)` : ''}"><span class="add-field anchor" style="height:20px;font-size:10px">+Lost${n ? ` ${n}` : ''}</span></button>`;
+  return `<button class="catr-slot js-lost-demand" data-r="R5b" data-cat="${esc(c.categoryId)}" data-tip="A customer wanted one and none were free — log the lost ask${n ? ` (${n} logged)` : ''}"><span class="add-field anchor" style="height:20px;font-size:0.5882rem">+Lost${n ? ` ${n}` : ''}</span></button>`;
 }
 function categoryAvailableCount(catId, startISO, endISO, selfId) {
   return DATA.units.filter((u) => u.categoryId === catId && isUnitAvailableFor(u, startISO, endISO, selfId)).length;
@@ -2933,7 +2933,7 @@ function cardFwd(card) {
 // never-scrolled view has no entry
 // → stays at 0. (Fresh opens don't call this, so they still start at the top.)
 function restoreJogScroll(card) {
-  const c = document.querySelector(`.card[data-card="${card}"]`);
+  const c = document.querySelector(`.card[data-card="${card}"]:not([data-clone])`);   // §M8 wrap — the REAL card, never an edge clone
   const b = c && c.querySelector('.card-body'); if (!b) return;
   const y = scrollMemo[card + '|' + (c.dataset.view || 'list')];
   if (y) b.scrollTop = y;
@@ -5086,12 +5086,12 @@ function settingsFlagsPane(o) {
       const off = !!oo.off;
       const sevCtl = segCtl(['red', 'yellow', 'green'].map((sv) => ({ label: sv === 'red' ? 'R' : sv === 'yellow' ? 'Y' : 'G', js: 'js-flag-sev', data: { ent, id: f.id, sev: sv }, on: (!off && sev === sv) ? sv : null })));
       const onCtl = segCtl([{ label: 'On', js: 'js-flag-ov', data: { ent, id: f.id, val: 'on' }, on: !off ? 'green' : null }, { label: 'Off', js: 'js-flag-ov', data: { ent, id: f.id, val: 'off' }, on: off ? 'red' : null }]);
-      const changed = oo.off || oo.severity ? `<span class="muted" style="font-size:10px">edited</span>` : '';
+      const changed = oo.off || oo.severity ? `<span class="muted" style="font-size:0.5882rem">edited</span>` : '';
       return `<div class="set-row" style="gap:9px;align-items:center"><span style="flex:1;min-width:150px;${off ? 'opacity:.45' : ''}">${flagEl(f.label, sev)} ${esc(f.label)}</span>${sevCtl}${onCtl}${changed}</div>`;
     }).join('');
     return `<div class="set-sec"><h4 class="set-h">${esc(ENT_LBL[ent] || ent)}</h4>${items}</div>`;
   }).join('');
-  return `<div class="set-pane"><div class="muted" style="font-size:11.5px;margin-bottom:9px">Every flag is owner-tunable — Off hides it everywhere; R/Y/G overrides its severity. Defaults return by flipping back. Disabling a money/credit flag is audited.</div>${rows}</div>`;
+  return `<div class="set-pane"><div class="muted" style="font-size:0.6765rem;margin-bottom:9px">Every flag is owner-tunable — Off hides it everywhere; R/Y/G overrides its severity. Defaults return by flipping back. Disabling a money/credit flag is audited.</div>${rows}</div>`;
 }
 /* ── Settings → Team Roster (spec hr-compliance trimmed scope, Jac 2026-06-29) ──────
    The employee list — name · role · phone · note. Deliberately NO credentials/medical/
@@ -5129,7 +5129,7 @@ function settingsTeamPane(o) {
     <div class="emp-welcome-lbl">Crew welcome text</div>
     <textarea class="emp-welcome-ta" data-emp-welcome rows="3" placeholder="${esc(welcomeDefault)}" data-tip="Sent to a hand when they're added or their number changes">${esc(welcomeVal)}</textarea>
     <div class="emp-welcome-foot"><span class="emp-welcome-tok">Tokens <em>{name}</em> and <em>{link}</em> (the app link) fill in when it sends — no login code, they get that in the app.</span><button type="button" class="emp-act js-emp-welcome-reset" data-tip="Restore the default welcome wording">Reset to default</button></div></div>` : '';
-  return `<div class="set-pane"><div class="muted" style="font-size:11.5px;margin-bottom:9px">${esc(note)}</div>${rows || '<div class="muted" style="font-size:12px">No hands on the roster yet.</div>'}${welcomeBlock}<div class="kv pillrow" style="margin-top:9px">${addBtn('Employee', { link: true, js: 'js-emp-add' })}${showAuth ? `<button type="button" class="emp-act js-emp-blast" data-tip="Text the whole roster the app link + welcome">Round up the crew</button>` : ''}</div></div>`;
+  return `<div class="set-pane"><div class="muted" style="font-size:0.6765rem;margin-bottom:9px">${esc(note)}</div>${rows || '<div class="muted" style="font-size:0.7059rem">No hands on the roster yet.</div>'}${welcomeBlock}<div class="kv pillrow" style="margin-top:9px">${addBtn('Employee', { link: true, js: 'js-emp-add' })}${showAuth ? `<button type="button" class="emp-act js-emp-blast" data-tip="Text the whole roster the app link + welcome">Round up the crew</button>` : ''}</div></div>`;
 }
 /* ── Settings → Notifications (Phase A control center — design spec
    docs/superpowers/specs/2026-07-14-notifications-pane-design.md) ────────────────────
@@ -6150,12 +6150,12 @@ function svcPartPanelEl(u, task, pr, idx) {
       <div class="svc-ref-head" style="margin-top:14px">Vendor</div>
       <div class="svc-vendor-block">
         <div class="svc-vendor-name">${esc(vendor.name || '')}</div>
-        ${vendor.primaryContact ? `<div class="muted" style="font-size:11.5px">${esc(vendor.primaryContact)}</div>` : ''}
+        ${vendor.primaryContact ? `<div class="muted" style="font-size:0.6765rem">${esc(vendor.primaryContact)}</div>` : ''}
         ${vendor.phone ? linkName(vendor.phone, { js: 'js-open-link', data: { url: 'tel:' + String(vendor.phone).replace(/[^\d+]/g, '') } }) : ''}
         ${vendor.email ? linkName(vendor.email, { js: 'js-open-link', data: { url: 'mailto:' + vendor.email } }) : ''}
         ${vendor.website ? linkName(vendor.website, { js: 'js-open-link', data: { url: webUrl(vendor.website) } }) : ''}
       </div>` : (enriched ? '' : `
-      <p class="muted" style="font-size:12px;margin-top:8px">Not in the parts catalog yet.</p>
+      <p class="muted" style="font-size:0.7059rem;margin-top:8px">Not in the parts catalog yet.</p>
       <div class="svc-part-row">${linkName('Search this part number ↗', { js: 'js-open-link', data: { url: 'https://www.google.com/search?q=' + encodeURIComponent(pr.oem || pr.name || '') } })}</div>`);
   const pp = el('div', 'popup svc-part-popup'); pp.style.width = '300px';
   pp.innerHTML = popupShell({
@@ -6164,7 +6164,7 @@ function svcPartPanelEl(u, task, pr, idx) {
     closeJs: 'js-svc-part-close',
     body: `
       ${img ? `<img class="insp-thumb" src="${esc(img)}" alt="${esc(pr.name || 'part')}">` : ''}
-      <div class="muted" style="font-size:11px;margin-bottom:8px">OEM ${esc(pr.oem || '—')}${catalogPart ? ` · Catalog ${esc(catalogPart.productNumber || '')}` : ''}</div>
+      <div class="muted" style="font-size:0.6471rem;margin-bottom:8px">OEM ${esc(pr.oem || '—')}${catalogPart ? ` · Catalog ${esc(catalogPart.productNumber || '')}` : ''}</div>
       ${cost != null ? kv(money(cost), { pfx: 'Cost', derived: pr.cost == null }) : ''}
       ${catalogPart && catalogPart.qtyOnHand != null ? kv(catalogPart.qtyOnHand + ' on hand', { pfx: 'Stock', derived: true }) : ''}
       ${url ? `<div class="svc-part-row">${linkName(url.length > 30 ? 'Order / info ↗' : url, { js: 'js-open-link', data: { url: webUrl(url) } })}</div>` : ''}
@@ -6505,7 +6505,7 @@ function runCtxAction(act) {
 }
 /** R17: forward-action pills — commit (blue) / money (green) / danger (solid red). */
 function actionPill(kind, label, { js, data, h } = {}) {
-  return `<button class="pill c-${kind}${js ? ' ' + js : ''}" data-r="R17"${dataAttrs(data)}${h ? ` style="height:${h}px;font-size:11px"` : ''}>${esc(label)}</button>`;
+  return `<button class="pill c-${kind}${js ? ' ' + js : ''}" data-r="R17"${dataAttrs(data)}${h ? ` style="height:${h}px;font-size:0.6471rem"` : ''}>${esc(label)}</button>`;
 }
 /** R18: the ONE quiet/neutral action — Cancel, Close, secondary tools.
  *  `disabled` greys it (is-disabled) and drops the js hook so it's inert; pair with `tip`
@@ -6611,16 +6611,16 @@ const RB_FOUNDATION = {
   // ── TYPE ──
   'type-display': ['Aa', 'Display · stamped', "'Saira Condensed' · 600–800 · UPPERCASE · +1–2px tracking",
     'The yard “stamped-steel” voice: wordmark, column tabs, KPI labels, section headers, ignition buttons.',
-    `<span style="font-family:'Saira Condensed',sans-serif;text-transform:uppercase;letter-spacing:1.6px;font-weight:800;font-size:23px;color:var(--txt)">Clock In · Wrangle</span>`],
+    `<span style="font-family:'Saira Condensed',sans-serif;text-transform:uppercase;letter-spacing:1.6px;font-weight:800;font-size:1.3529rem;color:var(--txt)">Clock In · Wrangle</span>`],
   'type-body': ['Aa', 'Body', "'Geist' (var(--font)) · 400–700",
     'Everything you read: row text, field values, descriptions. Quiet, legible, never stamped.',
-    `<span style="font-size:14px;color:var(--txt)">Rugged equipment, rented right — the body face carries the content.</span>`],
+    `<span style="font-size:0.8235rem;color:var(--txt)">Rugged equipment, rented right — the body face carries the content.</span>`],
   'type-mono': ['‹›', 'Mono', 'ui-monospace · 10–12px · txt-3',
     'Code + debug references only: the Inspector tag and rulebook builder names.',
-    `<code style="font-family:ui-monospace,monospace;font-size:12px;color:var(--txt-3)">UNITS › INSPECTION › “Passed”</code>`],
+    `<code style="font-family:ui-monospace,monospace;font-size:0.7059rem;color:var(--txt-3)">UNITS › INSPECTION › “Passed”</code>`],
   'type-scale': ['#', 'Size scale', '28 · 15 · 13 · 12 · 11 · 10 · 9.5px',
     'Bigger = identity/value (28 KPI · 15 popup title). 12–13 = content. ≤11 = stamped micro-labels & counters. ONE size (11px) for every status badge.',
-    `<span style="display:flex;align-items:baseline;gap:13px;flex-wrap:wrap;color:var(--txt)"><span style="font-size:28px;font-weight:800">28</span><span style="font-size:15px;font-weight:700">15</span><span style="font-size:13px">13</span><span style="font-size:12px">12</span><span style="font-family:'Saira Condensed';text-transform:uppercase;letter-spacing:1px;font-size:11px;font-weight:700">11 label</span><span style="font-size:9.5px;color:var(--txt-3)">9.5</span></span>`],
+    `<span style="display:flex;align-items:baseline;gap:13px;flex-wrap:wrap;color:var(--txt)"><span style="font-size:1.6471rem;font-weight:800">28</span><span style="font-size:0.8824rem;font-weight:700">15</span><span style="font-size:0.7647rem">13</span><span style="font-size:0.7059rem">12</span><span style="font-family:'Saira Condensed';text-transform:uppercase;letter-spacing:1px;font-size:0.6471rem;font-weight:700">11 label</span><span style="font-size:0.5588rem;color:var(--txt-3)">9.5</span></span>`],
   'type-weight': ['B', 'Weight', '800 · 700 · 600 · 400',
     '800 stamped identity · 700 titles & labels · 600 strong body · 400 body.',
     `<span style="display:flex;gap:16px;align-items:baseline;color:var(--txt)"><span style="font-weight:800">800</span><span style="font-weight:700">700</span><span style="font-weight:600">600</span><span style="font-weight:400">400</span></span>`],
@@ -6642,7 +6642,7 @@ const RB_FOUNDATION = {
     rbSw('var(--tan,#c2925a)', 'Tan', 'saddle-stitch', '#1a1205')],
   'color-ec-red': ['⚠', 'ec-red · flagging glow', 'fill: color-mix(--red 65%, white) · shadow: 0 0 3px --red, 0 0 7px (--red 60%+transparent)',
     'Official treatment for EVERY flagging-red signal — text names/pills/flags/headers, borders, dots/bars. Three knobs in style.css .ec-red group: fill % (65), inner glow (3px), outer halo (7px / 60%). Never use pure --red alone on flagging text.',
-    `<span style="-webkit-text-fill-color:color-mix(in srgb,var(--red) 65%,white);text-shadow:0 0 3px var(--red),0 0 7px color-mix(in srgb,var(--red) 60%,transparent);font-weight:700;font-size:13px;letter-spacing:.5px">TUCKER FONTENOT · No Card · $0.30 overdue</span>`],
+    `<span style="-webkit-text-fill-color:color-mix(in srgb,var(--red) 65%,white);text-shadow:0 0 3px var(--red),0 0 7px color-mix(in srgb,var(--red) 60%,transparent);font-weight:700;font-size:0.7647rem;letter-spacing:.5px">TUCKER FONTENOT · No Card · $0.30 overdue</span>`],
   // ── FORM ──
   'radius': ['◳', 'Radius', '--radius 14–16 · --chip-radius 11–12 · 8–10 controls · 999 pills',
     'Cards/popups softest · chips medium · controls tight · pills & counters full-round · rings/avatars circles.',
@@ -6652,7 +6652,7 @@ const RB_FOUNDATION = {
     `<span style="display:flex;gap:12px"><span class="rb-surf" style="box-shadow:var(--shadow)">float</span><span class="rb-surf" style="box-shadow:var(--chip-shadow)">chip</span><span class="rb-surf" style="box-shadow:0 0 0 2px var(--accent-line),0 0 22px -8px var(--accent)">glow</span></span>`],
   'spacing': ['▦', 'Spacing', 'grid 12 · list 7 · section pad 12 · row pad 9–11',
     'Tight, dense yard data — generous enough to scan, never airy.',
-    `<span style="display:flex;align-items:center;color:var(--txt-3);font-size:11px;gap:8px"><span style="display:flex;gap:12px"><span style="width:14px;height:14px;background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:3px"></span><span style="width:14px;height:14px;background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:3px"></span></span>12px gap</span>`],
+    `<span style="display:flex;align-items:center;color:var(--txt-3);font-size:0.6471rem;gap:8px"><span style="display:flex;gap:12px"><span style="width:14px;height:14px;background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:3px"></span><span style="width:14px;height:14px;background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:3px"></span></span>12px gap</span>`],
   'motion': ['↻', 'Motion', '.12s controls · .15s surfaces · .5s rings/timeline',
     'Fast, functional. Keyframes: attnGlow (flash) · plateIn (login) · flagPulse · rwLint. prefers-reduced-motion respected everywhere.',
     `<span class="pill c-blue" style="animation:attnGlow 1.1s ease-in-out infinite;border-radius:10px"><span class="t">flash</span></span>`],
@@ -6682,23 +6682,23 @@ const RB_FOUNDATION = {
   // ── HEADERS / CONTAINERS ──
   'header-section': ['▭', 'Section header', '.section>h4 · centered · 11px UPPER',
     'Centered stamped label; right-side flags pin absolutely so the title stays true-center.',
-    `<span style="display:block;text-align:center;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--txt-3)">Inspection</span>`],
+    `<span style="display:block;text-align:center;font-size:0.6471rem;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--txt-3)">Inspection</span>`],
   'header-popup': ['▭', 'Popup header', '.popup-head · icon + h3(15) + ✕',
     'Every overlay leads with an accent icon, a 15px title, and the close on the right.',
-    `<span style="display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:9px;padding:7px 10px;background:var(--panel)"><span style="color:var(--accent);display:inline-flex">${I.doc || ''}</span><b style="font-size:14px">Popup title</b></span>`],
+    `<span style="display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:9px;padding:7px 10px;background:var(--panel)"><span style="color:var(--accent);display:inline-flex">${I.doc || ''}</span><b style="font-size:0.8235rem">Popup title</b></span>`],
   'overlay-popup': ['◳', 'Pop-up / overlay', '.overlay scrim + .popup',
     'Centered modal: 50%-black scrim · panel with the orange border + glow halo · max 92vw/86vh · internal scroll.',
     `<span class="rb-surf" style="background:var(--panel);border:1px solid var(--accent);box-shadow:0 0 0 2px var(--accent-line),0 0 20px -6px var(--accent);width:130px;height:42px;border-radius:12px">modal</span>`],
   'menu-dropdown': ['▾', 'Menu', '.dropdown-menu / .ctx-menu',
     'Floating orange-ringed lists: the sort/filter dropdowns and the R20 right-click menu.',
-    `<span style="display:inline-block;background:var(--panel);border:1px solid var(--accent);border-radius:11px;box-shadow:0 0 0 2px var(--accent-line);padding:5px;min-width:128px"><span style="display:block;padding:5px 9px;border-radius:8px;font-size:12px;color:var(--txt-2)">Sort · Name</span><span style="display:block;padding:5px 9px;border-radius:8px;font-size:12px;color:var(--accent);background:var(--panel-2)">Sort · Status</span></span>`],
+    `<span style="display:inline-block;background:var(--panel);border:1px solid var(--accent);border-radius:11px;box-shadow:0 0 0 2px var(--accent-line);padding:5px;min-width:128px"><span style="display:block;padding:5px 9px;border-radius:8px;font-size:0.7059rem;color:var(--txt-2)">Sort · Name</span><span style="display:block;padding:5px 9px;border-radius:8px;font-size:0.7059rem;color:var(--accent);background:var(--panel-2)">Sort · Status</span></span>`],
   'grid': ['▥', 'Yard grid', '.grid · 3 equal cols · 12px gap',
     'The fixed 3-column layout (Units · Rentals · Customers). Reflows 3→2→1 by width on phones (M0–M3); never squishes below the desktop floor.',
     `<span style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;width:150px"><span class="rb-surf" style="height:30px"></span><span class="rb-surf" style="height:30px"></span><span class="rb-surf" style="height:30px"></span></span>`],
   // ── DATA VIZ ──
   'data-kpi': ['◎', 'KPI rings', '.kpi-ring · concentric progress',
     'The header rings: Apple-style progress, each colored by its value band, number + stamped role label below.',
-    `<span style="display:inline-grid;place-items:center;width:38px;height:38px;border-radius:50%;background:conic-gradient(var(--green) 72%,var(--track) 0)"><span style="display:grid;place-items:center;width:27px;height:27px;border-radius:50%;background:var(--bg);font-size:10px;font-weight:800;color:var(--txt)">9</span></span>`],
+    `<span style="display:inline-grid;place-items:center;width:38px;height:38px;border-radius:50%;background:conic-gradient(var(--green) 72%,var(--track) 0)"><span style="display:grid;place-items:center;width:27px;height:27px;border-radius:50%;background:var(--bg);font-size:0.5882rem;font-weight:800;color:var(--txt)">9</span></span>`],
   'data-gauge': ['▰', 'Activity gauge', '.active-bar.bipolar · steel data-plate',
     'A bipolar −100…+100 track (customer health); a hazard overlay marks the deep-danger end.',
     `<span style="display:inline-block;width:140px;height:14px;border-radius:7px;overflow:hidden;background:var(--track)"><span style="display:block;height:100%;width:64%;background:linear-gradient(90deg,var(--red),var(--orange),var(--yellow),var(--green))"></span></span>`],
@@ -7353,10 +7353,10 @@ const ROWS = {
     const driverChip = multi
       ? (t.driverId
         ? `<button class="catr-slot js-trip-driver" data-id="${esc(t.id)}" data-day="${esc(t.day)}" data-tip="Driver on this trip (${t.stops.length} stops) — tap to change">${badge(driverName(t.driverId), 'navy')}</button>`
-        : (driverRoster().length ? `<button class="catr-slot js-trip-driver" data-r="R5b" data-id="${esc(t.id)}" data-day="${esc(t.day)}" data-tip="Assign a driver to this trip"><span class="add-field anchor" data-r="R5b" style="height:20px;font-size:10px">+Driver</span></button>` : ''))
+        : (driverRoster().length ? `<button class="catr-slot js-trip-driver" data-r="R5b" data-id="${esc(t.id)}" data-day="${esc(t.day)}" data-tip="Assign a driver to this trip"><span class="add-field anchor" data-r="R5b" style="height:20px;font-size:0.5882rem">+Driver</span></button>` : ''))
       : (t.driverId
         ? `<button class="catr-slot js-stop-driver" data-id="${esc(t.id)}" data-rec="${esc(t.rentalId)}" data-unit="${esc(t.unitId || '')}" data-task="${esc(t.task)}" data-tip="Driver on this leg — tap to change">${badge(driverName(t.driverId), 'navy')}</button>`
-        : (driverRoster().length ? `<button class="catr-slot js-stop-driver" data-r="R5b" data-id="${esc(t.id)}" data-rec="${esc(t.rentalId)}" data-unit="${esc(t.unitId || '')}" data-task="${esc(t.task)}" data-tip="Assign a driver to this leg"><span class="add-field anchor" data-r="R5b" style="height:20px;font-size:10px">+Driver</span></button>` : ''));
+        : (driverRoster().length ? `<button class="catr-slot js-stop-driver" data-r="R5b" data-id="${esc(t.id)}" data-rec="${esc(t.rentalId)}" data-unit="${esc(t.unitId || '')}" data-task="${esc(t.task)}" data-tip="Assign a driver to this leg"><span class="add-field anchor" data-r="R5b" style="height:20px;font-size:0.5882rem">+Driver</span></button>` : ''));
     // §2.3 row-2 — one unit pill per stop; a merged trip numbers the sequence (the
     // implicit array order IS the run order — spec §2.3, within-trip drag-reorder
     // skipped as a documented nice-to-have).
@@ -8044,11 +8044,11 @@ function woExpandedHtml(w) {
     + `<div class="wo-open-body">`
     + `<div class="kv" style="justify-content:flex-end;gap:6px">${flagsStack([typeFlag, dateFlag], 22)}</div>`
     + `<div class="wototals">${addBtn('Part/Task', { anchor: true, js: 'js-add-part', h: 26, data: { rec: w.woId } })}<span class="derived">${money(parts)} parts + ${hrs} hrs</span></div>`
-    + `${lines || '<div class="kv"><span class="muted" style="font-size:12px">No line items yet</span></div>'}`
+    + `${lines || '<div class="kv"><span class="muted" style="font-size:0.7059rem">No line items yet</span></div>'}`
     + `<div class="wofoot"><span class="derived">Parts ${money(Math.max(0, billed - laborBilled))} + Hrs ${money(laborBilled)} = ${money(billed)}</span>`
     + (w.cancelled
-        ? `<span class="pill c-gray" style="height:26px;font-size:11px" data-tip="This work order is cancelled">Cancelled</span>${actionPill('commit', 'Reopen WO', { js: 'js-wo-reopen', h: 26, data: { rec: w.woId } })}`
-        : `${addBtn('Invoice', { link: true, icon: CARD_ICON.invoices, js: 'js-bill-wo', h: 26, data: { rec: w.woId } })}<button class="pill ghost js-wo-cancel" data-r="R18" data-rec="${esc(w.woId)}" style="height:26px;font-size:11px">Cancel WO</button>${actionPill('commit', 'Complete WO', { js: `js-wo-complete ramp${bn.color === 'green' ? ' ready' : ''}`, h: 26, data: { rec: w.woId } })}`)
+        ? `<span class="pill c-gray" style="height:26px;font-size:0.6471rem" data-tip="This work order is cancelled">Cancelled</span>${actionPill('commit', 'Reopen WO', { js: 'js-wo-reopen', h: 26, data: { rec: w.woId } })}`
+        : `${addBtn('Invoice', { link: true, icon: CARD_ICON.invoices, js: 'js-bill-wo', h: 26, data: { rec: w.woId } })}<button class="pill ghost js-wo-cancel" data-r="R18" data-rec="${esc(w.woId)}" style="height:26px;font-size:0.6471rem">Cancel WO</button>${actionPill('commit', 'Complete WO', { js: `js-wo-complete ramp${bn.color === 'green' ? ' ready' : ''}`, h: 26, data: { rec: w.woId } })}`)
     + `</div>`
     + `</div>`
     + `</div>`;
@@ -8244,7 +8244,7 @@ function miniJourneyHtml(r2, eu) {
   if (te && te.rentalId === r2.rentalId && (te.unitId || null) === (eu ? eu.unitId : null)) return transportEditorHtml();
   const type = (T.transportType && T.transportType !== 'Self') ? T.transportType : null;
   if (!type) {
-    return `<div class="kv" style="justify-content:center;gap:9px"><span class="muted" style="font-size:10.5px">Self pickup · no transport</span><button class="add-field anchor js-tedit-open" data-r="R5b" data-rec="${esc(r2.rentalId)}"${du} data-leg="delivery" style="height:24px;font-size:11px">+Transport</button></div>`;
+    return `<div class="kv" style="justify-content:center;gap:9px"><span class="muted" style="font-size:0.6176rem">Self pickup · no transport</span><button class="add-field anchor js-tedit-open" data-r="R5b" data-rec="${esc(r2.rentalId)}"${du} data-leg="delivery" style="height:24px;font-size:0.6471rem">+Transport</button></div>`;
   }
   const sd = !!T.startCapture, ed = !!T.endCapture;
   const delAddr = T.deliveryAddress ? esc(T.deliveryAddress) : '+Address';
@@ -8478,7 +8478,7 @@ const DETAIL = {
             ${stallRouteHtml(r, eu)}
           </div>`;
         }).join('')
-      : `<div class="stall stall-empty rd-unit rd-unit-empty">${pickUnitBtn}<span class="muted" style="font-size:12px">drag a unit on, or cancel the quote</span></div>`;
+      : `<div class="stall stall-empty rd-unit rd-unit-empty">${pickUnitBtn}<span class="muted" style="font-size:0.7059rem">drag a unit on, or cancel the quote</span></div>`;
 
     /* Footer: field call only. The Complete/Cancel Rental buttons are RETIRED
        (Jac 2026-07-03) — terminal gates on every unit ARE the completion; the
@@ -8548,13 +8548,13 @@ const DETAIL = {
     const gpsSeen = gpsM ? gpsRelTime(gpsM.lastSeen) : '';
     const gpsBody = `<div class="fieldstack">
       ${kvPills((gsUnit ? statusPill('gpsStatus', gsUnit.status, { focal: true }) : badge('No GPS')) + (gpsMapped ? '' : addBtn('Connect GPS', { link: true, js: 'js-gps-connect', data: { rec: u.unitId } })))}
-      ${gpsStale ? `<div class="kv" style="justify-content:center"><span class="muted" style="font-size:11px">Last known — live link down</span></div>` : ''}
+      ${gpsStale ? `<div class="kv" style="justify-content:center"><span class="muted" style="font-size:0.6471rem">Last known — live link down</span></div>` : ''}
       ${gpsM ? `<div class="kv" style="justify-content:center;gap:8px;flex-wrap:wrap">
-        ${gpsSeen ? `<span class="muted" style="font-size:11px">Last seen ${esc(gpsSeen)}</span>` : ''}
+        ${gpsSeen ? `<span class="muted" style="font-size:0.6471rem">Last seen ${esc(gpsSeen)}</span>` : ''}
         ${gpsMapHref ? `<a class="gps-maplink" href="${gpsMapHref}" target="_blank" rel="noopener">${esc(gpsM.address || 'View on map')}</a>` : ''}
         ${badge(gpsM.engineOn ? 'Engine On' : 'Engine Off', gpsM.engineOn ? 'green' : 'gray')}
       </div>` : ''}
-      ${gpsMapped ? `<div class="kv"><span class="v muted" style="font-size:11px">${esc(u.gpsProvider)} · ${esc(u.gpsDeviceId)}</span>${ghostPill('Reconnect', { js: 'js-gps-connect', data: { rec: u.unitId } })}</div>` : ''}
+      ${gpsMapped ? `<div class="kv"><span class="v muted" style="font-size:0.6471rem">${esc(u.gpsProvider)} · ${esc(u.gpsDeviceId)}</span>${ghostPill('Reconnect', { js: 'js-gps-connect', data: { rec: u.unitId } })}</div>` : ''}
       ${efld('units', u, 'unitId', 'gpsType', 'GPS unit/type')}
       ${efld('units', u, 'unitId', 'gpsPlacement', 'Placement')}
       ${gpsShutdownControl(u, gpsM)}
@@ -8655,7 +8655,7 @@ const DETAIL = {
           ])}
         </div>
         <div class="kv" style="justify-content:center">${washBtn(u)}</div>
-        ${li2?.description ? `<div class="kv" style="justify-content:center"><span class="muted">Latest:</span> <span style="font-size:12.5px">${esc(li2.description)}</span></div>` : ''}
+        ${li2?.description ? `<div class="kv" style="justify-content:center"><span class="muted">Latest:</span> <span style="font-size:0.7353rem">${esc(li2.description)}</span></div>` : ''}
       </div>
     </div>`;
     const svcSec = serviceTasksHtml(u);   // Shop retirement (Jac 2026-07-07): services live ON the unit
@@ -8744,7 +8744,7 @@ const DETAIL = {
         ${ghostPill('Cancel', { js: 'js-rp-cancel' })}${actionPill('commit', 'Link', { js: 'js-rp-save', data: { rec: x.expenseId } })}
       </div>` : kvPills(addBtn('Part', { line: true, js: 'js-rcpt-addpart', h: 26, data: { rec: x.expenseId } }));
     const reconcile = `<div class="section"><h4>Reconcile — Parts</h4><div class="fieldstack">
-      ${partRows ? `<div class="hlog">${partRows}</div>` : '<span class="muted" style="font-size:12px">No parts linked yet.</span>'}
+      ${partRows ? `<div class="hlog">${partRows}</div>` : '<span class="muted" style="font-size:0.7059rem">No parts linked yet.</span>'}
       ${partForm}
       ${kv(money(lineTotal), { pfx: 'Line Total', derived: true })}
       ${kv(`<span style="color:var(--${unColor})">${(un < 0 ? '-' : '') + money(Math.abs(un))}</span>`, { pfx: 'Unaccounted', derived: true, html: true })}
@@ -8893,13 +8893,13 @@ const DETAIL = {
     const dupSrc = cs?.dupFrom ? IDX.model.get(cs.dupFrom) : null;
     const addModelRow = cs?.addingModel
       ? `<div class="kv pillrow" style="gap:7px">
-          ${dupSrc ? `<span class="muted" style="font-size:11px;width:100%">Duplicating ${esc(dupSrc.name)} — rename below</span>` : ''}
+          ${dupSrc ? `<span class="muted" style="font-size:0.6471rem;width:100%">Duplicating ${esc(dupSrc.name)} — rename below</span>` : ''}
           <input class="lf-in js-am-name" placeholder="Model name" style="flex:1" value="${dupSrc ? esc(dupSrc.name + ' copy') : ''}">
           ${ghostPill('Cancel', { js: 'js-am-cancel' })}${actionPill('commit', 'Add', { js: 'js-am-save', data: { rec: c.categoryId } })}
         </div>`
       : kvPills(addBtn('Model', { line: true, js: 'js-add-model', h: 26, data: { rec: c.categoryId } }));
     const models = `<div class="section"><h4>Models</h4><div class="fieldstack">
-      ${modelRows || '<span class="muted" style="font-size:12px">No models yet — units in this category use the generic service schedule.</span>'}
+      ${modelRows || '<span class="muted" style="font-size:0.7059rem">No models yet — units in this category use the generic service schedule.</span>'}
       ${addModelRow}
     </div></div>`;
     // every unit in the category — R2 linked pill + R4 derived status pill (Jac 2026-06-12)
@@ -8928,7 +8928,7 @@ const DETAIL = {
           ${efld('categories', c, 'categoryId', 'endOfLifeYears', 'End of life (yrs)', { type: 'number', admin: true, fmt: (v) => v + ' YRS', sfx: 'end of life' })}
           ${c.usefulLifeHours > 0 && c.endOfLifeYears > 0 ? kv(`${num(Math.round(c.usefulLifeHours / (c.endOfLifeYears * 12)))} HRS/MO`, { sfx: 'expected pace', derived: true }) : ''}
         </div>
-        <div class="side r">${unitRows || '<span class="muted" style="font-size:12px">No units</span>'}</div>
+        <div class="side r">${unitRows || '<span class="muted" style="font-size:0.7059rem">No units</span>'}</div>
       </div></div>`;
     const notes = notesSection('categories', c, 'categoryId');
     return `<div class="detail">
@@ -8982,7 +8982,7 @@ const DETAIL = {
           ? `${badge('Refunded')}${actionPill('commit', 'Details', { js: 'js-pay-invoice', data: { rec: i.invoiceId } })}`
           : t.balance <= 0 && t.paid > 0
             ? `${badge(`Paid${i.paymentMethod ? ' · ' + i.paymentMethod : ''}`, 'green')}${actionPill('danger', 'Refund', { js: 'js-pay-invoice', data: { rec: i.invoiceId } })}`
-            : `${actionPill('money', hasCardOnFile(cust) ? (t.paid > 0 ? 'Pay balance ' : 'Pay ') + money2(t.balance) : 'Take payment', { js: 'js-pay-invoice', data: { rec: i.invoiceId } })}${hasCardOnFile(cust) ? `<span class="muted" style="font-size:11px">${esc(cardLabel(cust))}</span>` : ''}`)
+            : `${actionPill('money', hasCardOnFile(cust) ? (t.paid > 0 ? 'Pay balance ' : 'Pay ') + money2(t.balance) : 'Take payment', { js: 'js-pay-invoice', data: { rec: i.invoiceId } })}${hasCardOnFile(cust) ? `<span class="muted" style="font-size:0.6471rem">${esc(cardLabel(cust))}</span>` : ''}`)
       : '') + colCell;
     // Void (Jac 2026-07-09): an UNPAID invoice ($0 assigned) can be voided — unlinks its rental
     // so the slot frees to re-invoice and retires this to a $0 auditable record (no hard-delete).
@@ -8991,17 +8991,17 @@ const DETAIL = {
     const voidCell = (canMoney()
       ? invoiceVoidable(i)
         ? actionPill('danger', 'Void invoice', { js: 'js-void-invoice', h: 26, data: { rec: i.invoiceId } })
-        : (t.paid > 0.005 && !i.refunded && !i.voided ? `<span class="muted" style="font-size:11px" data-tip="A payment is assigned — refund it first, then you can void this invoice.">Refund to void</span>` : '')
+        : (t.paid > 0.005 && !i.refunded && !i.voided ? `<span class="muted" style="font-size:0.6471rem" data-tip="A payment is assigned — refund it first, then you can void this invoice.">Refund to void</span>` : '')
       : '');
     const lineForm = `<div class="lineform"><input class="lf-in js-lf-label" placeholder="Custom line description" /><div class="lineform-row"><input class="lf-in js-lf-amt" type="number" min="0" placeholder="Amount $" /></div><div class="pillrow" style="justify-content:flex-end">${ghostPill('Cancel', { js: 'js-line-cancel' })}${actionPill('commit', 'Add line', { js: 'js-line-save', data: { rec: i.invoiceId } })}</div></div>`;
     // Merge (#64): a customer's other UNPAID invoices can fold into this one. Money-safe
     // by construction — only $0-paid, unlocked, un-refunded bills qualify (invoiceMergeable).
     const mergeables = (canMoney() && invoiceMergeable(i)) ? DATA.invoices.filter((o) => o.invoiceId !== i.invoiceId && o.customerId === i.customerId && invoiceMergeable(o)) : [];
-    const mergePicker = `<div class="lineform mergeform"><div class="muted" style="font-size:12px;margin-bottom:7px">Fold another unpaid invoice for ${esc(cust ? cust.name : 'this customer')} into ${esc(i.invoiceId)} — its lines move over and the original is removed.</div>${mergeables.map((o) => { const ot = invoiceTotals(o); const n = (o.lineItems || []).length; return `<div class="hitem"><b class="derived">${esc(invoiceShort(o.invoiceId))}</b><span class="muted" style="font-size:11px">${n} line${n === 1 ? '' : 's'} · ${money2(ot.total)}</span><span class="spacer"></span>${actionPill('commit', 'Merge in', { js: 'js-merge-pick', h: 24, data: { keep: i.invoiceId, rec: o.invoiceId } })}</div>`; }).join('')}<div class="pillrow" style="justify-content:flex-end;margin-top:7px">${ghostPill('Done', { js: 'js-merge-cancel' })}</div></div>`;
+    const mergePicker = `<div class="lineform mergeform"><div class="muted" style="font-size:0.7059rem;margin-bottom:7px">Fold another unpaid invoice for ${esc(cust ? cust.name : 'this customer')} into ${esc(i.invoiceId)} — its lines move over and the original is removed.</div>${mergeables.map((o) => { const ot = invoiceTotals(o); const n = (o.lineItems || []).length; return `<div class="hitem"><b class="derived">${esc(invoiceShort(o.invoiceId))}</b><span class="muted" style="font-size:0.6471rem">${n} line${n === 1 ? '' : 's'} · ${money2(ot.total)}</span><span class="spacer"></span>${actionPill('commit', 'Merge in', { js: 'js-merge-pick', h: 24, data: { keep: i.invoiceId, rec: o.invoiceId } })}</div>`; }).join('')}<div class="pillrow" style="justify-content:flex-end;margin-top:7px">${ghostPill('Done', { js: 'js-merge-cancel' })}</div></div>`;
     const manageRow = state.invLineForm === i.invoiceId ? lineForm
       : (state.invMergePick === i.invoiceId && mergeables.length) ? mergePicker
       : locked
-        ? `<div class="pillrow"><span class="muted" style="font-size:12px">🔒 Pricing locked.</span>${canMoney() ? actionPill('commit', 'Unlock to edit', { js: 'js-unlock-invoice', data: { rec: i.invoiceId } }) : ''}</div>`
+        ? `<div class="pillrow"><span class="muted" style="font-size:0.7059rem">🔒 Pricing locked.</span>${canMoney() ? actionPill('commit', 'Unlock to edit', { js: 'js-unlock-invoice', data: { rec: i.invoiceId } }) : ''}</div>`
         : `<div class="pillrow pillcol">${addBtn('Rental', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Rental' } })}${addBtn('WO', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'WO' } })}${addBtn('Custom', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Custom' } })}</div>${canMoney() && (i.lineItems || []).length ? `<div class="pillrow pillcol">${actionPill('commit', '🔒 Lock price', { js: 'js-lock-invoice', data: { rec: i.invoiceId } })}</div>` : ''}${mergeables.length ? `<div class="pillrow pillcol">${addBtn('Merge invoice', { line: true, js: 'js-merge-open', h: 26, data: { rec: i.invoiceId } })}</div>` : ''}`;
     const invoiceSec = `<div class="section"><h4>Invoice</h4>
       <div class="inv-split">
@@ -9011,7 +9011,7 @@ const DETAIL = {
           ${manageRow}
         </div>
         <div class="inv-data">
-          ${lines || '<span class="muted" style="font-size:12px">No line items yet</span>'}
+          ${lines || '<span class="muted" style="font-size:0.7059rem">No line items yet</span>'}
           ${(i.lineItems || []).length ? '<div class="inv-div"></div>' : ''}
           ${subRows}
           ${ledgerRow('Subtotal', money2(t.subtotal))}
@@ -9019,7 +9019,7 @@ const DETAIL = {
           ${ledgerRow('Total', money2(t.total), 'big')}
           ${ledgerRow('Paid', `${money2(t.paid)} / ${money2(t.total)}`)}
           ${ledgerRow(`Due${i.dueDate ? ' · ' + fmtShortDate(i.dueDate) : ''}`, money2(t.balance), 'due')}
-          ${!locked ? `<div class="kv" style="justify-content:flex-end;align-items:center;gap:7px;margin-top:2px"><span class="derived" style="font-size:11px">Set due date</span><input type="date" class="js-due-date" data-rec="${esc(i.invoiceId)}" value="${esc(i.dueDate || '')}" style="font-size:11px;color:var(--txt);background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:3px 7px;color-scheme:dark"></div>` : ''}
+          ${!locked ? `<div class="kv" style="justify-content:flex-end;align-items:center;gap:7px;margin-top:2px"><span class="derived" style="font-size:0.6471rem">Set due date</span><input type="date" class="js-due-date" data-rec="${esc(i.invoiceId)}" value="${esc(i.dueDate || '')}" style="font-size:0.6471rem;color:var(--txt);background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:3px 7px;color-scheme:dark"></div>` : ''}
           ${(payCell || voidCell) ? `<div class="pillrow" style="justify-content:flex-end;margin-top:9px">${payCell}${voidCell}</div>` : ''}
           <div class="pillrow" style="justify-content:flex-end;margin-top:9px">${ghostPill('🖨 Print', { js: 'js-print-invoice', data: { rec: i.invoiceId }, tip: 'Edge-to-edge already. For a fully clean page, turn off “Headers & footers” in the print dialog (Chrome remembers it).' })}${ghostPill('✉ Send Email', { js: 'js-send-email', data: { rec: i.invoiceId }, disabled: !cust || !cust.email, tip: !cust ? 'No customer on file' : !cust.email ? 'No email on file' : '' })}${ghostPill('💬 Send Text', { js: 'js-send-text', data: { rec: i.invoiceId }, disabled: !cust || !cust.phone, tip: !cust ? 'No customer on file' : !cust.phone ? 'No phone on file' : '' })}</div>
         </div>
@@ -9058,7 +9058,7 @@ const DETAIL = {
       <div class="pillrow"><button class="pill c-green js-part-save" data-rec="${w.woId}">Add line</button><button class="pill c-gray js-part-cancel">Cancel</button></div>
     </div>`;
     const journeySec = `<div class="section"><h4>Journey</h4>
-      <div class="hlog">${journey || '<span class="muted" style="font-size:12px">No line items</span>'}</div>
+      <div class="hlog">${journey || '<span class="muted" style="font-size:0.7059rem">No line items</span>'}</div>
       ${state.woPartForm === w.woId ? partForm : `<div class="pillrow" style="margin-top:8px">${addBtn('Part/Task', { anchor: true, js: 'js-add-part', h: 26, data: { rec: w.woId } })}${billBtn}</div>`}
     </div>`;
     const billToggle = gatePillRaw(`Bill customer: ${w.billCustomer === 'Yes' ? 'Yes' : 'No'}`, w.billCustomer === 'Yes' ? 'orange' : 'gray', 'js-wo-bill', { rec: w.woId }, true);
@@ -9099,7 +9099,7 @@ const DETAIL = {
     const headTop = top ? (top.washRequested ? `<span class="pill c-blue">Wash Requested</span>` : `<span class="pill c-${top.color}">${esc(getStatus('serviceStatus', top.status).label)}</span>`) : '';
     const notes = notesSection('units', u, 'unitId');
     return `<div class="detail">
-      <div class="detail-head">${unitPill(u.unitId)}<span class="muted" style="font-size:13px;font-weight:600">${num(u.currentHours)} HRS</span>${ar ? statusPill('rentalStatus', rentalDisplayStatus(ar), { card: 'rentals', recId: ar.rentalId }) : ''}${headTop}</div>
+      <div class="detail-head">${unitPill(u.unitId)}<span class="muted" style="font-size:0.7647rem;font-weight:600">${num(u.currentHours)} HRS</span>${ar ? statusPill('rentalStatus', rentalDisplayStatus(ar), { card: 'rentals', recId: ar.rentalId }) : ''}${headTop}</div>
       ${notes.top}
       ${tasks}
       ${notes.bottom}
@@ -9138,7 +9138,7 @@ const DETAIL = {
     </div></div>`;
     const notes = notesSection('inspections', n, 'inspectionId');
     return `<div class="detail">
-      <div class="detail-head">${unit ? unitPill(unit.unitId) : '<span class="d-title">Inspection</span>'}${resultPill}<span class="muted" style="font-size:12px;margin-left:auto">${esc(fmtShortDate(n.date))}</span></div>
+      <div class="detail-head">${unit ? unitPill(unit.unitId) : '<span class="d-title">Inspection</span>'}${resultPill}<span class="muted" style="font-size:0.7059rem;margin-left:auto">${esc(fmtShortDate(n.date))}</span></div>
       ${notes.top}
       ${report}
       ${notes.bottom}
@@ -9163,7 +9163,7 @@ function historySection(card, rec, cs, chips) {
   const items = q ? base.filter((h) => (h.search || `${h.when} ${h.text}`).toLowerCase().includes(q)) : base;
   const log = items.length
     ? items.map((h) => `<div class="hitem"><span class="htime">${esc(h.when)}</span>${h.pill || ''}<span>${esc(histText(h.text))}</span>${h.by ? `<span class="hby">${esc(h.by)}</span>` : ''}</div>`).join('')
-    : `<div class="muted" style="font-size:12px">${q || chip ? 'No matching history.' : 'No history yet.'}</div>`;
+    : `<div class="muted" style="font-size:0.7059rem">${q || chip ? 'No matching history.' : 'No history yet.'}</div>`;
   const chipBar = chips?.length
     ? `<div class="hvals">${chips.map((c) => `<button class="hv ${c.cls || ''} ${cs?.histKind === c.kind ? 'on' : ''} js-hchip" data-card="${esc(card)}" data-kind="${esc(c.kind)}">${esc(c.label)}</button>`).join('')}</div>` : '';
   // History Search (§0.6) — appears once the log has some depth.
@@ -9546,6 +9546,25 @@ function mobileRailPanelEl(member, session) {
   wrap.appendChild(card);
   return wrap;
 }
+// §M8 wrap (Jac 2026-07-18) — a visually-IDENTICAL but INERT copy of a rail panel, used to bracket
+// the ribbon's two ends so a swipe PAST Sales lands on a Categories clone (and past Categories on a
+// Sales clone); the scroll-settle teleport then swaps the clone for its real twin, so the loop is
+// seamless. cloneNode (no re-render, pixel-identical), pointer-events off (.rail-clone), aria-hidden,
+// and stripped of id/data-id so it never collides with the real panel's queries, clicks, drag, or
+// scroll-to targets. KEEPS data-card (theme stripe) + data-r (lint) so it still looks the part.
+function inertRailClone(realPanel) {
+  const c = realPanel.cloneNode(true);
+  c.classList.add('rail-clone');
+  c.setAttribute('aria-hidden', 'true');
+  c.dataset.clone = '1';
+  c.querySelectorAll('[id]').forEach((n) => n.removeAttribute('id'));
+  c.querySelectorAll('[data-id]').forEach((n) => n.removeAttribute('data-id'));
+  // The clone KEEPS data-card (its list-grid layout + theme stripe are keyed on it in CSS), so it
+  // would otherwise collide with the many `.card[data-card]` JS selectors that assume ONE match per
+  // card id. Stamp data-clone on the card too so those selectors exclude it via :not([data-clone]).
+  const cc = c.querySelector('.card[data-card]'); if (cc) cc.dataset.clone = '1';
+  return c;
+}
 function colTabsEl(col, active, session) {
   // Jac 2026-06-12: the toggle CHIP stays centered; the nav cluster sits OUTSIDE
   // it, parked at the row's right edge (.tabrow wraps both). (Desktop only — phone uses
@@ -9630,6 +9649,10 @@ function calendarCardEl(session) {
     <input class="mini-search" placeholder="Search trips…" value="${esc(state.calSearch || '')}" data-card="calendar" />
   </div>`;
   body.appendChild(bar);
+  // §scroll (Jac 2026-07-18) — the map panel + trip rows share ONE scroll region so the live
+  // map scrolls WITH the run instead of sitting frozen while the rows slide under it. The
+  // listbar (sticky) and the sync footer stay pinned as chrome; only this middle region scrolls.
+  const scroll = el('div', 'cal-scroll');
   // §2.1 the live-map panel — open by default everywhere, remembered per device. The map
   // singleton mounts into .js-dispmount after render (mountDispatchMap, the render pipeline
   // already calls it). Offline (#local), or a failed Maps load → the stamped MAP OFFLINE
@@ -9645,8 +9668,8 @@ function calendarCardEl(session) {
     const gmaps = dest ? `<span class="trips-gmaps">${linkName('Open in Google Maps', { href: `https://www.google.com/maps/dir/?api=1&destination=${dest}`, ext: true })}</span>` : '';
     panel.innerHTML = live
       ? `<div class="dispm js-dispmount" data-day="${esc(state.dispatchDay || TODAY_ISO)}">${mapsReady() ? '' : '<span class="map-spin" aria-hidden="true"></span><span class="map-tag">Loading dispatch map…</span>'}</div>${gmaps}`
-      : `<div class="trips-map-ph"><span class="map-pin" aria-hidden="true">${ICO_PIN}</span><span class="map-tag stamp" style="font-size:11px;color:var(--accent)">Map offline</span><span class="map-sub">The run below still drives the day.</span></div>${gmaps}`;
-    body.appendChild(panel);
+      : `<div class="trips-map-ph"><span class="map-pin" aria-hidden="true">${ICO_PIN}</span><span class="map-tag stamp" style="font-size:0.6471rem;color:var(--accent)">Map offline</span><span class="map-sub">The run below still drives the day.</span></div>${gmaps}`;
+    scroll.appendChild(panel);
   }
   let trips = tripsFor();
   if (q) trips = trips.filter((t) => tripMatches(t, q));
@@ -9659,7 +9682,8 @@ function calendarCardEl(session) {
   } else {
     appendGroupedSections(list, trips, {}, 'calendar');
   }
-  body.appendChild(list);
+  scroll.appendChild(list);
+  body.appendChild(scroll);
   const foot = el('div', 'disp-foot');
   const sync = tripsSyncFooter();   // §2.3 Phase 4 — real sync state, replaces the Phase 1 static placeholder
   foot.innerHTML = `<span class="disp-offdot${sync.synced ? ' on' : ''}"></span><span class="disp-offline${sync.synced ? ' on' : ''}">${esc(sync.label)}</span>`;
@@ -10279,7 +10303,7 @@ function toolsMenuRows() {
   // (Developer/Admin) render only when unlocked, exactly as before.
   const fam = (name, rows) => `<details class="dd-fam"><summary class="dd-fam-h">${esc(name)}<span class="dd-fam-chev">${I.chev}</span></summary><div class="dd-fam-body">${rows}</div></details>`;
   // General — the everyday tools + the manual cache-buster (force the newest build past a stale mobile cache, Jac 2026-07-16).
-  const general = `<button class="dd-item js-app-update"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${STATUS_ICONS.refresh}</span>Check for updates<span style="margin-left:auto;color:var(--txt-3);font-size:11px;letter-spacing:.3px">v${esc(appVersion())}</span></button>`
+  const general = `<button class="dd-item js-app-update"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${STATUS_ICONS.refresh}</span>Check for updates<span style="margin-left:auto;color:var(--txt-3);font-size:0.6471rem;letter-spacing:.3px">v${esc(appVersion())}</span></button>`
     + item('js-qr', I.qr, 'Share session (QR)')
     + item('js-previews', state.previewsOn ? I.eye : I.eyeOff, state.previewsOn ? 'Hover previews: on' : 'Hover previews: off', state.previewsOn)
     + item('js-hotkeys', I.mouse, 'Mouse & keyboard shortcuts');
@@ -10397,7 +10421,7 @@ function currentMobileMember() {
 // Invoices retired 2026-07-08 — embedded in Customer Details; the 2nd right slot is the
 // upcoming Sales placeholder.)
 const MOBILE_TOGGLE_GROUPS = [
-  { col: 'left',   members: ['units', 'categories'] },
+  { col: 'left',   members: ['categories', 'units'] },   // Categories LEFT, Units RIGHT — matches the rail's spatial order (Jac 2026-07-18)
   { col: 'middle', members: ['rentals', 'calendar'] },
   { col: 'right',  members: ['customers', 'sales'] },
 ];
@@ -10411,7 +10435,10 @@ const MOBILE_TOGGLE_GROUPS = [
 // the RIGHT column's two take the two RIGHT slots (main Customers then sub Sales), the middle
 // contributes only Rentals (or the swapped-in Calendar). state.mobileCol stays the COLUMN index
 // (0–2) that every downstream reader (zip-zones, cross-column links, the footer jog, cross-device
-// session sync) is keyed to — it's DERIVED from the snapped rail card.
+// session sync) is keyed to — it's DERIVED from the snapped rail card. §M8 wrap (2026-07-18) — the
+// ribbon LOOPS: render() brackets these 5 with 2 inert edge clones (inertRailClone) and a scroll-
+// settle teleport (teleportRailWrap) jumps a reached clone to its real twin, so a swipe past Sales
+// lands on Categories and past Categories lands on Sales.
 const MOBILE_RAIL = ['categories', 'units', 'rentals', 'customers', 'sales'];
 // The live rail members for a session — the center slot follows the middle column's active member
 // so a tapped Calendar shows there (off-rail swap-in-place) instead of Rentals.
@@ -10722,7 +10749,7 @@ function wranglerDockEl() {
   const chip = rec ? `<span class="wr-chip">${CARD_ICON[entityCardOf(o.card, o.recType)] || ''}${esc(detailTitle(entityCardOf(o.card, o.recType), rec))}</span>` : '';
   return `
     <div class="wr-dock-head">
-      <span style="font-size:18px">🤠</span>
+      <span style="font-size:1.0588rem">🤠</span>
       <span class="wr-dock-title">Mr. Wrangler</span>
       ${chip}
       <span class="spacer"></span>
@@ -12997,8 +13024,9 @@ function wirePopupDrag(overlay) {
    stack stays balanced. Phone-only — desktop keeps Esc/click. Wired in boot(). ── */
 let backGuard = false, backConsuming = false;
 let swipeFired = false;   // §M1/§M3 — a footer or grid section-switch swipe sets this so the trailing click is swallowed once
-function anyDismissable() { return !!(state.overlay || state.datesearch || state.chat.open || state.wrangler.open || (document.body.classList.contains('is-phone') && state.commsRail.cat)); }
+function anyDismissable() { return !!(_sigSheet || state.overlay || state.datesearch || state.chat.open || state.wrangler.open || (document.body.classList.contains('is-phone') && state.commsRail.cat)); }
 function dismissTopSheet() {
+  if (_sigSheet) { closeMobileSignSheet(); return true; }   // §M — the signature sheet is the topmost surface: back/Esc closes it FIRST, not the overlay behind it
   if (state.datesearch) { closeDateSearch(); return true; }
   if (overlayLocked()) { attnFlash('.rr-stars'); toast('Rate the return first — it can’t be skipped.'); return true; }   // required modal: refuse Esc/back
   if (state.overlay) { closeOverlay(); return true; }
@@ -13135,8 +13163,8 @@ function buildPopupEl(o, overlay, opts = {}) {
     pop.innerHTML = popupShell({ icon: I.qr, title: o.title || 'Share session', tag: 'Share · this session', body: `
       <div style="text-align:center">
         <img class="qr-img" alt="QR code" src="https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&bgcolor=15171c&color=ff7a1a&data=${encodeURIComponent(url)}" width="220" height="220" style="border-radius:12px;background:var(--panel-2)" />
-        <p class="muted" style="margin-top:10px;font-size:12px;word-break:break-all">${esc(url)}</p>
-        <p class="muted" style="margin-top:6px;font-size:11px">${esc(o.caption || 'Scan to open this session on another device (single shared login — §1/§4.2).')}</p>
+        <p class="muted" style="margin-top:10px;font-size:0.7059rem;word-break:break-all">${esc(url)}</p>
+        <p class="muted" style="margin-top:6px;font-size:0.6471rem">${esc(o.caption || 'Scan to open this session on another device (single shared login — §1/§4.2).')}</p>
       </div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'migrateUnits') {
@@ -13146,16 +13174,16 @@ function buildPopupEl(o, overlay, opts = {}) {
     const rentals = o.plan.reduce((n, p) => n + p.count, 0);
     const rows = o.plan.map((p) => `<tr style="border-top:1px solid rgba(255,255,255,.06)">
         <td style="padding:5px 8px">${esc(p.name)}</td>
-        <td style="padding:5px 8px"><span class="pill ${p.action === 'create' ? 'c-commit' : 'ref'}" style="height:20px;font-size:10px">${p.action === 'create' ? 'New · ' + p.unitId : 'Link · ' + p.unitId}</span></td>
+        <td style="padding:5px 8px"><span class="pill ${p.action === 'create' ? 'c-commit' : 'ref'}" style="height:20px;font-size:0.5882rem">${p.action === 'create' ? 'New · ' + p.unitId : 'Link · ' + p.unitId}</span></td>
         <td style="padding:5px 8px;color:var(--muted)">${esc(IDX.category.get(p.categoryId)?.name || p.categoryId || '—')}</td>
         <td style="padding:5px 8px;color:var(--muted);text-align:right">${p.count}</td></tr>`).join('');
     const pop = el('div', 'popup'); pop.style.width = '560px';
     pop.innerHTML = popupShell({ icon: CARD_ICON.units || '', title: 'Round up missing units', tag: 'Units · migrate',
       foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-migrate-go" data-r="R17">Create &amp; link ${o.plan.length}</button>`,
       body: `
-        <p style="font-size:13px;margin-bottom:10px"><b>${o.plan.length}</b> unit${o.plan.length === 1 ? '' : 's'} were referenced on rentals but never recorded. This will <b>create ${creates}</b> new record${creates === 1 ? '' : 's'}${links ? ` and <b>link ${links}</b> to existing units` : ''}, then connect <b>${rentals}</b> rental${rentals === 1 ? '' : 's'} (and their customers, categories &amp; invoices) to them.</p>
+        <p style="font-size:0.7647rem;margin-bottom:10px"><b>${o.plan.length}</b> unit${o.plan.length === 1 ? '' : 's'} were referenced on rentals but never recorded. This will <b>create ${creates}</b> new record${creates === 1 ? '' : 's'}${links ? ` and <b>link ${links}</b> to existing units` : ''}, then connect <b>${rentals}</b> rental${rentals === 1 ? '' : 's'} (and their customers, categories &amp; invoices) to them.</p>
         <div style="max-height:46vh;overflow:auto;border:1px solid rgba(255,255,255,.1);border-radius:8px">
-          <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <table style="width:100%;border-collapse:collapse;font-size:0.7059rem">
             <thead><tr style="position:sticky;top:0;background:var(--panel-2)"><th style="text-align:left;padding:6px 8px">Unit</th><th style="text-align:left;padding:6px 8px">Action</th><th style="text-align:left;padding:6px 8px">Category</th><th style="text-align:right;padding:6px 8px">Rentals</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
@@ -13241,7 +13269,7 @@ function buildPopupEl(o, overlay, opts = {}) {
         ${o.devicesLoading ? `<div class="set-loading" style="min-height:140px"><div class="set-loading-bar" aria-hidden="true"></div><div class="set-loading-lbl">Rounding up ${esc(o.provider)} machines…</div></div>`
           : o.devicesError ? `<p class="set-err" style="text-align:left">${esc(o.devicesError)}</p>`
           : list.length ? `<div class="gps-dev-list">${rows}</div>`
-          : `<p class="muted" style="font-size:12px">No ${q ? 'matching' : 'authorized'} machines${q ? ` for “${esc(o.deviceQuery)}”` : ' on this account yet'}.</p>`}`;
+          : `<p class="muted" style="font-size:0.7059rem">No ${q ? 'matching' : 'authorized'} machines${q ? ` for “${esc(o.deviceQuery)}”` : ' on this account yet'}.</p>`}`;
       foot = ghostPill('Back', { js: 'js-gps-back' });
     } else {   // 'poll' — the live first-contact confirmation (§5a step 3)
       const UI = {
@@ -13459,7 +13487,7 @@ function buildPopupEl(o, overlay, opts = {}) {
         <span class="gps-poll-ic c-${UI.color}">${UI.icon}</span>
         <div class="gpsru-poll-txt">
           <div class="gpsru-poll-lbl">${esc(UI.label)}</div>
-          <div class="muted" style="font-size:11px">${o.pollState === 'timeout' ? 'It may just be catching up — try again, or confirm from the last-known data above.' : `Attempt ${o.pollAttempt || 0} of ${o.pollMax || 8}`}</div>
+          <div class="muted" style="font-size:0.6471rem">${o.pollState === 'timeout' ? 'It may just be catching up — try again, or confirm from the last-known data above.' : `Attempt ${o.pollAttempt || 0} of ${o.pollMax || 8}`}</div>
         </div>
         ${o.pollState === 'timeout' ? ghostPill('Try again', { js: 'js-gpsru-poll-start', data: { rec: o.pollUnitId } }) : ''}
       </div>`;
@@ -13478,14 +13506,14 @@ function buildPopupEl(o, overlay, opts = {}) {
       return `<div class="gpsru-detail">
         ${segCtl(GPS_PROVIDERS.map((p) => ({ label: p, js: 'js-gpsru-swap-provider', data: { rec: r.unitId, val: p }, on: provider === p ? 'orange' : '' })))}
         <div class="bv-searchwrap" style="width:100%;margin:9px 0"><span class="s-icon">${I.search}</span><input class="bv-query js-gpsru-swap-search" placeholder="Search ${esc(provider)} devices…" value="${esc(o.swapQuery || '')}"></div>
-        ${devRows ? `<div class="gps-dev-list">${devRows}</div>` : `<p class="muted" style="font-size:12px">No ${sq ? 'matching' : 'available'} ${esc(provider)} devices${(o.devices || []).length ? '' : ' — scan first'}.</p>`}
+        ${devRows ? `<div class="gps-dev-list">${devRows}</div>` : `<p class="muted" style="font-size:0.7059rem">No ${sq ? 'matching' : 'available'} ${esc(provider)} devices${(o.devices || []).length ? '' : ' — scan first'}.</p>`}
         <div class="gpsru-detail-actions"><span class="spacer"></span>${ghostPill('Cancel', { js: 'js-gpsru-swap-cancel' })}</div>
       </div>`;
     };
     const expandHtml = (r) => {
       if (o.expandedMode === 'swap') return swapHtml(r);
       if (!r.deviceId) return `<div class="gpsru-detail">
-        <p class="muted" style="font-size:12.5px">No tracker picked yet for this unit.</p>
+        <p class="muted" style="font-size:0.7353rem">No tracker picked yet for this unit.</p>
         <div class="gpsru-detail-actions">${ghostPill('Pick a device', { js: 'js-gpsru-swap-open', data: { rec: r.unitId } })}</div>
       </div>`;
       const u = IDX.unit.get(r.unitId);
@@ -13730,9 +13758,9 @@ function buildPopupEl(o, overlay, opts = {}) {
       R8: '<span class="derived">$2,610 · 7-Day×1 + 1-Day×3</span>',
       R9: flagsStack([flagEl('Passed', 'green', { icon: CARD_ICON.inspections }), flagEl('ETA Jun 18', 'yellow', { icon: CARD_ICON.workOrders })]),
       R10: '<span class="c-titlecard"><span class="c-icon">' + CARD_ICON.units + '</span><span class="c-title">Beacon</span></span>',
-      R11: '<span style="display:inline-block;border:1px solid color-mix(in srgb, var(--green) 45%, transparent);border-radius:9px;padding:4px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--green)">INSPECTION</span>',
-      R12: '<span class="add-field" data-r="R5c" style="height:24px;font-size:11px">+Notes</span><span class="muted" style="font-size:11px"> (boxless line)</span>',
-      R13: '<button class="hv g on" style="font-size:11px;font-weight:700;border:1px solid var(--accent);border-radius:99px;padding:2px 8px;background:none;color:var(--accent)">12 Inspections</button>',
+      R11: '<span style="display:inline-block;border:1px solid color-mix(in srgb, var(--green) 45%, transparent);border-radius:9px;padding:4px 14px;font-size:0.5882rem;font-weight:700;letter-spacing:.5px;color:var(--green)">INSPECTION</span>',
+      R12: '<span class="add-field" data-r="R5c" style="height:24px;font-size:0.6471rem">+Notes</span><span class="muted" style="font-size:0.6471rem"> (boxless line)</span>',
+      R13: '<button class="hv g on" style="font-size:0.6471rem;font-weight:700;border:1px solid var(--accent);border-radius:99px;padding:2px 8px;background:none;color:var(--accent)">12 Inspections</button>',
       R14: segCtl([{ label: '✓ Pass', on: 'green' }, { label: 'Not Ready' }, { label: '✕ Fail' }]),
       R15: '<span style="display:inline-grid;place-items:center;width:26px;height:26px;border-radius:8px;background:#fff;color:#16181d">' + I.video + '</span><span style="border-top:2px dotted var(--line);width:34px;display:inline-block;vertical-align:middle;margin:0 4px"></span><span style="display:inline-grid;place-items:center;width:26px;height:26px;border-radius:8px;background:var(--green-bg);color:var(--green)">✓</span>',
       R16: '<span style="display:inline-flex;height:22px;width:120px;border:1px solid var(--line);border-radius:7px;overflow:hidden"><span style="flex:1;background:var(--green-bg);border-right:1px dashed var(--line-soft)"></span><span style="flex:1;background:var(--green-bg);border-right:1px dashed var(--line-soft)"></span><span style="flex:1;border-right:1px dashed var(--line-soft)"></span><span style="flex:1"></span></span>',
@@ -13748,7 +13776,7 @@ function buildPopupEl(o, overlay, opts = {}) {
       R23: '<span class="pill c-gray" data-tip="The one styled tip"><span class="t">hover me</span></span>',
     };
     EX.R21 = fileDrop('Add File', { icon: I.box });
-    EX.R25 = '<span style="position:relative;display:inline-flex;align-items:center;gap:9px;padding:8px 12px;background:var(--panel);border:1px solid var(--line);border-radius:9px;overflow:hidden;max-width:360px"><span style="position:absolute;top:0;left:0;right:0;height:3px;background:repeating-linear-gradient(135deg,var(--red) 0 13px,#14181d 13px 26px)"></span><span style="font-family:\'Saira Condensed\',system-ui,sans-serif;text-transform:uppercase;letter-spacing:1.4px;font-weight:800;font-size:12px;color:var(--red);white-space:nowrap">⚠ Not saving</span><span style="font-size:11px;color:var(--txt-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">changes held, retrying…</span></span>';
+    EX.R25 = '<span style="position:relative;display:inline-flex;align-items:center;gap:9px;padding:8px 12px;background:var(--panel);border:1px solid var(--line);border-radius:9px;overflow:hidden;max-width:360px"><span style="position:absolute;top:0;left:0;right:0;height:3px;background:repeating-linear-gradient(135deg,var(--red) 0 13px,#14181d 13px 26px)"></span><span style="font-family:\'Saira Condensed\',system-ui,sans-serif;text-transform:uppercase;letter-spacing:1.4px;font-weight:800;font-size:0.7059rem;color:var(--red);white-space:nowrap">⚠ Not saving</span><span style="font-size:0.6471rem;color:var(--txt-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">changes held, retrying…</span></span>';
     // ── tabbed render — a row builder per kind, then just the active tab's items ──
     const ruleRow = (r) => {
       const m = RULE_META[r]; if (!m) return '';
@@ -13761,7 +13789,7 @@ function buildPopupEl(o, overlay, opts = {}) {
       return `<div class="rb-row">
         <span class="rb-id">${r}</span>
         <div class="rb-ex">${EX[r] || '<span class="muted">—</span>'}</div>
-        <div class="rb-info"><b>${esc(m[0])}</b> · <code>${esc(m[1])}</code><div class="muted" style="font-size:11px">${esc(m[2])}</div>${idxHtml}</div>
+        <div class="rb-info"><b>${esc(m[0])}</b> · <code>${esc(m[1])}</code><div class="muted" style="font-size:0.6471rem">${esc(m[2])}</div>${idxHtml}</div>
       </div>`;
     };
     const foundRow = (key) => {
@@ -13770,7 +13798,7 @@ function buildPopupEl(o, overlay, opts = {}) {
         <span class="rb-id found">${esc(f[0])}</span>
         <div class="rb-found-body">
           <div class="rb-ex">${f[4]}</div>
-          <div class="rb-info"><b>${esc(f[1])}</b> · <code>${esc(f[2])}</code><div class="muted" style="font-size:11px">${esc(f[3])}</div></div>
+          <div class="rb-info"><b>${esc(f[1])}</b> · <code>${esc(f[2])}</code><div class="muted" style="font-size:0.6471rem">${esc(f[3])}</div></div>
         </div>
       </div>`;
     };
@@ -13869,16 +13897,16 @@ function buildPopupEl(o, overlay, opts = {}) {
       foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', rec ? 'Save' : (forTask ? 'Add part' : 'Add line'), { js: 'js-pf2-save' })}`,
       body: `
         ${fileDrop(state.partPhoto || rec?.photo ? '✓ photo attached' : 'Add Photo (not required)', { js: 'js-pf2-file', capture: 'environment', done: !!(state.partPhoto || rec?.photo), icon: I.camera })}
-        ${forTask ? '' : `<p class="muted" style="text-align:center;font-size:11.5px;margin:7px 0 10px">✨ Mr. Wrangler will add the parts for you!</p>`}
+        ${forTask ? '' : `<p class="muted" style="text-align:center;font-size:0.6765rem;margin:7px 0 10px">✨ Mr. Wrangler will add the parts for you!</p>`}
         <input class="lf-in js-pf2-desc" placeholder="Part/Task Name" value="${esc((forTask ? pr?.name : li?.part) || '')}" style="width:100%;margin-bottom:7px">
-        ${forTask && pr?.oem ? `<div class="muted" style="font-size:11px;margin:-3px 0 7px">OEM ${esc(pr.oem)} · from the manufacturer manual</div>` : ''}
+        ${forTask && pr?.oem ? `<div class="muted" style="font-size:0.6471rem;margin:-3px 0 7px">OEM ${esc(pr.oem)} · from the manufacturer manual</div>` : ''}
         <div style="display:flex;gap:7px;margin-bottom:7px">
           <input class="lf-in js-pf2-cost" type="number" min="0" placeholder="$Cost" value="${(forTask ? pr?.cost : li?.cost) ?? ''}" style="flex:1">
           ${forTask ? '' : `<input class="lf-in js-pf2-hours" type="number" min="0" step="0.5" placeholder="Hours" value="${li?.hours ?? ''}" style="flex:1">`}
         </div>
         <input class="lf-in js-pf2-url" placeholder="URL link" value="${esc((forTask ? pr?.url : li?.url) || '')}" style="width:100%;margin-bottom:7px">
         <input class="lf-in js-pf2-vendor" placeholder="Vendor" value="${esc(ven?.name || '')}" style="width:100%;margin-bottom:4px">
-        ${forTask ? '' : `<p class="muted" style="font-size:11px;margin:4px 0 4px">✨ Empty fields are filled by Mr. Wrangler after saving: the photo is reviewed for the description/cost/url, and hours are estimated from the category + industry standards.</p>`}` });
+        ${forTask ? '' : `<p class="muted" style="font-size:0.6471rem;margin:4px 0 4px">✨ Empty fields are filled by Mr. Wrangler after saving: the photo is reviewed for the description/cost/url, and hours are estimated from the category + industry standards.</p>`}` });
     overlay.appendChild(pop);
   } else if (o.kind === 'modelSchedule') {
     // A model's real maintenance schedule (Jac 2026-07-07) — replaces the generic
@@ -13896,7 +13924,7 @@ function buildPopupEl(o, overlay, opts = {}) {
     pop.innerHTML = popupShell({ icon: CARD_ICON.workOrders, title: mo?.name || 'Model schedule', tag: 'Category · model',
       foot: `${ghostPill('Close', { js: 'js-close' })}`,
       body: `
-        ${rows || '<p class="muted" style="font-size:12.5px;text-align:center;margin:6px 0 12px">No tasks yet — this model falls back to the generic schedule until you add some.</p>'}
+        ${rows || '<p class="muted" style="font-size:0.7353rem;text-align:center;margin:6px 0 12px">No tasks yet — this model falls back to the generic schedule until you add some.</p>'}
         <div class="wototals">${addBtn('Task', { anchor: true, js: 'js-add-svctask', h: 26, data: { rec: o.modelId } })}</div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'svctaskform') {
@@ -13928,7 +13956,7 @@ function buildPopupEl(o, overlay, opts = {}) {
           ${dateField('date', o.date)}
         </div>
         <input class="lf-in js-rf-part" placeholder="Part Name" value="" style="width:100%;margin-bottom:4px">
-        <p class="muted" style="font-size:11px;margin:4px 0 4px">✨ Empty fields are filled by Mr. Wrangler after saving: the photo is read for the vendor, amount, date and category.</p>` });
+        <p class="muted" style="font-size:0.6471rem;margin:4px 0 4px">✨ Empty fields are filled by Mr. Wrangler after saving: the photo is read for the vendor, amount, date and category.</p>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'wodone') {
     // v2: Complete WO with open line items → warn, don't hard-block
@@ -13938,8 +13966,8 @@ function buildPopupEl(o, overlay, opts = {}) {
     pop.innerHTML = popupShell({ icon: CARD_ICON.workOrders, title: 'Complete this Work Order?', tag: 'Work order · confirm', danger: true,
       foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('danger', 'Complete WO', { js: 'js-wodone-confirm', data: { rec: o.woId } })}`,
       body: `
-        <p style="font-size:13px;margin-bottom:6px">Are you sure? Not all items are completed.</p>
-        <p class="muted" style="font-size:12px;margin-bottom:4px">Still open: ${open.map((l) => `“${esc(l.part)} · ${esc(getStatus('woPhase', l.phase).label)}”`).join(' · ') || '—'}</p>` });
+        <p style="font-size:0.7647rem;margin-bottom:6px">Are you sure? Not all items are completed.</p>
+        <p class="muted" style="font-size:0.7059rem;margin-bottom:4px">Still open: ${open.map((l) => `“${esc(l.part)} · ${esc(getStatus('woPhase', l.phase).label)}”`).join(' · ') || '—'}</p>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'role') {
     const role = ROLES.find((r) => r.id === o.role);
@@ -13949,7 +13977,7 @@ function buildPopupEl(o, overlay, opts = {}) {
       const raw = vals[i];
       const b = bandColor(raw == null ? 0 : raw);
       const valTxt = raw == null ? '<span class="muted">Coming soon</span>' : `<span style="color:var(--${b.color})">${raw}%</span>`;
-      return `<div class="kpi-line" data-tip="${esc(KPI_HELP[k] || '')}"><span class="ring-no" style="border-color:var(--${raw == null ? 'line' : b.color});color:var(--${raw == null ? 'txt-3' : b.color})">${i + 1}</span><span class="k-name">${esc(k)}<span class="muted" style="font-size:10px;margin-left:6px">${ringTag[i]}</span></span><span class="k-val">${valTxt}</span></div>`;
+      return `<div class="kpi-line" data-tip="${esc(KPI_HELP[k] || '')}"><span class="ring-no" style="border-color:var(--${raw == null ? 'line' : b.color});color:var(--${raw == null ? 'txt-3' : b.color})">${i + 1}</span><span class="k-name">${esc(k)}<span class="muted" style="font-size:0.5882rem;margin-left:6px">${ringTag[i]}</span></span><span class="k-val">${valTxt}</span></div>`;
     }).join('');
     const pop = el('div', 'popup kpi-popup');
     pop.innerHTML = popupShell({ icon: RING_ICON[role.id], title: `${role.label} KPIs`, tag: 'Role · scorecard', body: `
@@ -14072,7 +14100,7 @@ function buildPopupEl(o, overlay, opts = {}) {
     const pop = el('div', 'popup hk-popup');
     pop.innerHTML = popupShell({ icon: I.mouse, title: 'Mouse shortcuts', tag: 'Operator · controls', bodyClass: 'hk-body', body: `
         ${rows.map((r) => `<div class="hk-row"><div class="hk-demo hk-${r.d}">${hkDemoInner(r.d)}</div><div class="hk-text"><div class="hk-name">${esc(r.n)}</div><div class="hk-desc">${esc(r.t)}</div></div></div>`).join('')}
-        <p class="muted" style="font-size:11px;margin:6px 2px 0">These work on a list row or anywhere on a card.</p>` });
+        <p class="muted" style="font-size:0.6471rem;margin:6px 2px 0">These work on a list row or anywhere on a card.</p>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'roadmap') {
     // §M2 — "Coming 2026" roadmap (the morale window behind the blurred rings).
@@ -14252,7 +14280,7 @@ function buildPopupEl(o, overlay, opts = {}) {
             <div class="ag-pcell"><div class="ag-pcap">Selfie</div>${signingSelfieSrc(sg) ? `<img class="ag-selfie" src="${esc(signingSelfieSrc(sg))}" alt="selfie on file" />` : '<div class="ag-selfie empty">—</div>'}</div>
             <div class="ag-pcell"><div class="ag-pcap">Signature</div>${signingSignatureSrc(sg) ? `<img class="ag-sigthumb" src="${esc(signingSignatureSrc(sg))}" alt="signature on file" />` : '<div class="ag-sigthumb"></div>'}</div>
           </div>
-          <p class="muted" style="font-size:11px;margin:12px 2px 0">🔒 Locked — the exact agreement accepted on this card. Re-signing happens only on a new card or an account-type change.</p>`;
+          <p class="muted" style="font-size:0.6471rem;margin:12px 2px 0">🔒 Locked — the exact agreement accepted on this card. Re-signing happens only on a new card or an account-type change.</p>`;
       } else {
         const key = requiredAgreementKey(custRec); const ag = AGREEMENTS[key];
         body = `
@@ -14390,14 +14418,14 @@ function buildPopupEl(o, overlay, opts = {}) {
         <div class="kv" style="justify-content:center">${kv(money2(t.balance), { sfx: `balance handed over · ${daysPast} days past` })}</div>
         <label class="pay-field"><span>Reason</span><select class="lf-in js-col-reason"><option>Uncollectable in-house</option><option>Customer unresponsive</option><option>Disputed — exhausted</option><option>Business closed</option><option>Other</option></select></label>
         <label class="pay-field"><span>Note</span><input class="lf-in js-col-note" placeholder="Optional note for the record" /></label>
-        <div class="muted" style="font-size:11.5px;margin-top:8px">This queues the debt for the collections agency and takes it off active aging. <b>It also blacklists the account</b> (blocks new rentals). A Recall reverses both.</div>` });
+        <div class="muted" style="font-size:0.6765rem;margin-top:8px">This queues the debt for the collections agency and takes it off active aging. <b>It also blacklists the account</b> (blocks new rentals). A Recall reverses both.</div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'installNudge') {
     // A1 — one-time Add-to-Home-Screen sheet (spec frontend-performance P1 / mobile-remote D3).
     const pop = el('div', 'popup nc-popup');
     pop.innerHTML = popupShell({ icon: CARD_ICON.units || '', title: 'Saddle Up — Add to Home Screen', tag: 'App · install',
       foot: `<button class="pill ghost js-install-later" data-r="R18">Not now</button><button class="pill ignition js-install-go" data-r="R17">Add it</button>`,
-      body: `<div class="muted" style="font-size:12.5px;line-height:1.5">Pin Rental Wrangler to your home screen — full-screen, one tap from the yard, no browser chrome. You can always do it later from the browser menu.</div>` });
+      body: `<div class="muted" style="font-size:0.7353rem;line-height:1.5">Pin Rental Wrangler to your home screen — full-screen, one tap from the yard, no browser chrome. You can always do it later from the browser menu.</div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'checklist') {
     // Required-checklist takeover (Settings → Inspections): replaces the sheet until completed;
@@ -14473,7 +14501,7 @@ function buildPopupEl(o, overlay, opts = {}) {
     pop.innerHTML = popupShell({ icon: CARD_ICON.inspections, title: `${passed ? 'Inspection' : 'Failure report'} — ${unit?.name || '—'}`, tag: `Inspection · ${passed ? 'passed' : 'failure'}`, danger: !passed,
       foot: `<button class="pill ignition js-close" data-r="R17">Done</button>`,
       body: `
-        <div class="pillrow" style="margin-bottom:12px">${unit ? unitPill(unit.unitId) : ''}<span class="pill c-${ir.color}">${esc(ir.label)}</span>${n.woId ? refPill('workOrders', n.woId, 'Work Order') : ''}<span class="muted" style="font-size:12px;margin-left:auto">${esc(fmtShortDate(n.date))}</span></div>
+        <div class="pillrow" style="margin-bottom:12px">${unit ? unitPill(unit.unitId) : ''}<span class="pill c-${ir.color}">${esc(ir.label)}</span>${n.woId ? refPill('workOrders', n.woId, 'Work Order') : ''}<span class="muted" style="font-size:0.7059rem;margin-left:auto">${esc(fmtShortDate(n.date))}</span></div>
         ${media}
         <textarea class="insp-desc js-insp-desc" data-rec="${n.inspectionId}" placeholder="${esc(descPh)}">${esc(n.description || '')}</textarea>
         ${passed ? '' : `<div class="insp-gate" style="margin-top:12px"><span class="insp-gate-lbl">Charge the customer?</span>${segCtl([
@@ -14495,7 +14523,7 @@ function buildPopupEl(o, overlay, opts = {}) {
     pop.innerHTML = popupShell({ icon: CARD_ICON.serviceOrders || '', title: `Complete service — ${u.name}`, tag: 'Service · complete',
       foot: `<button class="pill ignition js-svc-save" data-r="R17" data-unit="${u.unitId}" data-task="${task.taskId}">Record completion</button>`,
       body: `
-        <div class="pillrow" style="margin-bottom:12px">${unitPill(u.unitId)}<span class="pill c-${task.color}">${esc(task.name)}</span><span class="muted" style="font-size:12px;margin-left:auto">${esc(svcText(task))}</span></div>
+        <div class="pillrow" style="margin-bottom:12px">${unitPill(u.unitId)}<span class="pill c-${task.color}">${esc(task.name)}</span><span class="muted" style="font-size:0.7059rem;margin-left:auto">${esc(svcText(task))}</span></div>
         <div class="svc-ref"><div class="svc-ref-head">What you need${sourceLinkBtn(task.sourceUrl, task.source)}</div><div class="svc-ref-body">${svcNeedHtml(u, task)}</div></div>
         <label class="svc-field"><span>Hours at completion</span><input type="number" class="js-svc-hours" value="${num(u.currentHours)}"></label>
         <label class="svc-field"><span>Date completed</span><input type="date" class="js-svc-date" value="${TODAY_ISO}"></label>
@@ -14573,7 +14601,7 @@ function buildPopupEl(o, overlay, opts = {}) {
     pop.innerHTML = popupShell({ icon: CARD_ICON.rentals, title: `Different dates — ${u.name}`, tag: 'Rental · split window',
       foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-split-go" data-r="R17">Make separate rental</button>`,
       body: `
-        <p style="font-size:12.5px;margin-bottom:12px">The other machines stay on <b>${esc(fmtWindow(r.startDate, r.endDate) || 'this window')}</b>. This makes a <b>separate rental</b> for ${esc(u.name)}${inv ? ` on the same invoice (${esc(invoiceShort(inv.invoiceId))})` : ''}, moving its journey + lines over.</p>
+        <p style="font-size:0.7353rem;margin-bottom:12px">The other machines stay on <b>${esc(fmtWindow(r.startDate, r.endDate) || 'this window')}</b>. This makes a <b>separate rental</b> for ${esc(u.name)}${inv ? ` on the same invoice (${esc(invoiceShort(inv.invoiceId))})` : ''}, moving its journey + lines over.</p>
         <label class="svc-field"><span>Start</span>${dateField('splitStart', o.splitStart)}</label>
         <label class="svc-field" style="margin-top:8px"><span>End</span>${dateField('splitEnd', o.splitEnd)}</label>` });
     overlay.appendChild(pop);
@@ -14585,11 +14613,11 @@ function buildPopupEl(o, overlay, opts = {}) {
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: `Add card — ${c.name}`, tag: 'Customer · card on file',
       foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-card-save" data-r="R17">Save card</button>`,
       body: `
-        <p class="muted" style="font-size:11px;margin:0 0 10px">Saved cards can be charged right away. Capture the selfie + signature below to authorize On-Rent &amp; deliveries — or just save the card and sign it later.</p>
+        <p class="muted" style="font-size:0.6471rem;margin:0 0 10px">Saved cards can be charged right away. Capture the selfie + signature below to authorize On-Rent &amp; deliveries — or just save the card and sign it later.</p>
         <div class="pay-cap">Card number</div>
         <div class="pay-card-field" id="sl-card-element"></div>
         <div class="pay-err" id="sl-card-error"></div>
-        <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe. We store only the brand + last 4 digits — never the full number.</p>
+        <p class="muted" style="font-size:0.6471rem;margin:10px 0 0">Entered securely via Stripe. We store only the brand + last 4 digits — never the full number.</p>
         <div class="ag-cardsplit"></div>
         ${heldSignBlock(o, c, {})}` });
     overlay.appendChild(pop);
@@ -14615,7 +14643,7 @@ function buildPopupEl(o, overlay, opts = {}) {
           <div class="ach-col"><div class="pay-cap">Holder type</div><select class="lf-in" id="sl-ach-holdertype"><option value="individual">Individual</option><option value="company">Company</option></select></div>
         </div>
         <div class="pay-err" id="sl-ach-error"></div>
-        <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe. We store only the bank name + last 4 digits — never the full routing or account number. The signature + selfie on file authorize ACH debits. The account must be verified before it can be charged.</p>` });
+        <p class="muted" style="font-size:0.6471rem;margin:10px 0 0">Entered securely via Stripe. We store only the bank name + last 4 digits — never the full routing or account number. The signature + selfie on file authorize ACH debits. The account must be verified before it can be charged.</p>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'verifyAch') {
     // §14b verify a pending ACH via the micro-deposit descriptor code the customer
@@ -14627,7 +14655,7 @@ function buildPopupEl(o, overlay, opts = {}) {
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: `Verify ${k.bankName || 'bank'} ••${k.last4}`, tag: 'Customer · verify ACH',
       foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-ach-verify-save" data-r="R17">Verify account</button>`,
       body: `
-        <p class="muted" style="font-size:12px;margin:0 0 12px">Stripe sent a small deposit (about $0.01) to this account. Once it lands (1–2 business days), the customer sees a 6-character code on their statement starting with <b>SM</b>. Enter it here to verify the account for charging.</p>
+        <p class="muted" style="font-size:0.7059rem;margin:0 0 12px">Stripe sent a small deposit (about $0.01) to this account. Once it lands (1–2 business days), the customer sees a 6-character code on their statement starting with <b>SM</b>. Enter it here to verify the account for charging.</p>
         <div class="pay-cap">Verification code</div>
         <input class="lf-in" id="sl-vach-code" autocomplete="off" maxlength="6" placeholder="SM____" style="text-transform:uppercase;letter-spacing:2px">
         <div class="pay-err" id="sl-vach-error"></div>` });
@@ -16470,6 +16498,68 @@ function openSignatureWindow(title, custId) {
       fit();})();<\/script></body></html>`);
   w.document.close();
 }
+/* Mobile signature SHEET — the phone alternative to openSignatureWindow. A phone has one
+   screen, so "pop out to a 2nd screen" is meaningless; the window rendered as a full tab
+   whose Clear/close controls fell off-screen (Jac: "no way to close"). Here the pad is an
+   in-app bottom sheet covering ~half the viewport that dismisses by tapping the blank space
+   above it (no ✕). Strokes save on every pen-rest (mirroring onSigMessage's targets) so a
+   tap-away keeps the signature. Lives on document.body so a render()/renderOverlay() behind
+   it can't wipe it mid-signing. */
+let _sigSheet = null;
+function teardownSigSheet() {
+  if (!_sigSheet) return null;
+  const ref = _sigSheet; _sigSheet = null;
+  try { ref.backdrop.remove(); ref.sheet.remove(); } catch (e) {}
+  document.body.classList.remove('sig-sheet-open');
+  document.removeEventListener('keydown', ref.onKey, true);
+  return ref;
+}
+function closeMobileSignSheet() {
+  const ref = teardownSigSheet(); if (!ref) return;
+  if (ref.overlay && state.overlay) renderOverlay();   // reflect the saved signature on the packet behind (also re-syncs the back-guard)
+  else if (ref.custId) render();
+  else syncBackGuard();   // targetless sheet has no re-render path — still balance the back-guard entry
+}
+function openMobileSignSheet(title, custId) {
+  teardownSigSheet();                                  // never stack two
+  const o = state.overlay || null;
+  const c = custId ? IDX.customer.get(custId) : null;
+  const t = esc(title || 'Rental Account Agreement');
+  const backdrop = el('div', 'sig-sheet-backdrop');
+  const sheet = el('div', 'sig-sheet',
+    `<div class="sig-sheet-grip" aria-hidden="true"></div>
+     <div class="sig-sheet-cap">Sign here — <b>${t}</b></div>
+     <canvas class="sig-sheet-pad"></canvas>
+     <div class="sig-sheet-foot">${ghostPill('Clear', { js: 'js-sig-sheet-clear' })}</div>`);
+  document.body.appendChild(backdrop); document.body.appendChild(sheet);
+  document.body.classList.add('sig-sheet-open');
+  const cv = sheet.querySelector('.sig-sheet-pad'), ctx = cv.getContext('2d');
+  const ink = (getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#ff7a1a').trim();
+  const fit = () => { const r = cv.getBoundingClientRect(); cv.width = Math.round(r.width); cv.height = Math.round(r.height);
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); ctx.strokeStyle = ink; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; };
+  // re-apply a signature already captured (re-open) so it isn't lost — same source as setupSignaturePad
+  let cur = '';
+  if (o) { const cc = captureCtx(o); cur = cc.k ? ((cardDraftSig(cc.k) || {}).signature || '') : ((cc.c && cc.c.pendingCapture && cc.c.pendingCapture.signature) || ''); }
+  else if (c) { cur = agDraft(c).signature || ''; }
+  requestAnimationFrame(() => { fit(); if (cur) { const im = new Image(); im.onload = () => { ctx.drawImage(im, 0, 0, cv.width, cv.height); cv.dataset.drawn = '1'; }; im.src = cur; } });
+  const save = () => { const dataURL = cv.toDataURL('image/jpeg', 0.8);
+    if (o) { captureSignature(o, dataURL); scheduleFinalizeSign(o); } else if (c) { agDraft(c).signature = dataURL; } };
+  let drawing = false, last = null;
+  const pos = (e) => { const b = cv.getBoundingClientRect(); return { x: (e.clientX - b.left) * (cv.width / b.width), y: (e.clientY - b.top) * (cv.height / b.height) }; };
+  cv.addEventListener('pointerdown', (e) => { e.preventDefault(); drawing = true; last = pos(e); cv.dataset.drawn = '1'; clearTimeout(_signFinalizeT); try { cv.setPointerCapture(e.pointerId); } catch (_) {} });   // cancel the pending finalize so a pause between strokes can't freeze a truncated signature (mirrors setupSignaturePad)
+  cv.addEventListener('pointermove', (e) => { if (!drawing) return; e.preventDefault(); const p = pos(e);
+    ctx.lineWidth = (e.pointerType === 'pen' && e.pressure > 0) ? (1.4 + e.pressure * 2.6) : 2.4; ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last = p; });
+  const up = () => { if (drawing) { drawing = false; save(); } };
+  cv.addEventListener('pointerup', up); cv.addEventListener('pointerleave', up);
+  sheet.querySelector('.js-sig-sheet-clear').addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation();
+    fit(); cv.dataset.drawn = ''; if (o) clearCaptureSignature(o); else if (c) agDraft(c).signature = ''; haptic(10); });
+  sheet.addEventListener('pointerdown', (e) => e.stopPropagation());   // taps ON the sheet never reach the app behind (only the backdrop closes)
+  backdrop.addEventListener('pointerdown', (e) => { if (drawing) return; e.preventDefault(); closeMobileSignSheet(); });   // tap the blank space above = dismiss (no ✕); never mid-stroke (a stray 2nd touch shouldn't wipe an in-progress signature)
+  const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeMobileSignSheet(); } };
+  document.addEventListener('keydown', onKey, true);
+  _sigSheet = { backdrop, sheet, overlay: o, custId: custId || null, onKey };
+  syncBackGuard();   // §M3 — join the Android hardware-back chain so back closes the sheet (openMobileSignSheet doesn't render(), so push the guard entry here)
+}
 // Wire the signature canvas for finger/stylus/mouse/pen drawing (white bg → JPEG export).
 function setupSignaturePad() {
   // Wire EVERY pad in the overlay (the capture can ride the card signing tab and/or
@@ -16494,7 +16584,7 @@ function setupSignaturePad() {
     cv.addEventListener('pointerleave', stash);
   });
 }
-const closeOverlay = () => { destroyCardElement(); stopAgCam(); try { if (_sigWin && !_sigWin.closed) _sigWin.close(); } catch (e) {} _sigWin = null; clearTimeout(_gpsPollTimer); state.datepick = null; state.overlay = null; renderOverlay(); };
+const closeOverlay = () => { destroyCardElement(); stopAgCam(); teardownSigSheet(); try { if (_sigWin && !_sigWin.closed) _sigWin.close(); } catch (e) {} _sigWin = null; clearTimeout(_gpsPollTimer); state.datepick = null; state.overlay = null; renderOverlay(); };
 
 /* ── Back-office boards (§7.9–7.12): spreadsheet-style tables ─────────────── */
 function vendorTotals(vendorId) {
@@ -17065,7 +17155,7 @@ function setFocusedCard(cardId) {
   if (state.focusedCard === cardId) return;
   state.focusedCard = cardId;
   document.querySelectorAll('.card.card-focus').forEach((c) => c.classList.remove('card-focus'));
-  const c = cardId && document.querySelector(`.card[data-card="${cardId}"]`);
+  const c = cardId && document.querySelector(`.card[data-card="${cardId}"]:not([data-clone])`);   // §M8 wrap — the REAL card, not an edge clone (Sales' lead clone sits before it in the DOM)
   if (c) c.classList.add('card-focus');
 }
 
@@ -17093,7 +17183,7 @@ function render() {
   // Preserve each card's scroll position across the DOM swap, so recording an action
   // or editing a field doesn't dump you back at the top of a scrolled card (§0.6).
   const scrollOld = {};
-  document.querySelectorAll('.card[data-card]').forEach((c) => {
+  document.querySelectorAll('.card[data-card]:not([data-clone])').forEach((c) => {   // §M8 wrap — skip the edge clones (they'd clobber the memo with their scrollTop 0)
     const b = c.querySelector('.card-body'); if (!b) return;
     const v = c.dataset.view || 'list'; scrollOld[c.dataset.card] = v;
     scrollMemo[c.dataset.card + '|' + v] = b.scrollTop;   // remember where THIS view was scrolled
@@ -17113,20 +17203,30 @@ function render() {
   const grid = el('div', 'grid');
   // §M8 — phone paints the 5-card SWIPE RAIL (Categories·Units·Rentals·Customers·Sales, with
   // Calendar swapped into the center slot when active); desktop/tablet paint the 3 columns.
-  if (phone) for (const m of mobileRailMembers(session)) grid.appendChild(mobileRailPanelEl(m, session));
-  else for (const col of COLUMNS) grid.appendChild(columnEl(col, session));
+  if (phone) {
+    const panels = mobileRailMembers(session).map((m) => mobileRailPanelEl(m, session));
+    // §M8 wrap — bracket the ribbon with inert edge clones so a swipe past either end lands on a
+    // clone that teleports to the mirrored real panel (lead = Sales, left of Categories; trail =
+    // Categories, right of Sales). grid.children: [0]=lead clone · [1..5]=real · [6]=trail clone.
+    grid.appendChild(inertRailClone(panels[panels.length - 1]));
+    for (const p of panels) grid.appendChild(p);
+    grid.appendChild(inertRailClone(panels[0]));
+  } else {
+    for (const col of COLUMNS) grid.appendChild(columnEl(col, session));
+  }
   if (phone) {
     $('#app').replaceChildren(header, grid, mobileToolbarEl());
     // Snap the track to the card on screen with NO animation (a state-driven change must land
-    // instantly, not glide). rAF so the flex track has laid out and offsetLeft is real.
-    const target = mobileRailIndex(session);
+    // instantly, not glide). rAF so the flex track has laid out and offsetLeft is real. +1 skips
+    // the lead clone at index 0 so we land on the REAL panel.
+    const target = mobileRailIndex(session) + 1;
     requestAnimationFrame(() => { const c = grid.children[target]; if (c) grid.scrollLeft = c.offsetLeft; });
   } else {
     $('#app').replaceChildren(header, grid, bottomBarEl());
   }
   // restore scroll by VIEW: same view → keep your spot; back to a list → return to the
   // row you left; opened a record → top of Standard view (a targeted link scrolls itself after).
-  document.querySelectorAll('.card[data-card]').forEach((c) => {
+  document.querySelectorAll('.card[data-card]:not([data-clone])').forEach((c) => {   // §M8 wrap — skip the edge clones
     const b = c.querySelector('.card-body'); if (!b) return;
     const cardId = c.dataset.card, v = c.dataset.view || 'list', key = cardId + '|' + v;
     if (v === scrollOld[cardId] || v === 'list') b.scrollTop = scrollMemo[key] || 0;
@@ -17303,6 +17403,11 @@ function initTooltip() {
   tipEl = el('div', 'tooltip'); document.body.appendChild(tipEl);
   document.addEventListener('mouseover', (e) => {
     if (!HOVER_CAPABLE || DRAG.active) return;   // §15c — no tooltips mid-drag; never on touch (first-tap hover)
+    // Hover-preload a customer comms thread (Texts/Email only) so the click opens instantly — a
+    // backstop for tabs the on-summon prefetch didn't reach. commsFetchMsgs is idempotent, so repeat
+    // mouseovers on the same tab are cheap no-ops; touch opens ride the on-open prefetch instead.
+    const ctab = e.target.closest('.comms-tab[data-comms-tab], .js-comms-mrow[data-cust]');
+    if (ctab && (state.commsRail.cat === 'text' || state.commsRail.cat === 'email')) commsFetchMsgs(ctab.dataset.commsTab || ctab.dataset.cust, false, { quiet: true });
     const t = e.target.closest('[data-tip]');
     if (!t) return;
     clearTimeout(tipTimer);
@@ -17943,7 +18048,7 @@ function reapplyDragDecor() {
     const rec = recOf(ent, row.dataset.rec);
     if (rec && accept[ent](DRAG.payload.rec, rec)) row.classList.add('drop-ok');
   });
-  document.querySelectorAll('.card[data-card]').forEach((cardNode) => {
+  document.querySelectorAll('.card[data-card]:not([data-clone])').forEach((cardNode) => {   // §M8 wrap — skip the inert edge clones
     const dc = cardNode.dataset.card;
     if (!accept[dc]) return;
     const cs = activeSession().cards[dc];
@@ -18324,7 +18429,9 @@ function onClick(e) {
   if (closest('.js-ncsign-pdf')) { e.stopPropagation(); const b = closest('.js-ncsign-pdf'); return openSignedPdf(state.overlay.editId, b.dataset.card, b.dataset.sig); }
   if (closest('.js-nc-selfie-clear')) { e.stopPropagation(); ncSyncInputs(); state.overlay.draft.selfie = ''; renderOverlay(); return; }
   if (closest('.js-nc-sig-clearpad')) { e.stopPropagation(); const o = state.overlay; if (o) clearCaptureSignature(o); const cv = document.querySelector('.overlay .nc-sigpad'); if (cv) { const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); cv.dataset.drawn = ''; } return; }
-  if (closest('.js-sign-popout')) { e.preventDefault(); e.stopPropagation(); const b = closest('.js-sign-popout'); openSignatureWindow(b.dataset.title, b.dataset.rec || null); return; }
+  if (closest('.js-sign-popout')) { e.preventDefault(); e.stopPropagation(); const b = closest('.js-sign-popout');
+    if (document.body.classList.contains('is-phone')) openMobileSignSheet(b.dataset.title, b.dataset.rec || null);   // §M — phone: in-app half-height sheet, not a 2nd-screen window
+    else openSignatureWindow(b.dataset.title, b.dataset.rec || null); return; }
   if (closest('.js-ag-selfie')) {   // selfie tile: one-tap snap off the live feed; Retake clears it; no camera → native picker
     const o = state.overlay; if (!o) return;
     const tile = closest('.js-ag-selfie');
@@ -18703,9 +18810,10 @@ function onClick(e) {
     const member = closest('[data-gocard]').dataset.gocard, col = COLUMN_OF[member];
     const s = activeSession(); const grid = document.querySelector('#app > .grid');
     const railIdx = grid ? mobileRailMembers(s).indexOf(member) : -1;
-    if (grid && railIdx >= 0 && s.cols && s.cols[col] === member && grid.children[railIdx]) {
+    const panelIdx = railIdx + 1;   // §M8 wrap — real panels sit at grid.children[1..n]; [0] is the lead clone
+    if (grid && railIdx >= 0 && s.cols && s.cols[col] === member && grid.children[panelIdx]) {
       const ci = COLUMNS.findIndex((c) => c.id === col); if (ci >= 0) state.mobileCol = ci;
-      grid.scrollTo({ left: grid.children[railIdx].offsetLeft, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+      grid.scrollTo({ left: grid.children[panelIdx].offsetLeft, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
       return;
     }
     return goToCard(member);
@@ -20889,7 +20997,7 @@ function openLogoMenu(anchorEl) {
   const team = `<div class="menu-sep"></div><div class="menu-team"><div class="menu-team-head">Team KPIs</div><div class="menu-team-ring">${ringsSVG(roleScores, ROLES.map((r) => r.color), { size: 104 })}</div><div class="kpi-list"><div class="kpi-line"><span class="k-name">Sulphur Team</span><span class="k-val" style="color:var(--${tbd.color})">${teamScore}%</span></div></div></div>`;
   const userLine = `<div class="menu-user"><span class="mu-name">${esc(currentUser || 'Signed in')}</span>${currentRole ? `<span class="mu-role">${esc(currentRole)}</span>` : ''}</div>
     <button class="dd-item js-switch-user"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${I.back}</span>Switch user</button>
-    <button class="dd-item js-open-settings"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${I.grid}</span>Settings${adminUnlocked() ? '' : ' <span class="muted" style="font-size:10px;margin-left:2px">Admin</span>'}</button>
+    <button class="dd-item js-open-settings"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${I.grid}</span>Settings${adminUnlocked() ? '' : ' <span class="muted" style="font-size:0.5882rem;margin-left:2px">Admin</span>'}</button>
     <button class="dd-item js-ru-open"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${I.graph}</span>Reports</button>
     <div class="menu-sep"></div>`;
   openDropdown(anchorEl, userLine + boards + team);
@@ -26144,18 +26252,21 @@ function boot() {
   // cross-column links, the dock) stays correct. Cheap: an rAF-throttled scroll listener reads
   // scrollLeft and, only when the snapped index changes, updates state + toggles the dock .on —
   // no re-render. (scroll is captured because it doesn't bubble.)
-  let mcolRaf = 0, mcolLast = -1;
+  let mcolRaf = 0, mcolLast = -1, teleTimer = 0;
   function syncMobileColFromScroll() {
     const grid = document.querySelector('#app > .grid');
     if (!grid || !document.body.classList.contains('is-phone')) return;
     const w = grid.clientWidth || 1;
     const session = activeSession();
     const members = mobileRailMembers(session);
-    // §M8 — the track is the 5-card rail; read the snapped RAIL index (0–4) and fold it back to
-    // the COLUMN index (0–2) that everything downstream is keyed to. The active member of that
-    // column follows the swipe, so landing on Categories/Units/Customers/Sales updates cols[] —
-    // the chip highlight, cross-column links, the footer jog, and session sync all stay honest.
-    const railIdx = Math.max(0, Math.min(members.length - 1, Math.round(grid.scrollLeft / w)));
+    const n = members.length;
+    // §M8 — the track is the 5 real rail panels bracketed by 2 edge clones (§M8 wrap): grid.children
+    // = [0]=lead clone (mirrors real LAST) · [1..n]=real · [n+1]=trail clone (mirrors real FIRST).
+    // Read the snapped PANEL index (0..n+1), fold the clones back onto their real twin, then map to
+    // the COLUMN index (0–2) that everything downstream is keyed to. The active member follows the
+    // swipe, so cols[] (chip highlight, cross-column links, the footer jog, session sync) stays honest.
+    const panelIdx = Math.max(0, Math.min(n + 1, Math.round(grid.scrollLeft / w)));
+    const railIdx = panelIdx === 0 ? n - 1 : panelIdx === n + 1 ? 0 : panelIdx - 1;
     if (railIdx === mcolLast) return;
     mcolLast = railIdx;
     const member = members[railIdx], col = COLUMN_OF[member], colIdx = COLUMNS.findIndex((c) => c.id === col);
@@ -26166,8 +26277,24 @@ function boot() {
     const fj = document.querySelector('.mobile-toolbar .mfoot-jog');
     if (fj) fj.innerHTML = footerJogInner();
   }
+  // §M8 wrap — once the fling SETTLES on an edge clone, teleport (no-anim) to its mirrored REAL
+  // panel so the ribbon loops (swipe past Sales → Categories, past Categories → Sales). The clone
+  // shows the identical card, so the jump is invisible. Debounced on scroll-idle (never fires mid-
+  // fling — active scrolling keeps resetting the timer) and guarded to the EXACT clone snap point,
+  // so a normal panel is never nudged. prefers-reduced-motion is irrelevant: this is an instant set.
+  function teleportRailWrap() {
+    const grid = document.querySelector('#app > .grid');
+    if (!grid || !document.body.classList.contains('is-phone')) return;
+    const w = grid.clientWidth || 1;
+    const n = mobileRailMembers(activeSession()).length;
+    const panelIdx = Math.round(grid.scrollLeft / w);
+    if (Math.abs(grid.scrollLeft - panelIdx * w) > 2) return;   // not settled exactly on a snap point → skip
+    if (panelIdx === 0) grid.scrollLeft = n * w;                 // lead clone → real LAST (Sales)
+    else if (panelIdx === n + 1) grid.scrollLeft = w;           // trail clone → real FIRST (Categories)
+  }
   document.addEventListener('scroll', (e) => {
     if (!(e.target && e.target.classList && e.target.classList.contains('grid'))) return;
+    clearTimeout(teleTimer); teleTimer = setTimeout(teleportRailWrap, 90);   // §M8 wrap: teleport after the fling settles
     if (mcolRaf) return;
     mcolRaf = requestAnimationFrame(() => { mcolRaf = 0; syncMobileColFromScroll(); });
   }, true);
@@ -26502,6 +26629,7 @@ function boot() {
     clearTimeout(hoverGrace);
     hoverGrace = setTimeout(() => { hoverEl = null; hideHoverPreview(); }, 320);
   });
+  mountDeckSwitcher();   // Staging Deck (2026-07-18) — a dev-only "Staging ▾" nav on the staging host; no-op elsewhere
   // Admin / offline boot modes (opt-in via URL hash) — checked before the login gate.
   const hash = (location.hash || '').toLowerCase();
   if (hash.includes('local')) { return offlineBoot(); }     // #local — render from data.js, no backend
@@ -26537,6 +26665,53 @@ function boot() {
 // #local — render straight from data.js with NO backend (offline/demo + dev smoke test).
 // saveSoon() already no-ops without a password, so edits stay in-memory only.
 function offlineBoot() { buildIndexes(); state.cascade = createCascade(DATA); seedDemoRequests(); booting = false; render(); exposeTestApi(); window.__rwBootRail = wranglerRailLoad(); }
+
+/* ── Staging Deck switcher (spec 2026-07-18) — a DEV-ONLY "Staging ▾" nav overlay ──
+   On the staging Pages host only, list recent numbered deploys (label · id · age) from the
+   served manifest and let the reviewer jump between them. Rendered as a self-contained DOM
+   widget outside the app's render/rulebook, gated by host — it NEVER appears on
+   app.jacrentals.com or #local, so it can't touch production UI or the R0 lint surface. */
+const DECK_REPO_BASE = '/rental-wrangler-staging';   // the staging repo's Pages path (see SLOT_TARGETS)
+function isStagingHost() {
+  return location.hostname === 'operations-jacrentals.github.io'
+    && location.pathname.startsWith(DECK_REPO_BASE + '/');
+}
+function deckAge(whenISO) {
+  const t = Date.parse(whenISO); if (!t) return '';
+  const s = Math.max(0, (Date.now() - t) / 1000);
+  if (s < 90) return Math.round(s) + 's';
+  if (s < 5400) return Math.round(s / 60) + 'm';
+  if (s < 172800) return Math.round(s / 3600) + 'h';
+  return Math.round(s / 86400) + 'd';
+}
+function mountDeckSwitcher() {
+  if (!isStagingHost() || document.getElementById('deck-switcher')) return;
+  const cm = location.pathname.match(/\/d\/([^/]+)\//);
+  const curId = cm ? decodeURIComponent(cm[1]) : null;
+  const wrap = el('div', 'deck-switcher'); wrap.id = 'deck-switcher';
+  const btn = el('button', 'deck-btn'); btn.type = 'button';
+  btn.innerHTML = 'STAGING <span class="deck-chev">▾</span>';
+  const menu = el('div', 'deck-menu'); menu.hidden = true;
+  wrap.append(btn, menu); document.body.appendChild(wrap);
+  let loaded = false;
+  btn.addEventListener('click', async () => {
+    menu.hidden = !menu.hidden;
+    if (menu.hidden || loaded) return;
+    loaded = true; menu.innerHTML = '<div class="deck-empty">loading…</div>';
+    try {
+      const r = await fetch(DECK_REPO_BASE + '/d/deploys.json?cb=' + Date.now(), { cache: 'no-store' });
+      const rows = ((await r.json()).deploys || []).map((d) => {
+        const here = d.id === curId;
+        return `<a class="deck-row${here ? ' here' : ''}" href="${DECK_REPO_BASE}/d/${encodeURIComponent(d.id)}/">`
+          + `<span class="deck-dot">${here ? '●' : ''}</span>`
+          + `<span class="deck-main"><span class="deck-label">${esc(d.label || d.id)}</span>`
+          + `<span class="deck-meta"><span class="deck-id">${esc(d.id)}</span><span class="deck-age">${esc(deckAge(d.when))}</span></span></span></a>`;
+      }).join('');
+      menu.innerHTML = rows || '<div class="deck-empty">no deploys yet</div>';
+    } catch (e) { menu.innerHTML = '<div class="deck-empty">manifest unavailable</div>'; }
+  });
+  document.addEventListener('click', (e) => { if (!wrap.contains(e.target)) menu.hidden = true; });
+}
 /* #local demo only: a sample Requests-inbox entry so the review/continue flow is
    visible without a backend. Real installs fetch live requests via the backend. */
 function seedDemoRequests() {
@@ -26601,7 +26776,7 @@ function exposeTestApi() {
       adoptScanCaptures, setScanCaps: (m) => { SCAN_CAPS = m || {}; },   // §scan-reconcile — test seam: seed SCAN_CAPS then run adoption (logic-test)
       autoRunRepair, autoRunAnchorsFor, secToClock, AUTORUN_DAY_START_SEC, AUTORUN_EOD_DEADLINE_SEC, AUTORUN_LOAD_BUFFER_SEC, dispatchPinOf,
       openCustomerForm, renderOverlay, render, printInvoice, invoiceDocHtml, renderInvoicePng, invoiceSheetPng, invoicePrintGroups, invoiceAmendments, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature,
-      wranglerSend, wranglerNewChat, openWranglerDock, wranglerDockPollTick, devUnlocked, openWranglerOps, wrOpsAgo, __state: state };   // UI drivers for headless screenshot/e2e tests
+      wranglerSend, wranglerNewChat, openWranglerDock, wranglerDockPollTick, devUnlocked, openWranglerOps, wrOpsAgo, openMobileSignSheet, closeMobileSignSheet, agDraft, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }
 }
@@ -26753,7 +26928,12 @@ function refreshCommsThreads(force) {
   commsThreadsLoading = true;
   backendCall('commsThreads').then((r) => {
     commsThreadsLoading = false;
-    if (r && r.ok && Array.isArray(r.threads)) { commsThreads = r.threads; commsThreadsAt = Date.now(); render(); }
+    if (r && r.ok && Array.isArray(r.threads)) {
+      commsThreads = r.threads; commsThreadsAt = Date.now();
+      const cat = state.commsRail.cat;
+      if (cat === 'text' || cat === 'email') commsPrefetchThreads(cat);   // warm the summoned category so every open is instant
+      render();
+    }
   }).catch(() => { commsThreadsLoading = false; });
 }
 /* A thread's presence in ONE channel. Backend ≥v75 sends a per-channel `channels`
@@ -26855,19 +27035,84 @@ function commsWranglerWorst() {
   commsWranglerConvs().forEach((x) => { const s = commsWranglerStatus(x); if (!worst || COMMS_ST_RANK[s] < COMMS_ST_RANK[worst]) worst = s; });
   return (!worst || worst === 'gray') ? 'green' : worst;
 }
-/* ── per-customer thread messages (messagesFor — bodies + maskedTo + fromUsed) ── */
-const commsMsgs = new Map();        // customerId -> { loading, at, messages }
-function commsFetchMsgs(customerId, force) {
+/* ── per-customer thread messages (messagesFor — bodies + maskedTo + fromUsed) ──
+   Opening a customer thread should feel INSTANT (Messenger metaphor, Jac 2026-07-18) — the
+   customer channels are the ONLY comms that hit the network to render (Team rides the APP-23
+   chat store, Mr. Wrangler rides state.wrangler — both local, both instant; the AI's reply is
+   the only thing that's allowed to take a beat). Three moves close the gap: (1) PREFETCH a
+   summoned category's thread bodies so the click lands on a cache hit (commsPrefetchThreads);
+   (2) HOVER-preload a tab (the §mouseover hook); (3) render the last message INSTANTLY from the
+   thread rollup while the full history hydrates in behind it (commsPopupHtml). entry.promise lets
+   the prefetch pump gate concurrency on the one slow GAS backend WITHOUT double-fetching —
+   commsFetchMsgs is idempotent, so a click simply reuses any in-flight prefetch and re-renders on
+   its completion. 30s cache; a stale re-open shows its old messages while it revalidates. */
+const commsMsgs = new Map();        // customerId -> { loading, at, messages, promise, renderOnDone }
+// True when this customer's thread is the one CURRENTLY on screen (the open comms popup / phone
+// full-screen thread). Checked at fetch-completion so a quiet warm that lands on the OPEN thread
+// still repaints it — covers hovering the open thread's own tab after its 30s cache expired, where
+// the warm rebuilt the entry with renderOnDone off (bug caught in review, 2026-07-18).
+function commsThreadOnScreen(idS) {
+  const cat = state.commsRail.cat;
+  if (cat !== 'text' && cat !== 'email') return false;
+  const s = state.commsRail.sessions[cat];
+  return !!(s && String(s.lastOpen) === idS);
+}
+function commsFetchMsgs(customerId, force, opts) {
   if (!commsOnline()) return null;
-  let entry = commsMsgs.get(String(customerId));
-  if (entry && (entry.loading || (!force && Date.now() - entry.at < 30000))) return entry;
-  entry = { loading: true, at: entry ? entry.at : 0, messages: entry ? entry.messages : null };
-  commsMsgs.set(String(customerId), entry);
-  backendCall('messagesFor', { customerId }).then((r) => {
-    entry.loading = false;
-    if (r && r.ok && Array.isArray(r.messages)) { entry.messages = r.messages; entry.at = Date.now(); render(); }
-  }).catch(() => { entry.loading = false; });
+  const idS = String(customerId);
+  // A displayed caller (the open thread window / an open customer card, via commsPopupHtml /
+  // commsCustSectionHtml) wants a repaint the moment bodies land. A BACKGROUND warm (the summon
+  // prefetch pump, a hover) does NOT — it just fills the cache. Rendering on every warm meant a
+  // summon fired up to 12 full #app rebuilds in a burst, which froze/janked the phone until the
+  // burst drained (Jac, 2026-07-18). renderOnDone gates that: quiet warms stay silent, and a later
+  // displayed caller UPGRADES an in-flight warm so an opened-mid-prefetch thread still hydrates.
+  const wantRender = !(opts && opts.quiet);
+  let entry = commsMsgs.get(idS);
+  if (entry) {
+    if (wantRender) entry.renderOnDone = true;
+    if (entry.loading || (!force && Date.now() - entry.at < 30000)) return entry;   // in-flight or fresh → reuse (prefetch + click share one call)
+  }
+  entry = { loading: true, at: entry ? entry.at : 0, messages: entry ? entry.messages : null, promise: null, renderOnDone: wantRender };
+  commsMsgs.set(idS, entry);
+  entry.promise = backendCall('messagesFor', { customerId }).then((r) => {
+    entry.loading = false; entry.promise = null;
+    if (r && r.ok && Array.isArray(r.messages)) { entry.messages = r.messages; entry.at = Date.now(); if (entry.renderOnDone || commsThreadOnScreen(idS)) render(); }
+  }).catch(() => { entry.loading = false; entry.promise = null; });
   return entry;
+}
+/* Prefetch a summoned customer category's thread bodies so opening any tab is a cache hit. Capped
+   to the most-recently-active threads and drained a few lanes at a time — one GAS web app serves
+   every call, so a burst of dozens would just choke the backend and defeat the point. Idempotent +
+   cache-aware (skips anything already warm/in-flight), so it's safe to call on every summon/poll. */
+const COMMS_PREFETCH_CAP = 12;      // most-recent threads to warm per summon
+const COMMS_PREFETCH_LANES = 3;     // parallel messagesFor calls — keep the single GAS backend breathing
+let commsPrefetchQ = [], commsPrefetchLive = 0;
+function commsPrefetchThreads(cat) {
+  if (!commsOnline()) return;
+  const channel = COMMS_CAT_META[cat] && COMMS_CAT_META[cat].channel;
+  if (!channel || !commsThreads) return;
+  const now = Date.now();
+  commsThreadsFor(cat)
+    .slice()
+    .sort((a, b) => String(b.lastWhen || '').localeCompare(String(a.lastWhen || '')))   // most-recently-active first — the likeliest opens
+    .slice(0, COMMS_PREFETCH_CAP)
+    .forEach((t) => {
+      const id = String(t.customerId), e = commsMsgs.get(id);
+      if (e && (e.loading || now - e.at < 30000)) return;                                // already warm/in-flight — skip
+      if (!commsPrefetchQ.includes(id)) commsPrefetchQ.push(id);
+    });
+  commsPrefetchPump();
+}
+function commsPrefetchPump() {
+  while (commsPrefetchLive < COMMS_PREFETCH_LANES && commsPrefetchQ.length) {
+    const id = commsPrefetchQ.shift();
+    const e = commsMsgs.get(id);
+    if (e && (e.loading || Date.now() - e.at < 30000)) continue;                         // warmed since queued (a click/hover beat us) — drop it
+    const entry = commsFetchMsgs(id, false, { quiet: true });                            // warm silently — no render on a background body landing (the summon repaint already happened)
+    if (!entry || !entry.promise) continue;                                              // offline or instant cache hit — nothing to await
+    commsPrefetchLive++;
+    entry.promise.then(() => { commsPrefetchLive--; commsPrefetchPump(); });             // next lane once this body lands
+  }
 }
 const commsDrafts = new Map();      // `${cat}|${customerId}` -> composer draft (survives re-renders)
 const commsSending = new Set();     // in-flight send keys (disables the ignition)
@@ -26928,16 +27173,38 @@ function commsPopupHtml(cat, t, id) {
   const name = (c && fullName(c)) || String(id);
   const st = commsConvStatus(t, meta.channel);
   const entry = commsFetchMsgs(id);
+  const fmtWhen = (w) => { const d = w ? new Date(w) : null; return (d && !isNaN(d)) ? d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''; };
   const msgs = ((entry && entry.messages) || []).filter((m) => m.channel === meta.channel)
     .sort((a, b) => String(a.when || '').localeCompare(String(b.when || '')));
-  const stamp = (m) => { const d = m.when ? new Date(m.when) : null; return (d && !isNaN(d)) ? d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''; };
-  const rows = msgs.map((m) => {
-    const me = m.direction !== 'inbound';
-    const metaLine = me
-      ? [m.status === 'failed' ? '✕ Failed' : 'Sent', m.maskedTo || '', m.fromUsed ? 'from ' + m.fromUsed : '', stamp(m)].filter(Boolean).join(' · ')
-      : [name, stamp(m)].filter(Boolean).join(' · ');
-    return `<div class="cp-row${me ? ' me' : ''}"><div class="cp-cell"><div class="cp-bub${me ? ' me' : ''}${m.status === 'failed' ? ' failed' : ''}">${esc(m.body || m.subject || '(no text)')}</div><div class="cp-meta">${esc(metaLine)}</div></div></div>`;
-  }).join('') || `<div class="cp-empty">${entry && entry.loading ? 'Rounding up the thread…' : 'No messages yet — say the word.'}</div>`;
+  const bubble = (o) => `<div class="cp-row${o.me ? ' me' : ''}${o.preview ? ' cp-preview' : ''}"><div class="cp-cell"><div class="cp-bub${o.me ? ' me' : ''}${o.failed ? ' failed' : ''}">${esc(o.text)}</div><div class="cp-meta">${esc(o.meta)}</div></div></div>`;
+  let rows;
+  if (msgs.length) {
+    rows = msgs.map((m) => {
+      const me = m.direction !== 'inbound';
+      const metaLine = me
+        ? [m.status === 'failed' ? '✕ Failed' : 'Sent', m.maskedTo || '', m.fromUsed ? 'from ' + m.fromUsed : '', fmtWhen(m.when)].filter(Boolean).join(' · ')
+        : [name, fmtWhen(m.when)].filter(Boolean).join(' · ');
+      return bubble({ me, failed: m.status === 'failed', text: m.body || m.subject || '(no text)', meta: metaLine });
+    }).join('');
+  } else if (entry && entry.loading) {
+    // INSTANT open (Messenger metaphor, Jac 2026-07-18): the thread rollup ALREADY carries the last
+    // message — paint it the moment the window opens while the full history hydrates in behind it,
+    // instead of a blocking "Rounding up the thread…" spinner. Prefetch usually beats us here, so the
+    // full thread is already cached; this covers the cold thread (never opened, hover missed).
+    const ch = t && commsThreadChannel(t, meta.channel);
+    if (ch && ch.lastSnippet) {
+      const me = ch.lastDirection !== 'inbound';
+      const metaLine = me
+        ? [ch.lastStatus === 'failed' ? '✕ Failed' : 'Sent', fmtWhen(ch.lastWhen)].filter(Boolean).join(' · ')
+        : [name, fmtWhen(ch.lastWhen)].filter(Boolean).join(' · ');
+      rows = `<div class="cp-hydrate" aria-hidden="true">Rounding up the rest…</div>`
+        + bubble({ me, failed: ch.lastStatus === 'failed', text: ch.lastSnippet, meta: metaLine, preview: true });
+    } else {
+      rows = `<div class="cp-empty">Rounding up the thread…</div>`;   // no rollup snippet to preview (fresh, never-messaged thread)
+    }
+  } else {
+    rows = `<div class="cp-empty">No messages yet — say the word.</div>`;
+  }
   // D7 FROM picker — only for email, only when the shop has >1 connected alias
   let fromRow = '';
   if (meta.channel === 'email') {
@@ -27159,7 +27426,7 @@ function commsSummonChannel(ch) {
   const rail = state.commsRail, prev = rail.cat;
   if (prev && prev !== cat) commsLeaveCat(prev);
   rail.cat = cat;
-  refreshCommsThreads();
+  refreshCommsThreads(); commsPrefetchThreads(cat);   // warm bodies now (covers already-loaded threads the poll throttles past) + on the poll's return
   const s = rail.sessions[cat];
   s.menuOpen = true; s.lastOpen = null;   // show the list + toggle; no auto-opened window
   saveCommsRail(); render();
@@ -27184,7 +27451,7 @@ function commsToggleCat(cat) {
   }
   const prev = rail.cat;
   rail.cat = cat; if (prev) commsLeaveCat(prev);
-  if (COMMS_CAT_META[cat].channel) refreshCommsThreads();
+  if (COMMS_CAT_META[cat].channel) { refreshCommsThreads(); commsPrefetchThreads(cat); }   // warm the thread bodies so opening a tab is instant
   // summon the last session — its remembered LAST-open conversation is the ONE window restored
   const s = rail.sessions[cat];
   if (cat === 'team' && s.lastOpen) {

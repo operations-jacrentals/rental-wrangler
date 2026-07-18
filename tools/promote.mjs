@@ -190,10 +190,38 @@ const resolved = resolveFreshSlot(
 );
 if (resolved.badPin) fail(`--slot ${resolved.slotId} is not a configured staging slot (have ${Object.keys(SLOT_URLS).join(', ')}).`);
 const slotName = `staging slot ${resolved.slotId}`;
-const stagingFresh = resolved.fresh;
+
+// Deck-freshness (the DEFAULT staging path, spec 2026-07-18): a numbered deck folder
+// (…/rental-wrangler-staging/d/<id>/) may serve trunk's exact bytes. Probe the recent deploys
+// from the served manifest; a content-hash match = staging is fresh. Skipped when --slot pins
+// the slot path. Runs alongside the slot check — fresh iff EITHER a deck folder OR a slot matches.
+const DECK_BASE = stripSlash(SLOT_URLS[1]) + '/d';
+function probeDeckFolder(id) {
+  const base = `${DECK_BASE}/${encodeURIComponent(id)}`;
+  let token;
+  try { token = extractVersionToken(curlRaw(`${base}/index.html`)); } catch { return null; }
+  const q = token ? `?v=${token}` : '';
+  const hash = contentHash((f) => { try { return curlRaw(`${base}/${f}${q}`); } catch { return null; } });
+  return { id, token, hash };
+}
+function resolveFreshDeck() {
+  if (Number.isInteger(SLOT_ARG)) return null;   // --slot explicitly pins the slot path
+  let manifest;
+  try { manifest = JSON.parse(curlRaw(`${DECK_BASE}/deploys.json`)); } catch { return null; }
+  for (const d of (manifest.deploys || []).slice(0, 6)) {
+    const p = probeDeckFolder(d.id);
+    if (p && expectedHash && p.hash === expectedHash) return { fresh: true, id: d.id, probe: p };
+  }
+  return { fresh: false };
+}
+const deck = resolveFreshDeck();
+
+const stagingFresh = resolved.fresh || (deck && deck.fresh);
 const shortHash = (h) => (h ? String(h).slice(0, 10) : '(none)');
 console.log('');
-if (!expectedToken && !expectedHash) {
+if (deck && deck.fresh) {
+  console.log(`promote: staging freshness — ✅ deck deploy ${deck.id} serves trunk's bytes (content verified; …/d/${deck.id}/).`);
+} else if (!expectedToken && !expectedHash) {
   console.log('promote: staging freshness — ⚠️ no app.js?v= token / content in the promoted commit; cannot verify.');
 } else if (stagingFresh) {
   const how = resolved.resolvedBy === 'flag' ? 'pinned via --slot' : 'auto-resolved by content';
@@ -240,10 +268,10 @@ console.log('promote: --yes given — proceeding with the promotion above.');
 // --- Step 3b: ENFORCE the staging-freshness gate before touching production ---
 if (!stagingFresh && !SKIP_STAGING_CHECK) {
   fail(
-    `refusing to promote — ${slotName} is not confirmed fresh (see above). Promoting now would put ` +
-    `production AHEAD of the staging review site — exactly the drift this gate prevents.\n` +
-    `promote: fix it — from the merged feature branch run \`node tools/deploy-staging.mjs\`, confirm ` +
-    `${slotName} serves ?v=${expectedToken || '(the trunk token)'}, then re-run promote.\n` +
+    `refusing to promote — no deck deploy or slot serves trunk's bytes (see above). Promoting now would ` +
+    `put production AHEAD of the staging review site — exactly the drift this gate prevents.\n` +
+    `promote: fix it — from a checkout of trunk's bytes run \`node tools/deploy-staging.mjs\` (deck), confirm ` +
+    `the new deck folder serves ?v=${expectedToken || '(the trunk token)'}, then re-run promote.\n` +
     `promote: if staging genuinely can't be reached (its host is down) and you accept the risk, ` +
     `re-run with --skip-staging-check to override this deliberately.`
   );
