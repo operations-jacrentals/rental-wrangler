@@ -26364,9 +26364,8 @@ function mountDeckSwitcher() {
         const here = d.id === curId;
         return `<a class="deck-row${here ? ' here' : ''}" href="${DECK_REPO_BASE}/d/${encodeURIComponent(d.id)}/">`
           + `<span class="deck-dot">${here ? '●' : ''}</span>`
-          + `<span class="deck-label">${esc(d.label || d.id)}</span>`
-          + `<span class="deck-id">${esc(d.id)}</span>`
-          + `<span class="deck-age">${esc(deckAge(d.when))}</span></a>`;
+          + `<span class="deck-main"><span class="deck-label">${esc(d.label || d.id)}</span>`
+          + `<span class="deck-meta"><span class="deck-id">${esc(d.id)}</span><span class="deck-age">${esc(deckAge(d.when))}</span></span></span></a>`;
       }).join('');
       menu.innerHTML = rows || '<div class="deck-empty">no deploys yet</div>';
     } catch (e) { menu.innerHTML = '<div class="deck-empty">manifest unavailable</div>'; }
