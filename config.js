@@ -416,7 +416,7 @@ export const BACKOFFICE_BOARDS = [
  * can reveal it. (Shop retirement 2026-07-07: the left column holds Units +
  * Categories only — WO/service/inspection references reveal 'units'.) */
 export const COLUMNS = [
-  { id: 'left',   default: 'units',     members: ['units', 'categories'] },
+  { id: 'left',   default: 'units',     members: ['categories', 'units'] },   // Categories LEFT of Units — matches the mobile swipe rail (Jac 2026-07-18); `default` (the shown card) stays 'units'
   { id: 'middle', default: 'rentals',   members: ['rentals', 'calendar'] },
   { id: 'right',  default: 'customers', members: ['customers', 'sales'] },   // invoices retired (embedded in Customer Details); 2nd slot reserved for the upcoming 'sales' card ("coming soon" placeholder until PR 2)
 ];
