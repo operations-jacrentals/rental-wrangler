@@ -2933,7 +2933,7 @@ function cardFwd(card) {
 // never-scrolled view has no entry
 // → stays at 0. (Fresh opens don't call this, so they still start at the top.)
 function restoreJogScroll(card) {
-  const c = document.querySelector(`.card[data-card="${card}"]`);
+  const c = document.querySelector(`.card[data-card="${card}"]:not([data-clone])`);   // §M8 wrap — the REAL card, never an edge clone
   const b = c && c.querySelector('.card-body'); if (!b) return;
   const y = scrollMemo[card + '|' + (c.dataset.view || 'list')];
   if (y) b.scrollTop = y;
@@ -9470,6 +9470,10 @@ function inertRailClone(realPanel) {
   c.dataset.clone = '1';
   c.querySelectorAll('[id]').forEach((n) => n.removeAttribute('id'));
   c.querySelectorAll('[data-id]').forEach((n) => n.removeAttribute('data-id'));
+  // The clone KEEPS data-card (its list-grid layout + theme stripe are keyed on it in CSS), so it
+  // would otherwise collide with the many `.card[data-card]` JS selectors that assume ONE match per
+  // card id. Stamp data-clone on the card too so those selectors exclude it via :not([data-clone]).
+  const cc = c.querySelector('.card[data-card]'); if (cc) cc.dataset.clone = '1';
   return c;
 }
 function colTabsEl(col, active, session) {
@@ -16915,7 +16919,7 @@ function setFocusedCard(cardId) {
   if (state.focusedCard === cardId) return;
   state.focusedCard = cardId;
   document.querySelectorAll('.card.card-focus').forEach((c) => c.classList.remove('card-focus'));
-  const c = cardId && document.querySelector(`.card[data-card="${cardId}"]`);
+  const c = cardId && document.querySelector(`.card[data-card="${cardId}"]:not([data-clone])`);   // §M8 wrap — the REAL card, not an edge clone (Sales' lead clone sits before it in the DOM)
   if (c) c.classList.add('card-focus');
 }
 
@@ -16943,7 +16947,7 @@ function render() {
   // Preserve each card's scroll position across the DOM swap, so recording an action
   // or editing a field doesn't dump you back at the top of a scrolled card (§0.6).
   const scrollOld = {};
-  document.querySelectorAll('.card[data-card]').forEach((c) => {
+  document.querySelectorAll('.card[data-card]:not([data-clone])').forEach((c) => {   // §M8 wrap — skip the edge clones (they'd clobber the memo with their scrollTop 0)
     const b = c.querySelector('.card-body'); if (!b) return;
     const v = c.dataset.view || 'list'; scrollOld[c.dataset.card] = v;
     scrollMemo[c.dataset.card + '|' + v] = b.scrollTop;   // remember where THIS view was scrolled
@@ -16986,7 +16990,7 @@ function render() {
   }
   // restore scroll by VIEW: same view → keep your spot; back to a list → return to the
   // row you left; opened a record → top of Standard view (a targeted link scrolls itself after).
-  document.querySelectorAll('.card[data-card]').forEach((c) => {
+  document.querySelectorAll('.card[data-card]:not([data-clone])').forEach((c) => {   // §M8 wrap — skip the edge clones
     const b = c.querySelector('.card-body'); if (!b) return;
     const cardId = c.dataset.card, v = c.dataset.view || 'list', key = cardId + '|' + v;
     if (v === scrollOld[cardId] || v === 'list') b.scrollTop = scrollMemo[key] || 0;
@@ -17798,7 +17802,7 @@ function reapplyDragDecor() {
     const rec = recOf(ent, row.dataset.rec);
     if (rec && accept[ent](DRAG.payload.rec, rec)) row.classList.add('drop-ok');
   });
-  document.querySelectorAll('.card[data-card]').forEach((cardNode) => {
+  document.querySelectorAll('.card[data-card]:not([data-clone])').forEach((cardNode) => {   // §M8 wrap — skip the inert edge clones
     const dc = cardNode.dataset.card;
     if (!accept[dc]) return;
     const cs = activeSession().cards[dc];
