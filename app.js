@@ -16349,7 +16349,7 @@ function openMobileSignSheet(title, custId) {
     if (o) { captureSignature(o, dataURL); scheduleFinalizeSign(o); } else if (c) { agDraft(c).signature = dataURL; } };
   let drawing = false, last = null;
   const pos = (e) => { const b = cv.getBoundingClientRect(); return { x: (e.clientX - b.left) * (cv.width / b.width), y: (e.clientY - b.top) * (cv.height / b.height) }; };
-  cv.addEventListener('pointerdown', (e) => { e.preventDefault(); drawing = true; last = pos(e); cv.dataset.drawn = '1'; try { cv.setPointerCapture(e.pointerId); } catch (_) {} });
+  cv.addEventListener('pointerdown', (e) => { e.preventDefault(); drawing = true; last = pos(e); cv.dataset.drawn = '1'; clearTimeout(_signFinalizeT); try { cv.setPointerCapture(e.pointerId); } catch (_) {} });   // cancel the pending finalize so a pause between strokes can't freeze a truncated signature (mirrors setupSignaturePad)
   cv.addEventListener('pointermove', (e) => { if (!drawing) return; e.preventDefault(); const p = pos(e);
     ctx.lineWidth = (e.pointerType === 'pen' && e.pressure > 0) ? (1.4 + e.pressure * 2.6) : 2.4; ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last = p; });
   const up = () => { if (drawing) { drawing = false; save(); } };
@@ -16357,7 +16357,7 @@ function openMobileSignSheet(title, custId) {
   sheet.querySelector('.js-sig-sheet-clear').addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation();
     fit(); cv.dataset.drawn = ''; if (o) clearCaptureSignature(o); else if (c) agDraft(c).signature = ''; haptic(10); });
   sheet.addEventListener('pointerdown', (e) => e.stopPropagation());   // taps ON the sheet never reach the app behind (only the backdrop closes)
-  backdrop.addEventListener('pointerdown', (e) => { e.preventDefault(); closeMobileSignSheet(); });   // tap the blank space above = dismiss (no ✕)
+  backdrop.addEventListener('pointerdown', (e) => { if (drawing) return; e.preventDefault(); closeMobileSignSheet(); });   // tap the blank space above = dismiss (no ✕); never mid-stroke (a stray 2nd touch shouldn't wipe an in-progress signature)
   const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeMobileSignSheet(); } };
   document.addEventListener('keydown', onKey, true);
   _sigSheet = { backdrop, sheet, overlay: o, custId: custId || null, onKey };

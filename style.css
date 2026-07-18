@@ -462,6 +462,7 @@ body.is-phone { touch-action: manipulation; }
 .sig-sheet-pad { flex: 1 1 auto; width: 100%; min-height: 0; border: 1.5px dashed var(--line); border-radius: 14px;
   background: #fff; touch-action: none; cursor: crosshair; }
 .sig-sheet-foot { display: flex; justify-content: flex-end; flex: 0 0 auto; }
+body.sig-sheet-open { overflow: hidden; }   /* lock the page behind the sheet (§M3), same as .sheet-open for the winpicker */
 /* the calendar (both the window picker AND the R22 single-date picker reuse .wp-*):
    on a full-width sheet the day cells get room, so make them tappable too */
 .is-phone .winpicker .wp-day { height: 42px; font-size: 0.8235rem; }                 /* was 30 */
