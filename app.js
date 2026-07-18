@@ -4250,14 +4250,7 @@ function memberLeadRow(c) {
    plus the Member Lead extension on the Rental tab, and the tab's meta / Next-Actions / Log. */
 function funnelSectionHtml(c) {
   const tab = (state.funnelTab && state.funnelTab[c.customerId]) || 'rental';
-  // Full-width toggle sitting just above the funnel (Jac 2026-07-17 — matches the mockup); the
-  // account-type badge is dropped from here (it already lives in the Account section).
-  const seg = segCtl([
-    { label: 'Rental', js: `js-funnel-tab ${naDotClass(c, 'rental')}`, data: { rec: c.customerId, tab: 'rental' }, on: tab === 'rental' ? 'accent' : null },
-    { label: 'Equipment Sales', js: `js-funnel-tab ${naDotClass(c, 'usedSales')}`, data: { rec: c.customerId, tab: 'usedSales' }, on: tab === 'usedSales' ? 'accent' : null },
-  ], 'funnel-full');
-  let body;
-  if (tab === 'rental') {
+  const rentalBody = () => {
     const mem = inFunnel(c, 'member');
     // ONE current across the stacked Rental → Member journey. The Member position wins ONLY once
     // Member has moved past its 'Lead' entry — otherwise a Rented customer who just gets ticked
@@ -4270,23 +4263,47 @@ function funnelSectionHtml(c) {
       + memberLeadRow(c)
       + (mem ? datedFunnelHtml(c, 'member', FUNNELS.rental.stages.length + 1, curId) : '')
       + `</div>`;
-    body = stack
+    return stack
       + (mem ? `<div class="fieldstack funnel-fields">${membershipMetaHtml(c)}</div>` : '')
       + nextActionsHtml(c, 'rental')
       + actionLogHtml(c, 'rental');
-  } else {
+  };
+  const equipBody = () => {
     const intCats = (c.interestedCategoryIds || []).map((id) => { const cat = IDX.category.get(id); return cat ? refPill('categories', id, cat.name, { x: 'intcat-remove', xData: id, tag: 'Cat' }) : ''; }).join('');
     const intMakes = (c.interestedMakes || []).map((mk) => refPill(null, mk, mk, { x: 'intmake-remove', xData: mk, tag: 'Make', tone: 'tan' })).join('');
-    body = `<div class="dfunnel" data-r="R35">${datedFunnelHtml(c, 'equipment', 0)}</div>`
+    return `<div class="dfunnel" data-r="R35">${datedFunnelHtml(c, 'equipment', 0)}</div>`
       + `<div class="fieldstack funnel-fields">${custMetaField(c, 'desiredAge', 'Desired Age', 'Add desired age')}${custMetaField(c, 'desiredHours', 'Desired Hours', 'Add desired hours')}</div>`
       + `<div class="funnel-sublabel">Interested in</div>`
       + `<div class="kv pillrow interested">${intCats}${intMakes}${addBtn('Make / Category', { link: true, js: 'js-addmakecat', h: 26, data: { rec: c.customerId } })}</div>`
       + nextActionsHtml(c, 'usedSales')
       + actionLogHtml(c, 'usedSales');
+  };
+  const bodyFor = (t) => t === 'rental' ? rentalBody() : equipBody();
+  // §M-swipe (R36) — on PHONE the funnel is a swipe deck: both tabs live in a scroll-snap track,
+  // the R14 toggle rides the scroll. Desktop keeps the single-pane + tap render (byte-identical).
+  if (document.body.classList.contains('is-phone')) {
+    const activeIdx = tab === 'usedSales' ? 1 : 0;
+    // the slider carries each tab's RYG urgency (naDotClass), not the orange accent (Jac 2026-07-18).
+    const DOT_TONE = { due: 'red', soon: 'yellow', ok: 'green' };
+    const dR = naDotClass(c, 'rental'), dE = naDotClass(c, 'usedSales');
+    const seg = swipeSeg([
+      { label: 'Rental', cls: dR, tone: DOT_TONE[dR] },
+      { label: 'Equipment Sales', cls: dE, tone: DOT_TONE[dE] },
+    ], activeIdx, 'funnel-full');
+    return `<div class="section funnel-sec swipe-sec">`
+      + `<div class="funnel-hd full">${seg}</div>`
+      + `<div class="funnel-body">${swipeTrack('funnel', c.customerId, activeIdx, [bodyFor('rental'), bodyFor('usedSales')])}</div>`
+      + `</div>`;
   }
+  // Full-width toggle sitting just above the funnel (Jac 2026-07-17 — matches the mockup); the
+  // account-type badge is dropped from here (it already lives in the Account section).
+  const seg = segCtl([
+    { label: 'Rental', js: `js-funnel-tab ${naDotClass(c, 'rental')}`, data: { rec: c.customerId, tab: 'rental' }, on: tab === 'rental' ? 'accent' : null },
+    { label: 'Equipment Sales', js: `js-funnel-tab ${naDotClass(c, 'usedSales')}`, data: { rec: c.customerId, tab: 'usedSales' }, on: tab === 'usedSales' ? 'accent' : null },
+  ], 'funnel-full');
   return `<div class="section funnel-sec">`
     + `<div class="funnel-hd full">${seg}</div>`
-    + `<div class="funnel-body">${body}</div>`
+    + `<div class="funnel-body">${bodyFor(tab)}</div>`
     + `</div>`;
 }
 // ── Dated-funnel mutators (Idea D) ──
@@ -4851,32 +4868,37 @@ function invoiceExpandedHtml(i, c, cs, menuOpen) {
 }
 function customerInvoicesSection(c, cs) {
   const view = (state.custInvView && state.custInvView[c.customerId]) || 'all';
-  const toggle = invViewToggle(c);
-  if (view === 'transactions') {
-    const { kpi, rows } = invTransactionsHtml(c);
-    return `<div class="section inv-sec" data-cust="${esc(c.customerId)}"><h4>${toggle}</h4>${kpi}<div class="inv-scroll">${rows}</div></div>`;
-  }
   const allInvs = invoicesForCustomer(c);   // KPI strip is ALWAYS customer-wide — see invSummaryStrip's header comment
-  const invs = view === 'open' ? allInvs.filter((i) => invoiceTotals(i).balance > 0.005) : allInvs;
   const openId = (state.custInvOpen && state.custInvOpen[c.customerId]) || null;
   const menuId = (state.custInvMenu && state.custInvMenu[c.customerId]) || null;
-  const body = invs.length ? invs.map((i) => {
-    if (i.invoiceId === openId) return invoiceExpandedHtml(i, c, cs, menuId === i.invoiceId);
-    const t = invoiceTotals(i);
-    const ps = invPayState(t);
-    const paidFull = t.paid > 0.005 && t.balance <= 0.005;
-    const dateLine = paidFull
-      ? `Paid ${fmtShortDate(i.paidAt || i.date) || '—'}${i.paymentMethod ? ' · ' + i.paymentMethod : ''}`
-      : `Issued ${fmtShortDate(i.date) || '—'}${i.dueDate ? ' · due ' + fmtShortDate(i.dueDate) : ''}`;
-    const amt = money2(t.balance > 0.005 ? t.balance : t.total);
-    return `<div class="inv-row js-inv-row" data-rec="${esc(i.invoiceId)}" data-cust="${esc(c.customerId)}" data-tip="Open invoice">`
-      + `<span class="ir-stat ${ps.cls}"></span>`
-      + `<span class="ir-id">${esc(invoiceShort(i.invoiceId))}</span>`
-      + `<span class="ir-mid"><span class="ir-desc">${esc(invoiceOneLine(i))}</span><span class="ir-date">${esc(dateLine)}</span></span>`
-      + `<span class="ir-amt ${ps.cls}">${esc(amt)}<small>${esc(ps.word)}</small></span>`
-      + `<span class="ir-chev">${I.chev}</span>`
-      + `</div>`;
-  }).join('') : `<div class="inv-empty muted">No ${view === 'open' ? 'open ' : ''}invoices for this customer yet.</div>`;
+  const strip = allInvs.length ? invSummaryStrip(allInvs, c) : '';
+  // The Open/All row list. `expandable` = this is the ACTIVE pane, so an inline-expanded invoice
+  // renders here (only the active pane, else open+all would each render the same expansion).
+  const rowList = (v, expandable) => {
+    const invs = v === 'open' ? allInvs.filter((i) => invoiceTotals(i).balance > 0.005) : allInvs;
+    const body = invs.length ? invs.map((i) => {
+      if (expandable && i.invoiceId === openId) return invoiceExpandedHtml(i, c, cs, menuId === i.invoiceId);
+      const t = invoiceTotals(i);
+      const ps = invPayState(t);
+      const paidFull = t.paid > 0.005 && t.balance <= 0.005;
+      const dateLine = paidFull
+        ? `Paid ${fmtShortDate(i.paidAt || i.date) || '—'}${i.paymentMethod ? ' · ' + i.paymentMethod : ''}`
+        : `Issued ${fmtShortDate(i.date) || '—'}${i.dueDate ? ' · due ' + fmtShortDate(i.dueDate) : ''}`;
+      const amt = money2(t.balance > 0.005 ? t.balance : t.total);
+      return `<div class="inv-row js-inv-row" data-rec="${esc(i.invoiceId)}" data-cust="${esc(c.customerId)}" data-tip="Open invoice">`
+        + `<span class="ir-stat ${ps.cls}"></span>`
+        + `<span class="ir-id">${esc(invoiceShort(i.invoiceId))}</span>`
+        + `<span class="ir-mid"><span class="ir-desc">${esc(invoiceOneLine(i))}</span><span class="ir-date">${esc(dateLine)}</span></span>`
+        + `<span class="ir-amt ${ps.cls}">${esc(amt)}<small>${esc(ps.word)}</small></span>`
+        + `<span class="ir-chev">${I.chev}</span>`
+        + `</div>`;
+    }).join('') : `<div class="inv-empty muted">No ${v === 'open' ? 'open ' : ''}invoices for this customer yet.</div>`;
+    return `<div class="inv-scroll${(expandable && openId) ? ' expanded' : ''}">${body}</div>`;
+  };
+  const paneFor = (v, active) => {
+    if (v === 'transactions') { const { kpi, rows } = invTransactionsHtml(c); return kpi + `<div class="inv-scroll">${rows}</div>`; }
+    return strip + rowList(v, active);
+  };
   // §3.4 — the standalone Invoice card is retired, so invoice-building re-homes HERE: the
   // rows + the expanded invoice are desktop drag drop-targets, and this transient +Invoice
   // pill creates a fresh invoice for THIS customer from a released rental/WO/unit (or a tap
@@ -4885,11 +4907,20 @@ function customerInvoicesSection(c, cs) {
   const linkingInv = !!(state.linking && state.linking.targetCard === 'invoices');
   const addPill = addBtn('Invoice', { link: true, icon: CARD_ICON.invoices, h: 26,
     js: 'inv-add-pill js-inv-add-pill' + (linkingInv ? ' linking-show' : ''), data: { cust: c.customerId } });
-  return `<div class="section inv-sec" data-cust="${esc(c.customerId)}"><h4>${toggle}</h4>`
-    + (allInvs.length ? invSummaryStrip(allInvs, c) : '')
-    + `<div class="inv-scroll${openId ? ' expanded' : ''}">${body}</div>`
-    + addPill
-    + `</div>`;
+  // §M-swipe (R36) — phone: the three views ride a swipe deck; the +Invoice pill stays a SINGLE
+  // instance OUTSIDE the panes (so the drag/link target isn't duplicated). Desktop keeps the
+  // single-view + tap render, byte-identical — incl. NO +Invoice pill on the Transactions view.
+  if (document.body.classList.contains('is-phone')) {
+    const views = ['open', 'all', 'transactions'];
+    const activeIdx = Math.max(0, views.indexOf(view));
+    const seg = swipeSeg([{ label: 'Open' }, { label: 'All' }, { label: 'Transactions' }], activeIdx);
+    return `<div class="section inv-sec swipe-sec" data-cust="${esc(c.customerId)}"><h4>${seg}</h4>`
+      + swipeTrack('inv', c.customerId, activeIdx, views.map((v, i) => paneFor(v, i === activeIdx)))
+      + addPill + `</div>`;
+  }
+  const toggle = invViewToggle(c);
+  const desktopAdd = view === 'transactions' ? '' : addPill;
+  return `<div class="section inv-sec" data-cust="${esc(c.customerId)}"><h4>${toggle}</h4>${paneFor(view, true)}${desktopAdd}</div>`;
 }
 /* ── F5 — enrollment / cancel / reactivate orchestration ──────────────────────────
    Reuses the deployed, money-gated stripeChargeInvoice action (same security model as
@@ -6223,6 +6254,63 @@ function dateField(field, value, { withTime, time, ph = 'Pick a date' } = {}) {
 function segCtl(buttons, cls) {
   return `<span class="seg${cls ? ' ' + cls : ''}" data-r="R14">${buttons.map((b) => `<button class="${b.js || ''}${b.on ? ` on-${b.on}` : ''}"${dataAttrs(b.data)}>${b.label}</button>`).join('')}</span>`;
 }
+/* ── §M-swipe (R36) — the phone-only SWIPE-TOGGLE DECK ─────────────────────────────
+   A view-switch toggle section (funnel · invoices · comms Text/Email) whose body is a
+   nested horizontal scroll-snap TRACK of its panes. The toggle's ONE-orange fill (R3)
+   becomes a `.deck-thumb` that RIDES the scroll (deckPaint); the active tab commits on
+   SNAP with NO render() — exactly how the 5-card rail keeps mobileCol honest — because
+   both panes are already in the DOM. Desktop NEVER calls these (single pane + tap). The
+   track nests cleanly inside the .grid rail: the rail's scroll-sync is class-filtered to
+   .grid, and deckPaint's listener to .swipe-track, so neither steals the other's swipe. */
+// The thumb-tracking toggle (segCtl family — carries the R14 stamp). `items` = [{label|html,
+// cls, tip}]; `cls` on an item is an extra button class (e.g. the funnel naDotClass urgency).
+// R36 tone → [thumb fill, ink]. The funnel colors its slider by the ACTIVE tab's RYG urgency
+// (naDotClass) instead of orange (Jac 2026-07-18) — the accent clashes with the funnel's RYG
+// system. Comms/invoices pass no tone → the orange accent default (via the CSS var fallbacks).
+// Yellow keeps DARK ink (white on #ffe000 fails contrast); red/green take light ink as Jac asked.
+const DECK_TONE = { red: ['var(--red)', '#fff'], yellow: ['var(--yellow)', '#1a1205'], green: ['var(--green)', '#fff'] };
+function swipeSeg(items, activeIdx, cls) {
+  const n = items.length || 1;
+  const tones = items.map((it) => it.tone || '');
+  const hasTones = tones.some(Boolean);
+  const btns = items.map((it, i) =>
+    `<button class="js-swipe-tab${it.cls ? ' ' + it.cls : ''}${i === activeIdx ? ' deck-on' : ''}" data-i="${i}"${it.tip ? ` data-tip="${esc(it.tip)}"` : ''}>${it.html || esc(it.label)}</button>`).join('');
+  const m = hasTones && DECK_TONE[tones[activeIdx]];
+  const tv = m ? `;--thumb-c:${m[0]};--thumb-ink:${m[1]}` : '';
+  return `<span class="seg deck-seg swipe-seg${cls ? ' ' + cls : ''}" data-r="R14"${hasTones ? ` data-tones="${tones.join(',')}"` : ''} style="--deck-tw:${(100 / n).toFixed(4)}%${tv}">`
+    + `<span class="deck-thumb" style="left:${(activeIdx * 100 / n).toFixed(4)}%"></span>${btns}</span>`;
+}
+// The nested scroll-snap track. `kind`+`recId` tell deckCommit which state key to write on
+// snap; `activeIdx` is where render() positions scrollLeft. The track carries the R36 stamp.
+function swipeTrack(kind, recId, activeIdx, panes) {
+  return `<div class="swipe-track" data-r="R36" data-deck="${esc(kind)}" data-rec="${esc(String(recId))}" data-active="${activeIdx}">`
+    + panes.map((h) => `<div class="swipe-pane">${h}</div>`).join('') + `</div>`;
+}
+// Write the section's active-tab state from a snapped deck index — NO render() (both panes
+// are in the DOM, so the shown pane is whatever snapped). Mirrors the tap handlers' writes so
+// a LATER render() re-positions to the right pane and cross-device resume stays honest.
+function deckCommit(kind, recId, idx) {
+  if (kind === 'funnel') { (state.funnelTab = state.funnelTab || {})[recId] = ['rental', 'usedSales'][idx] || 'rental'; }
+  else if (kind === 'inv') { (state.custInvView = state.custInvView || {})[recId] = ['open', 'all', 'transactions'][idx] || 'all'; if (state.custInvOpen) state.custInvOpen[recId] = null; if (state.custInvMenu) state.custInvMenu[recId] = null; }
+  else if (kind === 'comms') { setCommsCustCh(idx === 1 ? 'email' : 'text'); if (state.commsRail && state.commsRail.cat) state.commsRail.cat = commsCustCat(); }
+}
+// rAF-throttled per-track paint (called from the boot scroll listener + after render): move
+// the thumb to match scrollLeft, flip the active button's ink, and on a NEW snapped index tick
+// haptics + commit state. `_dp` throttles per element.
+const _deckPending = new Set();
+function deckPaint(track) {
+  const sec = track.closest('.swipe-sec'); if (!sec) return;
+  const seg = sec.querySelector('.deck-seg'); if (!seg) return;
+  const thumb = seg.querySelector('.deck-thumb'), btns = seg.querySelectorAll('.js-swipe-tab');
+  const n = track.children.length || 1, w = track.clientWidth || 1, max = track.scrollWidth - w;
+  const ratio = max > 0 ? Math.max(0, Math.min(1, track.scrollLeft / max)) : 0;
+  if (thumb) thumb.style.left = (ratio * (n - 1) * 100 / n) + '%';   // move via `left`, NOT transform — a transformed/will-change thumb composites ABOVE the button label on iOS Safari (covered-label bug)
+  const idx = Math.max(0, Math.min(n - 1, Math.round(ratio * (n - 1))));
+  btns.forEach((b, i) => b.classList.toggle('deck-on', i === idx));
+  // funnel: recolor the slider to the tab it's over (RYG), so the fill flips at the midpoint.
+  if (seg.dataset.tones) { const m = DECK_TONE[seg.dataset.tones.split(',')[idx]]; if (m) { seg.style.setProperty('--thumb-c', m[0]); seg.style.setProperty('--thumb-ink', m[1]); } }
+  if (idx !== (+track.dataset.active || 0)) { track.dataset.active = idx; haptic(8); deckCommit(track.dataset.deck, track.dataset.rec, idx); }
+}
 /** R19: the ATTENTION FLASH — a glow that points AT what the user must do,
  *  replacing error messages wherever possible (Jac 2026-06-11). */
 function attnFlash(sel) {
@@ -6509,6 +6597,7 @@ const RULE_META = {
   R33: ['Global toggle', 'globeToggle', 'the icon-only globe pinned right in a grid card’s search bar — flips that bar, and every grid-card bar in lockstep, between per-card and whole-yard “global” search (dim steel off, safety-orange on). A scope-MODE toggle like R31 but icon-only + it drives the shared query; replaces the old giant #globalsearch bar. Behind FEATURES.cardGlobalSearch.'],
   R34: ['Wash cycle button', 'washBtn', 'one pressable status pill that advances a unit’s wash on each click — neutral “Wash?” → caution “Wash It!” (yellow, requested) → ready “✓ Washed” (green, logged) → click again un-marks today’s wash. Registry STATUS tones (green/yellow/gray), NOT action colors; a press-to-advance control like R1 but it cycles in place instead of opening a dropdown. Replaces the old Wash / Don’t Wash / Washed R14 toggle; wash no longer gates inspection Pass.'],
   R35: ['Dated-action funnel', 'datedFunnelHtml / .dfunnel', 'the customer-detail funnel as a two-tab (Rental | Equipment Sales) stack of clickable LAYERS, narrowing like a real funnel — everyone sits in both tabs (a fresh customer at Lead). Each layer is a SLOT for a dated next-action ("notes = actions"): arm any layer with an action (note + date) and it glows red/yellow/green by that date’s urgency (naUrgency) — several can be armed at once. A reached-but-unarmed layer is quiet steel history (a check + when it happened); the terminal Signed/Paid, once reached, is SOLID BLUE (closed won). Clicking a layer opens its action editor (arm/edit/complete, or Advance the customer here). The armed actions are the same scheduled entries as the date-sorted queue below. Rental Reserved/Rented history-dates derive from live rentals. Bespoke — layers are NOT .pill, the .dfunnel container carries the stamp.'],
+  R36: ['Swipe-toggle deck', 'swipeSeg / swipeTrack / .swipe-track', 'the PHONE-ONLY carousel that turns a VIEW-SWITCH toggle section (the customer funnel · invoices · comms Text/Email) into a swipeable deck: both panes sit side-by-side in a nested horizontal scroll-snap track, and the toggle’s ONE-orange fill (R3) becomes a .deck-thumb that RIDES the scroll (deckPaint). The active tab commits on SNAP with NO render (deckCommit) — both panes are already in the DOM — a haptic ticks per change, and a tab tap smooth-scrolls the track. Nests inside the 5-card .grid rail without stealing its swipe (each scroll listener is class-filtered to its own track). Desktop is byte-identical to before — single pane + the R14 tap toggle. Attaches ONLY to view-switch toggles, never a value/action segCtl (a swipe must never set inspection Fail or a transport leg).'],
 };
 /* ════════════ APP-12 · DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
    The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
@@ -6637,7 +6726,7 @@ const RB_TABS = [
   { id: 'upload', label: 'Upload & Capture', intro: 'Add-file zones and photo/site captures.',
     items: [{ r: 'R21' }, { f: 'upload-capture' }] },
   { id: 'data', label: 'Data & Behaviors', intro: 'Visualizations, plus the app’s behaviors — it flashes instead of erroring, right-clicks, tooltips, and self-lints.',
-    items: [{ r: 'R16' }, { r: 'R15' }, { r: 'R35' }, { r: 'R13' }, { f: 'data-kpi' }, { f: 'data-gauge' }, { r: 'R19' }, { r: 'R25' }, { r: 'R20' }, { r: 'R23' }, { f: 'behavior-preview' }, { r: 'R0' }] },
+    items: [{ r: 'R16' }, { r: 'R15' }, { r: 'R35' }, { r: 'R36' }, { r: 'R13' }, { f: 'data-kpi' }, { f: 'data-gauge' }, { r: 'R19' }, { r: 'R25' }, { r: 'R20' }, { r: 'R23' }, { f: 'behavior-preview' }, { r: 'R0' }] },
 
   { id: 'windows', label: 'Windows', intro: 'Every pop-up window in the app, by kind. Expand one for a live preview, its fields, and a copy-paste edit reference — your map to wrangle any screen.', items: [] },
 ];
@@ -6645,7 +6734,7 @@ const RB_TABS = [
 const CLASS_RULE = [
   ['.c-titlecard', 'R10'], ['.nsec', 'R12'], ['.hvals', 'R13'], ['.history', 'R13'],
   ['.timeline', 'R16'], ['.jnode', 'R15'], ['.jseg', 'R15'], ['.journey', 'R15'],
-  ['.seg', 'R14'], ['.kv.derived', 'R8'], ['.derived', 'R8'], ['.file-drop', 'R21'], ['.datefield', 'R22'], ['.dfunnel', 'R35'], ['.section', 'R11'],
+  ['.seg', 'R14'], ['.kv.derived', 'R8'], ['.derived', 'R8'], ['.file-drop', 'R21'], ['.datefield', 'R22'], ['.dfunnel', 'R35'], ['.swipe-track', 'R36'], ['.section', 'R11'],
 ];
 function ruleOf(target) {
   if (!target || !target.closest) return null;
@@ -12956,6 +13045,85 @@ function syncBackGuard() {
   if (open && !backGuard) { try { history.pushState({ rwSheet: true }, ''); } catch (e) {} backGuard = true; }
   else if (!open && backGuard) { backConsuming = true; backGuard = false; try { history.back(); } catch (e) {} }   // closed via Esc/✕ → eat the dummy entry
 }
+// §M-pull (Feature B) — CLOSE the top phone sheet OUTRIGHT (a completed pull-down commits here).
+// Distinct from dismissTopSheet's STEP chain: for comms it exits the category regardless of the
+// thread/inbox level (pull = dismiss the surface; the browser back-swipe, trapped by the history
+// guard → popstate → dismissTopSheet, is what steps back a level). Honors a locked required-modal
+// (rate-the-return) — refuses + flashes and returns false so the sheet snaps back.
+function closePhoneSheet() {
+  if (state.datesearch) { closeDateSearch(); return true; }
+  if (overlayLocked()) { attnFlash('.rr-stars'); toast('Rate the return first — it can’t be skipped.'); return false; }
+  if (state.overlay) { closeOverlay(); return true; }
+  if (document.body.classList.contains('is-phone') && state.commsRail.cat) {
+    const s = commsSess(); commsLeaveCat(state.commsRail.cat); state.commsRail.cat = null; if (s) s.menuOpen = false; saveCommsRail(); render(); return true;
+  }
+  if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; render(); return true; }
+  if (state.chat.open) { state.chat.open = false; render(); return true; }
+  return false;
+}
+// §M-pull (Feature B) — touch engine for PULL-DOWN-TO-CLOSE on the phone full-pane sheets
+// (.mcomms · a full-pane .popup). The sheet follows the finger; past a distance threshold OR a
+// downward flick it dismisses (closePhoneSheet), else it snaps back. Engages from the header
+// ALWAYS (touch-action:none there so iOS hands us the drag instead of scrolling), or from the
+// body only when its scroller is at the top — so it never fights the message list. No grabber,
+// no haptic (Jac's picks).
+// LEFT-EDGE "BACK" is deliberately NOT a custom gesture here: iOS Safari's native edge-swipe
+// fires a history back, which syncBackGuard's dummy entry + the popstate handler already route to
+// dismissTopSheet (thread→inbox→exit). A custom edge handler only double-fired and fought the
+// browser (Jac 2026-07-18: "left edge → Home Screen THEN chat menu"), so it's removed.
+// Coexists with the R36 deck carousel (a mid-screen horizontal swipe): abandons the moment the
+// gesture resolves horizontal, so native scroll-snap owns that swipe.
+let _pg = null;
+const PULL_MIN = 6, PULL_THRESH = 110, PULL_FLICK = 0.6;
+function _sheetScroller(target, sheet) {
+  let n = target;
+  while (n && n !== sheet) {
+    if (n.scrollHeight > n.clientHeight + 2) { const oy = getComputedStyle(n).overflowY; if (oy === 'auto' || oy === 'scroll') return n; }
+    n = n.parentElement;
+  }
+  return null;
+}
+function initPhoneSheetGestures() {
+  const reduce = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+  document.addEventListener('touchstart', (e) => {
+    if (_pg || e.touches.length !== 1 || !document.body.classList.contains('is-phone')) return;
+    const sheet = e.target.closest && e.target.closest('.mcomms, #overlay-root .overlay .popup');
+    if (!sheet) return;
+    const t = e.touches[0];
+    const header = !!(e.target.closest && e.target.closest('.cp-head, .mcomms-back, .popup-head'));
+    _pg = { sheet, x0: t.clientX, y0: t.clientY, t0: e.timeStamp, header, scroller: _sheetScroller(e.target, sheet), mode: null };
+  }, { passive: true });
+  // passive:false so preventDefault() can STOP iOS's native scroll/rubber-band — that's what makes
+  // the at-top BODY pull work (Jac 2026-07-18); the header pull rides touch-action:none. Cheap: it
+  // bails immediately when no sheet gesture is armed, so normal list scrolling is untouched.
+  document.addEventListener('touchmove', (e) => {
+    if (!_pg) return;
+    const t = e.touches[0]; const dx = t.clientX - _pg.x0, dy = t.clientY - _pg.y0, ax = Math.abs(dx), ay = Math.abs(dy);
+    if (!_pg.mode) {
+      if (dy > PULL_MIN && ay > ax && (_pg.header || !_pg.scroller || _pg.scroller.scrollTop <= 0)) { _pg.mode = 'pull'; _pg.sheet.classList.add('pulling'); }
+      else if (ax > PULL_MIN || ay > PULL_MIN) { _pg = null; return; }   // horizontal, up, or body-not-at-top → let native scroll / the deck carousel own it
+      else return;
+    }
+    if (_pg.mode === 'pull') { _pg.sheet.style.transform = 'translateY(' + Math.max(0, dy * 0.7) + 'px)'; if (e.cancelable) e.preventDefault(); }
+  }, { passive: false });
+  const end = (e) => {
+    if (!_pg) return;
+    const pg = _pg; _pg = null;
+    pg.sheet.classList.remove('pulling');
+    if (pg.mode !== 'pull') return;
+    const t = (e.changedTouches && e.changedTouches[0]) || {};
+    const dy = (t.clientY != null ? t.clientY : pg.y0) - pg.y0, dt = (e.timeStamp - pg.t0) || 1;
+    if (dy > PULL_THRESH || dy / dt > PULL_FLICK) {
+      // A locked required-modal (rate-the-return) must NEVER glide off-screen: closePhoneSheet
+      // REFUSES it (returns false, no render), which would strand the sheet at translateY(100%).
+      // Snap back and let closePhoneSheet flash instead. Reduced-motion also resets-then-closes.
+      if (overlayLocked() || reduce()) { pg.sheet.style.transform = ''; closePhoneSheet(); }
+      else { const s = pg.sheet; s.style.transform = 'translateY(100%)'; setTimeout(() => { if (closePhoneSheet() === false) s.style.transform = ''; }, 240); }
+    } else pg.sheet.style.transform = '';
+  };
+  document.addEventListener('touchend', end, { passive: true });
+  document.addEventListener('touchcancel', end, { passive: true });
+}
 
 function renderOverlay() {
   hideTip(); hideHoverPreview();   // the body-level singletons don't get a mouseout when this swap orphans the hovered node — dismiss them like render() does, so a tip can't bleed across a popup switch/close
@@ -17082,6 +17250,11 @@ function render() {
   // Phone comms is FULL-SCREEN now (mountMobileComms); the old phone-only chat/wrangler bottom-sheet docks are retired.
   mountCommsPops();   // D8/D9 comms rail — desktop: the session's single open window floats above its own tab
   mountMobileComms(); // D8/D9 comms — phone: the summoned category renders FULL-SCREEN (Messenger-style)
+  // §M-swipe (R36) — after layout, snap each phone deck's track to its active pane + paint the
+  // thumb (no state change — active is unchanged). Runs after the card grid AND the comms sheet.
+  if (document.body.classList.contains('is-phone')) requestAnimationFrame(() => {
+    document.querySelectorAll('.swipe-track').forEach((track) => { const w = track.clientWidth; if (!w) return; track.scrollLeft = (+track.dataset.active || 0) * w; deckPaint(track); });
+  });
   // §18e/§17 — the bell + Requests inbox now live in the bottom comms band (bb-utils),
   // always visible; the docks float above it. (The old floating fab-stack is retired.)
   mountTransportEditor();   // inline transport editor: mount the live map + wire the address field
@@ -18822,6 +18995,9 @@ function onClick(e) {
   if (closest('.js-funnel-setstage')) { const b = closest('.js-funnel-setstage'); return pickFunnelStage(b.dataset.rec, b.dataset.funnel, b.dataset.val); }
   // Dated-action funnel: the two-tab toggle, a layer press (open its action editor), the Member Lead checkbox.
   if (closest('.js-funnel-tab')) { const b = closest('.js-funnel-tab'); e.stopPropagation(); state.funnelTab = state.funnelTab || {}; state.funnelTab[b.dataset.rec] = b.dataset.tab; return render(); }
+  // §M-swipe (R36) — phone deck tab tap: smooth-scroll the track to that pane (the scroll
+  // listener commits the state on snap). No render() — the slide IS the feedback.
+  if (closest('.js-swipe-tab')) { const b = closest('.js-swipe-tab'); e.stopPropagation(); const sec = b.closest('.swipe-sec'); const track = sec && sec.querySelector('.swipe-track'); if (track) track.scrollTo({ left: (+b.dataset.i || 0) * track.clientWidth, behavior: 'smooth' }); return; }
   if (closest('.js-funnel-layer')) {
     const b = closest('.js-funnel-layer'); e.stopPropagation();
     return openFunnelLayerEdit(b.dataset.rec, b.dataset.fkey, b.dataset.stage);   // any layer → arm/edit its action (advancing is an explicit button inside)
@@ -26122,6 +26298,16 @@ function boot() {
     if (mcolRaf) return;
     mcolRaf = requestAnimationFrame(() => { mcolRaf = 0; syncMobileColFromScroll(); });
   }, true);
+  // §M-swipe (R36) — drive the deck thumb + commit the active tab from a nested track's scroll.
+  // Class-filtered to .swipe-track so it never fires on the .grid rail (and vice-versa).
+  document.addEventListener('scroll', (e) => {
+    const t = e.target;
+    if (!(t && t.classList && t.classList.contains('swipe-track'))) return;
+    if (_deckPending.has(t)) return;
+    _deckPending.add(t);
+    requestAnimationFrame(() => { _deckPending.delete(t); deckPaint(t); });
+  }, true);
+  initPhoneSheetGestures();   // §M-pull / §M-edge (Features B/C) — pull-down-to-close + comms edge-back
   initDrag();   // §15c drag & drop link engine — #drag-layer singleton + document pointer listeners
   try { loadGoogleMaps(); } catch (e) {}   // §2.3 warm the Maps SDK at boot so the dispatch cockpit + transport editor open instantly (no first-open wait / "load it twice")
   // R0 flash-lint: ON by default — violations self-report by pulsing (SPEC v8)
@@ -27068,6 +27254,29 @@ function commsMenuHtml(cat, opts = {}) {
   const row = (id, name, st, snip) => opts.readonly
     ? `<div class="cm-row cm-ro"><span class="cp-dot c-${st}" aria-hidden="true"></span><span class="cm-who">${esc(name)}</span><span class="cm-snip">${esc(snip)}</span></div>`
     : `<div class="cm-row js-comms-mrow" data-cust="${esc(id)}" data-tip="Open"><span class="cp-dot c-${st}" aria-hidden="true"></span><span class="cm-who">${esc(name)}</span><span class="cm-snip">${esc(snip)}</span>${ghostPill('End', { js: 'js-comms-mend', data: { cust: id }, tip: cat === 'team' || cat === 'wrangler' ? 'End it — the history stays stored' : 'End it — the history stays on the profile' })}</div>`;
+  const isCustDeck = (cat === 'text' || cat === 'email');
+  // §M-swipe (R36) — PHONE customer comms: the Text/Email toggle drives a swipe deck of the two
+  // channel lists (the orange fill rides the swipe; the channel commits on snap). Desktop + the
+  // team/wrangler cats keep the single-list render below. NOT for the read-only preview (opts.readonly).
+  if (isCustDeck && !opts.readonly && document.body.classList.contains('is-phone')) {
+    const custRowsFor = (ch) => {
+      const m = COMMS_CAT_META[ch];
+      return commsThreadsFor(ch).map((t) => {
+        const id = String(t.customerId), c = IDX.customer.get(id);
+        const chn = commsThreadChannel(t, m.channel) || t;
+        return row(id, (c && fullName(c)) || id, commsConvStatus(t, m.channel), (chn.lastDirection === 'inbound' ? 'them: ' : 'you: ') + (chn.lastSnippet || ''));
+      }).join('') || `<div class="cp-empty">Nothing on the line — open a customer to start one.</div>`;
+    };
+    const activeIdx = commsCustCh === 'email' ? 1 : 0;
+    const seg = `<div class="comms-chan deck-seg" role="tablist" aria-label="Channel — text or email" style="--deck-tw:50%">`
+      + `<span class="deck-thumb" style="left:${activeIdx * 50}%"></span>`
+      + `<button class="comms-chan-b js-swipe-tab${activeIdx === 0 ? ' deck-on' : ''}" data-i="0" role="tab" aria-selected="${commsCustCh === 'text'}">${I.messageSquare}<span>Text</span></button>`
+      + `<button class="comms-chan-b js-swipe-tab${activeIdx === 1 ? ' deck-on' : ''}" data-i="1" role="tab" aria-selected="${commsCustCh === 'email'}">${I.mail}<span>Email</span></button></div>`;
+    const track = swipeTrack('comms', '', activeIdx, [`<div class="cp-feed cp-list">${custRowsFor('text')}</div>`, `<div class="cp-feed cp-list">${custRowsFor('email')}</div>`]);
+    return `<div class="cp-cap" aria-hidden="true"></div>
+      <div class="cp-head"><span class="cp-cat">Customers</span><span class="cp-who">${commsCustCh === 'email' ? 'Emailing customers' : 'Texting customers'}</span><span class="spacer"></span><button class="cp-x js-comms-menu-x" aria-label="Tuck the list away" data-tip="Tuck away — nothing ends">${I.x}</button></div>
+      <div class="swipe-sec comms-swipe">${seg}${track}</div>`;
+  }
   let rows = '', empty = 'Nothing on the line — right-click a customer to start one.', newRow = '';
   if (cat === 'team') {
     rows = commsTeamChats().map((c) => {
