@@ -1,0 +1,314 @@
+<!--
+  /rental-audit — artifact TEMPLATE (yard data-plate design system).
+  REUSE THE <style> BLOCK VERBATIM. Re-author only the body for the audit at hand.
+  Publish with the Artifact tool (load the artifact-design skill first). Favicon: 🚜.
+  HONESTY: the card mock is a reconstruction, not a screenshot (the live app is SMS-gated).
+  Use ILLUSTRATIVE names only — never a real customer record (public repo + live PII).
+  Component classes you have: .plate/.rivet (riveted panel) · .hazard (stripe) ·
+  .persona · .compare + .cardmock (.cm-top/.grp-head/.rrow/.spill/.pulse/.cta/.flagbadge/.pin) ·
+  .legend/.lg-item (problem→fix) · .qblock/.qhead/.find/.sev/.lvl (scoreboard) ·
+  .placard/.missing (what's missing) · .fixlist/.fixrow (top fixes).
+-->
+<title>&lt;Surface&gt; Audit — as &lt;Persona&gt; sees it</title>
+<style>
+  :root{
+    --ground:#e4e0d7; --panel:#efece4; --panel-2:#dbd6ca; --edge:#c6c0b2;
+    --ink:#1a1f25; --ink-2:#5b6470; --ink-3:#8a8578;
+    --accent:#d95e08; --accent-ink:#fff; --hazard:#c99a2b;
+    --red:#c33338; --amber:#a56a09; --green:#2c8b3c; --purple:#7a4fd0; --blue:#2a6fb0;
+    --tan:#956a3b;
+    --shadow:0 1px 2px rgba(30,25,15,.12),0 8px 24px rgba(30,25,15,.10);
+    --plate-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 2px 6px rgba(30,25,15,.14);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --ground:#0f131a; --panel:#161c23; --panel-2:#1e252d; --edge:#2b333d;
+      --ink:#e9ecef; --ink-2:#9aa4ad; --ink-3:#69727c;
+      --accent:#ff7a1a; --accent-ink:#160a02; --hazard:#f5c542;
+      --red:#e5484d; --amber:#f5a524; --green:#42b950; --purple:#a371f7; --blue:#4c9be8;
+      --tan:#c2925a;
+      --shadow:0 1px 2px rgba(0,0,0,.5),0 10px 30px rgba(0,0,0,.4);
+      --plate-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 2px 8px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="light"]{
+    --ground:#e4e0d7; --panel:#efece4; --panel-2:#dbd6ca; --edge:#c6c0b2;
+    --ink:#1a1f25; --ink-2:#5b6470; --ink-3:#8a8578;
+    --accent:#d95e08; --accent-ink:#fff; --hazard:#c99a2b;
+    --red:#c33338; --amber:#a56a09; --green:#2c8b3c; --purple:#7a4fd0; --blue:#2a6fb0;
+    --tan:#956a3b;
+    --shadow:0 1px 2px rgba(30,25,15,.12),0 8px 24px rgba(30,25,15,.10);
+    --plate-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 2px 6px rgba(30,25,15,.14);
+  }
+  :root[data-theme="dark"]{
+    --ground:#0f131a; --panel:#161c23; --panel-2:#1e252d; --edge:#2b333d;
+    --ink:#e9ecef; --ink-2:#9aa4ad; --ink-3:#69727c;
+    --accent:#ff7a1a; --accent-ink:#160a02; --hazard:#f5c542;
+    --red:#e5484d; --amber:#f5a524; --green:#42b950; --purple:#a371f7; --blue:#4c9be8;
+    --tan:#c2925a;
+    --shadow:0 1px 2px rgba(0,0,0,.5),0 10px 30px rgba(0,0,0,.4);
+    --plate-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 2px 8px rgba(0,0,0,.5);
+  }
+  /* fixed dark-steel palette for the embedded APP CARD mock — same in both themes */
+  .cardmock{
+    --cm-bg:#151a20; --cm-panel:#1b212a; --cm-edge:#2a323c; --cm-edge2:#333c47;
+    --cm-ink:#e9ecef; --cm-ink2:#8b95a0; --cm-ink3:#5c6672;
+    --cm-red:#e5484d; --cm-green:#42b950; --cm-amber:#f5a524; --cm-purple:#a371f7;
+    --cm-accent:#ff7a1a; --cm-tan:#c2925a;
+  }
+  *{box-sizing:border-box}
+  html{ -webkit-text-size-adjust:100% }
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:16px; line-height:1.55; letter-spacing:.005em; -webkit-font-smoothing:antialiased;
+  }
+  .f-plate{ font-family:"Saira Condensed","Oswald","Bebas Neue","Arial Narrow",system-ui,sans-serif; }
+  .mono{ font-family:ui-monospace,"SF Mono","Cascadia Code","Roboto Mono",Menlo,Consolas,monospace; font-variant-numeric:tabular-nums; }
+  .wrap{ max-width:1120px; margin:0 auto; padding:26px 20px 80px; }
+  a{ color:var(--accent); }
+  ::selection{ background:var(--accent); color:var(--accent-ink); }
+  :focus-visible{ outline:2px solid var(--accent); outline-offset:2px; border-radius:3px; }
+
+  .hazard{ height:9px; border-radius:2px; background:repeating-linear-gradient(135deg,var(--hazard) 0 13px, #14181d 13px 26px); }
+  :root[data-theme="light"] .hazard, :root:not([data-theme]) .hazard{ background:repeating-linear-gradient(135deg,var(--hazard) 0 13px, #d9d4c8 13px 26px); }
+  @media (prefers-color-scheme:dark){ :root:not([data-theme]) .hazard{ background:repeating-linear-gradient(135deg,var(--hazard) 0 13px, #14181d 13px 26px); } }
+
+  .plate{ position:relative; background:linear-gradient(180deg, color-mix(in srgb,var(--panel) 92%, #fff 8%), var(--panel)); border:1px solid var(--edge); border-radius:8px; box-shadow:var(--plate-shadow); }
+  .rivet{ position:absolute; width:9px; height:9px; border-radius:50%; background:radial-gradient(circle at 34% 30%, #7b8794, #363d45 58%, #171b21); box-shadow:inset 0 0 0 1px rgba(0,0,0,.35), 0 1px 1px rgba(0,0,0,.3); }
+  .rivet.tl{top:9px;left:9px}.rivet.tr{top:9px;right:9px}.rivet.bl{bottom:9px;left:9px}.rivet.br{bottom:9px;right:9px}
+
+  header.masthead{ margin-top:14px; padding:22px 26px; }
+  .eyebrow{ font-size:12.5px; letter-spacing:.22em; text-transform:uppercase; color:var(--accent); font-weight:700; }
+  h1{ font-family:"Saira Condensed","Oswald","Arial Narrow",system-ui,sans-serif; text-transform:uppercase; letter-spacing:.02em; font-weight:700; text-wrap:balance; font-size:clamp(34px,6vw,60px); line-height:.95; margin:.18em 0 .12em; }
+  h1 .thin{ color:var(--ink-2); font-weight:600; }
+  .dek{ color:var(--ink-2); max-width:60ch; font-size:16.5px; }
+  .metarow{ display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
+  .tag{ font-size:11.5px; letter-spacing:.06em; text-transform:uppercase; font-weight:700; padding:4px 9px; border-radius:999px; border:1px solid var(--edge); color:var(--ink-2); background:var(--panel-2); display:inline-flex; align-items:center; gap:6px; }
+  .tag .dot{ width:7px;height:7px;border-radius:50%; background:var(--green); }
+  .tag.warn .dot{ background:var(--amber); }
+
+  section{ margin-top:40px; }
+  .sec-head{ display:flex; align-items:baseline; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
+  .sec-num{ font-family:"Saira Condensed","Arial Narrow",system-ui,sans-serif; font-weight:700; color:var(--accent); font-size:15px; letter-spacing:.1em; }
+  h2{ font-family:"Saira Condensed","Oswald","Arial Narrow",system-ui,sans-serif; text-transform:uppercase; letter-spacing:.03em; font-weight:700; font-size:clamp(21px,3.2vw,27px); margin:0; line-height:1.05; }
+  .sec-sub{ color:var(--ink-2); font-size:14.5px; margin:2px 0 0; max-width:68ch; }
+
+  .persona{ display:grid; grid-template-columns:minmax(0,1fr); gap:0; overflow:hidden; }
+  .persona-inner{ display:flex; gap:20px; padding:20px 22px; flex-wrap:wrap; align-items:flex-start; }
+  .avatar{ width:74px; height:74px; border-radius:8px; flex:0 0 auto; position:relative; background:linear-gradient(160deg,#2a323c,#12161c); border:1px solid var(--edge); display:grid; place-items:center; color:var(--hazard); font-size:34px; }
+  .persona h3{ margin:0; font-family:"Saira Condensed","Arial Narrow",system-ui,sans-serif; text-transform:uppercase; letter-spacing:.04em; font-size:23px; }
+  .persona .role{ color:var(--accent); font-weight:700; font-size:12px; letter-spacing:.14em; text-transform:uppercase; }
+  .persona p{ margin:8px 0 0; color:var(--ink-2); font-size:14.5px; max-width:64ch; }
+  .needs{ list-style:none; margin:12px 0 0; padding:0; display:flex; flex-wrap:wrap; gap:8px; }
+  .needs li{ font-size:13px; background:var(--panel-2); border:1px solid var(--edge); padding:5px 10px; border-radius:6px; color:var(--ink); }
+  .needs li b{ color:var(--accent); }
+
+  .compare{ display:grid; grid-template-columns:repeat(auto-fit,minmax(310px,1fr)); gap:18px; align-items:start; }
+  .col-label{ display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+  .col-label .chip{ font-family:"Saira Condensed","Arial Narrow",system-ui,sans-serif; font-weight:700; text-transform:uppercase; letter-spacing:.08em; font-size:13px; padding:4px 11px; border-radius:5px; }
+  .chip.bad{ background:color-mix(in srgb,var(--red) 22%, transparent); color:var(--red); border:1px solid color-mix(in srgb,var(--red) 45%, transparent); }
+  .chip.good{ background:color-mix(in srgb,var(--green) 20%, transparent); color:var(--green); border:1px solid color-mix(in srgb,var(--green) 45%, transparent); }
+  .col-label small{ color:var(--ink-2); font-size:12.5px; }
+
+  .cardmock{ background:var(--cm-bg); border:1px solid var(--cm-edge); border-radius:10px; overflow:hidden; box-shadow:var(--shadow); color:var(--cm-ink); }
+  .cm-top{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:11px 13px; border-bottom:1px solid var(--cm-edge); background:linear-gradient(180deg,#20272f,#181d24); }
+  .cm-title{ font-family:"Saira Condensed","Arial Narrow",system-ui,sans-serif; font-weight:700; text-transform:uppercase; letter-spacing:.12em; font-size:15px; color:var(--cm-ink); }
+  .cm-bell{ position:relative; color:var(--cm-ink2); font-size:16px; display:inline-flex; }
+  .cm-bell .b-count{ position:absolute; top:-6px; right:-8px; background:var(--cm-red); color:#fff; font-size:9.5px; font-weight:800; min-width:15px; height:15px; border-radius:8px; display:grid; place-items:center; padding:0 3px; }
+  .cm-bell.dead .b-count{ display:none; }
+  .grp-head{ display:flex; align-items:center; gap:8px; padding:6px 13px; font-family:"Saira Condensed","Arial Narrow",system-ui,sans-serif; text-transform:uppercase; letter-spacing:.1em; font-size:12px; font-weight:700; color:#0d1116; }
+  .grp-head .ct{ margin-left:auto; opacity:.8; font-size:11px; }
+  .grp-green{ background:var(--cm-green); } .grp-red{ background:var(--cm-red); color:#fff; } .grp-amber{ background:var(--cm-amber); } .grp-purple{ background:var(--cm-purple); color:#fff; } .grp-steel{ background:#2a323c; color:var(--cm-ink); }
+  .rrow{ display:flex; align-items:center; gap:10px; padding:9px 13px 9px 11px; border-bottom:1px solid var(--cm-edge); border-left:3px solid transparent; position:relative; }
+  .rrow:last-child{ border-bottom:0; }
+  .rrow.sev-red{ border-left-color:var(--cm-red); } .rrow.sev-green{ border-left-color:var(--cm-green); } .rrow.sev-amber{ border-left-color:var(--cm-amber); } .rrow.sev-purple{ border-left-color:var(--cm-purple); } .rrow.sev-steel{ border-left-color:#3a434e; }
+  .rrow .who{ min-width:0; flex:1 1 auto; }
+  .rrow .nm{ font-size:13.5px; font-weight:600; color:var(--cm-ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .rrow .un{ font-size:11.5px; color:var(--cm-ink2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .timeline{ display:flex; gap:2px; flex:0 0 auto; }
+  .timeline i{ width:5px; height:12px; border-radius:1px; background:#333c47; display:block; }
+  .timeline i.on{ background:var(--cm-green); } .timeline i.rd{ background:var(--cm-red); } .timeline i.rs{ background:var(--cm-purple); }
+  .spill{ font-family:"Saira Condensed","Arial Narrow",system-ui,sans-serif; font-weight:700; text-transform:uppercase; letter-spacing:.04em; font-size:10.5px; padding:3px 8px; border-radius:999px; flex:0 0 auto; white-space:nowrap; }
+  .spill.red{ background:color-mix(in srgb,var(--cm-red) 24%,#000 4%); color:#ff9ea1; border:1px solid color-mix(in srgb,var(--cm-red) 55%,transparent); }
+  .spill.green{ background:color-mix(in srgb,var(--cm-green) 20%,#000 4%); color:#8ee79a; border:1px solid color-mix(in srgb,var(--cm-green) 50%,transparent); }
+  .spill.amber{ background:color-mix(in srgb,var(--cm-amber) 22%,#000 4%); color:#ffcf87; border:1px solid color-mix(in srgb,var(--cm-amber) 55%,transparent); }
+  .spill.purple{ background:color-mix(in srgb,var(--cm-purple) 22%,#000 4%); color:#cbb0ff; border:1px solid color-mix(in srgb,var(--cm-purple) 55%,transparent); }
+  .balchip{ font-size:11px; font-weight:700; color:#ff9ea1; white-space:nowrap; }
+  .pulse{ width:9px;height:9px;border-radius:50%; background:var(--cm-red); flex:0 0 auto; box-shadow:0 0 0 0 color-mix(in srgb,var(--cm-red) 70%,transparent); animation:pulse 1.5s ease-out infinite; }
+  @keyframes pulse{ 0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--cm-red) 70%,transparent)} 70%{box-shadow:0 0 0 8px transparent} 100%{box-shadow:0 0 0 0 transparent} }
+  @media (prefers-reduced-motion:reduce){ .pulse{ animation:none } }
+  .cta{ font-family:"Saira Condensed","Arial Narrow",system-ui,sans-serif; font-weight:700; text-transform:uppercase; letter-spacing:.05em; font-size:11px; padding:4px 10px; border-radius:5px; flex:0 0 auto; white-space:nowrap; background:linear-gradient(180deg,#ff9038,#ec6a12); color:#160a02; border:1px solid #ffab5e; box-shadow:0 1px 0 rgba(0,0,0,.3); }
+  .cta.ghost{ background:transparent; color:var(--cm-tan); border:1px solid color-mix(in srgb,var(--cm-tan) 55%,transparent); box-shadow:none; }
+  .flagbadge{ font-family:"Saira Condensed","Arial Narrow",system-ui,sans-serif; font-weight:800; text-transform:uppercase; letter-spacing:.05em; font-size:10px; padding:3px 7px; border-radius:4px; flex:0 0 auto; white-space:nowrap; }
+  .flagbadge.fc{ background:var(--cm-red); color:#fff; } .flagbadge.od{ background:#b3121a; color:#fff; } .flagbadge.un{ background:var(--cm-amber); color:#160a02; }
+  .pin{ display:inline-grid; place-items:center; width:18px;height:18px;border-radius:50%; background:var(--accent); color:var(--accent-ink); font-size:11px; font-weight:800; flex:0 0 auto; box-shadow:0 0 0 2px var(--cm-bg),0 0 0 3px var(--accent); font-family:ui-monospace,monospace; }
+  .pin.on-head{ box-shadow:0 0 0 2px #0d1116; }
+  .ghost-slot{ padding:9px 13px; border-bottom:1px solid var(--cm-edge); border-left:3px dashed #3a434e; color:var(--cm-ink3); font-size:12px; font-style:italic; display:flex; align-items:center; gap:9px; }
+  .legend{ margin-top:20px; display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:12px; }
+  .lg-item{ display:grid; grid-template-columns:auto 1fr; gap:11px; padding:12px 14px; }
+  .lg-item .pinnum{ display:inline-grid; place-items:center; width:22px;height:22px;border-radius:50%; background:var(--accent); color:var(--accent-ink); font-weight:800; font-size:12px; font-family:ui-monospace,monospace; align-self:start; }
+  .lg-item .prob{ font-weight:700; font-size:14px; }
+  .lg-item .fix{ color:var(--ink-2); font-size:13.5px; margin-top:3px; }
+  .lg-item .fix b{ color:var(--green); font-weight:700; }
+
+  .qblock{ margin-top:16px; }
+  .qhead{ display:flex; align-items:center; gap:10px; padding:9px 0 8px; border-bottom:2px solid var(--edge); }
+  .qhead .q{ font-family:"Saira Condensed","Arial Narrow",system-ui,sans-serif; text-transform:uppercase; letter-spacing:.03em; font-weight:700; font-size:16.5px; }
+  .qhead .verdict{ margin-left:auto; font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; padding:3px 9px; border-radius:999px; }
+  .v-bad{ background:color-mix(in srgb,var(--red) 18%,transparent); color:var(--red); }
+  .v-mixed{ background:color-mix(in srgb,var(--amber) 20%,transparent); color:var(--amber); }
+  .v-ok{ background:color-mix(in srgb,var(--green) 18%,transparent); color:var(--green); }
+  .find{ display:grid; grid-template-columns:auto 1fr; gap:12px; padding:12px 2px; border-bottom:1px solid var(--edge); align-items:start; }
+  .find:last-child{ border-bottom:0; }
+  .sev{ width:6px; align-self:stretch; border-radius:3px; min-height:34px; }
+  .sev.crit{ background:var(--red); } .sev.fric{ background:var(--amber); } .sev.pol{ background:var(--ink-3); } .sev.win{ background:var(--green); }
+  .find .body .t{ font-weight:700; font-size:15px; }
+  .find .body .t .lvl{ font-size:10.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; padding:2px 6px; border-radius:4px; margin-right:8px; vertical-align:middle; }
+  .lvl.crit{ background:var(--red); color:#fff; } .lvl.fric{ background:var(--amber); color:#160a02; }
+  .lvl.pol{ background:var(--panel-2); color:var(--ink-2); border:1px solid var(--edge); } .lvl.win{ background:var(--green); color:#06210c; }
+  .find .body .d{ color:var(--ink-2); font-size:13.5px; margin-top:3px; }
+  .find .body .cite{ font-size:11.5px; color:var(--ink-3); margin-top:5px; }
+  .find .body .cite b{ color:var(--tan); font-weight:600; }
+
+  .placard{ padding:0; overflow:hidden; }
+  .placard .ph{ display:flex; align-items:center; gap:12px; padding:16px 22px; background:repeating-linear-gradient(135deg, color-mix(in srgb,var(--hazard) 30%, transparent) 0 13px, transparent 13px 26px); border-bottom:1px solid var(--edge); }
+  .placard .ph h2{ margin:0; } .placard .ph .warnico{ font-size:22px; }
+  .missing{ list-style:none; margin:0; padding:8px 0; }
+  .missing li{ display:grid; grid-template-columns:auto 1fr auto; gap:12px; align-items:center; padding:11px 22px; border-bottom:1px solid var(--edge); }
+  .missing li:last-child{ border-bottom:0; }
+  .missing .mt{ font-weight:700; font-size:14.5px; } .missing .md{ color:var(--ink-2); font-size:13px; }
+  .missing .grade{ font-family:"Saira Condensed","Arial Narrow",system-ui,sans-serif; font-weight:800; font-size:13px; text-transform:uppercase; letter-spacing:.05em; padding:4px 10px; border-radius:5px; white-space:nowrap; }
+  .grade.none{ background:var(--red); color:#fff; } .grade.stub{ background:var(--amber); color:#160a02; } .grade.buried{ background:var(--panel-2); color:var(--ink); border:1px solid var(--edge); }
+
+  .fixlist{ counter-reset:fx; display:grid; gap:10px; }
+  .fixrow{ display:grid; grid-template-columns:auto 1fr; gap:14px; align-items:center; padding:14px 16px; }
+  .fixrow::before{ counter-increment:fx; content:counter(fx); font-family:"Saira Condensed","Arial Narrow",system-ui,sans-serif; font-weight:800; font-size:26px; color:var(--accent-ink); background:var(--accent); width:40px;height:40px;border-radius:8px; display:grid; place-items:center; }
+  .fixrow .ft{ font-weight:700; font-size:15.5px; } .fixrow .fd{ color:var(--ink-2); font-size:13.5px; margin-top:2px; }
+  .fixrow .eff{ margin-left:auto; font-size:11px; text-transform:uppercase; letter-spacing:.06em; font-weight:700; color:var(--ink-3); align-self:start; }
+
+  footer{ margin-top:46px; padding:22px 24px; color:var(--ink-2); font-size:13px; }
+  footer b{ color:var(--ink); } footer .fnote{ max-width:78ch; }
+  .rule{ height:1px; background:var(--edge); margin:6px 0 0; }
+</style>
+
+<div class="hazard" aria-hidden="true"></div>
+<div class="wrap">
+
+  <!-- ══ MASTHEAD ══ -->
+  <header class="masthead plate">
+    <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
+    <div class="eyebrow">Rental Wrangler · &lt;Role&gt; UX Audit</div>
+    <h1>The &lt;Surface&gt; card,<br><span class="thin">as &lt;Persona&gt; sees it</span></h1>
+    <p class="dek"><!-- REPLACE: one line on who the persona is and that this is the byte-identical production code. --></p>
+    <div class="metarow">
+      <span class="tag"><span class="dot"></span>Production · v&lt;token&gt; · byte-identical</span>
+      <span class="tag">6 lenses · verified</span>
+      <span class="tag warn"><span class="dot"></span>&lt;caveat if any&gt;</span>
+    </div>
+  </header>
+
+  <!-- ══ PERSONA BADGE ══ -->
+  <section>
+    <div class="plate persona"><div class="persona-inner">
+      <div class="avatar" aria-hidden="true">🦺</div>
+      <div style="flex:1 1 320px; min-width:0;">
+        <div class="role">The &lt;Role&gt;</div>
+        <h3>"&lt;Persona&gt;"</h3>
+        <p><!-- REPLACE: the character bio — lazy + not-sharp + clock-watching, in a sentence or two. --></p>
+        <ul class="needs">
+          <li><b>1.</b> Tell me exactly what to do next</li>
+          <li><b>2.</b> Make the emergency impossible to miss</li>
+          <li><b>3.</b> Don't let me get lost</li>
+        </ul>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- ══ CENTERPIECE: AS-IS vs SHOULD-BE ══ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">01</span><div>
+      <h2>The same card — shipped vs. should-be</h2>
+      <p class="sec-sub">Left = what &lt;Persona&gt; stares at today. Right = the same data re-stacked so the real emergency is the loudest thing. Pins map problem → fix.</p>
+    </div></div>
+    <div class="compare">
+      <div>
+        <div class="col-label"><span class="chip bad">As it ships</span><small>&lt;the core problem in 4 words&gt;</small></div>
+        <div class="cardmock">
+          <div class="cm-top"><span class="cm-title">&lt;Surface&gt;</span><span class="cm-bell dead">🔔<span class="b-count">0</span></span></div>
+          <div class="grp-head grp-green">On State <span class="ct">3</span> <span class="pin on-head">3</span></div>
+          <!-- REPLACE rows with a faithful reconstruction (illustrative names only). Example row: -->
+          <div class="rrow sev-red">
+            <span class="pin">1</span>
+            <div class="timeline"><i class="on"></i><i class="on"></i><i class="rd"></i><i></i><i></i></div>
+            <div class="who"><div class="nm">Illustrative Co.</div><div class="un">Item #ID · &lt;hidden problem&gt;</div></div>
+            <span class="spill red">Status Noun</span>
+          </div>
+          <div class="rrow sev-red">
+            <span class="pin">2</span>
+            <div class="who"><div class="nm">Another Co.</div><div class="un">Item #ID · minor note</div></div>
+            <span class="pulse"></span><span class="spill red">Status Noun</span>
+          </div>
+          <div class="ghost-slot"><span class="pin">5</span> …missing bucket / affordance the persona needs</div>
+        </div>
+      </div>
+      <div>
+        <div class="col-label"><span class="chip good">Should-be</span><small>&lt;the fix in 4 words&gt;</small></div>
+        <div class="cardmock">
+          <div class="cm-top"><span class="cm-title">&lt;Surface&gt;</span><span class="cm-bell">🔔<span class="b-count">2</span></span></div>
+          <div class="grp-head grp-red">⚠ Needs you now <span class="ct">2</span></div>
+          <div class="rrow sev-red"><span class="flagbadge fc">Field Call</span><div class="who"><div class="nm">Illustrative Co.</div><div class="un">Item #ID broke down</div></div><span class="pulse"></span><span class="cta">Dispatch</span></div>
+          <div class="rrow sev-red"><span class="flagbadge od">Overdue</span><div class="who"><div class="nm">Another Co.</div><div class="un">Item #ID · due Mon</div></div><span class="cta">Recover</span></div>
+          <div class="grp-head grp-steel">All good <span class="ct">1</span></div>
+          <div class="rrow sev-green"><div class="timeline"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></div><div class="who"><div class="nm">Fine Co.</div><div class="un">Item #ID</div></div><span class="spill green">On State</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="legend">
+      <!-- REPLACE: one .lg-item per pin, problem → fix. -->
+      <div class="lg-item plate"><span class="pinnum">1</span><div><div class="prob">&lt;the problem&gt;</div><div class="fix">&lt;why it hurts.&gt; <b>Fix:</b> &lt;the change.&gt;</div></div></div>
+    </div>
+  </section>
+
+  <!-- ══ SCOREBOARD — one .qblock per persona question ══ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">02</span><div>
+      <h2>&lt;Persona&gt;'s report card</h2>
+      <p class="sec-sub">Grouped by the persona's questions, severity-ranked, cited to live code, marked with the verify verdict.</p>
+    </div></div>
+    <!-- REPLACE: one qblock per question. verdict chip: v-bad / v-mixed / v-ok. -->
+    <div class="qblock">
+      <div class="qhead"><span class="q">&lt;A persona question&gt;</span><span class="verdict v-mixed">Half</span></div>
+      <div class="find"><div class="sev win"></div><div class="body"><div class="t"><span class="lvl win">Win</span>&lt;what works&gt;</div><div class="d">&lt;detail&gt;</div><div class="cite mono"><b>app.js:0000</b></div></div></div>
+      <div class="find"><div class="sev crit"></div><div class="body"><div class="t"><span class="lvl crit">Critical ✓</span>&lt;confirmed problem&gt;</div><div class="d">&lt;detail&gt;</div><div class="cite mono"><b>app.js:0000</b></div></div></div>
+    </div>
+  </section>
+
+  <!-- ══ WHAT'S MISSING ══ -->
+  <section>
+    <div class="plate placard">
+      <div class="ph"><span class="warnico" aria-hidden="true">⚠️</span><div><h2>The silent yard</h2><p class="sec-sub" style="margin-top:2px">What's missing — alerts, comms &amp; team gaps.</p></div></div>
+      <ul class="missing">
+        <!-- REPLACE: grade = none (absent) / stub (built-but-not-wired) / buried (exists but unreachable). -->
+        <li><span class="mt">&lt;missing capability&gt;</span><span class="md">&lt;why it matters&gt;</span><span class="grade none">Absent</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ══ TOP FIXES ══ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">03</span><div><h2>If you fix &lt;N&gt; things</h2><p class="sec-sub">Ranked by help-per-hour; smallest contained change first.</p></div></div>
+    <div class="fixlist">
+      <!-- REPLACE: one .fixrow per fix (auto-numbered). -->
+      <div class="fixrow plate"><div><div class="ft">&lt;the fix&gt;</div><div class="fd">&lt;what it kills&gt;</div></div><span class="eff">Low</span></div>
+    </div>
+  </section>
+
+  <footer class="plate">
+    <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
+    <p class="fnote"><b>Method.</b> Six persona lens-agents walked the &lt;surface&gt; against code byte-identical to production (<span class="mono">v&lt;token&gt;</span>); a workflow of adversarial verifiers + completeness critics confirmed/refuted each finding. ✓ = verified. Cites point at live <span class="mono">app.js</span>/<span class="mono">config.js</span>.</p>
+    <div class="rule"></div>
+    <p style="margin-top:12px"><b>Not a screenshot.</b> The card above is a faithful reconstruction of the shipped layout — the live login is SMS-gated. Names are illustrative, not real records.</p>
+  </footer>
+
+</div>
