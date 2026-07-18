@@ -1,0 +1,53 @@
+# Line endings — LF everywhere, in the repo AND in the working tree.
+#
+# Why this file exists (2026-07-18). With core.autocrlf=true and no attributes,
+# a Windows checkout puts CRLF in the working tree while the committed blobs are
+# LF. Git hides the difference (`git diff` normalizes, so the tree looks clean),
+# but any tool that reads bytes off disk sees CRLF and disagrees with git.
+#
+# What that actually broke: the two generator drift gates cry wolf. Both
+# `ci/gen-rule-usage.mjs --check` and `tools/gen-code-map.mjs --check` build
+# their expected output in memory with plain \n and then strict-compare it to
+# the file on disk (gen-rule-usage.mjs:45-46, gen-code-map.mjs:169-170 — neither
+# normalizes newlines). On a CRLF checkout they report "STALE" / "out of date"
+# with ZERO real drift: regenerating produces an empty `git diff`. It reads as a
+# red drift gate, and the honest fix looks like committing a regenerated file
+# that has no actual content change. CI runs ubuntu-latest, so this was a
+# local-Windows-only failure — invisible to the CI that's supposed to catch it.
+#
+# Also protective: `.claude/hooks/session-start.sh` is a `#!/bin/bash` script. A
+# CRLF shebang line breaks on Linux with a "bad interpreter" error, so pinning
+# LF keeps it executable everywhere.
+#
+# NOT a reason for this file: the /promote staging-freshness gate. That path was
+# already immune by design — `tools/lib/promote-freshness.mjs` runs every hashed
+# read through `normalizeForHash()` (CRLF and lone CR → LF) on BOTH sides, the
+# `git show` side and the served-bytes side, precisely so a Windows deploy vs a
+# Linux promote host can't produce a false mismatch. `ci/promote-test.mjs` has a
+# dedicated test for it. Don't cite promote as motivation here; it isn't.
+#
+# The committed blobs are ALREADY LF, so this file changes no committed content
+# (`git add --renormalize .` stages nothing). It only makes the working tree
+# agree with the blobs, which is what the generator gates assume.
+#
+# Note for Windows: after this lands, refresh an existing checkout once with
+#   git rm --cached -r -q . && git reset --hard
+# COMMIT OR STASH FIRST — `reset --hard` discards uncommitted work without
+# asking. The renormalize itself is content-neutral; the reset is not.
+
+* text=auto eol=lf
+
+# Binary — never normalize, never diff as text.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.mp4   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.eot   binary
+*.pdf   binary
+*.zip   binary
