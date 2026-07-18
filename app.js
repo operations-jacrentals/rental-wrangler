@@ -612,7 +612,7 @@ function heldSignBlock(o, custRec, d) {
   const p = (custRec && custRec.pendingCapture) || {};   // §7.1c pre-card held pieces (saddle onto the first card)
   return `<div class="ag-capcap" style="margin:16px 2px 8px">Signed agreement</div>
     ${capProgress([{ label: 'Card', done: false }, { label: 'Selfie', done: !!p.selfie }, { label: 'Signature', done: !!p.signature }])}
-    <p class="muted" style="font-size:11px;margin:2px 2px 0">Selfie &amp; signature save now and saddle onto the first card you add; On-Rent &amp; delivery unlock once that card is complete.</p>
+    <p class="muted" style="font-size:0.6471rem;margin:2px 2px 0">Selfie &amp; signature save now and saddle onto the first card you add; On-Rent &amp; delivery unlock once that card is complete.</p>
     ${agCaptureBlock(o, ag, 'account')}`;
 }
 /* Move an account-level HELD signing onto a freshly-added card — the draft's FROZEN
@@ -870,7 +870,7 @@ function cardTabBody(c) {
       ${k.isDefault ? badge('Default', 'blue') : actionPill('commit', 'Make default', { js: 'js-card-default', data: { rec: c.customerId, card: k.id } })}
       <button class="x js-card-remove" data-rec="${c.customerId}" data-card="${k.id}" data-tip="Remove card">${I.x}</button>
     </div>`;
-  }).join('') : '<span class="muted" style="font-size:12px">No cards on file.</span>';
+  }).join('') : '<span class="muted" style="font-size:0.7059rem">No cards on file.</span>';
   return `<div class="cards-list">${rows}</div>
     ${canMoney() ? `<div style="margin-top:10px">${addBtn('Card', { link: true, js: 'js-add-card', data: { rec: c.customerId } })}</div>` : ''}`;
 }
@@ -883,11 +883,11 @@ function achTabBody(c) {
       ${k.verified ? badge('Verified', 'green') : actionPill('commit', 'Verify', { js: 'js-bank-verify', data: { rec: c.customerId, bank: k.id } })}
       ${k.isDefault ? badge('Default', 'blue') : actionPill('commit', 'Make default', { js: 'js-bank-default', data: { rec: c.customerId, bank: k.id } })}
       <button class="x js-bank-remove" data-rec="${c.customerId}" data-bank="${k.id}" data-tip="Remove bank account">${I.x}</button>
-    </div>`).join('') : '<span class="muted" style="font-size:12px">No bank accounts on file.</span>';
+    </div>`).join('') : '<span class="muted" style="font-size:0.7059rem">No bank accounts on file.</span>';
   return `<div class="cards-list">${rows}</div>
     ${!canMoney() ? ''
       : consent ? `<div style="margin-top:10px">${addBtn('ACH', { link: true, js: 'js-add-ach', data: { rec: c.customerId } })}</div>`
-                : '<span class="muted" style="font-size:11px">Capture a selfie + signature (Edit account) before adding a bank account.</span>'}`;
+                : '<span class="muted" style="font-size:0.6471rem">Capture a selfie + signature (Edit account) before adding a bank account.</span>'}`;
 }
 
 /* §19 stable-key migration: give every existing invoice line a `lid` and remap
@@ -1678,15 +1678,15 @@ function transportEditorHtml() {
   const live = mapsReady();
   const who = u ? esc(u.name) + ' · ' : '';
   return `<div class="tedit sec" data-r="R5b">
-    <div class="tedit-head"><span class="stamp">Set ${te.leg === 'recovery' ? 'recovery' : 'delivery'} site</span><span class="muted" style="font-size:10.5px">${who}drag the pin for the exact driver drop</span></div>
+    <div class="tedit-head"><span class="stamp">Set ${te.leg === 'recovery' ? 'recovery' : 'delivery'} site</span><span class="muted" style="font-size:0.6176rem">${who}drag the pin for the exact driver drop</span></div>
     <div class="tedit-map js-tmap${live ? '' : ' ph'}">${live ? '' : (((GOOGLE_MAPS_KEY || _mapsKey) && !te.mapFailed)
       ? `<span class="map-spin" aria-hidden="true"></span><span class="map-tag">Loading dispatch map…</span>`
-      : `<span class="map-pin" aria-hidden="true">${ICO_PIN}</span><span class="map-tag stamp" style="font-size:11px;color:var(--accent)">${te.mapFailed ? 'Live map unavailable' : 'Offline'} · city-tier pricing</span><span class="map-sub">${te.mapFailed ? 'Type the site address below — pricing falls back to city tiers. Reopen the editor to retry the live map.' : 'Type the site address below — the live map &amp; exact mileage come online once the dispatch key is set.'}</span>`)}</div>
+      : `<span class="map-pin" aria-hidden="true">${ICO_PIN}</span><span class="map-tag stamp" style="font-size:0.6471rem;color:var(--accent)">${te.mapFailed ? 'Live map unavailable' : 'Offline'} · city-tier pricing</span><span class="map-sub">${te.mapFailed ? 'Type the site address below — pricing falls back to city tiers. Reopen the editor to retry the live map.' : 'Type the site address below — the live map &amp; exact mileage come online once the dispatch key is set.'}</span>`)}</div>
     <input class="lf-in js-taddr" placeholder="Site address — start typing…" value="${esc(te.addr || '')}" autocomplete="off" spellcheck="false" aria-label="Site address">
     <div class="js-tsug tedit-sug" role="listbox"></div>
     <div class="tedit-foot">
       <span class="muted tedit-hint">↑↓ choose · Tab/Enter set · Esc cancel</span>
-      <span class="muted js-te-dist" style="font-size:10.5px;margin-left:8px"></span>
+      <span class="muted js-te-dist" style="font-size:0.6176rem;margin-left:8px"></span>
       <span class="spacer"></span>
       ${ghostPill('Cancel', { js: 'js-tedit-cancel' })}
       ${actionPill('commit', 'Set address', { js: 'js-tedit-save' })}
@@ -2110,7 +2110,7 @@ function salePricingAutoApply() {
    the generic sync). Volume of asks per category feeds purchasing/fleet-spread decisions. */
 function lostDemandBtn(c) {
   const n = (c.lostDemand || []).length;
-  return `<button class="catr-slot js-lost-demand" data-r="R5b" data-cat="${esc(c.categoryId)}" data-tip="A customer wanted one and none were free — log the lost ask${n ? ` (${n} logged)` : ''}"><span class="add-field anchor" style="height:20px;font-size:10px">+Lost${n ? ` ${n}` : ''}</span></button>`;
+  return `<button class="catr-slot js-lost-demand" data-r="R5b" data-cat="${esc(c.categoryId)}" data-tip="A customer wanted one and none were free — log the lost ask${n ? ` (${n} logged)` : ''}"><span class="add-field anchor" style="height:20px;font-size:0.5882rem">+Lost${n ? ` ${n}` : ''}</span></button>`;
 }
 function categoryAvailableCount(catId, startISO, endISO, selfId) {
   return DATA.units.filter((u) => u.categoryId === catId && isUnitAvailableFor(u, startISO, endISO, selfId)).length;
@@ -5055,12 +5055,12 @@ function settingsFlagsPane(o) {
       const off = !!oo.off;
       const sevCtl = segCtl(['red', 'yellow', 'green'].map((sv) => ({ label: sv === 'red' ? 'R' : sv === 'yellow' ? 'Y' : 'G', js: 'js-flag-sev', data: { ent, id: f.id, sev: sv }, on: (!off && sev === sv) ? sv : null })));
       const onCtl = segCtl([{ label: 'On', js: 'js-flag-ov', data: { ent, id: f.id, val: 'on' }, on: !off ? 'green' : null }, { label: 'Off', js: 'js-flag-ov', data: { ent, id: f.id, val: 'off' }, on: off ? 'red' : null }]);
-      const changed = oo.off || oo.severity ? `<span class="muted" style="font-size:10px">edited</span>` : '';
+      const changed = oo.off || oo.severity ? `<span class="muted" style="font-size:0.5882rem">edited</span>` : '';
       return `<div class="set-row" style="gap:9px;align-items:center"><span style="flex:1;min-width:150px;${off ? 'opacity:.45' : ''}">${flagEl(f.label, sev)} ${esc(f.label)}</span>${sevCtl}${onCtl}${changed}</div>`;
     }).join('');
     return `<div class="set-sec"><h4 class="set-h">${esc(ENT_LBL[ent] || ent)}</h4>${items}</div>`;
   }).join('');
-  return `<div class="set-pane"><div class="muted" style="font-size:11.5px;margin-bottom:9px">Every flag is owner-tunable — Off hides it everywhere; R/Y/G overrides its severity. Defaults return by flipping back. Disabling a money/credit flag is audited.</div>${rows}</div>`;
+  return `<div class="set-pane"><div class="muted" style="font-size:0.6765rem;margin-bottom:9px">Every flag is owner-tunable — Off hides it everywhere; R/Y/G overrides its severity. Defaults return by flipping back. Disabling a money/credit flag is audited.</div>${rows}</div>`;
 }
 /* ── Settings → Team Roster (spec hr-compliance trimmed scope, Jac 2026-06-29) ──────
    The employee list — name · role · phone · note. Deliberately NO credentials/medical/
@@ -5098,7 +5098,7 @@ function settingsTeamPane(o) {
     <div class="emp-welcome-lbl">Crew welcome text</div>
     <textarea class="emp-welcome-ta" data-emp-welcome rows="3" placeholder="${esc(welcomeDefault)}" data-tip="Sent to a hand when they're added or their number changes">${esc(welcomeVal)}</textarea>
     <div class="emp-welcome-foot"><span class="emp-welcome-tok">Tokens <em>{name}</em> and <em>{link}</em> (the app link) fill in when it sends — no login code, they get that in the app.</span><button type="button" class="emp-act js-emp-welcome-reset" data-tip="Restore the default welcome wording">Reset to default</button></div></div>` : '';
-  return `<div class="set-pane"><div class="muted" style="font-size:11.5px;margin-bottom:9px">${esc(note)}</div>${rows || '<div class="muted" style="font-size:12px">No hands on the roster yet.</div>'}${welcomeBlock}<div class="kv pillrow" style="margin-top:9px">${addBtn('Employee', { link: true, js: 'js-emp-add' })}${showAuth ? `<button type="button" class="emp-act js-emp-blast" data-tip="Text the whole roster the app link + welcome">Round up the crew</button>` : ''}</div></div>`;
+  return `<div class="set-pane"><div class="muted" style="font-size:0.6765rem;margin-bottom:9px">${esc(note)}</div>${rows || '<div class="muted" style="font-size:0.7059rem">No hands on the roster yet.</div>'}${welcomeBlock}<div class="kv pillrow" style="margin-top:9px">${addBtn('Employee', { link: true, js: 'js-emp-add' })}${showAuth ? `<button type="button" class="emp-act js-emp-blast" data-tip="Text the whole roster the app link + welcome">Round up the crew</button>` : ''}</div></div>`;
 }
 /* ── Settings → Notifications (Phase A control center — design spec
    docs/superpowers/specs/2026-07-14-notifications-pane-design.md) ────────────────────
@@ -6119,12 +6119,12 @@ function svcPartPanelEl(u, task, pr, idx) {
       <div class="svc-ref-head" style="margin-top:14px">Vendor</div>
       <div class="svc-vendor-block">
         <div class="svc-vendor-name">${esc(vendor.name || '')}</div>
-        ${vendor.primaryContact ? `<div class="muted" style="font-size:11.5px">${esc(vendor.primaryContact)}</div>` : ''}
+        ${vendor.primaryContact ? `<div class="muted" style="font-size:0.6765rem">${esc(vendor.primaryContact)}</div>` : ''}
         ${vendor.phone ? linkName(vendor.phone, { js: 'js-open-link', data: { url: 'tel:' + String(vendor.phone).replace(/[^\d+]/g, '') } }) : ''}
         ${vendor.email ? linkName(vendor.email, { js: 'js-open-link', data: { url: 'mailto:' + vendor.email } }) : ''}
         ${vendor.website ? linkName(vendor.website, { js: 'js-open-link', data: { url: webUrl(vendor.website) } }) : ''}
       </div>` : (enriched ? '' : `
-      <p class="muted" style="font-size:12px;margin-top:8px">Not in the parts catalog yet.</p>
+      <p class="muted" style="font-size:0.7059rem;margin-top:8px">Not in the parts catalog yet.</p>
       <div class="svc-part-row">${linkName('Search this part number ↗', { js: 'js-open-link', data: { url: 'https://www.google.com/search?q=' + encodeURIComponent(pr.oem || pr.name || '') } })}</div>`);
   const pp = el('div', 'popup svc-part-popup'); pp.style.width = '300px';
   pp.innerHTML = popupShell({
@@ -6133,7 +6133,7 @@ function svcPartPanelEl(u, task, pr, idx) {
     closeJs: 'js-svc-part-close',
     body: `
       ${img ? `<img class="insp-thumb" src="${esc(img)}" alt="${esc(pr.name || 'part')}">` : ''}
-      <div class="muted" style="font-size:11px;margin-bottom:8px">OEM ${esc(pr.oem || '—')}${catalogPart ? ` · Catalog ${esc(catalogPart.productNumber || '')}` : ''}</div>
+      <div class="muted" style="font-size:0.6471rem;margin-bottom:8px">OEM ${esc(pr.oem || '—')}${catalogPart ? ` · Catalog ${esc(catalogPart.productNumber || '')}` : ''}</div>
       ${cost != null ? kv(money(cost), { pfx: 'Cost', derived: pr.cost == null }) : ''}
       ${catalogPart && catalogPart.qtyOnHand != null ? kv(catalogPart.qtyOnHand + ' on hand', { pfx: 'Stock', derived: true }) : ''}
       ${url ? `<div class="svc-part-row">${linkName(url.length > 30 ? 'Order / info ↗' : url, { js: 'js-open-link', data: { url: webUrl(url) } })}</div>` : ''}
@@ -6417,7 +6417,7 @@ function runCtxAction(act) {
 }
 /** R17: forward-action pills — commit (blue) / money (green) / danger (solid red). */
 function actionPill(kind, label, { js, data, h } = {}) {
-  return `<button class="pill c-${kind}${js ? ' ' + js : ''}" data-r="R17"${dataAttrs(data)}${h ? ` style="height:${h}px;font-size:11px"` : ''}>${esc(label)}</button>`;
+  return `<button class="pill c-${kind}${js ? ' ' + js : ''}" data-r="R17"${dataAttrs(data)}${h ? ` style="height:${h}px;font-size:0.6471rem"` : ''}>${esc(label)}</button>`;
 }
 /** R18: the ONE quiet/neutral action — Cancel, Close, secondary tools.
  *  `disabled` greys it (is-disabled) and drops the js hook so it's inert; pair with `tip`
@@ -6522,16 +6522,16 @@ const RB_FOUNDATION = {
   // ── TYPE ──
   'type-display': ['Aa', 'Display · stamped', "'Saira Condensed' · 600–800 · UPPERCASE · +1–2px tracking",
     'The yard “stamped-steel” voice: wordmark, column tabs, KPI labels, section headers, ignition buttons.',
-    `<span style="font-family:'Saira Condensed',sans-serif;text-transform:uppercase;letter-spacing:1.6px;font-weight:800;font-size:23px;color:var(--txt)">Clock In · Wrangle</span>`],
+    `<span style="font-family:'Saira Condensed',sans-serif;text-transform:uppercase;letter-spacing:1.6px;font-weight:800;font-size:1.3529rem;color:var(--txt)">Clock In · Wrangle</span>`],
   'type-body': ['Aa', 'Body', "'Geist' (var(--font)) · 400–700",
     'Everything you read: row text, field values, descriptions. Quiet, legible, never stamped.',
-    `<span style="font-size:14px;color:var(--txt)">Rugged equipment, rented right — the body face carries the content.</span>`],
+    `<span style="font-size:0.8235rem;color:var(--txt)">Rugged equipment, rented right — the body face carries the content.</span>`],
   'type-mono': ['‹›', 'Mono', 'ui-monospace · 10–12px · txt-3',
     'Code + debug references only: the Inspector tag and rulebook builder names.',
-    `<code style="font-family:ui-monospace,monospace;font-size:12px;color:var(--txt-3)">UNITS › INSPECTION › “Passed”</code>`],
+    `<code style="font-family:ui-monospace,monospace;font-size:0.7059rem;color:var(--txt-3)">UNITS › INSPECTION › “Passed”</code>`],
   'type-scale': ['#', 'Size scale', '28 · 15 · 13 · 12 · 11 · 10 · 9.5px',
     'Bigger = identity/value (28 KPI · 15 popup title). 12–13 = content. ≤11 = stamped micro-labels & counters. ONE size (11px) for every status badge.',
-    `<span style="display:flex;align-items:baseline;gap:13px;flex-wrap:wrap;color:var(--txt)"><span style="font-size:28px;font-weight:800">28</span><span style="font-size:15px;font-weight:700">15</span><span style="font-size:13px">13</span><span style="font-size:12px">12</span><span style="font-family:'Saira Condensed';text-transform:uppercase;letter-spacing:1px;font-size:11px;font-weight:700">11 label</span><span style="font-size:9.5px;color:var(--txt-3)">9.5</span></span>`],
+    `<span style="display:flex;align-items:baseline;gap:13px;flex-wrap:wrap;color:var(--txt)"><span style="font-size:1.6471rem;font-weight:800">28</span><span style="font-size:0.8824rem;font-weight:700">15</span><span style="font-size:0.7647rem">13</span><span style="font-size:0.7059rem">12</span><span style="font-family:'Saira Condensed';text-transform:uppercase;letter-spacing:1px;font-size:0.6471rem;font-weight:700">11 label</span><span style="font-size:0.5588rem;color:var(--txt-3)">9.5</span></span>`],
   'type-weight': ['B', 'Weight', '800 · 700 · 600 · 400',
     '800 stamped identity · 700 titles & labels · 600 strong body · 400 body.',
     `<span style="display:flex;gap:16px;align-items:baseline;color:var(--txt)"><span style="font-weight:800">800</span><span style="font-weight:700">700</span><span style="font-weight:600">600</span><span style="font-weight:400">400</span></span>`],
@@ -6553,7 +6553,7 @@ const RB_FOUNDATION = {
     rbSw('var(--tan,#c2925a)', 'Tan', 'saddle-stitch', '#1a1205')],
   'color-ec-red': ['⚠', 'ec-red · flagging glow', 'fill: color-mix(--red 65%, white) · shadow: 0 0 3px --red, 0 0 7px (--red 60%+transparent)',
     'Official treatment for EVERY flagging-red signal — text names/pills/flags/headers, borders, dots/bars. Three knobs in style.css .ec-red group: fill % (65), inner glow (3px), outer halo (7px / 60%). Never use pure --red alone on flagging text.',
-    `<span style="-webkit-text-fill-color:color-mix(in srgb,var(--red) 65%,white);text-shadow:0 0 3px var(--red),0 0 7px color-mix(in srgb,var(--red) 60%,transparent);font-weight:700;font-size:13px;letter-spacing:.5px">TUCKER FONTENOT · No Card · $0.30 overdue</span>`],
+    `<span style="-webkit-text-fill-color:color-mix(in srgb,var(--red) 65%,white);text-shadow:0 0 3px var(--red),0 0 7px color-mix(in srgb,var(--red) 60%,transparent);font-weight:700;font-size:0.7647rem;letter-spacing:.5px">TUCKER FONTENOT · No Card · $0.30 overdue</span>`],
   // ── FORM ──
   'radius': ['◳', 'Radius', '--radius 14–16 · --chip-radius 11–12 · 8–10 controls · 999 pills',
     'Cards/popups softest · chips medium · controls tight · pills & counters full-round · rings/avatars circles.',
@@ -6563,7 +6563,7 @@ const RB_FOUNDATION = {
     `<span style="display:flex;gap:12px"><span class="rb-surf" style="box-shadow:var(--shadow)">float</span><span class="rb-surf" style="box-shadow:var(--chip-shadow)">chip</span><span class="rb-surf" style="box-shadow:0 0 0 2px var(--accent-line),0 0 22px -8px var(--accent)">glow</span></span>`],
   'spacing': ['▦', 'Spacing', 'grid 12 · list 7 · section pad 12 · row pad 9–11',
     'Tight, dense yard data — generous enough to scan, never airy.',
-    `<span style="display:flex;align-items:center;color:var(--txt-3);font-size:11px;gap:8px"><span style="display:flex;gap:12px"><span style="width:14px;height:14px;background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:3px"></span><span style="width:14px;height:14px;background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:3px"></span></span>12px gap</span>`],
+    `<span style="display:flex;align-items:center;color:var(--txt-3);font-size:0.6471rem;gap:8px"><span style="display:flex;gap:12px"><span style="width:14px;height:14px;background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:3px"></span><span style="width:14px;height:14px;background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:3px"></span></span>12px gap</span>`],
   'motion': ['↻', 'Motion', '.12s controls · .15s surfaces · .5s rings/timeline',
     'Fast, functional. Keyframes: attnGlow (flash) · plateIn (login) · flagPulse · rwLint. prefers-reduced-motion respected everywhere.',
     `<span class="pill c-blue" style="animation:attnGlow 1.1s ease-in-out infinite;border-radius:10px"><span class="t">flash</span></span>`],
@@ -6593,23 +6593,23 @@ const RB_FOUNDATION = {
   // ── HEADERS / CONTAINERS ──
   'header-section': ['▭', 'Section header', '.section>h4 · centered · 11px UPPER',
     'Centered stamped label; right-side flags pin absolutely so the title stays true-center.',
-    `<span style="display:block;text-align:center;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--txt-3)">Inspection</span>`],
+    `<span style="display:block;text-align:center;font-size:0.6471rem;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--txt-3)">Inspection</span>`],
   'header-popup': ['▭', 'Popup header', '.popup-head · icon + h3(15) + ✕',
     'Every overlay leads with an accent icon, a 15px title, and the close on the right.',
-    `<span style="display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:9px;padding:7px 10px;background:var(--panel)"><span style="color:var(--accent);display:inline-flex">${I.doc || ''}</span><b style="font-size:14px">Popup title</b></span>`],
+    `<span style="display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:9px;padding:7px 10px;background:var(--panel)"><span style="color:var(--accent);display:inline-flex">${I.doc || ''}</span><b style="font-size:0.8235rem">Popup title</b></span>`],
   'overlay-popup': ['◳', 'Pop-up / overlay', '.overlay scrim + .popup',
     'Centered modal: 50%-black scrim · panel with the orange border + glow halo · max 92vw/86vh · internal scroll.',
     `<span class="rb-surf" style="background:var(--panel);border:1px solid var(--accent);box-shadow:0 0 0 2px var(--accent-line),0 0 20px -6px var(--accent);width:130px;height:42px;border-radius:12px">modal</span>`],
   'menu-dropdown': ['▾', 'Menu', '.dropdown-menu / .ctx-menu',
     'Floating orange-ringed lists: the sort/filter dropdowns and the R20 right-click menu.',
-    `<span style="display:inline-block;background:var(--panel);border:1px solid var(--accent);border-radius:11px;box-shadow:0 0 0 2px var(--accent-line);padding:5px;min-width:128px"><span style="display:block;padding:5px 9px;border-radius:8px;font-size:12px;color:var(--txt-2)">Sort · Name</span><span style="display:block;padding:5px 9px;border-radius:8px;font-size:12px;color:var(--accent);background:var(--panel-2)">Sort · Status</span></span>`],
+    `<span style="display:inline-block;background:var(--panel);border:1px solid var(--accent);border-radius:11px;box-shadow:0 0 0 2px var(--accent-line);padding:5px;min-width:128px"><span style="display:block;padding:5px 9px;border-radius:8px;font-size:0.7059rem;color:var(--txt-2)">Sort · Name</span><span style="display:block;padding:5px 9px;border-radius:8px;font-size:0.7059rem;color:var(--accent);background:var(--panel-2)">Sort · Status</span></span>`],
   'grid': ['▥', 'Yard grid', '.grid · 3 equal cols · 12px gap',
     'The fixed 3-column layout (Units · Rentals · Customers). Reflows 3→2→1 by width on phones (M0–M3); never squishes below the desktop floor.',
     `<span style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;width:150px"><span class="rb-surf" style="height:30px"></span><span class="rb-surf" style="height:30px"></span><span class="rb-surf" style="height:30px"></span></span>`],
   // ── DATA VIZ ──
   'data-kpi': ['◎', 'KPI rings', '.kpi-ring · concentric progress',
     'The header rings: Apple-style progress, each colored by its value band, number + stamped role label below.',
-    `<span style="display:inline-grid;place-items:center;width:38px;height:38px;border-radius:50%;background:conic-gradient(var(--green) 72%,var(--track) 0)"><span style="display:grid;place-items:center;width:27px;height:27px;border-radius:50%;background:var(--bg);font-size:10px;font-weight:800;color:var(--txt)">9</span></span>`],
+    `<span style="display:inline-grid;place-items:center;width:38px;height:38px;border-radius:50%;background:conic-gradient(var(--green) 72%,var(--track) 0)"><span style="display:grid;place-items:center;width:27px;height:27px;border-radius:50%;background:var(--bg);font-size:0.5882rem;font-weight:800;color:var(--txt)">9</span></span>`],
   'data-gauge': ['▰', 'Activity gauge', '.active-bar.bipolar · steel data-plate',
     'A bipolar −100…+100 track (customer health); a hazard overlay marks the deep-danger end.',
     `<span style="display:inline-block;width:140px;height:14px;border-radius:7px;overflow:hidden;background:var(--track)"><span style="display:block;height:100%;width:64%;background:linear-gradient(90deg,var(--red),var(--orange),var(--yellow),var(--green))"></span></span>`],
@@ -7264,10 +7264,10 @@ const ROWS = {
     const driverChip = multi
       ? (t.driverId
         ? `<button class="catr-slot js-trip-driver" data-id="${esc(t.id)}" data-day="${esc(t.day)}" data-tip="Driver on this trip (${t.stops.length} stops) — tap to change">${badge(driverName(t.driverId), 'navy')}</button>`
-        : (driverRoster().length ? `<button class="catr-slot js-trip-driver" data-r="R5b" data-id="${esc(t.id)}" data-day="${esc(t.day)}" data-tip="Assign a driver to this trip"><span class="add-field anchor" data-r="R5b" style="height:20px;font-size:10px">+Driver</span></button>` : ''))
+        : (driverRoster().length ? `<button class="catr-slot js-trip-driver" data-r="R5b" data-id="${esc(t.id)}" data-day="${esc(t.day)}" data-tip="Assign a driver to this trip"><span class="add-field anchor" data-r="R5b" style="height:20px;font-size:0.5882rem">+Driver</span></button>` : ''))
       : (t.driverId
         ? `<button class="catr-slot js-stop-driver" data-id="${esc(t.id)}" data-rec="${esc(t.rentalId)}" data-unit="${esc(t.unitId || '')}" data-task="${esc(t.task)}" data-tip="Driver on this leg — tap to change">${badge(driverName(t.driverId), 'navy')}</button>`
-        : (driverRoster().length ? `<button class="catr-slot js-stop-driver" data-r="R5b" data-id="${esc(t.id)}" data-rec="${esc(t.rentalId)}" data-unit="${esc(t.unitId || '')}" data-task="${esc(t.task)}" data-tip="Assign a driver to this leg"><span class="add-field anchor" data-r="R5b" style="height:20px;font-size:10px">+Driver</span></button>` : ''));
+        : (driverRoster().length ? `<button class="catr-slot js-stop-driver" data-r="R5b" data-id="${esc(t.id)}" data-rec="${esc(t.rentalId)}" data-unit="${esc(t.unitId || '')}" data-task="${esc(t.task)}" data-tip="Assign a driver to this leg"><span class="add-field anchor" data-r="R5b" style="height:20px;font-size:0.5882rem">+Driver</span></button>` : ''));
     // §2.3 row-2 — one unit pill per stop; a merged trip numbers the sequence (the
     // implicit array order IS the run order — spec §2.3, within-trip drag-reorder
     // skipped as a documented nice-to-have).
@@ -7955,11 +7955,11 @@ function woExpandedHtml(w) {
     + `<div class="wo-open-body">`
     + `<div class="kv" style="justify-content:flex-end;gap:6px">${flagsStack([typeFlag, dateFlag], 22)}</div>`
     + `<div class="wototals">${addBtn('Part/Task', { anchor: true, js: 'js-add-part', h: 26, data: { rec: w.woId } })}<span class="derived">${money(parts)} parts + ${hrs} hrs</span></div>`
-    + `${lines || '<div class="kv"><span class="muted" style="font-size:12px">No line items yet</span></div>'}`
+    + `${lines || '<div class="kv"><span class="muted" style="font-size:0.7059rem">No line items yet</span></div>'}`
     + `<div class="wofoot"><span class="derived">Parts ${money(Math.max(0, billed - laborBilled))} + Hrs ${money(laborBilled)} = ${money(billed)}</span>`
     + (w.cancelled
-        ? `<span class="pill c-gray" style="height:26px;font-size:11px" data-tip="This work order is cancelled">Cancelled</span>${actionPill('commit', 'Reopen WO', { js: 'js-wo-reopen', h: 26, data: { rec: w.woId } })}`
-        : `${addBtn('Invoice', { link: true, icon: CARD_ICON.invoices, js: 'js-bill-wo', h: 26, data: { rec: w.woId } })}<button class="pill ghost js-wo-cancel" data-r="R18" data-rec="${esc(w.woId)}" style="height:26px;font-size:11px">Cancel WO</button>${actionPill('commit', 'Complete WO', { js: `js-wo-complete ramp${bn.color === 'green' ? ' ready' : ''}`, h: 26, data: { rec: w.woId } })}`)
+        ? `<span class="pill c-gray" style="height:26px;font-size:0.6471rem" data-tip="This work order is cancelled">Cancelled</span>${actionPill('commit', 'Reopen WO', { js: 'js-wo-reopen', h: 26, data: { rec: w.woId } })}`
+        : `${addBtn('Invoice', { link: true, icon: CARD_ICON.invoices, js: 'js-bill-wo', h: 26, data: { rec: w.woId } })}<button class="pill ghost js-wo-cancel" data-r="R18" data-rec="${esc(w.woId)}" style="height:26px;font-size:0.6471rem">Cancel WO</button>${actionPill('commit', 'Complete WO', { js: `js-wo-complete ramp${bn.color === 'green' ? ' ready' : ''}`, h: 26, data: { rec: w.woId } })}`)
     + `</div>`
     + `</div>`
     + `</div>`;
@@ -8155,7 +8155,7 @@ function miniJourneyHtml(r2, eu) {
   if (te && te.rentalId === r2.rentalId && (te.unitId || null) === (eu ? eu.unitId : null)) return transportEditorHtml();
   const type = (T.transportType && T.transportType !== 'Self') ? T.transportType : null;
   if (!type) {
-    return `<div class="kv" style="justify-content:center;gap:9px"><span class="muted" style="font-size:10.5px">Self pickup · no transport</span><button class="add-field anchor js-tedit-open" data-r="R5b" data-rec="${esc(r2.rentalId)}"${du} data-leg="delivery" style="height:24px;font-size:11px">+Transport</button></div>`;
+    return `<div class="kv" style="justify-content:center;gap:9px"><span class="muted" style="font-size:0.6176rem">Self pickup · no transport</span><button class="add-field anchor js-tedit-open" data-r="R5b" data-rec="${esc(r2.rentalId)}"${du} data-leg="delivery" style="height:24px;font-size:0.6471rem">+Transport</button></div>`;
   }
   const sd = !!T.startCapture, ed = !!T.endCapture;
   const delAddr = T.deliveryAddress ? esc(T.deliveryAddress) : '+Address';
@@ -8389,7 +8389,7 @@ const DETAIL = {
             ${stallRouteHtml(r, eu)}
           </div>`;
         }).join('')
-      : `<div class="stall stall-empty rd-unit rd-unit-empty">${pickUnitBtn}<span class="muted" style="font-size:12px">drag a unit on, or cancel the quote</span></div>`;
+      : `<div class="stall stall-empty rd-unit rd-unit-empty">${pickUnitBtn}<span class="muted" style="font-size:0.7059rem">drag a unit on, or cancel the quote</span></div>`;
 
     /* Footer: field call only. The Complete/Cancel Rental buttons are RETIRED
        (Jac 2026-07-03) — terminal gates on every unit ARE the completion; the
@@ -8459,13 +8459,13 @@ const DETAIL = {
     const gpsSeen = gpsM ? gpsRelTime(gpsM.lastSeen) : '';
     const gpsBody = `<div class="fieldstack">
       ${kvPills((gsUnit ? statusPill('gpsStatus', gsUnit.status, { focal: true }) : badge('No GPS')) + (gpsMapped ? '' : addBtn('Connect GPS', { link: true, js: 'js-gps-connect', data: { rec: u.unitId } })))}
-      ${gpsStale ? `<div class="kv" style="justify-content:center"><span class="muted" style="font-size:11px">Last known — live link down</span></div>` : ''}
+      ${gpsStale ? `<div class="kv" style="justify-content:center"><span class="muted" style="font-size:0.6471rem">Last known — live link down</span></div>` : ''}
       ${gpsM ? `<div class="kv" style="justify-content:center;gap:8px;flex-wrap:wrap">
-        ${gpsSeen ? `<span class="muted" style="font-size:11px">Last seen ${esc(gpsSeen)}</span>` : ''}
+        ${gpsSeen ? `<span class="muted" style="font-size:0.6471rem">Last seen ${esc(gpsSeen)}</span>` : ''}
         ${gpsMapHref ? `<a class="gps-maplink" href="${gpsMapHref}" target="_blank" rel="noopener">${esc(gpsM.address || 'View on map')}</a>` : ''}
         ${badge(gpsM.engineOn ? 'Engine On' : 'Engine Off', gpsM.engineOn ? 'green' : 'gray')}
       </div>` : ''}
-      ${gpsMapped ? `<div class="kv"><span class="v muted" style="font-size:11px">${esc(u.gpsProvider)} · ${esc(u.gpsDeviceId)}</span>${ghostPill('Reconnect', { js: 'js-gps-connect', data: { rec: u.unitId } })}</div>` : ''}
+      ${gpsMapped ? `<div class="kv"><span class="v muted" style="font-size:0.6471rem">${esc(u.gpsProvider)} · ${esc(u.gpsDeviceId)}</span>${ghostPill('Reconnect', { js: 'js-gps-connect', data: { rec: u.unitId } })}</div>` : ''}
       ${efld('units', u, 'unitId', 'gpsType', 'GPS unit/type')}
       ${efld('units', u, 'unitId', 'gpsPlacement', 'Placement')}
       ${gpsShutdownControl(u, gpsM)}
@@ -8566,7 +8566,7 @@ const DETAIL = {
           ])}
         </div>
         <div class="kv" style="justify-content:center">${washBtn(u)}</div>
-        ${li2?.description ? `<div class="kv" style="justify-content:center"><span class="muted">Latest:</span> <span style="font-size:12.5px">${esc(li2.description)}</span></div>` : ''}
+        ${li2?.description ? `<div class="kv" style="justify-content:center"><span class="muted">Latest:</span> <span style="font-size:0.7353rem">${esc(li2.description)}</span></div>` : ''}
       </div>
     </div>`;
     const svcSec = serviceTasksHtml(u);   // Shop retirement (Jac 2026-07-07): services live ON the unit
@@ -8655,7 +8655,7 @@ const DETAIL = {
         ${ghostPill('Cancel', { js: 'js-rp-cancel' })}${actionPill('commit', 'Link', { js: 'js-rp-save', data: { rec: x.expenseId } })}
       </div>` : kvPills(addBtn('Part', { line: true, js: 'js-rcpt-addpart', h: 26, data: { rec: x.expenseId } }));
     const reconcile = `<div class="section"><h4>Reconcile — Parts</h4><div class="fieldstack">
-      ${partRows ? `<div class="hlog">${partRows}</div>` : '<span class="muted" style="font-size:12px">No parts linked yet.</span>'}
+      ${partRows ? `<div class="hlog">${partRows}</div>` : '<span class="muted" style="font-size:0.7059rem">No parts linked yet.</span>'}
       ${partForm}
       ${kv(money(lineTotal), { pfx: 'Line Total', derived: true })}
       ${kv(`<span style="color:var(--${unColor})">${(un < 0 ? '-' : '') + money(Math.abs(un))}</span>`, { pfx: 'Unaccounted', derived: true, html: true })}
@@ -8804,13 +8804,13 @@ const DETAIL = {
     const dupSrc = cs?.dupFrom ? IDX.model.get(cs.dupFrom) : null;
     const addModelRow = cs?.addingModel
       ? `<div class="kv pillrow" style="gap:7px">
-          ${dupSrc ? `<span class="muted" style="font-size:11px;width:100%">Duplicating ${esc(dupSrc.name)} — rename below</span>` : ''}
+          ${dupSrc ? `<span class="muted" style="font-size:0.6471rem;width:100%">Duplicating ${esc(dupSrc.name)} — rename below</span>` : ''}
           <input class="lf-in js-am-name" placeholder="Model name" style="flex:1" value="${dupSrc ? esc(dupSrc.name + ' copy') : ''}">
           ${ghostPill('Cancel', { js: 'js-am-cancel' })}${actionPill('commit', 'Add', { js: 'js-am-save', data: { rec: c.categoryId } })}
         </div>`
       : kvPills(addBtn('Model', { line: true, js: 'js-add-model', h: 26, data: { rec: c.categoryId } }));
     const models = `<div class="section"><h4>Models</h4><div class="fieldstack">
-      ${modelRows || '<span class="muted" style="font-size:12px">No models yet — units in this category use the generic service schedule.</span>'}
+      ${modelRows || '<span class="muted" style="font-size:0.7059rem">No models yet — units in this category use the generic service schedule.</span>'}
       ${addModelRow}
     </div></div>`;
     // every unit in the category — R2 linked pill + R4 derived status pill (Jac 2026-06-12)
@@ -8839,7 +8839,7 @@ const DETAIL = {
           ${efld('categories', c, 'categoryId', 'endOfLifeYears', 'End of life (yrs)', { type: 'number', admin: true, fmt: (v) => v + ' YRS', sfx: 'end of life' })}
           ${c.usefulLifeHours > 0 && c.endOfLifeYears > 0 ? kv(`${num(Math.round(c.usefulLifeHours / (c.endOfLifeYears * 12)))} HRS/MO`, { sfx: 'expected pace', derived: true }) : ''}
         </div>
-        <div class="side r">${unitRows || '<span class="muted" style="font-size:12px">No units</span>'}</div>
+        <div class="side r">${unitRows || '<span class="muted" style="font-size:0.7059rem">No units</span>'}</div>
       </div></div>`;
     const notes = notesSection('categories', c, 'categoryId');
     return `<div class="detail">
@@ -8893,7 +8893,7 @@ const DETAIL = {
           ? `${badge('Refunded')}${actionPill('commit', 'Details', { js: 'js-pay-invoice', data: { rec: i.invoiceId } })}`
           : t.balance <= 0 && t.paid > 0
             ? `${badge(`Paid${i.paymentMethod ? ' · ' + i.paymentMethod : ''}`, 'green')}${actionPill('danger', 'Refund', { js: 'js-pay-invoice', data: { rec: i.invoiceId } })}`
-            : `${actionPill('money', hasCardOnFile(cust) ? (t.paid > 0 ? 'Pay balance ' : 'Pay ') + money2(t.balance) : 'Take payment', { js: 'js-pay-invoice', data: { rec: i.invoiceId } })}${hasCardOnFile(cust) ? `<span class="muted" style="font-size:11px">${esc(cardLabel(cust))}</span>` : ''}`)
+            : `${actionPill('money', hasCardOnFile(cust) ? (t.paid > 0 ? 'Pay balance ' : 'Pay ') + money2(t.balance) : 'Take payment', { js: 'js-pay-invoice', data: { rec: i.invoiceId } })}${hasCardOnFile(cust) ? `<span class="muted" style="font-size:0.6471rem">${esc(cardLabel(cust))}</span>` : ''}`)
       : '') + colCell;
     // Void (Jac 2026-07-09): an UNPAID invoice ($0 assigned) can be voided — unlinks its rental
     // so the slot frees to re-invoice and retires this to a $0 auditable record (no hard-delete).
@@ -8902,17 +8902,17 @@ const DETAIL = {
     const voidCell = (canMoney()
       ? invoiceVoidable(i)
         ? actionPill('danger', 'Void invoice', { js: 'js-void-invoice', h: 26, data: { rec: i.invoiceId } })
-        : (t.paid > 0.005 && !i.refunded && !i.voided ? `<span class="muted" style="font-size:11px" data-tip="A payment is assigned — refund it first, then you can void this invoice.">Refund to void</span>` : '')
+        : (t.paid > 0.005 && !i.refunded && !i.voided ? `<span class="muted" style="font-size:0.6471rem" data-tip="A payment is assigned — refund it first, then you can void this invoice.">Refund to void</span>` : '')
       : '');
     const lineForm = `<div class="lineform"><input class="lf-in js-lf-label" placeholder="Custom line description" /><div class="lineform-row"><input class="lf-in js-lf-amt" type="number" min="0" placeholder="Amount $" /></div><div class="pillrow" style="justify-content:flex-end">${ghostPill('Cancel', { js: 'js-line-cancel' })}${actionPill('commit', 'Add line', { js: 'js-line-save', data: { rec: i.invoiceId } })}</div></div>`;
     // Merge (#64): a customer's other UNPAID invoices can fold into this one. Money-safe
     // by construction — only $0-paid, unlocked, un-refunded bills qualify (invoiceMergeable).
     const mergeables = (canMoney() && invoiceMergeable(i)) ? DATA.invoices.filter((o) => o.invoiceId !== i.invoiceId && o.customerId === i.customerId && invoiceMergeable(o)) : [];
-    const mergePicker = `<div class="lineform mergeform"><div class="muted" style="font-size:12px;margin-bottom:7px">Fold another unpaid invoice for ${esc(cust ? cust.name : 'this customer')} into ${esc(i.invoiceId)} — its lines move over and the original is removed.</div>${mergeables.map((o) => { const ot = invoiceTotals(o); const n = (o.lineItems || []).length; return `<div class="hitem"><b class="derived">${esc(invoiceShort(o.invoiceId))}</b><span class="muted" style="font-size:11px">${n} line${n === 1 ? '' : 's'} · ${money2(ot.total)}</span><span class="spacer"></span>${actionPill('commit', 'Merge in', { js: 'js-merge-pick', h: 24, data: { keep: i.invoiceId, rec: o.invoiceId } })}</div>`; }).join('')}<div class="pillrow" style="justify-content:flex-end;margin-top:7px">${ghostPill('Done', { js: 'js-merge-cancel' })}</div></div>`;
+    const mergePicker = `<div class="lineform mergeform"><div class="muted" style="font-size:0.7059rem;margin-bottom:7px">Fold another unpaid invoice for ${esc(cust ? cust.name : 'this customer')} into ${esc(i.invoiceId)} — its lines move over and the original is removed.</div>${mergeables.map((o) => { const ot = invoiceTotals(o); const n = (o.lineItems || []).length; return `<div class="hitem"><b class="derived">${esc(invoiceShort(o.invoiceId))}</b><span class="muted" style="font-size:0.6471rem">${n} line${n === 1 ? '' : 's'} · ${money2(ot.total)}</span><span class="spacer"></span>${actionPill('commit', 'Merge in', { js: 'js-merge-pick', h: 24, data: { keep: i.invoiceId, rec: o.invoiceId } })}</div>`; }).join('')}<div class="pillrow" style="justify-content:flex-end;margin-top:7px">${ghostPill('Done', { js: 'js-merge-cancel' })}</div></div>`;
     const manageRow = state.invLineForm === i.invoiceId ? lineForm
       : (state.invMergePick === i.invoiceId && mergeables.length) ? mergePicker
       : locked
-        ? `<div class="pillrow"><span class="muted" style="font-size:12px">🔒 Pricing locked.</span>${canMoney() ? actionPill('commit', 'Unlock to edit', { js: 'js-unlock-invoice', data: { rec: i.invoiceId } }) : ''}</div>`
+        ? `<div class="pillrow"><span class="muted" style="font-size:0.7059rem">🔒 Pricing locked.</span>${canMoney() ? actionPill('commit', 'Unlock to edit', { js: 'js-unlock-invoice', data: { rec: i.invoiceId } }) : ''}</div>`
         : `<div class="pillrow pillcol">${addBtn('Rental', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Rental' } })}${addBtn('WO', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'WO' } })}${addBtn('Custom', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Custom' } })}</div>${canMoney() && (i.lineItems || []).length ? `<div class="pillrow pillcol">${actionPill('commit', '🔒 Lock price', { js: 'js-lock-invoice', data: { rec: i.invoiceId } })}</div>` : ''}${mergeables.length ? `<div class="pillrow pillcol">${addBtn('Merge invoice', { line: true, js: 'js-merge-open', h: 26, data: { rec: i.invoiceId } })}</div>` : ''}`;
     const invoiceSec = `<div class="section"><h4>Invoice</h4>
       <div class="inv-split">
@@ -8922,7 +8922,7 @@ const DETAIL = {
           ${manageRow}
         </div>
         <div class="inv-data">
-          ${lines || '<span class="muted" style="font-size:12px">No line items yet</span>'}
+          ${lines || '<span class="muted" style="font-size:0.7059rem">No line items yet</span>'}
           ${(i.lineItems || []).length ? '<div class="inv-div"></div>' : ''}
           ${subRows}
           ${ledgerRow('Subtotal', money2(t.subtotal))}
@@ -8930,7 +8930,7 @@ const DETAIL = {
           ${ledgerRow('Total', money2(t.total), 'big')}
           ${ledgerRow('Paid', `${money2(t.paid)} / ${money2(t.total)}`)}
           ${ledgerRow(`Due${i.dueDate ? ' · ' + fmtShortDate(i.dueDate) : ''}`, money2(t.balance), 'due')}
-          ${!locked ? `<div class="kv" style="justify-content:flex-end;align-items:center;gap:7px;margin-top:2px"><span class="derived" style="font-size:11px">Set due date</span><input type="date" class="js-due-date" data-rec="${esc(i.invoiceId)}" value="${esc(i.dueDate || '')}" style="font-size:11px;color:var(--txt);background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:3px 7px;color-scheme:dark"></div>` : ''}
+          ${!locked ? `<div class="kv" style="justify-content:flex-end;align-items:center;gap:7px;margin-top:2px"><span class="derived" style="font-size:0.6471rem">Set due date</span><input type="date" class="js-due-date" data-rec="${esc(i.invoiceId)}" value="${esc(i.dueDate || '')}" style="font-size:0.6471rem;color:var(--txt);background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:3px 7px;color-scheme:dark"></div>` : ''}
           ${(payCell || voidCell) ? `<div class="pillrow" style="justify-content:flex-end;margin-top:9px">${payCell}${voidCell}</div>` : ''}
           <div class="pillrow" style="justify-content:flex-end;margin-top:9px">${ghostPill('🖨 Print', { js: 'js-print-invoice', data: { rec: i.invoiceId }, tip: 'Edge-to-edge already. For a fully clean page, turn off “Headers & footers” in the print dialog (Chrome remembers it).' })}${ghostPill('✉ Send Email', { js: 'js-send-email', data: { rec: i.invoiceId }, disabled: !cust || !cust.email, tip: !cust ? 'No customer on file' : !cust.email ? 'No email on file' : '' })}${ghostPill('💬 Send Text', { js: 'js-send-text', data: { rec: i.invoiceId }, disabled: !cust || !cust.phone, tip: !cust ? 'No customer on file' : !cust.phone ? 'No phone on file' : '' })}</div>
         </div>
@@ -8969,7 +8969,7 @@ const DETAIL = {
       <div class="pillrow"><button class="pill c-green js-part-save" data-rec="${w.woId}">Add line</button><button class="pill c-gray js-part-cancel">Cancel</button></div>
     </div>`;
     const journeySec = `<div class="section"><h4>Journey</h4>
-      <div class="hlog">${journey || '<span class="muted" style="font-size:12px">No line items</span>'}</div>
+      <div class="hlog">${journey || '<span class="muted" style="font-size:0.7059rem">No line items</span>'}</div>
       ${state.woPartForm === w.woId ? partForm : `<div class="pillrow" style="margin-top:8px">${addBtn('Part/Task', { anchor: true, js: 'js-add-part', h: 26, data: { rec: w.woId } })}${billBtn}</div>`}
     </div>`;
     const billToggle = gatePillRaw(`Bill customer: ${w.billCustomer === 'Yes' ? 'Yes' : 'No'}`, w.billCustomer === 'Yes' ? 'orange' : 'gray', 'js-wo-bill', { rec: w.woId }, true);
@@ -9010,7 +9010,7 @@ const DETAIL = {
     const headTop = top ? (top.washRequested ? `<span class="pill c-blue">Wash Requested</span>` : `<span class="pill c-${top.color}">${esc(getStatus('serviceStatus', top.status).label)}</span>`) : '';
     const notes = notesSection('units', u, 'unitId');
     return `<div class="detail">
-      <div class="detail-head">${unitPill(u.unitId)}<span class="muted" style="font-size:13px;font-weight:600">${num(u.currentHours)} HRS</span>${ar ? statusPill('rentalStatus', rentalDisplayStatus(ar), { card: 'rentals', recId: ar.rentalId }) : ''}${headTop}</div>
+      <div class="detail-head">${unitPill(u.unitId)}<span class="muted" style="font-size:0.7647rem;font-weight:600">${num(u.currentHours)} HRS</span>${ar ? statusPill('rentalStatus', rentalDisplayStatus(ar), { card: 'rentals', recId: ar.rentalId }) : ''}${headTop}</div>
       ${notes.top}
       ${tasks}
       ${notes.bottom}
@@ -9049,7 +9049,7 @@ const DETAIL = {
     </div></div>`;
     const notes = notesSection('inspections', n, 'inspectionId');
     return `<div class="detail">
-      <div class="detail-head">${unit ? unitPill(unit.unitId) : '<span class="d-title">Inspection</span>'}${resultPill}<span class="muted" style="font-size:12px;margin-left:auto">${esc(fmtShortDate(n.date))}</span></div>
+      <div class="detail-head">${unit ? unitPill(unit.unitId) : '<span class="d-title">Inspection</span>'}${resultPill}<span class="muted" style="font-size:0.7059rem;margin-left:auto">${esc(fmtShortDate(n.date))}</span></div>
       ${notes.top}
       ${report}
       ${notes.bottom}
@@ -9074,7 +9074,7 @@ function historySection(card, rec, cs, chips) {
   const items = q ? base.filter((h) => (h.search || `${h.when} ${h.text}`).toLowerCase().includes(q)) : base;
   const log = items.length
     ? items.map((h) => `<div class="hitem"><span class="htime">${esc(h.when)}</span>${h.pill || ''}<span>${esc(histText(h.text))}</span>${h.by ? `<span class="hby">${esc(h.by)}</span>` : ''}</div>`).join('')
-    : `<div class="muted" style="font-size:12px">${q || chip ? 'No matching history.' : 'No history yet.'}</div>`;
+    : `<div class="muted" style="font-size:0.7059rem">${q || chip ? 'No matching history.' : 'No history yet.'}</div>`;
   const chipBar = chips?.length
     ? `<div class="hvals">${chips.map((c) => `<button class="hv ${c.cls || ''} ${cs?.histKind === c.kind ? 'on' : ''} js-hchip" data-card="${esc(card)}" data-kind="${esc(c.kind)}">${esc(c.label)}</button>`).join('')}</div>` : '';
   // History Search (§0.6) — appears once the log has some depth.
@@ -9560,6 +9560,10 @@ function calendarCardEl(session) {
     <input class="mini-search" placeholder="Search trips…" value="${esc(state.calSearch || '')}" data-card="calendar" />
   </div>`;
   body.appendChild(bar);
+  // §scroll (Jac 2026-07-18) — the map panel + trip rows share ONE scroll region so the live
+  // map scrolls WITH the run instead of sitting frozen while the rows slide under it. The
+  // listbar (sticky) and the sync footer stay pinned as chrome; only this middle region scrolls.
+  const scroll = el('div', 'cal-scroll');
   // §2.1 the live-map panel — open by default everywhere, remembered per device. The map
   // singleton mounts into .js-dispmount after render (mountDispatchMap, the render pipeline
   // already calls it). Offline (#local), or a failed Maps load → the stamped MAP OFFLINE
@@ -9575,8 +9579,8 @@ function calendarCardEl(session) {
     const gmaps = dest ? `<span class="trips-gmaps">${linkName('Open in Google Maps', { href: `https://www.google.com/maps/dir/?api=1&destination=${dest}`, ext: true })}</span>` : '';
     panel.innerHTML = live
       ? `<div class="dispm js-dispmount" data-day="${esc(state.dispatchDay || TODAY_ISO)}">${mapsReady() ? '' : '<span class="map-spin" aria-hidden="true"></span><span class="map-tag">Loading dispatch map…</span>'}</div>${gmaps}`
-      : `<div class="trips-map-ph"><span class="map-pin" aria-hidden="true">${ICO_PIN}</span><span class="map-tag stamp" style="font-size:11px;color:var(--accent)">Map offline</span><span class="map-sub">The run below still drives the day.</span></div>${gmaps}`;
-    body.appendChild(panel);
+      : `<div class="trips-map-ph"><span class="map-pin" aria-hidden="true">${ICO_PIN}</span><span class="map-tag stamp" style="font-size:0.6471rem;color:var(--accent)">Map offline</span><span class="map-sub">The run below still drives the day.</span></div>${gmaps}`;
+    scroll.appendChild(panel);
   }
   let trips = tripsFor();
   if (q) trips = trips.filter((t) => tripMatches(t, q));
@@ -9589,7 +9593,8 @@ function calendarCardEl(session) {
   } else {
     appendGroupedSections(list, trips, {}, 'calendar');
   }
-  body.appendChild(list);
+  scroll.appendChild(list);
+  body.appendChild(scroll);
   const foot = el('div', 'disp-foot');
   const sync = tripsSyncFooter();   // §2.3 Phase 4 — real sync state, replaces the Phase 1 static placeholder
   foot.innerHTML = `<span class="disp-offdot${sync.synced ? ' on' : ''}"></span><span class="disp-offline${sync.synced ? ' on' : ''}">${esc(sync.label)}</span>`;
@@ -10209,7 +10214,7 @@ function toolsMenuRows() {
   // (Developer/Admin) render only when unlocked, exactly as before.
   const fam = (name, rows) => `<details class="dd-fam"><summary class="dd-fam-h">${esc(name)}<span class="dd-fam-chev">${I.chev}</span></summary><div class="dd-fam-body">${rows}</div></details>`;
   // General — the everyday tools + the manual cache-buster (force the newest build past a stale mobile cache, Jac 2026-07-16).
-  const general = `<button class="dd-item js-app-update"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${STATUS_ICONS.refresh}</span>Check for updates<span style="margin-left:auto;color:var(--txt-3);font-size:11px;letter-spacing:.3px">v${esc(appVersion())}</span></button>`
+  const general = `<button class="dd-item js-app-update"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${STATUS_ICONS.refresh}</span>Check for updates<span style="margin-left:auto;color:var(--txt-3);font-size:0.6471rem;letter-spacing:.3px">v${esc(appVersion())}</span></button>`
     + item('js-qr', I.qr, 'Share session (QR)')
     + item('js-previews', state.previewsOn ? I.eye : I.eyeOff, state.previewsOn ? 'Hover previews: on' : 'Hover previews: off', state.previewsOn)
     + item('js-hotkeys', I.mouse, 'Mouse & keyboard shortcuts');
@@ -10655,7 +10660,7 @@ function wranglerDockEl() {
   const chip = rec ? `<span class="wr-chip">${CARD_ICON[entityCardOf(o.card, o.recType)] || ''}${esc(detailTitle(entityCardOf(o.card, o.recType), rec))}</span>` : '';
   return `
     <div class="wr-dock-head">
-      <span style="font-size:18px">🤠</span>
+      <span style="font-size:1.0588rem">🤠</span>
       <span class="wr-dock-title">Mr. Wrangler</span>
       ${chip}
       <span class="spacer"></span>
@@ -12989,8 +12994,8 @@ function buildPopupEl(o, overlay, opts = {}) {
     pop.innerHTML = popupShell({ icon: I.qr, title: o.title || 'Share session', tag: 'Share · this session', body: `
       <div style="text-align:center">
         <img class="qr-img" alt="QR code" src="https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&bgcolor=15171c&color=ff7a1a&data=${encodeURIComponent(url)}" width="220" height="220" style="border-radius:12px;background:var(--panel-2)" />
-        <p class="muted" style="margin-top:10px;font-size:12px;word-break:break-all">${esc(url)}</p>
-        <p class="muted" style="margin-top:6px;font-size:11px">${esc(o.caption || 'Scan to open this session on another device (single shared login — §1/§4.2).')}</p>
+        <p class="muted" style="margin-top:10px;font-size:0.7059rem;word-break:break-all">${esc(url)}</p>
+        <p class="muted" style="margin-top:6px;font-size:0.6471rem">${esc(o.caption || 'Scan to open this session on another device (single shared login — §1/§4.2).')}</p>
       </div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'migrateUnits') {
@@ -13000,16 +13005,16 @@ function buildPopupEl(o, overlay, opts = {}) {
     const rentals = o.plan.reduce((n, p) => n + p.count, 0);
     const rows = o.plan.map((p) => `<tr style="border-top:1px solid rgba(255,255,255,.06)">
         <td style="padding:5px 8px">${esc(p.name)}</td>
-        <td style="padding:5px 8px"><span class="pill ${p.action === 'create' ? 'c-commit' : 'ref'}" style="height:20px;font-size:10px">${p.action === 'create' ? 'New · ' + p.unitId : 'Link · ' + p.unitId}</span></td>
+        <td style="padding:5px 8px"><span class="pill ${p.action === 'create' ? 'c-commit' : 'ref'}" style="height:20px;font-size:0.5882rem">${p.action === 'create' ? 'New · ' + p.unitId : 'Link · ' + p.unitId}</span></td>
         <td style="padding:5px 8px;color:var(--muted)">${esc(IDX.category.get(p.categoryId)?.name || p.categoryId || '—')}</td>
         <td style="padding:5px 8px;color:var(--muted);text-align:right">${p.count}</td></tr>`).join('');
     const pop = el('div', 'popup'); pop.style.width = '560px';
     pop.innerHTML = popupShell({ icon: CARD_ICON.units || '', title: 'Round up missing units', tag: 'Units · migrate',
       foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-migrate-go" data-r="R17">Create &amp; link ${o.plan.length}</button>`,
       body: `
-        <p style="font-size:13px;margin-bottom:10px"><b>${o.plan.length}</b> unit${o.plan.length === 1 ? '' : 's'} were referenced on rentals but never recorded. This will <b>create ${creates}</b> new record${creates === 1 ? '' : 's'}${links ? ` and <b>link ${links}</b> to existing units` : ''}, then connect <b>${rentals}</b> rental${rentals === 1 ? '' : 's'} (and their customers, categories &amp; invoices) to them.</p>
+        <p style="font-size:0.7647rem;margin-bottom:10px"><b>${o.plan.length}</b> unit${o.plan.length === 1 ? '' : 's'} were referenced on rentals but never recorded. This will <b>create ${creates}</b> new record${creates === 1 ? '' : 's'}${links ? ` and <b>link ${links}</b> to existing units` : ''}, then connect <b>${rentals}</b> rental${rentals === 1 ? '' : 's'} (and their customers, categories &amp; invoices) to them.</p>
         <div style="max-height:46vh;overflow:auto;border:1px solid rgba(255,255,255,.1);border-radius:8px">
-          <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <table style="width:100%;border-collapse:collapse;font-size:0.7059rem">
             <thead><tr style="position:sticky;top:0;background:var(--panel-2)"><th style="text-align:left;padding:6px 8px">Unit</th><th style="text-align:left;padding:6px 8px">Action</th><th style="text-align:left;padding:6px 8px">Category</th><th style="text-align:right;padding:6px 8px">Rentals</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
@@ -13095,7 +13100,7 @@ function buildPopupEl(o, overlay, opts = {}) {
         ${o.devicesLoading ? `<div class="set-loading" style="min-height:140px"><div class="set-loading-bar" aria-hidden="true"></div><div class="set-loading-lbl">Rounding up ${esc(o.provider)} machines…</div></div>`
           : o.devicesError ? `<p class="set-err" style="text-align:left">${esc(o.devicesError)}</p>`
           : list.length ? `<div class="gps-dev-list">${rows}</div>`
-          : `<p class="muted" style="font-size:12px">No ${q ? 'matching' : 'authorized'} machines${q ? ` for “${esc(o.deviceQuery)}”` : ' on this account yet'}.</p>`}`;
+          : `<p class="muted" style="font-size:0.7059rem">No ${q ? 'matching' : 'authorized'} machines${q ? ` for “${esc(o.deviceQuery)}”` : ' on this account yet'}.</p>`}`;
       foot = ghostPill('Back', { js: 'js-gps-back' });
     } else {   // 'poll' — the live first-contact confirmation (§5a step 3)
       const UI = {
@@ -13313,7 +13318,7 @@ function buildPopupEl(o, overlay, opts = {}) {
         <span class="gps-poll-ic c-${UI.color}">${UI.icon}</span>
         <div class="gpsru-poll-txt">
           <div class="gpsru-poll-lbl">${esc(UI.label)}</div>
-          <div class="muted" style="font-size:11px">${o.pollState === 'timeout' ? 'It may just be catching up — try again, or confirm from the last-known data above.' : `Attempt ${o.pollAttempt || 0} of ${o.pollMax || 8}`}</div>
+          <div class="muted" style="font-size:0.6471rem">${o.pollState === 'timeout' ? 'It may just be catching up — try again, or confirm from the last-known data above.' : `Attempt ${o.pollAttempt || 0} of ${o.pollMax || 8}`}</div>
         </div>
         ${o.pollState === 'timeout' ? ghostPill('Try again', { js: 'js-gpsru-poll-start', data: { rec: o.pollUnitId } }) : ''}
       </div>`;
@@ -13332,14 +13337,14 @@ function buildPopupEl(o, overlay, opts = {}) {
       return `<div class="gpsru-detail">
         ${segCtl(GPS_PROVIDERS.map((p) => ({ label: p, js: 'js-gpsru-swap-provider', data: { rec: r.unitId, val: p }, on: provider === p ? 'orange' : '' })))}
         <div class="bv-searchwrap" style="width:100%;margin:9px 0"><span class="s-icon">${I.search}</span><input class="bv-query js-gpsru-swap-search" placeholder="Search ${esc(provider)} devices…" value="${esc(o.swapQuery || '')}"></div>
-        ${devRows ? `<div class="gps-dev-list">${devRows}</div>` : `<p class="muted" style="font-size:12px">No ${sq ? 'matching' : 'available'} ${esc(provider)} devices${(o.devices || []).length ? '' : ' — scan first'}.</p>`}
+        ${devRows ? `<div class="gps-dev-list">${devRows}</div>` : `<p class="muted" style="font-size:0.7059rem">No ${sq ? 'matching' : 'available'} ${esc(provider)} devices${(o.devices || []).length ? '' : ' — scan first'}.</p>`}
         <div class="gpsru-detail-actions"><span class="spacer"></span>${ghostPill('Cancel', { js: 'js-gpsru-swap-cancel' })}</div>
       </div>`;
     };
     const expandHtml = (r) => {
       if (o.expandedMode === 'swap') return swapHtml(r);
       if (!r.deviceId) return `<div class="gpsru-detail">
-        <p class="muted" style="font-size:12.5px">No tracker picked yet for this unit.</p>
+        <p class="muted" style="font-size:0.7353rem">No tracker picked yet for this unit.</p>
         <div class="gpsru-detail-actions">${ghostPill('Pick a device', { js: 'js-gpsru-swap-open', data: { rec: r.unitId } })}</div>
       </div>`;
       const u = IDX.unit.get(r.unitId);
@@ -13584,9 +13589,9 @@ function buildPopupEl(o, overlay, opts = {}) {
       R8: '<span class="derived">$2,610 · 7-Day×1 + 1-Day×3</span>',
       R9: flagsStack([flagEl('Passed', 'green', { icon: CARD_ICON.inspections }), flagEl('ETA Jun 18', 'yellow', { icon: CARD_ICON.workOrders })]),
       R10: '<span class="c-titlecard"><span class="c-icon">' + CARD_ICON.units + '</span><span class="c-title">Beacon</span></span>',
-      R11: '<span style="display:inline-block;border:1px solid color-mix(in srgb, var(--green) 45%, transparent);border-radius:9px;padding:4px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--green)">INSPECTION</span>',
-      R12: '<span class="add-field" data-r="R5c" style="height:24px;font-size:11px">+Notes</span><span class="muted" style="font-size:11px"> (boxless line)</span>',
-      R13: '<button class="hv g on" style="font-size:11px;font-weight:700;border:1px solid var(--accent);border-radius:99px;padding:2px 8px;background:none;color:var(--accent)">12 Inspections</button>',
+      R11: '<span style="display:inline-block;border:1px solid color-mix(in srgb, var(--green) 45%, transparent);border-radius:9px;padding:4px 14px;font-size:0.5882rem;font-weight:700;letter-spacing:.5px;color:var(--green)">INSPECTION</span>',
+      R12: '<span class="add-field" data-r="R5c" style="height:24px;font-size:0.6471rem">+Notes</span><span class="muted" style="font-size:0.6471rem"> (boxless line)</span>',
+      R13: '<button class="hv g on" style="font-size:0.6471rem;font-weight:700;border:1px solid var(--accent);border-radius:99px;padding:2px 8px;background:none;color:var(--accent)">12 Inspections</button>',
       R14: segCtl([{ label: '✓ Pass', on: 'green' }, { label: 'Not Ready' }, { label: '✕ Fail' }]),
       R15: '<span style="display:inline-grid;place-items:center;width:26px;height:26px;border-radius:8px;background:#fff;color:#16181d">' + I.video + '</span><span style="border-top:2px dotted var(--line);width:34px;display:inline-block;vertical-align:middle;margin:0 4px"></span><span style="display:inline-grid;place-items:center;width:26px;height:26px;border-radius:8px;background:var(--green-bg);color:var(--green)">✓</span>',
       R16: '<span style="display:inline-flex;height:22px;width:120px;border:1px solid var(--line);border-radius:7px;overflow:hidden"><span style="flex:1;background:var(--green-bg);border-right:1px dashed var(--line-soft)"></span><span style="flex:1;background:var(--green-bg);border-right:1px dashed var(--line-soft)"></span><span style="flex:1;border-right:1px dashed var(--line-soft)"></span><span style="flex:1"></span></span>',
@@ -13602,7 +13607,7 @@ function buildPopupEl(o, overlay, opts = {}) {
       R23: '<span class="pill c-gray" data-tip="The one styled tip"><span class="t">hover me</span></span>',
     };
     EX.R21 = fileDrop('Add File', { icon: I.box });
-    EX.R25 = '<span style="position:relative;display:inline-flex;align-items:center;gap:9px;padding:8px 12px;background:var(--panel);border:1px solid var(--line);border-radius:9px;overflow:hidden;max-width:360px"><span style="position:absolute;top:0;left:0;right:0;height:3px;background:repeating-linear-gradient(135deg,var(--red) 0 13px,#14181d 13px 26px)"></span><span style="font-family:\'Saira Condensed\',system-ui,sans-serif;text-transform:uppercase;letter-spacing:1.4px;font-weight:800;font-size:12px;color:var(--red);white-space:nowrap">⚠ Not saving</span><span style="font-size:11px;color:var(--txt-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">changes held, retrying…</span></span>';
+    EX.R25 = '<span style="position:relative;display:inline-flex;align-items:center;gap:9px;padding:8px 12px;background:var(--panel);border:1px solid var(--line);border-radius:9px;overflow:hidden;max-width:360px"><span style="position:absolute;top:0;left:0;right:0;height:3px;background:repeating-linear-gradient(135deg,var(--red) 0 13px,#14181d 13px 26px)"></span><span style="font-family:\'Saira Condensed\',system-ui,sans-serif;text-transform:uppercase;letter-spacing:1.4px;font-weight:800;font-size:0.7059rem;color:var(--red);white-space:nowrap">⚠ Not saving</span><span style="font-size:0.6471rem;color:var(--txt-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">changes held, retrying…</span></span>';
     // ── tabbed render — a row builder per kind, then just the active tab's items ──
     const ruleRow = (r) => {
       const m = RULE_META[r]; if (!m) return '';
@@ -13615,7 +13620,7 @@ function buildPopupEl(o, overlay, opts = {}) {
       return `<div class="rb-row">
         <span class="rb-id">${r}</span>
         <div class="rb-ex">${EX[r] || '<span class="muted">—</span>'}</div>
-        <div class="rb-info"><b>${esc(m[0])}</b> · <code>${esc(m[1])}</code><div class="muted" style="font-size:11px">${esc(m[2])}</div>${idxHtml}</div>
+        <div class="rb-info"><b>${esc(m[0])}</b> · <code>${esc(m[1])}</code><div class="muted" style="font-size:0.6471rem">${esc(m[2])}</div>${idxHtml}</div>
       </div>`;
     };
     const foundRow = (key) => {
@@ -13624,7 +13629,7 @@ function buildPopupEl(o, overlay, opts = {}) {
         <span class="rb-id found">${esc(f[0])}</span>
         <div class="rb-found-body">
           <div class="rb-ex">${f[4]}</div>
-          <div class="rb-info"><b>${esc(f[1])}</b> · <code>${esc(f[2])}</code><div class="muted" style="font-size:11px">${esc(f[3])}</div></div>
+          <div class="rb-info"><b>${esc(f[1])}</b> · <code>${esc(f[2])}</code><div class="muted" style="font-size:0.6471rem">${esc(f[3])}</div></div>
         </div>
       </div>`;
     };
@@ -13723,16 +13728,16 @@ function buildPopupEl(o, overlay, opts = {}) {
       foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', rec ? 'Save' : (forTask ? 'Add part' : 'Add line'), { js: 'js-pf2-save' })}`,
       body: `
         ${fileDrop(state.partPhoto || rec?.photo ? '✓ photo attached' : 'Add Photo (not required)', { js: 'js-pf2-file', capture: 'environment', done: !!(state.partPhoto || rec?.photo), icon: I.camera })}
-        ${forTask ? '' : `<p class="muted" style="text-align:center;font-size:11.5px;margin:7px 0 10px">✨ Mr. Wrangler will add the parts for you!</p>`}
+        ${forTask ? '' : `<p class="muted" style="text-align:center;font-size:0.6765rem;margin:7px 0 10px">✨ Mr. Wrangler will add the parts for you!</p>`}
         <input class="lf-in js-pf2-desc" placeholder="Part/Task Name" value="${esc((forTask ? pr?.name : li?.part) || '')}" style="width:100%;margin-bottom:7px">
-        ${forTask && pr?.oem ? `<div class="muted" style="font-size:11px;margin:-3px 0 7px">OEM ${esc(pr.oem)} · from the manufacturer manual</div>` : ''}
+        ${forTask && pr?.oem ? `<div class="muted" style="font-size:0.6471rem;margin:-3px 0 7px">OEM ${esc(pr.oem)} · from the manufacturer manual</div>` : ''}
         <div style="display:flex;gap:7px;margin-bottom:7px">
           <input class="lf-in js-pf2-cost" type="number" min="0" placeholder="$Cost" value="${(forTask ? pr?.cost : li?.cost) ?? ''}" style="flex:1">
           ${forTask ? '' : `<input class="lf-in js-pf2-hours" type="number" min="0" step="0.5" placeholder="Hours" value="${li?.hours ?? ''}" style="flex:1">`}
         </div>
         <input class="lf-in js-pf2-url" placeholder="URL link" value="${esc((forTask ? pr?.url : li?.url) || '')}" style="width:100%;margin-bottom:7px">
         <input class="lf-in js-pf2-vendor" placeholder="Vendor" value="${esc(ven?.name || '')}" style="width:100%;margin-bottom:4px">
-        ${forTask ? '' : `<p class="muted" style="font-size:11px;margin:4px 0 4px">✨ Empty fields are filled by Mr. Wrangler after saving: the photo is reviewed for the description/cost/url, and hours are estimated from the category + industry standards.</p>`}` });
+        ${forTask ? '' : `<p class="muted" style="font-size:0.6471rem;margin:4px 0 4px">✨ Empty fields are filled by Mr. Wrangler after saving: the photo is reviewed for the description/cost/url, and hours are estimated from the category + industry standards.</p>`}` });
     overlay.appendChild(pop);
   } else if (o.kind === 'modelSchedule') {
     // A model's real maintenance schedule (Jac 2026-07-07) — replaces the generic
@@ -13750,7 +13755,7 @@ function buildPopupEl(o, overlay, opts = {}) {
     pop.innerHTML = popupShell({ icon: CARD_ICON.workOrders, title: mo?.name || 'Model schedule', tag: 'Category · model',
       foot: `${ghostPill('Close', { js: 'js-close' })}`,
       body: `
-        ${rows || '<p class="muted" style="font-size:12.5px;text-align:center;margin:6px 0 12px">No tasks yet — this model falls back to the generic schedule until you add some.</p>'}
+        ${rows || '<p class="muted" style="font-size:0.7353rem;text-align:center;margin:6px 0 12px">No tasks yet — this model falls back to the generic schedule until you add some.</p>'}
         <div class="wototals">${addBtn('Task', { anchor: true, js: 'js-add-svctask', h: 26, data: { rec: o.modelId } })}</div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'svctaskform') {
@@ -13782,7 +13787,7 @@ function buildPopupEl(o, overlay, opts = {}) {
           ${dateField('date', o.date)}
         </div>
         <input class="lf-in js-rf-part" placeholder="Part Name" value="" style="width:100%;margin-bottom:4px">
-        <p class="muted" style="font-size:11px;margin:4px 0 4px">✨ Empty fields are filled by Mr. Wrangler after saving: the photo is read for the vendor, amount, date and category.</p>` });
+        <p class="muted" style="font-size:0.6471rem;margin:4px 0 4px">✨ Empty fields are filled by Mr. Wrangler after saving: the photo is read for the vendor, amount, date and category.</p>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'wodone') {
     // v2: Complete WO with open line items → warn, don't hard-block
@@ -13792,8 +13797,8 @@ function buildPopupEl(o, overlay, opts = {}) {
     pop.innerHTML = popupShell({ icon: CARD_ICON.workOrders, title: 'Complete this Work Order?', tag: 'Work order · confirm', danger: true,
       foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('danger', 'Complete WO', { js: 'js-wodone-confirm', data: { rec: o.woId } })}`,
       body: `
-        <p style="font-size:13px;margin-bottom:6px">Are you sure? Not all items are completed.</p>
-        <p class="muted" style="font-size:12px;margin-bottom:4px">Still open: ${open.map((l) => `“${esc(l.part)} · ${esc(getStatus('woPhase', l.phase).label)}”`).join(' · ') || '—'}</p>` });
+        <p style="font-size:0.7647rem;margin-bottom:6px">Are you sure? Not all items are completed.</p>
+        <p class="muted" style="font-size:0.7059rem;margin-bottom:4px">Still open: ${open.map((l) => `“${esc(l.part)} · ${esc(getStatus('woPhase', l.phase).label)}”`).join(' · ') || '—'}</p>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'role') {
     const role = ROLES.find((r) => r.id === o.role);
@@ -13803,7 +13808,7 @@ function buildPopupEl(o, overlay, opts = {}) {
       const raw = vals[i];
       const b = bandColor(raw == null ? 0 : raw);
       const valTxt = raw == null ? '<span class="muted">Coming soon</span>' : `<span style="color:var(--${b.color})">${raw}%</span>`;
-      return `<div class="kpi-line" data-tip="${esc(KPI_HELP[k] || '')}"><span class="ring-no" style="border-color:var(--${raw == null ? 'line' : b.color});color:var(--${raw == null ? 'txt-3' : b.color})">${i + 1}</span><span class="k-name">${esc(k)}<span class="muted" style="font-size:10px;margin-left:6px">${ringTag[i]}</span></span><span class="k-val">${valTxt}</span></div>`;
+      return `<div class="kpi-line" data-tip="${esc(KPI_HELP[k] || '')}"><span class="ring-no" style="border-color:var(--${raw == null ? 'line' : b.color});color:var(--${raw == null ? 'txt-3' : b.color})">${i + 1}</span><span class="k-name">${esc(k)}<span class="muted" style="font-size:0.5882rem;margin-left:6px">${ringTag[i]}</span></span><span class="k-val">${valTxt}</span></div>`;
     }).join('');
     const pop = el('div', 'popup kpi-popup');
     pop.innerHTML = popupShell({ icon: RING_ICON[role.id], title: `${role.label} KPIs`, tag: 'Role · scorecard', body: `
@@ -13926,7 +13931,7 @@ function buildPopupEl(o, overlay, opts = {}) {
     const pop = el('div', 'popup hk-popup');
     pop.innerHTML = popupShell({ icon: I.mouse, title: 'Mouse shortcuts', tag: 'Operator · controls', bodyClass: 'hk-body', body: `
         ${rows.map((r) => `<div class="hk-row"><div class="hk-demo hk-${r.d}">${hkDemoInner(r.d)}</div><div class="hk-text"><div class="hk-name">${esc(r.n)}</div><div class="hk-desc">${esc(r.t)}</div></div></div>`).join('')}
-        <p class="muted" style="font-size:11px;margin:6px 2px 0">These work on a list row or anywhere on a card.</p>` });
+        <p class="muted" style="font-size:0.6471rem;margin:6px 2px 0">These work on a list row or anywhere on a card.</p>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'roadmap') {
     // §M2 — "Coming 2026" roadmap (the morale window behind the blurred rings).
@@ -14106,7 +14111,7 @@ function buildPopupEl(o, overlay, opts = {}) {
             <div class="ag-pcell"><div class="ag-pcap">Selfie</div>${signingSelfieSrc(sg) ? `<img class="ag-selfie" src="${esc(signingSelfieSrc(sg))}" alt="selfie on file" />` : '<div class="ag-selfie empty">—</div>'}</div>
             <div class="ag-pcell"><div class="ag-pcap">Signature</div>${signingSignatureSrc(sg) ? `<img class="ag-sigthumb" src="${esc(signingSignatureSrc(sg))}" alt="signature on file" />` : '<div class="ag-sigthumb"></div>'}</div>
           </div>
-          <p class="muted" style="font-size:11px;margin:12px 2px 0">🔒 Locked — the exact agreement accepted on this card. Re-signing happens only on a new card or an account-type change.</p>`;
+          <p class="muted" style="font-size:0.6471rem;margin:12px 2px 0">🔒 Locked — the exact agreement accepted on this card. Re-signing happens only on a new card or an account-type change.</p>`;
       } else {
         const key = requiredAgreementKey(custRec); const ag = AGREEMENTS[key];
         body = `
@@ -14244,14 +14249,14 @@ function buildPopupEl(o, overlay, opts = {}) {
         <div class="kv" style="justify-content:center">${kv(money2(t.balance), { sfx: `balance handed over · ${daysPast} days past` })}</div>
         <label class="pay-field"><span>Reason</span><select class="lf-in js-col-reason"><option>Uncollectable in-house</option><option>Customer unresponsive</option><option>Disputed — exhausted</option><option>Business closed</option><option>Other</option></select></label>
         <label class="pay-field"><span>Note</span><input class="lf-in js-col-note" placeholder="Optional note for the record" /></label>
-        <div class="muted" style="font-size:11.5px;margin-top:8px">This queues the debt for the collections agency and takes it off active aging. <b>It also blacklists the account</b> (blocks new rentals). A Recall reverses both.</div>` });
+        <div class="muted" style="font-size:0.6765rem;margin-top:8px">This queues the debt for the collections agency and takes it off active aging. <b>It also blacklists the account</b> (blocks new rentals). A Recall reverses both.</div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'installNudge') {
     // A1 — one-time Add-to-Home-Screen sheet (spec frontend-performance P1 / mobile-remote D3).
     const pop = el('div', 'popup nc-popup');
     pop.innerHTML = popupShell({ icon: CARD_ICON.units || '', title: 'Saddle Up — Add to Home Screen', tag: 'App · install',
       foot: `<button class="pill ghost js-install-later" data-r="R18">Not now</button><button class="pill ignition js-install-go" data-r="R17">Add it</button>`,
-      body: `<div class="muted" style="font-size:12.5px;line-height:1.5">Pin Rental Wrangler to your home screen — full-screen, one tap from the yard, no browser chrome. You can always do it later from the browser menu.</div>` });
+      body: `<div class="muted" style="font-size:0.7353rem;line-height:1.5">Pin Rental Wrangler to your home screen — full-screen, one tap from the yard, no browser chrome. You can always do it later from the browser menu.</div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'checklist') {
     // Required-checklist takeover (Settings → Inspections): replaces the sheet until completed;
@@ -14327,7 +14332,7 @@ function buildPopupEl(o, overlay, opts = {}) {
     pop.innerHTML = popupShell({ icon: CARD_ICON.inspections, title: `${passed ? 'Inspection' : 'Failure report'} — ${unit?.name || '—'}`, tag: `Inspection · ${passed ? 'passed' : 'failure'}`, danger: !passed,
       foot: `<button class="pill ignition js-close" data-r="R17">Done</button>`,
       body: `
-        <div class="pillrow" style="margin-bottom:12px">${unit ? unitPill(unit.unitId) : ''}<span class="pill c-${ir.color}">${esc(ir.label)}</span>${n.woId ? refPill('workOrders', n.woId, 'Work Order') : ''}<span class="muted" style="font-size:12px;margin-left:auto">${esc(fmtShortDate(n.date))}</span></div>
+        <div class="pillrow" style="margin-bottom:12px">${unit ? unitPill(unit.unitId) : ''}<span class="pill c-${ir.color}">${esc(ir.label)}</span>${n.woId ? refPill('workOrders', n.woId, 'Work Order') : ''}<span class="muted" style="font-size:0.7059rem;margin-left:auto">${esc(fmtShortDate(n.date))}</span></div>
         ${media}
         <textarea class="insp-desc js-insp-desc" data-rec="${n.inspectionId}" placeholder="${esc(descPh)}">${esc(n.description || '')}</textarea>
         ${passed ? '' : `<div class="insp-gate" style="margin-top:12px"><span class="insp-gate-lbl">Charge the customer?</span>${segCtl([
@@ -14349,7 +14354,7 @@ function buildPopupEl(o, overlay, opts = {}) {
     pop.innerHTML = popupShell({ icon: CARD_ICON.serviceOrders || '', title: `Complete service — ${u.name}`, tag: 'Service · complete',
       foot: `<button class="pill ignition js-svc-save" data-r="R17" data-unit="${u.unitId}" data-task="${task.taskId}">Record completion</button>`,
       body: `
-        <div class="pillrow" style="margin-bottom:12px">${unitPill(u.unitId)}<span class="pill c-${task.color}">${esc(task.name)}</span><span class="muted" style="font-size:12px;margin-left:auto">${esc(svcText(task))}</span></div>
+        <div class="pillrow" style="margin-bottom:12px">${unitPill(u.unitId)}<span class="pill c-${task.color}">${esc(task.name)}</span><span class="muted" style="font-size:0.7059rem;margin-left:auto">${esc(svcText(task))}</span></div>
         <div class="svc-ref"><div class="svc-ref-head">What you need${sourceLinkBtn(task.sourceUrl, task.source)}</div><div class="svc-ref-body">${svcNeedHtml(u, task)}</div></div>
         <label class="svc-field"><span>Hours at completion</span><input type="number" class="js-svc-hours" value="${num(u.currentHours)}"></label>
         <label class="svc-field"><span>Date completed</span><input type="date" class="js-svc-date" value="${TODAY_ISO}"></label>
@@ -14427,7 +14432,7 @@ function buildPopupEl(o, overlay, opts = {}) {
     pop.innerHTML = popupShell({ icon: CARD_ICON.rentals, title: `Different dates — ${u.name}`, tag: 'Rental · split window',
       foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-split-go" data-r="R17">Make separate rental</button>`,
       body: `
-        <p style="font-size:12.5px;margin-bottom:12px">The other machines stay on <b>${esc(fmtWindow(r.startDate, r.endDate) || 'this window')}</b>. This makes a <b>separate rental</b> for ${esc(u.name)}${inv ? ` on the same invoice (${esc(invoiceShort(inv.invoiceId))})` : ''}, moving its journey + lines over.</p>
+        <p style="font-size:0.7353rem;margin-bottom:12px">The other machines stay on <b>${esc(fmtWindow(r.startDate, r.endDate) || 'this window')}</b>. This makes a <b>separate rental</b> for ${esc(u.name)}${inv ? ` on the same invoice (${esc(invoiceShort(inv.invoiceId))})` : ''}, moving its journey + lines over.</p>
         <label class="svc-field"><span>Start</span>${dateField('splitStart', o.splitStart)}</label>
         <label class="svc-field" style="margin-top:8px"><span>End</span>${dateField('splitEnd', o.splitEnd)}</label>` });
     overlay.appendChild(pop);
@@ -14439,11 +14444,11 @@ function buildPopupEl(o, overlay, opts = {}) {
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: `Add card — ${c.name}`, tag: 'Customer · card on file',
       foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-card-save" data-r="R17">Save card</button>`,
       body: `
-        <p class="muted" style="font-size:11px;margin:0 0 10px">Saved cards can be charged right away. Capture the selfie + signature below to authorize On-Rent &amp; deliveries — or just save the card and sign it later.</p>
+        <p class="muted" style="font-size:0.6471rem;margin:0 0 10px">Saved cards can be charged right away. Capture the selfie + signature below to authorize On-Rent &amp; deliveries — or just save the card and sign it later.</p>
         <div class="pay-cap">Card number</div>
         <div class="pay-card-field" id="sl-card-element"></div>
         <div class="pay-err" id="sl-card-error"></div>
-        <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe. We store only the brand + last 4 digits — never the full number.</p>
+        <p class="muted" style="font-size:0.6471rem;margin:10px 0 0">Entered securely via Stripe. We store only the brand + last 4 digits — never the full number.</p>
         <div class="ag-cardsplit"></div>
         ${heldSignBlock(o, c, {})}` });
     overlay.appendChild(pop);
@@ -14469,7 +14474,7 @@ function buildPopupEl(o, overlay, opts = {}) {
           <div class="ach-col"><div class="pay-cap">Holder type</div><select class="lf-in" id="sl-ach-holdertype"><option value="individual">Individual</option><option value="company">Company</option></select></div>
         </div>
         <div class="pay-err" id="sl-ach-error"></div>
-        <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe. We store only the bank name + last 4 digits — never the full routing or account number. The signature + selfie on file authorize ACH debits. The account must be verified before it can be charged.</p>` });
+        <p class="muted" style="font-size:0.6471rem;margin:10px 0 0">Entered securely via Stripe. We store only the bank name + last 4 digits — never the full routing or account number. The signature + selfie on file authorize ACH debits. The account must be verified before it can be charged.</p>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'verifyAch') {
     // §14b verify a pending ACH via the micro-deposit descriptor code the customer
@@ -14481,7 +14486,7 @@ function buildPopupEl(o, overlay, opts = {}) {
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: `Verify ${k.bankName || 'bank'} ••${k.last4}`, tag: 'Customer · verify ACH',
       foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-ach-verify-save" data-r="R17">Verify account</button>`,
       body: `
-        <p class="muted" style="font-size:12px;margin:0 0 12px">Stripe sent a small deposit (about $0.01) to this account. Once it lands (1–2 business days), the customer sees a 6-character code on their statement starting with <b>SM</b>. Enter it here to verify the account for charging.</p>
+        <p class="muted" style="font-size:0.7059rem;margin:0 0 12px">Stripe sent a small deposit (about $0.01) to this account. Once it lands (1–2 business days), the customer sees a 6-character code on their statement starting with <b>SM</b>. Enter it here to verify the account for charging.</p>
         <div class="pay-cap">Verification code</div>
         <input class="lf-in" id="sl-vach-code" autocomplete="off" maxlength="6" placeholder="SM____" style="text-transform:uppercase;letter-spacing:2px">
         <div class="pay-err" id="sl-vach-error"></div>` });
@@ -20746,7 +20751,7 @@ function openLogoMenu(anchorEl) {
   const team = `<div class="menu-sep"></div><div class="menu-team"><div class="menu-team-head">Team KPIs</div><div class="menu-team-ring">${ringsSVG(roleScores, ROLES.map((r) => r.color), { size: 104 })}</div><div class="kpi-list"><div class="kpi-line"><span class="k-name">Sulphur Team</span><span class="k-val" style="color:var(--${tbd.color})">${teamScore}%</span></div></div></div>`;
   const userLine = `<div class="menu-user"><span class="mu-name">${esc(currentUser || 'Signed in')}</span>${currentRole ? `<span class="mu-role">${esc(currentRole)}</span>` : ''}</div>
     <button class="dd-item js-switch-user"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${I.back}</span>Switch user</button>
-    <button class="dd-item js-open-settings"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${I.grid}</span>Settings${adminUnlocked() ? '' : ' <span class="muted" style="font-size:10px;margin-left:2px">Admin</span>'}</button>
+    <button class="dd-item js-open-settings"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${I.grid}</span>Settings${adminUnlocked() ? '' : ' <span class="muted" style="font-size:0.5882rem;margin-left:2px">Admin</span>'}</button>
     <button class="dd-item js-ru-open"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${I.graph}</span>Reports</button>
     <div class="menu-sep"></div>`;
   openDropdown(anchorEl, userLine + boards + team);
@@ -26368,6 +26373,7 @@ function boot() {
     clearTimeout(hoverGrace);
     hoverGrace = setTimeout(() => { hoverEl = null; hideHoverPreview(); }, 320);
   });
+  mountDeckSwitcher();   // Staging Deck (2026-07-18) — a dev-only "Staging ▾" nav on the staging host; no-op elsewhere
   // Admin / offline boot modes (opt-in via URL hash) — checked before the login gate.
   const hash = (location.hash || '').toLowerCase();
   if (hash.includes('local')) { return offlineBoot(); }     // #local — render from data.js, no backend
@@ -26403,6 +26409,53 @@ function boot() {
 // #local — render straight from data.js with NO backend (offline/demo + dev smoke test).
 // saveSoon() already no-ops without a password, so edits stay in-memory only.
 function offlineBoot() { buildIndexes(); state.cascade = createCascade(DATA); seedDemoRequests(); booting = false; render(); exposeTestApi(); window.__rwBootRail = wranglerRailLoad(); }
+
+/* ── Staging Deck switcher (spec 2026-07-18) — a DEV-ONLY "Staging ▾" nav overlay ──
+   On the staging Pages host only, list recent numbered deploys (label · id · age) from the
+   served manifest and let the reviewer jump between them. Rendered as a self-contained DOM
+   widget outside the app's render/rulebook, gated by host — it NEVER appears on
+   app.jacrentals.com or #local, so it can't touch production UI or the R0 lint surface. */
+const DECK_REPO_BASE = '/rental-wrangler-staging';   // the staging repo's Pages path (see SLOT_TARGETS)
+function isStagingHost() {
+  return location.hostname === 'operations-jacrentals.github.io'
+    && location.pathname.startsWith(DECK_REPO_BASE + '/');
+}
+function deckAge(whenISO) {
+  const t = Date.parse(whenISO); if (!t) return '';
+  const s = Math.max(0, (Date.now() - t) / 1000);
+  if (s < 90) return Math.round(s) + 's';
+  if (s < 5400) return Math.round(s / 60) + 'm';
+  if (s < 172800) return Math.round(s / 3600) + 'h';
+  return Math.round(s / 86400) + 'd';
+}
+function mountDeckSwitcher() {
+  if (!isStagingHost() || document.getElementById('deck-switcher')) return;
+  const cm = location.pathname.match(/\/d\/([^/]+)\//);
+  const curId = cm ? decodeURIComponent(cm[1]) : null;
+  const wrap = el('div', 'deck-switcher'); wrap.id = 'deck-switcher';
+  const btn = el('button', 'deck-btn'); btn.type = 'button';
+  btn.innerHTML = 'STAGING <span class="deck-chev">▾</span>';
+  const menu = el('div', 'deck-menu'); menu.hidden = true;
+  wrap.append(btn, menu); document.body.appendChild(wrap);
+  let loaded = false;
+  btn.addEventListener('click', async () => {
+    menu.hidden = !menu.hidden;
+    if (menu.hidden || loaded) return;
+    loaded = true; menu.innerHTML = '<div class="deck-empty">loading…</div>';
+    try {
+      const r = await fetch(DECK_REPO_BASE + '/d/deploys.json?cb=' + Date.now(), { cache: 'no-store' });
+      const rows = ((await r.json()).deploys || []).map((d) => {
+        const here = d.id === curId;
+        return `<a class="deck-row${here ? ' here' : ''}" href="${DECK_REPO_BASE}/d/${encodeURIComponent(d.id)}/">`
+          + `<span class="deck-dot">${here ? '●' : ''}</span>`
+          + `<span class="deck-main"><span class="deck-label">${esc(d.label || d.id)}</span>`
+          + `<span class="deck-meta"><span class="deck-id">${esc(d.id)}</span><span class="deck-age">${esc(deckAge(d.when))}</span></span></span></a>`;
+      }).join('');
+      menu.innerHTML = rows || '<div class="deck-empty">no deploys yet</div>';
+    } catch (e) { menu.innerHTML = '<div class="deck-empty">manifest unavailable</div>'; }
+  });
+  document.addEventListener('click', (e) => { if (!wrap.contains(e.target)) menu.hidden = true; });
+}
 /* #local demo only: a sample Requests-inbox entry so the review/continue flow is
    visible without a backend. Real installs fetch live requests via the backend. */
 function seedDemoRequests() {
