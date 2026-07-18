@@ -17234,7 +17234,7 @@ function initTooltip() {
     // backstop for tabs the on-summon prefetch didn't reach. commsFetchMsgs is idempotent, so repeat
     // mouseovers on the same tab are cheap no-ops; touch opens ride the on-open prefetch instead.
     const ctab = e.target.closest('.comms-tab[data-comms-tab], .js-comms-mrow[data-cust]');
-    if (ctab && (state.commsRail.cat === 'text' || state.commsRail.cat === 'email')) commsFetchMsgs(ctab.dataset.commsTab || ctab.dataset.cust);
+    if (ctab && (state.commsRail.cat === 'text' || state.commsRail.cat === 'email')) commsFetchMsgs(ctab.dataset.commsTab || ctab.dataset.cust, false, { quiet: true });
     const t = e.target.closest('[data-tip]');
     if (!t) return;
     clearTimeout(tipTimer);
@@ -26860,17 +26860,37 @@ function commsWranglerWorst() {
    the prefetch pump gate concurrency on the one slow GAS backend WITHOUT double-fetching —
    commsFetchMsgs is idempotent, so a click simply reuses any in-flight prefetch and re-renders on
    its completion. 30s cache; a stale re-open shows its old messages while it revalidates. */
-const commsMsgs = new Map();        // customerId -> { loading, at, messages, promise }
-function commsFetchMsgs(customerId, force) {
+const commsMsgs = new Map();        // customerId -> { loading, at, messages, promise, renderOnDone }
+// True when this customer's thread is the one CURRENTLY on screen (the open comms popup / phone
+// full-screen thread). Checked at fetch-completion so a quiet warm that lands on the OPEN thread
+// still repaints it — covers hovering the open thread's own tab after its 30s cache expired, where
+// the warm rebuilt the entry with renderOnDone off (bug caught in review, 2026-07-18).
+function commsThreadOnScreen(idS) {
+  const cat = state.commsRail.cat;
+  if (cat !== 'text' && cat !== 'email') return false;
+  const s = state.commsRail.sessions[cat];
+  return !!(s && String(s.lastOpen) === idS);
+}
+function commsFetchMsgs(customerId, force, opts) {
   if (!commsOnline()) return null;
   const idS = String(customerId);
+  // A displayed caller (the open thread window / an open customer card, via commsPopupHtml /
+  // commsCustSectionHtml) wants a repaint the moment bodies land. A BACKGROUND warm (the summon
+  // prefetch pump, a hover) does NOT — it just fills the cache. Rendering on every warm meant a
+  // summon fired up to 12 full #app rebuilds in a burst, which froze/janked the phone until the
+  // burst drained (Jac, 2026-07-18). renderOnDone gates that: quiet warms stay silent, and a later
+  // displayed caller UPGRADES an in-flight warm so an opened-mid-prefetch thread still hydrates.
+  const wantRender = !(opts && opts.quiet);
   let entry = commsMsgs.get(idS);
-  if (entry && (entry.loading || (!force && Date.now() - entry.at < 30000))) return entry;   // in-flight or fresh → reuse (prefetch + click share one call)
-  entry = { loading: true, at: entry ? entry.at : 0, messages: entry ? entry.messages : null, promise: null };
+  if (entry) {
+    if (wantRender) entry.renderOnDone = true;
+    if (entry.loading || (!force && Date.now() - entry.at < 30000)) return entry;   // in-flight or fresh → reuse (prefetch + click share one call)
+  }
+  entry = { loading: true, at: entry ? entry.at : 0, messages: entry ? entry.messages : null, promise: null, renderOnDone: wantRender };
   commsMsgs.set(idS, entry);
   entry.promise = backendCall('messagesFor', { customerId }).then((r) => {
     entry.loading = false; entry.promise = null;
-    if (r && r.ok && Array.isArray(r.messages)) { entry.messages = r.messages; entry.at = Date.now(); render(); }
+    if (r && r.ok && Array.isArray(r.messages)) { entry.messages = r.messages; entry.at = Date.now(); if (entry.renderOnDone || commsThreadOnScreen(idS)) render(); }
   }).catch(() => { entry.loading = false; entry.promise = null; });
   return entry;
 }
@@ -26902,7 +26922,7 @@ function commsPrefetchPump() {
     const id = commsPrefetchQ.shift();
     const e = commsMsgs.get(id);
     if (e && (e.loading || Date.now() - e.at < 30000)) continue;                         // warmed since queued (a click/hover beat us) — drop it
-    const entry = commsFetchMsgs(id);
+    const entry = commsFetchMsgs(id, false, { quiet: true });                            // warm silently — no render on a background body landing (the summon repaint already happened)
     if (!entry || !entry.promise) continue;                                              // offline or instant cache hit — nothing to await
     commsPrefetchLive++;
     entry.promise.then(() => { commsPrefetchLive--; commsPrefetchPump(); });             // next lane once this body lands
