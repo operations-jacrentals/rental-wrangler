@@ -149,7 +149,10 @@ const RAW_STATUS = {
   },
   funnelStage: {
     'N/A':               { label: 'N/A',               color: 'gray'   },
-    'Inbound Lead':      { label: 'Inbound Lead',      color: 'blue'   },
+    'Lead':              { label: 'Lead',              color: 'blue'   },   // funnel redesign 2026-07-17 — the shared entry stage for Rental/Member/Equipment
+    'Reserved':          { label: 'Reserved',          color: 'purple' },   // Rental funnel — AUTO from a future reservation (never a manual pick)
+    'Rented':            { label: 'Rented',            color: 'green'  },   // Rental funnel — AUTO from On Rent
+    'Inbound Lead':      { label: 'Inbound Lead',      color: 'blue'   },   // legacy (pre-redesign) — kept for existing data; migrated → 'Lead'
     'Outbound Lead':     { label: 'Outbound Lead',     color: 'navy'   },
     "Don't Contact":     { label: "Don't Contact",     color: 'red'    },
     'Contacted':         { label: 'Contacted',         color: 'yellow' },
@@ -316,6 +319,24 @@ export const ROLES = [
   { id: 'sales', label: 'Sales', color: 'navy',
     kpis: ['Revenue Goal', 'Active Customer Rate', 'Pipeline'] },
 ];
+
+/* ── Customer funnels (redesign 2026-07-17 — spec: customer-funnel-redesign) ──
+ * Three funnels a customer can be in at once (explicit membership on customer.funnels).
+ * Each has its own stage LADDER (in order) and its AUTO stages (derived from live rental /
+ * agreement / invoice activity — never a manual pick, rendered locked like today's Signed/Paid).
+ *   • Rental  = renting equipment. Reserved/Rented are auto from the customer's rentals; a first
+ *               reservation/rental AUTO-JOINS the Rental funnel (see the migration + derivations).
+ *   • Member  = the membership-signup pipeline (a continuation of Rental in the detail view).
+ *   • Equipment = the equipment-SALES pipeline (no rental states). Terminal Paid (Member ends Signed). */
+export const FUNNELS = {
+  rental:    { label: 'Rental',    stages: ['Lead', 'Reserved', 'Rented'],                                          auto: ['Reserved', 'Rented'] },   // Reserved/Rented DERIVED from live rentals
+  member:    { label: 'Member',    stages: ['Lead', 'Contacted', 'Not A No!', 'Payment Discussed', 'Signed'],       auto: ['Signed'] },               // Signed auto-set by signing the membership agreement (markMembershipSigned)
+  // Equipment 'Paid' stays a MANUAL terminal: there is no customer↔sale-invoice link today to auto-lock it on
+  // payment (sellUnit is fleet-level, no buyer; no 'sale' line-kind), so keeping it auto-only would make it
+  // unreachable. Flagged for Jac — wire an auto trigger later and move 'Paid' into `auto`.
+  equipment: { label: 'Equipment', stages: ['Lead', 'Contacted', 'Not A No!', 'Payment Discussed', 'Paid'],         auto: [] },
+};
+export const FUNNEL_KEYS = Object.keys(FUNNELS);   // ['rental','member','equipment']
 
 /* ── Permission tiers (role-system redesign 2026-06-26) ───────────────────────
  * Roles are customizable (add/remove/rename in Settings → Roles & Logins), so

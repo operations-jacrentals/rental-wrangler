@@ -3847,6 +3847,9 @@ body { font-variant-numeric: tabular-nums; }
    convention. ── */
 .funnel-hd { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 13px; }
 .funnel-hd .fh-rule { flex: 1; border-top: 1.5px dashed var(--tan, #c2925a); opacity: .4; }   /* saddle-stitch flanks (ranch seasoning) */
+.funnel-hd.full { display: block; margin-bottom: 13px; }   /* full-width toggle sitting just above the funnel (Jac 2026-07-17 — matches the mockup) */
+.seg.funnel-full { display: flex; width: 100%; }
+.seg.funnel-full button { flex: 1; justify-content: center; height: 30px; font-size: 12px; }
 .funnel-sec .seg button.on-accent { background: var(--accent); color: var(--on-orange); }     /* selected tab = the ONE orange (rule #3) */
 /* Phase 6 (2026-07-10 dot->background sweep) — next-action urgency reads via the segment's own
    background tint (not a corner dot), same soft-bg + solid-ink treatment as .c-green/.c-yellow/.c-red. */
@@ -3859,6 +3862,144 @@ body { font-variant-numeric: tabular-nums; }
 .funnel-sec .seg button.on-accent.due { box-shadow: inset 0 0 0 2px var(--red); }   /* due still surfaces even on the active tab, matching the prior un-muted red dot */
 
 .fb-toprow { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+
+/* ═══ Customer funnel redesign 2026-07-17 (spec: customer-funnel-redesign) ═══
+   Two-track detail section (Rental→Member + Equipment) + the R35 ladder + the ONE
+   adaptive funnel menu. All tokens theme themselves dark/light; --tan keeps its fallback. */
+.funnel-hd .fh-title { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.4px;
+  font-weight: 800; font-size: 11px; color: var(--txt-2); white-space: nowrap; }
+.funnel-tracks { display: flex; flex-direction: column; gap: 12px; }
+.ftk { border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); padding: 11px 12px 12px; }
+.ftk-hd { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.ftk-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
+.ftk-dot.a { background: var(--accent); }               /* Track A — Rental → Member (the ignition track) */
+.ftk-dot.b { background: var(--blue); }                 /* Track B — Equipment (separate sales track) */
+.ftk-nm { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px;
+  font-weight: 700; font-size: 11.5px; color: var(--txt); }
+.ftk-urg { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+.ftk-urg.due { background: var(--red); box-shadow: 0 0 4px color-mix(in srgb, var(--red) 55%, transparent); }
+.ftk-urg.soon { background: var(--yellow); }
+.ftk-hint { font-size: 10.5px; color: var(--txt-3); font-style: italic; }
+.ftk-hd .acct-btn { margin-left: auto; }
+.ftk-empty { font-size: 12px; color: var(--txt-3); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* R35 — the funnel LADDER: a row of rungs with chevrons, current lit, auto locked. The
+   whole ladder is one press target that opens the funnel menu. Rungs are NOT .pill. */
+.fladder { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 6px; cursor: pointer; padding: 2px; margin: -2px -2px 2px; border-radius: 10px; }
+.fladder:hover { background: rgba(255,255,255,.03); }
+.fladder:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.frung { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  border: 1px solid; white-space: nowrap; }   /* color (bg/ink/border) comes from the generic .c-<registry> class */
+.frung.current { box-shadow: 0 0 0 1px var(--accent), inset 0 0 0 1px var(--accent); border-color: var(--accent); }
+.frung.auto { opacity: .92; }
+.fr-lock { display: inline-flex; opacity: .7; }
+.fr-lock svg { width: 11px; height: 11px; }
+.fl-arw { color: var(--txt-3); font-size: 13px; line-height: 1; }
+
+/* The ONE adaptive funnel menu (shared: detail section + quick-add "Lead?" pill). Steel panel
+   + the same vertical hazard rail as the gate timeline, no orange halo (that stays for dialogs). */
+.dropdown-menu.funnelmenu { width: max-content; min-width: 226px; max-width: 92vw; padding: 0 12px 12px 20px; position: fixed;
+  border: 1px solid var(--line); box-shadow: var(--shadow), 0 0 0 1px rgba(0,0,0,.4); overflow-y: auto; }
+.funnelmenu .fm-cap { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.3px;
+  font-weight: 700; font-size: 10px; color: var(--txt-3); padding: 10px 0 6px; }
+.fm-na { display: flex; align-items: center; gap: 7px; padding: 7px 9px; border: 1px dashed var(--line); border-radius: 9px;
+  color: var(--txt-3); font-size: 12px; }
+.fm-na.on { border-color: var(--accent-line, color-mix(in srgb, var(--accent) 50%, transparent)); color: var(--txt-2); }
+.fm-sec { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 700;
+  font-size: 9.5px; color: var(--txt-3); margin: 13px 0 7px; display: flex; align-items: center; gap: 7px; }
+.fm-sec::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.fm-sub { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .8px; font-weight: 700;
+  font-size: 9px; color: var(--txt-3); margin: 11px 0 6px; }
+.fm-leads { display: flex; gap: 7px; flex-wrap: wrap; }
+.fm-leads.qa { flex-direction: column; }
+.fm-chip { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); background: var(--panel); color: var(--txt-2);
+  border-radius: 999px; padding: 6px 13px; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: border-color .12s, background .12s, color .12s; }
+.fm-chip:hover { color: var(--txt); border-color: var(--accent-line, color-mix(in srgb, var(--accent) 50%, transparent)); }
+.fm-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fm-chip .fm-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: .45; }
+.fm-chip.on { background: var(--accent); color: var(--on-orange); border-color: var(--accent); }
+.fm-chip.on .fm-dot { opacity: 1; }
+.fm-chip.lock { cursor: default; }
+.fm-chip.lock:hover { border-color: var(--accent); }
+.fm-stages { display: flex; flex-direction: column; gap: 5px; }
+.fm-stage { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; padding: 8px 10px; border-radius: 9px;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--txt-2); font: inherit; }
+.fm-stage.pickable { cursor: pointer; }
+.fm-stage.pickable:hover { border-color: var(--accent-line, color-mix(in srgb, var(--accent) 50%, transparent)); color: var(--txt); }
+.fm-stage.pickable:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.fm-stage.current { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-soft, color-mix(in srgb, var(--accent) 12%, transparent)); color: var(--txt); }
+.fm-stage.auto { opacity: .9; }
+.fm-sdot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
+.fm-sdot.c-blue { background: var(--blue); } .fm-sdot.c-green { background: var(--green); } .fm-sdot.c-yellow { background: var(--yellow); }
+.fm-sdot.c-purple { background: var(--purple); } .fm-sdot.c-orange { background: var(--orange, #e8873a); } .fm-sdot.c-gray { background: var(--txt-3); }
+.fm-snm { flex: 1; font-size: 13px; font-weight: 600; }
+.fm-lock { display: inline-flex; align-items: center; gap: 3px; font-size: 9.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--txt-3); }
+.fm-lock svg { width: 11px; height: 11px; }
+.fm-tag { font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 9px; letter-spacing: .4px; text-transform: uppercase;
+  color: var(--txt-3); border: 1px solid var(--line); border-radius: 999px; padding: 1px 6px; }
+.fm-empty { color: var(--txt-3); font-size: 12px; font-style: italic; padding: 4px 2px; }
+@media (prefers-reduced-motion: reduce) { .fm-chip { transition: none; } }
+
+/* ═══ Dated funnel (Idea D, Jac 2026-07-17) — R35 ═══
+   The two-tab detail funnel: a narrowing stack of clickable dated layers, a Member Lead
+   checkbox, state-driven highlight (done green · current orange · upcoming dim). */
+.dfunnel { display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 12px 0 6px; }
+.dl { border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2); padding: 8px 12px; cursor: pointer;
+  display: flex; align-items: center; gap: 9px; font: inherit; color: var(--txt-2); text-align: left; transition: border-color .12s, background .12s; }
+.dl:hover { border-color: var(--accent-line, color-mix(in srgb, var(--accent) 50%, transparent)); }
+.dl:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dl-dot { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--line-2, var(--line)); display: inline-flex; align-items: center;
+  justify-content: center; font-size: 10px; font-weight: 800; flex: 0 0 auto; color: transparent; }
+.dl-nm { font-weight: 700; font-size: 13px; white-space: nowrap; color: var(--txt); flex: 0 0 auto; }
+.dl-lock { display: inline-flex; opacity: .55; flex: 0 0 auto; }
+.dl-lock svg { width: 11px; height: 11px; }
+.dl-note { font-size: 11px; color: var(--txt-3); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1 1 auto; }
+.dl-dt { margin-left: auto; font-size: 11.5px; color: var(--txt-2); font-variant-numeric: tabular-nums; white-space: nowrap; flex: 0 0 auto; }
+.dl-dt.up { color: var(--txt-3); font-style: italic; }
+/* REACHED, unarmed → quiet steel history (green is freed to mean "action on track"). */
+.dl.done { background: var(--panel-2); border-color: var(--line); opacity: .8; }
+.dl.done .dl-dot { border-color: var(--txt-3); color: var(--txt-3); }
+.dl.done.cur { opacity: 1; border-color: var(--accent-line, color-mix(in srgb, var(--accent) 50%, transparent)); }   /* the live position, unarmed */
+.dl.up { opacity: .55; border-style: dashed; }
+.dl.up:hover { opacity: .9; }
+.dl-plan { margin-left: auto; font-size: 10.5px; font-style: italic; color: var(--txt-3); font-family: 'Saira Condensed', var(--font); letter-spacing: .4px; text-transform: uppercase; flex: 0 0 auto; }
+.dl-now { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: .6px; font-size: 9px; font-weight: 800; color: var(--accent); border: 1px solid var(--accent-line, color-mix(in srgb, var(--accent) 50%, transparent)); border-radius: 4px; padding: 1px 5px; }
+/* ARMED — the layer carries a dated action: two lines, glowing red / yellow / green by its urgency
+   (naUrgency → due/soon/ok, the same thresholds the funnel tabs use). Green now means "on track". */
+.dl.act { flex-direction: column; align-items: stretch; gap: 5px; padding: 9px 12px 10px; }
+.dl-top { display: flex; align-items: center; gap: 9px; }
+.dl.act .dl-nm { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: .6px; font-weight: 800; font-size: 13px; }
+.dl-act { display: flex; align-items: center; gap: 8px; padding-left: 25px; }
+.dl-atxt { font-size: 12.5px; color: var(--txt); flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.dl-due { margin-left: auto; flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 800; font-family: 'Saira Condensed', var(--font); letter-spacing: .4px; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+.dl-due .dd { width: 7px; height: 7px; border-radius: 50%; }
+.dl.act.u-due  { border-color: var(--red); box-shadow: 0 0 0 1px var(--red), 0 0 15px -5px var(--red); background: var(--red-bg); }
+.dl.act.u-due  .dl-dot { border-color: var(--red); background: var(--red); color: #fff; }
+.dl.act.u-due  .dl-due { background: var(--red-bg); color: var(--red); } .dl.act.u-due .dd { background: var(--red); }
+.dl.act.u-soon { border-color: var(--yellow); box-shadow: 0 0 0 1px var(--yellow), 0 0 15px -5px var(--yellow); background: var(--yellow-bg); }
+.dl.act.u-soon .dl-dot { border-color: var(--yellow); background: var(--yellow); color: #1a1205; }
+.dl.act.u-soon .dl-due { background: var(--yellow-bg); color: var(--yellow); } .dl.act.u-soon .dd { background: var(--yellow); }
+.dl.act.u-ok   { border-color: var(--green); box-shadow: 0 0 0 1px var(--green), 0 0 14px -6px var(--green); background: var(--green-bg); }
+.dl.act.u-ok   .dl-dot { border-color: var(--green); background: var(--green); color: #04150d; }
+.dl.act.u-ok   .dl-due { background: var(--green-bg); color: var(--green); } .dl.act.u-ok .dd { background: var(--green); }
+/* CLOSED WON — Signed / Paid reached → a solid primary-blue plate (Jac 2026-07-17). Deepened so the
+   near-white stamp reads AA in both themes. */
+.dl.won { border-color: var(--blue); background: color-mix(in srgb, var(--blue) 62%, #05112a);
+  box-shadow: 0 0 0 1px var(--blue), 0 0 18px -6px var(--blue); }
+.dl.won .dl-nm { color: #eef4ff; font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: .7px; font-weight: 800; font-size: 13.5px; }
+.dl.won .dl-note { color: #cfe0ff; opacity: .9; }
+.dl.won .dl-dt { color: #dce8ff; font-weight: 700; }
+.dl.won .dl-dot { border-color: #eef4ff; background: #eef4ff; color: var(--blue); }
+.fl-actbtns { display: flex; gap: 8px; margin-top: 10px; }
+.dl-check { display: flex; align-items: center; gap: 9px; padding: 8px 12px; border: 1px dashed var(--accent-line, color-mix(in srgb, var(--accent) 50%, transparent));
+  border-radius: 9px; background: color-mix(in srgb, var(--accent) 6%, transparent); cursor: pointer; margin: 1px 0; color: var(--txt-2); font: inherit; }
+.dl-check:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dl-box { width: 18px; height: 18px; border-radius: 5px; border: 2px solid var(--accent); display: inline-flex; align-items: center; justify-content: center;
+  color: var(--on-orange); font-weight: 900; font-size: 12px; flex: 0 0 auto; }
+.dl-check.on .dl-box { background: var(--accent); }
+.dl-ck-t { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: .6px; font-weight: 800; font-size: 12px; color: var(--txt); }
+.dl-ck-h { margin-left: auto; font-size: 10px; color: var(--txt-3); font-style: italic; }
+.fl-autodate { font-size: 12.5px; color: var(--txt-2); padding: 6px 0; }
 /* R28 — the account button: a neutral steel chip, stamped label = the account type */
 .acct-btn { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 13px; border-radius: 999px;
   border: 1px solid var(--line); background: var(--card); color: var(--txt);
