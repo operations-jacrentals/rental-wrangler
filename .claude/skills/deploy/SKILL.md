@@ -39,21 +39,49 @@ work committed**: `deploy-staging` refuses `trunk`/`production`. If you're on tr
 is uncommitted, cut/commit to a feature branch off trunk first
 (`git checkout -b claude/<task> origin/trunk`), then deploy.
 
+## Two staging paths: the Deck (default) vs `--slots` (backup)
+`node tools/deploy-staging.mjs` with **no flags** runs the **Staging Deck** — the default since
+2026-07-18 (spec: `docs/superpowers/specs/2026-07-18-staging-deck-design.md`). Every deploy gets
+its own **immutable numbered folder** `d/<feature>-<n>/` in the staging repo — nothing is ever
+overwritten, so there's no lease/TTL/slot to arbitrate:
+- Publishes the site to `d/<feature>-<n>/`, rewrites the served manifest `d/deploys.json`, and
+  prunes to the newest 20 — all in **one commit**, with push-race CAS-retry (a rejected push
+  refetches, recomputes the id, and retries — bounded).
+- Prints the **deploy id** (e.g. `work-queue-92oeso-3`), the **label**, and the folder URL.
+  **`--label "<text>"`** sets a human-readable description (default: the HEAD commit subject).
+- A **stable launcher** at `…/rental-wrangler-staging/d/` always redirects to the newest deploy —
+  Jac bookmarks that ONE url once and it never goes stale.
+- On staging builds, a dev-gated in-app **`Staging ▾`** switcher (bottom-right) lists recent
+  deploys by label and jumps between them — Claude just tells Jac which id/label to open.
+- **No lease is acquired in deck mode**, and there's nothing to release later either (see
+  `/merge`, `/promote`, `/end`) — deck deploys are ephemeral, pruned by retention, never "held".
+
+**`--slots` is the backup path** — `node tools/deploy-staging.mjs --slots` falls back to the old
+3-slot lease pool, completely unchanged (still covered by the `lease-*` CI suites). Everything
+below about slots/lease/TTL/exit-3 is `--slots` behavior — reach for it only when the deck path
+itself is the problem.
+
 ## This step — deploy + PROVE it took
-1. **Deploy:** `node tools/deploy-staging.mjs` — crawls the real site-file set, bumps the shared
-   `?v=` token in `index.html`, clones the staging repo, syncs, pushes, then **curl-verifies the
-   live staging URL serves the new `?v=`** (polling ~1 min for Pages), exiting **non-zero** if it
-   never catches up. `--dry-run` bumps locally and stops before touching the staging repo.
-2. **Read the exit code + the ✅/🔴 line.** ✅ verified (exit 0) → proceed to review. **Exit 3 is
-   special: staging is BUSY, not broken** (all slots held by other sessions and the queue wait
-   gave up) — do **NOT** treat it as the HARD STOP / rotate-PAT case; handle it per "Exit 3"
-   below. Any other non-zero (1 = auth/network/guard, 2 = pushed-but-verify-failed) / 🔴 / auth
-   error → **HARD STOP** (below).
-3. **Review the running app** (after ✅): drive **the slot URL `/deploy` printed** with
-   Claude-in-Chrome (N=3: your deploy lands on slot 1, 2, or 3 — review THAT slot's URL, e.g.
-   `…/rental-wrangler-staging-2/`, never a fixed one) — log in (`$RW_PW`, never echo it), exercise
-   exactly what you built + a sanity flow, confirm no console errors and the visible result matches.
-   Save a screenshot. A red review STOPs the merge — fix on the branch, `/deploy` again, re-check.
+1. **Deploy (deck, the default):** `node tools/deploy-staging.mjs` — crawls the real site-file
+   set, publishes it to a fresh `d/<feature>-<n>/` folder in the staging repo (one commit, no
+   lease), then **curl-verifies the new folder serves the expected `?v=`** (polling ~1 min for
+   Pages), exiting **non-zero** if it never catches up. Prints the **deploy id**, **label**, and
+   folder URL. `--label "<text>"` sets the label. `--dry-run` bumps locally and stops before
+   touching the staging repo. `--slots` runs the old lease/slot pool instead (see above).
+2. **Read the exit code + the ✅/🔴 line.** ✅ verified (exit 0) → proceed to review. **Exit 3 only
+   happens under `--slots`: staging is BUSY, not broken** (all slots held by other sessions and
+   the queue wait gave up) — do **NOT** treat it as the HARD STOP / rotate-PAT case; handle it per
+   "Exit 3" below. The default deck path never contends for a shared slot, so it never exits 3.
+   Any other non-zero (1 = auth/network/guard, 2 = pushed-but-verify-failed) / 🔴 / auth error →
+   **HARD STOP** (below).
+3. **Review the running app** (after ✅): drive **the folder URL `/deploy` printed** — deck mode,
+   `…/rental-wrangler-staging/d/<id>/` (or open it via the in-app **`Staging ▾`** switcher, or the
+   stable `…/d/` launcher) — with Claude-in-Chrome: log in (`$RW_PW`, never echo it), exercise
+   exactly what you built + a sanity flow, confirm no console errors and the visible result
+   matches. Save a screenshot. Under `--slots`, review **the slot URL `/deploy` printed** instead
+   (N=3: your deploy lands on slot 1, 2, or 3 — review THAT slot's URL, e.g.
+   `…/rental-wrangler-staging-2/`, never a fixed one). A red review STOPs the merge — fix on the
+   branch, `/deploy` again, re-check.
 
 ## HARD STOP — a failed or unverified deploy
 If the script errors (expired PAT, network, wrong repo/branch) or the live-bytes check fails:
@@ -64,9 +92,10 @@ If the script errors (expired PAT, network, wrong repo/branch) or the live-bytes
   never echo it). Note a rotated token only reaches a **fresh session** (env vars are fixed at
   session start).
 
-## Exit 3 — staging BUSY, not broken (do NOT rotate the PAT)
-Staging is a **3-slot pool (N=3)** guarded by a lease (`tools/staging-lease.mjs`) — each session
-gets its own lane (slot 1/2/3), each an independent Pages site/URL. Exit
+## Exit 3 — staging BUSY, not broken (`--slots` only — do NOT rotate the PAT)
+This only happens under `--slots`; the default deck path has no shared target to contend over, so
+it never exits 3. Staging is a **3-slot pool (N=3)** guarded by a lease (`tools/staging-lease.mjs`)
+— each session gets its own lane (slot 1/2/3), each an independent Pages site/URL. Exit
 **3** means every slot is held by another session and the auto-queue wait gave up with no forward
 progress — the deploy is **queued or timed-out, NOT failed**. Nothing is wrong with the PAT, the
 host, or your branch.
