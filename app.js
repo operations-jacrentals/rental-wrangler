@@ -21006,8 +21006,8 @@ function openLogoMenu(anchorEl) {
 function switchUser() {
   document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
   try { flushUserPrefsNow(); } catch (e) {}   // §cross-device-sync — push a pending prefs edit before the token is dropped
-  backendPassword = ''; currentRole = ''; currentPersonId = ''; state.userPrefs = null; booting = true;   // §cross-device-sync — drop the leaving person's identity + synced doc so nothing pushes under the next person
-  sessionStorage.removeItem('jactec.pw'); sessionStorage.removeItem('jactec.role');
+  backendPassword = ''; currentRole = ''; currentPersonId = ''; state.userPrefs = null; booting = true; devPwMode = false;   // §cross-device-sync — drop the leaving person's identity + synced doc so nothing pushes under the next person. §dev-login: also drop dev-mode so the next user on a shared device returns to the default login, not the team-password screen.
+  sessionStorage.removeItem('jactec.pw'); sessionStorage.removeItem('jactec.role'); sessionStorage.removeItem('jactec.devpw');
   renderLogin();
 }
 // Settings (Admin-tier): loads the live config, then opens the editor. Below-Admin with
@@ -25967,14 +25967,15 @@ if (APP_ENV !== 'production') {
   document.title = (APP_SLOT ? 'Staging ' + APP_SLOT
     : APP_ENV === 'local' ? 'Local' : 'Staging') + ' · Rental Wrangler';
 }
-// ── §dev-login — Ctrl+Alt+P reveals the legacy team-password login on NON-PRODUCTION hosts
-//    (localhost + the staging mirror), so a dev or an automated session can sign in without the
-//    SMS phone-identity flow. Production (app.jacrentals.com) is NEVER touched: the listener is
-//    not even registered there, so the live site stays phone + SMS only. The password is TYPED at
+// ── §dev-login — Ctrl+Alt+P reveals the legacy team-password login on LOCALHOST ONLY (the dev /
+//    automation host), so a dev or an automated session can sign in without the SMS phone-identity
+//    flow. Gated by an ALLOWLIST (APP_ENV === 'local') — a security-review tightening: production
+//    AND the public staging mirror both stay phone + SMS only, and the listener isn't even
+//    registered off localhost (no fail-open on an unknown/future hostname). The password is TYPED at
 //    runtime — nothing is ever stored in the repo. devPwMode also flips backendCall to the plain
 //    `password` (legacy) auth the backend still honors, instead of a per-person sessionToken.
 //    e.code === 'KeyP' (not e.key) so macOS Option+P — which types 'π' — still triggers it. ──
-if (APP_ENV !== 'production') {
+if (APP_ENV === 'local') {
   try { if (sessionStorage.getItem('jactec.devpw') === '1') devPwMode = true; } catch (e) {}
   document.addEventListener('keydown', (e) => {
     if (!(e.ctrlKey && e.altKey) || e.code !== 'KeyP') return;
