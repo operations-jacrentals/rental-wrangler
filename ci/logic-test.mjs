@@ -1558,6 +1558,7 @@ try {
       T.markMembershipSigned(c, 'membership');
       ok(c.membershipStage === 'Signed', 'funnel: signing the MEMBERSHIP agreement auto-advances the funnel to Signed');
       ok(c.funnels && c.funnels.member === true, 'funnel: signing the membership agreement JOINS the Member funnel (else Signed hides)');
+      ok(T.funnelLayerDate(c, 'member', 'Signed') === T.TODAY_ISO, 'funnel: auto-signing stamps the Signed reached-date so the blue closed-won layer shows when it happened');
       // a completed terminal (Signed) can't be dropped from the funnel by a chip misclick
       T.toggleFunnelMembership('C-SIGN', 'member');
       ok(c.funnels.member === true && c.membershipStage === 'Signed', 'funnel: cannot leave the Member funnel while at the Signed terminal (no silent wipe)');

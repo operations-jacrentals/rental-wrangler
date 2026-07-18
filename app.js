@@ -642,6 +642,7 @@ function markMembershipSigned(c, key) {
   if (key !== 'membership' || !c || c.membershipStage === 'Signed') return;
   c.membershipStage = 'Signed';
   ensureFunnels(c).member = true;   // funnel redesign: a signed member IS in the Member funnel — else the Signed terminal is hidden (funnelTrackA needs inFunnel('member'))
+  const log = ensureFunnelLog(c).member; if (!log.Signed) log.Signed = {}; if (!log.Signed.date) log.Signed.date = TODAY_ISO;   // stamp the reached-date so the blue closed-won layer shows when it happened (auto-sign has no reachFunnelStage path)
   logAction(c, 'Membership agreement signed → Signed');
 }
 function signCardAgreement(c, k, signature, selfie) {
