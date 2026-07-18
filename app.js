@@ -4283,9 +4283,12 @@ function funnelSectionHtml(c) {
   // the R14 toggle rides the scroll. Desktop keeps the single-pane + tap render (byte-identical).
   if (document.body.classList.contains('is-phone')) {
     const activeIdx = tab === 'usedSales' ? 1 : 0;
+    // the slider carries each tab's RYG urgency (naDotClass), not the orange accent (Jac 2026-07-18).
+    const DOT_TONE = { due: 'red', soon: 'yellow', ok: 'green' };
+    const dR = naDotClass(c, 'rental'), dE = naDotClass(c, 'usedSales');
     const seg = swipeSeg([
-      { label: 'Rental', cls: naDotClass(c, 'rental') },
-      { label: 'Equipment Sales', cls: naDotClass(c, 'usedSales') },
+      { label: 'Rental', cls: dR, tone: DOT_TONE[dR] },
+      { label: 'Equipment Sales', cls: dE, tone: DOT_TONE[dE] },
     ], activeIdx, 'funnel-full');
     return `<div class="section funnel-sec swipe-sec">`
       + `<div class="funnel-hd full">${seg}</div>`
@@ -6261,11 +6264,20 @@ function segCtl(buttons, cls) {
    .grid, and deckPaint's listener to .swipe-track, so neither steals the other's swipe. */
 // The thumb-tracking toggle (segCtl family — carries the R14 stamp). `items` = [{label|html,
 // cls, tip}]; `cls` on an item is an extra button class (e.g. the funnel naDotClass urgency).
+// R36 tone → [thumb fill, ink]. The funnel colors its slider by the ACTIVE tab's RYG urgency
+// (naDotClass) instead of orange (Jac 2026-07-18) — the accent clashes with the funnel's RYG
+// system. Comms/invoices pass no tone → the orange accent default (via the CSS var fallbacks).
+// Yellow keeps DARK ink (white on #ffe000 fails contrast); red/green take light ink as Jac asked.
+const DECK_TONE = { red: ['var(--red)', '#fff'], yellow: ['var(--yellow)', '#1a1205'], green: ['var(--green)', '#fff'] };
 function swipeSeg(items, activeIdx, cls) {
   const n = items.length || 1;
+  const tones = items.map((it) => it.tone || '');
+  const hasTones = tones.some(Boolean);
   const btns = items.map((it, i) =>
     `<button class="js-swipe-tab${it.cls ? ' ' + it.cls : ''}${i === activeIdx ? ' deck-on' : ''}" data-i="${i}"${it.tip ? ` data-tip="${esc(it.tip)}"` : ''}>${it.html || esc(it.label)}</button>`).join('');
-  return `<span class="seg deck-seg swipe-seg${cls ? ' ' + cls : ''}" data-r="R14" style="--deck-tw:${(100 / n).toFixed(4)}%">`
+  const m = hasTones && DECK_TONE[tones[activeIdx]];
+  const tv = m ? `;--thumb-c:${m[0]};--thumb-ink:${m[1]}` : '';
+  return `<span class="seg deck-seg swipe-seg${cls ? ' ' + cls : ''}" data-r="R14"${hasTones ? ` data-tones="${tones.join(',')}"` : ''} style="--deck-tw:${(100 / n).toFixed(4)}%${tv}">`
     + `<span class="deck-thumb" style="left:${(activeIdx * 100 / n).toFixed(4)}%"></span>${btns}</span>`;
 }
 // The nested scroll-snap track. `kind`+`recId` tell deckCommit which state key to write on
@@ -6295,6 +6307,8 @@ function deckPaint(track) {
   if (thumb) thumb.style.left = (ratio * (n - 1) * 100 / n) + '%';   // move via `left`, NOT transform — a transformed/will-change thumb composites ABOVE the button label on iOS Safari (covered-label bug)
   const idx = Math.max(0, Math.min(n - 1, Math.round(ratio * (n - 1))));
   btns.forEach((b, i) => b.classList.toggle('deck-on', i === idx));
+  // funnel: recolor the slider to the tab it's over (RYG), so the fill flips at the midpoint.
+  if (seg.dataset.tones) { const m = DECK_TONE[seg.dataset.tones.split(',')[idx]]; if (m) { seg.style.setProperty('--thumb-c', m[0]); seg.style.setProperty('--thumb-ink', m[1]); } }
   if (idx !== (+track.dataset.active || 0)) { track.dataset.active = idx; haptic(8); deckCommit(track.dataset.deck, track.dataset.rec, idx); }
 }
 /** R19: the ATTENTION FLASH — a glow that points AT what the user must do,
@@ -13019,7 +13033,7 @@ function closePhoneSheet() {
   if (state.chat.open) { state.chat.open = false; render(); return true; }
   return false;
 }
-// §M-pull (Feature B) — pointer engine for PULL-DOWN-TO-CLOSE on the phone full-pane sheets
+// §M-pull (Feature B) — touch engine for PULL-DOWN-TO-CLOSE on the phone full-pane sheets
 // (.mcomms · a full-pane .popup). The sheet follows the finger; past a distance threshold OR a
 // downward flick it dismisses (closePhoneSheet), else it snaps back. Engages from the header
 // ALWAYS (touch-action:none there so iOS hands us the drag instead of scrolling), or from the
@@ -13043,41 +13057,41 @@ function _sheetScroller(target, sheet) {
 }
 function initPhoneSheetGestures() {
   const reduce = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-  document.addEventListener('pointerdown', (e) => {
-    if (_pg || !document.body.classList.contains('is-phone')) return;
+  document.addEventListener('touchstart', (e) => {
+    if (_pg || e.touches.length !== 1 || !document.body.classList.contains('is-phone')) return;
     const sheet = e.target.closest && e.target.closest('.mcomms, #overlay-root .overlay .popup');
     if (!sheet) return;
+    const t = e.touches[0];
     const header = !!(e.target.closest && e.target.closest('.cp-head, .mcomms-back, .popup-head'));
-    _pg = { sheet, x0: e.clientX, y0: e.clientY, t0: e.timeStamp, pid: e.pointerId, header,
-      scroller: _sheetScroller(e.target, sheet), mode: null };
-  }, true);
-  document.addEventListener('pointermove', (e) => {
-    if (!_pg || e.pointerId !== _pg.pid) return;
-    const dx = e.clientX - _pg.x0, dy = e.clientY - _pg.y0, ax = Math.abs(dx), ay = Math.abs(dy);
+    _pg = { sheet, x0: t.clientX, y0: t.clientY, t0: e.timeStamp, header, scroller: _sheetScroller(e.target, sheet), mode: null };
+  }, { passive: true });
+  // passive:false so preventDefault() can STOP iOS's native scroll/rubber-band — that's what makes
+  // the at-top BODY pull work (Jac 2026-07-18); the header pull rides touch-action:none. Cheap: it
+  // bails immediately when no sheet gesture is armed, so normal list scrolling is untouched.
+  document.addEventListener('touchmove', (e) => {
+    if (!_pg) return;
+    const t = e.touches[0]; const dx = t.clientX - _pg.x0, dy = t.clientY - _pg.y0, ax = Math.abs(dx), ay = Math.abs(dy);
     if (!_pg.mode) {
-      if (dy > PULL_MIN && ay > ax && (_pg.header || !_pg.scroller || _pg.scroller.scrollTop <= 0)) { _pg.mode = 'pull'; }
+      if (dy > PULL_MIN && ay > ax && (_pg.header || !_pg.scroller || _pg.scroller.scrollTop <= 0)) { _pg.mode = 'pull'; _pg.sheet.classList.add('pulling'); }
       else if (ax > PULL_MIN || ay > PULL_MIN) { _pg = null; return; }   // horizontal, up, or body-not-at-top → let native scroll / the deck carousel own it
       else return;
-      try { _pg.sheet.setPointerCapture(e.pointerId); } catch (_) {}
-      _pg.sheet.classList.add('pulling');
     }
-    _pg.sheet.style.transform = 'translateY(' + Math.max(0, dy * 0.7) + 'px)'; e.preventDefault();
-  }, { capture: true, passive: false });
+    if (_pg.mode === 'pull') { _pg.sheet.style.transform = 'translateY(' + Math.max(0, dy * 0.7) + 'px)'; if (e.cancelable) e.preventDefault(); }
+  }, { passive: false });
   const end = (e) => {
-    if (!_pg || e.pointerId !== _pg.pid) return;
+    if (!_pg) return;
     const pg = _pg; _pg = null;
-    try { pg.sheet.releasePointerCapture(e.pointerId); } catch (_) {}
-    const dy = e.clientY - pg.y0, dt = (e.timeStamp - pg.t0) || 1;
     pg.sheet.classList.remove('pulling');
-    if (pg.mode === 'pull') {
-      if (dy > PULL_THRESH || dy / dt > PULL_FLICK) {
-        if (reduce()) { pg.sheet.style.transform = ''; closePhoneSheet(); }
-        else { pg.sheet.style.transform = 'translateY(100%)'; setTimeout(() => closePhoneSheet(), 240); }
-      } else pg.sheet.style.transform = '';
-    }
+    if (pg.mode !== 'pull') return;
+    const t = (e.changedTouches && e.changedTouches[0]) || {};
+    const dy = (t.clientY != null ? t.clientY : pg.y0) - pg.y0, dt = (e.timeStamp - pg.t0) || 1;
+    if (dy > PULL_THRESH || dy / dt > PULL_FLICK) {
+      if (reduce()) { pg.sheet.style.transform = ''; closePhoneSheet(); }
+      else { pg.sheet.style.transform = 'translateY(100%)'; setTimeout(() => closePhoneSheet(), 240); }
+    } else pg.sheet.style.transform = '';
   };
-  document.addEventListener('pointerup', end, true);
-  document.addEventListener('pointercancel', end, true);
+  document.addEventListener('touchend', end, { passive: true });
+  document.addEventListener('touchcancel', end, { passive: true });
 }
 
 function renderOverlay() {

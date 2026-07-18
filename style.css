@@ -562,10 +562,13 @@ body.is-phone { touch-action: manipulation; }
 /* the thumb moves via `left` (JS) — NOT transform/will-change, which iOS Safari promotes to a
    compositing layer that paints ABOVE the button label (the covered-label bug). z-0 keeps it below. */
 .is-phone .deck-seg .deck-thumb { position: absolute; top: 0; bottom: 0; left: 0; z-index: 0;
-  width: var(--deck-tw, 50%); background: var(--accent); border-radius: 10px; pointer-events: none; }
+  width: var(--deck-tw, 50%); background: var(--thumb-c, var(--accent)); border-radius: 10px; pointer-events: none; }
 .is-phone .deck-seg > button { flex: 1 1 0; min-height: 40px; justify-content: center; }
+/* the divider between deck buttons is z-1 (above the thumb) so it painted a line THROUGH the
+   slider — drop it; the sliding thumb already marks the active tab (Jac 2026-07-18). */
+.is-phone .seg.deck-seg > button { border-right: 0; }
 .is-phone .deck-seg > button, .is-phone .deck-seg .comms-chan-b { position: relative; z-index: 1; background: transparent; }
-.is-phone .deck-seg > button.deck-on, .is-phone .deck-seg .comms-chan-b.deck-on { color: var(--on-orange); background: transparent; box-shadow: none; }
+.is-phone .deck-seg > button.deck-on, .is-phone .deck-seg .comms-chan-b.deck-on { color: var(--thumb-ink, var(--on-orange)); background: transparent; box-shadow: none; }
 .is-phone .funnel-sec.swipe-sec .swipe-pane { padding-top: 2px; }
 /* comms Text/Email deck: fills the sheet height; a flush segmented look so the thumb aligns */
 .is-phone .mcomms .swipe-sec { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
@@ -3893,6 +3896,10 @@ body { font-variant-numeric: tabular-nums; }
 .funnel-sec .seg button.due { background: var(--red-bg); color: var(--red); }
 .funnel-sec .seg button.soon { background: var(--yellow-bg); color: var(--yellow); }
 .funnel-sec .seg button.ok { background: var(--green-bg); color: var(--green); }
+/* the ACTIVE phone funnel tab: the RYG thumb provides the fill + --thumb-ink the light text —
+   override the .due/.soon/.ok tab-tint above (this comes AFTER them AND is more specific). The
+   inactive tabs keep their RYG tint; the active one rides the slider. (Jac 2026-07-18) */
+.is-phone .funnel-sec .deck-seg > button.deck-on { background: transparent; color: var(--thumb-ink, var(--on-orange)); }
 .funnel-sec .seg button.on-accent.due,
 .funnel-sec .seg button.on-accent.soon,
 .funnel-sec .seg button.on-accent.ok { background: var(--accent); color: var(--on-orange); }   /* selected always wins the fill — orange stays the ONE selection signal */
