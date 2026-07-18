@@ -462,17 +462,28 @@ async function deployDeck({ files, branch, cred, label, shortSha, dirty }) {
       const { manifest: nextManifest, dropIds } = addAndPrune(manifest, entry);
       mkdirSync(join(cloneDir, DECK_DIR), { recursive: true });
       writeFileSync(join(cloneDir, MANIFEST_PATH), serializeManifest(nextManifest));
-      // Stable launcher: d/index.html always redirects to the NEWEST deploy, so ONE permanent
-      // bookmark (…/rental-wrangler-staging/d/) always lands on the latest build + its in-app
-      // Staging switcher — never clobbered by slot deploys, always current.
+      // Stable launcher: d/index.html loads the NEWEST deploy in a full-screen IFRAME (NOT a
+      // redirect), so the address bar stays at …/rental-wrangler-staging/d/ — ONE permanent
+      // bookmark that never captures a (prunable) deploy id and so never goes stale (Jac 2026-07-18).
+      // The iframe src is an immutable folder path, so the cache guarantee still holds; a tiny
+      // manifest fetch upgrades to the very-newest in case this launcher HTML itself was CDN-cached
+      // (max-age=600). The in-app Staging switcher works inside the same-origin frame.
       const newestId = nextManifest.deploys[0].id;
+      const newestJs = JSON.stringify(newestId);
       writeFileSync(join(cloneDir, DECK_DIR, 'index.html'),
-        `<!doctype html><html lang="en"><meta charset="utf-8"><title>Staging deck</title>`
-        + `<meta http-equiv="refresh" content="0; url=./${newestId}/">`
-        + `<body style="background:#0b0c0f;color:#a7afbc;font:14px system-ui,sans-serif;padding:26px">`
-        + `<p>Opening the latest staging deploy… `
-        + `<a style="color:#ff7a1a" href="./${newestId}/">${newestId}</a></p>`
-        + `<script>location.replace('./${newestId}/')</script></body></html>\n`);
+        `<!doctype html><html lang="en"><head><meta charset="utf-8">`
+        + `<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">`
+        + `<title>Staging · Rental Wrangler</title>`
+        + `<style>html,body{margin:0;height:100%;background:#0b0c0f;overflow:hidden}`
+        + `#app{border:0;width:100%;height:100%;display:block}`
+        + `noscript a{color:#ff7a1a;font:14px system-ui,sans-serif}</style></head>`
+        + `<body><iframe id="app" title="Rental Wrangler staging — newest deploy" src="./${newestId}/"></iframe>`
+        + `<noscript><p style="color:#a7afbc;font:14px system-ui,sans-serif;padding:20px">`
+        + `<a href="./${newestId}/">Open the newest staging deploy →</a></p></noscript>`
+        + `<script>fetch('./deploys.json?cb='+Date.now(),{cache:'no-store'})`
+        + `.then(function(r){return r.json()}).then(function(m){var d=(m.deploys||[])[0];`
+        + `if(d&&d.id!==${newestJs})document.getElementById('app').src='./'+encodeURIComponent(d.id)+'/'})`
+        + `.catch(function(){})</script></body></html>\n`);
       for (const drop of dropIds) rmSync(join(cloneDir, DECK_DIR, drop), { recursive: true, force: true });
 
       // [R1] stage ONLY d/** (adds + mods + deletes) — root (slot-1 content) is never touched.
