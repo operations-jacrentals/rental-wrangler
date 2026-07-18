@@ -137,6 +137,11 @@ The old `tidy-sessions` job, unchanged in spirit:
   decisions, new gotchas, and design prefs to `MEMORY.md` (public-safe — no
   PII / pricing / secrets), and prune Open threads that have closed. It's the
   git-committed cross-session brain a fresh cloud clone starts from.
+- **Staging cleanup isn't `/end`'s job.** The default **deck** deploys are
+  ephemeral — pruned by retention (newest 20 kept) — so there's nothing to
+  release or clean up here. Only the `--slots` backup path holds anything
+  that needs releasing, and that's already handled by `/merge`'s step 5 and
+  `/promote`'s step 4 (soft, best-effort slot release) — not repeated here.
 - **Out of scope, by design:** driving Gate 1 ("merge it") or Gate 2
   ("promote it"), and "landing" work beyond reporting + parking. That's the
   `start` skill's two-gate deploy loop, not this one.

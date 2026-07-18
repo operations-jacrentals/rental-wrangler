@@ -54,8 +54,16 @@ import { tmpdir } from 'node:os';
 // helpers this file used to define locally.
 import {
   git, gitTry, lines, fail, sleepMs,
-  resolveCredential, stagingRemoteUrl, gitEnv, gitAuthed, slotTarget,
+  resolveCredential, stagingRemoteUrl, gitEnv, gitAuthed, gitAuthedTry, slotTarget,
+  pagesUrlForRepo, STAGING_REPO,
 } from './lib/staging-git.mjs';
+// The Staging Deck (spec 2026-07-18) — the DEFAULT path: publish to an immutable numbered
+// folder d/<feature>-<n>/ in the staging repo + a served manifest the in-app switcher reads.
+// No lease (immutable paths ⇒ nothing to arbitrate). `--slots` falls back to the lease pool.
+import {
+  slugFeature, deckId, addAndPrune, parseManifest, serializeManifest,
+  DECK_DIR, MANIFEST_PATH,
+} from './lib/staging-deck.mjs';
 // Step 7 — the staging-lease coordination layer. Acquire a slot (or auto-queue and wait)
 // before deploying, renew it on a verified live-bytes check, and release it only when
 // nothing landed. The advisory marker is diagnostic-only (gitignored). See the plan §5.7 / §6.
@@ -281,8 +289,12 @@ function pushStaging(dir, cred, target) {
 
 // Replace the clone's tracked files with exactly `files` (so a file removed from the
 // source side is removed from staging too, not left behind as a stale orphan).
+// [R1] PRESERVE the deck's own artifacts (d/** + the manifest): a --slots deploy to slot 1
+// shares the staging repo with the deck, and must never wipe a numbered deploy someone is
+// reviewing. The deck writes ONLY under d/**; the slot path writes ONLY root files.
 function syncFiles(cloneDir, files) {
   for (const f of lines(git(['ls-files'], { cwd: cloneDir }))) {
+    if (f === MANIFEST_PATH || f.startsWith(DECK_DIR + '/')) continue;   // [R1] leave deck folders intact
     rmSync(join(cloneDir, f), { force: true });
   }
   for (const f of files) {
@@ -454,11 +466,117 @@ async function renewHeld(cred, session, slot, token) {
 
 // ── main ──
 
+// The current app.js ?v= token from index.html — deck mode does NOT bump it (immutable
+// folders are the cache guarantee), so the verify checks the deployed folder serves this token.
+function readAppToken(indexHtmlAbs) {
+  const m = readFileSync(indexHtmlAbs, 'utf8').match(/app\.js\?v=([A-Za-z0-9._-]+)/);
+  return m ? m[1] : null;
+}
+
+// ── The Staging Deck deploy (DEFAULT path) ──
+// Publish the crawled site files to an immutable folder d/<feature>-<n>/ in the staging repo's
+// served `main` branch, rewrite the served manifest (d/deploys.json), and prune old folders —
+// all in ONE commit. Concurrency is handled by git push-reject → refetch → recompute id → retry
+// (the same atomic primitive the lease uses). No lease, no ?v= bump. Returns 0 (verified) or 2.
+async function deployDeck({ files, branch, cred, label, shortSha, dirty }) {
+  const feature = slugFeature(branch);
+  const expectedToken = readAppToken(join(ROOT, 'index.html'));
+  const cloneDir = freshCloneDir();
+  let id = null;
+  try {
+    console.log(`deploy-staging: 🃏 deck mode — cloning ${STAGING_REPO}#main …`);
+    gitAuthed(['clone', '--single-branch', '--branch', 'main', stagingRemoteUrl(cred, STAGING_REPO), cloneDir], cred);
+
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      // (re)compute id + rebuild the deck delta from the fresh manifest each attempt.
+      const manRaw = existsSync(join(cloneDir, MANIFEST_PATH)) ? readFileSync(join(cloneDir, MANIFEST_PATH), 'utf8') : null;
+      const manifest = parseManifest(manRaw);
+      id = deckId(feature, manifest);
+      const destRoot = join(cloneDir, DECK_DIR, id);
+      rmSync(destRoot, { recursive: true, force: true });                       // clean any partial from a prior attempt
+      for (const f of files) {
+        const dst = join(destRoot, f);
+        mkdirSync(dirname(dst), { recursive: true });
+        copyFileSync(join(ROOT, f), dst);
+      }
+      const entry = { id, label, feature, branch, sha: shortSha, when: new Date().toISOString() };
+      const { manifest: nextManifest, dropIds } = addAndPrune(manifest, entry);
+      mkdirSync(join(cloneDir, DECK_DIR), { recursive: true });
+      writeFileSync(join(cloneDir, MANIFEST_PATH), serializeManifest(nextManifest));
+      // Stable launcher: d/index.html always redirects to the NEWEST deploy, so ONE permanent
+      // bookmark (…/rental-wrangler-staging/d/) always lands on the latest build + its in-app
+      // Staging switcher — never clobbered by slot deploys, always current.
+      const newestId = nextManifest.deploys[0].id;
+      writeFileSync(join(cloneDir, DECK_DIR, 'index.html'),
+        `<!doctype html><html lang="en"><meta charset="utf-8"><title>Staging deck</title>`
+        + `<meta http-equiv="refresh" content="0; url=./${newestId}/">`
+        + `<body style="background:#0b0c0f;color:#a7afbc;font:14px system-ui,sans-serif;padding:26px">`
+        + `<p>Opening the latest staging deploy… `
+        + `<a style="color:#ff7a1a" href="./${newestId}/">${newestId}</a></p>`
+        + `<script>location.replace('./${newestId}/')</script></body></html>\n`);
+      for (const drop of dropIds) rmSync(join(cloneDir, DECK_DIR, drop), { recursive: true, force: true });
+
+      // [R1] stage ONLY d/** (adds + mods + deletes) — root (slot-1 content) is never touched.
+      git(['add', '-A', '--', DECK_DIR], { cwd: cloneDir });
+      if (gitTry(['diff', '--cached', '--quiet'], { cwd: cloneDir }).ok) {
+        console.log(`deploy-staging: deck folder ${id} already matches — nothing to push.`);
+        break;
+      }
+      // Defense-in-depth: refuse if anything OUTSIDE d/ got staged.
+      const staged = lines(git(['diff', '--cached', '--name-only'], { cwd: cloneDir }));
+      const outside = staged.filter((f) => !(f === MANIFEST_PATH || f.startsWith(DECK_DIR + '/')));
+      if (outside.length) fail(`deploy-staging: deck refuses to push — non-deck paths staged: ${outside.join(', ')}`);
+
+      git(['commit', '-m', `deck: ${id} — ${label} (${shortSha}${dirty ? '+dirty' : ''})`], { cwd: cloneDir });
+      const r = gitAuthedTry(['push', '--porcelain', 'origin', 'HEAD:refs/heads/main'], cred, { cwd: cloneDir });
+      if (r.ok) break;
+      if (r.raced && attempt < 5) {
+        console.log(`deploy-staging: deck push raced (another deploy landed) — refetching main + recomputing id (attempt ${attempt + 1})…`);
+        gitAuthed(['fetch', 'origin', 'main'], cred, { cwd: cloneDir });
+        git(['reset', '--hard', 'FETCH_HEAD'], { cwd: cloneDir });
+        continue;
+      }
+      throw (r.error || new Error('deploy-staging: deck push failed (message withheld).'));
+    }
+
+    const folderUrl = `${stripSlash(pagesUrlForRepo(STAGING_REPO))}/${DECK_DIR}/${id}`;
+    console.log('deploy-staging: pushed.');
+    console.log(`  deploy id:  ${id}`);
+    console.log(`  label:      ${label}`);
+    console.log(`  URL:        ${folderUrl}/`);
+
+    // Verify the folder actually serves the bytes (Pages ~1 min propagation), like the slot path.
+    const indexUrl = `${folderUrl}/index.html`;
+    let served = null;
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      try {
+        const html = execFileSync('curl', ['-sS', '-L', '--max-time', '15', indexUrl], { encoding: 'utf8' });
+        const m = html.match(/app\.js\?v=([A-Za-z0-9._-]+)/);
+        served = m ? m[1] : null;
+      } catch { served = null; }
+      if (served === expectedToken) break;
+      if (attempt < 5) { console.log(`deploy-staging: deck folder not live yet (Pages propagating)…`); sleepMs(12000); }
+    }
+    if (served === expectedToken) {
+      console.log(`deploy-staging: ✅ verified — ${id} is live and serving ?v=${expectedToken}.`);
+      console.log(`deploy-staging: 🃏 in the app on staging: Staging ▾ → ${id}.`);
+      return 0;
+    }
+    console.error(`deploy-staging: 🔴 pushed but ${id} is NOT live after ~1 min (got ?v=${served || 'unreachable'}). Pages may be propagating — re-check: curl -s ${indexUrl}`);
+    return 2;
+  } finally {
+    removeCloneDir(cloneDir);
+  }
+}
+
 async function main() {
   ROOT = git(['rev-parse', '--show-toplevel']);
   process.chdir(ROOT);
 
   const DRY_RUN = process.argv.includes('--dry-run');
+  const USE_SLOTS = process.argv.includes('--slots');
+  const labelIdx = process.argv.indexOf('--label');
+  const LABEL_ARG = labelIdx >= 0 ? (process.argv[labelIdx + 1] || '') : '';
 
   const files = deriveSiteFiles();
   if (!files.length) fail('deploy-staging: derived an empty site-file list — something upstream is broken.');
@@ -487,6 +605,15 @@ async function main() {
     console.log('                Set STAGING_DEPLOY_KEY_PATH or STAGING_DEPLOY_PAT once plan §0.4 is done, then re-run.');
     return 0;
   }
+
+  // ── DECK (default) vs SLOTS (--slots backup) ──
+  const dirtyPre = git(['status', '--porcelain']).length > 0;
+  const shortShaPre = gitTry(['rev-parse', '--short', 'HEAD']).out || 'nocommit';
+  if (!USE_SLOTS) {
+    const label = (LABEL_ARG && LABEL_ARG.trim()) || (gitTry(['log', '-1', '--format=%s']).out || 'staging deploy').slice(0, 72);
+    return deployDeck({ files, branch, cred, label, shortSha: shortShaPre, dirty: dirtyPre });
+  }
+  console.log('deploy-staging: --slots — using the lease/slot pool (deck bypassed).');
 
   const SESSION = process.env.CLAUDE_CODE_SESSION_ID || '';
   if (!SESSION) {

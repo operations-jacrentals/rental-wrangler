@@ -5503,3 +5503,39 @@ body.sync-failing.sched-due #app { padding-top: calc(40px + var(--sched-band, 46
 .sw-toast-msg { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: 1.4px;
   font-weight: 600; font-size: 0.7059rem; color: var(--txt-2); }
 .sw-toast .pill.ignition:focus-visible, .sw-toast .x:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── Staging Deck switcher (spec 2026-07-18) — DEV-ONLY, rendered only on the staging Pages
+   host (never production/#local). A fixed "Staging ▾" nav to jump between numbered deploys.
+   Bespoke .deck-* classes (not lint-family), token-styled with hard fallbacks since it paints
+   before the app's theme is applied. ── */
+.deck-switcher { position: fixed; right: 12px; bottom: 12px; z-index: 100000;
+  font-family: 'Saira Condensed', var(--font, system-ui, sans-serif); }
+.deck-btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px;
+  border-radius: 8px; border: 1px solid var(--accent-line, rgba(255,122,26,.5));
+  background: var(--panel-2, #1b1e24); color: var(--accent, #ff7a1a);
+  text-transform: uppercase; letter-spacing: 1px; font-weight: 800; font-size: 11px; cursor: pointer;
+  box-shadow: 0 6px 16px -8px rgba(0,0,0,.7); }
+.deck-btn:hover { border-color: var(--accent, #ff7a1a); }
+.deck-btn:focus-visible { outline: 2px solid var(--accent, #ff7a1a); outline-offset: 2px; }
+.deck-chev { font-size: 10px; }
+.deck-menu { position: absolute; right: 0; bottom: 38px; min-width: 330px; max-width: 94vw;
+  max-height: 62vh; overflow-y: auto; background: var(--panel, #15171c);
+  border: 1px solid var(--line, #262a31); border-radius: 10px;
+  box-shadow: 0 18px 40px -20px rgba(0,0,0,.85); padding: 5px; }
+/* Two-line rows: the LABEL gets the full width on top (wraps to 2 lines before it truncates),
+   the id + age sit smaller beneath — so you can read what a deploy is (Jac 2026-07-18). */
+.deck-row { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border-radius: 7px;
+  text-decoration: none; color: var(--txt-2, #a7afbc); }
+.deck-row:hover { background: var(--panel-2, #1b1e24); }
+.deck-row.here { background: var(--accent-soft, rgba(255,122,26,.14)); }
+.deck-row:focus-visible { outline: 2px solid var(--accent, #ff7a1a); outline-offset: -2px; }
+.deck-dot { width: 12px; margin-top: 2px; color: var(--accent, #ff7a1a); font-size: 10px; flex: 0 0 auto; text-align: center; }
+.deck-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.deck-label { font-family: var(--font, system-ui, sans-serif); font-weight: 600; font-size: 13.5px;
+  color: var(--txt, #e9edf4); line-height: 1.28; overflow: hidden; word-break: break-word;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.deck-meta { display: flex; align-items: center; gap: 8px; }
+.deck-id { font-family: ui-monospace, monospace; font-size: 10.5px; color: var(--txt-3, #6b7480); }
+.deck-age { font-size: 10.5px; color: var(--txt-3, #6b7480); font-variant-numeric: tabular-nums; }
+.deck-empty { padding: 10px; color: var(--txt-3, #6b7480); font-size: 12px;
+  font-family: var(--font, system-ui, sans-serif); }

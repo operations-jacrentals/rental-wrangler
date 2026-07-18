@@ -26316,6 +26316,7 @@ function boot() {
     clearTimeout(hoverGrace);
     hoverGrace = setTimeout(() => { hoverEl = null; hideHoverPreview(); }, 320);
   });
+  mountDeckSwitcher();   // Staging Deck (2026-07-18) — a dev-only "Staging ▾" nav on the staging host; no-op elsewhere
   // Admin / offline boot modes (opt-in via URL hash) — checked before the login gate.
   const hash = (location.hash || '').toLowerCase();
   if (hash.includes('local')) { return offlineBoot(); }     // #local — render from data.js, no backend
@@ -26351,6 +26352,53 @@ function boot() {
 // #local — render straight from data.js with NO backend (offline/demo + dev smoke test).
 // saveSoon() already no-ops without a password, so edits stay in-memory only.
 function offlineBoot() { buildIndexes(); state.cascade = createCascade(DATA); seedDemoRequests(); booting = false; render(); exposeTestApi(); window.__rwBootRail = wranglerRailLoad(); }
+
+/* ── Staging Deck switcher (spec 2026-07-18) — a DEV-ONLY "Staging ▾" nav overlay ──
+   On the staging Pages host only, list recent numbered deploys (label · id · age) from the
+   served manifest and let the reviewer jump between them. Rendered as a self-contained DOM
+   widget outside the app's render/rulebook, gated by host — it NEVER appears on
+   app.jacrentals.com or #local, so it can't touch production UI or the R0 lint surface. */
+const DECK_REPO_BASE = '/rental-wrangler-staging';   // the staging repo's Pages path (see SLOT_TARGETS)
+function isStagingHost() {
+  return location.hostname === 'operations-jacrentals.github.io'
+    && location.pathname.startsWith(DECK_REPO_BASE + '/');
+}
+function deckAge(whenISO) {
+  const t = Date.parse(whenISO); if (!t) return '';
+  const s = Math.max(0, (Date.now() - t) / 1000);
+  if (s < 90) return Math.round(s) + 's';
+  if (s < 5400) return Math.round(s / 60) + 'm';
+  if (s < 172800) return Math.round(s / 3600) + 'h';
+  return Math.round(s / 86400) + 'd';
+}
+function mountDeckSwitcher() {
+  if (!isStagingHost() || document.getElementById('deck-switcher')) return;
+  const cm = location.pathname.match(/\/d\/([^/]+)\//);
+  const curId = cm ? decodeURIComponent(cm[1]) : null;
+  const wrap = el('div', 'deck-switcher'); wrap.id = 'deck-switcher';
+  const btn = el('button', 'deck-btn'); btn.type = 'button';
+  btn.innerHTML = 'STAGING <span class="deck-chev">▾</span>';
+  const menu = el('div', 'deck-menu'); menu.hidden = true;
+  wrap.append(btn, menu); document.body.appendChild(wrap);
+  let loaded = false;
+  btn.addEventListener('click', async () => {
+    menu.hidden = !menu.hidden;
+    if (menu.hidden || loaded) return;
+    loaded = true; menu.innerHTML = '<div class="deck-empty">loading…</div>';
+    try {
+      const r = await fetch(DECK_REPO_BASE + '/d/deploys.json?cb=' + Date.now(), { cache: 'no-store' });
+      const rows = ((await r.json()).deploys || []).map((d) => {
+        const here = d.id === curId;
+        return `<a class="deck-row${here ? ' here' : ''}" href="${DECK_REPO_BASE}/d/${encodeURIComponent(d.id)}/">`
+          + `<span class="deck-dot">${here ? '●' : ''}</span>`
+          + `<span class="deck-main"><span class="deck-label">${esc(d.label || d.id)}</span>`
+          + `<span class="deck-meta"><span class="deck-id">${esc(d.id)}</span><span class="deck-age">${esc(deckAge(d.when))}</span></span></span></a>`;
+      }).join('');
+      menu.innerHTML = rows || '<div class="deck-empty">no deploys yet</div>';
+    } catch (e) { menu.innerHTML = '<div class="deck-empty">manifest unavailable</div>'; }
+  });
+  document.addEventListener('click', (e) => { if (!wrap.contains(e.target)) menu.hidden = true; });
+}
 /* #local demo only: a sample Requests-inbox entry so the review/continue flow is
    visible without a backend. Real installs fetch live requests via the backend. */
 function seedDemoRequests() {
