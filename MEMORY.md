@@ -6,6 +6,30 @@
 > Keep it lean; the first ~200 lines are what a session actually leans on.
 
 ## Decisions
+- **2026-07-18 — `/build` skill added** (merged to trunk, PR #716; config-only → production
+  untouched). A pre-gate build step that sits BEFORE the ship flow (`/build → /deploy → /merge →
+  /promote`): it takes the currently-outlined feature to **deploy-ready** (full CI gate set green,
+  committed & pushed on the feature branch), then **STOPS one step short of `/deploy`**. Contract
+  (Jac locked it via popup): **build everything buildable, never stall, never guess** — anything
+  that needs Jac or is genuinely ambiguous is **deferred** (NOT guessed, NOT `FEATURES`-flag-stubbed)
+  to a single end-of-run **batched popup + written DEFERRED report**. Hard-defer classes: money /
+  auth / PII-isolation / WO-completion / irreversible-or-live. Backend `Code.gs` is written
+  build-now, but the `/clasp` **push** carries `/clasp`'s confirm-before-push gate, so push +
+  go-live editor deploy are batched into the hand-back, not fired autonomously. A fresh-context
+  review caught + fixed two canon contradictions pre-merge (autonomous-push vs the `/clasp` rail; a
+  stray gate-skip carve-out). Wired into CLAUDE.md → *Deploy & gates* and `/start`'s sibling-skills
+  list. Skill: `.claude/skills/build/SKILL.md`.
+- **2026-07-18 — Phone SWIPE RAIL SHIPPED LIVE (§M8, PR #713, `?v=20260718d`).** Phone swipe
+  steps a single 5-card ribbon — **Categories · Units · Rentals · Customers · Sales** — instead
+  of the old 3-column swipe (one more swipe past Units → Categories, past Customers → Sales).
+  **Calendar** (the Dispatch/Driver grid) is the ONE off-rail card: its chip swaps it into the
+  CENTER slot in place of Rentals (reachable, never a swipe stop). Built on the existing native
+  scroll-snap track (`MOBILE_RAIL` + `mobileRailMembers`/`mobileRailIndex`/`mobileRailPanelEl`);
+  **`state.mobileCol` stays the COLUMN index (0–2)** — the rail index (0–4) folds back to it via
+  `COLUMN_OF`, so zip-zones/drag, cross-column links, the footer jog and session sync are all
+  untouched. Retired the dead `MOBILE_SWIPE_ORDER` / `MAIN_CARDS` constants + the `columnEl`
+  phone branch (superseded by `mobileRailPanelEl`). No new stamped elements (reuses `.col` +
+  chip row), so no R-rulebook/window-catalog churn.
 - **2026-07-17 — Cross-device user sync SHIPPED LIVE (`userSync` ON, PRs #692+#702+#685, `?v=20260717ab`).**
   A logged-in PERSON's prefs / saved Views / dispatcher route state / comms state / resume-column
   follow them across devices, keyed on `personId` **resolved SERVER-SIDE from the session token**
