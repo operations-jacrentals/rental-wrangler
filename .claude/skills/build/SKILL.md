@@ -8,12 +8,14 @@ description: Build the feature as currently outlined all the way to deploy-ready
 ## Where /build sits — it's the step BEFORE the ship flow
 
 ```
-   OUTLINE  ──/build──▶  DEPLOY-READY          (this skill: code done, gates green, pushed)
- (approved                     │
-  plan/spec)              /deploy   (Step 1: copy the feature branch to staging for review)
-                               │
-                               ▼
-                           STAGING ──/merge──▶ TRUNK ──/promote──▶ PRODUCTION (live)
+   OUTLINE ──/build──▶ FEATURE BRANCH      (this skill: code done, gates green, committed)
+ (approved                   │
+  plan/spec)                 ├──/deploy──▶  STAGING   (review mirror — pushes to nothing)
+                             │
+                           /merge   (Gate 1: squash the FEATURE BRANCH into trunk)
+                             │
+                             ▼
+                           TRUNK  ──/promote──▶  PRODUCTION (live)
 ```
 
 `/build` produces the thing the ship flow assumes already exists: a feature branch whose
@@ -26,9 +28,12 @@ Build **everything buildable now.** The moment you hit something that needs Jac,
 genuinely ambiguous, **do not stop and do not guess** — **defer** it (log it) and keep
 building everything else. A session must never hang on a question or a backend go-live.
 
-- **The ONLY improvisation allowed is backend code:** author/update `Code.gs` and **push it
-  via `/clasp`** (service-account path) when you can — then **defer just the go-live editor
-  deploy** (Jac's Apps Script click). If `GAS_SA_KEY_B64` is unset, defer the push too.
+- **The ONLY improvisation allowed is backend *code*:** author/update `Code.gs` (additive)
+  as you build — that part never stalls. But the actual **`/clasp` push carries `/clasp`'s own
+  STOP-gate** ("confirm the spliced diff with Jac before push, **every time**"), so `/build`
+  does **not** fire it mid-build: **batch the push** (the diff to confirm) into the end-of-run
+  hand-back, and **defer the go-live editor deploy** (Jac's Apps Script click) with it. Net:
+  build the backend code now, tee up its push + go-live for the one final confirmation.
 - **You do NOT get to pick product/UX decisions for Jac, and you do NOT get to stub a real
   decision behind a `FEATURES` flag as a shortcut.** (Jac deliberately withheld both.) When a
   choice is a user's / designer's / PM's to make → **defer the piece**, build around it.
@@ -61,9 +66,10 @@ Break the outline into the smallest independently-buildable units. Tag each:
   language). Stamp every new element `data-r="Rxx"`; **regenerate** `node ci/gen-rule-usage.mjs`
   when usage changes. A **new popup** needs a `WINDOW_CATALOG` entry
   (`ci/check-window-catalog.mjs`).
-- **Backend:** write/update `Code.gs`, additive only; push via `/clasp` service-account path when
-  reachable; **defer the go-live editor deploy** to the report. Never commit `Code.gs` (gitignored,
-  public repo).
+- **Backend:** write/update `Code.gs`, additive only — that's BUILD-NOW. The `/clasp` **push
+  itself is a DEFER** (`/clasp` confirms the spliced diff with Jac before every push), so batch
+  the push + the go-live editor deploy into the end-of-run hand-back. Never commit `Code.gs`
+  (gitignored, public repo).
 - **Something reported broken along the way → `wrangler-fix` first** (prove the root cause with
   citations before changing code).
 - **Delegate to keep the main thread free** — per `CLAUDE.md` → *Delegation & model triage*: a
@@ -92,8 +98,9 @@ node tools/gen-code-map.mjs --check
   `sed -i 's/8000/9147/g' ci/smoke.mjs ci/logic-test.mjs`, run, then `git checkout -- ci/`.
 - The `lease-*` and `promote-test` suites are **pure-Node** — **excluded** from the port swap,
   no browser/network.
-- Skip only the gates that *cannot* be affected by your diff (a docs-only change need not boot
-  Chromium) — but never skip a gate your change could touch, and say which you skipped and why.
+- The full set must pass, unconditionally — CLAUDE.md's *Gates (must pass before push)* list is
+  not discretionary, and "deploy-ready" means every one of them is green. `/build` never invents
+  a skip policy; if one is ever wanted, it goes in CLAUDE.md first.
 - **Don't** bump the `?v=` cache-bust here — `/deploy` owns that.
 
 ## Step 4 — Commit, push, and STOP at deploy-ready
@@ -119,6 +126,7 @@ Close every `/build` run with both:
    itself opens none.)
 
 ## In one breath
-Read the outline → build everything buildable (defer, never guess, what needs Jac) → write &
-push backend code but defer its go-live → green the gates → commit & push → **STOP at
-deploy-ready** → hand back one batched report + popup and a one-tap `/deploy`.
+Read the outline → build everything buildable (defer, never guess, what needs Jac) → write
+backend code but batch its `/clasp` push + go-live for confirmation → green the full gate set →
+commit & push → **STOP at deploy-ready** → hand back one batched report + popup and a one-tap
+`/deploy`.
