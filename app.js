@@ -13086,8 +13086,11 @@ function initPhoneSheetGestures() {
     const t = (e.changedTouches && e.changedTouches[0]) || {};
     const dy = (t.clientY != null ? t.clientY : pg.y0) - pg.y0, dt = (e.timeStamp - pg.t0) || 1;
     if (dy > PULL_THRESH || dy / dt > PULL_FLICK) {
-      if (reduce()) { pg.sheet.style.transform = ''; closePhoneSheet(); }
-      else { pg.sheet.style.transform = 'translateY(100%)'; setTimeout(() => closePhoneSheet(), 240); }
+      // A locked required-modal (rate-the-return) must NEVER glide off-screen: closePhoneSheet
+      // REFUSES it (returns false, no render), which would strand the sheet at translateY(100%).
+      // Snap back and let closePhoneSheet flash instead. Reduced-motion also resets-then-closes.
+      if (overlayLocked() || reduce()) { pg.sheet.style.transform = ''; closePhoneSheet(); }
+      else { const s = pg.sheet; s.style.transform = 'translateY(100%)'; setTimeout(() => { if (closePhoneSheet() === false) s.style.transform = ''; }, 240); }
     } else pg.sheet.style.transform = '';
   };
   document.addEventListener('touchend', end, { passive: true });

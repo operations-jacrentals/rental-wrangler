@@ -553,7 +553,7 @@ body.is-phone { touch-action: manipulation; }
    nested horizontal scroll-snap track of its panes; the toggle's ONE-orange fill (R3) rides
    the scroll as a .deck-thumb. Phone-only — desktop keeps the single-pane + tap render. ── */
 .is-phone .swipe-track { display: flex; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  -webkit-overflow-scrolling: touch; scrollbar-width: none; overscroll-behavior: contain; }   /* contain: a deck swipe at its edge must not chain-scroll the parent 5-card rail (flip the whole card) */
 .is-phone .swipe-track::-webkit-scrollbar { display: none; }
 .is-phone .swipe-pane { flex: 0 0 100%; scroll-snap-align: start; min-width: 0; }
 /* the thumb-driven toggle: the orange fill is one sliding thumb (JS transforms it from
