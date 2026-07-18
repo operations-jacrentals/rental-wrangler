@@ -10711,17 +10711,16 @@ function openWranglerDock(opts) {
   if (opts.reqNumber !== undefined) w.reqNumber = opts.reqNumber;
   if (opts.reqTitle !== undefined) w.reqTitle = opts.reqTitle;
   if (opts.reqUrl !== undefined) w.reqUrl = opts.reqUrl;
-  // D9 — desktop has no floating dock anymore: the conversation lands on the comms
-  // rail as the Mr. Wrangler session's SINGLE open window (single-open law).
-  if (!document.body.classList.contains('is-phone')) {
-    const rail = state.commsRail;
-    if (rail.cat !== 'wrangler') { commsLeaveCat(rail.cat); rail.cat = 'wrangler'; }
-    const s = rail.sessions.wrangler;
-    s.lastOpen = String(w.id); s.menuOpen = false;
-    s.hidden = (s.hidden || []).filter((x) => String(x) !== String(w.id));
-    commsUnend(w.id, 'wrangler');                    // any open resurrects an ended chat
-    saveCommsRail();
-  }
+  // The conversation lands on the comms rail as the Mr. Wrangler session's SINGLE open window
+  // (single-open law) — desktop floats it, phone renders that SAME rail state full-screen
+  // (mountMobileComms reads sessions.wrangler.lastOpen), so this sync must run on both.
+  const rail = state.commsRail;
+  if (rail.cat !== 'wrangler') { commsLeaveCat(rail.cat); rail.cat = 'wrangler'; }
+  const s = rail.sessions.wrangler;
+  s.lastOpen = String(w.id); s.menuOpen = false;
+  s.hidden = (s.hidden || []).filter((x) => String(x) !== String(w.id));
+  commsUnend(w.id, 'wrangler');                    // any open resurrects an ended chat
+  saveCommsRail();
   render();
   setTimeout(() => { const i = document.querySelector('.wrangler-dock .js-wr-in'); if (i) i.focus(); const f = document.querySelector('.wrangler-dock .wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
 }
@@ -12590,12 +12589,17 @@ function wirePopupDrag(overlay) {
    stack stays balanced. Phone-only — desktop keeps Esc/click. Wired in boot(). ── */
 let backGuard = false, backConsuming = false;
 let swipeFired = false;   // §M1/§M3 — a footer or grid section-switch swipe sets this so the trailing click is swallowed once
-function anyDismissable() { return !!(state.overlay || state.datesearch || state.chat.open || state.wrangler.open); }
+function anyDismissable() { return !!(state.overlay || state.datesearch || state.chat.open || state.wrangler.open || (document.body.classList.contains('is-phone') && state.commsRail.cat)); }
 function dismissTopSheet() {
   if (state.datesearch) { closeDateSearch(); return true; }
   if (overlayLocked()) { attnFlash('.rr-stars'); toast('Rate the return first — it can’t be skipped.'); return true; }   // required modal: refuse Esc/back
   if (state.overlay) { closeOverlay(); return true; }
-  if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; render(); return true; }   // mirror js-wr-close
+  if (document.body.classList.contains('is-phone') && state.commsRail.cat) {   // phone full-screen comms: a thread backs to its inbox, the inbox closes the surface
+    const s = commsSess();
+    if (s && s.lastOpen != null) { s.lastOpen = null; s.menuOpen = true; saveCommsRail(); render(); return true; }
+    commsLeaveCat(state.commsRail.cat); state.commsRail.cat = null; if (s) s.menuOpen = false; saveCommsRail(); render(); return true;
+  }
+  if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; render(); return true; }   // mirror js-wr-close (desktop)
   if (state.chat.open) { state.chat.open = false; render(); return true; }                                    // mirror js-chat-close
   return false;
 }
@@ -16573,7 +16577,7 @@ function render() {
     if (!phone) positionDateSearch(fl);
   }
   // §M3 — lock the column scroll behind any open sheet/overlay/dock on phones
-  document.body.classList.toggle('sheet-open', !!(state.overlay || state.datesearch || state.chat.open || (state.wrangler.open && !state.wrangler.min)));   // a MINIMIZED Wrangler dock is a slim in-flow bar — it must NOT lock the page scroll (Jac, mobile)
+  document.body.classList.toggle('sheet-open', !!(state.overlay || state.datesearch || state.chat.open || (state.wrangler.open && !state.wrangler.min) || (document.body.classList.contains('is-phone') && state.commsRail.cat)));   // a MINIMIZED Wrangler dock is a slim in-flow bar — it must NOT lock the page scroll (Jac, mobile); a phone full-screen comms surface DOES lock the card behind it
   syncBackGuard();   // §M3 — keep the Android back-button guard in step with what's open
   // §17/§18 — the team + wrangler DOCKS are PHONE-only bottom sheets now (D9): desktop
   // retired both surfaces onto the comms rail (their machinery is shared, not the shell).
@@ -26494,7 +26498,10 @@ function mountMobileComms() {
   }
   const host = el('div', 'mcomms');
   if (inner) {
-    host.innerHTML = `<div class="mcomms-sheet mcomms-thread"><button class="mcomms-back js-mcomms-back" aria-label="Back to the list">${I.chevL}<span>Back</span></button>${inner}</div>`;
+    // the wrangler thread wrapper must wear .wrangler-dock — mountWranglerDock() (called each
+    // render) keys off it to hydrate image blobs + wire paste/drag-drop (parity with desktop).
+    const dockCls = cat === 'wrangler' ? ' wrangler-dock' : '';
+    host.innerHTML = `<div class="mcomms-sheet mcomms-thread${dockCls}"><button class="mcomms-back js-mcomms-back" aria-label="Back to the list">${I.chevL}<span>Back</span></button>${inner}</div>`;
   } else {
     host.innerHTML = `<div class="mcomms-sheet mcomms-inbox">${commsMenuHtml(cat)}</div>`;
   }
@@ -26506,7 +26513,10 @@ function mountMobileComms() {
 /* Sweep a category's window off the rail when the rail leaves it (chip re-click,
    sibling chip, or any cross-category open — the single-open law's broom). */
 function commsLeaveCat(cat) {
-  if (cat === 'wrangler' && state.wrangler.open && !document.body.classList.contains('is-phone')) {
+  // Phone routes Mr. Wrangler through the rail full-screen now (not the old dock), so leaving the
+  // category must snapshot + close it on EVERY device — else state.wrangler.open never resets on
+  // phone and body.sheet-open locks the page scroll for the rest of the session.
+  if (cat === 'wrangler' && state.wrangler.open) {
     wranglerRailSnapshot(); state.wrangler.open = false; state.wrangler.min = false;
   }
 }
