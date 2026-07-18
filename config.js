@@ -672,8 +672,9 @@ export const FEATURES = {
   // roll out, back to OFF for instant rollback. Gates EXPERIENCE only — operator isolation is
   // enforced server-side (personId resolved from the session token, never a client value).
   // ACTIVATED 2026-07-17 after reconciliation folded in the first-adopt seed-before-wipe fix
-  // (no cutover Views loss), logout/pagehide flush, and refresh-poll re-drive. Flip back to
-  // false for instant rollback.
+  // (no cutover Views loss), logout/pagehide flush, and refresh-poll re-drive. A sendBeacon
+  // tab-close flush (#685) also captures an edit in the last ~1.2s before a close. Flip back
+  // to false for instant rollback.
   userSync: true,
 };
 
