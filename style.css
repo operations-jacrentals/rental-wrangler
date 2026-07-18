@@ -549,6 +549,38 @@ body.is-phone { touch-action: manipulation; }
    line is iMessage-blue; orange stays RESERVED for customer them-bubbles (D8 palette). */
 .is-phone .mcomms .cbub, .is-phone .mcomms .wr-msg.assistant .wr-bub { background: var(--bg-2); color: var(--txt); border: 1px solid var(--line); }
 .is-phone .mcomms .cbub.me { background: var(--bub-me); color: var(--on-bub-me); border: none; }
+/* ── §M-swipe (R36) — the phone SWIPE-TOGGLE DECK. A view-switch toggle section becomes a
+   nested horizontal scroll-snap track of its panes; the toggle's ONE-orange fill (R3) rides
+   the scroll as a .deck-thumb. Phone-only — desktop keeps the single-pane + tap render. ── */
+.is-phone .swipe-track { display: flex; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.is-phone .swipe-track::-webkit-scrollbar { display: none; }
+.is-phone .swipe-pane { flex: 0 0 100%; scroll-snap-align: start; min-width: 0; }
+/* the thumb-driven toggle: the orange fill is one sliding thumb (JS transforms it from
+   scrollLeft), buttons go transparent so it shows through; .deck-on carries the active ink. */
+.is-phone .deck-seg { position: relative; isolation: isolate; display: flex; width: 100%; box-sizing: border-box; }
+.is-phone .deck-seg .deck-thumb { position: absolute; top: 0; bottom: 0; left: 0; z-index: 0;
+  width: var(--deck-tw, 50%); background: var(--accent); border-radius: 10px; pointer-events: none; will-change: transform; }
+.is-phone .deck-seg > button { flex: 1 1 0; min-height: 40px; justify-content: center; }
+.is-phone .deck-seg > button, .is-phone .deck-seg .comms-chan-b { position: relative; z-index: 1; background: transparent; }
+.is-phone .deck-seg > button.deck-on, .is-phone .deck-seg .comms-chan-b.deck-on { color: var(--on-orange); background: transparent; box-shadow: none; }
+.is-phone .funnel-sec.swipe-sec .swipe-pane { padding-top: 2px; }
+/* comms Text/Email deck: fills the sheet height; a flush segmented look so the thumb aligns */
+.is-phone .mcomms .swipe-sec { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.is-phone .mcomms .swipe-track { flex: 1 1 auto; min-height: 0; }
+.is-phone .mcomms .swipe-pane { display: flex; flex-direction: column; min-height: 0; }
+.is-phone .mcomms .swipe-pane .cp-feed.cp-list { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.is-phone .comms-chan.deck-seg { width: auto; padding: 0; gap: 0; overflow: hidden; }
+.is-phone .comms-chan.deck-seg .comms-chan-b { border-radius: 0; min-height: 44px; }
+.is-phone .comms-chan.deck-seg .deck-thumb { border-radius: 10px; }
+/* ── §M-pull (Feature B) — pull-down-to-close full-pane phone sheets. JS drives an inline
+   translateY as the sheet follows the finger; releasing snaps back (this transition) or, past
+   the threshold / on a downward flick, dismisses. .pulling kills the transition mid-drag.
+   Header always grabs; the body grabs only when its scroller is at the top (JS-gated). ── */
+.is-phone .mcomms, .is-phone .overlay .popup { transition: transform .26s cubic-bezier(.22,.61,.36,1); }
+.is-phone .mcomms.pulling, .is-phone .overlay .popup.pulling { transition: none; }
+.is-phone .mcomms .cp-feed, .is-phone .mcomms .cp-list, .is-phone .swipe-pane, .is-phone .overlay .popup-body { overscroll-behavior: contain; }
+@media (prefers-reduced-motion: reduce) { .is-phone .mcomms, .is-phone .overlay .popup { transition: none; } }
 /* the global tool tray rendered as a phone sheet (§M1 footer → Tools) */
 .tools-tray { display: flex; flex-wrap: wrap; gap: 8px; }
 .tools-tray .iconbtn { flex: 0 0 auto; min-height: 44px; }
