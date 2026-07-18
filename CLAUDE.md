@@ -107,14 +107,21 @@ say-so:
 **Gates (must pass before push):** `node ci/smoke.mjs`, `node ci/logic-test.mjs`,
 `node ci/lease-test.mjs`, `node ci/lease-deploy-test.mjs`, `node ci/promote-test.mjs`,
 `node ci/gen-rule-usage.mjs --check`, `node ci/check-window-catalog.mjs`,
-`node tools/gen-code-map.mjs --check`. Port 8000 is reserved —
+`node tools/gen-code-map.mjs --check`, `node ci/cachebust-test.mjs`,
+`node ci/check-cachebust.mjs`. Port 8000 is reserved —
 swap to 9147 first: `sed -i 's/8000/9147/g' ci/smoke.mjs ci/logic-test.mjs`, run, then `git
 checkout -- ci/`. The `lease-*` and `promote-test` suites are **pure-Node** (mocked git seam /
 injected probe, no browser/server) — **excluded from the port swap** and never touch the network.
 
 **Cache-bust every deploy:** bump the shared `?v=` on `style.css`, `rule-usage.js`, and
-`app.js` in `index.html` (Pages serves `max-age=600`, no per-file hashing). Don't add `?v=`
-to the ES-module imports inside `app.js`. (`deploy-staging.mjs` bumps it for you.)
+`app.js` in `index.html` (Pages serves `max-age=600`, no per-file hashing; the service worker
+keys its cache on `?v=`). Don't add `?v=` to the ES-module imports inside `app.js`. **Slot**
+`deploy-staging.mjs` bumps it for you; **deck** mode does NOT (the immutable folder path is
+staging's cache key), so a deck ship that reaches production would serve stale bytes under an
+unchanged token — `/merge` runs **`node tools/bump-cachebust.mjs`** to land the bump on the
+feature branch (a no-op unless a served, versioned file changed vs trunk), and the CI guard
+**`ci/check-cachebust.mjs`** (in the `smoke` job) fails any served-file change to trunk that
+skipped the bump. Logic + format live in `tools/lib/cachebust.mjs` (tested by `ci/cachebust-test.mjs`).
 
 **Session title = this session's PRs.** On opening a PR, append its number to
 `.claude/.session-prs` (gitignored) and surface a one-tap `/rename #<nums> · <branch-label>`
