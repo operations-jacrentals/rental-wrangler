@@ -6,6 +6,26 @@
 > Keep it lean; the first ~200 lines are what a session actually leans on.
 
 ## Decisions
+- **2026-07-18 — STAGING DECK is the new DEFAULT staging path — SHIPPED LIVE (PRs #720 + #734).** Replaces
+  the 3-slot lease pool as the default (slots kept as the `--slots` BACKUP, unchanged). `node
+  tools/deploy-staging.mjs` (no flags) writes the site to an **immutable numbered folder**
+  `d/<feature>-<n>/` in the staging repo, rewrites a served manifest `d/deploys.json` (newest-20,
+  older pruned), and updates a stable **`/d/` launcher** (bookmark once → always redirects to newest) —
+  all in one commit with push-race CAS-retry. **No lease** (immutable paths ⇒ nothing to arbitrate, so
+  concurrent sessions never contend — this was the fix for the slot-contention pain). A dev-gated in-app
+  **`Staging ▾` switcher** (bottom-**left** after #734; badge dropped there) lists recent deploys + jumps
+  between them — Claude names an id/label to open. `?v=` is NOT bumped in deck mode (the unique folder
+  path IS the cache key); `/merge`'s `bump-cachebust` lands the bump before a served change reaches
+  trunk. `promote.mjs` freshness content-hashes trunk against the newest deck folder (or a slot).
+  Core `tools/lib/staging-deck.mjs` + `ci/deck-test.mjs` (24). Spec/plan:
+  `docs/superpowers/{specs,plans}/2026-07-18-staging-deck-*.md`.
+- **2026-07-18 — Dated-action CUSTOMER FUNNEL — SHIPPED LIVE (PR #693).** Each funnel layer is a dated
+  next-action slot glowing **red/yellow/green** by urgency (`naUrgency` due/soon/ok); "notes = actions"
+  (a layer's action = an OPEN scheduled `activityLog` entry tagged `fkey`+`stage`, via
+  `funnelLayerAction`). Signed/Paid terminal = **solid primary blue** (closed-won); multiple layers
+  armable at once; the extra-actions list is **date-sorted**; ✓ logs but does NOT advance (advance is a
+  separate button, `advanceFunnelLayer`); rental funnel participates; past-reached layers = quiet steel
+  history. `markMembershipSigned` stamps `funnelLog.member.Signed.date` so the won-layer isn't blank.
 - **2026-07-18 — Phone GESTURES SHIPPED LIVE + PROMOTED (PR #725, `?v=20260718h`).** Three phone-only
   native-app gestures; **desktop byte-identical**. (A) **Swipe-toggle decks (new rule R36)** — the
   customer funnel (Rental↔Equipment Sales), Invoices (Open·All·Transactions), and the comms Text/Email
@@ -225,6 +245,21 @@
   one line through single-column pan mode; the `<480px` query re-enables wrap for the mobile stack.
 
 ## Gotchas
+- **The Staging Deck (`d/`) shares the slot-1 repo, so a STALE-checkout session wipes it** (2026-07-18,
+  #720). The deck folders live at `d/` inside `rental-wrangler-staging` — the SAME repo slot-1 deploys
+  wipe. Any session still running the **pre-#720** `deploy-staging.mjs` (whose `syncFiles` doesn't
+  preserve `d/**`) DELETES the whole deck on its next slot deploy → Jac's `/d/` bookmark 404s. The fix
+  (`syncFiles` skips `d/**` + the manifest) is on trunk+production now, but only protects the deck once
+  each session **cycles onto the new code** — you can't force other sessions to update, so it
+  **self-heals over minutes-to-hours** as stale sessions end. Immediate relief: re-run
+  `node tools/deploy-staging.mjs` (~30s, additive — restores `d/` without touching root). Confirmed
+  cured once the old sessions closed (an updated session then deployed to slot 1 and left `d/` intact).
+- **`promote.mjs` deck-freshness probe can transiently TIME OUT during a GitHub incident** (2026-07-18).
+  A `curl: (28) Operation timed out` on the deck-folder probe makes promote fall back to the slots,
+  find no match, and **refuse** (correctly — it won't ship ahead of a staging site it can't verify).
+  Not real drift: confirm the deck folder serves trunk's `?v=` (a quick `curl -m 15`), then just
+  **re-run** `promote --yes` — the probe succeeds once GitHub is stable. Don't reach for
+  `--skip-staging-check` unless staging is genuinely unreachable.
 - **iOS Safari composites a `transform`/`will-change` element ABOVE a non-promoted sibling's text**
   (2026-07-18, #725). A sliding toggle "thumb" moved via `transform: translateX` + `will-change` painted
   OVER the button LABEL on iOS (invisible label) even though it sat at z-index:0 below the z-index:1
