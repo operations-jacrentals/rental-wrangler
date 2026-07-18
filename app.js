@@ -26857,7 +26857,17 @@ function commsWranglerWorst() {
    the prefetch pump gate concurrency on the one slow GAS backend WITHOUT double-fetching —
    commsFetchMsgs is idempotent, so a click simply reuses any in-flight prefetch and re-renders on
    its completion. 30s cache; a stale re-open shows its old messages while it revalidates. */
-const commsMsgs = new Map();        // customerId -> { loading, at, messages, promise }
+const commsMsgs = new Map();        // customerId -> { loading, at, messages, promise, renderOnDone }
+// True when this customer's thread is the one CURRENTLY on screen (the open comms popup / phone
+// full-screen thread). Checked at fetch-completion so a quiet warm that lands on the OPEN thread
+// still repaints it — covers hovering the open thread's own tab after its 30s cache expired, where
+// the warm rebuilt the entry with renderOnDone off (bug caught in review, 2026-07-18).
+function commsThreadOnScreen(idS) {
+  const cat = state.commsRail.cat;
+  if (cat !== 'text' && cat !== 'email') return false;
+  const s = state.commsRail.sessions[cat];
+  return !!(s && String(s.lastOpen) === idS);
+}
 function commsFetchMsgs(customerId, force, opts) {
   if (!commsOnline()) return null;
   const idS = String(customerId);
@@ -26877,7 +26887,7 @@ function commsFetchMsgs(customerId, force, opts) {
   commsMsgs.set(idS, entry);
   entry.promise = backendCall('messagesFor', { customerId }).then((r) => {
     entry.loading = false; entry.promise = null;
-    if (r && r.ok && Array.isArray(r.messages)) { entry.messages = r.messages; entry.at = Date.now(); if (entry.renderOnDone) render(); }
+    if (r && r.ok && Array.isArray(r.messages)) { entry.messages = r.messages; entry.at = Date.now(); if (entry.renderOnDone || commsThreadOnScreen(idS)) render(); }
   }).catch(() => { entry.loading = false; entry.promise = null; });
   return entry;
 }
