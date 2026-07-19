@@ -18091,7 +18091,13 @@ function dragFrameLoop() {
     if (!DRAG.active) return;
     const n = document.elementFromPoint(DRAG.point.x, DRAG.point.y);
     updateHot(n);
-    const body = n && n.closest ? n.closest('.card-body') : null;
+    // Resolve the card-body under the pointer, then hand off to the element that ACTUALLY
+    // scrolls — same .cal-scroll-before-.card-body precedence as scrollHostOf(). Trips/calendar
+    // keeps its real scroll region nested inside a `overflow:hidden` .card-body (style.css §2.1),
+    // so writing scrollTop straight onto the .card-body silently auto-scrolled nothing there.
+    // Anchoring on .card-body (not .card) keeps every other card's behaviour bit-for-bit.
+    const host = n && n.closest ? n.closest('.card-body') : null;
+    const body = host && (host.querySelector('.cal-scroll') || host);
     if (body) {
       const r = body.getBoundingClientRect();
       if (DRAG.point.y < r.top + EDGE) body.scrollTop -= Math.ceil((r.top + EDGE - DRAG.point.y) / 3);
