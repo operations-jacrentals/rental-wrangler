@@ -4850,6 +4850,24 @@ function invoiceStatMenu(i, c, open) {
   items.push(`<button class="im-item js-print-invoice" role="menuitem" data-rec="${esc(i.invoiceId)}"><span class="im-ic">🖨</span> Print</button>`);
   items.push(`<button class="im-item" role="menuitem" disabled data-tip="Sending invoices to customers is coming soon"><span class="im-ic">✉</span> Send</button>`);
   if (canRefund) items.push(`<div class="im-sep"></div><button class="im-item danger js-pay-invoice" role="menuitem" data-rec="${esc(i.invoiceId)}"><span class="im-ic">↩</span> ${t.status === 'Refunded' ? 'Details' : 'Refund'}</button>`);
+  // Void + Collections — the tail of the AR chain. Both were fully built (handlers, manager gate,
+  // reason-code confirm popup, collections overlay, auto-blacklist, audit log) but their ONLY
+  // trigger markup lived in DETAIL.invoices, and the standalone Invoices card is retired
+  // (config.js COLUMNS/COLUMN_OF carry no 'invoices'), so neither could be reached from the one
+  // invoice UI that does render. Ported here verbatim — same conditions, same js- hooks, same
+  // data-rec — so this is a render surface only, no new logic. (audit 2026-07-18)
+  const canVoid = mayMoney && invoiceVoidable(i);
+  const needsRefundFirst = mayMoney && !canVoid && t.paid > 0.005 && !i.refunded && !i.voided;
+  const mgrTier = !currentRole || roleTier(currentRole) >= tierRank('manager');
+  const inCollections = mgrTier && !!c && invoiceCollectionsActive(i);
+  const canCollect = mgrTier && !!c && !inCollections
+    && ['Late', 'Late+30', 'Late+60', 'Late+90', 'Collections'].includes(t.status)
+    && t.balance > 0.005 && !i.locked && !i.refunded;
+  if (canVoid || needsRefundFirst || inCollections || canCollect) items.push(`<div class="im-sep"></div>`);
+  if (canVoid) items.push(`<button class="im-item danger js-void-invoice" role="menuitem" data-rec="${esc(i.invoiceId)}"><span class="im-ic">⊘</span> Void invoice</button>`);
+  else if (needsRefundFirst) items.push(`<button class="im-item" role="menuitem" disabled data-tip="A payment is assigned — refund it first, then you can void this invoice."><span class="im-ic">⊘</span> Refund to void</button>`);
+  if (inCollections) items.push(`<button class="im-item js-col-recall" role="menuitem" data-rec="${esc(i.invoiceId)}"><span class="im-ic">↺</span> Recall from collections</button>`);
+  else if (canCollect) items.push(`<button class="im-item danger js-col-queue" role="menuitem" data-rec="${esc(i.invoiceId)}"><span class="im-ic">⚑</span> Wrangle to Collections</button>`);
   return `<div class="io-menu-wrap">`
     + `<button class="io-statmenu ${ps.cls}${open ? ' open' : ''} js-inv-statmenu" data-r="R29" data-rec="${esc(i.invoiceId)}" data-cust="${esc(c.customerId)}" aria-expanded="${open ? 'true' : 'false'}" aria-haspopup="menu" data-tip="Invoice status · actions">${esc(ps.word)} <span class="cv">${I.chev}</span></button>`
     + (open ? `<div class="io-menu" role="menu">${items.join('')}</div>` : '')
