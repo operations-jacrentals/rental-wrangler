@@ -18233,7 +18233,7 @@ function dispatchDrop(p, t) {
     const res = linkUnitToRental(r.rentalId, u.unitId);
     if (!res) return;
     render();
-    toast(`Unit ${u.name} → ${r.startDate && r.endDate ? 'rental ' + fmtWindow(r.startDate, r.endDate) : 'Quote'}${res.overbooked ? ' — ⚠ OVERBOOKED' : ''}`);
+    toast(`Unit ${u.name} → ${r.startDate && r.endDate ? 'rental ' + fmtWindow(r.startDate, r.endDate) : 'Quote'}${res.overbooked ? ' — ⚠ OVERBOOKED' : ''}${res.warn?.length ? ' — ⚠ ' + res.warn.join(' · ') : ''}`);   // §readiness — warn, never block
     dropFlash(`.card[data-card="rentals"] [data-pill-card="units"][data-pill-rec="${u.unitId}"]`, `.row[data-card="rentals"][data-rec="${r.rentalId}"], .card[data-card="rentals"]`);
     return;
   }
@@ -19648,7 +19648,30 @@ function startInlineEdit(span) {
     const u = IDX.unit.get(recId);
     input.value = u?.currentHours ?? '';
     input.type = 'number'; input.placeholder = 'Hours';
-    commit = () => { if (done) return; done = true; if (u && input.value !== '') { const old = u.currentHours; const v = Number(input.value); if (old !== v) { u.currentHours = v; reindex('units', u); logAction(u, `Hours: ${auditVal(old)} → ${auditVal(v)}`); } } render(); };
+    // §hours-sanity — WARN, never refuse (Jac 2026-07-18). currentHours is the sole input to every
+    // service countdown, the fleet average, category ROI and $/Hr, and it is stamped permanently
+    // onto any WO opened while it is wrong — yet it took any number at all. A 10× typo
+    // (1,738.5 → 17,385.5) sat in production for 26 days before a human caught it. Two anomalies
+    // are named now: a meter cannot physically run BACKWARDS, and a jump past ~2× the last reading
+    // is almost always a missed decimal. The value is still written either way — the warning rides
+    // the toast AND the unit's own history, so a bad number is reviewable later instead of silent.
+    commit = () => {
+      if (done) return; done = true;
+      if (u && input.value !== '') {
+        const old = u.currentHours; const v = Number(input.value);
+        if (old !== v) {
+          const prior = Number(old) || 0;
+          const odd = !Number.isFinite(v) ? 'not a number'
+            : (v < prior) ? `reads BACKWARDS (was ${num(prior)})`
+              : (prior > 0 && v > prior * 2) ? `is ${(v / prior).toFixed(1)}× the last reading (${num(prior)}) — check for a missed decimal`
+                : '';
+          u.currentHours = v; reindex('units', u);
+          logAction(u, `Hours: ${auditVal(old)} → ${auditVal(v)}${odd ? ` — ⚠ ${odd}` : ''}`);
+          if (odd) toast(`⚠ ${u.name}: ${num(v)} HRS ${odd}. Saved anyway — fix it here if that's wrong.`);
+        }
+      }
+      render();
+    };
   } else if (kind === 'invoicePO') {
     const inv = IDX.invoice.get(recId);
     input.value = inv?.po || ''; input.placeholder = 'PO #';
@@ -23134,10 +23157,23 @@ function linkUnitToRental(rentalId, unitId) {
     return null;
   }
   addUnitToRental(r, unitId);
+  // §readiness — WARN, never block (Jac 2026-07-18). Nothing on the rental path used to mention
+  // readiness at all: a unit with a failed inspection and a badly overdue service attached to a
+  // customer rental silently, and the rental screen said nothing about it. These two conditions
+  // now ride out on the success toast + the rental's own log. They are deliberately NON-blocking —
+  // the fleet gate above is the only hard stop — because a broken machine sometimes genuinely has
+  // to go out, and the person doing it should be told, not stopped.
+  // Deliberately NOT via topServiceForUnit: that returns the WASH row whenever one is requested,
+  // which would let a pending wash hide a 200-hr-overdue engine service from this very warning.
+  // unitServiceRows is already sorted worst-first, so the first past-due non-wash row IS the worst.
+  const warn = [];
+  if (u.inspectionStatus === 'Failed') warn.push('FAILED INSPECTION');
+  const svcDue = unitServiceRows(u).find((s) => s.taskId !== 'svc-wash' && s.status === 'past-due');
+  if (svcDue) warn.push(`SERVICE ${svcText(svcDue)}`);
   if (r.invoiceId) { syncRentalLines(r); syncTransportLine(r); }   // bill the newly-added unit (rental + transport lines) onto the existing invoice
-  logAction(r, `Unit + ${u.name}${conflicts.length ? ' — OVERBOOKED' : ''}`);
+  logAction(r, `Unit + ${u.name}${conflicts.length ? ' — OVERBOOKED' : ''}${warn.length ? ' — ⚠ ' + warn.join(' · ') : ''}`);
   reindexDraft('rentals', r);
-  return { added: u, overbooked: conflicts.length > 0 };
+  return { added: u, overbooked: conflicts.length > 0, warn };
 }
 /** Link a customer to a rental — with the §9 blacklist gate pulled up-front
  *  (it otherwise only fires later, in setRentalStatus). */
