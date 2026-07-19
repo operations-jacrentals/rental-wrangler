@@ -18448,8 +18448,17 @@ function onClick(e) {
   // closure round 2): the legacy js-mem-enroll button bypassed the signed-agreement gate
   // entirely (no signature/selfie/start-date check) — account-type can now ONLY change via
   // agreementSignCommit's inline sign=enroll flow.
-  if (closest('.js-mem-cancel')) { e.stopPropagation(); if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; } return membershipCancel(closest('.js-mem-cancel').dataset.rec); }
-  if (closest('.js-mem-paycxl')) { e.stopPropagation(); if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; } return membershipReactivate(closest('.js-mem-paycxl').dataset.rec); }
+  // Both arm-to-confirm (same shape as js-blacklist): one tap used to end a paying membership /
+  // charge a card in full with nothing in between. NOT routed through openPayInvoice — that only
+  // charges an invoice, whereas membershipReactivate also reactivates the membership server-side,
+  // so re-pointing it would take the money and leave the member lapsed. (audit 2026-07-18)
+  if (closest('.js-mem-cancel')) { e.stopPropagation(); if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; } const b = closest('.js-mem-cancel');
+    if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Click again — cancel membership'; toast('This ends the membership and raises a cancellation invoice for the rest of the term.'); return; }
+    return membershipCancel(b.dataset.rec); }
+  if (closest('.js-mem-paycxl')) { e.stopPropagation(); if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; } const b = closest('.js-mem-paycxl');
+    if (!b.dataset.armed) { const c0 = IDX.customer.get(b.dataset.rec); const inv0 = c0 && membershipCancellationInvoice(c0); const amt = inv0 ? money2(invoiceTotals(inv0).balance) : '';
+      b.dataset.armed = '1'; b.textContent = `Click again — charge ${amt}`; toast(`This charges the card on file ${amt} in full, right now.`); return; }
+    return membershipReactivate(b.dataset.rec); }
   if (closest('.js-add-card')) {
     e.stopPropagation();
     if (!canMoney()) { toast('Cards on file are Office/Admin only.'); return; }   // §14 card-on-file is Office/Admin only — same gate as Pay/Charge/Refund (canMoney)
@@ -18465,12 +18474,19 @@ function onClick(e) {
   }
   if (closest('.js-cardsub-cancel')) { e.stopPropagation(); if (state.overlay && state.overlay.kind === 'newCustomer') { state.overlay.cardSub = false; renderOverlay(); } return; }   // §14 close just the card panel, keep the form
   if (closest('.js-card-sign')) { e.stopPropagation(); const b = closest('.js-card-sign'); openCustomerForm(b.dataset.rec); if (state.overlay) { state.overlay.tab = b.dataset.card; renderOverlay(); } return; }
-  if (closest('.js-card-default')) { e.stopPropagation(); const b = closest('.js-card-default'); return setCardDefault(b.dataset.rec, b.dataset.card); }
-  if (closest('.js-card-remove')) { e.stopPropagation(); const b = closest('.js-card-remove'); return removeCard(b.dataset.rec, b.dataset.card); }
+  // §14 money gate — mirrors js-add-card/js-add-ach. Adding a card was Office/Admin-only while
+  // CHANGING or DELETING one was open to every role, which is the wrong way round: removeCard
+  // also fires a live stripeRemoveCard detach, so it is not locally reversible. (audit 2026-07-18)
+  if (closest('.js-card-default')) { e.stopPropagation(); if (!canMoney()) { toast('Cards on file are Office/Admin only.'); return; } const b = closest('.js-card-default'); return setCardDefault(b.dataset.rec, b.dataset.card); }
+  if (closest('.js-card-remove')) { e.stopPropagation(); if (!canMoney()) { toast('Cards on file are Office/Admin only.'); return; } const b = closest('.js-card-remove');
+    if (!b.dataset.armed) { b.dataset.armed = '1'; b.dataset.tip = 'Click again to remove this card'; toast('Removing a card also detaches it at Stripe — click ✕ again to confirm.'); return; }   // arm-to-confirm, same shape as js-blacklist
+    return removeCard(b.dataset.rec, b.dataset.card); }
   if (closest('.js-pm-tab')) { e.stopPropagation(); state.pmTab = closest('.js-pm-tab').dataset.tab; return render(); }   // §14b Cards | ACH toggle
   if (closest('.js-add-ach')) { e.stopPropagation(); if (!canMoney()) { toast('Bank accounts on file are Office/Admin only.'); return; } return openAddBank(closest('.js-add-ach').dataset.rec); }   // §14 same gate as js-add-card (canMoney)
-  if (closest('.js-bank-default')) { e.stopPropagation(); const b = closest('.js-bank-default'); return setBankDefault(b.dataset.rec, b.dataset.bank); }
-  if (closest('.js-bank-remove')) { e.stopPropagation(); const b = closest('.js-bank-remove'); return removeBank(b.dataset.rec, b.dataset.bank); }
+  if (closest('.js-bank-default')) { e.stopPropagation(); if (!canMoney()) { toast('Bank accounts on file are Office/Admin only.'); return; } const b = closest('.js-bank-default'); return setBankDefault(b.dataset.rec, b.dataset.bank); }
+  if (closest('.js-bank-remove')) { e.stopPropagation(); if (!canMoney()) { toast('Bank accounts on file are Office/Admin only.'); return; } const b = closest('.js-bank-remove');
+    if (!b.dataset.armed) { b.dataset.armed = '1'; b.dataset.tip = 'Click again to remove this bank account'; toast('Click ✕ again to confirm removing this bank account.'); return; }
+    return removeBank(b.dataset.rec, b.dataset.bank); }
   if (closest('.js-card-save')) { e.stopPropagation(); return saveCardFlow(closest('.js-card-save')); }
   if (closest('.js-ach-save')) { e.stopPropagation(); return saveAchFlow(closest('.js-ach-save')); }
   if (closest('.js-bank-verify')) { e.stopPropagation(); const b = closest('.js-bank-verify'); return openVerifyBank(b.dataset.rec, b.dataset.bank); }
