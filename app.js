@@ -7404,7 +7404,7 @@ const ROWS = {
     }).join('')}</div>` : '';
     return `<div class="row-1">
         ${badge(t.task, t.task === 'Deliver' ? 'blue' : 'brown')}
-        <input class="dt-time js-disp-time" data-id="${esc(t.id)}" data-day="${esc(t.day)}" value="${esc(t.time || '')}" placeholder="—:—" maxlength="8" aria-label="Stop time" data-tip="Set the stop time — reorders the run" />
+        <input class="dt-time js-disp-time" data-id="${esc(t.id)}" data-day="${esc(t.day)}" value="${esc(t.time || '')}" placeholder="${esc(eodPlaceholder())}" maxlength="8" aria-label="Stop time" data-tip="Set the stop time — reorders the run. Left blank, Auto-Run still treats this stop as due by ${esc(fmtClock(secToClock(AUTORUN_EOD_DEADLINE_SEC)))} (end of the business day)." />
         ${townHtml}
         <span class="spacer"></span>
         ${autoRunFlagHtml(t)}
@@ -11295,7 +11295,13 @@ function dispatchEvents() {
       const base = { rentalId: r.rentalId, unitId: eu.unitId, unit: unit?.name || '—', cust: cust?.name || cust?.company || '—', addr: eu.deliveryAddress || '', ttype: eu.transportType, pin };
       // per-LEG driver (spec rentals-dispatch D6): eu.deliveryDriverId / eu.recoveryDriverId — additive, rides sync
       if (['Delivery', 'Round-Trip'].includes(eu.transportType) && r.startDate) out.push({ ...base, date: r.startDate, time: r.startTime || '', task: 'Deliver', color: 'blue', driverId: eu.deliveryDriverId || null });
-      if (['Round-Trip', 'Recovery'].includes(eu.transportType) && r.endDate) out.push({ ...base, date: r.endDate, time: '', task: 'Pick up', color: 'brown', addr: eu.recoveryAddress || eu.deliveryAddress || '', driverId: eu.recoveryDriverId || null });
+      // The recovery leg reads the rental's RETURN time, mirroring how the Deliver leg above reads
+      // r.startTime. It used to hardcode `time: ''`, so a Pick up could never carry a time no matter
+      // what the rental said — every pickup row rendered the "—:—" placeholder and, being timeless,
+      // sorted to the top of its day and inherited Auto-Run's end-of-day fallback deadline. r.endTime
+      // is the same field the rental calendar prints above the return dot (app.js:7123) and that
+      // next-availability parses (app.js:2267), so this just stops discarding it. (Jac 2026-07-18)
+      if (['Round-Trip', 'Recovery'].includes(eu.transportType) && r.endDate) out.push({ ...base, date: r.endDate, time: r.endTime || '', task: 'Pick up', color: 'brown', addr: eu.recoveryAddress || eu.deliveryAddress || '', driverId: eu.recoveryDriverId || null });
     });
   });
   return out.sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
@@ -11904,6 +11910,12 @@ async function dispGeocode(addr, day) {
    durations, never through here, so CI never makes a real Google Directions request. */
 const AUTORUN_DAY_START_SEC = 7 * 3600;       // 7:00 AM — nominal truck-leaves-the-yard time for a run
 const AUTORUN_EOD_DEADLINE_SEC = 17 * 3600;   // 5:00 PM — implied deadline for a same-day rental promise with no set time (see autoRunAnchorsFor)
+/* A blank stop time is NOT "nothing due" — autoRunAnchorsFor falls it back to the end-of-business
+   deadline above, so the run is still planned around it. The row used to render a bare "—:—",
+   which reads to a driver as "no time on this one, not my problem" (audit 2026-07-18). The empty
+   input now advertises the deadline it actually inherits instead. Derived from the constant so
+   the two can never drift apart. */
+const eodPlaceholder = () => `by ${fmtClock(secToClock(AUTORUN_EOD_DEADLINE_SEC))}`;
 const AUTORUN_LOAD_BUFFER_SEC = 15 * 60;      // fixed load/unload dwell per stop (ramps, chains, walk-around)
 
 /* Materializes a trip's time exactly like the row's own dt-time input does (js-disp-time,
