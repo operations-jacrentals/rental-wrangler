@@ -2934,7 +2934,7 @@ function cardFwd(card) {
 // → stays at 0. (Fresh opens don't call this, so they still start at the top.)
 function restoreJogScroll(card) {
   const c = document.querySelector(`.card[data-card="${card}"]:not([data-clone])`);   // §M8 wrap — the REAL card, never an edge clone
-  const b = c && c.querySelector('.card-body'); if (!b) return;
+  const b = scrollHostOf(c); if (!b) return;
   const y = scrollMemo[card + '|' + (c.dataset.view || 'list')];
   if (y) b.scrollTop = y;
 }
@@ -17164,6 +17164,12 @@ function setFocusedCard(cardId) {
    ════════════════════════════════════════════════════════════════════════ */
 let renderCount = 0;
 const scrollMemo = {};   // persistent scroll positions, keyed `card|view` (list vs which record)
+/* The element that ACTUALLY scrolls for a card. Trips/calendar nests its real scroll region
+   (.cal-scroll) inside a .card-body that is itself `overflow:hidden` (style.css §2.1), so
+   reading/writing scrollTop on .card-body was a silent no-op there — the card snapped back to
+   the top of the map on every render (e.g. after assigning a driver). Every other card has no
+   .cal-scroll and still resolves to .card-body exactly as before. */
+const scrollHostOf = (c) => (c && (c.querySelector('.cal-scroll') || c.querySelector('.card-body'))) || null;
 // §M6 — phone chrome reflow (Jac 2026-07-11): the global "Search everything…" bar is dropped
 // (CSS-hidden); the phone reads top→bottom as HEADER (logo/rings · card toggles · per-card
 // search) then a bottom DOCK stacking the item-tab rail ABOVE the tool bar:
@@ -17184,7 +17190,7 @@ function render() {
   // or editing a field doesn't dump you back at the top of a scrolled card (§0.6).
   const scrollOld = {};
   document.querySelectorAll('.card[data-card]:not([data-clone])').forEach((c) => {   // §M8 wrap — skip the edge clones (they'd clobber the memo with their scrollTop 0)
-    const b = c.querySelector('.card-body'); if (!b) return;
+    const b = scrollHostOf(c); if (!b) return;
     const v = c.dataset.view || 'list'; scrollOld[c.dataset.card] = v;
     scrollMemo[c.dataset.card + '|' + v] = b.scrollTop;   // remember where THIS view was scrolled
   });
@@ -17227,7 +17233,7 @@ function render() {
   // restore scroll by VIEW: same view → keep your spot; back to a list → return to the
   // row you left; opened a record → top of Standard view (a targeted link scrolls itself after).
   document.querySelectorAll('.card[data-card]:not([data-clone])').forEach((c) => {   // §M8 wrap — skip the edge clones
-    const b = c.querySelector('.card-body'); if (!b) return;
+    const b = scrollHostOf(c); if (!b) return;
     const cardId = c.dataset.card, v = c.dataset.view || 'list', key = cardId + '|' + v;
     if (v === scrollOld[cardId] || v === 'list') b.scrollTop = scrollMemo[key] || 0;
     else b.scrollTop = 0;
@@ -17293,7 +17299,7 @@ function renderResults() {
   refreshToday();
   const scrollOld = {};
   document.querySelectorAll('.card[data-card]').forEach((c) => {
-    const b = c.querySelector('.card-body'); if (!b) return;
+    const b = scrollHostOf(c); if (!b) return;
     const v = c.dataset.view || 'list'; scrollOld[c.dataset.card] = v;
     scrollMemo[c.dataset.card + '|' + v] = b.scrollTop;
   });
@@ -17323,7 +17329,7 @@ function renderResults() {
     if (bb) bb.replaceWith(bottomBarEl());
   }
   document.querySelectorAll('.card[data-card]').forEach((c) => {   // restore scroll by view (mirrors render())
-    const b = c.querySelector('.card-body'); if (!b) return;
+    const b = scrollHostOf(c); if (!b) return;
     const cardId = c.dataset.card, v = c.dataset.view || 'list', key = cardId + '|' + v;
     if (v === scrollOld[cardId] || v === 'list') b.scrollTop = scrollMemo[key] || 0;
     else b.scrollTop = 0;
