@@ -6,6 +6,19 @@
 > Keep it lean; the first ~200 lines are what a session actually leans on.
 
 ## Decisions
+- **2026-07-19 — RENTALS "Denny" dispatcher audit — remaining work HANDED OFF to a fresh cloud session.**
+  Full durable handoff: **`docs/handoffs/audit-2026-07-19-rentals-dispatcher-remaining-work.md`**. State:
+  the 4 Bucket-A dispatch bug fixes are **integrated on `trunk`** (content-verified at `?v=20260719b` —
+  markFieldCall targetId, setUnitStatus toast, winPickSave else-toast, is-phone link copy; reviewed, gates
+  green) but **NOT promoted**. They first landed as PR #740 (`705ea12`) then trunk was force-moved by
+  concurrent sessions onto a cleaner lineage (the #740 *content* carried forward; that *hash* is orphaned —
+  verify by content, not by `705ea12`). ⛔ `/promote` still BLOCKED: `production` is not a fast-forward
+  ancestor of `trunk` (history split from #739's line-ending rewrite). **Do NOT force-push production/trunk**
+  — wait for the multi-session churn to settle, then verify a clean trunk→production ff (or reconcile
+  deliberately with Jac). Parked Bucket-B UI/process findings (attention bucket, verb CTAs, due-back
+  grouping, terminal-confirm+undo, proactive alerts, comms wiring, dispatch coordination, returns damage
+  handoff, empty-state, UX-polish bundle) are itemized in the handoff doc. Audit artifact:
+  `claude.ai/code/artifact/8716a062-d640-401d-ae5c-49e5fa600283`.
 - **2026-07-18 — STAGING DECK is the new DEFAULT staging path — SHIPPED LIVE (PRs #720 + #734).** Replaces
   the 3-slot lease pool as the default (slots kept as the `--slots` BACKUP, unchanged). `node
   tools/deploy-staging.mjs` (no flags) writes the site to an **immutable numbered folder**
