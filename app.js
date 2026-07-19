@@ -3975,9 +3975,13 @@ const isActiveMember = (c) => { const s = membershipStatus(c); return s === 'Act
    cycle's invoice on enroll and after each charge. This surfaces the two states the office must chase,
    detected from the invoices (NOT membershipStatus — a grandfathered member with no billing fields reads
    'Active'). Returns null (no flag) or { label, tip, alert }; alert=true PULSES (R9b) for the urgent tier.
-     • 'No Billing'  (alert/flash) — a Member with NO upcoming membership invoice at all (never enrolled /
-                      linkage missing — the Brandon/Emily gap).
-     • 'Payment Due' (steady)      — an enrolled member whose membership invoice is overdue & unpaid (grace/decline).
+     • 'Payment Due' (alert/flash) — an enrolled member whose membership invoice is overdue & unpaid
+                      (grace/decline). PULSES: real money is late right now. (Jac, 2026-07-18 — this
+                      and 'No Billing' below were the other way round; a setup gap outranked an
+                      actual overdue balance for the front desk's attention.)
+     • 'No Billing'  (steady)      — a Member with NO upcoming membership invoice at all (never enrolled /
+                      linkage missing — the Brandon/Emily gap). Still red, still surfaced, but it is a
+                      back-office enrolment fix rather than a payment to chase at the counter.
    NOT flagged: a member intentionally finishing their term (autoRenew === false, still paid through today). */
 function membershipBillingFlag(c) {
   if (!c) return null;
@@ -3986,10 +3990,10 @@ function membershipBillingFlag(c) {
   const memUnpaid = DATA.invoices.filter((i) => i && i.membership && !i.membershipCancellation
     && i.customerId === c.customerId && invoiceTotals(i).balance > 0.005);
   const overdue = memUnpaid.some((i) => String(i.dueDate || i.date || '') < TODAY_ISO);
-  if (overdue) return { label: 'Payment Due', alert: false, tip: 'Membership invoice overdue and unpaid — chase the payment (member is in grace/decline).' };
+  if (overdue) return { label: 'Payment Due', alert: true, tip: 'Membership invoice overdue and unpaid — chase the payment (member is in grace/decline).' };
   if (memUnpaid.some((i) => String(i.dueDate || i.date || '') >= TODAY_ISO)) return null;   // healthy — next invoice waiting
   if (c.autoRenew === false && c.paidUntil && String(c.paidUntil) >= TODAY_ISO) return null; // intentionally finishing the term
-  return { label: 'No Billing', alert: true, tip: 'Member has no upcoming membership invoice — billing isn’t set up. Enroll them so the cycle bills.' };
+  return { label: 'No Billing', alert: false, tip: 'Member has no upcoming membership invoice — billing isn’t set up. Enroll them so the cycle bills.' };
 }
 /* Phase-0 (2026-07-10 account/agreements redesign) — the collapsed agreement-row's leading label
    (spec D18): a MEMBERSHIP status for a membership agreement, else '' (the caller then shows the plain
@@ -8355,7 +8359,14 @@ function headFlagsHtml(card, rec) {
     // BIG-DEAL flags PULSE: No Card · active rental · pay status not Paid/Current.
     const acct = getStatus('customerAccountType', rec.accountType || 'Non-Business');
     const pay = rec.payStatus ? getStatus('customerPayStatus', rec.payStatus) : null;
-    const payBad = pay && !/^(Paid|Current)$/i.test(rec.payStatus);
+    // 'New Customer' added to the quiet set (Jac, 2026-07-18): it is the value every customer is
+    // CREATED with and nothing in the client ever advances it, so a brand-new zero-balance signup
+    // pulsed exactly as urgently as someone genuinely Unpaid — the single biggest source of
+    // pulse-noise on this card. Kept as a negative test so any unrecognised/legacy payStatus still
+    // pulses rather than going silently quiet. ('Paid' is not a customer status — it is an invoice
+    // status left over from a copy/paste — but it is retained because live data is known to carry
+    // off-vocabulary values, e.g. "Don't Contact" on the funnel fields.)
+    const payBad = pay && !/^(Paid|Current|New Customer)$/i.test(rec.payStatus);
     const activeR = DATA.rentals.find((r) => r.customerId === rec.customerId && ACTIVE_RENTAL.has(r.status));
     const rSt = activeR ? getStatus('rentalStatus', rentalDisplayStatus(activeR)) : null;
     const noCard = cardFlag(rec) === 'none';
