@@ -9148,10 +9148,26 @@ const DETAIL = {
 };
 
 /* History section (§0.6) — dotted separator + bg shift, pinned at bottom. */
+/* Minutes-into-day from a nowClock() stamp ("5:44 PM" → 1064); -1 when absent/unparseable so
+   an undated entry sorts last within its day. Inverse of nowClock (app.js §audit). */
+function clockMinutes(c) {
+  const m = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(String(c || '').trim());
+  if (!m) return -1;
+  return ((Number(m[1]) % 12) + (/PM/i.test(m[3]) ? 12 : 0)) * 60 + Number(m[2]);
+}
 function historySection(card, rec, cs, chips) {
   // Timestamped actions taken this session (logAction) ride at the top, newest-first,
   // above the date-derived history. Single merge point → every card gets action history.
-  const acts = (rec.actions || []).slice().sort((a, b) => b.seq - a.seq).map((a) => {
+  // Sort on the REAL stamp (when + clock), not `seq`: actionSeq resets to 0 on every page load
+  // (app.js §audit), so entries written in different sessions carry values from independent
+  // counters and interleaved at random — a log that read Jun 17, Jul 18, Jun 22, Jul 13 in
+  // production (audit 2026-07-18). `seq` stays as the tie-break so same-minute entries from one
+  // session keep their true order.
+  const acts = (rec.actions || []).slice().sort((a, b) =>
+    String(b.when || '').localeCompare(String(a.when || ''))
+    || (clockMinutes(b.clock) - clockMinutes(a.clock))
+    || ((b.seq || 0) - (a.seq || 0))
+  ).map((a) => {
     const when = fmtShortDate(a.when) + (a.clock ? ` · ${a.clock}` : '');
     return { when, text: a.text, by: a.by || '', search: `${when} ${a.text} ${a.by || ''}` };
   });
@@ -20000,13 +20016,20 @@ function openUnitStatusDropdown(rentalId, unitId, anchorEl) {
 }
 /* §9 Field Call — a unit breaks mid-rental: flag the rental (red FC), fail the unit,
    and auto-open a Field-Call work order so the M.Tech can dispatch parts/swap. */
-function markFieldCall(rentalId) {
-  const r = IDX.rental.get(rentalId); if (!r || !r.unitId) { flashOr('[data-slot="unit"]', 'No unit on this rental.'); return; }
+/* §field-call — `unitId` is the unit the caller actually failed. On a MULTI-UNIT rental,
+   `r.unitId` is only the legacy PRIMARY-unit mirror, so falling back to it stamped Failed on
+   the wrong machine and opened the WO against it — the healthy unit went red and dropped out
+   of the rentable fleet while the broken one stayed rentable (audit 2026-07-18). Both callers
+   already hold the right id; the parameter is optional so the single-unit path is unchanged. */
+function markFieldCall(rentalId, unitId) {
+  const r = IDX.rental.get(rentalId);
+  const targetId = unitId || (r && r.unitId);
+  if (!r || !targetId) { flashOr('[data-slot="unit"]', 'No unit on this rental.'); return; }
   r.fieldCall = true; reindex('rentals', r);
-  const u = IDX.unit.get(r.unitId);
+  const u = IDX.unit.get(targetId);
   if (u) { u.inspectionStatus = 'Failed'; reindex('units', u); logAction(u, `Field Call on rental ${r.rentalName || rentalId}`); }
   const id = 'WO-FC' + (state.seq++);
-  const wo = { woId: id, unitId: r.unitId, customerId: r.customerId || null, woReport: 'Field Call — breakdown', woType: 'Field Call', description: `Field call raised on rental ${r.rentalName || rentalId}.`, phase: 'Part Needed?', billCustomer: 'No', date: TODAY_ISO, eta: '', unitHoursAtCreation: u?.currentHours || 0, assignedMechanic: '', laborHours: 0, lineItems: [], mock: true };
+  const wo = { woId: id, unitId: targetId, customerId: r.customerId || null, woReport: 'Field Call — breakdown', woType: 'Field Call', description: `Field call raised on rental ${r.rentalName || rentalId}.`, phase: 'Part Needed?', billCustomer: 'No', date: TODAY_ISO, eta: '', unitHoursAtCreation: u?.currentHours || 0, assignedMechanic: '', laborHours: 0, lineItems: [], mock: true };
   DATA.workOrders.push(wo); IDX.wo.set(id, wo); reindex('workOrders', wo);
   logAction(r, 'Field Call marked — unit failed, work order opened');
   toast('Field Call logged — unit → Failed, work order opened.');
@@ -20042,7 +20065,7 @@ function setUnitCondition(unitId, val) {
   if (val === 'Fail') {
     u.condAt = TODAY_ISO; u.condClock = nowClock();   // stamp the condition change on either path
     const ar = activeRentalForUnit(unitId);
-    if (ar) return markFieldCall(ar.rentalId);        // on-rent breakdown → field call (truck roll + dispatch)
+    if (ar) return markFieldCall(ar.rentalId, unitId);   // on-rent breakdown → field call (truck roll + dispatch); pass the unit Merle actually failed (§field-call)
     const n = newInspectionForUnit(u); n.wash = n.wash || 'No';
     return setInspResult(n.inspectionId, 'Fail');     // yard bench fail: auto-WO + §12.8 photo/notes popup
   }
@@ -20261,7 +20284,7 @@ function commitYardCapture(rentalId, cap, unitId, dataUrl, opts = {}) {
     setUnitCapture(r, eu, 'endCapture', stamp); logAction(r, `${uname ? uname + ' — ' : ''}End/Recovery video ${replace ? 're-captured' : 'captured'}`);
   } else if (cap === 'fc') {
     setUnitCapture(r, eu, 'fcCapture', stamp);
-    if (!replace) markFieldCall(rentalId);
+    if (!replace) markFieldCall(rentalId, unitId);   // §field-call — same unit the capture was stamped on, not the rental's primary mirror
   }
   uploadCaptureMedia(r, eu, cap, dataUrl);
   const session = activeSession(); if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
