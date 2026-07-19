@@ -11353,6 +11353,9 @@ function assignStopDriver(rentalId, unitId, task, driverId) {
   eu[f] = nv;
   logAction(r, `${IDX.unit.get(eu.unitId)?.name || 'Unit'} — ${task === 'Deliver' ? 'delivery' : 'recovery'} driver → ${nv ? driverName(nv) : 'unassigned'}`);
   reindex('rentals', r);
+  // §C crew alert (STUB) — the newly-assigned driver would get a "you're on this run" text. Gated on
+  // the Crew Alerts flag (default off) + composed/logged only, never sent live (see staffAlertMaybe).
+  if (nv) staffAlertMaybe('driverAssigned', { rosterId: nv, leg: task === 'Deliver' ? 'delivery' : 'pickup', unit: IDX.unit.get(eu.unitId)?.name || 'the unit', addr: task === 'Deliver' ? (eu.deliveryAddress || '') : (eu.recoveryAddress || eu.deliveryAddress || ''), date: day });
   return true;
 }
 /* §2.3 Trip materialization store (Phase 3, spec 2026-07-09 §2.3) — mirrors
@@ -11939,8 +11942,59 @@ function tripSetTime(day, tripId, time) {
   dayStore[tripId] = { time, order: cur ? cur.order : trip.stops.slice(), rev: (cur ? cur.rev || 0 : 0) + 1 };
   tripsSaveDay(day, dayStore);
   tripPushSoon(day, tripId);   // §2.3 Phase 4 — debounced sync of this one trip's new time
+  // §C crew alert (STUB) — an ASSIGNED trip whose time actually moved would ping its driver. Gated +
+  // stubbed; only fires on a real change so an Auto-Run rewrite to the same time stays quiet.
+  if (trip.driverId && trip.time !== time) staffAlertMaybe('scheduleChange', { rosterId: trip.driverId, unit: trip.unit, date: day, time });
   return true;
 }
+
+/* ── Crew SMS alerts (STUB) — the §C staff auto-triggers (driver assigned · schedule changed · morning
+   summary) from docs/superpowers/plans/2026-07-14-notifications-BCD-plan.md ───────────────────────────
+   They route through the SAME staff channel the crew broadcast uses: the backend sendStaffMessage_
+   resolves the phone SERVER-SIDE from the rosterId (a stable ref, NEVER a client phone) and owns every
+   gate (manager+, crew SMS consent, quiet-hours). TWO things are DELIBERATELY not live — Jac's calls:
+     1. STAFF_ALERTS_LIVE stays false. A fired trigger COMPOSES the message + recipient and records it to
+        the stubbed outbox (+ console), but never sends. Flip to true only after Jac approves the wording
+        AND the backend auto-trigger build lands (the manual staff-broadcast path is deployed; the three
+        auto-triggers are not — see docs/handoffs/BACKEND-DEPLOY-QUEUE.md).
+     2. The wording below is a DRAFT for Jac to approve, not final copy.
+   A trigger only composes when its Settings → Notifications → Crew Alerts flag is on (default off), so
+   with defaults this whole path is inert — zero behavior change until Jac opts in. */
+const STAFF_ALERTS_LIVE = false;   // Jac's go — never flip without approved wording + the backend trigger build
+const staffAlertOutbox = [];       // stubbed "what WOULD have sent" — newest last, capped at 50
+function staffAlertEnabled(kind) {
+  const staff = (state.settings && state.settings.notifications && state.settings.notifications.staff) || NOTIF_DEFAULTS.staff;
+  return !!(staff && staff[kind] && staff[kind].enabled);
+}
+function staffAlertCompose(kind, ctx) {   // DRAFT wording — Jac approves before go-live. → { rosterId, template, text } | null
+  if (kind === 'driverAssigned') return { rosterId: ctx.rosterId, template: 'staff-run', text: `Jac Rentals: you're on the ${ctx.leg} of ${ctx.unit}${ctx.addr ? ` — ${ctx.addr}` : ''}${ctx.date ? ` (${ctx.date})` : ''}. Open the app for the run.` };
+  if (kind === 'scheduleChange') return { rosterId: ctx.rosterId, template: 'staff-schedule', text: `Jac Rentals: your run${ctx.unit ? ` for ${ctx.unit}` : ''}${ctx.date ? ` on ${ctx.date}` : ''} moved to ${ctx.time || 'a new time'}. Check the app.` };
+  if (kind === 'morningSummary') return { rosterId: ctx.rosterId, template: 'staff-summary', text: `Good morning${ctx.name ? `, ${ctx.name}` : ''} — ${ctx.count} run${ctx.count === 1 ? '' : 's'} on your board today. Open the app for the order.` };
+  return null;
+}
+function staffAlertMaybe(kind, ctx) {
+  try {
+    if (!staffAlertEnabled(kind) || !ctx || !ctx.rosterId) return;   // flag off, or nobody to notify
+    const msg = staffAlertCompose(kind, ctx);
+    if (!msg || !msg.text) return;
+    const entry = { kind, to: driverName(msg.rosterId), rosterId: msg.rosterId, template: msg.template, text: msg.text, at: Date.now() };
+    staffAlertOutbox.push(entry); if (staffAlertOutbox.length > 50) staffAlertOutbox.shift();
+    try { window.__rwStaffAlerts = staffAlertOutbox; } catch (e) {}
+    console.info('[crew-alert STUB — not sent]', kind, '→', entry.to + ':', msg.text);
+    if (STAFF_ALERTS_LIVE) { /* go-live (Jac + backend trigger build): backendCall('sendStaffMessage', { template: msg.template, text: msg.text, rosterId: msg.rosterId, override: false }); */ }
+  } catch (e) { /* an alert must NEVER break the action that triggered it */ }
+}
+/* Morning summary — a per-driver digest of today's OPEN runs. Composing is client-side; the DAILY firing
+   must be a backend time-trigger (like Phase B's reminder sweep — editor-installed, not client cron), so
+   this builds + previews only. window.__rwMorningSummaries([dayISO]) logs what each driver would receive;
+   wiring the daily send is Jac's backend step. */
+function morningSummaryDrafts(dayISO) {
+  const day = dayISO || TODAY_ISO;
+  const byDriver = {};
+  tripsFor().filter((t) => t.day === day && !t.done && t.driverId).forEach((t) => { (byDriver[t.driverId] = byDriver[t.driverId] || []).push(t); });
+  return Object.keys(byDriver).map((rid) => ({ to: driverName(rid), runs: byDriver[rid].length, text: staffAlertCompose('morningSummary', { rosterId: rid, name: driverName(rid), count: byDriver[rid].length }).text }));
+}
+try { window.__rwMorningSummaries = (d) => { const ds = morningSummaryDrafts(d); console.info('[morning-summary STUB — not sent]', ds); return ds; }; } catch (e) {}
 
 /* Deadline anchors for a day's runs (spec §2.7: "stops with a set time, AND stops belonging
    to rentals with a start/end date that implies an arrival deadline"). Every trip passed in
