@@ -2207,9 +2207,14 @@ function topServiceForUnit(unit) {
   const active = rows.filter((s) => s.status !== 'ok' && !svcSnoozedUntil(unit, s.taskId));
   return active[0] || null;
 }
-/** Total repair cost for a unit = Σ its WO line-item costs (SPEC §12.4). */
+/** Total repair cost for a unit = Σ its NON-CANCELLED WO line-item costs (SPEC §12.4).
+ *  §void-money — a cancelled work order was never performed and never billed, so its line items
+ *  are not a repair cost. ruCatMoney's expense loop already skips cancelled WOs; this one did not,
+ *  so a category's ROI denominator and its "Expenses by Category" figure — shown one tab apart on
+ *  the same Categories card — used two different definitions of "expense" and could disagree
+ *  sharply, including flipping the sign of the reported ROI. (audit 2026-07-18) */
 function unitRepairCost(unitId) {
-  return rmemo('unitRepair', unitId, () => DATA.workOrders.filter((w) => w.unitId === unitId)
+  return rmemo('unitRepair', unitId, () => DATA.workOrders.filter((w) => w.unitId === unitId && !w.cancelled)
     .reduce((a, w) => a + (w.lineItems || []).reduce((s, li) => s + (Number(li.cost) || 0), 0), 0));
 }
 /** §7.6 WO "Price if billed": tiered parts markup (by each part's cost) + $150/hr labor.
@@ -2222,10 +2227,23 @@ function woBillable(w) {
   const labor = items.reduce((a, li) => a + (Number(li.hours) || 0), 0) || w.laborHours || 0;
   return Math.round(parts + labor * LABOR_RATE);
 }
-/** Total revenue a unit has earned = Σ its rentals' derived prices (SPEC §12.4). */
+/** Total revenue a unit has EARNED = Σ its rentals' derived prices, excluding rentals that never
+ *  happened (SPEC §12.4).
+ *  §void-money — this summed the rate-card price of every rental the unit was ever listed on, with
+ *  no status check at all, so a Cancelled or No-Show booking was counted as revenue even though the
+ *  app's own billing path had already stripped its invoice line (rentalLineItems filters
+ *  !unitVoided; setRentalStatus calls removeUnitInvoiceLine on void; setUnitStatus refuses to void
+ *  a unit while a payment is still assigned — so a voided unit provably carries $0). The exposure is
+ *  not only a deliberate cancel: rentalDisplayStatus derives 'No Show' for any Reserved rental whose
+ *  start date quietly passed. Filtered PER UNIT via the same unitVoided() convention the billing
+ *  path uses, so a mixed rental still counts the units that actually went out. (audit 2026-07-18) */
 function unitTotalRevenue(unitId) {
-  return rmemo('unitRev', unitId, () => DATA.rentals.filter((r) => rentalHasUnit(r, unitId))
-    .reduce((a, r) => { const p = unitRentalPrice(r, unitId); return a + (p ? p.price : 0); }, 0));   // §20 this unit's own line
+  return rmemo('unitRev', unitId, () => DATA.rentals.filter((r) => {
+    if (!rentalHasUnit(r, unitId)) return false;
+    if (rentalDisplayStatus(r) === 'Quote') return false;                 // an unaccepted quote has earned nothing
+    const eu = rentalUnits(r).find((x) => x.unitId === unitId);
+    return !(eu && unitVoided(r, eu));                                    // this unit's own No-Show/Cancel
+  }).reduce((a, r) => { const p = unitRentalPrice(r, unitId); return a + (p ? p.price : 0); }, 0));   // §20 this unit's own line
 }
 
 /** Inspection result (handles the pending state: no checklist yet = Not Ready). */
@@ -12395,10 +12413,13 @@ function ruCatMoney(rg) {
   const rev = {}, exp = {}, basis = {};
   DATA.rentals.forEach((rr) => {
     if (ruBounded(rg) && !ruIn(rr.startDate, rg)) return;
-    const us = rentalUnits(rr).map((eu) => IDX.unit.get(eu.unitId)).filter((u) => u && u.categoryId);
+    if (rentalDisplayStatus(rr) === 'Quote') return;                      // §void-money — see unitTotalRevenue
+    const us = rentalUnits(rr).map((eu) => ({ eu, u: IDX.unit.get(eu.unitId) })).filter((x) => x.u && x.u.categoryId);
     if (!us.length) return;
+    // Divisor stays the FULL unit count on purpose: a voided unit's slice must drop out of revenue,
+    // not be redistributed onto the units that did go out (which would leave the total unchanged).
     const share = ((rentalPrice(rr) || {}).price || 0) / us.length;
-    us.forEach((u) => { rev[u.categoryId] = (rev[u.categoryId] || 0) + share; });
+    us.forEach(({ eu, u }) => { if (unitVoided(rr, eu)) return; rev[u.categoryId] = (rev[u.categoryId] || 0) + share; });
   });
   DATA.workOrders.forEach((w) => {
     if (w.cancelled) return; if (ruBounded(rg) && !ruIn(w.date, rg)) return;
