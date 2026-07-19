@@ -3286,14 +3286,20 @@ function addFilterTerm(scope, raw) {
 function removeFilterTerm(scope, i) { const arr = termsFor(scope); if (i >= 0 && i < arr.length) arr.splice(i, 1); afterFilterChange(scope); }
 function toggleFilterNeg(scope, i) { const arr = termsFor(scope); if (arr[i]) arr[i].neg = !arr[i].neg; afterFilterChange(scope); }
 
-/** A pinned filter-term pill: leading ○ toggle (→ red − = NOT) + label. The whole
-    pill is click-to-remove (js-ft-x); the ○ toggle is checked first so it wins. */
+/** A pinned filter-term pill: leading ○ include/exclude toggle + label + an explicit remove ✕.
+    B4/B8/B9 filter-trust — the ✕ is now the obvious "get rid of this filter" affordance. A rep used
+    to tap the leading ○ expecting removal and silently NEGATED the filter instead; the ○ stays the
+    include/exclude toggle but is no longer the only tap target, and the pill body no longer removes.
+    A __date chip keeps its whole-pill "click to change the date" behavior — only its ✕ removes (the
+    click handler checks js-ft-x BEFORE the js-date-edit container the ✕ sits inside). */
 function filterTermPill(ft, i, scope) {
-  const isDate = ft.col === '__date';   // §5.4d date chip: whole pill re-opens the picker (edit), not remove
-  return `<span class="filt-term${ft.neg ? ' neg' : ''}${isDate ? ' is-date js-date-edit' : ' js-ft-x'}" data-scope="${esc(scope)}" data-i="${i}" data-tip="${isDate ? 'Click to change the date' : 'Click to remove'}">`
-    + `<button class="ft-neg js-ft-neg" data-scope="${esc(scope)}" data-i="${i}" data-tip="${ft.neg ? 'Excluding — click to include' : 'Including — click to exclude'}"></button>`
-    + `<span class="lbl">${esc(ft.t)}</span>`
-    + `</span>`;
+  const isDate = ft.col === '__date';   // §5.4d date chip: whole pill re-opens the picker (edit)
+  const neg = `<button class="ft-neg js-ft-neg" data-scope="${esc(scope)}" data-i="${i}" data-tip="${ft.neg ? 'Excluding — click to include' : 'Including — click to exclude'}"></button>`;
+  const rm = `<button class="ft-x js-ft-x" data-scope="${esc(scope)}" data-i="${i}" data-tip="Remove filter">${I.x}</button>`;
+  const cls = `filt-term has-x${ft.neg ? ' neg' : ''}${isDate ? ' is-date js-date-edit' : ''}`;
+  const tip = isDate ? ` data-tip="Click to change the date"` : '';
+  return `<span class="${cls}" data-scope="${esc(scope)}" data-i="${i}"${tip}>`
+    + neg + `<span class="lbl">${esc(ft.t)}</span>` + rm + `</span>`;
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -9808,8 +9814,13 @@ function listView(cardDef, session) {
   // state.query + global filter-pills (the whole yard searches as one); otherwise it shows its
   // own per-card cs.search + local pills (today's behavior). The globe stays a lockstep toggle.
   const glob = flagOn('cardGlobalSearch') && state.globalMode;
+  // B4/B8/B9 filter-trust — a per-card "clear all" ✕ once ≥2 filters stack on this card (they used
+  // to accumulate with no bulk clear, only pill-by-pill). Mirrors the global bar's leading closeX,
+  // and keeps graph-view (.g) terms — exactly what the Esc / phone-jog escape preserves. Global mode
+  // defers to the global bar's own clear, so it's suppressed there.
+  const cardClearX = (!glob && cterms.filter((t) => !t.g).length > 1) ? closeX('js-card-clear', { data: { card } }) : '';
   const barPills = glob ? state.filterTerms.map((ft, i) => filterTermPill(ft, i, 'global')).join('')
-                        : cascChip + cterms.map((ft, i) => filterTermPill(ft, i, card)).join('');
+                        : cascChip + cardClearX + cterms.map((ft, i) => filterTermPill(ft, i, card)).join('');
   const barVal = glob ? state.query : cs.search;
   const barHasTerms = glob ? state.filterTerms.length : (cterms.length || cascChip);
   const barHasQuery = glob ? (state.query.trim() || state.filterTerms.length) : (cs.search.trim() || cterms.length);
@@ -19044,9 +19055,10 @@ function onClick(e) {
     return;
   }
   if (closest('.js-clear')) return clearSearch();
+  if (closest('.js-card-clear')) { const b = closest('.js-card-clear'); e.stopPropagation(); const cs = activeSession().cards[b.dataset.card]; if (cs) { cs.filterTerms = (cs.filterTerms || []).filter((t) => t.g); cs.search = ''; } return afterFilterChange(b.dataset.card); }   // B4/B8/B9 — clear ALL of this card's filters at once (keeps graph-view .g terms)
   if (closest('.js-ft-neg')) { const b = closest('.js-ft-neg'); e.stopPropagation(); return toggleFilterNeg(b.dataset.scope, Number(b.dataset.i)); }
+  if (closest('.js-ft-x')) { const b = closest('.js-ft-x'); e.stopPropagation(); return removeFilterTerm(b.dataset.scope, Number(b.dataset.i)); }   // the ✕ wins over the js-date-edit container it sits inside
   if (closest('.js-date-edit')) { const b = closest('.js-date-edit'); e.stopPropagation(); return openDateSearch(b.dataset.scope, Number(b.dataset.i)); }   // §5.4d re-open the picker to change the date
-  if (closest('.js-ft-x')) { const b = closest('.js-ft-x'); e.stopPropagation(); return removeFilterTerm(b.dataset.scope, Number(b.dataset.i)); }
   if (closest('.js-closeall-menu')) { e.stopPropagation(); return openCloseAllMenu(closest('.js-closeall-menu')); }
   if (closest('.js-closeall')) { document.querySelectorAll('.dropdown-menu').forEach((m) => m.remove()); return closeAll(); }
   if (closest('.js-closeothers')) { document.querySelectorAll('.dropdown-menu').forEach((m) => m.remove()); return closeOthers(); }
@@ -19078,7 +19090,14 @@ function onClick(e) {
     const b = closest('.js-fleet-filter'); e.stopPropagation();
     // A1 — the fleet-bar segment routes through the search bar as a removable pill (one
     // filtering pathway, cleared from the search bar) — like the Not-Ready / Services tabs. (Jac 2026-06-15)
-    const s = activeSession(); if (s.cols) s.cols.left = 'units'; const u = s.cards.units; u.mode = 'list'; u.recId = null; u.recType = null; u.backStack = []; u.fwdStack = [];
+    // B4/B8/B9 filter-trust audit — record a full view snapshot (search + column layout) BEFORE the
+    // jump so Back returns to the category card, mirroring the Availability pill (showCategoryUnits).
+    // The tally trio and the Avail pill sit on the SAME category mini-card; they now behave the same
+    // on Back instead of one pushing history and the other wiping it. The phone jogBackEscape is
+    // unaffected — it only fires when backStack is empty (anchor / global-search cases).
+    const s = activeSession(); const u = s.cards.units;
+    pushCardHistory(u, true);
+    if (s.cols) s.cols.left = 'units'; u.mode = 'list'; u.recId = null; u.recType = null;
     addColFilter('units', '__fleet', `${b.dataset.cat}|${b.dataset.status}|${b.dataset.kind}`);
     return;
   }
