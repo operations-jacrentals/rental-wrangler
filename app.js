@@ -7289,11 +7289,16 @@ const ROWS = {
     }${
       tally('Fail', mix.Failed, 'red', 'Failed', `${mix.Failed} failed inspection — tap to filter Units`)
     }`;
-    const rate = (label, v) => `<div class="catr-rate"><span class="catr-rk">${label}</span><span class="catr-rv${v ? '' : ' none'}">${v ? money(v) : '—'}</span></div>`;
+    const rate = (label, v, cls) => `<div class="catr-rate${cls ? ' ' + cls : ''}"><span class="catr-rk">${label}</span><span class="catr-rv${v ? '' : ' none'}">${v ? money(v) : '—'}</span></div>`;
     return `<div class="catr" style="--catr-hl:var(--${hl})">
       <div class="catr-head"><span class="catr-cat">${categoryIconFor(c.name)}</span><span class="r-title catr-name${hl === 'red' ? ' ec-red' : ''}" style="color:${nameColor}" data-tip="${esc(c.name)}">${esc(c.name)}</span></div>
       <div class="catr-pills">${lead}<div class="catr-tally-row">${tallyRow}</div></div>
-      <div class="catr-rates">${rate('1-Day', c.rate1Day)}${rate('7-Day', c.rate7Day)}${rate('4-Week', c.rate4Wk)}${rate('Weekend', c.weekend)}</div>
+      <!-- §member-rate — memberDaily LEADS the stack because it is not a peer of the four
+           duration tiers: rentalPrice() short-circuits on membership and bills days × memberDaily,
+           ignoring all four. It was previously visible only after opening the detail, so the
+           surface a counter rep actually reads to quote a member showed four numbers none of which
+           would be charged (audit 2026-07-18). Order matches the detail view's Pricing section. -->
+      <div class="catr-rates">${rate('Member/Day', c.memberDaily, 'member')}${rate('1-Day', c.rate1Day)}${rate('7-Day', c.rate7Day)}${rate('4-Week', c.rate4Wk)}${rate('Weekend', c.weekend)}</div>
     </div>`;
   },
 

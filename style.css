@@ -4939,6 +4939,14 @@ button.catr-slot { cursor: pointer; padding: 0; background: none; border: 0; fon
 .catr-rk { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .8px; font-weight: 600; font-size: 0.5882rem; color: var(--txt-3); }
 .catr-rv { font-size: 0.7353rem; font-weight: 700; white-space: nowrap; }
 .catr-rv.none { color: var(--txt-3); font-weight: 600; }
+/* §member-rate — the member day rate REPLACES the four duration tiers rather than sitting
+   beside them (rentalPrice() short-circuits on membership), so it leads the stack and carries
+   --purple: the same registry colour the Member / Business Member account badges use, so the
+   rate and the badge read as one idea. Colour only REINFORCES the "Member/Day" label — it never
+   carries the meaning alone. --purple is a single value across all themes, matching how the
+   Member badge and Reserved status already behave. */
+.catr-rate.member .catr-rk,
+.catr-rate.member .catr-rv { color: var(--purple); }
 
 /* ── CUSTOMER ROW (cr-statuses): account-type + funnel, equal-width, right-pinned. ── */
 .cr-statuses { flex: 0 0 160px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-left: auto; }
