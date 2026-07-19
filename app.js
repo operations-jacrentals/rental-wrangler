@@ -8849,6 +8849,7 @@ const DETAIL = {
       ${funnelSectionHtml(c)}
       ${customerInvoicesSection(c, cs)}
       ${activeBar}
+      ${commsCustSectionHtml(c)}
       ${paymentMethodsSection(c)}
       ${notes.bottom}
       ${historySection('customers', c, cs)}
