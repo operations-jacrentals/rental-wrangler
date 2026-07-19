@@ -9468,8 +9468,13 @@ const memberIcon = (m) => (m === 'calendar' ? I.truck : m === 'sales' ? RING_ICO
 // Tab row count for a member (search-aware; mirrors the card's own count chip).
 function memberCount(member, session) {
   if (member === 'sales') return null;   // "coming soon" placeholder — no count chip
-  // Trips: upcoming not-done only — a done or past run is history, not a pending count.
-  if (member === 'calendar') return dispatchEvents().filter((ev) => ev.date >= TODAY_ISO && !stopDone(ev)).length;
+  // Trips: every not-done TRIP, any date (Jac 2026-07-18). Two deliberate choices here:
+  //   • no date floor — an undone run from a past day is the MOST overdue work on the board, not
+  //     history. The old `ev.date >= TODAY_ISO` filter hid it: a yard with four never-logged runs
+  //     (oldest 78 days) still showed a badge of 4, counting only today-forward.
+  //   • counts trips, not raw stops — the card body renders tripsFor(), so once two stops are
+  //     doubled into one run the badge stays equal to the rows underneath it.
+  if (member === 'calendar') return tripsFor().filter((t) => !t.done).length;
   try { let r = listFor(member, session); if (member === 'units') r = unitsVisible(r, session.cards.units); if (member === 'rentals') r = rentalsVisible(r, session, session.cards.rentals); return r.length; } catch { return 0; }
 }
 /** How many units NEED the crew — drives the red alert on the Units tab (the
@@ -11795,7 +11800,7 @@ function dispatchFocusStop(stopId) {
 function tripTownGo(stopId, day) {
   if (day) state.dispatchDay = day;
   state.dispFocusId = stopId;
-  if (!tripsMapOpen()) { tripsMapSetOpen(true); _dispMapFailed = false; }   // a collapsed panel opens (and retries a failed load)
+  if (!tripsMapOpen()) { _mapOpenSession = true; _dispMapFailed = false; }   // a collapsed panel opens for THIS session only (and retries a failed load) — never rewrites the remembered preference
   render();
   dispatchFocusStop(stopId);
 }
@@ -11809,8 +11814,24 @@ function tripTownGo(stopId, day) {
    (the key has Places, not Geocoding) and cached. Phase 2 (spec §2.1): the map rides a
    collapsible ~260px panel at the top of the Trips card — open by default everywhere,
    remembered per device; offline/#local shows the stamped MAP OFFLINE plate instead. */
-const tripsMapOpen = () => { try { const v = localStorage.getItem('jactec.tripsMap'); return v == null ? true : v === '1'; } catch (e) { return true; } };
-const tripsMapSetOpen = (on) => { try { localStorage.setItem('jactec.tripsMap', on ? '1' : '0'); } catch (e) {} };
+/* §2.1 map-panel state, in precedence order:
+   1. _mapOpenSession — a SESSION-ONLY override. Focusing a stop (tripTownGo) has to surface the
+      map, but that is a side effect of "show me this stop", not the driver saying "I want the map
+      open from now on". It used to call tripsMapSetOpen(true), which WROTE localStorage and
+      silently destroyed a deliberate collapse — one tap on a town undid it permanently (Jac
+      2026-07-18). The override lives for this page only; the explicit toggle button clears it.
+   2. the remembered per-device preference.
+   3. the default: open for everyone EXCEPT the driver role, whose landing card this is. The panel
+      is a fixed 260px inside a ~333px scroll region, so opening it by default left a driver
+      looking at one trip out of four; collapsed, three fit above the fold. Office/sales/mechanic
+      land on other cards and keep the map open as before. Read inside the try so a TDZ or storage
+      failure falls back to the old always-open behaviour. */
+let _mapOpenSession = null;
+const tripsMapOpen = () => {
+  if (_mapOpenSession !== null) return _mapOpenSession;
+  try { const v = localStorage.getItem('jactec.tripsMap'); return v == null ? currentRole !== 'driver' : v === '1'; } catch (e) { return true; }
+};
+const tripsMapSetOpen = (on) => { _mapOpenSession = null; try { localStorage.setItem('jactec.tripsMap', on ? '1' : '0'); } catch (e) {} };
 const isLocalDemo = () => (location.hash || '').toLowerCase().includes('local');
 let _dispMapFailed = false;   // a genuine Maps load failure → the panel flips to the plate (re-opening the panel retries)
 let _dispMap = null, _dispView = null, _dispMarkers = [], _dispRoute = null, _dispGeo = {}, _dispGeoPending = {};
