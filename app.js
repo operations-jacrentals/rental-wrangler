@@ -8841,7 +8841,11 @@ const DETAIL = {
        full-width toggle IS the header; each tab = the dated funnel + meta + Next-Actions
        list + Action Log) → the Invoices section (sits directly BELOW the funnel) → active
        bar → Comms → Cards → (empty Notes) → History. The old side-by-side membership/
-       used-sales columns AND the Action Board are folded into funnelSectionHtml. */
+       used-sales columns AND the Action Board are folded into funnelSectionHtml.
+       ⚠ The "→ Comms →" step above describes the INTENDED order, not what ships: the section
+       exists (commsCustSectionHtml) but has no call site, so nothing renders between the active
+       bar and Cards today. Left in the comment deliberately — it records where it belongs when
+       it gets wired up. (audit 2026-07-18) */
     return `<div class="detail">
       <div class="detail-head">${title}</div>
       ${notes.top}
@@ -12934,7 +12938,9 @@ const RUS_TABS = {
   categories: [{ p: 'rev-cat', l: 'Revenue' }, { p: 'exp-cat', l: 'Expenses' }, { p: 'time-util', l: 'Time Util' }, { p: 'dollar-util', l: '$ Util' }],
   rentals: [{ p: 'bookings', l: 'Bookings' }, { p: 'voided', l: 'Voided' }, { p: 'rev-status', l: 'Revenue' }, { p: 'inv-status', l: 'Invoices' }, { p: 'rent-tiles', l: '#s' }],
   customers: [{ p: 'accounts', l: 'Accounts' }, { p: 'cust-active', l: 'Active' }, { p: 'memberships', l: 'Members' }, { p: 'card-health', l: 'Cards' }, { p: 'top-spend', l: 'Top Spend' }],
-  invoices: [{ p: 'balances', l: 'Balances' }, { p: 'net-sales', l: 'Net' }, { p: 'refunds', l: 'Refunds' }, { p: 'aging', l: 'Aging' }, { p: 'top-spend', l: 'Top Spend' }],
+  // No `invoices:` entry — the standalone Invoices card was retired (config.js COLUMNS/COLUMN_OF
+  // carry no 'invoices' member), so listView/rusHtml can never be reached with card === 'invoices'.
+  // Its gauge-strip tabs were dead config and were removed (audit 2026-07-18).
 };
 const RUS_PER_LABEL = { today: 'Td', wk: 'Wk', mo: 'Mo', 30: '30d', 60: '60d', 90: '90d', all: 'All' };
 function rusHtml(card, src, cs) {
@@ -27515,9 +27521,13 @@ function commsHideTab(id) {   // the tab ✕ HIDES from the rail only — it nev
   saveCommsRail(); render();
 }
 /* Open (or resurrect — conversations never really end) a conversation onto the rail
-   in the right category, window up. Entry: the R20 menu, the ALL list, the customer
-   profile's Comms section, and the team/wrangler tab clicks. Single-open: landing
-   here closes whatever window was up (lastOpen replaces; category switch sweeps). */
+   in the right category, window up. Entry: the R20 menu, the ALL list, and the
+   team/wrangler tab clicks. (The customer profile's Comms section is listed in the
+   original note as a fourth entry point, but it does not reach here today — its
+   js-comms-copen button is only emitted by commsCustSectionHtml, which has no call
+   site, so that path is dormant until the section is wired in. audit 2026-07-18)
+   Single-open: landing here closes whatever window was up (lastOpen replaces;
+   category switch sweeps). */
 function commsOpenConv(cat, id) {
   if (cat === 'team') return openChat(String(id));
   if (cat === 'wrangler') return commsOpenWrangler(String(id));
