@@ -7142,7 +7142,13 @@ const ROWS = {
     // Name TINTED by the customer's flag color (Jac): red/yellow lead; green for Members
     // in good standing; a clear non-member keeps the calm default ink; archived/gray reads muted.
     const fc = getEntityColor('customers', c);
-    const isMember = c.accountType === 'Member' || c.accountType === 'Business Member';
+    // 'Non-Business Member', not 'Member': the customerAccountType KEYS are Non-Business /
+    // Business / Non-Business Member / Business Member / Member Incomplete / Blacklisted
+    // (config.js). 'Member' is only the *label* on the Non-Business Member key, so the old
+    // `=== 'Member'` compare could never be true and a Non-Business Member — the ordinary
+    // individual membership — never got the green name tint this line exists to give them.
+    // (audit 2026-07-18)
+    const isMember = c.accountType === 'Non-Business Member' || c.accountType === 'Business Member';
     const nameColor = (fc === 'red' || fc === 'yellow') ? `var(--${fc})` : fc === 'gray' ? 'var(--txt-3)' : (fc === 'green' && isMember) ? 'var(--green)' : 'var(--txt)';
     const sub = c.phone ? esc(c.phone) : '';
 
