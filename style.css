@@ -4947,6 +4947,14 @@ button.catr-slot { cursor: pointer; padding: 0; background: none; border: 0; fon
    Member badge and Reserved status already behave. */
 .catr-rate.member .catr-rk,
 .catr-rate.member .catr-rv { color: var(--purple); }
+/* §off-fleet-rates — every unit in this category is Sold / For Sale / Inactive, so the rate card
+   is reference data rather than a live quote. The lead pill above already stamps the reason
+   ("None · Sold"), so the numbers recede instead of repeating it: Jac keeps the figures, while a
+   counter rep no longer reads them as bookable. Values stay legible — this is de-emphasis, not
+   hiding, and the pill carries the meaning in words. */
+.catr-rates.off-fleet .catr-rv,
+.catr-rates.off-fleet .catr-rate.member .catr-rk,
+.catr-rates.off-fleet .catr-rate.member .catr-rv { color: var(--txt-3); font-weight: 600; }
 
 /* ── CUSTOMER ROW (cr-statuses): account-type + funnel, equal-width, right-pinned. ── */
 .cr-statuses { flex: 0 0 160px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-left: auto; }

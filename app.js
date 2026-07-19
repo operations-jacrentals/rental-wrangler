@@ -7290,15 +7290,31 @@ const ROWS = {
       tally('Fail', mix.Failed, 'red', 'Failed', `${mix.Failed} failed inspection — tap to filter Units`)
     }`;
     const rate = (label, v, cls) => `<div class="catr-rate${cls ? ' ' + cls : ''}"><span class="catr-rk">${label}</span><span class="catr-rv${v ? '' : ' none'}">${v ? money(v) : '—'}</span></div>`;
+    /* §no-rates (B13) — an unpriced category bills $0. The Rentals stall already flags this at
+       quote time (§rentalUnit `No rates`), but the Categories card — where a counter rep reads a
+       price BEFORE a rental exists — showed four silent em-dashes next to a green "N Avail", so
+       the surface said "rent me" and gave nothing to quote. Same predicate, same R9 flag, same
+       copy as the quote-time flag so the two read as one warning.
+       Deliberately NOT `alert:true`: the pulsing R9b variant is right for ONE record at quote
+       time, but this grid can hold many unpriced categories at once (7 of 46 in production), and
+       a screenful of pulsing flags is the scattered ambient motion the design language forbids. */
+    const noRatesFlag = catRatesUnset(c)
+      ? flagEl('No rates', 'yellow', { title: 'This category has no day / 7-day / 4-week rate — it bills $0. Set its rates before quoting.' })
+      : '';
+    /* §off-fleet-rates (B12) — mix counts the ACTIVE fleet only, so a zero total means every unit
+       is Sold / For Sale / Inactive: the rate card is reference data, not a live quote. The lead
+       pill above already stamps the reason ("None · Sold"), so the rates recede rather than repeat
+       it — Jac keeps the numbers, a rep stops reading them as bookable. */
+    const noActiveFleet = (mix.Ready + mix['Not Ready'] + mix.Failed) === 0;
     return `<div class="catr" style="--catr-hl:var(--${hl})">
-      <div class="catr-head"><span class="catr-cat">${categoryIconFor(c.name)}</span><span class="r-title catr-name${hl === 'red' ? ' ec-red' : ''}" style="color:${nameColor}" data-tip="${esc(c.name)}">${esc(c.name)}</span></div>
+      <div class="catr-head"><span class="catr-cat">${categoryIconFor(c.name)}</span><span class="r-title catr-name${hl === 'red' ? ' ec-red' : ''}" style="color:${nameColor}" data-tip="${esc(c.name)}">${esc(c.name)}</span>${noRatesFlag}</div>
       <div class="catr-pills">${lead}<div class="catr-tally-row">${tallyRow}</div></div>
       <!-- §member-rate — memberDaily LEADS the stack because it is not a peer of the four
            duration tiers: rentalPrice() short-circuits on membership and bills days × memberDaily,
            ignoring all four. It was previously visible only after opening the detail, so the
            surface a counter rep actually reads to quote a member showed four numbers none of which
            would be charged (audit 2026-07-18). Order matches the detail view's Pricing section. -->
-      <div class="catr-rates">${rate('Member/Day', c.memberDaily, 'member')}${rate('1-Day', c.rate1Day)}${rate('7-Day', c.rate7Day)}${rate('4-Week', c.rate4Wk)}${rate('Weekend', c.weekend)}</div>
+      <div class="catr-rates${noActiveFleet ? ' off-fleet' : ''}">${rate('Member/Day', c.memberDaily, 'member')}${rate('1-Day', c.rate1Day)}${rate('7-Day', c.rate7Day)}${rate('4-Week', c.rate4Wk)}${rate('Weekend', c.weekend)}</div>
     </div>`;
   },
 
