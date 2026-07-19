@@ -1,0 +1,173 @@
+From d7eee43e587054d46f6f4cdb199558ad091a20a8 Mon Sep 17 00:00:00 2001
+From: operations-jacrentals <operations@jacrentals.com>
+Date: Sat, 18 Jul 2026 22:49:01 -0500
+Subject: [PATCH 2/2] Make Void and Send-to-Collections reachable again (C1,
+ C2)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Both actions were fully built — manager-tier gate, reason-code confirm
+popup, collections overlay, auto-blacklist, audit-log entry, and live
+js-void-invoice / js-col-queue / js-col-recall handlers — but their ONLY
+trigger markup lived in DETAIL.invoices, and the standalone Invoices card is
+retired (config.js COLUMNS/COLUMN_OF carry no 'invoices' member). So the tail
+of the AR chain was unclickable: a late invoice could be paid, printed or
+refunded, but never voided and never sent to the agency. The only visible
+alternative was raw Blacklist, which skips the whole record-keeping path — no
+agency placement, no amount placed, no reason code.
+
+Ported the conditions verbatim into invoiceStatMenu, the menu that DOES
+render on the customer's embedded invoice list:
+  Void            canMoney() && invoiceVoidable(i)
+  (else)          "Refund to void" hint when a payment is assigned
+  Recall          manager tier && invoiceCollectionsActive(i)
+  Wrangle         manager tier && status in Late/Late+30/60/90/Collections
+                  && balance > 0.005 && !locked && !refunded
+Same js- hooks, same data-rec, same gates — render surface only, no new
+logic. Handlers re-check their own tier, so the gate is defence-in-depth.
+Items use the menu's existing im-item/im-sep pattern, so no new component,
+no new data-r and no WINDOW_CATALOG entry.
+
+VERIFIED end to end in the browser on the #local seed, through the real UI —
+opened customer C0033, expanded invoice 02i07Ju26 (status Late, $897.08
+owed, $0 paid, voidable, not in collections) and opened its status menu:
+  before:  $ Pay · Print · Send(disabled)
+  after:   $ Pay · Print · Send(disabled) · ⊘ Void invoice · ⚑ Wrangle to Collections
+with js-void-invoice and js-col-queue present on the new items.
+
+NOTE for whoever verifies next: the first run showed NO change because the
+browser was still running app.js?v=<old token> — index.html is cached too, so
+a plain reload is not enough. Bump the token (or load the page with a
+cache-busting query) before trusting a visual check. That is exactly the
+failure ci/check-cachebust.mjs exists to prevent. The bump used for this
+verification was reverted; /deploy owns the real one.
+
+Gates: smoke, logic-test, lease-test, lease-deploy-test, promote-test,
+deck-test, cachebust-test, gen-rule-usage --check, check-window-catalog,
+check-design-md, gen-code-map --check — all green.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+---
+ app.js                     | 18 ++++++++++
+ docs/code-map.generated.md | 68 +++++++++++++++++++-------------------
+ 2 files changed, 52 insertions(+), 34 deletions(-)
+
+diff --git a/app.js b/app.js
+index 0ff8109..308d43e 100644
+--- a/app.js
++++ b/app.js
+@@ -4850,6 +4850,24 @@ function invoiceStatMenu(i, c, open) {
+   items.push(`<button class="im-item js-print-invoice" role="menuitem" data-rec="${esc(i.invoiceId)}"><span class="im-ic">🖨</span> Print</button>`);
+   items.push(`<button class="im-item" role="menuitem" disabled data-tip="Sending invoices to customers is coming soon"><span class="im-ic">✉</span> Send</button>`);
+   if (canRefund) items.push(`<div class="im-sep"></div><button class="im-item danger js-pay-invoice" role="menuitem" data-rec="${esc(i.invoiceId)}"><span class="im-ic">↩</span> ${t.status === 'Refunded' ? 'Details' : 'Refund'}</button>`);
++  // Void + Collections — the tail of the AR chain. Both were fully built (handlers, manager gate,
++  // reason-code confirm popup, collections overlay, auto-blacklist, audit log) but their ONLY
++  // trigger markup lived in DETAIL.invoices, and the standalone Invoices card is retired
++  // (config.js COLUMNS/COLUMN_OF carry no 'invoices'), so neither could be reached from the one
++  // invoice UI that does render. Ported here verbatim — same conditions, same js- hooks, same
++  // data-rec — so this is a render surface only, no new logic. (audit 2026-07-18)
++  const canVoid = mayMoney && invoiceVoidable(i);
++  const needsRefundFirst = mayMoney && !canVoid && t.paid > 0.005 && !i.refunded && !i.voided;
++  const mgrTier = !currentRole || roleTier(currentRole) >= tierRank('manager');
++  const inCollections = mgrTier && !!c && invoiceCollectionsActive(i);
++  const canCollect = mgrTier && !!c && !inCollections
++    && ['Late', 'Late+30', 'Late+60', 'Late+90', 'Collections'].includes(t.status)
++    && t.balance > 0.005 && !i.locked && !i.refunded;
++  if (canVoid || needsRefundFirst || inCollections || canCollect) items.push(`<div class="im-sep"></div>`);
++  if (canVoid) items.push(`<button class="im-item danger js-void-invoice" role="menuitem" data-rec="${esc(i.invoiceId)}"><span class="im-ic">⊘</span> Void invoice</button>`);
++  else if (needsRefundFirst) items.push(`<button class="im-item" role="menuitem" disabled data-tip="A payment is assigned — refund it first, then you can void this invoice."><span class="im-ic">⊘</span> Refund to void</button>`);
++  if (inCollections) items.push(`<button class="im-item js-col-recall" role="menuitem" data-rec="${esc(i.invoiceId)}"><span class="im-ic">↺</span> Recall from collections</button>`);
++  else if (canCollect) items.push(`<button class="im-item danger js-col-queue" role="menuitem" data-rec="${esc(i.invoiceId)}"><span class="im-ic">⚑</span> Wrangle to Collections</button>`);
+   return `<div class="io-menu-wrap">`
+     + `<button class="io-statmenu ${ps.cls}${open ? ' open' : ''} js-inv-statmenu" data-r="R29" data-rec="${esc(i.invoiceId)}" data-cust="${esc(c.customerId)}" aria-expanded="${open ? 'true' : 'false'}" aria-haspopup="menu" data-tip="Invoice status · actions">${esc(ps.word)} <span class="cv">${I.chev}</span></button>`
+     + (open ? `<div class="io-menu" role="menu">${items.join('')}</div>` : '')
+diff --git a/docs/code-map.generated.md b/docs/code-map.generated.md
+index 82c2f87..9ab50d5 100644
+--- a/docs/code-map.generated.md
++++ b/docs/code-map.generated.md
+@@ -4,7 +4,7 @@
+ 
+ # Code Atlas — generated chapter index (Part I · The Frontend)
+ 
+-## app.js — 27683 lines, 41 chapters
++## app.js — 27701 lines, 41 chapters
+ 
+ | ID | Lines | Anchors | Chapter title | Key symbols |
+ |----|------:|---------|---------------|-------------|
+@@ -16,39 +16,39 @@
+ | APP-06 | 1591–2353 | — | INLINE TRANSPORT EDITOR + GOOGLE MAPS (Jac 2026-06-15) | _mapsKey, ensureMapsKey, loadGoogleMaps, afterMapsLoad, mapsReady, YARD_CENTER, _teMap, openTransportEdit, closeTransportEdit, transportEditorHtml, mountTransportEditor, teQuery, …(+63) |
+ | APP-07 | 2354–3277 | §4 §0.1 | §4 STATE & SESSIONS — one normalized object + the session model (SPEC §0.1) | freshSession, columnOfMember, SORT_LS_KEY, loadSort, saveSort, entityCardOf, unitOfShopRec, COMMS_LS_KEY, COMMS_CATS, commsFreshSessions, loadCommsRail, saveCommsRail, …(+84) |
+ | APP-08 | 3278–3285 | §5a | §5a ICONS — inline SVG (stroke-based, currentColor) | — |
+-| APP-09 | 3286–5774 | — | SETTINGS BOARD — admin customization (config.settings). | STATUS_ICONS, SETTINGS_STATUS_SETS, STATUS_DEFAULTS, ovIcon, loadAdminSettings, applyStatusOverrides, settingsReverted, applySettings, persistAdminSettings, hasSettingsBackup, pageDefaultSlice, resetPageSettings, …(+163) |
+-| APP-10 | 5775–5795 | §5 | §5 UI BUILDERS — ONE function per design rule (the SPEC v8 rulebook). | SET_CARD, dataAttrs |
+-| APP-11 | 5796–6601 | — | FLAG-DRIVEN COLOR ENGINE — SPEC docs/specs/flag-color-system.md | openWOsForRental, rentalUnitRecords, woHasEta, insuranceTypeCatalog, unitCoverage, INS_OUT, fleetInsuredValue, fleetPremiumMonthly, FLAG_COND, getEntityFlags, entityArchived, getEntityColor, …(+56) |
+-| APP-12 | 6602–6769 | — | DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) | rbSw, RB_FOUNDATION, RB_TABS, CLASS_RULE, ruleOf, refPath, onInspectMove |
+-| APP-13 | 6770–7009 | §6 | §6 LIST ROWS — row meta + the universal row template | ROW_META, isSoldInactive, unitsVisible, rentalsVisible, INV_METHOD_OPTS, INV_METHOD_LABEL, invMethodClass, rowViz, customerSpectrumViz, CATEGORY_MOTION, categoryIconFor, catFramesSvg, …(+7) |
+-| APP-14 | 7010–7419 | §6b | §6b PER-CARD ROWS | rowEl, genericRow, ROWS |
+-| APP-15 | 7420–7619 | §7 | §7 COLUMN REGISTRY & FOOTER TOTALS — one source of truth per card | pillS, C, CARD_COLUMNS, cardColumns, boardSegmentFor, aggColumn, AGG_CALCS, AGG_LABEL, fmtAggValue, LIST_LAYOUT_KEY, LIST_LAYOUTS, DEFAULT_LAYOUT, …(+11) |
+-| APP-16 | 7620–9195 | §8 | §8 DETAIL RENDERERS — kv/efld/notes · v2 helpers (yard tool, WO sections, | kv, kvPills, efld, notesSection, openWOsForUnit, latestInspForUnit, WO_SEV, woBottleneck, unitWorstBottleneck, unitCondLock, newInspectionForUnit, yardToolHtml, …(+46) |
+-| APP-17 | 9196–9455 | §9 | §9 CARDS & GRID — cardEl, listView, the 3-column shell | listFor, collection, sortRows, VIRT_CAP, SHOW_MORE_BATCH, appendWindowed, UNIT_SECTIONS, unitStageKey, GROUP_DEFS, COLLAPSED_GROUPS, groupDefaultCollapsed, groupCollapsed, …(+8) |
+-| APP-18 | 9456–9900 | — | 3-COLUMN LAYOUT (display-only shell over the existing cards). | GRID_CARD_BY_ID, MEMBER_TITLE, memberIcon, memberCount, unitsAlertCount, wave2ListOverride, columnEl, mobileRailPanelEl, inertRailClone, colTabsEl, mobileNavEl, colTabButtonsHtml, …(+9) |
+-| APP-19 | 9901–10025 | §11 | §11 HEADER, KPI & BOTTOM BAR | bandColor, ring3SVG, ringsSVG, pctOf, fleetInsp, legacyKpiPct, KPI_HELP |
+-| APP-20 | 10026–10197 | §11b | §11b KPI METRIC ENGINE — admin-definable KPIs (Settings → KPIs & Rings). | KPI_ENTITY, KPI_DERIVED, KPI_TOKENS, kpiField, kpiVal, kpiCond, kpiRows, kpiAgg, kpiBand, kpiTarget, kpiEval, KPI_DEFAULTS, …(+11) |
+-| APP-21 | 10198–10533 | — | COMING 2026 — the roadmap morale plate (Jac 2026-06-23) | ROADMAP_ITEMS, ROADMAP_AREAS, headerEl, bottomBarInner, toolsMenuRows, openToolsMenu, toolsBtn, commsBellCount, commsMenuRows, openCommsMenu, commsBellBtn, bottomBarEl, …(+13) |
+-| APP-22 | 10534–12101 | §17 | §17 INTERNAL TEAM DOCK (Jac, Phase 7) — a bottom-bar chat built on the Phase-6 | chatComments, chatUnreadCount, chatById, activeChat, chatsTagging, chatMarkSeen, chatUnseenForRec, newChat, myRosterId, chatIsAdmin, chatAmMember, chatVisibleToMe, …(+135) |
+-| APP-23 | 12102–12144 | §13.3 | §13.3 CARD GRAPH VIEW — RETIRED (2026-07-03). The per-card tile | GV_WIN_OPTS, GV_WIN_KEY, GV_WIN, loadGvWin, saveGvWin, gvWinLabel, gvWinCutoff, gvBuckets |
+-| APP-24 | 12145–12987 | §13.4 | §13.4 GRAPH CAROUSEL (Jac 2026-06-16) — the per-card Graph is a deck of | gvClampIdx, gvKey, gvSegOn, gvSmallest, graphViewsFor, gvSaveCurrent, gvStripTerms, gvRestore, gvOpen, gvChevron, gvSyncClosed, toggleGraphSeg, …(+71) |
+-| APP-25 | 12988–14722 | §12 | §12 OVERLAYS & BOARDS — renderOverlay kinds + back-office board popups | _ovScroll, _popDrag, wirePopupDrag, backGuard, swipeFired, anyDismissable, dismissTopSheet, syncBackGuard, closePhoneSheet, _pg, PULL_MIN, _sheetScroller, …(+4) |
+-| APP-26 | 14723–15067 | — | RB-WINDOWS catalog (Jac 2026-06-22) — the admin Rulebook's index of | WINDOW_CATALOG, previewOverlayFor, STANDALONE_SURFACES, feedbackContext, sendFeedback, CB_BLOCK_LABEL, CB_REASON_LABEL, crewBroadcastEmps, RR_STAR_TIP, rrBand, RR_BAND_LABEL, notifRatingTemplate, …(+12) |
+-| APP-27 | 15068–15552 | §18 | §18 MR. WRANGLER — the in-app AI (Claude via the Apps Script backend). | WRANGLER_SYSTEM, wranglerDigest, wrIssueIndex, wranglerContext, WR_DEDUP_NOTE, wranglerAttachAny, wranglerAttachFile, parseCsvFile, wranglerAttachTextFile, wranglerImageBlock, wranglerErrMsg, WR_TOOL_LIMIT, …(+11) |
+-| APP-28 | 15553–16811 | — | Mr. Wrangler ACTS on your data (Jac 2026-06-16) | WR_FUNNEL, wrFunnel, WR_ACCT, wrAccount, WR_EDITABLE, WR_REQUIRED, WR_NUMERIC, WR_MONEY_FIELDS, wrPlanNeedsApply, WR_IDX, wrGet, wrNorm, …(+116) |
+-| APP-29 | 16812–17161 | §13 | §13 DROPDOWNS — openDropdown + status/fleet/funnel/sort menus | GTI, GATE_ICON, GATE_TL, GTCHK, gateTimeline, openDropdown, openStatusDropdown, openFleetDropdown, setUnitFleet, openReconcileDropdown, setExpenseReconcile, funnelMenuChip, …(+23) |
+-| APP-30 | 17162–17531 | §14 | §14 RENDER PIPELINE + toast | renderCount, scrollMemo, render, renderResults, scheduleCardListRender, renderCardList, mirrorGlobeBars, _titlesRaf, applyTitles, HOVER_CAPABLE, initTooltip, hideTip, …(+8) |
+-| APP-31 | 17532–17535 | §15 | §15 EVENT HANDLERS — onClick/onInput/onChange (single listener tree) | — |
+-| APP-32 | 17536–20024 | §15c | §15c DRAG & DROP LINK ENGINE (DRAGDROP-DESIGN.md) — custom pointer engine. | DRAG, DRAG_SOURCES, INV_LINEABLE, dragLayer, DROP_MATRIX, woDroppableToInvoice, invoiceUnitIds, LINK_TARGET_LABEL, linkRoleAllows, linkActionPossible, linkActionsFor, enterLinking, …(+63) |
+-| APP-33 | 20025–21328 | §16 | §16 ACTIONS / MUTATIONS — every state change funnels through here | setUnitCondition, openInspectionRecord, pendingInspForUnit, openChecklist, completeChecklist, washBtn, cycleUnitWash, uncompleteWash, setUnitWash, sellUnit, captureUnit, setUnitCapture, …(+52) |
+-| APP-34 | 21329–22865 | §17 | §17 STRIPE / PAYMENTS — card-on-file + invoice charging (client side). | _stripe, _pubKey, ensurePubKey, getStripe, canMoney, brandName, hasCardOnFile, commitAction, cardOneLabel, cardLabel, friendlyPayErr, openAddCard, …(+97) |
+-| APP-35 | 22866–23348 | §5.4d | §5.4d — DATE SEARCH PICKER. A standalone calendar that REUSES the rental | openDateSearch, closeDateSearch, dsMonth, dsToday, dsClear, dsPickDay, dsDone, dateSearchEl, positionDateSearch, setInspWash, setInspResult, recordServiceCompletion, …(+21) |
+-| APP-36 | 23349–23351 | §18 | §18 PERSISTENCE & BOOT | — |
+-| APP-37 | 23352–24577 | §18b | §18b BACKEND SYNC — Google Sheets via the Apps Script web app | BACKEND_URL, PERSIST_KEYS, backendPassword, devPwMode, booting, saveTimer, driveViewUrl, backendCall, gpsToken, gpsBase, gpsConfigured, _gpsReloginInflight, …(+86) |
+-| APP-38 | 24578–25717 | — | INSTANT CACHE — on-device data snapshot (spec 2026-07-16) | DC_DB, CACHE_SCHEMA_VER, _dcDbPromise, dcDbOpen, dcTx, dataCache, cacheAppVer, pidLocalToken, cacheTokenTag, cacheDeviceOk, cacheValid, cacheSnapshotEnvelope, …(+93) |
+-| APP-39 | 25718–25724 | — | PHONE-VERIFIED DEVICE IDENTITY — login flow (Phase 2) | — |
+-| APP-40 | 25725–26055 | — | const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', | pidUI, pidTokenGet, pidTokenSet, pidTokenClear, pidRosterCache, pidAdopt, pidLoadFail, pidEnter, renderBootSplash, phoneBoot, pidErr, pidCall, …(+14) |
+-| APP-41 | 26056–27683 | — | SCAN-TO-LOG (QR DECAL → VIDEO) — standalone capture (FEATURES.qrScanLog) | pendingScan, scanActive, scanUI, scanEnabled, scanPreviewOn, scanTokenGet, scanTokenSet, scanTokenClear, maybeReplayScan, scanCall, scanPreviewResponse, renderScanCapture, …(+80) |
++| APP-09 | 3286–5792 | — | SETTINGS BOARD — admin customization (config.settings). | STATUS_ICONS, SETTINGS_STATUS_SETS, STATUS_DEFAULTS, ovIcon, loadAdminSettings, applyStatusOverrides, settingsReverted, applySettings, persistAdminSettings, hasSettingsBackup, pageDefaultSlice, resetPageSettings, …(+163) |
++| APP-10 | 5793–5813 | §5 | §5 UI BUILDERS — ONE function per design rule (the SPEC v8 rulebook). | SET_CARD, dataAttrs |
++| APP-11 | 5814–6619 | — | FLAG-DRIVEN COLOR ENGINE — SPEC docs/specs/flag-color-system.md | openWOsForRental, rentalUnitRecords, woHasEta, insuranceTypeCatalog, unitCoverage, INS_OUT, fleetInsuredValue, fleetPremiumMonthly, FLAG_COND, getEntityFlags, entityArchived, getEntityColor, …(+56) |
++| APP-12 | 6620–6787 | — | DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) | rbSw, RB_FOUNDATION, RB_TABS, CLASS_RULE, ruleOf, refPath, onInspectMove |
++| APP-13 | 6788–7027 | §6 | §6 LIST ROWS — row meta + the universal row template | ROW_META, isSoldInactive, unitsVisible, rentalsVisible, INV_METHOD_OPTS, INV_METHOD_LABEL, invMethodClass, rowViz, customerSpectrumViz, CATEGORY_MOTION, categoryIconFor, catFramesSvg, …(+7) |
++| APP-14 | 7028–7437 | §6b | §6b PER-CARD ROWS | rowEl, genericRow, ROWS |
++| APP-15 | 7438–7637 | §7 | §7 COLUMN REGISTRY & FOOTER TOTALS — one source of truth per card | pillS, C, CARD_COLUMNS, cardColumns, boardSegmentFor, aggColumn, AGG_CALCS, AGG_LABEL, fmtAggValue, LIST_LAYOUT_KEY, LIST_LAYOUTS, DEFAULT_LAYOUT, …(+11) |
++| APP-16 | 7638–9213 | §8 | §8 DETAIL RENDERERS — kv/efld/notes · v2 helpers (yard tool, WO sections, | kv, kvPills, efld, notesSection, openWOsForUnit, latestInspForUnit, WO_SEV, woBottleneck, unitWorstBottleneck, unitCondLock, newInspectionForUnit, yardToolHtml, …(+46) |
++| APP-17 | 9214–9473 | §9 | §9 CARDS & GRID — cardEl, listView, the 3-column shell | listFor, collection, sortRows, VIRT_CAP, SHOW_MORE_BATCH, appendWindowed, UNIT_SECTIONS, unitStageKey, GROUP_DEFS, COLLAPSED_GROUPS, groupDefaultCollapsed, groupCollapsed, …(+8) |
++| APP-18 | 9474–9918 | — | 3-COLUMN LAYOUT (display-only shell over the existing cards). | GRID_CARD_BY_ID, MEMBER_TITLE, memberIcon, memberCount, unitsAlertCount, wave2ListOverride, columnEl, mobileRailPanelEl, inertRailClone, colTabsEl, mobileNavEl, colTabButtonsHtml, …(+9) |
++| APP-19 | 9919–10043 | §11 | §11 HEADER, KPI & BOTTOM BAR | bandColor, ring3SVG, ringsSVG, pctOf, fleetInsp, legacyKpiPct, KPI_HELP |
++| APP-20 | 10044–10215 | §11b | §11b KPI METRIC ENGINE — admin-definable KPIs (Settings → KPIs & Rings). | KPI_ENTITY, KPI_DERIVED, KPI_TOKENS, kpiField, kpiVal, kpiCond, kpiRows, kpiAgg, kpiBand, kpiTarget, kpiEval, KPI_DEFAULTS, …(+11) |
++| APP-21 | 10216–10551 | — | COMING 2026 — the roadmap morale plate (Jac 2026-06-23) | ROADMAP_ITEMS, ROADMAP_AREAS, headerEl, bottomBarInner, toolsMenuRows, openToolsMenu, toolsBtn, commsBellCount, commsMenuRows, openCommsMenu, commsBellBtn, bottomBarEl, …(+13) |
++| APP-22 | 10552–12119 | §17 | §17 INTERNAL TEAM DOCK (Jac, Phase 7) — a bottom-bar chat built on the Phase-6 | chatComments, chatUnreadCount, chatById, activeChat, chatsTagging, chatMarkSeen, chatUnseenForRec, newChat, myRosterId, chatIsAdmin, chatAmMember, chatVisibleToMe, …(+135) |
++| APP-23 | 12120–12162 | §13.3 | §13.3 CARD GRAPH VIEW — RETIRED (2026-07-03). The per-card tile | GV_WIN_OPTS, GV_WIN_KEY, GV_WIN, loadGvWin, saveGvWin, gvWinLabel, gvWinCutoff, gvBuckets |
++| APP-24 | 12163–13005 | §13.4 | §13.4 GRAPH CAROUSEL (Jac 2026-06-16) — the per-card Graph is a deck of | gvClampIdx, gvKey, gvSegOn, gvSmallest, graphViewsFor, gvSaveCurrent, gvStripTerms, gvRestore, gvOpen, gvChevron, gvSyncClosed, toggleGraphSeg, …(+71) |
++| APP-25 | 13006–14740 | §12 | §12 OVERLAYS & BOARDS — renderOverlay kinds + back-office board popups | _ovScroll, _popDrag, wirePopupDrag, backGuard, swipeFired, anyDismissable, dismissTopSheet, syncBackGuard, closePhoneSheet, _pg, PULL_MIN, _sheetScroller, …(+4) |
++| APP-26 | 14741–15085 | — | RB-WINDOWS catalog (Jac 2026-06-22) — the admin Rulebook's index of | WINDOW_CATALOG, previewOverlayFor, STANDALONE_SURFACES, feedbackContext, sendFeedback, CB_BLOCK_LABEL, CB_REASON_LABEL, crewBroadcastEmps, RR_STAR_TIP, rrBand, RR_BAND_LABEL, notifRatingTemplate, …(+12) |
++| APP-27 | 15086–15570 | §18 | §18 MR. WRANGLER — the in-app AI (Claude via the Apps Script backend). | WRANGLER_SYSTEM, wranglerDigest, wrIssueIndex, wranglerContext, WR_DEDUP_NOTE, wranglerAttachAny, wranglerAttachFile, parseCsvFile, wranglerAttachTextFile, wranglerImageBlock, wranglerErrMsg, WR_TOOL_LIMIT, …(+11) |
++| APP-28 | 15571–16829 | — | Mr. Wrangler ACTS on your data (Jac 2026-06-16) | WR_FUNNEL, wrFunnel, WR_ACCT, wrAccount, WR_EDITABLE, WR_REQUIRED, WR_NUMERIC, WR_MONEY_FIELDS, wrPlanNeedsApply, WR_IDX, wrGet, wrNorm, …(+116) |
++| APP-29 | 16830–17179 | §13 | §13 DROPDOWNS — openDropdown + status/fleet/funnel/sort menus | GTI, GATE_ICON, GATE_TL, GTCHK, gateTimeline, openDropdown, openStatusDropdown, openFleetDropdown, setUnitFleet, openReconcileDropdown, setExpenseReconcile, funnelMenuChip, …(+23) |
++| APP-30 | 17180–17549 | §14 | §14 RENDER PIPELINE + toast | renderCount, scrollMemo, render, renderResults, scheduleCardListRender, renderCardList, mirrorGlobeBars, _titlesRaf, applyTitles, HOVER_CAPABLE, initTooltip, hideTip, …(+8) |
++| APP-31 | 17550–17553 | §15 | §15 EVENT HANDLERS — onClick/onInput/onChange (single listener tree) | — |
++| APP-32 | 17554–20042 | §15c | §15c DRAG & DROP LINK ENGINE (DRAGDROP-DESIGN.md) — custom pointer engine. | DRAG, DRAG_SOURCES, INV_LINEABLE, dragLayer, DROP_MATRIX, woDroppableToInvoice, invoiceUnitIds, LINK_TARGET_LABEL, linkRoleAllows, linkActionPossible, linkActionsFor, enterLinking, …(+63) |
++| APP-33 | 20043–21346 | §16 | §16 ACTIONS / MUTATIONS — every state change funnels through here | setUnitCondition, openInspectionRecord, pendingInspForUnit, openChecklist, completeChecklist, washBtn, cycleUnitWash, uncompleteWash, setUnitWash, sellUnit, captureUnit, setUnitCapture, …(+52) |
++| APP-34 | 21347–22883 | §17 | §17 STRIPE / PAYMENTS — card-on-file + invoice charging (client side). | _stripe, _pubKey, ensurePubKey, getStripe, canMoney, brandName, hasCardOnFile, commitAction, cardOneLabel, cardLabel, friendlyPayErr, openAddCard, …(+97) |
++| APP-35 | 22884–23366 | §5.4d | §5.4d — DATE SEARCH PICKER. A standalone calendar that REUSES the rental | openDateSearch, closeDateSearch, dsMonth, dsToday, dsClear, dsPickDay, dsDone, dateSearchEl, positionDateSearch, setInspWash, setInspResult, recordServiceCompletion, …(+21) |
++| APP-36 | 23367–23369 | §18 | §18 PERSISTENCE & BOOT | — |
++| APP-37 | 23370–24595 | §18b | §18b BACKEND SYNC — Google Sheets via the Apps Script web app | BACKEND_URL, PERSIST_KEYS, backendPassword, devPwMode, booting, saveTimer, driveViewUrl, backendCall, gpsToken, gpsBase, gpsConfigured, _gpsReloginInflight, …(+86) |
++| APP-38 | 24596–25735 | — | INSTANT CACHE — on-device data snapshot (spec 2026-07-16) | DC_DB, CACHE_SCHEMA_VER, _dcDbPromise, dcDbOpen, dcTx, dataCache, cacheAppVer, pidLocalToken, cacheTokenTag, cacheDeviceOk, cacheValid, cacheSnapshotEnvelope, …(+93) |
++| APP-39 | 25736–25742 | — | PHONE-VERIFIED DEVICE IDENTITY — login flow (Phase 2) | — |
++| APP-40 | 25743–26073 | — | const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', | pidUI, pidTokenGet, pidTokenSet, pidTokenClear, pidRosterCache, pidAdopt, pidLoadFail, pidEnter, renderBootSplash, phoneBoot, pidErr, pidCall, …(+14) |
++| APP-41 | 26074–27701 | — | SCAN-TO-LOG (QR DECAL → VIDEO) — standalone capture (FEATURES.qrScanLog) | pendingScan, scanActive, scanUI, scanEnabled, scanPreviewOn, scanTokenGet, scanTokenSet, scanTokenClear, maybeReplayScan, scanCall, scanPreviewResponse, renderScanCapture, …(+80) |
+ 
+ ## config.js — 697 lines, 0 chapters
+ 
+-- 
+2.54.0.windows.1
+

@@ -1,0 +1,147 @@
+From b94f3ddbe60465651b51b2d166192b2f50502283 Mon Sep 17 00:00:00 2001
+From: operations-jacrentals <operations@jacrentals.com>
+Date: Sat, 18 Jul 2026 21:37:15 -0500
+Subject: [PATCH] Gate and confirm the destructive card/bank and membership
+ money actions
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Four money controls could be fired by a single click, three of them by any
+logged-in role. Adding a card was already Office/Admin-only via canMoney();
+changing or deleting one was not — the wrong way round, especially since
+removeCard also fires a live stripeRemoveCard detach and is therefore not
+locally reversible. Only 124 cards exist across 2,265 customers.
+
+A1 — js-card-default, js-card-remove, js-bank-default, js-bank-remove now
+     carry the same canMoney() gate and toast as their js-add-card /
+     js-add-ach siblings. The two removes additionally arm-to-confirm.
+A3 — js-mem-cancel arms to confirm before ending a paying membership and
+     raising a cancellation invoice for the remainder of the term.
+A2 — js-mem-paycxl arms to confirm before charging the card in full, and the
+     armed label states the amount.
+
+All four reuse the existing js-blacklist arm-to-confirm shape (set
+dataset.armed, relabel, act on the second click) — no new CSS, no new
+component.
+
+DELIBERATE DEVIATION: the audit proposed routing js-mem-paycxl through
+openPayInvoice to get a review overlay. That would be wrong.
+membershipReactivate does not merely charge the cancellation invoice — it
+also calls backendCall('membershipReactivate', ...) and reopens the
+membership (accountType / paidUntil / prepaid / graceUntil). openPayInvoice
+only charges an invoice, so re-pointing the button would take the customer's
+money and leave their membership lapsed. Arm-to-confirm gets the same
+protection without touching the reactivation path.
+
+CONTEXT for review: js-blacklist is deliberately ungated — "spec
+customers-crm D3: ANY role can blacklist; the audit trail is the control".
+removeCard/removeBank do call logAction, so an audit-trail-only argument
+could be made for them too. The asymmetry with the already-gated add path,
+plus the irreversible Stripe detach, is why this gates them instead. Say the
+word if you'd rather they follow D3.
+
+Visible change: below-Office roles now get a toast instead of the action;
+Office/Admin get one extra click on the four destructive controls.
+
+Gates: smoke, logic-test, lease-test, lease-deploy-test, promote-test,
+deck-test, cachebust-test, gen-rule-usage --check, check-window-catalog,
+check-cachebust, check-design-md, gen-code-map --check — all green.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+---
+ app.js                     | 28 ++++++++++++++++++++++------
+ docs/code-map.generated.md | 22 +++++++++++-----------
+ 2 files changed, 33 insertions(+), 17 deletions(-)
+
+diff --git a/app.js b/app.js
+index bd784f2..4ce8de1 100644
+--- a/app.js
++++ b/app.js
+@@ -18448,8 +18448,17 @@ function onClick(e) {
+   // closure round 2): the legacy js-mem-enroll button bypassed the signed-agreement gate
+   // entirely (no signature/selfie/start-date check) — account-type can now ONLY change via
+   // agreementSignCommit's inline sign=enroll flow.
+-  if (closest('.js-mem-cancel')) { e.stopPropagation(); if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; } return membershipCancel(closest('.js-mem-cancel').dataset.rec); }
+-  if (closest('.js-mem-paycxl')) { e.stopPropagation(); if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; } return membershipReactivate(closest('.js-mem-paycxl').dataset.rec); }
++  // Both arm-to-confirm (same shape as js-blacklist): one tap used to end a paying membership /
++  // charge a card in full with nothing in between. NOT routed through openPayInvoice — that only
++  // charges an invoice, whereas membershipReactivate also reactivates the membership server-side,
++  // so re-pointing it would take the money and leave the member lapsed. (audit 2026-07-18)
++  if (closest('.js-mem-cancel')) { e.stopPropagation(); if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; } const b = closest('.js-mem-cancel');
++    if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Click again — cancel membership'; toast('This ends the membership and raises a cancellation invoice for the rest of the term.'); return; }
++    return membershipCancel(b.dataset.rec); }
++  if (closest('.js-mem-paycxl')) { e.stopPropagation(); if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; } const b = closest('.js-mem-paycxl');
++    if (!b.dataset.armed) { const c0 = IDX.customer.get(b.dataset.rec); const inv0 = c0 && membershipCancellationInvoice(c0); const amt = inv0 ? money2(invoiceTotals(inv0).balance) : '';
++      b.dataset.armed = '1'; b.textContent = `Click again — charge ${amt}`; toast(`This charges the card on file ${amt} in full, right now.`); return; }
++    return membershipReactivate(b.dataset.rec); }
+   if (closest('.js-add-card')) {
+     e.stopPropagation();
+     if (!canMoney()) { toast('Cards on file are Office/Admin only.'); return; }   // §14 card-on-file is Office/Admin only — same gate as Pay/Charge/Refund (canMoney)
+@@ -18465,12 +18474,19 @@ function onClick(e) {
+   }
+   if (closest('.js-cardsub-cancel')) { e.stopPropagation(); if (state.overlay && state.overlay.kind === 'newCustomer') { state.overlay.cardSub = false; renderOverlay(); } return; }   // §14 close just the card panel, keep the form
+   if (closest('.js-card-sign')) { e.stopPropagation(); const b = closest('.js-card-sign'); openCustomerForm(b.dataset.rec); if (state.overlay) { state.overlay.tab = b.dataset.card; renderOverlay(); } return; }
+-  if (closest('.js-card-default')) { e.stopPropagation(); const b = closest('.js-card-default'); return setCardDefault(b.dataset.rec, b.dataset.card); }
+-  if (closest('.js-card-remove')) { e.stopPropagation(); const b = closest('.js-card-remove'); return removeCard(b.dataset.rec, b.dataset.card); }
++  // §14 money gate — mirrors js-add-card/js-add-ach. Adding a card was Office/Admin-only while
++  // CHANGING or DELETING one was open to every role, which is the wrong way round: removeCard
++  // also fires a live stripeRemoveCard detach, so it is not locally reversible. (audit 2026-07-18)
++  if (closest('.js-card-default')) { e.stopPropagation(); if (!canMoney()) { toast('Cards on file are Office/Admin only.'); return; } const b = closest('.js-card-default'); return setCardDefault(b.dataset.rec, b.dataset.card); }
++  if (closest('.js-card-remove')) { e.stopPropagation(); if (!canMoney()) { toast('Cards on file are Office/Admin only.'); return; } const b = closest('.js-card-remove');
++    if (!b.dataset.armed) { b.dataset.armed = '1'; b.dataset.tip = 'Click again to remove this card'; toast('Removing a card also detaches it at Stripe — click ✕ again to confirm.'); return; }   // arm-to-confirm, same shape as js-blacklist
++    return removeCard(b.dataset.rec, b.dataset.card); }
+   if (closest('.js-pm-tab')) { e.stopPropagation(); state.pmTab = closest('.js-pm-tab').dataset.tab; return render(); }   // §14b Cards | ACH toggle
+   if (closest('.js-add-ach')) { e.stopPropagation(); if (!canMoney()) { toast('Bank accounts on file are Office/Admin only.'); return; } return openAddBank(closest('.js-add-ach').dataset.rec); }   // §14 same gate as js-add-card (canMoney)
+-  if (closest('.js-bank-default')) { e.stopPropagation(); const b = closest('.js-bank-default'); return setBankDefault(b.dataset.rec, b.dataset.bank); }
+-  if (closest('.js-bank-remove')) { e.stopPropagation(); const b = closest('.js-bank-remove'); return removeBank(b.dataset.rec, b.dataset.bank); }
++  if (closest('.js-bank-default')) { e.stopPropagation(); if (!canMoney()) { toast('Bank accounts on file are Office/Admin only.'); return; } const b = closest('.js-bank-default'); return setBankDefault(b.dataset.rec, b.dataset.bank); }
++  if (closest('.js-bank-remove')) { e.stopPropagation(); if (!canMoney()) { toast('Bank accounts on file are Office/Admin only.'); return; } const b = closest('.js-bank-remove');
++    if (!b.dataset.armed) { b.dataset.armed = '1'; b.dataset.tip = 'Click again to remove this bank account'; toast('Click ✕ again to confirm removing this bank account.'); return; }
++    return removeBank(b.dataset.rec, b.dataset.bank); }
+   if (closest('.js-card-save')) { e.stopPropagation(); return saveCardFlow(closest('.js-card-save')); }
+   if (closest('.js-ach-save')) { e.stopPropagation(); return saveAchFlow(closest('.js-ach-save')); }
+   if (closest('.js-bank-verify')) { e.stopPropagation(); const b = closest('.js-bank-verify'); return openVerifyBank(b.dataset.rec, b.dataset.bank); }
+diff --git a/docs/code-map.generated.md b/docs/code-map.generated.md
+index 71b9755..75e4253 100644
+--- a/docs/code-map.generated.md
++++ b/docs/code-map.generated.md
+@@ -4,7 +4,7 @@
+ 
+ # Code Atlas — generated chapter index (Part I · The Frontend)
+ 
+-## app.js — 27675 lines, 41 chapters
++## app.js — 27691 lines, 41 chapters
+ 
+ | ID | Lines | Anchors | Chapter title | Key symbols |
+ |----|------:|---------|---------------|-------------|
+@@ -39,16 +39,16 @@
+ | APP-29 | 16812–17161 | §13 | §13 DROPDOWNS — openDropdown + status/fleet/funnel/sort menus | GTI, GATE_ICON, GATE_TL, GTCHK, gateTimeline, openDropdown, openStatusDropdown, openFleetDropdown, setUnitFleet, openReconcileDropdown, setExpenseReconcile, funnelMenuChip, …(+23) |
+ | APP-30 | 17162–17531 | §14 | §14 RENDER PIPELINE + toast | renderCount, scrollMemo, render, renderResults, scheduleCardListRender, renderCardList, mirrorGlobeBars, _titlesRaf, applyTitles, HOVER_CAPABLE, initTooltip, hideTip, …(+8) |
+ | APP-31 | 17532–17535 | §15 | §15 EVENT HANDLERS — onClick/onInput/onChange (single listener tree) | — |
+-| APP-32 | 17536–20019 | §15c | §15c DRAG & DROP LINK ENGINE (DRAGDROP-DESIGN.md) — custom pointer engine. | DRAG, DRAG_SOURCES, INV_LINEABLE, dragLayer, DROP_MATRIX, woDroppableToInvoice, invoiceUnitIds, LINK_TARGET_LABEL, linkRoleAllows, linkActionPossible, linkActionsFor, enterLinking, …(+63) |
+-| APP-33 | 20020–21323 | §16 | §16 ACTIONS / MUTATIONS — every state change funnels through here | setUnitCondition, openInspectionRecord, pendingInspForUnit, openChecklist, completeChecklist, washBtn, cycleUnitWash, uncompleteWash, setUnitWash, sellUnit, captureUnit, setUnitCapture, …(+52) |
+-| APP-34 | 21324–22857 | §17 | §17 STRIPE / PAYMENTS — card-on-file + invoice charging (client side). | _stripe, _pubKey, ensurePubKey, getStripe, canMoney, brandName, hasCardOnFile, commitAction, cardOneLabel, cardLabel, friendlyPayErr, openAddCard, …(+97) |
+-| APP-35 | 22858–23340 | §5.4d | §5.4d — DATE SEARCH PICKER. A standalone calendar that REUSES the rental | openDateSearch, closeDateSearch, dsMonth, dsToday, dsClear, dsPickDay, dsDone, dateSearchEl, positionDateSearch, setInspWash, setInspResult, recordServiceCompletion, …(+21) |
+-| APP-36 | 23341–23343 | §18 | §18 PERSISTENCE & BOOT | — |
+-| APP-37 | 23344–24569 | §18b | §18b BACKEND SYNC — Google Sheets via the Apps Script web app | BACKEND_URL, PERSIST_KEYS, backendPassword, devPwMode, booting, saveTimer, driveViewUrl, backendCall, gpsToken, gpsBase, gpsConfigured, _gpsReloginInflight, …(+86) |
+-| APP-38 | 24570–25709 | — | INSTANT CACHE — on-device data snapshot (spec 2026-07-16) | DC_DB, CACHE_SCHEMA_VER, _dcDbPromise, dcDbOpen, dcTx, dataCache, cacheAppVer, pidLocalToken, cacheTokenTag, cacheDeviceOk, cacheValid, cacheSnapshotEnvelope, …(+93) |
+-| APP-39 | 25710–25716 | — | PHONE-VERIFIED DEVICE IDENTITY — login flow (Phase 2) | — |
+-| APP-40 | 25717–26047 | — | const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', | pidUI, pidTokenGet, pidTokenSet, pidTokenClear, pidRosterCache, pidAdopt, pidLoadFail, pidEnter, renderBootSplash, phoneBoot, pidErr, pidCall, …(+14) |
+-| APP-41 | 26048–27675 | — | SCAN-TO-LOG (QR DECAL → VIDEO) — standalone capture (FEATURES.qrScanLog) | pendingScan, scanActive, scanUI, scanEnabled, scanPreviewOn, scanTokenGet, scanTokenSet, scanTokenClear, maybeReplayScan, scanCall, scanPreviewResponse, renderScanCapture, …(+80) |
++| APP-32 | 17536–20035 | §15c | §15c DRAG & DROP LINK ENGINE (DRAGDROP-DESIGN.md) — custom pointer engine. | DRAG, DRAG_SOURCES, INV_LINEABLE, dragLayer, DROP_MATRIX, woDroppableToInvoice, invoiceUnitIds, LINK_TARGET_LABEL, linkRoleAllows, linkActionPossible, linkActionsFor, enterLinking, …(+63) |
++| APP-33 | 20036–21339 | §16 | §16 ACTIONS / MUTATIONS — every state change funnels through here | setUnitCondition, openInspectionRecord, pendingInspForUnit, openChecklist, completeChecklist, washBtn, cycleUnitWash, uncompleteWash, setUnitWash, sellUnit, captureUnit, setUnitCapture, …(+52) |
++| APP-34 | 21340–22873 | §17 | §17 STRIPE / PAYMENTS — card-on-file + invoice charging (client side). | _stripe, _pubKey, ensurePubKey, getStripe, canMoney, brandName, hasCardOnFile, commitAction, cardOneLabel, cardLabel, friendlyPayErr, openAddCard, …(+97) |
++| APP-35 | 22874–23356 | §5.4d | §5.4d — DATE SEARCH PICKER. A standalone calendar that REUSES the rental | openDateSearch, closeDateSearch, dsMonth, dsToday, dsClear, dsPickDay, dsDone, dateSearchEl, positionDateSearch, setInspWash, setInspResult, recordServiceCompletion, …(+21) |
++| APP-36 | 23357–23359 | §18 | §18 PERSISTENCE & BOOT | — |
++| APP-37 | 23360–24585 | §18b | §18b BACKEND SYNC — Google Sheets via the Apps Script web app | BACKEND_URL, PERSIST_KEYS, backendPassword, devPwMode, booting, saveTimer, driveViewUrl, backendCall, gpsToken, gpsBase, gpsConfigured, _gpsReloginInflight, …(+86) |
++| APP-38 | 24586–25725 | — | INSTANT CACHE — on-device data snapshot (spec 2026-07-16) | DC_DB, CACHE_SCHEMA_VER, _dcDbPromise, dcDbOpen, dcTx, dataCache, cacheAppVer, pidLocalToken, cacheTokenTag, cacheDeviceOk, cacheValid, cacheSnapshotEnvelope, …(+93) |
++| APP-39 | 25726–25732 | — | PHONE-VERIFIED DEVICE IDENTITY — login flow (Phase 2) | — |
++| APP-40 | 25733–26063 | — | const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', | pidUI, pidTokenGet, pidTokenSet, pidTokenClear, pidRosterCache, pidAdopt, pidLoadFail, pidEnter, renderBootSplash, phoneBoot, pidErr, pidCall, …(+14) |
++| APP-41 | 26064–27691 | — | SCAN-TO-LOG (QR DECAL → VIDEO) — standalone capture (FEATURES.qrScanLog) | pendingScan, scanActive, scanUI, scanEnabled, scanPreviewOn, scanTokenGet, scanTokenSet, scanTokenClear, maybeReplayScan, scanCall, scanPreviewResponse, renderScanCapture, …(+80) |
+ 
+ ## config.js — 697 lines, 0 chapters
+ 
+-- 
+2.54.0.windows.1
+

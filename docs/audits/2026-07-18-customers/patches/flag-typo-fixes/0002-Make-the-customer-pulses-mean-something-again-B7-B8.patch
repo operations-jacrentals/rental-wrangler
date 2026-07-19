@@ -1,0 +1,185 @@
+From c918bf060bed8c04ce24b2df1ad5099b9c5532bb Mon Sep 17 00:00:00 2001
+From: operations-jacrentals <operations@jacrentals.com>
+Date: Sat, 18 Jul 2026 21:53:24 -0500
+Subject: [PATCH 2/2] Make the customer pulses mean something again (B7, B8)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Two flag pulses fired on the wrong condition. Both matched their own spec
+comments, so these are approved behaviour changes (Jac, 2026-07-18), not
+typo fixes — the comments are updated alongside the code.
+
+B7 — 'New Customer' no longer pulses.
+  payBad was `!/^(Paid|Current)$/`, and 'New Customer' is the value EVERY
+  customer is created with that nothing in the client ever advances. So every
+  brand-new zero-balance signup alarmed exactly like someone genuinely Unpaid
+  — the largest single source of pulse-noise on the card. Added to the quiet
+  set. Deliberately kept as a NEGATIVE test so any unrecognised or legacy
+  payStatus still pulses instead of going silently quiet; 'Paid' stays in the
+  pattern for the same reason (live data is known to carry off-vocabulary
+  values — see "Don't Contact" on the funnel fields).
+
+B8 — 'Payment Due' now pulses and 'No Billing' goes steady, swapping them.
+  Previously a member who was never enrolled (nothing actually late) flashed,
+  while a member whose membership invoice was genuinely overdue and unpaid sat
+  calm. Both stay red and both stay surfaced; only which one earns the motion
+  cue changes. Rationale: the counter chases money that is late; a missing
+  enrolment is a back-office fix.
+
+Visible change: fewer pulsing pills on the Customers list (no more New
+Customer), and an overdue member now draws the eye instead of an unenrolled
+one.
+
+Gates on this branch: smoke, logic-test, lease-test, lease-deploy-test,
+promote-test, deck-test, cachebust-test, gen-rule-usage --check,
+check-window-catalog, check-design-md, gen-code-map --check — green.
+check-cachebust is RED and expected to be: app.js changed vs trunk and the
+shared ?v= token is bumped by tools/bump-cachebust.mjs at /merge time, not on
+the feature branch. Same is true of the sibling audit branches.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+---
+ app.js                     | 23 +++++++++----
+ docs/code-map.generated.md | 68 +++++++++++++++++++-------------------
+ 2 files changed, 51 insertions(+), 40 deletions(-)
+
+diff --git a/app.js b/app.js
+index f062136..a8fed3c 100644
+--- a/app.js
++++ b/app.js
+@@ -3975,9 +3975,13 @@ const isActiveMember = (c) => { const s = membershipStatus(c); return s === 'Act
+    cycle's invoice on enroll and after each charge. This surfaces the two states the office must chase,
+    detected from the invoices (NOT membershipStatus — a grandfathered member with no billing fields reads
+    'Active'). Returns null (no flag) or { label, tip, alert }; alert=true PULSES (R9b) for the urgent tier.
+-     • 'No Billing'  (alert/flash) — a Member with NO upcoming membership invoice at all (never enrolled /
+-                      linkage missing — the Brandon/Emily gap).
+-     • 'Payment Due' (steady)      — an enrolled member whose membership invoice is overdue & unpaid (grace/decline).
++     • 'Payment Due' (alert/flash) — an enrolled member whose membership invoice is overdue & unpaid
++                      (grace/decline). PULSES: real money is late right now. (Jac, 2026-07-18 — this
++                      and 'No Billing' below were the other way round; a setup gap outranked an
++                      actual overdue balance for the front desk's attention.)
++     • 'No Billing'  (steady)      — a Member with NO upcoming membership invoice at all (never enrolled /
++                      linkage missing — the Brandon/Emily gap). Still red, still surfaced, but it is a
++                      back-office enrolment fix rather than a payment to chase at the counter.
+    NOT flagged: a member intentionally finishing their term (autoRenew === false, still paid through today). */
+ function membershipBillingFlag(c) {
+   if (!c) return null;
+@@ -3986,10 +3990,10 @@ function membershipBillingFlag(c) {
+   const memUnpaid = DATA.invoices.filter((i) => i && i.membership && !i.membershipCancellation
+     && i.customerId === c.customerId && invoiceTotals(i).balance > 0.005);
+   const overdue = memUnpaid.some((i) => String(i.dueDate || i.date || '') < TODAY_ISO);
+-  if (overdue) return { label: 'Payment Due', alert: false, tip: 'Membership invoice overdue and unpaid — chase the payment (member is in grace/decline).' };
++  if (overdue) return { label: 'Payment Due', alert: true, tip: 'Membership invoice overdue and unpaid — chase the payment (member is in grace/decline).' };
+   if (memUnpaid.some((i) => String(i.dueDate || i.date || '') >= TODAY_ISO)) return null;   // healthy — next invoice waiting
+   if (c.autoRenew === false && c.paidUntil && String(c.paidUntil) >= TODAY_ISO) return null; // intentionally finishing the term
+-  return { label: 'No Billing', alert: true, tip: 'Member has no upcoming membership invoice — billing isn’t set up. Enroll them so the cycle bills.' };
++  return { label: 'No Billing', alert: false, tip: 'Member has no upcoming membership invoice — billing isn’t set up. Enroll them so the cycle bills.' };
+ }
+ /* Phase-0 (2026-07-10 account/agreements redesign) — the collapsed agreement-row's leading label
+    (spec D18): a MEMBERSHIP status for a membership agreement, else '' (the caller then shows the plain
+@@ -8355,7 +8359,14 @@ function headFlagsHtml(card, rec) {
+     // BIG-DEAL flags PULSE: No Card · active rental · pay status not Paid/Current.
+     const acct = getStatus('customerAccountType', rec.accountType || 'Non-Business');
+     const pay = rec.payStatus ? getStatus('customerPayStatus', rec.payStatus) : null;
+-    const payBad = pay && !/^(Paid|Current)$/i.test(rec.payStatus);
++    // 'New Customer' added to the quiet set (Jac, 2026-07-18): it is the value every customer is
++    // CREATED with and nothing in the client ever advances it, so a brand-new zero-balance signup
++    // pulsed exactly as urgently as someone genuinely Unpaid — the single biggest source of
++    // pulse-noise on this card. Kept as a negative test so any unrecognised/legacy payStatus still
++    // pulses rather than going silently quiet. ('Paid' is not a customer status — it is an invoice
++    // status left over from a copy/paste — but it is retained because live data is known to carry
++    // off-vocabulary values, e.g. "Don't Contact" on the funnel fields.)
++    const payBad = pay && !/^(Paid|Current|New Customer)$/i.test(rec.payStatus);
+     const activeR = DATA.rentals.find((r) => r.customerId === rec.customerId && ACTIVE_RENTAL.has(r.status));
+     const rSt = activeR ? getStatus('rentalStatus', rentalDisplayStatus(activeR)) : null;
+     const noCard = cardFlag(rec) === 'none';
+diff --git a/docs/code-map.generated.md b/docs/code-map.generated.md
+index eac5c78..b2f71f1 100644
+--- a/docs/code-map.generated.md
++++ b/docs/code-map.generated.md
+@@ -4,7 +4,7 @@
+ 
+ # Code Atlas — generated chapter index (Part I · The Frontend)
+ 
+-## app.js — 27681 lines, 41 chapters
++## app.js — 27692 lines, 41 chapters
+ 
+ | ID | Lines | Anchors | Chapter title | Key symbols |
+ |----|------:|---------|---------------|-------------|
+@@ -16,39 +16,39 @@
+ | APP-06 | 1591–2353 | — | INLINE TRANSPORT EDITOR + GOOGLE MAPS (Jac 2026-06-15) | _mapsKey, ensureMapsKey, loadGoogleMaps, afterMapsLoad, mapsReady, YARD_CENTER, _teMap, openTransportEdit, closeTransportEdit, transportEditorHtml, mountTransportEditor, teQuery, …(+63) |
+ | APP-07 | 2354–3277 | §4 §0.1 | §4 STATE & SESSIONS — one normalized object + the session model (SPEC §0.1) | freshSession, columnOfMember, SORT_LS_KEY, loadSort, saveSort, entityCardOf, unitOfShopRec, COMMS_LS_KEY, COMMS_CATS, commsFreshSessions, loadCommsRail, saveCommsRail, …(+84) |
+ | APP-08 | 3278–3285 | §5a | §5a ICONS — inline SVG (stroke-based, currentColor) | — |
+-| APP-09 | 3286–5774 | — | SETTINGS BOARD — admin customization (config.settings). | STATUS_ICONS, SETTINGS_STATUS_SETS, STATUS_DEFAULTS, ovIcon, loadAdminSettings, applyStatusOverrides, settingsReverted, applySettings, persistAdminSettings, hasSettingsBackup, pageDefaultSlice, resetPageSettings, …(+163) |
+-| APP-10 | 5775–5795 | §5 | §5 UI BUILDERS — ONE function per design rule (the SPEC v8 rulebook). | SET_CARD, dataAttrs |
+-| APP-11 | 5796–6601 | — | FLAG-DRIVEN COLOR ENGINE — SPEC docs/specs/flag-color-system.md | openWOsForRental, rentalUnitRecords, woHasEta, insuranceTypeCatalog, unitCoverage, INS_OUT, fleetInsuredValue, fleetPremiumMonthly, FLAG_COND, getEntityFlags, entityArchived, getEntityColor, …(+56) |
+-| APP-12 | 6602–6769 | — | DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) | rbSw, RB_FOUNDATION, RB_TABS, CLASS_RULE, ruleOf, refPath, onInspectMove |
+-| APP-13 | 6770–7009 | §6 | §6 LIST ROWS — row meta + the universal row template | ROW_META, isSoldInactive, unitsVisible, rentalsVisible, INV_METHOD_OPTS, INV_METHOD_LABEL, invMethodClass, rowViz, customerSpectrumViz, CATEGORY_MOTION, categoryIconFor, catFramesSvg, …(+7) |
+-| APP-14 | 7010–7425 | §6b | §6b PER-CARD ROWS | rowEl, genericRow, ROWS |
+-| APP-15 | 7426–7625 | §7 | §7 COLUMN REGISTRY & FOOTER TOTALS — one source of truth per card | pillS, C, CARD_COLUMNS, cardColumns, boardSegmentFor, aggColumn, AGG_CALCS, AGG_LABEL, fmtAggValue, LIST_LAYOUT_KEY, LIST_LAYOUTS, DEFAULT_LAYOUT, …(+11) |
+-| APP-16 | 7626–9201 | §8 | §8 DETAIL RENDERERS — kv/efld/notes · v2 helpers (yard tool, WO sections, | kv, kvPills, efld, notesSection, openWOsForUnit, latestInspForUnit, WO_SEV, woBottleneck, unitWorstBottleneck, unitCondLock, newInspectionForUnit, yardToolHtml, …(+46) |
+-| APP-17 | 9202–9461 | §9 | §9 CARDS & GRID — cardEl, listView, the 3-column shell | listFor, collection, sortRows, VIRT_CAP, SHOW_MORE_BATCH, appendWindowed, UNIT_SECTIONS, unitStageKey, GROUP_DEFS, COLLAPSED_GROUPS, groupDefaultCollapsed, groupCollapsed, …(+8) |
+-| APP-18 | 9462–9906 | — | 3-COLUMN LAYOUT (display-only shell over the existing cards). | GRID_CARD_BY_ID, MEMBER_TITLE, memberIcon, memberCount, unitsAlertCount, wave2ListOverride, columnEl, mobileRailPanelEl, inertRailClone, colTabsEl, mobileNavEl, colTabButtonsHtml, …(+9) |
+-| APP-19 | 9907–10031 | §11 | §11 HEADER, KPI & BOTTOM BAR | bandColor, ring3SVG, ringsSVG, pctOf, fleetInsp, legacyKpiPct, KPI_HELP |
+-| APP-20 | 10032–10203 | §11b | §11b KPI METRIC ENGINE — admin-definable KPIs (Settings → KPIs & Rings). | KPI_ENTITY, KPI_DERIVED, KPI_TOKENS, kpiField, kpiVal, kpiCond, kpiRows, kpiAgg, kpiBand, kpiTarget, kpiEval, KPI_DEFAULTS, …(+11) |
+-| APP-21 | 10204–10539 | — | COMING 2026 — the roadmap morale plate (Jac 2026-06-23) | ROADMAP_ITEMS, ROADMAP_AREAS, headerEl, bottomBarInner, toolsMenuRows, openToolsMenu, toolsBtn, commsBellCount, commsMenuRows, openCommsMenu, commsBellBtn, bottomBarEl, …(+13) |
+-| APP-22 | 10540–12107 | §17 | §17 INTERNAL TEAM DOCK (Jac, Phase 7) — a bottom-bar chat built on the Phase-6 | chatComments, chatUnreadCount, chatById, activeChat, chatsTagging, chatMarkSeen, chatUnseenForRec, newChat, myRosterId, chatIsAdmin, chatAmMember, chatVisibleToMe, …(+135) |
+-| APP-23 | 12108–12150 | §13.3 | §13.3 CARD GRAPH VIEW — RETIRED (2026-07-03). The per-card tile | GV_WIN_OPTS, GV_WIN_KEY, GV_WIN, loadGvWin, saveGvWin, gvWinLabel, gvWinCutoff, gvBuckets |
+-| APP-24 | 12151–12993 | §13.4 | §13.4 GRAPH CAROUSEL (Jac 2026-06-16) — the per-card Graph is a deck of | gvClampIdx, gvKey, gvSegOn, gvSmallest, graphViewsFor, gvSaveCurrent, gvStripTerms, gvRestore, gvOpen, gvChevron, gvSyncClosed, toggleGraphSeg, …(+71) |
+-| APP-25 | 12994–14728 | §12 | §12 OVERLAYS & BOARDS — renderOverlay kinds + back-office board popups | _ovScroll, _popDrag, wirePopupDrag, backGuard, swipeFired, anyDismissable, dismissTopSheet, syncBackGuard, closePhoneSheet, _pg, PULL_MIN, _sheetScroller, …(+4) |
+-| APP-26 | 14729–15073 | — | RB-WINDOWS catalog (Jac 2026-06-22) — the admin Rulebook's index of | WINDOW_CATALOG, previewOverlayFor, STANDALONE_SURFACES, feedbackContext, sendFeedback, CB_BLOCK_LABEL, CB_REASON_LABEL, crewBroadcastEmps, RR_STAR_TIP, rrBand, RR_BAND_LABEL, notifRatingTemplate, …(+12) |
+-| APP-27 | 15074–15558 | §18 | §18 MR. WRANGLER — the in-app AI (Claude via the Apps Script backend). | WRANGLER_SYSTEM, wranglerDigest, wrIssueIndex, wranglerContext, WR_DEDUP_NOTE, wranglerAttachAny, wranglerAttachFile, parseCsvFile, wranglerAttachTextFile, wranglerImageBlock, wranglerErrMsg, WR_TOOL_LIMIT, …(+11) |
+-| APP-28 | 15559–16817 | — | Mr. Wrangler ACTS on your data (Jac 2026-06-16) | WR_FUNNEL, wrFunnel, WR_ACCT, wrAccount, WR_EDITABLE, WR_REQUIRED, WR_NUMERIC, WR_MONEY_FIELDS, wrPlanNeedsApply, WR_IDX, wrGet, wrNorm, …(+116) |
+-| APP-29 | 16818–17167 | §13 | §13 DROPDOWNS — openDropdown + status/fleet/funnel/sort menus | GTI, GATE_ICON, GATE_TL, GTCHK, gateTimeline, openDropdown, openStatusDropdown, openFleetDropdown, setUnitFleet, openReconcileDropdown, setExpenseReconcile, funnelMenuChip, …(+23) |
+-| APP-30 | 17168–17537 | §14 | §14 RENDER PIPELINE + toast | renderCount, scrollMemo, render, renderResults, scheduleCardListRender, renderCardList, mirrorGlobeBars, _titlesRaf, applyTitles, HOVER_CAPABLE, initTooltip, hideTip, …(+8) |
+-| APP-31 | 17538–17541 | §15 | §15 EVENT HANDLERS — onClick/onInput/onChange (single listener tree) | — |
+-| APP-32 | 17542–20025 | §15c | §15c DRAG & DROP LINK ENGINE (DRAGDROP-DESIGN.md) — custom pointer engine. | DRAG, DRAG_SOURCES, INV_LINEABLE, dragLayer, DROP_MATRIX, woDroppableToInvoice, invoiceUnitIds, LINK_TARGET_LABEL, linkRoleAllows, linkActionPossible, linkActionsFor, enterLinking, …(+63) |
+-| APP-33 | 20026–21329 | §16 | §16 ACTIONS / MUTATIONS — every state change funnels through here | setUnitCondition, openInspectionRecord, pendingInspForUnit, openChecklist, completeChecklist, washBtn, cycleUnitWash, uncompleteWash, setUnitWash, sellUnit, captureUnit, setUnitCapture, …(+52) |
+-| APP-34 | 21330–22863 | §17 | §17 STRIPE / PAYMENTS — card-on-file + invoice charging (client side). | _stripe, _pubKey, ensurePubKey, getStripe, canMoney, brandName, hasCardOnFile, commitAction, cardOneLabel, cardLabel, friendlyPayErr, openAddCard, …(+97) |
+-| APP-35 | 22864–23346 | §5.4d | §5.4d — DATE SEARCH PICKER. A standalone calendar that REUSES the rental | openDateSearch, closeDateSearch, dsMonth, dsToday, dsClear, dsPickDay, dsDone, dateSearchEl, positionDateSearch, setInspWash, setInspResult, recordServiceCompletion, …(+21) |
+-| APP-36 | 23347–23349 | §18 | §18 PERSISTENCE & BOOT | — |
+-| APP-37 | 23350–24575 | §18b | §18b BACKEND SYNC — Google Sheets via the Apps Script web app | BACKEND_URL, PERSIST_KEYS, backendPassword, devPwMode, booting, saveTimer, driveViewUrl, backendCall, gpsToken, gpsBase, gpsConfigured, _gpsReloginInflight, …(+86) |
+-| APP-38 | 24576–25715 | — | INSTANT CACHE — on-device data snapshot (spec 2026-07-16) | DC_DB, CACHE_SCHEMA_VER, _dcDbPromise, dcDbOpen, dcTx, dataCache, cacheAppVer, pidLocalToken, cacheTokenTag, cacheDeviceOk, cacheValid, cacheSnapshotEnvelope, …(+93) |
+-| APP-39 | 25716–25722 | — | PHONE-VERIFIED DEVICE IDENTITY — login flow (Phase 2) | — |
+-| APP-40 | 25723–26053 | — | const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', | pidUI, pidTokenGet, pidTokenSet, pidTokenClear, pidRosterCache, pidAdopt, pidLoadFail, pidEnter, renderBootSplash, phoneBoot, pidErr, pidCall, …(+14) |
+-| APP-41 | 26054–27681 | — | SCAN-TO-LOG (QR DECAL → VIDEO) — standalone capture (FEATURES.qrScanLog) | pendingScan, scanActive, scanUI, scanEnabled, scanPreviewOn, scanTokenGet, scanTokenSet, scanTokenClear, maybeReplayScan, scanCall, scanPreviewResponse, renderScanCapture, …(+80) |
++| APP-09 | 3286–5778 | — | SETTINGS BOARD — admin customization (config.settings). | STATUS_ICONS, SETTINGS_STATUS_SETS, STATUS_DEFAULTS, ovIcon, loadAdminSettings, applyStatusOverrides, settingsReverted, applySettings, persistAdminSettings, hasSettingsBackup, pageDefaultSlice, resetPageSettings, …(+163) |
++| APP-10 | 5779–5799 | §5 | §5 UI BUILDERS — ONE function per design rule (the SPEC v8 rulebook). | SET_CARD, dataAttrs |
++| APP-11 | 5800–6605 | — | FLAG-DRIVEN COLOR ENGINE — SPEC docs/specs/flag-color-system.md | openWOsForRental, rentalUnitRecords, woHasEta, insuranceTypeCatalog, unitCoverage, INS_OUT, fleetInsuredValue, fleetPremiumMonthly, FLAG_COND, getEntityFlags, entityArchived, getEntityColor, …(+56) |
++| APP-12 | 6606–6773 | — | DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) | rbSw, RB_FOUNDATION, RB_TABS, CLASS_RULE, ruleOf, refPath, onInspectMove |
++| APP-13 | 6774–7013 | §6 | §6 LIST ROWS — row meta + the universal row template | ROW_META, isSoldInactive, unitsVisible, rentalsVisible, INV_METHOD_OPTS, INV_METHOD_LABEL, invMethodClass, rowViz, customerSpectrumViz, CATEGORY_MOTION, categoryIconFor, catFramesSvg, …(+7) |
++| APP-14 | 7014–7429 | §6b | §6b PER-CARD ROWS | rowEl, genericRow, ROWS |
++| APP-15 | 7430–7629 | §7 | §7 COLUMN REGISTRY & FOOTER TOTALS — one source of truth per card | pillS, C, CARD_COLUMNS, cardColumns, boardSegmentFor, aggColumn, AGG_CALCS, AGG_LABEL, fmtAggValue, LIST_LAYOUT_KEY, LIST_LAYOUTS, DEFAULT_LAYOUT, …(+11) |
++| APP-16 | 7630–9212 | §8 | §8 DETAIL RENDERERS — kv/efld/notes · v2 helpers (yard tool, WO sections, | kv, kvPills, efld, notesSection, openWOsForUnit, latestInspForUnit, WO_SEV, woBottleneck, unitWorstBottleneck, unitCondLock, newInspectionForUnit, yardToolHtml, …(+46) |
++| APP-17 | 9213–9472 | §9 | §9 CARDS & GRID — cardEl, listView, the 3-column shell | listFor, collection, sortRows, VIRT_CAP, SHOW_MORE_BATCH, appendWindowed, UNIT_SECTIONS, unitStageKey, GROUP_DEFS, COLLAPSED_GROUPS, groupDefaultCollapsed, groupCollapsed, …(+8) |
++| APP-18 | 9473–9917 | — | 3-COLUMN LAYOUT (display-only shell over the existing cards). | GRID_CARD_BY_ID, MEMBER_TITLE, memberIcon, memberCount, unitsAlertCount, wave2ListOverride, columnEl, mobileRailPanelEl, inertRailClone, colTabsEl, mobileNavEl, colTabButtonsHtml, …(+9) |
++| APP-19 | 9918–10042 | §11 | §11 HEADER, KPI & BOTTOM BAR | bandColor, ring3SVG, ringsSVG, pctOf, fleetInsp, legacyKpiPct, KPI_HELP |
++| APP-20 | 10043–10214 | §11b | §11b KPI METRIC ENGINE — admin-definable KPIs (Settings → KPIs & Rings). | KPI_ENTITY, KPI_DERIVED, KPI_TOKENS, kpiField, kpiVal, kpiCond, kpiRows, kpiAgg, kpiBand, kpiTarget, kpiEval, KPI_DEFAULTS, …(+11) |
++| APP-21 | 10215–10550 | — | COMING 2026 — the roadmap morale plate (Jac 2026-06-23) | ROADMAP_ITEMS, ROADMAP_AREAS, headerEl, bottomBarInner, toolsMenuRows, openToolsMenu, toolsBtn, commsBellCount, commsMenuRows, openCommsMenu, commsBellBtn, bottomBarEl, …(+13) |
++| APP-22 | 10551–12118 | §17 | §17 INTERNAL TEAM DOCK (Jac, Phase 7) — a bottom-bar chat built on the Phase-6 | chatComments, chatUnreadCount, chatById, activeChat, chatsTagging, chatMarkSeen, chatUnseenForRec, newChat, myRosterId, chatIsAdmin, chatAmMember, chatVisibleToMe, …(+135) |
++| APP-23 | 12119–12161 | §13.3 | §13.3 CARD GRAPH VIEW — RETIRED (2026-07-03). The per-card tile | GV_WIN_OPTS, GV_WIN_KEY, GV_WIN, loadGvWin, saveGvWin, gvWinLabel, gvWinCutoff, gvBuckets |
++| APP-24 | 12162–13004 | §13.4 | §13.4 GRAPH CAROUSEL (Jac 2026-06-16) — the per-card Graph is a deck of | gvClampIdx, gvKey, gvSegOn, gvSmallest, graphViewsFor, gvSaveCurrent, gvStripTerms, gvRestore, gvOpen, gvChevron, gvSyncClosed, toggleGraphSeg, …(+71) |
++| APP-25 | 13005–14739 | §12 | §12 OVERLAYS & BOARDS — renderOverlay kinds + back-office board popups | _ovScroll, _popDrag, wirePopupDrag, backGuard, swipeFired, anyDismissable, dismissTopSheet, syncBackGuard, closePhoneSheet, _pg, PULL_MIN, _sheetScroller, …(+4) |
++| APP-26 | 14740–15084 | — | RB-WINDOWS catalog (Jac 2026-06-22) — the admin Rulebook's index of | WINDOW_CATALOG, previewOverlayFor, STANDALONE_SURFACES, feedbackContext, sendFeedback, CB_BLOCK_LABEL, CB_REASON_LABEL, crewBroadcastEmps, RR_STAR_TIP, rrBand, RR_BAND_LABEL, notifRatingTemplate, …(+12) |
++| APP-27 | 15085–15569 | §18 | §18 MR. WRANGLER — the in-app AI (Claude via the Apps Script backend). | WRANGLER_SYSTEM, wranglerDigest, wrIssueIndex, wranglerContext, WR_DEDUP_NOTE, wranglerAttachAny, wranglerAttachFile, parseCsvFile, wranglerAttachTextFile, wranglerImageBlock, wranglerErrMsg, WR_TOOL_LIMIT, …(+11) |
++| APP-28 | 15570–16828 | — | Mr. Wrangler ACTS on your data (Jac 2026-06-16) | WR_FUNNEL, wrFunnel, WR_ACCT, wrAccount, WR_EDITABLE, WR_REQUIRED, WR_NUMERIC, WR_MONEY_FIELDS, wrPlanNeedsApply, WR_IDX, wrGet, wrNorm, …(+116) |
++| APP-29 | 16829–17178 | §13 | §13 DROPDOWNS — openDropdown + status/fleet/funnel/sort menus | GTI, GATE_ICON, GATE_TL, GTCHK, gateTimeline, openDropdown, openStatusDropdown, openFleetDropdown, setUnitFleet, openReconcileDropdown, setExpenseReconcile, funnelMenuChip, …(+23) |
++| APP-30 | 17179–17548 | §14 | §14 RENDER PIPELINE + toast | renderCount, scrollMemo, render, renderResults, scheduleCardListRender, renderCardList, mirrorGlobeBars, _titlesRaf, applyTitles, HOVER_CAPABLE, initTooltip, hideTip, …(+8) |
++| APP-31 | 17549–17552 | §15 | §15 EVENT HANDLERS — onClick/onInput/onChange (single listener tree) | — |
++| APP-32 | 17553–20036 | §15c | §15c DRAG & DROP LINK ENGINE (DRAGDROP-DESIGN.md) — custom pointer engine. | DRAG, DRAG_SOURCES, INV_LINEABLE, dragLayer, DROP_MATRIX, woDroppableToInvoice, invoiceUnitIds, LINK_TARGET_LABEL, linkRoleAllows, linkActionPossible, linkActionsFor, enterLinking, …(+63) |
++| APP-33 | 20037–21340 | §16 | §16 ACTIONS / MUTATIONS — every state change funnels through here | setUnitCondition, openInspectionRecord, pendingInspForUnit, openChecklist, completeChecklist, washBtn, cycleUnitWash, uncompleteWash, setUnitWash, sellUnit, captureUnit, setUnitCapture, …(+52) |
++| APP-34 | 21341–22874 | §17 | §17 STRIPE / PAYMENTS — card-on-file + invoice charging (client side). | _stripe, _pubKey, ensurePubKey, getStripe, canMoney, brandName, hasCardOnFile, commitAction, cardOneLabel, cardLabel, friendlyPayErr, openAddCard, …(+97) |
++| APP-35 | 22875–23357 | §5.4d | §5.4d — DATE SEARCH PICKER. A standalone calendar that REUSES the rental | openDateSearch, closeDateSearch, dsMonth, dsToday, dsClear, dsPickDay, dsDone, dateSearchEl, positionDateSearch, setInspWash, setInspResult, recordServiceCompletion, …(+21) |
++| APP-36 | 23358–23360 | §18 | §18 PERSISTENCE & BOOT | — |
++| APP-37 | 23361–24586 | §18b | §18b BACKEND SYNC — Google Sheets via the Apps Script web app | BACKEND_URL, PERSIST_KEYS, backendPassword, devPwMode, booting, saveTimer, driveViewUrl, backendCall, gpsToken, gpsBase, gpsConfigured, _gpsReloginInflight, …(+86) |
++| APP-38 | 24587–25726 | — | INSTANT CACHE — on-device data snapshot (spec 2026-07-16) | DC_DB, CACHE_SCHEMA_VER, _dcDbPromise, dcDbOpen, dcTx, dataCache, cacheAppVer, pidLocalToken, cacheTokenTag, cacheDeviceOk, cacheValid, cacheSnapshotEnvelope, …(+93) |
++| APP-39 | 25727–25733 | — | PHONE-VERIFIED DEVICE IDENTITY — login flow (Phase 2) | — |
++| APP-40 | 25734–26064 | — | const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', | pidUI, pidTokenGet, pidTokenSet, pidTokenClear, pidRosterCache, pidAdopt, pidLoadFail, pidEnter, renderBootSplash, phoneBoot, pidErr, pidCall, …(+14) |
++| APP-41 | 26065–27692 | — | SCAN-TO-LOG (QR DECAL → VIDEO) — standalone capture (FEATURES.qrScanLog) | pendingScan, scanActive, scanUI, scanEnabled, scanPreviewOn, scanTokenGet, scanTokenSet, scanTokenClear, maybeReplayScan, scanCall, scanPreviewResponse, renderScanCapture, …(+80) |
+ 
+ ## config.js — 697 lines, 0 chapters
+ 
+-- 
+2.54.0.windows.1
+
