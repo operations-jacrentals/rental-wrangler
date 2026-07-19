@@ -2207,9 +2207,13 @@ function topServiceForUnit(unit) {
   const active = rows.filter((s) => s.status !== 'ok' && !svcSnoozedUntil(unit, s.taskId));
   return active[0] || null;
 }
-/** Total repair cost for a unit = Σ its WO line-item costs (SPEC §12.4). */
+/** Total repair cost for a unit = Σ its WO line-item costs (SPEC §12.4).
+ *  §void-work — a CANCELLED work order was never performed and never billed, so its line
+ *  items are not a repair cost. ruCatMoney's expense loop already skipped cancelled WOs;
+ *  this one did not, so the same category's ROI denominator and its Expenses graph used two
+ *  different definitions of "expense" and could visibly disagree (audit 2026-07-18). */
 function unitRepairCost(unitId) {
-  return rmemo('unitRepair', unitId, () => DATA.workOrders.filter((w) => w.unitId === unitId)
+  return rmemo('unitRepair', unitId, () => DATA.workOrders.filter((w) => w.unitId === unitId && !w.cancelled)
     .reduce((a, w) => a + (w.lineItems || []).reduce((s, li) => s + (Number(li.cost) || 0), 0), 0));
 }
 /** §7.6 WO "Price if billed": tiered parts markup (by each part's cost) + $150/hr labor.
@@ -2222,9 +2226,17 @@ function woBillable(w) {
   const labor = items.reduce((a, li) => a + (Number(li.hours) || 0), 0) || w.laborHours || 0;
   return Math.round(parts + labor * LABOR_RATE);
 }
+/* §void-rental — a rental that was Cancelled, No-Showed, or is still an unaccepted Quote
+   never happened: the void path strips its invoice line, so the ledger already disagrees with
+   any rollup that counts its derived price. ruCatUtilProxy excluded exactly these three
+   statuses; unitTotalRevenue and ruCatMoney did not, so revenue and ROI were inflated by
+   money never collected (audit 2026-07-18). ONE shared predicate so the sites can't drift
+   apart again — rentalDisplayStatus is a hoisted declaration, safe to call from here. */
+const VOID_RENTAL_STATUS = new Set(['Cancelled', 'No Show', 'Quote']);
+const rentalOccurred = (r) => !VOID_RENTAL_STATUS.has(rentalDisplayStatus(r));
 /** Total revenue a unit has earned = Σ its rentals' derived prices (SPEC §12.4). */
 function unitTotalRevenue(unitId) {
-  return rmemo('unitRev', unitId, () => DATA.rentals.filter((r) => rentalHasUnit(r, unitId))
+  return rmemo('unitRev', unitId, () => DATA.rentals.filter((r) => rentalHasUnit(r, unitId) && rentalOccurred(r))
     .reduce((a, r) => { const p = unitRentalPrice(r, unitId); return a + (p ? p.price : 0); }, 0));   // §20 this unit's own line
 }
 
@@ -12394,6 +12406,7 @@ function ruNavigate(card, col, value, seg) {
 function ruCatMoney(rg) {
   const rev = {}, exp = {}, basis = {};
   DATA.rentals.forEach((rr) => {
+    if (!rentalOccurred(rr)) return;   // §void-rental — Cancelled / No Show / Quote earned nothing; matches ruCatUtilProxy
     if (ruBounded(rg) && !ruIn(rr.startDate, rg)) return;
     const us = rentalUnits(rr).map((eu) => IDX.unit.get(eu.unitId)).filter((u) => u && u.categoryId);
     if (!us.length) return;
@@ -12730,7 +12743,7 @@ function ruCatUtilProxy(rg) {
   const days = Math.max(1, Math.round((parseISO(b) - parseISO(a)) / 86400000));
   const rented = {};   // categoryId → Σ on-rent days inside [a,b)
   DATA.rentals.forEach((r2) => {
-    const s = rentalDisplayStatus(r2); if (s === 'Cancelled' || s === 'No Show' || s === 'Quote') return;
+    if (!rentalOccurred(r2)) return;   // §void-rental — was an inline triple-compare here; now the shared predicate
     const rs = (r2.startDate || '').slice(0, 10), re = (r2.endDate || r2.startDate || '').slice(0, 10);
     if (!rs) return;
     const lo = rs > a ? rs : a, hi = re < b ? re : b; if (lo >= hi) return;
@@ -12738,7 +12751,12 @@ function ruCatUtilProxy(rg) {
     rentalUnits(r2).forEach((eu) => { const u = IDX.unit.get(eu.unitId); if (u && u.categoryId) rented[u.categoryId] = (rented[u.categoryId] || 0) + d; });
   });
   const fleet = {};   // categoryId → unit count (available days = units × window days)
-  DATA.units.forEach((u) => { if (u.categoryId) fleet[u.categoryId] = (fleet[u.categoryId] || 0) + 1; });
+  /* §dead-fleet — the denominator is "unit-days we COULD have rented", so a Sold / For Sale /
+     Inactive unit does not belong in it: it can never go out again. Counting it permanently
+     depressed utilization for any category that has retired anything, making a busy class read
+     as idle (audit 2026-07-18). RENTABLE_SKIP_FLEET is the same set the mini-card's availability
+     already uses; the numerator above was already filtered, only this side was not. */
+  DATA.units.forEach((u) => { if (u.categoryId && !RENTABLE_SKIP_FLEET.has(u.fleetStatus)) fleet[u.categoryId] = (fleet[u.categoryId] || 0) + 1; });
   return { days, note, rented, fleet };
 }
 function ruTimeUtil(rg) {   // proxy: days on rent ÷ available days per category — swaps to (Δhours ÷ expected)×100 once M4 history exists
@@ -26593,7 +26611,14 @@ function boot() {
     if (e.target.classList.contains('js-comms-in') && e.key === 'Enter') { e.preventDefault(); return commsSend(e.target.dataset.cust); }   // D8 — Enter fires the ignition Send
     // §M3 — one predictable back/dismiss chain (shared with the Android back button):
     // winpicker → overlay → Mr. Wrangler dock → team chat dock.
-    if (e.key === 'Escape') dismissTopSheet();
+    // §esc-menus — an open .dropdown-menu is the TOPMOST surface, so Esc closes it FIRST and
+    // stops there; only with no menu open does Esc walk the sheet chain above. closeMenus() was
+    // wired into ~30 click paths but never the keyboard, so a menu sat open through Esc — over
+    // the values underneath it — until you clicked elsewhere (audit 2026-07-18).
+    if (e.key === 'Escape') {
+      if (document.querySelector('.dropdown-menu')) { closeMenus(); return; }
+      dismissTopSheet();
+    }
   });
   // mouse hotkeys (§0.1): double-click a row = anchor; right-click = Back
   // #10b — `state.winEdit` is NOT a modal flag (comment at its declaration: "NOT a
