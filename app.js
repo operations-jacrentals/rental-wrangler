@@ -2728,7 +2728,14 @@ function openStandard(card, recId, recType) {
   }
   sweepEmptyDrafts(recId);   // #8 — leaving an empty draft deletes it
   pushCardHistory(cs);       // Task 1 — record the prior (list) view so Back can return
-  cs.mode = 'standard'; cs.recId = recId; cs.recType = recType || null; cs.graphView = false;   // opening a record exits the in-column graph view
+  cs.mode = 'standard'; cs.recId = recId; cs.recType = recType || null;
+  // C21 (Jac audit): on every OTHER card, opening a record exits the in-column graph view —
+  // but on Units that graph is the mechanic worklist (the ex-Shop front page), and clearing
+  // it here was a one-way door: nothing ever set it back, so opening a single machine killed
+  // the worklist for the rest of the session. Leave cs.graphView untouched for units; cardEl's
+  // inStandard (§9 Cards & Grid) is scoped to ignore it there, so the record still opens
+  // correctly, and the worklist is exactly as the user left it once they return to the list.
+  if (card !== 'units') cs.graphView = false;
   if (card === 'customers') { if (state.custInvOpen) delete state.custInvOpen[recId]; if (state.custInvMenu) delete state.custInvMenu[recId]; }   // §3.3 — collapse the embedded Invoices accordion on a fresh open (openInvoice re-sets it after)
   if (card === 'customers') { if (state.custAcctOpen) delete state.custAcctOpen[recId]; if (state.custAgOpen) delete state.custAgOpen[recId]; if (state.custAgDraft) delete state.custAgDraft[recId]; }   // Phase 1/2b — collapse the Account section + its Agreements accordion + any in-progress draft on a fresh open
   if (card === 'units') { if (state.svcSecOpen) delete state.svcSecOpen[recId]; if (state.unitSecOpen) delete state.unitSecOpen[recId]; if (state.woRowOpen) delete state.woRowOpen[recId]; }   // collapse the Services + Work Orders / Specs / GPS / Investment sections + any open Work Order row on a fresh open (mirrors the Account/Invoices collapse above)
@@ -3034,6 +3041,22 @@ function scrollToSect(card, sect) {
     if (n) { n.scrollIntoView({ behavior: 'smooth', block: 'start' }); attnFlash(`.card[data-card="${ec}"] .${sect}`); }
   }, 60);
 }
+/* S16 (Jac audit): a WO/inspection deep-link opened its owning unit but always landed on the
+ * generic top — same fix shape as scrollToSect above (deferred scrollIntoView + the R19 glow),
+ * just targeting the SPECIFIC record clicked instead of a named section. A work order's row
+ * (collapsed or its accordion-open .wo-open form — woRowHtml/woExpandedHtml) always carries
+ * data-wo; an inspection's entry lives in the unit's History log as its existing
+ * data-pill-card/data-pill-rec pill (historyFor). serviceOrders has no per-record DOM target
+ * (a recurring task, not a dated event), so it's left alone.
+ */
+function scrollToShopRec(card, recId) {
+  if (card !== 'workOrders' && card !== 'inspections') return;
+  setTimeout(() => {
+    const sel = card === 'workOrders' ? `[data-wo="${recId}"]` : `[data-pill-card="inspections"][data-pill-rec="${recId}"]`;
+    const n = document.querySelector(`.card[data-card="units"] ${sel}`);
+    if (n) { n.scrollIntoView({ behavior: 'smooth', block: 'start' }); attnFlash(`.card[data-card="units"] ${sel}`); }
+  }, 60);
+}
 function pillTo(card, recId) {
   if (recId == null) return;
   // §3.4 — the Invoice card is retired: EVERY invoice cross-link (refPill('invoices',…)
@@ -3051,7 +3074,7 @@ function pillTo(card, recId) {
   // Shop retirement (Jac 2026-07-07): a WO / inspection / serviceOrder pill opens its OWNING UNIT.
   if (SHOP_TYPES.includes(card)) {
     const uid = unitOfShopRec(card, recId);
-    if (uid && IDX.unit.get(uid)) { noteSwap('units'); revealCol('units'); openStandard('units', uid); }
+    if (uid && IDX.unit.get(uid)) { noteSwap('units'); revealCol('units'); openStandard('units', uid); scrollToShopRec(card, recId); }   // S16 — land ON the record clicked, not just the unit's top
     return;
   }
   if (recOf(card, recId)) { noteSwap(card); revealCol(card); openStandard(card, recId); }
@@ -7987,6 +8010,20 @@ function collapseSection({ open, toggleCls, rec, sec, extraCls = '', lbl, summar
 // Coverage / Investment) expanded? All collapsed by default; state is view-local and
 // reset on a fresh unit open (mirrors svcSecOpen for the Services section).
 function unitSecOpen(u, id) { return !!(state.unitSecOpen && state.unitSecOpen[u.unitId] && state.unitSecOpen[u.unitId][id]); }
+// S17 (Jac audit): the "N WOs Open" title flag's click target — force the Work Orders
+// section open (same state js-unit-sec toggles) and scroll+flash it, same deferred
+// scrollIntoView + R19 glow as scrollToSect/scrollToShopRec (§3 Universal pill rule area).
+function openUnitWOSection(unitId) {
+  if (!unitId) return;
+  state.unitSecOpen = state.unitSecOpen || {};
+  state.unitSecOpen[unitId] = state.unitSecOpen[unitId] || {};
+  state.unitSecOpen[unitId].workorders = true;
+  render();
+  setTimeout(() => {
+    const n = document.querySelector('.card[data-card="units"] [data-sec="workorders"]');
+    if (n) { n.scrollIntoView({ behavior: 'smooth', block: 'start' }); attnFlash('.card[data-card="units"] [data-sec="workorders"]'); }
+  }, 60);
+}
 // The bottleneck phase word shown on a WO row/chip: the worst open line's phase,
 // else 'Ready' when every line is done, else the WO-level phase for an empty WO.
 function woPhaseLabel(w, bottleIdx) {
@@ -8331,7 +8368,11 @@ function headFlagsHtml(card, rec) {
     // QR is just a flag with the others; fleet flags the title ONLY when not Active
     return flagsStack([flagEl(insp.label, insp.color, { icon: CARD_ICON.inspections }), flagEl('QR', 'gray', { icon: I.qr })])
       + (rec.fleetStatus !== 'Active' ? flagsStack([flagEl(fleet.label, fleet.color)]) : '')
-      + (wos.length && bn ? flagsStack([flagEl(bn.label, bn.color, { icon: CARD_ICON.workOrders }), flagEl(`${wos.length} WO${wos.length > 1 ? 's' : ''} Open`, 'red')]) : '')
+      // S17 (Jac audit): "N WOs Open" used to be plain text — same flag styling/cursor as
+      // its neighbor bn.label flag above it, but no click behavior. Give it one, matching
+      // the neighbor's "opens something about these WOs" intent: expand + scroll to this
+      // same unit's own Work Orders section (js-open-wo-sec → openUnitWOSection below).
+      + (wos.length && bn ? flagsStack([flagEl(bn.label, bn.color, { icon: CARD_ICON.workOrders }), `<span class="flag c-red js-open-wo-sec" data-r="R9" data-rec="${esc(rec.unitId)}" data-tip="Open the Work Orders section">${esc(`${wos.length} WO${wos.length > 1 ? 's' : ''} Open`)}</span>`]) : '')
       + (unitOverbooked(rec.unitId) ? flagsStack([flagEl('Overbooked', 'red', { icon: CARD_ICON.rentals, alert: true, card: 'rentals', recId: unitOverbooked(rec.unitId).rentalId, title: 'Two active rentals overlap on this unit — click to view' })]) : '');
   }
   if (card === 'rentals') {
@@ -9178,7 +9219,16 @@ function historyFor(card, rec) {
     return out;
   }
   if (card === 'units' || card === 'serviceOrders') {
-    const insp = DATA.inspections.filter((n) => n.unitId === rec.unitId).map((n) => { const ir = inspResult(n); return { when: fmtShortDate(n.date), pill: `<span class="pill c-${ir.color}" data-r="R3" data-pill-card="inspections" data-pill-rec="${esc(n.inspectionId)}">${esc(ir.label)}</span>`, text: 'Inspection', search: `${fmtShortDate(n.date)} inspection ${ir.label} ${n.description || ''}` }; });
+    const insp = DATA.inspections.filter((n) => n.unitId === rec.unitId).map((n) => {
+      const ir = inspResult(n);
+      // C11 (Jac audit): the only door to a failed inspection's photo/video report lived in
+      // the RETIRED Shop renderer (unreachable — inspections aren't a grid card anymore, see
+      // SHOP_TYPES). openOverlay({kind:'inspection'}) is still fully live (js-open-insp, used
+      // by the re-Pass "view the done inspection" path); this just gives a FAILED one a
+      // reachable trigger from the unit's own History log, reusing that exact viewer.
+      const report = n.checklist === 'Fail' ? `<button class="pill ref link js-open-insp" data-r="R2" data-rec="${esc(n.inspectionId)}" data-tip="View the photo/video report">Failure report →</button>` : '';
+      return { when: fmtShortDate(n.date), pill: `<span class="pill c-${ir.color}" data-r="R3" data-pill-card="inspections" data-pill-rec="${esc(n.inspectionId)}">${esc(ir.label)}</span>${report}`, text: 'Inspection', search: `${fmtShortDate(n.date)} inspection ${ir.label} ${n.description || ''}` };
+    });
     const wos = DATA.workOrders.filter((w) => w.unitId === rec.unitId).map((w) => ({ when: fmtShortDate(w.date), pill: refPill('workOrders', w.woId, w.woReport.slice(0, 16)), text: getStatus('woPhase', w.phase).label, search: `${fmtShortDate(w.date)} ${w.woReport} ${w.phase} ${w.woType}` }));
     return [...insp, ...wos].sort((a, b) => (b.when > a.when ? 1 : -1));
   }
@@ -9706,7 +9756,10 @@ function cardEl(cardDef, session) {
 
   // §5.4: global search forces EVERY card into list view (the prior standard/anchor
   // state is untouched, so exiting search restores the session for free).
-  const inStandard = !state.searchMode && cs.mode === 'standard' && cs.recId != null && !cs.graphView;
+  // C21: Units no longer clears graphView on record-open (openStandard), so a record must
+  // still win here regardless of it — graphView only suppresses standard view on every OTHER
+  // card (the defensive case: a stale graphView left set while mode/recId say "record open").
+  const inStandard = !state.searchMode && cs.mode === 'standard' && cs.recId != null && (card === 'units' || !cs.graphView);
   // List mode → NO card header (the column tab already names the card). Standard mode →
   // a slim header: the record name in the top-left (hidden when an item tab already shows
   // it, i.e. when anchored) + the row actions. (#2.3 / §0.6)
@@ -18527,6 +18580,7 @@ function onClick(e) {
   if (closest('.js-acct-toggle')) { e.stopPropagation(); const rec = closest('.js-acct-toggle').dataset.rec; return guardAgLeave(rec, () => { state.custAcctOpen = state.custAcctOpen || {}; state.custAcctOpen[rec] = !state.custAcctOpen[rec]; render(); }); }
   if (closest('.js-svc-sec-toggle')) { e.stopPropagation(); const rec = closest('.js-svc-sec-toggle').dataset.rec; state.svcSecOpen = state.svcSecOpen || {}; state.svcSecOpen[rec] = !state.svcSecOpen[rec]; return render(); }   // Unit detail — collapse/expand the Services (service-order) section
   if (closest('.js-unit-sec')) { e.stopPropagation(); const b = closest('.js-unit-sec'); const rec = b.dataset.rec, sec = b.dataset.sec; state.unitSecOpen = state.unitSecOpen || {}; state.unitSecOpen[rec] = state.unitSecOpen[rec] || {}; state.unitSecOpen[rec][sec] = !state.unitSecOpen[rec][sec]; return render(); }   // Unit detail — collapse/expand a generic detail section (Work Orders / Specs / GPS / Investment[+Coverage])
+  if (closest('.js-open-wo-sec')) { e.stopPropagation(); return openUnitWOSection(closest('.js-open-wo-sec').dataset.rec); }   // S17 — the "N WOs Open" title flag opens (not just toggles) the Work Orders section
   if (closest('.js-wo-row')) { e.stopPropagation(); const b = closest('.js-wo-row'); const un = b.dataset.unit, rec = b.dataset.rec; state.woRowOpen = state.woRowOpen || {}; state.woRowOpen[un] = (state.woRowOpen[un] === rec) ? null : rec; return render(); }   // Unit detail — open/collapse one Work Order row (accordion, mirrors js-inv-row)
   if (closest('.js-wo-collapse') && !closest('.inline-edit')) { e.stopPropagation(); const un = closest('.js-wo-collapse').dataset.unit; if (state.woRowOpen) state.woRowOpen[un] = null; return render(); }   // collapse the open Work Order row — header-wide, but the inline-edit report stays editable
   if (closest('.js-ag-row')) { e.stopPropagation(); const b = closest('.js-ag-row'); const rec = b.dataset.rec, card = b.dataset.card; return guardAgLeave(rec, () => { state.custAgOpen = state.custAgOpen || {}; state.custAgOpen[rec] = (state.custAgOpen[rec] === card) ? null : card; render(); }); }
@@ -26139,6 +26193,29 @@ function renderScanCapture(unitId) {
     drawScanScreen();
   }).catch(() => { scanUI.phase = 'error'; drawScanScreen(); });
 }
+// C1 (Jac audit): the capture screen used to have no way back — once scanned in, the
+// only exit was closing the browser tab. This drops scanActive and resumes whatever
+// boot phase the scan intercepted: a cold "remembered phone"/preview scan grabs #app
+// BEFORE the normal load ever ran (booting is still true — see boot()'s own tail,
+// mirrored here), so falling through re-runs that same load-or-login branch; a scan
+// replayed after a real login (maybeReplayScan) already has the app rendered
+// underneath, so booting is false and a plain render() brings it back.
+function exitScanCapture() {
+  scanActive = false;
+  Object.assign(scanUI, { unitId: '', unitName: '', action: '', phase: '', reason: '' });
+  pendingScan = null;
+  try { sessionStorage.removeItem('jactec.pendingScan'); } catch (e) {}
+  if (!booting) { render(); return; }
+  if (flagOn('phoneIdentity')) { phoneBoot(); return; }   // C1 — mirror boot()'s per-person path (flag ON in prod); else a cold-scan exit drops to the shared-password login
+  if (backendPassword) {
+    renderBootSplash();
+    loadFromBackend().then(finishLoad)
+      .catch(() => { backendPassword = ''; sessionStorage.removeItem('jactec.pw'); renderLogin('Please sign in again.'); });
+  } else {
+    warmBackend();
+    renderLogin();
+  }
+}
 function scanRecord(file) {
   if (!file) return;
   const rd = new FileReader();
@@ -26183,10 +26260,11 @@ function drawScanScreen() {
   }
   $('#app').innerHTML = `<div class="scan-screen"><div class="scan-box">`
     + `<span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>`
-    + `<div class="scan-plate"><div class="scan-brand"><span class="scan-brandtxt">Jac<b>Rentals</b></span><span class="scan-tag">Scan to log</span></div>`
+    + `<div class="scan-plate"><div class="scan-brand"><span class="scan-brandtxt">Jac<b>Rentals</b></span><span style="display:flex;align-items:center;gap:8px"><span class="scan-tag">Scan to log</span>${closeX('js-scan-exit')}</span></div>`
     + `<div class="scan-body">${body}</div></div></div></div>`;
   const f = document.querySelector('.js-scan-file');
   if (f) f.addEventListener('change', (e) => scanRecord(e.target.files && e.target.files[0]));
+  const exitBtn = document.querySelector('.js-scan-exit'); if (exitBtn) exitBtn.addEventListener('click', () => exitScanCapture());   // C1 — a clearly visible way back out of the capture screen
   const again = document.querySelector('.js-scan-again'); if (again) again.addEventListener('click', () => renderScanCapture(scanUI.unitId));
   const retry = document.querySelector('.js-scan-retry'); if (retry) retry.addEventListener('click', () => renderScanCapture(scanUI.unitId));
 }
