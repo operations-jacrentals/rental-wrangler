@@ -19043,7 +19043,8 @@ function onClick(e) {
     e.stopPropagation();
     const s = activeSession(); if (s.cols) s.cols.left = 'units'; s.cards.units.mode = 'list';
     render(); attnFlash('.card[data-card="units"] .list');   // R19 — point AT the list
-    toast('Drag a unit from the Units card onto this rental.');
+    // §M3 — drag-to-link is retired on phones (long-press → R20 menu is the link path); phrase to match the device
+    toast(document.body.classList.contains('is-phone') ? 'Long-press a unit in the Units card to link it to this rental.' : 'Drag a unit from the Units card onto this rental.');
     return;
   }
   if (closest('.js-quickadd-cust')) {   // §quick-add hint — point AT the Customers search bar (no popup, Jac 2026-06-16)
@@ -19051,7 +19052,7 @@ function onClick(e) {
     const s = activeSession(); if (s.cols) s.cols.right = 'customers';
     const ccs = s.cards.customers; ccs.mode = 'list'; ccs.recId = null;
     render(); attnFlash('.card[data-card="customers"] .mini-searchwrap');   // R19 — guide them to the search
-    toast('Type a name + phone in the Customers search and press Enter — then drag the new customer here.');
+    toast(document.body.classList.contains('is-phone') ? 'Type a name + phone in the Customers search and press Enter — then long-press the new customer to link it here.' : 'Type a name + phone in the Customers search and press Enter — then drag the new customer here.');
     return;
   }
   if (closest('.js-create-invoice')) { e.stopPropagation(); return createInvoiceForRental(closest('.js-create-invoice').dataset.rec); }
@@ -19077,9 +19078,9 @@ function onClick(e) {
     const b = closest('.js-add-line'); e.stopPropagation();
     const inv = IDX.invoice.get(b.dataset.rec);
     if (b.dataset.kind === 'Rental') {
-      if (inv && !inv.customerId) { flashOr('[data-slot="customer"]', 'The invoice needs a customer first (§7.5) — drag or quick-add one.'); return; }
+      if (inv && !inv.customerId) { flashOr('[data-slot="customer"]', document.body.classList.contains('is-phone') ? 'The invoice needs a customer first (§7.5) — long-press to link, or quick-add one.' : 'The invoice needs a customer first (§7.5) — drag or quick-add one.'); return; }
       const s = activeSession(); if (s.cols) s.cols.middle = 'rentals'; s.cards.rentals.mode = 'list';
-      render(); attnFlash('.card[data-card="rentals"] .list'); toast('Drag a rental onto this invoice.'); return;
+      render(); attnFlash('.card[data-card="rentals"] .list'); toast(document.body.classList.contains('is-phone') ? 'Long-press a rental to link it to this invoice.' : 'Drag a rental onto this invoice.'); return;
     }
     if (b.dataset.kind === 'WO') {
       // Phase 4 (Jac) — open the invoice's LINKED unit(s) in a filtered Units list; the
@@ -19967,7 +19968,9 @@ function setUnitStatus(rentalId, unitId, val, opts = {}) {
   else if (wasVoided && r.invoiceId) { syncRentalLines(r); syncTransportLine(r); }   // un-void → restore the unit's billing (was silently un-billed)
   syncRentalPrimary(r);            // mirror the aggregate back onto r.status for back-compat readers
   reindex('rentals', r);
-  logAction(r, `${IDX.unit.get(unitId)?.name || unitId} → ${getStatus('rentalStatus', val).label}`);
+  const unitLabel = IDX.unit.get(unitId)?.name || unitId;
+  logAction(r, `${unitLabel} → ${getStatus('rentalStatus', val).label}`);
+  toast(`${unitLabel} → ${getStatus('rentalStatus', val).label}`);   // confirm the per-unit move (mirrors setRentalStatus)
   render();
   if (val === 'Returned') maybePromptReturnRating(r);   // all units back → rate the customer's experience
 }
@@ -20000,13 +20003,15 @@ function openUnitStatusDropdown(rentalId, unitId, anchorEl) {
 }
 /* §9 Field Call — a unit breaks mid-rental: flag the rental (red FC), fail the unit,
    and auto-open a Field-Call work order so the M.Tech can dispatch parts/swap. */
-function markFieldCall(rentalId) {
-  const r = IDX.rental.get(rentalId); if (!r || !r.unitId) { flashOr('[data-slot="unit"]', 'No unit on this rental.'); return; }
+function markFieldCall(rentalId, unitId) {
+  const r = IDX.rental.get(rentalId); if (!r) return;
+  const targetId = unitId || r.unitId;   // the unit that actually broke; primary is only the fallback (§20 multi-unit)
+  if (!targetId) { flashOr('[data-slot="unit"]', 'No unit on this rental.'); return; }
   r.fieldCall = true; reindex('rentals', r);
-  const u = IDX.unit.get(r.unitId);
+  const u = IDX.unit.get(targetId);
   if (u) { u.inspectionStatus = 'Failed'; reindex('units', u); logAction(u, `Field Call on rental ${r.rentalName || rentalId}`); }
   const id = 'WO-FC' + (state.seq++);
-  const wo = { woId: id, unitId: r.unitId, customerId: r.customerId || null, woReport: 'Field Call — breakdown', woType: 'Field Call', description: `Field call raised on rental ${r.rentalName || rentalId}.`, phase: 'Part Needed?', billCustomer: 'No', date: TODAY_ISO, eta: '', unitHoursAtCreation: u?.currentHours || 0, assignedMechanic: '', laborHours: 0, lineItems: [], mock: true };
+  const wo = { woId: id, unitId: targetId, customerId: r.customerId || null, woReport: 'Field Call — breakdown', woType: 'Field Call', description: `Field call raised on rental ${r.rentalName || rentalId}.`, phase: 'Part Needed?', billCustomer: 'No', date: TODAY_ISO, eta: '', unitHoursAtCreation: u?.currentHours || 0, assignedMechanic: '', laborHours: 0, lineItems: [], mock: true };
   DATA.workOrders.push(wo); IDX.wo.set(id, wo); reindex('workOrders', wo);
   logAction(r, 'Field Call marked — unit failed, work order opened');
   toast('Field Call logged — unit → Failed, work order opened.');
@@ -20042,7 +20047,7 @@ function setUnitCondition(unitId, val) {
   if (val === 'Fail') {
     u.condAt = TODAY_ISO; u.condClock = nowClock();   // stamp the condition change on either path
     const ar = activeRentalForUnit(unitId);
-    if (ar) return markFieldCall(ar.rentalId);        // on-rent breakdown → field call (truck roll + dispatch)
+    if (ar) return markFieldCall(ar.rentalId, unitId);   // on-rent breakdown → field call on THIS unit (truck roll + dispatch)
     const n = newInspectionForUnit(u); n.wash = n.wash || 'No';
     return setInspResult(n.inspectionId, 'Fail');     // yard bench fail: auto-WO + §12.8 photo/notes popup
   }
@@ -20261,7 +20266,7 @@ function commitYardCapture(rentalId, cap, unitId, dataUrl, opts = {}) {
     setUnitCapture(r, eu, 'endCapture', stamp); logAction(r, `${uname ? uname + ' — ' : ''}End/Recovery video ${replace ? 're-captured' : 'captured'}`);
   } else if (cap === 'fc') {
     setUnitCapture(r, eu, 'fcCapture', stamp);
-    if (!replace) markFieldCall(rentalId);
+    if (!replace) markFieldCall(rentalId, unitId);   // flag the captured unit, not just the primary (§20 multi-unit)
   }
   uploadCaptureMedia(r, eu, cap, dataUrl);
   const session = activeSession(); if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
@@ -22674,6 +22679,9 @@ function winPickSave() {
       const newN = ext.newInvoices ? ` · ${ext.newInvoices} new invoice${ext.newInvoices > 1 ? 's' : ''}` : '';
       logAction(r, `Extension ${up ? 'billed' : 're-priced −'} (${basis}) — ${up ? '+' : '−'}${amt}${newN}`);
       toast(`Extension ${up ? 'billed +' : 're-priced − '}${amt} (${basis})${ext.newInvoices ? ` — opened ${ext.newInvoices} continuation invoice${ext.newInvoices > 1 ? 's' : ''} (28-day cap)` : ''}.`);
+    } else {
+      // a shrink or move (no billable extension) saved silently before — confirm it too
+      toast(`Rental window → ${r.startDate && r.endDate ? fmtShortDate(r.startDate) + '–' + fmtShortDate(r.endDate) : 'cleared'}.`);
     }
   }
   state.winEdit = null; render();
