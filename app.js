@@ -2310,13 +2310,22 @@ function categoryUnavailReason(categoryId) {
 }
 /** A unit's current rental bucket (mirrors §12.4 Rental Status into 3 buckets). */
 function unitRentalBucket(u) {
+  /* §off-fleet — Sold / For Sale / Inactive (RENTABLE_SKIP_FLEET) have permanently left
+     rentable inventory, so they are NOT "Available". They simply have no open rental, which
+     the old `if (!r) return 'Available'` below read as free-to-rent — which is why a category
+     detail could advertise "9 Available" while its own mini-card correctly showed none free
+     (Jac 2026-07-18: Sold, For Sale and Inactive are ALL Off Fleet). Tested BEFORE the rental
+     lookup, because off-fleet is a property of the UNIT, not of whether it happens to be out.
+     This function also backs the §A1 `__fleet` segment filter, so the bar and its click-through
+     stay in step for free. */
+  if (RENTABLE_SKIP_FLEET.has(u.fleetStatus)) return 'Off Fleet';
   const r = activeRentalForUnit(u.unitId);
   if (!r) return 'Available';
   const eu = unitEntry(r, u.unitId);   // §20 this unit's OWN status, not the rental roll-up
   return eu ? unitStatus(r, eu) : rentalDisplayStatus(r);
 }
 /** The order rental-status segments appear in the §12.3 second bar (birds-eye renting). */
-const RENTAL_BAR_ORDER = ['Available', 'Tomorrow', 'Today', 'Reserved', 'On Rent', 'End Rent', 'Off Rent', 'Returned', 'Cancelled', 'No Show'];
+const RENTAL_BAR_ORDER = ['Available', 'Tomorrow', 'Today', 'Reserved', 'On Rent', 'End Rent', 'Off Rent', 'Returned', 'Cancelled', 'No Show', 'Off Fleet'];   // §off-fleet last — it is the only bucket that can never come back into play
 /** Category proportional RENTAL mix by actual display status, plus which buckets
    involve transport (truck icon). Same proportional pattern as categoryMix. */
 function categoryRentalMix(categoryId) {
@@ -7496,7 +7505,13 @@ const CARD_COLUMNS = {
     C('rate4', '4-Week', 'money', (c) => c.rate4Wk ?? null),
     C('avgHours', 'Avg hours', 'num', (c) => categoryStats(c).avgHours ?? null, { agg: 'avg' }),
     C('units', 'Units', 'num', (c) => DATA.units.filter((u) => u.categoryId === c.categoryId).length, { agg: 'sum' }),
-    C('roi', 'ROI', 'pct', (c) => { const s = categoryStats(c); return s.roi != null ? s.roi : null; }, { pill: true, cell: (c) => { const s = categoryStats(c); return s.roi == null ? '—' : pillS(s.roi >= 0 ? 'green' : 'red', s.roi + '% ROI'); } }),
+    /* §roi-gate — ROI is MARGIN. The detail view already hides it behind canMoney() (the
+       Investment section renders it only `if (st.roi != null && canMoney())`), but the same
+       value was published here as an ungated list column — in the card's DEFAULT layout — and
+       as an ungated sort key, so a below-money-tier reader could read margin off a coloured
+       pill or infer the whole ranking just by sorting on it. Gated at the accessor AND the
+       cell so the value is withheld and any sort on it carries no ordering signal. */
+    C('roi', 'ROI', 'pct', (c) => { if (!canMoney()) return null; const s = categoryStats(c); return s.roi != null ? s.roi : null; }, { pill: true, cell: (c) => { if (!canMoney()) return '—'; const s = categoryStats(c); return s.roi == null ? '—' : pillS(s.roi >= 0 ? 'green' : 'red', s.roi + '% ROI'); } }),
   ],
   invoices: [
     C('id', 'Invoice', 'text', (i) => i.invoiceId),
@@ -8880,7 +8895,12 @@ const DETAIL = {
     const mixBar = mix.total ? `<div class="mixbar tall">${mixSeg(mix.Ready, mix.total, 'Ready', 'green', 'Ready', 'inspection')}${mixSeg(mix['Not Ready'], mix.total, 'Not Ready', 'yellow', 'Not Ready', 'inspection')}${mixSeg(mix.Failed, mix.total, 'Failed', 'red', 'Failed', 'inspection')}</div>` : '';
     // §12.3 second bar — birds-eye RENTAL status: Available + each active status
     // (Tomorrow/Today/Reserved/On Rent/…) in order, with a truck icon for transport.
-    const rentSegs = RENTAL_BAR_ORDER.map((stt) => { const ct = rmix.counts[stt] || 0; if (!ct) return ''; const color = stt === 'Available' ? 'gray' : getStatus('rentalStatus', stt).color; return mixSeg(ct, rmix.total, stt, color, stt, 'rental', !!rmix.truck[stt]); }).join('');
+    const rentSegs = RENTAL_BAR_ORDER.map((stt) => { const ct = rmix.counts[stt] || 0; if (!ct) return ''; // §off-fleet — 'Off Fleet' is not a rentalStatus, so getStatus() would return undefined and
+// throw on .color; it needs the same explicit mapping 'Available' already has. --navy is an
+// existing, fully-themed token (dark + light/ranch both defined) that no rentalStatus value
+// uses, so nothing collides and none of the six registry meanings is repurposed — it reads as
+// recessive "not in play", which is exactly what an off-fleet machine is.
+const color = stt === 'Available' ? 'gray' : stt === 'Off Fleet' ? 'navy' : getStatus('rentalStatus', stt).color; return mixSeg(ct, rmix.total, stt, color, stt, 'rental', !!rmix.truck[stt]); }).join('');
     const rentBar = rmix.total ? `<div class="mixbar tall">${rentSegs}</div>` : '';
     const bars = (mixBar || rentBar) ? `<div class="mixbars">${mixBar}${rentBar}</div>` : '';
     // Pricing is Admin-gated (Jac 2026-06-22): anyone can read the rates, but changing
@@ -9750,7 +9770,10 @@ function listView(cardDef, session) {
   gvSyncClosed(card, cs);   // §13.4 — graph closed but g-terms linger (record open / invoice surface) → save + drop them before the bar's pills render
   const wrap = el('div');
   // sort/search bar
-  const sf = SORT_FIELDS[card];
+  // §roi-gate — drop ROI from the offered sort keys below the money tier, so the margin
+  // ranking can't be inferred by sorting on a value the detail view deliberately hides.
+  // `curField` already falls back to sf[0] when the saved field isn't in the list.
+  const sf = SORT_FIELDS[card].filter((f) => f.field !== 'roi' || canMoney());
   const curField = sf.find((f) => f.field === cs.sort.field) || sf[0];
   const av = activeView(card, cs);   // §5.5 the View button shows the active view's name, else the sort field
   const bar = el('div', 'listbar');
