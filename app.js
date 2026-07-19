@@ -9147,11 +9147,27 @@ const DETAIL = {
   },
 };
 
+/* Minutes-into-day from a nowClock() stamp ("5:44 PM" → 1064); -1 when absent/unparseable so
+   an undated entry sorts last within its day. Inverse of nowClock. */
+function clockMinutes(c) {
+  const m = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(String(c || '').trim());
+  if (!m) return -1;
+  return ((Number(m[1]) % 12) + (/PM/i.test(m[3]) ? 12 : 0)) * 60 + Number(m[2]);
+}
 /* History section (§0.6) — dotted separator + bg shift, pinned at bottom. */
 function historySection(card, rec, cs, chips) {
   // Timestamped actions taken this session (logAction) ride at the top, newest-first,
   // above the date-derived history. Single merge point → every card gets action history.
-  const acts = (rec.actions || []).slice().sort((a, b) => b.seq - a.seq).map((a) => {
+  // Sort on the REAL stamp (when + clock), not `seq`: actionSeq resets to 0 on every page load,
+  // so entries written in different sessions carry values from independent counters and
+  // interleaved at random — a log that read Jun 17, Jul 18, Jun 22, Jul 13 in production
+  // (audit 2026-07-18). `seq` stays as the tie-break so same-minute entries from one session
+  // keep their true order.
+  const acts = (rec.actions || []).slice().sort((a, b) =>
+    String(b.when || '').localeCompare(String(a.when || ''))
+    || (clockMinutes(b.clock) - clockMinutes(a.clock))
+    || ((b.seq || 0) - (a.seq || 0))
+  ).map((a) => {
     const when = fmtShortDate(a.when) + (a.clock ? ` · ${a.clock}` : '');
     return { when, text: a.text, by: a.by || '', search: `${when} ${a.text} ${a.by || ''}` };
   });
@@ -16677,7 +16693,11 @@ function boardSortRows(cols, rows, sort) {
 }
 function boardViewRecords(o, session) {
   const entity = boardEntity(o.card, session);
-  const cols = cardColumns(o.card, session);
+  // Columns must resolve off the ENTITY, not the raw saved card: a stale 'shop' board view
+  // (card retired 2026-07-07) has no CARD_COLUMNS entry, so passing o.card returned [] and the
+  // board rendered column-less — defeating the very fallback boardSegmentFor exists for. Records
+  // on the next line already use `entity`; this just makes the columns agree (audit 2026-07-18).
+  const cols = cardColumns(entity, session);
   let rows = (collection(entity) || []).filter((r) => boardMatches(cols, r, o.query));
   return boardSortRows(cols, rows, o.sort);
 }
@@ -16736,7 +16756,7 @@ function bvFmtNum(v) { return Number.isFinite(v) ? (Math.round(v * 100) / 100).t
 
 function boardViewTable(o, session) {
   const entity = boardEntity(o.card, session);
-  const cols = cardColumns(o.card, session);
+  const cols = cardColumns(entity, session);   // entity, not o.card — see boardViewRecords (stale 'shop' view)
   const byKey = Object.create(null); cols.forEach((c) => { byKey[c.key] = c; });
   const rows = boardViewRecords(o, session);
   if (!o.colOrder) o.colOrder = cols.map((c) => ({ kind: 'data', key: c.key }));   // unified, insertable column order
@@ -26536,7 +26556,7 @@ function boot() {
       const v = (t.textContent || '').trim();
       if (v.startsWith('=')) {
         const session = activeSession(), entity = boardEntity(o.card, session);
-        const cols = cardColumns(o.card, session), recs = boardViewRecords(o, session);
+        const cols = cardColumns(entity, session), recs = boardViewRecords(o, session);   // entity, not o.card — see boardViewRecords (stale 'shop' view)
         const rec = t.dataset.row ? recs.find((r) => String(idOf(entity, r)) === t.dataset.row) || null : null;   // data-row cell → that row; scratch row → aggregate
         const r = bvCompute(v.slice(1), cols, recs, rec);
         t.dataset.raw = v; t.classList.add('bv-comp'); t.textContent = r.err ? 'ERR' : bvFmtNum(r.val);
