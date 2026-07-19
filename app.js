@@ -9474,7 +9474,9 @@ function memberCount(member, session) {
   //     (oldest 78 days) still showed a badge of 4, counting only today-forward.
   //   • counts trips, not raw stops — the card body renders tripsFor(), so once two stops are
   //     doubled into one run the badge stays equal to the rows underneath it.
-  if (member === 'calendar') return tripsFor().filter((t) => !t.done).length;
+  //   • runs through the SAME tripsScopeFilter as the card body (§1), so a bound driver's badge
+  //     counts THEIR scoped board and can never drift from the rows below it.
+  if (member === 'calendar') return tripsScopeFilter(tripsFor()).filter((t) => !t.done).length;
   try { let r = listFor(member, session); if (member === 'units') r = unitsVisible(r, session.cards.units); if (member === 'rentals') r = rentalsVisible(r, session, session.cards.rentals); return r.length; } catch { return 0; }
 }
 /** How many units NEED the crew — drives the red alert on the Units tab (the
@@ -9647,9 +9649,19 @@ function calendarCardEl(session) {
   const body = el('div', 'card-body cal-body');
   const q = (state.calSearch || '').trim();
   const mapOpen = tripsMapOpen();
+  // §1 driver scoping — a bound driver gets a Mine·All toggle in the graph-button slot; the active
+  // segment rides the ONE orange (selected-tab, rule R3/#3). Other roles / unbound logins: no toggle.
+  const scope = tripsScope();
+  const scopeSeg = tripsScopeOffered()
+    ? segCtl([
+        { label: 'Mine', js: 'js-trips-scope', data: { scope: 'mine' }, on: scope === 'mine' ? 'orange' : null },
+        { label: 'All', js: 'js-trips-scope', data: { scope: 'all' }, on: scope === 'all' ? 'orange' : null },
+      ], 'trips-scopeseg')
+    : '';
   const bar = el('div', 'listbar');
   bar.innerHTML = `
     <button class="bv-btn js-tripsmap${mapOpen ? ' on' : ''}" data-tip="${mapOpen ? 'Hide the live map' : 'Live map'}">${I.graph}</button>
+    ${scopeSeg}
     <div class="mini-searchwrap${q ? ' has-query' : ''}">
     <input class="mini-search" placeholder="Search trips…" value="${esc(state.calSearch || '')}" data-card="calendar" />
   </div>`;
@@ -9676,13 +9688,14 @@ function calendarCardEl(session) {
       : `<div class="trips-map-ph"><span class="map-pin" aria-hidden="true">${ICO_PIN}</span><span class="map-tag stamp" style="font-size:0.6471rem;color:var(--accent)">Map offline</span><span class="map-sub">The run below still drives the day.</span></div>${gmaps}`;
     scroll.appendChild(panel);
   }
-  let trips = tripsFor();
+  let trips = tripsScopeFilter(tripsFor());   // §1 driver scoping — mine (assigned + unassigned) vs the whole yard
   if (q) trips = trips.filter((t) => tripMatches(t, q));
   trips = [...trips].sort(tripSort);
   const list = el('div', 'list');
   if (!trips.length) {
-    const label = q ? 'No Matching Trips' : 'No Hauls On The Books';
-    const hint = q ? `No trips match "${q}".` : 'Rentals with delivery or recovery land here on their own.';
+    const scopedMine = tripsScopeOffered() && scope === 'mine';
+    const label = q ? 'No Matching Trips' : (scopedMine ? 'No Runs On Your Board' : 'No Hauls On The Books');
+    const hint = q ? `No trips match "${q}".` : (scopedMine ? 'Nothing assigned to you yet — tap All to see the whole yard.' : 'Rentals with delivery or recovery land here on their own.');
     list.innerHTML = `<div class="trip-empty"><span class="trip-empty-label">${esc(label)}</span><span class="trip-empty-hint">${esc(hint)}</span></div>`;
   } else {
     appendGroupedSections(list, trips, {}, 'calendar');
@@ -11832,6 +11845,36 @@ const tripsMapOpen = () => {
   try { const v = localStorage.getItem('jactec.tripsMap'); return v == null ? currentRole !== 'driver' : v === '1'; } catch (e) { return true; }
 };
 const tripsMapSetOpen = (on) => { _mapOpenSession = null; try { localStorage.setItem('jactec.tripsMap', on ? '1' : '0'); } catch (e) {} };
+/* Driver scoping (spec rentals-dispatch §1, Jac 2026-07-18) — the Trips card is the DRIVER's landing
+   (ROLE_LANDING.driver). A driver defaults to seeing only their own runs (assigned to them OR still
+   unassigned), with a listbar toggle to the whole yard; an unbound/demo login (no roster id) always
+   sees all, mirroring chatVisibleToMe's `!mine` short-circuit.
+   myDriverId() must resolve the viewer to the SAME id that got written onto a trip. driverRoster()
+   keys each driver as `e2.id || e2.name` (a roster row predating stable ids falls back to its name),
+   and THAT value is what lands on eu.deliveryDriverId/recoveryDriverId — so we resolve OUR id the
+   identical id-or-name way. (myRosterId() returns String(id) only and would silently miss a
+   name-keyed driver's own runs — the trap this helper exists to avoid.) */
+function myDriverId() {
+  const me = (currentUser || '').trim().toLowerCase();
+  if (!me) return null;
+  const hit = ((state.settings && state.settings.employees) || []).find((e) => (e.name || '').trim().toLowerCase() === me);
+  return hit ? String(hit.id || hit.name) : null;
+}
+const tripsScope = () => {
+  const dflt = currentRole === 'driver' ? 'mine' : 'all';
+  try { const v = localStorage.getItem('jactec.tripsScope'); return v === 'mine' || v === 'all' ? v : dflt; } catch (e) { return dflt; }
+};
+const tripsScopeSet = (v) => { try { localStorage.setItem('jactec.tripsScope', v === 'mine' ? 'mine' : 'all'); } catch (e) {} };
+/* The scope toggle is only OFFERED to a bound driver (see calendarCardEl), and this is the single
+   choke point BOTH the card body and the tab badge run through — so the badge can never drift from
+   the rows (the invariant #745 established). Any non-driver role, an unbound viewer, or 'all' mode
+   passes through unfiltered. */
+const tripsScopeFilter = (trips) => {
+  const my = myDriverId();
+  if (!my || currentRole !== 'driver' || tripsScope() !== 'mine') return trips;
+  return trips.filter((t) => !t.driverId || String(t.driverId) === my);
+};
+const tripsScopeOffered = () => currentRole === 'driver' && !!myDriverId();
 const isLocalDemo = () => (location.hash || '').toLowerCase().includes('local');
 let _dispMapFailed = false;   // a genuine Maps load failure → the panel flips to the plate (re-opening the panel retries)
 let _dispMap = null, _dispView = null, _dispMarkers = [], _dispRoute = null, _dispGeo = {}, _dispGeoPending = {};
@@ -18992,6 +19035,8 @@ function onClick(e) {
   if (closest('.js-trip-town')) { e.stopPropagation(); const b = closest('.js-trip-town'); return tripTownGo(b.dataset.id, b.dataset.day); }
   // §2.1 Trips — map panel toggle (the graph-button slot); re-opening retries a failed Maps load
   if (closest('.js-tripsmap')) { e.stopPropagation(); const on = !tripsMapOpen(); tripsMapSetOpen(on); if (on) _dispMapFailed = false; return render(); }
+  // §1 driver scoping — flip the Trips card between the driver's own runs and the whole yard
+  if (closest('.js-trips-scope')) { e.stopPropagation(); tripsScopeSet(closest('.js-trips-scope').dataset.scope); return render(); }
   // §2.3 free-form route arrows — these win over the stop-open below (the icon lives inside the row)
   if (closest('.js-disp-stop') && !closest('.js-disp-time') && !closest('.disp-grip') && !closest('.js-site-go')) { e.stopPropagation(); return anchorRecord('rentals', closest('.js-disp-stop').dataset.rec); }
   if (closest('.js-disp-tok') && !closest('.dt-time') && !closest('.dt-grip') && !closest('.js-site-go') && !closest('.pill')) { e.stopPropagation(); return dispatchFocusStop(closest('.js-disp-tok').dataset.id); }   // §2.3 cockpit: tap a rail stop → focus it on the map (the customer pill opens the rental)
