@@ -2207,9 +2207,13 @@ function topServiceForUnit(unit) {
   const active = rows.filter((s) => s.status !== 'ok' && !svcSnoozedUntil(unit, s.taskId));
   return active[0] || null;
 }
-/** Total repair cost for a unit = Σ its WO line-item costs (SPEC §12.4). */
+/** Total repair cost for a unit = Σ its WO line-item costs (SPEC §12.4).
+ *  §void-work — a CANCELLED work order was never performed and never billed, so its line
+ *  items are not a repair cost. ruCatMoney's expense loop already skipped cancelled WOs;
+ *  this one did not, so the same category's ROI denominator and its Expenses graph used two
+ *  different definitions of "expense" and could visibly disagree (audit 2026-07-18). */
 function unitRepairCost(unitId) {
-  return rmemo('unitRepair', unitId, () => DATA.workOrders.filter((w) => w.unitId === unitId)
+  return rmemo('unitRepair', unitId, () => DATA.workOrders.filter((w) => w.unitId === unitId && !w.cancelled)
     .reduce((a, w) => a + (w.lineItems || []).reduce((s, li) => s + (Number(li.cost) || 0), 0), 0));
 }
 /** §7.6 WO "Price if billed": tiered parts markup (by each part's cost) + $150/hr labor.
@@ -2222,9 +2226,17 @@ function woBillable(w) {
   const labor = items.reduce((a, li) => a + (Number(li.hours) || 0), 0) || w.laborHours || 0;
   return Math.round(parts + labor * LABOR_RATE);
 }
+/* §void-rental — a rental that was Cancelled, No-Showed, or is still an unaccepted Quote
+   never happened: the void path strips its invoice line, so the ledger already disagrees with
+   any rollup that counts its derived price. ruCatUtilProxy excluded exactly these three
+   statuses; unitTotalRevenue and ruCatMoney did not, so revenue and ROI were inflated by
+   money never collected (audit 2026-07-18). ONE shared predicate so the sites can't drift
+   apart again — rentalDisplayStatus is a hoisted declaration, safe to call from here. */
+const VOID_RENTAL_STATUS = new Set(['Cancelled', 'No Show', 'Quote']);
+const rentalOccurred = (r) => !VOID_RENTAL_STATUS.has(rentalDisplayStatus(r));
 /** Total revenue a unit has earned = Σ its rentals' derived prices (SPEC §12.4). */
 function unitTotalRevenue(unitId) {
-  return rmemo('unitRev', unitId, () => DATA.rentals.filter((r) => rentalHasUnit(r, unitId))
+  return rmemo('unitRev', unitId, () => DATA.rentals.filter((r) => rentalHasUnit(r, unitId) && rentalOccurred(r))
     .reduce((a, r) => { const p = unitRentalPrice(r, unitId); return a + (p ? p.price : 0); }, 0));   // §20 this unit's own line
 }
 
@@ -2298,13 +2310,22 @@ function categoryUnavailReason(categoryId) {
 }
 /** A unit's current rental bucket (mirrors §12.4 Rental Status into 3 buckets). */
 function unitRentalBucket(u) {
+  /* §off-fleet — Sold / For Sale / Inactive (RENTABLE_SKIP_FLEET) have permanently left
+     rentable inventory, so they are NOT "Available". They simply have no open rental, which
+     the old `if (!r) return 'Available'` below read as free-to-rent — which is why a category
+     detail could advertise "9 Available" while its own mini-card correctly showed none free
+     (Jac 2026-07-18: Sold, For Sale and Inactive are ALL Off Fleet). Tested BEFORE the rental
+     lookup, because off-fleet is a property of the UNIT, not of whether it happens to be out.
+     This function also backs the §A1 `__fleet` segment filter, so the bar and its click-through
+     stay in step for free. */
+  if (RENTABLE_SKIP_FLEET.has(u.fleetStatus)) return 'Off Fleet';
   const r = activeRentalForUnit(u.unitId);
   if (!r) return 'Available';
   const eu = unitEntry(r, u.unitId);   // §20 this unit's OWN status, not the rental roll-up
   return eu ? unitStatus(r, eu) : rentalDisplayStatus(r);
 }
 /** The order rental-status segments appear in the §12.3 second bar (birds-eye renting). */
-const RENTAL_BAR_ORDER = ['Available', 'Tomorrow', 'Today', 'Reserved', 'On Rent', 'End Rent', 'Off Rent', 'Returned', 'Cancelled', 'No Show'];
+const RENTAL_BAR_ORDER = ['Available', 'Tomorrow', 'Today', 'Reserved', 'On Rent', 'End Rent', 'Off Rent', 'Returned', 'Cancelled', 'No Show', 'Off Fleet'];   // §off-fleet last — it is the only bucket that can never come back into play
 /** Category proportional RENTAL mix by actual display status, plus which buckets
    involve transport (truck icon). Same proportional pattern as categoryMix. */
 function categoryRentalMix(categoryId) {
@@ -7268,11 +7289,32 @@ const ROWS = {
     }${
       tally('Fail', mix.Failed, 'red', 'Failed', `${mix.Failed} failed inspection — tap to filter Units`)
     }`;
-    const rate = (label, v) => `<div class="catr-rate"><span class="catr-rk">${label}</span><span class="catr-rv${v ? '' : ' none'}">${v ? money(v) : '—'}</span></div>`;
+    const rate = (label, v, cls) => `<div class="catr-rate${cls ? ' ' + cls : ''}"><span class="catr-rk">${label}</span><span class="catr-rv${v ? '' : ' none'}">${v ? money(v) : '—'}</span></div>`;
+    /* §no-rates (B13) — an unpriced category bills $0. The Rentals stall already flags this at
+       quote time (§rentalUnit `No rates`), but the Categories card — where a counter rep reads a
+       price BEFORE a rental exists — showed four silent em-dashes next to a green "N Avail", so
+       the surface said "rent me" and gave nothing to quote. Same predicate, same R9 flag, same
+       copy as the quote-time flag so the two read as one warning.
+       Deliberately NOT `alert:true`: the pulsing R9b variant is right for ONE record at quote
+       time, but this grid can hold many unpriced categories at once (7 of 46 in production), and
+       a screenful of pulsing flags is the scattered ambient motion the design language forbids. */
+    const noRatesFlag = catRatesUnset(c)
+      ? flagEl('No rates', 'yellow', { title: 'This category has no day / 7-day / 4-week rate — it bills $0. Set its rates before quoting.' })
+      : '';
+    /* §off-fleet-rates (B12) — mix counts the ACTIVE fleet only, so a zero total means every unit
+       is Sold / For Sale / Inactive: the rate card is reference data, not a live quote. The lead
+       pill above already stamps the reason ("None · Sold"), so the rates recede rather than repeat
+       it — Jac keeps the numbers, a rep stops reading them as bookable. */
+    const noActiveFleet = (mix.Ready + mix['Not Ready'] + mix.Failed) === 0;
     return `<div class="catr" style="--catr-hl:var(--${hl})">
-      <div class="catr-head"><span class="catr-cat">${categoryIconFor(c.name)}</span><span class="r-title catr-name${hl === 'red' ? ' ec-red' : ''}" style="color:${nameColor}" data-tip="${esc(c.name)}">${esc(c.name)}</span></div>
+      <div class="catr-head"><span class="catr-cat">${categoryIconFor(c.name)}</span><span class="r-title catr-name${hl === 'red' ? ' ec-red' : ''}" style="color:${nameColor}" data-tip="${esc(c.name)}">${esc(c.name)}</span>${noRatesFlag}</div>
       <div class="catr-pills">${lead}<div class="catr-tally-row">${tallyRow}</div></div>
-      <div class="catr-rates">${rate('1-Day', c.rate1Day)}${rate('7-Day', c.rate7Day)}${rate('4-Week', c.rate4Wk)}${rate('Weekend', c.weekend)}</div>
+      <!-- §member-rate — memberDaily LEADS the stack because it is not a peer of the four
+           duration tiers: rentalPrice() short-circuits on membership and bills days × memberDaily,
+           ignoring all four. It was previously visible only after opening the detail, so the
+           surface a counter rep actually reads to quote a member showed four numbers none of which
+           would be charged (audit 2026-07-18). Order matches the detail view's Pricing section. -->
+      <div class="catr-rates${noActiveFleet ? ' off-fleet' : ''}">${rate('Member/Day', c.memberDaily, 'member')}${rate('1-Day', c.rate1Day)}${rate('7-Day', c.rate7Day)}${rate('4-Week', c.rate4Wk)}${rate('Weekend', c.weekend)}</div>
     </div>`;
   },
 
@@ -7484,7 +7526,13 @@ const CARD_COLUMNS = {
     C('rate4', '4-Week', 'money', (c) => c.rate4Wk ?? null),
     C('avgHours', 'Avg hours', 'num', (c) => categoryStats(c).avgHours ?? null, { agg: 'avg' }),
     C('units', 'Units', 'num', (c) => DATA.units.filter((u) => u.categoryId === c.categoryId).length, { agg: 'sum' }),
-    C('roi', 'ROI', 'pct', (c) => { const s = categoryStats(c); return s.roi != null ? s.roi : null; }, { pill: true, cell: (c) => { const s = categoryStats(c); return s.roi == null ? '—' : pillS(s.roi >= 0 ? 'green' : 'red', s.roi + '% ROI'); } }),
+    /* §roi-gate — ROI is MARGIN. The detail view already hides it behind canMoney() (the
+       Investment section renders it only `if (st.roi != null && canMoney())`), but the same
+       value was published here as an ungated list column — in the card's DEFAULT layout — and
+       as an ungated sort key, so a below-money-tier reader could read margin off a coloured
+       pill or infer the whole ranking just by sorting on it. Gated at the accessor AND the
+       cell so the value is withheld and any sort on it carries no ordering signal. */
+    C('roi', 'ROI', 'pct', (c) => { if (!canMoney()) return null; const s = categoryStats(c); return s.roi != null ? s.roi : null; }, { pill: true, cell: (c) => { if (!canMoney()) return '—'; const s = categoryStats(c); return s.roi == null ? '—' : pillS(s.roi >= 0 ? 'green' : 'red', s.roi + '% ROI'); } }),
   ],
   invoices: [
     C('id', 'Invoice', 'text', (i) => i.invoiceId),
@@ -8868,7 +8916,12 @@ const DETAIL = {
     const mixBar = mix.total ? `<div class="mixbar tall">${mixSeg(mix.Ready, mix.total, 'Ready', 'green', 'Ready', 'inspection')}${mixSeg(mix['Not Ready'], mix.total, 'Not Ready', 'yellow', 'Not Ready', 'inspection')}${mixSeg(mix.Failed, mix.total, 'Failed', 'red', 'Failed', 'inspection')}</div>` : '';
     // §12.3 second bar — birds-eye RENTAL status: Available + each active status
     // (Tomorrow/Today/Reserved/On Rent/…) in order, with a truck icon for transport.
-    const rentSegs = RENTAL_BAR_ORDER.map((stt) => { const ct = rmix.counts[stt] || 0; if (!ct) return ''; const color = stt === 'Available' ? 'gray' : getStatus('rentalStatus', stt).color; return mixSeg(ct, rmix.total, stt, color, stt, 'rental', !!rmix.truck[stt]); }).join('');
+    const rentSegs = RENTAL_BAR_ORDER.map((stt) => { const ct = rmix.counts[stt] || 0; if (!ct) return ''; // §off-fleet — 'Off Fleet' is not a rentalStatus, so getStatus() would return undefined and
+// throw on .color; it needs the same explicit mapping 'Available' already has. --navy is an
+// existing, fully-themed token (dark + light/ranch both defined) that no rentalStatus value
+// uses, so nothing collides and none of the six registry meanings is repurposed — it reads as
+// recessive "not in play", which is exactly what an off-fleet machine is.
+const color = stt === 'Available' ? 'gray' : stt === 'Off Fleet' ? 'navy' : getStatus('rentalStatus', stt).color; return mixSeg(ct, rmix.total, stt, color, stt, 'rental', !!rmix.truck[stt]); }).join('');
     const rentBar = rmix.total ? `<div class="mixbar tall">${rentSegs}</div>` : '';
     const bars = (mixBar || rentBar) ? `<div class="mixbars">${mixBar}${rentBar}</div>` : '';
     // Pricing is Admin-gated (Jac 2026-06-22): anyone can read the rates, but changing
@@ -9738,7 +9791,10 @@ function listView(cardDef, session) {
   gvSyncClosed(card, cs);   // §13.4 — graph closed but g-terms linger (record open / invoice surface) → save + drop them before the bar's pills render
   const wrap = el('div');
   // sort/search bar
-  const sf = SORT_FIELDS[card];
+  // §roi-gate — drop ROI from the offered sort keys below the money tier, so the margin
+  // ranking can't be inferred by sorting on a value the detail view deliberately hides.
+  // `curField` already falls back to sf[0] when the saved field isn't in the list.
+  const sf = SORT_FIELDS[card].filter((f) => f.field !== 'roi' || canMoney());
   const curField = sf.find((f) => f.field === cs.sort.field) || sf[0];
   const av = activeView(card, cs);   // §5.5 the View button shows the active view's name, else the sort field
   const bar = el('div', 'listbar');
@@ -12394,6 +12450,7 @@ function ruNavigate(card, col, value, seg) {
 function ruCatMoney(rg) {
   const rev = {}, exp = {}, basis = {};
   DATA.rentals.forEach((rr) => {
+    if (!rentalOccurred(rr)) return;   // §void-rental — Cancelled / No Show / Quote earned nothing; matches ruCatUtilProxy
     if (ruBounded(rg) && !ruIn(rr.startDate, rg)) return;
     const us = rentalUnits(rr).map((eu) => IDX.unit.get(eu.unitId)).filter((u) => u && u.categoryId);
     if (!us.length) return;
@@ -12730,7 +12787,7 @@ function ruCatUtilProxy(rg) {
   const days = Math.max(1, Math.round((parseISO(b) - parseISO(a)) / 86400000));
   const rented = {};   // categoryId → Σ on-rent days inside [a,b)
   DATA.rentals.forEach((r2) => {
-    const s = rentalDisplayStatus(r2); if (s === 'Cancelled' || s === 'No Show' || s === 'Quote') return;
+    if (!rentalOccurred(r2)) return;   // §void-rental — was an inline triple-compare here; now the shared predicate
     const rs = (r2.startDate || '').slice(0, 10), re = (r2.endDate || r2.startDate || '').slice(0, 10);
     if (!rs) return;
     const lo = rs > a ? rs : a, hi = re < b ? re : b; if (lo >= hi) return;
@@ -12738,7 +12795,12 @@ function ruCatUtilProxy(rg) {
     rentalUnits(r2).forEach((eu) => { const u = IDX.unit.get(eu.unitId); if (u && u.categoryId) rented[u.categoryId] = (rented[u.categoryId] || 0) + d; });
   });
   const fleet = {};   // categoryId → unit count (available days = units × window days)
-  DATA.units.forEach((u) => { if (u.categoryId) fleet[u.categoryId] = (fleet[u.categoryId] || 0) + 1; });
+  /* §dead-fleet — the denominator is "unit-days we COULD have rented", so a Sold / For Sale /
+     Inactive unit does not belong in it: it can never go out again. Counting it permanently
+     depressed utilization for any category that has retired anything, making a busy class read
+     as idle (audit 2026-07-18). RENTABLE_SKIP_FLEET is the same set the mini-card's availability
+     already uses; the numerator above was already filtered, only this side was not. */
+  DATA.units.forEach((u) => { if (u.categoryId && !RENTABLE_SKIP_FLEET.has(u.fleetStatus)) fleet[u.categoryId] = (fleet[u.categoryId] || 0) + 1; });
   return { days, note, rented, fleet };
 }
 function ruTimeUtil(rg) {   // proxy: days on rent ÷ available days per category — swaps to (Δhours ÷ expected)×100 once M4 history exists
@@ -26593,7 +26655,14 @@ function boot() {
     if (e.target.classList.contains('js-comms-in') && e.key === 'Enter') { e.preventDefault(); return commsSend(e.target.dataset.cust); }   // D8 — Enter fires the ignition Send
     // §M3 — one predictable back/dismiss chain (shared with the Android back button):
     // winpicker → overlay → Mr. Wrangler dock → team chat dock.
-    if (e.key === 'Escape') dismissTopSheet();
+    // §esc-menus — an open .dropdown-menu is the TOPMOST surface, so Esc closes it FIRST and
+    // stops there; only with no menu open does Esc walk the sheet chain above. closeMenus() was
+    // wired into ~30 click paths but never the keyboard, so a menu sat open through Esc — over
+    // the values underneath it — until you clicked elsewhere (audit 2026-07-18).
+    if (e.key === 'Escape') {
+      if (document.querySelector('.dropdown-menu')) { closeMenus(); return; }
+      dismissTopSheet();
+    }
   });
   // mouse hotkeys (§0.1): double-click a row = anchor; right-click = Back
   // #10b — `state.winEdit` is NOT a modal flag (comment at its declaration: "NOT a
