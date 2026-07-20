@@ -51,21 +51,39 @@ The Rental card is **one view anchored on the calendar**:
   (not paged): customer Ref · status Gate · balance (owed) · per-unit rows (unit Ref +
   rate + per-unit gate) · PO / protection-off. Keeps the History footer.
 
-## 4. Anchoring, item tab rail, links, cascade  *(integrate with the existing system)*
+## 4. Anchoring, item tab rail, links, cascade  *(grounded on the existing system — recon 2026-07-20)*
 
-- **Anchoring must keep working** with inline-expand, **including cross-card cascade**
-  (anchoring an item still lights its related records on the other two cards). Ground the
-  new UI against the app's existing anchor-ring / rail / cascade behaviour — do not
-  reinvent it.
-- **Anchor UI on an expanded item:** the **top-right corner shows an anchor icon**
-  (anchor this item). If an item is **already anchored**, that icon becomes a **`+`** on
-  *other* expanded items — **adds the item to the rail without changing the current
-  anchor.** De-anchor stays available via hotkey + the rail bar, and now also this button.
-- **Links / transfers jump precisely:** clicking a linked record **scrolls to the item on
-  its card, expands it, and opens it on the correct section** (the link encodes the target
-  section). Own taps land on the SIGNAL summary; links land on their subject.
-- **Preview tool is retired** — expanding is now so low-commitment that a separate peek/
-  preview affordance is redundant.
+The app already has every primitive; the new model mostly **re-maps single-click to
+inline-expand** and leaves anchoring / rail / cascade / links intact.
+
+- **Single vs double (reuse the existing `deferOrAnchor`, 220 ms discriminator):**
+  **single-click/tap → inline-expand** (the new low-commitment primary; **no cascade**).
+  **Double-click → anchor** (existing behaviour: opens a foreground **tab**, sets
+  `session.anchor`, cascades the other two cards to the related subset, paints the
+  `#18b6ff` ring).
+- **Anchor UI on an expanded item:** **top-right anchor icon = anchor** (= `anchorRecord`
+  / foreground tab + cascade). If something is **already anchored**, that icon becomes a
+  **`+`** on *other* expanded items = **add to the rail without changing the anchor**
+  (= existing `openInNewTab` / ctrl-click background tab). De-anchor: double-tap the
+  anchor, the rail ✕, hotkeys — and now this button.
+- **Cascade fires on ANCHOR only**, never on inline-expand — that's what keeps expand
+  cheap. Cascade engine unchanged (`cascade.js`: FK-walk → related subset → hard-filter
+  the sibling cards to it).
+- **Item tab rail unchanged** (`tabStrip`: one tab per anchored/open record; header-right
+  on desktop, bottom-dock above the toolbar on phone; active-tab click re-cascades).
+- **Tabs are SESSIONS, not just items** (Chrome-tab style): a tab holds the anchored
+  record **plus the whole 3-card state** (cascade, sibling filters, scroll) at that moment;
+  switching tabs restores that entire context. This is the natural unit for **transferable
+  sessions / send-to-coworker** (§Open) — you hand over a *tab* = a working context, not one
+  record.
+- **Links jump precisely (generalise the existing `pillTo`):** a link-click **reveals the
+  target's card column, opens the record in place, scrolls to + inline-expands it on the
+  correct section** — exactly the pattern the retired-Invoice case (`openInvoice`) already
+  runs (reveal customer → scroll to the Invoices section → expand the row → glow). Own
+  taps land on the SIGNAL summary; links land on their subject section. (Double-clicking a
+  link still anchors, as today.)
+- **Preview tool retired.** The hover-preview + the row/bottom-bar **eye** toggles go away
+  — inline-expand is the peek now.
 
 ## 5. KPI Rings → left vertical rail  *(OPEN — dangerous tradeoff)*
 
@@ -73,6 +91,19 @@ Candidate: move the **KPI Rings from the top to a left-hand vertical rail**, fre
 top for a **single item tab rail** (the anchored/open items — nothing more).
 - **Only do this if the horizontal real-estate given up is worth less than the vertical
   space gained.** Measure before committing (mock top-KPI vs left-KPI side by side).
+
+## 6. Section content the extra room unlocks  *(Units — early ideas, not locked)*
+
+Inline-expand gives sections real estate the cramped detail view never had. Two Units
+sections to rethink with it:
+- **Inspection** (current design is outdated): if an inspection needs a checklist, keep the
+  **checklist open live in the section** — answers fill in place; the inspection only flips
+  to **done when it's actually done**, not on a separate screen. A live capture surface, not
+  a button that launches a form.
+- **Yard journey** ("not good enough"): replace the cramped horizontal node rail. Leading
+  direction — a **live vertical lifecycle timeline** (done / current / upcoming stages, each
+  a row carrying its captured evidence + the one next Door), led by a compact **"now + next"**
+  header, with an inline **route map** when transport applies. Concepts to mock + pick.
 
 ## Open problems
 
