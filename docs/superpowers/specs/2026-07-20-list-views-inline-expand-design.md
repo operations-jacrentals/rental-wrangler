@@ -299,6 +299,34 @@ interaction model that just adds panes when there's room (desktop = "the mobile 
     repeats.
   So the menu either **overlays** the list (hover peek) or **trades places with the email** (click) — it
   never overtakes it. Channels stay up top on the toggle throughout.
+
+**Inbox expand — the OUTER width lever (Jac, 2026-07-20; INBOX-ONLY).** Office roles need a big Gmail
+workspace or they'll leave the app, so the Inbox card can **expand, shrinking its siblings** — but this
+expand is **exclusive to the Inbox**, never a generic "resize any card" feature (Jac's hard constraint).
+**Key unification: expanding the Inbox just moves it UP its own responsive ladder above** — at ⅓ width
+it's the collapse/swap mode; expanded to ½–full it becomes the **roomy 3-pane Gmail workspace** (folder
+rail + list + reading pane + draggable divider). Expand and the internal space model are ONE lever — no
+new internal behaviour. **Recommended shape (①):** a **stepped "Focus" toggle** on the Inbox (⅓ → ½ →
+full); as it grows the **other two cards collapse to slim, clickable spines** (card title + unread/alert
+dot) so the yard context is peekable/one-click-restorable, never lost; **office roles default to a wide
+Inbox**, field roles default balanced (role-default *sizing*, extending role-default landing).
+Alternatives: ② an **overlay/breakout** that floats over the cards (no resize, more modal); ③ a coarse
+draggable card boundary (deprioritised — fiddly drags). The expand control lives **only** on the Inbox;
+siblings collapsing is a *consequence*, not a feature they own.
+
+**No heart attack — sibling interactions cleanly EXIT inbox-focus (Jac's concern, 2026-07-20).** The
+danger exists only if the expanded inbox and the yard cards are both "live" and fight for the same
+gestures (cascade / anchor / click). The fix: inbox-expand is a **first-class focus STATE** with one
+rule — **any sibling-directed action gracefully exits it**, reusing the left-menu choreography:
+- **Hover a collapsed sibling spine → transient peek** (overlay, nothing commits).
+- **Click it** (or a cross-card link, or a Ref pointing at a yard card) → **the inbox collapses back to
+  balanced thirds and that sibling comes forward, ready to work.**
+There is never an ambiguous "both expanded" state. Example — click Customers while the inbox is
+expanded → read as "switch to Customers": inbox drops to its ⅓, layout rebalances, Customers focuses.
+This is **why expand stays inbox-only**: the state machine is just `{balanced} ↔ {inbox-focused}`
+(tractable); a generic "any card expands/shrinks any other" is the real N×N heart attack. And
+**yard → comms actions never expand the inbox** — they open the **dock** (compose, §7.3), so the two
+worlds don't collide.
 - **Narrow / phone:** fully **mobile** — list only; tap a thread → it **swaps** to the reading view
   full-width (back returns); swipe the top toggle to change channel; folders behind a hamburger. The
   draggable divider is dropped here (not plausible in the tight space — collapse+swap is the robust answer).
