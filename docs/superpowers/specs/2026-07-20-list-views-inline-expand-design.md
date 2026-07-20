@@ -426,6 +426,34 @@ repeating paths a yard doesn't run) with **Stops (Drop/Pickup)** inside — that
   swipe-to-Driver = me only). The **"NOW + Next Up"** focus Jac liked is the driver's home.
 - **Dispatch board needs a contrast/separation fix** (critique log #3) — trips currently blur together.
 
+### 8.1 Trip creation, scheduling & the Dispatch board  *(Jac, 2026-07-20)*
+
+- **One address per rental (the norm) → trips INHERIT it; no re-typing.** A rental is conventionally tied to
+  one **job-site address** (equipment-rental standard — not a hard legal rule). So every Trip/Stop **defaults to
+  the rental's site address**; the user never re-types it across multiple trips. A **Stop can override** the
+  address for the rare multi-site case — the first-class Trip model supports it without forcing it.
+- **Create in one gesture (save clicks):** `+ Trip` → a 3-way toggle **Drop · Pickup · Round-trip** (one tap):
+  Drop = one drop stop at the site · Pickup = one pickup stop · Round-trip = a Drop + a Pickup. Units default to
+  the rental's units (adjust if needed).
+- **A Trip CAN be created with no time/date** — it lands on Dispatch **unscheduled** (a **yellow "needs
+  scheduling" Signal**). Decouples *needs-moving* (the rental's job) from *when* (Dispatch's job).
+- **Signals:** unscheduled = **yellow** · scheduled & fine = **blue** (waiting)/grey · driver conflict or
+  punctuality risk = **red** · done = **green** · field trouble = **red**.
+- **Driver availability is INLINE in the assign Gate, not a toast (Jac).** The reassign **Gate** opens a driver
+  picker where **each driver carries a state label relative to THIS assignment** (Available · Busy 9–10:30 →
+  would overlap · on a nearby run). Proactive, in-context. Picking a driver that creates a **punctuality/overlap
+  conflict warns the user right there.**
+- **Flexible time, auto-sequenced.** Scheduled times are **windows/targets, not hard locks** — two drops "at the
+  same hour" aren't a conflict if one can go early within its window. The app **auto-sequences** each group into
+  the **most driver-time-optimal order that still hits every stop on time** (accounting for traffic + load
+  times); the dispatcher can override; only a genuinely un-hittable schedule turns **red**. *(Honest: real
+  route-optimization + traffic/load modelling is an ambitious build — phase it: manual ordering first, the
+  optimiser later; the mock shows the optimised order as the default.)*
+- **Dispatch board groups (Jac — replaces the old Deliveries/Pickups grouping):** **Field Calls** (top, its own
+  attention group) · **Today** · **Tomorrow** · **This Week** — each **auto-sorted** in the optimal order above.
+- **Drag to organize (two levels):** drag a **Stop within a Trip** to reorder its stops; drag a **Trip** to
+  reorder trips; drag a **Unit** between Trips to re-plan. Trip is the parent item.
+
 ## Open problems
 
 - **"Sort" needs an all-cards redesign (Jac, 2026-07-20 — "our Sort sucks").** The current Views &
