@@ -94,11 +94,26 @@ deepened `--red-fill` and the `--commit` button carry white.
 - **Plate grammar** — every section is the same repeated plate: left status-bar +
   stamped label + summary + status chip + chevron → expands to a body; header colour
   = the worst item inside (SIGNAL rollup).
-- **Parked (approved-in-principle, not built):** detail views collapse to **inline,
-  in-list expansion** — tap a row, it grows in place (~70%), you **page the sections**
-  left/right; the **landing section is always the SIGNAL summary** (what's hot / your
-  move). **Role sets the default landing + order; user can drag-resort, persisted per
-  record-type.**
+- **Inline-expand (the list→detail interaction) — decided, not yet built:**
+  - **Trigger:** tap a list row/tile/card → it expands. **Desktop:** *in place* to a
+    **fixed** target size/position (downward in-column, siblings push down), animated
+    with the mobile-swipe's easing/timing. **Mobile:** into a **focused full-screen
+    mode reusing the comms full-screen gesture system** — there, swipe pages sections,
+    so swipe never competes with the toggle/card gestures.
+  - **Sections page by tab-bar + chevrons** (Units, Customers). **Landing = the SIGNAL
+    summary** (what's hot / your move) on your own taps; a **link/transfer lands on its
+    target section** (the deep-link encodes the section — send an invoice → opens on
+    Invoices). **Role sets default landing + section order; user drag-resort, persisted
+    per record-type.**
+  - **Persistent History-search footer:** every expanded item keeps a `History:
+    [search…]` bar at the bottom on ALL sections; tapping it expands the log downward +
+    reveals quick-filter chips. It does not page away.
+  - **Tall sections (Invoices) scroll internally** — fixed outer height, internal scroll.
+  - **Rentals is the exception — no sections.** One view anchored on the **condensed
+    detail window-picker calendar**, which stays constant collapsed→expanded; expansion
+    reveals customer / gate / balance / units **around** the fixed calendar.
+  - **Cross-user (transfer / send-to-coworker / links):** open — an item's deep-link
+    encodes its target section; firm up with the Teams/linking model before building.
 
 ## 5. Voice — the wrangler/ranch seasoning
 
