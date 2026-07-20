@@ -263,7 +263,9 @@ wrangler**) and the **R20 right-click** comms items ("Text {name}…" / "Email {
 `commsOpenConv`).
 
 - **Compose opens in the dock, not the card.** Desktop → a **docked footer-rail tab** (Gmail-desktop
-  compose window, minimizable, several at once). Mobile → **full-screen**.
+  compose window, minimizable, several at once). Mobile → **full-screen**. It does **NOT follow the
+  pointer or pop up mid-screen** — even a right-click trigger sends the compose to the footer dock /
+  full-screen, never a floating box at the cursor.
 - **A comms action from a record stays in place.** Right-click / +Team / +Gmail / Text…/Email… →
   opens the **new compose** (footer tab / full-screen) with **the record pre-attached** — it does
   **NOT** navigate to the Inbox card. Zipping the user to the inbox mid-task is disorienting,
@@ -276,6 +278,28 @@ wrangler**) and the **R20 right-click** comms items ("Text {name}…" / "Email {
   withholds a screenshot of the current one so the weak design can't bias/corrupt the rebuild.)
 - This is the **quick-dock tier** (§7) doing its job: fire a reply or start a thread without leaving
   the card you're on — bell alerts, dock handles the quick turn, the Inbox card is the full workspace.
+
+### 7.4 Fitting the inbox in one card — responsive space + quick actions  *(Jac, 2026-07-20)*
+
+The Inbox is a Gmail-scale workspace in a **width-constrained card**, so it adapts by width — ONE
+interaction model that just adds panes when there's room (desktop = "the mobile model with more space"):
+
+- **Roomy (inbox focused / broken out wide):** folder rail + thread list + reading pane, all three; a
+  **draggable divider** between list and reading pane resizes them — the "vertical expand line", **only
+  here**, where there's room for it.
+- **One-card width (the constrained default):** the **left folder rail collapses to a slim icon strip**
+  (click/hover pops it back as a temporary drawer), freeing width so the **thread list + open email sit
+  together** (the left menu collapses, the list takes its place, the open email shows alongside).
+  Channels stay up top on the toggle, so navigation isn't lost.
+- **Narrow / phone:** fully **mobile** — list only; tap a thread → it **swaps** to the reading view
+  full-width (back returns); swipe the top toggle to change channel; folders behind a hamburger. The
+  draggable divider is dropped here (not plausible in the tight space — collapse+swap is the robust answer).
+
+**Quick actions — a customizable set, two entry points:**
+- A user-**customizable** quick-action set — **Hide · Mark unread/read · Star · Snooze · Archive** (like
+  Gmail's configurable swipe actions) — surfaced identically as **row actions** (hover-reveal on desktop,
+  **swipe** on mobile) AND in the **right-click (R20) menu**. One set, learned once, available everywhere.
+- **Drag-to-resort** threads (manual order) and reorder folders/labels.
 
 ## Open problems
 
