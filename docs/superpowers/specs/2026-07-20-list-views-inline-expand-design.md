@@ -177,6 +177,36 @@ sections to rethink with it:
   next-actions list + action log, but rebuilt on the locked components (Signal / Gate /
   Stamp / Door, one height + baseline, the palette). Mock + review.
 
+## 7. Comms architecture — one system, three altitudes  *(Jac, 2026-07-20)*
+
+The bell and the inbox felt the same because they're the **same system at different altitudes**.
+Split them by **verb**: a notification's verb is *go to the record*; a message's verb is *read & reply*.
+
+- **The bell = alerts.** The app → you, about records (a today-trigger fired, a payment's overdue,
+  *and* "you got a message"). Glanceable, a pointer back to a source. Stays a **badge + drawer**,
+  never a card. (This is `get-told`.)
+- **The footer comms rail = the quick dock.** Active/pinned threads + compose, minimized along the
+  bottom so you can fire a reply or keep a conversation going **without leaving the card you're on**.
+  This is **exactly Gmail desktop's docked compose/chat windows** — we are **NOT** ditching it; we're
+  naming its job as the middle tier.
+- **The Inbox card = the full workspace.** A first-class card in the pool — a **near-duplicate of
+  Gmail** (search + recent searches, category bundles, labels: Inbox/Starred/Snoozed/Sent/Drafts +
+  **Customers** and **Team**, thread list, reading pane, compose, filter chips) so the office keeps
+  its muscle memory. Rendered in wrangler-style, theme-aware — **Gmail's bones, RW's skin** (not a
+  light Gmail clone; flip only if Jac asks for the literal look).
+  - **The value Gmail can't give:** every thread is **threaded to the record it's about** (a **Ref**)
+    — sender → matched to a customer → the conversation hangs off that customer/rental/unit and also
+    surfaces *on* its card. "Gmail, but every email already knows which machine and rental it's about."
+  - **Unifies email + SMS** per contact (Twilio SMS + email in one thread).
+- **Internal team comms = the Team stream** in the same Inbox card — staff-to-staff, much of it
+  **record-attached** (`@Trey the hydraulics on RC-4700 need a second look`, posted on the WO → pings
+  Trey's bell → threads on the record → lands in his Team inbox). This is also the home for
+  **send-to-coworker / session hand-off** (hand a tab/record to a teammate with a note), which
+  **partly resolves the cross-user open problem** below.
+
+One flow: **alert (bell) → quick-dock (footer rail) → full workspace (Inbox card)** — a message can be
+handled at whichever altitude fits, exactly like Gmail's badge → docked window → full inbox.
+
 ## Open problems
 
 - **Cross-user:** transferable sessions, send-to-coworker (Teams), other linking systems
