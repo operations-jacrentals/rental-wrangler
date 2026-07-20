@@ -29,7 +29,9 @@ navigation.
   becomes the section rail (tab chips), plus ‹ › chevrons + a dot indicator. (This is
   distinct from the page-level item tab rail in §5.)
 - **Landing section = the SIGNAL summary** ("what's hot / your move") on the user's own
-  taps. A **link/transfer lands on its target section instead** (see §4).
+  taps — **labelled "To Do" on the section chips** (the user-facing name for the Signal-
+  summary tab; "Signal" stays the internal component name). A **link/transfer lands on its
+  target section instead** (see §4).
 - **Role sets the default landing + section order**; user can **drag-resort**, persisted
   per record-type.
 - **Persistent History-search footer:** every expanded item keeps a `History: [ …search… ]`
@@ -53,6 +55,10 @@ navigation.
     tail/notch) so it (a) clearly belongs to THIS item, not the row above, and (b) forms one
     **contiguous hover zone** with the row — move up into it without it dismissing (no
     dead-gap). Near the list top, **flip it to appear below**.
+  - **Alt placement if "above" is too tight:** hover the item's **name** → the chips appear
+    as a **vertical stack to the LEFT** of the item (may extend *off the card/column* — that's
+    fine). Same off-the-row-surface logic; a candidate to prototype against the above-popover
+    and pick by feel.
   - **Lit sections first** (tight, 1–3 chips). **Desktop-only** (no hover on touch). Rentals
     (no sections) has no menu.
   - Feel-test in the prototype: positioning, reaching into it, flicker between adjacent rows.

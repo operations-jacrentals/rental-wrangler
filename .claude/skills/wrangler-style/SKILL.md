@@ -34,7 +34,7 @@ Surfaces  --bg #0a0d11 · --panel #171d25 · --card #12171e · --card-head #1a21
 Lines     --line #2c343f · --line-soft #212834
 Text      --txt #eef2f7 · --txt-2 #aab4c1 · --txt-3 #717b89
 Accent    --accent #ff7e1f · --on-orange #1a1205   (safety orange; dark ink ALWAYS)
-Status    --green #34d399 · --yellow #ffe14d · --red #ff4242 · --red-fill #d63636
+Status    --green #34d399 · --yellow #eed44b · --red #ff4242 · --red-fill #d63636
           --blue #6394cc · --gray #8b94a3
 Action    --commit #2f6fd0   (deep blue: Save / +Add / write)
 Leather   --tan #c2925a      (wrangler seasoning — tiny touches only)
@@ -42,13 +42,16 @@ Leather   --tan #c2925a      (wrangler seasoning — tiny touches only)
 **Light:** `--bg #e6e8ea · --panel/#card #fff · --line #cfd6e1 · --txt #141821 ·
 --txt-2 #414b5a · --txt-3 #69727f · --accent #cf6000 · --red #d52a2a · --red-fill
 #b5241f · --blue #2f5fb0 · --commit #1f56c0 · --green #0c8f5f · --gray #566072 ·
---yellow #ffe14d · --tan #8a5a2b`.
+--yellow #eed44b · --tan #8a5a2b`.
 
 **The three forced picks (don't casually undo):**
 - **`--red-fill #d63636`** for *filled* red — white text clears AA at 4.73 (bright
   `#ff4242` = 3.44, fails). Bright `--red` stays for outline chips / bars / dots.
-- **`--yellow #ffe14d`** — the amber `#e0b13a` sat only 77 from orange under
-  deuteranopia+protanopia sim; this is 103 (Jac is colour-blind — this is a gate).
+- **`--yellow #eed44b`** — dimmed from the neon `#ffe14d` on request, but kept
+  colour-blind-safe: it's the **dimmest** yellow that still holds **≥90** separation from
+  *both* orange (93) and green (95) under deuter+protan sim. Darkening more breaks orange-
+  separation; softening more breaks green — `#eed44b` is the floor. (Amber `#e0b13a` = 77,
+  failed. Jac is colour-blind — this is a gate, don't dim past it.)
 - **`--blue #6394cc`** — muted so it stops fighting the orange (soften-complements).
 
 Never `#000`/`#fff`. Fills always take dark ink (blue/orange/yellow/green); only the
@@ -69,20 +72,24 @@ deepened `--red-fill` and the `--commit` button carry white.
 ## 3. Components — the decided look
 
 - **Signal** — coloured chip, read-only state; **colour = state, fill = today**;
-  radius 8; dark ink on fill (filled red = `--red-fill`). Click → teleport to source;
+  radius 7 (the ONE chip radius — see note); dark ink on fill (filled red = `--red-fill`). Click → teleport to source;
   hover → explain + name the source.
 - **Gate** — a Signal + a **leading, optically-centred SVG chevron that hugs the text**
   (≤2px gap). **No orange dot.** Opens a status picker.
 - **Stamp** — a plain fact: **chip text, no box, no colour** (`--txt-3`), stamped
   voice. Sits beside a Signal as its quiet sibling. Budget overflow → `+N` (accent).
 - **Ref** — a linked record: square **accent-tinted backing holding the parent's
-  Lucide icon** + the name (body voice); radius 6; orange-marked = touchable. Not a
+  Lucide icon** + the name (body voice); radius 7 (its square shape + accent tint carry
+  its distinction, not a different radius — chips use ONE radius); orange-marked = touchable. Not a
   status chip. Walks across cards.
 - **Door** — a verb action, **radii = pill (999)**:
   - **Commit / create** → deep blue `--commit` (Save = solid; `+Add` = dashed outline).
   - **Takes money** → green. **Destructive-confirm** → red.
   - **The one quiet Cancel/Close** → **ghost** (transparent, `--line` border).
-  - **Toggle active segment** → **orange** (`--accent`, dark ink).
+  - **Toggle active segment** → the **filled Signal chip** of the selected option's status
+    (colour = state) — e.g. a "do-now" option shows filled-yellow, a blocked one filled-red.
+    Falls back to **orange** (`--accent`, dark ink) when the option carries no status.
+    Applies to every toggle, incl. funnel tabs and the yard/staff segmented controls.
 - **Contact** — show the **phone number itself** as the `tel:` link (readable on
   desktop, tappable on mobile); email likewise. Honest-affordance: tappable ⇒ looks
   it; not ⇒ plain text. No fake hover-underlines.
