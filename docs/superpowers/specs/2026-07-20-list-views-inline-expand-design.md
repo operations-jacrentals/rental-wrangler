@@ -39,6 +39,15 @@ navigation.
   Washes for units, …). History is NOT a paged tab.
 - **Tall sections scroll internally.** Fixed outer height; a section that overflows
   (esp. Customers' **Invoices**) scrolls within its own body — never blows out the card.
+- **Hover-jump (desktop enhancement):** on a *collapsed* row, hovering reveals the item's
+  **section chips** (lit ones coloured by their Signal) so the user can **click straight
+  into the section they need** — skipping expand → orient → pick. Replaces the retired
+  hover-preview with something actionable (a *triage* glance, not a passive peek). **Mis-
+  click guards:** (a) **dwell delay ~300 ms** — chips appear only on a deliberate pause, so
+  a fast click-to-open lands on the row (expand) *before* any chip exists; (b) **reserved
+  lane** — chips slide in from a dedicated edge zone, never under the name/primary target,
+  which stays "click = expand"; (c) **desktop-only** (no hover on touch → no mobile mis-
+  tap). Dwell timing must be *felt* — prototype and tune, don't lock the number on paper.
 
 ## 3. Rentals is the exception — no sections
 
