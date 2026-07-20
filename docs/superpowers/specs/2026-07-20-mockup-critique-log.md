@@ -54,3 +54,4 @@ _Disposition: open → queued → done (with where it was fixed: skill / mockup 
 | # | Date | Surface | Note | Type | Scope | Disposition |
 |---|------|---------|------|------|-------|-------------|
 | 1 | 2026-07-20 | Intake | **Parked** — Jac isn't worried about intake as a feature until much later, if ever. Mock kept for reference; don't re-surface it as "the next gap." | Gap | Just here | Parked |
+| 2 | 2026-07-20 | Inbox chrome | **"VIEWS & SORT" button looks VERY out of place** in the top chrome. Jac drafting alternatives on paper — DON'T rebuild yet. Ties to the parked all-cards Sort redesign. | Surface | Just here | Open — Jac redrafting |
