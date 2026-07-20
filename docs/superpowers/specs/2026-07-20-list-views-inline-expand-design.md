@@ -168,6 +168,16 @@ a chart-as-control that drills into the base cards (§5). List (not in order):
 - **Buy Inventory: by Category** — ROI × Performance.
 - **Sell Inventory: by Category + Unit Suggestion** — Hours × Expenses × ROI.
 
+### 5.2 The graph button moves from card-subheaders → to SECTIONS  *(Jac, 2026-07-20)*
+
+The old graph button lived in the **card subheader**, and popping a big graph down in place was the very
+thing that threatened the inline-expand vertical budget (§5's original problem). New decision: **move the
+graph button onto each SECTION.** Clicking a section's graph button **instantly pops that exact graph onto
+the user's Dashboard** — so you **curate your role Dashboard from the sections you care about** (open a
+unit's Investment / Services / GPS section → click its graph → it lands on your Dashboard). Bonus: the graph
+goes to the Dashboard, **not inline**, so it never eats the card's vertical space. This is the **composition
+mechanism** for §5's role Dashboard — graphs are sourced section-by-section.
+
 ## 6. Section content the extra room unlocks  *(Units — early ideas, not locked)*
 
 Inline-expand gives sections real estate the cramped detail view never had. Two Units
