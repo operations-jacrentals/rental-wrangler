@@ -215,7 +215,7 @@ Messenger/Messages, **not** Gmail. Split **finding** from **talking**:
 
 - **Triage = ONE surface (the Gmail layout).** Every channel — email, texts, team — lands in one inbox list
   (rows: avatar · name · snippet · time · unread · **Ref** · **Signal**), each row carrying a small **channel
-  glyph** (✉ email / SMS / # team) so the medium is always clear. This is the muscle-memory streamline (one place
+  glyph** (✉ email / SMS / # team / 🔧 Mr. Wrangler) so the medium is always clear. This is the muscle-memory streamline (one place
   to scan "what needs me") and it uses **our own search + sort**, not Gmail's (see 7.2).
 - **Talking = native to the medium.** Opening a thread renders in that medium's form:
   - **Email** → reading-pane thread (Gmail).
@@ -224,6 +224,11 @@ Messenger/Messages, **not** Gmail. Split **finding** from **talking**:
     carrying the existing workflow channels (Reservations, On Rent/Delivery/Recovery, Office, Transport/Field
     Calls), now **record-aware** (a message attaches to the unit/rental it names; the "On Rent/Delivery/Recovery"
     channel *is* the Yard Journey lifecycle).
+  - **Mr. Wrangler** → its own **bot channel** of threads (report a bug/request → it replies:
+    investigating → fixed / needs-you). Today it **barely signals a reply or a fix — annoying** — so on
+    reply/fix/needs-you it fires a **loud, distinct bell alert** + a clear unread thread in the inbox, and
+    it **stops clogging the bell** with the raw engineering feed (surface *resolutions addressed to you*,
+    not every ticket). This is the existing `wrangler` comms cat, made legible.
 - **Why not all-Gmail:** forcing a live chat into an email-quote-thread reads worse AND spends the Messenger
   muscle memory the crew already has. Streamline the *triage*, keep bubbles where bubbles belong.
 
@@ -241,6 +246,24 @@ all-accounts scope → the globe. So it's **Gmail's layout wearing RW's search/s
   §2 hover-jump popover — **floating menus emerge above to keep the content below legible** (near the
   top edge it overlays upward out of the card head). Applies everywhere, not just the Inbox; the Inbox
   mock adopts it.
+
+### 7.3 Compose & the comms rail — quick-dock, never a teleport  *(Jac, 2026-07-20)*
+
+Grounded on the existing **D8/D9 comms rail** (`state.commsRail`, cats **team · text · email ·
+wrangler**) and the **R20 right-click** comms items ("Text {name}…" / "Email {name}…" →
+`commsOpenConv`).
+
+- **Compose opens in the dock, not the card.** Desktop → a **docked footer-rail tab** (Gmail-desktop
+  compose window, minimizable, several at once). Mobile → **full-screen**.
+- **A comms action from a record stays in place.** Right-click / +Team / +Gmail / Text…/Email… →
+  opens the **new compose** (footer tab / full-screen) with **the record pre-attached** — it does
+  **NOT** navigate to the Inbox card. Zipping the user to the inbox mid-task is disorienting,
+  **especially on mobile.** The full Inbox card is **opt-in** (you go there when you want the
+  workspace), never a side effect of starting a message.
+- **Redesign the comms-rail tab popups.** The current tab popups are weak; rebuild them in the locked
+  system (Signal/Ref/Stamp/Door, one control height, the palette) as part of the Inbox v2 pass.
+- This is the **quick-dock tier** (§7) doing its job: fire a reply or start a thread without leaving
+  the card you're on — bell alerts, dock handles the quick turn, the Inbox card is the full workspace.
 
 ## Open problems
 
