@@ -4,31 +4,31 @@ description: >-
   The MEASURABLE rulebook for Rental Wrangler's UI — numerical rules and
   guidelines that any control, chip, section, form row, or layout must satisfy,
   so elements read as one family. It does NOT pick fonts or hex values (those are
-  design decisions that live in the app tokens / jactec-ui and can change) — it
+  design decisions that live in the app tokens / style.css and can change) — it
   gives the numbers those decisions must hit: one control height, one baseline,
   the size ladder, two radii, weight-with-a-reason, WCAG contrast floors, the
   colour-blind separation threshold, the 60-30-10 accent budget, and the two
   state functions (colour = state, fill = today). Reach for it on "line these up",
   "is this readable", "which two colours are too close", "make this a proper
-  chip/gate/stamp", "why does this look unaligned". PAIRS WITH jactec-ui, which
-  carries the house's actual brand *decisions* (the specific typefaces, the
-  orange, the hazard/rivet signature, mobile, /role); style only enforces the
-  measurable constraints on top of them.
+  chip/gate/stamp", "why does this look unaligned". The brand *decisions* (the
+  specific typefaces, the accent hex, any signature) live in style.css tokens and
+  are free to change; this skill only enforces the measurable constraints on them.
 ---
 
 # Style — numerical rules & guidelines
 
 This skill is a **rulebook, not a decision-maker.** It never says "use this font"
-or "use this orange" — those are design decisions that live in `style.css` tokens
-and in `jactec-ui` (the house voice), and they're allowed to change. This skill
+or "use this orange" — those are design decisions that live in `style.css` tokens,
+and they're allowed to change. This skill
 says **what numbers any such decision has to satisfy** so the result reads as one
 intentional system instead of chaos. Every rule below is checkable — with a ruler,
 a ratio function, or a simulation — not by eye.
 
-**Division of labour:** `jactec-ui` = the brand *decisions* (which typefaces, the
-one orange, the hazard-stripe/rivet signature, the R0–R25 builders, mobile, the
-/role audit). **`style`** = the measurable *constraints* those decisions must pass.
-When a decision and a rule conflict, the decision moves — not the rule.
+**Division of labour:** the **brand decisions** — which typefaces, the accent, any
+signature, plus the app's own rule-stamped builders and mobile reflow — live in the
+app itself (`style.css`, `app.js`). **This skill** holds the measurable *constraints*
+those decisions must pass. When a decision and a rule conflict, the decision moves —
+not the rule.
 
 ---
 
@@ -56,8 +56,8 @@ When a decision and a rule conflict, the decision moves — not the rule.
   one *readable* voice for names & values. A monospace face is allowed for **one**
   purpose only (a code/inspector tag). **Never a third family.**
 - **Record names** ride the readable voice, **bold, sentence-case** (not caps).
-- *Which* typefaces fill those two roles is a project decision (see jactec-ui /
-  tokens), not a rule here.
+- *Which* typefaces fill those two roles is a project decision (in the app tokens),
+  not a rule here.
 
 ## 3. Contrast — hard floors, checked with math
 
@@ -135,4 +135,4 @@ protan = [[0.152,1.053,-0.205],[0.115,0.786,0.099],[-0.004,-0.048,1.052]]
 - [ ] Co-occurring status colours **≥90** apart under deuter+protan sim.
 - [ ] Accent **≤10%**; no pure `#000`/`#fff`; meaning never colour-alone.
 - [ ] Colour from `taskState`, fill from `triggeredToday`; no status colour on a button.
-- [ ] Then hand off to **jactec-ui**'s gates (data-r stamps, signature, R0 lint).
+- [ ] Then run the app's CI gates (data-r rule stamps, R0 flash-lint).
