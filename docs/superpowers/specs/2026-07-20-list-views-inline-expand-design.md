@@ -52,6 +52,14 @@ navigation.
     (they were opening it anyway; chevron one over) — never destructive or surprising.
   - **Lit sections first** so the strip stays tight (usually 1–3 chips, not all seven).
   - **Desktop-only** (no hover on touch → no mobile mis-tap).
+  - **Coexists with element tooltips (don't overload the whole row):** the strip triggers
+    from ONE zone only — the item's **summary-Signal** (the rolled-up status chip on the
+    right/corner). Hover it → it expands into the lit-section chips. Every *other* element
+    (name, stamps, refs, numbers, gates) keeps its own hover-tooltip, untouched. The only
+    element whose tooltip the strip "replaces" is the summary Signal — and the lit-section
+    chips are strictly richer than that tooltip (same status + the breakdown + the jump).
+    Rentals (no sections) has no strip, so its mini-card is fully free for tooltips.
+    (Feel-test: is the summary-Signal a big enough hover target on the tiny mini-cards?)
 
 ## 3. Rentals is the exception — no sections
 
