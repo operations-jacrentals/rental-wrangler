@@ -14,6 +14,15 @@ presented as decided.
 
 ---
 
+## ⏱ Precedence — newer beats older (Jac, 2026-07-20)
+
+**When a rescued (older) decision conflicts with a newer one, the NEWER decision is canon.** This
+ledger preserves history — including early framings that were later refined — for *context*, never to
+override a current locked decision. Known refinements are flagged inline as **[refined → …]**. Do not
+let an archived early decision overtake a newer locked one.
+
+---
+
 ## ⚠ NEWLY CAPTURED — was not in any doc
 
 ### 1. The 5-part DNA: WORD · NUMBER · SIGNAL · DOOR · PLACE
@@ -161,6 +170,11 @@ colors = what · orange = touchable · white = commit · everything else = plain
 text.** Nothing ever does two jobs. `wrangler-style` shows the resulting Signal/Ref/Door
 components but never states this organizing one-liner, which is the reason those three
 things don't collide.
+
+**[refined → §8 / `wrangler-style` §3]:** current canon is **commit = deep-blue `#2f6fd0` with white
+INK on it** — *not* "white = commit." White is the ink *on* the deep-blue commit pill; the early
+"white = commit" phrasing here is the ancestor, kept for context, and does **not** override the
+deep-blue-commit decision.
 
 ### 8. The two-blues collision and its pill-shape resolution
 Blue was already spoken for as the *Waiting* status color, so a commit/save button

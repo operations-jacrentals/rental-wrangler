@@ -349,8 +349,10 @@ medium's tempo:
   steals focus). Also logs in the bell as the durable catch-all.
 - **Emails (low-frequency) → bell + inbox, calm.** **No footer pop** — UNLESS that email thread is
   **already docked on the rail**, in which case update that existing tab; never spawn a new pop for email.
-- **Gate the aggressiveness by recency/activity:** only auto-pop **recent/active** threads; a text on a
-  cold thread stays quiet (bell + inbox + a silent tab) so the rail isn't hijacked by every stray message.
+- **Gate only the POP by recency/activity — the tab always appears.** A cold-thread text still **appears
+  as a tab on the footer rail** (with the truncated preview + unread dot); it just does **not auto-pop
+  open**. Only **recent/active** threads auto-expand the popup. So every text/chat reaches the rail;
+  recency decides pop-open vs. sit-as-a-tab — the rail isn't hijacked, but nothing is hidden either.
 - **Team nuance (Messenger/Slack):** a **@mention or DM always pops**; general channel chatter is a
   **quiet count** on the channel, not a full pop. Any thread/channel can be **muted → count only**.
 - **Mobile:** no persistent footer rail, so a high-freq inbound = an **OS-style banner/toast + badge**
