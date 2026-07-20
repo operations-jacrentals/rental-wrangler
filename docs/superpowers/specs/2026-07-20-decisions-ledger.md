@@ -150,6 +150,14 @@ contract layered on top:
   "Today" mostly repeats what groups+color already carry, while "Blocking" catches
   something nothing else does — Claude recommended keeping Blocking, but Jac overruled
   and locked Fill = Today.
+
+**[refined → current: `style` §6 / `triggeredToday`, see "Final correction" bullet below]:**
+neither of the two bullets above is current canon — **fill = the generous "curiosity
+magnet" rule** (`triggeredToday`: due/overdue/gating-now/needs-hands/near-clock/in-flight/
+flagged-live/closed-today), not "Filled = Blocking" (1st proposal) and not narrowly
+"Filled = Today" (2nd proposal). Both are the ancestors, kept for context, and do **not**
+override the final generous fill rule.
+
 - **Final correction (Jac), reached by explicitly rejecting Claude's own narrower
   reading:** fill should be a **generous "look here"/curiosity magnet** — Jac wanted
   future-dated items, in-flight/self-resolving items (ACH, e-sign), and dormant flags to
@@ -327,7 +335,7 @@ first written down in this ledger.
 | 71 | Comms: three altitudes — bell (alerts) / footer dock (quick-dock) / Inbox card (full workspace) | [doc: spec §7] |
 | 72 | Every comms thread is Ref-linked to the record it's about | [doc: spec §7] |
 | 73 | Unified triage (one Gmail-style list) + native conversation per medium (email=reading pane, texts=Messages bubbles, team=Messenger channels) | [doc: spec §7.1] |
-| 74 | Channel toggle top-right: ALL·TEAM·TEXTS·EMAIL·WRANGLER·CALLS, swipeable on mobile | [doc: spec §7.1] |
+| 74 | Channel toggle top-right: ALL·TEAM·TEXTS·EMAIL·WRANGLER·CALLS, swipeable on mobile **[refined → NOT fully locked: the WRANGLER segment is still OPEN (Claude's recommendation only, per spec §7.1 and "Still open" below) — only ALL·TEAM·TEXTS·EMAIL·CALLS + the swipeable top-toggle placement are decided]** | [doc: spec §7.1] |
 | 75 | Mr. Wrangler is its own channel; stops clogging the bell, fires a loud distinct alert on reply/fix | [doc: spec §7.1] |
 | 76 | Inbox reuses the app's own search bar + Views&sort (not Gmail's chrome) | [doc: spec §7.2] |
 | 77 | Recent-search history popup opens ABOVE the bar app-wide, same principle as the hover-jump popover | [doc: spec §7.2] |
@@ -380,7 +388,8 @@ first written down in this ledger.
   judgment call on the Dashboard mock; never answered.
 - **Mr. Wrangler's exact channel placement** — its own 6th toggle segment (Claude's
   recommendation, since shipped in the mock) vs. living only inside ALL + the bell. Spec
-  itself already flags this OPEN.
+  itself already flags this OPEN. (See item 74's annotation above — the mock shipping it
+  is not the same as it being locked.)
 - **KPI Rings → left vertical rail** — superseded in practice by the Dashboard-card idea,
   but the underlying measure-don't-guess tradeoff was never directly tested (mock
   top-KPI vs. left-KPI side by side), per the spec's own note.
@@ -395,3 +404,82 @@ first written down in this ledger.
   closeable today but the part's on order) fills as "today's blocker you're tracking" or
   stays outline until the part lands; superseded in spirit by the final generous-fill
   rule but never explicitly re-confirmed for this specific case.
+
+---
+
+## Promotion recommendations — ledger-only decisions that should become enforced canon
+
+These are load-bearing rules this reconciliation pass found living **only** in this
+ledger's rescued sections — never actually written into `wrangler-style`/`style` — even
+though other locked decisions already depend on them (e.g. "header colour = worst item
+inside" needs a *worst* to be defined; it isn't, anywhere but here). Recommended only —
+**Jac promotes on his go**; this ledger is not the place to change `wrangler-style`/`style`
+themselves.
+
+### (a) Rollup precedence — `style` §6 (State & fill)
+
+Add as a new bullet after the `fill = triggeredToday(...)` line:
+
+```
+- **Rollup precedence, hottest wins.** When multiple task-states combine into one summary
+  (a group header, a card cap, a rolled-up count), the winner is fixed, never resolved ad
+  hoc per renderer: **red > yellow > blue > green > grey.**
+```
+
+### (b) No status colour on buttons, ever — already canon; recommend a cross-reference only
+
+This one is **already** stated verbatim in `style` §6 ("Buttons carry **no** status
+colour") and the §8 checklist ("no status colour on a button"). Nothing to promote there.
+The gap is that `wrangler-style` — the skill that actually defines Door's action colours —
+never says the negative rule out loud. Recommend appending to the **Door** bullet in
+`wrangler-style` §3:
+
+```
+  (Commit/money/destructive are action colours, never status colours — no Door, chip, or
+  button ever repurposes a status hue to mean "click me"; see `style` §6.)
+```
+
+### (c) The three-way colour-role split — `wrangler-style` §3 (Components), as a preamble
+
+Add before the component bullet list:
+
+```
+**The one rule underneath every component below:** status colour = *what* it is · orange
+= *touchable* · deep-blue `--commit` = *commit* · everything else = plain honest text.
+Nothing ever does two jobs — that's the whole reason Signal, Ref, and Door don't collide.
+```
+
+### (d) Group taxonomy — `wrangler-style` §4 (Layout & structure)
+
+Add as new bullets:
+
+```
+- **Group taxonomy.** Every card's list groups are one of two kinds: **Attention groups**
+  (e.g. Field Calls, Failed) exist and are coloured only because something is wrong —
+  hidden entirely when empty. **Lifecycle groups** (e.g. On Rent, Reserved, Available) are
+  always present, grey by default, and take colour only when a member inside triggers it —
+  no group ever carries a fixed/native colour.
+- **Groups are never named after status** ("Bad"/"To-Do") — that double-encodes what
+  colour already says; a group name says *where* in the workflow, colour says *how much*
+  it needs you.
+```
+
+### (e) The 3-tier Signal/Gate hover contract — `wrangler-style` §3, extend the Signal bullet
+
+Current Signal bullet only says "hover → explain + name the source." Extend it:
+
+```
+  Three-tier read: **(1) colour + fill** = the instant at-a-glance state, **(2) the word
+  on the chip** = what it is, **(3) hover / Tab-focus / long-press** = *why* and *what it
+  stops*. Click → teleport to source.
+```
+
+### (f) Internal vocabulary vs. user-facing labels — `wrangler-style` §5 (Voice)
+
+Add as a new bullet:
+
+```
+- **Component names are internal vocabulary, never user-facing.** Signal/Gate/Stamp/Ref/
+  Door are how *we* talk about the pieces; the person using the app always sees plain task
+  language (e.g. the Signal-summary landing tab reads **"To Do"**, never "Signal").
+```
