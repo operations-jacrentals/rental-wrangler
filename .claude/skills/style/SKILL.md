@@ -24,11 +24,11 @@ says **what numbers any such decision has to satisfy** so the result reads as on
 intentional system instead of chaos. Every rule below is checkable — with a ruler,
 a ratio function, or a simulation — not by eye.
 
-**Division of labour:** the **brand decisions** — which typefaces, the accent, any
-signature, plus the app's own rule-stamped builders and mobile reflow — live in the
-app itself (`style.css`, `app.js`). **This skill** holds the measurable *constraints*
-those decisions must pass. When a decision and a rule conflict, the decision moves —
-not the rule.
+**Division of labour:** the **brand decisions** — which typefaces, the palette, the
+component looks, any signature, the voice — live in the **`wrangler-style`** skill
+(with the app's `style.css` / `app.js` as the implementation). **This skill** holds
+the measurable *constraints* those decisions must pass. Run **both** on any UI; when
+a decision and a rule conflict, the decision moves — not the rule.
 
 ---
 
