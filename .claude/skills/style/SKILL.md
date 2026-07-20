@@ -1,204 +1,138 @@
 ---
 name: style
 description: >-
-  The alignment + colour standard for Rental Wrangler's UI system (the 2026
-  redesign language). Use whenever you build, align, or review ANY control,
-  chip, section, form row, or layout and need elements to read as ONE family —
-  matched heights, one baseline, weight-with-a-reason, and the contrast-verified
-  colour law (colour = state · orange = touchable · muted-blue = commit · fill =
-  today). Covers the six alignment rules, the five named parts (Signal · Gate ·
-  Stamp · Ref · Door), the AA-checked token values (deepened filled-red, muted
-  blue, dark-ink law), the 60-30-10 accent budget, and the off-white/charcoal
-  rule. Reach for it on: "why do these look unaligned", "make this a proper
-  chip/button/gate", "which blue/red", "is this readable", "line these up". PAIRS
-  WITH jactec-ui (the house yard-data-plate language + R0–R25 builders + hazard/
-  rivet signature); style is the alignment & colour-discipline layer every UI
-  must also satisfy. Not for the ranch/signature aesthetic or mobile reflow —
-  that's jactec-ui.
+  The MEASURABLE rulebook for Rental Wrangler's UI — numerical rules and
+  guidelines that any control, chip, section, form row, or layout must satisfy,
+  so elements read as one family. It does NOT pick fonts or hex values (those are
+  design decisions that live in the app tokens / jactec-ui and can change) — it
+  gives the numbers those decisions must hit: one control height, one baseline,
+  the size ladder, two radii, weight-with-a-reason, WCAG contrast floors, the
+  colour-blind separation threshold, the 60-30-10 accent budget, and the two
+  state functions (colour = state, fill = today). Reach for it on "line these up",
+  "is this readable", "which two colours are too close", "make this a proper
+  chip/gate/stamp", "why does this look unaligned". PAIRS WITH jactec-ui, which
+  carries the house's actual brand *decisions* (the specific typefaces, the
+  orange, the hazard/rivet signature, mobile, /role); style only enforces the
+  measurable constraints on top of them.
 ---
 
-# Style — the alignment & colour standard
+# Style — numerical rules & guidelines
 
-The layer that makes the app read as **one intentional system** instead of a pile
-of elements at different heights, weights, and saturations. It came out of the
-2026 redesign work: the *alignment contract* (kills visual chaos) + a *colour
-law* re-grounded on real WCAG numbers and the "good colour is not random"
-fundamentals.
+This skill is a **rulebook, not a decision-maker.** It never says "use this font"
+or "use this orange" — those are design decisions that live in `style.css` tokens
+and in `jactec-ui` (the house voice), and they're allowed to change. This skill
+says **what numbers any such decision has to satisfy** so the result reads as one
+intentional system instead of chaos. Every rule below is checkable — with a ruler,
+a ratio function, or a simulation — not by eye.
 
-**Relationship to `jactec-ui`:** jactec-ui is the house *voice* — the yard
-data-plate look, the hazard-stripe/rivet signature, the R0–R25 stamped builders,
-mobile reflow, the /role audit. **style** is the *grammar* underneath it: how any
-element aligns, and exactly which colour/ink/shape it takes. Every UI must satisfy
-BOTH. The five named parts below are just friendly handles for jactec-ui builders
-(Signal≈R3 `statusPill`, Gate≈R1 `gatePill`, Stamp≈R3b `badge`, Ref≈R2 `refPill`,
-Door≈R17 `actionPill`/R18 `ghostPill`). The token deltas here (deepened red, muted
-blue) **refine** jactec-ui's registry — keep `references/tokens.md` in sync if they
-ever land in the live app (that's a deliberate site-wide pass, not a silent edit).
+**Division of labour:** `jactec-ui` = the brand *decisions* (which typefaces, the
+one orange, the hazard-stripe/rivet signature, the R0–R25 builders, mobile, the
+/role audit). **`style`** = the measurable *constraints* those decisions must pass.
+When a decision and a rule conflict, the decision moves — not the rule.
 
 ---
 
-## 1. The alignment contract — six rules, and every drift is a rule-break
+## 1. Alignment — numbers, so a row can't go ragged
 
-The fix for "no matching heights, some text high, some bold for no reason." Once
-these hold, a row **cannot** go ragged.
+- **One control height `H`.** Every inline control — chip, gate, stamp, ref, add,
+  button, toggle — is **exactly `H`** tall (pick `H` in 24–28px for desktop; **≥44px**
+  hit-area on touch). Not "about the same" — the same number.
+- **One baseline.** All inline controls **vertically centre** on the row axis
+  (`align-items:center`); vertical deviation = **0**.
+- **One size ladder.** Text sizes come from a fixed set only — e.g.
+  **28 · 15 · 13 · 12 · 11 · 10 · 9.5 px** (value · title · content · field · label
+  & every chip · small · finest). **No value off the ladder.** A badge is 11, always.
+- **Two radii.** **Actions = pill (999).** **Statuses = chip (one small value,
+  ~5–8).** Exactly two families of radius; shape signals action-vs-state pre-read.
+- **Weight has a reason — cap the weights.** At most **three** used: **bold** = a
+  name or a value you read · one **stamped** weight = labels · **regular** = the
+  rest. If something's bold, it's because it carries meaning. Never "bold for feel."
+- **Optical-align glyphs.** Chevrons/arrows whose visual centre ≠ geometric are
+  centred and hug their text (≤2px gap) — use a real SVG, never a stray glyph.
 
-1. **One control height.** Every inline control — chip, gate, stamp, ref, add,
-   button, toggle — is the **same height** (26–28px desktop; ≥44px touch targets
-   on phones). Nothing is a different height, so nothing sinks or floats.
-2. **One baseline.** They all **vertically centre** on the row axis (`display:flex;
-   align-items:center`). Nothing sits high or low.
-3. **Two type voices, never a third.** **Saira Condensed** (stamped, UPPERCASE,
-   ~1.4px tracking, 700–800) for labels & chips; **Geist** (`--font`) for names &
-   values you read. Record names are Geist **bold, not caps**. `ui-monospace` only
-   for the inspector tag. (Numbers/IDs/timestamps ride Geist or mono, tabular.)
-4. **Weight has a reason.** **Bold = a name or a value you read.** Stamped-caps = a
-   label. Everything else is regular. If something's bold, it's because you read it
-   for meaning — never "just because."
-5. **One size ladder (px):** 28 value · 15 title · 13 content · 12 field · **11
-   label & every chip** · 10 · 9.5 finest. A badge is 11, always. No one-off sizes.
-6. **Two radii tell action from state.** **Actions are pills** (Save/Cancel/Add →
-   999). **Statuses are chips** (Signal/Gate/Stamp → 8; sharper 5 for a flatter
-   look). Shape signals action-vs-state before you read a word.
+## 2. Type — structural (which fonts is NOT this skill's call)
 
-**Optically align glyphs** whose visual centre ≠ geometric (chevron, ▸): never a
-raw `⌄` glyph — use a centred SVG `chevron-down`, hugging its text (≤2px gap).
+- **Exactly two type families:** one *stamped/condensed* voice for labels & chips,
+  one *readable* voice for names & values. A monospace face is allowed for **one**
+  purpose only (a code/inspector tag). **Never a third family.**
+- **Record names** ride the readable voice, **bold, sentence-case** (not caps).
+- *Which* typefaces fill those two roles is a project decision (see jactec-ui /
+  tokens), not a rule here.
 
----
+## 3. Contrast — hard floors, checked with math
 
-## 2. The colour law — three jobs, and nothing does two
+- **AA is a gate:** text **≥4.5:1**, large text (≥18px, or ≥14px bold) and UI
+  elements **≥3:1** — in **every** theme (dark, light, any variant).
+- **Verify with a ratio function, never eyeball.** (WCAG relative-luminance ratio.)
+- **A coloured fill that carries text must clear the floor** — deepen the fill or
+  switch to dark ink. Rule of thumb this catches: white on a mid orange/blue/red
+  lands ≈ **2.5–3.4** and **fails** — so those fills take dark ink, or the fill
+  darkens until white passes. (The specific hexes are the decision; the ≥4.5 is the rule.)
+- **Never encode meaning in colour alone** — always **colour + label + icon**.
 
-The trap that forced this: **blue is a status colour now (Waiting)**, so links/
-commit can't casually be blue. Split colour into three non-overlapping jobs:
+## 4. Colour-blind separation — the co-occurrence threshold
 
-- **Status colours → STATE.** `red / yellow / blue / green / grey` say *what's
-  going on*. Reserved for that. Never decorate with them.
-- **Orange → TOUCHABLE.** The one accent (`--accent`) means *"you can act on
-  this"* — selected tab, ignition/primary, linked-record (Ref), gate affordance.
-  Never decorative, never a 2nd status colour.
-- **Deep blue → COMMIT.** The button that *writes* (Save/confirm) and the `+Add`
-  that *creates*. Rare, so it always reads "this commits."
+Any two status colours that can appear **together** must stay distinguishable under
+colour-vision deficiency (≈8% of men). Test it, don't trust normal-vision eyes:
 
-### colour = state, assigned by ONE function (so it can't drift)
-```
-taskState(record) → 'blocked' | 'now' | 'later' | 'done' | 'none'
-  blocked → red     bad / a wall / danger
-  now     → yellow  your move, do it now
-  later   → blue    waiting — not your move / pending on someone else
-  done    → green   done today (ages to grey next day; can re-alarm to red)
-  none    → grey    n/a
-```
-Buttons are **never** a status colour (only status carries state).
-
-### fill = today, assigned by ONE function
-```
-fill = triggeredToday(record, ctx) → boolean   // filled if TRUE, else outline
-```
-A chip **fills only when a today-trigger actually fires** (or is actively
-expected): due/dated today · overdue (re-fires daily) · gating a today action ·
-needs-your-hands today · a coming-up clock that has reached today · in-flight/
-expected (ACH, e-sign) · flagged-and-live · closed-today. **Outline = no live
-trigger yet**: far-future, dormant flag, steady/idle, historical. Fill is the
-"look here, something's live" bit — kept honest so a filled chip earns the eye.
-Fill is a **meaning** bit, not loudness; priority still = colour + sort order.
-
-Per-colour fill meaning: red filled=Blocking / outline=Fix-it · yellow filled=Must-
-do / outline=Should-do · blue filled=Blocked-waiting / outline=Pending · green
-filled=Closed / outline=Done-today · grey filled=N/A-confirmed / outline=Unknown
-(the "$0 ≠ I don't know" fix).
-
-### hover / click (progressive disclosure)
-Colour+fill = instant read · the **word** on the chip = what it is (verbalise the
-status) · **hover / Tab / long-press** = why & what it stops.
-| Part | Hover | Click |
-|---|---|---|
-| **Signal** | explains the state + names its source | **teleports** to the source driving it |
-| **Gate** | current state + "tap to change" | opens the status picker |
-| **Stamp** | full label if abbreviated (else nothing) | inert — it's a fact |
-| **Ref** | a peek at the linked record | opens / expands that record |
-| **Door** | what it does, or why it's gated | runs the action (or shows the block) |
-
----
-
-## 3. The five named parts
-
-- **Signal** — coloured chip, **read-only** state (colour=state, fill=today). Tiny
-  Saira caps + a verbalising word + parent-card icon. Clicking teleports to source.
-- **Gate** — a Signal you can **turn**. Same coloured chip + a leading centred
-  chevron (hugging), opens a status picker to advance the record. Where SIGNAL and
-  the DOOR to change it merge.
-- **Stamp** — a plain **fact** (`Non-member`, `Net 15`, `Excavator`). Chip *text*,
-  **no box, no colour** — sits beside a Signal as its quiet sibling. Budgeted;
-  overflow rolls to `+N`.
-- **Ref** — a **linked record**. Square backing holding the **parent icon** (Lucide)
-  + the name, orange-marked (touchable), *not* a status chip. Walks across cards.
-- **Door** — a **verb action**. Ghost/outline normally; **deep-blue** when it
-  commits or creates (`+Add`); **ghost** for the one quiet Cancel/Close.
-
-Contact is a Door done honestly: show the **phone number itself** as the `tel:`
-link (readable on desktop, tappable on mobile), never a "Call" verb hiding it.
-**Honest-affordance rule:** if it looks tappable, it is; if not, it's plain text —
-no decorative underlines, no dead `cursor:pointer`.
-
----
-
-## 4. Colour standards (contrast-verified, 2026 pass)
-
-Accessibility is a **gate**, checked with math, not eyeballed. AA = ≥4.5:1 text,
-≥3:1 large/UI, in dark **and** light. Real ratios from our tokens:
-
-- **Filled RED must deepen.** White on `#ff4242` = **3.44** → fails for 11px chips.
-  Filled danger uses **`--red-strong #d63636`** (white ink = **4.73** ✓). Keep
-  bright **`--red #ff4242`** for **outline** chips, status bars, and dots (red-on-
-  dark clears AA on its own).
-- **Blue never carries white.** White on blue = **2.72** (fail). Filled blue always
-  takes **dark ink** (`#0a1220`).
-- **Mute the blue** so it stops fighting the orange (soften-complements rule): 
-  **`--blue #6394cc`** (was `#5b9dff`). Dark-ink filled = 5.93 ✓, blue-on-dark text
-  = 6.15 ✓. Calmer blue also fits "waiting = passive."
-- **Orange always carries dark ink** (`--on-orange`). White on orange = **2.54**
-  (fail); dark ink = **7.29** ✓. Yellow/green filled also take dark ink (10.7 / 9.8).
-- **60-30-10 accent budget.** ~60% steel base (bg/cards) · ~30% supporting (panels/
-  lines/muted text) · **≤10% accent** (orange + active status). If orange creeps
-  past 10% of the visual weight, pull it back.
-- **Off-white / charcoal, never pure.** `--txt #eef2f7`, `--bg #0a0d11`. No `#fff`,
-  no `#000` — anywhere.
-- **Saturation discipline.** Neutrals stay desaturated steel. Status + accent are
-  deliberately *loud* — a **justified override** of "muted = premium," because a
-  rental yard wants hi-vis, not muted. Don't quiet the states; don't loud the greys.
-- **Narrow palette.** One tight, named registry (base + a soft `-bg` fill each) —
-  resist expanding toward a 30-swatch palette. Colour earns its place by meaning.
-
----
-
-## 5. Tokens (dark base — the values this skill assumes)
+- Simulate **deuteranopia + protanopia** (Machado-2009 severity-1.0 matrices,
+  applied to sRGB) and require **Euclidean RGB distance ≥ 90** between the pair,
+  under **both** simulations.
+- Data point that set the line: our amber-yellow vs orange scored **77** (too
+  close — reported as confusable) and the fix landed at **103**. So: **77 fails,
+  ≥90 is the floor, ~100+ is comfortable.**
+- Prefer separating by **lightness** as well as hue — lightness survives CVD; hue
+  often doesn't.
 
 ```
-Surfaces  --bg #0a0d11 · --panel #171d25 · --card #12171e · --card-head #1a212b
-Lines     --line #2c343f · --line-soft #212834
-Text      --txt #eef2f7 · --txt-2 #aab4c1 · --txt-3 #717b89
-Accent    --accent #ff7e1f · --on-orange #1a1205 · --accent-line rgba(255,126,31,.55)
-Status    --green #34d399 · --yellow #f5c542 · --red #ff4242 · --red-strong #d63636
-          --blue #6394cc · --gray #8b94a3        (blue muted; red-strong for fills)
-Leather   --tan #c2925a  (seasoning only — saddle-stitch + tiny touches)
-Form      --radius 14–16 · --chip-radius 8 (or 5 flat) · pills 999 · control-h 26–28
+// Machado-2009, severity 1.0 (multiply the sRGB 0–255 vector)
+deuter = [[0.367,0.861,-0.228],[0.280,0.673,0.047],[-0.012,0.043,0.969]]
+protan = [[0.152,1.053,-0.205],[0.115,0.786,0.099],[-0.004,-0.048,1.052]]
+// distinguishable if euclidean(sim(A), sim(B)) >= 90 under both
 ```
-Light theme darkens the status hues so pill text still reads on soft fills
-(`--red #d52a2a`, `--blue ~#2f5fb0`, etc.) — preserve that when adding a status.
-Never hardcode a hex in markup; derive from the token.
 
----
+## 5. Accent budget & surfaces — proportions
 
-## 6. Pre-ship checklist
+- **60-30-10.** ~**60%** base surface · ~**30%** supporting (panels, lines, muted
+  text) · **≤10%** accent. If the accent exceeds ~10% of the visual weight, pull back.
+- **Never pure.** No `#000`, no `#fff`, anywhere — near-black / near-white only.
+- **Saturation split.** Neutrals stay desaturated; status + accent may be *loud* —
+  a deliberate, allowed override of "muted = premium," because ops wants hi-vis.
 
-- [ ] Every inline control the **same height**, centred on **one baseline**.
-- [ ] Two type voices only; **bold only on names/values**; sizes off the ladder.
-- [ ] Actions are pills, statuses are chips; chevrons are centred SVGs, hugging.
-- [ ] Colour only carries **state**; orange only marks **touchable**; commit is
-      **deep blue**. No status colour on a button. No orange as decoration.
-- [ ] Colour from `taskState`, fill from `triggeredToday` — nothing hand-set.
-- [ ] **Contrast checked** in dark + light: filled red = `--red-strong`, blue/orange/
-      yellow/green filled = **dark ink**. Run the ratio, don't eyeball.
-- [ ] Facts are **Stamps** (no box/colour); links are honest (tappable ⇒ looks it);
-      contact shows the **number**.
-- [ ] Accent ≤ **10%** of the view; neutrals near-black/near-white, never pure.
-- [ ] Then run **jactec-ui**'s gates (data-r stamps, signature, R0 flash-lint).
+## 6. State & fill — two functions, so they can't drift
+
+- **`colour = taskState(record) → state-bucket`** (blocked · now · later · done ·
+  none). One function assigns it; never hand-set a status colour. Buttons carry
+  **no** status colour.
+- **`fill = triggeredToday(record, ctx) → boolean`** — filled only when a *today*
+  trigger actually fires (due/overdue/gating-now/needs-hands/near-clock/in-flight/
+  flagged-live/closed-today); otherwise outline. Fill is a *meaning* bit, not
+  loudness — priority still = colour + sort order.
+- The bucket→colour mapping and trigger list are **guidelines** (adjust per app);
+  the **"one function, no drift"** structure is the rule.
+
+## 7. The five named parts — definitions (structural vocabulary)
+
+- **Signal** — coloured chip, **read-only** state (colour=state, fill=today) + a
+  verbalising word + parent-card icon. Click → teleport to source.
+- **Gate** — a Signal you can **turn**: same chip + a leading centred chevron;
+  opens a status picker. (SIGNAL and its DOOR-to-change, merged.)
+- **Stamp** — a plain **fact**: chip *text*, **no box, no colour**; sits beside a
+  Signal as its quiet sibling. Budgeted, overflow → `+N`.
+- **Ref** — a **linked record**: square backing with the parent icon + name,
+  accent-marked (touchable), never a status chip. Walks across cards.
+- **Door** — a **verb action**: quiet/ghost normally; the *commit/create* and
+  *money* intents each get their own action colour (a decision, not a rule); one
+  quiet **ghost** for Cancel/Close. Honest-affordance: tappable ⇒ looks it; not ⇒
+  plain text. Contact shows the **number itself** as the link.
+
+## 8. Pre-ship checklist — every item measurable
+
+- [ ] Every inline control the **same height**; baseline deviation **0**.
+- [ ] All sizes on the **ladder**; **≤3** weights; radii are only **999** or the chip value.
+- [ ] **Two** type families (+mono for the one tag); names bold, sentence-case.
+- [ ] Every text/fill pair **≥4.5** (or ≥3 large/UI), computed — in dark **and** light.
+- [ ] Co-occurring status colours **≥90** apart under deuter+protan sim.
+- [ ] Accent **≤10%**; no pure `#000`/`#fff`; meaning never colour-alone.
+- [ ] Colour from `taskState`, fill from `triggeredToday`; no status colour on a button.
+- [ ] Then hand off to **jactec-ui**'s gates (data-r stamps, signature, R0 lint).
