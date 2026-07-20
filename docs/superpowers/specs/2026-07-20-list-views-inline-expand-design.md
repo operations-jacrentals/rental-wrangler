@@ -153,6 +153,21 @@ top for a **single item tab rail** (the anchored/open items — nothing more).
       `canMoney`) remains a security-review call, not part of this dashboard structure — though the
       role Dashboard is the natural place to *surface* a gated number where the role is allowed it.
 
+### 5.1 Sales dashboard — requested widgets  *(Jac, 2026-07-20; PARKED for build, not yet designed/ordered)*
+
+Jac's wishlist for the **Sales** role Dashboard (§5), captured so it's not lost. Order/layout TBD; each is
+a chart-as-control that drills into the base cards (§5). List (not in order):
+- **"All" Scheduled actions** — list + calendar **toggled** view (mobile swipes between them).
+- **Funnel totals** — interactive; swipe left/right to toggle.
+- **KPI Ring.**
+- **Active × Inactive Customers.**
+- **Customer Split.**
+- **Category Performance.**
+- **Mr. Wrangler daily one-liner.**
+- **Units For Sale / Categories without a unit for sale.**
+- **Buy Inventory: by Category** — ROI × Performance.
+- **Sell Inventory: by Category + Unit Suggestion** — Hours × Expenses × ROI.
+
 ## 6. Section content the extra room unlocks  *(Units — early ideas, not locked)*
 
 Inline-expand gives sections real estate the cramped detail view never had. Two Units
