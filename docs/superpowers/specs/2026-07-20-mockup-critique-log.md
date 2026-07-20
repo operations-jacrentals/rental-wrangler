@@ -53,4 +53,4 @@ _Disposition: open → queued → done (with where it was fixed: skill / mockup 
 
 | # | Date | Surface | Note | Type | Scope | Disposition |
 |---|------|---------|------|------|-------|-------------|
-| — | — | — | _(awaiting first notes)_ | — | — | — |
+| 1 | 2026-07-20 | Intake | **Parked** — Jac isn't worried about intake as a feature until much later, if ever. Mock kept for reference; don't re-surface it as "the next gap." | Gap | Just here | Parked |
