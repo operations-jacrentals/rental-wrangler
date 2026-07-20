@@ -235,7 +235,18 @@ fields + saved Views) — same as every card (`no-surprises`). Gmail's chrome ma
 (From/To/Attachment/Starred/Unread) → our filter pills; labels + date sort → Views & sort + saved Views;
 all-accounts scope → the globe. So it's **Gmail's layout wearing RW's search/sort chrome.**
 
+- **Recent-search history — ALL card search bars, app-wide (Jac, 2026-07-20).** Focusing any search
+  bar shows a **recent-searches** dropdown (like Gmail's "Recent mail searches"), opening **ABOVE the
+  bar, never below**, so it never covers the live-filtering results underneath. Same principle as the
+  §2 hover-jump popover — **floating menus emerge above to keep the content below legible** (near the
+  top edge it overlays upward out of the card head). Applies everywhere, not just the Inbox; the Inbox
+  mock adopts it.
+
 ## Open problems
+
+- **"Sort" needs an all-cards redesign (Jac, 2026-07-20 — "our Sort sucks").** The current Views &
+  sort menu is weak; a future pass redesigns sort/views across **every** card, and the comms work
+  (filter-pills-in-the-bar, saved Views, one filtering pathway) may seed it. Parked — not this slice.
 
 - **Cross-user:** transferable sessions, send-to-coworker (Teams), other linking systems
   — how the section/anchor state travels. Firm up the Teams/linking model first.
