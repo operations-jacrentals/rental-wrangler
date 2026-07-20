@@ -432,9 +432,11 @@ repeating paths a yard doesn't run) with **Stops (Drop/Pickup)** inside — that
   one **job-site address** (equipment-rental standard — not a hard legal rule). So every Trip/Stop **defaults to
   the rental's site address**; the user never re-types it across multiple trips. A **Stop can override** the
   address for the rare multi-site case — the first-class Trip model supports it without forcing it.
-- **Create in one gesture (save clicks):** `+ Trip` → a 3-way toggle **Drop · Pickup · Round-trip** (one tap):
-  Drop = one drop stop at the site · Pickup = one pickup stop · Round-trip = a Drop + a Pickup. Units default to
-  the rental's units (adjust if needed).
+- **Create in one gesture (save clicks):** `+ Trip` → a **4-way toggle: Self · Round Trip · Delivery · Pickup**
+  (one tap). **Self** = customer transports themselves → **no trip/stop created.** **Delivery** = one Drop stop
+  (at the rental start). **Pickup** = one Pickup stop (at the rental end). **Round Trip** = both — a Delivery
+  *and* a Pickup stop, which land **days/weeks/months apart** (delivery at rental start, pickup at rental end).
+  Units default to the rental's units.
 - **A Trip CAN be created with no time/date** — it lands on Dispatch **unscheduled** (a **yellow "needs
   scheduling" Signal**). Decouples *needs-moving* (the rental's job) from *when* (Dispatch's job).
 - **Signals:** unscheduled = **yellow** · scheduled & fine = **blue** (waiting)/grey · driver conflict or
@@ -453,6 +455,25 @@ repeating paths a yard doesn't run) with **Stops (Drop/Pickup)** inside — that
   attention group) · **Today** · **Tomorrow** · **This Week** — each **auto-sorted** in the optimal order above.
 - **Drag to organize (two levels):** drag a **Stop within a Trip** to reorder its stops; drag a **Trip** to
   reorder trips; drag a **Unit** between Trips to re-plan. Trip is the parent item.
+
+### 8.2 The Dispatch board — a two-panel planning surface  *(Jac, 2026-07-20)*
+
+- **LEFT = the schedule:** trips grouped **Field Calls · Today · Tomorrow · This Week**, each trip = its ordered
+  **stops + units**, auto-sequenced optimally. **RIGHT = a "To-Dispatch" rail:** every **unplanned stop** waiting
+  for a truck, sorted by due/urgency.
+- **Stop types (our language):** **Drop · Pickup · Field Call · Repo · Task.** (A Delivery makes a Drop, a Pickup
+  makes a Pickup; Field Call / Repo / Task arrive from their own triggers.)
+- **Plan by drag:** drag a stop from the **right rail onto a trip** (adds it) or onto **empty time** (spawns a new
+  trip). Drag a stop **off** a trip → back to the rail (un-plan). Drag **within** a trip = reorder its stops; drag
+  a **trip** = re-time it.
+- **ONE schedule, not two — the rail holds the future.** A **Round Trip** spawns a Delivery (near, at rental
+  start) and a Pickup (far, at rental end, weeks/months out). The near one schedules now; the **far pickup waits
+  in the rail** and **rises as its window approaches** — you never manage a pickup three weeks early. One
+  timeline + a backlog that feeds it, not a second schedule.
+- **Dragging a trip re-times it; if that breaks a stop's due window → a red conflict flag** (per §8.1's
+  punctuality rule), never a silent reshuffle.
+- **Problem / unscheduled / conflicted items rise to the top** — Field Calls is already the top group, and within
+  every group the attention-first order floats unscheduled + conflicted trips up so they can't hide.
 
 ## Open problems
 
