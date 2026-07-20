@@ -217,6 +217,15 @@ Messenger/Messages, **not** Gmail. Split **finding** from **talking**:
   (rows: avatar · name · snippet · time · unread · **Ref** · **Signal**), each row carrying a small **channel
   glyph** (✉ email / SMS / # team / 🔧 Mr. Wrangler) so the medium is always clear. This is the muscle-memory streamline (one place
   to scan "what needs me") and it uses **our own search + sort**, not Gmail's (see 7.2).
+- **Channels = a top segmented toggle, not a left-rail list (Jac, 2026-07-20).** The channel selector
+  moves OUT of the buried bottom-left "Streams" list UP to a **top toggle** (channels are the primary
+  axis — which conversation world you're in). Left→right: **ALL · TEAM · TEXTS · EMAIL · CALLS** (CALLS
+  = future in-app calling, a placeholder "soon" segment). On **mobile the toggle is swipeable** (swipe
+  = change channel). The **left rail keeps only the Gmail folders** (Inbox/Starred/Snoozed/Sent/
+  Scheduled/Drafts/All mail/Spam/Trash). Active segment = **orange** (channels aren't a status → the
+  fallback, not a filled Signal); each segment carries its unread count. **OPEN — where Mr. Wrangler
+  sits:** its own 6th segment (ALL·TEAM·TEXTS·EMAIL·**WRANGLER**·CALLS) vs. living inside ALL + the bell
+  — recommend a **segment**, since its whole problem is invisibility.
 - **Talking = native to the medium.** Opening a thread renders in that medium's form:
   - **Email** → reading-pane thread (Gmail).
   - **Text (SMS/customer)** → **Apple-Messages bubbles** (sent/received, delivered receipts, inline media).
@@ -262,6 +271,9 @@ wrangler**) and the **R20 right-click** comms items ("Text {name}…" / "Email {
   workspace), never a side effect of starting a message.
 - **Redesign the comms-rail tab popups.** The current tab popups are weak; rebuild them in the locked
   system (Signal/Ref/Stamp/Door, one control height, the palette) as part of the Inbox v2 pass.
+  **Model the redesign on the best-in-class references — duplicate Facebook Messenger (team) + Apple
+  Messages (texts) + Gmail (email), in RW's skin — NOT the incumbent comms rail.** (Jac deliberately
+  withholds a screenshot of the current one so the weak design can't bias/corrupt the rebuild.)
 - This is the **quick-dock tier** (§7) doing its job: fire a reply or start a thread without leaving
   the card you're on — bell alerts, dock handles the quick turn, the Inbox card is the full workspace.
 
