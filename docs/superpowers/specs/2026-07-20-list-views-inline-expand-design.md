@@ -91,6 +91,11 @@ Candidate: move the **KPI Rings from the top to a left-hand vertical rail**, fre
 top for a **single item tab rail** (the anchored/open items — nothing more).
 - **Only do this if the horizontal real-estate given up is worth less than the vertical
   space gained.** Measure before committing (mock top-KPI vs left-KPI side by side).
+- **Graph mode reinforces the "gain vertical" side.** A graph that "pops down" is the
+  same vertical-growth pattern as inline-expand / the History footer (grow the card +
+  scroll internally), so it **composes** — it does NOT break the inline model. But graphs
+  are only useful with room, so their appetite is one more reason to reclaim vertical
+  space. (Confirm exactly what "graph mode" is against the app before building.)
 
 ## 6. Section content the extra room unlocks  *(Units — early ideas, not locked)*
 
@@ -100,10 +105,21 @@ sections to rethink with it:
   **checklist open live in the section** — answers fill in place; the inspection only flips
   to **done when it's actually done**, not on a separate screen. A live capture surface, not
   a button that launches a form.
-- **Yard journey** ("not good enough"): replace the cramped horizontal node rail. Leading
-  direction — a **live vertical lifecycle timeline** (done / current / upcoming stages, each
-  a row carrying its captured evidence + the one next Door), led by a compact **"now + next"**
-  header, with an inline **route map** when transport applies. Concepts to mock + pick.
+- **Yard journey → its OWN Units section** (chosen 2026-07-20): replaces the cramped
+  horizontal node-rail with a **live vertical lifecycle timeline** — stages Reserved → Out
+  → On Rent → Field calls → End Rent → Recovery → Returned, each a **row** with a state dot
+  (done / current / upcoming) + timestamp/who + its **captured evidence**, the current stage
+  carrying the one next **Door** — led by a compact **"NOW + next"** header; inline **route
+  strip** when transport applies.
+  - It is the **role-default landing section for drivers + maintenance techs** (unless the
+    user reorders). Because its NOW header answers "what's my move," it **doubles as their
+    SIGNAL summary** — so "land on SIGNAL first" still holds; field roles just land on the
+    section whose header *is* their signal. Office roles get the generic rollup summary.
+  - Dormant when the unit has no active rental (shows "Available", not an empty rail).
+- **Funnel** (Customers — concept loved, execution poor): run it through `style` +
+  `wrangler-style`. Keep the Rental | Equipment-Sales toggle + the dated funnel + the
+  next-actions list + action log, but rebuilt on the locked components (Signal / Gate /
+  Stamp / Door, one height + baseline, the palette). Mock + review.
 
 ## Open problems
 
