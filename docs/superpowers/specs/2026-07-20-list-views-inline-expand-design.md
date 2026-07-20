@@ -353,14 +353,15 @@ This is **why expand stays inbox-only**: the state machine is just `{balanced} �
 **yard → comms actions never expand the inbox** — they open the **dock** (compose, §7.3), so the two
 worlds don't collide.
 
-**ONE expand option — supersedes the ladder + spines above (Jac, 2026-07-20).** The inbox has a **single**
-expand toggle (normal ↔ expanded), not a stepped ladder. Its width is a **grid-valid** width that leaves both
-neighbours at a **whole number of usable mini-cards** — never a half-card, never a spine. Grounding: the
-Rentals/Categories/Units columns are mini-card grids (Rentals ≈ 2 mini-cards wide → each ½ a column; Units ≈ 3
-→ each ⅓). **The width (pick one):** **⅔-column** — borrow two **unit** mini-cards, dropping that neighbour to
-1 whole card (*recommended: most Gmail room*) — or **½-column** (borrow one **rental** mini-card). Because
-neighbours stay **fully usable** (just narrower whole-card columns), clicking one just works normally — so the
-earlier **spine collapse, rebalance-on-click, and heart-attack machinery are moot** under the one-option model.
+**ONE expand option — the single locked width (Jac, 2026-07-20; supersedes the ladder + spines above).** The
+inbox has a **single** expand toggle (normal ↔ expanded). When expanded, **BOTH neighbours shrink to a single
+mini-card each** — **Units → 1 unit-card (⅓-column), Rentals → 1 rental-card (½-column)** — and the inbox takes
+all the freed width (≈ 2.2 columns). The two shrunk columns end at **different widths — that's fine.** Both
+neighbours stay **fully usable** (one whole mini-card each; never a half-card, never a spine), so clicking one
+just works — the earlier **spine collapse, rebalance-on-click, and heart-attack machinery are all moot.**
+**Header consequence (Jac):** a column squeezed to one mini-card is too narrow for its normal card header, so
+**the card header may need to stack / compact** (title over its controls, or a vertical/condensed header) to
+fit — a known layout task for the build.
 - **Narrow / phone:** fully **mobile** — list only; tap a thread → it **swaps** to the reading view
   full-width (back returns); swipe the top toggle to change channel; folders behind a hamburger. The
   draggable divider is dropped here (not plausible in the tight space — collapse+swap is the robust answer).
@@ -395,6 +396,35 @@ medium's tempo:
 
 Net: the bell stays the durable everything-log; **high-frequency chat gets a faster, reply-in-place lane
 (the footer rail); email stays calm** unless you've already pulled it onto the rail.
+
+## 8. Trips — a first-class concept, severed from Rentals  *(Jac, 2026-07-20)*
+
+**The bug in today's model:** Rentals treat **transport as a line-item on the rental** (≈ 1 rental ↔ 1
+transport), so you can't trigger more than one trip per rental — but a real rental often needs several
+(different equipment, multiple loads, staged delivery/pickup). **Sever it: a Trip is independent and
+first-class, not a child of a rental.**
+
+**The model (this is exactly the "routes with drops and pickups" Jac described):**
+- **Trip** = one truck+driver outing. A first-class record with a **home on Dispatch**.
+- A Trip has **ordered Stops**; each **Stop** is a **Drop** or a **Pickup** at a location, moving **one or
+  more Units**.
+- Each unit-move references its **Unit** and the **Rental** that unit belongs to — so the Rental↔Trip link
+  lives at the **move** level: **a rental → many trips; a trip → can serve many rentals.**
+- **Driver** is assigned to the Trip **at Dispatch**.
+- Both of Jac's cases fall out for free: *two units, dropped at two sites* = one Trip, two Drop stops;
+  *drop one unit, pick up another to bring back* = one Trip, a Drop + a Pickup stop.
+
+**Naming (OPEN — Jac to pick):** recommend keeping **"Trip"** (the team's word; "Route" implies fixed
+repeating paths a yard doesn't run) with **Stops (Drop/Pickup)** inside — that already IS the multi-stop
+"route." "Route" is an equally valid label if it clicks better; it's a naming choice, not a structural one.
+
+**Flow & interactions:**
+- **Create:** `+ Trip` (the app's `+X` syntax) from the rental screen, **repeatable** (many trips per rental)
+  → **pick which Units** → (Dispatch) **assign a driver** → add **Stops**.
+- **Re-plan:** **drag a Unit from one Trip to another** on the Dispatch board (moves that unit-move).
+- **Driver view is user-scoped** — a driver sees **only their own** trips/stops (Dispatch↔Driver toggle;
+  swipe-to-Driver = me only). The **"NOW + Next Up"** focus Jac liked is the driver's home.
+- **Dispatch board needs a contrast/separation fix** (critique log #3) — trips currently blur together.
 
 ## Open problems
 
