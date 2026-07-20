@@ -353,16 +353,14 @@ This is **why expand stays inbox-only**: the state machine is just `{balanced} �
 **yard → comms actions never expand the inbox** — they open the **dock** (compose, §7.3), so the two
 worlds don't collide.
 
-**Snap the expand to the mini-card grid, never to free pixels (Jac, 2026-07-20).** Rentals/Categories/Units
-columns are **mini-card grids** (Rentals ≈ 2 mini-cards wide → each ½ a column; Units ≈ 3 → each ⅓), so the
-inbox may only grow to widths that leave every neighbour at a **whole number of mini-cards** — else a
-neighbour's mini-cards get cut in half. The Focus steps are therefore **grid-valid**, not arbitrary thirds:
-- **Gentle** — borrow one **rental** mini-card width (½ a column) from a neighbour; both stay usable.
-- **Wider** — borrow two **unit** mini-card widths (⅔ a column); that neighbour drops to its narrower whole count.
-- **Full** — neighbours **collapse to spines** (above) rather than squeeze past their last whole mini-card.
-Not a two-option dead-end: a short snap-to-grid ladder, capped by the spine collapse. **Borrow from the Units
-neighbour first** (⅓-column steps are finer than Rentals' ½-column) → more graceful stops, and the Rentals
-column stays whole longer.
+**ONE expand option — supersedes the ladder + spines above (Jac, 2026-07-20).** The inbox has a **single**
+expand toggle (normal ↔ expanded), not a stepped ladder. Its width is a **grid-valid** width that leaves both
+neighbours at a **whole number of usable mini-cards** — never a half-card, never a spine. Grounding: the
+Rentals/Categories/Units columns are mini-card grids (Rentals ≈ 2 mini-cards wide → each ½ a column; Units ≈ 3
+→ each ⅓). **The width (pick one):** **⅔-column** — borrow two **unit** mini-cards, dropping that neighbour to
+1 whole card (*recommended: most Gmail room*) — or **½-column** (borrow one **rental** mini-card). Because
+neighbours stay **fully usable** (just narrower whole-card columns), clicking one just works normally — so the
+earlier **spine collapse, rebalance-on-click, and heart-attack machinery are moot** under the one-option model.
 - **Narrow / phone:** fully **mobile** — list only; tap a thread → it **swaps** to the reading view
   full-width (back returns); swipe the top toggle to change channel; folders behind a hamburger. The
   draggable divider is dropped here (not plausible in the tight space — collapse+swap is the robust answer).
