@@ -114,11 +114,44 @@ Candidate: move the **KPI Rings from the top to a left-hand vertical rail**, fre
 top for a **single item tab rail** (the anchored/open items — nothing more).
 - **Only do this if the horizontal real-estate given up is worth less than the vertical
   space gained.** Measure before committing (mock top-KPI vs left-KPI side by side).
-- **Graph mode reinforces the "gain vertical" side.** A graph that "pops down" is the
-  same vertical-growth pattern as inline-expand / the History footer (grow the card +
-  scroll internally), so it **composes** — it does NOT break the inline model. But graphs
-  are only useful with room, so their appetite is one more reason to reclaim vertical
-  space. (Confirm exactly what "graph mode" is against the app before building.)
+- **SUPERSEDING IDEA — the graph becomes a role-home *card*, not an inline pop-down (Jac,
+  2026-07-20).** Instead of a graph that "pops down" inside an expanded item (which fought the
+  inline-expand vertical budget), the analytics get their **own card: a role-home dashboard.**
+  The seed: the sales card already *is* a dashboard — the sales job laid out as graphs — so
+  generalise it. **Every role gets a home card that is its job's native shape:** analytical roles
+  (sales, owner, dispatch) → an **interactive graph dashboard**; field roles (driver, mechanic) →
+  their live timeline (the Yard-Journey / route already set as their default). One pattern, two forms.
+  - **The chart is a control, not a dead-end read-out.** A graph mark is a **link**: click a wedge
+    → **zip to the target list card with the filter applied** (sales clicks a customer-split slice
+    → Customers filtered to them; a mechanic clicks down-vs-rented → Units/Categories filtered to
+    the down fleet). This is the grounded primitives re-aimed — `pillTo` (reveal → filter → scroll)
+    + `cascade` (FK-walk filter) fired from a chart mark instead of a text link.
+  - **One colour law across chip and chart** — the dashboard uses the same status palette as the
+    Signals (down = red, rented = green…), so a chart is a spatial aggregation of the same Signal
+    language: the wedge you tap is the colour of the chip you land on.
+  - **This resolves the KPI-rings-to-left tradeoff above** — the role-home dashboard *is* that
+    left/home surface; the KPI rings are its simplest cell.
+  - **Home, not lockout** — the dashboard is the role's **default landing, not its only card** (the
+    drill *into* the other cards is the whole point, so they stay reachable). **Which cards/numbers
+    a role may *access* is a separate security / data-gate call** (`keep-the-keys` / `canMoney`):
+    the dashboard is the natural place to make that gate *visible* (owner sees the money dashboard,
+    the mechanic doesn't), but a hard access-lockout goes through the security review — never a
+    design toggle. (Bonus: this gives the coverage map's `keep-the-keys` gap a home.)
+  - **Feasible now** — the app already ships a plotting lib (`vendor/d3-shape`, `vendor/plot.min.js`).
+  - **RESOLVED (Jac, 2026-07-20):**
+    - **Shape = 5 + 1.** Every role keeps the **five base cards — Units · Rentals · Customers ·
+      Trips · Categories** — and gets a **6th card: the Dashboard, role-dependent** (what the Sales
+      card is today, generalised per role). It is an *added* card whose content is tailored to the
+      role — **not** a landing/lockout, and not a replacement for anything.
+    - **The base surfaces stay put — the dashboard drills TO them, never replaces them.** Yard
+      Journey stays a **Units** section; driver routes stay on the **Trips** card. The dashboard is
+      the overview/aggregate layer whose marks *link into* those base cards.
+    - **Drill = filter now, tab on double.** Single-click a graph mark → filter the target base
+      card in place; double-click / anchor → open that filtered view as a **session tab**
+      (tabs-as-sessions). Mirrors the existing single-vs-double discriminator.
+    - **Access-gating stays separate.** Hiding a card or a number by role (`keep-the-keys` /
+      `canMoney`) remains a security-review call, not part of this dashboard structure — though the
+      role Dashboard is the natural place to *surface* a gated number where the role is allowed it.
 
 ## 6. Section content the extra room unlocks  *(Units — early ideas, not locked)*
 
