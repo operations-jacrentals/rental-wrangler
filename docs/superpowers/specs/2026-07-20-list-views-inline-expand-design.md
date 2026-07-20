@@ -287,10 +287,18 @@ interaction model that just adds panes when there's room (desktop = "the mobile 
 - **Roomy (inbox focused / broken out wide):** folder rail + thread list + reading pane, all three; a
   **draggable divider** between list and reading pane resizes them — the "vertical expand line", **only
   here**, where there's room for it.
-- **One-card width (the constrained default):** the **left folder rail collapses to a slim icon strip**
-  (click/hover pops it back as a temporary drawer), freeing width so the **thread list + open email sit
-  together** (the left menu collapses, the list takes its place, the open email shows alongside).
-  Channels stay up top on the toggle, so navigation isn't lost.
+- **One-card width (the constrained default):** the card only ever shows **two of the three** panes, and
+  the **thread list is the anchor — the menu never overtakes or pushes it.** The **left folder menu and
+  an open email are mutually exclusive** (no room for both):
+  - **Reading (email open):** the menu is hidden behind a **hamburger**; the card shows **list + open
+    email**, neither moving. **Hover the hamburger → the menu pops out as an OVERLAY *covering* the
+    list** — a transient peek, nothing underneath reflows; move off and it retracts.
+  - **Browsing (click the hamburger):** the **open email closes**, the **list slides over into its
+    place**, and the **left menu pins on the left** (persistent) → **menu + list**, no email.
+  - **Click a thread → the email opens → back to Reading** (menu collapses to the hamburger). The dance
+    repeats.
+  So the menu either **overlays** the list (hover peek) or **trades places with the email** (click) — it
+  never overtakes it. Channels stay up top on the toggle throughout.
 - **Narrow / phone:** fully **mobile** — list only; tap a thread → it **swaps** to the reading view
   full-width (back returns); swipe the top toggle to change channel; folders behind a hamburger. The
   draggable divider is dropped here (not plausible in the tight space — collapse+swap is the robust answer).
