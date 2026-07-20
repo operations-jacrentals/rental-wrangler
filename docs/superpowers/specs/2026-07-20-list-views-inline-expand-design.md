@@ -337,6 +337,29 @@ worlds don't collide.
   **swipe** on mobile) AND in the **right-click (R20) menu**. One set, learned once, available everywhere.
 - **Drag-to-resort** threads (manual order) and reorder folders/labels.
 
+### 7.5 Inbound routing — where a NEW message lands, by medium  *(Jac, 2026-07-20)*
+
+"Better than a notification" for a live chat is the message **arriving on the footer rail itself** —
+actionable (reply-in-place), not a notification you chase. So inbound delivery altitude depends on the
+medium's tempo:
+
+- **Texts & Team chats (high-frequency back-and-forth) → the footer rail.** A new message **raises its
+  rail tab with the new text truncated into the tab** (glanceable). If a tab for that thread already
+  exists → **bump to front + flash + preview + unread dot**; else a tab **slides in**. Non-modal (never
+  steals focus). Also logs in the bell as the durable catch-all.
+- **Emails (low-frequency) → bell + inbox, calm.** **No footer pop** — UNLESS that email thread is
+  **already docked on the rail**, in which case update that existing tab; never spawn a new pop for email.
+- **Gate the aggressiveness by recency/activity:** only auto-pop **recent/active** threads; a text on a
+  cold thread stays quiet (bell + inbox + a silent tab) so the rail isn't hijacked by every stray message.
+- **Team nuance (Messenger/Slack):** a **@mention or DM always pops**; general channel chatter is a
+  **quiet count** on the channel, not a full pop. Any thread/channel can be **muted → count only**.
+- **Mobile:** no persistent footer rail, so a high-freq inbound = an **OS-style banner/toast + badge**
+  (tap → full-screen thread); email = **badge only**.
+- **Mr. Wrangler** keeps its own loud, distinct bell alert on reply/fix (§7.1).
+
+Net: the bell stays the durable everything-log; **high-frequency chat gets a faster, reply-in-place lane
+(the footer rail); email stays calm** unless you've already pulled it onto the rail.
+
 ## Open problems
 
 - **"Sort" needs an all-cards redesign (Jac, 2026-07-20 — "our Sort sucks").** The current Views &
