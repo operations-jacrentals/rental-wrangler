@@ -207,6 +207,34 @@ Split them by **verb**: a notification's verb is *go to the record*; a message's
 One flow: **alert (bell) → quick-dock (footer rail) → full workspace (Inbox card)** — a message can be
 handled at whichever altitude fits, exactly like Gmail's badge → docked window → full inbox.
 
+### 7.1 How far to take the Messages/Messenger feel — RESOLVED: unified triage, native conversation  *(Jac, 2026-07-20)*
+
+The team already runs ops in **Messenger group chats by workflow** (Reservations · On Rent/Delivery/Recovery ·
+Office · Transport/Field Calls · the crew chat) + Apple Messages for 1:1 — so their *chat* muscle memory is
+Messenger/Messages, **not** Gmail. Split **finding** from **talking**:
+
+- **Triage = ONE surface (the Gmail layout).** Every channel — email, texts, team — lands in one inbox list
+  (rows: avatar · name · snippet · time · unread · **Ref** · **Signal**), each row carrying a small **channel
+  glyph** (✉ email / SMS / # team) so the medium is always clear. This is the muscle-memory streamline (one place
+  to scan "what needs me") and it uses **our own search + sort**, not Gmail's (see 7.2).
+- **Talking = native to the medium.** Opening a thread renders in that medium's form:
+  - **Email** → reading-pane thread (Gmail).
+  - **Text (SMS/customer)** → **Apple-Messages bubbles** (sent/received, delivered receipts, inline media).
+  - **Team** → **Messenger-style channels** — bubbles + sender names + **presence dots** + reactions + @mentions,
+    carrying the existing workflow channels (Reservations, On Rent/Delivery/Recovery, Office, Transport/Field
+    Calls), now **record-aware** (a message attaches to the unit/rental it names; the "On Rent/Delivery/Recovery"
+    channel *is* the Yard Journey lifecycle).
+- **Why not all-Gmail:** forcing a live chat into an email-quote-thread reads worse AND spends the Messenger
+  muscle memory the crew already has. Streamline the *triage*, keep bubbles where bubbles belong.
+
+### 7.2 Chrome = the app's own search + sort (not Gmail's)
+
+The Inbox card reuses the existing **card search bar** (`mini-search` — filters are removable **pills in the bar**,
+one filtering pathway, plus the **globe** per-card↔whole-yard scope toggle) and the **"Views & sort" menu** (sort
+fields + saved Views) — same as every card (`no-surprises`). Gmail's chrome maps straight onto ours: filter chips
+(From/To/Attachment/Starred/Unread) → our filter pills; labels + date sort → Views & sort + saved Views;
+all-accounts scope → the globe. So it's **Gmail's layout wearing RW's search/sort chrome.**
+
 ## Open problems
 
 - **Cross-user:** transferable sessions, send-to-coworker (Teams), other linking systems
