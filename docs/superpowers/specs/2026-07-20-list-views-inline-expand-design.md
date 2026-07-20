@@ -42,12 +42,16 @@ navigation.
 - **Hover-jump (desktop enhancement):** on a *collapsed* row, hovering reveals the item's
   **section chips** (lit ones coloured by their Signal) so the user can **click straight
   into the section they need** — skipping expand → orient → pick. Replaces the retired
-  hover-preview with something actionable (a *triage* glance, not a passive peek). **Mis-
-  click guards:** (a) **dwell delay ~300 ms** — chips appear only on a deliberate pause, so
-  a fast click-to-open lands on the row (expand) *before* any chip exists; (b) **reserved
-  lane** — chips slide in from a dedicated edge zone, never under the name/primary target,
-  which stays "click = expand"; (c) **desktop-only** (no hover on touch → no mobile mis-
-  tap). Dwell timing must be *felt* — prototype and tune, don't lock the number on paper.
+  hover-preview with something actionable (a *triage* glance, not a passive peek). Appears
+  **instantly** — power users want speed, **no dwell delay**. Mis-click is solved
+  **spatially, not by timing** (the cause is a *moving target*, not speed):
+  - **Absolutely-positioned right-lane strip** → **zero layout shift**; it never covers the
+    **name/body on the left**, which stays the big "click = open" target. Nothing under the
+    user's intended click ever moves, so 0 ms is safe.
+  - **Graceful degradation:** even a clipped chip just **opens the item on that section**
+    (they were opening it anyway; chevron one over) — never destructive or surprising.
+  - **Lit sections first** so the strip stays tight (usually 1–3 chips, not all seven).
+  - **Desktop-only** (no hover on touch → no mobile mis-tap).
 
 ## 3. Rentals is the exception — no sections
 
