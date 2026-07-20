@@ -475,6 +475,25 @@ repeating paths a yard doesn't run) with **Stops (Drop/Pickup)** inside — that
 - **Problem / unscheduled / conflicted items rise to the top** — Field Calls is already the top group, and within
   every group the attention-first order floats unscheduled + conflicted trips up so they can't hide.
 
+### 8.3 Jac's schedule model (hand-drawn 2026-07-20) — refines §8.2
+
+- **ONE time-sorted timeline, not two panels.** Trips are **time-blocked parent rows** (Trip 1 · 8–12pm; Trip 2
+  · 3–5pm), sorted by time; each trip **braces its stops** as sub-rows. **Unassigned stops interleave INLINE** in
+  the same timeline at their **deadline** position (⚠ `Boudin · Dequincy · Drop · 2pm` sits *between* Trip 1 and
+  Trip 2 because 2pm lands there). This **supersedes the separate right-rail** for the near window; far-future
+  stops just live further down the same timeline.
+- **Stop row format:** **Unit – Location – Type – Time** (e.g. `Beau – Lake Charles – Drop – 9am`).
+- **A trip is controlled by its tightest sub-item deadline** — the earliest hard deadline among its stops pins the
+  trip's slot. With slack, **drag a trip to re-time it** (time updates automatically).
+- **The store (yard) anchors every trip:** trip = **store → [ordered stops] → store**; the store departure/return
+  is the trip's **start/end trigger**.
+- **Capacity / load-plan rule (Jac's "issue for fun"):** the trailer carries a **limited load**; model the load
+  across each leg — a **pickup adds** a unit, a **drop removes** one. If capacity is exceeded at any leg, those
+  stops **cannot be one trip** → the app **flags it red and forces/suggests a separate trip** (store → that stop
+  → store). *Example: Trip 2 can't pick up Bush (3pm) while still carrying Snappy out for its 4pm drop on one
+  trailer — Bush's pickup becomes its own trip.* Core feasibility rule (part of the auto-sequencer; even before
+  full optimisation the app must DETECT + flag infeasible combos).
+
 ## Open problems
 
 - **"Sort" needs an all-cards redesign (Jac, 2026-07-20 — "our Sort sucks").** The current Views &
