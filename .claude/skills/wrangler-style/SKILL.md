@@ -32,11 +32,11 @@ values are ours and free to change — change them here, then re-check against `
 ```
 Surfaces  --bg #0a0d11 · --panel #171d25 · --card #12171e · --card-head #1a212b
 Lines     --line #2c343f · --line-soft #212834
-Text      --txt #eef2f7 · --txt-2 #aab4c1 · --txt-3 #717b89
+Text      --txt #eef2f7 · --txt-2 #aab4c1 · --txt-3 #838e9c
 Accent    --accent #ff7e1f · --on-orange #1a1205   (safety orange; dark ink ALWAYS)
 Status    --green #34d399 · --yellow #eed44b · --red #ff4242 · --red-fill #d63636
-          --blue #6394cc · --gray #8b94a3
-Action    --commit #2f6fd0   (deep blue: Save / +Add / write)
+          --blue #6394cc · --gray #8b94a3 · --on-red-fill #fdfdfd
+Action    --commit #2f6fd0 · --on-commit #fdfdfd   (deep blue: Save / +Add / write)
 Leather   --tan #c2925a      (wrangler seasoning — tiny touches only)
 ```
 **Light:** `--bg #e6e8ea · --panel/#card #fff · --line #cfd6e1 · --txt #141821 ·
@@ -45,8 +45,9 @@ Leather   --tan #c2925a      (wrangler seasoning — tiny touches only)
 --yellow #eed44b · --tan #8a5a2b`.
 
 **The three forced picks (don't casually undo):**
-- **`--red-fill #d63636`** for *filled* red — white text clears AA at 4.73 (bright
-  `#ff4242` = 3.44, fails). Bright `--red` stays for outline chips / bars / dots.
+- **`--red-fill #d63636`** for *filled* red — near-white ink `--on-red-fill #fdfdfd`
+  clears AA at **4.65** (bright `#ff4242` = 3.44, fails). Bright `--red` stays for outline
+  chips / bars / dots.
 - **`--yellow #eed44b`** — dimmed from the neon `#ffe14d` on request, but kept
   colour-blind-safe: it's the **dimmest** yellow that still holds **≥90** separation from
   *both* orange (93) and green (95) under deuter+protan sim. Darkening more breaks orange-
@@ -54,8 +55,19 @@ Leather   --tan #c2925a      (wrangler seasoning — tiny touches only)
   failed. Jac is colour-blind — this is a gate, don't dim past it.)
 - **`--blue #6394cc`** — muted so it stops fighting the orange (soften-complements).
 
-Never `#000`/`#fff`. Fills always take dark ink (blue/orange/yellow/green); only the
-deepened `--red-fill` and the `--commit` button carry white.
+**Neutral-text floor (`--txt-3`):** nudged `#717b89` → **`#838e9c`** — the old value read
+only **3.78–4.20** against `--card`/`--card-head` as body text, failing the 4.5 floor. The
+nudge clears **4.87** on `--card-head` and **5.41** on `--card`. Nudged rather than
+restricted to icons/borders, because `Stamp` (§3) uses `--txt-3` as real chip *text*, not
+just an icon/border tint — though both old and new values already clear the 3:1 UI floor
+for any icon/border use.
+
+Never `#000`/`#fff`. Fills always take dark ink (blue/orange/yellow/green); `--red-fill`
+and `--commit` are the one exception needing a light ink — but that ink is **near-white,
+not pure**, which the rule already permits: `--on-red-fill`/`--on-commit #fdfdfd`. This
+resolves the old claim ("white clears AA 4.73/4.9"), which silently assumed pure `#fff` and
+broke this same never-pure rule. Verified with `#fdfdfd`: `--red-fill` → **4.65**,
+`--commit` → **4.80** — both still clear the 4.5 floor, no rule exception needed.
 
 ## 2. Type — the two voices (fonts are a decision; sizes are `style`'s ladder)
 
@@ -71,9 +83,15 @@ deepened `--red-fill` and the `--commit` button carry white.
 
 ## 3. Components — the decided look
 
+**The one rule underneath every component below:** status colour = *what* it is · orange
+= *touchable* · deep-blue `--commit` = *commit* · everything else = plain honest text.
+Nothing ever does two jobs — that's the whole reason Signal, Ref, and Door don't collide.
+
 - **Signal** — coloured chip, read-only state; **colour = state, fill = today**;
-  radius 7 (the ONE chip radius — see note); dark ink on fill (filled red = `--red-fill`). Click → teleport to source;
-  hover → explain + name the source.
+  radius 7 (the ONE chip radius — see note); dark ink on fill (filled red = `--red-fill`
+  + `--on-red-fill` ink). Three-tier read: **(1) colour + fill** = the instant
+  at-a-glance state, **(2) the word on the chip** = what it is, **(3) hover / Tab-focus /
+  long-press** = *why* and *what it stops*. Click → teleport to source.
 - **Gate** — a Signal + a **leading, optically-centred SVG chevron that hugs the text**
   (≤2px gap). **No orange dot.** Opens a status picker.
 - **Stamp** — a plain fact: **chip text, no box, no colour** (`--txt-3`), stamped
@@ -90,6 +108,8 @@ deepened `--red-fill` and the `--commit` button carry white.
     (colour = state) — e.g. a "do-now" option shows filled-yellow, a blocked one filled-red.
     Falls back to **orange** (`--accent`, dark ink) when the option carries no status.
     Applies to every toggle, incl. funnel tabs and the yard/staff segmented controls.
+  (Commit/money/destructive are action colours, never status colours — no Door, chip, or
+  button ever repurposes a status hue to mean "click me"; see `style` §6.)
 - **Contact** — show the **phone number itself** as the `tel:` link (readable on
   desktop, tappable on mobile); email likewise. Honest-affordance: tappable ⇒ looks
   it; not ⇒ plain text. No fake hover-underlines.
@@ -101,6 +121,14 @@ deepened `--red-fill` and the `--commit` button carry white.
 - **Plate grammar** — every section is the same repeated plate: left status-bar +
   stamped label + summary + status chip + chevron → body; header colour = the worst
   item inside (SIGNAL rollup).
+- **Group taxonomy.** Every card's list groups are one of two kinds: **Attention groups**
+  (e.g. Field Calls, Failed) exist and are coloured only because something is wrong —
+  hidden entirely when empty. **Lifecycle groups** (e.g. On Rent, Reserved, Available) are
+  always present, grey by default, and take colour only when a member inside triggers it —
+  no group ever carries a fixed/native colour.
+- **Groups are never named after status** ("Bad"/"To-Do") — that double-encodes what
+  colour already says; a group name says *where* in the workflow, colour says *how much*
+  it needs you.
 - **Interaction & feature architecture is NOT decided here.** The inline-expand model,
   anchoring + item rails, section paging, cross-card cascade, linking, KPI placement,
   and mobile focused-mode live in the **feature spec** (`docs/superpowers/specs/`). This
@@ -112,13 +140,16 @@ deepened `--red-fill` and the `--commit` button carry white.
   up · Rein in.** An action keeps its name through the whole flow (button → toast).
 - Restrained: leather-`--tan` touches only; copy carries the character, not the chrome.
 - **Litmus:** if a glance reads "western" before "industrial rental yard," dial it back.
+- **Component names are internal vocabulary, never user-facing.** Signal/Gate/Stamp/Ref/
+  Door are how *we* talk about the pieces; the person using the app always sees plain task
+  language (e.g. the Signal-summary landing tab reads **"To Do"**, never "Signal").
 
 ## 6. Open decisions (not locked)
 
 - **Signature motif** — we did **not** re-adopt jactec-ui's hazard-stripe + rivets by
   default. If we want one bold signature beat, decide it here fresh. (Current builds
   are clean matte plates.)
-- **Commit-blue exact** — `#2f6fd0` chosen (white clears AA 4.9); revisit if it reads
-  too close to `--blue`.
+- **Commit-blue exact** — `#2f6fd0` chosen (near-white ink `--on-commit #fdfdfd` clears
+  AA **4.80**); revisit if it reads too close to `--blue`.
 - Any new colour/font/component decision gets **added here**, then re-checked against
   `style`'s numbers before it ships.

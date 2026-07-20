@@ -108,6 +108,9 @@ protan = [[0.152,1.053,-0.205],[0.115,0.786,0.099],[-0.004,-0.048,1.052]]
   trigger actually fires (due/overdue/gating-now/needs-hands/near-clock/in-flight/
   flagged-live/closed-today); otherwise outline. Fill is a *meaning* bit, not
   loudness — priority still = colour + sort order.
+- **Rollup precedence, hottest wins.** When multiple task-states combine into one summary
+  (a group header, a card cap, a rolled-up count), the winner is fixed, never resolved ad
+  hoc per renderer: **red > yellow > blue > green > grey.**
 - The bucket→colour mapping and trigger list are **guidelines** (adjust per app);
   the **"one function, no drift"** structure is the rule.
 
