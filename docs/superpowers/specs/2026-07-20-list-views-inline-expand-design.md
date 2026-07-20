@@ -39,27 +39,23 @@ navigation.
   Washes for units, …). History is NOT a paged tab.
 - **Tall sections scroll internally.** Fixed outer height; a section that overflows
   (esp. Customers' **Invoices**) scrolls within its own body — never blows out the card.
-- **Hover-jump (desktop enhancement):** on a *collapsed* row, hovering reveals the item's
-  **section chips** (lit ones coloured by their Signal) so the user can **click straight
-  into the section they need** — skipping expand → orient → pick. Replaces the retired
-  hover-preview with something actionable (a *triage* glance, not a passive peek). Appears
-  **instantly** — power users want speed, **no dwell delay**. Mis-click is solved
-  **spatially, not by timing** (the cause is a *moving target*, not speed):
-  - **Absolutely-positioned right-lane strip** → **zero layout shift**; it never covers the
-    **name/body on the left**, which stays the big "click = open" target. Nothing under the
-    user's intended click ever moves, so 0 ms is safe.
-  - **Graceful degradation:** even a clipped chip just **opens the item on that section**
-    (they were opening it anyway; chevron one over) — never destructive or surprising.
-  - **Lit sections first** so the strip stays tight (usually 1–3 chips, not all seven).
-  - **Desktop-only** (no hover on touch → no mobile mis-tap).
-  - **Coexists with element tooltips (don't overload the whole row):** the strip triggers
-    from ONE zone only — the item's **summary-Signal** (the rolled-up status chip on the
-    right/corner). Hover it → it expands into the lit-section chips. Every *other* element
-    (name, stamps, refs, numbers, gates) keeps its own hover-tooltip, untouched. The only
-    element whose tooltip the strip "replaces" is the summary Signal — and the lit-section
-    chips are strictly richer than that tooltip (same status + the breakdown + the jump).
-    Rentals (no sections) has no strip, so its mini-card is fully free for tooltips.
-    (Feel-test: is the summary-Signal a big enough hover target on the tiny mini-cards?)
+- **Hover-jump (desktop enhancement):** hovering a *collapsed* row/mini-card pops up a
+  **compact section-chip menu ABOVE the item** — emerging from *behind* it like a popover,
+  **one chip-line tall** so it never covers the legibility of the item above. It's the same
+  section rail that takes the item's top line on expand, previewed. Click a chip → open on
+  that section; click the item → open on the default / Signal landing.
+  - **Frees the row surface entirely.** The menu floats *above*, so the row's own elements
+    keep their tooltips and the row stays "click = open" — **no aiming at a sub-element**,
+    no occlusion, and **whole-row hover** triggers it (fast, nothing to target).
+  - **Instant, no dwell. Mis-click-safe by geometry:** the chips sit ABOVE the row, off the
+    click-path to open — click the row → expand; to use a chip you move *up* into the menu.
+  - **Connected + reachable:** the popover emerges from the item's **top edge** (a small
+    tail/notch) so it (a) clearly belongs to THIS item, not the row above, and (b) forms one
+    **contiguous hover zone** with the row — move up into it without it dismissing (no
+    dead-gap). Near the list top, **flip it to appear below**.
+  - **Lit sections first** (tight, 1–3 chips). **Desktop-only** (no hover on touch). Rentals
+    (no sections) has no menu.
+  - Feel-test in the prototype: positioning, reaching into it, flicker between adjacent rows.
 
 ## 3. Rentals is the exception — no sections
 
