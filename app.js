@@ -5978,15 +5978,21 @@ function refPill(card, recId, label, { x, xData, tag, tone } = {}) {
   const tip = (card === 'customers' && label && label.length > 9) ? ` data-tip="${esc(label)}"` : '';
   const shown = (card === 'customers' && label && label.length > 9) ? label.slice(0, 9).trimEnd() + '…' : label;
   const chat = ` data-chat-el data-chat-label="${esc(label || recId)}" data-chat-color="gray" data-chat-card="${esc(card)}" data-chat-rec="${esc(recId)}"`;   // §17 — link/person pill → draggable into a chat
-  return `<span class="pill ref link${toneCls}" data-r="R2" data-pill-card="${card}" data-pill-rec="${esc(recId)}"${tip}${chat}>${tg}${CARD_ICON[card] || ''}${esc(shown)}${xb}</span>`;
+  return `<span class="pill ref link${toneCls}" data-r="R2" data-pill-card="${card}" data-pill-rec="${esc(recId)}"${tip}${chat}>${tg}<span class="ref-ico">${CARD_ICON[card] || ''}</span>${esc(shown)}${xb}</span>`;
 }
-/** R2: a Unit pill — LINKED record, orange outline + units icon. */
-function unitPill(unitId, { x, xData } = {}) {
+/** R2: a Unit pill — LINKED record, orange outline + units icon. `tint`/`tip`/`cls` are
+ *  an optional per-call override (e.g. ROWS.rentals tints by inspection status + the
+ *  ec-red halo on Failed) — every existing caller omits all three, so their render is
+ *  byte-identical to before. */
+function unitPill(unitId, { x, xData, tint, tip, cls } = {}) {
   const u = IDX.unit.get(unitId);
   if (!u) return badge('No unit');
   const xb = x ? `<span class="x" data-x="${esc(x)}"${xData != null ? ` data-id="${esc(xData)}"` : ''}>✕</span>` : '';
   const chat = ` data-chat-el data-chat-label="${esc(u.name)}" data-chat-color="gray" data-chat-card="units" data-chat-rec="${esc(unitId)}"`;   // §17
-  return `<span class="pill ref link" data-r="R2" data-pill-card="units" data-pill-rec="${esc(unitId)}"${chat}>${CARD_ICON.units}${esc(u.name)}${xb}</span>`;
+  const style = tint ? ` style="color:${tint}"` : '';
+  const tipAttr = tip ? ` data-tip="${esc(tip)}"` : '';
+  const clsAttr = cls ? ' ' + cls : '';
+  return `<span class="pill ref link${clsAttr}" data-r="R2" data-pill-card="units" data-pill-rec="${esc(unitId)}"${style}${tipAttr}${chat}><span class="ref-ico">${CARD_ICON.units}</span>${esc(u.name)}${xb}</span>`;
 }
 /** R2: entity-stamp pill — flag-colored (getEntityColor), Saira-caps, card icon + name. */
 function entityPill(card, rec, { x, xData } = {}) {
@@ -5996,7 +6002,7 @@ function entityPill(card, rec, { x, xData } = {}) {
   const flag = getEntityColor(card, rec) || 'gray';
   const xb = x ? `<span class="x" data-x="${esc(x)}"${xData != null ? ` data-id="${esc(xData)}"` : ''}>✕</span>` : '';
   const chat = ` data-chat-el data-chat-label="${esc(name)}" data-chat-color="${esc(flag)}" data-chat-card="${esc(card)}" data-chat-rec="${esc(id)}"`;
-  return `<span class="pill entity-stamp c-${flag}" data-r="R2" data-pill-card="${card}" data-pill-rec="${esc(id)}"${chat}>${CARD_ICON[card] || ''}<span class="t">${esc(name)}</span>${xb}</span>`;
+  return `<span class="pill entity-stamp c-${flag}" data-r="R2" data-pill-card="${card}" data-pill-rec="${esc(id)}"${chat}><span class="ref-ico">${CARD_ICON[card] || ''}</span><span class="t">${esc(name)}</span>${xb}</span>`;
 }
 /** R3b: a DATA CHIP — a plain fact (480 HRS, No GPS), independent of R3. */
 const badge = (label, color = 'gray', focal) => `<span class="pill c-${color}${focal ? ' focal' : ''}" data-r="R3b"><span class="t">${esc(label)}</span></span>`;
@@ -7072,12 +7078,14 @@ const ROWS = {
     // ── HEADER: row 1 = unit names (colored by inspection status) + status pill pinned RIGHT;
     //           row 2 = customer name + balance (Jac 2026-06-23) ──
     // Unit names tinted by their inspection status so color signal is immediate on hover.
+    // Ref, not plain text (Jac 2026-07-21 — "why isn't this a Ref"): real click-to-navigate +
+    // drag-to-chat via unitPill(), same inspection-status tint/tooltip/ec-red halo as before.
     const unitNameHtml = rentalUnits(r).map((eu) => {
       const unit = IDX.unit.get(eu.unitId);
       if (!unit) return '';
       const insp = unit.inspectionStatus;
       const ic = insp === 'Failed' ? 'var(--red)' : insp === 'Not Ready' ? 'var(--yellow)' : insp === 'Passed' ? 'var(--green)' : 'var(--txt)';
-      return `<span class="rcc-uname${insp === 'Failed' ? ' ec-red' : ''}" style="color:${ic}" data-tip="${esc(unit.name)}: ${esc(insp || 'Unknown')}">${esc(unit.name)}</span>`;
+      return unitPill(unit.unitId, { tint: ic, tip: `${unit.name}: ${insp || 'Unknown'}`, cls: insp === 'Failed' ? 'ec-red' : '' });
     }).filter(Boolean).join('<span class="rcc-usep">, </span>') || (units ? `<span class="rcc-uname">${esc(units)}</span>` : '');
     const headHtml = `<div class="rcc-head">
       <div class="rcc-h1">${unitNameHtml ? `<span class="rcc-units">${unitNameHtml}</span>` : ''}${stPill}</div>
@@ -9426,7 +9434,7 @@ function appendGroupedSections(list, rows, cs, card) {
     hd.setAttribute('style', `--sec:var(--${sec.color})`);
     const suffix = def.groupSuffix ? def.groupSuffix(group) : '';   // e.g. Trips' "2 done" riding the count (spec §2.2)
     const extra = def.headerExtra ? def.headerExtra(group, sec.key) : '';   // e.g. Trips' per-day AUTO-RUN button (spec §2.7)
-    hd.innerHTML = `<span class="grp-grip" data-tip="Drag to reorder">⠿</span><span class="grp-chev">${I.chevR}</span><span class="grp-label">${esc(sec.label || sec.key)} · ${group.length}${suffix ? ' · ' + esc(suffix) : ''}</span>${extra}`;
+    hd.innerHTML = `<span class="grp-grip" data-tip="Drag to reorder">⠿</span><span class="grp-chev">${I.chevR}</span><span class="grp-label">${esc(sec.label || sec.key)}</span> · <span class="grp-count">${group.length}${suffix ? ' · ' + esc(suffix) : ''}</span>${extra}`;
     list.appendChild(hd);
     if (collapsed) continue;   // header only — cards hidden, and they don't consume the window
     const canShow = limit - shown;

@@ -93,18 +93,22 @@ html.dv2 {
      genericRow (invoices/workOrders/inspections/serviceOrders) → .row-1/.row-2/.r-title/.r-fields
      appendGroupedSections → .grp-hd > .grp-grip/.grp-chev/.grp-label       app.js:9423
 
-   DEFERRED (needs markup — not attempted here; each is real drift, tracked for a
-   later slice that touches app.js, not a CSS-only one):
-   1. Ref's canon "square icon-backing" shape (a distinct accent-tinted square HOUSING
-      the icon, name outside it) — refPill/unitPill/entityPill emit one flat pill with
-      icon+text as siblings, no wrappable icon box. Needs a `<span class="ref-ico">`
-      wrapper added in app.js.
-   2. Rentals row unit + customer references (.rcc-uname, .rcc-cust) render as plain,
-      non-clickable text — no data-pill-card/data-pill-rec, no icon. Exact drift
-      wrangler-style §3 already flags. Fix = swap for refPill()/unitPill() calls in
-      ROWS.rentals (app.js:7075-7086) — CSS can only recolor/reweight the text.
-   3. Group-header item count ("Label · N") is fused into one `.grp-label` text node
-      (app.js:9429) — no separate node to give the count its own mono/tabular treatment.
+   DEFERRED status (Jac 2026-07-21: "is a reskin actually easy given the builders?" —
+   yes, mostly; #1 and #3 below were the small real exceptions, now CLOSED in app.js
+   as a small "close the gaps" pass so later slices ride purely on the shared builders):
+   1. CLOSED — Ref's canon "square icon-backing" shape: refPill/unitPill/entityPill now
+      wrap the icon in `<span class="ref-ico">` (app.js) — styled below.
+   2. PARTIALLY CLOSED — Rentals row unit references (.rcc-uname) now call unitPill()
+      (real click-to-navigate + drag-to-chat via the app's existing delegated
+      [data-pill-card] handler — a genuine capability add, not just a restyle), same
+      inspection tint/tooltip/ec-red halo preserved. The CUSTOMER reference (.rcc-cust)
+      is INTENTIONALLY still plain text: refPill('customers', …) truncates names to
+      ~9 chars (built for a narrower context) — wiring it into this wider row would
+      silently truncate real customer names, so it's held for a deliberate decision
+      (add a no-truncate option to refPill, or accept the truncation) rather than guessed.
+   3. CLOSED — Group-header item count is now its own `<span class="grp-count">`,
+      split from `.grp-label` in app.js (the " · " separator kept as static markup so
+      the base/non-dv2 look is unchanged) — styled below.
    4. List mode renders NO header plate today (only the search/sort `.listbar`) — the
       mockup's stamped eyebrow+description header has no shipped equivalent to restyle. */
 html.dv2 {
@@ -142,6 +146,17 @@ html.dv2 .pill[data-r="R2"] {
 }
 /* orange-marked/touchable already correct from SLICE 1 (.pill.ref.link uses --accent-soft/
    --accent/--accent-line) — nothing to change there. */
+/* Ref's canon "square icon-backing" (wrangler-style §3): DEFERRED #1 from the first CSS-only
+   pass is now closed — refPill/unitPill/entityPill wrap the icon in <span class="ref-ico">
+   (app.js). Style it as the accent-tinted square housing; :empty hides it for the rare no-icon
+   case (an unmatched card type). */
+html.dv2 .pill[data-r="R2"] .ref-ico {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 4px; margin-right: 2px; flex: 0 0 auto;
+  background: var(--accent-soft); color: var(--accent);
+}
+html.dv2 .pill[data-r="R2"] .ref-ico svg { width: 12px; height: 12px; }
+html.dv2 .pill[data-r="R2"] .ref-ico:empty { display: none; }
 
 /* DOOR — verb actions (actionPill/ghostPill), radius stays pill (999) per canon. */
 html.dv2 .pill { height: var(--dv2-h); padding: 0 10px; }
@@ -255,6 +270,14 @@ html.dv2 .grp-label {
   font-size: 0.6471rem;   /* 11px — label ladder rung (was 0.9706rem/16.5px) */
 }
 html.dv2 .grp-chev svg { width: 12px; height: 12px; }
+/* group-header COUNT — DEFERRED #3 from the first CSS-only pass is now closed (app.js split
+   the fused "Label · N" text into separate .grp-label/.grp-count nodes); the count is a plain
+   fact (Stamp) so it reads mono/tabular, distinct from the label word. */
+html.dv2 .grp-count {
+  font-family: var(--dv2-font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--txt-3);
+}
 
 /* ── Reset / base ────────────────────────────────────────────────────────── */
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -4827,6 +4850,7 @@ body.dragging[data-drag="workOrders"] .inv-add-pill,
 .rcc-uname.ec-red,
 .catr-name.ec-red,
 .uc-name.ec-red,
+.pill.ref.ec-red,
 .rcc-bal.overdue,
 .cr-pay.over,
 .pill.c-red .t { color: var(--red); -webkit-text-fill-color: color-mix(in srgb, var(--red) 65%, white); text-shadow: 0 0 3px var(--red), 0 0 7px color-mix(in srgb, var(--red) 60%, transparent); }
