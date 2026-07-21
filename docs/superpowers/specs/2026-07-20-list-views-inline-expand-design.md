@@ -599,7 +599,9 @@ map; that's the only map surface in scope.
    departure time passes, it **counts UP the minutes elapsed until Start is clicked** (a live late-clock). **If Start has NOT
    been clicked by the departure time → heavy escalation:** notify dispatch **plus the manager and sales** (a missed
    departure is a business problem, not a quiet flag).
-5. **Drive time is a FIRST-CLASS fact** — its own column, not subtext under the ETA.
+5. **Drive folds into the ETA-tracker LINE as a first-class figure** (Jac round-3, supersedes the "own column"): the ETA
+   cell reads **`+42MIN = 8:22 ETA`** — the drive minutes prominent (not a whisper), `=` the resulting arrival. No separate
+   DRIVE column. Town stays right of the ETA.
 6. **Town links column-align with the Deadline chips** (Town + Deadline read as an aligned right-hand pair).
 7. **Connector = the stop's ORDER NUMBER (1·2·3…) once tripped** — it tells the driver the sequence (valuable after a
    drag-reorder, and for talk-back: "stop 1… then stop 2…"). An **untripped / loose stop keeps a BOX** ("schedule me!").
@@ -610,7 +612,24 @@ map; that's the only map surface in scope.
    `wrangler-style` + `style`** — never the live app (Jac, 2026-07-21).
 10. **Customer Ref between the Town and the Deadline** (Jac, 2026-07-21 — "forgot to give them a place in the row"): the
     customer rides as a **Ref** (parent icon + name, walks to the customer record), sitting between the town link and the
-    deadline chip. New row order: number/box · glyph · Gate · Drive · ETA · **Town** · **Customer (Ref)** · **Deadline**.
+    deadline chip. Row order: number/box · glyph · Gate · **ETA (`+42MIN = 8:22 ETA`)** · **Town** · **Customer (Ref)** ·
+    **Deadline** (DRIVE folded into the ETA line per point 5 — no separate column).
+11. **Gate = a canon Gate chip, NOT a `--commit` affirm pill** (Jac round-3: "don't like the affirm blue pills"): the gate
+    reads as **soft Waiting `--blue` + a leading chevron** (a Signal you can turn); gray when inapplicable. The **chevron**
+    keeps a blue Gate distinct from a blue Waiting Signal, so both use `--blue`. `--commit` is reserved for real **Doors**.
+12. **Unit AND customer BOTH render as Refs** (Jac round-3: "you didn't use the REF for the units"): the unit in the left
+    prefix is a **Ref** (unit icon in accent-tinted backing + name + code; `+N` for multi-unit), matching the customer Ref —
+    never plain text. General rule from this catch: **every element uses its canon style + the two type voices** (audit the
+    whole surface; no plain-text stand-ins for Signal/Gate/Stamp/Ref).
+13. **The departure TIME is colour-coded by the state ladder** (Jac round-4): **one colour language, two clocks** — the
+    **departure time** = *"should I leave?"* (grey not-yet · **blue = next up** · yellow = gotta-leave · red = late ·
+    green = departed/done) and the **deadline chip** = *"will it make the window?"* (the §8.5 slack ladder). Same colours,
+    same meanings, two different targets — not double-encoding. **Only the NEXT stop goes blue** (one "next" per trip), so
+    it stays disciplined. (Formula in `style`.)
+14. **The numbered spine hangs OUTSIDE the trip card** (Jac round-4: "outside outside, outside the entire trips floating
+    card"): the connector nodes (order numbers on tripped stops · box on loose · small dot on anchors) live in a **left rail
+    gutter beside the card**, not as an inner column — so the *sequence* is the outermost structure and the (now colour-coded)
+    departure time reads as a proper first column inside the card.
 
 ## Open problems
 

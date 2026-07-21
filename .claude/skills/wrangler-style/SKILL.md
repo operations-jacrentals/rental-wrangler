@@ -139,14 +139,22 @@ Nothing ever does two jobs — that's the whole reason Signal, Ref, and Door don
   number, no box). **Untrip by DRAGGING the row away** — there is no click-to-untrip box.
   **Row order (left→right):** number/box · **stop-type glyph** (`HQ`/`↓`/`↑`) · **Gate** ·
   **Drive** (a first-class fact, its own column — never subtext under the ETA) · **ETA** ·
-  **Town** · **Customer** (a **Ref** — parent icon + name, walks to the customer record) ·
-  **Deadline**. **Town = the "True hyperlink ↗"** from the *Words, links & flags*
+  **Town** · **Customer** (a **Ref**) · **Deadline** — where **DRIVE folds into the ETA line**
+  as a first-class figure: **`+42MIN = 8:22 ETA`** (not a separate column, not a whisper).
+  **BOTH the unit AND the customer render as Refs** (parent icon in an accent-tinted square
+  backing + name; walk to that record) — never plain text. The **Gate is a canon Gate chip**
+  — a Signal you can turn: the **soft Waiting `--blue`** chip + a **leading chevron** (NOT a
+  deep `--commit` affirm pill; `--commit` is reserved for real **Doors** like Save/+Add). The
+  chevron is what distinguishes a blue **Gate** (turnable) from a blue **Waiting Signal**
+  (read-only), so the two can share `--blue` without colliding. Gray when the gate doesn't yet
+  apply. **Town = the "True hyperlink ↗"** from the *Words, links & flags*
   elements artifact: ink + accent underline + a **trailing ↗**, opens off-app, deep-linking
   to Google Maps; **towns column-align with the deadline chips** (an aligned right pair). The
-  **Gate button IS the next action** (`--commit` affirm-blue: Start → Arrived? →
-  Dropped?/Picked Up?), gray when it doesn't yet apply. **Two distinct blues, no overload:** the deep
-  **`--commit`** drives the gate *action* (affirm), while the muted **`--blue`** marks the
-  **Waiting** state on the **deadline Signal** — already separate tokens. Deadline-Signal
+  **Gate IS the next action** (Start → Arrived? → Dropped?/Picked Up?) and reads as a **canon
+  Gate chip — soft `--blue` + leading chevron**, gray when it doesn't yet apply. **Blue does
+  NOT overload:** the **chevron** separates a blue **Gate** (turnable action) from a chevron-less
+  blue **Waiting Signal** (read-only) — the same distinction the whole app uses; `--commit`
+  stays reserved for real **Doors**. Deadline-Signal
   ladder = the **standard wrangler state colours** driven by schedule slack
   (`slack = deadline − ETA`), NOT a reassignment: **`--blue` = Waiting** (incomplete,
   `slack>2h`) · **`--yellow`** = near/due (within 2h) · **`--red`** = late (overdue) ·

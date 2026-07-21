@@ -125,6 +125,11 @@ protan = [[0.152,1.053,-0.205],[0.115,0.786,0.099],[-0.004,-0.048,1.052]]
     event, not a quiet colour flip — the notify audience widens beyond the operator (e.g.
     manager + sales), because a missed departure is a business problem. (The widened audience
     is a decision; the `now > departure ⇒ escalate` trigger is the rule.)
+  - **One ladder, two clocks.** The SAME state ladder colours **two** facts against **two**
+    targets: the **departure time** (slack vs *leave-time* → "should I leave?") and the
+    **deadline chip** (slack vs *deadline* → "will it make it?"). Same colours, same meanings,
+    different targets = not double-encoding. Restraint rule: at most **one "next" (blue)** per
+    trip — everything ahead is grey (not-yet), everything behind green (done).
   - **Deadline slack → colour** — the **standard state buckets**, no reassignment, from
     `slack = deadline − ETA` (live, recomputed on every change): **Done** (gate closed) →
     green (overrides all) · `slack < 0` → red (late/overdue) · `0 ≤ slack ≤ 2h` → yellow
