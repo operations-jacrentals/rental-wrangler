@@ -531,6 +531,64 @@ grey↔green) are **accepted** (label + icon disambiguate) until a deliberate fu
 **Contrast/separation — borrow the Invoices "ticketing" look (Jac):** for the Trips rebuild, take separation
 cues from the app's **existing invoices design** — stops and trips as **tickets**. (Study the invoices card first.)
 
+### 8.5 The ETA-Tracker LEDGER + gate state-machine  *(Jac, 2026-07-21 — hand-drawn "ETA TRACKER" + dispatch-book inspiration; supersedes §8.4's "ticket card" framing)*
+
+The trip is not a "card" — it is a **ledger** (dispatch-book / register look: numbered carbon dispatch tickets, the
+blue-ruled DESPATCH REGISTER, the TRUCK DRIVER LOG). Rows have **strong independence from the trip** — it reads as a
+**list of stops prefixed by departure times**, joined by a spine of connector boxes. Drop the customer **photo**; drop the
+**tilted stamp** (no rotation); lean hard on **Blue**.
+
+**Row anatomy (left → right):**
+- **Outside-left prefix** (sits left of the row body): **departure time** + **unit icon + unit**. A stop = **one address,
+  possibly multiple units** (the video/notify logic fans out per unit).
+- **Connector box** — a **square, clickable** control: **click to "untrip"** (pull the stop back out of the trip); it also
+  **fills/ticks as the gate closes** (progress). The **Start-HQ and End-HQ anchor rows use CIRCLES, not squares, and are
+  NOT clickable** — the store anchors can't be untripped.
+- **The Gate** — the **State button *is* the next action** (see the state-machine below). This replaces a passive status chip.
+- **Stop-type glyph:** `HQ` = yard start/end · `↓` = drop · `↑` = pickup (glyph carries the type, not a colour).
+- **ETA** — cumulative `drive + load` arrival time (see the formula).
+- **Town** — a real **Google Maps deep-link** (tapping the town navigates the driver to external Google Maps).
+- **Deadline signal** — shows the **deadline TIME** coloured by status (see the colour ladder). Deadline time = the
+  **rental start** (for a Drop) or **rental end + 1 hr** (for a Pickup).
+
+**Cumulative ETA (Jac's drawing's one correction):** ETAs and departures **accumulate downward** — each row sums **all**
+prior drive + load times, so arrivals get later the deeper into the trip. `departure_i = ETA_{i-1} + load_{i-1}` (first
+departure = trip start); `ETA_i = departure_i + drive_i`; default load = **20 min/stop** (§8.4). One late leg re-times the
+whole ledger. (Formula lives in `style`; live ETA updates via the Google API are a **future** enhancement.)
+
+**Deadline colour ladder — the STANDARD wrangler state colours (blue=Waiting, green=Done), NOT a reassignment; NO new
+colour.** From `slack = deadline − ETA`:
+- 🔵 **`--blue` = Waiting** — incomplete, on-time (`slack > 2h`)
+- 🟡 **`--yellow`** = near/due — within 2 hrs (`0 ≤ slack ≤ 2h`)
+- 🔴 **`--red`** = late/overdue (`slack < 0`)
+- 🟢 **`--green` = Done** — gate closed / stop complete (ticks the connector box too).
+- **Green is Done ONLY.** An on-time, not-yet-worked stop is **Waiting = blue, never green** — the earlier `trips-schedule`
+  mockup coloured on-time stops green and broke this. The signal **recolours live** as the countdown burns (a Waiting stop
+  slides 🔵→🟡→🔴 before the driver acts).
+- **Two distinct blues, no overload:** the **gate button** uses the deep **action-blue `--commit`**; the **Waiting signal**
+  uses the muted **state-blue `--blue`**. Already separate tokens → no collision.
+
+**The gate state-machine (the heart):**
+1. Trip start: **all gates gray** (N/A) except row 1 → **affirm `--commit` "Start"**.
+2. **Tap Start** → notifies **dispatch + customer (text)** · starts the trip · **forces Google Maps** · **fires the ETA
+   countdown** (est. drive time). Button flips instantly to **"Arrived?"**.
+3. **Tap Arrived?** → the **next row's gate** becomes **"Dropped?" / "Picked Up?"** (`--commit`) · notifies **dispatch +
+   customer (text + email)**.
+4. **Tap Dropped?/Picked Up?** → **prompts the On-Rent / End-Rent yard video (required)**. **Video LOGS ONLY** — it is
+   proof/logging and does **NOT** move billing (billing stays a separate manual action). Field Calls / Repos / Tasks (no
+   rental) **skip the video**; the gate still notifies.
+5. **Video logged** → the next row's gate turns **`--commit` "Start"** → the cycle recycles.
+
+**Comms — AUTO-SEND all (Jac):** the texts/emails above fire the instant the gate is tapped (high-frequency, dispatcher
+loves the immediacy). Because a mis-tap reaches a real customer, the comms-firing gates carry an **undo** (a brief
+"sent — undo" window).
+
+**Row interactions — three non-overlapping targets:** **row-body** click → the **trip map opens on the Dashboard card**;
+**town** → external Google Maps; **gate button** → advance the state-machine; **square box** → untrip. (Anchor circles inert.)
+
+**Open in §8.5:** the multi-truck board (the Houston-map inspiration: colour-coded routes + a per-route time-lane gantt,
+"Ignore Dates / Zoom All") is the **Dashboard map view**, not the single-trip ledger — parallel/future work.
+
 ## Open problems
 
 - **"Sort" needs an all-cards redesign (Jac, 2026-07-20 — "our Sort sucks").** The current Views &

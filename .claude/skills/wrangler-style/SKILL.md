@@ -123,6 +123,27 @@ Nothing ever does two jobs — that's the whole reason Signal, Ref, and Door don
 - **Contact** — show the **phone number itself** as the `tel:` link (readable on
   desktop, tappable on mobile); email likewise. Honest-affordance: tappable ⇒ looks
   it; not ⇒ plain text. No fake hover-underlines.
+- **Ledger** (Trips ETA-Tracker; Jac 2026-07-21) — a trip renders as a **dispatch-book
+  ledger**, not a card: a list of stop rows joined by a connector spine. Borrows the
+  **register / carbon-dispatch-ticket** look **as a LAYOUT only** — it is built from the
+  SAME **two type voices (§2)** and the SAME **Signal / Gate / Stamp / Ref / Door** elements;
+  the register inspiration **never replaces the fonts or the element designs** (Jac,
+  2026-07-21: don't abandon the wrangler type families / element looks). Row rules: **no
+  tilted stamp** (zero
+  rotation), **no customer photo**. Each row = **one address, possibly many units**; the
+  **unit icon + unit + departure time** sit in an **outside-left prefix**. The **connector
+  box is a clickable SQUARE** (click = untrip the stop; fills as its gate closes); the
+  **Start/End store-anchor rows use inert CIRCLES** (can't be untripped). The **Gate button
+  IS the next action** (`--commit` affirm-blue: Start → Arrived? → Dropped?/Picked Up?),
+  gray when it doesn't yet apply. **Two distinct blues, no overload:** the deep
+  **`--commit`** drives the gate *action* (affirm), while the muted **`--blue`** marks the
+  **Waiting** state on the **deadline Signal** — already separate tokens. Deadline-Signal
+  ladder = the **standard wrangler state colours** driven by schedule slack
+  (`slack = deadline − ETA`), NOT a reassignment: **`--blue` = Waiting** (incomplete,
+  `slack>2h`) · **`--yellow`** = near/due (within 2h) · **`--red`** = late (overdue) ·
+  **`--green` = Done** (gate closed). **Green is Done only** — the earlier mockup that
+  coloured on-time stops green broke this (an on-time, not-yet-worked stop is **Waiting =
+  blue**, never green). Numbers/thresholds live in `style`.
 
 ## 4. Layout & structure
 

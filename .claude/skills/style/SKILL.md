@@ -113,6 +113,19 @@ protan = [[0.152,1.053,-0.205],[0.115,0.786,0.099],[-0.004,-0.048,1.052]]
   hoc per renderer: **red > yellow > blue > green > grey.**
 - The bucket→colour mapping and trigger list are **guidelines** (adjust per app);
   the **"one function, no drift"** structure is the rule.
+- **Time-derived state — the schedule/ETA formula** (Trips ETA-Tracker, generalises to any
+  deadline-vs-estimate signal). Two measurable rules so a countdown can't be hand-tuned:
+  - **Cumulative cascade.** For an ordered run of stops: `departure₀ = tripStart`;
+    `ETAᵢ = departureᵢ + driveᵢ`; `departureᵢ₊₁ = ETAᵢ + loadᵢ` with **load = 20 min/stop**
+    default. Every estimate sums **all** prior drive + load — one slip re-times everything
+    below it. (Not a per-row constant.)
+  - **Deadline slack → colour** — the **standard state buckets**, no reassignment, from
+    `slack = deadline − ETA` (live, recomputed on every change): **Done** (gate closed) →
+    green (overrides all) · `slack < 0` → red (late/overdue) · `0 ≤ slack ≤ 2h` → yellow
+    (near/due) · `slack > 2h` → **blue = Waiting** (incomplete, on-time). Maps 1:1 onto the
+    buckets above (waiting=blue, due=yellow, overdue=red, done=green) — **green stays Done
+    only**, an on-time pending stop is blue, never green. Still one function; rolls up
+    `red > yellow > blue > green`.
 
 ## 7. The five named parts — definitions (structural vocabulary)
 
