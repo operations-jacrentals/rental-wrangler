@@ -139,9 +139,12 @@ Nothing ever does two jobs — that's the whole reason Signal, Ref, and Door don
   number, no box). **Untrip by DRAGGING the row away** — there is no click-to-untrip box.
   **Row order (left→right):** number/box · **stop-type glyph** (`HQ`/`↓`/`↑`) · **Gate** ·
   **Drive** (a first-class fact, its own column — never subtext under the ETA) · **ETA** ·
-  **Town** · **Deadline**. **Town = an external Ref (R26):** a real `<a target="_blank">`
-  with the **trailing ↗** (`icon-link`/`linkOut`) that marks any off-app link, deep-linking
-  to Google Maps; **towns column-align with the deadline chips** (an aligned right pair). The
+  **Town** · **Deadline**. **Town = the R7 `linkname` text-hyperlink** (`ext`): a real
+  `<a target="_blank" rel="noopener">`, ink + accent underline + **trailing ↗** — exactly the
+  "True hyperlink ↗" in the elements reference — deep-linking to Google Maps; **towns
+  column-align with the deadline chips** (an aligned right pair). (**R26 `icon-link`** is the
+  *icon-only* ↗ button for off-app links with **no** text label — NOT used for a labelled
+  town; don't conflate the two.) The
   **Gate button IS the next action** (`--commit` affirm-blue: Start → Arrived? →
   Dropped?/Picked Up?), gray when it doesn't yet apply. **Two distinct blues, no overload:** the deep
   **`--commit`** drives the gate *action* (affirm), while the muted **`--blue`** marks the

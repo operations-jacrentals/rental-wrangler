@@ -605,9 +605,11 @@ map; that's the only map surface in scope.
    drag-reorder, and for talk-back: "stop 1… then stop 2…"). An **untripped / loose stop keeps a BOX** ("schedule me!").
    **Start/End anchors are inert** (no number, no box). *(Supersedes §8.5's "square box + inert circles".)*
 8. **Untrip by DRAGGING the row away** — the box is no longer a click-to-untrip control.
-9. **Town = an external Ref via the app's decided off-app treatment (R26 / `icon-link` / `linkOut`):** a real
-   `<a target="_blank" rel="noopener">` carrying the **trailing ↗** the app already uses (`Order / info ↗`, `Read ↗`),
-   deep-linking to Google Maps. Apply the *researched* Ref/link + Signal/Gate/Stamp element rules exactly — do not reinvent.
+9. **Town = the app's R7 `linkname` text-hyperlink (`ext`):** a real `<a target="_blank" rel="noopener">`, ink + accent
+   underline + **trailing ↗** — the "True hyperlink ↗" already in the *Words, links & flags* elements reference
+   (`Order / info ↗`, `Read ↗`, `Terms ↗`), deep-linking to Google Maps. **NB (Jac caught this):** R26 `icon-link` is a
+   *separate* real rule — the **icon-only** ↗ button (no text label, `app.js:6096`) — and is **NOT** the town treatment;
+   a labelled town is R7. Apply the *researched* R7 link + Signal/Gate/Stamp element rules exactly — do not reinvent.
 
 ## Open problems
 
