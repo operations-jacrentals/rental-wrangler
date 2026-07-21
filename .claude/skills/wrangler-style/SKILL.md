@@ -139,12 +139,10 @@ Nothing ever does two jobs — that's the whole reason Signal, Ref, and Door don
   number, no box). **Untrip by DRAGGING the row away** — there is no click-to-untrip box.
   **Row order (left→right):** number/box · **stop-type glyph** (`HQ`/`↓`/`↑`) · **Gate** ·
   **Drive** (a first-class fact, its own column — never subtext under the ETA) · **ETA** ·
-  **Town** · **Deadline**. **Town = the R7 `linkname` text-hyperlink** (`ext`): a real
-  `<a target="_blank" rel="noopener">`, ink + accent underline + **trailing ↗** — exactly the
-  "True hyperlink ↗" in the elements reference — deep-linking to Google Maps; **towns
-  column-align with the deadline chips** (an aligned right pair). (**R26 `icon-link`** is the
-  *icon-only* ↗ button for off-app links with **no** text label — NOT used for a labelled
-  town; don't conflate the two.) The
+  **Town** · **Customer** (a **Ref** — parent icon + name, walks to the customer record) ·
+  **Deadline**. **Town = the "True hyperlink ↗"** from the *Words, links & flags*
+  elements artifact: ink + accent underline + a **trailing ↗**, opens off-app, deep-linking
+  to Google Maps; **towns column-align with the deadline chips** (an aligned right pair). The
   **Gate button IS the next action** (`--commit` affirm-blue: Start → Arrived? →
   Dropped?/Picked Up?), gray when it doesn't yet apply. **Two distinct blues, no overload:** the deep
   **`--commit`** drives the gate *action* (affirm), while the muted **`--blue`** marks the
@@ -175,6 +173,12 @@ Nothing ever does two jobs — that's the whole reason Signal, Ref, and Door don
   anchoring + item rails, section paging, cross-card cascade, linking, KPI placement,
   and mobile focused-mode live in the **feature spec** (`docs/superpowers/specs/`). This
   skill holds only the design *values* — palette, type, numbers, component looks, voice.
+- **Sourcing boundary (Jac, 2026-07-21).** Every design decision is drawn from the
+  **controlled canon** — the deep-research corpus, this skill, `style`, the design
+  **artifacts**, and the feature spec. **Never reverse-engineer design from the live app**
+  (`app.js`/`style.css`, `data-r` numbers, class names); if the canon is missing something,
+  **STOP and ask Jac** rather than backfilling from the old site. Reading the app is allowed
+  **only** when Jac explicitly directs it (e.g. "study invoices").
 
 ## 5. Voice — the wrangler/ranch seasoning
 

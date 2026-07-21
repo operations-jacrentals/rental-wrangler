@@ -605,11 +605,12 @@ map; that's the only map surface in scope.
    drag-reorder, and for talk-back: "stop 1… then stop 2…"). An **untripped / loose stop keeps a BOX** ("schedule me!").
    **Start/End anchors are inert** (no number, no box). *(Supersedes §8.5's "square box + inert circles".)*
 8. **Untrip by DRAGGING the row away** — the box is no longer a click-to-untrip control.
-9. **Town = the app's R7 `linkname` text-hyperlink (`ext`):** a real `<a target="_blank" rel="noopener">`, ink + accent
-   underline + **trailing ↗** — the "True hyperlink ↗" already in the *Words, links & flags* elements reference
-   (`Order / info ↗`, `Read ↗`, `Terms ↗`), deep-linking to Google Maps. **NB (Jac caught this):** R26 `icon-link` is a
-   *separate* real rule — the **icon-only** ↗ button (no text label, `app.js:6096`) — and is **NOT** the town treatment;
-   a labelled town is R7. Apply the *researched* R7 link + Signal/Gate/Stamp element rules exactly — do not reinvent.
+9. **Town = the "True hyperlink ↗"** off-app link from the *Words, links & flags* elements artifact: ink + accent
+   underline + a **trailing ↗**, opens off-app, deep-linking to Google Maps. Source every element from the **artifacts +
+   `wrangler-style` + `style`** — never the live app (Jac, 2026-07-21).
+10. **Customer Ref between the Town and the Deadline** (Jac, 2026-07-21 — "forgot to give them a place in the row"): the
+    customer rides as a **Ref** (parent icon + name, walks to the customer record), sitting between the town link and the
+    deadline chip. New row order: number/box · glyph · Gate · Drive · ETA · **Town** · **Customer (Ref)** · **Deadline**.
 
 ## Open problems
 
