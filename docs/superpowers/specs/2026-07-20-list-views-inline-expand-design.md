@@ -494,6 +494,41 @@ repeating paths a yard doesn't run) with **Stops (Drop/Pickup)** inside — that
   trailer — Bush's pickup becomes its own trip.* Core feasibility rule (part of the auto-sequencer; even before
   full optimisation the app must DETECT + flag infeasible combos).
 
+### 8.4 The scheduling flow — REVISED: single list + box-connect  *(Jac, 2026-07-20; supersedes §8.2's two-panel, refines §8.3)*
+
+**Creation (from the rental):**
+- Moving the **4-way toggle** (Self · Round Trip · Delivery · Pickup) **is the trigger — no separate `+ Trip`.**
+- An **address field** appears just below (type-ahead addresses + the already-built **map**). Select it.
+- The **stops are created on the schedule with NO trip and NO driver.** Their state shows on the **rental card**:
+  a **Drop** → **"Unscheduled"** (needs a trip); a **Pickup** → **"Waiting"** (pickups don't need scheduling
+  early). One state each — no over-labelling.
+- **Times derive from the rental window** (start/end) — forces a time rather than a blank.
+
+**The scheduling surface — ONE list of stop rows** (not two panels). Each row carries: a **blank connector box**
+(prefix) · **the deadlines** (rental start/end) · the **actual Scheduled time**.
+- **Form a Trip by connecting boxes:** drag stops into the order you want, then **click-hold a box and drag to
+  the next box to release** → that contiguous run **connects into a Trip.** A **single stop** → just **click its
+  box to schedule** (a 1-stop trip).
+- **Connecting spawns a START row (above the first stop) + an END row (below the last)** — both the **store's
+  location by default**, manually changeable. Every trip reads **store → stops → store** with ETAs.
+- **Stops carry their estimated drive times** (from the address at creation), so the instant they join a trip the
+  **start/end rows populate their ETAs** — hand-holding the driver, showing his real time.
+
+**Live flags/states (critical):** every drag/connect **re-computes ETAs and re-checks each stop's scheduled time
+vs its deadline** — the schedule *constantly builds and breaks*, so **flags + states update live** (on-time /
+at-risk / past-deadline). The **capacity rule (§8.3)** also fires on connect — a run that won't fit one trailer
+flags red and must split (the Bush example).
+
+**C1 is gone:** stops never auto-place by time (attempt-1's flaw). Type is fixed at creation; the user controls
+order + grouping. No ambiguity.
+
+**Palette — FROZEN (Jac):** do **not** invent colours or touch the palette — any change must cascade across
+*every* field, too costly ("we can't have a thousand colours"). The known CVD imperfections (blue↔grey,
+grey↔green) are **accepted** (label + icon disambiguate) until a deliberate full-cascade palette project.
+
+**Contrast/separation — borrow the Invoices "ticketing" look (Jac):** for the Trips rebuild, take separation
+cues from the app's **existing invoices design** — stops and trips as **tickets**. (Study the invoices card first.)
+
 ## Open problems
 
 - **"Sort" needs an all-cards redesign (Jac, 2026-07-20 — "our Sort sucks").** The current Views &
