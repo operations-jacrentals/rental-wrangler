@@ -55,4 +55,24 @@ _Disposition: open → queued → done (with where it was fixed: skill / mockup 
 |---|------|---------|------|------|-------|-------------|
 | 1 | 2026-07-20 | Intake | **Parked** — Jac isn't worried about intake as a feature until much later, if ever. Mock kept for reference; don't re-surface it as "the next gap." | Gap | Just here | Parked |
 | 2 | 2026-07-20 | Inbox chrome | **"VIEWS & SORT" button looks VERY out of place** in the top chrome. Jac drafting alternatives on paper — DON'T rebuild yet. Ties to the parked all-cards Sort redesign. | Surface | Just here | Open — Jac redrafting |
-| 3 | 2026-07-20 | Trips (dispatch) | **Overwhelming — trips blur together; a contrast/background problem.** Only the mobile "Next Up" focus felt right. Fix: stronger per-trip **separation** (distinct cards, breathing room, less uniform dark-on-dark) + borrow the driver "NOW / Next Up" focus. Don't rebuild until the Trips MODEL (§8) settles. | Surface | Just here | Queued — REBUILT on §8.4: `trips-schedule.html` borrows the invoice "ticketing" look (hazard-stripe header, state stamp, dashed saddle-stitch separators, soft per-trip card w/ subtotal, kept NOW focus). Awaiting Jac's review. |
+| 3 | 2026-07-20 | Trips (dispatch) | **Overwhelming — trips blur together; a contrast/background problem.** Only the mobile "Next Up" focus felt right. Fix: stronger per-trip **separation** (distinct cards, breathing room, less uniform dark-on-dark) + borrow the driver "NOW / Next Up" focus. Don't rebuild until the Trips MODEL (§8) settles. | Surface | Just here | DONE — rebuilt as the **ETA-Tracker ledger** (`trips-ledger.html`, spec §8.5): register layout, soft-blue Gate chips, unit+customer Refs, `+MIN=ETA` line, departure-clock colour, numbered spine outside the card. Published. |
+
+## Canon-compliance audit — build-first surfaces (2026-07-21)
+
+Ran a canon-drift audit of `list-views.html` + `detail-views.html` (the surfaces slated to build first) against
+`style` + `wrangler-style`. **These feed the build writing-plan — the fixes land in the BUILT code, not necessarily the
+throwaway mockups.** Systemic patterns (fix everywhere at build):
+
+- **Ref drift (the Trips miss, repeated).** Card **titles/headers** and unit/invoice **sub-rows** render linked records as
+  **plain text**; a shared `ref()` **hardcodes the user icon** for every type. → Every linked record is a Ref with its
+  **type icon**, everywhere (canon tightened in `wrangler-style` §3).
+- **ONE chip radius, violated.** Ref/Signal/Gate carry 2–3 different radii (`6/8/5px`). → collapse to one shared chip-radius token.
+- **Yellow token drift (detail-views).** `--yellow:#ffe14d` is the **rejected neon** (fails CVD); locked value is **`#eed44b`**.
+  Footer even mislabels it. Every yellow Signal/Gate is off-canon. → swap to `#eed44b`.
+- **Pure `#fff` ink (detail-views, real — not just light blocks).** `.sig.f.red`/`.door.save` use pure white. → `--onRedFill`/`--onCommit #fdfdfd`.
+- **Number voice.** Dollar figures in body-sans instead of **mono/tabular**. → `var(--stamp)` + tabular-nums.
+- **Toggle colour law (detail-views).** Insured/Uninsured active option paints plain accent-orange, discarding good/risk **state**.
+  → route through state colour (orange fallback is only for no-status options).
+- **Dead light-mode blocks** on both. → strip on build (dark-only rule now in `wrangler-style` §1).
+- **Clean:** Gate chips (state colour + chevron, never `--commit`) and the two type voices are otherwise correct. Good sign —
+  most drift is old mockups predating settled canon, not gaps in the canon itself.

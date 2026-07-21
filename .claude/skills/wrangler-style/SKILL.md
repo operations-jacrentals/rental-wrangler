@@ -44,6 +44,12 @@ Leather   --tan #c2925a      (wrangler seasoning — tiny touches only)
 #b5241f · --blue #2f5fb0 · --commit #1f56c0 · --green #0c8f5f · --gray #566072 ·
 --yellow #eed44b · --tan #8a5a2b`.
 
+**Dark-only — no light mode in shipped code (Jac, 2026-07-21).** The app has **no light
+mode**; shipped code must **not** emit `@media (prefers-color-scheme:light)` or
+`:root[data-theme="light"]` palette blocks. The Light hexes above are kept for reference only
+(a light mode is not planned; don't spend effort on it). Old mockups carry vestigial light
+blocks + pure `#fff` inside them — **strip them on build.**
+
 **The three forced picks (don't casually undo):**
 - **`--red-fill #d63636`** for *filled* red — near-white ink `--on-red-fill #fdfdfd`
   clears AA at **4.65** (bright `#ff4242` = 3.44, fails). Bright `--red` stays for outline
@@ -109,7 +115,13 @@ Nothing ever does two jobs — that's the whole reason Signal, Ref, and Door don
 - **Ref** — a linked record: square **accent-tinted backing holding the parent's
   Lucide icon** + the name (body voice); radius 7 (its square shape + accent tint carry
   its distinction, not a different radius — chips use ONE radius); orange-marked = touchable. Not a
-  status chip. Walks across cards.
+  status chip. Walks across cards. **EVERY linked record is a Ref, everywhere its name/ID
+  appears** — unit · customer · rental · invoice · category — including a card's **own
+  title/header**, not just inline body references; **never plain text**. The icon is that
+  record's **type icon** (unit→unit glyph, customer→user, invoice→invoice…), **never one
+  generic user icon for all** (a shared `ref()` that hardcodes the user glyph is the bug).
+  *(Confirmed drift 2026-07-21: card titles + unit/invoice sub-rows rendered as plain text
+  on list-views/detail-views — the same miss caught on Trips.)*
 - **Door** — a verb action, **radii = pill (999)**:
   - **Commit / create** → deep blue `--commit` (Save = solid; `+Add` = dashed outline).
   - **Takes money** → green. **Destructive-confirm** → red.
