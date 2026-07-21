@@ -24,6 +24,32 @@ navigation.
 
 ## 2. Sections & paging
 
+**§2.0 RESOLVED — section model = ACCORDION PLATE STACK on desktop, PAGE on mobile (Jac, 2026-07-21;
+supersedes the "page their sections / top-row tab rail" language below where they conflict).** We compared
+the accordion **plate stack** (the 3-detail-views artifact: every section a one-line plate showing its
+state stripe + summary + its own gate action + chevron; tap to expand ONE in place) against §2's original
+**paged tab-rail**, and chose the plate stack:
+- **Why:** the stack renders every section's state at rest, so **the stack IS the Signal summary** — it
+  serves the app's triage-first DNA ("spot what's on fire") and lets a dispatcher **act from the summary**
+  (WASH NOW / PART ON ORDER / END RENT / FOLLOW UP tappable un-expanded). Paging hid all of that one
+  tab-tap away. Bonus: the plate stack is the **existing `collapseSection` accordion, restyled** — a
+  reskin, not net-new interaction machinery.
+- **"To Do" tab retired on desktop** — the stack shows all sections, so no synthesized Signal-summary tab
+  is needed there. (The internal component name "Signal" still stands.)
+- **Restricted total height — YES (confirms the "Fixed outer height" line below).** An expanded item has a
+  **max-height ≈ one column-screenful**: a short item (calendar-anchored Rental, §3) never reaches it;
+  tall content (a long WO list, Customers' 14 invoices) hits the cap and the **inner plate stack scrolls**
+  (discipline #1), never the item's outer footprint. Title/anchor row pinned top, History-search footer
+  pinned bottom. **One deliberate escape hatch:** focusing History search grows the item downward past the
+  cap (the "history log expands down" rule below) — the single intentional exception.
+- **Mobile = paged (discipline #2), and the "To Do" tab RETURNS there.** On phone the item is the
+  focused full-screen mode and sections **swipe-page** one at a time — which hides the ambient stack — so
+  the **first swipe-page becomes the To-Do / Signal summary**, then swipe into individual sections. To-Do
+  earns its keep exactly where paging hid the stack.
+- **NOT adopted:** auto-open-worst-section (everything lands collapsed; the red stripe already draws the
+  eye) and a separate top-line fast-jump rail (the plate labels ARE the index; a link lands by
+  scrolling+opening the target plate, §4).
+
 - Multi-section cards (**Units, Customers**) page their sections.
 - **Section chips live in the item's OWN top row** — on expand, the top row of the item
   becomes the section rail (tab chips), plus ‹ › chevrons + a dot indicator. (This is

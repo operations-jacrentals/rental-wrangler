@@ -353,6 +353,60 @@ html.dv2 .acct.sec-red .acct-lbl { text-shadow: none; }
 /* section/plate label voice: stamped mono, matching every other Rxx label in this system */
 html.dv2 .acct-lbl, html.dv2 .section > h4 { font-family: var(--dv2-font-mono); }
 
+/* ── Phase-2 wrangler-style redesign · SLICE 5: INLINE-EXPAND (spec §1) — a plain
+   single-click on a Units/Rentals/Customers row reveals the record IN the list (the
+   row expands to its detail) instead of swapping the whole card to a detail view.
+   rowEl renders `.row.row-expanded` (a ✕ + the detail inside `.row-detail`); this
+   styles it. HEIGHT (Jac's concern — "how high it gets with all sections visible"):
+   the item lands all-collapsed (short), opens one section body at a time, and is
+   HARD-CAPPED here — a taller open body scrolls INSIDE `.row-detail`, the outer
+   footprint never exceeds --dv2-expand-max. That's stricter than the legacy
+   card-swap detail, which had no cap at all (the column just scrolled forever).
+   --dv2-expand-gutter is the breathing room above+below so the neighbouring rows
+   peek (the list stays "home"); one-line dialable (Jac weighing ~6% vs 10%).
+   The cap is measured against the COLUMN, not the viewport: `.card-body` becomes a
+   size container (container-type: size — its height is already flex-derived, so
+   containment doesn't change it) and the item caps at N `cqh` (% of the column's
+   visible height). A vh cap was wrong — it ignored the app header/KPI bar above the
+   columns, so the "88vh" item overshot a 625px column. Gutter is the peek margin.
+   (Step 2 restructures the item into pinned-head / scroll / pinned-foot; this cqh
+   cap already bounds the whole footprint to the column meanwhile.) */
+html.dv2 { --dv2-expand-gutter: 6cqh; --dv2-expand-max: 88cqh; }
+/* Only a card-body that currently HOLDS an inline-expanded row becomes a size container
+   (so cqh = the column's height for the cap). Scoped via :has so normal list/detail
+   card-bodies — and their sticky listbar — keep their exact current behaviour. */
+html.dv2 .card-body:has(.row-expanded) { container-type: size; }
+html.dv2 .row.row-expanded {
+  display: block;
+  padding: 0;
+  cursor: default;
+  overflow: hidden;                                  /* clip to the rounded corners; the inner detail scrolls */
+  max-height: calc(var(--dv2-expand-max) - 2 * var(--dv2-expand-gutter));
+  margin: var(--dv2-expand-gutter) 0;                /* the peek gutter above + below */
+  border-color: var(--accent-line);
+  box-shadow: 0 8px 26px -12px rgba(0, 0, 0, .65);   /* lift the revealed item off the flat list (matte, not a glow) */
+}
+html.dv2 .row.row-expanded .row-detail {
+  max-height: calc(var(--dv2-expand-max) - 2 * var(--dv2-expand-gutter));
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+html.dv2 .row-collapse {
+  position: absolute; top: 10px; right: 10px; z-index: 5;
+  width: 30px; height: 30px; flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 999px; border: 1px solid var(--line);
+  background: var(--panel-2); color: var(--txt-2); cursor: pointer;
+  transition: border-color .12s, color .12s;
+}
+html.dv2 .row-collapse:hover { border-color: var(--accent-line); color: var(--accent); }
+html.dv2 .row-collapse svg { width: 16px; height: 16px; }
+/* phone: the reveal is full-screen focused mode (Step 8) — no vh cap / gutter there */
+@media (max-width: 640px) {
+  html.dv2 .row.row-expanded { max-height: none; margin: 0; box-shadow: none; }
+  html.dv2 .row.row-expanded .row-detail { max-height: none; }
+}
+
 /* ── Reset / base ────────────────────────────────────────────────────────── */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 /* §0: the page never scrolls VERTICALLY, but pans HORIZONTALLY on screens narrower

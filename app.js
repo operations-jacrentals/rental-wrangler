@@ -2720,11 +2720,17 @@ function openStandard(card, recId, recType) {
   const cs = activeSession().cards[card];
   if (cs && cs.mode === 'standard' && cs.recId != null) {
     if (String(cs.recId) === String(recId)) { render(); return; }            // already showing it — no-op
-    // Task 5 — overtaking a DIFFERENT record already open in Standard freezes the
-    // session and opens a NEW foreground tab. The new tab carries this card's history
-    // PLUS the record we're leaving, so the jog can walk the overtake chain back.
-    const stack = [...cs.backStack, cardSnap(cs)];
-    return openInTab(card, recId, recType, { inheritFrom: activeSession(), seedHistory: { card, stack } });
+    // dv2 inline-expand (spec §1): with an item already expanded IN the list, clicking a
+    // SIBLING row just MOVES the expansion (cheap peek, one open at a time) — it must NOT
+    // trigger the legacy overtake-opens-a-new-tab. Fall through to the plain open below,
+    // which re-points cs.recId and runs the same section-collapse resets.
+    if (!inlineExpandActive(card)) {
+      // Task 5 — overtaking a DIFFERENT record already open in Standard freezes the
+      // session and opens a NEW foreground tab. The new tab carries this card's history
+      // PLUS the record we're leaving, so the jog can walk the overtake chain back.
+      const stack = [...cs.backStack, cardSnap(cs)];
+      return openInTab(card, recId, recType, { inheritFrom: activeSession(), seedHistory: { card, stack } });
+    }
   }
   sweepEmptyDrafts(recId);   // #8 — leaving an empty draft deletes it
   pushCardHistory(cs);       // Task 1 — record the prior (list) view so Back can return
@@ -7016,8 +7022,40 @@ function unitCardFlags(u) {
 /* ════════════════════════════════════════════════════════════════════════
    APP-14 · §6b PER-CARD ROWS
    ════════════════════════════════════════════════════════════════════════ */
+/* dv2 INLINE-EXPAND (spec §1, Jac 2026-07-21) — the Phase-2 model kills "click into a
+   detail view": a plain single-click on a Units/Rentals/Customers row REVEALS the record
+   in place — the row expands to its detail — instead of swapping the whole card to a
+   detail view. It reuses the EXISTING standard-open machinery wholesale (openStandard
+   already sets cs.mode='standard'/cs.recId with NO cascade — §4); only the RENDER changes,
+   and only under dv2 (staging/local auto-on; production frozen until the flag flips).
+   An ANCHORED tab keeps the committed card-swap detail — anchoring stays the "commit"
+   (double-click → foreground tab + cascade), inline-expand stays the cheap peek. */
+const INLINE_EXPAND_CARDS = new Set(['units', 'rentals', 'customers']);
+function dv2On() { return document.documentElement.classList.contains('dv2'); }
+/* Is this card rendering its open record as an inline-expanded row (vs the legacy
+   card-swap detail)? True only under dv2, for an expandable card, when the record is a
+   plain single-click open — never the session's anchored card (that keeps the full detail). */
+function inlineExpandActive(card) {
+  const s = activeSession();
+  return dv2On() && INLINE_EXPAND_CARDS.has(card) && !(s.anchor && s.anchor.card === card);
+}
 function rowEl(card, rec) {
   const id = idOf(card, rec);
+  // dv2 inline-expand (spec §1): if THIS row is the card's open standard record (a plain
+  // single-click open — not the anchored tab), the row renders its DETAIL inline instead of
+  // the collapsed row content. The record's open/close/back state is the SAME cs.mode/recId
+  // the legacy card-swap uses; only the render differs. A ✕ (js-row-collapse) closes it;
+  // clicking a sibling row moves the expansion (openStandard). Prod (dv2 off) never hits this.
+  {
+    const cs = activeSession().cards[card];
+    if (cs && cs.mode === 'standard' && String(cs.recId) === String(id) && inlineExpandActive(card) && DETAIL[card]) {
+      const node = el('div', 'row row-expanded');
+      node.dataset.card = card; node.dataset.rec = id;
+      node.innerHTML = `<button class="row-collapse js-row-collapse" data-card="${card}" data-tip="Close" aria-label="Close">${I.x}</button>`
+        + `<div class="row-detail">${DETAIL[card](rec, cs)}</div>`;
+      return node;
+    }
+  }
   const inner = rowInnerHTML(card, rec);
   let extra = '';
   if (card === 'units' && rec.fleetStatus !== 'Active') extra = ' fleet-dim';   // out of active inventory → dim (failed = gradient, not full red)
@@ -9716,10 +9754,15 @@ function cardEl(cardDef, session) {
   // §5.4: global search forces EVERY card into list view (the prior standard/anchor
   // state is untouched, so exiting search restores the session for free).
   const inStandard = !state.searchMode && cs.mode === 'standard' && cs.recId != null && !cs.graphView;
+  // dv2 inline-expand (spec §1): a plain single-click open renders the record IN the list
+  // (the row expands — rowEl handles it), so the card stays in list layout: no card-swap,
+  // no standard header. An ANCHORED tab still gets the committed card-swap detail below.
+  const inlineExpand = inStandard && inlineExpandActive(card);
+  const swapDetail = inStandard && !inlineExpand;   // legacy full-card detail (prod, and anchored tabs)
   // List mode → NO card header (the column tab already names the card). Standard mode →
   // a slim header: the record name in the top-left (hidden when an item tab already shows
   // it, i.e. when anchored) + the row actions. (#2.3 / §0.6)
-  if (inStandard) {
+  if (swapDetail) {
     const stdRec = recOf(card, cs.recId);
     const titleHtml = stdRec
       ? `<span class="c-title">${esc(detailTitle(card, stdRec))}</span>`
@@ -9735,11 +9778,11 @@ function cardEl(cardDef, session) {
 
   // body
   const body = el('div', 'card-body');
-  if (inStandard) {
+  if (swapDetail) {
     const rec = recOf(card, cs.recId);
     body.innerHTML = rec && DETAIL[card] ? DETAIL[card](rec, cs) : '<div class="empty">Record not found.</div>';
   } else {
-    body.appendChild(listView(cardDef, session));
+    body.appendChild(listView(cardDef, session));   // list view — under dv2 inline-expand the open row expands in place (rowEl)
   }
   const lb = linkBanner(card); if (lb) { const w = el('div'); w.innerHTML = lb; if (w.firstElementChild) node.appendChild(w.firstElementChild); }   // §17b — linking-mode banner above the list
   node.appendChild(body);
@@ -19562,10 +19605,19 @@ function onClick(e) {
     return deferOrAnchor('pill:' + pc + ':' + prec, () => { pillTo(pc, prec); if (psect) scrollToSect(pc, psect); }, anchor);
   }
 
+  // dv2 inline-expand (spec §1): the ✕ on an expanded row collapses it back to the list
+  // (reuses cardToList → cs.mode='list', pushing history so Back can return). Checked BEFORE
+  // the row block so the click never falls through to a re-open.
+  if (closest('.js-row-collapse')) { e.stopPropagation(); return cardToList(closest('.js-row-collapse').dataset.card); }
+
   // click a row → open in Standard, BUT deferred a beat so a double-click anchors
   // instead (the first click never opens — #10). Ctrl/Cmd+click = new tab (instant).
   const row = closest('.row');
   if (row) {
+    // dv2 inline-expand: an already-expanded row IS its detail — its interactive elements
+    // (gates/pills/inputs) are handled by their own guards ABOVE; a stray click on the
+    // detail's dead space must do nothing (never collapse/re-open). Close is the ✕ only.
+    if (row.classList.contains('row-expanded')) return;
     // §2.2b Trips cab sheet — tapping the row BODY (pills/time/town/log all returned
     // above; the tel: anchor + time input are left to their own devices) toggles the
     // trip's inline unit-facts sheet. One open at a time; a second tap collapses.
