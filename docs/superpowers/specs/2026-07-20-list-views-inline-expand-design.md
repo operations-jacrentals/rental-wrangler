@@ -586,8 +586,9 @@ loves the immediacy). Because a mis-tap reaches a real customer, the comms-firin
 **Row interactions — three non-overlapping targets:** **row-body** click → the **trip map opens on the Dashboard card**;
 **town** → external Google Maps; **gate button** → advance the state-machine; **square box** → untrip. (Anchor circles inert.)
 
-**Open in §8.5:** the multi-truck board (the Houston-map inspiration: colour-coded routes + a per-route time-lane gantt,
-"Ignore Dates / Zoom All") is the **Dashboard map view**, not the single-trip ledger — parallel/future work.
+**Not a build target:** the Houston multi-route map (colour-coded routes + per-route time-lane gantt) was **inspiration
+only — do NOT build a multi-truck board** (Jac, 2026-07-21). Row-click still opens the single trip's route on the Dashboard
+map; that's the only map surface in scope.
 
 ## Open problems
 
