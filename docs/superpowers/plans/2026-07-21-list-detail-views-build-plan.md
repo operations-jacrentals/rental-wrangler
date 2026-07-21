@@ -75,3 +75,41 @@ tabular; body-sans bold sentence-case for record names) — **dollar figures use
   keep the render routed through the element layer so flipping Ref↔Stamp is a one-line change, not a sweep.
 - Anything touching money/auth/PII/WO-completion stays on the main session (never delegated) per the
   build rules.
+
+## Build log (`/build`, 2026-07-21 — "build as far as you can without me")
+
+**Phase 0/1 (element layer)** — CLOSED earlier this session: `FEATURES.designV2` flag + `--chip-radius`
+token (Slice 1); `refPill`/`unitPill`/`entityPill` icon-plate (`.ref-ico`), `ROWS.rentals` unit names
+routed through `unitPill()`, group-header label/count split (Slice 2b) — the builder-coverage audit
+Jac asked for ("is a reskin actually easy?") came back yes, with two small real exceptions, now closed.
+
+**Phase 2 (List Views structural reshape)** — CLOSED earlier this session (Slice 2, integrated from a
+Sonnet CSS pass against the mockup): pill radius/height unification, Ref radius fix, `--commit` wired,
+record-name/number voice split, double-frame fix, group-label voice.
+
+**Phase 3 (Detail views — "fix the specific drift") — CLOSED this run (Slice 3):**
+- **Dollar figures → mono/tabular voice**: closed via ONE rule on `.derived` — the base app's own
+  existing "this is a computed fact" marker that every `kv()`/`efld()` money field, the invoice ledger
+  (`ledgerRow`'s `Subtotal/Tax/Total/Paid/Due`), and the category pricing engine already carry. Plus
+  `.balline` (Customers' account-balance line), the one primary figure outside `.derived`. CSS-only,
+  no app.js changes.
+- **Insured/Uninsured toggle → state colour**: already correct in the real app (`segCtl` with
+  `on-green`/`on-red`, true fills) — the audit finding was against the standalone mockup, not live code.
+  Confirmed, left untouched.
+- **Unit/invoice sub-rows → `ref()`**: already correct in the real app — customer swap, unit
+  remove, WO #, invoice customer cell, category/status pills, and every history-timeline entry already
+  route through `refPill`/`unitPill`/`entityPill`. Confirmed, left untouched.
+- **Strip light-mode blocks**: none exist inside `html.dv2` CSS. Confirmed, nothing to strip.
+
+**NOT built this run — deferred, not guessed (see hand-back report):**
+- The mockup's `.plate`/accordion/KPI-grid/mini-calendar **structural reshape** of the three Detail
+  views. This is a DOM/JS restructure (collapsible left-border-coded sections, a big-number card, a
+  KPI strip, an inline mini-calendar) — a UX/information-architecture decision on par with Trips'
+  multi-round review, not a "close the gap" fix. It hasn't been through the same interactive
+  mockup-review cycle Trips/List-Views got, so it's deferred to its own reviewed pass rather than
+  built blind.
+- `.stall-amt` / `.jprice` mono-voice (tertiary nested widgets — `.jprice` nests a `.sfx` suffix that
+  needs its own carve-out first).
+- `linkName()` (vendor/part links, gmaps/calendar links) staying plain-text, not Ref-ified — the plan
+  scoped Ref-ification to "unit/invoice sub-rows" specifically, which are already done; extending it to
+  every `linkName()` call site app-wide is a broader visual decision outside this plan's stated scope.
