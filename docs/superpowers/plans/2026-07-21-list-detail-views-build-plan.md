@@ -70,8 +70,8 @@ tabular; body-sans bold sentence-case for record names) — **dollar figures use
 - **Phase 4 — gates + ship prep.** `data-r` stamps + `rule-usage.js` regen; `WINDOW_CATALOG` for any new
   popup; full CI gate suite; cache-bust bump; then hand to `/deploy → /merge → /promote`.
 
-## Open decisions (bring to Jac before/at build)
-- **Invoice line-item IDs as Ref or Stamp?** detail-views shows `#4460/#4471` as plain IDs. Ref-wrap
-  (walkable) vs an explicit "line-item IDs are Stamp-by-design" call. → Jac's call.
+## Decisions
+- **Invoice line-item IDs = Ref (walkable)** — Jac, 2026-07-21. *May revert to Stamp-by-design later* —
+  keep the render routed through the element layer so flipping Ref↔Stamp is a one-line change, not a sweep.
 - Anything touching money/auth/PII/WO-completion stays on the main session (never delegated) per the
   build rules.
