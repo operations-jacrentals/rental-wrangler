@@ -69,6 +69,16 @@ resolves the old claim ("white clears AA 4.73/4.9"), which silently assumed pure
 broke this same never-pure rule. Verified with `#fdfdfd`: `--red-fill` → **4.65**,
 `--commit` → **4.80** — both still clear the 4.5 floor, no rule exception needed.
 
+**Palette is FROZEN — no new colours (Jac, 2026-07-20).** These ten tokens are the whole
+vocabulary; a new surface **picks from them, never adds to them.** *"We can't have a
+thousand different colours."* Adding one means cascading it across every field, chip, chart,
+and status in the app — that cost is not paid casually. Known consequence, **accepted:** some
+pairs fall under the `style` **≥90 CVD-separation** floor (blue↔grey ~45–48, blue↔green ~72,
+green↔grey ~31–69 under deuter+protan sim) — those are disambiguated by **label + icon +
+position**, not by inventing a colour. Fixing them is a **deliberate full-cascade project**,
+never a one-off tweak inside a mockup. A surface that "needs another colour" is a surface
+that needs a Signal/Stamp/icon distinction instead — solve it in the component layer.
+
 ## 2. Type — the two voices (fonts are a decision; sizes are `style`'s ladder)
 
 - **Stamped voice** — a **monospace technical** face (`ui-monospace, "Cascadia Code",
