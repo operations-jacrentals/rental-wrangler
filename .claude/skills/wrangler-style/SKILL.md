@@ -128,14 +128,22 @@ Nothing ever does two jobs — that's the whole reason Signal, Ref, and Door don
   **register / carbon-dispatch-ticket** look **as a LAYOUT only** — it is built from the
   SAME **two type voices (§2)** and the SAME **Signal / Gate / Stamp / Ref / Door** elements;
   the register inspiration **never replaces the fonts or the element designs** (Jac,
-  2026-07-21: don't abandon the wrangler type families / element looks). Row rules: **no
-  tilted stamp** (zero
-  rotation), **no customer photo**. Each row = **one address, possibly many units**; the
-  **unit icon + unit + departure time** sit in an **outside-left prefix**. The **connector
-  box is a clickable SQUARE** (click = untrip the stop; fills as its gate closes); the
-  **Start/End store-anchor rows use inert CIRCLES** (can't be untripped). The **Gate button
-  IS the next action** (`--commit` affirm-blue: Start → Arrived? → Dropped?/Picked Up?),
-  gray when it doesn't yet apply. **Two distinct blues, no overload:** the deep
+  2026-07-21: don't abandon the wrangler type families / element looks). **No per-trip
+  header or footer** (Jac round-2) — the ledger is just its rows; the driver-reassign Gate
+  rides the START (store) row. Row rules: **no tilted stamp** (zero rotation), **no customer
+  photo**. Each row = **one address, possibly many units**; the **unit icon + unit +
+  departure time** sit in an **outside-left prefix**, labelled the full word **"DEPARTURE"**
+  (never OUT/DEP/RTN abbreviations). **Connector = the stop's ORDER NUMBER** (1·2·3…) once
+  tripped — it aids talk-back ("stop 1 then stop 2") and survives drag-reorder; an **untripped
+  / loose stop instead shows a BOX** ("schedule me!"); **Start/End anchors are inert** (no
+  number, no box). **Untrip by DRAGGING the row away** — there is no click-to-untrip box.
+  **Row order (left→right):** number/box · **stop-type glyph** (`HQ`/`↓`/`↑`) · **Gate** ·
+  **Drive** (a first-class fact, its own column — never subtext under the ETA) · **ETA** ·
+  **Town** · **Deadline**. **Town = an external Ref (R26):** a real `<a target="_blank">`
+  with the **trailing ↗** (`icon-link`/`linkOut`) that marks any off-app link, deep-linking
+  to Google Maps; **towns column-align with the deadline chips** (an aligned right pair). The
+  **Gate button IS the next action** (`--commit` affirm-blue: Start → Arrived? →
+  Dropped?/Picked Up?), gray when it doesn't yet apply. **Two distinct blues, no overload:** the deep
   **`--commit`** drives the gate *action* (affirm), while the muted **`--blue`** marks the
   **Waiting** state on the **deadline Signal** — already separate tokens. Deadline-Signal
   ladder = the **standard wrangler state colours** driven by schedule slack

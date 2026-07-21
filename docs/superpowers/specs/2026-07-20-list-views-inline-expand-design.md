@@ -590,6 +590,25 @@ loves the immediacy). Because a mis-tap reaches a real customer, the comms-firin
 only — do NOT build a multi-truck board** (Jac, 2026-07-21). Row-click still opens the single trip's route on the Dashboard
 map; that's the only map surface in scope.
 
+**§8.5.1 Round-2 refinements (Jac, 2026-07-21 — supersede the above where they conflict):**
+1. **"DEPARTURE"**, spelled out — the left-prefix time is when the driver *should depart*; never the OUT/DEP/RTN abbreviations.
+2. **No per-trip header or footer.** The ledger is just its rows. The **driver-reassign Gate moves to the START (store) row**
+   (assumption — flag if it belongs elsewhere); the group headers (Field Calls / Today / Tomorrow / This Week) stay.
+3. **Stop-type glyph (`HQ`/`↓`/`↑`) sits LEFT of the Gate.** Row order: number/box · glyph · Gate · Drive · ETA · Town · Deadline.
+4. **ETA-Tracker clock behaviour:** the ETA column **shows the scheduled departure time until that time arrives**; once the
+   departure time passes, it **counts UP the minutes elapsed until Start is clicked** (a live late-clock). **If Start has NOT
+   been clicked by the departure time → heavy escalation:** notify dispatch **plus the manager and sales** (a missed
+   departure is a business problem, not a quiet flag).
+5. **Drive time is a FIRST-CLASS fact** — its own column, not subtext under the ETA.
+6. **Town links column-align with the Deadline chips** (Town + Deadline read as an aligned right-hand pair).
+7. **Connector = the stop's ORDER NUMBER (1·2·3…) once tripped** — it tells the driver the sequence (valuable after a
+   drag-reorder, and for talk-back: "stop 1… then stop 2…"). An **untripped / loose stop keeps a BOX** ("schedule me!").
+   **Start/End anchors are inert** (no number, no box). *(Supersedes §8.5's "square box + inert circles".)*
+8. **Untrip by DRAGGING the row away** — the box is no longer a click-to-untrip control.
+9. **Town = an external Ref via the app's decided off-app treatment (R26 / `icon-link` / `linkOut`):** a real
+   `<a target="_blank" rel="noopener">` carrying the **trailing ↗** the app already uses (`Order / info ↗`, `Read ↗`),
+   deep-linking to Google Maps. Apply the *researched* Ref/link + Signal/Gate/Stamp element rules exactly — do not reinvent.
+
 ## Open problems
 
 - **"Sort" needs an all-cards redesign (Jac, 2026-07-20 — "our Sort sucks").** The current Views &

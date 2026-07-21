@@ -119,6 +119,12 @@ protan = [[0.152,1.053,-0.205],[0.115,0.786,0.099],[-0.004,-0.048,1.052]]
     `ETAᵢ = departureᵢ + driveᵢ`; `departureᵢ₊₁ = ETAᵢ + loadᵢ` with **load = 20 min/stop**
     default. Every estimate sums **all** prior drive + load — one slip re-times everything
     below it. (Not a per-row constant.)
+  - **Departure clock.** The active row's ETA cell reads the **scheduled departure time until
+    `now ≥ departure`**; after that it **counts up** `now − departure` until the go-action
+    (Start) fires. **Miss threshold:** `now > departure` with no Start = an **escalation**
+    event, not a quiet colour flip — the notify audience widens beyond the operator (e.g.
+    manager + sales), because a missed departure is a business problem. (The widened audience
+    is a decision; the `now > departure ⇒ escalate` trigger is the rule.)
   - **Deadline slack → colour** — the **standard state buckets**, no reassignment, from
     `slack = deadline − ETA` (live, recomputed on every change): **Done** (gate closed) →
     green (overrides all) · `slack < 0` → red (late/overdue) · `0 ≤ slack ≤ 2h` → yellow
