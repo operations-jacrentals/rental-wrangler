@@ -279,6 +279,38 @@ html.dv2 .grp-count {
   color: var(--txt-3);
 }
 
+/* ── Phase-2 wrangler-style redesign · SLICE 3: Detail Views — dollar figures →
+   the stamped mono/tabular voice (wrangler-style §2 / style §7's two-voice rule:
+   record names stay body-sans, every number/fact is mono). The build-plan audit
+   flagged detail-view money as body-sans (the mockup's finding); the real app
+   already routes almost every detail-view dollar figure through `.derived` — the
+   base app's OWN existing marker for "this is a computed fact" (rule 13/20/21/27,
+   currently italic). `.derived` is the single choke point every kv()/efld() money
+   field AND the invoice ledger (ledgerRow's `<b class="derived">`: Subtotal/Tax/
+   Total/Paid/Due) AND the category pricing engine already carry — closing it here
+   closes Units/Rentals/Customers economics + the whole invoice ledger in one rule,
+   no app.js changes needed. Stamped mono replaces italic as the "fact" signal,
+   matching the voice already used for .grp-count/.rcc-bal elsewhere in this file
+   (neither is italicized). */
+html.dv2 .derived {
+  font-family: var(--dv2-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-style: normal;
+}
+/* Customers detail's account-balance line (.balline) is the one other PRIMARY
+   "at a glance" dollar figure that doesn't route through .derived — same voice. */
+html.dv2 .balline b,
+html.dv2 .balline .tot {
+  font-family: var(--dv2-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+/* NOT touched this slice (tertiary/nested, same fix, later slice — see /build
+   hand-back): .stall-amt (rental-detail stall line) and .jprice (transport
+   mini-journey one-way price) already carry tabular-nums in their base rules;
+   only font-family is missing. .jprice nests a .sfx annotation ("/one-way") that
+   needs its own carve-out first so the suffix doesn't silently go mono too — not
+   guessing that call here. */
+
 /* ── Reset / base ────────────────────────────────────────────────────────── */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 /* §0: the page never scrolls VERTICALLY, but pans HORIZONTALLY on screens narrower
