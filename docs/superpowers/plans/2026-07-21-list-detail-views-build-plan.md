@@ -113,3 +113,22 @@ record-name/number voice split, double-frame fix, group-label voice.
 - `linkName()` (vendor/part links, gmaps/calendar links) staying plain-text, not Ref-ified — the plan
   scoped Ref-ification to "unit/invoice sub-rows" specifically, which are already done; extending it to
   every `linkName()` call site app-wide is a broader visual decision outside this plan's stated scope.
+
+**Slice 4 (2026-07-21, "/build until you don't need me") — section/plate state colour, further pushed:**
+- Applied the mockup's plate grammar (coloured LEFT-BORDER stripe = section state) to BOTH field-group
+  containers the real app already has: `.acct` (Units' 5 collapsible sections) and `.section` (the
+  static field boxes on Rentals/Customers/vendors/parts/everywhere else) — narrowed from a full-
+  perimeter border-color to a 3px stripe, dropped the base theme's `.sec-red` glow (`wrangler-style`:
+  "matte, no glow"), moved section/plate labels to the stamped mono voice.
+- Units' Specs section: `sec-green` → `sec-gray` (plain facts, no health state — green is Done
+  specifically under the colour law, gray is not-applicable).
+- Units' Investment "Profit" line: added `big:true` (an EXISTING `kv()` option) → 28px, the style
+  ladder's own "value" rung — the mockup's headline-number treatment, without touching the `.side`/
+  `.side.r` column layout it lives in.
+- **Confirmed NOT built (genuine layout/UX decisions, not colour)**: the mockup's boxed `.num` CARD
+  (pulling Profit out of its column into a bordered callout — would unbalance the existing 4-row
+  `.side.r` symmetry without a browser check); the Customers Invoices KPI grid (Open/Invoices/1yr avg/
+  Avg pay — the data isn't bundled anywhere today, "Avg pay" exists only as a standalone row-chip
+  elsewhere); the inline rental-window mini-calendar (no existing equivalent); and whether Rentals/
+  Customers' always-open `.section` boxes should BECOME collapsible like Units' `.acct` (today they
+  never collapse; the mockup shows every section collapsible by default) — an interaction-model call.
