@@ -26008,6 +26008,12 @@ if (APP_ENV !== 'production') {
   document.title = (APP_SLOT ? 'Staging ' + APP_SLOT
     : APP_ENV === 'local' ? 'Local' : 'Staging') + ' · Rental Wrangler';
 }
+// ── Phase-2 wrangler-style redesign gate (dv2) ──────────────────────────────
+// The redesigned steel-canon look/surfaces are scoped behind `html.dv2` in style.css and land
+// BESIDE the old rendering (never replacing it) — so the old path is byte-identical when off.
+// dv2 is ON automatically on non-production (staging/local) so Jac reviews the redesign there,
+// and in production ONLY when FEATURES.designV2 is flipped true. Set at module load, before render.
+document.documentElement.classList.toggle('dv2', flagOn('designV2') || APP_ENV !== 'production');
 // ── §dev-login — Ctrl+Alt+P reveals the legacy team-password login on LOCALHOST ONLY (the dev /
 //    automation host), so a dev or an automated session can sign in without the SMS phone-identity
 //    flow. Gated by an ALLOWLIST (APP_ENV === 'local') — a security-review tightening: production

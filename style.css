@@ -52,6 +52,32 @@
   --font: "Geist", -apple-system, "Segoe UI", sans-serif;
 }
 
+/* ── Phase-2 wrangler-style redesign · SLICE 1: palette canon alignment ───────
+   Scoped behind `html.dv2` (set in app.js — ON on staging/local, and in production only when
+   FEATURES.designV2 flips true). Additive overrides ONLY — the base :root above is untouched, so
+   the OLD look is byte-identical when dv2 is off. This slice aligns the clear-mapping core tokens
+   to the locked steel canon (wrangler-style §1): the CVD-checked yellow #eed44b (was neon #ffe000),
+   the muted accent/blue, near-white fill inks (never pure), the one chip radius, and the commit
+   action colour. Extra-colour collapse (navy/purple/pink/brown) + the surface reshapes ride LATER
+   slices behind this same gate. Card radius + the Geist body font are deliberately left as-is. */
+html.dv2 {
+  --accent:#ff7e1f; --accent-soft:rgba(255,126,31,.15); --accent-line:rgba(255,126,31,.5);
+  --orange:#ff7e1f; --orange-bg:rgba(255,126,31,.14); --on-orange:#1a1205;
+  --bg:#0a0d11; --bg-2:#0f1318; --panel:#171d25; --panel-2:#1b222c;
+  --card:#12171e; --card-head:#1a212b;
+  --line:#2c343f; --line-soft:#212834;
+  --txt:#eef2f7; --txt-2:#aab4c1; --txt-3:#838e9c;
+  --green:#34d399; --green-bg:rgba(52,211,153,.14);
+  --yellow:#eed44b; --yellow-bg:rgba(238,212,75,.15);
+  --red:#ff4242; --red-bg:rgba(255,66,66,.13);
+  --blue:#6394cc; --blue-bg:rgba(99,148,204,.15);
+  --gray:#8b94a3; --gray-bg:rgba(139,148,163,.14);
+  --chip-radius:7px;
+  /* additive canon tokens the redesigned surfaces will use — filled-red + commit take NEAR-white
+     ink (never pure #fff), which clears AA on both fills. */
+  --red-fill:#d63636; --on-red-fill:#fdfdfd; --commit:#2f6fd0; --on-commit:#fdfdfd; --tan:#c2925a;
+}
+
 /* ── Reset / base ────────────────────────────────────────────────────────── */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 /* §0: the page never scrolls VERTICALLY, but pans HORIZONTALLY on screens narrower
