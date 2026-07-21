@@ -304,12 +304,54 @@ html.dv2 .balline .tot {
   font-family: var(--dv2-font-mono);
   font-variant-numeric: tabular-nums;
 }
+/* kv()'s existing `big` option (.kv .v.big, already wired up — Units' Investment
+   "Profit" line now passes it) is the mockup's headline-number callout WITHOUT
+   the mockup's boxed-card layout: bumping just the number, not restructuring the
+   .side/.side.r column it lives in, keeps every sibling kv row's alignment intact.
+   28px is the style ladder's own "value" rung (28·15·13·12·11·10·9.5) — the top of
+   the ladder, reserved for exactly this. The boxed .num/.big CARD treatment (a
+   bordered callout, pulled out of the column) is a layout change, not a number-
+   size change — deferred, see /build hand-back. */
+html.dv2 .kv .v.big {
+  font-size: 1.6471rem;   /* 28px — the ladder's "value" rung */
+  font-weight: 800;
+}
 /* NOT touched this slice (tertiary/nested, same fix, later slice — see /build
    hand-back): .stall-amt (rental-detail stall line) and .jprice (transport
    mini-journey one-way price) already carry tabular-nums in their base rules;
    only font-family is missing. .jprice nests a .sfx annotation ("/one-way") that
    needs its own carve-out first so the suffix doesn't silently go mono too — not
    guessing that call here. */
+
+/* ── Phase-2 wrangler-style redesign · SLICE 4: section/plate state colour —
+   the mockup's "plate" grammar (a coloured LEFT-BORDER stripe marks a section's
+   state) applied to the two field-group containers the real app already has:
+   .acct (Units' 5 collapsible sections — Work Orders/Services/Specs/GPS/
+   Investment) and .section (the static, always-open field boxes everywhere
+   else — Rentals/Customers/vendors/parts/etc.). Both already carry a full-
+   perimeter border-color per state (sec-green/yellow/red[/blue/gray]); this
+   narrows that to a 3px left stripe (thin neutral border on the other three
+   sides) and drops the .sec-red glow — wrangler-style is explicit: "the app is
+   matte, no glow" (SKILL.md). NOT changed: which sections collapse vs stay
+   open — that's an interaction-model call for Rentals/Customers (today's
+   .section never collapses; the mockup shows every section collapsible), not
+   a restyle, so it rides behind its own decision rather than a guess here. */
+html.dv2 .acct.sec-green, html.dv2 .acct.sec-yellow, html.dv2 .acct.sec-red, html.dv2 .acct.sec-blue, html.dv2 .acct.sec-gray,
+html.dv2 .section.sec-green, html.dv2 .section.sec-yellow, html.dv2 .section.sec-red, html.dv2 .section.sec-blue, html.dv2 .section.sec-gray {
+  border-color: var(--line);
+  border-left-width: 3px;
+  box-shadow: none;
+}
+html.dv2 .acct.sec-green, html.dv2 .section.sec-green { border-left-color: var(--green); }
+html.dv2 .acct.sec-yellow, html.dv2 .section.sec-yellow { border-left-color: var(--yellow); }
+html.dv2 .acct.sec-red, html.dv2 .section.sec-red { border-left-color: var(--red); }
+html.dv2 .acct.sec-blue, html.dv2 .section.sec-blue { border-left-color: var(--blue); }
+html.dv2 .acct.sec-gray, html.dv2 .section.sec-gray { border-left-color: var(--line); }
+/* the base theme's sec-red glow (neon text-shadow/box-shadow) predates "matte, no glow" — drop it */
+html.dv2 .section.sec-red > h4 { text-shadow: none; -webkit-text-fill-color: var(--red); }
+html.dv2 .acct.sec-red .acct-lbl { text-shadow: none; }
+/* section/plate label voice: stamped mono, matching every other Rxx label in this system */
+html.dv2 .acct-lbl, html.dv2 .section > h4 { font-family: var(--dv2-font-mono); }
 
 /* ── Reset / base ────────────────────────────────────────────────────────── */
 * { box-sizing: border-box; margin: 0; padding: 0; }
