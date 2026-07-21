@@ -505,7 +505,9 @@ repeating paths a yard doesn't run) with **Stops (Drop/Pickup)** inside — that
 - **Times derive from the rental window** (start/end) — forces a time rather than a blank.
 
 **The scheduling surface — ONE list of stop rows** (not two panels). Each row carries: a **blank connector box**
-(prefix) · **the deadlines** (rental start/end) · the **actual Scheduled time**.
+(prefix) · **three times — ETA · SCHEDULED · DEADLINE** (DEADLINE = the rental-window start/end). **Each stop adds 20 min
+of load time, cooked into the ETA** (ETA = departure + cumulative drive-time + 20 min/stop) — an honest arrival
+vs the scheduled target vs the hard deadline; START/END rows read the same three times.
 - **Form a Trip by connecting boxes:** drag stops into the order you want, then **click-hold a box and drag to
   the next box to release** → that contiguous run **connects into a Trip.** A **single stop** → just **click its
   box to schedule** (a 1-stop trip).
