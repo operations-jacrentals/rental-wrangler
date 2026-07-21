@@ -391,6 +391,12 @@ html.dv2 .row.row-expanded .row-detail {
   overflow-y: auto;
   overflow-x: hidden;
 }
+/* Units (3-across auto-fill) and Rentals (1fr 1fr) lists are multi-column GRIDS, so an
+   expanded item would otherwise cram into ONE ~140px cell with a sibling mini-card beside
+   it. Break it out to span the whole grid row (spec §1: "opened Units/Rentals items may
+   break out to span the full grid-row width so labels don't truncate"). Harmless on the
+   flex-column Customers list (grid-column is ignored there). */
+html.dv2 .list > .row.row-expanded { grid-column: 1 / -1; }
 html.dv2 .row-collapse {
   position: absolute; top: 10px; right: 10px; z-index: 5;
   width: 30px; height: 30px; flex: 0 0 auto;
