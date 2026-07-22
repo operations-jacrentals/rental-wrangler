@@ -2749,6 +2749,18 @@ function openStandard(card, recId, recType) {
     if (cat && us) { us.search = cat.name; us.listLimit = undefined; if (s.cols && s.cols.left) s.cols.left = 'units'; }
   }
   render();
+  if (inlineExpandActive(card)) scrollExpandedToTop(card);   // dv2: the reveal anchors to the column top (no dead space above it — Jac 2026-07-21)
+}
+/* dv2 inline-expand: after a reveal, scroll the card-body so the expanded row sits at the
+   top of the column — the item "grows to the top" instead of expanding downward from its
+   list position (which left a gap above it). rAF so it runs after render() paints. */
+function scrollExpandedToTop(card) {
+  requestAnimationFrame(() => {
+    const row = document.querySelector(`.card[data-card="${card}"] .row.row-expanded`);
+    const body = row && row.closest('.card-body');
+    if (!row || !body) return;
+    body.scrollTop += row.getBoundingClientRect().top - body.getBoundingClientRect().top - 6;   // 6px breathing room above
+  });
 }
 /** Jump to the Units card filtered to one category's units — wired to a category
  *  mini-card's Availability pill (Jac 2026-06-25). Narrows Units by the category
@@ -7051,8 +7063,8 @@ function rowEl(card, rec) {
     if (cs && cs.mode === 'standard' && String(cs.recId) === String(id) && inlineExpandActive(card) && DETAIL[card]) {
       const node = el('div', 'row row-expanded');
       node.dataset.card = card; node.dataset.rec = id;
-      node.innerHTML = `<button class="row-collapse js-row-collapse" data-card="${card}" data-tip="Close" aria-label="Close">${I.x}</button>`
-        + `<div class="row-detail">${DETAIL[card](rec, cs)}</div>`;
+      // No ✕ (Jac 2026-07-21): the detail HEADER is the collapse control (js-inline-close).
+      node.innerHTML = `<div class="row-detail">${DETAIL[card](rec, cs)}</div>`;
       return node;
     }
   }
@@ -8691,9 +8703,9 @@ const DETAIL = {
     const stampDate = u.condAt || li2?.date || '';
     const stamp = stampDate ? `${fmtShortDate(stampDate)}${u.condClock ? ' · ' + u.condClock : ''}` : '—';
     const cond = u.inspectionStatus;
-    const inspSec = `<div class="section sec-${cond === 'Ready' ? 'green' : cond === 'Failed' ? 'red' : 'yellow'}">
-      <h4>Inspection <span class="hmuted">· ${esc(stamp)}</span></h4>
-      <div class="fieldstack">
+    const inspColor = cond === 'Ready' ? 'green' : cond === 'Failed' ? 'red' : 'yellow';
+    const inspStateLbl = cond === 'Ready' ? 'Ready' : cond === 'Failed' ? 'Failed' : 'Not Ready';
+    const inspBody = `<div class="fieldstack">
         <div class="kv" style="justify-content:center">
           ${segCtl([
             { label: '✓ Pass', js: 'js-cond', data: { rec: u.unitId, val: 'Pass' }, on: cond === 'Ready' ? 'green' : null },
@@ -8703,8 +8715,13 @@ const DETAIL = {
         </div>
         <div class="kv" style="justify-content:center">${washBtn(u)}</div>
         ${li2?.description ? `<div class="kv" style="justify-content:center"><span class="muted">Latest:</span> <span style="font-size:0.7353rem">${esc(li2.description)}</span></div>` : ''}
-      </div>
-    </div>`;
+      </div>`;
+    // dv2 (spec §2.0 plate-stack): Inspection reads as a collapsed one-line plate like every
+    // other section — summary (state · timestamp) + a status chip — expanding to the live
+    // Pass/Not-Ready/Fail toggle. Production (dv2 off) keeps the always-open section untouched.
+    const inspSec = dv2On()
+      ? collapseSection({ open: unitSecOpen(u, 'inspection'), toggleCls: 'js-unit-sec', sec: 'inspection', rec: u.unitId, lbl: 'Inspection', summary: `<b>${inspStateLbl}</b><span class="acct-dot">·</span>${esc(stamp)}`, chip: { text: inspStateLbl, tone: inspColor === 'green' ? 'ok' : inspColor === 'red' ? 'bad' : 'warn' }, body: inspBody, extraCls: 'sec-' + inspColor })
+      : `<div class="section sec-${inspColor}"><h4>Inspection <span class="hmuted">· ${esc(stamp)}</span></h4>${inspBody}</div>`;
     const svcSec = serviceTasksHtml(u);   // Shop retirement (Jac 2026-07-07): services live ON the unit
     const woSec = workOrdersSection(u);    // Work Orders as accordion rows within ONE section (like Invoices)
     const notes = notesSection('units', u, 'unitId');
@@ -8714,9 +8731,14 @@ const DETAIL = {
       { kind: 'rent', label: `${DATA.rentals.filter((r) => rentalHasUnit(r, u.unitId)).length} Rentals`, cls: 'b', re: /rent/i },
       { kind: 'wash', label: `${(u.serviceLog || []).filter((l) => l.taskId === 'svc-wash').length} Washes`, cls: 'y', re: /wash/i },
     ];
+    // dv2 header (spec §2.0): the record NAME leads (eyebrow + name + status stamp), and the
+    // header IS the collapse control (js-inline-close) — click it to close, so the ✕ is dropped
+    // (Jac 2026-07-21). Non-dv2 keeps the legacy order (journey strip, then the plain name head).
+    const dhead = dv2On()
+      ? `<div class="detail-head dv2-dhead js-inline-close" data-card="units" data-tip="Collapse"><span class="dh-eyebrow">Unit Detail</span><span class="d-title">${esc(u.name)}</span>${headFlagsHtml('units', u)}<span class="dh-collapse">${I.chev}</span></div>`
+      : `<div class="detail-head"><span class="d-title">${esc(u.name)}</span></div>`;
     return `<div class="detail">
-      ${yardToolHtml(u)}
-      <div class="detail-head"><span class="d-title">${esc(u.name)}</span></div>
+      ${dv2On() ? dhead + yardToolHtml(u) : yardToolHtml(u) + dhead}
       ${notes.top}
       ${inspSec}
       ${svcSec}
@@ -9215,6 +9237,13 @@ function historySection(card, rec, cs, chips) {
     ? `<div class="hvals">${chips.map((c) => `<button class="hv ${c.cls || ''} ${cs?.histKind === c.kind ? 'on' : ''} js-hchip" data-card="${esc(card)}" data-kind="${esc(c.kind)}">${esc(c.label)}</button>`).join('')}</div>` : '';
   // History Search (§0.6) — appears once the log has some depth.
   const searchBar = all.length >= 3 ? `<input class="mini-search js-history-search" placeholder="Search history…" value="${esc(cs?.historySearch || '')}" />` : '';
+  // dv2 (Jac 2026-07-21): History rests COLLAPSED on desktop — just the label + count chips
+  // (the mock footer), reclaiming the log's vertical space. The count chips still filter; the
+  // full log + search step in with the History-search footer pass. Phone keeps it open (space
+  // isn't the constraint there). Non-dv2 renders the full log as today.
+  if (dv2On() && !document.body.classList.contains('is-phone')) {
+    return `<div class="history dv2-hist-collapsed"><h4>History</h4>${chipBar}</div>`;
+  }
   return `<div class="history"><h4>History</h4>${chipBar}${searchBar}<div class="hlog">${log}</div></div>`;
 }
 function historyFor(card, rec) {
@@ -19605,10 +19634,11 @@ function onClick(e) {
     return deferOrAnchor('pill:' + pc + ':' + prec, () => { pillTo(pc, prec); if (psect) scrollToSect(pc, psect); }, anchor);
   }
 
-  // dv2 inline-expand (spec §1): the ✕ on an expanded row collapses it back to the list
-  // (reuses cardToList → cs.mode='list', pushing history so Back can return). Checked BEFORE
-  // the row block so the click never falls through to a re-open.
-  if (closest('.js-row-collapse')) { e.stopPropagation(); return cardToList(closest('.js-row-collapse').dataset.card); }
+  // dv2 inline-expand (spec §1): clicking the expanded item's HEADER (js-inline-close, the
+  // record-name bar — the ✕ was dropped, Jac 2026-07-21) collapses it back to the list
+  // (cardToList → cs.mode='list', pushing history so Back can return). Checked BEFORE the row
+  // block so the click never falls through to a re-open.
+  if (closest('.js-inline-close')) { e.stopPropagation(); return cardToList(closest('.js-inline-close').dataset.card); }
 
   // click a row → open in Standard, BUT deferred a beat so a double-click anchors
   // instead (the first click never opens — #10). Ctrl/Cmd+click = new tab (instant).

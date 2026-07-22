@@ -382,10 +382,14 @@ html.dv2 .row.row-expanded {
   cursor: default;
   overflow: hidden;                                  /* clip to the rounded corners; the inner detail scrolls */
   max-height: calc(var(--dv2-expand-max) - 2 * var(--dv2-expand-gutter));
-  margin: var(--dv2-expand-gutter) 0;                /* the peek gutter above + below */
+  margin: 4px 0 var(--dv2-expand-gutter);            /* small top (openStandard scroll-anchors the item to the column top), gutter below so the next row peeks */
   border-color: var(--accent-line);
   box-shadow: 0 8px 26px -12px rgba(0, 0, 0, .65);   /* lift the revealed item off the flat list (matte, not a glow) */
+  animation: dv2-reveal .2s cubic-bezier(.2, .7, .2, 1);   /* the sheet-up / swipe reveal easing (Jac: match the swipe quality) */
 }
+/* the item fades + slides in on reveal — the app's sheet-up motion, not an instant pop */
+@keyframes dv2-reveal { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { html.dv2 .row.row-expanded { animation: none; } }
 html.dv2 .row.row-expanded .row-detail {
   max-height: calc(var(--dv2-expand-max) - 2 * var(--dv2-expand-gutter));
   overflow-y: auto;
@@ -397,17 +401,32 @@ html.dv2 .row.row-expanded .row-detail {
    break out to span the full grid-row width so labels don't truncate"). Harmless on the
    flex-column Customers list (grid-column is ignored there). */
 html.dv2 .list > .row.row-expanded { grid-column: 1 / -1; }
-html.dv2 .row-collapse {
-  position: absolute; top: 10px; right: 10px; z-index: 5;
-  width: 30px; height: 30px; flex: 0 0 auto;
-  display: inline-flex; align-items: center; justify-content: center;
-  border-radius: 999px; border: 1px solid var(--line);
-  background: var(--panel-2); color: var(--txt-2); cursor: pointer;
-  transition: border-color .12s, color .12s;
+
+/* dv2 detail HEADER (spec §2.0) — the record-name bar leads the expanded item and IS the
+   collapse control (click to close; the ✕ was dropped). Eyebrow + name (body voice) +
+   status stamp + a collapse chevron, on a subtle sticky bar so it stays reachable as the
+   stack scrolls. */
+html.dv2 .row-detail .dv2-dhead {
+  position: sticky; top: 0; z-index: 4;
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  margin: 0 0 10px; padding: 12px 14px;
+  background: var(--panel); border-bottom: 1px solid var(--line);
+  cursor: pointer; justify-content: flex-start;
 }
-html.dv2 .row-collapse:hover { border-color: var(--accent-line); color: var(--accent); }
-html.dv2 .row-collapse svg { width: 16px; height: 16px; }
-/* phone: the reveal is full-screen focused mode (Step 8) — no vh cap / gutter there */
+html.dv2 .row-detail .dv2-dhead:hover { background: var(--panel-2); }
+html.dv2 .dv2-dhead .dh-eyebrow {
+  flex: 0 0 100%; font-family: var(--dv2-font-mono); font-size: 0.6471rem; letter-spacing: .5px;
+  text-transform: uppercase; color: var(--txt-3);
+}
+/* the legacy `.card .detail-head .d-title { display:none }` hid the name (the card-head
+   showed it in the old model); inline-expand HAS no card-head, so the name leads here */
+html.dv2 .dv2-dhead .d-title { display: inline-block; font-size: 1.1765rem; font-weight: 800; color: var(--txt); letter-spacing: 0; }
+html.dv2 .dv2-dhead .dh-collapse { margin-left: auto; display: inline-flex; color: var(--txt-3); transform: rotate(180deg); }
+html.dv2 .dv2-dhead .dh-collapse svg { width: 16px; height: 16px; }
+/* History resting collapsed on desktop — label + count chips only (the mock footer) */
+html.dv2 .history.dv2-hist-collapsed { padding-top: 4px; }
+
+/* phone: the reveal is full-screen focused mode (Step 8) — no cap / gutter / sticky there */
 @media (max-width: 640px) {
   html.dv2 .row.row-expanded { max-height: none; margin: 0; box-shadow: none; }
   html.dv2 .row.row-expanded .row-detail { max-height: none; }
