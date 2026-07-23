@@ -3,6 +3,11 @@
 **Purpose:** everything Codex needs to take over this repo. Written to travel *with* the repo,
 so it works wherever Codex reads it.
 
+> **Two-doc handoff:** this file is the **setup mechanics** (repo, secrets, tooling, dual-agent).
+> Once set up, **study the project itself** via **`docs/CODEX-ONBOARDING.md`** — a guided reading
+> order for the current state, the research, the flaws, the design canon, what's been built, and
+> what's next.
+
 ## TL;DR — most of this is agent-agnostic and already travels
 The project is mostly portable Node + markdown on a GitHub repo. There are **three real work
 items**, everything else just works if Codex runs on the same repo:
