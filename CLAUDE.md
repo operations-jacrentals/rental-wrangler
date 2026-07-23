@@ -31,20 +31,22 @@ what Jac wants for all choices.
 
 ## Design language
 
-**Every new or reshaped UI runs through the `jactec-ui` skill** — the single design
-skill and quality gate. The house language is the **"yard data-plate"**: dark
-industrial steel, **ONE** safety-orange accent (`--accent #ff7a1a`), a hi-vis
-**hazard-stripe** signature (`repeating-linear-gradient(135deg,var(--yellow,#f5c542)
-0 13px, #14181d 13px 26px)`), stamped **Saira Condensed** labels, corner **rivets**,
-ignition-style primary buttons, and a light **wrangler/ranch seasoning** — voice-first
-("Wrangle", "Round up", "Corral", "Brand"), with restrained leather-tan (`~#c2925a`)
-touches only. If a glance reads "western" before "industrial rental yard," dial it back.
+**Every new or reshaped UI runs through BOTH design skills — `style` and
+`wrangler-style`** (they replaced `jactec-ui`, 2026-07-20). `style` is the **measurable
+rulebook** — the numbers any UI must hit (one control height, one baseline, the size
+ladder, two radii, WCAG contrast floors, the colour-blind separation threshold, 60-30-10,
+and the two state functions `colour = state` / `fill = today`). `wrangler-style` holds the
+**hard decisions** those numbers constrain — the locked steel palette, the two type
+voices, the button taxonomy, the **Signal · Gate · Stamp · Ref · Door** component
+vocabulary, and the restrained **wrangler/ranch voice** ("Wrangle", "Round up", "Corral",
+"Brand"). A change must satisfy both; when a decision and a rule conflict, the **decision
+moves, not the rule.**
 
 - **Scope: new/reshaped UI only** — do **NOT** retroactively restyle the existing site
   unless Jac asks for a site-wide pass.
-- Full tokens, signature recipes, the R0–R25 rulebook, the anti-slop checklist, and the
-  folded sub-capabilities (aesthetic direction, mobile, DESIGN.md, `/role` audit) all
-  live in `jactec-ui`. Reference implementations: `.login-*` and `.cancel-arc` in `style.css`.
+- Hard values (palette, fonts, components) live in **`wrangler-style`**; the constraints
+  they must pass live in **`style`**. The R0–R25 `data-r` rulebook + CI guards still live
+  in `app.js`/`ci/`. Reference implementations: `.login-*` and `.cancel-arc` in `style.css`.
 
 ## Deploy & gates
 
