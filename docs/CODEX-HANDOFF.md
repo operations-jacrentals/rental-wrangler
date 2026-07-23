@@ -88,8 +88,9 @@ Two homes for secrets:
 3. **Codex model routing.** Route mechanical work to cheaper tiers; keep the hard reasoning up.
 
 ## 6. Decisions needed from you
-1. **Same repo?** Recommend **yes** — CI, branch protection, Actions secrets, and all tooling
-   travel free. A fresh repo re-does every one of them.
+1. **Same repo? — ✅ CONFIRMED (Jac).** Codex runs on this same GitHub repo, so CI (`ci.yml`),
+   branch protection on `trunk`/`production`, the GitHub Actions secrets, and all of `tools/`
+   carry over with **zero re-setup**.
 2. **Keep trunk → staging → production?** The tooling is portable; only the `/build /deploy
    /merge /promote` *invocation* is Claude-specific. Recommend adding **npm scripts** so the flow
    is agent-agnostic:
