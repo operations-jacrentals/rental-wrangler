@@ -91,16 +91,22 @@ Two homes for secrets:
 1. **Same repo? — ✅ CONFIRMED (Jac).** Codex runs on this same GitHub repo, so CI (`ci.yml`),
    branch protection on `trunk`/`production`, the GitHub Actions secrets, and all of `tools/`
    carry over with **zero re-setup**.
-2. **Keep trunk → staging → production?** The tooling is portable; only the `/build /deploy
-   /merge /promote` *invocation* is Claude-specific. Recommend adding **npm scripts** so the flow
-   is agent-agnostic:
+2. **Keep trunk → staging → production? — ✅ CONFIRMED (Jac).** The tooling is portable; only the
+   `/build /deploy /merge /promote` *invocation* was Claude-specific → wrap it in **npm scripts**
+   so the flow is agent-agnostic (first Codex chore):
    - `npm run gates` → runs the full CI suite locally
    - `npm run deploy:staging` → `node tools/deploy-staging.mjs`
    - `npm run promote` → `node tools/promote.mjs`
    - `npm run cachebust` → `node tools/bump-cachebust.mjs`
-3. **Backend (Google Apps Script):** keep the clasp service-account push? It's portable — just
-   re-provision `GAS_SA_KEY_B64`. Go-live stays your Apps Script editor deploy.
-4. **`app.js` split:** first Codex task, or later? Recommend **first**, carefully, gate-green.
+3. **Backend (Google Apps Script):** keep the clasp service-account push (the only backend path) —
+   just re-provision `GAS_SA_KEY_B64`. Go-live stays your Apps Script editor deploy.
+4. **`app.js` split — ✅ CONFIRMED: Codex does it.** Split along the **chapter boundaries
+   `docs/CODE-MAP.md` already names**, keep every `data-r` stamp intact, and **re-run the full
+   gate suite after each move** (`gen-code-map`/`gen-rule-usage`/`smoke`/`logic` all key off
+   `app.js`). Do it early — it's the #1 token lever (§5).
+5. **Cross-review — recommend ADVISORY (Jac to confirm):** the `/cross-review` skill (§8b) posts
+   its opinion on a PR; you decide. Promote it to a *blocking* required check later only if you
+   want a hard merge-gate.
 
 ## 7. First-week Codex checklist
 - [ ] Confirm Codex on the **same** GitHub repo (inherits CI + branch protection + Actions secrets).
