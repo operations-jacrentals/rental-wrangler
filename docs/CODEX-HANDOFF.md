@@ -23,10 +23,9 @@ Your instinct was right: most "control gates" are a nonstarter because GitHub al
   on this repo inherits them**. **Branch protection** on `trunk`/`production` travels too.
 - **Release tooling** — `tools/*.mjs` (`deploy-staging`, `promote`, `staging-lease`,
   `bump-cachebust`, `gen-code-map`, `gen-icons`) are plain Node, zero Claude dependencies.
-- **The repo brain** — `docs/CODE-MAP.md`, `MEMORY.md`, `docs/`, `.claude/rules/`, and the
-  R0–R25 `data-r` rulebook + its CI guards are all markdown/Node and travel automatically.
-  Codex can **read** `.claude/skills/*` and `.claude/rules/*` as plain files even though it can't
-  "invoke" them as skills.
+- **The repo brain** — `docs/CODE-MAP.md`, `MEMORY.md`, `docs/`, and `.claude/rules/` are all
+  markdown and travel automatically. Codex can **read** `.claude/skills/*` and `.claude/rules/*`
+  as plain files even though it can't "invoke" them as skills.
 
 ## 2. Small adaptations
 ### 2a. `AGENTS.md` (Codex's instruction file)
@@ -41,7 +40,7 @@ Every skill is a markdown file under `.claude/skills/<name>/SKILL.md`. Point `AG
 |---|---|---|
 | `build` · `deploy` · `merge` · `promote` · `live` | **PORT** | the ship flow — core release runbook. Tooling is portable; document the orchestration (see §6 npm scripts). |
 | `clasp` | **PORT** | backend (Google Apps Script) deploy runbook — the backend can't ship without it. |
-| `style` · `wrangler-style` | **PORT (critical)** | the design canon (palette, type voices, Signal·Gate·Stamp·Ref·Door, the measurable rulebook). The reason the UI is one family. |
+| `style` · `wrangler-style` | **PORT (critical)** | the design canon (palette, type voices, Signal·Gate·Stamp·Ref·Door, and the measurable spec — control height, size ladder, contrast floors). The reason the UI is one family. |
 | `wrangler-fix` | **PORT** | "prove the root cause with citations before changing code" — the debugging methodology. |
 | `atlas` | **PORT (as instruction)** | CODE-MAP-first navigation → the #2 token lever (§5). |
 | `start` | **ADAPT** | session orientation — keep the branch-flow parts, drop Claude-session bits. |
@@ -78,11 +77,10 @@ Two homes for secrets:
 
 ## 5. Token levers (from the other session — encoded here)
 1. **Split `app.js` (27,812 lines) — the #1 win.** A read then pulls the right module, not 27k
-   lines. **Caution:** gates key off `app.js` — `gen-code-map` (chapter markers), `gen-rule-usage`
-   (the `data-r` scan), and `smoke`/`logic` (boot). Split along the **chapter boundaries CODE-MAP
-   already names**, keep every `data-r` stamp intact, and re-run the **full gate suite after each
-   move**. Best done as an early Codex task: clean, mechanical, high payoff — but it must stay
-   gate-green.
+   lines. **Caution:** gates key off `app.js` — `gen-code-map` (chapter markers) and `smoke`/`logic`
+   (boot). Split along the **chapter boundaries CODE-MAP already names** and re-run the **full gate
+   suite after each move**. Best done as an early Codex task: clean, mechanical, high payoff — but
+   it must stay gate-green.
 2. **Use CODE-MAP hard.** `AGENTS.md` should tell Codex: open `docs/CODE-MAP.md` FIRST, jump to
    `file:line`, never scan `app.js` blind. (That's the `/atlas` discipline.)
 3. **Codex model routing.** Route mechanical work to cheaper tiers; keep the hard reasoning up.
@@ -101,12 +99,11 @@ Two homes for secrets:
 3. **Backend (Google Apps Script):** keep the clasp service-account push (the only backend path) —
    just re-provision `GAS_SA_KEY_B64`. Go-live stays your Apps Script editor deploy.
 4. **`app.js` split — ✅ CONFIRMED: Codex does it.** Split along the **chapter boundaries
-   `docs/CODE-MAP.md` already names**, keep every `data-r` stamp intact, and **re-run the full
-   gate suite after each move** (`gen-code-map`/`gen-rule-usage`/`smoke`/`logic` all key off
-   `app.js`). Do it early — it's the #1 token lever (§5).
-5. **Cross-review — recommend ADVISORY (Jac to confirm):** the `/cross-review` skill (§8b) posts
-   its opinion on a PR; you decide. Promote it to a *blocking* required check later only if you
-   want a hard merge-gate.
+   `docs/CODE-MAP.md` already names** and **re-run the full gate suite after each move**
+   (`gen-code-map`/`smoke`/`logic` all key off `app.js`). Do it early — it's the #1 token lever (§5).
+5. **Cross-review — ✅ CONFIRMED: a tool, never a gate (Jac).** The `/cross-review` skill (§8b) is
+   something you run **on demand** for a second opinion; it never blocks a merge and is never a
+   required check.
 
 ## 7. First-week Codex checklist
 - [ ] Confirm Codex on the **same** GitHub repo (inherits CI + branch protection + Actions secrets).
@@ -140,15 +137,16 @@ Both agents on one repo is safe *if* each stays in its own lane and the shared i
   the two never grab the same work. (`branch-janitor` can flag stale entries.)
 
 ### 9b. Cross-review — "look at what the other one did and tell me what you think"
-A small skill on each side, both grounded in the SAME canon (`docs/CODE-MAP.md` + the R0–R25
-rulebook + `style`/`wrangler-style` + the specs) so they judge by one standard:
+A small skill on each side, both grounded in the SAME canon (`docs/CODE-MAP.md` +
+`style`/`wrangler-style` + the specs) so they judge by one standard. **It is a tool you reach for
+on demand — never a gate, never a merge block, never a required check.**
 - **Claude:** a `/cross-review <codex-branch-or-PR>` skill — fetch the diff, check it against the
-  gates, the R-rulebook, and the design canon, then report **agree / disagree / risks / canon
-  violations** with `file:line` citations. (It's the existing `/review` + `/code-review`, pointed
-  at Codex's PR with a "measure against canon" framing.)
+  gates and the design canon, then report **agree / disagree / risks** with `file:line` citations.
+  (It's the existing `/review` + `/code-review`, pointed at Codex's PR with a "measure against
+  canon" framing.)
 - **Codex:** a mirror command that does the same to a `claude/*` PR, pointed at the same canon files.
-- Because production is `/promote`-gated by a human, cross-review is **advisory** — it informs
-  your call, it doesn't auto-merge. Make it a required PR check only if you want it blocking.
+- Production is `/promote`-gated by a human, so cross-review only ever **informs your call** — you
+  run it whenever you want a second opinion, and it never touches the merge.
 
 ## 9. Current work-in-flight (context for whoever picks up the UI)
 The active branch `claude/rental-wrangler-ui-research-rhd74v` (PR #752) holds the **Phase-2
