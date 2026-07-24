@@ -173,6 +173,12 @@ Invoke a command as `$rental-wrangler-commands:<name>` (for example,
   working rules, then propose a `codex/<slug>` branch and wait for explicit approval
   before switching. It never starts work on `trunk`.
 
+  Match model capability to risk: use the strongest available frontier coding/reasoning
+  model for architecture, sensitive product/security decisions, and final review;
+  use a balanced model for ordinary implementation; and use an efficient model for
+  bounded mechanical checks. Prefer capability roles over hard-coded model names so
+  this remains valid as the model picker changes.
+
   In a Codex sandbox, local `gh` credentials may belong to a different Windows
   identity than the user's desktop session. Do not loop on reauthentication or ask
   for a token. Use the authenticated GitHub integration for remote publishing when

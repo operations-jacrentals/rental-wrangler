@@ -87,7 +87,29 @@ thread, what each agent should inspect or verify, and how the results will be
 integrated. Do not spawn duplicate agents for the same question, and do not let
 agent use bypass the branch, gates, staging, PR, or promotion rules.
 
-## 5. Propose, then wait before branching
+## 5. Match model strength to task risk
+
+Choose by capability and risk, not by a hard-coded model name; model labels and
+picker offerings change over time. Keep the main thread on the strongest available
+frontier coding/reasoning model for architecture, large refactors, design judgment,
+auth, money, customer PII/isolation, work-order semantics, or release-risk review.
+Use the balanced general coding model for ordinary feature work, bug fixes, PR
+preparation, and test-guided implementation. Use a fast/efficient coding model for
+bounded reconnaissance, code-map or file inventory, documentation, syntax checks,
+and other mechanical work whose acceptance criteria are already clear.
+
+Start with a balanced reasoning setting. Raise it for ambiguous, high-blast-radius,
+or evidence-heavy work; lower it for latency-sensitive, well-specified work. Do not
+trade away model strength for sensitive decisions, and do not block a task merely
+because a preferred model label is unavailable—map the current picker to these roles
+and continue with the closest safe capability.
+
+For parallel work, keep product and safety judgment on the frontier-model main
+thread and give independent low-risk checks to efficient models. Use a fresh context
+for an adversarial second review when that is more valuable than additional effort in
+the original thread.
+
+## 6. Propose, then wait before branching
 
 Based on the user's actual task, propose one short feature branch off the latest
 `trunk`, using the form:
@@ -102,7 +124,7 @@ Stop and wait for the user's explicit OK before switching or creating the branch
 After approval, start from the latest `origin/trunk`, use the proposed `codex/<slug>`
 branch, and verify the branch before editing. Never start work directly on `trunk`.
 
-## 6. Load the session working rules
+## 7. Load the session working rules
 
 Before any change, read and apply:
 
