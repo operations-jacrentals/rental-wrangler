@@ -25,6 +25,7 @@ import { AGREEMENTS, AGREEMENT_VERSIONS, AGREEMENT_CURRENT } from './agreements.
 import { ico, I, CARD_ICON, RING_ICON, CATEGORY_ICON } from './icons.js';
 import { CATEGORY_ANIM } from './icons-anim.js';
 import { CATEGORY_FRAMES } from './icons-frames.js';
+import { $, el, esc, money, money2, num, TODAY, dayDiff, refreshToday, debounce, SINGULAR } from './src/format.js';
 import {
   getStatus, STATUS, ROLES, ROLE_TIERS, tierRank, BUILTIN_ROLE_TIERS, GRID_CARDS, BACKOFFICE_BOARDS, SORT_FIELDS,
   SHOP_TYPES, COLUMNS, COLUMN_OF,
@@ -72,27 +73,12 @@ function wranglerIssueUrl(title, body, label = 'wrangler-fix') {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   APP-02 · §1 UTILITIES & FORMATTING — $, el, esc, money, num, dates
+   APP-02 · §1 UTILITIES & FORMATTING — moved to src/format.js (2026-07-24 module split)
    ════════════════════════════════════════════════════════════════════════ */
-const $  = (sel, root = document) => root.querySelector(sel);
-const el = (tag, cls, html) => { const n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; };
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const money = (n) => { if (n == null) return '—'; const v = Math.round(Number(n) * 100) / 100; return '$' + v.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(v) ? 0 : 2, maximumFractionDigits: 2 }); };   // cents shown only when present, so exact tax ($53.75) reads true while whole-dollar figures stay clean
-// money2 — always-two-decimal money for the invoice ledger + payment flow (#109): a
-// printed/paid figure reads what's actually owed, to the cent, even on whole dollars.
-const money2 = (n) => (n == null ? '—' : '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-const num = (n) => (n == null ? '—' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 1 }));
-let TODAY = parseISO(TODAY_ISO);   // live: refreshToday() rolls it over so an all-day-open tab never stamps yesterday
-const dayDiff = (a, b) => Math.round((b - a) / 86400000);
-// Keep "today" current on a long-lived tab. TODAY_ISO is an ESM live binding, so
-// every call-time reader picks up the new day for free; TODAY (a Date) is re-derived here.
-function refreshToday() { if (refreshTodayISO()) { TODAY = parseISO(TODAY_ISO); } }
-/* Trailing debounce: returns a scheduler you call with a thunk each time — it cancels
-   any pending thunk and reschedules, so only the LAST call in a burst actually runs.
-   Used to keep typing snappy on inputs whose reaction is expensive (a full render()). */
-function debounce(ms) { let t; return (fn) => { clearTimeout(t); t = setTimeout(fn, ms); }; }
-
-const SINGULAR = { customers: 'customer', rentals: 'rental', units: 'unit', invoices: 'invoice', categories: 'category', workOrders: 'workOrder', inspections: 'inspection', serviceOrders: 'unit', models: 'model' };
+/* $, el, esc, money, money2, num, TODAY, dayDiff, refreshToday, debounce, SINGULAR
+   all now live in src/format.js — imported above. Kept this banner (no code) so the
+   APP-NN chapter numbering below never shifts (see APP-08's icons.js pointer for the
+   established precedent). */
 
 /* ════════════════════════════════════════════════════════════════════════
    APP-03 · §2 INDEXES & SEARCH — built once on load (SPEC §3: never scan per keystroke)

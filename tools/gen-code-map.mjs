@@ -36,6 +36,10 @@ const FILES = [
   { rel: 'service-countdown.js', key: 'SVC' },
   { rel: 'agreements.js', key: 'AGR' },
   { rel: 'icons.js', key: 'ICON' },
+  // src/*.js — chapters extracted out of app.js (module split, 2026-07-24). Each currently
+  // carries no internal ═══ banner of its own (avoids re-stamping collisions with the
+  // APP-NN id it was moved from); add a { rel, key } entry here for every new file.
+  { rel: 'src/format.js', key: 'FMT' },
 ];
 
 const RULE = /═{6,}/;                 // a full-width ═══ banner rule line
