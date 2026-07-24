@@ -1,6 +1,6 @@
 ---
 name: start
-description: Orient a Rental Wrangler Codex task before any work begins. Probe the toolchain, confirm repository and branch state, recall the project context, load the working rules, and propose a codex/* feature branch while waiting for approval before switching.
+description: Orient a Rental Wrangler Codex task before any work begins. Probe the toolchain, confirm repository and branch state, recall the project context, choose an efficient agent plan, load the working rules, and propose a codex/* feature branch while waiting for approval before switching.
 ---
 
 # Start
@@ -55,7 +55,21 @@ If any requested file is absent, report its exact path as missing; do not recrea
 or substitute a guessed document. Give a short summary of the project state, active
 work, and the next likely step, distinguishing facts from missing context.
 
-## 4. Propose, then wait before branching
+## 4. Choose the efficient agent plan
+
+Before proposing execution, decide whether subagents would materially help the task.
+Use them for separable, low-risk work that can run in parallel, such as focused
+read-only reconnaissance, mechanical file inventory, or independent verification.
+Keep tightly coupled implementation, high-blast-radius reasoning, and any product,
+security, money, auth, customer-PII/isolation, work-order completion, secret, force
+push, or live-deployment decisions on the main thread.
+
+When agents are useful, state the intended split briefly: what stays on the main
+thread, what each agent should inspect or verify, and how the results will be
+integrated. Do not spawn duplicate agents for the same question, and do not let
+agent use bypass the branch, gates, staging, PR, or promotion rules.
+
+## 5. Propose, then wait before branching
 
 Based on the user's actual task, propose one short feature branch off the latest
 `trunk`, using the form:
@@ -70,7 +84,7 @@ Stop and wait for the user's explicit OK before switching or creating the branch
 After approval, start from the latest `origin/trunk`, use the proposed `codex/<slug>`
 branch, and verify the branch before editing. Never start work directly on `trunk`.
 
-## 5. Load the session working rules
+## 6. Load the session working rules
 
 Before any change, read and apply:
 

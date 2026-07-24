@@ -167,8 +167,11 @@ Invoke a command as `$rental-wrangler-commands:<name>` (for example,
 - `$rental-wrangler-commands:start` — at the top of every task, probe node/npm/gh/git,
   note the expected local Playwright limitation, verify origin/branch/tree state,
   read AGENTS/MEMORY/WIP plus the current spec and plan (report exact missing paths),
-  load the design canon and working rules, then propose a `codex/<slug>` branch and
-  wait for explicit approval before switching. It never starts work on `trunk`.
+  choose the most efficient agent plan for the task (parallelize independent,
+  low-risk reconnaissance or mechanical checks; keep product/security/money/auth/PII
+  and work-order completion reasoning on the main thread), load the design canon and
+  working rules, then propose a `codex/<slug>` branch and wait for explicit approval
+  before switching. It never starts work on `trunk`.
 
 The five ship commands have these exact boundaries:
 
