@@ -31,6 +31,17 @@ for remote branch, commit, PR, and workflow operations when available. Report th
 local CLI limitation separately; never copy credentials into the repository, a
 workspace file, or command output.
 
+Use this fallback ladder for remote work:
+
+1. Prefer the authenticated GitHub integration.
+2. If it is unavailable, check for non-secret `GH_TOKEN`/`GITHUB_TOKEN` presence,
+   an existing SSH agent/key, or a configured Git credential helper without printing
+   or exporting any credential value.
+3. If no remote channel is available, continue read-only investigation, edits, local
+   checks, commits, and artifact preparation. Mark only the final publish/PR action
+   as pending and give the user one concrete host-side auth action at that boundary;
+   never leave the whole session blocked and never ask them to paste a token.
+
 ## 2. Confirm the repository and orient
 
 Confirm that `origin` points to:

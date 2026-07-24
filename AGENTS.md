@@ -177,6 +177,11 @@ Invoke a command as `$rental-wrangler-commands:<name>` (for example,
   identity than the user's desktop session. Do not loop on reauthentication or ask
   for a token. Use the authenticated GitHub integration for remote publishing when
   available, and never write credentials to the repo, workspace, or logs.
+  If that integration is unavailable, check non-secret token presence, SSH, and the
+  configured Git credential helper; if all remote channels fail, continue local work
+  and mark only publishing/PR creation pending. Give one concrete host-side auth
+  action only at the final remote boundary—never block the entire session or request
+  a pasted token.
 
 The five ship commands have these exact boundaries:
 
