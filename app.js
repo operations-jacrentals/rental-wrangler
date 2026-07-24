@@ -12,6 +12,7 @@
  * ============================================================================
  */
 
+import { ERR_LOG, logErr, wranglerIssueUrl } from './src/glitch-capture.js';   // installed first thing, same as before the module split
 import { DATA } from './data.js';
 import { createCascade } from './cascade.js';
 import { serviceOrdersForUnit, completeService, SERVICE_TASKS } from './service-countdown.js';
@@ -25,6 +26,10 @@ import { AGREEMENTS, AGREEMENT_VERSIONS, AGREEMENT_CURRENT } from './agreements.
 import { ico, I, CARD_ICON, RING_ICON, CATEGORY_ICON } from './icons.js';
 import { CATEGORY_ANIM } from './icons-anim.js';
 import { CATEGORY_FRAMES } from './icons-frames.js';
+import { $, el, esc, money, money2, num, TODAY, dayDiff, refreshToday, debounce, SINGULAR } from './src/format.js';
+import { GV_WIN_OPTS, loadGvWin, saveGvWin, gvWinLabel, gvWinCutoff, gvBuckets } from './src/card-graph-view.js';
+import { APP as APP_INTERNALS } from './src/internals.js';   // late-binding registry — see src/internals.js for why
+import { RB_FOUNDATION, RB_TABS, ruleOf, refPath, onInspectMove } from './src/rulebook.js';
 import {
   getStatus, STATUS, ROLES, ROLE_TIERS, tierRank, BUILTIN_ROLE_TIERS, GRID_CARDS, BACKOFFICE_BOARDS, SORT_FIELDS,
   SHOP_TYPES, COLUMNS, COLUMN_OF,
@@ -39,60 +44,20 @@ import {
 const flagOn = (k) => !!(FEATURES && FEATURES[k] === true);
 
 /* ════════════════════════════════════════════════════════════════════════
-   APP-01 · §0.7 GLITCH CAPTURE — a small ring buffer of recent JS errors, so when you
-   hand a glitch to Mr. Wrangler the repro packet carries what actually broke
-   (the single most useful clue for the auto-fixer). Installed first thing so it
-   catches boot-time errors too. Kept tiny + best-effort — never throws itself.
+   APP-01 · §0.7 GLITCH CAPTURE — moved to src/glitch-capture.js (2026-07-24 module split)
    ════════════════════════════════════════════════════════════════════════ */
-const ERR_LOG = [];
-function logErr(kind, msg) {
-  try {
-    const t = new Date().toTimeString().slice(0, 8);
-    ERR_LOG.push(`[${t}] ${kind}: ${String(msg).replace(/\s+/g, ' ').slice(0, 300)}`);
-    if (ERR_LOG.length > 30) ERR_LOG.shift();
-  } catch (_) {}
-}
-window.addEventListener('error', (e) => logErr('error', (e.message || 'error') + (e.filename ? ` @ ${String(e.filename).split('/').pop()}:${e.lineno || '?'}` : '')));
-window.addEventListener('unhandledrejection', (e) => logErr('promise', (e.reason && (e.reason.message || e.reason)) || 'unhandled rejection'));
-{ const _ce = console.error; console.error = function (...a) { try { logErr('console', a.map((x) => (x && x.message) || x).join(' ')); } catch (_) {} return _ce.apply(this, a); }; }
-
-/* The public repo this app fixes itself through (Track B — see docs/wrangler-pipeline.md).
-   A glitch handed to Mr. Wrangler becomes a `wrangler-fix` GitHub issue that the
-   Action engine reproduces, patches, gate-checks, and auto-merges to live. The
-   browser can't hold a token, so we open a PRE-FILLED issue (one Submit tap). */
-const WRANGLER_REPO = 'operations-jacrentals/rental-wrangler';
-// label 'wrangler-fix' → the auto-fix Action runs (glitches). 'wrangler-request'
-// → filed for Jac's OK, NOT auto-implemented (he can add the fix label to greenlight).
-function wranglerIssueUrl(title, body, label = 'wrangler-fix') {
-  const u = new URL(`https://github.com/${WRANGLER_REPO}/issues/new`);
-  u.searchParams.set('title', String(title || 'Reported glitch').slice(0, 120));
-  u.searchParams.set('labels', label);
-  u.searchParams.set('body', String(body || '').slice(0, 6000));   // GitHub URL body cap headroom
-  return u.toString();
-}
+/* ERR_LOG, logErr, wranglerIssueUrl all now live in src/glitch-capture.js —
+   imported above (and installed immediately, same as before: side-effecting
+   window.addEventListener + console.error hooks run at module-eval time).
+   Kept this banner (no code) so the APP-NN numbering below never shifts. */
 
 /* ════════════════════════════════════════════════════════════════════════
-   APP-02 · §1 UTILITIES & FORMATTING — $, el, esc, money, num, dates
+   APP-02 · §1 UTILITIES & FORMATTING — moved to src/format.js (2026-07-24 module split)
    ════════════════════════════════════════════════════════════════════════ */
-const $  = (sel, root = document) => root.querySelector(sel);
-const el = (tag, cls, html) => { const n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; };
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const money = (n) => { if (n == null) return '—'; const v = Math.round(Number(n) * 100) / 100; return '$' + v.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(v) ? 0 : 2, maximumFractionDigits: 2 }); };   // cents shown only when present, so exact tax ($53.75) reads true while whole-dollar figures stay clean
-// money2 — always-two-decimal money for the invoice ledger + payment flow (#109): a
-// printed/paid figure reads what's actually owed, to the cent, even on whole dollars.
-const money2 = (n) => (n == null ? '—' : '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-const num = (n) => (n == null ? '—' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 1 }));
-let TODAY = parseISO(TODAY_ISO);   // live: refreshToday() rolls it over so an all-day-open tab never stamps yesterday
-const dayDiff = (a, b) => Math.round((b - a) / 86400000);
-// Keep "today" current on a long-lived tab. TODAY_ISO is an ESM live binding, so
-// every call-time reader picks up the new day for free; TODAY (a Date) is re-derived here.
-function refreshToday() { if (refreshTodayISO()) { TODAY = parseISO(TODAY_ISO); } }
-/* Trailing debounce: returns a scheduler you call with a thunk each time — it cancels
-   any pending thunk and reschedules, so only the LAST call in a burst actually runs.
-   Used to keep typing snappy on inputs whose reaction is expensive (a full render()). */
-function debounce(ms) { let t; return (fn) => { clearTimeout(t); t = setTimeout(fn, ms); }; }
-
-const SINGULAR = { customers: 'customer', rentals: 'rental', units: 'unit', invoices: 'invoice', categories: 'category', workOrders: 'workOrder', inspections: 'inspection', serviceOrders: 'unit', models: 'model' };
+/* $, el, esc, money, money2, num, TODAY, dayDiff, refreshToday, debounce, SINGULAR
+   all now live in src/format.js — imported above. Kept this banner (no code) so the
+   APP-NN chapter numbering below never shifts (see APP-08's icons.js pointer for the
+   established precedent). */
 
 /* ════════════════════════════════════════════════════════════════════════
    APP-03 · §2 INDEXES & SEARCH — built once on load (SPEC §3: never scan per keystroke)
@@ -6623,173 +6588,11 @@ const RULE_META = {
   R35: ['Dated-action funnel', 'datedFunnelHtml / .dfunnel', 'the customer-detail funnel as a two-tab (Rental | Equipment Sales) stack of clickable LAYERS, narrowing like a real funnel — everyone sits in both tabs (a fresh customer at Lead). Each layer is a SLOT for a dated next-action ("notes = actions"): arm any layer with an action (note + date) and it glows red/yellow/green by that date’s urgency (naUrgency) — several can be armed at once. A reached-but-unarmed layer is quiet steel history (a check + when it happened); the terminal Signed/Paid, once reached, is SOLID BLUE (closed won). Clicking a layer opens its action editor (arm/edit/complete, or Advance the customer here). The armed actions are the same scheduled entries as the date-sorted queue below. Rental Reserved/Rented history-dates derive from live rentals. Bespoke — layers are NOT .pill, the .dfunnel container carries the stamp.'],
   R36: ['Swipe-toggle deck', 'swipeSeg / swipeTrack / .swipe-track', 'the PHONE-ONLY carousel that turns a VIEW-SWITCH toggle section (the customer funnel · invoices · comms Text/Email) into a swipeable deck: both panes sit side-by-side in a nested horizontal scroll-snap track, and the toggle’s ONE-orange fill (R3) becomes a .deck-thumb that RIDES the scroll (deckPaint). The active tab commits on SNAP with NO render (deckCommit) — both panes are already in the DOM — a haptic ticks per change, and a tab tap smooth-scrolls the track. Nests inside the 5-card .grid rail without stealing its swipe (each scroll listener is class-filtered to its own track). Desktop is byte-identical to before — single pane + the R14 tap toggle. Attaches ONLY to view-switch toggles, never a value/action segCtl (a swipe must never set inspection Fail or a transport leg).'],
 };
-/* ════════════ APP-12 · DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
-   The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
-   design system. RB_FOUNDATION = the primitives the rules are built FROM (type,
-   color, form, surfaces, motion…) — NOT data-r stamped, they're the tokens &
-   guidelines. RB_TABS = the IA that groups every rule + foundation into tabs.
-   Foundation row = [tag, name, spec/token, when/why, exampleHTML]. ── */
-const rbSw = (bg, name, note, ink = '#fff') =>
-  `<span class="rb-sw" style="background:${bg};color:${ink}">${name ? `<b>${name}</b>` : ''}${note ? `<i>${note}</i>` : ''}</span>`;
-const RB_FOUNDATION = {
-  // ── TYPE ──
-  'type-display': ['Aa', 'Display · stamped', "'Saira Condensed' · 600–800 · UPPERCASE · +1–2px tracking",
-    'The yard “stamped-steel” voice: wordmark, column tabs, KPI labels, section headers, ignition buttons.',
-    `<span style="font-family:'Saira Condensed',sans-serif;text-transform:uppercase;letter-spacing:1.6px;font-weight:800;font-size:1.3529rem;color:var(--txt)">Clock In · Wrangle</span>`],
-  'type-body': ['Aa', 'Body', "'Geist' (var(--font)) · 400–700",
-    'Everything you read: row text, field values, descriptions. Quiet, legible, never stamped.',
-    `<span style="font-size:0.8235rem;color:var(--txt)">Rugged equipment, rented right — the body face carries the content.</span>`],
-  'type-mono': ['‹›', 'Mono', 'ui-monospace · 10–12px · txt-3',
-    'Code + debug references only: the Inspector tag and rulebook builder names.',
-    `<code style="font-family:ui-monospace,monospace;font-size:0.7059rem;color:var(--txt-3)">UNITS › INSPECTION › “Passed”</code>`],
-  'type-scale': ['#', 'Size scale', '28 · 15 · 13 · 12 · 11 · 10 · 9.5px',
-    'Bigger = identity/value (28 KPI · 15 popup title). 12–13 = content. ≤11 = stamped micro-labels & counters. ONE size (11px) for every status badge.',
-    `<span style="display:flex;align-items:baseline;gap:13px;flex-wrap:wrap;color:var(--txt)"><span style="font-size:1.6471rem;font-weight:800">28</span><span style="font-size:0.8824rem;font-weight:700">15</span><span style="font-size:0.7647rem">13</span><span style="font-size:0.7059rem">12</span><span style="font-family:'Saira Condensed';text-transform:uppercase;letter-spacing:1px;font-size:0.6471rem;font-weight:700">11 label</span><span style="font-size:0.5588rem;color:var(--txt-3)">9.5</span></span>`],
-  'type-weight': ['B', 'Weight', '800 · 700 · 600 · 400',
-    '800 stamped identity · 700 titles & labels · 600 strong body · 400 body.',
-    `<span style="display:flex;gap:16px;align-items:baseline;color:var(--txt)"><span style="font-weight:800">800</span><span style="font-weight:700">700</span><span style="font-weight:600">600</span><span style="font-weight:400">400</span></span>`],
-  // ── COLOR ──
-  'color-accent': ['●', 'Accent · safety orange', '--accent #ff7a1a (+ --on-orange ink)',
-    'ONE orange, ONE meaning: the selected tab · ignition · primary action. Never decorative.',
-    rbSw('var(--accent)', 'Accent', 'selected · ignition', 'var(--on-orange)')],
-  'color-status': ['◐', 'Status palette', '--green / --yellow / --red / --blue / --navy / --purple / --gray',
-    'Registry status colors — each carries a fixed meaning on every card (Passed · caution · danger · link…).',
-    ['var(--green)', 'var(--yellow)', 'var(--red)', 'var(--blue)', 'var(--navy)', 'var(--purple)', 'var(--gray)'].map((c) => `<span class="rb-sw" style="background:${c}"></span>`).join('')],
-  'color-semantic': ['▣', 'Action-color law', 'commit = blue · money = green · danger = red',
-    'Action INTENT, not status: blue commits/saves · green takes money · solid red confirms destructive.',
-    rbSw('var(--blue)', 'Commit') + rbSw('var(--green)', 'Money') + rbSw('var(--red)', 'Danger')],
-  'color-neutral': ['▤', 'Neutrals', '--txt / --txt-2 / --txt-3 · --line',
-    '3-step text hierarchy on steel; lines separate without shouting.',
-    `<span class="rb-sw" style="background:var(--txt);color:#000"><b>Txt</b></span><span class="rb-sw" style="background:var(--txt-2);color:#000"><b>Txt-2</b></span><span class="rb-sw" style="background:var(--txt-3)"><b>Txt-3</b></span><span class="rb-sw" style="background:var(--line)"><b>Line</b></span>`],
-  'color-tan': ['✶', 'Wrangler tan', '--tan #c2925a / --tan-deep (yard theme)',
-    'The light ranch seasoning — worn leather for saddle-stitch dividers & tiny touches. Restrained.',
-    rbSw('var(--tan,#c2925a)', 'Tan', 'saddle-stitch', '#1a1205')],
-  'color-ec-red': ['⚠', 'ec-red · flagging glow', 'fill: color-mix(--red 65%, white) · shadow: 0 0 3px --red, 0 0 7px (--red 60%+transparent)',
-    'Official treatment for EVERY flagging-red signal — text names/pills/flags/headers, borders, dots/bars. Three knobs in style.css .ec-red group: fill % (65), inner glow (3px), outer halo (7px / 60%). Never use pure --red alone on flagging text.',
-    `<span style="-webkit-text-fill-color:color-mix(in srgb,var(--red) 65%,white);text-shadow:0 0 3px var(--red),0 0 7px color-mix(in srgb,var(--red) 60%,transparent);font-weight:700;font-size:0.7647rem;letter-spacing:.5px">TUCKER FONTENOT · No Card · $0.30 overdue</span>`],
-  // ── FORM ──
-  'radius': ['◳', 'Radius', '--radius 14–16 · --chip-radius 11–12 · 8–10 controls · 999 pills',
-    'Cards/popups softest · chips medium · controls tight · pills & counters full-round · rings/avatars circles.',
-    `<span style="display:flex;gap:8px;align-items:center"><span class="rb-surf" style="border-radius:16px">16</span><span class="rb-surf" style="border-radius:12px">12</span><span class="rb-surf" style="border-radius:8px">8</span><span class="rb-surf" style="border-radius:999px">999</span></span>`],
-  'elevation': ['☁', 'Elevation', '--shadow (float) · --chip-shadow · accent glow',
-    'Two depths: cards/popups float deep; chips/rows lift gently. Pop-ups & menus add the orange halo ring.',
-    `<span style="display:flex;gap:12px"><span class="rb-surf" style="box-shadow:var(--shadow)">float</span><span class="rb-surf" style="box-shadow:var(--chip-shadow)">chip</span><span class="rb-surf" style="box-shadow:0 0 0 2px var(--accent-line),0 0 22px -8px var(--accent)">glow</span></span>`],
-  'spacing': ['▦', 'Spacing', 'grid 12 · list 7 · section pad 12 · row pad 9–11',
-    'Tight, dense yard data — generous enough to scan, never airy.',
-    `<span style="display:flex;align-items:center;color:var(--txt-3);font-size:0.6471rem;gap:8px"><span style="display:flex;gap:12px"><span style="width:14px;height:14px;background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:3px"></span><span style="width:14px;height:14px;background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:3px"></span></span>12px gap</span>`],
-  'motion': ['↻', 'Motion', '.12s controls · .15s surfaces · .5s rings/timeline',
-    'Fast, functional. Keyframes: attnGlow (flash) · plateIn (login) · flagPulse · rwLint. prefers-reduced-motion respected everywhere.',
-    `<span class="pill c-blue" style="animation:attnGlow 1.1s ease-in-out infinite;border-radius:10px"><span class="t">flash</span></span>`],
-  // ── SURFACES ──
-  'surface-bg': ['▢', 'App background', '--bg · yard: orange dawn-glow + mill texture',
-    'The yard floor everything floats on; the header & bottom bar sit transparent over it.',
-    `<span class="rb-surf" style="background:var(--bg);width:100%;height:34px"></span>`],
-  'surface-panel': ['▢', 'Panel', '--panel / --panel-2',
-    'Sub-surfaces: search bars, chips, dashboard stats, the action chip-trays.',
-    `<span class="rb-surf" style="background:var(--panel);width:100%;height:34px"></span>`],
-  'surface-card': ['▢', 'Card / plate', '--card · radius · --shadow',
-    'The column plate. Yard theme = steel gradient + hazard-stripe top + corner rivets.',
-    `<span class="rb-surf" style="background:var(--card);width:100%;height:38px;position:relative;overflow:hidden;justify-content:flex-start;padding-left:14px"><span style="position:absolute;top:0;left:0;right:0;height:5px;background:repeating-linear-gradient(135deg,var(--yellow,#f5c542) 0 13px,#14181d 13px 26px)"></span>card</span>`],
-  'surface-section': ['▢', 'Section', '.section · --panel · centered header · status-tinted',
-    'Sub-cards inside a record; the header + border follow the live status (sec-green/yellow/red).',
-    `<span class="rb-surf" style="background:var(--panel);border-color:color-mix(in srgb,var(--green) 45%,transparent);width:100%;height:34px"></span>`],
-  'surface-anchored': ['▢', 'Anchored ring', '#18b6ff neon ring',
-    'An opened record glows neon blue — the “you are here” signal (distinct from orange selection).',
-    `<span class="rb-surf" style="background:var(--card);width:100%;height:34px;border-color:#18b6ff;box-shadow:0 0 0 2px rgba(24,182,255,.55)"></span>`],
-  'surface-row': ['▢', 'Row chip', '.row · --panel · row-bg viz',
-    'List items are chips; a faint full-bleed visualization can tint a row by its data.',
-    `<span class="rb-surf" style="background:var(--panel);width:100%;height:30px"></span>`],
-  // ── UPLOAD / CAPTURE ──
-  'upload-capture': ['⌖', 'Capture drop', '.cap-drop · dashed · camera / site',
-    'Photo/selfie/site captures (inspections, deliveries). When transport is set the popup tops with the address + map pin.',
-    `<span class="cap-drop" style="min-height:46px">${I.camera || ''}<span>Capture photo</span></span>`],
-  // ── HEADERS / CONTAINERS ──
-  'header-section': ['▭', 'Section header', '.section>h4 · centered · 11px UPPER',
-    'Centered stamped label; right-side flags pin absolutely so the title stays true-center.',
-    `<span style="display:block;text-align:center;font-size:0.6471rem;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--txt-3)">Inspection</span>`],
-  'header-popup': ['▭', 'Popup header', '.popup-head · icon + h3(15) + ✕',
-    'Every overlay leads with an accent icon, a 15px title, and the close on the right.',
-    `<span style="display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:9px;padding:7px 10px;background:var(--panel)"><span style="color:var(--accent);display:inline-flex">${I.doc || ''}</span><b style="font-size:0.8235rem">Popup title</b></span>`],
-  'overlay-popup': ['◳', 'Pop-up / overlay', '.overlay scrim + .popup',
-    'Centered modal: 50%-black scrim · panel with the orange border + glow halo · max 92vw/86vh · internal scroll.',
-    `<span class="rb-surf" style="background:var(--panel);border:1px solid var(--accent);box-shadow:0 0 0 2px var(--accent-line),0 0 20px -6px var(--accent);width:130px;height:42px;border-radius:12px">modal</span>`],
-  'menu-dropdown': ['▾', 'Menu', '.dropdown-menu / .ctx-menu',
-    'Floating orange-ringed lists: the sort/filter dropdowns and the R20 right-click menu.',
-    `<span style="display:inline-block;background:var(--panel);border:1px solid var(--accent);border-radius:11px;box-shadow:0 0 0 2px var(--accent-line);padding:5px;min-width:128px"><span style="display:block;padding:5px 9px;border-radius:8px;font-size:0.7059rem;color:var(--txt-2)">Sort · Name</span><span style="display:block;padding:5px 9px;border-radius:8px;font-size:0.7059rem;color:var(--accent);background:var(--panel-2)">Sort · Status</span></span>`],
-  'grid': ['▥', 'Yard grid', '.grid · 3 equal cols · 12px gap',
-    'The fixed 3-column layout (Units · Rentals · Customers). Reflows 3→2→1 by width on phones (M0–M3); never squishes below the desktop floor.',
-    `<span style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;width:150px"><span class="rb-surf" style="height:30px"></span><span class="rb-surf" style="height:30px"></span><span class="rb-surf" style="height:30px"></span></span>`],
-  // ── DATA VIZ ──
-  'data-kpi': ['◎', 'KPI rings', '.kpi-ring · concentric progress',
-    'The header rings: Apple-style progress, each colored by its value band, number + stamped role label below.',
-    `<span style="display:inline-grid;place-items:center;width:38px;height:38px;border-radius:50%;background:conic-gradient(var(--green) 72%,var(--track) 0)"><span style="display:grid;place-items:center;width:27px;height:27px;border-radius:50%;background:var(--bg);font-size:0.5882rem;font-weight:800;color:var(--txt)">9</span></span>`],
-  'data-gauge': ['▰', 'Activity gauge', '.active-bar.bipolar · steel data-plate',
-    'A bipolar −100…+100 track (customer health); a hazard overlay marks the deep-danger end.',
-    `<span style="display:inline-block;width:140px;height:14px;border-radius:7px;overflow:hidden;background:var(--track)"><span style="display:block;height:100%;width:64%;background:linear-gradient(90deg,var(--red),var(--orange),var(--yellow),var(--green))"></span></span>`],
-  // ── BEHAVIORS ──
-  'behavior-preview': ['◉', 'Hover previews', 'the eye system · per-device toggle',
-    'Hovering most elements shows a rich preview; a row eye + bottom-bar eye toggle it. Off = every eye runs red.',
-    `<span class="pill c-gray"><span class="t">${I.eye || ''} preview</span></span>`],
-};
-/* The tabbed IA — every rule (R…) + foundation (f…) lands in exactly one tab. */
-const RB_TABS = [
-  { id: 'foundation', label: 'Foundations', intro: 'The primitives every rule is built from — type, color, form, motion. Change these and the whole yard shifts.',
-    items: [{ f: 'type-display' }, { f: 'type-body' }, { f: 'type-mono' }, { f: 'type-scale' }, { f: 'type-weight' },
-            { f: 'color-accent' }, { f: 'color-status' }, { f: 'color-semantic' }, { f: 'color-neutral' }, { f: 'color-tan' },
-            { f: 'radius' }, { f: 'elevation' }, { f: 'spacing' }, { f: 'motion' }] },
-  { id: 'surfaces', label: 'Surfaces', intro: 'Backgrounds & containers — the steel everything is bolted to.',
-    items: [{ f: 'surface-bg' }, { f: 'surface-panel' }, { f: 'surface-card' }, { f: 'surface-section' }, { f: 'surface-anchored' }, { f: 'surface-row' }] },
-  { id: 'containers', label: 'Containers', intro: 'Title chips, sections, headers, pop-ups, menus and the layout grid.',
-    items: [{ r: 'R10' }, { r: 'R11' }, { r: 'R12' }, { f: 'header-section' }, { f: 'header-popup' }, { f: 'overlay-popup' }, { f: 'menu-dropdown' }, { f: 'grid' }] },
-  { id: 'pills', label: 'Pills & Flags', intro: 'The status vocabulary — every colored chip and exactly what it’s allowed to mean.',
-    items: [{ r: 'R1' }, { r: 'R2' }, { r: 'R3' }, { r: 'R3b' }, { r: 'R4' }, { r: 'R4b' }, { r: 'R9' }, { r: 'R9b' }] },
-  { id: 'fields', label: 'Fields & Adds', intro: 'Where you type, link, and add.',
-    items: [{ r: 'R5' }, { r: 'R5b' }, { r: 'R5c' }, { r: 'R6' }, { r: 'R7' }, { r: 'R8' }, { r: 'R14' }, { r: 'R22' }, { r: 'R31' }, { r: 'R33' }] },
-  { id: 'actions', label: 'Actions', intro: 'Buttons that DO something — colored by intent.',
-    items: [{ r: 'R17' }, { r: 'R18' }, { r: 'R24' }, { r: 'R26' }, { r: 'R28' }, { r: 'R29' }, { r: 'R32' }] },
-  { id: 'upload', label: 'Upload & Capture', intro: 'Add-file zones and photo/site captures.',
-    items: [{ r: 'R21' }, { f: 'upload-capture' }] },
-  { id: 'data', label: 'Data & Behaviors', intro: 'Visualizations, plus the app’s behaviors — it flashes instead of erroring, right-clicks, tooltips, and self-lints.',
-    items: [{ r: 'R16' }, { r: 'R15' }, { r: 'R35' }, { r: 'R36' }, { r: 'R13' }, { f: 'data-kpi' }, { f: 'data-gauge' }, { r: 'R19' }, { r: 'R25' }, { r: 'R20' }, { r: 'R23' }, { f: 'behavior-preview' }, { r: 'R0' }] },
-
-  { id: 'windows', label: 'Windows', intro: 'Every pop-up window in the app, by kind. Expand one for a live preview, its fields, and a copy-paste edit reference — your map to wrangle any screen.', items: [] },
-];
-/* structural fallbacks so hovering containers also names their rule */
-const CLASS_RULE = [
-  ['.c-titlecard', 'R10'], ['.nsec', 'R12'], ['.hvals', 'R13'], ['.history', 'R13'],
-  ['.timeline', 'R16'], ['.jnode', 'R15'], ['.jseg', 'R15'], ['.journey', 'R15'],
-  ['.seg', 'R14'], ['.kv.derived', 'R8'], ['.derived', 'R8'], ['.file-drop', 'R21'], ['.datefield', 'R22'], ['.dfunnel', 'R35'], ['.swipe-track', 'R36'], ['.section', 'R11'],
-];
-function ruleOf(target) {
-  if (!target || !target.closest) return null;
-  const stamped = target.closest('[data-r]');
-  if (stamped) return { r: stamped.dataset.r, el: stamped };
-  for (const [sel, r] of CLASS_RULE) { const m = target.closest(sel); if (m) return { r, el: m }; }
-  const fam = target.closest('.pill, .add-field, .flag, .linkname, .inv-line-link, .req');
-  if (fam) return { r: null, el: fam };            // lint family, unstamped = violation
-  return null;
-}
-/* human-readable reference: CARD › SECTION › "text" — what Jac pastes to debug */
-function refPath(el) {
-  const card = el.closest('[data-card]')?.dataset.card;
-  const sec = el.closest('.section')?.querySelector('h4')?.textContent.replace(/\s+/g, ' ').trim().slice(0, 26);
-  const txt = (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 28);
-  return [card ? card.toUpperCase() : null, sec || null, txt ? `“${txt}”` : null].filter(Boolean).join(' › ');
-}
-function onInspectMove(e) {
-  if (!state.inspect) return;
-  let t = document.getElementById('rw-tip');
-  if (!t) { t = document.createElement('div'); t.id = 'rw-tip'; document.body.appendChild(t); }
-  const hit = ruleOf(e.target);
-  if (!hit || e.target.closest('#rw-tip, .overlay')) { t.style.display = 'none'; return; }
-  const meta = hit.r ? RULE_META[hit.r] : null;
-  t.innerHTML = hit.r
-    ? `<b>${esc(hit.r)}</b> ${esc(meta ? meta[0] : '')}<span class="rt-b">${esc(meta ? meta[1] : '')}</span>`
-    : `<b class="bad">⚠ NO RULE</b> bypassed the builders (R0)`;
-  t.style.display = 'block';
-  t.style.left = Math.min(e.clientX + 14, window.innerWidth - 250) + 'px';
-  t.style.top = Math.min(e.clientY + 18, window.innerHeight - 56) + 'px';
-}
+/* ════════════════════════════════════════════════════════════════════════
+   APP-12 · DESIGN-SYSTEM CATALOG — moved to src/rulebook.js (2026-07-24
+   module split). RB_FOUNDATION, RB_TABS, ruleOf, refPath, onInspectMove
+   all now live there — imported above.
+   ════════════════════════════════════════════════════════════════════════ */
 
 /* ════════════════════════════════════════════════════════════════════════
    APP-13 · §6 LIST ROWS — row meta + the universal row template
@@ -12202,48 +12005,13 @@ function tabBadge(card, rec) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   APP-23 · §13.3 CARD GRAPH VIEW — RETIRED (2026-07-03). The per-card tile
-   dashboard (pieSVG/gvBars tiles + unit roster) was replaced by the §13.6
-   Round-Up reporting board; the chapter number is kept so later APP-NN
-   banners keep their ids. See PR #460–#464 + the removal PR for history.
+   APP-23 · §13.3 CARD GRAPH VIEW — moved to src/card-graph-view.js (2026-07-24
+   module split). RETIRED (2026-07-03): the per-card tile dashboard itself was
+   replaced by the §13.6 Round-Up reporting board, but the time-window/bucket
+   helpers (GV_WIN_OPTS, loadGvWin, saveGvWin, gvWinLabel, gvWinCutoff,
+   gvBuckets) survive — imported above, the §13.4 Graph Carousel below still
+   calls into them. Chapter number kept so later APP-NN banners keep their ids.
    ════════════════════════════════════════════════════════════════════════ */
-
-/* §13.4 — TIMELINE SELECTOR (Jac 2026-06-23). Per-source (per card / shop segment) the
-   graph carousel's TIME-BASED views can be scoped to a recent window: 7/10/30/90/180/360
-   days, or All (default = today's all-time/6-month behavior). Snapshot views ignore it and
-   read "Current". The active window is stamped ON the chart head, never hover-only. */
-const GV_WIN_OPTS = [7, 10, 30, 90, 180, 360];
-const GV_WIN_KEY = (src) => `jactec.gvWin.${src}`;
-const GV_WIN = Object.create(null);
-function loadGvWin(src) {
-  if (src in GV_WIN) return GV_WIN[src];
-  let v = 0; try { v = Number(localStorage.getItem(GV_WIN_KEY(src))) || 0; } catch (e) { v = 0; }
-  GV_WIN[src] = GV_WIN_OPTS.includes(v) ? v : 0;   // 0 = All time
-  return GV_WIN[src];
-}
-function saveGvWin(src, days) {
-  const d = GV_WIN_OPTS.includes(days) ? days : 0;
-  GV_WIN[src] = d;
-  try { if (d) localStorage.setItem(GV_WIN_KEY(src), String(d)); else localStorage.removeItem(GV_WIN_KEY(src)); } catch (e) { /* private mode */ }
-}
-const gvWinLabel = (d) => d ? `${d}D` : 'All';
-// ISO (yyyy-mm-dd) cutoff: the oldest day still IN a `days`-long window ending today (inclusive). null = all.
-function gvWinCutoff(days) { if (!days) return null; const d = new Date(TODAY); d.setDate(d.getDate() - days + 1); return d.toISOString().slice(0, 10); }
-// Time buckets spanning the window for the "/period" bar charts. Each = {key:"a|b", label, a, b}
-// with a<=date<b (ISO). Granularity adapts: ≤14d daily · ≤90d weekly · else monthly (All = 6 months).
-function gvBuckets(days) {
-  const out = [], iso = (d) => d.toISOString().slice(0, 10), base = new Date(TODAY);
-  if (!days || days > 90) {
-    const n = !days ? 6 : Math.min(12, Math.max(1, Math.round(days / 30)));
-    for (let i = n - 1; i >= 0; i--) { const a = new Date(base.getFullYear(), base.getMonth() - i, 1), b = new Date(base.getFullYear(), base.getMonth() - i + 1, 1); out.push({ key: iso(a) + '|' + iso(b), label: a.toLocaleString('en-US', { month: 'short' }), a: iso(a), b: iso(b) }); }
-  } else if (days > 14) {
-    const weeks = Math.ceil(days / 7);
-    for (let i = weeks - 1; i >= 0; i--) { const b = new Date(base); b.setDate(b.getDate() - i * 7 + 1); const a = new Date(b); a.setDate(a.getDate() - 7); out.push({ key: iso(a) + '|' + iso(b), label: `${a.getMonth() + 1}/${a.getDate()}`, a: iso(a), b: iso(b) }); }
-  } else {
-    for (let i = days - 1; i >= 0; i--) { const a = new Date(base); a.setDate(a.getDate() - i); const b = new Date(a); b.setDate(b.getDate() + 1); out.push({ key: iso(a) + '|' + iso(b), label: `${a.getMonth() + 1}/${a.getDate()}`, a: iso(a), b: iso(b) }); }
-  }
-  return out;
-}
 /* ════════════════════════════════════════════════════════════════════════
    APP-24 · §13.4 GRAPH CAROUSEL (Jac 2026-06-16) — the per-card Graph is a deck of
    INTERACTIVE views stacked ABOVE the list. Chevrons cycle the view; clicking a
@@ -27794,6 +27562,12 @@ function commsCustSectionHtml(c) {
   return rows ? `<div class="section comms-sec"><h4>Comms</h4><div class="fieldstack">${rows}</div></div>` : '';
 }
 
+
+// Populate the late-binding registry (src/internals.js) with whatever this file's
+// own chapters still own that an extracted src/*.js module needs read back — done
+// here, after every app.js top-level chapter above has run, so nothing reads a
+// not-yet-initialized value. Extend this object as more chapters extract.
+Object.assign(APP_INTERNALS, { RULE_META, state });
 
 boot();
 

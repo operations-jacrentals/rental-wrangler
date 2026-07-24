@@ -12,6 +12,7 @@ const TOKEN = (self.location.search.match(/v=([\w-]+)/) || [])[1] || 'dev';
 const CACHE = 'rw-shell-' + TOKEN;
 const SHELL = ['./', './index.html', './app.js', './style.css', './config.js', './data.js',
   './cascade.js', './icons.js', './icons-anim.js', './agreements.js', './service-countdown.js',
+  './src/format.js', './src/glitch-capture.js', './src/card-graph-view.js', './src/internals.js', './src/rulebook.js',
   './rule-usage.js', './manifest.webmanifest'];
 const SHELL_SET = new Set(SHELL.map((p) => new URL(p, self.location.href).pathname));
 /* Standalone PUBLIC pages (SMS-compliance + business info) are their OWN documents, NOT the SPA
