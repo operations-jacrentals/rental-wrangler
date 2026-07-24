@@ -1,0 +1,1818 @@
+<title>Inbox v3 — channels up top, talk native, room to grow</title>
+
+<style>
+  :root{
+    --bg:#0a0d11; --bg2:#0f1318; --panel:#171d25; --panel2:#1d242d; --card:#12171e; --cardh:#1a212b;
+    --line:#2c343f; --lineSoft:#212834; --txt:#eef2f7; --txt2:#aab4c1; --txt3:#717b89;
+    --accent:#ff7e1f; --onAcc:#1a1205; --accSoft:rgba(255,126,31,.15); --accLine:rgba(255,126,31,.5);
+    --green:#34d399; --yellow:#eed44b; --red:#ff4242; --redStrong:#d63636; --blue:#6394cc; --commit:#2f6fd0; --gray:#8b94a3;
+    --tan:#c2925a; --tanSoft:rgba(194,146,90,.20);
+    --onFill:#fdfdfd;
+    --shadowPop:0 10px 24px rgba(5,7,10,.45);
+    --font:-apple-system,"Segoe UI",Roboto,system-ui,sans-serif;
+    --stamp:ui-monospace,"Cascadia Code","SF Mono",Menlo,Consolas,monospace;
+    --h:24px;
+  }
+  @media (prefers-color-scheme:light){ :root{
+    --bg:#e6e8ea; --bg2:#dfe3ea; --panel:#fbfbfa; --panel2:#eef1f6; --card:#fbfbfa; --cardh:#eef1f6;
+    --line:#cfd6e1; --lineSoft:#e1e6ee; --txt:#141821; --txt2:#414b5a; --txt3:#69727f; --onAcc:#1a1205;
+    --accent:#cf6000; --red:#d52a2a; --redStrong:#b5241f; --blue:#2f5fb0; --commit:#1f56c0; --green:#0c8f5f; --gray:#566072; --tan:#8a5a2b;
+    --accSoft:rgba(207,96,0,.10); --accLine:rgba(207,96,0,.45); --tanSoft:rgba(138,90,43,.14);
+    --shadowPop:0 10px 24px rgba(20,24,33,.16);
+  } }
+  :root[data-theme="light"]{
+    --bg:#e6e8ea; --panel:#fbfbfa; --card:#fbfbfa; --cardh:#eef1f6; --line:#cfd6e1; --lineSoft:#e1e6ee;
+    --txt:#141821; --txt2:#414b5a; --txt3:#69727f; --onAcc:#1a1205; --accent:#cf6000; --red:#d52a2a; --redStrong:#b5241f; --blue:#2f5fb0; --commit:#1f56c0; --green:#0c8f5f; --gray:#566072; --tan:#8a5a2b;
+    --accSoft:rgba(207,96,0,.10); --accLine:rgba(207,96,0,.45); --tanSoft:rgba(138,90,43,.14);
+    --shadowPop:0 10px 24px rgba(20,24,33,.16);
+  }
+  :root[data-theme="dark"]{
+    --bg:#0a0d11; --panel:#171d25; --card:#12171e; --cardh:#1a212b; --line:#2c343f; --lineSoft:#212834;
+    --txt:#eef2f7; --txt2:#aab4c1; --txt3:#717b89; --onAcc:#1a1205; --accent:#ff7e1f; --red:#ff4242; --redStrong:#d63636; --blue:#6394cc; --commit:#2f6fd0; --green:#34d399; --gray:#8b94a3; --tan:#c2925a;
+    --accSoft:rgba(255,126,31,.15); --accLine:rgba(255,126,31,.5); --tanSoft:rgba(194,146,90,.20);
+    --shadowPop:0 10px 24px rgba(5,7,10,.45);
+  }
+  *{box-sizing:border-box} body{margin:0}
+  .wrap{background:var(--bg); color:var(--txt); font-family:var(--font); line-height:1.5; -webkit-font-smoothing:antialiased; padding:clamp(14px,3vw,30px) clamp(10px,3vw,20px) 60px}
+  .sheet{max-width:1180px; margin:0 auto}
+  .eyebrow{font-family:var(--stamp); font-size:12px; letter-spacing:.18em; text-transform:uppercase; color:var(--txt3); margin:0; font-weight:700}
+  h1{font-family:var(--stamp); font-weight:800; font-size:clamp(20px,3.3vw,28px); line-height:1; margin:.26em 0 .32em; letter-spacing:.01em; text-transform:uppercase}
+  h1 .hl{color:var(--accent)}
+  .lede{max-width:96ch; font-size:13px; color:var(--txt2); margin:0} .lede b{color:var(--txt); font-weight:600} .lede code{font-family:var(--stamp); font-size:11.5px; background:var(--panel2); padding:1px 5px; border-radius:4px; color:var(--txt2)}
+  .key{display:flex; flex-wrap:wrap; gap:6px 12px; margin:14px 0 2px; font-family:var(--stamp); font-size:10px; letter-spacing:.03em; text-transform:uppercase; color:var(--txt3)}
+  .key b{color:var(--accent)}
+  h2.sec{font-family:var(--stamp); font-weight:800; font-size:13px; letter-spacing:.06em; text-transform:uppercase; color:var(--txt); margin:34px 0 4px; display:flex; align-items:center; gap:8px}
+  h2.sec .n{color:var(--accent)}
+  h3.subsec{font-family:var(--stamp); font-weight:800; font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--txt2); margin:20px 0 6px; padding-left:1px}
+  .secnote{font-size:12px; color:var(--txt3); margin:0 0 12px; max-width:94ch}
+
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:14px; overflow:hidden; transition:border-color .3s}
+  .panel.flash{border-color:var(--accent)}
+  .pcap{font-family:var(--stamp); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--txt3); padding:9px 13px 0}
+
+  /* ================= ICON SPRITE — all glyphs sourced from Lucide, inline, no external requests ================= */
+  .ic{width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; display:inline-block; flex:none}
+
+  /* ================= shared five-part vocabulary (Signal · Gate · Stamp · Ref · Door) ================= */
+  .ctl{height:var(--h); display:inline-flex; align-items:center; font-family:var(--stamp); font-size:11px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; white-space:nowrap; flex:none}
+  .sig{padding:0 8px; border-radius:7px}
+  .sig.f.red{background:var(--redStrong);color:var(--onFill)} .sig.o.red{color:var(--red);box-shadow:inset 0 0 0 1.3px var(--red)}
+  .sig.f.yellow{background:var(--yellow);color:#211a05} .sig.o.yellow{color:var(--yellow);box-shadow:inset 0 0 0 1.3px var(--yellow)}
+  .sig.f.blue{background:var(--blue);color:#0a1220} .sig.o.blue{color:var(--blue);box-shadow:inset 0 0 0 1.3px var(--blue)}
+  .sig.f.green{background:var(--green);color:#04140d} .sig.o.green{color:var(--green);box-shadow:inset 0 0 0 1.3px var(--green)}
+  .sig.o.grey{color:var(--gray);box-shadow:inset 0 0 0 1.3px var(--gray)}
+  .stamp{font-family:var(--stamp); font-size:10.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--txt3); white-space:nowrap}
+  .ref{height:var(--h); display:inline-flex; align-items:center; gap:6px; padding:0 9px 0 3px; border-radius:7px; background:var(--card); border:1px solid var(--line); color:var(--txt); font-size:12px; font-weight:700; cursor:pointer; text-decoration:none; white-space:nowrap}
+  .ref .ty{width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;color:var(--accent);background:var(--accSoft);border-radius:5px;flex:none} .ref .ty .ic{width:11px;height:11px}
+  .ref small{color:var(--gray); font-family:var(--stamp); font-size:9px; font-weight:600; margin-left:1px}
+  .door{height:var(--h); display:inline-flex; align-items:center; gap:5px; font-family:var(--stamp); font-size:10.5px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; cursor:pointer; border-radius:999px; padding:0 13px; border:0}
+  .door.save{background:var(--commit); color:var(--onFill)}
+  .door.money{background:var(--green); color:#04140d}
+  .door.ghost{background:transparent; color:var(--txt2); border:1px solid var(--line)}
+  .door.add{background:transparent; color:var(--commit); border:1.4px dashed var(--commit); padding:0 11px}
+  .chev{display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; color:var(--txt3); cursor:pointer; flex:none} .chev .ic{width:14px;height:14px}
+  .seg{height:var(--h); display:inline-flex; border:1px solid var(--line); border-radius:7px; overflow:hidden; flex:none}
+  .seg b{display:inline-flex;align-items:center;padding:0 11px;font-family:var(--stamp);font-size:10px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:var(--txt2);border-right:1px solid var(--line);cursor:pointer}
+  .seg b:last-child{border-right:0} .seg b.on{background:var(--accent);color:var(--onAcc)}
+  /* channel toggle — a .seg variant. Active = orange fill/dark ink (channels aren't a status → accent fallback, not a filled Signal) */
+  .seg.chan b{gap:5px; padding:0 12px}
+  .seg.chan b .ic{width:11px;height:11px;color:var(--txt3)}
+  .seg.chan b.on .ic{color:var(--onAcc)}
+  .seg.chan b .cnt{font-size:9px; color:var(--txt3); margin-left:1px}
+  .seg.chan b.on .cnt{color:var(--onAcc); opacity:.78}
+  .seg.chan b.soon{color:var(--txt3); opacity:.5; cursor:not-allowed; pointer-events:none}
+  .seg.chan b.soon .soonmark{font-family:var(--stamp); font-size:8px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; padding:0 4px; border-radius:999px; border:1px solid var(--line); color:var(--txt3); margin-left:4px}
+  .clink{display:inline-flex; align-items:center; gap:5px; color:var(--txt2); font-size:11.5px; text-decoration:none; font-family:var(--font); font-variant-numeric:tabular-nums}
+  .clink .ic{color:var(--accent); width:12px; height:12px} .clink .v{border-bottom:1.4px solid transparent} .clink:hover .v{border-bottom-color:var(--accent)}
+  .attchip,.labelchip{height:var(--h); display:inline-flex; align-items:center; gap:4px; padding:0 8px; border-radius:7px; border:1px solid var(--line); font-family:var(--stamp); font-size:9.5px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; white-space:nowrap; flex:none}
+  .attchip{color:var(--txt3); background:var(--card)} .attchip .ic{width:10px;height:10px}
+  .labelchip{color:var(--txt2); background:transparent}
+  .changlyph{width:20px; height:20px; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; background:var(--card); border:1px solid var(--line); color:var(--txt3); flex:none}
+  .changlyph .ic{width:11px;height:11px}
+  .fspacer{flex:1}
+
+  /* ================= top chrome — OUR mini-search (pills-in-bar) + globe scope + Views&sort + recent-searches-above ================= */
+  .chromegrid{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px; align-items:start}
+  @media (max-width:820px){ .chromegrid{grid-template-columns:1fr} }
+
+  .topbar{display:flex; align-items:center; gap:10px; padding:10px 14px; border-bottom:1px solid var(--line); background:var(--bg2); flex-wrap:wrap}
+  .iconbtn{width:36px; height:36px; border-radius:9px; display:inline-flex; align-items:center; justify-content:center; background:var(--card); border:1px solid var(--line); color:var(--txt2); flex:none; cursor:pointer}
+  .iconbtn .ic{width:17px;height:17px}
+  .searchwrap{flex:1; min-width:140px; position:relative}
+  .searchbar,.mini-search{height:36px; display:flex; align-items:center; gap:7px; padding:0 8px 0 14px; border-radius:999px; background:var(--card); border:1px solid var(--line); color:var(--txt3); font-size:13px; cursor:text}
+  .searchbar .ic,.mini-search .ic{color:var(--txt3); flex:none}
+  .searchbar.focused,.mini-search.focused{border-color:var(--accent); color:var(--txt)}
+  .searchbar .ph,.mini-search .ph{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .avatar{width:32px; height:32px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-family:var(--stamp); font-weight:800; font-size:11px; flex:none; background:var(--card); border:1px solid var(--line); color:var(--txt2)}
+  .bdgbell{position:relative}
+  .bdgbell .bdg{position:absolute; top:-4px; right:-4px; min-width:15px; height:15px; padding:0 3px; border-radius:999px; background:var(--redStrong); color:var(--onFill); font-family:var(--stamp); font-size:9px; font-weight:800; display:flex; align-items:center; justify-content:center; line-height:1}
+
+  /* removable filter pills — LIVE inside the mini-search bar (one filtering pathway); pill radius = 999, distinct from the row's 7px Signal/Ref/Stamp chips */
+  .spill{height:22px; display:inline-flex; align-items:center; gap:5px; padding:0 5px 0 10px; border-radius:999px; background:var(--accSoft); color:var(--accent); font-family:var(--stamp); font-size:9.5px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; white-space:nowrap; flex:none}
+  .spx{width:14px;height:14px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:var(--accent);cursor:pointer}
+  .spx .ic{width:9px;height:9px}
+  .gscope{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:var(--txt3);cursor:pointer;flex:none}
+  .gscope .ic{width:14px;height:14px}
+  .gscope.on{color:var(--accent); background:var(--accSoft)}
+
+  /* recent-searches — opens ABOVE the bar, never below (so it never covers live results). Demonstrated here with column-reverse flex: real DOM order is bar-then-drop, reverse renders drop on top. */
+  .stackrev{display:flex; flex-direction:column-reverse}
+  .recentdrop{padding:6px 0 10px}
+  .recentdrop.pop{background:var(--panel); border:1px solid var(--line); border-radius:12px; margin:0 10px 8px; box-shadow:var(--shadowPop); overflow:hidden}
+  .recentrow{display:flex; align-items:center; gap:10px; padding:8px 16px; font-size:13px; color:var(--txt2); cursor:pointer}
+  .recentrow:hover{background:var(--cardh)}
+  .recentrow .ic{color:var(--txt3)}
+  .recentrow b{color:var(--txt); font-weight:600}
+
+  /* chrome row — replaces Gmail's filter chips: OUR "Views & sort" (left) + channel toggle (right) */
+  .chromerow{display:flex; align-items:center; gap:8px; padding:9px 14px; border-bottom:1px solid var(--line); flex-wrap:wrap; background:var(--panel); position:relative}
+  .viewsort-menu{position:absolute; top:calc(100% + 8px); left:14px; z-index:15; min-width:210px; background:var(--panel); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadowPop); padding:6px; overflow:hidden}
+  .vs-label{font-family:var(--stamp); font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:var(--txt3); padding:7px 10px 4px}
+  .vs-opt{display:flex; align-items:center; gap:7px; padding:7px 10px; border-radius:8px; font-size:12.5px; color:var(--txt2); cursor:pointer}
+  .vs-opt:hover{background:var(--cardh)}
+  .vs-opt.on{color:var(--txt); font-weight:700}
+  .vs-opt.on::before{content:''; width:5px; height:5px; border-radius:50%; background:var(--accent); flex:none}
+  .vs-opt .ic{width:12px;height:12px; color:var(--yellow)}
+  .vs-opt.add{color:var(--commit); font-weight:700}
+  .vs-div{height:1px; background:var(--line); margin:4px 4px}
+
+  /* ================= three-pane app frame ================= */
+  .threepane{display:grid; grid-template-columns:200px 360px 1fr; min-height:600px}
+  @media (max-width:900px){ .threepane{grid-template-columns:1fr} .rail,.rpane{display:none} }
+
+  .rail{border-right:1px solid var(--line); padding:12px 10px; display:flex; flex-direction:column; gap:2px; background:var(--panel); overflow-y:auto}
+  .compose-btn{width:100%; justify-content:center; margin-bottom:10px}
+  .navrow{display:flex; align-items:center; gap:10px; padding:7px 10px; border-radius:8px; border-left:3px solid transparent; font-size:13px; color:var(--txt2); cursor:pointer; white-space:nowrap}
+  .navrow .ic{width:16px; height:16px; flex:none; color:var(--txt3)}
+  .navrow .cnt{margin-left:auto; font-family:var(--stamp); font-size:10.5px; font-weight:700; color:var(--txt3)}
+  .navrow.active{background:var(--accSoft); color:var(--txt); border-left-color:var(--accent); font-weight:700}
+  .navrow.active .ic{color:var(--accent)}
+  .navrow.active .cnt{color:var(--accent)}
+
+  /* ================= thread list ================= */
+  .tlist{border-right:1px solid var(--line); overflow-y:auto; background:var(--card)}
+  .trow{display:flex; flex-direction:column; gap:5px; padding:10px 12px; border-bottom:1px solid var(--lineSoft); cursor:pointer; border-left:3px solid transparent}
+  .trow.unread{background:var(--cardh)}
+  .trow.selected{background:var(--accSoft)}
+  .trow.sred{border-left-color:var(--red)} .trow.sblue{border-left-color:var(--blue)} .trow.syellow{border-left-color:var(--yellow)} .trow.sgray{border-left-color:var(--gray)} .trow.sgreen{border-left-color:var(--green)}
+  .trow1{display:flex; align-items:center; gap:8px}
+  .star{width:var(--h); height:var(--h); display:inline-flex; align-items:center; justify-content:center; flex:none; color:var(--txt3); cursor:pointer}
+  .star .ic{width:15px;height:15px; fill:none}
+  .star.on{color:var(--yellow)} .star.on .ic{fill:currentColor}
+  .tavatar{width:28px; height:28px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-family:var(--stamp); font-weight:800; font-size:10px; flex:none; background:var(--card); border:1px solid var(--line); color:var(--txt2)}
+  .tavatar.cust{box-shadow:inset 0 0 0 1.5px var(--accLine)}
+  .tavatar.team{box-shadow:inset 0 0 0 1.5px var(--tan)}
+  .tavatar.bot{box-shadow:inset 0 0 0 1.5px var(--accent); background:var(--accSoft); color:var(--accent)}
+  .tsub{flex:1; min-width:0; display:flex; align-items:baseline; gap:6px; overflow:hidden}
+  .tsender{font-family:var(--font); font-weight:600; font-size:13px; color:var(--txt2); white-space:nowrap; flex:none; max-width:34%; overflow:hidden; text-overflow:ellipsis}
+  .trow.unread .tsender{font-weight:700; color:var(--txt)}
+  .tsubject{font-family:var(--font); font-weight:400; font-size:13px; color:var(--txt2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0}
+  .trow.unread .tsubject{font-weight:700; color:var(--txt)}
+  .tsubject .snip{font-weight:400 !important; color:var(--txt3) !important}
+  .tdot{width:6px; height:6px; border-radius:50%; background:var(--accent); flex:none}
+  .trow:not(.unread) .tdot{visibility:hidden}
+  .ttime{margin-left:auto; font-family:var(--stamp); font-size:11px; color:var(--txt3); font-variant-numeric:tabular-nums; flex:none; padding-left:8px}
+  .trow.unread .ttime{color:var(--txt2); font-weight:700}
+  .trow2{display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding-left:36px}
+  .mention{font-weight:700; color:var(--accent); background:var(--accSoft); padding:1px 5px; border-radius:4px}
+
+  .handoff{background:var(--cardh)}
+  .handoff .trow1{gap:12px}
+  .handoff-icon{width:32px; height:32px; border-radius:8px; background:var(--accSoft); color:var(--accent); display:inline-flex; align-items:center; justify-content:center; flex:none}
+  .handoff-icon .ic{width:16px;height:16px}
+  .handoff-txt{flex:1; min-width:0; font-size:13px; color:var(--txt)}
+  .handoff-txt b{font-weight:700}
+
+  /* ================= reading pane (email — native Gmail form) ================= */
+  .rpane{overflow-y:auto; background:var(--card); display:flex; flex-direction:column}
+  .rp-header{padding:14px 16px; border-bottom:1px solid var(--line)}
+  .rp-context{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:9px}
+  .rp-subject{font-family:var(--font); font-weight:700; font-size:15px; color:var(--txt); margin:0 0 6px}
+  .rp-caption{font-size:11.5px; color:var(--txt3); margin:0; max-width:64ch}
+  .rp-caption b{color:var(--txt2)}
+  .rp-msgs{padding:12px 16px; display:flex; flex-direction:column; gap:12px}
+  .msg{border:1px solid var(--line); border-radius:10px; background:var(--panel2); overflow:hidden}
+  .msg-head{display:flex; align-items:center; gap:8px; padding:8px 11px; border-bottom:1px solid var(--line); flex-wrap:wrap}
+  .msg-av{width:24px; height:24px; border-radius:50%; background:var(--card); border:1px solid var(--line); display:inline-flex; align-items:center; justify-content:center; font-family:var(--stamp); font-size:9px; font-weight:800; color:var(--txt2); flex:none}
+  .msg-id{display:flex; flex-direction:column; gap:1px; min-width:0}
+  .msg-who{font-family:var(--font); font-weight:700; font-size:13px; color:var(--txt); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .msg-chan{display:inline-flex; align-items:center; gap:4px; font-family:var(--stamp); font-size:9px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--txt3); flex:none}
+  .msg-chan .ic{width:10px;height:10px}
+  .msg-time{margin-left:auto; font-family:var(--stamp); font-size:10.5px; color:var(--txt3); font-variant-numeric:tabular-nums; flex:none}
+  .msg-body{padding:10px 12px; font-size:13px; color:var(--txt2); line-height:1.55}
+  .rp-reply{border-top:1px solid var(--line); padding:12px 16px; margin-top:auto}
+  .replybox{border:1px solid var(--line); border-radius:12px; background:var(--bg2); padding:10px 12px}
+  .replytext{font-size:13px; color:var(--txt3); min-height:20px}
+  .replyfoot{display:flex; align-items:center; gap:8px; margin-top:10px; flex-wrap:wrap}
+
+  /* ================= native conversation — TEXTS (Apple Messages bubbles) ================= */
+  .applemsg{padding:14px 16px 18px; display:flex; flex-direction:column; gap:9px; background:var(--card)}
+  .bubblerow{display:flex; flex-direction:column; max-width:74%}
+  .bubblerow.sent{align-self:flex-end; align-items:flex-end}
+  .bubblerow.recv{align-self:flex-start; align-items:flex-start}
+  .bubble{padding:9px 13px; border-radius:17px; font-size:13px; line-height:1.45}
+  .bubblerow.sent .bubble{background:var(--commit); color:var(--onFill); border-bottom-right-radius:5px}
+  .bubblerow.recv .bubble{background:var(--panel2); color:var(--txt); border:1px solid var(--line); border-bottom-left-radius:5px}
+  .bubble-receipt{font-family:var(--stamp); font-size:9.5px; color:var(--txt3); margin-top:3px; letter-spacing:.04em; text-transform:uppercase; padding-right:2px}
+  .bubble-img{display:inline-flex; align-items:center; gap:6px; padding:5px 10px 5px 5px; border-radius:14px; background:var(--panel2); border:1px solid var(--line); font-size:11.5px; color:var(--txt2); margin-top:1px}
+  .bubble-img .ph{width:22px;height:22px;border-radius:6px;background:var(--card);border:1px solid var(--line);display:inline-flex;align-items:center;justify-content:center;color:var(--txt3); flex:none}
+
+  /* ================= native conversation — TEAM (Messenger-style channels) ================= */
+  .msgr-frame{display:grid; grid-template-columns:158px 1fr; min-height:300px}
+  @media (max-width:640px){ .msgr-frame{grid-template-columns:1fr} .msgr-chanlist{display:none} }
+  .msgr-chanlist{border-right:1px solid var(--line); background:var(--panel); padding:10px 7px; display:flex; flex-direction:column; gap:2px}
+  .msgr-chan{display:flex; align-items:center; gap:6px; padding:8px 8px; border-radius:8px; font-family:var(--font); font-size:12px; color:var(--txt2); cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .msgr-chan .ic{width:12px;height:12px; color:var(--txt3); flex:none}
+  .msgr-chan.active{background:var(--accSoft); color:var(--txt); font-weight:700}
+  .msgr-chan.active .ic{color:var(--accent)}
+  .msgr-chan .dot{width:6px;height:6px;border-radius:50%;background:var(--accent); margin-left:auto; flex:none}
+  .msgr-body{padding:14px 16px 18px; display:flex; flex-direction:column; gap:16px; background:var(--card)}
+  .msgr-msg{display:flex; gap:9px; align-items:flex-start}
+  .msgr-av-wrap{position:relative; flex:none}
+  .msgr-av{width:30px;height:30px;border-radius:50%;background:var(--card);border:1px solid var(--line);display:inline-flex;align-items:center;justify-content:center;font-family:var(--stamp);font-size:10px;font-weight:800;color:var(--txt2)}
+  .presence{position:absolute; right:-1px; bottom:-1px; width:9px; height:9px; border-radius:50%; background:var(--green); border:2px solid var(--card)}
+  .presence.off{background:var(--gray)}
+  .msgr-col{display:flex; flex-direction:column; gap:3px; max-width:78%; min-width:0}
+  .msgr-name{font-family:var(--font); font-weight:700; font-size:11.5px; color:var(--txt2)}
+  .msgr-bubble{position:relative; padding:9px 13px; border-radius:15px; border-top-left-radius:4px; background:var(--panel2); border:1px solid var(--line); color:var(--txt); font-size:13px; line-height:1.45; width:fit-content}
+  .msgr-reactions{display:inline-flex; align-items:center; gap:3px; position:absolute; bottom:-10px; right:8px; background:var(--card); border:1px solid var(--line); border-radius:999px; padding:2px 6px}
+  .msgr-reactions .ic{width:11px;height:11px}
+  .msgr-reactions .heart{color:var(--red)}
+  .msgr-reactions .laugh{color:var(--yellow)}
+  .msgr-refrow{margin-top:9px}
+
+  /* ================= native conversation — WRANGLER (bot thread, styled distinct) ================= */
+  .wthread{padding:14px 16px 18px; display:flex; flex-direction:column; gap:12px; background:var(--card)}
+  .wmsg{display:flex; gap:9px; align-items:flex-start}
+  .wmsg.user{flex-direction:row-reverse}
+  .wmsg.user .wcol{align-items:flex-end}
+  .wav{width:28px;height:28px;border-radius:7px;background:var(--accSoft);color:var(--accent);display:inline-flex;align-items:center;justify-content:center;flex:none}
+  .wav.person{background:var(--card); border:1px solid var(--line); border-radius:50%; color:var(--txt2)}
+  .wav .ic{width:14px;height:14px}
+  .wcol{display:flex; flex-direction:column; gap:5px; max-width:76%}
+  .wbubble{padding:9px 13px; border-radius:14px; font-size:13px; line-height:1.45}
+  .wmsg.user .wbubble{background:var(--commit); color:var(--onFill); border-bottom-right-radius:4px; font-family:var(--font)}
+  .wmsg.bot .wbubble{background:var(--tanSoft); border:1px solid var(--line); color:var(--txt); border-bottom-left-radius:4px; font-family:var(--stamp); font-size:12px; letter-spacing:.01em}
+  .wfoot{display:flex; align-items:center; gap:7px; flex-wrap:wrap}
+
+  /* loud, distinct bell alert — Mr. Wrangler resolving something, vs. today's barely-there ping */
+  .wbell{position:relative; display:flex; align-items:center; gap:11px; padding:12px 14px 12px 20px; background:var(--accSoft); border:1px solid var(--accLine); border-radius:11px; overflow:hidden}
+  .wbell-bar{position:absolute; left:0; top:0; bottom:0; width:5px; background:var(--accent)}
+  .wbell-ic{width:32px;height:32px;border-radius:9px;background:var(--accent);color:var(--onAcc);display:inline-flex;align-items:center;justify-content:center;flex:none}
+  .wbell-ic .ic{width:16px;height:16px}
+  .wbell-txt{flex:1; min-width:0; font-size:13px; color:var(--txt); font-weight:600}
+  .wbell-txt b{font-weight:800}
+
+  /* ================= mobile phone frame ================= */
+  .phonewrap{display:flex; justify-content:center; margin-top:16px}
+  .phone{width:380px; max-width:100%; border:1px solid var(--line); border-radius:22px; overflow:hidden; background:var(--card); position:relative}
+  .phone .topbar{padding:10px 12px}
+  .phone .tlist{max-height:390px; overflow-y:auto; border-right:0}
+  .phone .trow{padding:9px 10px}
+  .phone .trow2{padding-left:34px}
+  .fab{position:absolute; right:14px; bottom:14px; width:52px; height:52px; border-radius:999px; background:var(--commit); color:var(--onFill); display:inline-flex; align-items:center; justify-content:center; cursor:pointer; z-index:6; border:0}
+  .fab .ic{width:22px;height:22px}
+  .scrim{position:absolute; inset:0; background:rgba(5,7,10,.55); opacity:0; pointer-events:none; transition:opacity .18s; z-index:8}
+  .scrim.open{opacity:1; pointer-events:auto}
+  .drawer{position:absolute; top:0; left:0; bottom:0; width:78%; max-width:280px; background:var(--panel); border-right:1px solid var(--line); transform:translateX(-100%); transition:transform .2s ease; z-index:9; display:flex; flex-direction:column; padding:14px 10px; overflow-y:auto}
+  .drawer.open{transform:translateX(0)}
+
+  /* swipeable channel header — mobile's answer to the desktop toggle */
+  .swipehead{display:flex; align-items:center; gap:4px; padding:6px 8px; border-bottom:1px solid var(--line); background:var(--bg2); touch-action:pan-y}
+  .swarrow{width:36px; height:36px; border-radius:9px; display:inline-flex; align-items:center; justify-content:center; color:var(--txt3); cursor:pointer; flex:none; background:var(--card); border:1px solid var(--line)}
+  .swipetrack{flex:1; min-width:0; display:flex; align-items:center; justify-content:center; gap:6px; height:36px; border-radius:999px; background:var(--accent); color:var(--onAcc); font-family:var(--stamp); font-weight:800; font-size:11px; letter-spacing:.03em; text-transform:uppercase; user-select:none}
+  .swipetrack.soon{background:transparent; border:1px dashed var(--line); color:var(--txt3)}
+  .swipetrack .ic{width:13px;height:13px}
+  .swipetrack .cnt{opacity:.8}
+  .swipetrack .soonmark{font-size:8px; padding:0 5px; border-radius:999px; border:1px solid currentColor; margin-left:2px}
+  .swdots{display:flex; align-items:center; justify-content:center; gap:5px; padding:7px 0 2px}
+  .swdots .d{width:6px; height:6px; border-radius:50%; background:var(--line); cursor:pointer}
+  .swdots .d.on{background:var(--accent); width:14px; border-radius:999px}
+  .swplaceholder{padding:36px 20px; text-align:center; font-size:12.5px; color:var(--txt3)}
+
+  /* ================= footer comms dock (altitude two) ================= */
+  .dockdemo{padding:0}
+  .dockbar{position:relative; min-height:230px; background:var(--bg2); padding:16px; display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap}
+  .dockchip{height:34px; display:inline-flex; align-items:center; gap:8px; padding:0 12px; border-radius:9px 9px 0 0; background:var(--panel2); border:1px solid var(--line); border-bottom:0; color:var(--txt2); font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; position:relative}
+  .dockchip.flash{border-color:var(--accent); background:var(--accSoft)}
+  .dockchip .dot{width:6px; height:6px; border-radius:50%; background:var(--yellow); flex:none}
+  .composedock{width:300px; max-width:100%; background:var(--panel); border:1px solid var(--line); border-bottom:0; border-radius:10px 10px 0 0; overflow:hidden; margin-left:auto}
+  .cd-head{display:flex; align-items:center; gap:8px; padding:8px 10px; background:var(--panel2); border-bottom:1px solid var(--line)}
+  .cd-head .t{font-size:12px; font-weight:700; color:var(--txt); flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .cd-icon{width:20px; height:20px; display:inline-flex; align-items:center; justify-content:center; color:var(--txt3); cursor:pointer; flex:none}
+  .cd-icon .ic{width:12px;height:12px}
+  .cd-body{padding:9px 10px; display:flex; flex-direction:column; gap:7px}
+  .cd-body.min{display:none}
+  .cd-field{font-size:12px; color:var(--txt3); border-bottom:1px solid var(--lineSoft); padding-bottom:6px}
+  .cd-field b{color:var(--txt2); font-weight:600; margin-right:4px}
+  .cd-textarea{font-size:12px; color:var(--txt2); min-height:46px}
+  .cd-foot{display:flex; justify-content:flex-end; padding:8px 10px; border-top:1px solid var(--line)}
+  .cd-foot.min{display:none}
+
+  .annot{font-size:12px; color:var(--txt3); margin:10px 0 0; display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+  .flow{display:flex; align-items:center; gap:6px; flex-wrap:wrap}
+  .flowstep{display:inline-flex; align-items:center; gap:5px; font-family:var(--stamp); font-size:10px; font-weight:800; text-transform:uppercase; color:var(--txt2)}
+  .flowstep .ic{width:13px;height:13px; color:var(--txt3)}
+  .flowarrow{width:12px;height:12px; color:var(--txt3)}
+
+  .foot{margin-top:30px; padding-top:16px; border-top:1px solid var(--line); font-size:13px; color:var(--txt2); max-width:96ch} .foot b{color:var(--txt)}
+  .foot ul{margin:8px 0 0; padding-left:20px} .foot li{margin:7px 0}
+
+  /* ---------- callout (borrowed from get-told — same annotation device) ---------- */
+  .callout{padding:10px 12px; background:var(--bg2); border:1.4px dashed var(--accLine); border-radius:9px; font-size:11.5px; color:var(--txt2); line-height:1.5; position:relative}
+  .callout .lab{font-family:var(--stamp); font-size:9px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); display:block; margin-bottom:4px}
+  .callout b{color:var(--txt)}
+
+  /* ================= v3 — §7.4 draggable divider (roomy stage only) ================= */
+  .paneDivider{width:6px; cursor:col-resize; position:relative; z-index:4; flex:none; background:transparent}
+  .paneDivider::after{content:''; position:absolute; top:0; bottom:0; left:2.5px; width:1px; background:var(--line)}
+  .paneDivider:hover::after,.paneDivider.dragging::after{background:var(--accent); width:2px; left:2px}
+  .threepane.withdivider{grid-template-columns:200px 360px 6px 1fr}
+  @media (max-width:900px){ .threepane.withdivider{grid-template-columns:1fr} .paneDivider{display:none} }
+
+  /* ================= v3 — §7.4 one-card width: hamburger/list/email choreography ================= */
+  .ocdemo{max-width:460px; margin:0 auto; background:var(--card)}
+  .ocbody{position:relative; display:flex; min-height:380px; overflow:hidden}
+  .ocslot1{flex:0 0 130px; border-right:1px solid var(--line); background:var(--panel); position:relative; overflow-y:auto}
+  .ocslot2{flex:1; min-width:0; display:flex; flex-direction:column; overflow-y:auto}
+  .ocmenu{display:none; flex-direction:column; gap:2px; padding:10px 6px}
+  .ocwrap[data-state="browsing"] .ocmenu{display:flex}
+  .ocslot1 .navrow{font-size:11.5px; padding:6px 7px}
+  .ocmenu-peek{position:absolute; top:0; left:0; bottom:0; width:130px; background:var(--panel); border-right:1px solid var(--accLine); box-shadow:var(--shadowPop); z-index:6; padding:10px 6px; display:flex; flex-direction:column; gap:2px; opacity:0; pointer-events:none; transition:opacity .12s}
+  .ocwrap[data-state="reading"] .js-oc-ham:hover ~ .ocbody .ocmenu-peek{opacity:1; pointer-events:auto}
+  .oclistnarrow .trow2{display:none}
+  .ocemail{padding:12px 14px; display:none; flex-direction:column; gap:10px}
+  .oclistwide{display:none}
+  .ocwrap[data-state="reading"] .oclistnarrow{display:block}
+  .ocwrap[data-state="reading"] .ocemail{display:flex}
+  .ocwrap[data-state="browsing"] .oclistnarrow{display:none}
+  .ocwrap[data-state="browsing"] .oclistwide{display:block}
+  .ocwrap[data-state="browsing"] .ocemail{display:none}
+  .ocstate{font-family:var(--stamp); font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:var(--accent); font-weight:800}
+
+  /* ================= v3 — §7 inbox-expand: Focus toggle + sibling spines ================= */
+  .cardpool{display:flex; gap:10px; align-items:stretch; min-height:250px}
+  .poolcard{background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; display:flex; flex-direction:column; position:relative; transition:flex-basis .22s ease, flex-grow .22s ease, border-color .3s}
+  .poolcard.flash{border-color:var(--accent)}
+  .poolcard.inboxcard{flex:1 1 33.33%}
+  .poolcard.spine{flex:1 1 33.33%}
+  .cardpool[data-focus="half"] .inboxcard{flex:1 1 50%}
+  .cardpool[data-focus="full"] .inboxcard{flex:1 1 100%}
+  .cardpool:not([data-focus="balanced"]) .poolcard.spine{flex:0 0 42px; cursor:pointer}
+  .poolhead{display:flex; align-items:center; gap:8px; padding:10px 12px; border-bottom:1px solid var(--line); background:var(--panel)}
+  .poolttl{font-family:var(--font); font-weight:700; font-size:13px; color:var(--txt); flex:1}
+  .poolbody{padding:10px 12px; display:flex; flex-direction:column; gap:8px; overflow:hidden; flex:1}
+  .cardpool:not([data-focus="balanced"]) .poolcard.spine .poolbody,
+  .cardpool:not([data-focus="balanced"]) .poolcard.spine .poolhead .poolttl{display:none}
+  .spine-tab{display:none; align-items:center; justify-content:center; gap:8px; padding:10px 0; height:100%}
+  .cardpool:not([data-focus="balanced"]) .poolcard.spine .spine-tab{display:flex}
+  .spine-tab .spttl{writing-mode:vertical-rl; text-orientation:mixed; font-family:var(--font); font-weight:700; font-size:12.5px; color:var(--txt2); letter-spacing:.02em}
+  .spine-dot{width:7px; height:7px; border-radius:50%; flex:none}
+  .spine-peek{position:absolute; left:100%; top:0; margin-left:8px; width:190px; background:var(--panel); border:1px solid var(--line); border-radius:10px; box-shadow:var(--shadowPop); padding:10px 12px; z-index:9; opacity:0; pointer-events:none; transition:opacity .12s}
+  .poolcard.spine:hover .spine-peek{opacity:1}
+  .spine-peek .pptitle{font-family:var(--stamp); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--txt3); margin-bottom:6px}
+
+  /* ================= v3 — §7.4 quick actions: hover row actions + right-click menu + drag hint ================= */
+  .trow{position:relative}
+  .rowdrag{width:0; overflow:hidden; opacity:0; display:inline-flex; align-items:center; justify-content:center; color:var(--txt3); cursor:grab; transition:width .15s,opacity .15s; flex:none}
+  .trow:hover .rowdrag{width:14px; opacity:.55}
+  .rowdrag .ic{width:12px;height:12px}
+  .rowacts{display:none; align-items:center; gap:2px; margin-left:auto; padding-left:8px; flex:none}
+  #tlist .trow:hover .ttime{display:none}
+  #tlist .trow:hover .rowacts{display:inline-flex}
+  .rowact-btn{width:24px; height:24px; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; color:var(--txt3); cursor:pointer; flex:none}
+  .rowact-btn:hover{background:var(--card); color:var(--txt)}
+  .rowact-btn.danger:hover{color:var(--red)}
+  .rowact-btn .ic{width:14px;height:14px}
+  .ctxmenu{position:absolute; z-index:20; min-width:172px; background:var(--panel); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadowPop); padding:6px; overflow:hidden}
+  .ctx-opt{display:flex; align-items:center; gap:8px; padding:7px 10px; border-radius:8px; font-size:12.5px; color:var(--txt2); cursor:pointer; white-space:nowrap}
+  .ctx-opt:hover{background:var(--cardh); color:var(--txt)}
+  .ctx-opt .ic{width:13px;height:13px; color:var(--txt3)}
+  .ctx-opt.danger:hover{color:var(--red)} .ctx-opt.danger:hover .ic{color:var(--red)}
+  .ctx-div{height:1px; background:var(--line); margin:4px 4px}
+  .swiperow{position:relative; overflow:hidden; border-radius:10px; border:1px solid var(--line)}
+  .swipe-actions{position:absolute; top:0; right:0; bottom:0; display:flex}
+  .swipe-actions b{width:64px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; font-family:var(--stamp); font-size:8.5px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; cursor:pointer; border:0}
+  .swipe-actions b.a-snooze{background:var(--yellow); color:#211a05}
+  .swipe-actions b.a-archive{background:var(--green); color:#04140d}
+  .swiperow .trow{position:relative; z-index:2; background:var(--card); transition:transform .22s ease}
+  .swiperow.peeked .trow{transform:translateX(-128px)}
+
+  /* ================= v3 — §7.5 inbound routing demo ================= */
+  .dcsnip{margin-left:4px; color:var(--txt3); font-weight:400; max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:inline-block; vertical-align:bottom}
+  .dockchip.js-newchip{animation:chipin .22s ease}
+  @keyframes chipin{from{opacity:0; transform:translateY(6px)} to{opacity:1; transform:translateY(0)}}
+  .bdgbell.flashbell .ic{color:var(--accent)}
+  .dockpreview{position:absolute; bottom:100%; left:0; margin-bottom:8px; width:220px; background:var(--panel); border:1px solid var(--accLine); border-radius:10px; box-shadow:var(--shadowPop); padding:10px 12px; font-size:12px; color:var(--txt2); z-index:12}
+  .dockpreview b{color:var(--txt)}
+
+  /* ================= v3 — mobile tap-to-read swap (§7.4c) ================= */
+  .phone-reading{position:absolute; inset:0; background:var(--card); transform:translateX(100%); transition:transform .2s ease; z-index:7; display:flex; flex-direction:column}
+  .phone-reading.open{transform:translateX(0)}
+  .pr-head{display:flex; align-items:center; gap:8px; padding:10px 12px; border-bottom:1px solid var(--line); background:var(--bg2)}
+  .pr-back{width:32px; height:32px; border-radius:9px; display:inline-flex; align-items:center; justify-content:center; background:var(--card); border:1px solid var(--line); color:var(--txt2); cursor:pointer; flex:none}
+  .pr-back .ic{width:15px;height:15px}
+  .pr-subject{font-family:var(--font); font-weight:700; font-size:13px; color:var(--txt); margin:0; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .pr-from{padding:10px 14px 0; font-size:11.5px; color:var(--txt3)}
+  .pr-from b{color:var(--txt2)}
+  .pr-body{padding:10px 14px 16px; font-size:13px; color:var(--txt2); line-height:1.55}
+</style>
+
+<svg style="display:none">
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 12h16"/><path d="M4 6h16"/><path d="M4 18h16"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"/></symbol>
+  <symbol id="i-chev-r" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-chev-l" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="i-chev-d" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+  <symbol id="i-circle-user" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="10" r="3"/><path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662"/></symbol>
+  <symbol id="i-truck" viewBox="0 0 24 24"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></symbol>
+  <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z"/></symbol>
+  <symbol id="i-paperclip" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></symbol>
+  <symbol id="i-file-text" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></symbol>
+  <symbol id="i-archive" viewBox="0 0 24 24"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></symbol>
+  <symbol id="i-octagon-alert" viewBox="0 0 24 24"><path d="M12 16h.01"/><path d="M12 8v4"/><path d="M15.312 2a2 2 0 0 1 1.414.586l4.688 4.688A2 2 0 0 1 22 8.688v6.624a2 2 0 0 1-.586 1.414l-4.688 4.688a2 2 0 0 1-1.414.586H8.688a2 2 0 0 1-1.414-.586l-4.688-4.688A2 2 0 0 1 2 15.312V8.688a2 2 0 0 1 .586-1.414l4.688-4.688A2 2 0 0 1 8.688 2z"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M13.832 16.568a1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.804 1.6l-.469.351a1 1 0 0 0-.311 1.226 12.035 12.035 0 0 0 6.116 6.591Z"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></symbol>
+  <symbol id="i-app-window" viewBox="0 0 24 24"><rect width="18" height="14" x="3" y="5" rx="2"/><path d="M3 9h18"/><path d="M7 7h.01"/><path d="M10 7h.01"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></symbol>
+  <symbol id="i-hash" viewBox="0 0 24 24"><line x1="4" x2="20" y1="9" y2="9"/><line x1="4" x2="20" y1="15" y2="15"/><line x1="10" x2="8" y1="3" y2="21"/><line x1="16" x2="14" y1="3" y2="21"/></symbol>
+  <symbol id="i-message-circle" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></symbol>
+  <symbol id="i-laugh" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M18 13a6 6 0 0 1-6 5 6 6 0 0 1-6-5h12Z"/><line x1="9" x2="9.01" y1="9" y2="9"/><line x1="15" x2="15.01" y1="9" y2="9"/></symbol>
+  <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></symbol>
+  <symbol id="i-grip" viewBox="0 0 24 24"><circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/></symbol>
+</svg>
+
+<div class="wrap"><div class="sheet">
+
+  <p class="eyebrow">Inbox card v3 · comms spec §7.1–7.5 · channels-as-toggle + native-per-medium + responsive space model + inbox-expand — for Jac to react to, not final</p>
+  <h1>Inbox v3 — <span class="hl">channels up top, talk native</span></h1>
+  <p class="lede">Two structural changes from v1. <b>One</b> — <b>channel moves out of the buried left-rail "Streams" list
+  and up to a top toggle</b>: <code>ALL · TEAM · TEXTS · EMAIL · WRANGLER · CALLS</code>, each carrying its own unread
+  count, CALLS dimmed as a "soon" placeholder. The left rail goes back to being <b>just Gmail's folders.</b> <b>Two</b> —
+  <b>a thread now renders in its medium's own native form</b> instead of Gmail's reading pane wearing every hat: email
+  stays a Gmail thread, a text becomes Apple-Messages bubbles, a Team post becomes a Messenger channel with presence +
+  reactions, and Mr. Wrangler gets his own bot-thread with a loud, distinct bell when he actually fixes something. The
+  chrome around all of it — search, filters, sort — is <b>ours</b>, not Gmail's: the <code>mini-search</code> bar with
+  pills live in it, the globe scope toggle, and a <b>Views &amp; sort</b> menu. Same cross-record continuity as v1 —
+  every thread still knows which customer/rental/unit it's about.</p>
+  <p class="lede"><b>v3 adds four things</b> from spec §7.4–§7.5, all new sections below (7–10): the card's own
+  <b>responsive space model</b> — three width stages plus the left-menu hover/click choreography that swaps the
+  hamburger menu for the thread list without ever moving it; an <b>Inbox-only Focus toggle</b> (⅓ → ½ → full) that
+  shrinks its two siblings to slim clickable spines and rebalances the instant you touch one; a <b>shared quick-action
+  set</b> — Hide · Mark unread · Star · Snooze · Archive — live as row actions and a right-click menu on the same
+  five; and the <b>inbound-routing</b> rule for where a new text or email actually lands. Interactive throughout —
+  hover, click, and right-click the demos, don't just read them.</p>
+  <div class="key"><span><b>Signal</b> state chip</span><span><b>Ref</b> linked record</span><span><b>Stamp/Label</b> fact</span><span><b>Door</b> the one move</span><span><b>Contact</b> tel:/mailto:</span><span>· fill = today · colour = state · unread = dot+bold+bright, never colour alone</span></div>
+
+  <!-- ================= 1: TOP CHROME — OURS, NOT GMAIL'S ================= -->
+  <h2 class="sec"><span class="n">1</span> Top chrome — our search + sort, not Gmail's</h2>
+  <p class="secnote">Gmail's From/To/Attachment/Starred/Unread filter chips are gone. In their place: our own
+  <b>mini-search</b> — active filters render as <b>removable pills live in the bar</b> (one filtering pathway, pill
+  radius 999 so they read as "remove me," distinct from the row's chip-radius Signals) — a trailing <b>globe</b> scope
+  toggle (this channel ↔ all comms), and a separate <b>Views &amp; sort</b> button. Focusing search still drops a
+  <b>recent-searches</b> list first — but it now opens <b>above</b> the bar, never below, so it can't cover live results.</p>
+  <div class="chromegrid">
+    <div class="panel">
+      <div class="pcap">Default</div>
+      <div class="topbar" style="border-bottom:0">
+        <span class="iconbtn"><svg class="ic"><use href="#i-menu"></use></svg></span>
+        <div class="searchwrap">
+          <div class="mini-search">
+            <svg class="ic"><use href="#i-search"></use></svg>
+            <span class="ph">Search this channel…</span>
+            <span class="gscope" title="Scope: this channel"><svg class="ic"><use href="#i-globe"></use></svg></span>
+          </div>
+        </div>
+        <span class="door ghost">Views &amp; sort<svg class="ic" style="width:11px;height:11px"><use href="#i-chev-d"></use></svg></span>
+        <span class="iconbtn bdgbell"><svg class="ic"><use href="#i-bell"></use></svg><span class="bdg">3</span></span>
+        <span class="avatar">DR</span>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="pcap">Focused — pills in the bar, recent searches open ABOVE</div>
+      <div class="stackrev">
+        <div class="topbar" style="border-bottom:0">
+          <span class="iconbtn"><svg class="ic"><use href="#i-menu"></use></svg></span>
+          <div class="searchwrap">
+            <div class="mini-search focused">
+              <svg class="ic"><use href="#i-search"></use></svg>
+              <span class="spill">Unread<span class="spx"><svg class="ic"><use href="#i-x"></use></svg></span></span>
+              <span class="ph">sandra@boudreauxmarine.com</span>
+              <span class="gscope on" title="Scope: all comms"><svg class="ic"><use href="#i-globe"></use></svg></span>
+            </div>
+          </div>
+          <span class="door ghost">Views &amp; sort<svg class="ic" style="width:11px;height:11px"><use href="#i-chev-d"></use></svg></span>
+          <span class="iconbtn bdgbell"><svg class="ic"><use href="#i-bell"></use></svg><span class="bdg">3</span></span>
+          <span class="avatar">DR</span>
+        </div>
+        <div class="recentdrop pop">
+          <div class="recentrow"><svg class="ic"><use href="#i-clock"></use></svg><b>sandra@boudreauxmarine.com</b></div>
+          <div class="recentrow"><svg class="ic"><use href="#i-clock"></use></svg><b>bill of sale</b></div>
+          <div class="recentrow"><svg class="ic"><use href="#i-clock"></use></svg><b>Duhon Contracting</b></div>
+          <div class="recentrow"><svg class="ic"><use href="#i-clock"></use></svg>has:attachment from:acadianahydraulic.com</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 2: CHANNELS — TOP SEGMENTED TOGGLE ================= -->
+  <h2 class="sec"><span class="n">2</span> Channels — a top segmented toggle, not a buried streams list</h2>
+  <p class="secnote">Left→right: <b>All · Team · Texts · Email · Wrangler · Calls.</b> Active segment fills
+  <b>orange, dark ink</b> — channels aren't a status, so this is the accent fallback, not a filled Signal (same rule
+  that governs every toggle in the app). Each live segment carries its own unread count. <b>Calls</b> is a future
+  in-app-calling placeholder — dimmed and genuinely non-interactive (<code>pointer-events:none</code>), marked
+  <b>Soon</b>, not just visually quiet.</p>
+  <div class="panel">
+    <div class="pcap">Desktop — sits at the top bar / chrome row, right side</div>
+    <div style="padding:16px 14px">
+      <span class="seg chan">
+        <b class="on" data-chan="all"><svg class="ic"><use href="#i-inbox"></use></svg>All<span class="cnt">5</span></b>
+        <b data-chan="team"><svg class="ic"><use href="#i-hash"></use></svg>Team<span class="cnt">2</span></b>
+        <b data-chan="texts"><svg class="ic"><use href="#i-message-circle"></use></svg>Texts<span class="cnt">1</span></b>
+        <b data-chan="email"><svg class="ic"><use href="#i-mail"></use></svg>Email<span class="cnt">1</span></b>
+        <b data-chan="wrangler"><svg class="ic"><use href="#i-wrench"></use></svg>Wrangler<span class="cnt">1</span></b>
+        <b class="soon" data-chan="calls"><svg class="ic"><use href="#i-phone"></use></svg>Calls<span class="soonmark">Soon</span></b>
+      </span>
+    </div>
+  </div>
+
+  <!-- ================= 3: THE FULL WORKSPACE ================= -->
+  <h2 class="sec"><span class="n">3</span> The full workspace — desktop, three panes</h2>
+  <p class="secnote">The left rail is now <b>only Gmail's folders</b> — Inbox / Starred / Snoozed / Sent / Scheduled /
+  Drafts / All mail / Spam / Trash. The channel toggle lives in the chrome row (right side), <b>Views &amp; sort</b> on
+  the left where the old filter chips were. Click a channel to re-filter the thread list live; click a row to select +
+  mark read. <b>Boudreaux Marine LLC</b> is open at right — the <b>email</b> side of that relationship, native Gmail
+  form; its <b>text</b> side is its own thread over in Texts (see §4) — same customer, same Ref, two native threads
+  instead of one Gmail thread wearing two hats.</p>
+  <p class="secnote"><b>v3 — this is the <b>Roomy</b> width stage (§7.4 §7):</b> all three panes at once, so it now
+  carries a <b>draggable divider</b> (drag the thin bar between list and reading pane) and every row below is wired
+  with <b>hover row-actions + right-click quick actions</b> — hover a row or right-click it (see §9). The narrower
+  stages live in §7.</p>
+
+  <div class="panel">
+    <div class="stackrev">
+      <div class="topbar">
+        <span class="iconbtn js-drawer-toggle"><svg class="ic"><use href="#i-menu"></use></svg></span>
+        <div class="searchwrap">
+          <div class="mini-search js-worksearch">
+            <svg class="ic"><use href="#i-search"></use></svg>
+            <span class="ph">Search this channel…</span>
+            <span class="gscope js-gscope" title="Scope: this channel"><svg class="ic"><use href="#i-globe"></use></svg></span>
+          </div>
+        </div>
+        <span class="door save js-compose"><svg class="ic" style="width:13px;height:13px"><use href="#i-plus"></use></svg>Compose</span>
+        <span class="iconbtn bdgbell"><svg class="ic"><use href="#i-bell"></use></svg><span class="bdg">3</span></span>
+        <span class="avatar">DR</span>
+      </div>
+      <div class="recentdrop pop js-recentpop" hidden>
+        <div class="recentrow"><svg class="ic"><use href="#i-clock"></use></svg><b>sandra@boudreauxmarine.com</b></div>
+        <div class="recentrow"><svg class="ic"><use href="#i-clock"></use></svg><b>Duhon Contracting</b></div>
+        <div class="recentrow"><svg class="ic"><use href="#i-clock"></use></svg>has:attachment from:acadianahydraulic.com</div>
+      </div>
+    </div>
+    <div class="chromerow">
+      <span class="door ghost js-viewsort">Views &amp; sort<svg class="ic" style="width:11px;height:11px"><use href="#i-chev-d"></use></svg></span>
+      <div class="viewsort-menu js-vsmenu" hidden>
+        <div class="vs-label">Sort</div>
+        <div class="vs-opt js-vsopt on">Newest first</div>
+        <div class="vs-opt js-vsopt">Unread first</div>
+        <div class="vs-opt js-vsopt">Needs reply</div>
+        <div class="vs-div"></div>
+        <div class="vs-label">Saved views</div>
+        <div class="vs-opt"><svg class="ic"><use href="#i-star"></use></svg>My open threads</div>
+        <div class="vs-opt"><svg class="ic"><use href="#i-star"></use></svg>Overdue only</div>
+        <div class="vs-opt add">+ Save current as a View</div>
+      </div>
+      <span class="fspacer"></span>
+      <span class="seg chan js-chantoggle">
+        <b class="on" data-chan="all"><svg class="ic"><use href="#i-inbox"></use></svg>All<span class="cnt">0</span></b>
+        <b data-chan="team"><svg class="ic"><use href="#i-hash"></use></svg>Team<span class="cnt">0</span></b>
+        <b data-chan="texts"><svg class="ic"><use href="#i-message-circle"></use></svg>Texts<span class="cnt">0</span></b>
+        <b data-chan="email"><svg class="ic"><use href="#i-mail"></use></svg>Email<span class="cnt">0</span></b>
+        <b data-chan="wrangler"><svg class="ic"><use href="#i-wrench"></use></svg>Wrangler<span class="cnt">0</span></b>
+        <b class="soon" data-chan="calls"><svg class="ic"><use href="#i-phone"></use></svg>Calls<span class="soonmark">Soon</span></b>
+      </span>
+    </div>
+
+    <div class="threepane">
+      <!-- RAIL — Gmail folders ONLY, streams removed -->
+      <nav class="rail">
+        <span class="door save compose-btn js-compose"><svg class="ic" style="width:13px;height:13px"><use href="#i-plus"></use></svg>Compose</span>
+        <div class="navrow active js-folder"><svg class="ic"><use href="#i-inbox"></use></svg>Inbox<span class="cnt">9</span></div>
+        <div class="navrow js-folder"><svg class="ic"><use href="#i-star"></use></svg>Starred</div>
+        <div class="navrow js-folder"><svg class="ic"><use href="#i-clock"></use></svg>Snoozed</div>
+        <div class="navrow js-folder"><svg class="ic"><use href="#i-send"></use></svg>Sent</div>
+        <div class="navrow js-folder"><svg class="ic"><use href="#i-calendar"></use></svg>Scheduled</div>
+        <div class="navrow js-folder"><svg class="ic"><use href="#i-file-text"></use></svg>Drafts<span class="cnt">3</span></div>
+        <div class="navrow js-folder"><svg class="ic"><use href="#i-archive"></use></svg>All mail</div>
+        <div class="navrow js-folder"><svg class="ic"><use href="#i-octagon-alert"></use></svg>Spam</div>
+        <div class="navrow js-folder"><svg class="ic"><use href="#i-trash"></use></svg>Trash</div>
+      </nav>
+
+      <!-- THREAD LIST -->
+      <div class="tlist" id="tlist">
+
+        <div class="trow selected sred" data-chan="email" data-thread="boudreaux">
+          <div class="trow1">
+            <span class="tdot"></span>
+            <span class="star js-star on"><svg class="ic"><use href="#i-star"></use></svg></span>
+            <span class="tavatar cust">SB</span>
+            <span class="tsub"><span class="tsender">Sandra Boudreaux</span><span class="tsubject">Re: Invoice #4460 — payment plan? <span class="snip">— apologies for the wait, I saw this over text too...</span></span></span>
+            <span class="ttime">Jul 19</span>
+          </div>
+          <div class="trow2">
+            <span class="changlyph" title="Email"><svg class="ic"><use href="#i-mail"></use></svg></span>
+            <span class="ctl sig f red">overdue</span>
+            <a class="ref"><span class="ty"><svg class="ic"><use href="#i-user"></use></svg></span>Boudreaux Marine LLC</a>
+            <a class="ref"><span class="ty"><svg class="ic"><use href="#i-truck"></use></svg></span>Gator<small>RC-4700</small></a>
+            <span class="labelchip">Invoicing</span>
+          </div>
+        </div>
+
+        <div class="trow unread sred" data-chan="texts" data-thread="boudreaux-sms">
+          <div class="trow1">
+            <span class="tdot" style="background:var(--red)"></span>
+            <span class="star js-star"><svg class="ic"><use href="#i-star"></use></svg></span>
+            <span class="tavatar cust">SB</span>
+            <span class="tsub"><span class="tsender">Sandra Boudreaux</span><span class="tsubject">(337) 555-0188 <span class="snip">— Just so I confirm before I pay — first $420 today, second on the 3rd?</span></span></span>
+            <span class="ttime">9:14 AM</span>
+          </div>
+          <div class="trow2">
+            <span class="changlyph" title="Text"><svg class="ic"><use href="#i-message-circle"></use></svg></span>
+            <span class="ctl sig f red">overdue</span>
+            <a class="ref"><span class="ty"><svg class="ic"><use href="#i-user"></use></svg></span>Boudreaux Marine LLC</a>
+            <a class="ref"><span class="ty"><svg class="ic"><use href="#i-truck"></use></svg></span>Gator<small>RC-4700</small></a>
+          </div>
+        </div>
+
+        <div class="trow unread syellow" data-chan="email" data-thread="theriot">
+          <div class="trow1">
+            <span class="tdot" style="background:var(--yellow)"></span>
+            <span class="star js-star on"><svg class="ic"><use href="#i-star"></use></svg></span>
+            <span class="tavatar cust">MT</span>
+            <span class="tsub"><span class="tsender">Marcus Theriot</span><span class="tsubject">Split-pay request — INV #4498 <span class="snip">— Would like to split the $1,240 balance across two payments...</span></span></span>
+            <span class="ttime">8:40 AM</span>
+          </div>
+          <div class="trow2">
+            <span class="changlyph" title="Email"><svg class="ic"><use href="#i-mail"></use></svg></span>
+            <span class="ctl sig f yellow">awaiting reply</span>
+            <a class="ref"><span class="ty"><svg class="ic"><use href="#i-user"></use></svg></span>Theriot Pipe &amp; Supply</a>
+            <span class="labelchip">Invoicing</span>
+          </div>
+        </div>
+
+        <div class="trow sblue" data-chan="email" data-thread="duhon">
+          <div class="trow1">
+            <span class="tdot"></span>
+            <span class="star js-star"><svg class="ic"><use href="#i-star"></use></svg></span>
+            <span class="tavatar cust">RD</span>
+            <span class="tsub"><span class="tsender">Ray Duhon</span><span class="tsubject">Quote — Highrise 2-week extension <span class="snip">— Attached is the updated quote through Aug 3...</span></span></span>
+            <span class="ttime">Yesterday</span>
+          </div>
+          <div class="trow2">
+            <span class="changlyph" title="Email"><svg class="ic"><use href="#i-mail"></use></svg></span>
+            <span class="ctl sig f blue">quote sent</span>
+            <a class="ref"><span class="ty"><svg class="ic"><use href="#i-user"></use></svg></span>Duhon Contracting</a>
+            <a class="ref"><span class="ty"><svg class="ic"><use href="#i-truck"></use></svg></span>Highrise<small>4471-K</small></a>
+            <span class="attchip"><svg class="ic"><use href="#i-file-text"></use></svg>PDF</span>
+            <span class="labelchip">Sales</span>
+          </div>
+        </div>
+
+        <div class="trow sgray" data-chan="email" data-thread="acadiana">
+          <div class="trow1">
+            <span class="tdot"></span>
+            <span class="star js-star"><svg class="ic"><use href="#i-star"></use></svg></span>
+            <span class="tavatar cust">AH</span>
+            <span class="tsub"><span class="tsender">Acadiana Hydraulic Supply</span><span class="tsubject">Order confirmation — hyd seal kit shipped <span class="snip">— Your order (WO #1198) has shipped, ETA Fri...</span></span></span>
+            <span class="ttime">Jul 18</span>
+          </div>
+          <div class="trow2">
+            <span class="changlyph" title="Email"><svg class="ic"><use href="#i-mail"></use></svg></span>
+            <span class="ctl sig o grey">closed</span>
+            <a class="ref"><span class="ty"><svg class="ic"><use href="#i-truck"></use></svg></span>Highrise<small>4471-K</small></a>
+            <span class="labelchip">Parts</span>
+          </div>
+        </div>
+
+        <div class="trow unread syellow" data-chan="team" data-thread="mention1">
+          <div class="trow1">
+            <span class="tdot" style="background:var(--yellow)"></span>
+            <span class="star js-star"><svg class="ic"><use href="#i-star"></use></svg></span>
+            <span class="tavatar team">DR</span>
+            <span class="tsub"><span class="tsender">Denny R.</span><span class="tsubject"><span class="mention">@Trey</span> — hydraulics on RC-4700 need a second look before it goes back out</span></span>
+            <span class="ttime">7:52 AM</span>
+          </div>
+          <div class="trow2">
+            <span class="changlyph" title="Team"><svg class="ic"><use href="#i-hash"></use></svg></span>
+            <span class="ctl sig f yellow">needs review</span>
+            <a class="ref"><span class="ty"><svg class="ic"><use href="#i-wrench"></use></svg></span>WO #1198<small>RC-4700</small></a>
+          </div>
+        </div>
+
+        <div class="trow handoff unread syellow" data-chan="team" data-thread="handoff1">
+          <div class="trow1">
+            <span class="tdot" style="background:var(--yellow)"></span>
+            <span class="star js-star"><svg class="ic"><use href="#i-star"></use></svg></span>
+            <span class="handoff-icon"><svg class="ic"><use href="#i-app-window"></use></svg></span>
+            <span class="handoff-txt"><b>Denny R.</b> sent you a tab: Gator / RC-4700 recovery</span>
+            <span class="ttime">7:55 AM</span>
+          </div>
+          <div class="trow2">
+            <span class="changlyph" title="Team"><svg class="ic"><use href="#i-hash"></use></svg></span>
+            <a class="ref"><span class="ty"><svg class="ic"><use href="#i-truck"></use></svg></span>Gator<small>RC-4700</small></a>
+            <span class="door save" style="height:20px; padding:0 10px; font-size:9.5px">Open</span>
+          </div>
+        </div>
+
+        <div class="trow sgreen" data-chan="team" data-thread="wanda1">
+          <div class="trow1">
+            <span class="tdot"></span>
+            <span class="star js-star"><svg class="ic"><use href="#i-star"></use></svg></span>
+            <span class="tavatar team">WR</span>
+            <span class="tsub"><span class="tsender">Wanda R.</span><span class="tsubject">Highrise reinspection done <span class="snip">— cleared for Duhon's 7 AM pickup tomorrow.</span></span></span>
+            <span class="ttime">Yesterday · 4:10 PM</span>
+          </div>
+          <div class="trow2">
+            <span class="changlyph" title="Team"><svg class="ic"><use href="#i-hash"></use></svg></span>
+            <span class="ctl sig o green">cleared</span>
+            <a class="ref"><span class="ty"><svg class="ic"><use href="#i-truck"></use></svg></span>Highrise<small>4471-K</small></a>
+          </div>
+        </div>
+
+        <div class="trow unread sgreen" data-chan="wrangler" data-thread="wrangler1">
+          <div class="trow1">
+            <span class="tdot" style="background:var(--green)"></span>
+            <span class="star js-star"><svg class="ic"><use href="#i-star"></use></svg></span>
+            <span class="tavatar bot"><svg class="ic" style="width:14px;height:14px"><use href="#i-wrench"></use></svg></span>
+            <span class="tsub"><span class="tsender">Mr. Wrangler</span><span class="tsubject">Fixed — WO #1198 completion button <span class="snip">— hydraulics recheck now saves clean, redeployed.</span></span></span>
+            <span class="ttime">Just now</span>
+          </div>
+          <div class="trow2">
+            <span class="changlyph" title="Mr. Wrangler"><svg class="ic"><use href="#i-wrench"></use></svg></span>
+            <span class="ctl sig f green">fixed</span>
+            <a class="ref"><span class="ty"><svg class="ic"><use href="#i-wrench"></use></svg></span>WO #1198<small>RC-4700</small></a>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- v3 §7.4 — draggable divider, roomy stage only (drag the thin bar) -->
+      <div class="paneDivider" id="paneDivider" title="Drag to resize"></div>
+
+      <!-- READING PANE — email native (Gmail) -->
+      <div class="rpane" id="rpane">
+        <div class="rp-header">
+          <div class="rp-context">
+            <span class="ctl sig f red">overdue</span>
+            <a class="ref"><span class="ty"><svg class="ic"><use href="#i-user"></use></svg></span>Boudreaux Marine LLC</a>
+            <a class="ref"><span class="ty"><svg class="ic"><use href="#i-truck"></use></svg></span>Gator<small>RC-4700</small></a>
+          </div>
+          <p class="rp-subject">Re: Invoice #4460 — payment plan?</p>
+          <p class="rp-caption">This conversation is linked to <b>RC-4700 / Boudreaux Marine LLC</b> and also shows on
+          their card. Sandra's <b>text</b> replies live in their own native thread over in <b>Texts</b> — same
+          customer, same Ref, different medium.</p>
+        </div>
+        <div class="rp-msgs">
+          <div class="msg">
+            <div class="msg-head">
+              <span class="msg-av">DR</span>
+              <div class="msg-id"><span class="msg-who">Denny R.</span><a class="clink" href="mailto:denny@jacrentals.com"><svg class="ic"><use href="#i-mail"></use></svg><span class="v">denny@jacrentals.com</span></a></div>
+              <span class="msg-chan"><svg class="ic"><use href="#i-mail"></use></svg>Email</span>
+              <span class="msg-time">JUL 18 · 9:02 AM</span>
+            </div>
+            <div class="msg-body">Hi Sandra, following up on Invoice #4460 for the Gator rental (RC-4700) — balance of $840 is now 18 days past due. Let me know if you'd like to set up a payment plan or if there's an issue on your end.</div>
+          </div>
+          <div class="msg">
+            <div class="msg-head">
+              <span class="msg-av">SB</span>
+              <div class="msg-id"><span class="msg-who">Sandra Boudreaux</span><a class="clink" href="mailto:sandra@boudreauxmarine.com"><svg class="ic"><use href="#i-mail"></use></svg><span class="v">sandra@boudreauxmarine.com</span></a></div>
+              <span class="msg-chan"><svg class="ic"><use href="#i-mail"></use></svg>Email</span>
+              <span class="msg-time">JUL 19 · 10:15 AM</span>
+            </div>
+            <div class="msg-body">Hi Denny, apologies for the wait — I saw this over text too, just following up here for our records. Can we still do the two-payment split we talked about?</div>
+          </div>
+          <div class="msg">
+            <div class="msg-head">
+              <span class="msg-av">DR</span>
+              <div class="msg-id"><span class="msg-who">Denny R.</span><a class="clink" href="mailto:denny@jacrentals.com"><svg class="ic"><use href="#i-mail"></use></svg><span class="v">denny@jacrentals.com</span></a></div>
+              <span class="msg-chan"><svg class="ic"><use href="#i-mail"></use></svg>Email</span>
+              <span class="msg-time">JUL 19 · 3:40 PM</span>
+            </div>
+            <div class="msg-body">Confirmed — the split is set up and the first invoice link went out today. Thanks for looping back on both channels!</div>
+          </div>
+        </div>
+        <div class="rp-reply">
+          <div class="replybox">
+            <div class="replyfoot" style="margin-top:0; margin-bottom:9px"><span class="stamp">to sandra@boudreauxmarine.com</span></div>
+            <div class="replytext">Reply to Sandra Boudreaux…</div>
+            <div class="replyfoot">
+              <span class="door ghost"><svg class="ic" style="width:12px;height:12px"><use href="#i-paperclip"></use></svg>Attach</span>
+              <span class="fspacer"></span>
+              <span class="door save"><svg class="ic" style="width:12px;height:12px"><use href="#i-send"></use></svg>Send</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 4: NATIVE CONVERSATION PER MEDIUM ================= -->
+  <h2 class="sec"><span class="n">4</span> Native conversation per medium — talk stays native</h2>
+  <p class="secnote">Triage is one surface (§3); <b>talking is native to the medium.</b> Email's native form is the
+  Gmail reading pane already shown in §3 above. The other three, faithfully duplicated in our skin:</p>
+
+  <h3 class="subsec">Texts → Apple Messages bubbles</h3>
+  <p class="secnote">Sent = <code>--commit</code> blue, right-aligned; received = <code>--panel2</code>/<code>--card</code>
+  tint, left-aligned — both hold AA. A <b>Delivered</b> receipt sits under the last sent bubble, exactly Apple's
+  placement; the contact's own number is the <code>tel:</code> link, tappable on mobile, readable on desktop.</p>
+  <div class="panel">
+    <div class="pcap">Sandra Boudreaux · Boudreaux Marine LLC</div>
+    <div class="rp-header" style="padding:12px 16px 10px">
+      <div class="rp-context">
+        <span class="ctl sig f red">overdue</span>
+        <a class="ref"><span class="ty"><svg class="ic"><use href="#i-truck"></use></svg></span>Gator<small>RC-4700</small></a>
+      </div>
+      <p class="rp-subject" style="margin-bottom:2px">Sandra Boudreaux</p>
+      <a class="clink" href="tel:3375550188"><svg class="ic"><use href="#i-phone"></use></svg><span class="v">(337) 555-0188</span></a>
+    </div>
+    <div class="applemsg">
+      <div class="bubblerow recv"><div class="bubble">Hi Denny, sorry for the delay — can we do 2 payments of $420? Can text or call me at this #.</div></div>
+      <div class="bubblerow sent"><div class="bubble">That works — I'll set up the split and send a link for the first $420 today.</div><div class="bubble-receipt">Delivered</div></div>
+      <div class="bubblerow recv">
+        <div class="bubble-img"><span class="ph"><svg class="ic" style="width:12px;height:12px"><use href="#i-image"></use></svg></span>IMG_4021.jpg</div>
+        <div class="bubble" style="margin-top:6px">Here's the oil level on the Gator before anyone drives out — want to check before you send someone?</div>
+      </div>
+      <div class="bubblerow sent"><div class="bubble">Good catch — looks a little low, I'll have Trey top it off when he's out there.</div><div class="bubble-receipt">Delivered</div></div>
+      <div class="bubblerow recv"><div class="bubble">Just so I confirm before I pay — first $420 today, second on the 3rd? Want to make sure it lines up right.</div></div>
+    </div>
+  </div>
+
+  <h3 class="subsec">Team → Facebook Messenger channels</h3>
+  <p class="secnote">Sender name above each bubble, avatar with a <b>presence dot</b> (green = online), <b>reactions</b>
+  on a bubble, <span class="mention">@mentions</span> highlighted — carrying the crew's real workflow channels. Every
+  message that names a unit/rental hangs a <b>Ref</b> off it.</p>
+  <div class="panel">
+    <div class="pcap">On Rent/Delivery/Recovery · Team</div>
+    <div class="msgr-frame">
+      <div class="msgr-chanlist">
+        <div class="msgr-chan"><svg class="ic"><use href="#i-hash"></use></svg>Reservations</div>
+        <div class="msgr-chan active"><svg class="ic"><use href="#i-hash"></use></svg>On Rent/Delivery/Recovery<span class="dot"></span></div>
+        <div class="msgr-chan"><svg class="ic"><use href="#i-hash"></use></svg>Office</div>
+        <div class="msgr-chan"><svg class="ic"><use href="#i-hash"></use></svg>Transport/Field Calls<span class="dot"></span></div>
+      </div>
+      <div class="msgr-body">
+        <div class="msgr-msg">
+          <div class="msgr-av-wrap"><span class="msgr-av">DR</span><span class="presence"></span></div>
+          <div class="msgr-col">
+            <span class="msgr-name">Denny R.</span>
+            <div class="msgr-bubble"><span class="mention">@Trey</span> — hydraulics on RC-4700 need a second look before it goes back out<span class="msgr-reactions"><svg class="ic heart"><use href="#i-heart"></use></svg></span></div>
+            <div class="msgr-refrow"><a class="ref"><span class="ty"><svg class="ic"><use href="#i-wrench"></use></svg></span>WO #1198<small>RC-4700</small></a></div>
+          </div>
+        </div>
+        <div class="msgr-msg">
+          <div class="msgr-av-wrap"><span class="msgr-av">TG</span><span class="presence"></span></div>
+          <div class="msgr-col">
+            <span class="msgr-name">Trey Guidry</span>
+            <div class="msgr-bubble">On it — manifold's the usual suspect, pulling it now. (Also just dropped a bolt in my boot again.)<span class="msgr-reactions"><svg class="ic laugh"><use href="#i-laugh"></use></svg></span></div>
+          </div>
+        </div>
+        <div class="msgr-msg">
+          <div class="msgr-av-wrap"><span class="msgr-av">WR</span><span class="presence off"></span></div>
+          <div class="msgr-col">
+            <span class="msgr-name">Wanda R.</span>
+            <div class="msgr-bubble">Highrise reinspection's done either way — cleared for Duhon's 7 AM pickup tomorrow.</div>
+            <div class="msgr-refrow"><a class="ref"><span class="ty"><svg class="ic"><use href="#i-truck"></use></svg></span>Highrise<small>4471-K</small></a></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="callout" style="margin-top:9px">
+    <span class="lab">↑ session hand-off (unchanged from v1)</span>A <b>tab is a whole working context</b> (record +
+    cascade + scroll position), not just a record id. This still surfaces as a row in the unified Team list (§3) —
+    the Messenger view above is the channel it drops into, not a replacement for it.
+  </div>
+
+  <h3 class="subsec">Wrangler → the bot thread</h3>
+  <p class="secnote">Styled deliberately distinct from person-comms: bot lines carry the app's own <b>stamped</b> voice
+  (the same mono face used for labels/data everywhere else) instead of body-voice sentences, on a quiet
+  <code>--tanSoft</code> wash. Today Mr. Wrangler barely signals a fix; below is the <b>loud, distinct bell</b> this
+  spec calls for instead.</p>
+  <div class="panel">
+    <div class="pcap">Mr. Wrangler · bug report thread</div>
+    <div class="wthread">
+      <div class="wmsg user">
+        <span class="wav person">DR</span>
+        <div class="wcol">
+          <div class="wbubble">WO #1198 — the Complete button isn't saving the hydraulics recheck, keeps kicking back to draft.</div>
+        </div>
+      </div>
+      <div class="wmsg bot">
+        <span class="wav"><svg class="ic"><use href="#i-wrench"></use></svg></span>
+        <div class="wcol">
+          <div class="wbubble">got it — investigating wo #1198's completion flow.</div>
+          <div class="wfoot"><span class="ctl sig o yellow">investigating</span></div>
+        </div>
+      </div>
+      <div class="wmsg bot">
+        <span class="wav"><svg class="ic"><use href="#i-wrench"></use></svg></span>
+        <div class="wcol">
+          <div class="wbubble">fixed — recheck now saves clean. redeployed.</div>
+          <div class="wfoot"><span class="ctl sig f green">fixed</span><a class="ref"><span class="ty"><svg class="ic"><use href="#i-wrench"></use></svg></span>WO #1198<small>RC-4700</small></a></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="secnote" style="margin-top:12px"><b>The loud alert that fires on resolution</b> — a distinct bell, not folded into the raw engineering feed:</p>
+  <div class="wbell">
+    <span class="wbell-bar"></span>
+    <span class="wbell-ic"><svg class="ic"><use href="#i-bell"></use></svg></span>
+    <div class="wbell-txt"><b>Mr. Wrangler</b> fixed <b>WO #1198</b> — hydraulics recheck now saves clean.</div>
+    <span class="ctl sig f green">fixed</span>
+    <span class="ttime">Just now</span>
+  </div>
+
+  <!-- ================= 5: MOBILE ================= -->
+  <h2 class="sec"><span class="n">5</span> Narrow / mobile — swipeable channel header</h2>
+  <p class="secnote">The desktop segmented toggle becomes a <b>swipeable header</b>: swipe left/right (or tap the
+  chevrons) to change channel; dots below mark position among the six. The rail becomes a slide-over drawer —
+  <b>Gmail folders only</b>, same as desktop. Landing on <b>Calls</b> shows a placeholder, not a broken list.</p>
+  <p class="secnote"><b>v3 — this is the <b>Mobile</b> width stage (§7.4):</b> list only; <b>tap a thread and it
+  swaps to a full-width reading view</b> (no divider, no split — the robust answer at this width), ‹ Back returns to
+  the list.</p>
+  <div class="phonewrap">
+    <div class="phone" id="phoneApp">
+      <div class="topbar">
+        <span class="iconbtn js-phone-drawer"><svg class="ic"><use href="#i-menu"></use></svg></span>
+        <div class="searchwrap"><div class="mini-search"><svg class="ic"><use href="#i-search"></use></svg><span class="ph">Search this channel…</span></div></div>
+        <span class="avatar">DR</span>
+      </div>
+      <div class="swipehead">
+        <span class="swarrow js-sw-prev"><svg class="ic"><use href="#i-chev-l"></use></svg></span>
+        <div class="swipetrack js-swtrack"></div>
+        <span class="swarrow js-sw-next"><svg class="ic"><use href="#i-chev-r"></use></svg></span>
+      </div>
+      <div class="swdots js-swdots"></div>
+      <div class="tlist" id="phoneTlist">
+        <div class="trow selected sred" data-chan="email">
+          <div class="trow1">
+            <span class="tdot"></span>
+            <span class="star js-star on"><svg class="ic"><use href="#i-star"></use></svg></span>
+            <span class="tavatar cust">SB</span>
+            <span class="tsub"><span class="tsender">Sandra Boudreaux</span><span class="tsubject">Re: Invoice #4460 <span class="snip">— saw this over text too...</span></span></span>
+            <span class="ttime">Jul 19</span>
+          </div>
+          <div class="trow2"><span class="changlyph"><svg class="ic"><use href="#i-mail"></use></svg></span><span class="ctl sig f red">overdue</span><a class="ref"><span class="ty"><svg class="ic"><use href="#i-truck"></use></svg></span>Gator<small>RC-4700</small></a></div>
+        </div>
+        <div class="trow unread sred" data-chan="texts">
+          <div class="trow1">
+            <span class="tdot" style="background:var(--red)"></span>
+            <span class="star js-star"><svg class="ic"><use href="#i-star"></use></svg></span>
+            <span class="tavatar cust">SB</span>
+            <span class="tsub"><span class="tsender">Sandra Boudreaux</span><span class="tsubject">(337) 555-0188 <span class="snip">— first $420 today, second on the 3rd?</span></span></span>
+            <span class="ttime">9:14A</span>
+          </div>
+          <div class="trow2"><span class="changlyph"><svg class="ic"><use href="#i-message-circle"></use></svg></span><span class="ctl sig f red">overdue</span></div>
+        </div>
+        <div class="trow unread syellow" data-chan="team">
+          <div class="trow1">
+            <span class="tdot" style="background:var(--yellow)"></span>
+            <span class="star js-star"><svg class="ic"><use href="#i-star"></use></svg></span>
+            <span class="tavatar team">DR</span>
+            <span class="tsub"><span class="tsender">Denny R.</span><span class="tsubject"><span class="mention">@Trey</span> — RC-4700 hydraulics recheck</span></span>
+            <span class="ttime">7:52A</span>
+          </div>
+          <div class="trow2"><span class="changlyph"><svg class="ic"><use href="#i-hash"></use></svg></span><span class="ctl sig f yellow">needs review</span></div>
+        </div>
+        <div class="trow unread syellow" data-chan="email">
+          <div class="trow1">
+            <span class="tdot" style="background:var(--yellow)"></span>
+            <span class="star js-star on"><svg class="ic"><use href="#i-star"></use></svg></span>
+            <span class="tavatar cust">MT</span>
+            <span class="tsub"><span class="tsender">Marcus Theriot</span><span class="tsubject">Split-pay — INV #4498 <span class="snip">— split the $1,240 balance...</span></span></span>
+            <span class="ttime">8:40A</span>
+          </div>
+          <div class="trow2"><span class="changlyph"><svg class="ic"><use href="#i-mail"></use></svg></span><span class="ctl sig f yellow">awaiting reply</span></div>
+        </div>
+        <div class="trow unread sgreen" data-chan="wrangler">
+          <div class="trow1">
+            <span class="tdot" style="background:var(--green)"></span>
+            <span class="star js-star"><svg class="ic"><use href="#i-star"></use></svg></span>
+            <span class="tavatar bot"><svg class="ic" style="width:14px;height:14px"><use href="#i-wrench"></use></svg></span>
+            <span class="tsub"><span class="tsender">Mr. Wrangler</span><span class="tsubject">Fixed — WO #1198 <span class="snip">— completion button, redeployed.</span></span></span>
+            <span class="ttime">Now</span>
+          </div>
+          <div class="trow2"><span class="changlyph"><svg class="ic"><use href="#i-wrench"></use></svg></span><span class="ctl sig f green">fixed</span></div>
+        </div>
+      </div>
+      <div class="swplaceholder js-swplaceholder" hidden>In-app calling — coming soon.</div>
+      <span class="fab js-phone-compose"><svg class="ic"><use href="#i-plus"></use></svg></span>
+      <div class="scrim js-phone-scrim"></div>
+      <div class="drawer js-phone-drawer-panel">
+        <span class="door save compose-btn" style="margin-bottom:12px">Compose</span>
+        <div class="navrow active"><svg class="ic"><use href="#i-inbox"></use></svg>Inbox<span class="cnt">9</span></div>
+        <div class="navrow"><svg class="ic"><use href="#i-star"></use></svg>Starred</div>
+        <div class="navrow"><svg class="ic"><use href="#i-clock"></use></svg>Snoozed</div>
+        <div class="navrow"><svg class="ic"><use href="#i-send"></use></svg>Sent</div>
+        <div class="navrow"><svg class="ic"><use href="#i-calendar"></use></svg>Scheduled</div>
+        <div class="navrow"><svg class="ic"><use href="#i-file-text"></use></svg>Drafts<span class="cnt">3</span></div>
+        <div class="navrow"><svg class="ic"><use href="#i-archive"></use></svg>All mail</div>
+        <div class="navrow"><svg class="ic"><use href="#i-octagon-alert"></use></svg>Spam</div>
+        <div class="navrow"><svg class="ic"><use href="#i-trash"></use></svg>Trash</div>
+      </div>
+
+      <!-- v3 §7.4c — tap a thread, it swaps to a full-width reading view -->
+      <div class="phone-reading" id="phoneReading">
+        <div class="pr-head">
+          <span class="pr-back js-pr-back"><svg class="ic"><use href="#i-chev-l"></use></svg></span>
+          <p class="pr-subject" id="prSubject">Re: Invoice #4460 — payment plan?</p>
+        </div>
+        <p class="pr-from" id="prFrom"><b>Sandra Boudreaux</b></p>
+        <div class="pr-body" id="prBody">— apologies for the wait, I saw this over text too...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 6: FOOTER COMMS RAIL ================= -->
+  <h2 class="sec"><span class="n">6</span> Footer comms rail — the quick dock (altitude two)</h2>
+  <p class="secnote">Minimized thread chips + a docked compose window, bottom-right — Gmail desktop's own pattern,
+  unchanged from v1. A resolved Wrangler thread can dock here too, same as a person thread.</p>
+  <div class="panel dockdemo" id="dockdemo">
+    <div class="dockbar">
+      <span class="dockchip js-dockchip"><span class="dot"></span>Boudreaux Marine LLC</span>
+      <span class="dockchip js-dockchip"><span class="dot" style="background:var(--blue)"></span>Trey Guidry · RC-4700</span>
+      <span class="dockchip js-dockchip"><span class="dot" style="background:var(--green)"></span>Mr. Wrangler · WO #1198</span>
+      <div class="composedock">
+        <div class="cd-head js-cd-toggle">
+          <svg class="ic" style="width:13px;height:13px;color:var(--txt3)"><use href="#i-mail"></use></svg>
+          <span class="t">New message — Theriot Pipe &amp; Supply</span>
+          <span class="cd-icon"><svg class="ic"><use href="#i-minus"></use></svg></span>
+          <span class="cd-icon"><svg class="ic"><use href="#i-x"></use></svg></span>
+        </div>
+        <div class="cd-body">
+          <div class="cd-field"><b>To</b>marcus@theriotpipe.com</div>
+          <div class="cd-field"><b>Subject</b>Re: Split-pay request — INV #4498</div>
+          <div class="cd-textarea">Hi Marcus, that split works on our end — I'll send the first invoice link…</div>
+        </div>
+        <div class="cd-foot"><span class="door save" style="height:22px;font-size:9.5px;padding:0 10px">Send</span></div>
+      </div>
+    </div>
+  </div>
+  <p class="annot">A bell alert opens the thread here — nothing skips a level:</p>
+  <p class="annot">
+    <span class="flow">
+      <span class="flowstep"><svg class="ic"><use href="#i-bell"></use></svg>Bell</span>
+      <svg class="flowarrow"><use href="#i-chev-r"></use></svg>
+      <span class="flowstep"><svg class="ic"><use href="#i-mail"></use></svg>Dock chip</span>
+      <svg class="flowarrow"><use href="#i-chev-r"></use></svg>
+      <span class="flowstep"><svg class="ic"><use href="#i-inbox"></use></svg>Inbox card</span>
+    </span>
+    — alert (get-told) → quick-dock (footer rail) → full workspace (here), exactly like Gmail's badge → docked window → full inbox.
+  </p>
+
+  <!-- ================= 7: RESPONSIVE SPACE MODEL ================= -->
+  <h2 class="sec"><span class="n">7</span> Responsive space model — one lever, three width stages <span style="font-size:9px;color:var(--txt3);font-weight:700;text-transform:none;letter-spacing:0">(spec §7.4)</span></h2>
+  <p class="secnote">ONE interaction model that adds panes when there's room — desktop is "the mobile model with more
+  space." <b>Roomy</b> (§3, above) shows all three panes plus the new draggable divider. <b>Mobile</b> (§5, above)
+  shows list-only with a full-width tap-to-read swap. The squeeze in the middle — <b>one-card width</b>, where the
+  card only ever shows <b>two of the three panes</b> — is the one that needs demonstrating live:</p>
+  <div class="panel">
+    <div class="pcap">One-card width — hover the hamburger to peek, click it to browse, click a thread to read</div>
+    <div class="ocdemo ocwrap" id="ocDemo1" data-state="reading">
+      <div class="topbar" style="border-bottom:1px solid var(--line)">
+        <span class="iconbtn js-oc-ham" id="ocHam1"><svg class="ic"><use href="#i-menu"></use></svg></span>
+        <div class="searchwrap"><div class="mini-search"><svg class="ic"><use href="#i-search"></use></svg><span class="ph">Search this channel…</span></div></div>
+        <span class="ocstate js-ocstate" id="ocState1">Reading</span>
+      </div>
+      <div class="ocbody">
+        <div class="ocslot1">
+          <nav class="ocmenu">
+            <div class="navrow active"><svg class="ic"><use href="#i-inbox"></use></svg>Inbox<span class="cnt">9</span></div>
+            <div class="navrow"><svg class="ic"><use href="#i-star"></use></svg>Starred</div>
+            <div class="navrow"><svg class="ic"><use href="#i-clock"></use></svg>Snoozed</div>
+            <div class="navrow"><svg class="ic"><use href="#i-send"></use></svg>Sent</div>
+            <div class="navrow"><svg class="ic"><use href="#i-file-text"></use></svg>Drafts<span class="cnt">3</span></div>
+          </nav>
+          <div class="oclistnarrow js-oclist">
+            <div class="trow selected sred oc-row" data-oc="boudreaux">
+              <div class="trow1"><span class="tdot"></span><span class="tavatar cust">SB</span><span class="tsub"><span class="tsender">Sandra Boudreaux</span><span class="tsubject">Re: Invoice #4460</span></span><span class="ttime">Jul 19</span></div>
+              <div class="trow2"><span class="ctl sig f red">overdue</span></div>
+            </div>
+            <div class="trow unread syellow oc-row" data-oc="theriot">
+              <div class="trow1"><span class="tdot" style="background:var(--yellow)"></span><span class="tavatar cust">MT</span><span class="tsub"><span class="tsender">Marcus Theriot</span><span class="tsubject">Split-pay — INV #4498</span></span><span class="ttime">8:40A</span></div>
+              <div class="trow2"><span class="ctl sig f yellow">awaiting reply</span></div>
+            </div>
+            <div class="trow sblue oc-row" data-oc="duhon">
+              <div class="trow1"><span class="tdot"></span><span class="tavatar cust">RD</span><span class="tsub"><span class="tsender">Ray Duhon</span><span class="tsubject">Highrise extension quote</span></span><span class="ttime">Jul 18</span></div>
+              <div class="trow2"><span class="ctl sig f blue">quote sent</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="ocslot2">
+          <div class="oclistwide">
+            <div class="trow selected sred oc-row" data-oc="boudreaux">
+              <div class="trow1"><span class="tdot"></span><span class="tavatar cust">SB</span><span class="tsub"><span class="tsender">Sandra Boudreaux</span><span class="tsubject">Re: Invoice #4460 — payment plan? <span class="snip">— apologies for the wait…</span></span></span><span class="ttime">Jul 19</span></div>
+              <div class="trow2"><span class="ctl sig f red">overdue</span><a class="ref"><span class="ty"><svg class="ic"><use href="#i-user"></use></svg></span>Boudreaux Marine LLC</a></div>
+            </div>
+            <div class="trow unread syellow oc-row" data-oc="theriot">
+              <div class="trow1"><span class="tdot" style="background:var(--yellow)"></span><span class="tavatar cust">MT</span><span class="tsub"><span class="tsender">Marcus Theriot</span><span class="tsubject">Split-pay request — INV #4498 <span class="snip">— would like to split the balance…</span></span></span><span class="ttime">8:40A</span></div>
+              <div class="trow2"><span class="ctl sig f yellow">awaiting reply</span><a class="ref"><span class="ty"><svg class="ic"><use href="#i-user"></use></svg></span>Theriot Pipe &amp; Supply</a></div>
+            </div>
+            <div class="trow sblue oc-row" data-oc="duhon">
+              <div class="trow1"><span class="tdot"></span><span class="tavatar cust">RD</span><span class="tsub"><span class="tsender">Ray Duhon</span><span class="tsubject">Quote — Highrise 2-week extension <span class="snip">— attached is the updated quote…</span></span></span><span class="ttime">Jul 18</span></div>
+              <div class="trow2"><span class="ctl sig f blue">quote sent</span><a class="ref"><span class="ty"><svg class="ic"><use href="#i-user"></use></svg></span>Duhon Contracting</a></div>
+            </div>
+          </div>
+          <div class="ocemail">
+            <div class="rp-context" style="margin:0"><span class="ctl sig f red">overdue</span><a class="ref"><span class="ty"><svg class="ic"><use href="#i-user"></use></svg></span>Boudreaux Marine LLC</a></div>
+            <p class="rp-subject" id="ocSubject" style="margin:0">Re: Invoice #4460 — payment plan?</p>
+            <div class="msg">
+              <div class="msg-head"><span class="msg-av">SB</span><div class="msg-id"><span class="msg-who">Sandra Boudreaux</span></div><span class="msg-time">JUL 19</span></div>
+              <div class="msg-body" id="ocBody">Hi Denny, apologies for the wait — I saw this over text too, just following up here. Can we still do the two-payment split?</div>
+            </div>
+          </div>
+        </div>
+        <div class="ocmenu-peek">
+          <div class="navrow active"><svg class="ic"><use href="#i-inbox"></use></svg>Inbox<span class="cnt">9</span></div>
+          <div class="navrow"><svg class="ic"><use href="#i-star"></use></svg>Starred</div>
+          <div class="navrow"><svg class="ic"><use href="#i-clock"></use></svg>Snoozed</div>
+          <div class="navrow"><svg class="ic"><use href="#i-send"></use></svg>Sent</div>
+          <div class="navrow"><svg class="ic"><use href="#i-file-text"></use></svg>Drafts<span class="cnt">3</span></div>
+        </div>
+      </div>
+    </div>
+    <p class="secnote" style="padding:10px 14px 14px">Hover the hamburger above (menu peeks over the list, nothing
+    reflows). Click it to close the email, slide the list into its place, and pin the menu — click a thread to read
+    again. Channels stay up top throughout (not shown at this width — see §2).</p>
+  </div>
+
+  <!-- ================= 8: INBOX EXPAND ================= -->
+  <h2 class="sec"><span class="n">8</span> Inbox expand — Focus toggle + sibling spines <span style="font-size:9px;color:var(--txt3);font-weight:700;text-transform:none;letter-spacing:0">(spec §7, inbox-only)</span></h2>
+  <p class="secnote">The Inbox is the <b>only</b> card that can grow at its siblings' expense. A stepped
+  <b>Focus</b> toggle (⅓ → ½ → full) lives on the Inbox card only; as it grows, the other two cards collapse to
+  <b>slim clickable spines</b> — title + an unread/alert dot, nothing else. <b>Hover</b> a spine for a transient peek
+  (nothing commits); <b>click</b> it and the state machine is exactly <code>{balanced} ↔ {inbox-focused}</code> — the
+  Inbox drops back to ⅓ and that card comes forward, ready to work. There is never a "both expanded" state.</p>
+  <div class="panel">
+    <div class="pcap">Card pool — try the Focus toggle, then hover/click a spine</div>
+    <div class="cardpool" id="cardPool" data-focus="balanced">
+      <div class="poolcard inboxcard" id="poolInbox">
+        <div class="poolhead">
+          <svg class="ic" style="color:var(--accent);width:15px;height:15px"><use href="#i-inbox"></use></svg>
+          <span class="poolttl">Inbox</span>
+          <span class="seg js-focusseg">
+            <b class="on" data-f="third">⅓</b>
+            <b data-f="half">½</b>
+            <b data-f="full">Full</b>
+          </span>
+        </div>
+        <div class="poolbody">
+          <div class="trow sred" style="border-radius:8px; border:1px solid var(--line)">
+            <div class="trow1"><span class="tdot" style="background:var(--red)"></span><span class="tavatar cust">SB</span><span class="tsub"><span class="tsender">Sandra Boudreaux</span><span class="tsubject">Re: Invoice #4460 <span class="snip">— payment plan?</span></span></span><span class="ttime">Jul 19</span></div>
+            <div class="trow2"><span class="ctl sig f red">overdue</span></div>
+          </div>
+          <div class="trow syellow" style="border-radius:8px; border:1px solid var(--line)">
+            <div class="trow1"><span class="tdot" style="background:var(--yellow)"></span><span class="tavatar cust">MT</span><span class="tsub"><span class="tsender">Marcus Theriot</span><span class="tsubject">Split-pay — INV #4498</span></span><span class="ttime">8:40A</span></div>
+            <div class="trow2"><span class="ctl sig f yellow">awaiting reply</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="poolcard spine js-spine" data-card="Units">
+        <div class="poolhead"><svg class="ic" style="color:var(--txt3);width:15px;height:15px"><use href="#i-truck"></use></svg><span class="poolttl">Units</span></div>
+        <div class="poolbody">
+          <p class="secnote" style="margin:0">3 down for maintenance, 1 due back today.</p>
+          <span class="ctl sig f red" style="align-self:flex-start">3 down</span>
+        </div>
+        <div class="spine-tab"><span class="spttl">Units</span><span class="spine-dot" style="background:var(--red)"></span></div>
+        <div class="spine-peek"><div class="pptitle">Units</div><p class="secnote" style="margin:0">3 down for maintenance, 1 due back today.</p></div>
+      </div>
+      <div class="poolcard spine js-spine" data-card="Rentals">
+        <div class="poolhead"><svg class="ic" style="color:var(--txt3);width:15px;height:15px"><use href="#i-calendar"></use></svg><span class="poolttl">Rentals</span></div>
+        <div class="poolbody">
+          <p class="secnote" style="margin:0">1 return overdue, 2 quotes awaiting signature.</p>
+          <span class="ctl sig f yellow" style="align-self:flex-start">1 overdue return</span>
+        </div>
+        <div class="spine-tab"><span class="spttl">Rentals</span><span class="spine-dot" style="background:var(--yellow)"></span></div>
+        <div class="spine-peek"><div class="pptitle">Rentals</div><p class="secnote" style="margin:0">1 return overdue, 2 quotes awaiting signature.</p></div>
+      </div>
+    </div>
+    <p class="secnote" id="focusStatusLine" style="padding:0 14px 14px">Balanced — all three cards at ⅓. Click ½ or Full on the Inbox to grow it.</p>
+  </div>
+  <div class="callout" style="margin-top:9px">
+    <span class="lab">↑ yard → comms never expands the inbox</span>A cross-card action from Units/Rentals opens the
+    <b>dock</b> (§6), never this Focus state — the two worlds don't collide, per the spec's "no heart attack" rule.
+  </div>
+
+  <!-- ================= 9: QUICK ACTIONS ================= -->
+  <h2 class="sec"><span class="n">9</span> Quick actions — one set, two entry points <span style="font-size:9px;color:var(--txt3);font-weight:700;text-transform:none;letter-spacing:0">(spec §7.4)</span></h2>
+  <p class="secnote">A user-customizable set — <b>Hide · Mark unread · Star · Snooze · Archive</b> — surfaced
+  identically everywhere a thread row lives. <b>Try it live on the §3 workspace list above:</b> hover any row
+  (desktop) to swap its timestamp for the action icons, or <b>right-click</b> any row for the same five as a menu.
+  A <b>drag handle</b> (⋮⋮) fades in on the left on hover too — hinted here, not wired to a real reorder in this mock.</p>
+  <div class="panel">
+    <div class="pcap">The five, same order everywhere</div>
+    <div style="padding:14px 16px; display:flex; gap:18px; flex-wrap:wrap; align-items:center">
+      <span class="clink"><svg class="ic"><use href="#i-eye-off"></use></svg>Hide</span>
+      <span class="clink"><svg class="ic"><use href="#i-mail"></use></svg>Mark unread</span>
+      <span class="clink"><svg class="ic"><use href="#i-star"></use></svg>Star</span>
+      <span class="clink"><svg class="ic"><use href="#i-clock"></use></svg>Snooze</span>
+      <span class="clink"><svg class="ic"><use href="#i-archive"></use></svg>Archive</span>
+      <span class="fspacer"></span>
+      <span class="clink" style="color:var(--txt3)"><svg class="ic" style="color:var(--txt3)"><use href="#i-grip"></use></svg>drag to resort (hinted)</span>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="pcap">Mobile — swipe reveals the same two most-used actions</div>
+    <div style="padding:14px; max-width:360px; margin:0 auto">
+      <div class="swiperow" id="swipeDemo">
+        <div class="swipe-actions">
+          <b class="a-snooze" id="swipeSnoozeBtn"><svg class="ic"><use href="#i-clock"></use></svg>Snooze</b>
+          <b class="a-archive" id="swipeArchiveBtn"><svg class="ic"><use href="#i-archive"></use></svg>Archive</b>
+        </div>
+        <div class="trow unread syellow">
+          <div class="trow1">
+            <span class="tdot" style="background:var(--yellow)"></span>
+            <span class="tavatar cust">MT</span>
+            <span class="tsub"><span class="tsender">Marcus Theriot</span><span class="tsubject">Split-pay request <span class="snip">— would like to split the balance…</span></span></span>
+            <span class="ttime">8:40A</span>
+          </div>
+        </div>
+      </div>
+      <p class="secnote" style="text-align:center; margin-top:8px"><span class="door ghost js-swipe-peek" style="height:22px;font-size:9.5px;padding:0 10px">Peek swipe →</span></p>
+    </div>
+  </div>
+
+  <!-- ================= 10: INBOUND ROUTING ================= -->
+  <h2 class="sec"><span class="n">10</span> Inbound routing — where a new message lands <span style="font-size:9px;color:var(--txt3);font-weight:700;text-transform:none;letter-spacing:0">(spec §7.5)</span></h2>
+  <p class="secnote">High-frequency chat (texts, team) reaches the <b>footer rail</b> — a recent/active thread
+  <b>bumps to front, flashes, and pops open</b>; a cold thread just <b>slides in as a quiet tab</b>, truncated
+  preview visible in the tab either way. <b>Email stays calm</b> — bell + inbox only, no rail pop, unless that
+  thread's already docked. Press a button below to see each case land.</p>
+  <div class="panel">
+    <div class="pcap">Simulate an inbound message</div>
+    <div style="padding:12px 14px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; border-bottom:1px solid var(--line)">
+      <span class="door ghost js-sim" data-sim="active">Text — active thread</span>
+      <span class="door ghost js-sim" data-sim="cold">Text — cold thread</span>
+      <span class="door ghost js-sim" data-sim="email">Email</span>
+      <span class="fspacer"></span>
+      <span class="iconbtn bdgbell js-bell10" id="bell10"><svg class="ic"><use href="#i-bell"></use></svg><span class="bdg" id="bellCount10">3</span></span>
+    </div>
+    <div class="dockbar" id="dock10" style="min-height:120px">
+      <span class="dockchip" id="chipActive"><span class="dot" style="background:var(--blue)"></span>Trey Guidry · RC-4700</span>
+    </div>
+    <p class="secnote" id="sim10status" style="padding:0 14px 14px; min-height:16px">Press a button to simulate an inbound message.</p>
+  </div>
+
+  <div class="foot">
+    Judgment calls made for this v2 pass, flagged so Jac can push back:
+    <ul>
+      <li><b>Boudreaux Marine's thread splits into two native, channel-tagged threads</b> (email + texts) instead of
+      staying one interleaved Gmail thread — the direct consequence of "channel is a top-level toggle, native per
+      medium." Both keep the same <b>Boudreaux Marine LLC</b> / <b>Gator RC-4700</b> Ref chips, and the email side now
+      explicitly nods to the parallel text thread, so the "one relationship" story still reads even though it's told
+      across two rows.</li>
+      <li><b>Fixed a pre-existing v1 contrast bug</b> while cleaning up pure <code>#fff</code>: light theme's
+      <code>--onAcc</code> was pure white on the mid-orange accent (3.88:1 — fails AA), which also contradicted
+      <code>wrangler-style</code>'s own "orange fill = dark ink ALWAYS" rule. Now dark ink in both themes (4.70:1).
+      Light <code>--panel</code>/<code>--card</code> moved off pure white to <code>#fbfbfa</code>; the four remaining
+      hardcoded <code>#fff</code> inks (red-fill/commit text, badge, FAB) now route through a new <code>--onFill</code>
+      near-white token instead.</li>
+      <li><b>Filter pills inside the mini-search get pill radius (999)</b>, not the row's chip radius (7) — reads as
+      "removable action," kept visually distinct from the Signal/Ref/Stamp chips sitting in the same view.</li>
+      <li><b>CALLS is genuinely inert</b> (<code>pointer-events:none</code>, dimmed, a "Soon" marker) rather than just
+      styled to look disabled — WCAG's non-text-contrast floor explicitly exempts inactive UI components, so it's
+      dimmed harder than any live control would be.</li>
+      <li><b>Reactions render as Lucide heart/laugh icons</b>, not emoji — keeps the "inline SVG icons only" rule
+      intact; a real build might prefer native emoji for Messenger-authenticity, worth Jac's call.</li>
+      <li><b>Views &amp; sort is visual-only</b> this pass (sort options + two saved Views, no live query behind them)
+      — live sort/filter logic is the parked "Sort redesign" from the spec's Open Problems, not this slice.</li>
+      <li><b>Recent-searches-above is demonstrated via DOM order</b> (a column-reverse flex wrapper), not a true
+      floating overlay — a real build would position:absolute it so it doesn't push layout; the visual direction
+      ("opens above, never below") is faithful either way.</li>
+      <li><b>Mobile channel swipe is a real gesture</b> (touchstart/touchend, ~40px threshold, plus tappable chevrons),
+      wraps at both ends, and re-filters the same thread rows live; landing on Calls shows a "coming soon" placeholder
+      instead of an empty or broken list.</li>
+    </ul>
+    <p style="margin:16px 0 4px"><b>v3 additions — judgment calls:</b></p>
+    <ul>
+      <li><b>Fixed the last 2 pure-black instances</b> — <code>--shadowPop</code>'s dark-theme value was literally
+      <code>rgba(0,0,0,.45)</code> (twice: the <code>:root</code> default and the explicit <code>data-theme="dark"</code>
+      block). Both now use <code>rgba(5,7,10,.45)</code> — the same near-black already established by this file's own
+      <code>.scrim</code> (<code>rgba(5,7,10,.55)</code>), so it's not a new tone, just consistent with one already in use.</li>
+      <li><b>One-card choreography is built as two fixed slots whose CONTENT swaps</b> (slot 1: list ↔ pinned menu;
+      slot 2: email ↔ wide list), not as DOM nodes physically moved between panes — same visual result ("list slides
+      into the email's place, menu pins left") without a manual FLIP animation. The hover-peek overlay is pure CSS
+      (a sibling-combinator hover rule), no JS needed for that half of the choreography.</li>
+      <li><b>Inbox-expand's spines use <code>writing-mode:vertical-rl</code></b> for the collapsed title — reads as a
+      genuine slim, clickable spine (like a collapsed IDE panel) rather than just a narrow box with truncated text.
+      Clicking a spine rebalances via the exact <code>{balanced}↔{inbox-focused}</code> toggle the spec calls for;
+      the "sibling comes forward" cue is a brief accent-border flash (reusing the existing <code>.flash</code> pattern
+      from §1's panel), not a new component.</li>
+      <li><b>Two new Lucide glyphs added to the sprite</b> — <code>eye-off</code> (Hide) and <code>grip-vertical</code>
+      (drag handle) — both standard Lucide icons, traced faithfully, not hand-rolled. Snooze reuses the existing
+      clock glyph (already doing double duty as "recent" elsewhere in this file) rather than adding a third clock-ish icon.</li>
+      <li><b>Quick actions are wired generically onto the real §3 workspace list</b> via a small JS injector
+      (<code>wireRowActions</code>) rather than hand-duplicating the hover/right-click markup onto all nine existing
+      rows — same five actions, same icons, same order, everywhere; §9 also carries a static legend + a standalone
+      swipe-reveal demo for the mobile case, and Star isn't hover-duplicated since every row already has its own
+      always-visible star control (the right-click menu still lists it, for parity).</li>
+      <li><b>Drag-to-resort is a hinted affordance only</b> (a grip icon that fades in on hover), per the brief — no
+      functional drag-and-drop reordering in this mock.</li>
+      <li><b>Inbound routing gets its own compact dock</b> (§10) rather than reusing the §6 dock demo's live DOM
+      nodes — keeps the simulator self-contained so Jac doesn't have to scroll back up mid-demo; same
+      <code>.dockchip</code>/<code>.composedock</code> vocabulary throughout.</li>
+      <li><b>All new v3 elements reuse existing tokens only</b> — no new hex values were introduced, so every new
+      text/fill pairing (spine titles, row-action icons, context menu, dock preview, swipe-action fills) is a
+      already-checked combination borrowed verbatim from elsewhere in this file (e.g. the swipe-action ink colours
+      are the same <code>#211a05</code>/<code>#04140d</code> already used on filled yellow/green Signals).</li>
+    </ul>
+  </div>
+
+</div></div>
+
+<script>
+  // ---- channel toggle + unread-count bookkeeping ----
+  var activeChannel = 'all';
+  function computeChanCounts(scopeSel){
+    var counts = {all:0, team:0, texts:0, email:0, wrangler:0};
+    document.querySelectorAll(scopeSel + ' .trow.unread[data-chan]').forEach(function(row){
+      var c = row.getAttribute('data-chan');
+      if (counts[c] !== undefined){ counts[c]++; counts.all++; }
+    });
+    return counts;
+  }
+  function paintChanCounts(toggleEl, counts){
+    if (!toggleEl) return;
+    toggleEl.querySelectorAll('b[data-chan]').forEach(function(b){
+      var c = b.getAttribute('data-chan');
+      var cntEl = b.querySelector('.cnt');
+      if (cntEl && counts[c] !== undefined) cntEl.textContent = counts[c];
+    });
+  }
+  function applyChanFilter(scopeSel, channel){
+    document.querySelectorAll(scopeSel + ' .trow[data-chan]').forEach(function(row){
+      row.style.display = (channel === 'all' || row.getAttribute('data-chan') === channel) ? '' : 'none';
+    });
+  }
+  function wireChanToggle(toggleEl, tlistSel){
+    if (!toggleEl) return;
+    toggleEl.querySelectorAll('b[data-chan]').forEach(function(b){
+      if (b.classList.contains('soon')) return;
+      b.addEventListener('click', function(){
+        toggleEl.querySelectorAll('b').forEach(function(x){ x.classList.remove('on'); });
+        b.classList.add('on');
+        var chan = b.getAttribute('data-chan');
+        applyChanFilter(tlistSel, chan);
+      });
+    });
+    paintChanCounts(toggleEl, computeChanCounts(tlistSel));
+  }
+  wireChanToggle(document.querySelector('.js-chantoggle'), '#tlist');
+
+  // ---- Gmail-folder rail (visual only — folders aren't the filtering axis anymore, channels are) ----
+  document.querySelectorAll('.js-folder').forEach(function(row){
+    row.addEventListener('click', function(){
+      document.querySelectorAll('.js-folder').forEach(function(r){ r.classList.remove('active'); });
+      row.classList.add('active');
+    });
+  });
+
+  // ---- thread select (select + mark read; recompute channel counts) ----
+  document.querySelectorAll('#tlist .trow[data-thread]').forEach(function(row){
+    row.addEventListener('click', function(e){
+      if (e.target.closest('.star')) return;
+      document.querySelectorAll('#tlist .trow').forEach(function(r){ r.classList.remove('selected'); });
+      row.classList.add('selected');
+      row.classList.remove('unread');
+      paintChanCounts(document.querySelector('.js-chantoggle'), computeChanCounts('#tlist'));
+    });
+  });
+
+  // ---- star toggle ----
+  document.querySelectorAll('.js-star').forEach(function(star){
+    star.addEventListener('click', function(e){
+      e.stopPropagation();
+      star.classList.toggle('on');
+    });
+  });
+
+  // ---- compose -> scroll to + flash the footer dock ----
+  document.querySelectorAll('.js-compose').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var dock = document.getElementById('dockdemo');
+      if (!dock) return;
+      dock.scrollIntoView({behavior:'smooth', block:'center'});
+      dock.classList.add('flash');
+      setTimeout(function(){ dock.classList.remove('flash'); }, 900);
+    });
+  });
+
+  // ---- docked compose minimize toggle ----
+  document.querySelectorAll('.js-cd-toggle').forEach(function(head){
+    head.addEventListener('click', function(){
+      var dock = head.closest('.composedock');
+      dock.querySelector('.cd-body').classList.toggle('min');
+      dock.querySelector('.cd-foot').classList.toggle('min');
+    });
+  });
+
+  // ---- recent-searches: click the workspace mini-search to reveal it (opens ABOVE, never below) ----
+  var worksearch = document.querySelector('.js-worksearch');
+  var recentpop = document.querySelector('.js-recentpop');
+  if (worksearch && recentpop){
+    worksearch.addEventListener('click', function(e){
+      e.stopPropagation();
+      worksearch.classList.toggle('focused');
+      recentpop.hidden = !recentpop.hidden;
+    });
+    document.addEventListener('click', function(){
+      worksearch.classList.remove('focused');
+      recentpop.hidden = true;
+    });
+    recentpop.addEventListener('click', function(e){ e.stopPropagation(); });
+  }
+
+  // ---- globe scope toggle (this channel <-> all comms) ----
+  document.querySelectorAll('.js-gscope').forEach(function(g){
+    g.addEventListener('click', function(e){
+      e.stopPropagation();
+      g.classList.toggle('on');
+      g.setAttribute('title', g.classList.contains('on') ? 'Scope: all comms' : 'Scope: this channel');
+    });
+  });
+
+  // ---- Views & sort menu ----
+  var vsBtn = document.querySelector('.js-viewsort');
+  var vsMenu = document.querySelector('.js-vsmenu');
+  if (vsBtn && vsMenu){
+    vsBtn.addEventListener('click', function(e){
+      e.stopPropagation();
+      vsMenu.hidden = !vsMenu.hidden;
+    });
+    document.addEventListener('click', function(){ vsMenu.hidden = true; });
+    vsMenu.addEventListener('click', function(e){ e.stopPropagation(); });
+    document.querySelectorAll('.js-vsopt').forEach(function(opt){
+      opt.addEventListener('click', function(){
+        document.querySelectorAll('.js-vsopt').forEach(function(o){ o.classList.remove('on'); });
+        opt.classList.add('on');
+        vsMenu.hidden = true;
+      });
+    });
+  }
+
+  // ---- mobile slide-over drawer ----
+  var phoneDrawer = document.querySelector('.js-phone-drawer-panel');
+  var phoneScrim = document.querySelector('.js-phone-scrim');
+  function togglePhoneDrawer(){
+    phoneDrawer.classList.toggle('open');
+    phoneScrim.classList.toggle('open');
+  }
+  document.querySelector('.js-phone-drawer').addEventListener('click', togglePhoneDrawer);
+  phoneScrim.addEventListener('click', togglePhoneDrawer);
+  document.querySelector('.js-phone-compose').addEventListener('click', function(){
+    var dock = document.getElementById('dockdemo');
+    if (!dock) return;
+    dock.scrollIntoView({behavior:'smooth', block:'center'});
+    dock.classList.add('flash');
+    setTimeout(function(){ dock.classList.remove('flash'); }, 900);
+  });
+
+  // ---- mobile swipeable channel header ----
+  var CHANS = [
+    {key:'all', label:'All', icon:'i-inbox'},
+    {key:'team', label:'Team', icon:'i-hash'},
+    {key:'texts', label:'Texts', icon:'i-message-circle'},
+    {key:'email', label:'Email', icon:'i-mail'},
+    {key:'wrangler', label:'Wrangler', icon:'i-wrench'},
+    {key:'calls', label:'Calls', icon:'i-phone', soon:true}
+  ];
+  var swIndex = 1; // land on Team to start, matching the desktop demo's mixed view
+  var swTrack = document.querySelector('.js-swtrack');
+  var swDots = document.querySelector('.js-swdots');
+  var swPlaceholder = document.querySelector('.js-swplaceholder');
+  var phoneTlist = document.getElementById('phoneTlist');
+
+  function renderSwipe(){
+    var c = CHANS[swIndex];
+    var counts = computeChanCounts('#phoneTlist');
+    if (swDots){
+      swDots.innerHTML = '';
+      CHANS.forEach(function(x, i){
+        var d = document.createElement('span');
+        d.className = 'd' + (i === swIndex ? ' on' : '');
+        d.addEventListener('click', function(){ swIndex = i; renderSwipe(); });
+        swDots.appendChild(d);
+      });
+    }
+    if (swTrack){
+      swTrack.classList.toggle('soon', !!c.soon);
+      var cntHtml = c.soon ? '<span class="soonmark">Soon</span>' : '<span class="cnt">' + (counts[c.key] || 0) + '</span>';
+      swTrack.innerHTML = '<svg class="ic"><use href="#' + c.icon + '"></use></svg>' + c.label + cntHtml;
+    }
+    if (phoneTlist) phoneTlist.hidden = !!c.soon;
+    if (swPlaceholder) swPlaceholder.hidden = !c.soon;
+    if (!c.soon) applyChanFilter('#phoneTlist', c.key);
+  }
+  function swNext(){ swIndex = (swIndex + 1) % CHANS.length; renderSwipe(); }
+  function swPrev(){ swIndex = (swIndex - 1 + CHANS.length) % CHANS.length; renderSwipe(); }
+  var swPrevBtn = document.querySelector('.js-sw-prev');
+  var swNextBtn = document.querySelector('.js-sw-next');
+  if (swPrevBtn) swPrevBtn.addEventListener('click', swPrev);
+  if (swNextBtn) swNextBtn.addEventListener('click', swNext);
+  var swHead = document.querySelector('.swipehead');
+  if (swHead){
+    var touchStartX = null;
+    swHead.addEventListener('touchstart', function(e){ touchStartX = e.touches[0].clientX; }, {passive:true});
+    swHead.addEventListener('touchend', function(e){
+      if (touchStartX === null) return;
+      var dx = e.changedTouches[0].clientX - touchStartX;
+      if (Math.abs(dx) > 40){ dx < 0 ? swNext() : swPrev(); }
+      touchStartX = null;
+    }, {passive:true});
+  }
+  renderSwipe();
+  // re-mark-read on phone tap -> recompute swipe counts too
+  document.querySelectorAll('#phoneTlist .trow').forEach(function(row){
+    row.addEventListener('click', function(e){
+      if (e.target.closest('.star')) return;
+      document.querySelectorAll('#phoneTlist .trow').forEach(function(r){ r.classList.remove('selected'); });
+      row.classList.add('selected');
+      row.classList.remove('unread');
+      renderSwipe();
+    });
+  });
+
+  // ================= v3 additions ================= //
+
+  // ---- §7.4c mobile tap-to-read: swap to full-width reading view, reusing row text already in the DOM ----
+  var phoneReading = document.getElementById('phoneReading');
+  if (phoneReading){
+    document.querySelectorAll('#phoneTlist .trow').forEach(function(row){
+      row.addEventListener('click', function(e){
+        if (e.target.closest('.star')) return;
+        var senderEl = row.querySelector('.tsender');
+        var subjEl = row.querySelector('.tsubject');
+        var snipEl = row.querySelector('.snip');
+        var subjOnly = '';
+        if (subjEl){
+          var clone = subjEl.cloneNode(true);
+          var snipInClone = clone.querySelector('.snip');
+          if (snipInClone) snipInClone.remove();
+          subjOnly = clone.textContent.trim();
+        }
+        document.getElementById('prSubject').textContent = subjOnly || 'Thread';
+        document.getElementById('prFrom').innerHTML = '<b>' + (senderEl ? senderEl.textContent : 'Unknown') + '</b>';
+        document.getElementById('prBody').textContent = snipEl ? snipEl.textContent.replace(/^—\s*/, '') : 'Open to read the full message…';
+        phoneReading.classList.add('open');
+      });
+    });
+    document.querySelectorAll('.js-pr-back').forEach(function(btn){
+      btn.addEventListener('click', function(){ phoneReading.classList.remove('open'); });
+    });
+  }
+
+  // ---- §7.4 draggable divider (roomy stage only) ----
+  (function(){
+    var threepane = document.querySelector('.threepane');
+    var divider = document.getElementById('paneDivider');
+    if (!threepane || !divider) return;
+    threepane.classList.add('withdivider');
+    var railW = 200, dragging = false, startX = 0, startListW = 360;
+    divider.addEventListener('mousedown', function(e){
+      dragging = true; startX = e.clientX;
+      var cols = getComputedStyle(threepane).gridTemplateColumns.split(' ');
+      startListW = parseFloat(cols[1]) || 360;
+      divider.classList.add('dragging');
+      document.body.style.userSelect = 'none';
+      e.preventDefault();
+    });
+    window.addEventListener('mousemove', function(e){
+      if (!dragging) return;
+      var dx = e.clientX - startX;
+      var newW = Math.max(260, Math.min(560, startListW + dx));
+      threepane.style.gridTemplateColumns = railW + 'px ' + newW + 'px 6px 1fr';
+    });
+    window.addEventListener('mouseup', function(){
+      if (!dragging) return;
+      dragging = false;
+      divider.classList.remove('dragging');
+      document.body.style.userSelect = '';
+    });
+  })();
+
+  // ---- §7.4 one-card width choreography: hamburger click toggles reading <-> browsing ----
+  (function(){
+    var wrap = document.getElementById('ocDemo1');
+    if (!wrap) return;
+    var stateEl = document.getElementById('ocState1');
+    var ham = document.getElementById('ocHam1');
+    var OC_CONTENT = {
+      boudreaux: {subject:'Re: Invoice #4460 — payment plan?', body:'Hi Denny, apologies for the wait — I saw this over text too, just following up here. Can we still do the two-payment split?'},
+      theriot: {subject:'Split-pay request — INV #4498', body:'Would like to split the $1,240 balance across two payments, if that still works on your end.'},
+      duhon: {subject:'Quote — Highrise 2-week extension', body:'Attached is the updated quote through Aug 3 — let me know if the numbers work and I\'ll get the paperwork moving.'}
+    };
+    function setState(next){
+      wrap.setAttribute('data-state', next);
+      if (stateEl) stateEl.textContent = next === 'reading' ? 'Reading' : 'Browsing';
+    }
+    if (ham){
+      ham.addEventListener('click', function(){
+        setState(wrap.getAttribute('data-state') === 'reading' ? 'browsing' : 'reading');
+      });
+    }
+    function selectOcRow(key){
+      var content = OC_CONTENT[key];
+      wrap.querySelectorAll('.oc-row').forEach(function(r){ r.classList.remove('selected'); });
+      wrap.querySelectorAll('.oc-row[data-oc="' + key + '"]').forEach(function(r){ r.classList.add('selected'); });
+      if (content){
+        document.getElementById('ocSubject').textContent = content.subject;
+        document.getElementById('ocBody').textContent = content.body;
+      }
+    }
+    wrap.querySelectorAll('.oclistwide .oc-row').forEach(function(row){
+      row.addEventListener('click', function(){
+        selectOcRow(row.getAttribute('data-oc'));
+        setState('reading');
+      });
+    });
+    wrap.querySelectorAll('.oclistnarrow .oc-row').forEach(function(row){
+      row.addEventListener('click', function(){ selectOcRow(row.getAttribute('data-oc')); });
+    });
+  })();
+
+  // ---- §7 inbox-expand: Focus toggle + sibling spines ----
+  (function(){
+    var pool = document.getElementById('cardPool');
+    var focusSeg = document.querySelector('.js-focusseg');
+    var statusLine = document.getElementById('focusStatusLine');
+    if (!pool || !focusSeg) return;
+    focusSeg.querySelectorAll('b[data-f]').forEach(function(b){
+      b.addEventListener('click', function(){
+        focusSeg.querySelectorAll('b').forEach(function(x){ x.classList.remove('on'); });
+        b.classList.add('on');
+        var f = b.getAttribute('data-f');
+        pool.setAttribute('data-focus', f === 'third' ? 'balanced' : f);
+        if (statusLine) statusLine.textContent = f === 'third'
+          ? 'Balanced — all three cards at ⅓. Click ½ or Full on the Inbox to grow it.'
+          : 'Inbox-focused (' + (f === 'half' ? '½' : 'Full') + ') — Units and Rentals collapsed to spines. Hover one to peek, click it to rebalance.';
+      });
+    });
+    document.querySelectorAll('.js-spine').forEach(function(spine){
+      spine.addEventListener('click', function(){
+        if (pool.getAttribute('data-focus') === 'balanced') return;
+        pool.setAttribute('data-focus', 'balanced');
+        focusSeg.querySelectorAll('b').forEach(function(x){ x.classList.remove('on'); });
+        focusSeg.querySelector('b[data-f="third"]').classList.add('on');
+        spine.classList.add('flash');
+        setTimeout(function(){ spine.classList.remove('flash'); }, 900);
+        if (statusLine) statusLine.textContent = 'Back to balanced — ' + spine.getAttribute('data-card') + ' comes forward, ready to work.';
+      });
+    });
+  })();
+
+  // ---- §7.4 quick actions: hover row-actions + right-click menu + drag-hint, wired onto the §3 workspace list ----
+  function runRowAction(row, act){
+    if (act === 'unread'){ row.classList.toggle('unread'); return; }
+    row.style.transition = 'opacity .18s, transform .18s';
+    row.style.opacity = '0';
+    row.style.transform = 'translateX(24px)';
+    setTimeout(function(){ row.style.display = 'none'; }, 190);
+  }
+  var openCtxEl = null;
+  function closeCtxMenu(){ if (openCtxEl){ openCtxEl.remove(); openCtxEl = null; } }
+  function openCtxMenu(row, evt){
+    closeCtxMenu();
+    var rect = row.getBoundingClientRect();
+    var menu = document.createElement('div');
+    menu.className = 'ctxmenu';
+    menu.style.top = Math.max(0, evt.clientY - rect.top) + 'px';
+    menu.style.left = Math.max(0, Math.min(evt.clientX - rect.left, rect.width - 180)) + 'px';
+    menu.innerHTML =
+      '<div class="ctx-opt" data-act="hide"><svg class="ic"><use href="#i-eye-off"></use></svg>Hide</div>' +
+      '<div class="ctx-opt" data-act="unread"><svg class="ic"><use href="#i-mail"></use></svg>Mark unread</div>' +
+      '<div class="ctx-opt" data-act="star"><svg class="ic"><use href="#i-star"></use></svg>Star</div>' +
+      '<div class="ctx-opt" data-act="snooze"><svg class="ic"><use href="#i-clock"></use></svg>Snooze</div>' +
+      '<div class="ctx-div"></div>' +
+      '<div class="ctx-opt danger" data-act="archive"><svg class="ic"><use href="#i-archive"></use></svg>Archive</div>';
+    row.appendChild(menu);
+    openCtxEl = menu;
+    menu.querySelectorAll('.ctx-opt').forEach(function(opt){
+      opt.addEventListener('click', function(e){
+        e.stopPropagation();
+        var act = opt.getAttribute('data-act');
+        if (act === 'star'){ var star = row.querySelector('.star'); if (star) star.classList.toggle('on'); }
+        else { runRowAction(row, act); }
+        closeCtxMenu();
+      });
+    });
+    setTimeout(function(){ document.addEventListener('click', closeCtxMenu, {once:true}); }, 0);
+  }
+  function wireRowActions(scopeSel){
+    var list = document.querySelector(scopeSel);
+    if (!list) return;
+    list.querySelectorAll('.trow').forEach(function(row){
+      var trow1 = row.querySelector('.trow1');
+      if (!trow1 || trow1.querySelector('.rowacts')) return;
+      var drag = document.createElement('span');
+      drag.className = 'rowdrag'; drag.title = 'Drag to resort';
+      drag.innerHTML = '<svg class="ic"><use href="#i-grip"></use></svg>';
+      trow1.insertBefore(drag, trow1.firstChild);
+
+      var acts = document.createElement('span');
+      acts.className = 'rowacts';
+      acts.innerHTML =
+        '<span class="rowact-btn js-ra" data-act="hide" title="Hide"><svg class="ic"><use href="#i-eye-off"></use></svg></span>' +
+        '<span class="rowact-btn js-ra" data-act="unread" title="Mark unread"><svg class="ic"><use href="#i-mail"></use></svg></span>' +
+        '<span class="rowact-btn js-ra" data-act="snooze" title="Snooze"><svg class="ic"><use href="#i-clock"></use></svg></span>' +
+        '<span class="rowact-btn js-ra danger" data-act="archive" title="Archive"><svg class="ic"><use href="#i-archive"></use></svg></span>';
+      trow1.appendChild(acts);
+
+      acts.querySelectorAll('.js-ra').forEach(function(btn){
+        btn.addEventListener('click', function(e){
+          e.stopPropagation();
+          runRowAction(row, btn.getAttribute('data-act'));
+        });
+      });
+      row.addEventListener('contextmenu', function(e){
+        e.preventDefault();
+        openCtxMenu(row, e);
+      });
+    });
+  }
+  wireRowActions('#tlist');
+
+  // ---- §7.4 mobile swipe-reveal demo (standalone, §9) ----
+  (function(){
+    var btn = document.querySelector('.js-swipe-peek');
+    var demoRow = document.getElementById('swipeDemo');
+    if (!btn || !demoRow) return;
+    btn.addEventListener('click', function(){
+      demoRow.classList.toggle('peeked');
+      btn.textContent = demoRow.classList.contains('peeked') ? '← Close' : 'Peek swipe →';
+    });
+    var snoozeBtn = document.getElementById('swipeSnoozeBtn');
+    var archiveBtn = document.getElementById('swipeArchiveBtn');
+    if (snoozeBtn) snoozeBtn.addEventListener('click', function(){ demoRow.classList.remove('peeked'); btn.textContent = 'Peek swipe →'; });
+    if (archiveBtn) archiveBtn.addEventListener('click', function(){ demoRow.remove(); });
+  })();
+
+  // ---- §7.5 inbound routing simulator ----
+  (function(){
+    var statusEl = document.getElementById('sim10status');
+    var dock10 = document.getElementById('dock10');
+    var chipActive = document.getElementById('chipActive');
+    var bell10 = document.getElementById('bell10');
+    var bellCount10 = document.getElementById('bellCount10');
+    if (!dock10) return;
+    var coldSeq = 0;
+    var texts = ['running about 15 late, sorry!', 'can you resend the quote PDF?', 'confirmed — see you at 7'];
+    document.querySelectorAll('.js-sim').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var kind = btn.getAttribute('data-sim');
+        if (kind === 'active'){
+          var msg = texts[Math.floor(Math.random() * texts.length)];
+          var snip = chipActive.querySelector('.dcsnip');
+          if (!snip){ snip = document.createElement('span'); snip.className = 'dcsnip'; chipActive.appendChild(snip); }
+          snip.textContent = '— ' + msg;
+          dock10.insertBefore(chipActive, dock10.firstChild);
+          chipActive.classList.add('flash');
+          setTimeout(function(){ chipActive.classList.remove('flash'); }, 900);
+          var oldPreview = chipActive.querySelector('.dockpreview');
+          if (oldPreview) oldPreview.remove();
+          var preview = document.createElement('div');
+          preview.className = 'dockpreview';
+          preview.innerHTML = '<b>Trey Guidry</b> · ' + msg;
+          chipActive.appendChild(preview);
+          if (statusEl) statusEl.textContent = '→ recent/active thread: bumped to front, flashed, and popped open with a preview.';
+        } else if (kind === 'cold'){
+          coldSeq++;
+          var chip = document.createElement('span');
+          chip.className = 'dockchip js-newchip';
+          chip.innerHTML = '<span class="dot" style="background:var(--gray)"></span>Acadiana Hydraulic<span class="dcsnip">— WO #120' + coldSeq + ' parts ETA update</span>';
+          dock10.appendChild(chip);
+          if (statusEl) statusEl.textContent = '→ cold thread: a new tab slid onto the rail, quiet — no pop, no flash.';
+        } else if (kind === 'email'){
+          bellCount10.textContent = (parseInt(bellCount10.textContent, 10) || 0) + 1;
+          if (bell10) bell10.classList.add('flashbell');
+          setTimeout(function(){ if (bell10) bell10.classList.remove('flashbell'); }, 900);
+          if (statusEl) statusEl.textContent = '→ email: bell +1 only. No dock activity — email stays calm.';
+        }
+      });
+    });
+  })();
+</script>
