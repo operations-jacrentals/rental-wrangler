@@ -1,0 +1,442 @@
+<title>Get-told — the durable inbox</title>
+
+<style>
+  :root{
+    --bg:#0a0d11; --bg2:#0f1318; --panel:#171d25; --panel2:#1d242d; --card:#12171e; --cardh:#1a212b;
+    --line:#2c343f; --lineSoft:#212834; --txt:#eef2f7; --txt2:#aab4c1; --txt3:#717b89;
+    --accent:#ff7e1f; --onAcc:#1a1205; --accSoft:rgba(255,126,31,.15); --accLine:rgba(255,126,31,.5);
+    --green:#34d399; --yellow:#eed44b; --red:#ff4242; --redStrong:#d63636; --blue:#6394cc; --commit:#2f6fd0; --gray:#8b94a3;
+    --tan:#c2925a;
+    --font:-apple-system,"Segoe UI",Roboto,system-ui,sans-serif;
+    --stamp:ui-monospace,"Cascadia Code","SF Mono",Menlo,Consolas,monospace;
+    --h:24px;
+  }
+  @media (prefers-color-scheme:light){ :root{
+    --bg:#e6e8ea; --bg2:#dfe3ea; --panel:#fff; --panel2:#eef1f6; --card:#fff; --cardh:#eef1f6;
+    --line:#cfd6e1; --lineSoft:#e1e6ee; --txt:#141821; --txt2:#414b5a; --txt3:#69727f; --onAcc:#fff;
+    --accent:#cf6000; --red:#d52a2a; --redStrong:#b5241f; --blue:#2f5fb0; --commit:#1f56c0; --green:#0c8f5f; --gray:#566072; --tan:#8a5a2b;
+  } }
+  :root[data-theme="light"]{
+    --bg:#e6e8ea; --panel:#fff; --card:#fff; --cardh:#eef1f6; --line:#cfd6e1; --lineSoft:#e1e6ee;
+    --txt:#141821; --txt2:#414b5a; --txt3:#69727f; --onAcc:#fff; --accent:#cf6000; --red:#d52a2a; --redStrong:#b5241f; --blue:#2f5fb0; --commit:#1f56c0; --green:#0c8f5f; --gray:#566072; --tan:#8a5a2b;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0a0d11; --panel:#171d25; --card:#12171e; --cardh:#1a212b; --line:#2c343f; --lineSoft:#212834;
+    --txt:#eef2f7; --txt2:#aab4c1; --txt3:#717b89; --onAcc:#1a1205; --accent:#ff7e1f; --red:#ff4242; --redStrong:#d63636; --blue:#6394cc; --commit:#2f6fd0; --green:#34d399; --gray:#8b94a3; --tan:#c2925a;
+  }
+  *{box-sizing:border-box} body{margin:0}
+  .wrap{background:var(--bg); color:var(--txt); font-family:var(--font); line-height:1.5; -webkit-font-smoothing:antialiased; padding:clamp(14px,3vw,30px) clamp(10px,3vw,20px) 60px}
+  .sheet{max-width:1180px; margin:0 auto}
+  .eyebrow{font-family:var(--stamp); font-size:12px; letter-spacing:.18em; text-transform:uppercase; color:var(--txt3); margin:0; font-weight:700}
+  h1{font-family:var(--stamp); font-weight:800; font-size:clamp(20px,3.3vw,28px); line-height:1; margin:.26em 0 .32em; letter-spacing:.01em; text-transform:uppercase}
+  h1 .hl{color:var(--accent)}
+  .lede{max-width:92ch; font-size:13px; color:var(--txt2); margin:0} .lede b{color:var(--txt); font-weight:600}
+  .key{display:flex; flex-wrap:wrap; gap:6px 12px; margin:14px 0 2px; font-family:var(--stamp); font-size:10px; letter-spacing:.03em; text-transform:uppercase; color:var(--txt3)}
+  .key b{color:var(--accent)}
+  h2.sec{font-family:var(--stamp); font-weight:800; font-size:13px; letter-spacing:.06em; text-transform:uppercase; color:var(--txt); margin:34px 0 4px; display:flex; align-items:center; gap:8px}
+  h2.sec .n{color:var(--accent)}
+  .secnote{font-size:12px; color:var(--txt3); margin:0 0 12px; max-width:88ch}
+
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:14px; overflow:hidden}
+  .pcap{font-family:var(--stamp); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--txt3); padding:9px 13px 0}
+
+  /* ---------- the five parts (kept identical to the approved reference mockups) ---------- */
+  .ctl{height:var(--h); display:inline-flex; align-items:center; font-family:var(--stamp); font-size:11px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; white-space:nowrap; flex:none}
+  .sig{padding:0 8px; border-radius:7px}
+  .sig.f.red{background:var(--redStrong);color:#fff} .sig.o.red{color:var(--red);box-shadow:inset 0 0 0 1.3px var(--red)}
+  .sig.f.yellow{background:var(--yellow);color:#211a05} .sig.o.yellow{color:var(--yellow);box-shadow:inset 0 0 0 1.3px var(--yellow)}
+  .sig.f.blue{background:var(--blue);color:#0a1220} .sig.o.blue{color:var(--blue);box-shadow:inset 0 0 0 1.3px var(--blue)}
+  .sig.f.green{background:var(--green);color:#04140d} .sig.o.green{color:var(--green);box-shadow:inset 0 0 0 1.3px var(--green)}
+  .sig.o.grey{color:var(--gray);box-shadow:inset 0 0 0 1.3px var(--gray)}
+  .stamp{font-family:var(--stamp); font-size:10.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--txt3); white-space:nowrap}
+  .dot{color:var(--line); font-family:var(--stamp); font-size:10px} .stamp.more{color:var(--accent)}
+  .ref{height:var(--h); display:inline-flex; align-items:center; gap:6px; padding:0 9px 0 3px; border-radius:7px; background:var(--card); border:1px solid var(--line); color:var(--txt); font-size:12px; font-weight:700; cursor:pointer; text-decoration:none; white-space:nowrap}
+  .ref .ty{width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;color:var(--accent);background:var(--accSoft);border-radius:5px} .ref .ty svg{width:11px;height:11px}
+  .ref small{color:var(--gray); font-family:var(--stamp); font-size:9px; font-weight:600; margin-left:1px}
+  .door{height:var(--h); display:inline-flex; align-items:center; font-family:var(--stamp); font-size:10.5px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; cursor:pointer; border-radius:999px; padding:0 13px; border:0}
+  .door.save{background:var(--commit); color:#fff}
+  .door.money{background:var(--green); color:#04140d}
+  .door.ghost{background:transparent; color:var(--txt2); border:1px solid var(--line)}
+  .door.add{background:transparent; color:var(--commit); border:1.4px dashed var(--commit); padding:0 11px}
+  .chev{display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; color:var(--txt3); cursor:pointer; flex:none} .chev svg{width:14px;height:14px}
+
+  /* ---------- segmented toggle (Mine/All) — orange fallback per wrangler-style ---------- */
+  .seg{height:var(--h); display:inline-flex; border:1px solid var(--line); border-radius:7px; overflow:hidden; flex:none}
+  .seg b{display:inline-flex;align-items:center;padding:0 11px;font-family:var(--stamp);font-size:10px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:var(--txt3);border-right:1px solid var(--line);cursor:pointer}
+  .seg b:last-child{border-right:0} .seg b.on{background:var(--accent);color:var(--onAcc)}
+
+  /* ================= SECTION A — bell + badge ================= */
+  .bellrow{display:flex; gap:14px; flex-wrap:wrap; margin-top:14px}
+  .bellcard{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px; display:flex; flex-direction:column; align-items:center; gap:9px; min-width:132px}
+  .bellbtn{position:relative; width:44px; height:44px; border-radius:10px; background:var(--card); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; color:var(--txt2)}
+  .bellbtn svg{width:20px;height:20px}
+  .bdg{position:absolute; top:-6px; right:-6px; min-width:18px; height:18px; padding:0 4px; border-radius:999px; display:flex; align-items:center; justify-content:center; font-family:var(--stamp); font-size:11px; font-weight:800; line-height:1}
+  .bdg.red{background:var(--redStrong); color:#fff}
+  .bdg.yellow{background:var(--yellow); color:#211a05}
+  .blabel{font-family:var(--stamp); font-size:10.5px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; color:var(--txt)}
+  .bsub{font-size:10.5px; color:var(--txt3); text-align:center; max-width:16ch}
+  .cmp{display:flex; align-items:stretch; gap:0; border:1px solid var(--line); border-radius:12px; overflow:hidden; flex:1; min-width:280px}
+  .cmphalf{flex:1; padding:12px 16px; display:flex; flex-direction:column; gap:5px; justify-content:center}
+  .cmphalf.old{background:var(--card)}
+  .cmphalf.new{background:var(--cardh); border-left:1px solid var(--line)}
+  .cmptag{font-family:var(--stamp); font-size:9px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; color:var(--txt3)}
+  .cmpnum{font-family:var(--font); font-weight:800; font-size:22px; color:var(--txt3); font-variant-numeric:tabular-nums}
+  .cmphalf.new .cmpnum{color:var(--accent)}
+  .cmpwhat{font-size:11.5px; color:var(--txt3)}
+  .cmphalf.old .cmpwhat{text-decoration:line-through; text-decoration-color:var(--line)}
+  .cmphalf.new .cmpwhat{color:var(--txt2)}
+
+  /* ================= SECTION B — the inbox ================= */
+  .inbox-head{display:flex; align-items:center; gap:10px; padding:12px 14px; border-bottom:1px solid var(--line); flex-wrap:wrap; background:var(--bg2)}
+  .addr{display:flex; flex-direction:column; gap:1px; margin-right:6px}
+  .addr .who{font-family:var(--font); font-weight:700; font-size:14px; color:var(--txt); display:flex; align-items:center; gap:6px}
+  .addr .who svg{width:13px;height:13px;color:var(--txt3)}
+  .addr .durable{font-family:var(--stamp); font-size:9px; letter-spacing:.05em; text-transform:uppercase; color:var(--txt3)}
+  .toolbar{display:flex; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid var(--line); flex-wrap:wrap}
+  .fchip{height:var(--h); display:inline-flex; align-items:center; padding:0 10px; border-radius:7px; font-family:var(--stamp); font-size:10.5px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; white-space:nowrap; color:var(--txt2); border:1px solid var(--line); cursor:pointer; background:transparent; user-select:none}
+  .fchip.active{background:var(--accent); color:var(--onAcc); border-color:var(--accent)}
+  .spacer{flex:1}
+
+  .grouphead{display:flex; align-items:center; gap:9px; padding:8px 14px; background:var(--bg2); border-top:1px solid var(--line); border-bottom:1px solid var(--line); border-left:3px solid transparent}
+  .grouphead.bad{border-left-color:var(--red)} .grouphead.wait{border-left-color:var(--blue)} .grouphead.done{border-left-color:var(--green)}
+  .glabel{font-family:var(--stamp); font-weight:800; font-size:11px; letter-spacing:.07em; text-transform:uppercase; color:var(--txt)}
+  .gcount{font-family:var(--stamp); font-size:11px; font-weight:800; color:var(--txt3)}
+  .ghint{font-size:11px; color:var(--txt3); margin-left:auto}
+
+  .nitem{border-bottom:1px solid var(--lineSoft); border-left:3px solid transparent; padding:11px 14px 12px; background:var(--card)}
+  .nitem:last-child{border-bottom:0}
+  .nitem.unread{background:var(--cardh)}
+  .nitem.red{border-left-color:var(--red)} .nitem.yellow{border-left-color:var(--yellow)} .nitem.blue{border-left-color:var(--blue)} .nitem.green{border-left-color:var(--green)}
+  .nrow1{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+  .ndot{width:7px; height:7px; border-radius:50%; flex:none}
+  .ndot.red{background:var(--red)} .ndot.yellow{background:var(--yellow)} .ndot.blue{background:var(--blue)}
+  .nline{font-size:13px; color:var(--txt2); margin:6px 0 0}
+  .nitem.unread .nline{color:var(--txt); font-weight:600}
+  .nmeta{font-family:var(--stamp); font-size:10.5px; color:var(--txt3); margin-top:6px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-variant-numeric:tabular-nums; letter-spacing:.01em}
+  .nmeta b{color:var(--txt2); font-weight:800; text-transform:none; font-family:var(--font)}
+  .ndoor{margin-left:auto}
+  .nread-note{font-size:10.5px; color:var(--txt3); font-style:normal}
+
+  /* ---------- bridge callout ---------- */
+  .callout{margin:0 14px 12px; padding:10px 12px; background:var(--bg2); border:1.4px dashed var(--accLine); border-radius:9px; font-size:11.5px; color:var(--txt2); line-height:1.5; position:relative}
+  .callout::before{content:""; position:absolute; top:-7px; left:22px; width:12px; height:12px; background:var(--bg2); border-left:1.4px dashed var(--accLine); border-top:1.4px dashed var(--accLine); transform:rotate(45deg)}
+  .callout .lab{font-family:var(--stamp); font-size:9px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); display:block; margin-bottom:4px}
+  .callout b{color:var(--txt)}
+
+  /* ---------- message thread ---------- */
+  .thread{margin:9px 14px 2px; padding:10px 11px; background:var(--bg2); border:1px solid var(--line); border-radius:9px}
+  .tclose{display:flex; justify-content:space-between; align-items:center; margin-bottom:8px}
+  .tclose .tt{font-family:var(--stamp); font-size:9.5px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--txt3)}
+  .bubbles{display:flex; flex-direction:column; gap:7px; margin-bottom:9px}
+  .brow{display:flex}
+  .brow.out{justify-content:flex-end}
+  .bubble{max-width:72%; padding:7px 10px; border-radius:10px; font-size:12.5px; line-height:1.42}
+  .bubble .who{display:block; font-family:var(--stamp); font-size:9px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; margin-bottom:2px; opacity:.75}
+  .brow.in .bubble{background:var(--panel2); color:var(--txt); border:1px solid var(--line); border-bottom-left-radius:3px}
+  .brow.out .bubble{background:var(--commit); color:#fff; border-bottom-right-radius:3px}
+  .brow.out .bubble .who{color:#dbe6fb}
+  .replyrow{display:flex; align-items:center; gap:8px}
+  .replyin{flex:1; height:var(--h); display:flex; align-items:center; padding:0 10px; background:var(--card); border:1px solid var(--line); border-radius:999px; color:var(--txt3); font-size:12px}
+
+  /* ================= SECTION C — flood vs empty ================= */
+  .stategrid{display:grid; grid-template-columns:1.15fr 1fr; gap:16px; margin-top:14px; align-items:start}
+  @media (max-width:880px){ .stategrid{grid-template-columns:1fr} }
+
+  .fgrouphead{display:flex; align-items:center; gap:8px; padding:7px 13px; background:var(--bg2); border-top:1px solid var(--line); border-bottom:1px solid var(--line); border-left:3px solid transparent; cursor:pointer}
+  .fgrouphead.bad{border-left-color:var(--red)} .fgrouphead.wait{border-left-color:var(--blue)} .fgrouphead.done{border-left-color:var(--green)}
+  .frow{display:flex; align-items:center; gap:8px; padding:7px 13px; border-bottom:1px solid var(--lineSoft); font-size:12px; border-left:3px solid transparent}
+  .frow.red{border-left-color:var(--red)} .frow.yellow{border-left-color:var(--yellow)} .frow.blue{border-left-color:var(--blue)}
+  .frow .fn{flex:1; min-width:0; color:var(--txt2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .frow.unread .fn{color:var(--txt); font-weight:600}
+  .fmore{padding:6px 13px 9px; font-family:var(--stamp); font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--accent); cursor:pointer}
+  .fcollapse-body{display:none}
+  .fcollapse-body.open{display:block}
+  .fgrouphead .chev{margin-left:auto}
+
+  .emptystate{display:flex; flex-direction:column; align-items:center; text-align:center; gap:6px; padding:38px 20px 26px}
+  .esicon{width:56px;height:56px;border-radius:50%; display:flex; align-items:center; justify-content:center; background:var(--card); box-shadow:inset 0 0 0 1.6px var(--green); color:var(--green); margin-bottom:6px}
+  .esicon svg{width:26px;height:26px}
+  .eshead{font-family:var(--font); font-weight:700; font-size:16px; color:var(--txt)}
+  .essub{font-size:12px; color:var(--txt3); max-width:34ch}
+  .escleared{width:100%; margin-top:18px; border-top:1px solid var(--line); padding-top:12px}
+  .esclabel{font-family:var(--stamp); font-size:9px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--txt3); padding:0 16px 6px}
+  .escrow{display:flex; align-items:center; gap:8px; padding:5px 16px; font-size:11.5px; color:var(--txt3)}
+  .escrow svg{width:12px;height:12px;color:var(--green);flex:none}
+
+  .foot{margin-top:30px; padding-top:16px; border-top:1px solid var(--line); font-size:13px; color:var(--txt2); max-width:92ch} .foot b{color:var(--txt)}
+  .foot ul{margin:8px 0 0; padding-left:20px} .foot li{margin:5px 0}
+</style>
+
+<div class="wrap"><div class="sheet">
+
+  <p class="eyebrow">Get-told · notifications · first draft — for Jac to react to, not final</p>
+  <h1>Get-told — <span class="hl">a durable, addressed inbox</span></h1>
+  <p class="lede">Today there's <b>no delivery channel</b> — no push, no badge that means anything, no durable inbox. Settings
+  sells three notification engines wired to nothing, and the header bell (confirmed in <code>app.js</code>) surfaces
+  <b>Mr. Wrangler fix-ticket resolutions</b>, not what a worker needs to do next. This mockup builds the seat our own
+  system reserves for this job — <b>WORD: a durable, addressed inbox.</b> The bridge rule: a notification fires when a
+  <b>today-trigger</b> fires on a record — the same <code>fill = triggeredToday</code> discipline that lights a Signal
+  anywhere else. It inherits that Signal's <b>colour = state</b>, names its source as a <b>Ref</b>, and a tap
+  <b>teleports</b> you to that source — never a Gate here, it's read-only until you land. The built per-record
+  <b>message thread</b> (reach-the-person's dead code) lives on this surface too, since it renders nowhere today.</p>
+  <div class="key"><span><b>Signal</b> state chip</span><span><b>Ref</b> linked source</span><span><b>Stamp</b> fact</span><span><b>Door</b> the one move</span><span>· fill = today · colour = state · click = teleport</span></div>
+
+  <!-- ================= A: BELL + BADGE ================= -->
+  <h2 class="sec"><span class="n">1</span> The badge + bell — counts what needs YOU</h2>
+  <p class="secnote">Three states of the same bell. The badge is <b>colour = state</b> too (worst bucket present), and follows
+  the app's own overflow rule found in <code>app.js</code> — <code>n &gt; 9 ? '9+' : n</code>.</p>
+  <div class="bellrow">
+    <div class="bellcard">
+      <div class="bellbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg></div>
+      <div class="blabel">All caught up</div>
+      <div class="bsub">No badge — nothing addressed to Denny right now</div>
+    </div>
+    <div class="bellcard">
+      <div class="bellbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg><span class="bdg red">5</span></div>
+      <div class="blabel">Ordinary Tuesday</div>
+      <div class="bsub">5 unread · worst = red, badge fills red</div>
+    </div>
+    <div class="bellcard">
+      <div class="bellbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg><span class="bdg red">9+</span></div>
+      <div class="blabel">Flooded (§5)</div>
+      <div class="bsub">23 unread — caps at 9+, never a huge number</div>
+    </div>
+    <div class="cmp">
+      <div class="cmphalf old">
+        <span class="cmptag">Bell today</span>
+        <span class="cmpnum">14</span>
+        <span class="cmpwhat">Mr. Wrangler fix-ticket resolutions — engineering, not your move</span>
+      </div>
+      <div class="cmphalf new">
+        <span class="cmptag">Bell, redesigned</span>
+        <span class="cmpnum">5</span>
+        <span class="cmpwhat">Addressed to Denny R. · Dispatch — every one has a Door</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= B: THE INBOX ================= -->
+  <h2 class="sec"><span class="n">2</span> The durable inbox</h2>
+  <p class="secnote">Grouped <b>worst-first</b>, not one flat list. Unread = solid dot + bold line + brighter card;
+  read = no dot, dimmed, Door drops to a quiet <b>Dismiss</b>. Filters are real toggles below — click a type chip.</p>
+
+  <div class="panel">
+    <div class="inbox-head">
+      <div class="addr">
+        <span class="who"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>Denny R. · Dispatch</span>
+        <span class="durable">Durable — survives reload · not RAM</span>
+      </div>
+    </div>
+    <div class="toolbar">
+      <span class="seg"><b class="on">Mine</b><b>All</b></span>
+      <span class="fchip active js-f" data-type="all">All types</span>
+      <span class="fchip js-f" data-type="returns">Returns</span>
+      <span class="fchip js-f" data-type="repairs">Repairs</span>
+      <span class="fchip js-f" data-type="payments">Payments</span>
+      <span class="fchip js-f" data-type="messages">Messages</span>
+      <span class="spacer"></span>
+      <span class="door ghost">Clear read</span>
+    </div>
+
+    <!-- GROUP 1 — NEEDS YOU NOW -->
+    <div class="grouphead bad"><span class="glabel">Needs you now</span><span class="gcount">3</span><span class="ghint">worst first</span></div>
+
+    <div class="nitem unread yellow" data-type="returns">
+      <div class="nrow1">
+        <span class="ndot yellow"></span>
+        <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg></span>Gator<small>RC-4700</small></a>
+        <span class="ctl sig f yellow">recovery</span>
+        <span class="ndoor door save">Saddle up for pickup</span>
+      </div>
+      <p class="nline">Rental ended — Gator's back at Broussard Dirt Works, still nobody dispatched for pickup.</p>
+      <div class="nmeta">JUL 20 · 8:20 AM · auto — end-rent trigger, unattended 40 min</div>
+    </div>
+    <div class="callout"><span class="lab">↑ the bridge</span>Lands here because a <b>today-trigger</b> fired on RC-4700
+      (end-rent, 40 min with no dispatch logged) → same <b>filled yellow</b> as Gator's own Signal on its
+      Yard Journey timeline → tap this item and you land on that exact Recovery row, ready to
+      <b>Saddle up for pickup</b> — a notification is a Signal that came to find you.</div>
+
+    <div class="nitem unread red" data-type="repairs">
+      <div class="nrow1">
+        <span class="ndot red"></span>
+        <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg></span>Highrise<small>4471-K</small></a>
+        <span class="ctl sig f red">failed</span>
+        <span class="stamp">for Duhon · 7 AM pickup</span>
+        <span class="ndoor door ghost">Reassign unit</span>
+      </div>
+      <p class="nline">Failed inspection — Highrise can't leave the yard for Duhon Contracting's 7 AM pickup.</p>
+      <div class="nmeta">JUL 20 · 5:15 AM · <b>Wanda R.</b> — inspection</div>
+    </div>
+
+    <div class="nitem unread red" data-type="payments">
+      <div class="nrow1">
+        <span class="ndot red"></span>
+        <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>Boudreaux Marine LLC</a>
+        <span class="ctl sig f red">owed 18d</span>
+        <span class="stamp">INV #4460 · $840</span>
+        <span class="ndoor door ghost">Call back</span>
+      </div>
+      <p class="nline">Overdue invoice crossed 18 days — escalated from yesterday's 16d, still unpaid.</p>
+      <div class="nmeta">JUL 20 · 12:01 AM · auto — AR aging sweep · <a href="tel:3375550142" style="color:var(--txt2);text-decoration:none;border-bottom:1.4px solid var(--line)">(337) 555-0142</a></div>
+    </div>
+
+    <!-- GROUP 2 — WAITING ON YOU -->
+    <div class="grouphead wait"><span class="glabel">Waiting on you</span><span class="gcount">2</span></div>
+
+    <div class="nitem unread blue" data-type="payments">
+      <div class="nrow1">
+        <span class="ndot blue"></span>
+        <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>Theriot Pipe &amp; Supply</a>
+        <span class="ctl sig f blue">awaiting approval</span>
+        <span class="stamp">INV #4498 · $1,240</span>
+        <span class="ndoor door money">Approve</span>
+      </div>
+      <p class="nline">Requesting a 2-payment split on $1,240 — submitted through the customer portal.</p>
+      <div class="nmeta">JUL 20 · 8:40 AM · <b>submitted</b> — customer portal</div>
+    </div>
+
+    <div class="nitem unread blue" data-type="messages">
+      <div class="nrow1">
+        <span class="ndot blue"></span>
+        <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg></span>Gator<small>RC-4700</small></a>
+        <span class="ctl sig f blue">message</span>
+        <span class="stamp">from Trey Guidry</span>
+        <span class="ndoor door ghost js-thread-toggle">Reply ▾</span>
+      </div>
+      <p class="nline">Trey has a question before he rolls for the Gator pickup — reach-the-person's message thread, live here.</p>
+      <div class="nmeta">JUL 20 · 9:06 AM · <b>Trey Guidry</b> — driver</div>
+      <div class="thread">
+        <div class="tclose"><span class="tt">Thread · Rental #4501 · Gator recovery</span></div>
+        <div class="bubbles">
+          <div class="brow in"><div class="bubble"><span class="who">Trey Guidry · 9:02 AM</span>Gate code for Broussard Dirt Works still 4471? Heading out for the Gator pickup.</div></div>
+          <div class="brow out"><div class="bubble"><span class="who">Denny R. · 9:04 AM</span>Yep, 4471 still good. Ask for Mike at the shop if it doesn't work.</div></div>
+          <div class="brow in"><div class="bubble"><span class="who">Trey Guidry · 9:06 AM</span>Copy that, rolling now.</div></div>
+        </div>
+        <div class="replyrow"><span class="replyin">Type a reply…</span><span class="door save">Send</span></div>
+      </div>
+    </div>
+
+    <!-- GROUP 3 — HANDLED TODAY (read) -->
+    <div class="grouphead done"><span class="glabel">Handled today</span><span class="gcount">2</span><span class="ghint">read · quiet</span></div>
+
+    <div class="nitem green" data-type="repairs">
+      <div class="nrow1">
+        <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg></span>Ranger<small>BC-7702</small></a>
+        <span class="ctl sig o green">done</span>
+        <span class="stamp">WO #1194 · hyd hose</span>
+        <span class="ndoor door ghost">Dismiss</span>
+      </div>
+      <p class="nline">Work order closed — hydraulic hose replaced, unit back in service.</p>
+      <div class="nmeta">JUL 20 · 7:10 AM · <b>Mikey Fontenot</b> — tech</div>
+    </div>
+
+    <div class="nitem green" data-type="returns">
+      <div class="nrow1">
+        <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg></span>Scout<small>SS-14</small></a>
+        <span class="ctl sig o green">delivered</span>
+        <span class="stamp">→ LeBlanc Construction</span>
+        <span class="ndoor door ghost">Dismiss</span>
+      </div>
+      <p class="nline">Delivered and signed for — dispatch loop closed.</p>
+      <div class="nmeta">JUL 20 · 10:15 AM · <b>Trey Guidry</b> — driver</div>
+    </div>
+  </div>
+
+  <!-- ================= C: STATES ================= -->
+  <h2 class="sec"><span class="n">3</span> States that matter — flooded vs. all caught up</h2>
+  <p class="secnote">Same worst-first grouping under load — the read group starts <b>collapsed</b> so it never buries what's
+  live. And "empty" still shows its work, quietly.</p>
+
+  <div class="stategrid">
+    <div class="panel">
+      <div class="pcap">Flooded — 23 unread</div>
+      <div class="grouphead bad" style="margin-top:8px"><span class="glabel">Needs you now</span><span class="gcount">7</span></div>
+      <div class="frow red unread"><span class="fn"><b style="color:var(--txt);font-weight:600">Gator</b> · recovery — pickup unattended 40 min</span></div>
+      <div class="frow red unread"><span class="fn"><b style="color:var(--txt);font-weight:600">Highrise</b> · failed inspection blocks 7 AM pickup</span></div>
+      <div class="frow red unread"><span class="fn"><b style="color:var(--txt);font-weight:600">Boudreaux Marine</b> · owed 18d, escalated</span></div>
+      <div class="fmore">+ 4 more — same group, worst first</div>
+
+      <div class="grouphead wait"><span class="glabel">Waiting on you</span><span class="gcount">9</span></div>
+      <div class="frow blue unread"><span class="fn"><b style="color:var(--txt);font-weight:600">Theriot Pipe &amp; Supply</b> · split-pay awaiting approval</span></div>
+      <div class="frow blue unread"><span class="fn"><b style="color:var(--txt);font-weight:600">Gator</b> · Trey Guidry — question before rollout</span></div>
+      <div class="fmore">+ 7 more — same group, worst first</div>
+
+      <div class="fgrouphead done js-flood-toggle"><span class="glabel">Handled today</span><span class="gcount">7</span><span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span></div>
+      <div class="fcollapse-body js-flood-body">
+        <div class="frow"><span class="fn">Ranger · WO #1194 closed — Mikey Fontenot</span></div>
+        <div class="frow"><span class="fn">Scout · delivered to LeBlanc Construction</span></div>
+        <div class="frow"><span class="fn">5 more — read, quiet, out of the way</span></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="pcap">All caught up</div>
+      <div class="emptystate">
+        <div class="esicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/></svg></div>
+        <div class="eshead">All caught up, Denny</div>
+        <div class="essub">Nothing needs you right now. New Signals land here the moment a trigger fires — no refresh needed.</div>
+        <div class="escleared">
+          <div class="esclabel">Last cleared</div>
+          <div class="escrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/></svg>WO #1194 · 12m ago</div>
+          <div class="escrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/></svg>Scout delivered · 40m ago</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    Judgment calls made for this first draft, flagged so Jac can push back:
+    <ul>
+      <li><b>Chips here are Signals, not Gates</b> — read-only, click teleports to the source. You don't change status
+      from the inbox, only at the record itself; that's a deliberate restriction, not an oversight.</li>
+      <li><b>Filled vs outline follows attention, not group</b> — Needs-you-now and Waiting both fill (they're asking for
+      something); Handled uses the calm outline-green already used for "reporting/insured" elsewhere.</li>
+      <li><b>Unread is three redundant cues</b> (dot + bold + brighter card), never colour alone, per the contrast rule.</li>
+      <li><b>Type filter chips fall back to orange</b> (not a status colour) since "type" isn't a state — matches the
+      toggle rule's stated fallback exactly.</li>
+      <li><b>The flood state collapses "Handled" by default</b> — a made-up call, not yet in the spec: read items are the
+      one group allowed to stay hidden so volume doesn't bury what's still live.</li>
+      <li><b>"Durable" is asserted, not built</b> — this mockup has no backend; the real version needs a persisted table
+      (not <code>state</code> memory) so a reload or a different device doesn't lose the inbox.</li>
+      <li><b>Message thread is shown already expanded</b> for one item so the reach-the-person tie-in is visible without
+      a click; in the shipped version it would start collapsed like the others.</li>
+    </ul>
+  </div>
+
+</div></div>
+
+<script>
+  document.querySelectorAll('.js-f').forEach(function(chip){
+    chip.addEventListener('click', function(){
+      var type = chip.getAttribute('data-type');
+      if (type === 'all') {
+        document.querySelectorAll('.js-f').forEach(function(c){ c.classList.toggle('active', c === chip); });
+      } else {
+        chip.classList.toggle('active');
+        var allChip = document.querySelector('.js-f[data-type="all"]');
+        var anyOn = Array.prototype.some.call(document.querySelectorAll('.js-f:not([data-type="all"])'), function(c){ return c.classList.contains('active'); });
+        allChip.classList.toggle('active', !anyOn);
+      }
+      var actives = Array.prototype.filter.call(document.querySelectorAll('.js-f'), function(c){ return c.classList.contains('active') && c.getAttribute('data-type') !== 'all'; }).map(function(c){ return c.getAttribute('data-type'); });
+      document.querySelectorAll('.nitem[data-type]').forEach(function(item){
+        var show = actives.length === 0 || actives.indexOf(item.getAttribute('data-type')) !== -1;
+        item.style.display = show ? '' : 'none';
+      });
+    });
+  });
+  document.querySelectorAll('.js-thread-toggle').forEach(function(btn){
+    btn.addEventListener('click', function(e){
+      e.stopPropagation();
+      var thread = btn.closest('.nitem').querySelector('.thread');
+      if (thread) thread.style.display = (thread.style.display === 'none') ? '' : 'none';
+    });
+  });
+  document.querySelectorAll('.js-flood-toggle').forEach(function(h){
+    h.addEventListener('click', function(){
+      var body = h.nextElementSibling;
+      body.classList.toggle('open');
+      var chev = h.querySelector('.chev svg');
+      chev.style.transform = body.classList.contains('open') ? 'rotate(90deg)' : '';
+    });
+  });
+</script>

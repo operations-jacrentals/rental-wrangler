@@ -1,0 +1,647 @@
+<title>Intake — first draft, for Jac to react to</title>
+<style>
+/* ══════════════════════════════════════════════════════════════════════
+   TOKENS — locked steel palette (wrangler-style §1), identical to the
+   detail-views / funnel reference files. Dark is default; light overrides
+   via prefers-color-scheme; :root[data-theme] wins both directions.
+   ══════════════════════════════════════════════════════════════════════ */
+:root{
+  --bg:#0a0d11; --panel:#171d25; --card:#12171e; --card-head:#1a212b;
+  --line:#2c343f; --line-soft:#212834;
+  --txt:#eef2f7; --txt-2:#aab4c1; --txt-3:#717b89;
+  --accent:#ff7e1f; --ink:#1a1205;
+  --green:#34d399; --yellow:#eed44b; --red:#ff4242; --red-fill:#d63636;
+  --blue:#6394cc; --gray:#8b94a3; --commit:#2f6fd0; --tan:#c2925a;
+  --on-blue:#1a1205;   /* dark ink reads fine on the dark theme's lighter blue; light theme's darker blue needs white — see below */
+
+  --h:26px;                 /* ONE control height — every inline control */
+  --r-pill:999px;            /* actions: Door, segmented toggle, quick-pick */
+  --r-chip:7px;               /* state: Signal / Gate / Ref backing — ONE chip value */
+  /* size ladder — 28 · 15 · 13 · 12 · 11 · 10 · 9.5 (value·title·content·field·label/chip·small·finest) */
+  --fs-value:28px; --fs-title:15px; --fs-content:13px; --fs-field:12px;
+  --fs-chip:11px; --fs-small:10px; --fs-finest:9.5px;
+  --w-stamp:800; --w-bold:700; --w-reg:400;   /* three weights, capped */
+  --mono: ui-monospace,"Cascadia Code","SF Mono",Menlo,Consolas,monospace;
+  --sans: -apple-system,"Segoe UI",Roboto,system-ui,sans-serif;
+}
+@media (prefers-color-scheme: light){
+  :root{
+    --bg:#e6e8ea; --panel:#fff; --card:#fff; --card-head:#eef0f2;
+    --line:#cfd6e1; --line-soft:#e1e6ec;
+    --txt:#141821; --txt-2:#414b5a; --txt-3:#69727f;
+    --accent:#cf6000; --ink:#1a1205;
+    --green:#0c8f5f; --yellow:#eed44b; --red:#d52a2a; --red-fill:#b5241f;
+    --blue:#2f5fb0; --gray:#566072; --commit:#1f56c0; --tan:#8a5a2b;
+    --on-blue:#fff;   /* light theme's --blue is darker — ink fails (2.99), white clears (6.20) */
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0a0d11; --panel:#171d25; --card:#12171e; --card-head:#1a212b;
+  --line:#2c343f; --line-soft:#212834;
+  --txt:#eef2f7; --txt-2:#aab4c1; --txt-3:#717b89;
+  --accent:#ff7e1f; --ink:#1a1205;
+  --green:#34d399; --yellow:#eed44b; --red:#ff4242; --red-fill:#d63636;
+  --blue:#6394cc; --gray:#8b94a3; --commit:#2f6fd0; --tan:#c2925a; --on-blue:#1a1205;
+}
+:root[data-theme="light"]{
+  --bg:#e6e8ea; --panel:#fff; --card:#fff; --card-head:#eef0f2;
+  --line:#cfd6e1; --line-soft:#e1e6ec;
+  --txt:#141821; --txt-2:#414b5a; --txt-3:#69727f;
+  --accent:#cf6000; --ink:#1a1205;
+  --green:#0c8f5f; --yellow:#eed44b; --red:#d52a2a; --red-fill:#b5241f;
+  --blue:#2f5fb0; --gray:#566072; --commit:#1f56c0; --tan:#8a5a2b; --on-blue:#fff;
+}
+
+*,*::before,*::after{ box-sizing:border-box; }
+body{ margin:0; background:var(--bg); color:var(--txt); font-family:var(--sans);
+  line-height:1.5; -webkit-font-smoothing:antialiased; }
+.num{ font-variant-numeric:tabular-nums; font-family:var(--mono); }
+button,input{ font-family:inherit; color:inherit; }
+
+.page{ max-width:1180px; margin:0 auto; padding:clamp(14px,3vw,30px) clamp(10px,3vw,20px) 60px; }
+.eyebrow{ font-family:var(--mono); font-size:var(--fs-field); letter-spacing:.16em; text-transform:uppercase;
+  color:var(--txt-2); margin:0; font-weight:var(--w-bold); }
+h1{ font-family:var(--mono); font-weight:var(--w-stamp); font-size:clamp(20px,3.3vw,var(--fs-value));
+  line-height:1; margin:.28em 0 .34em; letter-spacing:.01em; text-transform:uppercase; }
+h1 .hl{ color:var(--accent); }
+.lede{ max-width:82ch; font-size:var(--fs-content); color:var(--txt-2); margin:0 0 4px; }
+.lede b{ color:var(--txt); font-weight:var(--w-bold); }
+
+.legend{ display:flex; flex-wrap:wrap; gap:6px 16px; margin:14px 0 22px; font-family:var(--mono);
+  font-size:var(--fs-small); letter-spacing:.03em; text-transform:uppercase; color:var(--txt-2); }
+.legend b{ color:var(--tan); font-weight:var(--w-bold); }
+
+/* ══════════════════════════════════════════════════════════════════════
+   LAYOUT — two intake shells side by side (first-touch vs mid-call),
+   wrapping to a stack on narrow viewports.
+   ══════════════════════════════════════════════════════════════════════ */
+.compare{ display:flex; flex-wrap:wrap; gap:22px; align-items:flex-start; }
+.intake-shell{ flex:1 1 380px; max-width:460px; min-width:0; }
+.ix-head{ display:flex; align-items:baseline; gap:9px; padding:0 2px 9px; border-bottom:1px dashed var(--line); margin-bottom:12px; }
+.ix-tag{ font-family:var(--mono); font-size:var(--fs-finest); font-weight:var(--w-stamp); letter-spacing:.1em;
+  text-transform:uppercase; color:var(--tan); }
+.ix-title{ font-family:var(--sans); font-weight:var(--w-bold); font-size:var(--fs-title); color:var(--txt); margin-left:auto; }
+
+.ix-panel{ background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:visible; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   PLATE GRAMMAR — reused verbatim: left status-bar + stamped label +
+   summary + chip + chevron → body. Header colour = worst item inside.
+   ══════════════════════════════════════════════════════════════════════ */
+.plate{ border-bottom:1px solid var(--line); border-left:3px solid transparent; }
+.plate:last-child{ border-bottom:0; }
+.plate.bad{ border-left-color:var(--red); } .plate.now{ border-left-color:var(--yellow); }
+.plate.wait{ border-left-color:var(--blue); } .plate.done{ border-left-color:var(--green); }
+.plate.none{ border-left-color:var(--gray); } .plate.locked{ border-left-color:transparent; }
+.phead{ display:flex; align-items:center; gap:9px; min-height:calc(var(--h) + 10px); padding:6px 12px; cursor:pointer; }
+.plate.locked .phead{ cursor:not-allowed; }
+.plabel{ font-family:var(--mono); font-size:var(--fs-chip); font-weight:var(--w-stamp); letter-spacing:.05em;
+  text-transform:uppercase; color:var(--txt); flex:none; }
+.plate.locked .plabel{ color:var(--txt-2); }
+.psum{ flex:1; min-width:0; font-size:var(--fs-chip); color:var(--txt-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.plate.locked .psum{ color:var(--txt-2); font-style:italic; }
+.chev{ font-size:var(--fs-chip); color:var(--txt-3); flex:none; display:inline-flex; align-items:center; width:12px; height:12px; }
+.chev svg{ width:12px; height:12px; } .chev.open{ color:var(--accent); transform:rotate(90deg); }
+.lockic{ flex:none; width:13px; height:13px; display:inline-flex; color:var(--txt-3); }
+.lockic svg{ width:13px; height:13px; }
+.pbody{ padding:2px 12px 14px; background:var(--card-head); border-top:1px solid var(--line); }
+
+/* ══════════════════════════════════════════════════════════════════════
+   THE FIVE PARTS — shared inline vocabulary (identical look to the
+   detail-view / funnel reference components).
+   ══════════════════════════════════════════════════════════════════════ */
+.ctl{ height:var(--h); display:inline-flex; align-items:center; font-family:var(--mono); font-size:var(--fs-chip);
+  font-weight:var(--w-stamp); letter-spacing:.03em; text-transform:uppercase; white-space:nowrap; flex:none; }
+/* Signal */
+.sig{ padding:0 9px; border-radius:var(--r-chip); }
+.sig.f.red{ background:var(--red-fill); color:#fff; } .sig.o.red{ color:var(--red); box-shadow:inset 0 0 0 1.3px var(--red); }
+.sig.f.yellow{ background:var(--yellow); color:var(--ink); } .sig.o.yellow{ color:var(--yellow); box-shadow:inset 0 0 0 1.3px var(--yellow); }
+.sig.f.blue{ background:var(--blue); color:var(--on-blue); } .sig.o.blue{ color:var(--blue); box-shadow:inset 0 0 0 1.3px var(--blue); }
+.sig.f.green{ background:var(--green); color:var(--ink); } .sig.o.green{ color:var(--green); box-shadow:inset 0 0 0 1.3px var(--green); }
+.sig.o.gray{ color:var(--gray); box-shadow:inset 0 0 0 1.3px var(--gray); }
+/* Stamp — plain fact, no box, no colour */
+.stamp{ font-family:var(--mono); font-size:var(--fs-chip); font-weight:var(--w-bold); letter-spacing:.03em;
+  text-transform:uppercase; color:var(--txt-2); white-space:nowrap; height:var(--h); display:inline-flex; align-items:center; }
+.dotsep{ color:var(--line); font-family:var(--mono); font-size:var(--fs-small); }
+/* Ref — linked record: square icon backing + body-voice name */
+.ref{ height:var(--h); display:inline-flex; align-items:center; gap:6px; padding:0 9px 0 3px; border-radius:var(--r-chip);
+  background:var(--card); border:1px solid var(--line); color:var(--txt); font-size:var(--fs-field); font-weight:var(--w-bold);
+  cursor:pointer; text-decoration:none; white-space:nowrap; }
+.ref .ty{ width:19px; height:19px; display:inline-flex; align-items:center; justify-content:center; color:var(--accent);
+  background:color-mix(in srgb, var(--accent) 16%, transparent); border-radius:var(--r-chip); }
+.ref .ty svg{ width:11px; height:11px; }
+/* Doors — verbs, radius = pill always */
+.door{ height:var(--h); display:inline-flex; align-items:center; justify-content:center; font-family:var(--sans);
+  font-size:var(--fs-field); font-weight:var(--w-bold); cursor:pointer; border-radius:var(--r-pill); padding:0 13px;
+  border:1px solid transparent; white-space:nowrap; }
+.door.commit{ background:var(--commit); color:#fff; } .door.commit:hover{ filter:brightness(1.08); }
+.door.money{ background:var(--green); color:var(--ink); } .door.money:hover{ filter:brightness(1.06); }
+.door.add{ background:transparent; color:var(--txt); border:1.4px dashed var(--commit); }
+.door.ghost{ background:transparent; color:var(--txt-2); border-color:var(--line); }
+.door.ghost:hover{ border-color:var(--txt-3); color:var(--txt); }
+.door.sm{ padding:0 10px; font-size:var(--fs-chip); }
+.door:disabled{ opacity:.45; cursor:not-allowed; }
+/* segmented toggle — active segment = filled Signal of ITS OWN status */
+.seg{ display:inline-flex; height:var(--h); border:1px solid var(--line); border-radius:var(--r-pill); overflow:hidden; }
+.seg b{ display:inline-flex; align-items:center; padding:0 11px; font-family:var(--mono); font-size:var(--fs-chip);
+  font-weight:var(--w-stamp); letter-spacing:.03em; text-transform:uppercase; color:var(--txt-2); cursor:pointer;
+  border-right:1px solid var(--line); user-select:none; }
+.seg b:last-child{ border-right:0; }
+.seg b.on{ background:var(--accent); color:var(--ink); }
+.seg.tone-yellow b.on{ background:var(--yellow); color:var(--ink); }
+/* contact — the number IS the link */
+.clink{ display:inline-flex; align-items:center; gap:6px; color:var(--txt); font-size:var(--fs-field); text-decoration:none; }
+.clink svg{ color:var(--accent); width:13px; height:13px; }
+.clink .v{ border-bottom:1.4px solid transparent; } .clink:hover .v{ border-bottom-color:var(--accent); }
+/* tooltip */
+.tip{ position:relative; display:inline-block; }
+.tip>*{ cursor:help; }
+.tip .bub{ position:absolute; bottom:calc(100% + 8px); left:0; width:max-content; max-width:min(70vw,250px);
+  background:#05070a; color:#eef2f7; border:1px solid #3a444e; border-radius:8px; padding:9px 11px; font-family:var(--sans);
+  font-size:var(--fs-field); line-height:1.45; text-transform:none; letter-spacing:0; font-weight:var(--w-reg);
+  box-shadow:0 12px 30px rgba(0,0,0,.6); opacity:0; transform:translateY(4px); pointer-events:none;
+  transition:opacity .12s,transform .12s; z-index:40; }
+@media (prefers-color-scheme:light){ .tip .bub{ background:#fff; color:#141821; border-color:#c7ccd2; } }
+:root[data-theme="light"] .tip .bub{ background:#fff; color:#141821; border-color:#c7ccd2; }
+.tip:hover .bub,.tip:focus-within .bub{ opacity:1; transform:translateY(0); pointer-events:auto; }
+.tip .bub .t{ font-family:var(--mono); font-size:var(--fs-finest); font-weight:var(--w-stamp); letter-spacing:.05em;
+  text-transform:uppercase; color:var(--tan); display:block; margin-bottom:4px; }
+.tip .bub .go{ color:var(--blue); font-weight:var(--w-bold); }
+
+/* ══════════════════════════════════════════════════════════════════════
+   STEP 1 · WHO — lookup-or-create
+   ══════════════════════════════════════════════════════════════════════ */
+.ix-searchwrap{ position:relative; margin-bottom:9px; }
+.ix-searchic{ position:absolute; left:9px; top:50%; transform:translateY(-50%); width:13px; height:13px; color:var(--txt-3); pointer-events:none; }
+.ix-search{ width:100%; height:var(--h); border:1px solid var(--line); border-radius:7px; background:var(--panel);
+  color:var(--txt); padding:0 10px 0 30px; font-size:var(--fs-field); }
+.ix-search::placeholder{ color:var(--txt-3); }
+.ix-search:focus{ outline:none; border-color:var(--accent); }
+.ix-results{ display:flex; flex-direction:column; gap:5px; margin-bottom:4px; }
+.ix-result{ display:flex; align-items:center; gap:9px; padding:7px 9px; border:1px solid var(--line); border-radius:8px;
+  background:var(--card); cursor:pointer; }
+.ix-result:hover{ border-color:var(--txt-3); }
+.ix-result.is-picked{ border-color:var(--commit); background:color-mix(in srgb, var(--commit) 10%, var(--card)); }
+.ix-r-ic{ width:26px; height:26px; border-radius:var(--r-chip); background:color-mix(in srgb, var(--accent) 16%, transparent);
+  display:flex; align-items:center; justify-content:center; flex:none; color:var(--accent); }
+.ix-r-ic svg{ width:14px; height:14px; }
+.ix-r-body{ min-width:0; flex:1; }
+.ix-r-name{ font-family:var(--sans); font-weight:var(--w-bold); font-size:var(--fs-field); color:var(--txt); }
+.ix-r-meta{ display:flex; flex-wrap:wrap; align-items:center; gap:5px 8px; margin-top:3px; }
+.ix-newrow{ display:flex; align-items:center; gap:8px; padding:7px 2px 2px; }
+.ix-newrow .stamp{ color:var(--txt-2); font-weight:var(--w-reg); text-transform:none; letter-spacing:0; font-family:var(--sans); }
+.ix-recent{ display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 2px; }
+.ix-recentchip{ height:var(--h); display:inline-flex; align-items:center; gap:5px; padding:0 10px; border-radius:var(--r-pill);
+  border:1px dashed var(--line); background:transparent; color:var(--txt-2); font-size:var(--fs-chip); font-family:var(--mono);
+  letter-spacing:.02em; cursor:pointer; }
+.ix-recentchip:hover{ border-color:var(--txt-3); color:var(--txt); }
+.ix-recentlbl{ font-family:var(--mono); font-size:var(--fs-finest); letter-spacing:.08em; text-transform:uppercase;
+  color:var(--txt-2); margin:10px 0 5px; }
+.ix-sizeup{ margin-top:10px; padding-top:10px; border-top:1px dashed var(--line-soft); }
+.ix-sizeup-row{ display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin-bottom:8px; }
+.ix-contactrow{ display:flex; flex-wrap:wrap; gap:12px; margin-bottom:4px; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   STEP 2 · WHEN — quick-pick + calendar (idiom reused from detail views)
+   ══════════════════════════════════════════════════════════════════════ */
+.ix-qprow{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+.ix-qp{ height:var(--h); display:inline-flex; align-items:center; padding:0 11px; border-radius:var(--r-pill);
+  border:1px solid var(--line); background:transparent; color:var(--txt-2); font-family:var(--mono); font-size:var(--fs-chip);
+  font-weight:var(--w-stamp); letter-spacing:.03em; text-transform:uppercase; cursor:pointer; }
+.ix-qp:hover{ border-color:var(--txt-3); }
+.ix-qp.on{ background:var(--commit); border-color:var(--commit); color:#fff; }
+.cal{ margin:0 0 9px; padding:9px; background:var(--card); border:1px solid var(--line); border-radius:9px; }
+.calh{ font-family:var(--mono); font-size:var(--fs-small); letter-spacing:.06em; text-transform:uppercase; color:var(--txt-2);
+  margin-bottom:6px; display:flex; justify-content:space-between; }
+.calg{ display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
+.calg i{ font-style:normal; font-family:var(--sans); font-size:var(--fs-small); text-align:center; padding:5px 0;
+  border-radius:4px; color:var(--txt-2); position:relative; }
+.calg i.tdy{ box-shadow:inset 0 0 0 1.3px var(--txt-3); color:var(--txt); }
+.calg i.in{ background:color-mix(in srgb, var(--accent) 14%, transparent); color:var(--txt); }
+.calg i.s,.calg i.e{ background:var(--accent); color:var(--ink); font-weight:var(--w-bold); }
+.ix-availnote{ display:flex; align-items:center; gap:7px; font-size:var(--fs-field); color:var(--txt-2); margin-top:2px; }
+.ix-availnote svg{ width:13px; height:13px; color:var(--green); flex:none; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   STEP 3 · WHAT — category + fitness-gated unit list
+   ══════════════════════════════════════════════════════════════════════ */
+.ix-catrow{ display:flex; align-items:center; gap:8px; margin-bottom:9px; }
+.ix-gatenote{ display:flex; align-items:flex-start; gap:7px; font-size:var(--fs-field); color:var(--txt-2); line-height:1.4;
+  margin-bottom:9px; }
+.ix-gatenote svg{ width:13px; height:13px; flex:none; margin-top:1px; color:var(--txt-3); }
+.ix-units{ display:flex; flex-direction:column; gap:6px; }
+.ix-unit{ display:flex; align-items:center; gap:9px; padding:7px 9px; border:1px solid var(--line); border-radius:8px;
+  background:var(--card); cursor:pointer; }
+.ix-unit:hover{ border-color:var(--txt-3); }
+.ix-unit.is-sel{ border-color:var(--commit); background:color-mix(in srgb, var(--commit) 10%, var(--card)); }
+.ix-unit.is-out{ cursor:help; opacity:1; }
+.ix-u-ic{ width:26px; height:26px; border-radius:var(--r-chip); background:color-mix(in srgb, var(--accent) 16%, transparent);
+  display:flex; align-items:center; justify-content:center; flex:none; color:var(--accent); }
+.ix-unit.is-out .ix-u-ic{ background:var(--line-soft); color:var(--txt-3); }
+.ix-u-ic svg{ width:14px; height:14px; }
+.ix-u-body{ flex:1; min-width:0; }
+.ix-u-name{ font-family:var(--sans); font-weight:var(--w-bold); font-size:var(--fs-field); color:var(--txt); }
+.ix-unit.is-out .ix-u-name{ color:var(--txt-2); text-decoration:line-through; text-decoration-color:var(--txt-3); }
+.ix-u-sub{ font-family:var(--mono); font-size:var(--fs-small); color:var(--txt-2); margin-top:1px; }
+.ix-u-rate{ font-family:var(--mono); font-size:var(--fs-field); font-weight:var(--w-bold); color:var(--txt); flex:none;
+  font-variant-numeric:tabular-nums; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   STEP 4 · HOW MUCH — the owned number
+   ══════════════════════════════════════════════════════════════════════ */
+.num{ margin:0 0 9px; padding:11px 12px; background:var(--card); border:1px solid var(--line); border-radius:9px; }
+.num .big{ font-family:var(--sans); font-size:var(--fs-value); font-weight:var(--w-bold); letter-spacing:-.02em;
+  color:var(--txt); line-height:1; font-variant-numeric:tabular-nums; display:flex; align-items:baseline; gap:9px; flex-wrap:wrap; }
+.num .prov{ font-size:var(--fs-small); color:var(--txt-2); margin-top:6px; }
+.num .prov b{ color:var(--txt); }
+.ix-linerow{ display:flex; align-items:center; gap:8px; padding:5px 0; border-bottom:1px solid var(--line-soft); font-size:var(--fs-field); }
+.ix-linerow:last-of-type{ border-bottom:0; }
+.ix-linerow .lname{ flex:1; color:var(--txt-2); }
+.ix-linerow .lamt{ font-family:var(--mono); color:var(--txt); font-variant-numeric:tabular-nums; font-weight:var(--w-bold); }
+.ix-linerow.is-est .lamt{ color:var(--txt-2); }
+.ix-protrow{ display:flex; align-items:center; gap:9px; margin:9px 0; }
+.ix-savenote{ display:flex; align-items:center; gap:6px; margin-top:8px; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   STEP 5 · COMMIT — Door + Refs + the Yard Journey it flows into
+   ══════════════════════════════════════════════════════════════════════ */
+.ix-refrow{ display:flex; flex-wrap:wrap; gap:7px; margin-bottom:10px; }
+.ix-committext{ font-size:var(--fs-field); color:var(--txt-2); margin-bottom:10px; line-height:1.5; }
+.ix-committext b{ color:var(--txt); }
+.ix-donebox{ display:none; }
+.ix-donebox.show{ display:block; }
+.ix-donehead{ display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+.ix-donehead svg{ width:17px; height:17px; color:var(--green); flex:none; }
+.ix-donehead .t{ font-family:var(--sans); font-weight:var(--w-bold); font-size:var(--fs-field); color:var(--txt); }
+.ix-mini{ display:flex; align-items:center; gap:0; padding:9px; background:var(--card); border:1px solid var(--line); border-radius:9px; margin-bottom:9px; }
+.ix-mstage{ display:flex; align-items:center; gap:6px; flex:none; }
+.ix-mdot{ width:20px; height:20px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  border:2px solid var(--line); color:var(--txt-3); flex:none; }
+.ix-mdot svg{ width:10px; height:10px; }
+.ix-mstage.done .ix-mdot{ background:var(--green); border-color:var(--green); color:var(--ink); }
+.ix-mstage.cur .ix-mdot{ background:var(--blue); border-color:var(--blue); color:var(--on-blue); outline:2px solid var(--txt); outline-offset:2px; }
+.ix-mname{ font-family:var(--mono); font-size:var(--fs-small); font-weight:var(--w-stamp); letter-spacing:.03em; text-transform:uppercase; color:var(--txt-2); }
+.ix-mstage.done .ix-mname,.ix-mstage.cur .ix-mname{ color:var(--txt); }
+.ix-mline{ flex:1 1 16px; height:1.5px; background:var(--line); margin:0 8px; min-width:14px; }
+.ix-mstage.done + .ix-mline{ background:var(--green); }
+
+/* ── first-touch (empty) recent panel spacing ── */
+.ix-emptynote{ font-size:var(--fs-field); color:var(--txt-2); margin:2px 0 0; line-height:1.5; }
+
+/* reviewer notes box — annotation, not shipped chrome */
+.notes{ margin-top:30px; border:1px dashed var(--line); border-radius:10px; padding:16px 18px; max-width:960px; }
+.notes h2{ font-family:var(--mono); font-size:var(--fs-chip); font-weight:var(--w-stamp); letter-spacing:.06em;
+  text-transform:uppercase; color:var(--txt-2); margin:0 0 10px; }
+.notes ul{ margin:0; padding-left:18px; }
+.notes li{ font-size:var(--fs-field); color:var(--txt-2); line-height:1.65; margin-bottom:5px; }
+.notes b{ color:var(--txt); }
+.notes code{ font-family:var(--mono); font-size:.92em; background:var(--line-soft); padding:1px 4px; border-radius:4px; }
+
+@media (max-width:460px){
+  .ix-linerow{ flex-wrap:wrap; }
+}
+</style>
+
+<div class="page">
+  <p class="eyebrow">Intake · first draft · counter-rep, live call → reservation</p>
+  <h1>Intake — <span class="hl">who / when / what / how much / commit</span></h1>
+  <p class="lede">The front of the workflow, un-designed until now. A rep is on the phone with a caller who wants to
+    rent — this turns the call into a reservation in five calm steps, one plate each, no modal wall. <b>Left:</b> the very
+    first paint, nothing dialed in yet. <b>Right:</b> mid-call, quoting a real return caller — click a chevron to
+    open/close a step, click a unit or the Protection toggle to watch the quote move, click <b>Reserve</b> to see it land.</p>
+
+  <div class="legend">
+    <span><b>Signal</b> state chip</span><span><b>Gate</b> turnable</span><span><b>Stamp</b> fact</span>
+    <span><b>Ref</b> linked record</span><span><b>Door</b> action</span><span>· fill = today · colour = state</span>
+  </div>
+
+  <div class="compare">
+
+    <!-- ═══════════════════════════ PANEL A — FIRST TOUCH ═══════════════════════════ -->
+    <div class="intake-shell">
+      <div class="ix-head"><span class="ix-tag">First touch</span><span class="ix-title">Nothing dialed in yet</span></div>
+
+      <div class="ix-panel">
+        <!-- STEP 1 open + empty -->
+        <div class="plate none">
+          <div class="phead"><span class="plabel">1 · Who</span><span class="psum">Type a name or number…</span>
+            <span class="ctl sig o gray">no caller</span>
+            <span class="chev open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span></div>
+          <div class="pbody">
+            <div class="ix-searchwrap">
+              <svg class="ix-searchic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+              <input class="ix-search" placeholder="Name or phone number…">
+            </div>
+            <div class="ix-recentlbl">Recent</div>
+            <div class="ix-recent">
+              <span class="ix-recentchip">Duhon Contracting</span>
+              <span class="ix-recentchip">Boudreaux Marine LLC</span>
+              <span class="ix-recentchip">Gator · RC-4700</span>
+            </div>
+            <div class="ix-newrow"><button class="door add sm"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" style="margin-right:5px"><path d="M12 5v14M5 12h14"/></svg>New customer</button>
+              <span class="stamp">no match? start fresh</span></div>
+          </div>
+        </div>
+
+        <!-- STEPS 2-5 locked -->
+        <div class="plate locked"><div class="phead"><span class="plabel">2 · When</span><span class="psum">Resolve Who first</span><span class="lockic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span></div></div>
+        <div class="plate locked"><div class="phead"><span class="plabel">3 · What</span><span class="psum">Resolve Who first</span><span class="lockic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span></div></div>
+        <div class="plate locked"><div class="phead"><span class="plabel">4 · How Much</span><span class="psum">Resolve Who first</span><span class="lockic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span></div></div>
+        <div class="plate locked"><div class="phead"><span class="plabel">5 · Commit</span><span class="psum">Resolve Who first</span><span class="lockic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span></div></div>
+      </div>
+      <p class="ix-emptynote">Everything downstream is locked (icon, not just colour) until a caller resolves — the
+        guided order can't be skipped by accident.</p>
+    </div>
+
+    <!-- ═══════════════════════════ PANEL B — MID-CALL ═══════════════════════════ -->
+    <div class="intake-shell">
+      <div class="ix-head"><span class="ix-tag">Mid-call</span><span class="ix-title">Quoting a return caller</span></div>
+
+      <div class="ix-panel" id="wizard">
+
+        <!-- STEP 1 · WHO — resolved, collapsed -->
+        <div class="plate done" data-step="who" id="plateWho">
+          <div class="phead" data-toggle="who"><span class="plabel">1 · Who</span><span class="psum" id="whoSum">Boudreaux Marine LLC · matched</span>
+            <span class="ctl sig f green">matched</span>
+            <span class="chev" id="chevWho"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span></div>
+          <div class="pbody" id="bodyWho" style="display:none">
+            <div class="ix-searchwrap">
+              <svg class="ix-searchic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+              <input class="ix-search" id="whoInput" value="Boudreaux" placeholder="Name or phone number…">
+            </div>
+            <div class="ix-results">
+              <div class="ix-result is-picked" data-pick="boudreaux">
+                <span class="ix-r-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+                <div class="ix-r-body"><div class="ix-r-name">Boudreaux Marine LLC</div>
+                  <div class="ix-r-meta">
+                    <span class="tip"><span class="ctl sig f red" tabindex="0">owed 16d</span><span class="bub"><span class="t">Overdue balance</span>Invoice #4460 still open 16 days. Worth a mention before quoting more work. <span class="go">→ open invoices</span></span></span>
+                    <span class="stamp">Non-member</span><span class="dotsep">·</span><span class="stamp">Marine</span><span class="dotsep">·</span><span class="stamp">Net 15</span>
+                  </div></div>
+              </div>
+              <div class="ix-result" data-pick="duhon">
+                <span class="ix-r-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+                <div class="ix-r-body"><div class="ix-r-name">Duhon Contracting</div>
+                  <div class="ix-r-meta"><span class="ctl sig o gray">active</span><span class="stamp">Non-member</span><span class="dotsep">·</span><span class="stamp">2 past rentals</span></div></div>
+              </div>
+            </div>
+            <div class="ix-newrow"><button class="door add sm"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" style="margin-right:5px"><path d="M12 5v14M5 12h14"/></svg>New customer</button></div>
+            <div class="ix-sizeup">
+              <div class="ix-sizeup-row">
+                <span class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>Boudreaux Marine LLC</span>
+                <span class="tip"><span class="ctl sig f red" tabindex="0">owed 16d</span><span class="bub"><span class="t">Sized up on pickup</span>Every match surfaces this immediately — no digging for it mid-call. <span class="go">→ open account</span></span></span>
+                <span class="stamp">Non-member</span><span class="dotsep">·</span><span class="stamp">Net 15</span>
+              </div>
+              <div class="ix-contactrow">
+                <a class="clink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.83 4.4a10.5 10.5 0 0 0 5.77 5.77l1.28-1.28a1 1 0 0 1 1.05-.24 11.4 11.4 0 0 0 3.55.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.51a1 1 0 0 1 1 1 11.4 11.4 0 0 0 .57 3.55 1 1 0 0 1-.24 1.05z" transform="translate(-1 -1)"/></svg><span class="v">(337) 555-0142</span></a>
+                <a class="clink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 7 10 6 10-6"/></svg><span class="v">marc@boudreaux…</span></a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- STEP 2 · WHEN — resolved, collapsed -->
+        <div class="plate done" data-step="when" id="plateWhen">
+          <div class="phead" data-toggle="when"><span class="plabel">2 · When</span><span class="psum" id="whenSum">Jul 22 → Jul 25 · 3 days</span>
+            <span class="ctl sig f green" id="whenChip">3 days</span>
+            <span class="chev" id="chevWhen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span></div>
+          <div class="pbody" id="bodyWhen" style="display:none">
+            <div class="ix-qprow">
+              <span class="ix-qp" data-qp="1">1 Day</span>
+              <span class="ix-qp on" data-qp="3">3 Day</span>
+              <span class="ix-qp" data-qp="7">1 Week</span>
+              <span class="ix-qp" data-qp="custom">Custom</span>
+            </div>
+            <div class="cal">
+              <div class="calh"><span>Rental window</span><span>Jul '26</span></div>
+              <div class="calg">
+                <i>29</i><i>30</i><i class="tdy">1</i><i>2</i><i>3</i><i>4</i><i>5</i>
+                <i>6</i><i>7</i><i>8</i><i>9</i><i>10</i><i>11</i><i>12</i>
+                <i>13</i><i>14</i><i>15</i><i>16</i><i>17</i><i>18</i><i>19</i>
+                <i class="tdy">20</i><i>21</i><i class="s" id="calS">22</i><i class="in">23</i><i class="in">24</i><i class="e" id="calE">25</i><i>26</i>
+                <i>27</i><i>28</i><i>29</i><i>30</i><i>31</i><i></i><i></i>
+              </div>
+            </div>
+            <div class="ix-availnote"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4 4 10-11"/></svg><span id="availTxt">Skid Steer 75hp — 2 of 3 units free those dates</span></div>
+          </div>
+        </div>
+
+        <!-- STEP 3 · WHAT — resolved, collapsed -->
+        <div class="plate done" data-step="what" id="plateWhat">
+          <div class="phead" data-toggle="what"><span class="plabel">3 · What</span><span class="psum" id="whatSum">Skid Steer 75hp · SS-12</span>
+            <span class="ctl sig f green">selected</span>
+            <span class="chev" id="chevWhat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span></div>
+          <div class="pbody" id="bodyWhat" style="display:none">
+            <div class="ix-catrow">
+              <span class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8l9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg></span>Skid Steer 75hp</span>
+              <span class="stamp">$360/day retail</span>
+            </div>
+            <div class="ix-gatenote"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>Fitness gate — only units that passed today's inspection are offered. Failed/out-of-service units show but can't be picked.</div>
+            <div class="ix-units">
+              <div class="ix-unit is-sel" data-unit="ss12">
+                <span class="ix-u-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/></svg></span>
+                <div class="ix-u-body"><div class="ix-u-name">Skid Steer 75hp <span style="color:var(--txt-2);font-weight:var(--w-reg)">SS-12</span></div>
+                  <div class="ix-u-sub"><span class="ctl sig o gray" style="height:auto">ready</span></div></div>
+                <span class="ix-u-rate">$360/day</span>
+              </div>
+              <div class="ix-unit" data-unit="ss07">
+                <span class="ix-u-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/></svg></span>
+                <div class="ix-u-body"><div class="ix-u-name">Skid Steer 75hp <span style="color:var(--txt-2);font-weight:var(--w-reg)">SS-07</span></div>
+                  <div class="ix-u-sub"><span class="ctl sig o gray" style="height:auto">ready</span></div></div>
+                <span class="ix-u-rate">$360/day</span>
+              </div>
+              <div class="tip ix-unit is-out" tabindex="0">
+                <span class="ix-u-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/></svg></span>
+                <div class="ix-u-body"><div class="ix-u-name">Highrise <span style="color:var(--txt-2);font-weight:var(--w-reg)">4471-K</span></div>
+                  <div class="ix-u-sub"><span class="ctl sig f red" style="height:auto">failed</span></div></div>
+                <span class="bub" style="left:auto;right:0"><span class="t">Not offered</span>Failed inspection 2h ago — can't leave the yard today. <span class="go">→ open unit</span></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- STEP 4 · HOW MUCH — the current step, expanded -->
+        <div class="plate now" data-step="howmuch" id="plateHowMuch">
+          <div class="phead" data-toggle="howmuch"><span class="plabel">4 · How Much</span><span class="psum">Live quote</span>
+            <span class="ctl sig f yellow">quoting</span>
+            <span class="chev open" id="chevHowMuch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span></div>
+          <div class="pbody" id="bodyHowMuch">
+            <div class="num">
+              <div class="big">$<span id="totalAmt">1,080</span></div>
+              <div class="prov"><b>Retail — non-member</b> · 3 days × $360/day <span class="dotsep">·</span> rate 1-Day×3</div>
+            </div>
+            <div class="ix-linerow"><span class="lname">Equipment — SS-12, 3 days</span><span class="lamt">$1,080</span></div>
+            <div class="ix-linerow" id="protLine" style="display:none"><span class="lname">Protection (8%)</span><span class="lamt">$86</span></div>
+            <div class="ix-linerow is-est"><span class="lname">Tax — estimated at checkout</span><span class="lamt">est.</span></div>
+            <div class="ix-protrow">
+              <span class="seg"><b class="on" data-prot="off">Protection Off</b><b data-prot="on">Protection On</b></span>
+            </div>
+            <div class="ix-savenote">
+              <span class="tip"><span class="ctl sig o blue" tabindex="0">non-member rate</span><span class="bub"><span class="t">Membership upsell</span>Member rate on this booking would be <b>$267</b> — saves <b>$813</b>. Worth mentioning while she's on the line. <span class="go">→ start membership</span></span></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- STEP 5 · COMMIT -->
+        <div class="plate wait" data-step="commit" id="plateCommit">
+          <div class="phead" data-toggle="commit"><span class="plabel">5 · Commit</span><span class="psum" id="commitSum">Reserve → creates a real rental</span>
+            <span class="ctl sig o blue">next</span>
+            <span class="chev" id="chevCommit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span></div>
+          <div class="pbody" id="bodyCommit" style="display:none">
+
+            <div id="commitPre">
+              <p class="ix-committext">Every field above maps to a record — nothing about closing this out is new,
+                it's the same <b>Yard Journey</b> any rental walks.</p>
+              <div class="ix-refrow">
+                <span class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>Boudreaux Marine LLC</span>
+                <span class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8l9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg></span>SS-12</span>
+              </div>
+              <button class="door commit" id="reserveBtn" style="width:100%">Reserve — $1,080</button>
+            </div>
+
+            <div id="commitDone" class="ix-donebox">
+              <div class="ix-donehead"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12.5l4 4 10-11"/></svg><span class="t">Rental #4483 created</span></div>
+              <div class="ix-mini">
+                <div class="ix-mstage done"><span class="ix-mdot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v8M8.5 11.5 12 15l3.5-3.5"/><circle cx="12" cy="12" r="9"/></svg></span><span class="ix-mname">Lead</span></div>
+                <span class="ix-mline"></span>
+                <div class="ix-mstage cur"><span class="ix-mdot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/></svg></span><span class="ix-mname">Reserved · now</span></div>
+                <span class="ix-mline"></span>
+                <div class="ix-mstage"><span class="ix-mdot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><span class="ix-mname">Rented</span></div>
+              </div>
+              <p class="ix-committext">Closure is nothing new — it lives on the Rental card from here, same as any other. <button class="door ghost sm">View rental</button></p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <div class="notes">
+    <h2>Judgment calls — for Jac to react to</h2>
+    <ul>
+      <li><b>The five plates ARE the wizard.</b> Reused the exact plate grammar from the detail views instead of a
+        separate "wizard" widget — one component vocabulary, no new pattern to learn. Steps collapse to a one-line
+        summary once resolved (a real rep won't want Who's search box sitting open through the whole call).</li>
+      <li><b>"How Much" defaults open, not "Who."</b> In the mid-call panel the interesting state is live-quoting —
+        earlier steps default collapsed-done so the number is what's on screen. All five stay independently
+        expandable by chevron.</li>
+      <li><b>Fitness gate rendered as a note + a struck-through, hover-explained row</b> (reusing the failed
+        <code>Highrise · 4471-K</code> unit from the detail views), not the literal <b>Gate</b> component — Gate turns
+        a status via a picker; this is a read-only availability filter, a different job even though the brief calls
+        it a "gate."</li>
+      <li><b>Boudreaux Marine's "owed 16d" surfaces the instant she's matched</b> — same red Signal as her detail
+        view, same invoice #4460 — so sizing-up costs the rep zero extra clicks. The member-rate savings ($267 vs
+        $1,080) is offered as an upsell tip, not a Door — no money action fires itself.</li>
+      <li><b>Protection defaults OFF</b> to match her real account state (the "protection off" stamp already on her
+        Rental plate) — toggling it live-updates the quote, demonstrating "live" honestly, while tax stays labelled
+        <code>estimated</code> since jurisdiction/final tax isn't known until invoice time.</li>
+      <li><b>Quote math is real</b>, not invented: Skid Steer 75hp non-member, 3 days, is <code>rate1Day×3 = $1,080</code>
+        under the app's actual cheapest-blend pricing (checked against <code>rentalPrice()</code> in <code>app.js</code>);
+        member rate would be <code>memberDaily×3 = $267</code>.</li>
+      <li><b>Not built:</b> real typeahead search (the input/results here are a fixed demo set), true click-to-pick
+        calendar range selection (quick-picks are wired; individual day clicks are decorative), and what happens if
+        NO unit is fit to go out (an all-excluded empty state) — flagged rather than guessed.</li>
+    </ul>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  function toggle(step, forceOpen){
+    var body = document.getElementById('body' + cap(step));
+    var chev = document.getElementById('chev' + cap(step));
+    var open = forceOpen != null ? forceOpen : body.style.display === 'none';
+    body.style.display = open ? 'block' : 'none';
+    if (chev) chev.classList.toggle('open', open);
+  }
+  function cap(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
+
+  document.querySelectorAll('[data-toggle]').forEach(function(h){
+    h.addEventListener('click', function(){ toggle(h.getAttribute('data-toggle')); });
+  });
+
+  // ── Who: pick a result ──
+  document.querySelectorAll('.ix-result[data-pick]').forEach(function(r){
+    r.addEventListener('click', function(e){
+      e.stopPropagation();
+      document.querySelectorAll('.ix-result').forEach(function(x){ x.classList.remove('is-picked'); });
+      r.classList.add('is-picked');
+      var name = r.querySelector('.ix-r-name').textContent;
+      document.getElementById('whoSum').textContent = name + ' · matched';
+    });
+  });
+
+  // ── When: quick-pick ──
+  var qpDays = { '1':1, '3':3, '7':7 };
+  document.querySelectorAll('.ix-qp[data-qp]').forEach(function(p){
+    p.addEventListener('click', function(e){
+      e.stopPropagation();
+      document.querySelectorAll('.ix-qp').forEach(function(x){ x.classList.remove('on'); });
+      p.classList.add('on');
+      var qp = p.getAttribute('data-qp');
+      if (qp === 'custom') return;
+      var days = qpDays[qp];
+      var rate1 = 360;
+      var amt = days === 7 ? 1190 : days * rate1;
+      var label = days === 7 ? '7-Day×1' : ('1-Day×' + days);
+      document.getElementById('whenSum').textContent = 'Jul 22 → ' + (22+days) + ' · ' + days + ' day' + (days===1?'':'s');
+      document.getElementById('whenChip').textContent = days + (days===1?' day':' days');
+      window.__ixDays = days; window.__ixAmt = amt; window.__ixRateLabel = label;
+      updateQuote();
+    });
+  });
+
+  // ── What: select a unit (excluded ones are inert) ──
+  document.querySelectorAll('.ix-unit[data-unit]').forEach(function(u){
+    u.addEventListener('click', function(e){
+      e.stopPropagation();
+      document.querySelectorAll('.ix-unit[data-unit]').forEach(function(x){ x.classList.remove('is-sel'); });
+      u.classList.add('is-sel');
+      var id = u.getAttribute('data-unit');
+      var label = u.querySelector('.ix-u-name').textContent.trim().replace(/\s+/g,' ');
+      document.getElementById('whatSum').textContent = 'Skid Steer 75hp · ' + id.toUpperCase();
+    });
+  });
+
+  // ── How Much: protection toggle ──
+  var protOn = false;
+  document.querySelectorAll('[data-prot]').forEach(function(b){
+    b.addEventListener('click', function(e){
+      e.stopPropagation();
+      document.querySelectorAll('[data-prot]').forEach(function(x){ x.classList.remove('on'); });
+      b.classList.add('on');
+      protOn = b.getAttribute('data-prot') === 'on';
+      updateQuote();
+    });
+  });
+
+  function updateQuote(){
+    var amt = window.__ixAmt || 1080;
+    var days = window.__ixDays || 3;
+    var rateLabel = window.__ixRateLabel || '1-Day×3';
+    var prot = protOn ? Math.round(amt * 0.08) : 0;
+    var total = amt + prot;
+    document.getElementById('totalAmt').textContent = total.toLocaleString();
+    document.getElementById('protLine').style.display = protOn ? 'flex' : 'none';
+    document.getElementById('protLine').querySelector('.lamt').textContent = '$' + prot;
+    document.querySelector('#plateHowMuch .prov').innerHTML = '<b>Retail — non-member</b> · ' + days + ' day' + (days===1?'':'s') + ' × $360/day <span class="dotsep">·</span> rate ' + rateLabel;
+    document.querySelector('#bodyHowMuch .ix-linerow:first-of-type .lname').textContent = 'Equipment — SS-12, ' + days + ' day' + (days===1?'':'s');
+    document.querySelector('#bodyHowMuch .ix-linerow:first-of-type .lamt').textContent = '$' + amt.toLocaleString();
+    document.getElementById('reserveBtn').textContent = 'Reserve — $' + total.toLocaleString();
+  }
+
+  // ── Commit ──
+  document.getElementById('reserveBtn').addEventListener('click', function(e){
+    e.stopPropagation();
+    document.getElementById('commitPre').style.display = 'none';
+    document.getElementById('commitDone').classList.add('show');
+    var plate = document.getElementById('plateCommit');
+    plate.classList.remove('wait'); plate.classList.add('done');
+    plate.querySelector('.sig').className = 'ctl sig f green';
+    plate.querySelector('.sig').textContent = 'reserved';
+    document.getElementById('commitSum').textContent = 'Rental #4483 · Reserved';
+  });
+})();
+</script>

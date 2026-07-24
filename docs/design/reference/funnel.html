@@ -1,0 +1,1160 @@
+<title>Funnel — Section Redesign</title>
+<meta charset="utf-8">
+<style>
+/* ══════════════════════════════════════════════════════════════════════
+   TOKENS — locked steel palette (wrangler-style §1). Dark is default;
+   light overrides via prefers-color-scheme; :root[data-theme] wins both
+   directions because the attribute selector out-specifies a bare :root
+   inside a media query — no !important needed.
+   REV 3: --yellow dimmed to #eed44b in BOTH dark + light (locked in wrangler-style).
+   ══════════════════════════════════════════════════════════════════════ */
+:root{
+  --bg:#0a0d11; --panel:#171d25; --card:#12171e; --card-head:#1a212b;
+  --line:#2c343f; --line-soft:#212834;
+  --txt:#eef2f7; --txt-2:#aab4c1; --txt-3:#717b89;
+  --accent:#ff7e1f; --ink:#1a1205;
+  --green:#34d399; --yellow:#eed44b; --red:#ff4242; --red-fill:#d63636;
+  --blue:#6394cc; --gray:#8b94a3; --commit:#2f6fd0; --tan:#c2925a;
+
+  /* style skill numbers: one control height, two radii, the size ladder.
+     H=26px matches the app's own real precedent for this exact section
+     (addBtn/actionPill calls in the funnel code pass h:26). */
+  --h:26px;
+  --r-pill:999px;           /* actions (Door, segmented toggle) */
+  --r-chip:7px;             /* state (Signal / Gate / Ref square) — ONE chip value */
+  --fs-title:15px; --fs-body:13px; --fs-field:12px; --fs-chip:11px; --fs-small:10px; --fs-fine:9.5px;
+  --w-stamp:800; --w-bold:700; --w-reg:400;
+  --mono: ui-monospace,"Cascadia Code","SF Mono",Menlo,Consolas,monospace;
+  --sans: -apple-system,"Segoe UI",Roboto,system-ui,sans-serif;
+}
+@media (prefers-color-scheme: light){
+  :root{
+    --bg:#e6e8ea; --panel:#fff; --card:#fff; --card-head:#eef0f2;
+    --line:#cfd6e1; --line-soft:#e1e6ec;
+    --txt:#141821; --txt-2:#414b5a; --txt-3:#69727f;
+    --accent:#cf6000; --ink:#1a1205;
+    --green:#0c8f5f; --yellow:#eed44b; --red:#d52a2a; --red-fill:#b5241f;
+    --blue:#2f5fb0; --gray:#566072; --commit:#1f56c0; --tan:#8a5a2b;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0a0d11; --panel:#171d25; --card:#12171e; --card-head:#1a212b;
+  --line:#2c343f; --line-soft:#212834;
+  --txt:#eef2f7; --txt-2:#aab4c1; --txt-3:#717b89;
+  --accent:#ff7e1f; --ink:#1a1205;
+  --green:#34d399; --yellow:#eed44b; --red:#ff4242; --red-fill:#d63636;
+  --blue:#6394cc; --gray:#8b94a3; --commit:#2f6fd0; --tan:#c2925a;
+}
+:root[data-theme="light"]{
+  --bg:#e6e8ea; --panel:#fff; --card:#fff; --card-head:#eef0f2;
+  --line:#cfd6e1; --line-soft:#e1e6ec;
+  --txt:#141821; --txt-2:#414b5a; --txt-3:#69727f;
+  --accent:#cf6000; --ink:#1a1205;
+  --green:#0c8f5f; --yellow:#eed44b; --red:#d52a2a; --red-fill:#b5241f;
+  --blue:#2f5fb0; --gray:#566072; --commit:#1f56c0; --tan:#8a5a2b;
+}
+
+*,*::before,*::after{ box-sizing:border-box; }
+body{ margin:0; background:var(--bg); color:var(--txt); font-family:var(--sans);
+  -webkit-font-smoothing:antialiased; }
+.num{ font-variant-numeric:tabular-nums; font-family:var(--mono); }
+button{ font-family:inherit; }
+
+.page{ max-width:1180px; margin:0 auto; padding:28px 20px 60px; }
+.page h1{ font-family:var(--sans); font-size:20px; font-weight:var(--w-bold); margin:0 0 6px; }
+.page > p{ font-size:var(--fs-body); color:var(--txt-2); max-width:76ch; line-height:1.5; margin:0 0 22px; }
+
+.legend{ display:flex; flex-wrap:wrap; gap:6px 18px; align-items:center; margin-bottom:26px;
+  font-family:var(--mono); font-size:var(--fs-small); color:var(--txt-3); letter-spacing:.03em; }
+.legend b{ color:var(--txt-2); font-weight:var(--w-reg); }
+.legend .lg-dot{ display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px; vertical-align:-1px; }
+.legend .lg-dmd{ display:inline-block; width:7px; height:7px; background:var(--txt-3); transform:rotate(45deg); margin-right:5px; vertical-align:-1px; }
+
+.compare{ display:flex; flex-wrap:wrap; gap:26px; align-items:flex-start; }
+.customer-shell{ flex:1 1 480px; max-width:600px; min-width:0; }
+
+/* ── faux customer-item chrome (context only — NOT part of the redesign) ── */
+.cust-strip{ display:flex; align-items:baseline; gap:10px; padding:0 2px 8px; border-bottom:1px dashed var(--line); margin-bottom:10px; }
+.cust-name{ font-family:var(--sans); font-weight:var(--w-bold); font-size:var(--fs-title); color:var(--txt); }
+.cust-meta{ font-size:var(--fs-field); color:var(--txt-3); font-family:var(--mono); }
+.cust-chev{ margin-left:auto; font-size:var(--fs-fine); color:var(--txt-3); font-family:var(--mono); }
+.cust-collapsed-note{ font-size:var(--fs-fine); color:var(--txt-3); opacity:.7; margin:-2px 2px 14px; }
+.panel-tag{ display:block; font-family:var(--mono); font-size:var(--fs-fine); font-weight:var(--w-stamp);
+  letter-spacing:.06em; text-transform:uppercase; color:var(--tan); margin-bottom:8px; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   THE FUNNEL SECTION — plate grammar.
+   ══════════════════════════════════════════════════════════════════════ */
+.funnel-mock{ background:var(--card); border:1px solid var(--line); border-radius:10px; overflow:visible; }
+
+.fx-plate{ display:flex; align-items:center; gap:10px; min-height:calc(var(--h) + 14px); padding:0 14px 0 0;
+  background:var(--card-head); border-bottom:1px solid var(--line); border-radius:10px 10px 0 0; position:relative; }
+.fx-bar{ position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--bar,var(--gray)); border-radius:10px 0 0 0; }
+.fx-label{ font-family:var(--mono); font-weight:var(--w-stamp); font-size:var(--fs-chip); letter-spacing:.06em;
+  text-transform:uppercase; color:var(--txt); padding-left:16px; white-space:nowrap; }
+.fx-sum{ font-size:var(--fs-field); color:var(--txt-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fx-sum b{ color:var(--txt); font-weight:var(--w-bold); }
+
+/* ── segmented toggle — REV 2 rule: active segment = filled Signal of that
+   option's OWN status (colour=state); today-urgency → yellow; no status → orange
+   fallback. Inactive tabs keep a small dot carrying their own urgency instead. ── */
+.fx-seg{ display:flex; gap:6px; padding:12px 14px 4px; }
+.fx-tab{ display:inline-flex; align-items:center; gap:7px; height:var(--h); padding:0 13px;
+  border-radius:var(--r-pill); border:1px solid var(--line); background:transparent; color:var(--txt-2);
+  font-family:var(--mono); font-weight:var(--w-stamp); font-size:var(--fs-chip); letter-spacing:.04em;
+  text-transform:uppercase; cursor:pointer; line-height:1; transition:background .12s ease,color .12s ease,border-color .12s ease; }
+.fx-tab:hover{ border-color:var(--txt-3); }
+.fx-tab .tone-suffix{ display:none; }
+.fx-tab.is-active{ background:var(--accent); border-color:var(--accent); color:var(--ink); }
+.fx-tab.is-active[data-tone="today"]{ background:var(--yellow); border-color:var(--yellow); }
+.fx-tab.is-active[data-tone="today"] .tone-suffix{ display:inline; opacity:.7; font-weight:var(--w-reg); margin-left:1px; }
+.fx-dot{ width:7px; height:7px; border-radius:50%; flex:0 0 auto; border:1.5px solid var(--line); background:transparent; }
+.fx-tab:not(.is-active)[data-tone="today"] .fx-dot{ background:var(--yellow); border-color:var(--yellow); }
+.fx-tab.is-active .fx-dot{ display:none; }   /* the whole chip's fill already carries the state — no redundant dot */
+
+.fx-body{ padding:6px 14px 14px; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   STEPPER — vertical dated progression, REAL FUNNELS stage sets
+   (config.js FUNNELS): rental ['Lead','Reserved','Rented'], member
+   ['Lead','Contacted','Not A No!','Payment Discussed','Signed'],
+   equipment ['Lead','Contacted','Not A No!','Payment Discussed','Paid'].
+   ══════════════════════════════════════════════════════════════════════ */
+.fx-block-h{ font-family:var(--mono); font-weight:var(--w-stamp); font-size:var(--fs-fine); letter-spacing:.08em;
+  text-transform:uppercase; color:var(--txt-3); margin:16px 0 8px; display:flex; align-items:center; gap:8px; }
+.fx-block:first-of-type .fx-block-h{ margin-top:10px; }
+.fx-block-h .sub{ font-weight:var(--w-reg); text-transform:none; letter-spacing:0; color:var(--txt-3); opacity:.8; }
+
+.fx-stepper{ list-style:none; margin:0; padding:0; }
+.stage{ display:flex; gap:12px; }
+.stage-rail{ display:flex; flex-direction:column; align-items:center; width:26px; flex:0 0 auto; }
+.stage-dot{ position:relative; width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  flex:0 0 auto; background:transparent; border:2px solid var(--line); color:var(--txt-3); }
+.stage-dot svg{ width:13px; height:13px; }
+.stage-badge{ position:absolute; right:-2px; bottom:-2px; width:10px; height:10px; border:1.5px solid var(--card); }
+.stage-badge.badge-check{ border-radius:50%; background:var(--card); color:var(--green); display:flex; align-items:center; justify-content:center; }
+.stage-badge.badge-check svg{ width:6px; height:6px; }
+.stage-badge.badge-now{ border-radius:0; background:var(--txt); transform:rotate(45deg); }
+.stage-line{ width:2px; flex:1 1 auto; min-height:22px; background:var(--line); margin:2px 0; }
+.stage:last-child .stage-line{ display:none; }
+.stage-body{ display:flex; align-items:center; gap:10px; flex:1 1 auto; min-width:0; padding-bottom:22px; flex-wrap:wrap; }
+.stage:last-child .stage-body{ padding-bottom:2px; }
+.stage-info{ display:flex; align-items:center; gap:8px; flex:0 0 auto; }
+
+/* done — colour=state green, dark ink, steady (no motion), own meaningful icon + circular ✓ badge */
+.stage.is-done .stage-dot{ background:var(--green); border-color:var(--green); color:var(--ink); }
+.stage.is-done .stage-line{ background:var(--green); }
+
+/* current — "you are here": MORE than colour — own icon on a blue fill, a
+   solid 0-blur ring OFFSET from the fill (matte, no glow), a DIAMOND badge
+   (shape, not colour), AND the literal word "· now" in the chip text. */
+.stage.is-current .stage-dot{ background:var(--blue); border-color:var(--blue); color:var(--ink);
+  outline:2px solid var(--txt); outline-offset:2px; }
+
+.stage.is-upcoming .stage-dot{ border-color:var(--line); color:var(--txt-3); }
+
+.stage-name{ display:inline-flex; align-items:center; gap:3px; height:var(--h); padding:0 10px;
+  border-radius:var(--r-chip); font-family:var(--mono); font-weight:var(--w-stamp); font-size:var(--fs-chip);
+  letter-spacing:.04em; text-transform:uppercase; white-space:nowrap; }
+.stage.is-done .stage-name{ background:var(--green); color:var(--ink); }
+.stage.is-current .stage-name{ background:var(--blue); color:var(--ink); cursor:pointer; border:none; }
+.stage.is-current .stage-name svg{ width:9px; height:9px; margin-right:1px; } /* leading chevron hugs text, ≤2px gap */
+.stage.is-current .stage-name .now{ opacity:.75; font-weight:var(--w-reg); margin-left:2px; }
+.stage.is-upcoming .stage-name{ color:var(--txt-3); background:none; padding:0 10px 0 0; }
+
+.stage-date{ font-family:var(--mono); font-size:var(--fs-small); color:var(--txt-3); white-space:nowrap;
+  font-variant-numeric:tabular-nums; flex:0 0 auto; }
+.stage.is-upcoming .stage-date{ opacity:.6; }
+
+/* ── per-checkpoint action zone — sits to the RIGHT of every stage row ── */
+.stage-action{ display:flex; align-items:center; gap:7px; margin-left:auto; min-width:0; flex:1 1 160px; justify-content:flex-end; }
+.stage-atxt{ font-size:var(--fs-field); color:var(--txt-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+.stage-action .inline-add{ flex:1 1 auto; justify-content:flex-end; }
+
+/* the Gate status-picker popover — opens on the current stage chip */
+.gate-pop{ display:none; margin:8px 0 4px 34px; border:1px solid var(--line); border-radius:8px; background:var(--panel);
+  padding:9px 10px; max-width:260px; }
+.gate-pop.open{ display:block; }
+.gate-pop-h{ font-family:var(--mono); font-size:var(--fs-fine); font-weight:var(--w-stamp); letter-spacing:.06em;
+  text-transform:uppercase; color:var(--txt-3); margin-bottom:6px; }
+.gate-pop-row{ display:flex; align-items:center; gap:8px; width:100%; height:var(--h); padding:0 8px; border:none;
+  background:none; border-radius:6px; color:var(--txt-2); font-family:var(--sans); font-size:var(--fs-field);
+  cursor:pointer; text-align:left; }
+.gate-pop-row:hover{ background:var(--line-soft); color:var(--txt); }
+.gate-pop-row svg{ width:12px; height:12px; flex:0 0 auto; color:var(--txt-3); }
+.gate-pop-note{ display:flex; align-items:flex-start; gap:7px; font-size:var(--fs-field); color:var(--txt-3); line-height:1.4; padding:2px 2px; }
+.gate-pop-note svg{ width:13px; height:13px; flex:0 0 auto; margin-top:1px; color:var(--txt-3); }
+
+/* ══════════════════════════════════════════════════════════════════════
+   Doors, Signal, Stamp, Ref — shared inline vocabulary
+   ══════════════════════════════════════════════════════════════════════ */
+.signal{ display:inline-flex; align-items:center; height:var(--h); padding:0 9px; border-radius:var(--r-chip);
+  font-family:var(--mono); font-weight:var(--w-stamp); font-size:var(--fs-chip); letter-spacing:.04em;
+  text-transform:uppercase; white-space:nowrap; background:var(--sc,var(--gray)); color:var(--ink); flex:0 0 auto; }
+.stamp{ font-family:var(--mono); font-size:var(--fs-chip); letter-spacing:.02em; color:var(--txt-3);
+  white-space:nowrap; height:var(--h); display:inline-flex; align-items:center; flex:0 0 auto; }
+
+.door{ display:inline-flex; align-items:center; justify-content:center; height:var(--h); padding:0 14px;
+  border-radius:var(--r-pill); font-family:var(--sans); font-weight:var(--w-bold); font-size:var(--fs-field);
+  cursor:pointer; white-space:nowrap; border:1px solid transparent; flex:0 0 auto; }
+.door.sm{ padding:0 10px; font-size:var(--fs-chip); }
+.door-commit{ background:var(--commit); color:#eef2f7; }
+.door-commit:hover{ filter:brightness(1.08); }
+.door-ghost{ background:transparent; border-color:var(--line); color:var(--txt-2); }
+.door-ghost:hover{ border-color:var(--txt-3); color:var(--txt); }
+
+.fx-stamps{ display:flex; flex-wrap:wrap; gap:6px 16px; align-items:center; }
+.fx-stamps .stamp{ height:auto; }
+
+.ref{ display:inline-flex; align-items:center; gap:6px; height:var(--h); padding:0 10px 0 0; border-radius:var(--r-chip);
+  cursor:pointer; }
+.ref-ic{ width:var(--h); height:var(--h); border-radius:var(--r-chip); background:color-mix(in srgb, var(--accent) 16%, transparent);
+  display:flex; align-items:center; justify-content:center; flex:0 0 auto; }
+.ref-ic svg{ width:13px; height:13px; color:var(--accent); }
+.ref-name{ font-family:var(--sans); font-weight:var(--w-bold); font-size:var(--fs-field); color:var(--txt); }
+
+/* ── More Actions (renamed from Next Actions — per-checkpoint actions now
+   live inline on the stepper; this list is the account-level OVERFLOW,
+   i.e. items not tied to any single funnel stage) ── */
+.fx-todo{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
+.todo-row{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.todo-text{ flex:1 1 auto; font-size:var(--fs-body); color:var(--txt); min-width:0; }
+.todo-row.is-quiet .todo-text{ color:var(--txt-2); }
+.todo-add-row{ display:flex; }
+
+/* ── inline add — NO modal. Clicking "+ Action" expands a row in place;
+   the ONE tolerable popup is the calendar+time picker, anchored above the click. ── */
+.inline-add{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; width:100%; }
+.inline-add[hidden]{ display:none; }   /* author display:flex above otherwise beats the UA [hidden] rule */
+.inline-in{ height:var(--h); flex:1 1 150px; min-width:100px; border:1px solid var(--line); border-radius:7px;
+  background:var(--panel); color:var(--txt); padding:0 10px; font:inherit; font-size:var(--fs-field); }
+.inline-in::placeholder{ color:var(--txt-3); }
+.inline-in:focus{ outline:none; border-color:var(--accent); }
+.dt-trigger{ height:var(--h); padding:0 10px; border-radius:var(--r-pill); border:1px dashed var(--line);
+  background:transparent; color:var(--txt-3); font-size:var(--fs-small); font-family:var(--mono); cursor:pointer;
+  white-space:nowrap; flex:0 0 auto; }
+.dt-trigger:hover{ border-color:var(--txt-3); color:var(--txt-2); }
+.dt-trigger.is-set{ border-style:solid; color:var(--txt-2); border-color:var(--txt-3); }
+
+/* ── the ONE tolerable popup — calendar + time, anchored ABOVE the click ── */
+.cal-pop{ position:fixed; z-index:9999; width:220px; background:var(--panel); border:1px solid var(--line);
+  border-radius:10px; padding:10px; display:none; }
+.cal-pop.open{ display:block; }
+.cal-hd{ display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+.cal-month{ font-family:var(--mono); font-weight:var(--w-stamp); font-size:var(--fs-chip); letter-spacing:.04em;
+  text-transform:uppercase; color:var(--txt); }
+.cal-nav{ width:22px; height:22px; border-radius:6px; border:1px solid var(--line); background:transparent;
+  color:var(--txt-2); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; font-size:12px; line-height:1; }
+.cal-nav:hover{ border-color:var(--txt-3); color:var(--txt); }
+.cal-dow{ display:grid; grid-template-columns:repeat(7,1fr); gap:2px; margin-bottom:3px; }
+.cal-dow span{ font-family:var(--mono); font-size:8.5px; color:var(--txt-3); text-align:center; letter-spacing:.02em; }
+.cal-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:2px; }
+.cal-day{ height:26px; border-radius:6px; border:1px solid transparent; background:transparent; color:var(--txt-2);
+  font-size:var(--fs-small); font-family:var(--mono); cursor:pointer; display:flex; align-items:center; justify-content:center; }
+.cal-day:hover{ border-color:var(--line); }
+.cal-day.is-today{ border-color:var(--txt-3); color:var(--txt); }
+.cal-day.is-sel{ background:var(--blue); color:var(--ink); font-weight:var(--w-bold); }
+.cal-day.is-blank{ visibility:hidden; }
+.cal-time-row{ display:flex; align-items:center; gap:6px; margin-top:9px; }
+.cal-time{ flex:1 1 auto; height:26px; border:1px solid var(--line); border-radius:7px; background:var(--bg);
+  color:var(--txt); padding:0 8px; font:inherit; font-size:var(--fs-field); }
+
+/* ── Action log — compact, dated, scrollable ── */
+.fx-log{ list-style:none; margin:0; padding:0; max-height:172px; overflow-y:auto; display:flex; flex-direction:column;
+  border-top:1px solid var(--line-soft); }
+.fx-log li{ display:flex; gap:10px; padding:7px 2px; border-bottom:1px solid var(--line-soft); align-items:baseline; }
+.fx-log li:last-child{ border-bottom:none; }
+.log-ts{ font-family:var(--mono); font-size:var(--fs-small); color:var(--txt-3); flex:0 0 auto;
+  font-variant-numeric:tabular-nums; }
+.log-txt{ font-size:var(--fs-field); color:var(--txt-2); }
+
+/* reviewer-notes box — annotation only, not part of the shipped component */
+.notes{ margin-top:30px; border:1px dashed var(--line); border-radius:10px; padding:16px 18px; max-width:920px; }
+.notes h2{ font-family:var(--mono); font-size:var(--fs-chip); font-weight:var(--w-stamp); letter-spacing:.06em;
+  text-transform:uppercase; color:var(--txt-3); margin:0 0 10px; }
+.notes ul{ margin:0; padding-left:18px; }
+.notes li{ font-size:var(--fs-field); color:var(--txt-2); line-height:1.65; margin-bottom:4px; }
+.notes b{ color:var(--txt); }
+.notes code{ font-family:var(--mono); font-size:0.92em; background:var(--line-soft); padding:1px 4px; border-radius:4px; }
+
+@media (max-width:520px){
+  .fx-plate{ flex-wrap:wrap; min-height:auto; padding:8px 12px; gap:4px; }
+  .fx-sum{ white-space:normal; }
+  .stage-action{ flex-basis:100%; justify-content:flex-start; margin-left:36px; }
+}
+</style>
+
+<div class="page">
+  <h1>Funnel — section redesign (rev 2)</h1>
+  <p>Rebuilt on the app's <b>real</b> funnel stages (<code>config.js</code> <code>FUNNELS</code> —
+  Rental <code>Lead → Reserved → Rented</code>, its Member-Lead continuation
+  <code>Lead → Contacted → Not A No! → Payment Discussed → Signed</code>, and Equipment
+  <code>Lead → Contacted → Not A No! → Payment Discussed → Paid</code>). Each checkpoint carries
+  its own meaningful icon, and the space to the right of every checkpoint is that checkpoint's
+  own action. <b>More Actions</b> below is the overflow — items not tied to a single stage.
+  Adding an action is fully inline; the only popup is a small calendar + time picker anchored
+  above wherever you clicked.</p>
+
+  <div class="legend">
+    <span><i class="lg-dot" style="background:var(--green)"></i><b>done</b> — filled icon + circular ✓ badge</span>
+    <span><i class="lg-dot" style="background:var(--blue)"></i><b>current</b> — filled icon + ring + <i class="lg-dmd"></i> badge + "· now" (never colour alone)</span>
+    <span><i class="lg-dot" style="border:1.5px solid var(--line)"></i><b>upcoming</b> — outline icon only, muted</span>
+    <span><i class="lg-dot" style="background:var(--yellow)"></i><b>today</b> — filled Signal / active-tab tone</span>
+  </div>
+
+  <div class="compare">
+
+    <!-- ═══════════════ PANEL A — Rental tab active by default ═══════════════ -->
+    <div class="customer-shell">
+      <div class="cust-strip">
+        <span class="cust-name">Bayou Marine Fabrication LLC</span>
+        <span class="cust-meta">Acct #10482 · Commercial</span>
+        <span class="cust-chev">⌄ expanded</span>
+      </div>
+      <div class="cust-collapsed-note">Contact · Billing · Units — collapsed above/below</div>
+
+      <section class="funnel-mock" data-mock>
+        <header class="fx-plate" style="--bar:var(--yellow)">
+          <span class="fx-bar"></span>
+          <span class="fx-label">Funnel</span>
+          <span class="fx-sum">Rental · Rented — Member: Payment Discussed — next: mid-rental check-in <b>today</b></span>
+        </header>
+
+        <div class="fx-seg" role="tablist">
+          <button class="fx-tab is-active" data-tab="rental" data-tone="today" aria-selected="true" role="tab">Rental<span class="tone-suffix">· today</span><i class="fx-dot"></i></button>
+          <button class="fx-tab" data-tab="equipment" data-tone="neutral" aria-selected="false" role="tab">Equipment Sales<i class="fx-dot"></i></button>
+        </div>
+
+        <!-- ── RENTAL TAB BODY ── -->
+        <div class="fx-body" data-panel="rental" role="tabpanel">
+          <div class="fx-block-h">Rental</div>
+          <ol class="fx-stepper">
+
+            <li class="stage is-done"><span class="stage-rail">
+                <span class="stage-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v8M8.5 11.5 12 15l3.5-3.5"/></svg><span class="stage-badge badge-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12.5l4 4 10-11"/></svg></span></span>
+                <span class="stage-line"></span></span>
+              <span class="stage-body">
+                <span class="stage-info"><span class="stage-name">Lead</span><span class="stage-date num">Jun 24</span></span>
+                <span class="stage-action">
+                  <button class="door door-ghost sm js-add-trigger">+ Action</button>
+                  <div class="inline-add" hidden>
+                    <input class="inline-in" placeholder="What's the next step?">
+                    <button class="dt-trigger js-dt-trigger">Set date</button>
+                    <button class="door door-ghost sm js-inline-cancel">Cancel</button>
+                    <button class="door door-commit sm js-inline-save">Save</button>
+                  </div>
+                </span>
+              </span></li>
+
+            <li class="stage is-done"><span class="stage-rail">
+                <span class="stage-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/></svg><span class="stage-badge badge-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12.5l4 4 10-11"/></svg></span></span>
+                <span class="stage-line"></span></span>
+              <span class="stage-body">
+                <span class="stage-info"><span class="stage-name">Reserved</span><span class="stage-date num">Jul 02</span></span>
+                <span class="stage-action">
+                  <span class="stage-atxt">Confirm delivery time window</span>
+                  <span class="stamp">in 2d</span>
+                  <button class="door door-commit sm">Edit</button>
+                </span>
+              </span></li>
+
+            <li class="stage is-done"><span class="stage-rail">
+                <span class="stage-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M5 21v-1a7 7 0 0 1 14 0v1"/></svg><span class="stage-badge badge-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12.5l4 4 10-11"/></svg></span></span>
+                <span class="stage-line"></span></span>
+              <span class="stage-body">
+                <span class="stage-info"><span class="stage-name">Rented</span><span class="stage-date num">Jul 15</span></span>
+                <span class="stage-action">
+                  <span class="stage-atxt">Mid-rental check-in call</span>
+                  <span class="signal" style="--sc:var(--yellow)">Today</span>
+                  <button class="door door-commit sm">Log</button>
+                </span>
+              </span></li>
+          </ol>
+
+          <div class="fx-block-h">Member <span class="sub">— extends Rental (ticked)</span></div>
+          <ol class="fx-stepper">
+
+            <li class="stage is-done"><span class="stage-rail">
+                <span class="stage-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v8M8.5 11.5 12 15l3.5-3.5"/></svg><span class="stage-badge badge-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12.5l4 4 10-11"/></svg></span></span>
+                <span class="stage-line"></span></span>
+              <span class="stage-body">
+                <span class="stage-info"><span class="stage-name">Lead</span><span class="stage-date num">Jul 05</span></span>
+                <span class="stage-action">
+                  <button class="door door-ghost sm js-add-trigger">+ Action</button>
+                  <div class="inline-add" hidden>
+                    <input class="inline-in" placeholder="What's the next step?">
+                    <button class="dt-trigger js-dt-trigger">Set date</button>
+                    <button class="door door-ghost sm js-inline-cancel">Cancel</button>
+                    <button class="door door-commit sm js-inline-save">Save</button>
+                  </div>
+                </span>
+              </span></li>
+
+            <li class="stage is-done"><span class="stage-rail">
+                <span class="stage-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3-8.6A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.4 2.1L8.1 9.9a16 16 0 0 0 6 6l1.4-1.4a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg><span class="stage-badge badge-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12.5l4 4 10-11"/></svg></span></span>
+                <span class="stage-line"></span></span>
+              <span class="stage-body">
+                <span class="stage-info"><span class="stage-name">Contacted</span><span class="stage-date num">Jul 08</span></span>
+                <span class="stage-action">
+                  <button class="door door-ghost sm js-add-trigger">+ Action</button>
+                  <div class="inline-add" hidden>
+                    <input class="inline-in" placeholder="What's the next step?">
+                    <button class="dt-trigger js-dt-trigger">Set date</button>
+                    <button class="door door-ghost sm js-inline-cancel">Cancel</button>
+                    <button class="door door-commit sm js-inline-save">Save</button>
+                  </div>
+                </span>
+              </span></li>
+
+            <li class="stage is-done"><span class="stage-rail">
+                <span class="stage-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11v9H4a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3zM7 11l4-7a2 2 0 0 1 3 1.5V9h5a2 2 0 0 1 2 2.3l-1.2 7A2 2 0 0 1 20.6 20H7"/></svg><span class="stage-badge badge-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12.5l4 4 10-11"/></svg></span></span>
+                <span class="stage-line"></span></span>
+              <span class="stage-body">
+                <span class="stage-info"><span class="stage-name">Not A No!</span><span class="stage-date num">Jul 12</span></span>
+                <span class="stage-action">
+                  <button class="door door-ghost sm js-add-trigger">+ Action</button>
+                  <div class="inline-add" hidden>
+                    <input class="inline-in" placeholder="What's the next step?">
+                    <button class="dt-trigger js-dt-trigger">Set date</button>
+                    <button class="door door-ghost sm js-inline-cancel">Cancel</button>
+                    <button class="door door-commit sm js-inline-save">Save</button>
+                  </div>
+                </span>
+              </span></li>
+
+            <li class="stage is-current"><span class="stage-rail">
+                <span class="stage-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/></svg><span class="stage-badge badge-now"></span></span>
+                <span class="stage-line"></span></span>
+              <span class="stage-body">
+                <span class="stage-info">
+                  <span class="stage-name js-gate" data-gate="a"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M9 6l6 6-6 6"/></svg>Payment Discussed<span class="now">· now</span></span>
+                  <span class="stage-date num">Jul 18</span>
+                </span>
+                <span class="stage-action">
+                  <span class="stage-atxt">Send membership agreement link</span>
+                  <span class="stamp">in 1d</span>
+                  <button class="door door-commit sm">Send</button>
+                </span>
+              </span></li>
+            <div class="gate-pop" data-gate-pop="a">
+              <div class="gate-pop-h">Advance funnel</div>
+              <div class="gate-pop-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>"Signed" auto-locks when the membership agreement is signed — not a manual pick.</div>
+            </div>
+
+            <li class="stage is-upcoming"><span class="stage-rail">
+                <span class="stage-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg></span>
+                <span class="stage-line"></span></span>
+              <span class="stage-body">
+                <span class="stage-info"><span class="stage-name">Signed</span><span class="stage-date num">—</span></span>
+                <span class="stage-action">
+                  <button class="door door-ghost sm js-add-trigger">+ Action</button>
+                  <div class="inline-add" hidden>
+                    <input class="inline-in" placeholder="What's the next step?">
+                    <button class="dt-trigger js-dt-trigger">Set date</button>
+                    <button class="door door-ghost sm js-inline-cancel">Cancel</button>
+                    <button class="door door-commit sm js-inline-save">Save</button>
+                  </div>
+                </span>
+              </span></li>
+          </ol>
+
+          <div class="fx-block">
+            <div class="fx-block-h">More actions</div>
+            <ul class="fx-todo">
+              <li class="todo-row"><span class="todo-text">Update contact — new job-site address</span>
+                <span class="stamp">in 5d</span>
+                <button class="door door-commit sm">Update</button></li>
+              <li class="todo-row is-quiet"><span class="todo-text">Add to spring promo mailing list</span>
+                <span class="stamp">—</span>
+                <button class="door door-ghost sm">Dismiss</button></li>
+              <li class="todo-row todo-add-row">
+                <button class="door door-ghost sm js-add-trigger">+ Action</button>
+                <div class="inline-add" hidden data-list="1">
+                  <input class="inline-in" placeholder="What's the next step?">
+                  <button class="dt-trigger js-dt-trigger">Set date</button>
+                  <button class="door door-ghost sm js-inline-cancel">Cancel</button>
+                  <button class="door door-commit sm js-inline-save">Save</button>
+                </div>
+              </li>
+            </ul>
+          </div>
+
+          <div class="fx-block">
+            <div class="fx-block-h">Membership / meta</div>
+            <div class="fx-stamps">
+              <span class="stamp">Lead age · <span class="num">26d</span></span>
+              <span class="stamp">Source · Referral</span>
+              <span class="stamp">Rep · J. Broussard</span>
+              <span class="ref"><span class="ref-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8 12 3 3 8l9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg></span><span class="ref-name">Skid Steer S650</span></span>
+            </div>
+          </div>
+
+          <div class="fx-block">
+            <div class="fx-block-h">Action log</div>
+            <ol class="fx-log">
+              <li><span class="log-ts num">07/18 9:10a</span><span class="log-txt">Membership stage → Payment Discussed</span></li>
+              <li><span class="log-ts num">07/15 8:47a</span><span class="log-txt">Rented — delivery completed</span></li>
+              <li><span class="log-ts num">07/12 3:20p</span><span class="log-txt">Membership stage → Not A No!</span></li>
+              <li><span class="log-ts num">07/12 2:15p</span><span class="log-txt">Deposit received ($350)</span></li>
+              <li><span class="log-ts num">07/08 11:00a</span><span class="log-txt">Membership stage → Contacted</span></li>
+              <li><span class="log-ts num">07/05 10:00a</span><span class="log-txt">Member Lead ticked on</span></li>
+              <li><span class="log-ts num">07/02 11:30a</span><span class="log-txt">Reserved — 42&quot; skid steer, 2wk</span></li>
+              <li><span class="log-ts num">06/24 9:00a</span><span class="log-txt">Lead created — inbound call</span></li>
+            </ol>
+          </div>
+        </div>
+
+        <!-- ── EQUIPMENT TAB BODY ── -->
+        <div class="fx-body" data-panel="equipment" role="tabpanel" hidden>
+          <div class="fx-block-h">Equipment</div>
+          <ol class="fx-stepper">
+
+            <li class="stage is-done"><span class="stage-rail">
+                <span class="stage-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v8M8.5 11.5 12 15l3.5-3.5"/></svg><span class="stage-badge badge-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12.5l4 4 10-11"/></svg></span></span>
+                <span class="stage-line"></span></span>
+              <span class="stage-body">
+                <span class="stage-info"><span class="stage-name">Lead</span><span class="stage-date num">Jun 10</span></span>
+                <span class="stage-action">
+                  <button class="door door-ghost sm js-add-trigger">+ Action</button>
+                  <div class="inline-add" hidden>
+                    <input class="inline-in" placeholder="What's the next step?">
+                    <button class="dt-trigger js-dt-trigger">Set date</button>
+                    <button class="door door-ghost sm js-inline-cancel">Cancel</button>
+                    <button class="door door-commit sm js-inline-save">Save</button>
+                  </div>
+                </span>
+              </span></li>
+
+            <li class="stage is-done"><span class="stage-rail">
+                <span class="stage-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3-8.6A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.4 2.1L8.1 9.9a16 16 0 0 0 6 6l1.4-1.4a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg><span class="stage-badge badge-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12.5l4 4 10-11"/></svg></span></span>
+                <span class="stage-line"></span></span>
+              <span class="stage-body">
+                <span class="stage-info"><span class="stage-name">Contacted</span><span class="stage-date num">Jun 14</span></span>
+                <span class="stage-action">
+                  <span class="stage-atxt">Follow up after demo — gauge interest</span>
+                  <span class="stamp">in 1d</span>
+                  <button class="door door-commit sm">Log call</button>
+                </span>
+              </span></li>
+
+            <li class="stage is-current"><span class="stage-rail">
+                <span class="stage-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11v9H4a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3zM7 11l4-7a2 2 0 0 1 3 1.5V9h5a2 2 0 0 1 2 2.3l-1.2 7A2 2 0 0 1 20.6 20H7"/></svg><span class="stage-badge badge-now"></span></span>
+                <span class="stage-line"></span></span>
+              <span class="stage-body">
+                <span class="stage-info">
+                  <span class="stage-name js-gate" data-gate="b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M9 6l6 6-6 6"/></svg>Not A No!<span class="now">· now</span></span>
+                  <span class="stage-date num">Jul 17</span>
+                </span>
+                <span class="stage-action">
+                  <span class="stage-atxt">Confirm decision-maker sign-off</span>
+                  <span class="stamp">in 3d</span>
+                  <button class="door door-commit sm">Log call</button>
+                </span>
+              </span></li>
+            <div class="gate-pop" data-gate-pop="b">
+              <div class="gate-pop-h">Advance funnel</div>
+              <button class="gate-pop-row js-gate-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 6l6 6-6 6"/></svg>Mark as Payment Discussed</button>
+            </div>
+
+            <li class="stage is-upcoming"><span class="stage-rail">
+                <span class="stage-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/></svg></span>
+                <span class="stage-line"></span></span>
+              <span class="stage-body">
+                <span class="stage-info"><span class="stage-name">Payment Discussed</span><span class="stage-date num">—</span></span>
+                <span class="stage-action">
+                  <button class="door door-ghost sm js-add-trigger">+ Action</button>
+                  <div class="inline-add" hidden>
+                    <input class="inline-in" placeholder="What's the next step?">
+                    <button class="dt-trigger js-dt-trigger">Set date</button>
+                    <button class="door door-ghost sm js-inline-cancel">Cancel</button>
+                    <button class="door door-commit sm js-inline-save">Save</button>
+                  </div>
+                </span>
+              </span></li>
+
+            <li class="stage is-upcoming"><span class="stage-rail">
+                <span class="stage-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0zM7 5H4v2a3 3 0 0 0 3 3M17 5h3v2a3 3 0 0 1-3 3"/></svg></span>
+                <span class="stage-line"></span></span>
+              <span class="stage-body">
+                <span class="stage-info"><span class="stage-name">Paid</span><span class="stage-date num">—</span></span>
+                <span class="stage-action">
+                  <button class="door door-ghost sm js-add-trigger">+ Action</button>
+                  <div class="inline-add" hidden>
+                    <input class="inline-in" placeholder="What's the next step?">
+                    <button class="dt-trigger js-dt-trigger">Set date</button>
+                    <button class="door door-ghost sm js-inline-cancel">Cancel</button>
+                    <button class="door door-commit sm js-inline-save">Save</button>
+                  </div>
+                </span>
+              </span></li>
+          </ol>
+
+          <div class="fx-block">
+            <div class="fx-block-h">More actions</div>
+            <ul class="fx-todo">
+              <li class="todo-row"><span class="todo-text">Verify tax-exempt certificate on file</span>
+                <span class="stamp">in 3d</span>
+                <button class="door door-commit sm">Verify</button></li>
+              <li class="todo-row todo-add-row">
+                <button class="door door-ghost sm js-add-trigger">+ Action</button>
+                <div class="inline-add" hidden data-list="1">
+                  <input class="inline-in" placeholder="What's the next step?">
+                  <button class="dt-trigger js-dt-trigger">Set date</button>
+                  <button class="door door-ghost sm js-inline-cancel">Cancel</button>
+                  <button class="door door-commit sm js-inline-save">Save</button>
+                </div>
+              </li>
+            </ul>
+          </div>
+
+          <div class="fx-block">
+            <div class="fx-block-h">Membership / meta</div>
+            <div class="fx-stamps">
+              <span class="stamp">Lead age · <span class="num">40d</span></span>
+              <span class="stamp">Deal est. · <span class="num">$42,000</span></span>
+              <span class="stamp">Rep · T. Guidry</span>
+              <span class="ref"><span class="ref-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/></svg></span><span class="ref-name">Quote Q-10432</span></span>
+            </div>
+          </div>
+
+          <div class="fx-block">
+            <div class="fx-block-h">Action log</div>
+            <ol class="fx-log">
+              <li><span class="log-ts num">07/17 1:15p</span><span class="log-txt">Stage → Not A No!</span></li>
+              <li><span class="log-ts num">07/10 9:40a</span><span class="log-txt">Demo completed — positive feedback</span></li>
+              <li><span class="log-ts num">06/22 3:00p</span><span class="log-txt">On-site demo scheduled</span></li>
+              <li><span class="log-ts num">06/14 10:15a</span><span class="log-txt">Stage → Contacted</span></li>
+              <li><span class="log-ts num">06/10 8:30a</span><span class="log-txt">Lead created — trade show (LA Contractors Expo)</span></li>
+            </ol>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ═══════════════ PANEL B — Equipment Sales tab active by default ═══════════════
+         Same customer/data as Panel A — only the DEFAULT active tab differs, to show
+         the toggle rule's other branch (orange/neutral, since Equipment has no today-item). -->
+    <div class="customer-shell">
+      <div class="cust-strip">
+        <span class="cust-name">Bayou Marine Fabrication LLC</span>
+        <span class="cust-meta">Acct #10482 · Commercial</span>
+        <span class="cust-chev">⌄ expanded</span>
+      </div>
+      <div class="cust-collapsed-note">Contact · Billing · Units — collapsed above/below</div>
+
+      <section class="funnel-mock" data-mock>
+        <header class="fx-plate" style="--bar:var(--gray)">
+          <span class="fx-bar"></span>
+          <span class="fx-label">Funnel</span>
+          <span class="fx-sum">Equipment Sales · Not A No! — next: confirm sign-off <b>in 3d</b></span>
+        </header>
+
+        <div class="fx-seg" role="tablist">
+          <button class="fx-tab" data-tab="rental" data-tone="today" aria-selected="false" role="tab">Rental<span class="tone-suffix">· today</span><i class="fx-dot"></i></button>
+          <button class="fx-tab is-active" data-tab="equipment" data-tone="neutral" aria-selected="true" role="tab">Equipment Sales<i class="fx-dot"></i></button>
+        </div>
+
+        <div class="fx-body" data-panel="rental" role="tabpanel" hidden>
+          <div class="fx-block-h">Rental</div>
+          <ol class="fx-stepper">
+            <li class="stage is-done"><span class="stage-rail">
+                <span class="stage-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v8M8.5 11.5 12 15l3.5-3.5"/></svg><span class="stage-badge badge-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12.5l4 4 10-11"/></svg></span></span>
+                <span class="stage-line"></span></span>
+              <span class="stage-body">
+                <span class="stage-info"><span class="stage-name">Lead</span><span class="stage-date num">Jun 24</span></span>
+                <span class="stage-action">
+                  <button class="door door-ghost sm js-add-trigger">+ Action</button>
+                  <div class="inline-add" hidden>
+                    <input class="inline-in" placeholder="What's the next step?">
+                    <button class="dt-trigger js-dt-trigger">Set date</button>
+                    <button class="door door-ghost sm js-inline-cancel">Cancel</button>
+                    <button class="door door-commit sm js-inline-save">Save</button>
+                  </div>
+                </span>
+              </span></li>
+            <li class="stage is-done"><span class="stage-rail">
+                <span class="stage-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/></svg><span class="stage-badge badge-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12.5l4 4 10-11"/></svg></span></span>
+                <span class="stage-line"></span></span>
+              <span class="stage-body">
+                <span class="stage-info"><span class="stage-name">Reserved</span><span class="stage-date num">Jul 02</span></span>
+                <span class="stage-action">
+                  <span class="stage-atxt">Confirm delivery time window</span>
+                  <span class="stamp">in 2d</span>
+                  <button class="door door-commit sm">Edit</button>
+                </span>
+              </span></li>
+            <li class="stage is-done"><span class="stage-rail">
+                <span class="stage-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M5 21v-1a7 7 0 0 1 14 0v1"/></svg><span class="stage-badge badge-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12.5l4 4 10-11"/></svg></span></span>
+                <span class="stage-line"></span></span>
+              <span class="stage-body">
+                <span class="stage-info"><span class="stage-name">Rented</span><span class="stage-date num">Jul 15</span></span>
+                <span class="stage-action">
+                  <span class="stage-atxt">Mid-rental check-in call</span>
+                  <span class="signal" style="--sc:var(--yellow)">Today</span>
+                  <button class="door door-commit sm">Log</button>
+                </span>
+              </span></li>
+          </ol>
+
+          <div class="fx-block-h">Member <span class="sub">— extends Rental (ticked)</span></div>
+          <ol class="fx-stepper">
+            <li class="stage is-done"><span class="stage-rail">
+                <span class="stage-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v8M8.5 11.5 12 15l3.5-3.5"/></svg><span class="stage-badge badge-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12.5l4 4 10-11"/></svg></span></span>
+                <span class="stage-line"></span></span>
+              <span class="stage-body">
+                <span class="stage-info"><span class="stage-name">Lead</span><span class="stage-date num">Jul 05</span></span>
+                <span class="stage-action">
+                  <button class="door door-ghost sm js-add-trigger">+ Action</button>
+                  <div class="inline-add" hidden>
+                    <input class="inline-in" placeholder="What's the next step?">
+                    <button class="dt-trigger js-dt-trigger">Set date</button>
+                    <button class="door door-ghost sm js-inline-cancel">Cancel</button>
+                    <button class="door door-commit sm js-inline-save">Save</button>
+                  </div>
+                </span>
+              </span></li>
+            <li class="stage is-done"><span class="stage-rail">
+                <span class="stage-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3-8.6A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.4 2.1L8.1 9.9a16 16 0 0 0 6 6l1.4-1.4a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg><span class="stage-badge badge-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12.5l4 4 10-11"/></svg></span></span>
+                <span class="stage-line"></span></span>
+              <span class="stage-body">
+                <span class="stage-info"><span class="stage-name">Contacted</span><span class="stage-date num">Jul 08</span></span>
+                <span class="stage-action">
+                  <button class="door door-ghost sm js-add-trigger">+ Action</button>
+                  <div class="inline-add" hidden>
+                    <input class="inline-in" placeholder="What's the next step?">
+                    <button class="dt-trigger js-dt-trigger">Set date</button>
+                    <button class="door door-ghost sm js-inline-cancel">Cancel</button>
+                    <button class="door door-commit sm js-inline-save">Save</button>
+                  </div>
+                </span>
+              </span></li>
+            <li class="stage is-done"><span class="stage-rail">
+                <span class="stage-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11v9H4a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3zM7 11l4-7a2 2 0 0 1 3 1.5V9h5a2 2 0 0 1 2 2.3l-1.2 7A2 2 0 0 1 20.6 20H7"/></svg><span class="stage-badge badge-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12.5l4 4 10-11"/></svg></span></span>
+                <span class="stage-line"></span></span>
+              <span class="stage-body">
+                <span class="stage-info"><span class="stage-name">Not A No!</span><span class="stage-date num">Jul 12</span></span>
+                <span class="stage-action">
+                  <button class="door door-ghost sm js-add-trigger">+ Action</button>
+                  <div class="inline-add" hidden>
+                    <input class="inline-in" placeholder="What's the next step?">
+                    <button class="dt-trigger js-dt-trigger">Set date</button>
+                    <button class="door door-ghost sm js-inline-cancel">Cancel</button>
+                    <button class="door door-commit sm js-inline-save">Save</button>
+                  </div>
+                </span>
+              </span></li>
+            <li class="stage is-current"><span class="stage-rail">
+                <span class="stage-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/></svg><span class="stage-badge badge-now"></span></span>
+                <span class="stage-line"></span></span>
+              <span class="stage-body">
+                <span class="stage-info">
+                  <span class="stage-name js-gate" data-gate="c"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M9 6l6 6-6 6"/></svg>Payment Discussed<span class="now">· now</span></span>
+                  <span class="stage-date num">Jul 18</span>
+                </span>
+                <span class="stage-action">
+                  <span class="stage-atxt">Send membership agreement link</span>
+                  <span class="stamp">in 1d</span>
+                  <button class="door door-commit sm">Send</button>
+                </span>
+              </span></li>
+            <div class="gate-pop" data-gate-pop="c">
+              <div class="gate-pop-h">Advance funnel</div>
+              <div class="gate-pop-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>"Signed" auto-locks when the membership agreement is signed — not a manual pick.</div>
+            </div>
+            <li class="stage is-upcoming"><span class="stage-rail">
+                <span class="stage-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg></span>
+                <span class="stage-line"></span></span>
+              <span class="stage-body">
+                <span class="stage-info"><span class="stage-name">Signed</span><span class="stage-date num">—</span></span>
+                <span class="stage-action">
+                  <button class="door door-ghost sm js-add-trigger">+ Action</button>
+                  <div class="inline-add" hidden>
+                    <input class="inline-in" placeholder="What's the next step?">
+                    <button class="dt-trigger js-dt-trigger">Set date</button>
+                    <button class="door door-ghost sm js-inline-cancel">Cancel</button>
+                    <button class="door door-commit sm js-inline-save">Save</button>
+                  </div>
+                </span>
+              </span></li>
+          </ol>
+
+          <div class="fx-block">
+            <div class="fx-block-h">More actions</div>
+            <ul class="fx-todo">
+              <li class="todo-row"><span class="todo-text">Update contact — new job-site address</span>
+                <span class="stamp">in 5d</span>
+                <button class="door door-commit sm">Update</button></li>
+              <li class="todo-row is-quiet"><span class="todo-text">Add to spring promo mailing list</span>
+                <span class="stamp">—</span>
+                <button class="door door-ghost sm">Dismiss</button></li>
+              <li class="todo-row todo-add-row">
+                <button class="door door-ghost sm js-add-trigger">+ Action</button>
+                <div class="inline-add" hidden data-list="1">
+                  <input class="inline-in" placeholder="What's the next step?">
+                  <button class="dt-trigger js-dt-trigger">Set date</button>
+                  <button class="door door-ghost sm js-inline-cancel">Cancel</button>
+                  <button class="door door-commit sm js-inline-save">Save</button>
+                </div>
+              </li>
+            </ul>
+          </div>
+
+          <div class="fx-block">
+            <div class="fx-block-h">Membership / meta</div>
+            <div class="fx-stamps">
+              <span class="stamp">Lead age · <span class="num">26d</span></span>
+              <span class="stamp">Source · Referral</span>
+              <span class="stamp">Rep · J. Broussard</span>
+              <span class="ref"><span class="ref-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8 12 3 3 8l9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg></span><span class="ref-name">Skid Steer S650</span></span>
+            </div>
+          </div>
+
+          <div class="fx-block">
+            <div class="fx-block-h">Action log</div>
+            <ol class="fx-log">
+              <li><span class="log-ts num">07/18 9:10a</span><span class="log-txt">Membership stage → Payment Discussed</span></li>
+              <li><span class="log-ts num">07/15 8:47a</span><span class="log-txt">Rented — delivery completed</span></li>
+              <li><span class="log-ts num">07/12 3:20p</span><span class="log-txt">Membership stage → Not A No!</span></li>
+              <li><span class="log-ts num">07/12 2:15p</span><span class="log-txt">Deposit received ($350)</span></li>
+              <li><span class="log-ts num">07/08 11:00a</span><span class="log-txt">Membership stage → Contacted</span></li>
+              <li><span class="log-ts num">07/05 10:00a</span><span class="log-txt">Member Lead ticked on</span></li>
+              <li><span class="log-ts num">07/02 11:30a</span><span class="log-txt">Reserved — 42&quot; skid steer, 2wk</span></li>
+              <li><span class="log-ts num">06/24 9:00a</span><span class="log-txt">Lead created — inbound call</span></li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="fx-body" data-panel="equipment" role="tabpanel">
+          <div class="fx-block-h">Equipment</div>
+          <ol class="fx-stepper">
+            <li class="stage is-done"><span class="stage-rail">
+                <span class="stage-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v8M8.5 11.5 12 15l3.5-3.5"/></svg><span class="stage-badge badge-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12.5l4 4 10-11"/></svg></span></span>
+                <span class="stage-line"></span></span>
+              <span class="stage-body">
+                <span class="stage-info"><span class="stage-name">Lead</span><span class="stage-date num">Jun 10</span></span>
+                <span class="stage-action">
+                  <button class="door door-ghost sm js-add-trigger">+ Action</button>
+                  <div class="inline-add" hidden>
+                    <input class="inline-in" placeholder="What's the next step?">
+                    <button class="dt-trigger js-dt-trigger">Set date</button>
+                    <button class="door door-ghost sm js-inline-cancel">Cancel</button>
+                    <button class="door door-commit sm js-inline-save">Save</button>
+                  </div>
+                </span>
+              </span></li>
+            <li class="stage is-done"><span class="stage-rail">
+                <span class="stage-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3-8.6A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.4 2.1L8.1 9.9a16 16 0 0 0 6 6l1.4-1.4a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg><span class="stage-badge badge-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12.5l4 4 10-11"/></svg></span></span>
+                <span class="stage-line"></span></span>
+              <span class="stage-body">
+                <span class="stage-info"><span class="stage-name">Contacted</span><span class="stage-date num">Jun 14</span></span>
+                <span class="stage-action">
+                  <span class="stage-atxt">Follow up after demo — gauge interest</span>
+                  <span class="stamp">in 1d</span>
+                  <button class="door door-commit sm">Log call</button>
+                </span>
+              </span></li>
+            <li class="stage is-current"><span class="stage-rail">
+                <span class="stage-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11v9H4a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3zM7 11l4-7a2 2 0 0 1 3 1.5V9h5a2 2 0 0 1 2 2.3l-1.2 7A2 2 0 0 1 20.6 20H7"/></svg><span class="stage-badge badge-now"></span></span>
+                <span class="stage-line"></span></span>
+              <span class="stage-body">
+                <span class="stage-info">
+                  <span class="stage-name js-gate" data-gate="d"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M9 6l6 6-6 6"/></svg>Not A No!<span class="now">· now</span></span>
+                  <span class="stage-date num">Jul 17</span>
+                </span>
+                <span class="stage-action">
+                  <span class="stage-atxt">Confirm decision-maker sign-off</span>
+                  <span class="stamp">in 3d</span>
+                  <button class="door door-commit sm">Log call</button>
+                </span>
+              </span></li>
+            <div class="gate-pop" data-gate-pop="d">
+              <div class="gate-pop-h">Advance funnel</div>
+              <button class="gate-pop-row js-gate-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 6l6 6-6 6"/></svg>Mark as Payment Discussed</button>
+            </div>
+            <li class="stage is-upcoming"><span class="stage-rail">
+                <span class="stage-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/></svg></span>
+                <span class="stage-line"></span></span>
+              <span class="stage-body">
+                <span class="stage-info"><span class="stage-name">Payment Discussed</span><span class="stage-date num">—</span></span>
+                <span class="stage-action">
+                  <button class="door door-ghost sm js-add-trigger">+ Action</button>
+                  <div class="inline-add" hidden>
+                    <input class="inline-in" placeholder="What's the next step?">
+                    <button class="dt-trigger js-dt-trigger">Set date</button>
+                    <button class="door door-ghost sm js-inline-cancel">Cancel</button>
+                    <button class="door door-commit sm js-inline-save">Save</button>
+                  </div>
+                </span>
+              </span></li>
+            <li class="stage is-upcoming"><span class="stage-rail">
+                <span class="stage-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0zM7 5H4v2a3 3 0 0 0 3 3M17 5h3v2a3 3 0 0 1-3 3"/></svg></span>
+                <span class="stage-line"></span></span>
+              <span class="stage-body">
+                <span class="stage-info"><span class="stage-name">Paid</span><span class="stage-date num">—</span></span>
+                <span class="stage-action">
+                  <button class="door door-ghost sm js-add-trigger">+ Action</button>
+                  <div class="inline-add" hidden>
+                    <input class="inline-in" placeholder="What's the next step?">
+                    <button class="dt-trigger js-dt-trigger">Set date</button>
+                    <button class="door door-ghost sm js-inline-cancel">Cancel</button>
+                    <button class="door door-commit sm js-inline-save">Save</button>
+                  </div>
+                </span>
+              </span></li>
+          </ol>
+
+          <div class="fx-block">
+            <div class="fx-block-h">More actions</div>
+            <ul class="fx-todo">
+              <li class="todo-row"><span class="todo-text">Verify tax-exempt certificate on file</span>
+                <span class="stamp">in 3d</span>
+                <button class="door door-commit sm">Verify</button></li>
+              <li class="todo-row todo-add-row">
+                <button class="door door-ghost sm js-add-trigger">+ Action</button>
+                <div class="inline-add" hidden data-list="1">
+                  <input class="inline-in" placeholder="What's the next step?">
+                  <button class="dt-trigger js-dt-trigger">Set date</button>
+                  <button class="door door-ghost sm js-inline-cancel">Cancel</button>
+                  <button class="door door-commit sm js-inline-save">Save</button>
+                </div>
+              </li>
+            </ul>
+          </div>
+
+          <div class="fx-block">
+            <div class="fx-block-h">Membership / meta</div>
+            <div class="fx-stamps">
+              <span class="stamp">Lead age · <span class="num">40d</span></span>
+              <span class="stamp">Deal est. · <span class="num">$42,000</span></span>
+              <span class="stamp">Rep · T. Guidry</span>
+              <span class="ref"><span class="ref-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/></svg></span><span class="ref-name">Quote Q-10432</span></span>
+            </div>
+          </div>
+
+          <div class="fx-block">
+            <div class="fx-block-h">Action log</div>
+            <ol class="fx-log">
+              <li><span class="log-ts num">07/17 1:15p</span><span class="log-txt">Stage → Not A No!</span></li>
+              <li><span class="log-ts num">07/10 9:40a</span><span class="log-txt">Demo completed — positive feedback</span></li>
+              <li><span class="log-ts num">06/22 3:00p</span><span class="log-txt">On-site demo scheduled</span></li>
+              <li><span class="log-ts num">06/14 10:15a</span><span class="log-txt">Stage → Contacted</span></li>
+              <li><span class="log-ts num">06/10 8:30a</span><span class="log-txt">Lead created — trade show (LA Contractors Expo)</span></li>
+            </ol>
+          </div>
+        </div>
+      </section>
+    </div>
+
+  </div>
+
+  <div class="notes">
+    <h2>Judgment calls</h2>
+    <ul>
+      <li><b>Real stages, sourced verbatim from <code>config.js</code> <code>FUNNELS</code>:</b>
+        rental <code>['Lead','Reserved','Rented']</code>, member <code>['Lead','Contacted','Not A No!','Payment Discussed','Signed']</code>
+        (auto: Signed), equipment <code>['Lead','Contacted','Not A No!','Payment Discussed','Paid']</code> (no auto yet — flagged
+        in the code itself for a future auto-trigger). The Rental tab renders Rental's own 3 stages
+        <i>plus</i> Member's 5 as a second stacked ladder when Member Lead is ticked — matching
+        <code>funnelSectionHtml</code>'s <code>rentalBody()</code> exactly (two independent Lead
+        entries, not one shared one — the earlier 2026-07-17 design doc proposed a single shared
+        Lead rung, but the shipped code keeps them separate, so I followed the code).</li>
+      <li><b>Icons are reused verbatim from the app's own <code>GATE_ICON</code></b> (app.js ~16845) —
+        Reserved (calendar), Contacted (phone), Not A No! (thumbs-up), Payment Discussed (card), Paid
+        (wallet) map 1:1 by stage name. Three stages have no exact <code>GATE_ICON</code> key today, so
+        I reused the closest real semantic match rather than inventing one: <b>Lead</b> → the
+        <code>'Inbound Lead'</code> glyph, <b>Rented</b> → the <code>'On Rent'</code> glyph (same
+        real-world state, different label), <b>Signed</b> → the <code>'Complete'</code> glyph
+        (agreement completed). Flagging these three for Jac to confirm or swap.</li>
+      <li><b>Done/current/upcoming no longer differ by icon</b> (the icon is now the stage's fixed
+        identity) — the state reads instead through fill vs. outline (a shape cue, not just colour),
+        plus a small corner badge: a <b>circle ✓</b> for done, a <b>diamond</b> (◆, pure geometry, no
+        colour dependency) for current, no badge for upcoming — on top of the ring and "· now" text
+        already carrying "current." Four independent non-colour cues on the one state that matters most.</li>
+      <li><b>Per-checkpoint actions model the app's real 3-state layer logic</b>
+        (<code>funnelLayerHtml</code>): a stage with an open, dated action shows that action's text +
+        urgency (a filled-yellow Signal only when due <i>today</i>, else a quiet Stamp) + a commit Door;
+        an unarmed stage (done or upcoming) shows a ghost <b>+ Action</b>. The one auto-locked next
+        stage in this sample (Rental's Payment Discussed → Signed) renders its Gate popover as an
+        informational note instead of a clickable row, since <code>reachFunnelStage</code> genuinely
+        refuses to manually set an auto stage — the mockup doesn't offer a control the real app would reject.</li>
+      <li><b>"More Actions" is the overflow</b> — account-level items with no <code>fkey</code>/<code>stage</code>
+        tag, distinct from the per-checkpoint actions now inline on the stepper (the real
+        <code>nextActionsHtml</code> currently lists both redundantly; this mockup splits them for clarity).</li>
+      <li><b>Inline add, no modal:</b> "+ Action" expands a row in place (text field + Save/Cancel) rather
+        than opening a window. The <b>one</b> tolerable popup is the small calendar + time picker, which
+        opens anchored <i>above</i> the clicked trigger (falls back to below only if there's truly no
+        room above — an edge-case safeguard, not the default). Saving swaps the ghost button for the
+        armed display live, so the whole loop is demonstrable without a page reload.</li>
+      <li><b>Toggle rule applied:</b> the active tab is a filled Signal of that funnel's own state —
+        yellow "· today" when a today-action exists anywhere in it, else the standard orange (no real
+        status = neutral). Panel A's Rental tab demonstrates the yellow branch; Panel B's Equipment tab
+        (same customer, same data) demonstrates the orange fallback, since Equipment carries no
+        due-today item. Inactive tabs keep a small dot instead of the full fill.</li>
+      <li><b>Yellow dimmed to <code>#eed44b</code> in BOTH themes</b> to match the locked
+        <code>wrangler-style</code> token — light theme no longer keeps the brighter
+        <code>#ffe14d</code>. The dark-palette deuter/protan separation (≥90 vs orange &amp; green)
+        was verified when the hex was locked; light-theme separation holds by lightness (the yellow
+        is far lighter than light-orange <code>#cf6000</code> / green <code>#0c8f5f</code>).</li>
+      <li>Control height moved 27px → <b>26px</b> to match the app's own real precedent in this exact
+        section (<code>h:26</code> on <code>addBtn</code>/<code>actionPill</code> calls in
+        <code>funnelSectionHtml</code>'s neighborhood); chip radius stays unified at 7px (style's
+        two-radii rule still overrides wrangler-style's separate 6/8 listing).</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+(function(){
+  var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var DOWS = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+
+  // ── shared calendar+time popover — the ONE tolerable popup, anchored ABOVE the click ──
+  var calPop = document.createElement('div');
+  calPop.className = 'cal-pop';
+  calPop.innerHTML =
+    '<div class="cal-hd"><button class="cal-nav cal-prev" type="button">‹</button>' +
+    '<span class="cal-month"></span><button class="cal-nav cal-next" type="button">›</button></div>' +
+    '<div class="cal-dow">' + DOWS.map(function(d){ return '<span>' + d + '</span>'; }).join('') + '</div>' +
+    '<div class="cal-grid"></div>' +
+    '<div class="cal-time-row"><input type="time" class="cal-time" value="09:00">' +
+    '<button class="door door-commit sm cal-set" type="button">Set</button></div>';
+  document.body.appendChild(calPop);
+
+  var calState = { target:null, viewYear:0, viewMonth:0, selDay:null };
+
+  function renderCal(){
+    var today = new Date();
+    calPop.querySelector('.cal-month').textContent = MONTHS[calState.viewMonth] + ' ' + calState.viewYear;
+    var first = new Date(calState.viewYear, calState.viewMonth, 1);
+    var startDow = first.getDay();
+    var daysInMonth = new Date(calState.viewYear, calState.viewMonth + 1, 0).getDate();
+    var grid = calPop.querySelector('.cal-grid');
+    var html = '';
+    for (var b = 0; b < startDow; b++) html += '<span class="cal-day is-blank"></span>';
+    for (var d = 1; d <= daysInMonth; d++) {
+      var isToday = today.getFullYear() === calState.viewYear && today.getMonth() === calState.viewMonth && today.getDate() === d;
+      var isSel = calState.selDay === d;
+      html += '<button type="button" class="cal-day' + (isToday ? ' is-today' : '') + (isSel ? ' is-sel' : '') + '" data-day="' + d + '">' + d + '</button>';
+    }
+    grid.innerHTML = html;
+  }
+
+  function openCal(trigger){
+    calState.target = trigger;
+    var now = new Date();
+    calState.viewYear = now.getFullYear(); calState.viewMonth = now.getMonth(); calState.selDay = null;
+    renderCal();
+    calPop.classList.add('open');
+    var r = trigger.getBoundingClientRect();
+    var w = calPop.offsetWidth || 220, h = calPop.offsetHeight || 260;
+    var left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8));
+    var top = r.top - h - 8;                          // anchored ABOVE the click
+    if (top < 8) top = Math.min(r.bottom + 8, window.innerHeight - h - 8);  // edge-case fallback only
+    calPop.style.left = left + 'px'; calPop.style.top = top + 'px';
+  }
+  function closeCal(){ calPop.classList.remove('open'); calState.target = null; }
+
+  calPop.querySelector('.cal-prev').addEventListener('click', function(){
+    calState.viewMonth--; if (calState.viewMonth < 0) { calState.viewMonth = 11; calState.viewYear--; }
+    calState.selDay = null; renderCal();
+  });
+  calPop.querySelector('.cal-next').addEventListener('click', function(){
+    calState.viewMonth++; if (calState.viewMonth > 11) { calState.viewMonth = 0; calState.viewYear++; }
+    calState.selDay = null; renderCal();
+  });
+  calPop.querySelector('.cal-grid').addEventListener('click', function(e){
+    var b = e.target.closest('.cal-day:not(.is-blank)'); if (!b) return;
+    calState.selDay = parseInt(b.getAttribute('data-day'), 10); renderCal();
+  });
+  calPop.querySelector('.cal-set').addEventListener('click', function(){
+    if (!calState.target) return;
+    var day = calState.selDay || new Date().getDate();
+    var timeVal = calPop.querySelector('.cal-time').value || '09:00';
+    var parts = timeVal.split(':'); var hh = parseInt(parts[0], 10); var mm = parts[1] || '00';
+    var ampm = hh >= 12 ? 'p' : 'a'; var h12 = hh % 12; if (h12 === 0) h12 = 12;
+    var label = MONTHS[calState.viewMonth] + ' ' + day + ' · ' + h12 + ':' + mm + ampm;
+    calState.target.textContent = label;
+    calState.target.classList.add('is-set');
+    closeCal();
+  });
+  document.addEventListener('mousedown', function(e){
+    if (calPop.classList.contains('open') && !calPop.contains(e.target) && !e.target.closest('.js-dt-trigger')) closeCal();
+  });
+
+  // ── per-mock delegated behavior: tabs, gate popovers, inline add ──
+  document.querySelectorAll('[data-mock]').forEach(function(mock){
+    mock.addEventListener('click', function(e){
+      var tab = e.target.closest('.fx-tab');
+      if (tab) {
+        mock.querySelectorAll('.fx-tab').forEach(function(b){ b.classList.remove('is-active'); b.setAttribute('aria-selected','false'); });
+        tab.classList.add('is-active'); tab.setAttribute('aria-selected','true');
+        var name = tab.getAttribute('data-tab');
+        mock.querySelectorAll('.fx-body').forEach(function(p){ p.hidden = p.getAttribute('data-panel') !== name; });
+        mock.querySelectorAll('.gate-pop.open').forEach(function(g){ g.classList.remove('open'); });
+        return;
+      }
+      var gate = e.target.closest('.js-gate');
+      if (gate) {
+        var id = gate.getAttribute('data-gate');
+        var pop = mock.querySelector('.gate-pop[data-gate-pop="' + id + '"]');
+        if (!pop) return;
+        var wasOpen = pop.classList.contains('open');
+        mock.querySelectorAll('.gate-pop.open').forEach(function(g){ g.classList.remove('open'); });
+        if (!wasOpen) pop.classList.add('open');
+        return;
+      }
+      var gateClose = e.target.closest('.js-gate-close');
+      if (gateClose) { gateClose.closest('.gate-pop').classList.remove('open'); return; }
+
+      var addTrig = e.target.closest('.js-add-trigger');
+      if (addTrig) {
+        var zone = addTrig.parentElement;
+        var form = zone.querySelector('.inline-add');
+        addTrig.hidden = true;
+        if (form) { form.hidden = false; var inp = form.querySelector('.inline-in'); if (inp) inp.focus(); }
+        return;
+      }
+      var cancelBtn = e.target.closest('.js-inline-cancel');
+      if (cancelBtn) {
+        var form2 = cancelBtn.closest('.inline-add');
+        var zone2 = form2.parentElement;
+        form2.hidden = true;
+        form2.querySelector('.inline-in').value = '';
+        var dt = form2.querySelector('.dt-trigger'); dt.textContent = 'Set date'; dt.classList.remove('is-set');
+        var trig2 = zone2.querySelector('.js-add-trigger'); if (trig2) trig2.hidden = false;
+        return;
+      }
+      var dtTrig = e.target.closest('.js-dt-trigger');
+      if (dtTrig) { openCal(dtTrig); return; }
+
+      var saveBtn = e.target.closest('.js-inline-save');
+      if (saveBtn) {
+        var form3 = saveBtn.closest('.inline-add');
+        var text = form3.querySelector('.inline-in').value.trim() || 'Follow up';
+        var dtLabel = form3.querySelector('.dt-trigger').textContent;
+        var hasDate = form3.querySelector('.dt-trigger').classList.contains('is-set');
+        if (form3.getAttribute('data-list')) {
+          // "More Actions" overflow row — insert a real new <li> above the add-row
+          var li = document.createElement('li');
+          li.className = 'todo-row';
+          li.innerHTML = '<span class="todo-text"></span><span class="stamp"></span><button class="door door-commit sm" type="button">Do</button>';
+          li.querySelector('.todo-text').textContent = text;
+          li.querySelector('.stamp').textContent = hasDate ? dtLabel : '—';
+          var addLi = form3.closest('.todo-add-row');
+          addLi.parentElement.insertBefore(li, addLi);
+        } else {
+          // per-checkpoint row — swap the zone into an ARMED display, live
+          var zone3 = form3.parentElement;
+          var armed = document.createElement('span'); armed.className = 'stage-atxt'; armed.textContent = text;
+          var chip = document.createElement('span');
+          chip.className = hasDate ? 'stamp' : 'signal'; if (!hasDate) chip.style.setProperty('--sc', 'var(--yellow)');
+          chip.textContent = hasDate ? dtLabel : 'Today';
+          var editBtn = document.createElement('button'); editBtn.className = 'door door-commit sm'; editBtn.type = 'button'; editBtn.textContent = 'Edit';
+          zone3.innerHTML = ''; zone3.appendChild(armed); zone3.appendChild(chip); zone3.appendChild(editBtn);
+        }
+        return;
+      }
+    });
+  });
+})();
+</script>
