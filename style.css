@@ -52,6 +52,386 @@
   --font: "Geist", -apple-system, "Segoe UI", sans-serif;
 }
 
+/* ── Phase-2 wrangler-style redesign · SLICE 1: palette canon alignment ───────
+   Scoped behind `html.dv2` (set in app.js — ON on staging/local, and in production only when
+   FEATURES.designV2 flips true). Additive overrides ONLY — the base :root above is untouched, so
+   the OLD look is byte-identical when dv2 is off. This slice aligns the clear-mapping core tokens
+   to the locked steel canon (wrangler-style §1): the CVD-checked yellow #eed44b (was neon #ffe000),
+   the muted accent/blue, near-white fill inks (never pure), the one chip radius, and the commit
+   action colour. Extra-colour collapse (navy/purple/pink/brown) + the surface reshapes ride LATER
+   slices behind this same gate. Card radius + the Geist body font are deliberately left as-is. */
+html.dv2 {
+  --accent:#ff7e1f; --accent-soft:rgba(255,126,31,.15); --accent-line:rgba(255,126,31,.5);
+  --orange:#ff7e1f; --orange-bg:rgba(255,126,31,.14); --on-orange:#1a1205;
+  --bg:#0a0d11; --bg-2:#0f1318; --panel:#171d25; --panel-2:#1b222c;
+  --card:#12171e; --card-head:#1a212b;
+  --line:#2c343f; --line-soft:#212834;
+  --txt:#eef2f7; --txt-2:#aab4c1; --txt-3:#838e9c;
+  --green:#34d399; --green-bg:rgba(52,211,153,.14);
+  --yellow:#eed44b; --yellow-bg:rgba(238,212,75,.15);
+  --red:#ff4242; --red-bg:rgba(255,66,66,.13);
+  --blue:#6394cc; --blue-bg:rgba(99,148,204,.15);
+  --gray:#8b94a3; --gray-bg:rgba(139,148,163,.14);
+  --chip-radius:7px;
+  /* additive canon tokens the redesigned surfaces will use — filled-red + commit take NEAR-white
+     ink (never pure #fff), which clears AA on both fills. */
+  --red-fill:#d63636; --on-red-fill:#fdfdfd; --commit:#2f6fd0; --on-commit:#fdfdfd; --tan:#c2925a;
+}
+
+/* ── Phase-2 wrangler-style redesign · SLICE 2: List Views structural/spacing/
+   element-shape reshape — CSS ONLY, additive, every rule scoped `html.dv2 …`. No
+   markup or app.js changes ride with this slice; where the target look needs a DOM
+   change, it's noted instead of faked in CSS.
+
+   Target markup covered (read from app.js, unchanged here):
+     statusPill  → .pill.c-<color>[data-badge]      (SIGNAL)   app.js:5947
+     refPill/unitPill/entityPill → .pill[data-r="R2"] (REF)     app.js:5969,5984,5991
+     actionPill/ghostPill → .pill.c-commit/.c-money/.c-danger/.ghost (DOOR) app.js:6507,6515
+     masterGate/gatePill/gatePillRaw/unitStatusGate → .pill.gate (GATE) app.js:6004-6028
+     rowEl → .row > .row-content > (ROWS[card] markup)          app.js:7013
+     ROWS.units → .ucard / ROWS.rentals → .rcc / ROWS.customers → .cr
+     genericRow (invoices/workOrders/inspections/serviceOrders) → .row-1/.row-2/.r-title/.r-fields
+     appendGroupedSections → .grp-hd > .grp-grip/.grp-chev/.grp-label       app.js:9423
+
+   DEFERRED status (Jac 2026-07-21: "is a reskin actually easy given the builders?" —
+   yes, mostly; #1 and #3 below were the small real exceptions, now CLOSED in app.js
+   as a small "close the gaps" pass so later slices ride purely on the shared builders):
+   1. CLOSED — Ref's canon "square icon-backing" shape: refPill/unitPill/entityPill now
+      wrap the icon in `<span class="ref-ico">` (app.js) — styled below.
+   2. PARTIALLY CLOSED — Rentals row unit references (.rcc-uname) now call unitPill()
+      (real click-to-navigate + drag-to-chat via the app's existing delegated
+      [data-pill-card] handler — a genuine capability add, not just a restyle), same
+      inspection tint/tooltip/ec-red halo preserved. The CUSTOMER reference (.rcc-cust)
+      is INTENTIONALLY still plain text: refPill('customers', …) truncates names to
+      ~9 chars (built for a narrower context) — wiring it into this wider row would
+      silently truncate real customer names, so it's held for a deliberate decision
+      (add a no-truncate option to refPill, or accept the truncation) rather than guessed.
+   3. CLOSED — Group-header item count is now its own `<span class="grp-count">`,
+      split from `.grp-label` in app.js (the " · " separator kept as static markup so
+      the base/non-dv2 look is unchanged) — styled below.
+   4. List mode renders NO header plate today (only the search/sort `.listbar`) — the
+      mockup's stamped eyebrow+description header has no shipped equivalent to restyle. */
+html.dv2 {
+  /* Stamped voice per wrangler-style §2: a monospace technical face for labels/chips/
+     stamps. The base --font (Geist) stays the body voice for record names — untouched. */
+  --dv2-font-mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  /* One control height (style §1: pick H in 24–28 desktop) — the single number every
+     chip/gate/stamp/ref/door in list views converges on (was split 19/22px). */
+  --dv2-h: 24px;
+}
+
+/* SIGNAL / GATE / STAMP — statusPill/badge/gatePill*: .pill[data-badge], .pill[data-r="R3b"], .pill.gate.
+   These three already collapse onto one hardcoded 7px (style.css "RULEBOOK" block, not
+   variable-linked) — re-point at the token so it can't drift from SLICE 1's --chip-radius. */
+html.dv2 .pill[data-badge],
+html.dv2 .pill[data-r="R3b"],
+html.dv2 .pill.gate {
+  border-radius: var(--chip-radius);
+  height: var(--dv2-h);
+  font-family: var(--dv2-font-mono);
+  letter-spacing: .05em;
+  font-weight: 800;   /* canon: 700–800 on stamped labels */
+}
+html.dv2 .pill.gate { height: var(--dv2-h); padding: 0 10px; }   /* Gate's own height/padding override — same token as Signal/Stamp */
+
+/* REF — linked record (refPill/unitPill/entityPill), all stamp data-r="R2". Canon
+   (wrangler-style §3): Ref shares the ONE chip radius — it is NOT a stadium pill. Today
+   it inherits the base .pill's 999px (no R2 override exists anywhere in style.css) —
+   the hardcoded-radius gap. Body voice stays untouched (a Ref name is never stamped). */
+html.dv2 .pill[data-r="R2"] {
+  border-radius: var(--chip-radius);
+  height: var(--dv2-h);
+  padding: 0 10px;
+  font-weight: 700;
+}
+/* orange-marked/touchable already correct from SLICE 1 (.pill.ref.link uses --accent-soft/
+   --accent/--accent-line) — nothing to change there. */
+/* Ref's canon "square icon-backing" (wrangler-style §3): DEFERRED #1 from the first CSS-only
+   pass is now closed — refPill/unitPill/entityPill wrap the icon in <span class="ref-ico">
+   (app.js). Style it as the accent-tinted square housing; :empty hides it for the rare no-icon
+   case (an unmatched card type). */
+html.dv2 .pill[data-r="R2"] .ref-ico {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 4px; margin-right: 2px; flex: 0 0 auto;
+  background: var(--accent-soft); color: var(--accent);
+}
+html.dv2 .pill[data-r="R2"] .ref-ico svg { width: 12px; height: 12px; }
+html.dv2 .pill[data-r="R2"] .ref-ico:empty { display: none; }
+
+/* DOOR — verb actions (actionPill/ghostPill), radius stays pill (999) per canon. */
+html.dv2 .pill { height: var(--dv2-h); padding: 0 10px; }
+html.dv2 .pill.ghost.icon-only { width: var(--dv2-h); padding: 0; }   /* icon-only ghost stays square as H moves */
+/* Commit uses --blue today; SLICE 1 landed dedicated --commit/--on-commit tokens for
+   exactly this (deep-blue "commit/create", distinct from the softer --blue used for
+   Waiting/status) but nothing consumed them yet — wire it up. */
+html.dv2 .pill.c-commit { background: var(--commit); color: var(--on-commit); }
+
+/* CARD SHELL + HEADER — .card / .c-titlecard (list mode itself renders no header —
+   see DEFERRED #4; this covers the standard/detail-view header a list row opens into).
+   .c-title is already body-voice bold (correct — a card title is a Ref, not stamped
+   text); the meta count beside it is a plain fact (Stamp) → same stamped voice as
+   every other chip label. */
+html.dv2 .c-titlecard .c-count {
+  font-family: var(--dv2-font-mono);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+/* LIST ROWS — .row / .row-content / .ucard / .rcc / .cr / .r-title / .r-fields.
+   Every row is wrapped in one shared .row shell before ROWS[card]'s own markup — tidy
+   its padding onto a denser, ladder-appropriate inset (was 14px 17px, a +50% bump from
+   2026-07-17 predating the wrangler-style/style canon; the ladder rule wins per
+   CLAUDE.md's "decision moves, not the rule"). Customers has no self-padding .cr
+   wrapper, so this IS its real inset. */
+html.dv2 .row { padding: 10px 12px; }
+
+/* Units (.ucard) and Rentals (.rcc) already draw their OWN plate — a coloured 2px
+   border + own radius/padding — inside .row-content. Today .row ALSO keeps its full
+   panel/border/padding around them, so every unit tile and rental card renders
+   double-framed (an outer steel box around an inner coloured one). Make the outer .row
+   transparent/frameless for exactly these two shapes so the inner plate is the only
+   visible one — the fix Customers doesn't need (.cr has no border of its own). */
+html.dv2 .row:has(.ucard),
+html.dv2 .row:has(.rcc) {
+  background: transparent; border-color: transparent; padding: 0; box-shadow: none;
+}
+html.dv2 .row:has(.ucard):hover,
+html.dv2 .row:has(.rcc):hover,
+html.dv2 .row.selected:has(.ucard),
+html.dv2 .row.selected:has(.rcc) { border-color: transparent; }   /* the highlight below now lives on the inner plate */
+html.dv2 .ucard, html.dv2 .rcc { transition: border-color .12s ease, box-shadow .12s ease; }
+html.dv2 .row:has(.ucard):hover .ucard,
+html.dv2 .row:has(.rcc):hover .rcc { border-color: var(--accent-line); }
+html.dv2 .row.selected .ucard,
+html.dv2 .row.selected .rcc { border-color: var(--accent-line); box-shadow: 0 0 0 1px var(--accent-line); }
+/* unify the two plates' radius (was 12px/11px — a one-off mismatch, not a deliberate
+   two-radius signal) */
+html.dv2 .ucard, html.dv2 .rcc { border-radius: 10px; }
+
+/* Record NAMES — body-sans bold sentence-case, never caps (canon §2). .uc-name and
+   .cr-name currently hardcode Saira Condensed + uppercase + tracking — the OLD
+   stamped-everything look this slice replaces. Record names are the one thing that
+   must NOT be stamped voice. */
+html.dv2 .uc-name, html.dv2 .cr-name {
+  font-family: var(--font);           /* body voice (Geist) — unchanged token, just no longer overridden to Saira */
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 700;                   /* bold = a name you read (canon weight budget) */
+  font-size: 0.7647rem;               /* 13px — style §1 "content" ladder rung (was 14px/20px, both off-ladder) */
+}
+html.dv2 .cr-name { font-size: 0.7647rem; }   /* was 1.1765rem/20px, a +50% bump predating the ladder rule */
+
+/* Unit category is a plain classification label, not a name — stamped voice, finest
+   ladder rung (matches the mockup's .ut-cat treatment). */
+html.dv2 .uc-cat {
+  font-family: var(--dv2-font-mono);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  font-size: 0.5588rem;               /* 9.5px — "finest" ladder rung */
+}
+
+/* customer secondary reference name on a rentals row — canon weight budget caps at 3
+   weights (bold/stamped/regular); 600 was a stray fourth. */
+html.dv2 .rcc-cust { font-weight: 700; }
+
+/* Numbers / IDs / timestamps — monospace, tabular (canon §2). */
+html.dv2 .rcc-bal, html.dv2 .cr-pay {
+  font-family: var(--dv2-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+html.dv2 .rcc-t, html.dv2 .rcc-n, html.dv2 .rcc-dow span {
+  font-family: var(--dv2-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+/* invoice ID is the row's name-slot but is an ID, not a name — mono/tabular wins there
+   specifically (workOrders/inspections share the same .r-title class for an actual
+   title, so this is scoped to the invoices card only). */
+html.dv2 .card[data-card="invoices"] .row-1 .r-title {
+  font-family: var(--dv2-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* generic row-1/row-2 typography (invoices/workOrders/inspections/serviceOrders) —
+   bring the +50%-bumped, off-ladder sizes back onto the ladder: title→content(13),
+   fields→field(12), matching their OWN pre-bump values (13px/12px) from before the
+   2026-07-17 pass. */
+html.dv2 .row-1 .r-title { font-size: 0.7647rem; }   /* 13px content rung (was 1.1471rem/19.5px) */
+html.dv2 .row-1 .r-fields { font-size: 0.7059rem; }  /* 12px field rung (was 1.0588rem/18px) */
+
+/* GROUP HEADERS — .grp-hd / .grp-label (appendGroupedSections). Canon group look:
+   stamped voice, quiet unless attention (already true — color rides --sec, grey by
+   default, red only for sec-danger). The gap here is voice + an off-ladder size
+   predating the canon (+50% bump, "was 11px" — the ladder's own label rung). Chevron
+   glyph shrinks to match so the icon doesn't out-scale the now-smaller label. */
+html.dv2 .grp-label {
+  font-family: var(--dv2-font-mono);
+  letter-spacing: .06em;
+  font-weight: 800;
+  font-size: 0.6471rem;   /* 11px — label ladder rung (was 0.9706rem/16.5px) */
+}
+html.dv2 .grp-chev svg { width: 12px; height: 12px; }
+/* group-header COUNT — DEFERRED #3 from the first CSS-only pass is now closed (app.js split
+   the fused "Label · N" text into separate .grp-label/.grp-count nodes); the count is a plain
+   fact (Stamp) so it reads mono/tabular, distinct from the label word. */
+html.dv2 .grp-count {
+  font-family: var(--dv2-font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--txt-3);
+}
+
+/* ── Phase-2 wrangler-style redesign · SLICE 3: Detail Views — dollar figures →
+   the stamped mono/tabular voice (wrangler-style §2 / style §7's two-voice rule:
+   record names stay body-sans, every number/fact is mono). The build-plan audit
+   flagged detail-view money as body-sans (the mockup's finding); the real app
+   already routes almost every detail-view dollar figure through `.derived` — the
+   base app's OWN existing marker for "this is a computed fact" (rule 13/20/21/27,
+   currently italic). `.derived` is the single choke point every kv()/efld() money
+   field AND the invoice ledger (ledgerRow's `<b class="derived">`: Subtotal/Tax/
+   Total/Paid/Due) AND the category pricing engine already carry — closing it here
+   closes Units/Rentals/Customers economics + the whole invoice ledger in one rule,
+   no app.js changes needed. Stamped mono replaces italic as the "fact" signal,
+   matching the voice already used for .grp-count/.rcc-bal elsewhere in this file
+   (neither is italicized). */
+html.dv2 .derived {
+  font-family: var(--dv2-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-style: normal;
+}
+/* Customers detail's account-balance line (.balline) is the one other PRIMARY
+   "at a glance" dollar figure that doesn't route through .derived — same voice. */
+html.dv2 .balline b,
+html.dv2 .balline .tot {
+  font-family: var(--dv2-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+/* kv()'s existing `big` option (.kv .v.big, already wired up — Units' Investment
+   "Profit" line now passes it) is the mockup's headline-number callout WITHOUT
+   the mockup's boxed-card layout: bumping just the number, not restructuring the
+   .side/.side.r column it lives in, keeps every sibling kv row's alignment intact.
+   28px is the style ladder's own "value" rung (28·15·13·12·11·10·9.5) — the top of
+   the ladder, reserved for exactly this. The boxed .num/.big CARD treatment (a
+   bordered callout, pulled out of the column) is a layout change, not a number-
+   size change — deferred, see /build hand-back. */
+html.dv2 .kv .v.big {
+  font-size: 1.6471rem;   /* 28px — the ladder's "value" rung */
+  font-weight: 800;
+}
+/* NOT touched this slice (tertiary/nested, same fix, later slice — see /build
+   hand-back): .stall-amt (rental-detail stall line) and .jprice (transport
+   mini-journey one-way price) already carry tabular-nums in their base rules;
+   only font-family is missing. .jprice nests a .sfx annotation ("/one-way") that
+   needs its own carve-out first so the suffix doesn't silently go mono too — not
+   guessing that call here. */
+
+/* ── Phase-2 wrangler-style redesign · SLICE 4: section/plate state colour —
+   the mockup's "plate" grammar (a coloured LEFT-BORDER stripe marks a section's
+   state) applied to the two field-group containers the real app already has:
+   .acct (Units' 5 collapsible sections — Work Orders/Services/Specs/GPS/
+   Investment) and .section (the static, always-open field boxes everywhere
+   else — Rentals/Customers/vendors/parts/etc.). Both already carry a full-
+   perimeter border-color per state (sec-green/yellow/red[/blue/gray]); this
+   narrows that to a 3px left stripe (thin neutral border on the other three
+   sides) and drops the .sec-red glow — wrangler-style is explicit: "the app is
+   matte, no glow" (SKILL.md). NOT changed: which sections collapse vs stay
+   open — that's an interaction-model call for Rentals/Customers (today's
+   .section never collapses; the mockup shows every section collapsible), not
+   a restyle, so it rides behind its own decision rather than a guess here. */
+html.dv2 .acct.sec-green, html.dv2 .acct.sec-yellow, html.dv2 .acct.sec-red, html.dv2 .acct.sec-blue, html.dv2 .acct.sec-gray,
+html.dv2 .section.sec-green, html.dv2 .section.sec-yellow, html.dv2 .section.sec-red, html.dv2 .section.sec-blue, html.dv2 .section.sec-gray {
+  border-color: var(--line);
+  border-left-width: 3px;
+  box-shadow: none;
+}
+html.dv2 .acct.sec-green, html.dv2 .section.sec-green { border-left-color: var(--green); }
+html.dv2 .acct.sec-yellow, html.dv2 .section.sec-yellow { border-left-color: var(--yellow); }
+html.dv2 .acct.sec-red, html.dv2 .section.sec-red { border-left-color: var(--red); }
+html.dv2 .acct.sec-blue, html.dv2 .section.sec-blue { border-left-color: var(--blue); }
+html.dv2 .acct.sec-gray, html.dv2 .section.sec-gray { border-left-color: var(--line); }
+/* the base theme's sec-red glow (neon text-shadow/box-shadow) predates "matte, no glow" — drop it */
+html.dv2 .section.sec-red > h4 { text-shadow: none; -webkit-text-fill-color: var(--red); }
+html.dv2 .acct.sec-red .acct-lbl { text-shadow: none; }
+/* section/plate label voice: stamped mono, matching every other Rxx label in this system */
+html.dv2 .acct-lbl, html.dv2 .section > h4 { font-family: var(--dv2-font-mono); }
+
+/* ── Phase-2 wrangler-style redesign · SLICE 5: INLINE-EXPAND (spec §1) — a plain
+   single-click on a Units/Rentals/Customers row reveals the record IN the list (the
+   row expands to its detail) instead of swapping the whole card to a detail view.
+   rowEl renders `.row.row-expanded` (a ✕ + the detail inside `.row-detail`); this
+   styles it. HEIGHT (Jac's concern — "how high it gets with all sections visible"):
+   the item lands all-collapsed (short), opens one section body at a time, and is
+   HARD-CAPPED here — a taller open body scrolls INSIDE `.row-detail`, the outer
+   footprint never exceeds --dv2-expand-max. That's stricter than the legacy
+   card-swap detail, which had no cap at all (the column just scrolled forever).
+   --dv2-expand-gutter is the breathing room above+below so the neighbouring rows
+   peek (the list stays "home"); one-line dialable (Jac weighing ~6% vs 10%).
+   The cap is measured against the COLUMN, not the viewport: `.card-body` becomes a
+   size container (container-type: size — its height is already flex-derived, so
+   containment doesn't change it) and the item caps at N `cqh` (% of the column's
+   visible height). A vh cap was wrong — it ignored the app header/KPI bar above the
+   columns, so the "88vh" item overshot a 625px column. Gutter is the peek margin.
+   (Step 2 restructures the item into pinned-head / scroll / pinned-foot; this cqh
+   cap already bounds the whole footprint to the column meanwhile.) */
+html.dv2 { --dv2-expand-gutter: 6cqh; --dv2-expand-max: 88cqh; }
+/* Only a card-body that currently HOLDS an inline-expanded row becomes a size container
+   (so cqh = the column's height for the cap). Scoped via :has so normal list/detail
+   card-bodies — and their sticky listbar — keep their exact current behaviour. */
+html.dv2 .card-body:has(.row-expanded) { container-type: size; }
+html.dv2 .row.row-expanded {
+  display: block;
+  padding: 0;
+  cursor: default;
+  overflow: hidden;                                  /* clip to the rounded corners; the inner detail scrolls */
+  max-height: calc(var(--dv2-expand-max) - 2 * var(--dv2-expand-gutter));
+  margin: 4px 0 var(--dv2-expand-gutter);            /* small top (openStandard scroll-anchors the item to the column top), gutter below so the next row peeks */
+  border-color: var(--accent-line);
+  box-shadow: 0 8px 26px -12px rgba(0, 0, 0, .65);   /* lift the revealed item off the flat list (matte, not a glow) */
+  animation: dv2-reveal .2s cubic-bezier(.2, .7, .2, 1);   /* the sheet-up / swipe reveal easing (Jac: match the swipe quality) */
+}
+/* the item fades + slides in on reveal — the app's sheet-up motion, not an instant pop */
+@keyframes dv2-reveal { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { html.dv2 .row.row-expanded { animation: none; } }
+html.dv2 .row.row-expanded .row-detail {
+  max-height: calc(var(--dv2-expand-max) - 2 * var(--dv2-expand-gutter));
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+/* Units (3-across auto-fill) and Rentals (1fr 1fr) lists are multi-column GRIDS, so an
+   expanded item would otherwise cram into ONE ~140px cell with a sibling mini-card beside
+   it. Break it out to span the whole grid row (spec §1: "opened Units/Rentals items may
+   break out to span the full grid-row width so labels don't truncate"). Harmless on the
+   flex-column Customers list (grid-column is ignored there). */
+html.dv2 .list > .row.row-expanded { grid-column: 1 / -1; }
+
+/* dv2 detail HEADER (spec §2.0) — the record-name bar leads the expanded item and IS the
+   collapse control (click to close; the ✕ was dropped). Eyebrow + name (body voice) +
+   status stamp + a collapse chevron, on a subtle sticky bar so it stays reachable as the
+   stack scrolls. */
+html.dv2 .row-detail .dv2-dhead {
+  position: sticky; top: 0; z-index: 4;
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  margin: 0 0 10px; padding: 12px 14px;
+  background: var(--panel); border-bottom: 1px solid var(--line);
+  cursor: pointer; justify-content: flex-start;
+}
+html.dv2 .row-detail .dv2-dhead:hover { background: var(--panel-2); }
+html.dv2 .dv2-dhead .dh-eyebrow {
+  flex: 0 0 100%; font-family: var(--dv2-font-mono); font-size: 0.6471rem; letter-spacing: .5px;
+  text-transform: uppercase; color: var(--txt-3);
+}
+/* the legacy `.card .detail-head .d-title { display:none }` hid the name (the card-head
+   showed it in the old model); inline-expand HAS no card-head, so the name leads here */
+html.dv2 .dv2-dhead .d-title { display: inline-block; font-size: 1.1765rem; font-weight: 800; color: var(--txt); letter-spacing: 0; }
+html.dv2 .dv2-dhead .dh-collapse { margin-left: auto; display: inline-flex; color: var(--txt-3); transform: rotate(180deg); }
+html.dv2 .dv2-dhead .dh-collapse svg { width: 16px; height: 16px; }
+/* History resting collapsed on desktop — label + count chips only (the mock footer) */
+html.dv2 .history.dv2-hist-collapsed { padding-top: 4px; }
+
+/* phone: the reveal is full-screen focused mode (Step 8) — no cap / gutter / sticky there */
+@media (max-width: 640px) {
+  html.dv2 .row.row-expanded { max-height: none; margin: 0; box-shadow: none; }
+  html.dv2 .row.row-expanded .row-detail { max-height: none; }
+}
+
 /* ── Reset / base ────────────────────────────────────────────────────────── */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 /* §0: the page never scrolls VERTICALLY, but pans HORIZONTALLY on screens narrower
@@ -4623,6 +5003,7 @@ body.dragging[data-drag="workOrders"] .inv-add-pill,
 .rcc-uname.ec-red,
 .catr-name.ec-red,
 .uc-name.ec-red,
+.pill.ref.ec-red,
 .rcc-bal.overdue,
 .cr-pay.over,
 .pill.c-red .t { color: var(--red); -webkit-text-fill-color: color-mix(in srgb, var(--red) 65%, white); text-shadow: 0 0 3px var(--red), 0 0 7px color-mix(in srgb, var(--red) 60%, transparent); }
