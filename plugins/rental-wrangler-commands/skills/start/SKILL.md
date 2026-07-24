@@ -24,6 +24,13 @@ smoke and logic suites install Chromium and run in CI. Report the local browser 
 
 Never print secret values. If a tool or credential check is unavailable, say so plainly.
 
+If local `gh auth status` is unavailable or reports an invalid credential because the
+Codex sandbox uses a different Windows identity, do not repeatedly ask the user to
+reauthenticate and do not ask for a token. Use the authenticated GitHub integration
+for remote branch, commit, PR, and workflow operations when available. Report the
+local CLI limitation separately; never copy credentials into the repository, a
+workspace file, or command output.
+
 ## 2. Confirm the repository and orient
 
 Confirm that `origin` points to:
