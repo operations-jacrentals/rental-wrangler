@@ -1,6 +1,6 @@
 ---
 name: start
-description: Orient a Rental Wrangler Codex task before any work begins. Probe the toolchain, confirm repository and branch state, recall the project context, load the working rules, and propose a codex/* feature branch while waiting for approval before switching.
+description: Orient a Rental Wrangler Codex task before any work begins. Probe the toolchain, confirm repository and branch state, recall the project context, choose an efficient agent plan, load the working rules, and propose a codex/* feature branch while waiting for approval before switching.
 ---
 
 # Start
@@ -23,6 +23,24 @@ smoke and logic suites install Chromium and run in CI. Report the local browser 
 `available`, `missing (expected; CI is authoritative)`, or `unknown`.
 
 Never print secret values. If a tool or credential check is unavailable, say so plainly.
+
+If local `gh auth status` is unavailable or reports an invalid credential because the
+Codex sandbox uses a different Windows identity, do not repeatedly ask the user to
+reauthenticate and do not ask for a token. Use the authenticated GitHub integration
+for remote branch, commit, PR, and workflow operations when available. Report the
+local CLI limitation separately; never copy credentials into the repository, a
+workspace file, or command output.
+
+Use this fallback ladder for remote work:
+
+1. Prefer the authenticated GitHub integration.
+2. If it is unavailable, check for non-secret `GH_TOKEN`/`GITHUB_TOKEN` presence,
+   an existing SSH agent/key, or a configured Git credential helper without printing
+   or exporting any credential value.
+3. If no remote channel is available, continue read-only investigation, edits, local
+   checks, commits, and artifact preparation. Mark only the final publish/PR action
+   as pending and give the user one concrete host-side auth action at that boundary;
+   never leave the whole session blocked and never ask them to paste a token.
 
 ## 2. Confirm the repository and orient
 
@@ -55,7 +73,43 @@ If any requested file is absent, report its exact path as missing; do not recrea
 or substitute a guessed document. Give a short summary of the project state, active
 work, and the next likely step, distinguishing facts from missing context.
 
-## 4. Propose, then wait before branching
+## 4. Choose the efficient agent plan
+
+Before proposing execution, decide whether subagents would materially help the task.
+Use them for separable, low-risk work that can run in parallel, such as focused
+read-only reconnaissance, mechanical file inventory, or independent verification.
+Keep tightly coupled implementation, high-blast-radius reasoning, and any product,
+security, money, auth, customer-PII/isolation, work-order completion, secret, force
+push, or live-deployment decisions on the main thread.
+
+When agents are useful, state the intended split briefly: what stays on the main
+thread, what each agent should inspect or verify, and how the results will be
+integrated. Do not spawn duplicate agents for the same question, and do not let
+agent use bypass the branch, gates, staging, PR, or promotion rules.
+
+## 5. Match model strength to task risk
+
+Choose by capability and risk, not by a hard-coded model name; model labels and
+picker offerings change over time. Keep the main thread on the strongest available
+frontier coding/reasoning model for architecture, large refactors, design judgment,
+auth, money, customer PII/isolation, work-order semantics, or release-risk review.
+Use the balanced general coding model for ordinary feature work, bug fixes, PR
+preparation, and test-guided implementation. Use a fast/efficient coding model for
+bounded reconnaissance, code-map or file inventory, documentation, syntax checks,
+and other mechanical work whose acceptance criteria are already clear.
+
+Start with a balanced reasoning setting. Raise it for ambiguous, high-blast-radius,
+or evidence-heavy work; lower it for latency-sensitive, well-specified work. Do not
+trade away model strength for sensitive decisions, and do not block a task merely
+because a preferred model label is unavailable—map the current picker to these roles
+and continue with the closest safe capability.
+
+For parallel work, keep product and safety judgment on the frontier-model main
+thread and give independent low-risk checks to efficient models. Use a fresh context
+for an adversarial second review when that is more valuable than additional effort in
+the original thread.
+
+## 6. Propose, then wait before branching
 
 Based on the user's actual task, propose one short feature branch off the latest
 `trunk`, using the form:
@@ -70,7 +124,7 @@ Stop and wait for the user's explicit OK before switching or creating the branch
 After approval, start from the latest `origin/trunk`, use the proposed `codex/<slug>`
 branch, and verify the branch before editing. Never start work directly on `trunk`.
 
-## 5. Load the session working rules
+## 7. Load the session working rules
 
 Before any change, read and apply:
 

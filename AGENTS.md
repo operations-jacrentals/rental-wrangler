@@ -167,8 +167,27 @@ Invoke a command as `$rental-wrangler-commands:<name>` (for example,
 - `$rental-wrangler-commands:start` — at the top of every task, probe node/npm/gh/git,
   note the expected local Playwright limitation, verify origin/branch/tree state,
   read AGENTS/MEMORY/WIP plus the current spec and plan (report exact missing paths),
-  load the design canon and working rules, then propose a `codex/<slug>` branch and
-  wait for explicit approval before switching. It never starts work on `trunk`.
+  choose the most efficient agent plan for the task (parallelize independent,
+  low-risk reconnaissance or mechanical checks; keep product/security/money/auth/PII
+  and work-order completion reasoning on the main thread), load the design canon and
+  working rules, then propose a `codex/<slug>` branch and wait for explicit approval
+  before switching. It never starts work on `trunk`.
+
+  Match model capability to risk: use the strongest available frontier coding/reasoning
+  model for architecture, sensitive product/security decisions, and final review;
+  use a balanced model for ordinary implementation; and use an efficient model for
+  bounded mechanical checks. Prefer capability roles over hard-coded model names so
+  this remains valid as the model picker changes.
+
+  In a Codex sandbox, local `gh` credentials may belong to a different Windows
+  identity than the user's desktop session. Do not loop on reauthentication or ask
+  for a token. Use the authenticated GitHub integration for remote publishing when
+  available, and never write credentials to the repo, workspace, or logs.
+  If that integration is unavailable, check non-secret token presence, SSH, and the
+  configured Git credential helper; if all remote channels fail, continue local work
+  and mark only publishing/PR creation pending. Give one concrete host-side auth
+  action only at the final remote boundary—never block the entire session or request
+  a pasted token.
 
 The five ship commands have these exact boundaries:
 
