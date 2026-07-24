@@ -40,6 +40,7 @@ const FILES = [
   // carries no internal ═══ banner of its own (avoids re-stamping collisions with the
   // APP-NN id it was moved from); add a { rel, key } entry here for every new file.
   { rel: 'src/format.js', key: 'FMT' },
+  { rel: 'src/glitch-capture.js', key: 'GLC' },
 ];
 
 const RULE = /═{6,}/;                 // a full-width ═══ banner rule line
