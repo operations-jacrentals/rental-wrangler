@@ -4,6 +4,12 @@
   "private": true,
   "type": "module",
   "description": "JacTec Rental Wrangler — vanilla-JS rental-fleet ops SPA (static).",
+  "scripts": {
+    "gates": "node --check app.js && node --check config.js && node --check data.js && node --check cascade.js && node --check service-countdown.js && node ci/smoke.mjs && node ci/logic-test.mjs && node ci/lease-test.mjs && node ci/lease-deploy-test.mjs && node ci/promote-test.mjs && node ci/cachebust-test.mjs && node ci/gen-rule-usage.mjs --check && node ci/check-window-catalog.mjs && node tools/gen-code-map.mjs --check && node ci/check-cachebust.mjs && node ci/check-design-md.mjs",
+    "deploy:staging": "node tools/deploy-staging.mjs",
+    "promote": "node tools/promote.mjs",
+    "cachebust": "node tools/bump-cachebust.mjs"
+  },
   "dependencies": {
     "playwright": "^1.61.1"
   }
