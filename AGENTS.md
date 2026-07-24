@@ -152,7 +152,7 @@ once, then begin a new task so Codex discovers the skills:
 
 ```text
 codex plugin marketplace add .agents/plugins
-codex plugin add rental-wrangler-commands@personal
+codex plugin add rental-wrangler-commands@rental-wrangler
 ```
 
 In the Codex desktop marketplace UI, add `operations-jacrentals/rental-wrangler` at
