@@ -143,10 +143,9 @@ do not hunt for them. Use the specs and the live staging build instead.
 
 ## Invocable Codex commands
 
-The repo-scoped Codex plugin is `.agents/plugins/plugins/rental-wrangler-commands`; its
-marketplace manifest is `.agents/plugins/marketplace.json`. Keep its skills thin: each
-one points back to this operating guide and the existing npm scripts rather than copying
-a runbook.
+The repo-scoped Codex plugin is `plugins/rental-wrangler-commands`; its marketplace
+manifest is `.agents/plugins/marketplace.json`. Keep its skills thin: each one points
+back to this operating guide and the existing npm scripts rather than copying a runbook.
 
 After cloning the repository in a Codex environment, install the marketplace and plugin
 once, then begin a new task so Codex discovers the skills:
@@ -155,6 +154,10 @@ once, then begin a new task so Codex discovers the skills:
 codex plugin marketplace add .agents/plugins
 codex plugin add rental-wrangler-commands@personal
 ```
+
+In the Codex desktop marketplace UI, add `operations-jacrentals/rental-wrangler` at
+`trunk` and include both sparse paths: `.agents/plugins` and
+`plugins/rental-wrangler-commands`.
 
 Invoke a command as `$rental-wrangler-commands:<name>` (for example,
 `$rental-wrangler-commands:style`). Available names: `style`, `wrangler-style`,
