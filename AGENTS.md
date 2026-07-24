@@ -160,9 +160,17 @@ In the Codex desktop marketplace UI, add `operations-jacrentals/rental-wrangler`
 `plugins/rental-wrangler-commands`.
 
 Invoke a command as `$rental-wrangler-commands:<name>` (for example,
-`$rental-wrangler-commands:style`). Available names: `style`, `wrangler-style`,
-`atlas`, `wrangler-fix`, `gates`, `build`, `deploy`, `merge`, `promote`, `live`, and
-`clasp`. The five ship commands have these exact boundaries:
+`$rental-wrangler-commands:style`). Available names: `start`, `style`,
+`wrangler-style`, `atlas`, `wrangler-fix`, `gates`, `build`, `deploy`, `merge`,
+`promote`, `live`, and `clasp`.
+
+- `$rental-wrangler-commands:start` — at the top of every task, probe node/npm/gh/git,
+  note the expected local Playwright limitation, verify origin/branch/tree state,
+  read AGENTS/MEMORY/WIP plus the current spec and plan (report exact missing paths),
+  load the design canon and working rules, then propose a `codex/<slug>` branch and
+  wait for explicit approval before switching. It never starts work on `trunk`.
+
+The five ship commands have these exact boundaries:
 
 - `$rental-wrangler-commands:build` — build safe approved work, run gates, commit and
   push the feature branch, then stop before deploy.
