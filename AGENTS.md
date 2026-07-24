@@ -162,7 +162,21 @@ In the Codex desktop marketplace UI, add `operations-jacrentals/rental-wrangler`
 Invoke a command as `$rental-wrangler-commands:<name>` (for example,
 `$rental-wrangler-commands:style`). Available names: `style`, `wrangler-style`,
 `atlas`, `wrangler-fix`, `gates`, `build`, `deploy`, `merge`, `promote`, `live`, and
-`clasp`. The plugin is a portable command wrapper, not a second source of truth:
+`clasp`. The five ship commands have these exact boundaries:
+
+- `$rental-wrangler-commands:build` — build safe approved work, run gates, commit and
+  push the feature branch, then stop before deploy.
+- `$rental-wrangler-commands:deploy` — run `npm run deploy:staging`, print and verify
+  the staging URL/new bytes, and hard-stop on failure or drift.
+- `$rental-wrangler-commands:merge` — require staging review, run gates, push, open a
+  ready PR, and queue `gh pr merge --auto --squash --delete-branch`; stop at trunk.
+- `$rental-wrangler-commands:promote` — Jac's explicit call only; preview first,
+  require staging/trunk freshness, then use the confirmed promote path and verify live bytes.
+- `$rental-wrangler-commands:live` — deploy → merge → promote end to end; stop for
+  red gates, review/freshness surprises, or sensitive product decisions. Config-only
+  branches use merge alone.
+
+The plugin is a portable command wrapper, not a second source of truth:
 update this guide or the referenced canon/runbook first, then only adjust the small
 wrapper that points to it.
 

@@ -1,8 +1,8 @@
 ---
 name: build
-description: Build the current approved Rental Wrangler feature to deploy-ready state, then stop.
+description: Build the current Rental Wrangler feature to deploy-ready, committed, pushed state, then stop before staging.
 ---
 
 # Build
 
-Follow the build phase of `AGENTS.md`'s `Gates and ship flow`: work only on the approved scope, apply the map and canon as relevant, update required documentation, and run `npm run gates`. Finish deploy-ready and stop; do not deploy, merge, or promote.
+Build everything currently safe and approved on the feature branch. Apply the map and canon as relevant, defer money/pricing, auth/roles, customer PII, work-order completion, and irreversible/live decisions in a short batched report, then run `npm run gates`. Commit and push the feature branch only after gates pass. Stop deploy-ready: do not deploy, merge, open a trunk PR, or promote.
