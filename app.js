@@ -27,6 +27,7 @@ import { ico, I, CARD_ICON, RING_ICON, CATEGORY_ICON } from './icons.js';
 import { CATEGORY_ANIM } from './icons-anim.js';
 import { CATEGORY_FRAMES } from './icons-frames.js';
 import { $, el, esc, money, money2, num, TODAY, dayDiff, refreshToday, debounce, SINGULAR } from './src/format.js';
+import { GV_WIN_OPTS, loadGvWin, saveGvWin, gvWinLabel, gvWinCutoff, gvBuckets } from './src/card-graph-view.js';
 import {
   getStatus, STATUS, ROLES, ROLE_TIERS, tierRank, BUILTIN_ROLE_TIERS, GRID_CARDS, BACKOFFICE_BOARDS, SORT_FIELDS,
   SHOP_TYPES, COLUMNS, COLUMN_OF,
@@ -12164,48 +12165,13 @@ function tabBadge(card, rec) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   APP-23 · §13.3 CARD GRAPH VIEW — RETIRED (2026-07-03). The per-card tile
-   dashboard (pieSVG/gvBars tiles + unit roster) was replaced by the §13.6
-   Round-Up reporting board; the chapter number is kept so later APP-NN
-   banners keep their ids. See PR #460–#464 + the removal PR for history.
+   APP-23 · §13.3 CARD GRAPH VIEW — moved to src/card-graph-view.js (2026-07-24
+   module split). RETIRED (2026-07-03): the per-card tile dashboard itself was
+   replaced by the §13.6 Round-Up reporting board, but the time-window/bucket
+   helpers (GV_WIN_OPTS, loadGvWin, saveGvWin, gvWinLabel, gvWinCutoff,
+   gvBuckets) survive — imported above, the §13.4 Graph Carousel below still
+   calls into them. Chapter number kept so later APP-NN banners keep their ids.
    ════════════════════════════════════════════════════════════════════════ */
-
-/* §13.4 — TIMELINE SELECTOR (Jac 2026-06-23). Per-source (per card / shop segment) the
-   graph carousel's TIME-BASED views can be scoped to a recent window: 7/10/30/90/180/360
-   days, or All (default = today's all-time/6-month behavior). Snapshot views ignore it and
-   read "Current". The active window is stamped ON the chart head, never hover-only. */
-const GV_WIN_OPTS = [7, 10, 30, 90, 180, 360];
-const GV_WIN_KEY = (src) => `jactec.gvWin.${src}`;
-const GV_WIN = Object.create(null);
-function loadGvWin(src) {
-  if (src in GV_WIN) return GV_WIN[src];
-  let v = 0; try { v = Number(localStorage.getItem(GV_WIN_KEY(src))) || 0; } catch (e) { v = 0; }
-  GV_WIN[src] = GV_WIN_OPTS.includes(v) ? v : 0;   // 0 = All time
-  return GV_WIN[src];
-}
-function saveGvWin(src, days) {
-  const d = GV_WIN_OPTS.includes(days) ? days : 0;
-  GV_WIN[src] = d;
-  try { if (d) localStorage.setItem(GV_WIN_KEY(src), String(d)); else localStorage.removeItem(GV_WIN_KEY(src)); } catch (e) { /* private mode */ }
-}
-const gvWinLabel = (d) => d ? `${d}D` : 'All';
-// ISO (yyyy-mm-dd) cutoff: the oldest day still IN a `days`-long window ending today (inclusive). null = all.
-function gvWinCutoff(days) { if (!days) return null; const d = new Date(TODAY); d.setDate(d.getDate() - days + 1); return d.toISOString().slice(0, 10); }
-// Time buckets spanning the window for the "/period" bar charts. Each = {key:"a|b", label, a, b}
-// with a<=date<b (ISO). Granularity adapts: ≤14d daily · ≤90d weekly · else monthly (All = 6 months).
-function gvBuckets(days) {
-  const out = [], iso = (d) => d.toISOString().slice(0, 10), base = new Date(TODAY);
-  if (!days || days > 90) {
-    const n = !days ? 6 : Math.min(12, Math.max(1, Math.round(days / 30)));
-    for (let i = n - 1; i >= 0; i--) { const a = new Date(base.getFullYear(), base.getMonth() - i, 1), b = new Date(base.getFullYear(), base.getMonth() - i + 1, 1); out.push({ key: iso(a) + '|' + iso(b), label: a.toLocaleString('en-US', { month: 'short' }), a: iso(a), b: iso(b) }); }
-  } else if (days > 14) {
-    const weeks = Math.ceil(days / 7);
-    for (let i = weeks - 1; i >= 0; i--) { const b = new Date(base); b.setDate(b.getDate() - i * 7 + 1); const a = new Date(b); a.setDate(a.getDate() - 7); out.push({ key: iso(a) + '|' + iso(b), label: `${a.getMonth() + 1}/${a.getDate()}`, a: iso(a), b: iso(b) }); }
-  } else {
-    for (let i = days - 1; i >= 0; i--) { const a = new Date(base); a.setDate(a.getDate() - i); const b = new Date(a); b.setDate(b.getDate() + 1); out.push({ key: iso(a) + '|' + iso(b), label: `${a.getMonth() + 1}/${a.getDate()}`, a: iso(a), b: iso(b) }); }
-  }
-  return out;
-}
 /* ════════════════════════════════════════════════════════════════════════
    APP-24 · §13.4 GRAPH CAROUSEL (Jac 2026-06-16) — the per-card Graph is a deck of
    INTERACTIVE views stacked ABOVE the list. Chevrons cycle the view; clicking a

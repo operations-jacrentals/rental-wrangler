@@ -41,6 +41,7 @@ const FILES = [
   // APP-NN id it was moved from); add a { rel, key } entry here for every new file.
   { rel: 'src/format.js', key: 'FMT' },
   { rel: 'src/glitch-capture.js', key: 'GLC' },
+  { rel: 'src/card-graph-view.js', key: 'GVW' },
 ];
 
 const RULE = /═{6,}/;                 // a full-width ═══ banner rule line
