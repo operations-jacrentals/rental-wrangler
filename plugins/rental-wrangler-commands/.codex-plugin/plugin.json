@@ -1,0 +1,19 @@
+{
+  "name": "rental-wrangler-commands",
+  "version": "0.1.0",
+  "description": "Rental Wrangler workflow and design commands for Codex.",
+  "author": {
+    "name": "operations-jacrentals",
+    "email": "operations@jacrentals.com"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Rental Wrangler Commands",
+    "shortDescription": "Rental Wrangler commands for Codex.",
+    "longDescription": "Invocable Rental Wrangler design, diagnosis, and ship-flow skills.",
+    "developerName": "operations-jacrentals",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": "Use $rental-wrangler-commands:atlas to orient in Rental Wrangler."
+  }
+}

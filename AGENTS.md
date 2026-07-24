@@ -141,6 +141,27 @@ do not hunt for them. Use the specs and the live staging build instead.
 
 ## Working conventions
 
+## Invocable Codex commands
+
+The repo-scoped Codex plugin is `plugins/rental-wrangler-commands`; its marketplace
+manifest is `.agents/plugins/marketplace.json`. Keep its skills thin: each one points
+back to this operating guide and the existing npm scripts rather than copying a runbook.
+
+After cloning the repository in a Codex environment, install the marketplace and plugin
+once, then begin a new task so Codex discovers the skills:
+
+```text
+codex plugin marketplace add .agents/plugins
+codex plugin add rental-wrangler-commands@personal
+```
+
+Invoke a command as `$rental-wrangler-commands:<name>` (for example,
+`$rental-wrangler-commands:style`). Available names: `style`, `wrangler-style`,
+`atlas`, `wrangler-fix`, `gates`, `build`, `deploy`, `merge`, `promote`, `live`, and
+`clasp`. The plugin is a portable command wrapper, not a second source of truth:
+update this guide or the referenced canon/runbook first, then only adjust the small
+wrapper that points to it.
+
 - Keep a shared `docs/WIP.md` entry for each in-flight feature when multiple agents are active; read it before starting work and remove the entry after merge.
 - Keep changes small and scoped. Run the full gates after structural moves, especially any future `app.js` split.
 - Update `docs/CODE-MAP.md` through its generator when code-map-relevant structure changes.
