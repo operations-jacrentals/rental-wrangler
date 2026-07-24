@@ -1,8 +1,8 @@
 ---
 name: merge
-description: Integrate an approved Rental Wrangler feature through the protected trunk merge flow.
+description: Integrate a reviewed Rental Wrangler feature through the protected trunk merge flow with automatic CI-wait and squash cleanup.
 ---
 
 # Merge
 
-Follow the merge phase in `AGENTS.md`: ensure `npm run gates` is green, confirm Jac has approved integration, open a PR, and squash-merge through branch protection. Never push directly to `trunk`.
+First require evidence that this feature was deployed to staging and reviewed; if not, stop and tell Jac to run `$rental-wrangler-commands:deploy`. Then run `npm run gates` and stop if red, push the feature branch, and create a ready (not draft) PR into `trunk`. Use `gh pr merge --auto --squash --delete-branch` to automate the CI wait, squash, and branch cleanup. Never push directly to `trunk`, never promote here, and never add the `auto-promote` label to a normal feature PR.
