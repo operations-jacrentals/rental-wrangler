@@ -42,6 +42,8 @@ const FILES = [
   { rel: 'src/format.js', key: 'FMT' },
   { rel: 'src/glitch-capture.js', key: 'GLC' },
   { rel: 'src/card-graph-view.js', key: 'GVW' },
+  { rel: 'src/internals.js', key: 'INT' },
+  { rel: 'src/rulebook.js', key: 'RBK' },
 ];
 
 const RULE = /═{6,}/;                 // a full-width ═══ banner rule line
