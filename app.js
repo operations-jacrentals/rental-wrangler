@@ -2720,11 +2720,17 @@ function openStandard(card, recId, recType) {
   const cs = activeSession().cards[card];
   if (cs && cs.mode === 'standard' && cs.recId != null) {
     if (String(cs.recId) === String(recId)) { render(); return; }            // already showing it — no-op
-    // Task 5 — overtaking a DIFFERENT record already open in Standard freezes the
-    // session and opens a NEW foreground tab. The new tab carries this card's history
-    // PLUS the record we're leaving, so the jog can walk the overtake chain back.
-    const stack = [...cs.backStack, cardSnap(cs)];
-    return openInTab(card, recId, recType, { inheritFrom: activeSession(), seedHistory: { card, stack } });
+    // dv2 inline-expand (spec §1): with an item already expanded IN the list, clicking a
+    // SIBLING row just MOVES the expansion (cheap peek, one open at a time) — it must NOT
+    // trigger the legacy overtake-opens-a-new-tab. Fall through to the plain open below,
+    // which re-points cs.recId and runs the same section-collapse resets.
+    if (!inlineExpandActive(card)) {
+      // Task 5 — overtaking a DIFFERENT record already open in Standard freezes the
+      // session and opens a NEW foreground tab. The new tab carries this card's history
+      // PLUS the record we're leaving, so the jog can walk the overtake chain back.
+      const stack = [...cs.backStack, cardSnap(cs)];
+      return openInTab(card, recId, recType, { inheritFrom: activeSession(), seedHistory: { card, stack } });
+    }
   }
   sweepEmptyDrafts(recId);   // #8 — leaving an empty draft deletes it
   pushCardHistory(cs);       // Task 1 — record the prior (list) view so Back can return
@@ -2743,6 +2749,18 @@ function openStandard(card, recId, recType) {
     if (cat && us) { us.search = cat.name; us.listLimit = undefined; if (s.cols && s.cols.left) s.cols.left = 'units'; }
   }
   render();
+  if (inlineExpandActive(card)) scrollExpandedToTop(card);   // dv2: the reveal anchors to the column top (no dead space above it — Jac 2026-07-21)
+}
+/* dv2 inline-expand: after a reveal, scroll the card-body so the expanded row sits at the
+   top of the column — the item "grows to the top" instead of expanding downward from its
+   list position (which left a gap above it). rAF so it runs after render() paints. */
+function scrollExpandedToTop(card) {
+  requestAnimationFrame(() => {
+    const row = document.querySelector(`.card[data-card="${card}"] .row.row-expanded`);
+    const body = row && row.closest('.card-body');
+    if (!row || !body) return;
+    body.scrollTop += row.getBoundingClientRect().top - body.getBoundingClientRect().top - 6;   // 6px breathing room above
+  });
 }
 /** Jump to the Units card filtered to one category's units — wired to a category
  *  mini-card's Availability pill (Jac 2026-06-25). Narrows Units by the category
@@ -5978,15 +5996,21 @@ function refPill(card, recId, label, { x, xData, tag, tone } = {}) {
   const tip = (card === 'customers' && label && label.length > 9) ? ` data-tip="${esc(label)}"` : '';
   const shown = (card === 'customers' && label && label.length > 9) ? label.slice(0, 9).trimEnd() + '…' : label;
   const chat = ` data-chat-el data-chat-label="${esc(label || recId)}" data-chat-color="gray" data-chat-card="${esc(card)}" data-chat-rec="${esc(recId)}"`;   // §17 — link/person pill → draggable into a chat
-  return `<span class="pill ref link${toneCls}" data-r="R2" data-pill-card="${card}" data-pill-rec="${esc(recId)}"${tip}${chat}>${tg}${CARD_ICON[card] || ''}${esc(shown)}${xb}</span>`;
+  return `<span class="pill ref link${toneCls}" data-r="R2" data-pill-card="${card}" data-pill-rec="${esc(recId)}"${tip}${chat}>${tg}<span class="ref-ico">${CARD_ICON[card] || ''}</span>${esc(shown)}${xb}</span>`;
 }
-/** R2: a Unit pill — LINKED record, orange outline + units icon. */
-function unitPill(unitId, { x, xData } = {}) {
+/** R2: a Unit pill — LINKED record, orange outline + units icon. `tint`/`tip`/`cls` are
+ *  an optional per-call override (e.g. ROWS.rentals tints by inspection status + the
+ *  ec-red halo on Failed) — every existing caller omits all three, so their render is
+ *  byte-identical to before. */
+function unitPill(unitId, { x, xData, tint, tip, cls } = {}) {
   const u = IDX.unit.get(unitId);
   if (!u) return badge('No unit');
   const xb = x ? `<span class="x" data-x="${esc(x)}"${xData != null ? ` data-id="${esc(xData)}"` : ''}>✕</span>` : '';
   const chat = ` data-chat-el data-chat-label="${esc(u.name)}" data-chat-color="gray" data-chat-card="units" data-chat-rec="${esc(unitId)}"`;   // §17
-  return `<span class="pill ref link" data-r="R2" data-pill-card="units" data-pill-rec="${esc(unitId)}"${chat}>${CARD_ICON.units}${esc(u.name)}${xb}</span>`;
+  const style = tint ? ` style="color:${tint}"` : '';
+  const tipAttr = tip ? ` data-tip="${esc(tip)}"` : '';
+  const clsAttr = cls ? ' ' + cls : '';
+  return `<span class="pill ref link${clsAttr}" data-r="R2" data-pill-card="units" data-pill-rec="${esc(unitId)}"${style}${tipAttr}${chat}><span class="ref-ico">${CARD_ICON.units}</span>${esc(u.name)}${xb}</span>`;
 }
 /** R2: entity-stamp pill — flag-colored (getEntityColor), Saira-caps, card icon + name. */
 function entityPill(card, rec, { x, xData } = {}) {
@@ -5996,7 +6020,7 @@ function entityPill(card, rec, { x, xData } = {}) {
   const flag = getEntityColor(card, rec) || 'gray';
   const xb = x ? `<span class="x" data-x="${esc(x)}"${xData != null ? ` data-id="${esc(xData)}"` : ''}>✕</span>` : '';
   const chat = ` data-chat-el data-chat-label="${esc(name)}" data-chat-color="${esc(flag)}" data-chat-card="${esc(card)}" data-chat-rec="${esc(id)}"`;
-  return `<span class="pill entity-stamp c-${flag}" data-r="R2" data-pill-card="${card}" data-pill-rec="${esc(id)}"${chat}>${CARD_ICON[card] || ''}<span class="t">${esc(name)}</span>${xb}</span>`;
+  return `<span class="pill entity-stamp c-${flag}" data-r="R2" data-pill-card="${card}" data-pill-rec="${esc(id)}"${chat}><span class="ref-ico">${CARD_ICON[card] || ''}</span><span class="t">${esc(name)}</span>${xb}</span>`;
 }
 /** R3b: a DATA CHIP — a plain fact (480 HRS, No GPS), independent of R3. */
 const badge = (label, color = 'gray', focal) => `<span class="pill c-${color}${focal ? ' focal' : ''}" data-r="R3b"><span class="t">${esc(label)}</span></span>`;
@@ -7010,8 +7034,40 @@ function unitCardFlags(u) {
 /* ════════════════════════════════════════════════════════════════════════
    APP-14 · §6b PER-CARD ROWS
    ════════════════════════════════════════════════════════════════════════ */
+/* dv2 INLINE-EXPAND (spec §1, Jac 2026-07-21) — the Phase-2 model kills "click into a
+   detail view": a plain single-click on a Units/Rentals/Customers row REVEALS the record
+   in place — the row expands to its detail — instead of swapping the whole card to a
+   detail view. It reuses the EXISTING standard-open machinery wholesale (openStandard
+   already sets cs.mode='standard'/cs.recId with NO cascade — §4); only the RENDER changes,
+   and only under dv2 (staging/local auto-on; production frozen until the flag flips).
+   An ANCHORED tab keeps the committed card-swap detail — anchoring stays the "commit"
+   (double-click → foreground tab + cascade), inline-expand stays the cheap peek. */
+const INLINE_EXPAND_CARDS = new Set(['units', 'rentals', 'customers']);
+function dv2On() { return document.documentElement.classList.contains('dv2'); }
+/* Is this card rendering its open record as an inline-expanded row (vs the legacy
+   card-swap detail)? True only under dv2, for an expandable card, when the record is a
+   plain single-click open — never the session's anchored card (that keeps the full detail). */
+function inlineExpandActive(card) {
+  const s = activeSession();
+  return dv2On() && INLINE_EXPAND_CARDS.has(card) && !(s.anchor && s.anchor.card === card);
+}
 function rowEl(card, rec) {
   const id = idOf(card, rec);
+  // dv2 inline-expand (spec §1): if THIS row is the card's open standard record (a plain
+  // single-click open — not the anchored tab), the row renders its DETAIL inline instead of
+  // the collapsed row content. The record's open/close/back state is the SAME cs.mode/recId
+  // the legacy card-swap uses; only the render differs. A ✕ (js-row-collapse) closes it;
+  // clicking a sibling row moves the expansion (openStandard). Prod (dv2 off) never hits this.
+  {
+    const cs = activeSession().cards[card];
+    if (cs && cs.mode === 'standard' && String(cs.recId) === String(id) && inlineExpandActive(card) && DETAIL[card]) {
+      const node = el('div', 'row row-expanded');
+      node.dataset.card = card; node.dataset.rec = id;
+      // No ✕ (Jac 2026-07-21): the detail HEADER is the collapse control (js-inline-close).
+      node.innerHTML = `<div class="row-detail">${DETAIL[card](rec, cs)}</div>`;
+      return node;
+    }
+  }
   const inner = rowInnerHTML(card, rec);
   let extra = '';
   if (card === 'units' && rec.fleetStatus !== 'Active') extra = ' fleet-dim';   // out of active inventory → dim (failed = gradient, not full red)
@@ -7072,12 +7128,14 @@ const ROWS = {
     // ── HEADER: row 1 = unit names (colored by inspection status) + status pill pinned RIGHT;
     //           row 2 = customer name + balance (Jac 2026-06-23) ──
     // Unit names tinted by their inspection status so color signal is immediate on hover.
+    // Ref, not plain text (Jac 2026-07-21 — "why isn't this a Ref"): real click-to-navigate +
+    // drag-to-chat via unitPill(), same inspection-status tint/tooltip/ec-red halo as before.
     const unitNameHtml = rentalUnits(r).map((eu) => {
       const unit = IDX.unit.get(eu.unitId);
       if (!unit) return '';
       const insp = unit.inspectionStatus;
       const ic = insp === 'Failed' ? 'var(--red)' : insp === 'Not Ready' ? 'var(--yellow)' : insp === 'Passed' ? 'var(--green)' : 'var(--txt)';
-      return `<span class="rcc-uname${insp === 'Failed' ? ' ec-red' : ''}" style="color:${ic}" data-tip="${esc(unit.name)}: ${esc(insp || 'Unknown')}">${esc(unit.name)}</span>`;
+      return unitPill(unit.unitId, { tint: ic, tip: `${unit.name}: ${insp || 'Unknown'}`, cls: insp === 'Failed' ? 'ec-red' : '' });
     }).filter(Boolean).join('<span class="rcc-usep">, </span>') || (units ? `<span class="rcc-uname">${esc(units)}</span>` : '');
     const headHtml = `<div class="rcc-head">
       <div class="rcc-h1">${unitNameHtml ? `<span class="rcc-units">${unitNameHtml}</span>` : ''}${stPill}</div>
@@ -8532,8 +8590,9 @@ const DETAIL = {
       ${efld('units', u, 'unitId', 'weight', 'Weight')}
       <div class="kv"><span class="v inline-edit" data-edit="unitHours" data-rec="${u.unitId}">${num(u.currentHours)} HRS</span></div>
     </div>`;
-    // Specs is a plain-fact section — no health status, so it reads a neutral green "OK".
-    const specs = collapseSection({ open: unitSecOpen(u, 'specs'), toggleCls: 'js-unit-sec', sec: 'specs', rec: u.unitId, lbl: 'Specs', summary: `<b>${esc(cat?.name || makeModel || 'Unit')}</b><span class="acct-dot">·</span>${num(u.currentHours)} HRS`, chip: { text: 'OK', tone: 'ok' }, body: specsBody, extraCls: 'sec-green' });
+    // Specs is a plain-fact section — no health status, so it reads neutral gray (wrangler-style
+    // colour law: green = Done specifically, gray = not-applicable/no-state — not "green = fine").
+    const specs = collapseSection({ open: unitSecOpen(u, 'specs'), toggleCls: 'js-unit-sec', sec: 'specs', rec: u.unitId, lbl: 'Specs', summary: `<b>${esc(cat?.name || makeModel || 'Unit')}</b><span class="acct-dot">·</span>${num(u.currentHours)} HRS`, chip: { text: 'OK', tone: 'ok' }, body: specsBody, extraCls: 'sec-gray' });
     // GPS connect wizard (spec §5a) — mapping now happens through a guided popup
     // (provider → identify → confirmed live signal) instead of hand-typing gpsProvider/
     // gpsDeviceId; the "No GPS" badge grows a +Connect add, an already-mapped unit gets
@@ -8629,7 +8688,7 @@ const DETAIL = {
           ${kv(money(totalRev), { pfx: 'Total Revenue', derived: true })}
           ${kv(money(avgRevMo), { pfx: 'Monthly', derived: true })}
           ${kv(money(repair), { pfx: 'Work Orders', derived: true })}
-          ${kv(`${money(profit)}${roi != null && canMoney() ? ` · (${roi}%)` : ''}`, { pfx: 'Profit', derived: true })}
+          ${kv(`${money(profit)}${roi != null && canMoney() ? ` · (${roi}%)` : ''}`, { pfx: 'Profit', derived: true, big: true })}
         </div>
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">${sellAction}${gatePill('unitFleetStatus', u.fleetStatus, 'js-fleetstatus', { rec: u.unitId })}</div>`;
@@ -8644,9 +8703,9 @@ const DETAIL = {
     const stampDate = u.condAt || li2?.date || '';
     const stamp = stampDate ? `${fmtShortDate(stampDate)}${u.condClock ? ' · ' + u.condClock : ''}` : '—';
     const cond = u.inspectionStatus;
-    const inspSec = `<div class="section sec-${cond === 'Ready' ? 'green' : cond === 'Failed' ? 'red' : 'yellow'}">
-      <h4>Inspection <span class="hmuted">· ${esc(stamp)}</span></h4>
-      <div class="fieldstack">
+    const inspColor = cond === 'Ready' ? 'green' : cond === 'Failed' ? 'red' : 'yellow';
+    const inspStateLbl = cond === 'Ready' ? 'Ready' : cond === 'Failed' ? 'Failed' : 'Not Ready';
+    const inspBody = `<div class="fieldstack">
         <div class="kv" style="justify-content:center">
           ${segCtl([
             { label: '✓ Pass', js: 'js-cond', data: { rec: u.unitId, val: 'Pass' }, on: cond === 'Ready' ? 'green' : null },
@@ -8656,8 +8715,13 @@ const DETAIL = {
         </div>
         <div class="kv" style="justify-content:center">${washBtn(u)}</div>
         ${li2?.description ? `<div class="kv" style="justify-content:center"><span class="muted">Latest:</span> <span style="font-size:0.7353rem">${esc(li2.description)}</span></div>` : ''}
-      </div>
-    </div>`;
+      </div>`;
+    // dv2 (spec §2.0 plate-stack): Inspection reads as a collapsed one-line plate like every
+    // other section — summary (state · timestamp) + a status chip — expanding to the live
+    // Pass/Not-Ready/Fail toggle. Production (dv2 off) keeps the always-open section untouched.
+    const inspSec = dv2On()
+      ? collapseSection({ open: unitSecOpen(u, 'inspection'), toggleCls: 'js-unit-sec', sec: 'inspection', rec: u.unitId, lbl: 'Inspection', summary: `<b>${inspStateLbl}</b><span class="acct-dot">·</span>${esc(stamp)}`, chip: { text: inspStateLbl, tone: inspColor === 'green' ? 'ok' : inspColor === 'red' ? 'bad' : 'warn' }, body: inspBody, extraCls: 'sec-' + inspColor })
+      : `<div class="section sec-${inspColor}"><h4>Inspection <span class="hmuted">· ${esc(stamp)}</span></h4>${inspBody}</div>`;
     const svcSec = serviceTasksHtml(u);   // Shop retirement (Jac 2026-07-07): services live ON the unit
     const woSec = workOrdersSection(u);    // Work Orders as accordion rows within ONE section (like Invoices)
     const notes = notesSection('units', u, 'unitId');
@@ -8667,9 +8731,14 @@ const DETAIL = {
       { kind: 'rent', label: `${DATA.rentals.filter((r) => rentalHasUnit(r, u.unitId)).length} Rentals`, cls: 'b', re: /rent/i },
       { kind: 'wash', label: `${(u.serviceLog || []).filter((l) => l.taskId === 'svc-wash').length} Washes`, cls: 'y', re: /wash/i },
     ];
+    // dv2 header (spec §2.0): the record NAME leads (eyebrow + name + status stamp), and the
+    // header IS the collapse control (js-inline-close) — click it to close, so the ✕ is dropped
+    // (Jac 2026-07-21). Non-dv2 keeps the legacy order (journey strip, then the plain name head).
+    const dhead = dv2On()
+      ? `<div class="detail-head dv2-dhead js-inline-close" data-card="units" data-tip="Collapse"><span class="dh-eyebrow">Unit Detail</span><span class="d-title">${esc(u.name)}</span>${headFlagsHtml('units', u)}<span class="dh-collapse">${I.chev}</span></div>`
+      : `<div class="detail-head"><span class="d-title">${esc(u.name)}</span></div>`;
     return `<div class="detail">
-      ${yardToolHtml(u)}
-      <div class="detail-head"><span class="d-title">${esc(u.name)}</span></div>
+      ${dv2On() ? dhead + yardToolHtml(u) : yardToolHtml(u) + dhead}
       ${notes.top}
       ${inspSec}
       ${svcSec}
@@ -9168,6 +9237,13 @@ function historySection(card, rec, cs, chips) {
     ? `<div class="hvals">${chips.map((c) => `<button class="hv ${c.cls || ''} ${cs?.histKind === c.kind ? 'on' : ''} js-hchip" data-card="${esc(card)}" data-kind="${esc(c.kind)}">${esc(c.label)}</button>`).join('')}</div>` : '';
   // History Search (§0.6) — appears once the log has some depth.
   const searchBar = all.length >= 3 ? `<input class="mini-search js-history-search" placeholder="Search history…" value="${esc(cs?.historySearch || '')}" />` : '';
+  // dv2 (Jac 2026-07-21): History rests COLLAPSED on desktop — just the label + count chips
+  // (the mock footer), reclaiming the log's vertical space. The count chips still filter; the
+  // full log + search step in with the History-search footer pass. Phone keeps it open (space
+  // isn't the constraint there). Non-dv2 renders the full log as today.
+  if (dv2On() && !document.body.classList.contains('is-phone')) {
+    return `<div class="history dv2-hist-collapsed"><h4>History</h4>${chipBar}</div>`;
+  }
   return `<div class="history"><h4>History</h4>${chipBar}${searchBar}<div class="hlog">${log}</div></div>`;
 }
 function historyFor(card, rec) {
@@ -9426,7 +9502,7 @@ function appendGroupedSections(list, rows, cs, card) {
     hd.setAttribute('style', `--sec:var(--${sec.color})`);
     const suffix = def.groupSuffix ? def.groupSuffix(group) : '';   // e.g. Trips' "2 done" riding the count (spec §2.2)
     const extra = def.headerExtra ? def.headerExtra(group, sec.key) : '';   // e.g. Trips' per-day AUTO-RUN button (spec §2.7)
-    hd.innerHTML = `<span class="grp-grip" data-tip="Drag to reorder">⠿</span><span class="grp-chev">${I.chevR}</span><span class="grp-label">${esc(sec.label || sec.key)} · ${group.length}${suffix ? ' · ' + esc(suffix) : ''}</span>${extra}`;
+    hd.innerHTML = `<span class="grp-grip" data-tip="Drag to reorder">⠿</span><span class="grp-chev">${I.chevR}</span><span class="grp-label">${esc(sec.label || sec.key)}</span> · <span class="grp-count">${group.length}${suffix ? ' · ' + esc(suffix) : ''}</span>${extra}`;
     list.appendChild(hd);
     if (collapsed) continue;   // header only — cards hidden, and they don't consume the window
     const canShow = limit - shown;
@@ -9707,10 +9783,15 @@ function cardEl(cardDef, session) {
   // §5.4: global search forces EVERY card into list view (the prior standard/anchor
   // state is untouched, so exiting search restores the session for free).
   const inStandard = !state.searchMode && cs.mode === 'standard' && cs.recId != null && !cs.graphView;
+  // dv2 inline-expand (spec §1): a plain single-click open renders the record IN the list
+  // (the row expands — rowEl handles it), so the card stays in list layout: no card-swap,
+  // no standard header. An ANCHORED tab still gets the committed card-swap detail below.
+  const inlineExpand = inStandard && inlineExpandActive(card);
+  const swapDetail = inStandard && !inlineExpand;   // legacy full-card detail (prod, and anchored tabs)
   // List mode → NO card header (the column tab already names the card). Standard mode →
   // a slim header: the record name in the top-left (hidden when an item tab already shows
   // it, i.e. when anchored) + the row actions. (#2.3 / §0.6)
-  if (inStandard) {
+  if (swapDetail) {
     const stdRec = recOf(card, cs.recId);
     const titleHtml = stdRec
       ? `<span class="c-title">${esc(detailTitle(card, stdRec))}</span>`
@@ -9726,11 +9807,11 @@ function cardEl(cardDef, session) {
 
   // body
   const body = el('div', 'card-body');
-  if (inStandard) {
+  if (swapDetail) {
     const rec = recOf(card, cs.recId);
     body.innerHTML = rec && DETAIL[card] ? DETAIL[card](rec, cs) : '<div class="empty">Record not found.</div>';
   } else {
-    body.appendChild(listView(cardDef, session));
+    body.appendChild(listView(cardDef, session));   // list view — under dv2 inline-expand the open row expands in place (rowEl)
   }
   const lb = linkBanner(card); if (lb) { const w = el('div'); w.innerHTML = lb; if (w.firstElementChild) node.appendChild(w.firstElementChild); }   // §17b — linking-mode banner above the list
   node.appendChild(body);
@@ -19553,10 +19634,20 @@ function onClick(e) {
     return deferOrAnchor('pill:' + pc + ':' + prec, () => { pillTo(pc, prec); if (psect) scrollToSect(pc, psect); }, anchor);
   }
 
+  // dv2 inline-expand (spec §1): clicking the expanded item's HEADER (js-inline-close, the
+  // record-name bar — the ✕ was dropped, Jac 2026-07-21) collapses it back to the list
+  // (cardToList → cs.mode='list', pushing history so Back can return). Checked BEFORE the row
+  // block so the click never falls through to a re-open.
+  if (closest('.js-inline-close')) { e.stopPropagation(); return cardToList(closest('.js-inline-close').dataset.card); }
+
   // click a row → open in Standard, BUT deferred a beat so a double-click anchors
   // instead (the first click never opens — #10). Ctrl/Cmd+click = new tab (instant).
   const row = closest('.row');
   if (row) {
+    // dv2 inline-expand: an already-expanded row IS its detail — its interactive elements
+    // (gates/pills/inputs) are handled by their own guards ABOVE; a stray click on the
+    // detail's dead space must do nothing (never collapse/re-open). Close is the ✕ only.
+    if (row.classList.contains('row-expanded')) return;
     // §2.2b Trips cab sheet — tapping the row BODY (pills/time/town/log all returned
     // above; the tel: anchor + time input are left to their own devices) toggles the
     // trip's inline unit-facts sheet. One open at a time; a second tap collapses.
@@ -26008,6 +26099,12 @@ if (APP_ENV !== 'production') {
   document.title = (APP_SLOT ? 'Staging ' + APP_SLOT
     : APP_ENV === 'local' ? 'Local' : 'Staging') + ' · Rental Wrangler';
 }
+// ── Phase-2 wrangler-style redesign gate (dv2) ──────────────────────────────
+// The redesigned steel-canon look/surfaces are scoped behind `html.dv2` in style.css and land
+// BESIDE the old rendering (never replacing it) — so the old path is byte-identical when off.
+// dv2 is ON automatically on non-production (staging/local) so Jac reviews the redesign there,
+// and in production ONLY when FEATURES.designV2 is flipped true. Set at module load, before render.
+document.documentElement.classList.toggle('dv2', flagOn('designV2') || APP_ENV !== 'production');
 // ── §dev-login — Ctrl+Alt+P reveals the legacy team-password login on LOCALHOST ONLY (the dev /
 //    automation host), so a dev or an automated session can sign in without the SMS phone-identity
 //    flow. Gated by an ALLOWLIST (APP_ENV === 'local') — a security-review tightening: production
