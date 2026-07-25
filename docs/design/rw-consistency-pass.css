@@ -1,0 +1,175 @@
+/* ============================================================================
+   Rental Wrangler — atom consistency pass, ready to commit to the design system.
+   Source of truth for the review: Atoms.dc.html (section 00 lists every id).
+   Rules below are UNSCOPED (the [data-pass] wrapper was review-only).
+
+   Where each block goes:
+     [A] tokens/tokens.css      — token changes + 2 new tokens
+     [B] _ds_bundle.css         — revised component rules
+     [C] _ds_bundle.css         — new: Pin atom, seg--state, seg--stack
+     [D] notes / deletions
+   ============================================================================ */
+
+
+/* ============================ [A] tokens/tokens.css ======================== */
+:root{
+  /* C14 · body voice: Archivo replaces Geist (mono voice unchanged).
+     Ship the woff2 next to Geist, or load weights 400;500;600;700;800. */
+  --font: "Archivo", "Helvetica Neue", -apple-system, "Segoe UI", sans-serif;
+
+  /* C13/C17 · THREE control shapes, one per family:
+     state chips squared · records rounded · actions pill (Doors only) */
+  --chip-radius: 2px;   /* was 7px — Signal, Gate, Field, Seg */
+  --item-radius: 8px;   /* NEW — Ref, +Add: things that are/link records */
+  --pill-radius: 999px; /* Doors only */
+
+  /* C18 · red at full chroma but higher lightness: the only legible red on the
+     dark surfaces once outline chips lost their tint (~6:1 vs --panel). */
+  --red-line: color-mix(in oklch, var(--red) 78%, var(--txt));
+}
+@supports (color: oklch(from red l c h)){
+  :root{ --red-line: oklch(from var(--red) .74 .215 h); }
+}
+
+
+/* ========================= [B] _ds_bundle.css — revisions ================== */
+
+/* C15 · the secondary chip is a TRUE outline: no tint backfill, 1px border in its
+   own status hue. Replaces every .signal--*.signal--outline background rule. */
+.signal--outline{background:transparent; border:1px solid currentColor}
+.signal--gray.signal--outline  {color:var(--gray)}
+.signal--blue.signal--outline  {color:var(--blue)}
+.signal--yellow.signal--outline{color:var(--yellow)}
+.signal--green.signal--outline {color:var(--green)}
+.signal--red.signal--outline   {color:var(--red-line)}   /* C18 */
+
+/* C7 · read-only atoms say so with the cursor */
+.signal, .stamp, .stamp-sep, .dead-text, .t-hint{cursor:default}
+
+/* C4 · the stamp separator is a true sibling of the stamps it sits between */
+.stamp-sep{height:var(--h); display:inline-flex; align-items:center; font-weight:700}
+
+/* C3/C17 · Ref: content size on the ladder + the item radius */
+.ref{font-size:13px; border-radius:var(--item-radius); padding:0 10px 0 3px}
+.ref__icon{border-radius:5px}
+
+/* C5 · segment text is the ONE chip size, so a selected segment really is the
+   filled Signal chip of its status */
+.seg__opt{font-size:11px; letter-spacing:.05em}
+/* the kit had no green segment — it does now, on the chip's own tokens */
+.seg__opt--on-green{background:var(--green); color:var(--on-green)}
+
+/* M10 · +Add is built on the Ref pattern (it adds/links items): item radius, the
+   same icon holder with the + inside it, dashed commit border kept.
+   Markup: <button class="door door--add"><span class="ref__icon">{+ svg}</span>Add Unit</button> */
+.door--add{border-radius:var(--item-radius); gap:6px; padding:0 11px 0 3px}
+.door--add .ref__icon{background:color-mix(in oklab, var(--commit) 25%, transparent); color:var(--commit)}
+
+/* C1/C2/M12 · link atoms: 24px box, underline on the LABEL only, the out-marker is
+   a drawn arrow in the house icon holder.
+   Markup: <a class="hlink">service schedule<span class="hlink__ext">{↗ svg}</span></a> */
+.hlink, .dead-text{height:var(--h); display:inline-flex; align-items:center}
+.hlink{border-bottom:0; padding-bottom:0; gap:7px; text-decoration:underline;
+  text-decoration-color:var(--accent); text-decoration-thickness:1.5px; text-underline-offset:3px}
+.hlink__ext{width:16px; height:16px; flex:none; border-radius:4px; text-decoration:none;
+  display:inline-flex; align-items:center; justify-content:center;
+  background:var(--accent-soft); color:var(--accent)}
+.hlink__ext svg{width:10px; height:10px; display:block}
+.contact__v{border-bottom-width:1.5px}
+
+/* C19 · no atom shrinks or wraps inside a flex row */
+.ref, .field, .seg, .seg__opt, .contact, .hlink, .dead-text, .stamp{flex:none; white-space:nowrap}
+
+/* C12 · every tappable atom is a real <button type="button">; zero the sides the
+   kit doesn't own so a segment still bleeds to its track */
+button.gate, button.door, button.seg__opt, button.field{-webkit-appearance:none; appearance:none;
+  margin:0; text-align:left}
+button.seg__opt{border-top:0; border-bottom:0; border-left:0}
+
+/* C20 · ONE universal hover: an accent ring drawn OUTSIDE the element, so no atom's
+   own border, fill or size changes and nothing in the layout moves.
+   On a segmented toggle the ring goes around the TRACK, never a single cell. */
+.gate:hover, .door:hover, .seg:hover, .field:hover, .ref:hover,
+.contact:hover, .hlink:hover, .pin[data-tip]:hover{outline:1.5px solid var(--accent); outline-offset:2px}
+
+/* C8 · press dips the fill on filled tappables */
+.gate:active, .door--commit:active, .door--money:active, .door--destroy:active{filter:brightness(.94)}
+
+/* C9 · hover INK is reserved for the atoms that navigate or switch */
+.seg__opt:not([class*="seg__opt--on"]):hover{color:var(--txt)}
+.ref:hover, .contact:hover{color:var(--accent)}
+
+/* C10 · one focus ring for every tappable atom */
+.gate:focus-visible, .door:focus-visible, .seg__opt:focus-visible, .field:focus-visible,
+.ref:focus-visible, .contact:focus-visible, .hlink:focus-visible{outline:2px solid var(--accent-line);
+  outline-offset:2px}
+
+
+/* ============================ [C] _ds_bundle.css — new ===================== */
+
+/* M11 · a STATE pair toggle reads as Signals: the live state is the filled chip of
+   its status, the other side is the secondary outline in ITS OWN hue. Neutral pairs
+   (do now / later) and no-status pairs (details / activity, orange) stay plain.
+   Markup: <span class="seg seg--state">
+             <button class="seg__opt seg__opt--on-green">Insured</button>
+             <button class="seg__opt seg__opt--off-red">Uninsured</button></span> */
+.seg--state .seg__opt{border-right:0}
+.seg--state .seg__opt:not([class*="seg__opt--on"]){background:transparent; color:var(--gray);
+  box-shadow:inset 0 1px 0 currentColor, inset 0 -1px 0 currentColor, inset -1px 0 0 currentColor}
+.seg--state .seg__opt:not([class*="seg__opt--on"]):first-child{
+  box-shadow:inset 0 1px 0 currentColor, inset 0 -1px 0 currentColor, inset 1px 0 0 currentColor}
+.seg--state .seg__opt--off-red:not([class*="seg__opt--on"]){color:var(--red-line)}
+
+/* M7 · the status picker IS the segmented toggle, stacked. Header cell is the same
+   shape filled accent (border-bottom:0 so it sits flush on the stack). */
+.seg--stack{flex-direction:column; height:auto; align-items:stretch; width:100%}
+.seg--stack .seg__opt{height:var(--h); flex:none; border-right:0;
+  border-bottom:1px solid var(--line); justify-content:flex-start}
+.seg--stack .seg__opt:last-child{border-bottom:0}
+
+/* N1 · PIN — the universal corner marker (new atom).
+   Colour = state, fill = today, exactly like a Signal. Content is free: number,
+   weekday, date, icon. Hover explains (data-tip), click teleports to the record.
+   Anchored at 70% over its host's top-right corner so ownership is unambiguous.
+   13px tall — deliberately off the 24px control ladder — and ZERO layout footprint:
+   absolutely positioned, no margin, no reserved space.
+   Markup: <span class="pin-wrap">{host}<a class="pin pin--red" data-tip="…">3</a></span> */
+.pin-wrap{position:relative; display:inline-flex; flex:none}
+.pin{position:absolute; top:0; left:100%; transform:translate(-70%,-50%); z-index:2;
+  height:13px; min-width:13px; padding:0 4px;
+  display:inline-flex; align-items:center; justify-content:center; gap:3px;
+  border-radius:var(--chip-radius); font-family:var(--font-mono); font-size:9px; font-weight:800;
+  letter-spacing:.04em; text-transform:uppercase; white-space:nowrap; font-variant-numeric:tabular-nums;
+  cursor:pointer; text-decoration:none; outline:1.5px solid var(--panel)}
+.pin svg{width:9px; height:9px; display:block}
+.pin--gray  {background:var(--gray);     color:var(--on-gray)}
+.pin--blue  {background:var(--blue);     color:var(--on-blue)}
+.pin--yellow{background:var(--yellow);   color:var(--on-yellow)}
+.pin--red   {background:var(--red-fill); color:var(--on-red-fill)}
+.pin--green {background:var(--green);    color:var(--on-green)}
+.pin--outline{background:var(--panel); border:1px solid currentColor}
+.pin--gray.pin--outline  {color:var(--gray)}
+.pin--blue.pin--outline  {color:var(--blue)}
+.pin--yellow.pin--outline{color:var(--yellow)}
+.pin--green.pin--outline {color:var(--green)}
+.pin--red.pin--outline   {color:var(--red-line)}
+.pin:focus-visible{outline:2px solid var(--accent-line); outline-offset:2px}
+.pin:after{content:attr(data-tip); position:absolute; bottom:calc(100% + 8px); right:-2px; display:none;
+  padding:7px 10px; max-width:260px; background:var(--panel-2); border:1px solid var(--line);
+  border-radius:9px; color:var(--txt); font-family:var(--font); font-size:11.5px; font-weight:400;
+  line-height:1.4; letter-spacing:0; text-transform:none; white-space:nowrap; z-index:6; pointer-events:none}
+.pin[data-tip]:hover:after,
+.pin[data-tip]:focus-visible:after{display:block}
+
+
+/* ================================ [D] notes =============================== */
+/* 1. DELETE the ten .signal--*.signal--outline{background:var(--*-bg)} rules — [B]
+      replaces them. The --*-bg tints stay in tokens (plates still use them).
+   2. .menu / .menu__h / .menu__i / .menu__sw are SUPERSEDED as a status picker by
+      .seg--stack. Keep the classes if other surfaces use them; the picker should not.
+   3. Doors are the only atom on --pill-radius. Nothing else may take it.
+   4. Font: add Archivo woff2 to fonts/ (weights 400–800) alongside Geist, or the
+      Google Fonts link; --font-mono is untouched.
+   5. Docs to update: Signal (outline is a border now), Ref + Door (three radii),
+      Sizing (add --item-radius, the 13px pin, the 24px control law), and a new
+      Pin page. Chips page: green stays filled-only for live status. */
