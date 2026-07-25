@@ -29,10 +29,16 @@ to emit the approved markup. (Codex is NOT in use.)
 the Inherit list, NOT from session continuity. Start a fresh Labs session per screen.
 
 ## Build order (foundations first)
-- **Tier 0.0 — Atoms** ✅ **LOCKED 2026-07-25** (see decisions below).
-- **Tier 0.1 — Containers** ← **NEXT.** Card frame · card header · list row · section/plate ·
-  panel/popup · **action/overflow menu**. Design each as its own artifact and lock BEFORE anything
-  composes them.
+- **Tier 0.0 — Atoms** ✅ **LOCKED 2026-07-25** (see decisions below). The approved consistency pass
+  is **applied to the kit itself** — `rw-consistency-pass.css` stays as the record of what was
+  decided, but the kit files no longer need it layered on.
+- **Tier 0.1 — Containers** ← **CURRENT.** Prompts are **written**; none has been run in Labs yet.
+  Run them in this order, each its own Labs session:
+  1. `prompts/prompt-03-container-card.md` — **card frame · header · list row.** The most
+     load-bearing prompt in the build order: eleven surfaces share this anatomy.
+  2. `prompts/prompt-04-container-section.md` — **section / plate.** A detail view is a stack of
+     these, so it must lock before Tier 1 can.
+  3. `prompts/prompt-05-container-overlay.md` — **panel · popup · ⋯ action menu.**
 - **Tier 0.2 — App shell** — 3-column yard grid, top bar, footer rail; decides how a row-expansion
   relates to the columns. *A first draft exists (parked) — it revealed the real tension: the detail
   view's horizontal section rail does NOT fit a ⅓-width column, so the shell must decide
@@ -66,9 +72,13 @@ the Inherit list, NOT from session continuity. Start a fresh Labs session per sc
 
 ## Files (all in the repo — durable)
 - `docs/design/rw-design-system/` — the kit: `tokens.css`, `foundations/`, `elements/`, `components/`.
-  **This is what gets `/design-sync`'d to Labs.**
-- `docs/design/atoms-canvas.html` — all atom families on one editable page (the review surface).
-- `docs/design/prompts/` — the Labs prompts written so far (atoms, detail views, shell).
+  **This is what gets `/design-sync`'d to Labs.** 13 preview cards — the consistency pass is applied,
+  and `elements/pin.html` is the new eighth atom.
+- `docs/design/atoms-canvas.html` — all atom families on one editable page (the review surface),
+  now including a Pins section.
+- `docs/design/prompts/` — the Labs prompts. `00` atoms · `01` detail views · `02` shell ·
+  `03/04/05` the three container prompts. Note the numbers are **creation order, not tier order** —
+  the tier sequence is in `labs-build-order.md`.
 - `docs/design/labs-build-order.md` — the framework + full build order.
 - `docs/design/reference/` — the ~16 earlier mockups (list views, trips, inbox, dashboard, funnel,
   inspection, intake…) + `decision-notes.md`. Still valid as design references.
@@ -85,6 +95,17 @@ the Inherit list, NOT from session continuity. Start a fresh Labs session per sc
   ancestor, run `git fetch --deepen=200 origin trunk` before believing it.
 
 ## Next action
-Design the **containers** (Tier 0.1) in Labs, starting with the **card frame + header + list row** —
-the anatomy shared by all 7 cards. Write the prompt with the three-part framework above, and put the
-locked atoms in its **Inherit** list.
+1. **`/design-sync` from a LOCAL session** against the patched kit, so Labs is grounded on the locked
+   atoms rather than the pre-pass ones. A cloud/web session cannot authorize this — that's expected.
+2. **Run `prompts/prompt-03-container-card.md`** in a fresh Labs session. Then 04, then 05.
+3. As each locks, fold the result into the kit, re-sync, and append it to the locked-elements
+   registry in `labs-build-order.md`.
+
+## Open questions for Jac
+- **Is Trips a card?** It has three reference mockups (`trips-card`, `trips-ledger`,
+  `trips-schedule`) but is **not** in the shipped registry (`config.js` → `GRID_CARDS`). The real
+  inventory is 5 grid cards + 6 back-office boards = 11 surfaces sharing the card anatomy. Worth
+  settling before Tier 2 starts, since it changes what the container has to serve.
+- **Archivo needs one line in `index.html`** whenever the redesign ships — adding it to the existing
+  Google Fonts `<link>`. Nothing in the kit change touches the live app, so this is a Tier-2/ship
+  concern, not a blocker now.
