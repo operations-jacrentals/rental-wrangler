@@ -219,6 +219,7 @@
   .radii-item{display:flex; flex-direction:column; align-items:center; gap:8px}
   .radii-box{width:84px; height:44px; background:var(--card-head); border:1.5px solid var(--accent)}
   .radii-box.chip{border-radius:var(--chip-radius)}
+  .radii-box.opener{border-radius:5px 5px 0 0}
   .radii-box.item{border-radius:var(--item-radius)}
   .radii-box.pill{border-radius:var(--pill-radius)}
   .radii-box.container{border-radius:var(--radius)}
@@ -267,7 +268,7 @@
 
   /* ======================================================================
      ATOM CONSISTENCY PASS — approved 2026-07-25 (rw-consistency-pass.css).
-     Three control shapes: state chips SQUARED · records ROUNDED · actions PILL.
+     Four control shapes: state SQUARED · openers TOP-ROUNDED · records ROUNDED · actions PILL.
      ====================================================================== */
   @supports (color: oklch(from red l c h)){
     :root{ --red-line: oklch(from var(--red) .74 .215 h); }
@@ -282,6 +283,13 @@
   /* C3/C17 · Ref: content size on the ladder + the item radius */
   .ref{font-size:13px; border-radius:var(--item-radius); padding:0 10px 0 3px}
   .ref__icon{border-radius:5px}
+
+
+  /* C21/C22 · the OPENER shape — a fourth control shape, earned only by the atoms that
+     open something: top corners rounded, bottom corners square, so the trigger reads as
+     the top half of an open menu. Toggles, Doors, Signals, Refs and Pins never take it. */
+  .gate{border-radius:5px 5px 0 0}
+  .field{border-radius:5px 5px 0 0}
 
   /* C5 · segment text is the ONE chip size, so a selected segment really is the
      filled Signal chip of its status */
@@ -342,12 +350,12 @@
   /* M7 · the status picker IS the segmented toggle, stacked. .menu is superseded
      as a picker; a menu of unrelated ACTIONS is a container, not an atom. */
   .seg--stack{flex-direction:column; height:auto; align-items:stretch; width:100%}
+  .seg--stack{border-radius:5px 5px var(--chip-radius) var(--chip-radius)}
+  .seg--stack__cap{border-radius:5px 5px 0 0; border-bottom:0}  /* C22 · accent header caps the top */
   .seg--stack .seg__opt{height:var(--h); flex:none; border-right:0;
     border-bottom:1px solid var(--line); justify-content:flex-start}
   .seg--stack .seg__opt:last-child{border-bottom:0}
   .seg--stack .seg__sw{width:8px; height:8px; border-radius:2px; flex:none; margin-right:8px}
-  .picker-head{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase;
-    color:var(--txt-3); padding:0 0 7px}
 
   /* N1 · PIN — the universal corner marker (new atom). Colour = state, fill = today,
      exactly like a Signal. 13px, deliberately OFF the 24px control ladder, and zero
@@ -394,7 +402,7 @@
     type icon + the name (body voice). Orange-marked = touchable. Not a status chip — walks across cards.</div>
 
   <div class="callout info"><b>Shape · updated 2026-07-25.</b> Refs take the <b>record radius</b>
-    <code>--item-radius: 8px</code> — rounded, not squared. That is the whole point of the three-shape rule: a
+    <code>--item-radius: 8px</code> — rounded, not squared. That is the whole point of the four-shape rule: a
     <b>squared</b> control is a state you read, a <b>rounded</b> one is a record you can open, and a <b>pill</b> is a
     verb you fire. A Ref is the only atom that links to another record, so it owns the rounded shape (shared only with
     <code>+Add</code>, which creates one).</div>

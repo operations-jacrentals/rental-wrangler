@@ -219,6 +219,7 @@
   .radii-item{display:flex; flex-direction:column; align-items:center; gap:8px}
   .radii-box{width:84px; height:44px; background:var(--card-head); border:1.5px solid var(--accent)}
   .radii-box.chip{border-radius:var(--chip-radius)}
+  .radii-box.opener{border-radius:5px 5px 0 0}
   .radii-box.item{border-radius:var(--item-radius)}
   .radii-box.pill{border-radius:var(--pill-radius)}
   .radii-box.container{border-radius:var(--radius)}
@@ -267,7 +268,7 @@
 
   /* ======================================================================
      ATOM CONSISTENCY PASS — approved 2026-07-25 (rw-consistency-pass.css).
-     Three control shapes: state chips SQUARED · records ROUNDED · actions PILL.
+     Four control shapes: state SQUARED · openers TOP-ROUNDED · records ROUNDED · actions PILL.
      ====================================================================== */
   @supports (color: oklch(from red l c h)){
     :root{ --red-line: oklch(from var(--red) .74 .215 h); }
@@ -282,6 +283,13 @@
   /* C3/C17 · Ref: content size on the ladder + the item radius */
   .ref{font-size:13px; border-radius:var(--item-radius); padding:0 10px 0 3px}
   .ref__icon{border-radius:5px}
+
+
+  /* C21/C22 · the OPENER shape — a fourth control shape, earned only by the atoms that
+     open something: top corners rounded, bottom corners square, so the trigger reads as
+     the top half of an open menu. Toggles, Doors, Signals, Refs and Pins never take it. */
+  .gate{border-radius:5px 5px 0 0}
+  .field{border-radius:5px 5px 0 0}
 
   /* C5 · segment text is the ONE chip size, so a selected segment really is the
      filled Signal chip of its status */
@@ -342,12 +350,12 @@
   /* M7 · the status picker IS the segmented toggle, stacked. .menu is superseded
      as a picker; a menu of unrelated ACTIONS is a container, not an atom. */
   .seg--stack{flex-direction:column; height:auto; align-items:stretch; width:100%}
+  .seg--stack{border-radius:5px 5px var(--chip-radius) var(--chip-radius)}
+  .seg--stack__cap{border-radius:5px 5px 0 0; border-bottom:0}  /* C22 · accent header caps the top */
   .seg--stack .seg__opt{height:var(--h); flex:none; border-right:0;
     border-bottom:1px solid var(--line); justify-content:flex-start}
   .seg--stack .seg__opt:last-child{border-bottom:0}
   .seg--stack .seg__sw{width:8px; height:8px; border-radius:2px; flex:none; margin-right:8px}
-  .picker-head{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase;
-    color:var(--txt-3); padding:0 0 7px}
 
   /* N1 · PIN — the universal corner marker (new atom). Colour = state, fill = today,
      exactly like a Signal. 13px, deliberately OFF the 24px control ladder, and zero
@@ -393,6 +401,18 @@
   <div class="callout"><b>Gate</b> — a Signal you can <b>turn</b>: the same chip plus a leading, optically-centred
     chevron that <b>hugs the text (≤2px gap)</b>. <b>No orange dot.</b> Opens a status picker.</div>
 
+  <div class="callout info"><b>Shape · the opener, added 2026-07-25.</b> A Gate no longer takes the squared chip
+    shape. It takes the <b>opener</b> — <code>border-radius: 5px 5px 0 0</code>, top corners rounded and bottom
+    corners square — so the trigger reads as the <em>top half of an already-open menu</em> and the picker drops out of
+    it against a flat edge. Only <b>Gate</b> and <b>Field</b> earn this shape. That is the whole difference between a
+    Gate and a Signal at a glance: same colour, same height, same word — but a Gate's silhouette says it opens.</div>
+
+  <div class="callout warn"><b>The picker is <code>.seg--stack</code>, not a menu.</b> The atom pass dropped
+    <code>.menu</code> as a status picker; the picker is now the segmented toggle, stacked vertically, capped by a
+    filled-accent header cell (<code>.seg--stack__cap</code>) that carries the opener shape so it sits flush under the
+    Gate. A menu of unrelated <em>actions</em> (⋯ → Duplicate · Export · Archive · Delete) is a different job
+    entirely, and is designed as a <b>container</b>, not an atom.</div>
+
   <section>
     <h2 class="sub">Canonical gates — turnable Waiting / turnable Do-now</h2>
     <div class="panel pad">
@@ -423,8 +443,8 @@
     <div class="row">
       <button type="button" class="gate gate--blue"><span class="gate__chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>on rent</button>
       <div style="width:190px">
-        <div class="picker-head">Move rental to…</div>
         <span class="seg seg--stack">
+          <span class="seg__opt seg__opt--on-accent seg--stack__cap">Move rental to…</span>
         <button type="button" class="seg__opt"><span class="seg__sw" style="background:var(--gray)"></span>Reserved</button>
         <button type="button" class="seg__opt seg__opt--on-blue"><span class="seg__sw" style="background:var(--blue)"></span>On Rent</button>
         <button type="button" class="seg__opt"><span class="seg__sw" style="background:var(--yellow)"></span>End Rent</button>

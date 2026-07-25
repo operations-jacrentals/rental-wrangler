@@ -36,7 +36,7 @@ worst state, and carries its own primary action — so a record's detail is noth
 - **All eight atom families.**
 - **The card frame, header and list row** from prompt 0.1a — a section may *contain* rows, and when
   it does it uses that exact row, not a variant.
-- **The three control shapes** and **`--radius: 14px`** for container corners.
+- **The four control shapes** and **`--radius: 14px`** for container corners.
 - **Rollup precedence** `red > yellow > blue > green > gray` — a collapsed section header shows the
   worst state inside it.
 - **The `--*-bg` tint tokens.** Outline chips gave up their tints in the atom pass, but **plates kept

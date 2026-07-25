@@ -19,7 +19,7 @@ Jac is reminded they're decided. Each screen approved adds its components to the
 - ✅ **Design system** — tokens, palette, type, Signal·Gate·Stamp·Ref·Door (synced to Labs).
 - ✅ **Atoms — LOCKED 2026-07-25.** All eight families, including the new **Pin**. The approved
   consistency pass is applied to the kit itself (`rw-consistency-pass.css` stays as the record of
-  what was decided): three control shapes, Archivo body voice, true-outline chips, `.menu` dropped
+  what was decided): four control shapes, Archivo body voice, true-outline chips, `.menu` dropped
   as a picker, uniform hover/focus/press, real `<button>`s.
 - ⏳ **Containers (Tier 0.1)** — prompts written, not yet run. Card frame · header · list row →
   section plate → panel · popup · ⋯ menu.

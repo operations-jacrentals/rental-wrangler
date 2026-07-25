@@ -20,10 +20,13 @@ borrows a status hue to mean "click me."
 Every file here carries the approved pass from `../rw-consistency-pass.css` (kept as the source
 record of what was decided). What changed:
 
-- **Three control shapes, one per family.** State chips **squared** (`--chip-radius: 2px`), records
-  **rounded** (`--item-radius: 8px` — Ref and `+Add`), actions **pill** (`--pill-radius` — Doors and
-  nothing else). This **supersedes** the old "two radii / one 7px chip radius" line in the `style`
-  skill; that canon is stale.
+- **Four control shapes, one per family.** State chips **squared** (`--chip-radius: 2px`), **openers**
+  top-rounded (`5px 5px 0 0` — Gate and Field, so a trigger reads as the top half of an already-open
+  menu), records **rounded** (`--item-radius: 8px` — Ref and `+Add`), actions **pill**
+  (`--pill-radius` — Doors and nothing else). This **supersedes** the old "two radii / one 7px chip
+  radius" line in the `style` skill; that canon is stale. Rejected for the opener shape on purpose:
+  `.plate` / `.plate__head` (a container on `--radius`, not an inline control), `.door` (actions
+  never open), `.seg` (a toggle switches, it does not open).
 - **Body voice is Archivo**, loaded via the Google Fonts `<link>` in each file's `<head>` (fonts are
   CDN-loaded, never bundled). `--font-mono` is unchanged.
 - **Outline chips are true outlines** — transparent + 1px border in the status hue. The `--*-bg`

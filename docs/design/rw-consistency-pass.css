@@ -53,6 +53,12 @@
 .ref{font-size:13px; border-radius:var(--item-radius); padding:0 10px 0 3px}
 .ref__icon{border-radius:5px}
 
+/* C21/C22 · the OPENER shape — a fourth control shape, earned only by the atoms that
+   open something: top corners rounded, bottom corners square, so the trigger reads as
+   the top half of an open menu. Toggles, Doors, Signals, Refs and Pins never take it. */
+.gate{border-radius:5px 5px 0 0}
+.field{border-radius:5px 5px 0 0}
+
 /* C5 · segment text is the ONE chip size, so a selected segment really is the
    filled Signal chip of its status */
 .seg__opt{font-size:11px; letter-spacing:.05em}
@@ -123,6 +129,7 @@ button.seg__opt{border-top:0; border-bottom:0; border-left:0}
 /* M7 · the status picker IS the segmented toggle, stacked. Header cell is the same
    shape filled accent (border-bottom:0 so it sits flush on the stack). */
 .seg--stack{flex-direction:column; height:auto; align-items:stretch; width:100%}
+.seg--stack__cap{border-radius:5px 5px 0 0; border-bottom:0}  /* C22 · accent header caps the top */
 .seg--stack .seg__opt{height:var(--h); flex:none; border-right:0;
   border-bottom:1px solid var(--line); justify-content:flex-start}
 .seg--stack .seg__opt:last-child{border-bottom:0}
@@ -170,6 +177,11 @@ button.seg__opt{border-top:0; border-bottom:0; border-left:0}
    3. Doors are the only atom on --pill-radius. Nothing else may take it.
    4. Font: add Archivo woff2 to fonts/ (weights 400–800) alongside Geist, or the
       Google Fonts link; --font-mono is untouched.
-   5. Docs to update: Signal (outline is a border now), Ref + Door (three radii),
-      Sizing (add --item-radius, the 13px pin, the 24px control law), and a new
-      Pin page. Chips page: green stays filled-only for live status. */
+   5. Opener-shape audit (C21/C22): .gate and .field take it; .seg--stack__cap caps the top of the panel; the
+      panel's own bottom corners stay on --chip-radius (unchanged by request). Considered and REJECTED: .plate/.plate__head (a collapsible
+      section header, but it is a container on --radius, not an inline control — giving
+      it the opener shape would put container and control on one language); .door
+      (actions never open); .seg (a toggle switches, it does not open).
+   6. Docs to update: Signal (outline is a border now), Ref + Door (three radii),
+      Sizing (add --item-radius, the opener shape, the 13px pin, the 24px control law),
+      Gate + Fields (the opener shape), and a new Pin page. Chips page: green stays filled-only for live status. */

@@ -5,7 +5,7 @@ whole build order: the frame, its header, and the repeated row are the anatomy *
 app shares**. Get these three right and eleven surfaces are 80% designed.
 
 **Attach from the `rw-design-system` folder** — the locked atoms this must be built out of:
-`foundations/spacing.html` (the 24px control law + the three radii) · `elements/signal.html` ·
+`foundations/spacing.html` (the 24px control law + the four control shapes) · `elements/signal.html` ·
 `elements/gate.html` · `elements/stamp.html` · `elements/ref.html` · `elements/pin.html` ·
 `elements/door.html` · `components/section-plate.html` (for the header grammar only).
 
@@ -37,8 +37,9 @@ every card in the app is the same object with different contents.
 
 ## ♻️ Inherit (locked — reuse verbatim)
 - **All eight atom families**, exactly as they render in the attached kit.
-- **The three control shapes:** state chips **squared** (2px), records **rounded** (8px), actions
-  **pill** — and `--radius: 14px` for containers, which is what the card frame itself takes.
+- **The four control shapes:** state chips **squared** (2px), openers **top-rounded** (`5px 5px 0 0` —
+  Gate and Field only), records **rounded** (8px), actions **pill** (Doors only) — and `--radius: 14px`
+  for containers, which is what the card frame itself takes.
 - **The 24px control law.** Every control in a row is 24px on one baseline. The **Pin** at 13px is
   the single exception, and it is the tool for marking a row or header without consuming a slot.
 - **Rollup precedence:** `red > yellow > blue > green > gray`. A header never shows calm while

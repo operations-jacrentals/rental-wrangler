@@ -33,7 +33,7 @@ nothing floating above a screen is ever invented on the spot.
 - **All eight atom families.**
 - **The card frame, header and list row** (0.1a) and **the section plate** (0.1b) — a popup that
   shows a list shows *the* list row; a panel that groups fields uses *the* plate.
-- **The three control shapes** and **`--radius: 14px`** for container corners.
+- **The four control shapes** and **`--radius: 14px`** for container corners.
 - **Door taxonomy** — commit · +Add · money · destroy · ghost. A popup's footer is built from these
   and nothing else, and the pill silhouette stays Doors-only.
 

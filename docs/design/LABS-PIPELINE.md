@@ -54,9 +54,12 @@ the Inherit list, NOT from session continuity. Start a fresh Labs session per sc
 - **The palette/type tokens** — the `html.dv2` redesign set in `style.css` (CVD-tuned; `--yellow:#eed44b`,
   `--red:#ff4242`, `--blue:#6394cc`, `--commit:#2f6fd0`, `--accent:#ff7e1f`).
 - **Atoms consistency pass (2026-07-25)** — applied to the kit from Jac's Labs review:
-  - **Three control shapes, one per family** — state chips **squared** (`--chip-radius:2px`), records
-    **rounded** (`--item-radius:8px`), actions **pill** (Doors only). ⚠️ This SUPERSEDES the old
-    "two radii / one 7px chip radius" line in the `style` skill — that canon is now stale.
+  - **Four control shapes, one per family** — state chips **squared** (`--chip-radius:2px`), openers
+    **top-rounded** (`5px 5px 0 0` — Gate and Field only, so a trigger reads as the top half of an
+    open menu), records **rounded** (`--item-radius:8px`), actions **pill** (Doors only). ⚠️ This
+    SUPERSEDES the old "two radii / one 7px chip radius" line in the `style` skill — that canon is
+    now stale. Rejected on purpose: `.plate` (a container, not a control), `.door` (actions never
+    open), `.seg` (a toggle switches, it does not open).
   - **Body voice = Archivo** (mono voice unchanged). Loaded via the Google Fonts `<link>` in
     `index.html` (fonts are CDN-loaded, NOT bundled — adding Archivo is a one-line change).
   - **Outline chips are TRUE outlines** — transparent bg + 1px border in the status hue (the ten
