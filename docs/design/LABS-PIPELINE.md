@@ -35,7 +35,7 @@ the Inherit list, NOT from session continuity. Start a fresh Labs session per sc
 - **Tier 0.1 — Containers** ← **CURRENT.** Prompts are **written**; none has been run in Labs yet.
   Run them in this order, each its own Labs session:
   1. `prompts/prompt-03-container-card.md` — **card frame · header · list row.** The most
-     load-bearing prompt in the build order: eleven surfaces share this anatomy.
+     load-bearing prompt in the build order: twelve surfaces share this anatomy.
   2. `prompts/prompt-04-container-section.md` — **section / plate.** A detail view is a stack of
      these, so it must lock before Tier 1 can.
   3. `prompts/prompt-05-container-overlay.md` — **panel · popup · ⋯ action menu.**
@@ -46,7 +46,8 @@ the Inherit list, NOT from session continuity. Start a fresh Labs session per sc
 - **Tier 1 — Detail view** — bounded height + section rail that pages one section at a time, each rail
   chip carrying its rolled-up Signal + primary Door, History pinned. *A first draft exists (parked)
   and PROVED the model works; it locks once it sits inside the approved shell.*
-- **Tier 2 — Per-card content** — Units · Rentals (calendar-anchored) · Customers · Trips · Invoices…
+- **Tier 2 — Per-card content** — the twelve surfaces: Units · Rentals (calendar-anchored) ·
+  Customers · Invoices · Categories · Trips · the six back-office boards.
 - **Tier 3 — Cross-cutting** — item/comms tabs · footer-rail open chats · notifications/toasts ·
   settings boards · creation flows/wizards · empty+loading+login+mobile reflow.
 
@@ -104,11 +105,14 @@ the Inherit list, NOT from session continuity. Start a fresh Labs session per sc
 3. As each locks, fold the result into the kit, re-sync, and append it to the locked-elements
    registry in `labs-build-order.md`.
 
+## Settled + carried
+- **Trips IS a card** (Jac, 2026-07-25). The card anatomy serves **twelve** surfaces: 5 grid cards +
+  6 back-office boards + Trips. Trips has no `GRID_CARDS` / `BACKOFFICE_BOARDS` entry yet — only its
+  three reference mockups — so **adding the registry row is queued app work for Tier 2**, not part
+  of the Labs pass. It is the useful stress test for the row grammar: time-anchored, so its rows
+  carry *when* as prominently as *what*.
+
 ## Open questions for Jac
-- **Is Trips a card?** It has three reference mockups (`trips-card`, `trips-ledger`,
-  `trips-schedule`) but is **not** in the shipped registry (`config.js` → `GRID_CARDS`). The real
-  inventory is 5 grid cards + 6 back-office boards = 11 surfaces sharing the card anatomy. Worth
-  settling before Tier 2 starts, since it changes what the container has to serve.
 - **Archivo needs one line in `index.html`** whenever the redesign ships — adding it to the existing
   Google Fonts `<link>`. Nothing in the kit change touches the live app, so this is a Tier-2/ship
   concern, not a blocker now.

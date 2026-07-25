@@ -43,12 +43,16 @@ Jac is reminded they're decided. Each screen approved adds its components to the
      Archive · Delete) is a different job and a *container*, not an atom — designed here so it
      never gets improvised mid-screen.
 
-> **Card count correction (2026-07-25).** The "all 7 cards" line above was stale. The shipped
-> registry (`config.js` → `GRID_CARDS`, `BACKOFFICE_BOARDS`) is **5 grid cards** — Units ·
-> Categories · Rentals · Invoices · Customers — plus **6 back-office boards** — Parts · Vendors ·
-> Expenses & Receipts · Company Files · Collections · Sales Pipeline. The Shop card was retired
-> 2026-07-07. **Trips** has three reference mockups but is *not* in the registry — confirm with Jac
-> whether it becomes a twelfth surface before Tier 2 starts.
+> **Card count correction (2026-07-25).** The "all 7 cards" line above was stale. The card anatomy
+> is shared by **twelve** surfaces: **5 grid cards** (`config.js` → `GRID_CARDS`) — Units ·
+> Categories · Rentals · Invoices · Customers — plus **6 back-office boards**
+> (`BACKOFFICE_BOARDS`) — Parts · Vendors · Expenses & Receipts · Company Files · Collections ·
+> Sales Pipeline — plus **Trips**, confirmed by Jac 2026-07-25. The Shop card was retired
+> 2026-07-07 (its three entity types moved inside each Unit's detail view).
+>
+> **Trips needs a registry entry.** It is in scope for the container and for Tier 2, but it has no
+> `GRID_CARDS` / `BACKOFFICE_BOARDS` row yet — only the three reference mockups. Adding it is app
+> work, not design work; it is queued for whoever builds Tier 2, not for the Labs pass.
 
 **Tier 0.2 — THE SHELL (composes the locked containers):**
 4. **App shell** → `prompts/prompt-02-shell.md`. 3-column yard grid, top bar, footer rail. Decides

@@ -2,7 +2,7 @@
 
 **Tier 0.1 — containers.** This is the first container prompt and the most load-bearing one in the
 whole build order: the frame, its header, and the repeated row are the anatomy **every card in the
-app shares**. Get these three right and eleven surfaces are 80% designed.
+app shares**. Get these three right and twelve surfaces are 80% designed.
 
 **Attach from the `rw-design-system` folder** — the locked atoms this must be built out of:
 `foundations/spacing.html` (the 24px control law + the four control shapes) · `elements/signal.html` ·
@@ -58,7 +58,7 @@ The cap that says what this card is and what is wrong inside it. It has to carry
 constant-height band: the card's **name**, a **count**, the **rolled-up worst state** of everything
 inside, a **filter/segment control**, and a **primary action**. Decide the order, what survives when
 the card is narrow, and what happens to the header when the body is scrolled. This header appears on
-all eleven surfaces below — design it as a system, not a one-off.
+all twelve surfaces below — design it as a system, not a one-off.
 
 ### 3. The list row
 The unit that repeats. Design the **collapsed** row and its **states**: default, hover, focused,
@@ -74,15 +74,23 @@ selected, expanded-parent, and the row that is on fire. Decide:
   three, and when a value is missing entirely.
 
 ## Grounding — the real inventory
-This container is shared by **five grid cards** — Units · Categories · Rentals · Invoices ·
-Customers — and **six back-office boards** — Parts · Vendors · Expenses & Receipts · Company Files ·
-Collections · Sales Pipeline. Eleven surfaces, one frame.
+This container is shared by **twelve surfaces**:
+- **Five grid cards** — Units · Categories · Rentals · Invoices · Customers.
+- **Six back-office boards** — Parts · Vendors · Expenses & Receipts · Company Files · Collections ·
+  Sales Pipeline.
+- **Trips** — confirmed by Jac 2026-07-25 as a twelfth surface. It is not yet in the shipped card
+  registry, but it has three reference mockups (`trips-card.html`, `trips-ledger.html`,
+  `trips-schedule.html`) and it **is** in scope for this container.
 
-> **Note for Jac:** the build order says "all 7 cards." That number is stale. The Shop card was
-> retired 2026-07-07 (Work Orders / Service Orders / Inspections moved inside each Unit's detail
-> view), and **Trips** — which has three reference mockups — is not in the shipped card registry.
-> The real count is 5 grid cards + 6 back-office boards. Worth confirming whether Trips is meant to
-> become a twelfth surface before Tier 2 starts.
+Trips is the useful stress test here, because it is the least list-shaped of the twelve: it is
+time-anchored (a schedule and an ETA ledger, not a static roster), so its rows carry *when* as
+prominently as *what*. **If the row grammar can seat a departure time and an ETA without a special
+case, it will seat anything the other eleven throw at it.** Check the row design against
+`trips-ledger.html` before calling it done — but design the general row, not a Trips row.
+
+> The build order used to say "all 7 cards." That number was stale: the Shop card was retired
+> 2026-07-07 (Work Orders / Service Orders / Inspections moved inside each Unit's detail view).
+> Corrected to twelve.
 
 ## The test each artifact has to pass
 Put the three together and ask the yard question: **a tired dispatcher glances at this card for two
