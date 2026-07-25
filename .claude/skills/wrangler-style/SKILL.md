@@ -4,11 +4,14 @@ description: >-
   The DECISIONS home for Rental Wrangler's UI — the hard brand/design picks that
   the `style` skill's numbers constrain. This is the true replacement for the old
   jactec-ui skill. Holds the locked steel palette (exact hexes, dark + light), the
-  two type voices, the button taxonomy, the Signal · Gate · Stamp · Ref · Door
-  component vocabulary, the kept-structure layout rules, and the restrained
-  wrangler/ranch voice. Reach for it whenever you build or restyle ANY UI to look
-  up "which colour / which font / how does a chip/gate/stamp/ref/door look / what's
-  our voice". ALWAYS pair it with `style` (the measurable rulebook): every UI
+  two type voices (Archivo body · mono stamped), the FOUR control shapes (squared
+  state · opener · rounded record · pill action), the button taxonomy, the
+  Signal · Gate · Stamp · Ref · Door · Pin · Field component vocabulary, the
+  uniform hover/focus/press rules, the kept-structure layout rules, and the
+  restrained wrangler/ranch voice. Reach for it whenever you build or restyle ANY
+  UI to look up "which colour / which font / which radius / how does a
+  chip/gate/stamp/ref/door/pin look / what's our voice". ALWAYS pair it with
+  `style` (the measurable rulebook): every UI
   decision here must also pass style's numbers, and when a decision and a rule
   conflict, the decision moves — not the rule.
 ---
@@ -36,6 +39,8 @@ Text      --txt #eef2f7 · --txt-2 #aab4c1 · --txt-3 #838e9c
 Accent    --accent #ff7e1f · --on-orange #1a1205   (safety orange; dark ink ALWAYS)
 Status    --green #34d399 · --yellow #eed44b · --red #ff4242 · --red-fill #d63636
           --blue #6394cc · --gray #8b94a3 · --on-red-fill #fdfdfd
+          --red-line  = color-mix(in oklch, var(--red) 78%, var(--txt))
+                        (oklch(from --red .74 .215 h) where supported)
 Action    --commit #2f6fd0 · --on-commit #fdfdfd   (deep blue: Save / +Add / write)
 Leather   --tan #c2925a      (wrangler seasoning — tiny touches only)
 ```
@@ -60,6 +65,12 @@ blocks + pure `#fff` inside them — **strip them on build.**
   separation; softening more breaks green — `#eed44b` is the floor. (Amber `#e0b13a` = 77,
   failed. Jac is colour-blind — this is a gate, don't dim past it.)
 - **`--blue #6394cc`** — muted so it stops fighting the orange (soften-complements).
+- **`--red-line`** (added 2026-07-25 with the atom pass) — the red for **outline** chips.
+  When outline chips lost their tinted backfill (§3), bright `--red #ff4242` on bare
+  `--panel` sat too low to read comfortably; `--red-line` lifts lightness at full chroma to
+  clear ~6:1. **This is not a new colour** under the frozen-palette rule — it is `--red`
+  *derived* (a `color-mix`, refined to `oklch` where supported), so it adds no new hue to
+  the vocabulary and cascades automatically if `--red` ever changes.
 
 **Neutral-text floor (`--txt-3`):** nudged `#717b89` → **`#838e9c`** — the old value read
 only **3.78–4.20** against `--card`/`--card-head` as body text, failing the 4.5 floor. The
@@ -91,9 +102,15 @@ that needs a Signal/Stamp/icon distinction instead — solve it in the component
   "SF Mono", Menlo, Consolas, monospace`), UPPERCASE, ~0.03–0.06em tracking, 700–800.
   Used for: section/field **labels**, **chips** (Signal/Gate/Stamp), KPI micro-labels,
   the eyebrow. (This is the crisp "data-plate stamp" look Jac keeps — not Saira.)
-- **Body voice** — a clean **system sans** (`-apple-system, "Segoe UI", Roboto,
-  system-ui, sans-serif`). Record **names** are body-voice **bold, sentence-case**
-  (not caps). Values / prose are body-voice regular.
+- **Body voice — `Archivo`** (locked 2026-07-25, atom pass): `"Archivo", "Helvetica Neue",
+  -apple-system, "Segoe UI", sans-serif`. A grotesque with a taller x-height and squarer
+  terminals than the system stack or the earlier `Geist` — it holds up better at 12–13px on
+  the dark panels, and sits closer to the stamped mono voice than a humanist face does.
+  Record **names** are body-voice **bold, sentence-case** (not caps); values / prose are
+  body-voice regular.
+  **Fonts are CDN-loaded, never bundled** — shipping this is one line in the Google Fonts
+  `<link>` in `index.html` (weights 400;500;600;700;800). *(Not yet in the shipped app —
+  it lands with the redesign; the design-system kit already loads it.)*
 - **Numbers / IDs / timestamps** — monospace, tabular (`font-variant-numeric:tabular-nums`).
 - Never a third family.
 
@@ -103,18 +120,65 @@ that needs a Signal/Stamp/icon distinction instead — solve it in the component
 = *touchable* · deep-blue `--commit` = *commit* · everything else = plain honest text.
 Nothing ever does two jobs — that's the whole reason Signal, Ref, and Door don't collide.
 
+### 3.0 The four control shapes (locked 2026-07-25 — this is our answer to `style` §1)
+
+Shape carries the **family**, so a control's silhouette says what kind of thing it is before
+colour or text does. **This supersedes the old "two radii / one 7px chip radius" line** —
+that partition couldn't tell a trigger from a record from plain state.
+
+| Token | Value | Family | Who takes it |
+|---|---|---|---|
+| `--chip-radius` | **2px** — squared | **state you read** | Signal · Seg |
+| *(the opener)* | **5px 5px 0 0** | **trigger that opens** | Gate · Field |
+| `--item-radius` | **8px** — rounded | **record you open** | Ref · `+Add` |
+| `--pill-radius` | **999px** — pill | **verb you fire** | **Door, and nothing else** |
+| `--radius` | **14px** | *container, not a control* | cards · panels · plates |
+
+- **The opener** — top corners rounded, bottom square — reads as the *top half of an
+  already-open menu*, so the panel it drops lands flush against a flat edge. The stacked
+  status picker is capped by `.seg--stack__cap`, which wears the same shape.
+- **Considered and rejected for the opener, on purpose:** `.plate` / `.plate__head` (it
+  collapses, but it is a **container** on `--radius` — giving it a control shape would put
+  container and control in one language) · `.door` (actions never *open*) · `.seg`
+  (a toggle **switches**, it does not open).
+- **Nothing but a Door may take `--pill-radius`.** The one Door that isn't a pill is
+  **`+Add`**: it *creates a record*, so it rides the Ref pattern instead — `--item-radius`,
+  with the plus in the same square icon holder a Ref uses, keeping its dashed `--commit` border.
+
 - **Signal** — coloured chip, read-only state; **colour = state, fill = today**;
-  radius 7 (the ONE chip radius — see note); dark ink on fill (filled red = `--red-fill`
+  **squared** (`--chip-radius` 2px, §3.0); dark ink on fill (filled red = `--red-fill`
   + `--on-red-fill` ink). Three-tier read: **(1) colour + fill** = the instant
   at-a-glance state, **(2) the word on the chip** = what it is, **(3) hover / Tab-focus /
   long-press** = *why* and *what it stops*. Click → teleport to source.
+  **Outline = a TRUE outline** (2026-07-25): transparent background + a 1px border in the
+  status hue — **no tint backfill**. The old `--*-bg` tints read as a third, muddier fill
+  state instead of an honest "same state, not today"; the tokens stay (plates still use
+  them), they just no longer back a chip. Outlined red uses **`--red-line`**, not `--red`.
+  **Green is filled-only** for live status: green is a *completion*, only ever true today —
+  tomorrow the thing isn't "less green," it's done and ages to **gray**. An outlined green
+  chip would name a state the app doesn't have.
 - **Gate** — a Signal + a **leading, optically-centred SVG chevron that hugs the text**
-  (≤2px gap). **No orange dot.** Opens a status picker.
+  (≤2px gap). **No orange dot.** Takes the **opener** shape (§3.0) — that silhouette, plus
+  the chevron, is what tells a Gate from a Signal at a glance: same colour, same height,
+  same word, but a Gate's shape says it opens.
+  **Its picker is `.seg--stack`, not a menu** (2026-07-25): the segmented toggle stacked
+  vertically, capped by a filled-accent header cell. A menu of *unrelated verbs*
+  (⋯ → Duplicate · Export · Archive · Delete) is a different job and is a **container**,
+  not an atom — see the Tier 0.1 container prompts.
+- **Pin** — the universal **corner marker** (new atom, 2026-07-25). Colour = state, fill =
+  today, exactly like a Signal, but it rides the **top-right corner of another control**
+  instead of taking a slot in the row. **13px — deliberately off the 24px control ladder**,
+  because it is not a control; it is a marker *on* one. **Zero layout footprint**:
+  absolutely positioned, no margin, no reserved space — nothing moves when it appears or
+  disappears. Content is a count, a countdown, a day/date, or a type icon. Hover explains,
+  click teleports. **One host, one pin** — two pins means the host is doing two jobs.
+  If a marker needs its own slot in a row, it's a **Signal**, not a Pin.
 - **Stamp** — a plain fact: **chip text, no box, no colour** (`--txt-3`), stamped
   voice. Sits beside a Signal as its quiet sibling. Budget overflow → `+N` (accent).
 - **Ref** — a linked record: square **accent-tinted backing holding the parent's
-  Lucide icon** + the name (body voice); radius 7 (its square shape + accent tint carry
-  its distinction, not a different radius — chips use ONE radius); orange-marked = touchable. Not a
+  Lucide icon** + the name (body voice); **rounded** (`--item-radius` 8px, §3.0 — a Ref is
+  the only atom that links to another record, so it owns the record shape, shared only with
+  `+Add`, which creates one); orange-marked = touchable. Not a
   status chip. Walks across cards. **EVERY linked record is a Ref, everywhere its name/ID
   appears** — unit · customer · rental · invoice · category — including a card's **own
   title/header**, not just inline body references; **never plain text**. The icon is that
@@ -122,8 +186,12 @@ Nothing ever does two jobs — that's the whole reason Signal, Ref, and Door don
   generic user icon for all** (a shared `ref()` that hardcodes the user glyph is the bug).
   *(Confirmed drift 2026-07-21: card titles + unit/invoice sub-rows rendered as plain text
   on list-views/detail-views — the same miss caught on Trips.)*
-- **Door** — a verb action, **radii = pill (999)**:
-  - **Commit / create** → deep blue `--commit` (Save = solid; `+Add` = dashed outline).
+- **Field** — a select-style input. Takes the **opener** shape (§3.0) because it *opens*
+  something; its dropdown lands flush against the flat bottom edge. Shares that shape with
+  the Gate and nothing else.
+- **Door** — a verb action, **pill (999) — the only atom allowed on `--pill-radius`**:
+  - **Commit / create** → deep blue `--commit` (Save = solid; `+Add` = dashed outline —
+    and `+Add` is the one Door **not** on the pill: it rides the Ref pattern, §3.0).
   - **Takes money** → green. **Destructive-confirm** → red.
   - **The one quiet Cancel/Close** → **ghost** (transparent, `--line` border).
   - **Toggle active segment** → the **filled Signal chip** of the selected option's status
@@ -135,6 +203,25 @@ Nothing ever does two jobs — that's the whole reason Signal, Ref, and Door don
 - **Contact** — show the **phone number itself** as the `tel:` link (readable on
   desktop, tappable on mobile); email likewise. Honest-affordance: tappable ⇒ looks
   it; not ⇒ plain text. No fake hover-underlines.
+
+### 3.1 Interaction — one behaviour for every atom (locked 2026-07-25)
+
+- **One hover: an accent ring drawn OUTSIDE the element** (`outline` + `outline-offset`), so
+  no atom's own border, fill or size changes and **nothing in the layout moves**. On a
+  segmented toggle the ring goes around the **track**, never a single cell.
+- **One focus ring** — `--accent-line`, same geometry, for every tappable atom.
+- **Press dips the fill** (`brightness(.94)`) on filled tappables only.
+- **Hover *ink*** is reserved for atoms that **navigate or switch** (Ref, Contact, an unselected
+  segment) — never for atoms that merely report.
+- **Every tappable atom is a real `<button type="button">`** (or an `<a>` when it genuinely
+  navigates). Read-only atoms — Signal, Stamp, dead text — carry `cursor: default` so they
+  admit it.
+- **No atom shrinks or wraps inside a flex row** (`flex: none; white-space: nowrap`) — that
+  is what keeps a mixed row on one 24px band instead of collapsing into a ransom note.
+- **State-pair toggle → `.seg--state`**: the live side is the **filled Signal chip of its
+  status**, the other side is the **secondary outline in ITS OWN hue** (e.g. Insured green /
+  Uninsured red). Neutral pairs (do-now / later) and no-status pairs (details / activity,
+  orange) stay plain.
 - **Ledger** (Trips ETA-Tracker; Jac 2026-07-21) — a trip renders as a **dispatch-book
   ledger**, not a card: a list of stop rows joined by a connector spine. Borrows the
   **register / carbon-dispatch-ticket** look **as a LAYOUT only** — it is built from the
@@ -215,6 +302,11 @@ Nothing ever does two jobs — that's the whole reason Signal, Ref, and Door don
 - **Signature motif** — we did **not** re-adopt jactec-ui's hazard-stripe + rivets by
   default. If we want one bold signature beat, decide it here fresh. (Current builds
   are clean matte plates.)
+- **Containers (Tier 0.1) are being designed now, not decided yet** — card frame · header ·
+  list row · section plate · panel · popup · the ⋯ action menu. Prompts are written
+  (`docs/design/prompts/prompt-03/04/05-container-*.md`); each locks on Jac's approval in
+  Design Labs and gets recorded here. **Until then, don't improvise a container** — if a
+  build needs one before it's locked, ask.
 - **Commit-blue exact** — `#2f6fd0` chosen (near-white ink `--on-commit #fdfdfd` clears
   AA **4.80**); revisit if it reads too close to `--blue`.
 - Any new colour/font/component decision gets **added here**, then re-checked against
