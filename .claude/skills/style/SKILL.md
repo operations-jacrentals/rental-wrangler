@@ -1,34 +1,41 @@
 ---
 name: style
 description: >-
-  The MEASURABLE rulebook for Rental Wrangler's UI — numerical rules and
-  guidelines that any control, chip, section, form row, or layout must satisfy,
-  so elements read as one family. It does NOT pick fonts or hex values (those are
-  design decisions that live in the app tokens / style.css and can change) — it
-  gives the numbers those decisions must hit: one control height, one baseline,
-  the size ladder, two radii, weight-with-a-reason, WCAG contrast floors, the
+  The MEASURABLE rulebook for UI — project-agnostic numerical rules and guidelines
+  that any control, chip, section, form row, or layout must satisfy, so elements
+  read as one family. It does NOT pick fonts or hex values (those are design
+  decisions that live in a project's tokens and can change) — it gives the numbers
+  those decisions must hit: one control height, one baseline, the size ladder,
+  one shape per control family, weight-with-a-reason, WCAG contrast floors, the
   colour-blind separation threshold, the 60-30-10 accent budget, and the two
   state functions (colour = state, fill = today). Reach for it on "line these up",
   "is this readable", "which two colours are too close", "make this a proper
   chip/gate/stamp", "why does this look unaligned". The brand *decisions* (the
-  specific typefaces, the accent hex, any signature) live in style.css tokens and
-  are free to change; this skill only enforces the measurable constraints on them.
+  specific typefaces, the accent hex, any signature) live in the project's tokens
+  and are free to change; this skill only enforces the measurable constraints on
+  them. For Rental Wrangler, pair it with `wrangler-style`, which holds those
+  decisions.
 ---
 
 # Style — numerical rules & guidelines
 
 This skill is a **rulebook, not a decision-maker.** It never says "use this font"
-or "use this orange" — those are design decisions that live in `style.css` tokens,
+or "use this orange" — those are design decisions that live in a project's tokens,
 and they're allowed to change. This skill
 says **what numbers any such decision has to satisfy** so the result reads as one
 intentional system instead of chaos. Every rule below is checkable — with a ruler,
 a ratio function, or a simulation — not by eye.
 
+**It is deliberately project-agnostic.** Nothing here names a hex, a typeface, or a
+product. The rules are guidelines that any UI can be held to; a project supplies the
+values and its own component vocabulary.
+
 **Division of labour:** the **brand decisions** — which typefaces, the palette, the
-component looks, any signature, the voice — live in the **`wrangler-style`** skill
-(with the app's `style.css` / `app.js` as the implementation). **This skill** holds
-the measurable *constraints* those decisions must pass. Run **both** on any UI; when
-a decision and a rule conflict, the decision moves — not the rule.
+component looks, any signature, the voice — live in a project's decisions skill (for
+Rental Wrangler that's **`wrangler-style`**, with `style.css` / `app.js` as the
+implementation). **This skill** holds the measurable *constraints* those decisions
+must pass. Run **both** on any UI; when a decision and a rule conflict, the decision
+moves — not the rule.
 
 ---
 
@@ -42,8 +49,25 @@ a decision and a rule conflict, the decision moves — not the rule.
 - **One size ladder.** Text sizes come from a fixed set only — e.g.
   **28 · 15 · 13 · 12 · 11 · 10 · 9.5 px** (value · title · content · field · label
   & every chip · small · finest). **No value off the ladder.** A badge is 11, always.
-- **Two radii.** **Actions = pill (999).** **Statuses = chip (one small value,
-  ~5–8).** Exactly two families of radius; shape signals action-vs-state pre-read.
+- **One shape per control family — and never shared.** Give each *family* of inline
+  control its own radius, so a control's **silhouette** answers "what kind of thing is
+  this?" before colour or text does. The rule is the **partition**, not the numbers:
+  every family owns exactly one radius, no family borrows another's, and the count stays
+  **small (3–5)** — past that, shape stops being a signal and becomes noise.
+  A working set, by what the control *does*:
+  | Family | Shape | Reads as |
+  |---|---|---|
+  | **State** you read | squared (~0–3) | a flat plate of information |
+  | **Opener** that reveals something | top corners rounded, bottom square (~5 5 0 0) | the top half of an already-open panel |
+  | **Record** you can open | rounded (~6–10) | an object with an identity |
+  | **Action** you fire | pill (999) | a button, unmistakably |
+  Which family takes which radius — and whether a project needs the opener at all — is a
+  **decision**, not a rule. Two constraints bind it: the **container** radius (cards,
+  panels, sheets) is a *separate* value that must not collide with any control radius, and
+  a shape only earns a slot if it maps to a distinct **behaviour** — not a distinct look.
+  *(Supersedes the earlier "exactly two radii — pill for actions, chip for statuses" line;
+  that partition was too coarse once triggers and records both needed to be distinguishable
+  from plain state.)*
 - **Weight has a reason — cap the weights.** At most **three** used: **bold** = a
   name or a value you read · one **stamped** weight = labels · **regular** = the
   rest. If something's bold, it's because it carries meaning. Never "bold for feel."
@@ -78,8 +102,8 @@ colour-vision deficiency (≈8% of men). Test it, don't trust normal-vision eyes
 - Simulate **deuteranopia + protanopia** (Machado-2009 severity-1.0 matrices,
   applied to sRGB) and require **Euclidean RGB distance ≥ 90** between the pair,
   under **both** simulations.
-- Data point that set the line: our amber-yellow vs orange scored **77** (too
-  close — reported as confusable) and the fix landed at **103**. So: **77 fails,
+- Data point that set the line: a real amber-yellow vs orange pair scored **77** — reported
+  as confusable by a colour-blind user — and the fix landed at **103**. So: **77 fails,
   ≥90 is the floor, ~100+ is comfortable.**
 - Prefer separating by **lightness** as well as hue — lightness survives CVD; hue
   often doesn't.
@@ -113,23 +137,24 @@ protan = [[0.152,1.053,-0.205],[0.115,0.786,0.099],[-0.004,-0.048,1.052]]
   hoc per renderer: **red > yellow > blue > green > grey.**
 - The bucket→colour mapping and trigger list are **guidelines** (adjust per app);
   the **"one function, no drift"** structure is the rule.
-- **Time-derived state — the schedule/ETA formula** (Trips ETA-Tracker, generalises to any
-  deadline-vs-estimate signal). Two measurable rules so a countdown can't be hand-tuned:
+- **Time-derived state — the schedule/ETA formula.** Applies to any **deadline-vs-estimate**
+  signal: an ordered run of steps, each with a duration, measured against a promised time.
+  Two measurable rules so a countdown can't be hand-tuned:
   - **Cumulative cascade.** For an ordered run of stops: `departure₀ = tripStart`;
     `ETAᵢ = departureᵢ + driveᵢ`; `departureᵢ₊₁ = ETAᵢ + loadᵢ` with **load = 20 min/stop**
     default. Every estimate sums **all** prior drive + load — one slip re-times everything
     below it. (Not a per-row constant.)
   - **Departure clock.** The active row's ETA cell reads the **scheduled departure time until
     `now ≥ departure`**; after that it **counts up** `now − departure` until the go-action
-    (Start) fires. **Miss threshold:** `now > departure` with no Start = an **escalation**
-    event, not a quiet colour flip — the notify audience widens beyond the operator (e.g.
-    manager + sales), because a missed departure is a business problem. (The widened audience
-    is a decision; the `now > departure ⇒ escalate` trigger is the rule.)
+    (the go-action) fires. **Miss threshold:** `now > departure` with no go-action = an
+    **escalation** event, not a quiet colour flip — the notify audience widens beyond the
+    operator, because a missed start is a business problem, not a display state. (Who gets
+    notified is a decision; the `now > departure ⇒ escalate` trigger is the rule.)
   - **One ladder, two clocks.** The SAME state ladder colours **two** facts against **two**
-    targets: the **departure time** (slack vs *leave-time* → "should I leave?") and the
-    **deadline chip** (slack vs *deadline* → "will it make it?"). Same colours, same meanings,
+    targets: the **start time** (slack vs *leave-time* → "should I go?") and the
+    **deadline** (slack vs *deadline* → "will it make it?"). Same colours, same meanings,
     different targets = not double-encoding. Restraint rule: at most **one "next" (blue)** per
-    trip — everything ahead is grey (not-yet), everything behind green (done).
+    run — everything ahead is grey (not-yet), everything behind green (done).
   - **Deadline slack → colour** — the **standard state buckets**, no reassignment, from
     `slack = deadline − ETA` (live, recomputed on every change): **Done** (gate closed) →
     green (overrides all) · `slack < 0` → red (late/overdue) · `0 ≤ slack ≤ 2h` → yellow
@@ -138,7 +163,14 @@ protan = [[0.152,1.053,-0.205],[0.115,0.786,0.099],[-0.004,-0.048,1.052]]
     only**, an on-time pending stop is blue, never green. Still one function; rolls up
     `red > yellow > blue > green`.
 
-## 7. The five named parts — definitions (structural vocabulary)
+## 7. Control archetypes — structural definitions, not a naming mandate
+
+These are the **roles** an inline control can play. A project names them and decides how
+each one *looks* (for Rental Wrangler, in `wrangler-style`); what's structural — and what
+this skill holds you to — is that **each role is exactly one thing and never does two jobs.**
+That single-responsibility split is what lets shape, colour, and fill each stay a reliable
+signal. The set below is a proven partition, not the only possible one.
+
 
 - **Signal** — coloured chip, **read-only** state (colour=state, fill=today) + a
   verbalising word + parent-card icon. Click → teleport to source.
@@ -156,7 +188,8 @@ protan = [[0.152,1.053,-0.205],[0.115,0.786,0.099],[-0.004,-0.048,1.052]]
 ## 8. Pre-ship checklist — every item measurable
 
 - [ ] Every inline control the **same height**; baseline deviation **0**.
-- [ ] All sizes on the **ladder**; **≤3** weights; radii are only **999** or the chip value.
+- [ ] All sizes on the **ladder**; **≤3** weights; every control's radius is **its family's**
+      — no family borrows another's, and the container radius collides with none of them.
 - [ ] **Two** type families (+mono for the one tag); names bold, sentence-case.
 - [ ] Every text/fill pair **≥4.5** (or ≥3 large/UI), computed — in dark **and** light.
 - [ ] Co-occurring status colours **≥90** apart under deuter+protan sim.
