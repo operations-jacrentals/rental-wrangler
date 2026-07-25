@@ -1,0 +1,754 @@
+<!-- @dsCard group="Foundations" name="Palette & colour law" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rental Wrangler — Palette & colour law</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+  /* ---- LOCKED CANON (verbatim from html.dv2 in style.css — do not approximate) ---- */
+  --accent:#ff7e1f; --accent-soft:rgba(255,126,31,.15); --accent-line:rgba(255,126,31,.5);
+  --orange:#ff7e1f; --orange-bg:rgba(255,126,31,.14); --on-orange:#1a1205;
+  --bg:#0a0d11; --bg-2:#0f1318; --panel:#171d25; --panel-2:#1b222c;
+  --card:#12171e; --card-head:#1a212b;
+  --line:#2c343f; --line-soft:#212834;
+  --txt:#eef2f7; --txt-2:#aab4c1; --txt-3:#838e9c;
+  --green:#34d399; --green-bg:rgba(52,211,153,.14);
+  --yellow:#eed44b; --yellow-bg:rgba(238,212,75,.15);
+  --red:#ff4242; --red-bg:rgba(255,66,66,.13);
+  --blue:#6394cc; --blue-bg:rgba(99,148,204,.15);
+  --gray:#8b94a3; --gray-bg:rgba(139,148,163,.14);
+  --chip-radius:2px;    /* state chips — SQUARED (was 7px) */
+  --red-fill:#d63636; --on-red-fill:#fdfdfd; --commit:#2f6fd0; --on-commit:#fdfdfd; --tan:#c2925a;
+  --radius:14px;
+  --font: "Archivo", "Helvetica Neue", -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  /* ---- STRUCTURAL ADDITIONS (not in the locked block — see README/report) ---- */
+  --h:24px;             /* one control height — style skill's 24-28px range; matches shipped --dv2-h */
+  --item-radius:8px;    /* records — Ref and +Add: things that ARE, or link to, a record */
+  --pill-radius:999px;  /* actions — Doors ONLY. Nothing else may take this radius. */
+  --red-line:color-mix(in oklch, var(--red) 78%, var(--txt)); /* legible red once outline chips lost their tint */
+  --on-gray:#12171d; --on-blue:#0a1220; --on-yellow:#241d05; --on-green:#06231a;
+  }
+
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg)}
+  .wrap{background:var(--bg); color:var(--txt-2); font-family:var(--font); line-height:1.55;
+    -webkit-font-smoothing:antialiased; min-height:100vh; padding:40px 0 72px}
+  .sheet{max-width:960px; margin:0 auto; padding:0 clamp(16px,4vw,32px)}
+  code,.mono{font-family:var(--font-mono)}
+  b{color:var(--txt); font-weight:700}
+
+  .eyebrow{font-family:var(--font-mono); font-size:11px; font-weight:700; letter-spacing:.16em;
+    text-transform:uppercase; color:var(--txt-3); margin:0 0 10px}
+  .eyebrow .hl{color:var(--accent)}
+  h1{font-family:var(--font-mono); font-weight:800; font-size:clamp(22px,3.6vw,30px);
+    letter-spacing:-.01em; color:var(--txt); margin:0 0 10px; line-height:1.15}
+  h1 .hl{color:var(--accent)}
+  .lede{max-width:70ch; font-size:14px; color:var(--txt-2); margin:0 0 6px}
+  .rule{max-width:74ch; font-size:12.5px; color:var(--txt-3); margin:10px 0 0}
+  .rule b{color:var(--txt-2)}
+  .top{padding-bottom:22px; border-bottom:1px solid var(--line)}
+
+  section{margin-top:40px}
+  h2.sub{font-family:var(--font-mono); font-weight:800; font-size:12px; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--txt-3); margin:0 0 14px; padding-bottom:8px;
+    border-bottom:1px solid var(--line)}
+  h2.sub .hl{color:var(--accent)}
+  h3.mini{font-family:var(--font-mono); font-size:11px; font-weight:800; letter-spacing:.08em;
+    text-transform:uppercase; color:var(--txt-3); margin:22px 0 10px}
+  h3.mini:first-of-type{margin-top:0}
+
+  .panel{border:1px solid var(--line); border-radius:var(--radius); background:var(--panel); overflow:hidden}
+  .pad{padding:18px 20px}
+  .callout{border:1px solid var(--line); border-left:3px solid var(--accent); background:var(--card);
+    border-radius:0 9px 9px 0; padding:12px 15px; font-size:12.5px; color:var(--txt-2); margin-top:14px}
+  .callout b{color:var(--txt)}
+  .callout.warn{border-left-color:var(--yellow)}
+  .callout.info{border-left-color:var(--blue)}
+  .callout.law{border-left-color:var(--red)}
+
+  .foot{margin-top:56px; padding:20px 0 0; border-top:1px solid var(--line); font-size:12px;
+    color:var(--txt-3); max-width:82ch}
+  .foot b{color:var(--txt-2)}
+
+  .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+  .row.tight{gap:6px}
+
+  /* ================= SIGNAL — read-only state; colour=state, fill=today ================= */
+  .signal{height:var(--h); display:inline-flex; align-items:center; gap:6px; padding:0 10px;
+    border-radius:var(--chip-radius); font-family:var(--font-mono); font-size:11px; font-weight:800;
+    letter-spacing:.05em; text-transform:uppercase; white-space:nowrap}
+  .signal--gray.signal--filled   {background:var(--gray);     color:var(--on-gray)}
+  /* C15 · the secondary chip is a TRUE outline — no tint backfill, 1px border in its own hue */
+  .signal--outline{background:transparent; border:1px solid currentColor}
+  .signal--gray.signal--outline  {color:var(--gray)}
+  .signal--blue.signal--filled   {background:var(--blue);     color:var(--on-blue)}
+  .signal--blue.signal--outline  {color:var(--blue)}
+  .signal--yellow.signal--filled {background:var(--yellow);   color:var(--on-yellow)}
+  .signal--yellow.signal--outline{color:var(--yellow)}
+  .signal--red.signal--filled    {background:var(--red-fill); color:var(--on-red-fill)}
+  .signal--red.signal--outline   {color:var(--red-line)}
+  .signal--green.signal--filled  {background:var(--green);    color:var(--on-green)}
+  .signal--green.signal--outline {color:var(--green)}
+
+  /* ================= GATE — a Signal you can turn: + leading centred chevron ================= */
+  .gate{height:var(--h); display:inline-flex; align-items:center; gap:2px; padding:0 10px 0 7px;
+    border-radius:var(--chip-radius); font-family:var(--font-mono); font-size:11px; font-weight:800;
+    letter-spacing:.05em; text-transform:uppercase; white-space:nowrap; cursor:pointer; border:0}
+  .gate__chev{display:inline-flex; align-items:center; justify-content:center; width:12px; height:12px; flex:none}
+  .gate__chev svg{width:12px; height:12px; display:block}
+  .gate--blue  {background:var(--blue);     color:var(--on-blue)}
+  .gate--yellow{background:var(--yellow);   color:var(--on-yellow)}
+  .gate--red   {background:var(--red-fill); color:var(--on-red-fill)}
+  .gate--green {background:var(--green);    color:var(--on-green)}
+  .gate--gray  {background:var(--gray);     color:var(--on-gray)}
+
+  /* ================= STAMP — a quiet fact: chip text, no box, no colour ================= */
+  .stamp{height:var(--h); display:inline-flex; align-items:center; padding:0 3px;
+    font-family:var(--font-mono); font-size:11px; font-weight:700; letter-spacing:.05em;
+    text-transform:uppercase; color:var(--txt-3)}
+  .stamp--more{color:var(--accent)}
+  .stamp-sep{color:var(--line); font-family:var(--font-mono); font-size:11px}
+
+  /* ================= REF — a linked record: accent-tinted icon backing + name ================= */
+  .ref{height:var(--h); display:inline-flex; align-items:center; gap:6px; padding:0 9px 0 3px;
+    border-radius:var(--chip-radius); border:1px solid var(--line); background:transparent;
+    font-family:var(--font); font-weight:600; font-size:12.5px; color:var(--txt);
+    text-decoration:none; cursor:pointer}
+  .ref:hover{border-color:var(--accent)}
+  .ref__icon{width:18px; height:18px; border-radius:4px; flex:none; display:inline-flex;
+    align-items:center; justify-content:center; background:var(--accent-soft); color:var(--accent)}
+  .ref__icon svg{width:12px; height:12px}
+  .ref__id{font-family:var(--font-mono); font-size:9px; color:var(--txt-3); font-weight:600}
+  .ref-trace{display:flex; align-items:center; gap:7px; flex-wrap:wrap}
+  .ref-trace__arrow{font-family:var(--font-mono); color:var(--txt-3); font-size:12px}
+
+  /* ================= DOOR — a verb action: radius=pill, colour=intent, never status ================= */
+  .door{height:var(--h); display:inline-flex; align-items:center; padding:0 15px;
+    border-radius:var(--pill-radius); font-family:var(--font-mono); font-size:11px; font-weight:800;
+    letter-spacing:.05em; text-transform:uppercase; cursor:pointer; border:0; white-space:nowrap}
+  .door--commit {background:var(--commit); color:var(--on-commit)}
+  .door--add    {background:transparent; border:1.5px dashed var(--commit); color:var(--commit); padding:0 13px}
+  .door--money  {background:var(--green); color:var(--on-green)}
+  .door--destroy{background:var(--red-fill); color:var(--on-red-fill)}
+  .door--ghost  {background:transparent; border:1px solid var(--line); color:var(--txt-2)}
+
+  .seg{height:var(--h); display:inline-flex; border:1px solid var(--line); border-radius:var(--chip-radius); overflow:hidden}
+  .seg__opt{display:inline-flex; align-items:center; padding:0 11px; font-family:var(--font-mono);
+    font-size:10px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--txt-3);
+    border-right:1px solid var(--line); cursor:pointer; background:transparent}
+  .seg__opt:last-child{border-right:0}
+  .seg__opt--on-yellow{background:var(--yellow); color:var(--on-yellow)}
+  .seg__opt--on-red{background:var(--red-fill); color:var(--on-red-fill)}
+  .seg__opt--on-blue{background:var(--blue); color:var(--on-blue)}
+  .seg__opt--on-accent{background:var(--accent); color:var(--on-orange)}
+
+  /* ================= FIELDS / links ================= */
+  .field{height:var(--h); display:inline-flex; align-items:center; gap:8px; padding:0 10px;
+    border-radius:var(--chip-radius); border:1px solid var(--line); font-family:var(--font);
+    font-size:12px; color:var(--txt); cursor:pointer; background:transparent}
+  .field__car{color:var(--accent); font-family:var(--font-mono); font-size:10px}
+  .contact{height:var(--h); display:inline-flex; align-items:center; gap:6px; font-family:var(--font);
+    font-size:13px; color:var(--txt); text-decoration:none; cursor:pointer}
+  .contact svg{color:var(--accent); width:14px; height:14px}
+  .contact__v{border-bottom:1.4px solid transparent}
+  .contact:hover .contact__v{border-bottom-color:var(--accent)}
+  .hlink{font-family:var(--font); font-size:13px; color:var(--txt); text-decoration:none;
+    border-bottom:1.5px solid var(--accent); padding-bottom:1px; cursor:pointer}
+  .hlink__ext{font-family:var(--font-mono); color:var(--accent); font-size:10px}
+  .dead-text{font-family:var(--font); font-size:13px; color:var(--txt-2)}
+
+  /* ================= PLATE — section-header grammar ================= */
+  .plate{border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; background:var(--card)}
+  .plate__head{display:flex; align-items:center; gap:10px; min-height:42px; padding:0 14px;
+    border-bottom:1px solid var(--line); background:var(--card-head)}
+  .plate__stripe{width:3px; align-self:stretch; margin:8px 0; border-radius:2px; flex:none}
+  .plate__label{font-family:var(--font-mono); font-size:12px; font-weight:800; letter-spacing:.05em;
+    text-transform:uppercase; flex:none}
+  .plate__summary{flex:1; min-width:0; font-family:var(--font); font-size:12.5px; color:var(--txt-2);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .plate__chevron{color:var(--txt-3); font-family:var(--font-mono)}
+  .plate__body{padding:12px 14px; display:flex; gap:9px; flex-wrap:wrap; align-items:center}
+  .plate--gray   .plate__head{background:var(--gray-bg)}   .plate--gray   .plate__stripe{background:var(--gray)}   .plate--gray   .plate__label{color:var(--gray)}
+  .plate--blue   .plate__head{background:var(--blue-bg)}   .plate--blue   .plate__stripe{background:var(--blue)}   .plate--blue   .plate__label{color:var(--blue)}
+  .plate--yellow .plate__head{background:var(--yellow-bg)} .plate--yellow .plate__stripe{background:var(--yellow)} .plate--yellow .plate__label{color:var(--yellow)}
+  .plate--red    .plate__head{background:var(--red-bg)}    .plate--red    .plate__stripe{background:var(--red)}    .plate--red    .plate__label{color:var(--red)}
+  .plate--green  .plate__head{background:var(--green-bg)}  .plate--green  .plate__stripe{background:var(--green)}  .plate--green  .plate__label{color:var(--green)}
+
+  /* ================= misc demo scaffolding ================= */
+  .swatch-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:10px}
+  .swatch{border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--card)}
+  .swatch__blk{height:52px; position:relative}
+  .swatch__tag{position:absolute; right:6px; bottom:5px; font-family:var(--font-mono); font-size:8.5px;
+    font-weight:800; letter-spacing:.05em; text-transform:uppercase; padding:1px 5px; border-radius:3px;
+    background:rgba(0,0,0,.28)}
+  .swatch__info{padding:9px 10px 10px}
+  .swatch__val{font-family:var(--font-mono); font-size:10.5px; font-weight:700; color:var(--txt);
+    word-break:break-all}
+  .swatch__name{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--txt-3); margin-top:1px}
+  .swatch__mean{font-size:11.5px; color:var(--txt-2); margin-top:6px; line-height:1.4}
+
+  .spec-row{display:grid; grid-template-columns:170px 1fr; border-bottom:1px solid var(--line)}
+  .spec-row:last-child{border-bottom:0}
+  .spec-row__role{padding:14px; border-right:1px solid var(--line); background:var(--card-head)}
+  .spec-row__rn{font-family:var(--font-mono); font-size:10.5px; font-weight:800; letter-spacing:.05em;
+    text-transform:uppercase; color:var(--txt)}
+  .spec-row__rr{font-size:10.5px; color:var(--txt-3); margin-top:3px}
+  .spec-row__ex{padding:14px; display:flex; align-items:center; flex-wrap:wrap; gap:8px; min-width:0}
+  .t-name{font-family:var(--font); font-weight:700; font-size:16px; color:var(--txt)}
+  .t-prose{font-family:var(--font); font-size:13px; color:var(--txt-2)}
+  .t-num{font-family:var(--font-mono); font-size:13px; color:var(--txt-2); font-variant-numeric:tabular-nums; font-weight:600}
+  .t-hint{font-family:var(--font); font-size:12.5px; color:var(--txt-3); font-style:italic}
+  .t-stamp2{font-family:var(--font-mono); font-size:9.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--txt-3)}
+
+  .ladder-row{display:flex; align-items:baseline; gap:14px; padding:11px 16px; border-bottom:1px solid var(--line-soft)}
+  .ladder-row:last-child{border-bottom:0}
+  .ladder-row__px{font-family:var(--font-mono); font-size:11px; font-weight:800; color:var(--accent); width:48px; flex:none}
+  .ladder-row__role{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--txt-3); width:160px; flex:none}
+  .ladder-row__demo{font-family:var(--font); color:var(--txt); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+
+  .radii-row{display:flex; gap:20px; flex-wrap:wrap; padding:16px}
+  .radii-item{display:flex; flex-direction:column; align-items:center; gap:8px}
+  .radii-box{width:84px; height:44px; background:var(--card-head); border:1.5px solid var(--accent)}
+  .radii-box.chip{border-radius:var(--chip-radius)}
+  .radii-box.opener{border-radius:5px 5px 0 0}
+  .radii-box.item{border-radius:var(--item-radius)}
+  .radii-box.pill{border-radius:var(--pill-radius)}
+  .radii-box.container{border-radius:var(--radius)}
+  .radii-lab{font-family:var(--font-mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--txt-2); text-align:center}
+  .radii-lab b{display:block; color:var(--txt); font-size:12px}
+
+  .budget-bar{display:flex; height:34px; border-radius:8px; overflow:hidden; border:1px solid var(--line)}
+  .budget-bar span{display:flex; align-items:center; justify-content:center; font-family:var(--font-mono);
+    font-size:10.5px; font-weight:800; letter-spacing:.04em}
+  .b-60{width:60%; background:var(--card-head); color:var(--txt-2)}
+  .b-30{width:30%; background:var(--panel); color:var(--txt-2)}
+  .b-10{width:10%; background:var(--accent); color:var(--on-orange)}
+
+  .therm{display:grid; grid-template-columns:repeat(4,1fr); border:1px solid var(--line); border-radius:11px; overflow:hidden}
+  @media (max-width:680px){ .therm{grid-template-columns:1fr 1fr} }
+  .tcell{padding:14px; border-right:1px solid var(--line); background:var(--card)}
+  .tcell:last-child{border-right:0}
+  .tdot{width:100%; height:9px; border-radius:4px; margin-bottom:9px}
+  .t-gray .tdot{background:var(--gray)} .t-blue .tdot{background:var(--blue)}
+  .t-yellow .tdot{background:var(--yellow)} .t-red .tdot{background:var(--red)}
+  .tname{font-family:var(--font-mono); font-size:12.5px; font-weight:800; letter-spacing:.04em; text-transform:uppercase}
+  .t-gray .tname{color:var(--gray)} .t-blue .tname{color:var(--blue)}
+  .t-yellow .tname{color:var(--yellow)} .t-red .tname{color:var(--red)}
+  .tmean{font-size:11.5px; color:var(--txt-2); margin-top:4px}
+
+  .menu{border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--panel); width:190px}
+  .menu__h{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--txt-3); padding:9px 12px; border-bottom:1px solid var(--line); background:var(--card-head)}
+  .menu__i{display:flex; align-items:center; gap:8px; padding:8px 12px; font-size:12px; color:var(--txt);
+    border-bottom:1px solid var(--line-soft); cursor:pointer}
+  .menu__i:last-child{border-bottom:0}
+  .menu__sw{width:8px; height:8px; border-radius:2px; flex:none}
+  .menu__i.on{font-weight:800}
+  .menu__i.on:after{content:"\2713"; margin-left:auto; color:var(--accent); font-family:var(--font-mono); font-size:11px}
+
+  table.floors{width:100%; border-collapse:collapse}
+  table.floors th, table.floors td{padding:9px 12px; border-bottom:1px solid var(--line-soft); font-size:12px; text-align:left}
+  table.floors th{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--txt-3); background:var(--card-head)}
+  table.floors td.ratio{font-family:var(--font-mono); font-weight:700; color:var(--txt)}
+  table.floors td .pass{color:var(--green); font-weight:700}
+  table.floors td .fail{color:var(--red); font-weight:700}
+  table.floors tr:last-child td{border-bottom:0}
+
+
+  /* ======================================================================
+     ATOM CONSISTENCY PASS — approved 2026-07-25 (rw-consistency-pass.css).
+     Four control shapes: state SQUARED · openers TOP-ROUNDED · records ROUNDED · actions PILL.
+     ====================================================================== */
+  @supports (color: oklch(from red l c h)){
+    :root{ --red-line: oklch(from var(--red) .74 .215 h); }
+  }
+
+  /* C7 · read-only atoms say so with the cursor */
+  .signal, .stamp, .stamp-sep, .dead-text, .t-hint{cursor:default}
+
+  /* C4 · the stamp separator is a true sibling of the stamps it sits between */
+  .stamp-sep{height:var(--h); display:inline-flex; align-items:center; font-weight:700}
+
+  /* C3/C17 · Ref: content size on the ladder + the item radius */
+  .ref{font-size:13px; border-radius:var(--item-radius); padding:0 10px 0 3px}
+  .ref__icon{border-radius:5px}
+
+
+  /* C21/C22 · the OPENER shape — a fourth control shape, earned only by the atoms that
+     open something: top corners rounded, bottom corners square, so the trigger reads as
+     the top half of an open menu. Toggles, Doors, Signals, Refs and Pins never take it. */
+  .gate{border-radius:5px 5px 0 0}
+  .field{border-radius:5px 5px 0 0}
+
+  /* C5 · segment text is the ONE chip size, so a selected segment really is the
+     filled Signal chip of its status */
+  .seg__opt{font-size:11px; letter-spacing:.05em}
+  .seg__opt--on-green{background:var(--green); color:var(--on-green)}
+  .seg__opt--on-gray{background:var(--gray); color:var(--on-gray)}
+
+  /* M10 · +Add is built on the Ref pattern (it adds/links items) */
+  .door--add{border-radius:var(--item-radius); gap:6px; padding:0 11px 0 3px}
+  .door--add .ref__icon{background:color-mix(in oklab, var(--commit) 25%, transparent); color:var(--commit)}
+
+  /* C1/C2/M12 · link atoms: 24px box, underline on the LABEL only, the out-marker
+     is a drawn arrow in the house icon holder */
+  .hlink, .dead-text{height:var(--h); display:inline-flex; align-items:center}
+  .hlink{border-bottom:0; padding-bottom:0; gap:7px; text-decoration:underline;
+    text-decoration-color:var(--accent); text-decoration-thickness:1.5px; text-underline-offset:3px}
+  .hlink__ext{width:16px; height:16px; flex:none; border-radius:4px; text-decoration:none;
+    display:inline-flex; align-items:center; justify-content:center;
+    background:var(--accent-soft); color:var(--accent)}
+  .hlink__ext svg{width:10px; height:10px; display:block}
+  .contact__v{border-bottom-width:1.5px}
+
+  /* C19 · no atom shrinks or wraps inside a flex row */
+  .ref, .field, .seg, .seg__opt, .contact, .hlink, .dead-text, .stamp{flex:none; white-space:nowrap}
+
+  /* C12 · every tappable atom is a real <button type="button"> */
+  button.gate, button.door, button.seg__opt, button.field{-webkit-appearance:none; appearance:none;
+    margin:0; text-align:left}
+  button.seg__opt{border-top:0; border-bottom:0; border-left:0}
+
+  /* C20 · ONE universal hover: an accent ring drawn OUTSIDE the element, so no
+     atom's own border, fill or size changes and nothing in the layout moves.
+     On a segmented toggle the ring goes around the TRACK, never a single cell. */
+  .gate:hover, .door:hover, .seg:hover, .field:hover, .ref:hover,
+  .contact:hover, .hlink:hover, .pin[data-tip]:hover{outline:1.5px solid var(--accent); outline-offset:2px}
+
+  /* C8 · press dips the fill on filled tappables */
+  .gate:active, .door--commit:active, .door--money:active, .door--destroy:active{filter:brightness(.94)}
+
+  /* C9 · hover INK is reserved for the atoms that navigate or switch */
+  .seg__opt:not([class*="seg__opt--on"]):hover{color:var(--txt)}
+  .ref:hover, .contact:hover{color:var(--accent)}
+
+  /* C10 · one focus ring for every tappable atom */
+  .gate:focus-visible, .door:focus-visible, .seg__opt:focus-visible, .field:focus-visible,
+  .ref:focus-visible, .contact:focus-visible, .hlink:focus-visible{outline:2px solid var(--accent-line);
+    outline-offset:2px}
+
+  /* M11 · a STATE pair toggle reads as Signals: the live state is the filled chip
+     of its status, the other side is the secondary outline in ITS OWN hue */
+  .seg--state .seg__opt{border-right:0}
+  .seg--state .seg__opt:not([class*="seg__opt--on"]){background:transparent; color:var(--gray);
+    box-shadow:inset 0 1px 0 currentColor, inset 0 -1px 0 currentColor, inset -1px 0 0 currentColor}
+  .seg--state .seg__opt:not([class*="seg__opt--on"]):first-child{
+    box-shadow:inset 0 1px 0 currentColor, inset 0 -1px 0 currentColor, inset 1px 0 0 currentColor}
+  .seg--state .seg__opt--off-red:not([class*="seg__opt--on"]){color:var(--red-line)}
+
+  /* M7 · the status picker IS the segmented toggle, stacked. .menu is superseded
+     as a picker; a menu of unrelated ACTIONS is a container, not an atom. */
+  .seg--stack{flex-direction:column; height:auto; align-items:stretch; width:100%}
+  .seg--stack{border-radius:5px 5px var(--chip-radius) var(--chip-radius)}
+  .seg--stack__cap{border-radius:5px 5px 0 0; border-bottom:0}  /* C22 · accent header caps the top */
+  .seg--stack .seg__opt{height:var(--h); flex:none; border-right:0;
+    border-bottom:1px solid var(--line); justify-content:flex-start}
+  .seg--stack .seg__opt:last-child{border-bottom:0}
+  .seg--stack .seg__sw{width:8px; height:8px; border-radius:2px; flex:none; margin-right:8px}
+
+  /* N1 · PIN — the universal corner marker (new atom). Colour = state, fill = today,
+     exactly like a Signal. 13px, deliberately OFF the 24px control ladder, and zero
+     layout footprint: absolutely positioned, no margin, no reserved space. */
+  .pin-wrap{position:relative; display:inline-flex; flex:none}
+  .pin{position:absolute; top:0; left:100%; transform:translate(-70%,-50%); z-index:2;
+    height:13px; min-width:13px; padding:0 4px;
+    display:inline-flex; align-items:center; justify-content:center; gap:3px;
+    border-radius:var(--chip-radius); font-family:var(--font-mono); font-size:9px; font-weight:800;
+    letter-spacing:.04em; text-transform:uppercase; white-space:nowrap; font-variant-numeric:tabular-nums;
+    cursor:pointer; text-decoration:none; outline:1.5px solid var(--panel)}
+  .pin svg{width:9px; height:9px; display:block}
+  .pin--gray  {background:var(--gray);     color:var(--on-gray)}
+  .pin--blue  {background:var(--blue);     color:var(--on-blue)}
+  .pin--yellow{background:var(--yellow);   color:var(--on-yellow)}
+  .pin--red   {background:var(--red-fill); color:var(--on-red-fill)}
+  .pin--green {background:var(--green);    color:var(--on-green)}
+  .pin--outline{background:var(--panel); border:1px solid currentColor}
+  .pin--gray.pin--outline  {color:var(--gray)}
+  .pin--blue.pin--outline  {color:var(--blue)}
+  .pin--yellow.pin--outline{color:var(--yellow)}
+  .pin--green.pin--outline {color:var(--green)}
+  .pin--red.pin--outline   {color:var(--red-line)}
+  .pin:focus-visible{outline:2px solid var(--accent-line); outline-offset:2px}
+  .pin:after{content:attr(data-tip); position:absolute; bottom:calc(100% + 8px); right:-2px; display:none;
+    padding:7px 10px; max-width:260px; background:var(--panel-2); border:1px solid var(--line);
+    border-radius:9px; color:var(--txt); font-family:var(--font); font-size:11.5px; font-weight:400;
+    line-height:1.4; letter-spacing:0; text-transform:none; white-space:nowrap; z-index:6; pointer-events:none}
+  .pin[data-tip]:hover:after,
+  .pin[data-tip]:focus-visible:after{display:block}
+
+</style>
+</head>
+<body>
+<div class="wrap"><div class="sheet">
+  <div class="top">
+    <p class="eyebrow">JacRentals · Rental Wrangler <span class="hl">·</span> Foundations</p>
+    <h1>Palette & colour law</h1>
+    <p class="lede">Every token as a swatch — surfaces, text, accent, status, action, leather — plus the law that governs them.</p>
+    
+  </div>
+
+  <section id="law">
+    <h2 class="sub">The colour law</h2>
+    <div class="callout law">
+      <b>Colour = state. Fill = today.</b> Status colours mean STATE ONLY — buttons/actions are neutral and never
+      borrow one. Rollup precedence, hottest wins: <code>red &gt; yellow &gt; blue &gt; green &gt; gray</code>.
+      <b>Green</b> = Done <i>today</i> only (ages to gray the next day). <b>Blue</b> = Waiting (someone else's move).
+      <b>Red</b> = bad. <b>Yellow</b> = your move now. <b>Gray</b> = nothing.
+    </div>
+  </section>
+
+  <section id="surfaces">
+    <h2 class="sub">Surfaces &amp; lines</h2>
+    <div class="swatch-grid">
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--bg)"><span class="swatch__tag" style="color:#eef2f7">bg</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">#0a0d11</div>
+      <div class="swatch__name">--bg</div>
+      <div class="swatch__mean">App base — the ~60% surface.</div>
+    </div>
+  </div>
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--bg-2)"><span class="swatch__tag" style="color:#eef2f7">bg-2</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">#0f1318</div>
+      <div class="swatch__name">--bg-2</div>
+      <div class="swatch__mean">Secondary app base tint.</div>
+    </div>
+  </div>
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--panel)"><span class="swatch__tag" style="color:#eef2f7">panel</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">#171d25</div>
+      <div class="swatch__name">--panel</div>
+      <div class="swatch__mean">Panel surface — nav, side rails, menus.</div>
+    </div>
+  </div>
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--panel-2)"><span class="swatch__tag" style="color:#eef2f7">panel-2</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">#1b222c</div>
+      <div class="swatch__name">--panel-2</div>
+      <div class="swatch__mean">Secondary panel tint.</div>
+    </div>
+  </div>
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--card)"><span class="swatch__tag" style="color:#eef2f7">card</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">#12171e</div>
+      <div class="swatch__name">--card</div>
+      <div class="swatch__mean">Record / list-row surface.</div>
+    </div>
+  </div>
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--card-head)"><span class="swatch__tag" style="color:#eef2f7">card-head</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">#1a212b</div>
+      <div class="swatch__name">--card-head</div>
+      <div class="swatch__mean">Card header strip / section head.</div>
+    </div>
+  </div>
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--line)"><span class="swatch__tag" style="color:#eef2f7">line</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">#2c343f</div>
+      <div class="swatch__name">--line</div>
+      <div class="swatch__mean">The standard hairline border.</div>
+    </div>
+  </div>
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--line-soft)"><span class="swatch__tag" style="color:#eef2f7">line-soft</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">#212834</div>
+      <div class="swatch__name">--line-soft</div>
+      <div class="swatch__mean">Soft inner divider (row-to-row).</div>
+    </div>
+  </div>
+    </div>
+  </section>
+
+  <section id="text">
+    <h2 class="sub">Text</h2>
+    <div class="swatch-grid">
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--txt)"><span class="swatch__tag" style="color:#0a0d11">txt</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">#eef2f7</div>
+      <div class="swatch__name">--txt</div>
+      <div class="swatch__mean">Primary ink — names, headings, values you read.</div>
+    </div>
+  </div>
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--txt-2)"><span class="swatch__tag" style="color:#0a0d11">txt-2</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">#aab4c1</div>
+      <div class="swatch__name">--txt-2</div>
+      <div class="swatch__mean">Secondary ink — meta, sub-labels, prose.</div>
+    </div>
+  </div>
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--txt-3)"><span class="swatch__tag" style="color:#0a0d11">txt-3</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">#838e9c</div>
+      <div class="swatch__name">--txt-3</div>
+      <div class="swatch__mean">Tertiary ink — Stamp fact text, icons, borders.</div>
+    </div>
+  </div>
+    </div>
+  </section>
+
+  <section id="accent">
+    <h2 class="sub">Accent — <span class="hl">touchable</span>, the ONE safety orange</h2>
+    <div class="swatch-grid">
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--accent)"><span class="swatch__tag" style="color:#1a1205">accent</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">#ff7e1f</div>
+      <div class="swatch__name">--accent</div>
+      <div class="swatch__mean">"You can act on this" — Refs, Gate chevrons, toggle fallback, carets. Dark ink always.</div>
+    </div>
+  </div>
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--accent-soft)"><span class="swatch__tag" style="color:#eef2f7">accent-soft</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">rgba(255,126,31,.15)</div>
+      <div class="swatch__name">--accent-soft</div>
+      <div class="swatch__mean">Soft accent wash — Ref icon backing.</div>
+    </div>
+  </div>
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--accent-line)"><span class="swatch__tag" style="color:#eef2f7">accent-line</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">rgba(255,126,31,.5)</div>
+      <div class="swatch__name">--accent-line</div>
+      <div class="swatch__mean">Accent-tinted border/line.</div>
+    </div>
+  </div>
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--orange)"><span class="swatch__tag" style="color:#1a1205">orange</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">#ff7e1f</div>
+      <div class="swatch__name">--orange</div>
+      <div class="swatch__mean">Alias of --accent used by some call sites.</div>
+    </div>
+  </div>
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--orange-bg)"><span class="swatch__tag" style="color:#eef2f7">orange-bg</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">rgba(255,126,31,.14)</div>
+      <div class="swatch__name">--orange-bg</div>
+      <div class="swatch__mean">Alias of --accent-soft.</div>
+    </div>
+  </div>
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--on-orange)"><span class="swatch__tag" style="color:#eef2f7">on-orange</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">#1a1205</div>
+      <div class="swatch__name">--on-orange</div>
+      <div class="swatch__mean">The dark ink that always sits on accent fills.</div>
+    </div>
+  </div>
+    </div>
+  </section>
+
+  <section id="status">
+    <h2 class="sub">Status — <span class="hl">colour = state</span>, a thermometer (never decoration)</h2>
+    <div class="swatch-grid">
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--gray)"><span class="swatch__tag" style="color:#12171d">gray</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">#8b94a3</div>
+      <div class="swatch__name">--gray</div>
+      <div class="swatch__mean">N/A · nothing to do. Coolest.</div>
+    </div>
+  </div>
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--gray-bg)"><span class="swatch__tag" style="color:#eef2f7">gray-bg</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">rgba(139,148,163,.14)</div>
+      <div class="swatch__name">--gray-bg</div>
+      <div class="swatch__mean">Soft gray wash — outline/at-rest gray chips.</div>
+    </div>
+  </div>
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--blue)"><span class="swatch__tag" style="color:#0a1220">blue</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">#6394cc</div>
+      <div class="swatch__name">--blue</div>
+      <div class="swatch__mean">Waiting — incomplete, on-time, no rush. Muted so it stops fighting orange.</div>
+    </div>
+  </div>
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--blue-bg)"><span class="swatch__tag" style="color:#eef2f7">blue-bg</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">rgba(99,148,204,.15)</div>
+      <div class="swatch__name">--blue-bg</div>
+      <div class="swatch__mean">Soft blue wash — outline Waiting chips.</div>
+    </div>
+  </div>
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--yellow)"><span class="swatch__tag" style="color:#241d05">yellow</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">#eed44b</div>
+      <div class="swatch__name">--yellow</div>
+      <div class="swatch__mean">Do-now · near/due · time-sensitive. Warm. CVD floor — see spacing.html.</div>
+    </div>
+  </div>
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--yellow-bg)"><span class="swatch__tag" style="color:#eef2f7">yellow-bg</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">rgba(238,212,75,.15)</div>
+      <div class="swatch__name">--yellow-bg</div>
+      <div class="swatch__mean">Soft yellow wash — outline do-now chips.</div>
+    </div>
+  </div>
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--red)"><span class="swatch__tag" style="color:#3a0505">red</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">#ff4242</div>
+      <div class="swatch__name">--red</div>
+      <div class="swatch__mean">Bad · overdue. Outline chips/bars/dots — filled white-on-red fails AA.</div>
+    </div>
+  </div>
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--red-bg)"><span class="swatch__tag" style="color:#eef2f7">red-bg</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">rgba(255,66,66,.13)</div>
+      <div class="swatch__name">--red-bg</div>
+      <div class="swatch__mean">Soft red wash — outline red chips.</div>
+    </div>
+  </div>
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--red-fill)"><span class="swatch__tag" style="color:#fdfdfd">red-fill</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">#d63636</div>
+      <div class="swatch__name">--red-fill</div>
+      <div class="swatch__mean">The deepened filled red — with near-white ink clears AA at 4.65.</div>
+    </div>
+  </div>
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--on-red-fill)"><span class="swatch__tag" style="color:#0a0d11">on-red-fill</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">#fdfdfd</div>
+      <div class="swatch__name">--on-red-fill</div>
+      <div class="swatch__mean">Near-white ink on --red-fill (never pure #fff).</div>
+    </div>
+  </div>
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--green)"><span class="swatch__tag" style="color:#06231a">green</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">#34d399</div>
+      <div class="swatch__name">--green</div>
+      <div class="swatch__mean">Done — today only. Ages to gray tomorrow, snaps to red on revert.</div>
+    </div>
+  </div>
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--green-bg)"><span class="swatch__tag" style="color:#eef2f7">green-bg</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">rgba(52,211,153,.14)</div>
+      <div class="swatch__name">--green-bg</div>
+      <div class="swatch__mean">Soft green wash — outline done chips.</div>
+    </div>
+  </div>
+    </div>
+  </section>
+
+  <section id="action">
+    <h2 class="sub">Action — <span class="hl">commit</span>, never a status colour</h2>
+    <div class="swatch-grid">
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--commit)"><span class="swatch__tag" style="color:#fdfdfd">commit</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">#2f6fd0</div>
+      <div class="swatch__name">--commit</div>
+      <div class="swatch__mean">The one deep blue meaning "commit / create / write" — Save solid, +Add dashed.</div>
+    </div>
+  </div>
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--on-commit)"><span class="swatch__tag" style="color:#0a0d11">on-commit</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">#fdfdfd</div>
+      <div class="swatch__name">--on-commit</div>
+      <div class="swatch__mean">Near-white ink on commit fills — clears AA at 4.80.</div>
+    </div>
+  </div>
+    </div>
+    <div class="callout info"><b>Deep vs pale, never adjacent.</b> Blue is already a status colour (Waiting). Commit
+      is a deep, saturated, solid <i>button</i>; Waiting is a pale, desaturated, tiny <i>chip</i>. Different
+      saturation, different shape — they never read as the same thing.</div>
+  </section>
+
+  <section id="leather">
+    <h2 class="sub">Leather — restrained seasoning only</h2>
+    <div class="swatch-grid">
+      
+  <div class="swatch">
+    <div class="swatch__blk" style="background:var(--tan)"><span class="swatch__tag" style="color:#2a1400">tan</span></div>
+    <div class="swatch__info">
+      <div class="swatch__val">#c2925a</div>
+      <div class="swatch__name">--tan</div>
+      <div class="swatch__mean">Wrangler/ranch touches — tiny, never a status, never the dominant note.</div>
+    </div>
+  </div>
+    </div>
+  </section>
+
+  <section id="structural">
+    <h2 class="sub">Structural additions (not colours)</h2>
+    <div class="panel pad">
+      <div class="row" style="margin-bottom:8px"><code>--h: 24px</code><span class="t-hint">— the one control height (style skill, 24–28px range)</span></div>
+      <div class="row" style="margin-bottom:8px"><code>--chip-radius: 7px</code><span class="t-hint">— the one chip radius (states)</span></div>
+      <div class="row" style="margin-bottom:8px"><code>--pill-radius: 999px</code><span class="t-hint">— the one pill radius (actions) — added, paired with --chip-radius</span></div>
+      <div class="row" style="margin-bottom:8px"><code>--radius: 14px</code><span class="t-hint">— container/panel corner radius (cards, plates) — a THIRD radius, but for containers, not controls</span></div>
+      <div class="row"><code>--font</code> / <code>--font-mono</code><span class="t-hint">— the two type voices, see type.html</span></div>
+    </div>
+  </section>
+
+  <div class="foot">Sourced from <b>wrangler-style</b> (decisions) + <b>style</b> (measurable rules), built on the
+    <b>locked html.dv2</b> redesign tokens. Dark-only — no light mode is shipped or shown. Vanilla HTML + CSS, no
+    framework.</div>
+</div></div>
+</body>
+</html>
