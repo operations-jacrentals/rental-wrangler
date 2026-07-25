@@ -5,6 +5,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Rental Wrangler — Ref</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root{
   /* ---- LOCKED CANON (verbatim from html.dv2 in style.css — do not approximate) ---- */
@@ -19,14 +22,16 @@
   --red:#ff4242; --red-bg:rgba(255,66,66,.13);
   --blue:#6394cc; --blue-bg:rgba(99,148,204,.15);
   --gray:#8b94a3; --gray-bg:rgba(139,148,163,.14);
-  --chip-radius:7px;
+  --chip-radius:2px;    /* state chips — SQUARED (was 7px) */
   --red-fill:#d63636; --on-red-fill:#fdfdfd; --commit:#2f6fd0; --on-commit:#fdfdfd; --tan:#c2925a;
   --radius:14px;
-  --font: "Geist", -apple-system, "Segoe UI", sans-serif;
+  --font: "Archivo", "Helvetica Neue", -apple-system, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
   /* ---- STRUCTURAL ADDITIONS (not in the locked block — see README/report) ---- */
   --h:24px;             /* one control height — style skill's 24-28px range; matches shipped --dv2-h */
-  --pill-radius:999px;  /* the action radius, paired with --chip-radius for the "two radii" rule */
+  --item-radius:8px;    /* records — Ref and +Add: things that ARE, or link to, a record */
+  --pill-radius:999px;  /* actions — Doors ONLY. Nothing else may take this radius. */
+  --red-line:color-mix(in oklch, var(--red) 78%, var(--txt)); /* legible red once outline chips lost their tint */
   --on-gray:#12171d; --on-blue:#0a1220; --on-yellow:#241d05; --on-green:#06231a;
   }
 
@@ -80,15 +85,17 @@
     border-radius:var(--chip-radius); font-family:var(--font-mono); font-size:11px; font-weight:800;
     letter-spacing:.05em; text-transform:uppercase; white-space:nowrap}
   .signal--gray.signal--filled   {background:var(--gray);     color:var(--on-gray)}
-  .signal--gray.signal--outline  {background:var(--gray-bg);  color:var(--gray)}
+  /* C15 · the secondary chip is a TRUE outline — no tint backfill, 1px border in its own hue */
+  .signal--outline{background:transparent; border:1px solid currentColor}
+  .signal--gray.signal--outline  {color:var(--gray)}
   .signal--blue.signal--filled   {background:var(--blue);     color:var(--on-blue)}
-  .signal--blue.signal--outline  {background:var(--blue-bg);  color:var(--blue)}
+  .signal--blue.signal--outline  {color:var(--blue)}
   .signal--yellow.signal--filled {background:var(--yellow);   color:var(--on-yellow)}
-  .signal--yellow.signal--outline{background:var(--yellow-bg);color:var(--yellow)}
+  .signal--yellow.signal--outline{color:var(--yellow)}
   .signal--red.signal--filled    {background:var(--red-fill); color:var(--on-red-fill)}
-  .signal--red.signal--outline   {background:var(--red-bg);   color:var(--red)}
+  .signal--red.signal--outline   {color:var(--red-line)}
   .signal--green.signal--filled  {background:var(--green);    color:var(--on-green)}
-  .signal--green.signal--outline {background:var(--green-bg); color:var(--green)}
+  .signal--green.signal--outline {color:var(--green)}
 
   /* ================= GATE — a Signal you can turn: + leading centred chevron ================= */
   .gate{height:var(--h); display:inline-flex; align-items:center; gap:2px; padding:0 10px 0 7px;
@@ -212,6 +219,7 @@
   .radii-item{display:flex; flex-direction:column; align-items:center; gap:8px}
   .radii-box{width:84px; height:44px; background:var(--card-head); border:1.5px solid var(--accent)}
   .radii-box.chip{border-radius:var(--chip-radius)}
+  .radii-box.item{border-radius:var(--item-radius)}
   .radii-box.pill{border-radius:var(--pill-radius)}
   .radii-box.container{border-radius:var(--radius)}
   .radii-lab{font-family:var(--font-mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase;
@@ -256,6 +264,121 @@
   table.floors td .fail{color:var(--red); font-weight:700}
   table.floors tr:last-child td{border-bottom:0}
 
+
+  /* ======================================================================
+     ATOM CONSISTENCY PASS — approved 2026-07-25 (rw-consistency-pass.css).
+     Three control shapes: state chips SQUARED · records ROUNDED · actions PILL.
+     ====================================================================== */
+  @supports (color: oklch(from red l c h)){
+    :root{ --red-line: oklch(from var(--red) .74 .215 h); }
+  }
+
+  /* C7 · read-only atoms say so with the cursor */
+  .signal, .stamp, .stamp-sep, .dead-text, .t-hint{cursor:default}
+
+  /* C4 · the stamp separator is a true sibling of the stamps it sits between */
+  .stamp-sep{height:var(--h); display:inline-flex; align-items:center; font-weight:700}
+
+  /* C3/C17 · Ref: content size on the ladder + the item radius */
+  .ref{font-size:13px; border-radius:var(--item-radius); padding:0 10px 0 3px}
+  .ref__icon{border-radius:5px}
+
+  /* C5 · segment text is the ONE chip size, so a selected segment really is the
+     filled Signal chip of its status */
+  .seg__opt{font-size:11px; letter-spacing:.05em}
+  .seg__opt--on-green{background:var(--green); color:var(--on-green)}
+  .seg__opt--on-gray{background:var(--gray); color:var(--on-gray)}
+
+  /* M10 · +Add is built on the Ref pattern (it adds/links items) */
+  .door--add{border-radius:var(--item-radius); gap:6px; padding:0 11px 0 3px}
+  .door--add .ref__icon{background:color-mix(in oklab, var(--commit) 25%, transparent); color:var(--commit)}
+
+  /* C1/C2/M12 · link atoms: 24px box, underline on the LABEL only, the out-marker
+     is a drawn arrow in the house icon holder */
+  .hlink, .dead-text{height:var(--h); display:inline-flex; align-items:center}
+  .hlink{border-bottom:0; padding-bottom:0; gap:7px; text-decoration:underline;
+    text-decoration-color:var(--accent); text-decoration-thickness:1.5px; text-underline-offset:3px}
+  .hlink__ext{width:16px; height:16px; flex:none; border-radius:4px; text-decoration:none;
+    display:inline-flex; align-items:center; justify-content:center;
+    background:var(--accent-soft); color:var(--accent)}
+  .hlink__ext svg{width:10px; height:10px; display:block}
+  .contact__v{border-bottom-width:1.5px}
+
+  /* C19 · no atom shrinks or wraps inside a flex row */
+  .ref, .field, .seg, .seg__opt, .contact, .hlink, .dead-text, .stamp{flex:none; white-space:nowrap}
+
+  /* C12 · every tappable atom is a real <button type="button"> */
+  button.gate, button.door, button.seg__opt, button.field{-webkit-appearance:none; appearance:none;
+    margin:0; text-align:left}
+  button.seg__opt{border-top:0; border-bottom:0; border-left:0}
+
+  /* C20 · ONE universal hover: an accent ring drawn OUTSIDE the element, so no
+     atom's own border, fill or size changes and nothing in the layout moves.
+     On a segmented toggle the ring goes around the TRACK, never a single cell. */
+  .gate:hover, .door:hover, .seg:hover, .field:hover, .ref:hover,
+  .contact:hover, .hlink:hover, .pin[data-tip]:hover{outline:1.5px solid var(--accent); outline-offset:2px}
+
+  /* C8 · press dips the fill on filled tappables */
+  .gate:active, .door--commit:active, .door--money:active, .door--destroy:active{filter:brightness(.94)}
+
+  /* C9 · hover INK is reserved for the atoms that navigate or switch */
+  .seg__opt:not([class*="seg__opt--on"]):hover{color:var(--txt)}
+  .ref:hover, .contact:hover{color:var(--accent)}
+
+  /* C10 · one focus ring for every tappable atom */
+  .gate:focus-visible, .door:focus-visible, .seg__opt:focus-visible, .field:focus-visible,
+  .ref:focus-visible, .contact:focus-visible, .hlink:focus-visible{outline:2px solid var(--accent-line);
+    outline-offset:2px}
+
+  /* M11 · a STATE pair toggle reads as Signals: the live state is the filled chip
+     of its status, the other side is the secondary outline in ITS OWN hue */
+  .seg--state .seg__opt{border-right:0}
+  .seg--state .seg__opt:not([class*="seg__opt--on"]){background:transparent; color:var(--gray);
+    box-shadow:inset 0 1px 0 currentColor, inset 0 -1px 0 currentColor, inset -1px 0 0 currentColor}
+  .seg--state .seg__opt:not([class*="seg__opt--on"]):first-child{
+    box-shadow:inset 0 1px 0 currentColor, inset 0 -1px 0 currentColor, inset 1px 0 0 currentColor}
+  .seg--state .seg__opt--off-red:not([class*="seg__opt--on"]){color:var(--red-line)}
+
+  /* M7 · the status picker IS the segmented toggle, stacked. .menu is superseded
+     as a picker; a menu of unrelated ACTIONS is a container, not an atom. */
+  .seg--stack{flex-direction:column; height:auto; align-items:stretch; width:100%}
+  .seg--stack .seg__opt{height:var(--h); flex:none; border-right:0;
+    border-bottom:1px solid var(--line); justify-content:flex-start}
+  .seg--stack .seg__opt:last-child{border-bottom:0}
+  .seg--stack .seg__sw{width:8px; height:8px; border-radius:2px; flex:none; margin-right:8px}
+  .picker-head{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--txt-3); padding:0 0 7px}
+
+  /* N1 · PIN — the universal corner marker (new atom). Colour = state, fill = today,
+     exactly like a Signal. 13px, deliberately OFF the 24px control ladder, and zero
+     layout footprint: absolutely positioned, no margin, no reserved space. */
+  .pin-wrap{position:relative; display:inline-flex; flex:none}
+  .pin{position:absolute; top:0; left:100%; transform:translate(-70%,-50%); z-index:2;
+    height:13px; min-width:13px; padding:0 4px;
+    display:inline-flex; align-items:center; justify-content:center; gap:3px;
+    border-radius:var(--chip-radius); font-family:var(--font-mono); font-size:9px; font-weight:800;
+    letter-spacing:.04em; text-transform:uppercase; white-space:nowrap; font-variant-numeric:tabular-nums;
+    cursor:pointer; text-decoration:none; outline:1.5px solid var(--panel)}
+  .pin svg{width:9px; height:9px; display:block}
+  .pin--gray  {background:var(--gray);     color:var(--on-gray)}
+  .pin--blue  {background:var(--blue);     color:var(--on-blue)}
+  .pin--yellow{background:var(--yellow);   color:var(--on-yellow)}
+  .pin--red   {background:var(--red-fill); color:var(--on-red-fill)}
+  .pin--green {background:var(--green);    color:var(--on-green)}
+  .pin--outline{background:var(--panel); border:1px solid currentColor}
+  .pin--gray.pin--outline  {color:var(--gray)}
+  .pin--blue.pin--outline  {color:var(--blue)}
+  .pin--yellow.pin--outline{color:var(--yellow)}
+  .pin--green.pin--outline {color:var(--green)}
+  .pin--red.pin--outline   {color:var(--red-line)}
+  .pin:focus-visible{outline:2px solid var(--accent-line); outline-offset:2px}
+  .pin:after{content:attr(data-tip); position:absolute; bottom:calc(100% + 8px); right:-2px; display:none;
+    padding:7px 10px; max-width:260px; background:var(--panel-2); border:1px solid var(--line);
+    border-radius:9px; color:var(--txt); font-family:var(--font); font-size:11.5px; font-weight:400;
+    line-height:1.4; letter-spacing:0; text-transform:none; white-space:nowrap; z-index:6; pointer-events:none}
+  .pin[data-tip]:hover:after,
+  .pin[data-tip]:focus-visible:after{display:block}
+
 </style>
 </head>
 <body>
@@ -268,8 +391,13 @@
   </div>
 
   <div class="callout"><b>Ref</b> — a linked record: a square <b>accent-tinted icon backing</b> holding the parent's
-    type icon + the name (body voice). Radius = the one chip radius. Orange-marked = touchable. Not a status chip —
-    walks across cards.</div>
+    type icon + the name (body voice). Orange-marked = touchable. Not a status chip — walks across cards.</div>
+
+  <div class="callout info"><b>Shape · updated 2026-07-25.</b> Refs take the <b>record radius</b>
+    <code>--item-radius: 8px</code> — rounded, not squared. That is the whole point of the three-shape rule: a
+    <b>squared</b> control is a state you read, a <b>rounded</b> one is a record you can open, and a <b>pill</b> is a
+    verb you fire. A Ref is the only atom that links to another record, so it owns the rounded shape (shared only with
+    <code>+Add</code>, which creates one).</div>
 
   <section>
     <h2 class="sub">Every linked record is a Ref — its own type icon, never one generic glyph</h2>

@@ -1,10 +1,10 @@
-<!-- @dsCard group="Components" name="Section plate" -->
+<!-- @dsCard group="Elements" name="Pin" -->
 <!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Rental Wrangler — Section plate</title>
+<title>Rental Wrangler — Pin</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -384,109 +384,113 @@
 <body>
 <div class="wrap"><div class="sheet">
   <div class="top">
-    <p class="eyebrow">JacRentals · Rental Wrangler <span class="hl">·</span> Components</p>
-    <h1>Section plate</h1>
-    <p class="lede">The section-header "plate" grammar the detail views use: a left state-stripe, a stamped label, a rolled-up summary, and a primary Door.</p>
-    
+    <p class="eyebrow">JacRentals · Rental Wrangler <span class="hl">·</span> Elements</p>
+    <h1>Pin</h1>
+    <p class="lede">The universal corner marker. Colour = state, fill = today — exactly like a Signal —
+      but it rides on the <em>corner of another thing</em> instead of taking a slot in the row.</p>
   </div>
 
-  <div class="callout"><b>Plate grammar</b> — every section is the same repeated plate: left status-bar + stamped
-    label + summary + a rolled-up Signal + chevron → body. Header colour = the <b>worst item inside</b> (rollup).</div>
+  <div class="callout"><b>Pin</b> — marks its host with a count, a date, or a type. <b>Zero layout
+    footprint:</b> absolutely positioned over the host's top-right corner, no margin, no reserved
+    space, nothing moves when it appears or disappears. Hover explains; click teleports to the record.</div>
 
   <section>
-    <h2 class="sub">Rolled up hottest-wins — one plate per state</h2>
-    <div class="panel pad" style="display:flex; flex-direction:column; gap:14px">
-      
-    <div class="plate plate--red">
-      <div class="plate__head">
-        <span class="plate__stripe"></span>
-        <span class="plate__label">Field Calls</span>
-        <span class="plate__summary">1 unit flagged in the field</span>
-        <span class="signal signal--red signal--filled">3d overdue</span>
-        <span class="plate__chevron">›</span>
+    <h2 class="sub">Every state colour — filled vs. outline</h2>
+    <div class="panel pad">
+      <div class="row" style="gap:26px; padding:6px 4px">
+        <span class="pin-wrap"><button type="button" class="field">Unit SS-12 <span class="field__car">▾</span></button>
+          <a class="pin pin--gray" data-tip="No open items">0</a></span>
+        <span class="pin-wrap"><button type="button" class="field">Unit EX-04 <span class="field__car">▾</span></button>
+          <a class="pin pin--blue" data-tip="2 rentals booked ahead">2</a></span>
+        <span class="pin-wrap"><button type="button" class="field">Unit MT-31 <span class="field__car">▾</span></button>
+          <a class="pin pin--yellow" data-tip="Service due in 9 hours">9h</a></span>
+        <span class="pin-wrap"><button type="button" class="field">Unit BH-07 <span class="field__car">▾</span></button>
+          <a class="pin pin--red" data-tip="3 days overdue — Duhon Contracting">3</a></span>
+        <span class="pin-wrap"><button type="button" class="field">Unit TL-19 <span class="field__car">▾</span></button>
+          <a class="pin pin--green" data-tip="Returned today, 7:42a"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.6a1 1 0 0 0-.2-.6l-3.5-4.4A1 1 0 0 0 17.5 8H14"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg></a></span>
       </div>
-      <div class="plate__body">
-        <span class="signal signal--yellow signal--filled">due back</span>
-        <span class="signal signal--red signal--filled">3 days overdue</span>
-        <span class="stamp">6 total</span>
-        <button class="door door--commit" style="margin-left:auto">Round Up</button>
+      <div class="row" style="gap:26px; padding:16px 4px 6px">
+        <span class="pin-wrap"><button type="button" class="field">Unit SS-12 <span class="field__car">▾</span></button>
+          <a class="pin pin--gray pin--outline" data-tip="Was idle last week">0</a></span>
+        <span class="pin-wrap"><button type="button" class="field">Unit EX-04 <span class="field__car">▾</span></button>
+          <a class="pin pin--blue pin--outline" data-tip="Booked, but not this week">2</a></span>
+        <span class="pin-wrap"><button type="button" class="field">Unit MT-31 <span class="field__car">▾</span></button>
+          <a class="pin pin--yellow pin--outline" data-tip="Service due next month">Sep</a></span>
+        <span class="pin-wrap"><button type="button" class="field">Unit BH-07 <span class="field__car">▾</span></button>
+          <a class="pin pin--red pin--outline" data-tip="Was overdue — closed out Friday">3</a></span>
+        <span class="pin-wrap"><button type="button" class="field">Unit TL-19 <span class="field__car">▾</span></button>
+          <a class="pin pin--green pin--outline" data-tip="Returned Tuesday"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.6a1 1 0 0 0-.2-.6l-3.5-4.4A1 1 0 0 0 17.5 8H14"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg></a></span>
       </div>
-    </div>
-      
-    <div class="plate plate--yellow">
-      <div class="plate__head">
-        <span class="plate__stripe"></span>
-        <span class="plate__label">End Rent</span>
-        <span class="plate__summary">2 due back today · 1 overdue</span>
-        <span class="signal signal--yellow signal--filled">due back</span>
-        <span class="plate__chevron">›</span>
-      </div>
-      <div class="plate__body">
-        <span class="signal signal--yellow signal--filled">due back</span>
-        <span class="signal signal--red signal--filled">3 days overdue</span>
-        <span class="stamp">6 total</span>
-        <button class="door door--commit" style="margin-left:auto">Round Up</button>
-      </div>
-    </div>
-      
-    <div class="plate plate--blue">
-      <div class="plate__head">
-        <span class="plate__stripe"></span>
-        <span class="plate__label">On Rent</span>
-        <span class="plate__summary">4 out, none due yet</span>
-        <span class="signal signal--blue signal--filled">waiting</span>
-        <span class="plate__chevron">›</span>
-      </div>
-      <div class="plate__body">
-        <span class="signal signal--yellow signal--filled">due back</span>
-        <span class="signal signal--red signal--filled">3 days overdue</span>
-        <span class="stamp">6 total</span>
-        <button class="door door--commit" style="margin-left:auto">Round Up</button>
-      </div>
-    </div>
-      
-    <div class="plate plate--green">
-      <div class="plate__head">
-        <span class="plate__stripe"></span>
-        <span class="plate__label">Returned</span>
-        <span class="plate__summary">2 closed out today</span>
-        <span class="signal signal--green signal--filled">done today</span>
-        <span class="plate__chevron">›</span>
-      </div>
-      <div class="plate__body">
-        <span class="signal signal--yellow signal--filled">due back</span>
-        <span class="signal signal--red signal--filled">3 days overdue</span>
-        <span class="stamp">6 total</span>
-        <button class="door door--commit" style="margin-left:auto">Round Up</button>
-      </div>
-    </div>
-      
-    <div class="plate plate--gray">
-      <div class="plate__head">
-        <span class="plate__stripe"></span>
-        <span class="plate__label">Reserved</span>
-        <span class="plate__summary">nothing due, nothing overdue</span>
-        <span class="signal signal--gray signal--outline">n/a</span>
-        <span class="plate__chevron">›</span>
-      </div>
-      <div class="plate__body">
-        <span class="signal signal--yellow signal--filled">due back</span>
-        <span class="signal signal--red signal--filled">3 days overdue</span>
-        <span class="stamp">6 total</span>
-        <button class="door door--commit" style="margin-left:auto">Round Up</button>
-      </div>
-    </div>
+      <p class="rule" style="margin-top:16px">Same two-tier read as a Signal: <b>filled = today</b>, the
+        live thing you act on; <b>outline = the same state, not today</b>. Red is the one hue that shifts
+        token — outlined red uses <code>--red-line</code>, the lighter red that stays legible once the
+        tint backfill is gone.</p>
     </div>
   </section>
 
-  <div class="callout warn"><b>Group taxonomy.</b> Attention groups (Field Calls, Failed) exist and are coloured only
-    because something is wrong — hidden entirely when empty. Lifecycle groups (On Rent, Reserved, Available) are
-    always present, gray by default, and take colour only when a member inside triggers it. Groups are never named
-    after status — colour already says "how much," the name says "where."</div>
+  <section>
+    <h2 class="sub">It pins anything — the host never changes</h2>
+    <div class="panel pad">
+      <div class="row" style="gap:26px; padding:6px 4px">
+        <span class="pin-wrap"><a class="ref"><span class="ref__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.6a1 1 0 0 0-.2-.6l-3.5-4.4A1 1 0 0 0 17.5 8H14"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg></span>Skid Steer <span class="ref__id">SS-12</span></a>
+          <a class="pin pin--red" data-tip="3 days overdue">3</a></span>
+        <span class="pin-wrap"><button type="button" class="door door--commit">Save Rental</button>
+          <a class="pin pin--yellow" data-tip="2 unsaved changes">2</a></span>
+        <span class="pin-wrap"><span class="signal signal--blue signal--filled">on rent</span>
+          <a class="pin pin--blue" data-tip="Returns Friday">FRI</a></span>
+        <span class="pin-wrap"><span class="seg"><button type="button" class="seg__opt seg__opt--on-accent">All</button><button type="button" class="seg__opt">Mine</button></span>
+          <a class="pin pin--red pin--outline" data-tip="4 hidden by this filter">4</a></span>
+      </div>
+      <div class="callout warn" style="margin-top:16px"><b>One host, one pin.</b> A pin answers a single
+        question about the thing it sits on. Two pins on one host means the host is doing two jobs — split
+        the host, don't stack the pins.</div>
+    </div>
+  </section>
 
-  <div class="foot">Sourced from <b>wrangler-style</b> (decisions) + <b>style</b> (measurable rules), built on the
-    <b>locked html.dv2</b> redesign tokens. Dark-only — no light mode is shipped or shown. Vanilla HTML + CSS, no
-    framework.</div>
+  <section>
+    <h2 class="sub">Content — a number, a time, a date, or a type icon</h2>
+    <div class="panel">
+      <div class="spec-row"><div class="spec-row__role"><div class="spec-row__rn">Count</div>
+        <div class="spec-row__rr">how many of the thing</div></div>
+        <div class="spec-row__ex" style="gap:26px"><span class="pin-wrap"><span class="stamp">OPEN WOs</span>
+          <a class="pin pin--red" data-tip="3 open work orders">3</a></span></div></div>
+      <div class="spec-row"><div class="spec-row__role"><div class="spec-row__rn">Countdown</div>
+        <div class="spec-row__rr">how long until it bites</div></div>
+        <div class="spec-row__ex" style="gap:26px"><span class="pin-wrap"><span class="stamp">SERVICE</span>
+          <a class="pin pin--yellow" data-tip="Due in 9 hours">9h</a></span></div></div>
+      <div class="spec-row"><div class="spec-row__role"><div class="spec-row__rn">Day / date</div>
+        <div class="spec-row__rr">when it lands</div></div>
+        <div class="spec-row__ex" style="gap:26px"><span class="pin-wrap"><span class="stamp">RETURNS</span>
+          <a class="pin pin--blue" data-tip="Returns Friday 3p">FRI</a></span></div></div>
+      <div class="spec-row"><div class="spec-row__role"><div class="spec-row__rn">Type icon</div>
+        <div class="spec-row__rr">what kind of thing</div></div>
+        <div class="spec-row__ex" style="gap:26px"><span class="pin-wrap"><span class="stamp">IN SHOP</span>
+          <a class="pin pin--yellow" data-tip="Mechanical hold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></a></span></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="sub">The law</h2>
+    <div class="panel pad">
+      <ol style="margin:0; padding-left:20px; color:var(--txt-2); font-size:13px; line-height:1.9">
+        <li><b>13px, deliberately off the ladder.</b> Every control in the app is 24px. The pin is not a
+          control — it is a marker <em>on</em> one, and its size says so.</li>
+        <li><b>Zero layout footprint.</b> Absolutely positioned at 70% over the host's top-right corner.
+          Adding or removing a pin must never move a single pixel of the row.</li>
+        <li><b>Colour = state, fill = today.</b> The Signal rollup precedence applies unchanged:
+          <code>red &gt; yellow &gt; blue &gt; green &gt; gray</code>.</li>
+        <li><b>Hover explains, click teleports.</b> The pin is the shortest path to the record behind the
+          number — never a dead badge.</li>
+        <li><b>It rides the host's corner, not the row.</b> If a marker needs its own slot in a row, it is
+          a Signal, not a Pin.</li>
+      </ol>
+    </div>
+  </section>
+
+  <div class="foot">Added by the <b>atom consistency pass</b> (2026-07-25) as the eighth atom family.
+    Sourced from <b>wrangler-style</b> (decisions) + <b>style</b> (measurable rules), built on the
+    <b>locked html.dv2</b> redesign tokens. Dark-only — no light mode is shipped or shown. Vanilla
+    HTML + CSS, no framework.</div>
 </div></div>
 </body>
 </html>

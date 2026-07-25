@@ -15,13 +15,18 @@
   --red:#ff4242; --red-bg:rgba(255,66,66,.13);
   --blue:#6394cc; --blue-bg:rgba(99,148,204,.15);
   --gray:#8b94a3; --gray-bg:rgba(139,148,163,.14);
-  --chip-radius:7px;
+  --chip-radius:2px;    /* state chips — SQUARED (was 7px) */
   --red-fill:#d63636; --on-red-fill:#fdfdfd; --commit:#2f6fd0; --on-commit:#fdfdfd; --tan:#c2925a;
   --radius:14px;
-  --font: "Geist", -apple-system, "Segoe UI", sans-serif;
+  --font: "Archivo", "Helvetica Neue", -apple-system, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
   /* ---- STRUCTURAL ADDITIONS (not in the locked block — see README/report) ---- */
   --h:24px;             /* one control height — style skill's 24-28px range; matches shipped --dv2-h */
-  --pill-radius:999px;  /* the action radius, paired with --chip-radius for the "two radii" rule */
+  --item-radius:8px;    /* records — Ref and +Add: things that ARE, or link to, a record */
+  --pill-radius:999px;  /* actions — Doors ONLY. Nothing else may take this radius. */
+  --red-line:color-mix(in oklch, var(--red) 78%, var(--txt)); /* legible red once outline chips lost their tint */
   --on-gray:#12171d; --on-blue:#0a1220; --on-yellow:#241d05; --on-green:#06231a;
+}
+@supports (color: oklch(from red l c h)){
+  :root{ --red-line: oklch(from var(--red) .74 .215 h); }
 }
