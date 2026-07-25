@@ -12,8 +12,12 @@ to emit the approved markup. (Codex is NOT in use.)
 - **Design Labs** = where each screen is designed + approved. It is blind to our code; it only knows
   the synced design system. It emits static HTML/CSS in our idiom.
 - **`docs/design/rw-design-system/`** = the code-accurate kit (the design system's source of truth).
-  Jac syncs it to Labs with `/design-sync` from a **local** Claude Code session (a cloud/web session
-  cannot authorize — that's expected, not a bug).
+  Jac syncs it to Labs with `/design-sync` from a **local** Claude Code session. **A cloud/web session
+  cannot do this** — verified 2026-07-25: `DesignSync` returns *"design-system authorization, but
+  /design-login requires an interactive terminal and is not available in this environment."* That is
+  expected, not a bug; don't burn a turn retrying it. The error names one untested alternative —
+  Claude Design's **"Send to Claude Code Web"**, which seeds the project into the workspace — worth
+  trying sometime, but the local `/design-sync` is the known-good path.
 - **Implementation** = rewrite what the builders (`rowEl`, `cardEl`, chip helpers…) *emit*. The data
   plumbing (`IDX`, derivations) does not change; only the returned markup does. This is why the kit is
   built on our real tokens/classes — so approved mockups drop in rather than needing translation.
@@ -99,8 +103,10 @@ the Inherit list, NOT from session continuity. Start a fresh Labs session per sc
   ancestor, run `git fetch --deepen=200 origin trunk` before believing it.
 
 ## Next action
-1. **`/design-sync` from a LOCAL session** against the patched kit, so Labs is grounded on the locked
-   atoms rather than the pre-pass ones. A cloud/web session cannot authorize this — that's expected.
+1. **`/design-sync` from a LOCAL session** (`/design-sync docs/design/rw-design-system/`) against the
+   patched kit. **This gates everything else** — Labs is still grounded on the PRE-pass atoms, so
+   running a container prompt before syncing composes containers out of 7px chips, Geist and tinted
+   outlines, and the work has to be redone. Labs has never seen `elements/pin.html` at all.
 2. **Run `prompts/prompt-03-container-card.md`** in a fresh Labs session. Then 04, then 05.
 3. As each locks, fold the result into the kit, re-sync, and append it to the locked-elements
    registry in `labs-build-order.md`.
