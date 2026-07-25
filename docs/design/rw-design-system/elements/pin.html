@@ -1,10 +1,10 @@
-<!-- @dsCard group="Elements" name="Ref" -->
+<!-- @dsCard group="Elements" name="Pin" -->
 <!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Rental Wrangler — Ref</title>
+<title>Rental Wrangler — Pin</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root{
@@ -331,46 +331,68 @@
   .pin[data-tip]:hover:after,
   .pin[data-tip]:focus-visible:after{display:block}
 
+  /* ---- misc demo scaffolding: Pin host tile (page-local, not shared vocabulary) ---- */
+  .pin-host{width:56px; height:40px; border-radius:8px; border:1px solid var(--line); background:var(--card);
+    display:inline-flex; align-items:center; justify-content:center; color:var(--txt-3)}
+  .pin-host svg{width:18px; height:18px}
 </style>
 </head>
 <body>
 <div class="wrap"><div class="sheet">
   <div class="top">
     <p class="eyebrow">JacRentals · Rental Wrangler <span class="hl">·</span> Elements</p>
-    <h1>Ref</h1>
-    <p class="lede">A linked record: it carries the parent icon and walks across cards.</p>
+    <h1>Pin</h1>
+    <p class="lede">The universal corner marker. Colour = state, fill = today — exactly like a Signal — anchored on a host so ownership is unambiguous.</p>
     
   </div>
 
-  <div class="callout"><b>Ref</b> — a linked record: a square <b>accent-tinted icon backing</b> holding the parent's
-    type icon + the name (body voice). Radius = the one chip radius. Orange-marked = touchable. Not a status chip —
-    walks across cards.</div>
+  <div class="callout"><b>Pin</b> — a small corner marker anchored at 70% over its host's top-right corner. Content is
+    free: a number, a weekday, a date, an icon. Hover/focus explains via <code>data-tip</code>; click teleports to the
+    record. 13px tall — deliberately off the 24px control ladder — and zero layout footprint: absolutely positioned,
+    no margin, no reserved space.</div>
 
   <section>
-    <h2 class="sub">Every linked record is a Ref — its own type icon, never one generic glyph</h2>
+    <h2 class="sub">Every state colour — filled (today) vs. outline</h2>
+    <div class="panel pad">
+      <div class="row" style="margin-bottom:18px">
+        <span class="pin-wrap"><span class="pin-host">A</span><a class="pin pin--gray" data-tip="Nothing pending">&middot;</a></span>
+        <span class="pin-wrap"><span class="pin-host">B</span><a class="pin pin--blue" data-tip="Waiting on customer">2</a></span>
+        <span class="pin-wrap"><span class="pin-host">C</span><a class="pin pin--yellow" data-tip="Due back today">MON</a></span>
+        <span class="pin-wrap"><span class="pin-host">D</span><a class="pin pin--red" data-tip="3 unread field calls">3</a></span>
+        <span class="pin-wrap"><span class="pin-host">E</span><a class="pin pin--green" data-tip="Closed out today">&check;</a></span>
+      </div>
+      <div class="row">
+        <span class="pin-wrap"><span class="pin-host">A</span><a class="pin pin--gray pin--outline" data-tip="Nothing pending">&middot;</a></span>
+        <span class="pin-wrap"><span class="pin-host">B</span><a class="pin pin--blue pin--outline" data-tip="Waiting on customer">2</a></span>
+        <span class="pin-wrap"><span class="pin-host">C</span><a class="pin pin--yellow pin--outline" data-tip="Due back today">MON</a></span>
+        <span class="pin-wrap"><span class="pin-host">D</span><a class="pin pin--red pin--outline" data-tip="3 unread field calls">3</a></span>
+        <span class="pin-wrap"><span class="pin-host">E</span><a class="pin pin--green pin--outline" data-tip="Closed out today">&check;</a></span>
+      </div>
+      <p class="rule">Green is filled-only in practice, same as Signal — a completion, not a temperature.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="sub">Content is free — number, weekday, icon</h2>
     <div class="panel pad">
       <div class="row">
-        <a class="ref"><span class="ref__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>Duhon Contracting</a>
-        <a class="ref"><span class="ref__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.6a1 1 0 0 0-.2-.6l-3.5-4.4A1 1 0 0 0 17.5 8H14"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg></span>Skid Steer <span class="ref__id">SS-12</span></a>
-        <a class="ref"><span class="ref__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg></span>Invoice <span class="ref__id">#4460</span></a>
-        <a class="ref"><span class="ref__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg></span>Rental <span class="ref__id">#4471</span></a>
+        <span class="pin-wrap"><span class="pin-host"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg></span><a class="pin pin--red" data-tip="Rental #4471 &mdash; 3 days overdue">3</a></span>
+        <span class="pin-wrap"><span class="pin-host"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><a class="pin pin--yellow" data-tip="Due back Thursday">THU</a></span>
+        <span class="pin-wrap"><span class="pin-host"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg></span><a class="pin pin--blue" data-tip="Invoice #4460 &mdash; waiting on customer">&middot;</a></span>
       </div>
+      <p class="rule">A Pin's host can be anything — a Ref icon, a Stamp, a plain tile. The Pin itself never resizes or
+        re-colours its host; it only sits on top of the host's top-right corner.</p>
     </div>
   </section>
 
   <section>
-    <h2 class="sub">Walks across cards — a trace</h2>
+    <h2 class="sub">Anchored, not laid out</h2>
     <div class="panel pad">
-      <div class="ref-trace">
-        <a class="ref"><span class="ref__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>Duhon</a><span class="ref-trace__arrow">→</span>
-        <a class="ref"><span class="ref__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg></span>Rental <span class="ref__id">#4471</span></a><span class="ref-trace__arrow">→</span>
-        <a class="ref"><span class="ref__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg></span>#4460</a>
-      </div>
+      <p class="rule" style="margin:0">Absolutely positioned at <code>top:0; left:100%; transform:translate(-70%,-50%)</code>
+        over the host, inside a <code>.pin-wrap{position:relative}</code>. It reserves no width, no height, no margin
+        &mdash; the host's own box never changes size to make room for it.</p>
     </div>
   </section>
-
-  <div class="callout warn"><b>Every occurrence, not just inline body text.</b> A card's own title/header is a Ref
-    too, everywhere that record's name/ID appears — unit · customer · rental · invoice · category — never plain text.</div>
 
   <div class="foot">Sourced from <b>wrangler-style</b> (decisions) + <b>style</b> (measurable rules), built on the
     <b>locked html.dv2</b> redesign tokens. Dark-only — no light mode is shipped or shown. Vanilla HTML + CSS, no
