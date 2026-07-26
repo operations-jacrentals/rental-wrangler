@@ -120,6 +120,13 @@ that needs a Signal/Stamp/icon distinction instead — solve it in the component
 = *touchable* · deep-blue `--commit` = *commit* · everything else = plain honest text.
 Nothing ever does two jobs — that's the whole reason Signal, Ref, and Door don't collide.
 
+**ACCENT ≠ STATUS — the agency law (locked 2026-07-26, ledger #137).** Accent means **user agency**;
+status hues mean **the world.** Anything that says *"you did this"* — the selected row, an active
+filter, the hover ring, the focus ring — is `--accent`. A status hue (red · yellow · blue · green ·
+gray) always describes the **record's** condition, never the user's choice. This sharpens
+"orange = touchable" above: *touchable* is the affordance, *agency* is the state of having acted.
+Without it, a selected row and an on-fire row compete for the same meaning — and the fire loses.
+
 ### 3.0 The four control shapes (locked 2026-07-25 — this is our answer to `style` §1)
 
 Shape carries the **family**, so a control's silhouette says what kind of thing it is before

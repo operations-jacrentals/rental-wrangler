@@ -558,8 +558,17 @@ history is what lets a future reader tell "settled" from "settled twice."
 | 134 | **Every Labs prompt must inherit this ledger, never re-derive from scratch.** Labs is blind to the repo, so anything absent from a prompt does not exist to it — a prompt that re-derives settled ground silently undoes it | [LABS-PIPELINE] |
 | 135 | **A decision is not made until it has a row in this table.** The 07-20 snapshot going un-extended for six days is what let a superseded decision be cited as current | [this section] |
 | 136 | **A Labs prompt MAY ask for several artifacts in one session, and container mockups STAY interactive** — both deliberate, both accepted as slower. Reviewed 2026-07-26 after Jac asked why one artifact takes so long: prompt-03 asks a single session for frame + header + row across ~17 rendered states, with live JS. Kept because designing the three **against each other** stops them drifting, and because clicking a row and watching it expand catches what a static state grid cannot. **Cost accepted:** slower builds, and a wrong part means re-running the whole prompt. **Do not "fix" the apparent conflict with "one screen = one Labs session = one artifact" by splitting these prompts** — the rule is about *scope of subject*, not count of rendered pieces | ✅ **CURRENT** [Jac] |
+| 137 | **ACCENT ≠ STATUS — accent means USER AGENCY, status hues mean THE WORLD.** Selected row, active filter, hover ring, focus ring — anything that says *"you did this"* — is `--accent`. A status hue (red/yellow/blue/green/gray) always describes the **record's** condition, never the user's choice. Raised by the Tier 0.1a card artifact, which needed a colour for "you did this" that could not be mistaken for the world being on fire. **Accepted as a law** (Jac, 2026-07-26). Sharpens the existing "orange = touchable" line in `wrangler-style` §3: touchable is the affordance, agency is the *state* of having acted | ✅ **CURRENT** [Jac] |
+| 138 | **Two atom gaps found by the 0.1a card artifact — real, not workarounds to keep.** (a) The kit has **no real text input** — Search is currently faked with a `.field`, which is an *opener* (it opens something) and therefore the wrong shape for free typing. (b) The **Pin's ring colour is hard-coded** to `--panel`, so a Pin breaks on any surface that isn't a panel. Both need fixing in the kit and re-syncing | ⏳ **OPEN — queued for the kit** |
 
 ## Still open after 07-20 (do not treat as locked)
+
+- **The card header's seating — 1a / 1b / 1c** (Tier 0.1a artifact §2.2). Two bands (identity over
+  controls, the artifact's recommendation), one band, or identity-cap + filter rail in the body.
+  **Jac has not chosen.** Do not treat 1a as settled just because it is marked RECOMMENDED.
+- **The drop order under narrowing** — the artifact proposes *glance frequency*
+  (sort → search → description → chip words, with title Ref / rollup / Door never dropping).
+  **Jac has not ruled.** Undecided.
 
 - **The Detail-view structural reshape** (#119) — deferred pending its own reviewed pass.
 - **Invoice line-item IDs as Ref vs Stamp** (#116) — shipped as Ref, explicitly flagged as revertible.
