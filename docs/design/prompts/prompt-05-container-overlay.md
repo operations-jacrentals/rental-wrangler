@@ -54,7 +54,22 @@ and what a **destructive** confirm looks like when it must not be clicked throug
 ### 3. The ⋯ action menu — the one this tier added
 The atom pass **dropped `.menu`** as a status picker (that job now belongs to `.seg--stack`, a
 stacked segmented toggle). What is left is a genuinely different container: a short list of
-**unrelated verbs** hanging off a ⋯ trigger — Duplicate · Export · Archive · Delete.
+**unrelated verbs** hanging off a ⋯ trigger.
+
+**⚠️ This menu is already half-decided — read before designing**
+(`docs/superpowers/specs/2026-07-20-decisions-ledger.md` #79/#83,
+`2026-07-20-list-views-inline-expand-design.md` §7.3–7.4):
+
+- **It is the same surface as the R20 right-click menu.** Right-clicking a row and tapping its ⋯ must
+  open **one menu**, not two designs of one. Design it once.
+- **It carries a user-CUSTOMIZABLE quick-action set** — Hide · Mark unread/read · Star · Snooze ·
+  Archive — surfaced **identically** as row actions (hover-reveal on desktop, **swipe** on mobile) and
+  in this menu. *"One set, learned once, available everywhere."* So the menu is not a fixed list you
+  get to author: design it to hold a **configurable** set, and decide what a user-ordered menu looks
+  like and where a customize entry point lives.
+- **Comms items stay in place.** "Text {name}…" / "Email {name}…" open compose **with the record
+  pre-attached**, docked — they must **never teleport to the Inbox card**, and never pop mid-screen.
+  A comms verb in this menu is a different animal from Duplicate/Delete; decide how it reads.
 
 Design it as a container, and settle the questions that make it a menu rather than a list of chips:
 - **The trigger.** What ⋯ looks like at rest, on hover, and while open — and where it sits on a row

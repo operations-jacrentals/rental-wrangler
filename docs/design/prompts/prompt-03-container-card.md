@@ -54,11 +54,42 @@ scroll, and what the bottom edge does when there is more below the fold — a ca
 off is the failure mode to design against.
 
 ### 2. The card header
-The cap that says what this card is and what is wrong inside it. It has to carry, in one 
-constant-height band: the card's **name**, a **count**, the **rolled-up worst state** of everything
-inside, a **filter/segment control**, and a **primary action**. Decide the order, what survives when
+The cap that says what this card is and what is wrong inside it. Decide the order, what survives when
 the card is narrow, and what happens to the header when the body is scrolled. This header appears on
 all twelve surfaces below — design it as a system, not a one-off.
+
+**⚠️ The header's CONTENTS are already decided — do not re-derive them.** These are locked
+(`docs/superpowers/specs/2026-07-20-decisions-ledger.md` §5 + decisions 36/37, and
+`2026-07-20-list-views-inline-expand-design.md` §5.2). Your job is the **grammar** — order, spacing,
+priority, responsive behaviour — **not** which controls exist:
+
+- **The card's name, LEFT-aligned.** It moved from centre to left *specifically* to free header room
+  for the filter chips (ledger #37). Do not centre it. It renders as a **Ref**, not plain text — a
+  card title is a linked record like any other (critique log: "Ref drift").
+- **A short description line** under the name — mono, uppercase, muted, ellipsised
+  (e.g. "3-up tiles · staff priority order"). Present in the reference mockup as `col-desc`.
+- **"Your Work"** — the quick-filter chip. Hides any group holding **only** green/gray; shows only
+  groups containing red/yellow/blue. It does **not** re-bucket items, only hides/shows whole groups,
+  and it **carries a rolled-up count**. Accent-filled when on. This was deliberately chosen over four
+  time-based chips (Today/Tomorrow/Week/Done) because those are Rentals-specific words that don't fit
+  Units or Customers — a per-card filter set would have broken "same builder everywhere."
+- **"Done"** — its sibling and opposite: shows only items in the green "done today" state, so a user
+  can re-find and re-touch what they just did. A **filter**, explicitly *not* a group.
+- **Search** and **sort**. (Sort is flagged weak and parked for a future all-cards redesign, ledger
+  #85 — give it a slot, don't over-invest in it.)
+- **The rolled-up worst state** and a **primary action** (one verb per card).
+- **NOT the graph button.** It used to live in the card subheader; it **moved onto each section**
+  (spec §5.2), where clicking it pops that graph onto the user's Dashboard. Do not put it back here.
+
+So the real question this artifact answers is: **how do a left-aligned Ref title, a description line,
+two filter chips (one carrying a count), search, sort, a rollup, and one Door share one band** — and
+what drops first as the card narrows. That is a harder packing problem than a generic six-slot header,
+and it is the actual problem.
+
+**A note on what already exists:** a prior Labs pass produced a clean six-slot header
+(stripe · name · count · rollup · filter-seg · verb) that is good grammar but was built without the
+list above — its `ALL / OPEN / PAID` segment is not the locked Your Work / Done model. Treat that
+pass's **frame, row and overflow work as sound**; the header is the part to redo against this canon.
 
 ### 3. The list row
 The unit that repeats. Design the **collapsed** row and its **states**: default, hover, focused,
