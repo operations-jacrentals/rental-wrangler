@@ -36,10 +36,27 @@ verified, not assumed:
 These files are **not a skill** — nothing loads them automatically. They are readable canon for the
 capabilities above until someone gives them a proper one.
 
-**Open follow-up for Jac:** the **`/role` audit** and **mobile** guidance deserve to be their own
-skills so they trigger automatically again. Right now they only work if someone remembers to open
-this folder — which is exactly the "lives in the wrong place" failure that cost three audits on
-2026-07-26. Filed rather than invented: creating two new skills is a decision, not cleanup.
+## Where these should actually live — the recommendation
+
+**The lesson from `jactec-ui` is that one skill doing four jobs rots**, because the parts get
+superseded at different rates and nobody notices the stale ones. So the answer is *not* "make a new
+combined design skill." It is to put each capability where its own kind of content already lives:
+
+| Capability | Recommended home | Why |
+|---|---|---|
+| **mobile** | **split across the existing two** — measurable bits (≥44px touch floor, safe-area/dvh sizing, gesture timing thresholds) into `style`; decisions (bottom sheets, the 3-column phone reflow, which gesture does what, haptics) into `wrangler-style` | Matches the established rules-vs-decisions architecture. **No new skill** — mobile isn't a separate discipline, it's the same design system at another width. |
+| **`/role` audit** | **its own skill** (`.claude/skills/role/`) | It is a **review gate**, not design language — explicitly invoked, its own triggers, its own output. Critically it is the **PII / margin-leak** check, and burying a security gate inside a styling skill is how it gets skipped by a design-focused session. |
+| **anti-slop** | **`wrangler-style`** | "Don't look generic" is a voice/decision concern, and it's short. |
+| **DESIGN.md guides** | **decide first** | Ask Jac whether `DESIGN.md` is still a live artifact. If it's being retired, these go with it; if it's live, they belong wherever it's owned. Don't build a skill for a file that may be on the way out. |
+
+⚠️ **One thing to check before creating the `/role` skill:** it overlaps the existing **`lazy-audit`**
+skill, which is also role-lens auditing. They are *probably* distinct — `lazy-audit` walks a **running
+surface** as one persona; `/role` reviews a **spec** against 15 lenses plus the authority /
+data-sensitivity / gate checklist — different inputs, different outputs. But confirm that before
+standing up a second, overlapping skill rather than extending `lazy-audit`.
+
+**All of this is filed, not done.** Creating skills and moving canon between them is a decision, not
+cleanup — and doing it silently is what produced the mess this folder documents.
 
 Anything else from the old skill (tokens, signature recipes, checklists, frontend-design,
 jactec.design.md) was **dropped deliberately** — it taught the superseded design language, and it
