@@ -29,6 +29,23 @@ to emit the approved markup. (Codex is NOT in use.)
 3. **♻️ Inherit** — the already-locked components this mockup must reuse **verbatim**. Once a thing is
    locked it rides onto every later screen unchanged.
 
+### ⛔ Before writing ANY prompt: mine the decisions ledger
+
+**`docs/superpowers/specs/2026-07-20-decisions-ledger.md` is the index of every locked decision** —
+grep it for the surface you are about to prompt, and put what you find in the **Inherit** list.
+Its companion `2026-07-20-list-views-inline-expand-design.md` carries the same session's spec.
+
+This is not optional politeness — **it is the step that was skipped once and caused a real
+regression** (2026-07-26): the card-header prompt derived its own slot list (name · count · rollup ·
+filter · verb) instead of inheriting the ledger's, and Labs faithfully designed a header with **no
+"Your Work" chip, no "Done" chip, a centred title, and no description line** — all four of which
+were decided months earlier. Labs is blind to our repo; **anything not in the prompt does not exist
+to it.** A prompt that re-derives what was already settled *will* silently undo it.
+
+Watch especially for decisions marked **`⚠ NEW — captured here`** in the ledger's index table: those
+exist in the ledger and **nowhere else** — not in a skill, not in a spec — so they are exactly the
+ones a from-scratch prompt will miss.
+
 **One screen = one Labs session = one artifact.** Consistency comes from the synced design system +
 the Inherit list, NOT from session continuity. Start a fresh Labs session per screen.
 

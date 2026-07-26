@@ -61,11 +61,23 @@ What goes inside: a **key/value grid** for facts, a **row list** for contained r
 label/value alignment, what a missing value looks like, and how a long value wraps without breaking
 the 24px control band.
 
-### 4. The section's action
+### 4. The section's actions — a Door **and** a graph button
 Each section owns at most one **primary Door** ("Add Part", "Collect Payment", "Start Inspection")
 plus optional secondary actions. Decide where it lives — in the header band or the body footer —
 and what happens to it when the section is collapsed. This choice directly feeds the Tier 1 rail
 chip, which carries the section's Signal *and* its primary Door.
+
+**⚠️ Every section also carries a GRAPH BUTTON — this is locked, not optional**
+(`docs/superpowers/specs/2026-07-20-list-views-inline-expand-design.md` §5.2). Clicking it pops that
+section's graph **onto the user's role Dashboard** — *not* inline, which is the whole point: the graph
+never eats the card's vertical budget. This is the **composition mechanism** for the role Dashboard —
+users curate it section by section (open a unit's Investment / Services / GPS section → click its
+graph → it lands on their Dashboard).
+
+So a section header carries **two** affordances of different kinds: a **Door** (a verb that changes
+this record) and a **graph button** (a verb that changes *the user's dashboard*). Decide how they sit
+together without reading as a row of equal buttons — they are not equals, and the graph button is the
+quieter of the two. Decide what it looks like once the graph is already on the Dashboard.
 
 ## The test the artifact has to pass
 Stack **eight** sections — two red, one yellow, five gray — and scroll it. Can you find the two that
