@@ -28,8 +28,8 @@ worst state, and carries its own primary action — so a record's detail is noth
 - **The section rail itself** — the horizontal strip of chips that pages between sections one at a
   time. That is **Tier 1, the detail view**, and it depends on the shell. Here you only decide what
   a single section *contributes* to a rail chip: its label, its rolled-up Signal, its primary Door.
-- **Bounded height and paging behaviour.** Tier 1. Design the section as if it will be given
-  whatever height it needs.
+- **The expanded item's bounded height and section paging.** Tier 1. ⚠️ But **not** the section's own
+  overflow — see the locked rule below; a section does *not* get "whatever height it needs."
 - **Popups and the ⋯ menu.** The next prompt.
 
 ## ♻️ Inherit (locked — reuse verbatim)
@@ -61,6 +61,12 @@ What goes inside: a **key/value grid** for facts, a **row list** for contained r
 label/value alignment, what a missing value looks like, and how a long value wraps without breaking
 the 24px control band.
 
+**⚠️ A tall section scrolls INTERNALLY — it never blows out the card** (ledger #57; the worked example
+is Customers' Invoices, which can hold hundreds of rows). So the section owns a max height and its own
+scroll. Decide what that scroll looks like, where the boundary reads, and how a scrolled section still
+shows that there is more below — the same anti-silent-cutoff problem the card frame solves at its hem,
+one level down.
+
 ### 4. The section's actions — a Door **and** a graph button
 Each section owns at most one **primary Door** ("Add Part", "Collect Payment", "Start Inspection")
 plus optional secondary actions. Decide where it lives — in the header band or the body footer —
@@ -78,6 +84,23 @@ So a section header carries **two** affordances of different kinds: a **Door** (
 this record) and a **graph button** (a verb that changes *the user's dashboard*). Decide how they sit
 together without reading as a row of equal buttons — they are not equals, and the graph button is the
 quieter of the two. Decide what it looks like once the graph is already on the Dashboard.
+
+## Two neighbours the section must not collide with
+
+Both are Tier 1's to design, but they bound this one — so know they exist:
+
+- **The landing section is the Signal summary, and it is labelled "To Do"** (ledger #54). Internally we
+  call it Signal; **the user never sees that word** — component names are our vocabulary, never
+  user-facing. So one section in every stack is *the summary of the others*. Make sure the plate
+  grammar can carry that without needing a special case.
+- **A persistent History-search footer sits under every expanded item, on all sections** (ledger #56)
+  — it is **never paged away** when you move between sections. That footer is not yours, but it eats
+  the bottom edge: **don't design a section footer that competes with it.** This is the main reason
+  the section's primary Door may want to live in the header band rather than at the bottom.
+
+Also inherited: **role sets the default landing section and the section order**, and a user's
+**drag-resort persists per record-type** (ledger #55). So section order is data — never hard-code a
+sequence into the design, and make sure a plate looks right in any position in the stack.
 
 ## The test the artifact has to pass
 Stack **eight** sections — two red, one yellow, five gray — and scroll it. Can you find the two that
