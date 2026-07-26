@@ -1,4 +1,12 @@
-# Decisions Ledger — 2026-07-20 design session
+# Decisions Ledger — 2026-07-20 design session (extended to 2026-07-26)
+
+> **⏱ READ FIRST — this file has two halves.** Everything up to **#100** is a **2026-07-20
+> snapshot**. Decisions made on **07-21, 07-25 and 07-26** are indexed in the
+> **[EXTENSION section](#extension--decisions-after-2026-07-20-101)** at the bottom, starting at
+> **#101** — including **two reversals of the section model**, where a 07-20 row is no longer current.
+> **Do not cite a row from the first half without checking for a superseding row in the extension.**
+> Grepping this file and stopping at the first hit is exactly how a superseded decision got cited as
+> canon on 2026-07-26.
 
 **Purpose.** This is the flat, scannable index of every locked decision made during the
 2026-07-20 UI-redesign brainstorming session, cross-checked against every doc it should
@@ -314,8 +322,8 @@ first written down in this ledger.
 | 50 | Inline-expand replaces detail-view navigation; single-click/tap expands in place, no cascade | [doc: spec §1] |
 | 51 | Desktop expand animates with the mobile-swipe easing/timing, fixed target size, siblings push down | [doc: spec §1] |
 | 52 | Mobile expand opens a focused full-screen mode reusing the comms full-screen gesture system | [doc: spec §1] |
-| 53 | Multi-section cards page via section chips living in the item's own top row on expand | [doc: spec §2] |
-| 54 | Landing section = the Signal summary, labelled "To Do" on the section chips (internal name stays "Signal") | [doc: spec §2] |
+| 53 | Multi-section cards page via section chips living in the item's own top row on expand | ⚠️ reversed twice — see **#101** then **#121**; the paging model is current but the rail's form changed [doc: spec §2] |
+| 54 | Landing section = the Signal summary, labelled "To Do" on the section chips (internal name stays "Signal") | ⚠️ the "To Do" label was retired on desktop by #101 and returns with paging — see **#123** [doc: spec §2] |
 | 55 | Role sets the default landing + section order inside an expanded item; drag-resort persists per record-type | [doc: spec §2] |
 | 56 | Persistent History-search footer on every expanded item, all sections, not paged away | [doc: spec §2] |
 | 57 | Tall sections (e.g. Customers' Invoices) scroll internally, never blow out the card | [doc: spec §2] |
@@ -483,3 +491,77 @@ Add as a new bullet:
   Door are how *we* talk about the pieces; the person using the app always sees plain task
   language (e.g. the Signal-summary landing tab reads **"To Do"**, never "Signal").
 ```
+
+---
+
+# EXTENSION — decisions after 2026-07-20 (#101+)
+
+**Why this exists.** Everything above is a **2026-07-20 snapshot** that stops at #100. Decisions kept
+being made on 07-21, 07-25 and 07-26 — but none were indexed here, so this file quietly became a
+*stale* authority: a reader would grep it, find a 07-20 answer, and cite a decision that had since
+been reversed. That happened on 2026-07-26 and cost three audits.
+
+**The rule going forward: a decision is not made until it has a row in this table.** If you reverse
+something, add a new row rather than editing the old one, and mark the old one superseded — the
+history is what lets a future reader tell "settled" from "settled twice."
+
+> ⏱ **Precedence reminder:** rows are dated. **Newer wins.** The 07-20 tables above are *not*
+> automatically current — check for a superseding row down here before citing one of them.
+
+## 2026-07-21 — Trips ETA-Tracker, detail-view build, section model (first reversal)
+
+| # | Decision | Status |
+|---|---|---|
+| 101 | Section model → **accordion plate stack on desktop, page on mobile** (spec §2.0); chosen because the stack renders every section's state at rest | ⛔ **SUPERSEDED by #121 (07-25)** |
+| 102 | Trips ETA-Tracker renders as a **dispatch-book ledger** — a list of stop rows joined by a connector spine — not a ticket card | [spec §8.5, supersedes §8.4's framing] |
+| 103 | The Houston multi-route map was **inspiration only — do NOT build a multi-truck board.** Row-click opens the single trip's route on the Dashboard map; that is the only map surface in scope | [spec §8.5] |
+| 104 | **"DEPARTURE" spelled out** on the ledger's left prefix — never OUT/DEP/RTN abbreviations | [spec §8.5.1] |
+| 105 | **No per-trip header or footer** — the ledger is just its rows; the driver-reassign Gate rides the START (store) row; group headers stay | [spec §8.5.1] |
+| 106 | Stop-type glyph (`HQ`/`↓`/`↑`) sits **left of the Gate** | [spec §8.5.1] |
+| 107 | **ETA clock behaviour:** shows the scheduled departure time until it arrives, then **counts UP** until Start is clicked. A missed departure is a **heavy escalation** — notifies dispatch **plus manager and sales**, because it is a business problem, not a quiet flag | [spec §8.5.1, style §6] |
+| 108 | **Drive folds into the ETA line** as a first-class figure — `+42MIN = 8:22 ETA`, no separate Drive column | [spec §8.5.1 pt5, supersedes the "own column" round-2 line] |
+| 109 | Town links **column-align with the Deadline chips** (an aligned right-hand pair) | [spec §8.5.1] |
+| 110 | **Connector = the stop's ORDER NUMBER** (1·2·3…) once tripped; an untripped/loose stop keeps a **BOX**; Start/End anchors are **inert** | [spec §8.5.1 pt7, supersedes §8.5's "square box + inert circles"] |
+| 111 | **Untrip by DRAGGING the row away** — the box is not a click-to-untrip control | [spec §8.5.1] |
+| 112 | Town = the **"True hyperlink ↗"** — ink + accent underline + trailing arrow, opening Google Maps off-app | [spec §8.5.1] |
+| 113 | The **customer rides as a Ref** between the Town and the Deadline | [spec §8.5.1 pt10] |
+| 114 | The Trips **Gate is a canon Gate chip** — soft Waiting `--blue` + leading chevron — **not** a `--commit` affirm pill. The chevron is what keeps a blue Gate distinct from a blue Waiting Signal | [spec §8.5.1 pt11] |
+| 115 | **Source every element from the artifacts + `wrangler-style` + `style` — never the live app.** If canon is missing something, stop and ask | [spec §8.5.1 pt9] |
+| 116 | **Invoice line-item IDs = Ref (walkable).** May revert to Stamp later — keep the render routed through the element layer so the flip is one line, not a sweep | [build plan Decisions] |
+| 117 | Trips row has **three non-overlapping click targets**: row-body → trip map on the Dashboard · town → Google Maps · gate → advance the state machine | [spec §8.5] |
+| 118 | **List Views + the three Detail views ship as ONE build plan** — they share the element layer and card grammar, so building them together keeps the shared builders honest | [build plan Scope] |
+| 119 | The `.plate`/accordion/KPI-grid/mini-calendar **structural reshape of the Detail views is DEFERRED** — an information-architecture decision that needs its own reviewed mockup pass, not a blind build | [build plan, "NOT built this run"] |
+| 120 | Plate grammar ships as a **3px coloured LEFT-BORDER stripe** on both existing field-group containers (`.acct`, `.section`); the base theme's glow is dropped (matte, no glow) | [build plan Slice 4] |
+
+## 2026-07-25 — the Labs pipeline, the atoms lock, section model (second reversal)
+
+| # | Decision | Status |
+|---|---|---|
+| 121 | **Section model → PAGING, via a section rail.** *"The settled answer is a bounded, paging detail view driven by a section rail… no long scroll, no accordion stack."* The accordion lost because stacking every section open made a Customer record run **~5 phone-screens** | ✅ **CURRENT — supersedes #101 and #53** [`docs/design/prompts/prompt-01-detail-views.md`] |
+| 122 | Each **rail chip carries three things**: the section's rolled-up Signal (worst state inside), colour = that state, and the section's **one primary Door** — so paging hides nothing | [prompt-01] |
+| 123 | The **first section shown on open is the Signal summary / most-urgent** one — land the user on what needs them | [prompt-01; decision-notes.md:169] |
+| 124 | **History is a pinned footer**, always visible under the paging pane — explicitly **not** one of the rail's paging sections | [prompt-01] |
+| 125 | **Section order stays natural and familiar** — never re-sorted by severity; the rail's *colour* carries severity, the *order* holds muscle memory | [prompt-01] |
+| 126 | **One fixed maximum height envelope** every record obeys, so the list never jumps; a section taller than the envelope **scrolls inside its own pane** | [prompt-01] |
+| 127 | **Atoms LOCKED** — the consistency pass: four control shapes, Archivo body voice, true-outline chips + `--red-line`, `.menu` dropped as a picker in favour of `.seg--stack`, the new **Pin** atom, and uniform hover/focus/press with real `<button>`s | [LABS-PIPELINE, `wrangler-style` §3.0/§3.1] |
+| 128 | **The Labs prompt framework** — every prompt carries a North Star, explicit anti-objectives, and an Inherit list; **one screen = one Labs session = one artifact** | [LABS-PIPELINE] |
+| 129 | The **shell must resolve the rail-vs-⅓-column tension** — the detail's horizontal rail does not fit a third-width column, so the shell picks break-out-wider vs anchor-panel vs in-column | [prompt-02-shell] |
+| 130 | The design system reaches Labs via **`/design-sync` from a LOCAL session** — a cloud session cannot authorize it | [LABS-PIPELINE] |
+
+## 2026-07-26 — the opener shape, the card inventory, the process fixes
+
+| # | Decision | Status |
+|---|---|---|
+| 131 | **The opener — a fourth control shape.** Top corners rounded, bottom square (`5px 5px 0 0`), earned only by **Gate** and **Field**, so a trigger reads as the top half of an already-open menu. Rejected on purpose: `.plate` (a container, not a control), `.door` (actions never open), `.seg` (a toggle switches) | ✅ supersedes the "two radii / one 7px chip" line [`style` §1, `wrangler-style` §3.0] |
+| 132 | **Trips IS a card** — the card anatomy serves it, and it is the useful stress test for the row grammar because it is time-anchored | [Jac, LABS-PIPELINE] |
+| 133 | **The base five are Units · Rentals · Customers · Trips · Categories**, plus the role **Dashboard** as a 6th. **Invoices is NOT a base card** — it becomes a back-office board. Confirms #44 over the shipped code, so **`config.js` → `GRID_CARDS` needs updating in Tier 2** (queued app work, not a design task) | ✅ **CURRENT** [Jac] |
+| 134 | **Every Labs prompt must inherit this ledger, never re-derive from scratch.** Labs is blind to the repo, so anything absent from a prompt does not exist to it — a prompt that re-derives settled ground silently undoes it | [LABS-PIPELINE] |
+| 135 | **A decision is not made until it has a row in this table.** The 07-20 snapshot going un-extended for six days is what let a superseded decision be cited as current | [this section] |
+
+## Still open after 07-20 (do not treat as locked)
+
+- **The Detail-view structural reshape** (#119) — deferred pending its own reviewed pass.
+- **Invoice line-item IDs as Ref vs Stamp** (#116) — shipped as Ref, explicitly flagged as revertible.
+- **Everything in the 07-20 "Still open" list above** — signature motif, commit-blue shade, Mr.
+  Wrangler's channel placement, KPI rings, the all-cards Sort redesign, the fill-rule edge case.
+  None of these were settled since; **do not promote them into a prompt as if locked.**

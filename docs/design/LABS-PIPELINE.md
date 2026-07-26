@@ -35,6 +35,11 @@ to emit the approved markup. (Codex is NOT in use.)
 grep it for the surface you are about to prompt, and put what you find in the **Inherit** list.
 Its companion `2026-07-20-list-views-inline-expand-design.md` carries the same session's spec.
 
+**The ledger now runs to 2026-07-26.** Rows **#1–100** are the 07-20 snapshot; **#101+** is the
+EXTENSION covering 07-21 → 07-26, including the reversals. **Read to the end** — a 07-20 row may have
+a superseding row in the extension. And when you settle something new, **add a row**: a decision is
+not made until it is in that table (#135).
+
 This is not optional politeness — **it is the step that was skipped once and caused a real
 regression** (2026-07-26): the card-header prompt derived its own slot list (name · count · rollup ·
 filter · verb) instead of inheriting the ledger's, and Labs faithfully designed a header with **no
