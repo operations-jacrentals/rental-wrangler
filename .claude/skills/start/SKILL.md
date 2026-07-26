@@ -99,6 +99,22 @@ The app uses **trunk-based development**: one trunk (`trunk`), short-lived **fea
 - **Any new or reshaped UI → `/jactec-ui`** — the single design skill and quality gate for every visual change. It's the yard data-plate design language enforcer (dark steel, ONE safety-orange accent, hazard-stripe, Saira Condensed, rivets, R0–R24 rulebook) and governs every screen, card, column, pill, button, field, popup, menu, date picker, KPI ring. It now also carries the four folded sub-capabilities — **aesthetic direction / typography** (former `/frontend`), **mobile** reflow/viewport/touch (former `mobile-*`), **DESIGN.md** scaffold/lint (former `/design-md`), and the **`/role` audit** — each behind its own reference + section. Backend (`Code.gs`) changes, CI scripts, and pure logic are exempt.
 - **R-Rulebook — stamp UI + keep `rule-usage.js` current.** Every new UI element gets a `data-r="Rxx"` attribute matching the rulebook. When rule usage changes, regenerate: `node ci/gen-rule-usage.mjs` (no `--check`). The `--check` flag is the CI gate — run `node ci/gen-rule-usage.mjs --check` before pushing; it fails on drift or duplicate rules. **Any new or reshaped UI keeps the R-Rulebook current — a hard rule (see CLAUDE.md → R-rulebook).** New popup windows also need a `WINDOW_CATALOG` entry, enforced by `node ci/check-window-catalog.mjs`.
 
+- **Any DESIGN/UI decision → the decisions ledger is the index, and it is dated.**
+  `docs/superpowers/specs/2026-07-20-decisions-ledger.md` is the flat index of every locked UI
+  decision. Three rules, learned the hard way on 2026-07-26 (one missed lookup → three audits and six
+  PRs):
+  1. **Read it BEFORE writing a spec, a Labs prompt, or any UI.** Don't re-derive what's settled.
+     Anything you don't carry forward gets silently undone — a Design Labs prompt that omits a locked
+     decision produces a mockup without it, because Labs is blind to this repo.
+  2. **Read to the END, and check dates.** Rows #1–100 are a **2026-07-20 snapshot**; #101+ is the
+     extension through 07-26. **A 07-20 row may be superseded further down** — the section model
+     reversed *twice*. Grepping and stopping at the first hit is exactly how a dead decision gets
+     cited as canon.
+  3. **A decision is not made until it has a row in that table** (#135). When Jac settles something,
+     add the row — with the date and, if it reverses something, a pointer both ways.
+  Decisions marked **`⚠ NEW — captured here`** exist in the ledger and *nowhere else* — not in a
+  skill, not in a spec — so they're the ones a from-scratch pass will miss.
+
 ### Working discipline
 - **Token discipline:** terse by default; `Grep`/`Glob` before `Read`; read only the range you need; spawn subagents for large isolated work to protect the main context.
 - **Session title tracks this session's PRs.** When you **open** a PR, append its number to `.claude/.session-prs` (gitignored, one per line) and surface a one-tap **`/rename #<nums> · <branch-label>`** line — the model can't self-`/rename`, so this is how Jac gets an *instant* title update. When a PR **merges/closes**, remove its number and surface the updated `/rename`. A `SessionStart` hook (`.claude/hooks/session-title.mjs`) re-derives the title from that file on every start/resume (respecting a manual rename), so the title auto-heals even without the tap. Best-effort: the file is session-scoped and lost on a fresh-container reclaim.
