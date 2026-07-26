@@ -88,6 +88,13 @@ static state grid cannot. Both are deliberate, both are accepted as slower (ledg
   Run them in this order, each its own Labs session:
   1. `prompts/prompt-03-container-card.md` — **card frame · header · list row.** The most
      load-bearing prompt in the build order: twelve surfaces share this anatomy.
+     > ⚠️ **The FIRST 0.1a run is a DRAFT, not a lock (Jac, 2026-07-26).** It was run against the
+     > prompt *before* the canon corrections (#770–#772), so its header lacks **"Your Work"**,
+     > **"Done"**, the left-aligned **Ref** title and the description line, and its row lacks the
+     > click contract and the group taxonomy. Jac deliberately chose not to restart that session —
+     > the corrections land on the **next** run. **Do not treat that artifact as the locked card
+     > container, and do not build Tier 0.2 on it.** Its frame, list row and Trips stress-test work
+     > are sound and carry forward.
   2. `prompts/prompt-04-container-section.md` — **section.** A detail view is a rail of these paged
      one at a time, so it must lock before Tier 1 can.
   3. `prompts/prompt-05-container-overlay.md` — **panel · popup · ⋯ action menu.**
