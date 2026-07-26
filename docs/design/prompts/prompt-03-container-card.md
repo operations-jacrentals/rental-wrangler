@@ -98,9 +98,31 @@ selected, expanded-parent, and the row that is on fire. Decide:
   should be readable as a fixed set of positions, not an improvised flex soup.
 - **Density.** How tall, how much breathing room, how many rows before the eye loses the column.
 - **The group header** — the divider that separates "Overdue" from "Due today" from "Later". It is a
-  different object from the card header; decide how different.
-- **The expansion affordance.** How the row says "there is more inside me," and what it looks like
-  the instant before the detail opens.
+  different object from the card header; decide how different. **⚠️ Groups come in two locked kinds**
+  (ledger #31/#34/#35) and the header must serve both:
+  - **Attention groups** (Field Calls, Failed) exist *only* because something is wrong — they are
+    **hidden entirely when empty** and carry colour natively.
+  - **Lifecycle groups** (On Rent, Reserved, Available) are **always present, gray by default**, and
+    take colour **only** when a member inside triggers it. No group ever carries a fixed colour.
+  - **Never named after status** ("Bad", "To-Do") — a group name says *where in the workflow*, colour
+    says *how much it needs you*. Double-encoding those is the error to design against.
+  - The same group **set** is **reordered per role** — so group order is data, not layout. Don't bake
+    an order into the design.
+- **The expansion affordance — and the click contract behind it** (ledger #50/#62/#63/#67):
+  - **Single click = inline-expand in place. No cascade.** The row opens where it sits; siblings
+    **push down**. There is a **220ms discriminator**, so single and double click are different verbs.
+  - **Double click = anchor** — that one fires the cascade and opens a tab. The row needs to make
+    both reachable without advertising two buttons.
+  - **An expanded row carries an anchor icon, top-right.** If something is *already* anchored, that
+    icon becomes a **"+"** on every other expanded row. Design both states.
+  - The expand animates with the **mobile-swipe easing and timing**, to a **fixed target size**.
+  - The old **hover-eye preview is retired** — inline-expand *is* the peek. Don't reintroduce a
+    preview affordance.
+- **The hover-jump accelerator** (ledger #58/#59/#60). On hover, a **popover emerges from the row's
+  top edge** with a tail/notch, **one chip-line tall**, flipping below when the row is near the top of
+  the list. It is **instant — no dwell timer** — and made mis-click-safe by **geometry** (a right-lane
+  or whole-row hover target), never by a delay. Here, decide only **what the row owes it**: where it
+  emerges from and what must stay clear. The popover itself is designed in prompt 0.1c.
 - **Overflow.** What a row does when the name is too long, when there are six chips and room for
   three, and when a value is missing entirely.
 
@@ -118,6 +140,21 @@ time-anchored (a schedule and an ETA ledger, not a static roster), so its rows c
 prominently as *what*. **If the row grammar can seat a departure time and an ETA without a special
 case, it will seat anything the other eleven throw at it.** Check the row design against
 `trips-ledger.html` before calling it done — but design the general row, not a Trips row.
+
+**Plus a thirteenth, different one: the Dashboard card** (ledger #44/#45/#86–#89). Every role gets the
+base cards **plus a role-dependent Dashboard** as a 6th. It is a **landing, never a lockout** — the
+base cards stay reachable. Its content is charts rather than rows, and **chart marks are links**
+(a wedge fires the same cascade a text link would), under **one colour law shared by chip and chart**:
+a graph wedge is the same colour as the Signal chip it lands on. Field roles get a live timeline
+(Yard Journey / route) instead of graphs — one pattern, two forms.
+**You are not designing the Dashboard here** — that is Tier 2. What matters now is that the card
+**frame and header must not assume a row list inside them**, because one of the thirteen isn't one.
+
+> **⚠️ Flag for Jac — a canon/code mismatch worth settling before Tier 2.** Ledger #44 names the five
+> base cards as **Units · Rentals · Customers · Trips · Categories** (+ Dashboard). The shipped
+> registry (`config.js` → `GRID_CARDS`) has **Units · Categories · Rentals · Invoices · Customers** —
+> it includes **Invoices** and omits **Trips**. Both can't be the base five. This doesn't block the
+> container work (the frame serves all of them either way), but it decides Tier 2's scope.
 
 > The build order used to say "all 7 cards." That number was stale: the Shop card was retired
 > 2026-07-07 (Work Orders / Service Orders / Inspections moved inside each Unit's detail view).
