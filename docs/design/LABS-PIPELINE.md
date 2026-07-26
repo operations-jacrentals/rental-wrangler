@@ -70,8 +70,15 @@ every rail chip shows its rolled-up Signal at rest — which was the accordion's
 **If you reverse one of these, add a row here with the date and the reason.** Two flips already
 happened without a written trail, which is why an audit had to reconstruct it from file dates.
 
-**One screen = one Labs session = one artifact.** Consistency comes from the synced design system +
-the Inherit list, NOT from session continuity. Start a fresh Labs session per screen.
+**One screen = one Labs session.** Consistency comes from the synced design system + the Inherit
+list, NOT from session continuity. Start a fresh Labs session per screen.
+
+The rule is about the **scope of the subject**, not the count of rendered pieces: a session covers
+**one subject**, but that subject may need several artifacts to express (prompt-03 covers the card as
+frame + header + row, because designing the three *against each other* is what stops them drifting).
+**Container mockups also stay interactive** — clicking a row and watching it expand catches what a
+static state grid cannot. Both are deliberate, both are accepted as slower (ledger **#136**);
+**do not "streamline" them by splitting prompts or dropping the JS.**
 
 ## Build order (foundations first)
 - **Tier 0.0 — Atoms** ✅ **LOCKED 2026-07-25** (see decisions below). The approved consistency pass
