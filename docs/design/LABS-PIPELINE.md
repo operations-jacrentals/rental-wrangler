@@ -29,8 +29,56 @@ to emit the approved markup. (Codex is NOT in use.)
 3. **♻️ Inherit** — the already-locked components this mockup must reuse **verbatim**. Once a thing is
    locked it rides onto every later screen unchanged.
 
-**One screen = one Labs session = one artifact.** Consistency comes from the synced design system +
-the Inherit list, NOT from session continuity. Start a fresh Labs session per screen.
+### ⛔ Before writing ANY prompt: mine the decisions ledger
+
+**`docs/superpowers/specs/2026-07-20-decisions-ledger.md` is the index of every locked decision** —
+grep it for the surface you are about to prompt, and put what you find in the **Inherit** list.
+Its companion `2026-07-20-list-views-inline-expand-design.md` carries the same session's spec.
+
+**The ledger now runs to 2026-07-26.** Rows **#1–100** are the 07-20 snapshot; **#101+** is the
+EXTENSION covering 07-21 → 07-26, including the reversals. **Read to the end** — a 07-20 row may have
+a superseding row in the extension. And when you settle something new, **add a row**: a decision is
+not made until it is in that table (#135).
+
+This is not optional politeness — **it is the step that was skipped once and caused a real
+regression** (2026-07-26): the card-header prompt derived its own slot list (name · count · rollup ·
+filter · verb) instead of inheriting the ledger's, and Labs faithfully designed a header with **no
+"Your Work" chip, no "Done" chip, a centred title, and no description line** — all four of which
+were decided months earlier. Labs is blind to our repo; **anything not in the prompt does not exist
+to it.** A prompt that re-derives what was already settled *will* silently undo it.
+
+Watch especially for decisions marked **`⚠ NEW — captured here`** in the ledger's index table: those
+exist in the ledger and **nowhere else** — not in a skill, not in a spec — so they are exactly the
+ones a from-scratch prompt will miss.
+
+### ⏱ And check the DATE — some decisions reversed more than once
+
+The ledger is dated **2026-07-20**. Several decisions were revisited on **07-21** (in the spec) and
+again on **07-25** (in `prompts/`). **The ledger is not automatically the newest thing.** Grepping it
+and stopping is how you end up confidently citing a superseded decision — which happened on 2026-07-26.
+
+**Known reversal chains — settle these by the newest entry, not the first one you find:**
+
+| Question | 07-20 (ledger) | 07-21 (spec) | **07-25 (prompts) — CURRENT** |
+|---|---|---|---|
+| Section model | paging via chips (#53) | accordion plate stack on desktop, page on mobile (§2.0) | **paging via a section rail, "no accordion stack"** (`prompt-01-detail-views.md`) |
+
+The accordion lost on the second reversal for a concrete reason worth keeping: stacking every section
+open made a Customer record run **~5 phone-screens**. Paging costs nothing in awareness **because**
+every rail chip shows its rolled-up Signal at rest — which was the accordion's whole argument.
+
+**If you reverse one of these, add a row here with the date and the reason.** Two flips already
+happened without a written trail, which is why an audit had to reconstruct it from file dates.
+
+**One screen = one Labs session.** Consistency comes from the synced design system + the Inherit
+list, NOT from session continuity. Start a fresh Labs session per screen.
+
+The rule is about the **scope of the subject**, not the count of rendered pieces: a session covers
+**one subject**, but that subject may need several artifacts to express (prompt-03 covers the card as
+frame + header + row, because designing the three *against each other* is what stops them drifting).
+**Container mockups also stay interactive** — clicking a row and watching it expand catches what a
+static state grid cannot. Both are deliberate, both are accepted as slower (ledger **#136**);
+**do not "streamline" them by splitting prompts or dropping the JS.**
 
 ## Build order (foundations first)
 - **Tier 0.0 — Atoms** ✅ **LOCKED 2026-07-25** (see decisions below). The approved consistency pass
@@ -40,8 +88,8 @@ the Inherit list, NOT from session continuity. Start a fresh Labs session per sc
   Run them in this order, each its own Labs session:
   1. `prompts/prompt-03-container-card.md` — **card frame · header · list row.** The most
      load-bearing prompt in the build order: twelve surfaces share this anatomy.
-  2. `prompts/prompt-04-container-section.md` — **section / plate.** A detail view is a stack of
-     these, so it must lock before Tier 1 can.
+  2. `prompts/prompt-04-container-section.md` — **section.** A detail view is a rail of these paged
+     one at a time, so it must lock before Tier 1 can.
   3. `prompts/prompt-05-container-overlay.md` — **panel · popup · ⋯ action menu.**
 - **Tier 0.2 — App shell** — 3-column yard grid, top bar, footer rail; decides how a row-expansion
   relates to the columns. *A first draft exists (parked) — it revealed the real tension: the detail
@@ -50,8 +98,9 @@ the Inherit list, NOT from session continuity. Start a fresh Labs session per sc
 - **Tier 1 — Detail view** — bounded height + section rail that pages one section at a time, each rail
   chip carrying its rolled-up Signal + primary Door, History pinned. *A first draft exists (parked)
   and PROVED the model works; it locks once it sits inside the approved shell.*
-- **Tier 2 — Per-card content** — the twelve surfaces: Units · Rentals (calendar-anchored) ·
-  Customers · Invoices · Categories · Trips · the six back-office boards.
+- **Tier 2 — Per-card content** — the twelve surfaces: the base five (Units · Rentals
+  calendar-anchored · Customers · Trips · Categories), the role Dashboard, and the six back-office
+  boards (Invoices now among them — see Settled + carried).
 - **Tier 3 — Cross-cutting** — item/comms tabs · footer-rail open chats · notifications/toasts ·
   settings boards · creation flows/wizards · empty+loading+login+mobile reflow.
 
@@ -112,6 +161,11 @@ the Inherit list, NOT from session continuity. Start a fresh Labs session per sc
    registry in `labs-build-order.md`.
 
 ## Settled + carried
+- **The base five are Units · Rentals · Customers · Trips · Categories** (Jac, 2026-07-26, confirming
+  ledger #44 over the shipped code). **Invoices is NOT a base card** — it moves to a back-office
+  board. The shipped `config.js` → `GRID_CARDS` still has Invoices in and Trips out, so **`config.js`
+  needs updating in Tier 2** — that is queued app work, not a design task. Plus the role **Dashboard**
+  as a 6th, role-dependent card.
 - **Trips IS a card** (Jac, 2026-07-25). The card anatomy serves **twelve** surfaces: 5 grid cards +
   6 back-office boards + Trips. Trips has no `GRID_CARDS` / `BACKOFFICE_BOARDS` entry yet — only its
   three reference mockups — so **adding the registry row is queued app work for Tier 2**, not part

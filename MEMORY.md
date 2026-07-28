@@ -258,6 +258,18 @@
   one line through single-column pan mode; the `<480px` query re-enables wrap for the mobile stack.
 
 ## Gotchas
+- **A stale INDEX is worse than a missing one (2026-07-26, PRs #770-773).** The decisions ledger
+  (`docs/superpowers/specs/2026-07-20-decisions-ledger.md`) was a 07-20 snapshot that stopped at #100
+  and indexed nothing after. Six days of decisions accumulated in a spec, a build plan, five prompts
+  and two pipeline docs — so grepping the "canonical" index returned confidently WRONG answers:
+  the section model had reversed **twice** (paging → accordion → paging) and the ledger still showed
+  the first. Cost: one missed lookup → three audits, six PRs. **Rules now:** read the ledger before
+  any UI/design work, **read to the END and check dates** (#101+ is the 07-21→07-26 extension), and
+  **add a row when Jac settles something** — a decision isn't made until it's in that table (#135).
+  Reversed rows are marked in place so a grep surfaces the reversal, not the dead answer.
+- **Design Labs is blind to this repo.** Whatever a Labs prompt omits, the mockup won't have — that's
+  how "Your Work", the group taxonomy, the click contract and the section-paging model all silently
+  vanished from a container design. Prompts must INHERIT canon, never re-derive it.
 - **The Staging Deck (`d/`) shares the slot-1 repo, so a STALE-checkout session wipes it** (2026-07-18,
   #720). The deck folders live at `d/` inside `rental-wrangler-staging` — the SAME repo slot-1 deploys
   wipe. Any session still running the **pre-#720** `deploy-staging.mjs` (whose `syncFiles` doesn't
