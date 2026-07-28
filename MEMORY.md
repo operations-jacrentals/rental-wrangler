@@ -597,24 +597,32 @@
   **staging drive** (real Chrome), not headless screenshots.
 
 ## Open threads
-- **Redesign Tier 0.1 — HANDED OFF, Labs retired (2026-07-28, PR #780, draft).** Jac ended the
-  Design Labs sessions: **Labs isn't reachable from his phone**, so the redesign can't depend on him
-  being at a desk. The 0.1a session was forced to hand its work back — four artifacts landed verbatim
-  in **`docs/design/tier-01-handoff/`** (`final-card.html` · `tier-01-card.css` 891 marked-up lines ·
-  `atom-rebuild.md` · `labs-decisions.md`); start at its `README.md`. The session **replaced the atom
-  language** rather than just building containers: nine new components (slot rack · message board ·
-  footer terminal · grip rack · roll marker · laser frame · hint layer · jump band), four new finishes,
-  radius ladder demolished, hover rings deleted card-wide with feedback moved to the footer terminal.
-  Ledger rows **#139–#152**. **Jac's rulings:** radius 0 + chamfers **LOCKED**; mono-on-controls
-  **LOCKED**; the 17px control tier **DEFERRED to Tier 0.2** (the 24px law stands until the shell
-  rules); the three drifted decisions **RE-IMPOSED**.
-  **Next, in order:** (1) rule the ~20 PROPOSED/ASSUMED rows + the three unruled rounded survivors
-  (#141 — Door's pill, `.ref__icon` 5px, hint bubble 9px, which Labs flagged as accidents);
-  (2) **rebuild the atom kit FROM the card** (`rw-design-system/` is now stale), closing the ~20
-  inline `TOKEN-GAP:` markers — start with the `#C28E54` vs `--tan` `#c2925a` near-miss (#152) and
-  #138(b), the Pin's hard-coded `--panel` ring (#151); (3) **Tier 0.2, the shell**, which now also
-  owns the 17px ruling (#143) and the Units∣Categories one-card conflict with #133 (#148);
-  (4) carry #144's three re-imposed decisions into whatever comes next.
+- **Redesign Tier 0.1 — rulings DONE (2026-07-28, ledger #153–#162), atom-kit rebuild NEXT.**
+  PR #780 (Labs handed off, retired — unreachable from Jac's phone) merged to trunk; PR #779
+  (superseded, its commit was already in #780) closed as redundant. The ~20 PROPOSED/ASSUMED
+  rows in `labs-decisions.md` + the three unruled rounded survivors (#141) are now **ruled**:
+  Door's pill **CONFIRMED** as pre-existing canon (`.ref__icon`/hint bubble **ZEROED**, #153);
+  seg-cell 10px **REJECTED** — holds the canonical 11px chip size, #154; Ref re-cut/signal-column
+  formula/Pin sizing **LOCKED**, #155; open-row wash/picker-rollup-Pin/sort-behind-funnel-key
+  **LOCKED**, #156; **the off-white hover wash is REJECTED and replaced** by a three-way material
+  hover system — steel = elevation lift (no colour), open-group terminal rows = an animated
+  light-beam wrap, message-board glass = a cursor-following gradient (direction locked, exact
+  params open for the kit rebuild), #157; the jump-verb menu and the dispatcher group order are
+  both **REJECTED as designed** — neither matched anything in the shipped app (verified against
+  `app.js`/`config.js`): real transitions use a status-pill dropdown (`RAW_STATUS.rentalStatus`,
+  `config.js:63-74`), real group order is `UNIT_SECTIONS`/`GROUP_DEFS.rentals.sections`
+  (`app.js:9158-9202`) — Tier 0.2 designs against those, not Labs' invented placeholders, #158/#159;
+  placeholder row data **CONFIRMED** as demo filler (Tier 2 owns real numbers), #160; jump-band/
+  hint-layer/boot-theatre timings **LOCKED**, #161; width breakpoints **ACCEPTED PROVISIONALLY**,
+  re-verify in Tier 0.2, #162. **Drift caught before ruling:** 3 of the ~20 rows (radius-0, mono-
+  on-controls, the 17px tier) were already ruled at #140/#142/#143 but `labs-decisions.md`'s own
+  status column hadn't been updated — read the ledger, not a handoff doc's status column, for
+  what's actually settled. Both docs now cross-reference each other.
+  **Next, in order:** (1) **rebuild the atom kit FROM the card** (`rw-design-system/` is stale),
+  closing the ~20 inline `TOKEN-GAP:` markers — start with the `#C28E54` vs `--tan` `#c2925a`
+  near-miss (#152) and #138(b), the Pin's hard-coded `--panel` ring (#151); (2) **Tier 0.2, the
+  shell**, which now also owns the 17px ruling (#143) and the Units∣Categories one-card conflict
+  with #133 (#148); (3) carry #144's three re-imposed decisions into whatever comes next.
   ⚠️ **Porting caution:** `labs-decisions.md` § *Notes to the implementer* is an accurate fragility
   inventory — laser polygon coords hand-tuned against four other values, an order-load-bearing `§3`
   cascade, and both carets + the footer loop measured off hidden mirror spans (**a font or

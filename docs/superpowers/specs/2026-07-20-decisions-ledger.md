@@ -594,17 +594,34 @@ the atom language underneath it. Prompts written against the old kit will now co
 | 151 | **#138(a) is SOLVED differently — the text-input gap closed by abandoning `.field` for search.** Search is now a raw `<input>` inside a well div with a measured glowing block caret; the funnel key is `.field`'s one surviving use. **#138(b) — the Pin's hard-coded `--panel` ring — is NOT addressed** and stays open | ⏳ **#138(a) closed · #138(b) still OPEN** |
 | 152 | **A near-miss token was caught and must be unified: `#C28E54` vs the real `--tan` `#c2925a`.** Labs flagged it rather than shipping a second tan. ~20 further `TOKEN-GAP:` markers sit inline in `tier-01-card.css` naming the token each hard-coded value wants | ⏳ **OPEN — token pass queued with the kit rebuild** |
 
+### 2026-07-28 (session 2) — ruling the ~20 PROPOSED/ASSUMED rows in `labs-decisions.md`
+
+⚠️ **Drift caught before ruling, not after.** Grepping `labs-decisions.md`'s own status column
+against this ledger found three rows still marked PROPOSED there that are **already ruled**: the
+radius-ladder-off direction (labs row 27) is `#140` LOCKED, mono-on-every-control (labs row 33) is
+`#142` LOCKED, and the 17px control tier (labs row 30) is `#143` DEFERRED. Those three needed no
+fresh ruling — the file just wasn't updated after the ledger was. **Read the ledger, not a handoff
+doc's own status column, for what's actually settled.** That leaves 17 rows ruled below (#153–#162).
+
+| # | Decision | Status |
+|---|---|---|
+| 153 | **The three rounded survivors (#141), ruled.** Door's pill is **CONFIRMED, not an exception** — it predates Tier 0.1 (`#15`, wrangler-style's pill-action shape) and radius-0 (`#140`) never named Door in the first place, only seg/signal/pin/field/ref. `.ref__icon` (5px) and the hint bubble (9px) are **ZEROED to 0** — no prior lock, no reason to carve a new one now that radius-0 is the card's explicit identity | ✅ **RULED — Jac, 2026-07-28.** Resolves #141 |
+| 154 | **Seg cell type HOLDS the canonical 11px/.05em — the 10px/.09em card-level shrink is REJECTED.** Per this project's own precedent ("when a decision and a rule conflict, the decision moves, not the rule"), `style`'s C5 pass rule ("one chip size") wins. The 380px overflow that motivated the shrink must be solved another way (shorter labels, tighter seg padding) in the Tier 0.2 rebuild | ❌ **REJECTED as designed — Jac, 2026-07-28** |
+| 155 | **Three implementation-detail designs LOCKED as designed:** Ref re-cut (dark plate `#0B121B`, NE 45° notch, borderless, mono, fixed 152×17 slot, hover marquee for long names); the row-Signal fixed-width column formula (`max(66, longest-state × 7.15 + 14)px`); Pin's stud shadow + 10px mini size, with the kit's `data-tip` tooltip surviving only on Pins. **Flag:** the signal-column formula's 7.15px/char constant was measured against 11px mono and needs re-measuring now that row keys render at 9px, and again once #154 is implemented | ✅ **LOCKED — Jac, 2026-07-28** |
+| 156 | **Three row-grammar mechanics LOCKED as designed:** open-row wash = group hue at 16% (a #137 application — an open row shows the group's state, not the user's click); picker rows carry each board's own rollup Pin (worst hue + count); sort lives behind the funnel key and the tray stays open whenever a non-default sort is live | ✅ **LOCKED — Jac, 2026-07-28** |
+| 157 | **The flat off-white row-hover wash is REJECTED and REPLACED with a three-way, material-based hover system.** Steel (plates, controls, ordinary rows) gets a brightness/elevation lift only — no colour wash at all. Open-group terminal rows get an animated light-beam that wraps around the row on hover. Message-board glass (search well, footer terminal, group message board) gets a cursor-following gradient. This extends the card's existing finish vocabulary (steel vs. glass/terminal) and the already-locked emission fiction (`#146` — light is emitted BY glass, never applied TO steel). **Exact animation parameters (duration, easing, gradient formula) are OPEN** — to be prototyped in the atom-kit rebuild, not specified here | ✅ **LOCKED (direction) — Jac, 2026-07-28.** Supersedes labs-decisions.md's off-white hover-wash row; details open |
+| 158 | **The jump-verb menu (Dispatch/Return/Confirm/Reopen/Reserve) is REJECTED as designed — it was invented for the demo and matches nothing in the shipped app.** Real rental/unit status transitions use a status-pill dropdown showing the actual status names (`RAW_STATUS.rentalStatus`, `config.js:63-74`: Quote/Reserved/On Rent/End Rent/Off Rent/Returned/Cancelled/No Show; `openStatusDropdown`, `app.js:16788`). Tier 0.2 must design the jump band against this real mechanism, not invented verb copy | ❌ **REJECTED as designed — Jac, 2026-07-28** |
+| 159 | **The dispatcher group order (Field Calls/On Rent/Reserved/Available/Returned Today) is REJECTED as designed — it doesn't exist in the shipped app.** ("Field Calls" is real but is a Work-Order-type filter/KPI label, `app.js:3156` etc., never a lifecycle group; "Returned Today" doesn't exist anywhere.) The real, already-shipped order is: Units (`UNIT_SECTIONS`, `app.js:9158-9169`) = Not Ready → Attention → Today → Tomorrow → Reserved → Off Rent → End Rent → On Rent → Available → Out of Fleet; Rentals (`GROUP_DEFS.rentals.sections`, `app.js:9191-9195`) = Today → Tomorrow → Reserved → On Rent → Off Rent → End Rent → Returned → No Show → Cancelled → Quote. Tier 0.2 uses these. **The "Yard role" order variant is DROPPED entirely** — it was only ever a stub to prove the drag-reorder mechanism, which already ships (`GROUP_ORDER`/`customGroupOrder`, `app.js:9248-9265`) | ❌ **REJECTED as designed — Jac, 2026-07-28** |
+| 160 | **All placeholder row/rollup data (names, S/Ns, rollup counts, sigCount) is CONFIRMED as demo filler only** — Tier 2 wires the real numbers, per the mockup's own note. No further ruling needed | ✅ **CONFIRMED — no ruling required** |
+| 161 | **Timing tunables LOCKED as designed:** jump band (450ms settle-armed, warm-swap between rows, 320ms leave grace); hint layer (540ms dwell, instant re-hover swap, suppressed under open jump bands); boot theatre (CRT flicker + laser drop + per-row type-in, `steps(16)` .07s stagger, on group open) — confirmed fine as designed, ties to the already-locked emission fiction (#146) | ✅ **LOCKED — Jac, 2026-07-28** |
+| 162 | **Width breakpoints ACCEPTED PROVISIONALLY, not locked permanently:** grip rack shown ≥330px; facts column shown ≥440px; "Your Work"→"Work" label shrink <420px; when-column (96px) shown ≥440px. These are Labs' own untested numbers — re-verify against real column widths once Tier 0.2 settles the shell | ⏳ **PROVISIONAL — re-verify in Tier 0.2** |
+
 ## Still open after 07-20 (do not treat as locked)
 
-- **The three rounded survivors** (#141) — Door's pill, `.ref__icon` 5px, hint bubble 9px in an
-  otherwise radius-0 design. Labs flagged them as accidents, not decisions. **Unruled.**
-- **The 17px control tier** (#143) — deferred to Tier 0.2; the 24px law stands until the shell rules.
-- **Everything in `tier-01-handoff/labs-decisions.md` § Still open** — the Tier 1 drawer is a
+- **`labs-decisions.md`'s remaining open items** not covered above: the Tier 1 drawer is a
   placeholder, teleport is a stub, cross-board search (globe) is unspecified, board quick-search
   persistence was asked and never answered, density standard/roomy was never reviewed off compact,
-  the width breakpoints (330/420/440) are Labs' numbers unreviewed, and `stateW`'s 7.15px/char
-  formula was measured against 11px mono but now renders at 9px. **~14 PROPOSED and ~6 ASSUMED rows
-  in that file still need Jac's individual sign-off** — they are not canon because they are written down.
+  and `stateW`'s 7.15px/char formula needs re-measuring (see #155's flag).
 - **The card header's seating — 1a / 1b / 1c** (Tier 0.1a artifact §2.2). Two bands (identity over
   controls, the artifact's recommendation), one band, or identity-cap + filter rail in the body.
   **Jac has not chosen.** Do not treat 1a as settled just because it is marked RECOMMENDED.
