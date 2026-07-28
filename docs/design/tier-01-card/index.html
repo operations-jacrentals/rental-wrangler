@@ -1,0 +1,1864 @@
+<!DOCTYPE html>
+<html><head>
+<script>window.__resources = {
+  "https://unpkg.com/react@18.3.1/umd/react.production.min.js": "react.production.min.js",
+  "https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js": "react-dom.production.min.js"
+};</script>
+
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="dc-runtime.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>/* Archivo — bundled variable woff2 (latin + latin-ext, weight axis 400-800).
+   Source: Google Fonts (v25). Bundled rather than CDN-linked so cards render with the
+   correct body voice regardless of render-sandbox network access.
+   One file per subset: Archivo is variable, so all weights come from the same woff2. */
+
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 400 800;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("archivo-latin.woff2") format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 400 800;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("archivo-latin-ext.woff2") format('woff2-variations');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+</style>
+<style>/* Rental Wrangler — design tokens
+ * Source of truth: html.dv2 in style.css (the locked redesign canon).
+ * See rw-design-system/README.md for usage notes.
+ */
+:root{
+  /* ---- LOCKED CANON (verbatim from html.dv2 in style.css — do not approximate) ---- */
+  --accent:#ff7e1f; --accent-soft:rgba(255,126,31,.15); --accent-line:rgba(255,126,31,.5);
+  --orange:#ff7e1f; --orange-bg:rgba(255,126,31,.14); --on-orange:#1a1205;
+  --bg:#0a0d11; --bg-2:#0f1318; --panel:#171d25; --panel-2:#1b222c;
+  --card:#12171e; --card-head:#1a212b;
+  --line:#2c343f; --line-soft:#212834;
+  --txt:#eef2f7; --txt-2:#aab4c1; --txt-3:#838e9c;
+  --green:#34d399; --green-bg:rgba(52,211,153,.14);
+  --yellow:#eed44b; --yellow-bg:rgba(238,212,75,.15);
+  --red:#ff4242; --red-bg:rgba(255,66,66,.13);
+  --blue:#6394cc; --blue-bg:rgba(99,148,204,.15);
+  --gray:#8b94a3; --gray-bg:rgba(139,148,163,.14);
+  --chip-radius:2px;    /* state chips — SQUARED (was 7px) */
+  --red-fill:#d63636; --on-red-fill:#fdfdfd; --commit:#2f6fd0; --on-commit:#fdfdfd; --tan:#c2925a;
+  --radius:14px;
+  --font: "Archivo", "Helvetica Neue", -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  /* ---- STRUCTURAL ADDITIONS (not in the locked block — see README/report) ---- */
+  --h:24px;             /* one control height — style skill's 24-28px range; matches shipped --dv2-h */
+  --item-radius:8px;    /* records — Ref and +Add: things that ARE, or link to, a record */
+  --pill-radius:999px;  /* actions — Doors ONLY. Nothing else may take this radius. */
+  --red-line:color-mix(in oklch, var(--red) 78%, var(--txt)); /* legible red once outline chips lost their tint */
+  --on-gray:#12171d; --on-blue:#0a1220; --on-yellow:#241d05; --on-green:#06231a;
+}
+@supports (color: oklch(from red l c h)){
+  :root{ --red-line: oklch(from var(--red) .74 .215 h); }
+}
+</style>
+<style>/* Rental Wrangler — component + layout CSS, extracted verbatim from the cards' shared stylesheet (minus :root, which lives in tokens/tokens.css). html.dv2 redesign canon, Tier 0.1 atom consistency pass applied. */
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg)}
+  .wrap{background:var(--bg); color:var(--txt-2); font-family:var(--font); line-height:1.55;
+    -webkit-font-smoothing:antialiased; min-height:100vh; padding:40px 0 72px}
+  .sheet{max-width:960px; margin:0 auto; padding:0 clamp(16px,4vw,32px)}
+  code,.mono{font-family:var(--font-mono)}
+  b{color:var(--txt); font-weight:700}
+
+  .eyebrow{font-family:var(--font-mono); font-size:11px; font-weight:700; letter-spacing:.16em;
+    text-transform:uppercase; color:var(--txt-3); margin:0 0 10px}
+  .eyebrow .hl{color:var(--accent)}
+  h1{font-family:var(--font-mono); font-weight:800; font-size:clamp(22px,3.6vw,30px);
+    letter-spacing:-.01em; color:var(--txt); margin:0 0 10px; line-height:1.15}
+  h1 .hl{color:var(--accent)}
+  .lede{max-width:70ch; font-size:14px; color:var(--txt-2); margin:0 0 6px}
+  .rule{max-width:74ch; font-size:12.5px; color:var(--txt-3); margin:10px 0 0}
+  .rule b{color:var(--txt-2)}
+  .top{padding-bottom:22px; border-bottom:1px solid var(--line)}
+
+  section{margin-top:40px}
+  h2.sub{font-family:var(--font-mono); font-weight:800; font-size:12px; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--txt-3); margin:0 0 14px; padding-bottom:8px;
+    border-bottom:1px solid var(--line)}
+  h2.sub .hl{color:var(--accent)}
+  h3.mini{font-family:var(--font-mono); font-size:11px; font-weight:800; letter-spacing:.08em;
+    text-transform:uppercase; color:var(--txt-3); margin:22px 0 10px}
+  h3.mini:first-of-type{margin-top:0}
+
+  .panel{border:1px solid var(--line); border-radius:var(--radius); background:var(--panel); overflow:hidden}
+  .pad{padding:18px 20px}
+  .callout{border:1px solid var(--line); border-left:3px solid var(--accent); background:var(--card);
+    border-radius:0 9px 9px 0; padding:12px 15px; font-size:12.5px; color:var(--txt-2); margin-top:14px}
+  .callout b{color:var(--txt)}
+  .callout.warn{border-left-color:var(--yellow)}
+  .callout.info{border-left-color:var(--blue)}
+  .callout.law{border-left-color:var(--red)}
+
+  .foot{margin-top:56px; padding:20px 0 0; border-top:1px solid var(--line); font-size:12px;
+    color:var(--txt-3); max-width:82ch}
+  .foot b{color:var(--txt-2)}
+
+  .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+  .row.tight{gap:6px}
+
+  /* ================= SIGNAL — read-only state; colour=state, fill=today ================= */
+  .signal{height:var(--h); display:inline-flex; align-items:center; gap:6px; padding:0 10px;
+    border-radius:var(--chip-radius); font-family:var(--font-mono); font-size:11px; font-weight:800;
+    letter-spacing:.05em; text-transform:uppercase; white-space:nowrap}
+  .signal--gray.signal--filled   {background:var(--gray);     color:var(--on-gray)}
+  /* C15 · the secondary chip is a TRUE outline — no tint backfill, 1px border in its own hue */
+  .signal--outline{background:transparent; border:1px solid currentColor}
+  .signal--gray.signal--outline  {color:var(--gray)}
+  .signal--blue.signal--filled   {background:var(--blue);     color:var(--on-blue)}
+  .signal--blue.signal--outline  {color:var(--blue)}
+  .signal--yellow.signal--filled {background:var(--yellow);   color:var(--on-yellow)}
+  .signal--yellow.signal--outline{color:var(--yellow)}
+  .signal--red.signal--filled    {background:var(--red-fill); color:var(--on-red-fill)}
+  .signal--red.signal--outline   {color:var(--red-line)}
+  .signal--green.signal--filled  {background:var(--green);    color:var(--on-green)}
+  .signal--green.signal--outline {color:var(--green)}
+
+  /* ================= GATE — a Signal you can turn: + leading centred chevron ================= */
+  .gate{height:var(--h); display:inline-flex; align-items:center; gap:2px; padding:0 10px 0 7px;
+    border-radius:var(--chip-radius); font-family:var(--font-mono); font-size:11px; font-weight:800;
+    letter-spacing:.05em; text-transform:uppercase; white-space:nowrap; cursor:pointer; border:0}
+  .gate__chev{display:inline-flex; align-items:center; justify-content:center; width:12px; height:12px; flex:none}
+  .gate__chev svg{width:12px; height:12px; display:block}
+  .gate--blue  {background:var(--blue);     color:var(--on-blue)}
+  .gate--yellow{background:var(--yellow);   color:var(--on-yellow)}
+  .gate--red   {background:var(--red-fill); color:var(--on-red-fill)}
+  .gate--green {background:var(--green);    color:var(--on-green)}
+  .gate--gray  {background:var(--gray);     color:var(--on-gray)}
+
+  /* ================= STAMP — a quiet fact: chip text, no box, no colour ================= */
+  .stamp{height:var(--h); display:inline-flex; align-items:center; padding:0 3px;
+    font-family:var(--font-mono); font-size:11px; font-weight:700; letter-spacing:.05em;
+    text-transform:uppercase; color:var(--txt-3)}
+  .stamp--more{color:var(--accent)}
+  .stamp-sep{color:var(--line); font-family:var(--font-mono); font-size:11px}
+
+  /* ================= REF — a linked record: accent-tinted icon backing + name ================= */
+  .ref{height:var(--h); display:inline-flex; align-items:center; gap:6px; padding:0 9px 0 3px;
+    border-radius:var(--chip-radius); border:1px solid var(--line); background:transparent;
+    font-family:var(--font); font-weight:600; font-size:12.5px; color:var(--txt);
+    text-decoration:none; cursor:pointer}
+  .ref:hover{border-color:var(--accent)}
+  .ref__icon{width:18px; height:18px; border-radius:4px; flex:none; display:inline-flex;
+    align-items:center; justify-content:center; background:var(--accent-soft); color:var(--accent)}
+  .ref__icon svg{width:12px; height:12px}
+  .ref__id{font-family:var(--font-mono); font-size:9px; color:var(--txt-3); font-weight:600}
+  .ref-trace{display:flex; align-items:center; gap:7px; flex-wrap:wrap}
+  .ref-trace__arrow{font-family:var(--font-mono); color:var(--txt-3); font-size:12px}
+
+  /* ================= DOOR — a verb action: radius=pill, colour=intent, never status ================= */
+  .door{height:var(--h); display:inline-flex; align-items:center; padding:0 15px;
+    border-radius:var(--pill-radius); font-family:var(--font-mono); font-size:11px; font-weight:800;
+    letter-spacing:.05em; text-transform:uppercase; cursor:pointer; border:0; white-space:nowrap}
+  .door--commit {background:var(--commit); color:var(--on-commit)}
+  .door--add    {background:transparent; border:1.5px dashed var(--commit); color:var(--commit); padding:0 13px}
+  .door--money  {background:var(--green); color:var(--on-green)}
+  .door--destroy{background:var(--red-fill); color:var(--on-red-fill)}
+  .door--ghost  {background:transparent; border:1px solid var(--line); color:var(--txt-2)}
+
+  .seg{height:var(--h); display:inline-flex; border:1px solid var(--line); border-radius:var(--chip-radius); overflow:hidden}
+  .seg__opt{display:inline-flex; align-items:center; padding:0 11px; font-family:var(--font-mono);
+    font-size:10px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--txt-3);
+    border-right:1px solid var(--line); cursor:pointer; background:transparent}
+  .seg__opt:last-child{border-right:0}
+  .seg__opt--on-yellow{background:var(--yellow); color:var(--on-yellow)}
+  .seg__opt--on-red{background:var(--red-fill); color:var(--on-red-fill)}
+  .seg__opt--on-blue{background:var(--blue); color:var(--on-blue)}
+  .seg__opt--on-accent{background:var(--accent); color:var(--on-orange)}
+
+  /* ================= FIELDS / links ================= */
+  .field{height:var(--h); display:inline-flex; align-items:center; gap:8px; padding:0 10px;
+    border-radius:var(--chip-radius); border:1px solid var(--line); font-family:var(--font);
+    font-size:12px; color:var(--txt); cursor:pointer; background:transparent}
+  .field__car{color:var(--accent); font-family:var(--font-mono); font-size:10px}
+  .contact{height:var(--h); display:inline-flex; align-items:center; gap:6px; font-family:var(--font);
+    font-size:13px; color:var(--txt); text-decoration:none; cursor:pointer}
+  .contact svg{color:var(--accent); width:14px; height:14px}
+  .contact__v{border-bottom:1.4px solid transparent}
+  .contact:hover .contact__v{border-bottom-color:var(--accent)}
+  .hlink{font-family:var(--font); font-size:13px; color:var(--txt); text-decoration:none;
+    border-bottom:1.5px solid var(--accent); padding-bottom:1px; cursor:pointer}
+  .hlink__ext{font-family:var(--font-mono); color:var(--accent); font-size:10px}
+  .dead-text{font-family:var(--font); font-size:13px; color:var(--txt-2)}
+
+  /* ================= PLATE — section-header grammar ================= */
+  .plate{border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; background:var(--card)}
+  .plate__head{display:flex; align-items:center; gap:10px; min-height:42px; padding:0 14px;
+    border-bottom:1px solid var(--line); background:var(--card-head)}
+  .plate__stripe{width:3px; align-self:stretch; margin:8px 0; border-radius:2px; flex:none}
+  .plate__label{font-family:var(--font-mono); font-size:12px; font-weight:800; letter-spacing:.05em;
+    text-transform:uppercase; flex:none}
+  .plate__summary{flex:1; min-width:0; font-family:var(--font); font-size:12.5px; color:var(--txt-2);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .plate__chevron{color:var(--txt-3); font-family:var(--font-mono)}
+  .plate__body{padding:12px 14px; display:flex; gap:9px; flex-wrap:wrap; align-items:center}
+  .plate--gray   .plate__head{background:var(--gray-bg)}   .plate--gray   .plate__stripe{background:var(--gray)}   .plate--gray   .plate__label{color:var(--gray)}
+  .plate--blue   .plate__head{background:var(--blue-bg)}   .plate--blue   .plate__stripe{background:var(--blue)}   .plate--blue   .plate__label{color:var(--blue)}
+  .plate--yellow .plate__head{background:var(--yellow-bg)} .plate--yellow .plate__stripe{background:var(--yellow)} .plate--yellow .plate__label{color:var(--yellow)}
+  .plate--red    .plate__head{background:var(--red-bg)}    .plate--red    .plate__stripe{background:var(--red)}    .plate--red    .plate__label{color:var(--red)}
+  .plate--green  .plate__head{background:var(--green-bg)}  .plate--green  .plate__stripe{background:var(--green)}  .plate--green  .plate__label{color:var(--green)}
+
+  /* ================= misc demo scaffolding ================= */
+  .swatch-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:10px}
+  .swatch{border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--card)}
+  .swatch__blk{height:52px; position:relative}
+  .swatch__tag{position:absolute; right:6px; bottom:5px; font-family:var(--font-mono); font-size:8.5px;
+    font-weight:800; letter-spacing:.05em; text-transform:uppercase; padding:1px 5px; border-radius:3px;
+    background:rgba(0,0,0,.28)}
+  .swatch__info{padding:9px 10px 10px}
+  .swatch__val{font-family:var(--font-mono); font-size:10.5px; font-weight:700; color:var(--txt);
+    word-break:break-all}
+  .swatch__name{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--txt-3); margin-top:1px}
+  .swatch__mean{font-size:11.5px; color:var(--txt-2); margin-top:6px; line-height:1.4}
+
+  .spec-row{display:grid; grid-template-columns:170px 1fr; border-bottom:1px solid var(--line)}
+  .spec-row:last-child{border-bottom:0}
+  .spec-row__role{padding:14px; border-right:1px solid var(--line); background:var(--card-head)}
+  .spec-row__rn{font-family:var(--font-mono); font-size:10.5px; font-weight:800; letter-spacing:.05em;
+    text-transform:uppercase; color:var(--txt)}
+  .spec-row__rr{font-size:10.5px; color:var(--txt-3); margin-top:3px}
+  .spec-row__ex{padding:14px; display:flex; align-items:center; flex-wrap:wrap; gap:8px; min-width:0}
+  .t-name{font-family:var(--font); font-weight:700; font-size:16px; color:var(--txt)}
+  .t-prose{font-family:var(--font); font-size:13px; color:var(--txt-2)}
+  .t-num{font-family:var(--font-mono); font-size:13px; color:var(--txt-2); font-variant-numeric:tabular-nums; font-weight:600}
+  .t-hint{font-family:var(--font); font-size:12.5px; color:var(--txt-3); font-style:italic}
+  .t-stamp2{font-family:var(--font-mono); font-size:9.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--txt-3)}
+
+  .ladder-row{display:flex; align-items:baseline; gap:14px; padding:11px 16px; border-bottom:1px solid var(--line-soft)}
+  .ladder-row:last-child{border-bottom:0}
+  .ladder-row__px{font-family:var(--font-mono); font-size:11px; font-weight:800; color:var(--accent); width:48px; flex:none}
+  .ladder-row__role{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--txt-3); width:160px; flex:none}
+  .ladder-row__demo{font-family:var(--font); color:var(--txt); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+
+  .radii-row{display:flex; gap:20px; flex-wrap:wrap; padding:16px}
+  .radii-item{display:flex; flex-direction:column; align-items:center; gap:8px}
+  .radii-box{width:84px; height:44px; background:var(--card-head); border:1.5px solid var(--accent)}
+  .radii-box.chip{border-radius:var(--chip-radius)}
+  .radii-box.opener{border-radius:5px 5px 0 0}
+  .radii-box.item{border-radius:var(--item-radius)}
+  .radii-box.pill{border-radius:var(--pill-radius)}
+  .radii-box.container{border-radius:var(--radius)}
+  .radii-lab{font-family:var(--font-mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--txt-2); text-align:center}
+  .radii-lab b{display:block; color:var(--txt); font-size:12px}
+
+  .budget-bar{display:flex; height:34px; border-radius:8px; overflow:hidden; border:1px solid var(--line)}
+  .budget-bar span{display:flex; align-items:center; justify-content:center; font-family:var(--font-mono);
+    font-size:10.5px; font-weight:800; letter-spacing:.04em}
+  .b-60{width:60%; background:var(--card-head); color:var(--txt-2)}
+  .b-30{width:30%; background:var(--panel); color:var(--txt-2)}
+  .b-10{width:10%; background:var(--accent); color:var(--on-orange)}
+
+  .therm{display:grid; grid-template-columns:repeat(4,1fr); border:1px solid var(--line); border-radius:11px; overflow:hidden}
+  @media (max-width:680px){ .therm{grid-template-columns:1fr 1fr} }
+  .tcell{padding:14px; border-right:1px solid var(--line); background:var(--card)}
+  .tcell:last-child{border-right:0}
+  .tdot{width:100%; height:9px; border-radius:4px; margin-bottom:9px}
+  .t-gray .tdot{background:var(--gray)} .t-blue .tdot{background:var(--blue)}
+  .t-yellow .tdot{background:var(--yellow)} .t-red .tdot{background:var(--red)}
+  .tname{font-family:var(--font-mono); font-size:12.5px; font-weight:800; letter-spacing:.04em; text-transform:uppercase}
+  .t-gray .tname{color:var(--gray)} .t-blue .tname{color:var(--blue)}
+  .t-yellow .tname{color:var(--yellow)} .t-red .tname{color:var(--red)}
+  .tmean{font-size:11.5px; color:var(--txt-2); margin-top:4px}
+
+  .menu{border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--panel); width:190px}
+  .menu__h{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--txt-3); padding:9px 12px; border-bottom:1px solid var(--line); background:var(--card-head)}
+  .menu__i{display:flex; align-items:center; gap:8px; padding:8px 12px; font-size:12px; color:var(--txt);
+    border-bottom:1px solid var(--line-soft); cursor:pointer}
+  .menu__i:last-child{border-bottom:0}
+  .menu__sw{width:8px; height:8px; border-radius:2px; flex:none}
+  .menu__i.on{font-weight:800}
+  .menu__i.on:after{content:"\2713"; margin-left:auto; color:var(--accent); font-family:var(--font-mono); font-size:11px}
+
+  table.floors{width:100%; border-collapse:collapse}
+  table.floors th, table.floors td{padding:9px 12px; border-bottom:1px solid var(--line-soft); font-size:12px; text-align:left}
+  table.floors th{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--txt-3); background:var(--card-head)}
+  table.floors td.ratio{font-family:var(--font-mono); font-weight:700; color:var(--txt)}
+  table.floors td .pass{color:var(--green); font-weight:700}
+  table.floors td .fail{color:var(--red); font-weight:700}
+  table.floors tr:last-child td{border-bottom:0}
+
+
+  /* ======================================================================
+     ATOM CONSISTENCY PASS — approved 2026-07-25 (rw-consistency-pass.css).
+     Four control shapes: state SQUARED · openers TOP-ROUNDED · records ROUNDED · actions PILL.
+     ====================================================================== */
+
+  /* C7 · read-only atoms say so with the cursor */
+  .signal, .stamp, .stamp-sep, .dead-text, .t-hint{cursor:default}
+
+  /* C4 · the stamp separator is a true sibling of the stamps it sits between */
+  .stamp-sep{height:var(--h); display:inline-flex; align-items:center; font-weight:700}
+
+  /* C3/C17 · Ref: content size on the ladder + the item radius */
+  .ref{font-size:13px; border-radius:var(--item-radius); padding:0 10px 0 3px}
+  .ref__icon{border-radius:5px}
+
+
+  /* C21/C22 · the OPENER shape — a fourth control shape, earned only by the atoms that
+     open something: top corners rounded, bottom corners square, so the trigger reads as
+     the top half of an open menu. Toggles, Doors, Signals, Refs and Pins never take it. */
+  .gate{border-radius:5px 5px 0 0}
+  .field{border-radius:5px 5px 0 0}
+
+  /* C5 · segment text is the ONE chip size, so a selected segment really is the
+     filled Signal chip of its status */
+  .seg__opt{font-size:11px; letter-spacing:.05em}
+  .seg__opt--on-green{background:var(--green); color:var(--on-green)}
+  .seg__opt--on-gray{background:var(--gray); color:var(--on-gray)}
+
+  /* M10 · +Add is built on the Ref pattern (it adds/links items) */
+  .door--add{border-radius:var(--item-radius); gap:6px; padding:0 11px 0 3px}
+  .door--add .ref__icon{background:color-mix(in oklab, var(--commit) 25%, transparent); color:var(--commit)}
+
+  /* C1/C2/M12 · link atoms: 24px box, underline on the LABEL only, the out-marker
+     is a drawn arrow in the house icon holder */
+  .hlink, .dead-text{height:var(--h); display:inline-flex; align-items:center}
+  .hlink{border-bottom:0; padding-bottom:0; gap:7px; text-decoration:underline;
+    text-decoration-color:var(--accent); text-decoration-thickness:1.5px; text-underline-offset:3px}
+  .hlink__ext{width:16px; height:16px; flex:none; border-radius:4px; text-decoration:none;
+    display:inline-flex; align-items:center; justify-content:center;
+    background:var(--accent-soft); color:var(--accent)}
+  .hlink__ext svg{width:10px; height:10px; display:block}
+  .contact__v{border-bottom-width:1.5px}
+
+  /* C19 · no atom shrinks or wraps inside a flex row */
+  .ref, .field, .seg, .seg__opt, .contact, .hlink, .dead-text, .stamp{flex:none; white-space:nowrap}
+
+  /* C12 · every tappable atom is a real <button type="button"> */
+  button.gate, button.door, button.seg__opt, button.field{-webkit-appearance:none; appearance:none;
+    margin:0; text-align:left}
+  button.seg__opt{border-top:0; border-bottom:0; border-left:0}
+
+  /* C20 · ONE universal hover: an accent ring drawn OUTSIDE the element, so no
+     atom's own border, fill or size changes and nothing in the layout moves.
+     On a segmented toggle the ring goes around the TRACK, never a single cell. */
+  .gate:hover, .door:hover, .seg:hover, .field:hover, .ref:hover,
+  .contact:hover, .hlink:hover, .pin[data-tip]:hover{outline:1.5px solid var(--accent); outline-offset:2px}
+
+  /* C8 · press dips the fill on filled tappables */
+  .gate:active, .door--commit:active, .door--money:active, .door--destroy:active{filter:brightness(.94)}
+
+  /* C9 · hover INK is reserved for the atoms that navigate or switch */
+  .seg__opt:not([class*="seg__opt--on"]):hover{color:var(--txt)}
+  .ref:hover, .contact:hover{color:var(--accent)}
+
+  /* C10 · one focus ring for every tappable atom */
+  .gate:focus-visible, .door:focus-visible, .seg__opt:focus-visible, .field:focus-visible,
+  .ref:focus-visible, .contact:focus-visible, .hlink:focus-visible{outline:2px solid var(--accent-line);
+    outline-offset:2px}
+
+  /* M11 · a STATE pair toggle reads as Signals: the live state is the filled chip
+     of its status, the other side is the secondary outline in ITS OWN hue */
+  .seg--state .seg__opt{border-right:0}
+  .seg--state .seg__opt:not([class*="seg__opt--on"]){background:transparent; color:var(--gray);
+    box-shadow:inset 0 1px 0 currentColor, inset 0 -1px 0 currentColor, inset -1px 0 0 currentColor}
+  .seg--state .seg__opt:not([class*="seg__opt--on"]):first-child{
+    box-shadow:inset 0 1px 0 currentColor, inset 0 -1px 0 currentColor, inset 1px 0 0 currentColor}
+  .seg--state .seg__opt--off-red:not([class*="seg__opt--on"]){color:var(--red-line)}
+
+  /* M7 · the status picker IS the segmented toggle, stacked. .menu is superseded
+     as a picker; a menu of unrelated ACTIONS is a container, not an atom. */
+  .seg--stack{flex-direction:column; height:auto; align-items:stretch; width:100%}
+  .seg--stack{border-radius:5px 5px var(--chip-radius) var(--chip-radius)}
+  .seg--stack__cap{border-radius:5px 5px 0 0; border-bottom:0}  /* C22 · accent header caps the top */
+  .seg--stack .seg__opt{height:var(--h); flex:none; border-right:0;
+    border-bottom:1px solid var(--line); justify-content:flex-start}
+  .seg--stack .seg__opt:last-child{border-bottom:0}
+  .seg--stack .seg__sw{width:8px; height:8px; border-radius:2px; flex:none; margin-right:8px}
+
+  /* N1 · PIN — the universal corner marker (new atom). Colour = state, fill = today,
+     exactly like a Signal. 13px, deliberately OFF the 24px control ladder, and zero
+     layout footprint: absolutely positioned, no margin, no reserved space. */
+  .pin-wrap{position:relative; display:inline-flex; flex:none}
+  .pin{position:absolute; top:0; left:100%; transform:translate(-70%,-50%); z-index:2;
+    height:13px; min-width:13px; padding:0 4px;
+    display:inline-flex; align-items:center; justify-content:center; gap:3px;
+    border-radius:var(--chip-radius); font-family:var(--font-mono); font-size:9px; font-weight:800;
+    letter-spacing:.04em; text-transform:uppercase; white-space:nowrap; font-variant-numeric:tabular-nums;
+    cursor:pointer; text-decoration:none; outline:1.5px solid var(--panel)}
+  .pin svg{width:9px; height:9px; display:block}
+  .pin--gray  {background:var(--gray);     color:var(--on-gray)}
+  .pin--blue  {background:var(--blue);     color:var(--on-blue)}
+  .pin--yellow{background:var(--yellow);   color:var(--on-yellow)}
+  .pin--red   {background:var(--red-fill); color:var(--on-red-fill)}
+  .pin--green {background:var(--green);    color:var(--on-green)}
+  .pin--outline{background:var(--panel); border:1px solid currentColor}
+  .pin--gray.pin--outline  {color:var(--gray)}
+  .pin--blue.pin--outline  {color:var(--blue)}
+  .pin--yellow.pin--outline{color:var(--yellow)}
+  .pin--green.pin--outline {color:var(--green)}
+  .pin--red.pin--outline   {color:var(--red-line)}
+  .pin:focus-visible{outline:2px solid var(--accent-line); outline-offset:2px}
+  .pin:after{content:attr(data-tip); position:absolute; bottom:calc(100% + 8px); right:-2px; display:none;
+    padding:7px 10px; max-width:260px; background:var(--panel-2); border:1px solid var(--line);
+    border-radius:9px; color:var(--txt); font-family:var(--font); font-size:11.5px; font-weight:400;
+    line-height:1.4; letter-spacing:0; text-transform:none; white-space:nowrap; z-index:6; pointer-events:none}
+  .pin[data-tip]:hover:after,
+  .pin[data-tip]:focus-visible:after{display:block}
+</style>
+<style>/* Rental Wrangler — styles entry. Rendered designs receive this file's transitive @import closure (fonts + tokens + component classes). Dark-only; no light mode. */
+/* Archivo — bundled variable woff2 (latin + latin-ext, weight axis 400-800).
+   Source: Google Fonts (v25). Bundled rather than CDN-linked so cards render with the
+   correct body voice regardless of render-sandbox network access.
+   One file per subset: Archivo is variable, so all weights come from the same woff2. */
+
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 400 800;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("archivo-latin.woff2") format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 400 800;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("archivo-latin-ext.woff2") format('woff2-variations');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* Rental Wrangler — design tokens
+ * Source of truth: html.dv2 in style.css (the locked redesign canon).
+ * See rw-design-system/README.md for usage notes.
+ */
+:root{
+  /* ---- LOCKED CANON (verbatim from html.dv2 in style.css — do not approximate) ---- */
+  --accent:#ff7e1f; --accent-soft:rgba(255,126,31,.15); --accent-line:rgba(255,126,31,.5);
+  --orange:#ff7e1f; --orange-bg:rgba(255,126,31,.14); --on-orange:#1a1205;
+  --bg:#0a0d11; --bg-2:#0f1318; --panel:#171d25; --panel-2:#1b222c;
+  --card:#12171e; --card-head:#1a212b;
+  --line:#2c343f; --line-soft:#212834;
+  --txt:#eef2f7; --txt-2:#aab4c1; --txt-3:#838e9c;
+  --green:#34d399; --green-bg:rgba(52,211,153,.14);
+  --yellow:#eed44b; --yellow-bg:rgba(238,212,75,.15);
+  --red:#ff4242; --red-bg:rgba(255,66,66,.13);
+  --blue:#6394cc; --blue-bg:rgba(99,148,204,.15);
+  --gray:#8b94a3; --gray-bg:rgba(139,148,163,.14);
+  --chip-radius:2px;    /* state chips — SQUARED (was 7px) */
+  --red-fill:#d63636; --on-red-fill:#fdfdfd; --commit:#2f6fd0; --on-commit:#fdfdfd; --tan:#c2925a;
+  --radius:14px;
+  --font: "Archivo", "Helvetica Neue", -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  /* ---- STRUCTURAL ADDITIONS (not in the locked block — see README/report) ---- */
+  --h:24px;             /* one control height — style skill's 24-28px range; matches shipped --dv2-h */
+  --item-radius:8px;    /* records — Ref and +Add: things that ARE, or link to, a record */
+  --pill-radius:999px;  /* actions — Doors ONLY. Nothing else may take this radius. */
+  --red-line:color-mix(in oklch, var(--red) 78%, var(--txt)); /* legible red once outline chips lost their tint */
+  --on-gray:#12171d; --on-blue:#0a1220; --on-yellow:#241d05; --on-green:#06231a;
+}
+@supports (color: oklch(from red l c h)){
+  :root{ --red-line: oklch(from var(--red) .74 .215 h); }
+}
+
+/* Rental Wrangler — component + layout CSS, extracted verbatim from the cards' shared stylesheet (minus :root, which lives in tokens/tokens.css). html.dv2 redesign canon, Tier 0.1 atom consistency pass applied. */
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg)}
+  .wrap{background:var(--bg); color:var(--txt-2); font-family:var(--font); line-height:1.55;
+    -webkit-font-smoothing:antialiased; min-height:100vh; padding:40px 0 72px}
+  .sheet{max-width:960px; margin:0 auto; padding:0 clamp(16px,4vw,32px)}
+  code,.mono{font-family:var(--font-mono)}
+  b{color:var(--txt); font-weight:700}
+
+  .eyebrow{font-family:var(--font-mono); font-size:11px; font-weight:700; letter-spacing:.16em;
+    text-transform:uppercase; color:var(--txt-3); margin:0 0 10px}
+  .eyebrow .hl{color:var(--accent)}
+  h1{font-family:var(--font-mono); font-weight:800; font-size:clamp(22px,3.6vw,30px);
+    letter-spacing:-.01em; color:var(--txt); margin:0 0 10px; line-height:1.15}
+  h1 .hl{color:var(--accent)}
+  .lede{max-width:70ch; font-size:14px; color:var(--txt-2); margin:0 0 6px}
+  .rule{max-width:74ch; font-size:12.5px; color:var(--txt-3); margin:10px 0 0}
+  .rule b{color:var(--txt-2)}
+  .top{padding-bottom:22px; border-bottom:1px solid var(--line)}
+
+  section{margin-top:40px}
+  h2.sub{font-family:var(--font-mono); font-weight:800; font-size:12px; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--txt-3); margin:0 0 14px; padding-bottom:8px;
+    border-bottom:1px solid var(--line)}
+  h2.sub .hl{color:var(--accent)}
+  h3.mini{font-family:var(--font-mono); font-size:11px; font-weight:800; letter-spacing:.08em;
+    text-transform:uppercase; color:var(--txt-3); margin:22px 0 10px}
+  h3.mini:first-of-type{margin-top:0}
+
+  .panel{border:1px solid var(--line); border-radius:var(--radius); background:var(--panel); overflow:hidden}
+  .pad{padding:18px 20px}
+  .callout{border:1px solid var(--line); border-left:3px solid var(--accent); background:var(--card);
+    border-radius:0 9px 9px 0; padding:12px 15px; font-size:12.5px; color:var(--txt-2); margin-top:14px}
+  .callout b{color:var(--txt)}
+  .callout.warn{border-left-color:var(--yellow)}
+  .callout.info{border-left-color:var(--blue)}
+  .callout.law{border-left-color:var(--red)}
+
+  .foot{margin-top:56px; padding:20px 0 0; border-top:1px solid var(--line); font-size:12px;
+    color:var(--txt-3); max-width:82ch}
+  .foot b{color:var(--txt-2)}
+
+  .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+  .row.tight{gap:6px}
+
+  /* ================= SIGNAL — read-only state; colour=state, fill=today ================= */
+  .signal{height:var(--h); display:inline-flex; align-items:center; gap:6px; padding:0 10px;
+    border-radius:var(--chip-radius); font-family:var(--font-mono); font-size:11px; font-weight:800;
+    letter-spacing:.05em; text-transform:uppercase; white-space:nowrap}
+  .signal--gray.signal--filled   {background:var(--gray);     color:var(--on-gray)}
+  /* C15 · the secondary chip is a TRUE outline — no tint backfill, 1px border in its own hue */
+  .signal--outline{background:transparent; border:1px solid currentColor}
+  .signal--gray.signal--outline  {color:var(--gray)}
+  .signal--blue.signal--filled   {background:var(--blue);     color:var(--on-blue)}
+  .signal--blue.signal--outline  {color:var(--blue)}
+  .signal--yellow.signal--filled {background:var(--yellow);   color:var(--on-yellow)}
+  .signal--yellow.signal--outline{color:var(--yellow)}
+  .signal--red.signal--filled    {background:var(--red-fill); color:var(--on-red-fill)}
+  .signal--red.signal--outline   {color:var(--red-line)}
+  .signal--green.signal--filled  {background:var(--green);    color:var(--on-green)}
+  .signal--green.signal--outline {color:var(--green)}
+
+  /* ================= GATE — a Signal you can turn: + leading centred chevron ================= */
+  .gate{height:var(--h); display:inline-flex; align-items:center; gap:2px; padding:0 10px 0 7px;
+    border-radius:var(--chip-radius); font-family:var(--font-mono); font-size:11px; font-weight:800;
+    letter-spacing:.05em; text-transform:uppercase; white-space:nowrap; cursor:pointer; border:0}
+  .gate__chev{display:inline-flex; align-items:center; justify-content:center; width:12px; height:12px; flex:none}
+  .gate__chev svg{width:12px; height:12px; display:block}
+  .gate--blue  {background:var(--blue);     color:var(--on-blue)}
+  .gate--yellow{background:var(--yellow);   color:var(--on-yellow)}
+  .gate--red   {background:var(--red-fill); color:var(--on-red-fill)}
+  .gate--green {background:var(--green);    color:var(--on-green)}
+  .gate--gray  {background:var(--gray);     color:var(--on-gray)}
+
+  /* ================= STAMP — a quiet fact: chip text, no box, no colour ================= */
+  .stamp{height:var(--h); display:inline-flex; align-items:center; padding:0 3px;
+    font-family:var(--font-mono); font-size:11px; font-weight:700; letter-spacing:.05em;
+    text-transform:uppercase; color:var(--txt-3)}
+  .stamp--more{color:var(--accent)}
+  .stamp-sep{color:var(--line); font-family:var(--font-mono); font-size:11px}
+
+  /* ================= REF — a linked record: accent-tinted icon backing + name ================= */
+  .ref{height:var(--h); display:inline-flex; align-items:center; gap:6px; padding:0 9px 0 3px;
+    border-radius:var(--chip-radius); border:1px solid var(--line); background:transparent;
+    font-family:var(--font); font-weight:600; font-size:12.5px; color:var(--txt);
+    text-decoration:none; cursor:pointer}
+  .ref:hover{border-color:var(--accent)}
+  .ref__icon{width:18px; height:18px; border-radius:4px; flex:none; display:inline-flex;
+    align-items:center; justify-content:center; background:var(--accent-soft); color:var(--accent)}
+  .ref__icon svg{width:12px; height:12px}
+  .ref__id{font-family:var(--font-mono); font-size:9px; color:var(--txt-3); font-weight:600}
+  .ref-trace{display:flex; align-items:center; gap:7px; flex-wrap:wrap}
+  .ref-trace__arrow{font-family:var(--font-mono); color:var(--txt-3); font-size:12px}
+
+  /* ================= DOOR — a verb action: radius=pill, colour=intent, never status ================= */
+  .door{height:var(--h); display:inline-flex; align-items:center; padding:0 15px;
+    border-radius:var(--pill-radius); font-family:var(--font-mono); font-size:11px; font-weight:800;
+    letter-spacing:.05em; text-transform:uppercase; cursor:pointer; border:0; white-space:nowrap}
+  .door--commit {background:var(--commit); color:var(--on-commit)}
+  .door--add    {background:transparent; border:1.5px dashed var(--commit); color:var(--commit); padding:0 13px}
+  .door--money  {background:var(--green); color:var(--on-green)}
+  .door--destroy{background:var(--red-fill); color:var(--on-red-fill)}
+  .door--ghost  {background:transparent; border:1px solid var(--line); color:var(--txt-2)}
+
+  .seg{height:var(--h); display:inline-flex; border:1px solid var(--line); border-radius:var(--chip-radius); overflow:hidden}
+  .seg__opt{display:inline-flex; align-items:center; padding:0 11px; font-family:var(--font-mono);
+    font-size:10px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--txt-3);
+    border-right:1px solid var(--line); cursor:pointer; background:transparent}
+  .seg__opt:last-child{border-right:0}
+  .seg__opt--on-yellow{background:var(--yellow); color:var(--on-yellow)}
+  .seg__opt--on-red{background:var(--red-fill); color:var(--on-red-fill)}
+  .seg__opt--on-blue{background:var(--blue); color:var(--on-blue)}
+  .seg__opt--on-accent{background:var(--accent); color:var(--on-orange)}
+
+  /* ================= FIELDS / links ================= */
+  .field{height:var(--h); display:inline-flex; align-items:center; gap:8px; padding:0 10px;
+    border-radius:var(--chip-radius); border:1px solid var(--line); font-family:var(--font);
+    font-size:12px; color:var(--txt); cursor:pointer; background:transparent}
+  .field__car{color:var(--accent); font-family:var(--font-mono); font-size:10px}
+  .contact{height:var(--h); display:inline-flex; align-items:center; gap:6px; font-family:var(--font);
+    font-size:13px; color:var(--txt); text-decoration:none; cursor:pointer}
+  .contact svg{color:var(--accent); width:14px; height:14px}
+  .contact__v{border-bottom:1.4px solid transparent}
+  .contact:hover .contact__v{border-bottom-color:var(--accent)}
+  .hlink{font-family:var(--font); font-size:13px; color:var(--txt); text-decoration:none;
+    border-bottom:1.5px solid var(--accent); padding-bottom:1px; cursor:pointer}
+  .hlink__ext{font-family:var(--font-mono); color:var(--accent); font-size:10px}
+  .dead-text{font-family:var(--font); font-size:13px; color:var(--txt-2)}
+
+  /* ================= PLATE — section-header grammar ================= */
+  .plate{border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; background:var(--card)}
+  .plate__head{display:flex; align-items:center; gap:10px; min-height:42px; padding:0 14px;
+    border-bottom:1px solid var(--line); background:var(--card-head)}
+  .plate__stripe{width:3px; align-self:stretch; margin:8px 0; border-radius:2px; flex:none}
+  .plate__label{font-family:var(--font-mono); font-size:12px; font-weight:800; letter-spacing:.05em;
+    text-transform:uppercase; flex:none}
+  .plate__summary{flex:1; min-width:0; font-family:var(--font); font-size:12.5px; color:var(--txt-2);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .plate__chevron{color:var(--txt-3); font-family:var(--font-mono)}
+  .plate__body{padding:12px 14px; display:flex; gap:9px; flex-wrap:wrap; align-items:center}
+  .plate--gray   .plate__head{background:var(--gray-bg)}   .plate--gray   .plate__stripe{background:var(--gray)}   .plate--gray   .plate__label{color:var(--gray)}
+  .plate--blue   .plate__head{background:var(--blue-bg)}   .plate--blue   .plate__stripe{background:var(--blue)}   .plate--blue   .plate__label{color:var(--blue)}
+  .plate--yellow .plate__head{background:var(--yellow-bg)} .plate--yellow .plate__stripe{background:var(--yellow)} .plate--yellow .plate__label{color:var(--yellow)}
+  .plate--red    .plate__head{background:var(--red-bg)}    .plate--red    .plate__stripe{background:var(--red)}    .plate--red    .plate__label{color:var(--red)}
+  .plate--green  .plate__head{background:var(--green-bg)}  .plate--green  .plate__stripe{background:var(--green)}  .plate--green  .plate__label{color:var(--green)}
+
+  /* ================= misc demo scaffolding ================= */
+  .swatch-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:10px}
+  .swatch{border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--card)}
+  .swatch__blk{height:52px; position:relative}
+  .swatch__tag{position:absolute; right:6px; bottom:5px; font-family:var(--font-mono); font-size:8.5px;
+    font-weight:800; letter-spacing:.05em; text-transform:uppercase; padding:1px 5px; border-radius:3px;
+    background:rgba(0,0,0,.28)}
+  .swatch__info{padding:9px 10px 10px}
+  .swatch__val{font-family:var(--font-mono); font-size:10.5px; font-weight:700; color:var(--txt);
+    word-break:break-all}
+  .swatch__name{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--txt-3); margin-top:1px}
+  .swatch__mean{font-size:11.5px; color:var(--txt-2); margin-top:6px; line-height:1.4}
+
+  .spec-row{display:grid; grid-template-columns:170px 1fr; border-bottom:1px solid var(--line)}
+  .spec-row:last-child{border-bottom:0}
+  .spec-row__role{padding:14px; border-right:1px solid var(--line); background:var(--card-head)}
+  .spec-row__rn{font-family:var(--font-mono); font-size:10.5px; font-weight:800; letter-spacing:.05em;
+    text-transform:uppercase; color:var(--txt)}
+  .spec-row__rr{font-size:10.5px; color:var(--txt-3); margin-top:3px}
+  .spec-row__ex{padding:14px; display:flex; align-items:center; flex-wrap:wrap; gap:8px; min-width:0}
+  .t-name{font-family:var(--font); font-weight:700; font-size:16px; color:var(--txt)}
+  .t-prose{font-family:var(--font); font-size:13px; color:var(--txt-2)}
+  .t-num{font-family:var(--font-mono); font-size:13px; color:var(--txt-2); font-variant-numeric:tabular-nums; font-weight:600}
+  .t-hint{font-family:var(--font); font-size:12.5px; color:var(--txt-3); font-style:italic}
+  .t-stamp2{font-family:var(--font-mono); font-size:9.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--txt-3)}
+
+  .ladder-row{display:flex; align-items:baseline; gap:14px; padding:11px 16px; border-bottom:1px solid var(--line-soft)}
+  .ladder-row:last-child{border-bottom:0}
+  .ladder-row__px{font-family:var(--font-mono); font-size:11px; font-weight:800; color:var(--accent); width:48px; flex:none}
+  .ladder-row__role{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--txt-3); width:160px; flex:none}
+  .ladder-row__demo{font-family:var(--font); color:var(--txt); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+
+  .radii-row{display:flex; gap:20px; flex-wrap:wrap; padding:16px}
+  .radii-item{display:flex; flex-direction:column; align-items:center; gap:8px}
+  .radii-box{width:84px; height:44px; background:var(--card-head); border:1.5px solid var(--accent)}
+  .radii-box.chip{border-radius:var(--chip-radius)}
+  .radii-box.opener{border-radius:5px 5px 0 0}
+  .radii-box.item{border-radius:var(--item-radius)}
+  .radii-box.pill{border-radius:var(--pill-radius)}
+  .radii-box.container{border-radius:var(--radius)}
+  .radii-lab{font-family:var(--font-mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--txt-2); text-align:center}
+  .radii-lab b{display:block; color:var(--txt); font-size:12px}
+
+  .budget-bar{display:flex; height:34px; border-radius:8px; overflow:hidden; border:1px solid var(--line)}
+  .budget-bar span{display:flex; align-items:center; justify-content:center; font-family:var(--font-mono);
+    font-size:10.5px; font-weight:800; letter-spacing:.04em}
+  .b-60{width:60%; background:var(--card-head); color:var(--txt-2)}
+  .b-30{width:30%; background:var(--panel); color:var(--txt-2)}
+  .b-10{width:10%; background:var(--accent); color:var(--on-orange)}
+
+  .therm{display:grid; grid-template-columns:repeat(4,1fr); border:1px solid var(--line); border-radius:11px; overflow:hidden}
+  @media (max-width:680px){ .therm{grid-template-columns:1fr 1fr} }
+  .tcell{padding:14px; border-right:1px solid var(--line); background:var(--card)}
+  .tcell:last-child{border-right:0}
+  .tdot{width:100%; height:9px; border-radius:4px; margin-bottom:9px}
+  .t-gray .tdot{background:var(--gray)} .t-blue .tdot{background:var(--blue)}
+  .t-yellow .tdot{background:var(--yellow)} .t-red .tdot{background:var(--red)}
+  .tname{font-family:var(--font-mono); font-size:12.5px; font-weight:800; letter-spacing:.04em; text-transform:uppercase}
+  .t-gray .tname{color:var(--gray)} .t-blue .tname{color:var(--blue)}
+  .t-yellow .tname{color:var(--yellow)} .t-red .tname{color:var(--red)}
+  .tmean{font-size:11.5px; color:var(--txt-2); margin-top:4px}
+
+  .menu{border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--panel); width:190px}
+  .menu__h{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--txt-3); padding:9px 12px; border-bottom:1px solid var(--line); background:var(--card-head)}
+  .menu__i{display:flex; align-items:center; gap:8px; padding:8px 12px; font-size:12px; color:var(--txt);
+    border-bottom:1px solid var(--line-soft); cursor:pointer}
+  .menu__i:last-child{border-bottom:0}
+  .menu__sw{width:8px; height:8px; border-radius:2px; flex:none}
+  .menu__i.on{font-weight:800}
+  .menu__i.on:after{content:"\2713"; margin-left:auto; color:var(--accent); font-family:var(--font-mono); font-size:11px}
+
+  table.floors{width:100%; border-collapse:collapse}
+  table.floors th, table.floors td{padding:9px 12px; border-bottom:1px solid var(--line-soft); font-size:12px; text-align:left}
+  table.floors th{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--txt-3); background:var(--card-head)}
+  table.floors td.ratio{font-family:var(--font-mono); font-weight:700; color:var(--txt)}
+  table.floors td .pass{color:var(--green); font-weight:700}
+  table.floors td .fail{color:var(--red); font-weight:700}
+  table.floors tr:last-child td{border-bottom:0}
+
+
+  /* ======================================================================
+     ATOM CONSISTENCY PASS — approved 2026-07-25 (rw-consistency-pass.css).
+     Four control shapes: state SQUARED · openers TOP-ROUNDED · records ROUNDED · actions PILL.
+     ====================================================================== */
+
+  /* C7 · read-only atoms say so with the cursor */
+  .signal, .stamp, .stamp-sep, .dead-text, .t-hint{cursor:default}
+
+  /* C4 · the stamp separator is a true sibling of the stamps it sits between */
+  .stamp-sep{height:var(--h); display:inline-flex; align-items:center; font-weight:700}
+
+  /* C3/C17 · Ref: content size on the ladder + the item radius */
+  .ref{font-size:13px; border-radius:var(--item-radius); padding:0 10px 0 3px}
+  .ref__icon{border-radius:5px}
+
+
+  /* C21/C22 · the OPENER shape — a fourth control shape, earned only by the atoms that
+     open something: top corners rounded, bottom corners square, so the trigger reads as
+     the top half of an open menu. Toggles, Doors, Signals, Refs and Pins never take it. */
+  .gate{border-radius:5px 5px 0 0}
+  .field{border-radius:5px 5px 0 0}
+
+  /* C5 · segment text is the ONE chip size, so a selected segment really is the
+     filled Signal chip of its status */
+  .seg__opt{font-size:11px; letter-spacing:.05em}
+  .seg__opt--on-green{background:var(--green); color:var(--on-green)}
+  .seg__opt--on-gray{background:var(--gray); color:var(--on-gray)}
+
+  /* M10 · +Add is built on the Ref pattern (it adds/links items) */
+  .door--add{border-radius:var(--item-radius); gap:6px; padding:0 11px 0 3px}
+  .door--add .ref__icon{background:color-mix(in oklab, var(--commit) 25%, transparent); color:var(--commit)}
+
+  /* C1/C2/M12 · link atoms: 24px box, underline on the LABEL only, the out-marker
+     is a drawn arrow in the house icon holder */
+  .hlink, .dead-text{height:var(--h); display:inline-flex; align-items:center}
+  .hlink{border-bottom:0; padding-bottom:0; gap:7px; text-decoration:underline;
+    text-decoration-color:var(--accent); text-decoration-thickness:1.5px; text-underline-offset:3px}
+  .hlink__ext{width:16px; height:16px; flex:none; border-radius:4px; text-decoration:none;
+    display:inline-flex; align-items:center; justify-content:center;
+    background:var(--accent-soft); color:var(--accent)}
+  .hlink__ext svg{width:10px; height:10px; display:block}
+  .contact__v{border-bottom-width:1.5px}
+
+  /* C19 · no atom shrinks or wraps inside a flex row */
+  .ref, .field, .seg, .seg__opt, .contact, .hlink, .dead-text, .stamp{flex:none; white-space:nowrap}
+
+  /* C12 · every tappable atom is a real <button type="button"> */
+  button.gate, button.door, button.seg__opt, button.field{-webkit-appearance:none; appearance:none;
+    margin:0; text-align:left}
+  button.seg__opt{border-top:0; border-bottom:0; border-left:0}
+
+  /* C20 · ONE universal hover: an accent ring drawn OUTSIDE the element, so no
+     atom's own border, fill or size changes and nothing in the layout moves.
+     On a segmented toggle the ring goes around the TRACK, never a single cell. */
+  .gate:hover, .door:hover, .seg:hover, .field:hover, .ref:hover,
+  .contact:hover, .hlink:hover, .pin[data-tip]:hover{outline:1.5px solid var(--accent); outline-offset:2px}
+
+  /* C8 · press dips the fill on filled tappables */
+  .gate:active, .door--commit:active, .door--money:active, .door--destroy:active{filter:brightness(.94)}
+
+  /* C9 · hover INK is reserved for the atoms that navigate or switch */
+  .seg__opt:not([class*="seg__opt--on"]):hover{color:var(--txt)}
+  .ref:hover, .contact:hover{color:var(--accent)}
+
+  /* C10 · one focus ring for every tappable atom */
+  .gate:focus-visible, .door:focus-visible, .seg__opt:focus-visible, .field:focus-visible,
+  .ref:focus-visible, .contact:focus-visible, .hlink:focus-visible{outline:2px solid var(--accent-line);
+    outline-offset:2px}
+
+  /* M11 · a STATE pair toggle reads as Signals: the live state is the filled chip
+     of its status, the other side is the secondary outline in ITS OWN hue */
+  .seg--state .seg__opt{border-right:0}
+  .seg--state .seg__opt:not([class*="seg__opt--on"]){background:transparent; color:var(--gray);
+    box-shadow:inset 0 1px 0 currentColor, inset 0 -1px 0 currentColor, inset -1px 0 0 currentColor}
+  .seg--state .seg__opt:not([class*="seg__opt--on"]):first-child{
+    box-shadow:inset 0 1px 0 currentColor, inset 0 -1px 0 currentColor, inset 1px 0 0 currentColor}
+  .seg--state .seg__opt--off-red:not([class*="seg__opt--on"]){color:var(--red-line)}
+
+  /* M7 · the status picker IS the segmented toggle, stacked. .menu is superseded
+     as a picker; a menu of unrelated ACTIONS is a container, not an atom. */
+  .seg--stack{flex-direction:column; height:auto; align-items:stretch; width:100%}
+  .seg--stack{border-radius:5px 5px var(--chip-radius) var(--chip-radius)}
+  .seg--stack__cap{border-radius:5px 5px 0 0; border-bottom:0}  /* C22 · accent header caps the top */
+  .seg--stack .seg__opt{height:var(--h); flex:none; border-right:0;
+    border-bottom:1px solid var(--line); justify-content:flex-start}
+  .seg--stack .seg__opt:last-child{border-bottom:0}
+  .seg--stack .seg__sw{width:8px; height:8px; border-radius:2px; flex:none; margin-right:8px}
+
+  /* N1 · PIN — the universal corner marker (new atom). Colour = state, fill = today,
+     exactly like a Signal. 13px, deliberately OFF the 24px control ladder, and zero
+     layout footprint: absolutely positioned, no margin, no reserved space. */
+  .pin-wrap{position:relative; display:inline-flex; flex:none}
+  .pin{position:absolute; top:0; left:100%; transform:translate(-70%,-50%); z-index:2;
+    height:13px; min-width:13px; padding:0 4px;
+    display:inline-flex; align-items:center; justify-content:center; gap:3px;
+    border-radius:var(--chip-radius); font-family:var(--font-mono); font-size:9px; font-weight:800;
+    letter-spacing:.04em; text-transform:uppercase; white-space:nowrap; font-variant-numeric:tabular-nums;
+    cursor:pointer; text-decoration:none; outline:1.5px solid var(--panel)}
+  .pin svg{width:9px; height:9px; display:block}
+  .pin--gray  {background:var(--gray);     color:var(--on-gray)}
+  .pin--blue  {background:var(--blue);     color:var(--on-blue)}
+  .pin--yellow{background:var(--yellow);   color:var(--on-yellow)}
+  .pin--red   {background:var(--red-fill); color:var(--on-red-fill)}
+  .pin--green {background:var(--green);    color:var(--on-green)}
+  .pin--outline{background:var(--panel); border:1px solid currentColor}
+  .pin--gray.pin--outline  {color:var(--gray)}
+  .pin--blue.pin--outline  {color:var(--blue)}
+  .pin--yellow.pin--outline{color:var(--yellow)}
+  .pin--green.pin--outline {color:var(--green)}
+  .pin--red.pin--outline   {color:var(--red-line)}
+  .pin:focus-visible{outline:2px solid var(--accent-line); outline-offset:2px}
+  .pin:after{content:attr(data-tip); position:absolute; bottom:calc(100% + 8px); right:-2px; display:none;
+    padding:7px 10px; max-width:260px; background:var(--panel-2); border:1px solid var(--line);
+    border-radius:9px; color:var(--txt); font-family:var(--font); font-size:11.5px; font-weight:400;
+    line-height:1.4; letter-spacing:0; text-transform:none; white-space:nowrap; z-index:6; pointer-events:none}
+  .pin[data-tip]:hover:after,
+  .pin[data-tip]:focus-visible:after{display:block}
+
+</style>
+<script src="rw-namespace.js"></script>
+<style>
+html,body{margin:0;background:#0a0d11}
+a{color:var(--accent)}
+a:hover{color:var(--txt)}
+@keyframes rwExpand{from{height:0;opacity:0}to{height:200px;opacity:1}}
+@keyframes crtWake{0%{opacity:0}38%{opacity:.85}50%{opacity:.3}64%{opacity:1}78%{opacity:.75}100%{opacity:1}}
+@keyframes rwLaserDrop{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes rwRailDrop{0%{transform:scaleY(0);opacity:1}45%{transform:scaleY(1);opacity:1}78%{opacity:1}100%{transform:scaleY(1);opacity:0}}
+@keyframes rwType{0%{clip-path:inset(0 100% 0 0)}100%{clip-path:inset(0 -2% 0 0)}}
+@keyframes rwCaret{0%{left:6px;opacity:0}6%{opacity:1}88%{opacity:1}100%{left:calc(100% - 14px);opacity:0}}
+@keyframes termloop{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@keyframes termblink{0%,55%{opacity:1}56%,100%{opacity:0}}
+input::placeholder{color:transparent}
+button,input,.seg__opt,.door,.field,.pin,.chip,.stamp,.ref,.ref__label{font-family:var(--font-mono)}
+.seg__opt{font-weight:800;letter-spacing:.09em}
+input:focus::placeholder{color:transparent}
+@keyframes rwPop{from{opacity:0;transform:translate(-50%,-10px)}to{opacity:1;transform:translate(-50%,0)}}
+/* Kit overrides ruled 2026-07-26 — pseudo-class rules on design-system classes, so they
+   cannot be expressed inline. Filed as finding #5 in the container document's §5.
+   C20: the hover ring goes around the CELL you are pointing at, not the whole track.
+   C9:  no atom changes its ink on hover. The ring and the border say "touchable". */
+.signal--outline{border-width:1.5px}
+.pin--outline{border-width:1.5px}
+.seg--state .seg__opt:not([class*="seg__opt--on"]){box-shadow:inset 0 1.5px 0 currentColor,inset 0 -1.5px 0 currentColor,inset -1.5px 0 0 currentColor}
+.seg--state .seg__opt:not([class*="seg__opt--on"]):first-child{box-shadow:inset 0 1.5px 0 currentColor,inset 0 -1.5px 0 currentColor,inset 1.5px 0 0 currentColor}
+.pin:hover{outline:none}
+.seg__opt > .pin,.pin-wrap > .pin{height:10px;min-width:10px;font-size:8px;line-height:10px;padding:0 2.5px}
+.seg:hover{outline:none}
+.seg__opt:hover{outline:1.5px solid var(--accent);outline-offset:-1.5px;position:relative;z-index:1}
+.ref:hover{color:var(--txt)}
+.ref:hover{border-color:var(--line)}
+.ref:hover{outline:none}
+.contact:hover{color:var(--txt)}
+.seg__opt:not([class*="seg__opt--on"]):hover{color:var(--txt-3)}
+.seg__opt{font-size:10px;letter-spacing:.09em}
+.seg__opt[class*="seg__opt--on"]{background-image:linear-gradient(180deg,rgba(0,0,0,.26),rgba(0,0,0,0) 48%);box-shadow:0 0 0 2px color-mix(in oklab, black 62%, var(--card-head)),0 3.4px 0 rgba(185,205,235,.13),0 -3.2px 0 rgba(185,205,235,.05),inset 0 1.5px 3px rgba(0,0,0,.5)}
+.seg__opt{border:0 !important}
+.seg__opt:not([class*="seg__opt--on"]){background-color:#050A10;background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.20) 2px 3px),linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,0) 55%,rgba(185,205,235,.04));box-shadow:0 0 0 2px color-mix(in oklab, black 62%, var(--card-head)),0 3.4px 0 rgba(185,205,235,.13),0 -3.2px 0 rgba(185,205,235,.05),inset 0 2px 3.5px rgba(0,0,0,.78)}
+[data-jump-band] .seg__opt{background:transparent !important;box-shadow:none}
+[data-pair] .seg__opt:not([class*="seg__opt--on"]){background:transparent !important;box-shadow:none !important}
+[data-pair] .seg__opt[class*="seg__opt--on"]{box-shadow:inset 0 1.5px 3px rgba(0,0,0,.5),0 1px 0 rgba(255,255,255,.05) !important}
+.seg--stack .seg__opt:not([class*="seg__opt--on"]){background:transparent !important;box-shadow:none !important}
+.field{border-radius:0 !important}
+.signal[class*="--filled"]{background-image:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.02) 45%,rgba(0,0,12,.16));box-shadow:0 0 0 2px color-mix(in oklab, black 62%, var(--card-head)),0 0 0 3px rgba(185,205,235,.09),0 5px 0 -2px rgba(185,205,235,.13),inset 0 1px 0 rgba(255,255,255,.28),inset 0 -1.5px 2.5px rgba(0,0,0,.32)}
+.signal[class*="--outline"]{box-shadow:0 0 0 2px color-mix(in oklab, black 62%, var(--card-head)),0 0 0 3px rgba(185,205,235,.07),0 5px 0 -2px rgba(185,205,235,.10),inset 0 1px 0 rgba(185,205,235,.07)}
+.seg,.seg__opt,.signal,.pin{border-radius:0 !important}
+.seg{border:0 !important}
+.gate{height:17px;padding:0 7px 0 4px;font-size:9px;border-radius:0;background-image:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.02) 45%,rgba(0,0,12,.16));box-shadow:0 0 0 1.5px color-mix(in oklab, black 58%, var(--card-head)),0 0 0 2.5px rgba(185,205,235,.08),inset 0 1px 0 rgba(255,255,255,.14),inset 0 -1.5px 2.5px rgba(0,0,0,.35)}
+.gate--blue,.gate--green,.gate--gray{background-color:#0A0F16 !important;background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.22) 2px 3px),linear-gradient(180deg,rgba(0,0,0,.32),rgba(0,0,0,0) 55%,rgba(185,205,235,.03)) !important}
+.gate--blue{color:var(--blue) !important;box-shadow:0 0 0 1.5px color-mix(in oklab, black 58%, var(--card-head)),0 0 0 2.5px rgba(185,205,235,.08),inset 0 0 0 1px color-mix(in oklab, transparent 40%, var(--blue)),inset 0 -1.5px 2.5px rgba(0,0,0,.5) !important}
+.gate--green{color:var(--green) !important;box-shadow:0 0 0 1.5px color-mix(in oklab, black 58%, var(--card-head)),0 0 0 2.5px rgba(185,205,235,.08),inset 0 0 0 1px color-mix(in oklab, transparent 40%, var(--green)),inset 0 -1.5px 2.5px rgba(0,0,0,.5) !important}
+.gate--gray{color:var(--txt-2) !important;box-shadow:0 0 0 1.5px color-mix(in oklab, black 58%, var(--card-head)),0 0 0 2.5px rgba(185,205,235,.08),inset 0 0 0 1px color-mix(in oklab, transparent 45%, var(--gray)),inset 0 -1.5px 2.5px rgba(0,0,0,.5) !important}
+.pin{box-shadow:0 1px 2px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.22)}
+[data-row] .pin-wrap > .signal{height:17px !important;font-size:9px !important;padding:0 7px !important;box-shadow:0 0 0 1.5px color-mix(in oklab, black 58%, var(--card-head)),0 0 0 2.5px rgba(185,205,235,.08),inset 0 1px 0 rgba(255,255,255,.14),inset 0 -1.5px 2.5px rgba(0,0,0,.35)}
+[data-row] .signal--blue,[data-row] .signal--green,[data-row] .signal--gray{background-color:#0A0F16 !important;background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.22) 2px 3px),linear-gradient(180deg,rgba(0,0,0,.32),rgba(0,0,0,0) 55%,rgba(185,205,235,.03)) !important}
+[data-row] .signal--blue{color:var(--blue) !important;box-shadow:0 0 0 1.5px color-mix(in oklab, black 58%, var(--card-head)),0 0 0 2.5px rgba(185,205,235,.08),inset 0 0 0 1px color-mix(in oklab, transparent 40%, var(--blue)),inset 0 -1.5px 2.5px rgba(0,0,0,.5) !important}
+[data-row] .signal--green{color:var(--green) !important;box-shadow:0 0 0 1.5px color-mix(in oklab, black 58%, var(--card-head)),0 0 0 2.5px rgba(185,205,235,.08),inset 0 0 0 1px color-mix(in oklab, transparent 40%, var(--green)),inset 0 -1.5px 2.5px rgba(0,0,0,.5) !important}
+[data-row] .signal--gray{color:var(--txt-2) !important;box-shadow:0 0 0 1.5px color-mix(in oklab, black 58%, var(--card-head)),0 0 0 2.5px rgba(185,205,235,.08),inset 0 0 0 1px color-mix(in oklab, transparent 45%, var(--gray)),inset 0 -1.5px 2.5px rgba(0,0,0,.5) !important}
+[data-row] .ref{height:17px !important;width:152px !important;flex:none !important;font-size:11px !important}
+[data-row] .ref:hover .rmq{width:max-content;text-overflow:clip;animation:refScroll 2.6s ease-in-out infinite alternate}
+@keyframes refScroll{0%,14%{transform:translateX(0)}86%,100%{transform:translateX(min(0px,calc(114px - 100%)))}}
+@keyframes bslide{0%,15%{transform:translateX(0)}85%,100%{transform:translateX(min(0px,calc(78px - 100%)))}}
+.ref{border-radius:0 !important;border:0 !important;background:#0B121B !important;clip-path:polygon(-3px -3px,calc(100% - 13px) -3px,calc(100% + 3px) 13px,calc(100% + 3px) calc(100% + 3px),-3px calc(100% + 3px));box-shadow:0 0 0 1.5px color-mix(in oklab, black 62%, var(--card-head)),0 2.5px 0 -1px rgba(185,205,235,.10),inset 0 1px 0 rgba(185,205,235,.06)}
+.gate:hover,.door:hover,.seg:hover,.field:hover,.ref:hover,.contact:hover,.hlink:hover,.pin[data-tip]:hover,.seg__opt:hover{outline:none !important}
+.gate:hover{filter:brightness(1.12)}
+.door:hover,.seg__opt:not([class*="seg__opt--on"]):hover{filter:brightness(1.15)}
+</style>
+</helmet>
+
+<div style="background:var(--bg);min-height:100vh;padding:36px;display:flex;justify-content:center;align-items:flex-start;font-family:var(--font);color:var(--txt-2);line-height:1.55">
+  <div data-screen-label="Live card" style="flex:none;width:{{ liveW }}">
+    <div ref="{{ cardRef }}" sc-camel-on-mouse-over="{{ onHint }}" sc-camel-on-mouse-leave="{{ onHintOut }}" style="position:relative;clip-path:polygon(16px 0,calc(100% - 16px) 0,100% 16px,100% calc(100% - 16px),calc(100% - 16px) 100%,10px 100%,0 calc(100% - 10px),0 16px);display:flex;flex-direction:column;height:540px;padding:2.5px 5px 4px 5px;box-sizing:border-box">
+      <div style="position:absolute;inset:0;clip-path:polygon(16px 0,calc(100% - 16px) 0,100% 16px,100% calc(100% - 16px),calc(100% - 16px) 100%,10px 100%,0 calc(100% - 10px),0 16px);background:color-mix(in oklab, black 52%, {{ frameBase }})"></div>
+      <div style="position:absolute;inset:1.2px;clip-path:polygon(15.3px 0,calc(100% - 15.3px) 0,100% 15.3px,100% calc(100% - 15.3px),calc(100% - 15.3px) 100%,9.3px 100%,0 calc(100% - 9.3px),0 15.3px);background:linear-gradient(180deg,color-mix(in oklab, white 32%, {{ frameBase }}),color-mix(in oklab, white 13%, {{ frameBase }}) 22%,color-mix(in oklab, white 6%, {{ frameBase }}) 75%,color-mix(in oklab, white 3%, {{ frameBase }}))"></div>
+      <div style="position:absolute;inset:2.6px;clip-path:polygon(14.5px 0,calc(100% - 14.5px) 0,100% 14.5px,100% calc(100% - 14.5px),calc(100% - 14.5px) 100%,8.5px 100%,0 calc(100% - 8.5px),0 14.5px);background:{{ frameFace }}"></div>
+
+      <div style="position:relative;flex:1;min-height:0;display:flex;flex-direction:column;clip-path:polygon(15.5px 0,calc(100% - 15.5px) 0,100% 15.5px,calc(100% + 5px) 20.5px,calc(100% + 5px) calc(100% - 19px),100% calc(100% - 14px),calc(100% - 14px) 100%,8px 100%,0 calc(100% - 8px),-5px calc(100% - 13px),-5px 20.5px,0 15.5px);background-color:color-mix(in oklab, var(--blue) 7%, var(--card));background-image:linear-gradient(168deg,rgba(130,170,230,.045),rgba(0,0,18,.22)),url(&quot;steel-texture.png&quot;)">
+      <div style="position:relative;display:flex;background-color:{{ chassisFace }};background-image:url(&quot;steel-texture.png&quot;);border-bottom:1px solid color-mix(in oklab, black 60%, var(--card-head));box-shadow:0 1px 0 rgba(185,205,235,.08),inset 0 -1px 0 rgba(185,205,235,.04);flex:none;clip-path:polygon(15.5px 0,calc(100% - 15.5px) 0,100% 15.5px,100% 100%,0 100%,0 15.5px)">
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;padding:0 2px 2px 0">
+          <div style="position:relative;display:flex;align-items:stretch">
+            <div data-hint="{{ workTip }}" style="position:relative;flex:none;width:20px;margin-right:-1.2px">
+              
+            </div>
+            <div style="position:relative;flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px;padding:13px 4px 8px 4px">
+              <div style="position:absolute;inset:0;clip-path:polygon(0 5px,100% 5px,100% 100%,0 100%);background:color-mix(in oklab, black 52%, var(--card-head))"></div>
+              <div style="position:absolute;inset:1.2px;clip-path:polygon(0 5px,100% 5px,100% 100%,0 100%);background-color:{{ chassisPlate }};background-image:linear-gradient(180deg,rgba(185,205,235,.14),rgba(185,205,235,.04) 45%,rgba(0,0,12,.19)),url(&quot;steel-texture.png&quot;);box-shadow:inset 0 -1px 0 rgba(185,205,235,.06)"></div>
+            <span style="flex:1 1 auto;min-width:0;display:flex;align-items:center;justify-content:center;gap:5px;position:relative">
+              <div class="seg" style="flex:0 1 auto;min-width:0;max-width:100%;position:relative;border-radius:{{ titleRadius }};outline:{{ titleRing }};background-color:#050A10;background-image:linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,0) 55%,rgba(185,205,235,.04));box-shadow:0 0 0 2px color-mix(in oklab, black 62%, var(--card-head)),0 3.4px 0 rgba(185,205,235,.13),0 -3.2px 0 rgba(185,205,235,.05),inset 0 2px 3.5px rgba(0,0,0,.78)" data-pair="1">
+                <span style="position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.20) 2px 3px)"></span>
+                <sc-if value="{{ pickerShut }}" hint-placeholder-val="{{ true }}">
+                <sc-for list="{{ pair }}" as="p" hint-placeholder-count="2">
+                  <button type="button" class="{{ p.cls }}" sc-camel-on-click="{{ p.click }}" data-hint="{{ p.tip }}" style="position:relative;min-width:0;flex:0 1 auto;padding:0 8px;gap:5px"><svg sc-camel-view-box="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="{{ p.icon }}"></path></svg><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.name }}</span></button>
+                </sc-for>
+                </sc-if>
+                <sc-if value="{{ pickerOpen }}" hint-placeholder-val="{{ false }}">
+                  <button type="button" class="seg__opt" sc-camel-on-click="{{ togglePicker }}" style="flex:1 1 auto;min-width:0;justify-content:flex-start;padding:0 10px;color:var(--accent);background:transparent;box-shadow:inset 0 0 0 1.5px currentColor">Put a board here…</button>
+                </sc-if>
+              </div>
+              <sc-if value="{{ pickerOpen }}" hint-placeholder-val="{{ false }}">
+                <div class="seg seg--stack" style="position:absolute;top:100%;left:0;width:202px;z-index:9;max-height:262px;overflow-y:auto;overflow-x:hidden;background:var(--panel);border-radius:0 0 var(--chip-radius) var(--chip-radius);border-top:0;outline:1.5px solid var(--accent);outline-offset:0;scrollbar-width:none">
+                  <sc-for list="{{ cards }}" as="c" hint-placeholder-count="6">
+                    <button type="button" class="{{ c.cls }}" sc-camel-on-click="{{ c.pick }}" style="gap:7px;position:relative"><svg sc-camel-view-box="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="{{ c.weight }}" stroke-linecap="round" stroke-linejoin="round" style="flex:none;color:{{ c.hue }}"><path d="{{ c.icon }}"></path></svg>{{ c.name }}<sc-if value="{{ c.pinShow }}" hint-placeholder-val="{{ false }}"><span class="{{ c.pinCls }}" data-hint="{{ c.pinTip }}" style="left:auto;right:9px;top:50%;transform:translateY(-50%)">{{ c.pinN }}</span></sc-if></button>
+                  </sc-for>
+                </div>
+              </sc-if>
+            </span>
+            </div>
+            <div style="position:relative;flex:none;display:flex;align-items:center;padding:13px 12px 8px 11px;margin-left:-1.2px">
+              <div style="position:absolute;left:0;right:0;bottom:0;top:5px;clip-path:polygon(0 0,calc(100% - 8.5px) 0,100% 8.5px,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%);background:color-mix(in oklab, black 52%, var(--card-head))"></div>
+              <div style="position:absolute;left:1.2px;right:1.2px;bottom:1.2px;top:6.2px;clip-path:polygon(0 0,calc(100% - 7.8px) 0,100% 7.8px,100% calc(100% - 7px),calc(100% - 7px) 100%,0 100%);background-color:{{ chassisPlate }};background-image:linear-gradient(180deg,rgba(185,205,235,.14),rgba(185,205,235,.04) 45%,rgba(0,0,12,.19)),url(&quot;steel-texture.png&quot;);box-shadow:inset 0 -1px 0 rgba(185,205,235,.06)"></div>
+            <div class="seg" style="flex:none;overflow:visible;position:relative;background:transparent;gap:7px">
+              <button type="button" class="{{ workCls }}" sc-camel-on-click="{{ toggleWork }}" data-hint="{{ workTip }}" style="position:relative;padding:0 7px">{{ workLabel }}<sc-if value="{{ workPinShow }}" hint-placeholder-val="{{ true }}"><span class="{{ workPinCls }}">{{ workCount }}</span></sc-if></button>
+              <button type="button" class="{{ openCls }}" sc-camel-on-click="{{ openClick }}" sc-camel-on-mouse-enter="{{ openIn }}" sc-camel-on-mouse-leave="{{ openOut }}" data-hint="{{ openTip }}" style="position:relative;padding:0 7px">{{ openLabel }}<sc-if value="{{ openPinShow }}" hint-placeholder-val="{{ false }}"><span class="{{ openPinCls }}" sc-camel-on-mouse-enter="{{ openPinIn }}" sc-camel-on-mouse-leave="{{ openPinOut }}" sc-camel-on-click="{{ openPinClick }}" style="cursor:pointer">{{ openCount }}</span></sc-if></button>
+              <button type="button" class="{{ doneCls }}" sc-camel-on-click="{{ toggleDone }}" data-hint="{{ doneTip }}" style="position:relative;padding:0 7px">{{ doneLabel }}<sc-if value="{{ donePinShow }}" hint-placeholder-val="{{ true }}"><span class="{{ donePinCls }}">{{ doneCount }}</span></sc-if></button>
+            </div>
+            </div>
+          </div>
+          <sc-if value="{{ showBand2 }}" hint-placeholder-val="{{ true }}">
+            <div style="position:relative;display:flex;flex-direction:column;gap:7px;padding:9px 13px 9px 12px;margin:-1.2px 0 0 3px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.55)) drop-shadow(0 1.2px 0 rgba(185,205,235,.13))">
+              <div style="position:absolute;inset:0;clip-path:polygon(9px 0,100% 0,100% 100%,9px 100%,0 calc(100% - 9px),0 9px);background:color-mix(in oklab, black 52%, var(--card-head))"></div>
+              <div style="position:absolute;inset:1.2px;clip-path:polygon(8px 0,100% 0,100% 100%,8px 100%,0 calc(100% - 8px),0 8px);background-color:{{ chassisPlate }};background-image:linear-gradient(180deg,rgba(185,205,235,.14),rgba(185,205,235,.04) 45%,rgba(0,0,12,.19)),url(&quot;steel-texture.png&quot;);box-shadow:inset 0 1px 0 rgba(185,205,235,.13)"></div>
+              <span style="position:absolute;bottom:0;left:16%;width:10px;height:3px;background:rgba(0,0,0,.55);pointer-events:none"></span>
+              <span style="position:absolute;bottom:0;right:16%;width:10px;height:3px;background:rgba(0,0,0,.55);pointer-events:none"></span>
+              <div style="display:flex;align-items:center;gap:8px;position:relative">
+                <button type="button" class="field" sc-camel-on-click="{{ toggleSort }}" data-hint="Filter and sort this card" style="position:relative;flex:none;padding:0 7px;color:{{ funnelHue }};border-radius:0;background-color:#050A10;background-image:linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,0) 55%,rgba(185,205,235,.04));box-shadow:0 0 0 2px color-mix(in oklab, black 62%, var(--card-head)),0 3.4px 0 rgba(185,205,235,.13),0 -3.2px 0 rgba(185,205,235,.05),inset 0 2px 3.5px rgba(0,0,0,.78);border:0"><span style="width:13px;height:13px;display:block;position:relative"><svg sc-camel-view-box="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M1.6 3.2h12.8L9.4 8.9v4.3l-2.8 1.4V8.9z"></path></svg></span><span style="position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.22) 2px 3px)"></span></button>
+                <div style="flex:1 1 auto;min-width:0;position:relative;display:flex;padding:0;border-radius:0;background-color:#050A10;background-image:linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,0) 55%,rgba(185,205,235,.04));box-shadow:0 0 0 2px color-mix(in oklab, black 62%, var(--card-head)),0 3.4px 0 rgba(185,205,235,.13),0 -3.2px 0 rgba(185,205,235,.05),inset 0 2px 3.5px rgba(0,0,0,.78)">
+                  <input type="text" placeholder="Search..." data-hint="Search this card" value="{{ q }}" sc-camel-on-change="{{ onQ }}" style="flex:1 1 auto;min-width:0;height:24px;border-radius:0;font-family:var(--font-mono);font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;text-shadow:0 0 7px currentColor;caret-color:transparent;padding:0 28px 0 9px;outline:none;border:0;background:transparent;color:var(--accent)" sc-camel-on-focus="{{ onQFocus }}" sc-camel-on-blur="{{ onQBlur }}">
+                  <sc-if value="{{ qEmpty }}" hint-placeholder-val="{{ true }}">
+                    <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);pointer-events:none;font-family:var(--font-mono);font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--txt-3)">Search...</span>
+                  </sc-if>
+                  <span ref="{{ qMeasRef }}" style="position:absolute;left:0;top:100%;visibility:hidden;white-space:pre;font-family:var(--font-mono);font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase">{{ q }}</span>
+                  <sc-if value="{{ searchCaretShow }}" hint-placeholder-val="{{ false }}">
+                    <span style="position:absolute;left:{{ searchCaretLeft }};top:6px;width:6px;height:12px;background:var(--accent);box-shadow:0 0 7px var(--accent);animation:termblink 1.1s step-end infinite;pointer-events:none"></span>
+                  </sc-if>
+                  <div style="position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.22) 2px 3px)"></div>
+                  <button type="button" sc-camel-on-click="{{ toggleGlobe }}" data-hint="{{ globeTip }}" style="position:absolute;right:3px;top:2px;height:20px;width:22px;padding:0;border:0;background:transparent;color:{{ globeHue }};display:flex;align-items:center;justify-content:center;cursor:pointer" style-hover="color:var(--accent)"><svg sc-camel-view-box="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.1"></circle><ellipse cx="8" cy="8" rx="2.6" ry="6.1"></ellipse><path d="M2.2 6h11.6M2.2 10h11.6"></path></svg><span style="position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.22) 2px 3px)"></span></button>
+                </div>
+              </div>
+              <sc-if value="{{ sortOpen }}" hint-placeholder-val="{{ false }}">
+                <div class="seg" style="align-self:flex-start;position:relative;background:#091018;box-shadow:0 0 0 2px color-mix(in oklab, black 62%, var(--card-head)),0 3.4px 0 rgba(185,205,235,.13),inset 0 2px 3.5px rgba(0,0,0,.6)">
+                  <sc-for list="{{ sorts }}" as="s" hint-placeholder-count="4">
+                    <button type="button" class="{{ s.cls }}" sc-camel-on-click="{{ s.pick }}" data-hint="{{ s.tip }}" style="gap:5px">{{ s.name }}<sc-if value="{{ s.on }}" hint-placeholder-val="{{ false }}"><svg sc-camel-view-box="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none;opacity:{{ s.upOp }}"><path d="M8 12.6V3.4M4.4 7 8 3.4 11.6 7"></path></svg><svg sc-camel-view-box="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none;margin-left:-3px;opacity:{{ s.downOp }}"><path d="M8 3.4v9.2M4.4 9 8 12.6 11.6 9"></path></svg></sc-if></button>
+                  </sc-for>
+                </div>
+              </sc-if>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+
+      <div style="flex:1;min-height:0;position:relative;margin:0 -5px;background:color-mix(in oklab, black 78%, var(--card));box-shadow:inset 0 2px 6px rgba(0,0,0,.6)">
+        <div style="position:absolute;left:0;top:0;bottom:0;width:5px;background:linear-gradient(90deg,color-mix(in oklab, black 52%, {{ frameBase }}) 0 1.2px,color-mix(in oklab, white 5%, {{ frameBase }}) 1.2px 2.6px,{{ frameFace }} 2.6px 100%)"></div>
+        <div style="position:absolute;right:0;top:0;bottom:0;width:5px;background:linear-gradient(270deg,color-mix(in oklab, black 52%, {{ frameBase }}) 0 1.2px,color-mix(in oklab, white 5%, {{ frameBase }}) 1.2px 2.6px,{{ frameFace }} 2.6px 100%)"></div>
+        <div ref="{{ scrollRef }}" sc-camel-on-scroll="{{ onScroll }}" style="position:absolute;inset:0;overflow:auto;scrollbar-width:none">
+          <sc-for list="{{ groups }}" as="g" hint-placeholder-count="2">
+            <div data-band-hue="{{ g.hue }}" data-band-name="{{ g.name }}" style="position:relative;margin:{{ g.gap }} {{ gInset }} 0 {{ gInset }}">
+              <div style="position:absolute;left:0;bottom:-5px;width:18%;height:5px;z-index:3;pointer-events:none;opacity:{{ g.tongueOp }};transition:opacity .25s;clip-path:polygon(0 0,100% 0,calc(100% - 5px) 100%,0 100%);background-color:{{ cartFace }};background-image:linear-gradient(180deg,rgba(185,205,235,.07),rgba(0,0,12,.22)),url(&quot;steel-texture.png&quot;)">
+                <span style="position:absolute;left:2px;right:6px;top:1.2px;height:2.6px;background:#04070C;box-shadow:inset 0 1px 1.5px rgba(0,0,0,.85)"></span>
+                <span style="position:absolute;left:3px;right:7px;top:1.8px;height:1.4px;background:{{ g.hue }}"></span>
+                <span style="position:absolute;left:2.8px;top:0;height:1.8px;width:1.4px;background:{{ g.hue }}"></span>
+              </div>
+              <div style="position:absolute;right:0;bottom:-5px;width:18%;height:5px;z-index:3;pointer-events:none;opacity:{{ g.tongueOp }};transition:opacity .25s;clip-path:polygon(0 0,100% 0,100% 100%,5px 100%);background-color:{{ cartFace }};background-image:linear-gradient(180deg,rgba(185,205,235,.07),rgba(0,0,12,.22)),url(&quot;steel-texture.png&quot;)">
+                <span style="position:absolute;left:6px;right:2px;top:1.2px;height:2.6px;background:#04070C;box-shadow:inset 0 1px 1.5px rgba(0,0,0,.85)"></span>
+                <span style="position:absolute;left:7px;right:3px;top:1.8px;height:1.4px;background:{{ g.hue }}"></span>
+                <span style="position:absolute;right:2.8px;top:0;height:1.8px;width:1.4px;background:{{ g.hue }}"></span>
+              </div>
+              <div style="position:absolute;left:0;top:0;bottom:0;width:7px;z-index:2;pointer-events:none;background-color:{{ cartFace }};background-image:linear-gradient(90deg,rgba(185,205,235,.07),rgba(0,0,12,.22)),url(&quot;steel-texture.png&quot;)">
+                </div>
+              <div style="position:absolute;right:0;top:0;bottom:0;width:7px;z-index:2;pointer-events:none;background-color:{{ cartFace }};background-image:linear-gradient(270deg,rgba(185,205,235,.07),rgba(0,0,12,.22)),url(&quot;steel-texture.png&quot;)">
+                </div>
+              <div style="position:absolute;inset:0;z-index:2;pointer-events:none;clip-path:{{ g.uGroove }};background:#04070C"></div>
+              <div style="position:absolute;inset:0;z-index:2;pointer-events:none;clip-path:{{ g.uBeam }};background:{{ g.hue }}"></div>
+              <span style="position:absolute;left:0;top:0;width:7px;height:2px;z-index:5;pointer-events:none;background:linear-gradient(180deg,rgba(185,205,235,.17) 0 1px,rgba(185,205,235,.05) 1px 2px)"></span>
+              <span style="position:absolute;right:0;top:0;width:7px;height:2px;z-index:5;pointer-events:none;background:linear-gradient(180deg,rgba(185,205,235,.17) 0 1px,rgba(185,205,235,.05) 1px 2px)"></span>
+              <div sc-camel-on-click="{{ g.toggle }}" sc-camel-on-mouse-enter="{{ g.headEnter }}" sc-camel-on-mouse-leave="{{ g.headLeave }}" style="position:relative;display:flex;align-items:center;gap:8px;height:30px;padding-right:8.5px;cursor:pointer;background-color:{{ cartFace }};background-image:linear-gradient(180deg,rgba(185,205,235,.10),rgba(185,205,235,.02) 45%,rgba(0,0,12,.18)),url(&quot;steel-texture.png&quot;);border-bottom:{{ g.headSeam }};box-shadow:{{ g.headShadow }}" style-hover="box-shadow:{{ g.headShadow }},inset 0 0 0 200px rgba(185,205,235,.05)">
+                <span style="position:absolute;left:0;top:0;bottom:0;width:6px;pointer-events:none;background:repeating-linear-gradient(90deg,rgba(185,205,235,.08) 0 1px,rgba(0,0,10,.30) 1px 3px)"></span>
+                <span style="position:absolute;right:0;top:0;bottom:0;width:6px;pointer-events:none;background:repeating-linear-gradient(90deg,rgba(185,205,235,.08) 0 1px,rgba(0,0,10,.30) 1px 3px)"></span>
+                <span style="position:absolute;left:0;right:0;top:0;height:11px;pointer-events:none;background:linear-gradient(180deg,color-mix(in oklab, transparent 89%, {{ g.hue }}),rgba(0,0,0,0))"></span>
+                <div sc-camel-on-click="{{ g.boardClick }}" data-hint="Quick search inside this group" style="flex:none;position:relative;display:flex;align-items:center;justify-content:{{ g.boardJust }};cursor:text;margin-left:9px;width:{{ rackW }};clip-path:polygon(-3px -3px,calc(100% - 11px) -3px,calc(100% + 3px) 11px,calc(100% + 3px) calc(100% + 3px),8px calc(100% + 3px),-3px calc(100% - 8px));box-sizing:border-box;height:calc({{ slotH }} + 5px);background-color:#050A10;background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.20) 2px 3px),linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,0) 55%,rgba(185,205,235,.04));border-radius:1px;box-shadow:inset 0 0 0 1px color-mix(in oklab, black 58%, var(--card-head)),inset 0 1px 2px rgba(0,0,0,.5),0 1px 0 rgba(185,205,235,.10),0 -1px 0 rgba(185,205,235,.04)"><span style="position:absolute;left:0;bottom:0;width:13px;height:13px;pointer-events:none;background:linear-gradient(45deg,rgba(0,0,0,0) calc(50% - 6px),rgba(185,205,235,.15) calc(50% - 5px),rgba(185,205,235,.15) calc(50% - 4.2px),#04070C calc(50% - 3.4px),#04070C calc(50% - 1.8px),rgba(0,0,0,0) calc(50% - 1px))"></span><span style="position:absolute;right:0;top:0;width:13px;height:13px;pointer-events:none;background:linear-gradient(225deg,rgba(0,0,0,0) calc(50% - 6px),rgba(185,205,235,.15) calc(50% - 5px),rgba(185,205,235,.15) calc(50% - 4.2px),#04070C calc(50% - 3.4px),#04070C calc(50% - 1.8px),rgba(0,0,0,0) calc(50% - 1px))"></span><sc-if value="{{ g.boardEditing }}" hint-placeholder-val="{{ false }}"><input type="text" value="{{ g.boardQ }}" sc-camel-on-change="{{ g.onBoardQ }}" sc-camel-on-blur="{{ g.boardBlur }}" ref="{{ g.boardRef }}" style="width:100%;height:100%;border:0;outline:none;background:transparent;text-align:center;font-family:var(--font-mono);font-size:8.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);text-shadow:0 0 7px currentColor;caret-color:transparent"><sc-if value="{{ g.boardEmpty }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none;font-family:var(--font-mono);font-size:8.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#C28E54;text-shadow:0 0 7px currentColor">Search...</span></sc-if><span style="position:absolute;left:calc(50% + {{ g.boardCaretOff }});top:50%;transform:translateY(-50%);width:5px;height:10px;background:var(--accent);box-shadow:0 0 7px var(--accent);animation:termblink 1.1s step-end infinite;pointer-events:none"></span><span ref="{{ g.boardMeasRef }}" style="position:absolute;left:0;top:100%;visibility:hidden;white-space:pre;font-family:var(--font-mono);font-size:8.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase">{{ g.boardQ }}</span></sc-if><sc-if value="{{ g.boardStill }}" hint-placeholder-val="{{ true }}"><span style="font-family:var(--font-mono);font-size:8.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;flex:none;width:max-content;padding:0 4px;animation:{{ g.boardAnim }};color:{{ g.labelHue }}">{{ g.sigWord }}</span></sc-if></div>
+                <div style="flex:none;display:flex;align-items:center;gap:2.5px"><sc-for list="{{ g.slots }}" as="sl" hint-placeholder-count="3"><button type="button" sc-camel-on-click="{{ sl.click }}" sc-camel-on-mouse-enter="{{ sl.enter }}" sc-camel-on-mouse-leave="{{ sl.leave }}" style-hover="filter:brightness(1.5)" style="flex:none;border:0;padding:0;width:{{ slotW }};height:{{ slotH }};transform:skewX(19deg);cursor:pointer;cursor:pointer;border-radius:1.5px;background-color:{{ sl.bg }};background-image:linear-gradient(180deg,rgba(255,255,255,.20),rgba(255,255,255,.04) 42%,rgba(0,0,0,.28));box-shadow:{{ sl.box }}"></button></sc-for><sc-if value="{{ g.slotMore }}" hint-placeholder-val="{{ false }}"><span style="margin-left:3px;font-family:var(--font-mono);font-size:9px;font-weight:800;color:var(--txt-3)">+{{ g.slotMoreN }}</span></sc-if></div>
+                <span class="stamp" style="height:auto;font-size:10px;margin-left:8px">{{ g.count }}</span>
+                <div style="flex:1;min-width:6px"></div>
+                <span class="pin-wrap" style="flex:none;position:relative;z-index:3">
+                  <button type="button" class="{{ g.gateCls }}"><span class="gate__chev" style="transform:{{ g.chevRot }};transition:transform .25s cubic-bezier(.32,.72,0,1)"><svg sc-camel-view-box="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5 6 7.5 9 4.5"></path></svg></span>{{ g.name }}</button>
+                  <sc-if value="{{ g.hot }}" hint-placeholder-val="{{ false }}">
+                    <a class="{{ g.pinCls }}" sc-camel-on-click="{{ g.sigClick }}" data-hint="{{ g.sigHint }}">{{ g.hotCount }}</a>
+                  </sc-if>
+                </span>
+                
+              </div>
+              <div style="display:grid;grid-template-rows:{{ g.rowsFr }};transition:grid-template-rows .38s cubic-bezier(.32,.72,0,1)">
+              <div style="min-height:0;overflow:hidden">
+              <div style="position:relative;padding:5px 10px 11px 10px;background-color:{{ termBg }};background-image:repeating-linear-gradient(180deg,rgba(185,205,235,.03) 0 1px,rgba(0,0,0,0) 1px 3px);animation:{{ g.bootAnim }}">
+                <span style="position:absolute;left:8px;top:2px;width:6px;height:6px;border-left:1.5px solid rgba(185,205,235,.30);border-top:1.5px solid rgba(185,205,235,.30);pointer-events:none"></span>
+                <span style="position:absolute;right:8px;top:2px;width:6px;height:6px;border-right:1.5px solid rgba(185,205,235,.30);border-top:1.5px solid rgba(185,205,235,.30);pointer-events:none"></span>
+                <span style="position:absolute;right:8px;bottom:8.5px;width:6px;height:6px;border-right:1.5px solid rgba(185,205,235,.30);border-bottom:1.5px solid rgba(185,205,235,.30);pointer-events:none"></span>
+                <div style="position:absolute;inset:0;pointer-events:none;z-index:1;transform-origin:top;animation:{{ g.laserAnim }}">
+                  <div style="position:absolute;left:0;right:0;bottom:0;height:7px;background-color:{{ cartFace }};background-image:linear-gradient(0deg,rgba(0,0,12,.22),rgba(185,205,235,.07)),url(&quot;steel-texture.png&quot;)">
+                    
+                  </div>
+                </div>
+                <sc-if value="{{ termScanShow }}" hint-placeholder-val="{{ true }}">
+                  <div style="position:absolute;inset:0;pointer-events:none;z-index:3;background:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.10) 2px 3px)"></div>
+                </sc-if>
+              <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="3">
+                <div data-row="{{ r.id }}" style="position:relative">
+                  <span style="position:absolute;left:6px;top:50%;margin-top:-7px;width:7px;height:14px;z-index:3;pointer-events:none;background:var(--accent);box-shadow:0 0 7px var(--accent);opacity:0;animation:{{ r.caretAnim }}"></span>
+                  
+                  <div sc-camel-on-mouse-down="{{ r.down }}" sc-camel-on-click="{{ r.click }}" sc-camel-on-double-click="{{ r.dbl }}" sc-camel-on-mouse-enter="{{ r.enter }}" sc-camel-on-mouse-move="{{ r.move }}" sc-camel-on-mouse-leave="{{ r.leave }}" style="position:relative;display:flex;align-items:center;cursor:pointer;gap:8px;padding-right:13px;height:{{ r.h }};background:{{ r.bg }};outline:{{ r.ring }};outline-offset:-1.5px;animation:{{ r.slideAnim }}">
+                    <span class="pin-wrap" style="flex:none;margin-left:8px;display:flex"><a class="{{ r.sigCls }}" sc-camel-on-click="{{ r.sigClick }}" data-hint="{{ r.sigHint }}" style-hover="filter:brightness(1.15)" style="flex:none;width:{{ stateW }};justify-content:center;padding:0 6px;cursor:pointer;text-decoration:none">{{ r.state }}</a><sc-if value="{{ r.sigPinShow }}" hint-placeholder-val="{{ false }}"><span class="{{ r.sigPinCls }}" data-hint="{{ r.sigPinTip }}">{{ r.sigPinN }}</span></sc-if></span>
+                    <span class="ref" style="flex:0 1 auto;min-width:0;overflow:hidden;cursor:default"><span class="ref__icon"><svg sc-camel-view-box="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M8 2.2 13.6 5v6L8 13.8 2.4 11V5z"></path></svg></span><span class="rmq" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.name }}</span></span>
+                    <sc-if value="{{ r.showFacts }}" hint-placeholder-val="{{ false }}">
+                      <span style="display:flex;align-items:center;overflow:hidden;min-width:0"><span class="stamp" style="min-width:0;overflow:hidden;text-overflow:ellipsis">{{ r.fact }}</span><span class="stamp-sep" style="flex:none">·</span><span class="stamp stamp--more" style="flex:none">{{ r.moreLabel }}</span></span>
+                    </sc-if>
+                    <span style="flex:1 1 auto;min-width:12px"></span>
+                    <span style="width:{{ whenW }};padding-right:8px;flex:none;text-align:right;font-family:var(--font-mono);font-size:11px;font-weight:700;font-variant-numeric:tabular-nums;color:{{ r.whenHue }}">{{ r.when }}</span>
+                    <sc-if value="{{ r.jump }}" hint-placeholder-val="{{ false }}">
+                      <div data-jump-band="1" sc-camel-on-mouse-enter="{{ r.bandEnter }}" sc-camel-on-mouse-move="{{ r.bandMove }}" style="position:absolute;left:50%;transform:translateX(-50%);width:69%;top:100%;margin-top:-5px;height:24px;z-index:3;background:{{ r.jumpBg }};animation:rwPop 1s cubic-bezier(.32,.72,0,1)">
+                        <div class="seg" style="width:100%;height:24px;background:transparent;overflow:visible">
+                          <sc-for list="{{ r.jumpCells }}" as="j" hint-placeholder-count="3">
+                            <button type="button" class="seg__opt" sc-camel-on-click="{{ j.click }}" sc-camel-on-double-click="{{ j.click }}" style="flex:1 1 0;justify-content:center;position:relative;font-size:9.5px;padding:0 6px;color:{{ j.ink }};box-shadow:{{ j.box }}">{{ j.word }}<span class="{{ j.pinCls }}" data-hint="{{ j.tip }}">{{ j.n }}</span></button>
+                          </sc-for>
+                        </div>
+                      </div>
+                    </sc-if>
+                  </div>
+                                    <sc-if value="{{ r.open }}" hint-placeholder-val="{{ false }}">
+                    <div style="position:relative;height:200px;padding-top:19px;overflow:hidden;background:var(--panel);border-bottom:1px solid var(--line-soft);animation:rwExpand .26s cubic-bezier(.32,.72,0,1)">
+                      <div style="padding:14px 12px;font-family:var(--font-mono);font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--txt-3)">Tier 1 · detail view (parked)</div>
+                      <div style="padding:0 12px;display:flex;flex-direction:column;gap:9px">
+                        <div style="height:9px;width:72%;border-radius:2px;background:var(--line)"></div>
+                        <div style="height:9px;width:54%;border-radius:2px;background:var(--line)"></div>
+                        <div style="height:9px;width:63%;border-radius:2px;background:var(--line)"></div>
+                      </div>
+                      <button type="button" sc-camel-on-click="{{ r.anchor }}" data-hint="{{ r.anchorTip }}" style="position:absolute;top:10px;right:10px;width:22px;height:22px;border-radius:0;display:flex;align-items:center;justify-content:center;cursor:pointer;background:{{ r.anchorBg }};border:{{ r.anchorBorder }};color:{{ r.anchorHue }}">
+                        <sc-if value="{{ r.isAnchorIcon }}" hint-placeholder-val="{{ true }}">
+                          <svg sc-camel-view-box="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="3.2" r="1.7"></circle><path d="M8 4.9V14M4.6 8H2.6a5.4 5.4 0 0 0 10.8 0h-2M5.4 6.6h5.2"></path></svg>
+                        </sc-if>
+                        <sc-if value="{{ r.isPlusIcon }}" hint-placeholder-val="{{ false }}">
+                          <svg sc-camel-view-box="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M8 3.6v8.8M3.6 8h8.8"></path></svg>
+                        </sc-if>
+                      </button>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-for>
+              </div>
+              </div>
+              </div>
+            </div>
+          </sc-for>
+          <sc-if value="{{ nothing }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:44px 26px;display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center">
+              <div style="font-family:var(--font-mono);font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--accent)">{{ nothingTitle }}</div>
+              <p style="margin:0;font-size:12px;line-height:1.5;color:var(--txt-3);max-width:28ch">{{ nothingBody }}</p>
+              <button type="button" class="door door--ghost" sc-camel-on-click="{{ clearFilter }}">Show all</button>
+            </div>
+          </sc-if>
+        </div>
+        <div style="position:absolute;left:5px;right:5px;bottom:0;height:40px;pointer-events:none;background:linear-gradient(to bottom,rgba(4,7,11,0) 0%,rgba(4,7,11,.75) 55%,rgb(6,9,13) 100%);opacity:{{ scrimOpacity }}"></div>
+      </div>
+
+      <div style="flex:none;height:32px;display:flex;align-items:center;gap:8px;padding:2px 8px 0 8px;border-top:1px solid color-mix(in oklab, black 60%, var(--card-head));box-shadow:0 -1px 0 rgba(185,205,235,.04),inset 0 1px 0 rgba(185,205,235,.08);background-color:{{ chassisFace }};background-image:url(&quot;steel-texture.png&quot;);clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,8px 100%,0 calc(100% - 8px));position:relative">
+        <div style="position:absolute;left:0;right:0;top:2px;bottom:0;clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,8px 100%,0 calc(100% - 8px));background:color-mix(in oklab, black 52%, var(--card-head))"></div>
+        <div style="position:absolute;left:1.2px;right:1.2px;top:3.2px;bottom:1.2px;clip-path:polygon(0 0,100% 0,100% calc(100% - 13.3px),calc(100% - 13.3px) 100%,7.3px 100%,0 calc(100% - 7.3px));background-color:{{ chassisFace }};background-image:linear-gradient(180deg,rgba(185,205,235,.09),rgba(185,205,235,.02) 45%,rgba(0,0,12,.16)),url(&quot;steel-texture.png&quot;)"></div>
+
+        <div style="position:relative;align-self:stretch;display:flex;align-items:center;padding:0 10px 0 0;flex:1 1 0;min-width:0">
+          
+          <div style="flex:1 1 auto;min-width:0;height:17px;position:relative;filter:drop-shadow(0 1.5px 0 rgba(185,205,235,.10)) drop-shadow(0 -1px 0 rgba(185,205,235,.05))">
+          <div style="position:absolute;inset:0;clip-path:polygon(0 0,100% 0,100% 100%,9px 100%,0 calc(100% - 9px));background:color-mix(in oklab, black 55%, var(--card-head))"></div>
+          <div ref="{{ termBoxRef }}" style="position:absolute;inset:1.4px;clip-path:polygon(0 0,100% 0,100% 100%,8.1px 100%,0 calc(100% - 8.1px));overflow:hidden;background:#050A10;box-shadow:inset 0 1.5px 3px rgba(0,0,0,.7)">
+            <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:{{ termJustify }};padding:0 8px;white-space:nowrap;animation:{{ termAnim }}">
+              <span style="display:flex;align-items:center;flex:none;padding-right:{{ termGap }};font-family:var(--font-mono);font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:{{ railHue }};text-shadow:0 0 7px currentColor">{{ railText }}</span>
+              <sc-if value="{{ termLoop }}" hint-placeholder-val="{{ false }}">
+                <span aria-hidden="true" style="display:flex;align-items:center;flex:none;padding-right:36px;font-family:var(--font-mono);font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:{{ railHue }};text-shadow:0 0 7px currentColor">{{ railText }}</span>
+              </sc-if>
+            </div>
+            <div style="position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.22) 2px 3px)"></div>
+            <span ref="{{ termMeasRef }}" style="position:absolute;left:0;top:100%;visibility:hidden;white-space:nowrap;font-family:var(--font-mono);font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase">{{ railText }}</span>
+          </div>
+          </div>
+        </div>
+        <sc-if value="{{ gripShow }}" hint-placeholder-val="{{ false }}">
+          <div data-hint="How far down this card you are" style="position:relative;flex:none;width:130px;align-self:stretch;margin:0 -8px 0 -8px">
+            <div style="position:absolute;inset:0;clip-path:polygon(0 9px,9px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%);background:color-mix(in oklab, black 52%, var(--card-head))"></div>
+            <div style="position:absolute;left:1.2px;right:1.2px;top:1.2px;bottom:1.2px;clip-path:polygon(0 8.3px,8.3px 0,100% 0,100% calc(100% - 13.3px),calc(100% - 13.3px) 100%,0 100%);background-color:#050A10;background-image:linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,0) 55%,rgba(185,205,235,.04));box-shadow:0 0 0 2px color-mix(in oklab, black 62%, var(--card-head)),0 3.4px 0 rgba(185,205,235,.13),0 -3.2px 0 rgba(185,205,235,.05),inset 0 2px 3.5px rgba(0,0,0,.78)"></div>
+            <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:2.5px">
+              <sc-for list="{{ gripSlots }}" as="v" hint-placeholder-count="8">
+                <div data-hint="{{ v.tip }}" data-hint-now="1" sc-camel-on-mouse-enter="{{ v.enter }}" sc-camel-on-mouse-leave="{{ v.leave }}" sc-camel-on-click="{{ v.go }}" style="position:relative;cursor:pointer;width:8.5px;height:15px;transform:skewX(-19deg);border-radius:1.5px;background-color:{{ v.bg }};background-image:linear-gradient(180deg,rgba(255,255,255,.20),rgba(255,255,255,.04) 42%,rgba(0,0,0,.28));box-shadow:{{ v.box }}" style-before="content:'';position:absolute;inset:-6px -2px"></div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+      </div>
+      <sc-if value="{{ mBorderShow }}" hint-placeholder-val="{{ true }}">
+        <div style="position:absolute;top:0;pointer-events:none;left:{{ mLeft }};width:{{ mHW }};height:{{ mHH }};clip-path:{{ mHClip }};background:{{ mHColor }}"></div>
+        <div style="position:absolute;top:0;pointer-events:none;left:{{ mLeft }};width:{{ mBW }};height:{{ mBH }};clip-path:{{ mBClip }};background:color-mix(in oklab, black 58%, var(--card-head))"></div>
+      </sc-if>
+      <div data-hint="{{ workTip }}" style="position:absolute;top:0;left:{{ mLeft }};width:{{ mW }};height:{{ mH }};clip-path:{{ mClip }};background-color:{{ rollHue }};background-image:linear-gradient(180deg,rgba(255,255,255,.30),rgba(255,255,255,0) 2.2px),linear-gradient(100deg,rgba(255,255,255,.25),rgba(255,255,255,.07) 45%,rgba(0,0,10,.16));filter:drop-shadow(1px 1.5px 1.5px rgba(0,0,0,.45))"></div>
+      <sc-if value="{{ hintOn }}" hint-placeholder-val="{{ false }}">
+        <div style="{{ hintStyle }}">{{ hintText }}</div>
+      </sc-if>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;$preview&quot;:{&quot;width&quot;:640,&quot;height&quot;:640},&quot;liveWidth&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:380,&quot;min&quot;:240,&quot;max&quot;:560,&quot;step&quot;:4,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Card&quot;},&quot;density&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;compact&quot;,&quot;options&quot;:[&quot;compact&quot;,&quot;standard&quot;,&quot;roomy&quot;],&quot;section&quot;:&quot;Card&quot;},&quot;fireTreatment&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;tint&quot;,&quot;options&quot;:[&quot;stripe&quot;,&quot;tint&quot;,&quot;chip-only&quot;],&quot;section&quot;:&quot;Card&quot;},&quot;slotOverlay&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;section&quot;:&quot;Card&quot;},&quot;role&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;dispatcher&quot;,&quot;options&quot;:[&quot;dispatcher&quot;,&quot;yard&quot;],&quot;section&quot;:&quot;Data&quot;},&quot;chassisHue&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;navy&quot;,&quot;options&quot;:[&quot;navy&quot;,&quot;graphite&quot;,&quot;orange&quot;,&quot;rust&quot;,&quot;yellow&quot;,&quot;gold&quot;,&quot;green&quot;,&quot;teal&quot;,&quot;red&quot;,&quot;pink&quot;,&quot;purple&quot;],&quot;section&quot;:&quot;Steel hues&quot;},&quot;plateHue&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;graphite&quot;,&quot;options&quot;:[&quot;navy&quot;,&quot;graphite&quot;,&quot;orange&quot;,&quot;rust&quot;,&quot;yellow&quot;,&quot;gold&quot;,&quot;green&quot;,&quot;teal&quot;,&quot;red&quot;,&quot;pink&quot;,&quot;purple&quot;],&quot;section&quot;:&quot;Steel hues&quot;},&quot;frameHue&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;navy&quot;,&quot;options&quot;:[&quot;navy&quot;,&quot;graphite&quot;,&quot;orange&quot;,&quot;rust&quot;,&quot;yellow&quot;,&quot;gold&quot;,&quot;green&quot;,&quot;teal&quot;,&quot;red&quot;,&quot;pink&quot;,&quot;purple&quot;],&quot;section&quot;:&quot;Steel hues&quot;},&quot;cartridgeHue&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;navy&quot;,&quot;options&quot;:[&quot;navy&quot;,&quot;graphite&quot;,&quot;orange&quot;,&quot;rust&quot;,&quot;yellow&quot;,&quot;gold&quot;,&quot;green&quot;,&quot;teal&quot;,&quot;red&quot;,&quot;pink&quot;,&quot;purple&quot;],&quot;section&quot;:&quot;Steel hues&quot;},&quot;hueStrength&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:30,&quot;min&quot;:0,&quot;max&quot;:60,&quot;step&quot;:2,&quot;section&quot;:&quot;Steel hues&quot;},&quot;steelContrast&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:100,&quot;min&quot;:60,&quot;max&quot;:140,&quot;step&quot;:5,&quot;section&quot;:&quot;Steel hues&quot;},&quot;markerX&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:1,&quot;min&quot;:0,&quot;max&quot;:24,&quot;step&quot;:0.5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Corner marker&quot;},&quot;markerW&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:16,&quot;min&quot;:4,&quot;max&quot;:24,&quot;step&quot;:0.5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Corner marker&quot;},&quot;markerTopY&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:0,&quot;min&quot;:0,&quot;max&quot;:48,&quot;step&quot;:0.5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Corner marker&quot;},&quot;markerBotY&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:37,&quot;min&quot;:10,&quot;max&quot;:90,&quot;step&quot;:0.5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Corner marker&quot;},&quot;markerTopCap&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:2,&quot;min&quot;:0,&quot;max&quot;:14,&quot;step&quot;:0.5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Corner marker&quot;},&quot;markerBorderOn&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;section&quot;:&quot;Corner marker&quot;},&quot;markerBorderW&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:2,&quot;min&quot;:0.5,&quot;max&quot;:6,&quot;step&quot;:0.25,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Corner marker&quot;},&quot;markerBorderTone&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:45,&quot;min&quot;:0,&quot;max&quot;:95,&quot;step&quot;:5,&quot;section&quot;:&quot;Corner marker&quot;},&quot;groupGap&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:3.4,&quot;min&quot;:0,&quot;max&quot;:20,&quot;step&quot;:0.2,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Groups&quot;},&quot;groupInset&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:1.5,&quot;min&quot;:0,&quot;max&quot;:16,&quot;step&quot;:0.5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Groups&quot;},&quot;laserStyle&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;thin-glow&quot;,&quot;options&quot;:[&quot;thin-glow&quot;,&quot;chunky&quot;,&quot;core-bloom&quot;],&quot;section&quot;:&quot;Groups&quot;},&quot;laserW&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:3.5,&quot;min&quot;:1,&quot;max&quot;:6,&quot;step&quot;:0.5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Groups&quot;},&quot;laserGlow&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:0,&quot;min&quot;:0,&quot;max&quot;:100,&quot;step&quot;:5,&quot;section&quot;:&quot;Groups&quot;},&quot;dryStyle&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;segmented&quot;,&quot;options&quot;:[&quot;segmented&quot;,&quot;continuous&quot;],&quot;section&quot;:&quot;Groups&quot;},&quot;railFrameW&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:0.5,&quot;min&quot;:0.5,&quot;max&quot;:3,&quot;step&quot;:0.25,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Laser rails&quot;},&quot;railPad&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:0,&quot;min&quot;:0,&quot;max&quot;:4,&quot;step&quot;:0.25,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Laser rails&quot;},&quot;railRadius&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:0.5,&quot;min&quot;:0,&quot;max&quot;:5,&quot;step&quot;:0.5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Laser rails&quot;},&quot;slotH&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:14,&quot;min&quot;:7,&quot;max&quot;:16,&quot;step&quot;:0.5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Groups&quot;},&quot;termStyle&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;flat&quot;,&quot;options&quot;:[&quot;scanlines&quot;,&quot;flat&quot;],&quot;section&quot;:&quot;Groups&quot;},&quot;termDark&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:85,&quot;min&quot;:20,&quot;max&quot;:85,&quot;step&quot;:5,&quot;section&quot;:&quot;Groups&quot;}}">
+const RANK = { gray:1, green:2, blue:3, yellow:4, red:5 };
+const HUE  = { gray:'var(--gray)', green:'var(--green)', blue:'var(--blue)', yellow:'var(--yellow)', red:'var(--red)' };
+const TINT = { gray:'transparent', green:'transparent', blue:'transparent', yellow:'var(--yellow-bg)', red:'var(--red-bg)' };
+const JUMPWORD = { red:'Dispatch', yellow:'Return', blue:'Confirm', green:'Reopen', gray:'Reserve' };
+
+class Component extends DCLogic {
+  state = { filter:null, q:'', expanded:{}, anchored:null, hoverRow:null, jumpRow:null, scrolled:false, atEnd:false, collapsed:{}, card:'Units', pair:['Units','Categories'], pickerOpen:false, sortOpen:false, sort:'Priority', sortDir:'asc', hint:null, flash:null, overOpen:false, searchAll:false };
+
+  componentDidMount() { this._termCheck(); this._bandCheck(); }
+  componentDidUpdate() { this._termCheck(); this._bandCheck(); }
+  _bandCheck() {
+    const sc = this._scroll;
+    if (!sc) return;
+    const denom = Math.max(1, sc.scrollHeight);
+    const bands = Array.from(sc.querySelectorAll('[data-band-hue]')).map(el => ({
+      a: el.offsetTop / denom, b: (el.offsetTop + el.offsetHeight) / denom,
+      hue: el.getAttribute('data-band-hue'), name: el.getAttribute('data-band-name')
+    }));
+    const key = JSON.stringify(bands.map(x => [Math.round(x.a * 64), Math.round(x.b * 64), x.hue, x.name]));
+    if (key !== this._bandKey) { this._bandKey = key; this._bands = bands; this.forceUpdate(); }
+  }
+  _termCheck() {
+    const b = this._termBox, m = this._termMeas;
+    const qm = this._qMeas;
+    const next = {};
+    if (b && m) {
+      const w = Math.ceil(m.offsetWidth), bw = Math.floor(b.clientWidth);
+      if (Math.abs((this.state.termW || 0) - w) > 1 || Math.abs((this.state.termBoxW || 0) - bw) > 1) { next.termW = w; next.termBoxW = bw; }
+    }
+    if (qm) {
+      const qw = Math.ceil(qm.offsetWidth);
+      if (Math.abs((this.state.qW || 0) - qw) > 0) next.qW = qw;
+    }
+    if (Object.keys(next).length) this.setState(next);
+  }
+
+  DATA = [
+    { id:'field', kind:'attention', name:'Field Calls', rows:[
+      { id:'f1', tone:'red', fill:true,  state:'3d overdue', name:'Excavator 12k',    facts:['S/N 4421','2019'], more:1, when:'Mar 14' },
+      { id:'f2', tone:'red', fill:false, state:'Failed',     name:'Skid Steer S650',  facts:['S/N 8802'],        more:2, when:'Mar 16' }
+    ]},
+    { id:'onrent', kind:'lifecycle', name:'On Rent', rows:[
+      { id:'o1', tone:'yellow', fill:true,  state:'Due back', name:'Boom Lift 45ft',   facts:['S/N 3310'],        more:1, when:'17:00'  },
+      { id:'o2', tone:'gray',   fill:false, state:'On rent',  name:'Compactor 1t',     facts:['S/N 7742','2020'], more:0, when:'Apr 02' },
+      { id:'o3', tone:'gray',   fill:false, state:'On rent',  name:'Light Tower LT6',  facts:[],                  more:0, when:'Apr 11' },
+      { id:'o4', tone:'blue',   fill:false, state:'Waiting',  name:'Generator 60kW',   facts:['S/N 1188'],        more:3, when:'—'      }
+    ]},
+    { id:'reserved', kind:'lifecycle', name:'Reserved', rows:[
+      { id:'v1', tone:'blue', fill:true,  state:'Pickup', name:'Mini Ex 3.5t',  facts:['S/N 9013'], more:1, when:'11:30'  },
+      { id:'v2', tone:'gray', fill:false, state:'Reserved',     name:'Trencher 36in', facts:[],           more:0, when:'Mar 24' }
+    ]},
+    { id:'avail', kind:'lifecycle', name:'Available', rows:[
+      { id:'a1', tone:'gray', fill:false, state:'Idle', name:'Plate Compactor',  facts:['2021'],     more:0, when:'—' },
+      { id:'a2', tone:'gray', fill:false, state:'Idle', name:'Water Pump 3in',   facts:[],           more:0, when:'—' },
+      { id:'a3', tone:'gray', fill:false, state:'Idle', name:'Scissor Lift 26ft',facts:['S/N 5521'], more:1, when:'—' }
+    ]},
+    { id:'returned', kind:'lifecycle', name:'Returned Today', rows:[
+      { id:'d1', tone:'green', fill:true, state:'Checked in', name:'Backhoe 310L',    facts:['S/N 2204'], more:0, when:'09:12' },
+      { id:'d2', tone:'green', fill:true, state:'Checked in', name:'Skid Steer S570', facts:[],           more:0, when:'10:40' }
+    ]}
+  ];
+
+  CARDS = [
+    ['Units','+ Unit','M8 2.2 13.6 5v6L8 13.8 2.4 11V5z'],
+    ['Categories','+ Category','M2.6 2.6h4.4v4.4H2.6zM9 2.6h4.4v4.4H9zM2.6 9h4.4v4.4H2.6zM9 9h4.4v4.4H9z'],
+    ['Rentals','+ Rental','M2.5 4.2h11v9.3h-11zM2.5 7h11M5.6 2.6v2.6M10.4 2.6v2.6'],
+    ['Invoices','+ Invoice','M4 2.5h5.4L12 5.1v8.4H4zM6.4 7.6h3.2M6.4 10.2h3.2'],
+    ['Customers','+ Customer','M8 7.6a2.4 2.4 0 1 0 0-4.8 2.4 2.4 0 0 0 0 4.8zM3.2 13.4c0-2.4 2.1-4.1 4.8-4.1s4.8 1.7 4.8 4.1'],
+    ['Trips','+ Trip','M1.6 10.4V4.6h7.2v5.8M8.8 6.4h2.6l2.9 2.4v1.6M4.4 12.7a1.3 1.3 0 1 0 0-2.6 1.3 1.3 0 0 0 0 2.6zM11.4 12.7a1.3 1.3 0 1 0 0-2.6 1.3 1.3 0 0 0 0 2.6z'],
+    ['Parts','+ Part','M8 5.4a2.6 2.6 0 1 0 0 5.2 2.6 2.6 0 0 0 0-5.2zM8 1.9v1.5M8 12.6v1.5M1.9 8h1.5M12.6 8h1.5M3.7 3.7l1 1M11.3 11.3l1 1M12.3 3.7l-1 1M4.7 11.3l-1 1'],
+    ['Vendors','+ Vendor','M2.5 6.6h11v6.9h-11zM2.5 6.6 4 2.9h8l1.5 3.7M6.5 13.5V9.6h3v3.9'],
+    ['Expenses & Receipts','+ Expense','M4 2.5h8v11l-2-1.2-2 1.2-2-1.2-2 1.2zM6.3 6.1h3.4M6.3 8.9h3.4'],
+    ['Company Files','+ File','M2.5 4.4h4.1l1.2 1.7h5.7v7.5h-11z'],
+    ['Collections','+ Claim','M8 2.6 14.2 13.4H1.8zM8 6.8v3M8 11.6h.01'],
+    ['Sales Pipeline','+ Lead','M1.6 3.2h12.8L9.4 8.9v4.3l-2.8 1.4V8.9z'],
+    ['Dashboard','Yard','M2.6 13.4V7M6.9 13.4V3.4M11.2 13.4V9.6']
+  ];
+  // Placeholder per-board rollups — Tier 2 owns the real numbers. [worst tone, count]
+  ROLLUP = {
+    'Units': ['red', 5], 'Categories': ['gray', 0], 'Rentals': ['yellow', 3],
+    'Invoices': ['red', 2], 'Customers': ['blue', 1], 'Trips': ['yellow', 4],
+    'Parts': ['gray', 0], 'Vendors': ['gray', 0], 'Expenses & Receipts': ['blue', 2],
+    'Company Files': ['gray', 0], 'Collections': ['red', 6], 'Sales Pipeline': ['blue', 3],
+    'Dashboard': ['yellow', 2]
+  };
+  iconOf(name){ const c = this.CARDS.filter(x => x[0] === name)[0]; return c ? c[2] : ''; }
+
+  ORDER = {
+    dispatcher: ['field','onrent','reserved','avail','returned'],
+    yard:       ['field','avail','onrent','reserved','returned']
+  };
+
+  componentWillUnmount(){ clearTimeout(this._t); clearTimeout(this._dwell); clearTimeout(this._flash); clearTimeout(this._flashRowT); }
+
+  _jumpToRow(id, gid){
+    this.setState(s => { const c = Object.assign({}, s.collapsed); delete c[gid]; return { collapsed: c, flashRow: id }; });
+    clearTimeout(this._flashRowT);
+    this._flashRowT = setTimeout(() => this.setState({ flashRow: null }), 1100);
+    setTimeout(() => {
+      const sc = this._scroll; if (!sc) return;
+      const el = sc.querySelector('[data-row="' + id + '"]'); if (!el) return;
+      const scR = sc.getBoundingClientRect(), eR = el.getBoundingClientRect();
+      sc.scrollTo({ top: Math.max(0, sc.scrollTop + (eR.top - scR.top) - 46), behavior: 'smooth' });
+    }, 80);
+  }
+
+  worstOf(rows){
+    let t = 'gray';
+    rows.forEach(r => { if (RANK[r.tone] > RANK[t]) t = r.tone; });
+    return t;
+  }
+
+  renderVals(){
+    const S = this.state, P = this.props;
+    const width = P.liveWidth ?? 380;
+    const H = ({ compact:30, standard:44, roomy:52 })[P.density ?? 'compact'] || 30;
+    const fireMode = P.fireTreatment ?? 'tint';
+    const overlay = P.slotOverlay ?? false;
+    const role = P.role ?? 'dispatcher';
+
+    const setF = f => this.setState(s => ({ filter: s.filter === f ? null : f }));
+    // Any number of rows may be open at once. `expanded` is a set, and the third
+    // filter cell — Open — is simply "the rows in that set".
+    const click = id => {
+      if (this._t) return;
+      this._t = setTimeout(() => {
+        this._t = null;
+        this.setState(s => {
+          const e = Object.assign({}, s.expanded);
+          if (e[id]) delete e[id]; else e[id] = true;
+          return { expanded: e };
+        });
+      }, 220);
+    };
+    const dbl = id => {
+      clearTimeout(this._t); this._t = null;
+      this.setState(s => ({ anchored: id, expanded: Object.assign({}, s.expanded, { [id]: true }) }));
+    };
+    // A state chip always teleports to the source of the signal. It must swallow the
+    // click so the row's expand/anchor contract never fires underneath it.
+    const teleport = (e, where) => {
+      e.preventDefault(); e.stopPropagation();
+      clearTimeout(this._t); this._t = null;
+      clearTimeout(this._flash);
+      this.setState({ flash: 'Teleport \u2192 ' + where });
+      this._flash = setTimeout(() => this.setState({ flash: null }), 1700);
+    };
+
+    // ---- rollups over the whole card, filter-independent ----
+    const all = [];
+    this.DATA.forEach(g => g.rows.forEach(r => all.push(r)));
+    const worst = this.worstOf(all);
+    // The state column is sized to the widest chip anywhere on this card, so every chip
+    // shares one left and right edge down the list. Mono 11px + .05em tracking + 12px padding.
+    let longest = 0;
+    all.forEach(r => { if (r.state.length > longest) longest = r.state.length; });
+    const stateW = Math.max(66, Math.round(longest * 7.15) + 14) + 'px';
+    const worstRow = all.filter(r => r.tone === worst)[0] || all[0];
+    const workCount = all.filter(r => r.tone === 'red' || r.tone === 'yellow' || r.tone === 'blue').length;
+    const doneCount = all.filter(r => r.tone === 'green').length;
+    const hotCount  = all.filter(r => r.tone === 'red' || r.tone === 'yellow').length;
+    const openIds   = Object.keys(S.expanded || {});
+
+    // ---- filtered, ordered groups ----
+    const q = S.q.trim().toLowerCase();
+    const groups = [];
+    let shown = 0;
+    this.ORDER[role].forEach(gid => {
+      const g = this.DATA.filter(x => x.id === gid)[0];
+      if (!g) return;
+      // Your Work hides whole groups holding only green/gray — it never re-buckets
+      if (S.filter === 'work' && !g.rows.some(r => r.tone === 'red' || r.tone === 'yellow' || r.tone === 'blue')) return;
+      if (S.filter === 'open' && !g.rows.some(r => !!S.expanded[r.id])) return;
+      let rows = g.rows;
+      if (S.filter === 'done') rows = rows.filter(r => r.tone === 'green');
+      if (S.filter === 'open') rows = rows.filter(r => !!S.expanded[r.id]);
+      if (q) rows = rows.filter(r => r.name.toLowerCase().indexOf(q) >= 0);
+      const bq = ((S.boardQ || {})[gid] || '').trim().toLowerCase();
+      if (bq && S.boardOpen === gid) rows = rows.filter(r => r.name.toLowerCase().indexOf(bq) >= 0);
+      const dir = S.sortDir === 'desc' ? -1 : 1;
+      if (S.sort === 'Name')  rows = rows.slice().sort((a, b) => dir * a.name.localeCompare(b.name));
+      if (S.sort === 'When')  rows = rows.slice().sort((a, b) => dir * String(a.when).localeCompare(String(b.when)));
+      if (S.sort === 'State') rows = rows.slice().sort((a, b) => dir * (RANK[b.tone] - RANK[a.tone]));
+      if (S.sort === 'Priority' && dir === -1) rows = rows.slice().reverse();
+      if (rows.length === 0 && (g.kind === 'attention' || S.filter || q)) return;
+
+      const gTone = rows.length ? this.worstOf(rows) : 'gray';
+      const bh = (S.boardHover && S.boardHover.gid === gid) ? S.boardHover : null;
+      const hot = gTone === 'red' || gTone === 'yellow';
+      shown += rows.length;
+
+      const gOpen = !S.collapsed[g.id];
+      const gGap = groups.length === 0 ? '4px' : (this.props.groupGap ?? 4.2) + 'px';
+      groups.push({
+        id: g.id,
+        name: g.name,
+        count: String(rows.length),
+        open: gOpen,
+        gap: groups.length === 0 ? '0px' : gGap,
+        chevRot: gOpen ? 'none' : 'rotate(-90deg)',
+        gateCls: 'gate gate--' + gTone,
+        rowsFr: gOpen ? '1fr' : '0fr',
+        tongueOp: '0',
+        headSeam: gOpen ? '0 solid transparent' : '1px solid color-mix(in oklab, black 60%, var(--card-head))',
+        uGroove: gOpen
+          ? 'polygon(2px 0,5px 0,5px calc(100% - 15px),15px calc(100% - 5px),calc(100% - 5px) calc(100% - 5px),calc(100% - 5px) 0,calc(100% - 2px) 0,calc(100% - 2px) calc(100% - 2px),11px calc(100% - 2px),2px calc(100% - 11px))'
+          : 'polygon(2px 0,5px 0,5px calc(100% - 9px),11px calc(100% - 3px),calc(100% - 5px) calc(100% - 3px),calc(100% - 5px) 0,calc(100% - 2px) 0,calc(100% - 2px) 100%,10px 100%,2px calc(100% - 8px))',
+        uBeam: gOpen
+          ? 'polygon(2.8px 0,4.2px 0,4.2px calc(100% - 12.2px),12.2px calc(100% - 4.2px),calc(100% - 4.2px) calc(100% - 4.2px),calc(100% - 4.2px) 0,calc(100% - 2.8px) 0,calc(100% - 2.8px) calc(100% - 2.8px),10.8px calc(100% - 2.8px),2.8px calc(100% - 10.8px))'
+          : 'polygon(2.8px 0,4.2px 0,4.2px calc(100% - 7.4px),10.2px calc(100% - 1.4px),calc(100% - 4.2px) calc(100% - 1.4px),calc(100% - 4.2px) 0,calc(100% - 2.8px) 0,calc(100% - 2.8px) 100%,8.8px 100%,2.8px calc(100% - 6px))',
+        headShadow: gOpen ? 'inset 0 1px 0 rgba(185,205,235,.17),inset 0 2px 0 rgba(185,205,235,.05)' : '0 1px 0 rgba(185,205,235,.20),inset 0 1px 0 rgba(185,205,235,.17),inset 0 2px 0 rgba(185,205,235,.05),inset 0 -1px 0 rgba(185,205,235,.04)',
+        bootAnim: gOpen ? 'crtWake .62s linear' : 'none',
+        laserAnim: gOpen ? 'rwLaserDrop .24s cubic-bezier(.32,.72,0,1) both' : 'none',
+        frameShadow: (() => { const hue = gTone === 'gray' ? 'var(--gray)' : HUE[gTone]; const fw = Math.max((this.props.laserW ?? 3.5) * 0.57 - 1, 0.5).toFixed(1); return 'inset ' + fw + 'px 0 0 ' + hue + ', inset -' + fw + 'px 0 0 ' + hue + ', inset 0 -' + fw + 'px 0 ' + hue; })(),
+        laserShadow: (() => { const hue = gTone === 'gray' ? 'var(--gray)' : HUE[gTone]; const st = this.props.laserStyle ?? 'thin-glow'; const lg = (this.props.laserGlow ?? 55) / 100; if (st === 'chunky') return 'none'; if (st === 'core-bloom') return '0 0 ' + (7 * lg).toFixed(1) + 'px ' + hue + ',0 0 ' + (24 * lg).toFixed(1) + 'px color-mix(in oklab, transparent 50%, ' + hue + ')'; return '0 0 ' + (9 * lg).toFixed(1) + 'px color-mix(in oklab, transparent 25%, ' + hue + ')'; })(),
+        slots: rows.slice(0, 8).map(r => ({
+          enter: () => this.setState({ boardHover: { gid, text: r.name + ' \u2014 ' + r.state, hue: r.tone === 'gray' ? 'var(--txt-2)' : HUE[r.tone] } }),
+          leave: () => this.setState({ boardHover: null }),
+          bg: r.tone === 'gray' ? '#0A1017' : HUE[r.tone],
+          box: 'inset 0 1px 0 rgba(255,255,255,.24), inset 0 -1.5px 2px rgba(0,0,0,.45), 0 1px 2px rgba(0,0,0,.6)' + (S.expanded[r.id] ? ', 0 0 6px color-mix(in oklab, transparent 40%, ' + HUE[r.tone] + ')' : ''),
+          tip: r.name + ' · ' + r.state + ' — click to jump to this row',
+          click: e => { e.stopPropagation(); this._jumpToRow(r.id, g.id); }
+        })),
+        slotMore: rows.length > 8, slotMoreN: String(Math.max(0, rows.length - 8)),
+        toggle: () => this.setState(s => {
+          const c = Object.assign({}, s.collapsed);
+          if (c[g.id]) delete c[g.id]; else c[g.id] = true;
+          return { collapsed: c };
+        }),
+        hue: gTone === 'gray' ? 'var(--gray)' : HUE[gTone],
+        labelHue: bh ? bh.hue : (gTone === 'gray' ? 'var(--txt-3)' : HUE[gTone]),
+        hot,
+        headEnter: () => this.setState({ headHover: (gOpen ? 'Collapse ' : 'Expand ') + g.name + ' · ' + rows.length + ' item' + (rows.length === 1 ? '' : 's') }),
+        headLeave: () => this.setState({ headHover: null }),
+        tip: (gOpen ? 'Collapse ' : 'Expand ') + g.name + ' · ' + rows.length + ' item' + (rows.length === 1 ? '' : 's')
+             + (g.kind === 'attention' ? ' · attention group — only here because something is wrong' : ' · lifecycle group'),
+        // The head's rolled-up state rides as a Pin on the label — zero layout footprint.
+        // The group's name IS a Signal chip, which gives the Pin a proper corner to sit on.
+        chipCls: 'signal signal--' + gTone + ' signal--' + (hot ? 'filled' : 'outline'),
+        pinCls: 'pin pin--' + gTone,
+        hotCount: String(rows.filter(r => r.tone === gTone).length),
+        lineHue: gTone === 'gray' ? 'var(--line-soft)' : HUE[gTone],
+        sigCls: 'signal signal--' + gTone + ' signal--filled',
+        sigClick: e => teleport(e, g.name + ' \u2014 worst item'),
+        sigHint: 'Worst state in ' + g.name + ' \u2014 click to open the item it came from',
+        sigWord: bh ? bh.text : ((rows.filter(r => r.tone === gTone)[0] || {}).state || ''),
+        boardEditing: S.boardOpen === gid,
+        boardStill: S.boardOpen !== gid,
+        boardJust: bh ? 'flex-start' : 'center',
+        boardAnim: bh ? 'bslide 2.6s ease-in-out infinite alternate' : 'none',
+        boardQ: (S.boardQ || {})[gid] || '',
+        boardClick: e => { e.stopPropagation(); this.setState({ boardOpen: gid }); },
+        onBoardQ: e => this.setState(s => ({ boardQ: { ...(s.boardQ || {}), [gid]: e.target.value } })),
+        boardBlur: () => this.setState(s => ({ boardOpen: null, boardQ: { ...(s.boardQ || {}), [gid]: '' } })),
+        boardRef: el => { if (el && S.boardOpen === gid) el.focus(); },
+        boardEmpty: !((S.boardQ || {})[gid] || ''),
+        boardCaretOff: (((S.boardW || {})[gid] || 0) / 2 + 1).toFixed(0) + 'px',
+        boardMeasRef: el => { if (el) { const w = el.offsetWidth; if (((S.boardW || {})[gid] || 0) !== w) this.setState(s => ({ boardW: { ...(s.boardW || {}), [gid]: w } })); } },
+        rows: rows.map((r, i) => {
+          const open = !!S.expanded[r.id];
+          const isHot = r.tone === 'red' || r.tone === 'yellow';
+          // An expanded row holds both: the section menu stays out and the ring stays on.
+          const jump = S.jumpRow === r.id || !!S.expanded[r.id];
+          const anchoredHere = S.anchored === r.id;
+          const somethingElse = S.anchored !== null && !anchoredHere;
+          const first = groups.length === 0 && i === 0;
+          const extra = Math.max(0, r.facts.length - 1) + r.more;
+          // Placeholder: how many of this record's sections are signalling. Tier 2 owns it.
+          const sigCount = r.tone === 'red' ? 3 : r.tone === 'yellow' ? 2 : r.tone === 'blue' ? 1 : 0;
+          let bg = 'transparent';
+          // Hover and open both read as an off-white wash mixed from --txt, not accent —
+          // orange is reserved for controls the user turns, not for where the cursor is.
+          const hovered = S.hoverRow === r.id;
+          if (hovered) bg = 'color-mix(in oklab, var(--txt) 5%, #101921)';
+          if (open) bg = 'color-mix(in oklab, transparent 84%, ' + (gTone === 'gray' ? 'var(--gray)' : HUE[gTone]) + ')';
+          if (S.flashRow === r.id) bg = 'color-mix(in oklab, var(--txt) 8%, #101921)';
+          let stripe = 'transparent';
+          if (fireMode !== 'chip-only' && isHot) stripe = HUE[r.tone];
+          if (open) stripe = 'var(--accent)';
+          return {
+            id: r.id, name: r.name, state: r.state, when: r.when,
+            tip: r.name + ' · ' + r.state + (r.when === '—' ? '' : ' · ' + r.when)
+                 + '\n' + (open ? 'Click to collapse' : 'Click to expand here') + ' · double-click to anchor and open a tab',
+            anchorTip: anchoredHere ? 'Anchored — click to release'
+                     : (somethingElse ? 'Add this to the anchored set' : 'Anchor this row and open it in a tab'),
+            h: H + 'px',
+            ...(() => {
+              const rf = this.props.railFrameW ?? 1, rp = this.props.railPad ?? 1.5;
+              const seg = (this.props.dryStyle ?? 'segmented') === 'segmented';
+              const hh = seg ? Math.min(24 + 2 * (rf + rp), H - 4) : H;
+              return { dryTop: ((H - hh) / 2) + 'px', dryHouseH: hh + 'px' };
+            })(),
+            dryHue: open ? 'var(--accent)' : (r.tone === 'gray' ? '#04070C' : HUE[r.tone]),
+            dryGlow: 'none',
+            ...(() => { const d = (0.14 + i * 0.07).toFixed(2); return {
+              slideAnim: gOpen ? ('rwType .28s steps(16,end) ' + d + 's both') : 'none',
+              caretAnim: gOpen ? ('rwCaret .28s steps(16,end) ' + d + 's both') : 'none'
+            }; })(),
+
+            bg, stripe, open, jump,
+            // The menu wears the same wash as the row it belongs to — mixed over --card
+            // rather than transparent, since it floats above other rows and must stay opaque.
+            jumpPos: open ? 'bottom:100%' : 'top:100%',
+            jumpBg: open ? 'var(--panel-2)' : 'color-mix(in oklab, var(--txt) 5%, var(--card))',
+            ring: (S.flashRow === r.id) ? '2px solid ' + (r.tone === 'gray' ? 'var(--gray)' : HUE[r.tone]) : 'none',
+            sigCls: 'signal signal--' + r.tone + ' signal--' + (r.fill ? 'filled' : 'outline'),
+            // The chip says WHAT the worst state is; a Pin on its corner says HOW MANY
+            // sections inside the record are signalling. Hidden at 0 and at 1.
+            sigPinShow: sigCount > 1,
+            sigPinCls: 'pin pin--' + r.tone,
+            sigPinN: String(sigCount),
+            // One line per signalling section: name — state — value.
+            sigPinTip: [['Rental 4417', r.state, r.when],
+                        ['Inspection', 'Failed', 'Mar 12'],
+                        ['Damage claim', 'Open', '$1,240']]
+                       .slice(0, sigCount)
+                       .map(x => x[0] + ', ' + x[1] + ', ' + x[2]).join('\n'),
+            sigClick: e => teleport(e, r.state + ' on ' + r.name),
+            sigHint: r.state + ' \u2014 click to open what set this state\n(the chip teleports; the row expands)',
+            showFacts: width >= 440 && r.facts.length > 0 && extra > 0,
+            fact: r.facts[0] || '',
+            moreLabel: '+' + extra,
+            whenHue: r.when === '—' ? 'var(--txt-3)' : 'var(--txt-2)',
+            laneBg: jump ? 'rgba(255,126,31,.09)' : (overlay ? 'rgba(255,126,31,.06)' : 'transparent'),
+            caretHue: (open || jump || S.hoverRow === r.id) ? 'var(--accent)' : 'var(--txt-3)',
+            caretRot: open ? 'rotate(90deg)' : 'none',
+            // Nothing in the jump line is *selected* — it is a menu of verbs — so no cell
+            // takes a fill. The leading verb carries its row's hue as an outline instead.
+            // Each cell is a section of the record, so each carries a Pin the same way the
+            // filter cells and the group heads do: colour = that section's state, number = count.
+            jumpCells: [
+              { click: e => { e.preventDefault(); e.stopPropagation(); }, word: JUMPWORD[r.tone], ink: r.tone === 'red' ? 'var(--red-line)' : HUE[r.tone],
+                box: 'inset 0 0 0 1.5px currentColor',
+                pinCls: 'pin pin--' + r.tone, n: String(1 + (i % 3)),
+                tip: 'Rental 4417, ' + r.state + ', ' + r.when },
+              { click: e => { e.preventDefault(); e.stopPropagation(); }, word: 'Extend', ink: 'var(--txt-3)', box: 'none', pinCls: 'pin pin--blue pin--outline', n: String(1 + (i % 2)),
+                tip: 'Extension req, Waiting, ' + (1 + (i % 2)) + ' open' },
+              { click: e => { e.preventDefault(); e.stopPropagation(); }, word: 'Call',   ink: 'var(--txt-3)', box: 'none', pinCls: 'pin pin--gray pin--outline', n: String(2 + (i % 2)),
+                tip: 'Contacts, On file, ' + (2 + (i % 2)) }
+            ],
+            jumpAWord: JUMPWORD[r.tone],
+            isAnchorIcon: !somethingElse,
+            isPlusIcon: somethingElse,
+            anchorBg: anchoredHere ? 'var(--accent)' : (somethingElse ? 'transparent' : 'var(--accent-soft)'),
+            anchorBorder: somethingElse ? '1px dashed var(--commit)' : '0',
+            anchorHue: anchoredHere ? 'var(--on-orange)' : (somethingElse ? 'var(--commit)' : 'var(--accent)'),
+            anchor: () => this.setState(s => ({ anchored: s.anchored === r.id ? null : r.id })),
+            down: () => {},
+            click: () => click(r.id),
+            dbl: () => dbl(r.id),
+            // The WASH follows the cursor immediately; the BAND waits for the pointer to
+            // settle, and is armed only inside the row's central 24px — the vertical band
+            // the state chip itself occupies — so sweeping down a list never flickers a
+            // band under every row. Once one band is up, moving between rows swaps
+            // instantly — the settle is paid once, which keeps it an accelerator.
+            enter: () => this.setState({ hoverRow: r.id }),
+            move: e => {
+              // The band lives inside the row, so its moves bubble here — and its
+              // coordinates are always outside the row's armed band, which would close it
+              // the moment you reached for a verb. Only the band's own handler judges it.
+              if (e.target.closest && e.target.closest('[data-jump-band]')) return;
+              const box = e.currentTarget.getBoundingClientRect();
+              const dy = Math.abs((e.clientY - box.top) - box.height / 2);
+              // The narrow band ARMS; it never disarms. Once the band is up you have to be
+              // able to travel down to it, and that path necessarily leaves the armed zone.
+              if (dy > 12) { if (this._settleFor === r.id) { clearTimeout(this._settle); this._settleFor = null; } return; }
+              if (this.state.jumpRow === r.id || this._settleFor === r.id) return;
+              clearTimeout(this._settle);
+              this._settleFor = r.id;
+              // "Warm" is tracked outside state: a close and the next row's mousemove can
+              // land in the same batch, and reading this.state.jumpRow there still returns
+              // the old value — which let the next row open with no wait at all.
+              const wait = this._warm ? 0 : 450;
+              this._settle = setTimeout(() => {
+                this._settleFor = null;
+                if (this.state.hoverRow === r.id) { this._warm = true; this.setState({ jumpRow: r.id }); }
+              }, wait);
+            },
+            // Heading out through the band's bottom quarter means you are leaving, not
+            // reaching for a verb — so it closes rather than waiting for mouseleave.
+            bandEnter: () => { clearTimeout(this._close); },
+            bandMove: e => {
+              e.stopPropagation();
+              const box = e.currentTarget.getBoundingClientRect();
+              if (e.clientY - box.top > box.height * 0.75) {
+                clearTimeout(this._settle);
+                this._settleFor = null;
+                // Dismissing on the way out goes cold: the row you fall onto next pays the
+                // full settle again, rather than opening the instant you land on it.
+                this._warm = false;
+                this.setState({ jumpRow: null });
+              }
+            },
+            leave: () => {
+              clearTimeout(this._settle);
+              this._settleFor = null;
+              this.setState({ hoverRow: null });
+              // Long enough to walk from the row down onto the band — which leaves the
+              // row's box on the way — and to cross the hairline between two rows.
+              clearTimeout(this._close);
+              this._close = setTimeout(() => {
+                if (!this.state.hoverRow) { this._warm = false; this.setState({ jumpRow: null }); }
+              }, 320);
+            },
+            laneIn: () => {},
+            laneOut: () => {}
+          };
+        })
+      });
+    });
+
+    const hidden = all.length - shown;
+    const filtering = S.filter !== null || q.length > 0;
+    let railText, railHue;
+    const hovBand = (() => { if (S.hoverSlot == null) return null; const bl = this._bands || []; if (!bl.length) return null; const mid = (S.hoverSlot + 0.5) / 8; let band = null; for (const x of bl) { if (!band && mid >= x.a && mid < x.b) band = x; } if (!band) { let best = 1e9; for (const x of bl) { const d = Math.abs((x.a + x.b) / 2 - mid); if (d < best) { best = d; band = x; } } } return band; })();
+    if (hovBand)                { railText = hovBand.name;                 railHue = hovBand.hue === 'var(--card-head)' ? 'var(--accent)' : hovBand.hue; }
+    else if (S.headHover)       { railText = S.headHover;                  railHue = 'var(--accent)'; }
+    else if (S.flash)           { railText = S.flash;                      railHue = 'var(--accent)'; }
+    else if (filtering && hidden > 0) { railText = hidden + ' hidden by filter'; railHue = 'var(--accent)'; }
+    else if (!S.atEnd)          { railText = '▾ more below';               railHue = 'var(--accent)'; }
+    else                        { railText = 'End of list · ' + shown + ' items'; railHue = 'color-mix(in oklab, var(--accent) 52%, #16202C)'; }
+    const termLoop = !!(S.termW && S.termBoxW && S.termW > S.termBoxW - 16);
+    const termDur = termLoop ? Math.max(6, Math.round((S.termW + 36) / 26)) : 0;
+
+    return {
+      liveW: width + 'px',
+      stateW,
+      // 96px only when the card is wide enough for a Trips-style departure→ETA pair.
+      whenW: (width >= 440 ? 96 : 72) + 'px',
+      cardName: S.card,
+      verb: width >= 300 ? (this.CARDS.filter(c => c[0] === S.card)[0] || ['','+'])[1] : '+',
+      pickerOpen: S.pickerOpen,
+      pickerShut: !S.pickerOpen,
+      titleRing: S.pickerOpen ? '1.5px solid var(--accent)' : 'none',
+      togglePicker: () => this.setState(s => ({ pickerOpen: !s.pickerOpen })),
+      // The title IS the toggle. Tapping the inactive side switches to it; tapping the side
+      // you are already on opens the board list and reassigns that half of the pair.
+      pair: S.pair.map(name => ({
+        name,
+        icon: this.iconOf(name),
+        // The active cell is the card's identity — it never shrinks; only the inactive
+        // half of the toggle gives way and ellipsizes when the row runs out of room.
+        flex: name === S.card ? '0 1 auto' : '0 4 auto',
+        cls: 'seg__opt' + (name === S.card ? ' seg__opt--on-accent' : ''),
+        tip: name === S.card
+          ? 'Showing ' + name + ' \u2014 click again to put a different board in this slot'
+          : 'Switch to ' + name,
+        click: () => this.setState(s => (name === s.card
+          ? { pickerOpen: !s.pickerOpen }
+          : { card: name, pickerOpen: false }))
+      })),
+      // While the picker is open the title reads as an opener — top-rounded, with the
+      // stacked toggle hanging flush off its bottom edge as the other half of one object.
+      titleRadius: '0',
+      cards: this.CARDS.map(c => ({
+        name: c[0],
+        icon: c[2],
+        cls: 'seg__opt' + (c[0] === S.card ? ' seg__opt--on-accent' : ''),
+        // The icon carries slot membership: accent = the other board seated in this slot,
+        // on-orange = the live one, muted = not seated. Heavier stroke for both occupants.
+        hue: c[0] === S.card ? 'var(--on-orange)' : (S.pair.indexOf(c[0]) >= 0 ? 'var(--accent)' : 'var(--txt-3)'),
+        weight: S.pair.indexOf(c[0]) >= 0 ? '2' : '1.4',
+        // Every board reports its own rolled-up state in the picker, the same way the
+        // filter cells and the group heads do — so you choose a board knowing what is in it.
+        pinShow: !!(this.ROLLUP[c[0]] && this.ROLLUP[c[0]][1] > 0),
+        pinCls: 'pin pin--' + ((this.ROLLUP[c[0]] || ['gray'])[0]),
+        pinN: String((this.ROLLUP[c[0]] || ['', 0])[1]),
+        pinTip: (this.ROLLUP[c[0]] || ['', 0])[1] + ' need you in ' + c[0],
+        pick: () => this.setState(s => {
+          const i = s.pair.indexOf(s.card);
+          const other = s.pair[1 - i];
+          if (c[0] === other) return { card: other, pickerOpen: false };
+          const pair = s.pair.slice();
+          pair[i] = c[0];
+          return { pair: pair, card: c[0], pickerOpen: false };
+        })
+      })),
+      showDesc: width >= 290,
+      // Sort has no slot of its own — it lives behind the search control, and the line
+      // stays open on its own whenever a non-default sort is live.
+      sortOpen: S.sortOpen || S.sort !== 'Priority' || S.sortDir !== 'asc',
+      toggleSort: () => this.setState(s => ({ sortOpen: !s.sortOpen })),
+      funnelHue: (S.sortOpen || S.sort !== 'Priority' || S.sortDir !== 'asc') ? 'var(--accent)' : 'var(--txt-3)',
+      globeHue: S.searchAll ? 'var(--accent)' : 'var(--txt-3)',
+      globeTip: S.searchAll ? 'Searching every board — tap for just this one' : 'Search every board, not just this one',
+      toggleGlobe: () => this.setState(s => ({ searchAll: !s.searchAll })),
+      openSort: () => this.setState({ sortOpen: true }),
+      // Sort is the one toggle where the chosen cell also carries a DIRECTION. The pair of
+      // arrows lives inside the active cell; the lit one is the current order, and clicking
+      // the cell you are already on flips it.
+      sorts: ['Priority', 'Name', 'When', 'State'].map(s => ({
+        name: s,
+        on: S.sort === s,
+        upOp: S.sortDir === 'asc' ? '1' : '.32',
+        downOp: S.sortDir === 'desc' ? '1' : '.32',
+        cls: 'seg__opt' + (S.sort === s ? ' seg__opt--on-accent' : ''),
+        tip: (S.sort === s ? 'Flip to ' + (S.sortDir === 'asc' ? 'descending' : 'ascending') + ' · ' : '') +
+             ({ Priority: 'Staff priority order — the card\'s own sequence',
+                Name: 'A–Z by record name, within each group',
+                When: 'Earliest first, by the row\'s when column',
+                State: 'Hottest first — red, yellow, blue, green, gray' })[s],
+        pick: () => this.setState(st => (st.sort === s
+          ? { sortDir: st.sortDir === 'asc' ? 'desc' : 'asc' }
+          : { sort: s, sortDir: 'asc' }))
+      })),
+      showBand2: true,
+      showMini: false,
+      tallyShow: width >= 348,
+      filtering,
+      searchBorder: q ? 'var(--accent)' : 'var(--line)',
+      searchBorderBot: q ? 'var(--accent)' : 'rgba(0,0,0,.6)',
+      searchBg: q ? 'var(--accent-soft)' : 'transparent',
+      searchInk: q ? 'var(--accent)' : 'var(--txt)',
+      workLabel: width >= 420 ? 'Your Work' : 'Work',
+      doneLabel: 'Done',
+      // The rollup chip is gone. Its two jobs ride as Pins on the filter cells:
+      // colour = the worst state in that bucket, number = how many. Zero slots consumed.
+      workPinCls: 'pin pin--' + (workCount ? worst : 'gray') + (workCount ? '' : ' pin--outline'),
+      workTip: workCount ? workCount + ' need you \u00b7 worst is ' + (worstRow ? worstRow.state : '\u2014') : 'Nothing needs you',
+      donePinCls: 'pin ' + (doneCount ? 'pin--green' : 'pin--gray pin--outline'),
+      doneTip: doneCount ? doneCount + ' finished today' : 'Nothing finished yet today',
+      workCls: 'seg__opt' + (S.filter === 'work' ? ' seg__opt--on-accent' : ''),
+      // #137 carve-out: a filter cell's hue follows its TARGET. Done maps 1:1 onto
+      // green so it wears green; Your Work spans three statuses so it falls back to accent.
+      doneCls: 'seg__opt' + (S.filter === 'done' ? ' seg__opt--on-green' : ''),
+      // "Open" — everything you have expanded on this card. Accent, because it describes
+      // the user's own working set (#137). On hover the cell becomes CLOSE, and CLOSE is
+      // destructive of your working set — so it takes the terminal fill.
+      openCls: 'seg__opt' + (S.filter === 'open'
+        ? (S.overOpen ? ' seg__opt--on-red' : ' seg__opt--on-accent')
+        : ''),
+      openCount: S.overOpenPin && openIds.length ? '\u2715' : String(openIds.length),
+      openPinIn: () => this.setState({ overOpenPin: true }),
+      openPinOut: () => this.setState({ overOpenPin: false }),
+      openPinClick: e => { e.stopPropagation(); this.setState({ expanded: {}, overOpenPin: false }); },
+      // Zero is the assumed state — a Pin appears only when there is something to report.
+      workPinShow: workCount > 0,
+      donePinShow: doneCount > 0,
+      openPinShow: openIds.length > 0,
+      openPinCls: 'pin ' + (S.overOpenPin && openIds.length ? 'pin--red' : (openIds.length ? 'pin--gray' : 'pin--gray pin--outline')),
+      openTip: S.filter === 'open'
+        ? 'Close all ' + openIds.length + ' open rows'
+        : (openIds.length ? openIds.length + ' rows open on this card' : 'Nothing open yet — click a row to open it'),
+      openLabel: (S.filter === 'open' && S.overOpen) ? 'Shut' : 'Open',
+      openIn: () => this.setState({ overOpen: true }),
+      openOut: () => this.setState({ overOpen: false }),
+      openClick: () => (S.filter === 'open'
+        ? this.setState({ expanded: {}, filter: null, overOpen: false })
+        : setF('open')),
+      miniCls: 'seg__opt ' + (S.filter === 'done' ? 'seg__opt--on-green' : 'seg__opt--on-accent'),
+      miniLabel: S.filter === 'done' ? 'Done' : (q ? 'Search' : 'Your Work'),
+      hiddenLabel: hidden + ' hidden',
+      workCount: String(workCount),
+      doneCount: String(doneCount),
+      gInset: (this.props.groupInset ?? 3) + 'px',
+      ...(() => {
+        const A = { navy: null, graphite: '#4A5160', orange: '#B45A1E', rust: '#8A3A1A', yellow: '#B49214', gold: '#8F7420', green: '#1F7A48', teal: '#177A72', red: '#C03A4A', pink: '#B0446E', purple: '#6E4AA8' };
+        const S = this.props.hueStrength ?? 22;
+        const c = ((this.props.steelContrast ?? 100) - 100) * 0.3;
+        const shade = (base, d) => !d ? base : (d > 0 ? 'color-mix(in oklab, white ' + d.toFixed(1) + '%, ' + base + ')' : 'color-mix(in oklab, black ' + (-d).toFixed(1) + '%, ' + base + ')');
+        const tint = (fam, base, d) => { const a = A[this.props[fam] ?? 'navy']; const b = shade(base, d || 0); return a ? 'color-mix(in oklab, ' + a + ' ' + S + '%, ' + b + ')' : b; };
+        return {
+          chassisFace: tint('chassisHue', '#171F2A', -c / 2),
+          chassisPlate: tint('plateHue', '#232E3E', c),
+          cartFace: tint('cartridgeHue', '#171F2A', 0),
+          frameFace: tint('frameHue', '#171F2A', 0),
+          frameBase: tint('frameHue', 'var(--card-head)', 0)
+        };
+      })(),
+      termBg: 'color-mix(in oklab, black ' + (this.props.termDark ?? 55) + '%, var(--card))',
+      termScanShow: (this.props.termStyle ?? 'scanlines') === 'scanlines',
+      laserW: ((this.props.laserStyle ?? 'thin-glow') === 'chunky' ? Math.max(this.props.laserW ?? 2.5, 4.5) : (this.props.laserW ?? 2.5)) + 'px',
+      slotH: (this.props.slotH ?? 11) + 'px',
+      slotW: ((this.props.slotH ?? 11) * 0.55).toFixed(1) + 'px',
+      rackW: (((this.props.slotH ?? 11) * 0.55) * 10 + 2.5 * 9 + 14).toFixed(0) + 'px',
+      ...(() => {
+        const rf = this.props.railFrameW ?? 1, rp = this.props.railPad ?? 1.5, rr = this.props.railRadius ?? 2;
+        const lw = (this.props.laserStyle ?? 'thin-glow') === 'chunky' ? Math.max(this.props.laserW ?? 2.5, 4.5) : (this.props.laserW ?? 2.5);
+        return { railHouseW: (lw + 2 * (rf + rp)) + 'px', railGlassIn: rf + 'px', railPadT: (rf + rp) + 'px', railRad: rr + 'px', railRadIn: Math.max(rr - 1, 0) + 'px' };
+      })(),
+      rollHue: HUE[worst],
+      ...(() => {
+        const w = this.props.markerW ?? 16.5, t = this.props.markerTopY ?? 0, b = this.props.markerBotY ?? 35.5;
+        const bt = this.props.markerBorderW ?? 1.5, tone = this.props.markerBorderTone ?? 55;
+        const cap = this.props.markerTopCap ?? 4.5;
+        const off = 1.414 * bt, hoff = off + 1.4;
+        const poly = (top, y0, yBR, yBL) => {
+          const pts = cap > y0
+            ? ['0 ' + top + 'px', Math.max(top - cap, 0) + 'px ' + cap + 'px', '100% ' + cap + 'px']
+            : ['0 ' + top + 'px', '100% ' + y0 + 'px'];
+          return 'polygon(' + pts.concat(['100% ' + yBR + 'px', '0 ' + yBL + 'px']).join(',') + ')';
+        };
+        return {
+          mLeft: (this.props.markerX ?? 1.5) + 'px',
+          mW: w + 'px', mH: (b + w) + 'px',
+          mClip: poly(t + w, t, b, b + w),
+          mBorderShow: (this.props.markerBorderOn ?? true) && bt > 0,
+          mBW: (w + bt) + 'px', mBH: (b + w + off) + 'px',
+          mBClip: poly(t + w + off, Math.max(t - 0.414 * bt, 0), b + 0.414 * bt, b + w + off),
+          mHW: (w + bt + 1.2) + 'px', mHH: (b + w + hoff) + 'px',
+          mHClip: poly(t + w + hoff, Math.max(t - 0.414 * bt - 1, 0), b + 0.414 * bt + 1.2, b + w + hoff),
+          mHColor: 'rgba(185,205,235,' + (tone / 100 * 0.4).toFixed(3) + ')'
+        };
+      })(),
+      rollCls: 'signal signal--' + worst + ' signal--' + (worstRow && worstRow.fill ? 'filled' : 'outline'),
+      rollWord: worstRow ? worstRow.state : 'Clear',
+      pinCls: 'pin pin--' + worst,
+      pinTip: workCount + ' need you · worst is ' + (worstRow ? worstRow.state : '—') + ' — click to filter',
+      // A Pin over a COUNT teleports to the filtered view of the things it counts.
+      pinClick: e => { e.preventDefault(); this.setState({ filter: 'work', q: '' }); },
+      q: S.q,
+      onQ: e => this.setState({ q: e.target.value }),
+      toggleWork: () => setF('work'),
+      toggleDone: () => setF('done'),
+      clearFilter: () => this.setState({ filter: null, q: '' }),
+      onScroll: e => {
+        const el = e.currentTarget;
+        const atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
+        const scrolled = el.scrollTop > 6;
+        const range = el.scrollHeight - el.clientHeight;
+        const frac = range > 0 ? Math.min(1, el.scrollTop / range) : 0;
+        if (scrolled !== this.state.scrolled || atEnd !== this.state.atEnd || Math.abs(frac - (this.state.scrollFrac || 0)) > 0.02)
+          this.setState({ scrolled, atEnd, scrollFrac: frac });
+      },
+      scrimOpacity: S.atEnd ? '0' : '1',
+      railText, railHue,
+      termLoop,
+      termGap: termLoop ? '36px' : '0px',
+      termJustify: termLoop ? 'flex-start' : 'center',
+      termAnim: termLoop ? ('termloop ' + termDur + 's linear infinite') : 'none',
+      termBoxRef: el => { this._termBox = el; },
+      termMeasRef: el => { this._termMeas = el; },
+      qMeasRef: el => { this._qMeas = el; },
+      searchCaretShow: !!S.searchFocus,
+      qEmpty: !S.q && !S.searchFocus,
+      searchCaretLeft: (10 + (S.qW || 0)) + 'px',
+      onQFocus: () => this.setState({ searchFocus: true }),
+      onQBlur: () => this.setState({ searchFocus: false }),
+      railPin: hotCount > 0 && !filtering,
+      railRightShow: filtering || hotCount > 0,
+      gripShow: width >= 330,
+      gripSlots: Array.from({ length: 8 }, (_, i) => {
+        const on = (S.scrollFrac || 0) * 8 >= i + 0.5;
+        const mid = (i + 0.5) / 8;
+        const s0 = i / 8, s1 = (i + 1) / 8;
+        let band = null, best = 0;
+        for (const x of (this._bands || [])) {
+          const ov = Math.min(s1, x.b) - Math.max(s0, x.a);
+          if (ov > best) { best = ov; band = x; }
+          if (!band && mid >= x.a && mid < x.b) band = x;
+        }
+        const hue = band ? band.hue : 'var(--card-head)';
+        const lit = S.hoverSlot === i;
+        return {
+          tip: band ? band.name : '\u2014',
+          enter: () => this.setState({ hoverSlot: i }),
+          leave: () => this.setState({ hoverSlot: null }),
+          go: () => {
+            const sc = this._scroll;
+            if (!sc || !band) return;
+            const denom = Math.max(1, sc.scrollHeight);
+            const gTop = band.a * denom, gH = (band.b - band.a) * denom;
+            const top = gH >= sc.clientHeight ? gTop : gTop - (sc.clientHeight - gH) / 2;
+            sc.scrollTo({ top: Math.max(0, Math.min(top, denom - sc.clientHeight)), behavior: 'smooth' });
+          },
+          bg: lit ? 'color-mix(in oklab, black 12%, ' + hue + ')'
+            : on ? 'color-mix(in oklab, black 30%, ' + hue + ')' : 'color-mix(in oklab, white 14%, var(--card-head))',
+          box: lit ? 'inset 0 1px 0 rgba(255,255,255,.28), inset 0 -1.5px 2px rgba(0,0,0,.4), 0 1px 2px rgba(0,0,0,.55), 0 0 8px color-mix(in oklab, transparent 35%, ' + hue + ')'
+            : on ? 'inset 0 1px 0 rgba(255,255,255,.22), inset 0 -1.5px 2px rgba(0,0,0,.45), 0 1px 2px rgba(0,0,0,.6), 0 0 5px color-mix(in oklab, transparent 55%, ' + hue + ')' : 'inset 0 1px 0 rgba(255,255,255,.22), inset 0 -1.5px 2px rgba(0,0,0,.45), 0 1px 2px rgba(0,0,0,.6)'
+        };
+      }),
+      railPinCls: 'pin pin--' + worst,
+      railPinCount: String(hotCount),
+      railPinTip: hotCount + ' still need you further down \u2014 worst is ' + (worstRow ? worstRow.state : '\u2014'),
+
+      // One instant, styled tooltip layer for the whole card, driven by delegation on
+      // [data-hint]. Native title tooltips are slow and off-brand; the kit's own .pin
+      // tooltip is the voice this copies.
+      cardRef: el => { this._card = el; },
+      scrollRef: el => { this._scroll = el; },
+      onHint: e => {
+        const t = e.target && e.target.closest ? e.target.closest('[data-hint]') : null;
+        const card = this._card;
+        clearTimeout(this._dwell);
+        if (!t || !card) { if (this.state.hint) this.setState({ hint: null }); return; }
+        const txt = t.getAttribute('data-hint');
+        if (!txt) { if (this.state.hint) this.setState({ hint: null }); return; }
+        const a = t.getBoundingClientRect(), b = card.getBoundingClientRect();
+        const next = { text: txt, pin: /(^|\s)pin(\s|$)/.test(t.className || ''),
+          x: Math.round(a.left - b.left), top: Math.round(a.top - b.top), bottom: Math.round(a.bottom - b.top) };
+        const c = this.state.hint;
+        if (c && c.text === next.text && c.top === next.top && c.x === next.x) return;
+        // A tooltip explains, so it waits; the jump accelerator accelerates, so it never
+        // does. Once one is already up, moving between targets swaps it without re-waiting.
+        if (c) { this.setState({ hint: next }); return; }
+        if (t.hasAttribute('data-hint-now')) { this.setState({ hint: next }); return; }
+        this._dwell = setTimeout(() => this.setState({ hint: next }), 540);
+      },
+      onHintOut: () => { clearTimeout(this._dwell); if (this.state.hint) this.setState({ hint: null }); },
+      // While a row's jump popover is up it speaks for that row — no tooltip on top of it,
+      // except on the popover's own Pins, which are the one thing it does not explain.
+      hintOn: !!S.hint && (!S.jumpRow || S.hint.pin),
+      hintText: S.hint ? S.hint.text : '',
+      hintStyle: !S.hint ? 'display:none' :
+        'position:absolute;z-index:30;pointer-events:none;left:' + Math.max(8, Math.min(S.hint.x, width - 214)) + 'px;' +
+        (S.hint.top < 52
+          ? 'top:' + (S.hint.bottom + 7) + 'px;'
+          : 'top:' + (S.hint.top - 7) + 'px;transform:translateY(-100%);') +
+        'max-width:206px;padding:7px 10px;background:var(--panel-2);border:1px solid var(--line);border-radius:9px;' +
+        'color:var(--txt);font-family:var(--font);font-size:11.5px;line-height:1.7;white-space:pre-line;font-variant-numeric:tabular-nums',
+      groups,
+      nothing: shown === 0,
+      nothingTitle: q ? 'No match' : 'Nothing needs you',
+      nothingBody: q ? 'Nothing in this card matches “' + S.q + '”.' : 'Every group in this card is calm right now.',
+      hintText2: null
+    };
+  }
+}
+</script>
+
+
+
+</body></html>
