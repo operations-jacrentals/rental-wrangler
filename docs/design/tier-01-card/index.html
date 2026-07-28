@@ -897,6 +897,35 @@ input:focus::placeholder{color:transparent}
 .gate:hover,.door:hover,.seg:hover,.field:hover,.ref:hover,.contact:hover,.hlink:hover,.pin[data-tip]:hover,.seg__opt:hover{outline:none !important}
 .gate:hover{filter:brightness(1.12)}
 .door:hover,.seg__opt:not([class*="seg__opt--on"]):hover{filter:brightness(1.15)}
+
+/* ══ Rulings — 2026-07-28 session 2 (decisions ledger #153–#162) ══════════════
+   Appended rather than edited into the kit blocks above: the synced bundle
+   stays pristine on purpose (it is the shared kit), and card-level decisions
+   belong here. These must stay LAST in this block — the §3 cascade is
+   order-load-bearing, so anything inserted after them changes their effect. */
+
+/* #153 — the three rounded survivors, ruled.
+   Door KEEPS its pill: it predates Tier 0.1 (ledger #15, the pill-action shape)
+   and radius-0 (#140) never named it — only seg/signal/pin/field/ref. So there
+   is deliberately no .door rule here.
+   The other two were accidents, not decisions, and go to 0. */
+.ref__icon{border-radius:0 !important}
+.pin:after{border-radius:0 !important}   /* the hint bubble — Pin's data-tip, the one surviving tooltip (#34) */
+
+/* #154 — seg cell type holds the canonical 11px/.05em; the 10px/.09em card-level
+   shrink is REJECTED (style §1's one-size-ladder rule wins over the density
+   workaround). The larger type costs width, so padding is tightened to buy it
+   back — that compensation is what the ruling itself named, rather than letting
+   the cells overflow the plates at 380px. */
+.seg__opt{font-size:11px !important;letter-spacing:.05em !important;padding-left:7px;padding-right:7px}
+
+/* KNOWN-OPEN (#159 fallout, needs Jac's ruling — deliberately NOT patched here):
+   the real bucket label "Not Ready/Failed+Reserved" (ledger §4) is longer than any label the
+   group head was designed around and overruns the head at the locked 380px compact width,
+   squeezing the message board and slot rack. A max-width/overflow clamp was tried and does
+   not hold inside the head's flex row. The fix is a decision, not CSS: shorten the display
+   label, or give the head the Ref's hover-marquee. Left visible on purpose so it is not
+   forgotten; carried into the audit brief as a known-open rather than a defect. */
 </style>
 </helmet>
 
@@ -1138,7 +1167,7 @@ input:focus::placeholder{color:transparent}
   </div>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script="" data-props="{&quot;$preview&quot;:{&quot;width&quot;:640,&quot;height&quot;:640},&quot;liveWidth&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:380,&quot;min&quot;:240,&quot;max&quot;:560,&quot;step&quot;:4,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Card&quot;},&quot;density&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;compact&quot;,&quot;options&quot;:[&quot;compact&quot;,&quot;standard&quot;,&quot;roomy&quot;],&quot;section&quot;:&quot;Card&quot;},&quot;fireTreatment&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;tint&quot;,&quot;options&quot;:[&quot;stripe&quot;,&quot;tint&quot;,&quot;chip-only&quot;],&quot;section&quot;:&quot;Card&quot;},&quot;slotOverlay&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;section&quot;:&quot;Card&quot;},&quot;role&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;dispatcher&quot;,&quot;options&quot;:[&quot;dispatcher&quot;,&quot;yard&quot;],&quot;section&quot;:&quot;Data&quot;},&quot;chassisHue&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;navy&quot;,&quot;options&quot;:[&quot;navy&quot;,&quot;graphite&quot;,&quot;orange&quot;,&quot;rust&quot;,&quot;yellow&quot;,&quot;gold&quot;,&quot;green&quot;,&quot;teal&quot;,&quot;red&quot;,&quot;pink&quot;,&quot;purple&quot;],&quot;section&quot;:&quot;Steel hues&quot;},&quot;plateHue&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;graphite&quot;,&quot;options&quot;:[&quot;navy&quot;,&quot;graphite&quot;,&quot;orange&quot;,&quot;rust&quot;,&quot;yellow&quot;,&quot;gold&quot;,&quot;green&quot;,&quot;teal&quot;,&quot;red&quot;,&quot;pink&quot;,&quot;purple&quot;],&quot;section&quot;:&quot;Steel hues&quot;},&quot;frameHue&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;navy&quot;,&quot;options&quot;:[&quot;navy&quot;,&quot;graphite&quot;,&quot;orange&quot;,&quot;rust&quot;,&quot;yellow&quot;,&quot;gold&quot;,&quot;green&quot;,&quot;teal&quot;,&quot;red&quot;,&quot;pink&quot;,&quot;purple&quot;],&quot;section&quot;:&quot;Steel hues&quot;},&quot;cartridgeHue&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;navy&quot;,&quot;options&quot;:[&quot;navy&quot;,&quot;graphite&quot;,&quot;orange&quot;,&quot;rust&quot;,&quot;yellow&quot;,&quot;gold&quot;,&quot;green&quot;,&quot;teal&quot;,&quot;red&quot;,&quot;pink&quot;,&quot;purple&quot;],&quot;section&quot;:&quot;Steel hues&quot;},&quot;hueStrength&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:30,&quot;min&quot;:0,&quot;max&quot;:60,&quot;step&quot;:2,&quot;section&quot;:&quot;Steel hues&quot;},&quot;steelContrast&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:100,&quot;min&quot;:60,&quot;max&quot;:140,&quot;step&quot;:5,&quot;section&quot;:&quot;Steel hues&quot;},&quot;markerX&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:1,&quot;min&quot;:0,&quot;max&quot;:24,&quot;step&quot;:0.5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Corner marker&quot;},&quot;markerW&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:16,&quot;min&quot;:4,&quot;max&quot;:24,&quot;step&quot;:0.5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Corner marker&quot;},&quot;markerTopY&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:0,&quot;min&quot;:0,&quot;max&quot;:48,&quot;step&quot;:0.5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Corner marker&quot;},&quot;markerBotY&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:37,&quot;min&quot;:10,&quot;max&quot;:90,&quot;step&quot;:0.5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Corner marker&quot;},&quot;markerTopCap&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:2,&quot;min&quot;:0,&quot;max&quot;:14,&quot;step&quot;:0.5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Corner marker&quot;},&quot;markerBorderOn&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;section&quot;:&quot;Corner marker&quot;},&quot;markerBorderW&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:2,&quot;min&quot;:0.5,&quot;max&quot;:6,&quot;step&quot;:0.25,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Corner marker&quot;},&quot;markerBorderTone&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:45,&quot;min&quot;:0,&quot;max&quot;:95,&quot;step&quot;:5,&quot;section&quot;:&quot;Corner marker&quot;},&quot;groupGap&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:3.4,&quot;min&quot;:0,&quot;max&quot;:20,&quot;step&quot;:0.2,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Groups&quot;},&quot;groupInset&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:1.5,&quot;min&quot;:0,&quot;max&quot;:16,&quot;step&quot;:0.5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Groups&quot;},&quot;laserStyle&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;thin-glow&quot;,&quot;options&quot;:[&quot;thin-glow&quot;,&quot;chunky&quot;,&quot;core-bloom&quot;],&quot;section&quot;:&quot;Groups&quot;},&quot;laserW&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:3.5,&quot;min&quot;:1,&quot;max&quot;:6,&quot;step&quot;:0.5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Groups&quot;},&quot;laserGlow&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:0,&quot;min&quot;:0,&quot;max&quot;:100,&quot;step&quot;:5,&quot;section&quot;:&quot;Groups&quot;},&quot;dryStyle&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;segmented&quot;,&quot;options&quot;:[&quot;segmented&quot;,&quot;continuous&quot;],&quot;section&quot;:&quot;Groups&quot;},&quot;railFrameW&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:0.5,&quot;min&quot;:0.5,&quot;max&quot;:3,&quot;step&quot;:0.25,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Laser rails&quot;},&quot;railPad&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:0,&quot;min&quot;:0,&quot;max&quot;:4,&quot;step&quot;:0.25,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Laser rails&quot;},&quot;railRadius&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:0.5,&quot;min&quot;:0,&quot;max&quot;:5,&quot;step&quot;:0.5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Laser rails&quot;},&quot;slotH&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:14,&quot;min&quot;:7,&quot;max&quot;:16,&quot;step&quot;:0.5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Groups&quot;},&quot;termStyle&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;flat&quot;,&quot;options&quot;:[&quot;scanlines&quot;,&quot;flat&quot;],&quot;section&quot;:&quot;Groups&quot;},&quot;termDark&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:85,&quot;min&quot;:20,&quot;max&quot;:85,&quot;step&quot;:5,&quot;section&quot;:&quot;Groups&quot;}}">
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;$preview&quot;:{&quot;width&quot;:640,&quot;height&quot;:640},&quot;liveWidth&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:380,&quot;min&quot;:240,&quot;max&quot;:560,&quot;step&quot;:4,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Card&quot;},&quot;density&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;compact&quot;,&quot;options&quot;:[&quot;compact&quot;,&quot;standard&quot;,&quot;roomy&quot;],&quot;section&quot;:&quot;Card&quot;},&quot;fireTreatment&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;tint&quot;,&quot;options&quot;:[&quot;stripe&quot;,&quot;tint&quot;,&quot;chip-only&quot;],&quot;section&quot;:&quot;Card&quot;},&quot;slotOverlay&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;section&quot;:&quot;Card&quot;},&quot;role&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;staff&quot;,&quot;options&quot;:[&quot;staff&quot;,&quot;office&quot;],&quot;section&quot;:&quot;Data&quot;},&quot;chassisHue&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;navy&quot;,&quot;options&quot;:[&quot;navy&quot;,&quot;graphite&quot;,&quot;orange&quot;,&quot;rust&quot;,&quot;yellow&quot;,&quot;gold&quot;,&quot;green&quot;,&quot;teal&quot;,&quot;red&quot;,&quot;pink&quot;,&quot;purple&quot;],&quot;section&quot;:&quot;Steel hues&quot;},&quot;plateHue&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;graphite&quot;,&quot;options&quot;:[&quot;navy&quot;,&quot;graphite&quot;,&quot;orange&quot;,&quot;rust&quot;,&quot;yellow&quot;,&quot;gold&quot;,&quot;green&quot;,&quot;teal&quot;,&quot;red&quot;,&quot;pink&quot;,&quot;purple&quot;],&quot;section&quot;:&quot;Steel hues&quot;},&quot;frameHue&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;navy&quot;,&quot;options&quot;:[&quot;navy&quot;,&quot;graphite&quot;,&quot;orange&quot;,&quot;rust&quot;,&quot;yellow&quot;,&quot;gold&quot;,&quot;green&quot;,&quot;teal&quot;,&quot;red&quot;,&quot;pink&quot;,&quot;purple&quot;],&quot;section&quot;:&quot;Steel hues&quot;},&quot;cartridgeHue&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;navy&quot;,&quot;options&quot;:[&quot;navy&quot;,&quot;graphite&quot;,&quot;orange&quot;,&quot;rust&quot;,&quot;yellow&quot;,&quot;gold&quot;,&quot;green&quot;,&quot;teal&quot;,&quot;red&quot;,&quot;pink&quot;,&quot;purple&quot;],&quot;section&quot;:&quot;Steel hues&quot;},&quot;hueStrength&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:30,&quot;min&quot;:0,&quot;max&quot;:60,&quot;step&quot;:2,&quot;section&quot;:&quot;Steel hues&quot;},&quot;steelContrast&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:100,&quot;min&quot;:60,&quot;max&quot;:140,&quot;step&quot;:5,&quot;section&quot;:&quot;Steel hues&quot;},&quot;markerX&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:1,&quot;min&quot;:0,&quot;max&quot;:24,&quot;step&quot;:0.5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Corner marker&quot;},&quot;markerW&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:16,&quot;min&quot;:4,&quot;max&quot;:24,&quot;step&quot;:0.5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Corner marker&quot;},&quot;markerTopY&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:0,&quot;min&quot;:0,&quot;max&quot;:48,&quot;step&quot;:0.5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Corner marker&quot;},&quot;markerBotY&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:37,&quot;min&quot;:10,&quot;max&quot;:90,&quot;step&quot;:0.5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Corner marker&quot;},&quot;markerTopCap&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:2,&quot;min&quot;:0,&quot;max&quot;:14,&quot;step&quot;:0.5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Corner marker&quot;},&quot;markerBorderOn&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;section&quot;:&quot;Corner marker&quot;},&quot;markerBorderW&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:2,&quot;min&quot;:0.5,&quot;max&quot;:6,&quot;step&quot;:0.25,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Corner marker&quot;},&quot;markerBorderTone&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:45,&quot;min&quot;:0,&quot;max&quot;:95,&quot;step&quot;:5,&quot;section&quot;:&quot;Corner marker&quot;},&quot;groupGap&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:3.4,&quot;min&quot;:0,&quot;max&quot;:20,&quot;step&quot;:0.2,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Groups&quot;},&quot;groupInset&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:1.5,&quot;min&quot;:0,&quot;max&quot;:16,&quot;step&quot;:0.5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Groups&quot;},&quot;laserStyle&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;thin-glow&quot;,&quot;options&quot;:[&quot;thin-glow&quot;,&quot;chunky&quot;,&quot;core-bloom&quot;],&quot;section&quot;:&quot;Groups&quot;},&quot;laserW&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:3.5,&quot;min&quot;:1,&quot;max&quot;:6,&quot;step&quot;:0.5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Groups&quot;},&quot;laserGlow&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:0,&quot;min&quot;:0,&quot;max&quot;:100,&quot;step&quot;:5,&quot;section&quot;:&quot;Groups&quot;},&quot;dryStyle&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;segmented&quot;,&quot;options&quot;:[&quot;segmented&quot;,&quot;continuous&quot;],&quot;section&quot;:&quot;Groups&quot;},&quot;railFrameW&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:0.5,&quot;min&quot;:0.5,&quot;max&quot;:3,&quot;step&quot;:0.25,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Laser rails&quot;},&quot;railPad&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:0,&quot;min&quot;:0,&quot;max&quot;:4,&quot;step&quot;:0.25,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Laser rails&quot;},&quot;railRadius&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:0.5,&quot;min&quot;:0,&quot;max&quot;:5,&quot;step&quot;:0.5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Laser rails&quot;},&quot;slotH&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:14,&quot;min&quot;:7,&quot;max&quot;:16,&quot;step&quot;:0.5,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Groups&quot;},&quot;termStyle&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;flat&quot;,&quot;options&quot;:[&quot;scanlines&quot;,&quot;flat&quot;],&quot;section&quot;:&quot;Groups&quot;},&quot;termDark&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:85,&quot;min&quot;:20,&quot;max&quot;:85,&quot;step&quot;:5,&quot;section&quot;:&quot;Groups&quot;}}">
 const RANK = { gray:1, green:2, blue:3, yellow:4, red:5 };
 const HUE  = { gray:'var(--gray)', green:'var(--green)', blue:'var(--blue)', yellow:'var(--yellow)', red:'var(--red)' };
 const TINT = { gray:'transparent', green:'transparent', blue:'transparent', yellow:'var(--yellow-bg)', red:'var(--red-bg)' };
@@ -1175,10 +1204,35 @@ class Component extends DCLogic {
     if (Object.keys(next).length) this.setState(next);
   }
 
+  /* Group set = Jac's real per-card Units lifecycle list (decisions ledger §4, rows #31–35),
+     replacing the five-group demo subset the Labs mockup shipped with. Ruled at #159.
+     kind: 'attention' = exists only because something is wrong, HIDDEN when empty (#31).
+           'lifecycle'  = always present, grey until a member inside triggers colour (#31).
+     No group carries a native colour — that rejection is what stops "green lied" recurring
+     at the group level. End Rent reads yellow only because membership means due-back (#32).
+     Row data remains illustrative demo filler (#160); Tier 2 wires the real records. */
   DATA = [
     { id:'field', kind:'attention', name:'Field Calls', rows:[
       { id:'f1', tone:'red', fill:true,  state:'3d overdue', name:'Excavator 12k',    facts:['S/N 4421','2019'], more:1, when:'Mar 14' },
       { id:'f2', tone:'red', fill:false, state:'Failed',     name:'Skid Steer S650',  facts:['S/N 8802'],        more:2, when:'Mar 16' }
+    ]},
+    /* The broken-machine-promised-to-a-customer collision — its own top bucket by design (#51). */
+    { id:'collision', kind:'attention', name:'Not Ready/Failed+Reserved', rows:[
+      { id:'x1', tone:'red', fill:true, state:'Promised', name:'Dozer D5',        facts:['S/N 6610'], more:2, when:'Mar 18' }
+    ]},
+    { id:'notready', kind:'attention', name:'Not Ready', rows:[
+      { id:'n1', tone:'yellow', fill:true,  state:'Service due', name:'Roller CS44',    facts:['S/N 2298'], more:1, when:'Mar 19' },
+      { id:'n2', tone:'yellow', fill:false, state:'Needs wash',  name:'Mini Ex 1.7t',   facts:[],           more:0, when:'Mar 20' }
+    ]},
+    { id:'failed', kind:'attention', name:'Failed', rows:[
+      { id:'l1', tone:'red', fill:false, state:'Hydraulics', name:'Telehandler 10k', facts:['S/N 7031'], more:3, when:'Mar 12' }
+    ]},
+    { id:'transport', kind:'lifecycle', name:'Transport', rows:[
+      { id:'t1', tone:'blue', fill:true, state:'On truck', name:'Excavator 8k', facts:['S/N 5140'], more:1, when:'08:30' }
+    ]},
+    { id:'reserved', kind:'lifecycle', name:'Reserved', rows:[
+      { id:'v1', tone:'blue', fill:true,  state:'Pickup',   name:'Mini Ex 3.5t',  facts:['S/N 9013'], more:1, when:'11:30'  },
+      { id:'v2', tone:'gray', fill:false, state:'Reserved', name:'Trencher 36in', facts:[],           more:0, when:'Mar 24' }
     ]},
     { id:'onrent', kind:'lifecycle', name:'On Rent', rows:[
       { id:'o1', tone:'yellow', fill:true,  state:'Due back', name:'Boom Lift 45ft',   facts:['S/N 3310'],        more:1, when:'17:00'  },
@@ -1190,14 +1244,23 @@ class Component extends DCLogic {
       { id:'v1', tone:'blue', fill:true,  state:'Pickup', name:'Mini Ex 3.5t',  facts:['S/N 9013'], more:1, when:'11:30'  },
       { id:'v2', tone:'gray', fill:false, state:'Reserved',     name:'Trencher 36in', facts:[],           more:0, when:'Mar 24' }
     ]},
-    { id:'avail', kind:'lifecycle', name:'Available', rows:[
-      { id:'a1', tone:'gray', fill:false, state:'Idle', name:'Plate Compactor',  facts:['2021'],     more:0, when:'—' },
-      { id:'a2', tone:'gray', fill:false, state:'Idle', name:'Water Pump 3in',   facts:[],           more:0, when:'—' },
-      { id:'a3', tone:'gray', fill:false, state:'Idle', name:'Scissor Lift 26ft',facts:['S/N 5521'], more:1, when:'—' }
+    /* End Rent reads yellow purely because membership means "due back today" (#32) — the
+       group still has no native colour; every row in it happens to trigger yellow. */
+    { id:'endrent', kind:'lifecycle', name:'End Rent', rows:[
+      { id:'e1', tone:'yellow', fill:true,  state:'Due back', name:'Backhoe 310L',    facts:['S/N 2204'], more:0, when:'17:00'  },
+      { id:'e2', tone:'yellow', fill:false, state:'Due back', name:'Skid Steer S570', facts:[],           more:1, when:'Mar 21' }
     ]},
-    { id:'returned', kind:'lifecycle', name:'Returned Today', rows:[
-      { id:'d1', tone:'green', fill:true, state:'Checked in', name:'Backhoe 310L',    facts:['S/N 2204'], more:0, when:'09:12' },
-      { id:'d2', tone:'green', fill:true, state:'Checked in', name:'Skid Steer S570', facts:[],           more:0, when:'10:40' }
+    /* 'Returned Today' is GONE — it exists in neither Jac's real group list nor the app (#159).
+       Green is a ROW state ("Done today", ages to grey tomorrow), never a group, so the
+       checked-in unit below sits in Available wearing green rather than in a bucket of its own. */
+    { id:'avail', kind:'lifecycle', name:'Available', rows:[
+      { id:'a1', tone:'gray',  fill:false, state:'Idle',       name:'Plate Compactor',  facts:['2021'],     more:0, when:'—' },
+      { id:'a2', tone:'gray',  fill:false, state:'Idle',       name:'Water Pump 3in',   facts:[],           more:0, when:'—' },
+      { id:'a3', tone:'gray',  fill:false, state:'Idle',       name:'Scissor Lift 26ft',facts:['S/N 5521'], more:1, when:'—' },
+      { id:'a4', tone:'green', fill:true,  state:'Checked in', name:'Backhoe 410',      facts:['S/N 3390'], more:0, when:'09:12' }
+    ]},
+    { id:'incomplete', kind:'attention', name:'Incomplete', rows:[
+      { id:'i1', tone:'yellow', fill:false, state:'Office work', name:'Forklift 5k', facts:['S/N 4470'], more:2, when:'Mar 17' }
     ]}
   ];
 
@@ -1226,9 +1289,14 @@ class Component extends DCLogic {
   };
   iconOf(name){ const c = this.CARDS.filter(x => x[0] === name)[0]; return c ? c[2] : ''; }
 
+  /* Role-scoped ORDER: the SAME group set, reordered per role (#35) — role supplies priority,
+     never a different grouping engine. The two real Units roles are staff/mechanic and office+
+     (ledger §4); the mockup's 'dispatcher'/'yard' pair was dropped at #159 — 'Yard' was a stub
+     to prove the mechanism, and a dispatcher does not live on the Units card.
+     Mechanic floats Not Ready and Failed to the top; office sinks them to the bottom. */
   ORDER = {
-    dispatcher: ['field','onrent','reserved','avail','returned'],
-    yard:       ['field','avail','onrent','reserved','returned']
+    staff:  ['field','collision','notready','failed','transport','reserved','onrent','endrent','avail','incomplete'],
+    office: ['field','collision','transport','reserved','onrent','endrent','avail','incomplete','notready','failed']
   };
 
   componentWillUnmount(){ clearTimeout(this._t); clearTimeout(this._dwell); clearTimeout(this._flash); clearTimeout(this._flashRowT); }
@@ -1257,7 +1325,7 @@ class Component extends DCLogic {
     const H = ({ compact:30, standard:44, roomy:52 })[P.density ?? 'compact'] || 30;
     const fireMode = P.fireTreatment ?? 'tint';
     const overlay = P.slotOverlay ?? false;
-    const role = P.role ?? 'dispatcher';
+    const role = P.role ?? 'staff';
 
     const setF = f => this.setState(s => ({ filter: s.filter === f ? null : f }));
     // Any number of rows may be open at once. `expanded` is a set, and the third
