@@ -607,17 +607,30 @@
   **LOCKED**, #156; **the off-white hover wash is REJECTED and replaced** by a three-way material
   hover system — steel = elevation lift (no colour), open-group terminal rows = an animated
   light-beam wrap, message-board glass = a cursor-following gradient (direction locked, exact
-  params open for the kit rebuild), #157; the jump-verb menu and the dispatcher group order are
-  both **REJECTED as designed** — neither matched anything in the shipped app (verified against
-  `app.js`/`config.js`): real transitions use a status-pill dropdown (`RAW_STATUS.rentalStatus`,
-  `config.js:63-74`), real group order is `UNIT_SECTIONS`/`GROUP_DEFS.rentals.sections`
-  (`app.js:9158-9202`) — Tier 0.2 designs against those, not Labs' invented placeholders, #158/#159;
-  placeholder row data **CONFIRMED** as demo filler (Tier 2 owns real numbers), #160; jump-band/
-  hint-layer/boot-theatre timings **LOCKED**, #161; width breakpoints **ACCEPTED PROVISIONALLY**,
-  re-verify in Tier 0.2, #162. **Drift caught before ruling:** 3 of the ~20 rows (radius-0, mono-
+  params open for the kit rebuild), #157; placeholder row data **CONFIRMED** as demo filler
+  (Tier 2 owns real numbers), #160; jump-band/hint-layer/boot-theatre timings **LOCKED**, #161;
+  width breakpoints **ACCEPTED PROVISIONALLY**, re-verify in Tier 0.2, #162.
+  **Two rulings (#158/#159) were WRONG on first pass and corrected same-day (#163) — the mistake
+  is worth remembering.** I checked the Labs mockup's jump verbs and dispatcher group order
+  against shipped `app.js`/`config.js` and rejected both for not matching. **`app.js` was the
+  wrong test** — it hadn't been updated to implement the 07-20/07-21 decisions or the 07-19
+  dispatcher audit's recommendations; it lags the decision trail. Jac caught it same-day: *"Not
+  the production. It is not up to date on our decisions."* Corrected: the verb-CTA **pattern**
+  is real precedent (Trips' locked Gate state-machine, `2026-07-20-list-views-inline-expand-
+  design.md` §8.5 — Start→Arrived?→Dropped?/Picked Up?; the 07-19 audit's Bucket-B #2 recommends
+  the same for Rentals/Units) — **locked**, though the specific five words don't come from either
+  source and the exact wording is still open for Tier 0.2. The dispatcher group order is
+  **substantially real** — Jac's own per-card lifecycle group lists from the 07-20 session (this
+  ledger §3/§4, rows #31–35): Units (staff/mechanic) = Field Calls, Not Ready/Failed+Reserved,
+  Not Ready, Failed, Transport, Reserved, On Rent, End Rent, Available, Incomplete; role-reordered
+  for office+. The mockup's 5-group set is a simplified demo subset of this (not a fabrication),
+  but Tier 0.2 wires the complete real list, not the demo shorthand and not `app.js`'s stale,
+  not-yet-updated `UNIT_SECTIONS`. **Corollary to #134/#145:** drift isn't only omitting a locked
+  decision — it's also consulting the wrong artifact (shipped code) for what's actually decided.
+  **Drift also caught the other direction, before ruling:** 3 of the ~20 rows (radius-0, mono-
   on-controls, the 17px tier) were already ruled at #140/#142/#143 but `labs-decisions.md`'s own
   status column hadn't been updated — read the ledger, not a handoff doc's status column, for
-  what's actually settled. Both docs now cross-reference each other.
+  what's actually settled. All three docs now cross-reference each other.
   **Next, in order:** (1) **rebuild the atom kit FROM the card** (`rw-design-system/` is stale),
   closing the ~20 inline `TOKEN-GAP:` markers — start with the `#C28E54` vs `--tan` `#c2925a`
   near-miss (#152) and #138(b), the Pin's hard-coded `--panel` ring (#151); (2) **Tier 0.2, the
