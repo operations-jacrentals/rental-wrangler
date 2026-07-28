@@ -919,6 +919,47 @@ input:focus::placeholder{color:transparent}
    the cells overflow the plates at 380px. */
 .seg__opt{font-size:11px !important;letter-spacing:.05em !important;padding-left:7px;padding-right:7px}
 
+/* #157 — the three-way, material-based hover system. The flat off-white wash is gone
+   (removed from the row renderer, not overridden here).
+   Materials answer differently: STEEL lifts, TERMINAL ROWS get a travelling beam, GLASS
+   follows the cursor. Accent appears in NONE of them — hover is "pointed at", not agency,
+   and #137 reserves orange for the latter. The beam is struck in the card's single locked
+   light source, rgba(185,205,235,…), which is also what keeps it inside #146's emission
+   fiction: light is emitted BY glass, never applied TO steel. */
+
+@property --rw-beam{syntax:'<angle>';initial-value:0deg;inherits:false}
+
+/* (a) TERMINAL ROWS — a beam of light travelling around the row's edge.
+   Drawn as a conic gradient masked down to a 1.5px frame, so it wraps the border and never
+   tints the row's face. Rows in a shut cartridge aren't rendered, so this is inherently
+   scoped to open groups. */
+[data-row]::after{
+  content:'';position:absolute;inset:0;pointer-events:none;z-index:2;
+  opacity:0;transition:opacity .16s ease;padding:1.5px;
+  background:conic-gradient(from var(--rw-beam),
+    transparent 0turn, transparent .58turn,
+    rgba(185,205,235,.28) .74turn,
+    rgba(214,230,255,.95) .82turn,
+    rgba(185,205,235,.28) .90turn,
+    transparent 1turn);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+          mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;
+}
+[data-row]:hover::after{opacity:1;animation:rwBeamRun 1.6s linear infinite}
+@keyframes rwBeamRun{to{--rw-beam:1turn}}
+
+/* (b) STEEL — elevation only, no colour at all. A machined face catches more light as it
+   rises; it does not change hue. Pairs with the brightness lifts already ruled above. */
+.gate,.door,.ref,.seg__opt,.field{transition:transform .12s ease,filter .12s ease}
+.gate:hover,.door:hover,.ref:hover,.seg__opt:hover,.field:hover{transform:translateY(-.5px)}
+.gate:active,.door:active,.ref:active,.seg__opt:active,.field:active{transform:translateY(.5px)}
+
+/* (c) GLASS (search well · footer terminal · group message boards) — a gradient following the
+   cursor. NOT BUILT: these three surfaces carry no class or data hook, being styled inline
+   from template vars, so wiring it needs markup changes rather than a rule here. Left undone
+   deliberately instead of half-applied to the wrong elements. */
+
 /* KNOWN-OPEN (#159 fallout, needs Jac's ruling — deliberately NOT patched here):
    the real bucket label "Not Ready/Failed+Reserved" (ledger §4) is longer than any label the
    group head was designed around and overruns the head at the locked 380px compact width,
@@ -1171,7 +1212,26 @@ input:focus::placeholder{color:transparent}
 const RANK = { gray:1, green:2, blue:3, yellow:4, red:5 };
 const HUE  = { gray:'var(--gray)', green:'var(--green)', blue:'var(--blue)', yellow:'var(--yellow)', red:'var(--red)' };
 const TINT = { gray:'transparent', green:'transparent', blue:'transparent', yellow:'var(--yellow-bg)', red:'var(--red-bg)' };
-const JUMPWORD = { red:'Dispatch', yellow:'Return', blue:'Confirm', green:'Reopen', gray:'Reserve' };
+/* #158 — the verb-CTA pattern is LOCKED: the state control names the NEXT ACTION rather than
+   restating the state, per Trips' gate state-machine (spec §8.5, "the State button IS the next
+   action") and the 2026-07-19 dispatcher audit's Bucket-B #2.
+
+   ⚠ THE WORDING BELOW IS PROPOSED, NOT RULED (#158 leaves it open). It is derived from the real
+   Units lifecycle so the audit can judge the pattern; do not cite it as canon.
+
+   Keyed by STATE, not by tone. The mockup keyed these off tone, which made every red row say
+   "Dispatch" whether it was an overdue field call or a failed hydraulic — tone says how loud,
+   only state says what to do next. */
+const JUMPWORD_BY_STATE = {
+  '3d overdue':'Recover',  'Failed':'Repair',     'Promised':'Reassign',
+  'Service due':'Service', 'Needs wash':'Ready up','Hydraulics':'Repair',
+  'On truck':'Track',      'Pickup':'Stage',      'Reserved':'Stage',
+  'Due back':'Check in',   'On rent':'Check in',  'Waiting':'Confirm',
+  'Idle':'Reserve',        'Checked in':'Inspect','Office work':'Complete'
+};
+/* Fallback only, so an unmapped state can never render an empty gate. */
+const JUMPWORD_BY_TONE = { red:'Open', yellow:'Handle', blue:'Confirm', green:'Inspect', gray:'Reserve' };
+const jumpWord = r => JUMPWORD_BY_STATE[r.state] || JUMPWORD_BY_TONE[r.tone];
 
 class Component extends DCLogic {
   state = { filter:null, q:'', expanded:{}, anchored:null, hoverRow:null, jumpRow:null, scrolled:false, atEnd:false, collapsed:{}, card:'Units', pair:['Units','Categories'], pickerOpen:false, sortOpen:false, sort:'Priority', sortDir:'asc', hint:null, flash:null, overOpen:false, searchAll:false };
@@ -1477,10 +1537,12 @@ class Component extends DCLogic {
           // Placeholder: how many of this record's sections are signalling. Tier 2 owns it.
           const sigCount = r.tone === 'red' ? 3 : r.tone === 'yellow' ? 2 : r.tone === 'blue' ? 1 : 0;
           let bg = 'transparent';
-          // Hover and open both read as an off-white wash mixed from --txt, not accent —
-          // orange is reserved for controls the user turns, not for where the cursor is.
+          // #157 — the off-white hover wash is REJECTED. Hover no longer paints the row at all;
+          // a terminal row announces itself with the travelling light-beam wrap (CSS, on
+          // [data-row]:hover). Orange still never appears here — accent means agency (#137).
+          // The OPEN wash below is untouched: it is locked at #156 and says "this row is open",
+          // which is a state of the record, not a report of where the cursor is.
           const hovered = S.hoverRow === r.id;
-          if (hovered) bg = 'color-mix(in oklab, var(--txt) 5%, #101921)';
           if (open) bg = 'color-mix(in oklab, transparent 84%, ' + (gTone === 'gray' ? 'var(--gray)' : HUE[gTone]) + ')';
           if (S.flashRow === r.id) bg = 'color-mix(in oklab, var(--txt) 8%, #101921)';
           let stripe = 'transparent';
@@ -1537,17 +1599,20 @@ class Component extends DCLogic {
             // takes a fill. The leading verb carries its row's hue as an outline instead.
             // Each cell is a section of the record, so each carries a Pin the same way the
             // filter cells and the group heads do: colour = that section's state, number = count.
+            /* Cells 2 and 3 were 'Extend' and 'Call' with tips naming "Rental 4417" — Rentals
+               leftovers that make no sense on a Unit. Re-pointed at what a unit actually has:
+               its work orders and its service history. Wording still PROPOSED (#158). */
             jumpCells: [
-              { click: e => { e.preventDefault(); e.stopPropagation(); }, word: JUMPWORD[r.tone], ink: r.tone === 'red' ? 'var(--red-line)' : HUE[r.tone],
+              { click: e => { e.preventDefault(); e.stopPropagation(); }, word: jumpWord(r), ink: r.tone === 'red' ? 'var(--red-line)' : HUE[r.tone],
                 box: 'inset 0 0 0 1.5px currentColor',
                 pinCls: 'pin pin--' + r.tone, n: String(1 + (i % 3)),
-                tip: 'Rental 4417, ' + r.state + ', ' + r.when },
-              { click: e => { e.preventDefault(); e.stopPropagation(); }, word: 'Extend', ink: 'var(--txt-3)', box: 'none', pinCls: 'pin pin--blue pin--outline', n: String(1 + (i % 2)),
-                tip: 'Extension req, Waiting, ' + (1 + (i % 2)) + ' open' },
-              { click: e => { e.preventDefault(); e.stopPropagation(); }, word: 'Call',   ink: 'var(--txt-3)', box: 'none', pinCls: 'pin pin--gray pin--outline', n: String(2 + (i % 2)),
-                tip: 'Contacts, On file, ' + (2 + (i % 2)) }
+                tip: r.name + ', ' + r.state + (r.when === '—' ? '' : ', ' + r.when) },
+              { click: e => { e.preventDefault(); e.stopPropagation(); }, word: 'WO', ink: 'var(--txt-3)', box: 'none', pinCls: 'pin pin--blue pin--outline', n: String(1 + (i % 2)),
+                tip: 'Work orders, open, ' + (1 + (i % 2)) },
+              { click: e => { e.preventDefault(); e.stopPropagation(); }, word: 'History', ink: 'var(--txt-3)', box: 'none', pinCls: 'pin pin--gray pin--outline', n: String(2 + (i % 2)),
+                tip: 'Service history, on file, ' + (2 + (i % 2)) }
             ],
-            jumpAWord: JUMPWORD[r.tone],
+            jumpAWord: jumpWord(r),
             isAnchorIcon: !somethingElse,
             isPlusIcon: somethingElse,
             anchorBg: anchoredHere ? 'var(--accent)' : (somethingElse ? 'transparent' : 'var(--accent-soft)'),
