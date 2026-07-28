@@ -7,6 +7,12 @@ proceed and picked one. Where a direction was approved but my execution details 
 it were not individually reviewed, the direction row is LOCKED and the detail rows are
 PROPOSED. Rows unnumbered for your ledger merge.
 
+**Ruled 2026-07-28 (session 2):** every PROPOSED/ASSUMED row below now carries its ledger
+disposition inline (LOCKED / REJECTED / DROPPED / PROVISIONAL / CONFIRMED + a `#`). See
+`docs/superpowers/specs/2026-07-20-decisions-ledger.md` #153–#162 for the full rulings —
+this file's own status column is left stale on purpose as a record of what Labs proposed;
+the ledger is the actual source of truth.
+
 | Decision | Why | Status |
 |---|---|---|
 | Panel seams are the 3-layer hairline recipe (dark groove + bright lit-side hairline + faint far-side hairline, lit side ~2× brighter) | A bare dark line reads as a drawn border, not two metal parts meeting; the asymmetry is what sells machining | LOCKED |
@@ -24,30 +30,30 @@ PROPOSED. Rows unnumbered for your ledger merge.
 | OPEN filter's Pin becomes ✕ (red) on hover; clicking it closes all open rows | You asked for a fast way to shed the working set | LOCKED |
 | Three steel tiers + hue tinting per family (chassis/plates/frame/cartridge; saved: navy/graphite/navy/navy, hueStrength 30, contrast 100) | Dialed and saved by you | LOCKED |
 | Corner roll marker geometry (x1, w16, top 0, bottom 37, cap 2, border 2 @ tone 45) | Dialed and saved by you | LOCKED |
-| Radius ladder off at card level: radius 0 on seg/signal/pin/field/ref; chamfers and notches carry the shape language | Radii read as plastic against the machined frame; shape semantics moved into finishes (key/press/well) | PROPOSED |
-| Door keeps its pill (only atom exempt from radius 0); ref icon 5px and hint bubble 9px also survive rounded | Never discussed; the demolition list simply never included them | ASSUMED |
-| Seg cell type 10px/.09em (breaks pass rule C5, 11px/.05em, "one chip size") | Card density at 380px; 11px cells overflowed the plates | PROPOSED |
-| Head controls are a second 17px/9px size (Gate, row Signals, Ref plates) — off the 24px ladder | 24px controls swallowed the 30px rows and heads | PROPOSED |
-| Row Signal column fixed-width: max(66, longest-state × 7.15 + 14)px, all keys share edges | Ragged chip widths made the state column unscannable | PROPOSED |
-| Ref re-cut: dark plate #0B121B, NE 45° notch, borderless, mono, fixed 152×17 slot in rows, hover marquee for long names | Rows needed one name-column edge; the notch ties Refs to the board's corner language | PROPOSED |
-| Mono voice on every control atom incl. Ref (kit Ref was Archivo) | One instrument voice inside the machine; Archivo stays for prose (hints, empty state) | PROPOSED |
-| Pin: stud shadow + 10px mini size on seg cells / row corners; kit data-tip tooltip survives only on Pins | 13px pins overpowered 17px controls; counts had to ride everything | PROPOSED |
-| Row hover/flash washes mix from --txt over #101921 (off-white), never accent; open-row wash = group hue at 16% | Orange is reserved for controls you turn and live info | PROPOSED |
-| Jump band: settle-armed (450ms) in the row's central 24px, warm-swap between rows, cold on dismiss-through-bottom, 320ms leave grace; expanded rows hold their band | Sweeping a list must never flicker menus; paying the settle once keeps it an accelerator | PROPOSED |
-| Jump verbs by state: red Dispatch · yellow Return · blue Confirm · green Reopen · gray Reserve; cells are verbs (no fills), leading verb outlined in row hue | A menu of verbs, nothing "selected"; verb copy invented to demo the pattern | ASSUMED |
-| Hint layer: 540ms dwell, instant swap once up, data-hint-now bypass, suppressed under open jump bands | A tooltip explains so it waits; an accelerator accelerates so it never does | PROPOSED |
+| Radius ladder off at card level: radius 0 on seg/signal/pin/field/ref; chamfers and notches carry the shape language | Radii read as plastic against the machined frame; shape semantics moved into finishes (key/press/well) | **LOCKED — ledger #140** |
+| Door keeps its pill (only atom exempt from radius 0); ref icon 5px and hint bubble 9px also survive rounded | Never discussed; the demolition list simply never included them | **RULED — ledger #153.** Door's pill CONFIRMED (predates this session, ledger #15); ref icon 5px and hint bubble 9px ZEROED to 0 |
+| Seg cell type 10px/.09em (breaks pass rule C5, 11px/.05em, "one chip size") | Card density at 380px; 11px cells overflowed the plates | **REJECTED — ledger #154.** Holds canonical 11px/.05em; overflow solved another way in Tier 0.2 |
+| Head controls are a second 17px/9px size (Gate, row Signals, Ref plates) — off the 24px ladder | 24px controls swallowed the 30px rows and heads | **DEFERRED to Tier 0.2 — ledger #143** |
+| Row Signal column fixed-width: max(66, longest-state × 7.15 + 14)px, all keys share edges | Ragged chip widths made the state column unscannable | **LOCKED — ledger #155.** 7.15px/char constant flagged for re-measurement |
+| Ref re-cut: dark plate #0B121B, NE 45° notch, borderless, mono, fixed 152×17 slot in rows, hover marquee for long names | Rows needed one name-column edge; the notch ties Refs to the board's corner language | **LOCKED — ledger #155** |
+| Mono voice on every control atom incl. Ref (kit Ref was Archivo) | One instrument voice inside the machine; Archivo stays for prose (hints, empty state) | **LOCKED — ledger #142** |
+| Pin: stud shadow + 10px mini size on seg cells / row corners; kit data-tip tooltip survives only on Pins | 13px pins overpowered 17px controls; counts had to ride everything | **LOCKED — ledger #155** |
+| Row hover/flash washes mix from --txt over #101921 (off-white), never accent; open-row wash = group hue at 16% | Orange is reserved for controls you turn and live info | **SPLIT — ledger #156/#157.** Open-row wash LOCKED (#156); the off-white hover wash itself is REJECTED and replaced by a three-way material hover system (#157) |
+| Jump band: settle-armed (450ms) in the row's central 24px, warm-swap between rows, cold on dismiss-through-bottom, 320ms leave grace; expanded rows hold their band | Sweeping a list must never flicker menus; paying the settle once keeps it an accelerator | **LOCKED — ledger #161** |
+| Jump verbs by state: red Dispatch · yellow Return · blue Confirm · green Reopen · gray Reserve; cells are verbs (no fills), leading verb outlined in row hue | A menu of verbs, nothing "selected"; verb copy invented to demo the pattern | **PATTERN LOCKED, wording OPEN — ledger #158.** The verb-CTA pattern is real precedent (Trips' locked Gate state-machine, spec §8.5; the 07-19 dispatcher audit's Bucket-B #2), not invented. The specific five words don't come from either source and need Jac's ruling in Tier 0.2 |
+| Hint layer: 540ms dwell, instant swap once up, data-hint-now bypass, suppressed under open jump bands | A tooltip explains so it waits; an accelerator accelerates so it never does | **LOCKED — ledger #161** |
 | Footer terminal is the card's one voice (scroll state, filter counts, hovers, teleports; loops long text at constant speed) | One place to look; lets every other surface stay quiet | LOCKED |
-| Grip rack: 8 slots = scroll position + group nav, group-hued, shown ≥330px width | The scrollbar was invisible and groups needed a jump control that shows where the heat is | PROPOSED |
+| Grip rack: 8 slots = scroll position + group nav, group-hued, shown ≥330px width | The scrollbar was invisible and groups needed a jump control that shows where the heat is | **PROVISIONAL — ledger #162.** Re-verify in Tier 0.2 |
 | Title is a recessed glass board holding the Units∣Categories pair; tapping the active side opens the picker to reseat that half | The title IS the toggle; a slot machine metaphor — boards seat into the card | LOCKED |
-| Picker rows carry each board's rollup Pin (worst hue + count) | Choose a board knowing what's in it | PROPOSED |
-| Sort lives behind the funnel key; the tray stays open whenever a non-default sort is live | Sort is rare; a live non-default sort must stay visible or it silently lies | PROPOSED |
+| Picker rows carry each board's rollup Pin (worst hue + count) | Choose a board knowing what's in it | **LOCKED — ledger #156** |
+| Sort lives behind the funnel key; the tray stays open whenever a non-default sort is live | Sort is rare; a live non-default sort must stay visible or it silently lies | **LOCKED — ledger #156** |
 | Search-all globe toggle inside the search well | You asked for cross-board search reach from this card | LOCKED |
-| Boot theatre: crtWake flicker, laser drop, per-row type-in + caret sweep (steps(16), .07s stagger) on group open | The terminal fiction needs a power-on; durations tuned to stay under ~.6s | PROPOSED |
+| Boot theatre: crtWake flicker, laser drop, per-row type-in + caret sweep (steps(16), .07s stagger) on group open | The terminal fiction needs a power-on; durations tuned to stay under ~.6s | **LOCKED — ledger #161** |
 | Density compact=30px rows saved; standard 44 / roomy 52 retained as tweaks | 30px dialed and saved by you; the other stops kept from the kit-era ladder | LOCKED |
-| Dispatcher group order: Field Calls, On Rent, Reserved, Available, Returned Today | Attention first, then lifecycle in dispatch reading order | ASSUMED |
-| Yard role order variant (field, avail, onrent, reserved, returned) | Needed a second role to prove the ORDER mechanism; never confirmed | ASSUMED |
-| Breakpoints: facts shown ≥440, "Your Work"→"Work" <420, grip ≥330, when-column 96px ≥440 | Needed values to keep 380px clean; never reviewed at other widths | ASSUMED |
-| All row/rollup data (names, S/Ns, ROLLUP counts, sigCount = 3/2/1/0 by tone, jump-cell counts) | Placeholder demo data; Tier 2 owns the real numbers | ASSUMED |
+| Dispatcher group order: Field Calls, On Rent, Reserved, Available, Returned Today | Attention first, then lifecycle in dispatch reading order | **REAL LIST IDENTIFIED — ledger #159.** This is a simplified demo subset of Jac's actual locked Units group list (2026-07-20 session, ledger §3/§4) — Field Calls first is correct, but Tier 0.2 wires the complete real list, not this shorthand and not app.js's stale, not-yet-updated UNIT_SECTIONS |
+| Yard role order variant (field, avail, onrent, reserved, returned) | Needed a second role to prove the ORDER mechanism; never confirmed | **DROPPED — ledger #159.** The two real roles are staff/mechanic and office+, not "Yard"; the reorder mechanism itself already ships |
+| Breakpoints: facts shown ≥440, "Your Work"→"Work" <420, grip ≥330, when-column 96px ≥440 | Needed values to keep 380px clean; never reviewed at other widths | **PROVISIONAL — ledger #162.** Re-verify in Tier 0.2 |
+| All row/rollup data (names, S/Ns, ROLLUP counts, sigCount = 3/2/1/0 by tone, jump-cell counts) | Placeholder demo data; Tier 2 owns the real numbers | **CONFIRMED — ledger #160.** No ruling needed |
 
 ## Departures from the synced design system
 
@@ -67,7 +73,9 @@ records / pill actions / 14px containers).** Radius 0 across seg, signal, pin, f
 ref; containers are chamfer-clipped polygons (card 16px top / 10px bottom-left; plates
 8–9px; footer 14/8px), Refs and boards take 45° notches, braces cross the notches at
 45°. Rounded survivors: Door's pill, `.ref__icon` 5px, hint bubble 9px, tick/board 1–1.5px
-softening. The opener shape (5px 5px 0 0) is dead at card level.
+softening. The opener shape (5px 5px 0 0) is dead at card level. **Ruled (ledger #153):**
+Door's pill CONFIRMED as pre-existing canon (not this session's exception); `.ref__icon`
+and the hint bubble are ZEROED to 0.
 
 **Card header.** The system-era card had a left-aligned title (board toggle) with a
 one-line description under it. The description was removed in the container-document era
@@ -123,7 +131,10 @@ second frame.
   a glance" job at card level.
 - **Hot-row stripe / permanent hot-row tint** (`fireTreatment`) — rows stay quiet;
   the state key carries the heat. The tweak path is inert in the final template.
-- **Accent row-hover wash** — off-white `--txt` wash won (orange discipline).
+- **Accent row-hover wash** — off-white `--txt` wash won (orange discipline). **Superseded
+  (ledger #157):** the off-white wash itself is now rejected too, replaced by a three-way
+  material hover system (steel = elevation lift, open-group terminal rows = an animated
+  light-beam wrap, message-board glass = a cursor-following gradient).
 - **Terminal scanline film** — built, tweakable, saved OFF; the ultra-faint 3px raster
   on the terminal body stayed.
 - **Jump band above expanded rows** (`jumpPos` fossil) — band now always hangs below.
@@ -145,9 +156,13 @@ second frame.
   is hard-coded (CSS §4.7a).
 - **Density standard/roomy**: row height scales (44/52px) but the 17px control size,
   racks, and head height don't — never reviewed off `compact`.
-- **Yard role ordering** and the whole second role's reality: assumed to exercise the
-  ORDER mechanism.
+- ~~**Yard role ordering** and the whole second role's reality: assumed to exercise the
+  ORDER mechanism.~~ **Ruled (ledger #159): dropped.** The dispatcher order and this variant
+  both matched nothing in the shipped app; Tier 0.2 uses the real GROUP_DEFS/UNIT_SECTIONS
+  order, and this stub is discarded.
 - **Width breakpoints** (330/420/440) and behavior below ~300px: my numbers, unreviewed.
+  **Ruled (ledger #162): accepted provisionally**, re-verify against real column widths in
+  Tier 0.2.
 - **stateW calibration**: 7.15px/char was measured against 11px mono; row keys now
   render 9px. It works because the width is generous, but the formula's premise is stale.
 - **`groupGap` first-group special case**: logic emits `4px` base top pad before group 1
