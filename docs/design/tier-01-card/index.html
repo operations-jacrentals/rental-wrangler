@@ -955,10 +955,19 @@ input:focus::placeholder{color:transparent}
 .gate:hover,.door:hover,.ref:hover,.seg__opt:hover,.field:hover{transform:translateY(-.5px)}
 .gate:active,.door:active,.ref:active,.seg__opt:active,.field:active{transform:translateY(.5px)}
 
-/* (c) GLASS (search well · footer terminal · group message boards) — a gradient following the
-   cursor. NOT BUILT: these three surfaces carry no class or data hook, being styled inline
-   from template vars, so wiring it needs markup changes rather than a rule here. Left undone
-   deliberately instead of half-applied to the wrong elements. */
+/* (c) GLASS (search well · group message boards · footer terminal) — a pool of light that
+   follows the cursor. This is the one surface where light may legitimately be *emitted*
+   rather than merely caught (#146), so glass gets the gradient and steel never does.
+   Position comes from --gx/--gy, written straight onto the node by the glassMove handler.
+   Drawn on ::after: these three are styled inline from template vars, and inline styles
+   cannot declare pseudo-elements, so there is nothing here to collide with. */
+[data-glass]::after{
+  content:'';position:absolute;inset:0;pointer-events:none;z-index:1;
+  opacity:0;transition:opacity .22s ease;
+  background:radial-gradient(90px circle at var(--gx,50%) var(--gy,50%),
+    rgba(185,205,235,.15),rgba(185,205,235,.05) 45%,transparent 72%);
+}
+[data-glass]:hover::after{opacity:1}
 
 /* KNOWN-OPEN (#159 fallout, needs Jac's ruling — deliberately NOT patched here):
    the real bucket label "Not Ready/Failed+Reserved" (ledger §4) is longer than any label the
@@ -1026,7 +1035,7 @@ input:focus::placeholder{color:transparent}
               <span style="position:absolute;bottom:0;right:16%;width:10px;height:3px;background:rgba(0,0,0,.55);pointer-events:none"></span>
               <div style="display:flex;align-items:center;gap:8px;position:relative">
                 <button type="button" class="field" sc-camel-on-click="{{ toggleSort }}" data-hint="Filter and sort this card" style="position:relative;flex:none;padding:0 7px;color:{{ funnelHue }};border-radius:0;background-color:#050A10;background-image:linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,0) 55%,rgba(185,205,235,.04));box-shadow:0 0 0 2px color-mix(in oklab, black 62%, var(--card-head)),0 3.4px 0 rgba(185,205,235,.13),0 -3.2px 0 rgba(185,205,235,.05),inset 0 2px 3.5px rgba(0,0,0,.78);border:0"><span style="width:13px;height:13px;display:block;position:relative"><svg sc-camel-view-box="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M1.6 3.2h12.8L9.4 8.9v4.3l-2.8 1.4V8.9z"></path></svg></span><span style="position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.22) 2px 3px)"></span></button>
-                <div style="flex:1 1 auto;min-width:0;position:relative;display:flex;padding:0;border-radius:0;background-color:#050A10;background-image:linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,0) 55%,rgba(185,205,235,.04));box-shadow:0 0 0 2px color-mix(in oklab, black 62%, var(--card-head)),0 3.4px 0 rgba(185,205,235,.13),0 -3.2px 0 rgba(185,205,235,.05),inset 0 2px 3.5px rgba(0,0,0,.78)">
+                <div data-glass sc-camel-on-mouse-move="{{ glassMove }}" style="flex:1 1 auto;min-width:0;position:relative;display:flex;padding:0;border-radius:0;background-color:#050A10;background-image:linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,0) 55%,rgba(185,205,235,.04));box-shadow:0 0 0 2px color-mix(in oklab, black 62%, var(--card-head)),0 3.4px 0 rgba(185,205,235,.13),0 -3.2px 0 rgba(185,205,235,.05),inset 0 2px 3.5px rgba(0,0,0,.78)">
                   <input type="text" placeholder="Search..." data-hint="Search this card" value="{{ q }}" sc-camel-on-change="{{ onQ }}" style="flex:1 1 auto;min-width:0;height:24px;border-radius:0;font-family:var(--font-mono);font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;text-shadow:0 0 7px currentColor;caret-color:transparent;padding:0 28px 0 9px;outline:none;border:0;background:transparent;color:var(--accent)" sc-camel-on-focus="{{ onQFocus }}" sc-camel-on-blur="{{ onQBlur }}">
                   <sc-if value="{{ qEmpty }}" hint-placeholder-val="{{ true }}">
                     <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);pointer-events:none;font-family:var(--font-mono);font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--txt-3)">Search...</span>
@@ -1079,7 +1088,7 @@ input:focus::placeholder{color:transparent}
                 <span style="position:absolute;left:0;top:0;bottom:0;width:6px;pointer-events:none;background:repeating-linear-gradient(90deg,rgba(185,205,235,.08) 0 1px,rgba(0,0,10,.30) 1px 3px)"></span>
                 <span style="position:absolute;right:0;top:0;bottom:0;width:6px;pointer-events:none;background:repeating-linear-gradient(90deg,rgba(185,205,235,.08) 0 1px,rgba(0,0,10,.30) 1px 3px)"></span>
                 <span style="position:absolute;left:0;right:0;top:0;height:11px;pointer-events:none;background:linear-gradient(180deg,color-mix(in oklab, transparent 89%, {{ g.hue }}),rgba(0,0,0,0))"></span>
-                <div sc-camel-on-click="{{ g.boardClick }}" data-hint="Quick search inside this group" style="flex:none;position:relative;display:flex;align-items:center;justify-content:{{ g.boardJust }};cursor:text;margin-left:9px;width:{{ rackW }};clip-path:polygon(-3px -3px,calc(100% - 11px) -3px,calc(100% + 3px) 11px,calc(100% + 3px) calc(100% + 3px),8px calc(100% + 3px),-3px calc(100% - 8px));box-sizing:border-box;height:calc({{ slotH }} + 5px);background-color:#050A10;background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.20) 2px 3px),linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,0) 55%,rgba(185,205,235,.04));border-radius:1px;box-shadow:inset 0 0 0 1px color-mix(in oklab, black 58%, var(--card-head)),inset 0 1px 2px rgba(0,0,0,.5),0 1px 0 rgba(185,205,235,.10),0 -1px 0 rgba(185,205,235,.04)"><span style="position:absolute;left:0;bottom:0;width:13px;height:13px;pointer-events:none;background:linear-gradient(45deg,rgba(0,0,0,0) calc(50% - 6px),rgba(185,205,235,.15) calc(50% - 5px),rgba(185,205,235,.15) calc(50% - 4.2px),#04070C calc(50% - 3.4px),#04070C calc(50% - 1.8px),rgba(0,0,0,0) calc(50% - 1px))"></span><span style="position:absolute;right:0;top:0;width:13px;height:13px;pointer-events:none;background:linear-gradient(225deg,rgba(0,0,0,0) calc(50% - 6px),rgba(185,205,235,.15) calc(50% - 5px),rgba(185,205,235,.15) calc(50% - 4.2px),#04070C calc(50% - 3.4px),#04070C calc(50% - 1.8px),rgba(0,0,0,0) calc(50% - 1px))"></span><sc-if value="{{ g.boardEditing }}" hint-placeholder-val="{{ false }}"><input type="text" value="{{ g.boardQ }}" sc-camel-on-change="{{ g.onBoardQ }}" sc-camel-on-blur="{{ g.boardBlur }}" ref="{{ g.boardRef }}" style="width:100%;height:100%;border:0;outline:none;background:transparent;text-align:center;font-family:var(--font-mono);font-size:8.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);text-shadow:0 0 7px currentColor;caret-color:transparent"><sc-if value="{{ g.boardEmpty }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none;font-family:var(--font-mono);font-size:8.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#C28E54;text-shadow:0 0 7px currentColor">Search...</span></sc-if><span style="position:absolute;left:calc(50% + {{ g.boardCaretOff }});top:50%;transform:translateY(-50%);width:5px;height:10px;background:var(--accent);box-shadow:0 0 7px var(--accent);animation:termblink 1.1s step-end infinite;pointer-events:none"></span><span ref="{{ g.boardMeasRef }}" style="position:absolute;left:0;top:100%;visibility:hidden;white-space:pre;font-family:var(--font-mono);font-size:8.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase">{{ g.boardQ }}</span></sc-if><sc-if value="{{ g.boardStill }}" hint-placeholder-val="{{ true }}"><span style="font-family:var(--font-mono);font-size:8.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;flex:none;width:max-content;padding:0 4px;animation:{{ g.boardAnim }};color:{{ g.labelHue }}">{{ g.sigWord }}</span></sc-if></div>
+                <div sc-camel-on-click="{{ g.boardClick }}" data-glass sc-camel-on-mouse-move="{{ g.glassMove }}" data-hint="Quick search inside this group" style="flex:none;position:relative;display:flex;align-items:center;justify-content:{{ g.boardJust }};cursor:text;margin-left:9px;width:{{ rackW }};clip-path:polygon(-3px -3px,calc(100% - 11px) -3px,calc(100% + 3px) 11px,calc(100% + 3px) calc(100% + 3px),8px calc(100% + 3px),-3px calc(100% - 8px));box-sizing:border-box;height:calc({{ slotH }} + 5px);background-color:#050A10;background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.20) 2px 3px),linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,0) 55%,rgba(185,205,235,.04));border-radius:1px;box-shadow:inset 0 0 0 1px color-mix(in oklab, black 58%, var(--card-head)),inset 0 1px 2px rgba(0,0,0,.5),0 1px 0 rgba(185,205,235,.10),0 -1px 0 rgba(185,205,235,.04)"><span style="position:absolute;left:0;bottom:0;width:13px;height:13px;pointer-events:none;background:linear-gradient(45deg,rgba(0,0,0,0) calc(50% - 6px),rgba(185,205,235,.15) calc(50% - 5px),rgba(185,205,235,.15) calc(50% - 4.2px),#04070C calc(50% - 3.4px),#04070C calc(50% - 1.8px),rgba(0,0,0,0) calc(50% - 1px))"></span><span style="position:absolute;right:0;top:0;width:13px;height:13px;pointer-events:none;background:linear-gradient(225deg,rgba(0,0,0,0) calc(50% - 6px),rgba(185,205,235,.15) calc(50% - 5px),rgba(185,205,235,.15) calc(50% - 4.2px),#04070C calc(50% - 3.4px),#04070C calc(50% - 1.8px),rgba(0,0,0,0) calc(50% - 1px))"></span><sc-if value="{{ g.boardEditing }}" hint-placeholder-val="{{ false }}"><input type="text" value="{{ g.boardQ }}" sc-camel-on-change="{{ g.onBoardQ }}" sc-camel-on-blur="{{ g.boardBlur }}" ref="{{ g.boardRef }}" style="width:100%;height:100%;border:0;outline:none;background:transparent;text-align:center;font-family:var(--font-mono);font-size:8.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);text-shadow:0 0 7px currentColor;caret-color:transparent"><sc-if value="{{ g.boardEmpty }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none;font-family:var(--font-mono);font-size:8.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#C28E54;text-shadow:0 0 7px currentColor">Search...</span></sc-if><span style="position:absolute;left:calc(50% + {{ g.boardCaretOff }});top:50%;transform:translateY(-50%);width:5px;height:10px;background:var(--accent);box-shadow:0 0 7px var(--accent);animation:termblink 1.1s step-end infinite;pointer-events:none"></span><span ref="{{ g.boardMeasRef }}" style="position:absolute;left:0;top:100%;visibility:hidden;white-space:pre;font-family:var(--font-mono);font-size:8.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase">{{ g.boardQ }}</span></sc-if><sc-if value="{{ g.boardStill }}" hint-placeholder-val="{{ true }}"><span style="font-family:var(--font-mono);font-size:8.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;flex:none;width:max-content;padding:0 4px;animation:{{ g.boardAnim }};color:{{ g.labelHue }}">{{ g.sigWord }}</span></sc-if></div>
                 <div style="flex:none;display:flex;align-items:center;gap:2.5px"><sc-for list="{{ g.slots }}" as="sl" hint-placeholder-count="3"><button type="button" sc-camel-on-click="{{ sl.click }}" sc-camel-on-mouse-enter="{{ sl.enter }}" sc-camel-on-mouse-leave="{{ sl.leave }}" style-hover="filter:brightness(1.5)" style="flex:none;border:0;padding:0;width:{{ slotW }};height:{{ slotH }};transform:skewX(19deg);cursor:pointer;cursor:pointer;border-radius:1.5px;background-color:{{ sl.bg }};background-image:linear-gradient(180deg,rgba(255,255,255,.20),rgba(255,255,255,.04) 42%,rgba(0,0,0,.28));box-shadow:{{ sl.box }}"></button></sc-for><sc-if value="{{ g.slotMore }}" hint-placeholder-val="{{ false }}"><span style="margin-left:3px;font-family:var(--font-mono);font-size:9px;font-weight:800;color:var(--txt-3)">+{{ g.slotMoreN }}</span></sc-if></div>
                 <span class="stamp" style="height:auto;font-size:10px;margin-left:8px">{{ g.count }}</span>
                 <div style="flex:1;min-width:6px"></div>
@@ -1171,7 +1180,7 @@ input:focus::placeholder{color:transparent}
           
           <div style="flex:1 1 auto;min-width:0;height:17px;position:relative;filter:drop-shadow(0 1.5px 0 rgba(185,205,235,.10)) drop-shadow(0 -1px 0 rgba(185,205,235,.05))">
           <div style="position:absolute;inset:0;clip-path:polygon(0 0,100% 0,100% 100%,9px 100%,0 calc(100% - 9px));background:color-mix(in oklab, black 55%, var(--card-head))"></div>
-          <div ref="{{ termBoxRef }}" style="position:absolute;inset:1.4px;clip-path:polygon(0 0,100% 0,100% 100%,8.1px 100%,0 calc(100% - 8.1px));overflow:hidden;background:#050A10;box-shadow:inset 0 1.5px 3px rgba(0,0,0,.7)">
+          <div ref="{{ termBoxRef }}" data-glass sc-camel-on-mouse-move="{{ glassMove }}" style="position:absolute;inset:1.4px;clip-path:polygon(0 0,100% 0,100% 100%,8.1px 100%,0 calc(100% - 8.1px));overflow:hidden;background:#050A10;box-shadow:inset 0 1.5px 3px rgba(0,0,0,.7)">
             <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:{{ termJustify }};padding:0 8px;white-space:nowrap;animation:{{ termAnim }}">
               <span style="display:flex;align-items:center;flex:none;padding-right:{{ termGap }};font-family:var(--font-mono);font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:{{ railHue }};text-shadow:0 0 7px currentColor">{{ railText }}</span>
               <sc-if value="{{ termLoop }}" hint-placeholder-val="{{ false }}">
@@ -1401,6 +1410,17 @@ class Component extends DCLogic {
         });
       }, 220);
     };
+    /* #157(c) — GLASS hover: a gradient that follows the cursor across the search well, the
+       group message boards and the footer terminal. Writes the pointer's element-local
+       position straight onto the node as CSS custom properties instead of into state: a
+       gradient tracking the cursor would otherwise re-render the whole card on every
+       mousemove. The CSS reads --gx/--gy; no React round-trip. */
+    const glassMove = e => {
+      const el = e.currentTarget; if (!el || !el.getBoundingClientRect) return;
+      const b = el.getBoundingClientRect(); if (!b.width || !b.height) return;
+      el.style.setProperty('--gx', (((e.clientX - b.left) / b.width) * 100).toFixed(2) + '%');
+      el.style.setProperty('--gy', (((e.clientY - b.top) / b.height) * 100).toFixed(2) + '%');
+    };
     const dbl = id => {
       clearTimeout(this._t); this._t = null;
       this.setState(s => ({ anchored: id, expanded: Object.assign({}, s.expanded, { [id]: true }) }));
@@ -1461,6 +1481,7 @@ class Component extends DCLogic {
       const gOpen = !S.collapsed[g.id];
       const gGap = groups.length === 0 ? '4px' : (this.props.groupGap ?? 4.2) + 'px';
       groups.push({
+        glassMove,   /* #157(c) — the board is inside this loop, so it needs its own handle on it */
         id: g.id,
         name: g.name,
         count: String(rows.length),
@@ -1781,6 +1802,7 @@ class Component extends DCLogic {
       showMini: false,
       tallyShow: width >= 348,
       filtering,
+      glassMove,   /* #157(c) — card-scope glass: the search well and the footer terminal */
       searchBorder: q ? 'var(--accent)' : 'var(--line)',
       searchBorderBot: q ? 'var(--accent)' : 'rgba(0,0,0,.6)',
       searchBg: q ? 'var(--accent-soft)' : 'transparent',
