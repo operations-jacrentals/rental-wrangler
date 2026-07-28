@@ -1,12 +1,17 @@
-# Decisions Ledger — 2026-07-20 design session (extended to 2026-07-26)
+# Decisions Ledger — 2026-07-20 design session (extended to 2026-07-28)
 
 > **⏱ READ FIRST — this file has two halves.** Everything up to **#100** is a **2026-07-20
-> snapshot**. Decisions made on **07-21, 07-25 and 07-26** are indexed in the
+> snapshot**. Decisions made on **07-21, 07-25, 07-26 and 07-28** are indexed in the
 > **[EXTENSION section](#extension--decisions-after-2026-07-20-101)** at the bottom, starting at
-> **#101** — including **two reversals of the section model**, where a 07-20 row is no longer current.
+> **#101** — including **two reversals of the section model** and, on **07-28, a reversal of the
+> control-shape ladder itself**, where a 07-20 row is no longer current.
 > **Do not cite a row from the first half without checking for a superseding row in the extension.**
 > Grepping this file and stopping at the first hit is exactly how a superseded decision got cited as
 > canon on 2026-07-26.
+>
+> ⚠️ **If you are writing a Labs prompt or touching UI, start at [#139](#2026-07-28--the-labs-handoff-a-new-design-language-not-just-containers).**
+> The 07-28 handoff replaced the atom language: radius 0 + chamfers, mono controls, nine new
+> components. Anything written against the four-shape ladder now contradicts the approved card.
 
 **Purpose.** This is the flat, scannable index of every locked decision made during the
 2026-07-20 UI-redesign brainstorming session, cross-checked against every doc it should
@@ -561,8 +566,45 @@ history is what lets a future reader tell "settled" from "settled twice."
 | 137 | **ACCENT ≠ STATUS — accent means USER AGENCY, status hues mean THE WORLD.** Selected row, active filter, hover ring, focus ring — anything that says *"you did this"* — is `--accent`. A status hue (red/yellow/blue/green/gray) always describes the **record's** condition, never the user's choice. Raised by the Tier 0.1a card artifact, which needed a colour for "you did this" that could not be mistaken for the world being on fire. **Accepted as a law** (Jac, 2026-07-26). Sharpens the existing "orange = touchable" line in `wrangler-style` §3: touchable is the affordance, agency is the *state* of having acted | ✅ **CURRENT** [Jac] |
 | 138 | **Two atom gaps found by the 0.1a card artifact — real, not workarounds to keep.** (a) The kit has **no real text input** — Search is currently faked with a `.field`, which is an *opener* (it opens something) and therefore the wrong shape for free typing. (b) The **Pin's ring colour is hard-coded** to `--panel`, so a Pin breaks on any surface that isn't a panel. Both need fixing in the kit and re-syncing | ⏳ **OPEN — queued for the kit** |
 
+## 2026-07-28 — the Labs handoff: a NEW DESIGN LANGUAGE, not just containers
+
+The Tier 0.1a Labs session ended and handed back four artifacts, landed verbatim in
+**`docs/design/tier-01-handoff/`** (`final-card.html` · `tier-01-card.css` · `atom-rebuild.md` ·
+`labs-decisions.md`). **That folder is the detail; these rows are the index.** Labs' own table
+carries ~39 rows at its own status grades — the rows below are the ones with blast radius, plus
+Jac's rulings on the four that gated everything else.
+
+⚠️ **Read #139 before any later prompt.** The session did not stay inside Tier 0.1: it replaced
+the atom language underneath it. Prompts written against the old kit will now contradict the card.
+
+| # | Decision | Status |
+|---|---|---|
+| 139 | **The 0.1a session produced a NEW DESIGN LANGUAGE, not a container pass.** Nine new components (slot rack · message board · footer terminal · grip rack · roll marker · laser frame · hint layer · jump band · dormant tongues), four new *finishes* (machined ring · well glass · dark key · pressed key), the radius ladder demolished, every control re-voiced to mono, hover rings deleted card-wide. **File it as Tier 0.0-replacement + 0.1, not "containers"** — the atom kit is now BEHIND the card and must be rebuilt from it | ✅ **CURRENT** [`tier-01-handoff/atom-rebuild.md`] |
+| 140 | **RADIUS 0 + CHAMFERS IS THE CARD'S IDENTITY.** `border-radius:0` on seg/signal/pin/field/ref; containers are chamfer-clipped polygons; Refs and boards take 45° notches. **Supersedes the four-shape control ladder (#131, #127).** Reason: radii read as plastic against a machined frame; shape semantics moved into the finishes (key/press/well) instead | ✅ **LOCKED — Jac, 2026-07-28.** Reverses #131 |
+| 141 | **The three rounded survivors are UNRULED, not decided** — Door keeps its pill, `.ref__icon` keeps 5px, the hint bubble keeps 9px. Labs marked these ASSUMED: *"never discussed; the demolition list simply never included them."* **Do not cite them as intentional** until Jac rules | ⏳ **OPEN — needs a ruling** |
+| 142 | **MONO on every control atom; Archivo for prose only.** Ref was the last control speaking Archivo and is now mono. Archivo survives in hint bubbles and empty states. One instrument voice inside the machine | ✅ **LOCKED — Jac, 2026-07-28.** Narrows #127's "Archivo body voice" to prose |
+| 143 | **The 24px control law is HELD, not broken — the shell decides.** The card introduces a second 17px/9px control size to serve 30px compact rows. **Do not treat the 17px tier as canon**: real column width (Tier 0.2) decides whether compact density is even necessary, and that ruling comes first | ⏳ **DEFERRED to Tier 0.2 — Jac, 2026-07-28** |
+| 144 | **Three LOCKED decisions silently vanished during the session and are RE-IMPOSED as hard requirements on the next pass** (Jac, 2026-07-28): the **click contract** (#50/#62/#63/#67 — single-click expands in place, double-click anchors, 220ms discriminator, anchor icon → "+" on other expanded rows), the **group taxonomy** (#31/#34/#35 — attention groups hidden when empty, lifecycle groups always present and gray), and the **Dashboard as the 13th surface** (#44/#45/#86–89 — charts, not rows). All three were *in* prompt 0.1a and were still dropped | ✅ **RE-IMPOSED — must appear in the next prompt's Inherit list** |
+| 145 | **New failure mode: DRIFT, not omission.** #134 assumed the danger was a prompt that never carried a decision. This session carried all three of #144's decisions in the prompt and lost them anyway, across hours of visual iteration — and the handoff did not notice, because a handoff reports what it *did* decide and is blind to what it stopped carrying. **Mitigation: an explicit "still honoured?" checklist of inherited decisions in every handoff prompt**, not just an Inherit list at the start | ✅ **CURRENT** |
+| 146 | **The emission fiction — light is emitted BY GLASS, never applied TO STEEL.** Steel and chips stay matte (canon holds); terminal text, carets, open-row rack ticks and filled grip slots glow. This is how the card honours "matte — no glow" while still reading as an instrument | ✅ **LOCKED — Jac's dial, saved** [labs-decisions.md § Departures] |
+| 147 | **Three filter chips, not two — Your Work · Open · Done.** *Open* (everything expanded here) is new; hovering its Pin turns it into a red ✕ that closes every open row. Each cell carries a Pin: hue = worst state in that bucket, number = count, hidden at zero. **Done wears green, Your Work falls back to accent** — Your Work spans red∪yellow∪blue, so no single status hue is honest (the #137 carve-out). Sort is not a chip; it lives behind the funnel key | ✅ **LOCKED.** Extends #37 |
+| 148 | **UNITS and CATEGORIES are ONE card with a two-board pair seated in it** — the title *is* the toggle; tapping the active side opens a picker that reseats that half from the full board list, each row showing its own rollup Pin. Not two cards, no second frame. **This changes the grid inventory and must be reconciled with #133 in Tier 0.2** | ✅ **LOCKED — but flags a #133 conflict** |
+| 149 | **The card header lost its description line.** Its context job migrated to the footer terminal + the per-group message boards. A `showDesc` computation survives in logic consumed by nothing — fossil. **Supersedes the locked description-line slot** in prompt 0.1a's header contents | ✅ **CURRENT.** Reverses part of §5 |
+| 150 | **The footer terminal is the card's one voice**, and it is WHY hover rings could be deleted: every hover explanation moved there. Removing or demoting it re-orphans every hover that used to have a ring — it is load-bearing, not decoration | ✅ **LOCKED** |
+| 151 | **#138(a) is SOLVED differently — the text-input gap closed by abandoning `.field` for search.** Search is now a raw `<input>` inside a well div with a measured glowing block caret; the funnel key is `.field`'s one surviving use. **#138(b) — the Pin's hard-coded `--panel` ring — is NOT addressed** and stays open | ⏳ **#138(a) closed · #138(b) still OPEN** |
+| 152 | **A near-miss token was caught and must be unified: `#C28E54` vs the real `--tan` `#c2925a`.** Labs flagged it rather than shipping a second tan. ~20 further `TOKEN-GAP:` markers sit inline in `tier-01-card.css` naming the token each hard-coded value wants | ⏳ **OPEN — token pass queued with the kit rebuild** |
+
 ## Still open after 07-20 (do not treat as locked)
 
+- **The three rounded survivors** (#141) — Door's pill, `.ref__icon` 5px, hint bubble 9px in an
+  otherwise radius-0 design. Labs flagged them as accidents, not decisions. **Unruled.**
+- **The 17px control tier** (#143) — deferred to Tier 0.2; the 24px law stands until the shell rules.
+- **Everything in `tier-01-handoff/labs-decisions.md` § Still open** — the Tier 1 drawer is a
+  placeholder, teleport is a stub, cross-board search (globe) is unspecified, board quick-search
+  persistence was asked and never answered, density standard/roomy was never reviewed off compact,
+  the width breakpoints (330/420/440) are Labs' numbers unreviewed, and `stateW`'s 7.15px/char
+  formula was measured against 11px mono but now renders at 9px. **~14 PROPOSED and ~6 ASSUMED rows
+  in that file still need Jac's individual sign-off** — they are not canon because they are written down.
 - **The card header's seating — 1a / 1b / 1c** (Tier 0.1a artifact §2.2). Two bands (identity over
   controls, the artifact's recommendation), one band, or identity-cap + filter rail in the body.
   **Jac has not chosen.** Do not treat 1a as settled just because it is marked RECOMMENDED.

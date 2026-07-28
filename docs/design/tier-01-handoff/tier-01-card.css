@@ -1,0 +1,891 @@
+/* ============================================================================
+   TIER 0.1 CSS — every style rule behind "Final Card"
+   ----------------------------------------------------------------------------
+   PROVENANCE. The live card is a Design Component whose styling lives in three
+   places: (1) the synced design-system stylesheets (tokens + atom classes),
+   (2) a <style> override block in the card's own head, and (3) inline styles
+   on every structural element, some computed from saved tweak values.
+   This sheet is the complete extraction of all three. Kit CSS is reproduced
+   verbatim, comments intact. Inline recipes are transcribed one class per
+   structural part, values verbatim from the source; where a value was computed
+   from a tweak, the formula is given in a comment and the rule carries the
+   value RESOLVED AT THE SAVED TWEAK SETTINGS (listed in §0.2).
+
+   MARKERS — every block is exactly one of:
+     [INHERITED]    unchanged from the synced design system
+     [CHANGED-ATOM] existed in the synced system, no longer identical to it
+     [NEW]          invented this session
+   Token gaps are flagged inline:  TOKEN-GAP: <hard value> -> <proposed token>
+
+   §0  saved tweak values + resolved steel palette
+   §1  tokens (:root)                                            [INHERITED]
+   §2  kit atoms the card consumes                               [INHERITED]
+   §3  the card's kit overrides (verbatim from its <style>)      [CHANGED-ATOM]
+   §4  structural recipes transcribed from inline styles         [NEW]
+   §5  keyframes                                                 [NEW]
+   §6  dead styles still present in source (do not delete blind)
+   ============================================================================ */
+
+
+/* ============================================================================
+   §0.1 — LIGHT MODEL (read first)
+   One cool light source, above and slightly forward. Every lit hairline in
+   this file is the same colour at a different alpha:
+       rgb(185,205,235)  at .03 – .30           TOKEN-GAP: rgba(185,205,235,*) -> --lit (with alpha steps)
+   Every groove/seam dark is near-black mixed FROM the panel it cuts into:
+       color-mix(in oklab, black 52–62%, var(--card-head))
+                                                 TOKEN-GAP: the 52/55/58/60/62% seam family -> --seam-1..--seam-5
+   Asymmetry is deliberate: below-edge highlights ~2x brighter than above-edge
+   (light from above). See CLAUDE.md "Panel-seam effect" — user-approved.
+   ============================================================================ */
+
+/* ============================================================================
+   §0.2 — SAVED TWEAK VALUES (the card's data-props defaults, as dialed in)
+   liveWidth:380px · density:compact (row H=30px) · fireTreatment:tint (INERT, §6)
+   slotOverlay:false (INERT, §6) · role:dispatcher
+   chassisHue:navy · plateHue:graphite · frameHue:navy · cartridgeHue:navy
+   hueStrength:30 · steelContrast:100
+   markerX:1 · markerW:16 · markerTopY:0 · markerBotY:37 · markerTopCap:2
+   markerBorderOn:true · markerBorderW:2 · markerBorderTone:45
+   groupGap:3.4px · groupInset:1.5px
+   laserStyle:thin-glow · laserW:3.5 · laserGlow:0   (beam geometry is now
+     hard-coded in the polygons of §4.8 — these three no longer reach the DOM, §6)
+   dryStyle:segmented · railFrameW:0.5 · railPad:0 · railRadius:0.5 (all INERT, §6)
+   slotH:14px (slot ticks; slotW = slotH*0.55 = 7.7px; board width rackW = 114px)
+   termStyle:flat (terminal scanline overlay OFF) · termDark:85
+
+   RESOLVED STEEL PALETTE at these settings (formula in §4.0):
+     chassis face   #171F2A                      TOKEN-GAP: #171F2A -> --steel
+     plate face     color-mix(in oklab, #4A5160 30%, #232E3E)
+                                                 TOKEN-GAP: #232E3E -> --steel-plate; #4A5160 -> --steel-graphite
+     cartridge face #171F2A
+     frame face     #171F2A
+     frame base     var(--card-head)
+     terminal bg    color-mix(in oklab, black 85%, var(--card))
+   ============================================================================ */
+
+
+/* ============================================================================
+   §1 — TOKENS                                                      [INHERITED]
+   Verbatim from tokens/tokens.css. Consumed, not modified. The card ignores
+   the radius ladder at render time (see §3) but the tokens were not edited.
+   ============================================================================ */
+
+/* [INHERITED] Rental Wrangler — design tokens
+ * Source of truth: html.dv2 in style.css (the locked redesign canon).
+ * See rw-design-system/README.md for usage notes.
+ */
+:root{
+  /* ---- LOCKED CANON (verbatim from html.dv2 in style.css — do not approximate) ---- */
+  --accent:#ff7e1f; --accent-soft:rgba(255,126,31,.15); --accent-line:rgba(255,126,31,.5);
+  --orange:#ff7e1f; --orange-bg:rgba(255,126,31,.14); --on-orange:#1a1205;
+  --bg:#0a0d11; --bg-2:#0f1318; --panel:#171d25; --panel-2:#1b222c;
+  --card:#12171e; --card-head:#1a212b;
+  --line:#2c343f; --line-soft:#212834;
+  --txt:#eef2f7; --txt-2:#aab4c1; --txt-3:#838e9c;
+  --green:#34d399; --green-bg:rgba(52,211,153,.14);
+  --yellow:#eed44b; --yellow-bg:rgba(238,212,75,.15);
+  --red:#ff4242; --red-bg:rgba(255,66,66,.13);
+  --blue:#6394cc; --blue-bg:rgba(99,148,204,.15);
+  --gray:#8b94a3; --gray-bg:rgba(139,148,163,.14);
+  --chip-radius:2px;    /* state chips — SQUARED (was 7px) */
+  --red-fill:#d63636; --on-red-fill:#fdfdfd; --commit:#2f6fd0; --on-commit:#fdfdfd; --tan:#c2925a;
+  --radius:14px;
+  --font: "Archivo", "Helvetica Neue", -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  /* ---- STRUCTURAL ADDITIONS (not in the locked block — see README/report) ---- */
+  --h:24px;             /* one control height — style skill's 24-28px range; matches shipped --dv2-h */
+  --item-radius:8px;    /* records — Ref and +Add: things that ARE, or link to, a record */
+  --pill-radius:999px;  /* actions — Doors ONLY. Nothing else may take this radius. */
+  --red-line:color-mix(in oklch, var(--red) 78%, var(--txt)); /* legible red once outline chips lost their tint */
+  --on-gray:#12171d; --on-blue:#0a1220; --on-yellow:#241d05; --on-green:#06231a;
+}
+@supports (color: oklch(from red l c h)){
+  :root{ --red-line: oklch(from var(--red) .74 .215 h); }
+}
+
+
+/* ============================================================================
+   §2 — KIT ATOMS THE CARD CONSUMES                                 [INHERITED]
+   Verbatim from _ds_bundle.css (only the blocks this card's markup reaches;
+   demo-scaffolding classes the card never mounts are omitted from this sheet
+   — they are unchanged in the kit, not abridged from the card).
+   Where §3 later overrides a property, the kit original still loads first;
+   the cascade order in the live file is: tokens -> bundle -> card <style>.
+   ============================================================================ */
+
+/* [INHERITED] */
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg)}
+
+/* [INHERITED] ================= SIGNAL — read-only state; colour=state, fill=today ================= */
+.signal{height:var(--h); display:inline-flex; align-items:center; gap:6px; padding:0 10px;
+  border-radius:var(--chip-radius); font-family:var(--font-mono); font-size:11px; font-weight:800;
+  letter-spacing:.05em; text-transform:uppercase; white-space:nowrap}
+.signal--gray.signal--filled   {background:var(--gray);     color:var(--on-gray)}
+/* C15 · the secondary chip is a TRUE outline — no tint backfill, 1px border in its own hue */
+.signal--outline{background:transparent; border:1px solid currentColor}
+.signal--gray.signal--outline  {color:var(--gray)}
+.signal--blue.signal--filled   {background:var(--blue);     color:var(--on-blue)}
+.signal--blue.signal--outline  {color:var(--blue)}
+.signal--yellow.signal--filled {background:var(--yellow);   color:var(--on-yellow)}
+.signal--yellow.signal--outline{color:var(--yellow)}
+.signal--red.signal--filled    {background:var(--red-fill); color:var(--on-red-fill)}
+.signal--red.signal--outline   {color:var(--red-line)}
+.signal--green.signal--filled  {background:var(--green);    color:var(--on-green)}
+.signal--green.signal--outline {color:var(--green)}
+
+/* [INHERITED] ================= GATE — a Signal you can turn: + leading centred chevron ================= */
+.gate{height:var(--h); display:inline-flex; align-items:center; gap:2px; padding:0 10px 0 7px;
+  border-radius:var(--chip-radius); font-family:var(--font-mono); font-size:11px; font-weight:800;
+  letter-spacing:.05em; text-transform:uppercase; white-space:nowrap; cursor:pointer; border:0}
+.gate__chev{display:inline-flex; align-items:center; justify-content:center; width:12px; height:12px; flex:none}
+.gate__chev svg{width:12px; height:12px; display:block}
+.gate--blue  {background:var(--blue);     color:var(--on-blue)}
+.gate--yellow{background:var(--yellow);   color:var(--on-yellow)}
+.gate--red   {background:var(--red-fill); color:var(--on-red-fill)}
+.gate--green {background:var(--green);    color:var(--on-green)}
+.gate--gray  {background:var(--gray);     color:var(--on-gray)}
+
+/* [INHERITED] ================= STAMP — a quiet fact: chip text, no box, no colour ================= */
+.stamp{height:var(--h); display:inline-flex; align-items:center; padding:0 3px;
+  font-family:var(--font-mono); font-size:11px; font-weight:700; letter-spacing:.05em;
+  text-transform:uppercase; color:var(--txt-3)}
+.stamp--more{color:var(--accent)}
+.stamp-sep{color:var(--line); font-family:var(--font-mono); font-size:11px}
+
+/* [INHERITED] ================= REF — a linked record: accent-tinted icon backing + name ================= */
+.ref{height:var(--h); display:inline-flex; align-items:center; gap:6px; padding:0 9px 0 3px;
+  border-radius:var(--chip-radius); border:1px solid var(--line); background:transparent;
+  font-family:var(--font); font-weight:600; font-size:12.5px; color:var(--txt);
+  text-decoration:none; cursor:pointer}
+.ref:hover{border-color:var(--accent)}
+.ref__icon{width:18px; height:18px; border-radius:4px; flex:none; display:inline-flex;
+  align-items:center; justify-content:center; background:var(--accent-soft); color:var(--accent)}
+.ref__icon svg{width:12px; height:12px}
+.ref__id{font-family:var(--font-mono); font-size:9px; color:var(--txt-3); font-weight:600}
+
+/* [INHERITED] ================= DOOR — a verb action: radius=pill, colour=intent, never status ================= */
+.door{height:var(--h); display:inline-flex; align-items:center; padding:0 15px;
+  border-radius:var(--pill-radius); font-family:var(--font-mono); font-size:11px; font-weight:800;
+  letter-spacing:.05em; text-transform:uppercase; cursor:pointer; border:0; white-space:nowrap}
+.door--commit {background:var(--commit); color:var(--on-commit)}
+.door--add    {background:transparent; border:1.5px dashed var(--commit); color:var(--commit); padding:0 13px}
+.door--money  {background:var(--green); color:var(--on-green)}
+.door--destroy{background:var(--red-fill); color:var(--on-red-fill)}
+.door--ghost  {background:transparent; border:1px solid var(--line); color:var(--txt-2)}
+
+/* [INHERITED] segmented toggle */
+.seg{height:var(--h); display:inline-flex; border:1px solid var(--line); border-radius:var(--chip-radius); overflow:hidden}
+.seg__opt{display:inline-flex; align-items:center; padding:0 11px; font-family:var(--font-mono);
+  font-size:10px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--txt-3);
+  border-right:1px solid var(--line); cursor:pointer; background:transparent}
+.seg__opt:last-child{border-right:0}
+.seg__opt--on-yellow{background:var(--yellow); color:var(--on-yellow)}
+.seg__opt--on-red{background:var(--red-fill); color:var(--on-red-fill)}
+.seg__opt--on-blue{background:var(--blue); color:var(--on-blue)}
+.seg__opt--on-accent{background:var(--accent); color:var(--on-orange)}
+
+/* [INHERITED] ================= FIELDS ================= */
+.field{height:var(--h); display:inline-flex; align-items:center; gap:8px; padding:0 10px;
+  border-radius:var(--chip-radius); border:1px solid var(--line); font-family:var(--font);
+  font-size:12px; color:var(--txt); cursor:pointer; background:transparent}
+
+/* [INHERITED] ── ATOM CONSISTENCY PASS rules that still bind this card ──
+   (approved 2026-07-25, rw-consistency-pass.css; the pass rules the card
+   overrides are repeated with their overrides in §3) */
+.signal, .stamp, .stamp-sep, .dead-text, .t-hint{cursor:default}          /* C7 */
+.stamp-sep{height:var(--h); display:inline-flex; align-items:center; font-weight:700}  /* C4 */
+.ref{font-size:13px; border-radius:var(--item-radius); padding:0 10px 0 3px}  /* C3/C17 — superseded by §3 .ref */
+.ref__icon{border-radius:5px}
+.gate{border-radius:5px 5px 0 0}      /* C21/C22 opener shape — superseded by §3 .gate radius 0 */
+.field{border-radius:5px 5px 0 0}     /*            "         — superseded by §3 .field radius 0 */
+.seg__opt{font-size:11px; letter-spacing:.05em}   /* C5 — superseded by §3 (10px/.09em) */
+.seg__opt--on-green{background:var(--green); color:var(--on-green)}
+.seg__opt--on-gray{background:var(--gray); color:var(--on-gray)}
+.ref, .field, .seg, .seg__opt, .contact, .hlink, .dead-text, .stamp{flex:none; white-space:nowrap}  /* C19 */
+button.gate, button.door, button.seg__opt, button.field{-webkit-appearance:none; appearance:none;   /* C12 */
+  margin:0; text-align:left}
+button.seg__opt{border-top:0; border-bottom:0; border-left:0}
+/* C20 · ONE universal hover ring — the card NEUTRALIZES this for most atoms in §3 */
+.gate:hover, .door:hover, .seg:hover, .field:hover, .ref:hover,
+.contact:hover, .hlink:hover, .pin[data-tip]:hover{outline:1.5px solid var(--accent); outline-offset:2px}
+.gate:active, .door--commit:active, .door--money:active, .door--destroy:active{filter:brightness(.94)}  /* C8 */
+.seg__opt:not([class*="seg__opt--on"]):hover{color:var(--txt)}   /* C9 — superseded by §3 (txt-3) */
+.ref:hover, .contact:hover{color:var(--accent)}                  /* C9 — superseded by §3 (txt) */
+.gate:focus-visible, .door:focus-visible, .seg__opt:focus-visible, .field:focus-visible,   /* C10 */
+.ref:focus-visible, .contact:focus-visible, .hlink:focus-visible{outline:2px solid var(--accent-line);
+  outline-offset:2px}
+/* M11 · a STATE pair toggle reads as Signals (card thickens the outline in §3) */
+.seg--state .seg__opt{border-right:0}
+.seg--state .seg__opt:not([class*="seg__opt--on"]){background:transparent; color:var(--gray);
+  box-shadow:inset 0 1px 0 currentColor, inset 0 -1px 0 currentColor, inset -1px 0 0 currentColor}
+.seg--state .seg__opt:not([class*="seg__opt--on"]):first-child{
+  box-shadow:inset 0 1px 0 currentColor, inset 0 -1px 0 currentColor, inset 1px 0 0 currentColor}
+.seg--state .seg__opt--off-red:not([class*="seg__opt--on"]){color:var(--red-line)}
+/* M7 · the status picker IS the segmented toggle, stacked */
+.seg--stack{flex-direction:column; height:auto; align-items:stretch; width:100%}
+.seg--stack{border-radius:5px 5px var(--chip-radius) var(--chip-radius)}
+.seg--stack__cap{border-radius:5px 5px 0 0; border-bottom:0}  /* C22 · accent header caps the top */
+.seg--stack .seg__opt{height:var(--h); flex:none; border-right:0;
+  border-bottom:1px solid var(--line); justify-content:flex-start}
+.seg--stack .seg__opt:last-child{border-bottom:0}
+.seg--stack .seg__sw{width:8px; height:8px; border-radius:2px; flex:none; margin-right:8px}
+
+/* [INHERITED] N1 · PIN — the universal corner marker (new atom). Colour = state, fill = today,
+   exactly like a Signal. 13px, deliberately OFF the 24px control ladder, and zero
+   layout footprint: absolutely positioned, no margin, no reserved space. */
+.pin-wrap{position:relative; display:inline-flex; flex:none}
+.pin{position:absolute; top:0; left:100%; transform:translate(-70%,-50%); z-index:2;
+  height:13px; min-width:13px; padding:0 4px;
+  display:inline-flex; align-items:center; justify-content:center; gap:3px;
+  border-radius:var(--chip-radius); font-family:var(--font-mono); font-size:9px; font-weight:800;
+  letter-spacing:.04em; text-transform:uppercase; white-space:nowrap; font-variant-numeric:tabular-nums;
+  cursor:pointer; text-decoration:none; outline:1.5px solid var(--panel)}
+.pin svg{width:9px; height:9px; display:block}
+.pin--gray  {background:var(--gray);     color:var(--on-gray)}
+.pin--blue  {background:var(--blue);     color:var(--on-blue)}
+.pin--yellow{background:var(--yellow);   color:var(--on-yellow)}
+.pin--red   {background:var(--red-fill); color:var(--on-red-fill)}
+.pin--green {background:var(--green);    color:var(--on-green)}
+.pin--outline{background:var(--panel); border:1px solid currentColor}
+.pin--gray.pin--outline  {color:var(--gray)}
+.pin--blue.pin--outline  {color:var(--blue)}
+.pin--yellow.pin--outline{color:var(--yellow)}
+.pin--green.pin--outline {color:var(--green)}
+.pin--red.pin--outline   {color:var(--red-line)}
+.pin:focus-visible{outline:2px solid var(--accent-line); outline-offset:2px}
+.pin:after{content:attr(data-tip); position:absolute; bottom:calc(100% + 8px); right:-2px; display:none;
+  padding:7px 10px; max-width:260px; background:var(--panel-2); border:1px solid var(--line);
+  border-radius:9px; color:var(--txt); font-family:var(--font); font-size:11.5px; font-weight:400;
+  line-height:1.4; letter-spacing:0; text-transform:none; white-space:nowrap; z-index:6; pointer-events:none}
+.pin[data-tip]:hover:after,
+.pin[data-tip]:focus-visible:after{display:block}
+
+
+/* ============================================================================
+   §3 — THE CARD'S KIT OVERRIDES                                 [CHANGED-ATOM]
+   Verbatim from the live card's <style> block, comments intact, original
+   order preserved (order matters: later rules win ties). This block is where
+   the kit's matte chips became machined keys. Individual rules annotated.
+   ============================================================================ */
+
+/* [NEW — page reset for the card's stage] */
+html,body{margin:0;background:#0a0d11}   /* = --bg. TOKEN-GAP: #0a0d11 -> var(--bg) (hard-coded duplicate) */
+a{color:var(--accent)}
+a:hover{color:var(--txt)}
+
+/* [NEW] input chrome for the CRT search wells */
+input::placeholder{color:transparent}
+input:focus::placeholder{color:transparent}
+
+/* [CHANGED-ATOM] every control atom speaks mono — kit already had mono on most;
+   this forces it on .ref/.ref__label (kit .ref was --font/Archivo) */
+button,input,.seg__opt,.door,.field,.pin,.chip,.stamp,.ref,.ref__label{font-family:var(--font-mono)}
+.seg__opt{font-weight:800;letter-spacing:.09em}
+
+/* Kit overrides ruled 2026-07-26 — pseudo-class rules on design-system classes, so they
+   cannot be expressed inline. Filed as finding #5 in the container document's §5.
+   C20: the hover ring goes around the CELL you are pointing at, not the whole track.
+   C9:  no atom changes its ink on hover. The ring and the border say "touchable". */
+/* [CHANGED-ATOM] outline chips thicken from 1px to 1.5px */
+.signal--outline{border-width:1.5px}
+.pin--outline{border-width:1.5px}
+/* [CHANGED-ATOM] state-pair outline thickens to match */
+.seg--state .seg__opt:not([class*="seg__opt--on"]){box-shadow:inset 0 1.5px 0 currentColor,inset 0 -1.5px 0 currentColor,inset -1.5px 0 0 currentColor}
+.seg--state .seg__opt:not([class*="seg__opt--on"]):first-child{box-shadow:inset 0 1.5px 0 currentColor,inset 0 -1.5px 0 currentColor,inset 1.5px 0 0 currentColor}
+/* [CHANGED-ATOM] kit C20 hover ring OFF for pins and toggles (per-cell ring below instead) */
+.pin:hover{outline:none}
+/* [CHANGED-ATOM] mini Pin — a 10px sub-size when a Pin rides a seg cell or pin-wrap
+   inside rows (kit Pin is a single 13px size) */
+.seg__opt > .pin,.pin-wrap > .pin{height:10px;min-width:10px;font-size:8px;line-height:10px;padding:0 2.5px}
+.seg:hover{outline:none}
+.seg__opt:hover{outline:1.5px solid var(--accent);outline-offset:-1.5px;position:relative;z-index:1}
+/* [CHANGED-ATOM] C9 reversal on Ref: hover ink is txt (not accent), border stays --line */
+.ref:hover{color:var(--txt)}
+.ref:hover{border-color:var(--line)}
+.ref:hover{outline:none}
+.contact:hover{color:var(--txt)}
+.seg__opt:not([class*="seg__opt--on"]):hover{color:var(--txt-3)}
+/* [CHANGED-ATOM] C5 reversal: seg text drops to 10px/.09em (kit pass says 11px/.05em).
+   Deliberate — card density; the "one chip size" law is knowingly broken here. */
+.seg__opt{font-size:10px;letter-spacing:.09em}
+
+/* [CHANGED-ATOM] the PRESSED KEY — an ON seg cell reads as a key pressed into the
+   plate: darkened top gradient + machined ring + inset press shadow.
+   The shadow stack is the standard "machined ring": 2px seam, lit edge below
+   (+3.4px), faint far edge above (-3.2px), press-in inset. */
+.seg__opt[class*="seg__opt--on"]{background-image:linear-gradient(180deg,rgba(0,0,0,.26),rgba(0,0,0,0) 48%);box-shadow:0 0 0 2px color-mix(in oklab, black 62%, var(--card-head)),0 3.4px 0 rgba(185,205,235,.13),0 -3.2px 0 rgba(185,205,235,.05),inset 0 1.5px 3px rgba(0,0,0,.5)}
+.seg__opt{border:0 !important}
+/* [CHANGED-ATOM] the DARK KEY — an OFF seg cell is a dark glass key: near-black well,
+   scanlines, deep inset. TOKEN-GAP: #050A10 -> --well (deep glass well face) */
+.seg__opt:not([class*="seg__opt--on"]){background-color:#050A10;background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.20) 2px 3px),linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,0) 55%,rgba(185,205,235,.04));box-shadow:0 0 0 2px color-mix(in oklab, black 62%, var(--card-head)),0 3.4px 0 rgba(185,205,235,.13),0 -3.2px 0 rgba(185,205,235,.05),inset 0 2px 3.5px rgba(0,0,0,.78)}
+/* [CHANGED-ATOM] context strips: cells inside the jump band / title pair sit on shared
+   glass, so per-cell wells are stripped */
+[data-jump-band] .seg__opt{background:transparent !important;box-shadow:none}
+[data-pair] .seg__opt:not([class*="seg__opt--on"]){background:transparent !important;box-shadow:none !important}
+[data-pair] .seg__opt[class*="seg__opt--on"]{box-shadow:inset 0 1.5px 3px rgba(0,0,0,.5),0 1px 0 rgba(255,255,255,.05) !important}
+.seg--stack .seg__opt:not([class*="seg__opt--on"]){background:transparent !important;box-shadow:none !important}
+/* [CHANGED-ATOM] radius ladder OFF at card level — machined chamfers replace radii */
+.field{border-radius:0 !important}
+/* [CHANGED-ATOM] Signal, filled: glass cap over the hue fill + machined ring */
+.signal[class*="--filled"]{background-image:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.02) 45%,rgba(0,0,12,.16));box-shadow:0 0 0 2px color-mix(in oklab, black 62%, var(--card-head)),0 0 0 3px rgba(185,205,235,.09),0 5px 0 -2px rgba(185,205,235,.13),inset 0 1px 0 rgba(255,255,255,.28),inset 0 -1.5px 2.5px rgba(0,0,0,.32)}
+/* [CHANGED-ATOM] Signal, outline: same ring, no fill */
+.signal[class*="--outline"]{box-shadow:0 0 0 2px color-mix(in oklab, black 62%, var(--card-head)),0 0 0 3px rgba(185,205,235,.07),0 5px 0 -2px rgba(185,205,235,.10),inset 0 1px 0 rgba(185,205,235,.07)}
+.seg,.seg__opt,.signal,.pin{border-radius:0 !important}
+.seg{border:0 !important}
+/* [CHANGED-ATOM] GATE re-cut for the group head: 17px tall (off the 24px ladder),
+   9px type, square, glass cap + machined ring. Height/padding/font are the
+   "head control" size shared with row Signals below. */
+.gate{height:17px;padding:0 7px 0 4px;font-size:9px;border-radius:0;background-image:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.02) 45%,rgba(0,0,12,.16));box-shadow:0 0 0 1.5px color-mix(in oklab, black 58%, var(--card-head)),0 0 0 2.5px rgba(185,205,235,.08),inset 0 1px 0 rgba(255,255,255,.14),inset 0 -1.5px 2.5px rgba(0,0,0,.35)}
+/* [CHANGED-ATOM] cool-tone Gates go DARK-KEY: near-black key face + 1px hue ring +
+   flat hue text. Red/yellow Gates keep their hue fill (heat stays loud).
+   TOKEN-GAP: #0A0F16 -> --key (dark key face) */
+.gate--blue,.gate--green,.gate--gray{background-color:#0A0F16 !important;background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.22) 2px 3px),linear-gradient(180deg,rgba(0,0,0,.32),rgba(0,0,0,0) 55%,rgba(185,205,235,.03)) !important}
+.gate--blue{color:var(--blue) !important;box-shadow:0 0 0 1.5px color-mix(in oklab, black 58%, var(--card-head)),0 0 0 2.5px rgba(185,205,235,.08),inset 0 0 0 1px color-mix(in oklab, transparent 40%, var(--blue)),inset 0 -1.5px 2.5px rgba(0,0,0,.5) !important}
+.gate--green{color:var(--green) !important;box-shadow:0 0 0 1.5px color-mix(in oklab, black 58%, var(--card-head)),0 0 0 2.5px rgba(185,205,235,.08),inset 0 0 0 1px color-mix(in oklab, transparent 40%, var(--green)),inset 0 -1.5px 2.5px rgba(0,0,0,.5) !important}
+.gate--gray{color:var(--txt-2) !important;box-shadow:0 0 0 1.5px color-mix(in oklab, black 58%, var(--card-head)),0 0 0 2.5px rgba(185,205,235,.08),inset 0 0 0 1px color-mix(in oklab, transparent 45%, var(--gray)),inset 0 -1.5px 2.5px rgba(0,0,0,.5) !important}
+/* [CHANGED-ATOM] Pin gains physicality: drop + top bevel */
+.pin{box-shadow:0 1px 2px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.22)}
+/* [CHANGED-ATOM] ROW SIGNALS take the head-control size and the same dark-key
+   treatment as Gates (cool tones only) */
+[data-row] .pin-wrap > .signal{height:17px !important;font-size:9px !important;padding:0 7px !important;box-shadow:0 0 0 1.5px color-mix(in oklab, black 58%, var(--card-head)),0 0 0 2.5px rgba(185,205,235,.08),inset 0 1px 0 rgba(255,255,255,.14),inset 0 -1.5px 2.5px rgba(0,0,0,.35)}
+[data-row] .signal--blue,[data-row] .signal--green,[data-row] .signal--gray{background-color:#0A0F16 !important;background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.22) 2px 3px),linear-gradient(180deg,rgba(0,0,0,.32),rgba(0,0,0,0) 55%,rgba(185,205,235,.03)) !important}
+[data-row] .signal--blue{color:var(--blue) !important;box-shadow:0 0 0 1.5px color-mix(in oklab, black 58%, var(--card-head)),0 0 0 2.5px rgba(185,205,235,.08),inset 0 0 0 1px color-mix(in oklab, transparent 40%, var(--blue)),inset 0 -1.5px 2.5px rgba(0,0,0,.5) !important}
+[data-row] .signal--green{color:var(--green) !important;box-shadow:0 0 0 1.5px color-mix(in oklab, black 58%, var(--card-head)),0 0 0 2.5px rgba(185,205,235,.08),inset 0 0 0 1px color-mix(in oklab, transparent 40%, var(--green)),inset 0 -1.5px 2.5px rgba(0,0,0,.5) !important}
+[data-row] .signal--gray{color:var(--txt-2) !important;box-shadow:0 0 0 1.5px color-mix(in oklab, black 58%, var(--card-head)),0 0 0 2.5px rgba(185,205,235,.08),inset 0 0 0 1px color-mix(in oklab, transparent 45%, var(--gray)),inset 0 -1.5px 2.5px rgba(0,0,0,.5) !important}
+/* [CHANGED-ATOM] ROW REF is a fixed-slot plate: 152x17, 11px type */
+[data-row] .ref{height:17px !important;width:152px !important;flex:none !important;font-size:11px !important}
+/* [NEW] Ref marquee — hover scrolls a name that doesn't fit (152px slot, 114px text run) */
+[data-row] .ref:hover .rmq{width:max-content;text-overflow:clip;animation:refScroll 2.6s ease-in-out infinite alternate}
+/* [CHANGED-ATOM] REF re-cut: square, borderless, dark plate, 45° notch cut off the
+   top-right corner (13px), machined seam + lit edge.
+   TOKEN-GAP: #0B121B -> --ref-plate */
+.ref{border-radius:0 !important;border:0 !important;background:#0B121B !important;clip-path:polygon(-3px -3px,calc(100% - 13px) -3px,calc(100% + 3px) 13px,calc(100% + 3px) calc(100% + 3px),-3px calc(100% + 3px));box-shadow:0 0 0 1.5px color-mix(in oklab, black 62%, var(--card-head)),0 2.5px 0 -1px rgba(185,205,235,.10),inset 0 1px 0 rgba(185,205,235,.06)}
+/* [CHANGED-ATOM] C20 hover ring neutralized across the card — hover feedback moved
+   to the footer terminal + brightness lifts instead (ruled this session) */
+.gate:hover,.door:hover,.seg:hover,.field:hover,.ref:hover,.contact:hover,.hlink:hover,.pin[data-tip]:hover,.seg__opt:hover{outline:none !important}
+.gate:hover{filter:brightness(1.12)}
+.door:hover,.seg__opt:not([class*="seg__opt--on"]):hover{filter:brightness(1.15)}
+
+
+/* ============================================================================
+   §4 — STRUCTURAL RECIPES                                               [NEW]
+   Transcribed 1:1 from the card's inline styles. Class names here are
+   DOCUMENTATION names (the DC uses inline styles, not these classes); nesting
+   below mirrors DOM order. All values verbatim; tweak-fed values resolved at
+   §0.2 and flagged with their formula.
+   ============================================================================ */
+
+/* ---- §4.0 · steel tint formula (logic-side, reproduced for rebuilders) ----
+   accent seeds: graphite #4A5160 · orange #B45A1E · rust #8A3A1A · yellow #B49214
+     gold #8F7420 · green #1F7A48 · teal #177A72 · red #C03A4A · pink #B0446E
+     purple #6E4AA8 · navy = none (base passes through)
+                       TOKEN-GAP: the seed map -> --steel-graphite … --steel-purple
+   contrast c = (steelContrast - 100) * 0.3        -> 0 at saved 100
+   shade(base, d) = color-mix(in oklab, white|black |d|%, base)
+   tint(family, base, d) = seed ? color-mix(in oklab, seed hueStrength%, shade(base,d))
+                                : shade(base, d)
+   chassisFace = tint(chassisHue, #171F2A, -c/2)   -> #171F2A
+   chassisPlate= tint(plateHue,   #232E3E, +c)     -> color-mix(in oklab, #4A5160 30%, #232E3E)
+   cartFace    = tint(cartridgeHue, #171F2A, 0)    -> #171F2A
+   frameFace   = tint(frameHue,   #171F2A, 0)      -> #171F2A
+   frameBase   = tint(frameHue, var(--card-head), 0) -> var(--card-head)
+   TOKEN-GAP: #171F2A -> --steel; #232E3E -> --steel-plate                      */
+
+/* [NEW] §4.1 · STAGE — the void the card floats in */
+.stage{background:var(--bg);min-height:100vh;padding:36px;display:flex;justify-content:center;
+  align-items:flex-start;font-family:var(--font);color:var(--txt-2);line-height:1.55}
+.stage__card-col{flex:none;width:380px}   /* liveWidth tweak, saved 380 */
+
+/* [NEW] §4.2 · CARD FRAME — three stacked layers under a chamfered clip.
+   Master silhouette: 16px chamfers on top corners + bottom-right, 10px bottom-left.
+   Each inner layer re-cuts the same polygon shrunk to its inset so the chamfer
+   edges stay parallel (16 -> 15.3 @1.2px inset -> 14.5 @2.6px inset). */
+.card{position:relative;display:flex;flex-direction:column;height:540px;padding:2.5px 5px 4px 5px;
+  box-sizing:border-box;
+  clip-path:polygon(16px 0,calc(100% - 16px) 0,100% 16px,100% calc(100% - 16px),calc(100% - 16px) 100%,10px 100%,0 calc(100% - 10px),0 16px)}
+.card__seam{position:absolute;inset:0;background:color-mix(in oklab, black 52%, var(--card-head));  /* frameBase */
+  clip-path:polygon(16px 0,calc(100% - 16px) 0,100% 16px,100% calc(100% - 16px),calc(100% - 16px) 100%,10px 100%,0 calc(100% - 10px),0 16px)}
+.card__bevel{position:absolute;inset:1.2px;   /* the lit rim — brightest at top, light from above */
+  background:linear-gradient(180deg,color-mix(in oklab, white 32%, #171F2A),color-mix(in oklab, white 13%, #171F2A) 22%,color-mix(in oklab, white 6%, #171F2A) 75%,color-mix(in oklab, white 3%, #171F2A));
+  clip-path:polygon(15.3px 0,calc(100% - 15.3px) 0,100% 15.3px,100% calc(100% - 15.3px),calc(100% - 15.3px) 100%,9.3px 100%,0 calc(100% - 9.3px),0 15.3px)}
+.card__face{position:absolute;inset:2.6px;background:#171F2A;   /* frameFace */
+  clip-path:polygon(14.5px 0,calc(100% - 14.5px) 0,100% 14.5px,100% calc(100% - 14.5px),calc(100% - 14.5px) 100%,8.5px 100%,0 calc(100% - 8.5px),0 14.5px)}
+
+/* [NEW] §4.3 · INTERIOR COLUMN — the card's inner body; its clip grows ±5px lips
+   past the frame on both sides across the well band, so the well's side rails
+   read as part of the frame. Steel texture image: assets/steel-navy2.png
+   (bundled into Final Card.html).  TOKEN-GAP: rgba(130,170,230,*) -> --lit-cool wash */
+.card__interior{position:relative;flex:1;min-height:0;display:flex;flex-direction:column;
+  background-color:color-mix(in oklab, var(--blue) 7%, var(--card));
+  background-image:linear-gradient(168deg,rgba(130,170,230,.045),rgba(0,0,18,.22)),url('assets/steel-navy2.png');
+  clip-path:polygon(15.5px 0,calc(100% - 15.5px) 0,100% 15.5px,calc(100% + 5px) 20.5px,calc(100% + 5px) calc(100% - 19px),100% calc(100% - 14px),calc(100% - 14px) 100%,8px 100%,0 calc(100% - 8px),-5px calc(100% - 13px),-5px 20.5px,0 15.5px)}
+
+/* [NEW] §4.4 · CHASSIS HEADER BAND — lighter steel tier; seam recipe at its foot */
+.chassis-head{position:relative;display:flex;flex:none;
+  background-color:#171F2A;background-image:url('assets/steel-navy2.png');   /* chassisFace */
+  border-bottom:1px solid color-mix(in oklab, black 60%, var(--card-head));
+  box-shadow:0 1px 0 rgba(185,205,235,.08),inset 0 -1px 0 rgba(185,205,235,.04);   /* seam: lit below, faint above */
+  clip-path:polygon(15.5px 0,calc(100% - 15.5px) 0,100% 15.5px,100% 100%,0 100%,0 15.5px)}
+.chassis-head__col{flex:1;min-width:0;display:flex;flex-direction:column;padding:0 2px 2px 0}
+.chassis-head__row1{position:relative;display:flex;align-items:stretch}
+.marker-hit{position:relative;flex:none;width:20px;margin-right:-1.2px}   /* hover zone under the corner flag */
+
+/* [NEW] §4.4a · TITLE PLATE — mounted plate (groove + face), top edge open */
+.title-plate{position:relative;flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px;
+  padding:13px 4px 8px 4px}
+.title-plate__groove{position:absolute;inset:0;clip-path:polygon(0 5px,100% 5px,100% 100%,0 100%);
+  background:color-mix(in oklab, black 52%, var(--card-head))}
+.title-plate__face{position:absolute;inset:1.2px;clip-path:polygon(0 5px,100% 5px,100% 100%,0 100%);
+  background-color:color-mix(in oklab, #4A5160 30%, #232E3E);   /* chassisPlate */
+  background-image:linear-gradient(180deg,rgba(185,205,235,.14),rgba(185,205,235,.04) 45%,rgba(0,0,12,.19)),url('assets/steel-navy2.png');
+  box-shadow:inset 0 -1px 0 rgba(185,205,235,.06)}
+
+/* [NEW] §4.4b · TITLE BOARD — the recessed glass well holding the Units|Categories
+   pair toggle. Well recipe = --well face + press shadow + machined ring; the
+   scanline film is a separate overlay span so cells can sit under it. */
+.title-board{flex:0 1 auto;min-width:0;max-width:100%;position:relative;border-radius:0;
+  background-color:#050A10;
+  background-image:linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,0) 55%,rgba(185,205,235,.04));
+  box-shadow:0 0 0 2px color-mix(in oklab, black 62%, var(--card-head)),0 3.4px 0 rgba(185,205,235,.13),0 -3.2px 0 rgba(185,205,235,.05),inset 0 2px 3.5px rgba(0,0,0,.78)}
+  /* open state adds: outline:1.5px solid var(--accent) (titleRing) */
+.title-board__scan{position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.20) 2px 3px)}
+.title-board__cell{position:relative;min-width:0;flex:0 1 auto;padding:0 8px;gap:5px}  /* .seg__opt; icon svg 12x12 stroke 1.5 */
+.title-board__cell-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.title-board__prompt{flex:1 1 auto;min-width:0;justify-content:flex-start;padding:0 10px;   /* picker-open state */
+  color:var(--accent);background:transparent;box-shadow:inset 0 0 0 1.5px currentColor}
+
+/* [NEW] §4.4c · BOARD PICKER — stacked seg hanging off the title board */
+.board-picker{position:absolute;top:100%;left:0;width:202px;z-index:9;max-height:262px;
+  overflow-y:auto;overflow-x:hidden;background:var(--panel);
+  border-radius:0 0 var(--chip-radius) var(--chip-radius);border-top:0;
+  outline:1.5px solid var(--accent);outline-offset:0;scrollbar-width:none}
+.board-picker__row{gap:7px;position:relative}   /* .seg__opt; svg 12x12, stroke weight 2 seated / 1.4 not */
+.board-picker__pin{left:auto;right:9px;top:50%;transform:translateY(-50%)}  /* rollup Pin, right-seated */
+
+/* [NEW] §4.4d · FILTER PLATE — right-hand mounted plate; chamfered NE/SE corners */
+.filter-plate{position:relative;flex:none;display:flex;align-items:center;
+  padding:13px 12px 8px 11px;margin-left:-1.2px}
+.filter-plate__groove{position:absolute;left:0;right:0;bottom:0;top:5px;
+  clip-path:polygon(0 0,calc(100% - 8.5px) 0,100% 8.5px,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%);
+  background:color-mix(in oklab, black 52%, var(--card-head))}
+.filter-plate__face{position:absolute;left:1.2px;right:1.2px;bottom:1.2px;top:6.2px;
+  clip-path:polygon(0 0,calc(100% - 7.8px) 0,100% 7.8px,100% calc(100% - 7px),calc(100% - 7px) 100%,0 100%);
+  background-color:color-mix(in oklab, #4A5160 30%, #232E3E);
+  background-image:linear-gradient(180deg,rgba(185,205,235,.14),rgba(185,205,235,.04) 45%,rgba(0,0,12,.19)),url('assets/steel-navy2.png');
+  box-shadow:inset 0 -1px 0 rgba(185,205,235,.06)}
+.filter-plate__seg{flex:none;overflow:visible;position:relative;background:transparent;gap:7px}
+.filter-plate__cell{position:relative;padding:0 7px}   /* Work / Open / Done, each a .seg__opt + Pin */
+
+/* [NEW] §4.5 · BAND-2 PLATE — search band; hangs off band 1 with two black
+   mounting notches on its bottom edge; whole plate drop-shadowed as one piece */
+.search-plate{position:relative;display:flex;flex-direction:column;gap:7px;
+  padding:9px 13px 9px 12px;margin:-1.2px 0 0 3px;
+  filter:drop-shadow(0 1px 2px rgba(0,0,0,.55)) drop-shadow(0 1.2px 0 rgba(185,205,235,.13))}
+.search-plate__groove{position:absolute;inset:0;
+  clip-path:polygon(9px 0,100% 0,100% 100%,9px 100%,0 calc(100% - 9px),0 9px);
+  background:color-mix(in oklab, black 52%, var(--card-head))}
+.search-plate__face{position:absolute;inset:1.2px;
+  clip-path:polygon(8px 0,100% 0,100% 100%,8px 100%,0 calc(100% - 8px),0 8px);
+  background-color:color-mix(in oklab, #4A5160 30%, #232E3E);
+  background-image:linear-gradient(180deg,rgba(185,205,235,.14),rgba(185,205,235,.04) 45%,rgba(0,0,12,.19)),url('assets/steel-navy2.png');
+  box-shadow:inset 0 1px 0 rgba(185,205,235,.13)}
+.search-plate__notch{position:absolute;bottom:0;width:10px;height:3px;background:rgba(0,0,0,.55);
+  pointer-events:none}   /* one at left:16%, one at right:16% */
+.search-plate__row{display:flex;align-items:center;gap:8px;position:relative}
+
+/* [NEW] §4.5a · FUNNEL KEY — the filter/sort opener (.field recut as a well key) */
+.funnel-key{position:relative;flex:none;padding:0 7px;border-radius:0;border:0;
+  color:var(--txt-3);   /* -> var(--accent) whenever sort tray is open or non-default */
+  background-color:#050A10;
+  background-image:linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,0) 55%,rgba(185,205,235,.04));
+  box-shadow:0 0 0 2px color-mix(in oklab, black 62%, var(--card-head)),0 3.4px 0 rgba(185,205,235,.13),0 -3.2px 0 rgba(185,205,235,.05),inset 0 2px 3.5px rgba(0,0,0,.78)}
+.funnel-key__icon{width:13px;height:13px;display:block;position:relative}   /* funnel svg, stroke 1.7 */
+.funnel-key__scan{position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.22) 2px 3px)}
+
+/* [NEW] §4.5b · SEARCH WELL — CRT input; same well recipe; phosphor text */
+.search-well{flex:1 1 auto;min-width:0;position:relative;display:flex;padding:0;border-radius:0;
+  background-color:#050A10;
+  background-image:linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,0) 55%,rgba(185,205,235,.04));
+  box-shadow:0 0 0 2px color-mix(in oklab, black 62%, var(--card-head)),0 3.4px 0 rgba(185,205,235,.13),0 -3.2px 0 rgba(185,205,235,.05),inset 0 2px 3.5px rgba(0,0,0,.78)}
+.search-well__input{flex:1 1 auto;min-width:0;height:24px;border-radius:0;
+  font-family:var(--font-mono);font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;
+  text-shadow:0 0 7px currentColor;    /* phosphor glow — deliberate matte-rule departure */
+  caret-color:transparent;             /* native caret replaced by the block caret below */
+  padding:0 28px 0 9px;outline:none;border:0;background:transparent;color:var(--accent)}
+.search-well__ghost{position:absolute;left:9px;top:50%;transform:translateY(-50%);pointer-events:none;
+  font-family:var(--font-mono);font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--txt-3)}   /* "Search..." — shown only while empty & unfocused */
+.search-well__caret{position:absolute;top:6px;width:6px;height:12px;background:var(--accent);
+  box-shadow:0 0 7px var(--accent);animation:termblink 1.1s step-end infinite;pointer-events:none}
+  /* left = 10px + measured text width (hidden measurer span mirrors input text) */
+.search-well__scan{position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.22) 2px 3px)}
+.search-well__globe{position:absolute;right:3px;top:2px;height:20px;width:22px;padding:0;border:0;
+  background:transparent;color:var(--txt-3);   /* -> var(--accent) when search-all is on */
+  display:flex;align-items:center;justify-content:center;cursor:pointer}
+  /* hover: color:var(--accent); globe svg 13x13 stroke 1.5 */
+
+/* [NEW] §4.5c · SORT TRAY — appears under the search row; stays open while a
+   non-default sort is live. Active cell carries the asc/desc arrow pair
+   (lit arrow opacity 1, other .32). */
+.sort-tray{align-self:flex-start;position:relative;background:#091018;   /* TOKEN-GAP: #091018 -> --tray */
+  box-shadow:0 0 0 2px color-mix(in oklab, black 62%, var(--card-head)),0 3.4px 0 rgba(185,205,235,.13),inset 0 2px 3.5px rgba(0,0,0,.6)}
+.sort-tray__cell{gap:5px}   /* .seg__opt; arrows svg 11x11 stroke 2, second arrow margin-left:-3px */
+
+/* [NEW] §4.6 · THE WELL — dark viewport the cartridges sit in; spans the full
+   card width (margin 0 -5px reaches under the frame lips) */
+.well{flex:1;min-height:0;position:relative;margin:0 -5px;
+  background:color-mix(in oklab, black 78%, var(--card));
+  box-shadow:inset 0 2px 6px rgba(0,0,0,.6)}
+.well__rail-l{position:absolute;left:0;top:0;bottom:0;width:5px;
+  background:linear-gradient(90deg,color-mix(in oklab, black 52%, var(--card-head)) 0 1.2px,color-mix(in oklab, white 5%, #171F2A) 1.2px 2.6px,#171F2A 2.6px 100%)}
+.well__rail-r{position:absolute;right:0;top:0;bottom:0;width:5px;
+  background:linear-gradient(270deg,color-mix(in oklab, black 52%, var(--card-head)) 0 1.2px,color-mix(in oklab, white 5%, #171F2A) 1.2px 2.6px,#171F2A 2.6px 100%)}
+.well__scroll{position:absolute;inset:0;overflow:auto;scrollbar-width:none}
+.well__scrim{position:absolute;left:5px;right:5px;bottom:0;height:40px;pointer-events:none;
+  background:linear-gradient(to bottom,rgba(4,7,11,0) 0%,rgba(4,7,11,.75) 55%,rgb(6,9,13) 100%);
+  opacity:1}   /* -> 0 once scrolled to end. TOKEN-GAP: rgb(6,9,13)/rgba(4,7,11,*) -> --void */
+
+/* [NEW] §4.7 · CARTRIDGE — one group; margins are the tweaks:
+   margin: {groupGap|3.4px, first group 0} {groupInset|1.5px} 0 {groupInset|1.5px} */
+.cartridge{position:relative;margin:3.4px 1.5px 0 1.5px}
+.cartridge:first-child{margin-top:0}   /* logic emits '0px' for the first, '4px' base top pad before group 1 */
+/* side rails — 7px cartridge steel flanking the terminal */
+.cartridge__rail-l{position:absolute;left:0;top:0;bottom:0;width:7px;z-index:2;pointer-events:none;
+  background-color:#171F2A;   /* cartFace */
+  background-image:linear-gradient(90deg,rgba(185,205,235,.07),rgba(0,0,12,.22)),url('assets/steel-navy2.png')}
+.cartridge__rail-r{position:absolute;right:0;top:0;bottom:0;width:7px;z-index:2;pointer-events:none;
+  background-color:#171F2A;
+  background-image:linear-gradient(270deg,rgba(185,205,235,.07),rgba(0,0,12,.22)),url('assets/steel-navy2.png')}
+/* lit top edges of the rails */
+.cartridge__rail-cap{position:absolute;top:0;width:7px;height:2px;z-index:5;pointer-events:none;
+  background:linear-gradient(180deg,rgba(185,205,235,.17) 0 1px,rgba(185,205,235,.05) 1px 2px)}
+  /* one at left:0, one at right:0 */
+
+/* [NEW] §4.7a · LASER FRAME — groove + beam, each ONE polygon wrapping down the
+   left rail, across the bottom, up the right rail, with a 45° chamfer at the
+   bottom-left and square 90° bends elsewhere. The beam (hue) sits inside the
+   groove (near-black) with symmetric reveal.  TOKEN-GAP: #04070C -> --groove
+   Geometry is HAND-TUNED to: 7px rails, 5px groove offset, 1.4px beam
+   (2.8px->4.2px), chamfer run 10px. The laser tweaks no longer drive it (§6).
+   OPEN state: */
+.cartridge__laser-groove{position:absolute;inset:0;z-index:2;pointer-events:none;background:#04070C;
+  clip-path:polygon(2px 0,5px 0,5px calc(100% - 15px),15px calc(100% - 5px),calc(100% - 5px) calc(100% - 5px),calc(100% - 5px) 0,calc(100% - 2px) 0,calc(100% - 2px) calc(100% - 2px),11px calc(100% - 2px),2px calc(100% - 11px))}
+.cartridge__laser-beam{position:absolute;inset:0;z-index:2;pointer-events:none;background:var(--red);  /* g.hue = group's worst-state hue */
+  clip-path:polygon(2.8px 0,4.2px 0,4.2px calc(100% - 12.2px),12.2px calc(100% - 4.2px),calc(100% - 4.2px) calc(100% - 4.2px),calc(100% - 4.2px) 0,calc(100% - 2.8px) 0,calc(100% - 2.8px) calc(100% - 2.8px),10.8px calc(100% - 2.8px),2.8px calc(100% - 10.8px))}
+/* COLLAPSED state: the beams retract to stubs beside the head */
+.cartridge--shut .cartridge__laser-groove{
+  clip-path:polygon(2px 0,5px 0,5px calc(100% - 9px),11px calc(100% - 3px),calc(100% - 5px) calc(100% - 3px),calc(100% - 5px) 0,calc(100% - 2px) 0,calc(100% - 2px) 100%,10px 100%,2px calc(100% - 8px))}
+.cartridge--shut .cartridge__laser-beam{
+  clip-path:polygon(2.8px 0,4.2px 0,4.2px calc(100% - 7.4px),10.2px calc(100% - 1.4px),calc(100% - 4.2px) calc(100% - 1.4px),calc(100% - 4.2px) 0,calc(100% - 2.8px) 0,calc(100% - 2.8px) 100%,8.8px 100%,2.8px calc(100% - 6px))}
+
+/* [NEW] §4.7b · TONGUES — hanging tabs under the head when collapsed (opacity
+   flips via g.tongueOp; currently emitted 0 in ALL states — see §6 note) */
+.cartridge__tongue-l{position:absolute;left:0;bottom:-5px;width:18%;height:5px;z-index:3;pointer-events:none;
+  opacity:0;transition:opacity .25s;
+  clip-path:polygon(0 0,100% 0,calc(100% - 5px) 100%,0 100%);
+  background-color:#171F2A;
+  background-image:linear-gradient(180deg,rgba(185,205,235,.07),rgba(0,0,12,.22)),url('assets/steel-navy2.png')}
+.cartridge__tongue-l .groove{position:absolute;left:2px;right:6px;top:1.2px;height:2.6px;
+  background:#04070C;box-shadow:inset 0 1px 1.5px rgba(0,0,0,.85)}
+.cartridge__tongue-l .beam{position:absolute;left:3px;right:7px;top:1.8px;height:1.4px;background:var(--red)}  /* g.hue */
+.cartridge__tongue-l .nub{position:absolute;left:2.8px;top:0;height:1.8px;width:1.4px;background:var(--red)}
+.cartridge__tongue-r{position:absolute;right:0;bottom:-5px;width:18%;height:5px;z-index:3;pointer-events:none;
+  opacity:0;transition:opacity .25s;
+  clip-path:polygon(0 0,100% 0,100% 100%,5px 100%);
+  background-color:#171F2A;
+  background-image:linear-gradient(180deg,rgba(185,205,235,.07),rgba(0,0,12,.22)),url('assets/steel-navy2.png')}
+.cartridge__tongue-r .groove{position:absolute;left:6px;right:2px;top:1.2px;height:2.6px;
+  background:#04070C;box-shadow:inset 0 1px 1.5px rgba(0,0,0,.85)}
+.cartridge__tongue-r .beam{position:absolute;left:7px;right:3px;top:1.8px;height:1.4px;background:var(--red)}
+.cartridge__tongue-r .nub{position:absolute;right:2.8px;top:0;height:1.8px;width:1.4px;background:var(--red)}
+
+/* [NEW] §4.8 · GROUP HEAD — the cartridge's steel cap; whole head is the toggle */
+.ghead{position:relative;display:flex;align-items:center;gap:8px;height:30px;padding-right:8.5px;
+  cursor:pointer;
+  background-color:#171F2A;   /* cartFace */
+  background-image:linear-gradient(180deg,rgba(185,205,235,.10),rgba(185,205,235,.02) 45%,rgba(0,0,12,.18)),url('assets/steel-navy2.png');
+  border-bottom:0 solid transparent;   /* collapsed: 1px solid color-mix(in oklab, black 60%, var(--card-head)) */
+  box-shadow:inset 0 1px 0 rgba(185,205,235,.17),inset 0 2px 0 rgba(185,205,235,.05)}   /* the strong lit top edge */
+.ghead--shut{box-shadow:0 1px 0 rgba(185,205,235,.20),inset 0 1px 0 rgba(185,205,235,.17),inset 0 2px 0 rgba(185,205,235,.05),inset 0 -1px 0 rgba(185,205,235,.04)}
+/* hover wash rides ON TOP of the state shadow (200px inset trick) */
+.ghead:hover{box-shadow:inset 0 1px 0 rgba(185,205,235,.17),inset 0 2px 0 rgba(185,205,235,.05),inset 0 0 0 200px rgba(185,205,235,.05)}
+/* knurled grip edges */
+.ghead__knurl{position:absolute;top:0;bottom:0;width:6px;pointer-events:none;
+  background:repeating-linear-gradient(90deg,rgba(185,205,235,.08) 0 1px,rgba(0,0,10,.30) 1px 3px)}
+  /* one at left:0, one at right:0 */
+/* hue bleed — the group's state hue spills faintly down from the top edge */
+.ghead__bleed{position:absolute;left:0;right:0;top:0;height:11px;pointer-events:none;
+  background:linear-gradient(180deg,color-mix(in oklab, transparent 89%, var(--red)),rgba(0,0,0,0))}  /* g.hue */
+
+/* [NEW] §4.8a · MESSAGE BOARD — per-group glass status board (search-bar glass:
+   gradient + ring, NO scanline film is separate… note: this board DOES carry a
+   scanline layer in its background-image stack, unlike the footer terminal).
+   Shows the worst state's text; echoes row name on slot hover (marquee if long);
+   click turns it into a quick-search input scoped to the group.
+   Width = rackW = slotW*10 + 2.5*9 + 14 = 114px at saved slotH 14.
+   Notched: 11px cut off NE corner, 8px off SW. */
+.mboard{flex:none;position:relative;display:flex;align-items:center;justify-content:center;
+  cursor:text;margin-left:9px;width:114px;height:calc(14px + 5px);box-sizing:border-box;
+  clip-path:polygon(-3px -3px,calc(100% - 11px) -3px,calc(100% + 3px) 11px,calc(100% + 3px) calc(100% + 3px),8px calc(100% + 3px),-3px calc(100% - 8px));
+  background-color:#050A10;
+  background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.20) 2px 3px),linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,0) 55%,rgba(185,205,235,.04));
+  border-radius:1px;
+  box-shadow:inset 0 0 0 1px color-mix(in oklab, black 58%, var(--card-head)),inset 0 1px 2px rgba(0,0,0,.5),0 1px 0 rgba(185,205,235,.10),0 -1px 0 rgba(185,205,235,.04)}
+/* 45° seam braces across the notched corners */
+.mboard__brace-sw{position:absolute;left:0;bottom:0;width:13px;height:13px;pointer-events:none;
+  background:linear-gradient(45deg,rgba(0,0,0,0) calc(50% - 6px),rgba(185,205,235,.15) calc(50% - 5px),rgba(185,205,235,.15) calc(50% - 4.2px),#04070C calc(50% - 3.4px),#04070C calc(50% - 1.8px),rgba(0,0,0,0) calc(50% - 1px))}
+.mboard__brace-ne{position:absolute;right:0;top:0;width:13px;height:13px;pointer-events:none;
+  background:linear-gradient(225deg,rgba(0,0,0,0) calc(50% - 6px),rgba(185,205,235,.15) calc(50% - 5px),rgba(185,205,235,.15) calc(50% - 4.2px),#04070C calc(50% - 3.4px),#04070C calc(50% - 1.8px),rgba(0,0,0,0) calc(50% - 1px))}
+.mboard__text{font-family:var(--font-mono);font-size:8.5px;font-weight:800;letter-spacing:.08em;
+  text-transform:uppercase;white-space:nowrap;flex:none;width:max-content;padding:0 4px;
+  color:var(--txt-3)}   /* g.labelHue: hue when hot, txt-3 when gray, echo hue on slot hover */
+  /* on slot-hover echo: justify-content:flex-start + animation:bslide 2.6s ease-in-out infinite alternate */
+.mboard__input{width:100%;height:100%;border:0;outline:none;background:transparent;text-align:center;
+  font-family:var(--font-mono);font-size:8.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--accent);text-shadow:0 0 7px currentColor;caret-color:transparent}
+.mboard__ghost{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none;
+  font-family:var(--font-mono);font-size:8.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  color:#C28E54;text-shadow:0 0 7px currentColor}
+  /* TOKEN-GAP: #C28E54 -> should be var(--tan) #c2925a — NEAR-MISS of an existing token, unify or rule apart */
+.mboard__caret{position:absolute;top:50%;transform:translateY(-50%);width:5px;height:10px;
+  background:var(--accent);box-shadow:0 0 7px var(--accent);
+  animation:termblink 1.1s step-end infinite;pointer-events:none}
+  /* left:calc(50% + measured-half-width + 1px) via hidden measurer */
+
+/* [NEW] §4.8b · SLOT RACK — the multi-segment state-distribution bar.
+   One skewed tick per row (first 8), coloured by that row's state; gray rows
+   read as unlit sockets; a row open on the card makes its tick GLOW; overflow
+   prints "+N". Hover echoes the row onto the message board; click jumps to
+   the row (expanding the group if shut).  TOKEN-GAP: #0A1017 -> --slot-off */
+.slotrack{flex:none;display:flex;align-items:center;gap:2.5px}
+.slotrack__tick{flex:none;border:0;padding:0;width:7.7px;height:14px;   /* slotW = slotH*0.55; slotH tweak */
+  transform:skewX(19deg);cursor:pointer;border-radius:1.5px;
+  background-color:var(--red);   /* sl.bg = row hue; gray rows: #0A1017 */
+  background-image:linear-gradient(180deg,rgba(255,255,255,.20),rgba(255,255,255,.04) 42%,rgba(0,0,0,.28));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.24), inset 0 -1.5px 2px rgba(0,0,0,.45), 0 1px 2px rgba(0,0,0,.6)}
+.slotrack__tick--open{box-shadow:inset 0 1px 0 rgba(255,255,255,.24), inset 0 -1.5px 2px rgba(0,0,0,.45), 0 1px 2px rgba(0,0,0,.6), 0 0 6px color-mix(in oklab, transparent 40%, var(--red))}  /* + hue glow */
+.slotrack__tick:hover{filter:brightness(1.5)}
+.slotrack__more{margin-left:3px;font-family:var(--font-mono);font-size:9px;font-weight:800;color:var(--txt-3)}
+
+/* [NEW] §4.8c · head count + gate cluster */
+.ghead__count{height:auto;font-size:10px;margin-left:8px}   /* on .stamp — off-ladder size */
+.ghead__gate-chev{transition:transform .25s cubic-bezier(.32,.72,0,1)}   /* rotate(-90deg) when shut */
+/* the head's Gate + hot-count Pin sit in a .pin-wrap at flex-end (z-index:3) */
+
+/* [NEW] §4.9 · TERMINAL — the opened cartridge's dark interior */
+.terminal-clip{display:grid;grid-template-rows:1fr;transition:grid-template-rows .38s cubic-bezier(.32,.72,0,1)}
+.cartridge--shut .terminal-clip{grid-template-rows:0fr}
+.terminal-clip__inner{min-height:0;overflow:hidden}
+.terminal{position:relative;padding:5px 10px 11px 10px;
+  background-color:color-mix(in oklab, black 85%, var(--card));   /* termDark 85 */
+  background-image:repeating-linear-gradient(180deg,rgba(185,205,235,.03) 0 1px,rgba(0,0,0,0) 1px 3px);
+  animation:crtWake .62s linear}   /* CRT power-on flicker when opened */
+/* etched corner braces */
+.terminal__brace-tl{position:absolute;left:8px;top:2px;width:6px;height:6px;
+  border-left:1.5px solid rgba(185,205,235,.30);border-top:1.5px solid rgba(185,205,235,.30);pointer-events:none}
+.terminal__brace-tr{position:absolute;right:8px;top:2px;width:6px;height:6px;
+  border-right:1.5px solid rgba(185,205,235,.30);border-top:1.5px solid rgba(185,205,235,.30);pointer-events:none}
+.terminal__brace-br{position:absolute;right:8px;bottom:8.5px;width:6px;height:6px;
+  border-right:1.5px solid rgba(185,205,235,.30);border-bottom:1.5px solid rgba(185,205,235,.30);pointer-events:none}
+/* the floor strip that "drops" with the laser on open */
+.terminal__floor-wrap{position:absolute;inset:0;pointer-events:none;z-index:1;transform-origin:top;
+  animation:rwLaserDrop .24s cubic-bezier(.32,.72,0,1) both}
+.terminal__floor{position:absolute;left:0;right:0;bottom:0;height:7px;
+  background-color:#171F2A;
+  background-image:linear-gradient(0deg,rgba(0,0,12,.22),rgba(185,205,235,.07)),url('assets/steel-navy2.png')}
+/* optional scanline film — saved tweak termStyle:flat leaves this OFF */
+.terminal__scan{position:absolute;inset:0;pointer-events:none;z-index:3;
+  background:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.10) 2px 3px)}
+
+/* [NEW] §4.10 · ROW — one record line inside the terminal */
+.row{position:relative;display:flex;align-items:center;cursor:pointer;gap:8px;
+  padding-right:13px;height:30px;   /* density compact; standard 44px, roomy 52px */
+  background:transparent;outline:none;outline-offset:-1.5px;
+  animation:rwType .28s steps(16,end) both}   /* stagger: delay .14s + .07s*i on group open */
+.row:hover{background:color-mix(in oklab, var(--txt) 5%, #101921)}   /* off-white wash, NOT accent */
+  /* TOKEN-GAP: #101921 -> --row-hover-base */
+.row--open{background:color-mix(in oklab, transparent 84%, var(--red))}   /* group hue wash */
+.row--flash{background:color-mix(in oklab, var(--txt) 8%, #101921);
+  outline:2px solid var(--red)}   /* jump-flash ring in the row's own hue, 1.1s */
+/* the typing caret that sweeps each row on group open */
+.row__caret{position:absolute;left:6px;top:50%;margin-top:-7px;width:7px;height:14px;z-index:3;
+  pointer-events:none;background:var(--accent);box-shadow:0 0 7px var(--accent);opacity:0;
+  animation:rwCaret .28s steps(16,end) both}   /* same stagger as rwType */
+/* state key: .signal overridden by §3 [data-row] rules; wrapper adds: */
+.row__sig{flex:none;width:86px;justify-content:center;padding:0 6px;cursor:pointer;text-decoration:none}
+  /* width = stateW = max(66, round(longest-state-chars * 7.15) + 14)px — sized so every
+     key on the card shares one left/right edge; hover: filter:brightness(1.15) */
+.row__facts{display:flex;align-items:center;overflow:hidden;min-width:0}   /* only at width>=440 */
+.row__when{width:72px;padding-right:8px;flex:none;text-align:right;   /* 96px at width>=440 */
+  font-family:var(--font-mono);font-size:11px;font-weight:700;font-variant-numeric:tabular-nums;
+  color:var(--txt-2)}   /* '—' rows: var(--txt-3) */
+
+/* [NEW] §4.11 · JUMP BAND — the settle-armed section menu under a row */
+.jumpband{position:absolute;left:50%;transform:translateX(-50%);width:69%;top:100%;margin-top:-5px;
+  height:24px;z-index:3;
+  background:color-mix(in oklab, var(--txt) 5%, var(--card));   /* opaque wash — floats over rows */
+  animation:rwPop 1s cubic-bezier(.32,.72,0,1)}
+.jumpband--open-row{background:var(--panel-2)}
+.jumpband__seg{width:100%;height:24px;background:transparent;overflow:visible}
+.jumpband__cell{flex:1 1 0;justify-content:center;position:relative;font-size:9.5px;padding:0 6px}
+  /* leading verb cell: color = row hue (red uses --red-line), box-shadow:inset 0 0 0 1.5px currentColor;
+     other cells: color var(--txt-3), no box. Every cell carries a mini Pin (colour = that
+     section's state, number = count). Verb by state: red Dispatch · yellow Return ·
+     blue Confirm · green Reopen · gray Reserve */
+
+/* [NEW] §4.12 · DRAWER — expanded row body (Tier 1 parked placeholder) */
+.drawer{position:relative;height:200px;padding-top:19px;overflow:hidden;background:var(--panel);
+  border-bottom:1px solid var(--line-soft);animation:rwExpand .26s cubic-bezier(.32,.72,0,1)}
+.drawer__label{padding:14px 12px;font-family:var(--font-mono);font-size:9.5px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--txt-3)}   /* "Tier 1 · detail view (parked)" */
+.drawer__bones{padding:0 12px;display:flex;flex-direction:column;gap:9px}
+.drawer__bone{height:9px;border-radius:2px;background:var(--line)}   /* widths 72% / 54% / 63% */
+.drawer__anchor{position:absolute;top:10px;right:10px;width:22px;height:22px;border-radius:0;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+  background:var(--accent-soft);border:0;color:var(--accent)}          /* default */
+.drawer__anchor--anchored{background:var(--accent);color:var(--on-orange)}
+.drawer__anchor--add{background:transparent;border:1px dashed var(--commit);color:var(--commit)}
+  /* when some OTHER row is anchored: plus icon, add-to-set affordance */
+
+/* [NEW] §4.13 · EMPTY STATE */
+.empty{padding:44px 26px;display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center}
+.empty__title{font-family:var(--font-mono);font-size:11px;font-weight:800;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--accent)}
+.empty__body{margin:0;font-size:12px;line-height:1.5;color:var(--txt-3);max-width:28ch}
+/* + .door.door--ghost "Show all" */
+
+/* [NEW] §4.14 · FOOTER CHASSIS */
+.foot{flex:none;height:32px;display:flex;align-items:center;gap:8px;padding:2px 8px 0 8px;
+  border-top:1px solid color-mix(in oklab, black 60%, var(--card-head));
+  box-shadow:0 -1px 0 rgba(185,205,235,.04),inset 0 1px 0 rgba(185,205,235,.08);   /* seam, lit side down-shifted */
+  background-color:#171F2A;background-image:url('assets/steel-navy2.png');
+  clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,8px 100%,0 calc(100% - 8px));
+  position:relative}
+.foot__groove{position:absolute;left:0;right:0;top:2px;bottom:0;
+  clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,8px 100%,0 calc(100% - 8px));
+  background:color-mix(in oklab, black 52%, var(--card-head))}
+.foot__face{position:absolute;left:1.2px;right:1.2px;top:3.2px;bottom:1.2px;
+  clip-path:polygon(0 0,100% 0,100% calc(100% - 13.3px),calc(100% - 13.3px) 100%,7.3px 100%,0 calc(100% - 7.3px));
+  background-color:#171F2A;
+  background-image:linear-gradient(180deg,rgba(185,205,235,.09),rgba(185,205,235,.02) 45%,rgba(0,0,12,.16)),url('assets/steel-navy2.png')}
+
+/* [NEW] §4.14a · FOOTER TERMINAL — the card's one voice; prints scroll state,
+   filter counts, hover info, teleport flashes; marquee-loops long text */
+.term{flex:1 1 auto;min-width:0;height:17px;position:relative;
+  filter:drop-shadow(0 1.5px 0 rgba(185,205,235,.10)) drop-shadow(0 -1px 0 rgba(185,205,235,.05))}
+.term__groove{position:absolute;inset:0;clip-path:polygon(0 0,100% 0,100% 100%,9px 100%,0 calc(100% - 9px));
+  background:color-mix(in oklab, black 55%, var(--card-head))}
+.term__glass{position:absolute;inset:1.4px;clip-path:polygon(0 0,100% 0,100% 100%,8.1px 100%,0 calc(100% - 8.1px));
+  overflow:hidden;background:#050A10;box-shadow:inset 0 1.5px 3px rgba(0,0,0,.7)}
+.term__line{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  padding:0 8px;white-space:nowrap}
+  /* looping: justify-content:flex-start + animation:termloop Ns linear infinite,
+     N = max(6, round((textW + 36) / 26)); text duplicated with 36px gap */
+.term__text{display:flex;align-items:center;flex:none;padding-right:0;
+  font-family:var(--font-mono);font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--accent);text-shadow:0 0 7px currentColor}
+  /* railHue: accent for live info; end-of-list dims to
+     color-mix(in oklab, var(--accent) 52%, #16202C)   TOKEN-GAP: #16202C -> --term-dim-base */
+.term__scan{position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.22) 2px 3px)}
+
+/* [NEW] §4.14b · GRIP RACK — 8-slot scroll position + group nav (footer right) */
+.grip{position:relative;flex:none;width:130px;align-self:stretch;margin:0 -8px 0 -8px}
+.grip__groove{position:absolute;inset:0;
+  clip-path:polygon(0 9px,9px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%);
+  background:color-mix(in oklab, black 52%, var(--card-head))}
+.grip__glass{position:absolute;left:1.2px;right:1.2px;top:1.2px;bottom:1.2px;
+  clip-path:polygon(0 8.3px,8.3px 0,100% 0,100% calc(100% - 13.3px),calc(100% - 13.3px) 100%,0 100%);
+  background-color:#050A10;
+  background-image:linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,0) 55%,rgba(185,205,235,.04));
+  box-shadow:0 0 0 2px color-mix(in oklab, black 62%, var(--card-head)),0 3.4px 0 rgba(185,205,235,.13),0 -3.2px 0 rgba(185,205,235,.05),inset 0 2px 3.5px rgba(0,0,0,.78)}
+.grip__slots{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:2.5px}
+.grip__slot{position:relative;cursor:pointer;width:8.5px;height:15px;transform:skewX(-19deg);
+  border-radius:1.5px;
+  background-color:color-mix(in oklab, white 14%, var(--card-head));   /* unfilled */
+  background-image:linear-gradient(180deg,rgba(255,255,255,.20),rgba(255,255,255,.04) 42%,rgba(0,0,0,.28));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22), inset 0 -1.5px 2px rgba(0,0,0,.45), 0 1px 2px rgba(0,0,0,.6)}
+.grip__slot::before{content:'';position:absolute;inset:-6px -2px}   /* fat hit area */
+.grip__slot--on{background-color:color-mix(in oklab, black 30%, var(--red));   /* band hue */
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22), inset 0 -1.5px 2px rgba(0,0,0,.45), 0 1px 2px rgba(0,0,0,.6), 0 0 5px color-mix(in oklab, transparent 55%, var(--red))}
+.grip__slot--lit{background-color:color-mix(in oklab, black 12%, var(--red));   /* hovered */
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.28), inset 0 -1.5px 2px rgba(0,0,0,.4), 0 1px 2px rgba(0,0,0,.55), 0 0 8px color-mix(in oklab, transparent 35%, var(--red))}
+  /* slot i maps to scroll range [i/8,(i+1)/8); its hue = the group overlapping that
+     range most; hover prints the group name to the footer terminal; click scrolls
+     the group into view (centered if it fits) */
+
+/* [NEW] §4.15 · ROLL MARKER — the corner flag over the frame's top-left; wears the
+   card's worst-state hue. Geometry from saved tweaks (markerX 1, markerW 16,
+   markerTopY 0, markerBotY 37, markerTopCap 2, markerBorderW 2, markerBorderTone 45):
+     flag   polygon(0 18px, 14px 2px, 100% 2px, 100% 37px, 0 53px)     w 16px
+     border polygon(0 18.83px, 16.83px 2px, 100% 2px, 100% 37.83px, 0 55.83px)  w 18px
+     halo   polygon(0 20.23px, 18.23px 2px, 100% 2px, 100% 38.23px, 0 57.23px)  w 19.2px
+   (border offset = 1.414*borderW; halo = +1.4px more; the 0.414 factor keeps the
+   45° edges parallel — tan(22.5°) relation. Recompute if markerBorderW changes.) */
+.marker{position:absolute;top:0;left:1px;width:16px;height:53px;
+  clip-path:polygon(0 18px,14px 2px,100% 2px,100% 37px,0 53px);
+  background-color:var(--red);   /* rollHue = worst state on the card */
+  background-image:linear-gradient(180deg,rgba(255,255,255,.30),rgba(255,255,255,0) 2.2px),linear-gradient(100deg,rgba(255,255,255,.25),rgba(255,255,255,.07) 45%,rgba(0,0,10,.16));
+  filter:drop-shadow(1px 1.5px 1.5px rgba(0,0,0,.45))}
+.marker__border{position:absolute;top:0;left:1px;width:18px;height:55.83px;pointer-events:none;
+  clip-path:polygon(0 18.83px,16.83px 2px,100% 2px,100% 37.83px,0 55.83px);
+  background:color-mix(in oklab, black 58%, var(--card-head))}
+.marker__halo{position:absolute;top:0;left:1px;width:19.2px;height:57.23px;pointer-events:none;
+  clip-path:polygon(0 20.23px,18.23px 2px,100% 2px,100% 38.23px,0 57.23px);
+  background:rgba(185,205,235,.180)}   /* markerBorderTone 45 -> 45/100*0.4 */
+
+/* [NEW] §4.16 · HINT LAYER — one delegated tooltip for the whole card ([data-hint]).
+   540ms dwell before first show; instant swap once one is up; suppressed while a
+   jump band is open (except on the band's own Pins). NOTE the 9px radius — the
+   one rounded survivor; an inconsistency left as-is. */
+.hint{position:absolute;z-index:30;pointer-events:none;max-width:206px;padding:7px 10px;
+  background:var(--panel-2);border:1px solid var(--line);border-radius:9px;color:var(--txt);
+  font-family:var(--font);font-size:11.5px;line-height:1.7;white-space:pre-line;
+  font-variant-numeric:tabular-nums}
+  /* x clamped to [8, cardW-214]; below target +7px when target top < 52px, else above -7px */
+
+
+/* ============================================================================
+   §5 — KEYFRAMES                                                        [NEW]
+   ============================================================================ */
+@keyframes rwExpand{from{height:0;opacity:0}to{height:200px;opacity:1}}
+@keyframes crtWake{0%{opacity:0}38%{opacity:.85}50%{opacity:.3}64%{opacity:1}78%{opacity:.75}100%{opacity:1}}
+@keyframes rwLaserDrop{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes rwRailDrop{0%{transform:scaleY(0);opacity:1}45%{transform:scaleY(1);opacity:1}78%{opacity:1}100%{transform:scaleY(1);opacity:0}}  /* UNUSED — §6 */
+@keyframes rwType{0%{clip-path:inset(0 100% 0 0)}100%{clip-path:inset(0 -2% 0 0)}}
+@keyframes rwCaret{0%{left:6px;opacity:0}6%{opacity:1}88%{opacity:1}100%{left:calc(100% - 14px);opacity:0}}
+@keyframes termloop{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@keyframes termblink{0%,55%{opacity:1}56%,100%{opacity:0}}
+@keyframes rwPop{from{opacity:0;transform:translate(-50%,-10px)}to{opacity:1;transform:translate(-50%,0)}}
+@keyframes refScroll{0%,14%{transform:translateX(0)}86%,100%{transform:translateX(min(0px,calc(114px - 100%)))}}
+@keyframes bslide{0%,15%{transform:translateX(0)}85%,100%{transform:translateX(min(0px,calc(78px - 100%)))}}
+
+
+/* ============================================================================
+   §6 — DEAD STYLES STILL IN SOURCE (inventory, not rules)
+   The logic computes these but the template no longer consumes them. They are
+   fossils of rejected directions (full list with reasoning in "Tier 0.1
+   Decisions", REJECTED ALTERNATIVES). Do not delete blind — some tweaks still
+   show in the Tweaks panel and now do nothing:
+     · fireTreatment (stripe/tint/chip-only) — r.stripe + TINT map computed, unread
+     · slotOverlay — r.laneBg computed, unread
+     · laserStyle / laserW / laserGlow — g.frameShadow / g.laserShadow / laserW
+       computed, unread; beam geometry is hard-coded in §4.7a polygons
+     · dryStyle, railFrameW, railPad, railRadius ("Laser rails" tweak section) —
+       r.dry* / railHouse* / railGlassIn / railPadT / railRad(In) computed, unread
+     · rwRailDrop keyframe — orphaned with the dry-rail direction
+     · showDesc / verb / cardName / rollCls / rollWord / miniCls / miniLabel /
+       tallyShow / searchBorder* / searchBg / searchInk / hiddenLabel / railPin* /
+       railRightShow / filtering / r.tip / g.tip / g.chipCls / g.lineHue /
+       r.jumpPos / r.caretHue / r.caretRot / r.jumpAWord / hintText2 — computed,
+       unread (earlier header/rail/row iterations)
+     · g.tongueOp is emitted as '0' in every state — the tongues render but stay
+       invisible; the collapse mechanism they animated was superseded by the
+       retracting laser stubs
+   ============================================================================ */

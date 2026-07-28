@@ -127,7 +127,35 @@ gray) always describes the **record's** condition, never the user's choice. This
 "orange = touchable" above: *touchable* is the affordance, *agency* is the state of having acted.
 Without it, a selected row and an on-fire row compete for the same meaning — and the fire loses.
 
-### 3.0 The four control shapes (locked 2026-07-25 — this is our answer to `style` §1)
+### 3.0 The four control shapes (locked 2026-07-25)
+
+> ## ⚠️ SUPERSEDED FOR THE REDESIGN — 2026-07-28, ledger #140
+>
+> **The redesign is `border-radius: 0` + chamfers and 45° notches.** The four-shape ladder below
+> was reversed by the Tier 0.1a handoff (`docs/design/tier-01-handoff/`) and Jac locked the
+> reversal. Reason: **radii read as plastic against a machined steel frame.**
+>
+> **`style` §1 is still satisfied — the signal moved axis, it did not disappear.** §1 asks that a
+> control's silhouette answer *"what kind of thing is this"* and that families never share a
+> signal. Families are now told apart by **finish** instead of radius:
+>
+> | Finish | Family | Recipe lives in |
+> |---|---|---|
+> | **dark key** | cool-tone state you read (blue/green/gray) | `tier-01-handoff/atom-rebuild.md` |
+> | **pressed key** | the ON cell of a toggle | ″ |
+> | **well glass** | a surface you type or search into | ″ |
+> | **machined ring** | any raised control | ″ |
+>
+> Also reversed on 07-28: **controls speak mono, not Archivo** (ledger #142 — Archivo is prose
+> only), and the **universal hover ring is deleted**, with hover feedback moving to the card's
+> footer terminal (ledger #150).
+>
+> **Three rounded survivors are UNRULED accidents, not decisions** (ledger #141): Door's pill,
+> `.ref__icon` 5px, the hint bubble's 9px. Do not cite them as intentional.
+>
+> **The table below still describes the SHIPPED app** (`style.css`, which the redesign has not
+> touched — it is gated behind `FEATURES.designV2`). Use it for work on the live site; use the
+> handoff for anything in the redesign. When rebuilding the kit, the handoff wins.
 
 Shape carries the **family**, so a control's silhouette says what kind of thing it is before
 colour or text does. **This supersedes the old "two radii / one 7px chip radius" line** —
