@@ -246,9 +246,25 @@
 
 ## Design prefs
 - Yard **"data-plate"** design language: dark industrial steel, **ONE** safety-orange
-  accent (`#ff7a1a`), hi-vis hazard stripe signature, stamped Saira Condensed labels,
-  rivets, a light wrangler/ranch seasoning (voice-first). Run **all** new/changed UI
-  through `/jactec-ui`. Don't retroactively restyle the existing site.
+  accent (**`#ff7e1f`**), **Archivo** body voice + mono stamped labels, a light
+  wrangler/ranch seasoning (voice-first). **Matte — no glow.** Run **all** new/changed UI
+  through **`style` + `wrangler-style`, both, always.** Don't retroactively restyle the
+  existing site.
+  ⚠️ **Superseded and gone:** `#ff7a1a`, Saira Condensed, the hazard-stripe + rivets
+  signature, and the **`jactec-ui` skill** (deleted 2026-07-26, PR #775 — its four rescued
+  capabilities sit in `docs/design/reference/legacy-jactec-ui/`). ~30 live specs still
+  describe the old language; sweep is filed at `docs/handoffs/STALE-DESIGN-LANGUAGE-SWEEP.md`.
+- **The decisions ledger is THE index for every UI decision** —
+  `docs/superpowers/specs/2026-07-20-decisions-ledger.md`. Read it **before** designing,
+  **read to the END** (rows #1–100 are a 07-20 snapshot; #101+ supersede several), and
+  **add a row** when something is settled. A decision is not made until it has a row (#135).
+- **The redesign's visual source of truth is `docs/design/tier-01-handoff/final-card.html`**
+  (2026-07-28), and it is **ahead of** the kit in `docs/design/rw-design-system/`. When they
+  disagree, the card wins. Redesign shape language is **`border-radius: 0` + chamfers/notches**
+  (#140, reverses the four-shape ladder) with **mono on every control, Archivo for prose only**
+  (#142); families are told apart by **finish** (key/press/well/machined ring) rather than
+  radius, which is how `style` §1 still passes. The shipped app is unchanged — the redesign
+  is behind `FEATURES.designV2`.
 - Icons always come from a library (Lucide), never hand-drawn — see `.claude/rules/icons.md`.
 - **Customers-list quick-add row is always-on and single-line (2026-07-17, #704).** The collapsed
   blue "+New Customer" `.bigbtn` was traded for the always-visible inline fields (First·Last·Phone ·
@@ -258,6 +274,26 @@
   one line through single-column pan mode; the `<480px` query re-enables wrap for the mobile stack.
 
 ## Gotchas
+- **A carried decision can still DRIFT away mid-session (2026-07-28, PR #780).** We already knew a
+  prompt that *omits* a locked decision loses it (#134). The Tier 0.1a Labs session proved a worse
+  case: three decisions were **in** the prompt — the click contract (#50/#62/#63/#67), the group
+  taxonomy (#31/#34/#35), and the Dashboard as the 13th surface (#44/#45) — and were still lost
+  across hours of visual iteration. **The handoff didn't notice**, because a handoff reports what it
+  *decided* and is structurally blind to what it *stopped carrying*. Only a grep of the returned
+  artifacts against the ledger found them. **Fix (#145): every handoff prompt needs an explicit
+  "still honoured?" checklist of inherited decisions**, not just an Inherit list at the start — and
+  when work comes back from any external tool, **grep it for the locked decisions before reading it.**
+- **An external design tool's status grades are the only thing standing between "designed" and
+  "approved" — read them literally (2026-07-28).** The 0.1a handoff came back ~19 LOCKED / 14
+  PROPOSED / 6 ASSUMED. The card *renders* all 39, and several PROPOSED items look completely
+  finished (the fixed row-Signal column width, the whole jump-band timing model). **Rendering is not
+  ratification.** Promote a row only by getting Jac's ruling and adding a ledger row.
+- **A branch cut before a docs sweep will resurrect the deleted skill (2026-07-28).** Switching to
+  `claude/rental-wrangler-redesign-tier-01-73qiof` made `jactec-ui` reappear in the skills list and
+  restored the pre-sweep ledger — the branch predated PR #775. **Merge trunk in BEFORE writing ledger
+  rows**, or the numbering collides with rows that already exist elsewhere. Related: `git rev-list`
+  ahead/behind counts are **garbage in this container** until `git fetch --deepen=200` — a shallow
+  clone reported "268 commits ahead" of trunk for a branch that was 4 behind.
 - **A stale INDEX is worse than a missing one (2026-07-26, PRs #770-773).** The decisions ledger
   (`docs/superpowers/specs/2026-07-20-decisions-ledger.md`) was a 07-20 snapshot that stopped at #100
   and indexed nothing after. Six days of decisions accumulated in a spec, a build plan, five prompts
@@ -561,6 +597,28 @@
   **staging drive** (real Chrome), not headless screenshots.
 
 ## Open threads
+- **Redesign Tier 0.1 — HANDED OFF, Labs retired (2026-07-28, PR #780, draft).** Jac ended the
+  Design Labs sessions: **Labs isn't reachable from his phone**, so the redesign can't depend on him
+  being at a desk. The 0.1a session was forced to hand its work back — four artifacts landed verbatim
+  in **`docs/design/tier-01-handoff/`** (`final-card.html` · `tier-01-card.css` 891 marked-up lines ·
+  `atom-rebuild.md` · `labs-decisions.md`); start at its `README.md`. The session **replaced the atom
+  language** rather than just building containers: nine new components (slot rack · message board ·
+  footer terminal · grip rack · roll marker · laser frame · hint layer · jump band), four new finishes,
+  radius ladder demolished, hover rings deleted card-wide with feedback moved to the footer terminal.
+  Ledger rows **#139–#152**. **Jac's rulings:** radius 0 + chamfers **LOCKED**; mono-on-controls
+  **LOCKED**; the 17px control tier **DEFERRED to Tier 0.2** (the 24px law stands until the shell
+  rules); the three drifted decisions **RE-IMPOSED**.
+  **Next, in order:** (1) rule the ~20 PROPOSED/ASSUMED rows + the three unruled rounded survivors
+  (#141 — Door's pill, `.ref__icon` 5px, hint bubble 9px, which Labs flagged as accidents);
+  (2) **rebuild the atom kit FROM the card** (`rw-design-system/` is now stale), closing the ~20
+  inline `TOKEN-GAP:` markers — start with the `#C28E54` vs `--tan` `#c2925a` near-miss (#152) and
+  #138(b), the Pin's hard-coded `--panel` ring (#151); (3) **Tier 0.2, the shell**, which now also
+  owns the 17px ruling (#143) and the Units∣Categories one-card conflict with #133 (#148);
+  (4) carry #144's three re-imposed decisions into whatever comes next.
+  ⚠️ **Porting caution:** `labs-decisions.md` § *Notes to the implementer* is an accurate fragility
+  inventory — laser polygon coords hand-tuned against four other values, an order-load-bearing `§3`
+  cascade, and both carets + the footer loop measured off hidden mirror spans (**a font or
+  `letter-spacing` change silently breaks caret tracking**). Port it deliberately, tweak panel intact.
 - **Cross-device user sync — SHIPPED LIVE + PROMOTED (2026-07-17, PRs #692+#702+#685, `?v=20260717ab`, flag
   `userSync` ON).** Prefs/Views/dispatch/comms/resume-column follow the PERSON across devices (see
   the Decisions entry for the design). Verified by a 4-lens adversarial workflow (operator-isolation

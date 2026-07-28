@@ -3,10 +3,24 @@
 **Read this first in a new session.** Everything needed to continue the redesign is in files;
 nothing important lives only in a chat. Started 2026-07-25.
 
+> ## 🛑 DESIGN LABS IS RETIRED AS THE DESIGN VENUE (2026-07-28)
+>
+> Jac ended the Labs sessions — **Labs is not reachable from his phone**, and the redesign can't
+> depend on him being at a desk. The Tier 0.1a session was forced to hand its work back before
+> closing.
+>
+> **The handoff is in [`tier-01-handoff/`](tier-01-handoff/README.md)** — four artifacts, landed
+> verbatim. **`tier-01-handoff/final-card.html` is now the visual source of truth**, and it is
+> AHEAD of the kit in `rw-design-system/`. When they disagree, the card is right.
+>
+> Design continues **between Jac and Claude Code directly**. The prompt framework below is still
+> the right way to *scope* a screen — North Star, anti-objectives, Inherit — it just no longer
+> gets pasted into Labs. **The `/design-sync` step below is moot**; nothing needs syncing anywhere.
+
 ## The plan in one line
-Jac approves **every inch** of the site by designing it in **Claude Design Labs**, screen by screen,
-foundations first — then Claude Code implements it by **rewriting the builder functions** in `app.js`
-to emit the approved markup. (Codex is NOT in use.)
+Jac approves **every inch** of the site, screen by screen, foundations first — then Claude Code
+implements it by **rewriting the builder functions** in `app.js` to emit the approved markup.
+(Originally via Claude Design Labs; see the retirement note above. Codex is NOT in use.)
 
 ## How the pieces fit
 - **Design Labs** = where each screen is designed + approved. It is blind to our code; it only knows
@@ -59,9 +73,11 @@ and stopping is how you end up confidently citing a superseded decision — whic
 
 **Known reversal chains — settle these by the newest entry, not the first one you find:**
 
-| Question | 07-20 (ledger) | 07-21 (spec) | **07-25 (prompts) — CURRENT** |
+| Question | Earlier | Then | **CURRENT** |
 |---|---|---|---|
-| Section model | paging via chips (#53) | accordion plate stack on desktop, page on mobile (§2.0) | **paging via a section rail, "no accordion stack"** (`prompt-01-detail-views.md`) |
+| Section model | paging via chips — 07-20, ledger #53 | accordion plate stack on desktop, page on mobile — 07-21, spec §2.0 | **paging via a section rail, "no accordion stack"** — 07-25, `prompt-01-detail-views.md` |
+| Control shapes | one 7px chip radius — pre-07-25, `jactec-ui` (deleted) | **four shapes**: squared 2px · opener `5px 5px 0 0` · rounded 8px · pill — 07-25/26, ledger #127/#131 | **RADIUS 0 + CHAMFERS** — 07-28, ledger **#140**, from the Labs handoff. Radii read as plastic against a machined frame; shape semantics moved into finishes (key/press/well). Rounded survivors (Door pill, ref icon, hint bubble) are **unruled accidents**, not decisions — ledger #141 |
+| Control voice | Saira Condensed — retired | **Archivo** body voice — 07-25, ledger #127 | **MONO on every control; Archivo for prose only** — 07-28, ledger **#142** |
 
 The accordion lost on the second reversal for a concrete reason worth keeping: stacking every section
 open made a Customer record run **~5 phone-screens**. Paging costs nothing in awareness **because**
@@ -81,16 +97,20 @@ static state grid cannot. Both are deliberate, both are accepted as slower (ledg
 **do not "streamline" them by splitting prompts or dropping the JS.**
 
 ## Build order (foundations first)
-- **Tier 0.0 — Atoms** ✅ **LOCKED 2026-07-25** (see decisions below). The approved consistency pass
-  is **applied to the kit itself** — `rw-consistency-pass.css` stays as the record of what was
-  decided, but the kit files no longer need it layered on.
-- **Tier 0.1 — Containers** ← **CURRENT.** Prompts are **written**; none has been run in Labs yet.
-  Run them in this order, each its own Labs session:
-  1. `prompts/prompt-03-container-card.md` — **card frame · header · list row.** The most
-     load-bearing prompt in the build order: twelve surfaces share this anatomy.
-  2. `prompts/prompt-04-container-section.md` — **section.** A detail view is a rail of these paged
-     one at a time, so it must lock before Tier 1 can.
-  3. `prompts/prompt-05-container-overlay.md` — **panel · popup · ⋯ action menu.**
+- **Tier 0.0 — Atoms** ⚠️ **RE-OPENED 2026-07-28.** Locked 07-25, then **superseded by the 0.1a
+  handoff**, which rebuilt the atom language from the card down (ledger #139/#140/#142). The kit in
+  `rw-design-system/` is now **stale**: it teaches the four-shape ladder and Archivo controls, both
+  reversed. **The kit must be rebuilt from `tier-01-handoff/final-card.html`**, using
+  `tier-01-handoff/atom-rebuild.md`, which was written to be enough to rebuild each atom standalone.
+- **Tier 0.1 — Containers** — **0.1a (card frame · header · row) is DONE** and is the handoff above.
+  Not "locked" in full: ~14 PROPOSED and ~6 ASSUMED rows in `tier-01-handoff/labs-decisions.md`
+  still need Jac's individual ruling, and **three inherited decisions were dropped and re-imposed**
+  (ledger #144 — click contract, group taxonomy, Dashboard-as-13th-surface).
+  1. ~~`prompts/prompt-03-container-card.md`~~ — **run; superseded by the handoff.** Kept as the
+     record of what was asked for.
+  2. `prompts/prompt-04-container-section.md` — **section.** Still to do. ⚠️ Written against the
+     four-shape ladder — **re-base it on ledger #139–#152 before using it.**
+  3. `prompts/prompt-05-container-overlay.md` — **panel · popup · ⋯ action menu.** Same caveat.
 - **Tier 0.2 — App shell** — 3-column yard grid, top bar, footer rail; decides how a row-expansion
   relates to the columns. *A first draft exists (parked) — it revealed the real tension: the detail
   view's horizontal section rail does NOT fit a ⅓-width column, so the shell must decide
@@ -105,6 +125,14 @@ static state grid cannot. Both are deliberate, both are accepted as slower (ledg
   settings boards · creation flows/wizards · empty+loading+login+mobile reflow.
 
 ## Locked decisions (do not reopen)
+
+> ⚠️ **The 2026-07-25 atoms pass below was PARTLY REVERSED on 07-28** by the Tier 0.1a handoff.
+> Still true: the palette/type tokens, true-outline chips, `.menu` dropped, the Pin atom, real
+> `<button>`s. **No longer true:** the four control shapes (→ **radius 0 + chamfers**, ledger #140)
+> and Archivo on controls (→ **mono**, Archivo for prose only, ledger #142). The universal hover
+> ring was also **deleted card-wide** in the handoff, with hover feedback moved to the footer
+> terminal (ledger #150). Read the 07-28 rows before citing anything here.
+
 - **The palette/type tokens** — the `html.dv2` redesign set in `style.css` (CVD-tuned; `--yellow:#eed44b`,
   `--red:#ff4242`, `--blue:#6394cc`, `--commit:#2f6fd0`, `--accent:#ff7e1f`).
 - **Atoms consistency pass (2026-07-25)** — applied to the kit from Jac's Labs review:
@@ -128,9 +156,14 @@ static state grid cannot. Both are deliberate, both are accepted as slower (ledg
     every tappable atom, no atom shrinks/wraps in a flex row.
 
 ## Files (all in the repo — durable)
+- `docs/design/tier-01-handoff/` — ⭐ **the 2026-07-28 Labs handoff, and the current visual source of
+  truth.** `final-card.html` (the design) · `tier-01-card.css` (891 marked-up lines) ·
+  `atom-rebuild.md` (how to rebuild each atom from the card) · `labs-decisions.md` (~39 graded
+  decisions). Start at its `README.md`.
 - `docs/design/rw-design-system/` — the kit: `tokens.css`, `foundations/`, `elements/`, `components/`.
-  **This is what gets `/design-sync`'d to Labs.** 13 preview cards — the consistency pass is applied,
-  and `elements/pin.html` is the new eighth atom.
+  ⚠️ **STALE as of 2026-07-28** — it teaches the four-shape ladder and Archivo controls, both
+  reversed by the handoff. Rebuild it from `tier-01-handoff/`. (It was the `/design-sync` payload
+  when Labs was in use; that sync did land before Labs was retired.)
 - `docs/design/atoms-canvas.html` — all atom families on one editable page (the review surface),
   now including a Pins section.
 - `docs/design/prompts/` — the Labs prompts. `00` atoms · `01` detail views · `02` shell ·
@@ -152,13 +185,22 @@ static state grid cannot. Both are deliberate, both are accepted as slower (ledg
   ancestor, run `git fetch --deepen=200 origin trunk` before believing it.
 
 ## Next action
-1. **`/design-sync` from a LOCAL session** (`/design-sync docs/design/rw-design-system/`) against the
-   patched kit. **This gates everything else** — Labs is still grounded on the PRE-pass atoms, so
-   running a container prompt before syncing composes containers out of 7px chips, Geist and tinted
-   outlines, and the work has to be redone. Labs has never seen `elements/pin.html` at all.
-2. **Run `prompts/prompt-03-container-card.md`** in a fresh Labs session. Then 04, then 05.
-3. As each locks, fold the result into the kit, re-sync, and append it to the locked-elements
-   registry in `labs-build-order.md`.
+
+*(The old step 1 — `/design-sync` from a local session — is **done and now moot**. The sync did
+land: Jac confirmed 2026-07-28 that Labs had the Pin and did not have Geist, which is the
+post-consistency-pass kit. With Labs retired, nothing needs syncing anywhere.)*
+
+1. **Rule the leftovers** — the ~20 PROPOSED/ASSUMED rows in `tier-01-handoff/labs-decisions.md`,
+   plus the three unruled rounded survivors (ledger #141). They are not canon just because the card
+   renders them.
+2. **Rebuild the atom kit from the card**, not the reverse. `atom-rebuild.md` is the instruction
+   set. Close the ~20 inline `TOKEN-GAP:` markers while doing it — start with the `#C28E54` vs
+   `--tan` `#c2925a` near-miss (ledger #152).
+3. **Tier 0.2, the shell.** It now also owns two rulings the card pushed onto it: the 17px-vs-24px
+   control tier (#143) and the Units∣Categories one-card conflict with #133 (#148).
+4. **Carry #144's three re-imposed decisions** into whatever comes next — and add an explicit
+   *"still honoured?"* checklist of inherited decisions to every future handoff (#145). An Inherit
+   list at the *start* of a session demonstrably does not survive hours of iteration.
 
 ## Settled + carried
 - **The base five are Units · Rentals · Customers · Trips · Categories** (Jac, 2026-07-26, confirming
