@@ -90,15 +90,15 @@ read for this snapshot (`docs/superpowers/specs/2026-07-20-decisions-ledger.md`,
 | What you'll see | Why it is deliberate | Ledger |
 |---|---|---|
 | **Almost nothing is rounded.** Square corners throughout; containers use cut 45° chamfers instead | The card's identity is machined steel, not plastic. Radii were removed on purpose | #140 |
-| **One exception: the pill-shaped action button** | Pill = "this is an action you fire". It is the one shape allowed to stay round, and it long predates this design | #131, #153 |
+| **One exception: the pill-shaped action button** | Pill = "this is an action you fire". It is the one shape allowed to stay round, and it long predates this design | #15, #153 |
 | **Two other rounded survivors: the `.ref__icon` and the hint bubble** | Confirmed as ordinary radius-0, same as everything else — not exceptions. If you see a rounded ref icon or hint bubble, that is stale, not deliberate | #153 |
 | **Nothing rings or outlines on hover** | Hover rings made hover the loudest thing on a dense card. Feedback moved to the footer terminal instead — that strip is the card's single voice, and it is load-bearing, not decoration | #150, #157 |
 | **Orange appears only on controls you can turn, and on live terminal text** | Orange means *you did this / you can do this*. Status colour means *the world is like this*. If they blurred, a selected row would compete with an on-fire row — and the fire would lose | #137 |
-| **Red and yellow chips are filled; blue, green and grey are dark with a thin coloured ring** | Heat must stay the loudest thing on screen. Filled cool chips read as glossy candy against steel | labs-decisions.md (cool-tone key finish), #155 |
+| **Red and yellow chips are filled; blue, green and grey are dark with a thin coloured ring** | Heat must stay the loudest thing on screen. Filled cool chips read as glossy candy against steel | labs-decisions.md (cool-tone key finish) — no dedicated ledger row |
 | **Terminal text, carets and some indicators glow, but steel never does** | Light is emitted *by glass*, never applied *to steel*. That is how the card stays "matte" while still reading as an instrument | #146 |
 | **Groups are framed cartridges with a coloured beam, and retract to a stub when shut** | A group is an inserted unit in a machine, not a floating header | labs-decisions.md (group cartridge design) |
 | **No description line under the card title** | Removed deliberately; its job moved to the footer terminal and the per-group message boards | #149 |
-| **Green appears on a row, never as its own group** | Green means "done today" and ages to grey tomorrow. It is a property of a record, not a bucket | #137 (rollup precedence), labs-decisions.md |
+| **Green appears on a row, never as its own group** | Green means "done today" and ages to grey tomorrow. It is a property of a record, not a bucket | #29 (rollup precedence), labs-decisions.md |
 | **Every control is mono, not the Archivo body font** | One instrument voice inside the machine; Archivo survives only in prose (hints, empty state) | #142 |
 | **The click contract: single-click expands a row in place, double-click anchors it; the anchor icon reads as a lone "+" when something else is already anchored** | A locked interaction pattern (220ms discriminator), confirmed present in this build, not dropped | #144, #164 |
 | **Two console warnings** about `<path> attribute d: "{{ p.icon }}"` and `"{{ c.icon }}"` | An artefact of how this prototype was unpacked for serving (`docs/design/tier-01-card/README.md`). Rendered output is unaffected. Ignore them — but **do** report any *other* console error | tier-01-card/README.md |
