@@ -1,0 +1,151 @@
+# Audit Prompt B — the task (Tier 0.1 Units card)
+
+**Send this second, after Prompt A.** Prompt A carries the standards and never changes.
+This half carries everything that does: the surface, the persona, what to skip, and what is
+deliberate.
+
+**Regenerate this file before every run.** It is a snapshot of what is currently locked, open,
+and stubbed. A stale Prompt B is worse than none — it will defend decisions that have since
+moved and flag work that has since landed. Rebuild it from the decisions ledger, not from the
+previous run's copy.
+
+*Snapshot taken: 2026-07-28, against trunk `b9edb3c`.*
+
+Paste everything below the line into the auditing AI.
+
+---
+
+Here is the task. The standards from the previous message all apply except where this message
+exempts them.
+
+## 1 · The surface
+
+The **Units card** — one card from a heavy-equipment rental yard's ops app. It is a dense list
+of equipment grouped by lifecycle stage, meant to be read at a glance by someone standing in a
+yard, on a phone or a grubby desktop.
+
+**It is a design prototype, not the shipped app.** It runs on demo data and several things are
+deliberately inert (§5). Judge the *design*, not the completeness of the wiring.
+
+### Getting it running
+
+The card is a self-contained static folder — no network access needed, nothing to install.
+
+```
+docs/design/tier-01-card/
+```
+
+Serve that folder with any static server and open the root. For example:
+
+```bash
+cd docs/design/tier-01-card && python3 -m http.server 8137
+# then open http://localhost:8137/
+```
+
+Everything (fonts, textures, runtime) is local. If anything tries to reach the network, that
+itself is a finding — report it.
+
+**Drive it at ~380–440px wide.** That is the card's real column width in the app. Check a
+narrow width too, but judge it at its design width first.
+
+## 2 · Your persona
+
+**Merle**, the yard/shop hand.
+
+Merle has worked the yard for eleven years and knows the machines cold — he can tell you which
+excavator burns oil by the sound of it. He has no patience for screens. He checks the card
+between jobs with one glove off, usually standing, often when someone is already shouting for
+him. He wants to know **what's broken, what's promised to somebody, and what he can hand over
+right now** — and he wants it without reading. If the screen doesn't tell him in about two
+seconds, he'll go ask someone instead, which is exactly the failure we're hunting.
+
+Keep Prompt A's constant traits: lazy, not sharp, clock-watching, distracted by movement.
+Write your findings in his voice.
+
+Merle is **not** the dispatcher, and not office staff. He does not care about billing, invoices,
+or customer names except as "who's waiting on this." The card has a staff/mechanic ordering and
+an office ordering; you are seeing the **staff/mechanic** one.
+
+## 3 · Dimensions to cover
+
+Run all six of Prompt A's lenses, with two re-aimed:
+
+- **task-clarity**, **emergency-triage**, **correctness**, **glitch-consistency** — as written.
+- **wayfinding** — re-aimed. This is *one card in isolation*; there is nowhere to navigate to,
+  so do not report the absence of destinations as defects. Ask instead: does the card make
+  clear **what would happen** if Merle acted, and does it ever strand him with no way back
+  from a state he entered (a filter, an open group, a search)?
+- **notifications-comms-team** — re-aimed. There is no bell, no inbox, no team presence in a
+  single card. Do not report those as missing. Ask instead: **what should this card hand off,
+  and to whom** — what does Merle learn here that somebody else needs to know, that the card
+  gives him no way to pass on?
+
+## 4 · Deliberate — do NOT report these as defects
+
+These look wrong and are not. Each is a locked decision with a reason.
+
+| What you'll see | Why it is deliberate |
+|---|---|
+| **Almost nothing is rounded.** Square corners throughout; containers use cut 45° chamfers instead | The card's identity is machined steel, not plastic. Radii were removed on purpose |
+| **One exception: the pill-shaped action button** | Pill = "this is an action you fire". It is the one shape allowed to stay round, and it long predates this design |
+| **Nothing rings or outlines on hover** | Hover rings made hover the loudest thing on a dense card. Feedback moved to the footer terminal instead — that strip is the card's single voice, and it is load-bearing, not decoration |
+| **Orange appears only on controls you can turn, and on live terminal text** | Orange means *you did this / you can do this*. Status colour means *the world is like this*. If they blurred, a selected row would compete with an on-fire row — and the fire would lose |
+| **Red and yellow chips are filled; blue, green and grey are dark with a thin coloured ring** | Heat must stay the loudest thing on screen. Filled cool chips read as glossy candy against steel |
+| **Terminal text, carets and some indicators glow, but steel never does** | Light is emitted *by glass*, never applied *to steel*. That is how the card stays "matte" while still reading as an instrument |
+| **Groups are framed cartridges with a coloured beam, and retract to a stub when shut** | A group is an inserted unit in a machine, not a floating header |
+| **No description line under the card title** | Removed deliberately; its job moved to the footer terminal and the per-group message boards |
+| **Green appears on a row, never as its own group** | Green means "done today" and ages to grey tomorrow. It is a property of a record, not a bucket |
+| **Two console warnings** about `<path> attribute d: "{{ p.icon }}"` and `"{{ c.icon }}"` | An artefact of how this prototype was unpacked for serving. Rendered output is unaffected. Ignore them — but **do** report any *other* console error |
+
+## 5 · Stubs and demo data — do NOT report as broken
+
+- **All record data is fake.** Machine names, serial numbers, dates and counts are illustrative.
+  Do not audit the *values*. **Do** audit whether a number is *presented* misleadingly.
+- **Clicking a status chip or a board name** flashes "Teleport → …" on the footer terminal and
+  goes nowhere. The destination is unbuilt on purpose.
+- **The expanded-row drawer** is a placeholder — a label and three skeleton bars. Nothing about
+  the expanded record view is designed yet. Do not review its contents.
+- **The globe toggle** in the search well switches its own state and tooltip only.
+- **The tweak panel** (if you can reach it) is a design-time dials harness, not product UI.
+  Several of its sections are inert by design. Out of scope.
+
+## 6 · Known-open — already logged, don't re-litigate
+
+Report these only if you find a consequence we have *not* already named.
+
+1. **The group labelled "Not Ready/Failed+Reserved" overruns its header** at 380px, squeezing
+   the message board and the tick rack beside it. Known. The label is real and the fix is a
+   naming decision, not a CSS bug. *(You may still report anything it causes downstream.)*
+2. **The action verbs in the hover menu** (Recover, Repair, Service, Stage, Check in…) are
+   **proposed, not approved**. Critique the *pattern* — does naming the next action beat showing
+   the state? — and tell us if a specific word is actively wrong for a yard hand. Do not treat
+   the set as settled.
+3. **The width thresholds** at which columns and controls drop are provisional and untested.
+4. **Head controls are smaller than the app's standard control height.** Known and deliberately
+   deferred; the surrounding shell decides it later. Do not re-argue the size — but **do**
+   report if the small size actually costs Merle a tap or a read.
+
+## 7 · What we most want to know
+
+If the run produces nothing else, answer these:
+
+1. Standing in the yard with one glove off, **can Merle tell what is on fire in two seconds** —
+   and does anything non-urgent steal that glance?
+2. **Does he know what to do next**, or only what the state currently is?
+3. The card removed every hover ring and moved feedback to one strip at the bottom. **Did that
+   work, or did it orphan the interactions that used to have rings?** This is the single
+   riskiest decision in the design and we want it stress-tested.
+4. Ten groups is a lot. **Does the grouping help him, or does he lose the two rows that matter
+   inside eight groups that don't?**
+5. What does he learn here that **somebody else needs to know**, with no way to pass it on?
+
+## 8 · Output
+
+Use Prompt A's report shape exactly — verdict, walkthrough, findings, what's missing — per
+dimension, with every finding classed **DEFECT / GAP / QUERY** and marked **OBSERVED** or
+**INFERRED**.
+
+Use **QUERY** freely. If something looks intentional but is not in §4, §5 or §6, ask rather than
+assert — we would rather answer a question than correct a confident wrong finding.
+
+Change nothing. This is a read, click and reason pass.
