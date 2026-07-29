@@ -68,17 +68,11 @@ Keep the traits constant: **lazy** (does the least; won't scroll/read/hunt/right
 **clock-watching**, **distracted by anything that blinks**. Give them a name and a one-paragraph
 bio — the audit is written in their voice, so they need to feel like a person.
 
-**The rubric — the persona's questions.** Every lens answers a slice of these (they are Jac's
-standing audit questions):
-
-- Do I know **what to do, and what's next**? Is the next action spelled out, or just data?
-- What deserves my attention — **what's an emergency**? And does **non-urgent noise steal it**?
-- How **glitchy / jumpy** is it? Do things move/flash/vanish under my finger?
-- Is the UI **consistent** — does the habit I formed on one card transfer to this one?
-- Do I know **what links to what** and **how to get there and back**?
-- Do the **systems actually work, and are the numbers accurate**?
-- **What's missing?**
-- What **notifications / alerts / comms / team** signals are lacking?
+**The rubric.** Every lens answers a slice of Jac's standing audit questions — the same eight
+standards `/prompt-a` hands to an external auditing AI. Read them from
+`docs/design/audit/prompt-a-standards.md` §3 (and its §4 measurable rules, if a lens needs to
+measure rather than judge by eye) — **don't re-derive or copy them here.** That file is the one
+place the bar lives; a second copy in this skill is exactly how it drifts out of sync with itself.
 
 ---
 
@@ -136,16 +130,14 @@ byte-identical-to-production guarantee ("what you read is EXACTLY what the live 
 | **notifications-comms-team** | what alerts/comms/team are lacking? | comms rail (APP-39), team dock (APP-22), toast (APP-30), sw.js, wrangler inbox, poll |
 | **glitch-consistency** | how jumpy / is it consistent? | render pipeline (APP-30), scrollMemo/restore, always-on animations, cross-card diff |
 
-**The fixed report shape** each lens returns (so synthesis is clean) — require exactly this:
-
-```
-### <Lens> — as <Persona> sees it
-**Verdict:** one blunt line.
-**Walkthrough:** 4–6 concrete beats of the persona trying to act, where they stall/guess wrong.
-**Findings:** ranked worst-first. Each = `SEVERITY | one-line problem | file:line | why it hurts <persona> | smallest fix`.
-                SEVERITY ∈ 🔴 (blocks/misleads) / 🟠 (friction) / 🟡 (polish). Mark provable-from-code vs would-need-a-live-drive.
-**What's missing:** bullets — affordances that SHOULD exist for this dimension but don't.
-```
+**The report shape** each lens returns (so synthesis is clean) is `prompt-a-standards.md` §5's
+shape, with one addition this skill needs and Prompt A's external-AI audience doesn't: since a
+lens here can cite the running source directly, its `Findings` line locates each item by
+**`file:line`** instead of a selector/screenshot ref, and marks it **provable-from-code** vs
+**would-need-a-live-drive** in place of Prompt A's OBSERVED/INFERRED (same idea — did you see it
+or reason it — worded for a code-reading lens instead of a click-driving one). Everything else —
+Verdict / Walkthrough / Findings / What's missing, the CLASS and SEVERITY vocabulary — is §5
+verbatim; don't restate it, read it.
 
 Ask lenses to separate **"provably broken in code"** from **"looks risky / needs a live drive"** —
 that honesty is what makes the verify pass tractable.
