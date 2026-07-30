@@ -969,13 +969,13 @@ input:focus::placeholder{color:transparent}
 }
 [data-glass]:hover::after{opacity:1}
 
-/* KNOWN-OPEN (#159 fallout, needs Jac's ruling — deliberately NOT patched here):
-   the real bucket label "Not Ready/Failed+Reserved" (ledger §4) is longer than any label the
-   group head was designed around and overruns the head at the locked 380px compact width,
-   squeezing the message board and slot rack. A max-width/overflow clamp was tried and does
-   not hold inside the head's flex row. The fix is a decision, not CSS: shorten the display
-   label, or give the head the Ref's hover-marquee. Left visible on purpose so it is not
-   forgotten; carried into the audit brief as a known-open rather than a defect. */
+/* RESOLVED (was KNOWN-OPEN #159 fallout — Jac's ruling, 2026-07-30):
+   the bucket label "Not Ready/Failed+Reserved" overran the head at the locked 380px compact
+   width, squeezing the message board and slot rack; a max-width/overflow clamp was tried and
+   did not hold inside the head's flex row. As the note predicted, the fix was a decision and
+   not CSS: the DISPLAY LABEL is shortened to "Reserved: Not Ready" (19 chars, down from 25).
+   The bucket itself is unchanged — id 'collision', still (Not Ready OR Failed) AND Reserved,
+   the broken-machine-promised-to-a-customer collision. Ledger row #165. */
 </style>
 </helmet>
 
@@ -1286,7 +1286,7 @@ class Component extends DCLogic {
       { id:'f2', tone:'red', fill:false, state:'Failed',     name:'Skid Steer S650',  facts:['S/N 8802'],        more:2, when:'Mar 16' }
     ]},
     /* The broken-machine-promised-to-a-customer collision — its own top bucket by design (#51). */
-    { id:'collision', kind:'attention', name:'Not Ready/Failed+Reserved', rows:[
+    { id:'collision', kind:'attention', name:'Reserved: Not Ready', rows:[
       { id:'x1', tone:'red', fill:true, state:'Promised', name:'Dozer D5',        facts:['S/N 6610'], more:2, when:'Mar 18' }
     ]},
     { id:'notready', kind:'attention', name:'Not Ready', rows:[
