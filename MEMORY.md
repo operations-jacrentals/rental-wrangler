@@ -640,6 +640,33 @@
   inventory — laser polygon coords hand-tuned against four other values, an order-load-bearing `§3`
   cascade, and both carets + the footer loop measured off hidden mirror spans (**a font or
   `letter-spacing` change silently breaks caret tracking**). Port it deliberately, tweak panel intact.
+- **Tier 0.1 group head + item row — head SETTLED in design, rows built to R7, architecture question
+  OPEN (2026-07-31).** Full trail with every revert point, rejected branch, measurement and CSS block:
+  `docs/superpowers/specs/2026-07-31-tier-01-head-row-design-log.md`. **Head (settled):** the title
+  became a **26px deep milled pocket** with **raised** letter faces in an etched-away field (the
+  footer scroll-pip physics — the pip's *outer* `0 1px 2px` cast shadow is the proof, since a recess
+  can't cast outward); chevron, head corner Pin and row pins all **dropped**; faces carry the **state
+  hue**, open/shut moved to the **pocket floor** because hue can't carry both — **red fails 4.5:1
+  below ~76%**, and the shared shut factor is the **max** across hues, not the min (got this backwards
+  twice). Pins → **slots** (skewed ticks); a collapsed slot unfurls **LEFT**, `+N` on the slot side.
+  **Rows:** order is `message board · button · slots · facts · name` (Jac's call); the row message
+  board **needs a steel ground** — measured 4.64× darker than head steel (reads as a well) but 1.38×
+  *lighter* than the open-row ground (inverts, vanishes); facts drop first, since the card is locked
+  at **380px / 357px interior at every viewport 440–560px** and all five don't fit. Row issue data
+  already exists in the old pin's tooltip — **rows expose `data-hint`, heads `data-tip`**.
+  **OPEN and unanswered:** Jac's two-level proposal — rows become **cartridges** that light up, group
+  heads condense **right** into a **housing** that racks open. The plot risk is two nested open/shut
+  mechanisms in one language; the fix is #146 (**group = opens by MOVING, steel, no light; row = opens
+  by LIGHTING, glass, emission**), which relocates six ledger rows (#146 application, #161 boot theatre
+  → row-open, #139/#140 laser, #156 wash, #67/#164 click contract, atom-rebuild §1's 8-cap). Jac also
+  asked what the **row button** is for — answer: it isn't redundant, it's **unfinished**; #158 already
+  locked the verb-CTA pattern, and converting it reclaims **~22px** (#155 sizes the chip to the longest
+  *state*, `3d overdue`/10ch; verbs are 8ch), which is most of what facts needs. **Only repo change
+  from that session:** the group rename `Not Ready/Failed+Reserved` → **`Reserved: Not Ready`**
+  (ledger #165, PR #785 — draft, green) — which leaves *Failed* implied under *Not Ready*, correct only
+  if `Failed ⊂ Not Ready` in yard usage. Also still open: rack placement, the **#147** collision
+  (Open chip's ✕-on-hover vs slot expand-on-hover), the 8-vs-10 tick cap, the collapsed slot
+  overhanging its cell (`OPEN` → `PEN`), whether it keeps its numeral, and the unread laser-drop trade.
 - **Cross-device user sync — SHIPPED LIVE + PROMOTED (2026-07-17, PRs #692+#702+#685, `?v=20260717ab`, flag
   `userSync` ON).** Prefs/Views/dispatch/comms/resume-column follow the PERSON across devices (see
   the Decisions entry for the design). Verified by a 4-lens adversarial workflow (operator-isolation
