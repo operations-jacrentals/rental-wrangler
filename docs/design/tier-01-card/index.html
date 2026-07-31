@@ -2019,6 +2019,7 @@ class Component extends DCLogic {
 
 
 
+
 <!-- ============================================================================
      Tier-0.1 head/row build — revert points R2-R7 plus P1, landed 2026-07-31.
      Trail: docs/superpowers/specs/2026-07-31-tier-01-head-row-design-log.md
@@ -2061,8 +2062,19 @@ class Component extends DCLogic {
   // (data-tip does not exist in this build — see design log section 5.7.)
   // Slots are ISSUES, so this is pin-derived ONLY: a row with nothing open gets no
   // ticks, rather than a filler tick made from its own state text.
+  // The row's OWN issue pin — never a jump-band verb cell. Those cells also carry
+  // a pin class + data-hint, and on a blue/gray row (sigCount <= 1) there is no
+  // real pin at all, so an unscoped query matched a VERB the moment the row opened —
+  // fabricating an issue and inflating its group head off NOMINAL.
+  function ownPin(row) {
+    var pins = row.querySelectorAll('.pin[data-hint]');
+    for (var i = 0; i < pins.length; i++) {
+      if (!pins[i].closest('[data-jump-band]')) return pins[i];
+    }
+    return null;
+  }
   function rowIssues(row) {
-    var pin = row.querySelector('.pin[data-hint]');
+    var pin = ownPin(row);
     if (!pin) return [];
     return (pin.getAttribute('data-hint') || '').split(/\n+/).map(function (l) {
       var p = l.split(',').map(function (s) { return s.trim(); });
@@ -2078,7 +2090,7 @@ class Component extends DCLogic {
   // and data-tone describing a DIFFERENT unit — and a wrong data-tone mis-colours the
   // laser frame, which #172 makes the sole carrier of the state hue.
   function rowSig(row) {
-    var pin = row.querySelector('.pin[data-hint]');
+    var pin = ownPin(row);
     return (pin ? pin.getAttribute('data-hint') : '') + '\u0001' +
            (((row.querySelector('.rmq') || {}).textContent) || '') + '\u0001' + rowState(row);
   }
@@ -2167,6 +2179,9 @@ class Component extends DCLogic {
         // the node was recycled onto a different record — tear the old layer out
         var ob = inner.querySelector('.rw-board'); if (ob) ob.parentNode.removeChild(ob);
         var ork = inner.querySelector('.rw-rack'); if (ork) ork.parentNode.removeChild(ork);
+        // the drawer's terminal lines are part of the injected layer too — leaving them
+        // behind on a recycled OPEN row showed another unit's name and issue list
+        var ocl = row.querySelector('.rw-cartlines'); if (ocl) ocl.parentNode.removeChild(ocl);
 
         [].forEach.call(inner.children, function (c) {
           // NEVER sweep the jump band: it only exists while the row is open, and
@@ -2267,6 +2282,11 @@ class Component extends DCLogic {
   }
   function schedule() { if (!queued) { queued = true; requestAnimationFrame(rebuild); } }
 
+  // fitRack measures, so it has to re-run whenever metrics change underneath it —
+  // a late webfont swap left a clipped tick with no +N until that row next changed.
+  function refitAll() {
+    [].forEach.call(document.querySelectorAll('.rw-rack'), fitRack);
+  }
   function start() {
     var st = document.createElement('style');
     st.id = 'rw-p1'; st.textContent = CSS;
@@ -2274,6 +2294,17 @@ class Component extends DCLogic {
     rebuild();
     obs = new MutationObserver(schedule);
     obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
+
+    if (document.fonts && document.fonts.ready && document.fonts.ready.then) {
+      document.fonts.ready.then(function () { if (obs) obs.disconnect(); refitAll();
+        if (obs) obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] }); });
+    }
+    var rt = null;
+    window.addEventListener('resize', function () {
+      if (rt) clearTimeout(rt);
+      rt = setTimeout(function () { if (obs) obs.disconnect(); refitAll();
+        if (obs) obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] }); }, 120);
+    });
   }
 
   // the component mounts asynchronously — wait for it, then bail out politely
