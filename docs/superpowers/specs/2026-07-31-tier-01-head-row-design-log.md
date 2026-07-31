@@ -590,11 +590,13 @@ Three readouts, one actuator. And converting it pays the §2.4 width bill via §
 **Six of the original eight closed on 2026-07-31.** Struck through with the row that closed them:
 
 1. ~~**Build P1 or not.**~~ → **RULED: build it** (#168). Built — §5.7.
-2. **Rack placement on rows** — settled order is R7, but placement within the head is not.
-   ⏳ **Still open.** Deliberately not asked in the same batch: it is downstream of #168, which
-   reshapes the row, so ruling it first would have settled a layout that was about to change.
-3. **#147 collision** — the Open chip's ✕-on-hover vs the collapsed slot's expand-on-hover.
-   Two hover behaviours on one element. ⏳ **Still open**, held back for the same reason as 2.
+2. ~~**Rack placement on rows.**~~ → **RULED** (#176): the row is `button · slots · board · name`
+   — the head's own right-to-left grammar (*name · board · slots*) plus a left-anchored button.
+   Supersedes R7's order; landed in the prototype.
+3. **#147 collision** — ⚠️ **narrowed, not closed** (#177). Jac ruled that **slots replace pins
+   everywhere and slots unfurl**, which *rejects* the tidy reading that a filter chip carries a
+   non-unfurling `Pin`. So the collision is real: the Open chip's slot unfurls on hover, and the
+   red **✕ close-all therefore cannot live on hover too**. ⏳ **Open: where the ✕ goes.**
 4. ~~**8-vs-10 tick cap.**~~ → **RULED: no cap at all** (#170), and §5.7.2 measured the result.
 5. ~~**Collapsed slot overhangs its chip cell** (`OPEN` → `PEN`).~~ → dissolved by #166: the
    collapsed slot carries a **numeral**, so the wide status word is gone from that state.
