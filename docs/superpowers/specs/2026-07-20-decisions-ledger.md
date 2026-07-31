@@ -619,6 +619,19 @@ doc's own status column, for what's actually settled.** That leaves 17 rows rule
 | 162 | **Width breakpoints ACCEPTED PROVISIONALLY, not locked permanently:** grip rack shown ≥330px; facts column shown ≥440px; "Your Work"→"Work" label shrink <420px; when-column (96px) shown ≥440px. These are Labs' own untested numbers — re-verify against real column widths once Tier 0.2 settles the shell | ⏳ **PROVISIONAL — re-verify in Tier 0.2** |
 | 165 | **The `collision` group's DISPLAY LABEL is renamed `Not Ready/Failed+Reserved` → `Reserved: Not Ready`** (25 chars → 19). **The bucket is unchanged** — same `id:'collision'`, same membership: (Not Ready OR Failed) AND Reserved, the broken-machine-promised-to-a-customer collision (decision-notes finding #51). Only the words on the head change. This closes the card's own KNOWN-OPEN comment, which called it correctly: the label overran the head at the locked 380px compact width, a max-width clamp would not hold inside the head's flex row, and *"the fix is a decision, not CSS."* **Supersedes the label only** in #159's per-card group lists and in §3/§4 — those lists stay authoritative for group SET and ORDER; do not retro-edit the 07-20 records, per #163. **Flag:** the new label names the *reserved* leg and leaves *Failed* implied under "Not Ready". That is correct if Failed ⊂ Not Ready in the yard's usage; if a Failed-but-Reserved unit must read as Failed on the head, the label needs a third word | ✅ **LOCKED — Jac, 2026-07-30** |
 
+## 2026-07-31 — the row-button/two-level-mechanic thread
+
+Jac's architecture proposal (group = housing that racks open, mechanical/steel/no light; row =
+cartridge that lights up, glass/terminal/emission — `#146`'s emission fiction applied at a second
+level) was put to him via popup alongside the collapsed-slot numeral question that fell out of the
+GROUP HEAD slot-rack work (pins retired in favour of skewed-tick slots this session, not yet in the
+repo).
+
+| # | Decision | Status |
+|---|---|---|
+| 166 | **A collapsed slot shows a numeral only — no status word.** The status word is what overhung the cell (rendering "OPEN" as "PEN"); dropping to a compact numeral while collapsed removes the wide text entirely, and the full word is deferred to the hover-unfurl | ✅ **LOCKED — Jac, 2026-07-31** |
+| 167 | **The two-level mechanic (group = racking housing, row = lighting cartridge) is NOT yet ruled — Jac wants a non-destructive prototype first.** Do not relocate #146/#161/#139/#140/#156/#67/#164 or drop the head rack's 8-tick cap until Jac sees it in motion and rules go/no-go. Build via Playwright CSS/JS injection against the sandboxed prototype, never by editing `docs/design/tier-01-card/index.html` directly | ⏳ **PROTOTYPING — Jac, 2026-07-31** |
+
 ## Still open after 07-20 (do not treat as locked)
 
 - **`labs-decisions.md`'s remaining open items** not covered above: the Tier 1 drawer is a
