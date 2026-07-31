@@ -94,11 +94,29 @@ is reserved by the board's fixed 114px, not by ticks)."* The cap exists because 
 reserves fixed width. **Free the board and the cap goes** — which is what makes the
 right-condensed head in §6 able to run slots at full width.
 
-### 2.6 Converting the button to a verb reclaims ~22px
-#155 sizes the state chip to the longest **state** — `3d overdue`, 10 characters, 93px.
-Verbs are shorter (`Dispatch`, 8ch). That's roughly **22px** back, which is most of what the
-facts column needs in §2.4. Finishing #158's verb-CTA conversion is the cheapest way to fit
-the row.
+### 2.6 Converting the button to a verb reclaims ~22px — but NOT enough to fit facts
+#155 sizes the state chip to the longest **state** — `Service due`, 11 characters, 93px.
+Verbs are shorter (`Reassign`, 8ch). That's roughly **22px** back.
+
+> ⚠️ **CORRECTED 2026-07-31 by measurement — the second half of this claim was wrong.** It read
+> *"which is most of what the facts column needs… the cheapest way to fit the row."* It is not.
+>
+> | Measured | Result |
+> |---|---|
+> | #155's formula reproduced | `max(66, 11 × 7.15 + 14)` = **93px** — exactly what the card renders ✅ |
+> | Swapping chip **text** to verbs | **0px reclaimed.** The chip is an inline `width:93px; flex:0 0 auto` — a *fixed column*. The saving is only real if `stateW` is **recomputed** against the verb set. |
+> | `stateW` recomputed for verbs (8ch) | **71px — 22px reclaimed** ✅ the arithmetic holds |
+> | Name column with facts restored at 71px | **40–48px** |
+> | Width `Excavator 12k` actually needs | **103px** |
+>
+> So facts still cannot come back: the name would be cut to **under half** of what it needs.
+> And there is a **hard ceiling** — #155's own `max(66, …)` floor means the chip can never go
+> below **66px**, so the largest possible reclaim from *any* verb set is **27px**, against a
+> ~59px shortfall. **No choice of wording makes facts fit at 380px.**
+>
+> **Consequence: do the verb conversion on its own merit** — it is the locked #158 pattern and it
+> removes the §5.7.3 duplication — **not as a width fix.** Facts stay dropped at 380px, which is
+> what #162 already specifies. Fitting facts needs a wider column (Tier 0.2), not shorter words.
 
 ### 2.7 Row issue data already exists
 No new data model is needed for row slots. The issues are already in the old pin's tooltip.
