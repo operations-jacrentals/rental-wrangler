@@ -640,33 +640,47 @@
   inventory — laser polygon coords hand-tuned against four other values, an order-load-bearing `§3`
   cascade, and both carets + the footer loop measured off hidden mirror spans (**a font or
   `letter-spacing` change silently breaks caret tracking**). Port it deliberately, tweak panel intact.
-- **Tier 0.1 group head + item row — head SETTLED in design, rows built to R7, architecture question
-  OPEN (2026-07-31).** Full trail with every revert point, rejected branch, measurement and CSS block:
-  `docs/superpowers/specs/2026-07-31-tier-01-head-row-design-log.md`. **Head (settled):** the title
-  became a **26px deep milled pocket** with **raised** letter faces in an etched-away field (the
-  footer scroll-pip physics — the pip's *outer* `0 1px 2px` cast shadow is the proof, since a recess
-  can't cast outward); chevron, head corner Pin and row pins all **dropped**; faces carry the **state
+- **Tier 0.1 group head + item row — RULED AND LANDED (2026-07-31, PR #785, ledger #165–#178).**
+  Full trail — nine revert points, every rejected branch, every measurement, the CSS for each state:
+  `docs/superpowers/specs/2026-07-31-tier-01-head-row-design-log.md`. **The card itself now carries
+  R2→P1** (`docs/design/tier-01-card/index.html`); `git checkout` of that one file is the revert.
+  **Head:** title is a **26px deep milled pocket**, **raised** letter faces in an etched-away field
+  (footer scroll-pip physics — the pip's *outer* `0 1px 2px` cast shadow is the proof, since a recess
+  can't cast outward); chevron, head corner Pin and row pins **dropped**; faces carry the **state
   hue**, open/shut moved to the **pocket floor** because hue can't carry both — **red fails 4.5:1
   below ~76%**, and the shared shut factor is the **max** across hues, not the min (got this backwards
-  twice). Pins → **slots** (skewed ticks); a collapsed slot unfurls **LEFT**, `+N` on the slot side.
-  **Rows:** order is `message board · button · slots · facts · name` (Jac's call); the row message
-  board **needs a steel ground** — measured 4.64× darker than head steel (reads as a well) but 1.38×
-  *lighter* than the open-row ground (inverts, vanishes); facts drop first, since the card is locked
-  at **380px / 357px interior at every viewport 440–560px** and all five don't fit. Row issue data
-  already exists in the old pin's tooltip — **rows expose `data-hint`, heads `data-tip`**.
-  **OPEN and unanswered:** Jac's two-level proposal — rows become **cartridges** that light up, group
-  heads condense **right** into a **housing** that racks open. The plot risk is two nested open/shut
-  mechanisms in one language; the fix is #146 (**group = opens by MOVING, steel, no light; row = opens
-  by LIGHTING, glass, emission**), which relocates six ledger rows (#146 application, #161 boot theatre
-  → row-open, #139/#140 laser, #156 wash, #67/#164 click contract, atom-rebuild §1's 8-cap). Jac also
-  asked what the **row button** is for — answer: it isn't redundant, it's **unfinished**; #158 already
-  locked the verb-CTA pattern, and converting it reclaims **~22px** (#155 sizes the chip to the longest
-  *state*, `3d overdue`/10ch; verbs are 8ch), which is most of what facts needs. **Only repo change
-  from that session:** the group rename `Not Ready/Failed+Reserved` → **`Reserved: Not Ready`**
-  (ledger #165, PR #785 — draft, green) — which leaves *Failed* implied under *Not Ready*, correct only
-  if `Failed ⊂ Not Ready` in yard usage. Also still open: rack placement, the **#147** collision
-  (Open chip's ✕-on-hover vs slot expand-on-hover), the 8-vs-10 tick cap, the collapsed slot
-  overhanging its cell (`OPEN` → `PEN`), whether it keeps its numeral, and the unread laser-drop trade.
+  twice). Pins → **slots** (skewed ticks) **everywhere, including the filter chips** (#177); a
+  collapsed slot unfurls **LEFT** and shows a **numeral only** (#166).
+  **P1 — the two-level mechanic (#168):** `GROUP = housing, opens by MOVING` (steel, mechanical, **no
+  light**) · `ROW = cartridge, opens by LIGHTING` (glass, terminal, emission). Invariant at both
+  levels: **name right-aligned**. Laser drop moved group → row (#169); lit face is **neutral glass,
+  the frame carries the hue alone** (#172, narrows #156); the **220ms click discriminator is
+  untouched** (#173) — the P1 layer adds no handler, it detects the card's own open-wash and re-skins
+  it. **Row order (#176):** `button · slots · board · name` — the head's own right-to-left grammar
+  (*name · board · slots*) plus a left-anchored button, the one element a head lacks. **Tick cap
+  retired (#170):** every other element is edge-anchored so the rack takes the residual — head racks
+  now run **138–243px** (16–28 ticks) where the spec allowed 8; the cap was always the board's fixed
+  114px. Close-all moved to a **click on the Open chip** (#178), retiring #147's ✕-on-hover.
+  ⚠️ **Two claims in that log were CORRECTED by measurement — don't rebuild on the originals.**
+  (1) **§2.6 was wrong** that the verb conversion pays the width bill (#174): the ~22px is real *only
+  if* `stateW` is recomputed (the chip is a fixed `width:93px`, so swapping text alone reclaims
+  **0px**), and #155's `max(66,…)` floor caps *any* verb set at **27px** against a **~59px** shortfall
+  — **facts cannot fit at 380px regardless of wording**; that needs a wider column in Tier 0.2.
+  (2) **§2.7's `data-tip || data-hint` is not true of this build** — `data-tip` doesn't exist at all;
+  the issue list is the row's **`.pin[data-hint]`**, newline-separated `Source, State, Date`. Building
+  against that sentence yields a one-tick rack. Also: the row's **centre point sits on the `.signal`
+  chip**, which `stopPropagation`s per #67 — a scripted `click('[data-row]')` does *not* open a row.
+  **Verb wording is deferred** to a future Fable-5 pass over the backend (#175) — the card's
+  `JUMPWORD_BY_STATE` is an explicit placeholder; **do not polish or audit those words**.
+  **Still open:** #156 (does the lit face keep the group hue?), and a pre-existing gap this surfaced
+  but didn't cause — the card's open-row wash never clears on a second body click, so a lit cartridge
+  stays lit (the card's own contract; #173 says leave the click alone).
+- **⛔ 36 commits sit on `trunk` but are NOT live (2026-07-31).** `production` is a clean
+  fast-forward behind `trunk`, and the range carries real served-file change — **app.js +552,
+  style.css +381**, plus `index.html` and `config.js`. This is a **much larger promote than one
+  commit**, and `/promote` will need staging to serve trunk's actual bytes first (the content-hash
+  freshness gate). Jac's call, deliberately deferred on 2026-07-31 — **check this before assuming
+  production reflects trunk.**
 - **Cross-device user sync — SHIPPED LIVE + PROMOTED (2026-07-17, PRs #692+#702+#685, `?v=20260717ab`, flag
   `userSync` ON).** Prefs/Views/dispatch/comms/resume-column follow the PERSON across devices (see
   the Decisions entry for the design). Verified by a 4-lens adversarial workflow (operator-isolation
