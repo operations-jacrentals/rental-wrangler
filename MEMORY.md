@@ -444,6 +444,22 @@
   (`CLAUDE_CODE_SESSION_ID=…-r1/-r2/-r3`); or just let natural churn do it (post-merge every
   trunk-based deploy self-identifies). A slot held by another ACTIVE session queues you rather than
   clobbering — that's correct; wait for its TTL to lapse before refreshing it.
+- **`git rev-list` counts LIE on this shallow clone — in BOTH directions (2026-07-31).** The
+  unpromoted-commit count read **1** before `git fetch --deepen=400` and **36** after. The existing
+  note said a shallow clone *over*-reports ("268 ahead" for a branch 4 behind); it also
+  **under**-reports, which is worse, because a "1 commit behind" reading looks safe and invites a
+  casual promote. **Deepen before quoting any ahead/behind count**, and prefer
+  `git log A..B --oneline | wc -l` cross-checked after a deepen.
+- **A measurement only proves something if the NEGATIVE case can occur (2026-07-31).** A "measured
+  proof" that the group housing moves on open was computed against a build where the gate was pinned
+  open forever — the transform never turned *off*, so the number was real and meaningless. Root
+  cause worth remembering on its own: **`getComputedStyle` on a `display:none` element returns
+  `transform: none`** regardless of the inline value, so reading state off an element your own CSS
+  hides silently freezes that state. Read the **inline** value instead.
+- **dc-runtime RECYCLES row/head DOM nodes positionally — it does not replace them (2026-07-31).**
+  Any "is this already built?" guard therefore reads a recycled node as correct, and an injected
+  layer ends up describing a **different record** (filter to Done and a green row still showed the
+  previous unit's red issues). Key an injected layer on a **content signature**, not on presence.
 - **Cloud sessions are ephemeral** (fresh clone, container reclaimed) — only
   git-committed work survives, and Claude Code's native auto-memory is machine-local
   so it won't carry over. Commit + push early.
@@ -675,6 +691,14 @@
   **Still open:** #156 (does the lit face keep the group hue?), and a pre-existing gap this surfaced
   but didn't cause — the card's open-row wash never clears on a second body click, so a lit cartridge
   stays lit (the card's own contract; #173 says leave the click alone).
+- **NEXT UP — cascade the Tier-0.1 decisions into the REST of the design artifacts (2026-07-31).**
+  Brief + a ready-to-paste prompt: **`docs/handoffs/2026-07-31-cascade-tier01-decisions.md`**. One
+  artifact (`docs/design/tier-01-card/index.html`) is current; the **kit**
+  (`docs/design/rw-design-system/` — `elements/pin.html` still teaches an atom #177 replaced, the
+  radius ladder #140 reversed, controls not yet mono per #142), **`tier-01-handoff/atom-rebuild.md`**
+  (its 8-tick cap + fixed-114px board are retired by #170), and **all six Labs prompts** still teach
+  the superseded language. Fold it into the existing `STALE-DESIGN-LANGUAGE-SWEEP.md` rather than
+  sweeping the same ~30 files twice.
 - **⛔ 36 commits sit on `trunk` but are NOT live (2026-07-31).** `production` is a clean
   fast-forward behind `trunk`, and the range carries real served-file change — **app.js +552,
   style.css +381**, plus `index.html` and `config.js`. This is a **much larger promote than one
