@@ -2018,6 +2018,7 @@ class Component extends DCLogic {
 
 
 
+
 <!-- ============================================================================
      Tier-0.1 head/row build — revert points R2-R7 plus P1, landed 2026-07-31.
      Trail: docs/superpowers/specs/2026-07-31-tier-01-head-row-design-log.md
@@ -2058,13 +2059,49 @@ class Component extends DCLogic {
 
   // A row's issues live in the .pin's data-hint: one per line, "Source, State, Date".
   // (data-tip does not exist in this build — see design log section 5.7.)
+  // Slots are ISSUES, so this is pin-derived ONLY: a row with nothing open gets no
+  // ticks, rather than a filler tick made from its own state text.
   function rowIssues(row) {
     var pin = row.querySelector('.pin[data-hint]');
-    if (!pin) { var sg = row.querySelector('.signal'); return sg ? [(sg.textContent || '').trim()] : []; }
+    if (!pin) return [];
     return (pin.getAttribute('data-hint') || '').split(/\n+/).map(function (l) {
       var p = l.split(',').map(function (s) { return s.trim(); });
       return p.length >= 2 ? p[1] : p[0];
     }).filter(Boolean);
+  }
+  function rowState(row) {
+    var sg = row.querySelector('.signal'); return sg ? (sg.textContent || '').trim() : '';
+  }
+  // THE STALENESS GUARD. dc-runtime RECYCLES row/head nodes positionally instead of
+  // replacing them, so "a rack already exists here" does NOT mean "this node is still
+  // about the same record". Without this, filtering or searching leaves a rack, board
+  // and data-tone describing a DIFFERENT unit — and a wrong data-tone mis-colours the
+  // laser frame, which #172 makes the sole carrier of the state hue.
+  function rowSig(row) {
+    var pin = row.querySelector('.pin[data-hint]');
+    return (pin ? pin.getAttribute('data-hint') : '') + '\u0001' +
+           (((row.querySelector('.rmq') || {}).textContent) || '') + '\u0001' + rowState(row);
+  }
+  function headSig(gate, grp) {
+    var s = ((gate.querySelector('.sc-interp') || {}).textContent) || '';
+    if (grp) { var rs = grp.querySelectorAll('[data-row]');
+      for (var i = 0; i < rs.length; i++) s += '\u0002' + rowSig(rs[i]); }
+    return s;
+  }
+  // #170 — "+N appears only when real width runs out". The rack clips at overflow:hidden,
+  // so without this the excess ticks vanish silently instead of being counted.
+  function fitRack(rk) {
+    if (!rk) return;
+    var old = rk.querySelector('.rw-more'); if (old) old.parentNode.removeChild(old);
+    var ticks = [].slice.call(rk.querySelectorAll('.rw-tick'));
+    ticks.forEach(function (t) { t.style.display = ''; });
+    if (!ticks.length || rk.clientWidth <= 0) return;
+    var n = ticks.length, more = null;
+    while (n > 0 && rk.scrollWidth > rk.clientWidth + 1) {
+      n--; ticks[n].style.display = 'none';
+      if (!more) { more = document.createElement('span'); more.className = 'rw-more'; rk.appendChild(more); }
+      more.textContent = '+' + (ticks.length - n);
+    }
   }
   // children[0] is the absolutely-positioned accent caret span, NOT the content div.
   function rowInner(row) {
@@ -2098,11 +2135,26 @@ class Component extends DCLogic {
   }
 
   function build() {
-    // --- open/shut, read off the chevron before the CSS hides it ---
+    // #169 takes the LASER off the housing — and ONLY the laser. The frame is the one
+    // element carrying an inline transform-origin (the browser normalises the authored
+    // "top" to "center top", so match the PROPERTY, not a value); there are exactly ten,
+    // one per group. It is NOT a direct child of the group, which is why a grp.children
+    // scan missed it entirely. The earlier blanket "hide every absolute div in the group"
+    // did find it, but took the side rails, U-groove, uBeam and both tongues with it —
+    // and those are chassis steel, which #168 defines the housing as keeping.
+    [].forEach.call(document.querySelectorAll('div[style*="transform-origin"]'), function (c) {
+      c.classList.add('rw-noframe');
+    });
+
+    // --- open/shut, read off the chevron's INLINE transform ---
+    // NOT getComputedStyle: this block's own CSS sets .gate__chev{display:none},
+    // and a display:none element computes transform as "none" no matter what the
+    // inline value says — which pinned every gate to data-open="1" and left the
+    // whole housing open/shut mechanic dead. The inline value survives hiding.
     [].forEach.call(document.querySelectorAll('.gate'), function (g) {
       var c = g.querySelector('.gate__chev');
-      var t = c ? getComputedStyle(c).transform : 'none';
-      g.setAttribute('data-open', (t !== 'none' && !/^matrix\(1,\s*0,\s*0,\s*1/.test(t)) ? '0' : '1');
+      var t = c ? (c.style.transform || 'none') : 'none';
+      g.setAttribute('data-open', (t && t !== 'none') ? '0' : '1');
     });
 
     // --- LEVEL 2 · cartridges (rows). REPLACE, don't ADD: the 380px budget is
@@ -2110,19 +2162,30 @@ class Component extends DCLogic {
     //     R7/#162 drop first anyway. ---
     [].forEach.call(document.querySelectorAll('[data-row]'), function (row) {
       var inner = rowInner(row); if (!inner) return;
-      if (!inner.querySelector('.rw-rack')) {
+      var sig = rowSig(row);
+      if (row.getAttribute('data-rwsig') !== sig) {
+        // the node was recycled onto a different record — tear the old layer out
+        var ob = inner.querySelector('.rw-board'); if (ob) ob.parentNode.removeChild(ob);
+        var ork = inner.querySelector('.rw-rack'); if (ork) ork.parentNode.removeChild(ork);
+
         [].forEach.call(inner.children, function (c) {
+          // NEVER sweep the jump band: it only exists while the row is open, and
+          // hiding it once is permanent because the sweep does not re-run for it.
+          if (c.hasAttribute('data-jump-band')) return;
           if (!c.classList.contains('pin-wrap') && !c.classList.contains('ref')) c.classList.add('rw-off');
         });
         var list = rowIssues(row);
-        var worst = list.slice().sort(function (a, b) { return RANK[HUE(a)[1]] - RANK[HUE(b)[1]]; })[0] || '';
-        row.setAttribute('data-tone', HUE(worst)[1]);
+        var worst = list.slice().sort(function (a, b) { return RANK[HUE(a)[1]] - RANK[HUE(b)[1]]; })[0];
+        // no open issues -> the row's own state still gives the lit frame its hue
+        row.setAttribute('data-tone', HUE(worst || rowState(row))[1]);
         var rest = list[0] ? list[0].toUpperCase() : '\u2014';
         var bd = board(rest);
         inner.insertBefore(bd, inner.firstChild);
-        var rk = rack(list.length ? list : ['available']);
+        var rk = rack(list);                     // empty list -> no ticks, not a filler tick
         inner.insertBefore(rk, bd.nextSibling);
         wire([].slice.call(rk.querySelectorAll('.rw-tick')), bd, rest);
+        fitRack(rk);
+        row.setAttribute('data-rwsig', sig);
       }
 
       // The card signals "this row is open" by writing an inline color-mix wash
@@ -2165,32 +2228,33 @@ class Component extends DCLogic {
     //     [ slots ...residual... ][ board ][ NAME ]. The head's own board/stamp/
     //     spacers are retired so the rack inherits the width they held (#170). ---
     [].forEach.call(document.querySelectorAll('.gate'), function (g) {
-      var scp = g.closest('.scp1'); if (!scp || scp.querySelector('.rw-rack')) return;
+      var scp = g.closest('.scp1'); if (!scp) return;
       var grp = scp.parentElement;
+      var sig = headSig(g, grp);
+      if (scp.getAttribute('data-rwsig') === sig) return;   // same record, still valid
+
+      var ob = scp.querySelector('.rw-board'); if (ob) ob.parentNode.removeChild(ob);
+      var ork = scp.querySelector('.rw-rack'); if (ork) ork.parentNode.removeChild(ork);
 
       [].forEach.call(scp.children, function (c) {
         if (c.classList.contains('pin-wrap')) return;
         if (getComputedStyle(c).position === 'absolute') return;
         c.classList.add('rw-off');
       });
-      // #168/#169 — the group's laser frame is an absolute overlay; it moves to rows
-      if (grp) [].forEach.call(grp.children, function (c) {
-        var s = getComputedStyle(c);
-        if (s.position === 'absolute' && c.tagName === 'DIV' && !c.classList.contains('rw-cart')) {
-          c.classList.add('rw-noframe');
-        }
-      });
-
       var rows = grp ? [].slice.call(grp.querySelectorAll('[data-row]')) : [];
       var list = [];
-      rows.forEach(function (r) { list = list.concat(rowIssues(r)); });
+      rows.forEach(function (r) { list = list.concat(rowIssues(r)); });   // pin-derived only
       list.sort(function (a, b) { return RANK[HUE(a)[1]] - RANK[HUE(b)[1]]; });   // hottest first
+      // a lifecycle group with nothing open reads NOMINAL and shows no ticks, instead
+      // of counting its own members' states as if they were open issues
       var rest = list.length ? (list.length + ' OPEN') : 'NOMINAL';
       var bd = board(rest);
-      var rk = rack(list.length ? list : ['available']);
+      var rk = rack(list);
       scp.insertBefore(bd, scp.firstChild);
       scp.insertBefore(rk, bd);
       wire([].slice.call(rk.querySelectorAll('.rw-tick')), bd, rest);
+      fitRack(rk);
+      scp.setAttribute('data-rwsig', sig);
     });
   }
 

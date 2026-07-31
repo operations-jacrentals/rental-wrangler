@@ -472,6 +472,17 @@ Computed-style samples, not eyeballing:
 right-aligned at both levels (the invariant). **Overflow: none** — every element sits inside the
 380px card at 440px viewport.
 
+> ⚠️ **This table was originally measured against a BROKEN build, and did not prove what it was
+> cited for.** `start()` appended the stylesheet — which contains `.gate__chev{display:none}` —
+> *before* the first build, and `getComputedStyle` on a `display:none` element reports
+> `transform: none` whatever the inline value says. So every gate was pinned to `data-open="1"`
+> forever: the housing's `translateY(-1.5px)` never turned **off**, and all five dimmed shut-face
+> colours were dead CSS. Measuring "it moved" against a state that never un-moves demonstrates
+> nothing. **Fix: read the chevron's INLINE `transform`**, which survives being hidden. Re-verified
+> properly — collapsed → `data-open="0"`, gate transform `matrix(1,0,0,1,0,0)`, face `#c26161` (R4's
+> shut red); reopened → `data-open="1"`, `-1.5px`, face `#ff8080`. Both the motion *and* the face
+> dimming work now.
+
 #### 5.7.2 #170 verified — the cap really was the board
 
 With the head's fixed 114px board retired, the ten head racks now measure **138–243px** of run.
@@ -497,7 +508,16 @@ Everything above was injection-only; the prototype in git showed R0 + the rename
 stylesheet, which lands after anything static, so an equal-specificity rule loses on source order
 (§3.3). The block appends its `<style>` from JS — guaranteed last — and the DOM work has to wait for
 the component to mount anyway. A `MutationObserver` (disconnected during its own writes, re-armed
-after) re-applies on every re-render, because the runtime replaces the nodes it owns.
+after) re-applies on every re-render.
+
+> ⚠️ **CORRECTED — this originally said the observer works *"because the runtime replaces the nodes
+> it owns."* It does not: dc-runtime RECYCLES row and head nodes positionally.** That is a materially
+> different thing, and the difference was a live bug — a once-only `if (!querySelector('.rw-rack'))`
+> guard reads a recycled node as "already correct", so filtering or searching left a rack, board and
+> `data-tone` describing a **different unit** (filter to Done and a green *Checked in* row still
+> showed `3D OVERDUE` with three red ticks). A wrong `data-tone` also mis-colours the laser frame,
+> which #172 makes the **sole** carrier of the state hue. **Fix: a content signature** — `data-rwsig`
+> on each row/head, rebuilt whenever the signature changes.
 
 **Why it hooks the card's own open state.** #173 keeps the 220ms discriminator untouched, so the
 block adds **no click handler at all**. The card marks an open row by writing an inline `color-mix`
@@ -610,7 +630,8 @@ Three readouts, one actuator. And converting it pays the §2.4 width bill via §
 
 **Added by the P1 build** (§5.7.3): the row's message board and its state chip currently print the
 same string at rest. Finishing #158's verb conversion resolves it — that is now the next row-level
-decision, and it also pays the §2.4 width bill via §2.6.
+decision. It does **not** pay the §2.4 width bill: see #174 and the correction in §2.6, which
+measured that no verb set can make facts fit at 380px.
 
 ---
 
