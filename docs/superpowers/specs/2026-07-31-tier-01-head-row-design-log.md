@@ -593,10 +593,12 @@ Three readouts, one actuator. And converting it pays the §2.4 width bill via §
 2. ~~**Rack placement on rows.**~~ → **RULED** (#176): the row is `button · slots · board · name`
    — the head's own right-to-left grammar (*name · board · slots*) plus a left-anchored button.
    Supersedes R7's order; landed in the prototype.
-3. **#147 collision** — ⚠️ **narrowed, not closed** (#177). Jac ruled that **slots replace pins
-   everywhere and slots unfurl**, which *rejects* the tidy reading that a filter chip carries a
-   non-unfurling `Pin`. So the collision is real: the Open chip's slot unfurls on hover, and the
-   red **✕ close-all therefore cannot live on hover too**. ⏳ **Open: where the ✕ goes.**
+3. ~~**#147 collision.**~~ → **RESOLVED** (#177 + #178). Jac ruled that **slots replace pins
+   everywhere and slots unfurl**, which *rejected* the tidy reading that a filter chip carries a
+   non-unfurling `Pin` — so the collision was real. It is settled by moving the action, not the
+   hover: **clicking the Open chip while it is the active filter closes every open row**, and the
+   ✕-on-hover clause of #147 is retired. No new element, no new hover, nothing the other two
+   filter chips lack.
 4. ~~**8-vs-10 tick cap.**~~ → **RULED: no cap at all** (#170), and §5.7.2 measured the result.
 5. ~~**Collapsed slot overhangs its chip cell** (`OPEN` → `PEN`).~~ → dissolved by #166: the
    collapsed slot carries a **numeral**, so the wide status word is gone from that state.
