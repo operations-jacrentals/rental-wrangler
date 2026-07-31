@@ -2016,4 +2016,208 @@ class Component extends DCLogic {
 
 
 
+
+<!-- ============================================================================
+     Tier-0.1 head/row build — revert points R2-R7 plus P1, landed 2026-07-31.
+     Trail: docs/superpowers/specs/2026-07-31-tier-01-head-row-design-log.md
+     Rulings: decisions ledger #165-#173.
+
+       R2-R4  the group head: a 26px deep milled pocket, raised letter faces in
+              an etched-away field, hue on the faces, open/shut on the floor.
+       R5-R7  pins retired for slots (skewed ticks); the row's message board;
+              row order = message board . button . slots . facts . name.
+       P1     TWO LEVELS, TWO PHYSICS (#168):
+                GROUP = housing,   opens by MOVING    steel . mechanical . no light
+                ROW   = cartridge, opens by LIGHTING  glass . terminal . emission
+              Invariant at both levels: the name is right-aligned.
+
+     WHY THIS IS A RUNTIME BLOCK AND NOT A STATIC <style>: the card ships its own
+     runtime-INJECTED stylesheet, which lands after anything static, so an
+     equal-specificity rule loses on source order (design log section 3.3). The
+     style element is appended from JS so it is guaranteed to come last, and the
+     DOM work has to wait for the component to mount anyway.
+
+     WHY IT HOOKS THE CARD'S OWN OPEN STATE: ledger #173 keeps the existing 220ms
+     single/double click discriminator (#67/#164) exactly as it is. The card marks
+     an open row by writing an inline color-mix wash (#156's group-hue-at-16%);
+     this block detects that and re-skins it as a lit cartridge, per #172. It does
+     NOT add a competing click handler.
+     ============================================================================ -->
+<script>
+(function () {
+  var CSS = ".ref{background:none!important;background-color:transparent!important;background-image:none!important;\n     box-shadow:none!important;border:0!important;clip-path:none!important;width:auto!important;\n     flex:1 1 auto!important;min-width:0!important;padding-left:0!important;}\n.ref__icon{width:12px!important;height:12px!important;background:transparent!important;opacity:.45!important;}\n.rmq{font-family:'Archivo',sans-serif!important;font-weight:700!important;font-size:15px!important;\n     letter-spacing:-.005em!important;color:#eef2f7!important;}\n\n/* R3 — deep milled pocket */\n.scp1{padding-right:2px!important;}\n.scp1 .pin{display:none!important;}\n.gate{height:26px!important;padding:0 11px!important;margin-right:0!important;\n  background:linear-gradient(#080d14 0%, #0b111a 62%, #0d141d 100%)!important;\n  background-color:#0a0f16!important;\n  clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)!important;\n  box-shadow:\n    inset 0 6px 7px -1px rgba(0,0,6,.96), inset 0 2px 0 rgba(0,0,8,.9),\n    inset -3px 0 0 rgba(0,0,8,.72), inset -8px 0 9px -4px rgba(0,0,6,.85),\n    inset 0 -8px 9px -5px rgba(0,0,6,.5), inset 0 -2px 0 rgba(198,218,248,.22),\n    inset -3px -2px 0 rgba(198,218,248,.10)!important;\n  border:0!important;display:inline-flex!important;align-items:center!important;overflow:hidden!important;}\n.gate__chev{display:none!important;}\n.gate .sc-interp{font-family:ui-monospace,'Cascadia Code',Menlo,Consolas,monospace!important;\n  font-size:12.5px!important;font-weight:800!important;letter-spacing:.04em!important;\n  text-transform:uppercase!important;overflow:hidden!important;\n  text-overflow:ellipsis!important;white-space:nowrap!important;}\n\n/* R4 — hue faces + floor tint (the settled head) */\n.gate--red    .sc-interp{color:#ff8080!important;text-shadow:0 -1px 0 rgba(255,196,196,.30), 0 1px 2px rgba(0,0,4,.95)!important;}\n.gate--yellow .sc-interp{color:#f2dc6a!important;text-shadow:0 -1px 0 rgba(255,244,190,.30), 0 1px 2px rgba(0,0,4,.95)!important;}\n.gate--blue   .sc-interp{color:#9dbfe4!important;text-shadow:0 -1px 0 rgba(206,228,250,.30), 0 1px 2px rgba(0,0,4,.95)!important;}\n.gate--green  .sc-interp{color:#5ee0ab!important;text-shadow:0 -1px 0 rgba(186,246,220,.30), 0 1px 2px rgba(0,0,4,.95)!important;}\n.gate--gray   .sc-interp{color:#c2ccd8!important;text-shadow:0 -1px 0 rgba(226,236,248,.28), 0 1px 2px rgba(0,0,4,.95)!important;}\n.gate--red[data-open=\"0\"]    .sc-interp{color:#c26161!important;}\n.gate--yellow[data-open=\"0\"] .sc-interp{color:#b8a751!important;}\n.gate--blue[data-open=\"0\"]   .sc-interp{color:#7791ad!important;}\n.gate--green[data-open=\"0\"]  .sc-interp{color:#47aa82!important;}\n.gate--gray[data-open=\"0\"]   .sc-interp{color:#939ba4!important;}\n.gate--red[data-open=\"1\"]   {background:linear-gradient(rgba(255,66,66,.26),rgba(255,66,66,.09))!important;}\n.gate--yellow[data-open=\"1\"]{background:linear-gradient(rgba(238,212,75,.24),rgba(238,212,75,.08))!important;}\n.gate--blue[data-open=\"1\"]  {background:linear-gradient(rgba(99,148,204,.28),rgba(99,148,204,.10))!important;}\n.gate--green[data-open=\"1\"] {background:linear-gradient(rgba(52,211,153,.24),rgba(52,211,153,.09))!important;}\n.gate--gray[data-open=\"1\"]  {background:linear-gradient(rgba(170,180,193,.20),rgba(170,180,193,.07))!important;}\n\n/* R5 — slots */\n.seg,.seg__opt,[data-row],[data-row]>div{overflow:visible!important;}\n.rw-tick{flex:0 0 auto;width:6px;height:12px;transform:skewX(19deg);border-radius:1.5px;cursor:pointer;\n  background-image:linear-gradient(rgba(255,255,255,.20), rgba(255,255,255,.04) 42%, rgba(0,0,0,.28));\n  box-shadow:inset 0 1px 0 rgba(255,255,255,.24), inset 0 -1.5px 2px rgba(0,0,0,.45),\n             0 1px 2px rgba(0,0,0,.6);}\n.rw-rack{flex:0 0 auto;display:flex;align-items:center;gap:2.5px;margin-left:2px;}\n.rw-more{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:9px;color:#838e9c;margin-left:1px;}\n\n/* R6 — row message board (needs steel under it, section 2.3) */\n[data-row] > div{background:linear-gradient(rgba(185,205,235,.085),rgba(185,205,235,.02) 45%,rgba(0,0,12,.16)),\n           #171F2A !important;\n  box-shadow:inset 0 1px 0 rgba(185,205,235,.13)!important;}\n.rw-board{background:#050A10;display:flex;align-items:center;padding:0 7px;\n  clip-path:polygon(5px 0,100% 0,100% calc(100% - 5px),calc(100% - 5px) 100%,0 100%,0 5px);\n  box-shadow:inset 0 1px 2px rgba(0,0,6,.8), inset 0 -1px 0 rgba(190,210,240,.10);}\n.rw-board span{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:8.5px;font-weight:700;\n  letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}\n.rw-tick.hot{filter:brightness(1.5);}\n\n/* R7 — row order: message board · button · slots · facts · name */\n[data-row]>div{height:34px!important;display:flex!important;align-items:center!important;\n  gap:6px!important;position:relative!important;padding-left:8px!important;padding-right:8px!important;}\n[data-row] .pin{display:none!important;}\n.rw-board          {order:1!important;flex:0 0 auto!important;width:76px!important;height:19px!important;}\n[data-row] .pin-wrap{order:2!important;flex:0 0 auto!important;width:auto!important;margin-left:0!important;}\n[data-row] .rw-rack{order:3!important;flex:0 0 auto!important;margin-left:0!important;}\n[data-row] > div > span.rw-facts{order:4!important;flex:0 0 auto!important;width:52px!important;\n  text-align:right!important;font-size:9.5px!important;display:none!important;}\n[data-row] .ref    {order:5!important;flex:1 1 0!important;min-width:0!important;width:auto!important;\n  display:flex!important;align-items:center!important;gap:5px!important;\n  justify-content:flex-end!important;height:auto!important;\n  background:none!important;box-shadow:none!important;border:0!important;clip-path:none!important;}\n[data-row] .rmq    {overflow:hidden!important;text-overflow:ellipsis!important;\n  white-space:nowrap!important;min-width:0!important;}\n\n\n/* ============================================================================\n   P1 · TWO LEVELS, TWO PHYSICS   (ledger #168)\n     GROUP = housing   — opens by MOVING    steel · mechanical · NO light\n     ROW   = cartridge — opens by LIGHTING  glass · terminal · emission\n   Invariant held at BOTH levels: the NAME is right-aligned.\n   ============================================================================ */\n\n/* #169 — the laser drop/frame comes OFF the group. A housing never emits. */\n.rw-noframe{display:none!important;}\n\n/* ---------------------------------------------------------------------------\n   LEVEL 1 · THE HOUSING (group head), right-condensed at the .scp1 level:\n   [ slots ....residual.... ][ board ][ NAME ]\n   #170 — board and name are edge-anchored, so the rack takes what is LEFT.\n   The head's ORIGINAL board / stamp / spacers are retired (.rw-off), not\n   added alongside — that is what kept the 380px budget honest.\n   --------------------------------------------------------------------------- */\n.rw-off{display:none!important;}\n.scp1 .rw-rack {order:1!important;flex:1 1 auto!important;min-width:0!important;\n  margin-left:0!important;overflow:hidden!important;justify-content:flex-start!important;}\n.scp1 .rw-board{order:2!important;flex:0 0 auto!important;width:auto!important;max-width:118px!important;\n  height:17px!important;}\n.scp1 .pin-wrap{order:3!important;flex:0 1 auto!important;min-width:0!important;\n  margin-left:auto!important;overflow:hidden!important;}\n.gate{max-width:100%!important;\n  transition:transform .26s cubic-bezier(.32,.72,0,1), box-shadow .26s cubic-bezier(.32,.72,0,1)!important;}\n\n/* the housing's OPEN state is MOTION. Nothing here emits light: the only\n   changes are WHERE the steel sits and WHICH WAY its shadow falls.          */\n.gate[data-open=\"1\"]{\n  transform:translateY(-1.5px)!important;\n  box-shadow:\n    inset 0 3px 5px -1px rgba(0,0,6,.80),\n    inset 0 1px 0 rgba(0,0,8,.7),\n    inset -3px 0 0 rgba(0,0,8,.72),\n    inset -8px 0 9px -4px rgba(0,0,6,.62),\n    inset 0 -1px 0 rgba(198,218,248,.30),\n    inset -3px -1px 0 rgba(198,218,248,.14),\n    0 3px 0 -1px rgba(0,0,5,.92),      /* the bay mouth it lifted out of */\n    0 5px 7px -3px rgba(0,0,4,.75)!important;\n}\n.gate[data-open=\"0\"]{transform:translateY(0)!important;}\n\n/* ---------------------------------------------------------------------------\n   LEVEL 2 · THE CARTRIDGE (row)\n   Seated shut = steel, matte, exactly as R7 left it.\n   Opened = the face POWERS ON (#161, #139/#140 relocated here by #168/#169).\n   The inner div carries an INLINE background, so these need !important.\n   --------------------------------------------------------------------------- */\n[data-row][data-lit=\"1\"] > div{\n  background:\n    radial-gradient(120% 180% at 50% 0%, rgba(120,190,255,.11), transparent 62%),\n    linear-gradient(#04080e 0%, #061019 62%, #040a11 100%)!important;\n  box-shadow:inset 0 1px 2px rgba(0,0,6,.9), inset 0 -1px 0 rgba(190,215,245,.13)!important;}\n\n/* the laser frame — now a ROW event, and drawn on the ROW so it wraps the WHOLE\n   cartridge (face + drawer) as one object. Drawing it on `> div` framed each\n   child separately, which read as two stacked panels.                        */\n[data-row][data-lit=\"1\"]::before{\n  content:'';position:absolute;inset:0;pointer-events:none;z-index:3;\n  transform-origin:top;animation:rwLaserDrop .24s cubic-bezier(.32,.72,0,1) both;}\n[data-row][data-lit=\"1\"][data-tone=\"red\"]::before   {box-shadow:inset 2px 0 0 #ff4242, inset -2px 0 0 #ff4242, inset 0 -2px 0 #ff4242, 0 0 9px rgba(255,66,66,.30);}\n[data-row][data-lit=\"1\"][data-tone=\"yellow\"]::before{box-shadow:inset 2px 0 0 #eed44b, inset -2px 0 0 #eed44b, inset 0 -2px 0 #eed44b, 0 0 9px rgba(238,212,75,.30);}\n[data-row][data-lit=\"1\"][data-tone=\"blue\"]::before  {box-shadow:inset 2px 0 0 #6394cc, inset -2px 0 0 #6394cc, inset 0 -2px 0 #6394cc, 0 0 9px rgba(99,148,204,.30);}\n[data-row][data-lit=\"1\"][data-tone=\"green\"]::before {box-shadow:inset 2px 0 0 #34d399, inset -2px 0 0 #34d399, inset 0 -2px 0 #34d399, 0 0 9px rgba(52,211,153,.30);}\n[data-row][data-lit=\"1\"][data-tone=\"gray\"]::before  {box-shadow:inset 2px 0 0 #8b94a3, inset -2px 0 0 #8b94a3, inset 0 -2px 0 #8b94a3, 0 0 9px rgba(139,148,163,.26);}\n\n/* THE DRAWER IS THE CARD'S OWN PANEL, not a new element. The card already\n   renders a \"Tier 1 · detail view (parked)\" panel as the row's third child —\n   that is the cartridge's drawer slot, and it carries the #63 anchor icon, so\n   it is decorated rather than replaced. Its label stays: Tier 1 IS still parked;\n   the terminal lines are what P1 puts in the slot now.                        */\n[data-row][data-lit=\"1\"] .rw-drawer{height:auto!important;display:block!important;\n  padding:0 0 5px 0!important;}\n.rw-cartlines{padding-top:2px;}\n\n/* the lit face emits; the name stays right-aligned (the invariant) */\n[data-row][data-lit=\"1\"] .rmq{color:#dcecff!important;text-shadow:0 0 7px rgba(150,205,255,.42)!important;}\n[data-row][data-lit=\"1\"] .rw-board{background:#02060b!important;\n  box-shadow:inset 0 1px 3px rgba(0,0,6,.92), inset 0 -1px 0 rgba(190,215,245,.16)!important;}\n[data-row][data-lit=\"1\"] .rw-board span{color:#8fd8ff!important;text-shadow:0 0 6px rgba(80,190,255,.45)!important;}\n\n/* CRT flicker on power-on (#161, relocated to row-open) */\n@keyframes rwCrtOn{\n  0%{opacity:.16;filter:brightness(2.6) saturate(.4)} 12%{opacity:1;filter:brightness(1.5)}\n  22%{opacity:.55;filter:brightness(.8)} 34%{opacity:1;filter:brightness(1.28)}\n  52%{opacity:.86;filter:brightness(.97)} 100%{opacity:1;filter:brightness(1)}}\n[data-row][data-lit=\"1\"] > div > *{animation:rwCrtOn .34s steps(16,end) both;}\n\n/* the drawer the cartridge drops — the terminal body */\n.rw-cart{overflow:hidden;background:linear-gradient(#04080e,#03070c);\n  box-shadow:inset 0 1px 0 rgba(150,200,255,.14), inset 0 -1px 0 rgba(0,0,6,.9);\n  animation:rwCartDrop .26s cubic-bezier(.32,.72,0,1) both;}\n@keyframes rwCartDrop{from{height:0}to{height:var(--cart-h,58px)}}\n.rw-cart .l,.rw-cartlines .l{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:9px;\n  letter-spacing:.05em;color:#7fd0ff;text-shadow:0 0 6px rgba(80,190,255,.40);padding:3px 10px;\n  white-space:nowrap;overflow:hidden;}\n.rw-cart .l b,.rw-cartlines .l b{color:#cfe9ff;font-weight:800;}\n.rw-cart .l.dim,.rw-cartlines .l.dim{color:#4d6d86;text-shadow:none;}";
+
+  var HUE = function (l) { var s = (l || '').toLowerCase();
+    if (/overdue|failed|fail|damage|breakdown/.test(s)) return ['#ff4242', 'red'];
+    if (/service due|needs wash|open|promised|due/.test(s)) return ['#eed44b', 'yellow'];
+    if (/transport|truck|pickup|reserved/.test(s)) return ['#6394cc', 'blue'];
+    if (/available|complete|passed|paid/.test(s)) return ['#34d399', 'green'];
+    return ['#8a94a2', 'gray']; };
+  var RANK = { red: 0, yellow: 1, blue: 2, green: 3, gray: 4 };   // style section 6 rollup
+
+  // A row's issues live in the .pin's data-hint: one per line, "Source, State, Date".
+  // (data-tip does not exist in this build — see design log section 5.7.)
+  function rowIssues(row) {
+    var pin = row.querySelector('.pin[data-hint]');
+    if (!pin) { var sg = row.querySelector('.signal'); return sg ? [(sg.textContent || '').trim()] : []; }
+    return (pin.getAttribute('data-hint') || '').split(/\n+/).map(function (l) {
+      var p = l.split(',').map(function (s) { return s.trim(); });
+      return p.length >= 2 ? p[1] : p[0];
+    }).filter(Boolean);
+  }
+  // children[0] is the absolutely-positioned accent caret span, NOT the content div.
+  function rowInner(row) {
+    for (var i = 0; i < row.children.length; i++) if (row.children[i].tagName === 'DIV') return row.children[i];
+    return null;
+  }
+  function rack(list) {
+    var r = document.createElement('div'); r.className = 'rw-rack';
+    list.forEach(function (t) {
+      var k = document.createElement('i'); k.className = 'rw-tick';
+      k.style.background = HUE(t)[0]; k.dataset.label = t; r.appendChild(k);
+    });
+    return r;
+  }
+  function board(txt) {
+    var b = document.createElement('div'); b.className = 'rw-board';
+    var s = document.createElement('span'); s.textContent = txt; s.style.color = '#6a7684';
+    b.appendChild(s); return b;
+  }
+  function wire(ticks, b, rest) {
+    ticks.forEach(function (k) {
+      k.addEventListener('mouseenter', function () {
+        var s = b.querySelector('span'); s.textContent = k.dataset.label.toUpperCase();
+        s.style.color = HUE(k.dataset.label)[0]; k.classList.add('hot');
+      });
+      k.addEventListener('mouseleave', function () {
+        var s = b.querySelector('span'); s.textContent = rest; s.style.color = '#6a7684';
+        k.classList.remove('hot');
+      });
+    });
+  }
+
+  function build() {
+    // --- open/shut, read off the chevron before the CSS hides it ---
+    [].forEach.call(document.querySelectorAll('.gate'), function (g) {
+      var c = g.querySelector('.gate__chev');
+      var t = c ? getComputedStyle(c).transform : 'none';
+      g.setAttribute('data-open', (t !== 'none' && !/^matrix\(1,\s*0,\s*0,\s*1/.test(t)) ? '0' : '1');
+    });
+
+    // --- LEVEL 2 · cartridges (rows). REPLACE, don't ADD: the 380px budget is
+    //     already spent, and the bare spans are the date/facts column, which
+    //     R7/#162 drop first anyway. ---
+    [].forEach.call(document.querySelectorAll('[data-row]'), function (row) {
+      var inner = rowInner(row); if (!inner) return;
+      if (!inner.querySelector('.rw-rack')) {
+        [].forEach.call(inner.children, function (c) {
+          if (!c.classList.contains('pin-wrap') && !c.classList.contains('ref')) c.classList.add('rw-off');
+        });
+        var list = rowIssues(row);
+        var worst = list.slice().sort(function (a, b) { return RANK[HUE(a)[1]] - RANK[HUE(b)[1]]; })[0] || '';
+        row.setAttribute('data-tone', HUE(worst)[1]);
+        var rest = list[0] ? list[0].toUpperCase() : '\u2014';
+        var bd = board(rest);
+        inner.insertBefore(bd, inner.firstChild);
+        var rk = rack(list.length ? list : ['available']);
+        inner.insertBefore(rk, bd.nextSibling);
+        wire([].slice.call(rk.querySelectorAll('.rw-tick')), bd, rest);
+      }
+
+      // The card signals "this row is open" by writing an inline color-mix wash
+      // (#156). #172 re-skins that as a lit cartridge; #173 leaves the click alone.
+      var open = /color-mix/.test((inner.getAttribute('style') || ''));
+
+      // The card renders its own detail panel as a LATER div child — that panel
+      // is the cartridge's drawer slot and it carries the #63 anchor icon, so
+      // the terminal lines go INSIDE it rather than becoming a second drawer.
+      var drawer = null;
+      for (var j = row.children.length - 1; j >= 0; j--) {
+        var ch = row.children[j];
+        if (ch.tagName === 'DIV' && ch !== inner) { drawer = ch; break; }
+      }
+
+      if (open) {
+        row.setAttribute('data-lit', '1');
+        if (drawer && !drawer.querySelector('.rw-cartlines')) {
+          drawer.classList.add('rw-drawer');
+          var nm = ((row.querySelector('.rmq') || {}).textContent || 'UNIT').trim();
+          var li = rowIssues(row);
+          var lines = document.createElement('div'); lines.className = 'rw-cartlines';
+          lines.innerHTML = '<div class="l">&gt; <b>' + nm + '</b> ONLINE</div>' +
+            (li.length ? li.map(function (t) { return '<div class="l">&nbsp;&nbsp;\u00b7 ' + t.toUpperCase() + '</div>'; }).join('')
+                       : '<div class="l dim">&nbsp;&nbsp;\u00b7 NO OPEN ISSUES</div>') +
+            '<div class="l dim">&nbsp;&nbsp;READY</div>';
+          drawer.appendChild(lines);
+        }
+      } else if (row.getAttribute('data-lit') === '1') {
+        row.removeAttribute('data-lit');
+        if (drawer) {
+          drawer.classList.remove('rw-drawer');
+          var old = drawer.querySelector('.rw-cartlines');
+          if (old) old.parentNode.removeChild(old);
+        }
+      }
+    });
+
+    // --- LEVEL 1 · housings (group heads), right-condensed at .scp1:
+    //     [ slots ...residual... ][ board ][ NAME ]. The head's own board/stamp/
+    //     spacers are retired so the rack inherits the width they held (#170). ---
+    [].forEach.call(document.querySelectorAll('.gate'), function (g) {
+      var scp = g.closest('.scp1'); if (!scp || scp.querySelector('.rw-rack')) return;
+      var grp = scp.parentElement;
+
+      [].forEach.call(scp.children, function (c) {
+        if (c.classList.contains('pin-wrap')) return;
+        if (getComputedStyle(c).position === 'absolute') return;
+        c.classList.add('rw-off');
+      });
+      // #168/#169 — the group's laser frame is an absolute overlay; it moves to rows
+      if (grp) [].forEach.call(grp.children, function (c) {
+        var s = getComputedStyle(c);
+        if (s.position === 'absolute' && c.tagName === 'DIV' && !c.classList.contains('rw-cart')) {
+          c.classList.add('rw-noframe');
+        }
+      });
+
+      var rows = grp ? [].slice.call(grp.querySelectorAll('[data-row]')) : [];
+      var list = [];
+      rows.forEach(function (r) { list = list.concat(rowIssues(r)); });
+      list.sort(function (a, b) { return RANK[HUE(a)[1]] - RANK[HUE(b)[1]]; });   // hottest first
+      var rest = list.length ? (list.length + ' OPEN') : 'NOMINAL';
+      var bd = board(rest);
+      var rk = rack(list.length ? list : ['available']);
+      scp.insertBefore(bd, scp.firstChild);
+      scp.insertBefore(rk, bd);
+      wire([].slice.call(rk.querySelectorAll('.rw-tick')), bd, rest);
+    });
+  }
+
+  var obs = null, queued = false;
+  function rebuild() {
+    if (obs) obs.disconnect();
+    try { build(); } catch (e) { if (window.console) console.warn('[rw-p1]', e); }
+    if (obs) obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
+    queued = false;
+  }
+  function schedule() { if (!queued) { queued = true; requestAnimationFrame(rebuild); } }
+
+  function start() {
+    var st = document.createElement('style');
+    st.id = 'rw-p1'; st.textContent = CSS;
+    document.head.appendChild(st);          // appended last, so it wins source order
+    rebuild();
+    obs = new MutationObserver(schedule);
+    obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
+  }
+
+  // the component mounts asynchronously — wait for it, then bail out politely
+  var tries = 0;
+  var t = setInterval(function () {
+    if (document.querySelector('.gate')) { clearInterval(t); start(); }
+    else if (++tries > 150) { clearInterval(t); }   // ~12s, then give up silently
+  }, 80);
+})();
+</script>
+
 </body></html>

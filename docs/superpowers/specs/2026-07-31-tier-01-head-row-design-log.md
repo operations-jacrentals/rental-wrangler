@@ -2,9 +2,10 @@
 
 Full trail for the head/row redesign session: what was tried, what was **rejected and why**,
 what was **measured**, and the CSS for every state so any of them can be re-injected or
-reverted to. Only one change from this session reached the repo (the rename, PR #785);
-everything else was explored by runtime CSS/JS injection against the prototype and is
-recorded here because the scratchpad that held it is ephemeral.
+reverted to. The work was explored by runtime CSS/JS injection against the prototype and is
+recorded here because the scratchpad that held it is ephemeral. **R2→P1 has since been landed
+in the prototype itself (§5.8)** — so the artifact and the ledger now agree, which they did not
+for most of this session.
 
 Prototype: `docs/design/tier-01-card/index.html`. Ledger:
 `docs/superpowers/specs/2026-07-20-decisions-ledger.md` (read to the end — #101+ supersede
@@ -14,8 +15,9 @@ parts of the #1–100 snapshot).
 
 ## 0 · Revert points
 
-Each state is additive on the one above. R1 is the only one in git; R2–R7 are re-created by
-injecting the CSS in §5 at the named stage.
+Each state is additive on the one above. **R2→P1 are all in the prototype now (§5.8)** — the §5
+CSS blocks below stay authoritative for *reverting to an intermediate state*, which is still done by
+injecting up to the named stage against a `git checkout`-clean prototype.
 
 | # | State | Where it lives |
 |---|---|---|
@@ -27,7 +29,8 @@ injecting the CSS in §5 at the named stage.
 | **R5** | + pins removed for slots; collapsed slot opens LEFT; no brackets | §5.4 |
 | **R6** | + row slot rack and row message board | §5.5 |
 | **R7** | + row order `message board · button · slots · facts · name` | §5.6 |
-| **P1** | Two-level housing/cartridge architecture | §5.7 — **RULED AND BUILT** (ledger #168–#171) — **latest built state** |
+| **P1** | Two-level housing/cartridge architecture | §5.7 — **RULED AND BUILT** (ledger #168–#173) |
+| **L** | R2→P1 **landed in the prototype** — the only state other than R1 that is in git | §5.8 — **latest state; `git checkout` the prototype to revert** |
 
 To revert to any state, apply §5 blocks up to that row and stop.
 
@@ -99,7 +102,11 @@ the row.
 
 ### 2.7 Row issue data already exists
 No new data model is needed for row slots. The issues are already in the old pin's tooltip.
-**Rows expose `data-hint`; heads expose `data-tip`** — read `data-tip || data-hint`.
+
+> ⚠️ **The `data-tip || data-hint` shorthand here is NOT literally true of this build — see §5.7.**
+> `data-tip` does not exist at all (`querySelectorAll('[data-tip]').length === 0`); all 66 hints are
+> `data-hint`, and the issue **list** is on the row's **`.pin[data-hint]`**, newline-separated as
+> `Source, State, Date`. Building against this sentence as written yields a one-tick rack.
 
 ---
 
@@ -461,6 +468,43 @@ and the chip shows the worst state, which for most rows is the same issue. This 
 the row button for?"* question showing up as a visible duplication rather than an argument.
 **Converting the button to a verb (#158) removes it**: board = the issue, button = the action. Until
 that lands, the row spends ~93px saying one thing twice.
+
+### 5.8 LANDED — R2→P1 is now in the prototype (2026-07-31)
+
+Everything above was injection-only; the prototype in git showed R0 + the rename. It now carries
+**R2→P1** as a self-contained block appended before `</body>` in
+`docs/design/tier-01-card/index.html`. **`git checkout` of that file is the revert.**
+
+**Why a runtime block and not a static `<style>`.** The card ships its own runtime-injected
+stylesheet, which lands after anything static, so an equal-specificity rule loses on source order
+(§3.3). The block appends its `<style>` from JS — guaranteed last — and the DOM work has to wait for
+the component to mount anyway. A `MutationObserver` (disconnected during its own writes, re-armed
+after) re-applies on every re-render, because the runtime replaces the nodes it owns.
+
+**Why it hooks the card's own open state.** #173 keeps the 220ms discriminator untouched, so the
+block adds **no click handler at all**. The card marks an open row by writing an inline `color-mix`
+wash; the block detects that and re-skins it. Two things fell out of building it that way:
+
+- **The row's centre point sits on the `.signal` chip**, which `stopPropagation`s per #67 — so
+  `page.click('[data-row]')` does *not* open a row. That is the click contract working, not a bug;
+  a test must click the row **body**. This cost one wrong "it doesn't work" diagnosis.
+- **The card already renders the drawer.** The row's *third* child is a
+  `Tier 1 · detail view (parked)` panel carrying the **#63 anchor icon**. That panel **is** the
+  cartridge's drawer slot, so the terminal lines are appended **inside** it and its label is left
+  alone — Tier 1 genuinely is still parked. The first cut appended a second drawer element and the
+  laser frame was drawn on `> div`, which framed each child separately: the card rendered as **two
+  stacked panels**. Fixed by moving the frame to the **row** (`[data-row][data-lit="1"]::before`)
+  so it wraps the whole cartridge as one object.
+
+**Verified with zero injection** — 10 housings, 20 cartridges, 10 head racks, 20 row racks, one
+drawer, one frame, no stray elements, `housingGlow: none`, `overflow: NONE`, `scrollWidth 440`. The
+only console output is the two `{{ p.icon }}` / `{{ c.icon }}` SVG parser warnings that the
+prototype's own `README.md` already documents as expected and puts on the audit ignore-list.
+
+**One pre-existing gap surfaced, deliberately not fixed:** the card's open-row wash does **not**
+clear on a second body click — open, click, click again, and it stays open. The P1 layer mirrors
+that state faithfully, so the cartridge stays lit. This is the card's own contract (and ties to the
+parked Tier 1 drawer), and #173 says leave the click alone — so it is reported, not patched.
 
 ---
 

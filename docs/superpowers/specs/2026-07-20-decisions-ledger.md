@@ -646,6 +646,22 @@ these rulings lean on.
 | 170 | **The tick cap is RETIRED — and the reason generalises into a layout law.** Jac: *"No need for a cap if the slots are the last thing while all elements are left or right aligned."* **The law: every other element in the head is edge-anchored (left or right), so the slot rack is the one element that takes the RESIDUAL width.** A cap is therefore meaningless — the rack simply fills what is actually left, and `+N` appears only when real width runs out, never at an arbitrary count. This retires **both** the head spec's 8 and R5's rendered 10, and confirms §2.5's measurement: the 8-cap was never about ticks, it was the message board's fixed 114px reserving the space. Freeing the board is what makes the right-condensed head of #168 able to run slots at full width | ✅ **LOCKED — Jac, 2026-07-31.** Retires `atom-rebuild §1`'s 8-cap |
 | 171 | **"Failed" is DROPPED from the group-head label but KEPT AS A FILTER TERM.** Closes #165's flag. The head reads `Reserved: Not Ready` (19 chars) and does **not** grow a third word — so the width problem #165 solved stays solved — but *Failed* must remain reachable as a **filter/search term** against the same `collision` bucket. The distinction is display vs. addressability: a word can stop being *shown* without ceasing to be *findable*, and a Failed-but-Reserved unit is still retrieved by searching "Failed". The bucket itself is unchanged for the third time — same `id:'collision'`, same `(Not Ready OR Failed) AND Reserved` membership | ✅ **LOCKED — Jac, 2026-07-31.** Resolves #165's open flag |
 
+### 2026-07-31 (session 3) — P1 landed in the prototype
+
+Jac's call was **land R2→P1 in the prototype** — the ledger said P1 was locked while the artifact in
+git still showed R0 + the rename, and that decided-vs-shown gap is the exact failure mode of #163,
+#144/#164 and the stale-ledger episode. Two rulings came with it.
+
+| # | Decision | Status |
+|---|---|---|
+| 172 | **The lit cartridge's face is NEUTRAL glass; the laser frame carries the state hue alone.** One hue channel per level: the frame says *which* state, the glass says *this one is powered on*. **Supersedes `#156`'s open-row wash for the LIT row** — the group-hue-at-16% wash and a hue frame on the same element stated the hue twice. #156 still stands for anything that is not a lit cartridge | ✅ **LOCKED — Jac, 2026-07-31.** Narrows #156 |
+| 173 | **The 220ms single/double click discriminator is KEPT EXACTLY AS IS** (`#67`/`#164`), even though a single click now powers on a whole cartridge rather than expanding a row. **Consequence for the build: P1 must not add a competing click handler.** The card signals an open row by writing an inline `color-mix` wash; the P1 layer *detects that and re-skins it*, so the click contract is untouched and the discriminator keeps working underneath. Verified: the row's centre point sits on the `.signal` chip, which `stopPropagation`s per #67 — clicking there correctly does **not** open the row | ✅ **LOCKED — Jac, 2026-07-31** |
+
+**Landed, not just designed.** `docs/design/tier-01-card/index.html` now carries R2→P1 as a runtime
+block (design log §5.8). Verified with **zero injection**: 10 housings, 20 cartridges, no light on
+steel, no overflow at 380px, and the only console output is the two SVG parser warnings the
+prototype's own README already puts on the ignore-list.
+
 **Still needing Jac after this set** (§7 of the design log, minus what #166/#168–#171 closed):
 **rack placement on rows** (§7.2) and **the `#147` collision** — the Open chip's ✕-on-hover vs the
 collapsed slot's expand-on-hover, two hover behaviours on one element (§7.3). Both were deliberately
