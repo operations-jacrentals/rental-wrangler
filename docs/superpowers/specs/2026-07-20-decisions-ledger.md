@@ -630,7 +630,27 @@ repo).
 | # | Decision | Status |
 |---|---|---|
 | 166 | **A collapsed slot shows a numeral only — no status word.** The status word is what overhung the cell (rendering "OPEN" as "PEN"); dropping to a compact numeral while collapsed removes the wide text entirely, and the full word is deferred to the hover-unfurl | ✅ **LOCKED — Jac, 2026-07-31** |
-| 167 | **The two-level mechanic (group = racking housing, row = lighting cartridge) is NOT yet ruled — Jac wants a non-destructive prototype first.** Do not relocate #146/#161/#139/#140/#156/#67/#164 or drop the head rack's 8-tick cap until Jac sees it in motion and rules go/no-go. Build via Playwright CSS/JS injection against the sandboxed prototype, never by editing `docs/design/tier-01-card/index.html` directly | ⏳ **PROTOTYPING — Jac, 2026-07-31** |
+| 167 | **The two-level mechanic (group = racking housing, row = lighting cartridge) is NOT yet ruled — Jac wants a non-destructive prototype first.** Do not relocate #146/#161/#139/#140/#156/#67/#164 or drop the head rack's 8-tick cap until Jac sees it in motion and rules go/no-go. Build via Playwright CSS/JS injection against the sandboxed prototype, never by editing `docs/design/tier-01-card/index.html` directly | ⛔ **SUPERSEDED by #168 (same day) — Jac ruled BUILD** |
+
+### 2026-07-31 (session 2) — P1 ruled, and the three calls that came with it
+
+Put to Jac as one batched set (the popup was declined; delivered inline as lettered options, per
+the single-attempt fallback rule). All four answered. **`docs/superpowers/specs/2026-07-31-tier-01-head-row-design-log.md`
+is the trail** — revert points R0–R7, the CSS for each, the rejection table, and the measurements
+these rulings lean on.
+
+| # | Decision | Status |
+|---|---|---|
+| 168 | **P1 IS BUILT — the two-level architecture is LOCKED.** `GROUP = housing, opens by MOVING` (steel · mechanical · **no light**); `ROW = cartridge, opens by LIGHTING` (glass · terminal · emission). This is `#146`'s emission fiction applied at a second level, and it is the fix for the *"don't break plot"* risk: two nested open/shut mechanisms in one visual language collapse the level distinction, so the two levels are given **different physics** rather than different amounts of the same physics. **Invariant that holds at BOTH levels: the name is right-aligned.** Middles may differ (heads have no button and no facts). **Six rows relocate, none break:** `#146` holds but its *application* drops a level · `#161` boot theatre (CRT flicker, laser drop, per-row type-in) moves group-open → **row-open** · `#139`/`#140` laser frame moves group → row · `#156`'s open-row wash needs revisiting and may become the cartridge's lit face · `#67`/`#164`'s 220ms click discriminator must be re-checked against a much larger expand event · `atom-rebuild §1`'s 8-cap and fixed 114px board both go (see #170) | ✅ **LOCKED — Jac, 2026-07-31.** Supersedes #167 |
+| 169 | **The laser-drop trade is TAKEN — the laser drop moves from groups to open items.** Groups get a purely mechanical opener; rows take the laser drop and keep the message board. Jac had flagged this proposal unread; it reaches #168's conclusion from the *opposite* direction (from the opener rather than from `#146`'s emission fiction), which is corroboration, not coincidence — two independent routes to the same steel/glass split. Implements the `#161`/`#139`/`#140` legs of #168 | ✅ **LOCKED — Jac, 2026-07-31** |
+| 170 | **The tick cap is RETIRED — and the reason generalises into a layout law.** Jac: *"No need for a cap if the slots are the last thing while all elements are left or right aligned."* **The law: every other element in the head is edge-anchored (left or right), so the slot rack is the one element that takes the RESIDUAL width.** A cap is therefore meaningless — the rack simply fills what is actually left, and `+N` appears only when real width runs out, never at an arbitrary count. This retires **both** the head spec's 8 and R5's rendered 10, and confirms §2.5's measurement: the 8-cap was never about ticks, it was the message board's fixed 114px reserving the space. Freeing the board is what makes the right-condensed head of #168 able to run slots at full width | ✅ **LOCKED — Jac, 2026-07-31.** Retires `atom-rebuild §1`'s 8-cap |
+| 171 | **"Failed" is DROPPED from the group-head label but KEPT AS A FILTER TERM.** Closes #165's flag. The head reads `Reserved: Not Ready` (19 chars) and does **not** grow a third word — so the width problem #165 solved stays solved — but *Failed* must remain reachable as a **filter/search term** against the same `collision` bucket. The distinction is display vs. addressability: a word can stop being *shown* without ceasing to be *findable*, and a Failed-but-Reserved unit is still retrieved by searching "Failed". The bucket itself is unchanged for the third time — same `id:'collision'`, same `(Not Ready OR Failed) AND Reserved` membership | ✅ **LOCKED — Jac, 2026-07-31.** Resolves #165's open flag |
+
+**Still needing Jac after this set** (§7 of the design log, minus what #166/#168–#171 closed):
+**rack placement on rows** (§7.2) and **the `#147` collision** — the Open chip's ✕-on-hover vs the
+collapsed slot's expand-on-hover, two hover behaviours on one element (§7.3). Both were deliberately
+held back rather than asked blind: they are downstream of #168, which reshapes the row, so ruling
+them before the cartridge exists would have settled a layout that is about to change.
 
 ## Still open after 07-20 (do not treat as locked)
 
