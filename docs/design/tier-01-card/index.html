@@ -3179,31 +3179,44 @@ html[data-b="hybrid"] [data-row] .signal:active{
     inset 0 3px 5px -1px rgba(0,0,6,.85)!important;}
 
 /* ============================================================================
-   THE PIPS WELL TAKES THE NAME PLATE'S BEVEL — Jac, 2026-08-01, pointing at a
-   crop of the two side by side: "This is exactly how it should look. Trade the
-   pips for the group name."
+   THE GROUP NAME IS BUILT LIKE THE SCROLL-PIPS WELL — Jac, 2026-08-01:
+   "I was telling you to match the group names to how the scroll pip was
+    designed."
 
-   The name plate is the reference now, so the scroll grip adopts its machined
-   edge: hard 3px light/dark top and bottom, thinner pair on the sides, soft
-   inner sheen under the top edge. Its own dark ring and press inset survive
-   underneath — this adds the bevel, it does not replace the recess.
+   I had this backwards on the previous pass and restyled the GRIP to match the
+   plate. The grip was already right; it is the reference, and it is reverted
+   untouched. The name plate copies it instead.
 
-   This also re-closes #193 from the other direction. That row made the head's
-   well match the pips well; steel v2 turned the head into a raised plate and
-   the two drifted apart. Matching the grip to the plate makes them one family
-   again, with the plate as the reference instead of the grip.
+   The pips well's construction (index.html ~1197), reproduced exactly:
+     outer  9px NW / 14px SE chamfer, filled with the dark line colour
+     inner  inset 1.2px, chamfer 8.3/13.3, #050A10 face with a top-dark to
+            bottom-lit gradient
+     light  an outer 2px dark ring, lit hairlines above and below, and a press
+            inset — the welled-glass recipe in full
+
+   This restores #193 as originally written: the group-name well IS the
+   scroll-pips well. Steel v2's raised plate was the drift, not the grip.
    ============================================================================ */
-[data-hint="How far down this card you are"] > div:nth-child(2){
+.scp1 .pin-wrap{
+  background:color-mix(in oklab, black 52%, var(--card-head))!important;
+  padding:1.2px!important;box-sizing:border-box!important;
+  clip-path:polygon(0 9px,9px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%)!important;}
+
+html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]{
+  clip-path:polygon(0 8.3px,8.3px 0,100% 0,100% calc(100% - 13.3px),calc(100% - 13.3px) 100%,0 100%)!important;
+  background-color:#050A10!important;
+  background-image:linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,0) 55%,rgba(185,205,235,.04))!important;
+  background-size:auto!important;
   box-shadow:
     0 0 0 2px color-mix(in oklab, black 62%, var(--card-head)),
-    inset 0 3px 0 rgba(236,246,255,.30),
-    inset 0 4px 4px -3px rgba(255,255,255,.22),
-    inset 0 -3px 0 rgba(0,0,8,.68),
-    inset 3px 0 0 rgba(232,242,255,.10),
-    inset -3px 0 0 rgba(0,0,8,.48),
     0 3.4px 0 rgba(185,205,235,.13),
     0 -3.2px 0 rgba(185,205,235,.05),
-    inset 0 2px 3.5px rgba(0,0,0,.78)!important;}
+    inset 0 2px 3.5px rgba(0,0,0,.78)!important;
+  padding:0 11px!important;}
+
+/* the separate inner well is gone — the gate IS the well now, exactly as the
+   grip's inner layer is. */
+.scp1 .gate::before{content:none!important;}
 `;
 
 
