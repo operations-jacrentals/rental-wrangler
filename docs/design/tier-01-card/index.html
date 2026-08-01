@@ -3129,8 +3129,15 @@ html[data-b="hybrid"] [data-row] .signal:active{
 /* the boards are clip-path'd, so their light has to be drop-shadow — box-shadow
    would be clipped away with the corner. This is the original recipe verbatim;
    my P2 rule had killed it outright with filter:none. */
+/* THE FULL recipe, not just the hairlines. My previous pass restored the two
+   drop-shadows and stopped there, which left the boards FLAT — the thing that
+   makes a board read as sunk into its panel is the PRESS INSET, and the ring is
+   a colour-mix against --card-head rather than a flat rgba so it sits in the
+   panel's own family. All three parts or none.
+   The FOOTER terminal rail is a different element and is deliberately untouched. */
 .rw-board{
-  box-shadow:0 0 0 1.2px rgba(0,0,8,.60)!important;
+  box-shadow:0 0 0 1.4px color-mix(in oklab, black 55%, var(--card-head)),
+             inset 0 1.5px 3px rgba(0,0,0,.7)!important;
   filter:drop-shadow(0 1.5px 0 rgba(185,205,235,.10)) drop-shadow(0 -1px 0 rgba(185,205,235,.05))!important;}
 
 /* the head panel had TWO stacked inset hairlines; steel v2 left one, weaker. */
