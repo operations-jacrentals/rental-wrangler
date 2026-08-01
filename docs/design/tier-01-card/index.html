@@ -3177,6 +3177,33 @@ html[data-b="hybrid"] [data-row] .signal:active{
     0 0 0 1.5px rgba(0,0,8,.55),
     0 0 0 2.5px rgba(185,205,235,.08),
     inset 0 3px 5px -1px rgba(0,0,6,.85)!important;}
+
+/* ============================================================================
+   THE PIPS WELL TAKES THE NAME PLATE'S BEVEL — Jac, 2026-08-01, pointing at a
+   crop of the two side by side: "This is exactly how it should look. Trade the
+   pips for the group name."
+
+   The name plate is the reference now, so the scroll grip adopts its machined
+   edge: hard 3px light/dark top and bottom, thinner pair on the sides, soft
+   inner sheen under the top edge. Its own dark ring and press inset survive
+   underneath — this adds the bevel, it does not replace the recess.
+
+   This also re-closes #193 from the other direction. That row made the head's
+   well match the pips well; steel v2 turned the head into a raised plate and
+   the two drifted apart. Matching the grip to the plate makes them one family
+   again, with the plate as the reference instead of the grip.
+   ============================================================================ */
+[data-hint="How far down this card you are"] > div:nth-child(2){
+  box-shadow:
+    0 0 0 2px color-mix(in oklab, black 62%, var(--card-head)),
+    inset 0 3px 0 rgba(236,246,255,.30),
+    inset 0 4px 4px -3px rgba(255,255,255,.22),
+    inset 0 -3px 0 rgba(0,0,8,.68),
+    inset 3px 0 0 rgba(232,242,255,.10),
+    inset -3px 0 0 rgba(0,0,8,.48),
+    0 3.4px 0 rgba(185,205,235,.13),
+    0 -3.2px 0 rgba(185,205,235,.05),
+    inset 0 2px 3.5px rgba(0,0,0,.78)!important;}
 `;
 
 
