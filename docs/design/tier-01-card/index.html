@@ -2290,6 +2290,21 @@ class Component extends DCLogic {
         row.setAttribute('data-lit', '1');
         if (drawer && !drawer.querySelector('.rw-cartlines')) {
           drawer.classList.add('rw-drawer');
+          // Jac, 2026-08-01: drop the three grey bar placeholders. They were 94px
+          // of the drawer's 195px — roughly half of every open row was fake
+          // content, and the drawer is the hue-lit centrepiece now. The "Tier 1 ·
+          // detail view (parked)" LABEL stays: the space is still honestly marked
+          // as unbuilt, it just no longer pretends to hold something.
+          // Identified structurally rather than by position: the bar rack is the
+          // only direct div child with children and no text (the label has text,
+          // the anchor is a BUTTON, spacers have no children).
+          [].forEach.call(drawer.children, function (d) {
+            if (d.tagName !== 'DIV') return;
+            if (d.classList.contains('rw-cartlines')) return;
+            if ((d.textContent || '').trim()) return;
+            if (!d.children.length) return;
+            d.classList.add('rw-off');
+          });
           var nm = ((row.querySelector('.rmq') || {}).textContent || 'UNIT').trim();
           var li = rowIssues(row);
           var lines = document.createElement('div'); lines.className = 'rw-cartlines';
@@ -2892,10 +2907,23 @@ html[data-a="strict"] .scp1 .gate[data-open], html[data-a="bold"] .scp1 .gate[da
 /* the DRAWER takes the signal hue: the circuit texture tinted at a low mix, so
    the texture stays legible and it reads as "running in RED condition" rather
    than a block of colour. The only hue surface on an open row (spec 4.4). */
+/* the hue is mixed into a NEUTRAL near-black, not into the navy glass body.
+   Mixing red into #04101c fought the navy and came out muddy — the tint read as
+   "slightly warm dark" rather than as a condition. Against a neutral base the
+   hue states itself, and the circuit texture still carries the glass. */
 [data-row][data-lit="1"] .rw-drawer, [data-row][data-lit="1"] .rw-cart{
-  background-color:color-mix(in oklab, var(--row-hue,#6394cc) 22%, #04101c)!important;
-  background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.24) 2px 3px),var(--h-circuit)!important;
-  background-size:auto,512px 512px!important;}
+  background-color:#06090d!important;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--row-hue,#6394cc) 26%, transparent),
+                    color-mix(in srgb, var(--row-hue,#6394cc) 26%, transparent)),
+    repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.24) 2px 3px),
+    var(--h-circuit)!important;
+  background-size:auto,auto,512px 512px!important;}
+/* the terminal block sits INSIDE the drawer, so it must not carry a second
+   glass body — its own background cut the hue wash in half and the drawer came
+   out red above the readout and navy below it. One surface, one wash. */
+[data-row][data-lit="1"] .rw-cartlines{
+  background:transparent!important;background-image:none!important;}
 [data-row][data-tone="red"]   {--row-hue:#ff4242;}
 [data-row][data-tone="yellow"]{--row-hue:#eed44b;}
 [data-row][data-tone="blue"]  {--row-hue:#6394cc;}
@@ -2972,12 +3000,27 @@ html[data-b="steel"] [data-row] .signal:active{
 
 /* B=digital — glass: scanline film, a cursor block, and a wake on hover. Live
    text, so by law 2 explicitly not steel, and it cannot compress. */
+/* currentColor is WRONG here. On an OUTLINE chip the text carries the hue, but
+   on a FILLED chip the text is white-on-hue — so a currentColor ring came out
+   white and the state vanished. Key off the row's own tone instead, and keep
+   "fill = today" alive in the glass reading: a filled chip is a brighter lamp
+   (hue wash + heavier glow), an outline chip is a ring on dark. */
 html[data-b="digital"] [data-row] .signal{
   background-color:#050b13!important;
   background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.30) 2px 3px),var(--h-circuit)!important;
   background-size:auto,512px 512px!important;
-  box-shadow:inset 0 0 0 1.2px currentColor, 0 0 8px color-mix(in srgb, currentColor 28%, transparent)!important;
-  text-shadow:0 0 6px currentColor!important;}
+  color:var(--row-hue,#aab4c1)!important;
+  box-shadow:inset 0 0 0 1.2px var(--row-hue,#8b94a3), 0 0 8px color-mix(in srgb, var(--row-hue,#8b94a3) 26%, transparent)!important;
+  text-shadow:0 0 6px color-mix(in srgb, var(--row-hue,#8b94a3) 70%, transparent)!important;}
+html[data-b="digital"] [data-row] .signal--filled{
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--row-hue,#6394cc) 30%, transparent),
+                    color-mix(in srgb, var(--row-hue,#6394cc) 30%, transparent)),
+    repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.30) 2px 3px),
+    var(--h-circuit)!important;
+  background-size:auto,auto,512px 512px!important;
+  box-shadow:inset 0 0 0 1.4px var(--row-hue,#8b94a3), 0 0 11px color-mix(in srgb, var(--row-hue,#8b94a3) 42%, transparent)!important;
+  filter:brightness(1.12);}
 html[data-b="digital"] [data-row] .signal::after{
   content:'\\2588';margin-left:3px;opacity:.5;animation:rwCursor 1.05s steps(1,end) infinite;}
 html[data-b="digital"] [data-row] .signal:hover{animation:rwWake .32s steps(9,end) 1;}
