@@ -3106,6 +3106,77 @@ html[data-b="hybrid"] [data-row] .signal:active{
   box-shadow:inset 0 1px 0 rgba(255,255,255,.24), inset 0 -1.5px 2px rgba(0,0,0,.45), 0 1px 3px rgba(0,0,0,.7)!important;
   z-index:3!important;}
 .pin[data-slotpin="1"] > *{transform:skewX(-19deg);display:block;}
+
+/* ============================================================================
+   RESTORE · THE WELLED-GLASS LIGHT  — Jac, 2026-08-01:
+   "At some point you dropped the welled glass light effect on a lot of the
+    elements and the rows and the header panels."
+
+   He was right, and it was five elements. Found by diffing computed box-shadow
+   and filter against the pre-steel-v2 build (646ca73) rather than by eye, so
+   this restores what was actually there instead of what I remembered.
+
+     card title seg · filter funnel · search glass · scroll-pips well   KEPT
+     head board · row board · head panel · row face · row chip          LOST
+
+   The signature is a LIT HAIRLINE in the rgba(185,205,235,*) family sitting just
+   outside or just inside a dark ring — light catching the lip of a recess. That
+   is what makes a panel read as seated rather than drawn, and it is independent
+   of whether the element has a well: dropping the board's bezel (spec 4.1) never
+   required dropping its light.
+   ============================================================================ */
+
+/* the boards are clip-path'd, so their light has to be drop-shadow — box-shadow
+   would be clipped away with the corner. This is the original recipe verbatim;
+   my P2 rule had killed it outright with filter:none. */
+.rw-board{
+  box-shadow:0 0 0 1.2px rgba(0,0,8,.60)!important;
+  filter:drop-shadow(0 1.5px 0 rgba(185,205,235,.10)) drop-shadow(0 -1px 0 rgba(185,205,235,.05))!important;}
+
+/* the head panel had TWO stacked inset hairlines; steel v2 left one, weaker. */
+.scp1{
+  box-shadow:inset 0 1px 0 rgba(185,205,235,.17),
+             inset 0 2px 0 rgba(185,205,235,.05)!important;}
+
+/* the row face keeps steel v2's side rails, but its top hairline goes back to
+   the canonical family (it had drifted to a cooler 226,238,255). */
+[data-row] > div, [data-row][data-lit="1"] > div{
+  box-shadow:inset 0 1px 0 rgba(185,205,235,.13),
+             inset 2px 0 0 rgba(0,0,6,.35),
+             inset -2px 0 0 rgba(0,0,6,.35)!important;}
+
+/* the chip is a component SEATED IN A WELL: dark ring, then the lit ring just
+   outside it, then a top highlight on the face. Restated per B reading so each
+   keeps its own state treatment on top of the seating. */
+html[data-b="digital"] [data-row] .signal{
+  box-shadow:
+    0 0 0 1.5px rgba(0,0,8,.55),
+    0 0 0 2.5px rgba(185,205,235,.08),
+    inset 0 0 0 1.2px var(--chip-hue,#8b94a3),
+    inset 0 1px 0 rgba(255,255,255,.14),
+    inset 0 -1.5px 2.5px rgba(0,0,0,.35),
+    0 0 8px color-mix(in srgb, var(--chip-hue,#8b94a3) 26%, transparent)!important;}
+html[data-b="digital"] [data-row] .signal--filled{
+  box-shadow:
+    0 0 0 1.5px rgba(0,0,8,.55),
+    0 0 0 2.5px rgba(185,205,235,.08),
+    inset 0 0 0 1.4px var(--chip-hue,#8b94a3),
+    inset 0 1px 0 rgba(255,255,255,.14),
+    inset 0 -1.5px 2.5px rgba(0,0,0,.35),
+    0 0 11px color-mix(in srgb, var(--chip-hue,#8b94a3) 42%, transparent)!important;}
+html[data-b="steel"] [data-row] .signal,
+html[data-b="hybrid"] [data-row] .signal{
+  box-shadow:
+    0 0 0 1.5px rgba(0,0,8,.55),
+    0 0 0 2.5px rgba(185,205,235,.08),
+    inset 0 1px 0 rgba(226,238,255,.20),
+    inset 0 -2px 3px rgba(0,0,6,.42)!important;}
+html[data-b="steel"] [data-row] .signal:active,
+html[data-b="hybrid"] [data-row] .signal:active{
+  box-shadow:
+    0 0 0 1.5px rgba(0,0,8,.55),
+    0 0 0 2.5px rgba(185,205,235,.08),
+    inset 0 3px 5px -1px rgba(0,0,6,.85)!important;}
 `;
 
 
