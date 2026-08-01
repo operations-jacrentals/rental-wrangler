@@ -3051,6 +3051,29 @@ html[data-b="digital"] .scp1 .gate:hover .sc-interp{animation:none!important;}
     inset 0 -1.4px 0 rgba(226,238,255,.22)!important;}
 
 /* ---------------------------------------------------------------------------
+   TOGGLE SELECT BOTTOM BUMP — Jac's mockup: a small centered highlight
+   straddles the bottom edge of the SELECTED chip only (UNITS, WORK, etc).
+   A NEW pseudo-element ("::after"), kept separate from the existing P5 rim
+   ("::before" above) so neither rule fights the other for the slot. Reuses
+   ".seg [class*='seg__opt--on']" — the same family the rim already uses,
+   proven to reach BOTH toggle pairs ([data-pair] UNITS/CATEGORIES and the
+   plain WORK/OPEN/DONE toggle) — so no separate [data-pair]-scoped
+   duplicate is needed here. The parent already carries position:relative
+   (P5, above). Sized to ~40% of the chip's own width, centered (equal
+   margin left/right), straddling the border half-in/half-out via a
+   negative "bottom" offset half its own height. Squared, not pill-shaped:
+   this language uses zero border-radius everywhere else, so the "soft"
+   look comes from the box-shadow glow blur, not an actual rounded corner
+   (kept to 1px, just enough to blunt the two sharp corners).
+   --------------------------------------------------------------------------- */
+.seg [class*="seg__opt--on"]::after{
+  content:''!important;position:absolute!important;pointer-events:none!important;z-index:1!important;
+  left:50%!important;bottom:-1.5px!important;width:42%!important;height:3px!important;
+  transform:translateX(-50%)!important;border-radius:1px!important;
+  background:var(--accent)!important;
+  box-shadow:0 0 6px 1px var(--accent), 0 0 11px 3px color-mix(in srgb, var(--accent) 55%, transparent)!important;}
+
+/* ---------------------------------------------------------------------------
    THE LASER'S OWN FRAME — Jac, 2026-08-01: "I can see it on the left and right
    borders but on the bottom border the frame is gone, the only thing visible
    is the laser." The row's ::before drew ONLY the coloured inset lines; any
