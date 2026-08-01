@@ -76,17 +76,20 @@ for (const f of ['archivo-latin-ext.woff2', 'archivo-latin.woff2']) {
   html = sub(html, `url(${f})`, uri);
 }
 
-/* 5 — the steel texture, hoisted once into a custom property. The references
-       live inside HTML attributes, so they are &quot;-escaped. */
-const steelRefs = (html.match(/url\(&quot;steel-texture\.png&quot;\)/g) || []).length;
-html = sub(html, 'url(&quot;steel-texture.png&quot;)', 'var(--rw-steel)');
-html = sub(html, 'url("steel-texture.png")', 'var(--rw-steel)');
+/* 5 — the texture atlas. Every texture is referenced exactly ONCE, in the
+       #rw-texroot :root block (inline chassis styles reach it via
+       var(--rw-steel) etc.), so each url() is swapped for its data URI in
+       place — no hoisting pass needed any more. */
+const TEXTURES = ['steel-texture.png', 'halo-steel.png', 'halo-olive.png', 'halo-canvas.png', 'halo-circuit.png'];
+for (const f of TEXTURES) {
+  const ref = `url("${f}")`;
+  const n = html.split(ref).length - 1;
+  if (n !== 1) throw new Error(`expected exactly 1 atlas reference for ${f}, found ${n}`);
+  html = sub(html, ref, `url(data:image/png;base64,${b64(f)})`);
+}
 
-/* 6 — title + the hoisted texture, first thing on the page */
-html =
-  `<title>${TITLE}</title>\n` +
-  `<style>:root{--rw-steel:url(data:image/png;base64,${b64('steel-texture.png')})}</style>\n` +
-  html.trimStart();
+/* 6 — title first */
+html = `<title>${TITLE}</title>\n` + html.trimStart();
 
 /* 7 — refuse to ship anything that still reaches off-page */
 const leaks = [
@@ -102,5 +105,5 @@ if (leaks.length) {
 writeFileSync(OUT, html);
 console.log(`built ${OUT}`);
 console.log(`  ${(before / 1024).toFixed(0)}KB source -> ${(html.length / 1024 / 1024).toFixed(2)}MB self-contained`);
-console.log(`  steel-texture refs hoisted to var(--rw-steel): ${steelRefs}`);
+console.log(`  atlas textures inlined: ${TEXTURES.length}`);
 console.log(`  external references remaining: 0`);

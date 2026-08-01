@@ -7,6 +7,20 @@
 
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<style id="rw-texroot">/* THE TEXTURE ATLAS — every texture is reached through a custom property, never
+   by filename, so a skin can re-dress a whole surface class by re-pointing ONE
+   var (the halo skin re-points --rw-steel to olive and the chassis follows).
+   The standalone builder swaps each url() here for a data URI; the 13 inline
+   chassis references were rewritten from the literal steel-texture filename to
+   var(--rw-steel) for exactly this reason. Each filename must appear in exactly
+   ONE url() — the builder enforces it. */
+:root{
+  --rw-steel:url("steel-texture.png");
+  --h-steel:url("halo-steel.png");
+  --h-olive:url("halo-olive.png");
+  --h-canvas:url("halo-canvas.png");
+  --h-circuit:url("halo-circuit.png");
+}</style>
 <script src="dc-runtime.js"></script>
 </head>
 <body>
@@ -989,8 +1003,8 @@ input:focus::placeholder{color:transparent}
       <div style="position:absolute;inset:1.2px;clip-path:polygon(15.3px 0,calc(100% - 15.3px) 0,100% 15.3px,100% calc(100% - 15.3px),calc(100% - 15.3px) 100%,9.3px 100%,0 calc(100% - 9.3px),0 15.3px);background:linear-gradient(180deg,color-mix(in oklab, white 32%, {{ frameBase }}),color-mix(in oklab, white 13%, {{ frameBase }}) 22%,color-mix(in oklab, white 6%, {{ frameBase }}) 75%,color-mix(in oklab, white 3%, {{ frameBase }}))"></div>
       <div style="position:absolute;inset:2.6px;clip-path:polygon(14.5px 0,calc(100% - 14.5px) 0,100% 14.5px,100% calc(100% - 14.5px),calc(100% - 14.5px) 100%,8.5px 100%,0 calc(100% - 8.5px),0 14.5px);background:{{ frameFace }}"></div>
 
-      <div style="position:relative;flex:1;min-height:0;display:flex;flex-direction:column;clip-path:polygon(15.5px 0,calc(100% - 15.5px) 0,100% 15.5px,calc(100% + 5px) 20.5px,calc(100% + 5px) calc(100% - 19px),100% calc(100% - 14px),calc(100% - 14px) 100%,8px 100%,0 calc(100% - 8px),-5px calc(100% - 13px),-5px 20.5px,0 15.5px);background-color:color-mix(in oklab, var(--blue) 7%, var(--card));background-image:linear-gradient(168deg,rgba(130,170,230,.045),rgba(0,0,18,.22)),url(&quot;steel-texture.png&quot;)">
-      <div style="position:relative;display:flex;background-color:{{ chassisFace }};background-image:url(&quot;steel-texture.png&quot;);border-bottom:1px solid color-mix(in oklab, black 60%, var(--card-head));box-shadow:0 1px 0 rgba(185,205,235,.08),inset 0 -1px 0 rgba(185,205,235,.04);flex:none;clip-path:polygon(15.5px 0,calc(100% - 15.5px) 0,100% 15.5px,100% 100%,0 100%,0 15.5px)">
+      <div style="position:relative;flex:1;min-height:0;display:flex;flex-direction:column;clip-path:polygon(15.5px 0,calc(100% - 15.5px) 0,100% 15.5px,calc(100% + 5px) 20.5px,calc(100% + 5px) calc(100% - 19px),100% calc(100% - 14px),calc(100% - 14px) 100%,8px 100%,0 calc(100% - 8px),-5px calc(100% - 13px),-5px 20.5px,0 15.5px);background-color:color-mix(in oklab, var(--blue) 7%, var(--card));background-image:linear-gradient(168deg,rgba(130,170,230,.045),rgba(0,0,18,.22)),var(--rw-steel)">
+      <div style="position:relative;display:flex;background-color:{{ chassisFace }};background-image:var(--rw-steel);border-bottom:1px solid color-mix(in oklab, black 60%, var(--card-head));box-shadow:0 1px 0 rgba(185,205,235,.08),inset 0 -1px 0 rgba(185,205,235,.04);flex:none;clip-path:polygon(15.5px 0,calc(100% - 15.5px) 0,100% 15.5px,100% 100%,0 100%,0 15.5px)">
         <div style="flex:1;min-width:0;display:flex;flex-direction:column;padding:0 2px 2px 0">
           <div style="position:relative;display:flex;align-items:stretch">
             <div data-hint="{{ workTip }}" style="position:relative;flex:none;width:20px;margin-right:-1.2px">
@@ -998,7 +1012,7 @@ input:focus::placeholder{color:transparent}
             </div>
             <div style="position:relative;flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px;padding:13px 4px 8px 4px">
               <div style="position:absolute;inset:0;clip-path:polygon(0 5px,100% 5px,100% 100%,0 100%);background:color-mix(in oklab, black 52%, var(--card-head))"></div>
-              <div style="position:absolute;inset:1.2px;clip-path:polygon(0 5px,100% 5px,100% 100%,0 100%);background-color:{{ chassisPlate }};background-image:linear-gradient(180deg,rgba(185,205,235,.14),rgba(185,205,235,.04) 45%,rgba(0,0,12,.19)),url(&quot;steel-texture.png&quot;);box-shadow:inset 0 -1px 0 rgba(185,205,235,.06)"></div>
+              <div style="position:absolute;inset:1.2px;clip-path:polygon(0 5px,100% 5px,100% 100%,0 100%);background-color:{{ chassisPlate }};background-image:linear-gradient(180deg,rgba(185,205,235,.14),rgba(185,205,235,.04) 45%,rgba(0,0,12,.19)),var(--rw-steel);box-shadow:inset 0 -1px 0 rgba(185,205,235,.06)"></div>
             <span style="flex:1 1 auto;min-width:0;display:flex;align-items:center;justify-content:center;gap:5px;position:relative">
               <div class="seg" style="flex:0 1 auto;min-width:0;max-width:100%;position:relative;border-radius:{{ titleRadius }};outline:{{ titleRing }};background-color:#050A10;background-image:linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,0) 55%,rgba(185,205,235,.04));box-shadow:0 0 0 2px color-mix(in oklab, black 62%, var(--card-head)),0 3.4px 0 rgba(185,205,235,.13),0 -3.2px 0 rgba(185,205,235,.05),inset 0 2px 3.5px rgba(0,0,0,.78)" data-pair="1">
                 <span style="position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.20) 2px 3px)"></span>
@@ -1022,7 +1036,7 @@ input:focus::placeholder{color:transparent}
             </div>
             <div style="position:relative;flex:none;display:flex;align-items:center;padding:13px 12px 8px 11px;margin-left:-1.2px">
               <div style="position:absolute;left:0;right:0;bottom:0;top:5px;clip-path:polygon(0 0,calc(100% - 8.5px) 0,100% 8.5px,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%);background:color-mix(in oklab, black 52%, var(--card-head))"></div>
-              <div style="position:absolute;left:1.2px;right:1.2px;bottom:1.2px;top:6.2px;clip-path:polygon(0 0,calc(100% - 7.8px) 0,100% 7.8px,100% calc(100% - 7px),calc(100% - 7px) 100%,0 100%);background-color:{{ chassisPlate }};background-image:linear-gradient(180deg,rgba(185,205,235,.14),rgba(185,205,235,.04) 45%,rgba(0,0,12,.19)),url(&quot;steel-texture.png&quot;);box-shadow:inset 0 -1px 0 rgba(185,205,235,.06)"></div>
+              <div style="position:absolute;left:1.2px;right:1.2px;bottom:1.2px;top:6.2px;clip-path:polygon(0 0,calc(100% - 7.8px) 0,100% 7.8px,100% calc(100% - 7px),calc(100% - 7px) 100%,0 100%);background-color:{{ chassisPlate }};background-image:linear-gradient(180deg,rgba(185,205,235,.14),rgba(185,205,235,.04) 45%,rgba(0,0,12,.19)),var(--rw-steel);box-shadow:inset 0 -1px 0 rgba(185,205,235,.06)"></div>
             <div class="seg" style="flex:none;overflow:visible;position:relative;background:transparent;gap:7px">
               <button type="button" class="{{ workCls }}" sc-camel-on-click="{{ toggleWork }}" data-hint="{{ workTip }}" style="position:relative;padding:0 7px">{{ workLabel }}<sc-if value="{{ workPinShow }}" hint-placeholder-val="{{ true }}"><span class="{{ workPinCls }}">{{ workCount }}</span></sc-if></button>
               <button type="button" class="{{ openCls }}" sc-camel-on-click="{{ openClick }}" sc-camel-on-mouse-enter="{{ openIn }}" sc-camel-on-mouse-leave="{{ openOut }}" data-hint="{{ openTip }}" style="position:relative;padding:0 7px">{{ openLabel }}<sc-if value="{{ openPinShow }}" hint-placeholder-val="{{ false }}"><span class="{{ openPinCls }}" sc-camel-on-mouse-enter="{{ openPinIn }}" sc-camel-on-mouse-leave="{{ openPinOut }}" sc-camel-on-click="{{ openPinClick }}" style="cursor:pointer">{{ openCount }}</span></sc-if></button>
@@ -1033,7 +1047,7 @@ input:focus::placeholder{color:transparent}
           <sc-if value="{{ showBand2 }}" hint-placeholder-val="{{ true }}">
             <div style="position:relative;display:flex;flex-direction:column;gap:7px;padding:9px 13px 9px 12px;margin:-1.2px 0 0 3px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.55)) drop-shadow(0 1.2px 0 rgba(185,205,235,.13))">
               <div style="position:absolute;inset:0;clip-path:polygon(9px 0,100% 0,100% 100%,9px 100%,0 calc(100% - 9px),0 9px);background:color-mix(in oklab, black 52%, var(--card-head))"></div>
-              <div style="position:absolute;inset:1.2px;clip-path:polygon(8px 0,100% 0,100% 100%,8px 100%,0 calc(100% - 8px),0 8px);background-color:{{ chassisPlate }};background-image:linear-gradient(180deg,rgba(185,205,235,.14),rgba(185,205,235,.04) 45%,rgba(0,0,12,.19)),url(&quot;steel-texture.png&quot;);box-shadow:inset 0 1px 0 rgba(185,205,235,.13)"></div>
+              <div style="position:absolute;inset:1.2px;clip-path:polygon(8px 0,100% 0,100% 100%,8px 100%,0 calc(100% - 8px),0 8px);background-color:{{ chassisPlate }};background-image:linear-gradient(180deg,rgba(185,205,235,.14),rgba(185,205,235,.04) 45%,rgba(0,0,12,.19)),var(--rw-steel);box-shadow:inset 0 1px 0 rgba(185,205,235,.13)"></div>
               <span style="position:absolute;bottom:0;left:16%;width:10px;height:3px;background:rgba(0,0,0,.55);pointer-events:none"></span>
               <span style="position:absolute;bottom:0;right:16%;width:10px;height:3px;background:rgba(0,0,0,.55);pointer-events:none"></span>
               <div style="display:flex;align-items:center;gap:8px;position:relative">
@@ -1069,25 +1083,25 @@ input:focus::placeholder{color:transparent}
         <div ref="{{ scrollRef }}" sc-camel-on-scroll="{{ onScroll }}" style="position:absolute;inset:0;overflow:auto;scrollbar-width:none">
           <sc-for list="{{ groups }}" as="g" hint-placeholder-count="2">
             <div data-band-hue="{{ g.hue }}" data-band-name="{{ g.name }}" style="position:relative;margin:{{ g.gap }} {{ gInset }} 0 {{ gInset }}">
-              <div style="position:absolute;left:0;bottom:-5px;width:18%;height:5px;z-index:3;pointer-events:none;opacity:{{ g.tongueOp }};transition:opacity .25s;clip-path:polygon(0 0,100% 0,calc(100% - 5px) 100%,0 100%);background-color:{{ cartFace }};background-image:linear-gradient(180deg,rgba(185,205,235,.07),rgba(0,0,12,.22)),url(&quot;steel-texture.png&quot;)">
+              <div style="position:absolute;left:0;bottom:-5px;width:18%;height:5px;z-index:3;pointer-events:none;opacity:{{ g.tongueOp }};transition:opacity .25s;clip-path:polygon(0 0,100% 0,calc(100% - 5px) 100%,0 100%);background-color:{{ cartFace }};background-image:linear-gradient(180deg,rgba(185,205,235,.07),rgba(0,0,12,.22)),var(--rw-steel)">
                 <span style="position:absolute;left:2px;right:6px;top:1.2px;height:2.6px;background:#04070C;box-shadow:inset 0 1px 1.5px rgba(0,0,0,.85)"></span>
                 <span style="position:absolute;left:3px;right:7px;top:1.8px;height:1.4px;background:{{ g.hue }}"></span>
                 <span style="position:absolute;left:2.8px;top:0;height:1.8px;width:1.4px;background:{{ g.hue }}"></span>
               </div>
-              <div style="position:absolute;right:0;bottom:-5px;width:18%;height:5px;z-index:3;pointer-events:none;opacity:{{ g.tongueOp }};transition:opacity .25s;clip-path:polygon(0 0,100% 0,100% 100%,5px 100%);background-color:{{ cartFace }};background-image:linear-gradient(180deg,rgba(185,205,235,.07),rgba(0,0,12,.22)),url(&quot;steel-texture.png&quot;)">
+              <div style="position:absolute;right:0;bottom:-5px;width:18%;height:5px;z-index:3;pointer-events:none;opacity:{{ g.tongueOp }};transition:opacity .25s;clip-path:polygon(0 0,100% 0,100% 100%,5px 100%);background-color:{{ cartFace }};background-image:linear-gradient(180deg,rgba(185,205,235,.07),rgba(0,0,12,.22)),var(--rw-steel)">
                 <span style="position:absolute;left:6px;right:2px;top:1.2px;height:2.6px;background:#04070C;box-shadow:inset 0 1px 1.5px rgba(0,0,0,.85)"></span>
                 <span style="position:absolute;left:7px;right:3px;top:1.8px;height:1.4px;background:{{ g.hue }}"></span>
                 <span style="position:absolute;right:2.8px;top:0;height:1.8px;width:1.4px;background:{{ g.hue }}"></span>
               </div>
-              <div style="position:absolute;left:0;top:0;bottom:0;width:7px;z-index:2;pointer-events:none;background-color:{{ cartFace }};background-image:linear-gradient(90deg,rgba(185,205,235,.07),rgba(0,0,12,.22)),url(&quot;steel-texture.png&quot;)">
+              <div style="position:absolute;left:0;top:0;bottom:0;width:7px;z-index:2;pointer-events:none;background-color:{{ cartFace }};background-image:linear-gradient(90deg,rgba(185,205,235,.07),rgba(0,0,12,.22)),var(--rw-steel)">
                 </div>
-              <div style="position:absolute;right:0;top:0;bottom:0;width:7px;z-index:2;pointer-events:none;background-color:{{ cartFace }};background-image:linear-gradient(270deg,rgba(185,205,235,.07),rgba(0,0,12,.22)),url(&quot;steel-texture.png&quot;)">
+              <div style="position:absolute;right:0;top:0;bottom:0;width:7px;z-index:2;pointer-events:none;background-color:{{ cartFace }};background-image:linear-gradient(270deg,rgba(185,205,235,.07),rgba(0,0,12,.22)),var(--rw-steel)">
                 </div>
               <div style="position:absolute;inset:0;z-index:2;pointer-events:none;clip-path:{{ g.uGroove }};background:#04070C"></div>
               <div style="position:absolute;inset:0;z-index:2;pointer-events:none;clip-path:{{ g.uBeam }};background:{{ g.hue }}"></div>
               <span style="position:absolute;left:0;top:0;width:7px;height:2px;z-index:5;pointer-events:none;background:linear-gradient(180deg,rgba(185,205,235,.17) 0 1px,rgba(185,205,235,.05) 1px 2px)"></span>
               <span style="position:absolute;right:0;top:0;width:7px;height:2px;z-index:5;pointer-events:none;background:linear-gradient(180deg,rgba(185,205,235,.17) 0 1px,rgba(185,205,235,.05) 1px 2px)"></span>
-              <div sc-camel-on-click="{{ g.toggle }}" sc-camel-on-mouse-enter="{{ g.headEnter }}" sc-camel-on-mouse-leave="{{ g.headLeave }}" style="position:relative;display:flex;align-items:center;gap:8px;height:30px;padding-right:8.5px;cursor:pointer;background-color:{{ cartFace }};background-image:linear-gradient(180deg,rgba(185,205,235,.10),rgba(185,205,235,.02) 45%,rgba(0,0,12,.18)),url(&quot;steel-texture.png&quot;);border-bottom:{{ g.headSeam }};box-shadow:{{ g.headShadow }}" style-hover="box-shadow:{{ g.headShadow }},inset 0 0 0 200px rgba(185,205,235,.05)">
+              <div sc-camel-on-click="{{ g.toggle }}" sc-camel-on-mouse-enter="{{ g.headEnter }}" sc-camel-on-mouse-leave="{{ g.headLeave }}" style="position:relative;display:flex;align-items:center;gap:8px;height:30px;padding-right:8.5px;cursor:pointer;background-color:{{ cartFace }};background-image:linear-gradient(180deg,rgba(185,205,235,.10),rgba(185,205,235,.02) 45%,rgba(0,0,12,.18)),var(--rw-steel);border-bottom:{{ g.headSeam }};box-shadow:{{ g.headShadow }}" style-hover="box-shadow:{{ g.headShadow }},inset 0 0 0 200px rgba(185,205,235,.05)">
                 <span style="position:absolute;left:0;top:0;bottom:0;width:6px;pointer-events:none;background:repeating-linear-gradient(90deg,rgba(185,205,235,.08) 0 1px,rgba(0,0,10,.30) 1px 3px)"></span>
                 <span style="position:absolute;right:0;top:0;bottom:0;width:6px;pointer-events:none;background:repeating-linear-gradient(90deg,rgba(185,205,235,.08) 0 1px,rgba(0,0,10,.30) 1px 3px)"></span>
                 <span style="position:absolute;left:0;right:0;top:0;height:11px;pointer-events:none;background:linear-gradient(180deg,color-mix(in oklab, transparent 89%, {{ g.hue }}),rgba(0,0,0,0))"></span>
@@ -1110,7 +1124,7 @@ input:focus::placeholder{color:transparent}
                 <span style="position:absolute;right:8px;top:2px;width:6px;height:6px;border-right:1.5px solid rgba(185,205,235,.30);border-top:1.5px solid rgba(185,205,235,.30);pointer-events:none"></span>
                 <span style="position:absolute;right:8px;bottom:8.5px;width:6px;height:6px;border-right:1.5px solid rgba(185,205,235,.30);border-bottom:1.5px solid rgba(185,205,235,.30);pointer-events:none"></span>
                 <div style="position:absolute;inset:0;pointer-events:none;z-index:1;transform-origin:top;animation:{{ g.laserAnim }}">
-                  <div style="position:absolute;left:0;right:0;bottom:0;height:7px;background-color:{{ cartFace }};background-image:linear-gradient(0deg,rgba(0,0,12,.22),rgba(185,205,235,.07)),url(&quot;steel-texture.png&quot;)">
+                  <div style="position:absolute;left:0;right:0;bottom:0;height:7px;background-color:{{ cartFace }};background-image:linear-gradient(0deg,rgba(0,0,12,.22),rgba(185,205,235,.07)),var(--rw-steel)">
                     
                   </div>
                 </div>
@@ -1175,9 +1189,9 @@ input:focus::placeholder{color:transparent}
         <div style="position:absolute;left:5px;right:5px;bottom:0;height:40px;pointer-events:none;background:linear-gradient(to bottom,rgba(4,7,11,0) 0%,rgba(4,7,11,.75) 55%,rgb(6,9,13) 100%);opacity:{{ scrimOpacity }}"></div>
       </div>
 
-      <div style="flex:none;height:32px;display:flex;align-items:center;gap:8px;padding:2px 8px 0 8px;border-top:1px solid color-mix(in oklab, black 60%, var(--card-head));box-shadow:0 -1px 0 rgba(185,205,235,.04),inset 0 1px 0 rgba(185,205,235,.08);background-color:{{ chassisFace }};background-image:url(&quot;steel-texture.png&quot;);clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,8px 100%,0 calc(100% - 8px));position:relative">
+      <div style="flex:none;height:32px;display:flex;align-items:center;gap:8px;padding:2px 8px 0 8px;border-top:1px solid color-mix(in oklab, black 60%, var(--card-head));box-shadow:0 -1px 0 rgba(185,205,235,.04),inset 0 1px 0 rgba(185,205,235,.08);background-color:{{ chassisFace }};background-image:var(--rw-steel);clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,8px 100%,0 calc(100% - 8px));position:relative">
         <div style="position:absolute;left:0;right:0;top:2px;bottom:0;clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,8px 100%,0 calc(100% - 8px));background:color-mix(in oklab, black 52%, var(--card-head))"></div>
-        <div style="position:absolute;left:1.2px;right:1.2px;top:3.2px;bottom:1.2px;clip-path:polygon(0 0,100% 0,100% calc(100% - 13.3px),calc(100% - 13.3px) 100%,7.3px 100%,0 calc(100% - 7.3px));background-color:{{ chassisFace }};background-image:linear-gradient(180deg,rgba(185,205,235,.09),rgba(185,205,235,.02) 45%,rgba(0,0,12,.16)),url(&quot;steel-texture.png&quot;)"></div>
+        <div style="position:absolute;left:1.2px;right:1.2px;top:3.2px;bottom:1.2px;clip-path:polygon(0 0,100% 0,100% calc(100% - 13.3px),calc(100% - 13.3px) 100%,7.3px 100%,0 calc(100% - 7.3px));background-color:{{ chassisFace }};background-image:linear-gradient(180deg,rgba(185,205,235,.09),rgba(185,205,235,.02) 45%,rgba(0,0,12,.16)),var(--rw-steel)"></div>
 
         <div style="position:relative;align-self:stretch;display:flex;align-items:center;padding:0 10px 0 0;flex:1 1 0;min-width:0">
           
@@ -2175,7 +2189,12 @@ class Component extends DCLogic {
     var r = document.createElement('div'); r.className = 'rw-rack';
     list.forEach(function (t) {
       var k = document.createElement('i'); k.className = 'rw-tick';
-      k.style.background = HUE(t)[0]; k.dataset.label = t; r.appendChild(k);
+      k.style.background = HUE(t)[0]; k.dataset.label = t;
+      // skin-agnostic data channel: the halo skin's per-tick emission glow needs
+      // the hue in a form CSS can compose (an inline background shorthand can't
+      // be read back), so every tick carries it as a custom property too.
+      k.style.setProperty('--tick-rgb', HUE(t)[0]);
+      r.appendChild(k);
     });
     return r;
   }
@@ -2643,7 +2662,127 @@ html[data-b="hybrid"] .gate .sc-interp::after{
   background:#131922;color:#8994a3;box-shadow:inset 0 0 0 1px rgba(0,0,6,.7);}
 #m1-sw button[data-on="1"]{background:#2b3541;color:#eef3f9;
   box-shadow:inset 0 1px 0 rgba(226,238,255,.20), inset 0 0 0 1px rgba(0,0,6,.7);}
+
+/* ============================================================================
+   H1 · THE HALO SKIN — Jac, 2026-08-01. A FINISH layer, never a physics layer:
+   every rule here is gated on html[data-skin="halo"] and keyed to the material
+   FAMILIES, so the compress, the glisten, the wake, the wrap, the marquee and
+   the click contract all run untouched underneath it.
+     steel = brushed charcoal (--h-steel) · rows seated = navy weave (--h-canvas)
+     glass = circuit navy (--h-circuit)   · chassis     = olive (--rw-steel re-point)
+   Mockup 2 supplies the body, mockup 1 the emissive treatment of glass.
+   ============================================================================ */
+
+/* the chassis re-dress is ONE LINE — every inline chassis surface reaches its
+   texture through var(--rw-steel), so re-pointing the var re-skins the frame,
+   header bands and footer plate together. This is the texture atlas paying off. */
+html[data-skin="halo"]{--rw-steel:var(--h-olive);}
+
+/* ---- STEEL: group-head panels in brushed charcoal ---- */
+html[data-skin="halo"] .scp1{
+  background-image:linear-gradient(180deg,rgba(205,225,250,.07),rgba(200,220,245,.02) 45%,rgba(0,0,10,.28)),var(--h-steel)!important;
+  background-size:auto,512px 512px!important;
+  box-shadow:inset 0 1px 0 rgba(205,225,250,.10)!important;}
+
+/* seated cartridges wear the navy weave — mockup 2's rows read navy against
+   the heads' charcoal. Still steel: they compress nothing (rows aren't buttons)
+   but they glisten and wrap exactly as before. */
+html[data-skin="halo"] [data-row]:not([data-lit="1"]) > div{
+  background-image:linear-gradient(rgba(4,9,16,.42),rgba(4,9,16,.55)),var(--h-canvas)!important;
+  background-color:#101b2c!important;background-size:auto,512px 512px!important;
+  box-shadow:inset 0 1px 0 rgba(170,200,240,.10)!important;}
+
+/* ---- GLASS: the circuit surface + emission in the element's own colour ---- */
+html[data-skin="halo"] .rw-board{
+  background-color:#04101c!important;
+  background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.20) 2px 3px),var(--h-circuit)!important;
+  background-size:auto,512px 512px!important;}
+html[data-skin="halo"] .rw-board span{text-shadow:0 0 6px currentColor;}
+html[data-skin="halo"] [data-row][data-lit="1"] > div{
+  background-image:radial-gradient(120% 180% at 50% 0%,rgba(120,190,255,.13),transparent 62%),var(--h-circuit)!important;
+  background-color:#04101c!important;background-size:auto,512px 512px!important;}
+html[data-skin="halo"] [data-row][data-lit="1"] .rw-drawer,
+html[data-skin="halo"] .rw-cart{
+  background-image:var(--h-circuit)!important;background-color:#030b14!important;
+  background-size:512px 512px!important;}
+
+/* ---- the GATE respects switch B (gates live on HEADS — data-open is set on
+        every .gate by build(), and rows carry Signals, not gates).
+        B=digital -> the plate goes GLASS: deep-hue backlit fill, scanline film,
+        letters in the state hue. Glass may emit, so this breaks no law — and it
+        must beat switch A's background-clip:text at any A position, hence the
+        explicit fill-color + background reset at higher specificity.
+        B=steel/hybrid -> the compressing charcoal plate; letters stay steel and
+        A keeps governing them. ---- */
+html[data-skin="halo"][data-b="digital"] .scp1 .gate{
+  background-color:color-mix(in oklab, var(--m-tint,#8b94a3) 20%, #070c13)!important;
+  background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.30) 2px 3px)!important;}
+html[data-skin="halo"][data-b="digital"] .scp1[data-tone] .gate .sc-interp{
+  background:none!important;-webkit-background-clip:border-box!important;background-clip:border-box!important;
+  filter:none!important;}
+html[data-skin="halo"][data-b="digital"] .scp1[data-tone="red"]    .gate .sc-interp{color:#ff8686!important;-webkit-text-fill-color:#ff8686!important;text-shadow:0 0 8px rgba(255,100,100,.55),0 1px 2px rgba(0,0,4,.9)!important;}
+html[data-skin="halo"][data-b="digital"] .scp1[data-tone="yellow"] .gate .sc-interp{color:#f2dc6a!important;-webkit-text-fill-color:#f2dc6a!important;text-shadow:0 0 8px rgba(240,215,100,.5),0 1px 2px rgba(0,0,4,.9)!important;}
+html[data-skin="halo"][data-b="digital"] .scp1[data-tone="blue"]   .gate .sc-interp{color:#9dc6ee!important;-webkit-text-fill-color:#9dc6ee!important;text-shadow:0 0 8px rgba(130,185,240,.5),0 1px 2px rgba(0,0,4,.9)!important;}
+html[data-skin="halo"][data-b="digital"] .scp1[data-tone="green"]  .gate .sc-interp{color:#5ee0ab!important;-webkit-text-fill-color:#5ee0ab!important;text-shadow:0 0 8px rgba(80,220,165,.5),0 1px 2px rgba(0,0,4,.9)!important;}
+html[data-skin="halo"][data-b="digital"] .scp1[data-tone="gray"]   .gate .sc-interp{color:#c6d2e0!important;-webkit-text-fill-color:#c6d2e0!important;text-shadow:0 0 7px rgba(200,215,235,.4),0 1px 2px rgba(0,0,4,.9)!important;}
+html[data-skin="halo"][data-b="steel"]  .gate[data-open],
+html[data-skin="halo"][data-b="hybrid"] .gate[data-open]{
+  background-image:linear-gradient(180deg,rgba(255,255,255,.13),rgba(255,255,255,.02) 46%,rgba(0,0,12,.24)),var(--h-steel)!important;
+  background-size:auto,512px 512px!important;}
+
+/* ---- ROW SIGNALS: the mockups' two DUE BACK boxes are exactly the card's
+        fill law (fill = today). Outline signals go dark emissive glass with a
+        ring and glow in currentColor — the Signal already carries its hue
+        there, so ONE rule covers every tone. Filled signals stay a solid lamp;
+        the glow needs the hue explicitly because their text colour is dark. ---- */
+html[data-skin="halo"] [data-row] .signal.signal--outline{
+  background-color:#050b13!important;
+  background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.28) 2px 3px)!important;
+  box-shadow:inset 0 0 0 .5px currentColor, 0 0 8px color-mix(in srgb, currentColor 30%, transparent)!important;
+  text-shadow:0 0 6px currentColor!important;}
+html[data-skin="halo"] [data-row] .signal--red.signal--filled   {box-shadow:0 0 9px rgba(255,66,66,.4)!important;}
+html[data-skin="halo"] [data-row] .signal--yellow.signal--filled{box-shadow:0 0 9px rgba(238,212,75,.38)!important;}
+html[data-skin="halo"] [data-row] .signal--blue.signal--filled  {box-shadow:0 0 9px rgba(99,148,204,.4)!important;}
+html[data-skin="halo"] [data-row] .signal--green.signal--filled {box-shadow:0 0 9px rgba(52,211,153,.38)!important;}
+html[data-skin="halo"] [data-row] .signal--gray.signal--filled  {box-shadow:0 0 8px rgba(139,148,163,.3)!important;}
+
+/* ---- SLOTS -> METER BLOCKS. Same DOM, same unfurl, same +N, same narration:
+        only geometry and finish change. The recessed channel behind them is
+        pure CSS on the rack, so the "empty track" is honest dead metal, and
+        each block glows in its own hue via the --tick-rgb data channel. ---- */
+html[data-skin="halo"] .rw-tick{
+  transform:none!important;width:7px!important;height:13px!important;border-radius:1px!important;
+  background-image:linear-gradient(180deg,rgba(255,255,255,.34),rgba(255,255,255,.07) 40%,rgba(0,0,0,.24))!important;
+  box-shadow:inset 0 0 0 .8px rgba(0,0,8,.5),
+    0 0 7px color-mix(in srgb, var(--tick-rgb,#9aacc0) 55%, transparent)!important;
+  filter:saturate(1.15) brightness(1.08);}
+html[data-skin="halo"] .rw-rack{
+  padding:2px 4px!important;border-radius:1px;
+  background:repeating-linear-gradient(90deg,rgba(150,185,225,.06) 0 7px,rgba(0,0,0,0) 7px 9.5px) content-box,#0a1119!important;
+  box-shadow:0 0 0 1px rgba(0,0,8,.55), inset 0 1.5px 2.5px rgba(0,0,0,.55)!important;}
+html[data-skin="halo"] .rw-more{color:#9fc6e8;text-shadow:0 0 5px rgba(120,190,255,.4);}
+
+/* ---- HEADER: the active tab is mockup 1's glowing outlined hex-tab; the
+        WORK/OPEN/DONE chips keep their steel and their REAL count pins. ---- */
+html[data-skin="halo"] [data-pair="1"] [class*="seg__opt--on"]{
+  color:#9fdcff!important;background:rgba(120,200,255,.07)!important;
+  box-shadow:inset 0 0 0 1.5px rgba(120,200,255,.75), 0 0 10px rgba(90,180,255,.30)!important;
+  text-shadow:0 0 7px rgba(140,210,255,.55)!important;}
+
+/* ---- SEARCH: the recessed glass slab becomes circuit glass; the terminal
+        voice turns cyan. --accent stays orange everywhere steel. ---- */
+html[data-skin="halo"] [data-glass]{
+  background-color:#04101c!important;
+  background-image:linear-gradient(180deg,rgba(0,0,0,.34),rgba(0,0,0,0) 55%,rgba(140,200,255,.05)),var(--h-circuit)!important;
+  background-size:auto,512px 512px!important;}
+html[data-skin="halo"] [data-glass] input{color:#8fd8ff!important;}
+
+/* ---- FOOTER: the grip pips keep their band hues (function) and gain
+        emission (finish). ---- */
+html[data-skin="halo"] [data-hint="How far down this card you are"]{
+  filter:brightness(1.1) saturate(1.12);}
 `;
+
 
   /* ==========================================================================
      LAW 7 — the ONE table. Everything above is written against these families;
@@ -2667,9 +2806,10 @@ html[data-b="hybrid"] .gate .sc-interp::after{
   var SWITCHES = [
     ['a', 'A', ['current', 'strict', 'bold']],
     ['b', 'B', ['digital', 'steel', 'hybrid']],
-    ['c', 'C', ['on', 'off']]
+    ['c', 'C', ['on', 'off']],
+    ['skin', 'S', ['steel', 'halo']]
   ];
-  var DEFAULTS = { a: 'current', b: 'digital', c: 'on' };
+  var DEFAULTS = { a: 'current', b: 'digital', c: 'on', skin: 'steel' };
 
   function get(k) { try { return localStorage.getItem('rw-m1-' + k) || DEFAULTS[k]; } catch (e) { return DEFAULTS[k]; } }
   function set(k, v) {
@@ -2767,7 +2907,7 @@ html[data-b="hybrid"] .gate .sc-interp::after{
     // re-stamp — otherwise a steel gate keeps a glass stamp and silently loses the
     // family's hover rules. Separate observer: documentElement is not in body.
     new MutationObserver(schedule).observe(document.documentElement,
-      { attributes: true, attributeFilter: ['data-a', 'data-b', 'data-c'] });
+      { attributes: true, attributeFilter: ['data-a', 'data-b', 'data-c', 'data-skin'] });
   }
 
   // wait for P1's stylesheet, not just the card — this block layers ON it.
