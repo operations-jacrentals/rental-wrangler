@@ -3257,17 +3257,62 @@ html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]
    makes the surround appear on its own — and uncovers the laser.
    ============================================================================ */
 .scp1 .pin-wrap{
-  align-self:center!important;
-  height:22px!important;              /* in a 30px head: 4px of panel above and below */
-  margin-right:10px!important;        /* uncovers the group's right-hand laser rail */
+  align-self:stretch!important;
+  margin:5px 10px 5px 0!important;    /* the panel shows around it; the 10px uncovers the laser rail */
   flex:0 0 calc(var(--rw-namew) - 10px)!important;
   width:calc(var(--rw-namew) - 10px)!important;}
 html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]{
   height:100%!important;align-self:stretch!important;}
 
-/* THE GROUP BOARD WAS TOP-ALIGNED — 17px tall, pinned to the top of a 30px
-   panel, which is why it looked hung rather than seated. Centred. */
-.scp1 .rw-board{align-self:center!important;}
+/* ---------------------------------------------------------------------------
+   THE BIG SCREEN. Jac: "a very large digital screen starting after the group
+   name panel. We can stack the slots under the message board. And the message
+   board needs no backlay, it can just be in line (it is a terminal display
+   after all)."
+
+   The head is one steel panel edge to edge; the screen is a single large glass
+   surface set into it, taking everything the name panel does not. The board and
+   the slot rack live INSIDE it, stacked — so the screen is the display and the
+   board is just its top line of text.
+   --------------------------------------------------------------------------- */
+/* the card pins the head at an inline height:30px, which is a one-line head.
+   A stacked screen needs two lines, so the head grows to fit its content. */
+.scp1{align-items:stretch!important;padding:5px 0 5px 5px!important;
+  height:auto!important;min-height:46px!important;}
+.rw-screen{
+  flex:1 1 auto!important;min-width:0;display:flex;flex-direction:column;
+  justify-content:center;gap:3px;padding:5px 9px 6px 11px;margin-right:8px;
+  background-color:#04101c;
+  background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.24) 2px 3px),var(--h-circuit);
+  background-size:auto,512px 512px;
+  clip-path:polygon(0 8px,8px 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%);
+  box-shadow:0 0 0 1.4px color-mix(in oklab, black 58%, var(--card-head)),
+    inset 0 2px 4px rgba(0,0,0,.85), inset 0 -1px 0 rgba(190,215,245,.10);
+  filter:drop-shadow(0 1.5px 0 rgba(185,205,235,.10)) drop-shadow(0 -1px 0 rgba(185,205,235,.05));}
+
+/* THE BOARD HAS NO BACKLAY — it is a line of text ON the screen, not a window
+   set into it. Everything that made it its own object comes off: the glass
+   body, the notch clip, the ring, the press inset, the lit hairlines and the
+   fixed width. The marquee and the scanline film stay, because those belong to
+   the reading, not to the housing. */
+.scp1 .rw-screen .rw-board{
+  background:none!important;background-image:none!important;
+  box-shadow:none!important;filter:none!important;clip-path:none!important;
+  width:auto!important;max-width:none!important;flex:0 0 auto!important;
+  height:auto!important;padding:0!important;align-self:stretch!important;
+  order:1!important;}   /* P1 ordered rack(1) before board(2) in the ROW; inside
+                           the screen the board is the top line and slots sit
+                           under it, so the order is reset here rather than
+                           inherited from a rule written for a different axis */
+.scp1 .rw-screen .rw-board::after{content:none!important;}   /* screen carries the scanlines now */
+.scp1 .rw-screen .rw-board span{color:#8fd8ff!important;text-shadow:0 0 6px rgba(80,190,255,.40)!important;}
+
+/* the slots sit UNDER the board, on the same screen */
+.scp1 .rw-screen .rw-rack{
+  flex:0 0 auto!important;justify-content:flex-start!important;
+  overflow:hidden!important;min-height:13px!important;margin:0!important;padding:0!important;
+  background:none!important;box-shadow:none!important;
+  order:2!important;}
 
 /* THE LASER'S FRAME reads again. Measured: the laser and its dark band are
    pixel-identical to the old build (y=35..105 in a 5x crop). What changed is
@@ -3367,6 +3412,29 @@ html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]
       pin.textContent = '';
       var s = document.createElement('span'); s.textContent = txt;
       pin.appendChild(s);
+    });
+
+    // THE HEAD'S DIGITAL SCREEN — Jac, 2026-08-01: "a very large digital screen
+    // starting after the group name panel. We can stack the slots under the
+    // message board." The board and the rack are siblings in the head, so the
+    // screen has to be a real container: create it once, move both inside, and
+    // park it before the name panel. Reading right-to-left the head is still
+    // NAME then board then slots (#176) — the screen simply holds the last two,
+    // stacked, and takes every pixel the name panel does not.
+    [].forEach.call(document.querySelectorAll('.scp1'), function (scp) {
+      var bd = scp.querySelector(':scope > .rw-board');
+      var rk = scp.querySelector(':scope > .rw-rack');
+      if (!bd && !rk) return;
+      var scr = scp.querySelector(':scope > .rw-screen');
+      if (!scr) {
+        scr = document.createElement('div');
+        scr.className = 'rw-screen';
+        scr.setAttribute('data-material', 'glass');
+        var pw = scp.querySelector(':scope > .pin-wrap');
+        scp.insertBefore(scr, pw || null);
+      }
+      if (bd && bd.parentNode !== scr) scr.appendChild(bd);
+      if (rk && rk.parentNode !== scr) scr.appendChild(rk);
     });
 
     // the head panel carries its group's tone so switch A can tint the steel.
