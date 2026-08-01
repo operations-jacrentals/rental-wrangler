@@ -3068,10 +3068,14 @@ html[data-b="digital"] .scp1 .gate:hover .sc-interp{animation:none!important;}
    --------------------------------------------------------------------------- */
 .seg [class*="seg__opt--on"]::after{
   content:''!important;position:absolute!important;pointer-events:none!important;z-index:1!important;
-  left:50%!important;bottom:-1.5px!important;width:42%!important;height:3px!important;
+  left:50%!important;bottom:3px!important;width:42%!important;height:3px!important;
   transform:translateX(-50%)!important;border-radius:1px!important;
   background:var(--accent)!important;
   box-shadow:0 0 6px 1px var(--accent), 0 0 11px 3px color-mix(in srgb, var(--accent) 55%, transparent)!important;}
+  /* Jac, 2026-08-01: "should sit above the bottom outline without changing or
+     impacting anything at all" -- moved from straddling the border (bottom:-1.5px,
+     half in/half out) to sitting fully INSIDE it (bottom:3px), above the ring's
+     own outer edge. Width, height, centering, colour and glow untouched. */
 
 /* ---------------------------------------------------------------------------
    THE LASER'S OWN FRAME — Jac, 2026-08-01: "I can see it on the left and right
@@ -3405,6 +3409,42 @@ html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]
 .scp1{
   box-shadow:inset 0 1.5px 0 rgba(196,216,246,.34),
              inset 0 3px 0 rgba(185,205,235,.07)!important;}
+
+/* ---------------------------------------------------------------------------
+   HEAD PANEL SILHOUETTE — the panel's OWN outer clip (computed clip-path was
+   "none" before this), separate from uGroove/uBeam's thin decorative inset
+   line traced on the group wrapper below it -- both layers coexist. 8px
+   45-degree chamfer on the RIGHT edge only (top-right + bottom-right),
+   matching uBeam's existing 8px bottom-left chamfer for visual consistency.
+   Left side stays square (0,0 / 0,100%) on purpose -- left is out of scope.
+   Verified against ".scp1 .pin-wrap"'s own box: the name plate's effective
+   inset from .scp1's top/bottom/right edges is 10px (5px padding + 5px
+   margin, vertically; 10px margin, horizontally) versus this 8px chamfer, so
+   the plate clears the cut with 2px to spare and never enters the diagonal
+   zone -- no margin/chamfer adjustment needed.
+   --------------------------------------------------------------------------- */
+.scp1{
+  clip-path:polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%)!important;}
+
+/* THE CHAMFER STUD — a tiny rivet marking where the new right-edge chamfer's
+   two diagonals would meet if extended (the vertical middle of the right
+   edge). .scp1 now carries a clip-path, so any child/pseudo-element of it
+   would be clipped by that same shape -- this stud is a SIBLING of .scp1 on
+   the group wrapper ("[data-band-hue]") instead, created in JS (see the
+   ".rw-stud" forEach loop next to the ".rw-screen" one), positioned to sit
+   right at/just past the header's own right edge. Neutral steel tone (not
+   accent) -- reads as structural hardware, not a touchable/lit control.
+   NOTE: top is a JS-set custom property, NOT a plain 50% -- the wrapper this
+   sits in also contains the (variable-height, expand/collapse) row list, so
+   centering on the WRAPPER's 50% put the stud far below the header, down in
+   the row area. --stud-top is set to half of .scp1's OWN measured height on
+   every stamp() pass, which is what actually centers it on the header bar. */
+.rw-stud{
+  position:absolute!important;right:-2px!important;top:var(--stud-top,19px)!important;
+  transform:translateY(-50%) rotate(45deg)!important;
+  width:3px!important;height:3px!important;pointer-events:none!important;z-index:4!important;
+  background:color-mix(in oklab, white 25%, var(--card-head))!important;
+  box-shadow:0 0 0 1px rgba(0,0,0,.5)!important;}
 `;
 
 
@@ -3517,6 +3557,28 @@ html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]
       }
       if (bd && bd.parentNode !== scr) scr.appendChild(bd);
       if (rk && rk.parentNode !== scr) scr.appendChild(rk);
+    });
+
+    // THE CHAMFER STUD — one small rivet per group, marking the narrowest point
+    // of .scp1's new right-edge chamfer (see the ".rw-stud" CSS above). .scp1
+    // itself now carries a clip-path, so a child/pseudo-element placed inside
+    // it would be clipped by that same shape -- this is why the stud is
+    // created as a SIBLING of .scp1 on the group wrapper instead, following
+    // the same querySelectorAll('.scp1') + insert-on-the-wrapper pattern the
+    // screen block above uses. Idempotent: skips creating a duplicate, but
+    // ALWAYS re-measures --stud-top: the wrapper also holds the (expand/
+    // collapse, variable-height) row list below the header, so top:50% on the
+    // wrapper itself would center on the WRONG box -- the stud has to track
+    // .scp1's own ~37-38px height (open vs collapsed), not the wrapper's.
+    [].forEach.call(document.querySelectorAll('.scp1'), function (scp) {
+      var wrap = scp.parentElement; if (!wrap) return;
+      var stud = wrap.querySelector(':scope > .rw-stud');
+      if (!stud) {
+        stud = document.createElement('div');
+        stud.className = 'rw-stud';
+        wrap.appendChild(stud);
+      }
+      stud.style.setProperty('--stud-top', (scp.offsetHeight / 2) + 'px');
     });
 
     // the head panel carries its group's tone so switch A can tint the steel.
