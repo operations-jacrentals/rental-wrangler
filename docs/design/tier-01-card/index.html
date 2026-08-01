@@ -2351,4 +2351,327 @@ class Component extends DCLogic {
 })();
 </script>
 
+<!-- ============================================================================
+     M1 · THE MATERIAL TAXONOMY  —  Jac's material laws, 2026-08-01
+     Appended AFTER the P1 block so its stylesheet lands last and wins source
+     order, exactly like P1's own regression-fix section.
+
+     LAW 7 is the spine: every element is stamped data-material="steel|glass|slot"
+     from ONE table, and every finish/hover/press rule below is written against
+     the FAMILY, never against an element. That is what stops a control going
+     stale when the language moves — you change the family, not fifteen selectors.
+
+     Two of the stamps are DERIVED, not fixed, which is the point of the taxonomy:
+       · a cartridge is steel while it is seated and GLASS once it powers on
+       · the gate's material IS the open question B, so the B switch rewrites it
+
+     Three live comparisons ride on top, driven by data-a / data-b / data-c on
+     <html> and switched from the panel at bottom-left:
+       A  current · strict · bold     steel text vs the state hue      (law 2)
+       B  digital · steel · hybrid    what a state button is made of   (law 6)
+       C  glisten on · off            steel hover                      (law 5)
+     ============================================================================ -->
+<script>
+(function () {
+  var CSS = `
+/* ============================================================================
+   M1 · MATERIAL FAMILIES
+   ============================================================================ */
+
+/* the wrap and the glisten both draw in ::after, so every steel plate needs a
+   containing block. .gate keeps its own, for B3's milled window in ::before. */
+[data-material="steel"], .gate{position:relative;}
+
+/* ----------------------------------------------------------------------------
+   LAW 5 / SWITCH C — steel hover.
+   Jac: the light animation that wraps a row, SLOWED. Steel glistens, it never
+   lights up. Two halves, deliberately split:
+     · the WRAP  — containers only (.scp1, a seated cartridge). It is the row's
+       own rwLaserDrop geometry at .54s instead of .24s, and NEUTRAL rather than
+       the state hue, because #169/#172 already spend the hue frame on "this
+       cartridge is powered on". Same gesture, half the speed, no colour — so
+       hover and open never read as the same event.
+     · the GLISTEN — every steel element, innermost-hovered only, so pointing at
+       a name glistens the NAME while the row it sits in wraps.
+   No blur, no bloom, no hue: matte is canon.
+   -------------------------------------------------------------------------- */
+@keyframes rwSteelWrap{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes rwGlisten{from{background-position:-60% 0}to{background-position:160% 0}}
+
+html[data-c="on"] [data-material="steel"]:hover:not(:has([data-material="steel"]:hover))::after,
+html[data-c="on"] [data-wrap="1"]:hover::after{
+  content:'';position:absolute;inset:0;pointer-events:none;z-index:4;
+  background-image:linear-gradient(100deg,rgba(214,230,255,0) 43%,rgba(214,230,255,.07) 50%,rgba(214,230,255,0) 57%);
+  background-size:220% 100%;background-repeat:no-repeat;
+  animation:rwGlisten 1.9s linear infinite;}
+
+html[data-c="on"] [data-wrap="1"]:hover::after{
+  transform-origin:top;
+  box-shadow:inset 1px 0 0 rgba(206,224,255,.15),
+             inset -1px 0 0 rgba(206,224,255,.15),
+             inset 0 -1px 0 rgba(206,224,255,.15);
+  animation:rwSteelWrap .54s cubic-bezier(.32,.72,0,1) both,
+            rwGlisten 1.9s linear .54s infinite;}
+
+@media (prefers-reduced-motion:reduce){
+  html[data-c="on"] [data-material="steel"]:hover::after,
+  html[data-c="on"] [data-wrap="1"]:hover::after{animation:none;}}
+
+/* ----------------------------------------------------------------------------
+   SWITCH A — LAW 2, strict: steel text holds the same colour as its steel panel.
+   "strict" and "bold" are ONE rule set separated by ONE number, --m-mix: the
+   share of the group's state hue mixed into the steel. 0% = neutral steel (the
+   strict reading). 34% = steel that has taken the colour boldly. The letters
+   re-use the panel's OWN recipe — same brush pattern, same tonal ramp, same
+   direction, lifted one stop — so the text follows the material by construction
+   rather than by a matched hex that can drift.
+   "current" sets nothing, leaving R4's hue faces exactly as they landed.
+   -------------------------------------------------------------------------- */
+html[data-a="strict"] .scp1{--m-mix:0%;}
+html[data-a="bold"]   .scp1{--m-mix:34%;}
+.scp1[data-tone="red"]   {--m-tint:#ff4242;}
+.scp1[data-tone="yellow"]{--m-tint:#eed44b;}
+.scp1[data-tone="blue"]  {--m-tint:#6394cc;}
+.scp1[data-tone="green"] {--m-tint:#34d399;}
+.scp1[data-tone="gray"]  {--m-tint:#8b94a3;}
+
+html[data-a="strict"] .scp1, html[data-a="bold"] .scp1{
+  background-image:
+    repeating-linear-gradient(90deg,rgba(255,255,255,.030) 0 1px,rgba(0,0,0,0) 1px 3px),
+    linear-gradient(180deg,
+      color-mix(in oklab, var(--m-tint,#8b94a3) var(--m-mix,0%), #313a46) 0%,
+      color-mix(in oklab, var(--m-tint,#8b94a3) var(--m-mix,0%), #222a34) 47%,
+      color-mix(in oklab, var(--m-tint,#8b94a3) var(--m-mix,0%), #171d25) 100%)!important;}
+
+html[data-a="strict"] .scp1 .rmq,      html[data-a="bold"] .scp1 .rmq,
+html[data-a="strict"] .gate .sc-interp, html[data-a="bold"] .gate .sc-interp{
+  color:transparent!important;
+  background-image:
+    repeating-linear-gradient(90deg,rgba(255,255,255,.055) 0 1px,rgba(0,0,0,0) 1px 3px),
+    linear-gradient(180deg,
+      color-mix(in oklab, var(--m-tint,#8b94a3) var(--m-mix,0%), #eaf0f8) 0%,
+      color-mix(in oklab, var(--m-tint,#8b94a3) var(--m-mix,0%), #bcc7d5) 50%,
+      color-mix(in oklab, var(--m-tint,#8b94a3) var(--m-mix,0%), #8c99a9) 100%)!important;
+  -webkit-background-clip:text!important;background-clip:text!important;
+  text-shadow:none!important;
+  filter:drop-shadow(0 1px 0 rgba(0,0,4,.85));}
+
+/* shut still reads as shut without borrowing a hue — the plate is simply less
+   lit. #168's motion remains the primary open/shut carrier; this only keeps the
+   letters honest once R4's hue dimming is gone. */
+html[data-a="strict"] .gate[data-open="0"] .sc-interp,
+html[data-a="bold"]   .gate[data-open="0"] .sc-interp{
+  filter:drop-shadow(0 1px 0 rgba(0,0,4,.85)) brightness(.72);}
+
+/* ----------------------------------------------------------------------------
+   SWITCH B — what a state button is MADE of. All three live, side by side.
+   -------------------------------------------------------------------------- */
+
+/* B2 · DIGITAL — the landed well, plus law 4's three tells: scanline film, a
+   cursor block, and a wake-up flicker when the pointer arrives. Live text, so
+   by law 2 it is explicitly NOT steel — and it cannot compress. */
+html[data-b="digital"] .gate[data-open="0"],
+html[data-b="digital"] .gate[data-open="1"]{
+  background-color:#070c12!important;
+  background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.30) 2px 3px)!important;}
+@keyframes rwCursor{0%,49%{opacity:1}50%,100%{opacity:0}}
+@keyframes rwWake{0%{opacity:.25;filter:brightness(2.2)}18%{opacity:1;filter:brightness(1.3)}
+  34%{opacity:.6;filter:brightness(.85)}52%{opacity:1;filter:brightness(1.18)}100%{opacity:1;filter:brightness(1)}}
+html[data-b="digital"] .gate .sc-interp::after{
+  content:'\\2588';margin-left:3px;opacity:.55;animation:rwCursor 1.05s steps(1,end) infinite;}
+html[data-b="digital"] .gate:hover .sc-interp{animation:rwWake .32s steps(9,end) 1;}
+
+/* B1 · STEEL and B3 · HYBRID share a body: a raised plate that COMPRESSES.
+   Restated at [data-open="0"/"1"] specificity on purpose — P1's regression-fix
+   7b note says a plain .gate override silently loses to those, whatever the
+   source order. Same trap, same fix. */
+html[data-b="steel"]  .gate[data-open="0"], html[data-b="steel"]  .gate[data-open="1"],
+html[data-b="hybrid"] .gate[data-open="0"], html[data-b="hybrid"] .gate[data-open="1"]{
+  background-color:#232b34!important;
+  background-image:
+    repeating-linear-gradient(90deg,rgba(255,255,255,.028) 0 1px,rgba(0,0,0,0) 1px 3px),
+    linear-gradient(180deg,rgba(255,255,255,.14),rgba(255,255,255,.02) 46%,rgba(0,0,12,.22))!important;
+  box-shadow:0 0 0 1.2px color-mix(in oklab, black 52%, var(--card-head)),
+    inset 0 1px 0 rgba(226,238,255,.22),
+    inset 0 -2px 3px rgba(0,0,6,.42),
+    0 1.5px 0 -.5px rgba(0,0,5,.75)!important;}
+
+/* the compress. Beats #168's translateY(-1.5px) on the open housing by
+   specificity, so an open gate still presses down from where it sits. */
+html[data-b="steel"]  .gate[data-open="0"]:active, html[data-b="steel"]  .gate[data-open="1"]:active,
+html[data-b="hybrid"] .gate[data-open="0"]:active, html[data-b="hybrid"] .gate[data-open="1"]:active{
+  transform:translateY(1.5px)!important;
+  box-shadow:0 0 0 1.2px color-mix(in oklab, black 52%, var(--card-head)),
+    inset 0 3px 5px -1px rgba(0,0,6,.85),
+    inset 0 -1px 0 rgba(226,238,255,.10)!important;}
+
+/* LAW 6 — under the press the steel text's LIGHTING changes. Nothing about the
+   letters is live; the plate simply turns under the light, which is what keeps
+   a re-stamped word compatible with law 2. */
+html[data-b="steel"]  .gate:active .sc-interp,
+html[data-b="hybrid"] .gate:active .sc-interp{filter:brightness(1.28) contrast(1.06)!important;}
+
+/* B3 · HYBRID — same compressing plate, with a milled scanlined window carrying
+   the live word. The window is drawn on the gate's ::before so it never fights
+   switch A's background-clip:text on .sc-interp. */
+html[data-b="hybrid"] .gate::before{
+  content:'';position:absolute;inset:3px 5px;z-index:0;pointer-events:none;
+  background-color:#050a10;
+  background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.30) 2px 3px);
+  box-shadow:inset 0 1.5px 3px rgba(0,0,0,.8), 0 0 0 1px rgba(0,0,6,.75);}
+html[data-b="hybrid"] .gate .sc-interp{position:relative;z-index:1;}
+html[data-b="hybrid"] .gate .sc-interp::after{
+  content:'\\2588';margin-left:3px;opacity:.5;animation:rwCursor 1.05s steps(1,end) infinite;}
+
+/* ----------------------------------------------------------------------------
+   the switcher — dev scaffolding, deliberately outside the card
+   -------------------------------------------------------------------------- */
+#m1-sw{position:fixed;left:10px;bottom:10px;z-index:99999;
+  font-family:ui-monospace,Menlo,Consolas,monospace;font-size:9px;letter-spacing:.05em;
+  background:linear-gradient(180deg,#232b34,#161c24);color:#9aa6b4;
+  box-shadow:0 0 0 1px rgba(0,0,6,.8), inset 0 1px 0 rgba(226,238,255,.14), 0 4px 12px rgba(0,0,6,.5);
+  padding:7px 8px;display:flex;flex-direction:column;gap:5px;user-select:none;}
+#m1-sw b{color:#c8d3e0;font-weight:800;letter-spacing:.12em;font-size:8px;}
+#m1-sw .r{display:flex;align-items:center;gap:3px;}
+#m1-sw .k{width:9px;color:#6d7987;}
+#m1-sw button{font:inherit;cursor:pointer;border:0;padding:3px 6px;
+  background:#131922;color:#8994a3;box-shadow:inset 0 0 0 1px rgba(0,0,6,.7);}
+#m1-sw button[data-on="1"]{background:#2b3541;color:#eef3f9;
+  box-shadow:inset 0 1px 0 rgba(226,238,255,.20), inset 0 0 0 1px rgba(0,0,6,.7);}
+`;
+
+  /* ==========================================================================
+     LAW 7 — the ONE table. Everything above is written against these families;
+     nothing above names an element twice. Adding a control means adding a row
+     here, not hunting the stylesheet.
+     ========================================================================== */
+  var MATERIAL = [
+    ['glass', '.rw-board'],      // the scanline film is the tell
+    ['glass', '.rw-cart'],
+    ['glass', '.rw-cartlines'],
+    ['slot',  '.rw-tick'],
+    ['slot',  '.rw-rack'],
+    ['steel', '.scp1'],
+    ['steel', '.ref'],
+    ['steel', '.plate'],
+    ['steel', '.door'],
+    ['steel', '.seg__opt'],
+    ['steel', '.field']
+  ];
+  var TONES = ['red', 'yellow', 'blue', 'green', 'gray'];
+  var SWITCHES = [
+    ['a', 'A', ['current', 'strict', 'bold']],
+    ['b', 'B', ['digital', 'steel', 'hybrid']],
+    ['c', 'C', ['on', 'off']]
+  ];
+  var DEFAULTS = { a: 'current', b: 'digital', c: 'on' };
+
+  function get(k) { try { return localStorage.getItem('rw-m1-' + k) || DEFAULTS[k]; } catch (e) { return DEFAULTS[k]; } }
+  function set(k, v) {
+    document.documentElement.setAttribute('data-' + k, v);
+    try { localStorage.setItem('rw-m1-' + k, v); } catch (e) {}
+    paint(); stamp();
+  }
+
+  function rowInner(row) {
+    for (var i = 0; i < row.children.length; i++) if (row.children[i].tagName === 'DIV') return row.children[i];
+    return null;
+  }
+
+  function stamp() {
+    MATERIAL.forEach(function (pair) {
+      [].forEach.call(document.querySelectorAll(pair[1]), function (el) {
+        el.setAttribute('data-material', pair[0]);
+      });
+    });
+
+    // DERIVED 1 — the gate's material is the open question. Switch B rewrites it,
+    // which is exactly why the finish rules key off the family and not off .gate.
+    var b = document.documentElement.getAttribute('data-b');
+    [].forEach.call(document.querySelectorAll('.gate'), function (g) {
+      g.setAttribute('data-material', b === 'digital' ? 'glass' : 'steel');
+    });
+
+    // DERIVED 2 — a cartridge is steel while seated and GLASS once it powers on.
+    // The taxonomy has to carry that, or #168's two-physics split lives only in
+    // prose. Only a SEATED cartridge takes the wrap: a lit one already wears the
+    // hue frame, and #172 makes that the sole "powered on" carrier.
+    [].forEach.call(document.querySelectorAll('[data-row]'), function (row) {
+      var inner = rowInner(row); if (!inner) return;
+      var lit = row.getAttribute('data-lit') === '1';
+      inner.setAttribute('data-material', lit ? 'glass' : 'steel');
+      if (lit) inner.removeAttribute('data-wrap'); else inner.setAttribute('data-wrap', '1');
+    });
+
+    // the head panel carries its group's tone so switch A can tint the steel.
+    [].forEach.call(document.querySelectorAll('.scp1'), function (scp) {
+      scp.setAttribute('data-wrap', '1');
+      var g = scp.querySelector('.gate'); if (!g) return;
+      for (var i = 0; i < TONES.length; i++) {
+        if (g.classList.contains('gate--' + TONES[i])) { scp.setAttribute('data-tone', TONES[i]); return; }
+      }
+    });
+  }
+
+  function paint() {
+    [].forEach.call(document.querySelectorAll('#m1-sw button'), function (btn) {
+      var on = document.documentElement.getAttribute('data-' + btn.dataset.k) === btn.dataset.v;
+      btn.setAttribute('data-on', on ? '1' : '0');
+    });
+  }
+
+  function panel() {
+    if (document.getElementById('m1-sw')) return;
+    var p = document.createElement('div'); p.id = 'm1-sw';
+    var h = document.createElement('b'); h.textContent = 'MATERIALS'; p.appendChild(h);
+    SWITCHES.forEach(function (s) {
+      var r = document.createElement('div'); r.className = 'r';
+      var k = document.createElement('span'); k.className = 'k'; k.textContent = s[1]; r.appendChild(k);
+      s[2].forEach(function (v) {
+        var btn = document.createElement('button');
+        btn.textContent = v; btn.dataset.k = s[0]; btn.dataset.v = v;
+        btn.addEventListener('click', function () { set(s[0], v); });
+        r.appendChild(btn);
+      });
+      p.appendChild(r);
+    });
+    document.body.appendChild(p);
+  }
+
+  var obs = null, queued = false;
+  function run() {
+    if (obs) obs.disconnect();
+    try { stamp(); paint(); } catch (e) { if (window.console) console.warn('[rw-m1]', e); }
+    if (obs) obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'data-lit', 'style'] });
+    queued = false;
+  }
+  function schedule() { if (!queued) { queued = true; requestAnimationFrame(run); } }
+
+  function start() {
+    var st = document.createElement('style');
+    st.id = 'rw-m1'; st.textContent = CSS;
+    document.head.appendChild(st);            // after #rw-p1, so this wins source order
+    Object.keys(DEFAULTS).forEach(function (k) { document.documentElement.setAttribute('data-' + k, get(k)); });
+    panel();
+    run();
+    obs = new MutationObserver(schedule);
+    obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'data-lit', 'style'] });
+
+    // the gate's data-material is DERIVED from the B switch, so a switch flipped
+    // from anywhere other than the panel (the console, a future prop) still has to
+    // re-stamp — otherwise a steel gate keeps a glass stamp and silently loses the
+    // family's hover rules. Separate observer: documentElement is not in body.
+    new MutationObserver(schedule).observe(document.documentElement,
+      { attributes: true, attributeFilter: ['data-a', 'data-b', 'data-c'] });
+  }
+
+  // wait for P1's stylesheet, not just the card — this block layers ON it.
+  var tries = 0;
+  var t = setInterval(function () {
+    if (document.getElementById('rw-p1')) { clearInterval(t); start(); }
+    else if (++tries > 200) { clearInterval(t); }   // ~16s, then give up silently
+  }, 80);
+})();
+</script>
+
 </body></html>
