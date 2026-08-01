@@ -116,17 +116,23 @@ Jac, 2026-08-01: *"Right now the group header doesn't appear to be a steel eleme
 it should be… It is no longer only steel, it's a hybrid. The full steel cartridge moves
 to the row."*
 
-### 4.1 · Group head — a fixed steel face plate
+### 4.1 · Group head — a glass bar carrying one steel plate
 
-Brushed grain, milled bevel, real edges. It must **read as metal at a glance**, which
-it does not today. Composition:
+Jac, 2026-08-01, revising his own earlier pick: *"The only 'Steel' part of the group
+header is the group name plate. The rest is glass, which drops the well around the
+message board."*
 
-- the **name is stamped into the steel** — no separate plate. This is `#189`'s
-  A-strict, already locked: steel text holds its panel's colour, milled from the
-  panel's own recipe.
-- the **slots sit on it as studs**.
-- the **message board is its single glass window** — the only inset (Jac's pick; the
-  name plate and slot channel stay steel).
+- the **bar is glass** — circuit texture, scanline film, and **neutral**: it does not
+  tint to the group's tone (§4.3).
+- the **name plate is the only steel on the head** — a raised plate riveted to the bar,
+  its name stamped into it per `#189`'s A-strict.
+- the **message board loses its well.** A well is a recess milled *into steel*; glass
+  set in glass has no bezel to recess into. The board keeps the silhouette `#185` gave
+  it — SW-notch clip, fixed 30%-of-card width, marquee, scanline film — but its
+  containment becomes a **seam in the glass**: one darker hairline, no metal rim.
+  Free-floating, but not shapeless.
+- the **slots sit on the glass** rather than as studs on metal. That suits them: law 8
+  already exempts slots from their host's physics.
 - it still **opens by MOTION** (`#168`), and the motion carries no light.
 
 ### 4.2 · Row — a seated steel cartridge, steel-faced always
@@ -142,11 +148,34 @@ confusable — one is a fixed face plate, the other a seated module.
   the face being steel does not make its instruments steel. The cartridge is steel
   hardware with one lit window, same grammar as the head.
 - a **glass terminal drawer drops beneath it** — that is where all the light lives.
+- **the drawer's glass takes the row's SIGNAL HUE.** Jac, 2026-08-01: *"The background
+  of the open item with its Halo Glass asset file should take on the signal color."*
+  The circuit texture is tinted with the row's state hue at a low mix, so the texture
+  stays legible and the surface reads as *this terminal is running in RED condition*
+  rather than as a block of colour. The steel face above it stays neutral metal, and
+  the drawer is the **only** surface on the row that takes the hue (§4.4).
 - the **hue laser frame wraps the whole cartridge**. A frame is a light source, not a
   material, so no steel glows. `#172`'s "the frame carries the hue alone" survives.
 - the row's **name stops glowing** when lit — it is steel now.
 
-### 4.3 · The flicker belongs to the drawer
+### 4.3 · Heads stay neutral; background-hue means exactly one thing
+
+The head's bar is glass now, and glass may carry hue — but heads **do not** tint to
+their group tone. The head's colour lives where it already does: in the stamped name
+plate and in its slots.
+
+This is what keeps §4.2's drawer tint readable. If both levels washed with hue, a
+coloured background would mean *"this group's worst state"* at one level and *"this row
+is open"* at the other — the same signal saying two different things. Keeping heads
+neutral makes **a hue-washed background mean "this thing is open", and only that.**
+
+### 4.4 · One hue surface per open row
+
+The drawer is the only surface that takes the signal hue. Not the row's board (its slot
+ticks already state the issue mix), and not the steel face (it is metal). One open row,
+one hue-washed surface, plus the frame that wraps it.
+
+### 4.5 · The flicker belongs to the drawer
 
 Jac, 2026-08-01: *"The flicker opening dance moves to the drawer as well, not at group
 open."*
@@ -165,7 +194,9 @@ present, or a rebuild/filter pass will replay it. The existing sweep already app
 
 | Row | Effect |
 |---|---|
-| `#172` | **DEAD.** The lit cartridge's face is no longer neutral glass — it stays steel. The clause that the frame carries the hue alone **survives**. |
+| `#172` | **DEAD — both clauses.** The lit face is no longer neutral glass (it stays steel), *and* the frame no longer carries the hue alone, because §4.2 gives the drawer the signal hue too. An earlier draft of this spec said the second clause survived; §4.2 overrides that. The "hue stated once" principle is preserved differently — §4.4 caps it at **one hue surface per open row**. |
+| `#193` | **MOOT for the head name.** #193 gave the group-name *well* the scroll-pips shape. There is no longer a well: the name is a raised steel plate on a glass bar (§4.1). The chamfer geometry (9px NW / 14px SE) is **kept as the plate's own silhouette**, so the visual rhyme with the pips well survives even though the recess does not. |
+| `#191` | **LIKELY CLOSED — needs Jac's word.** #191 left "what a state button is made of" open, with three candidates live behind switch B. §4.1 makes the head's name plate — which *is* the gate — definitively steel. That reads as B=steel winning for heads. Flagged rather than assumed, because closing #191 is a ledger-level call and this spec was not asked to make it. |
 | `#161` | **RELOCATED.** The CRT flicker moves from the row face to the drawer, and is forbidden on group open. |
 | `#168` | **REFINED, not reversed.** Two levels, two physics still holds: the head opens by motion, the row opens by dropping a drawer. What changes is that the row's face no longer changes material. |
 | `#177` | **LANDS on the toggles.** The count pin becomes a slot — the last pin standing. |
@@ -194,9 +225,11 @@ Playwright, both skins, before/after:
 3. toggle press: the segment's transform changes, the well's does not.
 4. count renders as a slot at the corner, hover-unfurls, keeps its state hue.
 5. glass: readouts compute cyan, search computes orange.
-6. head: name is `background-clip:text` off the panel recipe (A-strict), board is the
-   only child stamped `data-material="glass"`.
-7. row lit: face `data-material` stays `steel`; drawer is `glass`; laser frame present.
+6. head: the **bar** stamps `data-material="glass"`, the **name plate** is the only
+   descendant stamping `steel`; the board has no bezel ring in its computed shadow.
+7. row lit: face `data-material` stays `steel`; drawer is `glass`; laser frame present;
+   the drawer's background contains the row's hue and the face's does **not**.
+7b. head bars compute no tone tint at any group state (§4.3).
 8. **flicker fires on drawer creation only** — expand a group, assert zero animation on
    any row; then open a row, assert the drawer animates.
 9. zero console errors; standalone build makes zero off-page requests.
