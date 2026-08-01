@@ -39,3 +39,26 @@ record of what was decided). What changed:
   like a Signal; 13px, deliberately off the 24px control ladder; zero layout footprint.
 - **Interaction is uniform** — one hover ring drawn *outside* the element (no layout shift), one focus
   ring, real `<button type="button">` for every tappable atom, and no atom shrinks or wraps in a row.
+
+## Finish pass — applied 2026-07-28/07-31 (ledger #140/#142/#152/#153/#166/#177)
+
+Supersedes the four-shape radius ladder above for every control. What changed:
+
+- **Radius 0 + chamfers on every control atom** (Signal, Gate, Slot, Field, Ref) — the squared/opener/
+  rounded ladder read as plastic against a machined frame. Shape semantics moved into **finishes**
+  instead: **machined ring** (the standard trim on a filled/glass control), **well glass** (a recessed
+  dark face — OFF Seg cells, Field), **pressed key** (an ON Seg cell), **dark key** (the cool-tone
+  finish a filled control wears at row/head scale in the tier-01 card). **Door alone keeps its pill**
+  (ledger #153, predates radius-0 and was never in scope) — nothing else may take `--pill-radius`.
+  `.ref__icon` and the old Pin tooltip's corner, previously unruled rounded survivors, are zeroed too.
+- **MONO on every control atom** (ledger #142) — Ref was the last one speaking Archivo; it's mono now.
+  Archivo survives only in prose (hint bubbles, empty states, callout copy).
+- **Pin → Slot, everywhere** (ledger #177, `elements/pin.html` → `elements/slot.html`) — same job
+  (colour = state, fill = today, 13px, zero layout footprint), a skewed stud face instead of a rounded
+  chip, and an **unfurl** on hover/focus (a left-growing tray of every issue) instead of a single-line
+  tooltip. The collapsed face is a **numeral only** now (ledger #166) — no status word, so it can never
+  overhang its cell.
+- **`tokens.css` reconciled** (ledger #152) — every hard-coded value `tier-01-card.css` flagged with a
+  `TOKEN-GAP:` marker now has a named token (`--well`, `--key`, `--ref-plate`, the `--seam-*` family,
+  `--lit-rgb`, the steel accent-seed map, and more). The `#C28E54` near-miss unified to the existing
+  `--tan` rather than becoming a second one.

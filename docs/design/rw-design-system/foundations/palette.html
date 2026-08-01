@@ -22,17 +22,27 @@
   --red:#ff4242; --red-bg:rgba(255,66,66,.13);
   --blue:#6394cc; --blue-bg:rgba(99,148,204,.15);
   --gray:#8b94a3; --gray-bg:rgba(139,148,163,.14);
-  --chip-radius:2px;    /* state chips — SQUARED (was 7px) */
+  --chip-radius:0;      /* state chips — RADIUS 0 + finishes (was 2px -> 7px; #140 retires the ladder) */
   --red-fill:#d63636; --on-red-fill:#fdfdfd; --commit:#2f6fd0; --on-commit:#fdfdfd; --tan:#c2925a;
   --radius:14px;
   --font: "Archivo", "Helvetica Neue", -apple-system, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
   /* ---- STRUCTURAL ADDITIONS (not in the locked block — see README/report) ---- */
   --h:24px;             /* one control height — style skill's 24-28px range; matches shipped --dv2-h */
-  --item-radius:8px;    /* records — Ref and +Add: things that ARE, or link to, a record */
+  --item-radius:8px;    /* records — +Add only now (Ref moved to radius-0 + notch, ledger #140/#153) */
   --pill-radius:999px;  /* actions — Doors ONLY. Nothing else may take this radius. */
   --red-line:color-mix(in oklch, var(--red) 78%, var(--txt)); /* legible red once outline chips lost their tint */
   --on-gray:#12171d; --on-blue:#0a1220; --on-yellow:#241d05; --on-green:#06231a;
+  /* ---- FINISH TOKENS (reconciled from tier-01-card.css TOKEN-GAP markers — ledger #152) ---- */
+  --lit-rgb:185,205,235;        /* the one cool light source; alpha varies .03-.30 per use */
+  --seam-1:color-mix(in oklab, black 52%, var(--card-head));
+  --seam-2:color-mix(in oklab, black 55%, var(--card-head));
+  --seam-3:color-mix(in oklab, black 58%, var(--card-head));
+  --seam-4:color-mix(in oklab, black 60%, var(--card-head));
+  --seam-5:color-mix(in oklab, black 62%, var(--card-head));
+  --well:#050a10;               /* deep glass well face -- OFF seg cells, field wells */
+  --key:#0a0f16;                /* dark key face -- cool-tone finish at row/head scale */
+  --ref-plate:#0b121b;          /* Ref's dark plate face */
   }
 
   *{box-sizing:border-box}
@@ -280,16 +290,25 @@
   /* C4 · the stamp separator is a true sibling of the stamps it sits between */
   .stamp-sep{height:var(--h); display:inline-flex; align-items:center; font-weight:700}
 
-  /* C3/C17 · Ref: content size on the ladder + the item radius */
-  .ref{font-size:13px; border-radius:var(--item-radius); padding:0 10px 0 3px}
-  .ref__icon{border-radius:5px}
+  /* C3/C17 · Ref -- RADIUS 0 (ledger #140/#153): a dark plate with a 45deg notch,
+     not a rounded item. .ref__icon and the hint bubble are ZEROED too (#153) --
+     both were unruled rounded survivors, not decisions, and radius-0 is now the
+     card's explicit identity. Ref also drops Archivo for mono (#142). */
+  .ref{font-size:13px; font-family:var(--font-mono); border-radius:0; padding:0 10px 0 3px;
+    border:0; background:var(--ref-plate);
+    clip-path:polygon(-3px -3px, calc(100% - 13px) -3px, calc(100% + 3px) 13px, calc(100% + 3px) calc(100% + 3px), -3px calc(100% + 3px));
+    box-shadow:0 0 0 1.5px var(--seam-5), 0 2.5px 0 -1px rgba(var(--lit-rgb),.10), inset 0 1px 0 rgba(var(--lit-rgb),.06)}
+  .ref:hover{border-color:transparent; filter:brightness(1.12)}
+  .ref__icon{border-radius:0}
 
 
-  /* C21/C22 · the OPENER shape — a fourth control shape, earned only by the atoms that
-     open something: top corners rounded, bottom corners square, so the trigger reads as
-     the top half of an open menu. Toggles, Doors, Signals, Refs and Pins never take it. */
-  .gate{border-radius:5px 5px 0 0}
-  .field{border-radius:5px 5px 0 0}
+  /* C21/C22 · the OPENER shape is RETIRED (ledger #140, 2026-07-28) -- it was the
+     fourth rung of the four-shape radius ladder #140 replaced with radius 0 +
+     finishes. Gate and Field now take radius 0 like every other control; what used
+     to say "this opens" via a rounded top now says it via the machined-ring / well
+     -glass finish instead. Superseded text kept as history, not deleted. */
+  .gate{border-radius:0}
+  .field{border-radius:0}
 
   /* C5 · segment text is the ONE chip size, so a selected segment really is the
      filled Signal chip of its status */
@@ -324,7 +343,7 @@
      atom's own border, fill or size changes and nothing in the layout moves.
      On a segmented toggle the ring goes around the TRACK, never a single cell. */
   .gate:hover, .door:hover, .seg:hover, .field:hover, .ref:hover,
-  .contact:hover, .hlink:hover, .pin[data-tip]:hover{outline:1.5px solid var(--accent); outline-offset:2px}
+  .contact:hover, .hlink:hover, .slot:hover{outline:1.5px solid var(--accent); outline-offset:2px}
 
   /* C8 · press dips the fill on filled tappables */
   .gate:active, .door--commit:active, .door--money:active, .door--destroy:active{filter:brightness(.94)}
@@ -350,42 +369,119 @@
   /* M7 · the status picker IS the segmented toggle, stacked. .menu is superseded
      as a picker; a menu of unrelated ACTIONS is a container, not an atom. */
   .seg--stack{flex-direction:column; height:auto; align-items:stretch; width:100%}
-  .seg--stack{border-radius:5px 5px var(--chip-radius) var(--chip-radius)}
-  .seg--stack__cap{border-radius:5px 5px 0 0; border-bottom:0}  /* C22 · accent header caps the top */
+  .seg--stack{border-radius:0}   /* was 5px 5px chip-radius chip-radius (the opener shape) -- #140 */
+  .seg--stack__cap{border-radius:0; border-bottom:0}  /* C22 · accent header caps the top */
   .seg--stack .seg__opt{height:var(--h); flex:none; border-right:0;
     border-bottom:1px solid var(--line); justify-content:flex-start}
   .seg--stack .seg__opt:last-child{border-bottom:0}
   .seg--stack .seg__sw{width:8px; height:8px; border-radius:2px; flex:none; margin-right:8px}
 
-  /* N1 · PIN — the universal corner marker (new atom). Colour = state, fill = today,
-     exactly like a Signal. 13px, deliberately OFF the 24px control ladder, and zero
-     layout footprint: absolutely positioned, no margin, no reserved space. */
-  .pin-wrap{position:relative; display:inline-flex; flex:none}
-  .pin{position:absolute; top:0; left:100%; transform:translate(-70%,-50%); z-index:2;
+  /* ======================================================================
+     FINISH PASS — Jac, 2026-07-28/07-31 (ledger #140/#142/#152).
+     Radius 0 + chamfers is the card's identity; shape semantics move into
+     FOUR FINISHES instead — dark key, pressed key, well glass, machined ring.
+     Any control atom can wear one; they are finishes, not new atoms.
+     ====================================================================== */
+
+  /* machined ring — the standard trim on a filled/glass control: a seam ring plus
+     a lit hairline below and a fainter one above (light source is above) */
+  .signal--filled,.gate{
+    background-image:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.02) 45%,rgba(0,0,12,.16));
+    box-shadow:0 0 0 2px var(--seam-3),0 0 0 3px rgba(var(--lit-rgb),.09),
+      0 5px 0 -2px rgba(var(--lit-rgb),.13),inset 0 1px 0 rgba(255,255,255,.28),
+      inset 0 -1.5px 2.5px rgba(0,0,0,.32)}
+  .signal--outline{border-width:1.5px}
+
+  /* well glass — a recessed dark face: OFF seg cells, and Field's one surviving
+     kit use (the funnel key) */
+  .seg__opt:not([class*="seg__opt--on"]){background-color:var(--well);
+    background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.20) 2px 3px),
+      linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,0) 55%,rgba(var(--lit-rgb),.04));
+    box-shadow:0 0 0 2px var(--seam-5),0 3.4px 0 rgba(var(--lit-rgb),.13),
+      0 -3.2px 0 rgba(var(--lit-rgb),.05),inset 0 2px 3.5px rgba(0,0,0,.78)}
+  .field{background-color:var(--well);
+    background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.20) 2px 3px),
+      linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,0) 55%,rgba(var(--lit-rgb),.04));
+    box-shadow:0 0 0 2px var(--seam-5),inset 0 2px 3.5px rgba(0,0,0,.60)}
+
+  /* pressed key — an ON seg cell reads as a key pressed into the plate */
+  .seg__opt[class*="seg__opt--on"]{background-image:linear-gradient(180deg,rgba(0,0,0,.26),rgba(0,0,0,0) 48%);
+    box-shadow:0 0 0 2px var(--seam-3),0 3.4px 0 rgba(var(--lit-rgb),.13),
+      0 -3.2px 0 rgba(var(--lit-rgb),.05),inset 0 1.5px 3px rgba(0,0,0,.5)}
+
+  /* dark key — the cool-tone (blue/green/gray) finish a filled control wears at
+     row/head scale in the tier-01 card; red/yellow keep their hue fill everywhere
+     (heat stays loud). Shown here as an available finish swatch. */
+  .fin-key{background-color:var(--key) !important;
+    background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.22) 2px 3px),
+      linear-gradient(180deg,rgba(0,0,0,.32),rgba(0,0,0,0) 55%,rgba(var(--lit-rgb),.03)) !important;
+    box-shadow:0 0 0 1.5px var(--seam-4),0 0 0 2.5px rgba(var(--lit-rgb),.08),
+      inset 0 0 0 1px color-mix(in oklab, transparent 40%, currentColor),
+      inset 0 -1.5px 2.5px rgba(0,0,0,.5) !important}
+  .fin-key.tone-blue{color:var(--blue) !important} .fin-key.tone-green{color:var(--green) !important}
+  .fin-key.tone-gray{color:var(--txt-2) !important}
+
+  .finish-row{display:flex; gap:20px; flex-wrap:wrap; padding:16px}
+  .finish-item{display:flex; flex-direction:column; align-items:center; gap:8px}
+  .finish-box{width:84px; height:44px; border-radius:0}
+  .finish-box.key{background-color:var(--key);
+    background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.22) 2px 3px),
+      linear-gradient(180deg,rgba(0,0,0,.32),rgba(0,0,0,0) 55%,rgba(var(--lit-rgb),.03));
+    box-shadow:0 0 0 1.5px var(--seam-4),inset 0 0 0 1px color-mix(in oklab, transparent 40%, var(--blue)),
+      inset 0 -1.5px 2.5px rgba(0,0,0,.5)}
+  .finish-box.pressed{background-color:var(--panel);
+    background-image:linear-gradient(180deg,rgba(0,0,0,.26),rgba(0,0,0,0) 48%);
+    box-shadow:0 0 0 2px var(--seam-3),0 3.4px 0 rgba(var(--lit-rgb),.13),inset 0 1.5px 3px rgba(0,0,0,.5)}
+  .finish-box.well{background-color:var(--well);
+    background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.20) 2px 3px),
+      linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,0) 55%,rgba(var(--lit-rgb),.04));
+    box-shadow:0 0 0 2px var(--seam-5),inset 0 2px 3.5px rgba(0,0,0,.78)}
+  .finish-box.ring{background-color:var(--card-head);
+    background-image:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.02) 45%,rgba(0,0,12,.16));
+    box-shadow:0 0 0 2px var(--seam-3),0 0 0 3px rgba(var(--lit-rgb),.09),0 5px 0 -2px rgba(var(--lit-rgb),.13),
+      inset 0 1px 0 rgba(255,255,255,.28),inset 0 -1.5px 2.5px rgba(0,0,0,.32)}
+  .finish-lab{font-family:var(--font-mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--txt-2); text-align:center}
+  .finish-lab b{display:block; color:var(--txt); font-size:12px}
+
+  /* N1 · SLOT — Pin's replacement EVERYWHERE (ledger #177), not a new atom of its
+     own: colour = state, fill = today, exactly as Pin was. What changed: a skewed
+     stud face (reads as a machined rivet, not a rounded chip) and an UNFURL --
+     hover/focus opens a left-growing tray of every issue behind the numeral,
+     instead of a single-line tooltip. Collapsed state shows a NUMERAL ONLY (#166)
+     -- no status word, so it never overhangs its cell. 13px, deliberately off the
+     24px control ladder, zero layout footprint. */
+  .slot-wrap{position:relative; display:inline-flex; flex:none}
+  .slot{position:absolute; top:0; left:100%; transform:translate(-70%,-50%) skewX(19deg); z-index:2;
     height:13px; min-width:13px; padding:0 4px;
     display:inline-flex; align-items:center; justify-content:center; gap:3px;
-    border-radius:var(--chip-radius); font-family:var(--font-mono); font-size:9px; font-weight:800;
-    letter-spacing:.04em; text-transform:uppercase; white-space:nowrap; font-variant-numeric:tabular-nums;
-    cursor:pointer; text-decoration:none; outline:1.5px solid var(--panel)}
-  .pin svg{width:9px; height:9px; display:block}
-  .pin--gray  {background:var(--gray);     color:var(--on-gray)}
-  .pin--blue  {background:var(--blue);     color:var(--on-blue)}
-  .pin--yellow{background:var(--yellow);   color:var(--on-yellow)}
-  .pin--red   {background:var(--red-fill); color:var(--on-red-fill)}
-  .pin--green {background:var(--green);    color:var(--on-green)}
-  .pin--outline{background:var(--panel); border:1px solid currentColor}
-  .pin--gray.pin--outline  {color:var(--gray)}
-  .pin--blue.pin--outline  {color:var(--blue)}
-  .pin--yellow.pin--outline{color:var(--yellow)}
-  .pin--green.pin--outline {color:var(--green)}
-  .pin--red.pin--outline   {color:var(--red-line)}
-  .pin:focus-visible{outline:2px solid var(--accent-line); outline-offset:2px}
-  .pin:after{content:attr(data-tip); position:absolute; bottom:calc(100% + 8px); right:-2px; display:none;
-    padding:7px 10px; max-width:260px; background:var(--panel-2); border:1px solid var(--line);
-    border-radius:9px; color:var(--txt); font-family:var(--font); font-size:11.5px; font-weight:400;
-    line-height:1.4; letter-spacing:0; text-transform:none; white-space:nowrap; z-index:6; pointer-events:none}
-  .pin[data-tip]:hover:after,
-  .pin[data-tip]:focus-visible:after{display:block}
+    border-radius:1.5px; font-family:var(--font-mono); font-size:9px; font-weight:800;
+    letter-spacing:.04em; font-variant-numeric:tabular-nums;
+    cursor:pointer; text-decoration:none;
+    background-image:linear-gradient(rgba(255,255,255,.20),rgba(255,255,255,.04) 42%,rgba(0,0,0,.28));
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.24),inset 0 -1.5px 2px rgba(0,0,0,.45),0 1px 2px rgba(0,0,0,.6)}
+  .slot>*{display:inline-block; transform:skewX(-19deg)}   /* counter-skew the numeral upright */
+  .slot--gray  {background-color:var(--gray);     color:var(--on-gray)}
+  .slot--blue  {background-color:var(--blue);     color:var(--on-blue)}
+  .slot--yellow{background-color:var(--yellow);   color:var(--on-yellow)}
+  .slot--red   {background-color:var(--red-fill); color:var(--on-red-fill)}
+  .slot--green {background-color:var(--green);    color:var(--on-green)}
+  .slot--outline{background:var(--panel); border:1px solid currentColor}
+  .slot--gray.slot--outline  {color:var(--gray)}
+  .slot--blue.slot--outline  {color:var(--blue)}
+  .slot--yellow.slot--outline{color:var(--yellow)}
+  .slot--green.slot--outline {color:var(--green)}
+  .slot--red.slot--outline   {color:var(--red-line)}
+  .slot:focus-visible{outline:2px solid var(--accent-line); outline-offset:2px}
+  /* the unfurl -- a left-growing tray, one line per issue. Data shape inherited
+     from Pin's data-hint (newline-separated Source, State, Date) -- data-tip
+     never existed, per the design-log's traps list. */
+  .slot-tray{position:absolute; top:50%; right:100%; transform:translateY(-50%); display:none;
+    flex-direction:column; gap:2px; margin-right:4px; padding:6px 8px; min-width:120px;
+    background:var(--panel-2); box-shadow:0 0 0 1px var(--line),0 3px 10px rgba(0,0,0,.5);
+    color:var(--txt); font-family:var(--font); font-size:11px; font-weight:400; line-height:1.4;
+    white-space:nowrap; z-index:6; pointer-events:none}
+  .slot:hover+.slot-tray, .slot:focus-visible+.slot-tray{display:flex}
 
 </style>
 </head>

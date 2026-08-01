@@ -17,6 +17,13 @@ Design the **app shell**: the 3-column yard frame every other screen lives insid
 ## ♻️ Inherit (reuse verbatim)
 - The **Rental Wrangler Design System** — tokens, palette, the two type voices, and the Signal·Gate·Stamp·Ref·Door vocabulary. Every chip, label, and action uses these.
 
+### ✅ Still honoured? (check every box before generating — ledger #145)
+- [ ] **Radius 0, finishes not shapes** (#140) — every control atom (Signal, Gate, Slot, Field, Ref) is `border-radius:0`; shape reads through the four finishes (machined ring · well glass · pressed key · dark key), never a rounded-corner ladder. Door alone keeps its pill (predates radius-0).
+- [ ] **Mono on every control atom** (#142) — Signal, Gate, Slot, Field, Ref all speak mono. Archivo is prose/hint/empty-state only — never on a chip, label, or button face.
+- [ ] **Filter chips are Slots, not Pins** (#166/#177) — the header's To-Do/Done filter chips ARE the Slot component: skewed stud face, hover/focus unfurls a tray of every issue (no tooltip), collapsed face shows a numeral only — never a status word.
+- [ ] **Zeroed corners, not rounded survivors** (#153) — any Ref icon or Slot's collapsed-face corner in the shell (e.g. the footer rail's comms/notification Refs) renders at 0, not 5px/9px.
+- [ ] **Pull colour/finish from tokens, don't hard-code equivalents** (#152) — `--well`, `--key`, `--ref-plate`, `--seam-1..5`, `--lit-rgb`, the 10-colour steel accent-seed map, etc. already exist in `tokens.css`; no new hex standing in for one.
+
 ---
 
 ## The frame to render
