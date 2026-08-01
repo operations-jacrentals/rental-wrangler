@@ -444,6 +444,22 @@
   (`CLAUDE_CODE_SESSION_ID=…-r1/-r2/-r3`); or just let natural churn do it (post-merge every
   trunk-based deploy self-identifies). A slot held by another ACTIVE session queues you rather than
   clobbering — that's correct; wait for its TTL to lapse before refreshing it.
+- **`git rev-list` counts LIE on this shallow clone — in BOTH directions (2026-07-31).** The
+  unpromoted-commit count read **1** before `git fetch --deepen=400` and **36** after. The existing
+  note said a shallow clone *over*-reports ("268 ahead" for a branch 4 behind); it also
+  **under**-reports, which is worse, because a "1 commit behind" reading looks safe and invites a
+  casual promote. **Deepen before quoting any ahead/behind count**, and prefer
+  `git log A..B --oneline | wc -l` cross-checked after a deepen.
+- **A measurement only proves something if the NEGATIVE case can occur (2026-07-31).** A "measured
+  proof" that the group housing moves on open was computed against a build where the gate was pinned
+  open forever — the transform never turned *off*, so the number was real and meaningless. Root
+  cause worth remembering on its own: **`getComputedStyle` on a `display:none` element returns
+  `transform: none`** regardless of the inline value, so reading state off an element your own CSS
+  hides silently freezes that state. Read the **inline** value instead.
+- **dc-runtime RECYCLES row/head DOM nodes positionally — it does not replace them (2026-07-31).**
+  Any "is this already built?" guard therefore reads a recycled node as correct, and an injected
+  layer ends up describing a **different record** (filter to Done and a green row still showed the
+  previous unit's red issues). Key an injected layer on a **content signature**, not on presence.
 - **Cloud sessions are ephemeral** (fresh clone, container reclaimed) — only
   git-committed work survives, and Claude Code's native auto-memory is machine-local
   so it won't carry over. Commit + push early.
@@ -640,6 +656,55 @@
   inventory — laser polygon coords hand-tuned against four other values, an order-load-bearing `§3`
   cascade, and both carets + the footer loop measured off hidden mirror spans (**a font or
   `letter-spacing` change silently breaks caret tracking**). Port it deliberately, tweak panel intact.
+- **Tier 0.1 group head + item row — RULED AND LANDED (2026-07-31, PR #785, ledger #165–#178).**
+  Full trail — nine revert points, every rejected branch, every measurement, the CSS for each state:
+  `docs/superpowers/specs/2026-07-31-tier-01-head-row-design-log.md`. **The card itself now carries
+  R2→P1** (`docs/design/tier-01-card/index.html`); `git checkout` of that one file is the revert.
+  **Head:** title is a **26px deep milled pocket**, **raised** letter faces in an etched-away field
+  (footer scroll-pip physics — the pip's *outer* `0 1px 2px` cast shadow is the proof, since a recess
+  can't cast outward); chevron, head corner Pin and row pins **dropped**; faces carry the **state
+  hue**, open/shut moved to the **pocket floor** because hue can't carry both — **red fails 4.5:1
+  below ~76%**, and the shared shut factor is the **max** across hues, not the min (got this backwards
+  twice). Pins → **slots** (skewed ticks) **everywhere, including the filter chips** (#177); a
+  collapsed slot unfurls **LEFT** and shows a **numeral only** (#166).
+  **P1 — the two-level mechanic (#168):** `GROUP = housing, opens by MOVING` (steel, mechanical, **no
+  light**) · `ROW = cartridge, opens by LIGHTING` (glass, terminal, emission). Invariant at both
+  levels: **name right-aligned**. Laser drop moved group → row (#169); lit face is **neutral glass,
+  the frame carries the hue alone** (#172, narrows #156); the **220ms click discriminator is
+  untouched** (#173) — the P1 layer adds no handler, it detects the card's own open-wash and re-skins
+  it. **Row order (#176):** `button · slots · board · name` — the head's own right-to-left grammar
+  (*name · board · slots*) plus a left-anchored button, the one element a head lacks. **Tick cap
+  retired (#170):** every other element is edge-anchored so the rack takes the residual — head racks
+  now run **138–243px** (16–28 ticks) where the spec allowed 8; the cap was always the board's fixed
+  114px. Close-all moved to a **click on the Open chip** (#178), retiring #147's ✕-on-hover.
+  ⚠️ **Two claims in that log were CORRECTED by measurement — don't rebuild on the originals.**
+  (1) **§2.6 was wrong** that the verb conversion pays the width bill (#174): the ~22px is real *only
+  if* `stateW` is recomputed (the chip is a fixed `width:93px`, so swapping text alone reclaims
+  **0px**), and #155's `max(66,…)` floor caps *any* verb set at **27px** against a **~59px** shortfall
+  — **facts cannot fit at 380px regardless of wording**; that needs a wider column in Tier 0.2.
+  (2) **§2.7's `data-tip || data-hint` is not true of this build** — `data-tip` doesn't exist at all;
+  the issue list is the row's **`.pin[data-hint]`**, newline-separated `Source, State, Date`. Building
+  against that sentence yields a one-tick rack. Also: the row's **centre point sits on the `.signal`
+  chip**, which `stopPropagation`s per #67 — a scripted `click('[data-row]')` does *not* open a row.
+  **Verb wording is deferred** to a future Fable-5 pass over the backend (#175) — the card's
+  `JUMPWORD_BY_STATE` is an explicit placeholder; **do not polish or audit those words**.
+  **Still open:** #156 (does the lit face keep the group hue?), and a pre-existing gap this surfaced
+  but didn't cause — the card's open-row wash never clears on a second body click, so a lit cartridge
+  stays lit (the card's own contract; #173 says leave the click alone).
+- **NEXT UP — cascade the Tier-0.1 decisions into the REST of the design artifacts (2026-07-31).**
+  Brief + a ready-to-paste prompt: **`docs/handoffs/2026-07-31-cascade-tier01-decisions.md`**. One
+  artifact (`docs/design/tier-01-card/index.html`) is current; the **kit**
+  (`docs/design/rw-design-system/` — `elements/pin.html` still teaches an atom #177 replaced, the
+  radius ladder #140 reversed, controls not yet mono per #142), **`tier-01-handoff/atom-rebuild.md`**
+  (its 8-tick cap + fixed-114px board are retired by #170), and **all six Labs prompts** still teach
+  the superseded language. Fold it into the existing `STALE-DESIGN-LANGUAGE-SWEEP.md` rather than
+  sweeping the same ~30 files twice.
+- **⛔ 36 commits sit on `trunk` but are NOT live (2026-07-31).** `production` is a clean
+  fast-forward behind `trunk`, and the range carries real served-file change — **app.js +552,
+  style.css +381**, plus `index.html` and `config.js`. This is a **much larger promote than one
+  commit**, and `/promote` will need staging to serve trunk's actual bytes first (the content-hash
+  freshness gate). Jac's call, deliberately deferred on 2026-07-31 — **check this before assuming
+  production reflects trunk.**
 - **Cross-device user sync — SHIPPED LIVE + PROMOTED (2026-07-17, PRs #692+#702+#685, `?v=20260717ab`, flag
   `userSync` ON).** Prefs/Views/dispatch/comms/resume-column follow the PERSON across devices (see
   the Decisions entry for the design). Verified by a 4-lens adversarial workflow (operator-isolation
