@@ -17,7 +17,7 @@ deleted skill and a retired palette. The current canon is:
 |---|---|---|
 | Accent | `--accent #ff7a1a` | **`#ff7e1f`** |
 | Body voice | **Saira Condensed** | **Archivo** (mono voice unchanged) |
-| Control shapes | one 7px chip radius | **four** — squared `2px` state · opener `5px 5px 0 0` (Gate/Field) · rounded `8px` records · pill (Doors only) |
+| Control shapes | one 7px chip radius, **then** four shapes (squared/opener/rounded/pill) | **radius 0 + finishes** — machined ring · well glass · pressed key · dark key (ledger #140, 2026-07-28). Door alone keeps its pill (#153) |
 | Signature | hazard-stripe + rivets, ignition buttons | **not re-adopted** — matte, **no glow** |
 | Design skill | `jactec-ui` | **`style` + `wrangler-style`, both, always** |
 
@@ -103,3 +103,39 @@ Four capabilities lived only in it and were preserved as reference in
 `docs/design/reference/legacy-jactec-ui/` — the `/role` audit, mobile, anti-slop, and the DESIGN.md
 guides. See that folder's README; it also carries the recommendation for where those should
 eventually live as skills.
+
+## Wave 2 — folded in 2026-08-01: the "current canon" table above is now ITSELF stale
+
+The **Control shapes** row this document has called current since 2026-07-26 — "four shapes:
+squared 2px state · opener 5px 5px 0 0 (Gate/Field) · rounded 8px records · pill (Doors only)" —
+was superseded on **2026-07-28** by ledger **#140**: **radius 0 + chamfers on every control atom**
+(Signal, Gate, Slot, Field, Ref), with shape semantics moved into FOUR **finishes** instead
+(machined ring, well glass, pressed key, dark key). Door alone still keeps its pill (#153 —
+predates radius-0, never in scope). A same-session batch (#142/#152/#153/#166/#177) also:
+
+- put **mono on every control atom** (Ref was the last one speaking Archivo),
+- **renamed Pin → Slot** everywhere (numeral-only collapsed face, hover-unfurl tray instead of a
+  tooltip),
+- reconciled `tokens.css` against ~20 hard-coded `TOKEN-GAP:` values in `tier-01-card.css`.
+
+This landed in `docs/handoffs/2026-07-31-cascade-tier01-decisions.md`'s worklist (worked
+2026-08-01): the **kit** (`docs/design/rw-design-system/` — every file, incl. `elements/pin.html`
+→ renamed `elements/slot.html`), `docs/design/tier-01-handoff/atom-rebuild.md` (the 8-tick cap /
+fixed-114px board facts it stated, retired by #170), the six **Labs prompts**
+(`docs/design/prompts/prompt-00`…`05`, each given a `#145` "still honoured?" checklist), and
+`docs/design/audit/prompt-b-tier-01-card.md` (regenerated via `/prompt-b`) are now current. This
+document's own table row above is updated to match.
+
+**Not yet done — genuinely a second pass, not duplicate work:** the ~30 `docs/specs/*.md` +
+`DESIGN.md` files this sweep's Wave 1 targeted for the `#ff7a1a`/Saira/`jactec-ui` language were
+never checked for the **four-shape-radius-ladder** language (`one 7px chip radius` → `four shapes`
+→ now **radius-0 + finishes**), because Wave 1's grep (`ff7a1a\|Saira\|hazard.stripe\|rivets`)
+wouldn't have caught it — a spec could describe the four-shape ladder without mentioning any Wave-1
+term at all, or could have been "fixed" mid-Wave-1 to cite the four-shape ladder as current, which
+is now itself wrong. Find candidates with:
+```
+grep -rln '7px chip\|opener.*5px 5px 0 0\|four.*shape\|four control shapes' docs/specs/ DESIGN.md
+```
+Same worklist discipline applies: bespoke edit per file, leave `docs/superpowers/plans/` alone
+(historical record), don't invent canon beyond what `#140`/`#142`/`#152`/`#153`/`#166`/`#177`
+actually settled.

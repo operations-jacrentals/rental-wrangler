@@ -40,6 +40,15 @@ Use the sections already in `detail-views.html`:
 Render all three so the model is proven on the lightest (Unit) through the densest (Customer).
 
 ## Hard constraints (from the design system — do not drift)
+
+**✅ Still honoured? (check before generating — locked canon, 2026-07-20 ledger)**
+- [ ] Every control atom (Signal, Gate, Stamp, Ref) is **radius 0** — shape lives in **four finishes** (machined ring / well glass / pressed key / dark key), not a rounded-shape ladder (#140).
+- [ ] **Ref speaks mono**, same as every other control atom — not Archivo (#142).
+- [ ] `.ref__icon` and any tooltip/callout corner on a control atom is **0**, not a small rounded radius (#153).
+- [ ] The attached `design-system.html` upload is a **current** export — reflects `tokens.css`'s `--well`, `--key`, `--ref-plate`, `--seam-1..5`, `--lit-rgb`, and the 10-colour steel accent-seed map; don't hand-roll equivalent hex values in the mockup (#152).
+- [ ] **N/A here** — no Slot (formerly Pin) atom appears on this surface. If a later revision adds one (e.g. a rail-chip issue count), it's **"Slot"** — skewed stud face, numeral-only, hover/focus unfurls a tray — never "Pin" or a status word (#166/#177).
+- [ ] **N/A here** — #170–179 (slot-rack 8-tick cap, 114px message-board width, two-level card housing/cartridge, click discriminator, verb-CTA width math, row order) are tier-01 **card** row/group mechanics; this is a detail-view surface, don't import them.
+
 - **Only** the five vocabulary pieces: **Signal** (read-only state), **Gate** (turnable state), **Stamp** (quiet fact), **Ref** (linked record), **Door** (verb action). *Nothing does two jobs.* No new component types.
 - **Colour = state; fill = today.** Status colours mean state only; **buttons/Doors carry no status colour** (actions are neutral — white/deep-action-blue commit, ghost secondary). Green = **Done today** only. Blue = **Waiting** (someone else's move). Red = bad. Yellow = your move now. Grey = nothing.
 - **Two type voices:** stamped/condensed for labels, chips, IDs, and tabular numbers; body-sans for record names and prose. Dollar figures and counts use the stamped/tabular voice.

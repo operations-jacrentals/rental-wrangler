@@ -6,7 +6,7 @@ built from their rolled-up states — so the section has to be right before the 
 
 **Attach from the `rw-design-system` folder:** `components/section-plate.html` (the existing plate
 grammar — the thing being refined) · `elements/signal.html` · `elements/gate.html` ·
-`elements/stamp.html` · `elements/ref.html` · `elements/pin.html` · `elements/door.html` ·
+`elements/stamp.html` · `elements/ref.html` · `elements/slot.html` · `elements/door.html` ·
 `foundations/spacing.html`.
 
 **Reference (context, not canon — and note what's stale):** `docs/design/reference/detail-views.html`
@@ -37,11 +37,31 @@ and carries its own primary action — so a record's detail is nothing but a rai
 - **All eight atom families.**
 - **The card frame, header and list row** from prompt 0.1a — a section may *contain* rows, and when
   it does it uses that exact row, not a variant.
-- **The four control shapes** and **`--radius: 14px`** for container corners.
+- **Control atoms are RADIUS 0 + four finishes** (machined ring · well glass · pressed key · dark
+  key) — the old four-shape ladder is retired. **Container corners stay `--radius: 14px`** — that
+  token belongs to the plate/card frame, not to the atoms, and is untouched by the radius-0 pass.
 - **Rollup precedence** `red > yellow > blue > green > gray` — a section's rail chip shows the worst
   state inside it, whether or not that section is the one currently open.
 - **The `--*-bg` tint tokens.** Outline chips gave up their tints in the atom pass, but **plates kept
   them** — the tinted header band is now the plate's own signature and nothing else uses it.
+
+## ✅ Still honoured? (ledger #145 — decisions this prompt must not silently drop)
+- [x] **Radius 0 + four finishes on every control atom** — Signal, Gate, Field, Ref, Slot all
+  `border-radius: 0`; shape reads as machined ring / well glass / pressed key / dark key, not a
+  rounded shape (#140).
+- [x] **Container corners are unaffected** — the plate/card frame keeps `--radius: 14px` (#140,
+  #153 — Door's pill is the only other rounded survivor, and it's not a container).
+- [x] **Ref speaks mono, not Archivo** (#142) — any Ref used inside a section body (e.g. linking to
+  a related record) carries this.
+- [x] **`.ref__icon` and the old Pin-tooltip corner are zeroed to 0**, not rounded survivors (#153).
+- [x] **Pin is renamed Slot, everywhere** (#166/#177) — asset reference above points at
+  `elements/slot.html`; if a section's rail chip or body ever grows an issue-count marker, it is a
+  Slot (skewed stud face, numeral-only collapsed state, hover/focus unfurl), never a Pin.
+- [x] **New reconciled tokens exist** (`--well`, `--key`, `--ref-plate`, `--seam-1..5`, `--lit-rgb`,
+  the 10-colour steel accent-seed map) — don't hand-roll equivalents (#152).
+- [ ] **N/A here — tier-01 CARD row/head mechanics** (#170–#176, #178–#179: housing/cartridge
+  two-level open, click discriminator, verb-CTA width math, row order, close-all-on-click). Those
+  govern the card's row, a different container from this plate/section — do not import them.
 
 ## The ask — one artifact, four questions
 

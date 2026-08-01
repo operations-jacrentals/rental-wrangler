@@ -15,17 +15,45 @@
   --red:#ff4242; --red-bg:rgba(255,66,66,.13);
   --blue:#6394cc; --blue-bg:rgba(99,148,204,.15);
   --gray:#8b94a3; --gray-bg:rgba(139,148,163,.14);
-  --chip-radius:2px;    /* state chips — SQUARED (was 7px) */
+  --chip-radius:0;      /* state chips — RADIUS 0 + finishes (was 2px -> 7px; ledger #140 retires the ladder) */
   --red-fill:#d63636; --on-red-fill:#fdfdfd; --commit:#2f6fd0; --on-commit:#fdfdfd; --tan:#c2925a;
   --radius:14px;
   --font: "Archivo", "Helvetica Neue", -apple-system, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
   /* ---- STRUCTURAL ADDITIONS (not in the locked block — see README/report) ---- */
   --h:24px;             /* one control height — style skill's 24-28px range; matches shipped --dv2-h */
-  --item-radius:8px;    /* records — Ref and +Add: things that ARE, or link to, a record */
+  --item-radius:8px;    /* records — +Add only now (Ref moved to radius-0 + notch, ledger #140/#153) */
   --pill-radius:999px;  /* actions — Doors ONLY. Nothing else may take this radius. */
   --red-line:color-mix(in oklch, var(--red) 78%, var(--txt)); /* legible red once outline chips lost their tint */
   --on-gray:#12171d; --on-blue:#0a1220; --on-yellow:#241d05; --on-green:#06231a;
+  /* ---- FINISH TOKENS (reconciled from tier-01-card.css TOKEN-GAP markers — ledger #152) ----
+     Every hard-coded hex/rgba the card's stylesheet flagged as wanting a token, named and
+     given its verbatim value. --tan already existed (#c2925a) — the near-miss #C28E54 in
+     the card's message-board ghost-text unifies to it, not a second tan. */
+  --lit-rgb:185,205,235;          /* the one cool light source; alpha varies .03-.30 per use */
+  --seam-1:color-mix(in oklab, black 52%, var(--card-head));
+  --seam-2:color-mix(in oklab, black 55%, var(--card-head));
+  --seam-3:color-mix(in oklab, black 58%, var(--card-head));
+  --seam-4:color-mix(in oklab, black 60%, var(--card-head));
+  --seam-5:color-mix(in oklab, black 62%, var(--card-head));
+  --well:#050a10;                 /* deep glass well face — OFF seg cells, search wells */
+  --key:#0a0f16;                  /* dark key face — cool-tone finish at row/head scale */
+  --ref-plate:#0b121b;            /* Ref's dark plate face */
+  --steel:#171f2a;                /* chassis/cartridge/frame face at saved (navy) settings */
+  --steel-plate:#232e3e;          /* plate face base */
+  --lit-cool-rgb:130,170,230;     /* the card interior's cool wash, alpha varies per use */
+  --tray:#091018;                 /* the sort tray's face */
+  --void-rgb:4,7,11;              /* the well-scrim gradient's transparent-to-near-opaque run */
+  --void-solid:#06090d;           /* the well-scrim gradient's fully-opaque endpoint */
+  --groove:#04070c;               /* the laser frame's near-black channel the beam sits inside */
+  --slot-off:#0a1017;             /* an unlit slot-rack tick (a gray/no-issue row's socket) */
+  --row-hover-base:#101921;       /* row hover wash base (mixed with --txt at 5-8%, NOT accent) */
+  --term-dim-base:#16202c;        /* footer-terminal text dims toward this at end-of-list */
+  /* steel accent-seed map — the tint(family, base, d) formula's seed colours (§4.0 of
+     tier-01-card.css); navy has no seed (base passes through) so it needs none here */
+  --steel-graphite:#4a5160; --steel-orange:#b45a1e; --steel-rust:#8a3a1a; --steel-yellow:#b49214;
+  --steel-gold:#8f7420; --steel-green:#1f7a48; --steel-teal:#177a72; --steel-red:#c03a4a;
+  --steel-pink:#b0446e; --steel-purple:#6e4aa8;
 }
 @supports (color: oklch(from red l c h)){
   :root{ --red-line: oklch(from var(--red) .74 .215 h); }

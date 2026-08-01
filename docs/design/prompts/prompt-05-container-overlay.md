@@ -5,7 +5,7 @@ and the overflow menu. These are the containers most likely to get improvised mi
 exactly why they get designed once, here, before any screen needs one.
 
 **Attach from the `rw-design-system` folder:** `elements/door.html` · `components/buttons.html` ·
-`components/fields.html` · `elements/signal.html` · `elements/ref.html` · `elements/pin.html` ·
+`components/fields.html` · `elements/signal.html` · `elements/ref.html` · `elements/slot.html` ·
 `foundations/spacing.html`.
 
 **Reference (context, not canon):** `docs/design/reference/compose-dock.html` and
@@ -33,9 +33,24 @@ nothing floating above a screen is ever invented on the spot.
 - **All eight atom families.**
 - **The card frame, header and list row** (0.1a) and **the section plate** (0.1b) — a popup that
   shows a list shows *the* list row; a panel that groups fields uses *the* plate.
-- **The four control shapes** and **`--radius: 14px`** for container corners.
+- **`border-radius: 0` + finish, not a shape ladder, on every control atom** (Signal, Gate, Slot,
+  Field, Ref) — machined ring · well glass · pressed key · dark key. **`--radius: 14px`** still
+  governs *container* corners (this panel/popup/menu shell included — containers are out of scope
+  for the radius-0 rule). Door alone keeps its pill.
+- **Every control atom speaks mono** (Ref included) — Archivo is prose/hint/empty-state voice only.
 - **Door taxonomy** — commit · +Add · money · destroy · ghost. A popup's footer is built from these
   and nothing else, and the pill silhouette stays Doors-only.
+
+### ✅ Still honoured?
+- [ ] Every control atom shown inside these overlays (Signal/Gate/Slot/Field/Ref) is `border-radius: 0`
+      + finish — no rounded chip/badge/opener corners survive.
+- [ ] Container shells (panel / popup / ⋯ menu) keep `--radius: 14px` — untouched by the radius-0 rule.
+- [ ] Door alone keeps the pill silhouette; nothing else in these overlays takes it.
+- [ ] Any Ref shown (e.g. a record reference inside a panel/popup) is mono, not Archivo — Archivo
+      appears only in prose/hints/empty-states.
+- [ ] Any badge/count on a menu item or trigger is a **Slot** (not "Pin") — numeral-only face, skewed
+      stud, hover/focus unfurls a tray; never a rounded chip with a status word.
+- [ ] `.ref__icon` and any tooltip/hint-bubble corner shown in these overlays render at `0`, not 4–9px.
 
 ## The ask — four artifacts
 

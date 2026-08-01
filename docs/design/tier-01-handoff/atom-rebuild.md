@@ -21,6 +21,14 @@ demolition: `border-radius: 0 !important` on `.seg, .seg__opt, .signal, .pin, .f
 .ref` — the four-shape radius ladder does not survive at card level (exceptions noted
 per atom below).
 
+> **Still current below, one rename aside:** this document predates 2026-07-31's Pin →
+> Slot rename (ledger #166/#177) — every `.pin` reference below, including the whole
+> **Pin — CHANGED** section, describes what is now called **Slot** (`.pin`→`.slot`,
+> `.pin-wrap`→`.slot-wrap`), rebuilt with a skewed stud face and a hover-unfurl tray
+> replacing the tooltip, and a numeral-only collapsed face (#166). The geometry,
+> physicality and stud shadow this document records are otherwise still accurate — see
+> `../rw-design-system/elements/slot.html` for the current write-up and demo.
+
 ---
 
 ## Signal — CHANGED
@@ -191,17 +199,25 @@ transparent 40%, hue)`) — the rack doubles as a map of your open rows. It is a
 DISTRIBUTION read: severity mix and volume at a glance, in row order (not sorted, not
 aggregated).
 
-**Behavior:** empty group → no ticks render; the message board still sits beside the
-empty rack space (rack width is reserved by the board's fixed 114px, not by ticks).
-One row → one tick. Many → first **8** rows get ticks; overflow prints `+N` (mono 9px,
-`--txt-3`). More than 8 of one state does NOT merge ticks — the rack is per-row, capped,
-never proportional. Hover: tick brightens ×1.5 and **echoes its row onto the message
-board** (`name — state`, in the row's hue; long text marquees). Click: stops the head
-toggle, expands the group if shut, scrolls to the row, flashes the row's ring for 1.1s.
-Filters change the rack — it draws from the group's *visible* rows.
+**Behavior:** empty group → no ticks render. **Retired 2026-07-31 (ledger #170) — no
+tick cap, and the rack is not sized off a fixed board:** this section originally said
+the message board's fixed 114px reserved the rack's width and capped it at 8 ticks.
+Both were wrong about the *cause*, not just the number — freeing the board (P1 dropped
+it from the head entirely, see the design log's §5.7) let the rack run the head's full
+residual width. Measured on the landed P1 build (design-log §2.5/§5.7.2): the ten head
+racks now run **138–243px**, i.e. **16–28 ticks** of real capacity, where this doc's own
+math had reserved room for 8. `+N` overflow (mono 9px, `--txt-3`) still fires whenever a
+group's row count actually exceeds its rack's current capacity — it just triggers far
+less often now that the cap was never a ticks problem. Overflow of one state does NOT
+merge ticks — the rack is per-row, never proportional. Hover: tick brightens ×1.5 and
+**echoes its row onto the message board** (`name — state`, in the row's hue; long text
+marquees). Click: stops the head toggle, expands the group if shut, scrolls to the row,
+flashes the row's ring for 1.1s. Filters change the rack — it draws from the group's
+*visible* rows.
 
-**Kit relationship:** none. Nearest kin is a Pin (state + count) but the rack encodes
-per-row identity and order, which no kit atom does.
+**Kit relationship:** none. Nearest kin is a Slot (state + count, formerly named Pin —
+ledger #177 renamed and rebuilt it, see `../rw-design-system/elements/slot.html`) but
+the rack encodes per-row identity and order, which no kit atom does.
 
 ## 2 · Message board
 
