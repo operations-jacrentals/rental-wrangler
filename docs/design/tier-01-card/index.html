@@ -15,7 +15,7 @@
    var(--rw-steel) for exactly this reason. Each filename must appear in exactly
    ONE url() — the builder enforces it. */
 :root{
-  --rw-steel:url("steel-texture.png");
+  --rw-steel:url("steel-grain.png");   /* P0: was steel-texture.png (kept as revert point) */
   --h-steel:url("halo-steel.png");
   --h-olive:url("halo-olive.png");
   --h-canvas:url("halo-canvas.png");
@@ -2781,6 +2781,181 @@ html[data-skin="halo"] [data-glass] input{color:#8fd8ff!important;}
         emission (finish). ---- */
 html[data-skin="halo"] [data-hint="How far down this card you are"]{
   filter:brightness(1.1) saturate(1.12);}
+
+/* ============================================================================
+   S2 · STEEL v2  —  spec 2026-08-01-steel-v2-design.md, plan phases P1-P6.
+   These are STEEL-THEME rules (not gated on data-skin), appended last so they
+   win source order over M1. The halo skin's H1 rules are gated on
+   [data-skin="halo"] and therefore still beat these wherever they overlap.
+
+   The law that governs every phase below: steel is INERT under interaction and
+   never emits; glass is what lights, wakes and carries hue; slots are exempt.
+   ============================================================================ */
+
+/* ---------------------------------------------------------------------------
+   P1 · THE GLASS FAMILY — circuit surface + scanline film + emission.
+   Readouts cyan (what the machine tells you) · controls orange (what you touch).
+   Retires one-accent FOR GLASS ONLY; justified on separation — orange sits
+   adjacent to the red state hue at 8.5px, cyan collides with none of the four.
+   --------------------------------------------------------------------------- */
+:root{
+  --g-read:#8fd8ff;              /* readout cyan */
+  --g-read-dim:#5f7d94;          /* resting readout */
+  --g-read-hot:#cfe9ff;          /* emphasised readout */
+  --g-bg:#04101c;                /* glass body */
+}
+.rw-board, .rw-cart, .rw-cartlines, [data-glass]{
+  background-color:var(--g-bg)!important;
+  background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.22) 2px 3px),var(--h-circuit)!important;
+  background-size:auto,512px 512px!important;}
+.rw-board span{color:var(--g-read-dim)!important;}
+[data-row][data-lit="1"] .rw-board span{color:var(--g-read)!important;text-shadow:0 0 6px rgba(80,190,255,.45)!important;}
+.rw-cart .l, .rw-cartlines .l{color:var(--g-read)!important;}
+.rw-cart .l b, .rw-cartlines .l b{color:var(--g-read-hot)!important;}
+/* controls stay orange — the search field is the one glass element you type into */
+[data-glass] input{color:var(--accent)!important;}
+
+/* ---------------------------------------------------------------------------
+   P2 · HEAD INVERSION — the bar is GLASS, the name plate is the ONLY steel.
+   Jac: "The only 'Steel' part of the group header is the group name plate."
+   --------------------------------------------------------------------------- */
+/* the bar: glass, and NEUTRAL — it never takes the group tone, so a hue-washed
+   background means "this thing is open" and only that (spec 4.3). */
+.scp1{
+  background-color:#0a141f!important;
+  background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.18) 2px 3px),var(--h-circuit)!important;
+  background-size:auto,512px 512px!important;
+  box-shadow:inset 0 1px 0 rgba(150,190,235,.09)!important;}
+
+/* the name plate — a RAISED steel plate riveted to the glass bar. It keeps
+   #193's 9px/14px chamfer as its OWN silhouette: the recess is gone, the rhyme
+   with the scroll-pips well survives. */
+.scp1 .pin-wrap{
+  background:none!important;padding:0!important;
+  clip-path:polygon(0 9px,9px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%)!important;}
+/* NOTE the html[data-b] prefix. M1's switch-B rules are html[data-b="digital"]
+   .gate[data-open="…"] at specificity (0,3,1); a bare .scp1 .gate[data-open="…"]
+   is (0,2,1) and LOSES, which left the head plate rendering as B's glass well.
+   Matching (0,3,1) and landing later in source makes the plate steel whatever B
+   says — which is the #191 collision the spec predicted, resolved in favour of
+   Jac's direct instruction. B still governs the row-level reading. */
+html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]{
+  clip-path:polygon(0 9px,9px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%)!important;
+  background-color:#2e3033!important;
+  background-image:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.02) 46%,rgba(0,0,10,.26)),var(--rw-steel)!important;
+  background-size:auto,512px 512px!important;
+  box-shadow:0 1.5px 0 -0.5px rgba(0,0,6,.85), 0 3px 5px -2px rgba(0,0,4,.6),
+    inset 0 1px 0 rgba(226,238,255,.16), inset 0 -1.5px 2px rgba(0,0,6,.3)!important;}
+.scp1 .gate[data-open="1"]{transform:translateY(-1.5px)!important;}
+.scp1 .gate[data-open="0"]{transform:translateY(0)!important;}
+
+/* P2 HEADLINE RISK, handled: switch A milled the head name from .scp1's own
+   recipe, but .scp1 is GLASS now. Re-point A to the PLATE — otherwise A=bold
+   tints the glass bar instead of the steel it is supposed to tint. The bar's
+   own background is restated at [data-a] specificity so A can never reach it. */
+html[data-a="strict"] .scp1, html[data-a="bold"] .scp1{
+  background-color:#0a141f!important;
+  background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.18) 2px 3px),var(--h-circuit)!important;
+  background-size:auto,512px 512px!important;}
+html[data-a="strict"] .scp1 .gate[data-open], html[data-a="bold"] .scp1 .gate[data-open]{
+  background-image:
+    repeating-linear-gradient(90deg,rgba(255,255,255,.030) 0 1px,rgba(0,0,0,0) 1px 3px),
+    linear-gradient(180deg,
+      color-mix(in oklab, var(--m-tint,#8b94a3) var(--m-mix,0%), #40444a) 0%,
+      color-mix(in oklab, var(--m-tint,#8b94a3) var(--m-mix,0%), #2e3236) 47%,
+      color-mix(in oklab, var(--m-tint,#8b94a3) var(--m-mix,0%), #212528) 100%)!important;
+  background-size:auto,auto!important;}
+
+/* the board loses its WELL. A well is a recess milled into steel; glass set in
+   glass has no bezel. #185's silhouette, width, marquee and scanlines survive —
+   the containment becomes ONE darker seam. */
+.rw-board{
+  box-shadow:0 0 0 1px rgba(0,0,8,.55)!important;
+  filter:none!important;}
+
+/* the slots now sit on glass rather than as studs on metal. Law 8 already
+   exempts slots from their host's physics, so only the shading changes. */
+.scp1 .rw-rack{background:none!important;box-shadow:none!important;padding:0!important;}
+
+/* ---------------------------------------------------------------------------
+   P3 · ROW CARTRIDGE — a seated steel module, steel-faced in BOTH states.
+   --------------------------------------------------------------------------- */
+[data-row] > div, [data-row][data-lit="1"] > div{
+  background-color:#2b2e31!important;
+  background-image:linear-gradient(180deg,rgba(255,255,255,.085),rgba(255,255,255,.015) 45%,rgba(0,0,10,.24)),var(--rw-steel)!important;
+  background-size:auto,512px 512px!important;
+  box-shadow:inset 0 1px 0 rgba(226,238,255,.11),
+             inset 2px 0 0 rgba(0,0,6,.35), inset -2px 0 0 rgba(0,0,6,.35)!important;}
+/* the lit row's name stops glowing — it is steel now */
+[data-row][data-lit="1"] .rmq{color:#eef2f7!important;text-shadow:none!important;}
+
+/* the DRAWER takes the signal hue: the circuit texture tinted at a low mix, so
+   the texture stays legible and it reads as "running in RED condition" rather
+   than a block of colour. The only hue surface on an open row (spec 4.4). */
+[data-row][data-lit="1"] .rw-drawer, [data-row][data-lit="1"] .rw-cart{
+  background-color:color-mix(in oklab, var(--row-hue,#6394cc) 22%, #04101c)!important;
+  background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.24) 2px 3px),var(--h-circuit)!important;
+  background-size:auto,512px 512px!important;}
+[data-row][data-tone="red"]   {--row-hue:#ff4242;}
+[data-row][data-tone="yellow"]{--row-hue:#eed44b;}
+[data-row][data-tone="blue"]  {--row-hue:#6394cc;}
+[data-row][data-tone="green"] {--row-hue:#34d399;}
+[data-row][data-tone="gray"]  {--row-hue:#8b94a3;}
+
+/* ---------------------------------------------------------------------------
+   P4 · THE FLICKER BELONGS TO THE DRAWER, and fires on drawer CREATION only —
+   never when a group expands. Group expansion mounts rows without opening
+   drawers, so moving the animation off the row's face children is the whole fix.
+   --------------------------------------------------------------------------- */
+/* :not(.rw-drawer) is load-bearing. The drawer is ALSO a direct div child of the
+   row, so an unscoped child-of-child selector killed the flicker on the very
+   element it was being moved onto — the animation vanished from face and drawer
+   alike. Scope the kill to the face; let the drawer keep it.
+   (NB: no backticks in this block. It lives inside a template literal, so one
+   backtick in a comment silently ends the CSS string and the rest parses as JS.) */
+[data-row][data-lit="1"] > div:not(.rw-drawer) > *{animation:none!important;}
+.rw-cartlines{animation:rwCrtOn .34s steps(16,end) both!important;}
+
+/* ---------------------------------------------------------------------------
+   P5 · TOGGLE — the steel well is INERT; the glass seated in it carries every
+   state. The lit edge is the GLASS panel's edge glowing, drawn >=1px inside its
+   own boundary so it can never touch the bezel.
+   --------------------------------------------------------------------------- */
+.seg [class*="seg__opt"]{position:relative;transition:transform .10s ease, box-shadow .12s ease;}
+.seg [class*="seg__opt"]::before{
+  content:'';position:absolute;inset:1.5px;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 0 1.2px transparent;transition:box-shadow .14s ease;}
+.seg [class*="seg__opt--on"]::before{
+  box-shadow:inset 0 0 0 1.2px var(--accent), inset 0 0 9px -2px var(--accent);}
+/* the selected segment LIGHTS — it does not become a colour block. The card's
+   original --on-* classes FILL with the accent (.seg__opt--on-accent{background:
+   var(--accent)}), which put orange text on an orange field and made the tab
+   unreadable. Strip the fill back to glass; the rim and the text carry it. */
+.seg [class*="seg__opt--on"]{
+  background:transparent!important;
+  color:var(--accent)!important;
+  text-shadow:0 0 7px color-mix(in srgb, var(--accent) 55%, transparent)!important;}
+.seg [class*="seg__opt"]:hover{animation:rwWake .3s steps(9,end) 1;}
+.seg [class*="seg__opt"]:active{transform:translateY(1px);box-shadow:inset 0 2px 3px rgba(0,0,6,.55);}
+/* the well itself never responds — restated so nothing can leak onto the steel */
+.seg:hover, .seg:active{transform:none!important;filter:none!important;}
+
+/* ---------------------------------------------------------------------------
+   P6 · THE COUNT IS A FLOATING SLOT (#177 — the last pin standing; law 8 lets a
+   slot break physics at a toggle corner, which is the case the law names).
+   --------------------------------------------------------------------------- */
+/* keyed to a STAMPED marker, not to ancestry. The jump band's verb cells are
+   also .pin inside a .seg, so a structural selector caught them too and hung
+   little tags off the band. The stamp pass decides what is a toggle count. */
+.pin[data-slotpin="1"]{
+  position:absolute!important;top:-5px!important;right:-6px!important;left:auto!important;
+  transform:skewX(19deg)!important;border-radius:1.5px!important;
+  min-width:14px!important;height:13px!important;padding:0 3px!important;
+  display:flex!important;align-items:center!important;justify-content:center!important;
+  font-family:ui-monospace,Menlo,Consolas,monospace!important;font-size:8.5px!important;font-weight:800!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.24), inset 0 -1.5px 2px rgba(0,0,0,.45), 0 1px 3px rgba(0,0,0,.7)!important;
+  z-index:3!important;}
+.pin[data-slotpin="1"] > *{transform:skewX(-19deg);display:block;}
 `;
 
 
@@ -2837,15 +3012,39 @@ html[data-skin="halo"] [data-hint="How far down this card you are"]{
       g.setAttribute('data-material', b === 'digital' ? 'glass' : 'steel');
     });
 
-    // DERIVED 2 — a cartridge is steel while seated and GLASS once it powers on.
-    // The taxonomy has to carry that, or #168's two-physics split lives only in
-    // prose. Only a SEATED cartridge takes the wrap: a lit one already wears the
-    // hue frame, and #172 makes that the sole "powered on" carrier.
+    // DERIVED 2 — the cartridge's face material, which is now SKIN-DEPENDENT.
+    // M1 stamped it glass-when-lit, carrying #168's "a cartridge powers on" split.
+    // Steel v2 supersedes that for the steel theme: the face is steel in BOTH
+    // states and the light moved to the drawer. The halo skin still paints a lit
+    // face as circuit glass, so the stamp follows the skin rather than pretending
+    // one answer fits both. Only a SEATED cartridge takes the wrap either way.
+    var skin = document.documentElement.getAttribute('data-skin');
     [].forEach.call(document.querySelectorAll('[data-row]'), function (row) {
       var inner = rowInner(row); if (!inner) return;
       var lit = row.getAttribute('data-lit') === '1';
-      inner.setAttribute('data-material', lit ? 'glass' : 'steel');
+      inner.setAttribute('data-material', (lit && skin === 'halo') ? 'glass' : 'steel');
       if (lit) inner.removeAttribute('data-wrap'); else inner.setAttribute('data-wrap', '1');
+      var dr = row.querySelector('.rw-drawer');
+      if (dr) dr.setAttribute('data-material', 'glass');   // the drawer is the light
+    });
+
+    // P6 — the toggle counts are SLOTS now, and a slot's face is skewX(19deg).
+    // The numeral has to be counter-skewed back upright, and `.pin > *` only
+    // matches ELEMENT children — the count renders as a bare text node, so the
+    // rule would match nothing and every numeral would sit slanted. Same trap the
+    // kit hit at 7db47b5; same fix, applied here at the stamp pass.
+    [].forEach.call(document.querySelectorAll('.seg [class*="seg__opt"] > .pin'), function (pin) {
+      // the jump band's verb cells are ALSO .pin inside a .seg — styling by
+      // structure caught them and hung slot tags off the band. Only a header
+      // toggle's count is a slot; mark it, and let CSS key off the mark.
+      if (pin.closest('[data-jump-band]')) return;
+      pin.setAttribute('data-slotpin', '1');
+      if (pin.firstElementChild) return;                 // already wrapped
+      var txt = (pin.textContent || '').trim();
+      if (!txt) return;
+      pin.textContent = '';
+      var s = document.createElement('span'); s.textContent = txt;
+      pin.appendChild(s);
     });
 
     // the head panel carries its group's tone so switch A can tint the steel.
