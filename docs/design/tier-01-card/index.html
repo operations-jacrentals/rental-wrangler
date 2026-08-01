@@ -2941,6 +2941,67 @@ html[data-a="strict"] .scp1 .gate[data-open], html[data-a="bold"] .scp1 .gate[da
 .seg:hover, .seg:active{transform:none!important;filter:none!important;}
 
 /* ---------------------------------------------------------------------------
+   B RE-SCOPED TO THE ROW'S STATE CHIP — Jac, 2026-08-01.
+   Steel v2 settled the head's name plate as steel, which left switch B with no
+   target: every .gate lives inside a .scp1, so all three B positions rendered
+   identically and the comparison was dead. B moves to where the question really
+   lives — #182 calls the ROW's chip "the one button at the row level", so that,
+   not the head's name plate, is the state button #191 was ever asking about.
+   The chip carries its own hue in currentColor, so one rule per reading covers
+   every tone.
+   --------------------------------------------------------------------------- */
+/* B=steel — a plate that COMPRESSES and whose text lighting changes under press
+   (law 6). Nothing about it is live text; the plate turns under the light. */
+html[data-b="steel"] [data-row] .signal{
+  background-image:linear-gradient(180deg,rgba(255,255,255,.14),rgba(255,255,255,.02) 46%,rgba(0,0,12,.24)),var(--rw-steel)!important;
+  background-size:auto,512px 512px!important;
+  box-shadow:inset 0 1px 0 rgba(226,238,255,.20), inset 0 -2px 3px rgba(0,0,6,.42),
+    0 1.5px 0 -.5px rgba(0,0,5,.7)!important;
+  transition:transform .10s ease, box-shadow .12s ease;}
+/* a FILLED chip is PAINTED steel, not bare steel. "Fill = today" is a colour
+   law, and an opaque grain over the hue turned 3D OVERDUE grey — the signal
+   was lost to the finish. Blending the grain into the hue instead keeps the
+   plate metal AND keeps the chip unmistakably red. Outline chips are untouched:
+   they are bare steel already, and their hue lives in rim and text. */
+html[data-b="steel"] [data-row] .signal--filled{
+  background-image:linear-gradient(180deg,rgba(255,255,255,.20),rgba(255,255,255,.03) 46%,rgba(0,0,12,.26))!important;}
+html[data-b="steel"] [data-row] .signal:active{
+  transform:translateY(1.5px)!important;
+  box-shadow:inset 0 3px 5px -1px rgba(0,0,6,.85)!important;
+  filter:brightness(1.28) contrast(1.06)!important;}
+
+/* B=digital — glass: scanline film, a cursor block, and a wake on hover. Live
+   text, so by law 2 explicitly not steel, and it cannot compress. */
+html[data-b="digital"] [data-row] .signal{
+  background-color:#050b13!important;
+  background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.30) 2px 3px),var(--h-circuit)!important;
+  background-size:auto,512px 512px!important;
+  box-shadow:inset 0 0 0 1.2px currentColor, 0 0 8px color-mix(in srgb, currentColor 28%, transparent)!important;
+  text-shadow:0 0 6px currentColor!important;}
+html[data-b="digital"] [data-row] .signal::after{
+  content:'\\2588';margin-left:3px;opacity:.5;animation:rwCursor 1.05s steps(1,end) infinite;}
+html[data-b="digital"] [data-row] .signal:hover{animation:rwWake .32s steps(9,end) 1;}
+
+/* B=hybrid — the compressing steel plate with a milled scanlined window
+   carrying the live word. */
+html[data-b="hybrid"] [data-row] .signal--filled{
+  background-image:linear-gradient(180deg,rgba(255,255,255,.20),rgba(255,255,255,.03) 46%,rgba(0,0,12,.26))!important;}
+html[data-b="hybrid"] [data-row] .signal{
+  position:relative;
+  background-image:linear-gradient(180deg,rgba(255,255,255,.14),rgba(255,255,255,.02) 46%,rgba(0,0,12,.24)),var(--rw-steel)!important;
+  background-size:auto,512px 512px!important;
+  box-shadow:inset 0 1px 0 rgba(226,238,255,.20), inset 0 -2px 3px rgba(0,0,6,.42),
+    0 1.5px 0 -.5px rgba(0,0,5,.7)!important;}
+html[data-b="hybrid"] [data-row] .signal::before{
+  content:'';position:absolute;inset:3px 5px;z-index:0;pointer-events:none;
+  background-color:#050a10;
+  background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.30) 2px 3px);
+  box-shadow:inset 0 1.5px 3px rgba(0,0,0,.8), 0 0 0 1px rgba(0,0,6,.75);}
+html[data-b="hybrid"] [data-row] .signal > *{position:relative;z-index:1;}
+html[data-b="hybrid"] [data-row] .signal:active{
+  transform:translateY(1.5px)!important;filter:brightness(1.28) contrast(1.06)!important;}
+
+/* ---------------------------------------------------------------------------
    P6 · THE COUNT IS A FLOATING SLOT (#177 — the last pin standing; law 8 lets a
    slot break physics at a toggle corner, which is the case the law names).
    --------------------------------------------------------------------------- */
