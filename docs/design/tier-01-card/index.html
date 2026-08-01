@@ -3224,6 +3224,40 @@ html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]
 /* the separate inner well is gone — the gate IS the well now, exactly as the
    grip's inner layer is. */
 .scp1 .gate::before{content:none!important;}
+
+/* ============================================================================
+   THE WELL IS INSET SO ITS BORDER IS A CONSEQUENCE — Jac, 2026-08-01:
+   "shortened and moved slightly to the left... This border is a consequence, a
+    passive result, not something we cook into the element itself."
+
+   The grip reads thick-bordered because it SITS IN a panel with room around it,
+   not because anything draws a thick border. The name well was full-height and
+   2.8px off the right edge, so there was no room for the panel to show and no
+   room for the group's laser rail either. Shortening it and pulling it left
+   makes the surround appear on its own — and uncovers the laser.
+   ============================================================================ */
+.scp1 .pin-wrap{
+  align-self:center!important;
+  height:22px!important;              /* in a 30px head: 4px of panel above and below */
+  margin-right:10px!important;        /* uncovers the group's right-hand laser rail */
+  flex:0 0 calc(var(--rw-namew) - 10px)!important;
+  width:calc(var(--rw-namew) - 10px)!important;}
+html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]{
+  height:100%!important;align-self:stretch!important;}
+
+/* THE GROUP BOARD WAS TOP-ALIGNED — 17px tall, pinned to the top of a 30px
+   panel, which is why it looked hung rather than seated. Centred. */
+.scp1 .rw-board{align-self:center!important;}
+
+/* THE LASER'S FRAME reads again. Measured: the laser and its dark band are
+   pixel-identical to the old build (y=35..105 in a 5x crop). What changed is
+   what sits BELOW it — the head used to be steel rgb(72,88,110) and is now
+   glass rgb(54,74,97), so the dark band no longer contrasts against anything.
+   The frame did not disappear; the surface it framed against went dark. So the
+   fix is the lip's contrast, not the frame. */
+.scp1{
+  box-shadow:inset 0 1.5px 0 rgba(196,216,246,.34),
+             inset 0 3px 0 rgba(185,205,235,.07)!important;}
 `;
 
 
