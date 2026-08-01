@@ -969,13 +969,16 @@ input:focus::placeholder{color:transparent}
 }
 [data-glass]:hover::after{opacity:1}
 
-/* RESOLVED (was KNOWN-OPEN #159 fallout — Jac's ruling, 2026-07-30):
-   the bucket label "Not Ready/Failed+Reserved" overran the head at the locked 380px compact
-   width, squeezing the message board and slot rack; a max-width/overflow clamp was tried and
-   did not hold inside the head's flex row. As the note predicted, the fix was a decision and
-   not CSS: the DISPLAY LABEL is shortened to "Reserved: Not Ready" (19 chars, down from 25).
-   The bucket itself is unchanged — id 'collision', still (Not Ready OR Failed) AND Reserved,
-   the broken-machine-promised-to-a-customer collision. Ledger row #165. */
+/* SUPERSEDED — the 'collision' bucket is DROPPED entirely (Jac, 2026-08-01).
+   History, kept because it explains why the label churned: the bucket label
+   "Not Ready/Failed+Reserved" overran the head at the locked 380px compact width, squeezing
+   the message board and slot rack; a clamp did not hold inside the head's flex row, so #165
+   shortened the DISPLAY LABEL to "Reserved: Not Ready" (19 chars, down from 25).
+   That was treating a symptom. The bucket itself is now gone — a group that only ever held
+   the broken-machine-promised-to-a-customer collision was paying a full head for one row, and
+   its members are already reachable through Not Ready, Failed and Reserved. Reserved moves up
+   to sit directly under Field Calls for staff/mechanics instead, which is where a yard hand
+   looks after the emergencies. Ledger row #165 is superseded. */
 </style>
 </helmet>
 
@@ -1285,11 +1288,11 @@ class Component extends DCLogic {
       { id:'f1', tone:'red', fill:true,  state:'3d overdue', name:'Excavator 12k',    facts:['S/N 4421','2019'], more:1, when:'Mar 14' },
       { id:'f2', tone:'red', fill:false, state:'Failed',     name:'Skid Steer S650',  facts:['S/N 8802'],        more:2, when:'Mar 16' }
     ]},
-    /* The broken-machine-promised-to-a-customer collision — its own top bucket by design (#51). */
-    { id:'collision', kind:'attention', name:'Reserved: Not Ready', rows:[
-      { id:'x1', tone:'red', fill:true, state:'Promised', name:'Dozer D5',        facts:['S/N 6610'], more:2, when:'Mar 18' }
-    ]},
+    /* The 'collision' bucket ("Reserved: Not Ready") is DROPPED — Jac, 2026-08-01. Its one
+       member, the promised-but-broken Dozer, moves into Not Ready where its condition puts
+       it; being promised is what its Reserved membership already says. */
     { id:'notready', kind:'attention', name:'Not Ready', rows:[
+      { id:'x1', tone:'red', fill:true, state:'Promised', name:'Dozer D5', facts:['S/N 6610'], more:2, when:'Mar 18' },
       { id:'n1', tone:'yellow', fill:true,  state:'Service due', name:'Roller CS44',    facts:['S/N 2298'], more:1, when:'Mar 19' },
       { id:'n2', tone:'yellow', fill:false, state:'Needs wash',  name:'Mini Ex 1.7t',   facts:[],           more:0, when:'Mar 20' }
     ]},
@@ -1309,10 +1312,9 @@ class Component extends DCLogic {
       { id:'o3', tone:'gray',   fill:false, state:'On rent',  name:'Light Tower LT6',  facts:[],                  more:0, when:'Apr 11' },
       { id:'o4', tone:'blue',   fill:false, state:'Waiting',  name:'Generator 60kW',   facts:['S/N 1188'],        more:3, when:'—'      }
     ]},
-    { id:'reserved', kind:'lifecycle', name:'Reserved', rows:[
-      { id:'v1', tone:'blue', fill:true,  state:'Pickup', name:'Mini Ex 3.5t',  facts:['S/N 9013'], more:1, when:'11:30'  },
-      { id:'v2', tone:'gray', fill:false, state:'Reserved',     name:'Trencher 36in', facts:[],           more:0, when:'Mar 24' }
-    ]},
+    /* NB a SECOND, effectively identical 'reserved' group used to sit here. It never rendered —
+       the group walk resolves each id with DATA.filter(...)[0], so the first definition always
+       won — but it made the source read as if Reserved were two buckets. Removed. */
     /* End Rent reads yellow purely because membership means "due back today" (#32) — the
        group still has no native colour; every row in it happens to trigger yellow. */
     { id:'endrent', kind:'lifecycle', name:'End Rent', rows:[
@@ -1362,10 +1364,14 @@ class Component extends DCLogic {
      never a different grouping engine. The two real Units roles are staff/mechanic and office+
      (ledger §4); the mockup's 'dispatcher'/'yard' pair was dropped at #159 — 'Yard' was a stub
      to prove the mechanism, and a dispatcher does not live on the Units card.
-     Mechanic floats Not Ready and Failed to the top; office sinks them to the bottom. */
+     Mechanic floats Not Ready and Failed to the top; office sinks them to the bottom.
+     'collision' is gone from both orders — the bucket itself was dropped (Jac, 2026-08-01).
+     Staff/mechanics also get Reserved lifted to directly under Field Calls: for a yard hand the
+     question after "what is on fire" is "what has been promised", so the two sit together.
+     Office ordering is untouched beyond losing 'collision' — the ask was scoped to staff. */
   ORDER = {
-    staff:  ['field','collision','notready','failed','transport','reserved','onrent','endrent','avail','incomplete'],
-    office: ['field','collision','transport','reserved','onrent','endrent','avail','incomplete','notready','failed']
+    staff:  ['field','reserved','notready','failed','transport','onrent','endrent','avail','incomplete'],
+    office: ['field','transport','reserved','onrent','endrent','avail','incomplete','notready','failed']
   };
 
   componentWillUnmount(){ clearTimeout(this._t); clearTimeout(this._dwell); clearTimeout(this._flash); clearTimeout(this._flashRowT); }
@@ -2108,12 +2114,57 @@ class Component extends DCLogic {
     var ticks = [].slice.call(rk.querySelectorAll('.rw-tick'));
     ticks.forEach(function (t) { t.style.display = ''; });
     if (!ticks.length || rk.clientWidth <= 0) return;
-    var n = ticks.length, more = null;
-    while (n > 0 && rk.scrollWidth > rk.clientWidth + 1) {
-      n--; ticks[n].style.display = 'none';
-      if (!more) { more = document.createElement('span'); more.className = 'rw-more'; rk.appendChild(more); }
+
+    // MEASURE LAYOUT WIDTH, NOT scrollWidth. A tick is transform:skewX(19deg), and a
+    // transform bleeds outside the layout box: with the rack at overflow:visible (the
+    // 07-31 "nothing clips a tick vertically" fix) that skew reports as a permanent
+    // ~2px of scroll overflow which no amount of hiding removes. The old loop read
+    // that as "still does not fit" and hid every tick in turn — which is why group
+    // heads rendered a bare "+6" with no slots beside it. offsetWidth is the layout
+    // width and ignores the transform, so the fit is computed, not searched.
+    var gap = parseFloat(getComputedStyle(rk).columnGap) || 0;
+    var tw = ticks[0].offsetWidth || 6;
+    var avail = rk.clientWidth;
+
+    // n ticks alone need n*tw + (n-1)*gap; with a counter they need n*tw + n*gap + moreW.
+    if (Math.floor((avail + gap) / (tw + gap)) >= ticks.length) return;   // all of them fit
+
+    // the counter is PREPENDED — Jac, 2026-08-01: "+N should be on the left side of the
+    // slots, not the right". It still counts from the tail (the ticks that get hidden
+    // are the rightmost), it just reads before them.
+    var more = document.createElement('span');
+    more.className = 'rw-more';
+    rk.insertBefore(more, rk.firstChild);
+    var n = ticks.length;
+    for (var pass = 0; pass < 2; pass++) {      // twice: the digit count changes its width
       more.textContent = '+' + (ticks.length - n);
+      n = Math.max(0, Math.min(ticks.length, Math.floor((avail - more.offsetWidth) / (tw + gap))));
     }
+    more.textContent = '+' + (ticks.length - n);
+    for (var i = n; i < ticks.length; i++) ticks[i].style.display = 'none';
+    if (n >= ticks.length) more.parentNode.removeChild(more);
+  }
+
+  // fitRack is a MEASUREMENT, so it is only valid for the layout it measured. It ran
+  // once per CONTENT change, so a rack that was still settling at first layout hid
+  // every tick and never reconsidered — the head racks showed a bare "+6" with
+  // nothing beside it, a count computed against a width the rack no longer had.
+  //
+  // The observer re-fits on every size callback, including the one ResizeObserver
+  // delivers on observe() — that initial callback is the point, because it repairs
+  // exactly this stale state. Re-fitting unconditionally is safe on both counts:
+  // fitRack is idempotent (it re-shows every tick before re-hiding any), and the
+  // rack cannot feed the observer, because it is the flex:1 1 auto residual in a
+  // line whose other cells are all fixed — its box does not depend on its content.
+  var ro = null;
+  function watchRacks() {
+    if (!window.ResizeObserver) return;
+    if (!ro) ro = new ResizeObserver(function (entries) {
+      entries.forEach(function (e) { fitRack(e.target); });
+    });
+    [].forEach.call(document.querySelectorAll('.rw-rack'), function (rk) {
+      if (rk.__rwRo) return; rk.__rwRo = 1; ro.observe(rk);
+    });
   }
   // children[0] is the absolutely-positioned accent caret span, NOT the content div.
   function rowInner(row) {
@@ -2311,7 +2362,7 @@ class Component extends DCLogic {
 
   function rebuild() {
     if (obs) obs.disconnect();
-    try { build(); boards(); } catch (e) { if (window.console) console.warn('[rw-p1]', e); }
+    try { build(); boards(); watchRacks(); } catch (e) { if (window.console) console.warn('[rw-p1]', e); }
     if (obs) obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
     queued = false;
   }
@@ -2522,6 +2573,60 @@ html[data-b="hybrid"] .gate::before{
 html[data-b="hybrid"] .gate .sc-interp{position:relative;z-index:1;}
 html[data-b="hybrid"] .gate .sc-interp::after{
   content:'\\2588';margin-left:3px;opacity:.5;animation:rwCursor 1.05s steps(1,end) infinite;}
+
+/* ============================================================================
+   REALIGNMENT + WELL SHAPE — Jac, 2026-08-01. Last in the block, so these win.
+     2  the group-name well takes the scroll-pips well's shape
+     3  the +N counter reads to the LEFT of the slots
+     4  the message boards form one column down the card
+   ============================================================================ */
+
+/* 3 — the counter sits before the ticks (the prepend is in fitRack). */
+.rw-more{margin-left:0!important;margin-right:3px!important;}
+
+/* 4 — THE BOARDS FORM A COLUMN.
+   Root cause, measured before the fix: head boards ranged L=393.2 to 433.3 and
+   row boards L=384.5 to 408.1 — a 63px scatter, and no two levels agreeing. The
+   board is a fixed 114px, but it sat between a residual-width rack and a name
+   cell that was flex:0 1 auto, i.e. sized by its own TEXT. So the board's x
+   tracked how long the unit was called: "Failed" pushed it to 433, "Field Calls"
+   pulled it to 393. #170's law already says the RACK takes the residual and
+   everything else is edge-anchored — the name was never meant to be the second
+   flexible element. Giving the name a fixed cell restores that law, and matching
+   the head's right padding to the cartridge's own content edge (the housing
+   insets the cartridge by 10px, which the head then has to pay back) puts the
+   head's board in the same column as its rows'.
+
+   SCOPED TO HEADS ONLY, deliberately. The same fix on rows does NOT fit: a row
+   also carries the left-anchored button, which #155 pins at a constant 93px, so
+   its budget is 341 - 93 - 114 - 18(gaps) = 116px to split between the rack and
+   the name. Fixing the name at the head's 129px overflowed the row by 13.2px
+   (measured), and shrinking it to fit leaves the name ~86px against the 103px
+   "Excavator 12k" needs. That is #174's wall exactly — "no choice of wording
+   makes facts fit at 380px; fitting them needs a wider column in Tier 0.2" —
+   so rows keep their flexible name and their boards still track it. Making the
+   two levels share ONE column needs either a wider card or a ruling that flips
+   #170's residual law from the rack to the name; both are Jac's calls, not
+   something to take by side effect. The head's right padding is then set so its
+   column lands ON the row column's floor (384.5px), which is where every row
+   with a name long enough to ellipsize already sits. */
+:root{--rw-namew:calc(var(--rw-boardw,114px) * 34 / 30);}
+.scp1{padding-right:2.8px!important;}
+.scp1 .pin-wrap{box-sizing:border-box!important;
+  flex:0 0 var(--rw-namew)!important;width:var(--rw-namew)!important;
+  margin-left:0!important;min-width:0!important;}
+
+/* 2 — the group-name well takes the SCROLL-PIPS well's shape: a 9px NW chamfer,
+   a 14px SE chamfer, ONE dark line, no bevelled steel border. Built the way the
+   pips well itself is built (index.html ~1197) — an outer clipped layer in the
+   line colour with the face inset 1.2px inside a slightly smaller clip — because
+   box-shadow does NOT follow clip-path, so a rim drawn on the face alone would
+   square off at exactly the two corners the shape exists to cut. */
+.scp1 .pin-wrap{position:relative!important;padding:1.2px!important;overflow:hidden!important;
+  background:color-mix(in oklab, black 52%, var(--card-head))!important;
+  clip-path:polygon(0 9px,9px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%)!important;}
+.scp1 .gate{width:100%!important;
+  clip-path:polygon(0 8.3px,8.3px 0,100% 0,100% calc(100% - 13.3px),calc(100% - 13.3px) 100%,0 100%)!important;}
 
 /* ----------------------------------------------------------------------------
    the switcher — dev scaffolding, deliberately outside the card
