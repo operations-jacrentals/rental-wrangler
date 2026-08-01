@@ -2952,7 +2952,14 @@ html[data-b="digital"] .scp1 .gate:hover .sc-interp{animation:none!important;}
   background-image:linear-gradient(180deg,rgba(255,255,255,.085),rgba(255,255,255,.015) 45%,rgba(0,0,10,.24)),var(--rw-steel)!important;
   background-size:auto,512px 512px!important;
   box-shadow:inset 0 1px 0 rgba(226,238,255,.11),
-             inset 2px 0 0 rgba(0,0,6,.35), inset -2px 0 0 rgba(0,0,6,.35)!important;}
+             inset 2px 0 0 rgba(0,0,6,.35), inset -2px 0 0 rgba(0,0,6,.35),
+             inset 0 -2px 0 rgba(0,0,6,.35)!important;}
+             /* the bottom rail was missing from this list — left/right had their dark
+                seam, the bottom didn't, so when the row lights, its laser (::before,
+                inset 0 -2px 0 <hue>) had a frame line to sit beside on the sides but
+                none on the bottom: only the coloured laser showed there. Jac: "I can
+                see it on the left and right borders but on the bottom border the frame
+                is gone." Mirrored the side rails' 2px dark inset onto the bottom edge. */
 /* the lit row's name stops glowing — it is steel now */
 [data-row][data-lit="1"] .rmq{color:#eef2f7!important;text-shadow:none!important;}
 
@@ -3019,6 +3026,51 @@ html[data-b="digital"] .scp1 .gate:hover .sc-interp{animation:none!important;}
 .seg [class*="seg__opt"]:active{transform:translateY(1px);box-shadow:inset 0 2px 3px rgba(0,0,6,.55);}
 /* the well itself never responds — restated so nothing can leak onto the steel */
 .seg:hover, .seg:active{transform:none!important;filter:none!important;}
+
+/* ---------------------------------------------------------------------------
+   TOGGLE SELECT HIGHLIGHT, UNIFIED — Jac, 2026-08-01: "your highlight for units
+   is different than for the work open done and all toggles should have the
+   same select highlight", plus the missing "inert cosmetic bump at the bottom
+   border inside of the well underneath work". An older R-rulebook layer gave
+   [data-pair] (UNITS/CATEGORIES) its own stripped-down selected box-shadow —
+   press + a faint top line only, no outer ring, no lit hairlines — while every
+   other toggle (WORK/OPEN/DONE, sort, jump-band) kept the full welled-glass
+   recipe. Restated identically at [data-pair]'s own specificity so both toggle
+   families read as ONE recipe, and added the inset bottom hairline: the usual
+   "lit hairlines above and below" of this recipe sit OUTSIDE the box (the 3.4px/
+   -3.2px lines already below); this one sits INSIDE, on the well's inert steel,
+   the way light catches the inner lip of a glass seated in a frame. */
+.seg__opt[class*="seg__opt--on"],
+[data-pair] .seg__opt[class*="seg__opt--on"]{
+  background-image:linear-gradient(180deg,rgba(0,0,0,.26),rgba(0,0,0,0) 48%)!important;
+  box-shadow:
+    0 0 0 2px color-mix(in oklab, black 62%, var(--card-head)),
+    0 3.4px 0 rgba(185,205,235,.13),
+    0 -3.2px 0 rgba(185,205,235,.05),
+    inset 0 1.5px 3px rgba(0,0,0,.5),
+    inset 0 -1.4px 0 rgba(226,238,255,.22)!important;}
+
+/* ---------------------------------------------------------------------------
+   THE LASER'S OWN FRAME — Jac, 2026-08-01: "I can see it on the left and right
+   borders but on the bottom border the frame is gone, the only thing visible
+   is the laser." The row's ::before drew ONLY the coloured inset lines; any
+   dark line running beside them on the sides was incidental contrast from
+   whatever sat underneath (the face's own steel, the drawer's tint), not a
+   frame the laser carried itself — which is exactly why it read fine on two
+   sides and disappeared on the third, where nothing happened to be dark
+   enough to pair with it. Giving the laser its own outer ring, in the same
+   "0 0 0 Npx color-mix(...)" family every other framed element in this design
+   already uses, guarantees the pairing on every side regardless of what's
+   underneath. var(--row-hue) already carries the right colour per tone (set
+   alongside the drawer's own hue wash, a few lines up), so one rule replaces
+   the five tone-specific ones instead of repeating the ring five times. */
+[data-row][data-lit="1"]::before{
+  box-shadow:
+    0 0 0 1.4px color-mix(in oklab, black 60%, var(--card-head)),
+    inset 2px 0 0 var(--row-hue,#8b94a3),
+    inset -2px 0 0 var(--row-hue,#8b94a3),
+    inset 0 -2px 0 var(--row-hue,#8b94a3),
+    0 0 9px color-mix(in srgb, var(--row-hue,#8b94a3) 30%, transparent)!important;}
 
 /* ---------------------------------------------------------------------------
    B RE-SCOPED TO THE ROW'S STATE CHIP — Jac, 2026-08-01.
@@ -3166,11 +3218,16 @@ html[data-b="hybrid"] [data-row] .signal:active{
              inset 0 2px 0 rgba(185,205,235,.05)!important;}
 
 /* the row face keeps steel v2's side rails, but its top hairline goes back to
-   the canonical family (it had drifted to a cooler 226,238,255). */
+   the canonical family (it had drifted to a cooler 226,238,255). Also carries
+   the bottom rail P3 never had: left/right had a dark seam for the row's laser
+   to sit beside when lit, the bottom didn't, so only the laser's own colour
+   showed there. Jac: "I can see it on the left and right borders but on the
+   bottom border the frame is gone." Mirrored the side rails onto the bottom. */
 [data-row] > div, [data-row][data-lit="1"] > div{
   box-shadow:inset 0 1px 0 rgba(185,205,235,.13),
              inset 2px 0 0 rgba(0,0,6,.35),
-             inset -2px 0 0 rgba(0,0,6,.35)!important;}
+             inset -2px 0 0 rgba(0,0,6,.35),
+             inset 0 -2px 0 rgba(0,0,6,.35)!important;}
 
 /* the chip is a component SEATED IN A WELL: dark ring, then the lit ring just
    outside it, then a top highlight on the face. Restated per B reading so each
