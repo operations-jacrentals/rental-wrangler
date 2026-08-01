@@ -2881,6 +2881,14 @@ html[data-a="strict"] .scp1 .gate[data-open], html[data-a="bold"] .scp1 .gate[da
       color-mix(in oklab, var(--m-tint,#8b94a3) var(--m-mix,0%), #212528) 100%)!important;
   background-size:auto,auto!important;}
 
+/* THE HEAD PLATE IS STEEL, SO IT GETS NO DIGITAL TELLS. M1's B=digital rules
+   gave the gate a blinking cursor and a wake-flicker on hover — correct while
+   the gate was a glass WELL, and wrong the moment steel v2 made it a plate.
+   A steel plate does not blink. Killed here rather than in M1, so the halo
+   skin (where the head is still a well under B=digital) keeps them. */
+html[data-b="digital"] .scp1 .gate .sc-interp::after{content:none!important;}
+html[data-b="digital"] .scp1 .gate:hover .sc-interp{animation:none!important;}
+
 /* the board loses its WELL. A well is a recess milled into steel; glass set in
    glass has no bezel. #185's silhouette, width, marquee and scanlines survive —
    the containment becomes ONE darker seam. */
@@ -3005,21 +3013,32 @@ html[data-b="steel"] [data-row] .signal:active{
    white and the state vanished. Key off the row's own tone instead, and keep
    "fill = today" alive in the glass reading: a filled chip is a brighter lamp
    (hue wash + heavier glow), an outline chip is a ring on dark. */
+/* --chip-hue is the CHIP'S OWN state, and it is NOT --row-hue. --row-hue is the
+   row's worst open issue (what the laser frame and drawer wash carry); a chip
+   states its own condition. Keying the chip to --row-hue put a RED ring around
+   a chip reading SERVICE DUE, because that row's worst issue was red — two
+   different facts wearing one colour. */
+[data-row] .signal--red   {--chip-hue:#ff4242;}
+[data-row] .signal--yellow{--chip-hue:#eed44b;}
+[data-row] .signal--blue  {--chip-hue:#6394cc;}
+[data-row] .signal--green {--chip-hue:#34d399;}
+[data-row] .signal--gray  {--chip-hue:#8b94a3;}
+
 html[data-b="digital"] [data-row] .signal{
   background-color:#050b13!important;
   background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.30) 2px 3px),var(--h-circuit)!important;
   background-size:auto,512px 512px!important;
-  color:var(--row-hue,#aab4c1)!important;
-  box-shadow:inset 0 0 0 1.2px var(--row-hue,#8b94a3), 0 0 8px color-mix(in srgb, var(--row-hue,#8b94a3) 26%, transparent)!important;
-  text-shadow:0 0 6px color-mix(in srgb, var(--row-hue,#8b94a3) 70%, transparent)!important;}
+  color:var(--chip-hue,#aab4c1)!important;
+  box-shadow:inset 0 0 0 1.2px var(--chip-hue,#8b94a3), 0 0 8px color-mix(in srgb, var(--chip-hue,#8b94a3) 26%, transparent)!important;
+  text-shadow:0 0 6px color-mix(in srgb, var(--chip-hue,#8b94a3) 70%, transparent)!important;}
 html[data-b="digital"] [data-row] .signal--filled{
   background-image:
-    linear-gradient(color-mix(in srgb, var(--row-hue,#6394cc) 30%, transparent),
-                    color-mix(in srgb, var(--row-hue,#6394cc) 30%, transparent)),
+    linear-gradient(color-mix(in srgb, var(--chip-hue,#6394cc) 30%, transparent),
+                    color-mix(in srgb, var(--chip-hue,#6394cc) 30%, transparent)),
     repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.30) 2px 3px),
     var(--h-circuit)!important;
   background-size:auto,auto,512px 512px!important;
-  box-shadow:inset 0 0 0 1.4px var(--row-hue,#8b94a3), 0 0 11px color-mix(in srgb, var(--row-hue,#8b94a3) 42%, transparent)!important;
+  box-shadow:inset 0 0 0 1.4px var(--chip-hue,#8b94a3), 0 0 11px color-mix(in srgb, var(--chip-hue,#8b94a3) 42%, transparent)!important;
   filter:brightness(1.12);}
 html[data-b="digital"] [data-row] .signal::after{
   content:'\\2588';margin-left:3px;opacity:.5;animation:rwCursor 1.05s steps(1,end) infinite;}
