@@ -2861,8 +2861,30 @@ html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]
   background-color:#26313f!important;
   background-image:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.02) 46%,rgba(0,0,10,.26)),var(--rw-steel)!important;
   background-size:auto,512px 512px!important;
-  box-shadow:0 1.5px 0 -0.5px rgba(0,0,6,.85), 0 3px 5px -2px rgba(0,0,4,.6),
-    inset 0 1px 0 rgba(226,238,255,.16), inset 0 -1.5px 2px rgba(0,0,6,.3)!important;}
+  /* a THICKER bevel — the plate reads as a machined casting, not a sticker.
+     Top and bottom get hard 2.5px light/dark edges, the sides a thinner pair,
+     and one dark line rings the whole thing. */
+  box-shadow:
+    0 0 0 1.4px color-mix(in oklab, black 55%, var(--card-head)),
+    inset 0 3px 0 rgba(236,246,255,.30),
+    inset 0 4px 4px -3px rgba(255,255,255,.22),
+    inset 0 -3px 0 rgba(0,0,8,.68),
+    inset 3px 0 0 rgba(232,242,255,.10),
+    inset -3px 0 0 rgba(0,0,8,.48),
+    0 2px 4px -1px rgba(0,0,4,.6)!important;
+  padding:0 12px!important;}
+
+/* THE NAME SITS IN A WELL milled into that plate. Drawn on ::before rather than
+   on .sc-interp because switch A puts background-clip:text on the letters — a
+   background on the same element would be clipped to the glyphs instead of
+   forming a recess behind them. ::before is free at the head: the hybrid window
+   that also uses it is halo-only, and halo's head is not this plate. */
+.scp1 .gate::before{
+  content:'';position:absolute;inset:4px 6px;z-index:0;pointer-events:none;
+  background:#0c131e;
+  box-shadow:inset 0 2px 3.5px rgba(0,0,6,.9), inset 0 -1px 0 rgba(198,218,248,.09),
+    0 0 0 1px rgba(0,0,8,.55), 0 1px 0 rgba(214,230,252,.10);}
+.scp1 .gate .sc-interp{position:relative;z-index:1;}
 .scp1 .gate[data-open="1"]{transform:translateY(-1.5px)!important;}
 .scp1 .gate[data-open="0"]{transform:translateY(0)!important;}
 
@@ -3042,8 +3064,11 @@ html[data-b="digital"] [data-row] .signal--filled{
   background-size:auto,auto,512px 512px!important;
   box-shadow:inset 0 0 0 1.4px var(--chip-hue,#8b94a3), 0 0 11px color-mix(in srgb, var(--chip-hue,#8b94a3) 42%, transparent)!important;
   filter:brightness(1.12);}
-html[data-b="digital"] [data-row] .signal::after{
-  content:'\\2588';margin-left:3px;opacity:.5;animation:rwCursor 1.05s steps(1,end) infinite;}
+/* NO CURSOR ON THE CHIPS. A cursor means "something is being typed here", and
+   on fifteen state chips at once it is fifteen things blinking for no reason —
+   noise, not a tell. Law 4's other two digital signs do the work: the scanline
+   film says glass, and the wake says the pointer arrived. The cursor stays where
+   text really is live: the search field. */
 html[data-b="digital"] [data-row] .signal:hover{animation:rwWake .32s steps(9,end) 1;}
 
 /* B=hybrid — the compressing steel plate with a milled scanlined window
