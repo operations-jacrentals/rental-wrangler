@@ -20,6 +20,7 @@
   --h-olive:url("halo-olive.png");
   --h-canvas:url("halo-canvas.png");
   --h-circuit:url("halo-circuit.png");
+  --s-etch:url("steel-etch.png");
 }</style>
 <script src="dc-runtime.js"></script>
 </head>
@@ -2834,13 +2835,32 @@ html[data-skin="halo"] [data-hint="How far down this card you are"]{
    P2 · HEAD INVERSION — the bar is GLASS, the name plate is the ONLY steel.
    Jac: "The only 'Steel' part of the group header is the group name plate."
    --------------------------------------------------------------------------- */
-/* the bar: glass, and NEUTRAL — it never takes the group tone, so a hue-washed
-   background means "this thing is open" and only that (spec 4.3). */
+/* THE BAR IS A STEEL PANEL WITH A DIGITAL EXTENSION — Jac, 2026-08-01, against
+   a Halo reference: "Right now it doesn't feel like a steel panel with a digital
+   extension."
+
+   It had been a navy glass field with a circuit print, which reads digital-FIRST.
+   In the reference the circuitry is ENGRAVED INTO the metal — same value family
+   as the steel, catching light along the groove — and the panel is split into
+   facets by hard dark seams. So: steel base, steel grain, etched traces, seams.
+   The message board stays the actual glass; the etching is the extension, not a
+   replacement for the metal. Still NEUTRAL — no group tone (spec 4.3).
+
+   Layer order matters: seams on top (they cut the surface), then the etch, then
+   the grain, then the tonal gradient. */
 .scp1{
-  background-color:#0a141f!important;
-  background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.18) 2px 3px),var(--h-circuit)!important;
-  background-size:auto,512px 512px!important;
-  box-shadow:inset 0 1px 0 rgba(150,190,235,.09)!important;}
+  background-color:#222b38!important;
+  background-image:
+    /* facet seams — dark groove with a lit lip, the "more dark lines" ask */
+    linear-gradient(102deg, rgba(0,0,0,0) 57.4%, rgba(0,0,8,.34) 57.5%, rgba(0,0,8,.34) 57.9%,
+                    rgba(214,230,252,.06) 58.0%, rgba(0,0,0,0) 58.3%),
+    linear-gradient(102deg, rgba(0,0,0,0) 80.4%, rgba(0,0,8,.28) 80.5%, rgba(0,0,8,.28) 80.9%,
+                    rgba(214,230,252,.05) 81.0%, rgba(0,0,0,0) 81.3%),
+    var(--s-etch),
+    var(--rw-steel),
+    linear-gradient(180deg, rgba(226,240,255,.05), rgba(0,0,10,.16) 62%, rgba(0,0,10,.26))!important;
+  background-size:auto,auto,320px 320px,512px 512px,auto!important;
+  background-blend-mode:normal,normal,normal,normal,normal!important;}
 
 /* the name plate — a RAISED steel plate riveted to the glass bar. It keeps
    #193's 9px/14px chamfer as its OWN silhouette: the recess is gone, the rhyme

@@ -80,7 +80,7 @@ for (const f of ['archivo-latin-ext.woff2', 'archivo-latin.woff2']) {
        #rw-texroot :root block (inline chassis styles reach it via
        var(--rw-steel) etc.), so each url() is swapped for its data URI in
        place — no hoisting pass needed any more. */
-const TEXTURES = ['steel-grain.png', 'halo-steel.png', 'halo-olive.png', 'halo-canvas.png', 'halo-circuit.png'];
+const TEXTURES = ['steel-grain.png', 'steel-etch.png', 'halo-steel.png', 'halo-olive.png', 'halo-canvas.png', 'halo-circuit.png'];
 for (const f of TEXTURES) {
   const ref = `url("${f}")`;
   const n = html.split(ref).length - 1;
