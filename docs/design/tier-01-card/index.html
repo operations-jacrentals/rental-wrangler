@@ -3307,11 +3307,14 @@ html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]
 .scp1 .rw-screen .rw-board::after{content:none!important;}   /* screen carries the scanlines now */
 .scp1 .rw-screen .rw-board span{color:#8fd8ff!important;text-shadow:0 0 6px rgba(80,190,255,.40)!important;}
 
-/* the slots sit UNDER the board, on the same screen */
+/* the slots sit UNDER the board, on the same screen — one hairline divides the
+   two readouts so the stack reads as ORDERED lines, not a loose pile. */
 .scp1 .rw-screen .rw-rack{
   flex:0 0 auto!important;justify-content:flex-start!important;
-  overflow:hidden!important;min-height:13px!important;margin:0!important;padding:0!important;
-  background:none!important;box-shadow:none!important;
+  overflow:hidden!important;min-height:13px!important;margin:0!important;
+  padding:4px 0 0 0!important;
+  background:none!important;
+  box-shadow:inset 0 1px 0 rgba(140,190,240,.10)!important;
   order:2!important;}
 
 /* THE LASER'S FRAME reads again. Measured: the laser and its dark band are
