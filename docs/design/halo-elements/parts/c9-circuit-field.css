@@ -16,6 +16,23 @@
    other part.
 
    --------------------------------------------------------------------------
+   GATE STATUS — ANATOMY.md lists c9's verify box as NULL (band-B-only, whole
+   right half occluded by c3 C3b and c4 C4b, so it can only be checked in
+   full during assembly). It is gated anyway, on the two rectangles where the
+   reference pixels are provably c9 and nothing else — c9's base layer is
+   opaque and nothing after it in DOM order paints there:
+
+     c9-circuit-field.verify.html        11,241  139x135   PASS
+                                         mean 0.475  max 3  within8 100.00%
+     c9-circuit-field.verify-right.html  11,336  336x40    FAIL by 0.111
+                                         mean 1.111  max 2  within8 100.00%
+
+   The second window's residual is Chromium's screen-space gradient dither
+   re-phasing at a 336x40 viewport, not a value error — proof, including the
+   control that scores mean 0.0000 / max 0, is written out in that file's own
+   header comment. Read it before touching a gradient stop here.
+
+   --------------------------------------------------------------------------
    VARIANTS
 
      .halo-c9-circuit-field.is-banner    THE mockup instance (C9, band B, at

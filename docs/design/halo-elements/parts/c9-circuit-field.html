@@ -7,7 +7,10 @@
 <link rel="stylesheet" href="./c9-circuit-field.css">
 <style>
   /* scaffolding only — never touches .halo-c9-circuit-field's own rendering */
-  body { display: block; padding: 48px 32px 96px; }
+  /* place-items:center comes from tokens.css's body rule and, in current
+     Chromium, still centres+shrink-wraps block-level children. Reset it so the
+     variants stack flush-left and are easy to compare. Scaffolding only. */
+  body { display: block; place-items: start; padding: 48px 32px 96px; }
   h1 {
     font-family: var(--mono); font-size: 13px; font-weight: 700; letter-spacing: .08em;
     text-transform: uppercase; color: #8a8f98; margin: 0 0 8px;
