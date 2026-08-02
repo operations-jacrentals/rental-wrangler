@@ -1,0 +1,70 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>c10-banner-top-row verify — C10 (band B, verify is NULL)</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="./c10-banner-top-row.css">
+</head>
+<body>
+<!--
+  ===========================================================================
+  VERIFY IS NULL FOR THIS PART — and that is the anatomy's call, not a dodge.
+
+  ANATOMY.md c10: "Verify: null. Band-B-only. Verified during the assembly
+  phase instead." There is no window of _ref/original.png that shows c10 and
+  only c10: across its whole box (canvas x13..1281, y125..241) the mockup also
+  paints c11's red L bracket (which is INTERLEAVED into c10's own DOM), c12's
+  rivets, c1's status chips, and c9. Cropping the reference anywhere inside
+  that box compares this part against those parts too. So `check.py` against
+  original.png cannot be run for c10 — there is no honest (refX, refY, W, H).
+
+  WHAT THIS PAGE IS FOR
+  ---------------------------------------------------------------------------
+  A full-canvas 1292x635 stage carrying ONLY c10, at its TRUE canvas position
+  (--x:13px --y:125px). Two uses:
+
+    1. It is the exact input the ASSEMBLY phase composites — drop the other
+       parts onto the same stage, in the documented order (c11 between
+       .bt-graph and .bt-warm), and gate the whole band.
+    2. It renders on the same 1292-wide pixel grid as the original, so an
+       isolation diff (original.html with everything but c10's 22 children
+       hidden, vs this page) is exact. That diff was run during extraction
+       and is reported with the part — see the structured result.
+
+  Root placement is deliberately NOT rebased away here: --x/--y ARE the canvas
+  origin (13, 125). Every offset INSIDE the part is local — that is the whole
+  point of the split, and the numbers are shown in the sheet's comments.
+  ===========================================================================
+-->
+<div class="stage" style="width:1292px;height:635px">
+  <div class="halo-c10-banner-top-row is-banner" style="--x:13px; --y:125px">
+    <i class="bt-top"></i>
+    <i class="bt-face"></i>
+    <i class="bt-mod"></i>
+    <i class="bt-band2"></i>
+    <i class="bt-fallA"></i>
+    <i class="bt-fallB"></i>
+    <i class="bt-bev"></i>
+    <i class="bt-seam"></i>
+    <i class="bt-right"></i>
+    <i class="bt-ramp"><b></b></i>
+    <i class="bt-notch"></i>
+    <i class="bt-slate"></i>
+    <i class="bt-gut"></i>
+    <i class="bt-gutcap"></i>
+    <i class="bt-gutlow"></i>
+    <i class="bt-welltop"></i>
+    <i class="bt-well"></i>
+    <i class="bt-welledge"></i>
+    <i class="bt-wellr"></i>
+    <svg class="bt-graph" viewBox="0 0 36 73" fill="none">
+      <polyline points="0.5,29.6 3,29.6 25,14.6 34.6,5"
+                stroke="rgba(170,205,228,.30)" stroke-width="1.1"/>
+    </svg>
+    <i class="bt-warm"></i>
+    <i class="bt-rivet"></i>
+  </div>
+</div>
+</body>
+</html>

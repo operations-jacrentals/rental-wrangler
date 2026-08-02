@@ -1,0 +1,219 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>c10-banner-top-row — preview</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="./c10-banner-top-row.css">
+<style>
+  /* Page-scaffolding only — nothing here touches .halo-c10-banner-top-row or
+     any of its descendants, and none of it is part of the recreated artwork.
+     NOTHING on this page scales, filters or transforms the component: every
+     view below is 1:1. The "detail" views are just smaller .stage windows with
+     the SAME component slid left behind them, so what you see is the real
+     pixels, cropped — never a zoom. */
+  body { min-height: 100vh; padding: 48px 24px; align-items: flex-start; }
+  .sheet { display: flex; flex-direction: column; gap: 44px; align-items: center; max-width: 100%; }
+  h1 {
+    font-family: var(--mono); font-size: 13px; font-weight: 700;
+    letter-spacing: .08em; text-transform: uppercase; color: #6b7480;
+  }
+  h2 {
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    letter-spacing: .1em; text-transform: uppercase; color: #59616b;
+    border-top: 1px solid #1b2029; padding-top: 14px; width: 100%; max-width: 900px;
+  }
+  .demo { display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 100%; }
+  .scroll { max-width: 100%; overflow-x: auto; padding-bottom: 4px; }
+  .demo .stage { position: relative; border: 1px solid #1b2029; }
+  .row { display: flex; flex-wrap: wrap; gap: 28px; justify-content: center; }
+  .cap {
+    font-family: var(--mono); font-size: 11px; line-height: 1.55;
+    color: #6b7480; text-align: center; max-width: 900px;
+  }
+  .cap b { color: #9aa3ad; font-weight: 700; }
+  .cap code { color: #7d8894; }
+  .note {
+    font-family: var(--mono); font-size: 11px; line-height: 1.6;
+    color: #5a626c; max-width: 900px; text-align: left;
+    border-top: 1px solid #1b2029; padding-top: 16px;
+  }
+  .note b { color: #8a939d; font-weight: 700; }
+  .note code { color: #7d8894; }
+  .note table { border-collapse: collapse; margin: 10px 0 4px; }
+  .note td { padding: 2px 18px 2px 0; vertical-align: top; }
+  .note td:first-child { color: #7d8894; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <h1>c10 — banner top row</h1>
+
+  <!-- ============ .is-banner — C10, band B — THE ONLY VARIANT ============ -->
+  <div class="demo">
+    <div class="scroll">
+      <div class="stage" style="width:1308px;height:156px">
+        <div class="halo-c10-banner-top-row is-banner" style="--x:20px; --y:20px">
+          <i class="bt-top"></i>
+          <i class="bt-face"></i>
+          <i class="bt-mod"></i>
+          <i class="bt-band2"></i>
+          <i class="bt-fallA"></i>
+          <i class="bt-fallB"></i>
+          <i class="bt-bev"></i>
+          <i class="bt-seam"></i>
+          <i class="bt-right"></i>
+          <i class="bt-ramp"><b></b></i>
+          <i class="bt-notch"></i>
+          <i class="bt-slate"></i>
+          <i class="bt-gut"></i>
+          <i class="bt-gutcap"></i>
+          <i class="bt-gutlow"></i>
+          <i class="bt-welltop"></i>
+          <i class="bt-well"></i>
+          <i class="bt-welledge"></i>
+          <i class="bt-wellr"></i>
+          <svg class="bt-graph" viewBox="0 0 36 73" fill="none">
+            <polyline points="0.5,29.6 3,29.6 25,14.6 34.6,5"
+                      stroke="rgba(170,205,228,.30)" stroke-width="1.1"/>
+          </svg>
+          <i class="bt-warm"></i>
+          <i class="bt-rivet"></i>
+        </div>
+      </div>
+    </div>
+    <div class="cap">
+      <b>.is-banner</b> &middot; C10 &middot; band B &middot; canvas (13,&nbsp;125) &middot; the only instance in the mockup<br>
+      <code>--w:1268px --h:116px</code> &middot; <code>--well-x:24px --well-y:18px</code> &middot;
+      <code>--seam-x:211px --seam-w:814px</code> &middot; <code>--slate-x:59px --slate-w:143px</code><br>
+      <code>--ramp-x:190px --notch-x:649px --bev-x:60px --bev-w:150px</code><br>
+      <code>--right-x:1025px --right-w:20px</code> &middot;
+      <code>--fall-a-x:787px --fall-a-w:481px --fall-b-x:987px --fall-b-w:281px</code> &middot;
+      <code>--rivet-x:0.5px --rivet-y:107px</code><br>
+      Fully opaque across its whole box; nothing spills outside 1268&times;116.
+    </div>
+  </div>
+
+  <h2>1:1 detail windows — same component, cropped, never scaled</h2>
+
+  <div class="row">
+    <!-- LEFT END: gutters, warm column, graph well, slate, bevel, ramp -->
+    <div class="demo">
+      <div class="stage" style="width:260px;height:156px">
+        <div class="halo-c10-banner-top-row is-banner" style="--x:20px; --y:20px">
+          <i class="bt-top"></i><i class="bt-face"></i><i class="bt-mod"></i><i class="bt-band2"></i>
+          <i class="bt-fallA"></i><i class="bt-fallB"></i><i class="bt-bev"></i><i class="bt-seam"></i>
+          <i class="bt-right"></i><i class="bt-ramp"><b></b></i><i class="bt-notch"></i><i class="bt-slate"></i>
+          <i class="bt-gut"></i><i class="bt-gutcap"></i><i class="bt-gutlow"></i>
+          <i class="bt-welltop"></i><i class="bt-well"></i><i class="bt-welledge"></i><i class="bt-wellr"></i>
+          <svg class="bt-graph" viewBox="0 0 36 73" fill="none">
+            <polyline points="0.5,29.6 3,29.6 25,14.6 34.6,5"
+                      stroke="rgba(170,205,228,.30)" stroke-width="1.1"/>
+          </svg>
+          <i class="bt-warm"></i><i class="bt-rivet"></i>
+        </div>
+      </div>
+      <div class="cap">
+        <b>left end</b> — local x&nbsp;0..240<br>
+        gutters &middot; warm column &middot; graph well &middot; slate &middot; bevel &middot; ramp<br>
+        <code>--x:20px</code> into a 260px window
+      </div>
+    </div>
+
+    <!-- MIDDLE: the seam and the chamfer notch -->
+    <div class="demo">
+      <div class="stage" style="width:260px;height:156px">
+        <div class="halo-c10-banner-top-row is-banner" style="--x:-580px; --y:20px">
+          <i class="bt-top"></i><i class="bt-face"></i><i class="bt-mod"></i><i class="bt-band2"></i>
+          <i class="bt-fallA"></i><i class="bt-fallB"></i><i class="bt-bev"></i><i class="bt-seam"></i>
+          <i class="bt-right"></i><i class="bt-ramp"><b></b></i><i class="bt-notch"></i><i class="bt-slate"></i>
+          <i class="bt-gut"></i><i class="bt-gutcap"></i><i class="bt-gutlow"></i>
+          <i class="bt-welltop"></i><i class="bt-well"></i><i class="bt-welledge"></i><i class="bt-wellr"></i>
+          <svg class="bt-graph" viewBox="0 0 36 73" fill="none">
+            <polyline points="0.5,29.6 3,29.6 25,14.6 34.6,5"
+                      stroke="rgba(170,205,228,.30)" stroke-width="1.1"/>
+          </svg>
+          <i class="bt-warm"></i><i class="bt-rivet"></i>
+        </div>
+      </div>
+      <div class="cap">
+        <b>mid span</b> — local x&nbsp;580..840<br>
+        the recessed seam &middot; the chamfer notch at <code>--notch-x:649px</code><br>
+        <code>--x:-580px</code> into a 260px window
+      </div>
+    </div>
+
+    <!-- RIGHT END: exposed face strip, rim falloffs, the right edge -->
+    <div class="demo">
+      <div class="stage" style="width:288px;height:156px">
+        <div class="halo-c10-banner-top-row is-banner" style="--x:-1000px; --y:20px">
+          <i class="bt-top"></i><i class="bt-face"></i><i class="bt-mod"></i><i class="bt-band2"></i>
+          <i class="bt-fallA"></i><i class="bt-fallB"></i><i class="bt-bev"></i><i class="bt-seam"></i>
+          <i class="bt-right"></i><i class="bt-ramp"><b></b></i><i class="bt-notch"></i><i class="bt-slate"></i>
+          <i class="bt-gut"></i><i class="bt-gutcap"></i><i class="bt-gutlow"></i>
+          <i class="bt-welltop"></i><i class="bt-well"></i><i class="bt-welledge"></i><i class="bt-wellr"></i>
+          <svg class="bt-graph" viewBox="0 0 36 73" fill="none">
+            <polyline points="0.5,29.6 3,29.6 25,14.6 34.6,5"
+                      stroke="rgba(170,205,228,.30)" stroke-width="1.1"/>
+          </svg>
+          <i class="bt-warm"></i><i class="bt-rivet"></i>
+        </div>
+      </div>
+      <div class="cap">
+        <b>right end</b> — local x&nbsp;1000..1268<br>
+        exposed face strip at <code>--right-x:1025px</code> &middot; rim falloffs A + B<br>
+        <code>--x:-1000px</code> into a 288px window
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>Verify is NULL for this part — by design.</b> ANATOMY.md c10: band-B only,
+    <i>verified during the assembly phase instead</i>. No window of the reference PNG shows
+    c10 and only c10 — c11's red L bracket is <b>interleaved into c10's own DOM</b>, and c1,
+    c9 and c12 all paint inside its box. The extraction was instead proven by an isolation
+    diff: <code>original.html</code> with every element except c10's 22 children hidden,
+    rendered on its native 1292&times;635 grid, against
+    <code>c10-banner-top-row.verify.html</code> on the same grid —
+    <b>mean 0.000 · max 0 · 100.00% exact</b>, over the full canvas, not just the box.
+    Painted bbox measured back at exactly x&nbsp;13..1281, y&nbsp;125..241.
+
+    <br><br><b>Knobs</b> (all defaults reproduce the mockup exactly):
+    <table>
+      <tr><td>--x --y</td><td>placement, relative to the positioning ancestor</td></tr>
+      <tr><td>--w --h</td><td>1268 / 116. --w also spans .bt-top .bt-face .bt-mod .bt-band2 —
+        their gradient stops stay in px, so widening does not restretch the colour ramp</td></tr>
+      <tr><td>--seam-x --seam-w</td><td>211 / 814 — the recessed seam</td></tr>
+      <tr><td>--ramp-x</td><td>190 — the 45&deg; ramp lifting the seam to the top bevel</td></tr>
+      <tr><td>--notch-x</td><td>649 — the chamfer notch</td></tr>
+      <tr><td>--bev-x --bev-w</td><td>60 / 150 — darker blue bevel rows over the slate</td></tr>
+      <tr><td>--slate-x --slate-w</td><td>59 / 143 — texture panel, masked to feather right</td></tr>
+      <tr><td>--well-x --well-y</td><td>24 / 18 — moves the WHOLE well assembly: welltop,
+        well, welledge, wellr and the graph svg all hang off this anchor</td></tr>
+      <tr><td>--warm-x</td><td>defaults to <code>--well-x - 4</code> (= 20); override to decouple
+        the warm shadow column from the well</td></tr>
+      <tr><td>--right-x --right-w</td><td>1025 / 20 — hole-filler whose left edge is dictated by
+        c1's C1b chip. Move C1b and this must move with it</td></tr>
+      <tr><td>--fall-a-x --fall-a-w</td><td>787 / 481 — top-rim falloff A</td></tr>
+      <tr><td>--fall-b-x --fall-b-w</td><td>987 / 281 — top-rim falloff B</td></tr>
+      <tr><td>--rivet-x --rivet-y</td><td>0.5 / 107 — the half-pixel x is measured, not rounding</td></tr>
+    </table>
+
+    <b>Do not reorder the children.</b> DOM order is the compositing recipe:
+    <code>.bt-mod</code>, <code>.bt-fallA</code>, <code>.bt-fallB</code> and
+    <code>.bt-bev</code> are translucent modulation layers that only work over
+    <code>.bt-top</code> / <code>.bt-face</code> / <code>.bt-slate</code>. Nothing sets
+    <code>z-index</code>.
+
+    <br><br><b>Assembly note.</b> c11 used to live inside this DOM as
+    <code>.bt-div .bt-lv .bt-ltip .bt-lch</code>, between the graph svg and
+    <code>.bt-warm</code>. On the assembled canvas c11 must paint <i>after</i>
+    <code>.bt-graph</code> and <i>before</i> <code>.bt-warm</code> — the warm column fully
+    occludes c11's elbow in local x&nbsp;20..24. The two parts interleave; c11 is not a layer
+    that can sit wholly above or below this one. And <code>.bt-rivet</code> is all but
+    invisible under c12's rivet&nbsp;#4 (max delta 1 on a 2-row sliver) — it is correct here by
+    construction, since no pixel gate can catch it being wrong.
+  </div>
+</div>
+</body>
+</html>

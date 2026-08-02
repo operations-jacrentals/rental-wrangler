@@ -1,0 +1,357 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>c9-circuit-field — preview</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="./c9-circuit-field.css">
+<style>
+  /* scaffolding only — never touches .halo-c9-circuit-field's own rendering */
+  body { display: block; padding: 48px 32px 96px; }
+  h1 {
+    font-family: var(--mono); font-size: 13px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: #8a8f98; margin: 0 0 8px;
+  }
+  .lede {
+    font-family: var(--mono); font-size: 10.5px; line-height: 1.6; color: #5f6570;
+    max-width: 640px; margin: 0 0 34px;
+  }
+  .lede b { color: #8a8f98; font-weight: 700; }
+  figure { margin: 0 0 34px; }
+  .demo {
+    position: relative;
+    width: 381px; height: 175px;
+    background: var(--bg);
+    border: 1px solid #1b1f27;
+    border-radius: 4px;
+    overflow: visible; /* never clip the component */
+  }
+  /* the x4 view: a vector re-raster, NOT a pixel magnifier — geometry only */
+  .zoom { width: 1384px; height: 580px; overflow: hidden; }
+  .zoom > .halo-c9-circuit-field { transform: scale(4); transform-origin: 0 0; }
+  figcaption {
+    font-family: var(--mono); font-size: 10.5px; line-height: 1.55; color: #5f6570;
+    letter-spacing: .01em; margin-top: 10px; max-width: 660px;
+  }
+  figcaption b { color: #8a8f98; font-weight: 700; }
+  figcaption code { color: #6d7481; }
+  hr { border: 0; border-top: 1px solid #1b1f27; margin: 10px 0 34px; }
+</style>
+</head>
+<body>
+
+<h1>halo-c9-circuit-field — every variant</h1>
+<p class="lede">
+  341&times;135 opaque field: four stacked background layers, an inline SVG of
+  etched copper traces/pads/fills, and the re-parented <b>.microtext</b> block at
+  local (19,&nbsp;80.35). <b>Three of the four background layers are other
+  components' light baked in</b> — <code>--layer1</code> is c4 C4b's rim spill,
+  <code>--layer2</code> is c3 C3b's red wash, <code>--layer3</code> is c11
+  .bt-div's top shadow. Only <code>--layer4</code> belongs to c9.
+</p>
+
+<figure>
+  <div class="demo">
+  <div class="halo-c9-circuit-field is-banner" style="--x:20px; --y:20px">
+    <svg width="341" height="135" viewBox="0 0 341 135">
+      <g class="halo">
+        <path d="M28.5 0 L50.5 22.5 H144.5 L160 7"/>
+        <path d="M0 4.5 H26 L49 27.5 H151.5 L169 10"/>
+        <path d="M0 8.5 H25.5 L49 32 H154 L174 12"/>
+        <path d="M18 14 H24.5 L47 36.5 H160 L180 16.5"/>
+        <path d="M12.5 19 H23.5 L45.5 41 M33 41 H173"/>
+        <path d="M33 36.5 L43 46 H174.5 L189 31"/>
+        <path d="M8 69.5 H21.5 L41.5 50 H178 L189 39"/>
+        <path d="M26 80.5 L51 55.5 H174 L185 44.5"/>
+        <path d="M38.5 83.5 L57.5 64.5 H122.5"/>
+        <path d="M45 60 H181 L189 52"/>
+        <path d="M46 95.5 L55 86.5 H161"/>
+      </g>
+      <g class="cu">
+        <!-- upper fan: six nested troughs, 45deg chamfers both ends -->
+        <path d="M28.5 0 L50.5 22.5 H144.5 L160 7"/>
+        <path d="M0 4.5 H26 L49 27.5 H151.5 L169 10"/>
+        <path d="M0 8.5 H25.5 L49 32 H154 L174 12"/>
+        <path d="M18 14 H24.5 L47 36.5 H160 L180 16.5"/>
+        <path d="M12.5 19 H23.5 L45.5 41"/>
+        <path d="M33 41 H173"/>
+        <path d="M33 36.5 L43 46 H174.5 L189 31"/>
+        <!-- lower group: three traces climbing out of the text block -->
+        <path d="M8 69.5 H21.5 L41.5 50 H178 L189 39"/>
+        <path d="M26 80.5 L51 55.5 H174 L185 44.5"/>
+        <path d="M38.5 83.5 L57.5 64.5 H122.5"/>
+        <path d="M45 60 H181 L189 52"/>
+        <path d="M46 95.5 L55 86.5 H161"/>
+        <path d="M172 97 L182 106.5"/>
+        <!-- left-edge stubs, top rail, text-block outline -->
+        <path d="M0 32.8 H9"/>
+        <path d="M13.5 38 V44.5"/>
+        <path d="M15 48 V56"/>
+        <path d="M0 80.5 H22"/>
+        <path d="M22 121 L16 127 H1"/>
+        <path d="M80 0 H124"/>
+        <!-- right half, below the conduit: via columns to the bottom rail -->
+        <path d="M195 110 L201.5 103.5 V134"/>
+        <path d="M200 97 L206.5 90.5 V134"/>
+        <path d="M211 100 L217.5 93.5 V134"/>
+        <path d="M223 101 L229.5 94.5 V134"/>
+        <path d="M229 104 L235.5 97.5 V134"/>
+        <path d="M268 96 L274.5 89.5 V134"/>
+        <path d="M273 98 L279.5 91.5 V134"/>
+        <path d="M295 92 L301.5 85.5 V134"/>
+        <path d="M302 93 L308.5 86.5 V134"/>
+        <path d="M332 98 L338.5 91.5 V134"/>
+      </g>
+      <g class="cud">
+        <!-- pads -->
+        <circle cx="11.5" cy="32.8" r="2.1"/>
+        <circle cx="10.5" cy="63.2" r="2.9"/>
+        <circle cx="34.5" cy="41"   r="1.8"/>
+        <circle cx="173"  cy="40.5" r="1.8"/>
+        <circle cx="48.5" cy="56.5" r="1.5"/>
+        <circle cx="163"  cy="86.5" r="1.5"/>
+        <circle cx="186"  cy="88.5" r="1.2"/>
+        <circle cx="183"  cy="108"  r="1.9"/>
+      </g>
+      <g class="cu">
+        <circle cx="76.4" cy="15.4" r="1.9"/>
+        <circle cx="86.4" cy="15.4" r="1.9"/>
+        <rect x="12.5" y="13"   width="5.5" height="5.5"/>
+        <rect x="166.5" y="82.5" width="11" height="9" rx="2"/>
+      </g>
+      <g class="cuf">
+        <rect x="124"   y="63"  width="3.6" height="3.8"/>
+        <rect x="132.5" y="63"  width="4"   height="3.8"/>
+        <rect x="286.5" y="121.6" width="10.5" height="2.6"/>
+        <rect x="286.5" y="129.6" width="10.5" height="2.2"/>
+        <rect x="325"   y="107.6" width="11"   height="2.2"/>
+        <rect x="333"   y="95.6"  width="8.5"  height="2.2"/>
+      </g>
+    </svg>
+    <div class="microtext">
+      <div>MJOLNIR-C</div>
+      <div>&nbsp;</div>
+      <div style="top:.55px">LINK ARM 0x8F7 CAL 05.487</div>
+      <div>SEQ.0026.1</div>
+      <div>CHKSUM 4E32 90A7 5B</div>
+      <div>SYS.STAT [6] 088 CHAIN.SLIP_LOCK_STRESS_A1.2</div>
+      <div>LOADOUT RD 0006 @UTP07LRD01</div>
+      <div>SHIELD 100</div>
+      <div>TEMP 028</div>
+      <div>CROSS-TAPHD 4302</div>
+    </div>
+  </div>
+  </div>
+  <figcaption>
+    <b>is-banner</b> — instance C9, band B, canvas (11,&nbsp;241). The mockup
+    instance and the one the pixel gate verifies. Sets no vars: every rule
+    default already IS C9. All four <code>--layer1..4</code> on.
+  </figcaption>
+</figure>
+
+<figure>
+  <div class="demo">
+  <div class="halo-c9-circuit-field is-unlit" style="--x:20px; --y:20px">
+    <svg width="341" height="135" viewBox="0 0 341 135">
+      <g class="halo">
+        <path d="M28.5 0 L50.5 22.5 H144.5 L160 7"/>
+        <path d="M0 4.5 H26 L49 27.5 H151.5 L169 10"/>
+        <path d="M0 8.5 H25.5 L49 32 H154 L174 12"/>
+        <path d="M18 14 H24.5 L47 36.5 H160 L180 16.5"/>
+        <path d="M12.5 19 H23.5 L45.5 41 M33 41 H173"/>
+        <path d="M33 36.5 L43 46 H174.5 L189 31"/>
+        <path d="M8 69.5 H21.5 L41.5 50 H178 L189 39"/>
+        <path d="M26 80.5 L51 55.5 H174 L185 44.5"/>
+        <path d="M38.5 83.5 L57.5 64.5 H122.5"/>
+        <path d="M45 60 H181 L189 52"/>
+        <path d="M46 95.5 L55 86.5 H161"/>
+      </g>
+      <g class="cu">
+        <!-- upper fan: six nested troughs, 45deg chamfers both ends -->
+        <path d="M28.5 0 L50.5 22.5 H144.5 L160 7"/>
+        <path d="M0 4.5 H26 L49 27.5 H151.5 L169 10"/>
+        <path d="M0 8.5 H25.5 L49 32 H154 L174 12"/>
+        <path d="M18 14 H24.5 L47 36.5 H160 L180 16.5"/>
+        <path d="M12.5 19 H23.5 L45.5 41"/>
+        <path d="M33 41 H173"/>
+        <path d="M33 36.5 L43 46 H174.5 L189 31"/>
+        <!-- lower group: three traces climbing out of the text block -->
+        <path d="M8 69.5 H21.5 L41.5 50 H178 L189 39"/>
+        <path d="M26 80.5 L51 55.5 H174 L185 44.5"/>
+        <path d="M38.5 83.5 L57.5 64.5 H122.5"/>
+        <path d="M45 60 H181 L189 52"/>
+        <path d="M46 95.5 L55 86.5 H161"/>
+        <path d="M172 97 L182 106.5"/>
+        <!-- left-edge stubs, top rail, text-block outline -->
+        <path d="M0 32.8 H9"/>
+        <path d="M13.5 38 V44.5"/>
+        <path d="M15 48 V56"/>
+        <path d="M0 80.5 H22"/>
+        <path d="M22 121 L16 127 H1"/>
+        <path d="M80 0 H124"/>
+        <!-- right half, below the conduit: via columns to the bottom rail -->
+        <path d="M195 110 L201.5 103.5 V134"/>
+        <path d="M200 97 L206.5 90.5 V134"/>
+        <path d="M211 100 L217.5 93.5 V134"/>
+        <path d="M223 101 L229.5 94.5 V134"/>
+        <path d="M229 104 L235.5 97.5 V134"/>
+        <path d="M268 96 L274.5 89.5 V134"/>
+        <path d="M273 98 L279.5 91.5 V134"/>
+        <path d="M295 92 L301.5 85.5 V134"/>
+        <path d="M302 93 L308.5 86.5 V134"/>
+        <path d="M332 98 L338.5 91.5 V134"/>
+      </g>
+      <g class="cud">
+        <!-- pads -->
+        <circle cx="11.5" cy="32.8" r="2.1"/>
+        <circle cx="10.5" cy="63.2" r="2.9"/>
+        <circle cx="34.5" cy="41"   r="1.8"/>
+        <circle cx="173"  cy="40.5" r="1.8"/>
+        <circle cx="48.5" cy="56.5" r="1.5"/>
+        <circle cx="163"  cy="86.5" r="1.5"/>
+        <circle cx="186"  cy="88.5" r="1.2"/>
+        <circle cx="183"  cy="108"  r="1.9"/>
+      </g>
+      <g class="cu">
+        <circle cx="76.4" cy="15.4" r="1.9"/>
+        <circle cx="86.4" cy="15.4" r="1.9"/>
+        <rect x="12.5" y="13"   width="5.5" height="5.5"/>
+        <rect x="166.5" y="82.5" width="11" height="9" rx="2"/>
+      </g>
+      <g class="cuf">
+        <rect x="124"   y="63"  width="3.6" height="3.8"/>
+        <rect x="132.5" y="63"  width="4"   height="3.8"/>
+        <rect x="286.5" y="121.6" width="10.5" height="2.6"/>
+        <rect x="286.5" y="129.6" width="10.5" height="2.2"/>
+        <rect x="325"   y="107.6" width="11"   height="2.2"/>
+        <rect x="333"   y="95.6"  width="8.5"  height="2.2"/>
+      </g>
+    </svg>
+    <div class="microtext">
+      <div>MJOLNIR-C</div>
+      <div>&nbsp;</div>
+      <div style="top:.55px">LINK ARM 0x8F7 CAL 05.487</div>
+      <div>SEQ.0026.1</div>
+      <div>CHKSUM 4E32 90A7 5B</div>
+      <div>SYS.STAT [6] 088 CHAIN.SLIP_LOCK_STRESS_A1.2</div>
+      <div>LOADOUT RD 0006 @UTP07LRD01</div>
+      <div>SHIELD 100</div>
+      <div>TEMP 028</div>
+      <div>CROSS-TAPHD 4302</div>
+    </div>
+  </div>
+  </div>
+  <figcaption>
+    <b>is-unlit</b> — <b>DERIVED, not in the mockup.</b> Sets
+    <code>--layer1:none --layer2:none --layer3:none</code>, leaving only c9's own
+    base ramp. This is what the field looks like with the borrowed light removed —
+    use it when c9 is lifted away from C3b&nbsp;/&nbsp;C4b&nbsp;/&nbsp;C11, where
+    the baked-in shadow and wash would be a lie.
+  </figcaption>
+</figure>
+
+<hr>
+
+<figure>
+  <div class="demo zoom">
+  <div class="halo-c9-circuit-field is-banner" style="--x:5px; --y:5px">
+    <svg width="341" height="135" viewBox="0 0 341 135">
+      <g class="halo">
+        <path d="M28.5 0 L50.5 22.5 H144.5 L160 7"/>
+        <path d="M0 4.5 H26 L49 27.5 H151.5 L169 10"/>
+        <path d="M0 8.5 H25.5 L49 32 H154 L174 12"/>
+        <path d="M18 14 H24.5 L47 36.5 H160 L180 16.5"/>
+        <path d="M12.5 19 H23.5 L45.5 41 M33 41 H173"/>
+        <path d="M33 36.5 L43 46 H174.5 L189 31"/>
+        <path d="M8 69.5 H21.5 L41.5 50 H178 L189 39"/>
+        <path d="M26 80.5 L51 55.5 H174 L185 44.5"/>
+        <path d="M38.5 83.5 L57.5 64.5 H122.5"/>
+        <path d="M45 60 H181 L189 52"/>
+        <path d="M46 95.5 L55 86.5 H161"/>
+      </g>
+      <g class="cu">
+        <!-- upper fan: six nested troughs, 45deg chamfers both ends -->
+        <path d="M28.5 0 L50.5 22.5 H144.5 L160 7"/>
+        <path d="M0 4.5 H26 L49 27.5 H151.5 L169 10"/>
+        <path d="M0 8.5 H25.5 L49 32 H154 L174 12"/>
+        <path d="M18 14 H24.5 L47 36.5 H160 L180 16.5"/>
+        <path d="M12.5 19 H23.5 L45.5 41"/>
+        <path d="M33 41 H173"/>
+        <path d="M33 36.5 L43 46 H174.5 L189 31"/>
+        <!-- lower group: three traces climbing out of the text block -->
+        <path d="M8 69.5 H21.5 L41.5 50 H178 L189 39"/>
+        <path d="M26 80.5 L51 55.5 H174 L185 44.5"/>
+        <path d="M38.5 83.5 L57.5 64.5 H122.5"/>
+        <path d="M45 60 H181 L189 52"/>
+        <path d="M46 95.5 L55 86.5 H161"/>
+        <path d="M172 97 L182 106.5"/>
+        <!-- left-edge stubs, top rail, text-block outline -->
+        <path d="M0 32.8 H9"/>
+        <path d="M13.5 38 V44.5"/>
+        <path d="M15 48 V56"/>
+        <path d="M0 80.5 H22"/>
+        <path d="M22 121 L16 127 H1"/>
+        <path d="M80 0 H124"/>
+        <!-- right half, below the conduit: via columns to the bottom rail -->
+        <path d="M195 110 L201.5 103.5 V134"/>
+        <path d="M200 97 L206.5 90.5 V134"/>
+        <path d="M211 100 L217.5 93.5 V134"/>
+        <path d="M223 101 L229.5 94.5 V134"/>
+        <path d="M229 104 L235.5 97.5 V134"/>
+        <path d="M268 96 L274.5 89.5 V134"/>
+        <path d="M273 98 L279.5 91.5 V134"/>
+        <path d="M295 92 L301.5 85.5 V134"/>
+        <path d="M302 93 L308.5 86.5 V134"/>
+        <path d="M332 98 L338.5 91.5 V134"/>
+      </g>
+      <g class="cud">
+        <!-- pads -->
+        <circle cx="11.5" cy="32.8" r="2.1"/>
+        <circle cx="10.5" cy="63.2" r="2.9"/>
+        <circle cx="34.5" cy="41"   r="1.8"/>
+        <circle cx="173"  cy="40.5" r="1.8"/>
+        <circle cx="48.5" cy="56.5" r="1.5"/>
+        <circle cx="163"  cy="86.5" r="1.5"/>
+        <circle cx="186"  cy="88.5" r="1.2"/>
+        <circle cx="183"  cy="108"  r="1.9"/>
+      </g>
+      <g class="cu">
+        <circle cx="76.4" cy="15.4" r="1.9"/>
+        <circle cx="86.4" cy="15.4" r="1.9"/>
+        <rect x="12.5" y="13"   width="5.5" height="5.5"/>
+        <rect x="166.5" y="82.5" width="11" height="9" rx="2"/>
+      </g>
+      <g class="cuf">
+        <rect x="124"   y="63"  width="3.6" height="3.8"/>
+        <rect x="132.5" y="63"  width="4"   height="3.8"/>
+        <rect x="286.5" y="121.6" width="10.5" height="2.6"/>
+        <rect x="286.5" y="129.6" width="10.5" height="2.2"/>
+        <rect x="325"   y="107.6" width="11"   height="2.2"/>
+        <rect x="333"   y="95.6"  width="8.5"  height="2.2"/>
+      </g>
+    </svg>
+    <div class="microtext">
+      <div>MJOLNIR-C</div>
+      <div>&nbsp;</div>
+      <div style="top:.55px">LINK ARM 0x8F7 CAL 05.487</div>
+      <div>SEQ.0026.1</div>
+      <div>CHKSUM 4E32 90A7 5B</div>
+      <div>SYS.STAT [6] 088 CHAIN.SLIP_LOCK_STRESS_A1.2</div>
+      <div>LOADOUT RD 0006 @UTP07LRD01</div>
+      <div>SHIELD 100</div>
+      <div>TEMP 028</div>
+      <div>CROSS-TAPHD 4302</div>
+    </div>
+  </div>
+  </div>
+  <figcaption>
+    <b>is-banner, &times;4 vector zoom</b> — scaffolding, not a variant. A CSS
+    <code>scale(4)</code> re-rasterises the part, so this shows <em>geometry</em>
+    (trace routing, pad radii, the 4.55px micro-text pitch and its 2.4&times;2.15px
+    gutter blocks) and deliberately <em>not</em> the true 1:1 pixel result. Judge
+    fidelity from the 1:1 views above and from the gate, never from this one.
+  </figcaption>
+</figure>
+
+</body>
+</html>

@@ -1,0 +1,493 @@
+/* ==========================================================================
+   C10 — BANNER TOP ROW  (halo-c10-banner-top-row)
+
+   The full-width machined "top row" of the banner: the horizontal band stack
+   that sits above the face, the face itself, its cross-lit modulation layers
+   and right-hand falloffs, the recessed seam with its 45deg ramp and chamfer
+   notch, the slate texture panel, the left frame gutters, the little graph
+   well (with grid + polyline trace), the warm shadow column, the exposed face
+   strip on the right, and one rivet. 22 painted children, every colour a
+   measured per-scanline value from the reference.
+
+   Lifted verbatim from _ref/original.html: CSS 520-719 + 750-766 (the whole
+   `#btr` block EXCEPT 721-749, which is c11's red L bracket) and markup
+   932-955 + 960-962 (`#btr`'s children EXCEPT 956-959, again c11).
+
+   Shared deps: NONE. No SVG <defs>, no tokens.css primitives, no filters, no
+   clip-paths. The one inline <svg> (.bt-graph) carries an inline stroke and
+   needs no defs at all, so nothing here can collide with another part.
+
+   --------------------------------------------------------------------------
+   THE REBASE (this is the largest mechanical rebase in the kit)
+
+   In the original, `#btr` was `position:absolute; inset:0` — i.e. the FULL
+   1292x635 stage — so all 22 children carried stage-absolute CANVAS
+   coordinates. The instance's own painted box is x13..1281, y125..241, so the
+   root origin is canvas (13, 125) and EVERY child offset below is the
+   original value minus (13, 125). Arithmetic is shown inline on each rule.
+
+   Two further canvas-space values had to be rewritten, not just moved:
+     * .bt-graph's viewBox was "37 143 36 73" (canvas user units). Because the
+       element is 36x73 CSS px and the viewBox is 36x73 user units, the mapping
+       is a pure 1:1 translation, so viewBox "0 0 36 73" is exactly equivalent.
+     * its polyline points were canvas coords
+         37.5,172.6  40,172.6  62,157.6  71.6,148
+       minus the viewBox origin (37, 143) ->
+          0.5,29.6    3,29.6   25,14.6   34.6,5
+       (see MARKUP below — the points live in the markup, not this sheet).
+
+   Also dropped: `#btr i { position:absolute; display:block }` became
+   `.halo-c10-banner-top-row > i`. Without it every child collapses into
+   static flow — it is load-bearing, not boilerplate. `.bt-ramp b` and
+   `.bt-graph` were the only two children that declared their own position.
+
+   --------------------------------------------------------------------------
+   DOM ORDER IS THE COMPOSITING RECIPE — DO NOT REORDER
+
+     .bt-top .bt-face .bt-mod .bt-band2 .bt-fallA .bt-fallB .bt-bev .bt-seam
+     .bt-right .bt-ramp .bt-notch .bt-slate .bt-gut .bt-gutcap .bt-gutlow
+     .bt-welltop .bt-well .bt-welledge .bt-wellr .bt-graph .bt-warm .bt-rivet
+
+   .bt-mod / .bt-fallA / .bt-fallB / .bt-bev are translucent modulation layers
+   whose result depends entirely on .bt-top / .bt-face / .bt-slate underneath.
+   Nothing here sets z-index; source order alone does the stacking.
+
+   --------------------------------------------------------------------------
+   VARIANTS
+
+     .halo-c10-banner-top-row.is-banner   C10, band B, canvas (13, 125),
+                                          1268 x 116. The ONLY instance in the
+                                          mockup — there is exactly one, so
+                                          there is exactly one variant. It
+                                          restates every fitted number so the
+                                          class stays self-describing even if
+                                          the sheet defaults are later tuned.
+
+   The component is fully opaque across its whole 1268x116 box (.bt-top +
+   .bt-face tile it edge to edge with opaque gradients) and NOTHING spills
+   outside it — no glow, no blur, no bloom. Whatever it is dropped on top of
+   is completely hidden. On the assembled canvas that is deliberate: c10
+   paints over c13's banner shell.
+
+   --------------------------------------------------------------------------
+   KNOBS a designer can safely turn (CSS custom properties on the root; every
+   default equals the measured C10 value, so leaving them alone reproduces the
+   mockup exactly). All are LOCAL to the part — none are canvas coordinates.
+
+     placement    --x  --y            top-left, relative to whatever ancestor
+                                       positions the part.
+     box          --w  --h            1268 x 116. --w also drives the four
+                                       full-bleed bands (.bt-top .bt-face
+                                       .bt-mod .bt-band2), which span the
+                                       component edge to edge. NOTE their
+                                       gradients are stated in px, so widening
+                                       --w widens the box but does not restretch
+                                       the colour stops.
+     seam         --seam-x --seam-w   211 / 814. The recessed seam.
+     ramp         --ramp-x            190. The 45deg ramp that lifts the seam
+                                       up to the top bevel.
+     notch        --notch-x           649. The small chamfer notch.
+     bevel        --bev-x --bev-w     60 / 150. The darker blue bevel rows over
+                                       the slate.
+     slate        --slate-x --slate-w 59 / 143. The texture panel (feathers out
+                                       to the right via a mask).
+     graph well   --well-x --well-y   24 / 18. Moves the WHOLE well assembly —
+                                       .bt-welltop (-1,-4), .bt-well (+1,0),
+                                       .bt-welledge (0,-1), .bt-wellr (+34,0)
+                                       and .bt-graph (0,0) all hang off it.
+     warm column  --warm-x            defaults to --well-x - 4 (= 20), so it
+                                       follows the well; override to decouple.
+     face strip   --right-x --right-w 1025 / 20. The exposed strip right of the
+                                       PROMISED chip. It is a HOLE-FILLER whose
+                                       left edge is dictated by c1's C1b chip —
+                                       move C1b and this must move with it.
+     rim falloff  --fall-a-x --fall-a-w   787 / 481
+                  --fall-b-x --fall-b-w   987 / 281
+     rivet        --rivet-x --rivet-y 0.5 / 107. See the trap note below.
+
+   TRAP: .bt-rivet is covered by c12's loose rivet #4 in the assembly, all but
+   a 2-row sliver worth a max delta of 1. It is effectively invisible, so a
+   pixel gate cannot catch it being wrong. It is here, last in DOM order, at
+   its measured half-pixel x, by construction.
+
+   --------------------------------------------------------------------------
+   MARKUP (copy verbatim — order matters, and the svg is not optional)
+
+   <div class="halo-c10-banner-top-row is-banner" style="--x:13px; --y:125px">
+     <i class="bt-top"></i>
+     <i class="bt-face"></i>
+     <i class="bt-mod"></i>
+     <i class="bt-band2"></i>
+     <i class="bt-fallA"></i>
+     <i class="bt-fallB"></i>
+     <i class="bt-bev"></i>
+     <i class="bt-seam"></i>
+     <i class="bt-right"></i>
+     <i class="bt-ramp"><b></b></i>
+     <i class="bt-notch"></i>
+     <i class="bt-slate"></i>
+     <i class="bt-gut"></i>
+     <i class="bt-gutcap"></i>
+     <i class="bt-gutlow"></i>
+     <i class="bt-welltop"></i>
+     <i class="bt-well"></i>
+     <i class="bt-welledge"></i>
+     <i class="bt-wellr"></i>
+     <svg class="bt-graph" viewBox="0 0 36 73" fill="none">
+       <polyline points="0.5,29.6 3,29.6 25,14.6 34.6,5"
+                 stroke="rgba(170,205,228,.30)" stroke-width="1.1"/>
+     </svg>
+     <i class="bt-warm"></i>
+     <i class="bt-rivet"></i>
+   </div>
+
+   NOTE on assembly: c11 (the red L bracket) used to live inside this DOM as
+   .bt-div / .bt-lv / .bt-ltip / .bt-lch, sitting between .bt-wellr's group and
+   .bt-warm. On the assembled canvas c11 must therefore paint AFTER .bt-graph
+   and BEFORE .bt-warm — .bt-warm fully occludes c11's .bt-lch in the column
+   x33..37 (canvas), which is x20..24 local. c10 and c11 interleave; c11 is not
+   a layer that can sit wholly above or below this part.
+   ========================================================================== */
+
+
+/* --------------------------------------------------------------------------
+   ROOT  (was `#btr { position:absolute; inset:0; pointer-events:none }`,
+   original line 525 — `inset:0` was the whole stage; here it is the part's
+   own 1268x116 painted box.)
+   -------------------------------------------------------------------------- */
+.halo-c10-banner-top-row {
+  --x: 0px;
+  --y: 0px;
+  --w: 1268px;
+  --h: 116px;
+
+  --seam-x: 211px;
+  --seam-w: 814px;
+  --ramp-x: 190px;
+  --notch-x: 649px;
+  --bev-x: 60px;
+  --bev-w: 150px;
+  --slate-x: 59px;
+  --slate-w: 143px;
+  --well-x: 24px;
+  --well-y: 18px;
+  --warm-x: calc(var(--well-x) - 4px);
+  --right-x: 1025px;
+  --right-w: 20px;
+  --fall-a-x: 787px;
+  --fall-a-w: 481px;
+  --fall-b-x: 987px;
+  --fall-b-w: 281px;
+  --rivet-x: 0.5px;
+  --rivet-y: 107px;
+
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--w);
+  height: var(--h);
+  pointer-events: none;
+}
+
+/* was `#btr i { position:absolute; display:block }` (original line 526).
+   LOAD-BEARING: none of the .bt-* rules below declare a position of their
+   own, so without this every child collapses into static flow. */
+.halo-c10-banner-top-row > i { position: absolute; display: block; }
+
+
+/* --------------------------------------------------------------------------
+   VARIANT — the single mockup instance
+   -------------------------------------------------------------------------- */
+/* C10 · band B · canvas (13,125) 1268x116. Every value restated so the class
+   is self-describing; all of them match the sheet defaults above. */
+.halo-c10-banner-top-row.is-banner {
+  --w: 1268px;
+  --h: 116px;
+  --seam-x: 211px;   --seam-w: 814px;
+  --ramp-x: 190px;
+  --notch-x: 649px;
+  --bev-x: 60px;     --bev-w: 150px;
+  --slate-x: 59px;   --slate-w: 143px;
+  --well-x: 24px;    --well-y: 18px;
+  --warm-x: 20px;
+  --right-x: 1025px; --right-w: 20px;
+  --fall-a-x: 787px; --fall-a-w: 481px;
+  --fall-b-x: 987px; --fall-b-w: 281px;
+  --rivet-x: 0.5px;  --rivet-y: 107px;
+}
+
+
+/* --- horizontal band stack above the face, canvas y125..143 --------------
+   rebase: left 13-13 = 0 · top 125-125 = 0 ------------------------------- */
+.halo-c10-banner-top-row .bt-top {
+  left: 0; top: 0; width: var(--w); height: 18px;
+  background:linear-gradient(180deg,
+    #0c0f15 0 1px,   #0c111a 1px 3px, #090c12 3px 4px, #1c1e21 4px 5px,
+    #5c6469 5px 6px, #5f686f 6px 7px, #363c42 7px 8px, #2c2e31 8px 9px,
+    #2e3032 9px 10px,#1b1c1f 10px 11px,#000002 11px 12px,#191819 12px 13px,
+    #4c4a51 13px 14px,#61606d 14px 15px,#6c7181 15px 16px,#656b7d 16px 17px,
+    #424759 17px 18px);
+}
+
+/* --- the face itself, canvas y143..241 -----------------------------------
+   rebase: left 13-13 = 0 · top 143-125 = 18 ------------------------------ */
+.halo-c10-banner-top-row .bt-face {
+  left: 0; top: 18px; width: var(--w); height: 98px;
+  background:linear-gradient(180deg,
+    #313644 0 1px,   #303340 1px 2px,  #2f313f 2px 6px,  #2f313f 6px 7px,
+    #303240 7px 8px, #313340 8px 9px,  #333542 9px 19px, #343745 19px 21px,
+    #333643 21px 22px,#333543 22px 23px,#333541 23px 24px,#33343f 24px 29px,
+    #34323c 29px 30px,#32303a 30px 31px,#302e37 31px 32px,#2f2d35 32px 35px,
+    #2e2b33 35px 38px,#2c2a30 38px 41px,#2d292e 41px 48px,#2c272d 48px 51px,
+    #2a252b 51px 54px,#282329 54px 57px,#272329 57px 61px,#262129 61px 66px,
+    #252028 66px 73px,#251f28 73px 80px,#292029 80px 81px,#2b1f27 81px 82px,
+    #25171d 82px 83px,#221219 83px 84px,#190d17 84px 85px,#262324 85px 90px,
+    #232022 90px 96px,#141014 96px 97px,#0e090c 97px 98px);
+}
+
+/* faint blue-grey cross-lighting: the face is brighter around x420..500 and
+   x880..980, dimmest at x100..140 and x580..700 (measured on rows 143..150)
+   rebase: left 13-13 = 0 · top 143-125 = 18 ------------------------------ */
+.halo-c10-banner-top-row .bt-mod {
+  left: 0; top: 18px; width: var(--w); height: 14px;
+  background:linear-gradient(90deg,
+    rgba(133,163,225,.000)   0px, rgba(133,163,225,.030) 150px,
+    rgba(133,163,225,.035) 250px, rgba(133,163,225,.070) 310px,
+    rgba(133,163,225,.088) 410px, rgba(133,163,225,.088) 460px,
+    rgba(133,163,225,.060) 510px, rgba(133,163,225,.000) 557px,
+    rgba(133,163,225,.035) 607px, rgba(133,163,225,.010) 657px,
+    rgba(133,163,225,.010) 707px, rgba(133,163,225,.020) 757px,
+    rgba(133,163,225,.045) 807px, rgba(133,163,225,.070) 857px,
+    rgba(133,163,225,.088) 907px, rgba(133,163,225,.105) 957px,
+    rgba(133,163,225,.050) 1007px,rgba(133,163,225,.050) 1268px);
+}
+
+/* the canvas y157..171 continuation of that band, no cross-lighting
+   rebase: left 13-13 = 0 · top 157-125 = 32 ------------------------------ */
+.halo-c10-banner-top-row .bt-band2 {
+  left: 0; top: 32px; width: var(--w); height: 14px;
+  background:linear-gradient(180deg,
+    #343745 0 5px,#333643 5px 6px,#333543 6px 7px,#333541 7px 8px,#33343f 8px 14px);
+}
+
+/* falloff of the grey top rim towards the right end of the banner
+   rebase: left 800-13 = 787 · top 129-125 = 4 ---------------------------- */
+.halo-c10-banner-top-row .bt-fallA {
+  left: var(--fall-a-x); top: 4px; width: var(--fall-a-w); height: 11px;
+  background:linear-gradient(90deg, rgba(0,0,0,0) 0px, rgba(0,0,0,.06) 60px,
+             rgba(0,0,0,.13) 140px, rgba(0,0,0,.20) 210px, rgba(0,0,0,.24) 260px,
+             rgba(0,0,0,.24) 481px);
+}
+/* rebase: left 1000-13 = 987 · top 140-125 = 15 -------------------------- */
+.halo-c10-banner-top-row .bt-fallB {
+  left: var(--fall-b-x); top: 15px; width: var(--fall-b-w); height: 3px;
+  background:linear-gradient(90deg, rgba(0,0,0,0) 0px, rgba(0,0,0,.14) 60px,
+             rgba(0,0,0,.14) 281px);
+}
+
+/* the blue bevel rows canvas 138..142 are markedly darker over the slate,
+   canvas x73..223 · rebase: left 73-13 = 60 · top 138-125 = 13 ----------- */
+.halo-c10-banner-top-row .bt-bev {
+  left: var(--bev-x); top: 13px; width: var(--bev-w); height: 5px;
+  background:linear-gradient(90deg, rgba(18,10,28,.26) 0px, rgba(18,10,28,.26) 60px,
+             rgba(18,10,28,.14) 100px, rgba(18,10,28,.07) 150px);
+}
+
+/* --- the recessed seam that runs canvas x224..1038 at y151..164 ----------
+   rebase: left 224-13 = 211 · top 151-125 = 26 --------------------------- */
+.halo-c10-banner-top-row .bt-seam {
+  left: var(--seam-x); top: 26px; width: var(--seam-w); height: 13px;
+  background:linear-gradient(180deg,
+    #353440 0 1px,  #302b37 1px 2px, #2a2029 2px 3px, #241c23 3px 4px,
+    #2a252d 4px 5px,#33303b 5px 6px, #464451 6px 7px, #5b5c69 7px 8px,
+    #515463 8px 9px,#414351 9px 10px,#393845 10px 11px,#373a47 11px 12px,
+    #353845 12px 13px);
+}
+
+/* --- the exposed face strip right of the PROMISED chip, canvas x1038..1058
+   A HOLE-FILLER shaped by c1's C1b chip, not an independent feature.
+   rebase: left 1038-13 = 1025 · top 143-125 = 18 ------------------------- */
+.halo-c10-banner-top-row .bt-right {
+  left: var(--right-x); top: 18px; width: var(--right-w); height: 85px;
+  background:linear-gradient(180deg,
+    #343a4c 0 1px,#313749 1px 2px,#303649 2px 6px,#31374b 6px 9px,#30364a 9px 10px,
+    #303546 10px 14px,#2f3445 14px 17px,#2e3445 17px 19px,#2d3344 19px 21px,
+    #2e3343 21px 22px,#2d3141 22px 23px,#2d3140 23px 24px,#2b2f3e 24px 25px,
+    #292d3b 25px 26px,#292c3a 26px 27px,#282b38 27px 28px,#262936 28px 29px,
+    #252734 29px 33px,#272834 33px 40px,#262631 40px 41px,#24242f 41px 45px,
+    #252530 45px 48px,#242430 48px 49px,#23232e 49px 50px,#22222c 50px 51px,
+    #22222b 51px 58px,#211f29 58px 66px,#1f1e26 66px 80px,#231d28 80px 81px,
+    #251d26 81px 82px,#221720 82px 83px,#20131c 83px 84px,#1a1019 84px 85px);
+}
+
+/* 45deg ramp that carries the seam up to the top bevel, canvas x204..226
+   rebase: left 203-13 = 190 · top 134-125 = 9 ---------------------------- */
+.halo-c10-banner-top-row .bt-ramp {
+  left: var(--ramp-x); top: 9px; width: 24px; height: 31px; overflow: hidden;
+}
+/* `b` is already LOCAL to .bt-ramp in the original — nothing to rebase. */
+.halo-c10-banner-top-row .bt-ramp b {
+  position:absolute; left:3.5px; top:7.5px; width:30px; height:9px;
+  margin-top:-4.5px; transform-origin:0 50%; transform:rotate(44.2deg);
+  background:linear-gradient(180deg,#343442 0%,#2b2631 18%,#221d27 34%,
+                             #3c3f4d 46%,#4e5364 55%,#4a4d5c 66%,#3a3a47 82%,#363644 100%);
+}
+
+/* small chamfer notch in the same band at canvas x662..676
+   rebase: left 662-13 = 649 · top 144-125 = 19 --------------------------- */
+.halo-c10-banner-top-row .bt-notch {
+  left: var(--notch-x); top: 19px; width: 14px; height: 5px;
+  background:linear-gradient(90deg,
+    #3d4352 0 1px,#4e5466 1px 3px,#474d5f 3px 4px,#3a3e4f 4px 5px,#282b39 5px 6px,
+    #1d1d28 6px 7px,#191620 7px 9px,#201c27 9px 10px,#26232e 10px 12px,#2b2a37 12px 14px);
+}
+
+/* --- slate texture panel, canvas x72..215 (feathers out to the right) ----
+   BOTH mask-image prefixes are required — keep the -webkit- pair.
+   rebase: left 72-13 = 59 · top 143-125 = 18 ----------------------------- */
+.halo-c10-banner-top-row .bt-slate {
+  left: var(--slate-x); top: 18px; width: var(--slate-w); height: 85px;
+  -webkit-mask-image:linear-gradient(90deg,#000 0 50%,rgba(0,0,0,0) 100%);
+          mask-image:linear-gradient(90deg,#000 0 50%,rgba(0,0,0,0) 100%);
+  background:
+    radial-gradient(40px 22px at 62% 16%, rgba(150,140,165,.030), transparent 72%),
+    radial-gradient(50px 26px at 88% 52%, rgba(120,110,140,.032), transparent 74%),
+    radial-gradient(26px 30px at 14% 68%, rgba( 20, 14, 22,.045), transparent 76%),
+    linear-gradient(180deg,
+    #32303e 0 1px,#302e3b 1px 2px,#2f2e3a 2px 4px,#302f3c 4px 5px,#31303d 5px 6px,
+    #31313e 6px 20px,#302f3a 20px 21px,#302d39 21px 22px,#2f2c37 22px 23px,
+    #2e2b36 23px 24px,#2d2a34 24px 25px,#2c2934 25px 26px,#2c2833 26px 27px,
+    #2b2732 27px 28px,#2b2731 28px 29px,#2b2630 29px 30px,#2a242f 30px 31px,
+    #2a232d 31px 32px,#29222c 32px 33px,#29212b 33px 35px,#28212a 35px 36px,
+    #282029 36px 38px,#271f28 38px 40px,#261f28 40px 41px,#251e26 41px 44px,
+    #251d25 44px 47px,#241c25 47px 50px,#231b23 50px 56px,#221921 56px 61px,
+    #211820 61px 66px,#21171f 66px 71px,#1f161d 71px 77px,#20161e 77px 80px,
+    #241821 80px 81px,#251820 81px 82px,#221219 82px 83px,#1f0e14 83px 84px,
+    #170a11 84px 85px);
+}
+
+/* --- left gutter between the frame rim and the L bracket, canvas x13..24 --
+   rebase: left 13-13 = 0 · top 142-125 = 17 ------------------------------ */
+.halo-c10-banner-top-row .bt-gut {
+  left: 0; top: 17px; width: 11px; height: 71px;
+  background:linear-gradient(90deg,
+    #2f2f32 0 1px,#18191c 1px 2px,#0c0b0c 2px 3px,#130d0c 3px 4px,#20120c 4px 5px,
+    #2e1610 5px 6px,#533c37 6px 7px,#5a4945 7px 8px,#3a2d2b 8px 9px,#30211c 9px 11px);
+}
+/* rebase: left 13-13 = 0 · top 136-125 = 11 ------------------------------ */
+.halo-c10-banner-top-row .bt-gutcap {
+  left: 0; top: 11px; width: 13px; height: 6px;
+  background:linear-gradient(180deg,#322f2f 0 1px,#141312 1px 2px,#0c0706 2px 3px,
+                             #251c1a 3px 4px,#413735 4px 5px,#3b2f2d 5px 6px);
+}
+
+/* --- C10 graph well, canvas x37..72 y139..215 ---------------------------
+   The whole assembly hangs off --well-x / --well-y (local 24 / 18, i.e.
+   canvas 37 / 143). Per-element offsets from that anchor:
+     .bt-welltop  (-1, -4)   canvas 36,139  -> local 23,14
+     .bt-well     (+1,  0)   canvas 38,143  -> local 25,18
+     .bt-welledge ( 0, -1)   canvas 37,142  -> local 24,17
+     .bt-wellr    (+34, 0)   canvas 71,143  -> local 58,18
+     .bt-graph    ( 0,  0)   canvas 37,143  -> local 24,18
+     .bt-warm     (-4,  0)   canvas 33,143  -> local 20,18  (via --warm-x)
+   -------------------------------------------------------------------------- */
+.halo-c10-banner-top-row .bt-welltop {
+  left: calc(var(--well-x) - 1px); top: calc(var(--well-y) - 4px);
+  width: 37px; height: 4px;
+  background:linear-gradient(180deg,#636666 0 1px,#7d868a 1px 2px,#627077 2px 3px,#5c6c74 3px 4px);
+}
+.halo-c10-banner-top-row .bt-well {
+  left: calc(var(--well-x) + 1px); top: var(--well-y);
+  width: 33px; height: 73px;
+  background:
+    linear-gradient(90deg, rgba(0,8,22,0) 0%, rgba(0,8,22,0) 38%, rgba(0,8,22,.16) 100%),
+    linear-gradient(90deg, rgba(130,190,240,.115) 0%, rgba(130,190,240,0) 40%,
+                    rgba(130,190,240,0) 100%),
+    linear-gradient(180deg,
+    #2e404b 0px 1px,#1a2b38 1px 2px,#1e2e39 2px 3px,#1d2c37 3px 4px,#1b2934 4px 5px,
+    #192832 5px 6px,#1a2832 6px 7px,#182631 7px 8px,#182630 8px 9px,#1d2c37 9px 10px,
+    #1d2d39 10px 11px,#182733 11px 12px,#192732 12px 13px,#182732 13px 14px,#182631 14px 16px,
+    #1a2833 16px 17px,#1a2934 17px 18px,#192833 18px 19px,#182632 19px 20px,#182732 20px 21px,
+    #192733 21px 22px,#182632 22px 23px,#172530 23px 24px,#172631 24px 25px,#162631 25px 26px,
+    #15242f 26px 27px,#14232e 27px 28px,#162531 28px 29px,#182631 29px 30px,#15222d 30px 31px,
+    #13202b 31px 32px,#13212c 32px 33px,#121f2a 33px 34px,#111d29 34px 35px,#121f2a 35px 36px,
+    #121e2a 36px 37px,#111c28 37px 39px,#121e2a 39px 40px,#111d29 40px 41px,#111b27 41px 42px,
+    #111d29 42px 43px,#121e29 43px 44px,#121c28 44px 45px,#121c27 45px 46px,#131d29 46px 47px,
+    #131e29 47px 48px,#131d28 48px 50px,#141e29 50px 52px,#141d28 52px 53px,#151e29 53px 54px,
+    #151f29 54px 56px,#1a242e 56px 57px,#19232d 57px 58px,#171f2a 58px 59px,#181f2a 59px 60px,
+    #191f2a 60px 61px,#1b212d 61px 62px,#1d222d 62px 63px,#1d212c 63px 64px,#1e202b 64px 65px,
+    #23222d 65px 66px,#171d29 66px 67px,#171e2b 67px 68px,#1c2430 68px 69px,#1c212d 69px 70px,
+    #1c1f2a 70px 71px,#1f1f2b 71px 72px,#22202c 72px 73px);
+}
+/* faint square grid — already LOCAL to .bt-well (inset:0), nothing to rebase */
+.halo-c10-banner-top-row .bt-well::before {
+  content:""; position:absolute; inset:0;
+  background:
+    repeating-linear-gradient(90deg, rgba(150,205,230,.035) 0 1px, transparent 1px 9.4px),
+    repeating-linear-gradient(180deg, rgba(150,205,230,.030) 0 1px, transparent 1px 9.4px);
+  background-position:3px 9px, 3px 9px;
+}
+/* 1px pale border down the left of the well, 1px shade down the right */
+.halo-c10-banner-top-row .bt-welledge {
+  left: var(--well-x); top: calc(var(--well-y) - 1px);
+  width: 1px; height: 73px; background:#3d4350;
+}
+.halo-c10-banner-top-row .bt-wellr {
+  left: calc(var(--well-x) + 34px); top: var(--well-y);
+  width: 1px; height: 73px; background:#151b25;
+}
+
+/* the graph trace. In the original this was an inline <svg> carrying its own
+   position + a CANVAS-SPACE viewBox; the viewBox and its polyline points are
+   rewritten in the MARKUP (see the header block). No <defs> — the stroke is
+   inline, so two parts on one page cannot collide. */
+.halo-c10-banner-top-row .bt-graph {
+  position: absolute;
+  left: var(--well-x); top: var(--well-y);
+  width: 36px; height: 73px;
+}
+
+/* the warm shadow column between the L bracket and the well, canvas x33..36
+   rebase: left 33-13 = 20 (= --well-x - 4) · top 143-125 = 18 ------------ */
+.halo-c10-banner-top-row .bt-warm {
+  left: var(--warm-x); top: var(--well-y); width: 4px; height: 86px;
+  background:linear-gradient(180deg,
+    #352e33 0px 1px,#332b2f 1px 2px,#31292e 2px 3px,#2f272d 3px 4px,#2c242b 4px 5px,
+    #2a242a 5px 6px,#2b2529 6px 7px,#2b2428 7px 8px,#2a2428 8px 9px,#2e272b 9px 10px,
+    #2f282d 10px 11px,#2c252b 11px 12px,#2b252a 12px 13px,#2b242a 13px 14px,#2a242a 14px 15px,
+    #2a2428 15px 16px,#2b2528 16px 17px,#2b2629 17px 18px,#2b252a 18px 20px,#2b2529 20px 21px,
+    #2c252a 21px 22px,#2b252a 22px 23px,#2c262b 23px 24px,#2e272c 24px 25px,#2f272c 25px 28px,
+    #2f282c 28px 29px,#31292c 29px 30px,#2f282b 30px 31px,#2b252a 31px 34px,#2c252a 34px 35px,
+    #2d252a 35px 36px,#2c252b 36px 37px,#2b242a 37px 38px,#2b242b 38px 39px,#2c242b 39px 40px,
+    #2b242a 40px 41px,#2a232a 41px 42px,#2b232a 42px 43px,#2c242a 43px 44px,#2d252b 44px 45px,
+    #2e252b 45px 46px,#31262c 46px 47px,#32262d 47px 48px,#30262c 48px 50px,#32272e 50px 51px,
+    #34282e 51px 52px,#35272d 52px 53px,#38282d 53px 54px,#39282e 54px 55px,#39282d 55px 56px,
+    #3b282e 56px 57px,#3d292f 57px 58px,#3e282e 58px 59px,#44272d 59px 60px,#562c32 60px 61px,
+    #7c4045 61px 62px,#a9565a 62px 63px,#d2686b 63px 64px,#ed6f6d 64px 65px,#f76e69 65px 66px,
+    #fa6e66 66px 67px,#fa6d64 67px 68px,#f06a60 68px 69px,#dd6357 69px 70px,#c1564d 70px 71px,
+    #a34942 71px 72px,#843a34 72px 73px,#6d2e2a 73px 74px,#5d2622 74px 75px,#4e1e1a 75px 76px,
+    #421a16 76px 77px,#371814 77px 78px,#2e1713 78px 79px,#291a17 79px 80px,#2b2321 80px 81px,
+    #383533 81px 82px,#403f3c 82px 83px,#3e3e3a 83px 84px,#35352f 84px 85px,#313028 85px 86px);
+}
+
+/* the frame gutter continues below the bracket foot
+   rebase: left 13-13 = 0 · top 213-125 = 88 ------------------------------ */
+.halo-c10-banner-top-row .bt-gutlow {
+  left: 0; top: 88px; width: 11px; height: 16px;
+  background:linear-gradient(180deg,
+    #2f2923 0px 1px,#2d2721 1px 2px,#26201b 2px 3px,#211b17 3px 4px,#1e1916 4px 5px,
+    #1a1513 5px 6px,#1b1715 6px 7px,#1f1c1c 7px 8px,#212020 8px 9px,#232323 9px 10px,
+    #252626 10px 11px,#29292a 11px 12px,#2f2d2e 12px 13px,#323131 13px 14px,#353334 14px 15px,
+    #3a3636 15px 16px);
+}
+
+/* the rivet. rebase: left 13.5-13 = 0.5 · top 232-125 = 107
+   The half-pixel x is measured, not a rounding artefact — keep it.
+   TRAP: c12's loose rivet #4 covers all but a 2-row sliver of this in the
+   assembly (max delta 1), so no pixel gate can prove it right. It is correct
+   by construction: last in DOM order, at 0.5/107, 7x7, radius 50%. */
+.halo-c10-banner-top-row .bt-rivet {
+  left: var(--rivet-x); top: var(--rivet-y); width: 7px; height: 7px;
+  border-radius: 50%;
+  background:radial-gradient(circle at 50% 45%, #46392f 0 1.4px, #2a1f1c 2.4px, #16100f 100%);
+}
