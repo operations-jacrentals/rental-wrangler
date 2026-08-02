@@ -1,0 +1,1194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Halo Design Elements — HTML/CSS recreation</title>
+<style>
+/* ==========================================================================
+   HALO DESIGN ELEMENTS — pure HTML/CSS recreation of "Halo Design Elements.svg"
+
+   Canvas 1292 x 635 = the artwork's own pixel scale.
+   Three bands:  A  parts, y   0..109
+                 B  assembled banner, y 125..378
+                 C  parts, y 394..623
+   Every effect is built by stacking translucent layers; no images are used.
+   ========================================================================== */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0a0c10;
+
+  /* red family */
+  --neon:      #f95a5c;   /* status-chip outline core   */
+  --neon-hi:   #ff7a76;
+  --bar-red:   #ff433e;   /* segment bar fill           */
+  --brk-red:   #fc6c5c;   /* banner L-bracket core      */
+  --pnl-red:   #fa756f;   /* panel C-bracket core       */
+  --tube-red:  #ff8078;   /* conduit light channel      */
+  --maroon:    #411b1e;
+  --maroon-d:  #32171e;
+
+  /* yellow */
+  --bar-yel:   #fff252;
+  --amber:     #7c401f;   /* hex icon                   */
+
+  /* metals */
+  --chrome:    #aebac6;
+  --silver:    #a19596;
+  --rim-top:   #626971;
+  --rim-left:  #818d92;
+  --rim-right: #74808a;
+  --rim-bot:   #7b8997;
+
+  /* darks */
+  --slate:     #32303e;
+  --field:     #1e202c;
+  --cavity:    #221a25;
+  --circuit:   #070e16;
+  --edge:      #0d1218;
+
+  --mono: Consolas, "Cascadia Mono", "DejaVu Sans Mono", "Courier New", monospace;
+  --sans: Roboto, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+html, body { background: #05070a; }
+body { display: grid; place-items: center; min-height: 100vh; }
+
+#stage {
+  position: relative; width: 1292px; height: 635px;
+  background: var(--bg); overflow: hidden;
+  font-family: var(--sans); font-kerning: none;
+}
+
+/* -- primitives ---------------------------------------------------------- */
+
+/* Halo chamfer: cuts top-right + bottom-left at 45deg by --cut.
+   Nesting a copy inset by S with --cut reduced by 0.5858*S gives a
+   mathematically exact uniform-width outline — that is how the chips work. */
+.oct {
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut),
+                     100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
+}
+/* all four corners cut */
+.oct4 {
+  clip-path: polygon(var(--cut) 0, calc(100% - var(--cut)) 0,
+                     100% var(--cut), 100% calc(100% - var(--cut)),
+                     calc(100% - var(--cut)) 100%, var(--cut) 100%,
+                     0 calc(100% - var(--cut)), 0 var(--cut));
+}
+/* bottom-right only */
+.oct-br {
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--cut)),
+                     calc(100% - var(--cut)) 100%, 0 100%);
+}
+
+.a { position: absolute; }
+
+/* ==========================================================================
+   C1 — STATUS CHIP
+   plate box (--px,--py,--pw,--ph) carries the dark backing;
+   outline centreline box (--ox,--oy,--ow,--oh) carries the 4px neon stroke.
+   ========================================================================== */
+.chip { position: absolute; left: var(--px); top: var(--py); width: var(--pw); height: var(--ph); }
+
+/* The plate is NOT chrome: measured it is a near-black warm maroon slab.
+   x700 column of the reference reads #16070b -> #1c0407 above the stroke and
+   #120202 -> #110605 below it, never above luminance 30.                     */
+.chip .plate {
+  position: absolute; inset: 0; --cut: var(--pcut);
+  background:
+    linear-gradient(180deg,
+      #1c1613 0px, #100708 1.2px, #150608 2.4px, #150506 3.4px,
+      #0f0102 4.6px, #150204 5.7px, #1b0507 6.9px, #190306 8.6px,
+      #1a0405 calc(100% - 5px), #1a0404 calc(100% - 3px),
+      #170303 calc(100% - 1.4px), #100202 100%);
+}
+/* neutral warm-grey bloom under the plate's bottom edge.
+   stops derived from the measured deltas over the backdrop:
+   +32/17/13, +63/50/48, +67/62/60, +60/58/56, +28/28/26, +3/3/3           */
+.chip .bloom {
+  position: absolute; left: var(--blx); right: var(--blr);
+  top: 100%; height: var(--blh); opacity: var(--blo, 1);
+  background: linear-gradient(180deg,
+     rgba(255,120,100,.055)  0%,
+     rgba(255,150,120,.131)  8.3%,
+     rgba(255,210,205,.257) 25%,
+     rgba(255,240,235,.273) 41.7%,
+     rgba(255,245,240,.245) 58.3%,
+     rgba(255,255,250,.114) 75%,
+     rgba(255,255,255,.012) 91.7%,
+     rgba(255,255,255,0)   100%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 15px, #000 calc(100% - 6px), transparent 100%);
+          mask-image: linear-gradient(90deg, transparent 0, #000 15px, #000 calc(100% - 6px), transparent 100%);
+}
+/* The neon outline is a stroked octagon. It has to be SVG: Chrome pixel-snaps
+   the paint box of every CSS div, so a 4px stroke whose centreline sits at
+   y=34.87 renders at 33..37 with no antialiasing at all. An SVG path is
+   rasterised at sub-pixel precision, and feGaussianBlur reproduces the
+   reference's ~0.8px soft shoulder that a hard CSS edge cannot.             */
+svg.ringlayer { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+svg.ringlayer > path { fill: none; stroke-linejoin: miter; stroke: var(--stroke, #f85a5c); }
+svg.ringlayer > path.halo { stroke-width: var(--hw, 3.8); stroke-opacity: .90; filter: url(#chipSoft); }
+svg.ringlayer > path.core { stroke-width: var(--cw, 2.8); }
+/* interior: fully opaque (no red must leak through) + the measured inward
+   red glow that each stroke throws back into the cavity. Its outer edge sits
+   1px outside the centreline so the stroke core hides it.                    */
+.chip .inner {
+  position: absolute;
+  left: calc(var(--ox) - var(--px) - 1px);
+  top:  calc(var(--oy) - var(--py) - 1px);
+  width:  calc(var(--ow) + 2px);
+  height: calc(var(--oh) + 2px);
+  --cut: calc(var(--oc) + .586px);
+  background:
+    linear-gradient(180deg, rgba(255,30,30,var(--gt,.052)) 0, rgba(255,30,30,0) 18px),
+    linear-gradient(0deg,   rgba(255,30,30,var(--gb,.070)) 0, rgba(255,30,30,0) 20px),
+    linear-gradient(90deg,  rgba(255,30,30,var(--gs,.088)) 0, rgba(255,30,30,0) 25px),
+    linear-gradient(270deg, rgba(255,30,30,var(--gs,.088)) 0, rgba(255,30,30,0) 25px),
+    var(--fill, #060a10);
+}
+/* dark end-cap rail past the black gutter at the right end */
+.chip .cap {
+  position: absolute; left: var(--capx); width: var(--capw);
+  top: var(--capy); height: var(--caph);
+  border-radius: var(--capr, 3.5px);
+  background: linear-gradient(90deg,
+     var(--cap0,#0d0507) 0%, var(--cap1,#241a1c) 20%, var(--cap2,#382b2e) 32%,
+     var(--cap3,#291e20) 45%, var(--cap4,#150e0e) 62%, var(--cap5,#130c0c) 100%);
+}
+.chip .label {
+  position: absolute; left: 0; right: 0;
+  font-family: var(--mono); font-weight: 700; color: #f2585a; white-space: nowrap; line-height: 1;
+  text-shadow: 0 0 5px rgba(249,90,92,.45);
+}
+
+/* ==========================================================================
+   C2 — SEGMENT BARS   (skewed round-rects, bottom leans right, 19.3deg)
+   ========================================================================== */
+.bars { position: absolute; top: var(--y); height: var(--h); }
+/* The source art is out of focus, and anisotropically so: measured 10-90% edge
+   widths are ~4px horizontally but 7.5-8px vertically. So the horizontal
+   softness comes from a small uniform blur and the vertical softness is baked
+   into the fill gradient via --ft / --fb (the top and bottom fade lengths).
+   Box edges are placed at the measured 50% crossings +/- the fade. */
+.bars .b {
+  position: absolute; top: 0; height: 100%; width: 23.6px;
+  border-radius: 13px;
+  transform: skewX(18deg);
+  filter: blur(1.4px);
+}
+.bars .b.r {
+  background: linear-gradient(180deg,
+    rgba(255,65,59,0)  0px,
+    rgba(255,65,59,1)  var(--ft),
+    #ff463d            55%,
+    #ff3d35            calc(100% - var(--fb)),
+    rgba(255,61,53,0)  100%);
+}
+.bars .b.y {
+  background: linear-gradient(180deg,
+    rgba(255,242,82,0) 0px,
+    rgba(255,242,82,1) var(--ft),
+    #fff453            55%,
+    #f8e948            calc(100% - var(--fb)),
+    rgba(248,233,72,0) 100%);
+}
+/* pale specular cap sitting on top of the solid region */
+.bars .b::before {
+  content: ""; position: absolute; left: 1.5px; right: 1.5px;
+  top: calc(var(--ft) - 2px); height: 5px;
+  border-radius: 4px 4px 2px 2px;
+  background: linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,0));
+}
+.bars .b.y::before { background: linear-gradient(180deg, rgba(237,217,112,.85), rgba(255,255,255,0)); }
+
+/* ==========================================================================
+   C5 — OCTAGON DISPLAY PLATE ("FAILED" screen)
+   ========================================================================== */
+.oplate { position: absolute; left: var(--x); top: var(--y); width: var(--w); height: var(--h); }
+.oplate .body {
+  position: absolute; inset: 0; --cut: 19px;
+  background: linear-gradient(180deg, #1a1c22 0%, #0b0d12 8%, #070910 50%, #0b0d13 92%, #23262c 100%);
+}
+.oplate .glass {
+  position: absolute; inset: 7px; --cut: 15px;
+  background: var(--glass, #040910);
+}
+.oplate .glass::after {
+  content: ""; position: absolute; inset: 0;
+  background: repeating-linear-gradient(180deg, rgba(120,170,200,.035) 0 1px, transparent 1px 3px);
+}
+/* 1px cyan hairline inset ~9px from the outer edge */
+.oplate .hair {
+  position: absolute; --cut: 12px;
+  left: var(--hx); top: var(--hy); width: var(--hw); height: var(--hh);
+  background: rgba(90,160,190,.30);
+}
+.oplate .hair > i {
+  position: absolute; inset: 1px; display: block; --cut: 11.4px;
+  background: var(--glass, #040910);
+}
+
+/* ==========================================================================
+   C4 — PANEL FRAME (914 x 125) — dark frame, recessed cavity, red C bracket
+   ========================================================================== */
+/* Coordinate system: .pframe origin = (344, 497) for C4a  -> every child offset
+   below is (absolute reference px - that origin).  .pf-body starts 4.5px in,
+   at x=348.5, which is the hard left edge of the metal; everything left of it
+   (glow + the two lit chamfer facets) lives directly on .pframe.            */
+.pframe { position: absolute; left: var(--x); top: var(--y);
+          width: var(--w, 914.5px); height: 125px; }
+
+/* ---- the metal body: outer silhouette + the whole vertical build-up ------ */
+.pframe .pf-body {
+  position: absolute; left: 4.5px; right: 0; top: 0; bottom: 0;
+  clip-path: polygon(19.5px 0, 906.5px 0, 100% 3.5px, 100% 114px,
+                     898.5px 100%, 27px 100%, 0 104px, 0 14px);
+  background: linear-gradient(180deg,
+      #1c1c1e 0px,   #1c1c1e 1px,    /* 497 soft outer bloom            */
+      #444344 1px,   #444344 2px,    /* 498 specular rim peak           */
+      #4c4a4c 2px,   #4c4a4c 3px,    /* 499                             */
+      #201d1e 3px,   #201d1e 4px,    /* 500 flat dark-grey face         */
+      #1f1c1e 4px,   #1f1c1e 5px,
+      #201d1f 5px,   #201d1f 7px,
+      #211e20 7px,   #211e20 8px,
+      #221d1e 8px,   #221d1e 9px,    /* 505                             */
+      #17100c 9px,   #17100c 10px,   /* 506 deep black inner gutter     */
+      #110503 10px,  #110503 11px,
+      #0b0100 11px,  #0b0100 12px,
+      #050000 12px,  #050000 13px,
+      #030000 13px,  #030000 15px,
+      #080506 15px,  #080506 16px,   /* 512                             */
+      #050101 16px,  #050101 108px,  /* 513..604 cavity gutter backing  */
+      #120c11 108px, #120c11 109px,  /* 605 thin black gutter           */
+      #080305 109px, #080305 110px,
+      #161115 110px, #161115 111px,
+      #2e2c31 111px, #2e2c31 112px,  /* 608 rail plate specular         */
+      #39373d 112px, #39373d 113px,
+      #3f3c40 113px, #3f3c40 114px,
+      #3f3b3e 114px, #3f3b3e 115px,
+      #2a2523 115px, #2a2523 116px,
+      #17120e 116px, #17120e 117px,
+      #171412 117px, #171412 118px,
+      #191312 118px, #191312 119px,
+      #171313 119px, #171313 120px,
+      #191516 120px, #191516 121px,
+      #292426 121px, #292426 122px,
+      #605e62 122px, #605e62 123px,  /* 619 bottom bloom                */
+      #8b8a8e 123px, #8b8a8e 124px,  /* 620                             */
+      #48484d 124px, #48484d 125px); /* 621                             */
+}
+/* the three top rows and the three bottom rows carry almost all of the
+   horizontal modulation, so each is its own 1px strip                       */
+.pframe .pf-r { position: absolute; left: 0; right: 0; height: 1px; }
+.pframe .pf-r0 { top: 0; background: linear-gradient(90deg,
+  #413435 0px,#3a2f30 61px,#362d2e 101px,#342b2c 141px,#31282a 181px,#2e2628 221px,
+  #2e2729 261px,#2c2527 310px,#1a1a1d 320px,#1c1d1f 381px,#1a1b1d 421px,#1d1d1f 461px,
+  #1a1a1d 501px,#1e1e20 541px,#1e1e20 581px,#222021 621px,#242123 661px,#242124 701px,
+  #201f22 741px,#17181b 781px,#111316 821px,#0d0f13 861px,#0b0d11 901px,#0a0c10 910px); }
+.pframe .pf-r1 { top: 1px; background: linear-gradient(90deg,
+  #5f5151 0px,#5c4f4f 61px,#5a4d4e 101px,#574b4c 141px,#544949 181px,#504645 221px,
+  #504647 261px,#4c4344 310px,#444243 320px,#474546 381px,#444244 421px,#454344 461px,
+  #424041 501px,#434040 541px,#433f3f 581px,#433e3e 621px,#433e3e 661px,#423e3f 701px,
+  #393739 741px,#2e2e30 781px,#252728 821px,#242527 861px,#16171a 901px,#101215 910px); }
+.pframe .pf-r2 { top: 2px; background: linear-gradient(90deg,
+  #564a4b 0px,#544849 61px,#534849 101px,#524849 141px,#514749 181px,#4e4546 221px,
+  #4e4547 261px,#4c4445 310px,#4c494a 320px,#4c494a 381px,#4a4749 421px,#4b4749 461px,
+  #484546 501px,#474243 541px,#454142 581px,#454040 621px,#453f40 661px,#444041 701px,
+  #3d3b3d 741px,#363537 781px,#302f31 821px,#323133 861px,#292a2e 901px,#232427 910px); }
+.pframe .pf-r122 { top: 122px; background: linear-gradient(90deg,
+  #442830 0px,#4c2a2e 61px,#513b40 101px,#594347 141px,#5a464a 181px,#5a474a 221px,
+  #5d4a4e 261px,#5d4a4f 301px,#4b4144 314px,#605d62 318px,#605e61 381px,#626063 421px,
+  #5c5a5d 461px,#575456 501px,#524f52 541px,#423f42 581px,#3e393d 621px,#2a2528 661px,
+  #241e22 701px,#231e20 741px,#201c1d 781px,#1a1718 821px,#171314 861px,#141316 910px); }
+.pframe .pf-r123 { top: 123px; background: linear-gradient(90deg,
+  #55333a 0px,#61383e 61px,#7f595b 101px,#8d6769 141px,#8f6a6d 181px,#926d70 221px,
+  #967073 261px,#977174 301px,#715b5f 314px,#8b898e 318px,#8c8a8f 381px,#8d8d92 421px,
+  #86868a 461px,#7b797d 501px,#757378 541px,#615f64 581px,#565358 621px,#353236 661px,
+  #2d282c 701px,#292428 741px,#261f22 781px,#181516 821px,#171313 861px,#111014 910px); }
+.pframe .pf-r124 { top: 124px; background: linear-gradient(90deg,
+  #391f25 0px,#3e2328 61px,#4d3437 101px,#54393c 141px,#53393d 181px,#543a3e 221px,
+  #52383d 261px,#533a3e 301px,#4c3a3f 314px,#48474c 318px,#48474c 381px,#49484c 421px,
+  #45454a 461px,#404045 501px,#3d3c41 541px,#36363a 581px,#313034 621px,#252326 661px,
+  #222023 701px,#1f1c1f 741px,#231e21 781px,#181618 821px,#181517 861px,#0e0e12 910px); }
+/* left plate / right plate overlays for rail rows 605..618 (seams x=663.5, 1155.5) */
+.pframe .pf-railL { position: absolute; left: 0; width: 315px; top: 108px; height: 14px;
+  background: linear-gradient(180deg,
+     #0f0a0e 0px,#0f0a0e 1px,#070205 1px,#070205 2px,#161214 2px,#161214 3px,
+     #29272a 3px,#29272a 4px,#2e2d32 4px,#2e2d32 5px,#302f33 5px,#302f33 6px,
+     #302f31 6px,#302f31 7px,#22201f 7px,#22201f 8px,#171211 8px,#171211 9px,
+     #171312 9px,#171312 10px,#191415 10px,#191415 11px,#181414 11px,#181414 12px,
+     #181415 12px,#181415 13px,#231c21 13px,#231c21 14px); }
+.pframe .pf-railR { position: absolute; left: 807px; right: 0; top: 108px; height: 14px;
+  background: linear-gradient(180deg,
+     #0e090e 0px,#0e090e 1px,#040203 1px,#040203 2px,#0f0b0f 2px,#0f0b0f 3px,
+     #1a181c 3px,#1a181c 4px,#1a191e 4px,#1a191e 5px,#1e1d21 5px,#1e1d21 6px,
+     #201f22 6px,#201f22 7px,#212121 7px,#212121 8px,#171514 8px,#171514 9px,
+     #1a1818 9px,#1a1818 13px,#1a1819 13px,#1a1819 14px); }
+
+/* ---- recessed cavity ---------------------------------------------------- */
+.pframe .pf-cav {
+  position: absolute; left: 31.5px; right: 18px; top: 15.5px; height: 92px;
+  clip-path: polygon(0 0, 855px 0, 100% 5px, 100% 100%, 18px 100%, 0 77px);
+  background:
+    radial-gradient(340px 52px at 27% 66%, rgba(195,215,220,.055), rgba(195,215,220,0) 72%),
+    linear-gradient(180deg,
+      #17151b 0px, #17161b 4px, #17151a 10px, #19171c 16px, #1a171c 22px,
+      #191619 28px, #191519 34px, #191419 40px, #191419 46px, #1b1618 52px,
+      #1b1618 58px, #1b1517 64px, #1b1517 70px, #1b1419 76px, #1a1517 82px,
+      #181315 88px, #171214 92px);
+}
+/* right half of the cavity: colder, darker, with the warm reflection blob    */
+.pframe .pf-cavr {
+  position: absolute; left: 283.5px; right: 0; top: 0; bottom: 0;
+  background:
+    linear-gradient(90deg, rgba(8,6,12,.34) 0px, rgba(8,6,12,.12) 6px, rgba(8,6,12,0) 15px,
+                    rgba(8,6,12,0) 78%, rgba(46,52,74,.16) 92%, rgba(12,10,18,.40) 100%),
+    radial-gradient(150px 62px at 28% 54%, rgba(160,145,80,.19), rgba(160,145,80,0) 72%),
+    radial-gradient(125px 50px at 12% 26%, rgba(150,155,195,.13), rgba(150,155,195,0) 74%),
+    linear-gradient(180deg,
+      #1c1b25 0px, #1d1c26 4px, #1b1a23 10px, #1a181f 16px, #1a171d 22px,
+      #19141b 28px, #191219 34px, #191117 40px, #1a1017 46px, #1a1016 52px,
+      #1a1016 58px, #191015 64px, #191016 70px, #181117 76px, #171117 82px,
+      #150e15 88px, #130c13 92px);
+}
+/* bluish top reflection band, strongest at the right-hand end               */
+.pframe .pf-cavr::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 10px;
+  background:
+    linear-gradient(180deg, rgba(58,80,150,.26), rgba(58,80,150,0)),
+    linear-gradient(90deg, rgba(0,0,0,.35) 0px, rgba(0,0,0,0) 240px);
+}
+
+/* ---- right-hand edge ---------------------------------------------------- */
+.pframe .pf-rmar {              /* 2px maroon stripe, x 1244..1246.5 */
+  position: absolute; right: 12px; width: 2.5px; top: 19.5px; height: 87px;
+  background: linear-gradient(90deg, #1a0a0f 0 .6px, #2d161c .6px 1.9px, #261519 1.9px 2.5px);
+}
+.pframe .pf-rface {             /* grey face + 3px chrome edge, x 1246.5..1258.5 */
+  position: absolute; right: 0; width: 12px; top: 3.5px; bottom: 0;
+  background: linear-gradient(90deg, #1c191a 0 7.5px, #16181d 7.5px 8.5px,
+              #2d373f 8.5px 9.5px, #7f8993 9.5px 10.5px, #817f80 10.5px 11.5px,
+              #2d2a26 11.5px 12px);
+}
+.pframe .pf-riv {               /* 9x9 rivet centred (1249.5, 505) */
+  position: absolute; left: 896.5px; top: 3.5px; width: 9px; height: 9px;
+  background: radial-gradient(circle at 4.5px 4.5px,
+      #3d3d42 0 1.7px, #2b2b2f 2.3px, #15141a 2.9px, #0c0a0b 3.7px, #12100f 4.5px,
+      rgba(0,0,0,0) 4.6px);
+}
+
+/* ---- left end: chamfer facets, bevel, warm face, red glow ---------------- */
+.pframe .pf-lside {             /* red bloom that leaks past the metal edge  */
+  position: absolute; left: 0; width: 4.5px; top: 12px; height: 92px;
+  background: linear-gradient(90deg,
+      rgba(245,90,92,.010) 0px, rgba(245,90,92,.040) 1px, rgba(245,90,92,.075) 2px,
+      rgba(245,90,92,.120) 3px, rgba(245,90,92,.160) 4px, rgba(245,90,92,.175) 4.5px);
+}
+.pframe .pf-fct, .pframe .pf-fcb {   /* the two lit chamfer facets */
+  position: absolute; left: 0; width: 4.5px;
+  background:
+    linear-gradient(180deg, #0a0c10 0px, rgba(10,12,16,0) 2.5px,
+                    rgba(10,12,16,0) var(--f1), #0a0c10 var(--f2)),
+    linear-gradient(90deg, #271b1e 0 1px, #5a383b 1px 2px, #674446 2px 3px,
+                    #624447 3px 4px, #5b4044 4px 4.5px);
+}
+.pframe .pf-fct { top: 12px;  height: 24px; --f1: 18px; --f2: 24px; }
+.pframe .pf-fcb { top: 89px;  height: 17px; --f1: 12px; --f2: 17px;
+  background:
+    linear-gradient(180deg, #0a0c10 0px, rgba(10,12,16,0) 2.5px,
+                    rgba(10,12,16,0) 12px, #0a0c10 17px),
+    linear-gradient(90deg, #22181b 0 1px, #563336 1px 2px, #60393c 2px 3px,
+                    #503236 3px 4px, #492f34 4px 4.5px); }
+.pframe .pf-lbev {              /* the bright outer bevel, x 349..353 */
+  position: absolute; left: .5px; width: 4px; top: 14px; height: 90px;
+  background: linear-gradient(90deg, #4e1f24 0 1px, #994f53 1px 2px,
+                              #8d4346 2px 3px, #471a1b 3px 4px);
+}
+.pframe .pf-lface {             /* warm frame face + inner glow, x 353..375 */
+  position: absolute; left: 4.5px; width: 22px; top: 15px; height: 90px;
+  background: linear-gradient(90deg,
+     #321a1b 0 1px, #2f1d1f 1px 2px, #2f1c1f 2px 3px, #301b1e 3px 4px, #341b1e 4px 5px,
+     #3b1c1e 5px 6px, #431c1f 6px 7px, #49181b 7px 8px, #5f1316 8px 9px,
+     #b03f3e 9px 10px, #f76b69 10px 12px, #e35f5e 12px 13px, #872d30 13px 14px,
+     #5b1f22 14px 15px, #461c1e 15px 16px, #391b1c 16px 17px, #382126 17px 19px,
+     #231719 19px 20px, #170c0a 20px 21px, #150808 21px 22px);
+}
+.pframe .pf-chT {               /* lit facet of the top-left chamfer */
+  position: absolute; left: 1.9px; top: 10.3px; width: 19.4px; height: 2.6px;
+  transform-origin: 0 50%; transform: rotate(-32.4deg);
+  background: linear-gradient(180deg, #3d3033, #63494d 42%, #4f363a 82%, #2c1c1d);
+}
+
+/* ---- red "C" bracket ---------------------------------------------------- */
+.pframe .pf-brk { position: absolute; inset: 0; filter: blur(.45px); }
+.pframe .pf-brk i { position: absolute; display: block; }
+.pframe .pf-brk .v  {           /* vertical stroke, centre x = 364.0 */
+  left: 18.2px; top: 5.5px; width: 3.6px; height: 90px;
+  background: linear-gradient(180deg, #ff7b76 0%, #ff7472 30%, #fb6f6d 72%, #ff7472 100%);
+}
+.pframe .pf-brk .d  {           /* bottom-left chamfer, dx/dy = 1.12 */
+  left: 18.2px; top: 94.5px; width: 3.6px; height: 33px;
+  transform-origin: 50% 0; transform: rotate(-48.2deg);
+  background: #fb6f6d;
+}
+.pframe .pf-brk .ts {           /* top stub */
+  left: 22px; top: 4.6px; width: 26px; height: 2.3px;
+  background: linear-gradient(90deg, #f4675f 0px, #cf5a58 8px, #b45254 14px, #ac5254 26px);
+}
+.pframe .pf-brk .bs {           /* bottom stub */
+  left: 41.5px; top: 117.7px; width: 17.5px; height: 2.9px;
+  background: linear-gradient(90deg, #f96b6b 0px, #fa6d6d 8px, #f47472 17.5px);
+}
+
+/* ---- soft blooms just outside the metal --------------------------------- */
+.pframe .pf-bl { position: absolute; left: 4.5px; right: 0; height: 1px; }
+.pframe .pf-blt { top: -1px; background: linear-gradient(90deg,
+  #1a1619 0px,#181518 61px,#151417 141px,#131215 221px,#141216 261px,#131215 301px,
+  #0b0d11 341px,#0b0d11 501px,#0c0e11 541px,#0e0f13 621px,#0e0f13 701px,#0c0e12 781px,
+  #0b0d11 821px,#0a0c10 910px); }
+.pframe .pf-blb { top: 125px; background: linear-gradient(90deg,
+  #191317 0px,#1c171b 101px,#1d191b 141px,#1c181c 221px,#141115 261px,#1a171b 301px,
+  #16171a 341px,#17171b 421px,#16171b 461px,#17181c 501px,#16171a 541px,#18191c 581px,
+  #18181c 621px,#151518 661px,#17171a 701px,#151417 741px,#19191c 781px,#141417 821px,
+  #131417 861px,#0c0d11 901px); }
+
+
+/* The panel art is semi-transparent. C4a sits on the page background, C4b sits on
+   the banner's lighter backdrop, so the same artwork composites lighter there.
+   Measured delta (ref x=674 vs x=678, same relative y): +6,+7,+7 across the frame
+   face and +8,+9,+15 through the cavity top. This layer replays that lift. */
+.pf-lift {
+  position: absolute; left: 0; right: 0; top: 0; height: 125px; pointer-events: none;
+  background: linear-gradient(180deg,
+    rgba(225,167,188,0.08960000000000001) 0px,   rgba(225,167,188,0.08960000000000001) 1px,
+    rgba(225,167,188,0.16) 1px,   rgba(225,167,188,0.16) 3px,
+    rgba(132,148,148,0.0384) 3px,   rgba(132,148,148,0.0384) 9px,
+    rgba(132,148,148,.01) 9px,   rgba(132,148,148,.01) 16px,
+    rgba(110,118,186,0.06) 16px,  rgba(110,118,186,0.06) 46px,
+    rgba(110,118,186,0.048) 46px,  rgba(110,118,186,0.048) 107px,
+    rgba(150,150,170,0.03) 107px, rgba(150,150,170,0.03) 125px);
+}
+
+/* ==========================================================================
+   C12 — RIVET (9x9 dark ring, lighter core)
+   ========================================================================== */
+.rivet {
+  position: absolute; width: 9px; height: 9px; border-radius: 50%;
+  background: radial-gradient(circle at 50% 45%, #45454a 0 1.8px, #1a181c 2.6px, #0a0708 100%);
+  box-shadow: inset 0 0 0 .5px rgba(150,160,170,.14);
+}
+
+/* ==========================================================================
+   C3 - CONDUIT ELBOW (209 x 125) - inline SVG art, two instances via <use>
+   ========================================================================== */
+.conduit { position: absolute; left: var(--x); top: var(--y); width: 209px; height: 125px; }
+
+/* ==========================================================================
+   BANNER
+   ========================================================================== */
+#banner { position: absolute; left: 1px; top: 125px; width: 1287px; height: 254px; }
+#banner .back { position: absolute; inset: 0; background: var(--edge); }
+
+/* main vertical build-up of the banner interior */
+#banner .face {
+  position: absolute; left: 7px; right: 7px; top: 5px; bottom: 1px;
+  background: linear-gradient(180deg,
+      #0b1119   0px,  #52595f  6px,  #353c42  8px,  #191b1f 10px,
+      #000103  11px, #3f3a41  13px, #606372  16px,
+      #32374a  18px, #32374a  38px, #2d2d3c  47px,
+      #1c1b23  52px, #3b3d49  59px,
+      #211e27  60px, #211e27  99px,
+      #110204  113px, #0d0e14 120px, #624f51 122px, #222423 124px,
+      #080204  131px, #14141a 137px, #1e202c 140px,
+      #1b1d27  200px, #17161e 230px, #030000 231px,
+      #232326  233px, #434346 236px, #181718 242px,
+      #1d242e  247px, #47535d 251px, #788892 253px);
+}
+/* outer frame rims, measured centrelines */
+/* The outer frame rims are 5-6px ramps in the source, not hairlines.
+   Left  ramp measured at row 250: x6..11  = #303232 #60625e #78817e #818d92 #7d8c9d #4e6077
+   Right ramp measured at row 300: x1282..1286 = #253751 #4f6381 #728498 #7b868e #757877  */
+#banner .rim-t { position:absolute; left:12px;  right:6px; top:5.5px;    height:1.6px; background:var(--rim-top);   opacity:.85 }
+#banner .rim-b { position:absolute; left:6px;  right:6px; bottom:.5px;  height:1.8px; background:var(--rim-bot);   opacity:.9 }
+#banner .rim-l { position:absolute; top:6px; bottom:5px; left:5px; width:6px;
+                 background:linear-gradient(90deg,#303232 0 1px,#60625e 1px 2px,#78817e 2px 3px,#818d92 3px 4px,#7d8c9d 4px 5px,#4e6077 5px 6px); }
+#banner .rim-r { position:absolute; top:6px; bottom:5px; right:1px; width:5px;
+                 background:linear-gradient(90deg,#253751 0 1px,#4f6381 1px 2px,#728498 2px 3px,#7b868e 3px 4px,#757877 4px 5px); }
+
+/* ==========================================================================
+   BANNER TOP ROW  (y125..241, x13..1281)
+   frame rims / band stack / C10 graph well / slate panel / C11 red L bracket
+   Every colour below is a measured per-scanline value from the reference.
+   ========================================================================== */
+#btr { position:absolute; inset:0; pointer-events:none; }
+#btr i { position:absolute; display:block; }
+
+/* --- horizontal band stack above the face, y125..143 --------------------- */
+.bt-top {
+  left:13px; top:125px; width:1268px; height:18px;
+  background:linear-gradient(180deg,
+    #0c0f15 0 1px,   #0c111a 1px 3px, #090c12 3px 4px, #1c1e21 4px 5px,
+    #5c6469 5px 6px, #5f686f 6px 7px, #363c42 7px 8px, #2c2e31 8px 9px,
+    #2e3032 9px 10px,#1b1c1f 10px 11px,#000002 11px 12px,#191819 12px 13px,
+    #4c4a51 13px 14px,#61606d 14px 15px,#6c7181 15px 16px,#656b7d 16px 17px,
+    #424759 17px 18px);
+}
+/* --- the face itself, y143..241 ----------------------------------------- */
+.bt-face {
+  left:13px; top:143px; width:1268px; height:98px;
+  background:linear-gradient(180deg,
+    #313644 0 1px,   #303340 1px 2px,  #2f313f 2px 6px,  #2f313f 6px 7px,
+    #303240 7px 8px, #313340 8px 9px,  #333542 9px 19px, #343745 19px 21px,
+    #333643 21px 22px,#333543 22px 23px,#333541 23px 24px,#33343f 24px 29px,
+    #34323c 29px 30px,#32303a 30px 31px,#302e37 31px 32px,#2f2d35 32px 35px,
+    #2e2b33 35px 38px,#2c2a30 38px 41px,#2d292e 41px 48px,#2c272d 48px 51px,
+    #2a252b 51px 54px,#282329 54px 57px,#272329 57px 61px,#262129 61px 66px,
+    #252028 66px 73px,#251f28 73px 80px,#292029 80px 81px,#2b1f27 81px 82px,
+    #25171d 82px 83px,#221219 83px 84px,#190d17 84px 85px,#262324 85px 90px,
+    #232022 90px 96px,#141014 96px 97px,#0e090c 97px 98px);
+}
+/* faint blue-grey cross-lighting: the face is brighter around x420..500 and
+   x880..980, dimmest at x100..140 and x580..700 (measured on rows 143..150) */
+.bt-mod {
+  left:13px; top:143px; width:1268px; height:14px;
+  background:linear-gradient(90deg,
+    rgba(133,163,225,.000)   0px, rgba(133,163,225,.030) 150px,
+    rgba(133,163,225,.035) 250px, rgba(133,163,225,.070) 310px,
+    rgba(133,163,225,.088) 410px, rgba(133,163,225,.088) 460px,
+    rgba(133,163,225,.060) 510px, rgba(133,163,225,.000) 557px,
+    rgba(133,163,225,.035) 607px, rgba(133,163,225,.010) 657px,
+    rgba(133,163,225,.010) 707px, rgba(133,163,225,.020) 757px,
+    rgba(133,163,225,.045) 807px, rgba(133,163,225,.070) 857px,
+    rgba(133,163,225,.088) 907px, rgba(133,163,225,.105) 957px,
+    rgba(133,163,225,.050) 1007px,rgba(133,163,225,.050) 1268px);
+}
+/* the y157..171 continuation of that band, no cross-lighting */
+.bt-band2 {
+  left:13px; top:157px; width:1268px; height:14px;
+  background:linear-gradient(180deg,
+    #343745 0 5px,#333643 5px 6px,#333543 6px 7px,#333541 7px 8px,#33343f 8px 14px);
+}
+/* falloff of the grey top rim towards the right end of the banner */
+.bt-fallA {
+  left:800px; top:129px; width:481px; height:11px;
+  background:linear-gradient(90deg, rgba(0,0,0,0) 0px, rgba(0,0,0,.06) 60px,
+             rgba(0,0,0,.13) 140px, rgba(0,0,0,.20) 210px, rgba(0,0,0,.24) 260px,
+             rgba(0,0,0,.24) 481px);
+}
+.bt-fallB {
+  left:1000px; top:140px; width:281px; height:3px;
+  background:linear-gradient(90deg, rgba(0,0,0,0) 0px, rgba(0,0,0,.14) 60px,
+             rgba(0,0,0,.14) 281px);
+}
+/* the blue bevel rows 138..142 are markedly darker over the slate, x73..223 */
+.bt-bev {
+  left:73px; top:138px; width:150px; height:5px;
+  background:linear-gradient(90deg, rgba(18,10,28,.26) 0px, rgba(18,10,28,.26) 60px,
+             rgba(18,10,28,.14) 100px, rgba(18,10,28,.07) 150px);
+}
+/* --- the recessed seam that runs x224..1038 at y151..164 ----------------- */
+.bt-seam {
+  left:224px; top:151px; width:814px; height:13px;
+  background:linear-gradient(180deg,
+    #353440 0 1px,  #302b37 1px 2px, #2a2029 2px 3px, #241c23 3px 4px,
+    #2a252d 4px 5px,#33303b 5px 6px, #464451 6px 7px, #5b5c69 7px 8px,
+    #515463 8px 9px,#414351 9px 10px,#393845 10px 11px,#373a47 11px 12px,
+    #353845 12px 13px);
+}
+/* 45deg ramp that carries the seam up to the top bevel, x204..226 */
+.bt-ramp { left:203px; top:134px; width:24px; height:31px; overflow:hidden; }
+.bt-ramp b {
+  position:absolute; left:3.5px; top:7.5px; width:30px; height:9px;
+  margin-top:-4.5px; transform-origin:0 50%; transform:rotate(44.2deg);
+  background:linear-gradient(180deg,#343442 0%,#2b2631 18%,#221d27 34%,
+                             #3c3f4d 46%,#4e5364 55%,#4a4d5c 66%,#3a3a47 82%,#363644 100%);
+}
+/* small chamfer notch in the same band at x662..676 */
+.bt-notch {
+  left:662px; top:144px; width:14px; height:5px;
+  background:linear-gradient(90deg,
+    #3d4352 0 1px,#4e5466 1px 3px,#474d5f 3px 4px,#3a3e4f 4px 5px,#282b39 5px 6px,
+    #1d1d28 6px 7px,#191620 7px 9px,#201c27 9px 10px,#26232e 10px 12px,#2b2a37 12px 14px);
+}
+
+/* --- slate texture panel, x72..215 (feathers out to the right) ---------- */
+.bt-slate {
+  left:72px; top:143px; width:143px; height:85px;
+  -webkit-mask-image:linear-gradient(90deg,#000 0 50%,rgba(0,0,0,0) 100%);
+          mask-image:linear-gradient(90deg,#000 0 50%,rgba(0,0,0,0) 100%);
+  background:
+    radial-gradient(40px 22px at 62% 16%, rgba(150,140,165,.030), transparent 72%),
+    radial-gradient(50px 26px at 88% 52%, rgba(120,110,140,.032), transparent 74%),
+    radial-gradient(26px 30px at 14% 68%, rgba( 20, 14, 22,.045), transparent 76%),
+    linear-gradient(180deg,
+    #32303e 0 1px,#302e3b 1px 2px,#2f2e3a 2px 4px,#302f3c 4px 5px,#31303d 5px 6px,
+    #31313e 6px 20px,#302f3a 20px 21px,#302d39 21px 22px,#2f2c37 22px 23px,
+    #2e2b36 23px 24px,#2d2a34 24px 25px,#2c2934 25px 26px,#2c2833 26px 27px,
+    #2b2732 27px 28px,#2b2731 28px 29px,#2b2630 29px 30px,#2a242f 30px 31px,
+    #2a232d 31px 32px,#29222c 32px 33px,#29212b 33px 35px,#28212a 35px 36px,
+    #282029 36px 38px,#271f28 38px 40px,#261f28 40px 41px,#251e26 41px 44px,
+    #251d25 44px 47px,#241c25 47px 50px,#231b23 50px 56px,#221921 56px 61px,
+    #211820 61px 66px,#21171f 66px 71px,#1f161d 71px 77px,#20161e 77px 80px,
+    #241821 80px 81px,#251820 81px 82px,#221219 82px 83px,#1f0e14 83px 84px,
+    #170a11 84px 85px);
+}
+
+/* --- left gutter between the frame rim and the L bracket, x13..24 -------- */
+.bt-gut {
+  left:13px; top:142px; width:11px; height:71px;
+  background:linear-gradient(90deg,
+    #2f2f32 0 1px,#18191c 1px 2px,#0c0b0c 2px 3px,#130d0c 3px 4px,#20120c 4px 5px,
+    #2e1610 5px 6px,#533c37 6px 7px,#5a4945 7px 8px,#3a2d2b 8px 9px,#30211c 9px 11px);
+}
+.bt-gutcap {
+  left:13px; top:136px; width:13px; height:6px;
+  background:linear-gradient(180deg,#322f2f 0 1px,#141312 1px 2px,#0c0706 2px 3px,
+                             #251c1a 3px 4px,#413735 4px 5px,#3b2f2d 5px 6px);
+}
+
+/* --- C10 graph well, x37..72 y139..215 ---------------------------------- */
+.bt-welltop {
+  left:36px; top:139px; width:37px; height:4px;
+  background:linear-gradient(180deg,#636666 0 1px,#7d868a 1px 2px,#627077 2px 3px,#5c6c74 3px 4px);
+}
+.bt-well {
+  left:38px; top:143px; width:33px; height:73px;
+  background:
+    linear-gradient(90deg, rgba(0,8,22,0) 0%, rgba(0,8,22,0) 38%, rgba(0,8,22,.16) 100%),
+    linear-gradient(90deg, rgba(130,190,240,.115) 0%, rgba(130,190,240,0) 40%,
+                    rgba(130,190,240,0) 100%),
+    linear-gradient(180deg,
+    #2e404b 0px 1px,#1a2b38 1px 2px,#1e2e39 2px 3px,#1d2c37 3px 4px,#1b2934 4px 5px,
+    #192832 5px 6px,#1a2832 6px 7px,#182631 7px 8px,#182630 8px 9px,#1d2c37 9px 10px,
+    #1d2d39 10px 11px,#182733 11px 12px,#192732 12px 13px,#182732 13px 14px,#182631 14px 16px,
+    #1a2833 16px 17px,#1a2934 17px 18px,#192833 18px 19px,#182632 19px 20px,#182732 20px 21px,
+    #192733 21px 22px,#182632 22px 23px,#172530 23px 24px,#172631 24px 25px,#162631 25px 26px,
+    #15242f 26px 27px,#14232e 27px 28px,#162531 28px 29px,#182631 29px 30px,#15222d 30px 31px,
+    #13202b 31px 32px,#13212c 32px 33px,#121f2a 33px 34px,#111d29 34px 35px,#121f2a 35px 36px,
+    #121e2a 36px 37px,#111c28 37px 39px,#121e2a 39px 40px,#111d29 40px 41px,#111b27 41px 42px,
+    #111d29 42px 43px,#121e29 43px 44px,#121c28 44px 45px,#121c27 45px 46px,#131d29 46px 47px,
+    #131e29 47px 48px,#131d28 48px 50px,#141e29 50px 52px,#141d28 52px 53px,#151e29 53px 54px,
+    #151f29 54px 56px,#1a242e 56px 57px,#19232d 57px 58px,#171f2a 58px 59px,#181f2a 59px 60px,
+    #191f2a 60px 61px,#1b212d 61px 62px,#1d222d 62px 63px,#1d212c 63px 64px,#1e202b 64px 65px,
+    #23222d 65px 66px,#171d29 66px 67px,#171e2b 67px 68px,#1c2430 68px 69px,#1c212d 69px 70px,
+    #1c1f2a 70px 71px,#1f1f2b 71px 72px,#22202c 72px 73px);
+}
+/* faint square grid */
+.bt-well::before {
+  content:""; position:absolute; inset:0;
+  background:
+    repeating-linear-gradient(90deg, rgba(150,205,230,.035) 0 1px, transparent 1px 9.4px),
+    repeating-linear-gradient(180deg, rgba(150,205,230,.030) 0 1px, transparent 1px 9.4px);
+  background-position:3px 9px, 3px 9px;
+}
+/* 1px pale border down the left of the well, 1px shade down the right */
+.bt-welledge { left:37px; top:142px; width:1px; height:73px; background:#3d4350; }
+.bt-wellr    { left:71px; top:143px; width:1px; height:73px; background:#151b25; }
+/* the warm shadow column between the L bracket and the well, x33..36 */
+.bt-warm {
+  left:33px; top:143px; width:4px; height:86px;
+  background:linear-gradient(180deg,
+    #352e33 0px 1px,#332b2f 1px 2px,#31292e 2px 3px,#2f272d 3px 4px,#2c242b 4px 5px,
+    #2a242a 5px 6px,#2b2529 6px 7px,#2b2428 7px 8px,#2a2428 8px 9px,#2e272b 9px 10px,
+    #2f282d 10px 11px,#2c252b 11px 12px,#2b252a 12px 13px,#2b242a 13px 14px,#2a242a 14px 15px,
+    #2a2428 15px 16px,#2b2528 16px 17px,#2b2629 17px 18px,#2b252a 18px 20px,#2b2529 20px 21px,
+    #2c252a 21px 22px,#2b252a 22px 23px,#2c262b 23px 24px,#2e272c 24px 25px,#2f272c 25px 28px,
+    #2f282c 28px 29px,#31292c 29px 30px,#2f282b 30px 31px,#2b252a 31px 34px,#2c252a 34px 35px,
+    #2d252a 35px 36px,#2c252b 36px 37px,#2b242a 37px 38px,#2b242b 38px 39px,#2c242b 39px 40px,
+    #2b242a 40px 41px,#2a232a 41px 42px,#2b232a 42px 43px,#2c242a 43px 44px,#2d252b 44px 45px,
+    #2e252b 45px 46px,#31262c 46px 47px,#32262d 47px 48px,#30262c 48px 50px,#32272e 50px 51px,
+    #34282e 51px 52px,#35272d 52px 53px,#38282d 53px 54px,#39282e 54px 55px,#39282d 55px 56px,
+    #3b282e 56px 57px,#3d292f 57px 58px,#3e282e 58px 59px,#44272d 59px 60px,#562c32 60px 61px,
+    #7c4045 61px 62px,#a9565a 62px 63px,#d2686b 63px 64px,#ed6f6d 64px 65px,#f76e69 65px 66px,
+    #fa6e66 66px 67px,#fa6d64 67px 68px,#f06a60 68px 69px,#dd6357 69px 70px,#c1564d 70px 71px,
+    #a34942 71px 72px,#843a34 72px 73px,#6d2e2a 73px 74px,#5d2622 74px 75px,#4e1e1a 75px 76px,
+    #421a16 76px 77px,#371814 77px 78px,#2e1713 78px 79px,#291a17 79px 80px,#2b2321 80px 81px,
+    #383533 81px 82px,#403f3c 82px 83px,#3e3e3a 83px 84px,#35352f 84px 85px,#313028 85px 86px);
+}
+/* the frame gutter continues below the bracket foot */
+.bt-gutlow {
+  left:13px; top:213px; width:11px; height:16px;
+  background:linear-gradient(180deg,
+    #2f2923 0px 1px,#2d2721 1px 2px,#26201b 2px 3px,#211b17 3px 4px,#1e1916 4px 5px,
+    #1a1513 5px 6px,#1b1715 6px 7px,#1f1c1c 7px 8px,#212020 8px 9px,#232323 9px 10px,
+    #252626 10px 11px,#29292a 11px 12px,#2f2d2e 12px 13px,#323131 13px 14px,#353334 14px 15px,
+    #3a3636 15px 16px);
+}
+.bt-graph { position:absolute; left:37px; top:143px; width:36px; height:73px; }
+
+/* --- C11 red L bracket -------------------------------------------------- */
+.bt-lv {
+  left:24px; top:142px; width:9px; height:63px;
+  background:linear-gradient(90deg,
+    #3d1712 0 1px,#5a0a04 1px 2px,#c74f45 2px 3px,#f76a5c 3px 4px,#fc6a5c 4px 6px,
+    #ee6f6a 6px 7px,#bc6568 7px 8px,#593947 8px 9px);
+}
+.bt-ltip {
+  left:24px; top:138px; width:9px; height:5px;
+  background:linear-gradient(180deg,#241715 0 1px,#8e6057 1px 2px,#e99b8d 2px 3px,
+                             #f88c7d 3px 4px,#f47061 4px 5px);
+  -webkit-mask-image:linear-gradient(90deg,transparent 0 2px,rgba(0,0,0,.80) 2px 3px,
+                     #000 3px 7px,rgba(0,0,0,.74) 7px 8px,rgba(0,0,0,.34) 8px 9px);
+          mask-image:linear-gradient(90deg,transparent 0 2px,rgba(0,0,0,.80) 2px 3px,
+                     #000 3px 7px,rgba(0,0,0,.74) 7px 8px,rgba(0,0,0,.34) 8px 9px);
+}
+.bt-lch {
+  left:27px; top:202px; width:43px; height:5.6px; margin-top:-2.8px;
+  transform-origin:0 50%; transform:rotate(43.5deg);
+  background:linear-gradient(180deg,#b5504a 0%,#f0655a 16%,#fc6c5c 38%,#fb6f66 62%,
+                             #ee7270 80%,#a85258 100%);
+}
+.bt-div {
+  left:52px; top:228px; width:1012px; height:12px;
+  background:linear-gradient(180deg,
+    #4c2426 0 1px,#b5615f 1px 2px,#de7470 2px 3px,#a84845 3px 4px,#772527 4px 5px,
+    #612123 5px 6px,#4f2121 6px 7px,#442322 7px 8px,#331f1e 8px 9px,#1d0d0d 9px 10px,
+    #140404 10px 11px,#100304 11px 12px);
+}
+/* --- the exposed face strip right of the PROMISED chip, x1038..1058 ------ */
+.bt-right {
+  left:1038px; top:143px; width:20px; height:85px;
+  background:linear-gradient(180deg,
+    #343a4c 0 1px,#313749 1px 2px,#303649 2px 6px,#31374b 6px 9px,#30364a 9px 10px,
+    #303546 10px 14px,#2f3445 14px 17px,#2e3445 17px 19px,#2d3344 19px 21px,
+    #2e3343 21px 22px,#2d3141 22px 23px,#2d3140 23px 24px,#2b2f3e 24px 25px,
+    #292d3b 25px 26px,#292c3a 26px 27px,#282b38 27px 28px,#262936 28px 29px,
+    #252734 29px 33px,#272834 33px 40px,#262631 40px 41px,#24242f 41px 45px,
+    #252530 45px 48px,#242430 48px 49px,#23232e 49px 50px,#22222c 50px 51px,
+    #22222b 51px 58px,#211f29 58px 66px,#1f1e26 66px 80px,#231d28 80px 81px,
+    #251d26 81px 82px,#221720 82px 83px,#20131c 83px 84px,#1a1019 84px 85px);
+}
+.bt-rivet {
+  left:13.5px; top:232px; width:7px; height:7px; border-radius:50%;
+  background:radial-gradient(circle at 50% 45%, #46392f 0 1.4px, #2a1f1c 2.4px, #16100f 100%);
+}
+
+/* C9 — circuit etched field ------------------------------------------------
+   x 11..351, y 241..375.  Four stacked layers, bottom-most listed last:
+     4  opaque horizontal ramp  = base #080f16 + the bezel's inner glow
+     3  warm shadow cast by the L-bracket along the top edge
+     2  the conduit's ambient red wash over the right half
+     1  light spilling up from the sub-panel rim below y=347            */
+.circuitfield {
+  position: absolute; left: 11px; top: 241px; width: 341px; height: 135px;
+  background:
+    linear-gradient(180deg,
+      rgba(124,136,162,0)     0,     rgba(124,136,162,0)     106px,
+      rgba(124,136,162,.019) 111px,  rgba(124,136,162,.044) 116px,
+      rgba(124,136,162,.073) 120px,  rgba(124,136,162,.108) 124px,
+      rgba(124,136,162,.152) 128px,  rgba(124,136,162,.202) 132px,
+      rgba(124,136,162,.250) 134px,  rgba(124,136,162,.278) 135px),
+    linear-gradient(90deg,
+      rgba(230,110,95,0)     115px, rgba(230,110,95,.014) 140px,
+      rgba(230,110,95,.026) 175px,  rgba(230,110,95,.049) 225px,
+      rgba(230,110,95,.050) 300px,  rgba(230,110,95,.046) 341px),
+    linear-gradient(180deg,
+      rgba(154,58,52,.115) 0,   rgba(120,58,58,.052) 2px,
+      rgba(110,70,72,.030) 5px, rgba(110,80,86,.013) 12px,
+      rgba(110,80,86,0)    24px),
+    linear-gradient(90deg,
+      #43556e   0,     #27364d  1.5px, #232f3e  2.5px, #232e39  3.5px,
+      #222c36   4.5px, #202a34  5.5px, #1f2832  6.5px, #202932  7.5px,
+      #202831   9.5px, #202930 11.5px, #1d272f 13.5px, #1a242e 14.5px,
+      #162029  15.5px, #151e27 16.5px, #141d26 17.5px, #121b24 19.5px,
+      #111922  21.5px, #0f1820 23.5px, #0e171f 25.5px, #0d161e 28.5px,
+      #0d141d  30.5px, #0e151c 34.5px, #0e141d 37.5px, #0d131b 40.5px,
+      #0d121a  44.5px, #0d121a 49.5px, #0c1119 52.5px, #0b1018 56.5px,
+      #0a0f17  61.5px, #090f17 66.5px, #090f16 71.5px, #080f17 82.5px,
+      #090e16  94.5px, #080f16 109.5px, #080f16 341px);
+}
+/* the etched copper: ~1px, only +13 luminance over the field */
+.circuitfield svg { position: absolute; left: 0; top: 0; }
+.circuitfield .cu   { fill: none; stroke: rgba(142,148,142,.056); stroke-width: 1; }
+.circuitfield .cuf  { fill: rgba(142,148,142,.100); stroke: none; }
+.circuitfield .cud  { fill: rgba(142,148,142,.062); stroke: rgba(142,148,142,.062);
+                      stroke-width: 1.1; }
+.circuitfield .halo { fill: none; stroke: rgba(142,148,142,.044); stroke-width: 2.8; }
+
+/* C7 — micro technical text -------------------------------------------------
+   10 lines, pitch 4.55px, glyph band 3px.  Gutter block x30..31, text from
+   x=37.  Per-line widths are tuned so the right edges land on the measured
+   55/31/88/57/75/132/93/57/53/70.                                          */
+.microtext {
+  position: absolute; left: 30px; top: 321.35px; width: 140px;
+  font-family: var(--mono); font-size: 3.9px; line-height: 4.55px;
+  color: rgba(150,185,205,.66); white-space: nowrap; letter-spacing: -.05px;
+}
+.microtext > div { position: relative; padding-left: 7px; }
+.microtext > div::before {
+  content: ""; position: absolute; left: 0; top: -.65px;
+  width: 2.4px; height: 2.15px; background: rgba(182,208,222,.40);
+}
+
+/* C8 — hex icon */
+.hexicon { position: absolute; left: 397px; top: 297px; width: 30px; height: 31px; }
+
+/* C6d — the name */
+/* Arial Bold matches the source face: measured glyph widths S=25/k=20/i=6/d=21
+   and a 12px period pitch against the reference's 24/22/7/20 and 12. Sized so
+   cap height = 30px (y296..326) and tracked -0.35px to kill a 2% overrun. */
+.name {
+  position: absolute; left: 458px; top: 290.5px;
+  font-family: Arial, "Helvetica Neue", sans-serif; font-weight: 700;
+  font-size: 41.9px; line-height: 1;
+  letter-spacing: -.35px; color: #f4f9fa;
+  text-shadow: 0 2px 3px rgba(0,0,0,.72);
+}
+</style>
+</head>
+<body>
+<div id="stage">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<clipPath id="cd_clip" clipPathUnits="userSpaceOnUse"><path d="M13.5,2.3L126.6,2.3L137.5,13.2L137.5,31.3L113.8,31.3L111.0,25.3L98.6,25.3L98.6,33.5L101.0,38.0L108.3,46.3L133.0,71.0L143.5,74.6L187.6,74.6L187.6,68.6L205.6,72.3L205.6,75.5L203.6,79.5L203.6,111.0L196.3,115.6L196.3,123.5L188.0,123.5L175.0,120.3L122.0,120.3L114.5,116.0L51.3,52.7L50.6,25.3L35.5,25.3L28.5,30.8L4.8,30.8L3.5,14.6ZM67.0,24.8L77.8,24.8L77.8,35.5L88.3,51.6L79.6,59.8L67.0,47.0ZM91.5,33.3L94.0,33.3L100.0,41.0L99.5,43.0L97.5,45.8L90.2,36.4ZM122.3,86.3L131.0,91.6L150.6,91.6L150.6,101.3L148.6,102.6L124.0,102.6L115.8,93.3Z" clip-rule="evenodd"/></clipPath>
+<linearGradient id="g_bar" gradientUnits="userSpaceOnUse" x1="45.50" y1="-0.50" x2="45.50" y2="29.50"><stop offset="0.00%" stop-color="#000000" stop-opacity="0.000"/><stop offset="3.33%" stop-color="#020101" stop-opacity="0.004"/><stop offset="6.67%" stop-color="#2f161a" stop-opacity="0.004"/><stop offset="10.00%" stop-color="#5a2b33" stop-opacity="0.075"/><stop offset="13.33%" stop-color="#632c35" stop-opacity="0.278"/><stop offset="16.67%" stop-color="#84414b" stop-opacity="0.443"/><stop offset="20.00%" stop-color="#b8545d" stop-opacity="0.647"/><stop offset="23.33%" stop-color="#d96467" stop-opacity="0.875"/><stop offset="26.67%" stop-color="#e47a7b" stop-opacity="0.973"/><stop offset="30.00%" stop-color="#d38286" stop-opacity="0.992"/><stop offset="33.33%" stop-color="#bf969c" stop-opacity="1.000"/><stop offset="36.67%" stop-color="#ad9fac" stop-opacity="1.000"/><stop offset="40.00%" stop-color="#706776" stop-opacity="0.980"/><stop offset="43.33%" stop-color="#3a202a" stop-opacity="0.937"/><stop offset="46.67%" stop-color="#46141e" stop-opacity="0.937"/><stop offset="50.00%" stop-color="#75333c" stop-opacity="0.969"/><stop offset="53.33%" stop-color="#6b3136" stop-opacity="0.996"/><stop offset="56.67%" stop-color="#300d11" stop-opacity="1.000"/><stop offset="60.00%" stop-color="#1d0508" stop-opacity="0.996"/><stop offset="63.33%" stop-color="#220b0e" stop-opacity="0.992"/><stop offset="66.67%" stop-color="#220e11" stop-opacity="0.988"/><stop offset="70.00%" stop-color="#1f0c0e" stop-opacity="0.957"/><stop offset="73.33%" stop-color="#231317" stop-opacity="0.914"/><stop offset="76.67%" stop-color="#2c2125" stop-opacity="0.906"/><stop offset="80.00%" stop-color="#1c1213" stop-opacity="0.922"/><stop offset="83.33%" stop-color="#130b09" stop-opacity="0.859"/><stop offset="86.67%" stop-color="#150c0b" stop-opacity="0.443"/><stop offset="90.00%" stop-color="#110a0a" stop-opacity="0.078"/><stop offset="93.33%" stop-color="#020101" stop-opacity="0.004"/><stop offset="96.67%" stop-color="#000000" stop-opacity="0.000"/><stop offset="100.00%" stop-color="#000000" stop-opacity="0.000"/></linearGradient>
+<linearGradient id="g_capl" gradientUnits="userSpaceOnUse" x1="7.50" y1="3.50" x2="31.50" y2="27.50"><stop offset="0.00%" stop-color="#000000" stop-opacity="0.000"/><stop offset="8.33%" stop-color="#010101" stop-opacity="0.004"/><stop offset="12.50%" stop-color="#3b2123" stop-opacity="0.047"/><stop offset="16.67%" stop-color="#4f3339" stop-opacity="0.612"/><stop offset="20.83%" stop-color="#59414b" stop-opacity="0.918"/><stop offset="25.00%" stop-color="#43313a" stop-opacity="0.906"/><stop offset="29.17%" stop-color="#423139" stop-opacity="0.890"/><stop offset="33.33%" stop-color="#412f38" stop-opacity="0.890"/><stop offset="37.50%" stop-color="#402c35" stop-opacity="0.878"/><stop offset="41.67%" stop-color="#452d36" stop-opacity="0.878"/><stop offset="45.83%" stop-color="#4d2c33" stop-opacity="0.871"/><stop offset="50.00%" stop-color="#621f23" stop-opacity="0.871"/><stop offset="54.17%" stop-color="#d75b5a" stop-opacity="0.965"/><stop offset="58.33%" stop-color="#fe837e" stop-opacity="1.000"/><stop offset="62.50%" stop-color="#e37170" stop-opacity="1.000"/><stop offset="66.67%" stop-color="#904956" stop-opacity="0.957"/><stop offset="70.83%" stop-color="#6b3f4e" stop-opacity="0.953"/><stop offset="75.00%" stop-color="#492c37" stop-opacity="0.969"/><stop offset="79.17%" stop-color="#341f24" stop-opacity="0.984"/><stop offset="83.33%" stop-color="#29171a" stop-opacity="0.976"/><stop offset="87.50%" stop-color="#130304" stop-opacity="0.945"/><stop offset="91.67%" stop-color="#120102" stop-opacity="0.945"/><stop offset="95.83%" stop-color="#0f0101" stop-opacity="0.929"/><stop offset="100.00%" stop-color="#0a0000" stop-opacity="0.878"/></linearGradient>
+<linearGradient id="g_capr" gradientUnits="userSpaceOnUse" x1="138.50" y1="5.50" x2="114.50" y2="29.50"><stop offset="0.00%" stop-color="#000000" stop-opacity="0.000"/><stop offset="16.67%" stop-color="#070707" stop-opacity="0.004"/><stop offset="20.83%" stop-color="#2a2729" stop-opacity="0.090"/><stop offset="25.00%" stop-color="#47444e" stop-opacity="0.643"/><stop offset="29.17%" stop-color="#9399a8" stop-opacity="0.910"/><stop offset="33.33%" stop-color="#544953" stop-opacity="0.831"/><stop offset="37.50%" stop-color="#473039" stop-opacity="0.839"/><stop offset="41.67%" stop-color="#4a303c" stop-opacity="0.859"/><stop offset="45.83%" stop-color="#493139" stop-opacity="0.878"/><stop offset="50.00%" stop-color="#50353c" stop-opacity="0.898"/><stop offset="54.17%" stop-color="#55343c" stop-opacity="0.894"/><stop offset="58.33%" stop-color="#5c323a" stop-opacity="0.902"/><stop offset="62.50%" stop-color="#8a353d" stop-opacity="0.949"/><stop offset="66.67%" stop-color="#f36f6a" stop-opacity="0.988"/><stop offset="70.83%" stop-color="#fe8079" stop-opacity="1.000"/><stop offset="75.00%" stop-color="#e66765" stop-opacity="0.969"/><stop offset="79.17%" stop-color="#8c363a" stop-opacity="0.898"/><stop offset="83.33%" stop-color="#5b2226" stop-opacity="0.933"/><stop offset="87.50%" stop-color="#31080b" stop-opacity="0.898"/><stop offset="91.67%" stop-color="#2a0509" stop-opacity="0.890"/><stop offset="95.83%" stop-color="#2b0a0f" stop-opacity="0.902"/><stop offset="100.00%" stop-color="#270b0e" stop-opacity="0.851"/></linearGradient>
+<linearGradient id="g_footl" gradientUnits="userSpaceOnUse" x1="-0.50" y1="28.50" x2="41.50" y2="28.50"><stop offset="0.00%" stop-color="#000000" stop-opacity="0.000"/><stop offset="7.14%" stop-color="#3d1a1c" stop-opacity="0.039"/><stop offset="9.52%" stop-color="#411c1c" stop-opacity="0.196"/><stop offset="11.90%" stop-color="#391c1f" stop-opacity="0.416"/><stop offset="14.29%" stop-color="#2a171c" stop-opacity="0.678"/><stop offset="16.67%" stop-color="#190c0e" stop-opacity="0.847"/><stop offset="19.05%" stop-color="#13070a" stop-opacity="0.878"/><stop offset="21.43%" stop-color="#15070b" stop-opacity="0.890"/><stop offset="23.81%" stop-color="#15070b" stop-opacity="0.875"/><stop offset="26.19%" stop-color="#160609" stop-opacity="0.851"/><stop offset="28.57%" stop-color="#130406" stop-opacity="0.882"/><stop offset="30.95%" stop-color="#140101" stop-opacity="0.906"/><stop offset="33.33%" stop-color="#651715" stop-opacity="0.910"/><stop offset="35.71%" stop-color="#c02e30" stop-opacity="0.969"/><stop offset="38.10%" stop-color="#df383b" stop-opacity="0.984"/><stop offset="40.48%" stop-color="#e64345" stop-opacity="0.976"/><stop offset="42.86%" stop-color="#e3494c" stop-opacity="0.941"/><stop offset="45.24%" stop-color="#c3474f" stop-opacity="0.882"/><stop offset="47.62%" stop-color="#66212a" stop-opacity="0.878"/><stop offset="50.00%" stop-color="#27060a" stop-opacity="0.918"/><stop offset="52.38%" stop-color="#1a0305" stop-opacity="0.925"/><stop offset="54.76%" stop-color="#180506" stop-opacity="0.922"/><stop offset="57.14%" stop-color="#170506" stop-opacity="0.925"/><stop offset="59.52%" stop-color="#160607" stop-opacity="0.937"/><stop offset="61.90%" stop-color="#140608" stop-opacity="0.925"/><stop offset="64.29%" stop-color="#120406" stop-opacity="0.922"/><stop offset="66.67%" stop-color="#0d0202" stop-opacity="0.945"/><stop offset="69.05%" stop-color="#0d0101" stop-opacity="0.953"/><stop offset="71.43%" stop-color="#0d0001" stop-opacity="0.925"/><stop offset="73.81%" stop-color="#0b0000" stop-opacity="0.851"/><stop offset="76.19%" stop-color="#0b0000" stop-opacity="0.655"/><stop offset="78.57%" stop-color="#0b0000" stop-opacity="0.361"/><stop offset="80.95%" stop-color="#070000" stop-opacity="0.114"/><stop offset="83.33%" stop-color="#030000" stop-opacity="0.016"/><stop offset="85.71%" stop-color="#010000" stop-opacity="0.000"/><stop offset="88.10%" stop-color="#000000" stop-opacity="0.000"/><stop offset="100.00%" stop-color="#000000" stop-opacity="0.000"/></linearGradient>
+<linearGradient id="g_footr" gradientUnits="userSpaceOnUse" x1="101.50" y1="28.50" x2="143.50" y2="28.50"><stop offset="0.00%" stop-color="#010101" stop-opacity="0.004"/><stop offset="2.38%" stop-color="#000000" stop-opacity="0.000"/><stop offset="4.76%" stop-color="#010000" stop-opacity="0.004"/><stop offset="9.52%" stop-color="#020000" stop-opacity="0.004"/><stop offset="16.67%" stop-color="#030001" stop-opacity="0.004"/><stop offset="19.05%" stop-color="#190001" stop-opacity="0.004"/><stop offset="21.43%" stop-color="#150103" stop-opacity="0.090"/><stop offset="23.81%" stop-color="#1b0304" stop-opacity="0.325"/><stop offset="26.19%" stop-color="#200709" stop-opacity="0.612"/><stop offset="28.57%" stop-color="#24090c" stop-opacity="0.804"/><stop offset="30.95%" stop-color="#280b0e" stop-opacity="0.882"/><stop offset="33.33%" stop-color="#2b0a0f" stop-opacity="0.902"/><stop offset="35.71%" stop-color="#2b070c" stop-opacity="0.902"/><stop offset="38.10%" stop-color="#2a060a" stop-opacity="0.898"/><stop offset="40.48%" stop-color="#2c060a" stop-opacity="0.890"/><stop offset="42.86%" stop-color="#370b0e" stop-opacity="0.890"/><stop offset="45.24%" stop-color="#400b10" stop-opacity="0.910"/><stop offset="47.62%" stop-color="#52080c" stop-opacity="0.902"/><stop offset="50.00%" stop-color="#971e22" stop-opacity="0.925"/><stop offset="52.38%" stop-color="#d23c41" stop-opacity="0.980"/><stop offset="54.76%" stop-color="#e0494b" stop-opacity="1.000"/><stop offset="57.14%" stop-color="#db4749" stop-opacity="1.000"/><stop offset="59.52%" stop-color="#9b2a31" stop-opacity="1.000"/><stop offset="61.90%" stop-color="#41090c" stop-opacity="0.988"/><stop offset="64.29%" stop-color="#200204" stop-opacity="0.976"/><stop offset="66.67%" stop-color="#1b0406" stop-opacity="0.965"/><stop offset="69.05%" stop-color="#180406" stop-opacity="0.957"/><stop offset="71.43%" stop-color="#170406" stop-opacity="0.957"/><stop offset="73.81%" stop-color="#170408" stop-opacity="0.941"/><stop offset="76.19%" stop-color="#170509" stop-opacity="0.937"/><stop offset="78.57%" stop-color="#110204" stop-opacity="0.961"/><stop offset="80.95%" stop-color="#0b0000" stop-opacity="0.957"/><stop offset="83.33%" stop-color="#0a0000" stop-opacity="0.882"/><stop offset="85.71%" stop-color="#0b0101" stop-opacity="0.765"/><stop offset="88.10%" stop-color="#100304" stop-opacity="0.486"/><stop offset="90.48%" stop-color="#170202" stop-opacity="0.129"/><stop offset="92.86%" stop-color="#180000" stop-opacity="0.008"/><stop offset="95.24%" stop-color="#030000" stop-opacity="0.004"/><stop offset="97.62%" stop-color="#000000" stop-opacity="0.000"/><stop offset="100.00%" stop-color="#000000" stop-opacity="0.000"/></linearGradient>
+<linearGradient id="g_leg1" gradientUnits="userSpaceOnUse" x1="43.50" y1="39.50" x2="75.50" y2="39.50"><stop offset="0.00%" stop-color="#000000" stop-opacity="0.000"/><stop offset="9.38%" stop-color="#000000" stop-opacity="0.004"/><stop offset="12.50%" stop-color="#200a09" stop-opacity="0.000"/><stop offset="15.63%" stop-color="#5b1a19" stop-opacity="0.027"/><stop offset="18.75%" stop-color="#601117" stop-opacity="0.251"/><stop offset="21.88%" stop-color="#701319" stop-opacity="0.565"/><stop offset="25.00%" stop-color="#963132" stop-opacity="0.804"/><stop offset="28.13%" stop-color="#c57374" stop-opacity="0.957"/><stop offset="31.25%" stop-color="#d1999c" stop-opacity="1.000"/><stop offset="34.38%" stop-color="#8e6a71" stop-opacity="0.973"/><stop offset="37.50%" stop-color="#4a343c" stop-opacity="0.918"/><stop offset="40.63%" stop-color="#3d2b34" stop-opacity="0.910"/><stop offset="43.75%" stop-color="#3e2d38" stop-opacity="0.941"/><stop offset="46.88%" stop-color="#3c2c37" stop-opacity="0.953"/><stop offset="50.00%" stop-color="#3c2b36" stop-opacity="0.949"/><stop offset="53.13%" stop-color="#37242d" stop-opacity="0.957"/><stop offset="56.25%" stop-color="#312325" stop-opacity="0.969"/><stop offset="59.38%" stop-color="#787572" stop-opacity="0.992"/><stop offset="62.50%" stop-color="#868280" stop-opacity="0.918"/><stop offset="65.63%" stop-color="#352325" stop-opacity="0.820"/><stop offset="68.75%" stop-color="#44171b" stop-opacity="0.812"/><stop offset="71.88%" stop-color="#6b282f" stop-opacity="0.702"/><stop offset="75.00%" stop-color="#5a131b" stop-opacity="0.294"/><stop offset="78.13%" stop-color="#380309" stop-opacity="0.043"/><stop offset="81.25%" stop-color="#070001" stop-opacity="0.004"/><stop offset="84.38%" stop-color="#000000" stop-opacity="0.000"/><stop offset="100.00%" stop-color="#000000" stop-opacity="0.004"/></linearGradient>
+<linearGradient id="g_leg2" gradientUnits="userSpaceOnUse" x1="71.50" y1="32.50" x2="107.50" y2="32.50"><stop offset="0.00%" stop-color="#000000" stop-opacity="0.000"/><stop offset="13.89%" stop-color="#877474" stop-opacity="0.008"/><stop offset="16.67%" stop-color="#621c21" stop-opacity="0.204"/><stop offset="19.44%" stop-color="#69181b" stop-opacity="0.580"/><stop offset="22.22%" stop-color="#be8687" stop-opacity="0.894"/><stop offset="25.00%" stop-color="#ca9a9a" stop-opacity="0.980"/><stop offset="27.78%" stop-color="#763537" stop-opacity="0.914"/><stop offset="30.56%" stop-color="#571217" stop-opacity="0.871"/><stop offset="33.33%" stop-color="#62242a" stop-opacity="0.890"/><stop offset="36.11%" stop-color="#59242a" stop-opacity="0.886"/><stop offset="38.89%" stop-color="#441b1f" stop-opacity="0.859"/><stop offset="41.67%" stop-color="#33161a" stop-opacity="0.835"/><stop offset="44.44%" stop-color="#403037" stop-opacity="0.737"/><stop offset="47.22%" stop-color="#41383e" stop-opacity="0.647"/><stop offset="50.00%" stop-color="#2b1719" stop-opacity="0.663"/><stop offset="52.78%" stop-color="#2f1110" stop-opacity="0.671"/><stop offset="55.56%" stop-color="#361215" stop-opacity="0.647"/><stop offset="58.33%" stop-color="#331215" stop-opacity="0.631"/><stop offset="61.11%" stop-color="#2b0c0b" stop-opacity="0.706"/><stop offset="63.89%" stop-color="#1b0202" stop-opacity="0.796"/><stop offset="66.67%" stop-color="#61565c" stop-opacity="0.847"/><stop offset="69.44%" stop-color="#666268" stop-opacity="0.933"/><stop offset="72.22%" stop-color="#22181a" stop-opacity="0.910"/><stop offset="75.00%" stop-color="#34282b" stop-opacity="0.706"/><stop offset="77.78%" stop-color="#504c51" stop-opacity="0.427"/><stop offset="80.56%" stop-color="#4a444c" stop-opacity="0.176"/><stop offset="83.33%" stop-color="#373036" stop-opacity="0.027"/><stop offset="86.11%" stop-color="#070607" stop-opacity="0.004"/><stop offset="88.89%" stop-color="#000000" stop-opacity="0.000"/><stop offset="100.00%" stop-color="#000000" stop-opacity="0.000"/></linearGradient>
+<linearGradient id="g_diag" gradientUnits="userSpaceOnUse" x1="86.50" y1="94.50" x2="124.50" y2="56.50"><stop offset="0.00%" stop-color="#000000" stop-opacity="0.000"/><stop offset="2.63%" stop-color="#240507" stop-opacity="0.000"/><stop offset="5.26%" stop-color="#7c181f" stop-opacity="0.180"/><stop offset="7.89%" stop-color="#851e27" stop-opacity="0.506"/><stop offset="10.53%" stop-color="#62191d" stop-opacity="0.824"/><stop offset="13.16%" stop-color="#300404" stop-opacity="0.969"/><stop offset="15.79%" stop-color="#4a1a1c" stop-opacity="0.996"/><stop offset="18.42%" stop-color="#4f252c" stop-opacity="0.992"/><stop offset="21.05%" stop-color="#47262d" stop-opacity="0.976"/><stop offset="23.68%" stop-color="#472730" stop-opacity="0.984"/><stop offset="26.32%" stop-color="#482831" stop-opacity="0.996"/><stop offset="28.95%" stop-color="#593b47" stop-opacity="0.973"/><stop offset="31.58%" stop-color="#8a6f7e" stop-opacity="0.996"/><stop offset="34.21%" stop-color="#5f2f36" stop-opacity="0.941"/><stop offset="36.84%" stop-color="#541518" stop-opacity="0.922"/><stop offset="39.47%" stop-color="#6a1213" stop-opacity="0.941"/><stop offset="42.11%" stop-color="#d85552" stop-opacity="0.976"/><stop offset="44.74%" stop-color="#ff7e76" stop-opacity="1.000"/><stop offset="47.37%" stop-color="#ff837b" stop-opacity="1.000"/><stop offset="50.00%" stop-color="#fe827b" stop-opacity="1.000"/><stop offset="52.63%" stop-color="#f87a74" stop-opacity="1.000"/><stop offset="55.26%" stop-color="#a13639" stop-opacity="0.961"/><stop offset="57.89%" stop-color="#621a1e" stop-opacity="0.953"/><stop offset="60.53%" stop-color="#712327" stop-opacity="0.906"/><stop offset="63.16%" stop-color="#6e252c" stop-opacity="0.941"/><stop offset="65.79%" stop-color="#522027" stop-opacity="0.910"/><stop offset="68.42%" stop-color="#45242a" stop-opacity="0.894"/><stop offset="71.05%" stop-color="#452d37" stop-opacity="0.867"/><stop offset="73.68%" stop-color="#916e7a" stop-opacity="0.875"/><stop offset="76.32%" stop-color="#844d57" stop-opacity="0.882"/><stop offset="78.95%" stop-color="#45171c" stop-opacity="0.859"/><stop offset="81.58%" stop-color="#300f13" stop-opacity="0.816"/><stop offset="84.21%" stop-color="#36191c" stop-opacity="0.804"/><stop offset="86.84%" stop-color="#493236" stop-opacity="0.808"/><stop offset="89.47%" stop-color="#8a8897" stop-opacity="0.796"/><stop offset="92.11%" stop-color="#41343f" stop-opacity="0.424"/><stop offset="94.74%" stop-color="#45373b" stop-opacity="0.043"/><stop offset="97.37%" stop-color="#070505" stop-opacity="0.000"/><stop offset="100.00%" stop-color="#000000" stop-opacity="0.000"/></linearGradient>
+<linearGradient id="g_diagL" gradientUnits="userSpaceOnUse" x1="97.50" y1="105.50" x2="129.50" y2="73.50"><stop offset="0.00%" stop-color="#000000" stop-opacity="0.000"/><stop offset="6.25%" stop-color="#8e0e17" stop-opacity="0.063"/><stop offset="9.38%" stop-color="#811d23" stop-opacity="0.392"/><stop offset="12.50%" stop-color="#6b1f24" stop-opacity="0.769"/><stop offset="15.63%" stop-color="#2d0203" stop-opacity="0.925"/><stop offset="18.75%" stop-color="#461516" stop-opacity="0.965"/><stop offset="21.88%" stop-color="#54282f" stop-opacity="0.976"/><stop offset="25.00%" stop-color="#442731" stop-opacity="0.949"/><stop offset="28.13%" stop-color="#3f2a34" stop-opacity="0.965"/><stop offset="31.25%" stop-color="#3b2934" stop-opacity="0.957"/><stop offset="34.38%" stop-color="#493b47" stop-opacity="0.949"/><stop offset="37.50%" stop-color="#817887" stop-opacity="0.992"/><stop offset="40.63%" stop-color="#4d2a2f" stop-opacity="0.949"/><stop offset="43.75%" stop-color="#421213" stop-opacity="0.925"/><stop offset="46.88%" stop-color="#612022" stop-opacity="0.933"/><stop offset="50.00%" stop-color="#5e1216" stop-opacity="0.953"/><stop offset="53.13%" stop-color="#51070a" stop-opacity="0.961"/><stop offset="56.25%" stop-color="#50070b" stop-opacity="0.949"/><stop offset="59.38%" stop-color="#5a0f11" stop-opacity="0.937"/><stop offset="62.50%" stop-color="#5e1418" stop-opacity="0.941"/><stop offset="65.63%" stop-color="#430b0f" stop-opacity="0.859"/><stop offset="68.75%" stop-color="#6a313a" stop-opacity="0.894"/><stop offset="71.88%" stop-color="#561a1d" stop-opacity="0.941"/><stop offset="75.00%" stop-color="#552023" stop-opacity="0.937"/><stop offset="78.13%" stop-color="#46222c" stop-opacity="0.922"/><stop offset="81.25%" stop-color="#3b242f" stop-opacity="0.925"/><stop offset="84.38%" stop-color="#372630" stop-opacity="0.925"/><stop offset="87.50%" stop-color="#33252e" stop-opacity="0.925"/><stop offset="90.63%" stop-color="#3b303a" stop-opacity="0.933"/><stop offset="93.75%" stop-color="#6c6673" stop-opacity="0.965"/><stop offset="96.88%" stop-color="#9b97a8" stop-opacity="0.992"/><stop offset="100.00%" stop-color="#938c9b" stop-opacity="0.953"/></linearGradient>
+<linearGradient id="g_runA" gradientUnits="userSpaceOnUse" x1="157.50" y1="67.50" x2="157.50" y2="127.50"><stop offset="0.00%" stop-color="#000000" stop-opacity="0.000"/><stop offset="6.67%" stop-color="#613131" stop-opacity="0.012"/><stop offset="8.33%" stop-color="#513836" stop-opacity="0.173"/><stop offset="10.00%" stop-color="#666261" stop-opacity="0.361"/><stop offset="11.67%" stop-color="#9999a0" stop-opacity="0.518"/><stop offset="13.33%" stop-color="#b6b0bd" stop-opacity="0.620"/><stop offset="15.00%" stop-color="#8e838c" stop-opacity="0.412"/><stop offset="16.67%" stop-color="#4e3836" stop-opacity="0.220"/><stop offset="18.33%" stop-color="#4b2a29" stop-opacity="0.369"/><stop offset="20.00%" stop-color="#3e1d1f" stop-opacity="0.659"/><stop offset="21.67%" stop-color="#260707" stop-opacity="0.863"/><stop offset="23.33%" stop-color="#4e2429" stop-opacity="0.961"/><stop offset="25.00%" stop-color="#a2717a" stop-opacity="0.996"/><stop offset="26.67%" stop-color="#c697a0" stop-opacity="1.000"/><stop offset="28.33%" stop-color="#794f58" stop-opacity="0.965"/><stop offset="30.00%" stop-color="#431821" stop-opacity="0.925"/><stop offset="31.67%" stop-color="#53202a" stop-opacity="0.929"/><stop offset="33.33%" stop-color="#5a232c" stop-opacity="0.953"/><stop offset="35.00%" stop-color="#5a2129" stop-opacity="0.961"/><stop offset="36.67%" stop-color="#52191f" stop-opacity="0.957"/><stop offset="38.33%" stop-color="#430e0f" stop-opacity="0.973"/><stop offset="40.00%" stop-color="#592224" stop-opacity="0.984"/><stop offset="41.67%" stop-color="#6e272c" stop-opacity="0.988"/><stop offset="43.33%" stop-color="#88272d" stop-opacity="0.992"/><stop offset="45.00%" stop-color="#c24a4f" stop-opacity="0.992"/><stop offset="46.67%" stop-color="#d6535a" stop-opacity="1.000"/><stop offset="48.33%" stop-color="#c94248" stop-opacity="1.000"/><stop offset="50.00%" stop-color="#bf383b" stop-opacity="1.000"/><stop offset="51.67%" stop-color="#bf3a3c" stop-opacity="1.000"/><stop offset="53.33%" stop-color="#c44244" stop-opacity="1.000"/><stop offset="55.00%" stop-color="#b63b3f" stop-opacity="1.000"/><stop offset="56.67%" stop-color="#7f1a20" stop-opacity="0.996"/><stop offset="58.33%" stop-color="#51070f" stop-opacity="0.961"/><stop offset="60.00%" stop-color="#410910" stop-opacity="0.949"/><stop offset="61.67%" stop-color="#50282e" stop-opacity="0.980"/><stop offset="63.33%" stop-color="#806973" stop-opacity="1.000"/><stop offset="65.00%" stop-color="#847484" stop-opacity="0.992"/><stop offset="66.67%" stop-color="#554352" stop-opacity="0.984"/><stop offset="68.33%" stop-color="#3c2935" stop-opacity="0.984"/><stop offset="70.00%" stop-color="#402c37" stop-opacity="0.973"/><stop offset="71.67%" stop-color="#422831" stop-opacity="0.965"/><stop offset="73.33%" stop-color="#36151a" stop-opacity="0.988"/><stop offset="75.00%" stop-color="#2d080b" stop-opacity="0.996"/><stop offset="76.67%" stop-color="#280306" stop-opacity="0.957"/><stop offset="78.33%" stop-color="#270206" stop-opacity="0.851"/><stop offset="80.00%" stop-color="#370e13" stop-opacity="0.667"/><stop offset="81.67%" stop-color="#64262c" stop-opacity="0.510"/><stop offset="83.33%" stop-color="#933437" stop-opacity="0.576"/><stop offset="85.00%" stop-color="#99292b" stop-opacity="0.761"/><stop offset="86.67%" stop-color="#8c2024" stop-opacity="0.706"/><stop offset="88.33%" stop-color="#882327" stop-opacity="0.486"/><stop offset="90.00%" stop-color="#852525" stop-opacity="0.306"/><stop offset="91.67%" stop-color="#7e2421" stop-opacity="0.259"/><stop offset="93.33%" stop-color="#782824" stop-opacity="0.216"/><stop offset="95.00%" stop-color="#782d27" stop-opacity="0.067"/><stop offset="96.67%" stop-color="#000000" stop-opacity="0.000"/><stop offset="100.00%" stop-color="#000000" stop-opacity="0.000"/></linearGradient>
+<linearGradient id="g_runB" gradientUnits="userSpaceOnUse" x1="181.50" y1="67.50" x2="181.50" y2="127.50"><stop offset="0.00%" stop-color="#000000" stop-opacity="0.000"/><stop offset="5.00%" stop-color="#000000" stop-opacity="0.004"/><stop offset="6.67%" stop-color="#141213" stop-opacity="0.000"/><stop offset="8.33%" stop-color="#4f474b" stop-opacity="0.118"/><stop offset="10.00%" stop-color="#4f4247" stop-opacity="0.435"/><stop offset="11.67%" stop-color="#817e87" stop-opacity="0.761"/><stop offset="13.33%" stop-color="#9ea0b0" stop-opacity="0.941"/><stop offset="15.00%" stop-color="#554f5a" stop-opacity="0.961"/><stop offset="16.67%" stop-color="#2f242c" stop-opacity="0.949"/><stop offset="18.33%" stop-color="#40333c" stop-opacity="0.965"/><stop offset="20.00%" stop-color="#433139" stop-opacity="0.961"/><stop offset="21.67%" stop-color="#402a31" stop-opacity="0.957"/><stop offset="23.33%" stop-color="#42282e" stop-opacity="0.957"/><stop offset="25.00%" stop-color="#46272d" stop-opacity="0.957"/><stop offset="26.67%" stop-color="#49262d" stop-opacity="0.969"/><stop offset="28.33%" stop-color="#4d262c" stop-opacity="0.980"/><stop offset="30.00%" stop-color="#51252c" stop-opacity="0.980"/><stop offset="31.67%" stop-color="#54232a" stop-opacity="0.976"/><stop offset="33.33%" stop-color="#5a2027" stop-opacity="0.969"/><stop offset="35.00%" stop-color="#71242b" stop-opacity="0.980"/><stop offset="36.67%" stop-color="#7c242c" stop-opacity="0.996"/><stop offset="38.33%" stop-color="#6b1a20" stop-opacity="1.000"/><stop offset="40.00%" stop-color="#6d2528" stop-opacity="1.000"/><stop offset="41.67%" stop-color="#692428" stop-opacity="0.996"/><stop offset="43.33%" stop-color="#882d32" stop-opacity="0.984"/><stop offset="45.00%" stop-color="#d96160" stop-opacity="0.988"/><stop offset="46.67%" stop-color="#fd7e78" stop-opacity="1.000"/><stop offset="48.33%" stop-color="#ff807a" stop-opacity="1.000"/><stop offset="50.00%" stop-color="#ff7f78" stop-opacity="1.000"/><stop offset="51.67%" stop-color="#ff8078" stop-opacity="1.000"/><stop offset="53.33%" stop-color="#ff7f78" stop-opacity="1.000"/><stop offset="55.00%" stop-color="#e86661" stop-opacity="1.000"/><stop offset="56.67%" stop-color="#a02e2d" stop-opacity="0.992"/><stop offset="58.33%" stop-color="#600c0e" stop-opacity="0.973"/><stop offset="60.00%" stop-color="#510c0e" stop-opacity="0.980"/><stop offset="61.67%" stop-color="#622429" stop-opacity="0.996"/><stop offset="63.33%" stop-color="#824e5b" stop-opacity="0.996"/><stop offset="65.00%" stop-color="#784d5d" stop-opacity="0.976"/><stop offset="66.67%" stop-color="#542e39" stop-opacity="0.969"/><stop offset="68.33%" stop-color="#47252d" stop-opacity="0.980"/><stop offset="70.00%" stop-color="#472830" stop-opacity="0.969"/><stop offset="71.67%" stop-color="#462931" stop-opacity="0.949"/><stop offset="73.33%" stop-color="#432931" stop-opacity="0.941"/><stop offset="75.00%" stop-color="#402832" stop-opacity="0.937"/><stop offset="76.67%" stop-color="#3e2932" stop-opacity="0.937"/><stop offset="78.33%" stop-color="#3d2831" stop-opacity="0.949"/><stop offset="80.00%" stop-color="#3c2631" stop-opacity="0.965"/><stop offset="81.67%" stop-color="#3a222c" stop-opacity="0.980"/><stop offset="83.33%" stop-color="#2e181e" stop-opacity="0.976"/><stop offset="85.00%" stop-color="#240a0d" stop-opacity="0.953"/><stop offset="86.67%" stop-color="#532b2d" stop-opacity="0.906"/><stop offset="88.33%" stop-color="#a76d6f" stop-opacity="0.863"/><stop offset="90.00%" stop-color="#a96d6e" stop-opacity="0.725"/><stop offset="91.67%" stop-color="#733f3b" stop-opacity="0.471"/><stop offset="93.33%" stop-color="#55241a" stop-opacity="0.259"/><stop offset="95.00%" stop-color="#552115" stop-opacity="0.067"/><stop offset="96.67%" stop-color="#000000" stop-opacity="0.000"/><stop offset="100.00%" stop-color="#000000" stop-opacity="0.000"/></linearGradient>
+<linearGradient id="g_elbT" gradientUnits="userSpaceOnUse" x1="121.50" y1="85.50" x2="161.50" y2="85.50"><stop offset="0.00%" stop-color="#654551" stop-opacity="0.820"/><stop offset="2.50%" stop-color="#563944" stop-opacity="0.812"/><stop offset="5.00%" stop-color="#34191e" stop-opacity="0.863"/><stop offset="7.50%" stop-color="#210708" stop-opacity="0.910"/><stop offset="10.00%" stop-color="#260c10" stop-opacity="0.918"/><stop offset="12.50%" stop-color="#311920" stop-opacity="0.914"/><stop offset="15.00%" stop-color="#37212b" stop-opacity="0.922"/><stop offset="17.50%" stop-color="#3a2430" stop-opacity="0.922"/><stop offset="20.00%" stop-color="#3a2631" stop-opacity="0.918"/><stop offset="22.50%" stop-color="#392831" stop-opacity="0.914"/><stop offset="25.00%" stop-color="#372831" stop-opacity="0.914"/><stop offset="27.50%" stop-color="#372832" stop-opacity="0.910"/><stop offset="30.00%" stop-color="#372834" stop-opacity="0.910"/><stop offset="32.50%" stop-color="#382a34" stop-opacity="0.918"/><stop offset="35.00%" stop-color="#392b35" stop-opacity="0.925"/><stop offset="37.50%" stop-color="#3b2b35" stop-opacity="0.929"/><stop offset="40.00%" stop-color="#3b2b36" stop-opacity="0.933"/><stop offset="42.50%" stop-color="#3d2b36" stop-opacity="0.941"/><stop offset="45.00%" stop-color="#3d2c37" stop-opacity="0.945"/><stop offset="47.50%" stop-color="#3e2c37" stop-opacity="0.945"/><stop offset="50.00%" stop-color="#3f2d38" stop-opacity="0.945"/><stop offset="52.50%" stop-color="#422d38" stop-opacity="0.949"/><stop offset="55.00%" stop-color="#432e39" stop-opacity="0.949"/><stop offset="57.50%" stop-color="#3f2a33" stop-opacity="0.949"/><stop offset="60.00%" stop-color="#382129" stop-opacity="0.961"/><stop offset="62.50%" stop-color="#331d26" stop-opacity="0.953"/><stop offset="65.00%" stop-color="#2f1a23" stop-opacity="0.933"/><stop offset="67.50%" stop-color="#2e1821" stop-opacity="0.922"/><stop offset="70.00%" stop-color="#301821" stop-opacity="0.918"/><stop offset="72.50%" stop-color="#331922" stop-opacity="0.929"/><stop offset="75.00%" stop-color="#341821" stop-opacity="0.937"/><stop offset="77.50%" stop-color="#351820" stop-opacity="0.929"/><stop offset="80.00%" stop-color="#371820" stop-opacity="0.925"/><stop offset="82.50%" stop-color="#3c1a22" stop-opacity="0.929"/><stop offset="85.00%" stop-color="#401b23" stop-opacity="0.933"/><stop offset="87.50%" stop-color="#421a22" stop-opacity="0.933"/><stop offset="90.00%" stop-color="#431821" stop-opacity="0.925"/><stop offset="92.50%" stop-color="#441821" stop-opacity="0.925"/><stop offset="95.00%" stop-color="#461821" stop-opacity="0.929"/><stop offset="100.00%" stop-color="#471821" stop-opacity="0.929"/></linearGradient>
+<linearGradient id="g_elbB" gradientUnits="userSpaceOnUse" x1="130.50" y1="101.50" x2="130.50" y2="126.50"><stop offset="0.00%" stop-color="#2b1418" stop-opacity="0.098"/><stop offset="4.00%" stop-color="#32181d" stop-opacity="0.412"/><stop offset="8.00%" stop-color="#2c1017" stop-opacity="0.725"/><stop offset="12.00%" stop-color="#402831" stop-opacity="0.890"/><stop offset="16.00%" stop-color="#807a85" stop-opacity="0.980"/><stop offset="20.00%" stop-color="#8d92a0" stop-opacity="0.996"/><stop offset="24.00%" stop-color="#4b4d5a" stop-opacity="0.976"/><stop offset="28.00%" stop-color="#252431" stop-opacity="0.957"/><stop offset="32.00%" stop-color="#282837" stop-opacity="0.941"/><stop offset="36.00%" stop-color="#2b2c3c" stop-opacity="0.933"/><stop offset="40.00%" stop-color="#2a2b3b" stop-opacity="0.937"/><stop offset="44.00%" stop-color="#282939" stop-opacity="0.933"/><stop offset="48.00%" stop-color="#262636" stop-opacity="0.925"/><stop offset="52.00%" stop-color="#252534" stop-opacity="0.925"/><stop offset="56.00%" stop-color="#272634" stop-opacity="0.922"/><stop offset="60.00%" stop-color="#2b2837" stop-opacity="0.918"/><stop offset="64.00%" stop-color="#2c2734" stop-opacity="0.922"/><stop offset="68.00%" stop-color="#221a21" stop-opacity="0.925"/><stop offset="72.00%" stop-color="#1d0d0e" stop-opacity="0.902"/><stop offset="76.00%" stop-color="#432322" stop-opacity="0.749"/><stop offset="80.00%" stop-color="#714645" stop-opacity="0.471"/><stop offset="84.00%" stop-color="#6e483f" stop-opacity="0.196"/><stop offset="88.00%" stop-color="#603f2f" stop-opacity="0.027"/><stop offset="92.00%" stop-color="#000000" stop-opacity="0.000"/><stop offset="100.00%" stop-color="#000000" stop-opacity="0.000"/></linearGradient>
+<linearGradient id="g_plate" gradientUnits="userSpaceOnUse" x1="183.50" y1="84.50" x2="211.50" y2="84.50"><stop offset="0.00%" stop-color="#50262e" stop-opacity="0.976"/><stop offset="3.57%" stop-color="#52262e" stop-opacity="0.976"/><stop offset="7.14%" stop-color="#53252c" stop-opacity="0.973"/><stop offset="10.71%" stop-color="#4e1c22" stop-opacity="0.945"/><stop offset="14.29%" stop-color="#611e20" stop-opacity="0.933"/><stop offset="17.86%" stop-color="#b75c5b" stop-opacity="0.976"/><stop offset="21.43%" stop-color="#e78787" stop-opacity="0.988"/><stop offset="25.00%" stop-color="#b25d61" stop-opacity="0.914"/><stop offset="28.57%" stop-color="#541f23" stop-opacity="0.875"/><stop offset="32.14%" stop-color="#3d191d" stop-opacity="0.835"/><stop offset="35.71%" stop-color="#3f1f23" stop-opacity="0.831"/><stop offset="39.29%" stop-color="#3e1e22" stop-opacity="0.847"/><stop offset="42.86%" stop-color="#3a1b20" stop-opacity="0.843"/><stop offset="46.43%" stop-color="#381a1f" stop-opacity="0.847"/><stop offset="50.00%" stop-color="#391a1f" stop-opacity="0.851"/><stop offset="53.57%" stop-color="#3b1a20" stop-opacity="0.859"/><stop offset="57.14%" stop-color="#3d1a1f" stop-opacity="0.855"/><stop offset="60.71%" stop-color="#3a1418" stop-opacity="0.882"/><stop offset="64.29%" stop-color="#471116" stop-opacity="0.886"/><stop offset="67.86%" stop-color="#873c42" stop-opacity="0.902"/><stop offset="71.43%" stop-color="#964d54" stop-opacity="0.773"/><stop offset="75.00%" stop-color="#72383c" stop-opacity="0.278"/><stop offset="78.57%" stop-color="#7f2022" stop-opacity="0.031"/><stop offset="82.14%" stop-color="#ed0404" stop-opacity="0.004"/><stop offset="85.71%" stop-color="#ea0000" stop-opacity="0.000"/><stop offset="89.29%" stop-color="#000000" stop-opacity="0.000"/><stop offset="100.00%" stop-color="#000000" stop-opacity="0.000"/></linearGradient>
+<linearGradient id="g_platT" gradientUnits="userSpaceOnUse" x1="197.50" y1="62.50" x2="197.50" y2="81.50"><stop offset="0.00%" stop-color="#000000" stop-opacity="0.000"/><stop offset="21.05%" stop-color="#221113" stop-opacity="0.000"/><stop offset="26.32%" stop-color="#5a2128" stop-opacity="0.027"/><stop offset="31.58%" stop-color="#5e2e38" stop-opacity="0.169"/><stop offset="36.84%" stop-color="#5e3c47" stop-opacity="0.373"/><stop offset="42.11%" stop-color="#725965" stop-opacity="0.553"/><stop offset="47.37%" stop-color="#938492" stop-opacity="0.718"/><stop offset="52.63%" stop-color="#a599a8" stop-opacity="0.827"/><stop offset="57.89%" stop-color="#a28f9e" stop-opacity="0.831"/><stop offset="63.16%" stop-color="#947582" stop-opacity="0.784"/><stop offset="68.42%" stop-color="#7f555b" stop-opacity="0.749"/><stop offset="73.68%" stop-color="#6b3b3f" stop-opacity="0.745"/><stop offset="78.95%" stop-color="#69353b" stop-opacity="0.749"/><stop offset="84.21%" stop-color="#6e373f" stop-opacity="0.776"/><stop offset="89.47%" stop-color="#5a282d" stop-opacity="0.831"/><stop offset="94.74%" stop-color="#3e1418" stop-opacity="0.882"/><stop offset="100.00%" stop-color="#391418" stop-opacity="0.886"/></linearGradient>
+<linearGradient id="g_platB" gradientUnits="userSpaceOnUse" x1="197.50" y1="105.50" x2="197.50" y2="128.50"><stop offset="0.00%" stop-color="#3a1d22" stop-opacity="0.871"/><stop offset="4.35%" stop-color="#3b1e23" stop-opacity="0.867"/><stop offset="8.70%" stop-color="#3e2027" stop-opacity="0.867"/><stop offset="13.04%" stop-color="#3e2129" stop-opacity="0.863"/><stop offset="17.39%" stop-color="#382025" stop-opacity="0.863"/><stop offset="21.74%" stop-color="#412b32" stop-opacity="0.867"/><stop offset="26.09%" stop-color="#5b454e" stop-opacity="0.847"/><stop offset="30.43%" stop-color="#664951" stop-opacity="0.757"/><stop offset="34.78%" stop-color="#70454e" stop-opacity="0.612"/><stop offset="39.13%" stop-color="#89505a" stop-opacity="0.525"/><stop offset="43.48%" stop-color="#8f4a56" stop-opacity="0.494"/><stop offset="47.83%" stop-color="#8b3844" stop-opacity="0.427"/><stop offset="52.17%" stop-color="#8b2e37" stop-opacity="0.392"/><stop offset="56.52%" stop-color="#80232a" stop-opacity="0.396"/><stop offset="60.87%" stop-color="#6a191f" stop-opacity="0.400"/><stop offset="65.22%" stop-color="#591419" stop-opacity="0.400"/><stop offset="69.57%" stop-color="#4e1215" stop-opacity="0.380"/><stop offset="73.91%" stop-color="#471213" stop-opacity="0.392"/><stop offset="78.26%" stop-color="#451617" stop-opacity="0.341"/><stop offset="82.61%" stop-color="#441a1d" stop-opacity="0.106"/><stop offset="86.96%" stop-color="#000000" stop-opacity="0.000"/><stop offset="100.00%" stop-color="#000000" stop-opacity="0.000"/></linearGradient>
+<linearGradient id="g_ubar" gradientUnits="userSpaceOnUse" x1="71.50" y1="16.50" x2="71.50" y2="28.50"><stop offset="0.00%" stop-color="#2c0a0c" stop-opacity="1.000"/><stop offset="8.33%" stop-color="#1f080a" stop-opacity="0.992"/><stop offset="16.67%" stop-color="#240e10" stop-opacity="0.996"/><stop offset="25.00%" stop-color="#1b080d" stop-opacity="0.984"/><stop offset="33.33%" stop-color="#894c54" stop-opacity="0.894"/><stop offset="41.67%" stop-color="#e4848a" stop-opacity="0.949"/><stop offset="50.00%" stop-color="#e3747a" stop-opacity="0.976"/><stop offset="58.33%" stop-color="#ae3c47" stop-opacity="0.878"/><stop offset="66.67%" stop-color="#87242f" stop-opacity="0.608"/><stop offset="75.00%" stop-color="#83242f" stop-opacity="0.278"/><stop offset="83.33%" stop-color="#7e191e" stop-opacity="0.059"/><stop offset="91.67%" stop-color="#4c1010" stop-opacity="0.004"/><stop offset="100.00%" stop-color="#090303" stop-opacity="0.000"/></linearGradient>
+<linearGradient id="g_rchan" gradientUnits="userSpaceOnUse" x1="165.50" y1="88.50" x2="165.50" y2="106.50"><stop offset="0.00%" stop-color="#6d222e" stop-opacity="0.953"/><stop offset="5.56%" stop-color="#702129" stop-opacity="0.965"/><stop offset="11.11%" stop-color="#5d1519" stop-opacity="0.980"/><stop offset="16.67%" stop-color="#682224" stop-opacity="0.988"/><stop offset="22.22%" stop-color="#72282b" stop-opacity="0.996"/><stop offset="27.78%" stop-color="#923538" stop-opacity="0.984"/><stop offset="33.33%" stop-color="#de6864" stop-opacity="0.984"/><stop offset="38.89%" stop-color="#fe837a" stop-opacity="1.000"/><stop offset="44.44%" stop-color="#ff817a" stop-opacity="1.000"/><stop offset="50.00%" stop-color="#ff8179" stop-opacity="1.000"/><stop offset="55.56%" stop-color="#ff827b" stop-opacity="1.000"/><stop offset="66.67%" stop-color="#e96762" stop-opacity="1.000"/><stop offset="72.22%" stop-color="#a32e2e" stop-opacity="1.000"/><stop offset="77.78%" stop-color="#640d10" stop-opacity="0.996"/><stop offset="83.33%" stop-color="#4f0c10" stop-opacity="0.996"/><stop offset="88.89%" stop-color="#5c272c" stop-opacity="1.000"/><stop offset="94.44%" stop-color="#865f6c" stop-opacity="1.000"/><stop offset="100.00%" stop-color="#86697a" stop-opacity="0.992"/></linearGradient>
+<g id="cd_art" clip-path="url(#cd_clip)">
+<path d="M13.5,2.3L126.6,2.3L137.5,13.2L137.5,31.3L113.8,31.3L111.0,25.3L98.6,25.3L98.6,33.5L101.0,38.0L108.3,46.3L133.0,71.0L143.5,74.6L187.6,74.6L187.6,68.6L205.6,72.3L205.6,75.5L203.6,79.5L203.6,111.0L196.3,115.6L196.3,123.5L188.0,123.5L175.0,120.3L122.0,120.3L114.5,116.0L51.3,52.7L50.6,25.3L35.5,25.3L28.5,30.8L4.8,30.8L3.5,14.6ZM67.0,24.8L77.8,24.8L77.8,35.5L88.3,51.6L79.6,59.8L67.0,47.0ZM91.5,33.3L94.0,33.3L100.0,41.0L99.5,43.0L97.5,45.8L90.2,36.4ZM122.3,86.3L131.0,91.6L150.6,91.6L150.6,101.3L148.6,102.6L124.0,102.6L115.8,93.3Z" fill-rule="evenodd" fill="#20111a"/>
+<polygon points="52.0,-12.0 88.0,-12.0 122.5,25.5 17.5,25.5" fill="url(#g_bar)"/>
+<polygon points="52.0,-12.0 17.5,25.5 -9.0,25.5 -9.0,-12.0" fill="url(#g_capl)"/>
+<polygon points="88.0,-12.0 149.0,-12.0 149.0,25.5 122.5,25.5" fill="url(#g_capr)"/>
+<polygon points="-9.0,25.4 43.0,25.4 43.0,38.0 -9.0,38.0" fill="url(#g_footl)"/>
+<polygon points="103.0,25.4 149.0,25.4 149.0,38.0 103.0,38.0" fill="url(#g_footr)"/>
+<polygon points="43.0,25.4 73.0,25.4 73.0,46.4 43.0,56.7" fill="url(#g_leg1)"/>
+<polygon points="73.0,25.4 103.0,25.4 103.0,36.0 73.0,46.4" fill="url(#g_leg2)"/>
+<polygon points="5.0,69.9 185.5,7.5 67.0,126.0 5.0,126.0" fill="url(#g_diag)"/>
+<polygon points="185.5,7.5 157.3,17.4 116.1,126.0 67.0,126.0" fill="url(#g_diagL)"/>
+<polygon points="161.0,7.5 173.0,7.5 173.0,136.0 112.3,136.0" fill="url(#g_runA)"/>
+<polygon points="173.0,14.0 187.5,14.0 187.5,136.0 173.0,136.0" fill="url(#g_runB)"/>
+<polygon points="123.0,79.0 157.0,79.0 157.0,92.0 123.0,92.0" fill="url(#g_elbT)"/>
+<polygon points="124.0,102.5 147.0,102.5 147.0,128.0 124.0,128.0" fill="url(#g_elbB)"/>
+<polygon points="187.5,56.0 217.0,56.0 217.0,136.0 187.5,136.0" fill="url(#g_plate)"/>
+<polygon points="191.0,56.0 217.0,56.0 217.0,79.5 191.0,79.5" fill="url(#g_platT)"/>
+<polygon points="191.0,107.0 217.0,107.0 217.0,136.0 191.0,136.0" fill="url(#g_platB)"/>
+<polygon points="58.5,17.0 82.5,17.0 82.5,26.5 58.5,26.5" fill="url(#g_ubar)"/>
+<polygon points="155.5,89.0 187.5,89.0 187.5,105.0 155.5,105.0" fill="url(#g_rchan)"/>
+</g>
+</defs></svg>
+
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+    <filter id="chipSoft" x="-6%" y="-25%" width="112%" height="150%"><feGaussianBlur stdDeviation=".81"/></filter>
+  </defs></svg>
+
+  <!-- ===================== BAND A — loose parts ===================== -->
+
+  <!-- C2a: 5 segment bars, R R R Y Y -->
+  <div class="bars" style="--y:44.6px; --h:61.6px; --ft:12px; --fb:14px;">
+    <span class="b r" style="left:215.0px"></span>
+    <span class="b r" style="left:247.4px"></span>
+    <span class="b r" style="left:279.7px"></span>
+    <span class="b y" style="left:314.1px"></span>
+    <span class="b y" style="left:348.9px"></span>
+  </div>
+
+  <!-- C1a: wide status chip, no label -->
+  <div class="chip" style="--px:394px; --py:24.4px; --pw:634.8px; --ph:60.6px; --pcut:21px;
+                           --ox:407.5px; --oy:34.87px; --ow:606.8px; --oh:46px; --oc:20.4px;
+                           --fill:#05070b; --gt:.052; --gb:.070; --gs:.088;
+                           --blx:22px; --blr:11px; --blh:6px; --blo:1;
+                           --capx:626.5px; --capw:8px; --capy:20.6px; --caph:45px;">
+    <div class="plate oct"></div>
+    <div class="bloom"></div>
+    <div class="cap"></div>
+    <div class="inner oct"></div>
+    
+  </div>
+  <svg class="ringlayer" width="1292" height="635"><path class="halo" d="M407.46,34.9 H993.96 L1014.36,55.30 V79.68 H427.86 L407.46,59.28 Z"/><path class="core" d="M407.46,34.9 H993.96 L1014.36,55.30 V79.68 H427.86 L407.46,59.28 Z"/></svg>
+
+  <!-- C5a: octagon display plate -->
+  <div class="oplate" style="--x:1063px; --y:0px; --w:219px; --h:110px;
+                             --hx:9px; --hy:9px; --hw:192px; --hh:88px; --glass:#191720;">
+    <div class="body oct4"></div>
+    <div class="glass oct4"></div>
+    <div class="hair oct4"><i class="oct4"></i></div>
+  </div>
+
+  <!-- ===================== BAND B — the banner ====================== -->
+  <div id="banner">
+    <div class="back"></div>
+    <div class="face"></div>
+    <div class="rim-t"></div><div class="rim-b"></div>
+    <div class="rim-l"></div><div class="rim-r"></div>
+  </div>
+
+  <!-- ============ BANNER TOP ROW: rims, band stack, C10 well, slate, C11 L ============ -->
+  <div id="btr">
+    <i class="bt-top"></i>
+    <i class="bt-face"></i>
+    <i class="bt-mod"></i>
+    <i class="bt-band2"></i>
+    <i class="bt-fallA"></i>
+    <i class="bt-fallB"></i>
+    <i class="bt-bev"></i>
+    <i class="bt-seam"></i>
+    <i class="bt-right"></i>
+    <i class="bt-ramp"><b></b></i>
+    <i class="bt-notch"></i>
+    <i class="bt-slate"></i>
+    <i class="bt-gut"></i>
+    <i class="bt-gutcap"></i>
+    <i class="bt-gutlow"></i>
+    <i class="bt-welltop"></i>
+    <i class="bt-well"></i>
+    <i class="bt-welledge"></i>
+    <i class="bt-wellr"></i>
+    <svg class="bt-graph" viewBox="37 143 36 73" fill="none">
+      <polyline points="37.5,172.6 40,172.6 62,157.6 71.6,148"
+                stroke="rgba(170,205,228,.30)" stroke-width="1.1"/>
+    </svg>
+    <i class="bt-div"></i>
+    <i class="bt-lv"></i>
+    <i class="bt-ltip"></i>
+    <i class="bt-lch"></i>
+    <i class="bt-warm"></i>
+    <i class="bt-rivet"></i>
+  </div>
+
+  <div class="lbrk"><span class="v"></span><span class="d"></span><span class="h"></span></div>
+
+  <!-- C2b: 7 bars, R R R Y Y Y Y -->
+  <!-- this group is hard-clipped at x=384 in the source: bar 7's right edge
+       stops growing at 383 from y=186 down, while its left edge keeps skewing -->
+  <div class="bars" style="--y:155.5px; --h:50.5px; --ft:7px; --fb:7px;
+       left:0; width:1292px; clip-path:inset(0 908px 0 0);">
+    <span class="b r" style="left:141.5px"></span>
+    <span class="b r" style="left:179.0px"></span>
+    <span class="b r" style="left:215.5px"></span>
+    <span class="b y" style="left:251.0px"></span>
+    <span class="b y" style="left:288.0px"></span>
+    <span class="b y" style="left:324.5px"></span>
+    <span class="b y" style="left:360.0px"></span>
+  </div>
+
+  <!-- C1b: PROMISED -->
+  <div class="chip" style="--px:402.6px; --py:150.4px; --pw:633px; --ph:60.5px; --pcut:21px;
+                           --ox:416.9px; --oy:160.85px; --ow:605.8px; --oh:45.45px; --oc:20.4px;
+                           --fill:#060f18; --gt:.058; --gb:.078; --gs:.082;
+                           --blx:22px; --blr:11px; --blh:5.2px; --blo:.95;
+                           --capx:626.9px; --capw:6px; --capy:22.6px; --caph:43px;
+                           --cap0:#100c0c; --cap1:#2a2422; --cap2:#332b29; --cap3:#2a2322; --cap4:#191614; --cap5:#161311;">
+    <div class="plate oct"></div>
+    <div class="bloom"></div>
+    <div class="cap"></div>
+    <div class="inner oct"></div>
+    
+    <div class="label" style="top:21px; font-size:27.9px; letter-spacing:1.35px;
+                              text-align:left; padding-left:239px;">PROMISED</div>
+  </div>
+  <svg class="ringlayer" width="1292" height="635"><path class="halo" d="M416.9,160.87 H1002.30 L1022.70,181.27 V206.38 H437.30 L416.9,185.98 Z"/><path class="core" d="M416.9,160.87 H1002.30 L1022.70,181.27 V206.38 H437.30 L416.9,185.98 Z"/></svg>
+
+  <!-- C5b: FAILED screen -->
+  <div class="oplate" style="--x:1063px; --y:136px; --w:222px; --h:106px;
+                             --hx:11.5px; --hy:8.5px; --hw:193px; --hh:88px; --glass:#040910;">
+    <div class="body oct4"></div>
+    <div class="glass oct4"></div>
+    <div class="hair oct4"><i class="oct4"></i></div>
+    <div style="position:absolute; left:38px; top:32.7px; font-family:var(--mono); font-weight:700;
+                font-size:40.4px; line-height:1; letter-spacing:-0.1px; color:#f4595a;
+                text-shadow:0 0 6px rgba(244,95,91,.40);">FAILED</div>
+  </div>
+  <div class="rivet" style="left:1266px; top:141px"></div>
+  <div class="rivet" style="left:1266px; top:228px"></div>
+  <div class="rivet" style="left:1272px; top:133px"></div>
+  <div class="rivet" style="left:13px;   top:231px"></div>
+
+  <!-- C9 circuit field + traces   (svg units = px, origin = ref 11,241) -->
+  <div class="circuitfield">
+    <svg width="341" height="135" viewBox="0 0 341 135">
+      <g class="halo">
+        <path d="M28.5 0 L50.5 22.5 H144.5 L160 7"/>
+        <path d="M0 4.5 H26 L49 27.5 H151.5 L169 10"/>
+        <path d="M0 8.5 H25.5 L49 32 H154 L174 12"/>
+        <path d="M18 14 H24.5 L47 36.5 H160 L180 16.5"/>
+        <path d="M12.5 19 H23.5 L45.5 41 M33 41 H173"/>
+        <path d="M33 36.5 L43 46 H174.5 L189 31"/>
+        <path d="M8 69.5 H21.5 L41.5 50 H178 L189 39"/>
+        <path d="M26 80.5 L51 55.5 H174 L185 44.5"/>
+        <path d="M38.5 83.5 L57.5 64.5 H122.5"/>
+        <path d="M45 60 H181 L189 52"/>
+        <path d="M46 95.5 L55 86.5 H161"/>
+      </g>
+      <g class="cu">
+        <!-- upper fan: six nested troughs, 45deg chamfers both ends -->
+        <path d="M28.5 0 L50.5 22.5 H144.5 L160 7"/>
+        <path d="M0 4.5 H26 L49 27.5 H151.5 L169 10"/>
+        <path d="M0 8.5 H25.5 L49 32 H154 L174 12"/>
+        <path d="M18 14 H24.5 L47 36.5 H160 L180 16.5"/>
+        <path d="M12.5 19 H23.5 L45.5 41"/>
+        <path d="M33 41 H173"/>
+        <path d="M33 36.5 L43 46 H174.5 L189 31"/>
+        <!-- lower group: three traces climbing out of the text block -->
+        <path d="M8 69.5 H21.5 L41.5 50 H178 L189 39"/>
+        <path d="M26 80.5 L51 55.5 H174 L185 44.5"/>
+        <path d="M38.5 83.5 L57.5 64.5 H122.5"/>
+        <path d="M45 60 H181 L189 52"/>
+        <path d="M46 95.5 L55 86.5 H161"/>
+        <path d="M172 97 L182 106.5"/>
+        <!-- left-edge stubs, top rail, text-block outline -->
+        <path d="M0 32.8 H9"/>
+        <path d="M13.5 38 V44.5"/>
+        <path d="M15 48 V56"/>
+        <path d="M0 80.5 H22"/>
+        <path d="M22 121 L16 127 H1"/>
+        <path d="M80 0 H124"/>
+        <!-- right half, below the conduit: via columns to the bottom rail -->
+        <path d="M195 110 L201.5 103.5 V134"/>
+        <path d="M200 97 L206.5 90.5 V134"/>
+        <path d="M211 100 L217.5 93.5 V134"/>
+        <path d="M223 101 L229.5 94.5 V134"/>
+        <path d="M229 104 L235.5 97.5 V134"/>
+        <path d="M268 96 L274.5 89.5 V134"/>
+        <path d="M273 98 L279.5 91.5 V134"/>
+        <path d="M295 92 L301.5 85.5 V134"/>
+        <path d="M302 93 L308.5 86.5 V134"/>
+        <path d="M332 98 L338.5 91.5 V134"/>
+      </g>
+      <g class="cud">
+        <!-- pads -->
+        <circle cx="11.5" cy="32.8" r="2.1"/>
+        <circle cx="10.5" cy="63.2" r="2.9"/>
+        <circle cx="34.5" cy="41"   r="1.8"/>
+        <circle cx="173"  cy="40.5" r="1.8"/>
+        <circle cx="48.5" cy="56.5" r="1.5"/>
+        <circle cx="163"  cy="86.5" r="1.5"/>
+        <circle cx="186"  cy="88.5" r="1.2"/>
+        <circle cx="183"  cy="108"  r="1.9"/>
+      </g>
+      <g class="cu">
+        <circle cx="76.4" cy="15.4" r="1.9"/>
+        <circle cx="86.4" cy="15.4" r="1.9"/>
+        <rect x="12.5" y="13"   width="5.5" height="5.5"/>
+        <rect x="166.5" y="82.5" width="11" height="9" rx="2"/>
+      </g>
+      <g class="cuf">
+        <rect x="124"   y="63"  width="3.6" height="3.8"/>
+        <rect x="132.5" y="63"  width="4"   height="3.8"/>
+        <rect x="286.5" y="121.6" width="10.5" height="2.6"/>
+        <rect x="286.5" y="129.6" width="10.5" height="2.2"/>
+        <rect x="325"   y="107.6" width="11"   height="2.2"/>
+        <rect x="333"   y="95.6"  width="8.5"  height="2.2"/>
+      </g>
+    </svg>
+  </div>
+
+  <div class="microtext">
+    <div>MJOLNIR-C</div>
+    <div>&nbsp;</div>
+    <div style="top:.55px">LINK ARM 0x8F7 CAL 05.487</div>
+    <div>SEQ.0026.1</div>
+    <div>CHKSUM 4E32 90A7 5B</div>
+    <div>SYS.STAT [6] 088 CHAIN.SLIP_LOCK_STRESS_A1.2</div>
+    <div>LOADOUT RD 0006 @UTP07LRD01</div>
+    <div>SHIELD 100</div>
+    <div>TEMP 028</div>
+    <div>CROSS-TAPHD 4302</div>
+  </div>
+
+  <!-- C3b: conduit inside the banner -->
+  <svg class="conduit" style="--x:147px;--y:211px;filter:saturate(.9)" viewBox="0 0 209 125"><use href="#cd_art"/></svg>
+
+  <!-- C4b: banner sub-panel  ( = C4a + (4.3, -251) ) -->
+  <div class="pframe" style="--x:348.3px; --y:246px; --w:915.2px;">
+    <div class="pf-body">
+      <div class="pf-r pf-r0"></div><div class="pf-r pf-r1"></div><div class="pf-r pf-r2"></div>
+      <div class="pf-cav"><div class="pf-cavr"></div></div>
+      <div class="pf-railL"></div><div class="pf-railR"></div>
+      <div class="pf-r pf-r122"></div><div class="pf-r pf-r123"></div><div class="pf-r pf-r124"></div>
+      <div class="pf-rmar"></div><div class="pf-rface"></div><div class="pf-riv"></div>
+      <div class="pf-lbev"></div>
+      <div class="pf-lift"></div><div class="pf-lface"></div><div class="pf-chT"></div>
+    </div>
+    <div class="pf-lside"></div><div class="pf-fct"></div><div class="pf-fcb"></div>
+    <div class="pf-brk"><i class="v"></i><i class="d"></i><i class="ts"></i><i class="bs"></i></div>
+    <div class="pf-bl pf-blt"></div><div class="pf-bl pf-blb"></div>
+  </div>
+
+  <div class="hexicon">
+    <svg width="30" height="31" viewBox="0 0 30 31" fill="none"
+         stroke="#6f3d22" stroke-width="3.5" stroke-linejoin="miter">
+      <path d="M15 2 L27 9.2 V21.8 L15 29 L3 21.8 V9.2 Z"/>
+    </svg>
+  </div>
+  <div class="name">Skid Ste...</div>
+
+  <!-- C2c: 5 bars in the sub-panel -->
+  <div class="bars" style="--y:282px; --h:55px; --ft:7.5px; --fb:8px;">
+    <span class="b r" style="left:700.7px"></span>
+    <span class="b r" style="left:732.7px"></span>
+    <span class="b r" style="left:765.2px"></span>
+    <span class="b y" style="left:799.7px"></span>
+    <span class="b y" style="left:834.2px"></span>
+  </div>
+
+  <!-- C1c: narrow PROMISED -->
+  <div class="chip" style="--px:877.5px; --py:271.5px; --pw:362.5px; --ph:70.1px; --pcut:25px;
+                           --ox:892.26px; --oy:282.45px; --ow:335.2px; --oh:54.1px; --oc:24.8px;
+                           --fill:#030a12; --gt:.050; --gb:.062; --gs:.070;
+                           --blx:26px; --blr:10px; --blh:4px; --blo:.55;
+                           --capx:355px; --capw:6.5px; --capy:27.5px; --caph:46px;
+                           --cap0:#150a0c; --cap1:#2a1416; --cap2:#3d2020; --cap3:#3c1a17; --cap4:#210708; --cap5:#140406;">
+    <div class="plate oct"></div>
+    <div class="bloom"></div>
+    <div class="cap"></div>
+    <div class="inner oct"></div>
+    
+    <div class="label" style="top:24.9px; font-size:29.5px; letter-spacing:0.15px;
+                              text-align:left; padding-left:119px;">PROMISED</div>
+  </div>
+  <svg class="ringlayer" width="1292" height="635"><path class="halo" d="M891.89,282.49 H1202.70 L1227.50,307.29 V336.18 H916.69 L891.89,311.38 Z"/><path class="core" d="M891.89,282.49 H1202.70 L1227.50,307.29 V336.18 H916.69 L891.89,311.38 Z"/></svg>
+
+  <!-- ===================== BAND C — loose parts ===================== -->
+
+  <!-- C1d: narrow chip, no label -->
+  <div class="chip" style="--px:888.6px; --py:394.6px; --pw:363px; --ph:71px; --pcut:24px;
+                           --ox:903.2px; --oy:406.35px; --ow:336.2px; --oh:54.07px; --oc:26px;
+                           --fill:#0b0d11; --gt:.040; --gb:.052; --gs:.062;
+                           --blx:26px; --blr:10px; --blh:4px; --blo:.55;
+                           --capx:356.9px; --capw:7px; --capy:27.4px; --caph:47.5px;
+                           --cap0:#150507; --cap1:#341216; --cap2:#4b1f22; --cap3:#3b1519; --cap4:#1c0709; --cap5:#150808;">
+    <div class="plate oct"></div>
+    <div class="bloom"></div>
+    <div class="cap"></div>
+    <div class="inner oct"></div>
+    
+  </div>
+  <svg class="ringlayer" width="1292" height="635"><path class="halo" d="M903.2,406.21 H1213.35 L1239.35,432.21 V460.12 H929.20 L903.2,434.12 Z"/><path class="core" d="M903.2,406.21 H1213.35 L1239.35,432.21 V460.12 H929.20 L903.2,434.12 Z"/></svg>
+
+  <!-- C3a: standalone conduit -->
+  <svg class="conduit" style="--x:105px;--y:464px" viewBox="0 0 209 125"><use href="#cd_art"/></svg>
+
+  <!-- C4a: standalone panel frame -->
+  <div class="pframe" style="--x:344px; --y:497px; --w:914.5px;">
+    <div class="pf-body">
+      <div class="pf-r pf-r0"></div><div class="pf-r pf-r1"></div><div class="pf-r pf-r2"></div>
+      <div class="pf-cav"><div class="pf-cavr"></div></div>
+      <div class="pf-railL"></div><div class="pf-railR"></div>
+      <div class="pf-r pf-r122"></div><div class="pf-r pf-r123"></div><div class="pf-r pf-r124"></div>
+      <div class="pf-rmar"></div><div class="pf-rface"></div><div class="pf-riv"></div>
+      <div class="pf-lbev"></div><div class="pf-lface"></div><div class="pf-chT"></div>
+    </div>
+    <div class="pf-lside"></div><div class="pf-fct"></div><div class="pf-fcb"></div>
+    <div class="pf-brk"><i class="v"></i><i class="d"></i><i class="ts"></i><i class="bs"></i></div>
+    <div class="pf-bl pf-blt"></div><div class="pf-bl pf-blb"></div>
+  </div>
+
+</div>
+</body>
+</html>
