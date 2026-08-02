@@ -3741,7 +3741,7 @@ html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]
 /* ticks: as tall as the board (24px), proportionally wide (12px), everywhere.
    Geometry only — skew, gloss gradient and shadows untouched; fitRack
    recomputes from offsetWidth so the header's +N counter absorbs overflow. */
-.rw-tick{width:12px!important;height:24px!important;border-radius:3.5px!important;}
+.rw-tick{width:12px!important;height:24px!important;border-radius:4px!important;}
 .scp1 .rw-rack,[data-row] .rw-rack{min-height:24px!important;}
 
 /* ============================================================================
@@ -3767,18 +3767,20 @@ html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]
   background-color:#04101c!important;
   background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.22) 2px 3px),var(--h-circuit)!important;
   background-size:auto,512px 512px!important;
-  clip-path:polygon(0 0,100% 0,100% 100%,9px 100%,0 calc(100% - 9px))!important;
+  clip-path:polygon(3px 0,calc(100% - 9px) 0,100% 9px,100% calc(100% - 3px),
+    calc(100% - 3px) 100%,9px 100%,0 calc(100% - 9px),0 3px)!important;
   box-shadow:0 0 0 1.4px color-mix(in oklab, black 55%, var(--card-head)),
-    inset 0 0 0 1.4px var(--row-hue,#8b94a3),
+    inset 0 0 0 1.6px var(--row-hue,#8b94a3),
     inset 0 1.5px 3px rgba(0,0,0,.7)!important;
   filter:drop-shadow(0 1.5px 0 rgba(185,205,235,.10)) drop-shadow(0 -1px 0 rgba(185,205,235,.05))!important;}
 .scp1 .rw-screen .rw-board{
   background-color:#04101c!important;
   background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.22) 2px 3px),var(--h-circuit)!important;
   background-size:auto,512px 512px!important;
-  clip-path:polygon(0 0,100% 0,100% 100%,9px 100%,0 calc(100% - 9px))!important;
+  clip-path:polygon(3px 0,calc(100% - 9px) 0,100% 9px,100% calc(100% - 3px),
+    calc(100% - 3px) 100%,9px 100%,0 calc(100% - 9px),0 3px)!important;
   box-shadow:0 0 0 1.4px color-mix(in oklab, black 55%, var(--card-head)),
-    inset 0 0 0 1.4px var(--g-hue,#8b94a3),
+    inset 0 0 0 1.6px var(--g-hue,#8b94a3),
     inset 0 1.5px 3px rgba(0,0,0,.7)!important;
   filter:drop-shadow(0 1.5px 0 rgba(185,205,235,.10)) drop-shadow(0 -1px 0 rgba(185,205,235,.05))!important;}
 /* the revealed search original wears the same restored recipe */
@@ -3786,9 +3788,10 @@ html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]
   background-color:#04101c!important;
   background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.22) 2px 3px),var(--h-circuit)!important;
   background-size:auto,512px 512px!important;
-  clip-path:polygon(0 0,100% 0,100% 100%,9px 100%,0 calc(100% - 9px))!important;
+  clip-path:polygon(3px 0,calc(100% - 9px) 0,100% 9px,100% calc(100% - 3px),
+    calc(100% - 3px) 100%,9px 100%,0 calc(100% - 9px),0 3px)!important;
   box-shadow:0 0 0 1.4px color-mix(in oklab, black 55%, var(--card-head)),
-    inset 0 0 0 1.4px var(--g-hue,#8b94a3),
+    inset 0 0 0 1.6px var(--g-hue,#8b94a3),
     inset 0 1.5px 3px rgba(0,0,0,.7)!important;}
 
 /* ============================================================================
@@ -3823,15 +3826,19 @@ html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]
   background-image:linear-gradient(180deg,rgba(0,0,0,.5),rgba(0,0,0,0) 60%,rgba(185,205,235,.05))!important;
   box-shadow:0 0 0 1.5px #04060a,
     inset 0 1.5px 2.5px rgba(0,0,0,.8)!important;
-  justify-content:flex-start!important;
-  padding-left:10px!important;
-  padding-right:14px!important;}
+  justify-content:center!important;
+  padding-left:8px!important;
+  padding-right:12px!important;}
 .scp1 .gate .sc-interp{
   text-shadow:0 1px 0 rgba(0,0,0,.65)!important;
   color:color-mix(in srgb, var(--g-hue,#8b94a3) 60%, white 40%)!important;
-  font-size:12.5px!important;
+  font-size:11.5px!important;
   font-weight:800!important;
-  letter-spacing:.04em!important;}
+  letter-spacing:.09em!important;}
+
+/* the mockup row PRIORITIZES SLOTS over the full name — "Skid Ste..." truncates
+   at ~40% of the row so the rack keeps its ticks. Cap the ref accordingly. */
+[data-row] .ref{max-width:27%!important;}
 
 /* the indicator tick embedded in the right bezel edge, in the group tone */
 .scp1 .pin-wrap::after{
