@@ -2351,6 +2351,14 @@ class Component extends DCLogic {
 
       [].forEach.call(scp.children, function (c) {
         if (c.classList.contains('pin-wrap')) return;
+        // NEVER retire .rw-screen. It is M1's OWN container (stamp() creates it
+        // and parks the board + rack inside it), not head furniture this sweep
+        // is meant to replace — and nothing ever takes .rw-off back off. The
+        // sweep only re-runs when headSig changes, i.e. when the group's ROWS
+        // change, which nothing could do until the board-buttons search went
+        // live: the first typed character retired the screen and the head lost
+        // its board and slots for good (0x0, display:none) until reload.
+        if (c.classList.contains('rw-screen')) return;
         if (getComputedStyle(c).position === 'absolute') return;
         c.classList.add('rw-off');
       });
@@ -3580,6 +3588,120 @@ html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]
         gets bigger and softer. fitRack() reads offsetWidth on every stamp, so
         the racks re-fit themselves and the +N counter appears when it should. */
 .rw-tick{width:9px!important;height:14px!important;border-radius:3px!important;}
+
+/* ============================================================================
+   BOARD-BUTTONS — Jac, 2026-08-02 (spec 2026-08-02-board-buttons-design.md).
+   "The slots are Steel Elements. The buttons/gates are digital so they live in
+   the message glass." Each level's ONE digital surface is its board, so each
+   level's BUTTON lives inside it. Appended LAST: source order is the tiebreak.
+     P1  the hover verb layer      P3  the row gate press
+     P2  the header search rehost  P4  materials restamp + pins hidden
+   ============================================================================ */
+
+/* ---- P1 · THE HOVER VERB LAYER -------------------------------------------
+   One glass, two readings. At REST the board shows the present condition (and
+   marquees it when long); on HOVER the glass wakes and shows the next-action
+   verb. Never both. The verb is a SEPARATE absolutely-positioned child, never
+   a rewrite of the condition span: boards() measures that span (clientWidth
+   minus 14) and the marquee echo rides on its data-dup, so touching its text,
+   classes or attributes would either false-trigger or kill the loop. The swap
+   is therefore OPACITY ONLY, in both directions.                            */
+.rw-verb{
+  position:absolute!important;inset:0!important;z-index:1!important;
+  display:flex!important;align-items:center!important;justify-content:center!important;
+  font-family:ui-monospace,Menlo,Consolas,monospace!important;
+  font-size:8.5px!important;font-weight:800!important;letter-spacing:.06em!important;
+  text-transform:uppercase!important;white-space:nowrap!important;
+  pointer-events:none!important;opacity:0!important;
+  transition:opacity .12s linear!important;}
+/* the verb takes the SAME hue var the board's own ring takes at that level */
+[data-row] .rw-verb{color:var(--row-hue,#8b94a3)!important;
+  text-shadow:0 0 5px color-mix(in srgb, var(--row-hue,#8b94a3) 45%, transparent)!important;}
+.scp1 .rw-verb{color:var(--g-hue,#8b94a3)!important;
+  text-shadow:0 0 5px color-mix(in srgb, var(--g-hue,#8b94a3) 45%, transparent)!important;}
+
+.rw-board{cursor:pointer!important;}
+.rw-board:hover > .rw-verb{opacity:1!important;
+  animation:rwWake .32s steps(9,end) 1!important;}
+.rw-board:hover > span{opacity:0!important;}
+/* an is-loop board keeps its marquee STATE while hovered — it is only paused,
+   so the condition resumes mid-scroll instead of snapping back to the start. */
+.rw-board.is-loop:hover > span{animation-play-state:paused!important;}
+@media (prefers-reduced-motion:reduce){
+  .rw-board:hover > .rw-verb{animation:none!important;}}
+
+/* ---- P2 · THE HEADER SEARCH REHOST ---------------------------------------
+   The ORIGINAL head board still lives in .scp1 as div[data-glass], carrying
+   React's boardClick / boardEditing / boardQ machinery; the M1 build() sweep
+   only hid it with .rw-off. It stays the machinery and the M1 board becomes a
+   click-proxy (see the delegated listener in the M1 script). Two guards live
+   here: the original is pointer-events:none until it is actually revealed
+   (so a proxied click can never land back on it and loop), and the reveal is
+   a scoped :has() STATE rather than a class removal, so .rw-off is never
+   fought with. --rw-bx/by/bw/bh are measured off the M1 board every stamp()
+   pass, which is what makes the revealed original land ON the M1 board rather
+   than merely near it.                                                      */
+.scp1 > div[data-glass]{pointer-events:none!important;}
+.scp1:has(> div[data-glass] input) > div[data-glass]{
+  display:flex!important;pointer-events:auto!important;
+  position:absolute!important;z-index:7!important;
+  left:var(--rw-bx,0px)!important;top:var(--rw-by,0px)!important;
+  width:var(--rw-bw,92px)!important;height:var(--rw-bh,24px)!important;
+  margin:0!important;box-sizing:border-box!important;
+  padding:0 7px!important;align-items:center!important;justify-content:center!important;
+  background-color:#050A10!important;background-image:none!important;border-radius:0!important;
+  clip-path:polygon(0 7px,7px 0,100% 0,100% calc(100% - 7px),calc(100% - 7px) 100%,0 100%)!important;
+  box-shadow:inset 0 0 0 1.4px var(--g-hue,#8b94a3)!important;}
+/* the original's two 13px corner-notch decals belong to the OLD silhouette —
+   the clip-path above draws the NW/SE notches now, so the decals only muddy it.
+   They are the only children that are absolute AND have no descendants. */
+.scp1:has(> div[data-glass] input) > div[data-glass] > span:nth-child(-n+2){
+  display:none!important;}
+/* the caret, the placeholder and the input all take the group's tone */
+.scp1 > div[data-glass] input{
+  color:var(--g-hue,#8b94a3)!important;text-shadow:0 0 6px currentColor!important;
+  font-family:ui-monospace,Menlo,Consolas,monospace!important;
+  font-size:8.5px!important;font-weight:800!important;letter-spacing:.06em!important;}
+/* while editing, the M1 board yields the space but KEEPS it: visibility:hidden
+   still occupies layout, which is what --rw-bx/bw stay measured against. */
+.scp1:has(> div[data-glass] input) .rw-screen .rw-board{visibility:hidden!important;}
+
+/* ---- P3 · THE ROW GATE PRESS ---------------------------------------------
+   The board click already bubbles to the row face's own handler (r.click on
+   the face div) — nothing on the board path calls stopPropagation, so the gate
+   needs NO new wiring. All that is added is the ACKNOWLEDGEMENT: steel
+   compresses, glass LIGHTS, so the press is a brightness dip plus a one-shot
+   scanline flash and explicitly NO travel. Scoped to the board element so a
+   click on a tick (a SIBLING of the board, not a child) never fires it.    */
+@keyframes rwBoardFlash{
+  0%{opacity:.85;transform:translateY(-100%)}
+  60%{opacity:.45;transform:translateY(0)}
+  100%{opacity:0;transform:translateY(100%)}}
+[data-row] .rw-board:active{
+  transform:none!important;
+  filter:drop-shadow(0 0 5px color-mix(in srgb, var(--row-hue,#8b94a3) 28%, transparent))
+         brightness(.72)!important;}
+[data-row] .rw-board:active::before{
+  content:''!important;position:absolute!important;left:0!important;right:0!important;
+  top:0!important;height:100%!important;z-index:3!important;pointer-events:none!important;
+  background:linear-gradient(180deg,
+    color-mix(in srgb, var(--row-hue,#8b94a3) 0%, transparent),
+    color-mix(in srgb, var(--row-hue,#8b94a3) 34%, transparent) 55%,
+    color-mix(in srgb, var(--row-hue,#8b94a3) 0%, transparent))!important;
+  animation:rwBoardFlash .16s steps(5,end) 1!important;}
+@media (prefers-reduced-motion:reduce){
+  [data-row] .rw-board:active::before{animation:none!important;opacity:0!important;}}
+
+/* ---- P4 · PINS HIDDEN ----------------------------------------------------
+   Spec section 4: every FLOATING pin comes off for now — the WORK/DONE toggle
+   counts, the jump-band pins, and the name-plate alert counts. They no longer
+   make physical sense floating on steel once the taxonomy calls the ticks and
+   the plates steel; Jac wants a cleverer rehoming designed later. Group counts
+   are NOT lost: the head board still reads "N OPEN".                        */
+.seg__opt > .pin,
+[class*="seg__opt"] > .pin,
+.pin-wrap > .pin,
+.pin[data-slotpin="1"]{display:none!important;}
 `;
 
 
@@ -3592,7 +3714,13 @@ html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]
     ['glass', '.rw-board'],      // the scanline film is the tell
     ['glass', '.rw-cart'],
     ['glass', '.rw-cartlines'],
-    ['slot',  '.rw-tick'],
+    // BOARD-BUTTONS section 4 — the ticks restamp STEEL. Jac: "The slots are
+    // Steel Elements... Facts and Names are also Steel elements because they
+    // don't change." Only the boards stay digital/glass at either level, which
+    // is exactly why the level's BUTTON now lives inside the board.
+    ['steel', '.rw-tick'],
+    ['steel', '.rmq'],
+    ['steel', '.rw-facts'],
     ['slot',  '.rw-rack'],
     ['steel', '.scp1'],
     ['steel', '.ref'],
@@ -3716,6 +3844,46 @@ html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]
       stud.style.setProperty('--stud-top', (scp.offsetHeight / 2) + 'px');
     });
 
+    // BOARD-BUTTONS P1 — THE HOVER VERB LAYER. Every board gets exactly one
+    // .rw-verb overlay carrying its level's next-action verb. Same idempotent
+    // shape as the .rw-screen / .rw-stud loops above: look for the child, make
+    // it once, then only ever re-assert its text. It is APPENDED (never
+    // prepended) because boards() reads b.querySelector('span') for the
+    // condition — the verb is a DIV, but keeping it last means even a future
+    // span inside it could not shadow the measured node. The condition span is
+    // never touched here: P1's swap is opacity-only, in CSS.
+    [].forEach.call(document.querySelectorAll('.rw-board'), function (b) {
+      var v = b.querySelector(':scope > .rw-verb');
+      if (!v) {
+        v = document.createElement('div');
+        v.className = 'rw-verb';
+        b.appendChild(v);
+      }
+      var want = b.closest('.scp1') ? '> SEARCH' : '> OPEN LOG';
+      if (v.textContent !== want) v.textContent = want;
+    });
+
+    // BOARD-BUTTONS P2 — the geometry the revealed search board is pinned to.
+    // The original head board is NOT a child of .rw-screen, so CSS alone cannot
+    // line it up with the M1 board; these four custom properties are the M1
+    // board's own box, measured relative to .scp1 (which is position:relative).
+    // Written ONLY when the value actually changes: this block writes an inline
+    // style on .scp1, and both MutationObservers in this file watch 'style' —
+    // an unconditional write would feed itself forever. Measuring still works
+    // while revealed because the M1 board is visibility:hidden, not display:none,
+    // so it keeps its box.
+    [].forEach.call(document.querySelectorAll('.scp1'), function (scp) {
+      var bd = scp.querySelector('.rw-screen > .rw-board'); if (!bd) return;
+      var a = scp.getBoundingClientRect(), c = bd.getBoundingClientRect();
+      if (!c.width || !c.height) return;
+      var px = { '--rw-bx': Math.round(c.left - a.left), '--rw-by': Math.round(c.top - a.top),
+                 '--rw-bw': Math.round(c.width), '--rw-bh': Math.round(c.height) };
+      Object.keys(px).forEach(function (k) {
+        var v = px[k] + 'px';
+        if (scp.style.getPropertyValue(k) !== v) scp.style.setProperty(k, v);
+      });
+    });
+
     // the head panel carries its group's tone so switch A can tint the steel.
     [].forEach.call(document.querySelectorAll('.scp1'), function (scp) {
       scp.setAttribute('data-wrap', '1');
@@ -3751,6 +3919,68 @@ html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]
     document.body.appendChild(p);
   }
 
+  /* ==========================================================================
+     BOARD-BUTTONS P2 — THE HEADER BOARD IS THE GROUP SEARCH.
+
+     No duplicate state: the ORIGINAL head board (div[data-glass], hidden by
+     build()'s .rw-off sweep but still carrying React's boardClick/boardEditing/
+     boardQ handlers and its live row filter) remains the machinery, and the M1
+     board is only a click-proxy for it.
+
+     CAPTURE phase, and it stops propagation. .scp1 IS the element carrying the
+     group's own g.toggle click handler, so a bubble-phase proxy would collapse
+     the group on its way past — which is precisely why React's own boardClick
+     calls stopPropagation. Same problem, same answer, one phase earlier.
+
+     Loop guard, two halves: a click whose target is inside the original is let
+     through untouched (that is the revealed input doing its job, and it is the
+     event our own orig.click() dispatches), and CSS keeps the original
+     pointer-events:none until the :has(input) reveal state is actually on.
+     ========================================================================== */
+  function origBoard(scp) { return scp.querySelector(':scope > div[data-glass]'); }
+
+  function focusSearch(orig) {
+    var inp = orig.querySelector('input');
+    if (inp && document.activeElement !== inp) { try { inp.focus(); } catch (e) {} }
+  }
+  function openSearch(scp) {
+    var orig = origBoard(scp); if (!orig) return;
+    if (orig.querySelector('input')) { focusSearch(orig); return; }   // already editing
+    orig.click();                                    // React: setState({boardOpen: gid})
+    setTimeout(function () { focusSearch(orig); }, 40);
+  }
+  function proxy(e) {
+    var t = e.target;
+    if (!t || !t.closest) return;
+    if (t.closest('.scp1 > div[data-glass]')) return;         // the original: hands off
+    var bd = t.closest('.scp1 .rw-screen .rw-board'); if (!bd) return;
+    var scp = bd.closest('.scp1'); if (!scp) return;
+    if (!origBoard(scp)) return;
+    e.preventDefault(); e.stopPropagation();
+    var gate = scp.querySelector('.gate');
+    if (gate && gate.getAttribute('data-open') === '0') {
+      // COLLAPSED — open the group AND enter search in one motion. The gate has
+      // no handler of its own; the click bubbles to .scp1's g.toggle. React needs
+      // a beat to re-render before the board click can take, hence the settle.
+      gate.click();
+      setTimeout(function () { openSearch(scp); }, 60);
+    } else {
+      openSearch(scp);
+    }
+  }
+
+  // Spec section 2 says "Esc/blur exits". BLUR does — React wires boardBlur, and
+  // the :has() reveal state clears itself the moment the input unmounts. ESC did
+  // NOT: the card only ever bound an onBlur, so a pressed Escape sat there with
+  // the caret still blinking. Rather than reach into React (read-only), Escape is
+  // bridged to the exit React already owns — one keydown listener, one .blur().
+  function escExit(e) {
+    if (e.key !== 'Escape' && e.keyCode !== 27) return;
+    var t = e.target;
+    if (!t || !t.closest || !t.closest('.scp1 > div[data-glass]')) return;
+    if (t.tagName === 'INPUT') t.blur();
+  }
+
   var obs = null, queued = false;
   function run() {
     if (obs) obs.disconnect();
@@ -3765,6 +3995,9 @@ html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]
     st.id = 'rw-m1'; st.textContent = CSS;
     document.head.appendChild(st);            // after #rw-p1, so this wins source order
     Object.keys(DEFAULTS).forEach(function (k) { document.documentElement.setAttribute('data-' + k, get(k)); });
+    // delegated, so a React re-render that replaces a board never orphans it
+    document.addEventListener('click', proxy, true);
+    document.addEventListener('keydown', escExit, true);
     panel();
     run();
     obs = new MutationObserver(schedule);
