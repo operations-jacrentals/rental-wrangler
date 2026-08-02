@@ -3361,42 +3361,55 @@ html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]
    --------------------------------------------------------------------------- */
 .scp1{align-items:stretch!important;padding:5px 0 5px 5px!important;
   height:auto!important;min-height:30px!important;}
+/* MOCKUP 2 RETIRES THE GLASS SCREEN. The container STAYS (stamp() creates it and
+   moves the board + rack inside it, and that JS is untouched) but every scrap of
+   its glass comes off: no fill, no clip, no ring, no press, no drop-shadow. The
+   elements sit DIRECTLY on the etched steel now. What is left is a plain flex
+   row whose only job is to hold the rack on the left and the board beside it. */
 .rw-screen{
   flex:1 1 auto!important;min-width:0;display:flex;flex-direction:row;
-  align-items:center;justify-content:flex-start;gap:8px;padding:0 9px 0 11px;margin-right:8px;
-  background-color:#04101c;
-  background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.24) 2px 3px),var(--h-circuit);
-  background-size:auto,512px 512px;
-  clip-path:polygon(0 8px,8px 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%);
-  box-shadow:0 0 0 1.4px color-mix(in oklab, black 58%, var(--card-head)),
-    inset 0 2px 4px rgba(0,0,0,.85), inset 0 -1px 0 rgba(190,215,245,.10);
-  filter:drop-shadow(0 1.5px 0 rgba(185,205,235,.10)) drop-shadow(0 -1px 0 rgba(185,205,235,.05));}
+  align-items:center;justify-content:flex-start;gap:8px;padding:0 0 0 5px!important;margin-right:8px;
+  background:none!important;background-image:none!important;background-color:transparent!important;
+  clip-path:none!important;box-shadow:none!important;filter:none!important;}
 
-/* THE BOARD HAS NO BACKLAY — it is a line of text ON the screen, not a window
-   set into it. Everything that made it its own object comes off: the glass
-   body, the notch clip, the ring, the press inset, the lit hairlines and the
-   fixed width. The marquee and the scanline film stay, because those belong to
-   the reading, not to the housing. Order 2: nearest the name panel, #176's
-   right-to-left grammar (name, board, slots). */
+/* MOCKUP 2 — THE HEADER BOARD IS THE OUTLINED BOARD. The "no backlay" reading
+   is retired with the screen that motivated it: the board is an OBJECT again,
+   the same outlined object the row carries, only larger. Thin tone-coloured
+   ring drawn as an inset shadow, NW + SE 45-degree notches, dark glass
+   interior, the state word in the GROUP's tone. It sits directly on the steel.
+   Order 2: the rack is left-anchored, the board sits beside it.
+   The 7px+7px padding is LOAD-BEARING: boards() measures avail = clientWidth
+   minus 14 and false-triggers the marquee (text rendered twice) without it. */
 .scp1 .rw-screen .rw-board{
-  background:none!important;background-image:none!important;
-  box-shadow:none!important;filter:none!important;clip-path:none!important;
-  width:auto!important;max-width:150px!important;flex:0 1 auto!important;min-width:0!important;
-  height:auto!important;padding:0 7px!important;align-self:center!important;
-  order:2!important;}   /* the marquee test (boards()) assumes 7px+7px of padding on
-                           EVERY .rw-board when it measures clientWidth vs scrollWidth;
-                           dropping the padding to 0 here left that test permanently
-                           false-positive — "6 OPEN" would render twice, static, no
-                           matter how short the text. Padding is invisible (no
-                           background), so it costs nothing against "no backlay". */
-.scp1 .rw-screen .rw-board::after{content:none!important;}   /* screen carries the scanlines now */
-.scp1 .rw-screen .rw-board span{color:#8fd8ff!important;text-shadow:0 0 6px rgba(80,190,255,.40)!important;}
+  background:#050A10!important;background-image:none!important;
+  clip-path:polygon(0 7px,7px 0,100% 0,100% calc(100% - 7px),calc(100% - 7px) 100%,0 100%)!important;
+  box-shadow:inset 0 0 0 1.4px var(--g-hue,#8b94a3)!important;
+  filter:drop-shadow(0 0 5px color-mix(in srgb, var(--g-hue,#8b94a3) 28%, transparent))!important;
+  /* mockup 2 wants the board at roughly 40-46% OF THE HEADER. A bare percentage
+     here resolves against .rw-screen (the head minus the name plate), not the
+     head, which is why 46% measured only 27% of the bar. Deriving it from
+     --rw-boardw instead ties it to the CARD's width the way every other board
+     is tied, and lands at ~42% of the header. --rw-boardw is only READ here,
+     never written: it also drives --rw-namew, i.e. the name plate. The 78% cap
+     is the narrow-layout guard so the rack is never starved to nothing. */
+  width:min(calc(var(--rw-boardw,114px) * 1.4), 78%)!important;
+  max-width:none!important;flex:0 0 auto!important;min-width:0!important;
+  height:24px!important;padding:0 7px!important;align-self:center!important;
+  justify-content:center!important;
+  order:2!important;}
+/* the board carries its own scanlines again — the screen that used to carry
+   them is retired. */
+.scp1 .rw-screen .rw-board::after{content:''!important;position:absolute;inset:0;
+  pointer-events:none;z-index:2;
+  background:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.22) 2px 3px)!important;}
+.scp1 .rw-screen .rw-board span{color:var(--g-hue,#8b94a3)!important;
+  text-shadow:0 0 5px color-mix(in srgb, var(--g-hue,#8b94a3) 45%, transparent)!important;}
 
-/* the slots take the residual space to the board's left, ticks flush against
-   the board's edge — #170's law, unchanged since before the screen existed. */
+/* MOCKUP 2 — the slot rack is LEFT-anchored, hard against the head's left edge,
+   and takes the residual space; the board sits to its right. */
 .scp1 .rw-screen .rw-rack{
-  flex:1 1 auto!important;justify-content:flex-end!important;
-  overflow:hidden!important;min-height:13px!important;margin:0!important;padding:0!important;
+  flex:1 1 auto!important;justify-content:flex-start!important;
+  overflow:hidden!important;min-height:15px!important;margin:0!important;padding:0!important;
   background:none!important;box-shadow:none!important;
   order:1!important;}
 
@@ -3445,6 +3458,112 @@ html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]
   width:3px!important;height:3px!important;pointer-events:none!important;z-index:4!important;
   background:color-mix(in oklab, white 25%, var(--card-head))!important;
   box-shadow:0 0 0 1px rgba(0,0,0,.5)!important;}
+
+/* ============================================================================
+   THE THREE-MOCKUP REBUILD — Jac, 2026-08-01. Appended LAST so it wins source
+   order over every block above it.
+
+     MOCKUP 1  the row at rest: hex + NAME left, dim mono facts, chunky slot
+               ticks, and ONE right-anchored OUTLINED state board. No chip.
+     MOCKUP 2  the header: left rack, a LARGE outlined board in the group tone,
+               the existing name plate on the right, and a tone-coloured frame
+               line tracing the panel's own chamfered silhouette. The etched
+               steel stays; the big glass screen is retired.
+     MOCKUP 3  the group open: mockup 2's header, mockup 1's rows, and a quiet
+               resting tone frame on every row face.
+
+   The shared object is the OUTLINED BOARD: #050A10 glass, NW + SE 45-degree
+   notches, a ~1.4px ring in the OWNER's tone, mono uppercase text in that same
+   tone. The row keys to --row-hue; the header keys to --g-hue (defined below
+   off .scp1's existing data-tone). Gray reads as dim neutral, no drama.
+   ============================================================================ */
+
+/* ---- the group's tone channel, mirroring [data-row][data-tone] -> --row-hue */
+.scp1[data-tone="red"]   {--g-hue:#ff4242;}
+.scp1[data-tone="yellow"]{--g-hue:#eed44b;}
+.scp1[data-tone="blue"]  {--g-hue:#6394cc;}
+.scp1[data-tone="green"] {--g-hue:#34d399;}
+.scp1[data-tone="gray"]  {--g-hue:#8b94a3;}
+
+/* ---- MOCKUP 2 · THE HEADER'S ENERGIZED EDGE ------------------------------
+   A ring that follows the panel's OWN 45-degree silhouette. Drawn as a
+   ::before overlay carrying the SAME clip-path polygon as .scp1, so the inset
+   ring is cut by the chamfer and traces the diagonals instead of squaring them
+   off. .scp1 is display:flex, but an absolutely positioned pseudo is out of
+   flow, so this never becomes a flex item. The stud stays a SIBLING of .scp1
+   (it must escape the clip); this frame WANTS the clip, so it lives inside. */
+.scp1{position:relative!important;}
+.scp1::before{
+  content:''!important;position:absolute!important;inset:0!important;
+  pointer-events:none!important;z-index:6!important;
+  clip-path:polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%)!important;
+  box-shadow:inset 0 0 0 1.4px var(--g-hue,#3a4656)!important;}
+
+/* ---- MOCKUP 1 · ROW GRAMMAR ----------------------------------------------
+   Supersedes #176's right-to-left order: the NAME goes LEFT and leads, the
+   facts follow it as dim secondary mono, the slots take the residual and butt
+   up against the board, and the board is right-anchored. The residual gap
+   therefore falls between the facts and the slots, exactly as mockup 1 reads.
+   The row grows 34px -> 40px to carry the taller board.                     */
+[data-row] > div{height:40px!important;}
+[data-row] .ref{
+  order:1!important;flex:0 1 auto!important;min-width:0!important;
+  justify-content:flex-start!important;margin-left:0!important;margin-right:0!important;}
+[data-row] .ref__icon{opacity:.8!important;}
+[data-row] > div > span.rw-facts, [data-row] span.rw-facts{
+  order:2!important;flex:0 0 auto!important;display:inline!important;
+  width:auto!important;text-align:left!important;
+  font-family:ui-monospace,Menlo,Consolas,monospace!important;
+  font-size:9.5px!important;letter-spacing:.03em!important;color:#6a7684!important;}
+[data-row] .rw-rack{
+  order:3!important;flex:1 1 auto!important;min-width:0!important;
+  justify-content:flex-end!important;margin-left:0!important;}
+[data-row] .rw-board{order:4!important;flex:0 0 auto!important;height:24px!important;}
+
+/* the row's separate state chip is MERGED INTO the board — mockup 1 shows one
+   state read per row, and it is the outlined element. Hiding the chip also
+   retires switch B's row treatments, which is accepted, not an accident: B's
+   only remaining target was this chip. */
+[data-row] .pin-wrap{display:none!important;}
+
+/* ---- THE OUTLINED BOARD, ROW SCOPE ---------------------------------------
+   Same recipe as the header board, keyed to the ROW's tone. The clip cuts the
+   outer glow away, so the glow rides in a drop-shadow filter (the file's own
+   long-standing lesson about clip-path'd boards) and the ring rides inset.  */
+[data-row] .rw-board{
+  background:#050A10!important;background-image:none!important;
+  clip-path:polygon(0 7px,7px 0,100% 0,100% calc(100% - 7px),calc(100% - 7px) 100%,0 100%)!important;
+  box-shadow:inset 0 0 0 1.4px var(--row-hue,#8b94a3)!important;
+  filter:drop-shadow(0 0 5px color-mix(in srgb, var(--row-hue,#8b94a3) 28%, transparent))!important;
+  justify-content:center!important;padding:0 7px!important;}
+/* board() writes the text colour INLINE and wire() rewrites it on slot hover,
+   so CSS needs !important to win. That also pins the hover colour swap — the
+   hover still swaps the TEXT, which is the reading that matters, and a single
+   tone-coloured board is what the mockups show. */
+[data-row] .rw-board span{color:var(--row-hue,#8b94a3)!important;
+  text-shadow:0 0 5px color-mix(in srgb, var(--row-hue,#8b94a3) 45%, transparent)!important;}
+
+/* ---- MOCKUP 3 · THE ROW'S RESTING FRAME ----------------------------------
+   A quiet ~1.2px tone ring on the row FACE at rest. NO glow — much quieter
+   than the lit row's laser frame, which is drawn on [data-row]::before and
+   simply paints over this. It cannot live on [data-row]::after (that pseudo is
+   already the hover beam), so it is appended to the face's own shadow list,
+   FIRST in the list so it paints on top of the 2px dark side rails.
+   Scoped with :has(> .rw-board) because the drawer is also a direct div child
+   and only the face carries a board.                                        */
+[data-row] > div:has(> .rw-board){
+  box-shadow:
+    inset 0 0 0 1.2px color-mix(in srgb, var(--row-hue,#8b94a3) 55%, transparent),
+    inset 0 1px 0 rgba(185,205,235,.13),
+    inset 2px 0 0 rgba(0,0,6,.35),
+    inset -2px 0 0 rgba(0,0,6,.35),
+    inset 0 -2px 0 rgba(0,0,6,.35)!important;}
+
+/* ---- CHUNKIER, ROUNDER SLOT TICKS — one rule, header and rows alike.
+        The skew and the glossy gradient/shadows are untouched; only the block
+        gets bigger and softer. fitRack() reads offsetWidth on every stamp, so
+        the racks re-fit themselves and the +N counter appears when it should. */
+.rw-tick{width:9px!important;height:14px!important;border-radius:3px!important;}
 `;
 
 
