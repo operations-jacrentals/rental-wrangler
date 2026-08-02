@@ -23,8 +23,9 @@ def side_by_side(imgs, gap=8, bg=(10, 10, 10)):
 
 
 def posterize(im, n=5):
+    # clamp the bucket index, not the output — see refs.py:posterize
     step = 256 // n
-    lut = [min(255, (v // step) * step + step // 2) for v in range(256)]
+    lut = [min(v // step, n - 1) * step + step // 2 for v in range(256)]
     return im.convert('L').point(lut).convert('RGB')
 
 

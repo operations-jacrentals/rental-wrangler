@@ -14,9 +14,12 @@ g = im.convert('L')
 g.save(base + '-gray.png')
 
 def posterize(gray, n):
-    """Flatten to n evenly-spaced values — the notan."""
+    """Flatten to n evenly-spaced values — the notan.
+    Clamp the BUCKET INDEX, not the output: 256//n truncates, so the top
+    values (255 at n=3) land in a leftover n-th bucket and pure white would
+    read as an extra tone the mockup does not have."""
     step = 256 // n
-    lut = [min(255, (v // step) * step + step // 2) for v in range(256)]
+    lut = [min(v // step, n - 1) * step + step // 2 for v in range(256)]
     return gray.point(lut)
 
 posterize(g, 3).save(base + '-notan3.png')
