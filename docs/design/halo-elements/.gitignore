@@ -1,0 +1,9 @@
+# Pixel-gate evidence: regenerated in seconds by _ref/check.py, so it is proof
+# you re-run rather than proof you store. Keeping it out avoids churning ~40
+# binaries every time a part is nudged.
+parts/*.verify-part.png
+parts/*.verify-ref.png
+parts/*.verify-diff.png
+assembly/*-part.png
+assembly/*-ref.png
+assembly/*-diff.png

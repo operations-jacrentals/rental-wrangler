@@ -1,0 +1,118 @@
+/* ==========================================================================
+   C3 — CONDUIT ELBOW  (halo-c3-conduit)
+   A 209x125 inline-SVG art piece: one shared <defs> block (a clipPath + 18
+   linearGradients + a single <g id="…-cd_art"> made of 1 path + 17 polygons)
+   painted TWICE via <use> — once in the banner (very slightly desaturated),
+   once standalone.
+
+   Lifted from _ref/original.html: CSS 483-486 (`.conduit` — 3 lines, the
+   entire original sheet) + markup: defs 843-884, C3b instance 1105, C3a
+   instance 1175. Owns the ENTIRE conduit defs block outright — no other
+   component on the canvas references any #cd_* or #g_* id, so nothing here
+   is shared with, or needed by, any other part in the kit.
+
+   --------------------------------------------------------------------------
+   VARIANTS (2 real mockup instances — everything else about them is
+   identical: same 209x125 box, same shared art, same everything):
+
+     .halo-c3-conduit.is-banner        C3b, inside the banner sub-item row
+                                        (band B, paints OVER c9 at canvas
+                                        x150..352 y241..335). Carries the
+                                        ONE per-instance difference: a
+                                        measured filter:saturate(.9).
+     .halo-c3-conduit.is-standalone    C3a, a loose part on bare --bg
+                                        (band C). No filter at all in the
+                                        source — not even saturate(1).
+
+   --------------------------------------------------------------------------
+   KNOBS a designer can safely turn:
+
+     --x / --y   placement — top-left, relative to whatever ancestor
+                 positions this part (see REBASE below).
+     --sat       (is-banner only) filter: saturate() amount. Source value
+                 is .9; override to taste.
+
+   That is the whole knob surface. Every gradient stop inside the shared
+   `cd_art` defs is baked, unparameterized, exactly as the source mockup
+   had it (all 18 gradients are hardcoded fills, not custom-property
+   driven, in the original) — do not "improve" that by extracting colors
+   into vars neither instance ever actually varies. Width/height (209x125)
+   is likewise NOT a knob: it is the SVG's own viewBox, not a layout
+   choice — changing it rescales the art rather than repositioning it.
+
+   --------------------------------------------------------------------------
+   MARKUP each instance must supply:
+
+     <svg class="halo-c3-conduit <variant>" style="--x:…px; --y:…px;"
+          viewBox="0 0 209 125"><use href="#c3-conduit-cd_art"/></svg>
+
+   Plus, ONCE per page (shared by every c3 instance on that page, exactly
+   like the original — two conduits on one page share the one def block,
+   never duplicate it): the full clipPath + 18-gradient + <g id> defs block,
+   namespaced (see REBASE note 3). See this component's own .html /
+   .verify.html for the literal copy to paste.
+
+   --------------------------------------------------------------------------
+   REBASE NOTES (what changed vs. the original to make this origin-relative):
+
+   1. This is the CLEANEST component in the kit — nothing inside the art
+      needed rebasing. All 18 gradients are `gradientUnits="userSpaceOnUse"`
+      already expressed in cd_art's OWN local coordinate space (they were
+      never canvas-absolute to begin with), and the original `.conduit`
+      rule already read --x/--y for placement. The only canvas-coordinate
+      values anywhere in this component were the two instances' own --x/--y
+      (147/211 for C3b, 105/464 for C3a) — and those already ARE the
+      placement variables this root takes. There is no arithmetic to show:
+      dropping this part anywhere just means setting --x/--y to wherever
+      you want it, same as the original did per-instance.
+
+   2. The art deliberately paints OUTSIDE its own `viewBox="0 0 209 125"` —
+      polygons run out to x=217/y=136 and back to x=-9/y=-12 — and the
+      viewBox plus `clipPath#…-cd_clip` crop them, insetting the visible
+      paint ~3px/2px from the nominal 209x125 box. That crop IS the shape;
+      the polygon coordinates are not "wrong" and are not touched here.
+
+   3. IDs inside the shared defs block are renamed from the original's bare
+      `cd_clip` / `g_bar` / `g_capl` / … / `g_rchan` / `cd_art` to
+      `c3-conduit-cd_clip` / `c3-conduit-g_bar` / … / `c3-conduit-cd_art` —
+      namespaced under the part id so this component's defs can never
+      collide with another part's on the same page (same convention
+      c1-status-chip already used: `chipSoft` -> `c1-status-chip-soft`).
+      Every internal reference (`clip-path="url(#…)"`, each polygon's
+      `fill="url(#…)"`, the instance's `<use href="#…">`) is updated to
+      match — a pure rename, no stop/color/opacity value touched.
+
+   4. The two instances' ONLY visual difference (C3b's inline
+      `filter:saturate(.9)`) is now the `--sat` custom property on
+      `.is-banner`, rather than an inline style the consumer has to know
+      to type. `.is-standalone` intentionally has NO rule body (see the
+      comment on it below) so its raster path matches the original
+      byte-for-byte — no filter compositing pass at all, not merely
+      "visually a no-op."
+   ========================================================================== */
+
+.halo-c3-conduit {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: 209px;
+  height: 125px;
+}
+
+/* C3b — inside the banner. The one measured per-instance difference from
+   C3a: a slight desaturation (original inline style="filter:saturate(.9)"
+   on the <svg class="conduit"> itself). --sat is the knob; .9 is the
+   source value. */
+.halo-c3-conduit.is-banner {
+  filter: saturate(var(--sat, .9));
+}
+
+/* C3a — standalone, on bare --bg. The original never set `filter` on this
+   instance at all — not even `saturate(1)`. Left empty on purpose: the
+   base selector above already renders unfiltered, and adding
+   `filter:saturate(1)` here would be visually a no-op but would still
+   push this instance through an SVG filter compositing pass the original
+   never took, which is a real (if tiny) rasterization-fidelity risk this
+   component doesn't need to accept. */
+.halo-c3-conduit.is-standalone {
+}

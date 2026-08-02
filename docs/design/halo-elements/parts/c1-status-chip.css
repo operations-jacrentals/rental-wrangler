@@ -1,0 +1,273 @@
+/* ==========================================================================
+   C1 — STATUS CHIP  (halo-c1-status-chip)
+   Dark maroon plate + stroked neon octagon ring (SVG, filter-softened) +
+   warm bloom hanging off the bottom edge + a dark end-cap rail near the
+   right end. Optional mono label ("PROMISED" in the source mockup).
+
+   Lifted from _ref/original.html lines 88-164 (CSS) + markup at
+   902-913 / 981-995 / 1141-1155 / 1160-1172 + filter def 886-888.
+   Pure separation refactor — every gradient stop, blur radius, opacity,
+   colour and sub-pixel offset is unchanged in meaning from the original.
+
+   --------------------------------------------------------------------------
+   VARIANTS  (compound boolean classes — exactly 4 real combinations exist,
+   one per mockup instance; there is no 5th "wide + narrow" etc.):
+
+     .halo-c1-status-chip.is-wide                    → C1a  (band A, no label)
+     .halo-c1-status-chip.is-wide.is-labelled         → C1b  (band B, "PROMISED")
+     .halo-c1-status-chip.is-narrow.is-labelled       → C1c  (band B, "PROMISED")
+     .halo-c1-status-chip.is-narrow                   → C1d  (band C, no label)
+
+   A variant class bakes in every fitted number for that instance (plate
+   size, ring geometry, interior tint, bloom, cap gradient, label metrics).
+   `.is-labelled` variants additionally need the ring markup's <path d>
+   AND the `.label` div's text supplied by the consumer (see MARKUP below)
+   — both are per-instance data, not sensible CSS custom properties.
+
+   --------------------------------------------------------------------------
+   KNOBS a designer can safely turn (all are CSS custom properties on the
+   root element; set on an instance to override the variant-class default):
+
+     placement     --x --y                     top-left, relative to
+                                                whatever ancestor positions
+                                                this part (see REBASE below)
+     plate          --pw --ph --pcut            size + corner-chamfer of the
+                                                dark backing slab
+     ring interior  --ox --oy --ow --oh --oc    LOCAL box (see REBASE) that
+                                                `.inner` (the opaque cavity
+                                                behind the stroke) sits in
+     ring interior  --fill --gt --gb --gs       cavity base colour + the
+                                                three inward red-glow edges
+                                                (top / bottom / both sides)
+     ring stroke    --stroke --hw --cw          never overridden in the
+                                                mockup (#f85a5c, halo 3.8,
+                                                core 2.8) — free to turn,
+                                                just know all 4 instances
+                                                agree today
+     bloom          --blx --blr --blh --blo     the warm smear under the
+                                                plate's bottom edge
+     end-cap        --capx --capy --capw --caph --capr
+                    --cap0 .. --cap5            the dark rail near the
+                                                right end + its gradient
+     label          --lbl-top --lbl-fs --lbl-ls --lbl-pl
+                                                only meaningful when the
+                                                markup includes a `.label`
+                                                div (labelled variants)
+
+   --------------------------------------------------------------------------
+   MARKUP each instance must supply (a variant class alone is NOT enough —
+   the ring path and the label text are per-instance DATA, not scalars, so
+   they are not modelled as custom properties):
+
+     <div class="halo-c1-status-chip <variant classes>" style="--x:…; --y:…;">
+       <div class="plate oct"></div>
+       <div class="bloom"></div>
+       <div class="cap"></div>
+       <div class="inner oct"></div>
+       <!-- only on .is-labelled variants: -->
+       <div class="label">PROMISED</div>
+       <svg class="ringlayer">
+         <path class="halo" d="…"/>
+         <path class="core" d="…"/>
+       </svg>
+     </div>
+
+   Plus, ONCE per page (shared by every c1 instance on that page — the
+   original's own comment says "two chips on a page share the one def, do
+   not duplicate the id"):
+
+     <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+       <defs>
+         <filter id="c1-status-chip-soft" x="-6%" y="-25%" width="112%" height="150%">
+           <feGaussianBlur stdDeviation=".81"/>
+         </filter>
+       </defs>
+     </svg>
+
+   --------------------------------------------------------------------------
+   REBASE NOTES (what changed vs. the original to make this origin-relative):
+
+   1. The original's `.chip` used --px/--py as BOTH its own canvas position
+      AND the reference point subtracted inside `.inner`'s calc(). That dual
+      role is retired: --x/--y now carry ALL placement (this file's root
+      rule uses them directly), and --px/--py are gone — every part in this
+      kit places itself via --x/--y, so this component follows the same
+      convention instead of keeping a synonym that would always equal it.
+
+   2. --ox/--oy used to be CANVAS-absolute (see original lines 139-140:
+      `left: calc(var(--ox) - var(--px) - 1px)`). They are now pre-rebased
+      to be LOCAL (root-relative) at the point they're declared in each
+      variant class below — i.e. the value already IS
+      `original --ox - original --px` (same for --oy/--py). Because that
+      subtraction is a pure translation, it is numerically identical to the
+      original: only the --px/--py term disappears since it is now always
+      zero (root-relative to itself). `.inner`'s calc() below drops the
+      `- var(--px)` term accordingly — same formula, same numbers, just an
+      already-local input. Per instance:
+        C1a  --ox: 407.5  - 394   = 13.5    --oy: 34.87  - 24.4  = 10.47
+        C1b  --ox: 416.9  - 402.6 = 14.3    --oy: 160.85 - 150.4 = 10.45
+        C1c  --ox: 892.26 - 877.5 = 14.76   --oy: 282.45 - 271.5 = 10.95
+        C1d  --ox: 903.2  - 888.6 = 14.6    --oy: 406.35 - 394.6 = 11.75
+
+   3. The ring `<svg>` was a SIBLING of `.chip` in canvas space (absolute at
+      stage 0,0, path `d` in canvas coordinates). It is now a CHILD of the
+      root, sized to the root's own box (`inset:0`; percentages, not the
+      original's literal 1292x635 — irrelevant to the path's own geometry
+      since there is no viewBox, so 1 unit stays 1px either way), and every
+      `d` coordinate has had that same instance's (original --px, --py)
+      subtracted from it. This is where the DELIBERATE sub-pixel
+      disagreement between --ox/--oy and the path's own start point lives
+      (see original ANATOMY.md hazard #3) — it survives untouched because
+      subtracting the same constant from both sides of a difference doesn't
+      change the difference. Do not "fix" the mismatch.
+
+   4. --capx/--capy/--capw/--caph and --blx/--blr/--blh were ALREADY local
+      in the original (children positioned absolute within `.chip`, which
+      is itself the offset root) — carried over verbatim, no rebase math.
+
+   5. `.cap` overruns the plate box on every instance (--capy + --caph >
+      --ph, by 5.0 / 5.1 / 3.4 / 3.9px respectively) and `.bloom` hangs
+      `--blh`px below via `top:100%`. The root below deliberately has NO
+      `overflow:hidden` — adding one would silently clip both. This matches
+      the original: `.chip` never clipped its own children either.
+   ========================================================================== */
+
+.halo-c1-status-chip {
+  position: absolute;
+  left: var(--x, 0px);
+  top: var(--y, 0px);
+  width: var(--pw);
+  height: var(--ph);
+}
+
+/* The plate is NOT chrome: measured it is a near-black warm maroon slab.
+   x700 column of the reference reads #16070b -> #1c0407 above the stroke and
+   #120202 -> #110605 below it, never above luminance 30.                     */
+.halo-c1-status-chip .plate {
+  position: absolute; inset: 0; --cut: var(--pcut);
+  background:
+    linear-gradient(180deg,
+      #1c1613 0px, #100708 1.2px, #150608 2.4px, #150506 3.4px,
+      #0f0102 4.6px, #150204 5.7px, #1b0507 6.9px, #190306 8.6px,
+      #1a0405 calc(100% - 5px), #1a0404 calc(100% - 3px),
+      #170303 calc(100% - 1.4px), #100202 100%);
+}
+/* neutral warm-grey bloom under the plate's bottom edge.
+   stops derived from the measured deltas over the backdrop:
+   +32/17/13, +63/50/48, +67/62/60, +60/58/56, +28/28/26, +3/3/3           */
+.halo-c1-status-chip .bloom {
+  position: absolute; left: var(--blx); right: var(--blr);
+  top: 100%; height: var(--blh); opacity: var(--blo, 1);
+  background: linear-gradient(180deg,
+     rgba(255,120,100,.055)  0%,
+     rgba(255,150,120,.131)  8.3%,
+     rgba(255,210,205,.257) 25%,
+     rgba(255,240,235,.273) 41.7%,
+     rgba(255,245,240,.245) 58.3%,
+     rgba(255,255,250,.114) 75%,
+     rgba(255,255,255,.012) 91.7%,
+     rgba(255,255,255,0)   100%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 15px, #000 calc(100% - 6px), transparent 100%);
+          mask-image: linear-gradient(90deg, transparent 0, #000 15px, #000 calc(100% - 6px), transparent 100%);
+}
+/* The neon outline is a stroked octagon. It has to be SVG: Chrome pixel-snaps
+   the paint box of every CSS div, so a 4px stroke whose centreline sits at
+   y=34.87 renders at 33..37 with no antialiasing at all. An SVG path is
+   rasterised at sub-pixel precision, and feGaussianBlur reproduces the
+   reference's ~0.8px soft shoulder that a hard CSS edge cannot.
+   Re-parented into the root (was a canvas-absolute sibling — see REBASE
+   note 3 above); sized to the root's own box, overflow left visible so the
+   stroke halo/blur can still spill past it exactly as before. */
+.halo-c1-status-chip .ringlayer { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
+.halo-c1-status-chip .ringlayer > path { fill: none; stroke-linejoin: miter; stroke: var(--stroke, #f85a5c); }
+.halo-c1-status-chip .ringlayer > path.halo { stroke-width: var(--hw, 3.8); stroke-opacity: .90; filter: url(#c1-status-chip-soft); }
+.halo-c1-status-chip .ringlayer > path.core { stroke-width: var(--cw, 2.8); }
+/* interior: fully opaque (no red must leak through) + the measured inward
+   red glow that each stroke throws back into the cavity. Its outer edge sits
+   1px outside the centreline so the stroke core hides it.
+   --ox/--oy are already LOCAL here (see REBASE note 2) so the calc() below
+   drops the original's "- var(--px)" / "- var(--py)" term — same numbers. */
+.halo-c1-status-chip .inner {
+  position: absolute;
+  left: calc(var(--ox) - 1px);
+  top:  calc(var(--oy) - 1px);
+  width:  calc(var(--ow) + 2px);
+  height: calc(var(--oh) + 2px);
+  --cut: calc(var(--oc) + .586px);
+  background:
+    linear-gradient(180deg, rgba(255,30,30,var(--gt,.052)) 0, rgba(255,30,30,0) 18px),
+    linear-gradient(0deg,   rgba(255,30,30,var(--gb,.070)) 0, rgba(255,30,30,0) 20px),
+    linear-gradient(90deg,  rgba(255,30,30,var(--gs,.088)) 0, rgba(255,30,30,0) 25px),
+    linear-gradient(270deg, rgba(255,30,30,var(--gs,.088)) 0, rgba(255,30,30,0) 25px),
+    var(--fill, #060a10);
+}
+/* dark end-cap rail past the black gutter at the right end.
+   --capx/--capy/--capw/--caph were already local in the original — no
+   rebase needed (see REBASE note 4). Overruns the plate box on every
+   instance by design (REBASE note 5) — do not clip it. */
+.halo-c1-status-chip .cap {
+  position: absolute; left: var(--capx); width: var(--capw);
+  top: var(--capy); height: var(--caph);
+  border-radius: var(--capr, 3.5px);
+  background: linear-gradient(90deg,
+     var(--cap0,#0d0507) 0%, var(--cap1,#241a1c) 20%, var(--cap2,#382b2e) 32%,
+     var(--cap3,#291e20) 45%, var(--cap4,#150e0e) 62%, var(--cap5,#130c0c) 100%);
+}
+/* label metrics were per-instance inline styles in the original (no shared
+   var family existed for them); given names here since they are now
+   variant-class knobs. text-align is constant across both labelled
+   instances (always "left"), so it is baked in rather than var'd. */
+.halo-c1-status-chip .label {
+  position: absolute; left: 0; right: 0;
+  top: var(--lbl-top); font-size: var(--lbl-fs); letter-spacing: var(--lbl-ls);
+  text-align: left; padding-left: var(--lbl-pl);
+  font-family: var(--mono); font-weight: 700; color: #f2585a; white-space: nowrap; line-height: 1;
+  text-shadow: 0 0 5px rgba(249,90,92,.45);
+}
+
+/* --------------------------------------------------------------------------
+   VARIANTS — one compound class per real mockup instance. */
+
+/* C1a — wide, unlabelled (band A). Uses the rule's own --cap0..5 / --stroke
+   / --hw / --cw defaults, same as the original markup did. */
+.halo-c1-status-chip.is-wide {
+  --pw: 634.8px; --ph: 60.6px; --pcut: 21px;
+  --ox: 13.5px; --oy: 10.47px; --ow: 606.8px; --oh: 46px; --oc: 20.4px;
+  --fill: #05070b; --gt: .052; --gb: .070; --gs: .088;
+  --blx: 22px; --blr: 11px; --blh: 6px; --blo: 1;
+  --capx: 626.5px; --capw: 8px; --capy: 20.6px; --caph: 45px;
+}
+
+/* C1b — wide, "PROMISED" (band B). Sits on c10 .bt-face in the assembled
+   card; free-standing here. */
+.halo-c1-status-chip.is-wide.is-labelled {
+  --pw: 633px; --ph: 60.5px; --pcut: 21px;
+  --ox: 14.3px; --oy: 10.45px; --ow: 605.8px; --oh: 45.45px; --oc: 20.4px;
+  --fill: #060f18; --gt: .058; --gb: .078; --gs: .082;
+  --blx: 22px; --blr: 11px; --blh: 5.2px; --blo: .95;
+  --capx: 626.9px; --capw: 6px; --capy: 22.6px; --caph: 43px;
+  --cap0: #100c0c; --cap1: #2a2422; --cap2: #332b29; --cap3: #2a2322; --cap4: #191614; --cap5: #161311;
+  --lbl-top: 21px; --lbl-fs: 27.9px; --lbl-ls: 1.35px; --lbl-pl: 239px;
+}
+
+/* C1c — narrow, "PROMISED" (band B). Paints on top of c4 C4b in the
+   assembled card; free-standing here. */
+.halo-c1-status-chip.is-narrow.is-labelled {
+  --pw: 362.5px; --ph: 70.1px; --pcut: 25px;
+  --ox: 14.76px; --oy: 10.95px; --ow: 335.2px; --oh: 54.1px; --oc: 24.8px;
+  --fill: #030a12; --gt: .050; --gb: .062; --gs: .070;
+  --blx: 26px; --blr: 10px; --blh: 4px; --blo: .55;
+  --capx: 355px; --capw: 6.5px; --capy: 27.5px; --caph: 46px;
+  --cap0: #150a0c; --cap1: #2a1416; --cap2: #3d2020; --cap3: #3c1a17; --cap4: #210708; --cap5: #140406;
+  --lbl-top: 24.9px; --lbl-fs: 29.5px; --lbl-ls: 0.15px; --lbl-pl: 119px;
+}
+
+/* C1d — narrow, unlabelled (band C). Sits on bare --bg with no overlaps. */
+.halo-c1-status-chip.is-narrow {
+  --pw: 363px; --ph: 71px; --pcut: 24px;
+  --ox: 14.6px; --oy: 11.75px; --ow: 336.2px; --oh: 54.07px; --oc: 26px;
+  --fill: #0b0d11; --gt: .040; --gb: .052; --gs: .062;
+  --blx: 26px; --blr: 10px; --blh: 4px; --blo: .55;
+  --capx: 356.9px; --capw: 7px; --capy: 27.4px; --caph: 47.5px;
+  --cap0: #150507; --cap1: #341216; --cap2: #4b1f22; --cap3: #3b1519; --cap4: #1c0709; --cap5: #150808;
+}
