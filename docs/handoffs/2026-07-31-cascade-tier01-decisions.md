@@ -1,5 +1,31 @@
 # Handoff — cascade the Tier-0.1 decisions + retyping into the rest of the design artifacts
 
+> # ✅ DONE — THIS JOB IS COMPLETE. DO NOT RUN IT.
+>
+> **Superseded by PR #788 (`b35e4bb`) — which is this brief being CARRIED OUT, exactly as intended.**
+> Timeline: this brief merged to trunk at 19:17 as `57cb296`; the cascade landed 93 minutes later at
+> 20:50, **built directly on top of it** (`b35e4bb`'s parent *is* `57cb296`). A following session read
+> the brief and did the job. The cascade described below has already happened:
+>
+> - the kit's `elements/pin.html` was **renamed to `slot.html`** (#177) and every element,
+>   component and foundation page rebuilt;
+> - `tier-01-handoff/atom-rebuild.md` now carries *"Retired 2026-07-31 (ledger #170)"* against the
+>   8-tick cap and the fixed 114px board;
+> - all six Labs prompts (`prompt-00`…`prompt-05`) were updated;
+> - `docs/design/audit/prompt-b-tier-01-card.md` was **regenerated** and now indexes #172–#181, so
+>   the "stale at #164" warning below is **no longer true**;
+> - `tokens.css` took the #152 token pass, and `STALE-DESIGN-LANGUAGE-SWEEP.md` was folded in.
+>
+> **Two open items named below are also closed:** ledger **#180** closes **#156** (the laser frame
+> carries the hue alone; the lit cartridge face does *not* also keep the group hue) and **#181**
+> closes **#152**.
+>
+> **Kept, not deleted,** because the "Traps this session paid for" section is still accurate and
+> still worth reading, and because this file is now evidence that a written handoff **works**: it was
+> picked up and executed by the next session without a conversation.
+> **Everything below is history. Verify against the ledger before acting on any of it.**
+
+
 **Created 2026-07-31.** Self-contained. The prompt for the next session is at the bottom —
 copy from `## THE PROMPT` down.
 
