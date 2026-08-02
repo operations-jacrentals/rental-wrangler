@@ -3702,6 +3702,47 @@ html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]
 [class*="seg__opt"] > .pin,
 .pin-wrap > .pin,
 .pin[data-slotpin="1"]{display:none!important;}
+
+/* ============================================================================
+   NAME PLATE PER JAC'S SCREENSHOT + TICKS TO BOARD HEIGHT — Jac, 2026-08-02.
+   "Your group name panel looks NOTHING like my edits... Improve what we
+   already have using my screenshot. Ticks should be as tall as the message
+   board." Popup-confirmed: stretched-hex plate (45-deg chamfers on BOTH
+   ends), near-black flat fill, thin steel bezel line, FLAT crisp tone mono
+   (the glow well retires); ticks 24px tall x 12px wide EVERYWHERE (uniform
+   over ten-visible — Jac chose "12px everywhere, fewer fit": the header's
+   +N counter absorbs the overflow, the board keeps its width).
+   The message board design is explicitly untouched.
+   ============================================================================ */
+
+/* the plate's outer wrap becomes the thin LIGHT bezel line: a stretched hex.
+   Same 1.2px reveal construction as before — only the silhouette and the
+   line's colour change (the old bezel was a dark seam; the screenshot's is a
+   thin lit steel line against the dark plate). */
+.scp1 .pin-wrap{
+  background:color-mix(in oklab, white 22%, var(--card-head))!important;
+  clip-path:polygon(8px 0,calc(100% - 8px) 0,100% 8px,100% calc(100% - 8px),
+    calc(100% - 8px) 100%,8px 100%,0 calc(100% - 8px),0 8px)!important;}
+
+/* the gate inside: FLAT near-black plate, no well, no press inset, no lit
+   hairlines, no gradient — stamped steel with crisp mono. Restated at the
+   html[data-b] specificity that the grip-based well rules used, so this wins
+   for every B position without touching those earlier blocks. */
+html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]{
+  clip-path:polygon(7.4px 0,calc(100% - 7.4px) 0,100% 7.4px,100% calc(100% - 7.4px),
+    calc(100% - 7.4px) 100%,7.4px 100%,0 calc(100% - 7.4px),0 7.4px)!important;
+  background-color:#0a0f14!important;
+  background-image:none!important;
+  box-shadow:none!important;}
+
+/* flat crisp text — the tone hues stay (R4's per-tone colours), the GLOW goes */
+.scp1 .gate .sc-interp{text-shadow:none!important;}
+
+/* ticks: as tall as the board (24px), proportionally wide (12px), everywhere.
+   Geometry only — skew, gloss gradient and shadows untouched; fitRack
+   recomputes from offsetWidth so the header's +N counter absorbs overflow. */
+.rw-tick{width:12px!important;height:24px!important;border-radius:3.5px!important;}
+.scp1 .rw-rack,[data-row] .rw-rack{min-height:24px!important;}
 `;
 
 
