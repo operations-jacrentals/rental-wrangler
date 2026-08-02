@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>c5-display-plate verify — C5a</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="./c5-display-plate.css">
+</head>
+<body>
+<!--
+  Verify box for instance C5a: x=1045 y=0 w=247 h=124 (refX=1045 refY=0).
+  Root placement: --x = 1063(instance canvas x) - 1045(refX) = 18px
+                  --y = 0(instance canvas y)    - 0(refY)    = 0px
+  --w/--h/--hx/--hy/--hw/--hh/--glass all come from .is-blank.
+  C5a's painted box == its nominal box exactly (no glow/blur/bloom spill),
+  and it touches canvas row 0 — --y:0px is the real top of the paint, not a
+  clipped box, so this verify page correctly has no top margin.
+-->
+<div class="stage" style="width:247px;height:124px">
+  <div class="halo-c5-display-plate is-blank" style="--x:18px; --y:0px">
+    <div class="body oct4"></div>
+    <div class="glass oct4"></div>
+    <div class="hair oct4"><i class="oct4"></i></div>
+  </div>
+</div>
+</body>
+</html>

@@ -111,15 +111,20 @@
 
    3. The ring `<svg>` was a SIBLING of `.chip` in canvas space (absolute at
       stage 0,0, path `d` in canvas coordinates). It is now a CHILD of the
-      root, sized to the root's own box (`inset:0`; percentages, not the
-      original's literal 1292x635 — irrelevant to the path's own geometry
-      since there is no viewBox, so 1 unit stays 1px either way), and every
-      `d` coordinate has had that same instance's (original --px, --py)
-      subtracted from it. This is where the DELIBERATE sub-pixel
-      disagreement between --ox/--oy and the path's own start point lives
-      (see original ANATOMY.md hazard #3) — it survives untouched because
-      subtracting the same constant from both sides of a difference doesn't
-      change the difference. Do not "fix" the mismatch.
+      root, sized to the root's own box via `width/height:100%` (percentages
+      sized off the root's own --pw/--ph box; not the original's literal
+      1292x635 — irrelevant to the path's own geometry since there is no
+      viewBox, so 1 unit stays 1px either way — see note 6 for why the
+      SIZING isn't the delicate part but the SVG's left/top is). Every `d`
+      coordinate has had that same instance's (original --x, --y) subtracted
+      from it, THEN had that same instance's --x/--y FRACTIONAL remainder
+      added back (note 6) — net effect: `d` coordinate = original absolute
+      canvas coordinate minus floor(--x or --y). This is where the
+      DELIBERATE sub-pixel disagreement between --ox/--oy and the path's
+      own start point lives (see original ANATOMY.md hazard #3) — it
+      survives untouched because subtracting/adding the same constants to
+      both sides of a difference doesn't change the difference. Do not
+      "fix" the mismatch.
 
    4. --capx/--capy/--capw/--caph and --blx/--blr/--blh were ALREADY local
       in the original (children positioned absolute within `.chip`, which
@@ -130,6 +135,40 @@
       `--blh`px below via `top:100%`. The root below deliberately has NO
       `overflow:hidden` — adding one would silently clip both. This matches
       the original: `.chip` never clipped its own children either.
+
+   6. DISCOVERED DURING EXTRACTION, not in the original hazard list — a
+      Chromium rendering quirk, verified empirically, not theorised:
+      `filter:url(#c1-status-chip-soft)` on `.ringlayer > path.halo` only
+      rasterises pixel-identically to the reference when the `<svg>` that
+      carries the filtered path resolves to an INTEGER screen pixel
+      position. In the original, the ring's `<svg>` sat at stage (0,0) —
+      always integer — with every sub-pixel fraction folded into the path's
+      own `d` coordinates, which SVG rasterises at true sub-pixel precision
+      (unlike a filtered element's CSS box, which loses sub-pixel
+      translation when its layer snaps to the device-pixel grid). Once the
+      ring became a child of a fractionally-positioned root (--x/--y are
+      genuinely fractional for 3 of 4 instances — only C1a's --x is a whole
+      number), naively inheriting that fractional offset via plain
+      `left:0; top:0;` reproduced with a visible defect: mean delta ~2.5,
+      ~11% of pixels off by >8, concentrated in the blurred halo's
+      "shoulder" (the sharp core's peak coverage still matched; only the
+      blur's anti-aliased falloff shifted) — confirmed via
+      getBoundingClientRect that the path's own GEOMETRY was correct to
+      within 0.01px, so this is a rasterisation-phase artefact, not a math
+      error. Fix (verified: mean 0.000 / max 0 against the reference, both
+      for C1a where only Y is fractional and for C1d where X AND Y both
+      are): `.ringlayer`'s own `left`/`top` cancel out var(--x)/var(--y)'s
+      fractional part via `mod(…, 1px)`, pinning the SVG's effective
+      position to floor(--x)/floor(--y) — always integer, for ANY --x/--y
+      the consumer sets. The remainder (the fractional part that was just
+      subtracted out of the CSS position) is added back into each
+      variant's path `d` coordinates below, baked for that variant's own
+      shipped --x/--y. (If a variant is ever relocated to a DIFFERENT
+      fractional --x/--y, the `mod()` compensation still keeps the SVG's
+      CSS position integer — layout correctness never breaks — but the
+      path's baked sub-pixel remainder would drift by less than 1px,
+      reintroducing a blur-phase artefact too small to see by eye. Only
+      matters if this component is ever re-verified at a new position.)
    ========================================================================== */
 
 .halo-c1-status-chip {
@@ -177,8 +216,19 @@
    reference's ~0.8px soft shoulder that a hard CSS edge cannot.
    Re-parented into the root (was a canvas-absolute sibling — see REBASE
    note 3 above); sized to the root's own box, overflow left visible so the
-   stroke halo/blur can still spill past it exactly as before. */
-.halo-c1-status-chip .ringlayer { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
+   stroke halo/blur can still spill past it exactly as before.
+   left/top are NOT 0 — they cancel var(--x)/var(--y)'s fractional part so
+   this filtered element's OWN resolved screen position is always an
+   integer pixel. Required for pixel-identical filter rasterisation; see
+   REBASE note 6 above. Each variant's path `d` below carries that same
+   fraction back so the visible result is unchanged. */
+.halo-c1-status-chip .ringlayer {
+  position: absolute;
+  left: calc(-1 * mod(var(--x, 0px), 1px));
+  top:  calc(-1 * mod(var(--y, 0px), 1px));
+  width: 100%; height: 100%;
+  overflow: visible; pointer-events: none;
+}
 .halo-c1-status-chip .ringlayer > path { fill: none; stroke-linejoin: miter; stroke: var(--stroke, #f85a5c); }
 .halo-c1-status-chip .ringlayer > path.halo { stroke-width: var(--hw, 3.8); stroke-opacity: .90; filter: url(#c1-status-chip-soft); }
 .halo-c1-status-chip .ringlayer > path.core { stroke-width: var(--cw, 2.8); }

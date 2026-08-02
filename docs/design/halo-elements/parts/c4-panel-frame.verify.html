@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>c4-panel-frame verify — C4a</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="./c4-panel-frame.css">
+</head>
+<body>
+<!--
+  Verify box for instance C4a: x=330 y=478 w=944 h=157 (refX=330 refY=478).
+  Root placement: --x = 344(instance canvas x) - 330(refX) = 14px
+                  --y = 497(instance canvas y) - 478(refY) = 19px
+  --w comes from .is-c4a (914.5px).  No .pf-lift child — that is C4b only.
+  Box is generous on purpose: it clears the .pf-blt row at local y=18, the
+  .pf-blb row at local y=144, the blurred .pf-brk stubs, and the whole
+  right-hand edge assembly ending at local x=928.5.
+-->
+<div class="stage" style="width:944px;height:157px">
+  <div class="halo-c4-panel-frame is-c4a" style="--x:14px; --y:19px">
+    <div class="pf-body">
+      <div class="pf-r pf-r0"></div><div class="pf-r pf-r1"></div><div class="pf-r pf-r2"></div>
+      <div class="pf-cav"><div class="pf-cavr"></div></div>
+      <div class="pf-railL"></div><div class="pf-railR"></div>
+      <div class="pf-r pf-r122"></div><div class="pf-r pf-r123"></div><div class="pf-r pf-r124"></div>
+      <div class="pf-rmar"></div><div class="pf-rface"></div><div class="pf-riv"></div>
+      <div class="pf-lbev"></div><div class="pf-lface"></div><div class="pf-chT"></div>
+    </div>
+    <div class="pf-lside"></div><div class="pf-fct"></div><div class="pf-fcb"></div>
+    <div class="pf-brk"><i class="v"></i><i class="d"></i><i class="ts"></i><i class="bs"></i></div>
+    <div class="pf-bl pf-blt"></div><div class="pf-bl pf-blb"></div>
+  </div>
+</div>
+</body>
+</html>

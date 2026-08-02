@@ -605,3 +605,31 @@ is exactly `--bg` #0a0c10.
 For a verify page, the component root's `--x` / `--y` are `(instance canvas x) - refX` and
 `(instance canvas y) - refY`, using the instance's **nominal** origin, not the painted box
 above. The painted box is what the verify *window* must contain.
+
+### The stage width changes the pixels — use `check.py --full`
+
+A verify page sized to its own box does **not** rasterise identically to the real canvas.
+Chrome resolves a fractionally-sized box — especially one carrying a `clip-path` — against
+the enclosing stage, so the same markup lands on a different pixel grid depending on how wide
+that stage is.
+
+Measured on `c4-panel-frame`, whose `.pf-body` is 914.5px wide and clipped. The **original's
+own untouched markup**, moved into a 944-wide stage, scores:
+
+| stage the markup was rendered in | mean | max | within 8 |
+|---|--:|--:|--:|
+| 944 wide (box-sized verify page) | 0.288 | 84 | 99.70% |
+| 1292 wide (the real canvas) | **0.000** | **0** | **100%** |
+
+The error was a 4px-wide vertical stripe running the full frame height — the right-hand chrome
+edge, shifted exactly 1px. It looks precisely like a botched extraction, and it is not one:
+`c4-panel-frame` is byte-faithful. **Do not "fix" it.**
+
+The lesson generalises past this one part. A harness with a floor of 0.288 is a harness that
+can hide a real 1px defect, so `check.py` now takes **`--full`**: it renders the verify page
+at the canvas's own 1292x635 and crops the same window out of the render. A verify page in
+that mode carries a full-size stage with the part at its **true canvas coordinates**, which
+also removes the rebase arithmetic from the verify page — one less thing to get wrong. Under
+`--full` the c4 control scores 0.000.
+
+Box-sized verify pages still work and still gate; they just carry this floor. Prefer `--full`.
