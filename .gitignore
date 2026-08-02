@@ -59,3 +59,8 @@ tmp-*.mjs
 # (each cloud session gets its own clone), best-effort, NEVER committed.
 .claude/.session-prs
 .claude/.session-title-set
+
+# Python bytecode — /paint's scripts are run in place, so a stray __pycache__
+# lands inside the skill dir. Build artifact, never committed.
+__pycache__/
+*.pyc
