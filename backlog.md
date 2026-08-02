@@ -72,3 +72,27 @@ the task. To work one: `git checkout <branch>`, refresh it from its area
     (inert, gated on `claude/internal-chat-updates-vq6p7b`) and Wrangler Ops'
     global 100/day rate limit (documented, not yet deployed) — both live in
     `docs/handoffs/BACKEND-DEPLOY-QUEUE.md`.
+
+## Salvaged from the dead-base PRs closed 2026-08-02
+
+Fourteen PRs were closed because their base branch (`area/*`, or the retired `staging`) was orphaned
+by the 2026-07-13 trunk/production switch — they could not merge through GitHub regardless of
+content. **The branches still exist on `origin`; nothing was deleted.** Full triage:
+`docs/cleanup/2026-08-02-work-manifest.md`.
+
+Three carried real content worth keeping:
+
+| From | Item | Status |
+|---|---|---|
+| **#499** | **SMS (Text Message) Consent clause** added to the Rental agreement (§20) and Membership agreement (§21), with the pre-consent text version-frozen under `AGREEMENT_VERSIONS` so existing signings keep resolving the text people actually signed | ⚠ **PII/compliance — the keeper.** Re-cut onto a fresh branch off `trunk`. Source branch: `customers-crm/sms-consent-agreements` |
+| #529 | Backend handoff doc for inbound SMS keyword auto-reply (STOP / START / HELP) — A2P/10DLC carrier compliance | Salvage the doc when the comms backend work resumes. Source: `comms-notifications/sms-keyword-autoreply` |
+| #528 | One-time bulk sync of `docs/specs/*` area docs | Almost certainly superseded by trunk's current docs — content-diff before reusing. Source: `docs/spec-sync-2026-07-08` |
+
+The other eleven (#376 #375 #374 #373 #371 #370 #369 #368 #366 #365 #364) were single-markdown
+`[Backlog]` tickets with no code. Their content is the ticket text itself, preserved on their
+branches and in the closed PRs. Several restate rows already in the table above (red legibility,
+blue Save/Complete buttons, double-click anchor, mini-card category groups, multi-invoice rental
+view, signup agreement + first invoice, card/selfie/agreement in one window).
+
+**Stale reference in this file:** the header above still routes UI items through `/jactec-ui`, a
+skill **deleted 2026-07-26**. UI work now goes through `style` + `wrangler-style` (both, always).

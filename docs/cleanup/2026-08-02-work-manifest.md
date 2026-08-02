@@ -12,6 +12,17 @@ trunk's tree → the content is already on trunk. Non-zero exit → it no longer
 content-based on purpose: the repo **squash-merges**, so SHAs differ after merge and
 `git branch --merged` gives wrong answers here.
 
+> **Gotcha that nearly corrupted this analysis — worth carrying into `MEMORY.md`.**
+> Cloud sessions clone shallow (`depth=50`). `git fetch --unshallow` reported success and
+> `git rev-parse --is-shallow-repository` answered `false`, but **`.git/shallow` was still on disk**.
+> A later plain `git fetch origin trunk` (run by `ci/check-cachebust.mjs`) then re-truncated trunk to
+> **one reachable commit**, after which *every* `git merge-base` against trunk returned "no merge
+> base" — which reads exactly like 62 branches sharing no history with trunk. It is not true; it is
+> an artifact. The tell: `git rev-list --max-parents=0 origin/trunk` returned trunk's own HEAD, and a
+> repository's root commit can never be its own tip. Repair with
+> `rm -f .git/shallow && git fetch origin '+refs/heads/*:refs/remotes/origin/*'` (830 commits return),
+> then re-verify. All figures below were re-measured after the repair.
+
 ---
 
 ## The board at a glance
@@ -72,10 +83,25 @@ motivated by a 10× typo that sat live 26 days) · #751, #741 (UNITS navigation 
 fixes) · #272 (reverse customer↔unit search) · #748 (dispatch pickup leg discarded the rental's real
 return time) · #590 #548 #544 #600 (mobile layout/toolbar decluttering).
 
-**#285 — partial/per-line refunds.** ⚠ money. UI fully built, hard-gated behind
-`PARTIAL_REFUNDS_ENABLED = false` because the backend doesn't honor partial amounts yet and a flip
-today would **over-refund real money on the shared production Stripe account**. Safe to merge as-is
-(flag off = no behavior change). The eventual flip must not happen before the backend ships.
+**#285 — partial/per-line refunds. ⚠ money — LIKELY SUPERSEDED, verify before closing.**
+The PR's own guard comment says it is hard-gated behind `PARTIAL_REFUNDS_ENABLED = false` because
+flipping it before the backend honors partial amounts would **over-refund real money on the shared
+production Stripe account**. That describes the PR's 40-day-old branch, not reality:
+
+```
+app.js:8059 (trunk)       const PARTIAL_REFUNDS_ENABLED = true;
+app.js:8198 (production)  const PARTIAL_REFUNDS_ENABLED = true;
+```
+
+The feature is **already live in production**. So #285 is a stale record of shipped work, not
+pending work.
+
+**Separate open safety question, pre-existing and not from this session.** `backlog.md` records that
+this flag was flipped to `true` in production *"with no in-repo writeup confirming the
+deploy→verify→flip sequence Decision D1 required was actually followed in order."* Since the flag is
+live and money moves through it, that ordering is worth confirming with whoever flipped it. It is
+**not** part of the trunk→production gap — both sides already read `true`, so promoting changes
+nothing here.
 
 **#750 — crew SMS alerts.** Inert twice over: default-off Settings flag *and* a hardcoded
 `STAFF_ALERTS_LIVE = false`. Safe to merge as a no-op.
