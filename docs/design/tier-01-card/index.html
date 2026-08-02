@@ -3743,6 +3743,66 @@ html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]
    recomputes from offsetWidth so the header's +N counter absorbs overflow. */
 .rw-tick{width:12px!important;height:24px!important;border-radius:3.5px!important;}
 .scp1 .rw-rack,[data-row] .rw-rack{min-height:24px!important;}
+
+/* ============================================================================
+   THE WELLS COME BACK — Jac, 2026-08-02: "you have not fixed the glass wells.
+   They look nothing like they did before." Proven by computed-style diff
+   against 366c505 (the last pre-rebuild build): the design-dump rebuild
+   REPLACED the boards' welled-glass seating with a bare tone ring — the
+   all-or-none recipe violation this file has already documented once ("All
+   three parts or none"). This section RESTORES the before-recipe in full and
+   LAYERS the mockups' tone ring inside it, instead of choosing between them:
+
+     texture   #04101c + scanline film + circuit glass    (was: flat #050A10)
+     seat      0 0 0 1.4px dark ring outside              (was: gone)
+     tone      inset 0 0 0 1.4px hue ring                 (the mockup, kept)
+     press     inset 0 1.5px 3px black                    (was: gone)
+     light     the two lit-hairline drop-shadows          (was: a hue glow)
+     shape     the house SW-notch                          (was: NW/SE cuts)
+
+   Same selectors as the rebuild's rules, appended later, so source order wins
+   at equal specificity. Widths, padding (the 7px marquee contract), the tone
+   TEXT, the verb overlay and the press flash are all untouched.             */
+[data-row] .rw-board{
+  background-color:#04101c!important;
+  background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.22) 2px 3px),var(--h-circuit)!important;
+  background-size:auto,512px 512px!important;
+  clip-path:polygon(0 0,100% 0,100% 100%,9px 100%,0 calc(100% - 9px))!important;
+  box-shadow:0 0 0 1.4px color-mix(in oklab, black 55%, var(--card-head)),
+    inset 0 0 0 1.4px var(--row-hue,#8b94a3),
+    inset 0 1.5px 3px rgba(0,0,0,.7)!important;
+  filter:drop-shadow(0 1.5px 0 rgba(185,205,235,.10)) drop-shadow(0 -1px 0 rgba(185,205,235,.05))!important;}
+.scp1 .rw-screen .rw-board{
+  background-color:#04101c!important;
+  background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.22) 2px 3px),var(--h-circuit)!important;
+  background-size:auto,512px 512px!important;
+  clip-path:polygon(0 0,100% 0,100% 100%,9px 100%,0 calc(100% - 9px))!important;
+  box-shadow:0 0 0 1.4px color-mix(in oklab, black 55%, var(--card-head)),
+    inset 0 0 0 1.4px var(--g-hue,#8b94a3),
+    inset 0 1.5px 3px rgba(0,0,0,.7)!important;
+  filter:drop-shadow(0 1.5px 0 rgba(185,205,235,.10)) drop-shadow(0 -1px 0 rgba(185,205,235,.05))!important;}
+/* the revealed search original wears the same restored recipe */
+.scp1:has(> div[data-glass] input) > div[data-glass]{
+  background-color:#04101c!important;
+  background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.22) 2px 3px),var(--h-circuit)!important;
+  background-size:auto,512px 512px!important;
+  clip-path:polygon(0 0,100% 0,100% 100%,9px 100%,0 calc(100% - 9px))!important;
+  box-shadow:0 0 0 1.4px color-mix(in oklab, black 55%, var(--card-head)),
+    inset 0 0 0 1.4px var(--g-hue,#8b94a3),
+    inset 0 1.5px 3px rgba(0,0,0,.7)!important;}
+
+/* THE PLATE GETS ITS DEPTH BACK — the hex silhouette and lit bezel stay
+   (popup-confirmed twice), the flat sticker goes: the glass gradient, the
+   2px seat ring, the lit hairlines and the press inset return inside the
+   hex. Text stays flat crisp (the confirmed reading) — depth lives in the
+   PLATE, not in a text glow. */
+html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]{
+  background-color:#050A10!important;
+  background-image:linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,0) 55%,rgba(185,205,235,.04))!important;
+  box-shadow:0 0 0 2px color-mix(in oklab, black 62%, var(--card-head)),
+    0 3.4px 0 rgba(185,205,235,.13),
+    0 -3.2px 0 rgba(185,205,235,.05),
+    inset 0 2px 3.5px rgba(0,0,0,.78)!important;}
 `;
 
 
