@@ -3402,9 +3402,13 @@ html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]
      head, which is why 46% measured only 27% of the bar. Deriving it from
      --rw-boardw instead ties it to the CARD's width the way every other board
      is tied, and lands at ~42% of the header. --rw-boardw is only READ here,
-     never written: it also drives --rw-namew, i.e. the name plate. The 78% cap
-     is the narrow-layout guard so the rack is never starved to nothing. */
-  width:min(calc(var(--rw-boardw,114px) * 1.4), 78%)!important;
+     never written: it also drives --rw-namew, i.e. the name plate.
+     P0 (Jac, 2026-08-02) — the cap is a RESERVATION, not a fraction: the head
+     rack must be able to seat TEN ticks (9px wide, 2.5px gap => ~113px) plus
+     the skew bleed, so the board yields 130px of rack instead of taking 78%.
+     The percentage still resolves against .rw-screen; that is fine because the
+     130px reservation is what does the work, not the board's own fraction. */
+  width:min(calc(var(--rw-boardw,114px) * 1.4), calc(100% - 130px))!important;
   max-width:none!important;flex:0 0 auto!important;min-width:0!important;
   height:24px!important;padding:0 7px!important;align-self:center!important;
   justify-content:center!important;
@@ -3565,7 +3569,7 @@ html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]
    and only the face carries a board.                                        */
 [data-row] > div:has(> .rw-board){
   box-shadow:
-    inset 0 0 0 1.2px color-mix(in srgb, var(--row-hue,#8b94a3) 55%, transparent),
+    inset 0 0 0 1.2px color-mix(in srgb, var(--row-hue,#8b94a3) 40%, transparent),
     inset 0 1px 0 rgba(185,205,235,.13),
     inset 2px 0 0 rgba(0,0,6,.35),
     inset -2px 0 0 rgba(0,0,6,.35),
