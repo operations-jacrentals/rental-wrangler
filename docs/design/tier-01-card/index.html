@@ -3840,6 +3840,66 @@ html[data-b] .scp1 .gate[data-open="0"], html[data-b] .scp1 .gate[data-open="1"]
    at ~40% of the row so the rack keeps its ticks. Cap the ref accordingly. */
 [data-row] .ref{max-width:27%!important;}
 
+/* ============================================================================
+   /PAINT PORT — Jac, 2026-08-02: "Now port the recreation recipes into the
+   card." Recipes proven by the from-scratch recreation + six-cell grid pass
+   (docs: .claude/skills/paint). Three recipes, one retraction:
+     1. RINGS ARE TWO-LAYER CLIPPED SOLIDS, not inset box-shadows — a
+        box-shadow ring thins at every 45-degree cut; the mockup's stroke is
+        uniform. CSS form: a ::before filled with the ring paint, clipped to
+        the same octagon, with the interior punched out by the padding-box
+        mask-composite trick. Guarded by @supports; outside it the old
+        box-shadow ring stays as the fallback.
+     2. THE CUTS ARE ~HALF THE BOARD'S HEIGHT (26-27px on a 54px board) —
+        at the card's 24px boards that is 11.5px, up from 9px.
+     3. RING + BOARD TEXT WEAR WORKSHOP PAINT, NOT THE PURE STATE HUE — the
+        mockup's red samples #c9423e-#e04c50, i.e. the hue pulled ~15% toward
+        neutral. Pure hue stays reserved for LIT states (the laser, the lit
+        drawer) — paint is matter, light is state.
+     RETRACTED: the "tick lean is wrong" finding — pixel-sampled, the card's
+     skewX(19deg) matches the mockup. Ticks untouched.                       */
+
+[data-row]{--rw-paint:color-mix(in srgb, var(--row-hue,#8b94a3) 85%, #333333);}
+.scp1{--g-paint:color-mix(in srgb, var(--g-hue,#8b94a3) 85%, #333333);}
+
+/* recipe 2: longer cuts, all three board scopes */
+[data-row] .rw-board,
+.scp1 .rw-screen .rw-board,
+.scp1:has(> div[data-glass] input) > div[data-glass]{
+  clip-path:polygon(3px 0,calc(100% - 11.5px) 0,100% 11.5px,100% calc(100% - 3px),
+    calc(100% - 3px) 100%,11.5px 100%,0 calc(100% - 11.5px),0 3px)!important;}
+
+/* recipe 3: workshop paint on board text and the revealed search ring */
+[data-row] .rw-board span{color:var(--rw-paint)!important;}
+.scp1 .rw-screen .rw-board span{color:var(--g-paint)!important;}
+.scp1:has(> div[data-glass] input) > div[data-glass]{
+  box-shadow:0 0 0 1.4px color-mix(in oklab, black 55%, var(--card-head)),
+    inset 0 0 0 1.6px var(--g-paint,#8b94a3),
+    inset 0 1.5px 3px rgba(0,0,0,.7)!important;}
+/* ...and on the header's silhouette frame (the quiet tone ring) */
+.scp1::before{box-shadow:inset 0 0 0 1.4px var(--g-paint,#3a4656)!important;}
+
+/* recipe 1: the uniform masked ring; the box-shadow tone ring retires
+   INSIDE the guard only (seat ring + press inset stay everywhere) */
+@supports ((-webkit-mask-composite: xor) or (mask-composite: exclude)){
+  [data-row] .rw-board::before,
+  .scp1 .rw-screen .rw-board::before{
+    content:'';position:absolute;inset:0;z-index:3;pointer-events:none;
+    padding:1.6px;
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor;mask-composite:exclude;
+    clip-path:polygon(3px 0,calc(100% - 11.5px) 0,100% 11.5px,100% calc(100% - 3px),
+      calc(100% - 3px) 100%,11.5px 100%,0 calc(100% - 11.5px),0 3px);}
+  [data-row] .rw-board::before{background:var(--rw-paint,#8b94a3);}
+  .scp1 .rw-screen .rw-board::before{background:var(--g-paint,#8b94a3);}
+  [data-row] .rw-board{
+    box-shadow:0 0 0 1.4px color-mix(in oklab, black 55%, var(--card-head)),
+      inset 0 1.5px 3px rgba(0,0,0,.7)!important;}
+  .scp1 .rw-screen .rw-board{
+    box-shadow:0 0 0 1.4px color-mix(in oklab, black 55%, var(--card-head)),
+      inset 0 1.5px 3px rgba(0,0,0,.7)!important;}
+}
+
 /* the indicator tick embedded in the right bezel edge, in the group tone */
 .scp1 .pin-wrap::after{
   content:''!important;
