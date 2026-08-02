@@ -2258,7 +2258,19 @@ class Component extends DCLogic {
           // NEVER sweep the jump band: it only exists while the row is open, and
           // hiding it once is permanent because the sweep does not re-run for it.
           if (c.hasAttribute('data-jump-band')) return;
-          if (!c.classList.contains('pin-wrap') && !c.classList.contains('ref')) c.classList.add('rw-off');
+          if (c.classList.contains('pin-wrap') || c.classList.contains('ref')) return;
+          // MOCKUP 1 — the FACTS column survives the sweep. It is the row's dim
+          // secondary read ("small, clearly secondary"), so hiding it left the row
+          // with no facts text at all. Any bare span that actually CARRIES TEXT is
+          // that column: the card always renders the date span, and renders a
+          // second facts span (S/N, year, +N) once the card is wide enough. Both
+          // get classed .rw-facts and styled by the row-grammar block instead of
+          // being retired. The EMPTY spacer spans still go — sweeping those is
+          // what freed the width the new grammar spends on the board.
+          if (c.tagName === 'SPAN' && (c.textContent || '').trim()) {
+            c.classList.remove('rw-off'); c.classList.add('rw-facts'); return;
+          }
+          c.classList.add('rw-off');
         });
         var list = rowIssues(row);
         var worst = list.slice().sort(function (a, b) { return RANK[HUE(a)[1]] - RANK[HUE(b)[1]]; })[0];
