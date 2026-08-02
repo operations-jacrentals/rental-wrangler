@@ -266,6 +266,16 @@
   radius, which is how `style` §1 still passes. The shipped app is unchanged — the redesign
   is behind `FEATURES.designV2`.
 - Icons always come from a library (Lucide), never hand-drawn — see `.claude/rules/icons.md`.
+- **`/paint` — for recreating a Jac mockup pixel-true, don't edit toward it.** New skill
+  (`.claude/skills/paint/`), born 2026-08-02 after two failed passes built from a *remembered*
+  description of an uploaded image while the file sat unopened. The method: (1) confirm the
+  mockup is actually on disk and OPEN it, (2) recreate it from scratch in a clean standalone
+  HTML/CSS stage — never edit the live cascade toward a picture, a big file fights every move —
+  (3) a six-cell (or however many elements) agent grid pass, one read-only analyst per cell + one
+  applier per round, disputes settled by PIL pixel-sampling not eyeballing, (4) your own eyes on
+  the full-frame comparison after every apply round (agents miss cross-cell regressions), (5) only
+  THEN port proven recipes into the real file, as a Jac-approved multiSelect port list, one commit,
+  through the file's normal gates.
 - **Customers-list quick-add row is always-on and single-line (2026-07-17, #704).** The collapsed
   blue "+New Customer" `.bigbtn` was traded for the always-visible inline fields (First·Last·Phone ·
   the R1 "LEAD?" funnel gate) — no click to expand. All controls share ONE height via a scoped
@@ -274,6 +284,12 @@
   one line through single-column pan mode; the `<480px` query re-enables wrap for the mobile stack.
 
 ## Gotchas
+- **Don't `git checkout trunk` (or `production`) and `git push` in the SAME command chain, even
+  when pushing a different branch (2026-08-02).** A safety tripwire scans the whole shell
+  invocation and blocks it outright — "Direct push to a protected release branch...is blocked" —
+  even though the actual push target (e.g. a new `parked/...` branch) is perfectly fine. Fix: never
+  name `trunk`/`production` as a literal `checkout` target; branch straight off the remote instead
+  (`git checkout -b parked/foo origin/trunk`), and keep the `git push` in its own isolated command.
 - **A carried decision can still DRIFT away mid-session (2026-07-28, PR #780).** We already knew a
   prompt that *omits* a locked decision loses it (#134). The Tier 0.1a Labs session proved a worse
   case: three decisions were **in** the prompt — the click contract (#50/#62/#63/#67), the group
@@ -691,20 +707,30 @@
   **Still open:** #156 (does the lit face keep the group hue?), and a pre-existing gap this surfaced
   but didn't cause — the card's open-row wash never clears on a second body click, so a lit cartridge
   stays lit (the card's own contract; #173 says leave the click alone).
-- **NEXT UP — cascade the Tier-0.1 decisions into the REST of the design artifacts (2026-07-31).**
-  Brief + a ready-to-paste prompt: **`docs/handoffs/2026-07-31-cascade-tier01-decisions.md`**. One
-  artifact (`docs/design/tier-01-card/index.html`) is current; the **kit**
-  (`docs/design/rw-design-system/` — `elements/pin.html` still teaches an atom #177 replaced, the
-  radius ladder #140 reversed, controls not yet mono per #142), **`tier-01-handoff/atom-rebuild.md`**
-  (its 8-tick cap + fixed-114px board are retired by #170), and **all six Labs prompts** still teach
-  the superseded language. Fold it into the existing `STALE-DESIGN-LANGUAGE-SWEEP.md` rather than
-  sweeping the same ~30 files twice.
-- **⛔ 36 commits sit on `trunk` but are NOT live (2026-07-31).** `production` is a clean
-  fast-forward behind `trunk`, and the range carries real served-file change — **app.js +552,
-  style.css +381**, plus `index.html` and `config.js`. This is a **much larger promote than one
-  commit**, and `/promote` will need staging to serve trunk's actual bytes first (the content-hash
-  freshness gate). Jac's call, deliberately deferred on 2026-07-31 — **check this before assuming
-  production reflects trunk.**
+- **Cascade the Tier-0.1 decisions into the rest of the design artifacts — DONE (2026-08-01, PR
+  #788, merged to trunk).** The kit, `tier-01-handoff/atom-rebuild.md`, all six Labs prompts, and
+  `prompt-b-tier-01-card.md` now teach the current language; folded into
+  `STALE-DESIGN-LANGUAGE-SWEEP.md`. **Merged to trunk but not yet promoted** — it's the one commit
+  currently ahead of `production` (docs/design-artifact only, nothing served changes, so promoting
+  it is low-stakes whenever Jac wants it live).
+- **Tier 0.1 card — steel-v2 shipped, board-buttons shipped, `/paint` skill born (2026-08-01/02,
+  branch `claude/read-prompt-ls8uj8`, PR #789 open/draft, NOT yet merged to trunk).** Steel-v2 (P0–P7:
+  grain texture, glass family, head inversion, row cartridge, drawer-only flicker, toggle glass,
+  floating count slot) shipped and verified; ledger rows #197–#212 close out its debt plus the
+  design-dump/taxonomy era (name-left rows, chip-merged boards, the static-steel/digital-glass law,
+  board-buttons: header board = live group search reusing the card's original retired input
+  machinery, row board = the gate with a light-response press, condition-at-rest/verb-on-hover).
+  **New skill `/paint`** (`.claude/skills/paint/`) — recreate a mockup from scratch in clean HTML/CSS,
+  then a six-cell agent grid pass, THEN port proven recipes into the real file — born after two failed
+  edit-toward-the-picture attempts; used successfully on the header+row mockup (recreation artifact +
+  20-agent grid pass, scores converged after a hand-finishing round). **A port of three ring recipes
+  (uniform masked rings, half-height cuts, workshop-paint hue) was attempted and REVERTED same night —
+  "too many regressions," Jac's call — but the recipes are preserved in git history (commits
+  `aab66d1`/`104ba41`, revert `7d64cab`) for a more careful one-recipe-at-a-time retry.** Also parked:
+  a **two-deck header** structural idea from the same mockup (slot rack in its own recessed tray,
+  separate from the board+name row) — `parked/two-deck-header`, PR #791, needs Jac's ruling before
+  building (see the note for the three open questions). **Pick up next session: land PR #789, retry
+  the paint port carefully, rule on the two-deck header.**
 - **Cross-device user sync — SHIPPED LIVE + PROMOTED (2026-07-17, PRs #692+#702+#685, `?v=20260717ab`, flag
   `userSync` ON).** Prefs/Views/dispatch/comms/resume-column follow the PERSON across devices (see
   the Decisions entry for the design). Verified by a 4-lens adversarial workflow (operator-isolation
