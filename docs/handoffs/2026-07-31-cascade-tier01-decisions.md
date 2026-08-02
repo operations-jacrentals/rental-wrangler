@@ -2,8 +2,10 @@
 
 > # ✅ DONE — THIS JOB IS COMPLETE. DO NOT RUN IT.
 >
-> **Superseded 2026-08-01 by PR #788 (`b35e4bb`), which a concurrent session shipped while this
-> brief was being written.** The cascade described below has already happened:
+> **Superseded by PR #788 (`b35e4bb`) — which is this brief being CARRIED OUT, exactly as intended.**
+> Timeline: this brief merged to trunk at 19:17 as `57cb296`; the cascade landed 93 minutes later at
+> 20:50, **built directly on top of it** (`b35e4bb`'s parent *is* `57cb296`). A following session read
+> the brief and did the job. The cascade described below has already happened:
 >
 > - the kit's `elements/pin.html` was **renamed to `slot.html`** (#177) and every element,
 >   component and foundation page rebuilt;
@@ -19,8 +21,8 @@
 > closes **#152**.
 >
 > **Kept, not deleted,** because the "Traps this session paid for" section is still accurate and
-> still worth reading — and because deleting it would erase the record that two sessions worked the
-> same job in parallel (a known failure mode: see `MEMORY.md`'s concurrent-duplicate gotcha).
+> still worth reading, and because this file is now evidence that a written handoff **works**: it was
+> picked up and executed by the next session without a conversation.
 > **Everything below is history. Verify against the ledger before acting on any of it.**
 
 
