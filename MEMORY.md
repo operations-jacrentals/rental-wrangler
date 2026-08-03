@@ -627,6 +627,24 @@
   identical plain div rendered there; the login plate rendered fine). A headless
   artifact, not a real-browser defect — verify transient/fixed visual cues on the
   **staging drive** (real Chrome), not headless screenshots.
+- **A `workflow_dispatch` `smoke` check does NOT satisfy the branch-protection ruleset** (2026-07-17,
+  corrects the CI-`synchronize` note above) — dispatching `ci.yml` runs and turns `smoke` green on the
+  commit, but the merge STILL fails `405 … Required status check "smoke" is expected`: the ruleset only
+  counts a `smoke` from the **`pull_request`** event, not a manual dispatch. What actually unblocks the
+  merge is forcing a fresh `pull_request` run — push a commit (an empty `git commit --allow-empty`
+  re-trigger works), or close+reopen the PR (fires `reopened`). Dispatch is fine for a diagnostic/
+  self-review of the bytes, useless for clearing the gate.
+- **The deployed theme is `midnight` (blue-steel), NOT the base dark `:root`** (2026-07-17) — the live app
+  runs under a `[data-theme="midnight"]` set, so `.inv-row` & friends resolve tokens to midnight's values
+  (`--track #232b35`, `--panel-2 #1a2536`, `--line #283446`, `--chip-shadow …rgba(0,0,0,.78)`), not the
+  `:root` literals. Token-pure CSS adapts for free, but a computed-style assertion in a headless render
+  reads the MIDNIGHT hexes — don't assert against the `:root` values.
+- **Headless review of real UI without login = `#local` + the `window.__rw` bridge** (2026-07-17) — serve
+  the working tree on `127.0.0.1` (noProxy) and open `#local` (demo seed: no PII, no login). The app
+  exposes a test bridge at `window.__rw` (`DATA`, `IDX`, `openCustomerForm`, `render`, `__state`). To land
+  on a customer's embedded Invoices section (the `.inv-row` list), click the customer's LIST row via
+  `document.querySelector('[data-rec="<custId>"]').click()` — the delegated handler resolves the open.
+  `openCustomerForm(id)` opens the account EDIT form instead, which has no `.inv-row`.
 
 ## Open threads
 - **Redesign Tier 0.1 — rulings DONE (2026-07-28, ledger #153–#162), atom-kit rebuild NEXT.**
@@ -714,7 +732,10 @@
   currently ahead of `production` (docs/design-artifact only, nothing served changes, so promoting
   it is low-stakes whenever Jac wants it live).
 - **Tier 0.1 card — steel-v2 shipped, board-buttons shipped, `/paint` skill born (2026-08-01/02,
-  branch `claude/read-prompt-ls8uj8`, PR #789 open/draft, NOT yet merged to trunk).** Steel-v2 (P0–P7:
+  branch `claude/read-prompt-ls8uj8`, PR #789 **MERGED to trunk as `8dcdfb0`, and PROMOTED LIVE
+  2026-08-02** — this line previously read "open/draft, NOT yet merged" for a day after it landed,
+  which is exactly the memory drift the 08-02 cleanup was diagnosing; when a PR merges, fix its row
+  here in the same breath).** Steel-v2 (P0–P7:
   grain texture, glass family, head inversion, row cartridge, drawer-only flicker, toggle glass,
   floating count slot) shipped and verified; ledger rows #197–#212 close out its debt plus the
   design-dump/taxonomy era (name-left rows, chip-merged boards, the static-steel/digital-glass law,
@@ -728,9 +749,11 @@
   "too many regressions," Jac's call — but the recipes are preserved in git history (commits
   `aab66d1`/`104ba41`, revert `7d64cab`) for a more careful one-recipe-at-a-time retry.** Also parked:
   a **two-deck header** structural idea from the same mockup (slot rack in its own recessed tray,
-  separate from the board+name row) — `parked/two-deck-header`, PR #791, needs Jac's ruling before
-  building (see the note for the three open questions). **Pick up next session: land PR #789, retry
-  the paint port carefully, rule on the two-deck header.**
+  separate from the board+name row) — needs Jac's ruling before building (see the note for the three
+  open questions). Its PR #791 was **closed in the 08-02 cleanup and the note itself landed on trunk**
+  at `docs/superpowers/notes/2026-08-02-two-deck-header.md` — the idea is safe in the repo, not in a
+  PR. **Pick up next session: retry the paint port carefully (one recipe at a time), and rule on the
+  two-deck header.**
 - **Cross-device user sync — SHIPPED LIVE + PROMOTED (2026-07-17, PRs #692+#702+#685, `?v=20260717ab`, flag
   `userSync` ON).** Prefs/Views/dispatch/comms/resume-column follow the PERSON across devices (see
   the Decisions entry for the design). Verified by a 4-lens adversarial workflow (operator-isolation
