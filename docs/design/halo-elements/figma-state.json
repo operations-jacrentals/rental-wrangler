@@ -786,5 +786,49 @@
     "recoverySource": "Jac's untouched 429-vector original 'image 2 [Vectorized]' (143:6497) is still on the Slots page. The collapse is reversible from it.",
     "STILL_AVAILABLE": "EDITED VECTOR DECK (131 nodes) is now the assembly's biggest item, plus two conduit groups at 71 and 48. The same collapse applies. Better still, rebuilding the deck/housing/conduit from their surviving pre-merge originals (143:329, 128:33, 105:78) and collapsing THIS way instead would both undo the 946-pixel seam damage from the flatten merge AND take them to ~1 node each. Not done — Jac asked about the bulbs.",
     "tradeoff": "The bulb is now one shape rather than 242 selectable fragments. It stays fully vector and editable in Figma's vector editor, and the per-variant hue-rotation is still baked per region, so retinting is still scriptable (map region fills directly)."
+  },
+  "partsCollapse_2026_08_03": {
+    "ask": "Jac: 'do the deck and conduits the same way' — apply the bulb collapse to the remaining traced parts.",
+    "results": {
+      "EDITED VECTOR DECK (149:144, Deck page)": "131 -> 32 nodes",
+      "FINAL HOUSING (145:2, Housing page)": "50 -> 28 nodes",
+      "Conduit (assembly elbow)": "47 -> 1 node",
+      "assembly (172:7876)": "288 -> 121 nodes; 2235 at session start"
+    },
+    "verification": "Each part diffed against an untouched clone: deck mean 0.0002 / max 15 / 20 px of 265,880; housing mean 0.0001 / max 6 / 7 px; conduit mean 0.0001 / max 2 / 3 px. All 100% within delta 8. Whole assembly vs pre-collapse render: 17 px of 396,495 differ, 100% within delta 8.",
+    "WHY_DECK_AND_HOUSING_CANNOT_REACH_ONE_NODE": {
+      "cause": "A VectorRegion carries fills but NOT strokes. 22 of the deck's 126 vectors and 21 of the housing's 46 carry real strokes (weights 13/6/4/2 px, CENTER-aligned), plus one effect node each. Those must stay separate nodes or the stroke is lost.",
+      "method": "Collapse maximal runs of CONSECUTIVE COLLAPSIBLE SIBLINGS (no stroke, no effect, no rotation/scale, opacity 1, normal blend) within each container. Sibling-only runs keep z-order exact and avoid cross-group coordinate/placement problems. Deck merged runs of 8, 10 and 84; housing one run of 23; conduit one run of 47.",
+      "ifMoreIsWanted": "node.outlineStroke() converts a stroke into filled geometry, which would make those nodes collapsible too — but it destroys the editable stroke weight. NOT done; it is a design-destructive change and those weights look deliberate."
+    },
+    "THE_SECOND_DEFAULT_VALUE_TRAP": {
+      "what": "A vector created by figma.createVector() defaults to constraints MIN/MIN. Every original sibling in the deck and housing was SCALE/SCALE. The deck's main component is 1445x184 but its assembly INSTANCE is 1335x151, so on that resize the merged artwork stayed pinned top-left instead of scaling — tearing the plate edges and end caps. Jac spotted it in the live file.",
+      "detection": "Per-part diffs all PASSED (the components render at native size) while the whole-assembly diff FAILED at mean 5.01 / 12.3% of pixels. A part that passes in isolation but fails in composition means the difference is in how the container RESIZES it, not in the geometry.",
+      "fix": "Set constraints {horizontal:'SCALE', vertical:'SCALE'} on every merged vector. Assembly went to 17 px differing, 100% within delta 8.",
+      "rule": "After ANY createVector, set BOTH strokes=[] AND constraints — the two defaults that silently corrupt a merge. This is the same class of bug as the default black stroke."
+    },
+    "assemblyIsNowFullyInstanceBacked": {
+      "ask": "Jac: 'I'm ready for the main components to be the ones making this assembly so that I can edit them in place.'",
+      "finding": "Everything was ALREADY an instance of a main component except the Conduit, which was a raw FRAME (172:5135) cloned from 105:78 and resized.",
+      "done": "Promoted it to main component 'Conduit — subitem elbow' (212:80) on the Conduit page via figma.createComponentFromNode, and swapped the assembly's frame for an instance at identical position and size. Byte-identical: 0 pixels changed.",
+      "editMap": {
+        "EDITED VECTOR DECK": "149:144 — Deck page",
+        "FINAL HOUSING": "145:2 — Housing page",
+        "Conduit — subitem elbow": "212:80 — Conduit page (NEW)",
+        "Group Name / State=Failed": "38:8 — Group Name page",
+        "Message Board (x2)": "21:10 — Message Board page",
+        "Slots — signal row (x2)": "158:2193 — Slots page",
+        "Marks — Name": "70:7 — Marks page",
+        "Marks — Hexicon": "70:5 — Marks page"
+      },
+      "remaining": "The only non-instance nodes left in the assembly are three wrapper GROUPs used as layout containers (the assembly root and two row groups). The assembly root itself is still a GROUP, not a component — offered, not done."
+    },
+    "JACS_BULB_QUESTION": {
+      "asked": "Would the bulbs be lighter if we froze it in place, cut away just the 'light up' portion, or made it opaque for colour changes?",
+      "cutAwayTheLensNO": "MEASURED AND REJECTED — 406 of the bulb's 428 regions (95%) ARE the lens. Only 22 are neutral bezel/rim. A shared static base would carry almost nothing and every state variant would still hold 95% of the geometry.",
+      "opaqueTintLayerYES": "The real win. The 5 variants are 5 COMPLETE COPIES of identical geometry differing only by a hue rotation on the warm family. One base + a COLOR-blend tint per state preserves luminosity (so the measured shading survives) and cuts stored geometry 5x -> 1x, about 15,000 vertices. Costs ~2-3 nodes per placed bulb instead of 1.",
+      "freezeRasterize": "Lightest possible — zero vector geometry, one image fill. Defensible for a 65x58 lamp only ever used at one size, but it stops being a vector library asset and cannot be retinted without re-export.",
+      "notDecided": "Depends whether 'costly' means stored file weight (tint layer) or render cost at fixed size (freeze). Node count is already at its floor."
+    }
   }
 }
