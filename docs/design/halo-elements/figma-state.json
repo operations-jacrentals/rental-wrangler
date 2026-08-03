@@ -135,9 +135,18 @@
       "Getting Started/Getting Started Plate": "17:2"
     },
     "components": {
-      "Chip": {
+      "Message Board": {
         "setId": "21:36",
-        "page": "Chip",
+        "page": "Message Board",
+        "renamedFrom": "Chip — see namingCorrection; ledger #208 retires the standalone Signal",
+        "glassLayer": {
+          "appliedOn": "Jac's explicit say-so, 2026-08-03",
+          "rule": "Figma builds the NEW (Halo) shapes; tier-01 EFFECTS borrowed only on request. Each glass layer is a CLONE of that variant's own cavity, so only the finish is tier-01.",
+          "recipe": "#050A10 body + depth wash + tiled scanline film; 1.4px dark line (color-mix(in oklab, black 55%, --card-head) ~= #0c0f13); inner-shadow well press (0 1.5px 3px rgba(0,0,0,.5)); lit hairlines (0 3.4px 0 rgba(185,205,235,.13), 0 -3.2px 0 rgba(185,205,235,.05))",
+          "variable": "finish/glass-opacity (VariableID:35:18) — MOCKUP 0, CANON 100",
+          "nodes": { "Size=Wide, Label=Off": "35:20", "Size=Wide, Label=On": "35:22", "Size=Narrow, Label=On": "35:24", "Size=Narrow, Label=Off": "35:26" },
+          "zOrder": "inserted directly ABOVE 'inner' — appended last at first, which covered the label and ring"
+        },
         "variants": {
           "Size=Wide, Label=Off": "21:2",
           "Size=Wide, Label=On": "21:10",
@@ -200,8 +209,8 @@
   "nextPhase": {
     "phase": 3,
     "order": "Chip FIRST (it is canon's Signal archetype — Jac's steer), then the plan's ascending order: Conduit, Bracket, Marks, Screen, Housing, Slots, Deck, Cartridge, Etch",
-    "done": ["Chip", "Conduit"],
-    "remaining": ["Bracket", "Marks", "Screen", "Housing", "Slots", "Deck", "Cartridge", "Etch"],
+    "done": ["Message Board (was Chip)", "Conduit", "Screen"],
+    "remaining": ["Bracket", "Marks", "Housing", "Slots", "Deck", "Cartridge", "Etch"],
     "perComponent": "3a page -> 3b build with variable bindings -> 3c variants -> 3d/3e component properties -> 3f docs -> 3g get_metadata + get_screenshot -> 3h optional Code Connect",
     "rule": "One component at a time. Never batched. Figma writes strictly sequential."
   },
@@ -226,12 +235,24 @@
     "ifFewerSHAPESareWanted": "Not a compression problem. The honest route is AUTHORING the conduit as real geometry (~8 shapes, 3-5 stops each) — a cleaner, less photographic look. That is a redesign, not a simplification.",
     "status": "Jac is hand-editing the elbow; Claude to review later."
   },
+  "scanlineTechnique": {
+    "problem": "Figma has NO repeating-gradient, and the scanline film is the identity test for glass (ledger #188).",
+    "solution": "Hand-encode a tiny RGBA PNG (zlib + CRC32, no dependencies) and apply it as an IMAGE fill with scaleMode TILE and scalingFactor 0.25. A 4x12 tile at 0.25 renders exactly one 1px line every 3px. Generator: scratchpad/mk-tile.mjs <out> <r> <g> <b> <alpha> <linePx> <periodPx> [scale].",
+    "twoDifferentFilms": {
+      "tier01 board": "rgba(0,0,0,.20), 1px every 3px — a DARK line. imageHash 13762cd128fe5823360f156311d0042ae5e16f21",
+      "halo Screen c5": "rgba(120,170,200,.035), 1px every 3px — a LIGHT BLUE film, native to screen.css:132, not borrowed. imageHash af51b032af5a3ceff2d9f98d163f176d8f836ffb"
+    },
+    "note": "upload_assets places a stray frame on the current page for each upload — remove it after grabbing the imageHash."
+  },
   "figmaGotchas": {
     "opacityVariablesArePercent": "An OPACITY-scoped FLOAT variable resolves as a PERCENTAGE (0-100), NOT 0-1. finish/glow-opacity was first stored as 1 and rendered as 1%, silently switching the mockup's glow off in BOTH modes — and the screenshot still looked plausible. Correct values: MOCKUP=100, CANON=0.",
     "nestedOpacityMultiplies": "A node cannot carry both a bound opacity and its own measured opacity. The chip's bloom has a per-variant measured opacity (1/.95/.55/.55) AND must be glow-suppressed, so the glow layers are NESTED in a container whose opacity carries the token. Nested opacity multiplies, so both survive.",
     "querySelectorSpaces": "node.query('VECTOR[name=ring core]') does NOT match — a space in an attribute value breaks the selector and returns empty, which reads as 'node missing' rather than 'bad query'. Use children.find(c => c.name === '...') for names containing spaces.",
     "createAutoLayoutWhiteFill": "figma.createAutoLayout() frames arrive with an opaque WHITE fill. Any layout-only frame needs fills = [] or it paints a white slab.",
-    "textStyleBindingsResolveInDefaultMode": "A text style with a bound fontFamily reports its concrete face resolved in the file's DEFAULT mode, not the face you assigned. That is correct behaviour, not a failed write."
+    "textStyleBindingsResolveInDefaultMode": "A text style with a bound fontFamily reports its concrete face resolved in the file's DEFAULT mode, not the face you assigned. That is correct behaviour, not a failed write.",
+    "loadTheNodesCURRENTfonts": "Mutating .characters on a node whose fontFamily is BOUND to a variable throws 'Cannot write to node with unloaded font' naming the face the variable RESOLVES to — not the face you assigned. Renaming a Text/Title 15 node threw on Roboto Bold because type/body-family resolves to Roboto in MOCKUP. Load every face any mode could resolve to.",
+    "svgPathSyntax": "figma vectorPaths rejects the compact 'M13.5,2.3L126.6,2.3' form with 'Invalid command'. Normalise to space-separated: d.replace(/([MLZmlz])/g,' $1 ').replace(/,/g,' ').",
+    "appendedChildrenLandOnTop": "appendChild puts a node LAST = topmost. The Message Board's glass layer covered the label and ring until it was moved with insertChild(innerIdx+1, holder). Always read the child order back after building."
   },
   "completedSteps": ["phase0", "P1.0", "P1.a", "P1.b", "P1.c", "P1.d", "P1.e", "P1.f", "P1.g", "P1.h", "phase1", "P2.a", "P2.b", "P2.c", "phase2"]
 }
