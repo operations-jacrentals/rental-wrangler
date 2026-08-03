@@ -1,7 +1,7 @@
 {
   "runId": "halo-ds-2026-08-03",
   "phase": "phase3",
-  "step": "component-conduit-complete",
+  "step": "component-slots-complete + message-board well",
   "scopeLock": "MOCKUP + CANON as variable modes. CORRECTED 2026-08-03: CANON is a TOKEN-LAYER reskin (accent / state / ground / chrome) only — the hundreds of measured gradient stops stay baked, so a CANON render is NOT 'the card in canon'. Jac's call; dual-baking every stop was offered and declined.",
   "plan": "docs/design/halo-elements/FIGMA-PLAN.md",
   "source": "docs/design/halo-elements/parts/*.css — 10 components, all gated 0.000",
@@ -156,7 +156,7 @@
           "appliedOn": "Jac's explicit say-so, 2026-08-03",
           "rule": "Figma builds the NEW (Halo) shapes; tier-01 EFFECTS borrowed only on request. Each glass layer is a CLONE of that variant's own cavity, so only the finish is tier-01.",
           "recipe": "#050A10 body + depth wash + tiled scanline film; 1.4px dark line (color-mix(in oklab, black 55%, --card-head) ~= #0c0f13); inner-shadow well press (0 1.5px 3px rgba(0,0,0,.5)); lit hairlines (0 3.4px 0 rgba(185,205,235,.13), 0 -3.2px 0 rgba(185,205,235,.05))",
-          "variable": "finish/glass-opacity (VariableID:35:18) — MOCKUP 0, CANON 100",
+          "variable": "finish/glass-opacity (VariableID:35:18) — MOCKUP 100, CANON 100. Was 0/100, which made the glass invisible in the default view; Jac reported exactly that. Set MOCKUP back to 0 to restore the Halo-vs-glass A/B.",
           "nodes": {
             "Size=Wide, Label=Off": "35:20",
             "Size=Wide, Label=On": "35:22",
@@ -182,6 +182,19 @@
           "label fill": "ink/label",
           "label family": "type/stamp-family",
           "glow container opacity": "finish/glow-opacity"
+        },
+        "well": {
+          "addedOn": "Jac's reference + note, 2026-08-03",
+          "nodes": {
+            "Size=Wide, Label=Off": "53:20",
+            "Size=Wide, Label=On": "53:21",
+            "Size=Narrow, Label=On": "53:22",
+            "Size=Narrow, Label=Off": "53:23"
+          },
+          "geometry": "octagon at plate+5 on every side, cut + 0.5858*5 = 2.929 — tokens.css's own nested-octagon math for a uniform-width outline",
+          "fills": "metal/rim-right (BOUND, so the well reskins) + white .22 / black .30 / white .16 vertical bevel gradient",
+          "effects": "inner shadow (0,1,r2,a.85) + drop shadow (0,1,r2.5,a.55) — #185's 'one dark line'",
+          "openQuestion": "CHAMFER ORIENTATION. Jac's reference cuts NW/SE; Halo's .oct cuts NE/SW; ledger #208 says NW/SE for the tier-01 board. Kept NE/SW per 'stick to the new shapes'. Awaiting Jac."
         }
       }
     }
