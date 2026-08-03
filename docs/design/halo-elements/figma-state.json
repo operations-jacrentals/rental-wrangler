@@ -937,6 +937,12 @@
       "graft": "Duplicated the 20 bottom-right regions under a 180-degree rotation about the artwork centre (100.65,59.75). Rotation alone landed the piece detached, because the elbow is not truly point-symmetric. Measured the actual joint instead: cut face midpoint (74.3,41.9) vs the rotated attachment point (66.4,19.9), giving a translation of (+7.9,+22.0).",
       "strays": "Regions 26,27,49 sat against the body in the original and floated once rotated, so they are excluded from the graft -- 17 of the 20 are used.",
       "applied": "Written to the real component vector 212:79; component still 223.4x156.3, so nothing downstream reflows. Diagnostic frames removed."
+    },
+    "CORRECTION": {
+      "what": "I reported the conduit surgery as applied cleanly. It was not fully faithful.",
+      "evidence": "The trial vector held 56 regions in ONE vector. After setVectorNetworkAsync the component holds 51 regions across TWO vectors (212:79 with 39, plus a separate 238:2276 with 12). Figma pruned part of the graft on write and split the geometry.",
+      "visibleResult": "The elbow reads correctly and the top fitting is present, but it is thinner than the mirrored duplicate shown in the trial -- not the faithful copy of the bottom-right piece that was approved.",
+      "openQuestion": "Whether to redo the graft so the top fitting matches the bottom-right exactly. Left with Jac -- not redone unprompted."
     }
   },
   "assemblyIsNowTheMain_2026_08_03": {
@@ -950,5 +956,13 @@
     "rootCause": "A SHADER paint maps to the bounding box of the NODE that carries it. Seven variants carry it as a region fill inside 'Merged artwork' (617.8x56). Variant 21:10 alone still had unmerged plate+inner and carried it on 'inner' (607.8x47.45) -- about 18 percent shorter vertically, so the pattern was sampled at a different scale and origin. Same paint, different node box, visibly different result.",
     "fix": "Merged 21:10's plate+inner into a single 'Merged artwork' vector matching the other seven: plate network at origin as region 0, inner network offset by (4.3,4.45) as region 1 carrying SHADER + 4 gradients. Node now sits at (9,5) like the rest. Verified by render -- all four Default variants read identically.",
     "generalLesson": "When a shader is the background, structural parity between variants is not cosmetic -- it determines how the pattern is sampled. Any variant whose shader-bearing node differs in size will look wrong no matter how identical the paint is."
+  },
+  "cRecipe_2026_08_03": {
+    "whatJacWasPointingAt": "A panel from HIS OWN bulb simplification study on the 'Slots' page -- Panels SOURCE/A/B/C/D at y~1454. Panel C = 'N=4 minArea=3 | 119/428 regions (72% cut) | target met'. He said: 'I've been trying to tell you to use this but I don't know how to make my edits stick.'",
+    "WHY_THIS_MATTERS_MOST": "The C recipe culls tiny REGIONS INSIDE a single vector. It does NOT merge layers. What I had been doing all session was the opposite -- collapsing separate layers into one 'Merged artwork' node -- and that is what destroyed the handles later edits needed (no 'inner' layer to shader on 7 of 8 board variants; no top-connector layer to delete on the conduit). Jac's recipe gets the weight down WITHOUT costing editability. Prefer it over layer merging on anything still being designed.",
+    "whyHisEditsWouldNotStick": "Same root cause as the assembly fix logged above -- he was editing an instance of a component stored on another page. Fixed by moving the main onto the assembly page.",
+    "stateFound": "The bulbs ALREADY carry C: 119 regions, 4 distinct solids, zero further regions under the area floor. His study was complete and applied; he wanted the same treatment elsewhere.",
+    "applied": "Ran the C cull (drop regions with polygon area < 3) across the remaining heavy MAIN vectors: 206:241 deck bracket 84->35 (58% cut), 238:2276 conduit cap 12->10 (17%), 212:79 conduit body 39->36 (8%), 206:240 deck bar 12->11 (8%), 206:242 FINAL HOUSING 32->31 (3%). Before/after clones left in frame 'ZZ C-recipe verify' (263:123) on MAIN+SUB ASSEMBLY, mirroring his own 'ZZ bulb verify' method. Visually indistinguishable -- the deck bracket loses one thin highlight edge.",
+    "note": "Only 206:241 had real fat on it. The rest were already lean, so the recipe is close to exhausted on the current component set."
   }
 }
