@@ -3724,12 +3724,13 @@ table.tbl tfoot td.c-n { color: var(--wb-ink); }
       different pixel grid, and a harness with a floor is a harness that can hide a real 1px defect.
     </p>
     <p class="wb-note">
-      <b>Which is also true of this page.</b> Sitting in a scrolling frame in a browser-sized
-      viewport rather than on a bare 1292&times;635 canvas, the card above measures 0.093 against
-      the reference instead of 0.000 &mdash; that number is the frame, not the card. Rendering the
-      untouched <code>assembly/main-plus-subitem.html</code> inside an identical frame gives the
-      same 0.093, and the two renders are <b>0 pixels apart</b>. What is on this page is the gated
-      markup, byte for byte.
+      <b>Which is also true of this page.</b> In a scrolling frame in a browser-sized viewport
+      rather than on a bare 1292&times;635 canvas, the card above stops measuring 0.000: Chromium
+      re-phases its gradient dither in screen space, so the number drifts with where on the page
+      the card lands &mdash; 0.09 to 0.37 measured, max delta 14 between two positions, which is a
+      dither and not a shape. The proof that it is the frame and not the card: render the untouched
+      <code>assembly/main-plus-subitem.html</code> in an identical frame at the same position and
+      the two are <b>0 pixels apart</b>. What is on this page is the gated markup, byte for byte.
     </p>
     <p class="wb-note">
       <b>Four N/A gates are not four gaps.</b> DECK, BRACKET, MARKS and HOUSING are band-B-only:
