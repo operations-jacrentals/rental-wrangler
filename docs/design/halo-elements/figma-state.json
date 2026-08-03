@@ -1,7 +1,7 @@
 {
   "runId": "halo-ds-2026-08-03",
   "phase": "phase3",
-  "step": "phase3 — 5/10 components; message board framing propagated",
+  "step": "phase3 — 7/10 components",
   "scopeLock": "MOCKUP + CANON as variable modes. CORRECTED 2026-08-03: CANON is a TOKEN-LAYER reskin (accent / state / ground / chrome) only — the hundreds of measured gradient stops stay baked, so a CANON render is NOT 'the card in canon'. Jac's call; dual-baking every stop was offered and declined.",
   "plan": "docs/design/halo-elements/FIGMA-PLAN.md",
   "source": "docs/design/halo-elements/parts/*.css — 10 components, all gated 0.000",
@@ -235,6 +235,36 @@
           "opacityGotcha": "PAINT-level opacity did not survive being spread onto a bound paint object — it read back as 1 and the fill was fully opaque, hiding the circuit completely, which was the one thing Jac specified. Set opacity on the NODE instead. Verified by reading the value back, not by eye.",
           "tuning": "0.86 -> 0.82 -> 0.70. Below ~0.75 the hex field reads as darker patches through the red; above it the circuit vanishes. 0.70 is a judgement point, easily changed on the four fill layers."
         }
+      },
+      "Bracket": {
+        "componentId": "69:3",
+        "page": "Bracket",
+        "children": [
+          "divider",
+          "vertical",
+          "tip",
+          "elbow"
+        ],
+        "domOrderIsLoadBearing": "The divider MUST paint before vertical/tip/elbow — the elbow's painted extent far exceeds its declared 43x5.6 rect and overlaps the divider's left end. Reversing it is a measured defect (max delta 176 at canvas x52..60, y228..234).",
+        "tipMask": "A horizontal alpha ramp eating the first 2px and feathering the last 2. Figma paints have NO DESTINATION_OUT blend, so it is a real alpha mask node.",
+        "elbow": "rotate(43.5deg) about transform-origin 0 50% with margin-top:-2.8px, as a relativeTransform matrix.",
+        "assemblyTrap": "c10's .bt-warm paints AFTER this bracket and fully occludes the elbow in canvas column x33..37, so the bracket is NOT one contiguous layer relative to c10 — something from c10 must interleave at assembly time."
+      },
+      "Marks": {
+        "setId": "70:9",
+        "page": "Marks",
+        "variants": [
+          "Kind=Rivet",
+          "Kind=Hexicon",
+          "Kind=Name"
+        ],
+        "properties": [
+          "Kind",
+          "name (TEXT)"
+        ],
+        "arialSubstitution": "Arial is NOT in Figma; Arimo IS, and it is metrically compatible with Arial by design (identical advance widths). marks.css picked Arial specifically 'to match measured glyph widths', so the metrics ARE the requirement — Arimo preserves exactly that, where any other grotesque would keep the look and break the measurement.",
+        "rivetCentreDropped": "The radial is specified at 'circle at 50% 45%'; on a 9px dot that is 0.45px above centre, below one pixel, so the default centred transform is used.",
+        "hexIsMeasured": "stroke #6f3d22 is close to but NOT --amber (#7c401f) — measured, stays baked. The name binds to ink/bright."
       }
     }
   },
@@ -292,11 +322,11 @@
       "Conduit",
       "Screen",
       "Housing",
-      "Slots"
+      "Slots",
+      "Bracket",
+      "Marks"
     ],
     "remaining": [
-      "Bracket",
-      "Marks",
       "Deck",
       "Cartridge",
       "Etch"
@@ -386,7 +416,8 @@
     "textStyleBindingsResolveInDefaultMode": "A text style with a bound fontFamily reports its concrete face resolved in the file's DEFAULT mode, not the face you assigned. That is correct behaviour, not a failed write.",
     "loadTheNodesCURRENTfonts": "Mutating .characters on a node whose fontFamily is BOUND to a variable throws 'Cannot write to node with unloaded font' naming the face the variable RESOLVES to — not the face you assigned. Renaming a Text/Title 15 node threw on Roboto Bold because type/body-family resolves to Roboto in MOCKUP. Load every face any mode could resolve to.",
     "svgPathSyntax": "figma vectorPaths rejects the compact 'M13.5,2.3L126.6,2.3' form with 'Invalid command'. Normalise to space-separated: d.replace(/([MLZmlz])/g,' $1 ').replace(/,/g,' ').",
-    "appendedChildrenLandOnTop": "appendChild puts a node LAST = topmost. The Message Board's glass layer covered the label and ring until it was moved with insertChild(innerIdx+1, holder). Always read the child order back after building."
+    "appendedChildrenLandOnTop": "appendChild puts a node LAST = topmost. The Message Board's glass layer covered the label and ring until it was moved with insertChild(innerIdx+1, holder). Always read the child order back after building.",
+    "noDestinationOut": "Figma paint blendModes do NOT include DESTINATION_OUT (or any Porter-Duff compositing). A CSS mask-image has to become a real alpha mask node — a child with isMask=true whose own alpha drives visibility."
   },
   "completedSteps": [
     "phase0",
