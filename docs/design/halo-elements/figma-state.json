@@ -561,5 +561,69 @@
       "effectStyles is currently EMPTY — every shadow/blur in the library is inline, so there is no single place to retune 'the well press' or 'the glow'."
     ],
     "etchFix": "Jac hand-drew the corner etching on Screen/State=Failed (71:172-71:182); straightened to 45/90/180 snaps preserving start point and span. Vector 1 kept its two-angle bracket."
+  },
+  "assemblyCard": {
+    "date": "2026-08-03",
+    "ask": "Jac: 'we need a Tier-01 card we can update as we establish each element' + live instances.",
+    "page": "Assembly",
+    "cardId": "94:6",
+    "rootFrame": "Halo Card — assembly",
+    "backdrop": "_ref/original.png uploaded to Figma (imageHash 528bd3a8f6a4affc4aa211e289024d7a4832c62d), placed at 25% and LOCKED as an alignment reference.",
+    "placedOnCard": [
+      {
+        "name": "Housing",
+        "id": "45:3",
+        "at": [
+          8,
+          125
+        ],
+        "size": [
+          1287,
+          254
+        ]
+      },
+      {
+        "name": "Conduit",
+        "id": "30:2",
+        "at": [
+          150,
+          205
+        ],
+        "note": "the TRACED conduit; swap to 'Conduit (segments)' (80:2) in one click via the instance swap — Jac has not yet chosen which is canonical"
+      },
+      {
+        "name": "Message Board",
+        "variant": "Size=Wide, Label=On, State=Default",
+        "at": [
+          400,
+          152
+        ]
+      },
+      {
+        "name": "Group Name",
+        "variant": "State=Failed",
+        "at": [
+          1065,
+          138
+        ]
+      }
+    ],
+    "tray": [
+      "Deck",
+      "Bracket",
+      "Slots",
+      "Marks"
+    ],
+    "placeholders": [
+      "Cartridge",
+      "Etch"
+    ],
+    "howItUpdates": "Everything on the card is a live INSTANCE — editing a source component propagates automatically. Placements came from the source photo and are approximate; drag to refine, the link survives.",
+    "shaderFillTest": {
+      "result": "FAILED — not scriptable from here.",
+      "detail": "SHADER paints want {type:'SHADER', id}. But figma.importShaderById rejects the account-library id, and figma.listAvailableShaders() returns 0 in this file. The nine shader fills exist in Jac's account library and are reachable from the Figma UI, but the plugin API sees an empty shader registry.",
+      "correctsEarlierReport": "The 2026-08-03 capability report listed shader fills as an opportunity Claude could drive. It is not, as things stand. Untested next step: if Jac applies a shader fill by hand once, it may register in the file and become visible to listAvailableShaders — worth checking before relying on it.",
+      "unchanged": "Fractal noise / Pattern grid replacing the tiled raster texture assets is still viable — but as a manual Jac action, not a generated one."
+    }
   }
 }
