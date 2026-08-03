@@ -214,6 +214,14 @@
             },
             "verified": "Hex circuit pattern and its solder specks clearly visible at 5x, with scanlines riding over them."
           }
+        },
+        "scanlineOverText": {
+          "date": "2026-08-03",
+          "ask": "Jac: 'make sure the scan lines sit atop the text.'",
+          "why": "A glass film physically covers everything behind it, text included. In CSS the film is a background-image on the board element, so it sits BEHIND the element's own text — Figma lets us do the more convincing thing.",
+          "how": "The film is lifted out of the glass fill stack into its OWN layer, same cavity geometry, inserted directly above the label (above the glass when a variant has no label) and below the ring core — the ring is frame edge, not under glass. Removed from the glass stack so it cannot paint twice.",
+          "stillSwitched": "The film's opacity is bound to finish/glass-opacity, same as the glass holder, so both turn off together.",
+          "layerOrder": "well · plate · inner · glass (tier-01) · [label] · scanline film · glow · ring core"
         }
       }
     }
