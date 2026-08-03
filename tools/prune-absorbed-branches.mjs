@@ -50,7 +50,9 @@ const ARGV = process.argv.slice(2);
 const DO_IT = ARGV.includes('--yes');
 const SKIP_PR = ARGV.includes('--skip-pr-check');
 
-const PROTECTED = new Set(['trunk', 'production', 'HEAD']);
+// staging-control is listed defensively: it does not exist on origin today, but it carries the
+// slot-lease control.json and must never be pruned if it is ever recreated.
+const PROTECTED = new Set(['trunk', 'production', 'HEAD', 'staging-control']);
 
 function git(args, opts = {}) {
   return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...opts }).trim();
@@ -66,7 +68,16 @@ function repairShallow() {
   try {
     git(['fetch', 'origin', '+refs/heads/*:refs/remotes/origin/*', '--prune', '--quiet']);
   } catch (e) {
-    console.error('warn: fetch failed, continuing with local refs —', e.message.split('\n')[0]);
+    // NEVER downgrade this to a warning. The depth assertion below proves only that trunk is
+    // currently deep — which stays true from an EARLIER successful fetch — so it cannot detect
+    // that THIS run's refs are stale. Continuing here would classify against cached refs while
+    // printing "measurements are valid", and a branch that gained commits since the last fetch
+    // would be deleted as "absorbed". On this repo's flaky git proxy that is a live scenario.
+    console.error(
+      `\nFATAL: could not refresh refs from origin — ${e.message.split('\n')[0]}\n` +
+      `Refusing to classify against possibly-stale refs. Re-run once the network settles.\n`
+    );
+    process.exit(2);
   }
   // the fetch itself can re-write it
   if (existsSync(shallowPath)) rmSync(shallowPath, { force: true });
@@ -93,10 +104,23 @@ function openPrHeads() {
     console.error('WARNING: --skip-pr-check given. Branches behind OPEN pull requests are NOT excluded.');
     return new Set();
   }
+  const LIMIT = 500;
   try {
-    const raw = execFileSync('gh', ['pr', 'list', '--state', 'open', '--limit', '500', '--json', 'headRefName'],
+    const raw = execFileSync('gh', ['pr', 'list', '--state', 'open', '--limit', String(LIMIT), '--json', 'headRefName'],
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    return new Set(JSON.parse(raw).map((p) => p.headRefName));
+    const prs = JSON.parse(raw);
+    // `gh` truncates SILENTLY at --limit: a partial list means some open-PR head is missing from
+    // the guard, and any omitted head that happens to net to zero against trunk would be deleted
+    // out from under live work. Refuse rather than delete on an incomplete guard.
+    if (prs.length >= LIMIT) {
+      console.error(
+        `\nFATAL: \`gh pr list\` returned ${prs.length} PRs, at or above the --limit of ${LIMIT}.\n` +
+        `The list may be truncated, so the open-PR guard cannot be trusted. Raise LIMIT in this\n` +
+        `script and re-run.\n`
+      );
+      process.exit(2);
+    }
+    return new Set(prs.map((p) => p.headRefName));
   } catch {
     console.error(
       '\nFATAL: could not list open PRs via `gh`. Refusing to guess — a branch behind an open PR\n' +
@@ -131,7 +155,9 @@ for (const b of refs) {
 
   let tree = null;
   try { tree = git(['merge-tree', '--write-tree', 'origin/trunk', ref]); } catch { kept.hasWork++; continue; }
-  if (tree === trunkTree) absorbed.push(b); else kept.hasWork++;
+  // Record the exact SHA this verdict was computed from, so the delete can be pinned to it.
+  if (tree === trunkTree) absorbed.push({ name: b, sha: git(['rev-parse', ref]) });
+  else kept.hasWork++;
 }
 
 // ── 4. report ──────────────────────────────────────────────────────────────────
@@ -146,7 +172,7 @@ console.log(`held: current .... ${kept.current.length ? kept.current.join(', ') 
 if (!absorbed.length) { console.log('\nNothing to prune.\n'); process.exit(0); }
 
 console.log('\n' + (DO_IT ? 'DELETING:' : 'WOULD DELETE (dry run):'));
-for (const b of absorbed) console.log('  ' + b);
+for (const b of absorbed) console.log(`  ${b.name}  @ ${b.sha.slice(0, 8)}`);
 
 if (!DO_IT) {
   console.log(`\n${absorbed.length} branch(es). Re-run with --yes to delete.`);
@@ -154,14 +180,28 @@ if (!DO_IT) {
   process.exit(0);
 }
 
-let ok = 0, fail = 0;
-for (const b of absorbed) {
-  try { git(['push', 'origin', '--delete', b]); console.log(`  deleted ${b}`); ok++; }
-  catch (e) {
-    fail++;
-    const msg = e.message || '';
-    console.error(`  FAILED  ${b}${msg.includes('403') ? '  (HTTP 403 — this environment forbids ref deletion; run from a session with real push rights)' : ''}`);
+let ok = 0, fail = 0, stale = 0;
+for (const { name, sha } of absorbed) {
+  // Pin the delete to the SHA the "absorbed" verdict was computed from. A plain
+  // `push --delete <name>` is an unconditional delete-by-name: if the branch moved between
+  // classification and now (someone pushed to it, or the name was reused by new work), it would be
+  // deleted anyway. --force-with-lease makes the remote reject the delete unless it still points
+  // at the SHA we actually verified.
+  try {
+    git(['push', 'origin', `--force-with-lease=refs/heads/${name}:${sha}`, `:refs/heads/${name}`]);
+    console.log(`  deleted ${name}`);
+    ok++;
+  } catch (e) {
+    const msg = e.message || e.stderr?.toString() || '';
+    if (/stale info|force-with-lease|non-fast-forward|rejected/i.test(msg)) {
+      stale++;
+      console.error(`  SKIPPED ${name}  (moved since it was classified — re-run to re-evaluate)`);
+    } else {
+      fail++;
+      console.error(`  FAILED  ${name}${msg.includes('403') ? '  (HTTP 403 — this environment forbids ref deletion; run from a session with real push rights)' : ''}`);
+    }
   }
 }
+if (stale) console.log(`\n${stale} branch(es) skipped because they moved after classification — that guard working as intended.`);
 console.log(`\ndeleted ${ok}, failed ${fail}\n`);
 process.exit(fail ? 1 : 0);
