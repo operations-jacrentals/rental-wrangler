@@ -1050,5 +1050,18 @@
     "BUG_WORTH_REMEMBERING": "The first attempt produced caps at ~28 wide against a 39 wide channel. Cause: the cloned fitting inherited SCALE/SCALE constraints from the source artwork, so calling resize() on the parent COMPONENT silently rescaled the child -- and non-uniformly, because the two axes scaled by different factors (13.58x28.17 instead of 16.4x39). Anything cloned out of that conduit artwork carries SCALE constraints; neutralise them BEFORE resizing the parent, or measure the child afterwards rather than trusting the intended scale.",
     "residual": "The cap-to-channel seam is not perfectly flush -- the original fitting has an asymmetric lip that overhangs slightly on one side. Reads fine at working size; would need the lip trimmed for a perfect butt joint.",
     "demo": "'ZZ conduit kit demo' (281:91) re-laid to the new module: thickness 39, cap depth 18.8, vertical run 170, horizontal run stretched to meet the heading. Still 4 caps + 2 channels, still only two components."
+  },
+  "boardResizeAndOrphans_2026_08_03": {
+    "jac": "'I cant edit the size of this Message Board. In my frustration I deleted all the other ones outside of the assembly.'",
+    "whyResizeWasBlocked": "283:322 carried targetAspectRatio {x:362.5, y:70.1} -- the ASPECT RATIO LOCK. Any width change dragged height with it. Nothing structural, nothing to do with components. Cleared it on the wrapper AND on the instance nested inside it, then proved it with a test resize: width 373 -> 493 with height held at 72, then restored.",
+    "SECOND_AND_WORSE_PROBLEM": "Deleting the boards outside the assembly deleted the MAIN components. Figma keeps a deleted main alive while instances still reference it, but it belongs to NO PAGE -- 21:10 and 21:19 both reported page:null with an empty parent chain. They were orphaned: still rendering through their instances, but impossible to select or edit. This is a silent failure mode; nothing in the UI says the main is gone.",
+    "fix": "Re-parented both orphans back onto MAIN+SUB ASSEMBLY -- 21:10 at (-668,3050), 21:19 at (-668,3160). appendChild on an orphaned main works and fully restores it. Instances survived the round trip: 283:161 still points at 21:19, 260:2341 still points at 21:10.",
+    "structuralOddityFlagged": "283:322 is a COMPONENT whose only child is an INSTANCE of 21:19 -- a wrapper around a component. Editing 'the board' now means choosing between the wrapper and the inner main, which is exactly the kind of ambiguity that has cost this session hours. Worth collapsing to one.",
+    "survivorInventory": "Only 21:10 and 21:19 remain of the nine boards. 21:2, 21:28, 63:36, 63:48, 63:61, 63:74 are gone. The Board/Screen paint style still exists and still binds."
+  },
+  "conduitRepeatDownRows_NOTE": {
+    "jac": "'I kept our Conduit elbow. See the assembly, I like it, the app will have to repeat the sequence of conduit parts down the rows.'",
+    "implication": "The conduit is not a one-off decoration -- a cap/channel/tap sequence repeats per row. That argues for packaging the run itself as a component so a row instantiates ONE thing rather than six, and so run length stays a single override.",
+    "status": "Offered, not built. The two-part kit (Conduit / Cap 280:101, Conduit / Channel 280:91) already carries the real artwork and stretches, so a row-run wrapper is a small step on top."
   }
 }
