@@ -723,7 +723,7 @@
       "byColour": "429 -> 10 nodes (98%) but DESTROYS THE IMAGE. In a trace one colour's fragments are scattered through the z-stack, so merging them to one depth puts the dark bezel that sat BEHIND the lens in front of it. Result renders as a solid green blob. Kept on the page as 'Bulb — reduced (test)' to show the failure mode.",
       "byContiguousRun": "429 -> 242 nodes (44%) and PIXEL-IDENTICAL. Merge only consecutive same-colour siblings; stacking order is preserved by construction. 96 runs merged, 187 nodes removed, longest run 12. VERIFIED by pixel diff of the same node pre- and post-merge: mean delta 0.0000, max delta 0, 100% of pixels within delta 8 — the PNGs are even the same byte size.",
       "appliedToAll": "All 5 variants: 2145 -> 1210 nodes, 935 removed, identical run structure across every variant.",
-      "ceiling": "44% is the honest ceiling for a LOSSLESS reduction of a trace. Going further requires accepting visual change — the untested middle option is merging by colour WITHIN z-bands (~75-85%), which would need eyeballing, not a pixel gate."
+      "ceiling": "SUPERSEDED 2026-08-03 — see bulbCollapse_2026_08_03. The claim that 44% is the lossless ceiling was wrong: it assumed one node per contiguous same-colour run. Because VectorRegion carries its own fills, a whole trace collapses into ONE node (242 -> 1, 99.6%, pixel-identical). The untested 'merge by colour within z-bands' middle option is moot."
     },
     "FIGMA_GOTCHA_shear": "Figma CANNOT express a pure shear. Setting relativeTransform [[1,-0.325,0],[0,1,0]] silently normalises to a ROTATION [[1,-0.309,0],[0,0.951,0]] on EVERY node type — probed RECTANGLE, FRAME and VECTOR, all three. The Slots' lean only exists because it is baked into path COORDINATES. Note this contradicts the older PR-body claim that skewX is done 'via a relativeTransform matrix'.",
     "FIGMA_GOTCHA_vectorSeat": "Setting vectorPaths RE-BASES the path to its own bounding box and compensates via x/y. Forcing x=0,y=0 afterwards therefore SHIFTS the shape by its bbox origin. A vector must be seated at its path's true minimum coordinates."
@@ -765,5 +765,26 @@
       "revertPossible": "Pre-merge originals all survive: 143:329 (deck), 128:33 (housing), 105:78 (conduit). Rebuild from those if the 946 pixels are wanted back.",
       "CORRECTION": "I reported mid-run that the assembly total dropped to 1422. That was a stale mid-transaction read. Real total is 2208, down exactly 27."
     }
+  },
+  "bulbCollapse_2026_08_03": {
+    "ask": "Jac: 'Work hard on the bulbs so they're not so costly.' The 8 bulb instances were 88% of the assembly (1936 of 2208 nodes) at 242 nodes each.",
+    "RESULT": "Each variant collapsed 242 nodes -> 1 node (99.6%). Component set 1210 -> 5. Assembly 2208 -> 288 (87%). Verified pixel-identical on all five variants: worst mean delta 0.0029, max 7, 3-5 pixels of 3770 differ, 100% within delta 8 — orders of magnitude cleaner than the deck/housing/conduit flatten merge (mean 0.115, 946 px changed).",
+    "THE_MECHANISM": "A single VectorNode can carry MANY differently-coloured shapes, because VectorRegion has its own `fills` (region keys: windingRule, loops, fillStyleId, fills). Regions paint in ARRAY ORDER, later over earlier — verified with a red/green/blue overlapping-square probe. So all 241 visible child vectors concatenate into one network: append vertices with the child's x/y added, append segments with a vertex-index offset, append regions with a segment-index offset. Figma does NOT weld coincident vertices, so tiled trace fragments survive intact.",
+    "THE_TRAP_THAT_COST_THE_MOST": {
+      "what": "`figma.createVector()` ships with a DEFAULT 1px SOLID BLACK STROKE (and empty fills). Every region in the merged node was being OUTLINED in black, which on a densely-tiled trace reads as 'the lens renders black' — it looks exactly like a renderer bug or a per-region-fill limitation.",
+      "fix": "Set `vec.strokes = []` after setVectorNetworkAsync. That alone took the full-bulb merge from 55.89% of pixels wrong to 0.13%.",
+      "THE_GIVEAWAY": "Merging at K=2, 4, 8, 16 and 32 children per node produced BYTE-IDENTICAL renders (mean 34.5184, max 226, 2107 differing — all five the same). Node count changed 121->8 but the render did not. Total outline LENGTH is independent of how the regions are grouped, so an identical-across-granularity diff means the error is per-PATH (a stroke), not per-NODE. Reach for that test first next time — it localises a stroke/outline bug in one step.",
+      "wrongTurnsItCaused": "Chased overlap depth, region count, curve tangents, fill-object shape (bare {type,color} vs copied paint), region order reversal, and node-level fills. All were dead ends; every one of them still rendered black because the stroke was never cleared."
+    },
+    "OTHER_FINDINGS": {
+      "regionFillsSurviveTheWrite": "Read-back after setVectorNetworkAsync showed all 428 region fills byte-identical to source (histogram match). Figma normalises bare {type,color} paints back to the full form with visible/opacity/blendMode/boundVariables.",
+      "autoSeating": "setVectorNetworkAsync auto-seats the node at its true bbox origin — the merged vector landed at x=2.67 y=3.20 size 59.44x52.65 inside the 65x58 frame with NO manual correction. This refines the older FIGMA_GOTCHA_vectorSeat note, which was about vectorPaths.",
+      "nodeFillsGoMixed": "With differing region fills the node-level `fills` reads as figma.mixed (`.length` is undefined). Setting node-level fills does NOT override region fills and does NOT fix a stroke problem.",
+      "zSafeColourMergeNotNeeded": "Computed a z-safe same-colour grouping (merge same-colour fragments across z-gaps where no differently-coloured fragment between them overlaps) as a fallback: it would have given 241 -> 161 nodes, only 33%. Made moot by the single-node collapse."
+    },
+    "SUPERSEDES": "bulbSlots.VECTOR_REDUCTION_FINDING.ceiling claimed '44% is the honest ceiling for a LOSSLESS reduction of a trace'. That was wrong — it assumed one node per contiguous same-colour run. The real lossless ceiling is ONE NODE PER TRACED OBJECT (99.6%), because colour lives on the region, not the node.",
+    "recoverySource": "Jac's untouched 429-vector original 'image 2 [Vectorized]' (143:6497) is still on the Slots page. The collapse is reversible from it.",
+    "STILL_AVAILABLE": "EDITED VECTOR DECK (131 nodes) is now the assembly's biggest item, plus two conduit groups at 71 and 48. The same collapse applies. Better still, rebuilding the deck/housing/conduit from their surviving pre-merge originals (143:329, 128:33, 105:78) and collapsing THIS way instead would both undo the 946-pixel seam damage from the flatten merge AND take them to ~1 node each. Not done — Jac asked about the bulbs.",
+    "tradeoff": "The bulb is now one shape rather than 242 selectable fragments. It stays fully vector and editable in Figma's vector editor, and the per-variant hue-rotation is still baked per region, so retinting is still scriptable (map region fills directly)."
   }
 }
