@@ -877,5 +877,26 @@
       "agentRecommendation": "C — only candidate that hits <=128 regions while keeping the grille detail.",
       "status": "NOT APPLIED — awaiting Jac's pick."
     }
+  },
+  "bulbCandidateC_applied_2026_08_03": {
+    "ask": "Jac: reduce the bulbs ~70% — too detailed, doesn't match the flatter matte look of the kit, and they're too small to need it. Then: 'Candidate C is perfect after some of my edits.'",
+    "checkedFirstThatHeHadNotEditedC": "His wording could have meant he hand-edited the candidate, in which case recomputing would have silently discarded his work. STOPPED the running apply-agent, then recomputed candidate C from source and compared it region-by-region against the built Panel — C: 119 vs 119 regions, identical palette, ZERO colour mismatches. So his edits were elsewhere and per-variant recomputation was safe. Worth repeating that check any time a user says a generated artifact is good 'after my edits'.",
+    "applied": "All 5 variants 428 -> 119 regions, 72.2% cut, one node each.",
+    "method": "Drop every region whose shoelace area < 3.0 px^2, then quantise survivors to the 4 colours with the greatest total area, remapping by nearest squared-RGB. Run PER VARIANT against that variant's OWN colours — the variants are independent hue rotations, so a shared palette would flatten the state colours into each other.",
+    "resultingPalettes": {
+      "Overdue": "#354843 #482212 #da7f68 #763827",
+      "Due": "#354843 #484112 #dac068 #766527",
+      "Waiting": "#354843 #122848 #68a2da #274d76",
+      "Done": "#354843 #124830 #68da9d #27764d",
+      "Off": "#354843 #302c2a #a79e9c #524c4a"
+    },
+    "visualCheck": "Before/after rows rendered side by side (frame 'ZZ bulb verify'). All five still read as lit bulbs seated in bezels, states stay clearly distinct, and the result is visibly flatter/matter as asked. Bezel and grille remain legible.",
+    "NOT_pixel_gated": "This is a DELIBERATE design change, so the byte-identical gate used for the lossless collapses does not apply and was not used. Judgement was visual.",
+    "candidatesKept": "Frame 'ZZ bulb candidates' (220:7) on the Slots page still holds A/B/C/D for reference."
+  },
+  "cardHeaderPage_2026_08_03": {
+    "ask": "Jac: 'create the card header. Put it all on one page starting with the assembled elements and then the broken down versions around it so that I can edit and view them live assembled.'",
+    "delegated": "Sonnet agent building page 'Card Header': assembly 172:7876 moved there, with labelled instance stations for every constituent part below it.",
+    "AMBIGUITY_FLAGGED": "Because the mains were earlier moved INTO the assembly at Jac's instruction, the surrounding part stations are INSTANCES that live-update FROM the assembly — editing the assembly copy updates the stations, not the reverse. If Jac actually wants to edit the broken-down parts and see the assembly follow, the mains have to move back OUT to the stations and the assembly go back to instances. Both are one operation; needs his call."
   }
 }
