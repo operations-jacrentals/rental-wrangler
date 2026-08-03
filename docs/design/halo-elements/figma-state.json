@@ -484,5 +484,82 @@
     },
     "whatMadeTheFirstPassLookWrong": "A 3-stop gradient with the crown at 42% spans half of each segment and reads as chrome. The trace's realism is a NARROW specular band on a near-black body, so the crown needs to be a thin stop with dark on both sides.",
     "status": "Alternative offered, not substituted — Jac chooses which becomes canonical."
+  },
+  "capabilityProbe_2026_08_03": {
+    "why": "Jac: 'memorize and utilize the powerful stroke features: Brush, Dynamic... give me a full list of all the Figma features we are underutilizing. We may not even need our texture assets.'",
+    "method": "Probed by attempting each property/effect on a throwaway node and catching the validation error, plus list_shader_fills / list_shader_effects against the account library. Re-run rather than trusting this record — the surface changes.",
+    "strokes": {
+      "available": [
+        "dashPattern",
+        "strokeCap ROUND",
+        "strokeCap ARROW_LINES",
+        "strokeJoin BEVEL",
+        "strokeAlign INSIDE/OUTSIDE",
+        "strokeMiterLimit",
+        "GRADIENT strokes",
+        "IMAGE strokes (needs imageHash)",
+        "per-segment weight via vectorNetwork",
+        "individual side weights (strokeTopWeight etc)"
+      ],
+      "notExposedToPluginAPI": [
+        "brush",
+        "strokeBrush",
+        "strokeWeightProfile / widthProfile (variable-width)"
+      ],
+      "note": "Brush and Dynamic strokes are Figma Draw UI features. No `brush`/`strokeBrush`/`strokeWeightProfile` key exists on VectorNode, so they CANNOT be scripted — Jac can apply them by hand, Claude cannot generate them. Verified with `in` checks against the prototype chain (Object.keys on a node proxy returns nothing and is NOT a valid test)."
+    },
+    "effects": {
+      "available": [
+        "INNER_SHADOW",
+        "DROP_SHADOW",
+        "LAYER_BLUR",
+        "BACKGROUND_BLUR",
+        "TEXTURE",
+        "GLASS"
+      ],
+      "notAvailable": [
+        "NOISE fill",
+        "PATTERN fill",
+        "PROGRESSIVE_BLUR"
+      ]
+    },
+    "shaderFills": [
+      "Fractal noise",
+      "Mesh gradient",
+      "Pattern grid",
+      "Clouds",
+      "Nebula",
+      "Moire",
+      "Glowing wave",
+      "Water caustic",
+      "Concentric patterns"
+    ],
+    "shaderEffects": [
+      "Halftone",
+      "Outlines",
+      "Dither",
+      "Warp",
+      "Color adjust",
+      "Lens distortion",
+      "Pixelate",
+      "Bokeh blur",
+      "Channel mixer",
+      "Gradient map",
+      "Pixel stretch",
+      "Hatching",
+      "Colored edges",
+      "Pattern refraction",
+      "Gooey merge",
+      "Slice shift",
+      "Bloom",
+      "Chromatic metal",
+      "Filter presets"
+    ],
+    "biggestImplications": [
+      "Fractal noise + Pattern grid shader FILLS are procedural — they can replace the tiled scanline/grain IMAGE assets currently on the glass layer, removing raster dependencies entirely.",
+      "Gradient map shader EFFECT maps luminance to a configurable ramp. This is a candidate answer to the standing CANON limitation (hundreds of measured gradient stops are baked, so CANON is token-layer only) — a luminance remap could reskin baked shading without dual-baking every stop. Needs testing; shader params may not be variable-bindable per mode.",
+      "effectStyles is currently EMPTY — every shadow/blur in the library is inline, so there is no single place to retune 'the well press' or 'the glow'."
+    ],
+    "etchFix": "Jac hand-drew the corner etching on Screen/State=Failed (71:172-71:182); straightened to 45/90/180 snaps preserving start point and span. Vector 1 kept its two-angle bracket."
   }
 }
