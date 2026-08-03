@@ -830,5 +830,52 @@
       "freezeRasterize": "Lightest possible — zero vector geometry, one image fill. Defensible for a 65x58 lamp only ever used at one size, but it stops being a vector library asset and cannot be retinted without re-export.",
       "notDecided": "Depends whether 'costly' means stored file weight (tint layer) or render cost at fixed size (freeze). Node count is already at its floor."
     }
+  },
+  "assemblyRestructure_2026_08_03": {
+    "collapsePassCompleted": {
+      "MessageBoard set (21:36)": "96 -> 89 nodes; 7 of 8 variants had one mergeable pair",
+      "GroupName set (38:14)": "20 -> 17; State=Blank had a run of 4",
+      "everythingElse": "0 remaining. Every main component behind the assembly now reports zero collapsible sibling runs. The lossless node collapse is EXHAUSTED across the assembly.",
+      "whatBlocksMore": "What remains is almost entirely STROKED vectors (22 deck, 21 housing, 12 Group Name, 5 Message Board). A VectorRegion carries fills but not strokes, so they cannot merge without outlineStroke(), which destroys the editable stroke weight."
+    },
+    "VERIFICATION_PITFALL_screenshotRescale": {
+      "what": "get_screenshot's maxDimension caps the LONGER edge. Ask for less than the node's larger dimension and the PNG comes back RESCALED — e.g. a 1501x1802 node at maxDimension 1800 returns 1500x1800, a 1500/1501 shrink. That sub-pixel drift grows with x, so a panel at x=700 lands half a pixel off and any sharp edge or text reads as a huge difference: ~50% of pixels differing, max delta ~170, mean 1-4.",
+      "cost": "Burned a Haiku agent run plus two of my own passes 'confirming' the Message Board collapse had corrupted 10 variants. It had not.",
+      "TWO_RULES": "(1) Request maxDimension >= the node's LARGER dimension and CHECK the returned width/height equal original_width/original_height before trusting any diff. (2) ALWAYS include an UNCHANGED control in the comparison. Rows I never merged failed identically to rows I did — that is what proved the measurement was at fault, not the geometry. At true 1:1 all 10 passed, worst mean 0.2858, worst within-8 99.55%.",
+      "noiseFloor": "Two copies of the SAME node at different fractional x offsets differ by ~0.2 mean / ~40% of pixels at delta 1-2. That is the floor for this method, not a defect."
+    },
+    "mainComponentsMovedIntoAssembly": {
+      "ask": "Jac: 'These should be the main components so that I can edit them in place... If they are the main components they should live update their sisters on their pages.'",
+      "done": "Deck (149:144), Housing (145:2), Conduit elbow (212:80), Marks Name (70:7) and Marks Hexicon (70:5) now LIVE in the assembly at their instances' exact slots. Each left an instance behind on its own page, resized back to the original reference dimensions. Assembly render byte-identical after the deck/housing/conduit move (0 pixels changed).",
+      "TWO_HARD_BLOCKERS": {
+        "componentSetMembers": "Message Board (21:10) and Group Name (38:8) are VARIANTS inside COMPONENT_SETs (8 and 2 variants). A variant cannot be moved out of its set without destroying variant switching. They must stay as instances.",
+        "duplicatedUsage": "Message Board and Slots — signal row each appear TWICE in the assembly. Only one copy can hold the main."
+      },
+      "sizeNote": "Every instance was a different size from its main, so the main adopts the assembly's size as canonical and the page sister carries the old size as an explicit override. A main resize propagates to instances without an override — the sister resize only sticks if done in a SEPARATE use_figma call after the main resize.",
+      "hazard": "A main nested in a GROUP means dragging the assembly group's handles rescales the main and every sister with it. That is what was asked for, but it is a live foot-gun."
+    },
+    "MESSAGE_BOARD_LATENT_BUG_FOUND": {
+      "symptom": "The FAILED screen in the top row rendered as 'LED' behind a dark smear.",
+      "cause": "NOT the merges. Inside the Message Board main, the nested `glass`, `bloom` and `ring halo` carry MIN/MIN constraints while every sibling is SCALE/SCALE, and their parent frames have clipsContent FALSE. At the main's native 633px the 607.8px glass fits. The assembly instance is 486px, so the glass did not shrink and spilled 122px past the board, straight over the FAILED panel.",
+      "fix": "Set those three to SCALE/SCALE in the main. Glass went 607.8 -> 466.7 and the smear cleared.",
+      "lesson": "Third default/inherited-value trap in this work, after the black stroke and MIN/MIN on created vectors. Any nested child of a SCALE container that is itself MIN/MIN is a latent bug that only shows when an instance is resized."
+    },
+    "jacsShaderPattern": {
+      "what": "Jac applied a SHADER paint with blendMode COLOR_DODGE as the BOTTOM fill of the subitem Message Board's `inner` vector, replacing the plain SOLID; the four linear gradients above it are unchanged.",
+      "done": "Copied that exact paint onto the main-item board's `inner` (fill stacks now match: SHADER:COLOR_DODGE + 4 GRADIENT_LINEAR:NORMAL).",
+      "STILL_BLOCKED": "It does not READ yet, because the main-item board carries an extra `glass` layer that the subitem board does not — opaque, sitting above `inner`, hiding the dodge. Hiding it was attempted 3x and every write failed on stale node ids (225:6) because Jac was editing the file live. use_figma is atomic so nothing was half-applied. Needs a retry when the file is quiet."
+    },
+    "bulbReductionCandidates": {
+      "ask": "Jac: reduce the bulbs ~70%, they are too detailed and do not match the flatter matte look of the rest of the kit.",
+      "method": "Drop regions below an area threshold, then quantise the survivors' fills to the N most area-dominant colours. Built by a Sonnet agent in frame 220:7 on the Slots page, left in place for review.",
+      "results": {
+        "A (N=6, minArea 1.0)": "204 regions, 52% cut — near-indistinguishable, misses the target",
+        "B (N=5, minArea 2.0)": "143 regions, 67% — mildly banded, still misses",
+        "C (N=4, minArea 3.0)": "119 regions, 72% — flat hard-edged bands, bezel clean, grille still legible",
+        "D (N=4, minArea 6.0)": "61 regions, 86% — grille dissolves into a blob"
+      },
+      "agentRecommendation": "C — only candidate that hits <=128 regions while keeping the grille detail.",
+      "status": "NOT APPLIED — awaiting Jac's pick."
+    }
   }
 }
