@@ -12,16 +12,25 @@ trunk's tree → the content is already on trunk. Non-zero exit → it no longer
 content-based on purpose: the repo **squash-merges**, so SHAs differ after merge and
 `git branch --merged` gives wrong answers here.
 
-> **Gotcha that nearly corrupted this analysis — worth carrying into `MEMORY.md`.**
-> Cloud sessions clone shallow (`depth=50`). `git fetch --unshallow` reported success and
-> `git rev-parse --is-shallow-repository` answered `false`, but **`.git/shallow` was still on disk**.
-> A later plain `git fetch origin trunk` (run by `ci/check-cachebust.mjs`) then re-truncated trunk to
-> **one reachable commit**, after which *every* `git merge-base` against trunk returned "no merge
-> base" — which reads exactly like 62 branches sharing no history with trunk. It is not true; it is
-> an artifact. The tell: `git rev-list --max-parents=0 origin/trunk` returned trunk's own HEAD, and a
-> repository's root commit can never be its own tip. Repair with
-> `rm -f .git/shallow && git fetch origin '+refs/heads/*:refs/remotes/origin/*'` (830 commits return),
-> then re-verify. All figures below were re-measured after the repair.
+> **Gotcha that corrupted this analysis TWICE — carry it into `MEMORY.md`.**
+> Cloud sessions clone shallow (`depth=50`), and on the sandboxed git proxy **any plain `git fetch`
+> re-applies `.git/shallow`**, truncating `origin/trunk` to **one reachable commit**. It is not one
+> bad command — it recurs after every fetch. `git fetch --unshallow` reported success and
+> `git rev-parse --is-shallow-repository` answered `false` while `.git/shallow` was still on disk, so
+> **that check cannot be trusted.**
+>
+> It bit twice, with two different disguises:
+> 1. Every `merge-base` against trunk returned "no merge base" — reading exactly like 62 branches
+>    sharing no history with trunk.
+> 2. Later, the absorbed set came back **empty** — reading exactly like "nothing is safe to delete."
+>
+> Both are artifacts. The reliable tell is `git rev-list --max-parents=0 origin/trunk` returning
+> trunk's own HEAD: **a repository's root commit can never be its own tip.** Repair with
+> `rm -f .git/shallow && git fetch origin '+refs/heads/*:refs/remotes/origin/*'` (830 commits
+> return), then measure *without fetching again in between*.
+>
+> `tools/prune-absorbed-branches.mjs` now encodes this: it repairs the state, then **asserts trunk is
+> deep and exits 2 if not**, rather than reporting a confident wrong answer.
 
 ---
 
@@ -155,6 +164,15 @@ These merge cleanly but are sandbox/branding/doc artifacts. Low risk either way.
 - **233 conflicts** — mostly ancient. `mobile/phone-2col-and-paging` is 442 commits ahead of its
   merge base; `reconcile/staging-into-trunk` is 485. That lineage predates the trunk rename and is
   **archive, not backlog**.
+
+**21 branches are provably safe to delete** — verified by content, holding back trunk, production,
+the current branch, and any open-PR head. Run `node tools/prune-absorbed-branches.mjs` for the dry
+run and `--yes` to execute.
+
+⚠ **Deletion cannot be done from a cloud session.** The sandboxed git proxy returns **HTTP 403** on
+ref deletion (it permits pushes to the session's own branch, not deletes), and the GitHub MCP server
+exposes no branch-delete tool. The `--yes` path has to run from a session with real push rights —
+a local machine — or the branches get deleted from the GitHub UI.
 
 **The decay mechanism, in one line:**
 
