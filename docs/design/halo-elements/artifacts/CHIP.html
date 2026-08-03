@@ -1,0 +1,768 @@
+<title>CHIP — Halo element</title>
+<style>
+/* ============================================================
+   tokens.css subset — reset, :root vars, .oct/.oct4/.oct-br/.a,
+   .stage. Page-shell rules (html,body / body place-items) are
+   deliberately left out — the workbench supplies its own shell.
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0a0c10;
+  --neon:      #f95a5c;
+  --neon-hi:   #ff7a76;
+  --bar-red:   #ff433e;
+  --brk-red:   #fc6c5c;
+  --pnl-red:   #fa756f;
+  --tube-red:  #ff8078;
+  --maroon:    #411b1e;
+  --maroon-d:  #32171e;
+  --bar-yel:   #fff252;
+  --amber:     #7c401f;
+  --chrome:    #aebac6;
+  --silver:    #a19596;
+  --rim-top:   #626971;
+  --rim-left:  #818d92;
+  --rim-right: #74808a;
+  --rim-bot:   #7b8997;
+  --slate:     #32303e;
+  --field:     #1e202c;
+  --cavity:    #221a25;
+  --circuit:   #070e16;
+  --edge:      #0d1218;
+  --mono: Consolas, "Cascadia Mono", "DejaVu Sans Mono", "Courier New", monospace;
+  --sans: Roboto, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+.stage {
+  position: relative;
+  background: var(--bg);
+  overflow: hidden;
+  font-family: var(--sans);
+  font-kerning: none;
+}
+
+.oct {
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut),
+                     100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
+}
+.oct4 {
+  clip-path: polygon(var(--cut) 0, calc(100% - var(--cut)) 0,
+                     100% var(--cut), 100% calc(100% - var(--cut)),
+                     calc(100% - var(--cut)) 100%, var(--cut) 100%,
+                     0 calc(100% - var(--cut)), 0 var(--cut));
+}
+.oct-br {
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--cut)),
+                     calc(100% - var(--cut)) 100%, 0 100%);
+}
+.a { position: absolute; }
+
+/* ============================================================
+   workbench.css — verbatim, the shared workbench chrome.
+   ============================================================ */
+:root {
+  --wb-ground:   #07090d;
+  --wb-canvas:   #0a0c10;
+  --wb-chrome:   #10141b;
+  --wb-chrome-2: #151b23;
+  --wb-line:     #1e2630;
+  --wb-line-lit: #2b3846;
+  --wb-ink:      #c3ccd6;
+  --wb-ink-dim:  #78848f;
+  --wb-ink-mute: #4e5966;
+  --wb-steel:    #5d8fb3;
+  --wb-steel-lo: #34505f;
+  --wb-good:     #5fae7d;
+  --wb-bad:      #c9635e;
+
+  --wb-mono: ui-monospace, "DejaVu Sans Mono", Consolas, "Cascadia Mono", "Courier New", monospace;
+  --wb-sans: system-ui, "Archivo", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+.wb {
+  background: var(--wb-ground);
+  color: var(--wb-ink);
+  font-family: var(--wb-sans);
+  font-size: 15px;
+  line-height: 1.55;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding: 0 0 72px;
+}
+
+.wb-head {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 18px;
+  padding: 26px 28px 22px;
+  border-bottom: 1px solid var(--wb-line);
+  background: linear-gradient(180deg, #0b0f14, var(--wb-ground));
+}
+.wb-head h1 {
+  font-family: var(--wb-mono);
+  font-size: 26px; font-weight: 700; letter-spacing: 2.5px;
+  color: var(--wb-ink); text-transform: uppercase; text-wrap: balance;
+}
+.wb-head .wb-role {
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.6px;
+  text-transform: uppercase; color: var(--wb-steel);
+  padding: 3px 9px; border: 1px solid var(--wb-steel-lo); border-radius: 2px;
+}
+.wb-head p { flex: 1 1 340px; max-width: 66ch; color: var(--wb-ink-dim); font-size: 14px; }
+
+.wb-gate {
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.2px;
+  text-transform: uppercase; white-space: nowrap;
+  padding: 3px 9px; border-radius: 2px; border: 1px solid;
+  font-variant-numeric: tabular-nums;
+}
+.wb-gate.is-pass { color: var(--wb-good); border-color: #2c5a41; background: #0e1a14; }
+.wb-gate.is-fail { color: var(--wb-bad);  border-color: #5d2f2d; background: #1a0f0e; }
+.wb-gate.is-na   { color: var(--wb-ink-mute); border-color: var(--wb-line); }
+
+.wb-body {
+  display: grid; gap: 28px; padding: 0 28px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+@media (min-width: 1080px) {
+  .wb-body { grid-template-columns: minmax(0, 1fr) 330px; }
+  .wb-rail { position: sticky; top: 22px; }
+}
+
+.wb-specimens { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+
+.wb-spec {
+  border: 1px solid var(--wb-line); border-radius: 3px;
+  background: var(--wb-chrome); overflow: hidden;
+  transition: border-color .12s ease;
+}
+.wb-spec:hover { border-color: var(--wb-line-lit); }
+.wb-spec.is-selected { border-color: var(--wb-steel-lo); }
+
+.wb-spec-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 9px 13px; border-bottom: 1px solid var(--wb-line);
+  background: var(--wb-chrome-2);
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.1px;
+}
+.wb-pick {
+  appearance: none; cursor: pointer;
+  font: inherit; letter-spacing: inherit; text-transform: uppercase;
+  color: var(--wb-ink); background: transparent;
+  border: 1px solid var(--wb-line-lit); border-radius: 2px;
+  padding: 3px 10px;
+}
+.wb-pick:hover { border-color: var(--wb-steel-lo); color: #dfe6ec; }
+.wb-pick:focus-visible { outline: 2px solid var(--wb-steel); outline-offset: 2px; }
+.is-selected .wb-pick { background: var(--wb-steel-lo); border-color: var(--wb-steel); color: #eef4f8; }
+
+.wb-spec-meta { color: var(--wb-ink-mute); font-variant-numeric: tabular-nums; }
+.wb-spec-note { flex: 1 1 100%; color: var(--wb-ink-dim); letter-spacing: 0; font-size: 12px; }
+
+.wb-stage { overflow-x: auto; overflow-y: hidden; background: var(--wb-canvas); }
+.wb-stage > .stage { margin: 0 auto; }
+
+.wb-rail {
+  border: 1px solid var(--wb-line); border-radius: 3px;
+  background: var(--wb-chrome); min-width: 0;
+}
+.wb-rail-head {
+  padding: 11px 14px; border-bottom: 1px solid var(--wb-line);
+  background: var(--wb-chrome-2);
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.4px;
+  text-transform: uppercase; color: var(--wb-ink-dim);
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+}
+.wb-rail-head b { color: var(--wb-steel); font-weight: 700; }
+.wb-knobs { max-height: min(60vh, 620px); overflow-y: auto; padding: 4px 0 10px; }
+
+.wb-group { border-top: 1px solid var(--wb-line); }
+.wb-group:first-child { border-top: 0; }
+.wb-group > h3 {
+  font-family: var(--wb-mono); font-size: 10px; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--wb-ink-mute);
+  padding: 12px 14px 6px;
+}
+
+.wb-knob { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 5px 14px 7px; }
+.wb-knob label {
+  font-family: var(--wb-mono); font-size: 11.5px; letter-spacing: .4px;
+  color: var(--wb-ink-dim); align-self: center;
+}
+.wb-knob output {
+  font-family: var(--wb-mono); font-size: 11.5px; color: var(--wb-ink);
+  font-variant-numeric: tabular-nums; align-self: center; white-space: nowrap;
+}
+.wb-knob.is-dirty label { color: var(--wb-steel); }
+.wb-knob.is-dirty output { color: #dbe7ef; }
+.wb-knob input[type="range"], .wb-knob input[type="color"] { grid-column: 1 / -1; }
+
+.wb-knob input[type="range"] {
+  appearance: none; width: 100%; height: 18px; background: transparent; cursor: pointer;
+}
+.wb-knob input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px; background: var(--wb-line-lit); border-radius: 2px;
+}
+.wb-knob input[type="range"]::-moz-range-track {
+  height: 3px; background: var(--wb-line-lit); border-radius: 2px;
+}
+.wb-knob input[type="range"]::-webkit-slider-thumb {
+  appearance: none; width: 13px; height: 13px; margin-top: -5px;
+  border-radius: 50%; background: var(--wb-steel); border: 0;
+}
+.wb-knob input[type="range"]::-moz-range-thumb {
+  width: 13px; height: 13px; border-radius: 50%; background: var(--wb-steel); border: 0;
+}
+.wb-knob input:focus-visible { outline: 2px solid var(--wb-steel); outline-offset: 3px; }
+
+.wb-knob input[type="color"] {
+  appearance: none; width: 100%; height: 22px; padding: 0;
+  background: transparent; border: 1px solid var(--wb-line-lit); border-radius: 2px; cursor: pointer;
+}
+.wb-knob input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+.wb-knob input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 1px; }
+
+.wb-acts {
+  display: flex; gap: 8px; padding: 11px 14px;
+  border-top: 1px solid var(--wb-line); background: var(--wb-chrome-2);
+}
+.wb-btn {
+  flex: 1; appearance: none; cursor: pointer;
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase;
+  color: var(--wb-ink); background: transparent;
+  border: 1px solid var(--wb-line-lit); border-radius: 2px; padding: 7px 8px;
+  transition: border-color .12s ease, color .12s ease;
+}
+.wb-btn:hover { border-color: var(--wb-steel-lo); color: #dfe6ec; }
+.wb-btn:focus-visible { outline: 2px solid var(--wb-steel); outline-offset: 2px; }
+.wb-btn.is-done { color: var(--wb-good); border-color: #2c5a41; }
+
+.wb-out {
+  margin: 0 14px 12px; padding: 10px 11px;
+  border: 1px solid var(--wb-line); border-radius: 2px; background: #080b0f;
+  font-family: var(--wb-mono); font-size: 11px; line-height: 1.65; color: var(--wb-ink-dim);
+  white-space: pre; overflow-x: auto; max-height: 200px; overflow-y: auto;
+}
+.wb-out:empty { display: none; }
+
+.wb-note {
+  padding: 0 28px; max-width: 74ch;
+  color: var(--wb-ink-dim); font-size: 13.5px;
+}
+.wb-note code {
+  font-family: var(--wb-mono); font-size: .92em;
+  color: var(--wb-ink); background: var(--wb-chrome-2);
+  padding: 1px 5px; border-radius: 2px;
+}
+.wb-note a { color: var(--wb-steel); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
+
+/* ============================================================
+   chip.css — .halo-chip, C1 status chip. Verbatim rules from
+   docs/design/halo-elements/parts/chip.css.
+   ============================================================ */
+.halo-chip {
+  position: absolute;
+  left: var(--x, 0px);
+  top: var(--y, 0px);
+  width: var(--pw);
+  height: var(--ph);
+}
+
+.halo-chip .plate {
+  position: absolute; inset: 0; --cut: var(--pcut);
+  background:
+    linear-gradient(180deg,
+      #1c1613 0px, #100708 1.2px, #150608 2.4px, #150506 3.4px,
+      #0f0102 4.6px, #150204 5.7px, #1b0507 6.9px, #190306 8.6px,
+      #1a0405 calc(100% - 5px), #1a0404 calc(100% - 3px),
+      #170303 calc(100% - 1.4px), #100202 100%);
+}
+.halo-chip .bloom {
+  position: absolute; left: var(--blx); right: var(--blr);
+  top: 100%; height: var(--blh); opacity: var(--blo, 1);
+  background: linear-gradient(180deg,
+     rgba(255,120,100,.055)  0%,
+     rgba(255,150,120,.131)  8.3%,
+     rgba(255,210,205,.257) 25%,
+     rgba(255,240,235,.273) 41.7%,
+     rgba(255,245,240,.245) 58.3%,
+     rgba(255,255,250,.114) 75%,
+     rgba(255,255,255,.012) 91.7%,
+     rgba(255,255,255,0)   100%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 15px, #000 calc(100% - 6px), transparent 100%);
+          mask-image: linear-gradient(90deg, transparent 0, #000 15px, #000 calc(100% - 6px), transparent 100%);
+}
+.halo-chip .ringlayer {
+  position: absolute;
+  left: calc(-1 * mod(var(--x, 0px), 1px));
+  top:  calc(-1 * mod(var(--y, 0px), 1px));
+  width: 100%; height: 100%;
+  overflow: visible; pointer-events: none;
+}
+.halo-chip .ringlayer > path { fill: none; stroke-linejoin: miter; stroke: var(--stroke, #f85a5c); }
+.halo-chip .ringlayer > path.halo { stroke-width: var(--hw, 3.8); stroke-opacity: .90; filter: url(#chip-soft); }
+.halo-chip .ringlayer > path.core { stroke-width: var(--cw, 2.8); }
+.halo-chip .inner {
+  position: absolute;
+  left: calc(var(--ox) - 1px);
+  top:  calc(var(--oy) - 1px);
+  width:  calc(var(--ow) + 2px);
+  height: calc(var(--oh) + 2px);
+  --cut: calc(var(--oc) + .586px);
+  background:
+    linear-gradient(180deg, rgba(255,30,30,var(--gt,.052)) 0, rgba(255,30,30,0) 18px),
+    linear-gradient(0deg,   rgba(255,30,30,var(--gb,.070)) 0, rgba(255,30,30,0) 20px),
+    linear-gradient(90deg,  rgba(255,30,30,var(--gs,.088)) 0, rgba(255,30,30,0) 25px),
+    linear-gradient(270deg, rgba(255,30,30,var(--gs,.088)) 0, rgba(255,30,30,0) 25px),
+    var(--fill, #060a10);
+}
+.halo-chip .cap {
+  position: absolute; left: var(--capx); width: var(--capw);
+  top: var(--capy); height: var(--caph);
+  border-radius: var(--capr, 3.5px);
+  background: linear-gradient(90deg,
+     var(--cap0,#0d0507) 0%, var(--cap1,#241a1c) 20%, var(--cap2,#382b2e) 32%,
+     var(--cap3,#291e20) 45%, var(--cap4,#150e0e) 62%, var(--cap5,#130c0c) 100%);
+}
+.halo-chip .label {
+  position: absolute; left: 0; right: 0;
+  top: var(--lbl-top); font-size: var(--lbl-fs); letter-spacing: var(--lbl-ls);
+  text-align: left; padding-left: var(--lbl-pl);
+  font-family: var(--mono); font-weight: 700; color: #f2585a; white-space: nowrap; line-height: 1;
+  text-shadow: 0 0 5px rgba(249,90,92,.45);
+}
+
+.halo-chip.is-wide {
+  --pw: 634.8px; --ph: 60.6px; --pcut: 21px;
+  --ox: 13.5px; --oy: 10.47px; --ow: 606.8px; --oh: 46px; --oc: 20.4px;
+  --fill: #05070b; --gt: .052; --gb: .070; --gs: .088;
+  --blx: 22px; --blr: 11px; --blh: 6px; --blo: 1;
+  --capx: 626.5px; --capw: 8px; --capy: 20.6px; --caph: 45px;
+}
+
+.halo-chip.is-wide.is-labelled {
+  --pw: 633px; --ph: 60.5px; --pcut: 21px;
+  --ox: 14.3px; --oy: 10.45px; --ow: 605.8px; --oh: 45.45px; --oc: 20.4px;
+  --fill: #060f18; --gt: .058; --gb: .078; --gs: .082;
+  --blx: 22px; --blr: 11px; --blh: 5.2px; --blo: .95;
+  --capx: 626.9px; --capw: 6px; --capy: 22.6px; --caph: 43px;
+  --cap0: #100c0c; --cap1: #2a2422; --cap2: #332b29; --cap3: #2a2322; --cap4: #191614; --cap5: #161311;
+  --lbl-top: 21px; --lbl-fs: 27.9px; --lbl-ls: 1.35px; --lbl-pl: 239px;
+}
+
+.halo-chip.is-narrow.is-labelled {
+  --pw: 362.5px; --ph: 70.1px; --pcut: 25px;
+  --ox: 14.76px; --oy: 10.95px; --ow: 335.2px; --oh: 54.1px; --oc: 24.8px;
+  --fill: #030a12; --gt: .050; --gb: .062; --gs: .070;
+  --blx: 26px; --blr: 10px; --blh: 4px; --blo: .55;
+  --capx: 355px; --capw: 6.5px; --capy: 27.5px; --caph: 46px;
+  --cap0: #150a0c; --cap1: #2a1416; --cap2: #3d2020; --cap3: #3c1a17; --cap4: #210708; --cap5: #140406;
+  --lbl-top: 24.9px; --lbl-fs: 29.5px; --lbl-ls: 0.15px; --lbl-pl: 119px;
+}
+
+.halo-chip.is-narrow {
+  --pw: 363px; --ph: 71px; --pcut: 24px;
+  --ox: 14.6px; --oy: 11.75px; --ow: 336.2px; --oh: 54.07px; --oc: 26px;
+  --fill: #0b0d11; --gt: .040; --gb: .052; --gs: .062;
+  --blx: 26px; --blr: 10px; --blh: 4px; --blo: .55;
+  --capx: 356.9px; --capw: 7px; --capy: 27.4px; --caph: 47.5px;
+  --cap0: #150507; --cap1: #341216; --cap2: #4b1f22; --cap3: #3b1519; --cap4: #1c0709; --cap5: #150808;
+}
+</style>
+
+<div class="wb">
+
+  <header class="wb-head">
+    <h1>CHIP</h1>
+    <span class="wb-role">element 4 of 10</span>
+    <span class="wb-gate is-pass">PASS · 0.082</span>
+    <p>
+      A dark maroon plate under a stroked neon-octagon ring (SVG, blur-softened), a warm bloom
+      smeared off the plate's bottom edge, and a dark end-cap rail near the right end. Four
+      instances on the canvas: two loose and unlabelled (bands A and C), two riding the
+      assembled card reading "PROMISED" — one on the banner face, one on the sub-panel (band B).
+    </p>
+  </header>
+
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+    <filter id="chip-soft" x="-6%" y="-25%" width="112%" height="150%"><feGaussianBlur stdDeviation=".81"/></filter>
+  </defs></svg>
+
+  <div class="wb-body">
+    <div class="wb-specimens">
+
+      <article class="wb-spec" data-variant="is-wide">
+        <div class="wb-spec-bar">
+          <button class="wb-pick" type="button">select</button>
+          <span class="wb-spec-meta">634.8×60.6 · band A · loose, canvas (394, 24.4)</span>
+          <span class="wb-spec-note">unlabelled. no <code>.label</code> div. runs on the rule's own defaults for stroke and cap gradient — the only instance of the four that doesn't override either.</span>
+        </div>
+        <div class="wb-stage">
+          <div class="stage" style="width:680px;height:130px">
+            <div class="halo-chip is-wide" data-knobbed style="--x:20px; --y:20.4px">
+              <div class="plate oct"></div>
+              <div class="bloom"></div>
+              <div class="cap"></div>
+              <div class="inner oct"></div>
+              <svg class="ringlayer">
+                <path class="halo" d="M13.46,10.9 H599.96 L620.36,31.3 V55.68 H33.86 L13.46,35.28 Z"/>
+                <path class="core" d="M13.46,10.9 H599.96 L620.36,31.3 V55.68 H33.86 L13.46,35.28 Z"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="wb-spec" data-variant="is-wide is-labelled">
+        <div class="wb-spec-bar">
+          <button class="wb-pick" type="button">select</button>
+          <span class="wb-spec-meta">633×60.5 · band B · on the banner face, canvas (402.6, 150.4)</span>
+          <span class="wb-spec-note">"PROMISED", ls 1.35, pad-left 239. own cooler cap gradient and fill (#060f18) — biggest cap overrun of the four, 5.1px past the plate.</span>
+        </div>
+        <div class="wb-stage">
+          <div class="stage" style="width:680px;height:130px">
+            <div class="halo-chip is-wide is-labelled" data-knobbed style="--x:20.6px; --y:20.4px">
+              <div class="plate oct"></div>
+              <div class="bloom"></div>
+              <div class="cap"></div>
+              <div class="inner oct"></div>
+              <div class="label">PROMISED</div>
+              <svg class="ringlayer">
+                <path class="halo" d="M14.9,10.87 H600.3 L620.7,31.27 V56.38 H35.3 L14.9,35.98 Z"/>
+                <path class="core" d="M14.9,10.87 H600.3 L620.7,31.27 V56.38 H35.3 L14.9,35.98 Z"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="wb-spec" data-variant="is-narrow is-labelled">
+        <div class="wb-spec-bar">
+          <button class="wb-pick" type="button">select</button>
+          <span class="wb-spec-meta">362.5×70.1 · band B · on the sub-panel, canvas (877.5, 271.5)</span>
+          <span class="wb-spec-note">"PROMISED", tight ls 0.15, pad-left 119. smallest cap overrun of the four — only 3.4px past the plate.</span>
+        </div>
+        <div class="wb-stage">
+          <div class="stage" style="width:420px;height:140px">
+            <div class="halo-chip is-narrow is-labelled" data-knobbed style="--x:20.5px; --y:20.5px">
+              <div class="plate oct"></div>
+              <div class="bloom"></div>
+              <div class="cap"></div>
+              <div class="inner oct"></div>
+              <div class="label">PROMISED</div>
+              <svg class="ringlayer">
+                <path class="halo" d="M14.89,11.49 H325.7 L350.5,36.29 V65.18 H39.69 L14.89,40.38 Z"/>
+                <path class="core" d="M14.89,11.49 H325.7 L350.5,36.29 V65.18 H39.69 L14.89,40.38 Z"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="wb-spec" data-variant="is-narrow">
+        <div class="wb-spec-bar">
+          <button class="wb-pick" type="button">select</button>
+          <span class="wb-spec-meta">363×71 · band C · loose, canvas (888.6, 394.6)</span>
+          <span class="wb-spec-note">unlabelled. own warmer, redder cap gradient — cap overrun 3.9px past the plate.</span>
+        </div>
+        <div class="wb-stage">
+          <div class="stage" style="width:420px;height:140px">
+            <div class="halo-chip is-narrow" data-knobbed style="--x:20.6px; --y:20.6px">
+              <div class="plate oct"></div>
+              <div class="bloom"></div>
+              <div class="cap"></div>
+              <div class="inner oct"></div>
+              <svg class="ringlayer">
+                <path class="halo" d="M15.2,12.21 H325.35 L351.35,38.21 V66.12 H41.2 L15.2,40.12 Z"/>
+                <path class="core" d="M15.2,12.21 H325.35 L351.35,38.21 V66.12 H41.2 L15.2,40.12 Z"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </article>
+
+    </div>
+    <aside class="wb-rail" id="rail"></aside>
+  </div>
+
+  <p class="wb-note">
+    Turn a knob, hit <b>copy CSS</b> — it prints only what changed, as a paste-ready
+    <code>.halo-part { … }</code> block; swap that selector for the variant you're actually
+    editing (e.g. <code>.halo-chip.is-wide</code>) before it lands in
+    <code>parts/chip.css</code>.<br><br>
+
+    <b><code>--stroke</code>, <code>--hw</code>, <code>--cw</code> and <code>--capr</code> are
+    never set per-instance in the mockup</b> — they're the rule's own defaults (stroke
+    <code>#f85a5c</code>, halo 3.8px, core 2.8px, radius 3.5px), so the rail can't read a value
+    off the element and these four knobs open at their slider minimum, or black for the colour
+    swatch, until you actually move them. Same story for <code>--cap0..5</code> on the
+    <b>is-wide</b> specimen only, the one instance that doesn't override the cap gradient.<br><br>
+
+    <b><code>--lbl-*</code> only does anything on the two <code>is-labelled</code> specimens</b> —
+    <b>is-wide</b> and <b>is-narrow</b> have no <code>.label</code> div, so those four knobs have
+    nothing to move there.<br><br>
+
+    <code>--ox</code>/<code>--oy</code> are the interior cavity's own local box, independent of
+    the ring — turning them shifts the dark fill under the stroke without moving the stroke
+    itself, which is exactly how the source keeps a deliberate few-hundredths-of-a-pixel
+    disagreement between the two (see ANATOMY.md's c1 hazard #3). That disagreement is a measured
+    fit, not something to square up.<br><br>
+
+    Both stages carry real air beyond the painted box (bloom, cap overrun and the ring's blurred
+    shoulder all spill past the nominal plate) — push a plate or cap knob far enough past its
+    default and the stage's own edge may start cropping the specimen; that is the stage running
+    out of room, not a defect in the part.
+  </p>
+
+  <script>
+/* ============================================================
+   workbench.js — verbatim (HaloWorkbench).
+   ============================================================ */
+function HaloWorkbench(cfg) {
+  const rail = document.querySelector(cfg.rail);
+  const specimens = Array.from(document.querySelectorAll(cfg.specimens));
+  if (!rail || !specimens.length) return;
+
+  const groups = cfg.groups || [];
+  const allKnobs = groups.flatMap(g => g.knobs);
+
+  const born = new WeakMap();
+  const target = (spec) => spec.querySelector('[data-knobbed]') || spec.querySelector('.stage > *') || spec;
+
+  const readVar = (el, name) => {
+    const inline = el.style.getPropertyValue(name).trim();
+    if (inline) return inline;
+    return getComputedStyle(el).getPropertyValue(name).trim();
+  };
+
+  specimens.forEach(spec => {
+    const el = target(spec);
+    const snap = {};
+    allKnobs.forEach(k => { snap[k.var] = readVar(el, k.var); });
+    born.set(spec, snap);
+  });
+
+  let selected = specimens[0];
+
+  const controls = new Map();
+
+  const railHead = document.createElement('div');
+  railHead.className = 'wb-rail-head';
+  railHead.innerHTML = '<span>knobs</span><b data-wb-which></b>';
+  rail.appendChild(railHead);
+  const which = railHead.querySelector('[data-wb-which]');
+
+  const knobBox = document.createElement('div');
+  knobBox.className = 'wb-knobs';
+  rail.appendChild(knobBox);
+
+  groups.forEach(g => {
+    const sec = document.createElement('section');
+    sec.className = 'wb-group';
+    const h = document.createElement('h3');
+    h.textContent = g.title;
+    sec.appendChild(h);
+
+    g.knobs.forEach(k => {
+      const row = document.createElement('div');
+      row.className = 'wb-knob';
+
+      const id = 'k' + Math.abs(hash(k.var + g.title));
+      const lab = document.createElement('label');
+      lab.setAttribute('for', id);
+      lab.textContent = k.label || k.var;
+
+      const out = document.createElement('output');
+      out.setAttribute('for', id);
+
+      const input = document.createElement('input');
+      input.id = id;
+      if (k.type === 'color') {
+        input.type = 'color';
+      } else {
+        input.type = 'range';
+        input.min = k.min; input.max = k.max; input.step = k.step != null ? k.step : 1;
+      }
+      input.addEventListener('input', () => apply(k, input.value));
+
+      row.append(lab, out, input);
+      sec.appendChild(row);
+      controls.set(k.var, { input, out, row, knob: k });
+    });
+
+    knobBox.appendChild(sec);
+  });
+
+  const acts = document.createElement('div');
+  acts.className = 'wb-acts';
+  const copyBtn = mkBtn('copy CSS');
+  const resetBtn = mkBtn('reset');
+  acts.append(copyBtn, resetBtn);
+  rail.appendChild(acts);
+
+  const out = document.createElement('pre');
+  out.className = 'wb-out';
+  rail.appendChild(out);
+
+  function apply(knob, raw) {
+    const el = target(selected);
+    const value = knob.type === 'color' ? raw : raw + (knob.unit || '');
+    el.style.setProperty(knob.var, value);
+    sync(knob.var);
+  }
+
+  function sync(varName) {
+    const c = controls.get(varName);
+    if (!c) return;
+    const el = target(selected);
+    const now = readVar(el, varName);
+    const was = born.get(selected)[varName];
+    c.out.textContent = now || '—';
+    c.row.classList.toggle('is-dirty', norm(now) !== norm(was));
+  }
+
+  function load(spec) {
+    selected = spec;
+    specimens.forEach(s => s.classList.toggle('is-selected', s === spec));
+    which.textContent = spec.dataset.variant || '';
+    const el = target(spec);
+    controls.forEach(({ input, knob }, varName) => {
+      const v = readVar(el, varName);
+      if (knob.type === 'color') {
+        input.value = toHex(v) || '#000000';
+      } else {
+        const n = parseFloat(v);
+        input.value = Number.isFinite(n) ? n : (knob.min || 0);
+      }
+      sync(varName);
+    });
+    out.textContent = '';
+    copyBtn.classList.remove('is-done');
+    copyBtn.textContent = 'copy CSS';
+  }
+
+  specimens.forEach(spec => {
+    const pick = spec.querySelector('.wb-pick');
+    if (pick) pick.addEventListener('click', () => load(spec));
+    spec.addEventListener('click', e => {
+      if (e.target.closest('input, button, a')) return;
+      load(spec);
+    });
+  });
+
+  copyBtn.addEventListener('click', () => {
+    const el = target(selected);
+    const snap = born.get(selected);
+    const lines = [];
+    controls.forEach((c, varName) => {
+      const now = readVar(el, varName);
+      if (norm(now) !== norm(snap[varName])) lines.push(`  ${varName}: ${now};`);
+    });
+    const css = lines.length
+      ? `/* ${selected.dataset.variant || 'specimen'} — changed knobs */\n.halo-part {\n${lines.join('\n')}\n}`
+      : '/* nothing changed yet — turn a knob first */';
+    out.textContent = css;
+    if (navigator.clipboard && lines.length) {
+      navigator.clipboard.writeText(css).then(() => {
+        copyBtn.textContent = 'copied';
+        copyBtn.classList.add('is-done');
+      }, () => {});
+    }
+  });
+
+  resetBtn.addEventListener('click', () => {
+    const el = target(selected);
+    const snap = born.get(selected);
+    Object.keys(snap).forEach(varName => {
+      el.style.removeProperty(varName);
+      if (snap[varName]) el.style.setProperty(varName, snap[varName]);
+    });
+    load(selected);
+  });
+
+  load(specimens[0]);
+
+  function mkBtn(text) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'wb-btn'; b.textContent = text;
+    return b;
+  }
+  function norm(v) { return String(v || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
+  function hash(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h; }
+  function toHex(v) {
+    v = String(v || '').trim();
+    if (/^#[0-9a-f]{6}$/i.test(v)) return v;
+    if (/^#[0-9a-f]{3}$/i.test(v)) return '#' + v.slice(1).split('').map(c => c + c).join('');
+    const m = v.match(/^rgba?\(([^)]+)\)$/i);
+    if (m) {
+      const p = m[1].split(/[ ,/]+/).filter(Boolean).slice(0, 3).map(n => Math.max(0, Math.min(255, Math.round(parseFloat(n)))));
+      if (p.length === 3) return '#' + p.map(n => n.toString(16).padStart(2, '0')).join('');
+    }
+    return null;
+  }
+}
+
+HaloWorkbench({
+  rail: '#rail',
+  specimens: '.wb-spec',
+  groups: [
+    { title: 'placement', knobs: [
+        { var: '--x', label: 'x', min: 0, max: 200, step: .1, unit: 'px' },
+        { var: '--y', label: 'y', min: 0, max: 200, step: .1, unit: 'px' },
+    ]},
+    { title: 'plate', knobs: [
+        { var: '--pw', label: 'width', min: 180, max: 1000, step: .5, unit: 'px' },
+        { var: '--ph', label: 'height', min: 30, max: 140, step: .5, unit: 'px' },
+        { var: '--pcut', label: 'chamfer', min: 10, max: 50, step: .1, unit: 'px' },
+    ]},
+    { title: 'ring interior', knobs: [
+        { var: '--ox', label: 'box x', min: 7, max: 30, step: .05, unit: 'px' },
+        { var: '--oy', label: 'box y', min: 5, max: 24, step: .05, unit: 'px' },
+        { var: '--ow', label: 'box width', min: 168, max: 900, step: .5, unit: 'px' },
+        { var: '--oh', label: 'box height', min: 23, max: 108, step: .5, unit: 'px' },
+        { var: '--oc', label: 'box chamfer', min: 10, max: 52, step: .1, unit: 'px' },
+        { var: '--fill', label: 'cavity fill', type: 'color' },
+        { var: '--gt', label: 'glow top', min: .02, max: .12, step: .002 },
+        { var: '--gb', label: 'glow bottom', min: .026, max: .156, step: .002 },
+        { var: '--gs', label: 'glow sides', min: .03, max: .18, step: .002 },
+    ]},
+    { title: 'ring stroke', knobs: [
+        { var: '--stroke', label: 'colour', type: 'color' },
+        { var: '--hw', label: 'halo width', min: 1.9, max: 7.6, step: .05, unit: 'px' },
+        { var: '--cw', label: 'core width', min: 1.4, max: 5.6, step: .05, unit: 'px' },
+    ]},
+    { title: 'bloom', knobs: [
+        { var: '--blx', label: 'left inset', min: 11, max: 52, step: .5, unit: 'px' },
+        { var: '--blr', label: 'right inset', min: 5, max: 22, step: .5, unit: 'px' },
+        { var: '--blh', label: 'height', min: 2, max: 12, step: .1, unit: 'px' },
+        { var: '--blo', label: 'opacity', min: 0, max: 1, step: .01 },
+    ]},
+    { title: 'end-cap', knobs: [
+        { var: '--capx', label: 'x', min: 178, max: 700, step: .5, unit: 'px' },
+        { var: '--capy', label: 'y', min: 10, max: 55, step: .1, unit: 'px' },
+        { var: '--capw', label: 'width', min: 3, max: 16, step: .1, unit: 'px' },
+        { var: '--caph', label: 'height', min: 22, max: 95, step: .1, unit: 'px' },
+        { var: '--capr', label: 'radius', min: 1.75, max: 7, step: .05, unit: 'px' },
+        { var: '--cap0', label: 'stop 0', type: 'color' },
+        { var: '--cap1', label: 'stop 1', type: 'color' },
+        { var: '--cap2', label: 'stop 2', type: 'color' },
+        { var: '--cap3', label: 'stop 3', type: 'color' },
+        { var: '--cap4', label: 'stop 4', type: 'color' },
+        { var: '--cap5', label: 'stop 5', type: 'color' },
+    ]},
+    { title: 'label', knobs: [
+        { var: '--lbl-top', label: 'top', min: 10, max: 50, step: .1, unit: 'px' },
+        { var: '--lbl-fs', label: 'size', min: 14, max: 59, step: .1, unit: 'px' },
+        { var: '--lbl-ls', label: 'tracking', min: .05, max: 2.7, step: .01, unit: 'px' },
+        { var: '--lbl-pl', label: 'pad-left', min: 60, max: 480, step: 1, unit: 'px' },
+    ]},
+  ],
+});
+  </script>
+</div>

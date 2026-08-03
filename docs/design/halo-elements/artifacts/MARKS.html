@@ -1,0 +1,632 @@
+<title>MARKS — Halo element</title>
+<style>
+/* ============================================================
+   tokens.css subset — reset, :root vars, .oct/.oct4/.oct-br/.a,
+   .stage. Page-shell rules (html,body / body place-items) are
+   deliberately left out — the workbench supplies its own shell.
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0a0c10;
+  --neon:      #f95a5c;
+  --neon-hi:   #ff7a76;
+  --bar-red:   #ff433e;
+  --brk-red:   #fc6c5c;
+  --pnl-red:   #fa756f;
+  --tube-red:  #ff8078;
+  --maroon:    #411b1e;
+  --maroon-d:  #32171e;
+  --bar-yel:   #fff252;
+  --amber:     #7c401f;
+  --chrome:    #aebac6;
+  --silver:    #a19596;
+  --rim-top:   #626971;
+  --rim-left:  #818d92;
+  --rim-right: #74808a;
+  --rim-bot:   #7b8997;
+  --slate:     #32303e;
+  --field:     #1e202c;
+  --cavity:    #221a25;
+  --circuit:   #070e16;
+  --edge:      #0d1218;
+  --mono: Consolas, "Cascadia Mono", "DejaVu Sans Mono", "Courier New", monospace;
+  --sans: Roboto, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+.stage {
+  position: relative;
+  background: var(--bg);
+  overflow: hidden;
+  font-family: var(--sans);
+  font-kerning: none;
+}
+
+.oct {
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut),
+                     100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
+}
+.oct4 {
+  clip-path: polygon(var(--cut) 0, calc(100% - var(--cut)) 0,
+                     100% var(--cut), 100% calc(100% - var(--cut)),
+                     calc(100% - var(--cut)) 100%, var(--cut) 100%,
+                     0 calc(100% - var(--cut)), 0 var(--cut));
+}
+.oct-br {
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--cut)),
+                     calc(100% - var(--cut)) 100%, 0 100%);
+}
+.a { position: absolute; }
+
+/* ============================================================
+   workbench.css — verbatim, the shared workbench chrome.
+   ============================================================ */
+:root {
+  --wb-ground:   #07090d;
+  --wb-canvas:   #0a0c10;
+  --wb-chrome:   #10141b;
+  --wb-chrome-2: #151b23;
+  --wb-line:     #1e2630;
+  --wb-line-lit: #2b3846;
+  --wb-ink:      #c3ccd6;
+  --wb-ink-dim:  #78848f;
+  --wb-ink-mute: #4e5966;
+  --wb-steel:    #5d8fb3;
+  --wb-steel-lo: #34505f;
+  --wb-good:     #5fae7d;
+  --wb-bad:      #c9635e;
+
+  --wb-mono: ui-monospace, "DejaVu Sans Mono", Consolas, "Cascadia Mono", "Courier New", monospace;
+  --wb-sans: system-ui, "Archivo", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+.wb {
+  background: var(--wb-ground);
+  color: var(--wb-ink);
+  font-family: var(--wb-sans);
+  font-size: 15px;
+  line-height: 1.55;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding: 0 0 72px;
+}
+
+.wb-head {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 18px;
+  padding: 26px 28px 22px;
+  border-bottom: 1px solid var(--wb-line);
+  background: linear-gradient(180deg, #0b0f14, var(--wb-ground));
+}
+.wb-head h1 {
+  font-family: var(--wb-mono);
+  font-size: 26px; font-weight: 700; letter-spacing: 2.5px;
+  color: var(--wb-ink); text-transform: uppercase; text-wrap: balance;
+}
+.wb-head .wb-role {
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.6px;
+  text-transform: uppercase; color: var(--wb-steel);
+  padding: 3px 9px; border: 1px solid var(--wb-steel-lo); border-radius: 2px;
+}
+.wb-head p { flex: 1 1 340px; max-width: 66ch; color: var(--wb-ink-dim); font-size: 14px; }
+
+.wb-gate {
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.2px;
+  text-transform: uppercase; white-space: nowrap;
+  padding: 3px 9px; border-radius: 2px; border: 1px solid;
+  font-variant-numeric: tabular-nums;
+}
+.wb-gate.is-pass { color: var(--wb-good); border-color: #2c5a41; background: #0e1a14; }
+.wb-gate.is-fail { color: var(--wb-bad);  border-color: #5d2f2d; background: #1a0f0e; }
+.wb-gate.is-na   { color: var(--wb-ink-mute); border-color: var(--wb-line); }
+
+.wb-body {
+  display: grid; gap: 28px; padding: 0 28px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+@media (min-width: 1080px) {
+  .wb-body { grid-template-columns: minmax(0, 1fr) 330px; }
+  .wb-rail { position: sticky; top: 22px; }
+}
+
+.wb-specimens { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+
+.wb-spec {
+  border: 1px solid var(--wb-line); border-radius: 3px;
+  background: var(--wb-chrome); overflow: hidden;
+  transition: border-color .12s ease;
+}
+.wb-spec:hover { border-color: var(--wb-line-lit); }
+.wb-spec.is-selected { border-color: var(--wb-steel-lo); }
+
+.wb-spec-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 9px 13px; border-bottom: 1px solid var(--wb-line);
+  background: var(--wb-chrome-2);
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.1px;
+}
+.wb-pick {
+  appearance: none; cursor: pointer;
+  font: inherit; letter-spacing: inherit; text-transform: uppercase;
+  color: var(--wb-ink); background: transparent;
+  border: 1px solid var(--wb-line-lit); border-radius: 2px;
+  padding: 3px 10px;
+}
+.wb-pick:hover { border-color: var(--wb-steel-lo); color: #dfe6ec; }
+.wb-pick:focus-visible { outline: 2px solid var(--wb-steel); outline-offset: 2px; }
+.is-selected .wb-pick { background: var(--wb-steel-lo); border-color: var(--wb-steel); color: #eef4f8; }
+
+.wb-spec-meta { color: var(--wb-ink-mute); font-variant-numeric: tabular-nums; }
+.wb-spec-note { flex: 1 1 100%; color: var(--wb-ink-dim); letter-spacing: 0; font-size: 12px; }
+
+.wb-stage { overflow-x: auto; overflow-y: hidden; background: var(--wb-canvas); }
+.wb-stage > .stage { margin: 0 auto; }
+
+.wb-rail {
+  border: 1px solid var(--wb-line); border-radius: 3px;
+  background: var(--wb-chrome); min-width: 0;
+}
+.wb-rail-head {
+  padding: 11px 14px; border-bottom: 1px solid var(--wb-line);
+  background: var(--wb-chrome-2);
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.4px;
+  text-transform: uppercase; color: var(--wb-ink-dim);
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+}
+.wb-rail-head b { color: var(--wb-steel); font-weight: 700; }
+.wb-knobs { max-height: min(60vh, 620px); overflow-y: auto; padding: 4px 0 10px; }
+
+.wb-group { border-top: 1px solid var(--wb-line); }
+.wb-group:first-child { border-top: 0; }
+.wb-group > h3 {
+  font-family: var(--wb-mono); font-size: 10px; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--wb-ink-mute);
+  padding: 12px 14px 6px;
+}
+
+.wb-knob { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 5px 14px 7px; }
+.wb-knob label {
+  font-family: var(--wb-mono); font-size: 11.5px; letter-spacing: .4px;
+  color: var(--wb-ink-dim); align-self: center;
+}
+.wb-knob output {
+  font-family: var(--wb-mono); font-size: 11.5px; color: var(--wb-ink);
+  font-variant-numeric: tabular-nums; align-self: center; white-space: nowrap;
+}
+.wb-knob.is-dirty label { color: var(--wb-steel); }
+.wb-knob.is-dirty output { color: #dbe7ef; }
+.wb-knob input[type="range"], .wb-knob input[type="color"] { grid-column: 1 / -1; }
+
+.wb-knob input[type="range"] {
+  appearance: none; width: 100%; height: 18px; background: transparent; cursor: pointer;
+}
+.wb-knob input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px; background: var(--wb-line-lit); border-radius: 2px;
+}
+.wb-knob input[type="range"]::-moz-range-track {
+  height: 3px; background: var(--wb-line-lit); border-radius: 2px;
+}
+.wb-knob input[type="range"]::-webkit-slider-thumb {
+  appearance: none; width: 13px; height: 13px; margin-top: -5px;
+  border-radius: 50%; background: var(--wb-steel); border: 0;
+}
+.wb-knob input[type="range"]::-moz-range-thumb {
+  width: 13px; height: 13px; border-radius: 50%; background: var(--wb-steel); border: 0;
+}
+.wb-knob input:focus-visible { outline: 2px solid var(--wb-steel); outline-offset: 3px; }
+
+.wb-knob input[type="color"] {
+  appearance: none; width: 100%; height: 22px; padding: 0;
+  background: transparent; border: 1px solid var(--wb-line-lit); border-radius: 2px; cursor: pointer;
+}
+.wb-knob input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+.wb-knob input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 1px; }
+
+.wb-acts {
+  display: flex; gap: 8px; padding: 11px 14px;
+  border-top: 1px solid var(--wb-line); background: var(--wb-chrome-2);
+}
+.wb-btn {
+  flex: 1; appearance: none; cursor: pointer;
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase;
+  color: var(--wb-ink); background: transparent;
+  border: 1px solid var(--wb-line-lit); border-radius: 2px; padding: 7px 8px;
+  transition: border-color .12s ease, color .12s ease;
+}
+.wb-btn:hover { border-color: var(--wb-steel-lo); color: #dfe6ec; }
+.wb-btn:focus-visible { outline: 2px solid var(--wb-steel); outline-offset: 2px; }
+.wb-btn.is-done { color: var(--wb-good); border-color: #2c5a41; }
+
+.wb-out {
+  margin: 0 14px 12px; padding: 10px 11px;
+  border: 1px solid var(--wb-line); border-radius: 2px; background: #080b0f;
+  font-family: var(--wb-mono); font-size: 11px; line-height: 1.65; color: var(--wb-ink-dim);
+  white-space: pre; overflow-x: auto; max-height: 200px; overflow-y: auto;
+}
+.wb-out:empty { display: none; }
+
+.wb-note {
+  padding: 0 28px; max-width: 74ch;
+  color: var(--wb-ink-dim); font-size: 13.5px;
+}
+.wb-note code {
+  font-family: var(--wb-mono); font-size: .92em;
+  color: var(--wb-ink); background: var(--wb-chrome-2);
+  padding: 1px 5px; border-radius: 2px;
+}
+.wb-note a { color: var(--wb-steel); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
+
+/* ============================================================
+   marks.css — .halo-marks, C12 marks. Verbatim rules from
+   docs/design/halo-elements/parts/marks.css. Three unrelated
+   tiny marks bundled under one part id — a rivet, a hex-outline
+   icon, and the unit's name text — because the source canvas
+   placed each as one loose, unwrapped element with nothing else
+   around it. They share no structure or styling with each other.
+   Every instance already carried its own left/top in the source
+   (an inline style for .rivet, a baked rule for .hexicon/.name);
+   the only change here is spelling that as --x/--y. No <defs>,
+   no tokens.css primitive, nothing to rebase inside any of them.
+   ============================================================ */
+.halo-marks {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+}
+
+/* ---- .is-rivet — 9x9 dark ring, lighter core (original .rivet) ---- */
+.halo-marks.is-rivet {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 45%, #45454a 0 1.8px, #1a181c 2.6px, #0a0708 100%);
+  box-shadow: inset 0 0 0 .5px rgba(150,160,170,.14);
+}
+
+/* ---- .is-hexicon — hex outline (original .hexicon) ---- */
+.halo-marks.is-hexicon {
+  width: 30px;
+  height: 31px;
+}
+.halo-marks.is-hexicon svg {
+  display: block; /* kill the inline-svg baseline gap under the 30x31 box */
+}
+
+/* ---- .is-name — display name text (original .name) ---- */
+.halo-marks.is-name {
+  font-family: Arial, "Helvetica Neue", sans-serif;
+  font-weight: 700;
+  font-size: 41.9px;
+  line-height: 1;
+  letter-spacing: -.35px;
+  color: #f4f9fa;
+  text-shadow: 0 2px 3px rgba(0,0,0,.72);
+  white-space: nowrap; /* shrink-to-fit box, same as the unclassed original */
+}
+</style>
+
+<div class="wb">
+
+  <header class="wb-head">
+    <h1>MARKS</h1>
+    <span class="wb-role">element 10 of 10</span>
+    <span class="wb-gate is-na">N/A · band-B only</span>
+    <p>
+      Three unrelated small marks bundled under one part id, because the source canvas dropped each
+      as one loose, unwrapped element with nothing else around it: a rivet (four identical copies
+      scattered across the card), a hex-outline icon, and the unit's name text — the last two both
+      riding on c4's panel cavity, the rivets riding on c5's plate and on c10's own banner rivet.
+    </p>
+  </header>
+
+  <div class="wb-body">
+    <div class="wb-specimens">
+
+      <article class="wb-spec" data-variant="is-rivet">
+        <div class="wb-spec-bar">
+          <button class="wb-pick" type="button">select</button>
+          <span class="wb-spec-meta">9×9, painted == nominal · band B · 4 canvas instances, one class</span>
+          <span class="wb-spec-note">R1 (1266,141) and R2 (1266,228) both land on c5's C5b plate ·
+            R3 (1272,133) straddles C5b's own top edge — its top few rows sit on bare banner face
+            above where the plate starts (y136) · R4 (13,231) lands squarely on c10's own
+            <code>.bt-rivet</code>, hiding all but a 2-row sliver of it — get its paint order wrong
+            and a pixel gate would still pass. only the leftmost dot here is wired to the rail; the
+            other three sit static, proof that all four really are pixel-identical, only moved.</span>
+        </div>
+        <div class="wb-stage">
+          <div class="stage" style="width:360px;height:160px">
+            <div class="halo-marks is-rivet" data-knobbed style="--x:40px; --y:76px"></div>
+            <div class="halo-marks is-rivet" style="--x:130px; --y:76px"></div>
+            <div class="halo-marks is-rivet" style="--x:220px; --y:76px"></div>
+            <div class="halo-marks is-rivet" style="--x:310px; --y:76px"></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="wb-spec" data-variant="is-hexicon">
+        <div class="wb-spec-bar">
+          <button class="wb-pick" type="button">select</button>
+          <span class="wb-spec-meta">28×31 painted, 1px stroke-inset from a 30×31 nominal box · band B · canvas (397, 297)</span>
+          <span class="wb-spec-note">SVG stroke only, no fill — a 3.5px miter stroke on a hex path.
+            lands on c4's C4b cavity, last in paint order so it sits over the panel. the viewBox and
+            path are already local (0 0 30 31); nothing to rebase, no <code>&lt;defs&gt;</code> to
+            namespace.</span>
+        </div>
+        <div class="wb-stage">
+          <div class="stage" style="width:240px;height:200px">
+            <div class="halo-marks is-hexicon" data-knobbed style="--x:90px; --y:80px">
+              <svg width="30" height="31" viewBox="0 0 30 31" fill="none"
+                   stroke="#6f3d22" stroke-width="3.5" stroke-linejoin="miter">
+                <path d="M15 2 L27 9.2 V21.8 L15 29 L3 21.8 V9.2 Z"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="wb-spec" data-variant="is-name">
+        <div class="wb-spec-bar">
+          <button class="wb-pick" type="button">select</button>
+          <span class="wb-spec-meta">~200×37 painted, text-shadow spread past the type box · band B · canvas (458, 290.5)</span>
+          <span class="wb-spec-note">the unit's display name — Arial Bold 41.9px, letter-spacing
+            -.35px, a MEASURED fit against the reference's glyph widths, not a preference. lands on
+            c4's C4b cavity. the content is markup, not CSS — swap the text node for a different
+            label; nothing here references the string.</span>
+        </div>
+        <div class="wb-stage">
+          <div class="stage" style="width:440px;height:200px">
+            <div class="halo-marks is-name" data-knobbed style="--x:60px; --y:70px">Skid Ste...</div>
+          </div>
+        </div>
+      </article>
+
+    </div>
+    <aside class="wb-rail" id="rail"></aside>
+  </div>
+
+  <p class="wb-note">
+    Only <code>--x</code>/<code>--y</code> are wired for any of these three marks — every other
+    number here (the rivet's 9x9, the hexicon's 3.5px stroke, the name's font and shadow) was never
+    expressed as a variable in the source, and giving it one now would be a way to quietly break a
+    proven part, not iterate on it. Turn a knob, hit <b>copy CSS</b> — it prints only what changed,
+    as a paste-ready <code>.halo-part { … }</code> block; swap that selector for the instance you're
+    actually editing (e.g. <code>.halo-marks.is-hexicon</code>) before it lands in
+    <code>parts/marks.css</code>.<br><br>
+
+    <b>Three unrelated marks, one file.</b> <code>is-rivet</code>, <code>is-hexicon</code> and
+    <code>is-name</code> share no structure or styling with each other — bundled here only because
+    the source canvas placed each as one loose, unwrapped element with nothing around it. Selecting
+    a specimen isn't configuring a shared shape, it's picking which mark you want.<br><br>
+
+    <b>Paint order is mandatory, and this sheet can't enforce it.</b> Every instance here sits on top
+    of another part on the real card — R1–R3 over c5's C5b, R4 over c10's own
+    <code>.bt-rivet</code>, the hexicon and name over c4's C4b cavity. This page shows each mark on
+    bare canvas ground so its own geometry stays legible; the assembly pages (Main Item, Subitem,
+    Full Card) are what prove the correct stacking, all re-confirmed PASS mean 0.000.<br><br>
+
+    <b>Not a knob.</b> <code>is-name</code>'s font — Arial Bold, 41.9px, letter-spacing -.35px — was
+    picked to match measured glyph widths (S=25/k=20/i=6/d=21 against the reference's 24/22/7/20)
+    and a 12px period pitch, sized so cap height = 30px. <code>tokens.css</code>'s
+    <code>.stage { font-kerning: none }</code> is part of that fit and must stay in effect wherever
+    this part is dropped. Do not substitute a font.<br><br>
+
+    <b>Why the gate above reads N/A:</b> band-B-only, same treatment as c9/c10/c11/c13 — no crop of
+    the mockup shows any mark alone on bare <code>--bg</code>, since every instance composites onto
+    another part. Proven instead by an isolation-diff against a scratch copy of
+    <code>original.html</code> (exact match) and by the assembly gates, which paint c12 in the
+    documented order and re-confirm PASS mean 0.000.
+  </p>
+
+  <script>
+/* ============================================================
+   workbench.js — verbatim (HaloWorkbench).
+   ============================================================ */
+function HaloWorkbench(cfg) {
+  const rail = document.querySelector(cfg.rail);
+  const specimens = Array.from(document.querySelectorAll(cfg.specimens));
+  if (!rail || !specimens.length) return;
+
+  const groups = cfg.groups || [];
+  const allKnobs = groups.flatMap(g => g.knobs);
+
+  // Per-specimen record of the values it was born with, so reset is exact and
+  // "dirty" means "differs from the source mockup", not "differs from default".
+  const born = new WeakMap();
+  const target = (spec) => spec.querySelector('[data-knobbed]') || spec.querySelector('.stage > *') || spec;
+
+  const readVar = (el, name) => {
+    const inline = el.style.getPropertyValue(name).trim();
+    if (inline) return inline;
+    return getComputedStyle(el).getPropertyValue(name).trim();
+  };
+
+  specimens.forEach(spec => {
+    const el = target(spec);
+    const snap = {};
+    allKnobs.forEach(k => { snap[k.var] = readVar(el, k.var); });
+    born.set(spec, snap);
+  });
+
+  let selected = specimens[0];
+
+  // -- build the rail once; values are re-bound on selection ---------------
+  const controls = new Map();
+
+  const railHead = document.createElement('div');
+  railHead.className = 'wb-rail-head';
+  railHead.innerHTML = '<span>knobs</span><b data-wb-which></b>';
+  rail.appendChild(railHead);
+  const which = railHead.querySelector('[data-wb-which]');
+
+  const knobBox = document.createElement('div');
+  knobBox.className = 'wb-knobs';
+  rail.appendChild(knobBox);
+
+  groups.forEach(g => {
+    const sec = document.createElement('section');
+    sec.className = 'wb-group';
+    const h = document.createElement('h3');
+    h.textContent = g.title;
+    sec.appendChild(h);
+
+    g.knobs.forEach(k => {
+      const row = document.createElement('div');
+      row.className = 'wb-knob';
+
+      const id = 'k' + Math.abs(hash(k.var + g.title));
+      const lab = document.createElement('label');
+      lab.setAttribute('for', id);
+      lab.textContent = k.label || k.var;
+
+      const out = document.createElement('output');
+      out.setAttribute('for', id);
+
+      const input = document.createElement('input');
+      input.id = id;
+      if (k.type === 'color') {
+        input.type = 'color';
+      } else {
+        input.type = 'range';
+        input.min = k.min; input.max = k.max; input.step = k.step != null ? k.step : 1;
+      }
+      input.addEventListener('input', () => apply(k, input.value));
+
+      row.append(lab, out, input);
+      sec.appendChild(row);
+      controls.set(k.var, { input, out, row, knob: k });
+    });
+
+    knobBox.appendChild(sec);
+  });
+
+  const acts = document.createElement('div');
+  acts.className = 'wb-acts';
+  const copyBtn = mkBtn('copy CSS');
+  const resetBtn = mkBtn('reset');
+  acts.append(copyBtn, resetBtn);
+  rail.appendChild(acts);
+
+  const out = document.createElement('pre');
+  out.className = 'wb-out';
+  rail.appendChild(out);
+
+  // -- behaviour -----------------------------------------------------------
+
+  function apply(knob, raw) {
+    const el = target(selected);
+    const value = knob.type === 'color' ? raw : raw + (knob.unit || '');
+    el.style.setProperty(knob.var, value);
+    sync(knob.var);
+  }
+
+  function sync(varName) {
+    const c = controls.get(varName);
+    if (!c) return;
+    const el = target(selected);
+    const now = readVar(el, varName);
+    const was = born.get(selected)[varName];
+    c.out.textContent = now || '—';
+    c.row.classList.toggle('is-dirty', norm(now) !== norm(was));
+  }
+
+  function load(spec) {
+    selected = spec;
+    specimens.forEach(s => s.classList.toggle('is-selected', s === spec));
+    which.textContent = spec.dataset.variant || '';
+    const el = target(spec);
+    controls.forEach(({ input, knob }, varName) => {
+      const v = readVar(el, varName);
+      if (knob.type === 'color') {
+        input.value = toHex(v) || '#000000';
+      } else {
+        const n = parseFloat(v);
+        input.value = Number.isFinite(n) ? n : (knob.min || 0);
+      }
+      sync(varName);
+    });
+    out.textContent = '';
+    copyBtn.classList.remove('is-done');
+    copyBtn.textContent = 'copy CSS';
+  }
+
+  specimens.forEach(spec => {
+    const pick = spec.querySelector('.wb-pick');
+    if (pick) pick.addEventListener('click', () => load(spec));
+    spec.addEventListener('click', e => {
+      if (e.target.closest('input, button, a')) return;
+      load(spec);
+    });
+  });
+
+  copyBtn.addEventListener('click', () => {
+    const el = target(selected);
+    const snap = born.get(selected);
+    const lines = [];
+    controls.forEach((c, varName) => {
+      const now = readVar(el, varName);
+      if (norm(now) !== norm(snap[varName])) lines.push(`  ${varName}: ${now};`);
+    });
+    const css = lines.length
+      ? `/* ${selected.dataset.variant || 'specimen'} — changed knobs */\n.halo-part {\n${lines.join('\n')}\n}`
+      : '/* nothing changed yet — turn a knob first */';
+    out.textContent = css;
+    if (navigator.clipboard && lines.length) {
+      navigator.clipboard.writeText(css).then(() => {
+        copyBtn.textContent = 'copied';
+        copyBtn.classList.add('is-done');
+      }, () => {});
+    }
+  });
+
+  resetBtn.addEventListener('click', () => {
+    const el = target(selected);
+    const snap = born.get(selected);
+    Object.keys(snap).forEach(varName => {
+      el.style.removeProperty(varName);
+      if (snap[varName]) el.style.setProperty(varName, snap[varName]);
+    });
+    load(selected);
+  });
+
+  load(specimens[0]);
+
+  // -- helpers -------------------------------------------------------------
+
+  function mkBtn(text) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'wb-btn'; b.textContent = text;
+    return b;
+  }
+  function norm(v) { return String(v || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
+  function hash(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h; }
+  function toHex(v) {
+    v = String(v || '').trim();
+    if (/^#[0-9a-f]{6}$/i.test(v)) return v;
+    if (/^#[0-9a-f]{3}$/i.test(v)) return '#' + v.slice(1).split('').map(c => c + c).join('');
+    const m = v.match(/^rgba?\(([^)]+)\)$/i);
+    if (m) {
+      const p = m[1].split(/[ ,/]+/).filter(Boolean).slice(0, 3).map(n => Math.max(0, Math.min(255, Math.round(parseFloat(n)))));
+      if (p.length === 3) return '#' + p.map(n => n.toString(16).padStart(2, '0')).join('');
+    }
+    return null;
+  }
+}
+
+HaloWorkbench({
+  rail: '#rail',
+  specimens: '.wb-spec',
+  groups: [
+    { title: 'placement', knobs: [
+        { var: '--x', label: 'x', min: 0, max: 440, step: .5, unit: 'px' },
+        { var: '--y', label: 'y', min: 0, max: 200, step: .5, unit: 'px' },
+    ]},
+  ],
+});
+  </script>
+</div>

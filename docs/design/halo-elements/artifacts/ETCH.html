@@ -1,0 +1,873 @@
+<title>ETCH — Halo element</title>
+<style>
+/* ============================================================
+   tokens.css subset — reset, :root vars, .oct/.oct4/.oct-br/.a,
+   .stage. Page-shell rules (html,body / body place-items) are
+   deliberately left out — the workbench supplies its own shell.
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0a0c10;
+  --neon:      #f95a5c;
+  --neon-hi:   #ff7a76;
+  --bar-red:   #ff433e;
+  --brk-red:   #fc6c5c;
+  --pnl-red:   #fa756f;
+  --tube-red:  #ff8078;
+  --maroon:    #411b1e;
+  --maroon-d:  #32171e;
+  --bar-yel:   #fff252;
+  --amber:     #7c401f;
+  --chrome:    #aebac6;
+  --silver:    #a19596;
+  --rim-top:   #626971;
+  --rim-left:  #818d92;
+  --rim-right: #74808a;
+  --rim-bot:   #7b8997;
+  --slate:     #32303e;
+  --field:     #1e202c;
+  --cavity:    #221a25;
+  --circuit:   #070e16;
+  --edge:      #0d1218;
+  --mono: Consolas, "Cascadia Mono", "DejaVu Sans Mono", "Courier New", monospace;
+  --sans: Roboto, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+.stage {
+  position: relative;
+  background: var(--bg);
+  overflow: hidden;
+  font-family: var(--sans);
+  font-kerning: none;
+}
+
+.oct {
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut),
+                     100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
+}
+.oct4 {
+  clip-path: polygon(var(--cut) 0, calc(100% - var(--cut)) 0,
+                     100% var(--cut), 100% calc(100% - var(--cut)),
+                     calc(100% - var(--cut)) 100%, var(--cut) 100%,
+                     0 calc(100% - var(--cut)), 0 var(--cut));
+}
+.oct-br {
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--cut)),
+                     calc(100% - var(--cut)) 100%, 0 100%);
+}
+.a { position: absolute; }
+
+/* ============================================================
+   workbench.css — verbatim, the shared workbench chrome.
+   ============================================================ */
+:root {
+  --wb-ground:   #07090d;
+  --wb-canvas:   #0a0c10;
+  --wb-chrome:   #10141b;
+  --wb-chrome-2: #151b23;
+  --wb-line:     #1e2630;
+  --wb-line-lit: #2b3846;
+  --wb-ink:      #c3ccd6;
+  --wb-ink-dim:  #78848f;
+  --wb-ink-mute: #4e5966;
+  --wb-steel:    #5d8fb3;
+  --wb-steel-lo: #34505f;
+  --wb-good:     #5fae7d;
+  --wb-bad:      #c9635e;
+
+  --wb-mono: ui-monospace, "DejaVu Sans Mono", Consolas, "Cascadia Mono", "Courier New", monospace;
+  --wb-sans: system-ui, "Archivo", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+.wb {
+  background: var(--wb-ground);
+  color: var(--wb-ink);
+  font-family: var(--wb-sans);
+  font-size: 15px;
+  line-height: 1.55;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding: 0 0 72px;
+}
+
+.wb-head {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 18px;
+  padding: 26px 28px 22px;
+  border-bottom: 1px solid var(--wb-line);
+  background: linear-gradient(180deg, #0b0f14, var(--wb-ground));
+}
+.wb-head h1 {
+  font-family: var(--wb-mono);
+  font-size: 26px; font-weight: 700; letter-spacing: 2.5px;
+  color: var(--wb-ink); text-transform: uppercase; text-wrap: balance;
+}
+.wb-head .wb-role {
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.6px;
+  text-transform: uppercase; color: var(--wb-steel);
+  padding: 3px 9px; border: 1px solid var(--wb-steel-lo); border-radius: 2px;
+}
+.wb-head p { flex: 1 1 340px; max-width: 66ch; color: var(--wb-ink-dim); font-size: 14px; }
+
+.wb-gate {
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.2px;
+  text-transform: uppercase; white-space: nowrap;
+  padding: 3px 9px; border-radius: 2px; border: 1px solid;
+  font-variant-numeric: tabular-nums;
+}
+.wb-gate.is-pass { color: var(--wb-good); border-color: #2c5a41; background: #0e1a14; }
+.wb-gate.is-fail { color: var(--wb-bad);  border-color: #5d2f2d; background: #1a0f0e; }
+.wb-gate.is-na   { color: var(--wb-ink-mute); border-color: var(--wb-line); }
+
+.wb-body {
+  display: grid; gap: 28px; padding: 0 28px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+@media (min-width: 1080px) {
+  .wb-body { grid-template-columns: minmax(0, 1fr) 330px; }
+  .wb-rail { position: sticky; top: 22px; }
+}
+
+.wb-specimens { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+
+.wb-spec {
+  border: 1px solid var(--wb-line); border-radius: 3px;
+  background: var(--wb-chrome); overflow: hidden;
+  transition: border-color .12s ease;
+}
+.wb-spec:hover { border-color: var(--wb-line-lit); }
+.wb-spec.is-selected { border-color: var(--wb-steel-lo); }
+
+.wb-spec-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 9px 13px; border-bottom: 1px solid var(--wb-line);
+  background: var(--wb-chrome-2);
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.1px;
+}
+.wb-pick {
+  appearance: none; cursor: pointer;
+  font: inherit; letter-spacing: inherit; text-transform: uppercase;
+  color: var(--wb-ink); background: transparent;
+  border: 1px solid var(--wb-line-lit); border-radius: 2px;
+  padding: 3px 10px;
+}
+.wb-pick:hover { border-color: var(--wb-steel-lo); color: #dfe6ec; }
+.wb-pick:focus-visible { outline: 2px solid var(--wb-steel); outline-offset: 2px; }
+.is-selected .wb-pick { background: var(--wb-steel-lo); border-color: var(--wb-steel); color: #eef4f8; }
+
+.wb-spec-meta { color: var(--wb-ink-mute); font-variant-numeric: tabular-nums; }
+.wb-spec-note { flex: 1 1 100%; color: var(--wb-ink-dim); letter-spacing: 0; font-size: 12px; }
+
+.wb-stage { overflow-x: auto; overflow-y: hidden; background: var(--wb-canvas); }
+.wb-stage > .stage { margin: 0 auto; }
+
+.wb-rail {
+  border: 1px solid var(--wb-line); border-radius: 3px;
+  background: var(--wb-chrome); min-width: 0;
+}
+.wb-rail-head {
+  padding: 11px 14px; border-bottom: 1px solid var(--wb-line);
+  background: var(--wb-chrome-2);
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.4px;
+  text-transform: uppercase; color: var(--wb-ink-dim);
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+}
+.wb-rail-head b { color: var(--wb-steel); font-weight: 700; }
+.wb-knobs { max-height: min(60vh, 620px); overflow-y: auto; padding: 4px 0 10px; }
+
+.wb-group { border-top: 1px solid var(--wb-line); }
+.wb-group:first-child { border-top: 0; }
+.wb-group > h3 {
+  font-family: var(--wb-mono); font-size: 10px; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--wb-ink-mute);
+  padding: 12px 14px 6px;
+}
+
+.wb-knob { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 5px 14px 7px; }
+.wb-knob label {
+  font-family: var(--wb-mono); font-size: 11.5px; letter-spacing: .4px;
+  color: var(--wb-ink-dim); align-self: center;
+}
+.wb-knob output {
+  font-family: var(--wb-mono); font-size: 11.5px; color: var(--wb-ink);
+  font-variant-numeric: tabular-nums; align-self: center; white-space: nowrap;
+}
+.wb-knob.is-dirty label { color: var(--wb-steel); }
+.wb-knob.is-dirty output { color: #dbe7ef; }
+.wb-knob input[type="range"], .wb-knob input[type="color"] { grid-column: 1 / -1; }
+
+.wb-knob input[type="range"] {
+  appearance: none; width: 100%; height: 18px; background: transparent; cursor: pointer;
+}
+.wb-knob input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px; background: var(--wb-line-lit); border-radius: 2px;
+}
+.wb-knob input[type="range"]::-moz-range-track {
+  height: 3px; background: var(--wb-line-lit); border-radius: 2px;
+}
+.wb-knob input[type="range"]::-webkit-slider-thumb {
+  appearance: none; width: 13px; height: 13px; margin-top: -5px;
+  border-radius: 50%; background: var(--wb-steel); border: 0;
+}
+.wb-knob input[type="range"]::-moz-range-thumb {
+  width: 13px; height: 13px; border-radius: 50%; background: var(--wb-steel); border: 0;
+}
+.wb-knob input:focus-visible { outline: 2px solid var(--wb-steel); outline-offset: 3px; }
+
+.wb-knob input[type="color"] {
+  appearance: none; width: 100%; height: 22px; padding: 0;
+  background: transparent; border: 1px solid var(--wb-line-lit); border-radius: 2px; cursor: pointer;
+}
+.wb-knob input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+.wb-knob input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 1px; }
+
+.wb-acts {
+  display: flex; gap: 8px; padding: 11px 14px;
+  border-top: 1px solid var(--wb-line); background: var(--wb-chrome-2);
+}
+.wb-btn {
+  flex: 1; appearance: none; cursor: pointer;
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase;
+  color: var(--wb-ink); background: transparent;
+  border: 1px solid var(--wb-line-lit); border-radius: 2px; padding: 7px 8px;
+  transition: border-color .12s ease, color .12s ease;
+}
+.wb-btn:hover { border-color: var(--wb-steel-lo); color: #dfe6ec; }
+.wb-btn:focus-visible { outline: 2px solid var(--wb-steel); outline-offset: 2px; }
+.wb-btn.is-done { color: var(--wb-good); border-color: #2c5a41; }
+
+.wb-out {
+  margin: 0 14px 12px; padding: 10px 11px;
+  border: 1px solid var(--wb-line); border-radius: 2px; background: #080b0f;
+  font-family: var(--wb-mono); font-size: 11px; line-height: 1.65; color: var(--wb-ink-dim);
+  white-space: pre; overflow-x: auto; max-height: 200px; overflow-y: auto;
+}
+.wb-out:empty { display: none; }
+
+.wb-note {
+  padding: 0 28px; max-width: 74ch;
+  color: var(--wb-ink-dim); font-size: 13.5px;
+}
+.wb-note code {
+  font-family: var(--wb-mono); font-size: .92em;
+  color: var(--wb-ink); background: var(--wb-chrome-2);
+  padding: 1px 5px; border-radius: 2px;
+}
+.wb-note a { color: var(--wb-steel); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
+
+/* ============================================================
+   etch.css — .halo-etch, C9 circuit field. Verbatim rules from
+   docs/design/halo-elements/parts/etch.css. A 341x135 opaque box:
+   four stacked background gradients (three of them other parts'
+   light, baked in — --layer1 c4's rim spill, --layer2 c3's red
+   wash, --layer3 c11's top shadow, --layer4 c9's own base ramp),
+   an inline SVG of copper traces/pads, and the re-parented
+   .microtext block. No spill past its own nominal box.
+   ============================================================ */
+.halo-etch {
+  /* ---- placement ------------------------------------------------------- */
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: 341px;
+  height: 135px;
+
+  /* ---- the four stacked background layers ------------------------------ */
+  /* Declared top-most first, exactly as CSS paints them. Values are byte-
+     for-byte the original's; only the shorthand is split. */
+
+  /* layer 1 — light spilling UP from c4 C4b's sub-panel rim below y=347.
+     106px local == canvas y 347. */
+  --layer1: linear-gradient(180deg,
+      rgba(124,136,162,0)     0,     rgba(124,136,162,0)     106px,
+      rgba(124,136,162,.019) 111px,  rgba(124,136,162,.044) 116px,
+      rgba(124,136,162,.073) 120px,  rgba(124,136,162,.108) 124px,
+      rgba(124,136,162,.152) 128px,  rgba(124,136,162,.202) 132px,
+      rgba(124,136,162,.250) 134px,  rgba(124,136,162,.278) 135px);
+
+  /* layer 2 — c3 C3b's ambient red wash over the right half. */
+  --layer2: linear-gradient(90deg,
+      rgba(230,110,95,0)     115px, rgba(230,110,95,.014) 140px,
+      rgba(230,110,95,.026) 175px,  rgba(230,110,95,.049) 225px,
+      rgba(230,110,95,.050) 300px,  rgba(230,110,95,.046) 341px);
+
+  /* layer 3 — the warm shadow c11 .bt-div casts along the top edge. */
+  --layer3: linear-gradient(180deg,
+      rgba(154,58,52,.115) 0,   rgba(120,58,58,.052) 2px,
+      rgba(110,70,72,.030) 5px, rgba(110,80,86,.013) 12px,
+      rgba(110,80,86,0)    24px);
+
+  /* layer 4 — the base: opaque horizontal ramp, #080f16 field plus the
+     bezel's inner glow burning in over the first ~10px. */
+  --layer4: linear-gradient(90deg,
+      #43556e   0,     #27364d  1.5px, #232f3e  2.5px, #232e39  3.5px,
+      #222c36   4.5px, #202a34  5.5px, #1f2832  6.5px, #202932  7.5px,
+      #202831   9.5px, #202930 11.5px, #1d272f 13.5px, #1a242e 14.5px,
+      #162029  15.5px, #151e27 16.5px, #141d26 17.5px, #121b24 19.5px,
+      #111922  21.5px, #0f1820 23.5px, #0e171f 25.5px, #0d161e 28.5px,
+      #0d141d  30.5px, #0e151c 34.5px, #0e141d 37.5px, #0d131b 40.5px,
+      #0d121a  44.5px, #0d121a 49.5px, #0c1119 52.5px, #0b1018 56.5px,
+      #0a0f17  61.5px, #090f17 66.5px, #090f16 71.5px, #080f17 82.5px,
+      #090e16  94.5px, #080f16 109.5px, #080f16 341px);
+
+  background: var(--layer1), var(--layer2), var(--layer3), var(--layer4);
+
+  /* ---- copper ink ------------------------------------------------------ */
+  --cu-rgb: 142,148,142;
+  --cu-a:   .056;   --cu-w:   1;
+  --cuf-a:  .100;
+  --cud-a:  .062;   --cud-w:  1.1;
+  --halo-a: .044;   --halo-w: 2.8;
+
+  /* ---- micro text ------------------------------------------------------ */
+  --mt-x: 19px;      /* rebased: canvas 30     - 11  (instance x) */
+  --mt-y: 80.35px;   /* rebased: canvas 321.35 - 241 (instance y) */
+  --mt-w: 140px;
+  --mt-fs: 3.9px;
+  --mt-lh: 4.55px;
+  --mt-ls: -.05px;
+  --mt-color: rgba(150,185,205,.66);
+  --mt-gutter: rgba(182,208,222,.40);
+}
+
+/* --- the etched copper: ~1px, only +13 luminance over the field ---------- */
+.halo-etch svg { position: absolute; left: 0; top: 0; }
+
+.halo-etch .cu {
+  fill: none;
+  stroke: rgba(var(--cu-rgb), var(--cu-a));
+  stroke-width: var(--cu-w);
+}
+.halo-etch .cuf {
+  fill: rgba(var(--cu-rgb), var(--cuf-a));
+  stroke: none;
+}
+.halo-etch .cud {
+  fill: rgba(var(--cu-rgb), var(--cud-a));
+  stroke: rgba(var(--cu-rgb), var(--cud-a));
+  stroke-width: var(--cud-w);
+}
+.halo-etch .halo {
+  fill: none;
+  stroke: rgba(var(--cu-rgb), var(--halo-a));
+  stroke-width: var(--halo-w);
+}
+
+/* --- C7 micro technical text (re-parented) --------------------------------
+   10 lines, pitch 4.55px, glyph band 3px. Gutter block at local x0..1.4,
+   text from local x=7 (canvas x=37). Two pieces of the rhythm live in the
+   MARKUP and are load-bearing: line 2 is a bare &nbsp; spacer, and line 3
+   carries an inline top:.55px nudge. */
+.halo-etch .microtext {
+  position: absolute;
+  left: var(--mt-x);
+  top: var(--mt-y);
+  width: var(--mt-w);
+  font-family: var(--mono);
+  font-size: var(--mt-fs);
+  line-height: var(--mt-lh);
+  color: var(--mt-color);
+  white-space: nowrap;
+  letter-spacing: var(--mt-ls);
+}
+.halo-etch .microtext > div { position: relative; padding-left: 7px; }
+.halo-etch .microtext > div::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: -.65px;
+  width: 2.4px;
+  height: 2.15px;
+  background: var(--mt-gutter);
+}
+
+/* ==========================================================================
+   VARIANTS
+   ========================================================================== */
+
+/* C9 — the mockup instance, canvas 11,241. Intentionally empty: the base
+   rule above already is C9 exactly. */
+.halo-etch.is-banner {
+}
+
+/* DERIVED — NOT in the mockup. Strips the three layers of borrowed light. */
+.halo-etch.is-unlit {
+  --layer1: none;
+  --layer2: none;
+  --layer3: none;
+}
+</style>
+
+<div class="wb">
+
+  <header class="wb-head">
+    <h1>ETCH</h1>
+    <span class="wb-role">element 8 of 10</span>
+    <span class="wb-gate is-pass">PASS · 0.475 · see note</span>
+    <p>
+      the etched-copper field under band B's header row — a 341×135 opaque box of stacked light
+      layers, trace geometry and microtext, sitting at canvas (11, 241) beneath the conduit and
+      the sub-panel frame. gated by two box crops: the primary passes clean at mean 0.475, the
+      second reads 0.111 over the bar from a confirmed Chromium raster-dither artifact — harmless
+      where these pixels actually composite, inside the full-card assembly (mean 0.000).
+    </p>
+  </header>
+
+  <div class="wb-body">
+    <div class="wb-specimens">
+
+      <article class="wb-spec" data-variant="is-banner">
+        <div class="wb-spec-bar">
+          <button class="wb-pick" type="button">select</button>
+          <span class="wb-spec-meta">341×135, no spill · band B, canvas (11, 241)</span>
+          <span class="wb-spec-note">all three borrowed-light layers on. the mockup instance, the one the pixel gate checks.</span>
+        </div>
+        <div class="wb-stage">
+          <div class="stage" style="width:460px;height:230px">
+            <div class="halo-etch is-banner" data-knobbed style="--x:40px; --y:40px">
+              <svg width="341" height="135" viewBox="0 0 341 135">
+                <g class="halo">
+                  <path d="M28.5 0 L50.5 22.5 H144.5 L160 7"/>
+                  <path d="M0 4.5 H26 L49 27.5 H151.5 L169 10"/>
+                  <path d="M0 8.5 H25.5 L49 32 H154 L174 12"/>
+                  <path d="M18 14 H24.5 L47 36.5 H160 L180 16.5"/>
+                  <path d="M12.5 19 H23.5 L45.5 41 M33 41 H173"/>
+                  <path d="M33 36.5 L43 46 H174.5 L189 31"/>
+                  <path d="M8 69.5 H21.5 L41.5 50 H178 L189 39"/>
+                  <path d="M26 80.5 L51 55.5 H174 L185 44.5"/>
+                  <path d="M38.5 83.5 L57.5 64.5 H122.5"/>
+                  <path d="M45 60 H181 L189 52"/>
+                  <path d="M46 95.5 L55 86.5 H161"/>
+                </g>
+                <g class="cu">
+                  <!-- upper fan: six nested troughs, 45deg chamfers both ends -->
+                  <path d="M28.5 0 L50.5 22.5 H144.5 L160 7"/>
+                  <path d="M0 4.5 H26 L49 27.5 H151.5 L169 10"/>
+                  <path d="M0 8.5 H25.5 L49 32 H154 L174 12"/>
+                  <path d="M18 14 H24.5 L47 36.5 H160 L180 16.5"/>
+                  <path d="M12.5 19 H23.5 L45.5 41"/>
+                  <path d="M33 41 H173"/>
+                  <path d="M33 36.5 L43 46 H174.5 L189 31"/>
+                  <!-- lower group: three traces climbing out of the text block -->
+                  <path d="M8 69.5 H21.5 L41.5 50 H178 L189 39"/>
+                  <path d="M26 80.5 L51 55.5 H174 L185 44.5"/>
+                  <path d="M38.5 83.5 L57.5 64.5 H122.5"/>
+                  <path d="M45 60 H181 L189 52"/>
+                  <path d="M46 95.5 L55 86.5 H161"/>
+                  <path d="M172 97 L182 106.5"/>
+                  <!-- left-edge stubs, top rail, text-block outline -->
+                  <path d="M0 32.8 H9"/>
+                  <path d="M13.5 38 V44.5"/>
+                  <path d="M15 48 V56"/>
+                  <path d="M0 80.5 H22"/>
+                  <path d="M22 121 L16 127 H1"/>
+                  <path d="M80 0 H124"/>
+                  <!-- right half, below the conduit: via columns to the bottom rail -->
+                  <path d="M195 110 L201.5 103.5 V134"/>
+                  <path d="M200 97 L206.5 90.5 V134"/>
+                  <path d="M211 100 L217.5 93.5 V134"/>
+                  <path d="M223 101 L229.5 94.5 V134"/>
+                  <path d="M229 104 L235.5 97.5 V134"/>
+                  <path d="M268 96 L274.5 89.5 V134"/>
+                  <path d="M273 98 L279.5 91.5 V134"/>
+                  <path d="M295 92 L301.5 85.5 V134"/>
+                  <path d="M302 93 L308.5 86.5 V134"/>
+                  <path d="M332 98 L338.5 91.5 V134"/>
+                </g>
+                <g class="cud">
+                  <!-- pads -->
+                  <circle cx="11.5" cy="32.8" r="2.1"/>
+                  <circle cx="10.5" cy="63.2" r="2.9"/>
+                  <circle cx="34.5" cy="41"   r="1.8"/>
+                  <circle cx="173"  cy="40.5" r="1.8"/>
+                  <circle cx="48.5" cy="56.5" r="1.5"/>
+                  <circle cx="163"  cy="86.5" r="1.5"/>
+                  <circle cx="186"  cy="88.5" r="1.2"/>
+                  <circle cx="183"  cy="108"  r="1.9"/>
+                </g>
+                <g class="cu">
+                  <circle cx="76.4" cy="15.4" r="1.9"/>
+                  <circle cx="86.4" cy="15.4" r="1.9"/>
+                  <rect x="12.5" y="13"   width="5.5" height="5.5"/>
+                  <rect x="166.5" y="82.5" width="11" height="9" rx="2"/>
+                </g>
+                <g class="cuf">
+                  <rect x="124"   y="63"  width="3.6" height="3.8"/>
+                  <rect x="132.5" y="63"  width="4"   height="3.8"/>
+                  <rect x="286.5" y="121.6" width="10.5" height="2.6"/>
+                  <rect x="286.5" y="129.6" width="10.5" height="2.2"/>
+                  <rect x="325"   y="107.6" width="11"   height="2.2"/>
+                  <rect x="333"   y="95.6"  width="8.5"  height="2.2"/>
+                </g>
+              </svg>
+              <div class="microtext">
+                <div>MJOLNIR-C</div>
+                <div>&nbsp;</div>
+                <div style="top:.55px">LINK ARM 0x8F7 CAL 05.487</div>
+                <div>SEQ.0026.1</div>
+                <div>CHKSUM 4E32 90A7 5B</div>
+                <div>SYS.STAT [6] 088 CHAIN.SLIP_LOCK_STRESS_A1.2</div>
+                <div>LOADOUT RD 0006 @UTP07LRD01</div>
+                <div>SHIELD 100</div>
+                <div>TEMP 028</div>
+                <div>CROSS-TAPHD 4302</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="wb-spec" data-variant="is-unlit">
+        <div class="wb-spec-bar">
+          <button class="wb-pick" type="button">select</button>
+          <span class="wb-spec-meta">341×135, no spill · derived, not in the mockup</span>
+          <span class="wb-spec-note"><code>--layer1/2/3</code> forced to <code>none</code> — only the field's own base ramp is left. use it when lifting this field away from the conduit, the sub-panel rim, or the L-bracket's shadow.</span>
+        </div>
+        <div class="wb-stage">
+          <div class="stage" style="width:460px;height:230px">
+            <div class="halo-etch is-unlit" data-knobbed style="--x:40px; --y:40px">
+              <svg width="341" height="135" viewBox="0 0 341 135">
+                <g class="halo">
+                  <path d="M28.5 0 L50.5 22.5 H144.5 L160 7"/>
+                  <path d="M0 4.5 H26 L49 27.5 H151.5 L169 10"/>
+                  <path d="M0 8.5 H25.5 L49 32 H154 L174 12"/>
+                  <path d="M18 14 H24.5 L47 36.5 H160 L180 16.5"/>
+                  <path d="M12.5 19 H23.5 L45.5 41 M33 41 H173"/>
+                  <path d="M33 36.5 L43 46 H174.5 L189 31"/>
+                  <path d="M8 69.5 H21.5 L41.5 50 H178 L189 39"/>
+                  <path d="M26 80.5 L51 55.5 H174 L185 44.5"/>
+                  <path d="M38.5 83.5 L57.5 64.5 H122.5"/>
+                  <path d="M45 60 H181 L189 52"/>
+                  <path d="M46 95.5 L55 86.5 H161"/>
+                </g>
+                <g class="cu">
+                  <!-- upper fan: six nested troughs, 45deg chamfers both ends -->
+                  <path d="M28.5 0 L50.5 22.5 H144.5 L160 7"/>
+                  <path d="M0 4.5 H26 L49 27.5 H151.5 L169 10"/>
+                  <path d="M0 8.5 H25.5 L49 32 H154 L174 12"/>
+                  <path d="M18 14 H24.5 L47 36.5 H160 L180 16.5"/>
+                  <path d="M12.5 19 H23.5 L45.5 41"/>
+                  <path d="M33 41 H173"/>
+                  <path d="M33 36.5 L43 46 H174.5 L189 31"/>
+                  <!-- lower group: three traces climbing out of the text block -->
+                  <path d="M8 69.5 H21.5 L41.5 50 H178 L189 39"/>
+                  <path d="M26 80.5 L51 55.5 H174 L185 44.5"/>
+                  <path d="M38.5 83.5 L57.5 64.5 H122.5"/>
+                  <path d="M45 60 H181 L189 52"/>
+                  <path d="M46 95.5 L55 86.5 H161"/>
+                  <path d="M172 97 L182 106.5"/>
+                  <!-- left-edge stubs, top rail, text-block outline -->
+                  <path d="M0 32.8 H9"/>
+                  <path d="M13.5 38 V44.5"/>
+                  <path d="M15 48 V56"/>
+                  <path d="M0 80.5 H22"/>
+                  <path d="M22 121 L16 127 H1"/>
+                  <path d="M80 0 H124"/>
+                  <!-- right half, below the conduit: via columns to the bottom rail -->
+                  <path d="M195 110 L201.5 103.5 V134"/>
+                  <path d="M200 97 L206.5 90.5 V134"/>
+                  <path d="M211 100 L217.5 93.5 V134"/>
+                  <path d="M223 101 L229.5 94.5 V134"/>
+                  <path d="M229 104 L235.5 97.5 V134"/>
+                  <path d="M268 96 L274.5 89.5 V134"/>
+                  <path d="M273 98 L279.5 91.5 V134"/>
+                  <path d="M295 92 L301.5 85.5 V134"/>
+                  <path d="M302 93 L308.5 86.5 V134"/>
+                  <path d="M332 98 L338.5 91.5 V134"/>
+                </g>
+                <g class="cud">
+                  <!-- pads -->
+                  <circle cx="11.5" cy="32.8" r="2.1"/>
+                  <circle cx="10.5" cy="63.2" r="2.9"/>
+                  <circle cx="34.5" cy="41"   r="1.8"/>
+                  <circle cx="173"  cy="40.5" r="1.8"/>
+                  <circle cx="48.5" cy="56.5" r="1.5"/>
+                  <circle cx="163"  cy="86.5" r="1.5"/>
+                  <circle cx="186"  cy="88.5" r="1.2"/>
+                  <circle cx="183"  cy="108"  r="1.9"/>
+                </g>
+                <g class="cu">
+                  <circle cx="76.4" cy="15.4" r="1.9"/>
+                  <circle cx="86.4" cy="15.4" r="1.9"/>
+                  <rect x="12.5" y="13"   width="5.5" height="5.5"/>
+                  <rect x="166.5" y="82.5" width="11" height="9" rx="2"/>
+                </g>
+                <g class="cuf">
+                  <rect x="124"   y="63"  width="3.6" height="3.8"/>
+                  <rect x="132.5" y="63"  width="4"   height="3.8"/>
+                  <rect x="286.5" y="121.6" width="10.5" height="2.6"/>
+                  <rect x="286.5" y="129.6" width="10.5" height="2.2"/>
+                  <rect x="325"   y="107.6" width="11"   height="2.2"/>
+                  <rect x="333"   y="95.6"  width="8.5"  height="2.2"/>
+                </g>
+              </svg>
+              <div class="microtext">
+                <div>MJOLNIR-C</div>
+                <div>&nbsp;</div>
+                <div style="top:.55px">LINK ARM 0x8F7 CAL 05.487</div>
+                <div>SEQ.0026.1</div>
+                <div>CHKSUM 4E32 90A7 5B</div>
+                <div>SYS.STAT [6] 088 CHAIN.SLIP_LOCK_STRESS_A1.2</div>
+                <div>LOADOUT RD 0006 @UTP07LRD01</div>
+                <div>SHIELD 100</div>
+                <div>TEMP 028</div>
+                <div>CROSS-TAPHD 4302</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+    </div>
+    <aside class="wb-rail" id="rail"></aside>
+  </div>
+
+  <p class="wb-note">
+    The <code>--layer1..4</code> background gradients are shown as the two specimens above, not
+    as rail sliders — the mockup's only sanctioned states are all three borrowed-light layers on
+    (<b>is-banner</b>) or off (<b>is-unlit</b>); a slider that dials <code>--layer2</code>'s red
+    wash to 50% wouldn't explore the fit with c3/c4/c11, it would just break it.
+    <code>--cu-rgb</code> (the copper ink colour) is stored as an unwrapped rgb triple
+    (<code>142,148,142</code>), not a hex string — the rail's colour widget can't round-trip that
+    format without corrupting the <code>rgba()</code> it feeds, so it stays off this rail; retint
+    it by hand in <code>parts/etch.css</code> if you need to. Everything else here is a real knob,
+    read straight off the part's own custom properties.<br><br>
+
+    Turn a knob, hit <b>copy CSS</b> — it prints only what changed, as a paste-ready
+    <code>.halo-part { … }</code> block; swap that selector for <code>.halo-etch</code> (or
+    <code>.halo-etch.is-unlit</code>, whichever specimen you're editing) before it lands in
+    <code>parts/etch.css</code>.<br><br>
+
+    <b>Not a knob: the 341×135 box.</b> The gradient stops are absolute px and the inline
+    <code>&lt;svg&gt;</code> carries hard <code>width</code>/<code>height</code> attributes, so
+    resizing the root desyncs the paint from the art instead of rescaling it — same for the
+    individual stops inside each <code>--layerN</code> string; turn a whole layer off, don't tidy
+    a stop.
+  </p>
+
+  <script>
+/* ============================================================
+   workbench.js — verbatim (HaloWorkbench).
+   ============================================================ */
+function HaloWorkbench(cfg) {
+  const rail = document.querySelector(cfg.rail);
+  const specimens = Array.from(document.querySelectorAll(cfg.specimens));
+  if (!rail || !specimens.length) return;
+
+  const groups = cfg.groups || [];
+  const allKnobs = groups.flatMap(g => g.knobs);
+
+  const born = new WeakMap();
+  const target = (spec) => spec.querySelector('[data-knobbed]') || spec.querySelector('.stage > *') || spec;
+
+  const readVar = (el, name) => {
+    const inline = el.style.getPropertyValue(name).trim();
+    if (inline) return inline;
+    return getComputedStyle(el).getPropertyValue(name).trim();
+  };
+
+  specimens.forEach(spec => {
+    const el = target(spec);
+    const snap = {};
+    allKnobs.forEach(k => { snap[k.var] = readVar(el, k.var); });
+    born.set(spec, snap);
+  });
+
+  let selected = specimens[0];
+
+  const controls = new Map();
+
+  const railHead = document.createElement('div');
+  railHead.className = 'wb-rail-head';
+  railHead.innerHTML = '<span>knobs</span><b data-wb-which></b>';
+  rail.appendChild(railHead);
+  const which = railHead.querySelector('[data-wb-which]');
+
+  const knobBox = document.createElement('div');
+  knobBox.className = 'wb-knobs';
+  rail.appendChild(knobBox);
+
+  groups.forEach(g => {
+    const sec = document.createElement('section');
+    sec.className = 'wb-group';
+    const h = document.createElement('h3');
+    h.textContent = g.title;
+    sec.appendChild(h);
+
+    g.knobs.forEach(k => {
+      const row = document.createElement('div');
+      row.className = 'wb-knob';
+
+      const id = 'k' + Math.abs(hash(k.var + g.title));
+      const lab = document.createElement('label');
+      lab.setAttribute('for', id);
+      lab.textContent = k.label || k.var;
+
+      const out = document.createElement('output');
+      out.setAttribute('for', id);
+
+      const input = document.createElement('input');
+      input.id = id;
+      if (k.type === 'color') {
+        input.type = 'color';
+      } else {
+        input.type = 'range';
+        input.min = k.min; input.max = k.max; input.step = k.step != null ? k.step : 1;
+      }
+      input.addEventListener('input', () => apply(k, input.value));
+
+      row.append(lab, out, input);
+      sec.appendChild(row);
+      controls.set(k.var, { input, out, row, knob: k });
+    });
+
+    knobBox.appendChild(sec);
+  });
+
+  const acts = document.createElement('div');
+  acts.className = 'wb-acts';
+  const copyBtn = mkBtn('copy CSS');
+  const resetBtn = mkBtn('reset');
+  acts.append(copyBtn, resetBtn);
+  rail.appendChild(acts);
+
+  const out = document.createElement('pre');
+  out.className = 'wb-out';
+  rail.appendChild(out);
+
+  function apply(knob, raw) {
+    const el = target(selected);
+    const value = knob.type === 'color' ? raw : raw + (knob.unit || '');
+    el.style.setProperty(knob.var, value);
+    sync(knob.var);
+  }
+
+  function sync(varName) {
+    const c = controls.get(varName);
+    if (!c) return;
+    const el = target(selected);
+    const now = readVar(el, varName);
+    const was = born.get(selected)[varName];
+    c.out.textContent = now || '—';
+    c.row.classList.toggle('is-dirty', norm(now) !== norm(was));
+  }
+
+  function load(spec) {
+    selected = spec;
+    specimens.forEach(s => s.classList.toggle('is-selected', s === spec));
+    which.textContent = spec.dataset.variant || '';
+    const el = target(spec);
+    controls.forEach(({ input, knob }, varName) => {
+      const v = readVar(el, varName);
+      if (knob.type === 'color') {
+        input.value = toHex(v) || '#000000';
+      } else {
+        const n = parseFloat(v);
+        input.value = Number.isFinite(n) ? n : (knob.min || 0);
+      }
+      sync(varName);
+    });
+    out.textContent = '';
+    copyBtn.classList.remove('is-done');
+    copyBtn.textContent = 'copy CSS';
+  }
+
+  specimens.forEach(spec => {
+    const pick = spec.querySelector('.wb-pick');
+    if (pick) pick.addEventListener('click', () => load(spec));
+    spec.addEventListener('click', e => {
+      if (e.target.closest('input, button, a')) return;
+      load(spec);
+    });
+  });
+
+  copyBtn.addEventListener('click', () => {
+    const el = target(selected);
+    const snap = born.get(selected);
+    const lines = [];
+    controls.forEach((c, varName) => {
+      const now = readVar(el, varName);
+      if (norm(now) !== norm(snap[varName])) lines.push(`  ${varName}: ${now};`);
+    });
+    const css = lines.length
+      ? `/* ${selected.dataset.variant || 'specimen'} — changed knobs */\n.halo-part {\n${lines.join('\n')}\n}`
+      : '/* nothing changed yet — turn a knob first */';
+    out.textContent = css;
+    if (navigator.clipboard && lines.length) {
+      navigator.clipboard.writeText(css).then(() => {
+        copyBtn.textContent = 'copied';
+        copyBtn.classList.add('is-done');
+      }, () => {});
+    }
+  });
+
+  resetBtn.addEventListener('click', () => {
+    const el = target(selected);
+    const snap = born.get(selected);
+    Object.keys(snap).forEach(varName => {
+      el.style.removeProperty(varName);
+      if (snap[varName]) el.style.setProperty(varName, snap[varName]);
+    });
+    load(selected);
+  });
+
+  load(specimens[0]);
+
+  function mkBtn(text) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'wb-btn'; b.textContent = text;
+    return b;
+  }
+  function norm(v) { return String(v || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
+  function hash(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h; }
+  function toHex(v) {
+    v = String(v || '').trim();
+    if (/^#[0-9a-f]{6}$/i.test(v)) return v;
+    if (/^#[0-9a-f]{3}$/i.test(v)) return '#' + v.slice(1).split('').map(c => c + c).join('');
+    const m = v.match(/^rgba?\(([^)]+)\)$/i);
+    if (m) {
+      const p = m[1].split(/[ ,/]+/).filter(Boolean).slice(0, 3).map(n => Math.max(0, Math.min(255, Math.round(parseFloat(n)))));
+      if (p.length === 3) return '#' + p.map(n => n.toString(16).padStart(2, '0')).join('');
+    }
+    return null;
+  }
+}
+
+HaloWorkbench({
+  rail: '#rail',
+  specimens: '.wb-spec',
+  groups: [
+    { title: 'placement', knobs: [
+        { var: '--x', label: 'x', min: -20, max: 100, step: .5, unit: 'px' },
+        { var: '--y', label: 'y', min: -20, max: 80, step: .5, unit: 'px' },
+    ]},
+    { title: 'copper ink', knobs: [
+        { var: '--cu-a', label: 'trace alpha', min: 0, max: .15, step: .002 },
+        { var: '--cu-w', label: 'trace width', min: .3, max: 3, step: .05, unit: 'px' },
+        { var: '--cuf-a', label: 'pad fill alpha', min: 0, max: .25, step: .002 },
+        { var: '--cud-a', label: 'dense pad alpha', min: 0, max: .18, step: .002 },
+        { var: '--cud-w', label: 'dense pad width', min: .3, max: 3, step: .05, unit: 'px' },
+        { var: '--halo-a', label: 'under-stroke alpha', min: 0, max: .12, step: .002 },
+        { var: '--halo-w', label: 'under-stroke width', min: .8, max: 6, step: .1, unit: 'px' },
+    ]},
+    { title: 'micro text', knobs: [
+        { var: '--mt-x', label: 'x', min: 0, max: 70, step: .5, unit: 'px' },
+        { var: '--mt-y', label: 'y', min: 30, max: 110, step: .5, unit: 'px' },
+        { var: '--mt-w', label: 'box width', min: 70, max: 260, step: 1, unit: 'px' },
+        { var: '--mt-fs', label: 'font size', min: 2, max: 7, step: .1, unit: 'px' },
+        { var: '--mt-lh', label: 'line pitch', min: 2.5, max: 8, step: .05, unit: 'px' },
+        { var: '--mt-ls', label: 'letter spacing', min: -1, max: .8, step: .01, unit: 'px' },
+        { var: '--mt-color', label: 'text colour', type: 'color' },
+        { var: '--mt-gutter', label: 'gutter colour', type: 'color' },
+    ]},
+  ],
+});
+  </script>
+</div>
