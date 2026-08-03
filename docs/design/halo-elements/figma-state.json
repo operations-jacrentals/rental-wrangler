@@ -740,5 +740,30 @@
       "combining": "Selecting both and pressing Cmd/Ctrl+G groups them — but combining is rarely the actual fix; one of the two properties above almost always is."
     },
     "reductionAvailable": "101 nodes. The contiguous-run merge (see bulbSlots.VECTOR_REDUCTION_FINDING) would take roughly 44% off with zero visual change, if asked."
+  },
+  "assemblyDraft_172_7876": {
+    "date": "2026-08-03",
+    "what": "Jac's near-final rough draft — 'Group 2' (172:7876) on the Assembly page. Main row + subitem row joined by the multi-subitem conduit elbow.",
+    "critiqueGiven": [
+      "The conduit does the HIERARCHY work — the subitem relationship reads with no label, indent guide or connector line. That is the hard part and it is solved structurally.",
+      "FAILED screen is not 'installed' like the other parts: 142px tall in a 151px deck (4 above, 5 below) where the board and slots are symmetrically inset at 34/40. Its black is darker than the deck and its right edge is square where the deck's is chamfered. It reads as resting ON the row, not set INTO it. Not changed — Jac's call.",
+      "Marks IS in use despite Jac saying it was not: EXCAVATOR is Marks — Name and the hexagon is Marks — Hexicon. Only Rivet and Bracket are genuinely unused.",
+      "EXCAVATOR is the only white in the composition and out-shouts the FAILED screen, which is the actual alert — a glance lands on equipment name before failure state. Suggested dialling weight, not size. Not changed."
+    ],
+    "gapsFixed": {
+      "topRow": "was 24.6 / 0 (slots and board TOUCHING) / 25.9 -> uniform 16.5",
+      "subRow": "hexicon and name were touching at 0 -> 16.5, by moving the HEXICON LEFT so nothing downstream shifted",
+      "MISTAKE_worthRemembering": "My first sub-row pass ran the same anchor-based normaliser and it computed a NEGATIVE gap (-22.7) because the content is wider than the span between its anchors, packing EXCAVATOR on top of the hexicon. An even-distribution normaliser MUST be guarded against negative gaps.",
+      "boundingBoxesLie": "The sub-row slots instance is 258 wide but displays only 3 bulbs, so its BOX overlaps the message board by 92px while nothing overlaps visually. Gap maths must use absoluteRenderBounds, not x/width."
+    },
+    "mergeResult": {
+      "applied": "Contiguous-run merge on the three still-unmerged vectorize-derived parts.",
+      "saved": "EDITED VECTOR DECK 140->131, FINAL HOUSING 59->50, conduit elbow 56->47. Total 27 nodes (1.2%).",
+      "NOT_pixel_identical": "mean 0.115, max delta 19, 946 pixels changed (0.405%), all at y0-20 and y100-120 — the Deck's band seams, where merging abutting same-colour fragments erased their hairline anti-aliased seams. PASSES the kit gate (mean <=1.0 AND >=99% within delta 8) at 99.59%, but is NOT byte-identical the way the bulbs were.",
+      "WHY_IT_BARELY_PAID": "These parts alternate colour band by band (measured shading), so nearly every run has length 1. The bulbs had runs up to 12. RUN-MERGE ONLY PAYS WHERE THE TRACE PRODUCES LONG SAME-COLOUR RUNS — check run length distribution before bothering.",
+      "whereTheWeightIs": "1936 of 2208 nodes (88%) are the 8 bulb instances at 242 each, already merged from 429. NO further lossless reduction is available in this assembly.",
+      "revertPossible": "Pre-merge originals all survive: 143:329 (deck), 128:33 (housing), 105:78 (conduit). Rebuild from those if the 946 pixels are wanted back.",
+      "CORRECTION": "I reported mid-run that the assembly total dropped to 1422. That was a stale mid-transaction read. Real total is 2208, down exactly 27."
+    }
   }
 }
