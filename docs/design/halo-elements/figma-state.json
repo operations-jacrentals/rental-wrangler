@@ -663,6 +663,12 @@
     },
     "IMPORTANT_thisIsARedesignNotARecreation": "128:33 is a deliberate improvement on the source, not a byte-exact trace of it. It therefore CANNOT pass _ref/check.py against original.png, and that is by intent, not a defect. It does not replace housing.css (C13, byte-exact, 6 children, already the 9-slice-shaped shell). Treat them as two different artifacts and do not gate one with the other's test.",
     "codeTranslationDeferred": "Jac asked whether this needs translating to CSS/HTML. Deferred, on evidence: the Halo kit ships NOWHERE (nothing in index.html, style.css, app.js, config.js, sw.js or the manifest references halo-elements), ledger #214 is LOCKED that the kit is 'A SEPARATION, NOT A RECONCILIATION', Code Connect is a Phase 4 deliverable with zero mappings written, and nothing in this repo converts SVG to CSS — parts were authored by measuring the render scanline by scanline. Translation is not a button; it is the same authoring work as building the part from scratch.",
-    "OPEN_topRightLine": "Jac asked twice to remove 'the line in the top right corner'. NOT DONE — three candidates and no way to disambiguate from pixels: 145:37 'Vector 1' (full-width horizontal, x42 w1226 h0, 5px, right end terminates in the corner), 145:5 (unnamed, 15x27 at x1253, 0.63px, the little corner triangle), 145:38 'Vector 2' (126x157 at x1157, 6px, one of Jac's own named edits — deleting it removes more than a line). Popup was dismissed with 'wait for next instruction'. DO NOT guess-delete; wait for him to name the layer."
+    "OPEN_topRightLine": "CLOSED — Jac: 'Ignore it, I'll copy and paste your work to complete it.' He is finishing the top-right corner himself from the etched copy (145:2). Do NOT touch it.",
+    "handoffToJac": {
+      "node": "145:2 'EDITED VECTOR HOUSING (etched)' — he copies from here",
+      "layerNaming": "etch layers are PAIRS: '<name> — groove' and '<name> — lit edge', one lit edge per groove",
+      "theRule": "offset = (groove + lit) / 2. If a weight changes and the offset does not, the thicker groove swallows the lit edge and the engraving flattens to a plain line. This is the whole effect.",
+      "colours": "groove #0a0d11 @ .62 · lit edge rgba(185,205,235) @ .30"
+    }
   }
 }
