@@ -964,5 +964,12 @@
     "stateFound": "The bulbs ALREADY carry C: 119 regions, 4 distinct solids, zero further regions under the area floor. His study was complete and applied; he wanted the same treatment elsewhere.",
     "applied": "Ran the C cull (drop regions with polygon area < 3) across the remaining heavy MAIN vectors: 206:241 deck bracket 84->35 (58% cut), 238:2276 conduit cap 12->10 (17%), 212:79 conduit body 39->36 (8%), 206:240 deck bar 12->11 (8%), 206:242 FINAL HOUSING 32->31 (3%). Before/after clones left in frame 'ZZ C-recipe verify' (263:123) on MAIN+SUB ASSEMBLY, mirroring his own 'ZZ bulb verify' method. Visually indistinguishable -- the deck bracket loses one thin highlight edge.",
     "note": "Only 206:241 had real fat on it. The rest were already lean, so the recipe is close to exhausted on the current component set."
+  },
+  "messageBoardDarkBase_2026_08_03": {
+    "jac": "'You changed my Message Board design. I wanted the darker back not the lighter red one.'",
+    "myError": "When rolling the shader out I REPLACED fills[0] -- the dark base SOLID -- with the shader paint, on all eight variants. The darkness of the board was coming from that base fill. The four gradients above it are partially transparent, so with the base gone a COLOR_DODGE shader had nothing dark to dodge against and rendered as a bright red wash.",
+    "whyIMissedIt": "I reasoned that the subitem board Jac approved also had no solid on its inner (SHADER + 4 gradients) and concluded a straight one-for-one swap was faithful. That ignored the fact that the approved subitem was an unmerged 'inner' NODE sitting above a separate plate node, so its dodge resolved against a different backdrop than a region fill inside a merged vector does. Structure changes what a blend mode resolves against -- matching a fill LIST is not the same as matching a rendered result.",
+    "fix": "Re-inserted the dark base beneath the shader on region 1 of every variant, so the stack is now SOLID -> SHADER(dodge) -> 4 gradients. Bases restored per variant: #060f18 for 21:10, #05070b for the other seven. Dodge over a near-black backdrop stays near-black except where the pattern peaks, which is exactly the subtle texture Jac wanted.",
+    "rule": "Never drop a base fill to make room for a shader. Put the shader ABOVE the base. A dodge/screen blend needs its backdrop."
   }
 }
