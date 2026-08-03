@@ -118,7 +118,8 @@
       "ink/bright": "VariableID:13:6",
       "ink/label": "VariableID:13:7",
       "ink/readout": "VariableID:13:8",
-      "ink/micro": "VariableID:13:9"
+      "ink/micro": "VariableID:13:9",
+      "ink/on-fill": "(see Halo Language — added 2026-08-03)"
     },
     "textStyles": {
       "Text/Value 28": "S:5497b6f8dfd61bdae2f0a7a234d982c20a02c416,",
@@ -166,10 +167,13 @@
           "zOrder": "inserted directly ABOVE 'inner' — appended last at first, which covered the label and ring"
         },
         "variants": {
-          "Size=Wide, Label=Off": "21:2",
-          "Size=Wide, Label=On": "21:10",
-          "Size=Narrow, Label=On": "21:19",
-          "Size=Narrow, Label=Off": "21:28"
+          "matrix": "Size (Wide|Narrow) x Label (On|Off) x State (Default|Fill) = 8, complete",
+          "properties": [
+            "Size",
+            "Label",
+            "State",
+            "label#21:0 (TEXT)"
+          ]
         },
         "properties": [
           "Size",
@@ -222,6 +226,14 @@
           "how": "The film is lifted out of the glass fill stack into its OWN layer, same cavity geometry, inserted directly above the label (above the glass when a variant has no label) and below the ring core — the ring is frame edge, not under glass. Removed from the glass stack so it cannot paint twice.",
           "stillSwitched": "The film's opacity is bound to finish/glass-opacity, same as the glass holder, so both turn off together.",
           "layerOrder": "well · plate · inner · glass (tier-01) · [label] · scanline film · glow · ring core"
+        },
+        "fillState": {
+          "date": "2026-08-03",
+          "ask": "Jac: full red starting from INSIDE the red outlines, ink turns white, red must stay translucent enough to still see the Halo Circuit asset.",
+          "build": "a 'fill (state/hot-fill)' layer on the cavity's own octagon, above the glass and below the label, at 70% NODE opacity. Layer order: well · plate · inner · glass · fill · label · scanline film · glow · ring core — so the film still rides over both the fill and the text.",
+          "inkIsNotPureWhite": "binds to the new ink/on-fill semantic — CANON #fdfdfd, MOCKUP #f4f9fa. Canon deepened --red-fill to #d63636 AND pinned a near-white ink because white on #ff4242 measures 3.44 and fails AA (ledger #3). Hardcoding #fff would have reintroduced exactly the failure canon fixed.",
+          "opacityGotcha": "PAINT-level opacity did not survive being spread onto a bound paint object — it read back as 1 and the fill was fully opaque, hiding the circuit completely, which was the one thing Jac specified. Set opacity on the NODE instead. Verified by reading the value back, not by eye.",
+          "tuning": "0.86 -> 0.82 -> 0.70. Below ~0.75 the hex field reads as darker patches through the red; above it the circuit vanishes. 0.70 is a judgement point, easily changed on the four fill layers."
         }
       }
     }
