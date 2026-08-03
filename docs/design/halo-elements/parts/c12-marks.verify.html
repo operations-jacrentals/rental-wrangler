@@ -1,0 +1,80 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>c12-marks verify — C12 (band B, verify is NULL)</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="./c12-marks.css">
+</head>
+<body>
+<!--
+  ===========================================================================
+  VERIFY IS NULL FOR THIS PART — and that is the anatomy's call, not a dodge.
+
+  ANATOMY.md c12: "Verify: null. Every instance is band-B-only, sitting on
+  the banner, on C5b or on C4b. Verified during the assembly phase instead."
+  Every one of the 6 instances (R1-R4, .hexicon, .name) paints ON TOP of
+  another part (c5's C5b, c10's .bt-rivet, c4's C4b) — there is no window of
+  _ref/original.png that shows any of them against a clean background, so
+  there is no honest (refX, refY, W, H) for check.py to crop. Cropping
+  anywhere near one of these marks compares this part against whatever it
+  sits on too.
+
+  WHAT THIS PAGE IS FOR
+  ---------------------------------------------------------------------------
+  A full-canvas 1292x635 stage carrying ONLY c12's 6 marks, each at its TRUE
+  canvas position (the same --x/--y values ANATOMY.md and c12-marks.css
+  document). Two uses:
+
+    1. It is the exact input the ASSEMBLY phase composites — drop it (or its
+       6 elements) onto the same stage as c4/c5/c10 in the documented paint
+       order (R4 after c10's .bt-rivet; R1-R3 after c5's C5b; .hexicon/.name
+       after c4's C4b), and gate the whole assembled canvas.
+    2. It renders on the same 1292-wide pixel grid as the original, so an
+       isolation diff (original.html with everything but c12's 6 elements
+       hidden, vs this page) is exact. That diff was run during extraction
+       and is reported with the part — see the structured result.
+
+  Root placement is deliberately NOT rebased away here: --x/--y ARE the
+  canvas origin for each mark (matching the original's own left/top). Every
+  mark has no internal absolutely-positioned children, so there was nothing
+  else to rebase in the first place — see c12-marks.css's REBASE NOTES.
+
+  RE-RUNNING THE ISOLATION DIFF (the proof that stands in for the null gate)
+  ---------------------------------------------------------------------------
+  1. Copy _ref/original.html to a scratch file (NEVER edit the source) and
+     inject this before </head>:
+
+       <style id="iso-c12">
+       #stage > *    { visibility: hidden  !important; }
+       #stage > .rivet, #stage > .hexicon, #stage > .name
+                     { visibility: visible !important; }
+       </style>
+
+     (`.rivet`/`.hexicon`/`.name` are direct `#stage` children in the
+     original — `#stage > .rivet` etc. is ID+class, 1-1-0, which beats
+     `#stage > *`'s ID+universal, 1-0-0.)
+  2. Render BOTH that scratch file and THIS page at 1292x635 via
+     .claude/skills/paint/scripts/shot.mjs.
+  3. Diff them over the whole canvas (0,0,1292,635) — that crop also proves
+     nothing spilled and nothing was left behind on the stage.
+
+  Measured 2026-08-02: mean 0.000 · max 0 · within8 100.00% · exact 100.00%
+  on the full 1292x635 canvas.
+  ===========================================================================
+-->
+<div class="stage" style="width:1292px;height:635px">
+  <div class="halo-c12-marks is-rivet" style="--x:1266px; --y:141px;"></div>
+  <div class="halo-c12-marks is-rivet" style="--x:1266px; --y:228px;"></div>
+  <div class="halo-c12-marks is-rivet" style="--x:1272px; --y:133px;"></div>
+  <div class="halo-c12-marks is-rivet" style="--x:13px;   --y:231px;"></div>
+  <div class="halo-c12-marks is-hexicon" style="--x:397px; --y:297px;">
+    <svg width="30" height="31" viewBox="0 0 30 31" fill="none"
+         stroke="#6f3d22" stroke-width="3.5" stroke-linejoin="miter">
+      <path d="M15 2 L27 9.2 V21.8 L15 29 L3 21.8 V9.2 Z"/>
+    </svg>
+  </div>
+  <div class="halo-c12-marks is-name" style="--x:458px; --y:290.5px;">Skid Ste...</div>
+</div>
+</body>
+</html>

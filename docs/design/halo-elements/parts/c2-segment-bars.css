@@ -24,6 +24,9 @@
    Never rely on --bw/--bh (or a wrapping overflow:hidden) to contain the
    painted pixels — size any consuming layout generously, same as the
    pixel-gate verify box does.
+   EXCEPTION: .is-c2b alone carries a clip-path, and that clip IS derived
+   from --bw/--bh/--iy/--h/--clip-r — for that one variant the box really
+   does cut the paint (right, top and bottom). See the .is-c2b block.
 
    Every `.b` bar is a direct child of the root (the original's separate
    `.bars` wrapper box — which only existed to give `.b`'s `top:0;
@@ -61,7 +64,8 @@
                   (`.b::before` sits at `top:calc(var(--ft) - 2px)`) —
                   moving --ft moves the highlight with it, by design.
    --bw / --bh    informational bounding-box size (layout only, no clip
-                  effect).
+                  effect) — EXCEPT on .is-c2b, whose clip-path is derived
+                  from them; there they are load-bearing geometry.
    .r / .y        per-bar color, put on each `.b` span.
 
    NOT free knobs — baked from source measurement, change only if
@@ -143,24 +147,37 @@
      141.5-133=8.5    179.0-133=46.0   215.5-133=82.5
      251.0-133=118.0  288.0-133=155.0  324.5-133=191.5  360.0-133=227.0
 
-   Clip: the original clips a full-canvas-width (1292px), canvas-space box
-   (`left:0`) with `inset(0 908px 0 0)`, cutting at canvas x = 1292-908 =
-   384. Rebased to this root's local origin (canvas x=133):
-     local cutoff --clip-r = 384 - 133 = 251px
-   The rule below reads `calc(var(--bw) - var(--clip-r))` for the right
-   inset so the cut stays pinned at local x=251 regardless of what --bw is
-   set to. Top/bottom/left are pushed -30px OUTWARD (well past the
-   +/-8.2px skew throw and ~2.5px blur spread measured for this instance)
-   so only the intentional right-hand cut can ever clip a pixel — the
-   original's `inset(0 908px 0 0)` never clipped top/bottom/left either,
-   it just had a 1292px-wide box's worth of room on those sides instead of
-   an explicit negative margin. */
+   Clip: the original clips a canvas-space box — `left:0; width:1292px`,
+   `top:155.5px; height:50.5px` (i.e. full canvas width, but only the BAR
+   ROW's own height) — with `inset(0 908px 0 0)`. That inset cuts on all
+   four sides of THAT box:
+     right  canvas x = 1292 - 908 = 384    -> local 384 - 133 = 251
+     top    canvas y = 155.5               -> local 0.5  = var(--iy)
+     bottom canvas y = 155.5 + 50.5 = 206  -> local 51   = var(--bh)
+     left   canvas x = 0                   -> local -133 (nothing reaches it)
+   The right cut is the visible artwork (bar 7 sliced mid-paint). The TOP
+   and BOTTOM cuts are just as real though far subtler: the bars carry
+   `filter:blur(1.4px)` and `skewX(18deg)`, so their paint spills ~3px past
+   the bar row on both edges and the source clips that spill flat. Measured
+   in the band-B assembly, leaving top/bottom unclipped costs canvas rows
+   153-155 and 206-208 (mean 0.032, max 26, 163 px off by >8 in a 1292x95
+   window) — a real defect, invisible in this part's own C2a-only gate.
+   Written below as insets DERIVED from the row geometry so the clip stays
+   glued to the bar row: top = --iy, bottom = --bh - --iy - --h (= 0 here,
+   the root box bottom IS the bar row bottom), right pinned at --clip-r.
+   Left alone is pushed -30px outward rather than to the original's -133px:
+   both are far outside anything this instance paints (leftmost paint is
+   ~local -2.2 after skew + blur), so the two are pixel-identical, and -30px
+   does not smuggle a canvas coordinate back into the part. */
 .halo-c2-segment-bars.is-c2b {
   --h: 50.5px; --ft: 7px; --fb: 7px;
   --iy: 0.5px;
   --bw: 251px; --bh: 51px;
   --clip-r: 251px;
-  clip-path: inset(-30px calc(var(--bw) - var(--clip-r)) -30px -30px);
+  clip-path: inset(var(--iy)
+                   calc(var(--bw) - var(--clip-r))
+                   calc(var(--bh) - var(--iy) - var(--h))
+                   -30px);
 }
 
 /* is-c2c — 5 bars R R R Y Y, band B sub-panel instance.

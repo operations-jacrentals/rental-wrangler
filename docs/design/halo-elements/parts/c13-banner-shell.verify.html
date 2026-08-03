@@ -1,0 +1,77 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>c13-banner-shell verify — C13 (band B, verify is NULL)</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="./c13-banner-shell.css">
+</head>
+<body>
+<!--
+  ===========================================================================
+  VERIFY IS NULL FOR THIS PART — and that is the anatomy's call, not a dodge.
+
+  ANATOMY.md c13: "Verify: null. Band-B-only, and it is the substrate the
+  whole band composites onto. Verified during the assembly phase instead."
+  There is no window of _ref/original.png that shows c13 and only c13: across
+  its whole box (canvas x1..1287, y125..378) the mockup also paints c10's
+  entire top row (covering c13's top 116 rows), plus c9, c4b, c3b, c1b, c1c,
+  c2b, c2c and c5b over most of what remains. Cropping the reference anywhere
+  inside that box compares this part against all of those too. So check.py
+  against original.png cannot be run for c13 — there is no honest
+  (refX, refY, W, H).
+
+  WHAT THIS PAGE IS FOR
+  ---------------------------------------------------------------------------
+  A full-canvas 1292x635 stage carrying ONLY c13, at its TRUE canvas position
+  (--x:1px --y:125px, via the .is-banner variant). Two uses:
+
+    1. It is the exact input the ASSEMBLY phase composites — drop c9, c10,
+       c11, c12 and the rest of band B onto the same stage, in documented
+       paint order (see ANATOMY.md's "Paint-order and overlap map"), and gate
+       the whole assembled canvas.
+    2. It renders on the same 1292-wide pixel grid as the original, so an
+       isolation diff (original.html with everything but #banner's 6
+       children hidden, vs this page) is exact. That diff was run during
+       extraction and is reported with the part — see the structured result.
+
+  Root placement is deliberately NOT rebased away here: --x/--y ARE the
+  canvas origin (1, 125) — the same left:1px; top:125px #banner hard-coded
+  before this split, just lifted into vars. Every offset INSIDE the part was
+  already local (see c13-banner-shell.css's REBASE section) — there was
+  nothing else to rebase.
+
+  RE-RUNNING THE ISOLATION DIFF (the proof that stands in for the null gate)
+  ---------------------------------------------------------------------------
+  1. Copy _ref/original.html to a scratch file (NEVER edit the source) and
+     inject this before </head>:
+
+       <style id="iso-c13">
+       #stage > *      { visibility: hidden  !important; }
+       #stage > #banner { visibility: visible !important; }
+       </style>
+
+     (`#stage > #banner` is ID+ID, 2-0-0, which beats `#stage > *`'s
+     ID+universal, 1-0-1; #banner's 6 children have no visibility rule of
+     their own, so they inherit "visible" from #banner.)
+  2. Render BOTH that scratch file and THIS page at 1292x635 via
+     .claude/skills/paint/scripts/shot.mjs.
+  3. Diff them over the whole canvas (0,0,1292,635) — that crop also proves
+     nothing spilled and nothing was left behind on the stage.
+
+  Measured 2026-08-02: mean 0.0000 · max 0 · within8 100.00% · exact 100.00%
+  on the full 1292x635 canvas. Painted bbox measured back at exactly
+  x 1..1287, y 125..378 (= 1287x254), matching the declared box exactly —
+  no spill.
+  ===========================================================================
+-->
+<div class="stage" style="width:1292px;height:635px">
+  <div class="halo-c13-banner-shell is-banner">
+    <div class="back"></div>
+    <div class="face"></div>
+    <div class="rim-t"></div><div class="rim-b"></div>
+    <div class="rim-l"></div><div class="rim-r"></div>
+  </div>
+</div>
+</body>
+</html>

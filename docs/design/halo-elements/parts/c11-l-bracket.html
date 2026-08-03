@@ -7,8 +7,13 @@
 <link rel="stylesheet" href="./c11-l-bracket.css">
 <style>
   /* Preview-page scaffolding only — never affects the component itself. */
+  /* place-items:center comes from tokens.css's body rule and, in current
+     Chromium, still centres+shrink-wraps block-level children even after
+     display:block. Reset it so the variant stacks flush-left. Scaffolding
+     only (see c9-circuit-field.html for the same fix, documented first). */
   body {
     display: block;
+    place-items: start;
     min-height: 100vh;
     padding: 48px 32px 96px;
     background: #05070a;
