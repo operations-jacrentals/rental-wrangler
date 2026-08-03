@@ -898,5 +898,22 @@
     "ask": "Jac: 'create the card header. Put it all on one page starting with the assembled elements and then the broken down versions around it so that I can edit and view them live assembled.'",
     "delegated": "Sonnet agent building page 'Card Header': assembly 172:7876 moved there, with labelled instance stations for every constituent part below it.",
     "AMBIGUITY_FLAGGED": "Because the mains were earlier moved INTO the assembly at Jac's instruction, the surrounding part stations are INSTANCES that live-update FROM the assembly — editing the assembly copy updates the stations, not the reverse. If Jac actually wants to edit the broken-down parts and see the assembly follow, the mains have to move back OUT to the stations and the assembly go back to instances. Both are one operation; needs his call."
+  },
+  "workbenchPage_2026_08_03": {
+    "ask": "Jac: 'I still cant edit in place.' He made a fresh page with his assembled component and asked for all the main components placed around it so he can edit and see them live together.",
+    "page": "MAIN+SUB ASSEMBLY (226:1083). Holds instance 226:1084 of COMPONENT 'Main Assembly' 226:1018.",
+    "WHY_HE_COULD_NOT_EDIT_IN_PLACE": "An INSTANCE cannot be structurally edited — only its main can. Every part of the assembly was an instance whose main lived on another page, so there was nothing on his page to edit. The fix is physical: put the MAINS on the same page as the assembly instance.",
+    "HIS_COMPONENTISATION_FIXED_THE_WIRING": "Jac turned the assembly into COMPONENT 226:1018, which DELETED group 172:7876 and ejected the mains I had earlier moved inside it back out as instances. That is because a main component CANNOT be nested inside another component. It made my earlier inversion moot and produced the direction he wanted: edit the part, the assembly follows.",
+    "moved": {
+      "sixLooseMains": "149:144 EDITED VECTOR DECK, 145:2 FINAL HOUSING, 212:80 Conduit — subitem elbow, 158:2193 Slots — signal row, 70:7 Marks/Name, 70:5 Marks/Hexicon",
+      "threeVariantSets": "21:36 Message Board (8 variants, from the Message Board page), 38:14 Group Name (2, from Group Name), 158:2192 Bulb (5, from Slots)",
+      "whyMoveWholeSets": "A variant cannot be pulled out of its COMPONENT_SET without destroying variant switching. Moving the ENTIRE SET is the only way to make those editable on his page. Side effect: those sets no longer live on their own library pages — flagged to Jac, trivially reversible."
+    },
+    "BULB_SET_DEFECT_FOUND": {
+      "what": "COMPONENT_SET 158:2192 measured 65x58 — one variant's size — with clipsContent TRUE, and all five variants sat stacked at (0,0). Only one bulb was ever visible; the other four were hidden under it and clipped.",
+      "fix": "Spread the variants to x 0/89/178/267/356, set clipsContent false, resized the set to 445x82. All five now visible and distinct.",
+      "note": "Pre-existing, not caused by the reduction work — but it would have made the set uneditable and is the kind of thing only a render check catches. A COMPONENT_SET does NOT auto-grow to fit repositioned variants; resize it explicitly."
+    },
+    "layout": "Assembly at top under 'ASSEMBLED — live preview'; six mains under 'MAIN COMPONENTS — edit these, the assembly above updates live'; the three sets under 'VARIANT SETS'. Every station labelled. Overlap sweep run over all top-level nodes; the only remaining intersections are two section headings brushing the component below them, plus Jac's own 'Rectangle 1' backdrop which was deliberately left alone."
   }
 }
