@@ -1,11 +1,20 @@
 {
   "runId": "halo-ds-2026-08-03",
-  "phase": "phase0",
-  "step": "complete",
+  "phase": "phase1",
+  "step": "P1.0-file-created",
   "scopeLock": "both languages as variable modes: MOCKUP + CANON",
   "plan": "docs/design/halo-elements/FIGMA-PLAN.md",
   "source": "docs/design/halo-elements/parts/*.css — 10 components, all gated 0.000",
+  "figma": {
+    "fileKey": "cc3TcK2F2a8qSbCAstzcA5",
+    "fileUrl": "https://www.figma.com/design/cc3TcK2F2a8qSbCAstzcA5",
+    "fileName": "Rental Wrangler — Halo Elements Library",
+    "planKey": "team::1647821450524362303",
+    "planTier": "pro",
+    "maxModesPerCollection": 4,
+    "location": "drafts — movable into a team project later without changing the file key"
+  },
   "entities": { "collections": {}, "variables": {}, "pages": {}, "components": {} },
   "pendingValidations": [],
-  "completedSteps": ["phase0"]
+  "completedSteps": ["phase0", "P1.0"]
 }
