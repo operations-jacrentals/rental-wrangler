@@ -670,5 +670,18 @@
       "theRule": "offset = (groove + lit) / 2. If a weight changes and the offset does not, the thicker groove swallows the lit edge and the engraving flattens to a plain line. This is the whole effect.",
       "colours": "groove #0a0d11 @ .62 · lit edge rgba(185,205,235) @ .30"
     }
+  },
+  "editedVectorDeck": {
+    "date": "2026-08-03",
+    "origin": "Jac: 'It was easier for me to finish the DECK from the Housing module so can you copy this over correctly? There may need to be some polishing to do.' He built it in a frame called 'Editing Deck Now' (143:329) parked on the HOUSING page at (-98.5,-907).",
+    "copiedTo": "149:144 'EDITED VECTOR DECK' — COMPONENT on the Deck page, placed below the byte-exact Deck. Promoted to a component to match how his 128:33 'EDITED VECTOR HOUSING' is set up.",
+    "untouched": [
+      "143:329 (his original, still on the Housing page)",
+      "74:3 (the byte-exact Deck, C10)"
+    ],
+    "carriesMyEtchWork": "Yes — Vector 8/9/10 groove + lit-edge pairs propagated through, grouped into Group 1/2/3.",
+    "OPEN_group3Clipped": "Group 3 sits at x1208.7 with width 387.5, so it runs to x1596.2 inside a 1445-wide frame — 151.2px is cut off and clipsContent is TRUE. NOT fixed, because a bleed off the right edge may be intentional. Options given: leave as bleed; respace all three evenly at x99/x528.75/x958.5 (three full groups, equal 42.25px gaps); or drop to two groups matching the Housing's mirrored pair. There is NO room for a third full group at the current spacing — it would have to start at x1057.5, butting against Group 2's end at x1053.6.",
+    "OPEN_proportions": "It inherited HOUSING geometry, not Deck geometry: 1445x184, against the byte-exact Deck's 1268x116 and his own Housing's 1300x184. It is a Housing-shaped frame carrying Deck content. If the two stack as a card row his pair is 368px tall where the source is 254+116. Flagged to Jac, not changed.",
+    "sameForkAsHousing": "Like 128:33, this is a REDESIGN and cannot pass _ref/check.py against original.png. It does not replace deck.css (C10, byte-exact, 22 painted children). Two artifacts; never gate one with the other's test."
   }
 }
