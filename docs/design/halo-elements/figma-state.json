@@ -646,5 +646,20 @@
     },
     "stretchTest": "'Stretch test' frame on the Conduit page shows all three versions at native and 2x width. Vectorized scales proportionally (SCALE/SCALE) so a NON-UNIFORM stretch distorts chamfer angles and doubles hairlines; the segments version holds shape because its parts are discrete with pinned constraints.",
     "openCall": "Which conduit is canonical is STILL Jac's — there are now four on the page: traced (30:2), segments (80:2), Jac's vectorize (91:10), corrected vectorize (105:78)."
+  },
+  "editedVectorHousing": {
+    "date": "2026-08-03",
+    "origin": "Jac vectorized and hand-edited the Housing himself — node 128:33 'EDITED VECTOR HOUSING' (COMPONENT, 1300x184, 47 descendants) on the Housing page. His words: 'I think I even got this to look better than the OG.'",
+    "handoff": "He left five placeholder strokes in blue (#0091ff/#0088ff at 5/4/5/4/2px) and asked for 'the light effect dark lines and etches' instead.",
+    "treatmentApplied": {
+      "node": "145:2 'EDITED VECTOR HOUSING (etched)' — a COPY; Jac's 128:33 is untouched",
+      "principle": "An engraved line is a PAIR, not a colour: a dark groove plus a lit edge 1px below where light catches. Source values — etch.css:229 'the etched copper: ~1px, only +13 luminance over the field' (--cu-a .056, stroke-width 1); Message Board glass recipe '1.4px dark line' + 'lit hairlines rgba(185,205,235,.13)'.",
+      "groove": "#0a0d11 @ .62 — 2.4px on the four long traces, 1.4px on the bottom-left bracket",
+      "litEdge": "rgba(185,205,235) @ .30, 1.4px / 1.0px, offset 1.6px below the groove",
+      "alphaDeviation": "Lit alpha raised from the source's .13 to .30 because this face is mid-grey, not the near-black field etch.css was measured against.",
+      "jacFeedback": "First pass at 1.4px was too fine for the long runs — 'thicken the lines, the etchings in the bottom left corner are good.' Long traces went to 2.4px; the bottom-left bracket was left exactly as-is at his direction."
+    },
+    "IMPORTANT_thisIsARedesignNotARecreation": "128:33 is a deliberate improvement on the source, not a byte-exact trace of it. It therefore CANNOT pass _ref/check.py against original.png, and that is by intent, not a defect. It does not replace housing.css (C13, byte-exact, 6 children, already the 9-slice-shaped shell). Treat them as two different artifacts and do not gate one with the other's test.",
+    "codeTranslationDeferred": "Jac asked whether this needs translating to CSS/HTML. Deferred, on evidence: the Halo kit ships NOWHERE (nothing in index.html, style.css, app.js, config.js, sw.js or the manifest references halo-elements), ledger #214 is LOCKED that the kit is 'A SEPARATION, NOT A RECONCILIATION', Code Connect is a Phase 4 deliverable with zero mappings written, and nothing in this repo converts SVG to CSS — parts were authored by measuring the render scanline by scanline. Translation is not a button; it is the same authoring work as building the part from scratch."
   }
 }
