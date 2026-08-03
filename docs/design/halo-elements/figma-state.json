@@ -235,6 +235,36 @@
     "ifFewerSHAPESareWanted": "Not a compression problem. The honest route is AUTHORING the conduit as real geometry (~8 shapes, 3-5 stops each) — a cleaner, less photographic look. That is a redesign, not a simplification.",
     "status": "Jac is hand-editing the elbow; Claude to review later."
   },
+  "referencePage": {
+    "page": "Reference — tier-01",
+    "boardId": "44:3",
+    "purpose": "Jac's annotation surface, added on his request 2026-08-03: 'bring in the tier-01 artifact... Not for YOUR use. But for mine. I want to make references that will help you.' NOT a build source.",
+    "contents": {
+      "Tier-01 Card (live render)": "42:2 — docs/design/tier-01-card/index.html rendered at deviceScaleFactor 3, shown at 2x (380x540 card). Message boards visible: 3D OVERDUE, FAILED, PROMISED, SERVICE DUE, NOMINAL.",
+      "textures": "42:21..42:27 — steel-grain, steel-texture, steel-etch, halo-steel, halo-canvas, halo-circuit, halo-olive"
+    },
+    "knownGap": "Two icon templates did not resolve in the render ({{ p.icon }}, {{ c.icon }}), so a couple of glyphs are missing.",
+    "imageHashes": {
+      "tier01 card": "b215c7c4997969acd3d1d1a3d6114404e5c9d94c",
+      "steel-grain": "bff1979c36c4a803e60e4eceebe966c9754699d8",
+      "steel-texture": "3111a0af94daca1fa77203e82f6647db1cecb4d4",
+      "steel-etch": "b0825f27ac0f286c58fe21fcb9ad920eedc569e3",
+      "halo-steel": "db5e57d6a621fc09a25b6f451b2acb5ba9b3a519",
+      "halo-canvas": "bcd7499be350705048eb14e8de93c077915972db",
+      "halo-circuit": "be41cbf455c891cce9f49fd99eee8c7d5505d4b4",
+      "halo-olive": "69c87bccd8a91ed88c91558d6d12814e6fc554ca"
+    }
+  },
+  "playwrightWorksInThisContainer": {
+    "finding": "Playwright DOES run in this cloud container, so the tier-01 card (and any other HTML artifact) can be re-rendered to PNG on demand. This does NOT contradict CLAUDE.md's note that Playwright fails locally — that is about Jac's Windows desktop.",
+    "recipe": "npm install --no-save playwright@1.48.0, then launch with executablePath /opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell",
+    "threeTrapsHit": [
+      "A script in /tmp cannot resolve 'playwright' from the project's node_modules — import by absolute path.",
+      "playwright's entry is CommonJS: use a DEFAULT import, not named destructuring, from an .mjs script.",
+      "The chromium-1194 binary REMOVED --headless=old, which playwright 1.48 passes, so chromium-1194/chrome-linux/chrome fails to launch. The chromium_headless_shell-1194 binary is the standalone old-headless implementation and works."
+    ],
+    "script": "scratchpad/render-tier01.mjs — serves the card dir on :9147 and screenshots [data-screen-label='Live card']"
+  },
   "scanlineTechnique": {
     "problem": "Figma has NO repeating-gradient, and the scanline film is the identity test for glass (ledger #188).",
     "solution": "Hand-encode a tiny RGBA PNG (zlib + CRC32, no dependencies) and apply it as an IMAGE fill with scaleMode TILE and scalingFactor 0.25. A 4x12 tile at 0.25 renders exactly one 1px line every 3px. Generator: scratchpad/mk-tile.mjs <out> <r> <g> <b> <alpha> <linePx> <periodPx> [scale].",
