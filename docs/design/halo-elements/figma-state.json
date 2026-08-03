@@ -209,8 +209,8 @@
   "nextPhase": {
     "phase": 3,
     "order": "Chip FIRST (it is canon's Signal archetype — Jac's steer), then the plan's ascending order: Conduit, Bracket, Marks, Screen, Housing, Slots, Deck, Cartridge, Etch",
-    "done": ["Message Board (was Chip)", "Conduit", "Screen"],
-    "remaining": ["Bracket", "Marks", "Housing", "Slots", "Deck", "Cartridge", "Etch"],
+    "done": ["Message Board (was Chip)", "Conduit", "Screen", "Housing"],
+    "remaining": ["Bracket", "Marks", "Slots", "Deck", "Cartridge", "Etch"],
     "perComponent": "3a page -> 3b build with variable bindings -> 3c variants -> 3d/3e component properties -> 3f docs -> 3g get_metadata + get_screenshot -> 3h optional Code Connect",
     "rule": "One component at a time. Never batched. Figma writes strictly sequential."
   },
@@ -234,6 +234,10 @@
     ],
     "ifFewerSHAPESareWanted": "Not a compression problem. The honest route is AUTHORING the conduit as real geometry (~8 shapes, 3-5 stops each) — a cleaner, less photographic look. That is a redesign, not a simplification.",
     "status": "Jac is hand-editing the elbow; Claude to review later."
+  },
+  "gradientTraps": {
+    "offBoxStops": "Housing's .face declares stops at 251px and 253px on a box only 248px tall (top:5 bottom:1 on a 254 root), so CSS never paints them. Figma positions must be 0-1, and clamping those stops to 1.0 COMPRESSES and distorts the ramp. Correct handling: drop the off-box stops and interpolate the true colour at the box edge — here #28303a, 25% of the way from #1d242e(247) to #47535d(251). Check every multi-stop gradient for stops beyond its own paint box.",
+    "hardStopBands": "CSS '#303232 0 1px' is a SOLID band, not a gradient point. Figma smooth-interpolates between stops, which erases the band. Emit each colour TWICE — at position i/n and (i+1)/n — to hold the hard edge. Used by Housing's rim-l (6 bands) and rim-r (5 bands)."
   },
   "referencePage": {
     "page": "Reference — tier-01",
