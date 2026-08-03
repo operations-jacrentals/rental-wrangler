@@ -4,13 +4,13 @@
 <meta charset="utf-8">
 <title>main-item verify — band B header row, full canvas</title>
 <link rel="stylesheet" href="../tokens.css">
-<link rel="stylesheet" href="../parts/c13-banner-shell.css">
-<link rel="stylesheet" href="../parts/c10-banner-top-row.css">
-<link rel="stylesheet" href="../parts/c11-l-bracket.css">
-<link rel="stylesheet" href="../parts/c2-segment-bars.css">
-<link rel="stylesheet" href="../parts/c1-status-chip.css">
-<link rel="stylesheet" href="../parts/c5-display-plate.css">
-<link rel="stylesheet" href="../parts/c12-marks.css">
+<link rel="stylesheet" href="../parts/housing.css">
+<link rel="stylesheet" href="../parts/deck.css">
+<link rel="stylesheet" href="../parts/bracket.css">
+<link rel="stylesheet" href="../parts/slots.css">
+<link rel="stylesheet" href="../parts/chip.css">
+<link rel="stylesheet" href="../parts/screen.css">
+<link rel="stylesheet" href="../parts/marks.css">
 <link rel="stylesheet" href="./main-item.css">
 </head>
 <body>
@@ -73,16 +73,16 @@
 -->
 
 <!-- c1's filter def — ONCE per page, shared by every chip on it, id fixed
-     by c1-status-chip.css. Not part of .halo-main-item on purpose. -->
+     by chip.css. Not part of .halo-main-item on purpose. -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
-  <filter id="c1-status-chip-soft" x="-6%" y="-25%" width="112%" height="150%"><feGaussianBlur stdDeviation=".81"/></filter>
+  <filter id="chip-soft" x="-6%" y="-25%" width="112%" height="150%"><feGaussianBlur stdDeviation=".81"/></filter>
 </defs></svg>
 
 <div class="stage" style="width:1292px;height:635px">
   <div class="halo-main-item" style="--x:1px; --y:125px">
 
 <!-- @step 1 · c13 banner shell — the housing everything else sits on -->
-    <div class="halo-c13-banner-shell is-banner">
+    <div class="halo-housing is-banner">
       <div class="back"></div>
       <div class="face"></div>
       <div class="rim-t"></div><div class="rim-b"></div>
@@ -92,7 +92,7 @@
 
 <!-- @step 2 · c10 banner top row — rims, bands, graph well, slate, seam,
      bevel, ramp, notch, warm wash, rivet. DOM order IS the recipe. -->
-    <div class="halo-c10-banner-top-row is-banner">
+    <div class="halo-deck is-banner">
       <i class="bt-top"></i>
       <i class="bt-face"></i>
       <i class="bt-mod"></i>
@@ -119,7 +119,7 @@
 
 <!-- @step 3 · c11 L bracket — MUST sit here, after .bt-graph and before
      .bt-warm (which occludes the elbow in canvas columns 33..37). -->
-      <div class="halo-c11-l-bracket">
+      <div class="halo-bracket">
         <i class="c11-div"></i>
         <i class="c11-vertical"></i>
         <i class="c11-tip"></i>
@@ -133,7 +133,7 @@
 <!-- @endstep 2 -->
 
 <!-- @step 4 · c2 C2b — 7 bars R R R Y Y Y Y, hard-clipped at canvas x384 -->
-    <div class="halo-c2-segment-bars is-c2b">
+    <div class="halo-slots is-c2b">
       <span class="b r" style="left:8.5px"></span>
       <span class="b r" style="left:46.0px"></span>
       <span class="b r" style="left:82.5px"></span>
@@ -146,7 +146,7 @@
 
 <!-- @step 5 · c1 C1b — the wide PROMISED chip. The ring path `d` is this
      instance's own data (canvas coords minus floor(--x)/floor(--y)). -->
-    <div class="halo-c1-status-chip is-wide is-labelled">
+    <div class="halo-chip is-wide is-labelled">
       <div class="plate oct"></div>
       <div class="bloom"></div>
       <div class="cap"></div>
@@ -160,7 +160,7 @@
 <!-- @endstep 5 -->
 
 <!-- @step 6 · c5 C5b — the FAILED octagon plate -->
-    <div class="halo-c5-display-plate is-failed">
+    <div class="halo-screen is-failed">
       <div class="body oct4"></div>
       <div class="glass oct4"></div>
       <div class="hair oct4"><i class="oct4"></i></div>
@@ -170,10 +170,10 @@
 
 <!-- @step 7 · c12 — the four loose rivets, last so R1/R2/R3 land on C5b
      and R4 lands on c10's .bt-rivet -->
-    <div class="halo-c12-marks is-rivet mi-rivet-1"></div>
-    <div class="halo-c12-marks is-rivet mi-rivet-2"></div>
-    <div class="halo-c12-marks is-rivet mi-rivet-3"></div>
-    <div class="halo-c12-marks is-rivet mi-rivet-4"></div>
+    <div class="halo-marks is-rivet mi-rivet-1"></div>
+    <div class="halo-marks is-rivet mi-rivet-2"></div>
+    <div class="halo-marks is-rivet mi-rivet-3"></div>
+    <div class="halo-marks is-rivet mi-rivet-4"></div>
 <!-- @endstep 7 -->
 
   </div>

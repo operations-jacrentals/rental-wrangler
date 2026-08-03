@@ -1,0 +1,127 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>cartridge — preview</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="./cartridge.css">
+<style>
+  /* Page-scaffolding only — nothing here touches .halo-cartridge or any
+     of its descendants, and none of it is part of the recreated artwork. */
+  body { min-height: 100vh; padding: 48px 24px; align-items: flex-start; }
+  .sheet { display: flex; flex-direction: column; gap: 44px; align-items: center; }
+  h1 {
+    font-family: var(--mono); font-size: 13px; font-weight: 700;
+    letter-spacing: .08em; text-transform: uppercase; color: #6b7480;
+  }
+  .demo { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .demo .stage { position: relative; border: 1px solid #1b2029; }
+  .cap {
+    font-family: var(--mono); font-size: 11px; line-height: 1.55;
+    color: #6b7480; text-align: center; max-width: 900px;
+  }
+  .cap b { color: #9aa3ad; font-weight: 700; }
+  .cap code { color: #7d8894; }
+  .note {
+    font-family: var(--mono); font-size: 11px; line-height: 1.6;
+    color: #5a626c; max-width: 900px; text-align: left;
+    border-top: 1px solid #1b2029; padding-top: 16px;
+  }
+  .note b { color: #8a939d; font-weight: 700; }
+  .note code { color: #7d8894; }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <h1>c4 — panel frame</h1>
+
+  <!-- ============ .is-c4a — standalone (band C) ============ -->
+  <div class="demo">
+    <div class="stage" style="width:960px;height:264px">
+      <div class="halo-cartridge is-c4a" style="--x:22px; --y:68px">
+        <div class="pf-body">
+          <div class="pf-r pf-r0"></div><div class="pf-r pf-r1"></div><div class="pf-r pf-r2"></div>
+          <div class="pf-cav"><div class="pf-cavr"></div></div>
+          <div class="pf-railL"></div><div class="pf-railR"></div>
+          <div class="pf-r pf-r122"></div><div class="pf-r pf-r123"></div><div class="pf-r pf-r124"></div>
+          <div class="pf-rmar"></div><div class="pf-rface"></div><div class="pf-riv"></div>
+          <div class="pf-lbev"></div><div class="pf-lface"></div><div class="pf-chT"></div>
+        </div>
+        <div class="pf-lside"></div><div class="pf-fct"></div><div class="pf-fcb"></div>
+        <div class="pf-brk"><i class="v"></i><i class="d"></i><i class="ts"></i><i class="bs"></i></div>
+        <div class="pf-bl pf-blt"></div><div class="pf-bl pf-blb"></div>
+      </div>
+    </div>
+    <div class="cap">
+      <b>.is-c4a</b> — standalone panel &middot; band C &middot; canvas (344,&nbsp;497) &middot; sits on bare <code>--bg</code>, nothing over or under it<br>
+      <code>--w:914.5px</code> &middot; no <code>.pf-lift</code> child &middot; nominal 914.5&times;125, painted 914.5&times;127
+    </div>
+  </div>
+
+  <!-- ============ .is-c4b — banner sub-panel (band B) ============ -->
+  <div class="demo">
+    <div class="stage" style="width:960px;height:264px">
+      <div class="halo-cartridge is-c4b" style="--x:22px; --y:68px">
+        <div class="pf-body">
+          <div class="pf-r pf-r0"></div><div class="pf-r pf-r1"></div><div class="pf-r pf-r2"></div>
+          <div class="pf-cav"><div class="pf-cavr"></div></div>
+          <div class="pf-railL"></div><div class="pf-railR"></div>
+          <div class="pf-r pf-r122"></div><div class="pf-r pf-r123"></div><div class="pf-r pf-r124"></div>
+          <div class="pf-rmar"></div><div class="pf-rface"></div><div class="pf-riv"></div>
+          <div class="pf-lbev"></div>
+          <div class="pf-lift"></div><div class="pf-lface"></div><div class="pf-chT"></div>
+        </div>
+        <div class="pf-lside"></div><div class="pf-fct"></div><div class="pf-fcb"></div>
+        <div class="pf-brk"><i class="v"></i><i class="d"></i><i class="ts"></i><i class="bs"></i></div>
+        <div class="pf-bl pf-blt"></div><div class="pf-bl pf-blb"></div>
+      </div>
+    </div>
+    <div class="cap">
+      <b>.is-c4b</b> — banner sub-panel &middot; band B &middot; canvas (348.3,&nbsp;246) &middot; exactly C4a translated by (+4.3,&nbsp;&minus;251)<br>
+      <code>--w:915.2px</code> &middot; <b>HAS</b> the <code>.pf-lift</code> child, slotted inside <code>.pf-body</code> between <code>.pf-lbev</code> and <code>.pf-lface</code><br>
+      shown here on <code>--bg</code>, so the lift reads brighter than it does in the canvas — it is calibrated
+      for the banner's lighter backdrop, not for this one
+    </div>
+  </div>
+
+  <div class="note">
+    <b>How to drive this part.</b> The root is <code>position:absolute; left:var(--x); top:var(--y)</code> —
+    set <code>--x</code>/<code>--y</code> and drop it anywhere. Everything inside is measured from the part's
+    own top-left, so nothing is tied to the original canvas.<br><br>
+
+    <b>Knobs.</b>
+    <code>--x</code>/<code>--y</code> placement &middot;
+    <code>--w</code> overall width (default 914.5px) &middot;
+    <code>--f1</code>/<code>--f2</code> on <code>.pf-fct</code>, the vertical fade stops of the top chamfer facet.
+    (<code>.pf-fcb</code> declares <code>--f1</code>/<code>--f2</code> too, but re-declares its whole
+    <code>background</code> with the numbers inlined, so on the bottom facet they are inert — kept verbatim
+    from the source.)<br><br>
+
+    <b>--w does not really scale the art.</b> Only the right-hand edge assembly
+    (<code>.pf-rmar</code>, <code>.pf-rface</code>) and the stretchy <code>.pf-body</code>/<code>.pf-bl*</code>
+    boxes track it. <code>.pf-railR</code> (<code>left:807px</code>), <code>.pf-cav</code>
+    (<code>left:31.5px; right:18px</code>), <code>.pf-riv</code> (<code>left:896.5px</code>) and every
+    <code>.pf-r*</code>/<code>.pf-bl*</code> 90&deg; gradient are baked to a ~910px body. Straying far from
+    ~915px desyncs them from the right edge. Height is hard-coded 125px — not a variable.<br><br>
+
+    <b>The painted box is bigger than the nominal box.</b> <code>.pf-blt</code> (top:&minus;1px) and
+    <code>.pf-blb</code> (top:125px) are siblings of <code>.pf-body</code>, so they escape its clip-path —
+    painted height is <b>127</b>, not 125. <code>.pf-brk</code> is a sibling too and carries
+    <code>filter:blur(.45px)</code> on the whole group, so the red C bracket is not clipped by the metal
+    silhouette and bleeds ~1px past its own rects. The root sets no <code>overflow</code> — size any consuming
+    layout generously.<br><br>
+
+    <b>It assumes a <code>--bg</code> backdrop.</b> <code>.pf-fct</code>/<code>.pf-fcb</code> bake
+    <code>#0a0c10</code> into their vertical gradients as the fade-to-nothing colour. On any other background
+    the left end reads as a dark halo. That is source artwork, preserved as-is.<br><br>
+
+    <b>Why these preview stages are 264px tall.</b> Below a ~256px layer height Chromium takes a different
+    raster path and lands the <code>.pf-rface</code> chrome-edge gradient bands one pixel left of where a
+    normal-sized layer puts them. The stages here clear that threshold so what you see is the true render.
+    The pixel-gate page (<code>cartridge.verify.html</code>, a fixed 944&times;157 box) sits below it and
+    therefore shows that 1px artefact — verified to be identical for the untouched original markup, so it is
+    the renderer, not the part.
+  </div>
+</div>
+</body>
+</html>

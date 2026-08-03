@@ -26,7 +26,7 @@
 # --full exists because the default mode has a measurable floor. Chrome
 # rasterises a fractionally-sized box — especially one carrying a clip-path —
 # against the enclosing stage, so the SAME markup lands on a different pixel
-# grid in a 944-wide stage than in a 1292-wide one. Measured on c4-panel-frame,
+# grid in a 944-wide stage than in a 1292-wide one. Measured on cartridge,
 # whose body is 914.5px wide and clipped: the original's own untouched markup
 # scores mean 0.288 / max 84 in a 944-wide stage and mean 0.000 / max 0 in the
 # real 1292-wide one. That 0.288 is the harness, not the part — and a floor

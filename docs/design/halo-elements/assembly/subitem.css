@@ -16,14 +16,14 @@
    Parts composed (DOM order IS z-order — there is not a single z-index
    anywhere in this kit, exactly as ANATOMY.md's overlap map records):
 
-     c13-banner-shell    .is-banner                the housing — NOT this
+     housing    .is-banner                the housing — NOT this
                                                     row's; see THE SHELL
-     c9-circuit-field    .is-banner                etched field + microtext
-     c3-conduit          .is-banner                C3b, the conduit elbow
-     c4-panel-frame      .is-c4b                   the sub-panel (+ .pf-lift)
-     c12-marks           .is-hexicon · .is-name    hex icon + "Skid Ste..."
-     c2-segment-bars     .is-c2c                   5 bars R R R Y Y
-     c1-status-chip      .is-narrow.is-labelled    narrow PROMISED chip
+     etch    .is-banner                etched field + microtext
+     conduit          .is-banner                C3b, the conduit elbow
+     cartridge      .is-c4b                   the sub-panel (+ .pf-lift)
+     marks           .is-hexicon · .is-name    hex icon + "Skid Ste..."
+     slots     .is-c2c                   5 bars R R R Y Y
+     chip      .is-narrow.is-labelled    narrow PROMISED chip
 
    --------------------------------------------------------------------------
    THE ROW'S OWN ORIGIN
@@ -50,14 +50,14 @@
    KEEP --x AND --y INTEGERS. c1 pins its filtered ring <svg> to a whole
    screen pixel with mod(var(--x),1px) and bakes the leftover fraction into
    the path `d` for THIS instance's .5/.5 — so a fractionally-positioned row
-   root would put the ring's blur back off-grid (c1-status-chip.css REBASE
+   root would put the ring's blur back off-grid (chip.css REBASE
    note 6). The fractional part of each part's own placement below is
    load-bearing for the same reason; do not round it.
 
    --------------------------------------------------------------------------
    THE SHELL IS NOT THIS ROW'S
 
-   c13-banner-shell is the CARD's housing: ONE 1287x254 box at canvas (1,125)
+   housing is the CARD's housing: ONE 1287x254 box at canvas (1,125)
    that spans the whole of band B. The Main Item row sits in its top half and
    the Subitem row sits in its bottom half. It belongs to neither row, and
    both rows need it under them because every part above it composites
@@ -117,10 +117,10 @@
 
 /* --------------------------------------------------------------------------
    THE SHARED HOUSING — a sibling, not a child. See THE SHELL above.
-   c13-banner-shell.css's own .is-banner already bakes the canvas position
+   housing.css's own .is-banner already bakes the canvas position
    (1px, 125px), so nothing is restated here — only the crop.
    -------------------------------------------------------------------------- */
-.halo-c13-banner-shell.clip-to-subitem { clip-path: inset(116px 0 0 0); }
+.halo-housing.clip-to-subitem { clip-path: inset(116px 0 0 0); }
 
 /* --------------------------------------------------------------------------
    PART PLACEMENT — local = canvas - (1, 241)
@@ -133,23 +133,23 @@
    rim spill, c3 C3b's red wash, c11 .bt-div's top shadow) and all three of
    those neighbours are present in this card. Lift c9 away from them and
    .is-unlit is the honest variant instead. */
-.halo-subitem > .halo-c9-circuit-field { --x:  10px; --y:   0px; }
+.halo-subitem > .halo-etch { --x:  10px; --y:   0px; }
 
 /* c3 · conduit elbow, instance C3b.
    canvas (147, 211) -> local (146, -30).  The NEGATIVE --y is correct: this
    elbow straddles the row boundary and paints canvas rows 213..335, so its
    top 28 rows land over the Main Item row. That is the source's geometry. */
-.halo-subitem > .halo-c3-conduit       { --x: 146px; --y: -30px; }
+.halo-subitem > .halo-conduit       { --x: 146px; --y: -30px; }
 
 /* c4 · sub-panel frame, instance C4b.
    canvas (348.3, 246) -> local (347.3, 5).
    .pf-lift IS the variant and it is a DOM CHILD, not a var — .is-c4b alone
    does not produce it. Its slot is load-bearing too: inside .pf-body between
    .pf-lbev and .pf-lface. See the markup. */
-.halo-subitem > .halo-c4-panel-frame   { --x: 347.3px; --y: 5px; }
+.halo-subitem > .halo-cartridge   { --x: 347.3px; --y: 5px; }
 
 /* c12 · the two marks that ride on the sub-panel's cavity. Both are
-   .halo-c12-marks, so each gets its own placement hook (same pattern
+   .halo-marks, so each gets its own placement hook (same pattern
    main-item.css uses for its four rivets). Both must paint AFTER c4.
      hexicon  canvas (397,   297)   -> local (396, 56)
      name     canvas (458, 290.5)   -> local (457, 49.5)   */
@@ -160,7 +160,7 @@
    canvas (691, 279) -> local (690, 38).  (691,279) is c2c's own rebase
    reference — the measured painted-box top-left, which is what its per-bar
    local `left` values were rebased against, NOT the bar row's top.) */
-.halo-subitem > .halo-c2-segment-bars  { --x: 690px; --y:  38px; }
+.halo-subitem > .halo-slots  { --x: 690px; --y:  38px; }
 
 /* c1 · narrow PROMISED chip, instance C1c.
    canvas (877.5, 271.5) -> local (876.5, 30.5).
@@ -168,4 +168,4 @@
    filtered ring <svg> lands on an integer pixel, and the path `d` in the
    markup has that same .5/.5 baked back in. Keep the fractional part, and
    keep .halo-subitem itself on an integer position. */
-.halo-subitem > .halo-c1-status-chip   { --x: 876.5px; --y: 30.5px; }
+.halo-subitem > .halo-chip   { --x: 876.5px; --y: 30.5px; }

@@ -110,18 +110,18 @@ These sit alone on bare background in the mockup, so an isolated crop of
 
 | part | command | last confirmed result |
 |---|---|---|
-| c1-status-chip | `python3 _ref/check.py parts/c1-status-chip.verify.html 660 104 385 4` | PASS, mean 0.082, max 2 |
-| c2-segment-bars | `python3 _ref/check.py parts/c2-segment-bars.verify.html 202 98 188 26` | PASS, mean 0.000, max 0 |
-| c3-conduit | `python3 _ref/check.py parts/c3-conduit.verify.html 240 155 90 450` | PASS, mean 0.064, max 8 |
-| c4-panel-frame | `python3 _ref/check.py parts/c4-panel-frame.verify.html 944 157 330 478` | PASS, mean 0.288, max 84 (raster floor — see ANATOMY.md; not a defect) |
-| c5-display-plate | `python3 _ref/check.py parts/c5-display-plate.verify.html 247 124 1045 0` | PASS, mean 0.114, max 1 |
+| chip | `python3 _ref/check.py parts/chip.verify.html 660 104 385 4` | PASS, mean 0.082, max 2 |
+| slots | `python3 _ref/check.py parts/slots.verify.html 202 98 188 26` | PASS, mean 0.000, max 0 |
+| conduit | `python3 _ref/check.py parts/conduit.verify.html 240 155 90 450` | PASS, mean 0.064, max 8 |
+| cartridge | `python3 _ref/check.py parts/cartridge.verify.html 944 157 330 478` | PASS, mean 0.288, max 84 (raster floor — see ANATOMY.md; not a defect) |
+| screen | `python3 _ref/check.py parts/screen.verify.html 247 124 1045 0` | PASS, mean 0.114, max 1 |
 
-c9-circuit-field gets **two** real gate windows because no single rectangle
+etch gets **two** real gate windows because no single rectangle
 of the mockup is c9 and only c9:
 
 ```
-python3 _ref/check.py parts/c9-circuit-field.verify.html       139 135 11 241    # primary  → PASS mean 0.475
-python3 _ref/check.py parts/c9-circuit-field.verify-right.html 336 40  11 336    # bottom strip → FAIL mean 1.111 (see below)
+python3 _ref/check.py parts/etch.verify.html       139 135 11 241    # primary  → PASS mean 0.475
+python3 _ref/check.py parts/etch.verify-right.html 336 40  11 336    # bottom strip → FAIL mean 1.111 (see below)
 ```
 
 The bottom-strip window is a **known, documented artifact**, not a defect:
@@ -149,16 +149,16 @@ scratch copy of `original.html`, render both, diff) — which proves the
 `check.py` PASS against `original.png` and should not be reported as one.
 
 **Correction made while building this index:** an earlier report listed
-c12-marks' isolation-diff result as `gate=PASS`. It isn't a `check.py` PASS —
+marks' isolation-diff result as `gate=PASS`. It isn't a `check.py` PASS —
 it's the isolation-diff described above. The index now marks c12 `N/A`, same
 as c10/c13.
 
-**Also found while building this index:** c11-l-bracket's own `.verify.html`,
-run literally (`python3 _ref/check.py parts/c11-l-bracket.verify.html 1040 102 24 138`),
+**Also found while building this index:** bracket's own `.verify.html`,
+run literally (`python3 _ref/check.py parts/bracket.verify.html 1040 102 24 138`),
 prints a real `FAIL` — mean 56.247, only 24.4% of pixels within 8. This is
 **expected, not a regression**: c11's box in the mockup is painted over by
 c10's banner face and partially occluded by c10's `.bt-warm`, and neither of
-those live in `c11-l-bracket.css`. Isolating c11 alone can never match a
+those live in `bracket.css`. Isolating c11 alone can never match a
 composited reference — the FAIL is the instrument being asked the wrong
 question, not evidence the part is wrong.
 
@@ -183,21 +183,21 @@ test them against.
 
 ## How the parts compose
 
-**Main Item** = band B's header row (y 125–241): `c13-banner-shell` (the
-shared housing) → `c10-banner-top-row` → `c11-l-bracket` interleaved *inside*
+**Main Item** = band B's header row (y 125–241): `housing` (the
+shared housing) → `deck` → `bracket` interleaved *inside*
 c10's own children (between `.bt-graph` and `.bt-warm` — see ANATOMY.md, c10
-hazard 9) → `c2-segment-bars` (is-c2b) → `c1-status-chip` (is-wide.is-labelled)
-→ `c5-display-plate` (is-failed) → `c12-marks` (the rivets).
+hazard 9) → `slots` (is-c2b) → `chip` (is-wide.is-labelled)
+→ `screen` (is-failed) → `marks` (the rivets).
 
-**Subitem** = band B's lower row (y 241–378): `c13-banner-shell` again (a
+**Subitem** = band B's lower row (y 241–378): `housing` again (a
 second instance, clipped to just this row so a lone Subitem preview doesn't
-drag in housing that belongs to the row above) → `c9-circuit-field` →
-`c3-conduit` (is-banner) → `c4-panel-frame` (is-c4b, carries the extra
-`.pf-lift` child) → `c12-marks` (hexicon + name) → `c2-segment-bars`
-(is-c2c) → `c1-status-chip` (is-narrow.is-labelled).
+drag in housing that belongs to the row above) → `etch` →
+`conduit` (is-banner) → `cartridge` (is-c4b, carries the extra
+`.pf-lift` child) → `marks` (hexicon + name) → `slots`
+(is-c2c) → `chip` (is-narrow.is-labelled).
 
 **Full card** (`assembly/main-plus-subitem.html`) is both rows on **one**
-shared `c13-banner-shell` instance — the shell is not duplicated the way it
+shared `housing` instance — the shell is not duplicated the way it
 is across the two standalone previews. Ten part stylesheets, zero visual
 values of their own on the assembly page: every colour, gradient, blur, stop
 and radius still lives in a `parts/<id>.css` file. Paint order is DOM order

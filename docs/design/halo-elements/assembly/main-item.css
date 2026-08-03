@@ -11,13 +11,13 @@
    Parts composed (link their sheets in this order — DOM order IS z-order,
    there is not a single z-index anywhere in this kit):
 
-     c13-banner-shell    .is-banner                 the housing
-     c10-banner-top-row  .is-banner                 the row's furniture
-       c11-l-bracket     (nested — see INTERLEAVE)  the red L
-     c2-segment-bars     .is-c2b                    7 bars, clipped at x384
-     c1-status-chip      .is-wide.is-labelled       the wide PROMISED chip
-     c5-display-plate    .is-failed                 the FAILED octagon plate
-     c12-marks           .is-rivet  x4              the loose rivets
+     housing    .is-banner                 the housing
+     deck  .is-banner                 the row's furniture
+       bracket     (nested — see INTERLEAVE)  the red L
+     slots     .is-c2b                    7 bars, clipped at x384
+     chip      .is-wide.is-labelled       the wide PROMISED chip
+     screen    .is-failed                 the FAILED octagon plate
+     marks           .is-rivet  x4              the loose rivets
 
    --------------------------------------------------------------------------
    THE ROW'S OWN ORIGIN
@@ -33,7 +33,7 @@
    therefore canvas (1, 125): every local offset below is that instance's
    canvas coordinate minus (1, 125).
 
-   NOTE the row does NOT clip: c13-banner-shell is 254px tall (it is the
+   NOTE the row does NOT clip: housing is 254px tall (it is the
    WHOLE card's housing, header row + sub-item row), so it deliberately
    overflows this 117px box. A .stage sized to the row crops it to the
    header; a taller container shows the rest. Adding overflow:hidden here
@@ -62,7 +62,7 @@
    whose reference point is not the row itself.
 
    Selector safety of the nesting: c10's only structural selector is
-   `.halo-c10-banner-top-row > i` (a CHILD combinator), and c11's four <i>
+   `.halo-deck > i` (a CHILD combinator), and c11's four <i>
    children are grandchildren of that root, so nothing leaks. c11 does
    inherit c10's custom properties (--x/--y/--w/…); the rules below reset the
    two it reads, and c11's sheet reads no others.
@@ -70,8 +70,8 @@
    --------------------------------------------------------------------------
    ONE PAGE-LEVEL DEPENDENCY the row cannot carry itself
 
-   c1's ring halo is filtered by `url(#c1-status-chip-soft)`, a hard-coded
-   id, so the page must carry that <defs> block ONCE (see c1-status-chip.css
+   c1's ring halo is filtered by `url(#chip-soft)`, a hard-coded
+   id, so the page must carry that <defs> block ONCE (see chip.css
    MARKUP). It is deliberately NOT inside .halo-main-item: two rows on one
    page must share the single def, never duplicate the id.
    ========================================================================== */
@@ -98,28 +98,28 @@
    .is-banner bakes the canvas position (1px, 125px) — the only variant class
    in the kit that does — so it is reset here to the row-local origin. Class
    kept: it is the instance's identity, not just its coordinates. */
-.halo-main-item > .halo-c13-banner-shell {
+.halo-main-item > .halo-housing {
   --x: 0px;
   --y: 0px;
 }
 
 /* c10 the row furniture · canvas (13, 125) -> local (12, 0) */
-.halo-main-item > .halo-c10-banner-top-row {
+.halo-main-item > .halo-deck {
   --x: 12px;
   --y: 0px;
 }
 
 /* c11 the red L · canvas (24, 138), measured from C10's origin (13, 125)
    because it is nested inside it -> (24-13, 138-125) = (11, 13). */
-.halo-main-item .halo-c10-banner-top-row > .halo-c11-l-bracket {
+.halo-main-item .halo-deck > .halo-bracket {
   --x: 11px;
   --y: 13px;
 }
 
 /* c2 C2b · 7 bars, canvas (133, 155) -> local (132, 30).
    (133,155) is c2b's own rebase reference — the measured painted bbox
-   top-left, not the bar row's top; see c2-segment-bars.css .is-c2b.) */
-.halo-main-item > .halo-c2-segment-bars {
+   top-left, not the bar row's top; see slots.css .is-c2b.) */
+.halo-main-item > .halo-slots {
   --x: 132px;
   --y: 30px;
 }
@@ -129,14 +129,14 @@
    integer screen pixel with mod(var(--x),1px) and bakes the remainder back
    into the path `d` for THIS instance's .6/.4 — so the local value must keep
    the same fractional part as the canvas value, and .halo-main-item must
-   itself land on an integer position. See c1-status-chip.css REBASE note 6. */
-.halo-main-item > .halo-c1-status-chip {
+   itself land on an integer position. See chip.css REBASE note 6. */
+.halo-main-item > .halo-chip {
   --x: 401.6px;
   --y: 25.4px;
 }
 
 /* c5 C5b · the FAILED plate, canvas (1063, 136) -> local (1062, 11) */
-.halo-main-item > .halo-c5-display-plate {
+.halo-main-item > .halo-screen {
   --x: 1062px;
   --y: 11px;
 }

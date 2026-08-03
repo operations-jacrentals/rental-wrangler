@@ -1,0 +1,132 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>chip — preview</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="./chip.css">
+<style>
+  /* scaffolding only — never touches .halo-chip's own rendering */
+  body { display: block; padding: 48px 32px 96px; }
+  h1 {
+    font-family: var(--mono); font-size: 13px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: #8a8f98; margin: 0 0 32px;
+  }
+  .row {
+    display: flex; flex-wrap: wrap; align-items: flex-start; gap: 28px;
+    margin-bottom: 28px;
+  }
+  .demo {
+    position: relative;
+    background: var(--bg);
+    border: 1px solid #1b1f27;
+    border-radius: 4px;
+    overflow: visible; /* never clip the component — cap/bloom/ring legitimately paint past its nominal box */
+  }
+  figure { margin: 0; }
+  figcaption {
+    font-family: var(--mono); font-size: 10.5px; line-height: 1.5; color: #5f6570;
+    letter-spacing: .01em; margin-top: 10px; max-width: 420px;
+  }
+  figcaption b { color: #8a8f98; font-weight: 700; }
+  figcaption code { color: #6d7481; }
+</style>
+</head>
+<body>
+
+<!-- Shared filter defs — c1's own, namespaced, ONE copy serves every instance
+     on this page (the original's own comment: "two chips on a page share
+     the one def, do not duplicate the id"). -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <filter id="chip-soft" x="-6%" y="-25%" width="112%" height="150%"><feGaussianBlur stdDeviation=".81"/></filter>
+</defs></svg>
+
+<h1>halo-chip — every variant</h1>
+
+<div class="row">
+  <figure>
+    <div class="demo" style="width:680px; height:130px;">
+      <div class="halo-chip is-wide" style="--x:20px; --y:20.4px;">
+        <div class="plate oct"></div>
+        <div class="bloom"></div>
+        <div class="cap"></div>
+        <div class="inner oct"></div>
+        <svg class="ringlayer">
+          <path class="halo" d="M13.46,10.9 H599.96 L620.36,31.3 V55.68 H33.86 L13.46,35.28 Z"/>
+          <path class="core" d="M13.46,10.9 H599.96 L620.36,31.3 V55.68 H33.86 L13.46,35.28 Z"/>
+        </svg>
+      </div>
+    </div>
+    <figcaption>
+      <b>is-wide</b> — instance C1a, band A, unlabelled. <code>--pw:634.8px --ph:60.6px
+      --fill:#05070b --blo:1</code>, rule-default <code>--cap0..5 --stroke --hw --cw</code>.
+    </figcaption>
+  </figure>
+
+  <figure>
+    <div class="demo" style="width:680px; height:130px;">
+      <div class="halo-chip is-wide is-labelled" style="--x:20.6px; --y:20.4px;">
+        <div class="plate oct"></div>
+        <div class="bloom"></div>
+        <div class="cap"></div>
+        <div class="inner oct"></div>
+        <div class="label">PROMISED</div>
+        <svg class="ringlayer">
+          <path class="halo" d="M14.9,10.87 H600.3 L620.7,31.27 V56.38 H35.3 L14.9,35.98 Z"/>
+          <path class="core" d="M14.9,10.87 H600.3 L620.7,31.27 V56.38 H35.3 L14.9,35.98 Z"/>
+        </svg>
+      </div>
+    </div>
+    <figcaption>
+      <b>is-wide.is-labelled</b> — instance C1b, band B, "PROMISED". <code>--pw:633px
+      --ph:60.5px --fill:#060f18 --blo:.95</code>, own <code>--cap0..5</code>,
+      <code>--lbl-fs:27.9px --lbl-ls:1.35px --lbl-pl:239px</code>.
+    </figcaption>
+  </figure>
+</div>
+
+<div class="row">
+  <figure>
+    <div class="demo" style="width:420px; height:140px;">
+      <div class="halo-chip is-narrow is-labelled" style="--x:20.5px; --y:20.5px;">
+        <div class="plate oct"></div>
+        <div class="bloom"></div>
+        <div class="cap"></div>
+        <div class="inner oct"></div>
+        <div class="label">PROMISED</div>
+        <svg class="ringlayer">
+          <path class="halo" d="M14.89,11.49 H325.7 L350.5,36.29 V65.18 H39.69 L14.89,40.38 Z"/>
+          <path class="core" d="M14.89,11.49 H325.7 L350.5,36.29 V65.18 H39.69 L14.89,40.38 Z"/>
+        </svg>
+      </div>
+    </div>
+    <figcaption>
+      <b>is-narrow.is-labelled</b> — instance C1c, band B, "PROMISED". <code>--pw:362.5px
+      --ph:70.1px --fill:#030a12 --blo:.55</code>, own <code>--cap0..5</code>,
+      <code>--lbl-fs:29.5px --lbl-ls:0.15px --lbl-pl:119px</code>.
+    </figcaption>
+  </figure>
+
+  <figure>
+    <div class="demo" style="width:420px; height:140px;">
+      <div class="halo-chip is-narrow" style="--x:20.6px; --y:20.6px;">
+        <div class="plate oct"></div>
+        <div class="bloom"></div>
+        <div class="cap"></div>
+        <div class="inner oct"></div>
+        <svg class="ringlayer">
+          <path class="halo" d="M15.2,12.21 H325.35 L351.35,38.21 V66.12 H41.2 L15.2,40.12 Z"/>
+          <path class="core" d="M15.2,12.21 H325.35 L351.35,38.21 V66.12 H41.2 L15.2,40.12 Z"/>
+        </svg>
+      </div>
+    </div>
+    <figcaption>
+      <b>is-narrow</b> — instance C1d, band C, unlabelled. <code>--pw:363px --ph:71px
+      --fill:#0b0d11 --blo:.55</code>, own <code>--cap0..5</code>, rule-default
+      <code>--stroke --hw --cw</code>.
+    </figcaption>
+  </figure>
+</div>
+
+</body>
+</html>

@@ -4,13 +4,13 @@
 <meta charset="utf-8">
 <title>main-item — band B header row, assembled from the parts kit</title>
 <link rel="stylesheet" href="../tokens.css">
-<link rel="stylesheet" href="../parts/c13-banner-shell.css">
-<link rel="stylesheet" href="../parts/c10-banner-top-row.css">
-<link rel="stylesheet" href="../parts/c11-l-bracket.css">
-<link rel="stylesheet" href="../parts/c2-segment-bars.css">
-<link rel="stylesheet" href="../parts/c1-status-chip.css">
-<link rel="stylesheet" href="../parts/c5-display-plate.css">
-<link rel="stylesheet" href="../parts/c12-marks.css">
+<link rel="stylesheet" href="../parts/housing.css">
+<link rel="stylesheet" href="../parts/deck.css">
+<link rel="stylesheet" href="../parts/bracket.css">
+<link rel="stylesheet" href="../parts/slots.css">
+<link rel="stylesheet" href="../parts/chip.css">
+<link rel="stylesheet" href="../parts/screen.css">
+<link rel="stylesheet" href="../parts/marks.css">
 <link rel="stylesheet" href="./main-item.css">
 <style>
   /* PAGE SCAFFOLDING ONLY — nothing here touches .halo-main-item or any part.
@@ -50,11 +50,11 @@
 <body>
 
 <!-- c1's filter def — ONCE per page, shared by every c1 instance on it (the
-     id is hard-coded in c1-status-chip.css). It sits OUTSIDE .halo-main-item
+     id is hard-coded in chip.css). It sits OUTSIDE .halo-main-item
      on purpose: two rows on one page share this single def rather than
      duplicating the id. A page that drops the Main Item in must carry it. -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
-  <filter id="c1-status-chip-soft" x="-6%" y="-25%" width="112%" height="150%"><feGaussianBlur stdDeviation=".81"/></filter>
+  <filter id="chip-soft" x="-6%" y="-25%" width="112%" height="150%"><feGaussianBlur stdDeviation=".81"/></filter>
 </defs></svg>
 
 <div class="head">
@@ -73,7 +73,7 @@
 <!-- @step 1 · c13 banner shell — the housing everything else sits on.
      1287x254: this is the WHOLE card's housing, so it overflows the row's
      117px box and the .stage crops it to the header row. -->
-      <div class="halo-c13-banner-shell is-banner">
+      <div class="halo-housing is-banner">
         <div class="back"></div>
         <div class="face"></div>
         <div class="rim-t"></div><div class="rim-b"></div>
@@ -85,7 +85,7 @@
      seam, bevel, ramp, notch, warm wash, rivet. DOM order IS the recipe:
      .bt-mod/.bt-fallA/.bt-fallB/.bt-bev are translucent modulation layers
      that depend on .bt-top/.bt-face/.bt-slate underneath. Do not reorder. -->
-      <div class="halo-c10-banner-top-row is-banner">
+      <div class="halo-deck is-banner">
         <i class="bt-top"></i>
         <i class="bt-face"></i>
         <i class="bt-mod"></i>
@@ -114,7 +114,7 @@
      .bt-warm: .bt-warm (a c10 element) fully occludes c11's elbow in canvas
      columns 33..37, and c11's own .c11-div must paint before its elbow.
      c10 and c11 interleave; neither can be a layer above or below the other. -->
-        <div class="halo-c11-l-bracket">
+        <div class="halo-bracket">
           <i class="c11-div"></i>
           <i class="c11-vertical"></i>
           <i class="c11-tip"></i>
@@ -130,7 +130,7 @@
 <!-- @step 4 · c2 C2b — 7 bars R R R Y Y Y Y. The variant's clip-path slices
      bar 7 mid-paint at canvas x384 (intentional source artwork) and cuts the
      bars' blur spill flat at the bar row's own top and bottom edges. -->
-      <div class="halo-c2-segment-bars is-c2b">
+      <div class="halo-slots is-c2b">
         <span class="b r" style="left:8.5px"></span>
         <span class="b r" style="left:46.0px"></span>
         <span class="b r" style="left:82.5px"></span>
@@ -144,8 +144,8 @@
 <!-- @step 5 · c1 C1b — the wide PROMISED chip. The ring path `d` is this
      instance's own DATA, not a knob: canvas coordinates minus
      floor(--x)/floor(--y), with the .6/.4 fraction added back (see
-     c1-status-chip.css REBASE note 6). Copy it with the markup. -->
-      <div class="halo-c1-status-chip is-wide is-labelled">
+     chip.css REBASE note 6). Copy it with the markup. -->
+      <div class="halo-chip is-wide is-labelled">
         <div class="plate oct"></div>
         <div class="bloom"></div>
         <div class="cap"></div>
@@ -159,7 +159,7 @@
 <!-- @endstep 5 -->
 
 <!-- @step 6 · c5 C5b — the FAILED octagon plate -->
-      <div class="halo-c5-display-plate is-failed">
+      <div class="halo-screen is-failed">
         <div class="body oct4"></div>
         <div class="glass oct4"></div>
         <div class="hair oct4"><i class="oct4"></i></div>
@@ -169,10 +169,10 @@
 
 <!-- @step 7 · c12 — the four loose rivets, LAST so R1/R2/R3 land on C5b and
      R4 lands on c10's .bt-rivet -->
-      <div class="halo-c12-marks is-rivet mi-rivet-1"></div>
-      <div class="halo-c12-marks is-rivet mi-rivet-2"></div>
-      <div class="halo-c12-marks is-rivet mi-rivet-3"></div>
-      <div class="halo-c12-marks is-rivet mi-rivet-4"></div>
+      <div class="halo-marks is-rivet mi-rivet-1"></div>
+      <div class="halo-marks is-rivet mi-rivet-2"></div>
+      <div class="halo-marks is-rivet mi-rivet-3"></div>
+      <div class="halo-marks is-rivet mi-rivet-4"></div>
 <!-- @endstep 7 -->
 
     </div>
@@ -193,7 +193,7 @@
         and it computes that from <code>--x</code> measured off this root.</li>
       <li><b>c11 is nested inside c10</b>, not a sibling — the two interleave. The
         <code>@step</code> comments mark the paint order; step 3 sits inside step 2.</li>
-      <li><b>Page dependency:</b> the <code>#c1-status-chip-soft</code> filter def
+      <li><b>Page dependency:</b> the <code>#chip-soft</code> filter def
         must exist once on any page that hosts this row.</li>
       <li><b>c13 overflows on purpose</b> — it is 254px tall (the whole card's
         housing). The 117px stage crops it to the header row; the row root sets no

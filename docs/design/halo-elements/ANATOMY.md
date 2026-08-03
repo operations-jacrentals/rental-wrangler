@@ -595,11 +595,11 @@ is exactly `--bg` #0a0c10.
 
 | id | instance | x | y | w | h |
 |---|---|---|---|---|---|
-| c1-status-chip | C1a (band A) | 385 | 4 | 660 | 104 |
-| c2-segment-bars | C2a (band A) | 188 | 26 | 202 | 98 |
-| c3-conduit | C3a (band C) | 90 | 450 | 240 | 155 |
-| c4-panel-frame | C4a (band C) | 330 | 478 | 944 | 157 |
-| c5-display-plate | C5a (band A) | 1045 | 0 | 247 | 124 |
+| chip | C1a (band A) | 385 | 4 | 660 | 104 |
+| slots | C2a (band A) | 188 | 26 | 202 | 98 |
+| conduit | C3a (band C) | 90 | 450 | 240 | 155 |
+| cartridge | C4a (band C) | 330 | 478 | 944 | 157 |
+| screen | C5a (band A) | 1045 | 0 | 247 | 124 |
 | c9 · c10 · c11 · c12 · c13 | — | *null — band-B-only, verified in the assembly phase* | | | |
 
 For a verify page, the component root's `--x` / `--y` are `(instance canvas x) - refX` and
@@ -613,7 +613,7 @@ Chrome resolves a fractionally-sized box — especially one carrying a `clip-pat
 the enclosing stage, so the same markup lands on a different pixel grid depending on how wide
 that stage is.
 
-Measured on `c4-panel-frame`, whose `.pf-body` is 914.5px wide and clipped. The **original's
+Measured on `cartridge`, whose `.pf-body` is 914.5px wide and clipped. The **original's
 own untouched markup**, moved into a 944-wide stage, scores:
 
 | stage the markup was rendered in | mean | max | within 8 |
@@ -623,7 +623,7 @@ own untouched markup**, moved into a 944-wide stage, scores:
 
 The error was a 4px-wide vertical stripe running the full frame height — the right-hand chrome
 edge, shifted exactly 1px. It looks precisely like a botched extraction, and it is not one:
-`c4-panel-frame` is byte-faithful. **Do not "fix" it.**
+`cartridge` is byte-faithful. **Do not "fix" it.**
 
 The lesson generalises past this one part. A harness with a floor of 0.288 is a harness that
 can hide a real 1px defect, so `check.py` now takes **`--full`**: it renders the verify page
