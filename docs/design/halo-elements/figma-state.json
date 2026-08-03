@@ -1,7 +1,7 @@
 {
   "runId": "halo-ds-2026-08-03",
   "phase": "phase3",
-  "step": "component-slots-complete + message-board well",
+  "step": "phase3 — 5/10 components; message board framing propagated",
   "scopeLock": "MOCKUP + CANON as variable modes. CORRECTED 2026-08-03: CANON is a TOKEN-LAYER reskin (accent / state / ground / chrome) only — the hundreds of measured gradient stops stay baked, so a CANON render is NOT 'the card in canon'. Jac's call; dual-baking every stop was offered and declined.",
   "plan": "docs/design/halo-elements/FIGMA-PLAN.md",
   "source": "docs/design/halo-elements/parts/*.css — 10 components, all gated 0.000",
@@ -194,7 +194,21 @@
           "geometry": "octagon at plate+5 on every side, cut + 0.5858*5 = 2.929 — tokens.css's own nested-octagon math for a uniform-width outline",
           "fills": "metal/rim-right (BOUND, so the well reskins) + white .22 / black .30 / white .16 vertical bevel gradient",
           "effects": "inner shadow (0,1,r2,a.85) + drop shadow (0,1,r2.5,a.55) — #185's 'one dark line'",
-          "openQuestion": "CHAMFER ORIENTATION. Jac's reference cuts NW/SE; Halo's .oct cuts NE/SW; ledger #208 says NW/SE for the tier-01 board. Kept NE/SW per 'stick to the new shapes'. Awaiting Jac."
+          "openQuestion": "CHAMFER ORIENTATION. Jac's reference cuts NW/SE; Halo's .oct cuts NE/SW; ledger #208 says NW/SE for the tier-01 board. Kept NE/SW per 'stick to the new shapes'. Awaiting Jac.",
+          "jacCorrection": {
+            "date": "2026-08-03",
+            "what": "Jac edited variant 21:2 himself and asked for it propagated. He changed ONLY geometry — fills, effects, glass and glow untouched, exactly as he said.",
+            "rule": "plate moved to (9,5) and shrunk -17 x -4.6 so it sits INSIDE the frame; well at (2,0) sized PW-1.8 x PH+6.4 with chamfer one step wider than the plate's. Applied as ABSOLUTE offsets to the other three variants — a bevel is a constant width, not a proportional one.",
+            "chamferKept": "NE/SW. Jac's own edit kept Halo's orientation, so the open NW/SE question from his earlier reference is effectively answered: the board stays NE/SW.",
+            "variantNameRepaired": "He had renamed the layer 'EDITED: Size=Wide, Label=Off'. Figma parses variant names as Property=Value pairs, so that invented a property called 'EDITED: Size' and corrupted the set. Renamed back to 'Size=Wide, Label=Off'.",
+            "hisGeometryLeftAlone": "His variant's paths are slightly irregular (the well's bottom edge slants 2.5px over its length) because they were hand-nudged. Left exactly as he built it; the other three use clean octagons. Offer to normalise his if he wants them identical."
+          },
+          "textureAttempt": {
+            "ask": "Jac: 'reverse update the message boards with the texture asset back to these Message Board elements'",
+            "applied": "steel-grain.png (imageHash bff1979c...) added to every well, between the BOUND base steel and the bevel gradient so the base still reskins.",
+            "outcome": "TECHNICALLY APPLIED BUT EFFECTIVELY INVISIBLE, and this is physical rather than a tuning problem. steel-grain is a 512px mottled CHASSIS FACE; the well is a ~7px lit bevel. Even at a 51px tile the band samples too little variation to mottle, and the bevel gradient on top dominates what remains. Three settings were tried (OVERLAY .65 sf.5, OVERLAY .85 sf.06, NORMAL .42 sf.10) and verified at 6-7x zoom each time.",
+            "whereItWOULDread": "A broad flat steel surface — Housing's 1287x248 face is the obvious candidate, or a chassis backdrop behind the board. Awaiting Jac's steer rather than guessing again."
+          }
         }
       }
     }
