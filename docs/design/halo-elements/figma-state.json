@@ -1,7 +1,7 @@
 {
   "runId": "halo-ds-2026-08-03",
   "phase": "phase3",
-  "step": "phase3 — 7/10 components",
+  "step": "phase3 — 8/10 components",
   "scopeLock": "MOCKUP + CANON as variable modes. CORRECTED 2026-08-03: CANON is a TOKEN-LAYER reskin (accent / state / ground / chrome) only — the hundreds of measured gradient stops stay baked, so a CANON render is NOT 'the card in canon'. Jac's call; dual-baking every stop was offered and declined.",
   "plan": "docs/design/halo-elements/FIGMA-PLAN.md",
   "source": "docs/design/halo-elements/parts/*.css — 10 components, all gated 0.000",
@@ -265,6 +265,17 @@
         "arialSubstitution": "Arial is NOT in Figma; Arimo IS, and it is metrically compatible with Arial by design (identical advance widths). marks.css picked Arial specifically 'to match measured glyph widths', so the metrics ARE the requirement — Arimo preserves exactly that, where any other grotesque would keep the look and break the measurement.",
         "rivetCentreDropped": "The radial is specified at 'circle at 50% 45%'; on a 9px dot that is 0.45px above centre, below one pixel, so the default centred transform is used.",
         "hexIsMeasured": "stroke #6f3d22 is close to but NOT --amber (#7c401f) — measured, stays baked. The name binds to ink/bright."
+      },
+      "Deck": {
+        "componentId": "74:3",
+        "page": "Deck",
+        "layers": 22,
+        "hardStopBandCounts": "bt-face 37, bt-right 34, bt-slate 36, bt-well 73, bt-warm 86 — each colour emitted TWICE at both band edges or Figma interpolates the hard stop away",
+        "wellGrid": "1px rules every 9.4px — a NON-INTEGER period, so it cannot be a plain tile. Drawn at 5x where the period is an exact 47px, as a 235px PNG scaled back by 0.20. imageHash 0c605bad4b35c27bb6b1c89d5321e1b7bdd4ae50.",
+        "notReproduced": "The grid's background-position 3px 9px offset — Figma image tiles have no offset control.",
+        "slateMask": "linear-gradient(90deg,#000 0 50%,transparent 100%) as a real alpha mask node.",
+        "btRightIsAHoleFiller": "Not an independent feature — it is the face strip left exposed by c1's PROMISED chip and is shaped by that chip, so it only makes sense in assembly.",
+        "rivetHalfPixel": "x=0.5 is MEASURED, not rounding. Its own gate cannot prove it: c12's loose rivet #4 covers all but a 2-row sliver in assembly (max delta 1), so it is correct by construction."
       }
     }
   },
@@ -318,16 +329,16 @@
     "phase": 3,
     "order": "Chip FIRST (it is canon's Signal archetype — Jac's steer), then the plan's ascending order: Conduit, Bracket, Marks, Screen, Housing, Slots, Deck, Cartridge, Etch",
     "done": [
-      "Message Board (was Chip)",
+      "Message Board",
       "Conduit",
       "Screen",
       "Housing",
       "Slots",
       "Bracket",
-      "Marks"
+      "Marks",
+      "Deck"
     ],
     "remaining": [
-      "Deck",
       "Cartridge",
       "Etch"
     ],
