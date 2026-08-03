@@ -24,6 +24,28 @@ So the method inverts. Canva stops being a step that throws work away and become
 the step where the design is *interrogated*, because it is the tool Jac is fastest
 in and the one whose output can actually be read.
 
+## Two things this skill does NOT replace
+
+`/start` routes every new card, screen, row, popup and visual element here. That makes it easy
+to assume `/paint` is now the whole design law. It is not — it is the *sequence*. Two standing
+CLAUDE.md rules still bind at every station, and dropping them is how locked decisions get
+silently undone:
+
+1. **`style` + `wrangler-style`, both, always.** `wrangler-style` holds the decisions (the
+   locked steel palette, Archivo body + mono stamped, the four control shapes, the
+   Signal · Gate · Stamp · Ref · Door · Pin · Field vocabulary, the voice); `style` holds the
+   measurable rules those decisions must satisfy (one control height, the size ladder, WCAG
+   floors, ≥90 CVD separation, 60-30-10). When a decision and a rule conflict, **the decision
+   moves, not the rule.** Load both at **S3** (to critique against them) and again at **S6/S8**
+   (to build to them).
+2. **Read the decisions ledger BEFORE designing, and add a row when something is settled.**
+   `docs/superpowers/specs/2026-07-20-decisions-ledger.md`. Read it to the END and check dates —
+   rows #1–100 are a 07-20 snapshot and a later row may supersede one of them. **A decision is
+   not made until it is in that table**, so anything S3 or S5 settles gets a row, dated, with a
+   pointer both ways if it reverses something.
+
+A mockup is blind to both. Anything you do not carry forward gets designed away.
+
 ## The one hard rule
 
 **Every turn ends by naming the single next action, and whose it is.**

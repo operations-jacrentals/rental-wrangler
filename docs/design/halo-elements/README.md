@@ -39,7 +39,10 @@ docs/design/halo-elements/
     <id>.css                 one component's rules, everything namespaced under .halo-<id>
     <id>.html                 preview page — every variant, side by side
     <id>.verify.html           bare gate fixture (see "how to prove you didn't break it")
-    <id>.verify-*.html          extra gate fixtures where one box can't cover everything (c9)
+    <id>.verify-full.html       THE gate fixture — part at its true canvas position inside
+                                the real 1292x635 stage. Run with --full; this is what
+                                prints 0.000. Regenerate with _ref/mkfull.py
+    <id>.verify-right.html      extra window where one box can't cover everything (etch)
   assembly/
     main-item.css / .html / .verify.html      band B's header row, 7 parts recombined
     subitem.css / .html                        band B's lower row, 7 parts recombined
@@ -108,13 +111,38 @@ ANATOMY.md's "stage width changes the pixels" section for the worked example.
 These sit alone on bare background in the mockup, so an isolated crop of
 `original.png` shows the part and nothing else:
 
-| part | command | last confirmed result |
+**Use the `verify-full` fixture and the `--full` flag.** These are the commands that
+reproduce the `0.000` figures quoted in `index.html` and the commit messages. The
+box-sized fixtures below them also pass, but they carry a rasterisation floor and
+will never print 0.000 — see *the stage width changes the pixels* in `ANATOMY.md`.
+
+| part | command | result |
+|---|---|---|
+| chip | `python3 _ref/check.py parts/chip.verify-full.html 660 104 385 4 --full` | PASS, **mean 0.000, max 0** |
+| slots | `python3 _ref/check.py parts/slots.verify-full.html 202 98 188 26 --full` | PASS, **mean 0.000, max 0** |
+| conduit | `python3 _ref/check.py parts/conduit.verify-full.html 240 155 90 450 --full` | PASS, **mean 0.000, max 0** |
+| cartridge | `python3 _ref/check.py parts/cartridge.verify-full.html 944 157 330 478 --full` | PASS, **mean 0.000, max 0** |
+| screen | `python3 _ref/check.py parts/screen.verify-full.html 247 124 1045 0 --full` | PASS, **mean 0.000, max 0** |
+| etch | `python3 _ref/check.py parts/etch.verify-full.html 139 135 11 241 --full` | PASS, **mean 0.000, max 0** |
+
+`mkfull.py` regenerates any `verify-full` page from its box-sized original:
+`python3 _ref/mkfull.py parts/<name>.verify.html <refX> <refY>`.
+
+<details><summary>The box-sized fixtures, and the floor they carry</summary>
+
+| part | command | result |
 |---|---|---|
 | chip | `python3 _ref/check.py parts/chip.verify.html 660 104 385 4` | PASS, mean 0.082, max 2 |
 | slots | `python3 _ref/check.py parts/slots.verify.html 202 98 188 26` | PASS, mean 0.000, max 0 |
 | conduit | `python3 _ref/check.py parts/conduit.verify.html 240 155 90 450` | PASS, mean 0.064, max 8 |
 | cartridge | `python3 _ref/check.py parts/cartridge.verify.html 944 157 330 478` | PASS, mean 0.288, max 84 (raster floor — see ANATOMY.md; not a defect) |
 | screen | `python3 _ref/check.py parts/screen.verify.html 247 124 1045 0` | PASS, mean 0.114, max 1 |
+
+Every one of these residuals is the harness, not the part. Proven by control:
+the *original's own untouched markup*, dropped into the same box-sized stage,
+reproduces them identically.
+
+</details>
 
 etch gets **two** real gate windows because no single rectangle
 of the mockup is c9 and only c9:

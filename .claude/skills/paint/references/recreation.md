@@ -14,6 +14,7 @@ Born 2026-08-02, after two failed attempts to edit a card toward Jac's mockups f
 memory. His diagnosis, verbatim:
 
 > "I think your issue is editing, you're bad at that. You need to create from
+> scratch and then apply/merge into the mockup." … "Break the screenshot into
 > grids. use agents. See how close you can get per element in each grid."
 
 Extended the same day with the **master-copy workflow**, the copyist's discipline

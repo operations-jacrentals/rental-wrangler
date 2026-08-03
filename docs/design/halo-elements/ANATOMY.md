@@ -10,6 +10,30 @@ canvas. Never edit it.
 *byte-exact* render of the HTML (`check.py _ref/original.html 1292 635 0 0` → mean delta
 0.000, max 0), which is why the measurements below can be trusted.
 
+### ⚠ The gates are coupled to this container's fonts — read before trusting a 0.000
+
+`tokens.css` asks for `--mono: Consolas, "Cascadia Mono", "DejaVu Sans Mono", …` and
+`--sans: Roboto, "Segoe UI", …`. **Neither Consolas nor Roboto is installed here**, so both
+resolve to fallbacks, and `original.png` was rendered *with those fallbacks*:
+
+| asked for | resolves to, on this container |
+|---|---|
+| `Consolas` | **DejaVu Sans Mono** |
+| `Roboto` | **DejaVu Sans** |
+| `Arial` (the `.name` label) | **Liberation Sans** |
+
+Every part matches the reference because both were rendered through the same substitutions.
+**On a host that actually has Consolas or Roboto, the same markup renders different text
+pixels and the text-bearing gates fail** — measured with mono forced to Liberation Mono, `etch`
+scores mean 1.132 (95.83% within 8) and the full card 1.137, both FAIL.
+
+So `.gitignore`'s rationale — *"proof you re-run rather than proof you store"* — holds only on
+a box with this font set. Before treating a fresh `0.000` as meaningful anywhere else, first
+re-render `_ref/original.html` and confirm it still matches `_ref/original.png` at mean 0.000;
+if it does not, the environment moved and every downstream number is measuring a different
+target. The non-text parts (`slots`, `conduit`, `cartridge`, `screen`, `housing`, `bracket`)
+are unaffected either way.
+
 ### How the boxes here were measured
 
 Not by eye, and not from the CSS. For every instance the markup was deleted from a copy of
