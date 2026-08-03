@@ -1012,5 +1012,18 @@
     "found": "After the assembly restructure the conduit instance 226:1017 was parented to a STALE group (172:6639, not the assembly's 172:6638) and sat at absolute (827,799), far outside the frame -- so it silently vanished from the assembly render.",
     "caughtBy": "Comparing renders before/after the restructure, then dumping the frame tree. Its absolute position equalled its local position, which is the tell that a node is not where its parent claims.",
     "fix": "Re-parented into 172:6638 and restored to its original assembled position, absolute (-586,-238)."
+  },
+  "conduitKit_2Part_2026_08_03": {
+    "ask": "Jac: the conduit is complicated because there are 3 directions. Reduce to 2 parts -- Caps (identical) and Channels (the straight part). Caps connect channels to deck & housings AND plug into the side of a vertical channel for multiple headings. Structure: Deck, Cap, Channel(vertical), Cap, Cap(side), Channel(horizontal), Cap, Heading.",
+    "keyDecision": "The diagonal is GONE. Only vertical and horizontal runs remain, which is the actual source of the '3 directions' complexity.",
+    "whyAuthoredNotExtracted": "The existing artwork was 74 regions across 4 vectors with the diagonal woven through the same contours as the straight runs -- extracting clean parts from it would have carried the tangle forward. Authored the two parts fresh instead, using the conduit's own sampled palette so they match: casing #41353d, shadow #241016, shade #3f2d38, light edge #b6b0bd, mid #6f6472, red well #4c1e21, red core #b8433f, red hot #ff8078.",
+    "parts": {
+      "Conduit / Channel": "280:91, 54x140 default. Nine bands. Every band is STRETCH on the length axis and pinned MIN or MAX across the thickness, so it stretches to any length with the cross-section intact. Rotate 90 for a horizontal run -- same component.",
+      "Conduit / Cap": "280:101, 54x20 fixed. Ten bands, lip at one end and foot at the other. ONE component for every junction; orientation is rotation only."
+    },
+    "capRotations": "0 = deck to channel, 180 = channel foot, 270 = side tap into a vertical channel AND channel to heading. Identical component in all four places, which is what Jac asked for.",
+    "demo": "Frame 'ZZ conduit kit demo' (281:91) assembles his exact chain from 4 caps + 2 channels. Verified both channels stretch independently (vertical 170, horizontal 174) and every joint sits flush.",
+    "HONEST_GAP": "The new parts read FLATTER than the original artwork -- clean banded extrusions without the original's chunky bevels, notches and corner cuts. Structurally correct and stretchable, visually plainer. Enriching the cap and channel profiles is the obvious next step if Jac wants the old weight back.",
+    "notRetired": "The old conduit components are still in the file -- 212:80 'Conduit -- subitem elbow' and 270:174 'Conduit -- Multiple Subitems'. Left in place pending Jac's call, since 212:80 is still instanced in the assembly."
   }
 }
