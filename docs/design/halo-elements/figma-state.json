@@ -209,8 +209,8 @@
   "nextPhase": {
     "phase": 3,
     "order": "Chip FIRST (it is canon's Signal archetype — Jac's steer), then the plan's ascending order: Conduit, Bracket, Marks, Screen, Housing, Slots, Deck, Cartridge, Etch",
-    "done": ["Message Board (was Chip)", "Conduit", "Screen", "Housing"],
-    "remaining": ["Bracket", "Marks", "Slots", "Deck", "Cartridge", "Etch"],
+    "done": ["Message Board (was Chip)", "Conduit", "Screen", "Housing", "Slots"],
+    "remaining": ["Bracket", "Marks", "Deck", "Cartridge", "Etch"],
     "perComponent": "3a page -> 3b build with variable bindings -> 3c variants -> 3d/3e component properties -> 3f docs -> 3g get_metadata + get_screenshot -> 3h optional Code Connect",
     "rule": "One component at a time. Never batched. Figma writes strictly sequential."
   },
@@ -234,6 +234,16 @@
     ],
     "ifFewerSHAPESareWanted": "Not a compression problem. The honest route is AUTHORING the conduit as real geometry (~8 shapes, 3-5 stops each) — a cleaner, less photographic look. That is a redesign, not a simplification.",
     "status": "Jac is hand-editing the elbow; Claude to review later."
+  },
+  "calibrationAgainstSource": {
+    "why": "Slots' blur LOOKED wrong in Figma and the instinct was to reduce it. Rendering the actual source with Playwright and comparing like-for-like at 4x showed the Figma build was already correct — the reference eye was tier-01's crisp slot ticks, which are a DIFFERENT design. 'Fixing' it would have broken a correct component.",
+    "method": "scratchpad/render-slots.mjs serves docs/design/halo-elements on :9147 and screenshots the part's own selector at deviceScaleFactor 4 with a margin for skew/blur spill; then capture the Figma variant at the same scale, margin and background colour.",
+    "rule": "Before adjusting any measured value because it 'looks off', render the source and compare at matched scale. The kit has a byte-exact source for every part — there is never a reason to judge by memory."
+  },
+  "transformsAndBlur": {
+    "skew": "Figma has NO skew property. skewX(A) about transform-origin 50%/50% goes in as relativeTransform [[1, tanA, x - tanA*h/2], [0, 1, y]] — the tx term pulls the centre back, which is what the 50% origin means. Used by Slots (18deg).",
+    "blur": "CSS filter blur(Npx) is a Gaussian stdDeviation; Figma's LAYER_BLUR radius reads about 2x that. blur(1.4px) -> radius 2.8 and blur(.81) -> 1.62 both verified against source renders.",
+    "clipsThatMustNotBeSquared": "Slots Row=B clips a canvas-space box whose LEFT edge is at -30. Pulling that to 0 (the obvious frame-clip) would shave the leftmost bar's own skew+blur spill, which reaches ~-2.2 local. The clip frame is offset to x=-30 width=281 so the right cut still lands at 251."
   },
   "gradientTraps": {
     "offBoxStops": "Housing's .face declares stops at 251px and 253px on a box only 248px tall (top:5 bottom:1 on a 254 root), so CSS never paints them. Figma positions must be 0-1, and clamping those stops to 1.0 COMPRESSES and distorts the ramp. Correct handling: drop the off-box stops and interpolate the true colour at the box edge — here #28303a, 25% of the way from #1d242e(247) to #47535d(251). Check every multi-stop gradient for stops beyond its own paint box.",
