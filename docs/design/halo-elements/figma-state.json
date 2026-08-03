@@ -727,5 +727,18 @@
     },
     "FIGMA_GOTCHA_shear": "Figma CANNOT express a pure shear. Setting relativeTransform [[1,-0.325,0],[0,1,0]] silently normalises to a ROTATION [[1,-0.309,0],[0,0.951,0]] on EVERY node type — probed RECTANGLE, FRAME and VECTOR, all three. The Slots' lean only exists because it is baked into path COORDINATES. Note this contradicts the older PR-body claim that skewX is done 'via a relativeTransform matrix'.",
     "FIGMA_GOTCHA_vectorSeat": "Setting vectorPaths RE-BASES the path to its own bounding box and compensates via x/y. Forcing x=0,y=0 afterwards therefore SHIFTS the shape by its bbox origin. A vector must be seated at its path's true minimum coordinates."
+  },
+  "multiSubitemElbow": {
+    "date": "2026-08-03",
+    "ask": "Jac building a multi-subitem conduit elbow: 'I cant finish because I don't know how to combine two elements so my vectors are getting covered by white space.'",
+    "diagnosis": "NOT the white fill — that was already hidden. The frame 143:9416 had clipsContent TRUE, and ~44 of his branch vectors were sitting loose on the PAGE (x>1200, y359-553) while the frame ended at y414. Everything crossing the frame edge was being cut, which reads as white space eating the artwork.",
+    "fix": "Disabled clipsContent, kept the white fill hidden, moved all 44 loose vectors into the frame preserving absolute positions, grew the frame to the union bounds with 6px padding, renamed to 'Conduit — multi-subitem elbow' (143:9416, 101 children), aspect-locked.",
+    "revealedNotCaused": "With the clip off, his two branches are seen to OVERLAP in absolute space. That was always true — the clip was hiding the second branch's upper half. Left as-is; repositioning is his design call.",
+    "THE_TWO_WHITE_SPACE_CAUSES": {
+      "opaqueFrameFill": "Figma's vectorize adds a SOLID #ffffff frame fill. A stacked copy paints over whatever is beneath it. Fix: remove the frame fill. Same trap hit the Bulb (a full-bleed white backing rect) and the Screen.",
+      "clipsContent": "A frame with Clip content ON cuts any child crossing its edge. The giveaway is that geometry is lost along a perfectly STRAIGHT line at the frame boundary.",
+      "combining": "Selecting both and pressing Cmd/Ctrl+G groups them — but combining is rarely the actual fix; one of the two properties above almost always is."
+    },
+    "reductionAvailable": "101 nodes. The contiguous-run merge (see bulbSlots.VECTOR_REDUCTION_FINDING) would take roughly 44% off with zero visual change, if asked."
   }
 }
