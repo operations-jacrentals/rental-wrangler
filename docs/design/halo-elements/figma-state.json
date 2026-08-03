@@ -930,6 +930,25 @@
     "blocker": "The earlier collapse fused the conduit's 47 layers into ONE 'Merged artwork' vector of 56 regions, so there is no top-connector layer to delete and no bottom-right layer to duplicate.",
     "diagnosticBuilt": "Frame 'ZZ conduit zones' (244:253) on MAIN+SUB ASSEMBLY renders three copies: all-zones, top-removed, br-only. Top connector detail = 12 regions [2,3,4,5,6,7,8,13,14,15,16,17]. Bottom-right piece = 20 regions [26,27,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,48,49,52].",
     "WHY_A_REGION_DELETE_IS_NOT_ENOUGH": "The base silhouette is a SINGLE closed path spanning the entire elbow, sitting in neither zone. Deleting the 12 top-detail regions strips the top bar's surface but leaves its grey body standing -- visible in the middle copy of the diagnostic. Actually dropping the connector means cutting the silhouette path itself, which risks a ragged edge.",
-    "optionsPutToJac": "(a) region surgery on the merged vector, (b) restore the conduit from Figma version history to its 47-layer form and do it cleanly on real layers, (c) composite a mirrored duplicate over the top and clip. Awaiting his call -- not proceeding blind on a visible asset."
+    "optionsPutToJac": "(a) region surgery on the merged vector, (b) restore the conduit from Figma version history to its 47-layer form and do it cleanly on real layers, (c) composite a mirrored duplicate over the top and clip. Awaiting his call -- not proceeding blind on a visible asset.",
+    "resolved": {
+      "jacChose": "region surgery on the merged vector (over restoring layers or compositing)",
+      "cut": "Dropped the 17 regions lying wholly inside the top-bar zone (y<=38, x<=138), then cut the top run of vertices out of each surviving contour and closed the gap with a bridge segment. The base silhouette cut cleanly -- flat angled face, no ragged edge.",
+      "graft": "Duplicated the 20 bottom-right regions under a 180-degree rotation about the artwork centre (100.65,59.75). Rotation alone landed the piece detached, because the elbow is not truly point-symmetric. Measured the actual joint instead: cut face midpoint (74.3,41.9) vs the rotated attachment point (66.4,19.9), giving a translation of (+7.9,+22.0).",
+      "strays": "Regions 26,27,49 sat against the body in the original and floated once rotated, so they are excluded from the graft -- 17 of the 20 are used.",
+      "applied": "Written to the real component vector 212:79; component still 223.4x156.3, so nothing downstream reflows. Diagnostic frames removed."
+    }
+  },
+  "assemblyIsNowTheMain_2026_08_03": {
+    "ask": "Jac, frustrated: 'I want the assembled components to be the MAIN so I can live edit in place.'",
+    "rootCause": "The 'ASSEMBLED -- live preview' block was a GROUP ('Group 5') wrapping an INSTANCE (226:1084) of a 'Main Assembly' component that lived on a DIFFERENT page ('Assembly'). So Jac was looking at an instance of a component stored elsewhere -- nothing in it could be edited in place. This is the single best explanation for most of the session's friction: his in-place edits had nowhere to land, and my edits to mains were happening on nodes he was not looking at.",
+    "fix": "Moved the main component 226:1018 from the 'Assembly' page onto MAIN+SUB ASSEMBLY at the preview's exact position (-658,-345), then deleted the redundant Group 5 wrapper. Verified file-wide first that 226:1018 had exactly ONE usage, so nothing else broke. Relabelled the heading to 'ASSEMBLED -- this IS the main, edit in place'.",
+    "whatIsStillAnInstance": "The sub-pieces INSIDE the assembly (FINAL HOUSING, Message Board, Conduit, Slots, Bulbs, Marks) remain instances pointing at their mains laid out below on the same page. That is deliberate -- it is what makes one Message Board edit propagate to both boards in the assembly. If Jac wants those editable in place too, the mains would have to be pulled up into the assembly itself."
+  },
+  "messageBoardEvenness_2026_08_03": {
+    "ask": "Jac: 'You did not apply the message board background to all the elements evenly' -- circling variant 21:10 in the set.",
+    "rootCause": "A SHADER paint maps to the bounding box of the NODE that carries it. Seven variants carry it as a region fill inside 'Merged artwork' (617.8x56). Variant 21:10 alone still had unmerged plate+inner and carried it on 'inner' (607.8x47.45) -- about 18 percent shorter vertically, so the pattern was sampled at a different scale and origin. Same paint, different node box, visibly different result.",
+    "fix": "Merged 21:10's plate+inner into a single 'Merged artwork' vector matching the other seven: plate network at origin as region 0, inner network offset by (4.3,4.45) as region 1 carrying SHADER + 4 gradients. Node now sits at (9,5) like the rest. Verified by render -- all four Default variants read identically.",
+    "generalLesson": "When a shader is the background, structural parity between variants is not cosmetic -- it determines how the pattern is sampled. Any variant whose shader-bearing node differs in size will look wrong no matter how identical the paint is."
   }
 }
