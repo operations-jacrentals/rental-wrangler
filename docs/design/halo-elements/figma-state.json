@@ -459,5 +459,30 @@
     "comparisonFrame": "54:22 'Well Comparison' on the Message Board page — his reference stacked above an instance of the rebuild at matched width.",
     "textLayersWork": "Confirmed: Figma COMMENTS are invisible to Claude (no comment API on the plugin figma global), but TEXT LAYERS and node.annotations ARE readable. Jac's text-layer note came through verbatim."
   },
-  "textureRule": "Look up how tier-01 CONSUMES a texture before applying it — the atlas maps --rw-steel/--h-steel/--h-olive/--h-canvas/--h-circuit/--s-etch to files, and the consuming rule gives both the layer ORDER and the background-size. halo-circuit is used at native 512px UNDER a scanline film. Guessing the surface wasted three passes."
+  "textureRule": "Look up how tier-01 CONSUMES a texture before applying it — the atlas maps --rw-steel/--h-steel/--h-olive/--h-canvas/--h-circuit/--s-etch to files, and the consuming rule gives both the layer ORDER and the background-size. halo-circuit is used at native 512px UNDER a scanline film. Guessing the surface wasted three passes.",
+  "conduitSegments": {
+    "date": "2026-08-03",
+    "ask": "Jac: Figma provides texture, inner/drop shadows, layer blur, background blur, glass, shader — 'you can remove almost all of the many vectors creating the elbow and simplify using these features.' Explicitly: do not use his own recreation.",
+    "result": "'Conduit (segments)' (80:2) — 15 nodes / ~45 gradient stops, vs the traced 'Conduit — traced (reference)' (30:2) at 23 nodes / 359 stops. Both kept on the page for comparison.",
+    "method": "9 real segments (head bar, two feet, legs, diagonal run, vertical run, two elbow blocks, end plate), each ONE 5-stop cross-section gradient — deep, body, NARROW crown, body, deep — plus INNER_SHADOW bevels and a TEXTURE grain doing the depth work that 19 traced polygons were doing before. The lit core binds to emissive/tube-red with a LAYER_BLUR halo in a finish/glow-opacity container. Source clipPath kept verbatim as a mask.",
+    "figmaEffectSupportProbed": {
+      "available": [
+        "INNER_SHADOW",
+        "DROP_SHADOW",
+        "LAYER_BLUR",
+        "BACKGROUND_BLUR",
+        "TEXTURE",
+        "GLASS",
+        "SHADER fills"
+      ],
+      "notAvailable": [
+        "NOISE fill",
+        "PATTERN fill",
+        "PROGRESSIVE_BLUR effect"
+      ],
+      "note": "Probed by attempting each on a throwaway node and catching the validation error — worth re-running rather than assuming, since the set changes."
+    },
+    "whatMadeTheFirstPassLookWrong": "A 3-stop gradient with the crown at 42% spans half of each segment and reads as chrome. The trace's realism is a NARROW specular band on a near-black body, so the crown needs to be a thin stop with dark on both sides.",
+    "status": "Alternative offered, not substituted — Jac chooses which becomes canonical."
+  }
 }
