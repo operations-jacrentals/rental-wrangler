@@ -23,8 +23,21 @@
   },
   "entities": {
     "collections": {
-      "Halo Primitives": { "id": "VariableCollectionId:2:2", "modes": { "Value": "2:0" }, "variableCount": 43 },
-      "Halo Language": { "id": "VariableCollectionId:2:3", "modes": { "MOCKUP": "2:1", "CANON": "2:2" }, "variableCount": 28 }
+      "Halo Primitives": {
+        "id": "VariableCollectionId:2:2",
+        "modes": {
+          "Value": "2:0"
+        },
+        "variableCount": 43
+      },
+      "Halo Language": {
+        "id": "VariableCollectionId:2:3",
+        "modes": {
+          "MOCKUP": "2:1",
+          "CANON": "2:2"
+        },
+        "variableCount": 28
+      }
     },
     "variables": {
       "mockup/bg": "VariableID:3:2",
@@ -144,7 +157,12 @@
           "rule": "Figma builds the NEW (Halo) shapes; tier-01 EFFECTS borrowed only on request. Each glass layer is a CLONE of that variant's own cavity, so only the finish is tier-01.",
           "recipe": "#050A10 body + depth wash + tiled scanline film; 1.4px dark line (color-mix(in oklab, black 55%, --card-head) ~= #0c0f13); inner-shadow well press (0 1.5px 3px rgba(0,0,0,.5)); lit hairlines (0 3.4px 0 rgba(185,205,235,.13), 0 -3.2px 0 rgba(185,205,235,.05))",
           "variable": "finish/glass-opacity (VariableID:35:18) — MOCKUP 0, CANON 100",
-          "nodes": { "Size=Wide, Label=Off": "35:20", "Size=Wide, Label=On": "35:22", "Size=Narrow, Label=On": "35:24", "Size=Narrow, Label=Off": "35:26" },
+          "nodes": {
+            "Size=Wide, Label=Off": "35:20",
+            "Size=Wide, Label=On": "35:22",
+            "Size=Narrow, Label=On": "35:24",
+            "Size=Narrow, Label=Off": "35:26"
+          },
           "zOrder": "inserted directly ABOVE 'inner' — appended last at first, which covered the label and ring"
         },
         "variants": {
@@ -153,7 +171,11 @@
           "Size=Narrow, Label=On": "21:19",
           "Size=Narrow, Label=Off": "21:28"
         },
-        "properties": ["Size", "Label", "label#21:0 (TEXT)"],
+        "properties": [
+          "Size",
+          "Label",
+          "label#21:0 (TEXT)"
+        ],
         "modeProofFrame": "21:37",
         "bindings": {
           "ring core + ring halo stroke": "state/hot",
@@ -202,15 +224,31 @@
   },
   "phase2Validation": {
     "pages": 6,
-    "documentedPages": ["Cover", "Getting Started", "Foundations"],
+    "documentedPages": [
+      "Cover",
+      "Getting Started",
+      "Foundations"
+    ],
     "foundationsShows": "26 colour semantics as mode-pinned MOCKUP/CANON columns, a 7-style type specimen in both voices, and the gap register",
     "status": "ALL PHASE 2 EXIT CRITERIA MET"
   },
   "nextPhase": {
     "phase": 3,
     "order": "Chip FIRST (it is canon's Signal archetype — Jac's steer), then the plan's ascending order: Conduit, Bracket, Marks, Screen, Housing, Slots, Deck, Cartridge, Etch",
-    "done": ["Message Board (was Chip)", "Conduit", "Screen", "Housing", "Slots"],
-    "remaining": ["Bracket", "Marks", "Deck", "Cartridge", "Etch"],
+    "done": [
+      "Message Board (was Chip)",
+      "Conduit",
+      "Screen",
+      "Housing",
+      "Slots"
+    ],
+    "remaining": [
+      "Bracket",
+      "Marks",
+      "Deck",
+      "Cartridge",
+      "Etch"
+    ],
     "perComponent": "3a page -> 3b build with variable bindings -> 3c variants -> 3d/3e component properties -> 3f docs -> 3g get_metadata + get_screenshot -> 3h optional Code Connect",
     "rule": "One component at a time. Never batched. Figma writes strictly sequential."
   },
@@ -298,5 +336,33 @@
     "svgPathSyntax": "figma vectorPaths rejects the compact 'M13.5,2.3L126.6,2.3' form with 'Invalid command'. Normalise to space-separated: d.replace(/([MLZmlz])/g,' $1 ').replace(/,/g,' ').",
     "appendedChildrenLandOnTop": "appendChild puts a node LAST = topmost. The Message Board's glass layer covered the label and ring until it was moved with insertChild(innerIdx+1, holder). Always read the child order back after building."
   },
-  "completedSteps": ["phase0", "P1.0", "P1.a", "P1.b", "P1.c", "P1.d", "P1.e", "P1.f", "P1.g", "P1.h", "phase1", "P2.a", "P2.b", "P2.c", "phase2"]
+  "completedSteps": [
+    "phase0",
+    "P1.0",
+    "P1.a",
+    "P1.b",
+    "P1.c",
+    "P1.d",
+    "P1.e",
+    "P1.f",
+    "P1.g",
+    "P1.h",
+    "phase1",
+    "P2.a",
+    "P2.b",
+    "P2.c",
+    "phase2"
+  ],
+  "jacFeedback": {
+    "date": "2026-08-03",
+    "note": "Jac left a TEXT layer on the Message Board page (node 39:24) with a reference component 39:20 'Message Board + Well': 'Issue with your drafts is they dont have the glass effect like tier-01's footer message board. This element here is my example of how the bexel/border around the message board should look.'",
+    "twoRealProblems": [
+      "GLASS WAS INVISIBLE BY DEFAULT. finish/glass-opacity was MOCKUP=0 / CANON=100, and the component set renders in MOCKUP, so every default view showed no glass at all. Jac's report was accurate. Now 100 in BOTH modes; the Halo-vs-glass A/B is one value away (set MOCKUP back to 0).",
+      "THE WELL WAS MISSING ENTIRELY. The board had ring + cavity but no outer steel bevel, so it floated instead of being seated in a milled recess. Added as a 'well' vector behind everything, using the kit's OWN nested-octagon math from tokens.css: growing outward by S requires cut + 0.5858*S for a uniform-width outline. S=5, so cut grows 2.929."
+    ],
+    "chamferOrientationDiffers": "FLAGGED FOR JAC, NOT SILENTLY RESOLVED. His reference cuts NW/SE; the Halo .oct primitive cuts NE/SW; ledger #208 specifies NW/SE 7px for the tier-01 board. Two lineages, two shapes. Kept Halo's NE/SW per Jac's rule ('stick to the new shapes, borrow the EFFECTS from tier-01 when I say so'). Awaiting his call on whether to flip.",
+    "wellRecipe": "octagon at plate+5 on all sides, cut + 2.929; fills = metal/rim-right (BOUND, so it reskins) + a white .22 / black .30 / white .16 vertical bevel gradient; inner shadow (0,1,r2,a.85) and drop shadow (0,1,r2.5,a.55) for #185's 'one dark line'.",
+    "comparisonFrame": "54:22 'Well Comparison' on the Message Board page — his reference stacked above an instance of the rebuild at matched width.",
+    "textLayersWork": "Confirmed: Figma COMMENTS are invisible to Claude (no comment API on the plugin figma global), but TEXT LAYERS and node.annotations ARE readable. Jac's text-layer note came through verbatim."
+  }
 }
