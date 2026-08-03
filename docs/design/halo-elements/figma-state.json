@@ -204,10 +204,15 @@
             "hisGeometryLeftAlone": "His variant's paths are slightly irregular (the well's bottom edge slants 2.5px over its length) because they were hand-nudged. Left exactly as he built it; the other three use clean octagons. Offer to normalise his if he wants them identical."
           },
           "textureAttempt": {
-            "ask": "Jac: 'reverse update the message boards with the texture asset back to these Message Board elements'",
-            "applied": "steel-grain.png (imageHash bff1979c...) added to every well, between the BOUND base steel and the bevel gradient so the base still reskins.",
-            "outcome": "TECHNICALLY APPLIED BUT EFFECTIVELY INVISIBLE, and this is physical rather than a tuning problem. steel-grain is a 512px mottled CHASSIS FACE; the well is a ~7px lit bevel. Even at a 51px tile the band samples too little variation to mottle, and the bevel gradient on top dominates what remains. Three settings were tried (OVERLAY .65 sf.5, OVERLAY .85 sf.06, NORMAL .42 sf.10) and verified at 6-7x zoom each time.",
-            "whereItWOULDread": "A broad flat steel surface — Housing's 1287x248 face is the obvious candidate, or a chassis backdrop behind the board. Awaiting Jac's steer rather than guessing again."
+            "resolved": "WRONG ASSET. Jac: 'the texture for message board is suppose to be the Halo Circuit asset.' steel-grain was removed from the wells; halo-circuit went into the glass CAVITY instead.",
+            "whySteelGrainFailed": "steel-grain is a 512px mottled chassis FACE and the well is a ~7px lit bevel, so it could never read there. Three settings were tried and verified at 6-7x zoom before concluding — but the real error was the asset, not the tuning.",
+            "correctRecipe": "tier-01 index.html:2734 — background-image: <scanline film>, var(--h-circuit); background-size: auto, 512px 512px. CSS paints the FIRST background-image on top, so bottom-to-top is: base #050A10 -> halo-circuit at NATIVE 512px -> depth wash -> scanline film.",
+            "figmaFills": "glass node fills = [SOLID #050A10, IMAGE halo-circuit TILE sf1 op.9, GRADIENT depth wash, IMAGE scanline TILE sf0.25]",
+            "imageHashes": {
+              "halo-circuit": "be41cbf455c891cce9f49fd99eee8c7d5505d4b4",
+              "scanline film": "13762cd128fe5823360f156311d0042ae5e16f21"
+            },
+            "verified": "Hex circuit pattern and its solder specks clearly visible at 5x, with scanlines riding over them."
           }
         }
       }
@@ -391,5 +396,6 @@
     "wellRecipe": "octagon at plate+5 on all sides, cut + 2.929; fills = metal/rim-right (BOUND, so it reskins) + a white .22 / black .30 / white .16 vertical bevel gradient; inner shadow (0,1,r2,a.85) and drop shadow (0,1,r2.5,a.55) for #185's 'one dark line'.",
     "comparisonFrame": "54:22 'Well Comparison' on the Message Board page — his reference stacked above an instance of the rebuild at matched width.",
     "textLayersWork": "Confirmed: Figma COMMENTS are invisible to Claude (no comment API on the plugin figma global), but TEXT LAYERS and node.annotations ARE readable. Jac's text-layer note came through verbatim."
-  }
+  },
+  "textureRule": "Look up how tier-01 CONSUMES a texture before applying it — the atlas maps --rw-steel/--h-steel/--h-olive/--h-canvas/--h-circuit/--s-etch to files, and the consuming rule gives both the layer ORDER and the background-size. halo-circuit is used at native 512px UNDER a scanline film. Guessing the surface wasted three passes."
 }
