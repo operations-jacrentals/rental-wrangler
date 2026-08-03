@@ -1,6 +1,6 @@
 {
   "runId": "halo-ds-2026-08-03",
-  "phase": "phase1",
+  "phase": "phase2",
   "step": "complete",
   "scopeLock": "MOCKUP + CANON as variable modes. CORRECTED 2026-08-03: CANON is a TOKEN-LAYER reskin (accent / state / ground / chrome) only — the hundreds of measured gradient stops stay baked, so a CANON render is NOT 'the card in canon'. Jac's call; dual-baking every stop was offered and declined.",
   "plan": "docs/design/halo-elements/FIGMA-PLAN.md",
@@ -97,7 +97,15 @@
       "type/stamp-family": "VariableID:6:3",
       "type/body-weight-strong": "VariableID:6:4",
       "type/body-weight-regular": "VariableID:6:5",
-      "type/stamp-weight": "VariableID:6:6"
+      "type/stamp-weight": "VariableID:6:6",
+      "mockup/ink-bright": "VariableID:13:2",
+      "mockup/ink-label": "VariableID:13:3",
+      "mockup/ink-readout": "VariableID:13:4",
+      "mockup/ink-micro": "VariableID:13:5",
+      "ink/bright": "VariableID:13:6",
+      "ink/label": "VariableID:13:7",
+      "ink/readout": "VariableID:13:8",
+      "ink/micro": "VariableID:13:9"
     },
     "textStyles": {
       "Text/Value 28": "S:5497b6f8dfd61bdae2f0a7a234d982c20a02c416,",
@@ -109,7 +117,23 @@
       "Text/Finest 9.5": "S:ab29960846f2c1b79f7cfc9e466a50a59e55a5b6,"
     },
     "effectStyles": {},
-    "pages": {},
+    "pages": {
+      "Cover": "0:1",
+      "Getting Started": "12:2",
+      "Foundations": "12:3",
+      "——— COMPONENTS ———": "12:4",
+      "——— UTILITIES ———": "12:5",
+      "Utilities": "12:6"
+    },
+    "docNodes": {
+      "Cover/Cover Plate": "14:2",
+      "Foundations/Column MOCKUP": "15:2",
+      "Foundations/Column CANON": "15:96",
+      "Foundations/Type MOCKUP": "16:2",
+      "Foundations/Type CANON": "16:11",
+      "Foundations/Gap Register": "16:20",
+      "Getting Started/Getting Started Plate": "17:2"
+    },
     "components": {}
   },
   "decisions": {
@@ -120,7 +144,10 @@
     "gapsAreVisibleNotHidden": "Where canon has no locked value (metal/silver, all four rim tones, ground/cavity, ground/circuit, ground/edge, ground/maroon, ground/maroon-d, and the whole emissive/* family), CANON aliases the MOCKUP primitive and the variable description says so in the file.",
     "emissiveNamespace": "The mockup's six-strong emissive red family is namespaced emissive/* because that family IS the glow identity canon rejects — naming it that way makes the one non-swappable difference legible.",
     "textStyleSizes": "The 7 text styles use canon's locked ladder (28/15/13/12/11/10/9.5) — the only locked type scale in the project. The mockup's sizes are measured fits and are deliberately absent; they are set per-component in Phase 3.",
-    "chosenNotFound": "Stamped tracking = 4%, the MIDDLE of canon's stated 0.03–0.06em range. A chosen point, not a found one — flagged in every style description. line-height left AUTO because canon specifies none."
+    "chosenNotFound": "Stamped tracking = 4%, the MIDDLE of canon's stated 0.03–0.06em range. A chosen point, not a found one — flagged in every style description. line-height left AUTO because canon specifies none.",
+    "inkAmendment": "Phase 1 shipped with NO ink semantic (skipped because the mockup has no text-colour token). Caught in Phase 2 before anything was built on the gap. The kit's real inks were traced to source — chip.css:274 #f2585a, screen.css:103 #f4595a, marks.css:155 #f4f9fa, etch.css:225 rgba(150,185,205,.66) — and became 4 primitives + 4 mode-aware ink/* semantics scoped TEXT_FILL. ink-label and ink-readout differ by two steps and were deliberately NOT merged: the kit is byte-exact, so near-identical values stay distinct.",
+    "modePinnedColumns": "The Foundations page shows MOCKUP and CANON side by side as two frames with setExplicitVariableModeForCollection overrides, rather than one frame the reader has to flip. The CANON column is a clone() of the MOCKUP column, so the two are provably identical geometry and only the mode differs.",
+    "chipFirstInPhase3": "Jac, 2026-08-03: 'not that concerned about those colors, it will change with signal.' The Halo Chip IS canon's Signal archetype (the state you read), so Chip moves to FIRST in the Phase 3 order. The plan's original order was ascending node count, not a dependency chain, so nothing blocks the move."
   },
   "openGaps": [
     "No line-height locked for any step of canon's type ladder — text styles left AUTO.",
@@ -134,14 +161,28 @@
   "pendingValidations": [],
   "phase1Validation": {
     "collections": 2,
-    "totalVariables": 71,
-    "aliasesTotal": 44,
+    "totalVariables": 79,
+    "primitives": 47,
+    "semantics": 32,
+    "aliasesTotal": 52,
     "aliasesBroken": 0,
     "allScopesViolations": 0,
     "missingCodeSyntax": 0,
     "textStyles": 7,
     "effectStyles": 0,
-    "status": "ALL PHASE 1 EXIT CRITERIA MET"
+    "status": "ALL PHASE 1 EXIT CRITERIA MET (counts include the Phase 2 ink amendment)"
   },
-  "completedSteps": ["phase0", "P1.0", "P1.a", "P1.b", "P1.c", "P1.d", "P1.e", "P1.f", "P1.g", "P1.h", "phase1"]
+  "phase2Validation": {
+    "pages": 6,
+    "documentedPages": ["Cover", "Getting Started", "Foundations"],
+    "foundationsShows": "26 colour semantics as mode-pinned MOCKUP/CANON columns, a 7-style type specimen in both voices, and the gap register",
+    "status": "ALL PHASE 2 EXIT CRITERIA MET"
+  },
+  "nextPhase": {
+    "phase": 3,
+    "order": "Chip FIRST (it is canon's Signal archetype — Jac's steer), then the plan's ascending order: Conduit, Bracket, Marks, Screen, Housing, Slots, Deck, Cartridge, Etch",
+    "perComponent": "3a page -> 3b build with variable bindings -> 3c variants -> 3d/3e component properties -> 3f docs -> 3g get_metadata + get_screenshot -> 3h optional Code Connect",
+    "rule": "One component at a time. Never batched. Figma writes strictly sequential."
+  },
+  "completedSteps": ["phase0", "P1.0", "P1.a", "P1.b", "P1.c", "P1.d", "P1.e", "P1.f", "P1.g", "P1.h", "phase1", "P2.a", "P2.b", "P2.c", "phase2"]
 }
