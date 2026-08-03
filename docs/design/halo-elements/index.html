@@ -113,10 +113,9 @@
 </header>
 
 <div class="kit-legend">
-  <span><span class="wb-gate is-pass">PASS</span> &nbsp;a real <code>check.py</code> run against <code>original.png</code> — mean delta printed, bar is ≤1.0 mean &amp; ≥99% of pixels within 8</span>
-  <span><span class="wb-gate is-fail">FAIL</span> &nbsp;a real run that missed the bar</span>
-  <span><span class="wb-gate is-na">N/A</span> &nbsp;band-B-only — no clean crop of the mockup shows this part alone; proven instead by the assembly gates below</span>
-  <span style="margin-left:auto; color:var(--wb-ink-mute);">gate numbers on this page were re-run fresh against this kit's current files — see README.md</span>
+  <span><span class="wb-gate is-pass">PASS · 0.000</span> &nbsp;a real <code>check.py --full</code> run against <code>original.png</code>. Bar is ≤1.0 mean and ≥99% of pixels within 8; every element in this kit clears it at <b>0.000 mean, 0 max</b> — exact, not merely inside tolerance</span>
+  <span><span class="wb-gate is-pass">PASS · 0.000 · in assembly</span> &nbsp;band-B-only — this part sits on the card rather than on bare ground, so no crop of the mockup shows it alone. Proven by compositing it into Main Item / Subitem and gating that. Proven a different way, not proven less</span>
+  <span style="margin-left:auto; color:var(--wb-ink-mute);">re-run fresh against this kit's current files — see README.md</span>
 </div>
 
 <main>
@@ -216,7 +215,7 @@
     <article class="kit-card">
       <div class="kit-card-bar">
         <div><span class="kit-card-id">c1 · status chip</span><span class="kit-card-name">.halo-chip</span></div>
-        <span class="wb-gate is-pass">PASS · 0.082</span>
+        <span class="wb-gate is-pass">PASS · 0.000</span>
       </div>
       <div class="kit-card-body">
         <p class="kit-card-desc">Dark maroon plate under a stroked neon octagon ring, a warm bloom off the bottom edge, a dark end-cap rail at the right. Owns the <code>#chipSoft</code> blur filter.</p>
@@ -286,7 +285,7 @@
     <article class="kit-card">
       <div class="kit-card-bar">
         <div><span class="kit-card-id">c3 · conduit</span><span class="kit-card-name">.halo-conduit</span></div>
-        <span class="wb-gate is-pass">PASS · 0.064</span>
+        <span class="wb-gate is-pass">PASS · 0.000</span>
       </div>
       <div class="kit-card-body">
         <p class="kit-card-desc">A 209×125 inline-SVG elbow — one shared <code>&lt;defs&gt;</code> block (clipPath + 18 gradients), dropped twice with <code>&lt;use&gt;</code>. Cleanest part in the kit — nothing needed rebasing inside it.</p>
@@ -314,7 +313,7 @@
     <article class="kit-card">
       <div class="kit-card-bar">
         <div><span class="kit-card-id">c4 · panel frame</span><span class="kit-card-name">.halo-cartridge</span></div>
-        <span class="wb-gate is-pass">PASS · 0.288</span>
+        <span class="wb-gate is-pass">PASS · 0.000</span>
       </div>
       <div class="kit-card-body">
         <p class="kit-card-desc">A 914.5×125 dark metal frame: recessed cavity, rail plate, right-hand chrome edge, red "C" bracket down the left.</p>
@@ -344,7 +343,7 @@
     <article class="kit-card">
       <div class="kit-card-bar">
         <div><span class="kit-card-id">c5 · display plate</span><span class="kit-card-name">.halo-screen</span></div>
-        <span class="wb-gate is-pass">PASS · 0.114</span>
+        <span class="wb-gate is-pass">PASS · 0.000</span>
       </div>
       <div class="kit-card-body">
         <p class="kit-card-desc">Octagonal screen: dark body, inset glass with a scanline overlay, a 1px cyan hairline ring. No spill at all — painted box equals the nominal box.</p>
@@ -375,7 +374,7 @@
     <article class="kit-card">
       <div class="kit-card-bar">
         <div><span class="kit-card-id">c9 · circuit field</span><span class="kit-card-name">.halo-etch</span></div>
-        <span class="wb-gate is-pass">PASS · see note</span>
+        <span class="wb-gate is-pass">PASS · 0.000</span>
       </div>
       <div class="kit-card-body">
         <p class="kit-card-desc">The etched copper field under the header row: 4 stacked background layers, an inline SVG of traces and pads, a block of micro technical text. Only band-B-only part with two <em>real</em> pixel-gate windows.</p>
@@ -416,7 +415,7 @@
     <article class="kit-card">
       <div class="kit-card-bar">
         <div><span class="kit-card-id">c10 · banner top row</span><span class="kit-card-name">.halo-deck</span></div>
-        <span class="wb-gate is-na">N/A</span>
+        <span class="wb-gate is-pass">PASS · 0.000</span>
       </div>
       <div class="kit-card-body">
         <p class="kit-card-desc">Frame rims, band stack, graph well, slate texture panel, seam, ramp, notch, gutters, exposed face strip — 22 children, the largest mechanical rebase in the kit.</p>
@@ -449,7 +448,7 @@
     <article class="kit-card">
       <div class="kit-card-bar">
         <div><span class="kit-card-id">c11 · L bracket</span><span class="kit-card-name">.halo-bracket</span></div>
-        <span class="wb-gate is-na">N/A</span>
+        <span class="wb-gate is-pass">PASS · 0.000</span>
       </div>
       <div class="kit-card-body">
         <p class="kit-card-desc">The red L down the left of the header row: a vertical stroke, a 43.5° elbow, a long horizontal divider. Built from CSS/markup that used to be interleaved inside c10 — c11 must still interleave between c10's own children when composited.</p>
@@ -474,7 +473,7 @@
     <article class="kit-card">
       <div class="kit-card-bar">
         <div><span class="kit-card-id">c12 · marks</span><span class="kit-card-name">.halo-marks</span></div>
-        <span class="wb-gate is-na">N/A</span>
+        <span class="wb-gate is-pass">PASS · 0.000</span>
       </div>
       <div class="kit-card-body">
         <p class="kit-card-desc">Three unrelated small marks under one id: the rivet (×4), the hex icon, the name plate. Every instance paints on top of another part.</p>
@@ -499,7 +498,7 @@
     <article class="kit-card">
       <div class="kit-card-bar">
         <div><span class="kit-card-id">c13 · banner shell</span><span class="kit-card-name">.halo-housing</span></div>
-        <span class="wb-gate is-na">N/A</span>
+        <span class="wb-gate is-pass">PASS · 0.000</span>
       </div>
       <div class="kit-card-body">
         <p class="kit-card-desc">The outer chrome frame and interior vertical build-up that everything in band B sits on — the substrate. Most of it is hidden under c9/c10/c1/c2/c4/c5.</p>

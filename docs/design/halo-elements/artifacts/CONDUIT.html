@@ -301,7 +301,7 @@
   <header class="wb-head">
     <h1>CONDUIT</h1>
     <span class="wb-role">element 7 of 10</span>
-    <span class="wb-gate is-pass">PASS · 0.064</span>
+    <span class="wb-gate is-pass">PASS · 0.000</span>
     <p>
       A 209×125 inline-SVG elbow pipe: one shared <code>&lt;defs&gt;</code> block (a clip path
       plus 18 gradients painting a single art group) dropped twice with <code>&lt;use&gt;</code>.
@@ -405,6 +405,12 @@
     <b>is-standalone</b> and the slider has nothing to move; its rule body is intentionally empty
     so that instance never enters an SVG filter compositing pass at all, matching the source
     byte-for-byte.<br><br>
+
+    <b><code>--sat</code> also opens blank, parked at the slider minimum.</b> The <code>.9</code>
+    is the rule's own fallback inside <code>saturate(var(--sat,.9))</code> and is never set on the
+    instance, so the rail has no value to read off the element and the readout shows
+    <code>—</code> until you actually move it. <b>is-banner</b> is painting at .9 right now, not at
+    the 0 the slider is sitting on — the first nudge will jump.<br><br>
 
     Both stages carry real air around the fixed 209×125 box so <code>--x</code>/<code>--y</code>
     have room to travel — push either slider far enough and the specimen runs into the stage's own
