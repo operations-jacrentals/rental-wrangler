@@ -915,5 +915,21 @@
       "note": "Pre-existing, not caused by the reduction work — but it would have made the set uneditable and is the kind of thing only a render check catches. A COMPONENT_SET does NOT auto-grow to fit repositioned variants; resize it explicitly."
     },
     "layout": "Assembly at top under 'ASSEMBLED — live preview'; six mains under 'MAIN COMPONENTS — edit these, the assembly above updates live'; the three sets under 'VARIANT SETS'. Every station labelled. Overlap sweep run over all top-level nodes; the only remaining intersections are two section headings brushing the component below them, plus Jac's own 'Rectangle 1' backdrop which was deliberately left alone."
+  },
+  "messageBoardShader_2026_08_03": {
+    "ask": "Jac: the subitem Message Board in the assembly is the only one with the pattern background that replaces the texture asset. He wants the app simplified and lightened. Update the main component. Then: 'Only one of the message boards have taken the new background.'",
+    "whatThePatternActuallyIs": "A SHADER paint at COLOR_DODGE sitting at the BOTTOM of the inner layer's fill stack, under four linear gradients. The texture it replaces is a tiled IMAGE fill (hash be41cbf4…, TILE, opacity 0.9) on a separate 'glass' vector.",
+    "firstPass": "Copied the shader stack onto main 21:10's 'inner' and hid its 'glass'. Correct, but only fixed ONE of the eight variants.",
+    "WHY_ONLY_ONE_TOOK_IT": "My own earlier simplification pass had merged 'plate'+'inner' into a single 'Merged artwork' vector in SEVEN of the eight variants, leaving 21:10 alone with its layers intact. So the other seven had no 'inner' layer for a shader to be copied onto. This is a direct downstream cost of the collapse work -- worth remembering that merging layers silently removes the handles that later edits need.",
+    "fix": "Each merged variant turned out to hold exactly TWO regions -- region 0 the old plate gradient, region 1 the old inner (SOLID #05070b + 4 gradients), the same five-fill structure 21:10's inner had. So swapping region 1's fills[0] from the solid to the shader is an exact one-for-one analogue. Applied to all seven, plus glass hidden on all eight.",
+    "whyTheFillVariantsSurvive": "The red State=Fill variants take their colour from a separate 'fill (state/hot-fill)' SOLID #ff433e layer ABOVE the inner, so swapping the inner base does not darken them. Verified by render: four dark Default variants and four red Fill variants, all consistent.",
+    "sideEffect": "The heavy horizontal striping on the red variants is gone, because that came from the same glass texture that was retired. Consistent with the stated goal of lightening, but it IS a visible change to those four variants."
+  },
+  "conduitSimplification_2026_08_03_BLOCKED": {
+    "ask": "Jac: simplify the elbow conduit -- drop the top connector and replace it by duplicating the bottom-right connecting piece (212:80).",
+    "blocker": "The earlier collapse fused the conduit's 47 layers into ONE 'Merged artwork' vector of 56 regions, so there is no top-connector layer to delete and no bottom-right layer to duplicate.",
+    "diagnosticBuilt": "Frame 'ZZ conduit zones' (244:253) on MAIN+SUB ASSEMBLY renders three copies: all-zones, top-removed, br-only. Top connector detail = 12 regions [2,3,4,5,6,7,8,13,14,15,16,17]. Bottom-right piece = 20 regions [26,27,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,48,49,52].",
+    "WHY_A_REGION_DELETE_IS_NOT_ENOUGH": "The base silhouette is a SINGLE closed path spanning the entire elbow, sitting in neither zone. Deleting the 12 top-detail regions strips the top bar's surface but leaves its grey body standing -- visible in the middle copy of the diagnostic. Actually dropping the connector means cutting the silhouette path itself, which risks a ragged edge.",
+    "optionsPutToJac": "(a) region surgery on the merged vector, (b) restore the conduit from Figma version history to its 47-layer form and do it cleanly on real layers, (c) composite a mirrored duplicate over the top and clip. Awaiting his call -- not proceeding blind on a visible asset."
   }
 }
