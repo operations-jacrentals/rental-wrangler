@@ -1,7 +1,7 @@
 {
   "runId": "halo-ds-2026-08-03",
-  "phase": "phase2",
-  "step": "complete",
+  "phase": "phase3",
+  "step": "component-chip-complete",
   "scopeLock": "MOCKUP + CANON as variable modes. CORRECTED 2026-08-03: CANON is a TOKEN-LAYER reskin (accent / state / ground / chrome) only — the hundreds of measured gradient stops stay baked, so a CANON render is NOT 'the card in canon'. Jac's call; dual-baking every stop was offered and declined.",
   "plan": "docs/design/halo-elements/FIGMA-PLAN.md",
   "source": "docs/design/halo-elements/parts/*.css — 10 components, all gated 0.000",
@@ -134,7 +134,26 @@
       "Foundations/Gap Register": "16:20",
       "Getting Started/Getting Started Plate": "17:2"
     },
-    "components": {}
+    "components": {
+      "Chip": {
+        "setId": "21:36",
+        "page": "Chip",
+        "variants": {
+          "Size=Wide, Label=Off": "21:2",
+          "Size=Wide, Label=On": "21:10",
+          "Size=Narrow, Label=On": "21:19",
+          "Size=Narrow, Label=Off": "21:28"
+        },
+        "properties": ["Size", "Label", "label#21:0 (TEXT)"],
+        "modeProofFrame": "21:37",
+        "bindings": {
+          "ring core + ring halo stroke": "state/hot",
+          "label fill": "ink/label",
+          "label family": "type/stamp-family",
+          "glow container opacity": "finish/glow-opacity"
+        }
+      }
+    }
   },
   "decisions": {
     "oneLanguageCollection": "Colour, type and finish semantics all live in ONE collection (Halo Language), so flipping MOCKUP↔CANON is a single mode switch — the plan's scope-lock goal (FIGMA-PLAN.md 0d).",
@@ -181,8 +200,17 @@
   "nextPhase": {
     "phase": 3,
     "order": "Chip FIRST (it is canon's Signal archetype — Jac's steer), then the plan's ascending order: Conduit, Bracket, Marks, Screen, Housing, Slots, Deck, Cartridge, Etch",
+    "done": ["Chip"],
+    "remaining": ["Conduit", "Bracket", "Marks", "Screen", "Housing", "Slots", "Deck", "Cartridge", "Etch"],
     "perComponent": "3a page -> 3b build with variable bindings -> 3c variants -> 3d/3e component properties -> 3f docs -> 3g get_metadata + get_screenshot -> 3h optional Code Connect",
     "rule": "One component at a time. Never batched. Figma writes strictly sequential."
+  },
+  "figmaGotchas": {
+    "opacityVariablesArePercent": "An OPACITY-scoped FLOAT variable resolves as a PERCENTAGE (0-100), NOT 0-1. finish/glow-opacity was first stored as 1 and rendered as 1%, silently switching the mockup's glow off in BOTH modes — and the screenshot still looked plausible. Correct values: MOCKUP=100, CANON=0.",
+    "nestedOpacityMultiplies": "A node cannot carry both a bound opacity and its own measured opacity. The chip's bloom has a per-variant measured opacity (1/.95/.55/.55) AND must be glow-suppressed, so the glow layers are NESTED in a container whose opacity carries the token. Nested opacity multiplies, so both survive.",
+    "querySelectorSpaces": "node.query('VECTOR[name=ring core]') does NOT match — a space in an attribute value breaks the selector and returns empty, which reads as 'node missing' rather than 'bad query'. Use children.find(c => c.name === '...') for names containing spaces.",
+    "createAutoLayoutWhiteFill": "figma.createAutoLayout() frames arrive with an opaque WHITE fill. Any layout-only frame needs fills = [] or it paints a white slab.",
+    "textStyleBindingsResolveInDefaultMode": "A text style with a bound fontFamily reports its concrete face resolved in the file's DEFAULT mode, not the face you assigned. That is correct behaviour, not a failed write."
   },
   "completedSteps": ["phase0", "P1.0", "P1.a", "P1.b", "P1.c", "P1.d", "P1.e", "P1.f", "P1.g", "P1.h", "phase1", "P2.a", "P2.b", "P2.c", "phase2"]
 }
