@@ -56,7 +56,10 @@
       "mcp__Claude_Preview__preview_logs",
       "mcp__Claude_Preview__preview_fill",
       "mcp__Claude_Preview__preview_inspect",
-      "mcp__Claude_Preview__preview_stop"
+      "mcp__Claude_Preview__preview_stop",
+      "mcp__Figma__get_figma_skill",
+      "mcp__Figma__whoami",
+      "mcp__github__pull_request_read"
     ],
     "deny": [
       "Edit(backend/**)",
