@@ -1063,5 +1063,18 @@
     "jac": "'I kept our Conduit elbow. See the assembly, I like it, the app will have to repeat the sequence of conduit parts down the rows.'",
     "implication": "The conduit is not a one-off decoration -- a cap/channel/tap sequence repeats per row. That argues for packaging the run itself as a component so a row instantiates ONE thing rather than six, and so run length stays a single override.",
     "status": "Offered, not built. The two-part kit (Conduit / Cap 280:101, Conduit / Channel 280:91) already carries the real artwork and stretches, so a row-run wrapper is a small step on top."
+  },
+  "conduitRowRun_2026_08_03": {
+    "ask": "Jac: the app repeats the sequence of conduit parts down the rows -- package it so a row instantiates ONE thing.",
+    "built": "'Conduit / Row Run' (298:134), 260 x 39. Three instances of the two-part kit: Cap (spine tap, 270 deg) + Channel (run) + Cap (to heading, 270 deg). A row now instantiates one component and the only override needed is its width.",
+    "constraints": "tap MIN / channel STRETCH / end-cap MAX horizontally, all STRETCH vertically.",
+    "VERIFIED_NOT_ASSUMED": "Rotated children plus constraints do not always cooperate in Figma, so this was measured rather than trusted. Stretched 260 -> 420: both caps held at exactly 18.8 wide and the channel absorbed the whole 160px (222.4 -> 382.4). Restored to 260 cleanly. It works.",
+    "stillTwoParts": "No new artwork -- Row Run is pure composition over Conduit / Cap and Conduit / Channel, so edits to either still propagate through every row."
+  },
+  "wrapperCollapsed_2026_08_03": {
+    "ask": "Jac: 'Yes!' to collapsing 283:322, the component whose only child was an instance of another component.",
+    "done": "Verified the wrapper had ZERO instances first, then moved the real main 21:19 into the wrapper's exact slot in the assembly (Group 1, position 270,-150), matched it to the wrapper's 373x72, cleared its aspect lock, and deleted the wrapper plus its nested instance. The assembly now holds the MAIN itself -- one thing to select, one thing to edit.",
+    "RESIDUAL_AMBIGUITY_REMAINS": "There are still TWO components both named 'Message Board/Wide/On/Default' -- 21:10 parked at page level (633x61) and 273:2683 inside the assembly (633x85). Same name, different sizes, no relationship. That is the same wrapper-style ambiguity in a different shape and will bite again. Not touched without Jac's call, since which one is canonical is his decision, not mine.",
+    "boardInventoryNow": "21:19 (373x72, in assembly Group 1, MAIN), 273:2683 (633x85, in assembly, MAIN), 21:10 (633x61, parked on page, MAIN), 260:2341 (instance of 21:10 in Background Circuitry)."
   }
 }
