@@ -1033,5 +1033,19 @@
     "applied": "Across all nine boards: well.visible=false, bloom hidden. Ring core (2.8) and ring halo (3.8 @0.9) already matched the reference everywhere, so no stroke changes were needed. 21:19 itself needed nothing; 21:10 only needed its bloom hidden.",
     "deliberatelyNotTouched": "'glass' visibility was left alone. It is the screen texture Jac restored on the four Fill variants earlier, not bordering. Plate sizes also left alone -- they differ slightly per variant (348.5 vs 346 wide) and resizing risks distorting the cut-corner geometry.",
     "verified": "Rendered 21:19, 21:28 and 63:48 together -- identical border treatment across dark and red states."
+  },
+  "deckBracket_2026_08_03": {
+    "ask": "Jac pointed at the bracket in the ZZ C-recipe verify frame: 'Can you improve this? I need to use it.'",
+    "CORRECTION_the_C_cull_damaged_it": "I reported the C recipe as visually indistinguishable, losing only 'a thin highlight edge' on this bracket. That was WRONG and this is the piece where it mattered. Rendering before (84 regions) against after (35) at 12x shows the smooth diagonal ramp became a coarse staircase -- the sub-3-area regions the cull dropped were precisely the ones smoothing that diagonal. Lesson: an area-based cull is NOT safe on traced artwork, because anti-aliasing detail lives entirely in tiny regions.",
+    "rootCause": "206:241 is a VECTORIZED RASTER -- its parent is literally 'image 5 [Vectorized]'. It carried 733 vertices and 733 segments for a 41x30 shape, i.e. auto-trace stair-stepping. It was never going to scale, cull or no cull.",
+    "fix": "Redrew it as true vector geometry: new COMPONENT 'Deck / Bracket' (290:148) at 164x120, nine layers built from SVG path data with a real straight diagonal, palette sampled from the original (#b4b2b7 light, #7c7c81 mid-light, #60585c mid, #353338 dark, #111115 black). 28 vertices total versus 733, and it scales cleanly.",
+    "honestGap": "The redraw is crisper but slightly PLAINER than the original -- the traced version had subtler shading gradations across the top plane and a chunkier bottom edge. Clean and usable now; add shading passes if Jac wants the extra weight.",
+    "originalLeftInPlace": "206:241 is untouched inside the deck. The new component is additive so Jac can swap it in when he is happy with it."
+  },
+  "conduitArtworkSwap_PENDING": {
+    "jacApproved": "Yes -- swap the original conduit artwork into the two kit components so he keeps the richer look plus propagation and stretch.",
+    "sourcesIdentified": "Cap = 238:2276 (20x65, 10 regions, inside 212:80) -- the squared end fitting, matching what Jac asked to duplicate earlier. Channel cross-section = 238:2320 (57.1x38.7, 14 regions) with bands sampled across the thickness.",
+    "plan": "Cap component takes the real vector directly since it is fixed size. Channel keeps the band architecture -- which is what makes stretch work at all -- but the bands get re-derived from the cap's own throat cross-section so cap and channel align exactly.",
+    "status": "NOT YET DONE -- Jac pivoted to the bracket before this landed."
   }
 }
