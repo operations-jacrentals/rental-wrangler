@@ -625,5 +625,26 @@
       "correctsEarlierReport": "The 2026-08-03 capability report listed shader fills as an opportunity Claude could drive. It is not, as things stand. Untested next step: if Jac applies a shader fill by hand once, it may register in the file and become visible to listAvailableShaders — worth checking before relying on it.",
       "unchanged": "Fractal noise / Pattern grid replacing the tiled raster texture assets is still viable — but as a manual Jac action, not a generated one."
     }
+  },
+  "vectorizedConduit": {
+    "date": "2026-08-03",
+    "origin": "Jac cropped the source image and ran Figma's built-in vectorize (image trace). Node 91:10 'Version 2 [Vectorized]' on the Conduit page.",
+    "measured": {
+      "vectors": 56,
+      "approxAnchorPoints": 1099,
+      "distinctColours": 12,
+      "fillType": "all SOLID — the source's 359 gradient stops were posterised into flat bands",
+      "boundToTokens": "0 of 56",
+      "constraints": "SCALE/SCALE on every child"
+    },
+    "drift": "Vectorize desaturated the lit core (top red #ed6b66 vs source #ff8078) and lifted the darks, so the body read as light grey plastic rather than dark steel. The source's ratio is a near-black body with a NARROW chrome crown; vectorize inverted it, letting mid-greys dominate.",
+    "correction": {
+      "node": "105:78 'Conduit (vectorized, corrected)' — Jac's 91:10 left untouched",
+      "boundToEmissive": "3 fills (#ed6b66, #cd5e5d) bound to emissive/tube-red so the lit core still reskins with the mode",
+      "recoloured": "36 warm fills re-saturated + 17 body greys darkened toward the traced source palette",
+      "keptBaked": "measured steel shading stays hardcoded, per the CANON scope-lock — only the emissive core is tokenised"
+    },
+    "stretchTest": "'Stretch test' frame on the Conduit page shows all three versions at native and 2x width. Vectorized scales proportionally (SCALE/SCALE) so a NON-UNIFORM stretch distorts chamfer angles and doubles hairlines; the segments version holds shape because its parts are discrete with pinned constraints.",
+    "openCall": "Which conduit is canonical is STILL Jac's — there are now four on the page: traced (30:2), segments (80:2), Jac's vectorize (91:10), corrected vectorize (105:78)."
   }
 }
