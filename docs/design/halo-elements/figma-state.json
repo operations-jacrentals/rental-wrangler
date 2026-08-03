@@ -971,5 +971,26 @@
     "whyIMissedIt": "I reasoned that the subitem board Jac approved also had no solid on its inner (SHADER + 4 gradients) and concluded a straight one-for-one swap was faithful. That ignored the fact that the approved subitem was an unmerged 'inner' NODE sitting above a separate plate node, so its dodge resolved against a different backdrop than a region fill inside a merged vector does. Structure changes what a blend mode resolves against -- matching a fill LIST is not the same as matching a rendered result.",
     "fix": "Re-inserted the dark base beneath the shader on region 1 of every variant, so the stack is now SOLID -> SHADER(dodge) -> 4 gradients. Bases restored per variant: #060f18 for 21:10, #05070b for the other seven. Dodge over a near-black backdrop stays near-black except where the pattern peaks, which is exactly the subtle texture Jac wanted.",
     "rule": "Never drop a base fill to make room for a shader. Put the shader ABOVE the base. A dodge/screen blend needs its backdrop."
+  },
+  "boardSyncViaPaintStyle_2026_08_03": {
+    "jac": "'Still not synced. I want to change one and it change for all.' Screenshot showed the two Wide boards carrying his blue nebula shader and the two Narrow ones looking plain.",
+    "diagnosis": "TWO separate things were going on. (1) All eight variants already shared the SAME shader id (958fe881.../431) -- they were not carrying different shaders. They looked different because a shader maps to the box of the NODE that carries it, and Wide inner nodes are ~608x48 while Narrow are ~337x56, so the Narrow ones sample a different part of the pattern and read plainer. (2) There was genuinely no shared source: the background was a REGION inside a merged vector, and Figma regions cannot carry a paint style -- only NODES can. So there was nothing for the eight to point at, and any edit Jac made lived on one variant only.",
+    "fix": "Probed first and confirmed a paint style CAN hold a SHADER paint. Then split region 1 out of each variant's merged vector into its own node named 'inner (screen)', restacked it directly above 'plate' (the merged remnant, renamed), and bound all eight to a single new paint style 'Board/Screen'. Editing that one style now changes every variant.",
+    "orderingBugCaught": "insertChild at the merged node's index put the new node BELOW the plate, which would have let the plate paint over the screen. Caught on the layer-order readback and restacked to plate+1 before rendering.",
+    "residualCaveat": "Binding a style does NOT equalise the shader mapping -- each node still samples across its own box, so Wide and Narrow can still read differently even though they now share one source. If Jac wants them visually identical, the inner nodes would need matching aspect, or the shader would need size-independent mapping.",
+    "howJacUsesIt": "Figma sidebar > Local styles > Board/Screen > edit. All eight variants follow."
+  },
+  "conduitMultiSubitem_2026_08_03": {
+    "ask": "Jac: 'This needs to be a main component so I can stretch it to fix properly. Do your simplification passes on it.'",
+    "found": "'Conduit -- Multiple Subitems' (238:2287) was a FRAME, not a component, on MAIN+SUB ASSEMBLY. It carried real waste: FOUR exact duplicate vectors stacked at identical positions (260:2602-2605 sitting on 238:2296/2297/2320/2331 -- verified geometrically identical, not merely similar, before deleting), and THREE vectors with zero regions (two of them 0.4-0.5px slivers) painting nothing. Content also overflowed its own frame, reaching y~199 in a 156-tall clipped frame.",
+    "done": "Removed the 4 duplicates and 3 dead vectors, ran the C cull on the survivors (39->36, 12->10, 16->14, 14 unchanged), re-fitted the frame to content with 6px padding, turned off clipping, and promoted it to a real COMPONENT (270:174, 173.7x166.8, 4 vectors, 74 regions total). Layer count 11 -> 4.",
+    "stillOpen": "Constraints for stretching. All children are currently SCALE/SCALE, which scales the fittings along with the runs. Proper stretch behaviour wants the end fittings pinned at fixed size and only the straight runs stretching -- not yet done."
+  },
+  "editInPlace_figmaConstraint_2026_08_03": {
+    "jac": "Linked node 172:5193: 'This is still not the main component so I can't edit in line.'",
+    "whatThatNodeIs": "An INSTANCE of 'State=Failed', which is a VARIANT inside the 'Group Name' COMPONENT_SET (38:14).",
+    "THE_HARD_CONSTRAINT": "Figma permits a COMPONENT nested inside another COMPONENT, but NEVER a COMPONENT_SET. So any piece backed by variants cannot have its main live inside the assembly. This is a platform rule, not a layout problem, and no amount of restructuring gets around it.",
+    "classification": "CAN nest main in place (plain components): FINAL HOUSING, Slots -- signal row (x2), Marks/Name, Marks/Hexicon, EDITED VECTOR DECK. CANNOT (variant-backed): Message Board (x2), Group Name.",
+    "optionsForTheVariantBacked": "(a) leave as instances and edit the variant in the set below, (b) detach in the assembly -- full in-place editing but propagation is lost, (c) flatten the set to a single component, losing variants. Put to Jac rather than guessed."
   }
 }
