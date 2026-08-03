@@ -5,8 +5,25 @@ canvas. This is the plan for turning them into a Figma component library, so tha
 get **assembled** from components instead of recreated from screenshots.
 
 Run id: `halo-ds-2026-08-03`
-State ledger: `/tmp/design-system-state-halo-ds-2026-08-03.json` (re-read at the start of
-every turn — conversation context truncates, the file does not)
+
+**State ledger: `docs/design/halo-elements/figma-state.json` — in the repo, committed, on
+purpose.** The Figma skill's default is `/tmp/design-system-state-<RUN_ID>.json`, and that is
+wrong for this project: cloud sessions run in containers that are reclaimed after inactivity,
+so a `/tmp` ledger is gone by the next session and the resume starts blind — creating duplicate
+components and orphaned nodes, which is exactly what the ledger exists to prevent. Keep it in
+the repo and **commit it after every phase**.
+
+Re-read it at the start of every turn. Conversation context truncates; the file does not.
+
+### Resuming in a fresh session
+
+> "I'm continuing a design system build. Run ID: `halo-ds-2026-08-03`. Load the
+> figma-generate-library skill and resume from the last completed step."
+
+Then: read this file, read `figma-state.json`, load `figma-generate-library` **and** `figma-use`
+together, and run the skill's resume protocol — a read-only `use_figma` scan of all pages,
+components, variables and styles by name to reconstruct the `{name → id}` map before writing
+anything. Never trust a remembered node ID.
 
 ---
 
