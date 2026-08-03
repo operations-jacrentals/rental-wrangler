@@ -1,0 +1,616 @@
+<title>BRACKET — Halo element</title>
+<style>
+/* ============================================================
+   tokens.css subset — reset, :root vars, .oct/.oct4/.oct-br/.a,
+   .stage. Page-shell rules (html,body / body place-items) are
+   deliberately left out — the workbench supplies its own shell.
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0a0c10;
+  --neon:      #f95a5c;
+  --neon-hi:   #ff7a76;
+  --bar-red:   #ff433e;
+  --brk-red:   #fc6c5c;
+  --pnl-red:   #fa756f;
+  --tube-red:  #ff8078;
+  --maroon:    #411b1e;
+  --maroon-d:  #32171e;
+  --bar-yel:   #fff252;
+  --amber:     #7c401f;
+  --chrome:    #aebac6;
+  --silver:    #a19596;
+  --rim-top:   #626971;
+  --rim-left:  #818d92;
+  --rim-right: #74808a;
+  --rim-bot:   #7b8997;
+  --slate:     #32303e;
+  --field:     #1e202c;
+  --cavity:    #221a25;
+  --circuit:   #070e16;
+  --edge:      #0d1218;
+  --mono: Consolas, "Cascadia Mono", "DejaVu Sans Mono", "Courier New", monospace;
+  --sans: Roboto, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+.stage {
+  position: relative;
+  background: var(--bg);
+  overflow: hidden;
+  font-family: var(--sans);
+  font-kerning: none;
+}
+
+.oct {
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut),
+                     100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
+}
+.oct4 {
+  clip-path: polygon(var(--cut) 0, calc(100% - var(--cut)) 0,
+                     100% var(--cut), 100% calc(100% - var(--cut)),
+                     calc(100% - var(--cut)) 100%, var(--cut) 100%,
+                     0 calc(100% - var(--cut)), 0 var(--cut));
+}
+.oct-br {
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--cut)),
+                     calc(100% - var(--cut)) 100%, 0 100%);
+}
+.a { position: absolute; }
+
+/* ============================================================
+   workbench.css — verbatim, the shared workbench chrome.
+   ============================================================ */
+:root {
+  --wb-ground:   #07090d;
+  --wb-canvas:   #0a0c10;
+  --wb-chrome:   #10141b;
+  --wb-chrome-2: #151b23;
+  --wb-line:     #1e2630;
+  --wb-line-lit: #2b3846;
+  --wb-ink:      #c3ccd6;
+  --wb-ink-dim:  #78848f;
+  --wb-ink-mute: #4e5966;
+  --wb-steel:    #5d8fb3;
+  --wb-steel-lo: #34505f;
+  --wb-good:     #5fae7d;
+  --wb-bad:      #c9635e;
+
+  --wb-mono: ui-monospace, "DejaVu Sans Mono", Consolas, "Cascadia Mono", "Courier New", monospace;
+  --wb-sans: system-ui, "Archivo", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+.wb {
+  background: var(--wb-ground);
+  color: var(--wb-ink);
+  font-family: var(--wb-sans);
+  font-size: 15px;
+  line-height: 1.55;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding: 0 0 72px;
+}
+
+.wb-head {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 18px;
+  padding: 26px 28px 22px;
+  border-bottom: 1px solid var(--wb-line);
+  background: linear-gradient(180deg, #0b0f14, var(--wb-ground));
+}
+.wb-head h1 {
+  font-family: var(--wb-mono);
+  font-size: 26px; font-weight: 700; letter-spacing: 2.5px;
+  color: var(--wb-ink); text-transform: uppercase; text-wrap: balance;
+}
+.wb-head .wb-role {
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.6px;
+  text-transform: uppercase; color: var(--wb-steel);
+  padding: 3px 9px; border: 1px solid var(--wb-steel-lo); border-radius: 2px;
+}
+.wb-head p { flex: 1 1 340px; max-width: 66ch; color: var(--wb-ink-dim); font-size: 14px; }
+
+.wb-gate {
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.2px;
+  text-transform: uppercase; white-space: nowrap;
+  padding: 3px 9px; border-radius: 2px; border: 1px solid;
+  font-variant-numeric: tabular-nums;
+}
+.wb-gate.is-pass { color: var(--wb-good); border-color: #2c5a41; background: #0e1a14; }
+.wb-gate.is-fail { color: var(--wb-bad);  border-color: #5d2f2d; background: #1a0f0e; }
+.wb-gate.is-na   { color: var(--wb-ink-mute); border-color: var(--wb-line); }
+
+.wb-body {
+  display: grid; gap: 28px; padding: 0 28px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+@media (min-width: 1080px) {
+  .wb-body { grid-template-columns: minmax(0, 1fr) 330px; }
+  .wb-rail { position: sticky; top: 22px; }
+}
+
+.wb-specimens { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+
+.wb-spec {
+  border: 1px solid var(--wb-line); border-radius: 3px;
+  background: var(--wb-chrome); overflow: hidden;
+  transition: border-color .12s ease;
+}
+.wb-spec:hover { border-color: var(--wb-line-lit); }
+.wb-spec.is-selected { border-color: var(--wb-steel-lo); }
+
+.wb-spec-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 9px 13px; border-bottom: 1px solid var(--wb-line);
+  background: var(--wb-chrome-2);
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.1px;
+}
+.wb-pick {
+  appearance: none; cursor: pointer;
+  font: inherit; letter-spacing: inherit; text-transform: uppercase;
+  color: var(--wb-ink); background: transparent;
+  border: 1px solid var(--wb-line-lit); border-radius: 2px;
+  padding: 3px 10px;
+}
+.wb-pick:hover { border-color: var(--wb-steel-lo); color: #dfe6ec; }
+.wb-pick:focus-visible { outline: 2px solid var(--wb-steel); outline-offset: 2px; }
+.is-selected .wb-pick { background: var(--wb-steel-lo); border-color: var(--wb-steel); color: #eef4f8; }
+
+.wb-spec-meta { color: var(--wb-ink-mute); font-variant-numeric: tabular-nums; }
+.wb-spec-note { flex: 1 1 100%; color: var(--wb-ink-dim); letter-spacing: 0; font-size: 12px; }
+
+.wb-stage { overflow-x: auto; overflow-y: hidden; background: var(--wb-canvas); }
+.wb-stage > .stage { margin: 0 auto; }
+
+.wb-rail {
+  border: 1px solid var(--wb-line); border-radius: 3px;
+  background: var(--wb-chrome); min-width: 0;
+}
+.wb-rail-head {
+  padding: 11px 14px; border-bottom: 1px solid var(--wb-line);
+  background: var(--wb-chrome-2);
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.4px;
+  text-transform: uppercase; color: var(--wb-ink-dim);
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+}
+.wb-rail-head b { color: var(--wb-steel); font-weight: 700; }
+.wb-knobs { max-height: min(60vh, 620px); overflow-y: auto; padding: 4px 0 10px; }
+
+.wb-group { border-top: 1px solid var(--wb-line); }
+.wb-group:first-child { border-top: 0; }
+.wb-group > h3 {
+  font-family: var(--wb-mono); font-size: 10px; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--wb-ink-mute);
+  padding: 12px 14px 6px;
+}
+
+.wb-knob { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 5px 14px 7px; }
+.wb-knob label {
+  font-family: var(--wb-mono); font-size: 11.5px; letter-spacing: .4px;
+  color: var(--wb-ink-dim); align-self: center;
+}
+.wb-knob output {
+  font-family: var(--wb-mono); font-size: 11.5px; color: var(--wb-ink);
+  font-variant-numeric: tabular-nums; align-self: center; white-space: nowrap;
+}
+.wb-knob.is-dirty label { color: var(--wb-steel); }
+.wb-knob.is-dirty output { color: #dbe7ef; }
+.wb-knob input[type="range"], .wb-knob input[type="color"] { grid-column: 1 / -1; }
+
+.wb-knob input[type="range"] {
+  appearance: none; width: 100%; height: 18px; background: transparent; cursor: pointer;
+}
+.wb-knob input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px; background: var(--wb-line-lit); border-radius: 2px;
+}
+.wb-knob input[type="range"]::-moz-range-track {
+  height: 3px; background: var(--wb-line-lit); border-radius: 2px;
+}
+.wb-knob input[type="range"]::-webkit-slider-thumb {
+  appearance: none; width: 13px; height: 13px; margin-top: -5px;
+  border-radius: 50%; background: var(--wb-steel); border: 0;
+}
+.wb-knob input[type="range"]::-moz-range-thumb {
+  width: 13px; height: 13px; border-radius: 50%; background: var(--wb-steel); border: 0;
+}
+.wb-knob input:focus-visible { outline: 2px solid var(--wb-steel); outline-offset: 3px; }
+
+.wb-knob input[type="color"] {
+  appearance: none; width: 100%; height: 22px; padding: 0;
+  background: transparent; border: 1px solid var(--wb-line-lit); border-radius: 2px; cursor: pointer;
+}
+.wb-knob input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+.wb-knob input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 1px; }
+
+.wb-acts {
+  display: flex; gap: 8px; padding: 11px 14px;
+  border-top: 1px solid var(--wb-line); background: var(--wb-chrome-2);
+}
+.wb-btn {
+  flex: 1; appearance: none; cursor: pointer;
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase;
+  color: var(--wb-ink); background: transparent;
+  border: 1px solid var(--wb-line-lit); border-radius: 2px; padding: 7px 8px;
+  transition: border-color .12s ease, color .12s ease;
+}
+.wb-btn:hover { border-color: var(--wb-steel-lo); color: #dfe6ec; }
+.wb-btn:focus-visible { outline: 2px solid var(--wb-steel); outline-offset: 2px; }
+.wb-btn.is-done { color: var(--wb-good); border-color: #2c5a41; }
+
+.wb-out {
+  margin: 0 14px 12px; padding: 10px 11px;
+  border: 1px solid var(--wb-line); border-radius: 2px; background: #080b0f;
+  font-family: var(--wb-mono); font-size: 11px; line-height: 1.65; color: var(--wb-ink-dim);
+  white-space: pre; overflow-x: auto; max-height: 200px; overflow-y: auto;
+}
+.wb-out:empty { display: none; }
+
+.wb-note {
+  padding: 0 28px; max-width: 74ch;
+  color: var(--wb-ink-dim); font-size: 13.5px;
+}
+.wb-note code {
+  font-family: var(--wb-mono); font-size: .92em;
+  color: var(--wb-ink); background: var(--wb-chrome-2);
+  padding: 1px 5px; border-radius: 2px;
+}
+.wb-note a { color: var(--wb-steel); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
+
+/* ============================================================
+   bracket.css — .halo-bracket, C11 L bracket. Verbatim rules from
+   docs/design/halo-elements/parts/bracket.css. Built from the
+   original's .bt-lv/.bt-ltip/.bt-lch/.bt-div rules — the markup
+   that was clearly meant to hold them (.lbrk + .v/.d/.h) has no
+   matching CSS anywhere and paints nothing. One instance, band B,
+   no variants: every measurement but --x/--y is fixed to match
+   the source pixel-for-pixel.
+   ============================================================ */
+.halo-bracket {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: 1040px;
+  height: 102px;
+}
+
+/* .bt-div (original 743-749): left:52 top:228 -> local (52-24, 228-138) */
+.halo-bracket .c11-div {
+  position: absolute;
+  display: block;
+  left: 28px;
+  top: 90px;
+  width: 1012px;
+  height: 12px;
+  background: linear-gradient(180deg,
+    #4c2426 0 1px,#b5615f 1px 2px,#de7470 2px 3px,#a84845 3px 4px,#772527 4px 5px,
+    #612123 5px 6px,#4f2121 6px 7px,#442322 7px 8px,#331f1e 8px 9px,#1d0d0d 9px 10px,
+    #140404 10px 11px,#100304 11px 12px);
+}
+
+/* .bt-lv (original 722-727): left:24 top:142 -> local (24-24, 142-138) */
+.halo-bracket .c11-vertical {
+  position: absolute;
+  display: block;
+  left: 0px;
+  top: 4px;
+  width: 9px;
+  height: 63px;
+  background: linear-gradient(90deg,
+    #3d1712 0 1px,#5a0a04 1px 2px,#c74f45 2px 3px,#f76a5c 3px 4px,#fc6a5c 4px 6px,
+    #ee6f6a 6px 7px,#bc6568 7px 8px,#593947 8px 9px);
+}
+
+/* .bt-ltip (original 728-736): left:24 top:138 -> local (24-24, 138-138).
+   The mask-image eats the first 2px, so painted left is local 2 (canvas
+   26), not 0 (canvas 24) — same mask, unchanged, does that for us. */
+.halo-bracket .c11-tip {
+  position: absolute;
+  display: block;
+  left: 0px;
+  top: 0px;
+  width: 9px;
+  height: 5px;
+  background: linear-gradient(180deg,#241715 0 1px,#8e6057 1px 2px,#e99b8d 2px 3px,
+                             #f88c7d 3px 4px,#f47061 4px 5px);
+  -webkit-mask-image: linear-gradient(90deg,transparent 0 2px,rgba(0,0,0,.80) 2px 3px,
+                     #000 3px 7px,rgba(0,0,0,.74) 7px 8px,rgba(0,0,0,.34) 8px 9px);
+          mask-image: linear-gradient(90deg,transparent 0 2px,rgba(0,0,0,.80) 2px 3px,
+                     #000 3px 7px,rgba(0,0,0,.74) 7px 8px,rgba(0,0,0,.34) 8px 9px);
+}
+
+/* .bt-lch (original 737-742): left:27 top:202 -> local (27-24, 202-138).
+   margin-top, transform-origin and the rotate() are all relative to the
+   element's own box, not canvas space, so they carry over unchanged. Its
+   painted extent is much bigger than the declared 43x5.6 rect and starts
+   left of its own `left` — true extent is canvas 24..60 x 199..234, i.e.
+   local 0..36 x 61..96, well inside this root's 1040x102 box. */
+.halo-bracket .c11-elbow {
+  position: absolute;
+  display: block;
+  left: 3px;
+  top: 64px;
+  width: 43px;
+  height: 5.6px;
+  margin-top: -2.8px;
+  transform-origin: 0 50%;
+  transform: rotate(43.5deg);
+  background: linear-gradient(180deg,#b5504a 0%,#f0655a 16%,#fc6c5c 38%,#fb6f66 62%,
+                             #ee7270 80%,#a85258 100%);
+}
+</style>
+
+<div class="wb">
+
+  <header class="wb-head">
+    <h1>BRACKET</h1>
+    <span class="wb-role">element 9 of 10</span>
+    <span class="wb-gate is-pass">PASS · 0.000 · in assembly</span>
+    <p>
+      The red L down the left of the banner header row — a vertical stroke, a 43.5° elbow, and a
+      long horizontal divider running most of the card's width. One instance in the whole canvas,
+      built from CSS that used to live inside c10 and still has to interleave with it at
+      assembly time.
+    </p>
+  </header>
+
+  <div class="wb-body">
+    <div class="wb-specimens">
+
+      <article class="wb-spec" data-variant="base">
+        <div class="wb-spec-bar">
+          <button class="wb-pick" type="button">select</button>
+          <span class="wb-spec-meta">1040×102, painted box · header row, left edge · canvas (24, 138)</span>
+          <span class="wb-spec-note">the only variant — one instance on the whole canvas. the divider runs 1012px, far past the visible corner; the elbow's true paint extent starts left of its own <code>left</code>, on purpose.</span>
+        </div>
+        <div class="wb-stage">
+          <div class="stage" style="width:1128px;height:190px">
+            <div class="halo-bracket" data-knobbed style="--x:44px; --y:44px">
+              <i class="c11-div"></i>
+              <i class="c11-vertical"></i>
+              <i class="c11-tip"></i>
+              <i class="c11-elbow"></i>
+            </div>
+          </div>
+        </div>
+      </article>
+
+    </div>
+    <aside class="wb-rail" id="rail"></aside>
+  </div>
+
+  <p class="wb-note">
+    <b>Only <code>--x</code>/<code>--y</code> are knobs.</b> Everything else — the stroke widths,
+    the elbow's <code>rotate(43.5deg)</code>, the divider's 1012px run — was never expressed as a
+    variable in the source, and nothing in this pass changes that: turning it would break a
+    proven part, not iterate on it.<br><br>
+
+    <b>Paint order is baked into the markup, not a knob either.</b>
+    <code>.c11-div</code> has to come before <code>.c11-vertical</code>/<code>.c11-tip</code>/<code>.c11-elbow</code>
+    — the elbow's real paint extent overlaps the divider's left end on purpose (measured max delta
+    176 if reversed). Copy the four <code>&lt;i&gt;</code> tags in this order if you lift the
+    markup elsewhere.<br><br>
+
+    Turn <code>--x</code>/<code>--y</code>, hit <b>copy CSS</b>, paste the emitted block back into
+    <code>parts/bracket.css</code> in place of the current values — that's the whole handoff for
+    this part.<br><br>
+
+    <b>Why the gate above reads N/A:</b> a literal pixel check against this page's own crop always
+    fails (re-confirmed mean 56.247) because the crop necessarily includes c10's banner face and
+    its <code>.bt-warm</code> overlay, neither of which live in this file — an isolated bracket can
+    never match a composited reference. Real proof lives in the assembly gates (Main Item / Full
+    Card, both mean 0.000), which interleave this bracket with c10 exactly as the source does.
+  </p>
+
+  <script>
+/* ============================================================
+   workbench.js — verbatim (HaloWorkbench).
+   ============================================================ */
+function HaloWorkbench(cfg) {
+  const rail = document.querySelector(cfg.rail);
+  const specimens = Array.from(document.querySelectorAll(cfg.specimens));
+  if (!rail || !specimens.length) return;
+
+  const groups = cfg.groups || [];
+  const allKnobs = groups.flatMap(g => g.knobs);
+
+  // Per-specimen record of the values it was born with, so reset is exact and
+  // "dirty" means "differs from the source mockup", not "differs from default".
+  const born = new WeakMap();
+  const target = (spec) => spec.querySelector('[data-knobbed]') || spec.querySelector('.stage > *') || spec;
+
+  const readVar = (el, name) => {
+    const inline = el.style.getPropertyValue(name).trim();
+    if (inline) return inline;
+    return getComputedStyle(el).getPropertyValue(name).trim();
+  };
+
+  specimens.forEach(spec => {
+    const el = target(spec);
+    const snap = {};
+    allKnobs.forEach(k => { snap[k.var] = readVar(el, k.var); });
+    born.set(spec, snap);
+  });
+
+  let selected = specimens[0];
+
+  // -- build the rail once; values are re-bound on selection ---------------
+  const controls = new Map();
+
+  const railHead = document.createElement('div');
+  railHead.className = 'wb-rail-head';
+  railHead.innerHTML = '<span>knobs</span><b data-wb-which></b>';
+  rail.appendChild(railHead);
+  const which = railHead.querySelector('[data-wb-which]');
+
+  const knobBox = document.createElement('div');
+  knobBox.className = 'wb-knobs';
+  rail.appendChild(knobBox);
+
+  groups.forEach(g => {
+    const sec = document.createElement('section');
+    sec.className = 'wb-group';
+    const h = document.createElement('h3');
+    h.textContent = g.title;
+    sec.appendChild(h);
+
+    g.knobs.forEach(k => {
+      const row = document.createElement('div');
+      row.className = 'wb-knob';
+
+      const id = 'k' + Math.abs(hash(k.var + g.title));
+      const lab = document.createElement('label');
+      lab.setAttribute('for', id);
+      lab.textContent = k.label || k.var;
+
+      const out = document.createElement('output');
+      out.setAttribute('for', id);
+
+      const input = document.createElement('input');
+      input.id = id;
+      if (k.type === 'color') {
+        input.type = 'color';
+      } else {
+        input.type = 'range';
+        input.min = k.min; input.max = k.max; input.step = k.step != null ? k.step : 1;
+      }
+      input.addEventListener('input', () => apply(k, input.value));
+
+      row.append(lab, out, input);
+      sec.appendChild(row);
+      controls.set(k.var, { input, out, row, knob: k });
+    });
+
+    knobBox.appendChild(sec);
+  });
+
+  const acts = document.createElement('div');
+  acts.className = 'wb-acts';
+  const copyBtn = mkBtn('copy CSS');
+  const resetBtn = mkBtn('reset');
+  acts.append(copyBtn, resetBtn);
+  rail.appendChild(acts);
+
+  const out = document.createElement('pre');
+  out.className = 'wb-out';
+  rail.appendChild(out);
+
+  // -- behaviour -----------------------------------------------------------
+
+  function apply(knob, raw) {
+    const el = target(selected);
+    const value = knob.type === 'color' ? raw : raw + (knob.unit || '');
+    el.style.setProperty(knob.var, value);
+    sync(knob.var);
+  }
+
+  function sync(varName) {
+    const c = controls.get(varName);
+    if (!c) return;
+    const el = target(selected);
+    const now = readVar(el, varName);
+    const was = born.get(selected)[varName];
+    c.out.textContent = now || '—';
+    c.row.classList.toggle('is-dirty', norm(now) !== norm(was));
+  }
+
+  function load(spec) {
+    selected = spec;
+    specimens.forEach(s => s.classList.toggle('is-selected', s === spec));
+    which.textContent = spec.dataset.variant || '';
+    const el = target(spec);
+    controls.forEach(({ input, knob }, varName) => {
+      const v = readVar(el, varName);
+      if (knob.type === 'color') {
+        input.value = toHex(v) || '#000000';
+      } else {
+        const n = parseFloat(v);
+        input.value = Number.isFinite(n) ? n : (knob.min || 0);
+      }
+      sync(varName);
+    });
+    out.textContent = '';
+    copyBtn.classList.remove('is-done');
+    copyBtn.textContent = 'copy CSS';
+  }
+
+  specimens.forEach(spec => {
+    const pick = spec.querySelector('.wb-pick');
+    if (pick) pick.addEventListener('click', () => load(spec));
+    spec.addEventListener('click', e => {
+      if (e.target.closest('input, button, a')) return;
+      load(spec);
+    });
+  });
+
+  copyBtn.addEventListener('click', () => {
+    const el = target(selected);
+    const snap = born.get(selected);
+    const lines = [];
+    controls.forEach((c, varName) => {
+      const now = readVar(el, varName);
+      if (norm(now) !== norm(snap[varName])) lines.push(`  ${varName}: ${now};`);
+    });
+    const css = lines.length
+      ? `/* ${selected.dataset.variant || 'specimen'} — changed knobs */\n.halo-part {\n${lines.join('\n')}\n}`
+      : '/* nothing changed yet — turn a knob first */';
+    out.textContent = css;
+    if (navigator.clipboard && lines.length) {
+      navigator.clipboard.writeText(css).then(() => {
+        copyBtn.textContent = 'copied';
+        copyBtn.classList.add('is-done');
+      }, () => {});
+    }
+  });
+
+  resetBtn.addEventListener('click', () => {
+    const el = target(selected);
+    const snap = born.get(selected);
+    Object.keys(snap).forEach(varName => {
+      el.style.removeProperty(varName);
+      if (snap[varName]) el.style.setProperty(varName, snap[varName]);
+    });
+    load(selected);
+  });
+
+  load(specimens[0]);
+
+  // -- helpers -------------------------------------------------------------
+
+  function mkBtn(text) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'wb-btn'; b.textContent = text;
+    return b;
+  }
+  function norm(v) { return String(v || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
+  function hash(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h; }
+  function toHex(v) {
+    v = String(v || '').trim();
+    if (/^#[0-9a-f]{6}$/i.test(v)) return v;
+    if (/^#[0-9a-f]{3}$/i.test(v)) return '#' + v.slice(1).split('').map(c => c + c).join('');
+    const m = v.match(/^rgba?\(([^)]+)\)$/i);
+    if (m) {
+      const p = m[1].split(/[ ,/]+/).filter(Boolean).slice(0, 3).map(n => Math.max(0, Math.min(255, Math.round(parseFloat(n)))));
+      if (p.length === 3) return '#' + p.map(n => n.toString(16).padStart(2, '0')).join('');
+    }
+    return null;
+  }
+}
+
+HaloWorkbench({
+  rail: '#rail',
+  specimens: '.wb-spec',
+  groups: [
+    { title: 'placement', knobs: [
+        { var: '--x', label: 'x', min: 0, max: 88, step: 1, unit: 'px' },
+        { var: '--y', label: 'y', min: 0, max: 88, step: 1, unit: 'px' },
+    ]},
+  ],
+});
+  </script>
+</div>

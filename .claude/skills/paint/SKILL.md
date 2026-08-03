@@ -1,196 +1,244 @@
 ---
 name: paint
-description: Pixel-for-pixel recreation of a design mockup/screenshot in clean HTML/CSS, built the way a master copy is built — relationships before objects, and every effect (shading, etching, bevels, gradients, grain) achieved by STACKING thin translucent layers rather than asking one element to carry the accuracy. Then a gridded multi-agent refinement pass. Invoke with /paint when Jac supplies a mockup image and wants it recreated faithfully, wants a "pixel pass" on an existing recreation, or says a build "looks nothing like" his mockup. Recreate FROM SCRATCH first, grid-compare per element with agents, and only then port the proven recipes into the real codebase as construction swaps. NOT for building new UI from a text spec (that is wrangler-style + style) and NOT for triaging a functional bug (that is wrangler-fix).
+description: The guided design pipeline — Gemini inspiration → Canva composition → a critical read of that Canva file through the MCP → Figma components → gated code. Drives the whole run station by station and ALWAYS ends every turn by telling Jac the single next thing to do. Reach for it whenever a new card, screen, row, popup or visual element is being designed, whenever Jac has a mockup image or a Canva design he wants turned into real UI, whenever he asks "what's next" mid-design, or on an explicit /paint. Its centre of gravity is the CANVA CRITIQUE: Canva is Jac's most fluent tool, so the big structural decisions get made and challenged THERE — where he can fix them in seconds — instead of surviving into Figma or code where they cost hours. Carries the old pixel-recreation method as a FALLBACK lane for images with no editable source. NOT for building UI from a text spec (wrangler-style + style) and NOT for triaging a functional bug (wrangler-fix).
 ---
 
-# /paint — recreate the pixels, then borrow from what you built
+# /paint — the guided run, station by station
 
-Born 2026-08-02, after two failed attempts to edit the Tier-0.1 card toward
-Jac's mockups from memory. Jac's diagnosis, verbatim, is the core of the
-method:
+Rewritten 2026-08-03. The old `/paint` was a pixel-recreation method: take a PNG,
+rebuild it in CSS, chase the diff. It worked — the Halo card came out byte-exact,
+`mean delta 0.000` — and it cost **103 minutes, 1,587 model turns and ~2M tokens**
+to recover structure *that was never in the file*.
 
-> "I think your issue is editing, you're bad at that. You need to create from
-> scratch and then apply/merge into the mockup." … "Break the screenshot into
-> grids. use agents. See how close you can get per element in each grid."
+Jac's diagnosis of why:
 
-Extended 2026-08-02 with the **master-copy workflow** (Jac) — the copyist's
-discipline, translated to HTML/CSS. Two sentences carry the whole update:
+> "I've been working on this UI stuff for over a week, burning tokens, and not
+> making progress."
 
-> "Copy the artwork's **relationships** — not its individual objects."
-> "A single one-layer element does not need to bear the weight of accuracy —
-> using opacity and stacking elements can achieve it."
+The break was never `/paint` and never the inspiration. It was that Jac makes real
+structural decisions in Canva — what groups with what, relative sizes, where things
+sit — and then **exports a PNG, which destroys every one of them**. Recreation then
+pays, forensically, to guess back what he already knew.
 
-## The iron rules (each one paid for)
+So the method inverts. Canva stops being a step that throws work away and becomes
+the step where the design is *interrogated*, because it is the tool Jac is fastest
+in and the one whose output can actually be read.
 
-1. **The target image lives ON DISK and you have OPENED it.** Never work from
-   a remembered description of an image — two full rebuild passes were wasted
-   that way while the mockup sat unopened in the uploads folder. Check
-   `/root/.claude/uploads/<session>/` by *opening files*, not by filename.
-   If the image only exists in conversation, ask Jac to re-attach it.
-2. **Recreate from scratch, never edit toward.** A big cascade fights every
-   move; a clean standalone file has the mockup as its only constraint.
-   One `#stage` div at the image's native pixel size, absolute-positioned
-   elements, zero project CSS.
-3. **Measure before building.** PIL-sample colors and geometry (bboxes, stroke
-   widths, corner cuts, lean directions) — the eye misreads gloss as lean and
-   hue as shape.
-4. **Disputes are settled by sampling, not by confidence.** When an agent's
-   reading disagrees with yours, sample the pixels. (The tick-lean incident:
-   my eyes said `/`, three analysts said `\`, the pixels said `\`.)
-5. **Appliers introduce cross-cell regressions.** After any multi-agent apply
-   round, put YOUR OWN eyes on the full-frame comparison — cell analysts
-   can't see neighboring-cell damage (the chevron plate, the wrong-way
-   slash).
-6. **Port = construction swap, not nudge.** What moves into the real codebase
-   is the *recipe* (e.g. two-layer clipped-solid rings instead of inset
-   box-shadows), applied deliberately, one commit, with the recreation as the
-   reference artifact. Get Jac's call on the port list first (popup,
-   multiSelect).
-7. **Relationships, not objects.** A perfectly rendered eye in the wrong
-   location is still wrong. Match the *intervals, proportions and value gaps*
-   between elements before you perfect any single element. Same aspect ratio
-   as the mockup, always — a `#stage` of the wrong ratio drifts the whole
-   composition and no amount of per-element work recovers it.
-8. **No single element bears the accuracy — stack it.** Shading, etching,
-   bevels, gradients, grain, temperature: each is a *pile* of thin, low-alpha
-   layers, not one clever declaration. When a detail won't come out right,
-   the answer is almost always "add another layer at 8% alpha", not "tune
-   this one value harder." → `references/layering.md`.
+## Two things this skill does NOT replace
 
-## Order of importance — the diagnostic ranking
+`/start` routes every new card, screen, row, popup and visual element here. That makes it easy
+to assume `/paint` is now the whole design law. It is not — it is the *sequence*. Two standing
+CLAUDE.md rules still bind at every station, and dropping them is how locked decisions get
+silently undone:
 
-When the recreation is wrong, fix in **this order**, largest discrepancy
-first. A misplaced highlight never outranks a misplaced plate.
+1. **`style` + `wrangler-style`, both, always.** `wrangler-style` holds the decisions (the
+   locked steel palette, Archivo body + mono stamped, the four control shapes, the
+   Signal · Gate · Stamp · Ref · Door · Pin · Field vocabulary, the voice); `style` holds the
+   measurable rules those decisions must satisfy (one control height, the size ladder, WCAG
+   floors, ≥90 CVD separation, 60-30-10). When a decision and a rule conflict, **the decision
+   moves, not the rule.** Load both at **S3** (to critique against them) and again at **S6/S8**
+   (to build to them).
+2. **Read the decisions ledger BEFORE designing, and add a row when something is settled.**
+   `docs/superpowers/specs/2026-07-20-decisions-ledger.md`. Read it to the END and check dates —
+   rows #1–100 are a 07-20 snapshot and a later row may supersede one of them. **A decision is
+   not made until it is in that table**, so anything S3 or S5 settles gets a row, dated, with a
+   pointer both ways if it reverses something.
 
-| # | Layer | What "wrong" looks like |
-|---|---|---|
-| 1 | Composition & placement | element in the wrong x/y, wrong `#stage` ratio |
-| 2 | Proportion & drawing | right place, wrong width/height/angle/radius |
-| 3 | Value structure | right shape, wrong lightness — the squint test fails |
-| 4 | Edge hierarchy | everything equally sharp (or equally soft) |
-| 5 | Color temperature & saturation | correct value, but too warm/cool or too chromatic |
-| 6 | Surface handling | gradient/grain/texture reads flat or plastic |
-| 7 | Fine detail | glyphs, ticks, hairlines, micro-labels |
+A mockup is blind to both. Anything you do not carry forward gets designed away.
 
-This ranking governs **both** your own passes and the grid pass: an analyst
-reporting a 1px hairline shift while a plate sits 6px off is reporting the
-wrong thing. Cell reports carry the rank so the applier fixes top-down.
+## The one hard rule
 
-## The layering doctrine (short form)
+**Every turn ends by naming the single next action, and whose it is.**
 
-Build every surface as a stack, cheapest layer first. A typical plate:
+Not a status report. Not options. One line, at the bottom, in this shape:
 
-```
-1. base fill            solid, the local color at correct VALUE
-2. form modeling        1-3 linear/radial gradients, transparent-to-alpha
-3. edge construction    clipped solid rings (light TL / dark BR) — not inset shadows
-4. etching / incised    paired 1px lines: dark line + light line offset 1px
-5. texture / grain      tiled noise or repeating-gradient at 3-6% alpha
-6. temperature wash     one low-alpha warm or cool overlay, blend soft-light
-7. accents              the few hard, opaque marks — last, fewest
-```
+> **Next — you:** in Canva, name the five bar rects `bar-1`…`bar-5` and group them
+> as `slots`. Tell me when done.
 
-Every layer has **one job**. Never re-cover the whole element to fix one
-thing. Two hard constraints from the house language: **matte — no glow**
-(colored blur shadows are banned; build a hairline + a wash instead), and
-**never lighten with white** — white cools *and* desaturates; reach for the
-lighter neighboring hue. Full recipes, blend modes, and the edge-hierarchy
-table: `references/layering.md`.
+or
 
-## The method
+> **Next — me:** building the Chip component in Figma. Nothing needed from you.
 
-### Phase 0 — define the target and prep the reference
+If a turn ends without that line, the skill has failed. Jac should never have to
+ask "what now".
 
-Decide, out loud, before touching anything: is this an **exact reproduction**
-or an **observational study**? Exact ⇒ native pixel size, native aspect ratio,
-sight-size comparison. Then generate the reference set with
-`scripts/refs.py` — full-color, grayscale, 3-value posterized (notan), and a
-focal-area crop. You will judge value against the grayscale copy, not the
-color one; hue is the loudest liar in a value dispute.
+## The stations
 
-### Phase 1 — solo recreation (2-3 rounds)
+| | station | whose hands | gate to leave |
+|---|---|---|---|
+| **S0** | Frame the job | both | the card, its states, and the row count are written down |
+| **S1** | Gather inspiration | Jac | 1–3 references on disk, opened |
+| **S2** | Compose in Canva | Jac | he says it's laid out |
+| **S3** | **Read + critique** | me | the friction report is delivered |
+| **S4** | Fix in Canva | Jac | every finding answered or waived |
+| **S5** | Handoff gate | me | all gate criteria pass — I say "ready", explicitly |
+| **S6** | Build in Figma | me | components exist with variants + bound variables |
+| **S7** | Nudge in Figma | Jac | he says it's right |
+| **S8** | Code + gate | me | pixel gate green, committed |
 
-1. Copy `scripts/` into the scratchpad; point `shot.mjs` and `compare.py` at
-   your recreation file and the mockup path. `pip3 install Pillow` if PIL is
-   missing (it usually is on a fresh cloud container).
-2. Sample the mockup's key geometry with PIL (see `scripts/probe-example.py`):
-   outer envelope, major axes, extreme points, big negative shapes.
-3. **Envelope first.** Lay in `#stage` at native size on a *toned ground*
-   (mid-steel, not white or black — a brilliant ground misreads every value),
-   then block only the major masses as flat rectangles. No text, no ticks, no
-   icons, no gradients. Check the block-in with `scripts/diag.py --overlay`
-   before adding anything.
-4. **Value map before color.** Take the whole recreation monochrome
-   (`#stage { filter: grayscale(1) }`) and match it against the grayscale
-   mockup at 3-5 values. It must read correctly at 25% scale
-   (`scripts/diag.py --squint`) before any color goes down.
-5. **First color pass, thin and simple.** Background, big shadow masses, big
-   light masses, local colors, broad temperature shifts. Do not chase small
-   variations yet — establish the color climate.
-6. **Model with successive layers** (§ layering doctrine) — then rebuild the
-   edge hierarchy deliberately: sharpen at the focal point, soften turning
-   forms, *lose* edges where adjacent values merge. Do not outline everything.
-7. Render, stack-compare (mockup on top, recreation below), fix the big reads
-   yourself in the order-of-importance ranking. Stop when only fine detail
-   differs.
+S3↔S4 loops. Nothing else does.
 
-### Phase 2 — the grid pass (agents; needs Jac's multi-agent opt-in unless ultracode is on)
+### S0 — Frame the job
 
-8. Cut BOTH images into **element-aligned** cells — one cell per meaningful
-   element cluster (a rack, a board, a plate, a frame corner), not blind
-   squares. 3x nearest-neighbor upscale per cell. `scripts/cut.py` template.
-9. Workflow: `parallel` one **analyst per cell** (read-only!), each returns
-   `{score 1-10, deltas:[{rank 1-7, element, issue, fix}]}` with
-   original-scale px coordinates and sampled hex pairs — `rank` is the
-   order-of-importance row, and fixes are phrased as *layers to add* where a
-   layer is the answer. Then ONE **applier** (opus) merges all cells' deltas
-   **rank-ascending** (placement before proportion before value before edges…)
-   into the file — cells own their shared styles (the tick cell rules tick
-   styles) — re-renders, re-cuts. Loop analyze→apply until every cell ≥9 or
-   3 rounds.
-10. **Your final pass:** full-frame compare with your own eyes, in the
-    order-of-importance sequence — silhouette, placement, value masses, focal
-    contrast, temperature, saturation, edges, detail. Hand-apply the analysts'
-    last coordinates and fix any applier regressions. Then **unify**: deepen a
-    few darks, restore a few highlights, quiet overactive passages, repeat key
-    colors across the frame, and delete detail that isn't earning its place.
-    Republish the recreation artifact (its own URL, never the app artifact's).
+Before any picture exists, get three things on the record, because every one of
+them changes what gets drawn:
 
-### Phase 3 — the port (separate, gated)
+1. **What is it** — a card, a row, a popup, a whole screen.
+2. **Which states** — default, hover, open, selected, empty, error. A state not
+   drawn is a variant not built, and it comes back as rework. Ask explicitly.
+3. **How many on screen at once** — this sets the node and effect budget (see
+   `references/canva-critique.md` → *cost*). A design that is fine once can be
+   unusable at sixty.
 
-11. Name what the recreation taught — as recipes, with the false findings
-    retracted explicitly. Popup Jac the port list (multiSelect). Only then
-    touch the real codebase, and through its own gates (backtick audit, sweep,
-    ledger rows).
+### S1 — Gather inspiration
+
+Gemini or any image model. This step does **not** change and is not the problem.
+
+What changes is the picture's job: **it is a reference, not a specification.** AI
+images depict interfaces that often cannot exist — text that isn't text, spacing off
+any grid, lighting no CSS produces. Matching one pixel-for-pixel means inheriting an
+image model's mistakes as requirements. Take the two or three ideas that are good.
+
+Say this out loud when handing back references. Jac has lost weeks to treating a
+depiction as a spec.
+
+### S2 — Compose in Canva
+
+Jac's hands, Jac's pace. Do not hover. He is faster here than anywhere else and the
+whole point of the pipeline is to use that.
+
+One thing to tell him before he starts, because it is cheap up front and expensive
+later: **drop the reference in as a locked, dimmed underlay and build over it with
+real objects.** Tracing produces structure; pasting produces a blob.
+
+### S3 — Read the Canva file and be critical
+
+**This is the station the whole skill exists for.**
+
+    mcp__Canva__search-designs   → find it
+    mcp__Canva__read-design      → design_id, open_transaction: true,
+                                   fields: [design_metadata, page_metadata, design_content]
+
+With a transaction open, `design_content` is the full document as markdown: every
+element with a `[locator_id]`, its `pos:` and `size:`, rotation, opacity, fills,
+strokes, and complete typography. A single page of a real design ran **52,275
+characters**. That is a structured document — critique it like one.
+
+Then deliver a **friction report**. Full checklist and the measured evidence behind
+each item: `references/canva-critique.md`. The five families:
+
+- **Blocking** — raster where structure is needed, text baked into an image,
+  flattened groups. These make extraction impossible, not merely awkward.
+- **Library** — unnamed elements, repeated things ungrouped, one component drawn
+  twice inconsistently, missing states. These produce a wrong library, silently.
+- **Cost** — effect and node budget against S0's row count.
+- **Fragility** — fractional geometry, near-miss values, near-miss colours,
+  contrast and colour-blind separation floors.
+- **Order** — stacking is paint order; alignment that nearly lines up.
+
+Rules for the report itself:
+
+1. **Quantitative, never vibes.** "Your five bars sit at x = 215.0, 247.4, 279.7,
+   314.1, 348.9 — gaps of 32.4, 32.3, 34.4, 34.8. Is the widening deliberate?" A
+   PNG can never prompt that question; this is the entire value of reading the
+   source.
+2. **Ask, don't assume.** Every near-miss is either intent or drift and only Jac
+   knows which. Guessing is how a mockup's accident becomes canon.
+3. **Say what it will cost, in the currency of this project.** Not "blur is
+   expensive" — "each bar carries a blur; at sixty rows that is 840 compositing
+   layers, and the measured p90 frame went 16.8ms → 54ms."
+4. **Surface what he has not considered.** Missing states, the second breakpoint,
+   what an empty list looks like, what happens when the name is forty characters.
+   This is the part he explicitly asked for and it is the part a checklist alone
+   will not produce — read the design as someone who will have to build every state
+   of it.
+5. **Rank by cost of being wrong**, worst first — blocking, then library, then
+   cost, then fragility, then order. Never lead with a hairline.
+
+### S4 — Fix in Canva
+
+Hand back a numbered list of *actions*, not observations. Each one: what to change,
+where, and why it matters downstream. Then wait.
+
+Re-read after he's done and diff against the previous read. Say plainly what got
+fixed and what is still open. Loop until the gate passes or he waives an item —
+a waiver is fine and gets recorded, silence is not.
+
+### S5 — The handoff gate
+
+Do not advance on a feeling. Every one of these must be true, and I say so item by
+item:
+
+- [ ] Every element that needs independent styling is a real object, not inside a raster
+- [ ] All text is text
+- [ ] Repeated things are grouped and meaningfully named
+- [ ] Every component that needs variants has all its states drawn
+- [ ] No unanswered "deliberate or drift?" question
+- [ ] Node and effect budget reviewed against S0's row count
+- [ ] Paint order confirmed for every overlap
+
+Then say it explicitly: **"Ready to move to Figma."** That sentence is the gate.
+
+### S6 — Build in Figma
+
+My hands, not his. He has said plainly he has no Figma experience — creating
+components is the hard half and it is mine. Load `figma-generate-library` **and**
+`figma-use` together and follow their phases. Figma writes are strictly sequential;
+never parallelise them.
+
+### S7 — Nudge in Figma
+
+His hands, and this is the easy half: pick a variant from a dropdown, drag a number,
+move a box. If he is having to draw anything, S6 was done badly — go back and build
+the component properly rather than asking him to compensate.
+
+### S8 — Code, then gate
+
+`get_design_context` on the frame, generate against the existing parts kit, then
+prove it: `docs/design/halo-elements/_ref/check.py` with `--full`. The pixel gate is
+not ceremony — it caught a wrong `clip-path` that no part-level test could see,
+because the broken variant was the one its own gate didn't cover.
+
+## The fallback lane — no editable source
+
+When Jac is handed an image with no Canva or Figma behind it, the old recreation
+method is still right and still the best tool for it. It is a lane, not the road.
+
+Its full text — the eight iron rules, the diagnostic ranking, the phases, the grid
+pass — is `references/recreation.md`. The two that generalise beyond it:
+
+1. **The target image lives ON DISK and you have OPENED it.** Two full rebuild
+   passes were once wasted working from a remembered description while the mockup
+   sat unopened in the uploads folder.
+2. **Relationships, not objects.** A perfectly rendered element in the wrong place
+   is still wrong. Match intervals, proportions and value gaps before perfecting
+   anything.
+
+And the layering doctrine — no single element bears the accuracy, stack thin
+translucent layers — remains how any surface gets built, in either lane:
+`references/layering.md`.
 
 ## Scripts
 
-Templates in `scripts/` (copy to scratchpad; each takes paths as argv):
-- `refs.py` — reference set: grayscale, 3-value notan, posterized, focal crop
-- `cut.py` — cell definitions + 3x crops for both images
-- `shot.mjs` — playwright render of the recreation at native size
-- `compare.py` — stacked mockup/recreation comparison image
-- `diag.py` — the diagnostic checks: `--overlay` (difference map + alignment),
-  `--squint` (blur/downscale, the across-the-room read), `--flip` (mirror and
-  180° for drawing errors), `--values` (both images posterized side by side)
-- `probe-example.py` — PIL sampling patterns (blob columns, stroke runs,
-  lean-direction settlement)
+| script | use |
+|---|---|
+| `scripts/shot.mjs` | render an HTML file at native size (never resized) |
+| `scripts/refs.py` | full-colour / grayscale / posterised / crop reference set |
+| `scripts/cut.py` | element-aligned grid cut, same cells on both images |
+| `scripts/compare.py` | stack two renders for eyeballing |
+| `scripts/diag.py` | numeric diff diagnostics |
+| `scripts/probe-example.py` | PIL geometry sampling |
 
-Bootstrap: `pip3 install Pillow` · playwright lives at
-`/opt/node22/lib/node_modules/playwright`.
-
-## Reference
-
-- `references/layering.md` — the stacking recipes: shading, etching, bevels,
-  gradients, grain, temperature washes, the edge-hierarchy table, blend-mode
-  choices, and how to debug a stack.
-- `references/master-copy.md` — the full master-copy workflow (Jac's brief),
-  each step translated to what it means in HTML/CSS.
+The kit's own gate, `docs/design/halo-elements/_ref/check.py`, supersedes
+`compare.py` for anything that must be *proven* rather than eyeballed — it prints
+mean/max delta and a pass verdict. Use `--full`: a box-sized verify page has a
+measurable rasterisation floor (0.288 mean on a fractional clipped box) that will
+hide a real 1px defect.
 
 ## Score honestly
 
-Cell scores of 6-7 with a strong visual match are normal — analysts at 3x
-zoom see texture gaps a viewer never will. The stop condition is Jac's read
-("not terrible" → another pass; silence → ship the comparison and ask), not
-a perfect 10. Stop adding layers when another mark no longer improves the
-larger relationships.
+Report the number the gate printed, never a rounded impression of it. If a residual
+is the harness rather than the work, prove that with a control — render the
+*original's own untouched markup* through the same harness and show it scores the
+same. That exact control saved a byte-perfect part from being "fixed" into a broken
+one.

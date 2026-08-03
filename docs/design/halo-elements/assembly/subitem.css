@@ -1,0 +1,171 @@
+/* ==========================================================================
+   ASSEMBLY — SUBITEM  (.halo-subitem)
+   Band B's lower row: the nested record row inside the card.
+   Canvas x 1..1288, y 241..378 (plus c3's elbow, which straddles up to 213).
+
+   PLACEMENT ONLY. Not one colour, gradient, shadow, blur, radius, font or
+   part-size lives in this file, and none ever may. Every visual value belongs
+   to the part that owns it (parts/<id>.css). If an assembly ever needs a
+   colour to look right, the PART is incomplete — push the fix down into the
+   part, never patch it here.
+
+   The one non-coordinate rule in this sheet is `clip-to-subitem`, and it is a
+   framing decision about which slice of a SHARED housing a page shows, not a
+   restyle of c13 — see THE SHELL below.
+
+   Parts composed (DOM order IS z-order — there is not a single z-index
+   anywhere in this kit, exactly as ANATOMY.md's overlap map records):
+
+     housing    .is-banner                the housing — NOT this
+                                                    row's; see THE SHELL
+     etch    .is-banner                etched field + microtext
+     conduit          .is-banner                C3b, the conduit elbow
+     cartridge      .is-c4b                   the sub-panel (+ .pf-lift)
+     marks           .is-hexicon · .is-name    hex icon + "Skid Ste..."
+     slots     .is-c2c                   5 bars R R R Y Y
+     chip      .is-narrow.is-labelled    narrow PROMISED chip
+
+   --------------------------------------------------------------------------
+   THE ROW'S OWN ORIGIN
+
+   .halo-subitem is absolutely positioned at (--x, --y) and every part below
+   is placed relative to IT, not to the canvas. --x/--y default to 0, so the
+   row drops into any positioned ancestor at any offset:
+
+     <div class="halo-subitem" style="--x:40px; --y:24px"> … </div>
+
+   Row box = 1287 x 137 — c13's own width (canvas x 1..1287) by the sub-item
+   row's height (canvas rows 241..378 inclusive). The rebase constant is
+   therefore canvas (1, 241): every local offset below is that instance's
+   canvas coordinate minus (1, 241). Same convention main-item.css uses with
+   its own (1, 125), so the two rows stack by placing them 116px apart.
+
+   The row does NOT clip, deliberately. c3's C3b elbow carries a NEGATIVE
+   local --y (-30px): its nominal box starts at canvas y211, thirty rows above
+   this row's own top, and it genuinely paints up into the Main Item's band
+   (canvas rows 213..240) in the source. c2's bars likewise throw ~9px past
+   their root box on each side from `skewX(18deg)` plus ~2.5px of blur.
+   Adding overflow:hidden here would eat real paint.
+
+   KEEP --x AND --y INTEGERS. c1 pins its filtered ring <svg> to a whole
+   screen pixel with mod(var(--x),1px) and bakes the leftover fraction into
+   the path `d` for THIS instance's .5/.5 — so a fractionally-positioned row
+   root would put the ring's blur back off-grid (chip.css REBASE
+   note 6). The fractional part of each part's own placement below is
+   load-bearing for the same reason; do not round it.
+
+   --------------------------------------------------------------------------
+   THE SHELL IS NOT THIS ROW'S
+
+   housing is the CARD's housing: ONE 1287x254 box at canvas (1,125)
+   that spans the whole of band B. The Main Item row sits in its top half and
+   the Subitem row sits in its bottom half. It belongs to neither row, and
+   both rows need it under them because every part above it composites
+   against its face.
+
+   So it is NOT a child of .halo-subitem. On subitem.html it is a sibling,
+   included only so the page's backdrop is honest (a Subitem floating on bare
+   --bg would composite differently and would be a lie), and cropped to this
+   row's band by `clip-to-subitem` so the page does not display 116 rows of
+   housing that belong to the row above. inset(116px 0 0 0) is local to the
+   shell root: it keeps canvas rows 241..378 and drops 125..240.
+
+   THE 116 IS MEASURED, NOT ROUNDED. It was 117 first — cropping to rows
+   242..378 — and that cost real pixels: canvas row 241 is where c9's field
+   begins, and left/right of c9 that row shows the shell's own face in the
+   reference. With the crop at 117 the subitem page scored mean 6.455 / max
+   141 on the window 1063x1 @ (0,241); at 116 it scores 0.000 / max 0. The
+   Main Item's last row and the Subitem's first row are the same scanline —
+   both rows touch canvas 241 — so this row belongs to both, and the crop
+   has to keep it.
+
+   On main-plus-subitem.html both rows are present, the shell comes from
+   .halo-main-item (which owns it there), and this class is NOT applied.
+
+   --------------------------------------------------------------------------
+   WHY THE PAGES CARRY A FULL 1292x635 STAGE
+
+   So the pixel gate is honest. A stage that is not the canvas's own size
+   rasterises fractionally positioned, clip-pathed boxes onto a different
+   pixel grid. Measured on the ORIGINAL's own untouched markup, shifted into a
+   smaller stage by an integer offset and nothing else:
+
+       1292x140 stage (the subitem band)  ->  mean 0.228, max 83
+       1292x268 stage (all of band B)     ->  mean 0.059, max  8
+       1292x635 stage (the real canvas)   ->  mean 0.000, max  0
+
+   Those first two numbers are the harness, not the parts — and a harness with
+   a floor of 0.228 is one that can hide a real 1px defect. So the assembly
+   pages carry the canvas's own stage, every row root sits at its true canvas
+   origin, and the gate runs with check.py --full. (ANATOMY.md, "The stage
+   width changes the pixels".)
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   THE ROW
+   -------------------------------------------------------------------------- */
+.halo-subitem {
+  --x: 0px;
+  --y: 0px;
+
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: 1287px;
+  height: 137px;
+}
+
+/* --------------------------------------------------------------------------
+   THE SHARED HOUSING — a sibling, not a child. See THE SHELL above.
+   housing.css's own .is-banner already bakes the canvas position
+   (1px, 125px), so nothing is restated here — only the crop.
+   -------------------------------------------------------------------------- */
+.halo-housing.clip-to-subitem { clip-path: inset(116px 0 0 0); }
+
+/* --------------------------------------------------------------------------
+   PART PLACEMENT — local = canvas - (1, 241)
+   -------------------------------------------------------------------------- */
+
+/* c9 · etched circuit field + its re-parented microtext block.
+   canvas (11, 241) -> local (10, 0).
+   .is-banner is the LIT variant and the right one here: three of c9's four
+   background layers are other parts' light baked in as gradients (c4 C4b's
+   rim spill, c3 C3b's red wash, c11 .bt-div's top shadow) and all three of
+   those neighbours are present in this card. Lift c9 away from them and
+   .is-unlit is the honest variant instead. */
+.halo-subitem > .halo-etch { --x:  10px; --y:   0px; }
+
+/* c3 · conduit elbow, instance C3b.
+   canvas (147, 211) -> local (146, -30).  The NEGATIVE --y is correct: this
+   elbow straddles the row boundary and paints canvas rows 213..335, so its
+   top 28 rows land over the Main Item row. That is the source's geometry. */
+.halo-subitem > .halo-conduit       { --x: 146px; --y: -30px; }
+
+/* c4 · sub-panel frame, instance C4b.
+   canvas (348.3, 246) -> local (347.3, 5).
+   .pf-lift IS the variant and it is a DOM CHILD, not a var — .is-c4b alone
+   does not produce it. Its slot is load-bearing too: inside .pf-body between
+   .pf-lbev and .pf-lface. See the markup. */
+.halo-subitem > .halo-cartridge   { --x: 347.3px; --y: 5px; }
+
+/* c12 · the two marks that ride on the sub-panel's cavity. Both are
+   .halo-marks, so each gets its own placement hook (same pattern
+   main-item.css uses for its four rivets). Both must paint AFTER c4.
+     hexicon  canvas (397,   297)   -> local (396, 56)
+     name     canvas (458, 290.5)   -> local (457, 49.5)   */
+.halo-subitem > .si-hexicon            { --x: 396px; --y:  56px; }
+.halo-subitem > .si-name               { --x: 457px; --y: 49.5px; }
+
+/* c2 · 5 segment bars, instance C2c.
+   canvas (691, 279) -> local (690, 38).  (691,279) is c2c's own rebase
+   reference — the measured painted-box top-left, which is what its per-bar
+   local `left` values were rebased against, NOT the bar row's top.) */
+.halo-subitem > .halo-slots  { --x: 690px; --y:  38px; }
+
+/* c1 · narrow PROMISED chip, instance C1c.
+   canvas (877.5, 271.5) -> local (876.5, 30.5).
+   THE FRACTION IS LOAD-BEARING — c1 cancels mod(--x,1px)/mod(--y,1px) so its
+   filtered ring <svg> lands on an integer pixel, and the path `d` in the
+   markup has that same .5/.5 baked back in. Keep the fractional part, and
+   keep .halo-subitem itself on an integer position. */
+.halo-subitem > .halo-chip   { --x: 876.5px; --y: 30.5px; }

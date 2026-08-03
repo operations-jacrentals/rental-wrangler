@@ -1,0 +1,83 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>slots — preview</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="./slots.css">
+<style>
+  /* Page-scaffolding only — nothing here touches .halo-slots or
+     its descendants, and none of it is part of the recreated artwork. */
+  body { min-height: 100vh; padding: 48px 24px; align-items: flex-start; }
+  .sheet { display: flex; flex-direction: column; gap: 40px; align-items: center; }
+  h1 {
+    font-family: var(--mono); font-size: 13px; font-weight: 700;
+    letter-spacing: .08em; text-transform: uppercase; color: #6b7480;
+  }
+  .demo { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .demo .stage { position: relative; border: 1px solid #1b2029; }
+  .cap {
+    font-family: var(--mono); font-size: 11px; line-height: 1.5;
+    color: #6b7480; text-align: center; max-width: 420px;
+  }
+  .cap b { color: #9aa3ad; font-weight: 700; }
+  .cap code { color: #7d8894; }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <h1>c2 — segment bars</h1>
+
+  <div class="demo">
+    <div class="stage" style="width:260px;height:140px">
+      <div class="halo-slots is-c2a" style="--x:40px; --y:40px">
+        <span class="b r" style="left:11.0px"></span>
+        <span class="b r" style="left:43.4px"></span>
+        <span class="b r" style="left:75.7px"></span>
+        <span class="b y" style="left:110.1px"></span>
+        <span class="b y" style="left:144.9px"></span>
+      </div>
+    </div>
+    <div class="cap">
+      <b>.is-c2a</b> — 5 bars, R R R Y Y &middot; band A, loose<br>
+      <code>--h:61.6px --ft:12px --fb:14px --iy:1.6px --bw:180px --bh:66px</code>
+    </div>
+  </div>
+
+  <div class="demo">
+    <div class="stage" style="width:340px;height:130px">
+      <div class="halo-slots is-c2b" style="--x:40px; --y:40px">
+        <span class="b r" style="left:8.5px"></span>
+        <span class="b r" style="left:46.0px"></span>
+        <span class="b r" style="left:82.5px"></span>
+        <span class="b y" style="left:118.0px"></span>
+        <span class="b y" style="left:155.0px"></span>
+        <span class="b y" style="left:191.5px"></span>
+        <span class="b y" style="left:227.0px"></span>
+      </div>
+    </div>
+    <div class="cap">
+      <b>.is-c2b</b> — 7 bars, R R R Y Y Y Y &middot; band B, hard-clipped at local x=251
+      (bar 7's right edge is cut mid-paint — intentional source artwork)<br>
+      <code>--h:50.5px --ft:7px --fb:7px --iy:0.5px --bw:251px --bh:51px --clip-r:251px</code>
+    </div>
+  </div>
+
+  <div class="demo">
+    <div class="stage" style="width:260px;height:130px">
+      <div class="halo-slots is-c2c" style="--x:40px; --y:40px">
+        <span class="b r" style="left:9.7px"></span>
+        <span class="b r" style="left:41.7px"></span>
+        <span class="b r" style="left:74.2px"></span>
+        <span class="b y" style="left:108.7px"></span>
+        <span class="b y" style="left:143.2px"></span>
+      </div>
+    </div>
+    <div class="cap">
+      <b>.is-c2c</b> — 5 bars, R R R Y Y &middot; band B, sub-panel instance<br>
+      <code>--h:55px --ft:7.5px --fb:8px --iy:3px --bw:177px --bh:60px</code>
+    </div>
+  </div>
+</div>
+</body>
+</html>

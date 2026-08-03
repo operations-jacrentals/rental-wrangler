@@ -1,0 +1,182 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>main-item verify — band B header row, full canvas</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../parts/housing.css">
+<link rel="stylesheet" href="../parts/deck.css">
+<link rel="stylesheet" href="../parts/bracket.css">
+<link rel="stylesheet" href="../parts/slots.css">
+<link rel="stylesheet" href="../parts/chip.css">
+<link rel="stylesheet" href="../parts/screen.css">
+<link rel="stylesheet" href="../parts/marks.css">
+<link rel="stylesheet" href="./main-item.css">
+</head>
+<body>
+<!--
+  ===========================================================================
+  THE GATE PAGE for the Main Item assembly.
+
+  A full 1292x635 canvas stage carrying ONLY the Main Item, with the row root
+  at its TRUE canvas origin (--x:1px; --y:125px). Rendered with
+  `check.py … --full` it rasterises on exactly the pixel grid original.png
+  was rendered on — see ANATOMY.md, "The stage width changes the pixels".
+  main-item.html is the same markup with the row at its own (0,0) inside a
+  1287x117 stage; this page is the same row RELOCATED, which is itself the
+  proof that the row is origin-relative.
+
+  ---------------------------------------------------------------------------
+  THE GATE BOXES — four, because one honest rectangle does not exist
+
+  The row's box is canvas x1..1287, y125..241. A neighbour paints INTO it:
+  c3's C3b conduit is nominally at (147,211) 209x125, so its top 28 rows
+  land on canvas x150..284, y213..240 — inside the Main Item's box, painted
+  after it, and not part of it. Measured, not assumed: rendering
+  original.html with everything except the Main Item's 11 stage children
+  hidden and diffing against original.png leaves exactly two dirty regions
+  in rows 118..244 —
+
+      x150..284, y213..240   c3's C3b conduit
+      x11..351,  y241..244   c9's circuit field (the sub-item row begins)
+
+  and nothing else. So the row is gated by four windows that tile it and
+  avoid both:
+
+      A   0, 118, 1292, 95    rows 118..212, full width  (incl. 7 bg rows
+                              above the row — proves nothing spills up)
+      B   0, 213,  150, 28    rows 213..240, left of C3b
+      C 285, 213, 1007, 28    rows 213..240, right of C3b
+      D 353, 241,  939,  4    rows 241..244, right of c9 — catches C5b's
+                              last painted row and proves nothing spills down
+
+  Together: 158,892 px = 97.5% of the row's own box. The 2.5% not gated is
+  the C3b rectangle, where the reference simply is not the Main Item.
+
+  Run all four (from the repo root):
+
+    python3 docs/design/halo-elements/_ref/check.py \
+      docs/design/halo-elements/assembly/main-item.verify.html 1292 95 0 118 \
+      docs/design/halo-elements/assembly/main-item.A --full
+    …same for  150 28 0 213 (B) · 1007 28 285 213 (C) · 939 4 353 241 (D)
+
+  ---------------------------------------------------------------------------
+  LAYER-BY-LAYER
+
+  The `@step N` / `@endstep N` comment markers below are the layer-check
+  harness: deleting every block with a number greater than N yields the
+  page for step N (1 = shell alone … 7 = the whole row). They are also just
+  a readable index of the paint order, so they stay in the shipped page.
+  Note step 3 (c11) is nested INSIDE step 2 (c10) — that interleave is
+  required, see main-item.css.
+  ===========================================================================
+-->
+
+<!-- c1's filter def — ONCE per page, shared by every chip on it, id fixed
+     by chip.css. Not part of .halo-main-item on purpose. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <filter id="chip-soft" x="-6%" y="-25%" width="112%" height="150%"><feGaussianBlur stdDeviation=".81"/></filter>
+</defs></svg>
+
+<div class="stage" style="width:1292px;height:635px">
+  <div class="halo-main-item" style="--x:1px; --y:125px">
+
+<!-- @step 1 · c13 banner shell — the housing everything else sits on -->
+    <div class="halo-housing is-banner">
+      <div class="back"></div>
+      <div class="face"></div>
+      <div class="rim-t"></div><div class="rim-b"></div>
+      <div class="rim-l"></div><div class="rim-r"></div>
+    </div>
+<!-- @endstep 1 -->
+
+<!-- @step 2 · c10 banner top row — rims, bands, graph well, slate, seam,
+     bevel, ramp, notch, warm wash, rivet. DOM order IS the recipe. -->
+    <div class="halo-deck is-banner">
+      <i class="bt-top"></i>
+      <i class="bt-face"></i>
+      <i class="bt-mod"></i>
+      <i class="bt-band2"></i>
+      <i class="bt-fallA"></i>
+      <i class="bt-fallB"></i>
+      <i class="bt-bev"></i>
+      <i class="bt-seam"></i>
+      <i class="bt-right"></i>
+      <i class="bt-ramp"><b></b></i>
+      <i class="bt-notch"></i>
+      <i class="bt-slate"></i>
+      <i class="bt-gut"></i>
+      <i class="bt-gutcap"></i>
+      <i class="bt-gutlow"></i>
+      <i class="bt-welltop"></i>
+      <i class="bt-well"></i>
+      <i class="bt-welledge"></i>
+      <i class="bt-wellr"></i>
+      <svg class="bt-graph" viewBox="0 0 36 73" fill="none">
+        <polyline points="0.5,29.6 3,29.6 25,14.6 34.6,5"
+                  stroke="rgba(170,205,228,.30)" stroke-width="1.1"/>
+      </svg>
+
+<!-- @step 3 · c11 L bracket — MUST sit here, after .bt-graph and before
+     .bt-warm (which occludes the elbow in canvas columns 33..37). -->
+      <div class="halo-bracket">
+        <i class="c11-div"></i>
+        <i class="c11-vertical"></i>
+        <i class="c11-tip"></i>
+        <i class="c11-elbow"></i>
+      </div>
+<!-- @endstep 3 -->
+
+      <i class="bt-warm"></i>
+      <i class="bt-rivet"></i>
+    </div>
+<!-- @endstep 2 -->
+
+<!-- @step 4 · c2 C2b — 7 bars R R R Y Y Y Y, hard-clipped at canvas x384 -->
+    <div class="halo-slots is-c2b">
+      <span class="b r" style="left:8.5px"></span>
+      <span class="b r" style="left:46.0px"></span>
+      <span class="b r" style="left:82.5px"></span>
+      <span class="b y" style="left:118.0px"></span>
+      <span class="b y" style="left:155.0px"></span>
+      <span class="b y" style="left:191.5px"></span>
+      <span class="b y" style="left:227.0px"></span>
+    </div>
+<!-- @endstep 4 -->
+
+<!-- @step 5 · c1 C1b — the wide PROMISED chip. The ring path `d` is this
+     instance's own data (canvas coords minus floor(--x)/floor(--y)). -->
+    <div class="halo-chip is-wide is-labelled">
+      <div class="plate oct"></div>
+      <div class="bloom"></div>
+      <div class="cap"></div>
+      <div class="inner oct"></div>
+      <div class="label">PROMISED</div>
+      <svg class="ringlayer">
+        <path class="halo" d="M14.9,10.87 H600.3 L620.7,31.27 V56.38 H35.3 L14.9,35.98 Z"/>
+        <path class="core" d="M14.9,10.87 H600.3 L620.7,31.27 V56.38 H35.3 L14.9,35.98 Z"/>
+      </svg>
+    </div>
+<!-- @endstep 5 -->
+
+<!-- @step 6 · c5 C5b — the FAILED octagon plate -->
+    <div class="halo-screen is-failed">
+      <div class="body oct4"></div>
+      <div class="glass oct4"></div>
+      <div class="hair oct4"><i class="oct4"></i></div>
+      <div class="readout">FAILED</div>
+    </div>
+<!-- @endstep 6 -->
+
+<!-- @step 7 · c12 — the four loose rivets, last so R1/R2/R3 land on C5b
+     and R4 lands on c10's .bt-rivet -->
+    <div class="halo-marks is-rivet mi-rivet-1"></div>
+    <div class="halo-marks is-rivet mi-rivet-2"></div>
+    <div class="halo-marks is-rivet mi-rivet-3"></div>
+    <div class="halo-marks is-rivet mi-rivet-4"></div>
+<!-- @endstep 7 -->
+
+  </div>
+</div>
+</body>
+</html>

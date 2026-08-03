@@ -1,0 +1,213 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>main-item — band B header row, assembled from the parts kit</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../parts/housing.css">
+<link rel="stylesheet" href="../parts/deck.css">
+<link rel="stylesheet" href="../parts/bracket.css">
+<link rel="stylesheet" href="../parts/slots.css">
+<link rel="stylesheet" href="../parts/chip.css">
+<link rel="stylesheet" href="../parts/screen.css">
+<link rel="stylesheet" href="../parts/marks.css">
+<link rel="stylesheet" href="./main-item.css">
+<style>
+  /* PAGE SCAFFOLDING ONLY — nothing here touches .halo-main-item or any part.
+     It IS load-bearing scaffolding though, for one reason: the stage has to
+     land on WHOLE pixels. c1's chip pins its filtered ring <svg> to an integer
+     position with mod(var(--x),1px) measured off the row's own origin, so a
+     fractionally-positioned ancestor puts the blur back off grid. Two traps
+     handled here:
+       1. tokens.css sets `body { display:grid; place-items:center }`, and in
+          current Chromium the centring still shrink-wraps and half-pixel
+          centres a block child even with display overridden — measured, the
+          1287px stage landed at x=56.5. `place-items:start` is the fix.
+       2. Fractional line boxes above the stage push it to a fractional y
+          (measured 114.1875). `.head` gives the heading block a fixed integer
+          height so the stage starts at a whole pixel: 32 (pad) + 88 = 120. */
+  body { display: block; place-items: start; padding: 32px 24px 64px; }
+  .head { height: 88px; overflow: hidden; }
+  h1 {
+    font-family: var(--mono); font-size: 13px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: #8a8f98; margin: 0 0 8px; line-height: 20px;
+  }
+  p.sub {
+    font-family: var(--mono); font-size: 11px; line-height: 20px; color: #5f6570;
+    margin: 0; max-width: 900px;
+  }
+  .frame { width: 1287px; }
+  figcaption {
+    font-family: var(--mono); font-size: 10.5px; line-height: 1.65; color: #5f6570;
+    margin-top: 14px; max-width: 1000px;
+  }
+  figcaption b { color: #8a8f98; font-weight: 700; }
+  figcaption code { color: #6d7481; }
+  figcaption ul { margin: 8px 0 0 16px; }
+  figcaption li { margin-bottom: 2px; }
+</style>
+</head>
+<body>
+
+<!-- c1's filter def — ONCE per page, shared by every c1 instance on it (the
+     id is hard-coded in chip.css). It sits OUTSIDE .halo-main-item
+     on purpose: two rows on one page share this single def rather than
+     duplicating the id. A page that drops the Main Item in must carry it. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <filter id="chip-soft" x="-6%" y="-25%" width="112%" height="150%"><feGaussianBlur stdDeviation=".81"/></filter>
+</defs></svg>
+
+<div class="head">
+  <h1>main item — band B header row</h1>
+  <p class="sub">
+    Assembled from seven kit parts. Nothing in <code>main-item.css</code> but
+    placement; every colour, gradient, mask and clip below comes from the part
+    sheets unchanged.
+  </p>
+</div>
+
+<figure class="frame">
+  <div class="stage" style="width:1287px;height:117px">
+    <div class="halo-main-item">
+
+<!-- @step 1 · c13 banner shell — the housing everything else sits on.
+     1287x254: this is the WHOLE card's housing, so it overflows the row's
+     117px box and the .stage crops it to the header row. -->
+      <div class="halo-housing is-banner">
+        <div class="back"></div>
+        <div class="face"></div>
+        <div class="rim-t"></div><div class="rim-b"></div>
+        <div class="rim-l"></div><div class="rim-r"></div>
+      </div>
+<!-- @endstep 1 -->
+
+<!-- @step 2 · c10 banner top row — rims, band stack, graph well, slate,
+     seam, bevel, ramp, notch, warm wash, rivet. DOM order IS the recipe:
+     .bt-mod/.bt-fallA/.bt-fallB/.bt-bev are translucent modulation layers
+     that depend on .bt-top/.bt-face/.bt-slate underneath. Do not reorder. -->
+      <div class="halo-deck is-banner">
+        <i class="bt-top"></i>
+        <i class="bt-face"></i>
+        <i class="bt-mod"></i>
+        <i class="bt-band2"></i>
+        <i class="bt-fallA"></i>
+        <i class="bt-fallB"></i>
+        <i class="bt-bev"></i>
+        <i class="bt-seam"></i>
+        <i class="bt-right"></i>
+        <i class="bt-ramp"><b></b></i>
+        <i class="bt-notch"></i>
+        <i class="bt-slate"></i>
+        <i class="bt-gut"></i>
+        <i class="bt-gutcap"></i>
+        <i class="bt-gutlow"></i>
+        <i class="bt-welltop"></i>
+        <i class="bt-well"></i>
+        <i class="bt-welledge"></i>
+        <i class="bt-wellr"></i>
+        <svg class="bt-graph" viewBox="0 0 36 73" fill="none">
+          <polyline points="0.5,29.6 3,29.6 25,14.6 34.6,5"
+                    stroke="rgba(170,205,228,.30)" stroke-width="1.1"/>
+        </svg>
+
+<!-- @step 3 · c11 L bracket — MUST sit HERE, after .bt-graph and before
+     .bt-warm: .bt-warm (a c10 element) fully occludes c11's elbow in canvas
+     columns 33..37, and c11's own .c11-div must paint before its elbow.
+     c10 and c11 interleave; neither can be a layer above or below the other. -->
+        <div class="halo-bracket">
+          <i class="c11-div"></i>
+          <i class="c11-vertical"></i>
+          <i class="c11-tip"></i>
+          <i class="c11-elbow"></i>
+        </div>
+<!-- @endstep 3 -->
+
+        <i class="bt-warm"></i>
+        <i class="bt-rivet"></i>
+      </div>
+<!-- @endstep 2 -->
+
+<!-- @step 4 · c2 C2b — 7 bars R R R Y Y Y Y. The variant's clip-path slices
+     bar 7 mid-paint at canvas x384 (intentional source artwork) and cuts the
+     bars' blur spill flat at the bar row's own top and bottom edges. -->
+      <div class="halo-slots is-c2b">
+        <span class="b r" style="left:8.5px"></span>
+        <span class="b r" style="left:46.0px"></span>
+        <span class="b r" style="left:82.5px"></span>
+        <span class="b y" style="left:118.0px"></span>
+        <span class="b y" style="left:155.0px"></span>
+        <span class="b y" style="left:191.5px"></span>
+        <span class="b y" style="left:227.0px"></span>
+      </div>
+<!-- @endstep 4 -->
+
+<!-- @step 5 · c1 C1b — the wide PROMISED chip. The ring path `d` is this
+     instance's own DATA, not a knob: canvas coordinates minus
+     floor(--x)/floor(--y), with the .6/.4 fraction added back (see
+     chip.css REBASE note 6). Copy it with the markup. -->
+      <div class="halo-chip is-wide is-labelled">
+        <div class="plate oct"></div>
+        <div class="bloom"></div>
+        <div class="cap"></div>
+        <div class="inner oct"></div>
+        <div class="label">PROMISED</div>
+        <svg class="ringlayer">
+          <path class="halo" d="M14.9,10.87 H600.3 L620.7,31.27 V56.38 H35.3 L14.9,35.98 Z"/>
+          <path class="core" d="M14.9,10.87 H600.3 L620.7,31.27 V56.38 H35.3 L14.9,35.98 Z"/>
+        </svg>
+      </div>
+<!-- @endstep 5 -->
+
+<!-- @step 6 · c5 C5b — the FAILED octagon plate -->
+      <div class="halo-screen is-failed">
+        <div class="body oct4"></div>
+        <div class="glass oct4"></div>
+        <div class="hair oct4"><i class="oct4"></i></div>
+        <div class="readout">FAILED</div>
+      </div>
+<!-- @endstep 6 -->
+
+<!-- @step 7 · c12 — the four loose rivets, LAST so R1/R2/R3 land on C5b and
+     R4 lands on c10's .bt-rivet -->
+      <div class="halo-marks is-rivet mi-rivet-1"></div>
+      <div class="halo-marks is-rivet mi-rivet-2"></div>
+      <div class="halo-marks is-rivet mi-rivet-3"></div>
+      <div class="halo-marks is-rivet mi-rivet-4"></div>
+<!-- @endstep 7 -->
+
+    </div>
+  </div>
+
+  <figcaption>
+    <b>.halo-main-item</b> — 1287 x 117, the row's own box. Rebase constant is
+    canvas <code>(1, 125)</code>; every part's <code>--x/--y</code> in
+    <code>main-item.css</code> is its canvas coordinate minus that.
+    <ul>
+      <li><b>Origin knob:</b> the row itself takes <code>--x/--y</code> (default
+        <code>0</code>). <code>&lt;div class="halo-main-item" style="--x:40px; --y:24px"&gt;</code>
+        moves the whole row and everything in it. <code>main-item.verify.html</code>
+        is that same markup with the row at <code>--x:1px; --y:125px</code> inside a
+        full 1292x635 canvas — the relocation is what the pixel gate measures.</li>
+      <li><b>Keep the row on whole pixels.</b> c1's chip carries a filtered SVG
+        that only rasterises exactly when its own resolved position is an integer,
+        and it computes that from <code>--x</code> measured off this root.</li>
+      <li><b>c11 is nested inside c10</b>, not a sibling — the two interleave. The
+        <code>@step</code> comments mark the paint order; step 3 sits inside step 2.</li>
+      <li><b>Page dependency:</b> the <code>#chip-soft</code> filter def
+        must exist once on any page that hosts this row.</li>
+      <li><b>c13 overflows on purpose</b> — it is 254px tall (the whole card's
+        housing). The 117px stage crops it to the header row; the row root sets no
+        <code>overflow</code>.</li>
+    </ul>
+    Gate: <code>_ref/check.py … --full</code> against <code>_ref/original.png</code>
+    over four windows tiling the row —
+    <code>1292x95 @ (0,118)</code>, <code>150x28 @ (0,213)</code>,
+    <code>1007x28 @ (285,213)</code>, <code>939x4 @ (353,241)</code> —
+    all four <b>mean 0.000 / max 0 / 100% within 8</b>. The windows dodge the one
+    rectangle where the reference is not this row: c3's C3b conduit reaches up into
+    canvas x150..284, y213..240.
+  </figcaption>
+</figure>
+
+</body>
+</html>

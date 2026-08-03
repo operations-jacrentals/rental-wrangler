@@ -1,0 +1,90 @@
+/* ==========================================================================
+   HALO ELEMENTS — shared base
+   Lifted verbatim from _ref/original.html (the source of truth).
+   Every part sheet and every preview/verify page links THIS FIRST, then its
+   own parts/<id>.css.  Nothing component-specific may live in this file.
+
+   The one intentional difference from the original: #stage (an id, one per
+   page, hard-coded 1292x635) becomes .stage (a class, any size, any number
+   per page).  Everything else is byte-for-byte the original.
+   ========================================================================== */
+
+/* --- reset (original line 17) -------------------------------------------- */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* --- custom properties (original lines 19-53) ---------------------------- */
+:root {
+  --bg: #0a0c10;
+
+  /* red family */
+  --neon:      #f95a5c;   /* status-chip outline core   */
+  --neon-hi:   #ff7a76;
+  --bar-red:   #ff433e;   /* segment bar fill           */
+  --brk-red:   #fc6c5c;   /* banner L-bracket core      */
+  --pnl-red:   #fa756f;   /* panel C-bracket core       */
+  --tube-red:  #ff8078;   /* conduit light channel      */
+  --maroon:    #411b1e;
+  --maroon-d:  #32171e;
+
+  /* yellow */
+  --bar-yel:   #fff252;
+  --amber:     #7c401f;   /* hex icon                   */
+
+  /* metals */
+  --chrome:    #aebac6;
+  --silver:    #a19596;
+  --rim-top:   #626971;
+  --rim-left:  #818d92;
+  --rim-right: #74808a;
+  --rim-bot:   #7b8997;
+
+  /* darks */
+  --slate:     #32303e;
+  --field:     #1e202c;
+  --cavity:    #221a25;
+  --circuit:   #070e16;
+  --edge:      #0d1218;
+
+  --mono: Consolas, "Cascadia Mono", "DejaVu Sans Mono", "Courier New", monospace;
+  --sans: Roboto, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+/* --- page shell (original lines 55-56) ----------------------------------- */
+html, body { background: #05070a; }
+body { display: grid; place-items: center; min-height: 100vh; }
+
+/* --- the canvas ---------------------------------------------------------- */
+/* Replaces the original's #stage (original lines 58-62).  Size is set by the
+   page, not here.  font-kerning:none is LOAD-BEARING: the original's text
+   metrics depend on it — do not drop it. */
+.stage {
+  position: relative;
+  background: var(--bg);
+  overflow: hidden;
+  font-family: var(--sans);
+  font-kerning: none;
+}
+
+/* --- primitives (original lines 64-86) ----------------------------------- */
+
+/* Halo chamfer: cuts top-right + bottom-left at 45deg by --cut.
+   Nesting a copy inset by S with --cut reduced by 0.5858*S gives a
+   mathematically exact uniform-width outline — that is how the chips work. */
+.oct {
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut),
+                     100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
+}
+/* all four corners cut */
+.oct4 {
+  clip-path: polygon(var(--cut) 0, calc(100% - var(--cut)) 0,
+                     100% var(--cut), 100% calc(100% - var(--cut)),
+                     calc(100% - var(--cut)) 100%, var(--cut) 100%,
+                     0 calc(100% - var(--cut)), 0 var(--cut));
+}
+/* bottom-right only */
+.oct-br {
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--cut)),
+                     calc(100% - var(--cut)) 100%, 0 100%);
+}
+
+.a { position: absolute; }

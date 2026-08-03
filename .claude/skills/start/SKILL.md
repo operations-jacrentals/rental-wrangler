@@ -155,5 +155,29 @@ End with 3–4 lines: tools OK/missing, current branch + what's in flight, the p
 ## Conventions reference
 - **Branches (trunk-based):** cut a short feature branch `claude/<task>` (or a `claude --worktree <task>`) off **`trunk`** → build → `deploy-staging.mjs` → review on the staging URL → **"merge it"** (PR → `smoke` CI → squash-merge to `trunk`, integrated but NOT live) → **wait** → **"promote it"** (`promote.mjs` fast-forwards `production`; app.jacrentals.com goes live — Jac's explicit call only). `trunk` is the trunk (protected, PR + CI); `production` is the release pointer Pages serves. The ~19 `area/*` branches are frozen legacy, not routing targets (`references/branch-map.md` is now just a domain reference).
 - **Backend:** ships via `/clasp`, never git. `Code.gs`/`Code.js` are gitignored (public repo). **Deploy auth is currently the service account (`GAS_SA_KEY_B64` + `docs/handoffs/gas-deploy-service-account.mjs`), not clasp OAuth** — clasp's `CLASPRC_JSON_B64` path is RAPT-blocked as of 2026-07-06 (see `/clasp`). Full runbook + queue: `docs/handoffs/BACKEND-DEPLOY-QUEUE.md`.
-- **Sibling skills:** `/build` (build the currently-outlined feature to deploy-ready without stalling — defers anything needing Jac to one batched report; stops before `/deploy`), `/clasp` (backend deploy), `/audit` (token + model-fit coaching), `/end` (close out: report shipped-state, park loose work, archive finished chats — replaces `/tidy-sessions`), `/brainstorming` (design/spec before building — invoke before touching UI code), `style` + `wrangler-style` (**both mandatory for any UI** — measurable rules + locked decisions), `webapp-testing`, `wrangler-fix`.
+- **Sibling skills:** `/paint` (**the guided design run** — see below), `/build` (build the currently-outlined feature to deploy-ready without stalling — defers anything needing Jac to one batched report; stops before `/deploy`), `/clasp` (backend deploy), `/audit` (token + model-fit coaching), `/end` (close out: report shipped-state, park loose work, archive finished chats — replaces `/tidy-sessions`), `/brainstorming` (design/spec before building — invoke before touching UI code), `style` + `wrangler-style` (**both mandatory for any UI** — measurable rules + locked decisions), `webapp-testing`, `wrangler-fix`.
+
+### Designing anything visual → `/paint` drives the session
+
+**Any new card, screen, row, popup or visual element runs through `/paint`** (rewritten
+2026-08-03). It is no longer a pixel-recreation method — it is the **guided pipeline**, and it
+drives the run station by station: Gemini inspiration → Canva composition → a critical read of
+that Canva file through the MCP → Figma components → gated code.
+
+- **Every turn ends by naming the single next action and whose it is.** One line, at the
+  bottom: *"**Next — you:** in Canva, name the five bar rects and group them as `slots`."*
+  Jac should never have to ask "what now". A turn that ends without that line has failed.
+- **Canva is the critique station, not a pass-through.** It is Jac's most fluent tool, so the
+  big structural decisions get made and *challenged* there, where he fixes them in seconds.
+  `mcp__Canva__read-design` with `open_transaction: true` returns the full document — element
+  ids, positions, sizes, fills, strokes, complete typography (a real page measured 52k
+  characters). Critique it quantitatively and **ask** about every near-miss: a PNG can never
+  prompt "your gaps are 32.4, 32.3, 34.4, 34.8 — deliberate or drift?", and only Jac knows.
+- **Jac's hands stay in Gemini and Canva.** Figma construction is Claude's (he has said plainly
+  he has no Figma experience); his Figma role is nudging finished components — dropdowns,
+  numbers, positions. If he is having to draw in Figma, the component was built badly.
+- **The old recreation method survives as the fallback lane** — `references/recreation.md` —
+  for images with no editable source behind them. It is a lane, not the road: a byte-exact
+  recreation of the Halo card cost 103 minutes and ~2M tokens to recover structure that was
+  never in the file.
 - **At session end:** write a short handoff note (what changed, what's pending, which feature branch) into the session folder so the next chat — local or cloud — picks up cleanly.
