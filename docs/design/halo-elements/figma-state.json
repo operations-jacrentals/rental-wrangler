@@ -949,7 +949,14 @@
     "ask": "Jac, frustrated: 'I want the assembled components to be the MAIN so I can live edit in place.'",
     "rootCause": "The 'ASSEMBLED -- live preview' block was a GROUP ('Group 5') wrapping an INSTANCE (226:1084) of a 'Main Assembly' component that lived on a DIFFERENT page ('Assembly'). So Jac was looking at an instance of a component stored elsewhere -- nothing in it could be edited in place. This is the single best explanation for most of the session's friction: his in-place edits had nowhere to land, and my edits to mains were happening on nodes he was not looking at.",
     "fix": "Moved the main component 226:1018 from the 'Assembly' page onto MAIN+SUB ASSEMBLY at the preview's exact position (-658,-345), then deleted the redundant Group 5 wrapper. Verified file-wide first that 226:1018 had exactly ONE usage, so nothing else broke. Relabelled the heading to 'ASSEMBLED -- this IS the main, edit in place'.",
-    "whatIsStillAnInstance": "The sub-pieces INSIDE the assembly (FINAL HOUSING, Message Board, Conduit, Slots, Bulbs, Marks) remain instances pointing at their mains laid out below on the same page. That is deliberate -- it is what makes one Message Board edit propagate to both boards in the assembly. If Jac wants those editable in place too, the mains would have to be pulled up into the assembly itself."
+    "whatIsStillAnInstance": "The sub-pieces INSIDE the assembly (FINAL HOUSING, Message Board, Conduit, Slots, Bulbs, Marks) remain instances pointing at their mains laid out below on the same page. That is deliberate -- it is what makes one Message Board edit propagate to both boards in the assembly. If Jac wants those editable in place too, the mains would have to be pulled up into the assembly itself.",
+    "CORRECTION_component_nesting": {
+      "iWasWrong": "I stated that Figma allows a COMPONENT nested inside another COMPONENT and only forbids COMPONENT_SETs. Figma rejected the reparent outright: 'Reparenting would create a component inside a component.'",
+      "actualRule": "A COMPONENT cannot contain another COMPONENT. Since the assembly was itself a component, NOTHING could be a main inside it.",
+      "resolution": "Dissolved 'Main Assembly' from COMPONENT to FRAME (verified zero instances first, so nothing broke), which legalises mains inside it. Then moved five plain mains -- FINAL HOUSING, Slots, Marks/Name, Marks/Hexicon, EDITED VECTOR DECK -- into their assembled positions and deleted the hosting instances. Jac now edits those in place.",
+      "sideEffect": "Slots -- signal row was resized 245x58 -> 258x71 to match its assembled instance, which changes the default size for any instance not carrying its own size override.",
+      "stillInstances": "Message Board x2 and Group Name remain instances, per Jac's choice -- a variant cannot be placed individually, only a whole set, and a set cannot sit in a layout position."
+    }
   },
   "messageBoardEvenness_2026_08_03": {
     "ask": "Jac: 'You did not apply the message board background to all the elements evenly' -- circling variant 21:10 in the set.",
@@ -992,5 +999,18 @@
     "THE_HARD_CONSTRAINT": "Figma permits a COMPONENT nested inside another COMPONENT, but NEVER a COMPONENT_SET. So any piece backed by variants cannot have its main live inside the assembly. This is a platform rule, not a layout problem, and no amount of restructuring gets around it.",
     "classification": "CAN nest main in place (plain components): FINAL HOUSING, Slots -- signal row (x2), Marks/Name, Marks/Hexicon, EDITED VECTOR DECK. CANNOT (variant-backed): Message Board (x2), Group Name.",
     "optionsForTheVariantBacked": "(a) leave as instances and edit the variant in the set below, (b) detach in the assembly -- full in-place editing but propagation is lost, (c) flatten the set to a single component, losing variants. Put to Jac rather than guessed."
+  },
+  "THE_CASCADE_RULE_2026_08_03": {
+    "jac": "'Once again after editing it is not cascading to the other elements of Message Board.' Screenshot showed him editing a Fractal noise / Voronoi shader on a node W607.8 H47.45 at 14% opacity.",
+    "ROOT_CAUSE_REMEMBER_THIS": "Editing a node's FILLS directly SILENTLY DETACHES that node from its paint style. Figma does not warn. Verified: of the eight screen nodes, 268:4 -- the exact one he edited -- was the only one reporting styleBound:false. His edit landed on one detached node with nothing to cascade through.",
+    "SECOND_TRAP": "Node OPACITY is not part of a paint style. He had the node at 14%. Even with the style link intact, opacity would never have cascaded. Anything that must propagate has to live IN the paints, or be set on every node.",
+    "workflow": "Edit the STYLE, not the node (sidebar > Local styles > Board/Screen). If Jac edits a node instead -- which is the natural thing to do -- the fix is to push node fills UP into the style and re-bind, which is what was done here: took 268:4's fills, wrote them to Board/Screen, re-bound all eight, and set opacity 0.14 on all eight.",
+    "assemblyInstances": "Both assembly boards (172:5192, 172:6640) came back in sync automatically once re-bound -- same style id, same six fills, same opacity. No further action needed.",
+    "orphanedOverrides": "Both instances still carry overrides addressed to node 21:13 -- the old 'inner' layer deleted during the plate+inner merge. They are inert, but they are direct fingerprints of merge-induced breakage."
+  },
+  "conduitEscaped_2026_08_03": {
+    "found": "After the assembly restructure the conduit instance 226:1017 was parented to a STALE group (172:6639, not the assembly's 172:6638) and sat at absolute (827,799), far outside the frame -- so it silently vanished from the assembly render.",
+    "caughtBy": "Comparing renders before/after the restructure, then dumping the frame tree. Its absolute position equalled its local position, which is the tell that a node is not where its parent claims.",
+    "fix": "Re-parented into 172:6638 and restored to its original assembled position, absolute (-586,-238)."
   }
 }
