@@ -27,7 +27,7 @@ anything. Never trust a remembered node ID.
 
 ---
 
-## Scope lock (0d) — decided 2026-08-03
+## Scope lock (0d) — decided 2026-08-03, **corrected 2026-08-03 in Phase 1**
 
 **Both languages, as variable modes.** One component set, one geometry, one API. The colour
 collection carries two modes and only the *values* differ:
@@ -37,9 +37,34 @@ collection carries two modes and only the *values* differ:
 | what it is | the uploaded design, byte-exact | the app's locked language |
 | provenance | `parts/*.css`, all gated 0.000 | the decisions ledger + `wrangler-style` |
 
-Flipping the mode re-skins all ten components at once. That gives a side-by-side of the two
-languages on identical bones — which is the comparison needed to decide what of the Halo look
-is actually worth keeping, rather than deciding it in the abstract.
+> ### ⚠ Correction — CANON is a TOKEN-LAYER reskin, not a full one
+>
+> This section originally claimed "flipping the mode re-skins all ten components at once."
+> **That is not achievable, and the claim is withdrawn.** Phase 1 measured it: `tokens.css`
+> parameterises **22 colours**, but everything actually visible on the card — every bevel,
+> ramp, seam, well, rivet and glass tint — is a **hardcoded gradient stop**, hundreds of them,
+> and `README.md` states they "survived on purpose."
+>
+> So a CANON flip changes the accent, the state colours, the ground and the chrome. It leaves
+> the entire metal body in mockup colours. Anyone reading a CANON render as "the card in canon"
+> would be reading a false picture, and deciding what of the Halo look to keep from a false
+> picture is worse than not deciding.
+>
+> **The fix is honesty, not more tokens.** Making the measured stops variable was considered and
+> rejected: rule #2 below forbids it precisely because a variable invites a change that silently
+> breaks a byte-exact part. (Jac's call, 2026-08-03 — the alternative, dual-baking every stop,
+> was offered and declined.)
+>
+> **What CANON mode therefore is:** an *accent / state / ground / chrome* reskin. It answers
+> "what does canon's colour language do to this card", **not** "what does this card look like
+> in canon". The two-mode split earns its keep for a second reason too — ledger **#214** warns
+> the kit "is a separation, not a reconciliation… do not treat the kit as canon", and modelling
+> the two languages as explicit modes is what keeps them from bleeding into each other.
+>
+> Where canon has **no** locked value for a role (the rim tones, the cavity darks, `silver`, and
+> the whole emissive red family), CANON aliases the **mockup** primitive and the variable's
+> description says so in the file. The gaps are visible in Figma rather than hidden behind a
+> plausible-looking swatch.
 
 ---
 
@@ -124,8 +149,9 @@ Being honest up front, because a library that quietly drops things is worse than
 ## Phases
 
 - **0 · Discovery** — done. This document is its output.
-- **1 · Foundations** — collections, modes, primitives, semantics, scopes, code syntax,
-  effect + text styles. Nothing else until every token exists.
+- **1 · Foundations** — **done 2026-08-03.** File `cc3TcK2F2a8qSbCAstzcA5`. 2 collections,
+  71 variables (43 primitives + 28 semantics), 44 aliases all resolving, 7 text styles with
+  live mode bindings. Details below.
 - **2 · File structure** — Cover, Getting Started, Foundations, Components, Utilities.
 - **3 · Components** — one at a time, in the order above. Build, variant, bind, document,
   validate with a screenshot. Never batched.
@@ -134,3 +160,62 @@ Being honest up front, because a library that quietly drops things is worse than
 
 Figma writes are strictly sequential — never parallelised — because Figma state mutations
 race. That is why this is a long run rather than a fan-out.
+
+---
+
+## Phase 1 output (2026-08-03)
+
+**File:** `cc3TcK2F2a8qSbCAstzcA5` — *Rental Wrangler — Halo Elements Library*, drafts of
+`Jac Rentals's team` (pro tier ⇒ **4 modes max** per collection; we use 2). Movable into a team
+project later without changing the file key.
+
+### Collections — two, not the five first sketched
+
+| collection | modes | holds |
+|---|---|---|
+| `Halo Primitives` | `Value` | 43 raw colours — 22 `mockup/*` from `tokens.css`, 21 `canon/*` from `wrangler-style` §1. `scopes = []`, so they are hidden from every picker. |
+| `Halo Language` | `MOCKUP` · `CANON` | 28 semantics — 22 colour + `finish/glow-opacity` + 5 type. Everything mode-varying lives here. |
+
+Colour, type and finish share **one** collection rather than three, so flipping the language is
+a **single** mode switch — which is the whole point of the scope lock. `MOCKUP` is mode 1 (the
+default every new frame inherits) because the components are built byte-exact against the
+mockup, so Phase 3's screenshot validation has to render the mockup skin.
+
+### Two absences, deliberately left empty
+
+1. **No geometry collection.** Created, found to have no legitimate content, removed. This kit
+   has **no shared geometry scale** — every part carries its own measured geometry (`screen.css`
+   alone has four measured `--cut` layers: 19/15/12/11.4px). Canon's control ladder exists but
+   governs canon UI, not these parts, and is currently self-conflicted (ledger **#140** reverses
+   **#131**). Per-part knobs become Figma **component properties** in Phase 3 — not variables.
+2. **No effect styles.** Same reason: each part's blur radii are measured individually, so there
+   is no shared glow ladder to name. Per-part effects land with their components in Phase 3.
+
+Both were left empty on evidence. Inventing a spacing ladder or a shadow ramp here would have
+produced a foundation that looks complete and quietly isn't.
+
+### Type — both stamp voices resolved by the same rule
+
+Neither language commits to a mono **webfont**; both name a system *stack*. So each mode takes
+its stack's first entry that Figma actually has:
+
+| | declared stack | Figma has | resolved |
+|---|---|---|---|
+| `MOCKUP` | `Consolas, "Cascadia Mono", …` (`tokens.css:48`) | ✗ Consolas · ✓ Cascadia Mono | **Cascadia Mono** |
+| `CANON` | `ui-monospace, "Cascadia Code", "SF Mono", …` | ✓ Cascadia Code | **Cascadia Code** |
+
+Body voice is Roboto → Archivo. Figma text will **not** be glyph-identical to the CSS — the
+byte-exact implementation stays in `parts/*.css`, and Code Connect ties them in Phase 4.
+
+The 7 text styles sit on **canon's** locked size ladder (28/15/13/12/11/10/9.5), the only locked
+type scale this project has. The mockup's sizes (27.9 / 29.5 / 40.4 / 41.9 / 3.9px) are
+**measured fits** and are deliberately absent — they are set on the component in Phase 3.
+`line-height` is left AUTO throughout because canon specifies none for any step, and stamped
+tracking is 4%, the middle of canon's stated 0.03–0.06em **range** — a chosen point, not a
+found one, and flagged as such in each style's description.
+
+### One real divergence worth knowing
+
+`type/body-weight-regular` resolves to **Bold** in MOCKUP. That is not a mistake: every glyph in
+the mockup is weight 700 — it has no regular weight at all — while canon reserves bold for the
+name/value and sets prose in regular.
