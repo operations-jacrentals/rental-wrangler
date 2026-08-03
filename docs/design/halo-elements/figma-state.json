@@ -1025,5 +1025,13 @@
     "demo": "Frame 'ZZ conduit kit demo' (281:91) assembles his exact chain from 4 caps + 2 channels. Verified both channels stretch independently (vertical 170, horizontal 174) and every joint sits flush.",
     "HONEST_GAP": "The new parts read FLATTER than the original artwork -- clean banded extrusions without the original's chunky bevels, notches and corner cuts. Structurally correct and stretchable, visually plainer. Enriching the cap and channel profiles is the obvious next step if Jac wants the old weight back.",
     "notRetired": "The old conduit components are still in the file -- 212:80 'Conduit -- subitem elbow' and 270:174 'Conduit -- Multiple Subitems'. Left in place pending Jac's call, since 212:80 is still instanced in the assembly."
+  },
+  "boardBordering_2026_08_03": {
+    "ask": "Jac linked 21:19: 'I've done a better job with the bordering on this element, please update all Message Boards to match this.'",
+    "fileChangedUnderneath": "The COMPONENT_SET 21:36 NO LONGER EXISTS. Jac broke the variants apart into standalone COMPONENTs sitting directly on the page, renamed to slash paths ('Message Board/Narrow/On/Default' etc). A NINTH board also appeared -- 273:2683 'Message Board/Wide/On/Default' -- now living inside the assembly frame, which is legal since the assembly was dissolved to a FRAME. Any script targeting 21:36 will throw; enumerate the nine components by name instead.",
+    "whatTheBetterBorderingActuallyIS": "Determined by RENDERING 21:19 against its same-size sibling 21:28 rather than reading property lists. The reference has the grey steel 'well' HIDDEN, so the border is just the dark plate edge plus the red ring -- tight and clean, no chunky steel surround. It had also lost its 'bloom' entirely.",
+    "applied": "Across all nine boards: well.visible=false, bloom hidden. Ring core (2.8) and ring halo (3.8 @0.9) already matched the reference everywhere, so no stroke changes were needed. 21:19 itself needed nothing; 21:10 only needed its bloom hidden.",
+    "deliberatelyNotTouched": "'glass' visibility was left alone. It is the screen texture Jac restored on the four Fill variants earlier, not bordering. Plate sizes also left alone -- they differ slightly per variant (348.5 vs 346 wide) and resizing risks distorting the cut-corner geometry.",
+    "verified": "Rendered 21:19, 21:28 and 63:48 together -- identical border treatment across dark and red states."
   }
 }
