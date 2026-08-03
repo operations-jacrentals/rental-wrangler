@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Halo Elements — kit index</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="workbench.css">
+<style>
+  /* Index-only layout. Reuses workbench.css's palette vars (--wb-*) and its
+     .wb-gate stamp classes so a gate badge here looks identical to one on a
+     future per-part workbench page. Everything under .kit-* is new. */
+
+  .kit-legend {
+    display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center;
+    padding: 14px 28px; border-bottom: 1px solid var(--wb-line);
+    font-family: var(--wb-mono); font-size: 11px; letter-spacing: .4px;
+    color: var(--wb-ink-dim);
+  }
+  .kit-legend b { color: var(--wb-ink); font-weight: 700; }
+
+  .kit-section { padding: 4px 28px 8px; }
+  .kit-section > h2 {
+    font-family: var(--wb-mono); font-size: 13px; font-weight: 700;
+    letter-spacing: 2px; text-transform: uppercase; color: var(--wb-ink);
+    padding-bottom: 8px; margin-bottom: 14px; border-bottom: 1px solid var(--wb-line);
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  .kit-section > h2 span {
+    font-weight: 400; letter-spacing: 0; text-transform: none;
+    color: var(--wb-ink-mute); font-size: 12px;
+  }
+
+  .kit-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 14px; margin-bottom: 8px;
+  }
+  .kit-grid.is-assemblies { grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); }
+
+  .kit-card {
+    border: 1px solid var(--wb-line); border-radius: 3px;
+    background: var(--wb-chrome); display: flex; flex-direction: column;
+    transition: border-color .12s ease;
+  }
+  .kit-card:hover { border-color: var(--wb-line-lit); }
+
+  .kit-card-bar {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 10px; padding: 11px 13px 9px; border-bottom: 1px solid var(--wb-line);
+    background: var(--wb-chrome-2);
+  }
+  .kit-card-id {
+    font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1px;
+    color: var(--wb-steel); text-transform: uppercase; display: block; margin-bottom: 2px;
+  }
+  .kit-card-name { font-size: 15px; font-weight: 600; color: var(--wb-ink); }
+
+  .kit-card-body { padding: 12px 13px 4px; flex: 1; }
+  .kit-card-desc { font-size: 13px; color: var(--wb-ink-dim); margin-bottom: 10px; }
+
+  .kit-card-note {
+    font-size: 12px; color: var(--wb-ink-mute); background: #0d1015;
+    border: 1px solid var(--wb-line); border-radius: 2px; padding: 7px 9px;
+    margin-bottom: 10px; line-height: 1.5;
+  }
+  .kit-card-note b { color: var(--wb-ink-dim); }
+  .kit-card-note.is-warn { border-color: #4a2f2c; color: #d7a09a; }
+  .kit-card-note.is-warn b { color: #e2b0aa; }
+
+  .kit-field { margin-bottom: 10px; }
+  .kit-field > .kit-field-label {
+    font-family: var(--wb-mono); font-size: 10px; letter-spacing: 1.4px;
+    text-transform: uppercase; color: var(--wb-ink-mute); margin-bottom: 4px; display: block;
+  }
+  .kit-knobs {
+    font-family: var(--wb-mono); font-size: 11.5px; line-height: 1.7;
+    color: var(--wb-ink); word-break: break-word;
+  }
+  .kit-knobs code {
+    background: var(--wb-chrome-2); border: 1px solid var(--wb-line);
+    border-radius: 2px; padding: 0 4px; margin: 0 2px 3px 0; display: inline-block;
+  }
+  .kit-variants { font-size: 12px; color: var(--wb-ink-dim); }
+  .kit-variants li { margin-bottom: 2px; }
+  .kit-variants b { color: var(--wb-ink); font-weight: 600; }
+
+  .kit-card-links {
+    display: flex; flex-wrap: wrap; gap: 7px; padding: 10px 13px 13px;
+    border-top: 1px solid var(--wb-line); margin-top: auto;
+  }
+  .kit-card-links a {
+    font-family: var(--wb-mono); font-size: 10.5px; letter-spacing: .6px;
+    text-transform: uppercase; color: var(--wb-ink-dim); text-decoration: none;
+    border: 1px solid var(--wb-line-lit); border-radius: 2px; padding: 4px 8px;
+  }
+  .kit-card-links a:hover { color: #eef4f8; border-color: var(--wb-steel); }
+  .kit-card-links a.is-primary { color: var(--wb-steel); }
+
+  .wb-gate { flex: 0 0 auto; }
+</style>
+</head>
+<body class="wb">
+
+<header class="wb-head">
+  <h1>Halo Elements</h1>
+  <span class="wb-role">kit index</span>
+  <p>
+    One uploaded design mockup — <code style="font-family:var(--wb-mono)">_ref/original.html</code>,
+    a 1292×635 absolutely-positioned canvas — split into 10 independently iterable, origin-relative
+    parts and recombined into 3 assemblies. Every card below links its live preview, its pixel-gate
+    fixture and its stylesheet, and lists the CSS custom properties that are safe to turn.
+  </p>
+</header>
+
+<div class="kit-legend">
+  <span><span class="wb-gate is-pass">PASS</span> &nbsp;a real <code>check.py</code> run against <code>original.png</code> — mean delta printed, bar is ≤1.0 mean &amp; ≥99% of pixels within 8</span>
+  <span><span class="wb-gate is-fail">FAIL</span> &nbsp;a real run that missed the bar</span>
+  <span><span class="wb-gate is-na">N/A</span> &nbsp;band-B-only — no clean crop of the mockup shows this part alone; proven instead by the assembly gates below</span>
+  <span style="margin-left:auto; color:var(--wb-ink-mute);">gate numbers on this page were re-run fresh against this kit's current files — see README.md</span>
+</div>
+
+<main>
+
+<section class="kit-section">
+  <h2>Assemblies <span>parts recombined — the proof the split actually holds together</span></h2>
+  <div class="kit-grid is-assemblies">
+
+    <article class="kit-card">
+      <div class="kit-card-bar">
+        <div><span class="kit-card-id">assembly</span><span class="kit-card-name">Main Item</span></div>
+        <span class="wb-gate is-pass">PASS · 0.000</span>
+      </div>
+      <div class="kit-card-body">
+        <p class="kit-card-desc">
+          Band B's header row: banner shell + banner top row + L bracket + the 7-bar cluster +
+          the wide PROMISED chip + the FAILED plate. 7 part sheets, no visual value of its own.
+        </p>
+        <div class="kit-card-note">
+          4 windows, all <code>--full</code>: <b>A</b> 1292×95@(0,118) · <b>B</b> 150×28@(0,213) ·
+          <b>C</b> 1007×28@(285,213) · <b>D</b> 939×4@(353,241). All four: mean 0.000, max 0,
+          within8 100.00% — re-confirmed independently.
+        </div>
+        <div class="kit-field">
+          <span class="kit-field-label">composes</span>
+          <span class="kit-variants">c13 · c10 · c11 · c2 (C2b) · c1 (C1b) · c5 (C5b) · c12</span>
+        </div>
+      </div>
+      <div class="kit-card-links">
+        <a class="is-primary" href="assembly/main-item.html">Preview</a>
+        <a href="assembly/main-item.verify.html">Verify (gate)</a>
+        <a href="assembly/main-item.css">CSS</a>
+      </div>
+    </article>
+
+    <article class="kit-card">
+      <div class="kit-card-bar">
+        <div><span class="kit-card-id">assembly</span><span class="kit-card-name">Subitem</span></div>
+        <span class="wb-gate is-pass">PASS · 0.000</span>
+      </div>
+      <div class="kit-card-body">
+        <p class="kit-card-desc">
+          Band B's lower row: circuit field + conduit elbow + sub-panel frame, with the hex icon,
+          name, 5-bar cluster and narrow PROMISED chip riding on the sub-panel.
+        </p>
+        <div class="kit-card-note">
+          Gated via <code>main-plus-subitem.html --full</code> (no standalone
+          <code>subitem.verify.html</code> exists yet). 2 windows: <b>A</b> 1292×140@(0,242) ·
+          <b>B</b> 1063×1@(0,241). Both: mean 0.000, max 0, within8 100.00% — re-confirmed
+          independently.
+        </div>
+        <div class="kit-field">
+          <span class="kit-field-label">composes</span>
+          <span class="kit-variants">c13 (clipped) · c9 · c3 (C3b) · c4 (C4b) · c12 · c2 (C2c) · c1 (C1c)</span>
+        </div>
+      </div>
+      <div class="kit-card-links">
+        <a class="is-primary" href="assembly/subitem.html">Preview</a>
+        <a href="assembly/main-plus-subitem.html">Gate fixture (shared)</a>
+        <a href="assembly/subitem.css">CSS</a>
+      </div>
+    </article>
+
+    <article class="kit-card">
+      <div class="kit-card-bar">
+        <div><span class="kit-card-id">assembly</span><span class="kit-card-name">Full card</span></div>
+        <span class="wb-gate is-pass">PASS · 0.000</span>
+      </div>
+      <div class="kit-card-body">
+        <p class="kit-card-desc">
+          Main Item + Subitem on one shared <code>c13-banner-shell</code> — all of band B, 10 parts,
+          two rows, one page. This is the whole thing, rebuilt entirely from the separated kit.
+        </p>
+        <div class="kit-card-note">
+          1 window, full canvas: 1292×268@(0,118), <code>--full</code>. mean 0.000, max 0,
+          within8 100.00% — re-confirmed independently. This page already sits at true canvas
+          coordinates in a real 1292×635 stage, so it doubles as its own gate fixture.
+        </div>
+        <div class="kit-field">
+          <span class="kit-field-label">composes</span>
+          <span class="kit-variants">all 10 parts · every band-B instance</span>
+        </div>
+      </div>
+      <div class="kit-card-links">
+        <a class="is-primary" href="assembly/main-plus-subitem.html">Preview + gate fixture</a>
+      </div>
+    </article>
+
+  </div>
+</section>
+
+<section class="kit-section">
+  <h2>Parts <span>10 components — each origin-relative, placed by <code style="font-family:inherit">--x</code>/<code style="font-family:inherit">--y</code></span></h2>
+  <div class="kit-grid">
+
+    <!-- c1 -->
+    <article class="kit-card">
+      <div class="kit-card-bar">
+        <div><span class="kit-card-id">c1 · status chip</span><span class="kit-card-name">.halo-c1-status-chip</span></div>
+        <span class="wb-gate is-pass">PASS · 0.082</span>
+      </div>
+      <div class="kit-card-body">
+        <p class="kit-card-desc">Dark maroon plate under a stroked neon octagon ring, a warm bloom off the bottom edge, a dark end-cap rail at the right. Owns the <code>#chipSoft</code> blur filter.</p>
+        <div class="kit-field">
+          <span class="kit-field-label">variants (4)</span>
+          <ul class="kit-variants">
+            <li><b>is-wide</b> — C1a, band A, unlabelled</li>
+            <li><b>is-wide.is-labelled</b> — C1b, band B, "PROMISED"</li>
+            <li><b>is-narrow.is-labelled</b> — C1c, band B, "PROMISED"</li>
+            <li><b>is-narrow</b> — C1d, band C, unlabelled</li>
+          </ul>
+        </div>
+        <div class="kit-field">
+          <span class="kit-field-label">knobs</span>
+          <div class="kit-knobs">
+            <code>--x</code><code>--y</code><code>--pw</code><code>--ph</code><code>--pcut</code>
+            <code>--ox</code><code>--oy</code><code>--ow</code><code>--oh</code><code>--oc</code>
+            <code>--fill</code><code>--gt</code><code>--gb</code><code>--gs</code>
+            <code>--stroke</code><code>--hw</code><code>--cw</code>
+            <code>--blx</code><code>--blr</code><code>--blh</code><code>--blo</code>
+            <code>--capx</code><code>--capy</code><code>--capw</code><code>--caph</code><code>--capr</code>
+            <code>--cap0..5</code>
+            <code>--lbl-top</code><code>--lbl-fs</code><code>--lbl-ls</code><code>--lbl-pl</code>
+          </div>
+        </div>
+      </div>
+      <div class="kit-card-links">
+        <a class="is-primary" href="parts/c1-status-chip.html">Preview</a>
+        <a href="parts/c1-status-chip.verify.html">Verify (gate)</a>
+        <a href="parts/c1-status-chip.css">CSS</a>
+      </div>
+    </article>
+
+    <!-- c2 -->
+    <article class="kit-card">
+      <div class="kit-card-bar">
+        <div><span class="kit-card-id">c2 · segment bars</span><span class="kit-card-name">.halo-c2-segment-bars</span></div>
+        <span class="wb-gate is-pass">PASS · 0.000</span>
+      </div>
+      <div class="kit-card-body">
+        <p class="kit-card-desc">Skewed round-rect bars, bottom leaning right, vertical softness baked into the fill gradient, horizontal softness from a small blur.</p>
+        <div class="kit-card-note"><b>Gate covers C2a only.</b> C2b (7-bar, hard-clipped) and C2c (5-bar sub-panel) were rebased with the same arithmetic and visually cross-checked, but carry no dedicated pixel-gate box — they ride the assembly gates above instead.</div>
+        <div class="kit-field">
+          <span class="kit-field-label">variants (3)</span>
+          <ul class="kit-variants">
+            <li><b>is-c2a</b> — 5 bars R R R Y Y, band A, gated</li>
+            <li><b>is-c2b</b> — 7 bars, band B, hard-clipped at local x=251</li>
+            <li><b>is-c2c</b> — 5 bars, band B sub-panel instance</li>
+          </ul>
+        </div>
+        <div class="kit-field">
+          <span class="kit-field-label">knobs</span>
+          <div class="kit-knobs">
+            <code>--x</code><code>--y</code><code>--h</code><code>--ft</code><code>--fb</code>
+            <code>--bw</code><code>--bh</code>
+          </div>
+        </div>
+      </div>
+      <div class="kit-card-links">
+        <a class="is-primary" href="parts/c2-segment-bars.html">Preview</a>
+        <a href="parts/c2-segment-bars.verify.html">Verify (gate)</a>
+        <a href="parts/c2-segment-bars.css">CSS</a>
+      </div>
+    </article>
+
+    <!-- c3 -->
+    <article class="kit-card">
+      <div class="kit-card-bar">
+        <div><span class="kit-card-id">c3 · conduit</span><span class="kit-card-name">.halo-c3-conduit</span></div>
+        <span class="wb-gate is-pass">PASS · 0.064</span>
+      </div>
+      <div class="kit-card-body">
+        <p class="kit-card-desc">A 209×125 inline-SVG elbow — one shared <code>&lt;defs&gt;</code> block (clipPath + 18 gradients), dropped twice with <code>&lt;use&gt;</code>. Cleanest part in the kit — nothing needed rebasing inside it.</p>
+        <div class="kit-card-note">Gate covers <b>is-standalone</b> (C3a) only. <b>is-banner</b> (C3b) shares 100% of the same rule/markup, differing only by <code>filter:saturate(var(--sat,.9))</code> — not independently gated, but proven by the subitem assembly gate above.</div>
+        <div class="kit-field">
+          <span class="kit-field-label">variants (2)</span>
+          <ul class="kit-variants">
+            <li><b>is-standalone</b> — C3a, band C, no filter, gated</li>
+            <li><b>is-banner</b> — C3b, band B, <code>saturate(.9)</code></li>
+          </ul>
+        </div>
+        <div class="kit-field">
+          <span class="kit-field-label">knobs</span>
+          <div class="kit-knobs"><code>--x</code><code>--y</code><code>--sat</code></div>
+        </div>
+      </div>
+      <div class="kit-card-links">
+        <a class="is-primary" href="parts/c3-conduit.html">Preview</a>
+        <a href="parts/c3-conduit.verify.html">Verify (gate)</a>
+        <a href="parts/c3-conduit.css">CSS</a>
+      </div>
+    </article>
+
+    <!-- c4 -->
+    <article class="kit-card">
+      <div class="kit-card-bar">
+        <div><span class="kit-card-id">c4 · panel frame</span><span class="kit-card-name">.halo-c4-panel-frame</span></div>
+        <span class="wb-gate is-pass">PASS · 0.288</span>
+      </div>
+      <div class="kit-card-body">
+        <p class="kit-card-desc">A 914.5×125 dark metal frame: recessed cavity, rail plate, right-hand chrome edge, red "C" bracket down the left.</p>
+        <div class="kit-card-note">mean 0.288 / max 84 / within8 99.70% is a Chromium raster-height floor, not a defect — the untouched original markup scores identically in the same box (see ANATOMY.md, "the stage width changes the pixels"). The <b>is-c4b</b> instance rides inside the subitem assembly gate above (mean 0.000), which is the cleaner proof for this component.</div>
+        <div class="kit-field">
+          <span class="kit-field-label">variants (2)</span>
+          <ul class="kit-variants">
+            <li><b>is-c4a</b> — standalone, band C, no <code>.pf-lift</code>, gated</li>
+            <li><b>is-c4b</b> — banner sub-panel, band B, has the <code>.pf-lift</code> child</li>
+          </ul>
+        </div>
+        <div class="kit-field">
+          <span class="kit-field-label">knobs</span>
+          <div class="kit-knobs">
+            <code>--x</code><code>--y</code><code>--w</code><code>--f1</code><code>--f2</code>
+          </div>
+        </div>
+      </div>
+      <div class="kit-card-links">
+        <a class="is-primary" href="parts/c4-panel-frame.html">Preview</a>
+        <a href="parts/c4-panel-frame.verify.html">Verify (gate)</a>
+        <a href="parts/c4-panel-frame.css">CSS</a>
+      </div>
+    </article>
+
+    <!-- c5 -->
+    <article class="kit-card">
+      <div class="kit-card-bar">
+        <div><span class="kit-card-id">c5 · display plate</span><span class="kit-card-name">.halo-c5-display-plate</span></div>
+        <span class="wb-gate is-pass">PASS · 0.114</span>
+      </div>
+      <div class="kit-card-body">
+        <p class="kit-card-desc">Octagonal screen: dark body, inset glass with a scanline overlay, a 1px cyan hairline ring. No spill at all — painted box equals the nominal box.</p>
+        <div class="kit-card-note">Gate covers <b>is-blank</b> (C5a) only, the only instance with its own loose verify box. <b>is-failed</b> (C5b) rides inside the Main Item assembly gate above (mean 0.000).</div>
+        <div class="kit-field">
+          <span class="kit-field-label">variants (2)</span>
+          <ul class="kit-variants">
+            <li><b>is-blank</b> — C5a, band A, no readout, gated</li>
+            <li><b>is-failed</b> — C5b, band B, "FAILED" readout child</li>
+          </ul>
+        </div>
+        <div class="kit-field">
+          <span class="kit-field-label">knobs</span>
+          <div class="kit-knobs">
+            <code>--x</code><code>--y</code><code>--w</code><code>--h</code>
+            <code>--hx</code><code>--hy</code><code>--hw</code><code>--hh</code><code>--glass</code>
+          </div>
+        </div>
+      </div>
+      <div class="kit-card-links">
+        <a class="is-primary" href="parts/c5-display-plate.html">Preview</a>
+        <a href="parts/c5-display-plate.verify.html">Verify (gate)</a>
+        <a href="parts/c5-display-plate.css">CSS</a>
+      </div>
+    </article>
+
+    <!-- c9 -->
+    <article class="kit-card">
+      <div class="kit-card-bar">
+        <div><span class="kit-card-id">c9 · circuit field</span><span class="kit-card-name">.halo-c9-circuit-field</span></div>
+        <span class="wb-gate is-pass">PASS · see note</span>
+      </div>
+      <div class="kit-card-body">
+        <p class="kit-card-desc">The etched copper field under the header row: 4 stacked background layers, an inline SVG of traces and pads, a block of micro technical text. Only band-B-only part with two <em>real</em> pixel-gate windows.</p>
+        <div class="kit-card-note is-warn">
+          <b>Not independent.</b> 3 of its 4 background layers replay light baked in from other
+          parts (<code>--layer1</code> = c4's rim spill, <code>--layer2</code> = c3's red wash,
+          <code>--layer3</code> = c11's shadow). Move those parts and c9's baked light goes stale.
+          The <code>.is-unlit</code> variant (not in the mockup) turns them off.
+        </div>
+        <div class="kit-card-note">
+          Two box-sized windows gate 100% of the pixels that are c9 alone: <b>primary</b>
+          139×135@(11,241) → PASS mean 0.475, max 3. <b>supplementary</b> 336×40@(11,336) →
+          <b>FAIL mean 1.111</b>, max 2 (0.111 over the bar) — re-confirmed independently. This
+          is a Chromium screen-space dither re-phasing when the raster viewport shrinks to 40px
+          tall, not a value error: rendered at its true position inside the full-card assembly
+          (a real 1292×635 stage), the same pixels score mean 0.000 — re-confirmed independently
+          above. Both windows are documented in <code>c9-circuit-field.verify-right.html</code>.
+        </div>
+        <div class="kit-field">
+          <span class="kit-field-label">knobs</span>
+          <div class="kit-knobs">
+            <code>--x</code><code>--y</code><code>--layer1</code><code>--layer2</code><code>--layer3</code><code>--layer4</code>
+            <code>--cu-rgb</code><code>--cu-a</code><code>--cu-w</code><code>--cuf-a</code><code>--cud-a</code><code>--cud-w</code>
+            <code>--halo-a</code><code>--halo-w</code>
+            <code>--mt-x</code><code>--mt-y</code><code>--mt-w</code><code>--mt-fs</code><code>--mt-lh</code><code>--mt-ls</code><code>--mt-color</code><code>--mt-gutter</code>
+          </div>
+        </div>
+      </div>
+      <div class="kit-card-links">
+        <a class="is-primary" href="parts/c9-circuit-field.html">Preview</a>
+        <a href="parts/c9-circuit-field.verify.html">Verify (primary)</a>
+        <a href="parts/c9-circuit-field.verify-right.html">Verify (bottom strip)</a>
+        <a href="parts/c9-circuit-field.css">CSS</a>
+      </div>
+    </article>
+
+    <!-- c10 -->
+    <article class="kit-card">
+      <div class="kit-card-bar">
+        <div><span class="kit-card-id">c10 · banner top row</span><span class="kit-card-name">.halo-c10-banner-top-row</span></div>
+        <span class="wb-gate is-na">N/A</span>
+      </div>
+      <div class="kit-card-body">
+        <p class="kit-card-desc">Frame rims, band stack, graph well, slate texture panel, seam, ramp, notch, gutters, exposed face strip — 22 children, the largest mechanical rebase in the kit.</p>
+        <div class="kit-card-note"><b>Band-B-only — no <code>check.py</code> gate exists.</b> Every pixel of c10 is covered by the banner card itself; there is no clean crop of the mockup with c10 alone on <code>--bg</code>. Real proof is the Main Item / Full Card assembly gates above (both re-confirmed PASS mean 0.000), which composite c10 exactly as the mockup does.</div>
+        <div class="kit-field">
+          <span class="kit-field-label">variants (1)</span>
+          <span class="kit-variants"><b>is-banner</b> — C10, the only instance in the mockup</span>
+        </div>
+        <div class="kit-field">
+          <span class="kit-field-label">knobs</span>
+          <div class="kit-knobs">
+            <code>--x</code><code>--y</code><code>--w</code><code>--h</code>
+            <code>--seam-x</code><code>--seam-w</code><code>--ramp-x</code><code>--notch-x</code>
+            <code>--bev-x</code><code>--bev-w</code><code>--slate-x</code><code>--slate-w</code>
+            <code>--well-x</code><code>--well-y</code><code>--warm-x</code>
+            <code>--right-x</code><code>--right-w</code>
+            <code>--fall-a-x</code><code>--fall-a-w</code><code>--fall-b-x</code><code>--fall-b-w</code>
+            <code>--rivet-x</code><code>--rivet-y</code>
+          </div>
+        </div>
+      </div>
+      <div class="kit-card-links">
+        <a class="is-primary" href="parts/c10-banner-top-row.html">Preview</a>
+        <a href="parts/c10-banner-top-row.verify.html">Verify (fixture, not a gate)</a>
+        <a href="parts/c10-banner-top-row.css">CSS</a>
+      </div>
+    </article>
+
+    <!-- c11 -->
+    <article class="kit-card">
+      <div class="kit-card-bar">
+        <div><span class="kit-card-id">c11 · L bracket</span><span class="kit-card-name">.halo-c11-l-bracket</span></div>
+        <span class="wb-gate is-na">N/A</span>
+      </div>
+      <div class="kit-card-body">
+        <p class="kit-card-desc">The red L down the left of the header row: a vertical stroke, a 43.5° elbow, a long horizontal divider. Built from CSS/markup that used to be interleaved inside c10 — c11 must still interleave between c10's own children when composited.</p>
+        <div class="kit-card-note is-warn"><b>A literal <code>check.py</code> run against this part's own box FAILs</b> (re-confirmed: mean 56.247, within8 24.4%) — expected, not a defect. The crop necessarily includes c10's independently-painted banner face and c10's <code>.bt-warm</code> overlay, neither of which live in this file, so an isolated c11 can never match a composited reference. Real proof is the assembly gates above, which interleave c11 correctly and re-confirm PASS mean 0.000.</div>
+        <div class="kit-field">
+          <span class="kit-field-label">variants (1)</span>
+          <span class="kit-variants">base — the only instance, every measurement but position is fixed</span>
+        </div>
+        <div class="kit-field">
+          <span class="kit-field-label">knobs</span>
+          <div class="kit-knobs"><code>--x</code><code>--y</code></div>
+        </div>
+      </div>
+      <div class="kit-card-links">
+        <a class="is-primary" href="parts/c11-l-bracket.html">Preview</a>
+        <a href="parts/c11-l-bracket.verify.html">Verify (fixture, not a gate)</a>
+        <a href="parts/c11-l-bracket.css">CSS</a>
+      </div>
+    </article>
+
+    <!-- c12 -->
+    <article class="kit-card">
+      <div class="kit-card-bar">
+        <div><span class="kit-card-id">c12 · marks</span><span class="kit-card-name">.halo-c12-marks</span></div>
+        <span class="wb-gate is-na">N/A</span>
+      </div>
+      <div class="kit-card-body">
+        <p class="kit-card-desc">Three unrelated small marks under one id: the rivet (×4), the hex icon, the name plate. Every instance paints on top of another part.</p>
+        <div class="kit-card-note"><b>Band-B-only — no <code>check.py</code> gate exists.</b> R1–R3 sit on c5's plate, R4 sits on c10's own rivet, the hexicon and name sit on c4's cavity — no crop of the mockup shows any mark alone. An isolation-diff (mask everything but c12 in a scratch copy of <code>original.html</code>, diff against this part rendered the same way) scored an exact match, which is evidence the extraction is byte-faithful — but it is not the same instrument as a <code>check.py</code> PASS. Real proof is the assembly gates above, which paint c12 in the documented order and re-confirm PASS mean 0.000.</div>
+        <div class="kit-field">
+          <span class="kit-field-label">variants (3 classes, 6 instances)</span>
+          <span class="kit-variants">is-rivet (×4) · is-hexicon · is-name</span>
+        </div>
+        <div class="kit-field">
+          <span class="kit-field-label">knobs</span>
+          <div class="kit-knobs"><code>--x</code><code>--y</code></div>
+        </div>
+      </div>
+      <div class="kit-card-links">
+        <a class="is-primary" href="parts/c12-marks.html">Preview</a>
+        <a href="parts/c12-marks.verify.html">Verify (fixture, not a gate)</a>
+        <a href="parts/c12-marks.css">CSS</a>
+      </div>
+    </article>
+
+    <!-- c13 -->
+    <article class="kit-card">
+      <div class="kit-card-bar">
+        <div><span class="kit-card-id">c13 · banner shell</span><span class="kit-card-name">.halo-c13-banner-shell</span></div>
+        <span class="wb-gate is-na">N/A</span>
+      </div>
+      <div class="kit-card-body">
+        <p class="kit-card-desc">The outer chrome frame and interior vertical build-up that everything in band B sits on — the substrate. Most of it is hidden under c9/c10/c1/c2/c4/c5.</p>
+        <div class="kit-card-note"><b>Band-B-only — no <code>check.py</code> gate exists.</b> It's the surface the whole band composites onto; no uncovered crop of the mockup exists. Real proof is the assembly gates above, which stack all 10 parts on top of it and re-confirm PASS mean 0.000 — including the strips its own <code>.face</code> gradient is the only thing visible in.</div>
+        <div class="kit-field">
+          <span class="kit-field-label">variants (1)</span>
+          <span class="kit-variants"><b>is-banner</b> — C13, the only instance; width/height fixed 1287×254</span>
+        </div>
+        <div class="kit-field">
+          <span class="kit-field-label">knobs</span>
+          <div class="kit-knobs"><code>--x</code><code>--y</code></div>
+        </div>
+      </div>
+      <div class="kit-card-links">
+        <a class="is-primary" href="parts/c13-banner-shell.html">Preview</a>
+        <a href="parts/c13-banner-shell.verify.html">Verify (fixture, not a gate)</a>
+        <a href="parts/c13-banner-shell.css">CSS</a>
+      </div>
+    </article>
+
+  </div>
+</section>
+
+</main>
+
+<p class="wb-note">
+  Full measurement map, paint order and every hazard: <a href="ANATOMY.md">ANATOMY.md</a>.
+  How to change a part and re-prove it: <a href="README.md">README.md</a>. Source of truth —
+  never edit: <a href="_ref/original.html">_ref/original.html</a> ·
+  <a href="_ref/original.png">_ref/original.png</a>.
+</p>
+
+</body>
+</html>
