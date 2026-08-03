@@ -624,7 +624,28 @@
       "detail": "SHADER paints want {type:'SHADER', id}. But figma.importShaderById rejects the account-library id, and figma.listAvailableShaders() returns 0 in this file. The nine shader fills exist in Jac's account library and are reachable from the Figma UI, but the plugin API sees an empty shader registry.",
       "correctsEarlierReport": "The 2026-08-03 capability report listed shader fills as an opportunity Claude could drive. It is not, as things stand. Untested next step: if Jac applies a shader fill by hand once, it may register in the file and become visible to listAvailableShaders — worth checking before relying on it.",
       "unchanged": "Fractal noise / Pattern grid replacing the tiled raster texture assets is still viable — but as a manual Jac action, not a generated one."
-    }
+    },
+    "rebuilt": "2026-08-03 — rebuilt with every current part after the Housing/Deck/Bulb work.",
+    "onCard": [
+      "FINAL HOUSING (145:2)",
+      "Conduit (105:78, corrected vectorize)",
+      "Message Board (Size=Wide, Label=On, State=Default)",
+      "Group Name (State=Failed)"
+    ],
+    "inTray": [
+      "EDITED VECTOR DECK (149:144)",
+      "Bracket",
+      "Deck (byte-exact)",
+      "Housing (byte-exact)",
+      "Slots — signal row (158:2193)",
+      "Slots (original)",
+      "Bulb x5 (Overdue/Due/Waiting/Done/Off)",
+      "Marks Rivet/Hexicon/Name"
+    ],
+    "RESIZE_REQUIREMENT": "Jac: 'Make sure I can adjust their sizes (expand/shrink) with locked aspect ratio.' TWO settings are required and BOTH are needed: (1) constrainProportions = true on the placed INSTANCE locks the aspect while dragging a corner; (2) the source component's children must be set to constraints {horizontal:'SCALE', vertical:'SCALE'} or the frame resizes while the artwork inside stays put. Setting only the first looks broken.",
+    "housingChoice": "Jac renamed my etched copy 145:2 to 'FINAL HOUSING', read as his call on which housing is canonical — that is what the card carries. His 128:33 'EDITED VECTOR HOUSING' still exists.",
+    "stillOpen": "Which conduit is canonical (four exist). The card carries 105:78 pending his call — one instance swap to change.",
+    "note": "'Marks — Name' renders a large white 'EXCAVATOR' — that is the component's real content, not a placeholder."
   },
   "vectorizedConduit": {
     "date": "2026-08-03",
