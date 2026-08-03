@@ -683,5 +683,28 @@
     "OPEN_group3Clipped": "Group 3 sits at x1208.7 with width 387.5, so it runs to x1596.2 inside a 1445-wide frame — 151.2px is cut off and clipsContent is TRUE. NOT fixed, because a bleed off the right edge may be intentional. Options given: leave as bleed; respace all three evenly at x99/x528.75/x958.5 (three full groups, equal 42.25px gaps); or drop to two groups matching the Housing's mirrored pair. There is NO room for a third full group at the current spacing — it would have to start at x1057.5, butting against Group 2's end at x1053.6.",
     "OPEN_proportions": "It inherited HOUSING geometry, not Deck geometry: 1445x184, against the byte-exact Deck's 1268x116 and his own Housing's 1300x184. It is a Housing-shaped frame carrying Deck content. If the two stack as a card row his pair is 368px tall where the source is 254+116. Flagged to Jac, not changed.",
     "sameForkAsHousing": "Like 128:33, this is a REDESIGN and cannot pass _ref/check.py against original.png. It does not replace deck.css (C10, byte-exact, 22 painted children). Two artifacts; never gate one with the other's test."
+  },
+  "bulbSlots": {
+    "date": "2026-08-03",
+    "ask": "Jac: new slot design — 'The slots are bulbs that sit installed into steel panels. Make a component with 5 slots of the different signal colors.' Colour budget: 10 or simpler.",
+    "source": "His own vectorized bulb 143:6497 (65x58, 429 vectors, 12 colours) on the Slots page.",
+    "built": {
+      "Bulb": "158:2192 — COMPONENT_SET, 5 variants: State=Overdue / Due / Waiting / Done / Off",
+      "row": "158:2193 'Slots — signal row' — 5 instances, background DROPPED at Jac's request so the bulbs can be used on any surface (245x58, no fills, no effects)"
+    },
+    "method": "Jac asked 'is there any reason we cant just use the bulb I have? Duplicate it and adjust the coloring.' — and he was right. Duplicated his bulb 5x and HUE-ROTATED only the warm lens family (saturation > .2 and hue 0-45), leaving every neutral untouched, so all of his shading survives. Off desaturates to 10%. Hardcoded rather than tokenised, which is CONSISTENT with the CANON scope-lock (measured shading stays baked).",
+    "colourBudget": "Hit exactly 10 per variant by merging two near-duplicate pairs in his original: #f7f7f6 -> #ffffff and #ffc4a6 -> #e2ac90. 12 -> 10 with no visible change.",
+    "namedByState": "Variants are named by the canon state ladder, not by colour, because canon is 'colour = state' — blue = Waiting, yellow = near/due, red = bad, green = Done, grey = nothing (AGENTS.md:80, ledger #77).",
+    "CORRECTION_blueExists": "I initially told Jac the design language had no blue or green and created signal/* variables describing them as having 'NO MOCKUP SOURCE'. He corrected me: 'we have a blue color for Waiting.' TRUE — --blue #5b9dff (style.css:20), ledger #77. What is actually true is narrower: the Halo mockup RASTER is a red/yellow design and never depicts blue or green, so those two take the canon value in both modes. Variable descriptions were corrected.",
+    "signalVariables": "Added to Halo Language: signal/red, signal/amber, signal/green, signal/blue, signal/off. Currently REDUNDANT for this build since Jac's bulb is hardcoded — kept as the right home if the lamp is ever tokenised. Offered to delete; he has not said.",
+    "VECTOR_REDUCTION_FINDING": {
+      "ask": "Jac: 'try reducing vectors by scanning the image and drawing new vectors that encompass tiny puzzle pieced vectors by color.'",
+      "byColour": "429 -> 10 nodes (98%) but DESTROYS THE IMAGE. In a trace one colour's fragments are scattered through the z-stack, so merging them to one depth puts the dark bezel that sat BEHIND the lens in front of it. Result renders as a solid green blob. Kept on the page as 'Bulb — reduced (test)' to show the failure mode.",
+      "byContiguousRun": "429 -> 242 nodes (44%) and PIXEL-IDENTICAL. Merge only consecutive same-colour siblings; stacking order is preserved by construction. 96 runs merged, 187 nodes removed, longest run 12. VERIFIED by pixel diff of the same node pre- and post-merge: mean delta 0.0000, max delta 0, 100% of pixels within delta 8 — the PNGs are even the same byte size.",
+      "appliedToAll": "All 5 variants: 2145 -> 1210 nodes, 935 removed, identical run structure across every variant.",
+      "ceiling": "44% is the honest ceiling for a LOSSLESS reduction of a trace. Going further requires accepting visual change — the untested middle option is merging by colour WITHIN z-bands (~75-85%), which would need eyeballing, not a pixel gate."
+    },
+    "FIGMA_GOTCHA_shear": "Figma CANNOT express a pure shear. Setting relativeTransform [[1,-0.325,0],[0,1,0]] silently normalises to a ROTATION [[1,-0.309,0],[0,0.951,0]] on EVERY node type — probed RECTANGLE, FRAME and VECTOR, all three. The Slots' lean only exists because it is baked into path COORDINATES. Note this contradicts the older PR-body claim that skewX is done 'via a relativeTransform matrix'.",
+    "FIGMA_GOTCHA_vectorSeat": "Setting vectorPaths RE-BASES the path to its own bounding box and compensates via x/y. Forcing x=0,y=0 afterwards therefore SHIFTS the shape by its bbox origin. A vector must be seated at its path's true minimum coordinates."
   }
 }
