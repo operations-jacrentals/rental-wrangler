@@ -35,15 +35,17 @@ RAIL = """
         <input id="kS" type="range" min="0" max="60" step="1" value="30"></label>
       <label>Lightness <output id="oT">0.82</output>
         <input id="kT" type="range" min="0.45" max="1.15" step="0.01" value="0.82"></label>
+      <label>Hue spread <output id="oP">0</output>
+        <input id="kP" type="range" min="0" max="1" step="0.05" value="0"></label>
     </div>
 
     <div class="wb__presets">
       <span class="wb__lbl">Drafts</span>
-      <button data-p="214,30,0.82" class="is-on">Deep blued</button>
-      <button data-p="214,7,0.92">Gunmetal</button>
-      <button data-p="206,16,1">Slate</button>
-      <button data-p="218,10,0.7">Charcoal</button>
-      <button data-p="orig">Original</button>
+      <button data-p="214,30,0.82,0" class="is-on">Deep blued</button>
+      <button data-p="214,7,0.92,0">Gunmetal</button>
+      <button data-p="206,16,1,0">Slate</button>
+      <button data-p="218,10,0.7,0">Charcoal</button>
+      <button data-p="212,30,1,1">Original</button>
     </div>
 
     <div class="wb__presets">
@@ -55,6 +57,7 @@ RAIL = """
       <button data-r="off">None</button>
     </div>
 
+    <div class="wb__ladder" id="wbLadder"></div>
     <output id="wbOut" class="wb__out"></output>
   </div>
 
@@ -82,31 +85,45 @@ CSS = """
 .wb__presets button { font: 600 12px/1 var(--sans); color: #aab4c1; background: #1a212b; border: 1px solid #2c343f; border-radius: 999px; padding: 7px 14px; cursor: pointer; }
 .wb__presets button:hover { color: #eef2f7; border-color: #44546a; }
 .wb__presets button.is-on { color: #1a1205; background: #ff7e1f; border-color: #ff7e1f; }
+.wb__ladder { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 14px; padding-top: 14px; border-top: 1px solid #212834; }
+.wb__sw { flex: 1 1 78px; min-width: 78px; }
+.wb__sw i { display: block; height: 34px; border: 1px solid rgba(0,0,0,.45); }
+.wb__sw b { display: block; font: 500 9.5px/1.5 var(--mono); color: #838e9c; letter-spacing: .04em; padding-top: 4px; }
+.wb__sw b span { display: block; color: #5d6979; text-transform: uppercase; letter-spacing: .1em; font-size: 8.5px; }
 .wb__out { display: block; margin-top: 12px; font: 500 11.5px/1.6 var(--mono); color: #838e9c; word-break: break-all; }
-.wb__stagewrap { overflow-x: auto; }
-.wb__scaler { width: 1292px; }
-.wb__scaler .stage { margin: 0 auto; }
+/* The stage is the full 1292x635 canvas but the card only occupies a ~250px
+   band of it. Clip to that band rather than shipping a screen of empty
+   ground — the canvas keeps its real coordinates, we just window it. */
+.wb__stagewrap { overflow-x: auto; border: 1px solid #2c343f; border-radius: 10px; }
+.wb__scaler { width: 1292px; height: 264px; overflow: hidden; }
+.wb__scaler .stage { margin-top: -122px; }
 """
 
 JS = """
 (function(){
   var root = document.querySelector('.wb__scaler .stage') || document.querySelector('.stage');
-  var kH=document.getElementById('kH'), kS=document.getElementById('kS'), kT=document.getElementById('kT');
-  var oH=document.getElementById('oH'), oS=document.getElementById('oS'), oT=document.getElementById('oT');
+  var kH=document.getElementById('kH'), kS=document.getElementById('kS'),
+      kT=document.getElementById('kT'), kP=document.getElementById('kP');
+  var oH=document.getElementById('oH'), oS=document.getElementById('oS'),
+      oT=document.getElementById('oT'), oP=document.getElementById('oP');
   var out=document.getElementById('wbOut');
-  var ORIG={'--chrome':'#aebac6','--silver':'#a19596','--rim-top':'#626971','--rim-left':'#818d92',
-            '--rim-right':'#74808a','--rim-bot':'#7b8997','--slate':'#32303e','--field':'#1e202c',
-            '--cavity':'#221a25','--circuit':'#070e16','--edge':'#0d1218'};
-  function clearOrig(){ for(var k in ORIG) root.style.removeProperty(k); }
+  /* Set on the stage AND on :root. The stage is what gets previewed, but the
+     swatch rail lives outside it and would otherwise resolve :root's stale
+     defaults instead of what is actually on screen. */
+  var SCOPES = [document.documentElement, root];
+  function setVar(k,v){ SCOPES.forEach(function(el){ el.style.setProperty(k,v); }); }
   function apply(){
-    clearOrig();
-    root.style.setProperty('--steel-h', kH.value);
-    root.style.setProperty('--steel-s', kS.value + '%');
-    root.style.setProperty('--steel-tint', kT.value);
+    setVar('--steel-h', kH.value);
+    setVar('--steel-s', kS.value + '%');
+    setVar('--steel-tint', kT.value);
+    setVar('--steel-spread', kP.value);
     oH.textContent = kH.value;
     oS.textContent = kS.value + '%';
     oT.textContent = (+kT.value).toFixed(2);
-    readout('--steel-h: ' + kH.value + ';  --steel-s: ' + kS.value + '%;  --steel-tint: ' + kT.value + '   ·   ');
+    oP.textContent = (+kP.value).toFixed(2);
+    var exact = (kH.value==='212' && kS.value==='30' && +kT.value===1 && +kP.value===1);
+    readout((exact ? 'EXACT original canvas — the knobs alone reproduce it   ·   ' : '')
+      + 'h ' + kH.value + '  s ' + kS.value + '%  tint ' + kT.value + '  spread ' + kP.value + '   ·   ');
   }
 
   /* getComputedStyle on a custom property hands back the unresolved token
@@ -121,25 +138,38 @@ JS = """
     var m = c.match(/\\d+/g);
     return m ? '#' + m.slice(0,3).map(function(n){ return (+n).toString(16).padStart(2,'0'); }).join('') : c;
   }
+  /* the ladder, brightest to deepest, with the role each rung actually plays */
+  var RUNGS = [['--chrome','bright'],['--silver','sheen'],['--rim-left','edge L'],
+               ['--rim-bot','edge B'],['--rim-right','edge R'],['--rim-top','body'],
+               ['--slate','recess'],['--field','field'],['--cavity','cavity'],
+               ['--edge','edge'],['--circuit','groove']];
+  var lad = document.getElementById('wbLadder');
+  lad.innerHTML = RUNGS.map(function(r){
+    return '<div class="wb__sw"><i data-k="' + r[0] + '"></i><b><span>' + r[1] + '</span>'
+         + '<em data-h="' + r[0] + '" style="font-style:normal"></em></b></div>';
+  }).join('');
+  function paintLadder(){
+    RUNGS.forEach(function(r){
+      var hex = resolve(r[0]);
+      lad.querySelector('[data-k="' + r[0] + '"]').style.background = 'var(' + r[0] + ')';
+      lad.querySelector('[data-h="' + r[0] + '"]').textContent = hex;
+    });
+  }
   function readout(prefix){
     out.textContent = prefix + 'body ' + resolve('--rim-top')
       + '  ·  edge ' + resolve('--rim-right')
       + '  ·  bright ' + resolve('--chrome')
       + '  ·  groove ' + resolve('--circuit');
+    paintLadder();
   }
-  [kH,kS,kT].forEach(function(k){ k.addEventListener('input', apply); });
+  [kH,kS,kT,kP].forEach(function(k){ k.addEventListener('input', apply); });
 
   document.querySelectorAll('[data-p]').forEach(function(b){
     b.addEventListener('click', function(){
       document.querySelectorAll('[data-p]').forEach(function(x){ x.classList.remove('is-on'); });
       b.classList.add('is-on');
-      if(b.dataset.p === 'orig'){
-        for(var k in ORIG) root.style.setProperty(k, ORIG[k]);
-        readout('original canvas — scattered hues 197-283, the mismatch   ·   ');
-        return;
-      }
       var p = b.dataset.p.split(',');
-      kH.value = p[0]; kS.value = p[1]; kT.value = p[2];
+      kH.value = p[0]; kS.value = p[1]; kT.value = p[2]; kP.value = p[3];
       apply();
     });
   });

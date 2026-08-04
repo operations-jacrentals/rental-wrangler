@@ -121,11 +121,11 @@
 
 .halo-screen .body {
   position: absolute; inset: 0; --cut: 19px;
-  background: linear-gradient(180deg, #1a1c22 0%, #0b0d12 8%, #070910 50%, #0b0d13 92%, #23262c 100%);
+  background: linear-gradient(180deg, hsl(calc(var(--steel-h) + 13 * var(--steel-spread)) calc(var(--steel-s) * 0.444) calc(11.765% * var(--steel-tint))) 0%, hsl(calc(var(--steel-h) + 10.857 * var(--steel-spread)) calc(var(--steel-s) * 0.805) calc(5.686% * var(--steel-tint))) 8%, hsl(calc(var(--steel-h) + 14.667 * var(--steel-spread)) calc(var(--steel-s) * 1.304) calc(4.51% * var(--steel-tint))) 50%, hsl(calc(var(--steel-h) + 13 * var(--steel-spread)) calc(var(--steel-s) * 0.889) calc(5.882% * var(--steel-tint))) 92%, hsl(calc(var(--steel-h) + 8 * var(--steel-spread)) calc(var(--steel-s) * 0.38) calc(15.49% * var(--steel-tint))) 100%);
 }
 .halo-screen .glass {
   position: absolute; inset: 7px; --cut: 15px;
-  background: var(--glass, #040910);
+  background: var(--glass, hsl(calc(var(--steel-h) + 3 * var(--steel-spread)) calc(var(--steel-s) * 2) calc(3.922% * var(--steel-tint))));
 }
 .halo-screen .glass::after {
   content: ""; position: absolute; inset: 0;
@@ -140,7 +140,7 @@
 }
 .halo-screen .hair > i {
   position: absolute; inset: 1px; display: block; --cut: 11.4px;
-  background: var(--glass, #040910);
+  background: var(--glass, hsl(calc(var(--steel-h) + 3 * var(--steel-spread)) calc(var(--steel-s) * 2) calc(3.922% * var(--steel-tint))));
 }
 
 /* C5b's promoted "FAILED" readout — see REBASE note 2. Local to the root,
@@ -156,10 +156,10 @@
 .halo-screen.is-blank {   /* C5a, band A — blank glass, no readout */
   --w: 219px; --h: 110px;
   --hx: 9px; --hy: 9px; --hw: 192px; --hh: 88px;
-  --glass: #191720;
+  --glass: hsl(calc(var(--steel-h) + 41.333 * var(--steel-spread)) calc(var(--steel-s) * 0.545) calc(10.784% * var(--steel-tint)));
 }
 .halo-screen.is-failed {  /* C5b, band B — carries .readout child */
   --w: 222px; --h: 106px;
   --hx: 11.5px; --hy: 8.5px; --hw: 193px; --hh: 88px;
-  --glass: #040910;
+  --glass: hsl(calc(var(--steel-h) + 3 * var(--steel-spread)) calc(var(--steel-s) * 2) calc(3.922% * var(--steel-tint)));
 }

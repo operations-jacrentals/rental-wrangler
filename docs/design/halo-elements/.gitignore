@@ -11,3 +11,7 @@ parts/*-diff.png
 assembly/*-part.png
 assembly/*-ref.png
 assembly/*-diff.png
+
+# Scratch screenshot driver: hardcodes a per-session scratchpad path, so it is
+# a local convenience, not a fixture. Regenerate it when you need a baseline.
+.base.mjs

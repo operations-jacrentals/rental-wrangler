@@ -27,6 +27,10 @@
   --steel-h: 214;
   --steel-s: 30%;
   --steel-tint: 0.82;
+  /* 0 = every steel surface on ONE hue (the fix for the mismatch)
+     1 = each surface keeps its original hue offset, which reproduces the
+         source canvas exactly and is what the pixel gate runs at. */
+  --steel-spread: 0;
 }
 
 /* --- the steel surfaces --------------------------------------------------
@@ -39,34 +43,38 @@
    together. Repeating the block on .stage lets each stage resolve its own
    --steel-h/s/tint, which is what puts four drafts side by side. */
 :root, .stage {
-  --chrome:    hsl(var(--steel-h) var(--steel-s) calc(72.9% * var(--steel-tint)));
-  --silver:    hsl(var(--steel-h) var(--steel-s) calc(60.8% * var(--steel-tint)));
-  --rim-left:  hsl(var(--steel-h) var(--steel-s) calc(53.9% * var(--steel-tint)));
-  --rim-bot:   hsl(var(--steel-h) var(--steel-s) calc(53.7% * var(--steel-tint)));
-  --rim-right: hsl(var(--steel-h) var(--steel-s) calc(49.8% * var(--steel-tint)));
-  --rim-top:   hsl(var(--steel-h) var(--steel-s) calc(41.4% * var(--steel-tint)));
-  --slate:     hsl(var(--steel-h) var(--steel-s) calc(21.6% * var(--steel-tint)));
-  --field:     hsl(var(--steel-h) var(--steel-s) calc(14.5% * var(--steel-tint)));
-  --cavity:    hsl(var(--steel-h) var(--steel-s) calc(12.4% * var(--steel-tint)));
-  --edge:      hsl(var(--steel-h) var(--steel-s) calc( 7.3% * var(--steel-tint)));
-  /* the groove reads deepest — it keeps a touch more saturation so it stays
-     blued rather than going flat black as --steel-tint drops */
-  --circuit:   hsl(var(--steel-h) calc(var(--steel-s) * 1.6) calc(5.7% * var(--steel-tint)));
+  --chrome:    hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 0.58) calc(72.941% * var(--steel-tint)));  /* brightest machined edge */
+  --silver:    hsl(calc(var(--steel-h) + 143 * var(--steel-spread)) calc(var(--steel-s) * 0.2) calc(60.784% * var(--steel-tint)));  /* sheen */
+  --rim-left:  hsl(calc(var(--steel-h) + -14.353 * var(--steel-spread)) calc(var(--steel-s) * 0.241) calc(53.922% * var(--steel-tint)));  /* left edge */
+  --rim-bot:   hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 0.395) calc(53.725% * var(--steel-tint)));  /* bottom edge */
+  --rim-right: hsl(calc(var(--steel-h) + -4.727 * var(--steel-spread)) calc(var(--steel-s) * 0.289) calc(49.804% * var(--steel-tint)));  /* right edge */
+  --rim-top:   hsl(var(--steel-h) calc(var(--steel-s) * 0.237) calc(41.373% * var(--steel-tint)));  /* THE BODY PANEL */
+  --slate:     hsl(calc(var(--steel-h) + 36.571 * var(--steel-spread)) calc(var(--steel-s) * 0.424) calc(21.569% * var(--steel-tint)));  /* recess */
+  --field:     hsl(calc(var(--steel-h) + 19.429 * var(--steel-spread)) calc(var(--steel-s) * 0.631) calc(14.51% * var(--steel-tint)));  /* field */
+  --cavity:    hsl(calc(var(--steel-h) + 71.636 * var(--steel-spread)) calc(var(--steel-s) * 0.582) calc(12.353% * var(--steel-tint)));  /* cavity */
+  --edge:      hsl(calc(var(--steel-h) + 0.727 * var(--steel-spread)) calc(var(--steel-s) * 0.991) calc(7.255% * var(--steel-tint)));  /* edge */
+  --circuit:   hsl(var(--steel-h) calc(var(--steel-s) * 1.724) calc(5.686% * var(--steel-tint)));  /* groove / deepest */
 }
 
 /* --- presets -------------------------------------------------------------
-   Put one on <html> or .stage. These are the four drafts sitting beside the
-   assembly in Figma, so a pick here matches a pick there. */
-.steel--deep-blued { --steel-h: 214; --steel-s: 30%; --steel-tint: 0.82; }
-.steel--gunmetal   { --steel-h: 214; --steel-s:  7%; --steel-tint: 0.92; }
-.steel--slate      { --steel-h: 206; --steel-s: 16%; --steel-tint: 1.00; }
-.steel--charcoal   { --steel-h: 218; --steel-s: 10%; --steel-tint: 0.70; }
-/* the original canvas, for A/B against any of the above */
-.steel--original {
-  --chrome:#aebac6; --silver:#a19596; --rim-top:#626971; --rim-left:#818d92;
-  --rim-right:#74808a; --rim-bot:#7b8997; --slate:#32303e; --field:#1e202c;
-  --cavity:#221a25; --circuit:#070e16; --edge:#0d1218;
-}
+   Put one on <html> or .stage. These are the four colourways sitting beside
+   the assembly in Figma, so a pick here matches a pick there.
+
+   CARD ASSIGNMENT (Jac, 2026-08-04) — all four ship, one per card, so each
+   card differentiates itself from the next. The colour name and the card
+   name are the same selector; use whichever reads better at the call site.
+
+   Gunmetal -> Assembly is an ASSUMPTION: Jac named Customers/Rentals/Units
+   and left the fourth as "whatever you call the Assembly color". Gunmetal is
+   the remaining colourway and is what the Figma assembly now renders, so it
+   is wired as the assembly/default. Flip the alias if he meant another card. */
+.steel--deep-blued, .steel--customers { --steel-h: 214; --steel-s: 30%; --steel-tint: 0.82; --steel-spread: 0; }
+.steel--slate,      .steel--rentals   { --steel-h: 206; --steel-s: 16%; --steel-tint: 1.00; --steel-spread: 0; }
+.steel--charcoal,   .steel--units     { --steel-h: 218; --steel-s: 10%; --steel-tint: 0.70; --steel-spread: 0; }
+.steel--gunmetal,   .steel--assembly  { --steel-h: 214; --steel-s:  7%; --steel-tint: 0.92; --steel-spread: 0; }
+/* The source canvas, reproduced EXACTLY. Not a list of hexes any more — the
+   knobs alone get there, which is what proves the rewrite lost nothing. */
+.steel--original { --steel-h: 212; --steel-s: 30%; --steel-tint: 1; --steel-spread: 1; }
 
 /* ==========================================================================
    THE LASER FOLLOWS THE SIGNAL — THE BODY NEVER DOES  (ledger #217)
