@@ -25,12 +25,12 @@
 
    STRUCTURE (markup this sheet expects)
      <span class="row--overdue">
-       <span class="halo-bulb bulb--overdue"><i class="lens"></i><i class="glyph"></i></span>
+       <span class="halo-bulb bulb--overdue"><i class="lens"></i></span>
      </span>
 
    TWO CLASSES ARE REQUIRED, NOT ONE — this bit was wrong here until a browser
-   render caught it (2026-08-04). `bulb--<state>` sets the GLYPH and MOTTLE,
-   which is all this sheet owns. It does NOT set --row-hue: steel-skin.css
+   render caught it (2026-08-04). `bulb--<state>` sets the MOTTLE, which is
+   all this sheet owns. It does NOT set --row-hue: steel-skin.css
    wires --row-hue off `.row--<state>` (steel-skin.css:87-91), never off
    `.bulb--<state>`. So a bare `.halo-bulb.bulb--overdue` with no `.row--*`
    ancestor inherits whatever --row-hue is in scope — on the stage that is the
@@ -49,19 +49,20 @@
    --well-lip / --well / --well-floor ladder the panel's dark lines use, so a
    bulb recess and a panel line are visibly the same cut.
 
-   LEDGER #238 — GLYPH + MOTTLE, BECAUSE COLOUR ALONE FAILS THE CVD GATE
+   LEDGER #238 — MOTTLE, BECAUSE COLOUR ALONE FAILS THE CVD GATE
    Five states in one row, told apart by colour alone, measured: blue/gray 46-48,
    green/gray 31-69, blue/green 72 — all under `style` §4's 90-separation floor.
    The palette is FROZEN (wrangler-style §1) — this is fixed in the component
    layer, not by recolouring. `style` §7 already defines what a Signal needs:
    "coloured chip, read-only state + a verbalising word + parent-card icon."
-   The bulb had neither half. This sheet adds both:
-     - `.glyph`  — a per-state Lucide-sourced icon (glyph section below).
-     - mottle    — the existing lens texture, now reached per-state through a
-                   custom property so a distinct crackle can be dropped in per
-                   state without touching the rule that consumes it (mottle
-                   section below).
+   The bulb had neither half. This sheet's answer is:
+     - mottle — the existing lens texture, now reached per-state through a
+                custom property so a distinct crackle can be dropped in per
+                state without touching the rule that consumes it (mottle
+                section below).
    Jac is colour-blind — wrangler-style states this is a gate, not a preference.
+   Mottle is now the ONLY non-colour channel carrying this disambiguation —
+   see the GLYPH — BUILT, THEN REMOVED note further down for why it is alone.
 
    LEDGER #239 — THE 13px RADIUS STAYS. DO NOT "FIX" IT TO 0.
    `--bulb-r: 13px` looks like it contradicts ledger #140 (`border-radius: 0`
@@ -76,7 +77,6 @@
      --bulb-r              corner radius. 13px measured — KEEP (ledger #239,
                            see above). Not part of #140's radius-0 sweep.
      --bulb-skew           the row's shear. 0 for an upright bulb.
-     --bulb-glyph-size     glyph bounding box, default 22px (see GLYPH below).
    ========================================================================== */
 
 .halo-bulb {
@@ -145,6 +145,16 @@
 /* ==========================================================================
    MOTTLE — reached through a custom property, never by filename (ledger #238)
 
+   THE ONLY NON-COLOUR CHANNEL (2026-08-04). Ledger #238 originally paired this
+   with a per-state glyph (see the GLYPH — BUILT, THEN REMOVED note below);
+   Jac reversed the glyph half after seeing it rendered — slot ticks read
+   distribution/quantity at a glance and are not the place to label each tick
+   individually. That leaves mottle carrying the CVD disambiguation alone: it
+   is no longer reinforcement for a two-signal design, it IS the design. The
+   four still-owed distinct per-state assets (spec table below) are now load-
+   bearing, not optional polish — until they exist, all five states still
+   share one texture and differ only by hue.
+
    `--bulb-mottle` is what `.lens::after` actually consumes. It is not set
    directly: each `.bulb--*` rule points it at `var(--mottle-<state>)`, and
    each `--mottle-<state>` is declared once, in :root, below. That extra hop
@@ -196,113 +206,37 @@
 }
 
 /* ==========================================================================
-   GLYPH — the other half of ledger #238's fix, and the one that actually
-   disambiguates state (the mottle survives CVD but reads as "textured",
-   not as "which state" — the glyph is what a colour-blind glance names).
+   GLYPH — BUILT, THEN REMOVED (Jac, 2026-08-04)
 
-   Sourced VERBATIM from Lucide (ISC, pinned lucide-static v1.21.0 — same
-   pin `tools/gen-icons.mjs` uses for the shipped app), per the icon rule
-   in `.claude/rules/icons.md`: never hand-drawn. Five icons, one per state,
-   each chosen to VERBALISE that state rather than just decorate it:
+   Ledger #238 originally called for a per-state Lucide glyph here alongside
+   the mottle, and one was built: five state icons (triangle-alert / clock /
+   hourglass / check / power-off) inlined as CSS masks, sized and stamped to
+   sit inside the lens. It shipped in this file plus a verify harness. Jac
+   then saw it rendered and reversed the glyph half, verbatim: "No glyphs or
+   icons in slots. That's dumb and not their purpose." These bulbs are SLOT
+   TICKS — a slot rack communicates distribution/quantity at a glance, and
+   labelling each individual tick with an icon is not what a slot rack is
+   for. So the glyph is gone: no `.glyph` element rule, no `--bulb-glyph`
+   custom property, no `--glyph-<state>` data-URI declarations, no
+   `--bulb-glyph` assignment in any `.bulb--<state>` rule, and no
+   `<i class="glyph">` in the markup contract at the top of this file.
 
-     state     Lucide name      why this glyph
-     overdue   triangle-alert   the universal "this needs attention now"
-                                mark — matches the app's own `alert` icon
-                                (I.alert -> 'triangle-alert' in icons.js),
-                                so a colour-blind glance reads "overdue" the
-                                same way it already reads an overdue toast.
-     due       clock            a plain clock face says "time-based, coming
-                                due" without borrowing the hourglass's
-                                "actively counting down" connotation —
-                                that one is reserved for `waiting`.
-     waiting   hourglass        verbalises "incomplete, on hold, time is
-                                passing" — the wrangler-style §3.1 meaning
-                                of blue/Waiting (slack>2h, not yet worked).
-     done      check            a bare checkmark, not circle-check: at a
-                                ~20px glyph inside a 51x45 lens the extra
-                                thin ring on circle-check loses definition
-                                first: it fights the mottle multiply and
-                                reads as a smudge before the check does.
-     off       power-off        literal and exact — bulb.css's own comment
-                                already calls this state "unpowered."
-
-   Each icon is inlined as a CSS mask (never a filename, same plumbing as
-   the mottle above): `--glyph-<state>` in :root holds the actual Lucide
-   path data as a data: URI; `.bulb--<state>` points `--bulb-glyph` at it.
-   A mask, not a background-image, so the glyph's actual paint colour is a
-   CSS custom property (--glyph-tone) instead of being baked into the
-   asset — one glyph asset serves every colourway the same way the mottle
-   serves every hue.
-
-   Every path is stroked white on transparent so it reads correctly whether
-   the engine treats the mask as alpha or luminance (opaque white satisfies
-   both — see the file-level note this comment was added next to). Strokes,
-   not fills: reproduced 1:1 from the Lucide source rather than rebuilt as
-   filled shapes, so nothing here counts as hand-authoring new path data.
-
-   SIZE — legibility at the bulb's real size:
-   The lens is 51x45px (--bulb-w/-h 59x53, minus the 4px inset each edge).
-   --bulb-glyph-size defaults to 22px — roughly 45% of the lens's shorter
-   dimension, comfortably clear of both the lens's own edge and the 4px lip
-   the mottle needs to read as a distinct surface. `style` does not set an
-   icon-specific pixel floor, but 22px sits above the ~16-18px minimum
-   commonly used for a standalone (non-touch-target) glyph and is what a
-   Lucide 24x24 source draws cleanest at — shrinking materially past this
-   starts losing the triangle-alert exclamation mark and the hourglass's
-   waist, the two most detail-dense of the five. NOT independently verified
-   by rendering in this environment — flag for a visual check once the kit
-   is opened in a browser.
+   The CVD problem #238 identified is still real — colour alone measures
+   under `style` §4's 90-separation floor between several of these five
+   states (see the LEDGER #238 note above). The MOTTLE section below is now
+   the only place this file writes disambiguation: the mottle carries it
+   ALONE. Do not re-add a glyph thinking its absence here was an oversight —
+   it was tried, rendered, and explicitly turned down.
    ========================================================================== */
-:root {
-  --glyph-overdue: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d=%22m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3%22/%3E%3Cpath d=%22M12 9v4%22/%3E%3Cpath d=%22M12 17h.01%22/%3E%3C/svg%3E");
-  --glyph-due:     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx=%2212%22 cy=%2212%22 r=%2210%22/%3E%3Cpath d=%22M12 6v6l4 2%22/%3E%3C/svg%3E");
-  --glyph-waiting: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d=%22M5 22h14%22/%3E%3Cpath d=%22M5 2h14%22/%3E%3Cpath d=%22M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22%22/%3E%3Cpath d=%22M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2%22/%3E%3C/svg%3E");
-  --glyph-done:    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d=%22M20 6 9 17l-5-5%22/%3E%3C/svg%3E");
-  --glyph-off:     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d=%22M18.36 6.64A9 9 0 0 1 20.77 15%22/%3E%3Cpath d=%22M6.16 6.16a9 9 0 1 0 12.68 12.68%22/%3E%3Cpath d=%22M12 2v4%22/%3E%3Cpath d=%22m2 2 20 20%22/%3E%3C/svg%3E");
-}
 
-.halo-bulb .glyph {
-  --bulb-glyph-size: 22px;
-
-  position: absolute;
-  inset: 0;
-  margin: auto;
-  width: var(--bulb-glyph-size);
-  height: var(--bulb-glyph-size);
-
-  /* the glyph is a MASK, not a picture — colour comes from --glyph-tone so
-     the same asset works across every hue and every colourway */
-  -webkit-mask-image: var(--bulb-glyph);
-  mask-image: var(--bulb-glyph);
-  -webkit-mask-size: contain;
-  mask-size: contain;
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  -webkit-mask-position: center;
-  mask-position: center;
-
-  background-color: var(--glyph-tone, var(--txt, #eef2f7));
-
-  /* stamped, not stuck on (ledger #230's cue, applied to a glyph instead of
-     type): a dark contact shadow keeps the glyph legible against the
-     BRIGHTER two hues (due=yellow, done=green) without a second per-hue
-     ink swap — filter follows the mask's own alpha, so this silhouettes
-     the glyph shape, not a box around it. */
-  filter: drop-shadow(0 1px 0 rgba(0,0,0,.55)) drop-shadow(0 -1px 0 rgba(0,0,0,.25));
-
-  pointer-events: none;
-}
-
-.bulb--overdue { --bulb-glyph: var(--glyph-overdue); --bulb-mottle: var(--mottle-overdue); }
-.bulb--due     { --bulb-glyph: var(--glyph-due);     --bulb-mottle: var(--mottle-due); }
-.bulb--waiting { --bulb-glyph: var(--glyph-waiting); --bulb-mottle: var(--mottle-waiting); }
-.bulb--done    { --bulb-glyph: var(--glyph-done);    --bulb-mottle: var(--mottle-done); }
-.bulb--off     { --bulb-glyph: var(--glyph-off);     --bulb-mottle: var(--mottle-off); }
+.bulb--overdue { --bulb-mottle: var(--mottle-overdue); }
+.bulb--due     { --bulb-mottle: var(--mottle-due); }
+.bulb--waiting { --bulb-mottle: var(--mottle-waiting); }
+.bulb--done    { --bulb-mottle: var(--mottle-done); }
+.bulb--off     { --bulb-mottle: var(--mottle-off); }
 
 /* An unpowered bulb still has a lens — it is just not lit. `.bulb--off`
-   (above) supplies both its own grey mottle re-point and its power-off
-   glyph; `.row--off` still supplies the grey --row-hue for colour, so the
-   ramp resolves grey, the texture still modulates it, and the mottle
-   reads. That is what keeps the power-on beat a single token flip rather
-   than a swap — this pass adds a glyph flip and a mottle-var flip beside
-   it, not a third rendering path. */
+   (above) supplies its own grey mottle re-point; `.row--off` still supplies
+   the grey --row-hue for colour, so the ramp resolves grey and the texture
+   still modulates it. That is what keeps the power-on beat a single token
+   flip rather than a swap. */

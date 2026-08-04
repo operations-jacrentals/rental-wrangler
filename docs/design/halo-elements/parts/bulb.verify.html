@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>bulb verify — five states, glyph + mottle (ledger #238)</title>
+<title>bulb verify — five states, mottle (ledger #238)</title>
 <link rel="stylesheet" href="../tokens.css">
 <link rel="stylesheet" href="../steel-skin.css">
 <link rel="stylesheet" href="./bulb.css">
@@ -22,7 +22,7 @@
      --bulb-* custom property. */
   .real-size .halo-bulb { zoom: 0.6; }
 
-  /* big row: scale UP so the glyph is legible for inspection */
+  /* big row: scale UP so the mottle crackle is legible for inspection */
   .big .halo-bulb { zoom: 2.2; }
 
   /* CVD simulation filters, applied to the whole row via SVG colour-matrix */
@@ -57,119 +57,95 @@
 <h2>1. All five states, normal vision, at spec size (59x53)</h2>
 <div class="stage row-of-bulbs">
   <div class="cell row--overdue">
-    <span class="halo-bulb bulb--overdue"><i class="lens"></i><i class="glyph"></i></span>
+    <span class="halo-bulb bulb--overdue"><i class="lens"></i></span>
     <span>overdue</span>
   </div>
   <div class="cell row--due">
-    <span class="halo-bulb bulb--due"><i class="lens"></i><i class="glyph"></i></span>
+    <span class="halo-bulb bulb--due"><i class="lens"></i></span>
     <span>due</span>
   </div>
   <div class="cell row--waiting">
-    <span class="halo-bulb bulb--waiting"><i class="lens"></i><i class="glyph"></i></span>
+    <span class="halo-bulb bulb--waiting"><i class="lens"></i></span>
     <span>waiting</span>
   </div>
   <div class="cell row--done">
-    <span class="halo-bulb bulb--done"><i class="lens"></i><i class="glyph"></i></span>
+    <span class="halo-bulb bulb--done"><i class="lens"></i></span>
     <span>done</span>
   </div>
   <div class="cell row--off">
-    <span class="halo-bulb bulb--off"><i class="lens"></i><i class="glyph"></i></span>
+    <span class="halo-bulb bulb--off"><i class="lens"></i></span>
     <span>off</span>
   </div>
 </div>
 
-<h2>2. Same five, blown up 2.2x for glyph legibility inspection</h2>
-<div class="stage row-of-bulbs big">
-  <div class="cell row--overdue">
-    <span class="halo-bulb bulb--overdue"><i class="lens"></i><i class="glyph"></i></span>
-    <span>overdue</span>
-  </div>
-  <div class="cell row--due">
-    <span class="halo-bulb bulb--due"><i class="lens"></i><i class="glyph"></i></span>
-    <span>due</span>
-  </div>
-  <div class="cell row--waiting">
-    <span class="halo-bulb bulb--waiting"><i class="lens"></i><i class="glyph"></i></span>
-    <span>waiting</span>
-  </div>
-  <div class="cell row--done">
-    <span class="halo-bulb bulb--done"><i class="lens"></i><i class="glyph"></i></span>
-    <span>done</span>
-  </div>
-  <div class="cell row--off">
-    <span class="halo-bulb bulb--off"><i class="lens"></i><i class="glyph"></i></span>
-    <span>off</span>
-  </div>
-</div>
-
-<h2>3. Real in-card footprint (zoom 0.6, dense-row scale)</h2>
+<h2>2. Real in-card footprint (zoom 0.6, dense-row scale)</h2>
 <div class="stage row-of-bulbs real-size">
   <div class="cell row--overdue">
-    <span class="halo-bulb bulb--overdue"><i class="lens"></i><i class="glyph"></i></span>
+    <span class="halo-bulb bulb--overdue"><i class="lens"></i></span>
     <span>overdue</span>
   </div>
   <div class="cell row--due">
-    <span class="halo-bulb bulb--due"><i class="lens"></i><i class="glyph"></i></span>
+    <span class="halo-bulb bulb--due"><i class="lens"></i></span>
     <span>due</span>
   </div>
   <div class="cell row--waiting">
-    <span class="halo-bulb bulb--waiting"><i class="lens"></i><i class="glyph"></i></span>
+    <span class="halo-bulb bulb--waiting"><i class="lens"></i></span>
     <span>waiting</span>
   </div>
   <div class="cell row--done">
-    <span class="halo-bulb bulb--done"><i class="lens"></i><i class="glyph"></i></span>
+    <span class="halo-bulb bulb--done"><i class="lens"></i></span>
     <span>done</span>
   </div>
   <div class="cell row--off">
-    <span class="halo-bulb bulb--off"><i class="lens"></i><i class="glyph"></i></span>
+    <span class="halo-bulb bulb--off"><i class="lens"></i></span>
     <span>off</span>
   </div>
 </div>
 
-<h2>4. Deuteranopia simulation (feColorMatrix), 2.2x row</h2>
+<h2>3. Deuteranopia simulation (feColorMatrix), 2.2x row</h2>
 <div class="stage row-of-bulbs big cvd-deuter">
   <div class="cell row--overdue">
-    <span class="halo-bulb bulb--overdue"><i class="lens"></i><i class="glyph"></i></span>
+    <span class="halo-bulb bulb--overdue"><i class="lens"></i></span>
     <span>overdue</span>
   </div>
   <div class="cell row--due">
-    <span class="halo-bulb bulb--due"><i class="lens"></i><i class="glyph"></i></span>
+    <span class="halo-bulb bulb--due"><i class="lens"></i></span>
     <span>due</span>
   </div>
   <div class="cell row--waiting">
-    <span class="halo-bulb bulb--waiting"><i class="lens"></i><i class="glyph"></i></span>
+    <span class="halo-bulb bulb--waiting"><i class="lens"></i></span>
     <span>waiting</span>
   </div>
   <div class="cell row--done">
-    <span class="halo-bulb bulb--done"><i class="lens"></i><i class="glyph"></i></span>
+    <span class="halo-bulb bulb--done"><i class="lens"></i></span>
     <span>done</span>
   </div>
   <div class="cell row--off">
-    <span class="halo-bulb bulb--off"><i class="lens"></i><i class="glyph"></i></span>
+    <span class="halo-bulb bulb--off"><i class="lens"></i></span>
     <span>off</span>
   </div>
 </div>
 
-<h2>5. Protanopia simulation (feColorMatrix), 2.2x row</h2>
+<h2>4. Protanopia simulation (feColorMatrix), 2.2x row</h2>
 <div class="stage row-of-bulbs big cvd-protan">
   <div class="cell row--overdue">
-    <span class="halo-bulb bulb--overdue"><i class="lens"></i><i class="glyph"></i></span>
+    <span class="halo-bulb bulb--overdue"><i class="lens"></i></span>
     <span>overdue</span>
   </div>
   <div class="cell row--due">
-    <span class="halo-bulb bulb--due"><i class="lens"></i><i class="glyph"></i></span>
+    <span class="halo-bulb bulb--due"><i class="lens"></i></span>
     <span>due</span>
   </div>
   <div class="cell row--waiting">
-    <span class="halo-bulb bulb--waiting"><i class="lens"></i><i class="glyph"></i></span>
+    <span class="halo-bulb bulb--waiting"><i class="lens"></i></span>
     <span>waiting</span>
   </div>
   <div class="cell row--done">
-    <span class="halo-bulb bulb--done"><i class="lens"></i><i class="glyph"></i></span>
+    <span class="halo-bulb bulb--done"><i class="lens"></i></span>
     <span>done</span>
   </div>
   <div class="cell row--off">
-    <span class="halo-bulb bulb--off"><i class="lens"></i><i class="glyph"></i></span>
+    <span class="halo-bulb bulb--off"><i class="lens"></i></span>
     <span>off</span>
   </div>
 </div>
