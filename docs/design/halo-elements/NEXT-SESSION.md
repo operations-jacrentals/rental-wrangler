@@ -32,7 +32,8 @@ Copy the block below as your opening message. Everything after it is reference.
 | ├ 02 · CONDUIT RAIL + ELBOWS | channel upper run + 3 elbows + subitem elbow instance |
 | ├ 03 · SUBITEM 1 | housing · name · hexicon · message board |
 | └ 04 · SUBITEM 2 | housing · name · hexicon · message board |
-| **Tier-01 target** | page `Reference — tier-01` (`44:2`) → **`208:822`** is the vectorized card, 1032x250, 133 children. `42:2` is only an image + annotation, not usable structurally. |
+| **Tier-01 target** | page `Reference — tier-01` (`44:2`) → **`208:822`** is 133 FLAT, UNNAMED vector outlines (every child literally named "Vector"), covering only the card's top ~250px (tab bar + search bar). It is NOT the whole card and carries NO structure; individual letters are separate outlines. `42:2` is a flat image + annotation, also not structurally usable. The REAL structural source is the repo: `docs/design/tier-01-card/index.html`. |
+| **V2 card (built)** | page `V2 — Assembly x Tier-01`, frame **`438:274`** "V2 · CARD — Tier-01 structure x Halo components", 1500x2140. Contains three cloned Halo assembly blocks (`438:275`, `438:326`, `438:377`) plus placeholder chrome frames for header tab bar, search bar, and footer (all named with "[PENDING Halo component]" suffix). |
 | Jac's working assembly | `Frame 1` `418:7027` on page `MAIN+SUB ASSEMBLY` — he reorganised it himself; the V2 page is a **clone**, so his edits there do not propagate to it (component-level edits still do, via instances). |
 | Bulb variants | COMPONENT_SET `158:2192`, five states, on another page |
 | Colourway drafts | `354:2` gunmetal · `354:128` blued · `354:251` slate · `354:374` charcoal |
@@ -70,6 +71,7 @@ first CSS job. The artifact `MAIN ITEM + SUBITEM — the full card`
 7. Playwright 1.48 wants `chromium-1140`; the image ships `1194`, and 1194's chrome
    dropped `--headless=old`. Symlink `chromium-1140/chrome-linux/chrome` at the
    `chromium_headless_shell-1194` binary.
+8. **Tier-01 card scale and row rhythm alignment.** The Tier-01 card is 380x540; its Figma render `42:2` is 760x1080 (2x). Scaling that 2x render by ~1.97 makes Tier-01's row pitch land at ~154px, matching the Halo subitem height of 151px almost exactly — V2 card was built at 1500px wide and both systems' row rhythms line up without fighting. Trap: `208:822` looks like a usable card node and is not (see Tier-01 target row above).
 
 ## Waiting on Jac — do not guess these
 
