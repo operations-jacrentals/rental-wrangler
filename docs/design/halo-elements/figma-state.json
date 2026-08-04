@@ -1076,5 +1076,24 @@
     "done": "Verified the wrapper had ZERO instances first, then moved the real main 21:19 into the wrapper's exact slot in the assembly (Group 1, position 270,-150), matched it to the wrapper's 373x72, cleared its aspect lock, and deleted the wrapper plus its nested instance. The assembly now holds the MAIN itself -- one thing to select, one thing to edit.",
     "RESIDUAL_AMBIGUITY_REMAINS": "There are still TWO components both named 'Message Board/Wide/On/Default' -- 21:10 parked at page level (633x61) and 273:2683 inside the assembly (633x85). Same name, different sizes, no relationship. That is the same wrapper-style ambiguity in a different shape and will bite again. Not touched without Jac's call, since which one is canonical is his decision, not mine.",
     "boardInventoryNow": "21:19 (373x72, in assembly Group 1, MAIN), 273:2683 (633x85, in assembly, MAIN), 21:10 (633x61, parked on page, MAIN), 260:2341 (instance of 21:10 in Background Circuitry)."
+  },
+  "THE_WRAPPER_AND_ORPHAN_TRAP": {
+    "whyThisKeptHappening": "THREE separate 'I cannot edit this' reports today all had the same shape. A COMPONENT whose only child is an INSTANCE of another component, where that other component has been deleted from the canvas and survives only because the instance references it. Click the thing and you get the wrapper. Go inside and you get an instance, which only accepts overrides. Try to reach the source and there is nowhere to go, because an orphaned main belongs to NO PAGE. Figma gives no warning at any of the three stages.",
+    "howToSpotIt": "A component with exactly one child of type INSTANCE. And getNodeByIdAsync on the main returns a live node whose parent chain never reaches a PAGE.",
+    "howToFix": "Re-parent the orphaned main onto a page FIRST -- appendChild works and fully restores it -- then move it into the wrapper's slot and delete the wrapper. Order matters: deleting the wrapper first removes the last reference keeping the orphan alive.",
+    "casesFixed": "Message Board 21:19 (wrapper 283:322, deleted). Message Board 21:10 and 21:19 orphaned by Jac's cleanup, both restored. Group Name 38:8 (wrapper 297:167, deleted) -- this one was triple-locked and the source of his worst frustration."
+  },
+  "groupNameFixed_2026_08_03": {
+    "jac": "'I am SO frustrated with Group Name. I've done everything I can think of to try and edit it. Still to no avail.'",
+    "diagnosis": "297:167 was a COMPONENT whose only child was INSTANCE 297:151, pointing at main 38:8 -- and 38:8 was ORPHANED, on no page. Three layers of indirection, none of them visible in the UI. Nothing he tried could have worked.",
+    "fix": "Restored 38:8 to the page first, moved it into the wrapper's slot, carried across instance text (identical, so nothing changed), deleted the wrapper. 38:8 is now a real component at (852,-543) with 14 directly editable layers including the 'readout' TEXT.",
+    "assemblyRepair": "The assembly had ALSO lost its Group Name during the wrapper experiments -- caught by comparing renders before and after. Restored instance 303:17 at its original assembled position (436,-341), pointing at the editable main."
+  },
+  "boardResizeRealCause_2026_08_03": {
+    "jac": "'Im unable to expand the size of this Message Board' (21:19), after the aspect lock had already been cleared.",
+    "REAL_CAUSE": "Not a lock at all. The component resized fine -- 373x72 grew to 523x102 on demand. But EVERY CHILD was pinned MIN/MIN, so the frame grew while the artwork sat unchanged in the corner at its original size. Visually indistinguishable from 'resize does nothing'.",
+    "whyOnlyThisOne": "21:10, the wide board, already had SCALE/SCALE on its children, which is why that one always resized correctly and the narrow one never did. A per-node difference, invisible without inspecting constraints.",
+    "fix": "Set SCALE/SCALE recursively on all children of both boards. Verified by growing: 21:19's plate 348.5 -> 488.6, 21:10's plate 616 -> 762. SCALE chosen over STRETCH so stroke weights, effects and the angled corner cuts stay in proportion.",
+    "generalLesson": "'I cannot resize this' has at least three distinct causes in Figma -- an aspect-ratio lock, auto-layout HUG sizing, and children pinned so they ignore the parent. Check all three; the third one leaves no trace in the resize handles."
   }
 }
