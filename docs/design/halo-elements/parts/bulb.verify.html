@@ -1,0 +1,178 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>bulb verify — five states, glyph + mottle (ledger #238)</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../steel-skin.css">
+<link rel="stylesheet" href="./bulb.css">
+<style>
+  /* Page harness only — nothing here overrides bulb.css/steel-skin.css rules. */
+  body { display: block; padding: 32px; }
+  .stage { width: auto; height: auto; padding: 32px; display: block; }
+  h2 { color: #eef2f7; font-family: var(--mono); font-size: 13px; margin: 0 0 16px; }
+  .row-of-bulbs { display: flex; gap: 28px; align-items: center; margin-bottom: 40px; }
+  .cell { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .cell span { color: #9aa5b1; font-family: var(--mono); font-size: 11px; }
+
+  /* real in-card size: scale the bulb DOWN from its 59x53 spec via zoom,
+     since --bulb-w/-h are the measured Figma size already — this row
+     instead shows the bulb at a smaller on-screen footprint (e.g. as it
+     would sit in a dense list row) using CSS zoom, without touching any
+     --bulb-* custom property. */
+  .real-size .halo-bulb { zoom: 0.6; }
+
+  /* big row: scale UP so the glyph is legible for inspection */
+  .big .halo-bulb { zoom: 2.2; }
+
+  /* CVD simulation filters, applied to the whole row via SVG colour-matrix */
+  .cvd-deuter { filter: url(#deuteranopia); }
+  .cvd-protan { filter: url(#protanopia); }
+</style>
+</head>
+<body>
+
+<!-- SVG colour-matrix filters simulating deuteranopia and protanopia,
+     the two CVD simulations ledger #238 calls for. Matrices are the
+     standard Machado/Oliveira/Fer reduced-cvd approximations, applied as
+     feColorMatrix so they run entirely client-side against whatever the
+     row actually paints (mottle multiply included, not just the base hue). -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <filter id="deuteranopia">
+    <feColorMatrix type="matrix" values="
+      0.625 0.375 0     0 0
+      0.7   0.3   0     0 0
+      0     0.3   0.7   0 0
+      0     0     0     1 0"/>
+  </filter>
+  <filter id="protanopia">
+    <feColorMatrix type="matrix" values="
+      0.567 0.433 0     0 0
+      0.558 0.442 0     0 0
+      0     0.242 0.758 0 0
+      0     0     0     1 0"/>
+  </filter>
+</defs></svg>
+
+<h2>1. All five states, normal vision, at spec size (59x53)</h2>
+<div class="stage row-of-bulbs">
+  <div class="cell row--overdue">
+    <span class="halo-bulb bulb--overdue"><i class="lens"></i><i class="glyph"></i></span>
+    <span>overdue</span>
+  </div>
+  <div class="cell row--due">
+    <span class="halo-bulb bulb--due"><i class="lens"></i><i class="glyph"></i></span>
+    <span>due</span>
+  </div>
+  <div class="cell row--waiting">
+    <span class="halo-bulb bulb--waiting"><i class="lens"></i><i class="glyph"></i></span>
+    <span>waiting</span>
+  </div>
+  <div class="cell row--done">
+    <span class="halo-bulb bulb--done"><i class="lens"></i><i class="glyph"></i></span>
+    <span>done</span>
+  </div>
+  <div class="cell row--off">
+    <span class="halo-bulb bulb--off"><i class="lens"></i><i class="glyph"></i></span>
+    <span>off</span>
+  </div>
+</div>
+
+<h2>2. Same five, blown up 2.2x for glyph legibility inspection</h2>
+<div class="stage row-of-bulbs big">
+  <div class="cell row--overdue">
+    <span class="halo-bulb bulb--overdue"><i class="lens"></i><i class="glyph"></i></span>
+    <span>overdue</span>
+  </div>
+  <div class="cell row--due">
+    <span class="halo-bulb bulb--due"><i class="lens"></i><i class="glyph"></i></span>
+    <span>due</span>
+  </div>
+  <div class="cell row--waiting">
+    <span class="halo-bulb bulb--waiting"><i class="lens"></i><i class="glyph"></i></span>
+    <span>waiting</span>
+  </div>
+  <div class="cell row--done">
+    <span class="halo-bulb bulb--done"><i class="lens"></i><i class="glyph"></i></span>
+    <span>done</span>
+  </div>
+  <div class="cell row--off">
+    <span class="halo-bulb bulb--off"><i class="lens"></i><i class="glyph"></i></span>
+    <span>off</span>
+  </div>
+</div>
+
+<h2>3. Real in-card footprint (zoom 0.6, dense-row scale)</h2>
+<div class="stage row-of-bulbs real-size">
+  <div class="cell row--overdue">
+    <span class="halo-bulb bulb--overdue"><i class="lens"></i><i class="glyph"></i></span>
+    <span>overdue</span>
+  </div>
+  <div class="cell row--due">
+    <span class="halo-bulb bulb--due"><i class="lens"></i><i class="glyph"></i></span>
+    <span>due</span>
+  </div>
+  <div class="cell row--waiting">
+    <span class="halo-bulb bulb--waiting"><i class="lens"></i><i class="glyph"></i></span>
+    <span>waiting</span>
+  </div>
+  <div class="cell row--done">
+    <span class="halo-bulb bulb--done"><i class="lens"></i><i class="glyph"></i></span>
+    <span>done</span>
+  </div>
+  <div class="cell row--off">
+    <span class="halo-bulb bulb--off"><i class="lens"></i><i class="glyph"></i></span>
+    <span>off</span>
+  </div>
+</div>
+
+<h2>4. Deuteranopia simulation (feColorMatrix), 2.2x row</h2>
+<div class="stage row-of-bulbs big cvd-deuter">
+  <div class="cell row--overdue">
+    <span class="halo-bulb bulb--overdue"><i class="lens"></i><i class="glyph"></i></span>
+    <span>overdue</span>
+  </div>
+  <div class="cell row--due">
+    <span class="halo-bulb bulb--due"><i class="lens"></i><i class="glyph"></i></span>
+    <span>due</span>
+  </div>
+  <div class="cell row--waiting">
+    <span class="halo-bulb bulb--waiting"><i class="lens"></i><i class="glyph"></i></span>
+    <span>waiting</span>
+  </div>
+  <div class="cell row--done">
+    <span class="halo-bulb bulb--done"><i class="lens"></i><i class="glyph"></i></span>
+    <span>done</span>
+  </div>
+  <div class="cell row--off">
+    <span class="halo-bulb bulb--off"><i class="lens"></i><i class="glyph"></i></span>
+    <span>off</span>
+  </div>
+</div>
+
+<h2>5. Protanopia simulation (feColorMatrix), 2.2x row</h2>
+<div class="stage row-of-bulbs big cvd-protan">
+  <div class="cell row--overdue">
+    <span class="halo-bulb bulb--overdue"><i class="lens"></i><i class="glyph"></i></span>
+    <span>overdue</span>
+  </div>
+  <div class="cell row--due">
+    <span class="halo-bulb bulb--due"><i class="lens"></i><i class="glyph"></i></span>
+    <span>due</span>
+  </div>
+  <div class="cell row--waiting">
+    <span class="halo-bulb bulb--waiting"><i class="lens"></i><i class="glyph"></i></span>
+    <span>waiting</span>
+  </div>
+  <div class="cell row--done">
+    <span class="halo-bulb bulb--done"><i class="lens"></i><i class="glyph"></i></span>
+    <span>done</span>
+  </div>
+  <div class="cell row--off">
+    <span class="halo-bulb bulb--off"><i class="lens"></i><i class="glyph"></i></span>
+    <span>off</span>
+  </div>
+</div>
+
+</body>
+</html>

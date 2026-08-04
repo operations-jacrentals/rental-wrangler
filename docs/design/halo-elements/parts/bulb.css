@@ -24,11 +24,23 @@
    expensive detail in a texture, keep the colour in a parameter.
 
    STRUCTURE (markup this sheet expects)
-     <span class="halo-bulb bulb--overdue"><i class="lens"></i><i class="glyph"></i></span>
-   The state class (`bulb--overdue` / `--due` / `--waiting` / `--done` / `--off`
-   — the five states, see ledger #238 below) comes from canon-colour-map.css /
-   steel-skin.css and sets --row-hue for colour. This sheet adds the same five
-   classes' GLYPH and MOTTLE half — nothing here hardcodes a status colour.
+     <span class="row--overdue">
+       <span class="halo-bulb bulb--overdue"><i class="lens"></i><i class="glyph"></i></span>
+     </span>
+
+   TWO CLASSES ARE REQUIRED, NOT ONE — this bit was wrong here until a browser
+   render caught it (2026-08-04). `bulb--<state>` sets the GLYPH and MOTTLE,
+   which is all this sheet owns. It does NOT set --row-hue: steel-skin.css
+   wires --row-hue off `.row--<state>` (steel-skin.css:87-91), never off
+   `.bulb--<state>`. So a bare `.halo-bulb.bulb--overdue` with no `.row--*`
+   ancestor inherits whatever --row-hue is in scope — on the stage that is the
+   default red, which renders ALL FIVE STATES RED while looking deliberate.
+   A bulb must sit inside its row's state class, which is how it appears in
+   real assembled usage. See parts/bulb.verify.html for the working markup.
+
+   The five states (`overdue` / `due` / `waiting` / `done` / `off` — ledger
+   #238 below) are the same set on both classes; nothing here hardcodes a
+   status colour.
 
    THE WELL IS NOT THE SIGNAL
    The well keeps the scribe-line cut (ledger #231) and does NOT move with
