@@ -70,3 +70,5 @@ __pycache__/
 # browser has to sit here rather than in the scratchpad. They are throwaway.
 .scratch-*.mjs
 .scratch-*.js
+.tmp-*.mjs
+.tmp-*.js
