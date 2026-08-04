@@ -1,0 +1,241 @@
+/* ==========================================================================
+   CONDUIT / CAP  (halo-cap) — the fitting that closes a channel's end.
+
+   WHY THIS EXISTS
+   `conduit-channel.css` gives the straight run; every straight run needs an
+   end. Figma's two-part kit note (ledger session 2026-08-03,
+   "conduitKit_2Part") says it outright: "Caps connect channels to deck &
+   housings AND plug into the side of a vertical channel for multiple
+   headings... ONE component for every junction; orientation is rotation
+   only." One fitting, four junctions (capRotations, same session):
+     0deg   deck to channel     (default — this file's base .halo-cap)
+     180deg channel foot
+     270deg side tap into a vertical channel, AND channel to heading
+   This sheet builds the 0deg fitting from measured geometry, plus the two
+   rotations documented above.
+
+   PROVENANCE
+   Figma node 280:101 "Conduit / Cap", 39 x 18.8 nominal frame, one merged
+   VECTOR child "cap — fitting" (291:161, 55 vertices / 66 segments / 10
+   regions). Per the same session's "conduitArtworkSwap" entry: the fitting
+   was cloned from the ORIGINAL mockup's real end-fitting artwork (238:2297),
+   rotated and scaled onto the channel's 39px thickness — genuine bevelled
+   geometry, not an authored placeholder.
+
+   THE VECTOR IS PRE-ROTATED 90deg INSIDE THE COMPONENT — READ THIS FIRST
+   node.width/height on 291:161 report 21.8 x 39 (its own local, un-rotated
+   size) with node.rotation = 90. The component's default 39 x 18.8 render is
+   this native 21.8 x 39 shape rotated +90deg back into place. That is not
+   incidental: Figma's "Conduit / Row Run" (298:134) rotates the WHOLE cap
+   INSTANCE by -90deg for its two end caps ("Cap — spine tap", "Cap —
+   →heading") — instance(-90) composed with the vector's own baked +90 nets
+   to *zero* rotation on the vector's native shape. In other words the raw,
+   un-rotated vector geometry already IS the "capping a horizontal run"
+   orientation; no CSS transform or re-derivation was needed for
+   `.is-run-end` below — its facet table is simply the vector's own local
+   vertex coordinates, measured once.
+
+   WHY A LAYERED-RECT BACKGROUND, NOT ONE GRADIENT LIKE THE CHANNEL
+   The channel's 13 facets are literally 13 full-height rectangles side by
+   side — a 1-D cross-section, so ONE `linear-gradient` with hard stops
+   reproduces it exactly. The cap's 10 regions are a genuine 2-D fitting (a
+   recessed collar with a raised rib, sitting in a base plate, lit from the
+   upper-left) — no single axis sweep produces it. Each region IS still a
+   flat, hard-edged SOLID fill (confirmed: every region below is one
+   `SOLID` paint, no region itself is a gradient), so the CSS analogue is a
+   stack of hard-edged rectangles — one `background` layer per region, each
+   a same-color-to-same-color `linear-gradient` used purely as a rect
+   painter (`linear-gradient(C, C) X Y / W H no-repeat`), so every edge
+   between facets is still a hard, zero-blend cut, never a soft transition.
+   Layer order (first-listed = top-most, per the CSS background spec) was
+   derived from which regions visually sit inside/over which others — see
+   the per-file facet tables — not from the vectorNetwork's region array
+   order, which is not guaranteed to be z-ordered.
+
+   FOUR TONES, ALL PROVABLY SHARED WITH THE CHANNEL
+   Sampling the 10 regions' raw Figma fills turns up only FOUR distinct
+   colours, and each one is BIT-IDENTICAL (same float RGB, not just close)
+   to one of conduit-channel.css's own thirteen: this fitting and that
+   cross-section were cut from the same measured palette.
+
+     region role                    exact float RGB match          -> channel's own name / K,L
+     base plate + ridge + left edge  0.239216, 0.254902, 0.274510   -> "edge-outer"/"casing-lower"  K=0.723 L=28%
+     recess / shadow / far block     0.082353, 0.086275, 0.094118   -> "shadow-deep"                K=0.833 L=9.4%
+     upper-left bevel highlight      0.478431, 0.509804, 0.549020   -> "edge-lit"                    K=0.727 L=55.9%
+     mid-tone inner-wall facets      0.341176, 0.364706, 0.392157   -> "edge-mid"                    K=0.720 L=40%
+
+   So this file reuses conduit-channel.css's exact K (saturation ratio over
+   the 30% reference axis) and L (that tone's own lightness) pairs — never a
+   literal hex, per the steel rule, and never a NEW tone invented for the
+   cap. No red/laser tone appears anywhere in this vector — the lit core
+   does not reach the end fitting — so `--laser-*` is not used in this file.
+
+   THE STOPS ARE MEASURED, NOT CHOSEN
+   Every rect below is a region's own bounding box, read out of
+   `node.vectorNetwork` (vertices + segments assembled into each region's
+   loop, then min/maxed) and transformed into the component's own coordinate
+   space with the vector's documented relativeTransform. Four regions whose
+   bounding box is fully enclosed by a same-tone neighbour (region 4, "dark",
+   sits entirely inside region 6's box, identical colour) were folded into
+   that neighbour — one rect standing in for two identical-tone facets is a
+   simplification of the count, never of a measured value.
+
+   THE RESIDUAL OVERHANG IS KEPT, NOT FIXED
+   figma-state.json's "conduitArtworkSwap_2026_08_03" entry: "the cap-to-
+   channel seam is not perfectly flush — the original fitting has an
+   asymmetric lip that overhangs slightly on one side... would need the lip
+   trimmed for a perfect butt joint." Measured here: the vector's painted
+   box is 21.58 x 38.59 (`.is-run-end`) / 39 x 21.58 (default), while the
+   component's own NOMINAL frame is 18.8 (default height) or 18.8 (run-end
+   width) — a ~2.8px overhang. This sheet renders the TRUE painted extent
+   (matches the source screenshot: 280:101 rasterises at 39 x 22, not
+   39 x 18.8) rather than clipping to the nominal frame — clipping would
+   silently eat real, sourced artwork, the exact hazard this kit's own
+   ANATOMY.md warns about for other parts' overrun boxes ("A part root with
+   overflow:hidden will silently eat it"). Do not "fix" the overhang by
+   cropping; it is a measured fact of the source, not a bug in this sheet.
+
+   --------------------------------------------------------------------------
+   KNOBS
+     --cap-w   thickness — shared axis with .halo-channel's --ch-w. Defaults
+               to the measured 39px. Facet stops are declared in px against
+               this width; re-derive them if you rescale it.
+
+   --------------------------------------------------------------------------
+   VARIANTS / ROTATIONS
+     .halo-cap                  0deg,  deck to channel. 39 x 21.8 painted
+                                 box (18.8 is Figma's nominal frame — see
+                                 the overhang note above).
+     .halo-cap.is-180           180deg, channel foot. An exact `rotate(180)`
+                                 of the base facet table — safe and lossless
+                                 (a half-turn is symmetric, so it needs no
+                                 independent re-measurement) — NOT separately
+                                 pixel-gated against a Figma render the way
+                                 the base orientation is.
+     .halo-cap.is-run-end       270deg (Figma: -90deg), side tap into a
+                                 vertical channel, AND channel-to-heading —
+                                 the SAME rotation serves both junctions in
+                                 Row Run (298:134), confirmed: both its cap
+                                 instances carry rotation -90. 21.58 x 38.59
+                                 painted box, built from the vector's own
+                                 native (pre-component-rotation) geometry —
+                                 see "THE VECTOR IS PRE-ROTATED" above. This
+                                 is the orientation `conduit-rail.css`'s
+                                 elbow uses.
+
+   --------------------------------------------------------------------------
+   MARKUP each instance needs — a single, childless div (all paint is
+   `background`, exactly like .halo-channel):
+
+     <div class="halo-cap"></div>                  <!-- deck / channel top -->
+     <div class="halo-cap is-180"></div>            <!-- channel foot -->
+     <div class="halo-cap is-run-end"></div>        <!-- run end / spine tap -->
+   ========================================================================== */
+
+.halo-cap {
+  --cap-w: 39px;
+  width: var(--cap-w);
+  height: 21.8px; /* true painted extent — see RESIDUAL OVERHANG note */
+  background:
+    /* R3 — dark hairline crease atop the ridge */
+    linear-gradient(
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.833) calc(9.4% * var(--steel-tint))),
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.833) calc(9.4% * var(--steel-tint)))
+    )  8.50px  2.42px / 20.22px  0.90px no-repeat,
+    /* R2 — base-tone ridge inside the recess */
+    linear-gradient(
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(28% * var(--steel-tint))),
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(28% * var(--steel-tint)))
+    )  8.50px  2.42px / 20.62px  3.72px no-repeat,
+    /* R7 — mid-tone inner wall, right side */
+    linear-gradient(
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.720) calc(40% * var(--steel-tint))),
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.720) calc(40% * var(--steel-tint)))
+    ) 27.63px  3.53px /  3.68px  5.81px no-repeat,
+    /* R9 — mid-tone patch, left-lower */
+    linear-gradient(
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.720) calc(40% * var(--steel-tint))),
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.720) calc(40% * var(--steel-tint)))
+    )  1.49px 11.28px /  2.56px  9.49px no-repeat,
+    /* R5 — light bevel highlight, upper-left (the lit contour — from ABOVE) */
+    linear-gradient(
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.727) calc(55.9% * var(--steel-tint))),
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.727) calc(55.9% * var(--steel-tint)))
+    )  1.45px  0.22px /  4.28px  9.67px no-repeat,
+    /* R1 — dark recess / cavity, upper-centre */
+    linear-gradient(
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.833) calc(9.4% * var(--steel-tint))),
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.833) calc(9.4% * var(--steel-tint)))
+    )  5.36px  0.27px / 24.32px  9.45px no-repeat,
+    /* R6 — dark shadow block, right side (absorbs same-tone R4) */
+    linear-gradient(
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.833) calc(9.4% * var(--steel-tint))),
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.833) calc(9.4% * var(--steel-tint)))
+    ) 27.63px  3.53px / 10.96px 18.27px no-repeat,
+    /* R8 — base-tone sliver, far left edge */
+    linear-gradient(
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(28% * var(--steel-tint))),
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(28% * var(--steel-tint)))
+    )  0.00px  8.58px /  2.36px 12.58px no-repeat,
+    /* R0 — base plate, full box (background-color, bottom-most layer) */
+    hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(28% * var(--steel-tint)));
+}
+
+/* 180deg — channel foot. A half-turn is a lossless, symmetric transform of
+   the same facet table above: no new measurement, no new risk. */
+.halo-cap.is-180 {
+  transform: rotate(180deg);
+}
+
+/* 270deg (Figma: -90deg) — side tap into a vertical channel, AND channel to
+   heading (Row Run 298:134 uses this same rotation for both its end caps).
+   Built from the vector's own NATIVE local geometry — see "THE VECTOR IS
+   PRE-ROTATED" above — not a CSS `transform` of the default orientation, so
+   its facets are independently measured, not merely rotated math. */
+.halo-cap.is-run-end {
+  width: 21.58px;
+  height: 38.59px;
+  background:
+    /* R3 */
+    linear-gradient(
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.833) calc(9.4% * var(--steel-tint))),
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.833) calc(9.4% * var(--steel-tint)))
+    ) 18.49px  8.50px /  0.90px 20.22px no-repeat,
+    /* R2 */
+    linear-gradient(
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(28% * var(--steel-tint))),
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(28% * var(--steel-tint)))
+    ) 15.66px  8.50px /  3.72px 20.62px no-repeat,
+    /* R7 */
+    linear-gradient(
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.720) calc(40% * var(--steel-tint))),
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.720) calc(40% * var(--steel-tint)))
+    ) 12.46px 27.63px /  5.81px  3.68px no-repeat,
+    /* R9 */
+    linear-gradient(
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.720) calc(40% * var(--steel-tint))),
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.720) calc(40% * var(--steel-tint)))
+    )  1.03px  1.49px /  9.49px  2.56px no-repeat,
+    /* R5 */
+    linear-gradient(
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.727) calc(55.9% * var(--steel-tint))),
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.727) calc(55.9% * var(--steel-tint)))
+    ) 11.91px  1.45px /  9.67px  4.28px no-repeat,
+    /* R1 */
+    linear-gradient(
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.833) calc(9.4% * var(--steel-tint))),
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.833) calc(9.4% * var(--steel-tint)))
+    ) 12.08px  5.36px /  9.45px 24.32px no-repeat,
+    /* R6 (absorbs R4) */
+    linear-gradient(
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.833) calc(9.4% * var(--steel-tint))),
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.833) calc(9.4% * var(--steel-tint)))
+    )  0.00px 27.63px / 18.27px 10.96px no-repeat,
+    /* R8 */
+    linear-gradient(
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(28% * var(--steel-tint))),
+      hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(28% * var(--steel-tint)))
+    )  0.64px  0.00px / 12.58px  2.36px no-repeat,
+    /* R0 */
+    hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(28% * var(--steel-tint)));
+}

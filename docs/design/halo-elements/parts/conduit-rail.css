@@ -1,0 +1,155 @@
+/* ==========================================================================
+   CONDUIT / RAIL  (halo-rail) — the vertical spine subitem rows branch off.
+
+   WHY THIS EXISTS
+   figma-state.json's "conduitRepeatDownRows_NOTE" (Jac, 2026-08-03): "I kept
+   our Conduit elbow... the app will have to repeat the sequence of conduit
+   parts down the rows... That argues for packaging the run itself as a
+   component so a row instantiates ONE thing rather than six." Row Run
+   (298:134) solved that for a single HORIZONTAL row. The Rail is the same
+   idea turned 90deg: one VERTICAL spine that every row in a card's subitem
+   list taps into, sized to however many rows there are.
+
+   THIS IS A COMPOSITION, NOT NEW ARTWORK
+   Every pixel here comes from the two sheets this one sits on top of:
+     - the spine is literally a `.halo-channel` (conduit-channel.css),
+       stretched to the rail's own height — that class already supports
+       exactly this (`height: 100%` off its own default rule).
+     - each branch's elbow is `.halo-cap.is-run-end` (conduit-cap.css) — the
+       SAME rotation Row Run uses for its own end caps, and the same one
+       Figma's "conduitKit_2Part" note names for "side tap into a vertical
+       channel." Nothing here re-derives cap or channel geometry; this sheet
+       only positions instances of them.
+     - each branch's run stub is `.halo-channel.is-horizontal`.
+   Consuming this file WITHOUT also loading conduit-channel.css and
+   conduit-cap.css renders an empty spine with no cross-section and no
+   elbows — those two are a hard dependency, not merely a suggestion.
+
+   REFERENCE ARTWORK, NOT A TRACING SOURCE
+   Figma nodes "Conduit AA" (283:343) and "Conduit — Multiple Subitems"
+   (270:174) are the OLD, pre-kit multi-branch conduits — hand-authored SVG
+   trace/vectorize artwork from a different session, in a different (redder,
+   more ornate) visual language than the steel-token kit. They are useful
+   here only as a reference for WHAT a branching rail composes (a spine with
+   lateral taps at intervals) — not as a geometry source. Building `.halo-
+   rail` from them would mean two conduit languages on one card; building it
+   from the Cap+Channel kit (as this sheet does) keeps the whole thing on
+   one set of `--steel-*`/`--laser-*` knobs.
+
+   THE ELBOW BELONGS TO THE RAIL, NOT THE ROW
+   Per the build brief: the junction where a row's own conduit run meets the
+   spine is this sheet's responsibility. `.halo-rail__branch` therefore owns
+   both the elbow cap AND a run stub reaching toward the row; the row itself
+   starts wherever that stub ends (it does not supply its own spine-tap
+   cap — that would be the same fitting drawn twice).
+
+   THE ELBOW'S TRUE WIDTH IS WIDER THAN ITS NOMINAL FIGMA FRAME, ON PURPOSE
+   conduit-cap.css documents a measured ~2.8px lip overhang on `.is-run-end`
+   (true painted box 21.58px wide vs Figma's own nominal 18.8px instance
+   frame) and deliberately does NOT crop it. This sheet does not compensate
+   for that with a margin hack either: `.halo-rail__branch` lays the elbow
+   out at its own true width and lets the flex run stub (`flex: 1 1 0%`)
+   absorb the difference, so the overhang naturally eats very slightly into
+   where a nominal-width layout would have started the run — which is
+   exactly what the source artwork does. See conduit-cap.css's "RESIDUAL
+   OVERHANG IS KEPT, NOT FIXED" note; the same rule applies transitively
+   here.
+
+   --------------------------------------------------------------------------
+   KNOBS
+     --rail-h       spine length. Required — sizes the rail to however many
+                     rows it must reach (first branch to last, plus whatever
+                     lead-in/lead-out the caller wants). No default: unlike
+                     --ch-w/--cap-w, there is no single "right" length.
+     --branch-y     PER-BRANCH. Set on each `.halo-rail__branch`. This is the
+                     row's own vertical CENTRELINE on the spine — the branch
+                     is centred on it (`transform: translateY(-50%)`), not
+                     top-aligned, so it lines up with the row's own conduit
+                     run at the run's own thickness-centre.
+     --branch-run   PER-BRANCH, optional (default 40px). How far the run
+                     stub reaches from the spine before the row's own content
+                     takes over.
+     --ch-w         thickness, shared with .halo-channel/.halo-cap. Defaults
+                     39px — MUST match whatever the spine and elbow instances
+                     are actually using, since this sheet sizes the rail's
+                     own box (and every branch's height) off it.
+
+   ALTERNATE SPACING: evenly-spaced rows without a --branch-y per element
+   If every row is the same height, `nth-child` spacing is less markup than
+   a `--branch-y` on each branch — set `--row-h` once on `.halo-rail` and
+   drop the per-branch custom property:
+
+     .halo-rail.is-even > .halo-rail__branch {
+       top: calc((var(--row-i, 0) + 0.5) * var(--row-h));
+     }
+
+   with `--row-i: 0` / `1` / `2`… set per branch (or generated server-side —
+   CSS has no nth-child-to-counter arithmetic that reaches a custom
+   property without one). Not wired up as the default below because mixed
+   row heights are the common case in this app's subitem lists; offered
+   here as the documented alternative the brief asks for.
+
+   --------------------------------------------------------------------------
+   MARKUP each rail instance needs:
+
+     <div class="halo-rail" style="--rail-h: 420px;">
+       <div class="halo-channel"></div>
+
+       <div class="halo-rail__branch" style="--branch-y: 60px;">
+         <div class="halo-cap is-run-end"></div>
+         <div class="halo-channel is-horizontal"></div>
+       </div>
+       <!-- one .halo-rail__branch per subitem row, --branch-y = that row's
+            own vertical centre relative to the rail's own top -->
+     </div>
+
+   The row's own content/heading sits immediately after each branch, outside
+   this component — the branch only owns the spine-to-row conduit segment.
+   ========================================================================== */
+
+.halo-rail {
+  --ch-w: 39px; /* must match .halo-channel's / .halo-cap's own --ch-w/--cap-w */
+  position: relative;
+  width: var(--ch-w);
+  height: var(--rail-h);
+}
+
+/* The spine — a plain vertical .halo-channel stretched to the rail's full
+   height. Nothing rail-specific about its paint; this rule only places it. */
+.halo-rail > .halo-channel {
+  position: absolute;
+  inset: 0;
+}
+
+/* One branch per row. Positioned by its own --branch-y, centred on that
+   point (a row's conduit run is centred on the row, not top-aligned to it),
+   sitting flush off the spine's right edge. */
+.halo-rail__branch {
+  position: absolute;
+  top: var(--branch-y);
+  left: 100%;
+  width: var(--branch-run, 40px);
+  height: var(--ch-w);
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+}
+
+/* The elbow: side-tap into the vertical spine. Laid out at its own TRUE
+   width (21.58px, not Figma's nominal 18.8px) — see the overhang note
+   above — so the run stub's flex-basis:0% naturally absorbs the ~2.8px
+   difference instead of a manual offset that could drift out of sync with
+   conduit-cap.css if that sheet's measurement is ever refined. */
+.halo-rail__branch > .halo-cap.is-run-end {
+  flex: 0 0 auto;
+}
+
+/* The run stub, reaching from the elbow toward the row. flex-basis:0% (not
+   `auto`) is required here: .halo-channel.is-horizontal declares its own
+   `width: 100%` for its normal (non-flex) use, which would otherwise be
+   read as this item's flex-basis and blow the run out to the branch's full
+   width before growth/shrink is even applied. */
+.halo-rail__branch > .halo-channel.is-horizontal {
+  flex: 1 1 0%;
+  height: 100%;
+}
