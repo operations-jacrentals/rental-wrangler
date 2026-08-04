@@ -121,7 +121,18 @@ as the header, nothing else.
 
 ## 3 · Footer
 
-**Import verbatim from Tier-01.** Source: `index.html:1196-1223` — the terminal rail
+**Import verbatim from Tier-01** — Jac, 2026-08-04: *"Footer comes from Tier-01."* Not a
+recreation from the measurements below; those are for verification, not for redrawing.
+
+**How, given there is no vectorized source.** `208:822` (the vectorized chrome the header
+was imported from) covers only the card's top ~250px — tab bar and search row. It does
+not contain the footer, and `42:2` is a flat image. So the footer is captured from the
+**running** Tier-01 card: the static folder is served and driven in headless Chromium at
+the native 380px card width with `deviceScaleFactor: 4`, and the real footer element is
+screenshotted and brought into Figma. That keeps it genuinely Tier-01's own artwork
+rather than a rebuild, which a measurements-only reconstruction would have been.
+
+Source: `index.html:1196-1223` — the terminal rail
 (`index.html:1201-1210`, glass well + scrolling/looping text, described in full at
 `atom-rebuild.md:233-241`) and the scroll gauge / grip rack (`index.html:1213-1222`, 8
 skewed ticks in a chamfered well, `atom-rebuild.md:245-252`). Both are shipped,
@@ -171,17 +182,31 @@ two row rhythms **already align** without distorting either side. That is why V2
 being built at **1500px wide** (Figma node `438:274`, page `V2 — Assembly x Tier-01`) —
 not a fresh scale decision this spec is making, a measurement #240 already settled.
 
+**TWO DIFFERENT MULTIPLIERS — do not confuse them.** #240's **~1.97×** is measured
+against Tier-01's **2× render** (760px wide), not against its native card. Relative to
+the **380px native** card, the factor that reaches V2's 1500px is **~3.95×**
+(1500 ÷ 380). An earlier draft of this section applied 1.97× to the native figures,
+which would have built every chrome element at **half** its correct size. The rule:
+
+| Starting from | Multiplier to V2 |
+|---|---|
+| the 2× Figma render (760px) | **~1.97×** |
+| native Tier-01 px (380px card) | **~3.95×** |
+
+Confirmed against the built card: Tier-01's native ~17px card padding × 3.95 = the 67px
+margin V2 uses, and the chrome's own content inset measures 98.6px at 1500 wide
+(67.87 ÷ 1032 of card width).
+
 **Ruling carried over from the previous draft, now settled, not proposed:** the chrome
-is NOT reused via `transform: scale()`. New, smaller (or in this case, larger — Tier-01
-chrome is native at 380px-card scale, and V2's body is ~1.97× that) **variant classes**
-get authored, using the SAME gradient-stop *ratios* as the 380px-native Tier-01 chrome,
-scaled to the ~1.97× factor #240 measured. This preserves the "machined steel" read at
-native resolution instead of risking the soft/blurred look a CSS-transform scale
-produces (the same rasterisation risk the Halo kit's own `ANATOMY.md` documents for its
-ten parts). Concretely: every px value cited in §1–§3 above (24px control height, 11px
-tab type, 17px terminal strip, 8.5×15px gauge ticks, etc.) is the **380px-native**
-figure; the V2 variant multiplies geometry by ~1.97×, re-measures, and re-gates rather
-than transform-scaling the DOM.
+is NOT reused via `transform: scale()`. New, larger **variant classes** get authored
+(Tier-01 chrome is native at 380px-card scale; V2 is ~3.95× that), using the SAME
+gradient-stop *ratios* as the 380px-native Tier-01 chrome. This preserves the "machined
+steel" read at native resolution instead of risking the soft/blurred look a CSS-transform
+scale produces (the same rasterisation risk the Halo kit's own `ANATOMY.md` documents for
+its ten parts). Concretely: every px value cited in §1–§3 above is the **380px-native**
+figure and multiplies by **~3.95×**, not 1.97× — so the 17px terminal strip is **67px**
+in V2, and the 8.5×15px gauge ticks are **~34×59**. Re-measure and re-gate at that size
+rather than transform-scaling the DOM.
 
 **Margins.** Where the chrome's own edge padding meets the Figma body's edge padding
 (header strip to deck top, footer strip to last subitem, left/right card frame gutters),
@@ -224,12 +249,12 @@ Genuinely unresolved items only — the four rulings above (footer cyan, scale-v
 variant-classes, colourway inheritance, the four colourways staying as-is) are **settled
 and not relisted here.**
 
-1. **Chrome variant-class scale factor, final number.** §4 uses #240's ~1.97× body
-   measurement as the working assumption for chrome too. Confirm the header/search/
-   footer read correctly at that factor once actually dropped into the 1500px V2
-   assembly — it may want a slightly different multiplier than the body's, since chrome
-   carries finer detail (11px type, 1px hairlines) that degrades faster under scaling
-   than the body's larger steel panels.
+1. **Chrome variant-class scale factor, final number.** §4 fixes the working factor at
+   **~3.95× from native** (not 1.97×, which is measured from the 2× render — see the
+   two-multiplier table). Confirm the header/search/footer read correctly at that factor
+   now that they are actually in the 1500px V2 assembly — chrome may want a slightly
+   different multiplier than the body's, since it carries finer detail (11px type, 1px
+   hairlines) that degrades faster under scaling than the body's larger steel panels.
 2. **Where exactly chrome margins meet body margins** (header-to-deck, footer-to-last-
    subitem, left/right frame gutters) — §4 proposes "use the larger of the two," but
    this is a placeholder rule pending the actual assembly, not a measured value.
