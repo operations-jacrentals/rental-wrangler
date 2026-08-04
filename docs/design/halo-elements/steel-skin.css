@@ -1,0 +1,102 @@
+/* ==========================================================================
+   HALO ELEMENTS — STEEL SKIN
+   A colour-only override. Link it AFTER tokens.css and it recolours the
+   entire part kit without touching one coordinate, gradient stop, blur or
+   radius. Same move as the Figma pass: remap the palette, leave the
+   geometry alone.
+
+   WHY THIS FILE EXISTS
+   The original canvas painted its steel on scattered hues — 197, 207, 210,
+   212, 231, 248, 283 — which is what read as "the conduit and the housing
+   don't match". Every steel token below is rebuilt on ONE axis
+   (--steel-h) at ONE saturation (--steel-s), and each keeps its OWN
+   lightness from the original sculpt. That is load-bearing: relative
+   lightness is what the bevels, grain and machined highlights are made of,
+   so preserving it per-token keeps the texture while the colour moves.
+
+   TUNING (this is the slider surface)
+     --steel-h     hue of every steel surface        0-360
+     --steel-s     saturation of every steel surface 0-100%
+     --steel-tint  global lightness multiplier       0.5 = much darker,
+                                                     1   = original values
+   Change those three and the whole kit follows. Presets below.
+   ========================================================================== */
+
+:root {
+  /* default = "deep blued": darker and bluer than the original sculpt */
+  --steel-h: 214;
+  --steel-s: 30%;
+  --steel-tint: 0.82;
+}
+
+/* --- the steel surfaces --------------------------------------------------
+   Lightness percentages are measured from the original tokens and must not
+   be edited by hand — they ARE the sculpt. Retune with the three knobs.
+
+   Declared on :root AND .stage on purpose. A var() is substituted where the
+   property is DECLARED, not where it is used, so a ladder declared only on
+   :root can never be retuned per-stage — every stage on the page would move
+   together. Repeating the block on .stage lets each stage resolve its own
+   --steel-h/s/tint, which is what puts four drafts side by side. */
+:root, .stage {
+  --chrome:    hsl(var(--steel-h) var(--steel-s) calc(72.9% * var(--steel-tint)));
+  --silver:    hsl(var(--steel-h) var(--steel-s) calc(60.8% * var(--steel-tint)));
+  --rim-left:  hsl(var(--steel-h) var(--steel-s) calc(53.9% * var(--steel-tint)));
+  --rim-bot:   hsl(var(--steel-h) var(--steel-s) calc(53.7% * var(--steel-tint)));
+  --rim-right: hsl(var(--steel-h) var(--steel-s) calc(49.8% * var(--steel-tint)));
+  --rim-top:   hsl(var(--steel-h) var(--steel-s) calc(41.4% * var(--steel-tint)));
+  --slate:     hsl(var(--steel-h) var(--steel-s) calc(21.6% * var(--steel-tint)));
+  --field:     hsl(var(--steel-h) var(--steel-s) calc(14.5% * var(--steel-tint)));
+  --cavity:    hsl(var(--steel-h) var(--steel-s) calc(12.4% * var(--steel-tint)));
+  --edge:      hsl(var(--steel-h) var(--steel-s) calc( 7.3% * var(--steel-tint)));
+  /* the groove reads deepest — it keeps a touch more saturation so it stays
+     blued rather than going flat black as --steel-tint drops */
+  --circuit:   hsl(var(--steel-h) calc(var(--steel-s) * 1.6) calc(5.7% * var(--steel-tint)));
+}
+
+/* --- presets -------------------------------------------------------------
+   Put one on <html> or .stage. These are the four drafts sitting beside the
+   assembly in Figma, so a pick here matches a pick there. */
+.steel--deep-blued { --steel-h: 214; --steel-s: 30%; --steel-tint: 0.82; }
+.steel--gunmetal   { --steel-h: 214; --steel-s:  7%; --steel-tint: 0.92; }
+.steel--slate      { --steel-h: 206; --steel-s: 16%; --steel-tint: 1.00; }
+.steel--charcoal   { --steel-h: 218; --steel-s: 10%; --steel-tint: 0.70; }
+/* the original canvas, for A/B against any of the above */
+.steel--original {
+  --chrome:#aebac6; --silver:#a19596; --rim-top:#626971; --rim-left:#818d92;
+  --rim-right:#74808a; --rim-bot:#7b8997; --slate:#32303e; --field:#1e202c;
+  --cavity:#221a25; --circuit:#070e16; --edge:#0d1218;
+}
+
+/* ==========================================================================
+   THE LASER FOLLOWS THE SIGNAL — THE BODY NEVER DOES  (ledger #217)
+   The original hard-coded seven separate reds into the artwork. They are all
+   one thing: the lit contour. Keying them to --row-hue is what lets a row go
+   yellow/blue/green without repainting any steel.
+   ========================================================================== */
+
+.stage        { --row-hue: var(--red, #ff4242); }   /* default row state */
+.row--overdue { --row-hue: #ff4242; }
+.row--due     { --row-hue: #eed44b; }
+.row--waiting { --row-hue: #6394cc; }
+.row--done    { --row-hue: #34d399; }
+.row--off     { --row-hue: #8b94a3; }
+
+.stage, .row--overdue, .row--due, .row--waiting, .row--done, .row--off {
+  --laser-hot:  color-mix(in oklch, var(--row-hue) 62%, #eef2f7);
+  --laser-core: var(--row-hue);
+  --laser-well: color-mix(in oklch, var(--row-hue) 38%, var(--bg));
+
+  /* the seven baked-in reds, now one ramp */
+  --neon:      var(--laser-core);
+  --neon-hi:   var(--laser-hot);
+  --brk-red:   var(--laser-core);
+  --pnl-red:   var(--laser-core);
+  --tube-red:  var(--laser-hot);
+  --maroon:    var(--laser-well);
+  --maroon-d:  color-mix(in oklch, var(--row-hue) 24%, var(--bg));
+}
+
+/* --bar-red / --bar-yel / --amber are STATUS and tan, not laser — they stay
+   on their canon tokens and do not follow the row. */
+:root { --bar-red: #ff4343; --bar-yel: #efd653; --amber: #c2925a; }
