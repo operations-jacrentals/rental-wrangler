@@ -64,3 +64,9 @@ tmp-*.mjs
 # lands inside the skill dir. Build artifact, never committed.
 __pycache__/
 *.pyc
+
+# Agent scratch harnesses at the repo root. Playwright only resolves from the
+# repo (that is where node_modules lives), so a verify script that drives a
+# browser has to sit here rather than in the scratchpad. They are throwaway.
+.scratch-*.mjs
+.scratch-*.js
