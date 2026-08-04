@@ -62,3 +62,74 @@ The kit carries **three near-miss steel ladders**: the hex ladder in
 colourways. They are close but not equal, and it has already caused one real error —
 a bulb bezel was "fixed" in Figma *away* from a CSS canon that was already correct.
 Picking one source of truth is a design call for Jac, not a cleanup to do unattended.
+
+---
+
+# style + wrangler-style audit — 2026-08-04
+
+CLAUDE.md requires every new or reshaped UI to run through **both** skills. This
+session built a bulb part, a conduit channel and a lettering treatment without
+doing so; this is that pass, run as measurements rather than opinion.
+
+## PASS
+
+| Rule | Result |
+|---|---|
+| `style` §5 — never pure `#000`/`#fff` | **clean.** The only `rgba(0,0,0)` hits in `marks.css` are inside comments quoting the original shadow, not live CSS. |
+| wrangler-style §1 — dark-only, no light block | **clean**, 0 `prefers-color-scheme: light` across all four sheets. |
+| `style` §3 — text contrast ≥4.5 | **passes on all four colourways.** The debossed name `#dfe5ec` measures gunmetal **5.25**, blued **6.48**, slate **4.55**, charcoal **7.59**. Slate is the tight one — do not darken the face further without re-measuring. |
+| wrangler-style §1 — frozen palette | **clean.** Every `--row-hue` is a canon token; the steel ladder and `--laser-well` are *derived* shades of existing tokens, which #219 and the `--red-line` precedent both allow. |
+
+## FAIL — the bulb row encodes state in colour alone
+
+`style` §3: *"Never encode meaning in colour alone — always colour + label + icon."*
+`style` §4 requires co-occurring status colours to clear **90** separation under
+deuteranopia and protanopia. Measured, for the five bulb states that appear in one row:
+
+| pair | deuter | protan |
+|---|---|---|
+| blue / green | **72** | ok |
+| blue / gray | **48** | **46** |
+| green / gray | **31** | **69** |
+
+Three pairs fail, one of them at **31**.
+
+These exact failures are already known and *accepted* in wrangler-style §1 — but the
+acceptance is **conditional**: *"those are disambiguated by label + icon + position,
+not by inventing a colour."* The bulb as it stands has **no label and no icon**. It is
+a bare coloured lozenge, so the condition that makes the palette failure acceptable is
+not met here.
+
+This is not a theoretical nit. wrangler-style states plainly: *"Jac is colour-blind —
+this is a gate."*
+
+**Not fixable by recolouring** — the palette is frozen and these pairs are the known
+cost of that. It has to be fixed in the component layer, which is also what `style` §7
+already says a Signal is: *"coloured chip, read-only state + a verbalising word +
+parent-card icon."* The bulb is currently missing both halves of that.
+
+Three ways out, for Jac to pick:
+
+1. **Give each bulb its state glyph** — canon, matches the Signal archetype, costs a
+   small icon per state. My recommendation.
+2. **Fix the slot order** so position carries the meaning (slot 1 is always overdue,
+   slot 2 always due…). Free, but only honest if the row really is a fixed ladder
+   rather than a list of whatever states are live.
+3. **Vary the mottle per state.** A texture is not a colour, so it survives CVD
+   entirely. Cheap given the lens is already a texture — one extra ~5KB asset per
+   state — and it would be genuinely distinctive. Worth considering alongside 1.
+
+I did **not** guess this one. It changes what the bulb *is*, so it waits for Jac.
+
+## FLAG — the bulb's 13px radius contradicts ledger #140
+
+Ledger #140 (2026-07-28) reversed the four-shape radius ladder for the redesign:
+*"`border-radius: 0` + chamfers and 45° notches… radii read as plastic against a
+machined steel frame."*
+
+`bulb.css` carries `--bulb-r: 13px`, because 13px is what the Figma artwork measures.
+So the approved artwork and the locked rule disagree. `style` §1's own arbitration is
+that *"when a decision and a rule conflict, the decision moves — not the rule"* — but
+here the decision (the drawn bulb) and the rule (#140) are both Jac's. Left as measured
+and flagged rather than silently squared, especially since he has been moving *toward*
+square this session (the deck board 45° → 90°).
