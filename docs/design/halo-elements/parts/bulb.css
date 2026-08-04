@@ -145,15 +145,19 @@
 /* ==========================================================================
    MOTTLE — reached through a custom property, never by filename (ledger #238)
 
-   THE ONLY NON-COLOUR CHANNEL (2026-08-04). Ledger #238 originally paired this
-   with a per-state glyph (see the GLYPH — BUILT, THEN REMOVED note below);
-   Jac reversed the glyph half after seeing it rendered — slot ticks read
-   distribution/quantity at a glance and are not the place to label each tick
-   individually. That leaves mottle carrying the CVD disambiguation alone: it
-   is no longer reinforcement for a two-signal design, it IS the design. The
-   four still-owed distinct per-state assets (spec table below) are now load-
-   bearing, not optional polish — until they exist, all five states still
-   share one texture and differ only by hue.
+   SCOPE — THIS IS A VISUAL REDESIGN, NOT A FUNCTIONAL ONE (2026-08-04).
+   Ledger #238 originally paired the mottle with a per-state glyph (see the
+   GLYPH — BUILT, THEN REMOVED note below); Jac reversed the glyph half after
+   seeing it rendered — a tick is a small skewed signal plate, not a labelled
+   button. He then corrected an over-reading of what that implied:
+   "You're overcomplicating the slots. I've not changed a single thing about
+   them or how they work. I just used Figma to redesign them."
+
+   So: the slot's behaviour, meaning and affordances are UNCHANGED. The
+   per-state mottle is a nice-to-have for the new artwork, NOT a prerequisite
+   and NOT an open gate. Today all five states share one texture and differ by
+   hue, which is how the shipped slot has always worked. The four distinct
+   assets below are optional polish — do not re-raise them as a blocker.
 
    `--bulb-mottle` is what `.lens::after` actually consumes. It is not set
    directly: each `.bulb--*` rule points it at `var(--mottle-<state>)`, and
