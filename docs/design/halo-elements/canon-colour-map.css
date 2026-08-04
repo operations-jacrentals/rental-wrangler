@@ -51,30 +51,40 @@
 .bulb--off     { --tone:var(--gray);   --tone-lit:var(--gray-lit);   --tone-deep:var(--gray-deep);   --tone-shadow:var(--gray-shadow); }
 
 /* ---------------------------------------------------------------
-   THE LASER FOLLOWS THE SIGNAL  (ledger #208/#209)
-   The thin bright contour on the housing and deck keys to the row's
-   own tone. The thick machined strokes are body and never move.
-   Set --row-hue per row; everything downstream inherits it.
+   THE LASER FOLLOWS THE SIGNAL — THE BODY NEVER DOES  (ledger #217)
+   The thin lit contour on the housing, deck AND conduit keys to the
+   row's own tone. Every thick machined stroke and all casing stay on
+   the steel ladder. Set --row-hue once per row; the rest inherits.
    --------------------------------------------------------------- */
-.row              { --row-hue:var(--gray); }        /* default = no state */
-.row--overdue     { --row-hue:var(--red); }
-.row--due         { --row-hue:var(--yellow); }
-.row--waiting     { --row-hue:var(--blue); }
-.row--done        { --row-hue:var(--green); }
+.row          { --row-hue:var(--gray); }        /* default = no state */
+.row--overdue { --row-hue:var(--red); }
+.row--due     { --row-hue:var(--yellow); }
+.row--waiting { --row-hue:var(--blue); }
+.row--done    { --row-hue:var(--green); }
 
-.housing__laser,
-.deck__laser,
-.housing .lit-edge,
-.deck .lit-edge   { stroke:var(--row-hue); color:var(--row-hue); }
+/* The laser's own 3-tone ramp, derived from whatever --row-hue is.
+   Mixes go toward canon ground/text tokens, never toward #000 / #fff. */
+.row {
+  --laser-hot:  color-mix(in oklch, var(--row-hue) 62%, var(--txt));
+  --laser-core: var(--row-hue);
+  --laser-well: color-mix(in oklch, var(--row-hue) 38%, var(--bg));
+}
 
+.housing__laser, .deck__laser, .conduit__laser,
+.lit-edge                 { stroke:var(--laser-core); color:var(--laser-core); }
+.conduit__hot             { background:var(--laser-hot); }
+.conduit__core            { background:var(--laser-core); }
+.conduit__well            { background:var(--laser-well); }
+
+/* Structure — steel, and it does NOT move with state. */
 .housing__machined,
-.deck__machined   { stroke:var(--steel-10); }       /* highlight — structure, not state */
+.deck__machined           { stroke:var(--steel-10); }   /* bright machined highlight */
 .housing__body,
-.deck__body       { stroke:var(--steel-09); }
-.groove           { stroke:var(--steel-01); }
+.deck__body               { stroke:var(--steel-09); }
+.conduit__casing          { background:var(--steel-05); }
+.conduit__edge-mid        { background:var(--steel-08); }
+.conduit__edge-lit        { background:var(--steel-10); }
+.groove, .conduit__groove { stroke:var(--steel-01); background:var(--steel-01); }
 
-/* Board + conduit key to the same row tone — never a hardcoded red. */
-.board            { border-color:var(--row-hue); color:var(--row-hue); }
-.conduit__core    { background:var(--row-hue); }
-.conduit__hot     { background:var(--red-hot); }    /* lit core, red ramp */
-.conduit__casing  { background:var(--steel-05); }
+/* The board keys to the row tone too (ledger #208/#209) — never a fixed red. */
+.board { border-color:var(--row-hue); color:var(--row-hue); }

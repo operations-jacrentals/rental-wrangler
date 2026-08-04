@@ -771,3 +771,14 @@ them before the cartridge exists would have settled a layout that is about to ch
 - **Everything in the 07-20 "Still open" list above** — signature motif, commit-blue shade, Mr.
   Wrangler's channel placement, KPI rings, the all-cards Sort redesign, the fill-rule edge case.
   None of these were settled since; **do not promote them into a prompt as if locked.**
+
+
+### 2026-08-04 — Halo kit canon colour pass
+
+| # | Decision | Detail |
+|---|---|---|
+| 217 | **Laser follows the signal; the body never does** | The thin lit contour on the HOUSING, DECK and CONDUIT keys to the row's own tone (`--row-hue`). The thick machined strokes and ALL casing stay on the steel ladder. Jac, 2026-08-04: *"just make the lasers of the conduit follow signal, not the body."* Supersedes an interim pass in the same session that tinted the whole conduit body red — that pass was wrong and was reverted. |
+| 218 | **One steel ladder for HOUSING + CONDUIT + DECK** | Jac, 2026-08-04: *"The steel body and the conduit is a mis-match."* Cause: the three parts had each drifted onto their own near-miss ladder of greys (housing `#626871/#7c7e81/#b1b2b4`, conduit `#353a41/#646a72/#b0b6bd`, deck `#333538/#585b60/#b2b4b7`). All structural greys now snap to ONE 11-rung ladder on a cool ~214deg axis, with `--txt-2`, `--gray`, `--line`, `--card-head`, `--card` and `--bg` kept exact as rungs. |
+| 219 | **Derived SHADES of an existing hue are not new colours** | Jac, 2026-08-04: *"Rules say not to add colors but you may need to use extra shades for certain effects."* Clarifies the frozen-palette rule (wrangler-style §1): it bars new HUES, not lightness variants. Status ramps and the steel ladder derive shades of canon tokens; mixes go toward `--bg`/`--txt`, never toward pure black or white. |
+| 220 | **Bulb bezel/well is STRUCTURE, not state** | Jac, 2026-08-04: *"The bulbs don't have the right color bezels/well."* The bezel was a warm green-grey `#354843` seat sitting inside a cool steel body — it had been excluded from the first bulb pass as 'shared structural'. It is now a steel rung and stays CONSTANT across all five states; only the bulb's own three-tone sculpt carries the state hue. |
+| 221 | **Merged artwork cannot be recoloured through the Figma API** | Flattened `Merged artwork` vectors store paint per REGION, so `node.fills` reports `figma.mixed`. `setVectorNetworkAsync` accepts a region-fill write, returns NO error, and silently discards it — verified on `212:79` (36 regions): write succeeded, read-back byte-identical. Writes stick on page-level vectors but not on vectors sitting directly inside a COMPONENT main. Residual ~1% of paints; substitutions are listed in `docs/design/halo-elements/SVG-FIXUPS.md` for the SVG/CSS conversion, where regions become editable `fill=` attributes. |
