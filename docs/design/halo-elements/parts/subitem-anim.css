@@ -45,17 +45,18 @@
                         hook that removes it later, and none is needed: the
                         slide/drop's fill-mode is `both`, so the settled
                         state holds forever on its own; the power-on
-                        keyframe is deliberately NOT `forwards` (see POWER-
-                        ON below), so once it's done it hands --row-hue back
-                        to the live cascade rather than freezing it — a
-                        row's colour can still change normally if the app
-                        re-classes it after this entrance has finished.
+                        keyframes are deliberately NOT `forwards` (see
+                        POWER-ON below), so once one is done it hands
+                        --row-hue back to the live cascade rather than
+                        freezing it — a row's colour can still change
+                        normally if the app re-classes it after this
+                        entrance has finished.
 
    .halo-rail-spine     the rail itself — ONE element, direct child #1 of
                         the group. This file animates its transform/opacity
                         only; its actual look (width, gradient, which steel
                         ladder) is none of this file's business, same
-                        PLACEMENT-ONLY discipline assembly/*.css already
+                        PLACEMENT-ONLY discipline the assembly *.css files already
                         holds for coordinates. Pair it with a real part for
                         the visual, e.g.
                           <div class="halo-rail-spine halo-channel"></div>
@@ -66,9 +67,11 @@
 
    .row / .row--*       UNCHANGED from steel-skin.css (lines 86-91). This
                         file never decides what a row's resting colour IS —
-                        only how it ARRIVES. A bare `.row` with no state
-                        modifier inherits `.stage`'s default the same way
-                        it always has; nothing here overrides that.
+                        only how it ARRIVES. A row's power-on sweep is
+                        authored per state modifier (see POWER-ON) — a bare
+                        `.row` with none of the five still slides and fades
+                        in correctly, it just doesn't get an authored
+                        colour sweep (see the SCOPE note in POWER-ON).
 
    Nothing above is optional. Wire rows as direct siblings of
    .halo-rail-spine instead of nesting them in .halo-rail-rows, and the
@@ -95,7 +98,8 @@
    with the nth-child rules below.
 
    ==========================================================================
-   POWER-ON — why this file registers @property --row-hue (ledger #217)
+   POWER-ON — why this file registers @property --row-hue (ledger #217),
+   and the dead end that shaped how it's wired to each row's state
 
    "The laser follows the signal, the body never does." Powering a row on
    is a change to exactly ONE token, --row-hue — steel-skin.css already
@@ -126,64 +130,87 @@
    parsing — this registration is additive for the rest of the kit, not a
    behaviour change.
 
-   THE FROM VALUE (--subitem-row-hue-off, #8b94a3) genuinely duplicates
-   steel-skin.css's .row--off (line 91). Unlike the TO value below, there
-   is no live .row--off element on an entering row to capture that value
-   FROM — the row IS its real state (.row--overdue etc.) the whole time;
-   only the paint starts grey. So it has to be restated once here. KEEP IN
-   SYNC if that hex ever moves.
+   THE DEAD END — READ THIS BEFORE "DRY-ing" THIS UP AGAIN. The first cut
+   of this file tried to avoid duplicating steel-skin.css's four hexes by
+   CAPTURING each row's own cascaded colour into a private variable:
 
-   THE TO VALUE IS NOT DUPLICATED, on purpose. A row's real state (overdue/
-   due/waiting/done/off) is picked by whichever .row--* class the CONSUMER
-   put in the markup — this file doesn't know it and shouldn't have to. So
-   rather than five keyframes with five hexes copied in from steel-skin.css
-   (a second place for that ladder to drift out of sync — the exact debt
-   OPEN-QUESTIONS.md already flags), each row captures its OWN
-   already-cascaded colour into a private variable first:
+     .row { --subitem-row-hue-target: var(--row-hue); }        <- WRONG
+     @keyframes power-on { to { --row-hue: var(--subitem-row-hue-target); } }
 
-     --subitem-row-hue-target: var(--row-hue);
+   This LOOKS like it should work — var() resolves against the final
+   cascaded value, so the capture reads whatever .row--overdue etc. already
+   set. It does not work. The moment --row-hue is both (a) a keyframe
+   target and (b) read by ANOTHER property on the SAME element, the engine
+   treats that as a genuine cyclic custom-property dependency — --row-hue's
+   animated definition depends on --subitem-row-hue-target, and
+   --subitem-row-hue-target depends on --row-hue — and marks BOTH
+   guaranteed-invalid, for every element, at every point in time, not just
+   while the animation is active. Verified empirically (Chromium 141, this
+   file's own test harness): the instant .is-entering was added, EVERY
+   row's --row-hue — overdue, waiting, done, all of it — collapsed to the
+   same value (.stage's inherited default), because the "invalid" fallback
+   for an inheriting registered property is the nearest ancestor's value,
+   not the row's own now-broken declaration. This is a silent failure, not
+   a crash — it would have shipped looking almost right.
 
-   var() resolves against the FINAL cascaded value of --row-hue for that
-   element — not against declaration order between files — so this capture
-   is correct whether this sheet loads before or after steel-skin.css, and
-   it covers any FUTURE state class steel-skin.css adds with zero edits
-   here. The keyframe itself then only ever moves between two variables,
-   never a literal:
+   THE FIX keeps the ONE @property registration but drops the capture.
+   Each of the five states steel-skin.css already defines gets its OWN
+   keyframes with the target hex written out literally — yes, a real
+   duplication of steel-skin.css lines 87-91, KEEP IN SYNC if that ladder
+   ever moves (the same debt OPEN-QUESTIONS.md already logs for the other
+   two near-miss ladders, now with a third, smaller entry). What stays
+   DRY is the TIMING: every state shares one set of duration/delay/fill-
+   mode values, switched onto the right keyframes by a single identifier
+   variable, --subitem-power-anim — a plain custom-ident with no colour and
+   no relationship to --row-hue, so it cannot re-open the cycle above:
 
-     from { --row-hue: var(--subitem-row-hue-off); }
-     to   { --row-hue: var(--subitem-row-hue-target); }
+     .row             { --subitem-power-anim: halo-subitem-power-on-off; }  <- default
+     .row--overdue    { --subitem-power-anim: halo-subitem-power-on-overdue; }
+     .row--due        { --subitem-power-anim: halo-subitem-power-on-due; }
+     .row--waiting    { --subitem-power-anim: halo-subitem-power-on-waiting; }
+     .row--done       { --subitem-power-anim: halo-subitem-power-on-done; }
+     .row--off        { --subitem-power-anim: halo-subitem-power-on-off; }
+
+     animation-name: halo-subitem-row-in, var(--subitem-power-anim);
+
+   SCOPE: a row with NONE of the five .row--* modifiers falls back to the
+   -off keyframes (grey to grey — a no-op sweep, not a wrong-coloured one).
+   This file cannot safely guess what an unmodified `.row`'s inherited
+   --row-hue will resolve to without hardcoding THAT too, so it doesn't try
+   — the row still slides and fades in correctly, it just arrives without
+   an authored colour sweep. Give it a real state class to get one.
 
    FILL-MODE IS `backwards` ONLY — never `forwards` or `both` — and that is
    load-bearing, not a stray omission:
-     - `backwards` holds the FROM value for the whole animation-delay, so a
-       row sits visibly grey for its entire slide instead of flashing its
-       true colour from frame one — which would give away "who's overdue"
-       before the row has even landed, exactly the leak Jac's "as the rows
-       reach the elbows" ordering is there to prevent.
+     - `backwards` holds the FROM value (grey) for the whole animation-
+       delay, so a row sits visibly unpowered for its entire slide instead
+       of flashing its true colour from frame one — which would give away
+       "who's overdue" before the row has even landed, exactly the leak
+       Jac's "as the rows reach the elbows" ordering exists to prevent.
      - Once the animation's own active period ends, NOT including
        `forwards` hands --row-hue back to the ordinary cascade. That lands
-       on the identical colour --subitem-row-hue-target already captured,
-       so there is no visible seam — but it also means a row whose state
-       class changes LATER (a live re-render, not this entrance) is free
-       to recolour normally instead of staying pinned to whatever it
-       looked like on arrival.
+       on the same colour the keyframe's `to` used (they're the same hex,
+       by construction), so there's no visible seam — but it also means a
+       row whose state class changes LATER (a live re-render, not this
+       entrance) is free to recolour normally instead of staying pinned to
+       whatever it looked like on arrival.
 
    VERIFIED (scratchpad harness, headless Chromium 141 — see the report):
    sampling a lit pixel on a .row--overdue row's conduit strip across the
    220ms power-on window shows it move
-     rgb(139,148,163)  t=0ms    (#8b94a3, the off grey)
-     rgb(213,84,80)    t=110ms  (mid-sweep)
-     rgb(255,66,66)    t=220ms  (#ff4242, .row--overdue's own hue)
+     rgb(139,148,163)  t=0%    (#8b94a3, the off grey)
+     rgb(183,117,126)  t=25%
+     rgb(218,92,97)    t=50%
+     rgb(244,74,75)    t=75%
+     rgb(255,66,66)    t=100%  (#ff4242, .row--overdue's own hue, exactly
+                                matching steel-skin.css's own literal)
    @property IS available on the target engine, so the fallback this file
    would otherwise need — registering and animating --laser-core/-hot/-well
    directly instead of --row-hue — is not exercised here. That fallback is
-   only for engines with no @property support: it needs no --row-hue-
-   target-style capture, since --laser-core is already a plain var(--row-
-   hue) alias (steel-skin.css line 95), and --laser-hot/--laser-well are
-   colour-mix()/hsl() functions of it, so those three would each need
-   their OWN @property registration (syntax '<color>') and their OWN
-   from/to keyframes computed the same capture way, keyed off .halo-rail-
-   rows > .row instead of .row's --row-hue.
+   only for engines with no @property support at all; it would need the
+   same per-state literal treatment as above (not the capture trick, for
+   the identical cyclic reason), keyed onto whichever element actually
+   paints the laser.
 
    ==========================================================================
    GPU-FRIENDLY, AND WHERE THAT STOPS APPLYING
@@ -244,10 +271,10 @@
 }
 
 /* --------------------------------------------------------------------------
-   THE THREE KEYFRAMES. Each ends exactly where its element already rests
-   (transform: translate(0), opacity: 1, or the row's own true --row-hue),
-   which is what makes the fill-mode choices above safe — landing never
-   depends on a value snapping back.
+   THE SLIDE/DROP KEYFRAMES. Each ends exactly where its element already
+   rests (transform: translate(0), opacity: 1), which is what makes the
+   `both` fill-mode below safe — landing never depends on a value snapping
+   back once the animation is technically "done".
    -------------------------------------------------------------------------- */
 @keyframes halo-subitem-rail-drop {
   from { transform: translateY(var(--subitem-rail-dy)); opacity: 0; }
@@ -259,10 +286,19 @@
   to   { transform: translateX(0);                      opacity: 1; }
 }
 
-@keyframes halo-subitem-power-on {
-  from { --row-hue: var(--subitem-row-hue-off); }
-  to   { --row-hue: var(--subitem-row-hue-target); }
-}
+/* --------------------------------------------------------------------------
+   THE POWER-ON KEYFRAMES — one per state steel-skin.css defines (lines
+   87-91), each a literal duplicate of that state's hex. See the DEAD END
+   note above for why this isn't a var() capture. All five share the same
+   FROM (the off grey) and only the TO differs, so a row that never gets
+   powered on (-off) still runs the identical timeline as one that does —
+   the only difference is whether the sweep is visible.
+   -------------------------------------------------------------------------- */
+@keyframes halo-subitem-power-on-overdue { from { --row-hue: var(--subitem-row-hue-off); } to { --row-hue: #ff4242; } }
+@keyframes halo-subitem-power-on-due     { from { --row-hue: var(--subitem-row-hue-off); } to { --row-hue: #eed44b; } }
+@keyframes halo-subitem-power-on-waiting { from { --row-hue: var(--subitem-row-hue-off); } to { --row-hue: #6394cc; } }
+@keyframes halo-subitem-power-on-done    { from { --row-hue: var(--subitem-row-hue-off); } to { --row-hue: #34d399; } }
+@keyframes halo-subitem-power-on-off     { from { --row-hue: var(--subitem-row-hue-off); } to { --row-hue: #8b94a3; } }
 
 /* --------------------------------------------------------------------------
    BEAT 1 — the rail drops. Starts at t=0, the instant .is-entering is
@@ -275,19 +311,35 @@
 
 /* --------------------------------------------------------------------------
    BEAT 2 + BEAT 3 — the row slides in, and powers on the instant it lands.
-   --subitem-row-delay is computed once and reused for both animations
+   --subitem-row-delay is computed once and reused by both animations
    below, so "power-on fires as the row lands" is structurally guaranteed
    (power-on's own delay is literally row-delay + row-duration) rather than
    two numbers a future edit could drift apart.
+
+   Longhand `animation-*` (not the shorthand) on purpose: it lets the
+   per-state rules below override JUST animation-name's second slot
+   (via --subitem-power-anim) without restating duration/delay/fill-mode
+   for all five states.
    -------------------------------------------------------------------------- */
 .halo-subitem-rail.is-entering .halo-rail-rows > .row {
-  --subitem-row-hue-target: var(--row-hue);
   --subitem-row-delay: calc(var(--subitem-row-start) + var(--i, 0) * var(--subitem-row-stagger));
+  --subitem-power-anim: halo-subitem-power-on-off;   /* default: no .row--* modifier yet */
 
-  animation:
-    halo-subitem-row-in   var(--subitem-row-dur)   ease-out var(--subitem-row-delay) both,
-    halo-subitem-power-on var(--subitem-power-dur) ease-out calc(var(--subitem-row-delay) + var(--subitem-row-dur)) backwards;
+  animation-name:            halo-subitem-row-in, var(--subitem-power-anim);
+  animation-duration:        var(--subitem-row-dur), var(--subitem-power-dur);
+  animation-timing-function: ease-out, ease-out;
+  animation-delay:           var(--subitem-row-delay), calc(var(--subitem-row-delay) + var(--subitem-row-dur));
+  animation-fill-mode:       both, backwards;
 }
+
+/* Same specificity as the rule above (four classes) — these MUST come
+   after it in the cascade so the override wins on source order, and each
+   sets ONLY --subitem-power-anim, never touching the shared timing. */
+.halo-subitem-rail.is-entering .halo-rail-rows > .row--overdue { --subitem-power-anim: halo-subitem-power-on-overdue; }
+.halo-subitem-rail.is-entering .halo-rail-rows > .row--due     { --subitem-power-anim: halo-subitem-power-on-due; }
+.halo-subitem-rail.is-entering .halo-rail-rows > .row--waiting { --subitem-power-anim: halo-subitem-power-on-waiting; }
+.halo-subitem-rail.is-entering .halo-rail-rows > .row--done    { --subitem-power-anim: halo-subitem-power-on-done; }
+.halo-subitem-rail.is-entering .halo-rail-rows > .row--off     { --subitem-power-anim: halo-subitem-power-on-off; }
 
 /* --------------------------------------------------------------------------
    STAGGER INDEX — see STAGGER above. Twelve rows of headroom; --i:12+ is a
