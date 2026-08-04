@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <title>Halo assembly — the FULL CARD: Main Item + Subitem on one shell</title>
 <link rel="stylesheet" href="../tokens.css">
+<!-- steel-skin MUST come after tokens.css: it re-declares the steel ladder off the
+     three knobs, and a custom property is substituted where it is DECLARED. Without
+     this link the card renders the pre-knob palette and loses every treatment that
+     hangs off it — the four colourways, the seated bezels, the scribe-cut wells and
+     the --row-hue laser. It was missing, which is why the card still looked old. -->
+<link rel="stylesheet" href="../steel-skin.css">
 <link rel="stylesheet" href="../parts/housing.css">
 <link rel="stylesheet" href="../parts/deck.css">
 <link rel="stylesheet" href="../parts/bracket.css">

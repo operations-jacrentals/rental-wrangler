@@ -93,7 +93,13 @@
 .stage, .row--overdue, .row--due, .row--waiting, .row--done, .row--off {
   --laser-hot:  color-mix(in oklch, var(--row-hue) 62%, #eef2f7);
   --laser-core: var(--row-hue);
-  --laser-well: color-mix(in oklch, var(--row-hue) 38%, var(--bg));
+  /* The well is the SAME hue and saturation as the core, only darker — Figma's
+     #9d0000 against a #ff4242 core is exactly that: H0 S100%, L63.7% -> L30.8%.
+     Mixing toward --bg instead pulled saturation out and landed on (96,34,31),
+     a 61-value miss measured against the Figma render. Relative colour syntax
+     keeps h and s and moves only l, so the well stays a deep version of
+     whatever the row is lit with rather than drifting grey. */
+  --laser-well: hsl(from var(--row-hue) h s 31%);
 
   /* the seven baked-in reds, now one ramp */
   --neon:      var(--laser-core);
