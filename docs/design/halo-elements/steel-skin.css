@@ -134,31 +134,45 @@
    ========================================================================== */
 
 :root, .stage {
-  /* Bezel sits between the body panel and the recess: darker than the face
-     it interrupts, lighter than the well it surrounds. Derived from the two
-     neighbouring rungs rather than added as a literal, so it tracks the
-     steel knobs like everything else. */
-  --bezel:     color-mix(in oklch, var(--rim-top) 55%, var(--slate));
+  /* THE WELL IS CUT WITH THE SAME TOOL AS THE PANEL'S DARK LINES.
+     deck.css's scribe line (the thin dark lines etched across the steel) is
+     three 1px bands — L19.02% lit lip, L7.451% dark core, L3.529% floor.
+     Those land on --slate (21.6) / --edge (7.3) / --circuit (5.7), so the
+     well is built from the same three rungs. A bulb recess and a panel line
+     are then visibly the same cut in the same steel, which is the whole
+     point: a mid-grey ring reads as a separate applied part, a scribe-dark
+     one reads as machining that was already there. */
+  --well-lip:   var(--slate);    /* top lip of the cut, catching the light */
+  --well:       var(--edge);     /* the cut core — same tone as the lines   */
+  --well-floor: var(--circuit);  /* the deepest floor                       */
+
   --seat-seam: color-mix(in oklch, var(--circuit) 80%, transparent);
   --seat-wall: color-mix(in oklch, var(--circuit) 70%, transparent);
   --seat-lip:  color-mix(in oklch, var(--silver)  50%, transparent);
 }
 
-.is-seated {
+.is-seated,
+.bulb {
   box-shadow:
     0 0 1.5px .5px var(--seat-seam),   /* 1 the cut */
     inset 0 2.5px 3px var(--seat-wall),/* 2 top wall in shadow */
     inset 0 -2px 2px var(--seat-lip);  /* 3 bottom lip lit */
 }
 
-/* The bulb is a Signal: its LENS carries the state colour, its bezel and
-   well are STRUCTURE and stay steel in every state (canon-colour-map.css
-   says the same thing about --bezel). One shared bezel tone across all
-   five states is deliberate — a bezel that changed with status would read
-   as part of the signal instead of part of the machine. */
-.bulb { background: var(--bezel); }
-.bulb.is-seated,
-.bulb { box-shadow:
-    0 0 1.5px .5px var(--seat-seam),
-    inset 0 2.5px 3px var(--seat-wall),
-    inset 0 -2px 2px var(--seat-lip); }
+/* The bulb is a Signal: its LENS carries the state colour, its well is
+   STRUCTURE and stays steel in every state (canon-colour-map.css says the
+   same thing where it pins --bezel). One shared well tone across all five
+   states is deliberate — a well that changed with status would read as part
+   of the signal instead of part of the machine.
+
+   The gradient is the scribe line stood on end: lit lip along the very top
+   edge, dark core, floor at the bottom. NB canon-colour-map.css also sets
+   `.bulb { --bezel: var(--steel-05) }` off its own hex ladder; that token is
+   left alone here rather than overridden, since reconciling the two ladders
+   is a separate call — see the ladder note in the commit. */
+.bulb {
+  background: linear-gradient(180deg,
+    var(--well-lip)   0 1px,
+    var(--well)       1px,
+    var(--well-floor) 100%);
+}
