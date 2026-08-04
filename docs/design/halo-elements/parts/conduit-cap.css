@@ -35,50 +35,114 @@
    `.is-run-end` below — its facet table is simply the vector's own local
    vertex coordinates, measured once.
 
-   WHY A LAYERED-RECT BACKGROUND, NOT ONE GRADIENT LIKE THE CHANNEL
+   WHY POLYGON MASKS, NOT A SINGLE GRADIENT LIKE THE CHANNEL — AND NOT
+   BOUNDING-BOX RECTANGLES EITHER (that was tried and failed verification)
    The channel's 13 facets are literally 13 full-height rectangles side by
    side — a 1-D cross-section, so ONE `linear-gradient` with hard stops
    reproduces it exactly. The cap's 10 regions are a genuine 2-D fitting (a
    recessed collar with a raised rib, sitting in a base plate, lit from the
-   upper-left) — no single axis sweep produces it. Each region IS still a
-   flat, hard-edged SOLID fill (confirmed: every region below is one
-   `SOLID` paint, no region itself is a gradient), so the CSS analogue is a
-   stack of hard-edged rectangles — one `background` layer per region, each
-   a same-color-to-same-color `linear-gradient` used purely as a rect
-   painter (`linear-gradient(C, C) X Y / W H no-repeat`), so every edge
-   between facets is still a hard, zero-blend cut, never a soft transition.
-   Layer order (first-listed = top-most, per the CSS background spec) was
-   derived from which regions visually sit inside/over which others — see
-   the per-file facet tables — not from the vectorNetwork's region array
-   order, which is not guaranteed to be z-ordered.
+   upper-left) — no single axis sweep produces it, and a first attempt at
+   approximating each region by its axis-aligned BOUNDING BOX (a stack of
+   `background` rects) measured 15-115 channel-value deltas against the real
+   Figma render — an order of magnitude over the ~1-3 target. Dumping the
+   actual `vectorNetwork` LOOPS (not just min/max-ing their vertices) shows
+   why: every region is a genuine irregular polygon with diagonal edges
+   (the chamfers visible in the source screenshot), not a rectangle, and
+   region 4 — assumed redundant with region 6 on a bounding-box read (its
+   box sits fully inside region 6's) — is actually a SEPARATE adjacent
+   facet at true polygon resolution (true overlap: 28 of 1850px, i.e. a
+   shared edge, not containment). So this sheet reproduces each region as
+   its own hard-edged polygon: one CSS `mask-image` layer per region (a
+   tiny inline SVG `<polygon>`, coordinates only — no fill colour baked in
+   beyond a flat white so the mask reads as pure coverage), paired
+   positionally with a same-colour-twice `linear-gradient` on
+   `background-image` that supplies the actual (steel-token-driven) colour.
+   A `mask` still an inherently hard edge — an SVG polygon has no
+   antialiasing gradient of its own — so this satisfies "hard stops only"
+   exactly as literally as the channel's stop-pairs do, just extended to two
+   axes instead of one.
 
-   FOUR TONES, ALL PROVABLY SHARED WITH THE CHANNEL
+     MECHANICAL NOTE: `mask-image` does NOT accept the position/size/repeat
+     shorthand syntax the way `background` does (`mask-image: url(...) 0 0/
+     100% 100% no-repeat` silently fails to parse and computes to `none` —
+     caught during verification, see below). Position/size/repeat are set
+     as their own layered properties (`mask-size`, `mask-repeat`,
+     `mask-position`) instead, each given ONE value that applies uniformly
+     across all mask layers.
+
+   PROVED NON-OVERLAPPING BY RASTERISING EVERY PAIR, NOT ASSUMED
+   Before trusting a stacking order, all 10 regions' true polygons were
+   rasterised at 8x and checked pairwise for overlap. Result: this is a
+   clean nested partition, not a soup of overlapping shapes. Region 0 IS
+   the full silhouette (its area exactly equals the 10-region union).
+   Three genuine nesting chains sit inside it — dark region 1 contains
+   base region 2 contains dark region 3 (a cavity, a raised rib inside it,
+   a hairline crease on the rib); dark region 6 contains mid region 7 (a
+   lit inner wall inside a shadowed block) — plus six standalone facets
+   (1/4/5/6/8/9, using the outer members of those two chains) sitting
+   directly on region 0, mutually non-overlapping to within rasterisation
+   noise (<30px of ~1-10k px each, i.e. shared edges, not real overlap).
+   Paint order (top -> bottom) is therefore just "children after parents,
+   the rest in any order, region 0 last": R3, R2, R7, R1, R4, R5, R6, R8,
+   R9, R0 — the exact `mask-image`/`background-image` layer order below.
+
+   FOUR TONES, ALL PROVABLY SHARED WITH THE CHANNEL — BUT RE-DERIVED, NOT
+   COPIED, BECAUSE conduit-channel.css'S OWN K/L DOES NOT ROUND-TRIP
    Sampling the 10 regions' raw Figma fills turns up only FOUR distinct
    colours, and each one is BIT-IDENTICAL (same float RGB, not just close)
-   to one of conduit-channel.css's own thirteen: this fitting and that
-   cross-section were cut from the same measured palette.
+   to one of conduit-channel.css's own thirteen rectangle fills: this
+   fitting and that cross-section were cut from the same measured palette.
 
-     region role                    exact float RGB match          -> channel's own name / K,L
-     base plate + ridge + left edge  0.239216, 0.254902, 0.274510   -> "edge-outer"/"casing-lower"  K=0.723 L=28%
-     recess / shadow / far block     0.082353, 0.086275, 0.094118   -> "shadow-deep"                K=0.833 L=9.4%
-     upper-left bevel highlight      0.478431, 0.509804, 0.549020   -> "edge-lit"                    K=0.727 L=55.9%
-     mid-tone inner-wall facets      0.341176, 0.364706, 0.392157   -> "edge-mid"                    K=0.720 L=40%
+     region role                     exact float RGB match          -> channel's own facet name
+     base plate + ridge + left edge  0.239216, 0.254902, 0.274510   -> "edge-outer" / "casing-lower"
+     recess / shadow / far block     0.082353, 0.086275, 0.094118   -> "shadow-deep"
+     upper-left bevel highlight      0.478431, 0.509804, 0.549020   -> "edge-lit"
+     mid-tone inner-wall facets      0.341176, 0.364706, 0.392157   -> "edge-mid"
 
-   So this file reuses conduit-channel.css's exact K (saturation ratio over
-   the 30% reference axis) and L (that tone's own lightness) pairs — never a
-   literal hex, per the steel rule, and never a NEW tone invented for the
-   cap. No red/laser tone appears anywhere in this vector — the lit core
-   does not reach the end fitting — so `--laser-*` is not used in this file.
+   That much is a clean fact about the SOURCE fills. But the K/L pair
+   conduit-channel.css's own comments attach to those facet names (e.g.
+   "edge-outer" K=0.723 L=28%) does NOT reproduce that raw fill when run
+   through `hsl(var(--steel-h) calc(var(--steel-s)*K) calc(L%*var(--steel-tint)))`
+   at tokens.css's own defaults (h212 s30% tint1) — verified by rendering
+   conduit-channel.css itself and sampling it against the real 280:91
+   screenshot: every steel facet is off by 9-32 channel values, e.g.
+   "edge-outer" renders (56,70,87) against a true (61,65,70). Standard HSL
+   decomposition of that same raw fill (h≈213, s≈6.9%, l≈25.7%) gives
+   K = s/30 ≈ 0.229 and L ≈ 25.69% — which DOES round-trip exactly (delta
+   0 at h212). So conduit-channel.css's K/L values, whatever produced them,
+   are not simply "this tone's own measured S/30 and L" despite the
+   comment saying so; copying them here would have carried the same bug
+   into a second file. This sheet's four tones below are therefore each
+   independently re-measured with plain HSL decomposition of the raw fill
+   (never a literal hex, per the steel rule — the HUE stays on
+   `var(--steel-h)`, only K and L are baked in) and verified to round-trip
+   at delta 0 against the true fills before being written into the
+   gradients:
 
-   THE STOPS ARE MEASURED, NOT CHOSEN
-   Every rect below is a region's own bounding box, read out of
-   `node.vectorNetwork` (vertices + segments assembled into each region's
-   loop, then min/maxed) and transformed into the component's own coordinate
-   space with the vector's documented relativeTransform. Four regions whose
-   bounding box is fully enclosed by a same-tone neighbour (region 4, "dark",
-   sits entirely inside region 6's box, identical colour) were folded into
-   that neighbour — one rect standing in for two identical-tone facets is a
-   simplification of the count, never of a measured value.
+     tone (region role)              true H    K = S/30   L
+     base   (R0 / R2 / R8)           213.33deg  0.229      25.69%
+     dark   (R1 / R3 / R4 / R6)      220.00deg  0.222       8.82%
+     light  (R5)                     213.33deg  0.242      51.37%
+     mid    (R7 / R9)                212.31deg  0.232      36.67%
+
+   conduit-channel.css was left untouched (out of scope for this file, and
+   not this sheet's call to make) — but its own steel facets should be
+   treated as suspect until someone re-derives them the same way. No
+   red/laser tone appears anywhere in this cap vector — the lit core does
+   not reach the end fitting — so `--laser-*` is not used in this file.
+
+   THE POLYGONS ARE MEASURED, NOT CHOSEN
+   Every mask polygon below is a region's own loop, read out of
+   `node.vectorNetwork` (walking each region's `loops[0]` segment list to
+   its vertex start-points, in order — a genuine traced outline, not a
+   convex hull or a bounding box) and transformed into the target
+   coordinate space:
+     - `.halo-cap` (default): parentX = vecY, parentY = 21.79892921447754 -
+       vecX — the vector's own documented `relativeTransform` (a pure +90deg
+       rotation, tx≈0 ty≈21.799; verified: det = 1, off-diagonal magnitudes
+       both exactly 1).
+     - `.halo-cap.is-run-end`: the vector's raw local (x,y) directly — see
+       "THE VECTOR IS PRE-ROTATED" above for why no transform is needed.
 
    THE RESIDUAL OVERHANG IS KEPT, NOT FIXED
    figma-state.json's "conduitArtworkSwap_2026_08_03" entry: "the cap-to-
@@ -98,8 +162,10 @@
    --------------------------------------------------------------------------
    KNOBS
      --cap-w   thickness — shared axis with .halo-channel's --ch-w. Defaults
-               to the measured 39px. Facet stops are declared in px against
-               this width; re-derive them if you rescale it.
+               to the measured 39px. The mask/background geometry below is
+               declared in absolute px against that width; re-derive it if
+               you rescale it (a plain CSS `transform: scale()` on the whole
+               element is the safe way to resize without re-deriving).
 
    --------------------------------------------------------------------------
    VARIANTS / ROTATIONS
@@ -125,60 +191,63 @@
 
    --------------------------------------------------------------------------
    MARKUP each instance needs — a single, childless div (all paint is
-   `background`, exactly like .halo-channel):
+   `background`/`mask`, exactly like .halo-channel needs no children):
 
      <div class="halo-cap"></div>                  <!-- deck / channel top -->
      <div class="halo-cap is-180"></div>            <!-- channel foot -->
      <div class="halo-cap is-run-end"></div>        <!-- run end / spine tap -->
+
+   Requires a browser with CSS `mask-image` support (unprefixed + -webkit-
+   both declared below; every current evergreen browser has one or the
+   other).
    ========================================================================== */
 
+/* 0deg default — deck to channel */
 .halo-cap {
   --cap-w: 39px;
   width: var(--cap-w);
-  height: 21.8px; /* true painted extent — see RESIDUAL OVERHANG note */
-  background:
-    /* R3 — dark hairline crease atop the ridge */
-    linear-gradient(
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.833) calc(9.4% * var(--steel-tint))),
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.833) calc(9.4% * var(--steel-tint)))
-    )  8.50px  2.42px / 20.22px  0.90px no-repeat,
-    /* R2 — base-tone ridge inside the recess */
-    linear-gradient(
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(28% * var(--steel-tint))),
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(28% * var(--steel-tint)))
-    )  8.50px  2.42px / 20.62px  3.72px no-repeat,
-    /* R7 — mid-tone inner wall, right side */
-    linear-gradient(
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.720) calc(40% * var(--steel-tint))),
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.720) calc(40% * var(--steel-tint)))
-    ) 27.63px  3.53px /  3.68px  5.81px no-repeat,
-    /* R9 — mid-tone patch, left-lower */
-    linear-gradient(
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.720) calc(40% * var(--steel-tint))),
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.720) calc(40% * var(--steel-tint)))
-    )  1.49px 11.28px /  2.56px  9.49px no-repeat,
-    /* R5 — light bevel highlight, upper-left (the lit contour — from ABOVE) */
-    linear-gradient(
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.727) calc(55.9% * var(--steel-tint))),
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.727) calc(55.9% * var(--steel-tint)))
-    )  1.45px  0.22px /  4.28px  9.67px no-repeat,
-    /* R1 — dark recess / cavity, upper-centre */
-    linear-gradient(
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.833) calc(9.4% * var(--steel-tint))),
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.833) calc(9.4% * var(--steel-tint)))
-    )  5.36px  0.27px / 24.32px  9.45px no-repeat,
-    /* R6 — dark shadow block, right side (absorbs same-tone R4) */
-    linear-gradient(
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.833) calc(9.4% * var(--steel-tint))),
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.833) calc(9.4% * var(--steel-tint)))
-    ) 27.63px  3.53px / 10.96px 18.27px no-repeat,
-    /* R8 — base-tone sliver, far left edge */
-    linear-gradient(
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(28% * var(--steel-tint))),
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(28% * var(--steel-tint)))
-    )  0.00px  8.58px /  2.36px 12.58px no-repeat,
-    /* R0 — base plate, full box (background-color, bottom-most layer) */
-    hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(28% * var(--steel-tint)));
+  height: 21.8px; /* true painted extent */
+  background-image: linear-gradient(hsl(var(--steel-h) calc(var(--steel-s) * 0.222) calc(8.82% * var(--steel-tint))), hsl(var(--steel-h) calc(var(--steel-s) * 0.222) calc(8.82% * var(--steel-tint)))), /* R3 — dark recess/shadow */
+    linear-gradient(hsl(var(--steel-h) calc(var(--steel-s) * 0.229) calc(25.69% * var(--steel-tint))), hsl(var(--steel-h) calc(var(--steel-s) * 0.229) calc(25.69% * var(--steel-tint)))), /* R2 — base plate */
+    linear-gradient(hsl(var(--steel-h) calc(var(--steel-s) * 0.232) calc(36.67% * var(--steel-tint))), hsl(var(--steel-h) calc(var(--steel-s) * 0.232) calc(36.67% * var(--steel-tint)))), /* R7 — mid-tone wall */
+    linear-gradient(hsl(var(--steel-h) calc(var(--steel-s) * 0.222) calc(8.82% * var(--steel-tint))), hsl(var(--steel-h) calc(var(--steel-s) * 0.222) calc(8.82% * var(--steel-tint)))), /* R1 — dark recess/shadow */
+    linear-gradient(hsl(var(--steel-h) calc(var(--steel-s) * 0.222) calc(8.82% * var(--steel-tint))), hsl(var(--steel-h) calc(var(--steel-s) * 0.222) calc(8.82% * var(--steel-tint)))), /* R4 — dark recess/shadow */
+    linear-gradient(hsl(var(--steel-h) calc(var(--steel-s) * 0.242) calc(51.37% * var(--steel-tint))), hsl(var(--steel-h) calc(var(--steel-s) * 0.242) calc(51.37% * var(--steel-tint)))), /* R5 — light bevel highlight */
+    linear-gradient(hsl(var(--steel-h) calc(var(--steel-s) * 0.222) calc(8.82% * var(--steel-tint))), hsl(var(--steel-h) calc(var(--steel-s) * 0.222) calc(8.82% * var(--steel-tint)))), /* R6 — dark recess/shadow */
+    linear-gradient(hsl(var(--steel-h) calc(var(--steel-s) * 0.229) calc(25.69% * var(--steel-tint))), hsl(var(--steel-h) calc(var(--steel-s) * 0.229) calc(25.69% * var(--steel-tint)))), /* R8 — base plate */
+    linear-gradient(hsl(var(--steel-h) calc(var(--steel-s) * 0.232) calc(36.67% * var(--steel-tint))), hsl(var(--steel-h) calc(var(--steel-s) * 0.232) calc(36.67% * var(--steel-tint)))), /* R9 — mid-tone wall */
+    linear-gradient(hsl(var(--steel-h) calc(var(--steel-s) * 0.229) calc(25.69% * var(--steel-tint))), hsl(var(--steel-h) calc(var(--steel-s) * 0.229) calc(25.69% * var(--steel-tint)))); /* R0 — base plate */
+
+  -webkit-mask-image:
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2039.00%2021.80%27%3E%3Cpolygon%20points%3D%278.66%2C2.80%208.50%2C2.42%2022.27%2C2.53%2028.72%2C3.31%2026.38%2C3.29%2010.58%2C3.12%208.74%2C2.81%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R3 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2039.00%2021.80%27%3E%3Cpolygon%20points%3D%278.66%2C2.80%208.50%2C2.42%2022.27%2C2.53%2028.72%2C3.31%2029.12%2C3.53%2027.63%2C5.39%2027.72%2C5.72%2028.24%2C5.90%209.77%2C6.14%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R2 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2039.00%2021.80%27%3E%3Cpolygon%20points%3D%2727.72%2C5.72%2027.63%2C5.39%2029.12%2C3.53%2029.12%2C3.53%2029.35%2C3.74%2031.31%2C9.01%2031.03%2C9.34%2029.68%2C7.70%2028.24%2C5.90%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R7 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2039.00%2021.80%27%3E%3Cpolygon%20points%3D%275.36%2C0.95%205.40%2C0.54%205.73%2C0.27%208.50%2C2.42%2022.27%2C2.53%2028.72%2C3.31%2029.12%2C3.53%2027.63%2C5.39%2027.72%2C5.72%2028.24%2C5.90%2029.68%2C7.70%2028.95%2C9.08%208.92%2C9.72%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R1 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2039.00%2021.80%27%3E%3Cpolygon%20points%3D%2734.78%2C19.70%2034.81%2C9.22%2036.60%2C10.03%2038.59%2C20.09%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R4 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2039.00%2021.80%27%3E%3Cpolygon%20points%3D%271.45%2C0.38%201.58%2C0.22%205.40%2C0.54%205.36%2C0.95%205.36%2C0.95%204.52%2C0.99%204.22%2C9.70%201.70%2C9.89%201.51%2C3.01%201.74%2C0.68%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R5 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2039.00%2021.80%27%3E%3Cpolygon%20points%3D%2727.72%2C5.72%2027.63%2C5.39%2029.12%2C3.53%2029.12%2C3.53%2029.35%2C3.74%2032.38%2C8.45%2034.78%2C19.70%2038.59%2C20.09%2038.59%2C20.09%2038.08%2C21.80%2031.44%2C21.72%2030.94%2C21.64%2035.16%2C21.15%2035.27%2C20.90%2034.91%2C20.09%2034.64%2C20.50%2034.41%2C9.46%2031.19%2C9.54%2031.03%2C9.34%2029.68%2C7.70%2028.24%2C5.90%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R6 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2039.00%2021.80%27%3E%3Cpolygon%20points%3D%270.00%2C19.15%200.81%2C8.58%201.49%2C12.45%201.49%2C20.02%202.36%2C21.16%200.28%2C20.72%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R8 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2039.00%2021.80%27%3E%3Cpolygon%20points%3D%271.49%2C12.45%201.49%2C12.45%201.85%2C11.28%202.41%2C11.39%204.05%2C20.23%203.90%2C20.77%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R9 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2039.00%2021.80%27%3E%3Cpolygon%20points%3D%270.00%2C19.15%200.81%2C8.58%201.45%2C0.38%201.58%2C0.22%205.73%2C0.27%208.50%2C2.42%2022.27%2C2.53%2028.72%2C3.31%2029.12%2C3.53%2029.35%2C3.74%2032.38%2C8.45%2034.81%2C9.22%2036.60%2C10.03%2038.59%2C20.09%2038.08%2C21.80%2031.44%2C21.72%2030.94%2C21.64%209.37%2C21.69%203.73%2C21.49%202.36%2C21.16%200.28%2C20.72%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E") /* R0 */
+  ;
+  mask-image:
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2039.00%2021.80%27%3E%3Cpolygon%20points%3D%278.66%2C2.80%208.50%2C2.42%2022.27%2C2.53%2028.72%2C3.31%2026.38%2C3.29%2010.58%2C3.12%208.74%2C2.81%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R3 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2039.00%2021.80%27%3E%3Cpolygon%20points%3D%278.66%2C2.80%208.50%2C2.42%2022.27%2C2.53%2028.72%2C3.31%2029.12%2C3.53%2027.63%2C5.39%2027.72%2C5.72%2028.24%2C5.90%209.77%2C6.14%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R2 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2039.00%2021.80%27%3E%3Cpolygon%20points%3D%2727.72%2C5.72%2027.63%2C5.39%2029.12%2C3.53%2029.12%2C3.53%2029.35%2C3.74%2031.31%2C9.01%2031.03%2C9.34%2029.68%2C7.70%2028.24%2C5.90%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R7 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2039.00%2021.80%27%3E%3Cpolygon%20points%3D%275.36%2C0.95%205.40%2C0.54%205.73%2C0.27%208.50%2C2.42%2022.27%2C2.53%2028.72%2C3.31%2029.12%2C3.53%2027.63%2C5.39%2027.72%2C5.72%2028.24%2C5.90%2029.68%2C7.70%2028.95%2C9.08%208.92%2C9.72%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R1 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2039.00%2021.80%27%3E%3Cpolygon%20points%3D%2734.78%2C19.70%2034.81%2C9.22%2036.60%2C10.03%2038.59%2C20.09%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R4 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2039.00%2021.80%27%3E%3Cpolygon%20points%3D%271.45%2C0.38%201.58%2C0.22%205.40%2C0.54%205.36%2C0.95%205.36%2C0.95%204.52%2C0.99%204.22%2C9.70%201.70%2C9.89%201.51%2C3.01%201.74%2C0.68%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R5 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2039.00%2021.80%27%3E%3Cpolygon%20points%3D%2727.72%2C5.72%2027.63%2C5.39%2029.12%2C3.53%2029.12%2C3.53%2029.35%2C3.74%2032.38%2C8.45%2034.78%2C19.70%2038.59%2C20.09%2038.59%2C20.09%2038.08%2C21.80%2031.44%2C21.72%2030.94%2C21.64%2035.16%2C21.15%2035.27%2C20.90%2034.91%2C20.09%2034.64%2C20.50%2034.41%2C9.46%2031.19%2C9.54%2031.03%2C9.34%2029.68%2C7.70%2028.24%2C5.90%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R6 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2039.00%2021.80%27%3E%3Cpolygon%20points%3D%270.00%2C19.15%200.81%2C8.58%201.49%2C12.45%201.49%2C20.02%202.36%2C21.16%200.28%2C20.72%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R8 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2039.00%2021.80%27%3E%3Cpolygon%20points%3D%271.49%2C12.45%201.49%2C12.45%201.85%2C11.28%202.41%2C11.39%204.05%2C20.23%203.90%2C20.77%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R9 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2039.00%2021.80%27%3E%3Cpolygon%20points%3D%270.00%2C19.15%200.81%2C8.58%201.45%2C0.38%201.58%2C0.22%205.73%2C0.27%208.50%2C2.42%2022.27%2C2.53%2028.72%2C3.31%2029.12%2C3.53%2029.35%2C3.74%2032.38%2C8.45%2034.81%2C9.22%2036.60%2C10.03%2038.59%2C20.09%2038.08%2C21.80%2031.44%2C21.72%2030.94%2C21.64%209.37%2C21.69%203.73%2C21.49%202.36%2C21.16%200.28%2C20.72%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E") /* R0 */
+  ;
+  -webkit-mask-size: 39.00px 21.80px;
+  mask-size: 39.00px 21.80px;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: 0 0;
+  mask-position: 0 0;
 }
 
 /* 180deg — channel foot. A half-turn is a lossless, symmetric transform of
@@ -187,55 +256,53 @@
   transform: rotate(180deg);
 }
 
-/* 270deg (Figma: -90deg) — side tap into a vertical channel, AND channel to
-   heading (Row Run 298:134 uses this same rotation for both its end caps).
-   Built from the vector's own NATIVE local geometry — see "THE VECTOR IS
-   PRE-ROTATED" above — not a CSS `transform` of the default orientation, so
-   its facets are independently measured, not merely rotated math. */
+/* 270deg (Figma -90deg) — side tap into vertical channel / channel to
+   heading. Built from the vector's own NATIVE local geometry — see "THE
+   VECTOR IS PRE-ROTATED" above — not a CSS `transform` of the default
+   orientation, so its facets are independently measured, not merely
+   rotated math. */
 .halo-cap.is-run-end {
   width: 21.58px;
   height: 38.59px;
-  background:
-    /* R3 */
-    linear-gradient(
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.833) calc(9.4% * var(--steel-tint))),
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.833) calc(9.4% * var(--steel-tint)))
-    ) 18.49px  8.50px /  0.90px 20.22px no-repeat,
-    /* R2 */
-    linear-gradient(
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(28% * var(--steel-tint))),
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(28% * var(--steel-tint)))
-    ) 15.66px  8.50px /  3.72px 20.62px no-repeat,
-    /* R7 */
-    linear-gradient(
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.720) calc(40% * var(--steel-tint))),
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.720) calc(40% * var(--steel-tint)))
-    ) 12.46px 27.63px /  5.81px  3.68px no-repeat,
-    /* R9 */
-    linear-gradient(
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.720) calc(40% * var(--steel-tint))),
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.720) calc(40% * var(--steel-tint)))
-    )  1.03px  1.49px /  9.49px  2.56px no-repeat,
-    /* R5 */
-    linear-gradient(
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.727) calc(55.9% * var(--steel-tint))),
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.727) calc(55.9% * var(--steel-tint)))
-    ) 11.91px  1.45px /  9.67px  4.28px no-repeat,
-    /* R1 */
-    linear-gradient(
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.833) calc(9.4% * var(--steel-tint))),
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.833) calc(9.4% * var(--steel-tint)))
-    ) 12.08px  5.36px /  9.45px 24.32px no-repeat,
-    /* R6 (absorbs R4) */
-    linear-gradient(
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.833) calc(9.4% * var(--steel-tint))),
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.833) calc(9.4% * var(--steel-tint)))
-    )  0.00px 27.63px / 18.27px 10.96px no-repeat,
-    /* R8 */
-    linear-gradient(
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(28% * var(--steel-tint))),
-      hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(28% * var(--steel-tint)))
-    )  0.64px  0.00px / 12.58px  2.36px no-repeat,
-    /* R0 */
-    hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(28% * var(--steel-tint)));
+  background-image: linear-gradient(hsl(var(--steel-h) calc(var(--steel-s) * 0.222) calc(8.82% * var(--steel-tint))), hsl(var(--steel-h) calc(var(--steel-s) * 0.222) calc(8.82% * var(--steel-tint)))), /* R3 — dark recess/shadow */
+    linear-gradient(hsl(var(--steel-h) calc(var(--steel-s) * 0.229) calc(25.69% * var(--steel-tint))), hsl(var(--steel-h) calc(var(--steel-s) * 0.229) calc(25.69% * var(--steel-tint)))), /* R2 — base plate */
+    linear-gradient(hsl(var(--steel-h) calc(var(--steel-s) * 0.232) calc(36.67% * var(--steel-tint))), hsl(var(--steel-h) calc(var(--steel-s) * 0.232) calc(36.67% * var(--steel-tint)))), /* R7 — mid-tone wall */
+    linear-gradient(hsl(var(--steel-h) calc(var(--steel-s) * 0.222) calc(8.82% * var(--steel-tint))), hsl(var(--steel-h) calc(var(--steel-s) * 0.222) calc(8.82% * var(--steel-tint)))), /* R1 — dark recess/shadow */
+    linear-gradient(hsl(var(--steel-h) calc(var(--steel-s) * 0.222) calc(8.82% * var(--steel-tint))), hsl(var(--steel-h) calc(var(--steel-s) * 0.222) calc(8.82% * var(--steel-tint)))), /* R4 — dark recess/shadow */
+    linear-gradient(hsl(var(--steel-h) calc(var(--steel-s) * 0.242) calc(51.37% * var(--steel-tint))), hsl(var(--steel-h) calc(var(--steel-s) * 0.242) calc(51.37% * var(--steel-tint)))), /* R5 — light bevel highlight */
+    linear-gradient(hsl(var(--steel-h) calc(var(--steel-s) * 0.222) calc(8.82% * var(--steel-tint))), hsl(var(--steel-h) calc(var(--steel-s) * 0.222) calc(8.82% * var(--steel-tint)))), /* R6 — dark recess/shadow */
+    linear-gradient(hsl(var(--steel-h) calc(var(--steel-s) * 0.229) calc(25.69% * var(--steel-tint))), hsl(var(--steel-h) calc(var(--steel-s) * 0.229) calc(25.69% * var(--steel-tint)))), /* R8 — base plate */
+    linear-gradient(hsl(var(--steel-h) calc(var(--steel-s) * 0.232) calc(36.67% * var(--steel-tint))), hsl(var(--steel-h) calc(var(--steel-s) * 0.232) calc(36.67% * var(--steel-tint)))), /* R9 — mid-tone wall */
+    linear-gradient(hsl(var(--steel-h) calc(var(--steel-s) * 0.229) calc(25.69% * var(--steel-tint))), hsl(var(--steel-h) calc(var(--steel-s) * 0.229) calc(25.69% * var(--steel-tint)))); /* R0 — base plate */
+
+  -webkit-mask-image:
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2021.80%2038.59%27%3E%3Cpolygon%20points%3D%2719.00%2C8.66%2019.38%2C8.50%2019.27%2C22.27%2018.49%2C28.72%2018.51%2C26.38%2018.68%2C10.58%2018.99%2C8.74%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R3 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2021.80%2038.59%27%3E%3Cpolygon%20points%3D%2719.00%2C8.66%2019.38%2C8.50%2019.27%2C22.27%2018.49%2C28.72%2018.27%2C29.12%2016.41%2C27.63%2016.08%2C27.72%2015.90%2C28.24%2015.66%2C9.77%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R2 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2021.80%2038.59%27%3E%3Cpolygon%20points%3D%2716.08%2C27.72%2016.41%2C27.63%2018.27%2C29.12%2018.27%2C29.12%2018.06%2C29.35%2012.78%2C31.31%2012.46%2C31.03%2014.10%2C29.68%2015.90%2C28.24%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R7 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2021.80%2038.59%27%3E%3Cpolygon%20points%3D%2720.85%2C5.36%2021.26%2C5.40%2021.53%2C5.73%2019.38%2C8.50%2019.27%2C22.27%2018.49%2C28.72%2018.27%2C29.12%2016.41%2C27.63%2016.08%2C27.72%2015.90%2C28.24%2014.10%2C29.68%2012.72%2C28.95%2012.08%2C8.92%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R1 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2021.80%2038.59%27%3E%3Cpolygon%20points%3D%272.10%2C34.78%2012.58%2C34.81%2011.77%2C36.60%201.71%2C38.59%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R4 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2021.80%2038.59%27%3E%3Cpolygon%20points%3D%2721.42%2C1.45%2021.58%2C1.58%2021.26%2C5.40%2020.85%2C5.36%2020.85%2C5.36%2020.81%2C4.52%2012.10%2C4.22%2011.91%2C1.70%2018.79%2C1.51%2021.12%2C1.74%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R5 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2021.80%2038.59%27%3E%3Cpolygon%20points%3D%2716.08%2C27.72%2016.41%2C27.63%2018.27%2C29.12%2018.27%2C29.12%2018.06%2C29.35%2013.35%2C32.38%202.10%2C34.78%201.71%2C38.59%201.71%2C38.59%200.00%2C38.08%200.08%2C31.44%200.15%2C30.94%200.65%2C35.16%200.90%2C35.27%201.70%2C34.91%201.30%2C34.64%2012.34%2C34.41%2012.26%2C31.19%2012.46%2C31.03%2014.10%2C29.68%2015.90%2C28.24%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R6 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2021.80%2038.59%27%3E%3Cpolygon%20points%3D%272.65%2C0.00%2013.22%2C0.81%209.34%2C1.49%201.78%2C1.49%200.64%2C2.36%201.08%2C0.28%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R8 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2021.80%2038.59%27%3E%3Cpolygon%20points%3D%279.34%2C1.49%209.34%2C1.49%2010.52%2C1.85%2010.40%2C2.41%201.57%2C4.05%201.03%2C3.90%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R9 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2021.80%2038.59%27%3E%3Cpolygon%20points%3D%272.65%2C0.00%2013.22%2C0.81%2021.42%2C1.45%2021.58%2C1.58%2021.53%2C5.73%2019.38%2C8.50%2019.27%2C22.27%2018.49%2C28.72%2018.27%2C29.12%2018.06%2C29.35%2013.35%2C32.38%2012.58%2C34.81%2011.77%2C36.60%201.71%2C38.59%200.00%2C38.08%200.08%2C31.44%200.15%2C30.94%200.11%2C9.37%200.31%2C3.73%200.64%2C2.36%201.08%2C0.28%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E") /* R0 */
+  ;
+  mask-image:
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2021.80%2038.59%27%3E%3Cpolygon%20points%3D%2719.00%2C8.66%2019.38%2C8.50%2019.27%2C22.27%2018.49%2C28.72%2018.51%2C26.38%2018.68%2C10.58%2018.99%2C8.74%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R3 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2021.80%2038.59%27%3E%3Cpolygon%20points%3D%2719.00%2C8.66%2019.38%2C8.50%2019.27%2C22.27%2018.49%2C28.72%2018.27%2C29.12%2016.41%2C27.63%2016.08%2C27.72%2015.90%2C28.24%2015.66%2C9.77%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R2 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2021.80%2038.59%27%3E%3Cpolygon%20points%3D%2716.08%2C27.72%2016.41%2C27.63%2018.27%2C29.12%2018.27%2C29.12%2018.06%2C29.35%2012.78%2C31.31%2012.46%2C31.03%2014.10%2C29.68%2015.90%2C28.24%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R7 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2021.80%2038.59%27%3E%3Cpolygon%20points%3D%2720.85%2C5.36%2021.26%2C5.40%2021.53%2C5.73%2019.38%2C8.50%2019.27%2C22.27%2018.49%2C28.72%2018.27%2C29.12%2016.41%2C27.63%2016.08%2C27.72%2015.90%2C28.24%2014.10%2C29.68%2012.72%2C28.95%2012.08%2C8.92%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R1 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2021.80%2038.59%27%3E%3Cpolygon%20points%3D%272.10%2C34.78%2012.58%2C34.81%2011.77%2C36.60%201.71%2C38.59%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R4 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2021.80%2038.59%27%3E%3Cpolygon%20points%3D%2721.42%2C1.45%2021.58%2C1.58%2021.26%2C5.40%2020.85%2C5.36%2020.85%2C5.36%2020.81%2C4.52%2012.10%2C4.22%2011.91%2C1.70%2018.79%2C1.51%2021.12%2C1.74%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R5 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2021.80%2038.59%27%3E%3Cpolygon%20points%3D%2716.08%2C27.72%2016.41%2C27.63%2018.27%2C29.12%2018.27%2C29.12%2018.06%2C29.35%2013.35%2C32.38%202.10%2C34.78%201.71%2C38.59%201.71%2C38.59%200.00%2C38.08%200.08%2C31.44%200.15%2C30.94%200.65%2C35.16%200.90%2C35.27%201.70%2C34.91%201.30%2C34.64%2012.34%2C34.41%2012.26%2C31.19%2012.46%2C31.03%2014.10%2C29.68%2015.90%2C28.24%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R6 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2021.80%2038.59%27%3E%3Cpolygon%20points%3D%272.65%2C0.00%2013.22%2C0.81%209.34%2C1.49%201.78%2C1.49%200.64%2C2.36%201.08%2C0.28%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R8 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2021.80%2038.59%27%3E%3Cpolygon%20points%3D%279.34%2C1.49%209.34%2C1.49%2010.52%2C1.85%2010.40%2C2.41%201.57%2C4.05%201.03%2C3.90%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E"), /* R9 */
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2021.80%2038.59%27%3E%3Cpolygon%20points%3D%272.65%2C0.00%2013.22%2C0.81%2021.42%2C1.45%2021.58%2C1.58%2021.53%2C5.73%2019.38%2C8.50%2019.27%2C22.27%2018.49%2C28.72%2018.27%2C29.12%2018.06%2C29.35%2013.35%2C32.38%2012.58%2C34.81%2011.77%2C36.60%201.71%2C38.59%200.00%2C38.08%200.08%2C31.44%200.15%2C30.94%200.11%2C9.37%200.31%2C3.73%200.64%2C2.36%201.08%2C0.28%27%20fill%3D%27white%27%2F%3E%3C%2Fsvg%3E") /* R0 */
+  ;
+  -webkit-mask-size: 21.80px 38.59px;
+  mask-size: 21.80px 38.59px;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: 0 0;
+  mask-position: 0 0;
 }
