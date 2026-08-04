@@ -108,3 +108,57 @@
 /* --bar-red / --bar-yel / --amber are STATUS and tan, not laser — they stay
    on their canon tokens and do not follow the row. */
 :root { --bar-red: #ff4343; --bar-yel: #efd653; --amber: #c2925a; }
+
+/* ==========================================================================
+   SEATED IN THE STEEL — bezels and wells
+
+   A part INSTALLED into the panel and a part LYING ON it differ by three
+   cues. Get them consistent and the thing looks machined in; get them
+   mixed and it floats, which is exactly what the bulbs were doing:
+
+     1  a tight seam all the way round, NO offset   the cut in the panel
+     2  a dark wall at the TOP, inside              the lip above casts in
+     3  a lit lip at the BOTTOM, inside             the floor catches light
+
+   THE TRAP, because it cost a round to spot: an offset drop shadow is the
+   OPPOSITE cue — it says the part stands proud and casts DOWN onto the
+   panel. Pairing a top inner shadow (inset) with a downward drop shadow
+   (proud) reads as neither, and no amount of tuning either one fixes it.
+   Pick inset and commit. The seam in cue 1 is a drop shadow only in the
+   CSS sense: zero offset, tiny radius, so it reads as a cut line rather
+   than a cast shadow.
+
+   Light comes from ABOVE everywhere in this kit — that is what fixes dark
+   to the top and lit to the bottom, and it is why flipping these two
+   inverts the part into a raised boss.
+   ========================================================================== */
+
+:root, .stage {
+  /* Bezel sits between the body panel and the recess: darker than the face
+     it interrupts, lighter than the well it surrounds. Derived from the two
+     neighbouring rungs rather than added as a literal, so it tracks the
+     steel knobs like everything else. */
+  --bezel:     color-mix(in oklch, var(--rim-top) 55%, var(--slate));
+  --seat-seam: color-mix(in oklch, var(--circuit) 80%, transparent);
+  --seat-wall: color-mix(in oklch, var(--circuit) 70%, transparent);
+  --seat-lip:  color-mix(in oklch, var(--silver)  50%, transparent);
+}
+
+.is-seated {
+  box-shadow:
+    0 0 1.5px .5px var(--seat-seam),   /* 1 the cut */
+    inset 0 2.5px 3px var(--seat-wall),/* 2 top wall in shadow */
+    inset 0 -2px 2px var(--seat-lip);  /* 3 bottom lip lit */
+}
+
+/* The bulb is a Signal: its LENS carries the state colour, its bezel and
+   well are STRUCTURE and stay steel in every state (canon-colour-map.css
+   says the same thing about --bezel). One shared bezel tone across all
+   five states is deliberate — a bezel that changed with status would read
+   as part of the signal instead of part of the machine. */
+.bulb { background: var(--bezel); }
+.bulb.is-seated,
+.bulb { box-shadow:
+    0 0 1.5px .5px var(--seat-seam),
+    inset 0 2.5px 3px var(--seat-wall),
+    inset 0 -2px 2px var(--seat-lip); }
