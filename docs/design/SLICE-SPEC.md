@@ -22,7 +22,7 @@ CONDUIT RAIL decision.
 | `asm-deck` | 1335×151 | 28 | **221** | 20 | **1095** | stretch | stretch | none on the growable axis (3px scanline is inside the fixed left corner) | high |
 | `asm-rowboard` | 470×97 | 0 | 66 | 0 | 56 | stretch | stretch | none H (tile is uniform in x — stretch is lossless); 3px scanline V (never rescales, slice V = 0) | **verified 2026-08-05** |
 | `asm-headboard` | 241×141 | **43** | 47 | **59** | 30 | stretch | **round** | **3px** horizontal scanline, vertical axis, r = 1.00 @ lag 3/6/9 | high |
-| `asm-channel` | 41×131 | 0 | 35 | 0 | 4 | stretch | stretch | none (both axes continuous) | high |
+| `asm-channel` | **39×140** | — | — | — | — | n/a | n/a | **not a slice — 39×4 `repeat-y` tile**; zero vertical variation | **verified 2026-08-05** |
 
 Bold = changed from the first-pass proposal. Every bold number was re-rendered and re-measured, not
 reasoned about.
@@ -139,33 +139,43 @@ Requires the **text-free plate re-export** (§3). Until that lands, this panel i
 }
 ```
 
-### asm-channel — conduit rail (see §5: ship it as a TILE, not a slice)
+### asm-channel — conduit rail — VERIFIED 2026-08-05 (a TILE, never a slice)
 
-Slice form, kept for reference and for any place the rail must sit inside a bordered box:
-
-```css
-.halo-channel {
-  box-sizing: border-box;
-  width: 41px;
-  border-style: solid;
-  border-width: 0 35px 0 4px;
-  border-image-source: url("assets/halo/asm-channel.png");
-  border-image-slice: 0 35 0 4 fill;
-  border-image-width: 0 35px 0 4px;
-  border-image-repeat: stretch stretch;
-}
-```
-
-**Preferred form — repeating tile (this is the decision):**
+**The rail is 39px wide, not 41.** The 41 came from a PNG measurement; the vector source has 13
+stripes butting from x=0 to exactly x=39.000 with no gaps and every fill at alpha 1.0 (ledger #262).
+Component is `39×140`, 875 bytes, clean — no nested components, no text, zero render overhang.
 
 ```css
 .halo-channel {
-  width: 41px;
-  height: 100%;                                       /* any row count */
-  background: url("assets/halo/asm-channel-tile.png") repeat-y top left;
-  background-size: 41px 4px;                          /* 41×4 source, 1:1 */
+  width: 39px;
+  height: 100%;                                    /* any row count */
+  background: url("assets/asm-channel-tile.svg") repeat-y top left;
+  background-size: 39px 4px;
 }
 ```
+
+**Verification.** Rendered at heights 40 / 97 / 140 / 333.5 / 777.25px × DPR 1 / 2 / 3 — including
+deliberately fractional heights, which is where `repeat-y` resampling would seam. **All 45
+combinations clean: zero seam rows, max row-to-row delta 0.** The columns were then checked against
+the expected stripe profile and matched **13/13 exact**, so the clean result is real and not a false
+pass on a missing asset.
+
+**Why 4px and not 1px.** Nothing in the art needs it — there is zero vertical variation, so a 1px
+tile carries identical information. 4px is insurance against fractional-DPR edge sampling, and it
+measured identically, so it costs nothing to keep.
+
+**The accent stripes are still RED pending Jac`s redraw** (`#ff4242` core/hot, `#9d0000` well)
+against canon `#ff7e1f`. Per ledger #261 the rail is **neutral steel and never tints** — the elbow
+carries the row signal. Recolouring changes no number on this page; the tile geometry is
+colour-independent.
+
+**Noted alternative — a pure CSS gradient, no asset at all.** Because the panel is 13 solid vertical
+bands, `linear-gradient(90deg, …)` with hard stops reproduces it *exactly* — measured
+pixel-identical to the tile, 13/13 stripes, zero seams, at every height and DPR above. It drops the
+image decode and makes recolouring a token swap. It is NOT the shipped form because art-pipeline
+rule 1 says export art rather than recreating it in CSS; this is flagged as a deliberate, measured
+exception for Jac to rule on, not taken unilaterally. Generated form kept at
+`assets/asm-channel-gradient.css`.
 
 ---
 
@@ -285,13 +295,17 @@ Reconstruction error 0 at 41×131, 41×1, 41×7, 41×40, 41×600 and 60×300. No
 | `asm-deck` | min **1316px**, grows only | **fixed 151px** |
 | `asm-rowboard` | min **122px** geometric, **240px** practical | **fixed 97px** |
 | `asm-headboard` | min 77px | flexible, min 102px |
-| `asm-channel` | fixed 41px | any |
+| `asm-channel` | **fixed 39px** | any (pure vertical extrusion — verified seamless) |
 
 ---
 
 ## 5. CONDUIT RAIL — the decision (ledger #257)
 
-**YES. Ship `asm-channel` as one repeating tile. Stop shipping it as a 131px-tall image.**
+**YES. Ship `asm-channel` as one repeating tile. Stop shipping it as a 140px-tall image.**
+
+> **Updated 2026-08-05:** the decision holds and is now render-verified, but the dimensions below
+> are off — the rail is **39×140**, not 41×131. Both figures came from PNG measurements. See the
+> `asm-channel` CSS block above for the verified form.
 
 The measurement is unambiguous: **all 131 rows are byte-identical** (max row-to-row delta 0, per-column
 std 0.0000 down every sampled column). The panel is a pure vertical extrusion of a single 41px
@@ -347,7 +361,7 @@ just at the edges.
 | `asm-deck` | **x 1091–1117** — the 19px strip of plain steel between the nameplate's right edge (x1081) and the right chevron notch (x1114) |
 | `asm-rowboard` | **x 56–404** — the whole screen corridor, now the text and slots are out of the art. This is the **marquee viewport** (#266): keep it absolutely free of decoration, scrolling glyphs pass through it. |
 | `asm-headboard` | **x 30–194** free of decoration; **rows 43–81** free of ANY content on both side rails |
-| `asm-channel` | **x 2–7** — the 6px flat #151618 channel floor |
+| `asm-channel` | n/a — it is a tile, not a slice. The whole 39px profile repeats; there is no corridor to protect. |
 
 Give each of these a **named spacer frame in Figma** so it cannot be closed up by accident. The deck's
 corridor has 5px and 4px of slack; a single stray drop shadow drifting into it breaks the head at every
