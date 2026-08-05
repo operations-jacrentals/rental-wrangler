@@ -177,6 +177,76 @@ rule 1 says export art rather than recreating it in CSS; this is flagged as a de
 exception for Jac to rule on, not taken unilaterally. Generated form kept at
 `assets/asm-channel-gradient.css`.
 
+### asm-elbow — conduit elbow (FIXED SIZE, tinted) — VERIFIED 2026-08-05
+
+Not sliced. Fixed `224×157` (the frame is 223.43×156.29; Figma rounds the export up — use the
+asset's own size). **This is the part that carries the row signal** — per ledger #252/#261 the
+channel stays neutral steel and the elbow is the branch point where the row's colour surfaces.
+
+Ships as **four stacked layers**, painted in Figma's own paint order:
+
+```css
+.halo-elbow { position: relative; width: 224px; height: 157px; }
+.halo-elbow > i { position: absolute; inset: 0; display: block; }
+
+.halo-elbow .l-under { background: url("assets/asm-elbow-plate-under.svg") no-repeat 0 0/224px 157px; }
+.halo-elbow .l-well  { background: var(--row-hue-well);
+                       mask: url("assets/asm-elbow-well-mask.svg")   no-repeat 0 0/224px 157px; }
+.halo-elbow .l-sig   { background: var(--row-hue);
+                       mask: url("assets/asm-elbow-signal-mask.svg") no-repeat 0 0/224px 157px; }
+.halo-elbow .l-over  { background: url("assets/asm-elbow-plate-over.svg") no-repeat 0 0/224px 157px; }
+```
+```html
+<div class="halo-elbow"><i class="l-under"></i><i class="l-well"></i><i class="l-sig"></i><i class="l-over"></i></div>
+```
+
+| Layer | Paths | Bytes | |
+|---|---:|---:|---|
+| `asm-elbow-plate-under.svg` | 2 | 5,277 | steel that sits BELOW the signal |
+| `asm-elbow-well-mask.svg` | 2 | 2,315 | white silhouette → `var(--row-hue-well)` |
+| `asm-elbow-signal-mask.svg` | 5 | 2,510 | white silhouette → `var(--row-hue)` |
+| `asm-elbow-plate-over.svg` | 40 | 19,618 | steel that OCCLUDES the signal |
+
+2 + 2 + 5 + 40 = **49 = the original path count.** Nothing was dropped in the split.
+
+**Why two masks and not one.** The accent is two-tone — 5 paths `#FF4242` and 2 paths `#9D0000`.
+A single mask flattens them, and luminance-encoding the darker tone into one mask cannot work: a
+tint composited over any base can never reach `#9D0000`'s zero green/blue. Two masks let the shade
+be its own token, and keep the choice of how the well behaves per state open.
+
+**Why the plate is split in two.** Path order in the source interleaves steel and accent —
+`steel(0,1) · well(2) · steel(3) · bright(4,5,6) · steel(7–24) · well(25) · bright(26,27) ·
+steel(28–48)`. Bright paints above well in both clusters, and steel paints above the accent at
+several indices. Collapsing all steel under all accent produced a **visible wrong-colour block**
+(1,816 px reading `#9d0000` where the source is `#151618`). Splitting steel into under/over and
+putting bright above well fixes it.
+
+**Fidelity, measured.** The four layers recomposited with the source colours and pixel-diffed
+against the unsplit original: **0.791% of pixels differ at all, max channel delta 36, only 0.031%
+differ by more than 16.** All residual difference is anti-aliasing at shared edges — inherent to
+splitting paths across compositing layers, since each layer antialiases against transparency
+before compositing. No wrong colours remain. This is a *compare-by-distance* result, per
+art-pipeline rule 1 — do not chase it to zero.
+
+**Use explicit child elements, not `::before`/`::after`.** Pseudo-elements stack as first and last
+child, so a real child element lands BETWEEN them — which silently put the signal mask above the
+top plate on the first attempt.
+
+### asm-cap — conduit end cap (FIXED SIZE, never tints) — VERIFIED 2026-08-05
+
+```css
+.halo-cap { width: 39px; height: 22px;
+            background: url("assets/asm-cap.svg") no-repeat 0 0/39px 22px; }
+```
+
+**The asset is `39×22`, but the Figma frame reads `39×18.8`.** `clipsContent` is false and the
+rotated fitting overhangs the frame bottom by 3px, so Figma expands the export to contain it.
+**Size the cap at 22px, not 18.8px** — using the frame height squashes or clips the fitting.
+
+**No mask, no tint.** The cap's 10 paths contain zero accent colours — only `#151618`, `#3D4146`,
+`#575D64`, `#7A828C`. It is pure steel and stays neutral in every row state, which independently
+confirms ledger #252: only the elbow carries the signal.
+
 ---
 
 ## 3. What FAILED verification, and what changed
