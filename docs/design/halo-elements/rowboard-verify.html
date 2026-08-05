@@ -1,0 +1,27 @@
+<meta charset="utf-8">
+<style>
+  body{background:#15171a;color:#d9dde2;font:13px/1.5 ui-monospace,monospace;margin:0;padding:20px}
+  h2{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#8b939c;margin:22px 0 8px;font-weight:600}
+  .row{margin:0 0 14px}
+  .cap{color:#6f777f;font-size:11px;margin:0 0 4px}
+  .board{
+    height:97px; box-sizing:border-box;
+    border-image-source:url("assets/asm-rowboard-plate.svg");
+    border-image-slice:0 66 0 56 fill;
+    border-image-width:0 66px 0 56px;
+    border-image-repeat:stretch;
+    display:flex; align-items:center;
+  }
+  .txt{margin-left:70px;font:600 22px/1 Archivo,system-ui,sans-serif;letter-spacing:.08em;color:#ff6a6a}
+  .naive{height:97px;background-size:100% 100%;background-repeat:no-repeat;
+         background-image:url("assets/asm-rowboard-plate-stretch.svg")}
+</style>
+<h2>9-slice · border-image-slice: 0 66 0 56 fill · stretch</h2>
+<div id="a"></div>
+<h2>naive scale (control)</h2>
+<div id="b"></div>
+<script>
+const widths=[122,180,240,380,470,700,1100,1600];
+a.innerHTML=widths.map(w=>`<div class="row"><div class="cap">${w}px${w===470?'  (native)':''}${w===122?'  (floor 56+66)':''}</div><div class="board" style="width:${w}px"><span class="txt">PROMISED</span></div></div>`).join('');
+b.innerHTML=widths.map(w=>`<div class="row"><div class="cap">${w}px</div><div class="naive" style="width:${w}px"></div></div>`).join('');
+</script>

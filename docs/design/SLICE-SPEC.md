@@ -20,7 +20,7 @@ CONDUIT RAIL decision.
 |---|---|---:|---:|---:|---:|---|---|---|---|
 | `asm-housing` | 1171×151 | **62** | 147 | **81** | 150 | stretch | stretch | none (near-rhythm 460/440/459px — rejected) | high |
 | `asm-deck` | 1335×151 | 28 | **221** | 20 | **1095** | stretch | stretch | none on the growable axis (3px scanline is inside the fixed left corner) | high |
-| `asm-rowboard` | 684×97 | 0 | 72 | 0 | **500** | stretch | stretch | none H; 3px scanline V (unused — V does not scale) | high |
+| `asm-rowboard` | 470×97 | 0 | 66 | 0 | 56 | stretch | stretch | none H (tile is uniform in x — stretch is lossless); 3px scanline V (never rescales, slice V = 0) | **verified 2026-08-05** |
 | `asm-headboard` | 241×141 | **43** | 47 | **59** | 30 | stretch | **round** | **3px** horizontal scanline, vertical axis, r = 1.00 @ lag 3/6/9 | high |
 | `asm-channel` | 41×131 | 0 | 35 | 0 | 4 | stretch | stretch | none (both axes continuous) | high |
 
@@ -80,21 +80,46 @@ Paths assume `assets/halo/`. Adjust the URL only — never the numbers.
 }
 ```
 
-### asm-rowboard — row message board (HEIGHT-FIXED 97px, min 572px)
+### asm-rowboard — row message board (HEIGHT-FIXED 97px, min 122px) — VERIFIED 2026-08-05
+
+Source art `470×97`, text-free and slot-free (see ledger #268). The old `684×97 / 0 72 0 500`
+numbers were measured off a **contaminated export** — two stray duplicate `Slots — signal row`
+instances hung 189px off the left edge, making render bounds 683.4 wide. That 684 is where the
+figure came from. Do not resurrect those numbers.
 
 ```css
 .halo-rowboard {
   box-sizing: border-box;
   height: 97px;               /* FIXED — both chamfers run the full painted height */
-  min-width: 572px;
+  min-width: 122px;           /* geometric floor = 56 + 66; see note on practical minimum */
   border-style: solid;
-  border-width: 0 72px 0 500px;
-  border-image-source: url("assets/halo/asm-rowboard.png");
-  border-image-slice: 0 72 0 500 fill;
-  border-image-width: 0 72px 0 500px;
-  border-image-repeat: stretch stretch;
+  border-width: 0 66px 0 56px;
+  border-image-source: url("assets/asm-rowboard-plate.svg");
+  border-image-slice: 0 66 0 56 fill;
+  border-image-width: 0 66px 0 56px;
+  border-image-repeat: stretch;
 }
 ```
+
+**Why the cuts are where they are.** The innermost feature is `ring core`, whose bottom-left
+chamfer ends at x=49.85 and whose top-right chamfer begins at x=409.72 (→ 60.28 from the right
+edge). Add its 2.8 stroke (1.4 each side) and its 0.81 σ blur, and the minimum safe cuts are
+L≥53.7 / R≥64.1. Rounded up to **56 / 66** for margin.
+
+**Why `stretch` and not `round`.** The scanline tile was decoded: 4×12px, and **every row is a
+single constant colour across all 4 columns** — pure horizontal banding (8 rows clear, 4 rows
+black @ 20%). There is no horizontal information to preserve, so stretching the centre is
+*lossless*, and `round` would only risk a partial tile at the seam for no gain. Vertically the
+3px pitch never rescales at all, because the vertical slice is 0 and the height is locked.
+
+**Practical minimum vs geometric floor.** 122px is where the two borders butt and the centre
+corridor is zero-width. It renders correctly but shows no screen. For a marquee (#266) budget
+**≥240px** so there is a usable aperture for text to scroll through.
+
+**Verification performed:** rendered at 122 / 180 / 240 / 380 / 470 / 700 / 1100 / 1600px against
+a `preserveAspectRatio="none"` naive-scale control. Chamfers hold 45° and the ring stroke holds
+constant thickness at every width; the control rakes the chamfers flat and balloons the stroke
+by 1100px.
 
 ### asm-headboard — group headboard (width-flexible AND height-flexible)
 
@@ -181,6 +206,12 @@ ovals, PROMISED smears, and the 3px nameplate scanline moirés. **Pin the height
 
 ### `asm-rowboard` — FAILED (the fill region contained the baked wordmark)
 
+> **SUPERSEDED 2026-08-05 — kept as a record of the failure, not as current guidance.** The
+> analysis below is sound about the *proposal it rejected*, but it was reasoning about a
+> contaminated 684×97 export. With the text stripped at export time and the stray slot rows
+> hidden, the wordmark is not in the art at all and the fill region is clean glass end to end.
+> Current verified numbers are in the `asm-rowboard` CSS block above.
+
 The proposal claimed x250–617 was "one continuous band, max column diff 3/255". It is not: the baked
 **"PROMISED"** wordmark sits at x353–489 inside that claimed band with column-to-column deltas up to
 **178/255**. The proposal's own geometry paragraph contradicted its own uniformity claim.
@@ -240,7 +271,7 @@ Reconstruction error 0 at 41×131, 41×1, 41×7, 41×40, 41×600 and 60×300. No
 | Panel | Problem | Verdict |
 |---|---|---|
 | `asm-headboard` | "FAILED" baked into the plate, dead centre | **Re-export a text-free plate.** Blocking — the corrected numbers do not pass without it. Group name becomes live DOM text over the panel. |
-| `asm-rowboard` | "PROMISED" baked into the plate | **Re-export the plate empty.** The corrected slice works around the text by freezing it, but that pins 500px of fixed left border. Text-free art drops sliceLeft toward ~48 and the floor with it. |
+| `asm-rowboard` | ~~"PROMISED" baked into the plate~~ **RESOLVED 2026-08-05 — and it was never the real blocker.** | The label is a real `TEXT` node, so `visible=false` before `exportAsync` strips it with **no redraw** (ledger #263) — it was only 4.4 KB of a 664 KB export. The actual blocker was two stray duplicate `Slots — signal row` instances hanging 189px off the left edge (ledger #267/#268); hiding them took the export to 3.9 KB and dropped the floor from 572px to 122px. Verified numbers above. |
 | `asm-housing` | **The interior staircase lives inside the stretch zone.** 5 jogs/diagonals at pitch 460/440/459 — a *near*-rhythm, not a repeat, with the first instance fused to the left cap and the last truncated by the right cap. It cannot be stretched (the 128×76 diagonal rakes 23° at w=1500 and 79° at w=400) and it cannot be `round`ed (no whole-tile count exists). | **REDRAW. Decision: option (a).** Move ALL diagonals, jogs and joints into x<150 / x>1024 and leave the middle as plain steel plus a straight horizontal groove. The ends carry the sculpting — which is what the yard data-plate reads like anyway. Do NOT attempt option (b) (a true seamless tile at integer pitch) — it costs more and buys a motif the language doesn't need. |
 | `asm-deck` | Every piece of content — 3 chips, nameplate, "PROMISED" — is frozen in a 1100px fixed left corner. Widest uniform corridor in the whole 1294px painted panel is 19px. | **REDRAW.** Pull the chips and the nameplate OUT of the exported art into live DOM, leaving a plain steel shell with a wide uniform mid-run. sliceLeft then drops from 1095 to roughly 130 and the min-width drops with it. Until then: ship the corrected slice above **plus** the `contain` fallback below 1316px. |
 | `asm-housing` (vertical) | No feature-free row band exists anywhere in the interior — the panel is decorated continuously y22–125. | Fixed-height part. A height change cannot be absorbed invisibly by any cut. |
@@ -252,7 +283,7 @@ Reconstruction error 0 at 41×131, 41×1, 41×7, 41×40, 41×600 and 60×300. No
 |---|---|---|
 | `asm-housing` | min 650px (hard floor 297px) | **fixed 151px** |
 | `asm-deck` | min **1316px**, grows only | **fixed 151px** |
-| `asm-rowboard` | min **572px** | **fixed 97px** |
+| `asm-rowboard` | min **122px** geometric, **240px** practical | **fixed 97px** |
 | `asm-headboard` | min 77px | flexible, min 102px |
 | `asm-channel` | fixed 41px | any |
 
@@ -314,7 +345,7 @@ just at the edges.
 |---|---|
 | `asm-housing` | **x 114–268** and **x 1014–1034** (vertical cuts); **y 60–71** and **y 86–98** on BOTH flanks, x<150 and x>1024 (horizontal cuts) |
 | `asm-deck` | **x 1091–1117** — the 19px strip of plain steel between the nameplate's right edge (x1081) and the right chevron notch (x1114) |
-| `asm-rowboard` | **x 494–618** — the clean glass right of the wordmark |
+| `asm-rowboard` | **x 56–404** — the whole screen corridor, now the text and slots are out of the art. This is the **marquee viewport** (#266): keep it absolutely free of decoration, scrolling glyphs pass through it. |
 | `asm-headboard` | **x 30–194** free of decoration; **rows 43–81** free of ANY content on both side rails |
 | `asm-channel` | **x 2–7** — the 6px flat #151618 channel floor |
 
