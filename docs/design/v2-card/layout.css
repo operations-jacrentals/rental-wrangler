@@ -1,0 +1,417 @@
+/* ==========================================================================
+   FAITHFUL CARD — coordinate composition, NOT a flex layout.
+   Every rule below places a piece at its MEASURED Figma absolute position
+   (get_metadata, fileKey cc3TcK2F2a8qSbCAstzcA5, page "V2 — Assembly x
+   Tier-01", node 438:274). Coordinates are Figma-canvas px inside a single
+   1500px-wide, 2117px-tall stage — the SAME stage scales down for the
+   380px real-card render via one `transform: scale()` on .fc-stage, so nothing
+   drifts relative to anything else (task's own requirement).
+
+   MEASURED GEOMETRY (all numbers read directly off get_metadata, 2dp):
+     Card (438:274)                         1500 x 2117
+     Header chrome (445:919)                 0,0            1500 x 363.29
+     Group block N (438:275/326/377)         58.65,{353.29,893.29,1433.29}  1651 x 606
+       (block's own frame is 1651 wide — WIDER than the 1500 card. It is
+       clipped by the card's rounded mask; Figma's own screenshot of the
+       block confirms visible/painted width is only 1441.35 = 1500-58.65,
+       so the stage clips at 1500 exactly like the card frame does.)
+     Rail (02 · CONDUIT RAIL, block-relative)   40,60           231.27 x 421
+       channel (rail-relative)                  149,68          41 x 131
+       elbow → subitem 1 (rail-relative)         40,138          231.27 x 187
+       elbow → subitem 2 (rail-relative)         40,294          231.27 x 187
+     Main item (block-relative)                 89,40           1335 x 151
+       FAILED board (block-relative)             1179,53         241 x 141
+                                                  = (main-relative 1090,13)
+     Subitem 1 (block-relative)                  240.15,196      1170.85 x 151
+       hexicon (block-rel 310.67,251 -> sub-rel  70.52,55)       53.93 x 51
+       name    (block-rel 368.75,247 -> sub-rel 128.60,51)       312.16 x 49
+       message board — TRAP: node 429:77's OWN frame is 487.42x97 at
+         block-rel x=905.95, but its painted extent starts 193.93px further
+         LEFT (build.py's confirmed trap) -> true left = 905.95-193.93=712.02,
+         sub-relative = 712.02-240.15 = 471.87                  683.35 x 97
+     Subitem 2 (block-relative)                  240.15,352      1170.85 x 151
+       (identical internal offsets to subitem 1 — row pitch 352-196=156px,
+       matching the task brief's "156px row pitch")
+     Footer (454:919)                            0,1970          1500 x 146 (actual
+       measured — NOT the 189-tall figure in the brief; that number belongs
+       to a different footer variant this file does not currently show)
+   ========================================================================== */
+
+:root {
+  --card-w: 1500px;
+  --card-h: 2117px;
+  --header-h: 363.29px;
+  --footer-y: 1970px;
+  --footer-h: 146px;
+  --block-y1: 353.29px;
+  --block-y2: 893.29px;
+  --block-y3: 1433.29px;
+  --block-x: 58.65px;
+  --bg: #05070a;
+}
+
+* { box-sizing: border-box; }
+
+@property --row-hue {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #8b94a3;
+}
+
+body { background: #05070a; margin: 0; font-family: "Archivo", "Helvetica Neue", sans-serif; }
+
+/* ---- outer scaffolding: lets the SAME stage render at 1500px (Figma
+   scale, 1:1) or at 380px (real card width) purely via CSS transform, so
+   nothing in the composition itself has to know its own render size. ---- */
+.fc-viewport {
+  overflow: hidden;
+  background: #05070a;
+}
+.fc-stage {
+  position: relative;
+  width: var(--card-w);
+  height: var(--card-h);
+  transform-origin: top left;
+  background: #0a0d11;
+  overflow: hidden; /* clips the 1651-wide group blocks at the card edge,
+                        exactly like Figma's own rounded-mask clip does */
+}
+
+/* ---- chrome: header + footer are captured PNGs of the imported Tier-01
+   chrome nodes (445:919 / 454:919) — out of scope for the vector asset
+   gate (task's asset list is deck/headboard/housing/hexicon/channel/
+   rowboard/elbow only), placed at their measured absolute coordinates. ---- */
+.fc-header {
+  position: absolute; left: 0; top: 0;
+  width: var(--card-w); height: var(--header-h);
+  background-image: var(--fc-header-image);
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+}
+.fc-footer {
+  position: absolute; left: 0; top: var(--footer-y);
+  width: var(--card-w); height: var(--footer-h);
+  background-image: var(--fc-footer-image);
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+}
+
+/* ==========================================================================
+   GROUP BLOCK — one steel MAIN ITEM (head) + rail + two SUBITEMs (rows).
+   Absolutely positioned at its measured block-x / block-yN.
+   ========================================================================== */
+.fc-block {
+  position: absolute;
+  left: var(--block-x);
+  width: 1651px;   /* real frame width, wider than the card — intentional */
+  height: 606px;
+  --row-hue: #8b94a3;
+}
+.fc-block[data-block="1"] { top: var(--block-y1); }
+.fc-block[data-block="2"] { top: var(--block-y2); }
+.fc-block[data-block="3"] { top: var(--block-y3); }
+
+.fc-block[data-state="overdue"] { --row-hue: #ff4242; }
+.fc-block[data-state="waiting"] { --row-hue: #6394cc; }
+.fc-block[data-state="due"]     { --row-hue: #eed44b; }
+
+/* ---- 01 MAIN ITEM (the "head" — steel, opens by MOVING, never lights,
+   ledger #168/#146) ---- */
+.fc-main {
+  all: unset;
+  position: absolute;
+  left: 89px; top: 40px;
+  width: 1335px; height: 151px;
+  cursor: pointer;
+  display: block;
+  background-image: var(--asm-deck-image);
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  transform: translateY(0);
+  transition: transform 140ms ease-out;
+}
+.fc-main::after { /* the tinted ring — the ONLY part of the head allowed
+   to read --row-hue, per the deck asset's own two-layer split */
+  content: '';
+  position: absolute; inset: 0;
+  -webkit-mask-image: var(--asm-deck-mask);
+  mask-image: var(--asm-deck-mask);
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  background: var(--row-hue);
+  pointer-events: none;
+}
+.fc-main:hover { transform: translateY(1px); }
+.fc-main:active { transform: translateY(1.5px); }
+.fc-main:focus-visible { outline: 2px solid #ff7e1f; outline-offset: -2px; }
+
+/* DEFECT 2/3 fix (2026-08-05): node 438:315 "Main item · FAILED board" — its Figma layer
+   NAME is stale, but its live screenshot (figma get_screenshot, node 438:315) reads
+   "FIELD CALLS" (block 1 / red), "RESERVED" (block 2 / blue, ledger colour #6394cc), "NOT
+   READY" (block 3 / yellow, #eed44b) — this box at block-relative (1179,53) 241x141 IS the
+   GROUP NAME PLATE (ledger #247: name only, never a rolled-up signal). The position was
+   already correct; what was wrong was the CONTENT bound to it (the rolled-up signal count)
+   and the separate eyeballed .fc-group-label element bolted on top of/past it, clipped at
+   the card edge. That phantom element is removed below — this box now hosts the group
+   name, and the signal readout moves to .fc-signal (the deck's own message-board position,
+   confirmed by measuring block1-ref-full.png: paint bounds ~(524,63)-(1203,174) block-
+   relative match computed (535,72)-(1203,169) within border-stroke tolerance). */
+.fc-main-board {
+  position: absolute; left: 1090px; top: 13px; /* 1179-89, 53-40 */
+  width: 241px; height: 141px;
+  background-image: var(--asm-headboard-image);
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+.fc-main-board__text {
+  font-family: "Archivo", sans-serif;
+  font-weight: 800;
+  font-size: 26px;
+  line-height: 1.12;
+  letter-spacing: .01em;
+  white-space: normal;
+  padding: 0 14px;
+}
+
+/* ---- deck's own embedded message board ("6 OPEN" / "NOMINAL" / "7 OPEN") — the
+   ROLLED-UP SIGNAL, measured at main-relative (446,32) 668x97 (== DECK_MSGBOARD_OFFSET,
+   block-relative (535,72)-(1203,169), confirmed against block-ref-full.png pixels above).
+   The plate/scanline/gradient art is already baked into --asm-deck-image (asm-deck's own
+   DECK_MSGBOARD_SVG fragment, glyph-stripped); this is just the live text overlay. ---- */
+.fc-signal {
+  position: absolute; left: 446px; top: 32px;
+  width: 668px; height: 97px;
+  pointer-events: none;
+}
+.fc-signal-text {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-weight: 700; font-size: 26px; letter-spacing: .06em; text-align: center;
+  color: var(--row-hue);
+  text-transform: uppercase;
+}
+
+/* ---- 02 CONDUIT RAIL + ELBOWS ---- */
+.fc-rail {
+  position: absolute; left: 40px; top: 60px;
+  width: 231.27px; height: 421px;
+  pointer-events: none;
+}
+.fc-rail__channel {
+  position: absolute; left: 149px; top: 68px;
+  width: 41px; height: 131px;
+  background-image: var(--asm-channel-image);
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+}
+.fc-rail__channel::after {
+  content: '';
+  position: absolute; inset: 0;
+  -webkit-mask-image: var(--asm-channel-mask);
+  mask-image: var(--asm-channel-mask);
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  background: var(--row-hue);
+}
+.fc-rail .halo-elbow {
+  position: absolute;
+  left: 40px;
+  /* the elbow's OWN frame (429:52) is 231.27x187 — never squash it */
+}
+.fc-rail .halo-elbow[data-to="sub1"] { top: 138px; }
+.fc-rail .halo-elbow[data-to="sub2"] { top: 294px; }
+
+/* ---- 03/04 SUBITEM — the "row". Opens by LIGHTING (a coloured frame),
+   never moves, ledger #168. ---- */
+.fc-sub {
+  all: unset;
+  position: absolute;
+  left: 240.15px;
+  width: 1170.85px; height: 151px;
+  display: block;
+  cursor: default;
+}
+.fc-sub[data-sub="1"] { top: 196px; }
+.fc-sub[data-sub="2"] { top: 352px; }
+
+.fc-sub__housing {
+  position: absolute;
+  inset: 0;
+  background-image: var(--asm-housing-image);
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+}
+/* The row laser, split off the steel per ledger #217 (fix 2026-08-05) — see
+   assets.css for what each mask carries. ::before is the deep well (behind),
+   ::after is the hot core (in front); neither silhouette overlaps the other
+   so paint order doesn't matter, but this mirrors the source depth. Only
+   these two pseudo-elements read --row-hue — the steel background above
+   never does. */
+.fc-sub__housing::before,
+.fc-sub__housing::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+.fc-sub__housing::before {
+  background: hsl(from var(--row-hue) h s 31%);
+  -webkit-mask-image: var(--asm-housing-laser-well-mask);
+  mask-image: var(--asm-housing-laser-well-mask);
+}
+.fc-sub__housing::after {
+  background: var(--row-hue);
+  -webkit-mask-image: var(--asm-housing-laser-core-mask);
+  mask-image: var(--asm-housing-laser-core-mask);
+}
+.fc-sub__frame { /* the laser frame — glass, tinted, allowed to glow */
+  position: absolute; inset: 0;
+  -webkit-mask-image: var(--asm-rowboard-mask);
+  mask-image: var(--asm-rowboard-mask);
+  -webkit-mask-size: 683.35px 97px;
+  mask-size: 683.35px 97px;
+  -webkit-mask-position: 471.87px 25px;
+  mask-position: 471.87px 25px;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  background: var(--row-hue);
+  pointer-events: none;
+}
+.fc-sub__board { /* the plate under the laser (message board static art) */
+  position: absolute;
+  left: 471.87px; top: 25px;
+  width: 683.35px; height: 97px;
+  background-image: var(--asm-rowboard-image);
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+.fc-sub__hexicon {
+  position: absolute; left: 70.52px; top: 55px;
+  width: 53.93px; height: 51px;
+  background-image: var(--asm-hexicon-image);
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+.fc-sub__name {
+  position: absolute; left: 128.6px; top: 51px;
+  width: 312.16px; height: 49px;
+  display: flex; align-items: center;
+  font-family: "Archivo", sans-serif;
+  font-weight: 700; font-size: 22px; line-height: 1.1;
+  color: #eef2f7;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   OPEN / CLOSE physics (ledger #168, #146/#251, #217) — re-hosted on the
+   coordinate geometry above, same contract as the reused interaction
+   layer: HEAD moves, ROWS light, rail drops in, subitems slide in staggered,
+   power-on sweeps the row's --row-hue in from grey.
+   ========================================================================== */
+/* DEFAULT STATE = Figma's own static composition: rail + both subitems are
+   VISIBLE (438:275's own render shows a fully-assembled block, not a
+   collapsed accordion — confirmed against block1-ref.png). The open/close
+   toggle is an ADDED interaction affordance (Jac's card.js precedent) that
+   COLLAPSES to just the main item — so collapse is the exceptional state,
+   not the default. */
+.fc-block.is-collapsed .fc-rail,
+.fc-block.is-collapsed .fc-sub { display: none; }
+
+/* DEFECT 2 fix (2026-08-05): the old .fc-group-label rule (eyeballed left:1335/top:40,
+   overlapping the headboard and clipping at the card edge) is REMOVED — there is no such
+   node in the Figma tree (get_metadata on 438:275/326/377 shows only rail/main-item/sub1/
+   sub2; get_metadata on 438:315 itself lists a single "readout" text child, nothing else).
+   The group name now lives on .fc-main-board__text (measured position, see above) and the
+   rolled-up signal on .fc-signal-text (also measured, see above) — both real, both fit
+   within the block's own painted extent, nothing left to clip. */
+
+.fc-main-board__text {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+  text-transform: uppercase;
+  color: var(--row-hue);
+}
+.fc-sub__board-text {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-weight: 700; font-size: 15px; letter-spacing: .04em; text-align: center;
+  color: var(--row-hue);
+  pointer-events: none;
+  text-transform: uppercase;
+}
+
+@keyframes fc-rail-drop-in {
+  from { transform: translateY(-14px); opacity: 0; }
+  to   { transform: translateY(0);     opacity: 1; }
+}
+@keyframes fc-sub-slide-in {
+  from { transform: translateX(56px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+@keyframes fc-power-on {
+  from { opacity: 0; filter: saturate(0) brightness(0.6); }
+  to   { opacity: 1; filter: saturate(1) brightness(1); }
+}
+@keyframes fc-rail-drop-out {
+  from { transform: translateY(0);     opacity: 1; }
+  to   { transform: translateY(-14px); opacity: 0; }
+}
+@keyframes fc-sub-slide-out {
+  from { transform: translateX(0);    opacity: 1; }
+  to   { transform: translateX(56px); opacity: 0; }
+}
+
+/* EXPANDING (removing is-collapsed) */
+.fc-block.is-anim-expand .fc-rail__channel,
+.fc-block.is-anim-expand .halo-elbow {
+  animation: fc-rail-drop-in 420ms ease-out both;
+}
+.fc-block.is-anim-expand .fc-sub {
+  animation: fc-sub-slide-in 360ms ease-out both;
+}
+.fc-block.is-anim-expand .fc-sub[data-sub="1"] { animation-delay: 160ms; }
+.fc-block.is-anim-expand .fc-sub[data-sub="2"] { animation-delay: 250ms; }
+.fc-block.is-anim-expand .fc-sub__frame {
+  animation: fc-power-on 220ms ease-out backwards;
+}
+.fc-block.is-anim-expand .fc-sub[data-sub="1"] .fc-sub__frame { animation-delay: 520ms; }
+.fc-block.is-anim-expand .fc-sub[data-sub="2"] .fc-sub__frame { animation-delay: 610ms; }
+
+/* COLLAPSING (adding is-collapsed) */
+.fc-block.is-anim-collapse .fc-sub {
+  animation: fc-sub-slide-out 360ms ease-in both;
+}
+.fc-block.is-anim-collapse .fc-sub[data-sub="2"] { animation-delay: 0ms; }
+.fc-block.is-anim-collapse .fc-sub[data-sub="1"] { animation-delay: 90ms; }
+.fc-block.is-anim-collapse .fc-rail__channel,
+.fc-block.is-anim-collapse .halo-elbow {
+  animation: fc-rail-drop-out 420ms ease-in both;
+  animation-delay: 450ms;
+}
+
+.fc-main[aria-expanded="true"] .fc-chevron { transform: rotate(90deg); }
+.fc-chevron { transition: transform 200ms ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .fc-block.is-anim-open .fc-rail__channel,
+  .fc-block.is-anim-open .halo-elbow,
+  .fc-block.is-anim-open .fc-sub,
+  .fc-block.is-anim-close .fc-sub,
+  .fc-block.is-anim-close .fc-rail__channel,
+  .fc-block.is-anim-close .halo-elbow { animation: none; }
+}
