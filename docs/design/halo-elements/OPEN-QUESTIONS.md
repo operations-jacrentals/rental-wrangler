@@ -26,6 +26,13 @@ not structure — the rail sizes itself to whatever is there.
 
 ## 3. Animation timing
 
+> **⚠ SUPERSEDED by ledger #256 (2026-08-05).** The model below — *rail drops, then rows slide
+> in FROM THE RIGHT* — is no longer current. Jac fused the elbow to its row: rows now hide
+> BEHIND the group header and slide **DOWN** into place, so the elbows read as riding the
+> channel down carrying the rows they are stuck to. The motion is vertical only. The stagger,
+> the per-row power-on as each lands, and transform/opacity-only motion all carry over.
+> The timings below are still the working values; the ORDER is what changed.
+
 **Guessed**, from *"the rail drops down while the rows slide in from the right, and as
 the rows reach the elbows the rows power on"*:
 

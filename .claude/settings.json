@@ -92,8 +92,6 @@
       "Bash(md5sum:*)",
       "Bash(shasum:*)",
       "Bash(xxd:*)",
-      "Bash(env:*)",
-      "Bash(export:*)",
       "Bash(chmod:*)",
       "Bash(unzip:*)",
       "Bash(tar:*)",
