@@ -1,69 +1,67 @@
-# Next session — paste this as the opening message
+# Next session — paste everything below the rule
 
 ---
 
-Read the `art-pipeline` skill FIRST, before touching anything. It was written at the end of
-the last session and it is the method we are testing today. Then read ledger rows
-**#252–#257** in `docs/superpowers/specs/2026-07-20-decisions-ledger.md`.
+Read `docs/design/HANDOFF-2026-08-05.md` first, then the **`art-pipeline`** skill. Then ledger
+rows **#238–#260**. Don't skim them — they are the method and the traps, and re-deriving either
+is what made yesterday slow.
 
-**The goal today is SPEED, and speed is the thing being measured.** Yesterday it took hours
-to get one card out of Figma, mostly through avoidable rework. The `art-pipeline` skill
-exists so that never repeats. Today we prove the method: **artwork in Figma → a live
-published artifact, in minutes, without a fidelity argument.**
+Branch `claude/design-system-phase-1-vcgald`, PR #798, 87 commits, unmerged. Nothing is live.
 
-## The test
+## Today's job: prove the pipeline is fast
 
-Take **one** component I nominate from the Figma file `cc3TcK2F2a8qSbCAstzcA5` and carry it
-end to end:
+Yesterday one card took hours, almost all of it rework. `art-pipeline` exists so that never
+repeats. Today we measure it.
 
-1. **Export it** with Figma's own `exportAsync({format:'SVG_STRING'})`. Do NOT hand-walk
-   `vectorNetwork.regions`, and do NOT recreate it in CSS. Export is the road; hand-authoring
-   is not a fallback we are taking.
-2. **Split it** — static art baked as one z-ordered `background-image` in Figma's paint
-   order; anything that changes with state as a white-silhouette `mask-image` filled with
-   `var(--row-hue)`. Nothing state-coloured baked in (#217).
-3. **Make it resize** — `border-image` 9-slice. Structure `stretch`, rhythm `round`.
-   Per-axis where they differ.
-4. **Publish it** as an interactive artifact I can open and resize.
+**Take ONE component from Figma `cc3TcK2F2a8qSbCAstzcA5` all the way to a published,
+interactive artifact — and report the wall-clock time.**
 
-**Start a timer at step 1 and report the wall-clock time at step 4.** If it takes more than
-about 30 minutes for a single component, the method has failed and I want to know *which step*
-ate the time — not a heroic recovery.
+Use **`asm-headboard`**, **`asm-rowboard`** or **`asm-channel`**. Those three slice cleanly
+today. Don't pick the deck or the housing — their artwork has to be redrawn first
+(`SLICE-SPEC.md` §4), and that's my job, not yours.
 
-## Rules that make it fast
+The four steps:
 
-- **The exported asset IS ground truth.** Do not pixel-diff it against a Figma PNG and argue
-  about tones. Yesterday two "failures" were a uint8 overflow in the comparison, not real.
-  Fidelity comes from exporting, not from matching afterwards.
-- **Render the node and LOOK at it before building from it.** Frame bounds are not painted
-  extent. One pass built a whole component from a 41×158 sliver believing it was the elbow.
-- **Use `get_design_context` for anything instanced.** `get_metadata` reports the
-  *un-overridden component* position and will lie to you (the channel read 149px, was 108px).
-- **One agent owns geometry AND assets.** Splitting those across two agents is what produced
-  the wrong-layout rebuild — nobody owned the composition.
-- Do not chase tone counts. Do not animate a `filter: drop-shadow()`. Do not bake text into
-  art. All three are already-paid-for lessons in the skill.
+1. **Export** with Figma's own `exportAsync({format:'SVG_STRING'})`. Do **not** hand-walk
+   `vectorNetwork.regions`. Do **not** recreate it in CSS. Export is the road, not a fallback.
+2. **Split** — static art baked as one z-ordered `background-image` in Figma's paint order;
+   anything state-coloured as a white-silhouette `mask-image` filled with `var(--row-hue)`.
+   Nothing state-coloured baked in (#217).
+3. **Make it resize** — `border-image` 9-slice using the numbers already decided in
+   `docs/design/SLICE-SPEC.md`. Don't re-derive them; they were measured and adversarially
+   verified. Structure `stretch`, rhythm `round`.
+4. **Publish** an artifact I can open and resize.
 
-## What "done" looks like
+**Start a timer at step 1. Report the elapsed time at step 4.** If it runs past ~30 minutes for
+one component, stop and tell me **which step ate it** — I want the diagnosis, not a heroic
+recovery.
 
-A published artifact, the component resizing correctly at several widths with its decor
-repeating rather than smearing, per-state tinting working, and a one-line time report.
+## The five rules that keep it fast
 
-## Then, if that clears
+1. **The exported asset IS ground truth.** Do not pixel-diff it against a Figma PNG and argue
+   about tone counts. Two "failures" yesterday were a uint8 overflow in the comparison, and
+   Figma's export quantizes translucent washes into bands one channel value apart anyway.
+   Compare by distance, not identity — or better, don't compare at all.
+2. **Render the node and LOOK at it before building from it.** Frame bounds are not painted
+   extent. A whole component was once built from a 41×158 sliver believing it was the elbow.
+3. **Use `get_design_context` for anything instanced.** `get_metadata` returns the
+   *un-overridden component* position and will lie (the channel read 149px, was 108px).
+4. **One agent owns geometry AND assets.** Splitting them is what produced the wrong-layout
+   rebuild I rejected — nobody owned the composition.
+5. **Don't chase tone counts, don't animate a `filter: drop-shadow()`, don't bake text into
+   art.** All three are already-paid-for lessons in the skill.
 
-Tell me what it would take to run the same method across the whole assembly, and whether the
-rail should be authored as a single repeating tile (see #257) — that changes how I draw it,
-so I need to decide before I do more Figma work.
+## Done looks like
 
-## Where things stand
+A published artifact; the component resizing correctly across several widths with its decor
+repeating rather than smearing; per-state tinting working; and one line giving the time.
 
-- Branch `claude/design-system-phase-1-vcgald`, PR #798. Tree clean.
-- The current build is committed at `docs/design/v2-card/` — serve the folder, open
-  `card.html`. Its README carries the traps.
-- Rows are fused to their elbows (#256); they hide behind the group header and ride the
-  channel down. The channel reveals as they descend.
-- Open and mine to decide, not yours: whether the housing/deck/board panels get authored
-  with uniform slice bands at their edges (9-slice needs somewhere clean to cut), and whether
-  the conduit rail becomes one repeating tile.
+## Then
+
+Tell me what it would take to run the same method across the whole assembly — and confirm the
+rail tile spec in #259 (41×4, `repeat-y`, authored neutral and tinted per state) before I redraw
+it, since that changes what I draw.
+
+Don't start on the deck or housing redraws. Those are mine.
 
 ---
