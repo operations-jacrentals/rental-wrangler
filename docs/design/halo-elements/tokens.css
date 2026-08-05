@@ -45,6 +45,19 @@
   --circuit:   #070e16;
   --edge:      #0d1218;
 
+  /* --- steel knobs ------------------------------------------------------
+     The part sheets no longer carry literal steel hexes; each one is an
+     hsl() written against these four. The defaults below are the EXACT
+     original canvas — h212, full spread, no tint — so every preview and
+     every gate fixture renders byte-identical to before without linking
+     anything new. steel-skin.css is the opt-in that moves them.
+     Verified: at these values the assembly differs from the pre-rewrite
+     render by 323 of 821,712 px, max channel delta 1 (hsl rounding). */
+  --steel-h: 212;
+  --steel-s: 30%;
+  --steel-tint: 1;
+  --steel-spread: 1;
+
   --mono: Consolas, "Cascadia Mono", "DejaVu Sans Mono", "Courier New", monospace;
   --sans: Roboto, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
 }

@@ -1,0 +1,86 @@
+/* ==========================================================================
+   CONDUIT / CHANNEL  (halo-channel) — the knob-driven replacement for the
+   18-gradient inline SVG conduit.
+
+   WHY THIS EXISTS
+   The old conduit was inline SVG carrying 559 hardcoded stop-colors across 18
+   linearGradients, on a salmon-tinted palette that predates the steel knobs.
+   When tokenise.py moved the other eight part sheets onto --steel-h/-s/-tint,
+   the conduit could not follow — its colour lives in SVG attributes, not CSS —
+   so it stayed put while everything around it went darker and bluer. That is
+   why the elbow read pink against the new steel.
+
+   It also multiplies: one conduit per subitem row, 559 stops each.
+
+   WHAT REPLACED IT
+   Figma reduced the conduit to a two-part kit — a Channel and a Cap (ledger
+   #e097b4f). The Channel is 13 flat vertical strips across 39px. Thirteen
+   strips is ONE css gradient with thirteen HARD stops, which is not an
+   approximation of the vector: hard stops are crisp edges, so the facet
+   count, the facet widths and the facet tones are all reproduced exactly.
+   559 stops -> 13, and it now tracks the colourways for free.
+
+   FLATNESS IS A TWO-STOP PROBLEM, NOT A CSS PROBLEM
+   What makes steel read as machined is the number of tonal steps, hard edges
+   between them, and one consistent light direction. All three survive here.
+   Soft two-stop gradients are what read as flat; this sheet has none.
+
+   THE STOPS ARE MEASURED, NOT CHOSEN
+   Every offset below is the strip's own x/width read out of the Figma
+   component, and every lightness is that strip's own lightness. Saturation is
+   expressed as a ratio of the 30% reference axis, exactly as tokenise.py does
+   elsewhere, so the whole channel moves with --steel-h/-s/-tint and lands on
+   whichever colourway the stage carries.
+
+   THE LASER IS NOT STEEL
+   Three of the thirteen strips are the lit contour. They key to --laser-*
+   (i.e. --row-hue), never to the steel ladder, per ledger #217 — which is what
+   lets a row go yellow/blue/green, and what makes the "power on" beat a single
+   token flip rather than a repaint.
+
+   KNOBS
+     --ch-w   channel width. Defaults to the measured 39px. The stops are
+              declared in px against that width, so scale with transform,
+              not by changing this, unless you re-derive the offsets.
+   ========================================================================== */
+
+.halo-channel {
+  --ch-w: 39px;
+  width: var(--ch-w);
+  height: 100%;
+  background: linear-gradient(90deg,
+    /* edge — outer   */ hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(28%    * var(--steel-tint)))  0        1.21px,
+    /* edge — shade   */ hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(23.5%  * var(--steel-tint)))  1.21px   3.33px,
+    /* edge — shadow  */ hsl(var(--steel-h) calc(var(--steel-s) * 0.820) calc(13.5%  * var(--steel-tint)))  3.33px   7.16px,
+    /* edge — mid     */ hsl(var(--steel-h) calc(var(--steel-s) * 0.720) calc(40%    * var(--steel-tint)))  7.16px   8.57px,
+    /* casing — upper */ hsl(var(--steel-h) calc(var(--steel-s) * 0.727) calc(34.1%  * var(--steel-tint)))  8.57px  12.19px,
+    /* groove         */ hsl(var(--steel-h) calc(var(--steel-s) * 0.863) calc(5.3%   * var(--steel-tint))) 12.19px  15.72px,
+    /* red — core     */ var(--laser-core)                                                                 15.72px  18.44px,
+    /* red — hot      */ var(--laser-core)                                                                 18.44px  20.76px,
+    /* red — well     */ var(--laser-well)                                                                 20.76px  23.98px,
+    /* edge — lit     */ hsl(var(--steel-h) calc(var(--steel-s) * 0.727) calc(55.9%  * var(--steel-tint))) 23.98px  26.60px,
+    /* casing — lower */ hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(28%    * var(--steel-tint))) 26.60px  30.43px,
+    /* shadow — deep  */ hsl(var(--steel-h) calc(var(--steel-s) * 0.833) calc(9.4%   * var(--steel-tint))) 30.43px  37.59px,
+    /* edge — far     */ hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(23.5%  * var(--steel-tint))) 37.59px  var(--ch-w));
+}
+
+/* Horizontal run — the same thirteen facets, rotated. Light still comes from
+   above, so a horizontal channel reads its ladder top-to-bottom instead. */
+.halo-channel.is-horizontal {
+  width: 100%;
+  height: var(--ch-w);
+  background: linear-gradient(180deg,
+    hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(28%   * var(--steel-tint)))  0        1.21px,
+    hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(23.5% * var(--steel-tint)))  1.21px   3.33px,
+    hsl(var(--steel-h) calc(var(--steel-s) * 0.820) calc(13.5% * var(--steel-tint)))  3.33px   7.16px,
+    hsl(var(--steel-h) calc(var(--steel-s) * 0.720) calc(40%   * var(--steel-tint)))  7.16px   8.57px,
+    hsl(var(--steel-h) calc(var(--steel-s) * 0.727) calc(34.1% * var(--steel-tint)))  8.57px  12.19px,
+    hsl(var(--steel-h) calc(var(--steel-s) * 0.863) calc(5.3%  * var(--steel-tint))) 12.19px  15.72px,
+    var(--laser-core)                                                                15.72px  18.44px,
+    var(--laser-core)                                                                18.44px  20.76px,
+    var(--laser-well)                                                                20.76px  23.98px,
+    hsl(var(--steel-h) calc(var(--steel-s) * 0.727) calc(55.9% * var(--steel-tint))) 23.98px  26.60px,
+    hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(28%   * var(--steel-tint))) 26.60px  30.43px,
+    hsl(var(--steel-h) calc(var(--steel-s) * 0.833) calc(9.4%  * var(--steel-tint))) 30.43px  37.59px,
+    hsl(var(--steel-h) calc(var(--steel-s) * 0.723) calc(23.5% * var(--steel-tint))) 37.59px  var(--ch-w));
+}

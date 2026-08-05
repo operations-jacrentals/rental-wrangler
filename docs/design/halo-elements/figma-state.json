@@ -1,11 +1,1108 @@
 {
   "runId": "halo-ds-2026-08-03",
-  "phase": "phase0",
-  "step": "complete",
-  "scopeLock": "both languages as variable modes: MOCKUP + CANON",
+  "phase": "phase3",
+  "step": "phase3 — 8/10 components",
+  "scopeLock": "MOCKUP + CANON as variable modes. CORRECTED 2026-08-03: CANON is a TOKEN-LAYER reskin (accent / state / ground / chrome) only — the hundreds of measured gradient stops stay baked, so a CANON render is NOT 'the card in canon'. Jac's call; dual-baking every stop was offered and declined.",
   "plan": "docs/design/halo-elements/FIGMA-PLAN.md",
   "source": "docs/design/halo-elements/parts/*.css — 10 components, all gated 0.000",
-  "entities": { "collections": {}, "variables": {}, "pages": {}, "components": {} },
+  "figma": {
+    "fileKey": "cc3TcK2F2a8qSbCAstzcA5",
+    "fileUrl": "https://www.figma.com/design/cc3TcK2F2a8qSbCAstzcA5",
+    "fileName": "Rental Wrangler — Halo Elements Library",
+    "planKey": "team::1647821450524362303",
+    "planTier": "pro",
+    "maxModesPerCollection": 4,
+    "location": "drafts — movable into a team project later without changing the file key"
+  },
+  "fontFindings": {
+    "mockupStamp": "Consolas NOT AVAILABLE in Figma. tokens.css:48 stack is Consolas, \"Cascadia Mono\", \"DejaVu Sans Mono\", \"Courier New\" — resolved to Cascadia Mono, the source's own next choice. Jac approved 2026-08-03.",
+    "canonStamp": "Canon's stamp voice is also a stack (ui-monospace, \"Cascadia Code\", \"SF Mono\", Menlo, Consolas) with no committed webfont — resolved to Cascadia Code, its first named entry, by the same rule.",
+    "bodyVoices": "MOCKUP Roboto, CANON Archivo — both available.",
+    "styleStringGotcha": "Archivo/Roboto use \"SemiBold\" (no space); Inter uses \"Semi Bold\". Do not cross them.",
+    "notGlyphIdentical": "Figma text will not match the CSS glyph-for-glyph. The byte-exact implementation stays in parts/*.css; Code Connect ties them in Phase 4."
+  },
+  "entities": {
+    "collections": {
+      "Halo Primitives": {
+        "id": "VariableCollectionId:2:2",
+        "modes": {
+          "Value": "2:0"
+        },
+        "variableCount": 43
+      },
+      "Halo Language": {
+        "id": "VariableCollectionId:2:3",
+        "modes": {
+          "MOCKUP": "2:1",
+          "CANON": "2:2"
+        },
+        "variableCount": 28
+      }
+    },
+    "variables": {
+      "mockup/bg": "VariableID:3:2",
+      "mockup/neon": "VariableID:3:3",
+      "mockup/neon-hi": "VariableID:3:4",
+      "mockup/bar-red": "VariableID:3:5",
+      "mockup/brk-red": "VariableID:3:6",
+      "mockup/pnl-red": "VariableID:3:7",
+      "mockup/tube-red": "VariableID:3:8",
+      "mockup/maroon": "VariableID:3:9",
+      "mockup/maroon-d": "VariableID:3:10",
+      "mockup/bar-yel": "VariableID:3:11",
+      "mockup/amber": "VariableID:3:12",
+      "mockup/chrome": "VariableID:3:13",
+      "mockup/silver": "VariableID:3:14",
+      "mockup/rim-top": "VariableID:3:15",
+      "mockup/rim-left": "VariableID:3:16",
+      "mockup/rim-right": "VariableID:3:17",
+      "mockup/rim-bot": "VariableID:3:18",
+      "mockup/slate": "VariableID:3:19",
+      "mockup/field": "VariableID:3:20",
+      "mockup/cavity": "VariableID:3:21",
+      "mockup/circuit": "VariableID:3:22",
+      "mockup/edge": "VariableID:3:23",
+      "canon/bg": "VariableID:4:2",
+      "canon/panel": "VariableID:4:3",
+      "canon/card": "VariableID:4:4",
+      "canon/card-head": "VariableID:4:5",
+      "canon/line": "VariableID:4:6",
+      "canon/line-soft": "VariableID:4:7",
+      "canon/txt": "VariableID:4:8",
+      "canon/txt-2": "VariableID:4:9",
+      "canon/txt-3": "VariableID:4:10",
+      "canon/accent": "VariableID:4:11",
+      "canon/on-orange": "VariableID:4:12",
+      "canon/green": "VariableID:4:13",
+      "canon/yellow": "VariableID:4:14",
+      "canon/red": "VariableID:4:15",
+      "canon/red-fill": "VariableID:4:16",
+      "canon/on-red-fill": "VariableID:4:17",
+      "canon/blue": "VariableID:4:18",
+      "canon/gray": "VariableID:4:19",
+      "canon/commit": "VariableID:4:20",
+      "canon/on-commit": "VariableID:4:21",
+      "canon/tan": "VariableID:4:22",
+      "state/hot": "VariableID:5:2",
+      "state/hot-fill": "VariableID:5:3",
+      "state/warn": "VariableID:5:4",
+      "accent/primary": "VariableID:5:5",
+      "seasoning/tan": "VariableID:5:6",
+      "metal/chrome": "VariableID:5:7",
+      "metal/silver": "VariableID:5:8",
+      "metal/rim-top": "VariableID:5:9",
+      "metal/rim-left": "VariableID:5:10",
+      "metal/rim-right": "VariableID:5:11",
+      "metal/rim-bot": "VariableID:5:12",
+      "ground/base": "VariableID:5:13",
+      "ground/field": "VariableID:5:14",
+      "ground/cavity": "VariableID:5:15",
+      "ground/circuit": "VariableID:5:16",
+      "ground/edge": "VariableID:5:17",
+      "ground/maroon": "VariableID:5:18",
+      "ground/maroon-d": "VariableID:5:19",
+      "emissive/neon-hi": "VariableID:5:20",
+      "emissive/brk-red": "VariableID:5:21",
+      "emissive/pnl-red": "VariableID:5:22",
+      "emissive/tube-red": "VariableID:5:23",
+      "finish/glow-opacity": "VariableID:5:24",
+      "type/body-family": "VariableID:6:2",
+      "type/stamp-family": "VariableID:6:3",
+      "type/body-weight-strong": "VariableID:6:4",
+      "type/body-weight-regular": "VariableID:6:5",
+      "type/stamp-weight": "VariableID:6:6",
+      "mockup/ink-bright": "VariableID:13:2",
+      "mockup/ink-label": "VariableID:13:3",
+      "mockup/ink-readout": "VariableID:13:4",
+      "mockup/ink-micro": "VariableID:13:5",
+      "ink/bright": "VariableID:13:6",
+      "ink/label": "VariableID:13:7",
+      "ink/readout": "VariableID:13:8",
+      "ink/micro": "VariableID:13:9",
+      "ink/on-fill": "(see Halo Language — added 2026-08-03)"
+    },
+    "textStyles": {
+      "Text/Value 28": "S:5497b6f8dfd61bdae2f0a7a234d982c20a02c416,",
+      "Text/Title 15": "S:6c8f1ba8e1e142ba8f5f8e2d813b2b94a847d1c0,",
+      "Text/Content 13": "S:b06958c14a9460ab5958148d4915868a5c60c2c8,",
+      "Text/Field 12": "S:c1c7c88a51d076195da0a175792c5c032c4916c8,",
+      "Text/Label 11": "S:c4dace5038bcf20209d747776823d2225f311972,",
+      "Text/Small 10": "S:1bb9164222db601cc57be04fd21f55d8c4612299,",
+      "Text/Finest 9.5": "S:ab29960846f2c1b79f7cfc9e466a50a59e55a5b6,"
+    },
+    "effectStyles": {},
+    "pages": {
+      "Cover": "0:1",
+      "Getting Started": "12:2",
+      "Foundations": "12:3",
+      "——— COMPONENTS ———": "12:4",
+      "——— UTILITIES ———": "12:5",
+      "Utilities": "12:6"
+    },
+    "docNodes": {
+      "Cover/Cover Plate": "14:2",
+      "Foundations/Column MOCKUP": "15:2",
+      "Foundations/Column CANON": "15:96",
+      "Foundations/Type MOCKUP": "16:2",
+      "Foundations/Type CANON": "16:11",
+      "Foundations/Gap Register": "16:20",
+      "Getting Started/Getting Started Plate": "17:2"
+    },
+    "components": {
+      "Message Board": {
+        "setId": "21:36",
+        "page": "Message Board",
+        "renamedFrom": "Chip — see namingCorrection; ledger #208 retires the standalone Signal",
+        "glassLayer": {
+          "appliedOn": "Jac's explicit say-so, 2026-08-03",
+          "rule": "Figma builds the NEW (Halo) shapes; tier-01 EFFECTS borrowed only on request. Each glass layer is a CLONE of that variant's own cavity, so only the finish is tier-01.",
+          "recipe": "#050A10 body + depth wash + tiled scanline film; 1.4px dark line (color-mix(in oklab, black 55%, --card-head) ~= #0c0f13); inner-shadow well press (0 1.5px 3px rgba(0,0,0,.5)); lit hairlines (0 3.4px 0 rgba(185,205,235,.13), 0 -3.2px 0 rgba(185,205,235,.05))",
+          "variable": "finish/glass-opacity (VariableID:35:18) — MOCKUP 100, CANON 100. Was 0/100, which made the glass invisible in the default view; Jac reported exactly that. Set MOCKUP back to 0 to restore the Halo-vs-glass A/B.",
+          "nodes": {
+            "Size=Wide, Label=Off": "35:20",
+            "Size=Wide, Label=On": "35:22",
+            "Size=Narrow, Label=On": "35:24",
+            "Size=Narrow, Label=Off": "35:26"
+          },
+          "zOrder": "inserted directly ABOVE 'inner' — appended last at first, which covered the label and ring"
+        },
+        "variants": {
+          "matrix": "Size (Wide|Narrow) x Label (On|Off) x State (Default|Fill) = 8, complete",
+          "properties": [
+            "Size",
+            "Label",
+            "State",
+            "label#21:0 (TEXT)"
+          ]
+        },
+        "properties": [
+          "Size",
+          "Label",
+          "label#21:0 (TEXT)"
+        ],
+        "modeProofFrame": "21:37",
+        "bindings": {
+          "ring core + ring halo stroke": "state/hot",
+          "label fill": "ink/label",
+          "label family": "type/stamp-family",
+          "glow container opacity": "finish/glow-opacity"
+        },
+        "well": {
+          "addedOn": "Jac's reference + note, 2026-08-03",
+          "nodes": {
+            "Size=Wide, Label=Off": "53:20",
+            "Size=Wide, Label=On": "53:21",
+            "Size=Narrow, Label=On": "53:22",
+            "Size=Narrow, Label=Off": "53:23"
+          },
+          "geometry": "octagon at plate+5 on every side, cut + 0.5858*5 = 2.929 — tokens.css's own nested-octagon math for a uniform-width outline",
+          "fills": "metal/rim-right (BOUND, so the well reskins) + white .22 / black .30 / white .16 vertical bevel gradient",
+          "effects": "inner shadow (0,1,r2,a.85) + drop shadow (0,1,r2.5,a.55) — #185's 'one dark line'",
+          "openQuestion": "CHAMFER ORIENTATION. Jac's reference cuts NW/SE; Halo's .oct cuts NE/SW; ledger #208 says NW/SE for the tier-01 board. Kept NE/SW per 'stick to the new shapes'. Awaiting Jac.",
+          "jacCorrection": {
+            "date": "2026-08-03",
+            "what": "Jac edited variant 21:2 himself and asked for it propagated. He changed ONLY geometry — fills, effects, glass and glow untouched, exactly as he said.",
+            "rule": "plate moved to (9,5) and shrunk -17 x -4.6 so it sits INSIDE the frame; well at (2,0) sized PW-1.8 x PH+6.4 with chamfer one step wider than the plate's. Applied as ABSOLUTE offsets to the other three variants — a bevel is a constant width, not a proportional one.",
+            "chamferKept": "NE/SW. Jac's own edit kept Halo's orientation, so the open NW/SE question from his earlier reference is effectively answered: the board stays NE/SW.",
+            "variantNameRepaired": "He had renamed the layer 'EDITED: Size=Wide, Label=Off'. Figma parses variant names as Property=Value pairs, so that invented a property called 'EDITED: Size' and corrupted the set. Renamed back to 'Size=Wide, Label=Off'.",
+            "hisGeometryLeftAlone": "His variant's paths are slightly irregular (the well's bottom edge slants 2.5px over its length) because they were hand-nudged. Left exactly as he built it; the other three use clean octagons. Offer to normalise his if he wants them identical."
+          },
+          "textureAttempt": {
+            "resolved": "WRONG ASSET. Jac: 'the texture for message board is suppose to be the Halo Circuit asset.' steel-grain was removed from the wells; halo-circuit went into the glass CAVITY instead.",
+            "whySteelGrainFailed": "steel-grain is a 512px mottled chassis FACE and the well is a ~7px lit bevel, so it could never read there. Three settings were tried and verified at 6-7x zoom before concluding — but the real error was the asset, not the tuning.",
+            "correctRecipe": "tier-01 index.html:2734 — background-image: <scanline film>, var(--h-circuit); background-size: auto, 512px 512px. CSS paints the FIRST background-image on top, so bottom-to-top is: base #050A10 -> halo-circuit at NATIVE 512px -> depth wash -> scanline film.",
+            "figmaFills": "glass node fills = [SOLID #050A10, IMAGE halo-circuit TILE sf1 op.9, GRADIENT depth wash, IMAGE scanline TILE sf0.25]",
+            "imageHashes": {
+              "halo-circuit": "be41cbf455c891cce9f49fd99eee8c7d5505d4b4",
+              "scanline film": "13762cd128fe5823360f156311d0042ae5e16f21"
+            },
+            "verified": "Hex circuit pattern and its solder specks clearly visible at 5x, with scanlines riding over them."
+          }
+        },
+        "scanlineOverText": {
+          "date": "2026-08-03",
+          "ask": "Jac: 'make sure the scan lines sit atop the text.'",
+          "why": "A glass film physically covers everything behind it, text included. In CSS the film is a background-image on the board element, so it sits BEHIND the element's own text — Figma lets us do the more convincing thing.",
+          "how": "The film is lifted out of the glass fill stack into its OWN layer, same cavity geometry, inserted directly above the label (above the glass when a variant has no label) and below the ring core — the ring is frame edge, not under glass. Removed from the glass stack so it cannot paint twice.",
+          "stillSwitched": "The film's opacity is bound to finish/glass-opacity, same as the glass holder, so both turn off together.",
+          "layerOrder": "well · plate · inner · glass (tier-01) · [label] · scanline film · glow · ring core"
+        },
+        "fillState": {
+          "date": "2026-08-03",
+          "ask": "Jac: full red starting from INSIDE the red outlines, ink turns white, red must stay translucent enough to still see the Halo Circuit asset.",
+          "build": "a 'fill (state/hot-fill)' layer on the cavity's own octagon, above the glass and below the label, at 70% NODE opacity. Layer order: well · plate · inner · glass · fill · label · scanline film · glow · ring core — so the film still rides over both the fill and the text.",
+          "inkIsNotPureWhite": "binds to the new ink/on-fill semantic — CANON #fdfdfd, MOCKUP #f4f9fa. Canon deepened --red-fill to #d63636 AND pinned a near-white ink because white on #ff4242 measures 3.44 and fails AA (ledger #3). Hardcoding #fff would have reintroduced exactly the failure canon fixed.",
+          "opacityGotcha": "PAINT-level opacity did not survive being spread onto a bound paint object — it read back as 1 and the fill was fully opaque, hiding the circuit completely, which was the one thing Jac specified. Set opacity on the NODE instead. Verified by reading the value back, not by eye.",
+          "tuning": "0.86 -> 0.82 -> 0.70. Below ~0.75 the hex field reads as darker patches through the red; above it the circuit vanishes. 0.70 is a judgement point, easily changed on the four fill layers."
+        }
+      },
+      "Bracket": {
+        "componentId": "69:3",
+        "page": "Bracket",
+        "children": [
+          "divider",
+          "vertical",
+          "tip",
+          "elbow"
+        ],
+        "domOrderIsLoadBearing": "The divider MUST paint before vertical/tip/elbow — the elbow's painted extent far exceeds its declared 43x5.6 rect and overlaps the divider's left end. Reversing it is a measured defect (max delta 176 at canvas x52..60, y228..234).",
+        "tipMask": "A horizontal alpha ramp eating the first 2px and feathering the last 2. Figma paints have NO DESTINATION_OUT blend, so it is a real alpha mask node.",
+        "elbow": "rotate(43.5deg) about transform-origin 0 50% with margin-top:-2.8px, as a relativeTransform matrix.",
+        "assemblyTrap": "c10's .bt-warm paints AFTER this bracket and fully occludes the elbow in canvas column x33..37, so the bracket is NOT one contiguous layer relative to c10 — something from c10 must interleave at assembly time."
+      },
+      "Marks": {
+        "setId": "70:9",
+        "page": "Marks",
+        "variants": [
+          "Kind=Rivet",
+          "Kind=Hexicon",
+          "Kind=Name"
+        ],
+        "properties": [
+          "Kind",
+          "name (TEXT)"
+        ],
+        "arialSubstitution": "Arial is NOT in Figma; Arimo IS, and it is metrically compatible with Arial by design (identical advance widths). marks.css picked Arial specifically 'to match measured glyph widths', so the metrics ARE the requirement — Arimo preserves exactly that, where any other grotesque would keep the look and break the measurement.",
+        "rivetCentreDropped": "The radial is specified at 'circle at 50% 45%'; on a 9px dot that is 0.45px above centre, below one pixel, so the default centred transform is used.",
+        "hexIsMeasured": "stroke #6f3d22 is close to but NOT --amber (#7c401f) — measured, stays baked. The name binds to ink/bright."
+      },
+      "Deck": {
+        "componentId": "74:3",
+        "page": "Deck",
+        "layers": 22,
+        "hardStopBandCounts": "bt-face 37, bt-right 34, bt-slate 36, bt-well 73, bt-warm 86 — each colour emitted TWICE at both band edges or Figma interpolates the hard stop away",
+        "wellGrid": "1px rules every 9.4px — a NON-INTEGER period, so it cannot be a plain tile. Drawn at 5x where the period is an exact 47px, as a 235px PNG scaled back by 0.20. imageHash 0c605bad4b35c27bb6b1c89d5321e1b7bdd4ae50.",
+        "notReproduced": "The grid's background-position 3px 9px offset — Figma image tiles have no offset control.",
+        "slateMask": "linear-gradient(90deg,#000 0 50%,transparent 100%) as a real alpha mask node.",
+        "btRightIsAHoleFiller": "Not an independent feature — it is the face strip left exposed by c1's PROMISED chip and is shaped by that chip, so it only makes sense in assembly.",
+        "rivetHalfPixel": "x=0.5 is MEASURED, not rounding. Its own gate cannot prove it: c12's loose rivet #4 covers all but a 2-row sliver in assembly (max delta 1), so it is correct by construction."
+      }
+    }
+  },
+  "decisions": {
+    "oneLanguageCollection": "Colour, type and finish semantics all live in ONE collection (Halo Language), so flipping MOCKUP↔CANON is a single mode switch — the plan's scope-lock goal (FIGMA-PLAN.md 0d).",
+    "mockupIsDefaultMode": "MOCKUP is mode 1, the default every new frame inherits. Components are built byte-exact against the mockup, so Phase 3 screenshot validation must render the mockup skin.",
+    "geometryCollectionRemoved": "Created in P1.a, found to have no legitimate content, removed in P1.h. This kit has NO shared geometry scale — every part carries its own measured geometry. Per-part knobs become Figma COMPONENT PROPERTIES in Phase 3, not variables. Canon's control ladder exists but governs canon UI and is self-conflicted (ledger #140 reverses #131).",
+    "noEffectStyles": "No foundations-level effect styles. Each part's blur radii are measured individually; there is no shared glow ladder to name. Per-part effects land with their components in Phase 3.",
+    "gapsAreVisibleNotHidden": "Where canon has no locked value (metal/silver, all four rim tones, ground/cavity, ground/circuit, ground/edge, ground/maroon, ground/maroon-d, and the whole emissive/* family), CANON aliases the MOCKUP primitive and the variable description says so in the file.",
+    "emissiveNamespace": "The mockup's six-strong emissive red family is namespaced emissive/* because that family IS the glow identity canon rejects — naming it that way makes the one non-swappable difference legible.",
+    "textStyleSizes": "The 7 text styles use canon's locked ladder (28/15/13/12/11/10/9.5) — the only locked type scale in the project. The mockup's sizes are measured fits and are deliberately absent; they are set per-component in Phase 3.",
+    "chosenNotFound": "Stamped tracking = 4%, the MIDDLE of canon's stated 0.03–0.06em range. A chosen point, not a found one — flagged in every style description. line-height left AUTO because canon specifies none.",
+    "inkAmendment": "Phase 1 shipped with NO ink semantic (skipped because the mockup has no text-colour token). Caught in Phase 2 before anything was built on the gap. The kit's real inks were traced to source — chip.css:274 #f2585a, screen.css:103 #f4595a, marks.css:155 #f4f9fa, etch.css:225 rgba(150,185,205,.66) — and became 4 primitives + 4 mode-aware ink/* semantics scoped TEXT_FILL. ink-label and ink-readout differ by two steps and were deliberately NOT merged: the kit is byte-exact, so near-identical values stay distinct.",
+    "modePinnedColumns": "The Foundations page shows MOCKUP and CANON side by side as two frames with setExplicitVariableModeForCollection overrides, rather than one frame the reader has to flip. The CANON column is a clone() of the MOCKUP column, so the two are provably identical geometry and only the mode differs.",
+    "chipFirstInPhase3": "Jac, 2026-08-03: 'not that concerned about those colors, it will change with signal.' The Halo Chip IS canon's Signal archetype (the state you read), so Chip moves to FIRST in the Phase 3 order. The plan's original order was ascending node count, not a dependency chain, so nothing blocks the move."
+  },
+  "openGaps": [
+    "No line-height locked for any step of canon's type ladder — text styles left AUTO.",
+    "No letter-spacing locked for Archivo (only the mono voice's ~0.03–0.06em range).",
+    "--accent-line is named in wrangler-style (focus rings) but has no hex or formula anywhere.",
+    "--red-line is a color-mix() derivation, not a static hex — cannot be a Figma primitive as-is.",
+    "No general spacing/padding scale exists in canon; only the 24px control height and the type ladder.",
+    "43 primitives carry no description (not required; they are hidden from pickers).",
+    "GEOMETRY CONFLICT unresolved and deferred: shipped four-shape ladder (ledger #131, 2px/5-5-0-0/8px/999px/14px) vs redesign radius-0 + chamfers (ledger #140, newer, LOCKED, gated behind FEATURES.designV2). Phase 3 does not need it; a canon-geometry pass would."
+  ],
   "pendingValidations": [],
-  "completedSteps": ["phase0"]
+  "phase1Validation": {
+    "collections": 2,
+    "totalVariables": 79,
+    "primitives": 47,
+    "semantics": 32,
+    "aliasesTotal": 52,
+    "aliasesBroken": 0,
+    "allScopesViolations": 0,
+    "missingCodeSyntax": 0,
+    "textStyles": 7,
+    "effectStyles": 0,
+    "status": "ALL PHASE 1 EXIT CRITERIA MET (counts include the Phase 2 ink amendment)"
+  },
+  "phase2Validation": {
+    "pages": 6,
+    "documentedPages": [
+      "Cover",
+      "Getting Started",
+      "Foundations"
+    ],
+    "foundationsShows": "26 colour semantics as mode-pinned MOCKUP/CANON columns, a 7-style type specimen in both voices, and the gap register",
+    "status": "ALL PHASE 2 EXIT CRITERIA MET"
+  },
+  "nextPhase": {
+    "phase": 3,
+    "order": "Chip FIRST (it is canon's Signal archetype — Jac's steer), then the plan's ascending order: Conduit, Bracket, Marks, Screen, Housing, Slots, Deck, Cartridge, Etch",
+    "done": [
+      "Message Board",
+      "Conduit",
+      "Screen",
+      "Housing",
+      "Slots",
+      "Bracket",
+      "Marks",
+      "Deck"
+    ],
+    "remaining": [
+      "Cartridge",
+      "Etch"
+    ],
+    "perComponent": "3a page -> 3b build with variable bindings -> 3c variants -> 3d/3e component properties -> 3f docs -> 3g get_metadata + get_screenshot -> 3h optional Code Connect",
+    "rule": "One component at a time. Never batched. Figma writes strictly sequential."
+  },
+  "namingCorrection": {
+    "date": "2026-08-03",
+    "what": "The component built as 'Chip' is a MESSAGE BOARD. Jac's own parked note (docs/superpowers/notes/2026-08-02-two-deck-header.md:15) identifies 'the outlined PROMISED element' as the message board. It was named Chip because the kit file is parts/chip.css — taking the separation pass's filename as the element's identity, which is wrong: kit filenames are an artifact of how the canvas was taken apart, not canon.",
+    "signalFramingWasWrong": "Ledger #208 (2026-08-02, LOCKED): 'THE CHIP MERGES INTO THE BOARD: ONE OUTLINED STATE ELEMENT PER ROW... the outlined board IS the chip... the row's separate .signal chip retires (display:none).' There is no standalone Signal archetype any more — the board absorbed it. The Chip-first reorder was reasoned from a vocabulary entry without checking the entry still existed.",
+    "glassRecipeLocated": "The tier-01 message board recipe is real and locked: #050A10 glass body, inset 0 1.5px 3px well press, 1.4px dark line (color-mix(in oklab, black 55%, --card-head)), scanline film, marquee, lit drop-shadow hairlines (#185); NW/SE 7px notch (#208, supersedes #185's SW notch); glass is IDENTIFIED by the scanline film (#188); textures are real assets — --rw-steel: url(steel-grain.png), plus halo-steel/halo-canvas/halo-circuit/halo-olive.png in docs/design/tier-01-card/.",
+    "lineageSplit": "The Halo canvas board carries NO scanlines, well or texture — grep-verified. In that canvas the scanline film lives only on c5 the display plate (screen.css:132) and the texture on c10's slate panel (deck.css:426-427); c5 sits at canvas x1063 while the board sits at x394, so c5 is not its glass layer. The Halo board instead carries glow (bloom, blur halo, text-shadow), which canon rejects (#25, #214). Two different treatments of the same element, in two lineages.",
+    "jacsRuling": "Jac, 2026-08-03: 'the point of figma is to get the SHAPES right. That has been the biggest hurdle. So stick to the new shapes, and borrow the EFFECTS from tier-01 when I say so.' So: Figma builds the NEW Halo mockup's geometry; tier-01 glass effects are applied ON REQUEST ONLY, never auto-applied to CANON mode."
+  },
+  "conduitSimplification": {
+    "date": "2026-08-03",
+    "ask": "Jac: 'doesnt need so many gradients and components for it to feel real'",
+    "result": "559 -> 359 stops, 41.7KB -> 28.4KB, visually indistinguishable. All 19 layers named; light channel halo bound to emissive/tube-red inside a glow container bound to finish/glow-opacity.",
+    "method": "ERROR-BOUNDED ADAPTIVE simplification — drop a stop only where removal shifts the curve <10/255 on any channel. Measured ceiling: TOL 4 -> 20% fewer, 6 -> 27%, 10 -> 36%. Only ~a quarter of the stops are redundant; the rest encode real shading.",
+    "whyItCannotGoFurther": "The SVG is a MACHINE TRACE of a raster (stops at 3.33%, 6.67%, 9.52% — no designer chose those), so the detail is baked photographic shading, not design intent.",
+    "twoFailedAttempts": [
+      "Cherry-picked dark/mid/light stops spread evenly AND dropped stop-opacity — narrow highlights became broad opaque washes, the whole part came out pink. Always carry alpha.",
+      "Uniform resampling at 7 even points — this art is high-frequency (2px highlight next to near-black), so uniform downsampling smears exactly the detail that makes it read as steel."
+    ],
+    "ifFewerSHAPESareWanted": "Not a compression problem. The honest route is AUTHORING the conduit as real geometry (~8 shapes, 3-5 stops each) — a cleaner, less photographic look. That is a redesign, not a simplification.",
+    "status": "Jac is hand-editing the elbow; Claude to review later."
+  },
+  "calibrationAgainstSource": {
+    "why": "Slots' blur LOOKED wrong in Figma and the instinct was to reduce it. Rendering the actual source with Playwright and comparing like-for-like at 4x showed the Figma build was already correct — the reference eye was tier-01's crisp slot ticks, which are a DIFFERENT design. 'Fixing' it would have broken a correct component.",
+    "method": "scratchpad/render-slots.mjs serves docs/design/halo-elements on :9147 and screenshots the part's own selector at deviceScaleFactor 4 with a margin for skew/blur spill; then capture the Figma variant at the same scale, margin and background colour.",
+    "rule": "Before adjusting any measured value because it 'looks off', render the source and compare at matched scale. The kit has a byte-exact source for every part — there is never a reason to judge by memory."
+  },
+  "transformsAndBlur": {
+    "skew": "Figma has NO skew property. skewX(A) about transform-origin 50%/50% goes in as relativeTransform [[1, tanA, x - tanA*h/2], [0, 1, y]] — the tx term pulls the centre back, which is what the 50% origin means. Used by Slots (18deg).",
+    "blur": "CSS filter blur(Npx) is a Gaussian stdDeviation; Figma's LAYER_BLUR radius reads about 2x that. blur(1.4px) -> radius 2.8 and blur(.81) -> 1.62 both verified against source renders.",
+    "clipsThatMustNotBeSquared": "Slots Row=B clips a canvas-space box whose LEFT edge is at -30. Pulling that to 0 (the obvious frame-clip) would shave the leftmost bar's own skew+blur spill, which reaches ~-2.2 local. The clip frame is offset to x=-30 width=281 so the right cut still lands at 251."
+  },
+  "gradientTraps": {
+    "offBoxStops": "Housing's .face declares stops at 251px and 253px on a box only 248px tall (top:5 bottom:1 on a 254 root), so CSS never paints them. Figma positions must be 0-1, and clamping those stops to 1.0 COMPRESSES and distorts the ramp. Correct handling: drop the off-box stops and interpolate the true colour at the box edge — here #28303a, 25% of the way from #1d242e(247) to #47535d(251). Check every multi-stop gradient for stops beyond its own paint box.",
+    "hardStopBands": "CSS '#303232 0 1px' is a SOLID band, not a gradient point. Figma smooth-interpolates between stops, which erases the band. Emit each colour TWICE — at position i/n and (i+1)/n — to hold the hard edge. Used by Housing's rim-l (6 bands) and rim-r (5 bands)."
+  },
+  "referencePage": {
+    "page": "Reference — tier-01",
+    "boardId": "44:3",
+    "purpose": "Jac's annotation surface, added on his request 2026-08-03: 'bring in the tier-01 artifact... Not for YOUR use. But for mine. I want to make references that will help you.' NOT a build source.",
+    "contents": {
+      "Tier-01 Card (live render)": "42:2 — docs/design/tier-01-card/index.html rendered at deviceScaleFactor 3, shown at 2x (380x540 card). Message boards visible: 3D OVERDUE, FAILED, PROMISED, SERVICE DUE, NOMINAL.",
+      "textures": "42:21..42:27 — steel-grain, steel-texture, steel-etch, halo-steel, halo-canvas, halo-circuit, halo-olive"
+    },
+    "knownGap": "Two icon templates did not resolve in the render ({{ p.icon }}, {{ c.icon }}), so a couple of glyphs are missing.",
+    "imageHashes": {
+      "tier01 card": "b215c7c4997969acd3d1d1a3d6114404e5c9d94c",
+      "steel-grain": "bff1979c36c4a803e60e4eceebe966c9754699d8",
+      "steel-texture": "3111a0af94daca1fa77203e82f6647db1cecb4d4",
+      "steel-etch": "b0825f27ac0f286c58fe21fcb9ad920eedc569e3",
+      "halo-steel": "db5e57d6a621fc09a25b6f451b2acb5ba9b3a519",
+      "halo-canvas": "bcd7499be350705048eb14e8de93c077915972db",
+      "halo-circuit": "be41cbf455c891cce9f49fd99eee8c7d5505d4b4",
+      "halo-olive": "69c87bccd8a91ed88c91558d6d12814e6fc554ca"
+    }
+  },
+  "playwrightWorksInThisContainer": {
+    "finding": "Playwright DOES run in this cloud container, so the tier-01 card (and any other HTML artifact) can be re-rendered to PNG on demand. This does NOT contradict CLAUDE.md's note that Playwright fails locally — that is about Jac's Windows desktop.",
+    "recipe": "npm install --no-save playwright@1.48.0, then launch with executablePath /opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell",
+    "threeTrapsHit": [
+      "A script in /tmp cannot resolve 'playwright' from the project's node_modules — import by absolute path.",
+      "playwright's entry is CommonJS: use a DEFAULT import, not named destructuring, from an .mjs script.",
+      "The chromium-1194 binary REMOVED --headless=old, which playwright 1.48 passes, so chromium-1194/chrome-linux/chrome fails to launch. The chromium_headless_shell-1194 binary is the standalone old-headless implementation and works."
+    ],
+    "script": "scratchpad/render-tier01.mjs — serves the card dir on :9147 and screenshots [data-screen-label='Live card']"
+  },
+  "scanlineTechnique": {
+    "problem": "Figma has NO repeating-gradient, and the scanline film is the identity test for glass (ledger #188).",
+    "solution": "Hand-encode a tiny RGBA PNG (zlib + CRC32, no dependencies) and apply it as an IMAGE fill with scaleMode TILE and scalingFactor 0.25. A 4x12 tile at 0.25 renders exactly one 1px line every 3px. Generator: scratchpad/mk-tile.mjs <out> <r> <g> <b> <alpha> <linePx> <periodPx> [scale].",
+    "twoDifferentFilms": {
+      "tier01 board": "rgba(0,0,0,.20), 1px every 3px — a DARK line. imageHash 13762cd128fe5823360f156311d0042ae5e16f21",
+      "halo Screen c5": "rgba(120,170,200,.035), 1px every 3px — a LIGHT BLUE film, native to screen.css:132, not borrowed. imageHash af51b032af5a3ceff2d9f98d163f176d8f836ffb"
+    },
+    "note": "upload_assets places a stray frame on the current page for each upload — remove it after grabbing the imageHash."
+  },
+  "figmaGotchas": {
+    "opacityVariablesArePercent": "An OPACITY-scoped FLOAT variable resolves as a PERCENTAGE (0-100), NOT 0-1. finish/glow-opacity was first stored as 1 and rendered as 1%, silently switching the mockup's glow off in BOTH modes — and the screenshot still looked plausible. Correct values: MOCKUP=100, CANON=0.",
+    "nestedOpacityMultiplies": "A node cannot carry both a bound opacity and its own measured opacity. The chip's bloom has a per-variant measured opacity (1/.95/.55/.55) AND must be glow-suppressed, so the glow layers are NESTED in a container whose opacity carries the token. Nested opacity multiplies, so both survive.",
+    "querySelectorSpaces": "node.query('VECTOR[name=ring core]') does NOT match — a space in an attribute value breaks the selector and returns empty, which reads as 'node missing' rather than 'bad query'. Use children.find(c => c.name === '...') for names containing spaces.",
+    "createAutoLayoutWhiteFill": "figma.createAutoLayout() frames arrive with an opaque WHITE fill. Any layout-only frame needs fills = [] or it paints a white slab.",
+    "textStyleBindingsResolveInDefaultMode": "A text style with a bound fontFamily reports its concrete face resolved in the file's DEFAULT mode, not the face you assigned. That is correct behaviour, not a failed write.",
+    "loadTheNodesCURRENTfonts": "Mutating .characters on a node whose fontFamily is BOUND to a variable throws 'Cannot write to node with unloaded font' naming the face the variable RESOLVES to — not the face you assigned. Renaming a Text/Title 15 node threw on Roboto Bold because type/body-family resolves to Roboto in MOCKUP. Load every face any mode could resolve to.",
+    "svgPathSyntax": "figma vectorPaths rejects the compact 'M13.5,2.3L126.6,2.3' form with 'Invalid command'. Normalise to space-separated: d.replace(/([MLZmlz])/g,' $1 ').replace(/,/g,' ').",
+    "appendedChildrenLandOnTop": "appendChild puts a node LAST = topmost. The Message Board's glass layer covered the label and ring until it was moved with insertChild(innerIdx+1, holder). Always read the child order back after building.",
+    "noDestinationOut": "Figma paint blendModes do NOT include DESTINATION_OUT (or any Porter-Duff compositing). A CSS mask-image has to become a real alpha mask node — a child with isMask=true whose own alpha drives visibility."
+  },
+  "completedSteps": [
+    "phase0",
+    "P1.0",
+    "P1.a",
+    "P1.b",
+    "P1.c",
+    "P1.d",
+    "P1.e",
+    "P1.f",
+    "P1.g",
+    "P1.h",
+    "phase1",
+    "P2.a",
+    "P2.b",
+    "P2.c",
+    "phase2"
+  ],
+  "jacFeedback": {
+    "date": "2026-08-03",
+    "note": "Jac left a TEXT layer on the Message Board page (node 39:24) with a reference component 39:20 'Message Board + Well': 'Issue with your drafts is they dont have the glass effect like tier-01's footer message board. This element here is my example of how the bexel/border around the message board should look.'",
+    "twoRealProblems": [
+      "GLASS WAS INVISIBLE BY DEFAULT. finish/glass-opacity was MOCKUP=0 / CANON=100, and the component set renders in MOCKUP, so every default view showed no glass at all. Jac's report was accurate. Now 100 in BOTH modes; the Halo-vs-glass A/B is one value away (set MOCKUP back to 0).",
+      "THE WELL WAS MISSING ENTIRELY. The board had ring + cavity but no outer steel bevel, so it floated instead of being seated in a milled recess. Added as a 'well' vector behind everything, using the kit's OWN nested-octagon math from tokens.css: growing outward by S requires cut + 0.5858*S for a uniform-width outline. S=5, so cut grows 2.929."
+    ],
+    "chamferOrientationDiffers": "FLAGGED FOR JAC, NOT SILENTLY RESOLVED. His reference cuts NW/SE; the Halo .oct primitive cuts NE/SW; ledger #208 specifies NW/SE 7px for the tier-01 board. Two lineages, two shapes. Kept Halo's NE/SW per Jac's rule ('stick to the new shapes, borrow the EFFECTS from tier-01 when I say so'). Awaiting his call on whether to flip.",
+    "wellRecipe": "octagon at plate+5 on all sides, cut + 2.929; fills = metal/rim-right (BOUND, so it reskins) + a white .22 / black .30 / white .16 vertical bevel gradient; inner shadow (0,1,r2,a.85) and drop shadow (0,1,r2.5,a.55) for #185's 'one dark line'.",
+    "comparisonFrame": "54:22 'Well Comparison' on the Message Board page — his reference stacked above an instance of the rebuild at matched width.",
+    "textLayersWork": "Confirmed: Figma COMMENTS are invisible to Claude (no comment API on the plugin figma global), but TEXT LAYERS and node.annotations ARE readable. Jac's text-layer note came through verbatim."
+  },
+  "textureRule": "Look up how tier-01 CONSUMES a texture before applying it — the atlas maps --rw-steel/--h-steel/--h-olive/--h-canvas/--h-circuit/--s-etch to files, and the consuming rule gives both the layer ORDER and the background-size. halo-circuit is used at native 512px UNDER a scanline film. Guessing the surface wasted three passes.",
+  "conduitSegments": {
+    "date": "2026-08-03",
+    "ask": "Jac: Figma provides texture, inner/drop shadows, layer blur, background blur, glass, shader — 'you can remove almost all of the many vectors creating the elbow and simplify using these features.' Explicitly: do not use his own recreation.",
+    "result": "'Conduit (segments)' (80:2) — 15 nodes / ~45 gradient stops, vs the traced 'Conduit — traced (reference)' (30:2) at 23 nodes / 359 stops. Both kept on the page for comparison.",
+    "method": "9 real segments (head bar, two feet, legs, diagonal run, vertical run, two elbow blocks, end plate), each ONE 5-stop cross-section gradient — deep, body, NARROW crown, body, deep — plus INNER_SHADOW bevels and a TEXTURE grain doing the depth work that 19 traced polygons were doing before. The lit core binds to emissive/tube-red with a LAYER_BLUR halo in a finish/glow-opacity container. Source clipPath kept verbatim as a mask.",
+    "figmaEffectSupportProbed": {
+      "available": [
+        "INNER_SHADOW",
+        "DROP_SHADOW",
+        "LAYER_BLUR",
+        "BACKGROUND_BLUR",
+        "TEXTURE",
+        "GLASS",
+        "SHADER fills"
+      ],
+      "notAvailable": [
+        "NOISE fill",
+        "PATTERN fill",
+        "PROGRESSIVE_BLUR effect"
+      ],
+      "note": "Probed by attempting each on a throwaway node and catching the validation error — worth re-running rather than assuming, since the set changes."
+    },
+    "whatMadeTheFirstPassLookWrong": "A 3-stop gradient with the crown at 42% spans half of each segment and reads as chrome. The trace's realism is a NARROW specular band on a near-black body, so the crown needs to be a thin stop with dark on both sides.",
+    "status": "Alternative offered, not substituted — Jac chooses which becomes canonical."
+  },
+  "capabilityProbe_2026_08_03": {
+    "why": "Jac: 'memorize and utilize the powerful stroke features: Brush, Dynamic... give me a full list of all the Figma features we are underutilizing. We may not even need our texture assets.'",
+    "method": "Probed by attempting each property/effect on a throwaway node and catching the validation error, plus list_shader_fills / list_shader_effects against the account library. Re-run rather than trusting this record — the surface changes.",
+    "strokes": {
+      "available": [
+        "dashPattern",
+        "strokeCap ROUND",
+        "strokeCap ARROW_LINES",
+        "strokeJoin BEVEL",
+        "strokeAlign INSIDE/OUTSIDE",
+        "strokeMiterLimit",
+        "GRADIENT strokes",
+        "IMAGE strokes (needs imageHash)",
+        "per-segment weight via vectorNetwork",
+        "individual side weights (strokeTopWeight etc)"
+      ],
+      "notExposedToPluginAPI": [
+        "brush",
+        "strokeBrush",
+        "strokeWeightProfile / widthProfile (variable-width)"
+      ],
+      "note": "Brush and Dynamic strokes are Figma Draw UI features. No `brush`/`strokeBrush`/`strokeWeightProfile` key exists on VectorNode, so they CANNOT be scripted — Jac can apply them by hand, Claude cannot generate them. Verified with `in` checks against the prototype chain (Object.keys on a node proxy returns nothing and is NOT a valid test)."
+    },
+    "effects": {
+      "available": [
+        "INNER_SHADOW",
+        "DROP_SHADOW",
+        "LAYER_BLUR",
+        "BACKGROUND_BLUR",
+        "TEXTURE",
+        "GLASS"
+      ],
+      "notAvailable": [
+        "NOISE fill",
+        "PATTERN fill",
+        "PROGRESSIVE_BLUR"
+      ]
+    },
+    "shaderFills": [
+      "Fractal noise",
+      "Mesh gradient",
+      "Pattern grid",
+      "Clouds",
+      "Nebula",
+      "Moire",
+      "Glowing wave",
+      "Water caustic",
+      "Concentric patterns"
+    ],
+    "shaderEffects": [
+      "Halftone",
+      "Outlines",
+      "Dither",
+      "Warp",
+      "Color adjust",
+      "Lens distortion",
+      "Pixelate",
+      "Bokeh blur",
+      "Channel mixer",
+      "Gradient map",
+      "Pixel stretch",
+      "Hatching",
+      "Colored edges",
+      "Pattern refraction",
+      "Gooey merge",
+      "Slice shift",
+      "Bloom",
+      "Chromatic metal",
+      "Filter presets"
+    ],
+    "biggestImplications": [
+      "Fractal noise + Pattern grid shader FILLS are procedural — they can replace the tiled scanline/grain IMAGE assets currently on the glass layer, removing raster dependencies entirely.",
+      "Gradient map shader EFFECT maps luminance to a configurable ramp. This is a candidate answer to the standing CANON limitation (hundreds of measured gradient stops are baked, so CANON is token-layer only) — a luminance remap could reskin baked shading without dual-baking every stop. Needs testing; shader params may not be variable-bindable per mode.",
+      "effectStyles is currently EMPTY — every shadow/blur in the library is inline, so there is no single place to retune 'the well press' or 'the glow'."
+    ],
+    "etchFix": "Jac hand-drew the corner etching on Screen/State=Failed (71:172-71:182); straightened to 45/90/180 snaps preserving start point and span. Vector 1 kept its two-angle bracket."
+  },
+  "assemblyCard": {
+    "date": "2026-08-03",
+    "ask": "Jac: 'we need a Tier-01 card we can update as we establish each element' + live instances.",
+    "page": "Assembly",
+    "cardId": "94:6",
+    "rootFrame": "Halo Card — assembly",
+    "backdrop": "_ref/original.png uploaded to Figma (imageHash 528bd3a8f6a4affc4aa211e289024d7a4832c62d), placed at 25% and LOCKED as an alignment reference.",
+    "placedOnCard": [
+      {
+        "name": "Housing",
+        "id": "45:3",
+        "at": [
+          8,
+          125
+        ],
+        "size": [
+          1287,
+          254
+        ]
+      },
+      {
+        "name": "Conduit",
+        "id": "30:2",
+        "at": [
+          150,
+          205
+        ],
+        "note": "the TRACED conduit; swap to 'Conduit (segments)' (80:2) in one click via the instance swap — Jac has not yet chosen which is canonical"
+      },
+      {
+        "name": "Message Board",
+        "variant": "Size=Wide, Label=On, State=Default",
+        "at": [
+          400,
+          152
+        ]
+      },
+      {
+        "name": "Group Name",
+        "variant": "State=Failed",
+        "at": [
+          1065,
+          138
+        ]
+      }
+    ],
+    "tray": [
+      "Deck",
+      "Bracket",
+      "Slots",
+      "Marks"
+    ],
+    "placeholders": [
+      "Cartridge",
+      "Etch"
+    ],
+    "howItUpdates": "Everything on the card is a live INSTANCE — editing a source component propagates automatically. Placements came from the source photo and are approximate; drag to refine, the link survives.",
+    "shaderFillTest": {
+      "result": "FAILED — not scriptable from here.",
+      "detail": "SHADER paints want {type:'SHADER', id}. But figma.importShaderById rejects the account-library id, and figma.listAvailableShaders() returns 0 in this file. The nine shader fills exist in Jac's account library and are reachable from the Figma UI, but the plugin API sees an empty shader registry.",
+      "correctsEarlierReport": "The 2026-08-03 capability report listed shader fills as an opportunity Claude could drive. It is not, as things stand. Untested next step: if Jac applies a shader fill by hand once, it may register in the file and become visible to listAvailableShaders — worth checking before relying on it.",
+      "unchanged": "Fractal noise / Pattern grid replacing the tiled raster texture assets is still viable — but as a manual Jac action, not a generated one."
+    },
+    "rebuilt": "2026-08-03 — rebuilt with every current part after the Housing/Deck/Bulb work.",
+    "onCard": [
+      "FINAL HOUSING (145:2)",
+      "Conduit (105:78, corrected vectorize)",
+      "Message Board (Size=Wide, Label=On, State=Default)",
+      "Group Name (State=Failed)"
+    ],
+    "inTray": [
+      "EDITED VECTOR DECK (149:144)",
+      "Bracket",
+      "Deck (byte-exact)",
+      "Housing (byte-exact)",
+      "Slots — signal row (158:2193)",
+      "Slots (original)",
+      "Bulb x5 (Overdue/Due/Waiting/Done/Off)",
+      "Marks Rivet/Hexicon/Name"
+    ],
+    "RESIZE_REQUIREMENT": "Jac: 'Make sure I can adjust their sizes (expand/shrink) with locked aspect ratio.' TWO settings are required and BOTH are needed: (1) constrainProportions = true on the placed INSTANCE locks the aspect while dragging a corner; (2) the source component's children must be set to constraints {horizontal:'SCALE', vertical:'SCALE'} or the frame resizes while the artwork inside stays put. Setting only the first looks broken.",
+    "housingChoice": "Jac renamed my etched copy 145:2 to 'FINAL HOUSING', read as his call on which housing is canonical — that is what the card carries. His 128:33 'EDITED VECTOR HOUSING' still exists.",
+    "stillOpen": "Which conduit is canonical (four exist). The card carries 105:78 pending his call — one instance swap to change.",
+    "note": "'Marks — Name' renders a large white 'EXCAVATOR' — that is the component's real content, not a placeholder."
+  },
+  "vectorizedConduit": {
+    "date": "2026-08-03",
+    "origin": "Jac cropped the source image and ran Figma's built-in vectorize (image trace). Node 91:10 'Version 2 [Vectorized]' on the Conduit page.",
+    "measured": {
+      "vectors": 56,
+      "approxAnchorPoints": 1099,
+      "distinctColours": 12,
+      "fillType": "all SOLID — the source's 359 gradient stops were posterised into flat bands",
+      "boundToTokens": "0 of 56",
+      "constraints": "SCALE/SCALE on every child"
+    },
+    "drift": "Vectorize desaturated the lit core (top red #ed6b66 vs source #ff8078) and lifted the darks, so the body read as light grey plastic rather than dark steel. The source's ratio is a near-black body with a NARROW chrome crown; vectorize inverted it, letting mid-greys dominate.",
+    "correction": {
+      "node": "105:78 'Conduit (vectorized, corrected)' — Jac's 91:10 left untouched",
+      "boundToEmissive": "3 fills (#ed6b66, #cd5e5d) bound to emissive/tube-red so the lit core still reskins with the mode",
+      "recoloured": "36 warm fills re-saturated + 17 body greys darkened toward the traced source palette",
+      "keptBaked": "measured steel shading stays hardcoded, per the CANON scope-lock — only the emissive core is tokenised"
+    },
+    "stretchTest": "'Stretch test' frame on the Conduit page shows all three versions at native and 2x width. Vectorized scales proportionally (SCALE/SCALE) so a NON-UNIFORM stretch distorts chamfer angles and doubles hairlines; the segments version holds shape because its parts are discrete with pinned constraints.",
+    "openCall": "Which conduit is canonical is STILL Jac's — there are now four on the page: traced (30:2), segments (80:2), Jac's vectorize (91:10), corrected vectorize (105:78)."
+  },
+  "editedVectorHousing": {
+    "date": "2026-08-03",
+    "origin": "Jac vectorized and hand-edited the Housing himself — node 128:33 'EDITED VECTOR HOUSING' (COMPONENT, 1300x184, 47 descendants) on the Housing page. His words: 'I think I even got this to look better than the OG.'",
+    "handoff": "He left five placeholder strokes in blue (#0091ff/#0088ff at 5/4/5/4/2px) and asked for 'the light effect dark lines and etches' instead.",
+    "treatmentApplied": {
+      "node": "145:2 'EDITED VECTOR HOUSING (etched)' — a COPY; Jac's 128:33 is untouched",
+      "principle": "An engraved line is a PAIR, not a colour: a dark groove plus a lit edge 1px below where light catches. Source values — etch.css:229 'the etched copper: ~1px, only +13 luminance over the field' (--cu-a .056, stroke-width 1); Message Board glass recipe '1.4px dark line' + 'lit hairlines rgba(185,205,235,.13)'.",
+      "groove": "#0a0d11 @ .62 — 4.8px on the four long traces, 2.8px on the bottom-left bracket (Jac: 'Double the thickness of the lines AND the etchings')",
+      "litEdge": "rgba(185,205,235) @ .30 — 2.8px / 2.0px, offset 3.8px / 2.4px below the groove",
+      "alphaDeviation": "Lit alpha raised from the source's .13 to .30 because this face is mid-grey, not the near-black field etch.css was measured against.",
+      "jacFeedback": "First pass at 1.4px was too fine for the long runs — 'thicken the lines, the etchings in the bottom left corner are good.' Long traces went to 2.4px; the bottom-left bracket was left exactly as-is at his direction.",
+      "offsetRule": "offset = (groove + lit) / 2, so the pair sits exactly adjacent. Offsets MUST be rescaled whenever weights change or the thicker groove swallows the lit edge entirely.",
+      "weightHistory": "1.4/1.0 first pass (too fine) -> 2.4/1.4 -> 4.8/2.8 long, 2.8/2.0 bracket."
+    },
+    "IMPORTANT_thisIsARedesignNotARecreation": "128:33 is a deliberate improvement on the source, not a byte-exact trace of it. It therefore CANNOT pass _ref/check.py against original.png, and that is by intent, not a defect. It does not replace housing.css (C13, byte-exact, 6 children, already the 9-slice-shaped shell). Treat them as two different artifacts and do not gate one with the other's test.",
+    "codeTranslationDeferred": "Jac asked whether this needs translating to CSS/HTML. Deferred, on evidence: the Halo kit ships NOWHERE (nothing in index.html, style.css, app.js, config.js, sw.js or the manifest references halo-elements), ledger #214 is LOCKED that the kit is 'A SEPARATION, NOT A RECONCILIATION', Code Connect is a Phase 4 deliverable with zero mappings written, and nothing in this repo converts SVG to CSS — parts were authored by measuring the render scanline by scanline. Translation is not a button; it is the same authoring work as building the part from scratch.",
+    "OPEN_topRightLine": "CLOSED — Jac: 'Ignore it, I'll copy and paste your work to complete it.' He is finishing the top-right corner himself from the etched copy (145:2). Do NOT touch it.",
+    "handoffToJac": {
+      "node": "145:2 'EDITED VECTOR HOUSING (etched)' — he copies from here",
+      "layerNaming": "etch layers are PAIRS: '<name> — groove' and '<name> — lit edge', one lit edge per groove",
+      "theRule": "offset = (groove + lit) / 2. If a weight changes and the offset does not, the thicker groove swallows the lit edge and the engraving flattens to a plain line. This is the whole effect.",
+      "colours": "groove #0a0d11 @ .62 · lit edge rgba(185,205,235) @ .30"
+    }
+  },
+  "editedVectorDeck": {
+    "date": "2026-08-03",
+    "origin": "Jac: 'It was easier for me to finish the DECK from the Housing module so can you copy this over correctly? There may need to be some polishing to do.' He built it in a frame called 'Editing Deck Now' (143:329) parked on the HOUSING page at (-98.5,-907).",
+    "copiedTo": "149:144 'EDITED VECTOR DECK' — COMPONENT on the Deck page, placed below the byte-exact Deck. Promoted to a component to match how his 128:33 'EDITED VECTOR HOUSING' is set up.",
+    "untouched": [
+      "143:329 (his original, still on the Housing page)",
+      "74:3 (the byte-exact Deck, C10)"
+    ],
+    "carriesMyEtchWork": "Yes — Vector 8/9/10 groove + lit-edge pairs propagated through, grouped into Group 1/2/3.",
+    "OPEN_group3Clipped": "Group 3 sits at x1208.7 with width 387.5, so it runs to x1596.2 inside a 1445-wide frame — 151.2px is cut off and clipsContent is TRUE. NOT fixed, because a bleed off the right edge may be intentional. Options given: leave as bleed; respace all three evenly at x99/x528.75/x958.5 (three full groups, equal 42.25px gaps); or drop to two groups matching the Housing's mirrored pair. There is NO room for a third full group at the current spacing — it would have to start at x1057.5, butting against Group 2's end at x1053.6.",
+    "OPEN_proportions": "It inherited HOUSING geometry, not Deck geometry: 1445x184, against the byte-exact Deck's 1268x116 and his own Housing's 1300x184. It is a Housing-shaped frame carrying Deck content. If the two stack as a card row his pair is 368px tall where the source is 254+116. Flagged to Jac, not changed.",
+    "sameForkAsHousing": "Like 128:33, this is a REDESIGN and cannot pass _ref/check.py against original.png. It does not replace deck.css (C10, byte-exact, 22 painted children). Two artifacts; never gate one with the other's test."
+  },
+  "bulbSlots": {
+    "date": "2026-08-03",
+    "ask": "Jac: new slot design — 'The slots are bulbs that sit installed into steel panels. Make a component with 5 slots of the different signal colors.' Colour budget: 10 or simpler.",
+    "source": "His own vectorized bulb 143:6497 (65x58, 429 vectors, 12 colours) on the Slots page.",
+    "built": {
+      "Bulb": "158:2192 — COMPONENT_SET, 5 variants: State=Overdue / Due / Waiting / Done / Off",
+      "row": "158:2193 'Slots — signal row' — 5 instances, background DROPPED at Jac's request so the bulbs can be used on any surface (245x58, no fills, no effects)"
+    },
+    "method": "Jac asked 'is there any reason we cant just use the bulb I have? Duplicate it and adjust the coloring.' — and he was right. Duplicated his bulb 5x and HUE-ROTATED only the warm lens family (saturation > .2 and hue 0-45), leaving every neutral untouched, so all of his shading survives. Off desaturates to 10%. Hardcoded rather than tokenised, which is CONSISTENT with the CANON scope-lock (measured shading stays baked).",
+    "colourBudget": "Hit exactly 10 per variant by merging two near-duplicate pairs in his original: #f7f7f6 -> #ffffff and #ffc4a6 -> #e2ac90. 12 -> 10 with no visible change.",
+    "namedByState": "Variants are named by the canon state ladder, not by colour, because canon is 'colour = state' — blue = Waiting, yellow = near/due, red = bad, green = Done, grey = nothing (AGENTS.md:80, ledger #77).",
+    "CORRECTION_blueExists": "I initially told Jac the design language had no blue or green and created signal/* variables describing them as having 'NO MOCKUP SOURCE'. He corrected me: 'we have a blue color for Waiting.' TRUE — --blue #5b9dff (style.css:20), ledger #77. What is actually true is narrower: the Halo mockup RASTER is a red/yellow design and never depicts blue or green, so those two take the canon value in both modes. Variable descriptions were corrected.",
+    "signalVariables": "Added to Halo Language: signal/red, signal/amber, signal/green, signal/blue, signal/off. Currently REDUNDANT for this build since Jac's bulb is hardcoded — kept as the right home if the lamp is ever tokenised. Offered to delete; he has not said.",
+    "VECTOR_REDUCTION_FINDING": {
+      "ask": "Jac: 'try reducing vectors by scanning the image and drawing new vectors that encompass tiny puzzle pieced vectors by color.'",
+      "byColour": "429 -> 10 nodes (98%) but DESTROYS THE IMAGE. In a trace one colour's fragments are scattered through the z-stack, so merging them to one depth puts the dark bezel that sat BEHIND the lens in front of it. Result renders as a solid green blob. Kept on the page as 'Bulb — reduced (test)' to show the failure mode.",
+      "byContiguousRun": "429 -> 242 nodes (44%) and PIXEL-IDENTICAL. Merge only consecutive same-colour siblings; stacking order is preserved by construction. 96 runs merged, 187 nodes removed, longest run 12. VERIFIED by pixel diff of the same node pre- and post-merge: mean delta 0.0000, max delta 0, 100% of pixels within delta 8 — the PNGs are even the same byte size.",
+      "appliedToAll": "All 5 variants: 2145 -> 1210 nodes, 935 removed, identical run structure across every variant.",
+      "ceiling": "SUPERSEDED 2026-08-03 — see bulbCollapse_2026_08_03. The claim that 44% is the lossless ceiling was wrong: it assumed one node per contiguous same-colour run. Because VectorRegion carries its own fills, a whole trace collapses into ONE node (242 -> 1, 99.6%, pixel-identical). The untested 'merge by colour within z-bands' middle option is moot."
+    },
+    "FIGMA_GOTCHA_shear": "Figma CANNOT express a pure shear. Setting relativeTransform [[1,-0.325,0],[0,1,0]] silently normalises to a ROTATION [[1,-0.309,0],[0,0.951,0]] on EVERY node type — probed RECTANGLE, FRAME and VECTOR, all three. The Slots' lean only exists because it is baked into path COORDINATES. Note this contradicts the older PR-body claim that skewX is done 'via a relativeTransform matrix'.",
+    "FIGMA_GOTCHA_vectorSeat": "Setting vectorPaths RE-BASES the path to its own bounding box and compensates via x/y. Forcing x=0,y=0 afterwards therefore SHIFTS the shape by its bbox origin. A vector must be seated at its path's true minimum coordinates."
+  },
+  "multiSubitemElbow": {
+    "date": "2026-08-03",
+    "ask": "Jac building a multi-subitem conduit elbow: 'I cant finish because I don't know how to combine two elements so my vectors are getting covered by white space.'",
+    "diagnosis": "NOT the white fill — that was already hidden. The frame 143:9416 had clipsContent TRUE, and ~44 of his branch vectors were sitting loose on the PAGE (x>1200, y359-553) while the frame ended at y414. Everything crossing the frame edge was being cut, which reads as white space eating the artwork.",
+    "fix": "Disabled clipsContent, kept the white fill hidden, moved all 44 loose vectors into the frame preserving absolute positions, grew the frame to the union bounds with 6px padding, renamed to 'Conduit — multi-subitem elbow' (143:9416, 101 children), aspect-locked.",
+    "revealedNotCaused": "With the clip off, his two branches are seen to OVERLAP in absolute space. That was always true — the clip was hiding the second branch's upper half. Left as-is; repositioning is his design call.",
+    "THE_TWO_WHITE_SPACE_CAUSES": {
+      "opaqueFrameFill": "Figma's vectorize adds a SOLID #ffffff frame fill. A stacked copy paints over whatever is beneath it. Fix: remove the frame fill. Same trap hit the Bulb (a full-bleed white backing rect) and the Screen.",
+      "clipsContent": "A frame with Clip content ON cuts any child crossing its edge. The giveaway is that geometry is lost along a perfectly STRAIGHT line at the frame boundary.",
+      "combining": "Selecting both and pressing Cmd/Ctrl+G groups them — but combining is rarely the actual fix; one of the two properties above almost always is."
+    },
+    "reductionAvailable": "101 nodes. The contiguous-run merge (see bulbSlots.VECTOR_REDUCTION_FINDING) would take roughly 44% off with zero visual change, if asked."
+  },
+  "assemblyDraft_172_7876": {
+    "date": "2026-08-03",
+    "what": "Jac's near-final rough draft — 'Group 2' (172:7876) on the Assembly page. Main row + subitem row joined by the multi-subitem conduit elbow.",
+    "critiqueGiven": [
+      "The conduit does the HIERARCHY work — the subitem relationship reads with no label, indent guide or connector line. That is the hard part and it is solved structurally.",
+      "FAILED screen is not 'installed' like the other parts: 142px tall in a 151px deck (4 above, 5 below) where the board and slots are symmetrically inset at 34/40. Its black is darker than the deck and its right edge is square where the deck's is chamfered. It reads as resting ON the row, not set INTO it. Not changed — Jac's call.",
+      "Marks IS in use despite Jac saying it was not: EXCAVATOR is Marks — Name and the hexagon is Marks — Hexicon. Only Rivet and Bracket are genuinely unused.",
+      "EXCAVATOR is the only white in the composition and out-shouts the FAILED screen, which is the actual alert — a glance lands on equipment name before failure state. Suggested dialling weight, not size. Not changed."
+    ],
+    "gapsFixed": {
+      "topRow": "was 24.6 / 0 (slots and board TOUCHING) / 25.9 -> uniform 16.5",
+      "subRow": "hexicon and name were touching at 0 -> 16.5, by moving the HEXICON LEFT so nothing downstream shifted",
+      "MISTAKE_worthRemembering": "My first sub-row pass ran the same anchor-based normaliser and it computed a NEGATIVE gap (-22.7) because the content is wider than the span between its anchors, packing EXCAVATOR on top of the hexicon. An even-distribution normaliser MUST be guarded against negative gaps.",
+      "boundingBoxesLie": "The sub-row slots instance is 258 wide but displays only 3 bulbs, so its BOX overlaps the message board by 92px while nothing overlaps visually. Gap maths must use absoluteRenderBounds, not x/width."
+    },
+    "mergeResult": {
+      "applied": "Contiguous-run merge on the three still-unmerged vectorize-derived parts.",
+      "saved": "EDITED VECTOR DECK 140->131, FINAL HOUSING 59->50, conduit elbow 56->47. Total 27 nodes (1.2%).",
+      "NOT_pixel_identical": "mean 0.115, max delta 19, 946 pixels changed (0.405%), all at y0-20 and y100-120 — the Deck's band seams, where merging abutting same-colour fragments erased their hairline anti-aliased seams. PASSES the kit gate (mean <=1.0 AND >=99% within delta 8) at 99.59%, but is NOT byte-identical the way the bulbs were.",
+      "WHY_IT_BARELY_PAID": "These parts alternate colour band by band (measured shading), so nearly every run has length 1. The bulbs had runs up to 12. RUN-MERGE ONLY PAYS WHERE THE TRACE PRODUCES LONG SAME-COLOUR RUNS — check run length distribution before bothering.",
+      "whereTheWeightIs": "1936 of 2208 nodes (88%) are the 8 bulb instances at 242 each, already merged from 429. NO further lossless reduction is available in this assembly.",
+      "revertPossible": "Pre-merge originals all survive: 143:329 (deck), 128:33 (housing), 105:78 (conduit). Rebuild from those if the 946 pixels are wanted back.",
+      "CORRECTION": "I reported mid-run that the assembly total dropped to 1422. That was a stale mid-transaction read. Real total is 2208, down exactly 27."
+    }
+  },
+  "bulbCollapse_2026_08_03": {
+    "ask": "Jac: 'Work hard on the bulbs so they're not so costly.' The 8 bulb instances were 88% of the assembly (1936 of 2208 nodes) at 242 nodes each.",
+    "RESULT": "Each variant collapsed 242 nodes -> 1 node (99.6%). Component set 1210 -> 5. Assembly 2208 -> 288 (87%). Verified pixel-identical on all five variants: worst mean delta 0.0029, max 7, 3-5 pixels of 3770 differ, 100% within delta 8 — orders of magnitude cleaner than the deck/housing/conduit flatten merge (mean 0.115, 946 px changed).",
+    "THE_MECHANISM": "A single VectorNode can carry MANY differently-coloured shapes, because VectorRegion has its own `fills` (region keys: windingRule, loops, fillStyleId, fills). Regions paint in ARRAY ORDER, later over earlier — verified with a red/green/blue overlapping-square probe. So all 241 visible child vectors concatenate into one network: append vertices with the child's x/y added, append segments with a vertex-index offset, append regions with a segment-index offset. Figma does NOT weld coincident vertices, so tiled trace fragments survive intact.",
+    "THE_TRAP_THAT_COST_THE_MOST": {
+      "what": "`figma.createVector()` ships with a DEFAULT 1px SOLID BLACK STROKE (and empty fills). Every region in the merged node was being OUTLINED in black, which on a densely-tiled trace reads as 'the lens renders black' — it looks exactly like a renderer bug or a per-region-fill limitation.",
+      "fix": "Set `vec.strokes = []` after setVectorNetworkAsync. That alone took the full-bulb merge from 55.89% of pixels wrong to 0.13%.",
+      "THE_GIVEAWAY": "Merging at K=2, 4, 8, 16 and 32 children per node produced BYTE-IDENTICAL renders (mean 34.5184, max 226, 2107 differing — all five the same). Node count changed 121->8 but the render did not. Total outline LENGTH is independent of how the regions are grouped, so an identical-across-granularity diff means the error is per-PATH (a stroke), not per-NODE. Reach for that test first next time — it localises a stroke/outline bug in one step.",
+      "wrongTurnsItCaused": "Chased overlap depth, region count, curve tangents, fill-object shape (bare {type,color} vs copied paint), region order reversal, and node-level fills. All were dead ends; every one of them still rendered black because the stroke was never cleared."
+    },
+    "OTHER_FINDINGS": {
+      "regionFillsSurviveTheWrite": "Read-back after setVectorNetworkAsync showed all 428 region fills byte-identical to source (histogram match). Figma normalises bare {type,color} paints back to the full form with visible/opacity/blendMode/boundVariables.",
+      "autoSeating": "setVectorNetworkAsync auto-seats the node at its true bbox origin — the merged vector landed at x=2.67 y=3.20 size 59.44x52.65 inside the 65x58 frame with NO manual correction. This refines the older FIGMA_GOTCHA_vectorSeat note, which was about vectorPaths.",
+      "nodeFillsGoMixed": "With differing region fills the node-level `fills` reads as figma.mixed (`.length` is undefined). Setting node-level fills does NOT override region fills and does NOT fix a stroke problem.",
+      "zSafeColourMergeNotNeeded": "Computed a z-safe same-colour grouping (merge same-colour fragments across z-gaps where no differently-coloured fragment between them overlaps) as a fallback: it would have given 241 -> 161 nodes, only 33%. Made moot by the single-node collapse."
+    },
+    "SUPERSEDES": "bulbSlots.VECTOR_REDUCTION_FINDING.ceiling claimed '44% is the honest ceiling for a LOSSLESS reduction of a trace'. That was wrong — it assumed one node per contiguous same-colour run. The real lossless ceiling is ONE NODE PER TRACED OBJECT (99.6%), because colour lives on the region, not the node.",
+    "recoverySource": "Jac's untouched 429-vector original 'image 2 [Vectorized]' (143:6497) is still on the Slots page. The collapse is reversible from it.",
+    "STILL_AVAILABLE": "EDITED VECTOR DECK (131 nodes) is now the assembly's biggest item, plus two conduit groups at 71 and 48. The same collapse applies. Better still, rebuilding the deck/housing/conduit from their surviving pre-merge originals (143:329, 128:33, 105:78) and collapsing THIS way instead would both undo the 946-pixel seam damage from the flatten merge AND take them to ~1 node each. Not done — Jac asked about the bulbs.",
+    "tradeoff": "The bulb is now one shape rather than 242 selectable fragments. It stays fully vector and editable in Figma's vector editor, and the per-variant hue-rotation is still baked per region, so retinting is still scriptable (map region fills directly)."
+  },
+  "partsCollapse_2026_08_03": {
+    "ask": "Jac: 'do the deck and conduits the same way' — apply the bulb collapse to the remaining traced parts.",
+    "results": {
+      "EDITED VECTOR DECK (149:144, Deck page)": "131 -> 32 nodes",
+      "FINAL HOUSING (145:2, Housing page)": "50 -> 28 nodes",
+      "Conduit (assembly elbow)": "47 -> 1 node",
+      "assembly (172:7876)": "288 -> 121 nodes; 2235 at session start"
+    },
+    "verification": "Each part diffed against an untouched clone: deck mean 0.0002 / max 15 / 20 px of 265,880; housing mean 0.0001 / max 6 / 7 px; conduit mean 0.0001 / max 2 / 3 px. All 100% within delta 8. Whole assembly vs pre-collapse render: 17 px of 396,495 differ, 100% within delta 8.",
+    "WHY_DECK_AND_HOUSING_CANNOT_REACH_ONE_NODE": {
+      "cause": "A VectorRegion carries fills but NOT strokes. 22 of the deck's 126 vectors and 21 of the housing's 46 carry real strokes (weights 13/6/4/2 px, CENTER-aligned), plus one effect node each. Those must stay separate nodes or the stroke is lost.",
+      "method": "Collapse maximal runs of CONSECUTIVE COLLAPSIBLE SIBLINGS (no stroke, no effect, no rotation/scale, opacity 1, normal blend) within each container. Sibling-only runs keep z-order exact and avoid cross-group coordinate/placement problems. Deck merged runs of 8, 10 and 84; housing one run of 23; conduit one run of 47.",
+      "ifMoreIsWanted": "node.outlineStroke() converts a stroke into filled geometry, which would make those nodes collapsible too — but it destroys the editable stroke weight. NOT done; it is a design-destructive change and those weights look deliberate."
+    },
+    "THE_SECOND_DEFAULT_VALUE_TRAP": {
+      "what": "A vector created by figma.createVector() defaults to constraints MIN/MIN. Every original sibling in the deck and housing was SCALE/SCALE. The deck's main component is 1445x184 but its assembly INSTANCE is 1335x151, so on that resize the merged artwork stayed pinned top-left instead of scaling — tearing the plate edges and end caps. Jac spotted it in the live file.",
+      "detection": "Per-part diffs all PASSED (the components render at native size) while the whole-assembly diff FAILED at mean 5.01 / 12.3% of pixels. A part that passes in isolation but fails in composition means the difference is in how the container RESIZES it, not in the geometry.",
+      "fix": "Set constraints {horizontal:'SCALE', vertical:'SCALE'} on every merged vector. Assembly went to 17 px differing, 100% within delta 8.",
+      "rule": "After ANY createVector, set BOTH strokes=[] AND constraints — the two defaults that silently corrupt a merge. This is the same class of bug as the default black stroke."
+    },
+    "assemblyIsNowFullyInstanceBacked": {
+      "ask": "Jac: 'I'm ready for the main components to be the ones making this assembly so that I can edit them in place.'",
+      "finding": "Everything was ALREADY an instance of a main component except the Conduit, which was a raw FRAME (172:5135) cloned from 105:78 and resized.",
+      "done": "Promoted it to main component 'Conduit — subitem elbow' (212:80) on the Conduit page via figma.createComponentFromNode, and swapped the assembly's frame for an instance at identical position and size. Byte-identical: 0 pixels changed.",
+      "editMap": {
+        "EDITED VECTOR DECK": "149:144 — Deck page",
+        "FINAL HOUSING": "145:2 — Housing page",
+        "Conduit — subitem elbow": "212:80 — Conduit page (NEW)",
+        "Group Name / State=Failed": "38:8 — Group Name page",
+        "Message Board (x2)": "21:10 — Message Board page",
+        "Slots — signal row (x2)": "158:2193 — Slots page",
+        "Marks — Name": "70:7 — Marks page",
+        "Marks — Hexicon": "70:5 — Marks page"
+      },
+      "remaining": "The only non-instance nodes left in the assembly are three wrapper GROUPs used as layout containers (the assembly root and two row groups). The assembly root itself is still a GROUP, not a component — offered, not done."
+    },
+    "JACS_BULB_QUESTION": {
+      "asked": "Would the bulbs be lighter if we froze it in place, cut away just the 'light up' portion, or made it opaque for colour changes?",
+      "cutAwayTheLensNO": "MEASURED AND REJECTED — 406 of the bulb's 428 regions (95%) ARE the lens. Only 22 are neutral bezel/rim. A shared static base would carry almost nothing and every state variant would still hold 95% of the geometry.",
+      "opaqueTintLayerYES": "The real win. The 5 variants are 5 COMPLETE COPIES of identical geometry differing only by a hue rotation on the warm family. One base + a COLOR-blend tint per state preserves luminosity (so the measured shading survives) and cuts stored geometry 5x -> 1x, about 15,000 vertices. Costs ~2-3 nodes per placed bulb instead of 1.",
+      "freezeRasterize": "Lightest possible — zero vector geometry, one image fill. Defensible for a 65x58 lamp only ever used at one size, but it stops being a vector library asset and cannot be retinted without re-export.",
+      "notDecided": "Depends whether 'costly' means stored file weight (tint layer) or render cost at fixed size (freeze). Node count is already at its floor."
+    }
+  },
+  "assemblyRestructure_2026_08_03": {
+    "collapsePassCompleted": {
+      "MessageBoard set (21:36)": "96 -> 89 nodes; 7 of 8 variants had one mergeable pair",
+      "GroupName set (38:14)": "20 -> 17; State=Blank had a run of 4",
+      "everythingElse": "0 remaining. Every main component behind the assembly now reports zero collapsible sibling runs. The lossless node collapse is EXHAUSTED across the assembly.",
+      "whatBlocksMore": "What remains is almost entirely STROKED vectors (22 deck, 21 housing, 12 Group Name, 5 Message Board). A VectorRegion carries fills but not strokes, so they cannot merge without outlineStroke(), which destroys the editable stroke weight."
+    },
+    "VERIFICATION_PITFALL_screenshotRescale": {
+      "what": "get_screenshot's maxDimension caps the LONGER edge. Ask for less than the node's larger dimension and the PNG comes back RESCALED — e.g. a 1501x1802 node at maxDimension 1800 returns 1500x1800, a 1500/1501 shrink. That sub-pixel drift grows with x, so a panel at x=700 lands half a pixel off and any sharp edge or text reads as a huge difference: ~50% of pixels differing, max delta ~170, mean 1-4.",
+      "cost": "Burned a Haiku agent run plus two of my own passes 'confirming' the Message Board collapse had corrupted 10 variants. It had not.",
+      "TWO_RULES": "(1) Request maxDimension >= the node's LARGER dimension and CHECK the returned width/height equal original_width/original_height before trusting any diff. (2) ALWAYS include an UNCHANGED control in the comparison. Rows I never merged failed identically to rows I did — that is what proved the measurement was at fault, not the geometry. At true 1:1 all 10 passed, worst mean 0.2858, worst within-8 99.55%.",
+      "noiseFloor": "Two copies of the SAME node at different fractional x offsets differ by ~0.2 mean / ~40% of pixels at delta 1-2. That is the floor for this method, not a defect."
+    },
+    "mainComponentsMovedIntoAssembly": {
+      "ask": "Jac: 'These should be the main components so that I can edit them in place... If they are the main components they should live update their sisters on their pages.'",
+      "done": "Deck (149:144), Housing (145:2), Conduit elbow (212:80), Marks Name (70:7) and Marks Hexicon (70:5) now LIVE in the assembly at their instances' exact slots. Each left an instance behind on its own page, resized back to the original reference dimensions. Assembly render byte-identical after the deck/housing/conduit move (0 pixels changed).",
+      "TWO_HARD_BLOCKERS": {
+        "componentSetMembers": "Message Board (21:10) and Group Name (38:8) are VARIANTS inside COMPONENT_SETs (8 and 2 variants). A variant cannot be moved out of its set without destroying variant switching. They must stay as instances.",
+        "duplicatedUsage": "Message Board and Slots — signal row each appear TWICE in the assembly. Only one copy can hold the main."
+      },
+      "sizeNote": "Every instance was a different size from its main, so the main adopts the assembly's size as canonical and the page sister carries the old size as an explicit override. A main resize propagates to instances without an override — the sister resize only sticks if done in a SEPARATE use_figma call after the main resize.",
+      "hazard": "A main nested in a GROUP means dragging the assembly group's handles rescales the main and every sister with it. That is what was asked for, but it is a live foot-gun."
+    },
+    "MESSAGE_BOARD_LATENT_BUG_FOUND": {
+      "symptom": "The FAILED screen in the top row rendered as 'LED' behind a dark smear.",
+      "cause": "NOT the merges. Inside the Message Board main, the nested `glass`, `bloom` and `ring halo` carry MIN/MIN constraints while every sibling is SCALE/SCALE, and their parent frames have clipsContent FALSE. At the main's native 633px the 607.8px glass fits. The assembly instance is 486px, so the glass did not shrink and spilled 122px past the board, straight over the FAILED panel.",
+      "fix": "Set those three to SCALE/SCALE in the main. Glass went 607.8 -> 466.7 and the smear cleared.",
+      "lesson": "Third default/inherited-value trap in this work, after the black stroke and MIN/MIN on created vectors. Any nested child of a SCALE container that is itself MIN/MIN is a latent bug that only shows when an instance is resized."
+    },
+    "jacsShaderPattern": {
+      "what": "Jac applied a SHADER paint with blendMode COLOR_DODGE as the BOTTOM fill of the subitem Message Board's `inner` vector, replacing the plain SOLID; the four linear gradients above it are unchanged.",
+      "done": "Copied that exact paint onto the main-item board's `inner` (fill stacks now match: SHADER:COLOR_DODGE + 4 GRADIENT_LINEAR:NORMAL).",
+      "STILL_BLOCKED": "It does not READ yet, because the main-item board carries an extra `glass` layer that the subitem board does not — opaque, sitting above `inner`, hiding the dodge. Hiding it was attempted 3x and every write failed on stale node ids (225:6) because Jac was editing the file live. use_figma is atomic so nothing was half-applied. Needs a retry when the file is quiet."
+    },
+    "bulbReductionCandidates": {
+      "ask": "Jac: reduce the bulbs ~70%, they are too detailed and do not match the flatter matte look of the rest of the kit.",
+      "method": "Drop regions below an area threshold, then quantise the survivors' fills to the N most area-dominant colours. Built by a Sonnet agent in frame 220:7 on the Slots page, left in place for review.",
+      "results": {
+        "A (N=6, minArea 1.0)": "204 regions, 52% cut — near-indistinguishable, misses the target",
+        "B (N=5, minArea 2.0)": "143 regions, 67% — mildly banded, still misses",
+        "C (N=4, minArea 3.0)": "119 regions, 72% — flat hard-edged bands, bezel clean, grille still legible",
+        "D (N=4, minArea 6.0)": "61 regions, 86% — grille dissolves into a blob"
+      },
+      "agentRecommendation": "C — only candidate that hits <=128 regions while keeping the grille detail.",
+      "status": "NOT APPLIED — awaiting Jac's pick."
+    }
+  },
+  "bulbCandidateC_applied_2026_08_03": {
+    "ask": "Jac: reduce the bulbs ~70% — too detailed, doesn't match the flatter matte look of the kit, and they're too small to need it. Then: 'Candidate C is perfect after some of my edits.'",
+    "checkedFirstThatHeHadNotEditedC": "His wording could have meant he hand-edited the candidate, in which case recomputing would have silently discarded his work. STOPPED the running apply-agent, then recomputed candidate C from source and compared it region-by-region against the built Panel — C: 119 vs 119 regions, identical palette, ZERO colour mismatches. So his edits were elsewhere and per-variant recomputation was safe. Worth repeating that check any time a user says a generated artifact is good 'after my edits'.",
+    "applied": "All 5 variants 428 -> 119 regions, 72.2% cut, one node each.",
+    "method": "Drop every region whose shoelace area < 3.0 px^2, then quantise survivors to the 4 colours with the greatest total area, remapping by nearest squared-RGB. Run PER VARIANT against that variant's OWN colours — the variants are independent hue rotations, so a shared palette would flatten the state colours into each other.",
+    "resultingPalettes": {
+      "Overdue": "#354843 #482212 #da7f68 #763827",
+      "Due": "#354843 #484112 #dac068 #766527",
+      "Waiting": "#354843 #122848 #68a2da #274d76",
+      "Done": "#354843 #124830 #68da9d #27764d",
+      "Off": "#354843 #302c2a #a79e9c #524c4a"
+    },
+    "visualCheck": "Before/after rows rendered side by side (frame 'ZZ bulb verify'). All five still read as lit bulbs seated in bezels, states stay clearly distinct, and the result is visibly flatter/matter as asked. Bezel and grille remain legible.",
+    "NOT_pixel_gated": "This is a DELIBERATE design change, so the byte-identical gate used for the lossless collapses does not apply and was not used. Judgement was visual.",
+    "candidatesKept": "Frame 'ZZ bulb candidates' (220:7) on the Slots page still holds A/B/C/D for reference."
+  },
+  "cardHeaderPage_2026_08_03": {
+    "ask": "Jac: 'create the card header. Put it all on one page starting with the assembled elements and then the broken down versions around it so that I can edit and view them live assembled.'",
+    "delegated": "Sonnet agent building page 'Card Header': assembly 172:7876 moved there, with labelled instance stations for every constituent part below it.",
+    "AMBIGUITY_FLAGGED": "Because the mains were earlier moved INTO the assembly at Jac's instruction, the surrounding part stations are INSTANCES that live-update FROM the assembly — editing the assembly copy updates the stations, not the reverse. If Jac actually wants to edit the broken-down parts and see the assembly follow, the mains have to move back OUT to the stations and the assembly go back to instances. Both are one operation; needs his call."
+  },
+  "workbenchPage_2026_08_03": {
+    "ask": "Jac: 'I still cant edit in place.' He made a fresh page with his assembled component and asked for all the main components placed around it so he can edit and see them live together.",
+    "page": "MAIN+SUB ASSEMBLY (226:1083). Holds instance 226:1084 of COMPONENT 'Main Assembly' 226:1018.",
+    "WHY_HE_COULD_NOT_EDIT_IN_PLACE": "An INSTANCE cannot be structurally edited — only its main can. Every part of the assembly was an instance whose main lived on another page, so there was nothing on his page to edit. The fix is physical: put the MAINS on the same page as the assembly instance.",
+    "HIS_COMPONENTISATION_FIXED_THE_WIRING": "Jac turned the assembly into COMPONENT 226:1018, which DELETED group 172:7876 and ejected the mains I had earlier moved inside it back out as instances. That is because a main component CANNOT be nested inside another component. It made my earlier inversion moot and produced the direction he wanted: edit the part, the assembly follows.",
+    "moved": {
+      "sixLooseMains": "149:144 EDITED VECTOR DECK, 145:2 FINAL HOUSING, 212:80 Conduit — subitem elbow, 158:2193 Slots — signal row, 70:7 Marks/Name, 70:5 Marks/Hexicon",
+      "threeVariantSets": "21:36 Message Board (8 variants, from the Message Board page), 38:14 Group Name (2, from Group Name), 158:2192 Bulb (5, from Slots)",
+      "whyMoveWholeSets": "A variant cannot be pulled out of its COMPONENT_SET without destroying variant switching. Moving the ENTIRE SET is the only way to make those editable on his page. Side effect: those sets no longer live on their own library pages — flagged to Jac, trivially reversible."
+    },
+    "BULB_SET_DEFECT_FOUND": {
+      "what": "COMPONENT_SET 158:2192 measured 65x58 — one variant's size — with clipsContent TRUE, and all five variants sat stacked at (0,0). Only one bulb was ever visible; the other four were hidden under it and clipped.",
+      "fix": "Spread the variants to x 0/89/178/267/356, set clipsContent false, resized the set to 445x82. All five now visible and distinct.",
+      "note": "Pre-existing, not caused by the reduction work — but it would have made the set uneditable and is the kind of thing only a render check catches. A COMPONENT_SET does NOT auto-grow to fit repositioned variants; resize it explicitly."
+    },
+    "layout": "Assembly at top under 'ASSEMBLED — live preview'; six mains under 'MAIN COMPONENTS — edit these, the assembly above updates live'; the three sets under 'VARIANT SETS'. Every station labelled. Overlap sweep run over all top-level nodes; the only remaining intersections are two section headings brushing the component below them, plus Jac's own 'Rectangle 1' backdrop which was deliberately left alone."
+  },
+  "messageBoardShader_2026_08_03": {
+    "ask": "Jac: the subitem Message Board in the assembly is the only one with the pattern background that replaces the texture asset. He wants the app simplified and lightened. Update the main component. Then: 'Only one of the message boards have taken the new background.'",
+    "whatThePatternActuallyIs": "A SHADER paint at COLOR_DODGE sitting at the BOTTOM of the inner layer's fill stack, under four linear gradients. The texture it replaces is a tiled IMAGE fill (hash be41cbf4…, TILE, opacity 0.9) on a separate 'glass' vector.",
+    "firstPass": "Copied the shader stack onto main 21:10's 'inner' and hid its 'glass'. Correct, but only fixed ONE of the eight variants.",
+    "WHY_ONLY_ONE_TOOK_IT": "My own earlier simplification pass had merged 'plate'+'inner' into a single 'Merged artwork' vector in SEVEN of the eight variants, leaving 21:10 alone with its layers intact. So the other seven had no 'inner' layer for a shader to be copied onto. This is a direct downstream cost of the collapse work -- worth remembering that merging layers silently removes the handles that later edits need.",
+    "fix": "Each merged variant turned out to hold exactly TWO regions -- region 0 the old plate gradient, region 1 the old inner (SOLID #05070b + 4 gradients), the same five-fill structure 21:10's inner had. So swapping region 1's fills[0] from the solid to the shader is an exact one-for-one analogue. Applied to all seven, plus glass hidden on all eight.",
+    "whyTheFillVariantsSurvive": "The red State=Fill variants take their colour from a separate 'fill (state/hot-fill)' SOLID #ff433e layer ABOVE the inner, so swapping the inner base does not darken them. Verified by render: four dark Default variants and four red Fill variants, all consistent.",
+    "sideEffect": "The heavy horizontal striping on the red variants is gone, because that came from the same glass texture that was retired. Consistent with the stated goal of lightening, but it IS a visible change to those four variants."
+  },
+  "conduitSimplification_2026_08_03_BLOCKED": {
+    "ask": "Jac: simplify the elbow conduit -- drop the top connector and replace it by duplicating the bottom-right connecting piece (212:80).",
+    "blocker": "The earlier collapse fused the conduit's 47 layers into ONE 'Merged artwork' vector of 56 regions, so there is no top-connector layer to delete and no bottom-right layer to duplicate.",
+    "diagnosticBuilt": "Frame 'ZZ conduit zones' (244:253) on MAIN+SUB ASSEMBLY renders three copies: all-zones, top-removed, br-only. Top connector detail = 12 regions [2,3,4,5,6,7,8,13,14,15,16,17]. Bottom-right piece = 20 regions [26,27,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,48,49,52].",
+    "WHY_A_REGION_DELETE_IS_NOT_ENOUGH": "The base silhouette is a SINGLE closed path spanning the entire elbow, sitting in neither zone. Deleting the 12 top-detail regions strips the top bar's surface but leaves its grey body standing -- visible in the middle copy of the diagnostic. Actually dropping the connector means cutting the silhouette path itself, which risks a ragged edge.",
+    "optionsPutToJac": "(a) region surgery on the merged vector, (b) restore the conduit from Figma version history to its 47-layer form and do it cleanly on real layers, (c) composite a mirrored duplicate over the top and clip. Awaiting his call -- not proceeding blind on a visible asset.",
+    "resolved": {
+      "jacChose": "region surgery on the merged vector (over restoring layers or compositing)",
+      "cut": "Dropped the 17 regions lying wholly inside the top-bar zone (y<=38, x<=138), then cut the top run of vertices out of each surviving contour and closed the gap with a bridge segment. The base silhouette cut cleanly -- flat angled face, no ragged edge.",
+      "graft": "Duplicated the 20 bottom-right regions under a 180-degree rotation about the artwork centre (100.65,59.75). Rotation alone landed the piece detached, because the elbow is not truly point-symmetric. Measured the actual joint instead: cut face midpoint (74.3,41.9) vs the rotated attachment point (66.4,19.9), giving a translation of (+7.9,+22.0).",
+      "strays": "Regions 26,27,49 sat against the body in the original and floated once rotated, so they are excluded from the graft -- 17 of the 20 are used.",
+      "applied": "Written to the real component vector 212:79; component still 223.4x156.3, so nothing downstream reflows. Diagnostic frames removed."
+    },
+    "CORRECTION": {
+      "what": "I reported the conduit surgery as applied cleanly. It was not fully faithful.",
+      "evidence": "The trial vector held 56 regions in ONE vector. After setVectorNetworkAsync the component holds 51 regions across TWO vectors (212:79 with 39, plus a separate 238:2276 with 12). Figma pruned part of the graft on write and split the geometry.",
+      "visibleResult": "The elbow reads correctly and the top fitting is present, but it is thinner than the mirrored duplicate shown in the trial -- not the faithful copy of the bottom-right piece that was approved.",
+      "openQuestion": "Whether to redo the graft so the top fitting matches the bottom-right exactly. Left with Jac -- not redone unprompted."
+    }
+  },
+  "assemblyIsNowTheMain_2026_08_03": {
+    "ask": "Jac, frustrated: 'I want the assembled components to be the MAIN so I can live edit in place.'",
+    "rootCause": "The 'ASSEMBLED -- live preview' block was a GROUP ('Group 5') wrapping an INSTANCE (226:1084) of a 'Main Assembly' component that lived on a DIFFERENT page ('Assembly'). So Jac was looking at an instance of a component stored elsewhere -- nothing in it could be edited in place. This is the single best explanation for most of the session's friction: his in-place edits had nowhere to land, and my edits to mains were happening on nodes he was not looking at.",
+    "fix": "Moved the main component 226:1018 from the 'Assembly' page onto MAIN+SUB ASSEMBLY at the preview's exact position (-658,-345), then deleted the redundant Group 5 wrapper. Verified file-wide first that 226:1018 had exactly ONE usage, so nothing else broke. Relabelled the heading to 'ASSEMBLED -- this IS the main, edit in place'.",
+    "whatIsStillAnInstance": "The sub-pieces INSIDE the assembly (FINAL HOUSING, Message Board, Conduit, Slots, Bulbs, Marks) remain instances pointing at their mains laid out below on the same page. That is deliberate -- it is what makes one Message Board edit propagate to both boards in the assembly. If Jac wants those editable in place too, the mains would have to be pulled up into the assembly itself.",
+    "CORRECTION_component_nesting": {
+      "iWasWrong": "I stated that Figma allows a COMPONENT nested inside another COMPONENT and only forbids COMPONENT_SETs. Figma rejected the reparent outright: 'Reparenting would create a component inside a component.'",
+      "actualRule": "A COMPONENT cannot contain another COMPONENT. Since the assembly was itself a component, NOTHING could be a main inside it.",
+      "resolution": "Dissolved 'Main Assembly' from COMPONENT to FRAME (verified zero instances first, so nothing broke), which legalises mains inside it. Then moved five plain mains -- FINAL HOUSING, Slots, Marks/Name, Marks/Hexicon, EDITED VECTOR DECK -- into their assembled positions and deleted the hosting instances. Jac now edits those in place.",
+      "sideEffect": "Slots -- signal row was resized 245x58 -> 258x71 to match its assembled instance, which changes the default size for any instance not carrying its own size override.",
+      "stillInstances": "Message Board x2 and Group Name remain instances, per Jac's choice -- a variant cannot be placed individually, only a whole set, and a set cannot sit in a layout position."
+    }
+  },
+  "messageBoardEvenness_2026_08_03": {
+    "ask": "Jac: 'You did not apply the message board background to all the elements evenly' -- circling variant 21:10 in the set.",
+    "rootCause": "A SHADER paint maps to the bounding box of the NODE that carries it. Seven variants carry it as a region fill inside 'Merged artwork' (617.8x56). Variant 21:10 alone still had unmerged plate+inner and carried it on 'inner' (607.8x47.45) -- about 18 percent shorter vertically, so the pattern was sampled at a different scale and origin. Same paint, different node box, visibly different result.",
+    "fix": "Merged 21:10's plate+inner into a single 'Merged artwork' vector matching the other seven: plate network at origin as region 0, inner network offset by (4.3,4.45) as region 1 carrying SHADER + 4 gradients. Node now sits at (9,5) like the rest. Verified by render -- all four Default variants read identically.",
+    "generalLesson": "When a shader is the background, structural parity between variants is not cosmetic -- it determines how the pattern is sampled. Any variant whose shader-bearing node differs in size will look wrong no matter how identical the paint is."
+  },
+  "cRecipe_2026_08_03": {
+    "whatJacWasPointingAt": "A panel from HIS OWN bulb simplification study on the 'Slots' page -- Panels SOURCE/A/B/C/D at y~1454. Panel C = 'N=4 minArea=3 | 119/428 regions (72% cut) | target met'. He said: 'I've been trying to tell you to use this but I don't know how to make my edits stick.'",
+    "WHY_THIS_MATTERS_MOST": "The C recipe culls tiny REGIONS INSIDE a single vector. It does NOT merge layers. What I had been doing all session was the opposite -- collapsing separate layers into one 'Merged artwork' node -- and that is what destroyed the handles later edits needed (no 'inner' layer to shader on 7 of 8 board variants; no top-connector layer to delete on the conduit). Jac's recipe gets the weight down WITHOUT costing editability. Prefer it over layer merging on anything still being designed.",
+    "whyHisEditsWouldNotStick": "Same root cause as the assembly fix logged above -- he was editing an instance of a component stored on another page. Fixed by moving the main onto the assembly page.",
+    "stateFound": "The bulbs ALREADY carry C: 119 regions, 4 distinct solids, zero further regions under the area floor. His study was complete and applied; he wanted the same treatment elsewhere.",
+    "applied": "Ran the C cull (drop regions with polygon area < 3) across the remaining heavy MAIN vectors: 206:241 deck bracket 84->35 (58% cut), 238:2276 conduit cap 12->10 (17%), 212:79 conduit body 39->36 (8%), 206:240 deck bar 12->11 (8%), 206:242 FINAL HOUSING 32->31 (3%). Before/after clones left in frame 'ZZ C-recipe verify' (263:123) on MAIN+SUB ASSEMBLY, mirroring his own 'ZZ bulb verify' method. Visually indistinguishable -- the deck bracket loses one thin highlight edge.",
+    "note": "Only 206:241 had real fat on it. The rest were already lean, so the recipe is close to exhausted on the current component set."
+  },
+  "messageBoardDarkBase_2026_08_03": {
+    "jac": "'You changed my Message Board design. I wanted the darker back not the lighter red one.'",
+    "myError": "When rolling the shader out I REPLACED fills[0] -- the dark base SOLID -- with the shader paint, on all eight variants. The darkness of the board was coming from that base fill. The four gradients above it are partially transparent, so with the base gone a COLOR_DODGE shader had nothing dark to dodge against and rendered as a bright red wash.",
+    "whyIMissedIt": "I reasoned that the subitem board Jac approved also had no solid on its inner (SHADER + 4 gradients) and concluded a straight one-for-one swap was faithful. That ignored the fact that the approved subitem was an unmerged 'inner' NODE sitting above a separate plate node, so its dodge resolved against a different backdrop than a region fill inside a merged vector does. Structure changes what a blend mode resolves against -- matching a fill LIST is not the same as matching a rendered result.",
+    "fix": "Re-inserted the dark base beneath the shader on region 1 of every variant, so the stack is now SOLID -> SHADER(dodge) -> 4 gradients. Bases restored per variant: #060f18 for 21:10, #05070b for the other seven. Dodge over a near-black backdrop stays near-black except where the pattern peaks, which is exactly the subtle texture Jac wanted.",
+    "rule": "Never drop a base fill to make room for a shader. Put the shader ABOVE the base. A dodge/screen blend needs its backdrop."
+  },
+  "boardSyncViaPaintStyle_2026_08_03": {
+    "jac": "'Still not synced. I want to change one and it change for all.' Screenshot showed the two Wide boards carrying his blue nebula shader and the two Narrow ones looking plain.",
+    "diagnosis": "TWO separate things were going on. (1) All eight variants already shared the SAME shader id (958fe881.../431) -- they were not carrying different shaders. They looked different because a shader maps to the box of the NODE that carries it, and Wide inner nodes are ~608x48 while Narrow are ~337x56, so the Narrow ones sample a different part of the pattern and read plainer. (2) There was genuinely no shared source: the background was a REGION inside a merged vector, and Figma regions cannot carry a paint style -- only NODES can. So there was nothing for the eight to point at, and any edit Jac made lived on one variant only.",
+    "fix": "Probed first and confirmed a paint style CAN hold a SHADER paint. Then split region 1 out of each variant's merged vector into its own node named 'inner (screen)', restacked it directly above 'plate' (the merged remnant, renamed), and bound all eight to a single new paint style 'Board/Screen'. Editing that one style now changes every variant.",
+    "orderingBugCaught": "insertChild at the merged node's index put the new node BELOW the plate, which would have let the plate paint over the screen. Caught on the layer-order readback and restacked to plate+1 before rendering.",
+    "residualCaveat": "Binding a style does NOT equalise the shader mapping -- each node still samples across its own box, so Wide and Narrow can still read differently even though they now share one source. If Jac wants them visually identical, the inner nodes would need matching aspect, or the shader would need size-independent mapping.",
+    "howJacUsesIt": "Figma sidebar > Local styles > Board/Screen > edit. All eight variants follow."
+  },
+  "conduitMultiSubitem_2026_08_03": {
+    "ask": "Jac: 'This needs to be a main component so I can stretch it to fix properly. Do your simplification passes on it.'",
+    "found": "'Conduit -- Multiple Subitems' (238:2287) was a FRAME, not a component, on MAIN+SUB ASSEMBLY. It carried real waste: FOUR exact duplicate vectors stacked at identical positions (260:2602-2605 sitting on 238:2296/2297/2320/2331 -- verified geometrically identical, not merely similar, before deleting), and THREE vectors with zero regions (two of them 0.4-0.5px slivers) painting nothing. Content also overflowed its own frame, reaching y~199 in a 156-tall clipped frame.",
+    "done": "Removed the 4 duplicates and 3 dead vectors, ran the C cull on the survivors (39->36, 12->10, 16->14, 14 unchanged), re-fitted the frame to content with 6px padding, turned off clipping, and promoted it to a real COMPONENT (270:174, 173.7x166.8, 4 vectors, 74 regions total). Layer count 11 -> 4.",
+    "stillOpen": "Constraints for stretching. All children are currently SCALE/SCALE, which scales the fittings along with the runs. Proper stretch behaviour wants the end fittings pinned at fixed size and only the straight runs stretching -- not yet done."
+  },
+  "editInPlace_figmaConstraint_2026_08_03": {
+    "jac": "Linked node 172:5193: 'This is still not the main component so I can't edit in line.'",
+    "whatThatNodeIs": "An INSTANCE of 'State=Failed', which is a VARIANT inside the 'Group Name' COMPONENT_SET (38:14).",
+    "THE_HARD_CONSTRAINT": "Figma permits a COMPONENT nested inside another COMPONENT, but NEVER a COMPONENT_SET. So any piece backed by variants cannot have its main live inside the assembly. This is a platform rule, not a layout problem, and no amount of restructuring gets around it.",
+    "classification": "CAN nest main in place (plain components): FINAL HOUSING, Slots -- signal row (x2), Marks/Name, Marks/Hexicon, EDITED VECTOR DECK. CANNOT (variant-backed): Message Board (x2), Group Name.",
+    "optionsForTheVariantBacked": "(a) leave as instances and edit the variant in the set below, (b) detach in the assembly -- full in-place editing but propagation is lost, (c) flatten the set to a single component, losing variants. Put to Jac rather than guessed."
+  },
+  "THE_CASCADE_RULE_2026_08_03": {
+    "jac": "'Once again after editing it is not cascading to the other elements of Message Board.' Screenshot showed him editing a Fractal noise / Voronoi shader on a node W607.8 H47.45 at 14% opacity.",
+    "ROOT_CAUSE_REMEMBER_THIS": "Editing a node's FILLS directly SILENTLY DETACHES that node from its paint style. Figma does not warn. Verified: of the eight screen nodes, 268:4 -- the exact one he edited -- was the only one reporting styleBound:false. His edit landed on one detached node with nothing to cascade through.",
+    "SECOND_TRAP": "Node OPACITY is not part of a paint style. He had the node at 14%. Even with the style link intact, opacity would never have cascaded. Anything that must propagate has to live IN the paints, or be set on every node.",
+    "workflow": "Edit the STYLE, not the node (sidebar > Local styles > Board/Screen). If Jac edits a node instead -- which is the natural thing to do -- the fix is to push node fills UP into the style and re-bind, which is what was done here: took 268:4's fills, wrote them to Board/Screen, re-bound all eight, and set opacity 0.14 on all eight.",
+    "assemblyInstances": "Both assembly boards (172:5192, 172:6640) came back in sync automatically once re-bound -- same style id, same six fills, same opacity. No further action needed.",
+    "orphanedOverrides": "Both instances still carry overrides addressed to node 21:13 -- the old 'inner' layer deleted during the plate+inner merge. They are inert, but they are direct fingerprints of merge-induced breakage."
+  },
+  "conduitEscaped_2026_08_03": {
+    "found": "After the assembly restructure the conduit instance 226:1017 was parented to a STALE group (172:6639, not the assembly's 172:6638) and sat at absolute (827,799), far outside the frame -- so it silently vanished from the assembly render.",
+    "caughtBy": "Comparing renders before/after the restructure, then dumping the frame tree. Its absolute position equalled its local position, which is the tell that a node is not where its parent claims.",
+    "fix": "Re-parented into 172:6638 and restored to its original assembled position, absolute (-586,-238)."
+  },
+  "conduitKit_2Part_2026_08_03": {
+    "ask": "Jac: the conduit is complicated because there are 3 directions. Reduce to 2 parts -- Caps (identical) and Channels (the straight part). Caps connect channels to deck & housings AND plug into the side of a vertical channel for multiple headings. Structure: Deck, Cap, Channel(vertical), Cap, Cap(side), Channel(horizontal), Cap, Heading.",
+    "keyDecision": "The diagonal is GONE. Only vertical and horizontal runs remain, which is the actual source of the '3 directions' complexity.",
+    "whyAuthoredNotExtracted": "The existing artwork was 74 regions across 4 vectors with the diagonal woven through the same contours as the straight runs -- extracting clean parts from it would have carried the tangle forward. Authored the two parts fresh instead, using the conduit's own sampled palette so they match: casing #41353d, shadow #241016, shade #3f2d38, light edge #b6b0bd, mid #6f6472, red well #4c1e21, red core #b8433f, red hot #ff8078.",
+    "parts": {
+      "Conduit / Channel": "280:91, 54x140 default. Nine bands. Every band is STRETCH on the length axis and pinned MIN or MAX across the thickness, so it stretches to any length with the cross-section intact. Rotate 90 for a horizontal run -- same component.",
+      "Conduit / Cap": "280:101, 54x20 fixed. Ten bands, lip at one end and foot at the other. ONE component for every junction; orientation is rotation only."
+    },
+    "capRotations": "0 = deck to channel, 180 = channel foot, 270 = side tap into a vertical channel AND channel to heading. Identical component in all four places, which is what Jac asked for.",
+    "demo": "Frame 'ZZ conduit kit demo' (281:91) assembles his exact chain from 4 caps + 2 channels. Verified both channels stretch independently (vertical 170, horizontal 174) and every joint sits flush.",
+    "HONEST_GAP": "The new parts read FLATTER than the original artwork -- clean banded extrusions without the original's chunky bevels, notches and corner cuts. Structurally correct and stretchable, visually plainer. Enriching the cap and channel profiles is the obvious next step if Jac wants the old weight back.",
+    "notRetired": "The old conduit components are still in the file -- 212:80 'Conduit -- subitem elbow' and 270:174 'Conduit -- Multiple Subitems'. Left in place pending Jac's call, since 212:80 is still instanced in the assembly."
+  },
+  "boardBordering_2026_08_03": {
+    "ask": "Jac linked 21:19: 'I've done a better job with the bordering on this element, please update all Message Boards to match this.'",
+    "fileChangedUnderneath": "The COMPONENT_SET 21:36 NO LONGER EXISTS. Jac broke the variants apart into standalone COMPONENTs sitting directly on the page, renamed to slash paths ('Message Board/Narrow/On/Default' etc). A NINTH board also appeared -- 273:2683 'Message Board/Wide/On/Default' -- now living inside the assembly frame, which is legal since the assembly was dissolved to a FRAME. Any script targeting 21:36 will throw; enumerate the nine components by name instead.",
+    "whatTheBetterBorderingActuallyIS": "Determined by RENDERING 21:19 against its same-size sibling 21:28 rather than reading property lists. The reference has the grey steel 'well' HIDDEN, so the border is just the dark plate edge plus the red ring -- tight and clean, no chunky steel surround. It had also lost its 'bloom' entirely.",
+    "applied": "Across all nine boards: well.visible=false, bloom hidden. Ring core (2.8) and ring halo (3.8 @0.9) already matched the reference everywhere, so no stroke changes were needed. 21:19 itself needed nothing; 21:10 only needed its bloom hidden.",
+    "deliberatelyNotTouched": "'glass' visibility was left alone. It is the screen texture Jac restored on the four Fill variants earlier, not bordering. Plate sizes also left alone -- they differ slightly per variant (348.5 vs 346 wide) and resizing risks distorting the cut-corner geometry.",
+    "verified": "Rendered 21:19, 21:28 and 63:48 together -- identical border treatment across dark and red states."
+  },
+  "deckBracket_2026_08_03": {
+    "ask": "Jac pointed at the bracket in the ZZ C-recipe verify frame: 'Can you improve this? I need to use it.'",
+    "CORRECTION_the_C_cull_damaged_it": "I reported the C recipe as visually indistinguishable, losing only 'a thin highlight edge' on this bracket. That was WRONG and this is the piece where it mattered. Rendering before (84 regions) against after (35) at 12x shows the smooth diagonal ramp became a coarse staircase -- the sub-3-area regions the cull dropped were precisely the ones smoothing that diagonal. Lesson: an area-based cull is NOT safe on traced artwork, because anti-aliasing detail lives entirely in tiny regions.",
+    "rootCause": "206:241 is a VECTORIZED RASTER -- its parent is literally 'image 5 [Vectorized]'. It carried 733 vertices and 733 segments for a 41x30 shape, i.e. auto-trace stair-stepping. It was never going to scale, cull or no cull.",
+    "fix": "Redrew it as true vector geometry: new COMPONENT 'Deck / Bracket' (290:148) at 164x120, nine layers built from SVG path data with a real straight diagonal, palette sampled from the original (#b4b2b7 light, #7c7c81 mid-light, #60585c mid, #353338 dark, #111115 black). 28 vertices total versus 733, and it scales cleanly.",
+    "honestGap": "The redraw is crisper but slightly PLAINER than the original -- the traced version had subtler shading gradations across the top plane and a chunkier bottom edge. Clean and usable now; add shading passes if Jac wants the extra weight.",
+    "originalLeftInPlace": "206:241 is untouched inside the deck. The new component is additive so Jac can swap it in when he is happy with it.",
+    "jacFeedback": "'That Deck/Bracket looks good in the Conduit tree.' -- the clean redraw is accepted and in use."
+  },
+  "conduitArtworkSwap_2026_08_03": {
+    "done": "Jac approved swapping the original conduit artwork into the two kit components so he keeps the richer look AND gets propagation plus stretch.",
+    "channel": "280:91 rebuilt at thickness 39, taken from the REAL cross-section measured across 238:2320 (38.7 thick). Thirteen bands in the original order and colours -- outer edge, shade, shadow, mid, casing, groove, red core #b8433f, red hot #ff8078, red well #4c1e21, lit edge #b6b0bd, lower casing, deep shadow, far edge. Every band stretches along the length and pins across the thickness, so the real cross-section survives any length.",
+    "cap": "280:101 now holds the REAL end fitting cloned from 238:2297, rotated 90 and scaled 39/50.5 so its body spans the channel exactly. Component is 39 x 18.8. Ten regions of genuine bevelled artwork instead of flat rectangles.",
+    "BUG_WORTH_REMEMBERING": "The first attempt produced caps at ~28 wide against a 39 wide channel. Cause: the cloned fitting inherited SCALE/SCALE constraints from the source artwork, so calling resize() on the parent COMPONENT silently rescaled the child -- and non-uniformly, because the two axes scaled by different factors (13.58x28.17 instead of 16.4x39). Anything cloned out of that conduit artwork carries SCALE constraints; neutralise them BEFORE resizing the parent, or measure the child afterwards rather than trusting the intended scale.",
+    "residual": "The cap-to-channel seam is not perfectly flush -- the original fitting has an asymmetric lip that overhangs slightly on one side. Reads fine at working size; would need the lip trimmed for a perfect butt joint.",
+    "demo": "'ZZ conduit kit demo' (281:91) re-laid to the new module: thickness 39, cap depth 18.8, vertical run 170, horizontal run stretched to meet the heading. Still 4 caps + 2 channels, still only two components."
+  },
+  "boardResizeAndOrphans_2026_08_03": {
+    "jac": "'I cant edit the size of this Message Board. In my frustration I deleted all the other ones outside of the assembly.'",
+    "whyResizeWasBlocked": "283:322 carried targetAspectRatio {x:362.5, y:70.1} -- the ASPECT RATIO LOCK. Any width change dragged height with it. Nothing structural, nothing to do with components. Cleared it on the wrapper AND on the instance nested inside it, then proved it with a test resize: width 373 -> 493 with height held at 72, then restored.",
+    "SECOND_AND_WORSE_PROBLEM": "Deleting the boards outside the assembly deleted the MAIN components. Figma keeps a deleted main alive while instances still reference it, but it belongs to NO PAGE -- 21:10 and 21:19 both reported page:null with an empty parent chain. They were orphaned: still rendering through their instances, but impossible to select or edit. This is a silent failure mode; nothing in the UI says the main is gone.",
+    "fix": "Re-parented both orphans back onto MAIN+SUB ASSEMBLY -- 21:10 at (-668,3050), 21:19 at (-668,3160). appendChild on an orphaned main works and fully restores it. Instances survived the round trip: 283:161 still points at 21:19, 260:2341 still points at 21:10.",
+    "structuralOddityFlagged": "283:322 is a COMPONENT whose only child is an INSTANCE of 21:19 -- a wrapper around a component. Editing 'the board' now means choosing between the wrapper and the inner main, which is exactly the kind of ambiguity that has cost this session hours. Worth collapsing to one.",
+    "survivorInventory": "Only 21:10 and 21:19 remain of the nine boards. 21:2, 21:28, 63:36, 63:48, 63:61, 63:74 are gone. The Board/Screen paint style still exists and still binds."
+  },
+  "conduitRepeatDownRows_NOTE": {
+    "jac": "'I kept our Conduit elbow. See the assembly, I like it, the app will have to repeat the sequence of conduit parts down the rows.'",
+    "implication": "The conduit is not a one-off decoration -- a cap/channel/tap sequence repeats per row. That argues for packaging the run itself as a component so a row instantiates ONE thing rather than six, and so run length stays a single override.",
+    "status": "Offered, not built. The two-part kit (Conduit / Cap 280:101, Conduit / Channel 280:91) already carries the real artwork and stretches, so a row-run wrapper is a small step on top."
+  },
+  "conduitRowRun_2026_08_03": {
+    "ask": "Jac: the app repeats the sequence of conduit parts down the rows -- package it so a row instantiates ONE thing.",
+    "built": "'Conduit / Row Run' (298:134), 260 x 39. Three instances of the two-part kit: Cap (spine tap, 270 deg) + Channel (run) + Cap (to heading, 270 deg). A row now instantiates one component and the only override needed is its width.",
+    "constraints": "tap MIN / channel STRETCH / end-cap MAX horizontally, all STRETCH vertically.",
+    "VERIFIED_NOT_ASSUMED": "Rotated children plus constraints do not always cooperate in Figma, so this was measured rather than trusted. Stretched 260 -> 420: both caps held at exactly 18.8 wide and the channel absorbed the whole 160px (222.4 -> 382.4). Restored to 260 cleanly. It works.",
+    "stillTwoParts": "No new artwork -- Row Run is pure composition over Conduit / Cap and Conduit / Channel, so edits to either still propagate through every row."
+  },
+  "wrapperCollapsed_2026_08_03": {
+    "ask": "Jac: 'Yes!' to collapsing 283:322, the component whose only child was an instance of another component.",
+    "done": "Verified the wrapper had ZERO instances first, then moved the real main 21:19 into the wrapper's exact slot in the assembly (Group 1, position 270,-150), matched it to the wrapper's 373x72, cleared its aspect lock, and deleted the wrapper plus its nested instance. The assembly now holds the MAIN itself -- one thing to select, one thing to edit.",
+    "RESIDUAL_AMBIGUITY_REMAINS": "There are still TWO components both named 'Message Board/Wide/On/Default' -- 21:10 parked at page level (633x61) and 273:2683 inside the assembly (633x85). Same name, different sizes, no relationship. That is the same wrapper-style ambiguity in a different shape and will bite again. Not touched without Jac's call, since which one is canonical is his decision, not mine.",
+    "boardInventoryNow": "21:19 (373x72, in assembly Group 1, MAIN), 273:2683 (633x85, in assembly, MAIN), 21:10 (633x61, parked on page, MAIN), 260:2341 (instance of 21:10 in Background Circuitry)."
+  },
+  "THE_WRAPPER_AND_ORPHAN_TRAP": {
+    "whyThisKeptHappening": "THREE separate 'I cannot edit this' reports today all had the same shape. A COMPONENT whose only child is an INSTANCE of another component, where that other component has been deleted from the canvas and survives only because the instance references it. Click the thing and you get the wrapper. Go inside and you get an instance, which only accepts overrides. Try to reach the source and there is nowhere to go, because an orphaned main belongs to NO PAGE. Figma gives no warning at any of the three stages.",
+    "howToSpotIt": "A component with exactly one child of type INSTANCE. And getNodeByIdAsync on the main returns a live node whose parent chain never reaches a PAGE.",
+    "howToFix": "Re-parent the orphaned main onto a page FIRST -- appendChild works and fully restores it -- then move it into the wrapper's slot and delete the wrapper. Order matters: deleting the wrapper first removes the last reference keeping the orphan alive.",
+    "casesFixed": "Message Board 21:19 (wrapper 283:322, deleted). Message Board 21:10 and 21:19 orphaned by Jac's cleanup, both restored. Group Name 38:8 (wrapper 297:167, deleted) -- this one was triple-locked and the source of his worst frustration."
+  },
+  "groupNameFixed_2026_08_03": {
+    "jac": "'I am SO frustrated with Group Name. I've done everything I can think of to try and edit it. Still to no avail.'",
+    "diagnosis": "297:167 was a COMPONENT whose only child was INSTANCE 297:151, pointing at main 38:8 -- and 38:8 was ORPHANED, on no page. Three layers of indirection, none of them visible in the UI. Nothing he tried could have worked.",
+    "fix": "Restored 38:8 to the page first, moved it into the wrapper's slot, carried across instance text (identical, so nothing changed), deleted the wrapper. 38:8 is now a real component at (852,-543) with 14 directly editable layers including the 'readout' TEXT.",
+    "assemblyRepair": "The assembly had ALSO lost its Group Name during the wrapper experiments -- caught by comparing renders before and after. Restored instance 303:17 at its original assembled position (436,-341), pointing at the editable main."
+  },
+  "boardResizeRealCause_2026_08_03": {
+    "jac": "'Im unable to expand the size of this Message Board' (21:19), after the aspect lock had already been cleared.",
+    "REAL_CAUSE": "Not a lock at all. The component resized fine -- 373x72 grew to 523x102 on demand. But EVERY CHILD was pinned MIN/MIN, so the frame grew while the artwork sat unchanged in the corner at its original size. Visually indistinguishable from 'resize does nothing'.",
+    "whyOnlyThisOne": "21:10, the wide board, already had SCALE/SCALE on its children, which is why that one always resized correctly and the narrow one never did. A per-node difference, invisible without inspecting constraints.",
+    "fix": "Set SCALE/SCALE recursively on all children of both boards. Verified by growing: 21:19's plate 348.5 -> 488.6, 21:10's plate 616 -> 762. SCALE chosen over STRETCH so stroke weights, effects and the angled corner cuts stay in proportion.",
+    "generalLesson": "'I cannot resize this' has at least three distinct causes in Figma -- an aspect-ratio lock, auto-layout HUG sizing, and children pinned so they ignore the parent. Check all three; the third one leaves no trace in the resize handles."
+  },
+  "canonColourPass_2026_08_04": {
+    "ask": "Jac: use the audit findings, colour rules, style decisions and operational decisions to get the colouring right across these elements. Circuitry background included because that is how it should look live.",
+    "canonRead": "Loaded wrangler-style + style (both, per CLAUDE.md) and read the ledger to the end. The answer was ALREADY RULED, not a fresh design call: #214 says the Halo kit is deliberately faithful to a mockup that CONTRADICTS canon and must not be promoted as canon; #215 (locked 2026-08-03) rules the fix as one geometry with two variable modes, MOCKUP and CANON.",
+    "whatAlreadyExisted": "Both collections were already built by an earlier phase -- 'Halo Primitives' (47 raw vars, single mode) and 'Halo Language' (39 semantic vars, modes MOCKUP + CANON, including finish/glow-opacity and the type families). #215's plan had landed at the token layer.",
+    "THE_REAL_GAP_MEASURED": "Only 15 of ~1250 fills in the assembly are bound to any variable -- 1 percent. The tokens exist and almost nothing consumes them, which is why flipping the mode changes nothing. Attempting to bind by exact hex match against the collection's own MOCKUP values bound just ONE fill out of 1479 candidates: the elements' actual colours are NOT the mockup primitives the variables encode (boards are #e55457, bulbs were browns/golds), so there is nothing for a hex match to catch. The MOCKUP/CANON flip cannot reskin the card until fills are bound by ROLE, which is a per-element authoring job, not a sweep.",
+    "whatWasFixed": "The five Bulb states are Signals -- colour = state -- so canon's frozen status palette is the ruled answer for them. Remapped each state's three-tone sculpt to the canon hue and saturation while KEEPING each tone's own lightness, so the highlight/mid/deep shading survives intact: Overdue -> --red #ff4242, Due -> --yellow #eed44b, Waiting -> --blue #6394cc, Done -> --green #34d399, Off -> --gray #8b94a3. The shared structural tone #354843 was excluded -- it appears in every state and is not a state hue.",
+    "CVD_MEASURED_NOT_ASSUMED": "Ran style §4's Machado-2009 deuter+protan check on all ten co-occurring pairs. Seven pass: Due/Waiting 188, Overdue/Due 151, Due/Off 149, Overdue/Waiting 141, Overdue/Done 108, Overdue/Off 103, Due/Done 96. THREE FAIL the >=90 floor: Done/Off 31, Waiting/Off 46, Waiting/Done 72. These are the KNOWN AND ACCEPTED consequence of the frozen palette -- wrangler-style §1 names these exact pairs and rules that they are disambiguated by label + icon + position, NOT by inventing a colour. Do not 'fix' them by adding a hue; that is explicitly forbidden and would be a full-cascade project.",
+    "stillOutstanding": "(a) GLOW -- canon is matte, no glow, and the boards still carry ring-halo LAYER_BLUR and lit drop shadows. finish/glow-opacity exists to zero it. (b) BOARD TONE -- #208/#209 rule that the board's ring and text key to the element's OWN tone (--row-hue), not a fixed red; the boards are still hardcoded #e55457/#f2585a/#f95a5c. (c) THE METAL BODY stays mockup-coloured BY RULING -- the plan's own correction says CANON is an accent/state/ground/chrome reskin only, because the bevels and ramps are hundreds of hardcoded gradient stops and rule #2 forbids variableising them."
+  }
 }

@@ -1,0 +1,42 @@
+/* ------------------------------------------------------------------
+   NAME BRIDGE — the two build halves drifted on naming.
+   The shell (card.css) consumes  --asm-<key>
+   The asset export produced      --asm-<key>-image / --asm-<key>-mask
+   An unresolved var() on a mask means NO mask, and an unmasked element
+   painted with var(--row-hue) fills solid — which is exactly how this
+   first rendered (four solid colour blocks). Alias, do not rename, so
+   assets.css stays a drop-in from the exporter.
+   ------------------------------------------------------------------ */
+:root{
+  --asm-deck:      var(--asm-deck-image);
+  --asm-headboard: var(--asm-headboard-image);
+  --asm-housing:   var(--asm-housing-image);
+  --asm-hexicon:   var(--asm-hexicon-image);
+  --asm-channel:   var(--asm-channel-image);
+  /* the shell uses these two AS MASKS (mask-image + background: var(--row-hue)) */
+  --asm-rowboard:  var(--asm-rowboard-mask);
+  --asm-elbow:     var(--asm-elbow-mask, var(--asm-elbow-image));
+}
+
+/* ------------------------------------------------------------------
+   ELBOW — lives in elbow.css under --elbow-steel-image / --elbow-laser-mask.
+   It needs TWO layers: masking the element itself would clip the steel as
+   well as the laser, so the steel is the element's background and the
+   tinted laser rides on ::after. Only the ::after reads --row-hue (#217).
+   ------------------------------------------------------------------ */
+.asm-elbow{
+  position: relative;
+  background-image: var(--elbow-steel-image) !important;
+  background-size: 100% 100% !important;
+  background-repeat: no-repeat !important;
+  background-color: transparent !important;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+}
+.asm-elbow::after{
+  content:''; position:absolute; inset:0; pointer-events:none;
+  background: var(--row-hue);
+  -webkit-mask-image: var(--elbow-laser-mask); mask-image: var(--elbow-laser-mask);
+  -webkit-mask-size: 100% 100%; mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+}

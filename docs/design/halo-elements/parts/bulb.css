@@ -1,0 +1,246 @@
+/* ==========================================================================
+   BULB  (halo-bulb) — a Signal. Colour is state; the well is structure.
+
+   WHY THERE IS A TEXTURE HERE AND NOWHERE ELSE IN THE KIT
+   Every other part in this kit is pure CSS because every other part is made of
+   flat facets — the conduit channel is thirteen strips, the deck is a stack of
+   hard-stop ladders. The bulb lens is not. It is a mottled crackle carried by
+   3,803 vector segments, 3,188 of them curved. That is not a gradient with a
+   lot of stops; it is noise, and CSS has no honest way to draw it.
+
+   The two obvious answers are both wrong:
+     - Reproduce it in gradients -> it flattens, which is the exact failure
+       mode this kit exists to avoid (ledger #234).
+     - Inline the vector per bulb  -> 3,803 segments x 3 bulbs x N rows. This is
+       the "unsustainable by quantity" case (ledger #233).
+
+   The third answer is that the mottle is a TEXTURE, not geometry. Captured once
+   from the Figma component as a luminance mask (assets/bulb-lens-mask.png,
+   76x76, ~4.6KB) it costs the same whether the card shows three bulbs or three
+   hundred, and — because it is a MASK rather than a picture of a red bulb — one
+   file serves every state. The row's own hue is painted through it.
+
+   That is the whole trick, and it is the same one games use: keep the
+   expensive detail in a texture, keep the colour in a parameter.
+
+   STRUCTURE (markup this sheet expects)
+     <span class="row--overdue">
+       <span class="halo-bulb bulb--overdue"><i class="lens"></i></span>
+     </span>
+
+   TWO CLASSES ARE REQUIRED, NOT ONE — this bit was wrong here until a browser
+   render caught it (2026-08-04). `bulb--<state>` sets the MOTTLE, which is
+   all this sheet owns. It does NOT set --row-hue: steel-skin.css
+   wires --row-hue off `.row--<state>` (steel-skin.css:87-91), never off
+   `.bulb--<state>`. So a bare `.halo-bulb.bulb--overdue` with no `.row--*`
+   ancestor inherits whatever --row-hue is in scope — on the stage that is the
+   default red, which renders ALL FIVE STATES RED while looking deliberate.
+   A bulb must sit inside its row's state class, which is how it appears in
+   real assembled usage. See parts/bulb.verify.html for the working markup.
+
+   The five states (`overdue` / `due` / `waiting` / `done` / `off` — ledger
+   #238 below) are the same set on both classes; nothing here hardcodes a
+   status colour.
+
+   THE WELL IS NOT THE SIGNAL
+   The well keeps the scribe-line cut (ledger #231) and does NOT move with
+   state — a well that changed colour with status would read as part of the
+   signal instead of part of the machine (ledger #220). It is the same
+   --well-lip / --well / --well-floor ladder the panel's dark lines use, so a
+   bulb recess and a panel line are visibly the same cut.
+
+   LEDGER #238 — MOTTLE, BECAUSE COLOUR ALONE FAILS THE CVD GATE
+   Five states in one row, told apart by colour alone, measured: blue/gray 46-48,
+   green/gray 31-69, blue/green 72 — all under `style` §4's 90-separation floor.
+   The palette is FROZEN (wrangler-style §1) — this is fixed in the component
+   layer, not by recolouring. `style` §7 already defines what a Signal needs:
+   "coloured chip, read-only state + a verbalising word + parent-card icon."
+   The bulb had neither half. This sheet's answer is:
+     - mottle — the existing lens texture, now reached per-state through a
+                custom property so a distinct crackle can be dropped in per
+                state without touching the rule that consumes it (mottle
+                section below).
+   Jac is colour-blind — wrangler-style states this is a gate, not a preference.
+   Mottle is now the ONLY non-colour channel carrying this disambiguation —
+   see the GLYPH — BUILT, THEN REMOVED note further down for why it is alone.
+
+   LEDGER #239 — THE 13px RADIUS STAYS. DO NOT "FIX" IT TO 0.
+   `--bulb-r: 13px` looks like it contradicts ledger #140 (`border-radius: 0`
+   for every steel control shape). It does not: #239 EXEMPTS the bulb by name
+   — it is a LENS, not a control, and glass is allowed to be round. #140 still
+   governs every steel control shape; this is a narrowing, not a reversal.
+   Leave this radius alone.
+
+   KNOBS
+     --bulb-w / --bulb-h   lens plate size. Defaults are the measured Figma
+                           artwork, 59x53.
+     --bulb-r              corner radius. 13px measured — KEEP (ledger #239,
+                           see above). Not part of #140's radius-0 sweep.
+     --bulb-skew           the row's shear. 0 for an upright bulb.
+   ========================================================================== */
+
+.halo-bulb {
+  --bulb-w: 59px;
+  --bulb-h: 53px;
+  --bulb-r: 13px;
+  --bulb-skew: 0deg;
+
+  position: relative;
+  display: inline-block;
+  width: var(--bulb-w);
+  height: var(--bulb-h);
+  border-radius: var(--bulb-r);
+  transform: skewX(var(--bulb-skew));
+
+  /* the well: the scribe line stood on end — lit lip, dark core, floor */
+  background: linear-gradient(180deg,
+    var(--well-lip)   0 1px,
+    var(--well)       1px,
+    var(--well-floor) 100%);
+
+  /* seated, not proud — one cue set, never mixed (ledger #229) */
+  box-shadow:
+    0 0 1.5px .5px var(--seat-seam),
+    inset 0 2.5px 3px var(--seat-wall),
+    inset 0 -2px 2px var(--seat-lip);
+}
+
+/* The lens. The hue is the row's own light; the texture MODULATES it.
+
+   The first attempt masked the hue with the mottle's luminance, which was
+   wrong in a way worth recording: alpha 0 at the darkest texel punched a hole
+   straight through to the near-black well, so the deepest lens areas rendered
+   black instead of deep red. The mottle does not CUT the lens, it SHADES it.
+   Multiplying a greyscale texture over a solid hue is the faithful operation —
+   dark texel darkens the red, white texel leaves it alone, and nothing ever
+   drops out to the well.
+
+   The texture is range-compressed to [90..255] rather than [0..255] for the
+   same reason: 90/255 is the measured #5a0000-over-#ff4343 ratio in the Figma
+   artwork, so the darkest texel multiplies #ff4242 down to (90,23,23) — the
+   deep red the source actually has — instead of to black.
+
+   Inlined as a data: URI, not linked. Two hard reasons: a published artifact
+   runs under a CSP that blocks every external request, and Chromium treats a
+   file:// texture in CSS as cross-origin and refuses it outright, rendering an
+   unmodulated block with no error. assets/bulb-lens-tex.png is the
+   regeneration source; this is the shipped copy. */
+.halo-bulb .lens {
+  position: absolute;
+  inset: 4px;
+  border-radius: calc(var(--bulb-r) - 3px);
+  display: block;
+  overflow: hidden;
+  isolation: isolate;          /* keep the multiply off everything behind the lens */
+
+  /* Light falls from above, so the lens is hottest at its top shoulder and
+     sinks toward the deep well tone — the same three-stop ramp the conduit's
+     laser strips use, so a lit bulb and a lit conduit read as one light source. */
+  background: linear-gradient(163deg,
+    var(--laser-hot)  0%,
+    var(--laser-core) 42%,
+    var(--laser-well) 100%);
+}
+
+/* ==========================================================================
+   MOTTLE — reached through a custom property, never by filename (ledger #238)
+
+   SCOPE — THIS IS A VISUAL REDESIGN, NOT A FUNCTIONAL ONE (2026-08-04).
+   Ledger #238 originally paired the mottle with a per-state glyph (see the
+   GLYPH — BUILT, THEN REMOVED note below); Jac reversed the glyph half after
+   seeing it rendered — a tick is a small skewed signal plate, not a labelled
+   button. He then corrected an over-reading of what that implied:
+   "You're overcomplicating the slots. I've not changed a single thing about
+   them or how they work. I just used Figma to redesign them."
+
+   So: the slot's behaviour, meaning and affordances are UNCHANGED. The
+   per-state mottle is a nice-to-have for the new artwork, NOT a prerequisite
+   and NOT an open gate. Today all five states share one texture and differ by
+   hue, which is how the shipped slot has always worked. The four distinct
+   assets below are optional polish — do not re-raise them as a blocker.
+
+   `--bulb-mottle` is what `.lens::after` actually consumes. It is not set
+   directly: each `.bulb--*` rule points it at `var(--mottle-<state>)`, and
+   each `--mottle-<state>` is declared once, in :root, below. That extra hop
+   is the whole trick — a skin re-points ONE var (say, --mottle-overdue) and
+   every overdue bulb in the app picks up the new crackle, with nothing in
+   `.lens::after` or any `.bulb--*` rule touched.
+
+   TODAY all five --mottle-<state> vars point at the same asset
+   (--mottle-base, the shared 76x76 luminance-mask PNG documented at the top
+   of this file) — this sheet ships the PLUMBING, not five new textures.
+   Generating four more distinct mottle assets is a Figma/image-export task
+   outside this environment (no binary-asset generation here — ledger #238
+   is explicit that faking one would be worse than shipping none). The spec
+   for what each one needs, so it can be dropped in later as a straight var
+   re-point with no CSS change:
+
+     asset              size    format  notes
+     --mottle-overdue   76x76   PNG     crackle/mottle, luminance mask,
+     --mottle-due       76x76   PNG     range-compressed to [90..255] (see
+     --mottle-waiting   76x76   PNG     the WHY comment above — that ratio
+     --mottle-done      76x76   PNG     is measured from the Figma source
+     --mottle-off       76x76   PNG     and must hold for every new asset)
+
+   Captured from Figma exactly like --mottle-base was: export the state
+   variant's lens texture as a greyscale luminance mask at 76x76, range-
+   compress to [90..255], inline as base64 PNG in :root, re-point the var.
+   Nothing outside :root changes.
+   ========================================================================== */
+:root {
+  --mottle-base: url("data:image/png;base64,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");
+
+  /* placeholders — all five alias the shared base texture until distinct
+     per-state crackle assets exist (see spec table above) */
+  --mottle-overdue: var(--mottle-base);
+  --mottle-due:     var(--mottle-base);
+  --mottle-waiting: var(--mottle-base);
+  --mottle-done:    var(--mottle-base);
+  --mottle-off:     var(--mottle-base);
+}
+
+.halo-bulb .lens::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--bulb-mottle, var(--mottle-base));
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  mix-blend-mode: multiply;
+}
+
+/* ==========================================================================
+   GLYPH — BUILT, THEN REMOVED (Jac, 2026-08-04)
+
+   Ledger #238 originally called for a per-state Lucide glyph here alongside
+   the mottle, and one was built: five state icons (triangle-alert / clock /
+   hourglass / check / power-off) inlined as CSS masks, sized and stamped to
+   sit inside the lens. It shipped in this file plus a verify harness. Jac
+   then saw it rendered and reversed the glyph half, verbatim: "No glyphs or
+   icons in slots. That's dumb and not their purpose." These bulbs are SLOT
+   TICKS — a slot rack communicates distribution/quantity at a glance, and
+   labelling each individual tick with an icon is not what a slot rack is
+   for. So the glyph is gone: no `.glyph` element rule, no `--bulb-glyph`
+   custom property, no `--glyph-<state>` data-URI declarations, no
+   `--bulb-glyph` assignment in any `.bulb--<state>` rule, and no
+   `<i class="glyph">` in the markup contract at the top of this file.
+
+   The CVD problem #238 identified is still real — colour alone measures
+   under `style` §4's 90-separation floor between several of these five
+   states (see the LEDGER #238 note above). The MOTTLE section below is now
+   the only place this file writes disambiguation: the mottle carries it
+   ALONE. Do not re-add a glyph thinking its absence here was an oversight —
+   it was tried, rendered, and explicitly turned down.
+   ========================================================================== */
+
+.bulb--overdue { --bulb-mottle: var(--mottle-overdue); }
+.bulb--due     { --bulb-mottle: var(--mottle-due); }
+.bulb--waiting { --bulb-mottle: var(--mottle-waiting); }
+.bulb--done    { --bulb-mottle: var(--mottle-done); }
+.bulb--off     { --bulb-mottle: var(--mottle-off); }
+
+/* An unpowered bulb still has a lens — it is just not lit. `.bulb--off`
+   (above) supplies its own grey mottle re-point; `.row--off` still supplies
+   the grey --row-hue for colour, so the ramp resolves grey and the texture
+   still modulates it. That is what keeps the power-on beat a single token
+   flip rather than a swap. */

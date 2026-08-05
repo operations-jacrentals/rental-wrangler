@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Faithful card — coordinate composition</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="./assets.css">
+<link rel="stylesheet" href="./elbow.css">
+<link rel="stylesheet" href="./bridge.css">
+<link rel="stylesheet" href="./chrome.css">
+<link rel="stylesheet" href="./layout.css">
+<style>
+  html,body{background:#05070a;margin:0;}
+  .fc-harness{display:flex;flex-direction:column;gap:24px;align-items:flex-start;padding:24px;}
+  .fc-harness label{color:#aab4c1;font:12px ui-monospace,monospace;margin-bottom:8px;display:block;}
+</style>
+</head>
+<body>
+<div class="fc-harness">
+  <div>
+    <label>1500px — Figma scale 1:1</label>
+    <div class="fc-viewport" style="width:1500px;height:2117px;">
+      <div class="fc-stage" id="stage-1500" style="transform:scale(1);"></div>
+    </div>
+  </div>
+  <div>
+    <label>380px — real card width</label>
+    <div class="fc-viewport" style="width:380px;height:536px;">
+      <div class="fc-stage" id="stage-380" style="transform:scale(0.253333);"></div>
+    </div>
+  </div>
+</div>
+
+<template id="block-template">
+  <div class="fc-block" data-block="" data-state="">
+    <button type="button" class="fc-main" aria-expanded="true">
+      <div class="fc-signal">
+        <div class="fc-signal-text"></div>
+      </div>
+      <div class="fc-main-board">
+        <div class="fc-main-board__text"></div>
+      </div>
+    </button>
+    <div class="fc-rail">
+      <div class="fc-rail__channel"></div>
+      <span class="halo-elbow" data-to="sub1"><i class="core"></i></span>
+      <span class="halo-elbow" data-to="sub2"><i class="core"></i></span>
+    </div>
+    <div class="fc-sub" data-sub="1">
+      <div class="fc-sub__housing"></div>
+      <div class="fc-sub__frame"></div>
+      <div class="fc-sub__board">
+        <div class="fc-sub__board-text"></div>
+      </div>
+      <div class="fc-sub__hexicon"></div>
+      <div class="fc-sub__name"></div>
+    </div>
+    <div class="fc-sub" data-sub="2">
+      <div class="fc-sub__housing"></div>
+      <div class="fc-sub__frame"></div>
+      <div class="fc-sub__board">
+        <div class="fc-sub__board-text"></div>
+      </div>
+      <div class="fc-sub__hexicon"></div>
+      <div class="fc-sub__name"></div>
+    </div>
+  </div>
+</template>
+
+<script>
+(function () {
+  // groupLabel = the GROUP NAME PLATE (ledger #247: name only) — measured off Figma node
+  // 438:315 itself via get_screenshot: block1 shows "FIELD CALLS", block2 "RESERVED",
+  // block3 "NOT READY" (its Figma layer name, "FAILED board", is stale/wrong).
+  // signalText = the rolled-up count on the DECK's own message board (measured at
+  // main-relative 446,32 / DECK_MSGBOARD_OFFSET) — block1 "6 OPEN", block2 "NOMINAL",
+  // block3 "7 OPEN", also read directly off the Figma reference renders.
+  var BLOCKS = [
+    { state: 'overdue', groupLabel: 'FIELD CALLS', signalText: '6 OPEN',
+      subLabels: ['Excavator 220', 'Skid Steer 75'], subText: ['3D OVERDUE', 'FAILED'] },
+    { state: 'waiting', groupLabel: 'RESERVED', signalText: 'NOMINAL',
+      subLabels: ['Boom Lift 45', 'Mini Trencher'], subText: ['RESERVED', 'RESERVED'] },
+    { state: 'due', groupLabel: 'NOT READY', signalText: '7 OPEN',
+      subLabels: ['Compactor 4T', 'Generator 20kW'], subText: ['INSPECT', 'PARTS DUE'] }
+  ];
+
+  function buildStage(stageEl) {
+    var header = document.createElement('div');
+    header.className = 'fc-header';
+    stageEl.appendChild(header);
+
+    var tpl = document.getElementById('block-template');
+    BLOCKS.forEach(function (b, i) {
+      var frag = tpl.content.cloneNode(true);
+      var block = frag.querySelector('.fc-block');
+      block.setAttribute('data-block', String(i + 1));
+      block.setAttribute('data-state', b.state);
+      var names = block.querySelectorAll('.fc-sub__name');
+      names[0].textContent = b.subLabels[0];
+      names[1].textContent = b.subLabels[1];
+      block.querySelector('.fc-main-board__text').textContent = b.groupLabel;
+      block.querySelector('.fc-signal-text').textContent = b.signalText;
+      var boardTexts = block.querySelectorAll('.fc-sub__board-text');
+      boardTexts[0].textContent = b.subText[0];
+      boardTexts[1].textContent = b.subText[1];
+      stageEl.appendChild(block);
+    });
+
+    var footer = document.createElement('div');
+    footer.className = 'fc-footer';
+    stageEl.appendChild(footer);
+  }
+
+  buildStage(document.getElementById('stage-1500'));
+  buildStage(document.getElementById('stage-380'));
+})();
+</script>
+<script src="./card.js"></script>
+</body>
+</html>

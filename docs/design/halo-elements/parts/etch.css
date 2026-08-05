@@ -67,7 +67,7 @@
      --layer3            the warm shadow c11 .bt-div casts along the top
                          edge. Set to `none` if nothing sits above it.
      --layer4            the intrinsic base: opaque left-to-right ramp
-                         (#43556e bezel glow -> #080f16 field). This is the
+                         (hsl(calc(var(--steel-h) + 2.884 * var(--steel-spread)) calc(var(--steel-s) * 0.81) calc(34.706% * var(--steel-tint))) bezel glow -> hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 1.556) calc(5.882% * var(--steel-tint))) field). This is the
                          only layer c9 actually owns — do not set it to
                          `none` unless you want a transparent field.
 
@@ -193,18 +193,18 @@
       rgba(110,70,72,.030) 5px, rgba(110,80,86,.013) 12px,
       rgba(110,80,86,0)    24px);
 
-  /* layer 4 — the base: opaque horizontal ramp, #080f16 field plus the
+  /* layer 4 — the base: opaque horizontal ramp, hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 1.556) calc(5.882% * var(--steel-tint))) field plus the
      bezel's inner glow burning in over the first ~10px. */
   --layer4: linear-gradient(90deg,
-      #43556e   0,     #27364d  1.5px, #232f3e  2.5px, #232e39  3.5px,
-      #222c36   4.5px, #202a34  5.5px, #1f2832  6.5px, #202932  7.5px,
-      #202831   9.5px, #202930 11.5px, #1d272f 13.5px, #1a242e 14.5px,
-      #162029  15.5px, #151e27 16.5px, #141d26 17.5px, #121b24 19.5px,
-      #111922  21.5px, #0f1820 23.5px, #0e171f 25.5px, #0d161e 28.5px,
-      #0d141d  30.5px, #0e151c 34.5px, #0e141d 37.5px, #0d131b 40.5px,
-      #0d121a  44.5px, #0d121a 49.5px, #0c1119 52.5px, #0b1018 56.5px,
-      #0a0f17  61.5px, #090f17 66.5px, #090f16 71.5px, #080f17 82.5px,
-      #090e16  94.5px, #080f16 109.5px, #080f16 341px);
+      hsl(calc(var(--steel-h) + 2.884 * var(--steel-spread)) calc(var(--steel-s) * 0.81) calc(34.706% * var(--steel-tint)))   0,     hsl(calc(var(--steel-h) + 4.316 * var(--steel-spread)) calc(var(--steel-s) * 1.092) calc(22.745% * var(--steel-tint)))  1.5px, hsl(calc(var(--steel-h) + 1.333 * var(--steel-spread)) calc(var(--steel-s) * 0.928) calc(19.02% * var(--steel-tint)))  2.5px, hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 0.797) calc(18.039% * var(--steel-tint)))  3.5px,
+      hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 0.758) calc(17.255% * var(--steel-tint)))   4.5px, hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 0.794) calc(16.471% * var(--steel-tint)))  5.5px, hsl(calc(var(--steel-h) + -0.421 * var(--steel-spread)) calc(var(--steel-s) * 0.782) calc(15.882% * var(--steel-tint)))  6.5px, hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 0.732) calc(16.078% * var(--steel-tint)))  7.5px,
+      hsl(calc(var(--steel-h) + -0.235 * var(--steel-spread)) calc(var(--steel-s) * 0.7) calc(15.882% * var(--steel-tint)))   9.5px, hsl(calc(var(--steel-h) + -5.75 * var(--steel-spread)) calc(var(--steel-s) * 0.667) calc(15.686% * var(--steel-tint))) 11.5px, hsl(calc(var(--steel-h) + -5.333 * var(--steel-spread)) calc(var(--steel-s) * 0.789) calc(14.902% * var(--steel-tint))) 13.5px, hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 0.926) calc(14.118% * var(--steel-tint))) 14.5px,
+      hsl(calc(var(--steel-h) + -3.579 * var(--steel-spread)) calc(var(--steel-s) * 1.005) calc(12.353% * var(--steel-tint)))  15.5px, hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) var(--steel-s) calc(11.765% * var(--steel-tint))) 16.5px, hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 1.034) calc(11.373% * var(--steel-tint))) 17.5px, hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 1.111) calc(10.588% * var(--steel-tint))) 19.5px,
+      hsl(calc(var(--steel-h) + -0.235 * var(--steel-spread)) calc(var(--steel-s) * 1.111) calc(10% * var(--steel-tint)))  21.5px, hsl(calc(var(--steel-h) + -3.765 * var(--steel-spread)) calc(var(--steel-s) * 1.206) calc(9.216% * var(--steel-tint))) 23.5px, hsl(calc(var(--steel-h) + -3.765 * var(--steel-spread)) calc(var(--steel-s) * 1.259) calc(8.824% * var(--steel-tint))) 25.5px, hsl(calc(var(--steel-h) + -3.765 * var(--steel-spread)) calc(var(--steel-s) * 1.318) calc(8.431% * var(--steel-tint))) 28.5px,
+      hsl(calc(var(--steel-h) + 1.75 * var(--steel-spread)) calc(var(--steel-s) * 1.27) calc(8.235% * var(--steel-tint)))  30.5px, hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 1.111) calc(8.235% * var(--steel-tint))) 34.5px, hsl(calc(var(--steel-h) + 4 * var(--steel-spread)) calc(var(--steel-s) * 1.163) calc(8.431% * var(--steel-tint))) 37.5px, hsl(calc(var(--steel-h) + 2.286 * var(--steel-spread)) calc(var(--steel-s) * 1.167) calc(7.843% * var(--steel-tint))) 40.5px,
+      hsl(calc(var(--steel-h) + 4.923 * var(--steel-spread)) calc(var(--steel-s) * 1.111) calc(7.647% * var(--steel-tint)))  44.5px, hsl(calc(var(--steel-h) + 4.923 * var(--steel-spread)) calc(var(--steel-s) * 1.111) calc(7.647% * var(--steel-tint))) 49.5px, hsl(calc(var(--steel-h) + 4.923 * var(--steel-spread)) calc(var(--steel-s) * 1.171) calc(7.255% * var(--steel-tint))) 52.5px, hsl(calc(var(--steel-h) + 4.923 * var(--steel-spread)) calc(var(--steel-s) * 1.238) calc(6.863% * var(--steel-tint))) 56.5px,
+      hsl(calc(var(--steel-h) + 4.923 * var(--steel-spread)) calc(var(--steel-s) * 1.313) calc(6.471% * var(--steel-tint)))  61.5px, hsl(calc(var(--steel-h) + 2.286 * var(--steel-spread)) calc(var(--steel-s) * 1.458) calc(6.275% * var(--steel-tint))) 66.5px, hsl(calc(var(--steel-h) + 0.308 * var(--steel-spread)) calc(var(--steel-s) * 1.398) calc(6.078% * var(--steel-tint))) 71.5px, hsl(var(--steel-h) calc(var(--steel-s) * 1.613) calc(6.078% * var(--steel-tint))) 82.5px,
+      hsl(calc(var(--steel-h) + 4.923 * var(--steel-spread)) calc(var(--steel-s) * 1.398) calc(6.078% * var(--steel-tint)))  94.5px, hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 1.556) calc(5.882% * var(--steel-tint))) 109.5px, hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 1.556) calc(5.882% * var(--steel-tint))) 341px);
 
   background: var(--layer1), var(--layer2), var(--layer3), var(--layer4);
 

@@ -1,0 +1,90 @@
+/* Halo kit — canon colour map for the CSS/HTML conversion.
+   Generated from a full census of the Figma file (7,845 paints).
+   Palette is FROZEN (wrangler-style §1): pick from these, never add.
+   Dark-only — do NOT emit a light-mode block. Never #000 / #fff. */
+
+:root {
+  /* ---- canon tokens, verbatim from wrangler-style §1 ---- */
+  --bg:#0a0d11;  --panel:#171d25;  --card:#12171e;  --card-head:#1a212b;
+  --line:#2c343f; --line-soft:#212834;
+  --txt:#eef2f7; --txt-2:#aab4c1; --txt-3:#838e9c;
+  --accent:#ff7e1f; --on-orange:#1a1205;
+  --green:#34d399; --yellow:#eed44b; --red:#ff4242; --red-fill:#d63636;
+  --blue:#6394cc; --gray:#8b94a3; --on-red-fill:#fdfdfd;
+  --commit:#2f6fd0; --on-commit:#fdfdfd; --tan:#c2925a;
+
+  /* ---- status ramps ----
+     hue + saturation from the canon token, lightness from the original
+     sculpt, so every bevel and highlight survives the recolour. */
+  --red-hot:#ff7878;    --red-lit:#ff4343;     --red-deep:#9d0000;    --red-shadow:#5a0000;
+  --yellow-lit:#efd653; --yellow-deep:#8f7b0e; --yellow-shadow:#524608;
+  --blue-lit:#719ed1;   --blue-deep:#274c76;   --blue-shadow:#162b44;
+  --green-lit:#64deb1;  --green-deep:#1c815c;  --green-shadow:#104a35;
+  --gray-lit:#979fac;   --gray-deep:#454c57;   --gray-shadow:#282c32;
+
+  /* ---- ONE steel ladder: housing + conduit + deck ----
+     Before this pass the three parts sat on three near-miss grey ladders,
+     which is what read as a mismatch. All structural greys now snap here.
+     Cool axis ~214deg, sat .13; canon anchors kept exact. */
+  --steel-11:#c5cbd3;  /* brightest machined edge            */
+  --steel-10:#aab4c1;  /* = --txt-2   machined highlight     */
+  --steel-09:#8b94a3;  /* = --gray                           */
+  --steel-08:#6f7d90;
+  --steel-07:#5d6979;
+  --steel-06:#505a68;
+  --steel-05:#3e4651;
+  --steel-04:#2c343f;  /* = --line                           */
+  --steel-03:#1a212b;  /* = --card-head                      */
+  --steel-02:#12171e;  /* = --card                           */
+  --steel-01:#0a0d11;  /* = --bg      groove / deepest shadow */
+}
+
+/* ---------------------------------------------------------------
+   Bulb — a Signal: colour = state, fill = today.
+   Bezel/well is STRUCTURE, so it stays steel across every state.
+   --------------------------------------------------------------- */
+.bulb { --bezel:var(--steel-05); }
+.bulb--overdue { --tone:var(--red);    --tone-lit:var(--red-lit);    --tone-deep:var(--red-deep);    --tone-shadow:var(--red-shadow); }
+.bulb--due     { --tone:var(--yellow); --tone-lit:var(--yellow-lit); --tone-deep:var(--yellow-deep); --tone-shadow:var(--yellow-shadow); }
+.bulb--waiting { --tone:var(--blue);   --tone-lit:var(--blue-lit);   --tone-deep:var(--blue-deep);   --tone-shadow:var(--blue-shadow); }
+.bulb--done    { --tone:var(--green);  --tone-lit:var(--green-lit);  --tone-deep:var(--green-deep);  --tone-shadow:var(--green-shadow); }
+.bulb--off     { --tone:var(--gray);   --tone-lit:var(--gray-lit);   --tone-deep:var(--gray-deep);   --tone-shadow:var(--gray-shadow); }
+
+/* ---------------------------------------------------------------
+   THE LASER FOLLOWS THE SIGNAL — THE BODY NEVER DOES  (ledger #217)
+   The thin lit contour on the housing, deck AND conduit keys to the
+   row's own tone. Every thick machined stroke and all casing stay on
+   the steel ladder. Set --row-hue once per row; the rest inherits.
+   --------------------------------------------------------------- */
+.row          { --row-hue:var(--gray); }        /* default = no state */
+.row--overdue { --row-hue:var(--red); }
+.row--due     { --row-hue:var(--yellow); }
+.row--waiting { --row-hue:var(--blue); }
+.row--done    { --row-hue:var(--green); }
+
+/* The laser's own 3-tone ramp, derived from whatever --row-hue is.
+   Mixes go toward canon ground/text tokens, never toward #000 / #fff. */
+.row {
+  --laser-hot:  color-mix(in oklch, var(--row-hue) 62%, var(--txt));
+  --laser-core: var(--row-hue);
+  --laser-well: color-mix(in oklch, var(--row-hue) 38%, var(--bg));
+}
+
+.housing__laser, .deck__laser, .conduit__laser,
+.lit-edge                 { stroke:var(--laser-core); color:var(--laser-core); }
+.conduit__hot             { background:var(--laser-hot); }
+.conduit__core            { background:var(--laser-core); }
+.conduit__well            { background:var(--laser-well); }
+
+/* Structure — steel, and it does NOT move with state. */
+.housing__machined,
+.deck__machined           { stroke:var(--steel-10); }   /* bright machined highlight */
+.housing__body,
+.deck__body               { stroke:var(--steel-09); }
+.conduit__casing          { background:var(--steel-05); }
+.conduit__edge-mid        { background:var(--steel-08); }
+.conduit__edge-lit        { background:var(--steel-10); }
+.groove, .conduit__groove { stroke:var(--steel-01); background:var(--steel-01); }
+
+/* The board keys to the row tone too (ledger #208/#209) — never a fixed red. */
+.board { border-color:var(--row-hue); color:var(--row-hue); }

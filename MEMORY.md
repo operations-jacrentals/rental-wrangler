@@ -244,6 +244,31 @@
   the BASE `:root` only (never overridden per theme) so a slot's color never shifts on a theme
   toggle. Fully guarded off production (keeps its clean title + logo favicon); local = tan "L".
 
+- **Illustrated UI is EXPORTED from Figma, never recreated** (2026-08-05, skill
+  `art-pipeline`, ledger #257). Normal handoff moves tokens + component identity +
+  exported assets across — never pixels. Halo is the exception because the interface
+  IS artwork, so the analogue is game UI: export via Figma's own
+  `exportAsync({format:'SVG_STRING'})`, declare ONE shared asset in `:root`, reference
+  it N times, tint per state at runtime. Hand-rebuilding the elbow in CSS failed the
+  bar and cost hours; export beat it immediately. Measured: 96 elbows across 3 cards =
+  37KB vs 1,268KB for one shipped Tier-01 card (2.95%), `LayoutCount: 0`, ~60fps.
+- **Resizable panels are 9-sliced; rhythm ROUNDS, structure STRETCHES** (ledger #257/#258).
+  `border-image` with `fill`. The test is: does the feature have a countable rhythm?
+  Countable (etchings, rivets, ticks) → `round`, NOT `repeat` — a half-cut motif reads
+  as a mistake while `round`'s sub-pixel scaling to fit whole tiles does not. Continuous
+  (bevels, gradients) → `stretch`. Axes can differ. Slice bands decided and measured in
+  `docs/design/SLICE-SPEC.md`.
+- **The conduit rail is a 41x4 REPEATING TILE, not a slice** (ledger #259). All 131 rows
+  of `asm-channel` are byte-identical, so the tall asset carries no information.
+  `repeat-y`, not `border-image` — no corners to protect, the caps are the elbow.
+- **The elbow and its row are ONE element** (ledger #256). Rows hide behind the group
+  header and slide DOWN; the elbows ride the channel carrying them. Supersedes the old
+  "rail drops, rows slide in from the right" model. Fusing them makes per-elbow centring
+  structurally impossible to get wrong.
+- **"Matte — no glow" is a STEEL rule, not a ban** (ledger #251). `#146` is operative:
+  glass emits, steel never does. The shorthand in CLAUDE.md reads as absolute and keeps
+  winning arguments it shouldn't — check the MATERIAL before removing a glow.
+
 ## Design prefs
 - Yard **"data-plate"** design language: dark industrial steel, **ONE** safety-orange
   accent (**`#ff7e1f`**), **Archivo** body voice + mono stamped labels, a light
@@ -646,6 +671,35 @@
   `document.querySelector('[data-rec="<custId>"]').click()` — the delegated handler resolves the open.
   `openCustomerForm(id)` opens the account EDIT form instead, which has no `.inv-row`.
 
+- **Figma `get_metadata` LIES about overridden instances** (2026-08-05). It reports the
+  *un-overridden component* position. The conduit channel read 149px and was actually at
+  108px; the elbow's 138px was wrong the same way. Use `get_design_context` for anything
+  instanced.
+- **A node's frame bounds are NOT its painted extent.** `429:53`'s frame is 40x158 while
+  its child sits at absolute (40,158) — outside it. `429:77`'s frame is 487x97, painted
+  extent 683x97 offset 193.93px left. An entire component was once built from a 41x158
+  sliver believing it was the elbow. Render the node and LOOK at it first.
+- **Figma's PNG export quantizes translucent washes into bands ONE channel value apart.**
+  Counting those as distinct design tones fails an asset for not reproducing a rasteriser
+  artifact. Compare tones by DISTANCE, not identity — and cast to `int` before
+  subtracting, or uint8 overflow turns Δ=1 into Δ=36. That overflow produced two false
+  "asset failing" verdicts and two wasted agent passes.
+- **`mask-image` layers do not pair 1:1 with `background-image` layers** — they union via
+  `mask-composite: add`, so only the topmost background shows. Use one z-ordered image,
+  or separate elements. And masking an element clips EVERYTHING on it, so steel+laser
+  needs two layers (steel as background, tinted laser on `::after`).
+- **Sub-1% vector paths are the bevels, not noise.** Dropping ~40 collapsed the deck from
+  9 tones to 6 and made the steel read flat. On the elbow, 32 of 33 sub-1% runs had a
+  measurable visible cost when removed.
+- **Figma layer names go stale.** `438:315` is named "Main item · FAILED board" and
+  actually renders the group NAME. Two passes hunted a bug that didn't exist. Trust the
+  render, not the name.
+- **Paint order is load-bearing.** The message-board ring is the TOPMOST layer; painting
+  it before the opaque plate buries it. Looks like a missing asset, is z-order.
+- **`--row-hue` power-on uses `fill-mode: backwards`**, so the value reverts to the
+  cascade the instant the animation ends — every `.row--<state>` needs a permanent rule
+  or rows silently go grey AFTER settling. Screenshot the SETTLED frame, not mid-animation.
+
 ## Open threads
 - **Redesign Tier 0.1 — rulings DONE (2026-07-28, ledger #153–#162), atom-kit rebuild NEXT.**
   PR #780 (Labs handed off, retired — unreachable from Jac's phone) merged to trunk; PR #779
@@ -865,3 +919,24 @@
   monthly member gets next month's invoice created ahead + charged on its due date; a
   `requiresPO`+`duesRequirePO` member's dues hold (created, not charged, no lapse) until a PO is
   added. Jac's call; `wrangler-fix` any miss.
+
+- **V2 card — finish the merge** (2026-08-05, PR #798, branch
+  `claude/design-system-phase-1-vcgald`). The Figma card `438:274` runs as live HTML/CSS
+  at `docs/design/v2-card/` (serve the folder, open `card.html`). Jac's verdict: *"it's a
+  start."* Geometry is a measured coordinate composition, assets pass, rows are fused to
+  their elbows and ride the channel down. NOT yet at fidelity. Next session's test prompt
+  is written at `docs/design/NEXT-SESSION-PROMPT.md` — it measures wall-clock time from
+  export to published artifact for ONE component.
+- **Art that must be REDRAWN before it can resize** (ledger #260, `docs/design/SLICE-SPEC.md`).
+  `asm-deck` cannot be 9-sliced below 1316px — chips/nameplate/PROMISED are frozen in a
+  1100px fixed corner and the widest uniform corridor in the whole panel is 19px; fix is
+  to pull them into live DOM. `asm-housing`'s interior staircase is a NEAR-rhythm (pitch
+  460/440/459) that can neither stretch nor round; decided fix is to move all diagonals
+  into the end caps. `asm-headboard` and `asm-rowboard` need text-free plate re-exports.
+- **Conduit rail export defects** (ledger #259). A 1px fully-transparent slot at x=19; the
+  right edge clipped mid-luminance-ramp; and the accent is RED (`#ff4242`/`#9d0000`) not
+  the canon safety-orange `#ff7e1f`, reading as lit against the seam. Decision: author the
+  rail neutral and tint per state.
+- **Slice corridors need named spacer frames in Figma** (`SLICE-SPEC.md` §6). The deck's
+  uniform corridor has 5px and 4px of slack — a stray drop shadow drifting into it breaks
+  the head at every width.

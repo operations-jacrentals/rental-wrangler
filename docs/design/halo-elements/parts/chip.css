@@ -186,7 +186,7 @@
   position: absolute; inset: 0; --cut: var(--pcut);
   background:
     linear-gradient(180deg,
-      #1c1613 0px, #100708 1.2px, #150608 2.4px, #150506 3.4px,
+      hsl(calc(var(--steel-h) + 168 * var(--steel-spread)) calc(var(--steel-s) * 0.638) calc(9.216% * var(--steel-tint))) 0px, #100708 1.2px, #150608 2.4px, #150506 3.4px,
       #0f0102 4.6px, #150204 5.7px, #1b0507 6.9px, #190306 8.6px,
       #1a0405 calc(100% - 5px), #1a0404 calc(100% - 3px),
       #170303 calc(100% - 1.4px), #100202 100%);
@@ -249,7 +249,7 @@
     linear-gradient(0deg,   rgba(255,30,30,var(--gb,.070)) 0, rgba(255,30,30,0) 20px),
     linear-gradient(90deg,  rgba(255,30,30,var(--gs,.088)) 0, rgba(255,30,30,0) 25px),
     linear-gradient(270deg, rgba(255,30,30,var(--gs,.088)) 0, rgba(255,30,30,0) 25px),
-    var(--fill, #060a10);
+    var(--fill, hsl(calc(var(--steel-h) + 4 * var(--steel-spread)) calc(var(--steel-s) * 1.515) calc(4.314% * var(--steel-tint))));
 }
 /* dark end-cap rail past the black gutter at the right end.
    --capx/--capy/--capw/--caph were already local in the original — no
@@ -260,8 +260,8 @@
   top: var(--capy); height: var(--caph);
   border-radius: var(--capr, 3.5px);
   background: linear-gradient(90deg,
-     var(--cap0,#0d0507) 0%, var(--cap1,#241a1c) 20%, var(--cap2,#382b2e) 32%,
-     var(--cap3,#291e20) 45%, var(--cap4,#150e0e) 62%, var(--cap5,#130c0c) 100%);
+     var(--cap0,#0d0507) 0%, var(--cap1,hsl(calc(var(--steel-h) + 136 * var(--steel-spread)) calc(var(--steel-s) * 0.538) calc(12.157% * var(--steel-tint)))) 20%, var(--cap2,hsl(calc(var(--steel-h) + 134.154 * var(--steel-spread)) calc(var(--steel-s) * 0.438) calc(19.412% * var(--steel-tint)))) 32%,
+     var(--cap3,hsl(calc(var(--steel-h) + 137.091 * var(--steel-spread)) calc(var(--steel-s) * 0.516) calc(13.922% * var(--steel-tint)))) 45%, var(--cap4,hsl(calc(var(--steel-h) + 148 * var(--steel-spread)) calc(var(--steel-s) * 0.667) calc(6.863% * var(--steel-tint)))) 62%, var(--cap5,hsl(calc(var(--steel-h) + 148 * var(--steel-spread)) calc(var(--steel-s) * 0.753) calc(6.078% * var(--steel-tint)))) 100%);
 }
 /* label metrics were per-instance inline styles in the original (no shared
    var family existed for them); given names here since they are now
@@ -283,7 +283,7 @@
 .halo-chip.is-wide {
   --pw: 634.8px; --ph: 60.6px; --pcut: 21px;
   --ox: 13.5px; --oy: 10.47px; --ow: 606.8px; --oh: 46px; --oc: 20.4px;
-  --fill: #05070b; --gt: .052; --gb: .070; --gs: .088;
+  --fill: hsl(calc(var(--steel-h) + 8 * var(--steel-spread)) calc(var(--steel-s) * 1.25) calc(3.137% * var(--steel-tint))); --gt: .052; --gb: .070; --gs: .088;
   --blx: 22px; --blr: 11px; --blh: 6px; --blo: 1;
   --capx: 626.5px; --capw: 8px; --capy: 20.6px; --caph: 45px;
 }
@@ -293,10 +293,10 @@
 .halo-chip.is-wide.is-labelled {
   --pw: 633px; --ph: 60.5px; --pcut: 21px;
   --ox: 14.3px; --oy: 10.45px; --ow: 605.8px; --oh: 45.45px; --oc: 20.4px;
-  --fill: #060f18; --gt: .058; --gb: .078; --gs: .082;
+  --fill: hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 2) calc(5.882% * var(--steel-tint))); --gt: .058; --gb: .078; --gs: .082;
   --blx: 22px; --blr: 11px; --blh: 5.2px; --blo: .95;
   --capx: 626.9px; --capw: 6px; --capy: 22.6px; --caph: 43px;
-  --cap0: #100c0c; --cap1: #2a2422; --cap2: #332b29; --cap3: #2a2322; --cap4: #191614; --cap5: #161311;
+  --cap0: hsl(calc(var(--steel-h) + 148 * var(--steel-spread)) calc(var(--steel-s) * 0.476) calc(5.49% * var(--steel-tint))); --cap1: hsl(calc(var(--steel-h) + 163 * var(--steel-spread)) calc(var(--steel-s) * 0.351) calc(14.902% * var(--steel-tint))); --cap2: hsl(calc(var(--steel-h) + 160 * var(--steel-spread)) calc(var(--steel-s) * 0.362) calc(18.039% * var(--steel-tint))); --cap3: hsl(calc(var(--steel-h) + 155.5 * var(--steel-spread)) calc(var(--steel-s) * 0.351) calc(14.902% * var(--steel-tint))); --cap4: hsl(calc(var(--steel-h) + 172 * var(--steel-spread)) calc(var(--steel-s) * 0.37) calc(8.824% * var(--steel-tint))); --cap5: hsl(calc(var(--steel-h) + 172 * var(--steel-spread)) calc(var(--steel-s) * 0.427) calc(7.647% * var(--steel-tint)));
   --lbl-top: 21px; --lbl-fs: 27.9px; --lbl-ls: 1.35px; --lbl-pl: 239px;
 }
 
@@ -305,10 +305,10 @@
 .halo-chip.is-narrow.is-labelled {
   --pw: 362.5px; --ph: 70.1px; --pcut: 25px;
   --ox: 14.76px; --oy: 10.95px; --ow: 335.2px; --oh: 54.1px; --oc: 24.8px;
-  --fill: #030a12; --gt: .050; --gb: .062; --gs: .070;
+  --fill: hsl(var(--steel-h) calc(var(--steel-s) * 2.381) calc(4.118% * var(--steel-tint))); --gt: .050; --gb: .062; --gs: .070;
   --blx: 26px; --blr: 10px; --blh: 4px; --blo: .55;
   --capx: 355px; --capw: 6.5px; --capy: 27.5px; --caph: 46px;
-  --cap0: #150a0c; --cap1: #2a1416; --cap2: #3d2020; --cap3: #3c1a17; --cap4: #210708; --cap5: #140406;
+  --cap0: #150a0c; --cap1: #2a1416; --cap2: hsl(calc(var(--steel-h) + 148 * var(--steel-spread)) calc(var(--steel-s) * 1.039) calc(18.235% * var(--steel-tint))); --cap3: #3c1a17; --cap4: #210708; --cap5: #140406;
   --lbl-top: 24.9px; --lbl-fs: 29.5px; --lbl-ls: 0.15px; --lbl-pl: 119px;
 }
 
@@ -316,7 +316,7 @@
 .halo-chip.is-narrow {
   --pw: 363px; --ph: 71px; --pcut: 24px;
   --ox: 14.6px; --oy: 11.75px; --ow: 336.2px; --oh: 54.07px; --oc: 26px;
-  --fill: #0b0d11; --gt: .040; --gb: .052; --gs: .062;
+  --fill: hsl(calc(var(--steel-h) + 8 * var(--steel-spread)) calc(var(--steel-s) * 0.714) calc(5.49% * var(--steel-tint))); --gt: .040; --gb: .052; --gs: .062;
   --blx: 26px; --blr: 10px; --blh: 4px; --blo: .55;
   --capx: 356.9px; --capw: 7px; --capy: 27.4px; --caph: 47.5px;
   --cap0: #150507; --cap1: #341216; --cap2: #4b1f22; --cap3: #3b1519; --cap4: #1c0709; --cap5: #150808;

@@ -76,7 +76,7 @@
   height: 12px;
   background: linear-gradient(180deg,
     #4c2426 0 1px,#b5615f 1px 2px,#de7470 2px 3px,#a84845 3px 4px,#772527 4px 5px,
-    #612123 5px 6px,#4f2121 6px 7px,#442322 7px 8px,#331f1e 8px 9px,#1d0d0d 9px 10px,
+    #612123 5px 6px,#4f2121 6px 7px,hsl(calc(var(--steel-h) + 149.765 * var(--steel-spread)) calc(var(--steel-s) * 1.111) calc(20% * var(--steel-tint))) 7px 8px,hsl(calc(var(--steel-h) + 150.857 * var(--steel-spread)) calc(var(--steel-s) * 0.864) calc(15.882% * var(--steel-tint))) 8px 9px,#1d0d0d 9px 10px,
     #140404 10px 11px,#100304 11px 12px);
 }
 
@@ -90,7 +90,7 @@
   height: 63px;
   background: linear-gradient(90deg,
     #3d1712 0 1px,#5a0a04 1px 2px,#c74f45 2px 3px,#f76a5c 3px 4px,#fc6a5c 4px 6px,
-    #ee6f6a 6px 7px,#bc6568 7px 8px,#593947 8px 9px);
+    #ee6f6a 6px 7px,#bc6568 7px 8px,hsl(calc(var(--steel-h) + 121.75 * var(--steel-spread)) calc(var(--steel-s) * 0.731) calc(28.627% * var(--steel-tint))) 8px 9px);
 }
 
 /* .bt-ltip (original 728-736): left:24 top:138 -> local (24-24, 138-138).
@@ -103,7 +103,7 @@
   top: 0px;
   width: 9px;
   height: 5px;
-  background: linear-gradient(180deg,#241715 0 1px,#8e6057 1px 2px,#e99b8d 2px 3px,
+  background: linear-gradient(180deg,hsl(calc(var(--steel-h) + 156 * var(--steel-spread)) calc(var(--steel-s) * 0.877) calc(11.176% * var(--steel-tint))) 0 1px,hsl(calc(var(--steel-h) + 157.818 * var(--steel-spread)) calc(var(--steel-s) * 0.801) calc(44.902% * var(--steel-tint))) 1px 2px,#e99b8d 2px 3px,
                              #f88c7d 3px 4px,#f47061 4px 5px);
   -webkit-mask-image: linear-gradient(90deg,transparent 0 2px,rgba(0,0,0,.80) 2px 3px,
                      #000 3px 7px,rgba(0,0,0,.74) 7px 8px,rgba(0,0,0,.34) 8px 9px);
