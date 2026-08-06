@@ -448,7 +448,7 @@ Reconstruction error 0 at 41×131, 41×1, 41×7, 41×40, 41×600 and 60×300. No
 | `asm-rowboard` | ~~"PROMISED" baked into the plate~~ **RESOLVED 2026-08-05 — and it was never the real blocker.** | The label is a real `TEXT` node, so `visible=false` before `exportAsync` strips it with **no redraw** (ledger #263) — it was only 4.4 KB of a 664 KB export. The actual blocker was two stray duplicate `Slots — signal row` instances hanging 189px off the left edge (ledger #267/#268); hiding them took the export to 3.9 KB and dropped the floor from 572px to 122px. Verified numbers above. |
 | `asm-housing` | **The interior staircase lives inside the stretch zone.** 5 jogs/diagonals at pitch 460/440/459 — a *near*-rhythm, not a repeat, with the first instance fused to the left cap and the last truncated by the right cap. It cannot be stretched (the 128×76 diagonal rakes 23° at w=1500 and 79° at w=400) and it cannot be `round`ed (no whole-tile count exists). | **REDRAW. Decision: option (a).** Move ALL diagonals, jogs and joints into x<150 / x>1024 and leave the middle as plain steel plus a straight horizontal groove. The ends carry the sculpting — which is what the yard data-plate reads like anyway. Do NOT attempt option (b) (a true seamless tile at integer pitch) — it costs more and buys a motif the language doesn't need. |
 | `asm-deck` | Every piece of content — 3 chips, nameplate, "PROMISED" — is frozen in a 1100px fixed left corner. Widest uniform corridor in the whole 1294px painted panel is 19px. | **REDRAW.** Pull the chips and the nameplate OUT of the exported art into live DOM, leaving a plain steel shell with a wide uniform mid-run. sliceLeft then drops from 1095 to roughly 130 and the min-width drops with it. Until then: ship the corrected slice above **plus** the `contain` fallback below 1316px. |
-| `asm-housing` (vertical) | No feature-free row band exists anywhere in the interior — the panel is decorated continuously y22–125. | Fixed-height part. A height change cannot be absorbed invisibly by any cut. |
+| `asm-housing` (vertical) | No feature-free row band exists anywhere in the interior — the panel is decorated continuously y22–125. | Fixed-height part. A height change cannot be absorbed invisibly by any cut. **Still true — and it is exactly why the short variant (§7) was cut as an ART EDIT in Figma, not as a slice.** |
 | `asm-rowboard` (vertical) | Both 45° chamfers run the FULL 87px of painted height, as do the chip silhouettes — so there are zero horizontally-uniform rows in the side slice regions. | Height locked at 97px. If a variable-height board is ever needed, confine the chamfers to ≤12px corner notches so a uniform vertical band exists on both side edges, and flip repeatV to `round` (3px pitch). |
 
 **Size contract — enforce these in CSS, they are not suggestions:**
@@ -456,6 +456,7 @@ Reconstruction error 0 at 41×131, 41×1, 41×7, 41×40, 41×600 and 60×300. No
 | Panel | Width | Height |
 |---|---|---|
 | `asm-housing` | min 650px (hard floor 297px) | **fixed 151px** |
+| `asm-housing-short` | min 650px (hard floor 297px) | **fixed 117px** (§7 — separate part, not a resize of the 151) |
 | `asm-deck` | min **1316px**, grows only | **fixed 151px** |
 | `asm-rowboard` | min **122px** geometric, **240px** practical | **fixed 97px** |
 | `asm-headboard` | min 77px | flexible, min 102px |
@@ -581,4 +582,60 @@ headboard at once.
 - **Conduit rail:** ships as a 41×4 `repeat-y` tile, authored **neutral** and tinted per state;
   `asm-elbow` stays a fixed-size cap and never scales. (Implements #257.)
 - **Fixed-dimension contract:** housing 151px, deck 151px, rowboard 97px — height is not negotiable
-  as drawn.
+  as drawn. A different height means a **different part**, cut in Figma — see §7.
+
+---
+
+## 7. `asm-housing-short` — 117px subitem row (2026-08-06, ledger #283)
+
+Jac: *"The subitem rows need to be much shorter without disturbing the center lane."*
+
+**Why the row was 151.** Measured on the assembled row (`388:6647`), every member at native
+scale: message board **y 25→122** (97 tall), name **y 51→100** (49), hexicon **y 55→106** (51).
+A per-row pixel scan of the 1171×151 export puts the drawn bevel bands at **y 0–24** and
+**y 126–150** (1000+ of 1171 columns changing per row), with the interior **y 25–125** near-flat —
+adjacent rows there differ at only **16–40 columns**, all of it slowly-travelling diagonals.
+
+So the board filled the entire interior: ~1px of clearance above it, ~4px below. **There was no
+padding to remove — the board WAS the height.** Jac's ruling removed it: the subitem row drops the
+message board and the slots, and keeps only the name (and its hexicon), unaltered.
+
+**The cut.** One piecewise vertex map applied to all 24 leaf paths, in housing space:
+
+```
+TOP = 28    BOT = 126.38    REMOVE = 34    k = (BOT-TOP-REMOVE)/(BOT-TOP) = 0.6544
+
+f(y) =  y                        y ≤ TOP        identity — top bevel untouched
+        28 + (y-28) * 0.6544     TOP < y < BOT  interior compressed
+        y - 34                   y ≥ BOT        pure translation — bottom bevel untouched
+```
+
+Tangents scale by `f'` at their endpoint. Applied via `setVectorNetworkAsync`; the frame is then
+resized 151 → **117** with all child constraints pinned `MIN/MIN` so nothing scales.
+
+**Because f is the identity below 28 and a pure translation above 126.38, no bevel geometry is
+distorted — only moved.** That is a stronger guarantee than a pixel diff, and it is the reason to
+prefer it: a naive vertical resize would have smeared both bevels.
+
+**Verification.** Bevel bands are byte-identical wherever the bevel is *just frame* — top-band
+columns **270–536, 731–976, 1150–1164** and most of the bottom band differ by **zero**. The bands
+are not identical end-to-end, and should not be expected to be: the three staircase diagonals
+(x 67–269, 537–730, 977–1149) and the left-end groove (x 6–65) are **interior** features that
+extend up into the bevel band, so they legitimately moved. Guarded on distinct-colour count first
+per **#282**.
+
+**Known consequence:** the staircase diagonals get steeper (the interior they rake across is 34px
+shorter). Cosmetic, and superseded rather than contradicted by **#260**, which already rules those
+diagonals must move out of the middle entirely in a future redraw.
+
+**Side effect in our favour:** the conduit elbow is 223.43×156.29 native but instanced at
+231.27×187 — stretched **1.196× vertically** to span the 156 pitch (#279's open item). At the new
+**122 pitch** it needs ≈146, a scale of **0.94** — closer to native than today.
+
+**Figma:** `FINAL HOUSING / Short` `701:513` · `Subitem Row · Short` `705:513`. The 151 part is
+untouched and still backs the reference assembly.
+
+**Not yet done:** `docs/design/v2-card/layout.css` still has `.fc-sub { height: 151px }` on a 156
+pitch with the board baked into its DOM (`.fc-sub__board`). Changing only the height would leave a
+97px board inside a 117px row — that lab needs a proper pass that removes the board element, not a
+number edit.
