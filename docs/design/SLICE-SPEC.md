@@ -99,7 +99,26 @@ figure came from. Do not resurrect those numbers.
   border-image-width: 0 66px 0 56px;
   border-image-repeat: stretch;
 }
+/* State colour rides on masks, NOT on the plate — see "the plate is neutral" below. */
+.halo-rowboard > b { position: absolute; inset: 0 -66px 0 -56px; display: block; pointer-events: none; }
+.halo-rowboard .b-scr  { background: var(--row-hue); opacity: .14;
+  mask-border: url("assets/asm-rowboard-screen-mask.svg") 0 66 0 56 fill stretch; }
+.halo-rowboard .b-ring { background: var(--row-hue);
+  mask-border: url("assets/asm-rowboard-ring-mask.svg")   0 66 0 56 stretch; }
 ```
+
+**THE PLATE IS NEUTRAL — state colour is masked on top (fixed 2026-08-06, ledger #276).** The
+first verified plate still had the row colour baked in: ring stroke `#FF4242`, screen wash
+`#D63636`, and four gradients carrying `#FF4242` stops. The board physically could not follow the
+row hue — an orange row rendered a red board. Slice geometry was correct; the colour contract was
+not. Now `asm-rowboard-plate.svg` (1,506 B) is neutral steel + scanline only, and two masks carry
+the hue: `asm-rowboard-screen-mask.svg` (211 B, the glass aperture at 14%) and
+`asm-rowboard-ring-mask.svg` (232 B, the signal outline). **The masks 9-slice on the SAME bands via
+`mask-border`, so they track the plate at every width.**
+
+**`inset: 0` is wrong for a mask layer over a bordered box.** An absolutely-positioned child's
+containing block is the PADDING box, so `inset: 0` sits inside the 56/66px borders and the ring
+renders visibly inset from the plate. Use `inset: 0 -66px 0 -56px` to span the border box.
 
 **Why the cuts are where they are.** The innermost feature is `ring core`, whose bottom-left
 chamfer ends at x=49.85 and whose top-right chamfer begins at x=409.72 (→ 60.28 from the right
@@ -111,6 +130,13 @@ single constant colour across all 4 columns** — pure horizontal banding (8 row
 black @ 20%). There is no horizontal information to preserve, so stretching the centre is
 *lossless*, and `round` would only risk a partial tile at the seam for no gain. Vertically the
 3px pitch never rescales at all, because the vertical slice is 0 and the height is locked.
+
+**SHIP ONE MASTER — `354:38` (470 wide). Do NOT also ship `21:19` (487.42 wide).** The two are the
+same art at different scale (487.42/470 = 1.0371; chamfer insets are an identical 10.6% / 12.8% of
+width in both). Shipping both defeats the entire point of a 9-slice, and `21:19` would need
+`sliceR ≥ 66.32`, which this spec's `66` fails by 0.32px. Render the 470 master at 487.42 instead:
+the borders stay at native scale and only the centre widens, which is exactly the intended
+behaviour.
 
 **Practical minimum vs geometric floor.** 122px is where the two borders butt and the centre
 corridor is zero-width. It renders correctly but shows no screen. For a marquee (#266) budget
@@ -164,10 +190,13 @@ pass on a missing asset.
 tile carries identical information. 4px is insurance against fractional-DPR edge sampling, and it
 measured identically, so it costs nothing to keep.
 
-**The accent stripes are still RED pending Jac`s redraw** (`#ff4242` core/hot, `#9d0000` well)
-against canon `#ff7e1f`. Per ledger #261 the rail is **neutral steel and never tints** — the elbow
-carries the row signal. Recolouring changes no number on this page; the tile geometry is
-colour-independent.
+**RECOLOURED to neutral steel 2026-08-06** (ledger #261, Jac approved) using hexes already present
+in the rail, so the palette stays closed: `accent — core` `#FF4242`→`#4A4F56`, `accent — hot`
+`#FF4242`→`#575D64`, `accent — well` `#9D0000`→`#1E1F22`. The value rhythm is preserved — groove
+`#0C0C0D` → conduit face → shadow line → edge-lit `#7A828C` — so it still reads as a rounded
+conduit in a groove, just no longer a lit one. **Re-verified after the recolour: 0 seam rows across
+all 45 height×DPR combinations, stripe profile 13/13 exact.** The rail never tints; the elbow is
+the branch point that carries the row signal.
 
 **Noted alternative — a pure CSS gradient, no asset at all.** Because the panel is 13 solid vertical
 bands, `linear-gradient(90deg, …)` with hard stops reproduces it *exactly* — measured
