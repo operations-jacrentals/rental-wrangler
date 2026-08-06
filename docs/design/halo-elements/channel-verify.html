@@ -1,0 +1,25 @@
+<meta charset="utf-8">
+<style>
+  body{margin:0;background:#0a0b0c}
+  .col{position:absolute;top:0}
+  .tile{background-image:url("assets/asm-channel-tile.svg");background-repeat:repeat-y;background-size:39px 4px}
+  .full{background-image:url("assets/asm-channel-full.svg");background-repeat:repeat-y;background-size:39px 140px}
+  .grad{background-image:linear-gradient(90deg,
+    #3D4146 0px,#3D4146 1.21px,#33373B 1.21px,#33373B 3.33px,#1E1F22 3.33px,#1E1F22 7.16px,
+    #575D64 7.16px,#575D64 8.57px,#4A4F56 8.57px,#4A4F56 12.2px,#0C0C0D 12.2px,#0C0C0D 15.72px,
+    #FF4242 15.72px,#FF4242 18.44px,#FF4242 18.44px,#FF4242 20.76px,#9D0000 20.76px,#9D0000 23.98px,
+    #7A828C 23.98px,#7A828C 26.6px,#3D4146 26.6px,#3D4146 30.43px,#151618 30.43px,#151618 37.59px,
+    #33373B 37.59px,#33373B 39px);background-size:39px 100%;background-repeat:no-repeat}
+</style>
+<div id="stage"></div>
+<script>
+const H=[40,97,140,333.5,777.25], KIND=['tile','full','grad'];
+let x=0, html='';
+for(const h of H) for(const k of KIND){
+  html+=`<div class="col ${k}" data-h="${h}" data-k="${k}" style="left:${x}px;width:39px;height:${h}px"></div>`;
+  x+=45;
+}
+stage.innerHTML=html;
+document.body.style.height=Math.max(...H)+'px';
+document.body.style.width=x+'px';
+</script>

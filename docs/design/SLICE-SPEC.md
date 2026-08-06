@@ -20,9 +20,10 @@ CONDUIT RAIL decision.
 |---|---|---:|---:|---:|---:|---|---|---|---|
 | `asm-housing` | 1171×151 | **62** | 147 | **81** | 150 | stretch | stretch | none (near-rhythm 460/440/459px — rejected) | high |
 | `asm-deck` | 1335×151 | 28 | **221** | 20 | **1095** | stretch | stretch | none on the growable axis (3px scanline is inside the fixed left corner) | high |
-| `asm-rowboard` | 684×97 | 0 | 72 | 0 | **500** | stretch | stretch | none H; 3px scanline V (unused — V does not scale) | high |
+| `asm-rowboard` | 470×97 | 0 | 66 | 0 | 56 | stretch | stretch | none H (tile is uniform in x — stretch is lossless); 3px scanline V (never rescales, slice V = 0) | **verified 2026-08-05** |
 | `asm-headboard` | 241×141 | **43** | 47 | **59** | 30 | stretch | **round** | **3px** horizontal scanline, vertical axis, r = 1.00 @ lag 3/6/9 | high |
-| `asm-channel` | 41×131 | 0 | 35 | 0 | 4 | stretch | stretch | none (both axes continuous) | high |
+| `asm-btn-done` | 203×112 | **24** | 26 | **20** | **46** | stretch | stretch | none (hand-painted, no rhythm) | **verified 2026-08-06** |
+| `asm-channel` | **39×140** | — | — | — | — | n/a | n/a | **not a slice — 39×4 `repeat-y` tile**; zero vertical variation | **verified 2026-08-05** |
 
 Bold = changed from the first-pass proposal. Every bold number was re-rendered and re-measured, not
 reasoned about.
@@ -80,21 +81,72 @@ Paths assume `assets/halo/`. Adjust the URL only — never the numbers.
 }
 ```
 
-### asm-rowboard — row message board (HEIGHT-FIXED 97px, min 572px)
+### asm-rowboard — row message board (HEIGHT-FIXED 97px, min 122px) — VERIFIED 2026-08-05
+
+Source art `470×97`, text-free and slot-free (see ledger #268). The old `684×97 / 0 72 0 500`
+numbers were measured off a **contaminated export** — two stray duplicate `Slots — signal row`
+instances hung 189px off the left edge, making render bounds 683.4 wide. That 684 is where the
+figure came from. Do not resurrect those numbers.
 
 ```css
 .halo-rowboard {
   box-sizing: border-box;
   height: 97px;               /* FIXED — both chamfers run the full painted height */
-  min-width: 572px;
+  min-width: 122px;           /* geometric floor = 56 + 66; see note on practical minimum */
   border-style: solid;
-  border-width: 0 72px 0 500px;
-  border-image-source: url("assets/halo/asm-rowboard.png");
-  border-image-slice: 0 72 0 500 fill;
-  border-image-width: 0 72px 0 500px;
-  border-image-repeat: stretch stretch;
+  border-width: 0 66px 0 56px;
+  border-image-source: url("assets/asm-rowboard-plate.svg");
+  border-image-slice: 0 66 0 56 fill;
+  border-image-width: 0 66px 0 56px;
+  border-image-repeat: stretch;
 }
+/* State colour rides on masks, NOT on the plate — see "the plate is neutral" below. */
+.halo-rowboard > b { position: absolute; inset: 0 -66px 0 -56px; display: block; pointer-events: none; }
+.halo-rowboard .b-scr  { background: var(--row-hue); opacity: .14;
+  mask-border: url("assets/asm-rowboard-screen-mask.svg") 0 66 0 56 fill stretch; }
+.halo-rowboard .b-ring { background: var(--row-hue);
+  mask-border: url("assets/asm-rowboard-ring-mask.svg")   0 66 0 56 stretch; }
 ```
+
+**THE PLATE IS NEUTRAL — state colour is masked on top (fixed 2026-08-06, ledger #276).** The
+first verified plate still had the row colour baked in: ring stroke `#FF4242`, screen wash
+`#D63636`, and four gradients carrying `#FF4242` stops. The board physically could not follow the
+row hue — an orange row rendered a red board. Slice geometry was correct; the colour contract was
+not. Now `asm-rowboard-plate.svg` (1,506 B) is neutral steel + scanline only, and two masks carry
+the hue: `asm-rowboard-screen-mask.svg` (211 B, the glass aperture at 14%) and
+`asm-rowboard-ring-mask.svg` (232 B, the signal outline). **The masks 9-slice on the SAME bands via
+`mask-border`, so they track the plate at every width.**
+
+**`inset: 0` is wrong for a mask layer over a bordered box.** An absolutely-positioned child's
+containing block is the PADDING box, so `inset: 0` sits inside the 56/66px borders and the ring
+renders visibly inset from the plate. Use `inset: 0 -66px 0 -56px` to span the border box.
+
+**Why the cuts are where they are.** The innermost feature is `ring core`, whose bottom-left
+chamfer ends at x=49.85 and whose top-right chamfer begins at x=409.72 (→ 60.28 from the right
+edge). Add its 2.8 stroke (1.4 each side) and its 0.81 σ blur, and the minimum safe cuts are
+L≥53.7 / R≥64.1. Rounded up to **56 / 66** for margin.
+
+**Why `stretch` and not `round`.** The scanline tile was decoded: 4×12px, and **every row is a
+single constant colour across all 4 columns** — pure horizontal banding (8 rows clear, 4 rows
+black @ 20%). There is no horizontal information to preserve, so stretching the centre is
+*lossless*, and `round` would only risk a partial tile at the seam for no gain. Vertically the
+3px pitch never rescales at all, because the vertical slice is 0 and the height is locked.
+
+**SHIP ONE MASTER — `354:38` (470 wide). Do NOT also ship `21:19` (487.42 wide).** The two are the
+same art at different scale (487.42/470 = 1.0371; chamfer insets are an identical 10.6% / 12.8% of
+width in both). Shipping both defeats the entire point of a 9-slice, and `21:19` would need
+`sliceR ≥ 66.32`, which this spec's `66` fails by 0.32px. Render the 470 master at 487.42 instead:
+the borders stay at native scale and only the centre widens, which is exactly the intended
+behaviour.
+
+**Practical minimum vs geometric floor.** 122px is where the two borders butt and the centre
+corridor is zero-width. It renders correctly but shows no screen. For a marquee (#266) budget
+**≥240px** so there is a usable aperture for text to scroll through.
+
+**Verification performed:** rendered at 122 / 180 / 240 / 380 / 470 / 700 / 1100 / 1600px against
+a `preserveAspectRatio="none"` naive-scale control. Chamfers hold 45° and the ring stroke holds
+constant thickness at every width; the control rakes the chamfers flat and balloons the stroke
+by 1100px.
 
 ### asm-headboard — group headboard (width-flexible AND height-flexible)
 
@@ -114,33 +166,180 @@ Requires the **text-free plate re-export** (§3). Until that lands, this panel i
 }
 ```
 
-### asm-channel — conduit rail (see §5: ship it as a TILE, not a slice)
+### asm-channel — conduit rail — VERIFIED 2026-08-05 (a TILE, never a slice)
 
-Slice form, kept for reference and for any place the rail must sit inside a bordered box:
+**The rail is 39px wide, not 41.** The 41 came from a PNG measurement; the vector source has 13
+stripes butting from x=0 to exactly x=39.000 with no gaps and every fill at alpha 1.0 (ledger #262).
+Component is `39×140`, 875 bytes, clean — no nested components, no text, zero render overhang.
 
 ```css
 .halo-channel {
+  width: 39px;
+  height: 100%;                                    /* any row count */
+  background: url("assets/asm-channel-tile.svg") repeat-y top left;
+  background-size: 39px 4px;
+}
+```
+
+**Verification.** Rendered at heights 40 / 97 / 140 / 333.5 / 777.25px × DPR 1 / 2 / 3 — including
+deliberately fractional heights, which is where `repeat-y` resampling would seam. **All 45
+combinations clean: zero seam rows, max row-to-row delta 0.** The columns were then checked against
+the expected stripe profile and matched **13/13 exact**, so the clean result is real and not a false
+pass on a missing asset.
+
+**Why 4px and not 1px.** Nothing in the art needs it — there is zero vertical variation, so a 1px
+tile carries identical information. 4px is insurance against fractional-DPR edge sampling, and it
+measured identically, so it costs nothing to keep.
+
+**RECOLOURED to neutral steel 2026-08-06** (ledger #261, Jac approved) using hexes already present
+in the rail, so the palette stays closed: `accent — core` `#FF4242`→`#4A4F56`, `accent — hot`
+`#FF4242`→`#575D64`, `accent — well` `#9D0000`→`#1E1F22`. The value rhythm is preserved — groove
+`#0C0C0D` → conduit face → shadow line → edge-lit `#7A828C` — so it still reads as a rounded
+conduit in a groove, just no longer a lit one. **Re-verified after the recolour: 0 seam rows across
+all 45 height×DPR combinations, stripe profile 13/13 exact.** The rail never tints; the elbow is
+the branch point that carries the row signal.
+
+**Noted alternative — a pure CSS gradient, no asset at all.** Because the panel is 13 solid vertical
+bands, `linear-gradient(90deg, …)` with hard stops reproduces it *exactly* — measured
+pixel-identical to the tile, 13/13 stripes, zero seams, at every height and DPR above. It drops the
+image decode and makes recolouring a token swap. It is NOT the shipped form because art-pipeline
+rule 1 says export art rather than recreating it in CSS; this is flagged as a deliberate, measured
+exception for Jac to rule on, not taken unilaterally. Generated form kept at
+`assets/asm-channel-gradient.css`.
+
+### asm-elbow — conduit elbow (FIXED SIZE, tinted) — VERIFIED 2026-08-05
+
+Not sliced. Fixed `224×157` (the frame is 223.43×156.29; Figma rounds the export up — use the
+asset's own size). **This is the part that carries the row signal** — per ledger #252/#261 the
+channel stays neutral steel and the elbow is the branch point where the row's colour surfaces.
+
+Ships as **four stacked layers**, painted in Figma's own paint order:
+
+```css
+.halo-elbow { position: relative; width: 224px; height: 157px; }
+.halo-elbow > i { position: absolute; inset: 0; display: block; }
+
+.halo-elbow .l-under { background: url("assets/asm-elbow-plate-under.svg") no-repeat 0 0/224px 157px; }
+.halo-elbow .l-well  { background: var(--row-hue-well);
+                       mask: url("assets/asm-elbow-well-mask.svg")   no-repeat 0 0/224px 157px; }
+.halo-elbow .l-sig   { background: var(--row-hue);
+                       mask: url("assets/asm-elbow-signal-mask.svg") no-repeat 0 0/224px 157px; }
+.halo-elbow .l-over  { background: url("assets/asm-elbow-plate-over.svg") no-repeat 0 0/224px 157px; }
+```
+```html
+<div class="halo-elbow"><i class="l-under"></i><i class="l-well"></i><i class="l-sig"></i><i class="l-over"></i></div>
+```
+
+| Layer | Paths | Bytes | |
+|---|---:|---:|---|
+| `asm-elbow-plate-under.svg` | 2 | 5,277 | steel that sits BELOW the signal |
+| `asm-elbow-well-mask.svg` | 2 | 2,315 | white silhouette → `var(--row-hue-well)` |
+| `asm-elbow-signal-mask.svg` | 5 | 2,510 | white silhouette → `var(--row-hue)` |
+| `asm-elbow-plate-over.svg` | 40 | 19,618 | steel that OCCLUDES the signal |
+
+2 + 2 + 5 + 40 = **49 = the original path count.** Nothing was dropped in the split.
+
+**Why two masks and not one.** The accent is two-tone — 5 paths `#FF4242` and 2 paths `#9D0000`.
+A single mask flattens them, and luminance-encoding the darker tone into one mask cannot work: a
+tint composited over any base can never reach `#9D0000`'s zero green/blue. Two masks let the shade
+be its own token, and keep the choice of how the well behaves per state open.
+
+**Why the plate is split in two.** Path order in the source interleaves steel and accent —
+`steel(0,1) · well(2) · steel(3) · bright(4,5,6) · steel(7–24) · well(25) · bright(26,27) ·
+steel(28–48)`. Bright paints above well in both clusters, and steel paints above the accent at
+several indices. Collapsing all steel under all accent produced a **visible wrong-colour block**
+(1,816 px reading `#9d0000` where the source is `#151618`). Splitting steel into under/over and
+putting bright above well fixes it.
+
+**Fidelity, measured.** The four layers recomposited with the source colours and pixel-diffed
+against the unsplit original: **0.791% of pixels differ at all, max channel delta 36, only 0.031%
+differ by more than 16.** All residual difference is anti-aliasing at shared edges — inherent to
+splitting paths across compositing layers, since each layer antialiases against transparency
+before compositing. No wrong colours remain. This is a *compare-by-distance* result, per
+art-pipeline rule 1 — do not chase it to zero.
+
+**Use explicit child elements, not `::before`/`::after`.** Pseudo-elements stack as first and last
+child, so a real child element lands BETWEEN them — which silently put the signal mask above the
+top plate on the first attempt.
+
+### asm-cap — conduit end cap (FIXED SIZE, never tints) — VERIFIED 2026-08-05
+
+```css
+.halo-cap { width: 39px; height: 22px;
+            background: url("assets/asm-cap.svg") no-repeat 0 0/39px 22px; }
+```
+
+**The asset is `39×22`, but the Figma frame reads `39×18.8`.** `clipsContent` is false and the
+rotated fitting overhangs the frame bottom by 3px, so Figma expands the export to contain it.
+**Size the cap at 22px, not 18.8px** — using the frame height squashes or clips the fitting.
+
+**No mask, no tint.** The cap's 10 paths contain zero accent colours — only `#151618`, `#3D4146`,
+`#575D64`, `#7A828C`. It is pure steel and stays neutral in every row state, which independently
+confirms ledger #252: only the elbow carries the signal.
+
+### asm-btn-done — "Button · Done" (FLEXIBLE ON BOTH AXES) — VERIFIED 2026-08-06
+
+Figma `656:2235`, a GROUP of 8 painted vectors inside `Main item · FAILED board`. Export is
+`203×112` (the group measures 202.16×111.82; Figma rounds up — use the asset's own size).
+Clean: no nested components, no TEXT, zero render overhang, 3,004 B.
+
+```css
+.halo-btn-done {
   box-sizing: border-box;
-  width: 41px;
+  min-width: 72px;            /* 46 + 26 */
+  min-height: 44px;           /* 24 + 20 */
   border-style: solid;
-  border-width: 0 35px 0 4px;
-  border-image-source: url("assets/halo/asm-channel.png");
-  border-image-slice: 0 35 0 4 fill;
-  border-image-width: 0 35px 0 4px;
-  border-image-repeat: stretch stretch;
+  border-width: 24px 26px 20px 46px;
+  border-image-source: url("assets/asm-btn-done.svg");
+  border-image-slice: 24 26 20 46 fill;
+  border-image-width: 24px 26px 20px 46px;
+  border-image-repeat: stretch;
 }
 ```
 
-**Preferred form — repeating tile (this is the decision):**
+**Why these cuts.** The art is a light-from-top-left bevel: `#686C6F` highlight along the top and
+left, `#2B2E2F` / `#06080A` / `#171C1F` shadow along the bottom and right.
+- **L = 46** holds the left bevel *and* both hand-painted scuff marks (x 11.94–26.46 and
+  28.27–42.24). This is the band that carries the left-hand depth.
+- **R = 26** contains the top-right chamfer, which runs (182.33, 4.37) → (200.35, 21.42) and so
+  needs ≥ 20.67.
+- **T = 24** clears that same chamfer vertically (it ends at y = 21.42).
+- **B = 20, not 18.** The upper scuff spans y 92.80–95.14 and *straddles* an 18px cut, which would
+  split it between the bottom-left corner and the vertically-stretching left edge. At 20 both marks
+  sit wholly inside the corner and can never distort.
 
-```css
-.halo-channel {
-  width: 41px;
-  height: 100%;                                       /* any row count */
-  background: url("assets/halo/asm-channel-tile.png") repeat-y top left;
-  background-size: 41px 4px;                          /* 41×4 source, 1:1 */
-}
-```
+**Verification — the left band is byte-identical at every width tested.** Widths 120 / 160 / 203 /
+260 / 340 / 500 / 760 px, each captured as its own element screenshot and compared against native:
+
+| width | 9-slice left 46px band | naive-scale left 46px band |
+|---:|---|---|
+| 120 | **0.00% — identical** | 17.88% differ |
+| 160 | **0.00% — identical** | 13.71% |
+| 203 | identical (native) | identical (native) |
+| 260 | **0.00% — identical** | 15.92% |
+| 340 | **0.00% — identical** | 24.06% |
+| 500 | **0.00% — identical** | 38.55% |
+| 760 | **0.00% — identical** | **56.76%** |
+
+The naive control degrades monotonically with width — the bevel thickens into a fat light band and
+the scuff marks smear into streaks. The 9-slice does not move a single pixel of it.
+
+The right 26px band (the chamfer) is identical at 6 of 7 widths; at 260px it differs by 1.49% with
+**max channel delta 11**, scattered along the diagonal — anti-aliasing phase, not a slice error.
+
+**Height verified too:** rendered at 112 / 140 / 190 / 260px. Chamfer size, bevel thickness and
+scuff-mark position all hold; only the edges lengthen.
+
+**No tint mask needed — this panel is state-neutral.** Its five colours (`#444A4C`, `#06080A`,
+`#171C1F`, `#2B2E2F`, `#686C6F`) are all steel; there is no accent anywhere in it, so nothing
+state-coloured is baked and it satisfies #276 on the state axis as well as the resize axis.
+
+**Not a CSS border.** The paths are hand-drawn — vertices like `5.05355`, `13.9771`, `40.4747`,
+`60.5476`, and edges that are deliberately not parallel. `border:` would produce mathematically
+straight, uniform edges and discard exactly the painted quality that makes it read as art. The
+narrow rule-1 exception in #272 covers art that is provably plain rectangles; this is not that.
+
+**It is a GROUP, not a component.** Worth promoting to a component if it is going to be reused.
 
 ---
 
@@ -180,6 +379,12 @@ best these numbers can do.
 ovals, PROMISED smears, and the 3px nameplate scanline moirés. **Pin the height at 151px.**
 
 ### `asm-rowboard` — FAILED (the fill region contained the baked wordmark)
+
+> **SUPERSEDED 2026-08-05 — kept as a record of the failure, not as current guidance.** The
+> analysis below is sound about the *proposal it rejected*, but it was reasoning about a
+> contaminated 684×97 export. With the text stripped at export time and the stray slot rows
+> hidden, the wordmark is not in the art at all and the fill region is clean glass end to end.
+> Current verified numbers are in the `asm-rowboard` CSS block above.
 
 The proposal claimed x250–617 was "one continuous band, max column diff 3/255". It is not: the baked
 **"PROMISED"** wordmark sits at x353–489 inside that claimed band with column-to-column deltas up to
@@ -240,10 +445,10 @@ Reconstruction error 0 at 41×131, 41×1, 41×7, 41×40, 41×600 and 60×300. No
 | Panel | Problem | Verdict |
 |---|---|---|
 | `asm-headboard` | "FAILED" baked into the plate, dead centre | **Re-export a text-free plate.** Blocking — the corrected numbers do not pass without it. Group name becomes live DOM text over the panel. |
-| `asm-rowboard` | "PROMISED" baked into the plate | **Re-export the plate empty.** The corrected slice works around the text by freezing it, but that pins 500px of fixed left border. Text-free art drops sliceLeft toward ~48 and the floor with it. |
+| `asm-rowboard` | ~~"PROMISED" baked into the plate~~ **RESOLVED 2026-08-05 — and it was never the real blocker.** | The label is a real `TEXT` node, so `visible=false` before `exportAsync` strips it with **no redraw** (ledger #263) — it was only 4.4 KB of a 664 KB export. The actual blocker was two stray duplicate `Slots — signal row` instances hanging 189px off the left edge (ledger #267/#268); hiding them took the export to 3.9 KB and dropped the floor from 572px to 122px. Verified numbers above. |
 | `asm-housing` | **The interior staircase lives inside the stretch zone.** 5 jogs/diagonals at pitch 460/440/459 — a *near*-rhythm, not a repeat, with the first instance fused to the left cap and the last truncated by the right cap. It cannot be stretched (the 128×76 diagonal rakes 23° at w=1500 and 79° at w=400) and it cannot be `round`ed (no whole-tile count exists). | **REDRAW. Decision: option (a).** Move ALL diagonals, jogs and joints into x<150 / x>1024 and leave the middle as plain steel plus a straight horizontal groove. The ends carry the sculpting — which is what the yard data-plate reads like anyway. Do NOT attempt option (b) (a true seamless tile at integer pitch) — it costs more and buys a motif the language doesn't need. |
 | `asm-deck` | Every piece of content — 3 chips, nameplate, "PROMISED" — is frozen in a 1100px fixed left corner. Widest uniform corridor in the whole 1294px painted panel is 19px. | **REDRAW.** Pull the chips and the nameplate OUT of the exported art into live DOM, leaving a plain steel shell with a wide uniform mid-run. sliceLeft then drops from 1095 to roughly 130 and the min-width drops with it. Until then: ship the corrected slice above **plus** the `contain` fallback below 1316px. |
-| `asm-housing` (vertical) | No feature-free row band exists anywhere in the interior — the panel is decorated continuously y22–125. | Fixed-height part. A height change cannot be absorbed invisibly by any cut. |
+| `asm-housing` (vertical) | No feature-free row band exists anywhere in the interior — the panel is decorated continuously y22–125. | Fixed-height part. A height change cannot be absorbed invisibly by any cut. **Still true — and it is exactly why the short variant (§7) was cut as an ART EDIT in Figma, not as a slice.** |
 | `asm-rowboard` (vertical) | Both 45° chamfers run the FULL 87px of painted height, as do the chip silhouettes — so there are zero horizontally-uniform rows in the side slice regions. | Height locked at 97px. If a variable-height board is ever needed, confine the chamfers to ≤12px corner notches so a uniform vertical band exists on both side edges, and flip repeatV to `round` (3px pitch). |
 
 **Size contract — enforce these in CSS, they are not suggestions:**
@@ -251,16 +456,21 @@ Reconstruction error 0 at 41×131, 41×1, 41×7, 41×40, 41×600 and 60×300. No
 | Panel | Width | Height |
 |---|---|---|
 | `asm-housing` | min 650px (hard floor 297px) | **fixed 151px** |
+| `asm-housing-short` | min 650px (hard floor 297px) | **fixed 117px** (§7 — separate part, not a resize of the 151) |
 | `asm-deck` | min **1316px**, grows only | **fixed 151px** |
-| `asm-rowboard` | min **572px** | **fixed 97px** |
+| `asm-rowboard` | min **122px** geometric, **240px** practical | **fixed 97px** |
 | `asm-headboard` | min 77px | flexible, min 102px |
-| `asm-channel` | fixed 41px | any |
+| `asm-channel` | **fixed 39px** | any (pure vertical extrusion — verified seamless) |
 
 ---
 
 ## 5. CONDUIT RAIL — the decision (ledger #257)
 
-**YES. Ship `asm-channel` as one repeating tile. Stop shipping it as a 131px-tall image.**
+**YES. Ship `asm-channel` as one repeating tile. Stop shipping it as a 140px-tall image.**
+
+> **Updated 2026-08-05:** the decision holds and is now render-verified, but the dimensions below
+> are off — the rail is **39×140**, not 41×131. Both figures came from PNG measurements. See the
+> `asm-channel` CSS block above for the verified form.
 
 The measurement is unambiguous: **all 131 rows are byte-identical** (max row-to-row delta 0, per-column
 std 0.0000 down every sampled column). The panel is a pure vertical extrusion of a single 41px
@@ -314,9 +524,9 @@ just at the edges.
 |---|---|
 | `asm-housing` | **x 114–268** and **x 1014–1034** (vertical cuts); **y 60–71** and **y 86–98** on BOTH flanks, x<150 and x>1024 (horizontal cuts) |
 | `asm-deck` | **x 1091–1117** — the 19px strip of plain steel between the nameplate's right edge (x1081) and the right chevron notch (x1114) |
-| `asm-rowboard` | **x 494–618** — the clean glass right of the wordmark |
+| `asm-rowboard` | **x 56–404** — the whole screen corridor, now the text and slots are out of the art. This is the **marquee viewport** (#266): keep it absolutely free of decoration, scrolling glyphs pass through it. |
 | `asm-headboard` | **x 30–194** free of decoration; **rows 43–81** free of ANY content on both side rails |
-| `asm-channel` | **x 2–7** — the 6px flat #151618 channel floor |
+| `asm-channel` | n/a — it is a tile, not a slice. The whole 39px profile repeats; there is no corridor to protect. |
 
 Give each of these a **named spacer frame in Figma** so it cannot be closed up by accident. The deck's
 corridor has 5px and 4px of slack; a single stray drop shadow drifting into it breaks the head at every
@@ -372,4 +582,60 @@ headboard at once.
 - **Conduit rail:** ships as a 41×4 `repeat-y` tile, authored **neutral** and tinted per state;
   `asm-elbow` stays a fixed-size cap and never scales. (Implements #257.)
 - **Fixed-dimension contract:** housing 151px, deck 151px, rowboard 97px — height is not negotiable
-  as drawn.
+  as drawn. A different height means a **different part**, cut in Figma — see §7.
+
+---
+
+## 7. `asm-housing-short` — 117px subitem row (2026-08-06, ledger #283)
+
+Jac: *"The subitem rows need to be much shorter without disturbing the center lane."*
+
+**Why the row was 151.** Measured on the assembled row (`388:6647`), every member at native
+scale: message board **y 25→122** (97 tall), name **y 51→100** (49), hexicon **y 55→106** (51).
+A per-row pixel scan of the 1171×151 export puts the drawn bevel bands at **y 0–24** and
+**y 126–150** (1000+ of 1171 columns changing per row), with the interior **y 25–125** near-flat —
+adjacent rows there differ at only **16–40 columns**, all of it slowly-travelling diagonals.
+
+So the board filled the entire interior: ~1px of clearance above it, ~4px below. **There was no
+padding to remove — the board WAS the height.** Jac's ruling removed it: the subitem row drops the
+message board and the slots, and keeps only the name (and its hexicon), unaltered.
+
+**The cut.** One piecewise vertex map applied to all 24 leaf paths, in housing space:
+
+```
+TOP = 28    BOT = 126.38    REMOVE = 34    k = (BOT-TOP-REMOVE)/(BOT-TOP) = 0.6544
+
+f(y) =  y                        y ≤ TOP        identity — top bevel untouched
+        28 + (y-28) * 0.6544     TOP < y < BOT  interior compressed
+        y - 34                   y ≥ BOT        pure translation — bottom bevel untouched
+```
+
+Tangents scale by `f'` at their endpoint. Applied via `setVectorNetworkAsync`; the frame is then
+resized 151 → **117** with all child constraints pinned `MIN/MIN` so nothing scales.
+
+**Because f is the identity below 28 and a pure translation above 126.38, no bevel geometry is
+distorted — only moved.** That is a stronger guarantee than a pixel diff, and it is the reason to
+prefer it: a naive vertical resize would have smeared both bevels.
+
+**Verification.** Bevel bands are byte-identical wherever the bevel is *just frame* — top-band
+columns **270–536, 731–976, 1150–1164** and most of the bottom band differ by **zero**. The bands
+are not identical end-to-end, and should not be expected to be: the three staircase diagonals
+(x 67–269, 537–730, 977–1149) and the left-end groove (x 6–65) are **interior** features that
+extend up into the bevel band, so they legitimately moved. Guarded on distinct-colour count first
+per **#282**.
+
+**Known consequence:** the staircase diagonals get steeper (the interior they rake across is 34px
+shorter). Cosmetic, and superseded rather than contradicted by **#260**, which already rules those
+diagonals must move out of the middle entirely in a future redraw.
+
+**Side effect in our favour:** the conduit elbow is 223.43×156.29 native but instanced at
+231.27×187 — stretched **1.196× vertically** to span the 156 pitch (#279's open item). At the new
+**122 pitch** it needs ≈146, a scale of **0.94** — closer to native than today.
+
+**Figma:** `FINAL HOUSING / Short` `701:513` · `Subitem Row · Short` `705:513`. The 151 part is
+untouched and still backs the reference assembly.
+
+**Not yet done:** `docs/design/v2-card/layout.css` still has `.fc-sub { height: 151px }` on a 156
+pitch with the board baked into its DOM (`.fc-sub__board`). Changing only the height would leave a
+97px board inside a 117px row — that lab needs a proper pass that removes the board element, not a
+number edit.

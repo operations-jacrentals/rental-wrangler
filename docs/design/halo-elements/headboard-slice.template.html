@@ -1,0 +1,415 @@
+<title>asm-headboard — 9-slice bench</title>
+<style>
+  :root{
+    --plate-black:#0a0d11;
+    --steel-deep:#12171d;
+    --steel:#2C343F;
+    --steel-lit:#3d4753;
+    --accent:#ff7e1f;
+    --ink:#c9d3e0;
+    --ink-dim:#7b8798;
+    --row-hue:#ff4242;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+
+    /* ---- Figma exports. Declared ONCE; every instance below costs ~0 bytes. ---- */
+    --asm-headboard-plate:url("data:image/svg+xml;base64,__PLATE__");
+    --asm-headboard-screen-mask:url("data:image/svg+xml;base64,__MASK__");
+    /* identical art, preserveAspectRatio="none" — used ONLY by the naive control below */
+    --asm-headboard-plate-stretch:url("data:image/svg+xml;base64,__PLATE_S__");
+    --asm-headboard-screen-mask-stretch:url("data:image/svg+xml;base64,__MASK_S__");
+
+    /* ---- SLICE-SPEC.md, asm-headboard. Measured + adversarially verified. ---- */
+    --hb-slice-top:43;
+    --hb-slice-right:47;
+    --hb-slice-bottom:59;
+    --hb-slice-left:30;
+  }
+
+  *{box-sizing:border-box}
+  html{color-scheme:dark}
+  body{
+    margin:0;
+    background:
+      radial-gradient(120% 80% at 50% 0%, #161d26 0%, var(--plate-black) 60%);
+    color:var(--ink);
+    font-family:var(--sans);
+    font-size:15px;
+    line-height:1.55;
+    padding:clamp(20px,4vw,56px) clamp(16px,4vw,40px) 72px;
+  }
+  .wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:40px}
+
+  /* ---------- stamped label voice ---------- */
+  .stamp{
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:.18em;
+    text-transform:uppercase;
+    color:var(--ink-dim);
+  }
+  .stamp--accent{color:var(--accent)}
+
+  header{display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--steel);padding-bottom:24px}
+  h1{
+    margin:0;
+    font-size:clamp(26px,4vw,38px);
+    font-weight:650;
+    letter-spacing:-.015em;
+    text-wrap:balance;
+  }
+  h1 span{color:var(--accent)}
+  .lede{margin:0;max-width:64ch;color:var(--ink-dim)}
+  .lede code{font-family:var(--mono);font-size:.88em;color:var(--ink)}
+
+  h2{margin:0;font-size:15px;font-weight:650;letter-spacing:.01em}
+  section{display:flex;flex-direction:column;gap:16px}
+  .sec-head{display:flex;flex-direction:column;gap:4px}
+  .sec-head p{margin:0;color:var(--ink-dim);max-width:70ch;font-size:14px}
+
+  /* ---------- THE COMPONENT ---------- */
+  .hb{
+    position:relative;
+    display:block;
+    min-width:77px;                       /* left 30 + right 47 */
+    min-height:102px;                     /* top 43 + bottom 59 */
+    border-style:solid;
+    border-color:transparent;
+    border-width:43px 47px 59px 30px;
+    border-image-source:var(--asm-headboard-plate);
+    border-image-slice:43 47 59 30 fill;
+    border-image-width:43px 47px 59px 30px;
+    border-image-repeat:stretch round;    /* H structure stretches · V rhythm rounds */
+  }
+  /* state colour: white-silhouette mask + token fill. Nothing state-coloured is baked. */
+  .hb__screen{
+    position:absolute;
+    inset:-43px -47px -59px -30px;        /* cover the full border box, not the padding box */
+    background:var(--row-hue);
+    opacity:.07;
+    pointer-events:none;
+    -webkit-mask-box-image-source:var(--asm-headboard-screen-mask);
+    -webkit-mask-box-image-slice:43 47 59 30 fill;
+    -webkit-mask-box-image-width:43px 47px 59px 30px;
+    -webkit-mask-box-image-repeat:stretch round;
+    mask-border-source:var(--asm-headboard-screen-mask);
+    mask-border-slice:43 47 59 30 fill;
+    mask-border-width:43px 47px 59px 30px;
+    mask-border-repeat:stretch round;
+  }
+  @supports not ((-webkit-mask-box-image-source:none) or (mask-border-source:none)){
+    .hb__screen{
+      -webkit-mask-image:var(--asm-headboard-screen-mask);
+      mask-image:var(--asm-headboard-screen-mask);
+      -webkit-mask-size:100% 100%;
+      mask-size:100% 100%;
+    }
+  }
+  /* the group name is LIVE DOM, never baked into the art */
+  .hb__name{
+    position:absolute;
+    inset:-43px -47px -59px -30px;
+    display:grid;
+    place-items:center;
+    font-family:var(--mono);
+    font-weight:700;
+    font-size:clamp(15px,4cqi,30px);
+    letter-spacing:.14em;
+    color:var(--row-hue);
+    text-align:center;
+    padding:8px 14px;
+    overflow:hidden;
+    white-space:nowrap;
+  }
+  .hb-host{container-type:inline-size}
+
+  /* naive control: the same asset scaled, for contrast */
+  .hb--naive{
+    border:0;
+    background:var(--asm-headboard-plate-stretch) 0 0/100% 100% no-repeat;
+  }
+  /* the control must scale its mask too, or the comparison is rigged */
+  .hb--naive .hb__screen{
+    inset:0;
+    -webkit-mask-box-image-source:none;
+    mask-border-source:none;
+    -webkit-mask-image:var(--asm-headboard-screen-mask-stretch);
+    mask-image:var(--asm-headboard-screen-mask-stretch);
+    -webkit-mask-size:100% 100%;
+    mask-size:100% 100%;
+    -webkit-mask-repeat:no-repeat;
+    mask-repeat:no-repeat;
+  }
+  .hb--naive .hb__name{inset:0}
+
+  /* slice guides */
+  .hb.guides::after{
+    content:"";
+    position:absolute;
+    inset:-43px -47px -59px -30px;
+    pointer-events:none;
+    background:
+      linear-gradient(to right,transparent 0 30px,var(--accent) 30px 31px,transparent 31px) ,
+      linear-gradient(to left,transparent 0 47px,var(--accent) 47px 48px,transparent 48px),
+      linear-gradient(to bottom,transparent 0 43px,var(--accent) 43px 44px,transparent 44px),
+      linear-gradient(to top,transparent 0 59px,var(--accent) 59px 60px,transparent 60px);
+    opacity:.85;
+  }
+
+  /* ---------- control deck ---------- */
+  .deck{
+    display:flex;
+    flex-wrap:wrap;
+    gap:22px 32px;
+    align-items:flex-end;
+    padding:18px 20px;
+    background:var(--steel-deep);
+    border:1px solid var(--steel);
+  }
+  .ctrl{display:flex;flex-direction:column;gap:8px;min-width:190px}
+  .ctrl__val{font-family:var(--mono);color:var(--ink);font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:var(--accent);margin:0}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:.12em;
+    text-transform:uppercase;
+    padding:7px 11px;
+    background:transparent;
+    color:var(--ink-dim);
+    border:1px solid var(--steel);
+    cursor:pointer;
+  }
+  .chip:hover{border-color:var(--steel-lit);color:var(--ink)}
+  .chip[aria-pressed="true"]{
+    color:var(--plate-black);
+    background:var(--chip-hue,var(--accent));
+    border-color:var(--chip-hue,var(--accent));
+  }
+  .chip:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .toggle{display:flex;align-items:center;gap:9px;cursor:pointer;user-select:none}
+  .toggle input{accent-color:var(--accent);width:15px;height:15px;margin:0}
+
+  /* ---------- stage ---------- */
+  .stage{
+    padding:34px;
+    background:
+      repeating-linear-gradient(45deg,#0d1218 0 9px,#0b0f14 9px 18px);
+    border:1px solid var(--steel);
+    display:flex;
+    justify-content:center;
+  }
+  .stage__box{
+    resize:both;
+    overflow:hidden;
+    width:520px;
+    height:220px;
+    min-width:77px;
+    min-height:102px;
+    max-width:100%;
+  }
+  .stage__box>.hb{width:100%;height:100%}
+  .hint{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+
+  /* ---------- comparison ---------- */
+  .compare{display:grid;gap:14px}
+  .cmp-row{display:grid;grid-template-columns:78px 1fr;gap:14px;align-items:center}
+  .cmp-row>.stamp{text-align:right;font-size:10px}
+  .cmp-cell{overflow-x:auto;padding-bottom:2px}
+  .cmp-cell>.hb{height:150px}
+
+  /* ---------- spec plate ---------- */
+  .spec{width:100%;border-collapse:collapse;font-size:13.5px}
+  .spec caption{text-align:left;padding-bottom:10px}
+  .spec th,.spec td{border-bottom:1px solid var(--steel);padding:9px 12px 9px 0;text-align:left;vertical-align:top}
+  .spec th{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-dim);font-weight:400}
+  .spec td:first-child{font-family:var(--mono);color:var(--accent);white-space:nowrap}
+  .spec td code{font-family:var(--mono);color:var(--ink);font-size:.92em}
+  .tbl-scroll{overflow-x:auto}
+
+  footer{border-top:1px solid var(--steel);padding-top:20px;color:var(--ink-dim);font-size:13px}
+  footer p{margin:0 0 8px;max-width:74ch}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="stamp stamp--accent">Halo assembly · art pipeline bench</p>
+    <h1><span>asm-headboard</span> — exported once, resized natively</h1>
+    <p class="lede">One Figma node (<code>38:8</code>), pulled with <code>exportAsync({format:'SVG_STRING'})</code>, split into
+      a text-free static plate and a white-silhouette screen mask, then resized by <code>border-image</code> 9-slice
+      using the bands already measured in <code>SLICE-SPEC.md</code>. Nothing here was recreated in CSS.
+      Drag the panel's bottom-right corner.</p>
+  </header>
+
+  <section>
+    <div class="sec-head">
+      <h2>Control deck</h2>
+      <p>State drives <code>--row-hue</code> only. The steel never tints — the screen wash and the live name do.</p>
+    </div>
+
+    <div class="deck">
+      <div class="ctrl">
+        <label class="stamp" for="w">Width <span class="ctrl__val" id="wv">520</span> px</label>
+        <input type="range" id="w" min="77" max="1100" value="520">
+      </div>
+      <div class="ctrl">
+        <label class="stamp" for="h">Height <span class="ctrl__val" id="hv">220</span> px</label>
+        <input type="range" id="h" min="102" max="560" value="220">
+      </div>
+      <div class="ctrl">
+        <span class="stamp">Row state</span>
+        <div class="chips" id="states" role="group" aria-label="Row state"></div>
+      </div>
+      <div class="ctrl" style="min-width:auto">
+        <span class="stamp">Overlays</span>
+        <label class="toggle"><input type="checkbox" id="guides"> <span class="stamp">Slice guides</span></label>
+      </div>
+      <div class="ctrl" style="min-width:auto">
+        <span class="stamp">Group name</span>
+        <label class="toggle"><input type="checkbox" id="nameOn" checked> <span class="stamp">Live DOM text</span></label>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="stage__box" id="box">
+        <div class="hb hb-host" id="hb">
+          <div class="hb__screen"></div>
+          <div class="hb__name" id="hbname">SULPHUR YARD</div>
+        </div>
+      </div>
+    </div>
+    <div class="hint">
+      <span class="stamp">Drag the corner ↘ or use the sliders</span>
+      <span class="stamp">Floor 77 × 102 px — left 30 + right 47, top 43 + bottom 59</span>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>9-slice vs. scaling the same asset</h2>
+      <p>Identical export in both rows. The slice holds the chamfer angle, the rail notches and the 3px scanline at
+        every width; scaling rakes the chamfer and smears the notches. This is the whole argument for the method.</p>
+    </div>
+    <div class="compare" id="compare"></div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>What crossed the Figma boundary</h2>
+      <p>Two assets and a token. No geometry was hand-walked, no region rebuilt.</p>
+    </div>
+    <div class="tbl-scroll">
+      <table class="spec">
+        <thead>
+          <tr><th scope="col">Asset</th><th scope="col">Size</th><th scope="col">Role</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>plate</td><td>2,995 B</td>
+            <td>Static art — one z-ordered <code>background</code> in Figma's own paint order, all tones baked,
+              <strong>text stripped</strong>. The 3px scanline rides along as a 4×12 pattern tile.</td>
+          </tr>
+          <tr>
+            <td>screen mask</td><td>240 B</td>
+            <td>White silhouette of the glass, 9-sliced by <code>mask-border</code> with the same bands, filled
+              <code>var(--row-hue)</code> at 14%.</td>
+          </tr>
+          <tr>
+            <td>--row-hue</td><td>token</td>
+            <td>The only thing that changes per state. Five values, straight from <code>steel-skin.css:87–91</code>.</td>
+          </tr>
+          <tr>
+            <td>slice bands</td><td>43 47 59 30</td>
+            <td><code>fill</code>, <code>stretch round</code>. Taken from SLICE-SPEC, not re-derived. The single
+              <code>round</code> in the whole panel set.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    <p><strong>Why <code>round</code> on the vertical axis.</strong> The growable band is rows 43–81 — 39 rows, exactly
+      13 periods of the 3px scanline, so it is phase-closed and tiles seamlessly. <code>stretch</code> would drift the
+      period to 9px at h=300 and 25px at h=700 and destroy the texture. Horizontally there is no countable rhythm, so
+      the edges stretch.</p>
+    <p><strong>Text is not artwork.</strong> The Figma node bakes "FAILED" dead centre in the stretch zone, where no
+      slice numbers can save it. The export hides that <code>TEXT</code> node and the DOM supplies the words instead —
+      which is also what lets one plate serve every group.</p>
+    <p class="stamp" style="margin-top:16px">Source node 38:8 · file cc3TcK2F2a8qSbCAstzcA5 · bands per docs/design/SLICE-SPEC.md</p>
+  </footer>
+</div>
+
+<script>
+  const STATES=[
+    {k:'overdue',hue:'#ff4242'},
+    {k:'due',    hue:'#eed44b'},
+    {k:'waiting',hue:'#6394cc'},
+    {k:'done',   hue:'#34d399'},
+    {k:'off',    hue:'#8b94a3'}
+  ];
+  const root=document.documentElement;
+  const box=document.getElementById('box');
+  const hb=document.getElementById('hb');
+  const w=document.getElementById('w'), h=document.getElementById('h');
+  const wv=document.getElementById('wv'), hv=document.getElementById('hv');
+
+  // state chips
+  const chips=document.getElementById('states');
+  let current='overdue';
+  STATES.forEach(s=>{
+    const b=document.createElement('button');
+    b.type='button'; b.className='chip'; b.textContent=s.k;
+    b.style.setProperty('--chip-hue',s.hue);
+    b.setAttribute('aria-pressed',String(s.k===current));
+    b.addEventListener('click',()=>{
+      current=s.k;
+      root.style.setProperty('--row-hue',s.hue);
+      chips.querySelectorAll('.chip').forEach(c=>c.setAttribute('aria-pressed',String(c.textContent===s.k)));
+    });
+    chips.appendChild(b);
+  });
+
+  // sliders <-> drag-resize, kept in sync both ways
+  function apply(){
+    box.style.width=w.value+'px';
+    box.style.height=h.value+'px';
+    wv.textContent=w.value; hv.textContent=h.value;
+  }
+  w.addEventListener('input',apply); h.addEventListener('input',apply);
+  new ResizeObserver(es=>{
+    for(const e of es){
+      const cw=Math.round(e.contentRect.width), ch=Math.round(e.contentRect.height);
+      w.value=cw; h.value=ch; wv.textContent=cw; hv.textContent=ch;
+    }
+  }).observe(box);
+
+  document.getElementById('guides').addEventListener('change',e=>{
+    hb.classList.toggle('guides',e.target.checked);
+  });
+  document.getElementById('nameOn').addEventListener('change',e=>{
+    document.getElementById('hbname').style.display=e.target.checked?'grid':'none';
+  });
+
+  // comparison rows
+  const WIDTHS=[241,420,760,1040];
+  const cmp=document.getElementById('compare');
+  [['9-slice',''],['scaled','hb--naive']].forEach(([label,cls])=>{
+    WIDTHS.forEach(width=>{
+      const row=document.createElement('div'); row.className='cmp-row';
+      const tag=document.createElement('span'); tag.className='stamp';
+      tag.textContent=label+' · '+width;
+      const cell=document.createElement('div'); cell.className='cmp-cell';
+      const panel=document.createElement('div');
+      panel.className='hb hb-host'+(cls?' '+cls:'');
+      panel.style.width=width+'px';
+      panel.innerHTML='<div class="hb__screen"></div><div class="hb__name">SULPHUR YARD</div>';
+      cell.appendChild(panel); row.append(tag,cell); cmp.appendChild(row);
+    });
+  });
+
+  apply();
+</script>

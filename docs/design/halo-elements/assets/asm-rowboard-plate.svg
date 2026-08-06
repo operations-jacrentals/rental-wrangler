@@ -1,0 +1,18 @@
+<svg width="470" height="97" viewBox="0 0 470 97" fill="none" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<path d="M10.7104 5.76759H413.233L449.839 44.4365V92.9365H45.3619L10.7104 56.8892V5.76759Z" fill="url(#paint0_linear_354_38)"/>
+<path d="M17.3384 13.0426H410.241L442.228 46.3188V86.5791H49.3261L17.3384 53.3028V13.0426Z" fill="url(#pattern0_354_38)"/>
+<defs>
+<pattern id="pattern0_354_38" patternContentUnits="objectBoundingBox" width="0.00235355" height="0.0407961">
+<use xlink:href="#image0_354_38" transform="scale(0.000588387 0.00339967)"/>
+</pattern>
+<filter id="filter0_f_354_38" x="15.0785" y="10.8334" width="429.41" height="77.9549" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
+<feGaussianBlur stdDeviation="0.81" result="effect1_foregroundBlur_354_38"/>
+</filter>
+<linearGradient id="paint0_linear_354_38" x1="231.22" y1="7.73381" x2="231.22" y2="92.9365" gradientUnits="userSpaceOnUse">
+<stop stop-color="#1E1F22"/><stop offset="0.0171184" stop-color="#0C0C0D"/><stop offset="0.928673" stop-color="#0C0C0D"/><stop offset="1" stop-color="#0C0C0D"/>
+</linearGradient>
+<image id="image0_354_38" width="4" height="12" preserveAspectRatio="none" xlink:href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAMCAYAAABFohwTAAAAEUlEQVR42mNgGDzAGA2TKgAAaGQDMdZcXhEAAAAASUVORK5CYII="/>
+</defs>
+</svg>
