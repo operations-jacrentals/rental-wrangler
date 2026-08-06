@@ -1,7 +1,7 @@
 # Legacy `jactec-ui` references — capability rescued, design language retired
 
 The **`jactec-ui` skill was deleted** (Jac, 2026-07-26 — executing ledger **#26/#91**, which recorded
-the deletion back on 07-20 but was never actually carried out; the skill stayed on disk and `/start`
+the deletion back on 07-20 but was never actually carried out; the skill stayed on disk and `/startup`
 + `CLAUDE.md` kept routing every UI change to it).
 
 **The design language it taught is superseded.** `style` (measurable rules) + `wrangler-style`

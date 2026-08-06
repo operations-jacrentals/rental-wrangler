@@ -51,7 +51,7 @@ the **Spec** column below.
 `tools/spec-sync.mjs` down/up cross-branch sync are **retired**. Each spec's authoritative copy
 now lives in `docs/` on `trunk` — a plain `git pull` (or fetch `origin/trunk`) gets the latest;
 there is no ~2h push timer and nothing to pull "at session start" beyond the ordinary trunk sync.
-See `.claude/skills/start/SKILL.md` §2b.
+See `.claude/skills/startup/SKILL.md` §2b.
 
 Each area's "Today" line and anchors were mapped directly against the live codebase
 (`app.js` / `config.js` / `data.js` / `docs/`) on 2026-06-28.

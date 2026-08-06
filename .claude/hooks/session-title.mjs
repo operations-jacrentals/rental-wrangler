@@ -8,7 +8,7 @@
  * (via hookSpecificOutput.sessionTitle), and it re-fires on every resume — so this
  * script re-derives the title from a best-effort record file the assistant maintains.
  * Instant mid-session updates are a separate one-tap `/rename` (the model can't
- * self-invoke slash commands); see CLAUDE.md / /start §4.
+ * self-invoke slash commands); see CLAUDE.md / /startup §4.
  * Design: docs/superpowers/specs/2026-07-17-session-title-pr-numbers-design.md
  *
  * CONTRACT / SAFETY

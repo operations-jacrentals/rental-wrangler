@@ -1,9 +1,9 @@
 ---
-name: start
-description: Jac Rentals session startup routine — run at the top of a session with /start. Probes the toolchain (node/npm/clasp/gh/git + Playwright), orients on the current git branch vs the trunk (trunk), recalls relevant memory, proposes a short feature branch (or git worktree) off the trunk and a dated session-output folder — waiting for your OK before switching — then sets token-efficiency + role-aware working rules for the rest of the session.
+name: startup
+description: Jac Rentals session startup routine — run at the top of a session with /startup. Probes the toolchain (node/npm/clasp/gh/git + Playwright), orients on the current git branch vs the trunk (trunk), recalls relevant memory, proposes a short feature branch (or git worktree) off the trunk and a dated session-output folder — waiting for your OK before switching — then sets token-efficiency + role-aware working rules for the rest of the session.
 ---
 
-# /start — Jac Rentals session startup
+# /startup — Jac Rentals session startup
 
 Run this first thing in a session. It gets the session organized, orients you on the **trunk-based** dev flow, and primes Claude with the right tools, conventions, and discipline. Built for both local (Windows/PowerShell) and cloud (Linux) sessions.
 

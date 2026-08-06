@@ -122,8 +122,8 @@ born — just masks the defect. **No fix without a cited root cause.**
 - **Proof is the gate, not the developer's tap.** Cite the canon to prove a report correct
   and fix it immediately — the inbox is only for what you genuinely *cannot* prove.
 
-## /start hook
-This bullet lives in the `/start` working-rules list so every session routes broken-reports
+## /startup hook
+This bullet lives in the `/startup` working-rules list so every session routes broken-reports
 here first:
 > **Something reported broken → `wrangler-fix` first.** Anything reported not-working or
 > broken — an in-app `wrangler-fix`/`wrangler-request` issue OR Jac just saying it
