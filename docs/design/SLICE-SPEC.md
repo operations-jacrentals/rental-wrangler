@@ -22,6 +22,7 @@ CONDUIT RAIL decision.
 | `asm-deck` | 1335×151 | 28 | **221** | 20 | **1095** | stretch | stretch | none on the growable axis (3px scanline is inside the fixed left corner) | high |
 | `asm-rowboard` | 470×97 | 0 | 66 | 0 | 56 | stretch | stretch | none H (tile is uniform in x — stretch is lossless); 3px scanline V (never rescales, slice V = 0) | **verified 2026-08-05** |
 | `asm-headboard` | 241×141 | **43** | 47 | **59** | 30 | stretch | **round** | **3px** horizontal scanline, vertical axis, r = 1.00 @ lag 3/6/9 | high |
+| `asm-btn-done` | 203×112 | **24** | 26 | **20** | **46** | stretch | stretch | none (hand-painted, no rhythm) | **verified 2026-08-06** |
 | `asm-channel` | **39×140** | — | — | — | — | n/a | n/a | **not a slice — 39×4 `repeat-y` tile**; zero vertical variation | **verified 2026-08-05** |
 
 Bold = changed from the first-pass proposal. Every bold number was re-rendered and re-measured, not
@@ -275,6 +276,70 @@ rotated fitting overhangs the frame bottom by 3px, so Figma expands the export t
 **No mask, no tint.** The cap's 10 paths contain zero accent colours — only `#151618`, `#3D4146`,
 `#575D64`, `#7A828C`. It is pure steel and stays neutral in every row state, which independently
 confirms ledger #252: only the elbow carries the signal.
+
+### asm-btn-done — "Button · Done" (FLEXIBLE ON BOTH AXES) — VERIFIED 2026-08-06
+
+Figma `656:2235`, a GROUP of 8 painted vectors inside `Main item · FAILED board`. Export is
+`203×112` (the group measures 202.16×111.82; Figma rounds up — use the asset's own size).
+Clean: no nested components, no TEXT, zero render overhang, 3,004 B.
+
+```css
+.halo-btn-done {
+  box-sizing: border-box;
+  min-width: 72px;            /* 46 + 26 */
+  min-height: 44px;           /* 24 + 20 */
+  border-style: solid;
+  border-width: 24px 26px 20px 46px;
+  border-image-source: url("assets/asm-btn-done.svg");
+  border-image-slice: 24 26 20 46 fill;
+  border-image-width: 24px 26px 20px 46px;
+  border-image-repeat: stretch;
+}
+```
+
+**Why these cuts.** The art is a light-from-top-left bevel: `#686C6F` highlight along the top and
+left, `#2B2E2F` / `#06080A` / `#171C1F` shadow along the bottom and right.
+- **L = 46** holds the left bevel *and* both hand-painted scuff marks (x 11.94–26.46 and
+  28.27–42.24). This is the band that carries the left-hand depth.
+- **R = 26** contains the top-right chamfer, which runs (182.33, 4.37) → (200.35, 21.42) and so
+  needs ≥ 20.67.
+- **T = 24** clears that same chamfer vertically (it ends at y = 21.42).
+- **B = 20, not 18.** The upper scuff spans y 92.80–95.14 and *straddles* an 18px cut, which would
+  split it between the bottom-left corner and the vertically-stretching left edge. At 20 both marks
+  sit wholly inside the corner and can never distort.
+
+**Verification — the left band is byte-identical at every width tested.** Widths 120 / 160 / 203 /
+260 / 340 / 500 / 760 px, each captured as its own element screenshot and compared against native:
+
+| width | 9-slice left 46px band | naive-scale left 46px band |
+|---:|---|---|
+| 120 | **0.00% — identical** | 17.88% differ |
+| 160 | **0.00% — identical** | 13.71% |
+| 203 | identical (native) | identical (native) |
+| 260 | **0.00% — identical** | 15.92% |
+| 340 | **0.00% — identical** | 24.06% |
+| 500 | **0.00% — identical** | 38.55% |
+| 760 | **0.00% — identical** | **56.76%** |
+
+The naive control degrades monotonically with width — the bevel thickens into a fat light band and
+the scuff marks smear into streaks. The 9-slice does not move a single pixel of it.
+
+The right 26px band (the chamfer) is identical at 6 of 7 widths; at 260px it differs by 1.49% with
+**max channel delta 11**, scattered along the diagonal — anti-aliasing phase, not a slice error.
+
+**Height verified too:** rendered at 112 / 140 / 190 / 260px. Chamfer size, bevel thickness and
+scuff-mark position all hold; only the edges lengthen.
+
+**No tint mask needed — this panel is state-neutral.** Its five colours (`#444A4C`, `#06080A`,
+`#171C1F`, `#2B2E2F`, `#686C6F`) are all steel; there is no accent anywhere in it, so nothing
+state-coloured is baked and it satisfies #276 on the state axis as well as the resize axis.
+
+**Not a CSS border.** The paths are hand-drawn — vertices like `5.05355`, `13.9771`, `40.4747`,
+`60.5476`, and edges that are deliberately not parallel. `border:` would produce mathematically
+straight, uniform edges and discard exactly the painted quality that makes it read as art. The
+narrow rule-1 exception in #272 covers art that is provably plain rectangles; this is not that.
+
+**It is a GROUP, not a component.** Worth promoting to a component if it is going to be reused.
 
 ---
 
