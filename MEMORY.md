@@ -1,6 +1,6 @@
 # MEMORY — Rental Wrangler
 
-> Durable cross-session memory. **Read at `/start`, updated at `/end`.** This is a
+> Durable cross-session memory. **Read at `/startup`, updated at `/end`.** This is a
 > **PUBLIC** repo (served by Pages) — **never** put customer PII, pricing / margin
 > data, `DEFAULT_CONFIG` passwords, or any secret value here. Shareable context only.
 > Keep it lean; the first ~200 lines are what a session actually leans on.
@@ -91,7 +91,7 @@
   build-now, but the `/clasp` **push** carries `/clasp`'s confirm-before-push gate, so push +
   go-live editor deploy are batched into the hand-back, not fired autonomously. A fresh-context
   review caught + fixed two canon contradictions pre-merge (autonomous-push vs the `/clasp` rail; a
-  stray gate-skip carve-out). Wired into CLAUDE.md → *Deploy & gates* and `/start`'s sibling-skills
+  stray gate-skip carve-out). Wired into CLAUDE.md → *Deploy & gates* and `/startup`'s sibling-skills
   list. Skill: `.claude/skills/build/SKILL.md`.
 - **2026-07-18 — Phone SWIPE RAIL SHIPPED LIVE (§M8, PR #713, `?v=20260718d`).** Phone swipe
   steps a single 5-card ribbon — **Categories · Units · Rentals · Customers · Sales** — instead

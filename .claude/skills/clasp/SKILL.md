@@ -127,9 +127,9 @@ No `RW_PW` set? You can only test the **auth-rejection** path — ask Jac for a 
 ## Environment
 clasp (backend), GitHub, Google Drive, Gmail, Figma, HeyGen are available in the clasp-enabled **cloud** session — that's the deploy environment, and this runbook is written for it (Linux/bash). The local Windows desktop is **not** a deploy environment and its clasp can't make live calls (expired token + RAPT-blocked refresh) — to read the backend locally use the Drive-connector method above; to deploy, use a cloud session. (NB: `show-authorized-user → loggedIn:true` only proves a creds *file* exists — NOT that the token works.)
 
-## Note for /start
-`/start` checks for **`GAS_SA_KEY_B64`** (the service-account **push** path, current) rather
-than clasp auth as the litmus test for "backend push reachable" — see `/start` §1. clasp's
+## Note for /startup
+`/startup` checks for **`GAS_SA_KEY_B64`** (the service-account **push** path, current) rather
+than clasp auth as the litmus test for "backend push reachable" — see `/startup` §1. clasp's
 `show-authorized-user --json` can say `loggedIn:true` while every actual deploy call still
 fails RAPT, so that check alone is not proof anything works; `GAS_SA_KEY_B64` (+
 `GAS_IMPERSONATE_SUBJECT` at call time) + `docs/handoffs/BACKEND-DEPLOY-QUEUE.md` (on

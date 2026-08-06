@@ -3,7 +3,7 @@
 Captured from Jac's handwritten list on **2026-06-23** and sorted into area
 branches. Each row is a real branch on `origin` with a marker commit describing
 the task. To work one: `git checkout <branch>`, refresh it from its area
-(`git merge origin/main` / rebase per `/start`), then build.
+(`git merge origin/main` / rebase per `/startup`), then build.
 
 > Bug / removal items run through `/wrangler-fix` first (prove the root cause
 > before changing code). UI items run through `/jactec-ui` + `/frontend`.

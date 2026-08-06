@@ -26,7 +26,7 @@ in and the one whose output can actually be read.
 
 ## Two things this skill does NOT replace
 
-`/start` routes every new card, screen, row, popup and visual element here. That makes it easy
+`/startup` routes every new card, screen, row, popup and visual element here. That makes it easy
 to assume `/paint` is now the whole design law. It is not — it is the *sequence*. Two standing
 CLAUDE.md rules still bind at every station, and dropping them is how locked decisions get
 silently undone:

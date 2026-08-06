@@ -8,7 +8,7 @@ Vanilla-JS single-file app (`app.js`), `style.css`, `index.html`, `config.js`,
 **Contents:** [Interaction](#interaction-popup-first-single-attempt--jac-2026-07-16) ·
 [Design language](#design-language) · [Deploy & gates](#deploy--gates) ·
 [Don't](#dont) · [Delegation & model triage](#delegation--model-triage).
-Cross-session memory lives in **`MEMORY.md`** (read at `/start`); path-scoped detail
+Cross-session memory lives in **`MEMORY.md`** (read at `/startup`); path-scoped detail
 lives in **`.claude/rules/`** (loads only when the relevant files are touched).
 
 ## Interaction (popup-first, single-attempt — Jac, 2026-07-16)
@@ -137,7 +137,7 @@ skipped the bump. Logic + format live in `tools/lib/cachebust.mjs` (tested by `c
 `.claude/.session-prs` (gitignored) and surface a one-tap `/rename #<nums> · <branch-label>`
 (the model can't self-`/rename`); remove it on merge/close. A `SessionStart` hook
 (`.claude/hooks/session-title.mjs`) re-derives the title each start/resume, respecting a
-manual rename. Full rule: `/start` §4.
+manual rename. Full rule: `/startup` §4.
 
 **R-rulebook:** every UI element is stamped `data-r="Rxx"`; regenerate `rule-usage.js` with
 `node ci/gen-rule-usage.mjs` when usage changes (`--check` is the CI drift + duplicate
