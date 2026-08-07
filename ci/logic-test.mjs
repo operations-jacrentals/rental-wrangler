@@ -1903,6 +1903,20 @@ try {
         ok(r6.results[0].ok === true && uOpen.gpsProvider === 'Hapn' && uOpen.gpsDeviceId === 'ru-dev-6', 'gps M5: a real matcher proposal applies end-to-end with the canonical-cased provider');
       }
 
+      // === Connect-wizard picker error — a LAPSED PROVIDER LINK is not an unreachable
+      // backend (#803). The picker used to collapse every gpsProviderDevices() throw into
+      // "check the connection", which sent the operator to their router while Hapn loaded
+      // fine in the same dialog. gpsPickerError is the pure branch off the /api/<p>/status
+      // `authenticated` probe gpsFleetStatus already makes. ===
+      {
+        const lapsed = T.gpsPickerError('Yanmar', false);
+        ok(/isn’t linked to the GPS backend/.test(lapsed), 'gps #803: authenticated:false → names the lapsed account link');
+        ok(!/check the connection/.test(lapsed), 'gps #803: a lapsed link never blames the connection');
+        ok(/Yanmar/.test(lapsed) && /Deere/.test(T.gpsPickerError('Deere', false)), 'gps #803: the message names the provider that lapsed');
+        ok(T.gpsPickerError('Yanmar', null) === 'Couldn’t reach the GPS backend — check the connection and try again.', 'gps #803: an unknown probe keeps the original reachability wording');
+        ok(T.gpsPickerError('Yanmar', true) === T.gpsPickerError('Yanmar', null), 'gps #803: linked-but-list-failed also stays on the reachability wording');
+      }
+
       // cleanup — the suite mutates shared DATA
       ['U-RU1', 'U-RU2', 'U-RU3'].forEach((id) => T.IDX.unit.delete(id));
       ['U-RU1', 'U-RU2', 'U-RU3'].forEach((id) => { const i = T.DATA.units.findIndex((u) => u.unitId === id); if (i >= 0) T.DATA.units.splice(i, 1); });

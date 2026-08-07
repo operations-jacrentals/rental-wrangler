@@ -23592,6 +23592,31 @@ async function gpsProviderDevices(provider) {
   }
 }
 
+/* Is ONE provider's own account link live on the GPS backend? Deere/Yanmar/Bouncie each
+   authenticate against the PROVIDER (Deere/Bouncie OAuth, Yanmar a session login — backend
+   handoff §1) and expose an `/api/<p>/status` probe carrying `authenticated`; Hapn is
+   server-to-server client-credentials with no such probe, so it answers null = unknown.
+   This is the same probe gpsFleetStatus already makes before its phase-2 machine lists —
+   pulled out here so the connect-wizard picker can tell a LAPSED PROVIDER LINK apart from
+   an unreachable backend instead of blaming both on the connection.
+   Returns true = linked · false = link lapsed · null = couldn't tell. */
+async function gpsProviderAuthed(provider) {
+  const p = String(provider || '').toLowerCase();
+  if (p !== 'deere' && p !== 'yanmar' && p !== 'bouncie') return null;
+  try { return (await gpsFetch(`/api/${p}/status`))?.authenticated === true; }
+  catch { return null; }   // the probe itself failed → genuinely a reachability problem
+}
+/* Pick the honest picker-load error off that probe (PURE — exposed on window.__rw). A
+   provider whose account link has lapsed IS reachable; saying "check the connection"
+   sends the operator to their router when the real fix is relinking that account on the
+   GPS service. Anything else (probe unknown, provider linked but the list call failed)
+   keeps the original reachability wording. */
+function gpsPickerError(provider, linked) {
+  return linked === false
+    ? `${provider} isn’t linked to the GPS backend right now — that account needs reconnecting on the GPS service. Not a connection problem on your end.`
+    : 'Couldn’t reach the GPS backend — check the connection and try again.';
+}
+
 /* ── BOUNCIE TRUCKS → UNITS (design note docs/superpowers/specs/2026-07-09-bouncie-
    truck-units-design.md) ─────────────────────────────────────────────────────────
    Trucks are just units of a 'Truck' category — no new entity, no fleetStatus trick,
@@ -23824,11 +23849,19 @@ function gpsRawDeviceSub(provider, raw) {
    popup state. */
 async function gpsConnectLoadDevices(o) {
   o.devicesLoading = true; o.devicesError = ''; o.devices = null; renderOverlay();
+  const p = String(o.provider || '').toLowerCase();
   let list = [];
-  try { list = await gpsProviderDevices(String(o.provider || '').toLowerCase()); }
+  try { list = await gpsProviderDevices(p); }
   catch (e) {
     if (state.overlay !== o) return;
-    o.devicesLoading = false; o.devicesError = 'Couldn’t reach the GPS backend — check the connection and try again.';
+    // §two-phase — gpsFleetStatus probes /api/<p>/status and only pulls a machine list once
+    // it reports `authenticated`; this picker skipped that probe, so a provider whose OWN
+    // account link had lapsed (Yanmar's parked SmartAssist re-auth) surfaced as "couldn't
+    // reach the GPS backend" even while the very same gpsFetch was serving Hapn's list in
+    // this dialog. Ask the probe what actually broke before naming a cause.
+    const linked = await gpsProviderAuthed(p);
+    if (state.overlay !== o) return;
+    o.devicesLoading = false; o.devicesError = gpsPickerError(o.provider, linked);
     return renderOverlay();
   }
   if (state.overlay !== o) return;
@@ -26774,7 +26807,7 @@ function exposeTestApi() {
       dataCache, cacheValid, cacheDeviceOk, cacheTokenTag, cacheAppVer, cacheSnapshotEnvelope, CACHE_SCHEMA_VER, FEATURES,   // §instant-cache (spec 2026-07-16)
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, pickFunnelStage, toggleFunnelMembership, rentalFunnelStage, funnelStageOf, inFunnel, inRental, hasRentalActivity, funnelTrackA, funnelTrackEquip, ensureFunnels, funnelMenuHtml, reachFunnelStage, toggleMemberLead, funnelCurrentStage, funnelLayerDate, funnelLayerNote, ensureFunnelLog, markMembershipSigned, funnelLayerAction, funnelScope, naUrgency, naOpenList, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsUtilRollup, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, pickFunnelStage, toggleFunnelMembership, rentalFunnelStage, funnelStageOf, inFunnel, inRental, hasRentalActivity, funnelTrackA, funnelTrackEquip, ensureFunnels, funnelMenuHtml, reachFunnelStage, toggleMemberLead, funnelCurrentStage, funnelLayerDate, funnelLayerNote, ensureFunnelLog, markMembershipSigned, funnelLayerAction, funnelScope, naUrgency, naOpenList, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsPickerError, gpsUtilRollup, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
       tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, openYardCamera, commitYardCapture, nextCategoryId, nextUnitId,
       tripsLS, tripMerge, tripSplit, assignTripDriver, tripLabel, assignStopDriver, tripSetTime,
       tripPushSoon, tripPushNow, loadTripsFromBackend, tripsSyncFooter, setBackendPassword: (pw) => { backendPassword = pw || ''; },   // §2.3 Phase 4 sync — the setter is test-only (mirrors setRole), letting logic-test.mjs exercise the online path via a mocked window.fetch, never a real backend
