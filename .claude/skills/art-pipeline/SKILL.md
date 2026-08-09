@@ -8,12 +8,15 @@ description: >-
   assets), why you EXPORT art instead of recreating it, how a fixed-size panel is made to
   fit any width — 9-slice via `border-image`, and the STRETCH vs REPEAT vs ROUND decision
   for edges, etchings and decorative runs — how to tint art per state without re-exporting
-  it, and the eight measured traps that have cost this project real time (Figma metadata
-  lying about overridden instances, painted extent ≠ frame bounds, mask layers not pairing
-  with background layers, sub-1% paths being the bevels, export quantization faking tone
-  differences). Reach for it whenever pulling a component out of Figma, building or fixing
-  a panel that must resize, deciding whether a decorative run should stretch or repeat, or
-  when artwork looks flat, stretched, smeared, or stuck on one colour. NOT for choosing
+  it, what the artwork is allowed to WEIGH and COST at runtime (the three budgets in
+  `docs/design/ART-BUDGET.md`), and the ten measured traps that have cost this project real
+  time (Figma metadata lying about overridden instances, painted extent ≠ frame bounds, mask
+  layers not pairing with background layers, sub-1% paths being the bevels, export
+  quantization faking tone differences, an SVG export smuggling a raster inside it, and a
+  Figma shader grain silently not surviving export). Reach for it whenever pulling a
+  component out of Figma, building or fixing a panel that must resize, deciding whether a
+  decorative run should stretch or repeat, deciding whether a texture asset is warranted, or
+  when artwork looks flat, stretched, smeared, heavy, or stuck on one colour. NOT for choosing
   colours/fonts/shapes (that is `wrangler-style` + `style`) and NOT for laying out a screen.
 ---
 
@@ -147,7 +150,7 @@ Ledger **#217**: the laser follows the signal, the body never does. If a state c
 baked into the steel, every instance is pinned to that colour forever — this is exactly what
 happened when the housing shipped with 21 red elements baked in.
 
-## 6. The eight traps — all measured, all cost real time
+## 6. The ten traps — all measured, all cost real time
 
 1. **Figma metadata lies about overridden instances.** `get_metadata` reports the
    *un-overridden component* position; the instance's real override differs. The conduit
@@ -174,6 +177,19 @@ happened when the housing shipped with 21 red elements baked in.
    words. But strip only the glyphs — the inner outline usually lives in the same layer group.
 8. **Layer names go stale.** `438:315` is named "Main item · FAILED board" and actually
    renders the group NAME. Trust the render, not the name.
+9. **An SVG export can smuggle a raster inside it — decode it and grep for `<image`.** Audited
+   2026-08-09: `asm-rowboard-image` embeds a 330x97 PNG that is **97.1%** of the asset and
+   `asm-deck-image` a 316x88 PNG at **66.1%**. It is not texture — it is the slot ticks and the
+   board screen, baked as pixels. Baked controls cannot be clicked (#250), cannot be recoloured to
+   pass the CVD floor (#238/#248), and pin the slice band that stops the panel resizing (#260).
+   Pulling them into live DOM takes rowboard 46KB -> ~1.4KB. A tiny tile in a `<pattern>` is fine
+   and correct — headboard's 77-byte 4x12 scanline is the model; a 33KB one is a bug.
+10. **A Figma SHADER paint does not survive SVG export.** `#223` says the steel body is a solid
+   plus a shader at opacity .02 blend LIGHTEN, and that shader IS the machined grain. SVG has no
+   shader primitive: `asm-housing-image` (33 paths) and `elbow-steel-image` (32 paths) carry no
+   raster, no `<pattern>`, no `<filter>`. The tonal sculpt survives — the grain does not, on the
+   two surfaces that repeat per row. Re-add it as a **grain overlay tile: one seamless <=256px
+   square, lossless WebP, ONE `background-size`, ~2-5KB.** Never a photographic metal plate.
 
 ## 7. Performance shape
 

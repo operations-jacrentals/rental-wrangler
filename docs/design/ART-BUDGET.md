@@ -1,6 +1,6 @@
 # The Artwork Budget — measured limits for illustrated UI
 
-**Date:** 2026-08-09 · **Status:** PROPOSED — awaiting Jac's ruling on §7 (delivery mechanism)
+**Date:** 2026-08-09 · **Status:** ✅ **§7 delivery LOCKED — Jac, 2026-08-09.** Budget figures proposed.
 **Method:** the running app booted headless and measured live; the shipped payload measured on the
 live host with `curl`; formats measured by re-encoding this project's own art; browser ceilings read
 from Blink/WebKit source and adversarially re-verified (9 of 14 checked numeric claims were
@@ -219,6 +219,59 @@ predicts: 16.67 → 20.83 ms = +4.17 ms over 96 instances ≈ **43 µs per insta
 Textures are the dangerous addition, because they are photographic (they do not compress like flat
 panel art) and they tile (large decoded bitmaps that fork per `background-size`).
 
+### 6.1 What the exported art already carries — audited 2026-08-09
+
+All 13 exported assets in `docs/design/v2-card/` were decoded and inspected. **Eleven are pure
+vector. Two embed a raster PNG inside the SVG, and in both cases it dominates the asset:**
+
+| Asset | Embedded raster | Share of the asset's bytes | What it is |
+|---|---|---:|---|
+| `asm-rowboard-image` | 330×97 PNG (33,573 B) | **97.1%** | the three slot ticks + the board screen |
+| `asm-deck-image` | 316×88 PNG (28,839 B) | **66.1%** | the same cluster |
+| `asm-headboard-image` | 4×12 PNG (77 B) in a `<pattern>` | 3.5% | the 3 px scanline — correct and tiny |
+
+The 4×12 tile is the right shape for a repeating motif and should be the model. The two large
+embeds are not textures at all — **they are baked controls**, and they must be pulled into live DOM
+regardless of bytes:
+
+- **#250** — slots are independent and individually clickable; each owes hover, focus, press and a
+  real hit target. A pixel inside a background image cannot carry any of that.
+- **#238/#248** — the tick colours fail the CVD separation gate (measured 31–72 against a floor of
+  90). That cannot be fixed in baked pixels, and it is a gate, not a preference.
+- **#260** — this baked content is what pins `asm-rowboard`'s 500 px left slice band and blocks the
+  panel from resizing at all.
+
+Extracting it takes `asm-rowboard-image` from **46 KB to ~1.4 KB** and `asm-deck-image` from
+**58 KB to ~20 KB**. One authoring fix, four problems.
+
+### 6.2 The machined grain did NOT survive SVG export — and that is the one texture worth adding
+
+Ledger **#223** records that the steel body is a solid plus a Figma **shader paint** (opacity .02,
+blend LIGHTEN), and that *"that shader IS the machined grain."* **SVG has no shader primitive.**
+
+Verified against the exports: `asm-housing-image` is 33 paths and `elbow-steel-image` is 32 —
+**no embedded raster, no `<pattern>`, no `<filter>` in either.** The tonal sculpt survived (those
+paths *are* the bevels, per trap 4) but the fine grain did not — and the housing and the elbow are
+precisely the two surfaces that repeat per row.
+
+> **The steel grain overlay is the one legitimately earned texture asset.** One seamless tile,
+> **≤ 256²**, **lossless WebP**, **one** `background-size`, declared once in `:root`, **~2–5 KB**.
+> It is a ~2% overlay, not a picture. Do **not** bring across a photographic metal plate for this
+> job — `tex-metal-blued.jpg` spends 798 KB at 1024² on exactly that effect.
+
+That is ~5% of the texture allocation. The remainder should stay unspent: the exported art carries
+its own tone, and a second texture layer on top pays twice for one effect.
+
+### 6.3 The 798 KB already being paid is legacy, not part of this
+
+`tex-metal-blued.jpg` is bound to `[data-theme="bluedsteel"]` on `body` (`style.css:5181`),
+`.col > .card` (`:5192`), `.card.anchored` (`:5232`) and `.searchwrap` (`:5266`). **Three of those
+four surfaces are exactly what V2 replaces.** The redesign should therefore *retire* it rather than
+ship alongside it — 798 KB of the §1 overspend leaves as a side effect of landing the artwork. Only
+the body floor may need a replacement, and that is one small tile under the §6.2 limit.
+
+### 6.4 General texture rules
+
 | Rule | Number | Basis |
 |---|---|---|
 | **Tile, never full-bleed.** | A 2000×1200 stretched background = **9.6 MB decoded**; a 128² tile = 64 KB decoded and covers any area. | 4 B/px arithmetic |
@@ -228,7 +281,7 @@ panel art) and they tile (large decoded bitmaps that fork per `background-size`)
 | **Export undithered.** | ±1 LSB of dither grew a clean 800×400 panel from **2,701 B to 301,066 B — 111×**. | measured, this project's art |
 | **Never re-encode a JPEG master.** | The AVIF advantage inverts on double-compressed sources. Re-encode from the lossless master. | measured on `tex-metal-blued.jpg` |
 
-### Format, measured on this project's own art
+### 6.5 Format, measured on this project’s own art
 
 | Content | Winner | Measured |
 |---|---|---|
@@ -240,7 +293,7 @@ panel art) and they tile (large decoded bitmaps that fork per `background-size`)
 
 Support: WebP **96.18%**, AVIF **94.67%**, SVG **96.69%** (global, 2026).
 
-### SVG vs raster — the threshold ledger open-question (D) asked for
+### 6.6 SVG vs raster — the threshold ledger open-question (D) asked for
 
 Measured on a real 898-path export: **~187 bytes per path gzipped**.
 
@@ -258,7 +311,7 @@ Two project-specific facts that push harder toward raster than they would elsewh
 - **Coordinate precision is the only SVG lever worth pulling.** 3dp → 1dp cut gzip by **28.9%**.
   Collapsing whitespace cut **0.01%** — worthless. Set precision in the exporter; skip minification.
 
-### data: URI encoding
+### 6.7 data: URI encoding
 
 | | Penalty |
 |---|---|
@@ -270,10 +323,12 @@ Two project-specific facts that push harder toward raster than they would elsewh
 
 ---
 
-## 7. Delivery — the one call that is Jac's
+## 7. Delivery — ✅ LOCKED, Jac 2026-08-09
 
-Ledger open-question (B) is still open, and the service worker makes it consequential. The two paths
-are genuinely different, not stylistic:
+> **Exported art ships as SEPARATE FILES under `assets/halo/`, with the version in the FILENAME
+> (`asm-housing.20260809.webp`), added to `sw.js`'s `SHELL`.** Closes ledger open-question (B).
+
+The service worker is what made this consequential rather than stylistic. The two paths:
 
 | | Inline (data-URI in `style.css`) | Separate files under `assets/` |
 |---|---|---|
@@ -286,11 +341,10 @@ are genuinely different, not stylistic:
 At the proposed 900 KB envelope, inlining adds roughly **900 KB to every deploy for every active
 user**; separate files cost 900 KB once and then ~10 revalidation round-trips per 10 minutes.
 
-**Recommendation: separate files under `assets/halo/`, versioned in the filename**
-(`asm-housing.20260809.webp`), **added to `sw.js`'s `SHELL`.** The deploy cadence on this project is
-high enough that "paid every deploy" is the worse of the two costs.
+Jac took the separate-files path on 2026-08-09: the deploy cadence here is high enough that "paid
+every deploy" is clearly the worse cost.
 
-**Two things must land with that choice:**
+**Two things must land with that choice — they are now prerequisites, not caveats:**
 
 1. `sw.js`'s `SHELL` is **already stale** — it omits four modules `app.js` statically imports
    (`icons-frames.js`, `vendor/plot.min.js`, `vendor/d3-shape.min.js`, `vendor/qrcode.min.js`). The
@@ -316,7 +370,11 @@ Every new or changed artwork asset:
 - [ ] Format per §6; masks are lossless WebP or AVIF, never lossy WebP
 - [ ] SVG only under ~26 paths; coordinate precision set at export
 - [ ] SVG data-URIs **percent-encoded**, never base64
-- [ ] Added to `sw.js`'s `SHELL`, with the version **in the filename**
+- [ ] **Decode the export and grep it for `<image`** — an SVG that embeds a raster is not a vector
+      asset, and on two of this project's panels that embed is 66–97% of the bytes (§6.1)
+- [ ] Nothing **clickable, state-coloured or CVD-gated** is baked into the art (§6.1)
+- [ ] Shipped as a file under `assets/halo/`, version **in the filename**, added to `sw.js`'s
+      `SHELL` (§7 — locked)
 - [ ] Surface-level budget from §5.1 not exceeded; running total still ≤ 900 KB
 
 **Verify on a real device, not headless.** MEMORY.md records a `transform` + `will-change` element
@@ -338,7 +396,10 @@ Carried forward from the ledger, unchanged by this document:
 - **The conduit rail's export has three defects** (#259) and should ship as a 41×4 `repeat-y` tile,
   not a 9-slice.
 - **The slot/bulb art fails the CVD separation floor** (#238/#248) — measured 31–72 against a floor
-  of 90. That is a gate, not a preference.
+  of 90. That is a gate, not a preference. §6.1 adds the reason it cannot be fixed where it sits:
+  the ticks are **baked pixels inside `asm-rowboard-image` and `asm-deck-image`**, so the CVD gate,
+  the clickable-slot requirement (#250), the resize blocker (#260) and 97% of rowboard's bytes are
+  all the same extraction job.
 - **`FEATURES.designV2` does not exist.** Four documents claim the redesign is behind it; `grep` of
   `config.js` finds zero occurrences. **There is currently no runtime kill switch for the redesign
   or its artwork** — which CLAUDE.md requires for a replacement of this size.
