@@ -187,6 +187,27 @@ animating one across many instances is not.
 Because the art never stretches at runtime (it only moves), the browser rasterises each
 shared asset **once** and reuses it. Resize is a re-render, which is allowed.
 
+**The numbers live in `docs/design/ART-BUDGET.md`** (ledger **#262**) — read it before adding an
+asset. The three things it says that this section does not:
+
+- **There are THREE budgets, not one, and they have different multipliers.** Wire bytes scale with
+  the count of *unique assets* (which is why "declared once in `:root`" wins). Decoded memory scales
+  with the count of *distinct rasterised sizes* — the decode-cache key is `{image, mip level, filter
+  quality, colour space}`, so one panel drawn at five widths costs five entries. That is what makes
+  `#258`'s **fixed panel heights** a performance decision and not only a fidelity one. Frame time
+  scales with *instance count × per-element paint ops*, and the shared-asset pattern does nothing
+  for it.
+- **Only ROWS multiply.** Card frames cap at 7, group headers at 23, the footer at 1, graph frames
+  at 0 until opened — but rows are **60 at first paint (`VIRT_CAP`) and +200 per Show-more click**.
+  So above ~24 instances: **`stretch` only** (`round` routes to `DrawImageTiled` plus a per-tile
+  rescale) and **at most ONE mask layer** (`mask-image` is the slowest of 11 measured techniques,
+  ~0.149 ms/element — 60 rows is ~8.9 ms, the entire 90 Hz frame, before the field phone's 4.4×
+  multiplier).
+- **Vector vs raster has a threshold now: ~26 paths** (measured 187 B/path gzipped). It is tighter
+  on this project than elsewhere because **GitHub Pages serves gzip only — brotli is not offered**,
+  so a complex SVG costs 168 KB here where a brotli host charges 37.6 KB. Percent-encode SVG
+  data-URIs; base64 costs +431% gzipped against +0.24% for percent-encoding.
+
 ## 8. Checklist
 
 - [ ] Exported via Figma's own SVG export, not hand-walked regions
@@ -198,3 +219,9 @@ shared asset **once** and reuses it. Resize is a re-render, which is allowed.
 - [ ] Rhythm (`round`) vs structure (`stretch`) chosen per axis, deliberately
 - [ ] Motion is transform/opacity only; `LayoutCount: 0` verified
 - [ ] Tone check compares by DISTANCE with int casting
+- [ ] `stretch` (not `round`) and ≤1 mask layer on anything that can exceed 24 instances
+- [ ] Exported UNDITHERED; one 2× raster, never a 3× ladder
+- [ ] Format per ART-BUDGET §6 — masks are lossless WebP or AVIF, **never** lossy WebP
+- [ ] SVG data-URIs percent-encoded, never base64; exporter precision set (3dp→1dp = −28.9% gzip)
+- [ ] Added to `sw.js`'s `SHELL`, with the version in the FILENAME (`?v=` cannot reach `assets/`)
+- [ ] Surface budget from ART-BUDGET §5.1 not exceeded; running total still ≤ 900 KB
