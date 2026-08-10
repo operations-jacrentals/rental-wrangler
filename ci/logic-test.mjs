@@ -1507,6 +1507,42 @@ try {
         const ri = T.DATA.rentals.findIndex((o) => o.rentalId === rid); if (ri >= 0) T.DATA.rentals.splice(ri, 1); T.IDX.rental.delete(rid);
       } else { ok(true, '#444: no tiering category in the demo set — skipped'); }
     }
+    // 32d) #810 — the WHOLE winPickSave path, not just billExtension: the picker saves, bills the
+    //      extension, THEN calls syncRentalLines(r) to restore any un-voided unit's line. On a paid
+    //      rental that spilled a #444-credited continuation, syncRentalLines' series branch re-ran
+    //      billChunkUnits over EVERY chunk with fullWin = null (standalone per-chunk pricing) — which
+    //      topped the continuation back up from the credited delta to the full segment price, re-billing
+    //      the days already paid on the first invoice. Reported: 51AU paid $564.83, continuation 92AU
+    //      then showed the FULL week ($980) instead of the $470 extension delta.
+    {
+      const pf = (catId, s, e) => { const p = T.rentalPrice({ categoryId: catId, startDate: s, endDate: e, customerId: 'C0009' }); return p ? p.price : 0; };
+      const af = T.DATA.units.filter((u) => u.fleetStatus === 'Active');
+      const cu = af.find((u) => { const c = T.IDX.category.get(u.categoryId); return c && c.rate1Day > 0 && c.rate7Day > 0 && c.rate7Day < 7 * c.rate1Day; });
+      if (cu) {
+        const S0 = '2099-08-01', E1 = '2099-08-02', E7 = '2099-08-08';   // 1-day window → 7 days
+        const rid = 'R-810', iid = 'I-810';
+        const r = { rentalId: rid, customerId: 'C0009', unitId: cu.unitId, categoryId: cu.categoryId, startDate: S0, endDate: E1, startTime: '', status: 'On Rent', transportType: 'Self', deliveryAddress: '', transportMiles: null, invoiceId: iid, units: [{ unitId: cu.unitId, transportType: 'Self', transportMiles: null }], notes: '', actions: [], mock: true };
+        T.DATA.rentals.push(r); T.IDX.rental.set(rid, r);
+        const inv = { invoiceId: iid, customerId: 'C0009', rentalIds: [rid], date: T.TODAY_ISO, dueDate: T.TODAY_ISO, po: '', amountPaid: 0, lineItems: [], covOf: rid, covStart: S0, covEnd: E1, mock: true };
+        T.rentalLineItems(r).forEach((li) => inv.lineItems.push(li));
+        T.DATA.invoices.push(inv); T.IDX.invoice.set(iid, inv);
+        inv.amountPaid = T.invoiceTotals(inv).total; const l0 = inv.lineItems[0]; inv.allocations = { [T.lineKey(l0)]: l0.amount };   // pay in full → closed
+        const seriesSub = () => T.rentalInvoices(r).reduce((a, iv) => a + iv.lineItems.filter((l) => l.kind === 'rental' || l.kind === 'extension').reduce((s, l) => s + (+l.amount || 0), 0), 0);
+        const paidDay = pf(cu.categoryId, S0, E1), cheapest7 = pf(cu.categoryId, S0, E7);
+        r.startDate = S0; r.endDate = E7;
+        T.billExtension(r, E1, S0);
+        T.syncRentalLines(r);   // ← winPickSave (app.js) runs this immediately after billExtension
+        const cont = T.rentalInvoices(r)[1];
+        ok(cont && Math.abs(T.invoiceTotals(cont).subtotal - (cheapest7 - paidDay)) < 0.01,
+          `#810: the continuation bills ONLY the extension delta ($${Math.round((cheapest7 - paidDay) * 100) / 100}) after the re-sync — not the full window (got $${cont ? Math.round(T.invoiceTotals(cont).subtotal * 100) / 100 : 'none'})`);
+        ok(cont && cont.lineItems.filter((li) => li.kind === 'rental' || li.kind === 'extension').length === 1,
+          `#810: the re-sync adds NO duplicate rental line to the credited continuation (got ${cont ? cont.lineItems.filter((li) => li.kind === 'rental' || li.kind === 'extension').length : '?'})`);
+        ok(Math.abs(seriesSub() - cheapest7) < 0.01,
+          `#810: series total stays cheapest(7-day window) $${cheapest7} — the paid day is credited, never re-billed (got $${Math.round(seriesSub() * 100) / 100})`);
+        T.rentalInvoices(r).forEach((iv) => { const i = T.DATA.invoices.findIndex((o) => o.invoiceId === iv.invoiceId); if (i >= 0) T.DATA.invoices.splice(i, 1); T.IDX.invoice.delete(iv.invoiceId); });
+        const ri = T.DATA.rentals.findIndex((o) => o.rentalId === rid); if (ri >= 0) T.DATA.rentals.splice(ri, 1); T.IDX.rental.delete(rid);
+      } else { ok(true, '#810: no tiering category in the demo set — skipped'); }
+    }
     // === F1 — membership fee math (spec §2): no proration; protection = 15% of BASE only; 10.75% tax ===
     {
       const PR = { monthlyBase: 299, annualBase: 2691, monthlyTransport: 500, annualTransport: 4500, protectionPct: 15, protectionCapMonthly: 2000 };
