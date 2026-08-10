@@ -1258,10 +1258,11 @@ function createContinuationInvoice(r, covStart, covEnd) {
  *  full-window − billedSeries), so an already-billed — even PAID — sub-tier day counts toward
  *  the blended rate instead of being re-billed. Positive only (refund-first: a paid chunk is
  *  never reduced). Without fullWin the added segment is priced standalone (OFF path, #444). */
-function billChunkUnits(inv, r, ns, ne, prevEnd, retro, kind, contInvId, fullWin, emitZero) {
+function billChunkUnits(inv, r, ns, ne, prevEnd, retro, kind, contInvId, fullWin, emitZero, onlyUnitIds) {
   let delta = 0, count = 0;
   rentalUnits(r).forEach((eu) => {
     if (unitVoided(r, eu)) return;
+    if (onlyUnitIds && !onlyUnitIds.has(eu.unitId)) return;   // #810 — restrict to the units the caller asked for (syncRentalLines bills only what's MISSING)
     const u = IDX.unit.get(eu.unitId); if (!u) return;
     let amount, rate;
     if (retro && fullWin) {
@@ -1530,12 +1531,17 @@ function syncRentalLines(r) {
   if (series.length > 1) {
     // >28-day CHUNKED series (#552-r4): a re-added (un-voided) unit must bill PER CHUNK — the
     // same path the initial build takes (createInvoiceForRental → billChunkUnits) — not a single
-    // full-window line dumped on chunk #1. billChunkUnits with emitZero=false prices each chunk's
-    // own window and skips units already billed on that chunk (delta ≈ 0), so ONLY genuinely
-    // missing lines get added, correctly split across the series.
+    // full-window line dumped on chunk #1.
+    // The units already billed on a chunk are EXCLUDED outright (#810), never re-priced: this
+    // function only ever ADDS what's missing (its contract above). Letting billChunkUnits price an
+    // already-billed unit prices that chunk STANDALONE (fullWin = null), which tops a #444-credited
+    // continuation — one billed at cheapest(whole series) − already-paid — back up to the full
+    // segment price, re-billing days the customer already paid for on the earlier invoice.
     series.forEach((cv) => {
       const cs = invCovStart(cv, r), ce = invCovEnd(cv, r);
-      const res = billChunkUnits(cv, r, cs, ce, cs, retroPricingOn(), 'rental', cv.contOf || null, null, false);
+      const missing = new Set(rentalUnits(r).filter((eu) => unitBilledRental(cv, r, eu.unitId) <= 0.005).map((eu) => eu.unitId));
+      if (!missing.size) return;
+      const res = billChunkUnits(cv, r, cs, ce, cs, retroPricingOn(), 'rental', cv.contOf || null, null, false, missing);
       if (res.count) reindex('invoices', cv);
     });
     return;
