@@ -8,7 +8,11 @@ before starting anything, so the two agents never grab the same work.
 
 ---
 
-- **claude** · `claude/rental-wrangler-ui-research-rhd74v` (PR #752) · `FEATURES.designV2` · dv2
-  inline-expand redesign — Steps 1–2 built (inline-expand rendering seam + section plate-stack,
-  Units done). Pending: land on trunk behind the flag, then carry the plate-stack into Rentals +
-  Customers and finish rollout steps 3–10 (`docs/superpowers/plans/2026-07-21-list-detail-views-build-plan.md`).
+*Nothing in flight as of 2026-08-10.*
+
+Recently cleared:
+- ~~**claude** · `claude/rental-wrangler-ui-research-rhd74v` (PR #752) · `FEATURES.designV2` · dv2
+  inline-expand redesign~~ — **merged as #766**; the `designV2` flag was retired afterwards.
+- ~~**claude** · `claude/design-system-phase-1-vcgald` (PR #798) · design system / V2 card~~ —
+  **merged as `def4a15`**. Follow-on state and blockers:
+  `docs/design/HANDOFF-2026-08-05.md`; next step in `docs/design/NEXT-SESSION-PROMPT.md`.

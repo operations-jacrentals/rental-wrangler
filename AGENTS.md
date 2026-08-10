@@ -8,9 +8,19 @@ Before reading application code, open `docs/CODE-MAP.md` and navigate by its `fi
 
 For design work, use the design canon and current specs as the source of truth, not reverse-engineering from the current implementation:
 
-- `docs/superpowers/specs/2026-07-20-decisions-ledger.md`
-- `docs/superpowers/specs/2026-07-20-list-views-inline-expand-design.md`
-- `docs/superpowers/specs/2026-07-20-mockup-critique-log.md`
+- `docs/superpowers/specs/2026-07-20-decisions-ledger.md` — **read it to the END.** Rows #1–100 are a
+  2026-07-20 snapshot; rows #101+ supersede some of them. A decision is not made until it is a row in
+  that table, so **add a row** when something is settled.
+- `docs/design/HANDOFF-2026-08-05.md` — the most recent design-session handoff: what is built, what
+  is blocked on Jac's Figma work, and what not to try to fix in CSS.
+- `.claude/skills/art-pipeline/SKILL.md` — how illustrated UI gets out of Figma into running code.
+  Mandatory before touching any Halo/V2 artwork: **export, never recreate**; 9-slice via
+  `border-image`; structure `stretch`, countable rhythm `round`.
+- `docs/design/SLICE-SPEC.md` — the measured, adversarially verified 9-slice bands per panel. Do not
+  re-derive these numbers.
+- `docs/superpowers/specs/2026-07-20-list-views-inline-expand-design.md` and
+  `2026-07-20-mockup-critique-log.md` — the inline-expand model. **Shipped and landed on `trunk`;**
+  read as background, not as the active build target.
 - `DESIGN.md` and `docs/design/` when applicable
 
 ## Safety and product constraints
@@ -63,7 +73,11 @@ Before any new or reshaped UI, read both authorities in full:
 
 Also read the relevant current feature spec and decisions ledger. Never derive a new
 design decision by reverse-engineering `app.js` or `style.css`. `jactec-ui` is
-retired and must not be used.
+**deleted** (2026-07-26, ledger #26/#91) and must not be resurrected — it taught a
+superseded language (`#ff7a1a`, Saira Condensed, hazard stripes, one chip radius) that
+current canon contradicts. Four of its capabilities survive as read-only reference in
+`docs/design/reference/legacy-jactec-ui/`: the role audit, mobile reflow/touch,
+anti-slop, and the DESIGN.md guides. Reference only — not canon.
 
 Non-negotiables:
 
@@ -89,6 +103,12 @@ Non-negotiables:
   distinct.
 - Keep the voice industrial rental yard first, with restrained wrangler/ranch
   seasoning in copy rather than decorative chrome.
+- **"Matte — no glow" is a STEEL rule, not a ban** (ledger #251 — the shorthand in
+  `CLAUDE.md` and `wrangler-style` §28 keeps being over-read). The operative rule is
+  #146: light is emitted **by glass, never applied to steel**. Ask what material is
+  glowing. Glass emitting (terminal text, carets, an interactive control's lit state)
+  is correct and sometimes required; steel emitting (decks, housings, the card frame,
+  grip-rack ticks) is the actual violation. Cite #146 before removing a glow.
 
 ## Working rules
 
@@ -98,9 +118,17 @@ Non-negotiables:
   reference.
 - Do not invent UI pieces. Every element is a Signal, Gate, Stamp, Ref, or Door.
   If a new pill or button seems necessary, stop and ask rather than creating one.
-- Everything new rides behind `FEATURES.designV2` and remains additive. With that
-  flag off, the app must look and behave byte-for-byte as it does today. Back out any
-  change that alters the flag-off app.
+- Big *replacements* ride behind a `FEATURES` flag in `config.js` (read it with
+  `flagOn()`), landing the new path alongside the old one. Flag off = the old path is
+  still live and byte-identical; flipping it on is the rollout switch and flipping it
+  back is the instant rollback. Delete the old path only once the new one has proven
+  out. Small, low-risk changes skip the flag entirely and merge plainly.
+  A flag disables **execution, not visibility** on a public Pages site — never gate a
+  secret or a security/auth check on one.
+  Current flags: `cardGlobalSearch`, `phoneIdentity`, `qrScanLog`, `qrScanPreview`,
+  `instantCache`, `userSync`. **`designV2` no longer exists** — the `dv2` inline-expand
+  redesign landed on `trunk` and the flag was retired. Read `config.js` for live state
+  rather than trusting any flag name quoted in a document, including this one.
 - Colour is never decoration. Use the colour the state calls for, never one chosen
   merely because it looks nicer.
 - Done is factual, not aesthetic: green = genuinely finished; blue = waiting/on
@@ -117,27 +145,33 @@ Non-negotiables:
 **Design authority — decides what is correct:**
 
 - `.claude/skills/style/SKILL.md` and `.claude/skills/wrangler-style/SKILL.md` —
-  the canon.
-- `docs/superpowers/specs/2026-07-20-list-views-inline-expand-design.md` — the
-  current feature spec, including the mockups and Jac's ETA ledger in words.
-- `docs/superpowers/specs/2026-07-20-decisions-ledger.md` — locked decisions;
-  newer entries win.
-- `docs/superpowers/specs/2026-07-20-mockup-critique-log.md` — known flaws and
-  their fixes.
-- `docs/superpowers/plans/2026-07-21-list-detail-views-build-plan.md` — build plan
-  and running shipped-work log.
+  the canon. Read both, always, before any new or reshaped UI.
+- `docs/superpowers/specs/2026-07-20-decisions-ledger.md` — locked decisions; newer
+  entries win. Read to the end (currently ~#261) and add a row when something settles.
+- `.claude/skills/art-pipeline/SKILL.md` — the Figma→code method for illustrated UI.
+- `docs/design/SLICE-SPEC.md` — measured 9-slice bands; do not re-derive.
+- `docs/design/HANDOFF-2026-08-05.md` — the latest design-session state and its
+  explicit "blocked on Jac's Figma work — do not fix these in CSS" list.
+
+**Background — shipped, read for history, not as a build target:**
+
+- `docs/superpowers/specs/2026-07-20-list-views-inline-expand-design.md`,
+  `2026-07-20-mockup-critique-log.md`, and
+  `docs/superpowers/plans/2026-07-21-list-detail-views-build-plan.md` — the
+  inline-expand model. Landed on `trunk`; its `designV2` flag is retired.
 
 **Where the current build lives — read to continue work, not to decide design:**
 
-- `config.js` — `FEATURES.designV2`; `app.js` sets the `html.dv2` class.
-- `style.css` — the `html.dv2` redesign blocks.
-- `app.js` — inline-expand code: `rowEl`, `cardEl`, `openStandard`, `dv2On`, and
-  `INLINE_EXPAND_CARDS`.
+- `config.js` — the live `FEATURES` set.
+- `docs/design/v2-card/` — the Figma V2 card (`438:274`) running as live HTML/CSS.
+  Serve the folder and open `card.html`.
+- `docs/design/tier-01-card/` — the Tier-01 card the V2 assembly is built on.
+- `app.js` / `style.css` — navigate via `docs/CODE-MAP.md`, never by scanning.
 
-Reading those `dv2` implementation areas to extend them is expected. What is
-off-limits is deciding what the design should be by copying the current app. The
-visual mockups, hand-drawn sketches, and design artifacts are not in the repository;
-do not hunt for them. Use the specs and the live staging build instead.
+Reading implementation to extend it is expected. What is off-limits is deciding what
+the design should be by copying the current app. Most visual mockups and hand-drawn
+sketches are not in the repository; do not hunt for them. Use the canon, the ledger,
+the design docs, and the live staging build instead.
 
 ## Working conventions
 
