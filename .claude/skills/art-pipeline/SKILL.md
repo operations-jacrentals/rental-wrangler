@@ -8,12 +8,15 @@ description: >-
   assets), why you EXPORT art instead of recreating it, how a fixed-size panel is made to
   fit any width — 9-slice via `border-image`, and the STRETCH vs REPEAT vs ROUND decision
   for edges, etchings and decorative runs — how to tint art per state without re-exporting
-  it, and the eight measured traps that have cost this project real time (Figma metadata
-  lying about overridden instances, painted extent ≠ frame bounds, mask layers not pairing
-  with background layers, sub-1% paths being the bevels, export quantization faking tone
-  differences). Reach for it whenever pulling a component out of Figma, building or fixing
-  a panel that must resize, deciding whether a decorative run should stretch or repeat, or
-  when artwork looks flat, stretched, smeared, or stuck on one colour. NOT for choosing
+  it, what the artwork is allowed to WEIGH and COST at runtime (the three budgets in
+  `docs/design/ART-BUDGET.md`), and the ten measured traps that have cost this project real
+  time (Figma metadata lying about overridden instances, painted extent ≠ frame bounds, mask
+  layers not pairing with background layers, sub-1% paths being the bevels, export
+  quantization faking tone differences, an SVG export smuggling a raster inside it, and a
+  Figma shader grain silently not surviving export). Reach for it whenever pulling a
+  component out of Figma, building or fixing a panel that must resize, deciding whether a
+  decorative run should stretch or repeat, deciding whether a texture asset is warranted, or
+  when artwork looks flat, stretched, smeared, heavy, or stuck on one colour. NOT for choosing
   colours/fonts/shapes (that is `wrangler-style` + `style`) and NOT for laying out a screen.
 ---
 
@@ -147,7 +150,7 @@ Ledger **#217**: the laser follows the signal, the body never does. If a state c
 baked into the steel, every instance is pinned to that colour forever — this is exactly what
 happened when the housing shipped with 21 red elements baked in.
 
-## 6. The eight traps — all measured, all cost real time
+## 6. The ten traps — all measured, all cost real time
 
 1. **Figma metadata lies about overridden instances.** `get_metadata` reports the
    *un-overridden component* position; the instance's real override differs. The conduit
@@ -174,6 +177,19 @@ happened when the housing shipped with 21 red elements baked in.
    words. But strip only the glyphs — the inner outline usually lives in the same layer group.
 8. **Layer names go stale.** `438:315` is named "Main item · FAILED board" and actually
    renders the group NAME. Trust the render, not the name.
+9. **An SVG export can smuggle a raster inside it — decode it and grep for `<image`.** Audited
+   2026-08-09: `asm-rowboard-image` embeds a 330x97 PNG that is **97.1%** of the asset and
+   `asm-deck-image` a 316x88 PNG at **66.1%**. It is not texture — it is the slot ticks and the
+   board screen, baked as pixels. Baked controls cannot be clicked (#250), cannot be recoloured to
+   pass the CVD floor (#238/#248), and pin the slice band that stops the panel resizing (#260).
+   Pulling them into live DOM takes rowboard 46KB -> ~1.4KB. A tiny tile in a `<pattern>` is fine
+   and correct — headboard's 77-byte 4x12 scanline is the model; a 33KB one is a bug.
+10. **A Figma SHADER paint does not survive SVG export.** `#223` says the steel body is a solid
+   plus a shader at opacity .02 blend LIGHTEN, and that shader IS the machined grain. SVG has no
+   shader primitive: `asm-housing-image` (33 paths) and `elbow-steel-image` (32 paths) carry no
+   raster, no `<pattern>`, no `<filter>`. The tonal sculpt survives — the grain does not, on the
+   two surfaces that repeat per row. Re-add it as a **grain overlay tile: one seamless <=256px
+   square, lossless WebP, ONE `background-size`, ~2-5KB.** Never a photographic metal plate.
 
 ## 7. Performance shape
 
@@ -187,6 +203,27 @@ animating one across many instances is not.
 Because the art never stretches at runtime (it only moves), the browser rasterises each
 shared asset **once** and reuses it. Resize is a re-render, which is allowed.
 
+**The numbers live in `docs/design/ART-BUDGET.md`** (ledger **#262**) — read it before adding an
+asset. The three things it says that this section does not:
+
+- **There are THREE budgets, not one, and they have different multipliers.** Wire bytes scale with
+  the count of *unique assets* (which is why "declared once in `:root`" wins). Decoded memory scales
+  with the count of *distinct rasterised sizes* — the decode-cache key is `{image, mip level, filter
+  quality, colour space}`, so one panel drawn at five widths costs five entries. That is what makes
+  `#258`'s **fixed panel heights** a performance decision and not only a fidelity one. Frame time
+  scales with *instance count × per-element paint ops*, and the shared-asset pattern does nothing
+  for it.
+- **Only ROWS multiply.** Card frames cap at 7, group headers at 23, the footer at 1, graph frames
+  at 0 until opened — but rows are **60 at first paint (`VIRT_CAP`) and +200 per Show-more click**.
+  So above ~24 instances: **`stretch` only** (`round` routes to `DrawImageTiled` plus a per-tile
+  rescale) and **at most ONE mask layer** (`mask-image` is the slowest of 11 measured techniques,
+  ~0.149 ms/element — 60 rows is ~8.9 ms, the entire 90 Hz frame, before the field phone's 4.4×
+  multiplier).
+- **Vector vs raster has a threshold now: ~26 paths** (measured 187 B/path gzipped). It is tighter
+  on this project than elsewhere because **GitHub Pages serves gzip only — brotli is not offered**,
+  so a complex SVG costs 168 KB here where a brotli host charges 37.6 KB. Percent-encode SVG
+  data-URIs; base64 costs +431% gzipped against +0.24% for percent-encoding.
+
 ## 8. Checklist
 
 - [ ] Exported via Figma's own SVG export, not hand-walked regions
@@ -198,3 +235,9 @@ shared asset **once** and reuses it. Resize is a re-render, which is allowed.
 - [ ] Rhythm (`round`) vs structure (`stretch`) chosen per axis, deliberately
 - [ ] Motion is transform/opacity only; `LayoutCount: 0` verified
 - [ ] Tone check compares by DISTANCE with int casting
+- [ ] `stretch` (not `round`) and ≤1 mask layer on anything that can exceed 24 instances
+- [ ] Exported UNDITHERED; one 2× raster, never a 3× ladder
+- [ ] Format per ART-BUDGET §6 — masks are lossless WebP or AVIF, **never** lossy WebP
+- [ ] SVG data-URIs percent-encoded, never base64; exporter precision set (3dp→1dp = −28.9% gzip)
+- [ ] Added to `sw.js`'s `SHELL`, with the version in the FILENAME (`?v=` cannot reach `assets/`)
+- [ ] Surface budget from ART-BUDGET §5.1 not exceeded; running total still ≤ 900 KB
