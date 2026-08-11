@@ -3404,7 +3404,7 @@ function pageDefaultSlice(tab) {
     case 'general': return { key: 'company', value: {} };
     case 'requirements': return { key: 'rentalRules', value: {} };
     case 'fields': return { key: 'customFields', value: { customers: [], units: [], rentals: [], invoices: [] } };
-    case 'inspections': return { key: 'inspections', value: Object.fromEntries([...new Set((DATA.categories || []).map((c) => inspFamilyKey(c)))].map((k) => [k, { required: false, items: (INSP_DEFAULTS[k] || []).map((i) => ({ ...i })) }])) };
+    case 'inspections': return { key: 'inspections', value: Object.fromEntries([...new Set((DATA.categories || []).map((c) => inspFamilyKey(c)))].map((k) => [k, { required: false, items: (INSP_DEFAULTS[k] || INSP_DEFAULTS[inspSeedKey(k)] || []).map((i) => ({ ...i })) }])) };
     case 'notifications': return { key: 'notifications', value: JSON.parse(JSON.stringify(NOTIF_DEFAULTS)) };
     default: return null;   // Logins / planned tabs have no resettable slice
   }
@@ -3459,6 +3459,9 @@ const customFieldsFor = (entity) => ((state.settings && state.settings.customFie
 // *Trailer* categories share one EXCEPT *Dump Trailer* (its own). Everything else
 // stays per-category (keyed by its own categoryId, so prior per-category configs are
 // unchanged). Empty = today's quick Pass/Fail only.
+// A *breaker* is deliberately NOT in the Jack Hammer family (Jac, 2026-08-11, #812): a
+// hydraulic breaker attachment for a skid/excavator inspects nothing like the electric
+// jackhammer tool, so it falls through to its own per-category key and gets its own list.
 function inspFamilyKey(cat) {
   const n = ((cat && cat.name) || '').toLowerCase();
   if (n.includes('excavator')) return 'fam:excavator';
@@ -3476,12 +3479,25 @@ function inspFamilyKey(cat) {
   if (n.includes('buggy')) return 'fam:buggy';
   if (n.includes('attachment')) return 'fam:attachment';
   if (n.includes('generator') || n.includes('genset')) return 'fam:generator';
-  if (n.includes('jack hammer') || n.includes('jackhammer') || n.includes('breaker')) return 'fam:jack-hammer';
+  if (n.includes('jack hammer') || n.includes('jackhammer')) return 'fam:jack-hammer';
   if (n.includes('trowel')) return 'fam:power-trowel';
   if (n.includes('sump')) return 'fam:sump-pump';
   if (n.includes('pump')) return 'fam:trash-pump';
   if (n.includes('concrete saw') || (n.includes('saw') && n.includes('walk'))) return 'fam:concrete-saw';
   return cat ? cat.categoryId : '';
+}
+// A category split OUT of a shared family starts life with a COPY of the family it left
+// (Jac, #812: the new breaker list "starts as the same as Jackhammer and I'll edit it in
+// settings"). Pure read-through: the source family is never written to, and the moment the
+// admin saves the split category's own list that saved config wins and the two are fully
+// independent. Item ids are kept identical so inspection records taken under the old shared
+// list still line up when they're re-opened.
+const INSP_SEED_FROM = [{ test: (n) => n.includes('breaker'), from: 'fam:jack-hammer' }];
+function inspSeedKey(key) {
+  const cat = IDX.category.get(key); if (!cat) return '';
+  const n = ((cat && cat.name) || '').toLowerCase();
+  const hit = INSP_SEED_FROM.find((s) => s.test(n));
+  return hit ? hit.from : '';
 }
 const INSP_FAM_LABELS = {
   'fam:excavator': 'Excavator', 'fam:trailer': 'Trailer', 'fam:trailer-dump': 'Dump Trailer',
@@ -3844,7 +3860,12 @@ const INSP_DEFAULTS = {
 };
 const inspKeyOfCat = (categoryId) => inspFamilyKey(IDX.category.get(categoryId));
 const inspFamilyLabel = (key) => INSP_FAM_LABELS[key] || (IDX.category.get(key) ? IDX.category.get(key).name : key);
-const inspCfgByKey = (key) => ((state.settings && state.settings.inspections) || {})[key] || null;
+const inspCfgByKey = (key) => {
+  const all = (state.settings && state.settings.inspections) || {};
+  if (all[key]) return all[key];
+  const seed = inspSeedKey(key);                       // split-out category → copy of the family it left
+  return (seed && all[seed]) ? JSON.parse(JSON.stringify(all[seed])) : null;
+};
 const inspectionCfg = (categoryId) => inspCfgByKey(inspKeyOfCat(categoryId));
 function checklistFor(unit) { const c = unit && inspectionCfg(unit.categoryId); return (c && Array.isArray(c.items) && c.items.length) ? c : null; }
 const checklistRequired = (unit) => { const c = checklistFor(unit); return !!(c && c.required); };
