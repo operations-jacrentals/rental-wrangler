@@ -72,3 +72,7 @@ __pycache__/
 .scratch-*.js
 .tmp-*.mjs
 .tmp-*.js
+
+# Font candidate cache for tools/design/font-match.py — rebuild with `--fetch`,
+# never commit (upstream licences do not travel with the binaries).
+tools/design/fontcache/
