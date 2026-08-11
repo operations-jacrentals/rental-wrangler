@@ -22,7 +22,7 @@ const server = createServer(async (req, res) => {
     res.end(buf);
   } catch { res.writeHead(404); res.end('not found'); }
 });
-await new Promise((r) => server.listen(8000, r));
+await new Promise((r) => server.listen(9147, r));
 
 const browser = await chromium.launch();
 const page = await browser.newPage();
@@ -31,7 +31,7 @@ page.on('pageerror', (e) => pageErrors.push(String(e && e.message || e)));
 
 let failed = false;
 try {
-  await page.goto('http://localhost:8000/#local', { waitUntil: 'domcontentloaded', timeout: 20000 });
+  await page.goto('http://localhost:9147/#local', { waitUntil: 'domcontentloaded', timeout: 20000 });
   await page.waitForFunction(() => !!window.__rw, { timeout: 20000 });
   await page.evaluate(() => window.__rwBootRail);   // let offlineBoot's async wranglerRailLoad() finish before any test
                                                       // touches wranglerRail — else it can land mid-test and wipe fixtures (race)
@@ -1206,6 +1206,33 @@ try {
     st.settings.inspections = { [aKey]: { required: false, items: [{ id: 'ck_x', label: 'X' }] } };
     ok(T.checklistRequired(aUnit) === false && T.checklistFor(aUnit) !== null, 'a defined-but-not-required checklist is available but does not take over');
     st.settings.inspections = savedInsp;   // restore
+
+    // 26a) #812 — a BREAKER attachment is its own inspection category, seeded from Jack Hammer
+    {
+      const savedI2 = st.settings.inspections;
+      const jhCat = { categoryId: 'CAT-JH-812', name: 'Tool Jackhammer' };
+      const bkCat = { categoryId: 'CAT-BK-812', name: 'Att Breaker Skid Exc' };
+      T.DATA.categories.push(jhCat, bkCat);
+      T.IDX.category.set(jhCat.categoryId, jhCat); T.IDX.category.set(bkCat.categoryId, bkCat);
+      const mkU = (id, catId) => { const u = { unitId: id, name: id, categoryId: catId, assignedMechanic: '', currentHours: 0, inspectionStatus: 'Ready', fleetStatus: 'Active', purchaseHours: 0, serviceCompletions: {} }; T.DATA.units.push(u); T.IDX.unit.set(id, u); return u; };
+      const jhUnit = mkU('U-JH-812', jhCat.categoryId), bkUnit = mkU('U-BK-812', bkCat.categoryId);
+      ok(T.inspFamilyKey(jhCat) === 'fam:jack-hammer', 'Tool Jackhammer stays on the shared Jack Hammer family');
+      ok(T.inspFamilyKey(bkCat) === 'CAT-BK-812', 'a breaker attachment gets its OWN inspection category, not Jack Hammer (#812)');
+      // seeded: no saved list of its own → reads a COPY of the Jackhammer list it was split out of
+      st.settings.inspections = { 'fam:jack-hammer': { required: true, items: [{ id: 'iqc-jh-01', label: 'You Wiped Down The Unit' }] } };
+      const seeded = T.checklistFor(bkUnit);
+      ok(!!seeded && seeded.items.length === 1 && seeded.items[0].id === 'iqc-jh-01', 'the new breaker checklist seeds as a copy of the Jackhammer list');
+      seeded.items[0].label = 'MUTATED'; seeded.required = false;
+      ok(st.settings.inspections['fam:jack-hammer'].items[0].label === 'You Wiped Down The Unit' && T.checklistRequired(jhUnit) === true, 'seeding is a copy — editing it never touches the Jackhammer list');
+      // saved: its own list wins outright, and Jackhammer is unaffected
+      st.settings.inspections['CAT-BK-812'] = { required: false, items: [{ id: 'iqc-bk-01', label: 'Tool Point / Chisel Wear' }] };
+      ok(T.checklistFor(bkUnit).items[0].id === 'iqc-bk-01' && T.checklistRequired(bkUnit) === false, 'once saved, the breaker list is independent of Jack Hammer');
+      ok(T.checklistFor(jhUnit).items[0].id === 'iqc-jh-01' && T.checklistRequired(jhUnit) === true, 'the Jackhammer checklist is left exactly as it was');
+      T.DATA.categories.pop(); T.DATA.categories.pop(); T.DATA.units.pop(); T.DATA.units.pop();
+      T.IDX.category.delete('CAT-JH-812'); T.IDX.category.delete('CAT-BK-812');
+      T.IDX.unit.delete('U-JH-812'); T.IDX.unit.delete('U-BK-812');
+      st.settings.inspections = savedI2;   // restore
+    }
 
     // 26b) Fail-condition model (Jac 2026-06-26) — per-type fail predicate + all-required gate
     const F = T.inspItemFails, U = T.inspItemUnanswered;
