@@ -4694,17 +4694,23 @@ const BLOCK_TYPE_LABEL = { blacklist: 'Blacklisted', 'invoice-hold': 'Held — i
 // vs invoice-hold). A manual blacklist shows its state + an Admin/Owner-tier "Lift" (D13/T3.4) —
 // 'owner' already maps to the admin tier (config.js BUILTIN_ROLE_TIERS), so lifting reuses
 // requireAdmin, not a separate Owner password. The other three types are DERIVED (accountBlock,
-// app.js ~L381) and self-clear — shown as a read-only badge, no lift control.
+// app.js ~L381) and self-clear — their badge ANNOTATES the state, it does not replace the manual
+// control: `no-card`/`failed-payment` used to swallow the Block Account pill entirely, so an
+// account with no card (i.e. no signed agreement) had no way to be blacklisted at all (#814).
+// Per D12 the manual block button is unqualified, and a manual blacklist outranks both derived
+// types in accountBlock's precedence — so the pill stays reachable in every state except an
+// active blacklist, where "Lift" is the correct control. Auth is unchanged: the picker's
+// js-bp-blacklist still gates on requireAdmin (D13).
 function acctBlockFoot(c) {
   const b = accountBlock(c);
   if (!b) return `<div class="ag-foot"><span class="sp"></span>${actionPill('danger', 'Block Account', { js: 'js-block-account', data: { rec: c.customerId }, h: 28 })}</div>`;
   const stateBadge = badge(BLOCK_TYPE_LABEL[b.type] || b.type, 'red');
-  const lift = b.type === 'blacklist'
+  const selfClears = b.type === 'no-card' || b.type === 'failed-payment';
+  const note = selfClears ? `<span class="muted acct-microcopy">clears automatically</span>` : '';
+  const action = b.type === 'blacklist'
     ? actionPill('danger', 'Lift Blacklist', { js: 'js-lift-blacklist', data: { rec: c.customerId }, h: 28 })
-    : b.type === 'no-card' || b.type === 'failed-payment'
-      ? `<span class="muted acct-microcopy">clears automatically</span>`
-      : actionPill('danger', 'Block Account', { js: 'js-block-account', data: { rec: c.customerId }, h: 28 });   // invoice-hold: still offer the picker to add/replace a manual block
-  return `<div class="ag-foot">${stateBadge}<span class="sp"></span>${lift}</div>`;
+    : actionPill('danger', 'Block Account', { js: 'js-block-account', data: { rec: c.customerId }, h: 28 });   // invoice-hold + the derived blocks: still offer the picker to add/replace a manual block
+  return `<div class="ag-foot">${stateBadge}${note}<span class="sp"></span>${action}</div>`;
 }
 // T2.6 (2026-07-10) — the derived read-only stats the OLD account section's right column carried
 // (Total paid/Visits/Customer-for/Rents-every-N-days/rented categories), folded in here so retiring

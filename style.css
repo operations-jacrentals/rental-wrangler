@@ -4291,6 +4291,10 @@ body { font-variant-numeric: tabular-nums; }
 .acct-stats .rented-cats .rc-flags { justify-content: flex-start; }
 
 .ag-foot { display: flex; align-items: center; margin-top: 11px; }
+/* The self-clearing note rides beside its state badge on the LEFT, so the Block Account
+   pill keeps the bottom-RIGHT slot D17 gives it (#814). Resets .acct-microcopy's block
+   margins, which assume a stacked paragraph, not a flex row. */
+.ag-foot .acct-microcopy { margin: 0 0 0 8px; }
 /* D17 — Block Account, bottom-right: R17 danger intent, outline treatment (a milder
    accessor into the block flow, not the destructive confirm itself — that's the
    Manager/Owner password step). */
