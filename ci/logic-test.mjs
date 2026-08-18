@@ -22,7 +22,7 @@ const server = createServer(async (req, res) => {
     res.end(buf);
   } catch { res.writeHead(404); res.end('not found'); }
 });
-await new Promise((r) => server.listen(9147, r));
+await new Promise((r) => server.listen(8000, r));
 
 const browser = await chromium.launch();
 const page = await browser.newPage();
@@ -31,7 +31,7 @@ page.on('pageerror', (e) => pageErrors.push(String(e && e.message || e)));
 
 let failed = false;
 try {
-  await page.goto('http://localhost:9147/#local', { waitUntil: 'domcontentloaded', timeout: 20000 });
+  await page.goto('http://localhost:8000/#local', { waitUntil: 'domcontentloaded', timeout: 20000 });
   await page.waitForFunction(() => !!window.__rw, { timeout: 20000 });
   await page.evaluate(() => window.__rwBootRail);   // let offlineBoot's async wranglerRailLoad() finish before any test
                                                       // touches wranglerRail — else it can land mid-test and wipe fixtures (race)
@@ -949,6 +949,34 @@ try {
     const d227b = window.JT.computeChanges();
     ok((d227b.upserts.rentals || []).some((u) => u.id === 'R-NEW227x'), '#227: once the Quote earns content (a customer) it DOES sync — content-bearing Quotes survive');
     const qi227 = T.DATA.rentals.findIndex((r) => r.rentalId === 'R-NEW227x'); if (qi227 >= 0) T.DATA.rentals.splice(qi227, 1); T.IDX.rental.delete('R-NEW227x'); window.JT.snapshotSaved();   // restore baseline
+
+    // #816 §sync-latch — `saving` is a mutex, and a STALLED round-trip used to latch it
+    // forever (fetch() has no built-in timeout, so a hung Apps Script call never settles and
+    // nothing ran the release). Latched, every later flushSave just deferred and the live
+    // poll bailed on it: writes looked accepted, vanished on refresh, and other users' records
+    // never arrived — all with NO R25 banner, since #247 only counts SETTLED failures. Bound
+    // the round-trip + release in a `finally` and a stall becomes an ordinary retryable failure.
+    {
+      const realFetch = window.fetch;
+      const wasSync = { timeoutMs: window.JT.SYNC.timeoutMs, fails: window.JT.SYNC.fails, failing: window.JT.SYNC.failing, backoff: window.JT.SYNC.backoff };
+      for (let i = 0; i < 100 && window.JT.syncBusy(); i++) await new Promise((r) => setTimeout(r, 100));   // applyWranglerData above fires its own flushSave — let it settle so this reads a clean mutex
+      window.JT.SYNC.timeoutMs = 120;   // the BOUND is what's under test, not its production value — keep the gate fast
+      T.DATA.vendors.push({ vendorId: 'VEN-816x', name: 'Sync Latch Probe' });
+      window.fetch = () => new Promise(() => {});   // the stall: never resolves, never rejects
+      window.JT.flushSave();            // deliberately NOT awaited — unfixed, this promise never settles at all
+      await new Promise((r) => setTimeout(r, 600));   // comfortably past the bound
+      ok(window.JT.syncBusy() === false, '#816: a STALLED sync releases the save mutex instead of latching it — the push/pull never stops silently');
+      let sent = null;
+      window.fetch = async (u, o) => { sent = JSON.parse(o.body); return new Response('{"ok":true}', { status: 200 }); };
+      await window.JT.flushSave();
+      ok(sent && sent.action === 'sync' && (sent.upserts.vendors || []).some((v) => v.vendorId === 'VEN-816x'), '#816: the very next save still reaches the backend after a stall — the pending write is retried, not silently dropped');
+      window.fetch = realFetch;
+      const vi816 = T.DATA.vendors.findIndex((v) => v.vendorId === 'VEN-816x'); if (vi816 >= 0) T.DATA.vendors.splice(vi816, 1);
+      Object.assign(window.JT.SYNC, wasSync);
+      const sb816 = document.getElementById('sync-banner'); if (sb816) sb816.remove();
+      document.body.classList.remove('sync-failing');
+      window.JT.snapshotSaved();   // restore baseline
+    }
 
     // #152 a big import reply can be TRUNCATED by the model's output limit (no closing ```);
     // parseWranglerAction must salvage the complete rows so the preview still opens.
