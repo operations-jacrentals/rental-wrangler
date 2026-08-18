@@ -24816,7 +24816,7 @@ async function refreshFromBackend() {
   if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;              // mid-typing
   refreshing = true;
   try {
-    const r = await backendCall('load');
+    const r = await withTimeout(backendCall('load'), SYNC.pollTimeoutMs, 'Live refresh');   // §sync-latch (#816) — bounded: the `finally` below only runs once this SETTLES, so a stalled load would latch `refreshing` and kill the poll for the session
     if (!r || !r.ok || !r.data) return;
     const data = r.data; let applied = 0;
     PERSIST_KEYS.forEach((k) => {
@@ -24840,7 +24840,7 @@ async function refreshFromBackend() {
     });
     // also pull the shared team-chat threads so messages from other users land live
     try {
-      const cr = await backendCall('getChats', chatSyncIdentity());
+      const cr = await withTimeout(backendCall('getChats', chatSyncIdentity()), SYNC.pollTimeoutMs, 'Chat refresh');   // §sync-latch (#816) — inside the same `refreshing` critical section, so it needs the same bound
       if (cr && cr.ok && Array.isArray(cr.chats)) {
         const m = mergeChats(cr.chats);
         const pruned = reconcileScopedChats(cr.chats);
@@ -25375,7 +25375,14 @@ function saveSoon(ms) { if (booting || !backendPassword) return; clearTimeout(sa
 // row — one transient blip self-recovers) raise the R25 "Not saving" banner until a
 // sync succeeds. The backend (doSync batched I/O + tryLock_→'busy') is the cure; this
 // is the safety net so a stuck write can never vanish quietly again.
-const SYNC = { failing: false, fails: 0, backoff: 1200 };
+// §sync-latch (#816) — the round-trip BOUNDS. `fetch()` has no built-in timeout, so a
+// stalled Apps Script call never rejects (the exact hazard §17's withTimeout was written
+// for) and #247's failure counter, which only counts SETTLED failures, never fires. Every
+// persistence round-trip is bounded here so a stall degrades into the ordinary failure
+// path (R25 banner + backoff) instead of a silent, permanent stop. Generous vs §17's plain
+// 30s server bound: a batched sync carries far more than a single card call, and the photo
+// offload uploads multi-MB captures to Drive. Tunable so the gates can exercise a stall.
+const SYNC = { failing: false, fails: 0, backoff: 1200, timeoutMs: 60000, offloadTimeoutMs: 120000, pollTimeoutMs: 30000 };
 function retrySyncNow() { clearTimeout(saveTimer); SYNC.backoff = 1200; flushSave(); }   // R25 "Retry now"
 // A Google Sheets cell is hard-capped at 50,000 chars; the backend writes each
 // record's full JSON into one cell, so an oversized record makes the write throw
@@ -25436,28 +25443,40 @@ function holdOversized(upserts) {
   if (warnedChanged) setOversizeWarned(warned);
   _oversizeHeld = stillHeld;
 }
+/* §sync-latch (#816) — `saving` is a MUTEX, and a latched one is INVISIBLE: while it's set
+   every later flushSave just defers (savePending) and refreshFromBackend bails on it, so the
+   push AND the pull both stop dead with no R25 banner — writes look accepted, vanish on
+   refresh, and other users' records never arrive. It used to be able to latch forever two
+   ways: (a) an unbounded round-trip that never settles (see SYNC's bounds above), and (b) a
+   throw from offloadDirtyPhotos / computeChanges / holdOversized, which all sat OUTSIDE the
+   try — nothing released the flag. Now the round-trips are bounded and the release is in a
+   `finally`, so a stall or a throw becomes an ordinary sync failure (banner + exponential
+   backoff + retry), never a quiet stop. */
 async function flushSave() {
   if (saving) { savePending = true; return; }
   if (!lastSaved) return;                       // never loaded → nothing to diff against
   let { upserts, deletes, n } = computeChanges();
   if (!n) return;                               // nothing changed
   saving = true;
-  await offloadDirtyPhotos(upserts);            // base64 photos → Drive before they can ride into a 50k cell (#251)
-  ({ upserts, deletes } = computeChanges());    // re-diff: offloaded records shrank to a ~60-byte URL
-  holdOversized(upserts);                        // keep any still-oversized record out of the batch (fault isolation)
-  if (!Object.keys(upserts).length && !Object.keys(deletes).length) { saving = false; if (savePending) { savePending = false; saveSoon(); } return; }
-  const wireUp = {}; Object.keys(upserts).forEach((k) => { wireUp[k] = upserts[k].map((u) => u.rec); });
-  let ok = false;
+  let ok = false, nothingToSend = false;
   try {
-    const r = await backendCall('sync', { upserts: wireUp, deletes });
-    if (r && r.ok) {
-      // Commit ONLY what we sent — edits made mid-flight stay dirty and re-flush.
-      Object.keys(upserts).forEach((k) => upserts[k].forEach((u) => lastSaved[k].set(u.id, u.js)));
-      Object.keys(deletes).forEach((k) => deletes[k].forEach((id) => lastSaved[k].delete(id)));
-      ok = true;
+    await withTimeout(offloadDirtyPhotos(upserts), SYNC.offloadTimeoutMs, 'Photo offload');   // base64 photos → Drive before they can ride into a 50k cell (#251)
+    ({ upserts, deletes } = computeChanges());  // re-diff: offloaded records shrank to a ~60-byte URL
+    holdOversized(upserts);                     // keep any still-oversized record out of the batch (fault isolation)
+    if (!Object.keys(upserts).length && !Object.keys(deletes).length) nothingToSend = true;
+    else {
+      const wireUp = {}; Object.keys(upserts).forEach((k) => { wireUp[k] = upserts[k].map((u) => u.rec); });
+      const r = await withTimeout(backendCall('sync', { upserts: wireUp, deletes }), SYNC.timeoutMs, 'Saving');
+      if (r && r.ok) {
+        // Commit ONLY what we sent — edits made mid-flight stay dirty and re-flush.
+        Object.keys(upserts).forEach((k) => upserts[k].forEach((u) => lastSaved[k].set(u.id, u.js)));
+        Object.keys(deletes).forEach((k) => deletes[k].forEach((id) => lastSaved[k].delete(id)));
+        ok = true;
+      }
     }
-  } catch (e) { /* offline → handled below */ }
-  saving = false;
+  } catch (e) { /* offline / stalled / bad record → the failure path below */ }
+  finally { saving = false; }                   // ALWAYS release — a latched mutex stops every future save AND the live poll
+  if (nothingToSend) { if (savePending) { savePending = false; saveSoon(); } return; }
   if (ok) {
     if (SYNC.failing) toast('Back online — changes saved.');   // recovered from an outage
     SYNC.failing = false; SYNC.fails = 0; SYNC.backoff = 1200; renderSyncBanner();
@@ -27703,6 +27722,7 @@ boot();
 window.JT = {
   state, DATA, IDX, render, rentalPrice, invoiceTotals, buildIndexes, migrateCustomers, fullName,
   saveSoon, flushSave, snapshotSaved, computeChanges,   // persistence hooks (debug + wiring)
+  SYNC, syncBusy: () => saving,                         // §sync-latch (#816) — sync health + the save mutex, observable so a stall is diagnosable (and gate-testable) instead of invisible
   // creation / mutation API (the UI calls these; exposed for scripting + wiring)
   startNewRental, startNewInspection, startNewWorkOrder, startNewInvoice,
   createInvoiceForRental, addRentalLineToInvoice, addWOToInvoice, addCustomLine, addPartToWO,
