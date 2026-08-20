@@ -1009,7 +1009,7 @@ function searchBlob(card, rec) {
       break;
     case 'units':
       p = [rec.name, rec.assignedMechanic, rec.serial, rec.year, rec.make, rec.model, rec.weight,
-        rec.gpsType, rec.gpsPlacement, rec.notes,
+        rec.gpsType, rec.gpsPlacement, rec.immobilizer ? 'Immobilizer' : '', rec.immobilizerNote, rec.notes,
         rec.inspectionStatus, L('unitInspectionStatus', rec.inspectionStatus),
         rec.fleetStatus, L('unitFleetStatus', rec.fleetStatus),
         rec.gpsStatus, L('gpsStatus', rec.gpsStatus), ca(rec.categoryId)?.name,
@@ -8573,6 +8573,20 @@ const DETAIL = {
     const gpsM = (gsUnit && gsUnit.live) ? gsUnit.machine : null;
     const gpsMapHref = (gpsM && gpsM.lat != null && gpsM.lng != null) ? `https://www.google.com/maps?q=${gpsM.lat},${gpsM.lng}` : '';
     const gpsSeen = gpsM ? gpsRelTime(gpsM.lastSeen) : '';
+    /* IMMOBILIZER (#820) — a plain SPEC FACT about the machine: is a theft immobilizer
+       fitted, and (optionally) what kind / installed when. DESCRIPTIVE ONLY — it neither
+       reads nor arms gpsShutdownControl's Hapn starter cut below, which stays the only
+       thing in the app that can actually immobilize a unit. No status registry backs a
+       yes/no spec fact, so the selected cell falls back to the ONE orange (wrangler-style
+       §3 "toggle active segment"; ledger #16) rather than borrowing Coverage's green/red —
+       a unit without an immobilizer is a fact, not a fault. The note line follows the
+       Coverage precedent (riders only show when insured): it renders when one is fitted,
+       or whenever a note already exists, so flipping to None never eats what was typed. */
+    const immob = !!u.immobilizer;
+    const immobCtl = segCtl([
+      { label: 'Has immobilizer', js: 'js-immob-toggle', data: { rec: u.unitId, val: '1' }, on: immob ? 'orange' : null },
+      { label: 'None', js: 'js-immob-toggle', data: { rec: u.unitId, val: '' }, on: immob ? null : 'orange' },
+    ]);
     const gpsBody = `<div class="fieldstack">
       ${kvPills((gsUnit ? statusPill('gpsStatus', gsUnit.status, { focal: true }) : badge('No GPS')) + (gpsMapped ? '' : addBtn('Connect GPS', { link: true, js: 'js-gps-connect', data: { rec: u.unitId } })))}
       ${gpsStale ? `<div class="kv" style="justify-content:center"><span class="muted" style="font-size:0.6471rem">Last known — live link down</span></div>` : ''}
@@ -8584,6 +8598,8 @@ const DETAIL = {
       ${gpsMapped ? `<div class="kv"><span class="v muted" style="font-size:0.6471rem">${esc(u.gpsProvider)} · ${esc(u.gpsDeviceId)}</span>${ghostPill('Reconnect', { js: 'js-gps-connect', data: { rec: u.unitId } })}</div>` : ''}
       ${efld('units', u, 'unitId', 'gpsType', 'GPS unit/type')}
       ${efld('units', u, 'unitId', 'gpsPlacement', 'Placement')}
+      <div class="kv">${immobCtl}</div>
+      ${(immob || u.immobilizerNote) ? efld('units', u, 'unitId', 'immobilizerNote', 'Type / install date') : ''}
       ${gpsShutdownControl(u, gpsM)}
       ${gpsMapped ? gpsFeedHtml(u) : ''}
     </div>`;
@@ -18693,6 +18709,9 @@ function onClick(e) {
   if (closest('.js-sales-schedule')) { e.stopPropagation(); return openOverlay({ kind: 'schedule', customerId: closest('.js-sales-schedule').dataset.rec }); }
   if (closest('.js-install-go')) { e.stopPropagation(); try { localStorage.setItem('jactec.installNudged', '1'); } catch (er) {} const ev = state._installEvt; closeOverlay(); if (ev) { ev.prompt(); } return; }
   if (closest('.js-install-later')) { e.stopPropagation(); try { localStorage.setItem('jactec.installNudged', '1'); } catch (er) {} closeOverlay(); return; }
+  // Immobilizer yes/no on the unit's GPS section (#820) — a spec fact, open to every role like
+  // gpsType/Placement beside it; it records to unit history and NEVER touches the starter cut.
+  if (closest('.js-immob-toggle')) { e.stopPropagation(); const b = closest('.js-immob-toggle'); const u = IDX.unit.get(b.dataset.rec); if (!u) return; const nv = b.dataset.val === '1'; if (!!u.immobilizer !== nv) { u.immobilizer = nv; logAction(u, nv ? 'Immobilizer: none → fitted' : 'Immobilizer: fitted → none'); reindex('units', u); } render(); return; }
   if (closest('.js-cov-toggle')) { e.stopPropagation(); const b = closest('.js-cov-toggle'); const doIt = () => { const u = IDX.unit.get(b.dataset.rec); if (!u) return; u.insurance = u.insurance || {}; const nv = b.dataset.val === '1'; if (!!u.insurance.covered !== nv) { u.insurance.covered = nv; logAction(u, nv ? 'Branded covered — yard equipment insurance ON' : 'Coverage dropped — yard equipment insurance OFF'); reindex('units', u); } render(); }; if (!adminUnlocked()) return requireAdmin('Equipment insurance is Owner-only.', doIt); return doIt(); }
   if (closest('.js-cov-type')) { e.stopPropagation(); const b = closest('.js-cov-type'); const doIt = () => { const u = IDX.unit.get(b.dataset.rec); if (!u) return; u.insurance = u.insurance || {}; const ts = new Set(u.insurance.types || []); const id = b.dataset.id; ts.has(id) ? ts.delete(id) : ts.add(id); u.insurance.types = [...ts]; logAction(u, `Coverage riders → ${u.insurance.types.join(', ') || 'none'}`); reindex('units', u); render(); }; if (!adminUnlocked()) return requireAdmin('Equipment insurance is Owner-only.', doIt); return doIt(); }
   if (closest('.js-col-queue')) { e.stopPropagation(); if (currentRole && roleTier(currentRole) < tierRank('manager')) { toast('Collections is Manager-tier and up.'); return; } return openOverlay({ kind: 'collectionsSend', invoiceId: closest('.js-col-queue').dataset.rec }); }
@@ -22601,7 +22620,7 @@ let currentPersonId = '';   // §cross-device-sync — the logged-in person's st
 function nowClock() { const d = new Date(); let h = d.getHours(); const ap = h < 12 ? 'AM' : 'PM'; h = h % 12 || 12; return `${h}:${String(d.getMinutes()).padStart(2, '0')} ${ap}`; }
 function logAction(rec, text) { if (!rec) return; rec.actions = rec.actions || []; rec.actions.push({ when: TODAY_ISO, clock: nowClock(), text, by: currentUser || '', seq: actionSeq++ }); saveSoon(); }
 // Humanize a field key + format a value for an audit line ("Phone: (337)… → (337)…").
-const humanizeField = (f) => ({ po: 'PO', eta: 'ETA', 'insurance.policyRef': 'Policy #', 'insurance.effective': 'Coverage effective', 'insurance.expires': 'Coverage expires', 'insurance.insuredValue': 'Insured value', 'insurance.premium': 'Premium', accountNotes: 'Notes', assignedMechanic: 'Mechanic', gpsType: 'GPS type', gpsPlacement: 'GPS placement', purchasePrice: 'Purchase price', purchaseDate: 'Purchase date', trueCost: 'True cost', purchaseHours: 'Hours at purchase', currentHours: 'Hours', startHours: 'Start hours', returnHours: 'Return hours', rentalName: 'Name', woReport: 'Report', firstName: 'First name', lastName: 'Last name' }[f] || (f.charAt(0).toUpperCase() + f.slice(1).replace(/([A-Z])/g, ' $1')));
+const humanizeField = (f) => ({ po: 'PO', eta: 'ETA', 'insurance.policyRef': 'Policy #', 'insurance.effective': 'Coverage effective', 'insurance.expires': 'Coverage expires', 'insurance.insuredValue': 'Insured value', 'insurance.premium': 'Premium', accountNotes: 'Notes', assignedMechanic: 'Mechanic', gpsType: 'GPS type', gpsPlacement: 'GPS placement', immobilizerNote: 'Immobilizer note', purchasePrice: 'Purchase price', purchaseDate: 'Purchase date', trueCost: 'True cost', purchaseHours: 'Hours at purchase', currentHours: 'Hours', startHours: 'Start hours', returnHours: 'Return hours', rentalName: 'Name', woReport: 'Report', firstName: 'First name', lastName: 'Last name' }[f] || (f.charAt(0).toUpperCase() + f.slice(1).replace(/([A-Z])/g, ' $1')));
 const auditVal = (v) => { const s = String(v ?? '').trim(); return s ? (s.length > 28 ? s.slice(0, 28) + '…' : s) : '(empty)'; };
 /* Margin gate (units-fleet, Jac 2026-07-08): non-money roles never see dollar
    amounts in the History/audit log — a client-side DISPLAY redaction only (the raw
