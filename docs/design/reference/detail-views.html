@@ -1,0 +1,270 @@
+<title>Detail views — built to the style skill</title>
+
+<style>
+  :root{
+    --bg:#0a0d11; --bg2:#0f1318; --panel:#171d25; --panel2:#1d242d; --card:#12171e; --cardh:#1a212b;
+    --line:#2c343f; --lineSoft:#212834; --txt:#eef2f7; --txt2:#aab4c1; --txt3:#717b89;
+    --accent:#ff7e1f; --onAcc:#1a1205; --accSoft:rgba(255,126,31,.15); --accLine:rgba(255,126,31,.5);
+    --green:#34d399; --yellow:#eed44b; --red:#ff4242; --redStrong:#d63636; --blue:#6394cc; --commit:#2f6fd0; --gray:#8b94a3;
+    --tan:#c2925a; --rivet:#4a525e; --rivetPit:#0b0f14;
+    --font:-apple-system,"Segoe UI",Roboto,system-ui,sans-serif;
+    --stamp:ui-monospace,"Cascadia Code","SF Mono",Menlo,Consolas,monospace;
+    --h:24px;
+  }
+  *{box-sizing:border-box} body{margin:0}
+  .wrap{background:var(--bg); color:var(--txt); font-family:var(--font); line-height:1.5; -webkit-font-smoothing:antialiased; padding:clamp(14px,3vw,30px) clamp(10px,3vw,20px) 60px}
+  .sheet{max-width:1180px; margin:0 auto}
+  .eyebrow{font-family:var(--stamp); font-size:12px; letter-spacing:.18em; text-transform:uppercase; color:var(--txt3); margin:0; font-weight:700}
+  h1{font-family:var(--stamp); font-weight:800; font-size:clamp(20px,3.3vw,28px); line-height:1; margin:.26em 0 .32em; letter-spacing:.01em; text-transform:uppercase}
+  h1 .hl{color:var(--accent)}
+  .lede{max-width:84ch; font-size:13px; color:var(--txt2); margin:0} .lede b{color:var(--txt); font-weight:600}
+  .key{display:flex; flex-wrap:wrap; gap:6px 12px; margin:14px 0 2px; font-family:var(--stamp); font-size:10px; letter-spacing:.03em; text-transform:uppercase; color:var(--txt3)}
+  .key b{color:var(--accent)}
+
+  .board{display:grid; grid-template-columns:repeat(auto-fit,minmax(330px,1fr)); gap:14px; margin-top:18px; align-items:start}
+
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:14px; overflow:visible}
+  .pcap{font-family:var(--stamp); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--txt3); padding:9px 13px 0}
+  .ptitle{padding:1px 13px 11px; border-bottom:1px solid var(--line)}
+  .pt-name{font-family:var(--font); font-weight:700; font-size:16px; color:var(--txt); letter-spacing:-.01em; display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+  .pt-sub{font-size:11px; color:var(--txt3); margin-top:2px}
+  .stamps{display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-top:8px}
+  .contact{display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-top:9px}
+
+  /* ---------- yard rail (units) ---------- */
+  .rail{display:flex; align-items:center; gap:0; padding:9px 12px; border-bottom:1px solid var(--line); overflow-x:auto}
+  .rnode{font-family:var(--stamp); font-size:9px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--txt3); white-space:nowrap; display:inline-flex; align-items:center; gap:5px}
+  .rnode .dot{width:7px;height:7px;border-radius:50%;background:var(--gray)} .rnode.done .dot{background:var(--green)}
+  .rline{flex:1; min-width:14px; height:1px; background:var(--line); margin:0 6px}
+  .rnext{font-family:var(--stamp); font-size:9px; font-weight:700; text-transform:uppercase; color:var(--commit); border:1.4px dashed var(--commit); border-radius:6px; padding:2px 7px; white-space:nowrap}
+
+  /* ---------- plate grammar ---------- */
+  .plate{border-bottom:1px solid var(--line); border-left:3px solid transparent}
+  .plate:last-child{border-bottom:0}
+  .plate.bad{border-left-color:var(--red)} .plate.now{border-left-color:var(--yellow)} .plate.wait{border-left-color:var(--blue)} .plate.done{border-left-color:var(--green)} .plate.none{border-left-color:var(--gray)}
+  .phead{display:flex; align-items:center; gap:9px; min-height:36px; padding:6px 12px}
+  .plabel{font-family:var(--stamp); font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--txt); flex:none}
+  .psum{flex:1; min-width:0; font-size:11px; color:var(--txt2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .chev{font-size:12px; color:var(--txt3); flex:none; display:inline-flex; align-items:center; width:12px; height:12px}
+  .chev svg{width:12px;height:12px} .chev.open{color:var(--accent)}
+
+  /* ---------- the five parts ---------- */
+  .ctl{height:var(--h); display:inline-flex; align-items:center; font-family:var(--stamp); font-size:11px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; white-space:nowrap; flex:none}
+  /* Signal */
+  .sig{padding:0 8px; border-radius:8px}
+  .sig.f.red{background:var(--redStrong);color:#fdfdfd} .sig.o.red{color:var(--red);box-shadow:inset 0 0 0 1.3px var(--red)}
+  .sig.f.yellow{background:var(--yellow);color:#211a05} .sig.o.yellow{color:var(--yellow);box-shadow:inset 0 0 0 1.3px var(--yellow)}
+  .sig.f.blue{background:var(--blue);color:#0a1220} .sig.o.blue{color:var(--blue);box-shadow:inset 0 0 0 1.3px var(--blue)}
+  .sig.f.green{background:var(--green);color:#04140d} .sig.o.green{color:var(--green);box-shadow:inset 0 0 0 1.3px var(--green)}
+  .sig.o.grey{color:var(--gray);box-shadow:inset 0 0 0 1.3px var(--gray)}
+  /* Gate = Signal + leading chevron */
+  .gate{padding:0 8px 0 6px; border-radius:8px; gap:2px; cursor:pointer}
+  .gate .cv{display:inline-flex;align-items:center;justify-content:center;width:11px;height:11px} .gate .cv svg{width:11px;height:11px;display:block}
+  .gate.yellow{background:var(--yellow);color:#211a05} .gate.blue{background:var(--blue);color:#0a1220}
+  /* Stamp = plain fact */
+  .stamp{font-family:var(--stamp); font-size:10.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--txt3); white-space:nowrap}
+  .dot{color:var(--line); font-family:var(--stamp); font-size:10px} .stamp.more{color:var(--accent)}
+  /* Ref = parent icon + name */
+  .ref{height:var(--h); display:inline-flex; align-items:center; gap:6px; padding:0 8px 0 3px; border-radius:6px; background:var(--card); border:1px solid var(--line); color:var(--txt); font-size:12px; font-weight:600; cursor:pointer; text-decoration:none; white-space:nowrap}
+  .ref .ty{width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;color:var(--accent);background:var(--accSoft);border-radius:5px} .ref .ty svg{width:11px;height:11px}
+  .ref small{color:var(--gray); font-family:var(--stamp); font-size:9px; font-weight:600}
+  /* Doors */
+  .door{height:var(--h); display:inline-flex; align-items:center; font-family:var(--stamp); font-size:10px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; cursor:pointer; border-radius:999px; padding:0 12px}
+  .door.save{background:var(--commit); color:#fdfdfd; border:0}
+  .door.add{background:transparent; color:var(--commit); border:1.4px dashed var(--commit); padding:0 10px}
+  .door.ghost{background:transparent; color:var(--txt2); border:1px solid var(--line)}
+  .door.gated{background:transparent; color:var(--txt3); border:1px solid var(--line); cursor:help; gap:5px}
+  .door .lk{opacity:.8}
+  /* contact = the number IS the link */
+  .clink{display:inline-flex; align-items:center; gap:6px; color:var(--txt); font-size:12.5px; text-decoration:none; font-family:var(--font)}
+  .clink svg{color:var(--accent); width:14px; height:14px} .clink .v{border-bottom:1.4px solid transparent} .clink:hover .v{border-bottom-color:var(--accent)}
+
+  /* segmented toggle */
+  .seg{height:var(--h); display:inline-flex; border:1px solid var(--line); border-radius:7px; overflow:hidden}
+  .seg b{display:inline-flex;align-items:center;padding:0 9px;font-family:var(--stamp);font-size:9.5px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:var(--txt3);border-right:1px solid var(--line)}
+  .seg b:last-child{border-right:0} .seg b.on{background:var(--accent);color:var(--onAcc)}
+
+  /* expanded body */
+  .pbody{padding:3px 12px 12px; background:var(--bg2); border-top:1px solid var(--line)}
+  .kv{display:flex; justify-content:space-between; gap:10px; padding:5px 0; border-bottom:1px solid var(--lineSoft); font-size:12px; align-items:center}
+  .kv:last-child{border-bottom:0}
+  .kv .k{font-family:var(--stamp); font-size:9.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--txt3); flex:none}
+  .kv .v{color:var(--txt); text-align:right} .kv .v.ed{border-bottom:1px dashed var(--line)} .kv .v.lock{color:var(--txt3)}
+  .num{margin:9px 0 8px; padding:10px 11px; background:var(--card); border:1px solid var(--line); border-radius:9px}
+  .num .big{font-family:var(--font); font-size:22px; font-weight:800; letter-spacing:-.02em; color:var(--txt); line-height:1; font-variant-numeric:tabular-nums}
+  .num .big .roi{font-size:12px; color:var(--green); margin-left:8px} .num.owe .big{color:var(--red)}
+  .num .prov{font-size:10.5px; color:var(--txt3); margin-top:4px} .num .prov b{color:var(--txt)}
+  .prow{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:9px}
+  .subrow{display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--lineSoft); font-size:12px}
+  .subrow:last-child{border-bottom:0}
+  .subrow .sn{flex:1; min-width:0; color:var(--txt); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .subrow .sn small{color:var(--gray); font-family:var(--stamp); font-size:9px; font-weight:600; margin-left:5px}
+  .subrow .amt{font-family:var(--font); font-size:11px; color:var(--txt); font-weight:700; font-variant-numeric:tabular-nums}
+  .kpis{display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:var(--line); border:1px solid var(--line); border-radius:8px; overflow:hidden; margin:9px 0}
+  .kpi{background:var(--card); padding:7px 8px}
+  .kpi .kl{font-family:var(--stamp); font-size:8px; letter-spacing:.06em; text-transform:uppercase; color:var(--txt3)}
+  .kpi .kn{font-family:var(--font); font-size:14px; font-weight:800; color:var(--txt); margin-top:1px; font-variant-numeric:tabular-nums} .kpi .kn.owe{color:var(--red)}
+  .cal{margin:9px 0; padding:8px; background:var(--card); border:1px solid var(--line); border-radius:9px}
+  .calh{font-family:var(--stamp); font-size:9px; letter-spacing:.06em; text-transform:uppercase; color:var(--txt3); margin-bottom:6px; display:flex; justify-content:space-between}
+  .calg{display:grid; grid-template-columns:repeat(7,1fr); gap:3px}
+  .calg i{font-style:normal; font-family:var(--font); font-size:9.5px; text-align:center; padding:4px 0; border-radius:3px; color:var(--txt3)}
+  .calg i.in{background:var(--accSoft); color:var(--txt)} .calg i.s{background:var(--accent); color:var(--onAcc); font-weight:800} .calg i.e{background:var(--accent); color:var(--onAcc); font-weight:800}
+  .ent{height:var(--h); display:inline-flex; align-items:center; gap:6px; padding:0 8px 0 3px; border-radius:6px; background:var(--card); border:1px solid var(--line); color:var(--txt); font-size:12px; font-weight:700}
+  .ent .ty{width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;color:var(--accent);background:var(--accSoft);border-radius:5px} .ent .ty svg{width:11px;height:11px}
+  .htail{padding:9px 12px}
+  .h4{font-family:var(--stamp); font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--txt); margin-bottom:6px}
+  .hc{font-family:var(--stamp); font-size:9px; font-weight:700; text-transform:uppercase; color:var(--txt3); border:1px solid var(--line); border-radius:11px; padding:2px 7px; margin-right:5px; display:inline-block}
+
+  .tip{position:relative; display:inline-block}
+  .tip>.ctl{cursor:help}
+  .tip .bub{position:absolute; bottom:calc(100% + 8px); right:0; width:max-content; max-width:min(70vw,240px); background:#05070a; color:#eef2f7; border:1px solid #3a444e; border-radius:7px; padding:8px 10px; font-family:var(--font); font-size:11.5px; line-height:1.42; text-transform:none; letter-spacing:0; box-shadow:0 12px 30px rgba(0,0,0,.6); opacity:0; transform:translateY(4px); pointer-events:none; transition:opacity .12s, transform .12s; z-index:30}
+  .tip:hover .bub, .tip:focus-within .bub{opacity:1; transform:translateY(0)}
+  .tip .bub .t{font-family:var(--stamp); font-size:9px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--accent); display:block; margin-bottom:3px}
+  .tip .bub .go{color:var(--commit); font-weight:700}
+
+  .foot{margin-top:24px; padding-top:16px; border-top:1px solid var(--line); font-size:13px; color:var(--txt2); max-width:86ch} .foot b{color:var(--txt)}
+</style>
+
+<div class="wrap"><div class="sheet">
+
+  <p class="eyebrow">Three detail views · built to the style skill · matte, aligned, contrast-checked</p>
+  <h1>Detail views — <span class="hl">finished pass</span></h1>
+  <p class="lede">Same structure as before (nothing moved), now to the locked standard: <b>one control height, one baseline</b>; the mono-stamped labels + read-weight names you liked; <b>Signal · Gate · Stamp · Ref · Door</b>; muted blue &amp; deepened red for AA, the CVD-picked yellow (<code>#ffe14d</code>, well clear of orange), an orange calendar; dark ink on every fill; orange under 10%. No glow. The fonts &amp; hexes are <b>our</b> calls; the skill only enforced the numbers. Hover a Signal to see it name its source.</p>
+  <div class="key"><span><b>Signal</b> state chip</span><span><b>Gate</b> turnable</span><span><b>Stamp</b> fact</span><span><b>Ref</b> linked</span><span><b>Door</b> action</span><span>· fill = today · colour = state</span></div>
+
+  <div class="board">
+
+    <!-- ============ UNITS ============ -->
+    <div class="panel">
+      <div class="pcap">Unit detail</div>
+      <div class="ptitle"><div class="pt-name">Highrise <span class="ctl sig f red">field call</span></div><div class="pt-sub">Excavator · Skid Steer 75hp · S/N 4471-K</div></div>
+      <div class="rail">
+        <span class="rnode done"><span class="dot"></span>Reserved</span><span class="rline"></span>
+        <span class="rnode"><span class="dot"></span>On Rent</span>
+        <a class="ent" style="height:20px"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>Duhon</a>
+        <span class="rline"></span><span class="rnext">+ Log recovery</span>
+      </div>
+
+      <div class="plate bad"><div class="phead"><span class="plabel">Inspection</span><span class="psum">Failed · 2h ago</span>
+        <span class="tip"><span class="ctl sig f red" tabindex="0">failed</span><span class="bub"><span class="t">Blocks going out</span>Failed condition — can't leave the yard today. <span class="go">→ open the inspection</span></span></span>
+        <span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span></div></div>
+
+      <div class="plate now"><div class="phead"><span class="plabel">Services</span><span class="psum">Wash due · +4 tasks</span>
+        <span class="ctl sig f yellow">wash now</span>
+        <span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span></div></div>
+
+      <div class="plate wait"><div class="phead"><span class="plabel">Work Orders</span><span class="psum">1 open · hyd seal</span>
+        <span class="tip"><span class="ctl sig f blue" tabindex="0">part on order</span><span class="bub"><span class="t">Waiting on vendor</span>Hydraulic seal on order, ETA Fri. Not your move. <span class="go">→ open WO #113</span></span></span>
+        <span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span></div></div>
+
+      <div class="plate none"><div class="phead"><span class="plabel">Specs</span><span class="psum">2019 · 1,240 hrs</span>
+        <span class="ctl sig o grey">ok</span>
+        <span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span></div></div>
+
+      <div class="plate done"><div class="phead"><span class="plabel">GPS</span><span class="psum">Reporting · 4m ago</span>
+        <span class="ctl sig o green">reporting</span>
+        <span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span></div></div>
+
+      <!-- EXPANDED: Investment -->
+      <div class="plate done"><div class="phead"><span class="plabel">Investment</span><span class="psum">Owned 14 mo</span>
+        <span class="ctl sig o green">insured</span>
+        <span class="chev open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span></div>
+        <div class="pbody">
+          <div class="prow"><span class="seg"><b class="on">Insured</b><b>Uninsured</b></span></div>
+          <div class="num"><div class="big">$4,210 <span class="roi">ROI 31%</span></div><div class="prov"><b>Profit</b> — revenue $18,400 − true cost $14,190 · derived</div></div>
+          <div class="kv"><span class="k">Purchase</span><span class="v ed">$13,900 · Mar '25</span></div>
+          <div class="kv"><span class="k">True cost</span><span class="v ed">$14,190</span></div>
+          <div class="kv"><span class="k">Premium</span><span class="v lock">•••• · office tier</span></div>
+          <div class="prow"><span class="tip"><span class="ctl door gated" tabindex="0">Sell <span class="lk">🔒</span></span><span class="bub"><span class="t">Money action · gated</span>Selling books a transaction — Office tier only. The door's here, the guard's on it.</span></span></div>
+        </div>
+      </div>
+
+      <div class="htail"><div class="h4">History</div><span class="hc">12 Inspections</span><span class="hc">3 WOs</span><span class="hc">5 Rentals</span><span class="hc">8 Washes</span></div>
+    </div>
+
+    <!-- ============ RENTALS ============ -->
+    <div class="panel">
+      <div class="pcap">Rental detail</div>
+      <div class="ptitle"><div class="pt-name">Duhon — Skid Steer 75hp</div><div class="pt-sub">6-Day · Jul 8 → Jul 14</div></div>
+
+      <div class="plate none"><div class="phead"><span class="plabel">Notes</span><span class="psum">Add a note…</span>
+        <span class="ctl sig o grey">none</span>
+        <span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span></div></div>
+
+      <!-- EXPANDED: Rental section -->
+      <div class="plate now"><div class="phead"><span class="plabel">Rental</span><span class="psum">Due back today</span>
+        <span class="ctl sig f yellow">end rent</span>
+        <span class="chev open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span></div>
+        <div class="pbody">
+          <div class="prow" style="justify-content:space-between">
+            <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>Duhon Contracting</a>
+            <span class="ctl gate yellow"><span class="cv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>end rent</span>
+          </div>
+          <div class="prow"><span class="ctl door add">+ PO</span><span class="stamp">protection off</span></div>
+          <div class="num owe"><div class="big">$560</div><div class="prov"><b>Balance owed</b> — paid $0 of $560 · invoice #4471</div></div>
+          <div class="cal"><div class="calh"><span>Rental window</span><span>Jul '25</span></div>
+            <div class="calg"><i>6</i><i>7</i><i class="s">8</i><i class="in">9</i><i class="in">10</i><i class="in">11</i><i class="in">12</i><i class="in">13</i><i class="e">14</i><i>15</i><i>16</i><i>17</i><i>18</i><i>19</i></div></div>
+          <div class="subrow"><span class="sn">Skid Steer 75hp <small>SS-12</small></span><span class="ctl sig f yellow">end rent</span><span class="amt">$85/day</span></div>
+          <div class="subrow"><span class="sn" style="color:var(--txt3)">+ Unit · or drag one on</span></div>
+        </div>
+      </div>
+
+      <div class="htail"><div class="h4">History</div><span class="hc">4 Payments</span><span class="hc">2 Edits</span></div>
+    </div>
+
+    <!-- ============ CUSTOMERS ============ -->
+    <div class="panel">
+      <div class="pcap">Customer detail</div>
+      <div class="ptitle">
+        <div class="pt-name">Boudreaux Marine LLC <span class="ctl sig f red">owed 16d</span></div>
+        <div class="stamps"><span class="stamp">Non-member</span><span class="dot">·</span><span class="stamp">Marine</span><span class="dot">·</span><span class="stamp">Net 15</span><span class="stamp more">+1</span></div>
+        <div class="contact">
+          <a class="clink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.83 4.4a10.5 10.5 0 0 0 5.77 5.77l1.28-1.28a1 1 0 0 1 1.05-.24 11.4 11.4 0 0 0 3.55.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.51a1 1 0 0 1 1 1 11.4 11.4 0 0 0 .57 3.55 1 1 0 0 1-.24 1.05z" transform="translate(-1 -1)"/></svg><span class="v">(337) 555-0142</span></a>
+          <a class="clink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 7 10 6 10-6"/></svg><span class="v">marc@boudreaux…</span></a>
+        </div>
+      </div>
+
+      <div class="plate none"><div class="phead"><span class="plabel">Account</span><span class="psum">Boudreaux Marine · Cameron, LA</span>
+        <span class="ctl sig o grey">non-member</span>
+        <span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span></div></div>
+
+      <div class="plate now"><div class="phead"><span class="plabel">Funnel</span><span class="psum">Rental lead · call back due today</span>
+        <span class="ctl sig f yellow">follow up</span>
+        <span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span></div></div>
+
+      <!-- EXPANDED: Invoices -->
+      <div class="plate bad"><div class="phead"><span class="plabel">Invoices</span><span class="psum">1 overdue · 1 in flight</span>
+        <span class="ctl sig f red">owed 16d</span>
+        <span class="chev open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span></div>
+        <div class="pbody">
+          <div class="prow"><span class="seg"><b class="on">Open</b><b>All</b><b>Transactions</b></span></div>
+          <div class="kpis"><div class="kpi"><div class="kl">Open</div><div class="kn owe">$1,400</div></div><div class="kpi"><div class="kl">Invoices</div><div class="kn">14</div></div><div class="kpi"><div class="kl">1yr avg</div><div class="kn">$1,240</div></div><div class="kpi"><div class="kl">Avg pay</div><div class="kn">12d</div></div></div>
+          <div class="subrow"><span class="sn">#4460 <small>Jun 28</small></span>
+            <span class="tip"><span class="ctl sig f red" tabindex="0">owed 16d</span><span class="bub"><span class="t">Overdue 16 days</span>Still today's problem until it clears. <span class="go">→ send reminder / charge on file</span></span></span>
+            <span class="amt">$840</span></div>
+          <div class="subrow"><span class="sn">#4471 <small>Jul 8</small></span>
+            <span class="tip"><span class="ctl sig f blue" tabindex="0">ACH</span><span class="bub"><span class="t">Payment in flight</span>Clears in 2–4 days — settles itself. <span class="go">→ open payment</span></span></span>
+            <span class="amt">$560</span></div>
+          <div class="subrow"><span class="sn" style="color:var(--txt3)">#4402 <small>paid · May 2</small></span><span class="ctl sig o green">paid</span><span class="amt" style="color:var(--txt3)">$320</span></div>
+          <div class="prow"><span class="ctl door add">+ Invoice</span></div>
+        </div>
+      </div>
+
+      <div class="plate done"><div class="phead"><span class="plabel">Activity</span><span class="psum">★★★★☆ · $1.2k/mo</span>
+        <span class="ctl sig o green">active</span>
+        <span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span></div></div>
+
+      <div class="plate now"><div class="phead"><span class="plabel">Payment</span><span class="psum">2 cards · 1 ACH</span>
+        <span class="ctl sig f yellow">re-sign</span>
+        <span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span></div></div>
+
+      <div class="htail"><div class="h4">History</div><span class="hc" style="border:0;padding-left:0;color:var(--txt2)">rentals + status log</span></div>
+    </div>
+
+  </div>
+
+  <div class="foot">
+    Everything from the interim work is now on the plate: the crew all sits at one height on one baseline, labels are stamped and names are read-weight, <b>owed / field-call</b> use the deepened red, <b>ACH / part-on-order</b> use the muted blue (dark ink, so they clear AA), facts dropped their pills to become <b>Stamps</b>, refs carry the <b>parent icon</b>, contact shows the <b>real number</b>, the gate chevron leads and hugs, and commit/create wear the deep action-blue while orange stays under 10% (icons, active toggle, gate mark). Matte — no glow. This is the three detail views, done to the <b>style</b> skill.
+  </div>
+
+</div></div>

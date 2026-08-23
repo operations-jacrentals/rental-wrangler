@@ -1,0 +1,281 @@
+<title>Words, links &amp; flags — v2</title>
+
+<style>
+  :root{ --pg:#0a0d11; --pg-ink:#eef2f7; --pg-ink2:#aab4c1; --pg-line:#2c343f; --pg-acc:#ff7e1f;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Menlo,Consolas,monospace;
+    --na:#8b94a3; --na-bg:#2b343d; --wait:#6394cc; --now:#ffe14d; --bad:#ff4242; --badFill:#d63636; --done:#34d399; --commit:#2f6fd0;
+    --pnl:#171d25; --pnl2:#12171e; --edge:#2c343f; }
+  @media (prefers-color-scheme:light){ :root{ --pg:#e6e8ea; --pg-ink:#141821; --pg-ink2:#414b5a; --pg-line:#cfd6e1; --pg-acc:#cf6000; --pnl:#fff; --pnl2:#eef1f6; --edge:#cfd6e1; --commit:#1f56c0; --na:#566072; --wait:#2f5fb0; --now:#ffe14d; --bad:#d52a2a; --badFill:#b5241f; --done:#0c8f5f; } }
+  :root[data-theme="light"]{ --pg:#e6e8ea; --pg-ink:#141821; --pg-ink2:#414b5a; --pg-line:#cfd6e1; --pg-acc:#cf6000; --pnl:#fff; --pnl2:#eef1f6; --edge:#cfd6e1; --commit:#1f56c0; --na:#566072; --wait:#2f5fb0; --now:#ffe14d; --bad:#d52a2a; --badFill:#b5241f; --done:#0c8f5f; }
+  :root[data-theme="dark"]{ --pg:#0a0d11; --pg-ink:#eef2f7; --pg-ink2:#aab4c1; --pg-line:#2c343f; --pg-acc:#ff7e1f; --pnl:#171d25; --pnl2:#12171e; --edge:#2c343f; --commit:#2f6fd0; --na:#8b94a3; --wait:#6394cc; --now:#ffe14d; --bad:#ff4242; --badFill:#d63636; --done:#34d399; }
+  *{box-sizing:border-box} body{margin:0}
+  .wrap{background:var(--pg); color:var(--pg-ink); font-family:var(--sans); line-height:1.5; -webkit-font-smoothing:antialiased; padding:clamp(14px,3vw,30px) clamp(10px,3vw,22px) 60px}
+  .sheet{max-width:960px; margin:0 auto}
+  .eyebrow{font-family:var(--mono); font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:var(--pg-ink2); margin:0}
+  h1{font-family:var(--mono); font-weight:700; font-size:clamp(19px,3.2vw,26px); line-height:1.1; margin:.3em 0 .35em; letter-spacing:-.01em}
+  h1 .hl{color:var(--pg-acc)}
+  .lede{max-width:82ch; font-size:13.5px; color:var(--pg-ink2); margin:0}
+  .lede b{color:var(--pg-ink); font-weight:600}
+  h2{font-family:var(--mono); font-size:13px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; margin:30px 0 4px; color:var(--pg-ink)}
+  h2 .n{color:var(--pg-acc)}
+  .sub{font-size:12.5px; color:var(--pg-ink2); margin:0 0 12px; max-width:82ch} .sub b{color:var(--pg-ink)}
+  code{font-family:var(--mono); font-size:.85em}
+
+  .card{border:1px solid var(--edge); border-radius:10px; background:var(--pnl); overflow:hidden; margin-top:12px}
+
+  /* law */
+  .axes{display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--edge); border:1px solid var(--edge); border-radius:10px; overflow:hidden; margin-top:16px}
+  @media (max-width:640px){ .axes{grid-template-columns:1fr} }
+  .ax{background:var(--pnl); padding:12px 13px}
+  .ax .t{font-family:var(--mono); font-size:11px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; margin-bottom:4px}
+  .ax.state .t{color:var(--pg-ink)} .ax.touch .t{color:var(--pg-acc)} .ax.commit .t{color:var(--commit)}
+  .ax p{margin:0; font-size:12px; color:var(--pg-ink2)} .ax p b{color:var(--pg-ink)}
+  .ax .demo{display:flex; gap:5px; margin-top:8px; flex-wrap:wrap; align-items:center}
+
+  .twoblue{display:flex; gap:16px; align-items:center; flex-wrap:wrap; margin-top:12px; padding:11px 13px; border:1px dashed var(--edge); border-radius:9px; background:var(--pnl2); font-size:12px; color:var(--pg-ink2)}
+  .twoblue b{color:var(--pg-ink)} .twoblue .col{display:flex; align-items:center; gap:8px}
+
+  /* type specimens */
+  .spec{display:grid; grid-template-columns:150px 1fr; border-bottom:1px solid var(--edge)}
+  .spec:last-child{border-bottom:0}
+  .spec .role{padding:10px 12px; border-right:1px solid var(--edge); background:var(--pnl2)}
+  .spec .role .rn{font-family:var(--mono); font-size:10px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--pg-ink)}
+  .spec .role .rr{font-size:10.5px; color:var(--pg-ink2); margin-top:2px}
+  .spec .ex{padding:10px 12px; display:flex; align-items:center; min-width:0; flex-wrap:wrap; gap:6px}
+  .t-title{font-family:var(--sans); font-weight:700; font-size:17px; color:var(--pg-ink); letter-spacing:-.01em}
+  .t-label{font-family:var(--mono); font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--pg-ink)}
+  .t-flabel{font-family:var(--mono); font-size:9.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--pg-ink2)}
+  .t-value{font-family:var(--sans); font-size:13px; color:var(--pg-ink)}
+  .t-num{font-family:var(--mono); font-size:13px; color:var(--pg-ink2); font-weight:600}
+  .t-hint{font-family:var(--sans); font-size:12px; color:var(--pg-ink2); font-style:italic}
+
+  .demorow{display:flex; gap:9px; flex-wrap:wrap; align-items:center; padding:12px 13px}
+  .demorow + .demorow{border-top:1px solid var(--edge)}
+  .rlabel{font-family:var(--mono); font-size:9px; letter-spacing:.08em; text-transform:uppercase; color:var(--pg-ink2); width:100px; flex:none}
+
+  /* contact — show the value, make it the link */
+  .contact{font-family:var(--sans); font-size:13px; color:var(--pg-ink); text-decoration:none; display:inline-flex; align-items:center; gap:6px; cursor:pointer}
+  .contact svg{color:var(--pg-acc)} .contact .v{border-bottom:1.5px solid transparent} .contact:hover .v{border-bottom-color:var(--pg-acc)}
+  .mini{font-family:var(--mono); font-size:8.5px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; color:var(--pg-ink2); border:1px solid var(--edge); border-radius:4px; padding:2px 6px; cursor:pointer}
+  .mini:hover{border-color:var(--pg-acc); color:var(--pg-ink)}
+  .hlink{font-family:var(--sans); font-size:13px; color:var(--pg-ink); text-decoration:none; border-bottom:1.5px solid var(--pg-acc); padding-bottom:1px; cursor:pointer}
+  .hlink:hover{color:var(--pg-acc)} .hlink .ext{font-family:var(--mono); font-size:10px; color:var(--pg-acc)}
+  .dead{font-family:var(--sans); font-size:13px; color:var(--pg-ink2)}
+
+  /* reference token — icon in the square backing */
+  .ref{font-family:var(--sans); font-size:12px; font-weight:600; color:var(--pg-ink); background:var(--pg); border:1px solid var(--edge); border-radius:6px; padding:2px 8px 2px 3px; display:inline-flex; align-items:center; gap:6px; cursor:pointer; white-space:nowrap; text-decoration:none}
+  .ref .ty{display:inline-flex; align-items:center; justify-content:center; width:19px; height:19px; color:var(--pg-acc); background:rgba(255,126,31,.15); border-radius:4px}
+  .ref .ty svg{width:12px; height:12px}
+  .ref:hover{border-color:var(--pg-acc)} .ref:hover .nm{text-decoration:underline; text-decoration-color:var(--pg-acc)}
+  .ref small{color:var(--na); font-family:var(--mono); font-size:9px; font-weight:500}
+  .trace{display:flex; align-items:center; gap:6px; flex-wrap:wrap}
+  .trace .arr{color:var(--pg-ink2); font-family:var(--mono); font-size:12px}
+
+  /* flags */
+  .buckets{display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--edge)}
+  @media (max-width:640px){ .buckets{grid-template-columns:1fr} }
+  .bk{background:var(--pnl); padding:12px 13px}
+  .bk .bh{font-family:var(--mono); font-size:10.5px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; margin-bottom:3px}
+  .bk.sig .bh{color:var(--pg-ink)} .bk.tag .bh{color:var(--pg-ink2)}
+  .bk .bd{font-size:11.5px; color:var(--pg-ink2); margin-bottom:9px} .bk .bd b{color:var(--pg-ink)}
+  .bk .demo{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+
+  .chip{font-family:var(--mono); font-size:8.5px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; padding:3px 6px; border-radius:2px; white-space:nowrap; display:inline-block}
+  .f.red{background:var(--badFill);color:#fff} .o.red{color:var(--bad);box-shadow:inset 0 0 0 1.3px var(--bad)}
+  .f.blue{background:var(--wait);color:#0b1420} .o.blue{color:var(--wait);box-shadow:inset 0 0 0 1.3px var(--wait)}
+  .f.yellow{background:var(--now);color:#171206} .o.yellow{color:var(--now);box-shadow:inset 0 0 0 1.3px var(--now)}
+  .o.grey{color:var(--na);box-shadow:inset 0 0 0 1.3px var(--na)}
+  /* STAMP: fact = chip text, no box, no colour */
+  .stamp{font-family:var(--mono); font-size:8.5px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; color:var(--na); white-space:nowrap}
+  .stamp.more{color:var(--pg-acc)}
+  .dotsep{color:var(--edge); font-family:var(--mono); font-size:9px}
+
+  /* gates + names */
+  .gate{font-family:var(--mono); font-size:8.5px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; padding:3px 6px 3px 5px; border-radius:2px; white-space:nowrap; display:inline-flex; align-items:center; gap:2px; cursor:pointer}
+  .gate .car{display:inline-flex; align-items:center; justify-content:center; width:11px; height:11px} .gate .car svg{width:11px; height:11px; display:block}
+  .gate.y{background:var(--now); color:#171206} .gate.b{background:var(--wait); color:#0b1420} .gate.r{background:var(--badFill); color:#fff}
+  .menu{border:1px solid var(--edge); border-radius:7px; overflow:hidden; background:var(--pnl); width:170px; box-shadow:0 10px 26px rgba(0,0,0,.4)}
+  .menu .mi{display:flex; align-items:center; gap:8px; padding:7px 10px; font-size:11.5px; color:var(--pg-ink); border-bottom:1px solid var(--edge); cursor:pointer}
+  .menu .mi:last-child{border-bottom:0} .menu .mi:hover{background:var(--pnl2)}
+  .menu .mi .sw{width:8px; height:8px; border-radius:2px; flex:none}
+  .menu .mi.on{font-weight:800} .menu .mi.on:after{content:"✓"; margin-left:auto; color:var(--pg-acc); font-family:var(--mono); font-size:11px}
+  .selfield{font-family:var(--sans); font-size:12px; color:var(--pg-ink); border:1px solid var(--edge); border-radius:6px; padding:5px 8px; display:inline-flex; align-items:center; gap:8px; cursor:pointer}
+  .selfield .car{color:var(--pg-acc); font-family:var(--mono)}
+  .door{font-family:var(--mono); font-size:9.5px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; color:var(--pg-ink); background:transparent; border:1px solid var(--edge); border-radius:6px; padding:5px 9px; cursor:pointer}
+  .door.commit{background:var(--commit); color:#fff; border-color:var(--commit)}
+
+  .names{border:1px solid var(--edge); border-radius:10px; overflow:hidden; margin-top:12px}
+  .nr{display:grid; grid-template-columns:88px 150px 1fr; align-items:center; border-bottom:1px solid var(--edge)}
+  .nr:last-child{border-bottom:0}
+  .nr.head{background:var(--pnl2); font-family:var(--mono); font-size:9px; letter-spacing:.08em; text-transform:uppercase; color:var(--pg-ink2)}
+  .nr .c{padding:10px 12px; min-width:0}
+  .nr .nmn{font-family:var(--mono); font-size:11px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--pg-acc)}
+  .nr .cc{border-right:1px solid var(--edge)} .nr .dd{font-size:12px; color:var(--pg-ink2)} .nr .dd b{color:var(--pg-ink)}
+
+  /* before/after */
+  .ba{display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px}
+  @media (max-width:700px){ .ba{grid-template-columns:1fr} }
+  .bax{border:1px solid var(--edge); border-radius:10px; overflow:hidden}
+  .bah{font-family:var(--mono); font-size:10px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; padding:8px 11px; border-bottom:1px solid var(--edge)}
+  .bax.now .bah{color:var(--bad); background:rgba(255,66,66,.08)}
+  .bax.new .bah{color:var(--done); background:rgba(52,211,153,.08)}
+  .bab{padding:12px 12px; background:var(--pnl)}
+  .messrow{display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px}
+  .messrow:last-child{margin-bottom:0}
+  .bluelink{color:#5b9bd5; text-decoration:underline; font-size:12.5px; cursor:pointer}
+  .fakeqr{font-family:var(--mono); font-size:8.5px; font-weight:800; text-transform:uppercase; color:#5b9bd5; text-decoration:underline dotted; padding:2px 5px; border:1px solid var(--edge); border-radius:3px}
+  .badge-g{font-family:var(--mono); font-size:8.5px; font-weight:800; text-transform:uppercase; background:#3a7d44; color:#fff; padding:3px 6px; border-radius:3px}
+  .badge-r{font-family:var(--mono); font-size:8.5px; font-weight:800; text-transform:uppercase; background:#b0413c; color:#fff; padding:3px 6px; border-radius:3px}
+  .badge-b{font-family:var(--mono); font-size:8.5px; font-weight:800; text-transform:uppercase; background:#3f6fa0; color:#fff; padding:3px 6px; border-radius:3px}
+  .plainph{font-size:12.5px; color:var(--pg-ink2)}
+  .xnote{font-size:10.5px; color:var(--bad); font-family:var(--mono); margin-top:4px}
+  .gnote{font-size:10.5px; color:var(--done); font-family:var(--mono); margin-top:4px}
+  .name{font-family:var(--sans); font-weight:700; font-size:15px; color:var(--pg-ink)}
+
+  .foot{margin-top:26px; padding-top:16px; border-top:1px solid var(--pg-line); font-size:13.5px; color:var(--pg-ink2); max-width:84ch}
+  .foot b{color:var(--pg-ink)}
+  .map{display:flex; gap:6px 14px; flex-wrap:wrap; margin-top:8px; font-family:var(--mono); font-size:11px; color:var(--pg-ink2)}
+  .map b{color:var(--pg-acc)} .map .cm{color:var(--commit)}
+  .q{border-left:3px solid var(--pg-acc); background:var(--pnl2); padding:10px 13px; border-radius:0 8px 8px 0; margin-top:10px; font-size:12.5px; color:var(--pg-ink2)} .q b{color:var(--pg-ink)}
+</style>
+
+<div class="wrap"><div class="sheet">
+
+  <p class="eyebrow">Connective layer · refreshed to the locked, CVD-checked palette</p>
+  <h1>Words, links &amp; flags — <span class="hl">v3</span></h1>
+  <p class="lede">Now on the same locked standard as the detail views: the <b>CVD-picked yellow</b> (well clear of orange), the <b>muted blue</b> and <b>deepened filled-red</b> that clear AA, the deep <b>commit-blue</b>, mono-stamped labels — and the gate lost its orange dot for a <b>leading chevron</b>. The parts are unchanged: contact shows the real number, refs carry the parent icon, facts are plain Stamps, and Signal · Gate · Stamp · Ref · Door name the pieces.</p>
+
+  <h2><span class="n">0.</span> The colour law — now with your blue</h2>
+  <p class="sub">You didn't love white for save. The honest snag: <b>blue is already a status colour (Waiting)</b>. The clean way to still use blue is to make <b>commit</b> a <i>deep, saturated</i> blue and keep <b>Waiting</b> a <i>pale, desaturated</i> one — and commit is always a big solid button while Waiting is always a tiny chip, so they never read the same. That's the split, locked.</p>
+  <div class="axes">
+    <div class="ax state"><div class="t">Status colours → STATE</div><p>Red / yellow / blue / green / grey say <b>what's going on</b>. Never used to decorate.</p><div class="demo"><span class="chip f red">owed 16d</span><span class="chip f yellow">due back</span><span class="chip f blue">ACH</span></div></div>
+    <div class="ax touch"><div class="t">Orange → TOUCHABLE</div><p>The one accent = <b>"you can act on this"</b> — toggles, links, reference tokens, gate carets.</p><div class="demo"><a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><span class="nm">Duhon</span></a></div></div>
+    <div class="ax commit"><div class="t">Deep blue → COMMIT</div><p>The one button that <b>writes / saves / confirms</b>. Deep, saturated, solid — rare on the page, so it always means "commit."</p><div class="demo"><span class="door commit">Save</span></div></div>
+  </div>
+  <div class="twoblue">
+    <span class="col"><span class="chip f blue">ACH</span> <b>Waiting</b> — pale, tiny chip</span>
+    <span class="col"><span class="door commit">Save</span> <b>Commit</b> — deep, solid button</span>
+    <span>Different saturation, different shape, never adjacent → <b>no collision.</b> If you'd rather, orange can carry commit instead and blue stays purely status.</span>
+  </div>
+
+  <h2><span class="n">1.</span> Text — six roles, nothing more</h2>
+  <p class="sub">Labels <b>stamped</b> (Saira/data-plate), content <b>sans</b>, anything technical (#, $, time, S/N) <b>mono</b> so it aligns as machine-truth. Three families, six roles, never a seventh.</p>
+  <div class="card">
+    <div class="spec"><div class="role"><div class="rn">Record title</div><div class="rr">sans · 700</div></div><div class="ex"><span class="t-title">Boudreaux Marine LLC</span></div></div>
+    <div class="spec"><div class="role"><div class="rn">Stamped label</div><div class="rr">section &amp; field · mono</div></div><div class="ex"><span class="t-label">Work Orders</span><span class="t-flabel">Purchase date</span></div></div>
+    <div class="spec"><div class="role"><div class="rn">Value / body</div><div class="rr">sans</div></div><div class="ex"><span class="t-value">Marine construction · Cameron, LA</span></div></div>
+    <div class="spec"><div class="role"><div class="rn">Number / ID / time</div><div class="rr">mono · muted · tabular</div></div><div class="ex"><span class="t-num">#4471 · $560 · 2h ago · S/N 4471-K</span></div></div>
+    <div class="spec"><div class="role"><div class="rn">Chip / flag</div><div class="rr">mono · tiny · caps</div></div><div class="ex"><span class="chip f yellow">due back</span></div></div>
+    <div class="spec"><div class="role"><div class="rn">Hint / empty</div><div class="rr">sans · italic · muted</div></div><div class="ex"><span class="t-hint">No cards on file yet</span></div></div>
+  </div>
+
+  <h2><span class="n">2.</span> Links — show the value, make the value the link</h2>
+  <p class="sub"><b>The number is visible so you can read it off a desktop and dial from your handheld</b> — the value <i>is</i> the link, not a "Call" verb. Same for email. And the honest rule holds: if it looks tappable it is; if not, it's plain text.</p>
+  <div class="card">
+    <div class="demorow"><span class="rlabel">Phone</span>
+      <a class="contact"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.83 4.4a10.5 10.5 0 0 0 5.77 5.77l1.28-1.28a1 1 0 0 1 1.05-.24 11.4 11.4 0 0 0 3.55.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.51a1 1 0 0 1 1 1 11.4 11.4 0 0 0 .57 3.55 1 1 0 0 1-.24 1.05z" transform="translate(-1 -1)"/></svg><span class="v">(337) 555-0142</span></a>
+      <span class="mini">✦ text</span>
+      <span class="dead" style="font-size:11px">— <code>tel:</code> / <code>sms:</code>, always readable</span></div>
+    <div class="demorow"><span class="rlabel">Email</span>
+      <a class="contact"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 7 10 6 10-6"/></svg><span class="v">marc@boudreaux-marine.com</span></a>
+      <span class="dead" style="font-size:11px">— shown too (your call; I left it visible)</span></div>
+    <div class="demorow"><span class="rlabel">True hyperlink</span>
+      <a class="hlink">manufacturer service schedule <span class="ext">↗</span></a>
+      <span class="dead" style="font-size:11px">— rare, external. Ink + accent underline + ↗.</span></div>
+    <div class="demorow"><span class="rlabel">Dead text</span>
+      <span class="dead">S/N 4471-K</span><span class="dead" style="font-size:11px">— not interactive → no underline, no cursor. Honest.</span></div>
+  </div>
+
+  <h2><span class="n">3.</span> Linked items — parent icon in the square backing</h2>
+  <p class="sub">Kept the chip shape and the square backing you liked — swapped the two-letter code for the <b>parent record's icon</b> (Lucide, matched to each type). Still quiet, name-forward, one accent mark — unlike a status chip. Tap to open (or expand inline).</p>
+  <div class="card">
+    <div class="demorow"><span class="rlabel">The six types</span>
+      <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><span class="nm">Duhon Contracting</span></a>
+      <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.6a1 1 0 0 0-.2-.6l-3.5-4.4A1 1 0 0 0 17.5 8H14"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg></span><span class="nm">Skid Steer</span> <small>SS-12</small></a>
+      <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg></span><span class="nm">Rental</span> <small>#4471</small></a>
+      <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg></span><span class="nm">Invoice</span> <small>#4460</small></a>
+      <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.6 2.6A2 2 0 0 0 11.2 2H4a2 2 0 0 0-2 2v7.2a2 2 0 0 0 .6 1.4l8.7 8.7a2.4 2.4 0 0 0 3.4 0l6.6-6.6a2.4 2.4 0 0 0 0-3.4z"/><circle cx="7.5" cy="7.5" r="1.3"/></svg></span><span class="nm">Excavator</span></a>
+      <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg></span><span class="nm">Cameron, LA</span></a></div>
+    <div class="demorow"><span class="rlabel">A trace</span>
+      <div class="trace">
+        <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><span class="nm">Duhon</span></a><span class="arr">→</span>
+        <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg></span><span class="nm">Rental</span> <small>#4471</small></a><span class="arr">→</span>
+        <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.6a1 1 0 0 0-.2-.6l-3.5-4.4A1 1 0 0 0 17.5 8H14"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg></span><span class="nm">Skid Steer</span></a><span class="arr">→</span>
+        <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1z"/><path d="M8 7h8M8 11h8"/></svg></span><span class="nm">#4460</span></a> <span class="chip f red" style="margin-left:2px">owed 16d</span>
+      </div></div>
+  </div>
+
+  <h2><span class="n">4.</span> Flags — pill dropped, fact = plain stamp</h2>
+  <p class="sub">You called it: no circle around facts. A fact now uses the <b>same text as a status chip but drops the box and the colour</b> — so it can sit right beside a status chip and read as its quiet sibling. The eye sorts them instantly: <b>in a coloured box = attention; plain = fact.</b></p>
+  <div class="card"><div class="buckets">
+    <div class="bk sig">
+      <div class="bh">Status flag → coloured chip</div>
+      <div class="bd">Carries a move / urgency. One source per fact (kills the UD-002/046 contradictions).</div>
+      <div class="demo"><span class="chip f red">field call</span><span class="chip o yellow">protection off</span><span class="chip f yellow">no rates</span><span class="chip o grey">mixed</span></div>
+    </div>
+    <div class="bk tag">
+      <div class="bh">Fact → plain stamp (no box)</div>
+      <div class="bd">Just a fact. Same type as a chip, no box, no colour. Budgeted — overflow rolls to <span class="stamp more">+2</span>.</div>
+      <div class="demo"><span class="stamp">Non-member</span><span class="dotsep">·</span><span class="stamp">Excavator</span><span class="dotsep">·</span><span class="stamp">PO 4821</span><span class="dotsep">·</span><span class="stamp">Marine</span><span class="stamp more">+2</span></div>
+    </div>
+  </div>
+  <div class="demorow card" style="margin-top:12px"><span class="rlabel">Side by side</span>
+    <span class="chip f red">owed 16d</span><span class="stamp">Non-member</span><span class="dotsep">·</span><span class="stamp">Marine</span><span class="dotsep">·</span><span class="stamp">Net 15</span>
+    <span class="dead" style="font-size:11px; margin-left:6px">— one glance: the red box is the state, the rest are facts.</span></div>
+
+  <h2><span class="n">5.</span> Chips, gates &amp; dropdowns — how they relate, and their names</h2>
+  <p class="sub">Your question: do status gates <b>compete</b> with status chips? No — they <b>merge</b>. A plain chip is <b>read-only</b> SIGNAL. A <b>gate</b> is that same chip <b>made turnable</b>: same colour = state, plus a leading chevron, and tapping opens the picker to advance it. That's the one spot SIGNAL and DOOR become a single control. A plain dropdown that <i>isn't</i> status stays neutral (orange caret = touchable, no colour).</p>
+  <div class="card">
+    <div class="demorow"><span class="rlabel">Read-only</span><span class="chip f yellow">end rent</span><span class="dead" style="font-size:11px">— a <b>SIGNAL</b>. Reports state. Not tappable.</span></div>
+    <div class="demorow" style="align-items:flex-start"><span class="rlabel">Turnable</span>
+      <span class="gate y"><span class="car"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>end rent</span>
+      <div class="menu" style="margin-left:4px">
+        <div class="mi"><span class="sw" style="background:var(--na)"></span>Reserved</div>
+        <div class="mi"><span class="sw" style="background:var(--wait)"></span>On Rent</div>
+        <div class="mi on"><span class="sw" style="background:var(--now)"></span>End Rent</div>
+        <div class="mi"><span class="sw" style="background:var(--done)"></span>Returned</div>
+      </div>
+      <span class="dead" style="font-size:11px; max-width:150px">— a <b>GATE</b>. Same chip, now opens the picker. The leading chevron = you can turn it.</span></div>
+    <div class="demorow"><span class="rlabel">Plain dropdown</span><span class="selfield">Rider: All-risk <span class="car">▾</span></span><span class="dead" style="font-size:11px">— not a status → neutral control, orange caret, no colour.</span></div>
+  </div>
+
+  <p class="sub" style="margin-top:16px"><b>The names</b> — so we can point at things fast:</p>
+  <div class="names">
+    <div class="nr head"><div class="c cc">Name</div><div class="c cc">Looks like</div><div class="c">Means</div></div>
+    <div class="nr"><div class="c cc"><span class="nmn">Signal</span></div><div class="c cc"><span class="chip f red">owed 16d</span></div><div class="c dd">Coloured chip, <b>read-only</b>. State + fill = live today.</div></div>
+    <div class="nr"><div class="c cc"><span class="nmn">Gate</span></div><div class="c cc"><span class="gate b"><span class="car"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>on rent</span></div><div class="c dd">A Signal you can <b>turn</b> — opens a picker to advance status.</div></div>
+    <div class="nr"><div class="c cc"><span class="nmn">Stamp</span></div><div class="c cc"><span class="stamp">Non-member</span></div><div class="c dd">A plain <b>fact</b> — chip text, no box, no colour.</div></div>
+    <div class="nr"><div class="c cc"><span class="nmn">Ref</span></div><div class="c cc"><a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><span class="nm">Duhon</span></a></div><div class="c dd">A <b>linked item</b> — parent icon + name, walks to that record.</div></div>
+    <div class="nr"><div class="c cc"><span class="nmn">Door</span></div><div class="c cc"><span class="door">+ Invoice</span></div><div class="c dd">A <b>verb action</b>. Ghost normally; <b>deep-blue</b> when it commits.</div></div>
+  </div>
+
+  <h2><span class="n">6.</span> All of it, on one header — mess vs. layer</h2>
+  <div class="ba">
+    <div class="bax now">
+      <div class="bah">Roughly what's there now (per the findings)</div>
+      <div class="bab">
+        <div class="messrow"><span class="name">Boudreaux Marine</span> <a class="bluelink">Boudreaux Marine LLC</a> <span class="fakeqr">QR</span></div>
+        <div class="messrow"><span class="badge-g">Member</span><span class="badge-r">Past Due</span><span class="badge-b">Marine</span><span class="badge-g">Insured</span><span class="badge-r">No Card</span></div>
+        <div class="messrow"><span class="plainph">(337) 555-0142</span></div>
+        <div class="xnote">✕ blue link that isn't status · ✕ fake-clickable QR · ✕ colours competing · ✕ phone is dead text</div>
+      </div>
+    </div>
+    <div class="bax new">
+      <div class="bah">The connective layer</div>
+      <div class="bab">
+        <div class="messrow"><span class="name">Boudreaux Marine LLC</span> <span class="chip f red">owed 16d</span></div>
+        <div class="messrow"><span class="stamp">Non-member</span><span class="dotsep">·</span><span class="stamp">Marine</span><span class="dotsep">·</span><span class="stamp">Net 15</span><span class="stamp more">+1</span></div>
+        <div class="messrow"><a class="contact"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.83 4.4a10.5 10.5 0 0 0 5.77 5.77l1.28-1.28a1 1 0 0 1 1.05-.24 11.4 11.4 0 0 0 3.55.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.51a1 1 0 0 1 1 1 11.4 11.4 0 0 0 .57 3.55 1 1 0 0 1-.24 1.05z" transform="translate(-1 -1)"/></svg><span class="v">(337) 555-0142</span></a><span class="mini">✦ text</span><a class="contact"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 7 10 6 10-6"/></svg><span class="v">marc@…</span></a></div>
+        <div class="gnote">✓ one Signal = the state · ✓ facts are plain Stamps · ✓ number visible &amp; live · ✓ nothing fake</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    Vocabulary locked-in-waiting: <b>Signal</b> (read-only state) · <b>Gate</b> (state you can turn) · <b>Stamp</b> (plain fact) · <b>Ref</b> (linked item) · <b>Door</b> (action). And the law:
+    <div class="map"><b>status colour</b> = what · <b>orange</b> = touchable · <span class="cm">deep blue</span> = commit · plain text = fact / honest.</div>
+    <div class="q">Open decisions for you: <b>(1)</b> commit = deep blue (shown) — good, or should orange carry commit and blue stay purely status? <b>(2)</b> show the email value in full or truncate to <code>marc@…</code>? <b>(3)</b> the names — keep Signal / Gate / Stamp / Ref / Door, or rename any? Then we harden the sections idea with this layer folded in (and your role-default-landing + drag-to-resort parked for it).</div>
+  </div>
+
+</div></div>

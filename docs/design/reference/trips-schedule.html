@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trips · Dispatch schedule</title>
+<style>
+:root{
+  --bg:#0a0d11; --bg2:#0f1318; --panel:#171d25; --card:#12171e; --cardh:#1a212b;
+  --line:#2c343f; --lineSoft:#212834; --txt:#eef2f7; --txt2:#aab4c1; --txt3:#838e9c;
+  --accent:#ff7e1f; --onAcc:#1a1205; --accSoft:rgba(255,126,31,.15);
+  --green:#34d399; --yellow:#eed44b; --red:#ff4242; --redFill:#d63636; --onRedFill:#fdfdfd;
+  --blue:#6394cc; --commit:#2f6fd0; --onCommit:#fdfdfd; --gray:#8b94a3; --tan:#c2925a;
+  --font:-apple-system,"Segoe UI",Roboto,system-ui,sans-serif;
+  --stamp:ui-monospace,"Cascadia Code","SF Mono",Menlo,Consolas,monospace;
+  --h:24px;
+  /* alpha-derived soft fills of the SAME frozen tokens (same convention as --accSoft above) */
+  --greenSoft:rgba(52,211,153,.15); --yellowSoft:rgba(238,212,75,.16); --redSoft:rgba(255,66,66,.14);
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--bg); color:var(--txt); font-family:var(--font); font-size:13px; line-height:1.4;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+}
+svg.ic{width:14px;height:14px;flex:0 0 auto;display:block;}
+.board{max-width:1100px;margin:0 auto;padding:26px 20px 90px;}
+
+/* ============ PAGE HEAD ============ */
+.page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:16px;}
+.page-title{font:800 22px/1 var(--stamp);letter-spacing:.05em;text-transform:uppercase;color:var(--txt);}
+.page-sub{font:500 11.5px/1.4 var(--font);color:var(--txt3);margin-top:5px;}
+.page-sub b{color:var(--txt2);font-weight:600;}
+.yard-tag{display:inline-flex;align-items:center;gap:6px;height:var(--h);padding:0 11px;border:1px dashed var(--line);border-radius:999px;font:800 9.5px/1 var(--stamp);letter-spacing:.06em;text-transform:uppercase;color:var(--txt3);}
+.yard-tag svg{width:13px;height:13px;}
+
+/* ============ TOP ROW: rental inset + next-up ============ */
+.top-row{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px;}
+.panel-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px;}
+.panel-label{display:flex;align-items:center;gap:6px;font:800 9.5px/1 var(--stamp);letter-spacing:.08em;text-transform:uppercase;color:var(--txt3);margin-bottom:10px;}
+.panel-label svg{width:13px;height:13px;color:var(--txt3);}
+
+/* --- rental inset --- */
+.rental-inset{flex:1 1 340px;min-width:300px;}
+.ri-top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+.ri-unit{display:flex;align-items:center;gap:8px;}
+.ri-unit .ref-ic{width:26px;height:26px;border-radius:7px;background:var(--accSoft);display:flex;align-items:center;justify-content:center;color:var(--accent);flex:0 0 auto;}
+.ri-unit .ref-ic svg{width:14px;height:14px;}
+.ri-unit b{font:700 13px/1.2 var(--font);color:var(--txt);}
+.ri-unit span{display:block;font:500 10.5px/1.3 var(--font);color:var(--txt3);}
+.toggle4{display:inline-flex;height:var(--h);border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--panel);flex:0 0 auto;}
+.toggle4 .seg{display:flex;align-items:center;padding:0 10px;font:700 9px/1 var(--stamp);letter-spacing:.04em;text-transform:uppercase;color:var(--txt3);white-space:nowrap;}
+.toggle4 .seg.active{background:var(--accent);color:var(--onAcc);font-weight:800;}
+.ri-reveal{margin-top:11px;padding-top:11px;border-top:1px dashed var(--tan);opacity:.97;}
+.ri-addr{display:flex;align-items:center;gap:8px;height:var(--h);padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);}
+.ri-addr svg{width:14px;height:14px;color:var(--accent);flex:0 0 auto;}
+.ri-addr span{font:500 11px/1 var(--font);color:var(--txt3);}
+.ri-addr span b{color:var(--txt2);font-weight:600;}
+.ri-foot{display:flex;align-items:center;justify-content:space-between;margin-top:9px;}
+.ri-foot .hint{font:500 10px/1.3 var(--font);color:var(--txt3);}
+.stamp-fact{font:800 9.5px/1 var(--stamp);letter-spacing:.06em;text-transform:uppercase;color:var(--txt3);}
+.wait-chip{display:inline-flex;align-items:center;height:var(--h);padding:0 9px;border:1px dashed var(--line);border-radius:7px;font:800 9.5px/1 var(--stamp);letter-spacing:.05em;text-transform:uppercase;color:var(--gray);}
+
+/* --- next up / NOW panel --- */
+.nextup{flex:0 0 300px;border-color:var(--accent);box-shadow:0 0 0 1px var(--accSoft) inset;}
+.nu-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px;}
+.now-badge{display:inline-flex;align-items:center;height:var(--h);padding:0 10px;border-radius:7px;background:var(--accent);color:var(--onAcc);font:800 10px/1 var(--stamp);letter-spacing:.08em;}
+.nu-driver{display:flex;align-items:center;gap:6px;font:600 11px/1 var(--font);color:var(--txt2);}
+.nu-driver svg{width:13px;height:13px;color:var(--txt3);}
+.nu-stop{display:flex;align-items:baseline;gap:8px;margin:4px 0 2px;}
+.nu-stop b{font:700 15px/1.2 var(--font);color:var(--txt);}
+.nu-stop .nu-type{font:800 9px/1 var(--stamp);letter-spacing:.05em;text-transform:uppercase;color:var(--txt3);}
+.nu-addr{font:500 11px/1.4 var(--font);color:var(--txt3);margin-bottom:9px;}
+.nu-eta-row{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:11px;}
+.nu-eta{font:800 26px/1 var(--stamp);font-variant-numeric:tabular-nums;color:var(--green);}
+.nu-eta-lbl{font:800 9px/1 var(--stamp);letter-spacing:.06em;text-transform:uppercase;color:var(--txt3);}
+.nu-next{font:500 10.5px/1.3 var(--font);color:var(--txt3);margin-bottom:10px;}
+.nu-next b{color:var(--txt2);font-weight:600;}
+.nu-actions{display:flex;gap:8px;}
+.door{height:var(--h);border-radius:999px;padding:0 13px;font:700 10px/1 var(--stamp);letter-spacing:.05em;text-transform:uppercase;display:inline-flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap;}
+.door svg{width:13px;height:13px;}
+.door.ghost{background:transparent;border:1px solid var(--line);color:var(--txt2);}
+.door.commit{background:var(--commit);border:1px solid var(--commit);color:var(--onCommit);}
+.door.commit-outline{background:transparent;border:1.5px dashed var(--commit);color:var(--commit);}
+
+/* ============ LEGEND ============ */
+.legend{display:flex;align-items:center;gap:18px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--lineSoft);border-radius:10px;padding:9px 14px;margin-bottom:6px;font:500 11px/1.4 var(--font);color:var(--txt2);}
+.legend .lg-item{display:flex;align-items:center;gap:7px;}
+.legend svg{width:14px;height:14px;color:var(--accent);flex:0 0 auto;}
+.legend .lg-div{width:1px;align-self:stretch;background:var(--line);}
+.legend .lg-key{display:flex;align-items:center;gap:5px;}
+.legend .dot{width:8px;height:8px;border-radius:2px;}
+.legend .dot.ok{background:var(--green);} .legend .dot.risk{background:var(--yellow);} .legend .dot.late{background:var(--redFill);}
+
+/* ============ COLUMN HEADER ============ */
+.col-head{position:sticky;top:0;z-index:8;display:grid;grid-template-columns:30px 1fr 62px 62px 68px 122px;column-gap:10px;align-items:center;padding:8px 10px;margin:16px 0 4px;background:var(--bg2);border:1px solid var(--line);border-radius:8px;font:800 9px/1 var(--stamp);letter-spacing:.09em;text-transform:uppercase;color:var(--txt3);}
+.col-head .ch-r{text-align:right;}
+
+/* ============ GROUPS ============ */
+.group-head{display:flex;align-items:center;gap:8px;margin:24px 2px 8px;padding-bottom:6px;border-bottom:1px solid var(--line);}
+.group-head svg{width:15px;height:15px;color:var(--txt3);}
+.group-head h2{font:800 12.5px/1 var(--stamp);letter-spacing:.09em;text-transform:uppercase;color:var(--txt);margin:0;}
+.group-head .g-count{font:700 9.5px/1 var(--stamp);color:var(--txt3);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:3px 9px;}
+.group-head.g-field svg{color:var(--tan);}
+
+/* ============ STOP ROW (shared grid — keeps all 3 time columns aligned) ============ */
+.stop-row{display:grid;grid-template-columns:30px 1fr 62px 62px 68px 122px;column-gap:10px;align-items:center;min-height:42px;padding:7px 10px;border-bottom:1px dotted var(--lineSoft);}
+.stop-row:last-child{border-bottom:none;}
+.meta{display:flex;align-items:center;gap:8px;min-width:0;}
+.meta .m-ic{width:15px;height:15px;flex:0 0 auto;color:var(--txt3);}
+.meta .m-text{min-width:0;}
+.m-title{font:700 12.5px/1.25 var(--font);color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.m-title .loc{font-weight:400;color:var(--txt2);}
+.m-sub{font:800 9px/1.2 var(--stamp);letter-spacing:.05em;text-transform:uppercase;color:var(--txt3);margin-top:1px;}
+
+.tcell{text-align:right;font:600 11.5px/1.15 var(--stamp);font-variant-numeric:tabular-nums;color:var(--txt2);white-space:nowrap;}
+.tcell .t-delta{display:block;font:700 8.5px/1 var(--stamp);color:var(--txt3);margin-top:2px;}
+.tcell.deadline{color:var(--txt2);}
+.tcell.eta.risk{color:var(--yellow);}
+.tcell.eta.risk .t-delta{color:var(--yellow);}
+.tcell.eta.late{color:var(--red);font-weight:800;}
+.tcell.eta.late .t-delta{color:var(--red);}
+.tcell.dim{color:var(--txt3);}
+
+.state-cell{display:flex;justify-content:flex-end;}
+.sig{display:inline-flex;align-items:center;gap:5px;height:var(--h);padding:0 9px;border-radius:7px;font:800 9px/1 var(--stamp);letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;}
+.sig svg{width:11px;height:11px;}
+.sig.ok{color:var(--green);background:var(--greenSoft);border:1px solid rgba(52,211,153,.35);}
+.sig.risk{color:var(--yellow);background:var(--yellowSoft);border:1px solid rgba(238,212,75,.4);}
+.sig.late{background:var(--redFill);color:var(--onRedFill);border:1px solid rgba(255,66,66,.5);}
+.sig.conflict{background:var(--redFill);color:var(--onRedFill);border:1px solid rgba(255,66,66,.5);}
+.sig.wait{color:var(--gray);background:transparent;border:1px dashed var(--line);}
+
+/* --- connector / box-connect handle --- */
+.connector{width:17px;height:17px;border-radius:4px;border:1.5px solid var(--line);background:var(--card);position:relative;justify-self:center;z-index:1;}
+.connector.loose{border-style:dashed;border-color:var(--txt3);}
+.connector.linked{border-color:var(--tc);background:var(--tc-soft);}
+.connector.linked::before,.connector.linked::after{content:'';position:absolute;left:50%;width:2px;background:var(--tc);transform:translateX(-50%);}
+.connector.linked::before{bottom:100%;height:12px;}
+.connector.linked::after{top:100%;height:12px;}
+.connector.first::before{display:none;}
+.connector.last::after{display:none;}
+
+/* ============ TRIP TICKET CARD (invoice/YARD-LOG devices, translated to dark tokens) ============ */
+.trip{background:var(--card);border:1px solid var(--line);border-radius:12px;margin:12px 0;overflow:hidden;}
+.trip[data-state="ok"]{--tc:var(--green);--tc-soft:var(--greenSoft);}
+.trip[data-state="risk"]{--tc:var(--yellow);--tc-soft:var(--yellowSoft);}
+.trip[data-state="late"]{--tc:var(--red);--tc-soft:var(--redSoft);}
+.trip-head{padding:13px 15px 10px;}
+.trip-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.trip-idline{display:flex;align-items:center;gap:9px;}
+.trip-datestamp{font:800 24px/1 var(--stamp);font-variant-numeric:tabular-nums;color:var(--tc);}
+.trip-id-text .trip-id{font:800 9px/1 var(--stamp);letter-spacing:.08em;color:var(--txt3);text-transform:uppercase;}
+.trip-title{font:800 14px/1.3 var(--stamp);letter-spacing:.03em;text-transform:uppercase;color:var(--txt);margin-top:2px;}
+.stamp-badge{transform:rotate(-8deg);border:2.5px solid var(--tc);border-radius:6px;padding:3px 11px;font:800 11px/1.2 var(--stamp);letter-spacing:.12em;text-transform:uppercase;color:var(--tc);background:var(--tc-soft);white-space:nowrap;flex:0 0 auto;}
+.hazard{height:7px;border-radius:2px;margin:11px 15px 0;background:repeating-linear-gradient(135deg,var(--tc) 0 11px,var(--card) 11px 22px);opacity:.9;}
+.trip-dash{border-bottom:2px dashed var(--tan);margin:9px 15px 0;opacity:.55;}
+.trip-rows{padding:2px 5px 0;}
+.trip-foot{display:flex;align-items:center;justify-content:space-between;padding:9px 15px 12px;}
+.trip-driver{display:flex;align-items:center;gap:6px;}
+.trip-subtotal{font:800 10.5px/1 var(--stamp);letter-spacing:.03em;text-transform:uppercase;color:var(--txt2);font-variant-numeric:tabular-nums;white-space:nowrap;}
+
+.store-row .m-title{color:var(--txt2);font-style:italic;font-weight:600;}
+.store-row .m-sub{color:var(--txt3);}
+.store-row{opacity:.92;}
+
+/* --- capacity-conflict sub row --- */
+.conflict-note{grid-column:1/-1;margin:2px 8px 9px 38px;background:var(--redSoft);border:1px solid rgba(255,66,66,.4);border-left:3px solid var(--red);border-radius:7px;padding:9px 11px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.conflict-note p{margin:0;font:500 11.5px/1.4 var(--font);color:var(--txt);max-width:520px;}
+.conflict-note b{color:var(--red);}
+.conflict-note .door{flex:0 0 auto;}
+
+/* --- driver Gate dropdown --- */
+.gate{position:relative;display:inline-block;}
+.gate > summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:5px;height:var(--h);padding:0 9px 0 8px;border-radius:7px;border:1px solid var(--line);background:var(--panel);font:700 9.5px/1 var(--stamp);letter-spacing:.04em;text-transform:uppercase;color:var(--txt2);}
+.gate > summary::-webkit-details-marker{display:none;}
+.gate > summary svg.chev{width:11px;height:11px;transition:transform .15s;color:var(--txt3);}
+.gate[open] > summary svg.chev{transform:rotate(180deg);}
+.gate-menu{position:absolute;top:calc(100% + 5px);right:0;min-width:238px;background:var(--cardh);border:1px solid var(--line);border-radius:9px;box-shadow:0 14px 30px -10px rgba(0,0,0,.65);padding:6px;z-index:9;}
+.gate-opt{display:flex;flex-direction:column;gap:2px;padding:7px 8px;border-radius:6px;cursor:pointer;}
+.gate-opt:hover{background:var(--panel);}
+.gate-opt .go-name{font:600 12px/1.2 var(--font);color:var(--txt);}
+.gate-warn{display:flex;align-items:flex-start;gap:5px;font:700 9.5px/1.35 var(--stamp);letter-spacing:.02em;text-transform:uppercase;color:var(--yellow);background:var(--yellowSoft);border:1px solid rgba(238,212,75,.4);border-radius:5px;padding:5px 7px;margin-top:4px;}
+.gate-warn svg{width:12px;height:12px;flex:0 0 auto;margin-top:1px;}
+
+/* --- loose / unconnected rows (outside any trip) --- */
+.loose-row{background:var(--panel);border:1px solid var(--lineSoft);border-radius:9px;margin:8px 0;}
+.loose-row.is-warn{border-left:3px solid var(--yellow);}
+.loose-row.is-flat{border-left:3px solid var(--line);opacity:.9;}
+.loose-tag{grid-column:1/-1;display:flex;align-items:center;gap:6px;padding:0 10px 6px 38px;font:700 9px/1 var(--stamp);letter-spacing:.05em;text-transform:uppercase;color:var(--txt3);}
+.loose-tag.warn{color:var(--yellow);}
+.loose-tag svg{width:11px;height:11px;}
+
+.more-row{display:flex;align-items:center;justify-content:center;gap:6px;padding:9px;color:var(--txt3);font:700 10px/1 var(--stamp);letter-spacing:.05em;text-transform:uppercase;border:1px dashed var(--line);border-radius:9px;margin:8px 0;}
+
+@media (max-width:720px){
+  .col-head,.stop-row{grid-template-columns:26px 1fr 52px 52px 58px 96px;}
+}
+</style>
+</head>
+<body>
+
+<!-- inline SVG sprite — hand-drawn, Lucide-style, no external icon font -->
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-truck" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4h13v12H1z"/><path d="M14 9h4l3 3v4h-7V9z"/><circle cx="5.5" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></symbol>
+  <symbol id="i-rot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v5h5"/></symbol>
+  <symbol id="i-wrench" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 1 1-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 0 1 5.4-5.4l-3 3-2-2 3-3Z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-7.4 7-12.5A7 7 0 0 0 5 9.5C5 14.6 12 22 12 22Z"/><circle cx="12" cy="9.5" r="2.3"/></symbol>
+  <symbol id="i-grip" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2Z"/></symbol>
+  <symbol id="i-split" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v6a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3V3"/><path d="M12 12v9"/></symbol>
+</svg>
+
+<div class="board">
+
+  <!-- ============ PAGE HEAD ============ -->
+  <div class="page-head">
+    <div>
+      <div class="page-title">Trips · Dispatch</div>
+      <div class="page-sub">Sulphur, LA yard &nbsp;·&nbsp; <b>Tue Jul 21</b> &nbsp;·&nbsp; one time-sorted schedule, store&nbsp;→&nbsp;stops&nbsp;→&nbsp;store</div>
+    </div>
+    <div class="yard-tag"><svg class="ic"><use href="#i-truck"/></svg> 3 trucks · 2 drivers on shift</div>
+  </div>
+
+  <!-- ============ TOP ROW: rental-side trigger + Next Up ============ -->
+  <div class="top-row">
+    <div class="panel-card rental-inset">
+      <div class="panel-label"><svg><use href="#i-box"/></svg> Rental creation trigger</div>
+      <div class="ri-top">
+        <div class="ri-unit">
+          <span class="ref-ic"><svg class="ic"><use href="#i-box"/></svg></span>
+          <div>
+            <b>Beau</b> — Skid Steer 260
+            <span>Rental #4417 · Doucet Concrete</span>
+          </div>
+        </div>
+        <div class="toggle4">
+          <span class="seg">Self</span>
+          <span class="seg">Round Trip</span>
+          <span class="seg active">Delivery</span>
+          <span class="seg">Pickup</span>
+        </div>
+      </div>
+      <div class="ri-reveal">
+        <div class="ri-addr">
+          <svg><use href="#i-pin"/></svg>
+          <span>1402 <b>Cypress Rd, Lake Charles</b> — type-ahead + map ▾</span>
+        </div>
+        <div class="ri-foot">
+          <span class="hint">Moving off "Self" reveals the address — no separate +Trip button</span>
+          <span class="wait-chip">Unscheduled</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-card nextup">
+      <div class="nu-head">
+        <span class="now-badge">NOW</span>
+        <div class="nu-driver"><svg><use href="#i-user"/></svg> J. Thibodeaux · Truck 4</div>
+      </div>
+      <div class="nu-stop"><b>Beau → Lake Charles</b> <span class="nu-type">Drop</span></div>
+      <div class="nu-addr">1402 Cypress Rd — gate code 4471</div>
+      <div class="nu-eta-row">
+        <div><span class="nu-eta-lbl">ETA</span><div class="nu-eta">8:42</div></div>
+        <span class="sig ok"><svg><use href="#i-check"/></svg> On time</span>
+      </div>
+      <div class="nu-next">Next → <b>Roscoe · Sulphur</b> · sched 9:30</div>
+      <div class="nu-actions">
+        <a class="door ghost" href="tel:+13375550142"><svg><use href="#i-phone"/></svg> (337) 555-0142</a>
+        <span class="door commit"><svg><use href="#i-check"/></svg> Mark Arrived</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ LEGEND ============ -->
+  <div class="legend">
+    <div class="lg-item"><svg><use href="#i-grip"/></svg> Click-hold a connector box → drag to the next box to <b>connect a Trip</b>. Click alone = schedule a 1-stop trip.</div>
+    <div class="lg-div"></div>
+    <div class="lg-item">ETA = honest arrival (drive time + <b>20m load/stop</b>) · SCHEDULED = dispatch target · DEADLINE = hard rental-window edge</div>
+    <div class="lg-div"></div>
+    <div class="lg-key"><span class="dot ok"></span>On time <span class="dot risk"></span>At risk <span class="dot late"></span>Past deadline</div>
+  </div>
+
+  <!-- ============ COLUMN HEADER ============ -->
+  <div class="col-head">
+    <span></span><span>Unit · Location · Type</span>
+    <span class="ch-r">ETA</span><span class="ch-r">Sched</span><span class="ch-r">Deadline</span><span class="ch-r">State</span>
+  </div>
+
+  <!-- ============ FIELD CALLS (top group) ============ -->
+  <div class="group-head g-field"><svg><use href="#i-wrench"/></svg><h2>Field Calls</h2><span class="g-count">2</span></div>
+
+  <div class="loose-row is-warn">
+    <div class="stop-row" style="border-bottom:none;">
+      <span class="connector loose"></span>
+      <div class="meta"><svg class="m-ic"><use href="#i-wrench"/></svg>
+        <div class="m-text"><div class="m-title">Gator <span class="loc">— Iowa, LA</span></div><div class="m-sub">Field-Call</div></div>
+      </div>
+      <span class="tcell dim">—</span>
+      <span class="tcell dim">ASAP</span>
+      <span class="tcell dim">—</span>
+      <span class="state-cell"><span class="sig risk"><svg><use href="#i-alert"/></svg>At risk</span></span>
+    </div>
+    <div class="loose-tag warn"><svg><use href="#i-alert"/></svg> Unassigned — customer waiting on a callback slot</div>
+  </div>
+
+  <div class="loose-row is-flat">
+    <div class="stop-row" style="border-bottom:none;">
+      <span class="connector loose"></span>
+      <div class="meta"><svg class="m-ic"><use href="#i-rot"/></svg>
+        <div class="m-text"><div class="m-title">Scoot <span class="loc">— Sulphur, LA</span></div><div class="m-sub">Repo</div></div>
+      </div>
+      <span class="tcell">11:05<span class="t-delta">+5m load</span></span>
+      <span class="tcell">11:00</span>
+      <span class="tcell deadline">5:00p</span>
+      <span class="state-cell"><span class="sig ok"><svg><use href="#i-check"/></svg>On time</span></span>
+    </div>
+  </div>
+
+  <!-- ============ TODAY ============ -->
+  <div class="group-head"><svg><use href="#i-truck"/></svg><h2>Today</h2><span class="g-count">2 trips · 1 unassigned</span></div>
+
+  <!-- Trip 1 — ON TIME -->
+  <div class="trip" data-state="ok">
+    <div class="trip-head">
+      <div class="trip-top">
+        <div class="trip-idline">
+          <div class="trip-datestamp">8:00</div>
+          <div class="trip-id-text"><div class="trip-id">Trip 1 · Truck 4</div><div class="trip-title">Morning run — Beau + Roscoe</div></div>
+        </div>
+        <span class="stamp-badge">On Time</span>
+      </div>
+    </div>
+    <div class="hazard"></div>
+    <div class="trip-dash"></div>
+    <div class="trip-rows">
+      <div class="stop-row store-row">
+        <span class="connector linked first"></span>
+        <div class="meta"><svg class="m-ic"><use href="#i-truck"/></svg><div class="m-text"><div class="m-title">Yard — <span class="loc">Store</span></div><div class="m-sub">Start</div></div></div>
+        <span class="tcell">8:00</span><span class="tcell">8:00</span><span class="tcell dim">—</span>
+        <span class="state-cell"></span>
+      </div>
+      <div class="stop-row">
+        <span class="connector linked"></span>
+        <div class="meta"><svg class="m-ic"><use href="#i-box"/></svg><div class="m-text"><div class="m-title">Beau <span class="loc">— Lake Charles, LA</span></div><div class="m-sub">Drop</div></div></div>
+        <span class="tcell">8:35</span><span class="tcell">8:35</span><span class="tcell deadline">9:30</span>
+        <span class="state-cell"><span class="sig ok"><svg><use href="#i-check"/></svg>On time</span></span>
+      </div>
+      <div class="stop-row">
+        <span class="connector linked"></span>
+        <div class="meta"><svg class="m-ic"><use href="#i-box"/></svg><div class="m-text"><div class="m-title">Roscoe <span class="loc">— Sulphur, LA</span></div><div class="m-sub">Drop</div></div></div>
+        <span class="tcell">9:20<span class="t-delta">+20m load</span></span><span class="tcell">9:00</span><span class="tcell deadline">11:00</span>
+        <span class="state-cell"><span class="sig ok"><svg><use href="#i-check"/></svg>On time</span></span>
+      </div>
+      <div class="stop-row store-row">
+        <span class="connector linked last"></span>
+        <div class="meta"><svg class="m-ic"><use href="#i-truck"/></svg><div class="m-text"><div class="m-title">Yard — <span class="loc">Store</span></div><div class="m-sub">End</div></div></div>
+        <span class="tcell">10:00</span><span class="tcell">9:45</span><span class="tcell dim">—</span>
+        <span class="state-cell"></span>
+      </div>
+    </div>
+    <div class="trip-foot">
+      <div class="trip-driver">
+        <details class="gate"><summary><svg><use href="#i-user"/></svg> J. Thibodeaux <svg class="chev"><use href="#i-chev"/></svg></summary>
+          <div class="gate-menu">
+            <div class="gate-opt"><div class="go-name">J. Thibodeaux</div></div>
+            <div class="gate-opt"><div class="go-name">R. Guillory</div></div>
+            <div class="gate-opt"><div class="go-name">M. Fontenot</div></div>
+          </div>
+        </details>
+      </div>
+      <div class="trip-subtotal">2 stops · 1h20 drive · +40 load</div>
+    </div>
+  </div>
+
+  <!-- Unassigned interleaved stop, at its deadline position between Trip 1 and Trip 2 -->
+  <div class="loose-row is-warn">
+    <div class="stop-row" style="border-bottom:none;">
+      <span class="connector loose"></span>
+      <div class="meta"><svg class="m-ic"><use href="#i-box"/></svg>
+        <div class="m-text"><div class="m-title">Boudin <span class="loc">— Dequincy, LA</span></div><div class="m-sub">Drop</div></div>
+      </div>
+      <span class="tcell eta risk">1:55<span class="t-delta">tight</span></span>
+      <span class="tcell">1:40</span>
+      <span class="tcell deadline">2:00</span>
+      <span class="state-cell"><span class="sig risk"><svg><use href="#i-alert"/></svg>At risk</span></span>
+    </div>
+    <div class="loose-tag warn"><svg><use href="#i-alert"/></svg> Not yet connected — click its box to schedule</div>
+  </div>
+
+  <!-- Trip 2 — LATE, with capacity conflict -->
+  <div class="trip" data-state="late">
+    <div class="trip-head">
+      <div class="trip-top">
+        <div class="trip-idline">
+          <div class="trip-datestamp">2:30</div>
+          <div class="trip-id-text"><div class="trip-id">Trip 2 · Truck 2</div><div class="trip-title">Afternoon run — Bush · Snappy · Diesel</div></div>
+        </div>
+        <span class="stamp-badge">Late</span>
+      </div>
+    </div>
+    <div class="hazard"></div>
+    <div class="trip-dash"></div>
+    <div class="trip-rows">
+      <div class="stop-row store-row">
+        <span class="connector linked first"></span>
+        <div class="meta"><svg class="m-ic"><use href="#i-truck"/></svg><div class="m-text"><div class="m-title">Yard — <span class="loc">Store</span></div><div class="m-sub">Start</div></div></div>
+        <span class="tcell">2:30</span><span class="tcell">2:30</span><span class="tcell dim">—</span>
+        <span class="state-cell"></span>
+      </div>
+      <div class="stop-row">
+        <span class="connector linked"></span>
+        <div class="meta"><svg class="m-ic"><use href="#i-rot"/></svg><div class="m-text"><div class="m-title">Bush <span class="loc">— Iowa, LA</span></div><div class="m-sub">Pickup</div></div></div>
+        <span class="tcell">3:00</span><span class="tcell">3:00</span><span class="tcell dim">—</span>
+        <span class="state-cell"><span class="sig conflict"><svg><use href="#i-alert"/></svg>Conflict</span></span>
+      </div>
+      <div class="conflict-note">
+        <p>Trip 2 can't pick up <b>Bush</b> (3pm) while still carrying <b>Snappy</b> out for its 4pm drop — one trailer only. Bush's pickup splits into its own trip.</p>
+        <span class="door commit-outline"><svg><use href="#i-split"/></svg> Split into new trip</span>
+      </div>
+      <div class="stop-row">
+        <span class="connector linked"></span>
+        <div class="meta"><svg class="m-ic"><use href="#i-box"/></svg><div class="m-text"><div class="m-title">Snappy <span class="loc">— Vinton, LA</span></div><div class="m-sub">Drop</div></div></div>
+        <span class="tcell eta late">3:55<span class="t-delta">+20m load</span></span><span class="tcell">3:35</span><span class="tcell deadline">3:45</span>
+        <span class="state-cell"><span class="sig late"><svg><use href="#i-alert"/></svg>Late</span></span>
+      </div>
+      <div class="stop-row">
+        <span class="connector linked"></span>
+        <div class="meta"><svg class="m-ic"><use href="#i-box"/></svg><div class="m-text"><div class="m-title">Diesel <span class="loc">— Lake Charles, LA</span></div><div class="m-sub">Drop</div></div></div>
+        <span class="tcell eta late">4:50<span class="t-delta">+20m load</span></span><span class="tcell">4:30</span><span class="tcell deadline">4:45</span>
+        <span class="state-cell"><span class="sig late"><svg><use href="#i-alert"/></svg>Late</span></span>
+      </div>
+      <div class="stop-row store-row">
+        <span class="connector linked last"></span>
+        <div class="meta"><svg class="m-ic"><use href="#i-truck"/></svg><div class="m-text"><div class="m-title">Yard — <span class="loc">Store</span></div><div class="m-sub">End</div></div></div>
+        <span class="tcell">5:30</span><span class="tcell">5:10</span><span class="tcell dim">—</span>
+        <span class="state-cell"></span>
+      </div>
+    </div>
+    <div class="trip-foot">
+      <div class="trip-driver">
+        <details class="gate" open><summary><svg><use href="#i-user"/></svg> R. Guillory <svg class="chev"><use href="#i-chev"/></svg></summary>
+          <div class="gate-menu">
+            <div class="gate-opt">
+              <div class="go-name">R. Guillory</div>
+              <div class="gate-warn"><svg><use href="#i-alert"/></svg> Currently assigned</div>
+            </div>
+            <div class="gate-opt">
+              <div class="go-name">M. Fontenot</div>
+              <div class="gate-warn"><svg><use href="#i-alert"/></svg> +15m from last stop — pushes Diesel further past deadline</div>
+            </div>
+            <div class="gate-opt"><div class="go-name">J. Thibodeaux — off shift 4pm</div></div>
+          </div>
+        </details>
+      </div>
+      <div class="trip-subtotal">3 stops · 1h05 drive · +60 load</div>
+    </div>
+  </div>
+
+  <!-- ============ TOMORROW ============ -->
+  <div class="group-head"><svg><use href="#i-truck"/></svg><h2>Tomorrow</h2><span class="g-count">1 trip · 1 unassigned</span></div>
+
+  <div class="loose-row is-flat">
+    <div class="stop-row" style="border-bottom:none;">
+      <span class="connector loose"></span>
+      <div class="meta"><svg class="m-ic"><use href="#i-rot"/></svg>
+        <div class="m-text"><div class="m-title">Ratchet <span class="loc">— Sulphur, LA</span></div><div class="m-sub">Pickup</div></div>
+      </div>
+      <span class="tcell dim">—</span>
+      <span class="tcell dim">PM</span>
+      <span class="tcell dim">—</span>
+      <span class="state-cell"><span class="sig wait">Waiting</span></span>
+    </div>
+  </div>
+
+  <div class="trip" data-state="ok">
+    <div class="trip-head">
+      <div class="trip-top">
+        <div class="trip-idline">
+          <div class="trip-datestamp">9:00</div>
+          <div class="trip-id-text"><div class="trip-id">Trip 3 · Truck 4 · 1-stop trip</div><div class="trip-title">Peanut — single click-to-connect</div></div>
+        </div>
+        <span class="stamp-badge">On Time</span>
+      </div>
+    </div>
+    <div class="hazard"></div>
+    <div class="trip-dash"></div>
+    <div class="trip-rows">
+      <div class="stop-row store-row">
+        <span class="connector linked first"></span>
+        <div class="meta"><svg class="m-ic"><use href="#i-truck"/></svg><div class="m-text"><div class="m-title">Yard — <span class="loc">Store</span></div><div class="m-sub">Start</div></div></div>
+        <span class="tcell">9:00</span><span class="tcell">9:00</span><span class="tcell dim">—</span>
+        <span class="state-cell"></span>
+      </div>
+      <div class="stop-row">
+        <span class="connector linked"></span>
+        <div class="meta"><svg class="m-ic"><use href="#i-box"/></svg><div class="m-text"><div class="m-title">Peanut <span class="loc">— Vinton, LA</span></div><div class="m-sub">Drop</div></div></div>
+        <span class="tcell">9:35</span><span class="tcell">9:35</span><span class="tcell deadline">11:00</span>
+        <span class="state-cell"><span class="sig ok"><svg><use href="#i-check"/></svg>On time</span></span>
+      </div>
+      <div class="stop-row store-row">
+        <span class="connector linked last"></span>
+        <div class="meta"><svg class="m-ic"><use href="#i-truck"/></svg><div class="m-text"><div class="m-title">Yard — <span class="loc">Store</span></div><div class="m-sub">End</div></div></div>
+        <span class="tcell">10:10</span><span class="tcell">10:05</span><span class="tcell dim">—</span>
+        <span class="state-cell"></span>
+      </div>
+    </div>
+    <div class="trip-foot">
+      <div class="trip-driver"><span class="stamp-fact"><svg class="ic" style="display:inline;vertical-align:-2px;"><use href="#i-user"/></svg> J. Thibodeaux</span></div>
+      <div class="trip-subtotal">1 stop · 40m drive · +20 load</div>
+    </div>
+  </div>
+
+  <!-- ============ THIS WEEK ============ -->
+  <div class="group-head"><svg><use href="#i-truck"/></svg><h2>This Week</h2><span class="g-count">4 unassigned</span></div>
+
+  <div class="loose-row is-flat">
+    <div class="stop-row" style="border-bottom:none;">
+      <span class="connector loose"></span>
+      <div class="meta"><svg class="m-ic"><use href="#i-box"/></svg>
+        <div class="m-text"><div class="m-title">Tank <span class="loc">— Iowa, LA</span></div><div class="m-sub">Drop · Thu</div></div>
+      </div>
+      <span class="tcell dim">—</span>
+      <span class="tcell dim">Thu 10a</span>
+      <span class="tcell deadline">Thu 4p</span>
+      <span class="state-cell"><span class="sig wait">Waiting</span></span>
+    </div>
+  </div>
+
+  <div class="more-row"><svg class="ic"><use href="#i-grip"/></svg> +3 more stops this week</div>
+
+</div>
+</body>
+</html>

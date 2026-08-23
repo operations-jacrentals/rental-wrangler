@@ -1,0 +1,132 @@
+/* ==========================================================================
+   C11 — L BRACKET
+   The red L down the left of the banner header row: a vertical stroke, a
+   43.5deg elbow, and a long horizontal divider running most of the card's
+   width. Source: original.html CSS 721-749 (.bt-lv 722-727, .bt-ltip
+   728-736, .bt-lch 737-742, .bt-div 743-749), markup 956-959.
+
+   ORIGIN NOTE (read this before "fixing" the naming):
+   In original.html these four rules paint the bracket, but the markup that
+   was clearly INTENDED to hold them — `.lbrk` with child spans `.v` / `.d`
+   / `.h` (vertical / diagonal / horizontal) at line 964 — has NO matching
+   CSS anywhere in the document and paints nothing (proved by deletion-diff:
+   removing line 964 leaves an EMPTY diff bbox against the reference). The
+   author meant to move `.bt-lv`/`.bt-ltip`/`.bt-lch`/`.bt-div` into `.lbrk`
+   and never did. This file finishes that move: it is built from the
+   `.bt-*` rules (the ones that actually paint), not from `.lbrk`. c10 gave
+   these four rules up; do not expect to find them in c10's sheet anymore.
+
+   VARIANTS
+     (none) — one instance in the whole canvas (band B). There is nothing
+     to vary yet; the class list below is the full component every time.
+
+   KNOBS (safe to turn)
+     --x, --y   root position, canvas-absolute in the original, origin-
+                relative here. Everything else (stroke widths, the elbow's
+                rotate(43.5deg), the divider's 1012px run) is currently
+                fixed — the original never expressed them as vars, and nothing
+                in this pass changes that. Jac can promote more of these to
+                vars later; this pass proves fidelity first.
+
+   INTERNAL PAINT ORDER (do not reorder the markup)
+     .c11-div MUST come before .c11-vertical/.c11-tip/.c11-elbow in the DOM.
+     In the original, .bt-div (956) paints before .bt-lv/.bt-ltip/.bt-lch
+     (957-959), so the elbow's painted extent (which is far bigger than its
+     declared 43x5.6 rect — see .c11-elbow below) overlaps the divider's
+     left end at canvas x52..60, y228..234. Reversing the order changes
+     that overlap and is a visible defect (measured max delta 176 there).
+
+   ASSEMBLY NOTE (not this file's problem to solve, but a trap for whoever
+   composites the full page): in the original, c10's `.bt-warm` (960) paints
+   AFTER this whole bracket and fully occludes `.c11-elbow`'s equivalent
+   (`.bt-lch`) in canvas column x33..37. This component is NOT one
+   contiguous layer above or below c10 — a c10 element has to interleave
+   between this bracket and whatever paints next. That interleave happens
+   at assembly time, band-B-only (this part's own verify is null).
+
+   SVG <defs>: none. Every fill here is a CSS linear-gradient; nothing in
+   this component uses SVG.
+
+   Root box (painted, all four pieces): 1040 x 102 — x24..1064, y138..240
+   in the original canvas. Instance origin used for the rebase below is
+   (24, 138), i.e. the vertical stroke's own top-left.
+   ========================================================================== */
+
+.halo-bracket {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: 1040px;
+  height: 102px;
+}
+
+/* The .bt-* rules in original.html declare no `position` of their own —
+   they rely on the shared `#btr i { position:absolute; display:block }`
+   (original line 526, part of c10). That shared rule does not travel with
+   this part, so each child below states position/display explicitly —
+   this changes nothing about how they paint. */
+
+/* .bt-div (original 743-749): left:52 top:228 -> local (52-24, 228-138) */
+.halo-bracket .c11-div {
+  position: absolute;
+  display: block;
+  left: 28px;
+  top: 90px;
+  width: 1012px;
+  height: 12px;
+  background: linear-gradient(180deg,
+    #4c2426 0 1px,#b5615f 1px 2px,#de7470 2px 3px,#a84845 3px 4px,#772527 4px 5px,
+    #612123 5px 6px,#4f2121 6px 7px,hsl(calc(var(--steel-h) + 149.765 * var(--steel-spread)) calc(var(--steel-s) * 1.111) calc(20% * var(--steel-tint))) 7px 8px,hsl(calc(var(--steel-h) + 150.857 * var(--steel-spread)) calc(var(--steel-s) * 0.864) calc(15.882% * var(--steel-tint))) 8px 9px,#1d0d0d 9px 10px,
+    #140404 10px 11px,#100304 11px 12px);
+}
+
+/* .bt-lv (original 722-727): left:24 top:142 -> local (24-24, 142-138) */
+.halo-bracket .c11-vertical {
+  position: absolute;
+  display: block;
+  left: 0px;
+  top: 4px;
+  width: 9px;
+  height: 63px;
+  background: linear-gradient(90deg,
+    #3d1712 0 1px,#5a0a04 1px 2px,#c74f45 2px 3px,#f76a5c 3px 4px,#fc6a5c 4px 6px,
+    #ee6f6a 6px 7px,#bc6568 7px 8px,hsl(calc(var(--steel-h) + 121.75 * var(--steel-spread)) calc(var(--steel-s) * 0.731) calc(28.627% * var(--steel-tint))) 8px 9px);
+}
+
+/* .bt-ltip (original 728-736): left:24 top:138 -> local (24-24, 138-138).
+   The mask-image eats the first 2px, so painted left is local 2 (canvas
+   26), not 0 (canvas 24) — same mask, unchanged, does that for us. */
+.halo-bracket .c11-tip {
+  position: absolute;
+  display: block;
+  left: 0px;
+  top: 0px;
+  width: 9px;
+  height: 5px;
+  background: linear-gradient(180deg,hsl(calc(var(--steel-h) + 156 * var(--steel-spread)) calc(var(--steel-s) * 0.877) calc(11.176% * var(--steel-tint))) 0 1px,hsl(calc(var(--steel-h) + 157.818 * var(--steel-spread)) calc(var(--steel-s) * 0.801) calc(44.902% * var(--steel-tint))) 1px 2px,#e99b8d 2px 3px,
+                             #f88c7d 3px 4px,#f47061 4px 5px);
+  -webkit-mask-image: linear-gradient(90deg,transparent 0 2px,rgba(0,0,0,.80) 2px 3px,
+                     #000 3px 7px,rgba(0,0,0,.74) 7px 8px,rgba(0,0,0,.34) 8px 9px);
+          mask-image: linear-gradient(90deg,transparent 0 2px,rgba(0,0,0,.80) 2px 3px,
+                     #000 3px 7px,rgba(0,0,0,.74) 7px 8px,rgba(0,0,0,.34) 8px 9px);
+}
+
+/* .bt-lch (original 737-742): left:27 top:202 -> local (27-24, 202-138).
+   margin-top, transform-origin and the rotate() are all relative to the
+   element's own box, not canvas space, so they carry over unchanged. Its
+   painted extent is much bigger than the declared 43x5.6 rect and starts
+   left of its own `left` — true extent is canvas 24..60 x 199..234, i.e.
+   local 0..36 x 61..96 — well inside this root's 1040x102 box. */
+.halo-bracket .c11-elbow {
+  position: absolute;
+  display: block;
+  left: 3px;
+  top: 64px;
+  width: 43px;
+  height: 5.6px;
+  margin-top: -2.8px;
+  transform-origin: 0 50%;
+  transform: rotate(43.5deg);
+  background: linear-gradient(180deg,#b5504a 0%,#f0655a 16%,#fc6c5c 38%,#fb6f66 62%,
+                             #ee7270 80%,#a85258 100%);
+}

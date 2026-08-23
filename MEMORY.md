@@ -1,11 +1,24 @@
 # MEMORY — Rental Wrangler
 
-> Durable cross-session memory. **Read at `/start`, updated at `/end`.** This is a
+> Durable cross-session memory. **Read at `/startup`, updated at `/end`.** This is a
 > **PUBLIC** repo (served by Pages) — **never** put customer PII, pricing / margin
 > data, `DEFAULT_CONFIG` passwords, or any secret value here. Shareable context only.
 > Keep it lean; the first ~200 lines are what a session actually leans on.
 
 ## Decisions
+- **2026-07-19 — RENTALS "Denny" dispatcher audit — remaining work HANDED OFF to a fresh cloud session.**
+  Full durable handoff: **`docs/handoffs/audit-2026-07-19-rentals-dispatcher-remaining-work.md`**. State:
+  the 4 Bucket-A dispatch bug fixes are **integrated on `trunk`** (content-verified at `?v=20260719b` —
+  markFieldCall targetId, setUnitStatus toast, winPickSave else-toast, is-phone link copy; reviewed, gates
+  green) but **NOT promoted**. They first landed as PR #740 (`705ea12`) then trunk was force-moved by
+  concurrent sessions onto a cleaner lineage (the #740 *content* carried forward; that *hash* is orphaned —
+  verify by content, not by `705ea12`). ⛔ `/promote` still BLOCKED: `production` is not a fast-forward
+  ancestor of `trunk` (history split from #739's line-ending rewrite). **Do NOT force-push production/trunk**
+  — wait for the multi-session churn to settle, then verify a clean trunk→production ff (or reconcile
+  deliberately with Jac). Parked Bucket-B UI/process findings (attention bucket, verb CTAs, due-back
+  grouping, terminal-confirm+undo, proactive alerts, comms wiring, dispatch coordination, returns damage
+  handoff, empty-state, UX-polish bundle) are itemized in the handoff doc. Audit artifact:
+  `claude.ai/code/artifact/8716a062-d640-401d-ae5c-49e5fa600283`.
 - **2026-07-18 — STAGING DECK is the new DEFAULT staging path — SHIPPED LIVE (PRs #720 + #734).** Replaces
   the 3-slot lease pool as the default (slots kept as the `--slots` BACKUP, unchanged). `node
   tools/deploy-staging.mjs` (no flags) writes the site to an **immutable numbered folder**
@@ -78,7 +91,7 @@
   build-now, but the `/clasp` **push** carries `/clasp`'s confirm-before-push gate, so push +
   go-live editor deploy are batched into the hand-back, not fired autonomously. A fresh-context
   review caught + fixed two canon contradictions pre-merge (autonomous-push vs the `/clasp` rail; a
-  stray gate-skip carve-out). Wired into CLAUDE.md → *Deploy & gates* and `/start`'s sibling-skills
+  stray gate-skip carve-out). Wired into CLAUDE.md → *Deploy & gates* and `/startup`'s sibling-skills
   list. Skill: `.claude/skills/build/SKILL.md`.
 - **2026-07-18 — Phone SWIPE RAIL SHIPPED LIVE (§M8, PR #713, `?v=20260718d`).** Phone swipe
   steps a single 5-card ribbon — **Categories · Units · Rentals · Customers · Sales** — instead
@@ -231,12 +244,63 @@
   the BASE `:root` only (never overridden per theme) so a slot's color never shifts on a theme
   toggle. Fully guarded off production (keeps its clean title + logo favicon); local = tan "L".
 
+- **Illustrated UI is EXPORTED from Figma, never recreated** (2026-08-05, skill
+  `art-pipeline`, ledger #257). Normal handoff moves tokens + component identity +
+  exported assets across — never pixels. Halo is the exception because the interface
+  IS artwork, so the analogue is game UI: export via Figma's own
+  `exportAsync({format:'SVG_STRING'})`, declare ONE shared asset in `:root`, reference
+  it N times, tint per state at runtime. Hand-rebuilding the elbow in CSS failed the
+  bar and cost hours; export beat it immediately. Measured: 96 elbows across 3 cards =
+  37KB vs 1,268KB for one shipped Tier-01 card (2.95%), `LayoutCount: 0`, ~60fps.
+- **Resizable panels are 9-sliced; rhythm ROUNDS, structure STRETCHES** (ledger #257/#258).
+  `border-image` with `fill`. The test is: does the feature have a countable rhythm?
+  Countable (etchings, rivets, ticks) → `round`, NOT `repeat` — a half-cut motif reads
+  as a mistake while `round`'s sub-pixel scaling to fit whole tiles does not. Continuous
+  (bevels, gradients) → `stretch`. Axes can differ. Slice bands decided and measured in
+  `docs/design/SLICE-SPEC.md`.
+- **The conduit rail is a 41x4 REPEATING TILE, not a slice** (ledger #259). All 131 rows
+  of `asm-channel` are byte-identical, so the tall asset carries no information.
+  `repeat-y`, not `border-image` — no corners to protect, the caps are the elbow.
+- **The elbow and its row are ONE element** (ledger #256). Rows hide behind the group
+  header and slide DOWN; the elbows ride the channel carrying them. Supersedes the old
+  "rail drops, rows slide in from the right" model. Fusing them makes per-elbow centring
+  structurally impossible to get wrong.
+- **"Matte — no glow" is a STEEL rule, not a ban** (ledger #251). `#146` is operative:
+  glass emits, steel never does. The shorthand in CLAUDE.md reads as absolute and keeps
+  winning arguments it shouldn't — check the MATERIAL before removing a glow.
+
 ## Design prefs
 - Yard **"data-plate"** design language: dark industrial steel, **ONE** safety-orange
-  accent (`#ff7a1a`), hi-vis hazard stripe signature, stamped Saira Condensed labels,
-  rivets, a light wrangler/ranch seasoning (voice-first). Run **all** new/changed UI
-  through `/jactec-ui`. Don't retroactively restyle the existing site.
+  accent (**`#ff7e1f`**), **Archivo** body voice + mono stamped labels, a light
+  wrangler/ranch seasoning (voice-first). **Matte — no glow.** Run **all** new/changed UI
+  through **`style` + `wrangler-style`, both, always.** Don't retroactively restyle the
+  existing site.
+  ⚠️ **Superseded and gone:** `#ff7a1a`, Saira Condensed, the hazard-stripe + rivets
+  signature, and the **`jactec-ui` skill** (deleted 2026-07-26, PR #775 — its four rescued
+  capabilities sit in `docs/design/reference/legacy-jactec-ui/`). ~30 live specs still
+  describe the old language; sweep is filed at `docs/handoffs/STALE-DESIGN-LANGUAGE-SWEEP.md`.
+- **The decisions ledger is THE index for every UI decision** —
+  `docs/superpowers/specs/2026-07-20-decisions-ledger.md`. Read it **before** designing,
+  **read to the END** (rows #1–100 are a 07-20 snapshot; #101+ supersede several), and
+  **add a row** when something is settled. A decision is not made until it has a row (#135).
+- **The redesign's visual source of truth is `docs/design/tier-01-handoff/final-card.html`**
+  (2026-07-28), and it is **ahead of** the kit in `docs/design/rw-design-system/`. When they
+  disagree, the card wins. Redesign shape language is **`border-radius: 0` + chamfers/notches**
+  (#140, reverses the four-shape ladder) with **mono on every control, Archivo for prose only**
+  (#142); families are told apart by **finish** (key/press/well/machined ring) rather than
+  radius, which is how `style` §1 still passes. The shipped app is unchanged — the redesign
+  is behind `FEATURES.designV2`.
 - Icons always come from a library (Lucide), never hand-drawn — see `.claude/rules/icons.md`.
+- **`/paint` — for recreating a Jac mockup pixel-true, don't edit toward it.** New skill
+  (`.claude/skills/paint/`), born 2026-08-02 after two failed passes built from a *remembered*
+  description of an uploaded image while the file sat unopened. The method: (1) confirm the
+  mockup is actually on disk and OPEN it, (2) recreate it from scratch in a clean standalone
+  HTML/CSS stage — never edit the live cascade toward a picture, a big file fights every move —
+  (3) a six-cell (or however many elements) agent grid pass, one read-only analyst per cell + one
+  applier per round, disputes settled by PIL pixel-sampling not eyeballing, (4) your own eyes on
+  the full-frame comparison after every apply round (agents miss cross-cell regressions), (5) only
+  THEN port proven recipes into the real file, as a Jac-approved multiSelect port list, one commit,
+  through the file's normal gates.
 - **Customers-list quick-add row is always-on and single-line (2026-07-17, #704).** The collapsed
   blue "+New Customer" `.bigbtn` was traded for the always-visible inline fields (First·Last·Phone ·
   the R1 "LEAD?" funnel gate) — no click to expand. All controls share ONE height via a scoped
@@ -245,6 +309,44 @@
   one line through single-column pan mode; the `<480px` query re-enables wrap for the mobile stack.
 
 ## Gotchas
+- **Don't `git checkout trunk` (or `production`) and `git push` in the SAME command chain, even
+  when pushing a different branch (2026-08-02).** A safety tripwire scans the whole shell
+  invocation and blocks it outright — "Direct push to a protected release branch...is blocked" —
+  even though the actual push target (e.g. a new `parked/...` branch) is perfectly fine. Fix: never
+  name `trunk`/`production` as a literal `checkout` target; branch straight off the remote instead
+  (`git checkout -b parked/foo origin/trunk`), and keep the `git push` in its own isolated command.
+- **A carried decision can still DRIFT away mid-session (2026-07-28, PR #780).** We already knew a
+  prompt that *omits* a locked decision loses it (#134). The Tier 0.1a Labs session proved a worse
+  case: three decisions were **in** the prompt — the click contract (#50/#62/#63/#67), the group
+  taxonomy (#31/#34/#35), and the Dashboard as the 13th surface (#44/#45) — and were still lost
+  across hours of visual iteration. **The handoff didn't notice**, because a handoff reports what it
+  *decided* and is structurally blind to what it *stopped carrying*. Only a grep of the returned
+  artifacts against the ledger found them. **Fix (#145): every handoff prompt needs an explicit
+  "still honoured?" checklist of inherited decisions**, not just an Inherit list at the start — and
+  when work comes back from any external tool, **grep it for the locked decisions before reading it.**
+- **An external design tool's status grades are the only thing standing between "designed" and
+  "approved" — read them literally (2026-07-28).** The 0.1a handoff came back ~19 LOCKED / 14
+  PROPOSED / 6 ASSUMED. The card *renders* all 39, and several PROPOSED items look completely
+  finished (the fixed row-Signal column width, the whole jump-band timing model). **Rendering is not
+  ratification.** Promote a row only by getting Jac's ruling and adding a ledger row.
+- **A branch cut before a docs sweep will resurrect the deleted skill (2026-07-28).** Switching to
+  `claude/rental-wrangler-redesign-tier-01-73qiof` made `jactec-ui` reappear in the skills list and
+  restored the pre-sweep ledger — the branch predated PR #775. **Merge trunk in BEFORE writing ledger
+  rows**, or the numbering collides with rows that already exist elsewhere. Related: `git rev-list`
+  ahead/behind counts are **garbage in this container** until `git fetch --deepen=200` — a shallow
+  clone reported "268 commits ahead" of trunk for a branch that was 4 behind.
+- **A stale INDEX is worse than a missing one (2026-07-26, PRs #770-773).** The decisions ledger
+  (`docs/superpowers/specs/2026-07-20-decisions-ledger.md`) was a 07-20 snapshot that stopped at #100
+  and indexed nothing after. Six days of decisions accumulated in a spec, a build plan, five prompts
+  and two pipeline docs — so grepping the "canonical" index returned confidently WRONG answers:
+  the section model had reversed **twice** (paging → accordion → paging) and the ledger still showed
+  the first. Cost: one missed lookup → three audits, six PRs. **Rules now:** read the ledger before
+  any UI/design work, **read to the END and check dates** (#101+ is the 07-21→07-26 extension), and
+  **add a row when Jac settles something** — a decision isn't made until it's in that table (#135).
+  Reversed rows are marked in place so a grep surfaces the reversal, not the dead answer.
+- **Design Labs is blind to this repo.** Whatever a Labs prompt omits, the mockup won't have — that's
+  how "Your Work", the group taxonomy, the click contract and the section-paging model all silently
+  vanished from a container design. Prompts must INHERIT canon, never re-derive it.
 - **The Staging Deck (`d/`) shares the slot-1 repo, so a STALE-checkout session wipes it** (2026-07-18,
   #720). The deck folders live at `d/` inside `rental-wrangler-staging` — the SAME repo slot-1 deploys
   wipe. Any session still running the **pre-#720** `deploy-staging.mjs` (whose `syncFiles` doesn't
@@ -383,6 +485,22 @@
   (`CLAUDE_CODE_SESSION_ID=…-r1/-r2/-r3`); or just let natural churn do it (post-merge every
   trunk-based deploy self-identifies). A slot held by another ACTIVE session queues you rather than
   clobbering — that's correct; wait for its TTL to lapse before refreshing it.
+- **`git rev-list` counts LIE on this shallow clone — in BOTH directions (2026-07-31).** The
+  unpromoted-commit count read **1** before `git fetch --deepen=400` and **36** after. The existing
+  note said a shallow clone *over*-reports ("268 ahead" for a branch 4 behind); it also
+  **under**-reports, which is worse, because a "1 commit behind" reading looks safe and invites a
+  casual promote. **Deepen before quoting any ahead/behind count**, and prefer
+  `git log A..B --oneline | wc -l` cross-checked after a deepen.
+- **A measurement only proves something if the NEGATIVE case can occur (2026-07-31).** A "measured
+  proof" that the group housing moves on open was computed against a build where the gate was pinned
+  open forever — the transform never turned *off*, so the number was real and meaningless. Root
+  cause worth remembering on its own: **`getComputedStyle` on a `display:none` element returns
+  `transform: none`** regardless of the inline value, so reading state off an element your own CSS
+  hides silently freezes that state. Read the **inline** value instead.
+- **dc-runtime RECYCLES row/head DOM nodes positionally — it does not replace them (2026-07-31).**
+  Any "is this already built?" guard therefore reads a recycled node as correct, and an injected
+  layer ends up describing a **different record** (filter to Done and a green row still showed the
+  previous unit's red issues). Key an injected layer on a **content signature**, not on presence.
 - **Cloud sessions are ephemeral** (fresh clone, container reclaimed) — only
   git-committed work survives, and Claude Code's native auto-memory is machine-local
   so it won't carry over. Commit + push early.
@@ -534,8 +652,162 @@
   identical plain div rendered there; the login plate rendered fine). A headless
   artifact, not a real-browser defect — verify transient/fixed visual cues on the
   **staging drive** (real Chrome), not headless screenshots.
+- **A `workflow_dispatch` `smoke` check does NOT satisfy the branch-protection ruleset** (2026-07-17,
+  corrects the CI-`synchronize` note above) — dispatching `ci.yml` runs and turns `smoke` green on the
+  commit, but the merge STILL fails `405 … Required status check "smoke" is expected`: the ruleset only
+  counts a `smoke` from the **`pull_request`** event, not a manual dispatch. What actually unblocks the
+  merge is forcing a fresh `pull_request` run — push a commit (an empty `git commit --allow-empty`
+  re-trigger works), or close+reopen the PR (fires `reopened`). Dispatch is fine for a diagnostic/
+  self-review of the bytes, useless for clearing the gate.
+- **The deployed theme is `midnight` (blue-steel), NOT the base dark `:root`** (2026-07-17) — the live app
+  runs under a `[data-theme="midnight"]` set, so `.inv-row` & friends resolve tokens to midnight's values
+  (`--track #232b35`, `--panel-2 #1a2536`, `--line #283446`, `--chip-shadow …rgba(0,0,0,.78)`), not the
+  `:root` literals. Token-pure CSS adapts for free, but a computed-style assertion in a headless render
+  reads the MIDNIGHT hexes — don't assert against the `:root` values.
+- **Headless review of real UI without login = `#local` + the `window.__rw` bridge** (2026-07-17) — serve
+  the working tree on `127.0.0.1` (noProxy) and open `#local` (demo seed: no PII, no login). The app
+  exposes a test bridge at `window.__rw` (`DATA`, `IDX`, `openCustomerForm`, `render`, `__state`). To land
+  on a customer's embedded Invoices section (the `.inv-row` list), click the customer's LIST row via
+  `document.querySelector('[data-rec="<custId>"]').click()` — the delegated handler resolves the open.
+  `openCustomerForm(id)` opens the account EDIT form instead, which has no `.inv-row`.
+
+- **Figma `get_metadata` LIES about overridden instances** (2026-08-05). It reports the
+  *un-overridden component* position. The conduit channel read 149px and was actually at
+  108px; the elbow's 138px was wrong the same way. Use `get_design_context` for anything
+  instanced.
+- **A node's frame bounds are NOT its painted extent.** `429:53`'s frame is 40x158 while
+  its child sits at absolute (40,158) — outside it. `429:77`'s frame is 487x97, painted
+  extent 683x97 offset 193.93px left. An entire component was once built from a 41x158
+  sliver believing it was the elbow. Render the node and LOOK at it first.
+- **Figma's PNG export quantizes translucent washes into bands ONE channel value apart.**
+  Counting those as distinct design tones fails an asset for not reproducing a rasteriser
+  artifact. Compare tones by DISTANCE, not identity — and cast to `int` before
+  subtracting, or uint8 overflow turns Δ=1 into Δ=36. That overflow produced two false
+  "asset failing" verdicts and two wasted agent passes.
+- **`mask-image` layers do not pair 1:1 with `background-image` layers** — they union via
+  `mask-composite: add`, so only the topmost background shows. Use one z-ordered image,
+  or separate elements. And masking an element clips EVERYTHING on it, so steel+laser
+  needs two layers (steel as background, tinted laser on `::after`).
+- **Sub-1% vector paths are the bevels, not noise.** Dropping ~40 collapsed the deck from
+  9 tones to 6 and made the steel read flat. On the elbow, 32 of 33 sub-1% runs had a
+  measurable visible cost when removed.
+- **Figma layer names go stale.** `438:315` is named "Main item · FAILED board" and
+  actually renders the group NAME. Two passes hunted a bug that didn't exist. Trust the
+  render, not the name.
+- **Paint order is load-bearing.** The message-board ring is the TOPMOST layer; painting
+  it before the opaque plate buries it. Looks like a missing asset, is z-order.
+- **`--row-hue` power-on uses `fill-mode: backwards`**, so the value reverts to the
+  cascade the instant the animation ends — every `.row--<state>` needs a permanent rule
+  or rows silently go grey AFTER settling. Screenshot the SETTLED frame, not mid-animation.
 
 ## Open threads
+- **Redesign Tier 0.1 — rulings DONE (2026-07-28, ledger #153–#162), atom-kit rebuild NEXT.**
+  PR #780 (Labs handed off, retired — unreachable from Jac's phone) merged to trunk; PR #779
+  (superseded, its commit was already in #780) closed as redundant. The ~20 PROPOSED/ASSUMED
+  rows in `labs-decisions.md` + the three unruled rounded survivors (#141) are now **ruled**:
+  Door's pill **CONFIRMED** as pre-existing canon (`.ref__icon`/hint bubble **ZEROED**, #153);
+  seg-cell 10px **REJECTED** — holds the canonical 11px chip size, #154; Ref re-cut/signal-column
+  formula/Pin sizing **LOCKED**, #155; open-row wash/picker-rollup-Pin/sort-behind-funnel-key
+  **LOCKED**, #156; **the off-white hover wash is REJECTED and replaced** by a three-way material
+  hover system — steel = elevation lift (no colour), open-group terminal rows = an animated
+  light-beam wrap, message-board glass = a cursor-following gradient (direction locked, exact
+  params open for the kit rebuild), #157; placeholder row data **CONFIRMED** as demo filler
+  (Tier 2 owns real numbers), #160; jump-band/hint-layer/boot-theatre timings **LOCKED**, #161;
+  width breakpoints **ACCEPTED PROVISIONALLY**, re-verify in Tier 0.2, #162.
+  **Two rulings (#158/#159) were WRONG on first pass and corrected same-day (#163) — the mistake
+  is worth remembering.** I checked the Labs mockup's jump verbs and dispatcher group order
+  against shipped `app.js`/`config.js` and rejected both for not matching. **`app.js` was the
+  wrong test** — it hadn't been updated to implement the 07-20/07-21 decisions or the 07-19
+  dispatcher audit's recommendations; it lags the decision trail. Jac caught it same-day: *"Not
+  the production. It is not up to date on our decisions."* Corrected: the verb-CTA **pattern**
+  is real precedent (Trips' locked Gate state-machine, `2026-07-20-list-views-inline-expand-
+  design.md` §8.5 — Start→Arrived?→Dropped?/Picked Up?; the 07-19 audit's Bucket-B #2 recommends
+  the same for Rentals/Units) — **locked**, though the specific five words don't come from either
+  source and the exact wording is still open for Tier 0.2. The dispatcher group order is
+  **substantially real** — Jac's own per-card lifecycle group lists from the 07-20 session (this
+  ledger §3/§4, rows #31–35): Units (staff/mechanic) = Field Calls, Not Ready/Failed+Reserved,
+  Not Ready, Failed, Transport, Reserved, On Rent, End Rent, Available, Incomplete; role-reordered
+  for office+. The mockup's 5-group set is a simplified demo subset of this (not a fabrication),
+  but Tier 0.2 wires the complete real list, not the demo shorthand and not `app.js`'s stale,
+  not-yet-updated `UNIT_SECTIONS`. **Corollary to #134/#145:** drift isn't only omitting a locked
+  decision — it's also consulting the wrong artifact (shipped code) for what's actually decided.
+  **Drift also caught the other direction, before ruling:** 3 of the ~20 rows (radius-0, mono-
+  on-controls, the 17px tier) were already ruled at #140/#142/#143 but `labs-decisions.md`'s own
+  status column hadn't been updated — read the ledger, not a handoff doc's status column, for
+  what's actually settled. All three docs now cross-reference each other.
+  **Next, in order:** (1) **rebuild the atom kit FROM the card** (`rw-design-system/` is stale),
+  closing the ~20 inline `TOKEN-GAP:` markers — start with the `#C28E54` vs `--tan` `#c2925a`
+  near-miss (#152) and #138(b), the Pin's hard-coded `--panel` ring (#151); (2) **Tier 0.2, the
+  shell**, which now also owns the 17px ruling (#143) and the Units∣Categories one-card conflict
+  with #133 (#148); (3) carry #144's three re-imposed decisions into whatever comes next.
+  ⚠️ **Porting caution:** `labs-decisions.md` § *Notes to the implementer* is an accurate fragility
+  inventory — laser polygon coords hand-tuned against four other values, an order-load-bearing `§3`
+  cascade, and both carets + the footer loop measured off hidden mirror spans (**a font or
+  `letter-spacing` change silently breaks caret tracking**). Port it deliberately, tweak panel intact.
+- **Tier 0.1 group head + item row — RULED AND LANDED (2026-07-31, PR #785, ledger #165–#178).**
+  Full trail — nine revert points, every rejected branch, every measurement, the CSS for each state:
+  `docs/superpowers/specs/2026-07-31-tier-01-head-row-design-log.md`. **The card itself now carries
+  R2→P1** (`docs/design/tier-01-card/index.html`); `git checkout` of that one file is the revert.
+  **Head:** title is a **26px deep milled pocket**, **raised** letter faces in an etched-away field
+  (footer scroll-pip physics — the pip's *outer* `0 1px 2px` cast shadow is the proof, since a recess
+  can't cast outward); chevron, head corner Pin and row pins **dropped**; faces carry the **state
+  hue**, open/shut moved to the **pocket floor** because hue can't carry both — **red fails 4.5:1
+  below ~76%**, and the shared shut factor is the **max** across hues, not the min (got this backwards
+  twice). Pins → **slots** (skewed ticks) **everywhere, including the filter chips** (#177); a
+  collapsed slot unfurls **LEFT** and shows a **numeral only** (#166).
+  **P1 — the two-level mechanic (#168):** `GROUP = housing, opens by MOVING` (steel, mechanical, **no
+  light**) · `ROW = cartridge, opens by LIGHTING` (glass, terminal, emission). Invariant at both
+  levels: **name right-aligned**. Laser drop moved group → row (#169); lit face is **neutral glass,
+  the frame carries the hue alone** (#172, narrows #156); the **220ms click discriminator is
+  untouched** (#173) — the P1 layer adds no handler, it detects the card's own open-wash and re-skins
+  it. **Row order (#176):** `button · slots · board · name` — the head's own right-to-left grammar
+  (*name · board · slots*) plus a left-anchored button, the one element a head lacks. **Tick cap
+  retired (#170):** every other element is edge-anchored so the rack takes the residual — head racks
+  now run **138–243px** (16–28 ticks) where the spec allowed 8; the cap was always the board's fixed
+  114px. Close-all moved to a **click on the Open chip** (#178), retiring #147's ✕-on-hover.
+  ⚠️ **Two claims in that log were CORRECTED by measurement — don't rebuild on the originals.**
+  (1) **§2.6 was wrong** that the verb conversion pays the width bill (#174): the ~22px is real *only
+  if* `stateW` is recomputed (the chip is a fixed `width:93px`, so swapping text alone reclaims
+  **0px**), and #155's `max(66,…)` floor caps *any* verb set at **27px** against a **~59px** shortfall
+  — **facts cannot fit at 380px regardless of wording**; that needs a wider column in Tier 0.2.
+  (2) **§2.7's `data-tip || data-hint` is not true of this build** — `data-tip` doesn't exist at all;
+  the issue list is the row's **`.pin[data-hint]`**, newline-separated `Source, State, Date`. Building
+  against that sentence yields a one-tick rack. Also: the row's **centre point sits on the `.signal`
+  chip**, which `stopPropagation`s per #67 — a scripted `click('[data-row]')` does *not* open a row.
+  **Verb wording is deferred** to a future Fable-5 pass over the backend (#175) — the card's
+  `JUMPWORD_BY_STATE` is an explicit placeholder; **do not polish or audit those words**.
+  **Still open:** #156 (does the lit face keep the group hue?), and a pre-existing gap this surfaced
+  but didn't cause — the card's open-row wash never clears on a second body click, so a lit cartridge
+  stays lit (the card's own contract; #173 says leave the click alone).
+- **Cascade the Tier-0.1 decisions into the rest of the design artifacts — DONE (2026-08-01, PR
+  #788, merged to trunk).** The kit, `tier-01-handoff/atom-rebuild.md`, all six Labs prompts, and
+  `prompt-b-tier-01-card.md` now teach the current language; folded into
+  `STALE-DESIGN-LANGUAGE-SWEEP.md`. **Merged to trunk but not yet promoted** — it's the one commit
+  currently ahead of `production` (docs/design-artifact only, nothing served changes, so promoting
+  it is low-stakes whenever Jac wants it live).
+- **Tier 0.1 card — steel-v2 shipped, board-buttons shipped, `/paint` skill born (2026-08-01/02,
+  branch `claude/read-prompt-ls8uj8`, PR #789 **MERGED to trunk as `8dcdfb0`, and PROMOTED LIVE
+  2026-08-02** — this line previously read "open/draft, NOT yet merged" for a day after it landed,
+  which is exactly the memory drift the 08-02 cleanup was diagnosing; when a PR merges, fix its row
+  here in the same breath).** Steel-v2 (P0–P7:
+  grain texture, glass family, head inversion, row cartridge, drawer-only flicker, toggle glass,
+  floating count slot) shipped and verified; ledger rows #197–#212 close out its debt plus the
+  design-dump/taxonomy era (name-left rows, chip-merged boards, the static-steel/digital-glass law,
+  board-buttons: header board = live group search reusing the card's original retired input
+  machinery, row board = the gate with a light-response press, condition-at-rest/verb-on-hover).
+  **New skill `/paint`** (`.claude/skills/paint/`) — recreate a mockup from scratch in clean HTML/CSS,
+  then a six-cell agent grid pass, THEN port proven recipes into the real file — born after two failed
+  edit-toward-the-picture attempts; used successfully on the header+row mockup (recreation artifact +
+  20-agent grid pass, scores converged after a hand-finishing round). **A port of three ring recipes
+  (uniform masked rings, half-height cuts, workshop-paint hue) was attempted and REVERTED same night —
+  "too many regressions," Jac's call — but the recipes are preserved in git history (commits
+  `aab66d1`/`104ba41`, revert `7d64cab`) for a more careful one-recipe-at-a-time retry.** Also parked:
+  a **two-deck header** structural idea from the same mockup (slot rack in its own recessed tray,
+  separate from the board+name row) — needs Jac's ruling before building (see the note for the three
+  open questions). Its PR #791 was **closed in the 08-02 cleanup and the note itself landed on trunk**
+  at `docs/superpowers/notes/2026-08-02-two-deck-header.md` — the idea is safe in the repo, not in a
+  PR. **Pick up next session: retry the paint port carefully (one recipe at a time), and rule on the
+  two-deck header.**
 - **Cross-device user sync — SHIPPED LIVE + PROMOTED (2026-07-17, PRs #692+#702+#685, `?v=20260717ab`, flag
   `userSync` ON).** Prefs/Views/dispatch/comms/resume-column follow the PERSON across devices (see
   the Decisions entry for the design). Verified by a 4-lens adversarial workflow (operator-isolation
@@ -647,3 +919,24 @@
   monthly member gets next month's invoice created ahead + charged on its due date; a
   `requiresPO`+`duesRequirePO` member's dues hold (created, not charged, no lapse) until a PO is
   added. Jac's call; `wrangler-fix` any miss.
+
+- **V2 card — finish the merge** (2026-08-05, PR #798, branch
+  `claude/design-system-phase-1-vcgald`). The Figma card `438:274` runs as live HTML/CSS
+  at `docs/design/v2-card/` (serve the folder, open `card.html`). Jac's verdict: *"it's a
+  start."* Geometry is a measured coordinate composition, assets pass, rows are fused to
+  their elbows and ride the channel down. NOT yet at fidelity. Next session's test prompt
+  is written at `docs/design/NEXT-SESSION-PROMPT.md` — it measures wall-clock time from
+  export to published artifact for ONE component.
+- **Art that must be REDRAWN before it can resize** (ledger #260, `docs/design/SLICE-SPEC.md`).
+  `asm-deck` cannot be 9-sliced below 1316px — chips/nameplate/PROMISED are frozen in a
+  1100px fixed corner and the widest uniform corridor in the whole panel is 19px; fix is
+  to pull them into live DOM. `asm-housing`'s interior staircase is a NEAR-rhythm (pitch
+  460/440/459) that can neither stretch nor round; decided fix is to move all diagonals
+  into the end caps. `asm-headboard` and `asm-rowboard` need text-free plate re-exports.
+- **Conduit rail export defects** (ledger #259). A 1px fully-transparent slot at x=19; the
+  right edge clipped mid-luminance-ramp; and the accent is RED (`#ff4242`/`#9d0000`) not
+  the canon safety-orange `#ff7e1f`, reading as lit against the seam. Decision: author the
+  rail neutral and tint per state.
+- **Slice corridors need named spacer frames in Figma** (`SLICE-SPEC.md` §6). The deck's
+  uniform corridor has 5px and 4px of slack — a stray drop shadow drifting into it breaks
+  the head at every width.

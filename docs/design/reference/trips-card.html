@@ -1,0 +1,710 @@
+<title>Trips — dispatch v2, rebuilt on the new model</title>
+
+<style>
+  :root{
+    --bg:#0a0d11; --bg2:#0f1318; --panel:#171d25; --card:#12171e; --cardh:#1a212b;
+    --line:#2c343f; --lineSoft:#212834; --txt:#eef2f7; --txt2:#aab4c1; --txt3:#838e9c;
+    --accent:#ff7e1f; --onAcc:#1a1205; --accSoft:rgba(255,126,31,.15);
+    --green:#34d399; --yellow:#eed44b; --red:#ff4242; --redFill:#d63636; --onRedFill:#fdfdfd;
+    --blue:#6394cc; --commit:#2f6fd0; --onCommit:#fdfdfd; --gray:#8b94a3; --tan:#c2925a;
+    --font:-apple-system,"Segoe UI",Roboto,system-ui,sans-serif;
+    --stamp:ui-monospace,"Cascadia Code","SF Mono",Menlo,Consolas,monospace;
+    --h:24px;
+  }
+  *{box-sizing:border-box} body{margin:0}
+  .wrap{background:var(--bg); color:var(--txt); font-family:var(--font); line-height:1.5; -webkit-font-smoothing:antialiased; padding:clamp(14px,3vw,30px) clamp(10px,3vw,20px) 60px}
+  .sheet{max-width:1320px; margin:0 auto}
+  .eyebrow{font-family:var(--stamp); font-size:12px; letter-spacing:.18em; text-transform:uppercase; color:var(--txt3); margin:0; font-weight:700}
+  h1{font-family:var(--stamp); font-weight:800; font-size:clamp(20px,3.3vw,28px); line-height:1; margin:.26em 0 .32em; letter-spacing:.01em; text-transform:uppercase}
+  h1 .hl{color:var(--accent)}
+  .lede{max-width:96ch; font-size:13px; color:var(--txt2); margin:0} .lede b{color:var(--txt); font-weight:600}
+  .key{display:flex; flex-wrap:wrap; gap:6px 12px; margin:14px 0 2px; font-family:var(--stamp); font-size:10px; letter-spacing:.03em; text-transform:uppercase; color:var(--txt3)}
+  .key b{color:var(--accent)}
+
+  /* ---------- the five parts (kept identical to the approved detail-views look) ---------- */
+  .ctl{height:var(--h); display:inline-flex; align-items:center; font-family:var(--stamp); font-size:11px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; white-space:nowrap; flex:none}
+  .sig{padding:0 8px; border-radius:7px}
+  .sig.f.red{background:var(--redFill);color:var(--onRedFill)} .sig.o.red{color:var(--red);box-shadow:inset 0 0 0 1.3px var(--red)}
+  .sig.f.yellow{background:var(--yellow);color:var(--onAcc)} .sig.o.yellow{color:var(--yellow);box-shadow:inset 0 0 0 1.3px var(--yellow)}
+  .sig.f.green{background:var(--green);color:var(--onAcc)} .sig.o.green{color:var(--green);box-shadow:inset 0 0 0 1.3px var(--green)}
+  .sig.o.grey{color:var(--gray);box-shadow:inset 0 0 0 1.3px var(--gray)}
+  .gate{padding:0 8px 0 6px; border-radius:7px; gap:2px; cursor:pointer; border:0}
+  .gate .cv{display:inline-flex;align-items:center;justify-content:center;width:11px;height:11px} .gate .cv svg{width:11px;height:11px;display:block}
+  .gate.grey{background:var(--gray);color:var(--onAcc)}
+  .gate.o.grey{background:transparent;color:var(--txt3);box-shadow:inset 0 0 0 1.3px var(--line)}
+  .gate.yellow{background:var(--yellow);color:var(--onAcc)}
+  .gate.green{background:var(--green);color:var(--onAcc)}
+  .gate.red{background:var(--redFill);color:var(--onRedFill)}
+  .stamp{font-family:var(--stamp); font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--txt3); white-space:nowrap}
+  .dot{color:var(--line); font-family:var(--stamp); font-size:10px}
+  .ref{height:var(--h); display:inline-flex; align-items:center; gap:6px; padding:0 8px 0 3px; border-radius:7px; background:var(--card); border:1px solid var(--line); color:var(--txt); font-size:12px; font-weight:600; cursor:pointer; text-decoration:none; white-space:nowrap}
+  .ref.warn{border-color:var(--red)}
+  .ref .ty{width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;color:var(--accent);background:var(--accSoft);border-radius:5px} .ref .ty svg{width:10px;height:10px}
+  .door{height:var(--h); display:inline-flex; align-items:center; font-family:var(--stamp); font-size:10.5px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; cursor:pointer; border-radius:999px; padding:0 13px; border:0}
+  .door.save{background:var(--commit); color:var(--onCommit)}
+  .door.ghost{background:transparent; color:var(--txt2); border:1px solid var(--line)}
+  .door.dash{background:transparent; color:var(--commit); border:1.4px dashed var(--commit)}
+  .clink{display:inline-flex; align-items:center; gap:6px; color:var(--txt); font-size:12px; text-decoration:none; font-family:var(--font); height:var(--h)}
+  .clink svg{color:var(--accent); width:13px; height:13px; flex:none} .clink .v{border-bottom:1.4px solid transparent} .clink:hover .v{border-bottom-color:var(--accent)}
+
+  /* ---------- page-level Dispatch/Driver toggle + the 4-way +Trip toggle (Door rule: toggle w/ no status = orange fill, dark ink) ---------- */
+  .viewtoggle{display:inline-flex; height:var(--h); border:1px solid var(--line); border-radius:7px; overflow:hidden; flex:none}
+  .viewtoggle button{all:unset; box-sizing:border-box; cursor:pointer; height:100%; display:inline-flex; align-items:center; gap:5px; padding:0 12px; font-family:var(--stamp); font-size:10.5px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--txt3); border-right:1px solid var(--line)}
+  .viewtoggle button:last-child{border-right:0}
+  .viewtoggle button.on{background:var(--accent); color:var(--onAcc)}
+  .viewtoggle button svg{width:12px;height:12px}
+  .toggle4{display:inline-flex; height:var(--h); border-radius:7px; overflow:hidden; border:1px solid var(--line); flex:none}
+  .toggle4 button{all:unset; box-sizing:border-box; cursor:pointer; height:100%; padding:0 11px; font-family:var(--stamp); font-size:10.5px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; color:var(--txt3); border-right:1px solid var(--line); display:inline-flex; align-items:center}
+  .toggle4 button:last-child{border-right:0}
+  .toggle4 button.on{background:var(--accent); color:var(--onAcc)}
+
+  .tip{position:relative; display:inline-block}
+  .tip>.ctl{cursor:help}
+  .tip .bub{position:absolute; bottom:calc(100% + 8px); left:0; width:max-content; max-width:min(72vw,270px); background:#05070a; color:#eef2f7; border:1px solid #3a444e; border-radius:7px; padding:8px 10px; font-family:var(--font); font-size:12px; line-height:1.42; text-transform:none; letter-spacing:0; opacity:0; transform:translateY(4px); pointer-events:none; transition:opacity .12s, transform .12s; z-index:30}
+  .tip:hover .bub, .tip:focus-within .bub{opacity:1; transform:translateY(0)}
+  .tip .bub .t{font-family:var(--stamp); font-size:9px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--red); display:block; margin-bottom:3px}
+  .tip .bub .go{color:var(--commit); font-weight:700}
+
+  .reason{font-family:var(--font); font-size:12px; color:var(--txt2); background:rgba(214,54,54,.14); border:1px solid rgba(214,54,54,.4); border-radius:7px; padding:6px 9px; display:flex; align-items:center; gap:7px}
+  .reason svg{width:13px;height:13px; color:var(--red); flex:none}
+
+  /* ================= the +Trip creation snippet (rental-side entry point, §8.1) ================= */
+  .addtrip{background:var(--card); border:1px dashed var(--line); border-radius:12px; padding:12px 14px; margin-top:16px; display:flex; align-items:center; gap:12px; flex-wrap:wrap}
+  .addtrip .at-label{font-family:var(--stamp); font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--txt3); flex-basis:100%}
+  .addtrip .at-cap{flex-basis:100%; font-size:12px; color:var(--txt3); font-style:italic; margin-top:2px}
+  .addtrip .at-cap b{color:var(--txt2); font-style:normal}
+
+  /* ================= surface ladder (Priority #1 contrast fix): bg < card(trough) < panel(trip card) < cardh(stop well) ================= */
+  .stage{display:grid; grid-template-columns:minmax(0,1.5fr) minmax(280px,.95fr) 334px; gap:16px; margin-top:16px; align-items:start}
+  @media (max-width:1280px){ .stage{grid-template-columns:minmax(0,1.5fr) minmax(280px,.95fr)} .stage>.phonewrap{grid-column:1/-1; justify-self:center} }
+  @media (max-width:860px){ .stage{grid-template-columns:1fr} .stage>.phonewrap{justify-self:stretch} }
+
+  .dpanel{background:var(--card); border:1px solid var(--line); border-radius:14px; overflow:hidden; display:flex; flex-direction:column}
+  .dhead{padding:11px 14px 10px; display:flex; align-items:flex-start; justify-content:space-between; gap:10px; flex-wrap:wrap; border-bottom:1px solid var(--line)}
+  .dh-name{font-family:var(--font); font-weight:700; font-size:15px; color:var(--txt); letter-spacing:-.005em}
+  .dh-sub{font-size:11px; color:var(--txt3); margin-top:2px; font-family:var(--stamp); letter-spacing:.02em}
+
+  .draglegend{display:flex; flex-wrap:wrap; gap:8px 16px; padding:9px 14px; background:var(--bg2); border-bottom:1px solid var(--line)}
+  .draglegend .li{display:inline-flex; align-items:center; gap:6px; font-size:11px; color:var(--txt3)}
+  .draglegend .li b{color:var(--txt2); font-weight:600}
+  .draglegend svg{width:12px;height:12px; color:var(--txt3); flex:none}
+
+  .railcap{padding:8px 14px; font-size:11px; color:var(--txt3); font-style:italic; border-bottom:1px solid var(--line); background:var(--bg2)}
+
+  .dgroup{border-bottom:1px solid var(--line)}
+  .dgroup:last-child{border-bottom:0}
+  .dghead{display:flex; align-items:center; gap:9px; padding:9px 14px; border-left:3px solid var(--gray)}
+  .dghead.red{border-left-color:var(--redFill)}
+  .dghead.yellow{border-left-color:var(--yellow)}
+  .dghead.green{border-left-color:var(--green)}
+  .dglabel{font-family:var(--stamp); font-weight:800; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--txt)}
+
+  .dgbody{padding:11px 12px 12px; display:flex; flex-direction:column; gap:11px}
+  .rbody{padding:11px 12px 12px; display:flex; flex-direction:column; gap:10px}
+
+  /* ---- trip card: a real step UP off the trough (--card) onto --panel, with air + a lift so cards don't blur together ---- */
+  .trip{background:var(--panel); border:1px solid var(--line); border-radius:11px; padding:10px 11px 11px; box-shadow:0 1px 0 rgba(255,255,255,.03) inset, 0 5px 12px rgba(4,6,9,.3)}
+  .trip.st-bad{border-color:rgba(214,54,54,.55)}
+  .trip.st-warn{border-color:rgba(238,212,75,.4)}
+  .trip-top{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+  .dragh{display:inline-flex; color:var(--txt3); cursor:grab; flex:none; opacity:.75}
+  .dragh svg{width:13px;height:13px}
+  .trip-spacer{flex:1; min-width:6px}
+
+  .driverpick{margin-top:8px; background:var(--cardh); border:1px solid var(--line); border-radius:9px; padding:5px; display:flex; flex-direction:column; gap:1px}
+  .driverpick .dp-cap{font-family:var(--stamp); font-size:9px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--txt3); padding:4px 8px 5px}
+  .drow{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:6px 8px; border-radius:6px; flex-wrap:wrap}
+  .drow.sel{background:rgba(255,126,31,.13); box-shadow:inset 0 0 0 1px rgba(255,126,31,.32)}
+  .drow .dname{font-family:var(--font); font-weight:700; font-size:13px; color:var(--txt)}
+  .drow .dstate{font-size:11px; color:var(--txt3)}
+  .drow .dstate.busy{color:var(--red); font-weight:600}
+  .drow .dstate.near{color:var(--txt2)}
+
+  /* ---- stops nested inside a trip: step UP again to --cardh, the brightest surface — the thing a dispatcher actually reads ---- */
+  .tstops{margin-top:9px; display:flex; flex-direction:column; gap:5px}
+  .tstop{display:flex; align-items:center; gap:8px; flex-wrap:wrap; background:var(--cardh); border:1px solid var(--lineSoft); border-radius:8px; padding:6px 8px}
+  .seq{font-family:var(--stamp); font-size:9.5px; font-weight:800; color:var(--txt3); background:var(--card); width:15px; height:15px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; flex:none}
+  .stoptype{display:inline-flex; align-items:center; gap:4px; font-family:var(--stamp); font-size:10px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--txt3); flex:none}
+  .stoptype svg{width:11px;height:11px}
+  .tdoor{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:9px}
+  .futurelink{margin-top:8px; padding-top:8px; border-top:1px dashed var(--lineSoft); font-size:11px; color:var(--txt3); display:flex; align-items:center; gap:6px}
+  .futurelink svg{width:12px;height:12px;flex:none} .futurelink b{color:var(--txt2)}
+
+  /* ---- right rail: unplanned stops, sorted by urgency ---- */
+  .railitem{background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:8px 9px; display:flex; flex-direction:column; gap:6px}
+  .railitem.far{opacity:.62; border-style:dashed}
+  .ri-top{display:flex; align-items:center; gap:7px; flex-wrap:wrap}
+  .ri-due{display:flex; align-items:center; gap:4px; font-family:var(--stamp); font-size:10px; color:var(--txt3)}
+  .ri-due svg{width:10px;height:10px}
+
+  .htail{padding:9px 14px; border-top:1px solid var(--line)}
+  .h4{font-family:var(--stamp); font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--txt); margin-bottom:2px}
+  .hnote{font-size:11px; color:var(--txt3)}
+
+  /* ---------- phone frame (kept — driver view Jac liked) ---------- */
+  .phonewrap{display:flex; flex-direction:column; align-items:center; gap:10px}
+  .phone{width:334px; max-width:100%; padding:11px; background:#151a21; border:1px solid #262e38; border-radius:32px}
+  .phone-status{display:flex; justify-content:space-between; padding:3px 10px 8px; font-family:var(--stamp); font-size:9.5px; letter-spacing:.04em; color:var(--txt3)}
+  .phone-screen{background:var(--bg); border:1px solid #0d1116; border-radius:22px; overflow:hidden; display:flex; flex-direction:column}
+
+  .papp-top{display:flex; align-items:center; justify-content:space-between; gap:8px; padding:11px 12px 9px; border-bottom:1px solid var(--line)}
+  .papp-title{font-family:var(--stamp); font-weight:800; font-size:13px; letter-spacing:.06em; text-transform:uppercase; color:var(--txt)}
+
+  .pdriver{padding:10px 12px 0; display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap}
+  .pd-name{font-family:var(--font); font-weight:700; font-size:15px; color:var(--txt)}
+  .pd-sub{font-size:11px; color:var(--txt3); margin-top:1px; font-family:var(--stamp); letter-spacing:.02em}
+  .rolebadge{display:inline-flex; align-items:center; gap:5px; font-family:var(--stamp); font-size:9px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--tan); border:1px dashed var(--tan); border-radius:7px; padding:3px 7px; flex:none}
+  .rolebadge svg{width:10px;height:10px}
+
+  .nownext{margin:10px 12px 0; padding:10px 11px; background:var(--cardh); border:1px solid var(--line); border-radius:9px; display:flex; flex-direction:column; gap:6px}
+  .nn-row{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+  .nn-tag{font-family:var(--stamp); font-size:10px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; flex:none}
+  .nn-tag.now{color:var(--yellow)}
+  .nn-tag.next{color:var(--commit)}
+  .nn-headline{font-family:var(--font); font-weight:700; font-size:13px; color:var(--txt)}
+  .nn-sub{font-size:11.5px; color:var(--txt2)}
+
+  .stops{padding:6px 12px 4px}
+  .stop{display:grid; grid-template-columns:16px 1fr; gap:10px}
+  .stop-col{display:flex; flex-direction:column; align-items:center}
+  .stop-dot{width:10px; height:10px; border-radius:50%; margin-top:5px; flex:none; background:var(--gray)}
+  .stop.done .stop-dot{background:var(--green)}
+  .stop.current .stop-dot{background:var(--yellow); box-shadow:0 0 0 3px rgba(238,212,75,.28)}
+  .stop.trouble .stop-dot{background:var(--redFill); box-shadow:0 0 0 3px rgba(214,54,54,.26)}
+  .stop.upcoming .stop-dot{background:transparent; border:2px solid var(--line)}
+  .stop-conn{width:2px; flex:1; min-height:16px; background:var(--line); margin-top:2px}
+  .stop:last-child .stop-conn{display:none}
+  .stop-content{padding-bottom:14px; border-bottom:1px solid var(--lineSoft); min-width:0}
+  .stop:last-child .stop-content{border-bottom:0; padding-bottom:2px}
+  .stop-head{display:flex; align-items:center; gap:8px; min-height:var(--h); flex-wrap:wrap}
+  .stop-place{font-family:var(--font); font-weight:700; font-size:13.5px; color:var(--txt)}
+  .stop.upcoming .stop-place{color:var(--txt2)}
+  .stop-sub{font-size:11px; color:var(--txt3); margin-top:2px; display:flex; align-items:center; gap:6px; flex-wrap:wrap}
+  .stop-due{font-family:var(--stamp); font-size:11.5px; color:var(--txt2); margin-top:6px; font-variant-numeric:tabular-nums}
+  .stop-due b{color:var(--txt); font-size:13px}
+  .addr{display:flex; align-items:center; gap:6px; margin-top:7px; color:var(--txt); font-size:12px; text-decoration:none; font-family:var(--font); border-bottom:1.4px solid var(--line); padding-bottom:6px; width:fit-content}
+  .addr svg{width:14px;height:14px;color:var(--accent); flex:none}
+  .stages{display:flex; align-items:center; gap:5px; margin-top:9px; font-family:var(--stamp); font-size:9px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--txt3); flex-wrap:wrap}
+  .stages .on{color:var(--accent)}
+  .stages .sep{color:var(--line)}
+  .stop-door{margin-top:9px}
+
+  .phone-caption{max-width:334px; font-size:11.5px; color:var(--txt3); text-align:center; font-style:italic}
+  .phone-caption b{color:var(--txt2); font-style:normal}
+
+  .foot{margin-top:24px; padding-top:16px; border-top:1px solid var(--line); font-size:13px; color:var(--txt2); max-width:96ch} .foot b{color:var(--txt)}
+  .foot ul{margin:8px 0 0; padding-left:20px} .foot li{margin:4px 0}
+</style>
+
+<div class="wrap"><div class="sheet">
+
+  <p class="eyebrow">Trips · v2 · rebuilt on the dispatch model (spec §8–§8.2) · fixes critique #3 · built to style + wrangler-style</p>
+  <h1>Trips — <span class="hl">a first-class record, planned on its own board</span></h1>
+  <p class="lede">Severed from Rentals (§8): a <b>Trip</b> is a truck+driver outing with its own ordered <b>Stops</b> —
+  <b>Drop · Pickup · Field Call · Repo · Task</b> — each Stop moving one or more Units back to their Rental (a rental
+  can spawn many trips; a trip can serve many rentals). Dispatch is a genuine two-panel planning surface: the
+  <b>schedule</b> (left) groups trips into <b>Field Calls · Today · Tomorrow · This Week</b>, and a
+  <b>To-Dispatch rail</b> (right) holds every Stop that hasn't found a truck yet, sorted by urgency — one schedule,
+  the rail carries the future. <b>Priority fix — critique #3:</b> v1 read as uniform dark-on-dark; this draft steps
+  the surface at every level — board → group → trip card → stops — so one trip reads clean from the next at a
+  glance. The driver phone view (right) keeps the calm, user-scoped <b>NOW + Next Up</b> focus Jac liked.</p>
+  <div class="key"><span><b>Signal</b> read-only state</span><span><b>Gate</b> turnable</span><span><b>Stamp</b> fact</span><span><b>Ref</b> linked</span><span><b>Door</b> action</span><span>· fill = today · colour = state</span></div>
+
+  <!-- ============ +TRIP CREATION SNIPPET (rental-side entry point, §8.1) ============ -->
+  <div class="addtrip">
+    <span class="at-label">On the rental screen — the creation entry point</span>
+    <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/></svg></span>RES-2291 · Boudreaux Marine LLC</a>
+    <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7.3 12 12l8.7-4.7"/><path d="M12 22V12"/></svg></span>Scout SS-14</a>
+    <span class="door dash">+ Trip</span>
+    <div class="toggle4">
+      <button>Self</button>
+      <button class="on">Round Trip</button>
+      <button>Delivery</button>
+      <button>Pickup</button>
+    </div>
+    <span class="at-cap"><b>Self</b> = customer hauls it, no trip/stop created · <b>Delivery</b> = one Drop stop at
+    rental start · <b>Pickup</b> = one Pickup stop at rental end · <b>Round Trip</b> = both, days/weeks apart — the
+    Delivery lands on today's board below, the Pickup waits in the rail (Aug 10). Units default to the rental's
+    units; every stop inherits this job-site address unless overridden.</span>
+  </div>
+
+  <div class="stage">
+
+    <!-- ============ LEFT — THE SCHEDULE ============ -->
+    <div class="dpanel">
+      <div class="dhead">
+        <div>
+          <div class="dh-name">Today's Board</div>
+          <div class="dh-sub">Jul 20 · 10 trips · 4 drivers · 2 conflicts flagged</div>
+        </div>
+        <div class="viewtoggle">
+          <button class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 2v4M16 2v4"/></svg>Dispatch</button>
+          <button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2.4"/><path d="M11 18h2"/></svg>Driver</button>
+        </div>
+      </div>
+
+      <div class="draglegend">
+        <span class="li"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 8 4 4-4 4"/><path d="M2 12h20"/><path d="m6 8-4 4 4 4"/></svg><b>Rail ↔ trip</b> adds / un-plans a stop</span>
+        <span class="li"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg><b>Drag within a trip</b> reorders stops</span>
+        <span class="li"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="m15 19-3 3-3-3"/><path d="m19 9 3 3-3 3"/><path d="M2 12h20"/><path d="m5 9-3 3 3 3"/><path d="m9 5 3-3 3 3"/></svg><b>Drag a trip</b> re-times it</span>
+        <span class="li"><b>Empty time</b> spawns a new trip</span>
+      </div>
+
+      <!-- ===== FIELD CALLS ===== -->
+      <div class="dgroup">
+        <div class="dghead green"><span class="dglabel">Field Calls</span><span class="stamp">2 trips · 1 resolved</span></div>
+        <div class="dgbody">
+
+          <div class="trip">
+            <div class="trip-top">
+              <span class="dragh" title="Drag to re-time"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="m15 19-3 3-3-3"/><path d="m19 9 3 3-3 3"/><path d="M2 12h20"/><path d="m5 9-3 3 3 3"/><path d="m9 5 3-3 3 3"/></svg></span>
+              <span class="ctl stamp">2:15 PM</span>
+              <span class="trip-spacer"></span>
+              <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>Mikey Fontenot</a>
+              <span class="ctl sig o green">resolved</span>
+            </div>
+            <div class="tstops">
+              <div class="tstop">
+                <span class="dragh" title="Drag to reorder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg></span>
+                <span class="seq">1</span>
+                <span class="stoptype"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>Field Call</span>
+                <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7.3 12 12l8.7-4.7"/><path d="M12 22V12"/></svg></span>Gator RC-4700</a>
+                <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/></svg></span>Broussard Dirt Works</a>
+                <span class="ctl stamp" style="margin-left:auto">WO #1188 · hyd hose</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="trip">
+            <div class="trip-top">
+              <span class="dragh" title="Drag to re-time"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="m15 19-3 3-3-3"/><path d="m19 9 3 3-3 3"/><path d="M2 12h20"/><path d="m5 9-3 3 3 3"/><path d="m9 5 3-3 3 3"/></svg></span>
+              <span class="ctl stamp">ETA 2:45 PM</span>
+              <span class="trip-spacer"></span>
+              <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>Mikey Fontenot</a>
+              <span class="ctl gate grey"><span class="cv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>en route</span>
+            </div>
+            <div class="tstops">
+              <div class="tstop">
+                <span class="dragh" title="Drag to reorder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg></span>
+                <span class="seq">1</span>
+                <span class="stoptype"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>Field Call</span>
+                <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7.3 12 12l8.7-4.7"/><path d="M12 22V12"/></svg></span>Highrise</a>
+                <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/></svg></span>Duhon Contracting</a>
+                <span class="ctl stamp" style="margin-left:auto">WO #113 · hyd seal · part arrived</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ===== TODAY ===== -->
+      <div class="dgroup">
+        <div class="dghead red"><span class="dglabel">Today</span><span class="stamp">6 trips · 3 flagged</span></div>
+        <div class="dgbody">
+
+          <div class="trip st-bad">
+            <div class="trip-top">
+              <span class="dragh" title="Drag to re-time"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="m15 19-3 3-3-3"/><path d="m19 9 3 3-3 3"/><path d="M2 12h20"/><path d="m5 9-3 3 3 3"/><path d="m9 5 3-3 3 3"/></svg></span>
+              <span class="ctl stamp">9:00–10:30 AM</span>
+              <span class="trip-spacer"></span>
+              <a class="ref warn"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>Colby Thibodeaux</a>
+              <span class="ctl gate o grey"><span class="cv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>scheduled</span>
+              <span class="tip"><span class="ctl sig f red" tabindex="0">driver conflict</span><span class="bub"><span class="t">Same driver, two trips</span>Overlaps Colby's Deuce pickup below by 30 min. <span class="go">→ open the Gate to reassign</span></span></span>
+            </div>
+            <div class="driverpick">
+              <div class="dp-cap">Assign Gate — open (each driver's state inline, not a toast)</div>
+              <div class="drow"><span class="dname">Trey Guidry</span><span class="dstate">Available</span></div>
+              <div class="drow sel"><span class="dname">Colby Thibodeaux</span><span class="dstate busy">Busy 9:00–10:30 AM → would overlap</span></div>
+              <div class="drow"><span class="dname">Reggie Comeaux</span><span class="dstate near">On a nearby run (Fontenot Farms, 12 mi)</span></div>
+            </div>
+            <div class="tstops">
+              <div class="tstop">
+                <span class="dragh" title="Drag to reorder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg></span>
+                <span class="seq">1</span>
+                <span class="stoptype"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17V3"/><path d="m6 11 6 6 6-6"/><path d="M19 21H5"/></svg>Drop</span>
+                <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7.3 12 12l8.7-4.7"/><path d="M12 22V12"/></svg></span>Ranger ME-08</a>
+                <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/></svg></span>Duhon Contracting</a>
+                <span class="ctl stamp" style="margin-left:auto">9:00–10:30 AM</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="trip st-bad">
+            <div class="trip-top">
+              <span class="dragh" title="Drag to re-time"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="m15 19-3 3-3-3"/><path d="m19 9 3 3-3 3"/><path d="M2 12h20"/><path d="m5 9-3 3 3 3"/><path d="m9 5 3-3 3 3"/></svg></span>
+              <span class="ctl stamp">10:00–11:00 AM</span>
+              <span class="trip-spacer"></span>
+              <a class="ref warn"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>Colby Thibodeaux</a>
+              <span class="ctl gate o grey"><span class="cv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>scheduled</span>
+              <span class="tip"><span class="ctl sig f red" tabindex="0">driver conflict</span><span class="bub"><span class="t">Same driver, two trips</span>Overlaps Colby's Ranger delivery above by 30 min. <span class="go">→ open the Gate to reassign</span></span></span>
+            </div>
+            <div class="tstops">
+              <div class="tstop">
+                <span class="dragh" title="Drag to reorder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg></span>
+                <span class="seq">1</span>
+                <span class="stoptype"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 9-6-6-6 6"/><path d="M12 3v14"/><path d="M5 21h14"/></svg>Pickup</span>
+                <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7.3 12 12l8.7-4.7"/><path d="M12 22V12"/></svg></span>Deuce TL-9</a>
+                <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/></svg></span>Boudreaux Marine LLC</a>
+                <span class="ctl stamp" style="margin-left:auto">10:00–11:00 AM</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="trip st-bad">
+            <div class="trip-top">
+              <span class="dragh" title="Drag to re-time"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="m15 19-3 3-3-3"/><path d="m19 9 3 3-3 3"/><path d="M2 12h20"/><path d="m5 9-3 3 3 3"/><path d="m9 5 3-3 3 3"/></svg></span>
+              <span class="ctl stamp">3:30–4:15 PM</span>
+              <span class="trip-spacer"></span>
+              <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>Reggie Comeaux</a>
+              <span class="ctl gate red"><span class="cv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>trouble</span>
+            </div>
+            <div class="reason">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+              Flat tire on the trailer, can't tow — reported 3:40 PM
+            </div>
+            <div class="tstops">
+              <div class="tstop">
+                <span class="dragh" title="Drag to reorder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg></span>
+                <span class="seq">1</span>
+                <span class="stoptype"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 9-6-6-6 6"/><path d="M12 3v14"/><path d="M5 21h14"/></svg>Pickup</span>
+                <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7.3 12 12l8.7-4.7"/><path d="M12 22V12"/></svg></span>Bandit TL-22</a>
+                <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/></svg></span>Fontenot Farms</a>
+                <span class="ctl stamp" style="margin-left:auto">3:30–4:15 PM</span>
+              </div>
+            </div>
+            <div class="tdoor">
+              <span class="ctl door save">Reassign driver</span>
+              <a class="clink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.83 4.4a10.5 10.5 0 0 0 5.77 5.77l1.28-1.28a1 1 0 0 1 1.05-.24 11.4 11.4 0 0 0 3.55.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.51a1 1 0 0 1 1 1 11.4 11.4 0 0 0 .57 3.55 1 1 0 0 1-.24 1.05z"/></svg><span class="v">(337) 555-0177 · Reggie</span></a>
+            </div>
+          </div>
+
+          <div class="trip st-bad">
+            <div class="trip-top">
+              <span class="dragh" title="Drag to re-time"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="m15 19-3 3-3-3"/><path d="m19 9 3 3-3 3"/><path d="M2 12h20"/><path d="m5 9-3 3 3 3"/><path d="m9 5 3-3 3 3"/></svg></span>
+              <span class="ctl stamp">4:00 PM</span>
+              <span class="trip-spacer"></span>
+              <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>Trey Guidry</a>
+              <span class="ctl gate red"><span class="cv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>trouble</span>
+            </div>
+            <div class="reason">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+              Gate locked, no site contact — reported 3:52 PM
+            </div>
+            <div class="tstops">
+              <div class="tstop">
+                <span class="dragh" title="Drag to reorder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg></span>
+                <span class="seq">1</span>
+                <span class="stoptype"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17V3"/><path d="m6 11 6 6 6-6"/><path d="M19 21H5"/></svg>Drop</span>
+                <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7.3 12 12l8.7-4.7"/><path d="M12 22V12"/></svg></span>Bruiser CP-31</a>
+                <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/></svg></span>Landry Metal Works</a>
+                <span class="ctl stamp" style="margin-left:auto">4:00 PM</span>
+              </div>
+            </div>
+            <div class="tdoor">
+              <span class="ctl door save">Send help</span>
+              <a class="clink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.83 4.4a10.5 10.5 0 0 0 5.77 5.77l1.28-1.28a1 1 0 0 1 1.05-.24 11.4 11.4 0 0 0 3.55.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.51a1 1 0 0 1 1 1 11.4 11.4 0 0 0 .57 3.55 1 1 0 0 1-.24 1.05z"/></svg><span class="v">(337) 555-0142 · Trey</span></a>
+            </div>
+          </div>
+
+          <div class="trip">
+            <div class="trip-top">
+              <span class="dragh" title="Drag to re-time"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="m15 19-3 3-3-3"/><path d="m19 9 3 3-3 3"/><path d="M2 12h20"/><path d="m5 9-3 3 3 3"/><path d="m9 5 3-3 3 3"/></svg></span>
+              <span class="ctl stamp">12:15–2:00 PM</span>
+              <span class="trip-spacer"></span>
+              <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>Trey Guidry</a>
+              <span class="ctl gate o grey"><span class="cv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>scheduled</span>
+            </div>
+            <div class="tstops">
+              <div class="tstop">
+                <span class="dragh" title="Drag to reorder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg></span>
+                <span class="seq">1</span>
+                <span class="stoptype"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>Task</span>
+                <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/></svg></span>Duhon Contracting</a>
+                <span class="ctl stamp" style="margin-left:auto">Drop-off · filters &amp; hose · 12:15 PM</span>
+              </div>
+              <div class="tstop">
+                <span class="dragh" title="Drag to reorder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg></span>
+                <span class="seq">2</span>
+                <span class="stoptype"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 9-6-6-6 6"/><path d="M12 3v14"/><path d="M5 21h14"/></svg>Pickup</span>
+                <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7.3 12 12l8.7-4.7"/><path d="M12 22V12"/></svg></span>Gator RC-4700</a>
+                <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/></svg></span>Broussard Dirt Works</a>
+                <span class="ctl stamp" style="margin-left:auto">1:00–2:00 PM</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="trip">
+            <div class="trip-top">
+              <span class="dragh" title="Drag to re-time"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="m15 19-3 3-3-3"/><path d="m19 9 3 3-3 3"/><path d="M2 12h20"/><path d="m5 9-3 3 3 3"/><path d="m9 5 3-3 3 3"/></svg></span>
+              <span class="ctl stamp">8:00–9:00 AM</span>
+              <span class="trip-spacer"></span>
+              <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>Trey Guidry</a>
+              <span class="ctl sig o green">delivered · 8:52 AM</span>
+            </div>
+            <div class="tstops">
+              <div class="tstop">
+                <span class="dragh" title="Drag to reorder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg></span>
+                <span class="seq">1</span>
+                <span class="stoptype"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17V3"/><path d="m6 11 6 6 6-6"/><path d="M19 21H5"/></svg>Drop</span>
+                <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7.3 12 12l8.7-4.7"/><path d="M12 22V12"/></svg></span>Scout SS-14</a>
+                <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/></svg></span>Boudreaux Marine LLC</a>
+                <span class="ctl stamp" style="margin-left:auto">8:00–9:00 AM</span>
+              </div>
+            </div>
+            <div class="futurelink">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+              Round Trip · pickup scheduled <b>Aug 10</b> · waiting in the rail →
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ===== TOMORROW ===== -->
+      <div class="dgroup">
+        <div class="dghead yellow"><span class="dglabel">Tomorrow</span><span class="stamp">1 trip · needs scheduling</span></div>
+        <div class="dgbody">
+
+          <div class="trip st-warn">
+            <div class="trip-top">
+              <span class="dragh" title="Drag to re-time"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="m15 19-3 3-3-3"/><path d="m19 9 3 3-3 3"/><path d="M2 12h20"/><path d="m5 9-3 3 3 3"/><path d="m9 5 3-3 3 3"/></svg></span>
+              <span class="ctl sig f yellow">needs scheduling</span>
+              <span class="trip-spacer"></span>
+              <span class="ctl gate o grey"><span class="cv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>assign driver</span>
+            </div>
+            <div class="tstops">
+              <div class="tstop">
+                <span class="dragh" title="Drag to reorder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg></span>
+                <span class="seq">1</span>
+                <span class="stoptype"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17V3"/><path d="m6 11 6 6 6-6"/><path d="M19 21H5"/></svg>Drop</span>
+                <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7.3 12 12l8.7-4.7"/><path d="M12 22V12"/></svg></span>Trooper TR-19</a>
+                <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/></svg></span>Landry Metal Works</a>
+                <span class="ctl stamp" style="margin-left:auto">no time set</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ===== THIS WEEK ===== -->
+      <div class="dgroup">
+        <div class="dghead"><span class="dglabel">This Week</span><span class="stamp">1 trip</span></div>
+        <div class="dgbody">
+
+          <div class="trip">
+            <div class="trip-top">
+              <span class="dragh" title="Drag to re-time"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="m15 19-3 3-3-3"/><path d="m19 9 3 3-3 3"/><path d="M2 12h20"/><path d="m5 9-3 3 3 3"/><path d="m9 5 3-3 3 3"/></svg></span>
+              <span class="ctl stamp">Fri Jul 24 · 10:00 AM</span>
+              <span class="trip-spacer"></span>
+              <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>Reggie Comeaux</a>
+              <span class="ctl gate o grey"><span class="cv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>scheduled</span>
+            </div>
+            <div class="tstops">
+              <div class="tstop">
+                <span class="dragh" title="Drag to reorder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg></span>
+                <span class="seq">1</span>
+                <span class="stoptype"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 9-6-6-6 6"/><path d="M12 3v14"/><path d="M5 21h14"/></svg>Pickup</span>
+                <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7.3 12 12l8.7-4.7"/><path d="M12 22V12"/></svg></span>Bandit TL-22</a>
+                <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/></svg></span>Fontenot Farms</a>
+                <span class="ctl stamp" style="margin-left:auto">10:00 AM</span>
+              </div>
+            </div>
+            <div class="futurelink">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+              Re-scheduled — trailer repaired after today's flat tire
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="htail"><div class="h4">History</div><span class="hnote">42 trips this week · 3 driver conflicts caught</span></div>
+    </div>
+
+    <!-- ============ RIGHT — TO-DISPATCH RAIL ============ -->
+    <div class="dpanel">
+      <div class="dhead">
+        <div>
+          <div class="dh-name">To-Dispatch</div>
+          <div class="dh-sub">4 stops waiting for a truck</div>
+        </div>
+      </div>
+      <div class="railcap">Sorted by urgency — drag any of these onto a trip on the left, or onto empty time to start a new one.</div>
+
+      <div class="rbody">
+
+        <div class="railitem">
+          <div class="ri-top">
+            <span class="dragh" title="Drag onto a trip, or onto empty time"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg></span>
+            <span class="stoptype"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>Field Call</span>
+            <span class="ctl sig f yellow">unassigned</span>
+          </div>
+          <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/></svg></span>Hebert Logistics</a>
+          <div class="ri-due"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>Due today · 4:30 PM · hyd leak reported</div>
+        </div>
+
+        <div class="railitem">
+          <div class="ri-top">
+            <span class="dragh" title="Drag onto a trip, or onto empty time"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg></span>
+            <span class="stoptype"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17V3"/><path d="m6 11 6 6 6-6"/><path d="M19 21H5"/></svg>Drop</span>
+            <span class="ctl sig f yellow">unassigned</span>
+          </div>
+          <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/></svg></span>Broussard Dirt Works</a>
+          <div class="ri-due"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>Due tomorrow · 8:00 AM · new skid steer</div>
+        </div>
+
+        <div class="railitem">
+          <div class="ri-top">
+            <span class="dragh" title="Drag onto a trip, or onto empty time"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg></span>
+            <span class="stoptype"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22V12"/><path d="M16 17h6"/><path d="M21 13V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.729l7 4a2 2 0 0 0 2 .001l1.675-.955"/><path d="M3.29 7 12 12l8.71-5"/><path d="m7.5 4.27 8.997 5.148"/></svg>Repo</span>
+            <span class="ctl sig f yellow">unassigned</span>
+          </div>
+          <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/></svg></span>Fontenot Farms</a>
+          <div class="ri-due"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>Due this week · Fri · overdue account</div>
+        </div>
+
+        <div class="railitem far">
+          <div class="ri-top">
+            <span class="dragh" title="Drag onto a trip, or onto empty time"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg></span>
+            <span class="stoptype"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 9-6-6-6 6"/><path d="M12 3v14"/><path d="M5 21h14"/></svg>Pickup</span>
+            <span class="ctl sig o yellow">unassigned</span>
+          </div>
+          <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7.3 12 12l8.7-4.7"/><path d="M12 22V12"/></svg></span>Scout SS-14</a>
+          <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/></svg></span>Boudreaux Marine LLC</a>
+          <div class="ri-due"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>Due Aug 10</div>
+          <div class="futurelink" style="margin-top:0; padding-top:6px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17V3"/><path d="m6 11 6 6 6-6"/><path d="M19 21H5"/></svg>
+            Round Trip · Delivery already ran today, see the board ←
+          </div>
+        </div>
+
+      </div>
+      <div class="railcap" style="border-bottom:0; border-top:1px solid var(--line)">This Pickup won't need a truck for three weeks — it rises here as Aug 10 nears, exactly like every stop above it.</div>
+    </div>
+
+    <!-- ============ DRIVER VIEW (phone, kept) ============ -->
+    <div class="phonewrap">
+      <div class="phone">
+        <div class="phone-status"><span>Trips</span><span>1:15 PM</span></div>
+        <div class="phone-screen">
+
+          <div class="papp-top">
+            <span class="papp-title">Trips</span>
+            <div class="viewtoggle">
+              <button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 2v4M16 2v4"/></svg>Dispatch</button>
+              <button class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2.4"/><path d="M11 18h2"/></svg>Driver</button>
+            </div>
+          </div>
+
+          <div class="pdriver">
+            <div><div class="pd-name">Trey Guidry</div><div class="pd-sub">Today · Jul 20 · 4 stops</div></div>
+            <span class="rolebadge" title="Default landing for drivers — same idea as Yard Journey for techs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>Home</span>
+          </div>
+
+          <div class="nownext">
+            <div class="nn-row"><span class="nn-tag now">Now</span><span class="ctl sig f yellow">next up</span><span class="nn-headline">Broussard Dirt Works — due 2:00 PM</span></div>
+            <div class="nn-row"><span class="nn-tag next">Then</span><span class="nn-sub">Landry Metal Works, due 4:00 PM — flagged trouble, see below</span></div>
+          </div>
+
+          <div class="stops">
+
+            <div class="stop done">
+              <div class="stop-col"><span class="stop-dot"></span><span class="stop-conn"></span></div>
+              <div class="stop-content">
+                <div class="stop-head"><span class="stop-place">Boudreaux Marine LLC</span><span class="ctl sig o green">delivered</span></div>
+                <div class="stop-sub">Drop · Scout <span class="dot">·</span> SS-14</div>
+                <div class="stop-due">Delivered <b>8:52 AM</b></div>
+              </div>
+            </div>
+
+            <div class="stop current">
+              <div class="stop-col"><span class="stop-dot"></span><span class="stop-conn"></span></div>
+              <div class="stop-content">
+                <div class="stop-head"><span class="stop-place">Broussard Dirt Works</span><span class="ctl sig f yellow">next up</span></div>
+                <div class="stop-sub">Pickup · Gator <span class="dot">·</span> RC-4700</div>
+                <div class="stop-due">Due <b>2:00 PM</b> · 14 mi from yard</div>
+                <a class="addr" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/></svg>2210 Delcambre Rd, Broussard, LA</a>
+                <div class="stages"><span class="on">Start route</span><span class="sep">›</span><span>Arrived</span><span class="sep">›</span><span>Mark picked up</span></div>
+                <div class="stop-door"><span class="ctl door save">Start route</span></div>
+              </div>
+            </div>
+
+            <div class="stop trouble">
+              <div class="stop-col"><span class="stop-dot"></span><span class="stop-conn"></span></div>
+              <div class="stop-content">
+                <div class="stop-head"><span class="stop-place">Landry Metal Works</span><span class="ctl sig f red">trouble</span></div>
+                <div class="stop-sub">Drop · Bruiser <span class="dot">·</span> CP-31</div>
+                <div class="stop-due">Due <b>4:00 PM</b></div>
+                <a class="addr" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/></svg>860 Industrial Loop, Sulphur, LA</a>
+                <div class="reason"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>Gate locked, no site contact — reported 3:52 PM</div>
+                <div class="stop-door"><span class="ctl door save">Escalate to dispatch</span></div>
+              </div>
+            </div>
+
+            <div class="stop upcoming">
+              <div class="stop-col"><span class="stop-dot"></span></div>
+              <div class="stop-content">
+                <div class="stop-head"><span class="stop-place">Duhon Contracting</span><span class="ctl sig o grey">queued</span></div>
+                <div class="stop-sub">Task · filters &amp; hose</div>
+                <div class="stop-due">Due 4:45 PM</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+      <p class="phone-caption">User-scoped: Trey sees only <b>his own</b> stops — 2 of the board's 6 Today trips are his
+      (the rest are Colby's and Reggie's). Only the <b>current</b> stop gets an actionable Door — its label cycles
+      <b>Start route → Arrived → Mark picked up/delivered</b>. A stop that hits trouble jumps the queue and gets its
+      own recovery Door regardless of order.</p>
+    </div>
+
+  </div>
+
+  <div class="foot">
+    v2 rebuild — notes for review:
+    <ul>
+      <li><b>Priority #1 — the contrast/separation fix (critique #3):</b> v1 leaned on hairline borders between
+      rows on one flat surface, which is why trips blurred together. v2 steps the surface at every level using
+      <i>only</i> the locked palette (no new hexes): page <b>--bg</b> → board/rail trough <b>--card</b> → each
+      trip card <b>--panel</b> (lighter, bordered, lifted with a soft shadow, real 10–12px gaps instead of 1px
+      dividers) → its stops nested one step brighter still on <b>--cardh</b>, the surface a dispatcher actually
+      reads. Groups get a coloured left rule (rollup = worst trip inside) as a second, cheaper separation cue.
+      Also dropped v1's full-width double-booking banner — one more loud thing shouting at once — in favour of a
+      red Signal + tooltip living directly on the conflicted trip, where the eye already is.</li>
+      <li><b>Trip/Stop model (§8):</b> every trip card holds its own ordered, numbered Stops (Drop · Pickup ·
+      Field Call · Repo · Task), each a Ref to its location + unit — Trey's Today trip is a genuine 2-stop example
+      (Task at Duhon Contracting, then Pickup at Broussard Dirt Works) proving a Trip isn't 1:1 with a rental move.</li>
+      <li><b>Driver Gate, inline (§8.1):</b> the Ranger/Duhon trip's Gate is shown <i>open</i> as a worked example —
+      each driver's state renders right there (Available · <span style="color:var(--red)">Busy 9:00–10:30 AM →
+      would overlap</span> · on a nearby run), never a toast. The red conflict Signal is a separate flag layered on
+      top of the trip's real status (still "scheduled" underneath) — a trip can be both true and flagged at once.</li>
+      <li><b>One schedule, the rail holds the future (§8.2):</b> Boudreaux Marine LLC's Scout SS-14 Round Trip is
+      threaded through all three panels — the <b>+ Trip</b> snippet shows how it was created, its Delivery sits
+      done on today's board, and its Pickup (Aug 10) sits muted/dashed at the bottom of the rail, cross-linked both
+      directions, demonstrating "rises as its window nears" concretely rather than just asserting it.</li>
+      <li><b>Signal palette — dropped blue.</b> I ran the CVD math (deuter+protan, ≥90 floor) on every pair that
+      would actually sit side by side on this board: <b>grey vs blue = 45–48</b> and <b>blue vs green = 72/98</b>
+      both fail. Spec allows blue OR grey for "scheduled & fine" — so v2 uses grey only for that whole bucket,
+      and reuses the <b>fill = today</b> function to carry the distinction instead: <i>scheduled</i> = grey
+      outline, <i>en route</i> = grey filled (it's the "triggered today" case). Zero new hues, zero failing pairs
+      introduced. <b>Grey vs green</b> (scheduled vs done) still measures ~31–69, under the 90 floor — that's the
+      same already-accepted, already-shipped tradeoff flagged in v1/Yard Journey (each always carries its own
+      word), not a new problem; re-flagging it here rather than hiding it.</li>
+      <li><b>Contrast math (WCAG):</b> every new text/fill pair checked ≥4.5 across all three surface steps —
+      worst cases: txt-3 on cardh 4.87, red-text(dstate.busy) on cardh 4.71, dark ink on grey-fill 6.06, the two
+      forced picks re-verified unchanged (on-red-fill/red-fill 4.65, on-commit/commit 4.80).</li>
+      <li><b>Ladder discipline:</b> every new dispatch-side size sits on 9.5/10/11/12/13/15. Left the driver
+      phone view's pre-existing sizes (16px name, 13.5px stop-place, 11.5px captions) untouched — those predate
+      this pass and the brief says keep that view as Jac liked it; didn't want a silent restyle mixed into a kept
+      surface. Nudged shared classes reused on both sides (.stamp 10.5→10, .reason/.tip 11.5→12) since touching
+      them was unavoidable and the drift was trivial.</li>
+      <li>Continuity: Gator RC-4700, Scout SS-14, Boudreaux Marine LLC, Duhon (Contracting), Trey Guidry, Colby
+      Thibodeaux, and Broussard Dirt Works all carry over. Fontenot Farms threads a small story across panels —
+      today's flat-tire trouble, an overdue Repo in the rail, and the same trailer rescheduled clean for Friday.</li>
+    </ul>
+  </div>
+
+</div></div>

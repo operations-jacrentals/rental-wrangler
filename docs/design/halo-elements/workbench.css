@@ -1,0 +1,237 @@
+/* ==========================================================================
+   HALO WORKBENCH — the shared chrome around a specimen.
+
+   Every element page (and every element artifact) is the same shape: a
+   masthead naming the part, one or more specimens on the canvas ground, and a
+   knob rail bound to whichever specimen is selected.
+
+   Deliberately SINGLE-THEME dark. These specimens only exist on a near-black
+   ground (--bg #0a0c10, straight out of the source canvas); rendering them on
+   a light field would misrepresent the artwork, so there is no light theme
+   here and that is a choice, not an omission.
+
+   The workbench accent is a desaturated steel-blue. It is deliberately NOT
+   the specimen's red — the part is the only saturated thing on the page, and
+   the chrome stays quiet around it.
+   ========================================================================== */
+
+:root {
+  --wb-ground:   #07090d;   /* page ground — cooler + darker than the stage  */
+  --wb-canvas:   #0a0c10;   /* the stage; identical to the source's --bg     */
+  --wb-chrome:   #10141b;   /* panel fills                                   */
+  --wb-chrome-2: #151b23;   /* raised panel fills                            */
+  --wb-line:     #1e2630;   /* hairlines                                     */
+  --wb-line-lit: #2b3846;
+  --wb-ink:      #c3ccd6;   /* primary text — grey biased toward the steel   */
+  --wb-ink-dim:  #78848f;
+  --wb-ink-mute: #4e5966;
+  --wb-steel:    #5d8fb3;   /* the workbench's own accent                    */
+  --wb-steel-lo: #34505f;
+  --wb-good:     #5fae7d;
+  --wb-bad:      #c9635e;
+
+  --wb-mono: ui-monospace, "DejaVu Sans Mono", Consolas, "Cascadia Mono", "Courier New", monospace;
+  --wb-sans: system-ui, "Archivo", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+.wb {
+  background: var(--wb-ground);
+  color: var(--wb-ink);
+  font-family: var(--wb-sans);
+  font-size: 15px;
+  line-height: 1.55;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding: 0 0 72px;
+}
+
+/* -- masthead ------------------------------------------------------------- */
+
+.wb-head {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 18px;
+  padding: 26px 28px 22px;
+  border-bottom: 1px solid var(--wb-line);
+  background: linear-gradient(180deg, #0b0f14, var(--wb-ground));
+}
+.wb-head h1 {
+  font-family: var(--wb-mono);
+  font-size: 26px; font-weight: 700; letter-spacing: 2.5px;
+  color: var(--wb-ink); text-transform: uppercase; text-wrap: balance;
+}
+.wb-head .wb-role {
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.6px;
+  text-transform: uppercase; color: var(--wb-steel);
+  padding: 3px 9px; border: 1px solid var(--wb-steel-lo); border-radius: 2px;
+}
+.wb-head p { flex: 1 1 340px; max-width: 66ch; color: var(--wb-ink-dim); font-size: 14px; }
+
+/* -- the pixel-gate stamp ------------------------------------------------- */
+
+.wb-gate {
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.2px;
+  text-transform: uppercase; white-space: nowrap;
+  padding: 3px 9px; border-radius: 2px; border: 1px solid;
+  font-variant-numeric: tabular-nums;
+}
+.wb-gate.is-pass { color: var(--wb-good); border-color: #2c5a41; background: #0e1a14; }
+.wb-gate.is-fail { color: var(--wb-bad);  border-color: #5d2f2d; background: #1a0f0e; }
+/* --wb-ink-mute on --wb-chrome measures ~2.4:1 — below every WCAG floor, and a
+   gate stamp is exactly the kind of thing you must be able to read. --wb-ink-dim
+   on the same ground is 4.72:1. */
+.wb-gate.is-na   { color: var(--wb-ink-dim); border-color: var(--wb-line-lit); }
+
+/* -- layout --------------------------------------------------------------- */
+
+.wb-body {
+  display: grid; gap: 28px; padding: 0 28px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+@media (min-width: 1080px) {
+  .wb-body { grid-template-columns: minmax(0, 1fr) 330px; }
+  .wb-rail { position: sticky; top: 22px; }
+}
+
+/* -- specimens ------------------------------------------------------------ */
+
+.wb-specimens { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+
+.wb-spec {
+  border: 1px solid var(--wb-line); border-radius: 3px;
+  background: var(--wb-chrome); overflow: hidden;
+  transition: border-color .12s ease;
+}
+.wb-spec:hover { border-color: var(--wb-line-lit); }
+.wb-spec.is-selected { border-color: var(--wb-steel-lo); }
+
+.wb-spec-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 9px 13px; border-bottom: 1px solid var(--wb-line);
+  background: var(--wb-chrome-2);
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.1px;
+}
+.wb-pick {
+  appearance: none; cursor: pointer;
+  font: inherit; letter-spacing: inherit; text-transform: uppercase;
+  color: var(--wb-ink); background: transparent;
+  border: 1px solid var(--wb-line-lit); border-radius: 2px;
+  padding: 3px 10px;
+}
+.wb-pick:hover { border-color: var(--wb-steel-lo); color: #dfe6ec; }
+.wb-pick:focus-visible { outline: 2px solid var(--wb-steel); outline-offset: 2px; }
+.is-selected .wb-pick { background: var(--wb-steel-lo); border-color: var(--wb-steel); color: #eef4f8; }
+
+.wb-spec-meta { color: var(--wb-ink-mute); font-variant-numeric: tabular-nums; }
+.wb-spec-note { flex: 1 1 100%; color: var(--wb-ink-dim); letter-spacing: 0; font-size: 12px; }
+
+/* The stage is the ONLY place the source's own coordinate space applies.
+   It scrolls inside itself so a 1292px specimen never makes the page
+   scroll sideways. */
+.wb-stage { overflow-x: auto; overflow-y: hidden; background: var(--wb-canvas); }
+.wb-stage > .stage { margin: 0 auto; }
+
+/* -- knob rail ------------------------------------------------------------ */
+
+.wb-rail {
+  border: 1px solid var(--wb-line); border-radius: 3px;
+  background: var(--wb-chrome); min-width: 0;
+}
+.wb-rail-head {
+  padding: 11px 14px; border-bottom: 1px solid var(--wb-line);
+  background: var(--wb-chrome-2);
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.4px;
+  text-transform: uppercase; color: var(--wb-ink-dim);
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+}
+.wb-rail-head b { color: var(--wb-steel); font-weight: 700; }
+.wb-knobs { max-height: min(60vh, 620px); overflow-y: auto; padding: 4px 0 10px; }
+
+.wb-group { border-top: 1px solid var(--wb-line); }
+.wb-group:first-child { border-top: 0; }
+.wb-group > h3 {
+  font-family: var(--wb-mono); font-size: 10px; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--wb-ink-mute);
+  padding: 12px 14px 6px;
+}
+
+.wb-knob { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 5px 14px 7px; }
+.wb-knob label {
+  font-family: var(--wb-mono); font-size: 11.5px; letter-spacing: .4px;
+  color: var(--wb-ink-dim); align-self: center;
+}
+.wb-knob output {
+  font-family: var(--wb-mono); font-size: 11.5px; color: var(--wb-ink);
+  font-variant-numeric: tabular-nums; align-self: center; white-space: nowrap;
+}
+.wb-knob.is-dirty label { color: var(--wb-steel); }
+.wb-knob.is-dirty output { color: #dbe7ef; }
+.wb-knob input[type="range"], .wb-knob input[type="color"] { grid-column: 1 / -1; }
+
+.wb-knob input[type="range"] {
+  appearance: none; width: 100%; height: 18px; background: transparent; cursor: pointer;
+}
+.wb-knob input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px; background: var(--wb-line-lit); border-radius: 2px;
+}
+.wb-knob input[type="range"]::-moz-range-track {
+  height: 3px; background: var(--wb-line-lit); border-radius: 2px;
+}
+.wb-knob input[type="range"]::-webkit-slider-thumb {
+  appearance: none; width: 13px; height: 13px; margin-top: -5px;
+  border-radius: 50%; background: var(--wb-steel); border: 0;
+}
+.wb-knob input[type="range"]::-moz-range-thumb {
+  width: 13px; height: 13px; border-radius: 50%; background: var(--wb-steel); border: 0;
+}
+.wb-knob input:focus-visible { outline: 2px solid var(--wb-steel); outline-offset: 3px; }
+
+.wb-knob input[type="color"] {
+  appearance: none; width: 100%; height: 22px; padding: 0;
+  background: transparent; border: 1px solid var(--wb-line-lit); border-radius: 2px; cursor: pointer;
+}
+.wb-knob input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+.wb-knob input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 1px; }
+
+/* -- rail footer ---------------------------------------------------------- */
+
+.wb-acts {
+  display: flex; gap: 8px; padding: 11px 14px;
+  border-top: 1px solid var(--wb-line); background: var(--wb-chrome-2);
+}
+.wb-btn {
+  flex: 1; appearance: none; cursor: pointer;
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase;
+  color: var(--wb-ink); background: transparent;
+  border: 1px solid var(--wb-line-lit); border-radius: 2px; padding: 7px 8px;
+  transition: border-color .12s ease, color .12s ease;
+}
+.wb-btn:hover { border-color: var(--wb-steel-lo); color: #dfe6ec; }
+.wb-btn:focus-visible { outline: 2px solid var(--wb-steel); outline-offset: 2px; }
+.wb-btn.is-done { color: var(--wb-good); border-color: #2c5a41; }
+
+.wb-out {
+  margin: 0 14px 12px; padding: 10px 11px;
+  border: 1px solid var(--wb-line); border-radius: 2px; background: #080b0f;
+  font-family: var(--wb-mono); font-size: 11px; line-height: 1.65; color: var(--wb-ink-dim);
+  white-space: pre; overflow-x: auto; max-height: 200px; overflow-y: auto;
+}
+.wb-out:empty { display: none; }
+
+/* -- prose blocks --------------------------------------------------------- */
+
+.wb-note {
+  padding: 0 28px; max-width: 74ch;
+  color: var(--wb-ink-dim); font-size: 13.5px;
+}
+.wb-note code {
+  font-family: var(--wb-mono); font-size: .92em;
+  color: var(--wb-ink); background: var(--wb-chrome-2);
+  padding: 1px 5px; border-radius: 2px;
+}
+.wb-note a { color: var(--wb-steel); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}

@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trips · ETA Tracker</title>
+<style>
+:root{
+  --bg:#0a0d11; --bg2:#0f1318; --panel:#171d25; --card:#12171e; --cardh:#1a212b;
+  --line:#2c343f; --lineSoft:#212834; --txt:#eef2f7; --txt2:#aab4c1; --txt3:#838e9c;
+  --accent:#ff7e1f; --onAcc:#1a1205; --accSoft:rgba(255,126,31,.15);
+  --green:#34d399; --yellow:#eed44b; --red:#ff4242; --redFill:#d63636; --onRedFill:#fdfdfd;
+  --blue:#6394cc; --commit:#2f6fd0; --onCommit:#fdfdfd; --gray:#8b94a3; --tan:#c2925a;
+  --font:-apple-system,"Segoe UI",Roboto,system-ui,sans-serif;
+  --stamp:ui-monospace,"Cascadia Code","SF Mono",Menlo,Consolas,monospace;
+  --h:24px;
+  --greenSoft:rgba(52,211,153,.14); --yellowSoft:rgba(238,212,75,.15);
+  --redSoft:rgba(255,66,66,.13); --blueSoft:rgba(99,148,204,.15); --commitSoft:rgba(47,111,208,.16);
+  /* 7-col ledger grid — the numbered spine hangs OUTSIDE the card in a left rail, so it's
+     not a grid column. DEPARTURE·UNIT / TYPE / GATE / ETA / TOWN / CUSTOMER / DEADLINE. */
+  --grid:170px 30px 132px minmax(150px,auto) minmax(94px,1fr) 148px 100px;
+  --gap:12px;
+  --padx:14px;
+  --rail:44px;   /* the outside-the-card numbered-spine gutter */
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--bg); color:var(--txt); font-family:var(--font); font-size:13px; line-height:1.4;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+}
+svg.ic{width:14px;height:14px;flex:0 0 auto;display:block;}
+.board{max-width:1150px;margin:0 auto;padding:26px 20px 90px;}
+a{color:inherit;text-decoration:none;}
+
+/* ============================ PAGE HEAD ============================ */
+.page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:16px;}
+.page-title{font:800 21px/1 var(--stamp);letter-spacing:.055em;text-transform:uppercase;color:var(--txt);}
+.page-sub{font:500 11.5px/1.4 var(--font);color:var(--txt3);margin-top:6px;}
+.page-sub b{color:var(--txt2);font-weight:600;}
+.yard-tag{display:inline-flex;align-items:center;gap:6px;height:var(--h);padding:0 11px;border:1px dashed var(--line);border-radius:999px;font:800 9.5px/1 var(--stamp);letter-spacing:.06em;text-transform:uppercase;color:var(--txt3);}
+.yard-tag svg{width:13px;height:13px;}
+
+/* ============================ TOP ROW ============================ */
+.top-row{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:16px;align-items:stretch;}
+.panel-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px;}
+.panel-label{display:flex;align-items:center;gap:6px;font:800 9.5px/1 var(--stamp);letter-spacing:.08em;text-transform:uppercase;color:var(--txt3);margin-bottom:11px;}
+.panel-label svg{width:13px;height:13px;color:var(--txt3);}
+
+/* --- rental creation inset --- */
+.rental-inset{flex:1 1 380px;min-width:320px;display:flex;flex-direction:column;}
+.ri-top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+.ri-unit{display:flex;align-items:center;gap:9px;min-width:0;}
+.ri-unit .ref-ic{width:28px;height:28px;border-radius:7px;background:var(--accSoft);display:flex;align-items:center;justify-content:center;color:var(--accent);flex:0 0 auto;}
+.ri-unit .ref-ic svg{width:15px;height:15px;}
+.ri-unit b{font:700 13.5px/1.2 var(--font);color:var(--txt);}
+.ri-unit b .code{font:700 11px/1 var(--stamp);color:var(--txt3);letter-spacing:.02em;}
+.ri-unit span{display:block;font:500 10.5px/1.3 var(--font);color:var(--txt3);margin-top:1px;}
+.toggle4{display:inline-flex;height:var(--h);border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--panel);flex:0 0 auto;}
+.toggle4 .seg{display:flex;align-items:center;padding:0 11px;font:700 9px/1 var(--stamp);letter-spacing:.04em;text-transform:uppercase;color:var(--txt3);white-space:nowrap;cursor:pointer;}
+.toggle4 .seg+.seg{border-left:1px solid var(--line);}
+.toggle4 .seg.active{background:var(--accent);color:var(--onAcc);font-weight:800;}
+.ri-reveal{margin-top:12px;padding-top:12px;border-top:1px dashed var(--tan);}
+.ri-addr{display:flex;align-items:center;gap:9px;height:var(--h);padding:0 11px;border:1px solid var(--line);border-radius:8px;background:var(--panel);}
+.ri-addr svg{width:14px;height:14px;color:var(--accent);flex:0 0 auto;}
+.ri-addr span{font:500 11px/1 var(--font);color:var(--txt3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ri-addr span b{color:var(--txt2);font-weight:600;}
+.ri-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;}
+.ri-hint{font:500 10px/1.35 var(--font);color:var(--txt3);max-width:230px;}
+.wait-chip{display:inline-flex;align-items:center;height:var(--h);padding:0 10px;border:1px dashed var(--line);border-radius:7px;font:800 9.5px/1 var(--stamp);letter-spacing:.05em;text-transform:uppercase;color:var(--gray);white-space:nowrap;flex:0 0 auto;}
+
+/* --- driver NOW focus panel --- */
+.nowpanel{flex:0 0 316px;border-color:var(--accent);box-shadow:0 0 0 1px var(--accSoft) inset;display:flex;flex-direction:column;}
+.nu-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.now-badge{display:inline-flex;align-items:center;gap:5px;height:var(--h);padding:0 10px;border-radius:7px;background:var(--accent);color:var(--onAcc);font:800 10px/1 var(--stamp);letter-spacing:.09em;}
+.now-badge svg{width:12px;height:12px;}
+.nu-driver{display:flex;align-items:center;gap:6px;font:600 11px/1 var(--font);color:var(--txt2);}
+.nu-driver svg{width:13px;height:13px;color:var(--txt3);}
+.nu-stop{display:flex;align-items:baseline;gap:8px;margin:2px 0 2px;}
+.nu-stop b{font:700 15px/1.2 var(--font);color:var(--txt);}
+.nu-stop .nu-type{font:800 9px/1 var(--stamp);letter-spacing:.05em;text-transform:uppercase;color:var(--txt3);}
+.nu-addr{font:500 11px/1.4 var(--font);color:var(--txt3);margin-bottom:11px;}
+.nu-eta-row{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-bottom:12px;}
+.nu-eta{font:800 28px/.95 var(--stamp);font-variant-numeric:tabular-nums;color:var(--yellow);}
+.nu-eta-lbl{font:800 9px/1 var(--stamp);letter-spacing:.06em;text-transform:uppercase;color:var(--txt3);margin-bottom:3px;display:block;}
+.nu-eta-sub{font:600 10px/1.3 var(--stamp);letter-spacing:.03em;text-transform:uppercase;color:var(--yellow);text-align:right;}
+.nu-next{font:500 10.5px/1.3 var(--font);color:var(--txt3);margin-bottom:12px;}
+.nu-next b{color:var(--txt2);font-weight:600;}
+.nu-actions{display:flex;gap:8px;margin-top:auto;}
+
+/* ============================ DOORS (verb actions — the ONLY place --commit lives) ============================ */
+.door{height:var(--h);border-radius:999px;padding:0 13px;font:700 10px/1 var(--stamp);letter-spacing:.05em;text-transform:uppercase;display:inline-flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap;border:1px solid transparent;}
+.door svg{width:13px;height:13px;}
+.door.ghost{background:transparent;border-color:var(--line);color:var(--txt2);}
+.door.commit{background:var(--commit);border-color:var(--commit);color:var(--onCommit);}
+.door.ghost:hover{border-color:var(--txt3);color:var(--txt);}
+.door.commit:hover{filter:brightness(1.08);}
+
+/* ============================ LEGEND ============================ */
+.legend{display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--lineSoft);border-radius:10px;padding:10px 14px;margin-bottom:8px;font:500 11px/1.4 var(--font);color:var(--txt2);}
+.legend .lg-flow{display:flex;align-items:center;gap:7px;}
+.lg-gate{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 8px 0 6px;border-radius:6px;font:800 8.5px/1 var(--stamp);letter-spacing:.04em;text-transform:uppercase;}
+.lg-gate svg{width:10px;height:10px;}
+.lg-gate.go{background:var(--blueSoft);border:1px solid rgba(99,148,204,.5);color:var(--blue);}
+.lg-gate.na{background:var(--card);border:1px solid var(--line);color:var(--txt3);}
+.legend .lg-arrow{color:var(--txt3);font-weight:700;}
+.legend .lg-div{width:1px;align-self:stretch;background:var(--line);}
+.legend .lg-key{display:flex;align-items:center;gap:11px;flex-wrap:wrap;}
+.legend .lg-k{display:flex;align-items:center;gap:6px;font:700 9.5px/1 var(--stamp);letter-spacing:.03em;text-transform:uppercase;color:var(--txt2);}
+.legend .dot{width:9px;height:9px;border-radius:2px;flex:0 0 auto;}
+.dot.wait{background:var(--blue);} .dot.near{background:var(--yellow);} .dot.late{background:var(--redFill);} .dot.done{background:var(--green);} .dot.na{background:var(--txt3);}
+.legend .lg-note{font:500 10.5px/1.4 var(--font);color:var(--txt3);flex:1 1 260px;min-width:220px;}
+.legend .lg-note b{color:var(--txt2);font-weight:600;}
+.mini-node{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;vertical-align:-2px;border:1.5px solid var(--txt3);background:var(--card);margin:0 1px;font:800 8px/1 var(--stamp);color:var(--txt2);}
+.mini-node.num{border-radius:4px;} .mini-node.sq{border-radius:3px;color:transparent;}
+
+/* ============================ COLUMN HEADER (indented to clear the rail) ============================ */
+.col-head{display:grid;grid-template-columns:var(--grid);column-gap:var(--gap);align-items:center;
+  padding:9px var(--padx);margin:14px 0 6px calc(var(--rail) + 4px);background:var(--bg2);border:1px solid var(--line);border-radius:8px;
+  font:800 9px/1 var(--stamp);letter-spacing:.09em;text-transform:uppercase;color:var(--txt3);}
+.col-head .ch-r{text-align:right;}
+.col-head .ch-c{text-align:center;}
+
+/* ============================ GROUP HEADS ============================ */
+.group-head{display:flex;align-items:center;gap:9px;margin:26px 2px 8px calc(var(--rail) + 4px);padding-bottom:6px;border-bottom:1px solid var(--line);}
+.group-head svg{width:15px;height:15px;color:var(--txt3);}
+.group-head h2{font:800 12.5px/1 var(--stamp);letter-spacing:.09em;text-transform:uppercase;color:var(--txt);margin:0;}
+.group-head .g-count{font:700 9.5px/1 var(--stamp);letter-spacing:.03em;color:var(--txt3);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:4px 10px;}
+.group-head.g-field svg{color:var(--tan);}
+.group-head.g-field h2{color:var(--txt2);}
+
+/* ============================ TRIP LEDGER — floating card, numbered spine OUTSIDE on the left ============================ */
+.trip{background:var(--card);border-radius:12px;margin:10px 0 10px calc(var(--rail) + 4px);overflow:visible;box-shadow:inset 0 0 0 1px var(--line);}
+.trip-rows{padding:0;}
+
+/* ============================ STOP ROW ============================ */
+.stop-row{position:relative;display:grid;grid-template-columns:var(--grid);column-gap:var(--gap);align-items:center;
+  min-height:48px;padding:8px var(--padx);border-bottom:1px dotted var(--lineSoft);}
+.trip-rows .stop-row:last-child{border-bottom:none;}
+.stop-row.here{background:var(--cardh);}
+
+/* ── the numbered spine RAIL — absolutely positioned OUTSIDE the card's left edge ── */
+.rail{position:absolute;top:0;bottom:0;left:calc(-1 * (var(--rail) + 4px));width:var(--rail);
+  display:flex;align-items:center;justify-content:center;z-index:2;}
+.rail::before,.rail::after{content:'';position:absolute;left:50%;width:2px;background:var(--line);transform:translateX(-50%);z-index:1;}
+.rail::before{top:0;bottom:50%;}
+.rail::after{top:50%;bottom:0;}
+.rail.first::before{display:none;}
+.rail.last::after{display:none;}
+.rail.done-seg::before,.rail.done-below::after{background:var(--green);}
+.node{width:22px;height:22px;border:1.6px solid var(--line);background:var(--bg);position:relative;z-index:2;
+  display:flex;align-items:center;justify-content:center;font:800 10px/1 var(--stamp);color:var(--txt2);font-variant-numeric:tabular-nums;}
+.node.num{border-radius:6px;cursor:grab;}
+.node.num:hover{border-color:var(--accent);}
+.node.box{border-radius:5px;cursor:pointer;color:transparent;border-style:dashed;}
+.node.box:hover{border-color:var(--accent);}
+.node.done{background:var(--greenSoft);border-color:var(--green);color:var(--green);}
+.node.here{border-color:var(--accent);box-shadow:0 0 0 3px var(--accSoft);color:var(--accent);}
+.node.late{border-color:var(--redFill);color:var(--red);}
+
+/* 1 — outside-left prefix (DEPARTURE time + UNIT Ref) */
+.pfx{border-right:1px dashed var(--lineSoft);padding-right:12px;min-width:0;}
+.pfx-dep{display:flex;align-items:baseline;gap:6px;margin-bottom:5px;}
+/* departure time = the "should I leave?" clock — SAME ladder as the deadline chip, vs leave-time:
+   grey = not yet · blue = next up · yellow = gotta leave · red = late · green = departed/done. */
+.pfx-dep .t{font:700 13px/1 var(--stamp);font-variant-numeric:tabular-nums;color:var(--txt3);}
+.pfx-dep.next .t{color:var(--blue);}
+.pfx-dep.soon .t{color:var(--yellow);}
+.pfx-dep.late .t{color:var(--red);}
+.pfx-dep.done .t{color:var(--green);}
+.pfx-dep .l{font:800 7.5px/1 var(--stamp);letter-spacing:.07em;text-transform:uppercase;color:var(--txt3);}
+.pfx-unit{display:flex;align-items:center;gap:5px;min-width:0;}
+.pfx-yard{display:flex;align-items:center;gap:7px;min-width:0;font:italic 400 11.5px/1.25 var(--font);color:var(--txt3);}
+.pfx-yard svg{width:14px;height:14px;flex:0 0 auto;color:var(--txt3);}
+/* Ref element (unit + customer share this) — parent icon in accent-tinted square backing + name */
+.ref{display:inline-flex;align-items:center;gap:6px;max-width:100%;font:600 11.5px/1.15 var(--font);color:var(--txt);
+  background:var(--card);border:1px solid var(--line);border-radius:6px;padding:2px 8px 2px 3px;white-space:nowrap;overflow:hidden;cursor:pointer;}
+.ref .ty{display:inline-flex;align-items:center;justify-content:center;width:19px;height:19px;flex:0 0 auto;color:var(--accent);background:var(--accSoft);border-radius:4px;}
+.ref .ty svg{width:12px;height:12px;}
+.ref .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+.ref .nm .code{font:700 9.5px/1 var(--stamp);color:var(--txt3);margin-left:3px;}
+.ref:hover{border-color:var(--accent);}
+.ref.sm{font-size:11px;padding:2px 6px 2px 3px;gap:5px;}
+.ref.sm .ty{width:17px;height:17px;} .ref.sm .ty svg{width:11px;height:11px;}
+.ref-more{font:800 8.5px/1 var(--stamp);color:var(--accent);flex:0 0 auto;padding-left:1px;}
+
+/* 2 — stop-type glyph (LEFT of the gate) */
+.glyph{justify-self:center;display:inline-flex;align-items:center;justify-content:center;color:var(--txt3);}
+.glyph.hq{width:28px;height:20px;border:1px solid var(--line);border-radius:5px;font:800 9px/1 var(--stamp);letter-spacing:.05em;color:var(--txt3);}
+.glyph.arrow svg{width:18px;height:18px;}
+
+/* 3 — the Gate = a canon Gate chip: soft Waiting --blue + leading chevron (turnable). Gray when N/A. */
+.gate{display:flex;align-items:center;min-width:0;}
+.gate-chip{height:var(--h);border-radius:7px;padding:0 10px 0 8px;display:inline-flex;align-items:center;gap:5px;
+  font:800 9.5px/1 var(--stamp);letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;cursor:pointer;border:1px solid transparent;}
+.gate-chip .chev{width:12px;height:12px;flex:0 0 auto;}
+.gate-chip.go{background:var(--blueSoft);border-color:rgba(99,148,204,.5);color:var(--blue);}
+.gate-chip.go:hover{border-color:var(--blue);}
+.gate-chip.na{background:var(--card);border-color:var(--line);color:var(--txt3);cursor:default;}
+.gate-chip.na .chev{opacity:.45;}
+.gate-done{height:var(--h);border-radius:7px;padding:0 10px;display:inline-flex;align-items:center;gap:5px;
+  font:800 9px/1 var(--stamp);letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;
+  background:var(--greenSoft);border:1px solid rgba(52,211,153,.4);color:var(--green);}
+.gate-done svg{width:11px;height:11px;}
+.gate-wrap{display:flex;flex-direction:column;align-items:flex-start;gap:3px;min-width:0;}
+.sent-undo{display:inline-flex;align-items:center;gap:5px;font:700 8.5px/1 var(--stamp);letter-spacing:.03em;text-transform:uppercase;color:var(--txt3);padding-left:2px;}
+.sent-undo .ok{color:var(--green);display:inline-flex;align-items:center;gap:3px;}
+.sent-undo .ok svg{width:9px;height:9px;}
+.sent-undo a{color:var(--accent);border-bottom:1px solid transparent;cursor:pointer;}
+.sent-undo a:hover{border-bottom-color:var(--accent);}
+/* driver-reassign Gate — rides the START row */
+.driver-chip{display:inline-flex;align-items:center;gap:6px;height:var(--h);padding:0 10px;border-radius:7px;background:var(--panel);border:1px solid var(--line);font:600 11px/1 var(--font);color:var(--txt2);cursor:pointer;max-width:100%;}
+.driver-chip svg{width:13px;height:13px;color:var(--txt3);flex:0 0 auto;}
+.driver-chip .chev{width:11px;height:11px;color:var(--txt3);}
+.driver-chip .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+/* 4 — ETA line: +42MIN = 8:22 ETA (drive is first-class inside it) */
+.eta{display:flex;align-items:baseline;justify-content:flex-end;gap:4px;white-space:nowrap;text-align:right;}
+.eta .drv{font:800 11px/1 var(--stamp);font-variant-numeric:tabular-nums;color:var(--txt2);letter-spacing:.01em;}
+.eta .drv .u{font-size:7.5px;color:var(--txt3);margin-left:1px;}
+.eta .eq{font:700 10px/1 var(--stamp);color:var(--txt3);}
+.eta .t{font:800 13px/1 var(--stamp);font-variant-numeric:tabular-nums;color:var(--txt);}
+.eta .lbl{font:800 7.5px/1 var(--stamp);letter-spacing:.06em;text-transform:uppercase;color:var(--txt3);}
+.eta .climb{font:800 9px/1 var(--stamp);letter-spacing:.03em;text-transform:uppercase;color:var(--red);}
+.eta.near .t{color:var(--yellow);}
+.eta.late .t,.eta.late .drv{color:var(--red);}
+.eta.dim .t,.eta.dim .drv{color:var(--txt3);font-weight:600;}
+
+/* 5 — town = R7 "True hyperlink ↗" (off-app → Google Maps): ink + accent underline + trailing ↗ */
+.town{min-width:0;}
+.town a{display:inline-flex;align-items:baseline;gap:3px;font:500 12px/1.2 var(--font);color:var(--txt);
+  text-decoration:underline;text-decoration-color:var(--accent);text-decoration-thickness:1.5px;text-underline-offset:2px;max-width:100%;}
+.town a .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.town a .ext{font:700 10px/1 var(--stamp);color:var(--accent);flex:0 0 auto;}
+.town a:hover{color:var(--accent);}
+.town.dim{font:600 11px/1 var(--stamp);color:var(--txt3);text-transform:uppercase;letter-spacing:.05em;}
+
+/* 6 — customer Ref (shares .ref) */
+.cust{min-width:0;display:flex;}
+
+/* 7 — deadline Signal (deadline TIME + state colour) */
+.dl{display:flex;justify-content:flex-end;}
+.sig{display:inline-flex;align-items:center;gap:5px;height:var(--h);padding:0 9px;border-radius:7px;
+  font:800 9px/1 var(--stamp);letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;font-variant-numeric:tabular-nums;}
+.sig svg{width:11px;height:11px;}
+.sig .tm{font-weight:800;}
+.sig .st{opacity:.85;font-size:8px;}
+.sig.wait{color:var(--blue);background:var(--blueSoft);border:1px solid rgba(99,148,204,.4);}
+.sig.near{color:var(--yellow);background:var(--yellowSoft);border:1px solid rgba(238,212,75,.42);}
+.sig.late{background:var(--redFill);color:var(--onRedFill);border:1px solid rgba(255,66,66,.5);}
+.sig.done{color:var(--green);background:var(--greenSoft);border:1px solid rgba(52,211,153,.4);}
+.dl.dim{justify-content:flex-end;font:700 10px/1 var(--stamp);color:var(--txt3);padding-right:4px;}
+
+/* ============================ LOOSE ROWS ============================ */
+.loose{background:var(--panel);border-radius:10px;margin:8px 0 8px calc(var(--rail) + 4px);overflow:visible;box-shadow:inset 0 0 0 1px var(--lineSoft);}
+.loose.attn{box-shadow:inset 0 0 0 1px var(--lineSoft),inset 3px 0 0 0 var(--redFill);}
+.loose.attn.near{box-shadow:inset 0 0 0 1px var(--lineSoft),inset 3px 0 0 0 var(--yellow);}
+.loose .stop-row{border-bottom:none;}
+.loose-tag{display:flex;align-items:center;gap:6px;padding:0 var(--padx) 8px calc(170px + var(--gap) + var(--padx));font:700 9px/1.3 var(--stamp);letter-spacing:.04em;text-transform:uppercase;color:var(--txt3);}
+.loose-tag.warn{color:var(--yellow);} .loose-tag.hot{color:var(--red);}
+.loose-tag svg{width:11px;height:11px;flex:0 0 auto;}
+.more-row{display:flex;align-items:center;justify-content:center;gap:7px;padding:11px;color:var(--txt3);margin-left:calc(var(--rail) + 4px);
+  font:700 10px/1 var(--stamp);letter-spacing:.05em;text-transform:uppercase;border:1px dashed var(--line);border-radius:10px;margin-top:8px;margin-bottom:8px;cursor:pointer;}
+.more-row:hover{color:var(--txt2);border-color:var(--txt3);}
+
+@media (max-width:940px){
+  :root{--grid:132px 26px 118px 130px minmax(80px,1fr) 120px 92px;--gap:9px;--padx:11px;--rail:36px;}
+  .loose-tag{padding-left:calc(132px + var(--gap) + var(--padx));}
+  .nowpanel,.rental-inset{flex:1 1 100%;}
+}
+</style>
+</head>
+<body>
+
+<!-- inline SVG sprite — Lucide-style, thin stroke, currentColor -->
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-truck" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4h13v12H1z"/><path d="M14 9h4l3 3v4h-7V9z"/><circle cx="5.5" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></symbol>
+  <symbol id="i-wrench" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 1 1-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 0 1 5.4-5.4l-3 3-2-2 3-3Z"/></symbol>
+  <symbol id="i-rot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v5h5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-7.4 7-12.5A7 7 0 0 0 5 9.5C5 14.6 12 22 12 22Z"/><circle cx="12" cy="9.5" r="2.3"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2Z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 4 14 8-14 8V4Z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4"/><path d="M12 17h.01"/></symbol>
+</svg>
+
+<div class="board">
+
+  <!-- ============================ PAGE HEAD ============================ -->
+  <div class="page-head">
+    <div>
+      <div class="page-title">Trips · ETA Tracker</div>
+      <div class="page-sub">Sulphur, LA yard &nbsp;·&nbsp; <b>Tue Jul 21</b> &nbsp;·&nbsp; each trip = store&nbsp;→&nbsp;stops&nbsp;→&nbsp;store · ETAs accumulate downward (drive&nbsp;+&nbsp;20m load / stop)</div>
+    </div>
+    <div class="yard-tag"><svg class="ic"><use href="#i-truck"/></svg> 3 trucks · 3 drivers on shift</div>
+  </div>
+
+  <!-- ============================ TOP ROW ============================ -->
+  <div class="top-row">
+    <div class="panel-card rental-inset">
+      <div class="panel-label"><svg><use href="#i-box"/></svg> Start a trip from a rental</div>
+      <div class="ri-top">
+        <div class="ri-unit">
+          <span class="ref-ic"><svg class="ic"><use href="#i-box"/></svg></span>
+          <div>
+            <b>Beau <span class="code">260</span></b>
+            <span>Rental #4417 · Doucet Concrete</span>
+          </div>
+        </div>
+        <div class="toggle4">
+          <span class="seg">Self</span>
+          <span class="seg">Round Trip</span>
+          <span class="seg active">Delivery</span>
+          <span class="seg">Pickup</span>
+        </div>
+      </div>
+      <div class="ri-reveal">
+        <div class="ri-addr">
+          <svg><use href="#i-pin"/></svg>
+          <span>1402 <b>Cypress Rd, Lake Charles</b> — type-ahead + map ▾</span>
+        </div>
+        <div class="ri-foot">
+          <span class="ri-hint">Moving off <b>Self</b> reveals the address and drops the stop onto the ledger — no separate +Trip button.</span>
+          <span class="wait-chip">Unscheduled</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-card nowpanel">
+      <div class="nu-head">
+        <span class="now-badge"><svg><use href="#i-truck"/></svg> NOW</span>
+        <div class="nu-driver"><svg><use href="#i-user"/></svg> J. Thibodeaux · Truck 4</div>
+      </div>
+      <div class="nu-stop"><b>Snappy → Sulphur</b> <span class="nu-type">↓ Drop</span></div>
+      <div class="nu-addr">318 Beglis Pkwy — gate code 4471 · Boudreaux Marine</div>
+      <div class="nu-eta-row">
+        <div><span class="nu-eta-lbl">ETA arrive</span><div class="nu-eta">9:00</div></div>
+        <div class="nu-eta-sub">12 min out<br>deadline 10:30 · near</div>
+      </div>
+      <div class="nu-next">Next → <b>Gator · Vinton</b> · pickup, ETA 9:58</div>
+      <div class="nu-actions">
+        <a class="door ghost" href="tel:+13375550142"><svg><use href="#i-phone"/></svg> (337) 555-0142</a>
+        <span class="door commit"><svg><use href="#i-check"/></svg> Mark Arrived</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================ LEGEND ============================ -->
+  <div class="legend">
+    <div class="lg-flow">
+      <span class="lg-gate go"><svg><use href="#i-chev"/></svg>Start</span><span class="lg-arrow">→</span>
+      <span class="lg-gate go"><svg><use href="#i-chev"/></svg>Arrived?</span><span class="lg-arrow">→</span>
+      <span class="lg-gate go"><svg><use href="#i-chev"/></svg>Dropped?</span><span class="lg-arrow">→</span>
+      <span class="lg-gate na">next Start</span>
+    </div>
+    <div class="lg-div"></div>
+    <div class="lg-key">
+      <span class="lg-k"><span class="dot na"></span>Not yet</span>
+      <span class="lg-k"><span class="dot wait"></span>Waiting / next</span>
+      <span class="lg-k"><span class="dot near"></span>Leave / ≤2h</span>
+      <span class="lg-k"><span class="dot late"></span>Late</span>
+      <span class="lg-k"><span class="dot done"></span>Done</span>
+    </div>
+    <div class="lg-div"></div>
+    <div class="lg-note"><span class="mini-node num">2</span> numbered spine hangs <b>outside</b> the card (drag to reorder) · <span class="mini-node sq"></span> box = unscheduled · <b>drag a row away to untrip</b> · one ladder, two clocks: <b>departure time</b> = when to leave · <b>deadline chip</b> = will it make it · tap <b>town ↗</b> = Maps</div>
+  </div>
+
+  <!-- ============================ COLUMN HEADER ============================ -->
+  <div class="col-head">
+    <span>Departure · Unit</span><span class="ch-c">Type</span><span>Gate</span>
+    <span class="ch-r">ETA</span><span>Town</span><span>Customer</span><span class="ch-r">Deadline</span>
+  </div>
+
+  <!-- ============================ FIELD CALLS ============================ -->
+  <div class="group-head g-field"><svg><use href="#i-wrench"/></svg><h2>Field Calls</h2><span class="g-count">2 · 1 overdue</span></div>
+
+  <div class="loose attn">
+    <div class="stop-row">
+      <div class="rail first last"><span class="node box late" title="Unscheduled — drag onto a trip"></span></div>
+      <div class="pfx">
+        <div class="pfx-dep late"><span class="t">8:20</span><span class="l">Dispatch</span></div>
+        <div class="pfx-unit"><a class="ref sm"><span class="ty"><svg><use href="#i-wrench"/></svg></span><span class="nm">Bush<span class="code">MX‑50</span></span></a></div>
+      </div>
+      <span class="glyph arrow"><svg><use href="#i-wrench"/></svg></span>
+      <div class="gate"><span class="gate-chip go"><svg class="chev"><use href="#i-chev"/></svg> Start</span></div>
+      <span class="eta late"><span class="drv">+20<span class="u">MIN</span></span><span class="climb">⧗ climbing</span></span>
+      <span class="town"><a href="https://maps.google.com/?q=Iowa,LA" target="_blank" rel="noopener"><span class="nm">Iowa, LA</span><span class="ext">↗</span></a></span>
+      <span class="cust"><a class="ref"><span class="ty"><svg><use href="#i-user"/></svg></span><span class="nm">Thibodaux Farms</span></a></span>
+      <span class="dl"><span class="sig late"><svg><use href="#i-alert"/></svg><span class="tm">8:00a</span><span class="st">late</span></span></span>
+    </div>
+    <div class="loose-tag hot"><svg><use href="#i-alert"/></svg> Missed departure — clock counting up · escalated to dispatch + manager + sales (no yard video — service call)</div>
+  </div>
+
+  <div class="loose attn near">
+    <div class="stop-row">
+      <div class="rail first last"><span class="node box" title="Unscheduled — drag onto a trip"></span></div>
+      <div class="pfx">
+        <div class="pfx-dep soon"><span class="t">1:30</span><span class="l">Dispatch</span></div>
+        <div class="pfx-unit"><a class="ref sm"><span class="ty"><svg><use href="#i-rot"/></svg></span><span class="nm">Scoot<span class="code">T‑16</span></span></a></div>
+      </div>
+      <span class="glyph arrow"><svg><use href="#i-up"/></svg></span>
+      <div class="gate"><span class="gate-chip na"><svg class="chev"><use href="#i-chev"/></svg> Start</span></div>
+      <span class="eta near"><span class="drv">+40<span class="u">MIN</span></span><span class="eq">=</span><span class="t">2:10</span><span class="lbl">ETA</span></span>
+      <span class="town"><a href="https://maps.google.com/?q=Dequincy,LA" target="_blank" rel="noopener"><span class="nm">Dequincy, LA</span><span class="ext">↗</span></a></span>
+      <span class="cust"><a class="ref"><span class="ty"><svg><use href="#i-user"/></svg></span><span class="nm">Prejean Co.</span></a></span>
+      <span class="dl"><span class="sig near"><svg><use href="#i-clock"/></svg><span class="tm">3:00p</span><span class="st">near</span></span></span>
+    </div>
+    <div class="loose-tag warn"><svg><use href="#i-rot"/></svg> Repo pickup · assigned M. Fontenot · gate opens after his 1:00 drop</div>
+  </div>
+
+  <!-- ============================ TODAY ============================ -->
+  <div class="group-head"><svg><use href="#i-truck"/></svg><h2>Today</h2><span class="g-count">1 trip in progress · 1 late stop</span></div>
+
+  <div class="trip">
+    <div class="trip-rows">
+
+      <!-- START anchor -->
+      <div class="stop-row">
+        <div class="rail first done-below"><span class="node done" style="border-radius:50%;width:12px;height:12px"></span></div>
+        <div class="pfx">
+          <div class="pfx-dep done"><span class="t">7:40</span><span class="l">Departure</span></div>
+          <div class="pfx-yard"><svg><use href="#i-truck"/></svg> Sulphur yard</div>
+        </div>
+        <span class="glyph hq">HQ</span>
+        <div class="gate"><span class="gate-done"><svg><use href="#i-check"/></svg> Departed</span></div>
+        <span class="eta dim"><span class="t">7:40</span><span class="lbl">Trip 1 · start</span></span>
+        <span class="town dim">Store</span>
+        <span class="cust"><span class="driver-chip"><svg><use href="#i-user"/></svg><span class="nm">J. Thibodeaux</span><svg class="chev"><use href="#i-chev"/></svg></span></span>
+        <span class="dl dim">—</span>
+      </div>
+
+      <!-- Stop 1 — DONE -->
+      <div class="stop-row">
+        <div class="rail done-seg done-below"><span class="node num done" title="Stop 1 · done — drag away to untrip">1</span></div>
+        <div class="pfx">
+          <div class="pfx-dep done"><span class="t">7:40</span><span class="l">Departure</span></div>
+          <div class="pfx-unit"><a class="ref sm"><span class="ty"><svg><use href="#i-box"/></svg></span><span class="nm">Beau<span class="code">260</span></span></a><span class="ref-more">+1</span></div>
+        </div>
+        <span class="glyph arrow"><svg><use href="#i-down"/></svg></span>
+        <div class="gate-wrap">
+          <span class="gate-done"><svg><use href="#i-check"/></svg> Done · dropped</span>
+          <span class="sent-undo"><span class="ok"><svg><use href="#i-check"/></svg> sent</span> · <a>undo</a></span>
+        </div>
+        <span class="eta"><span class="drv">+42<span class="u">MIN</span></span><span class="eq">=</span><span class="t">8:22</span><span class="lbl">ETA</span></span>
+        <span class="town"><a href="https://maps.google.com/?q=Lake+Charles,LA" target="_blank" rel="noopener"><span class="nm">Lake Charles, LA</span><span class="ext">↗</span></a></span>
+        <span class="cust"><a class="ref"><span class="ty"><svg><use href="#i-user"/></svg></span><span class="nm">Doucet Concrete</span></a></span>
+        <span class="dl"><span class="sig done"><svg><use href="#i-check"/></svg><span class="tm">9:30</span><span class="st">done</span></span></span>
+      </div>
+
+      <!-- Stop 2 — ACTIVE -->
+      <div class="stop-row here">
+        <div class="rail"><span class="node num here" title="Stop 2 · current — drag away to untrip">2</span></div>
+        <div class="pfx">
+          <div class="pfx-dep done"><span class="t">8:42</span><span class="l">Departure</span></div>
+          <div class="pfx-unit"><a class="ref sm"><span class="ty"><svg><use href="#i-box"/></svg></span><span class="nm">Snappy<span class="code">S‑9</span></span></a></div>
+        </div>
+        <span class="glyph arrow"><svg><use href="#i-down"/></svg></span>
+        <div class="gate"><span class="gate-chip go"><svg class="chev"><use href="#i-chev"/></svg> Arrived?</span></div>
+        <span class="eta near"><span class="drv">+18<span class="u">MIN</span></span><span class="eq">=</span><span class="t">9:00</span><span class="lbl">ETA</span></span>
+        <span class="town"><a href="https://maps.google.com/?q=Sulphur,LA" target="_blank" rel="noopener"><span class="nm">Sulphur, LA</span><span class="ext">↗</span></a></span>
+        <span class="cust"><a class="ref"><span class="ty"><svg><use href="#i-user"/></svg></span><span class="nm">Boudreaux Marine</span></a></span>
+        <span class="dl"><span class="sig near"><svg><use href="#i-clock"/></svg><span class="tm">10:30</span><span class="st">near</span></span></span>
+      </div>
+
+      <!-- Stop 3 — NEXT UP (blue departure) -->
+      <div class="stop-row">
+        <div class="rail"><span class="node num" title="Stop 3 — drag away to untrip">3</span></div>
+        <div class="pfx">
+          <div class="pfx-dep next"><span class="t">9:20</span><span class="l">Departure</span></div>
+          <div class="pfx-unit"><a class="ref sm"><span class="ty"><svg><use href="#i-rot"/></svg></span><span class="nm">Gator<span class="code">ME‑35</span></span></a></div>
+        </div>
+        <span class="glyph arrow"><svg><use href="#i-up"/></svg></span>
+        <div class="gate"><span class="gate-chip na"><svg class="chev"><use href="#i-chev"/></svg> Picked Up?</span></div>
+        <span class="eta"><span class="drv">+38<span class="u">MIN</span></span><span class="eq">=</span><span class="t">9:58</span><span class="lbl">ETA</span></span>
+        <span class="town"><a href="https://maps.google.com/?q=Vinton,LA" target="_blank" rel="noopener"><span class="nm">Vinton, LA</span><span class="ext">↗</span></a></span>
+        <span class="cust"><a class="ref"><span class="ty"><svg><use href="#i-user"/></svg></span><span class="nm">Fontenot Rentals</span></a></span>
+        <span class="dl"><span class="sig wait"><svg><use href="#i-clock"/></svg><span class="tm">12:30</span><span class="st">waiting</span></span></span>
+      </div>
+
+      <!-- Stop 4 — LATE (grey departure = not yet its turn) -->
+      <div class="stop-row">
+        <div class="rail"><span class="node num" title="Stop 4 — drag away to untrip">4</span></div>
+        <div class="pfx">
+          <div class="pfx-dep"><span class="t">10:18</span><span class="l">Departure</span></div>
+          <div class="pfx-unit"><a class="ref sm"><span class="ty"><svg><use href="#i-box"/></svg></span><span class="nm">Diesel<span class="code">D‑20</span></span></a></div>
+        </div>
+        <span class="glyph arrow"><svg><use href="#i-down"/></svg></span>
+        <div class="gate"><span class="gate-chip na"><svg class="chev"><use href="#i-chev"/></svg> Dropped?</span></div>
+        <span class="eta late"><span class="drv">+55<span class="u">MIN</span></span><span class="eq">=</span><span class="t">11:13</span><span class="lbl">ETA</span></span>
+        <span class="town"><a href="https://maps.google.com/?q=Dequincy,LA" target="_blank" rel="noopener"><span class="nm">Dequincy, LA</span><span class="ext">↗</span></a></span>
+        <span class="cust"><a class="ref"><span class="ty"><svg><use href="#i-user"/></svg></span><span class="nm">Hebert Excavating</span></a></span>
+        <span class="dl"><span class="sig late"><svg><use href="#i-alert"/></svg><span class="tm">11:00</span><span class="st">late</span></span></span>
+      </div>
+
+      <!-- END anchor -->
+      <div class="stop-row">
+        <div class="rail last"><span class="node" style="border-radius:50%;width:12px;height:12px;background:var(--bg)"></span></div>
+        <div class="pfx">
+          <div class="pfx-dep"><span class="t">11:33</span><span class="l">Return</span></div>
+          <div class="pfx-yard"><svg><use href="#i-truck"/></svg> Sulphur yard</div>
+        </div>
+        <span class="glyph hq">HQ</span>
+        <div class="gate"><span class="gate-chip na"><svg class="chev"><use href="#i-chev"/></svg> Return</span></div>
+        <span class="eta dim"><span class="drv">+50<span class="u">MIN</span></span><span class="eq">=</span><span class="t">12:23</span></span>
+        <span class="town dim">Store</span>
+        <span class="cust"></span>
+        <span class="dl dim">—</span>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ============================ TOMORROW ============================ -->
+  <div class="group-head"><svg><use href="#i-truck"/></svg><h2>Tomorrow</h2><span class="g-count">1 trip · not started</span></div>
+
+  <div class="trip">
+    <div class="trip-rows">
+      <div class="stop-row">
+        <div class="rail first"><span class="node" style="border-radius:50%;width:12px;height:12px;background:var(--bg)"></span></div>
+        <div class="pfx">
+          <div class="pfx-dep"><span class="t">8:00</span><span class="l">Departure</span></div>
+          <div class="pfx-yard"><svg><use href="#i-truck"/></svg> Sulphur yard</div>
+        </div>
+        <span class="glyph hq">HQ</span>
+        <div class="gate"><span class="gate-chip go"><svg class="chev"><use href="#i-chev"/></svg> Start</span></div>
+        <span class="eta dim"><span class="t">8:00</span><span class="lbl">Trip 2 · start</span></span>
+        <span class="town dim">Store</span>
+        <span class="cust"><span class="driver-chip"><svg><use href="#i-user"/></svg><span class="nm">R. Guillory</span><svg class="chev"><use href="#i-chev"/></svg></span></span>
+        <span class="dl dim">—</span>
+      </div>
+      <div class="stop-row">
+        <div class="rail"><span class="node num" title="Stop 1 — drag away to untrip">1</span></div>
+        <div class="pfx">
+          <div class="pfx-dep"><span class="t">8:00</span><span class="l">Departure</span></div>
+          <div class="pfx-unit"><a class="ref sm"><span class="ty"><svg><use href="#i-rot"/></svg></span><span class="nm">Bush<span class="code">MX‑50</span></span></a></div>
+        </div>
+        <span class="glyph arrow"><svg><use href="#i-up"/></svg></span>
+        <div class="gate"><span class="gate-chip na"><svg class="chev"><use href="#i-chev"/></svg> Picked Up?</span></div>
+        <span class="eta"><span class="drv">+40<span class="u">MIN</span></span><span class="eq">=</span><span class="t">8:40</span><span class="lbl">ETA</span></span>
+        <span class="town"><a href="https://maps.google.com/?q=Iowa,LA" target="_blank" rel="noopener"><span class="nm">Iowa, LA</span><span class="ext">↗</span></a></span>
+        <span class="cust"><a class="ref"><span class="ty"><svg><use href="#i-user"/></svg></span><span class="nm">Guidry Oilfield</span></a></span>
+        <span class="dl"><span class="sig wait"><svg><use href="#i-clock"/></svg><span class="tm">11:00</span><span class="st">waiting</span></span></span>
+      </div>
+      <div class="stop-row">
+        <div class="rail"><span class="node num" title="Stop 2 — drag away to untrip">2</span></div>
+        <div class="pfx">
+          <div class="pfx-dep"><span class="t">9:00</span><span class="l">Departure</span></div>
+          <div class="pfx-unit"><a class="ref sm"><span class="ty"><svg><use href="#i-box"/></svg></span><span class="nm">Boudin<span class="code">B‑7</span></span></a></div>
+        </div>
+        <span class="glyph arrow"><svg><use href="#i-down"/></svg></span>
+        <div class="gate"><span class="gate-chip na"><svg class="chev"><use href="#i-chev"/></svg> Dropped?</span></div>
+        <span class="eta"><span class="drv">+38<span class="u">MIN</span></span><span class="eq">=</span><span class="t">9:38</span><span class="lbl">ETA</span></span>
+        <span class="town"><a href="https://maps.google.com/?q=Vinton,LA" target="_blank" rel="noopener"><span class="nm">Vinton, LA</span><span class="ext">↗</span></a></span>
+        <span class="cust"><a class="ref"><span class="ty"><svg><use href="#i-user"/></svg></span><span class="nm">Landry Ag Co.</span></a></span>
+        <span class="dl"><span class="sig wait"><svg><use href="#i-clock"/></svg><span class="tm">1:00p</span><span class="st">waiting</span></span></span>
+      </div>
+      <div class="stop-row">
+        <div class="rail last"><span class="node" style="border-radius:50%;width:12px;height:12px;background:var(--bg)"></span></div>
+        <div class="pfx">
+          <div class="pfx-dep"><span class="t">9:58</span><span class="l">Return</span></div>
+          <div class="pfx-yard"><svg><use href="#i-truck"/></svg> Sulphur yard</div>
+        </div>
+        <span class="glyph hq">HQ</span>
+        <div class="gate"><span class="gate-chip na"><svg class="chev"><use href="#i-chev"/></svg> Return</span></div>
+        <span class="eta dim"><span class="drv">+50<span class="u">MIN</span></span><span class="eq">=</span><span class="t">10:48</span></span>
+        <span class="town dim">Store</span>
+        <span class="cust"></span>
+        <span class="dl dim">—</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================ THIS WEEK ============================ -->
+  <div class="group-head"><svg><use href="#i-truck"/></svg><h2>This Week</h2><span class="g-count">5 stops · unscheduled</span></div>
+
+  <div class="loose">
+    <div class="stop-row">
+      <div class="rail first last"><span class="node box" title="Unscheduled — drag onto a trip"></span></div>
+      <div class="pfx">
+        <div class="pfx-dep"><span class="t">Thu</span><span class="l">am</span></div>
+        <div class="pfx-unit"><a class="ref sm"><span class="ty"><svg><use href="#i-box"/></svg></span><span class="nm">Tank<span class="code">T‑40</span></span></a></div>
+      </div>
+      <span class="glyph arrow"><svg><use href="#i-down"/></svg></span>
+      <div class="gate"><span class="gate-chip na"><svg class="chev"><use href="#i-chev"/></svg> Dropped?</span></div>
+      <span class="eta dim"><span class="lbl">not on a trip</span></span>
+      <span class="town"><a href="https://maps.google.com/?q=Iowa,LA" target="_blank" rel="noopener"><span class="nm">Iowa, LA</span><span class="ext">↗</span></a></span>
+      <span class="cust"><a class="ref"><span class="ty"><svg><use href="#i-user"/></svg></span><span class="nm">Broussard Const.</span></a></span>
+      <span class="dl"><span class="sig wait"><svg><use href="#i-clock"/></svg><span class="tm">Thu 4p</span><span class="st">waiting</span></span></span>
+    </div>
+  </div>
+
+  <div class="loose">
+    <div class="stop-row">
+      <div class="rail first last"><span class="node box" title="Unscheduled — drag onto a trip"></span></div>
+      <div class="pfx">
+        <div class="pfx-dep"><span class="t">Fri</span><span class="l">pm</span></div>
+        <div class="pfx-unit"><a class="ref sm"><span class="ty"><svg><use href="#i-rot"/></svg></span><span class="nm">Scoot<span class="code">T‑16</span></span></a></div>
+      </div>
+      <span class="glyph arrow"><svg><use href="#i-up"/></svg></span>
+      <div class="gate"><span class="gate-chip na"><svg class="chev"><use href="#i-chev"/></svg> Picked Up?</span></div>
+      <span class="eta dim"><span class="lbl">not on a trip</span></span>
+      <span class="town"><a href="https://maps.google.com/?q=Lake+Charles,LA" target="_blank" rel="noopener"><span class="nm">Lake Charles, LA</span><span class="ext">↗</span></a></span>
+      <span class="cust"><a class="ref"><span class="ty"><svg><use href="#i-user"/></svg></span><span class="nm">Cormier Rentals</span></a></span>
+      <span class="dl"><span class="sig wait"><svg><use href="#i-clock"/></svg><span class="tm">Fri 5p</span><span class="st">waiting</span></span></span>
+    </div>
+  </div>
+
+  <div class="more-row"><svg class="ic"><use href="#i-chev"/></svg> +3 more stops this week</div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,670 @@
+<title>SLOTS — Halo element</title>
+<style>
+/* ============================================================
+   tokens.css subset — reset, :root vars, .oct/.oct4/.oct-br/.a,
+   .stage. Page-shell rules (html,body / body place-items) are
+   deliberately left out — the workbench supplies its own shell.
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0a0c10;
+  --neon:      #f95a5c;
+  --neon-hi:   #ff7a76;
+  --bar-red:   #ff433e;
+  --brk-red:   #fc6c5c;
+  --pnl-red:   #fa756f;
+  --tube-red:  #ff8078;
+  --maroon:    #411b1e;
+  --maroon-d:  #32171e;
+  --bar-yel:   #fff252;
+  --amber:     #7c401f;
+  --chrome:    #aebac6;
+  --silver:    #a19596;
+  --rim-top:   #626971;
+  --rim-left:  #818d92;
+  --rim-right: #74808a;
+  --rim-bot:   #7b8997;
+  --slate:     #32303e;
+  --field:     #1e202c;
+  --cavity:    #221a25;
+  --circuit:   #070e16;
+  --edge:      #0d1218;
+  --mono: Consolas, "Cascadia Mono", "DejaVu Sans Mono", "Courier New", monospace;
+  --sans: Roboto, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+.stage {
+  position: relative;
+  background: var(--bg);
+  overflow: hidden;
+  font-family: var(--sans);
+  font-kerning: none;
+}
+
+.oct {
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut),
+                     100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
+}
+.oct4 {
+  clip-path: polygon(var(--cut) 0, calc(100% - var(--cut)) 0,
+                     100% var(--cut), 100% calc(100% - var(--cut)),
+                     calc(100% - var(--cut)) 100%, var(--cut) 100%,
+                     0 calc(100% - var(--cut)), 0 var(--cut));
+}
+.oct-br {
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--cut)),
+                     calc(100% - var(--cut)) 100%, 0 100%);
+}
+.a { position: absolute; }
+
+/* ============================================================
+   workbench.css — verbatim, the shared workbench chrome.
+   ============================================================ */
+:root {
+  --wb-ground:   #07090d;
+  --wb-canvas:   #0a0c10;
+  --wb-chrome:   #10141b;
+  --wb-chrome-2: #151b23;
+  --wb-line:     #1e2630;
+  --wb-line-lit: #2b3846;
+  --wb-ink:      #c3ccd6;
+  --wb-ink-dim:  #78848f;
+  --wb-ink-mute: #4e5966;
+  --wb-steel:    #5d8fb3;
+  --wb-steel-lo: #34505f;
+  --wb-good:     #5fae7d;
+  --wb-bad:      #c9635e;
+
+  --wb-mono: ui-monospace, "DejaVu Sans Mono", Consolas, "Cascadia Mono", "Courier New", monospace;
+  --wb-sans: system-ui, "Archivo", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+.wb {
+  background: var(--wb-ground);
+  color: var(--wb-ink);
+  font-family: var(--wb-sans);
+  font-size: 15px;
+  line-height: 1.55;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding: 0 0 72px;
+}
+
+.wb-head {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 18px;
+  padding: 26px 28px 22px;
+  border-bottom: 1px solid var(--wb-line);
+  background: linear-gradient(180deg, #0b0f14, var(--wb-ground));
+}
+.wb-head h1 {
+  font-family: var(--wb-mono);
+  font-size: 26px; font-weight: 700; letter-spacing: 2.5px;
+  color: var(--wb-ink); text-transform: uppercase; text-wrap: balance;
+}
+.wb-head .wb-role {
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.6px;
+  text-transform: uppercase; color: var(--wb-steel);
+  padding: 3px 9px; border: 1px solid var(--wb-steel-lo); border-radius: 2px;
+}
+.wb-head p { flex: 1 1 340px; max-width: 66ch; color: var(--wb-ink-dim); font-size: 14px; }
+
+.wb-gate {
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.2px;
+  text-transform: uppercase; white-space: nowrap;
+  padding: 3px 9px; border-radius: 2px; border: 1px solid;
+  font-variant-numeric: tabular-nums;
+}
+.wb-gate.is-pass { color: var(--wb-good); border-color: #2c5a41; background: #0e1a14; }
+.wb-gate.is-fail { color: var(--wb-bad);  border-color: #5d2f2d; background: #1a0f0e; }
+.wb-gate.is-na   { color: var(--wb-ink-mute); border-color: var(--wb-line); }
+
+.wb-body {
+  display: grid; gap: 28px; padding: 0 28px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+@media (min-width: 1080px) {
+  .wb-body { grid-template-columns: minmax(0, 1fr) 330px; }
+  .wb-rail { position: sticky; top: 22px; }
+}
+
+.wb-specimens { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+
+.wb-spec {
+  border: 1px solid var(--wb-line); border-radius: 3px;
+  background: var(--wb-chrome); overflow: hidden;
+  transition: border-color .12s ease;
+}
+.wb-spec:hover { border-color: var(--wb-line-lit); }
+.wb-spec.is-selected { border-color: var(--wb-steel-lo); }
+
+.wb-spec-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 9px 13px; border-bottom: 1px solid var(--wb-line);
+  background: var(--wb-chrome-2);
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.1px;
+}
+.wb-pick {
+  appearance: none; cursor: pointer;
+  font: inherit; letter-spacing: inherit; text-transform: uppercase;
+  color: var(--wb-ink); background: transparent;
+  border: 1px solid var(--wb-line-lit); border-radius: 2px;
+  padding: 3px 10px;
+}
+.wb-pick:hover { border-color: var(--wb-steel-lo); color: #dfe6ec; }
+.wb-pick:focus-visible { outline: 2px solid var(--wb-steel); outline-offset: 2px; }
+.is-selected .wb-pick { background: var(--wb-steel-lo); border-color: var(--wb-steel); color: #eef4f8; }
+
+.wb-spec-meta { color: var(--wb-ink-mute); font-variant-numeric: tabular-nums; }
+.wb-spec-note { flex: 1 1 100%; color: var(--wb-ink-dim); letter-spacing: 0; font-size: 12px; }
+
+.wb-stage { overflow-x: auto; overflow-y: hidden; background: var(--wb-canvas); }
+.wb-stage > .stage { margin: 0 auto; }
+
+.wb-rail {
+  border: 1px solid var(--wb-line); border-radius: 3px;
+  background: var(--wb-chrome); min-width: 0;
+}
+.wb-rail-head {
+  padding: 11px 14px; border-bottom: 1px solid var(--wb-line);
+  background: var(--wb-chrome-2);
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.4px;
+  text-transform: uppercase; color: var(--wb-ink-dim);
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+}
+.wb-rail-head b { color: var(--wb-steel); font-weight: 700; }
+.wb-knobs { max-height: min(60vh, 620px); overflow-y: auto; padding: 4px 0 10px; }
+
+.wb-group { border-top: 1px solid var(--wb-line); }
+.wb-group:first-child { border-top: 0; }
+.wb-group > h3 {
+  font-family: var(--wb-mono); font-size: 10px; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--wb-ink-mute);
+  padding: 12px 14px 6px;
+}
+
+.wb-knob { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 5px 14px 7px; }
+.wb-knob label {
+  font-family: var(--wb-mono); font-size: 11.5px; letter-spacing: .4px;
+  color: var(--wb-ink-dim); align-self: center;
+}
+.wb-knob output {
+  font-family: var(--wb-mono); font-size: 11.5px; color: var(--wb-ink);
+  font-variant-numeric: tabular-nums; align-self: center; white-space: nowrap;
+}
+.wb-knob.is-dirty label { color: var(--wb-steel); }
+.wb-knob.is-dirty output { color: #dbe7ef; }
+.wb-knob input[type="range"], .wb-knob input[type="color"] { grid-column: 1 / -1; }
+
+.wb-knob input[type="range"] {
+  appearance: none; width: 100%; height: 18px; background: transparent; cursor: pointer;
+}
+.wb-knob input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px; background: var(--wb-line-lit); border-radius: 2px;
+}
+.wb-knob input[type="range"]::-moz-range-track {
+  height: 3px; background: var(--wb-line-lit); border-radius: 2px;
+}
+.wb-knob input[type="range"]::-webkit-slider-thumb {
+  appearance: none; width: 13px; height: 13px; margin-top: -5px;
+  border-radius: 50%; background: var(--wb-steel); border: 0;
+}
+.wb-knob input[type="range"]::-moz-range-thumb {
+  width: 13px; height: 13px; border-radius: 50%; background: var(--wb-steel); border: 0;
+}
+.wb-knob input:focus-visible { outline: 2px solid var(--wb-steel); outline-offset: 3px; }
+
+.wb-knob input[type="color"] {
+  appearance: none; width: 100%; height: 22px; padding: 0;
+  background: transparent; border: 1px solid var(--wb-line-lit); border-radius: 2px; cursor: pointer;
+}
+.wb-knob input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+.wb-knob input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 1px; }
+
+.wb-acts {
+  display: flex; gap: 8px; padding: 11px 14px;
+  border-top: 1px solid var(--wb-line); background: var(--wb-chrome-2);
+}
+.wb-btn {
+  flex: 1; appearance: none; cursor: pointer;
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase;
+  color: var(--wb-ink); background: transparent;
+  border: 1px solid var(--wb-line-lit); border-radius: 2px; padding: 7px 8px;
+  transition: border-color .12s ease, color .12s ease;
+}
+.wb-btn:hover { border-color: var(--wb-steel-lo); color: #dfe6ec; }
+.wb-btn:focus-visible { outline: 2px solid var(--wb-steel); outline-offset: 2px; }
+.wb-btn.is-done { color: var(--wb-good); border-color: #2c5a41; }
+
+.wb-out {
+  margin: 0 14px 12px; padding: 10px 11px;
+  border: 1px solid var(--wb-line); border-radius: 2px; background: #080b0f;
+  font-family: var(--wb-mono); font-size: 11px; line-height: 1.65; color: var(--wb-ink-dim);
+  white-space: pre; overflow-x: auto; max-height: 200px; overflow-y: auto;
+}
+.wb-out:empty { display: none; }
+
+.wb-note {
+  padding: 0 28px; max-width: 74ch;
+  color: var(--wb-ink-dim); font-size: 13.5px;
+}
+.wb-note code {
+  font-family: var(--wb-mono); font-size: .92em;
+  color: var(--wb-ink); background: var(--wb-chrome-2);
+  padding: 1px 5px; border-radius: 2px;
+}
+.wb-note a { color: var(--wb-steel); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
+
+/* ============================================================
+   slots.css — .halo-slots, C2 segment bars. Verbatim rules from
+   docs/design/halo-elements/parts/slots.css. Every `.b` is a
+   direct child of the root, top:var(--iy) / height:var(--h)
+   read explicitly (the original's separate .bars wrapper — which
+   only existed to give `.b` something to inherit top/height 100%
+   from — has been folded away). Each bar's `left` is a baked
+   LOCAL px offset from the root's own left edge, copied per
+   instance in the markup below; it is not a canvas coordinate.
+   ============================================================ */
+.halo-slots {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--bw);
+  height: var(--bh);
+}
+
+.halo-slots .b {
+  position: absolute;
+  top: var(--iy);
+  height: var(--h);
+  width: 23.6px;
+  border-radius: 13px;
+  transform: skewX(18deg);
+  filter: blur(1.4px);
+}
+.halo-slots .b.r {
+  background: linear-gradient(180deg,
+    rgba(255,65,59,0)  0px,
+    rgba(255,65,59,1)  var(--ft),
+    #ff463d            55%,
+    #ff3d35            calc(100% - var(--fb)),
+    rgba(255,61,53,0)  100%);
+}
+.halo-slots .b.y {
+  background: linear-gradient(180deg,
+    rgba(255,242,82,0) 0px,
+    rgba(255,242,82,1) var(--ft),
+    #fff453             55%,
+    #f8e948             calc(100% - var(--fb)),
+    rgba(248,233,72,0) 100%);
+}
+.halo-slots .b::before {
+  content: ""; position: absolute; left: 1.5px; right: 1.5px;
+  top: calc(var(--ft) - 2px); height: 5px;
+  border-radius: 4px 4px 2px 2px;
+  background: linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,0));
+}
+.halo-slots .b.y::before { background: linear-gradient(180deg, rgba(237,217,112,.85), rgba(255,255,255,0)); }
+
+/* is-c2a — 5 bars R R R Y Y, band A loose. */
+.halo-slots.is-c2a {
+  --h: 61.6px; --ft: 12px; --fb: 14px;
+  --iy: 1.6px;
+  --bw: 180px; --bh: 66px;
+}
+
+/* is-c2b — 7 bars R R R Y Y Y Y, band B, hard-clipped. The clip is
+   written as calc()s against --iy/--h/--clip-r specifically so the
+   cut stays glued to the bar row even if --bw/--bh move. */
+.halo-slots.is-c2b {
+  --h: 50.5px; --ft: 7px; --fb: 7px;
+  --iy: 0.5px;
+  --bw: 251px; --bh: 51px;
+  --clip-r: 251px;
+  clip-path: inset(var(--iy)
+                   calc(var(--bw) - var(--clip-r))
+                   calc(var(--bh) - var(--iy) - var(--h))
+                   -30px);
+}
+
+/* is-c2c — 5 bars R R R Y Y, band B sub-panel instance. */
+.halo-slots.is-c2c {
+  --h: 55px; --ft: 7.5px; --fb: 8px;
+  --iy: 3px;
+  --bw: 177px; --bh: 60px;
+}
+</style>
+
+<div class="wb">
+
+  <header class="wb-head">
+    <h1>SLOTS</h1>
+    <span class="wb-role">element 6 of 10</span>
+    <span class="wb-gate is-pass">PASS · 0.000</span>
+    <p>
+      Skewed round-rect bars — red/red/red/yellow(/yellow…) segment ticks reading as a status
+      strip, their vertical softness baked into each bar's own fill gradient and their
+      horizontal softness from a small blur. Loose on the card's border in band A; twice more
+      inside the assembled card — a 7-bar cluster hard-clipped mid-paint in the header row, and
+      a 5-bar row riding the sub-panel below it.
+    </p>
+  </header>
+
+  <div class="wb-body">
+    <div class="wb-specimens">
+
+      <article class="wb-spec" data-variant="is-c2a">
+        <div class="wb-spec-bar">
+          <button class="wb-pick" type="button">select</button>
+          <span class="wb-spec-meta">180×66, painted == --bw/--bh · band A · loose, canvas (204, 43)</span>
+          <span class="wb-spec-note">5 bars, R R R Y Y. Sits alone on bare --bg — nothing paints under or over it. The only instance with its own pixel gate: PASS mean 0.000.</span>
+        </div>
+        <div class="wb-stage">
+          <div class="stage" style="width:380px;height:210px">
+            <div class="halo-slots is-c2a" data-knobbed style="--x:90px; --y:80px">
+              <span class="b r" style="left:11.0px"></span>
+              <span class="b r" style="left:43.4px"></span>
+              <span class="b r" style="left:75.7px"></span>
+              <span class="b y" style="left:110.1px"></span>
+              <span class="b y" style="left:144.9px"></span>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="wb-spec" data-variant="is-c2b">
+        <div class="wb-spec-bar">
+          <button class="wb-pick" type="button">select</button>
+          <span class="wb-spec-meta">251×51 painted, hard-clipped at local x=251 · band B · canvas (133, 155)</span>
+          <span class="wb-spec-note">7 bars, R R R Y Y Y Y — bar 7's right edge is sliced mid-paint at local x=251, intentional source artwork (original.html's own comment confirms it), not a mistake to fix. Paints under the assembled card's banner face/seam/ramp, so most of the top half is hidden on the real card. Rides inside the Main Item assembly gate, mean 0.000.</span>
+        </div>
+        <div class="wb-stage">
+          <div class="stage" style="width:460px;height:180px">
+            <div class="halo-slots is-c2b" data-knobbed style="--x:90px; --y:75px">
+              <span class="b r" style="left:8.5px"></span>
+              <span class="b r" style="left:46.0px"></span>
+              <span class="b r" style="left:82.5px"></span>
+              <span class="b y" style="left:118.0px"></span>
+              <span class="b y" style="left:155.0px"></span>
+              <span class="b y" style="left:191.5px"></span>
+              <span class="b y" style="left:227.0px"></span>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="wb-spec" data-variant="is-c2c">
+        <div class="wb-spec-bar">
+          <button class="wb-pick" type="button">select</button>
+          <span class="wb-spec-meta">177×60, painted == --bw/--bh · band B · sub-panel, canvas (691, 279)</span>
+          <span class="wb-spec-note">5 bars, R R R Y Y. Paints OVER c4's sub-panel on the real card — shown here on bare --bg, so it reads more isolated than in the assembly. Rides inside the subitem assembly gate, mean 0.000.</span>
+        </div>
+        <div class="wb-stage">
+          <div class="stage" style="width:380px;height:200px">
+            <div class="halo-slots is-c2c" data-knobbed style="--x:90px; --y:78px">
+              <span class="b r" style="left:9.7px"></span>
+              <span class="b r" style="left:41.7px"></span>
+              <span class="b r" style="left:74.2px"></span>
+              <span class="b y" style="left:108.7px"></span>
+              <span class="b y" style="left:143.2px"></span>
+            </div>
+          </div>
+        </div>
+      </article>
+
+    </div>
+    <aside class="wb-rail" id="rail"></aside>
+  </div>
+
+  <p class="wb-note">
+    Wired to the rail: <code>--x</code>/<code>--y</code> placement, <code>--h</code>/<code>--ft</code>/<code>--fb</code>
+    the bar row's own geometry, and <code>--bw</code>/<code>--bh</code> the root's recorded
+    bounding box. Turn a knob, hit <b>copy CSS</b>, and the printed rule lands on
+    <code>.halo-slots</code> — swap in the variant you're actually editing (e.g.
+    <code>.halo-slots.is-c2a</code>) before it goes into <code>parts/slots.css</code>.<br><br>
+
+    <code>--ft</code>/<code>--fb</code> aren't just fade lengths — <code>.b::before</code>'s
+    pale specular cap sits at <code>top: calc(var(--ft) - 2px)</code>, so nudging
+    <code>--ft</code> carries the highlight along with it, by design.<br><br>
+
+    <b><code>--bw</code>/<code>--bh</code> won't visibly move anything, on any of the three
+    specimens.</b> The root has no background and no <code>overflow</code>, so its own box never
+    clips <b>is-c2a</b>/<b>is-c2c</b> — turning these two is pure bookkeeping there. On
+    <b>is-c2b</b> the clip-path is real, but its insets are written as <code>calc()</code>s
+    against <code>--iy</code>/<code>--h</code>/<code>--clip-r</code> specifically so — per the
+    part's own comment — "the clip stays glued to the bar row" even as <code>--bw</code>/<code>--bh</code>
+    change; the math cancels out on purpose. Moving these sliders only updates the number the
+    part's header calls "the NOMINAL measured painted bounding box for THAT instance" — useful
+    to keep honest if you've also moved <code>--h</code>, not something you'll see move on
+    stage.<br><br>
+
+    <b>Not on the rail.</b> Each bar's own <code>left</code> offset, the internal
+    <code>--iy</code> row offset, and <code>--clip-r</code> (the fixed cut position
+    <b>is-c2b</b>'s clip-path is really anchored to) are baked source measurements, not free
+    knobs — the part's own header says so outright. Per-bar colour (<code>.r</code> red /
+    <code>.y</code> yellow) is a class on each bar's own span, not a custom property, so it isn't
+    wireable to a slider either — it's markup, hand-edit it if a bar needs to change teams.<br><br>
+
+    All three stages carry real air past the nominal box: <code>skewX(18deg)</code> throws each
+    bar's top edge left and bottom edge right by roughly ±8 to ±10px depending on bar height, and
+    <code>filter: blur(1.4px)</code> adds another ~2.5px on every side. Push <code>--h</code> or
+    <code>--y</code> far enough and the stage's own edge may start cropping a bar — that's the
+    stage running out of room, not a defect in the part.
+  </p>
+
+  <script>
+/* ============================================================
+   workbench.js — verbatim (HaloWorkbench).
+   ============================================================ */
+function HaloWorkbench(cfg) {
+  const rail = document.querySelector(cfg.rail);
+  const specimens = Array.from(document.querySelectorAll(cfg.specimens));
+  if (!rail || !specimens.length) return;
+
+  const groups = cfg.groups || [];
+  const allKnobs = groups.flatMap(g => g.knobs);
+
+  const born = new WeakMap();
+  const target = (spec) => spec.querySelector('[data-knobbed]') || spec.querySelector('.stage > *') || spec;
+
+  const readVar = (el, name) => {
+    const inline = el.style.getPropertyValue(name).trim();
+    if (inline) return inline;
+    return getComputedStyle(el).getPropertyValue(name).trim();
+  };
+
+  specimens.forEach(spec => {
+    const el = target(spec);
+    const snap = {};
+    allKnobs.forEach(k => { snap[k.var] = readVar(el, k.var); });
+    born.set(spec, snap);
+  });
+
+  let selected = specimens[0];
+
+  const controls = new Map();
+
+  const railHead = document.createElement('div');
+  railHead.className = 'wb-rail-head';
+  railHead.innerHTML = '<span>knobs</span><b data-wb-which></b>';
+  rail.appendChild(railHead);
+  const which = railHead.querySelector('[data-wb-which]');
+
+  const knobBox = document.createElement('div');
+  knobBox.className = 'wb-knobs';
+  rail.appendChild(knobBox);
+
+  groups.forEach(g => {
+    const sec = document.createElement('section');
+    sec.className = 'wb-group';
+    const h = document.createElement('h3');
+    h.textContent = g.title;
+    sec.appendChild(h);
+
+    g.knobs.forEach(k => {
+      const row = document.createElement('div');
+      row.className = 'wb-knob';
+
+      const id = 'k' + Math.abs(hash(k.var + g.title));
+      const lab = document.createElement('label');
+      lab.setAttribute('for', id);
+      lab.textContent = k.label || k.var;
+
+      const out = document.createElement('output');
+      out.setAttribute('for', id);
+
+      const input = document.createElement('input');
+      input.id = id;
+      if (k.type === 'color') {
+        input.type = 'color';
+      } else {
+        input.type = 'range';
+        input.min = k.min; input.max = k.max; input.step = k.step != null ? k.step : 1;
+      }
+      input.addEventListener('input', () => apply(k, input.value));
+
+      row.append(lab, out, input);
+      sec.appendChild(row);
+      controls.set(k.var, { input, out, row, knob: k });
+    });
+
+    knobBox.appendChild(sec);
+  });
+
+  const acts = document.createElement('div');
+  acts.className = 'wb-acts';
+  const copyBtn = mkBtn('copy CSS');
+  const resetBtn = mkBtn('reset');
+  acts.append(copyBtn, resetBtn);
+  rail.appendChild(acts);
+
+  const out = document.createElement('pre');
+  out.className = 'wb-out';
+  rail.appendChild(out);
+
+  function apply(knob, raw) {
+    const el = target(selected);
+    const value = knob.type === 'color' ? raw : raw + (knob.unit || '');
+    el.style.setProperty(knob.var, value);
+    sync(knob.var);
+  }
+
+  function sync(varName) {
+    const c = controls.get(varName);
+    if (!c) return;
+    const el = target(selected);
+    const now = readVar(el, varName);
+    const was = born.get(selected)[varName];
+    c.out.textContent = now || '—';
+    c.row.classList.toggle('is-dirty', norm(now) !== norm(was));
+  }
+
+  function load(spec) {
+    selected = spec;
+    specimens.forEach(s => s.classList.toggle('is-selected', s === spec));
+    which.textContent = spec.dataset.variant || '';
+    const el = target(spec);
+    controls.forEach(({ input, knob }, varName) => {
+      const v = readVar(el, varName);
+      if (knob.type === 'color') {
+        input.value = toHex(v) || '#000000';
+      } else {
+        const n = parseFloat(v);
+        input.value = Number.isFinite(n) ? n : (knob.min || 0);
+      }
+      sync(varName);
+    });
+    out.textContent = '';
+    copyBtn.classList.remove('is-done');
+    copyBtn.textContent = 'copy CSS';
+  }
+
+  specimens.forEach(spec => {
+    const pick = spec.querySelector('.wb-pick');
+    if (pick) pick.addEventListener('click', () => load(spec));
+    spec.addEventListener('click', e => {
+      if (e.target.closest('input, button, a')) return;
+      load(spec);
+    });
+  });
+
+  copyBtn.addEventListener('click', () => {
+    const el = target(selected);
+    const snap = born.get(selected);
+    const lines = [];
+    controls.forEach((c, varName) => {
+      const now = readVar(el, varName);
+      if (norm(now) !== norm(snap[varName])) lines.push(`  ${varName}: ${now};`);
+    });
+    const css = lines.length
+      ? `/* ${selected.dataset.variant || 'specimen'} — changed knobs */\n.halo-part {\n${lines.join('\n')}\n}`
+      : '/* nothing changed yet — turn a knob first */';
+    out.textContent = css;
+    if (navigator.clipboard && lines.length) {
+      navigator.clipboard.writeText(css).then(() => {
+        copyBtn.textContent = 'copied';
+        copyBtn.classList.add('is-done');
+      }, () => {});
+    }
+  });
+
+  resetBtn.addEventListener('click', () => {
+    const el = target(selected);
+    const snap = born.get(selected);
+    Object.keys(snap).forEach(varName => {
+      el.style.removeProperty(varName);
+      if (snap[varName]) el.style.setProperty(varName, snap[varName]);
+    });
+    load(selected);
+  });
+
+  load(specimens[0]);
+
+  function mkBtn(text) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'wb-btn'; b.textContent = text;
+    return b;
+  }
+  function norm(v) { return String(v || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
+  function hash(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h; }
+  function toHex(v) {
+    v = String(v || '').trim();
+    if (/^#[0-9a-f]{6}$/i.test(v)) return v;
+    if (/^#[0-9a-f]{3}$/i.test(v)) return '#' + v.slice(1).split('').map(c => c + c).join('');
+    const m = v.match(/^rgba?\(([^)]+)\)$/i);
+    if (m) {
+      const p = m[1].split(/[ ,/]+/).filter(Boolean).slice(0, 3).map(n => Math.max(0, Math.min(255, Math.round(parseFloat(n)))));
+      if (p.length === 3) return '#' + p.map(n => n.toString(16).padStart(2, '0')).join('');
+    }
+    return null;
+  }
+}
+
+HaloWorkbench({
+  rail: '#rail',
+  specimens: '.wb-spec',
+  groups: [
+    { title: 'placement', knobs: [
+        { var: '--x', label: 'x', min: 0, max: 220, step: .5, unit: 'px' },
+        { var: '--y', label: 'y', min: 0, max: 160, step: .5, unit: 'px' },
+    ]},
+    { title: 'bar row', knobs: [
+        { var: '--h',  label: 'bar height', min: 20, max: 130, step: .1, unit: 'px' },
+        { var: '--ft', label: 'top fade',   min: 0,  max: 28,  step: .1, unit: 'px' },
+        { var: '--fb', label: 'bottom fade', min: 0, max: 30,  step: .1, unit: 'px' },
+    ]},
+    { title: 'bounding box (informational)', knobs: [
+        { var: '--bw', label: 'width',  min: 80, max: 520, step: 1, unit: 'px' },
+        { var: '--bh', label: 'height', min: 20, max: 140, step: 1, unit: 'px' },
+    ]},
+  ],
+});
+  </script>
+</div>

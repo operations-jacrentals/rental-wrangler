@@ -1,0 +1,427 @@
+<title>Inspection — a live capture surface</title>
+
+<style>
+  :root{
+    --bg:#0a0d11; --bg2:#0f1318; --panel:#171d25; --panel2:#1d242d; --card:#12171e; --cardh:#1a212b;
+    --line:#2c343f; --lineSoft:#212834; --txt:#eef2f7; --txt2:#aab4c1; --txt3:#7f8896; --txt3-lo:#717b89;
+    --accent:#ff7e1f; --onAcc:#1a1205; --accSoft:rgba(255,126,31,.15); --accLine:rgba(255,126,31,.5);
+    --green:#34d399; --yellow:#eed44b; --red:#ff4242; --redStrong:#d63636; --blue:#6394cc; --commit:#2f6fd0; --gray:#8b94a3;
+    --tan:#c2925a;
+    --font:-apple-system,"Segoe UI",Roboto,system-ui,sans-serif;
+    --stamp:ui-monospace,"Cascadia Code","SF Mono",Menlo,Consolas,monospace;
+    --h:24px;
+  }
+  @media (prefers-color-scheme:light){ :root{
+    --bg:#e6e8ea; --bg2:#dfe3ea; --panel:#fff; --panel2:#eef1f6; --card:#fff; --cardh:#eef1f6;
+    --line:#cfd6e1; --lineSoft:#e1e6ee; --txt:#141821; --txt2:#414b5a; --txt3:#69727f;
+    --accent:#cf6000; --red:#d52a2a; --redStrong:#b5241f; --blue:#2f5fb0; --commit:#1f56c0; --green:#0c8f5f; --gray:#566072; --tan:#8a5a2b;
+  } }
+  :root[data-theme="light"]{
+    --bg:#e6e8ea; --panel:#fff; --card:#fff; --cardh:#eef1f6; --line:#cfd6e1; --lineSoft:#e1e6ee;
+    --txt:#141821; --txt2:#414b5a; --txt3:#69727f; --accent:#cf6000; --red:#d52a2a; --redStrong:#b5241f; --blue:#2f5fb0; --commit:#1f56c0; --green:#0c8f5f; --gray:#566072; --tan:#8a5a2b;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0a0d11; --panel:#171d25; --card:#12171e; --cardh:#1a212b; --line:#2c343f; --lineSoft:#212834;
+    --txt:#eef2f7; --txt2:#aab4c1; --txt3:#7f8896; --accent:#ff7e1f; --red:#ff4242; --redStrong:#d63636; --blue:#6394cc; --commit:#2f6fd0; --green:#34d399; --gray:#8b94a3; --tan:#c2925a;
+  }
+  *{box-sizing:border-box} body{margin:0}
+  .wrap{background:var(--bg); color:var(--txt); font-family:var(--font); line-height:1.5; -webkit-font-smoothing:antialiased; padding:clamp(14px,3vw,30px) clamp(10px,3vw,20px) 60px}
+  .sheet{max-width:1180px; margin:0 auto}
+  .eyebrow{font-family:var(--stamp); font-size:12px; letter-spacing:.18em; text-transform:uppercase; color:var(--txt3); margin:0; font-weight:700}
+  h1{font-family:var(--stamp); font-weight:800; font-size:clamp(20px,3.3vw,28px); line-height:1; margin:.26em 0 .32em; letter-spacing:.01em; text-transform:uppercase}
+  h1 .hl{color:var(--accent)}
+  .lede{max-width:90ch; font-size:13px; color:var(--txt2); margin:0} .lede b{color:var(--txt); font-weight:600}
+  .key{display:flex; flex-wrap:wrap; gap:6px 12px; margin:14px 0 2px; font-family:var(--stamp); font-size:10px; letter-spacing:.03em; text-transform:uppercase; color:var(--txt3)}
+  .key b{color:var(--accent)}
+
+  .insp-grid{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:20px; align-items:start}
+  @media (max-width:880px){ .insp-grid{grid-template-columns:1fr} }
+
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:14px; overflow:hidden}
+  .pcap{font-family:var(--stamp); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--txt3); padding:9px 13px 0; display:flex; align-items:center; gap:7px}
+  .dnote{font-family:var(--stamp); font-size:9px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--txt3); border:1px solid var(--line); border-radius:7px; padding:2px 7px}
+  .ptitle{padding:1px 13px 11px}
+  .pt-name{font-family:var(--font); font-weight:700; font-size:15px; color:var(--txt); letter-spacing:-.005em; display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+  .pt-sub{font-size:11px; color:var(--txt3); margin-top:2px; font-family:var(--stamp); letter-spacing:.02em}
+
+  /* ---------- the five parts (identical to yard-journey.html / detail-views.html) ---------- */
+  .ctl{height:var(--h); display:inline-flex; align-items:center; font-family:var(--stamp); font-size:11px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; white-space:nowrap; flex:none}
+  .sig{padding:0 8px; border-radius:7px}
+  .sig.f.red{background:var(--redStrong);color:#fff} .sig.o.red{color:var(--red);box-shadow:inset 0 0 0 1.3px var(--red)}
+  .sig.f.yellow{background:var(--yellow);color:#211a05} .sig.o.yellow{color:var(--yellow);box-shadow:inset 0 0 0 1.3px var(--yellow)}
+  .sig.f.blue{background:var(--blue);color:#0a1220} .sig.o.blue{color:var(--blue);box-shadow:inset 0 0 0 1.3px var(--blue)}
+  .sig.f.green{background:var(--green);color:#04140d} .sig.o.green{color:var(--green);box-shadow:inset 0 0 0 1.3px var(--green)}
+  .sig.o.grey{color:var(--gray);box-shadow:inset 0 0 0 1.3px var(--gray)}
+  .stamp{font-family:var(--stamp); font-size:10.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--txt3); white-space:nowrap}
+  .dot{color:var(--line); font-family:var(--stamp); font-size:10px}
+  .ref{height:var(--h); display:inline-flex; align-items:center; gap:6px; padding:0 8px 0 3px; border-radius:7px; background:var(--card); border:1px solid var(--line); color:var(--txt); font-size:12px; font-weight:600; cursor:pointer; text-decoration:none; white-space:nowrap}
+  .ref .ty{width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;color:var(--accent);background:var(--accSoft);border-radius:5px} .ref .ty svg{width:11px;height:11px}
+  .door{height:var(--h); display:inline-flex; align-items:center; gap:5px; font-family:var(--stamp); font-size:10.5px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; cursor:pointer; border-radius:999px; padding:0 13px; border:0; background:none}
+  .door.save{background:var(--commit); color:#fff; border:0}
+  .door.add{background:transparent; color:var(--commit); border:1.4px dashed var(--commit); padding:0 11px}
+  .door.ghost{background:transparent; color:var(--txt2); border:1px solid var(--line)}
+  .door.gated{background:transparent; color:var(--txt3); border:1px solid var(--line); cursor:help}
+  .door .lk{width:11px;height:11px;opacity:.85;flex:none}
+
+  /* ---------- section-chip rail (top row = item's own tabs; Inspection active) ---------- */
+  .secrail{display:flex; align-items:center; gap:6px; padding:9px 10px; border-bottom:1px solid var(--line); border-top:1px solid var(--line); background:var(--bg2)}
+  .scnav{flex:none; width:20px; height:20px; display:inline-flex; align-items:center; justify-content:center; background:transparent; border:1px solid var(--line); border-radius:6px; color:var(--txt3); cursor:pointer}
+  .scnav svg{width:11px;height:11px}
+  .scchips{display:flex; gap:6px; overflow-x:auto; flex:1; scrollbar-width:none}
+  .scchips::-webkit-scrollbar{display:none}
+  .schip{height:var(--h); display:inline-flex; align-items:center; padding:0 10px; border-radius:7px; font-family:var(--stamp); font-size:11px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; white-space:nowrap; flex:none; color:var(--txt3); border:1px solid transparent; cursor:pointer}
+  .schip.dim{opacity:.6}
+  .schip.active{background:var(--accent); color:var(--onAcc)}
+  .scdots{display:flex; gap:4px; padding:0 12px 8px; justify-content:flex-end; background:var(--bg2)}
+  .scdots i{width:5px;height:5px;border-radius:50%;background:var(--line);display:inline-block;font-style:normal}
+  .scdots i.on{background:var(--accent)}
+
+  /* ---------- progress head: N of M captured + rollup Signal + the ONE Door ---------- */
+  .inschead{padding:12px 14px; background:var(--cardh); border-bottom:1px solid var(--line)}
+  .ih-row{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+  .ih-count{font-family:var(--font); font-weight:700; font-size:13px; color:var(--txt); font-variant-numeric:tabular-nums}
+  .ih-spacer{flex:1}
+  .ih-sub{font-size:12px; color:var(--txt2); width:100%; margin-top:2px}
+  .tip{position:relative; display:inline-block}
+  .tip .bub{position:absolute; top:calc(100% + 8px); right:0; width:max-content; max-width:min(70vw,230px); background:#05070a; color:#eef2f7; border:1px solid #3a444e; border-radius:7px; padding:8px 10px; font-family:var(--font); font-size:11.5px; line-height:1.42; text-transform:none; letter-spacing:0; box-shadow:0 12px 30px rgba(0,0,0,.6); opacity:0; transform:translateY(-4px); pointer-events:none; transition:opacity .12s, transform .12s; z-index:30}
+  @media (prefers-color-scheme:light){ .tip .bub{background:#fff; color:#141821; border-color:#c7ccd2} } :root[data-theme="light"] .tip .bub{background:#fff; color:#141821; border-color:#c7ccd2}
+  .tip:hover .bub, .tip:focus-within .bub{opacity:1; transform:translateY(0)}
+  .tip .bub .t{font-family:var(--stamp); font-size:9px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--accent); display:block; margin-bottom:3px}
+
+  /* ---------- checklist: plate grammar reused as capture rows ---------- */
+  .clist{}
+  .plate{border-bottom:1px solid var(--line); border-left:3px solid transparent}
+  .clist .plate:last-child{border-bottom:0}
+  .plate.bad{border-left-color:var(--red)} .plate.now{border-left-color:var(--yellow)} .plate.done{border-left-color:var(--green)} .plate.none{border-left-color:var(--gray)}
+  .phead{display:flex; align-items:center; gap:9px; min-height:42px; padding:8px 12px}
+  .phead.toggle{cursor:pointer}
+  .crow-ic{flex:none; width:18px; height:18px; display:inline-flex; align-items:center; justify-content:center; color:var(--txt3)}
+  .crow-ic svg{width:14px;height:14px}
+  .plabel{font-family:var(--stamp); font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--txt); flex:none}
+  .psum{flex:1; min-width:120px; font-size:11px; color:var(--txt2)}
+  .chev{font-size:12px; color:var(--txt3); flex:none; display:inline-flex; align-items:center; width:12px; height:12px}
+  .chev svg{width:12px;height:12px} .chev.open{color:var(--accent)}
+  .capzone{padding:0 12px 12px 39px; display:flex; gap:8px; flex-wrap:wrap}
+  .pbody{padding:2px 12px 12px 39px; background:var(--bg2); border-top:1px solid var(--lineSoft)}
+  .kv{display:flex; gap:10px; padding:8px 0 2px; font-size:12px; align-items:flex-start}
+  .kv .k{font-family:var(--stamp); font-size:9.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--txt3); flex:none; padding-top:1px}
+  .kv .v{color:var(--txt2)}
+  .prow{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:8px}
+
+  .htail{padding:9px 12px; border-top:1px solid var(--line)}
+  .h4{font-family:var(--stamp); font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--txt); margin-bottom:6px}
+  .hc{font-family:var(--stamp); font-size:9px; font-weight:700; text-transform:uppercase; color:var(--txt3); border:1px solid var(--line); border-radius:11px; padding:2px 7px; margin-right:5px; display:inline-block}
+
+  .foot{margin-top:24px; padding-top:16px; border-top:1px solid var(--line); font-size:13px; color:var(--txt2); max-width:92ch} .foot b{color:var(--txt)}
+  .foot ul{margin:8px 0 0; padding-left:20px} .foot li{margin:4px 0}
+</style>
+
+<div class="wrap"><div class="sheet">
+
+  <p class="eyebrow">Units · Inspection · new live-capture redesign · built to style + wrangler-style</p>
+  <h1>Inspection — <span class="hl">a live capture surface</span></h1>
+  <p class="lede">Replaces the outdated "tap a button, fill a separate form" Inspection (spec §6, 2026-07-20). Framed as
+  one section of a Unit's inline-expanded card — same <b>section-chip rail</b> as Yard Journey across the top, Inspection
+  active. The checklist stays <b>open live in the section</b>: each item is captured in place, a <b>progress head</b> tracks
+  "N of M captured" plus a rollup Signal (worst item wins), and the single <b>Door</b> stays a disabled/ghost lock until
+  every required item is captured — it can only be pressed when the inspection is actually done. <b>Gator (left) is
+  interactive</b> — capture the last two items and press the Door yourself. <b>Scout (right)</b> shows the calm
+  afterimage once it's finished.</p>
+  <div class="key"><span><b>Signal</b> state chip</span><span><b>Gate</b> turnable</span><span><b>Stamp</b> fact</span><span><b>Ref</b> linked</span><span><b>Door</b> action</span><span>· fill = today · colour = state</span></div>
+
+  <div class="insp-grid">
+
+    <!-- ============ IN PROGRESS — GATOR ============ -->
+    <div class="panel">
+      <div class="pcap">Unit · inline-expanded</div>
+      <div class="ptitle">
+        <div class="pt-name">Gator <span class="ctl sig f red">flagged</span></div>
+        <div class="pt-sub">CAT 320 Excavator · S/N RC-4700</div>
+      </div>
+
+      <div class="secrail">
+        <button class="scnav" aria-label="previous sections"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
+        <div class="scchips">
+          <span class="schip dim">To Do</span>
+          <span class="schip dim">Yard Journey</span>
+          <span class="schip active">Inspection</span>
+          <span class="schip dim">Services</span>
+          <span class="schip dim">Work Orders</span>
+          <span class="schip dim">Specs</span>
+          <span class="schip dim">Investment</span>
+          <span class="schip dim">GPS</span>
+        </div>
+        <button class="scnav" aria-label="next sections"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>
+      </div>
+      <div class="scdots"><i class="on"></i><i></i></div>
+
+      <!-- progress head -->
+      <div class="inschead">
+        <div class="ih-row">
+          <span class="ih-count" id="p1-count">4 of 6 captured</span>
+          <span class="ctl sig f red" id="p1-rollup">flagged</span>
+          <span class="ih-spacer"></span>
+          <span class="tip" id="p1-doorwrap">
+            <span class="ctl door gated" id="p1-door" tabindex="0">Mark inspection done <svg class="lk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+            <span class="bub" id="p1-doorbub"><span class="t">Not yet unlocked</span><span class="rmsg">2 items left — capture damage photos + cleanliness to unlock.</span></span>
+          </span>
+        </div>
+        <div class="ih-sub">One item already failed (Hydraulics) — that's why the rollup reads <b style="color:var(--red)">flagged</b>. It stays that way even after the Door unlocks; done ≠ clean.</div>
+      </div>
+
+      <!-- live checklist -->
+      <div class="clist">
+
+        <div class="plate done" data-row="tires">
+          <div class="phead">
+            <span class="crow-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg></span>
+            <span class="plabel">Tires / PSI</span>
+            <span class="psum">36 · 35 · 37 · 34 psi · within range</span>
+            <span class="ctl sig o green rowsig">pass</span>
+          </div>
+        </div>
+
+        <div class="plate now" data-row="hours">
+          <div class="phead">
+            <span class="crow-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
+            <span class="plabel">Hours / meter</span>
+            <span class="psum">1,180 hrs logged · PM service interval due now</span>
+            <span class="ctl sig f yellow rowsig">due now</span>
+          </div>
+        </div>
+
+        <div class="plate none" data-row="fluids">
+          <div class="phead">
+            <span class="crow-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.4-4 6C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg></span>
+            <span class="plabel">Fluids</span>
+            <span class="psum">Full · clean · no contamination</span>
+            <span class="ctl sig o green rowsig">pass</span>
+          </div>
+        </div>
+
+        <div class="plate bad" data-row="hydraulics">
+          <div class="phead toggle">
+            <span class="crow-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></span>
+            <span class="plabel">Hydraulics</span>
+            <span class="psum">Leak at main cylinder seal</span>
+            <span class="ctl sig f red rowsig">failed</span>
+            <span class="chev open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
+          </div>
+          <div class="pbody" style="display:block">
+            <div class="kv"><span class="k">Noted</span><span class="v">Seeping fluid at the boom cylinder, left side — caught on the visual pass.</span></div>
+            <div class="prow">
+              <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></span>WO #1201 · hyd cylinder seal</a>
+              <span class="stamp">auto-linked on flag · 10:02 AM</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="plate none" data-row="photos">
+          <div class="phead">
+            <span class="crow-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3"/></svg></span>
+            <span class="plabel">Damage photos</span>
+            <span class="psum">Required before done</span>
+            <span class="ctl sig o grey rowsig">not captured</span>
+          </div>
+          <div class="capzone">
+            <button class="ctl door add" onclick="rwCapture('photos','pass','4 photos captured')">+ Add photos</button>
+          </div>
+        </div>
+
+        <div class="plate none" data-row="clean">
+          <div class="phead">
+            <span class="crow-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg></span>
+            <span class="plabel">Cleanliness</span>
+            <span class="psum">Required before done</span>
+            <span class="ctl sig o grey rowsig">not captured</span>
+          </div>
+          <div class="capzone">
+            <button class="ctl door ghost" onclick="rwCapture('clean','pass','Washed · no debris')">Pass</button>
+            <button class="ctl door ghost" onclick="rwCapture('clean','fail','Debris buildup — needs recleaning before dispatch')">Flag</button>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="htail"><div class="h4">History</div><span class="hc">12 Inspections</span><span class="hc">3 WOs</span></div>
+    </div>
+
+    <!-- ============ JUST COMPLETED — SCOUT ============ -->
+    <div class="panel">
+      <div class="pcap">Unit · inline-expanded <span class="dnote">just-completed example</span></div>
+      <div class="ptitle">
+        <div class="pt-name">Scout <span class="ctl sig o green">available</span></div>
+        <div class="pt-sub">Skid Steer 70hp · S/N SS-14</div>
+      </div>
+
+      <div class="secrail">
+        <button class="scnav" aria-label="previous sections"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
+        <div class="scchips">
+          <span class="schip dim">To Do</span>
+          <span class="schip dim">Yard Journey</span>
+          <span class="schip active">Inspection</span>
+          <span class="schip dim">Services</span>
+          <span class="schip dim">Specs</span>
+        </div>
+        <button class="scnav" aria-label="next sections"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>
+      </div>
+      <div class="scdots"><i class="on"></i><i></i></div>
+
+      <div class="inschead">
+        <div class="ih-row">
+          <span class="ih-count">6 of 6 captured</span>
+          <span class="ctl sig o green">clear</span>
+          <span class="ih-spacer"></span>
+          <span class="ctl sig o green">done</span>
+          <span class="stamp">Completed 9:14 AM · Trey G.</span>
+        </div>
+        <div class="ih-sub">Every required item captured clean — the Door is gone, not just disabled: nothing left to act on, so it's a plain fact now, not a button.</div>
+      </div>
+
+      <div class="clist">
+        <div class="plate done"><div class="phead">
+          <span class="crow-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg></span>
+          <span class="plabel">Tires / PSI</span><span class="psum">37 · 36 · 38 · 35 psi · within range</span>
+          <span class="ctl sig o green">pass</span></div></div>
+
+        <div class="plate done"><div class="phead">
+          <span class="crow-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
+          <span class="plabel">Hours / meter</span><span class="psum">842 hrs logged</span>
+          <span class="ctl sig o green">pass</span></div></div>
+
+        <div class="plate done"><div class="phead">
+          <span class="crow-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.4-4 6C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg></span>
+          <span class="plabel">Fluids</span><span class="psum">Full · clean · no contamination</span>
+          <span class="ctl sig o green">pass</span></div></div>
+
+        <div class="plate done"><div class="phead">
+          <span class="crow-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></span>
+          <span class="plabel">Hydraulics</span><span class="psum">No leaks · pressure nominal</span>
+          <span class="ctl sig o green">pass</span></div></div>
+
+        <div class="plate done"><div class="phead">
+          <span class="crow-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3"/></svg></span>
+          <span class="plabel">Damage photos</span><span class="psum">4 photos captured · none flagged</span>
+          <span class="ctl sig o green">pass</span></div></div>
+
+        <div class="plate done"><div class="phead">
+          <span class="crow-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg></span>
+          <span class="plabel">Cleanliness</span><span class="psum">Washed · no debris</span>
+          <span class="ctl sig o green">pass</span></div></div>
+      </div>
+
+      <div class="htail"><div class="h4">History</div><span class="hc">9 Inspections</span><span class="hc">1 WO</span></div>
+    </div>
+
+  </div>
+
+  <div class="foot">
+    <b>Inspection</b> is now a section, not a button that launches a form — the checklist lives open in place, and answers
+    fill in as you go. Notes for review:
+    <ul>
+      <li>The <b>progress head</b> carries "N of M captured" (a value you read → bold, body-voice, on the size ladder)
+      + the <b>rollup Signal</b> (worst item wins) + the <b>one</b> Door. Nothing else on the section competes for a
+      second action.</li>
+      <li>Four item states, same vocabulary used everywhere else — <b>grey</b> = not captured, <b>green</b> = pass,
+      <b>dimmed yellow (<code>#eed44b</code>)</b> = due now, <b>filled red</b> = failed. No new colour language.</li>
+      <li><b>Hydraulics failing raises the whole section to red</b> and auto-spawns a linked <b>WO Ref</b> — expand that
+      row (it opens by default here) to see it; the fact stays visible even once the inspection is marked done.</li>
+      <li><b>The Door is gated, not just greyed</b> — it carries a lock icon + tooltip naming exactly what's left, matching
+      the same honest-lock pattern as the money-gated Door in the Units detail mock. Capture the last two items on Gator
+      and it unlocks to solid commit-blue; press it and the whole head flips to a plain <b>Completed</b> Stamp — proving
+      "done" is a real state change, not a lie.</li>
+      <li><b>Done ≠ clean.</b> Marking the inspection done does not soften or hide the still-open Hydraulics flag — that's
+      the whole point of "the inspection only flips to Done when it's actually done," not when someone taps past it.</li>
+      <li>Scout (right) is the calm afterimage: once truly finished, the <b>Door disappears</b> rather than staying an
+      inert button — honest-affordance: not tappable ⇒ it doesn't look tappable.</li>
+      <li>Matte, no glow; dark-theme <code>--txt3</code> nudged <code>#717b89→#7f8896</code> (measured 4.2:1 → 5.0:1 on
+      <code>--card</code>) to clear the AA text floor — everything else is the exact palette from Yard Journey / Detail
+      views, reused for continuity.</li>
+    </ul>
+  </div>
+
+</div></div>
+
+<script>
+(function(){
+  var STATE = { photos:'unset', clean:'unset' };
+  var FIXED = { tires:'pass', hours:'due', fluids:'pass', hydraulics:'fail' };
+  var TOTAL = 6;
+  var SEV = { fail:3, due:2, pass:1, unset:0 };
+  var CLS = { fail:'bad', due:'now', pass:'done', unset:'none' };
+  var SIG = { fail:['sig f red','failed'], due:['sig f yellow','due now'], pass:['sig o green','pass'], unset:['sig o grey','not captured'] };
+  var ROLL = { fail:['sig f red','flagged'], due:['sig f yellow','due now'], pass:['sig o green','clear'], unset:['sig o grey','pending'] };
+
+  function paint(id, state, text){
+    var row = document.querySelector('[data-row="'+id+'"]');
+    if(!row) return;
+    row.classList.remove('bad','now','done','none');
+    row.classList.add(CLS[state]);
+    var sig = row.querySelector('.rowsig');
+    if(sig){ sig.className = 'ctl rowsig ' + SIG[state][0]; sig.textContent = SIG[state][1]; }
+    var sum = row.querySelector('.psum');
+    if(sum && text) sum.textContent = text;
+    var cap = row.querySelector('.capzone');
+    if(cap) cap.style.display = state === 'unset' ? '' : 'none';
+  }
+
+  function recompute(){
+    var all = {}; for(var k in FIXED) all[k]=FIXED[k]; for(var k2 in STATE) all[k2]=STATE[k2];
+    var captured = 0, worst = 'unset', worstSev = -1;
+    Object.keys(all).forEach(function(k){
+      if(all[k] !== 'unset') captured++;
+      if(SEV[all[k]] > worstSev){ worstSev = SEV[all[k]]; worst = all[k]; }
+    });
+    document.getElementById('p1-count').textContent = captured + ' of ' + TOTAL + ' captured';
+    var roll = document.getElementById('p1-rollup');
+    roll.className = 'ctl ' + ROLL[worst][0];
+    roll.textContent = ROLL[worst][1];
+
+    var door = document.getElementById('p1-door');
+    var bub = document.getElementById('p1-doorbub');
+    if(!door) return;
+    if(captured === TOTAL){
+      door.className = 'ctl door save';
+      door.innerHTML = 'Mark inspection done';
+      door.style.cursor = 'pointer';
+      door.onclick = markDone;
+      if(bub) bub.style.display = 'none';
+    } else {
+      var remain = TOTAL - captured;
+      door.className = 'ctl door gated';
+      door.innerHTML = 'Mark inspection done <svg class="lk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
+      door.onclick = null;
+      door.style.cursor = 'help';
+      if(bub){
+        bub.style.display='';
+        var rmsg = bub.querySelector('.rmsg');
+        if(rmsg) rmsg.textContent = remain + ' item' + (remain>1?'s':'') + ' left — capture damage photos + cleanliness to unlock.';
+      }
+    }
+  }
+
+  function markDone(){
+    var wrap = document.getElementById('p1-doorwrap');
+    if(wrap){ wrap.outerHTML = '<span class="ctl sig o green">done</span><span class="stamp">Completed just now · Trey G.</span>'; }
+  }
+
+  window.rwCapture = function(id, state, text){
+    STATE[id] = state;
+    paint(id, state, text);
+    recompute();
+  };
+
+  document.querySelectorAll('.phead.toggle').forEach(function(h){
+    h.addEventListener('click', function(){
+      var body = h.parentElement.querySelector('.pbody');
+      var chev = h.querySelector('.chev');
+      if(!body) return;
+      var isOpen = body.style.display !== 'none';
+      body.style.display = isOpen ? 'none' : 'block';
+      if(chev) chev.classList.toggle('open', !isOpen);
+    });
+  });
+
+  recompute();
+})();
+</script>

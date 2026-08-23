@@ -1,0 +1,17 @@
+# Pixel-gate evidence: regenerated in seconds by _ref/check.py, so it is proof
+# you re-run rather than proof you store. Keeping it out avoids churning ~40
+# binaries every time a part is nudged.
+# check.py's default out-prefix is splitext(page)[0], so a page named
+# chip.verify-full.html emits chip.verify-full-part.png. Match every fixture
+# name, not just the plain *.verify ones — the --full fixtures are the ones the
+# kit tells you to prefer, so their evidence is what actually accumulates.
+parts/*-part.png
+parts/*-ref.png
+parts/*-diff.png
+assembly/*-part.png
+assembly/*-ref.png
+assembly/*-diff.png
+
+# Scratch screenshot driver: hardcodes a per-session scratchpad path, so it is
+# a local convenience, not a fixture. Regenerate it when you need a baseline.
+.base.mjs

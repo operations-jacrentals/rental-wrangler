@@ -1,0 +1,386 @@
+/* ==========================================================================
+   C4 — PANEL FRAME  (914.5 x 125 nominal, 127 painted)
+
+   A long dark-metal frame plate: a machined outer silhouette with cut
+   corners, a deep recessed cavity across the middle, a rail plate band
+   under it, a chrome right-hand edge with a rivet, and a red "C" bracket
+   wrapping the left end.
+
+   Extracted from original.html: rules 233-455 (the whole .pframe block) plus
+   457-472 (.pf-lift, C4b only); markup at 1108-1121 (C4b) and 1178-1190 (C4a).
+   Shared deps: NONE. No SVG <defs>, no gradients/filters/clipPaths owned by
+   another part, and nothing from tokens.css beyond the base reset and the
+   .stage backdrop. This sheet is self-contained — two parts can sit on one
+   page with zero id or class collisions.
+
+   ORIGIN-RELATIVE MODEL
+   ---------------------
+   This is the ONE component the original already authored origin-relative:
+   its source comment (original.html:236-238) states the system outright —
+   ".pframe origin = (344, 497) for C4a -> every child offset below is
+   (absolute reference px - that origin)". So NOTHING needed rebasing on
+   extraction; the only structural change is the rename .pframe ->
+   .halo-cartridge and the namespacing of the one stray bare rule
+   (.pf-lift, see VARIANTS).
+
+   The root is `position:absolute; left:var(--x); top:var(--y)` with an
+   explicit `width:var(--w)` and a hard-coded `height:125px`. Two nesting
+   frames of reference exist inside it, and they are load-bearing:
+
+     * children of the ROOT       measure from the root's own left edge
+                                  (.pf-lside .pf-fct .pf-fcb .pf-brk .pf-bl*)
+     * children of .pf-body       measure from x = 4.5px, because .pf-body
+                                  is itself inset `left:4.5px` — that 4.5px
+                                  strip is the soft glow + the two lit
+                                  chamfer facets, which live OUTSIDE the
+                                  metal and therefore outside .pf-body.
+                                  (.pf-r* .pf-cav .pf-rail* .pf-rmar
+                                  .pf-rface .pf-riv .pf-lbev .pf-lift
+                                  .pf-lface .pf-chT)
+
+   Where the original's own comments quote a canvas coordinate, the local
+   value + its arithmetic is spelled out inline below, so the two frames
+   never get confused again.
+
+   PAINTED BOX vs NOMINAL BOX
+   --------------------------
+   Nominal box is --w x 125. PAINTED height is 127: .pf-blt (top:-1px) and
+   .pf-blb (top:125px) are siblings of .pf-body, so they escape .pf-body's
+   clip-path and paint one row above and one row below. .pf-brk also sits
+   outside .pf-body (and carries filter:blur(.45px) on the whole group), so
+   the red bracket is NOT clipped by the metal silhouette and its blur
+   spreads ~1px past its own rects. Size any consuming layout generously;
+   the root sets no overflow.
+
+   WIDTH DOES NOT SCALE
+   --------------------
+   --w moves the RIGHT-HAND assembly only (.pf-rmar/.pf-rface pin to
+   `right`, .pf-body/.pf-bl* stretch). Everything else is baked to a ~910px
+   body: .pf-railR{left:807px}, .pf-cav{left:31.5px;right:18px},
+   .pf-riv{left:896.5px}, and every 90deg gradient in .pf-r* / .pf-bl* runs
+   its stops out to 910px. The two shipped instances differ by 0.7px of --w
+   and are otherwise byte-identical inside. Height is NOT a variable.
+
+   BACKDROP ASSUMPTION
+   -------------------
+   .pf-fct / .pf-fcb bake hsl(calc(var(--steel-h) + 8 * var(--steel-spread)) calc(var(--steel-s) * 0.769) calc(5.098% * var(--steel-tint))) (= tokens.css --bg) into their vertical
+   gradients as the fade-to-nothing colour. They ASSUME a --bg backdrop; on
+   any other background they will read as a dark halo at the left end. This
+   is deliberate source artwork, preserved as-is — do not "fix" it to
+   transparent without re-running the pixel gate.
+
+   VARIANTS
+   --------
+   .is-c4a   standalone panel, band C. Canvas (344, 497), --w:914.5px.
+             Sits on bare --bg; nothing paints under or over it.
+             MARKUP: no .pf-lift child.
+   .is-c4b   banner sub-panel, band B. Canvas (348.3, 246), --w:915.2px.
+             Exactly C4a translated by (+4.3, -251).
+             MARKUP: has the extra .pf-lift child, and its DOM SLOT IS
+             LOAD-BEARING — it goes INSIDE .pf-body, between .pf-lbev and
+             .pf-lface, so .pf-lface/.pf-chT paint over it and .pf-body's
+             clip-path crops it. Moving it anywhere else changes the render.
+             .pf-lift is a BACKDROP COMPENSATION, not a decoration: the
+             panel art is semi-transparent, and C4b composites over the
+             banner's lighter backdrop, so the same artwork reads lighter
+             there (measured +6,+7,+7 across the frame face and +8,+9,+15
+             through the cavity top). The lift layer replays exactly that.
+             It is the ENTIRE difference between the two instances.
+             => Because the lift is a DOM child, `.is-c4b` alone does not
+             produce it; include the <div class="pf-lift"></div> in the
+             markup at that slot. Presence of the child IS the variant.
+
+   KNOBS A DESIGNER CAN SAFELY TURN
+   --------------------------------
+   --x / --y   placement of the whole part on its containing page. This is
+               the whole point of the extraction — the part is now
+               droppable anywhere.
+   --w         overall width (default 914.5px). Only the right-hand edge
+               assembly tracks it; see WIDTH DOES NOT SCALE above. Straying
+               far from ~915px will desync the baked 910px gradient stops
+               from the right edge.
+   --f1 / --f2 (on .pf-fct) the two vertical fade stops of the top chamfer
+               facet — where its hsl(calc(var(--steel-h) + 8 * var(--steel-spread)) calc(var(--steel-s) * 0.769) calc(5.098% * var(--steel-tint))) fade-out starts and completes.
+               NOTE .pf-fcb declares --f1/--f2 too but re-declares its whole
+               `background` with the numbers inlined, so on the BOTTOM facet
+               these two vars are inert. Kept verbatim from the source.
+
+   Everything else here is measured artwork lifted 1:1 from the reference
+   render. Changing a gradient stop, blur radius, opacity or sub-pixel
+   offset changes the art — do it deliberately, then re-run the gate.
+   ========================================================================== */
+
+/* Coordinate system: root origin = (344, 497) for C4a in canvas space -> every
+   child offset below is (absolute reference px - that origin).  .pf-body starts
+   4.5px in, at local x=4.5 (canvas x=348.5), which is the hard left edge of the
+   metal; everything left of it (glow + the two lit chamfer facets) lives
+   directly on the root.                                                       */
+.halo-cartridge {
+  position: absolute; left: var(--x); top: var(--y);
+  width: var(--w, 914.5px); height: 125px;
+}
+
+/* ---- per-instance variants ---------------------------------------------- */
+.halo-cartridge.is-c4a { --w: 914.5px; }   /* band C, standalone, no lift */
+.halo-cartridge.is-c4b { --w: 915.2px; }   /* band B, sub-panel, HAS .pf-lift */
+
+/* ---- the metal body: outer silhouette + the whole vertical build-up ------ */
+.halo-cartridge .pf-body {
+  position: absolute; left: 4.5px; right: 0; top: 0; bottom: 0;
+  clip-path: polygon(19.5px 0, 906.5px 0, 100% 3.5px, 100% 114px,
+                     898.5px 100%, 27px 100%, 0 104px, 0 14px);
+  background: linear-gradient(180deg,
+      hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.115) calc(11.373% * var(--steel-tint))) 0px,   hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.115) calc(11.373% * var(--steel-tint))) 1px,    /* 497 soft outer bloom            */
+      hsl(var(--steel-h) 0% calc(26.471% * var(--steel-tint))) 1px,   hsl(var(--steel-h) 0% calc(26.471% * var(--steel-tint))) 2px,    /* 498 specular rim peak           */
+      hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.044) calc(29.412% * var(--steel-tint))) 2px,   hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.044) calc(29.412% * var(--steel-tint))) 3px,    /* 499                             */
+      hsl(calc(var(--steel-h) + 128 * var(--steel-spread)) calc(var(--steel-s) * 0.164) calc(11.961% * var(--steel-tint))) 3px,   hsl(calc(var(--steel-h) + 128 * var(--steel-spread)) calc(var(--steel-s) * 0.164) calc(11.961% * var(--steel-tint))) 4px,    /* 500 flat dark-grey face         */
+      hsl(calc(var(--steel-h) + 108 * var(--steel-spread)) calc(var(--steel-s) * 0.169) calc(11.569% * var(--steel-tint))) 4px,   hsl(calc(var(--steel-h) + 108 * var(--steel-spread)) calc(var(--steel-s) * 0.169) calc(11.569% * var(--steel-tint))) 5px,
+      hsl(calc(var(--steel-h) + 108 * var(--steel-spread)) calc(var(--steel-s) * 0.164) calc(11.961% * var(--steel-tint))) 5px,   hsl(calc(var(--steel-h) + 108 * var(--steel-spread)) calc(var(--steel-s) * 0.164) calc(11.961% * var(--steel-tint))) 7px,
+      hsl(calc(var(--steel-h) + 108 * var(--steel-spread)) calc(var(--steel-s) * 0.159) calc(12.353% * var(--steel-tint))) 7px,   hsl(calc(var(--steel-h) + 108 * var(--steel-spread)) calc(var(--steel-s) * 0.159) calc(12.353% * var(--steel-tint))) 8px,
+      hsl(calc(var(--steel-h) + 136 * var(--steel-spread)) calc(var(--steel-s) * 0.265) calc(12.353% * var(--steel-tint))) 8px,   hsl(calc(var(--steel-h) + 136 * var(--steel-spread)) calc(var(--steel-s) * 0.265) calc(12.353% * var(--steel-tint))) 9px,    /* 505                             */
+      hsl(calc(var(--steel-h) + 169.818 * var(--steel-spread)) calc(var(--steel-s) * 1.048) calc(6.863% * var(--steel-tint))) 9px,   hsl(calc(var(--steel-h) + 169.818 * var(--steel-spread)) calc(var(--steel-s) * 1.048) calc(6.863% * var(--steel-tint))) 10px,   /* 506 deep black inner gutter     */
+      #110503 10px,  #110503 11px,
+      #0b0100 11px,  #0b0100 12px,
+      #050000 12px,  #050000 13px,
+      #030000 13px,  #030000 15px,
+      hsl(calc(var(--steel-h) + 128 * var(--steel-spread)) calc(var(--steel-s) * 0.769) calc(2.549% * var(--steel-tint))) 15px,  hsl(calc(var(--steel-h) + 128 * var(--steel-spread)) calc(var(--steel-s) * 0.769) calc(2.549% * var(--steel-tint))) 16px,   /* 512                             */
+      #050101 16px,  #050101 108px,  /* 513..604 cavity gutter backing  */
+      hsl(calc(var(--steel-h) + 98 * var(--steel-spread)) calc(var(--steel-s) * 0.667) calc(5.882% * var(--steel-tint))) 108px, hsl(calc(var(--steel-h) + 98 * var(--steel-spread)) calc(var(--steel-s) * 0.667) calc(5.882% * var(--steel-tint))) 109px,  /* 605 thin black gutter           */
+      #080305 109px, #080305 110px,
+      hsl(calc(var(--steel-h) + 100 * var(--steel-spread)) calc(var(--steel-s) * 0.427) calc(7.647% * var(--steel-tint))) 110px, hsl(calc(var(--steel-h) + 100 * var(--steel-spread)) calc(var(--steel-s) * 0.427) calc(7.647% * var(--steel-tint))) 111px,
+      hsl(calc(var(--steel-h) + 52 * var(--steel-spread)) calc(var(--steel-s) * 0.179) calc(18.235% * var(--steel-tint))) 111px, hsl(calc(var(--steel-h) + 52 * var(--steel-spread)) calc(var(--steel-s) * 0.179) calc(18.235% * var(--steel-tint))) 112px,  /* 608 rail plate specular         */
+      hsl(calc(var(--steel-h) + 48 * var(--steel-spread)) calc(var(--steel-s) * 0.172) calc(22.745% * var(--steel-tint))) 112px, hsl(calc(var(--steel-h) + 48 * var(--steel-spread)) calc(var(--steel-s) * 0.172) calc(22.745% * var(--steel-tint))) 113px,
+      hsl(calc(var(--steel-h) + 73 * var(--steel-spread)) calc(var(--steel-s) * 0.108) calc(24.314% * var(--steel-tint))) 113px, hsl(calc(var(--steel-h) + 73 * var(--steel-spread)) calc(var(--steel-s) * 0.108) calc(24.314% * var(--steel-tint))) 114px,
+      hsl(calc(var(--steel-h) + 103 * var(--steel-spread)) calc(var(--steel-s) * 0.109) calc(23.922% * var(--steel-tint))) 114px, hsl(calc(var(--steel-h) + 103 * var(--steel-spread)) calc(var(--steel-s) * 0.109) calc(23.922% * var(--steel-tint))) 115px,
+      hsl(calc(var(--steel-h) + 165.143 * var(--steel-spread)) calc(var(--steel-s) * 0.303) calc(15.098% * var(--steel-tint))) 115px, hsl(calc(var(--steel-h) + 165.143 * var(--steel-spread)) calc(var(--steel-s) * 0.303) calc(15.098% * var(--steel-tint))) 116px,
+      hsl(calc(var(--steel-h) + 174.667 * var(--steel-spread)) calc(var(--steel-s) * 0.811) calc(7.255% * var(--steel-tint))) 116px, hsl(calc(var(--steel-h) + 174.667 * var(--steel-spread)) calc(var(--steel-s) * 0.811) calc(7.255% * var(--steel-tint))) 117px,
+      hsl(calc(var(--steel-h) + 172 * var(--steel-spread)) calc(var(--steel-s) * 0.407) calc(8.039% * var(--steel-tint))) 117px, hsl(calc(var(--steel-h) + 172 * var(--steel-spread)) calc(var(--steel-s) * 0.407) calc(8.039% * var(--steel-tint))) 118px,
+      hsl(calc(var(--steel-h) + 156.571 * var(--steel-spread)) calc(var(--steel-s) * 0.543) calc(8.431% * var(--steel-tint))) 118px, hsl(calc(var(--steel-h) + 156.571 * var(--steel-spread)) calc(var(--steel-s) * 0.543) calc(8.431% * var(--steel-tint))) 119px,
+      hsl(calc(var(--steel-h) + 148 * var(--steel-spread)) calc(var(--steel-s) * 0.317) calc(8.235% * var(--steel-tint))) 119px, hsl(calc(var(--steel-h) + 148 * var(--steel-spread)) calc(var(--steel-s) * 0.317) calc(8.235% * var(--steel-tint))) 120px,
+      hsl(calc(var(--steel-h) + 133 * var(--steel-spread)) calc(var(--steel-s) * 0.29) calc(9.02% * var(--steel-tint))) 120px, hsl(calc(var(--steel-h) + 133 * var(--steel-spread)) calc(var(--steel-s) * 0.29) calc(9.02% * var(--steel-tint))) 121px,
+      hsl(calc(var(--steel-h) + 124 * var(--steel-spread)) calc(var(--steel-s) * 0.216) calc(15.098% * var(--steel-tint))) 121px, hsl(calc(var(--steel-h) + 124 * var(--steel-spread)) calc(var(--steel-s) * 0.216) calc(15.098% * var(--steel-tint))) 122px,
+      hsl(calc(var(--steel-h) + 58 * var(--steel-spread)) calc(var(--steel-s) * 0.069) calc(37.647% * var(--steel-tint))) 122px, hsl(calc(var(--steel-h) + 58 * var(--steel-spread)) calc(var(--steel-s) * 0.069) calc(37.647% * var(--steel-tint))) 123px,  /* 619 bottom bloom                */
+      hsl(calc(var(--steel-h) + 43 * var(--steel-spread)) calc(var(--steel-s) * 0.058) calc(54.902% * var(--steel-tint))) 123px, hsl(calc(var(--steel-h) + 43 * var(--steel-spread)) calc(var(--steel-s) * 0.058) calc(54.902% * var(--steel-tint))) 124px,  /* 620                             */
+      hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.112) calc(29.216% * var(--steel-tint))) 124px, hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.112) calc(29.216% * var(--steel-tint))) 125px); /* 621                             */
+}
+/* the three top rows and the three bottom rows carry almost all of the
+   horizontal modulation, so each is its own 1px strip.
+   Stops run 0..910px measured from .pf-body's left edge (local x 4.5). */
+.halo-cartridge .pf-r { position: absolute; left: 0; right: 0; height: 1px; }
+.halo-cartridge .pf-r0 { top: 0; background: linear-gradient(90deg,
+  hsl(calc(var(--steel-h) + 143.385 * var(--steel-spread)) calc(var(--steel-s) * 0.37) calc(22.941% * var(--steel-tint))) 0px,hsl(calc(var(--steel-h) + 142.545 * var(--steel-spread)) calc(var(--steel-s) * 0.349) calc(20.588% * var(--steel-tint))) 61px,hsl(calc(var(--steel-h) + 141.333 * var(--steel-spread)) calc(var(--steel-s) * 0.303) calc(19.412% * var(--steel-tint))) 101px,hsl(calc(var(--steel-h) + 141.333 * var(--steel-spread)) calc(var(--steel-s) * 0.316) calc(18.627% * var(--steel-tint))) 141px,hsl(calc(var(--steel-h) + 134.667 * var(--steel-spread)) calc(var(--steel-s) * 0.337) calc(17.451% * var(--steel-tint))) 181px,hsl(calc(var(--steel-h) + 133 * var(--steel-spread)) calc(var(--steel-s) * 0.317) calc(16.471% * var(--steel-tint))) 221px,
+  hsl(calc(var(--steel-h) + 130.857 * var(--steel-spread)) calc(var(--steel-s) * 0.275) calc(16.667% * var(--steel-tint))) 261px,hsl(calc(var(--steel-h) + 130.857 * var(--steel-spread)) calc(var(--steel-s) * 0.288) calc(15.882% * var(--steel-tint))) 310px,hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.182) calc(10.784% * var(--steel-tint))) 320px,hsl(calc(var(--steel-h) + 8 * var(--steel-spread)) calc(var(--steel-s) * 0.169) calc(11.569% * var(--steel-tint))) 381px,hsl(calc(var(--steel-h) + 8 * var(--steel-spread)) calc(var(--steel-s) * 0.182) calc(10.784% * var(--steel-tint))) 421px,hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.111) calc(11.765% * var(--steel-tint))) 461px,
+  hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.182) calc(10.784% * var(--steel-tint))) 501px,hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.108) calc(12.157% * var(--steel-tint))) 541px,hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.108) calc(12.157% * var(--steel-tint))) 581px,hsl(calc(var(--steel-h) + 118 * var(--steel-spread)) calc(var(--steel-s) * 0.101) calc(12.941% * var(--steel-tint))) 621px,hsl(calc(var(--steel-h) + 108 * var(--steel-spread)) calc(var(--steel-s) * 0.145) calc(13.529% * var(--steel-tint))) 661px,hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.145) calc(13.529% * var(--steel-tint))) 701px,
+  hsl(calc(var(--steel-h) + 48 * var(--steel-spread)) calc(var(--steel-s) * 0.154) calc(12.745% * var(--steel-tint))) 741px,hsl(calc(var(--steel-h) + 13 * var(--steel-spread)) calc(var(--steel-s) * 0.267) calc(9.804% * var(--steel-tint))) 781px,hsl(calc(var(--steel-h) + 4 * var(--steel-spread)) calc(var(--steel-s) * 0.427) calc(7.647% * var(--steel-tint))) 821px,hsl(calc(var(--steel-h) + 8 * var(--steel-spread)) calc(var(--steel-s) * 0.625) calc(6.275% * var(--steel-tint))) 861px,hsl(calc(var(--steel-h) + 8 * var(--steel-spread)) calc(var(--steel-s) * 0.714) calc(5.49% * var(--steel-tint))) 901px,hsl(calc(var(--steel-h) + 8 * var(--steel-spread)) calc(var(--steel-s) * 0.769) calc(5.098% * var(--steel-tint))) 910px); }
+.halo-cartridge .pf-r1 { top: 1px; background: linear-gradient(90deg,
+  hsl(calc(var(--steel-h) + 148 * var(--steel-spread)) calc(var(--steel-s) * 0.265) calc(34.51% * var(--steel-tint))) 0px,hsl(calc(var(--steel-h) + 148 * var(--steel-spread)) calc(var(--steel-s) * 0.253) calc(33.529% * var(--steel-tint))) 61px,hsl(calc(var(--steel-h) + 143.385 * var(--steel-spread)) calc(var(--steel-s) * 0.259) calc(32.745% * var(--steel-tint))) 101px,hsl(calc(var(--steel-h) + 143 * var(--steel-spread)) calc(var(--steel-s) * 0.247) calc(31.765% * var(--steel-tint))) 141px,hsl(calc(var(--steel-h) + 148 * var(--steel-spread)) calc(var(--steel-s) * 0.234) calc(30.784% * var(--steel-tint))) 181px,hsl(calc(var(--steel-h) + 153.455 * var(--steel-spread)) calc(var(--steel-s) * 0.246) calc(29.216% * var(--steel-tint))) 221px,
+  hsl(calc(var(--steel-h) + 142 * var(--steel-spread)) calc(var(--steel-s) * 0.222) calc(29.412% * var(--steel-tint))) 261px,hsl(calc(var(--steel-h) + 141.333 * var(--steel-spread)) calc(var(--steel-s) * 0.21) calc(28.039% * var(--steel-tint))) 310px,hsl(calc(var(--steel-h) + 118 * var(--steel-spread)) calc(var(--steel-s) * 0.05) calc(26.275% * var(--steel-tint))) 320px,hsl(calc(var(--steel-h) + 118 * var(--steel-spread)) calc(var(--steel-s) * 0.048) calc(27.451% * var(--steel-tint))) 381px,hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.05) calc(26.275% * var(--steel-tint))) 421px,hsl(calc(var(--steel-h) + 118 * var(--steel-spread)) calc(var(--steel-s) * 0.049) calc(26.667% * var(--steel-tint))) 461px,
+  hsl(calc(var(--steel-h) + 118 * var(--steel-spread)) calc(var(--steel-s) * 0.051) calc(25.49% * var(--steel-tint))) 501px,hsl(calc(var(--steel-h) + 148 * var(--steel-spread)) calc(var(--steel-s) * 0.076) calc(25.686% * var(--steel-tint))) 541px,hsl(calc(var(--steel-h) + 148 * var(--steel-spread)) calc(var(--steel-s) * 0.103) calc(25.49% * var(--steel-tint))) 581px,hsl(calc(var(--steel-h) + 148 * var(--steel-spread)) calc(var(--steel-s) * 0.129) calc(25.294% * var(--steel-tint))) 621px,hsl(calc(var(--steel-h) + 148 * var(--steel-spread)) calc(var(--steel-s) * 0.129) calc(25.294% * var(--steel-tint))) 661px,hsl(calc(var(--steel-h) + 133 * var(--steel-spread)) calc(var(--steel-s) * 0.104) calc(25.098% * var(--steel-tint))) 701px,
+  hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.06) calc(21.961% * var(--steel-tint))) 741px,hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.071) calc(18.431% * var(--steel-tint))) 781px,hsl(calc(var(--steel-h) + -12 * var(--steel-spread)) calc(var(--steel-s) * 0.13) calc(15.098% * var(--steel-tint))) 821px,hsl(calc(var(--steel-h) + 8 * var(--steel-spread)) calc(var(--steel-s) * 0.133) calc(14.706% * var(--steel-tint))) 861px,hsl(calc(var(--steel-h) + 13 * var(--steel-spread)) calc(var(--steel-s) * 0.278) calc(9.412% * var(--steel-tint))) 901px,hsl(calc(var(--steel-h) + 4 * var(--steel-spread)) calc(var(--steel-s) * 0.45) calc(7.255% * var(--steel-tint))) 910px); }
+.halo-cartridge .pf-r2 { top: 2px; background: linear-gradient(90deg,
+  hsl(calc(var(--steel-h) + 143 * var(--steel-spread)) calc(var(--steel-s) * 0.25) calc(31.373% * var(--steel-tint))) 0px,hsl(calc(var(--steel-h) + 143 * var(--steel-spread)) calc(var(--steel-s) * 0.256) calc(30.588% * var(--steel-tint))) 61px,hsl(calc(var(--steel-h) + 142.545 * var(--steel-spread)) calc(var(--steel-s) * 0.237) calc(30.392% * var(--steel-tint))) 101px,hsl(calc(var(--steel-h) + 142 * var(--steel-spread)) calc(var(--steel-s) * 0.216) calc(30.196% * var(--steel-tint))) 141px,hsl(calc(var(--steel-h) + 136 * var(--steel-spread)) calc(var(--steel-s) * 0.219) calc(29.804% * var(--steel-tint))) 181px,hsl(calc(var(--steel-h) + 141.333 * var(--steel-spread)) calc(var(--steel-s) * 0.204) calc(28.824% * var(--steel-tint))) 221px,
+  hsl(calc(var(--steel-h) + 134.667 * var(--steel-spread)) calc(var(--steel-s) * 0.204) calc(28.824% * var(--steel-tint))) 261px,hsl(calc(var(--steel-h) + 140.5 * var(--steel-spread)) calc(var(--steel-s) * 0.185) calc(28.235% * var(--steel-tint))) 310px,hsl(calc(var(--steel-h) + 128 * var(--steel-spread)) calc(var(--steel-s) * 0.067) calc(29.216% * var(--steel-tint))) 320px,hsl(calc(var(--steel-h) + 128 * var(--steel-spread)) calc(var(--steel-s) * 0.067) calc(29.216% * var(--steel-tint))) 381px,hsl(calc(var(--steel-h) + 108 * var(--steel-spread)) calc(var(--steel-s) * 0.069) calc(28.431% * var(--steel-tint))) 421px,hsl(calc(var(--steel-h) + 118 * var(--steel-spread)) calc(var(--steel-s) * 0.091) calc(28.627% * var(--steel-tint))) 461px,
+  hsl(calc(var(--steel-h) + 128 * var(--steel-spread)) calc(var(--steel-s) * 0.071) calc(27.647% * var(--steel-tint))) 501px,hsl(calc(var(--steel-h) + 136 * var(--steel-spread)) calc(var(--steel-s) * 0.122) calc(26.863% * var(--steel-tint))) 541px,hsl(calc(var(--steel-h) + 133 * var(--steel-spread)) calc(var(--steel-s) * 0.1) calc(26.275% * var(--steel-tint))) 581px,hsl(calc(var(--steel-h) + 148 * var(--steel-spread)) calc(var(--steel-s) * 0.125) calc(26.078% * var(--steel-tint))) 621px,hsl(calc(var(--steel-h) + 138 * var(--steel-spread)) calc(var(--steel-s) * 0.152) calc(25.882% * var(--steel-tint))) 661px,hsl(calc(var(--steel-h) + 133 * var(--steel-spread)) calc(var(--steel-s) * 0.101) calc(25.882% * var(--steel-tint))) 701px,
+  hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.056) calc(23.529% * var(--steel-tint))) 741px,hsl(calc(var(--steel-h) + 58 * var(--steel-spread)) calc(var(--steel-s) * 0.062) calc(21.176% * var(--steel-tint))) 781px,hsl(calc(var(--steel-h) + 58 * var(--steel-spread)) calc(var(--steel-s) * 0.069) calc(18.824% * var(--steel-tint))) 821px,hsl(calc(var(--steel-h) + 58 * var(--steel-spread)) calc(var(--steel-s) * 0.067) calc(19.608% * var(--steel-tint))) 861px,hsl(calc(var(--steel-h) + 16 * var(--steel-spread)) calc(var(--steel-s) * 0.192) calc(17.059% * var(--steel-tint))) 901px,hsl(calc(var(--steel-h) + 13 * var(--steel-spread)) calc(var(--steel-s) * 0.18) calc(14.51% * var(--steel-tint))) 910px); }
+.halo-cartridge .pf-r122 { top: 122px; background: linear-gradient(90deg,
+  hsl(calc(var(--steel-h) + 130.857 * var(--steel-spread)) calc(var(--steel-s) * 0.864) calc(21.176% * var(--steel-tint))) 0px,hsl(calc(var(--steel-h) + 140.941 * var(--steel-spread)) calc(var(--steel-s) * 0.96) calc(23.137% * var(--steel-tint))) 61px,hsl(calc(var(--steel-h) + 134.364 * var(--steel-spread)) calc(var(--steel-s) * 0.524) calc(27.451% * var(--steel-tint))) 101px,hsl(calc(var(--steel-h) + 137.091 * var(--steel-spread)) calc(var(--steel-s) * 0.47) calc(30.588% * var(--steel-tint))) 141px,hsl(calc(var(--steel-h) + 136 * var(--steel-spread)) calc(var(--steel-s) * 0.417) calc(31.373% * var(--steel-tint))) 181px,hsl(calc(var(--steel-h) + 138.526 * var(--steel-spread)) calc(var(--steel-s) * 0.393) calc(31.569% * var(--steel-tint))) 221px,
+  hsl(calc(var(--steel-h) + 135.368 * var(--steel-spread)) calc(var(--steel-s) * 0.379) calc(32.745% * var(--steel-tint))) 261px,hsl(calc(var(--steel-h) + 132.211 * var(--steel-spread)) calc(var(--steel-s) * 0.379) calc(32.745% * var(--steel-tint))) 301px,hsl(calc(var(--steel-h) + 130 * var(--steel-spread)) calc(var(--steel-s) * 0.238) calc(27.451% * var(--steel-tint))) 314px,hsl(calc(var(--steel-h) + 64 * var(--steel-spread)) calc(var(--steel-s) * 0.087) calc(37.451% * var(--steel-tint))) 318px,hsl(calc(var(--steel-h) + 68 * var(--steel-spread)) calc(var(--steel-s) * 0.052) calc(37.451% * var(--steel-tint))) 381px,hsl(calc(var(--steel-h) + 68 * var(--steel-spread)) calc(var(--steel-s) * 0.051) calc(38.235% * var(--steel-tint))) 421px,
+  hsl(calc(var(--steel-h) + 68 * var(--steel-spread)) calc(var(--steel-s) * 0.055) calc(35.882% * var(--steel-tint))) 461px,hsl(calc(var(--steel-h) + 108 * var(--steel-spread)) calc(var(--steel-s) * 0.058) calc(33.529% * var(--steel-tint))) 501px,hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.062) calc(31.569% * var(--steel-tint))) 541px,hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.078) calc(25.294% * var(--steel-tint))) 581px,hsl(calc(var(--steel-h) + 100 * var(--steel-spread)) calc(var(--steel-s) * 0.14) calc(23.333% * var(--steel-tint))) 621px,hsl(calc(var(--steel-h) + 112 * var(--steel-spread)) calc(var(--steel-s) * 0.211) calc(15.49% * var(--steel-tint))) 661px,
+  hsl(calc(var(--steel-h) + 108 * var(--steel-spread)) calc(var(--steel-s) * 0.303) calc(12.941% * var(--steel-tint))) 701px,hsl(calc(var(--steel-h) + 124 * var(--steel-spread)) calc(var(--steel-s) * 0.256) calc(12.745% * var(--steel-tint))) 741px,hsl(calc(var(--steel-h) + 133 * var(--steel-spread)) calc(var(--steel-s) * 0.222) calc(11.765% * var(--steel-tint))) 781px,hsl(calc(var(--steel-h) + 128 * var(--steel-spread)) calc(var(--steel-s) * 0.204) calc(9.608% * var(--steel-tint))) 821px,hsl(calc(var(--steel-h) + 133 * var(--steel-spread)) calc(var(--steel-s) * 0.317) calc(8.235% * var(--steel-tint))) 861px,hsl(calc(var(--steel-h) + 48 * var(--steel-spread)) calc(var(--steel-s) * 0.244) calc(8.039% * var(--steel-tint))) 910px); }
+.halo-cartridge .pf-r123 { top: 123px; background: linear-gradient(90deg,
+  hsl(calc(var(--steel-h) + 135.647 * var(--steel-spread)) calc(var(--steel-s) * 0.833) calc(26.667% * var(--steel-tint))) 0px,hsl(calc(var(--steel-h) + 139.22 * var(--steel-spread)) calc(var(--steel-s) * 0.893) calc(30% * var(--steel-tint))) 61px,hsl(calc(var(--steel-h) + 144.842 * var(--steel-spread)) calc(var(--steel-s) * 0.586) calc(42.353% * var(--steel-tint))) 101px,hsl(calc(var(--steel-h) + 144.842 * var(--steel-spread)) calc(var(--steel-s) * 0.519) calc(47.843% * var(--steel-tint))) 141px,hsl(calc(var(--steel-h) + 143.135 * var(--steel-spread)) calc(var(--steel-s) * 0.495) calc(48.824% * var(--steel-tint))) 181px,hsl(calc(var(--steel-h) + 143.135 * var(--steel-spread)) calc(var(--steel-s) * 0.484) calc(50% * var(--steel-tint))) 221px,
+  hsl(calc(var(--steel-h) + 143.263 * var(--steel-spread)) calc(var(--steel-s) * 0.511) calc(51.373% * var(--steel-tint))) 261px,hsl(calc(var(--steel-h) + 143.263 * var(--steel-spread)) calc(var(--steel-s) * 0.515) calc(51.765% * var(--steel-tint))) 301px,hsl(calc(var(--steel-h) + 137.091 * var(--steel-spread)) calc(var(--steel-s) * 0.359) calc(40% * var(--steel-tint))) 314px,hsl(calc(var(--steel-h) + 52 * var(--steel-spread)) calc(var(--steel-s) * 0.072) calc(54.706% * var(--steel-tint))) 318px,hsl(calc(var(--steel-h) + 52 * var(--steel-spread)) calc(var(--steel-s) * 0.073) calc(55.098% * var(--steel-tint))) 381px,hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.075) calc(56.275% * var(--steel-tint))) 421px,
+  hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.056) calc(53.333% * var(--steel-tint))) 461px,hsl(calc(var(--steel-h) + 58 * var(--steel-spread)) calc(var(--steel-s) * 0.054) calc(48.235% * var(--steel-tint))) 501px,hsl(calc(var(--steel-h) + 52 * var(--steel-spread)) calc(var(--steel-s) * 0.071) calc(46.078% * var(--steel-tint))) 541px,hsl(calc(var(--steel-h) + 52 * var(--steel-spread)) calc(var(--steel-s) * 0.085) calc(38.235% * var(--steel-tint))) 581px,hsl(calc(var(--steel-h) + 64 * var(--steel-spread)) calc(var(--steel-s) * 0.097) calc(33.529% * var(--steel-tint))) 621px,hsl(calc(var(--steel-h) + 73 * var(--steel-spread)) calc(var(--steel-s) * 0.128) calc(20.392% * var(--steel-tint))) 661px,
+  hsl(calc(var(--steel-h) + 100 * var(--steel-spread)) calc(var(--steel-s) * 0.196) calc(16.667% * var(--steel-tint))) 701px,hsl(calc(var(--steel-h) + 100 * var(--steel-spread)) calc(var(--steel-s) * 0.216) calc(15.098% * var(--steel-tint))) 741px,hsl(calc(var(--steel-h) + 122.286 * var(--steel-spread)) calc(var(--steel-s) * 0.338) calc(13.529% * var(--steel-tint))) 781px,hsl(calc(var(--steel-h) + 128 * var(--steel-spread)) calc(var(--steel-s) * 0.222) calc(8.824% * var(--steel-tint))) 821px,hsl(calc(var(--steel-h) + 148 * var(--steel-spread)) calc(var(--steel-s) * 0.317) calc(8.235% * var(--steel-tint))) 861px,hsl(calc(var(--steel-h) + 43 * var(--steel-spread)) calc(var(--steel-s) * 0.37) calc(7.059% * var(--steel-tint))) 910px); }
+.halo-cartridge .pf-r124 { top: 124px; background: linear-gradient(90deg,
+  hsl(calc(var(--steel-h) + 134.154 * var(--steel-spread)) calc(var(--steel-s) * 0.985) calc(17.255% * var(--steel-tint))) 0px,hsl(calc(var(--steel-h) + 136.889 * var(--steel-spread)) calc(var(--steel-s) * 0.928) calc(19.02% * var(--steel-tint))) 61px,hsl(calc(var(--steel-h) + 140.8 * var(--steel-spread)) calc(var(--steel-s) * 0.646) calc(25.294% * var(--steel-tint))) 101px,hsl(calc(var(--steel-h) + 141.333 * var(--steel-spread)) calc(var(--steel-s) * 0.638) calc(27.647% * var(--steel-tint))) 141px,hsl(calc(var(--steel-h) + 138.769 * var(--steel-spread)) calc(var(--steel-s) * 0.619) calc(27.451% * var(--steel-tint))) 181px,hsl(calc(var(--steel-h) + 138.769 * var(--steel-spread)) calc(var(--steel-s) * 0.61) calc(27.843% * var(--steel-tint))) 221px,
+  hsl(calc(var(--steel-h) + 136.462 * var(--steel-spread)) calc(var(--steel-s) * 0.628) calc(27.059% * var(--steel-tint))) 261px,hsl(calc(var(--steel-h) + 138.4 * var(--steel-spread)) calc(var(--steel-s) * 0.591) calc(27.647% * var(--steel-tint))) 301px,hsl(calc(var(--steel-h) + 131.333 * var(--steel-spread)) calc(var(--steel-s) * 0.448) calc(26.275% * var(--steel-tint))) 314px,hsl(calc(var(--steel-h) + 40 * var(--steel-spread)) calc(var(--steel-s) * 0.113) calc(28.824% * var(--steel-tint))) 318px,hsl(calc(var(--steel-h) + 40 * var(--steel-spread)) calc(var(--steel-s) * 0.113) calc(28.824% * var(--steel-tint))) 381px,hsl(calc(var(--steel-h) + 43 * var(--steel-spread)) calc(var(--steel-s) * 0.09) calc(29.02% * var(--steel-tint))) 421px,
+  hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.117) calc(28.039% * var(--steel-tint))) 461px,hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.125) calc(26.078% * var(--steel-tint))) 501px,hsl(calc(var(--steel-h) + 40 * var(--steel-spread)) calc(var(--steel-s) * 0.133) calc(24.51% * var(--steel-tint))) 541px,hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.119) calc(21.961% * var(--steel-tint))) 581px,hsl(calc(var(--steel-h) + 43 * var(--steel-spread)) calc(var(--steel-s) * 0.133) calc(19.608% * var(--steel-tint))) 621px,hsl(calc(var(--steel-h) + 68 * var(--steel-spread)) calc(var(--steel-s) * 0.137) calc(14.314% * var(--steel-tint))) 661px,
+  hsl(calc(var(--steel-h) + 68 * var(--steel-spread)) calc(var(--steel-s) * 0.149) calc(13.137% * var(--steel-tint))) 701px,hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.169) calc(11.569% * var(--steel-tint))) 741px,hsl(calc(var(--steel-h) + 112 * var(--steel-spread)) calc(var(--steel-s) * 0.256) calc(12.745% * var(--steel-tint))) 781px,hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.145) calc(9.02% * var(--steel-tint))) 821px,hsl(calc(var(--steel-h) + 108 * var(--steel-spread)) calc(var(--steel-s) * 0.222) calc(8.824% * var(--steel-tint))) 861px,hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.417) calc(6.275% * var(--steel-tint))) 910px); }
+/* left plate / right plate overlays for rail rows 605..618.
+   Canvas seams x=663.5 and x=1155.5 -> local (from .pf-body's edge):
+     663.5  - (344 + 4.5) = 315px   -> .pf-railL's right edge (left:0 width:315)
+     1155.5 - (344 + 4.5) = 807px   -> .pf-railR's left edge                    */
+.halo-cartridge .pf-railL { position: absolute; left: 0; width: 315px; top: 108px; height: 14px;
+  background: linear-gradient(180deg,
+     hsl(calc(var(--steel-h) + 100 * var(--steel-spread)) calc(var(--steel-s) * 0.667) calc(4.902% * var(--steel-tint))) 0px,hsl(calc(var(--steel-h) + 100 * var(--steel-spread)) calc(var(--steel-s) * 0.667) calc(4.902% * var(--steel-tint))) 1px,#070205 1px,#070205 2px,hsl(calc(var(--steel-h) + 118 * var(--steel-spread)) calc(var(--steel-s) * 0.333) calc(7.843% * var(--steel-tint))) 2px,hsl(calc(var(--steel-h) + 118 * var(--steel-spread)) calc(var(--steel-s) * 0.333) calc(7.843% * var(--steel-tint))) 3px,
+     hsl(calc(var(--steel-h) + 68 * var(--steel-spread)) calc(var(--steel-s) * 0.123) calc(15.882% * var(--steel-tint))) 3px,hsl(calc(var(--steel-h) + 68 * var(--steel-spread)) calc(var(--steel-s) * 0.123) calc(15.882% * var(--steel-tint))) 4px,hsl(calc(var(--steel-h) + 40 * var(--steel-spread)) calc(var(--steel-s) * 0.175) calc(18.627% * var(--steel-tint))) 4px,hsl(calc(var(--steel-h) + 40 * var(--steel-spread)) calc(var(--steel-s) * 0.175) calc(18.627% * var(--steel-tint))) 5px,hsl(calc(var(--steel-h) + 43 * var(--steel-spread)) calc(var(--steel-s) * 0.136) calc(19.216% * var(--steel-tint))) 5px,hsl(calc(var(--steel-h) + 43 * var(--steel-spread)) calc(var(--steel-s) * 0.136) calc(19.216% * var(--steel-tint))) 6px,
+     hsl(calc(var(--steel-h) + 58 * var(--steel-spread)) calc(var(--steel-s) * 0.069) calc(18.824% * var(--steel-tint))) 6px,hsl(calc(var(--steel-h) + 58 * var(--steel-spread)) calc(var(--steel-s) * 0.069) calc(18.824% * var(--steel-tint))) 7px,hsl(calc(var(--steel-h) + 168 * var(--steel-spread)) calc(var(--steel-s) * 0.154) calc(12.745% * var(--steel-tint))) 7px,hsl(calc(var(--steel-h) + 168 * var(--steel-spread)) calc(var(--steel-s) * 0.154) calc(12.745% * var(--steel-tint))) 8px,hsl(calc(var(--steel-h) + 158 * var(--steel-spread)) calc(var(--steel-s) * 0.5) calc(7.843% * var(--steel-tint))) 8px,hsl(calc(var(--steel-h) + 158 * var(--steel-spread)) calc(var(--steel-s) * 0.5) calc(7.843% * var(--steel-tint))) 9px,
+     hsl(calc(var(--steel-h) + 160 * var(--steel-spread)) calc(var(--steel-s) * 0.407) calc(8.039% * var(--steel-tint))) 9px,hsl(calc(var(--steel-h) + 160 * var(--steel-spread)) calc(var(--steel-s) * 0.407) calc(8.039% * var(--steel-tint))) 10px,hsl(calc(var(--steel-h) + 136 * var(--steel-spread)) calc(var(--steel-s) * 0.37) calc(8.824% * var(--steel-tint))) 10px,hsl(calc(var(--steel-h) + 136 * var(--steel-spread)) calc(var(--steel-s) * 0.37) calc(8.824% * var(--steel-tint))) 11px,hsl(calc(var(--steel-h) + 148 * var(--steel-spread)) calc(var(--steel-s) * 0.303) calc(8.627% * var(--steel-tint))) 11px,hsl(calc(var(--steel-h) + 148 * var(--steel-spread)) calc(var(--steel-s) * 0.303) calc(8.627% * var(--steel-tint))) 12px,
+     hsl(calc(var(--steel-h) + 133 * var(--steel-spread)) calc(var(--steel-s) * 0.303) calc(8.627% * var(--steel-tint))) 12px,hsl(calc(var(--steel-h) + 133 * var(--steel-spread)) calc(var(--steel-s) * 0.303) calc(8.627% * var(--steel-tint))) 13px,hsl(calc(var(--steel-h) + 105.143 * var(--steel-spread)) calc(var(--steel-s) * 0.37) calc(12.353% * var(--steel-tint))) 13px,hsl(calc(var(--steel-h) + 105.143 * var(--steel-spread)) calc(var(--steel-s) * 0.37) calc(12.353% * var(--steel-tint))) 14px); }
+.halo-cartridge .pf-railR { position: absolute; left: 807px; right: 0; top: 108px; height: 14px;
+  background: linear-gradient(180deg,
+     hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.725) calc(4.51% * var(--steel-tint))) 0px,hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.725) calc(4.51% * var(--steel-tint))) 1px,#040203 1px,#040203 2px,hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.513) calc(5.098% * var(--steel-tint))) 2px,hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.513) calc(5.098% * var(--steel-tint))) 3px,
+     hsl(calc(var(--steel-h) + 58 * var(--steel-spread)) calc(var(--steel-s) * 0.256) calc(10.196% * var(--steel-tint))) 3px,hsl(calc(var(--steel-h) + 58 * var(--steel-spread)) calc(var(--steel-s) * 0.256) calc(10.196% * var(--steel-tint))) 4px,hsl(calc(var(--steel-h) + 40 * var(--steel-spread)) calc(var(--steel-s) * 0.303) calc(10.784% * var(--steel-tint))) 4px,hsl(calc(var(--steel-h) + 40 * var(--steel-spread)) calc(var(--steel-s) * 0.303) calc(10.784% * var(--steel-tint))) 5px,hsl(calc(var(--steel-h) + 43 * var(--steel-spread)) calc(var(--steel-s) * 0.215) calc(12.157% * var(--steel-tint))) 5px,hsl(calc(var(--steel-h) + 43 * var(--steel-spread)) calc(var(--steel-s) * 0.215) calc(12.157% * var(--steel-tint))) 6px,
+     hsl(calc(var(--steel-h) + 48 * var(--steel-spread)) calc(var(--steel-s) * 0.154) calc(12.745% * var(--steel-tint))) 6px,hsl(calc(var(--steel-h) + 48 * var(--steel-spread)) calc(var(--steel-s) * 0.154) calc(12.745% * var(--steel-tint))) 7px,hsl(var(--steel-h) 0% calc(12.941% * var(--steel-tint))) 7px,hsl(var(--steel-h) 0% calc(12.941% * var(--steel-tint))) 8px,hsl(calc(var(--steel-h) + 168 * var(--steel-spread)) calc(var(--steel-s) * 0.233) calc(8.431% * var(--steel-tint))) 8px,hsl(calc(var(--steel-h) + 168 * var(--steel-spread)) calc(var(--steel-s) * 0.233) calc(8.431% * var(--steel-tint))) 9px,
+     hsl(calc(var(--steel-h) + 148 * var(--steel-spread)) calc(var(--steel-s) * 0.133) calc(9.804% * var(--steel-tint))) 9px,hsl(calc(var(--steel-h) + 148 * var(--steel-spread)) calc(var(--steel-s) * 0.133) calc(9.804% * var(--steel-tint))) 13px,hsl(calc(var(--steel-h) + 118 * var(--steel-spread)) calc(var(--steel-s) * 0.133) calc(9.804% * var(--steel-tint))) 13px,hsl(calc(var(--steel-h) + 118 * var(--steel-spread)) calc(var(--steel-s) * 0.133) calc(9.804% * var(--steel-tint))) 14px); }
+
+/* ---- recessed cavity ---------------------------------------------------- */
+/* left:31.5px is measured from .pf-body -> canvas x = 344 + 4.5 + 31.5 = 380  */
+.halo-cartridge .pf-cav {
+  position: absolute; left: 31.5px; right: 18px; top: 15.5px; height: 92px;
+  clip-path: polygon(0 0, 855px 0, 100% 5px, 100% 100%, 18px 100%, 0 77px);
+  background:
+    radial-gradient(340px 52px at 27% 66%, rgba(195,215,220,.055), rgba(195,215,220,0) 72%),
+    linear-gradient(180deg,
+      hsl(calc(var(--steel-h) + 48 * var(--steel-spread)) calc(var(--steel-s) * 0.417) calc(9.412% * var(--steel-tint))) 0px, hsl(calc(var(--steel-h) + 40 * var(--steel-spread)) calc(var(--steel-s) * 0.34) calc(9.608% * var(--steel-tint))) 4px, hsl(calc(var(--steel-h) + 52 * var(--steel-spread)) calc(var(--steel-s) * 0.355) calc(9.216% * var(--steel-tint))) 10px, hsl(calc(var(--steel-h) + 52 * var(--steel-spread)) calc(var(--steel-s) * 0.327) calc(10% * var(--steel-tint))) 16px, hsl(calc(var(--steel-h) + 64 * var(--steel-spread)) calc(var(--steel-s) * 0.327) calc(10% * var(--steel-tint))) 22px,
+      hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.213) calc(9.216% * var(--steel-tint))) 28px, hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.29) calc(9.02% * var(--steel-tint))) 34px, hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.37) calc(8.824% * var(--steel-tint))) 40px, hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.37) calc(8.824% * var(--steel-tint))) 46px, hsl(calc(var(--steel-h) + 124 * var(--steel-spread)) calc(var(--steel-s) * 0.34) calc(9.608% * var(--steel-tint))) 52px,
+      hsl(calc(var(--steel-h) + 124 * var(--steel-spread)) calc(var(--steel-s) * 0.34) calc(9.608% * var(--steel-tint))) 58px, hsl(calc(var(--steel-h) + 128 * var(--steel-spread)) calc(var(--steel-s) * 0.417) calc(9.412% * var(--steel-tint))) 64px, hsl(calc(var(--steel-h) + 128 * var(--steel-spread)) calc(var(--steel-s) * 0.417) calc(9.412% * var(--steel-tint))) 70px, hsl(calc(var(--steel-h) + 105.143 * var(--steel-spread)) calc(var(--steel-s) * 0.496) calc(9.216% * var(--steel-tint))) 76px, hsl(calc(var(--steel-h) + 124 * var(--steel-spread)) calc(var(--steel-s) * 0.355) calc(9.216% * var(--steel-tint))) 82px,
+      hsl(calc(var(--steel-h) + 124 * var(--steel-spread)) calc(var(--steel-s) * 0.388) calc(8.431% * var(--steel-tint))) 88px, hsl(calc(var(--steel-h) + 124 * var(--steel-spread)) calc(var(--steel-s) * 0.407) calc(8.039% * var(--steel-tint))) 92px);
+}
+/* right half of the cavity: colder, darker, with the warm reflection blob.
+   left:283.5px is measured from .pf-cav (already local to it).                */
+.halo-cartridge .pf-cavr {
+  position: absolute; left: 283.5px; right: 0; top: 0; bottom: 0;
+  background:
+    linear-gradient(90deg, rgba(8,6,12,.34) 0px, rgba(8,6,12,.12) 6px, rgba(8,6,12,0) 15px,
+                    rgba(8,6,12,0) 78%, rgba(46,52,74,.16) 92%, rgba(12,10,18,.40) 100%),
+    radial-gradient(150px 62px at 28% 54%, rgba(160,145,80,.19), rgba(160,145,80,0) 72%),
+    radial-gradient(125px 50px at 12% 26%, rgba(150,155,195,.13), rgba(150,155,195,0) 74%),
+    linear-gradient(180deg,
+      hsl(calc(var(--steel-h) + 34 * var(--steel-spread)) calc(var(--steel-s) * 0.521) calc(12.549% * var(--steel-tint))) 0px, hsl(calc(var(--steel-h) + 34 * var(--steel-spread)) calc(var(--steel-s) * 0.505) calc(12.941% * var(--steel-tint))) 4px, hsl(calc(var(--steel-h) + 34.667 * var(--steel-spread)) calc(var(--steel-s) * 0.492) calc(11.961% * var(--steel-tint))) 10px, hsl(calc(var(--steel-h) + 45.143 * var(--steel-spread)) calc(var(--steel-s) * 0.424) calc(10.784% * var(--steel-tint))) 16px, hsl(calc(var(--steel-h) + 58 * var(--steel-spread)) calc(var(--steel-s) * 0.385) calc(10.196% * var(--steel-tint))) 22px,
+      hsl(calc(var(--steel-h) + 70.857 * var(--steel-spread)) calc(var(--steel-s) * 0.496) calc(9.216% * var(--steel-tint))) 28px, hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.543) calc(8.431% * var(--steel-tint))) 34px, hsl(calc(var(--steel-h) + 103 * var(--steel-spread)) calc(var(--steel-s) * 0.635) calc(8.235% * var(--steel-tint))) 40px, hsl(calc(var(--steel-h) + 106 * var(--steel-spread)) calc(var(--steel-s) * 0.794) calc(8.235% * var(--steel-tint))) 46px, hsl(calc(var(--steel-h) + 112 * var(--steel-spread)) calc(var(--steel-s) * 0.794) calc(8.235% * var(--steel-tint))) 52px,
+      hsl(calc(var(--steel-h) + 112 * var(--steel-spread)) calc(var(--steel-s) * 0.794) calc(8.235% * var(--steel-tint))) 58px, hsl(calc(var(--steel-h) + 114.667 * var(--steel-spread)) calc(var(--steel-s) * 0.732) calc(8.039% * var(--steel-tint))) 64px, hsl(calc(var(--steel-h) + 108 * var(--steel-spread)) calc(var(--steel-s) * 0.732) calc(8.039% * var(--steel-tint))) 70px, hsl(calc(var(--steel-h) + 96.571 * var(--steel-spread)) calc(var(--steel-s) * 0.569) calc(8.039% * var(--steel-tint))) 76px, hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.5) calc(7.843% * var(--steel-tint))) 82px,
+      hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.667) calc(6.863% * var(--steel-tint))) 88px, hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.753) calc(6.078% * var(--steel-tint))) 92px);
+}
+/* bluish top reflection band, strongest at the right-hand end               */
+.halo-cartridge .pf-cavr::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 10px;
+  background:
+    linear-gradient(180deg, rgba(58,80,150,.26), rgba(58,80,150,0)),
+    linear-gradient(90deg, rgba(0,0,0,.35) 0px, rgba(0,0,0,0) 240px);
+}
+
+/* ---- right-hand edge ---------------------------------------------------- */
+/* These three pin to the RIGHT, so they track --w automatically.  The canvas
+   spans in the source comments are the C4a numbers: root right edge =
+   344 + 914.5 = 1258.5, so `right:12px width:2.5px` -> 1244..1246.5 and
+   `right:0 width:12px` -> 1246.5..1258.5.                                    */
+.halo-cartridge .pf-rmar {   /* 2px maroon stripe, canvas x 1244..1246.5 */
+  position: absolute; right: 12px; width: 2.5px; top: 19.5px; height: 87px;
+  background: linear-gradient(90deg, #1a0a0f 0 .6px, #2d161c .6px 1.9px, hsl(calc(var(--steel-h) + 133.882 * var(--steel-spread)) calc(var(--steel-s) * 0.96) calc(11.569% * var(--steel-tint))) 1.9px 2.5px);
+}
+.halo-cartridge .pf-rface { /* grey face + 3px chrome edge, canvas x 1246.5..1258.5 */
+  position: absolute; right: 0; width: 12px; top: 3.5px; bottom: 0;
+  background: linear-gradient(90deg, hsl(calc(var(--steel-h) + 128 * var(--steel-spread)) calc(var(--steel-s) * 0.189) calc(10.392% * var(--steel-tint))) 0 7.5px, hsl(calc(var(--steel-h) + 10.857 * var(--steel-spread)) calc(var(--steel-s) * 0.458) calc(10% * var(--steel-tint))) 7.5px 8.5px,
+              hsl(calc(var(--steel-h) + -5.333 * var(--steel-spread)) calc(var(--steel-s) * 0.556) calc(21.176% * var(--steel-tint))) 8.5px 9.5px, hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 0.282) calc(53.725% * var(--steel-tint))) 9.5px 10.5px, hsl(var(--steel-h) 0% calc(50.196% * var(--steel-tint))) 10.5px 11.5px,
+              hsl(calc(var(--steel-h) + -177.714 * var(--steel-spread)) calc(var(--steel-s) * 0.281) calc(16.275% * var(--steel-tint))) 11.5px 12px);
+}
+/* 9x9 rivet.  LEFT-pinned inside .pf-body (baked to the ~910px body, does NOT
+   track --w): local left 896.5 -> canvas x 344 + 4.5 + 896.5 = 1245, spanning
+   1245..1254; vertical centre = 497 + 3.5 + 4.5 = 505.                        */
+.halo-cartridge .pf-riv {
+  position: absolute; left: 896.5px; top: 3.5px; width: 9px; height: 9px;
+  background: radial-gradient(circle at 4.5px 4.5px,
+      hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.131) calc(24.902% * var(--steel-tint))) 0 1.7px, hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.148) calc(17.647% * var(--steel-tint))) 2.3px, hsl(calc(var(--steel-h) + 38 * var(--steel-spread)) calc(var(--steel-s) * 0.435) calc(9.02% * var(--steel-tint))) 2.9px, hsl(calc(var(--steel-h) + 118 * var(--steel-spread)) calc(var(--steel-s) * 0.303) calc(4.314% * var(--steel-tint))) 3.7px, hsl(calc(var(--steel-h) + 168 * var(--steel-spread)) calc(var(--steel-s) * 0.303) calc(6.471% * var(--steel-tint))) 4.5px,
+      rgba(0,0,0,0) 4.6px);
+}
+
+/* ---- left end: chamfer facets, bevel, warm face, red glow ---------------- */
+.halo-cartridge .pf-lside {  /* red bloom that leaks past the metal edge  */
+  position: absolute; left: 0; width: 4.5px; top: 12px; height: 92px;
+  background: linear-gradient(90deg,
+      rgba(245,90,92,.010) 0px, rgba(245,90,92,.040) 1px, rgba(245,90,92,.075) 2px,
+      rgba(245,90,92,.120) 3px, rgba(245,90,92,.160) 4px, rgba(245,90,92,.175) 4.5px);
+}
+/* the two lit chamfer facets.  hsl(calc(var(--steel-h) + 8 * var(--steel-spread)) calc(var(--steel-s) * 0.769) calc(5.098% * var(--steel-tint))) here is the BACKDROP colour (--bg)
+   baked in as the fade-to-nothing stop — see BACKDROP ASSUMPTION above.       */
+.halo-cartridge .pf-fct, .halo-cartridge .pf-fcb {
+  position: absolute; left: 0; width: 4.5px;
+  background:
+    linear-gradient(180deg, hsl(calc(var(--steel-h) + 8 * var(--steel-spread)) calc(var(--steel-s) * 0.769) calc(5.098% * var(--steel-tint))) 0px, rgba(10,12,16,0) 2.5px,
+                    rgba(10,12,16,0) var(--f1), hsl(calc(var(--steel-h) + 8 * var(--steel-spread)) calc(var(--steel-s) * 0.769) calc(5.098% * var(--steel-tint))) var(--f2)),
+    linear-gradient(90deg, hsl(calc(var(--steel-h) + 133 * var(--steel-spread)) calc(var(--steel-s) * 0.606) calc(12.941% * var(--steel-tint))) 0 1px, hsl(calc(var(--steel-h) + 142.706 * var(--steel-spread)) calc(var(--steel-s) * 0.776) calc(28.627% * var(--steel-tint))) 1px 2px, hsl(calc(var(--steel-h) + 144.571 * var(--steel-spread)) calc(var(--steel-s) * 0.682) calc(33.529% * var(--steel-tint))) 2px 3px,
+                    hsl(calc(var(--steel-h) + 142 * var(--steel-spread)) calc(var(--steel-s) * 0.602) calc(32.549% * var(--steel-tint))) 3px 4px, hsl(calc(var(--steel-h) + 139.111 * var(--steel-spread)) calc(var(--steel-s) * 0.581) calc(30.392% * var(--steel-tint))) 4px 4.5px);
+}
+.halo-cartridge .pf-fct { top: 12px;  height: 24px; --f1: 18px; --f2: 24px; }
+/* .pf-fcb re-declares `background` with 12px/17px inlined, so its --f1/--f2
+   below are inert.  Kept verbatim from the source — do not "tidy" them away. */
+.halo-cartridge .pf-fcb { top: 89px;  height: 17px; --f1: 12px; --f2: 17px;
+  background:
+    linear-gradient(180deg, hsl(calc(var(--steel-h) + 8 * var(--steel-spread)) calc(var(--steel-s) * 0.769) calc(5.098% * var(--steel-tint))) 0px, rgba(10,12,16,0) 2.5px,
+                    rgba(10,12,16,0) 12px, hsl(calc(var(--steel-h) + 8 * var(--steel-spread)) calc(var(--steel-s) * 0.769) calc(5.098% * var(--steel-tint))) 17px),
+    linear-gradient(90deg, hsl(calc(var(--steel-h) + 130 * var(--steel-spread)) calc(var(--steel-s) * 0.575) calc(11.373% * var(--steel-tint))) 0 1px, hsl(calc(var(--steel-h) + 142.857 * var(--steel-spread)) calc(var(--steel-s) * 0.852) calc(26.863% * var(--steel-tint))) 1px 2px, hsl(calc(var(--steel-h) + 143.385 * var(--steel-spread)) calc(var(--steel-s) * 0.85) calc(30% * var(--steel-tint))) 2px 3px,
+                    hsl(calc(var(--steel-h) + 140 * var(--steel-spread)) calc(var(--steel-s) * 0.769) calc(25.49% * var(--steel-tint))) 3px 4px, hsl(calc(var(--steel-h) + 136.462 * var(--steel-spread)) calc(var(--steel-s) * 0.722) calc(23.529% * var(--steel-tint))) 4px 4.5px); }
+/* inside .pf-body -> canvas x = 344 + 4.5 + .5 = 349, spanning 349..353       */
+.halo-cartridge .pf-lbev {   /* the bright outer bevel */
+  position: absolute; left: .5px; width: 4px; top: 14px; height: 90px;
+  background: linear-gradient(90deg, #4e1f24 0 1px, hsl(calc(var(--steel-h) + 144.757 * var(--steel-spread)) calc(var(--steel-s) * 1.063) calc(45.49% * var(--steel-tint))) 1px 2px,
+                              #8d4346 2px 3px, #471a1b 3px 4px);
+}
+/* inside .pf-body -> canvas x = 344 + 4.5 + 4.5 = 353, spanning 353..375      */
+.halo-cartridge .pf-lface {  /* warm frame face + inner glow */
+  position: absolute; left: 4.5px; width: 22px; top: 15px; height: 90px;
+  background: linear-gradient(90deg,
+     hsl(calc(var(--steel-h) + 145.5 * var(--steel-spread)) calc(var(--steel-s) * 1.053) calc(14.902% * var(--steel-tint))) 0 1px, hsl(calc(var(--steel-h) + 141.333 * var(--steel-spread)) calc(var(--steel-s) * 0.789) calc(14.902% * var(--steel-tint))) 1px 2px, hsl(calc(var(--steel-h) + 138.526 * var(--steel-spread)) calc(var(--steel-s) * 0.844) calc(14.706% * var(--steel-tint))) 2px 3px, hsl(calc(var(--steel-h) + 139.429 * var(--steel-spread)) calc(var(--steel-s) * 0.933) calc(14.706% * var(--steel-tint))) 3px 4px, hsl(calc(var(--steel-h) + 140.8 * var(--steel-spread)) calc(var(--steel-s) * 1.055) calc(15.49% * var(--steel-tint))) 4px 5px,
+     #3b1c1e 5px 6px, #431c1f 6px 7px, #49181b 7px 8px, #5f1316 8px 9px,
+     #b03f3e 9px 10px, #f76b69 10px 12px, #e35f5e 12px 13px, #872d30 13px 14px,
+     #5b1f22 14px 15px, #461c1e 15px 16px, #391b1c 16px 17px, hsl(calc(var(--steel-h) + 134.957 * var(--steel-spread)) calc(var(--steel-s) * 0.861) calc(17.451% * var(--steel-tint))) 17px 19px,
+     hsl(calc(var(--steel-h) + 138 * var(--steel-spread)) calc(var(--steel-s) * 0.69) calc(11.373% * var(--steel-tint))) 19px 20px, #170c0a 20px 21px, #150808 21px 22px);
+}
+.halo-cartridge .pf-chT {    /* lit facet of the top-left chamfer */
+  position: absolute; left: 1.9px; top: 10.3px; width: 19.4px; height: 2.6px;
+  transform-origin: 0 50%; transform: rotate(-32.4deg);
+  background: linear-gradient(180deg, hsl(calc(var(--steel-h) + 134.154 * var(--steel-spread)) calc(var(--steel-s) * 0.398) calc(21.373% * var(--steel-tint))), hsl(calc(var(--steel-h) + 138.769 * var(--steel-spread)) calc(var(--steel-s) * 0.504) calc(33.725% * var(--steel-tint))) 42%, hsl(calc(var(--steel-h) + 138.4 * var(--steel-spread)) calc(var(--steel-s) * 0.627) calc(26.078% * var(--steel-tint))) 82%, hsl(calc(var(--steel-h) + 144.25 * var(--steel-spread)) calc(var(--steel-s) * 0.741) calc(14.118% * var(--steel-tint))));
+}
+
+/* ---- red "C" bracket ---------------------------------------------------- */
+/* Sibling of .pf-body (NOT clipped by the metal silhouette) and it carries the
+   blur on the whole group, so the stroke edges bleed ~1px past their rects.   */
+.halo-cartridge .pf-brk { position: absolute; inset: 0; filter: blur(.45px); }
+.halo-cartridge .pf-brk i { position: absolute; display: block; }
+/* root-relative: 344 + 18.2 = 362.2 .. 365.8, i.e. centre canvas x = 364.0    */
+.halo-cartridge .pf-brk .v  {   /* vertical stroke */
+  left: 18.2px; top: 5.5px; width: 3.6px; height: 90px;
+  background: linear-gradient(180deg, #ff7b76 0%, #ff7472 30%, #fb6f6d 72%, #ff7472 100%);
+}
+.halo-cartridge .pf-brk .d  {   /* bottom-left chamfer, dx/dy = 1.12 */
+  left: 18.2px; top: 94.5px; width: 3.6px; height: 33px;
+  transform-origin: 50% 0; transform: rotate(-48.2deg);
+  background: #fb6f6d;
+}
+.halo-cartridge .pf-brk .ts {   /* top stub */
+  left: 22px; top: 4.6px; width: 26px; height: 2.3px;
+  background: linear-gradient(90deg, #f4675f 0px, #cf5a58 8px, #b45254 14px, #ac5254 26px);
+}
+.halo-cartridge .pf-brk .bs {   /* bottom stub */
+  left: 41.5px; top: 117.7px; width: 17.5px; height: 2.9px;
+  background: linear-gradient(90deg, #f96b6b 0px, #fa6d6d 8px, #f47472 17.5px);
+}
+
+/* ---- soft blooms just outside the metal --------------------------------- */
+/* Siblings of .pf-body: .pf-blt at top:-1px and .pf-blb at top:125px escape
+   .pf-body's clip-path entirely — this is why the PAINTED height is 127.      */
+.halo-cartridge .pf-bl { position: absolute; left: 4.5px; right: 0; height: 1px; }
+.halo-cartridge .pf-blt { top: -1px; background: linear-gradient(90deg,
+  hsl(calc(var(--steel-h) + 103 * var(--steel-spread)) calc(var(--steel-s) * 0.278) calc(9.412% * var(--steel-tint))) 0px,hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.222) calc(8.824% * var(--steel-tint))) 61px,hsl(calc(var(--steel-h) + 48 * var(--steel-spread)) calc(var(--steel-s) * 0.233) calc(8.431% * var(--steel-tint))) 141px,hsl(calc(var(--steel-h) + 48 * var(--steel-spread)) calc(var(--steel-s) * 0.256) calc(7.647% * var(--steel-tint))) 221px,hsl(calc(var(--steel-h) + 58 * var(--steel-spread)) calc(var(--steel-s) * 0.333) calc(7.843% * var(--steel-tint))) 261px,hsl(calc(var(--steel-h) + 48 * var(--steel-spread)) calc(var(--steel-s) * 0.256) calc(7.647% * var(--steel-tint))) 301px,
+  hsl(calc(var(--steel-h) + 8 * var(--steel-spread)) calc(var(--steel-s) * 0.714) calc(5.49% * var(--steel-tint))) 341px,hsl(calc(var(--steel-h) + 8 * var(--steel-spread)) calc(var(--steel-s) * 0.714) calc(5.49% * var(--steel-tint))) 501px,hsl(calc(var(--steel-h) + 4 * var(--steel-spread)) calc(var(--steel-s) * 0.575) calc(5.686% * var(--steel-tint))) 541px,hsl(calc(var(--steel-h) + 16 * var(--steel-spread)) calc(var(--steel-s) * 0.505) calc(6.471% * var(--steel-tint))) 621px,hsl(calc(var(--steel-h) + 16 * var(--steel-spread)) calc(var(--steel-s) * 0.505) calc(6.471% * var(--steel-tint))) 701px,hsl(calc(var(--steel-h) + 8 * var(--steel-spread)) calc(var(--steel-s) * 0.667) calc(5.882% * var(--steel-tint))) 781px,
+  hsl(calc(var(--steel-h) + 8 * var(--steel-spread)) calc(var(--steel-s) * 0.714) calc(5.49% * var(--steel-tint))) 821px,hsl(calc(var(--steel-h) + 8 * var(--steel-spread)) calc(var(--steel-s) * 0.769) calc(5.098% * var(--steel-tint))) 910px); }
+.halo-cartridge .pf-blb { top: 125px; background: linear-gradient(90deg,
+  hsl(calc(var(--steel-h) + 108 * var(--steel-spread)) calc(var(--steel-s) * 0.455) calc(8.627% * var(--steel-tint))) 0px,hsl(calc(var(--steel-h) + 100 * var(--steel-spread)) calc(var(--steel-s) * 0.327) calc(10% * var(--steel-tint))) 101px,hsl(calc(var(--steel-h) + 118 * var(--steel-spread)) calc(var(--steel-s) * 0.247) calc(10.588% * var(--steel-tint))) 141px,hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.256) calc(10.196% * var(--steel-tint))) 221px,hsl(calc(var(--steel-h) + 73 * var(--steel-spread)) calc(var(--steel-s) * 0.351) calc(7.451% * var(--steel-tint))) 261px,hsl(calc(var(--steel-h) + 73 * var(--steel-spread)) calc(var(--steel-s) * 0.267) calc(9.804% * var(--steel-tint))) 301px,
+  hsl(calc(var(--steel-h) + 13 * var(--steel-spread)) calc(var(--steel-s) * 0.278) calc(9.412% * var(--steel-tint))) 341px,hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.267) calc(9.804% * var(--steel-tint))) 421px,hsl(calc(var(--steel-h) + 16 * var(--steel-spread)) calc(var(--steel-s) * 0.34) calc(9.608% * var(--steel-tint))) 461px,hsl(calc(var(--steel-h) + 16 * var(--steel-spread)) calc(var(--steel-s) * 0.327) calc(10% * var(--steel-tint))) 501px,hsl(calc(var(--steel-h) + 13 * var(--steel-spread)) calc(var(--steel-s) * 0.278) calc(9.412% * var(--steel-tint))) 541px,hsl(calc(var(--steel-h) + 13 * var(--steel-spread)) calc(var(--steel-s) * 0.256) calc(10.196% * var(--steel-tint))) 581px,
+  hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.256) calc(10.196% * var(--steel-tint))) 621px,hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.222) calc(8.824% * var(--steel-tint))) 661px,hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.204) calc(9.608% * var(--steel-tint))) 701px,hsl(calc(var(--steel-h) + 48 * var(--steel-spread)) calc(var(--steel-s) * 0.233) calc(8.431% * var(--steel-tint))) 741px,hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.189) calc(10.392% * var(--steel-tint))) 781px,hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.233) calc(8.431% * var(--steel-tint))) 821px,
+  hsl(calc(var(--steel-h) + 13 * var(--steel-spread)) calc(var(--steel-s) * 0.317) calc(8.235% * var(--steel-tint))) 861px,hsl(calc(var(--steel-h) + 16 * var(--steel-spread)) calc(var(--steel-s) * 0.575) calc(5.686% * var(--steel-tint))) 901px); }
+
+
+/* ---- .pf-lift — C4b ONLY, backdrop compensation ------------------------- */
+/* The panel art is semi-transparent. C4a sits on the page background, C4b sits
+   on the banner's lighter backdrop, so the same artwork composites lighter
+   there. Measured delta (ref x=674 vs x=678, same relative y): +6,+7,+7 across
+   the frame face and +8,+9,+15 through the cavity top. This layer replays that
+   lift.
+   Namespaced on extraction: the source rule was a BARE `.pf-lift` (the only
+   un-namespaced selector in the whole C4 block, original.html:461).
+   Its DOM slot is load-bearing — inside .pf-body, between .pf-lbev and
+   .pf-lface — so .pf-lface/.pf-chT paint over it and .pf-body's clip crops it. */
+.halo-cartridge .pf-lift {
+  position: absolute; left: 0; right: 0; top: 0; height: 125px; pointer-events: none;
+  background: linear-gradient(180deg,
+    rgba(225,167,188,0.08960000000000001) 0px,   rgba(225,167,188,0.08960000000000001) 1px,
+    rgba(225,167,188,0.16) 1px,   rgba(225,167,188,0.16) 3px,
+    rgba(132,148,148,0.0384) 3px,   rgba(132,148,148,0.0384) 9px,
+    rgba(132,148,148,.01) 9px,   rgba(132,148,148,.01) 16px,
+    rgba(110,118,186,0.06) 16px,  rgba(110,118,186,0.06) 46px,
+    rgba(110,118,186,0.048) 46px,  rgba(110,118,186,0.048) 107px,
+    rgba(150,150,170,0.03) 107px, rgba(150,150,170,0.03) 125px);
+}

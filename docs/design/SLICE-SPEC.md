@@ -1,0 +1,375 @@
+# Halo 9-Slice Spec — measured, verified, decided
+
+**Date:** 2026-08-05 · **Source:** Figma reference PNGs at native size · **Method:** per-pixel band
+measurement + adversarial re-render in headless Chromium at 320 / 380 / 700 / 1100 / 1500 / 2200 px
+and at heights 131 / 300 / 700.
+
+## The headline
+
+**Four of the five panels failed first-pass verification. All four now have corrected numbers below —
+use the CORRECTED numbers, not the originals.** Two panels also need an **art re-export** before any
+slice can be correct, and one panel (`asm-deck`) **cannot be 9-sliced at all** below 1316px and needs
+a second art variant. `asm-channel` passed clean and should stop being a 9-slice entirely — see the
+CONDUIT RAIL decision.
+
+---
+
+## 1. Slice table (FINAL — corrected values)
+
+| Panel | Source | top | right | bottom | left | repeatH | repeatV | Rhythm pitch | Confidence |
+|---|---|---:|---:|---:|---:|---|---|---|---|
+| `asm-housing` | 1171×151 | **62** | 147 | **81** | 150 | stretch | stretch | none (near-rhythm 460/440/459px — rejected) | high |
+| `asm-deck` | 1335×151 | 28 | **221** | 20 | **1095** | stretch | stretch | none on the growable axis (3px scanline is inside the fixed left corner) | high |
+| `asm-rowboard` | 684×97 | 0 | 72 | 0 | **500** | stretch | stretch | none H; 3px scanline V (unused — V does not scale) | high |
+| `asm-headboard` | 241×141 | **43** | 47 | **59** | 30 | stretch | **round** | **3px** horizontal scanline, vertical axis, r = 1.00 @ lag 3/6/9 | high |
+| `asm-channel` | 41×131 | 0 | 35 | 0 | 4 | stretch | stretch | none (both axes continuous) | high |
+
+Bold = changed from the first-pass proposal. Every bold number was re-rendered and re-measured, not
+reasoned about.
+
+**Repeat-mode rule applied throughout (ledger #257):** countable rhythm → `round`; continuous feature
+→ `stretch`. Only `asm-headboard` has a countable rhythm on an axis that grows, and it is the only
+`round` in the set.
+
+---
+
+## 2. Ready-to-paste CSS
+
+Paths assume `assets/halo/`. Adjust the URL only — never the numbers.
+
+### asm-housing — instrument housing (width-flexible, HEIGHT-FIXED)
+
+```css
+.halo-housing {
+  box-sizing: border-box;
+  height: 151px;              /* FIXED — see §4 */
+  min-width: 650px;           /* fidelity floor; hard geometric floor is 297px */
+  border-style: solid;
+  border-width: 62px 147px 81px 150px;
+  border-image-source: url("assets/halo/asm-housing.png");
+  border-image-slice: 62 147 81 150 fill;
+  border-image-width: 62px 147px 81px 150px;
+  border-image-repeat: stretch stretch;
+}
+```
+
+### asm-deck — group deck head (grows ONLY; hard floor 1316px)
+
+```css
+.halo-deck {
+  box-sizing: border-box;
+  height: 151px;              /* FIXED — vertical scaling moirés the 3px scanline */
+  min-width: 1316px;          /* INTRINSIC floor — not a style choice */
+  border-style: solid;
+  border-width: 28px 221px 20px 1095px;
+  border-image-source: url("assets/halo/asm-deck.png");
+  border-image-slice: 28 221 20 1095 fill;
+  border-image-width: 28px 221px 20px 1095px;
+  border-image-repeat: stretch stretch;
+}
+
+/* Below 1316px the 9-slice is impossible. Scale the whole plate instead. */
+@media (max-width: 1315px) {
+  .halo-deck {
+    border: 0;
+    background: url("assets/halo/asm-deck.png") center / contain no-repeat;
+    aspect-ratio: 1335 / 151;
+    height: auto;
+    min-width: 0;
+  }
+}
+```
+
+### asm-rowboard — row message board (HEIGHT-FIXED 97px, min 572px)
+
+```css
+.halo-rowboard {
+  box-sizing: border-box;
+  height: 97px;               /* FIXED — both chamfers run the full painted height */
+  min-width: 572px;
+  border-style: solid;
+  border-width: 0 72px 0 500px;
+  border-image-source: url("assets/halo/asm-rowboard.png");
+  border-image-slice: 0 72 0 500 fill;
+  border-image-width: 0 72px 0 500px;
+  border-image-repeat: stretch stretch;
+}
+```
+
+### asm-headboard — group headboard (width-flexible AND height-flexible)
+
+Requires the **text-free plate re-export** (§3). Until that lands, this panel is not shippable.
+
+```css
+.halo-headboard {
+  box-sizing: border-box;
+  min-width: 77px;            /* left 30 + right 47 */
+  min-height: 102px;          /* top 43 + bottom 59 */
+  border-style: solid;
+  border-width: 43px 47px 59px 30px;
+  border-image-source: url("assets/halo/asm-headboard-plate.png");  /* TEXT-FREE plate */
+  border-image-slice: 43 47 59 30 fill;
+  border-image-width: 43px 47px 59px 30px;
+  border-image-repeat: stretch round;
+}
+```
+
+### asm-channel — conduit rail (see §5: ship it as a TILE, not a slice)
+
+Slice form, kept for reference and for any place the rail must sit inside a bordered box:
+
+```css
+.halo-channel {
+  box-sizing: border-box;
+  width: 41px;
+  border-style: solid;
+  border-width: 0 35px 0 4px;
+  border-image-source: url("assets/halo/asm-channel.png");
+  border-image-slice: 0 35 0 4 fill;
+  border-image-width: 0 35px 0 4px;
+  border-image-repeat: stretch stretch;
+}
+```
+
+**Preferred form — repeating tile (this is the decision):**
+
+```css
+.halo-channel {
+  width: 41px;
+  height: 100%;                                       /* any row count */
+  background: url("assets/halo/asm-channel-tile.png") repeat-y top left;
+  background-size: 41px 4px;                          /* 41×4 source, 1:1 */
+}
+```
+
+---
+
+## 3. What FAILED verification, and what changed
+
+### `asm-housing` — FAILED (vertical cuts bisected a real feature)
+
+The proposed y-cuts 66/92 bracketed and then **cut through** the left-flank hairline tick. The tick's
+true extent is rows **71–99** (29 rows), not the y72–85 that was claimed, so 21 of its rows sat inside
+the stretch band and the y=92 cut landed mid-tick. Rendered at h=700 the tick smeared from a 29px stub
+into a ~530px full-height rail with a visible kink.
+
+**Corrected: `62 147 81 150 fill`, stretch stretch.** Only the y-cuts move (66→62, and the bottom cut
+moves up so bottom = 151−70 = 81), which puts the whole tick inside the fixed bottom border. At native
+151px the output is byte-identical to the source, so the fix costs nothing at rest.
+
+Held up under scrutiny and unchanged: the x-cuts at **150 and 1024** are pixel-identical to their
+neighbours over the full height, seam discontinuity is **0** at both boundaries at 700/1100/1500/2200,
+and stretch/stretch is correct on both axes.
+
+### `asm-deck` — FAILED (the border box cannot shrink)
+
+Not a smear failure — a geometry failure. left 1100 + right 226 = **1326px of fixed border**, so
+Chromium clamped the element to 1326px at every requested width of 320/380/700/1100. In a real 380px
+container the panel spills 3.5× past it.
+
+**This floor is intrinsic, not a bad cut.** For any 9-slice, left + right = sourceWidth − middleBand,
+and the widest exact-uniform corridor in the entire painted area is **19px** — so the theoretical
+minimum is 1335 − 19 = **1316px**. No cut lines rescue this asset at 1100px, let alone 320px.
+
+**Corrected: `28 221 20 1095 fill`, stretch stretch** — uses the full 19px corridor instead of the
+conservative 9px, verified pixel-perfect at 1335/1500/2200 (corners byte-identical, every stretched
+column an exact copy of source column 1104), and lowers the floor from 1326 to 1316px. That is the
+best these numbers can do.
+
+**Second failure, vertical:** at h=300 and h=700 the whole 1100px left region stretches — chips become
+ovals, PROMISED smears, and the 3px nameplate scanline moirés. **Pin the height at 151px.**
+
+### `asm-rowboard` — FAILED (the fill region contained the baked wordmark)
+
+The proposal claimed x250–617 was "one continuous band, max column diff 3/255". It is not: the baked
+**"PROMISED"** wordmark sits at x353–489 inside that claimed band with column-to-column deltas up to
+**178/255**. The proposal's own geometry paragraph contradicted its own uniformity claim.
+
+Consequence, measured against the 4px reference letter stroke: 2.17× at w=1100, 3.29× at w=1500,
+5.26× at w=2200 — an unreadable blur; and at w=380 the text is crushed to 0.146×, at w=320 it is
+annihilated. Works at exactly one width — the textbook failure.
+
+**Corrected: `0 72 0 500 fill`, stretch stretch.** left=500 swallows the chips, the bottom-left
+chamfer, the ring's left vertical **and the entire wordmark** (text ends x489, so 10px clearance).
+The centre fill becomes x500–611: 112px of verified-featureless glass (max column diff 4/255,
+autocorrelation 0.186). Letter stroke now holds at 4px — pixel-identical to reference — at 700, 1100,
+1500 and 2200.
+
+Cost: hard **min-width 572px**. At declared 320/380 the element overflows to 572px, but the art stays
+completely undistorted — a far better failure than crushing the wordmark.
+
+### `asm-headboard` — FAILED twice (baked text + wrong repeat mode)
+
+1. **Baked "FAILED" lockup smears at every width.** The warm pixels sit at x50–192, y54–87 —
+   entirely inside the fill region. Measured red-run width vs the native 138px: 1.48× @320,
+   3.80× @700, 12.93× @2200. **No slice numbers can fix this** — the text is horizontally centred
+   and occupies 143px of a 241px plate. Asset defect.
+2. **`repeatV: stretch` contradicted the proposal's own finding.** The 3px scanline is correctly
+   identified as the one countable rhythm, on the vertical axis — and then stretch was specified,
+   which is the opposite of what the operative test dictates. Measured: native period 3px, but 9px at
+   h=300 and 25px at h=700. Texture destroyed.
+3. The old y-cuts (32/32) made #2 unfixable — 77 growable rows, 77 % 3 = 2 (not phase-closed), and
+   both one-off rail notches sat inside the growable band, so `round` would have tiled the notches.
+
+**Corrected: `43 47 59 30 fill`, `stretch round`.** The cut at y=43 is the first row from which both
+rails are mod-3 stationary; the cut at y=82 (bottom 59) puts both notches and both bottom chamfers in
+the fixed corners. Growable band = rows 43–81 = **39 rows = exactly 13 scanline periods**, mod-3 drift
+0/255 left rail, 3/255 right. Phase-closed, so `round` tiles it seamlessly. Verified: scanline holds
+its native 3px period at h=300 AND h=700.
+
+Held up and unchanged: left=30, right=47, repeatH=stretch. Both vertical cuts are **byte-identical**
+column runs. The top rail stays flat with zero interior gaps and the rail break stays pinned at
+exactly 43px from the right edge at all seven tested widths.
+
+**Two factual errors in the original notes, corrected for the record:**
+- There is **no drop shadow**. Measured alpha maximum in all four bleed regions is exactly **0**. The
+  margin is empty transparent padding (7px top, 6px bottom, 4px left, 8px right). Keep the frame at
+  241×141 anyway — trimming it moves every slice number — but there is nothing shadow-shaped to
+  preserve.
+- The x=194 cut is better than claimed: with text rows masked, columns 191–197 are byte-identical.
+
+### `asm-channel` — HOLDS
+
+Verified clean. All 131 rows byte-identical (max row-to-row delta **0**, per-column std **0.0000**).
+Reconstruction error 0 at 41×131, 41×1, 41×7, 41×40, 41×600 and 60×300. No change to the numbers.
+
+---
+
+## 4. Panels that must be REDRAWN — do not hide these
+
+| Panel | Problem | Verdict |
+|---|---|---|
+| `asm-headboard` | "FAILED" baked into the plate, dead centre | **Re-export a text-free plate.** Blocking — the corrected numbers do not pass without it. Group name becomes live DOM text over the panel. |
+| `asm-rowboard` | "PROMISED" baked into the plate | **Re-export the plate empty.** The corrected slice works around the text by freezing it, but that pins 500px of fixed left border. Text-free art drops sliceLeft toward ~48 and the floor with it. |
+| `asm-housing` | **The interior staircase lives inside the stretch zone.** 5 jogs/diagonals at pitch 460/440/459 — a *near*-rhythm, not a repeat, with the first instance fused to the left cap and the last truncated by the right cap. It cannot be stretched (the 128×76 diagonal rakes 23° at w=1500 and 79° at w=400) and it cannot be `round`ed (no whole-tile count exists). | **REDRAW. Decision: option (a).** Move ALL diagonals, jogs and joints into x<150 / x>1024 and leave the middle as plain steel plus a straight horizontal groove. The ends carry the sculpting — which is what the yard data-plate reads like anyway. Do NOT attempt option (b) (a true seamless tile at integer pitch) — it costs more and buys a motif the language doesn't need. |
+| `asm-deck` | Every piece of content — 3 chips, nameplate, "PROMISED" — is frozen in a 1100px fixed left corner. Widest uniform corridor in the whole 1294px painted panel is 19px. | **REDRAW.** Pull the chips and the nameplate OUT of the exported art into live DOM, leaving a plain steel shell with a wide uniform mid-run. sliceLeft then drops from 1095 to roughly 130 and the min-width drops with it. Until then: ship the corrected slice above **plus** the `contain` fallback below 1316px. |
+| `asm-housing` (vertical) | No feature-free row band exists anywhere in the interior — the panel is decorated continuously y22–125. | Fixed-height part. A height change cannot be absorbed invisibly by any cut. |
+| `asm-rowboard` (vertical) | Both 45° chamfers run the FULL 87px of painted height, as do the chip silhouettes — so there are zero horizontally-uniform rows in the side slice regions. | Height locked at 97px. If a variable-height board is ever needed, confine the chamfers to ≤12px corner notches so a uniform vertical band exists on both side edges, and flip repeatV to `round` (3px pitch). |
+
+**Size contract — enforce these in CSS, they are not suggestions:**
+
+| Panel | Width | Height |
+|---|---|---|
+| `asm-housing` | min 650px (hard floor 297px) | **fixed 151px** |
+| `asm-deck` | min **1316px**, grows only | **fixed 151px** |
+| `asm-rowboard` | min **572px** | **fixed 97px** |
+| `asm-headboard` | min 77px | flexible, min 102px |
+| `asm-channel` | fixed 41px | any |
+
+---
+
+## 5. CONDUIT RAIL — the decision (ledger #257)
+
+**YES. Ship `asm-channel` as one repeating tile. Stop shipping it as a 131px-tall image.**
+
+The measurement is unambiguous: **all 131 rows are byte-identical** (max row-to-row delta 0, per-column
+std 0.0000 down every sampled column). The panel is a pure vertical extrusion of a single 41px
+scanline, so 41×131 carries **zero** information beyond its first row. Ledger #257 already calls the
+rail "a repeating run — author one tile and repeat it, so it serves any row count." The art agrees.
+
+**Tile: 41 × 4 px.**
+- Width 41px is the full cross-section and is fixed (see defect (b) below — it may become ~44px after
+  a corrected re-export; re-measure then, do not guess).
+- Height **4px**, not 1px. 1px is mathematically sufficient (verified: a 1-row tile re-tiles to full
+  height with max error 0), but 1px tiles are where renderers do edge-sampling and half-pixel bleed at
+  fractional devicePixelRatio. 4px is ~40 bytes of insurance.
+
+**Seam requirement:** the tile's **last row must be pixel-identical to its first row**, and the tile
+height must be an exact integer. Today that is trivially satisfied — every row is identical — so any
+integer height seams perfectly. The requirement only becomes load-bearing if a vertical rhythm is
+ever added: then the tile height must be an **exact multiple of the rhythm's pitch**, the tile must
+start on the same phase it ends on, and the CSS must move from `background-repeat: repeat-y` to
+`border-image-repeat: … round` so partial end-tiles are impossible.
+
+**Render it with `background-repeat: repeat-y` and `background-size: 41px 4px`** — not `border-image`.
+There are no corner features to protect (end caps come from `asm-elbow`, which is fixed-size and must
+never scale, per #257), so 9-slice buys nothing here and adds a border box to reason about.
+
+**Three authoring defects in the current rail export — fix before this becomes the canonical tile:**
+
+1. **x=19 is a 1px fully-transparent full-height slot** between the dark red (#9d0000, alpha 64 at
+   x=18) and the bright red (#ff4242, alpha 191 at x=20). Whatever is behind the rail shows through as
+   a hairline. This is the classic Figma symptom of two shapes butted with a sub-pixel gap. Confirm
+   whether it is deliberate; assume it is not and close it.
+2. **The right edge is CLIPPED, not finished.** The profile terminates at x=40 at alpha 255 while still
+   on a rising luminance ramp (…#33373b → #363a3e → #3d4146). The left edge by contrast fades cleanly
+   to alpha 0. Classic "painted extent ≠ frame bounds". Widen the frame until the right ramp resolves,
+   then re-measure the width.
+3. **The accent is RED (#ff4242 / #9d0000), not the canon safety-orange `#ff7e1f`** — and a bright core
+   against a transparent seam reads as *lit*, not matte. Two direct conflicts with the house language
+   ("ONE safety-orange accent", "Matte — no glow"). **Decision: author the rail neutral and tint it per
+   state at runtime.** That is also what makes one asset serve every state, per #257's "share one
+   asset, tint at runtime."
+
+---
+
+## 6. What to author in Figma
+
+These are the rules that keep the slices working. Break one and the panel breaks at every width, not
+just at the edges.
+
+**A. Reserve the uniform corridors. They are named, load-bearing, and thin.**
+
+| Panel | Keep permanently free of decoration |
+|---|---|
+| `asm-housing` | **x 114–268** and **x 1014–1034** (vertical cuts); **y 60–71** and **y 86–98** on BOTH flanks, x<150 and x>1024 (horizontal cuts) |
+| `asm-deck` | **x 1091–1117** — the 19px strip of plain steel between the nameplate's right edge (x1081) and the right chevron notch (x1114) |
+| `asm-rowboard` | **x 494–618** — the clean glass right of the wordmark |
+| `asm-headboard` | **x 30–194** free of decoration; **rows 43–81** free of ANY content on both side rails |
+| `asm-channel` | **x 2–7** — the 6px flat #151618 channel floor |
+
+Give each of these a **named spacer frame in Figma** so it cannot be closed up by accident. The deck's
+corridor has 5px and 4px of slack; a single stray drop shadow drifting into it breaks the head at every
+width.
+
+**B. Never cut through a feature — so never draw a feature where a cut must go.** A slice line lands
+where adjacent columns (or rows) are pixel-identical. Anything crossing that line — a rivet, a groove, a
+diagonal, a chamfer, a notch — smears at every rendered size, not just at extremes. Both the housing
+tick and the rowboard wordmark failed exactly this way.
+
+**C. Corners are for one-off hardware. Edges are for uniform runs. Middles are for nothing.**
+- One-off features (end caps, chamfers, notches, rail breaks, bezel joints, pips) belong **inside a
+  corner**, where they are never resampled. The deck's bottom-bezel joint at x1035–1042 and the
+  headboard's rail break at x198–210 are correctly authored — they stay pinned at every width.
+- A side edge grows on one axis only, so anything on it must be either continuous (a bevel) or a true
+  repeating tile. **Never put a one-off feature on a growing edge** — that is exactly what forced the
+  headboard's y-cuts to move: two rail notches sat where `round` would have tiled them N times.
+- The **centre fill stretches on both axes.** Nothing legible, countable or diagonal may live there.
+  Text NEVER lives there — it goes in live DOM on top. Two of five panels failed on baked text.
+
+**D. Decoration relative to a tile boundary.** If a run must repeat, it has to be a genuine tile: one
+motif, an **exact integer pitch**, identical at both tile edges, fully contained between the slice
+lines, and the growable band must be an exact multiple of the pitch (phase-closed). The headboard's
+39 rows = 13 × 3px is the model. A *near*-rhythm — like the housing's 460/440/459px staircase, with
+its first instance fused to the end cap — is not a tile and cannot be rescued by `round`. Either make
+it exact or move it into a corner.
+
+**E. The middle band must be genuinely empty, not approximately empty.** During verification, an
+imperfect text scrub left a faint red ghost in the headboard's growable band and `round` **tiled the
+ghost visibly down the panel**. A scrub must be complete.
+
+**F. Export at 1× / integer scale, at the full frame, with the padding intact.** The deck's art is
+painted at x34–1328, y20–147 inside a 1335×151 frame — all four slice numbers include that asymmetric
+transparent pad. Re-export at exactly the same frame size with the same padding or every number moves.
+Fine features (2px bevel highlights, 3px scanline pitches) alias at fractional scale.
+
+**G. If a chamfer grows, the slice must grow with it.** The headboard's three chamfers each need ~24px
+of corner. Any chamfer that grows past its slice number puts a diagonal on a slice line.
+
+**H. Anything with variable text is not artwork.** Chips, nameplates and group labels come out of the
+export and into live DOM. That is the single change that would fix the deck, the rowboard and the
+headboard at once.
+
+---
+
+## 7. Ledger rows to add
+
+- **Housing interior:** the staircase moves to the end caps; the middle becomes plain steel plus a
+  straight horizontal groove. Option (a), not (b).
+- **Deck:** chips + nameplate leave the export and become live DOM; below 1316px the deck scales with
+  `contain` rather than 9-slicing.
+- **Rowboard / headboard:** all baked labels become live DOM text; plates export empty.
+- **Conduit rail:** ships as a 41×4 `repeat-y` tile, authored **neutral** and tinted per state;
+  `asm-elbow` stays a fixed-size cap and never scales. (Implements #257.)
+- **Fixed-dimension contract:** housing 151px, deck 151px, rowboard 97px — height is not negotiable
+  as drawn.

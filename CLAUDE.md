@@ -8,7 +8,7 @@ Vanilla-JS single-file app (`app.js`), `style.css`, `index.html`, `config.js`,
 **Contents:** [Interaction](#interaction-popup-first-single-attempt--jac-2026-07-16) ·
 [Design language](#design-language) · [Deploy & gates](#deploy--gates) ·
 [Don't](#dont) · [Delegation & model triage](#delegation--model-triage).
-Cross-session memory lives in **`MEMORY.md`** (read at `/start`); path-scoped detail
+Cross-session memory lives in **`MEMORY.md`** (read at `/startup`); path-scoped detail
 lives in **`.claude/rules/`** (loads only when the relevant files are touched).
 
 ## Interaction (popup-first, single-attempt — Jac, 2026-07-16)
@@ -31,20 +31,30 @@ what Jac wants for all choices.
 
 ## Design language
 
-**Every new or reshaped UI runs through the `jactec-ui` skill** — the single design
-skill and quality gate. The house language is the **"yard data-plate"**: dark
-industrial steel, **ONE** safety-orange accent (`--accent #ff7a1a`), a hi-vis
-**hazard-stripe** signature (`repeating-linear-gradient(135deg,var(--yellow,#f5c542)
-0 13px, #14181d 13px 26px)`), stamped **Saira Condensed** labels, corner **rivets**,
-ignition-style primary buttons, and a light **wrangler/ranch seasoning** — voice-first
-("Wrangle", "Round up", "Corral", "Brand"), with restrained leather-tan (`~#c2925a`)
-touches only. If a glance reads "western" before "industrial rental yard," dial it back.
+**Every new or reshaped UI runs through `style` + `wrangler-style` — both, always.**
+`wrangler-style` holds the **decisions**; `style` holds the **measurable rules** those decisions must
+satisfy. When a decision and a rule conflict, **the decision moves, not the rule.**
+
+The house language is the **"yard data-plate"**: dark industrial steel, **ONE** safety-orange accent
+(`--accent #ff7e1f`), stamped labels in the **mono** voice with **Archivo** as the body voice, and a
+light **wrangler/ranch seasoning** — voice-first ("Wrangle", "Round up", "Corral", "Brand"), with
+restrained leather-tan (`~#c2925a`) touches only. **Matte — no glow.** If a glance reads "western"
+before "industrial rental yard," dial it back.
 
 - **Scope: new/reshaped UI only** — do **NOT** retroactively restyle the existing site
   unless Jac asks for a site-wide pass.
-- Full tokens, signature recipes, the R0–R25 rulebook, the anti-slop checklist, and the
-  folded sub-capabilities (aesthetic direction, mobile, DESIGN.md, `/role` audit) all
-  live in `jactec-ui`. Reference implementations: `.login-*` and `.cancel-arc` in `style.css`.
+- **Every UI decision is indexed in the decisions ledger**
+  (`docs/superpowers/specs/2026-07-20-decisions-ledger.md`). Read it **before** designing, **read to
+  the end** (rows #1–100 are a 07-20 snapshot; #101+ supersede some of them), and **add a row** when
+  something is settled — a decision is not made until it is in that table.
+
+> **`jactec-ui` was DELETED (2026-07-26 — ledger #26/#91).** It taught the superseded language —
+> `#ff7a1a`, Saira Condensed, a hazard-stripe + rivets signature, one 7px chip radius — all of which
+> current canon contradicts (`#ff7e1f`, Archivo, no signature re-adopted, four control shapes).
+> **Do not resurrect it.** Four capabilities it uniquely held — the **`/role` audit**, **mobile**
+> reflow/touch, **anti-slop**, and the **DESIGN.md** guides — are preserved as reference in
+> `docs/design/reference/legacy-jactec-ui/` and still need proper skill homes. The R0–R24 rulebook is
+> mirrored there too, but its source of truth is `RULE_META` in `app.js`, which is what CI reads.
 
 ## Deploy & gates
 
@@ -127,7 +137,7 @@ skipped the bump. Logic + format live in `tools/lib/cachebust.mjs` (tested by `c
 `.claude/.session-prs` (gitignored) and surface a one-tap `/rename #<nums> · <branch-label>`
 (the model can't self-`/rename`); remove it on merge/close. A `SessionStart` hook
 (`.claude/hooks/session-title.mjs`) re-derives the title each start/resume, respecting a
-manual rename. Full rule: `/start` §4.
+manual rename. Full rule: `/startup` §4.
 
 **R-rulebook:** every UI element is stamped `data-r="Rxx"`; regenerate `rule-usage.js` with
 `node ci/gen-rule-usage.mjs` when usage changes (`--check` is the CI drift + duplicate

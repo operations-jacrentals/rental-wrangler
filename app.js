@@ -1009,7 +1009,7 @@ function searchBlob(card, rec) {
       break;
     case 'units':
       p = [rec.name, rec.assignedMechanic, rec.serial, rec.year, rec.make, rec.model, rec.weight,
-        rec.gpsType, rec.gpsPlacement, rec.notes,
+        rec.gpsType, rec.gpsPlacement, rec.immobilizer ? 'Immobilizer' : '', rec.immobilizerNote, rec.notes,
         rec.inspectionStatus, L('unitInspectionStatus', rec.inspectionStatus),
         rec.fleetStatus, L('unitFleetStatus', rec.fleetStatus),
         rec.gpsStatus, L('gpsStatus', rec.gpsStatus), ca(rec.categoryId)?.name,
@@ -1258,10 +1258,11 @@ function createContinuationInvoice(r, covStart, covEnd) {
  *  full-window − billedSeries), so an already-billed — even PAID — sub-tier day counts toward
  *  the blended rate instead of being re-billed. Positive only (refund-first: a paid chunk is
  *  never reduced). Without fullWin the added segment is priced standalone (OFF path, #444). */
-function billChunkUnits(inv, r, ns, ne, prevEnd, retro, kind, contInvId, fullWin, emitZero) {
+function billChunkUnits(inv, r, ns, ne, prevEnd, retro, kind, contInvId, fullWin, emitZero, onlyUnitIds) {
   let delta = 0, count = 0;
   rentalUnits(r).forEach((eu) => {
     if (unitVoided(r, eu)) return;
+    if (onlyUnitIds && !onlyUnitIds.has(eu.unitId)) return;   // #810 — restrict to the units the caller asked for (syncRentalLines bills only what's MISSING)
     const u = IDX.unit.get(eu.unitId); if (!u) return;
     let amount, rate;
     if (retro && fullWin) {
@@ -1530,12 +1531,17 @@ function syncRentalLines(r) {
   if (series.length > 1) {
     // >28-day CHUNKED series (#552-r4): a re-added (un-voided) unit must bill PER CHUNK — the
     // same path the initial build takes (createInvoiceForRental → billChunkUnits) — not a single
-    // full-window line dumped on chunk #1. billChunkUnits with emitZero=false prices each chunk's
-    // own window and skips units already billed on that chunk (delta ≈ 0), so ONLY genuinely
-    // missing lines get added, correctly split across the series.
+    // full-window line dumped on chunk #1.
+    // The units already billed on a chunk are EXCLUDED outright (#810), never re-priced: this
+    // function only ever ADDS what's missing (its contract above). Letting billChunkUnits price an
+    // already-billed unit prices that chunk STANDALONE (fullWin = null), which tops a #444-credited
+    // continuation — one billed at cheapest(whole series) − already-paid — back up to the full
+    // segment price, re-billing days the customer already paid for on the earlier invoice.
     series.forEach((cv) => {
       const cs = invCovStart(cv, r), ce = invCovEnd(cv, r);
-      const res = billChunkUnits(cv, r, cs, ce, cs, retroPricingOn(), 'rental', cv.contOf || null, null, false);
+      const missing = new Set(rentalUnits(r).filter((eu) => unitBilledRental(cv, r, eu.unitId) <= 0.005).map((eu) => eu.unitId));
+      if (!missing.size) return;
+      const res = billChunkUnits(cv, r, cs, ce, cs, retroPricingOn(), 'rental', cv.contOf || null, null, false, missing);
       if (res.count) reindex('invoices', cv);
     });
     return;
@@ -2934,7 +2940,7 @@ function cardFwd(card) {
 // → stays at 0. (Fresh opens don't call this, so they still start at the top.)
 function restoreJogScroll(card) {
   const c = document.querySelector(`.card[data-card="${card}"]:not([data-clone])`);   // §M8 wrap — the REAL card, never an edge clone
-  const b = scrollHostOf(c); if (!b) return;
+  const b = c && c.querySelector('.card-body'); if (!b) return;
   const y = scrollMemo[card + '|' + (c.dataset.view || 'list')];
   if (y) b.scrollTop = y;
 }
@@ -3398,7 +3404,7 @@ function pageDefaultSlice(tab) {
     case 'general': return { key: 'company', value: {} };
     case 'requirements': return { key: 'rentalRules', value: {} };
     case 'fields': return { key: 'customFields', value: { customers: [], units: [], rentals: [], invoices: [] } };
-    case 'inspections': return { key: 'inspections', value: Object.fromEntries([...new Set((DATA.categories || []).map((c) => inspFamilyKey(c)))].map((k) => [k, { required: false, items: (INSP_DEFAULTS[k] || []).map((i) => ({ ...i })) }])) };
+    case 'inspections': return { key: 'inspections', value: Object.fromEntries([...new Set((DATA.categories || []).map((c) => inspFamilyKey(c)))].map((k) => [k, { required: false, items: (INSP_DEFAULTS[k] || INSP_DEFAULTS[inspSeedKey(k)] || []).map((i) => ({ ...i })) }])) };
     case 'notifications': return { key: 'notifications', value: JSON.parse(JSON.stringify(NOTIF_DEFAULTS)) };
     default: return null;   // Logins / planned tabs have no resettable slice
   }
@@ -3453,6 +3459,9 @@ const customFieldsFor = (entity) => ((state.settings && state.settings.customFie
 // *Trailer* categories share one EXCEPT *Dump Trailer* (its own). Everything else
 // stays per-category (keyed by its own categoryId, so prior per-category configs are
 // unchanged). Empty = today's quick Pass/Fail only.
+// A *breaker* is deliberately NOT in the Jack Hammer family (Jac, 2026-08-11, #812): a
+// hydraulic breaker attachment for a skid/excavator inspects nothing like the electric
+// jackhammer tool, so it falls through to its own per-category key and gets its own list.
 function inspFamilyKey(cat) {
   const n = ((cat && cat.name) || '').toLowerCase();
   if (n.includes('excavator')) return 'fam:excavator';
@@ -3470,12 +3479,25 @@ function inspFamilyKey(cat) {
   if (n.includes('buggy')) return 'fam:buggy';
   if (n.includes('attachment')) return 'fam:attachment';
   if (n.includes('generator') || n.includes('genset')) return 'fam:generator';
-  if (n.includes('jack hammer') || n.includes('jackhammer') || n.includes('breaker')) return 'fam:jack-hammer';
+  if (n.includes('jack hammer') || n.includes('jackhammer')) return 'fam:jack-hammer';
   if (n.includes('trowel')) return 'fam:power-trowel';
   if (n.includes('sump')) return 'fam:sump-pump';
   if (n.includes('pump')) return 'fam:trash-pump';
   if (n.includes('concrete saw') || (n.includes('saw') && n.includes('walk'))) return 'fam:concrete-saw';
   return cat ? cat.categoryId : '';
+}
+// A category split OUT of a shared family starts life with a COPY of the family it left
+// (Jac, #812: the new breaker list "starts as the same as Jackhammer and I'll edit it in
+// settings"). Pure read-through: the source family is never written to, and the moment the
+// admin saves the split category's own list that saved config wins and the two are fully
+// independent. Item ids are kept identical so inspection records taken under the old shared
+// list still line up when they're re-opened.
+const INSP_SEED_FROM = [{ test: (n) => n.includes('breaker'), from: 'fam:jack-hammer' }];
+function inspSeedKey(key) {
+  const cat = IDX.category.get(key); if (!cat) return '';
+  const n = ((cat && cat.name) || '').toLowerCase();
+  const hit = INSP_SEED_FROM.find((s) => s.test(n));
+  return hit ? hit.from : '';
 }
 const INSP_FAM_LABELS = {
   'fam:excavator': 'Excavator', 'fam:trailer': 'Trailer', 'fam:trailer-dump': 'Dump Trailer',
@@ -3838,7 +3860,12 @@ const INSP_DEFAULTS = {
 };
 const inspKeyOfCat = (categoryId) => inspFamilyKey(IDX.category.get(categoryId));
 const inspFamilyLabel = (key) => INSP_FAM_LABELS[key] || (IDX.category.get(key) ? IDX.category.get(key).name : key);
-const inspCfgByKey = (key) => ((state.settings && state.settings.inspections) || {})[key] || null;
+const inspCfgByKey = (key) => {
+  const all = (state.settings && state.settings.inspections) || {};
+  if (all[key]) return all[key];
+  const seed = inspSeedKey(key);                       // split-out category → copy of the family it left
+  return (seed && all[seed]) ? JSON.parse(JSON.stringify(all[seed])) : null;
+};
 const inspectionCfg = (categoryId) => inspCfgByKey(inspKeyOfCat(categoryId));
 function checklistFor(unit) { const c = unit && inspectionCfg(unit.categoryId); return (c && Array.isArray(c.items) && c.items.length) ? c : null; }
 const checklistRequired = (unit) => { const c = checklistFor(unit); return !!(c && c.required); };
@@ -8546,6 +8573,20 @@ const DETAIL = {
     const gpsM = (gsUnit && gsUnit.live) ? gsUnit.machine : null;
     const gpsMapHref = (gpsM && gpsM.lat != null && gpsM.lng != null) ? `https://www.google.com/maps?q=${gpsM.lat},${gpsM.lng}` : '';
     const gpsSeen = gpsM ? gpsRelTime(gpsM.lastSeen) : '';
+    /* IMMOBILIZER (#820) — a plain SPEC FACT about the machine: is a theft immobilizer
+       fitted, and (optionally) what kind / installed when. DESCRIPTIVE ONLY — it neither
+       reads nor arms gpsShutdownControl's Hapn starter cut below, which stays the only
+       thing in the app that can actually immobilize a unit. No status registry backs a
+       yes/no spec fact, so the selected cell falls back to the ONE orange (wrangler-style
+       §3 "toggle active segment"; ledger #16) rather than borrowing Coverage's green/red —
+       a unit without an immobilizer is a fact, not a fault. The note line follows the
+       Coverage precedent (riders only show when insured): it renders when one is fitted,
+       or whenever a note already exists, so flipping to None never eats what was typed. */
+    const immob = !!u.immobilizer;
+    const immobCtl = segCtl([
+      { label: 'Has immobilizer', js: 'js-immob-toggle', data: { rec: u.unitId, val: '1' }, on: immob ? 'orange' : null },
+      { label: 'None', js: 'js-immob-toggle', data: { rec: u.unitId, val: '' }, on: immob ? null : 'orange' },
+    ]);
     const gpsBody = `<div class="fieldstack">
       ${kvPills((gsUnit ? statusPill('gpsStatus', gsUnit.status, { focal: true }) : badge('No GPS')) + (gpsMapped ? '' : addBtn('Connect GPS', { link: true, js: 'js-gps-connect', data: { rec: u.unitId } })))}
       ${gpsStale ? `<div class="kv" style="justify-content:center"><span class="muted" style="font-size:0.6471rem">Last known — live link down</span></div>` : ''}
@@ -8557,6 +8598,8 @@ const DETAIL = {
       ${gpsMapped ? `<div class="kv"><span class="v muted" style="font-size:0.6471rem">${esc(u.gpsProvider)} · ${esc(u.gpsDeviceId)}</span>${ghostPill('Reconnect', { js: 'js-gps-connect', data: { rec: u.unitId } })}</div>` : ''}
       ${efld('units', u, 'unitId', 'gpsType', 'GPS unit/type')}
       ${efld('units', u, 'unitId', 'gpsPlacement', 'Placement')}
+      <div class="kv">${immobCtl}</div>
+      ${(immob || u.immobilizerNote) ? efld('units', u, 'unitId', 'immobilizerNote', 'Type / install date') : ''}
       ${gpsShutdownControl(u, gpsM)}
       ${gpsMapped ? gpsFeedHtml(u) : ''}
     </div>`;
@@ -17184,12 +17227,6 @@ function setFocusedCard(cardId) {
    ════════════════════════════════════════════════════════════════════════ */
 let renderCount = 0;
 const scrollMemo = {};   // persistent scroll positions, keyed `card|view` (list vs which record)
-/* The element that ACTUALLY scrolls for a card. Trips/calendar nests its real scroll region
-   (.cal-scroll) inside a .card-body that is itself `overflow:hidden` (style.css §2.1), so
-   reading/writing scrollTop on .card-body was a silent no-op there — the card snapped back to
-   the top of the map on every render (e.g. after assigning a driver). Every other card has no
-   .cal-scroll and still resolves to .card-body exactly as before. */
-const scrollHostOf = (c) => (c && (c.querySelector('.cal-scroll') || c.querySelector('.card-body'))) || null;
 // §M6 — phone chrome reflow (Jac 2026-07-11): the global "Search everything…" bar is dropped
 // (CSS-hidden); the phone reads top→bottom as HEADER (logo/rings · card toggles · per-card
 // search) then a bottom DOCK stacking the item-tab rail ABOVE the tool bar:
@@ -17210,7 +17247,7 @@ function render() {
   // or editing a field doesn't dump you back at the top of a scrolled card (§0.6).
   const scrollOld = {};
   document.querySelectorAll('.card[data-card]:not([data-clone])').forEach((c) => {   // §M8 wrap — skip the edge clones (they'd clobber the memo with their scrollTop 0)
-    const b = scrollHostOf(c); if (!b) return;
+    const b = c.querySelector('.card-body'); if (!b) return;
     const v = c.dataset.view || 'list'; scrollOld[c.dataset.card] = v;
     scrollMemo[c.dataset.card + '|' + v] = b.scrollTop;   // remember where THIS view was scrolled
   });
@@ -17253,7 +17290,7 @@ function render() {
   // restore scroll by VIEW: same view → keep your spot; back to a list → return to the
   // row you left; opened a record → top of Standard view (a targeted link scrolls itself after).
   document.querySelectorAll('.card[data-card]:not([data-clone])').forEach((c) => {   // §M8 wrap — skip the edge clones
-    const b = scrollHostOf(c); if (!b) return;
+    const b = c.querySelector('.card-body'); if (!b) return;
     const cardId = c.dataset.card, v = c.dataset.view || 'list', key = cardId + '|' + v;
     if (v === scrollOld[cardId] || v === 'list') b.scrollTop = scrollMemo[key] || 0;
     else b.scrollTop = 0;
@@ -17319,7 +17356,7 @@ function renderResults() {
   refreshToday();
   const scrollOld = {};
   document.querySelectorAll('.card[data-card]').forEach((c) => {
-    const b = scrollHostOf(c); if (!b) return;
+    const b = c.querySelector('.card-body'); if (!b) return;
     const v = c.dataset.view || 'list'; scrollOld[c.dataset.card] = v;
     scrollMemo[c.dataset.card + '|' + v] = b.scrollTop;
   });
@@ -17349,7 +17386,7 @@ function renderResults() {
     if (bb) bb.replaceWith(bottomBarEl());
   }
   document.querySelectorAll('.card[data-card]').forEach((c) => {   // restore scroll by view (mirrors render())
-    const b = scrollHostOf(c); if (!b) return;
+    const b = c.querySelector('.card-body'); if (!b) return;
     const cardId = c.dataset.card, v = c.dataset.view || 'list', key = cardId + '|' + v;
     if (v === scrollOld[cardId] || v === 'list') b.scrollTop = scrollMemo[key] || 0;
     else b.scrollTop = 0;
@@ -18692,6 +18729,9 @@ function onClick(e) {
   if (closest('.js-sales-schedule')) { e.stopPropagation(); return openOverlay({ kind: 'schedule', customerId: closest('.js-sales-schedule').dataset.rec }); }
   if (closest('.js-install-go')) { e.stopPropagation(); try { localStorage.setItem('jactec.installNudged', '1'); } catch (er) {} const ev = state._installEvt; closeOverlay(); if (ev) { ev.prompt(); } return; }
   if (closest('.js-install-later')) { e.stopPropagation(); try { localStorage.setItem('jactec.installNudged', '1'); } catch (er) {} closeOverlay(); return; }
+  // Immobilizer yes/no on the unit's GPS section (#820) — a spec fact, open to every role like
+  // gpsType/Placement beside it; it records to unit history and NEVER touches the starter cut.
+  if (closest('.js-immob-toggle')) { e.stopPropagation(); const b = closest('.js-immob-toggle'); const u = IDX.unit.get(b.dataset.rec); if (!u) return; const nv = b.dataset.val === '1'; if (!!u.immobilizer !== nv) { u.immobilizer = nv; logAction(u, nv ? 'Immobilizer: none → fitted' : 'Immobilizer: fitted → none'); reindex('units', u); } render(); return; }
   if (closest('.js-cov-toggle')) { e.stopPropagation(); const b = closest('.js-cov-toggle'); const doIt = () => { const u = IDX.unit.get(b.dataset.rec); if (!u) return; u.insurance = u.insurance || {}; const nv = b.dataset.val === '1'; if (!!u.insurance.covered !== nv) { u.insurance.covered = nv; logAction(u, nv ? 'Branded covered — yard equipment insurance ON' : 'Coverage dropped — yard equipment insurance OFF'); reindex('units', u); } render(); }; if (!adminUnlocked()) return requireAdmin('Equipment insurance is Owner-only.', doIt); return doIt(); }
   if (closest('.js-cov-type')) { e.stopPropagation(); const b = closest('.js-cov-type'); const doIt = () => { const u = IDX.unit.get(b.dataset.rec); if (!u) return; u.insurance = u.insurance || {}; const ts = new Set(u.insurance.types || []); const id = b.dataset.id; ts.has(id) ? ts.delete(id) : ts.add(id); u.insurance.types = [...ts]; logAction(u, `Coverage riders → ${u.insurance.types.join(', ') || 'none'}`); reindex('units', u); render(); }; if (!adminUnlocked()) return requireAdmin('Equipment insurance is Owner-only.', doIt); return doIt(); }
   if (closest('.js-col-queue')) { e.stopPropagation(); if (currentRole && roleTier(currentRole) < tierRank('manager')) { toast('Collections is Manager-tier and up.'); return; } return openOverlay({ kind: 'collectionsSend', invoiceId: closest('.js-col-queue').dataset.rec }); }
@@ -19069,8 +19109,7 @@ function onClick(e) {
     e.stopPropagation();
     const s = activeSession(); if (s.cols) s.cols.left = 'units'; s.cards.units.mode = 'list';
     render(); attnFlash('.card[data-card="units"] .list');   // R19 — point AT the list
-    // §M3 — drag-to-link is retired on phones (long-press → R20 menu is the link path); phrase to match the device
-    toast(document.body.classList.contains('is-phone') ? 'Long-press a unit in the Units card to link it to this rental.' : 'Drag a unit from the Units card onto this rental.');
+    toast('Drag a unit from the Units card onto this rental.');
     return;
   }
   if (closest('.js-quickadd-cust')) {   // §quick-add hint — point AT the Customers search bar (no popup, Jac 2026-06-16)
@@ -19078,7 +19117,7 @@ function onClick(e) {
     const s = activeSession(); if (s.cols) s.cols.right = 'customers';
     const ccs = s.cards.customers; ccs.mode = 'list'; ccs.recId = null;
     render(); attnFlash('.card[data-card="customers"] .mini-searchwrap');   // R19 — guide them to the search
-    toast(document.body.classList.contains('is-phone') ? 'Type a name + phone in the Customers search and press Enter — then long-press the new customer to link it here.' : 'Type a name + phone in the Customers search and press Enter — then drag the new customer here.');
+    toast('Type a name + phone in the Customers search and press Enter — then drag the new customer here.');
     return;
   }
   if (closest('.js-create-invoice')) { e.stopPropagation(); return createInvoiceForRental(closest('.js-create-invoice').dataset.rec); }
@@ -19104,9 +19143,9 @@ function onClick(e) {
     const b = closest('.js-add-line'); e.stopPropagation();
     const inv = IDX.invoice.get(b.dataset.rec);
     if (b.dataset.kind === 'Rental') {
-      if (inv && !inv.customerId) { flashOr('[data-slot="customer"]', document.body.classList.contains('is-phone') ? 'The invoice needs a customer first (§7.5) — long-press to link, or quick-add one.' : 'The invoice needs a customer first (§7.5) — drag or quick-add one.'); return; }
+      if (inv && !inv.customerId) { flashOr('[data-slot="customer"]', 'The invoice needs a customer first (§7.5) — drag or quick-add one.'); return; }
       const s = activeSession(); if (s.cols) s.cols.middle = 'rentals'; s.cards.rentals.mode = 'list';
-      render(); attnFlash('.card[data-card="rentals"] .list'); toast(document.body.classList.contains('is-phone') ? 'Long-press a rental to link it to this invoice.' : 'Drag a rental onto this invoice.'); return;
+      render(); attnFlash('.card[data-card="rentals"] .list'); toast('Drag a rental onto this invoice.'); return;
     }
     if (b.dataset.kind === 'WO') {
       // Phase 4 (Jac) — open the invoice's LINKED unit(s) in a filtered Units list; the
@@ -19994,9 +20033,7 @@ function setUnitStatus(rentalId, unitId, val, opts = {}) {
   else if (wasVoided && r.invoiceId) { syncRentalLines(r); syncTransportLine(r); }   // un-void → restore the unit's billing (was silently un-billed)
   syncRentalPrimary(r);            // mirror the aggregate back onto r.status for back-compat readers
   reindex('rentals', r);
-  const unitLabel = IDX.unit.get(unitId)?.name || unitId;
-  logAction(r, `${unitLabel} → ${getStatus('rentalStatus', val).label}`);
-  toast(`${unitLabel} → ${getStatus('rentalStatus', val).label}`);   // confirm the per-unit move (mirrors setRentalStatus)
+  logAction(r, `${IDX.unit.get(unitId)?.name || unitId} → ${getStatus('rentalStatus', val).label}`);
   render();
   if (val === 'Returned') maybePromptReturnRating(r);   // all units back → rate the customer's experience
 }
@@ -20029,15 +20066,13 @@ function openUnitStatusDropdown(rentalId, unitId, anchorEl) {
 }
 /* §9 Field Call — a unit breaks mid-rental: flag the rental (red FC), fail the unit,
    and auto-open a Field-Call work order so the M.Tech can dispatch parts/swap. */
-function markFieldCall(rentalId, unitId) {
-  const r = IDX.rental.get(rentalId); if (!r) return;
-  const targetId = unitId || r.unitId;   // the unit that actually broke; primary is only the fallback (§20 multi-unit)
-  if (!targetId) { flashOr('[data-slot="unit"]', 'No unit on this rental.'); return; }
+function markFieldCall(rentalId) {
+  const r = IDX.rental.get(rentalId); if (!r || !r.unitId) { flashOr('[data-slot="unit"]', 'No unit on this rental.'); return; }
   r.fieldCall = true; reindex('rentals', r);
-  const u = IDX.unit.get(targetId);
+  const u = IDX.unit.get(r.unitId);
   if (u) { u.inspectionStatus = 'Failed'; reindex('units', u); logAction(u, `Field Call on rental ${r.rentalName || rentalId}`); }
   const id = 'WO-FC' + (state.seq++);
-  const wo = { woId: id, unitId: targetId, customerId: r.customerId || null, woReport: 'Field Call — breakdown', woType: 'Field Call', description: `Field call raised on rental ${r.rentalName || rentalId}.`, phase: 'Part Needed?', billCustomer: 'No', date: TODAY_ISO, eta: '', unitHoursAtCreation: u?.currentHours || 0, assignedMechanic: '', laborHours: 0, lineItems: [], mock: true };
+  const wo = { woId: id, unitId: r.unitId, customerId: r.customerId || null, woReport: 'Field Call — breakdown', woType: 'Field Call', description: `Field call raised on rental ${r.rentalName || rentalId}.`, phase: 'Part Needed?', billCustomer: 'No', date: TODAY_ISO, eta: '', unitHoursAtCreation: u?.currentHours || 0, assignedMechanic: '', laborHours: 0, lineItems: [], mock: true };
   DATA.workOrders.push(wo); IDX.wo.set(id, wo); reindex('workOrders', wo);
   logAction(r, 'Field Call marked — unit failed, work order opened');
   toast('Field Call logged — unit → Failed, work order opened.');
@@ -20073,7 +20108,7 @@ function setUnitCondition(unitId, val) {
   if (val === 'Fail') {
     u.condAt = TODAY_ISO; u.condClock = nowClock();   // stamp the condition change on either path
     const ar = activeRentalForUnit(unitId);
-    if (ar) return markFieldCall(ar.rentalId, unitId);   // on-rent breakdown → field call on THIS unit (truck roll + dispatch)
+    if (ar) return markFieldCall(ar.rentalId);        // on-rent breakdown → field call (truck roll + dispatch)
     const n = newInspectionForUnit(u); n.wash = n.wash || 'No';
     return setInspResult(n.inspectionId, 'Fail');     // yard bench fail: auto-WO + §12.8 photo/notes popup
   }
@@ -20292,7 +20327,7 @@ function commitYardCapture(rentalId, cap, unitId, dataUrl, opts = {}) {
     setUnitCapture(r, eu, 'endCapture', stamp); logAction(r, `${uname ? uname + ' — ' : ''}End/Recovery video ${replace ? 're-captured' : 'captured'}`);
   } else if (cap === 'fc') {
     setUnitCapture(r, eu, 'fcCapture', stamp);
-    if (!replace) markFieldCall(rentalId, unitId);   // flag the captured unit, not just the primary (§20 multi-unit)
+    if (!replace) markFieldCall(rentalId);
   }
   uploadCaptureMedia(r, eu, cap, dataUrl);
   const session = activeSession(); if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
@@ -21037,8 +21072,8 @@ function openLogoMenu(anchorEl) {
 function switchUser() {
   document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
   try { flushUserPrefsNow(); } catch (e) {}   // §cross-device-sync — push a pending prefs edit before the token is dropped
-  backendPassword = ''; currentRole = ''; currentPersonId = ''; state.userPrefs = null; booting = true; devPwMode = false;   // §cross-device-sync — drop the leaving person's identity + synced doc so nothing pushes under the next person. §dev-login: also drop dev-mode so the next user on a shared device returns to the default login, not the team-password screen.
-  sessionStorage.removeItem('jactec.pw'); sessionStorage.removeItem('jactec.role'); sessionStorage.removeItem('jactec.devpw');
+  backendPassword = ''; currentRole = ''; currentPersonId = ''; state.userPrefs = null; booting = true;   // §cross-device-sync — drop the leaving person's identity + synced doc so nothing pushes under the next person
+  sessionStorage.removeItem('jactec.pw'); sessionStorage.removeItem('jactec.role');
   renderLogin();
 }
 // Settings (Admin-tier): loads the live config, then opens the editor. Below-Admin with
@@ -22605,7 +22640,7 @@ let currentPersonId = '';   // §cross-device-sync — the logged-in person's st
 function nowClock() { const d = new Date(); let h = d.getHours(); const ap = h < 12 ? 'AM' : 'PM'; h = h % 12 || 12; return `${h}:${String(d.getMinutes()).padStart(2, '0')} ${ap}`; }
 function logAction(rec, text) { if (!rec) return; rec.actions = rec.actions || []; rec.actions.push({ when: TODAY_ISO, clock: nowClock(), text, by: currentUser || '', seq: actionSeq++ }); saveSoon(); }
 // Humanize a field key + format a value for an audit line ("Phone: (337)… → (337)…").
-const humanizeField = (f) => ({ po: 'PO', eta: 'ETA', 'insurance.policyRef': 'Policy #', 'insurance.effective': 'Coverage effective', 'insurance.expires': 'Coverage expires', 'insurance.insuredValue': 'Insured value', 'insurance.premium': 'Premium', accountNotes: 'Notes', assignedMechanic: 'Mechanic', gpsType: 'GPS type', gpsPlacement: 'GPS placement', purchasePrice: 'Purchase price', purchaseDate: 'Purchase date', trueCost: 'True cost', purchaseHours: 'Hours at purchase', currentHours: 'Hours', startHours: 'Start hours', returnHours: 'Return hours', rentalName: 'Name', woReport: 'Report', firstName: 'First name', lastName: 'Last name' }[f] || (f.charAt(0).toUpperCase() + f.slice(1).replace(/([A-Z])/g, ' $1')));
+const humanizeField = (f) => ({ po: 'PO', eta: 'ETA', 'insurance.policyRef': 'Policy #', 'insurance.effective': 'Coverage effective', 'insurance.expires': 'Coverage expires', 'insurance.insuredValue': 'Insured value', 'insurance.premium': 'Premium', accountNotes: 'Notes', assignedMechanic: 'Mechanic', gpsType: 'GPS type', gpsPlacement: 'GPS placement', immobilizerNote: 'Immobilizer note', purchasePrice: 'Purchase price', purchaseDate: 'Purchase date', trueCost: 'True cost', purchaseHours: 'Hours at purchase', currentHours: 'Hours', startHours: 'Start hours', returnHours: 'Return hours', rentalName: 'Name', woReport: 'Report', firstName: 'First name', lastName: 'Last name' }[f] || (f.charAt(0).toUpperCase() + f.slice(1).replace(/([A-Z])/g, ' $1')));
 const auditVal = (v) => { const s = String(v ?? '').trim(); return s ? (s.length > 28 ? s.slice(0, 28) + '…' : s) : '(empty)'; };
 /* Margin gate (units-fleet, Jac 2026-07-08): non-money roles never see dollar
    amounts in the History/audit log — a client-side DISPLAY redaction only (the raw
@@ -22705,9 +22740,6 @@ function winPickSave() {
       const newN = ext.newInvoices ? ` · ${ext.newInvoices} new invoice${ext.newInvoices > 1 ? 's' : ''}` : '';
       logAction(r, `Extension ${up ? 'billed' : 're-priced −'} (${basis}) — ${up ? '+' : '−'}${amt}${newN}`);
       toast(`Extension ${up ? 'billed +' : 're-priced − '}${amt} (${basis})${ext.newInvoices ? ` — opened ${ext.newInvoices} continuation invoice${ext.newInvoices > 1 ? 's' : ''} (28-day cap)` : ''}.`);
-    } else {
-      // a shrink or move (no billable extension) saved silently before — confirm it too
-      toast(`Rental window → ${r.startDate && r.endDate ? fmtShortDate(r.startDate) + '–' + fmtShortDate(r.endDate) : 'cleared'}.`);
     }
   }
   state.winEdit = null; render();
@@ -23384,7 +23416,6 @@ function mergeInvoiceInto(keepId, absorbId) {
 const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzHahzgJqOYe9o4GKlRVGh-A7USRn1k4Dvyy4ajLh8EYCqVxofouM28qs8trNlObZw/exec';
 const PERSIST_KEYS = ['categories', 'units', 'customers', 'invoices', 'rentals', 'workOrders', 'inspections', 'vendors', 'parts', 'companyFiles', 'expenses', 'models'];
 let backendPassword = sessionStorage.getItem('jactec.pw') || '';
-let devPwMode = false;                    // §dev-login: Ctrl+Alt+P revealed the legacy team-password screen (NON-PROD hosts only). Never hardcodes a password — the value is typed at runtime. Restored from sessionStorage in the APP_ENV setup block; also tells backendCall to authenticate with the plain team `password` (legacy path) instead of a per-person sessionToken.
 let booting = true;                       // suppresses saves during initial load
 let saveTimer = null, saving = false, savePending = false;
 
@@ -23398,7 +23429,7 @@ function driveViewUrl(res) {
 async function backendCall(action, extra) {
   // text/plain avoids a CORS preflight that GAS web apps can't answer
   const payload = Object.assign({ action, password: backendPassword }, extra || {});
-  if (flagOn('phoneIdentity') && backendPassword && !devPwMode) payload.sessionToken = backendPassword;   // per-person mode: the device/session token authorizes each call (backend prefers it over `password`); a no-op while the flag is OFF. §dev-login: devPwMode skips the token and authenticates with the plain team `password` (the legacy path the backend still honors)
+  if (flagOn('phoneIdentity') && backendPassword) payload.sessionToken = backendPassword;   // per-person mode: the device/session token authorizes each call (backend prefers it over `password`); a no-op while the flag is OFF
   const res = await fetch(BACKEND_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
   // A backend error page (GAS 500/quota/auth HTML) is NOT JSON — res.json() throws, callers
   // catch it, and a real card/charge failure gets masked as a generic "Network error". Parse
@@ -23625,6 +23656,31 @@ async function gpsProviderDevices(provider) {
     case 'bouncie': return (await gpsFetch('/api/bouncie/vehicles'))?.vehicles || [];
     default: return [];
   }
+}
+
+/* Is ONE provider's own account link live on the GPS backend? Deere/Yanmar/Bouncie each
+   authenticate against the PROVIDER (Deere/Bouncie OAuth, Yanmar a session login — backend
+   handoff §1) and expose an `/api/<p>/status` probe carrying `authenticated`; Hapn is
+   server-to-server client-credentials with no such probe, so it answers null = unknown.
+   This is the same probe gpsFleetStatus already makes before its phase-2 machine lists —
+   pulled out here so the connect-wizard picker can tell a LAPSED PROVIDER LINK apart from
+   an unreachable backend instead of blaming both on the connection.
+   Returns true = linked · false = link lapsed · null = couldn't tell. */
+async function gpsProviderAuthed(provider) {
+  const p = String(provider || '').toLowerCase();
+  if (p !== 'deere' && p !== 'yanmar' && p !== 'bouncie') return null;
+  try { return (await gpsFetch(`/api/${p}/status`))?.authenticated === true; }
+  catch { return null; }   // the probe itself failed → genuinely a reachability problem
+}
+/* Pick the honest picker-load error off that probe (PURE — exposed on window.__rw). A
+   provider whose account link has lapsed IS reachable; saying "check the connection"
+   sends the operator to their router when the real fix is relinking that account on the
+   GPS service. Anything else (probe unknown, provider linked but the list call failed)
+   keeps the original reachability wording. */
+function gpsPickerError(provider, linked) {
+  return linked === false
+    ? `${provider} isn’t linked to the GPS backend right now — that account needs reconnecting on the GPS service. Not a connection problem on your end.`
+    : 'Couldn’t reach the GPS backend — check the connection and try again.';
 }
 
 /* ── BOUNCIE TRUCKS → UNITS (design note docs/superpowers/specs/2026-07-09-bouncie-
@@ -23859,11 +23915,19 @@ function gpsRawDeviceSub(provider, raw) {
    popup state. */
 async function gpsConnectLoadDevices(o) {
   o.devicesLoading = true; o.devicesError = ''; o.devices = null; renderOverlay();
+  const p = String(o.provider || '').toLowerCase();
   let list = [];
-  try { list = await gpsProviderDevices(String(o.provider || '').toLowerCase()); }
+  try { list = await gpsProviderDevices(p); }
   catch (e) {
     if (state.overlay !== o) return;
-    o.devicesLoading = false; o.devicesError = 'Couldn’t reach the GPS backend — check the connection and try again.';
+    // §two-phase — gpsFleetStatus probes /api/<p>/status and only pulls a machine list once
+    // it reports `authenticated`; this picker skipped that probe, so a provider whose OWN
+    // account link had lapsed (Yanmar's parked SmartAssist re-auth) surfaced as "couldn't
+    // reach the GPS backend" even while the very same gpsFetch was serving Hapn's list in
+    // this dialog. Ask the probe what actually broke before naming a cause.
+    const linked = await gpsProviderAuthed(p);
+    if (state.overlay !== o) return;
+    o.devicesLoading = false; o.devicesError = gpsPickerError(o.provider, linked);
     return renderOverlay();
   }
   if (state.overlay !== o) return;
@@ -25552,13 +25616,13 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 window.addEventListener('pagehide', () => { try { flushUserPrefsNow(); } catch (e) {} });
 function renderLogin(msg) {
   resetCommsRailForLogin();   // D8 — clock-in = an EMPTY rail; BEFORE the phoneIdentity branch so BOTH login screens clear (this reset used to sit below the early-return = dead code on the live path — Jac 2026-07-17)
-  if (flagOn('phoneIdentity') && !devPwMode) return renderPhoneLogin(msg);   // per-person login flow (Phase 2); the shared-password screen below is the flag-OFF path — OR the §dev-login reveal (Ctrl+Alt+P, non-prod only) even while the flag is ON
+  if (flagOn('phoneIdentity')) return renderPhoneLogin(msg);   // per-person login flow (Phase 2); the shared-password screen below is the flag-OFF path
   $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4?v=20260708a" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="login-form">
     <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
     <div class="login-plate">
       <img class="login-logo" src="assets/jac-rentals-logo.jpg" alt="Jac Rentals" />
       <div class="login-title">Rental Wrangler</div>
-      <div class="login-sub">${devPwMode ? 'Dev sign-in · ' + esc(APP_ENV) : 'JacRentals · Sulphur, LA'}</div>
+      <div class="login-sub">JacRentals · Sulphur, LA</div>
       <div class="login-field">
         <label class="login-lbl" for="login-name">Operator</label>
         <input id="login-name" class="login-input" placeholder="Your name" autocomplete="name" value="${esc(currentUser)}" />
@@ -26000,25 +26064,6 @@ const APP_SLOT = (() => {
 if (APP_ENV !== 'production') {
   document.title = (APP_SLOT ? 'Staging ' + APP_SLOT
     : APP_ENV === 'local' ? 'Local' : 'Staging') + ' · Rental Wrangler';
-}
-// ── §dev-login — Ctrl+Alt+P reveals the legacy team-password login on LOCALHOST ONLY (the dev /
-//    automation host), so a dev or an automated session can sign in without the SMS phone-identity
-//    flow. Gated by an ALLOWLIST (APP_ENV === 'local') — a security-review tightening: production
-//    AND the public staging mirror both stay phone + SMS only, and the listener isn't even
-//    registered off localhost (no fail-open on an unknown/future hostname). The password is TYPED at
-//    runtime — nothing is ever stored in the repo. devPwMode also flips backendCall to the plain
-//    `password` (legacy) auth the backend still honors, instead of a per-person sessionToken.
-//    e.code === 'KeyP' (not e.key) so macOS Option+P — which types 'π' — still triggers it. ──
-if (APP_ENV === 'local') {
-  try { if (sessionStorage.getItem('jactec.devpw') === '1') devPwMode = true; } catch (e) {}
-  document.addEventListener('keydown', (e) => {
-    if (!(e.ctrlKey && e.altKey) || e.code !== 'KeyP') return;
-    if (backendPassword) return;                    // already signed in — never flip the auth mode mid-session
-    e.preventDefault();
-    devPwMode = !devPwMode;
-    try { devPwMode ? sessionStorage.setItem('jactec.devpw', '1') : sessionStorage.removeItem('jactec.devpw'); } catch (e2) {}
-    renderLogin();                                  // we're on the login screen (not signed in) → re-render in the chosen mode
-  });
 }
 // The slot's identity color (theme-invariant --slot-N / --tan), read from the stylesheet so the
 // tokens stay the single source of truth for the runtime-drawn favicon.
@@ -26828,7 +26873,7 @@ function exposeTestApi() {
       dataCache, cacheValid, cacheDeviceOk, cacheTokenTag, cacheAppVer, cacheSnapshotEnvelope, CACHE_SCHEMA_VER, FEATURES,   // §instant-cache (spec 2026-07-16)
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, pickFunnelStage, toggleFunnelMembership, rentalFunnelStage, funnelStageOf, inFunnel, inRental, hasRentalActivity, funnelTrackA, funnelTrackEquip, ensureFunnels, funnelMenuHtml, reachFunnelStage, toggleMemberLead, funnelCurrentStage, funnelLayerDate, funnelLayerNote, ensureFunnelLog, markMembershipSigned, funnelLayerAction, funnelScope, naUrgency, naOpenList, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsUtilRollup, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, pickFunnelStage, toggleFunnelMembership, rentalFunnelStage, funnelStageOf, inFunnel, inRental, hasRentalActivity, funnelTrackA, funnelTrackEquip, ensureFunnels, funnelMenuHtml, reachFunnelStage, toggleMemberLead, funnelCurrentStage, funnelLayerDate, funnelLayerNote, ensureFunnelLog, markMembershipSigned, funnelLayerAction, funnelScope, naUrgency, naOpenList, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsPickerError, gpsUtilRollup, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
       tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, openYardCamera, commitYardCapture, nextCategoryId, nextUnitId,
       tripsLS, tripMerge, tripSplit, assignTripDriver, tripLabel, assignStopDriver, tripSetTime,
       tripPushSoon, tripPushNow, loadTripsFromBackend, tripsSyncFooter, setBackendPassword: (pw) => { backendPassword = pw || ''; },   // §2.3 Phase 4 sync — the setter is test-only (mirrors setRole), letting logic-test.mjs exercise the online path via a mocked window.fetch, never a real backend

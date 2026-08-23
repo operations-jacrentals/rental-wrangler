@@ -22,7 +22,7 @@ const server = createServer(async (req, res) => {
     res.end(buf);
   } catch { res.writeHead(404); res.end('not found'); }
 });
-await new Promise((r) => server.listen(8000, r));
+await new Promise((r) => server.listen(9147, r));
 
 const browser = await chromium.launch();
 const page = await browser.newPage();
@@ -31,7 +31,7 @@ page.on('pageerror', (e) => pageErrors.push(String(e && e.message || e)));
 
 let failed = false;
 try {
-  await page.goto('http://localhost:8000/#local', { waitUntil: 'domcontentloaded', timeout: 20000 });
+  await page.goto('http://localhost:9147/#local', { waitUntil: 'domcontentloaded', timeout: 20000 });
   await page.waitForFunction(() => !!window.__rw, { timeout: 20000 });
   await page.evaluate(() => window.__rwBootRail);   // let offlineBoot's async wranglerRailLoad() finish before any test
                                                       // touches wranglerRail — else it can land mid-test and wipe fixtures (race)
@@ -1207,6 +1207,33 @@ try {
     ok(T.checklistRequired(aUnit) === false && T.checklistFor(aUnit) !== null, 'a defined-but-not-required checklist is available but does not take over');
     st.settings.inspections = savedInsp;   // restore
 
+    // 26a) #812 — a BREAKER attachment is its own inspection category, seeded from Jack Hammer
+    {
+      const savedI2 = st.settings.inspections;
+      const jhCat = { categoryId: 'CAT-JH-812', name: 'Tool Jackhammer' };
+      const bkCat = { categoryId: 'CAT-BK-812', name: 'Att Breaker Skid Exc' };
+      T.DATA.categories.push(jhCat, bkCat);
+      T.IDX.category.set(jhCat.categoryId, jhCat); T.IDX.category.set(bkCat.categoryId, bkCat);
+      const mkU = (id, catId) => { const u = { unitId: id, name: id, categoryId: catId, assignedMechanic: '', currentHours: 0, inspectionStatus: 'Ready', fleetStatus: 'Active', purchaseHours: 0, serviceCompletions: {} }; T.DATA.units.push(u); T.IDX.unit.set(id, u); return u; };
+      const jhUnit = mkU('U-JH-812', jhCat.categoryId), bkUnit = mkU('U-BK-812', bkCat.categoryId);
+      ok(T.inspFamilyKey(jhCat) === 'fam:jack-hammer', 'Tool Jackhammer stays on the shared Jack Hammer family');
+      ok(T.inspFamilyKey(bkCat) === 'CAT-BK-812', 'a breaker attachment gets its OWN inspection category, not Jack Hammer (#812)');
+      // seeded: no saved list of its own → reads a COPY of the Jackhammer list it was split out of
+      st.settings.inspections = { 'fam:jack-hammer': { required: true, items: [{ id: 'iqc-jh-01', label: 'You Wiped Down The Unit' }] } };
+      const seeded = T.checklistFor(bkUnit);
+      ok(!!seeded && seeded.items.length === 1 && seeded.items[0].id === 'iqc-jh-01', 'the new breaker checklist seeds as a copy of the Jackhammer list');
+      seeded.items[0].label = 'MUTATED'; seeded.required = false;
+      ok(st.settings.inspections['fam:jack-hammer'].items[0].label === 'You Wiped Down The Unit' && T.checklistRequired(jhUnit) === true, 'seeding is a copy — editing it never touches the Jackhammer list');
+      // saved: its own list wins outright, and Jackhammer is unaffected
+      st.settings.inspections['CAT-BK-812'] = { required: false, items: [{ id: 'iqc-bk-01', label: 'Tool Point / Chisel Wear' }] };
+      ok(T.checklistFor(bkUnit).items[0].id === 'iqc-bk-01' && T.checklistRequired(bkUnit) === false, 'once saved, the breaker list is independent of Jack Hammer');
+      ok(T.checklistFor(jhUnit).items[0].id === 'iqc-jh-01' && T.checklistRequired(jhUnit) === true, 'the Jackhammer checklist is left exactly as it was');
+      T.DATA.categories.pop(); T.DATA.categories.pop(); T.DATA.units.pop(); T.DATA.units.pop();
+      T.IDX.category.delete('CAT-JH-812'); T.IDX.category.delete('CAT-BK-812');
+      T.IDX.unit.delete('U-JH-812'); T.IDX.unit.delete('U-BK-812');
+      st.settings.inspections = savedI2;   // restore
+    }
+
     // 26b) Fail-condition model (Jac 2026-06-26) — per-type fail predicate + all-required gate
     const F = T.inspItemFails, U = T.inspItemUnanswered;
     // toggle: legacy (no it.fail) still fails on 'Fail'; inverted fails on 'Pass'
@@ -1506,6 +1533,42 @@ try {
         T.rentalInvoices(r).forEach((iv) => { const i = T.DATA.invoices.findIndex((o) => o.invoiceId === iv.invoiceId); if (i >= 0) T.DATA.invoices.splice(i, 1); T.IDX.invoice.delete(iv.invoiceId); });
         const ri = T.DATA.rentals.findIndex((o) => o.rentalId === rid); if (ri >= 0) T.DATA.rentals.splice(ri, 1); T.IDX.rental.delete(rid);
       } else { ok(true, '#444: no tiering category in the demo set — skipped'); }
+    }
+    // 32d) #810 — the WHOLE winPickSave path, not just billExtension: the picker saves, bills the
+    //      extension, THEN calls syncRentalLines(r) to restore any un-voided unit's line. On a paid
+    //      rental that spilled a #444-credited continuation, syncRentalLines' series branch re-ran
+    //      billChunkUnits over EVERY chunk with fullWin = null (standalone per-chunk pricing) — which
+    //      topped the continuation back up from the credited delta to the full segment price, re-billing
+    //      the days already paid on the first invoice. Reported: 51AU paid $564.83, continuation 92AU
+    //      then showed the FULL week ($980) instead of the $470 extension delta.
+    {
+      const pf = (catId, s, e) => { const p = T.rentalPrice({ categoryId: catId, startDate: s, endDate: e, customerId: 'C0009' }); return p ? p.price : 0; };
+      const af = T.DATA.units.filter((u) => u.fleetStatus === 'Active');
+      const cu = af.find((u) => { const c = T.IDX.category.get(u.categoryId); return c && c.rate1Day > 0 && c.rate7Day > 0 && c.rate7Day < 7 * c.rate1Day; });
+      if (cu) {
+        const S0 = '2099-08-01', E1 = '2099-08-02', E7 = '2099-08-08';   // 1-day window → 7 days
+        const rid = 'R-810', iid = 'I-810';
+        const r = { rentalId: rid, customerId: 'C0009', unitId: cu.unitId, categoryId: cu.categoryId, startDate: S0, endDate: E1, startTime: '', status: 'On Rent', transportType: 'Self', deliveryAddress: '', transportMiles: null, invoiceId: iid, units: [{ unitId: cu.unitId, transportType: 'Self', transportMiles: null }], notes: '', actions: [], mock: true };
+        T.DATA.rentals.push(r); T.IDX.rental.set(rid, r);
+        const inv = { invoiceId: iid, customerId: 'C0009', rentalIds: [rid], date: T.TODAY_ISO, dueDate: T.TODAY_ISO, po: '', amountPaid: 0, lineItems: [], covOf: rid, covStart: S0, covEnd: E1, mock: true };
+        T.rentalLineItems(r).forEach((li) => inv.lineItems.push(li));
+        T.DATA.invoices.push(inv); T.IDX.invoice.set(iid, inv);
+        inv.amountPaid = T.invoiceTotals(inv).total; const l0 = inv.lineItems[0]; inv.allocations = { [T.lineKey(l0)]: l0.amount };   // pay in full → closed
+        const seriesSub = () => T.rentalInvoices(r).reduce((a, iv) => a + iv.lineItems.filter((l) => l.kind === 'rental' || l.kind === 'extension').reduce((s, l) => s + (+l.amount || 0), 0), 0);
+        const paidDay = pf(cu.categoryId, S0, E1), cheapest7 = pf(cu.categoryId, S0, E7);
+        r.startDate = S0; r.endDate = E7;
+        T.billExtension(r, E1, S0);
+        T.syncRentalLines(r);   // ← winPickSave (app.js) runs this immediately after billExtension
+        const cont = T.rentalInvoices(r)[1];
+        ok(cont && Math.abs(T.invoiceTotals(cont).subtotal - (cheapest7 - paidDay)) < 0.01,
+          `#810: the continuation bills ONLY the extension delta ($${Math.round((cheapest7 - paidDay) * 100) / 100}) after the re-sync — not the full window (got $${cont ? Math.round(T.invoiceTotals(cont).subtotal * 100) / 100 : 'none'})`);
+        ok(cont && cont.lineItems.filter((li) => li.kind === 'rental' || li.kind === 'extension').length === 1,
+          `#810: the re-sync adds NO duplicate rental line to the credited continuation (got ${cont ? cont.lineItems.filter((li) => li.kind === 'rental' || li.kind === 'extension').length : '?'})`);
+        ok(Math.abs(seriesSub() - cheapest7) < 0.01,
+          `#810: series total stays cheapest(7-day window) $${cheapest7} — the paid day is credited, never re-billed (got $${Math.round(seriesSub() * 100) / 100})`);
+        T.rentalInvoices(r).forEach((iv) => { const i = T.DATA.invoices.findIndex((o) => o.invoiceId === iv.invoiceId); if (i >= 0) T.DATA.invoices.splice(i, 1); T.IDX.invoice.delete(iv.invoiceId); });
+        const ri = T.DATA.rentals.findIndex((o) => o.rentalId === rid); if (ri >= 0) T.DATA.rentals.splice(ri, 1); T.IDX.rental.delete(rid);
+      } else { ok(true, '#810: no tiering category in the demo set — skipped'); }
     }
     // === F1 — membership fee math (spec §2): no proration; protection = 15% of BASE only; 10.75% tax ===
     {
@@ -1901,6 +1964,20 @@ try {
         ok(r5.proposals.length === 1, 'gps M5: matcher still proposes a pair for the (now unmapped again) unit');
         const r6 = T.gpsApplyMappings(r5.proposals);
         ok(r6.results[0].ok === true && uOpen.gpsProvider === 'Hapn' && uOpen.gpsDeviceId === 'ru-dev-6', 'gps M5: a real matcher proposal applies end-to-end with the canonical-cased provider');
+      }
+
+      // === Connect-wizard picker error — a LAPSED PROVIDER LINK is not an unreachable
+      // backend (#803). The picker used to collapse every gpsProviderDevices() throw into
+      // "check the connection", which sent the operator to their router while Hapn loaded
+      // fine in the same dialog. gpsPickerError is the pure branch off the /api/<p>/status
+      // `authenticated` probe gpsFleetStatus already makes. ===
+      {
+        const lapsed = T.gpsPickerError('Yanmar', false);
+        ok(/isn’t linked to the GPS backend/.test(lapsed), 'gps #803: authenticated:false → names the lapsed account link');
+        ok(!/check the connection/.test(lapsed), 'gps #803: a lapsed link never blames the connection');
+        ok(/Yanmar/.test(lapsed) && /Deere/.test(T.gpsPickerError('Deere', false)), 'gps #803: the message names the provider that lapsed');
+        ok(T.gpsPickerError('Yanmar', null) === 'Couldn’t reach the GPS backend — check the connection and try again.', 'gps #803: an unknown probe keeps the original reachability wording');
+        ok(T.gpsPickerError('Yanmar', true) === T.gpsPickerError('Yanmar', null), 'gps #803: linked-but-list-failed also stays on the reachability wording');
       }
 
       // cleanup — the suite mutates shared DATA

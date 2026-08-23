@@ -1,0 +1,184 @@
+/* ==========================================================================
+   HALO ELEMENTS — STEEL SKIN
+   A colour-only override. Link it AFTER tokens.css and it recolours the
+   entire part kit without touching one coordinate, gradient stop, blur or
+   radius. Same move as the Figma pass: remap the palette, leave the
+   geometry alone.
+
+   WHY THIS FILE EXISTS
+   The original canvas painted its steel on scattered hues — 197, 207, 210,
+   212, 231, 248, 283 — which is what read as "the conduit and the housing
+   don't match". Every steel token below is rebuilt on ONE axis
+   (--steel-h) at ONE saturation (--steel-s), and each keeps its OWN
+   lightness from the original sculpt. That is load-bearing: relative
+   lightness is what the bevels, grain and machined highlights are made of,
+   so preserving it per-token keeps the texture while the colour moves.
+
+   TUNING (this is the slider surface)
+     --steel-h     hue of every steel surface        0-360
+     --steel-s     saturation of every steel surface 0-100%
+     --steel-tint  global lightness multiplier       0.5 = much darker,
+                                                     1   = original values
+   Change those three and the whole kit follows. Presets below.
+   ========================================================================== */
+
+:root {
+  /* default = "deep blued": darker and bluer than the original sculpt */
+  --steel-h: 214;
+  --steel-s: 30%;
+  --steel-tint: 0.82;
+  /* 0 = every steel surface on ONE hue (the fix for the mismatch)
+     1 = each surface keeps its original hue offset, which reproduces the
+         source canvas exactly and is what the pixel gate runs at. */
+  --steel-spread: 0;
+}
+
+/* --- the steel surfaces --------------------------------------------------
+   Lightness percentages are measured from the original tokens and must not
+   be edited by hand — they ARE the sculpt. Retune with the three knobs.
+
+   Declared on :root AND .stage on purpose. A var() is substituted where the
+   property is DECLARED, not where it is used, so a ladder declared only on
+   :root can never be retuned per-stage — every stage on the page would move
+   together. Repeating the block on .stage lets each stage resolve its own
+   --steel-h/s/tint, which is what puts four drafts side by side. */
+:root, .stage {
+  --chrome:    hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 0.58) calc(72.941% * var(--steel-tint)));  /* brightest machined edge */
+  --silver:    hsl(calc(var(--steel-h) + 143 * var(--steel-spread)) calc(var(--steel-s) * 0.2) calc(60.784% * var(--steel-tint)));  /* sheen */
+  --rim-left:  hsl(calc(var(--steel-h) + -14.353 * var(--steel-spread)) calc(var(--steel-s) * 0.241) calc(53.922% * var(--steel-tint)));  /* left edge */
+  --rim-bot:   hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 0.395) calc(53.725% * var(--steel-tint)));  /* bottom edge */
+  --rim-right: hsl(calc(var(--steel-h) + -4.727 * var(--steel-spread)) calc(var(--steel-s) * 0.289) calc(49.804% * var(--steel-tint)));  /* right edge */
+  --rim-top:   hsl(var(--steel-h) calc(var(--steel-s) * 0.237) calc(41.373% * var(--steel-tint)));  /* THE BODY PANEL */
+  --slate:     hsl(calc(var(--steel-h) + 36.571 * var(--steel-spread)) calc(var(--steel-s) * 0.424) calc(21.569% * var(--steel-tint)));  /* recess */
+  --field:     hsl(calc(var(--steel-h) + 19.429 * var(--steel-spread)) calc(var(--steel-s) * 0.631) calc(14.51% * var(--steel-tint)));  /* field */
+  --cavity:    hsl(calc(var(--steel-h) + 71.636 * var(--steel-spread)) calc(var(--steel-s) * 0.582) calc(12.353% * var(--steel-tint)));  /* cavity */
+  --edge:      hsl(calc(var(--steel-h) + 0.727 * var(--steel-spread)) calc(var(--steel-s) * 0.991) calc(7.255% * var(--steel-tint)));  /* edge */
+  --circuit:   hsl(var(--steel-h) calc(var(--steel-s) * 1.724) calc(5.686% * var(--steel-tint)));  /* groove / deepest */
+}
+
+/* --- presets -------------------------------------------------------------
+   Put one on <html> or .stage. These are the four colourways sitting beside
+   the assembly in Figma, so a pick here matches a pick there.
+
+   CARD ASSIGNMENT (Jac, 2026-08-04) — all four ship, one per card, so each
+   card differentiates itself from the next. The colour name and the card
+   name are the same selector; use whichever reads better at the call site.
+
+   Gunmetal -> Assembly is an ASSUMPTION: Jac named Customers/Rentals/Units
+   and left the fourth as "whatever you call the Assembly color". Gunmetal is
+   the remaining colourway and is what the Figma assembly now renders, so it
+   is wired as the assembly/default. Flip the alias if he meant another card. */
+.steel--deep-blued, .steel--customers { --steel-h: 214; --steel-s: 30%; --steel-tint: 0.82; --steel-spread: 0; }
+.steel--slate,      .steel--rentals   { --steel-h: 206; --steel-s: 16%; --steel-tint: 1.00; --steel-spread: 0; }
+.steel--charcoal,   .steel--units     { --steel-h: 218; --steel-s: 10%; --steel-tint: 0.70; --steel-spread: 0; }
+.steel--gunmetal,   .steel--assembly  { --steel-h: 214; --steel-s:  7%; --steel-tint: 0.92; --steel-spread: 0; }
+/* The source canvas, reproduced EXACTLY. Not a list of hexes any more — the
+   knobs alone get there, which is what proves the rewrite lost nothing. */
+.steel--original { --steel-h: 212; --steel-s: 30%; --steel-tint: 1; --steel-spread: 1; }
+
+/* ==========================================================================
+   THE LASER FOLLOWS THE SIGNAL — THE BODY NEVER DOES  (ledger #217)
+   The original hard-coded seven separate reds into the artwork. They are all
+   one thing: the lit contour. Keying them to --row-hue is what lets a row go
+   yellow/blue/green without repainting any steel.
+   ========================================================================== */
+
+.stage        { --row-hue: var(--red, #ff4242); }   /* default row state */
+.row--overdue { --row-hue: #ff4242; }
+.row--due     { --row-hue: #eed44b; }
+.row--waiting { --row-hue: #6394cc; }
+.row--done    { --row-hue: #34d399; }
+.row--off     { --row-hue: #8b94a3; }
+
+.stage, .row--overdue, .row--due, .row--waiting, .row--done, .row--off {
+  --laser-hot:  color-mix(in oklch, var(--row-hue) 62%, #eef2f7);
+  --laser-core: var(--row-hue);
+  /* The well is the SAME hue and saturation as the core, only darker — Figma's
+     #9d0000 against a #ff4242 core is exactly that: H0 S100%, L63.7% -> L30.8%.
+     Mixing toward --bg instead pulled saturation out and landed on (96,34,31),
+     a 61-value miss measured against the Figma render. Relative colour syntax
+     keeps h and s and moves only l, so the well stays a deep version of
+     whatever the row is lit with rather than drifting grey. */
+  --laser-well: hsl(from var(--row-hue) h s 31%);
+
+  /* the seven baked-in reds, now one ramp */
+  --neon:      var(--laser-core);
+  --neon-hi:   var(--laser-hot);
+  --brk-red:   var(--laser-core);
+  --pnl-red:   var(--laser-core);
+  --tube-red:  var(--laser-hot);
+  --maroon:    var(--laser-well);
+  --maroon-d:  color-mix(in oklch, var(--row-hue) 24%, var(--bg));
+}
+
+/* --bar-red / --bar-yel / --amber are STATUS and tan, not laser — they stay
+   on their canon tokens and do not follow the row. */
+:root { --bar-red: #ff4343; --bar-yel: #efd653; --amber: #c2925a; }
+
+/* ==========================================================================
+   SEATED IN THE STEEL — bezels and wells
+
+   A part INSTALLED into the panel and a part LYING ON it differ by three
+   cues. Get them consistent and the thing looks machined in; get them
+   mixed and it floats, which is exactly what the bulbs were doing:
+
+     1  a tight seam all the way round, NO offset   the cut in the panel
+     2  a dark wall at the TOP, inside              the lip above casts in
+     3  a lit lip at the BOTTOM, inside             the floor catches light
+
+   THE TRAP, because it cost a round to spot: an offset drop shadow is the
+   OPPOSITE cue — it says the part stands proud and casts DOWN onto the
+   panel. Pairing a top inner shadow (inset) with a downward drop shadow
+   (proud) reads as neither, and no amount of tuning either one fixes it.
+   Pick inset and commit. The seam in cue 1 is a drop shadow only in the
+   CSS sense: zero offset, tiny radius, so it reads as a cut line rather
+   than a cast shadow.
+
+   Light comes from ABOVE everywhere in this kit — that is what fixes dark
+   to the top and lit to the bottom, and it is why flipping these two
+   inverts the part into a raised boss.
+   ========================================================================== */
+
+:root, .stage {
+  /* THE WELL IS CUT WITH THE SAME TOOL AS THE PANEL'S DARK LINES.
+     deck.css's scribe line (the thin dark lines etched across the steel) is
+     three 1px bands — L19.02% lit lip, L7.451% dark core, L3.529% floor.
+     Those land on --slate (21.6) / --edge (7.3) / --circuit (5.7), so the
+     well is built from the same three rungs. A bulb recess and a panel line
+     are then visibly the same cut in the same steel, which is the whole
+     point: a mid-grey ring reads as a separate applied part, a scribe-dark
+     one reads as machining that was already there. */
+  --well-lip:   var(--slate);    /* top lip of the cut, catching the light */
+  --well:       var(--edge);     /* the cut core — same tone as the lines   */
+  --well-floor: var(--circuit);  /* the deepest floor                       */
+
+  --seat-seam: color-mix(in oklch, var(--circuit) 80%, transparent);
+  --seat-wall: color-mix(in oklch, var(--circuit) 70%, transparent);
+  --seat-lip:  color-mix(in oklch, var(--silver)  50%, transparent);
+}
+
+.is-seated,
+.bulb {
+  box-shadow:
+    0 0 1.5px .5px var(--seat-seam),   /* 1 the cut */
+    inset 0 2.5px 3px var(--seat-wall),/* 2 top wall in shadow */
+    inset 0 -2px 2px var(--seat-lip);  /* 3 bottom lip lit */
+}
+
+/* The bulb is a Signal: its LENS carries the state colour, its well is
+   STRUCTURE and stays steel in every state (canon-colour-map.css says the
+   same thing where it pins --bezel). One shared well tone across all five
+   states is deliberate — a well that changed with status would read as part
+   of the signal instead of part of the machine.
+
+   The gradient is the scribe line stood on end: lit lip along the very top
+   edge, dark core, floor at the bottom. NB canon-colour-map.css also sets
+   `.bulb { --bezel: var(--steel-05) }` off its own hex ladder; that token is
+   left alone here rather than overridden, since reconciling the two ladders
+   is a separate call — see the ladder note in the commit. */
+.bulb {
+  background: linear-gradient(180deg,
+    var(--well-lip)   0 1px,
+    var(--well)       1px,
+    var(--well-floor) 100%);
+}

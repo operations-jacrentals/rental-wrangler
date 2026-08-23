@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>chip verify — C1a</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="./chip.css">
+</head>
+<body>
+<!-- Shared filter defs — c1's own, namespaced. Owned outright by this
+     component (original.html lines 886-888), never shared with another
+     part's defs block. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <filter id="chip-soft" x="-6%" y="-25%" width="112%" height="150%"><feGaussianBlur stdDeviation=".81"/></filter>
+</defs></svg>
+
+<!-- Verify box for instance C1a: x=385 y=4 w=660 h=104 (canvas coords).
+     C1a's own plate origin is canvas (394, 24.4), so local placement here
+     is (394-385, 24.4-4) = (9, 20.4). -->
+<div class="stage" style="width:660px; height:104px">
+  <div class="halo-chip is-wide" style="--x:9px; --y:20.4px;">
+    <div class="plate oct"></div>
+    <div class="bloom"></div>
+    <div class="cap"></div>
+    <div class="inner oct"></div>
+    <svg class="ringlayer">
+      <path class="halo" d="M13.46,10.9 H599.96 L620.36,31.3 V55.68 H33.86 L13.46,35.28 Z"/>
+      <path class="core" d="M13.46,10.9 H599.96 L620.36,31.3 V55.68 H33.86 L13.46,35.28 Z"/>
+    </svg>
+  </div>
+</div>
+</body>
+</html>

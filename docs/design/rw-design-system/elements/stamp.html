@@ -1,0 +1,531 @@
+<!-- @dsCard group="Elements" name="Stamp" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rental Wrangler — Stamp</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+  /* ---- LOCKED CANON (verbatim from html.dv2 in style.css — do not approximate) ---- */
+  --accent:#ff7e1f; --accent-soft:rgba(255,126,31,.15); --accent-line:rgba(255,126,31,.5);
+  --orange:#ff7e1f; --orange-bg:rgba(255,126,31,.14); --on-orange:#1a1205;
+  --bg:#0a0d11; --bg-2:#0f1318; --panel:#171d25; --panel-2:#1b222c;
+  --card:#12171e; --card-head:#1a212b;
+  --line:#2c343f; --line-soft:#212834;
+  --txt:#eef2f7; --txt-2:#aab4c1; --txt-3:#838e9c;
+  --green:#34d399; --green-bg:rgba(52,211,153,.14);
+  --yellow:#eed44b; --yellow-bg:rgba(238,212,75,.15);
+  --red:#ff4242; --red-bg:rgba(255,66,66,.13);
+  --blue:#6394cc; --blue-bg:rgba(99,148,204,.15);
+  --gray:#8b94a3; --gray-bg:rgba(139,148,163,.14);
+  --chip-radius:0;      /* state chips — RADIUS 0 + finishes (was 2px -> 7px; #140 retires the ladder) */
+  --red-fill:#d63636; --on-red-fill:#fdfdfd; --commit:#2f6fd0; --on-commit:#fdfdfd; --tan:#c2925a;
+  --radius:14px;
+  --font: "Archivo", "Helvetica Neue", -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  /* ---- STRUCTURAL ADDITIONS (not in the locked block — see README/report) ---- */
+  --h:24px;             /* one control height — style skill's 24-28px range; matches shipped --dv2-h */
+  --item-radius:8px;    /* records — +Add only now (Ref moved to radius-0 + notch, ledger #140/#153) */
+  --pill-radius:999px;  /* actions — Doors ONLY. Nothing else may take this radius. */
+  --red-line:color-mix(in oklch, var(--red) 78%, var(--txt)); /* legible red once outline chips lost their tint */
+  --on-gray:#12171d; --on-blue:#0a1220; --on-yellow:#241d05; --on-green:#06231a;
+  /* ---- FINISH TOKENS (reconciled from tier-01-card.css TOKEN-GAP markers — ledger #152) ---- */
+  --lit-rgb:185,205,235;        /* the one cool light source; alpha varies .03-.30 per use */
+  --seam-1:color-mix(in oklab, black 52%, var(--card-head));
+  --seam-2:color-mix(in oklab, black 55%, var(--card-head));
+  --seam-3:color-mix(in oklab, black 58%, var(--card-head));
+  --seam-4:color-mix(in oklab, black 60%, var(--card-head));
+  --seam-5:color-mix(in oklab, black 62%, var(--card-head));
+  --well:#050a10;               /* deep glass well face -- OFF seg cells, field wells */
+  --key:#0a0f16;                /* dark key face -- cool-tone finish at row/head scale */
+  --ref-plate:#0b121b;          /* Ref's dark plate face */
+  }
+
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg)}
+  .wrap{background:var(--bg); color:var(--txt-2); font-family:var(--font); line-height:1.55;
+    -webkit-font-smoothing:antialiased; min-height:100vh; padding:40px 0 72px}
+  .sheet{max-width:960px; margin:0 auto; padding:0 clamp(16px,4vw,32px)}
+  code,.mono{font-family:var(--font-mono)}
+  b{color:var(--txt); font-weight:700}
+
+  .eyebrow{font-family:var(--font-mono); font-size:11px; font-weight:700; letter-spacing:.16em;
+    text-transform:uppercase; color:var(--txt-3); margin:0 0 10px}
+  .eyebrow .hl{color:var(--accent)}
+  h1{font-family:var(--font-mono); font-weight:800; font-size:clamp(22px,3.6vw,30px);
+    letter-spacing:-.01em; color:var(--txt); margin:0 0 10px; line-height:1.15}
+  h1 .hl{color:var(--accent)}
+  .lede{max-width:70ch; font-size:14px; color:var(--txt-2); margin:0 0 6px}
+  .rule{max-width:74ch; font-size:12.5px; color:var(--txt-3); margin:10px 0 0}
+  .rule b{color:var(--txt-2)}
+  .top{padding-bottom:22px; border-bottom:1px solid var(--line)}
+
+  section{margin-top:40px}
+  h2.sub{font-family:var(--font-mono); font-weight:800; font-size:12px; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--txt-3); margin:0 0 14px; padding-bottom:8px;
+    border-bottom:1px solid var(--line)}
+  h2.sub .hl{color:var(--accent)}
+  h3.mini{font-family:var(--font-mono); font-size:11px; font-weight:800; letter-spacing:.08em;
+    text-transform:uppercase; color:var(--txt-3); margin:22px 0 10px}
+  h3.mini:first-of-type{margin-top:0}
+
+  .panel{border:1px solid var(--line); border-radius:var(--radius); background:var(--panel); overflow:hidden}
+  .pad{padding:18px 20px}
+  .callout{border:1px solid var(--line); border-left:3px solid var(--accent); background:var(--card);
+    border-radius:0 9px 9px 0; padding:12px 15px; font-size:12.5px; color:var(--txt-2); margin-top:14px}
+  .callout b{color:var(--txt)}
+  .callout.warn{border-left-color:var(--yellow)}
+  .callout.info{border-left-color:var(--blue)}
+  .callout.law{border-left-color:var(--red)}
+
+  .foot{margin-top:56px; padding:20px 0 0; border-top:1px solid var(--line); font-size:12px;
+    color:var(--txt-3); max-width:82ch}
+  .foot b{color:var(--txt-2)}
+
+  .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+  .row.tight{gap:6px}
+
+  /* ================= SIGNAL — read-only state; colour=state, fill=today ================= */
+  .signal{height:var(--h); display:inline-flex; align-items:center; gap:6px; padding:0 10px;
+    border-radius:var(--chip-radius); font-family:var(--font-mono); font-size:11px; font-weight:800;
+    letter-spacing:.05em; text-transform:uppercase; white-space:nowrap}
+  .signal--gray.signal--filled   {background:var(--gray);     color:var(--on-gray)}
+  /* C15 · the secondary chip is a TRUE outline — no tint backfill, 1px border in its own hue */
+  .signal--outline{background:transparent; border:1px solid currentColor}
+  .signal--gray.signal--outline  {color:var(--gray)}
+  .signal--blue.signal--filled   {background:var(--blue);     color:var(--on-blue)}
+  .signal--blue.signal--outline  {color:var(--blue)}
+  .signal--yellow.signal--filled {background:var(--yellow);   color:var(--on-yellow)}
+  .signal--yellow.signal--outline{color:var(--yellow)}
+  .signal--red.signal--filled    {background:var(--red-fill); color:var(--on-red-fill)}
+  .signal--red.signal--outline   {color:var(--red-line)}
+  .signal--green.signal--filled  {background:var(--green);    color:var(--on-green)}
+  .signal--green.signal--outline {color:var(--green)}
+
+  /* ================= GATE — a Signal you can turn: + leading centred chevron ================= */
+  .gate{height:var(--h); display:inline-flex; align-items:center; gap:2px; padding:0 10px 0 7px;
+    border-radius:var(--chip-radius); font-family:var(--font-mono); font-size:11px; font-weight:800;
+    letter-spacing:.05em; text-transform:uppercase; white-space:nowrap; cursor:pointer; border:0}
+  .gate__chev{display:inline-flex; align-items:center; justify-content:center; width:12px; height:12px; flex:none}
+  .gate__chev svg{width:12px; height:12px; display:block}
+  .gate--blue  {background:var(--blue);     color:var(--on-blue)}
+  .gate--yellow{background:var(--yellow);   color:var(--on-yellow)}
+  .gate--red   {background:var(--red-fill); color:var(--on-red-fill)}
+  .gate--green {background:var(--green);    color:var(--on-green)}
+  .gate--gray  {background:var(--gray);     color:var(--on-gray)}
+
+  /* ================= STAMP — a quiet fact: chip text, no box, no colour ================= */
+  .stamp{height:var(--h); display:inline-flex; align-items:center; padding:0 3px;
+    font-family:var(--font-mono); font-size:11px; font-weight:700; letter-spacing:.05em;
+    text-transform:uppercase; color:var(--txt-3)}
+  .stamp--more{color:var(--accent)}
+  .stamp-sep{color:var(--line); font-family:var(--font-mono); font-size:11px}
+
+  /* ================= REF — a linked record: accent-tinted icon backing + name ================= */
+  .ref{height:var(--h); display:inline-flex; align-items:center; gap:6px; padding:0 9px 0 3px;
+    border-radius:var(--chip-radius); border:1px solid var(--line); background:transparent;
+    font-family:var(--font); font-weight:600; font-size:12.5px; color:var(--txt);
+    text-decoration:none; cursor:pointer}
+  .ref:hover{border-color:var(--accent)}
+  .ref__icon{width:18px; height:18px; border-radius:4px; flex:none; display:inline-flex;
+    align-items:center; justify-content:center; background:var(--accent-soft); color:var(--accent)}
+  .ref__icon svg{width:12px; height:12px}
+  .ref__id{font-family:var(--font-mono); font-size:9px; color:var(--txt-3); font-weight:600}
+  .ref-trace{display:flex; align-items:center; gap:7px; flex-wrap:wrap}
+  .ref-trace__arrow{font-family:var(--font-mono); color:var(--txt-3); font-size:12px}
+
+  /* ================= DOOR — a verb action: radius=pill, colour=intent, never status ================= */
+  .door{height:var(--h); display:inline-flex; align-items:center; padding:0 15px;
+    border-radius:var(--pill-radius); font-family:var(--font-mono); font-size:11px; font-weight:800;
+    letter-spacing:.05em; text-transform:uppercase; cursor:pointer; border:0; white-space:nowrap}
+  .door--commit {background:var(--commit); color:var(--on-commit)}
+  .door--add    {background:transparent; border:1.5px dashed var(--commit); color:var(--commit); padding:0 13px}
+  .door--money  {background:var(--green); color:var(--on-green)}
+  .door--destroy{background:var(--red-fill); color:var(--on-red-fill)}
+  .door--ghost  {background:transparent; border:1px solid var(--line); color:var(--txt-2)}
+
+  .seg{height:var(--h); display:inline-flex; border:1px solid var(--line); border-radius:var(--chip-radius); overflow:hidden}
+  .seg__opt{display:inline-flex; align-items:center; padding:0 11px; font-family:var(--font-mono);
+    font-size:10px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--txt-3);
+    border-right:1px solid var(--line); cursor:pointer; background:transparent}
+  .seg__opt:last-child{border-right:0}
+  .seg__opt--on-yellow{background:var(--yellow); color:var(--on-yellow)}
+  .seg__opt--on-red{background:var(--red-fill); color:var(--on-red-fill)}
+  .seg__opt--on-blue{background:var(--blue); color:var(--on-blue)}
+  .seg__opt--on-accent{background:var(--accent); color:var(--on-orange)}
+
+  /* ================= FIELDS / links ================= */
+  .field{height:var(--h); display:inline-flex; align-items:center; gap:8px; padding:0 10px;
+    border-radius:var(--chip-radius); border:1px solid var(--line); font-family:var(--font);
+    font-size:12px; color:var(--txt); cursor:pointer; background:transparent}
+  .field__car{color:var(--accent); font-family:var(--font-mono); font-size:10px}
+  .contact{height:var(--h); display:inline-flex; align-items:center; gap:6px; font-family:var(--font);
+    font-size:13px; color:var(--txt); text-decoration:none; cursor:pointer}
+  .contact svg{color:var(--accent); width:14px; height:14px}
+  .contact__v{border-bottom:1.4px solid transparent}
+  .contact:hover .contact__v{border-bottom-color:var(--accent)}
+  .hlink{font-family:var(--font); font-size:13px; color:var(--txt); text-decoration:none;
+    border-bottom:1.5px solid var(--accent); padding-bottom:1px; cursor:pointer}
+  .hlink__ext{font-family:var(--font-mono); color:var(--accent); font-size:10px}
+  .dead-text{font-family:var(--font); font-size:13px; color:var(--txt-2)}
+
+  /* ================= PLATE — section-header grammar ================= */
+  .plate{border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; background:var(--card)}
+  .plate__head{display:flex; align-items:center; gap:10px; min-height:42px; padding:0 14px;
+    border-bottom:1px solid var(--line); background:var(--card-head)}
+  .plate__stripe{width:3px; align-self:stretch; margin:8px 0; border-radius:2px; flex:none}
+  .plate__label{font-family:var(--font-mono); font-size:12px; font-weight:800; letter-spacing:.05em;
+    text-transform:uppercase; flex:none}
+  .plate__summary{flex:1; min-width:0; font-family:var(--font); font-size:12.5px; color:var(--txt-2);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .plate__chevron{color:var(--txt-3); font-family:var(--font-mono)}
+  .plate__body{padding:12px 14px; display:flex; gap:9px; flex-wrap:wrap; align-items:center}
+  .plate--gray   .plate__head{background:var(--gray-bg)}   .plate--gray   .plate__stripe{background:var(--gray)}   .plate--gray   .plate__label{color:var(--gray)}
+  .plate--blue   .plate__head{background:var(--blue-bg)}   .plate--blue   .plate__stripe{background:var(--blue)}   .plate--blue   .plate__label{color:var(--blue)}
+  .plate--yellow .plate__head{background:var(--yellow-bg)} .plate--yellow .plate__stripe{background:var(--yellow)} .plate--yellow .plate__label{color:var(--yellow)}
+  .plate--red    .plate__head{background:var(--red-bg)}    .plate--red    .plate__stripe{background:var(--red)}    .plate--red    .plate__label{color:var(--red)}
+  .plate--green  .plate__head{background:var(--green-bg)}  .plate--green  .plate__stripe{background:var(--green)}  .plate--green  .plate__label{color:var(--green)}
+
+  /* ================= misc demo scaffolding ================= */
+  .swatch-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:10px}
+  .swatch{border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--card)}
+  .swatch__blk{height:52px; position:relative}
+  .swatch__tag{position:absolute; right:6px; bottom:5px; font-family:var(--font-mono); font-size:8.5px;
+    font-weight:800; letter-spacing:.05em; text-transform:uppercase; padding:1px 5px; border-radius:3px;
+    background:rgba(0,0,0,.28)}
+  .swatch__info{padding:9px 10px 10px}
+  .swatch__val{font-family:var(--font-mono); font-size:10.5px; font-weight:700; color:var(--txt);
+    word-break:break-all}
+  .swatch__name{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--txt-3); margin-top:1px}
+  .swatch__mean{font-size:11.5px; color:var(--txt-2); margin-top:6px; line-height:1.4}
+
+  .spec-row{display:grid; grid-template-columns:170px 1fr; border-bottom:1px solid var(--line)}
+  .spec-row:last-child{border-bottom:0}
+  .spec-row__role{padding:14px; border-right:1px solid var(--line); background:var(--card-head)}
+  .spec-row__rn{font-family:var(--font-mono); font-size:10.5px; font-weight:800; letter-spacing:.05em;
+    text-transform:uppercase; color:var(--txt)}
+  .spec-row__rr{font-size:10.5px; color:var(--txt-3); margin-top:3px}
+  .spec-row__ex{padding:14px; display:flex; align-items:center; flex-wrap:wrap; gap:8px; min-width:0}
+  .t-name{font-family:var(--font); font-weight:700; font-size:16px; color:var(--txt)}
+  .t-prose{font-family:var(--font); font-size:13px; color:var(--txt-2)}
+  .t-num{font-family:var(--font-mono); font-size:13px; color:var(--txt-2); font-variant-numeric:tabular-nums; font-weight:600}
+  .t-hint{font-family:var(--font); font-size:12.5px; color:var(--txt-3); font-style:italic}
+  .t-stamp2{font-family:var(--font-mono); font-size:9.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--txt-3)}
+
+  .ladder-row{display:flex; align-items:baseline; gap:14px; padding:11px 16px; border-bottom:1px solid var(--line-soft)}
+  .ladder-row:last-child{border-bottom:0}
+  .ladder-row__px{font-family:var(--font-mono); font-size:11px; font-weight:800; color:var(--accent); width:48px; flex:none}
+  .ladder-row__role{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--txt-3); width:160px; flex:none}
+  .ladder-row__demo{font-family:var(--font); color:var(--txt); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+
+  .radii-row{display:flex; gap:20px; flex-wrap:wrap; padding:16px}
+  .radii-item{display:flex; flex-direction:column; align-items:center; gap:8px}
+  .radii-box{width:84px; height:44px; background:var(--card-head); border:1.5px solid var(--accent)}
+  .radii-box.chip{border-radius:var(--chip-radius)}
+  .radii-box.opener{border-radius:5px 5px 0 0}
+  .radii-box.item{border-radius:var(--item-radius)}
+  .radii-box.pill{border-radius:var(--pill-radius)}
+  .radii-box.container{border-radius:var(--radius)}
+  .radii-lab{font-family:var(--font-mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--txt-2); text-align:center}
+  .radii-lab b{display:block; color:var(--txt); font-size:12px}
+
+  .budget-bar{display:flex; height:34px; border-radius:8px; overflow:hidden; border:1px solid var(--line)}
+  .budget-bar span{display:flex; align-items:center; justify-content:center; font-family:var(--font-mono);
+    font-size:10.5px; font-weight:800; letter-spacing:.04em}
+  .b-60{width:60%; background:var(--card-head); color:var(--txt-2)}
+  .b-30{width:30%; background:var(--panel); color:var(--txt-2)}
+  .b-10{width:10%; background:var(--accent); color:var(--on-orange)}
+
+  .therm{display:grid; grid-template-columns:repeat(4,1fr); border:1px solid var(--line); border-radius:11px; overflow:hidden}
+  @media (max-width:680px){ .therm{grid-template-columns:1fr 1fr} }
+  .tcell{padding:14px; border-right:1px solid var(--line); background:var(--card)}
+  .tcell:last-child{border-right:0}
+  .tdot{width:100%; height:9px; border-radius:4px; margin-bottom:9px}
+  .t-gray .tdot{background:var(--gray)} .t-blue .tdot{background:var(--blue)}
+  .t-yellow .tdot{background:var(--yellow)} .t-red .tdot{background:var(--red)}
+  .tname{font-family:var(--font-mono); font-size:12.5px; font-weight:800; letter-spacing:.04em; text-transform:uppercase}
+  .t-gray .tname{color:var(--gray)} .t-blue .tname{color:var(--blue)}
+  .t-yellow .tname{color:var(--yellow)} .t-red .tname{color:var(--red)}
+  .tmean{font-size:11.5px; color:var(--txt-2); margin-top:4px}
+
+  .menu{border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--panel); width:190px}
+  .menu__h{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--txt-3); padding:9px 12px; border-bottom:1px solid var(--line); background:var(--card-head)}
+  .menu__i{display:flex; align-items:center; gap:8px; padding:8px 12px; font-size:12px; color:var(--txt);
+    border-bottom:1px solid var(--line-soft); cursor:pointer}
+  .menu__i:last-child{border-bottom:0}
+  .menu__sw{width:8px; height:8px; border-radius:2px; flex:none}
+  .menu__i.on{font-weight:800}
+  .menu__i.on:after{content:"\2713"; margin-left:auto; color:var(--accent); font-family:var(--font-mono); font-size:11px}
+
+  table.floors{width:100%; border-collapse:collapse}
+  table.floors th, table.floors td{padding:9px 12px; border-bottom:1px solid var(--line-soft); font-size:12px; text-align:left}
+  table.floors th{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--txt-3); background:var(--card-head)}
+  table.floors td.ratio{font-family:var(--font-mono); font-weight:700; color:var(--txt)}
+  table.floors td .pass{color:var(--green); font-weight:700}
+  table.floors td .fail{color:var(--red); font-weight:700}
+  table.floors tr:last-child td{border-bottom:0}
+
+
+  /* ======================================================================
+     ATOM CONSISTENCY PASS — approved 2026-07-25 (rw-consistency-pass.css).
+     Four control shapes: state SQUARED · openers TOP-ROUNDED · records ROUNDED · actions PILL.
+     ====================================================================== */
+  @supports (color: oklch(from red l c h)){
+    :root{ --red-line: oklch(from var(--red) .74 .215 h); }
+  }
+
+  /* C7 · read-only atoms say so with the cursor */
+  .signal, .stamp, .stamp-sep, .dead-text, .t-hint{cursor:default}
+
+  /* C4 · the stamp separator is a true sibling of the stamps it sits between */
+  .stamp-sep{height:var(--h); display:inline-flex; align-items:center; font-weight:700}
+
+  /* C3/C17 · Ref -- RADIUS 0 (ledger #140/#153): a dark plate with a 45deg notch,
+     not a rounded item. .ref__icon and the hint bubble are ZEROED too (#153) --
+     both were unruled rounded survivors, not decisions, and radius-0 is now the
+     card's explicit identity. Ref also drops Archivo for mono (#142). */
+  .ref{font-size:13px; font-family:var(--font-mono); border-radius:0; padding:0 10px 0 3px;
+    border:0; background:var(--ref-plate);
+    clip-path:polygon(-3px -3px, calc(100% - 13px) -3px, calc(100% + 3px) 13px, calc(100% + 3px) calc(100% + 3px), -3px calc(100% + 3px));
+    box-shadow:0 0 0 1.5px var(--seam-5), 0 2.5px 0 -1px rgba(var(--lit-rgb),.10), inset 0 1px 0 rgba(var(--lit-rgb),.06)}
+  .ref:hover{border-color:transparent; filter:brightness(1.12)}
+  .ref__icon{border-radius:0}
+
+
+  /* C21/C22 · the OPENER shape is RETIRED (ledger #140, 2026-07-28) -- it was the
+     fourth rung of the four-shape radius ladder #140 replaced with radius 0 +
+     finishes. Gate and Field now take radius 0 like every other control; what used
+     to say "this opens" via a rounded top now says it via the machined-ring / well
+     -glass finish instead. Superseded text kept as history, not deleted. */
+  .gate{border-radius:0}
+  .field{border-radius:0}
+
+  /* C5 · segment text is the ONE chip size, so a selected segment really is the
+     filled Signal chip of its status */
+  .seg__opt{font-size:11px; letter-spacing:.05em}
+  .seg__opt--on-green{background:var(--green); color:var(--on-green)}
+  .seg__opt--on-gray{background:var(--gray); color:var(--on-gray)}
+
+  /* M10 · +Add is built on the Ref pattern (it adds/links items) */
+  .door--add{border-radius:var(--item-radius); gap:6px; padding:0 11px 0 3px}
+  .door--add .ref__icon{background:color-mix(in oklab, var(--commit) 25%, transparent); color:var(--commit)}
+
+  /* C1/C2/M12 · link atoms: 24px box, underline on the LABEL only, the out-marker
+     is a drawn arrow in the house icon holder */
+  .hlink, .dead-text{height:var(--h); display:inline-flex; align-items:center}
+  .hlink{border-bottom:0; padding-bottom:0; gap:7px; text-decoration:underline;
+    text-decoration-color:var(--accent); text-decoration-thickness:1.5px; text-underline-offset:3px}
+  .hlink__ext{width:16px; height:16px; flex:none; border-radius:4px; text-decoration:none;
+    display:inline-flex; align-items:center; justify-content:center;
+    background:var(--accent-soft); color:var(--accent)}
+  .hlink__ext svg{width:10px; height:10px; display:block}
+  .contact__v{border-bottom-width:1.5px}
+
+  /* C19 · no atom shrinks or wraps inside a flex row */
+  .ref, .field, .seg, .seg__opt, .contact, .hlink, .dead-text, .stamp{flex:none; white-space:nowrap}
+
+  /* C12 · every tappable atom is a real <button type="button"> */
+  button.gate, button.door, button.seg__opt, button.field{-webkit-appearance:none; appearance:none;
+    margin:0; text-align:left}
+  button.seg__opt{border-top:0; border-bottom:0; border-left:0}
+
+  /* C20 · ONE universal hover: an accent ring drawn OUTSIDE the element, so no
+     atom's own border, fill or size changes and nothing in the layout moves.
+     On a segmented toggle the ring goes around the TRACK, never a single cell. */
+  .gate:hover, .door:hover, .seg:hover, .field:hover, .ref:hover,
+  .contact:hover, .hlink:hover, .slot:hover{outline:1.5px solid var(--accent); outline-offset:2px}
+
+  /* C8 · press dips the fill on filled tappables */
+  .gate:active, .door--commit:active, .door--money:active, .door--destroy:active{filter:brightness(.94)}
+
+  /* C9 · hover INK is reserved for the atoms that navigate or switch */
+  .seg__opt:not([class*="seg__opt--on"]):hover{color:var(--txt)}
+  .ref:hover, .contact:hover{color:var(--accent)}
+
+  /* C10 · one focus ring for every tappable atom */
+  .gate:focus-visible, .door:focus-visible, .seg__opt:focus-visible, .field:focus-visible,
+  .ref:focus-visible, .contact:focus-visible, .hlink:focus-visible{outline:2px solid var(--accent-line);
+    outline-offset:2px}
+
+  /* M11 · a STATE pair toggle reads as Signals: the live state is the filled chip
+     of its status, the other side is the secondary outline in ITS OWN hue */
+  .seg--state .seg__opt{border-right:0}
+  .seg--state .seg__opt:not([class*="seg__opt--on"]){background:transparent; color:var(--gray);
+    box-shadow:inset 0 1px 0 currentColor, inset 0 -1px 0 currentColor, inset -1px 0 0 currentColor}
+  .seg--state .seg__opt:not([class*="seg__opt--on"]):first-child{
+    box-shadow:inset 0 1px 0 currentColor, inset 0 -1px 0 currentColor, inset 1px 0 0 currentColor}
+  .seg--state .seg__opt--off-red:not([class*="seg__opt--on"]){color:var(--red-line)}
+
+  /* M7 · the status picker IS the segmented toggle, stacked. .menu is superseded
+     as a picker; a menu of unrelated ACTIONS is a container, not an atom. */
+  .seg--stack{flex-direction:column; height:auto; align-items:stretch; width:100%}
+  .seg--stack{border-radius:0}   /* was 5px 5px chip-radius chip-radius (the opener shape) -- #140 */
+  .seg--stack__cap{border-radius:0; border-bottom:0}  /* C22 · accent header caps the top */
+  .seg--stack .seg__opt{height:var(--h); flex:none; border-right:0;
+    border-bottom:1px solid var(--line); justify-content:flex-start}
+  .seg--stack .seg__opt:last-child{border-bottom:0}
+  .seg--stack .seg__sw{width:8px; height:8px; border-radius:2px; flex:none; margin-right:8px}
+
+  /* ======================================================================
+     FINISH PASS — Jac, 2026-07-28/07-31 (ledger #140/#142/#152).
+     Radius 0 + chamfers is the card's identity; shape semantics move into
+     FOUR FINISHES instead — dark key, pressed key, well glass, machined ring.
+     Any control atom can wear one; they are finishes, not new atoms.
+     ====================================================================== */
+
+  /* machined ring — the standard trim on a filled/glass control: a seam ring plus
+     a lit hairline below and a fainter one above (light source is above) */
+  .signal--filled,.gate{
+    background-image:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.02) 45%,rgba(0,0,12,.16));
+    box-shadow:0 0 0 2px var(--seam-3),0 0 0 3px rgba(var(--lit-rgb),.09),
+      0 5px 0 -2px rgba(var(--lit-rgb),.13),inset 0 1px 0 rgba(255,255,255,.28),
+      inset 0 -1.5px 2.5px rgba(0,0,0,.32)}
+  .signal--outline{border-width:1.5px}
+
+  /* well glass — a recessed dark face: OFF seg cells, and Field's one surviving
+     kit use (the funnel key) */
+  .seg__opt:not([class*="seg__opt--on"]){background-color:var(--well);
+    background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.20) 2px 3px),
+      linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,0) 55%,rgba(var(--lit-rgb),.04));
+    box-shadow:0 0 0 2px var(--seam-5),0 3.4px 0 rgba(var(--lit-rgb),.13),
+      0 -3.2px 0 rgba(var(--lit-rgb),.05),inset 0 2px 3.5px rgba(0,0,0,.78)}
+  .field{background-color:var(--well);
+    background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.20) 2px 3px),
+      linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,0) 55%,rgba(var(--lit-rgb),.04));
+    box-shadow:0 0 0 2px var(--seam-5),inset 0 2px 3.5px rgba(0,0,0,.60)}
+
+  /* pressed key — an ON seg cell reads as a key pressed into the plate */
+  .seg__opt[class*="seg__opt--on"]{background-image:linear-gradient(180deg,rgba(0,0,0,.26),rgba(0,0,0,0) 48%);
+    box-shadow:0 0 0 2px var(--seam-3),0 3.4px 0 rgba(var(--lit-rgb),.13),
+      0 -3.2px 0 rgba(var(--lit-rgb),.05),inset 0 1.5px 3px rgba(0,0,0,.5)}
+
+  /* dark key — the cool-tone (blue/green/gray) finish a filled control wears at
+     row/head scale in the tier-01 card; red/yellow keep their hue fill everywhere
+     (heat stays loud). Shown here as an available finish swatch. */
+  .fin-key{background-color:var(--key) !important;
+    background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.22) 2px 3px),
+      linear-gradient(180deg,rgba(0,0,0,.32),rgba(0,0,0,0) 55%,rgba(var(--lit-rgb),.03)) !important;
+    box-shadow:0 0 0 1.5px var(--seam-4),0 0 0 2.5px rgba(var(--lit-rgb),.08),
+      inset 0 0 0 1px color-mix(in oklab, transparent 40%, currentColor),
+      inset 0 -1.5px 2.5px rgba(0,0,0,.5) !important}
+  .fin-key.tone-blue{color:var(--blue) !important} .fin-key.tone-green{color:var(--green) !important}
+  .fin-key.tone-gray{color:var(--txt-2) !important}
+
+  .finish-row{display:flex; gap:20px; flex-wrap:wrap; padding:16px}
+  .finish-item{display:flex; flex-direction:column; align-items:center; gap:8px}
+  .finish-box{width:84px; height:44px; border-radius:0}
+  .finish-box.key{background-color:var(--key);
+    background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.22) 2px 3px),
+      linear-gradient(180deg,rgba(0,0,0,.32),rgba(0,0,0,0) 55%,rgba(var(--lit-rgb),.03));
+    box-shadow:0 0 0 1.5px var(--seam-4),inset 0 0 0 1px color-mix(in oklab, transparent 40%, var(--blue)),
+      inset 0 -1.5px 2.5px rgba(0,0,0,.5)}
+  .finish-box.pressed{background-color:var(--panel);
+    background-image:linear-gradient(180deg,rgba(0,0,0,.26),rgba(0,0,0,0) 48%);
+    box-shadow:0 0 0 2px var(--seam-3),0 3.4px 0 rgba(var(--lit-rgb),.13),inset 0 1.5px 3px rgba(0,0,0,.5)}
+  .finish-box.well{background-color:var(--well);
+    background-image:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.20) 2px 3px),
+      linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,0) 55%,rgba(var(--lit-rgb),.04));
+    box-shadow:0 0 0 2px var(--seam-5),inset 0 2px 3.5px rgba(0,0,0,.78)}
+  .finish-box.ring{background-color:var(--card-head);
+    background-image:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.02) 45%,rgba(0,0,12,.16));
+    box-shadow:0 0 0 2px var(--seam-3),0 0 0 3px rgba(var(--lit-rgb),.09),0 5px 0 -2px rgba(var(--lit-rgb),.13),
+      inset 0 1px 0 rgba(255,255,255,.28),inset 0 -1.5px 2.5px rgba(0,0,0,.32)}
+  .finish-lab{font-family:var(--font-mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--txt-2); text-align:center}
+  .finish-lab b{display:block; color:var(--txt); font-size:12px}
+
+  /* N1 · SLOT — Pin's replacement EVERYWHERE (ledger #177), not a new atom of its
+     own: colour = state, fill = today, exactly as Pin was. What changed: a skewed
+     stud face (reads as a machined rivet, not a rounded chip) and an UNFURL --
+     hover/focus opens a left-growing tray of every issue behind the numeral,
+     instead of a single-line tooltip. Collapsed state shows a NUMERAL ONLY (#166)
+     -- no status word, so it never overhangs its cell. 13px, deliberately off the
+     24px control ladder, zero layout footprint. */
+  .slot-wrap{position:relative; display:inline-flex; flex:none}
+  .slot{position:absolute; top:0; left:100%; transform:translate(-70%,-50%) skewX(19deg); z-index:2;
+    height:13px; min-width:13px; padding:0 4px;
+    display:inline-flex; align-items:center; justify-content:center; gap:3px;
+    border-radius:1.5px; font-family:var(--font-mono); font-size:9px; font-weight:800;
+    letter-spacing:.04em; font-variant-numeric:tabular-nums;
+    cursor:pointer; text-decoration:none;
+    background-image:linear-gradient(rgba(255,255,255,.20),rgba(255,255,255,.04) 42%,rgba(0,0,0,.28));
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.24),inset 0 -1.5px 2px rgba(0,0,0,.45),0 1px 2px rgba(0,0,0,.6)}
+  .slot>*{display:inline-block; transform:skewX(-19deg)}   /* counter-skew the numeral upright */
+  .slot--gray  {background-color:var(--gray);     color:var(--on-gray)}
+  .slot--blue  {background-color:var(--blue);     color:var(--on-blue)}
+  .slot--yellow{background-color:var(--yellow);   color:var(--on-yellow)}
+  .slot--red   {background-color:var(--red-fill); color:var(--on-red-fill)}
+  .slot--green {background-color:var(--green);    color:var(--on-green)}
+  .slot--outline{background:var(--panel); border:1px solid currentColor}
+  .slot--gray.slot--outline  {color:var(--gray)}
+  .slot--blue.slot--outline  {color:var(--blue)}
+  .slot--yellow.slot--outline{color:var(--yellow)}
+  .slot--green.slot--outline {color:var(--green)}
+  .slot--red.slot--outline   {color:var(--red-line)}
+  .slot:focus-visible{outline:2px solid var(--accent-line); outline-offset:2px}
+  /* the unfurl -- a left-growing tray, one line per issue. Data shape inherited
+     from Pin's data-hint (newline-separated Source, State, Date) -- data-tip
+     never existed, per the design-log's traps list. */
+  .slot-tray{position:absolute; top:50%; right:100%; transform:translateY(-50%); display:none;
+    flex-direction:column; gap:2px; margin-right:4px; padding:6px 8px; min-width:120px;
+    background:var(--panel-2); box-shadow:0 0 0 1px var(--line),0 3px 10px rgba(0,0,0,.5);
+    color:var(--txt); font-family:var(--font); font-size:11px; font-weight:400; line-height:1.4;
+    white-space:nowrap; z-index:6; pointer-events:none}
+  .slot:hover+.slot-tray, .slot:focus-visible+.slot-tray{display:flex}
+
+</style>
+</head>
+<body>
+<div class="wrap"><div class="sheet">
+  <div class="top">
+    <p class="eyebrow">JacRentals · Rental Wrangler <span class="hl">·</span> Elements</p>
+    <h1>Stamp</h1>
+    <p class="lede">A quiet fact — no pill, no colour, just plain stamped mono text sitting beside a Signal.</p>
+    
+  </div>
+
+  <div class="callout"><b>Stamp</b> — a plain fact: chip <b>text</b>, no box, no colour (<code>--txt-3</code>),
+    stamped voice. Sits beside a Signal as its quiet sibling. Budget overflow → <code>+N</code> in accent.</div>
+
+  <section>
+    <h2 class="sub">A Signal with its quiet Stamp siblings</h2>
+    <div class="panel pad">
+      <div class="row tight">
+        <span class="signal signal--red signal--filled" style="margin-right:2px">owed 16d</span>
+        <span class="stamp">non-member</span><span class="stamp-sep">·</span>
+        <span class="stamp">excavator</span><span class="stamp-sep">·</span>
+        <span class="stamp">PO 4821</span><span class="stamp-sep">·</span>
+        <span class="stamp stamp--more">+2</span>
+      </div>
+      <p class="rule">One glance: the coloured box is the state, the plain stamps are just facts. Overflow past the
+        budget rolls into a single accent-coloured <code>+N</code>.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="sub">Stamp alone — never a status</h2>
+    <div class="panel pad">
+      <div class="row tight">
+        <span class="stamp">S/N 4471-K</span><span class="stamp-sep">·</span>
+        <span class="stamp">2019</span><span class="stamp-sep">·</span>
+        <span class="stamp">75hp</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="foot">Sourced from <b>wrangler-style</b> (decisions) + <b>style</b> (measurable rules), built on the
+    <b>locked html.dv2</b> redesign tokens. Dark-only — no light mode is shipped or shown. Vanilla HTML + CSS, no
+    framework.</div>
+</div></div>
+</body>
+</html>

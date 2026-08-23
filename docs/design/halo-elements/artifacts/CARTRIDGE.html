@@ -1,0 +1,812 @@
+<title>CARTRIDGE — Halo element</title>
+<style>
+/* ============================================================
+   tokens.css subset — reset, :root vars, .oct/.oct4/.oct-br/.a,
+   .stage. Page-shell rules (html,body / body place-items) are
+   deliberately left out — the workbench supplies its own shell.
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0a0c10;
+  --neon:      #f95a5c;
+  --neon-hi:   #ff7a76;
+  --bar-red:   #ff433e;
+  --brk-red:   #fc6c5c;
+  --pnl-red:   #fa756f;
+  --tube-red:  #ff8078;
+  --maroon:    #411b1e;
+  --maroon-d:  #32171e;
+  --bar-yel:   #fff252;
+  --amber:     #7c401f;
+  --chrome:    #aebac6;
+  --silver:    #a19596;
+  --rim-top:   #626971;
+  --rim-left:  #818d92;
+  --rim-right: #74808a;
+  --rim-bot:   #7b8997;
+  --slate:     #32303e;
+  --field:     #1e202c;
+  --cavity:    #221a25;
+  --circuit:   #070e16;
+  --edge:      #0d1218;
+  --mono: Consolas, "Cascadia Mono", "DejaVu Sans Mono", "Courier New", monospace;
+  --sans: Roboto, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+.stage {
+  position: relative;
+  background: var(--bg);
+  overflow: hidden;
+  font-family: var(--sans);
+  font-kerning: none;
+}
+
+.oct {
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut),
+                     100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
+}
+.oct4 {
+  clip-path: polygon(var(--cut) 0, calc(100% - var(--cut)) 0,
+                     100% var(--cut), 100% calc(100% - var(--cut)),
+                     calc(100% - var(--cut)) 100%, var(--cut) 100%,
+                     0 calc(100% - var(--cut)), 0 var(--cut));
+}
+.oct-br {
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--cut)),
+                     calc(100% - var(--cut)) 100%, 0 100%);
+}
+.a { position: absolute; }
+
+/* ============================================================
+   workbench.css — verbatim, the shared workbench chrome.
+   ============================================================ */
+:root {
+  --wb-ground:   #07090d;
+  --wb-canvas:   #0a0c10;
+  --wb-chrome:   #10141b;
+  --wb-chrome-2: #151b23;
+  --wb-line:     #1e2630;
+  --wb-line-lit: #2b3846;
+  --wb-ink:      #c3ccd6;
+  --wb-ink-dim:  #78848f;
+  --wb-ink-mute: #4e5966;
+  --wb-steel:    #5d8fb3;
+  --wb-steel-lo: #34505f;
+  --wb-good:     #5fae7d;
+  --wb-bad:      #c9635e;
+
+  --wb-mono: ui-monospace, "DejaVu Sans Mono", Consolas, "Cascadia Mono", "Courier New", monospace;
+  --wb-sans: system-ui, "Archivo", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+.wb {
+  background: var(--wb-ground);
+  color: var(--wb-ink);
+  font-family: var(--wb-sans);
+  font-size: 15px;
+  line-height: 1.55;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding: 0 0 72px;
+}
+
+.wb-head {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 18px;
+  padding: 26px 28px 22px;
+  border-bottom: 1px solid var(--wb-line);
+  background: linear-gradient(180deg, #0b0f14, var(--wb-ground));
+}
+.wb-head h1 {
+  font-family: var(--wb-mono);
+  font-size: 26px; font-weight: 700; letter-spacing: 2.5px;
+  color: var(--wb-ink); text-transform: uppercase; text-wrap: balance;
+}
+.wb-head .wb-role {
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.6px;
+  text-transform: uppercase; color: var(--wb-steel);
+  padding: 3px 9px; border: 1px solid var(--wb-steel-lo); border-radius: 2px;
+}
+.wb-head p { flex: 1 1 340px; max-width: 66ch; color: var(--wb-ink-dim); font-size: 14px; }
+
+.wb-gate {
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.2px;
+  text-transform: uppercase; white-space: nowrap;
+  padding: 3px 9px; border-radius: 2px; border: 1px solid;
+  font-variant-numeric: tabular-nums;
+}
+.wb-gate.is-pass { color: var(--wb-good); border-color: #2c5a41; background: #0e1a14; }
+.wb-gate.is-fail { color: var(--wb-bad);  border-color: #5d2f2d; background: #1a0f0e; }
+.wb-gate.is-na   { color: var(--wb-ink-mute); border-color: var(--wb-line); }
+
+.wb-body {
+  display: grid; gap: 28px; padding: 0 28px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+@media (min-width: 1080px) {
+  .wb-body { grid-template-columns: minmax(0, 1fr) 330px; }
+  .wb-rail { position: sticky; top: 22px; }
+}
+
+.wb-specimens { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+
+.wb-spec {
+  border: 1px solid var(--wb-line); border-radius: 3px;
+  background: var(--wb-chrome); overflow: hidden;
+  transition: border-color .12s ease;
+}
+.wb-spec:hover { border-color: var(--wb-line-lit); }
+.wb-spec.is-selected { border-color: var(--wb-steel-lo); }
+
+.wb-spec-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 9px 13px; border-bottom: 1px solid var(--wb-line);
+  background: var(--wb-chrome-2);
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.1px;
+}
+.wb-pick {
+  appearance: none; cursor: pointer;
+  font: inherit; letter-spacing: inherit; text-transform: uppercase;
+  color: var(--wb-ink); background: transparent;
+  border: 1px solid var(--wb-line-lit); border-radius: 2px;
+  padding: 3px 10px;
+}
+.wb-pick:hover { border-color: var(--wb-steel-lo); color: #dfe6ec; }
+.wb-pick:focus-visible { outline: 2px solid var(--wb-steel); outline-offset: 2px; }
+.is-selected .wb-pick { background: var(--wb-steel-lo); border-color: var(--wb-steel); color: #eef4f8; }
+
+.wb-spec-meta { color: var(--wb-ink-mute); font-variant-numeric: tabular-nums; }
+.wb-spec-note { flex: 1 1 100%; color: var(--wb-ink-dim); letter-spacing: 0; font-size: 12px; }
+
+.wb-stage { overflow-x: auto; overflow-y: hidden; background: var(--wb-canvas); }
+.wb-stage > .stage { margin: 0 auto; }
+
+.wb-rail {
+  border: 1px solid var(--wb-line); border-radius: 3px;
+  background: var(--wb-chrome); min-width: 0;
+}
+.wb-rail-head {
+  padding: 11px 14px; border-bottom: 1px solid var(--wb-line);
+  background: var(--wb-chrome-2);
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.4px;
+  text-transform: uppercase; color: var(--wb-ink-dim);
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+}
+.wb-rail-head b { color: var(--wb-steel); font-weight: 700; }
+.wb-knobs { max-height: min(60vh, 620px); overflow-y: auto; padding: 4px 0 10px; }
+
+.wb-group { border-top: 1px solid var(--wb-line); }
+.wb-group:first-child { border-top: 0; }
+.wb-group > h3 {
+  font-family: var(--wb-mono); font-size: 10px; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--wb-ink-mute);
+  padding: 12px 14px 6px;
+}
+
+.wb-knob { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 5px 14px 7px; }
+.wb-knob label {
+  font-family: var(--wb-mono); font-size: 11.5px; letter-spacing: .4px;
+  color: var(--wb-ink-dim); align-self: center;
+}
+.wb-knob output {
+  font-family: var(--wb-mono); font-size: 11.5px; color: var(--wb-ink);
+  font-variant-numeric: tabular-nums; align-self: center; white-space: nowrap;
+}
+.wb-knob.is-dirty label { color: var(--wb-steel); }
+.wb-knob.is-dirty output { color: #dbe7ef; }
+.wb-knob input[type="range"], .wb-knob input[type="color"] { grid-column: 1 / -1; }
+
+.wb-knob input[type="range"] {
+  appearance: none; width: 100%; height: 18px; background: transparent; cursor: pointer;
+}
+.wb-knob input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px; background: var(--wb-line-lit); border-radius: 2px;
+}
+.wb-knob input[type="range"]::-moz-range-track {
+  height: 3px; background: var(--wb-line-lit); border-radius: 2px;
+}
+.wb-knob input[type="range"]::-webkit-slider-thumb {
+  appearance: none; width: 13px; height: 13px; margin-top: -5px;
+  border-radius: 50%; background: var(--wb-steel); border: 0;
+}
+.wb-knob input[type="range"]::-moz-range-thumb {
+  width: 13px; height: 13px; border-radius: 50%; background: var(--wb-steel); border: 0;
+}
+.wb-knob input:focus-visible { outline: 2px solid var(--wb-steel); outline-offset: 3px; }
+
+.wb-knob input[type="color"] {
+  appearance: none; width: 100%; height: 22px; padding: 0;
+  background: transparent; border: 1px solid var(--wb-line-lit); border-radius: 2px; cursor: pointer;
+}
+.wb-knob input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+.wb-knob input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 1px; }
+
+.wb-acts {
+  display: flex; gap: 8px; padding: 11px 14px;
+  border-top: 1px solid var(--wb-line); background: var(--wb-chrome-2);
+}
+.wb-btn {
+  flex: 1; appearance: none; cursor: pointer;
+  font-family: var(--wb-mono); font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase;
+  color: var(--wb-ink); background: transparent;
+  border: 1px solid var(--wb-line-lit); border-radius: 2px; padding: 7px 8px;
+  transition: border-color .12s ease, color .12s ease;
+}
+.wb-btn:hover { border-color: var(--wb-steel-lo); color: #dfe6ec; }
+.wb-btn:focus-visible { outline: 2px solid var(--wb-steel); outline-offset: 2px; }
+.wb-btn.is-done { color: var(--wb-good); border-color: #2c5a41; }
+
+.wb-out {
+  margin: 0 14px 12px; padding: 10px 11px;
+  border: 1px solid var(--wb-line); border-radius: 2px; background: #080b0f;
+  font-family: var(--wb-mono); font-size: 11px; line-height: 1.65; color: var(--wb-ink-dim);
+  white-space: pre; overflow-x: auto; max-height: 200px; overflow-y: auto;
+}
+.wb-out:empty { display: none; }
+
+.wb-note {
+  padding: 0 28px; max-width: 74ch;
+  color: var(--wb-ink-dim); font-size: 13.5px;
+}
+.wb-note code {
+  font-family: var(--wb-mono); font-size: .92em;
+  color: var(--wb-ink); background: var(--wb-chrome-2);
+  padding: 1px 5px; border-radius: 2px;
+}
+.wb-note a { color: var(--wb-steel); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
+
+/* ============================================================
+   cartridge.css — .halo-cartridge, C4 panel frame. Verbatim
+   rules from docs/design/halo-elements/parts/cartridge.css. The
+   ONE component already authored origin-relative in the source —
+   nothing here needed rebasing, only the .pframe -> .halo-cartridge
+   rename and namespacing the stray bare .pf-lift rule. Root sets
+   NO overflow: painted height is 127, not the nominal 125 (.pf-blt/
+   .pf-blb escape .pf-body's clip, and .pf-brk's blur bleeds ~1px
+   past its own rects) — both stages below carry real air for that,
+   not decoration.
+   ============================================================ */
+.halo-cartridge {
+  position: absolute; left: var(--x); top: var(--y);
+  width: var(--w, 914.5px); height: 125px;
+}
+
+.halo-cartridge.is-c4a { --w: 914.5px; }   /* band C, standalone, no lift */
+.halo-cartridge.is-c4b { --w: 915.2px; }   /* band B, sub-panel, HAS .pf-lift */
+
+.halo-cartridge .pf-body {
+  position: absolute; left: 4.5px; right: 0; top: 0; bottom: 0;
+  clip-path: polygon(19.5px 0, 906.5px 0, 100% 3.5px, 100% 114px,
+                     898.5px 100%, 27px 100%, 0 104px, 0 14px);
+  background: linear-gradient(180deg,
+      #1c1c1e 0px,   #1c1c1e 1px,
+      #444344 1px,   #444344 2px,
+      #4c4a4c 2px,   #4c4a4c 3px,
+      #201d1e 3px,   #201d1e 4px,
+      #1f1c1e 4px,   #1f1c1e 5px,
+      #201d1f 5px,   #201d1f 7px,
+      #211e20 7px,   #211e20 8px,
+      #221d1e 8px,   #221d1e 9px,
+      #17100c 9px,   #17100c 10px,
+      #110503 10px,  #110503 11px,
+      #0b0100 11px,  #0b0100 12px,
+      #050000 12px,  #050000 13px,
+      #030000 13px,  #030000 15px,
+      #080506 15px,  #080506 16px,
+      #050101 16px,  #050101 108px,
+      #120c11 108px, #120c11 109px,
+      #080305 109px, #080305 110px,
+      #161115 110px, #161115 111px,
+      #2e2c31 111px, #2e2c31 112px,
+      #39373d 112px, #39373d 113px,
+      #3f3c40 113px, #3f3c40 114px,
+      #3f3b3e 114px, #3f3b3e 115px,
+      #2a2523 115px, #2a2523 116px,
+      #17120e 116px, #17120e 117px,
+      #171412 117px, #171412 118px,
+      #191312 118px, #191312 119px,
+      #171313 119px, #171313 120px,
+      #191516 120px, #191516 121px,
+      #292426 121px, #292426 122px,
+      #605e62 122px, #605e62 123px,
+      #8b8a8e 123px, #8b8a8e 124px,
+      #48484d 124px, #48484d 125px);
+}
+.halo-cartridge .pf-r { position: absolute; left: 0; right: 0; height: 1px; }
+.halo-cartridge .pf-r0 { top: 0; background: linear-gradient(90deg,
+  #413435 0px,#3a2f30 61px,#362d2e 101px,#342b2c 141px,#31282a 181px,#2e2628 221px,
+  #2e2729 261px,#2c2527 310px,#1a1a1d 320px,#1c1d1f 381px,#1a1b1d 421px,#1d1d1f 461px,
+  #1a1a1d 501px,#1e1e20 541px,#1e1e20 581px,#222021 621px,#242123 661px,#242124 701px,
+  #201f22 741px,#17181b 781px,#111316 821px,#0d0f13 861px,#0b0d11 901px,#0a0c10 910px); }
+.halo-cartridge .pf-r1 { top: 1px; background: linear-gradient(90deg,
+  #5f5151 0px,#5c4f4f 61px,#5a4d4e 101px,#574b4c 141px,#544949 181px,#504645 221px,
+  #504647 261px,#4c4344 310px,#444243 320px,#474546 381px,#444244 421px,#454344 461px,
+  #424041 501px,#434040 541px,#433f3f 581px,#433e3e 621px,#433e3e 661px,#423e3f 701px,
+  #393739 741px,#2e2e30 781px,#252728 821px,#242527 861px,#16171a 901px,#101215 910px); }
+.halo-cartridge .pf-r2 { top: 2px; background: linear-gradient(90deg,
+  #564a4b 0px,#544849 61px,#534849 101px,#524849 141px,#514749 181px,#4e4546 221px,
+  #4e4547 261px,#4c4445 310px,#4c494a 320px,#4c494a 381px,#4a4749 421px,#4b4749 461px,
+  #484546 501px,#474243 541px,#454142 581px,#454040 621px,#453f40 661px,#444041 701px,
+  #3d3b3d 741px,#363537 781px,#302f31 821px,#323133 861px,#292a2e 901px,#232427 910px); }
+.halo-cartridge .pf-r122 { top: 122px; background: linear-gradient(90deg,
+  #442830 0px,#4c2a2e 61px,#513b40 101px,#594347 141px,#5a464a 181px,#5a474a 221px,
+  #5d4a4e 261px,#5d4a4f 301px,#4b4144 314px,#605d62 318px,#605e61 381px,#626063 421px,
+  #5c5a5d 461px,#575456 501px,#524f52 541px,#423f42 581px,#3e393d 621px,#2a2528 661px,
+  #241e22 701px,#231e20 741px,#201c1d 781px,#1a1718 821px,#171314 861px,#141316 910px); }
+.halo-cartridge .pf-r123 { top: 123px; background: linear-gradient(90deg,
+  #55333a 0px,#61383e 61px,#7f595b 101px,#8d6769 141px,#8f6a6d 181px,#926d70 221px,
+  #967073 261px,#977174 301px,#715b5f 314px,#8b898e 318px,#8c8a8f 381px,#8d8d92 421px,
+  #86868a 461px,#7b797d 501px,#757378 541px,#615f64 581px,#565358 621px,#353236 661px,
+  #2d282c 701px,#292428 741px,#261f22 781px,#181516 821px,#171313 861px,#111014 910px); }
+.halo-cartridge .pf-r124 { top: 124px; background: linear-gradient(90deg,
+  #391f25 0px,#3e2328 61px,#4d3437 101px,#54393c 141px,#53393d 181px,#543a3e 221px,
+  #52383d 261px,#533a3e 301px,#4c3a3f 314px,#48474c 318px,#48474c 381px,#49484c 421px,
+  #45454a 461px,#404045 501px,#3d3c41 541px,#36363a 581px,#313034 621px,#252326 661px,
+  #222023 701px,#1f1c1f 741px,#231e21 781px,#181618 821px,#181517 861px,#0e0e12 910px); }
+.halo-cartridge .pf-railL { position: absolute; left: 0; width: 315px; top: 108px; height: 14px;
+  background: linear-gradient(180deg,
+     #0f0a0e 0px,#0f0a0e 1px,#070205 1px,#070205 2px,#161214 2px,#161214 3px,
+     #29272a 3px,#29272a 4px,#2e2d32 4px,#2e2d32 5px,#302f33 5px,#302f33 6px,
+     #302f31 6px,#302f31 7px,#22201f 7px,#22201f 8px,#171211 8px,#171211 9px,
+     #171312 9px,#171312 10px,#191415 10px,#191415 11px,#181414 11px,#181414 12px,
+     #181415 12px,#181415 13px,#231c21 13px,#231c21 14px); }
+.halo-cartridge .pf-railR { position: absolute; left: 807px; right: 0; top: 108px; height: 14px;
+  background: linear-gradient(180deg,
+     #0e090e 0px,#0e090e 1px,#040203 1px,#040203 2px,#0f0b0f 2px,#0f0b0f 3px,
+     #1a181c 3px,#1a181c 4px,#1a191e 4px,#1a191e 5px,#1e1d21 5px,#1e1d21 6px,
+     #201f22 6px,#201f22 7px,#212121 7px,#212121 8px,#171514 8px,#171514 9px,
+     #1a1818 9px,#1a1818 13px,#1a1819 13px,#1a1819 14px); }
+
+.halo-cartridge .pf-cav {
+  position: absolute; left: 31.5px; right: 18px; top: 15.5px; height: 92px;
+  clip-path: polygon(0 0, 855px 0, 100% 5px, 100% 100%, 18px 100%, 0 77px);
+  background:
+    radial-gradient(340px 52px at 27% 66%, rgba(195,215,220,.055), rgba(195,215,220,0) 72%),
+    linear-gradient(180deg,
+      #17151b 0px, #17161b 4px, #17151a 10px, #19171c 16px, #1a171c 22px,
+      #191619 28px, #191519 34px, #191419 40px, #191419 46px, #1b1618 52px,
+      #1b1618 58px, #1b1517 64px, #1b1517 70px, #1b1419 76px, #1a1517 82px,
+      #181315 88px, #171214 92px);
+}
+.halo-cartridge .pf-cavr {
+  position: absolute; left: 283.5px; right: 0; top: 0; bottom: 0;
+  background:
+    linear-gradient(90deg, rgba(8,6,12,.34) 0px, rgba(8,6,12,.12) 6px, rgba(8,6,12,0) 15px,
+                    rgba(8,6,12,0) 78%, rgba(46,52,74,.16) 92%, rgba(12,10,18,.40) 100%),
+    radial-gradient(150px 62px at 28% 54%, rgba(160,145,80,.19), rgba(160,145,80,0) 72%),
+    radial-gradient(125px 50px at 12% 26%, rgba(150,155,195,.13), rgba(150,155,195,0) 74%),
+    linear-gradient(180deg,
+      #1c1b25 0px, #1d1c26 4px, #1b1a23 10px, #1a181f 16px, #1a171d 22px,
+      #19141b 28px, #191219 34px, #191117 40px, #1a1017 46px, #1a1016 52px,
+      #1a1016 58px, #191015 64px, #191016 70px, #181117 76px, #171117 82px,
+      #150e15 88px, #130c13 92px);
+}
+.halo-cartridge .pf-cavr::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 10px;
+  background:
+    linear-gradient(180deg, rgba(58,80,150,.26), rgba(58,80,150,0)),
+    linear-gradient(90deg, rgba(0,0,0,.35) 0px, rgba(0,0,0,0) 240px);
+}
+
+.halo-cartridge .pf-rmar {
+  position: absolute; right: 12px; width: 2.5px; top: 19.5px; height: 87px;
+  background: linear-gradient(90deg, #1a0a0f 0 .6px, #2d161c .6px 1.9px, #261519 1.9px 2.5px);
+}
+.halo-cartridge .pf-rface {
+  position: absolute; right: 0; width: 12px; top: 3.5px; bottom: 0;
+  background: linear-gradient(90deg, #1c191a 0 7.5px, #16181d 7.5px 8.5px,
+              #2d373f 8.5px 9.5px, #7f8993 9.5px 10.5px, #817f80 10.5px 11.5px,
+              #2d2a26 11.5px 12px);
+}
+.halo-cartridge .pf-riv {
+  position: absolute; left: 896.5px; top: 3.5px; width: 9px; height: 9px;
+  background: radial-gradient(circle at 4.5px 4.5px,
+      #3d3d42 0 1.7px, #2b2b2f 2.3px, #15141a 2.9px, #0c0a0b 3.7px, #12100f 4.5px,
+      rgba(0,0,0,0) 4.6px);
+}
+
+.halo-cartridge .pf-lside {
+  position: absolute; left: 0; width: 4.5px; top: 12px; height: 92px;
+  background: linear-gradient(90deg,
+      rgba(245,90,92,.010) 0px, rgba(245,90,92,.040) 1px, rgba(245,90,92,.075) 2px,
+      rgba(245,90,92,.120) 3px, rgba(245,90,92,.160) 4px, rgba(245,90,92,.175) 4.5px);
+}
+.halo-cartridge .pf-fct, .halo-cartridge .pf-fcb {
+  position: absolute; left: 0; width: 4.5px;
+  background:
+    linear-gradient(180deg, #0a0c10 0px, rgba(10,12,16,0) 2.5px,
+                    rgba(10,12,16,0) var(--f1), #0a0c10 var(--f2)),
+    linear-gradient(90deg, #271b1e 0 1px, #5a383b 1px 2px, #674446 2px 3px,
+                    #624447 3px 4px, #5b4044 4px 4.5px);
+}
+.halo-cartridge .pf-fct { top: 12px;  height: 24px; --f1: 18px; --f2: 24px; }
+.halo-cartridge .pf-fcb { top: 89px;  height: 17px; --f1: 12px; --f2: 17px;
+  background:
+    linear-gradient(180deg, #0a0c10 0px, rgba(10,12,16,0) 2.5px,
+                    rgba(10,12,16,0) 12px, #0a0c10 17px),
+    linear-gradient(90deg, #22181b 0 1px, #563336 1px 2px, #60393c 2px 3px,
+                    #503236 3px 4px, #492f34 4px 4.5px); }
+.halo-cartridge .pf-lbev {
+  position: absolute; left: .5px; width: 4px; top: 14px; height: 90px;
+  background: linear-gradient(90deg, #4e1f24 0 1px, #994f53 1px 2px,
+                              #8d4346 2px 3px, #471a1b 3px 4px);
+}
+.halo-cartridge .pf-lface {
+  position: absolute; left: 4.5px; width: 22px; top: 15px; height: 90px;
+  background: linear-gradient(90deg,
+     #321a1b 0 1px, #2f1d1f 1px 2px, #2f1c1f 2px 3px, #301b1e 3px 4px, #341b1e 4px 5px,
+     #3b1c1e 5px 6px, #431c1f 6px 7px, #49181b 7px 8px, #5f1316 8px 9px,
+     #b03f3e 9px 10px, #f76b69 10px 12px, #e35f5e 12px 13px, #872d30 13px 14px,
+     #5b1f22 14px 15px, #461c1e 15px 16px, #391b1c 16px 17px, #382126 17px 19px,
+     #231719 19px 20px, #170c0a 20px 21px, #150808 21px 22px);
+}
+.halo-cartridge .pf-chT {
+  position: absolute; left: 1.9px; top: 10.3px; width: 19.4px; height: 2.6px;
+  transform-origin: 0 50%; transform: rotate(-32.4deg);
+  background: linear-gradient(180deg, #3d3033, #63494d 42%, #4f363a 82%, #2c1c1d);
+}
+
+.halo-cartridge .pf-brk { position: absolute; inset: 0; filter: blur(.45px); }
+.halo-cartridge .pf-brk i { position: absolute; display: block; }
+.halo-cartridge .pf-brk .v  {
+  left: 18.2px; top: 5.5px; width: 3.6px; height: 90px;
+  background: linear-gradient(180deg, #ff7b76 0%, #ff7472 30%, #fb6f6d 72%, #ff7472 100%);
+}
+.halo-cartridge .pf-brk .d  {
+  left: 18.2px; top: 94.5px; width: 3.6px; height: 33px;
+  transform-origin: 50% 0; transform: rotate(-48.2deg);
+  background: #fb6f6d;
+}
+.halo-cartridge .pf-brk .ts {
+  left: 22px; top: 4.6px; width: 26px; height: 2.3px;
+  background: linear-gradient(90deg, #f4675f 0px, #cf5a58 8px, #b45254 14px, #ac5254 26px);
+}
+.halo-cartridge .pf-brk .bs {
+  left: 41.5px; top: 117.7px; width: 17.5px; height: 2.9px;
+  background: linear-gradient(90deg, #f96b6b 0px, #fa6d6d 8px, #f47472 17.5px);
+}
+
+.halo-cartridge .pf-bl { position: absolute; left: 4.5px; right: 0; height: 1px; }
+.halo-cartridge .pf-blt { top: -1px; background: linear-gradient(90deg,
+  #1a1619 0px,#181518 61px,#151417 141px,#131215 221px,#141216 261px,#131215 301px,
+  #0b0d11 341px,#0b0d11 501px,#0c0e11 541px,#0e0f13 621px,#0e0f13 701px,#0c0e12 781px,
+  #0b0d11 821px,#0a0c10 910px); }
+.halo-cartridge .pf-blb { top: 125px; background: linear-gradient(90deg,
+  #191317 0px,#1c171b 101px,#1d191b 141px,#1c181c 221px,#141115 261px,#1a171b 301px,
+  #16171a 341px,#17171b 421px,#16171b 461px,#17181c 501px,#16171a 541px,#18191c 581px,
+  #18181c 621px,#151518 661px,#17171a 701px,#151417 741px,#19191c 781px,#141417 821px,
+  #131417 861px,#0c0d11 901px); }
+
+/* .pf-lift — C4b ONLY, backdrop compensation. Namespaced on extraction
+   (the source rule was a bare, un-namespaced .pf-lift). Its DOM slot is
+   load-bearing: inside .pf-body, between .pf-lbev and .pf-lface, so
+   .pf-lface/.pf-chT paint over it and .pf-body's clip crops it. It
+   replays the +6/+7/+7 lift the semi-transparent panel art picks up
+   from the banner's lighter backdrop — the entire difference between
+   the two instances. */
+.halo-cartridge .pf-lift {
+  position: absolute; left: 0; right: 0; top: 0; height: 125px; pointer-events: none;
+  background: linear-gradient(180deg,
+    rgba(225,167,188,0.08960000000000001) 0px,   rgba(225,167,188,0.08960000000000001) 1px,
+    rgba(225,167,188,0.16) 1px,   rgba(225,167,188,0.16) 3px,
+    rgba(132,148,148,0.0384) 3px,   rgba(132,148,148,0.0384) 9px,
+    rgba(132,148,148,.01) 9px,   rgba(132,148,148,.01) 16px,
+    rgba(110,118,186,0.06) 16px,  rgba(110,118,186,0.06) 46px,
+    rgba(110,118,186,0.048) 46px,  rgba(110,118,186,0.048) 107px,
+    rgba(150,150,170,0.03) 107px, rgba(150,150,170,0.03) 125px);
+}
+</style>
+
+<div class="wb">
+
+  <header class="wb-head">
+    <h1>CARTRIDGE</h1>
+    <span class="wb-role">element 3 of 10</span>
+    <span class="wb-gate is-pass">PASS · 0.000</span>
+    <p>
+      The 914.5×125 dark-metal panel frame the subitem rides on — a machined outer silhouette
+      with cut corners, a deep recessed cavity, a rail plate, a chrome right-hand edge with a
+      rivet, and a red "C" bracket wrapping the left end. Appears twice: standalone in band C,
+      and as the banner's own sub-panel under the hex icon, name, bars and narrow chip in band B.
+    </p>
+  </header>
+
+  <div class="wb-body">
+    <div class="wb-specimens">
+
+      <article class="wb-spec" data-variant="is-c4a">
+        <div class="wb-spec-bar">
+          <button class="wb-pick" type="button">select</button>
+          <span class="wb-spec-meta">914.5×125 nominal, 127 painted · band C · canvas (344, 497)</span>
+          <span class="wb-spec-note">standalone — sits on bare --bg, nothing over or under it, no .pf-lift child. The only instance with its own pixel gate: PASS mean 0.288, which is a Chromium raster-height floor, not a defect — the untouched original markup scores the same in this box (see ANATOMY.md, "the stage width changes the pixels").</span>
+        </div>
+        <div class="wb-stage">
+          <div class="stage" style="width:1000px;height:280px">
+            <div class="halo-cartridge is-c4a" data-knobbed style="--x:42px; --y:90px">
+              <div class="pf-body">
+                <div class="pf-r pf-r0"></div><div class="pf-r pf-r1"></div><div class="pf-r pf-r2"></div>
+                <div class="pf-cav"><div class="pf-cavr"></div></div>
+                <div class="pf-railL"></div><div class="pf-railR"></div>
+                <div class="pf-r pf-r122"></div><div class="pf-r pf-r123"></div><div class="pf-r pf-r124"></div>
+                <div class="pf-rmar"></div><div class="pf-rface"></div><div class="pf-riv"></div>
+                <div class="pf-lbev"></div><div class="pf-lface"></div><div class="pf-chT"></div>
+              </div>
+              <div class="pf-lside"></div><div class="pf-fct"></div><div class="pf-fcb"></div>
+              <div class="pf-brk"><i class="v"></i><i class="d"></i><i class="ts"></i><i class="bs"></i></div>
+              <div class="pf-bl pf-blt"></div><div class="pf-bl pf-blb"></div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="wb-spec" data-variant="is-c4b">
+        <div class="wb-spec-bar">
+          <button class="wb-pick" type="button">select</button>
+          <span class="wb-spec-meta">915.2×125 nominal, 127 painted · band B · canvas (348.3, 246)</span>
+          <span class="wb-spec-note">banner sub-panel — exactly is-c4a translated by (+4.3, −251). Carries the .pf-lift backdrop-compensation layer (inside .pf-body, between .pf-lbev and .pf-lface) that replays the +6/+7/+7 lift the semi-transparent panel art picks up from the banner's lighter backdrop. Shown here on plain --bg, so the lift reads brighter than it does in the real assembly — it's calibrated for the banner face, not for this ground. Proven by the subitem assembly gate, mean 0.000.</span>
+        </div>
+        <div class="wb-stage">
+          <div class="stage" style="width:1000px;height:280px">
+            <div class="halo-cartridge is-c4b" data-knobbed style="--x:42px; --y:90px">
+              <div class="pf-body">
+                <div class="pf-r pf-r0"></div><div class="pf-r pf-r1"></div><div class="pf-r pf-r2"></div>
+                <div class="pf-cav"><div class="pf-cavr"></div></div>
+                <div class="pf-railL"></div><div class="pf-railR"></div>
+                <div class="pf-r pf-r122"></div><div class="pf-r pf-r123"></div><div class="pf-r pf-r124"></div>
+                <div class="pf-rmar"></div><div class="pf-rface"></div><div class="pf-riv"></div>
+                <div class="pf-lbev"></div>
+                <div class="pf-lift"></div><div class="pf-lface"></div><div class="pf-chT"></div>
+              </div>
+              <div class="pf-lside"></div><div class="pf-fct"></div><div class="pf-fcb"></div>
+              <div class="pf-brk"><i class="v"></i><i class="d"></i><i class="ts"></i><i class="bs"></i></div>
+              <div class="pf-bl pf-blt"></div><div class="pf-bl pf-blb"></div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+    </div>
+    <aside class="wb-rail" id="rail"></aside>
+  </div>
+
+  <p class="wb-note">
+    Only <code>--x</code> / <code>--y</code> (placement) and <code>--w</code> (overall width,
+    default 914.5px on is-c4a, 915.2px on is-c4b) are wired to the rail — turn a knob, hit
+    <b>copy CSS</b>, and the printed rule lands on <code>.halo-cartridge</code> (or a new variant
+    class) in <code>parts/cartridge.css</code>. <code>--w</code> moves only the right-hand edge
+    assembly (<code>.pf-rmar</code>, <code>.pf-rface</code>) and the stretchy
+    <code>.pf-body</code>/<code>.pf-bl*</code> boundary — everything else (<code>.pf-railR</code>,
+    <code>.pf-cav</code>, <code>.pf-riv</code>, every <code>.pf-r*</code>/<code>.pf-bl*</code>
+    gradient stop) is baked to a ~910px body, so straying far from ~915px desyncs them from the
+    right edge; the wide end of the slider is there to let you see that desync happen, not to
+    suggest it's free.<br><br>
+
+    <b><code>--f1</code>/<code>--f2</code> are deliberately left off this rail.</b> The part's own
+    header lists them as safe knobs for the top chamfer's fade stops, but they're declared and
+    consumed entirely inside <code>.pf-fct</code>'s own rule, not on the root — a single
+    root-level <code>data-knobbed</code> target can't reach them; the value would read empty and
+    writing it would do nothing. Move them by hand-editing <code>.pf-fct</code> in
+    <code>parts/cartridge.css</code> directly. (<code>.pf-fcb</code> declares
+    <code>--f1</code>/<code>--f2</code> too, but re-declares its whole background with the numbers
+    inlined, so on the bottom facet they're already inert in the source — untouched here either
+    way.)<br><br>
+
+    Both stages are held at 280px tall on purpose, not for symmetry: below roughly 256px Chromium
+    takes a different raster path and shifts the <code>.pf-rface</code> chrome-edge gradient one
+    pixel left of the true render — documented on the part's own preview page. The extra top/bottom
+    air also covers the real overflow: painted height is 127, not the nominal 125
+    (<code>.pf-blt</code>/<code>.pf-blb</code> escape <code>.pf-body</code>'s clip), and
+    <code>.pf-brk</code>'s blur bleeds ~1px past its own rects. The root sets no
+    <code>overflow</code>, so a tight stage would clip the very thing being iterated on.
+  </p>
+
+  <script>
+/* ============================================================
+   workbench.js — verbatim (HaloWorkbench).
+   ============================================================ */
+function HaloWorkbench(cfg) {
+  const rail = document.querySelector(cfg.rail);
+  const specimens = Array.from(document.querySelectorAll(cfg.specimens));
+  if (!rail || !specimens.length) return;
+
+  const groups = cfg.groups || [];
+  const allKnobs = groups.flatMap(g => g.knobs);
+
+  const born = new WeakMap();
+  const target = (spec) => spec.querySelector('[data-knobbed]') || spec.querySelector('.stage > *') || spec;
+
+  const readVar = (el, name) => {
+    const inline = el.style.getPropertyValue(name).trim();
+    if (inline) return inline;
+    return getComputedStyle(el).getPropertyValue(name).trim();
+  };
+
+  specimens.forEach(spec => {
+    const el = target(spec);
+    const snap = {};
+    allKnobs.forEach(k => { snap[k.var] = readVar(el, k.var); });
+    born.set(spec, snap);
+  });
+
+  let selected = specimens[0];
+
+  const controls = new Map();
+
+  const railHead = document.createElement('div');
+  railHead.className = 'wb-rail-head';
+  railHead.innerHTML = '<span>knobs</span><b data-wb-which></b>';
+  rail.appendChild(railHead);
+  const which = railHead.querySelector('[data-wb-which]');
+
+  const knobBox = document.createElement('div');
+  knobBox.className = 'wb-knobs';
+  rail.appendChild(knobBox);
+
+  groups.forEach(g => {
+    const sec = document.createElement('section');
+    sec.className = 'wb-group';
+    const h = document.createElement('h3');
+    h.textContent = g.title;
+    sec.appendChild(h);
+
+    g.knobs.forEach(k => {
+      const row = document.createElement('div');
+      row.className = 'wb-knob';
+
+      const id = 'k' + Math.abs(hash(k.var + g.title));
+      const lab = document.createElement('label');
+      lab.setAttribute('for', id);
+      lab.textContent = k.label || k.var;
+
+      const out = document.createElement('output');
+      out.setAttribute('for', id);
+
+      const input = document.createElement('input');
+      input.id = id;
+      if (k.type === 'color') {
+        input.type = 'color';
+      } else {
+        input.type = 'range';
+        input.min = k.min; input.max = k.max; input.step = k.step != null ? k.step : 1;
+      }
+      input.addEventListener('input', () => apply(k, input.value));
+
+      row.append(lab, out, input);
+      sec.appendChild(row);
+      controls.set(k.var, { input, out, row, knob: k });
+    });
+
+    knobBox.appendChild(sec);
+  });
+
+  const acts = document.createElement('div');
+  acts.className = 'wb-acts';
+  const copyBtn = mkBtn('copy CSS');
+  const resetBtn = mkBtn('reset');
+  acts.append(copyBtn, resetBtn);
+  rail.appendChild(acts);
+
+  const out = document.createElement('pre');
+  out.className = 'wb-out';
+  rail.appendChild(out);
+
+  function apply(knob, raw) {
+    const el = target(selected);
+    const value = knob.type === 'color' ? raw : raw + (knob.unit || '');
+    el.style.setProperty(knob.var, value);
+    sync(knob.var);
+  }
+
+  function sync(varName) {
+    const c = controls.get(varName);
+    if (!c) return;
+    const el = target(selected);
+    const now = readVar(el, varName);
+    const was = born.get(selected)[varName];
+    c.out.textContent = now || '—';
+    c.row.classList.toggle('is-dirty', norm(now) !== norm(was));
+  }
+
+  function load(spec) {
+    selected = spec;
+    specimens.forEach(s => s.classList.toggle('is-selected', s === spec));
+    which.textContent = spec.dataset.variant || '';
+    const el = target(spec);
+    controls.forEach(({ input, knob }, varName) => {
+      const v = readVar(el, varName);
+      if (knob.type === 'color') {
+        input.value = toHex(v) || '#000000';
+      } else {
+        const n = parseFloat(v);
+        input.value = Number.isFinite(n) ? n : (knob.min || 0);
+      }
+      sync(varName);
+    });
+    out.textContent = '';
+    copyBtn.classList.remove('is-done');
+    copyBtn.textContent = 'copy CSS';
+  }
+
+  specimens.forEach(spec => {
+    const pick = spec.querySelector('.wb-pick');
+    if (pick) pick.addEventListener('click', () => load(spec));
+    spec.addEventListener('click', e => {
+      if (e.target.closest('input, button, a')) return;
+      load(spec);
+    });
+  });
+
+  copyBtn.addEventListener('click', () => {
+    const el = target(selected);
+    const snap = born.get(selected);
+    const lines = [];
+    controls.forEach((c, varName) => {
+      const now = readVar(el, varName);
+      if (norm(now) !== norm(snap[varName])) lines.push(`  ${varName}: ${now};`);
+    });
+    const css = lines.length
+      ? `/* ${selected.dataset.variant || 'specimen'} — changed knobs */\n.halo-part {\n${lines.join('\n')}\n}`
+      : '/* nothing changed yet — turn a knob first */';
+    out.textContent = css;
+    if (navigator.clipboard && lines.length) {
+      navigator.clipboard.writeText(css).then(() => {
+        copyBtn.textContent = 'copied';
+        copyBtn.classList.add('is-done');
+      }, () => {});
+    }
+  });
+
+  resetBtn.addEventListener('click', () => {
+    const el = target(selected);
+    const snap = born.get(selected);
+    Object.keys(snap).forEach(varName => {
+      el.style.removeProperty(varName);
+      if (snap[varName]) el.style.setProperty(varName, snap[varName]);
+    });
+    load(selected);
+  });
+
+  load(specimens[0]);
+
+  function mkBtn(text) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'wb-btn'; b.textContent = text;
+    return b;
+  }
+  function norm(v) { return String(v || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
+  function hash(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h; }
+  function toHex(v) {
+    v = String(v || '').trim();
+    if (/^#[0-9a-f]{6}$/i.test(v)) return v;
+    if (/^#[0-9a-f]{3}$/i.test(v)) return '#' + v.slice(1).split('').map(c => c + c).join('');
+    const m = v.match(/^rgba?\(([^)]+)\)$/i);
+    if (m) {
+      const p = m[1].split(/[ ,/]+/).filter(Boolean).slice(0, 3).map(n => Math.max(0, Math.min(255, Math.round(parseFloat(n)))));
+      if (p.length === 3) return '#' + p.map(n => n.toString(16).padStart(2, '0')).join('');
+    }
+    return null;
+  }
+}
+
+HaloWorkbench({
+  rail: '#rail',
+  specimens: '.wb-spec',
+  groups: [
+    { title: 'placement', knobs: [
+        { var: '--x', label: 'x', min: 0, max: 120, step: .5, unit: 'px' },
+        { var: '--y', label: 'y', min: 0, max: 180, step: .5, unit: 'px' },
+    ]},
+    { title: 'plate', knobs: [
+        { var: '--w', label: 'width', min: 500, max: 1400, step: 1, unit: 'px' },
+    ]},
+  ],
+});
+  </script>
+</div>

@@ -1,0 +1,493 @@
+/* ==========================================================================
+   C10 — BANNER TOP ROW  (halo-deck)
+
+   The full-width machined "top row" of the banner: the horizontal band stack
+   that sits above the face, the face itself, its cross-lit modulation layers
+   and right-hand falloffs, the recessed seam with its 45deg ramp and chamfer
+   notch, the slate texture panel, the left frame gutters, the little graph
+   well (with grid + polyline trace), the warm shadow column, the exposed face
+   strip on the right, and one rivet. 22 painted children, every colour a
+   measured per-scanline value from the reference.
+
+   Lifted verbatim from _ref/original.html: CSS 520-719 + 750-766 (the whole
+   `#btr` block EXCEPT 721-749, which is c11's red L bracket) and markup
+   932-955 + 960-962 (`#btr`'s children EXCEPT 956-959, again c11).
+
+   Shared deps: NONE. No SVG <defs>, no tokens.css primitives, no filters, no
+   clip-paths. The one inline <svg> (.bt-graph) carries an inline stroke and
+   needs no defs at all, so nothing here can collide with another part.
+
+   --------------------------------------------------------------------------
+   THE REBASE (this is the largest mechanical rebase in the kit)
+
+   In the original, `#btr` was `position:absolute; inset:0` — i.e. the FULL
+   1292x635 stage — so all 22 children carried stage-absolute CANVAS
+   coordinates. The instance's own painted box is x13..1281, y125..241, so the
+   root origin is canvas (13, 125) and EVERY child offset below is the
+   original value minus (13, 125). Arithmetic is shown inline on each rule.
+
+   Two further canvas-space values had to be rewritten, not just moved:
+     * .bt-graph's viewBox was "37 143 36 73" (canvas user units). Because the
+       element is 36x73 CSS px and the viewBox is 36x73 user units, the mapping
+       is a pure 1:1 translation, so viewBox "0 0 36 73" is exactly equivalent.
+     * its polyline points were canvas coords
+         37.5,172.6  40,172.6  62,157.6  71.6,148
+       minus the viewBox origin (37, 143) ->
+          0.5,29.6    3,29.6   25,14.6   34.6,5
+       (see MARKUP below — the points live in the markup, not this sheet).
+
+   Also dropped: `#btr i { position:absolute; display:block }` became
+   `.halo-deck > i`. Without it every child collapses into
+   static flow — it is load-bearing, not boilerplate. `.bt-ramp b` and
+   `.bt-graph` were the only two children that declared their own position.
+
+   --------------------------------------------------------------------------
+   DOM ORDER IS THE COMPOSITING RECIPE — DO NOT REORDER
+
+     .bt-top .bt-face .bt-mod .bt-band2 .bt-fallA .bt-fallB .bt-bev .bt-seam
+     .bt-right .bt-ramp .bt-notch .bt-slate .bt-gut .bt-gutcap .bt-gutlow
+     .bt-welltop .bt-well .bt-welledge .bt-wellr .bt-graph .bt-warm .bt-rivet
+
+   .bt-mod / .bt-fallA / .bt-fallB / .bt-bev are translucent modulation layers
+   whose result depends entirely on .bt-top / .bt-face / .bt-slate underneath.
+   Nothing here sets z-index; source order alone does the stacking.
+
+   --------------------------------------------------------------------------
+   VARIANTS
+
+     .halo-deck.is-banner   C10, band B, canvas (13, 125),
+                                          1268 x 116. The ONLY instance in the
+                                          mockup — there is exactly one, so
+                                          there is exactly one variant. It
+                                          restates every fitted number so the
+                                          class stays self-describing even if
+                                          the sheet defaults are later tuned.
+
+   The component is fully opaque across its whole 1268x116 box (.bt-top +
+   .bt-face tile it edge to edge with opaque gradients) and NOTHING spills
+   outside it — no glow, no blur, no bloom. Whatever it is dropped on top of
+   is completely hidden. On the assembled canvas that is deliberate: c10
+   paints over c13's banner shell.
+
+   --------------------------------------------------------------------------
+   KNOBS a designer can safely turn (CSS custom properties on the root; every
+   default equals the measured C10 value, so leaving them alone reproduces the
+   mockup exactly). All are LOCAL to the part — none are canvas coordinates.
+
+     placement    --x  --y            top-left, relative to whatever ancestor
+                                       positions the part.
+     box          --w  --h            1268 x 116. --w also drives the four
+                                       full-bleed bands (.bt-top .bt-face
+                                       .bt-mod .bt-band2), which span the
+                                       component edge to edge. NOTE their
+                                       gradients are stated in px, so widening
+                                       --w widens the box but does not restretch
+                                       the colour stops.
+     seam         --seam-x --seam-w   211 / 814. The recessed seam.
+     ramp         --ramp-x            190. The 45deg ramp that lifts the seam
+                                       up to the top bevel.
+     notch        --notch-x           649. The small chamfer notch.
+     bevel        --bev-x --bev-w     60 / 150. The darker blue bevel rows over
+                                       the slate.
+     slate        --slate-x --slate-w 59 / 143. The texture panel (feathers out
+                                       to the right via a mask).
+     graph well   --well-x --well-y   24 / 18. Moves the WHOLE well assembly —
+                                       .bt-welltop (-1,-4), .bt-well (+1,0),
+                                       .bt-welledge (0,-1), .bt-wellr (+34,0)
+                                       and .bt-graph (0,0) all hang off it.
+     warm column  --warm-x            defaults to --well-x - 4 (= 20), so it
+                                       follows the well; override to decouple.
+     face strip   --right-x --right-w 1025 / 20. The exposed strip right of the
+                                       PROMISED chip. It is a HOLE-FILLER whose
+                                       left edge is dictated by c1's C1b chip —
+                                       move C1b and this must move with it.
+     rim falloff  --fall-a-x --fall-a-w   787 / 481
+                  --fall-b-x --fall-b-w   987 / 281
+     rivet        --rivet-x --rivet-y 0.5 / 107. See the trap note below.
+
+   TRAP: .bt-rivet is covered by c12's loose rivet #4 in the assembly, all but
+   a 2-row sliver worth a max delta of 1. It is effectively invisible, so a
+   pixel gate cannot catch it being wrong. It is here, last in DOM order, at
+   its measured half-pixel x, by construction.
+
+   --------------------------------------------------------------------------
+   MARKUP (copy verbatim — order matters, and the svg is not optional)
+
+   <div class="halo-deck is-banner" style="--x:13px; --y:125px">
+     <i class="bt-top"></i>
+     <i class="bt-face"></i>
+     <i class="bt-mod"></i>
+     <i class="bt-band2"></i>
+     <i class="bt-fallA"></i>
+     <i class="bt-fallB"></i>
+     <i class="bt-bev"></i>
+     <i class="bt-seam"></i>
+     <i class="bt-right"></i>
+     <i class="bt-ramp"><b></b></i>
+     <i class="bt-notch"></i>
+     <i class="bt-slate"></i>
+     <i class="bt-gut"></i>
+     <i class="bt-gutcap"></i>
+     <i class="bt-gutlow"></i>
+     <i class="bt-welltop"></i>
+     <i class="bt-well"></i>
+     <i class="bt-welledge"></i>
+     <i class="bt-wellr"></i>
+     <svg class="bt-graph" viewBox="0 0 36 73" fill="none">
+       <polyline points="0.5,29.6 3,29.6 25,14.6 34.6,5"
+                 stroke="rgba(170,205,228,.30)" stroke-width="1.1"/>
+     </svg>
+     <i class="bt-warm"></i>
+     <i class="bt-rivet"></i>
+   </div>
+
+   NOTE on assembly: c11 (the red L bracket) used to live inside this DOM as
+   .bt-div / .bt-lv / .bt-ltip / .bt-lch, sitting between .bt-wellr's group and
+   .bt-warm. On the assembled canvas c11 must therefore paint AFTER .bt-graph
+   and BEFORE .bt-warm — .bt-warm fully occludes c11's .bt-lch in the column
+   x33..37 (canvas), which is x20..24 local. c10 and c11 interleave; c11 is not
+   a layer that can sit wholly above or below this part.
+   ========================================================================== */
+
+
+/* --------------------------------------------------------------------------
+   ROOT  (was `#btr { position:absolute; inset:0; pointer-events:none }`,
+   original line 525 — `inset:0` was the whole stage; here it is the part's
+   own 1268x116 painted box.)
+   -------------------------------------------------------------------------- */
+.halo-deck {
+  --x: 0px;
+  --y: 0px;
+  --w: 1268px;
+  --h: 116px;
+
+  --seam-x: 211px;
+  --seam-w: 814px;
+  --ramp-x: 190px;
+  --notch-x: 649px;
+  --bev-x: 60px;
+  --bev-w: 150px;
+  --slate-x: 59px;
+  --slate-w: 143px;
+  --well-x: 24px;
+  --well-y: 18px;
+  --warm-x: calc(var(--well-x) - 4px);
+  --right-x: 1025px;
+  --right-w: 20px;
+  --fall-a-x: 787px;
+  --fall-a-w: 481px;
+  --fall-b-x: 987px;
+  --fall-b-w: 281px;
+  --rivet-x: 0.5px;
+  --rivet-y: 107px;
+
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--w);
+  height: var(--h);
+  pointer-events: none;
+}
+
+/* was `#btr i { position:absolute; display:block }` (original line 526).
+   LOAD-BEARING: none of the .bt-* rules below declare a position of their
+   own, so without this every child collapses into static flow. */
+.halo-deck > i { position: absolute; display: block; }
+
+
+/* --------------------------------------------------------------------------
+   VARIANT — the single mockup instance
+   -------------------------------------------------------------------------- */
+/* C10 · band B · canvas (13,125) 1268x116. Every value restated so the class
+   is self-describing; all of them match the sheet defaults above. */
+.halo-deck.is-banner {
+  --w: 1268px;
+  --h: 116px;
+  --seam-x: 211px;   --seam-w: 814px;
+  --ramp-x: 190px;
+  --notch-x: 649px;
+  --bev-x: 60px;     --bev-w: 150px;
+  --slate-x: 59px;   --slate-w: 143px;
+  --well-x: 24px;    --well-y: 18px;
+  --warm-x: 20px;
+  --right-x: 1025px; --right-w: 20px;
+  --fall-a-x: 787px; --fall-a-w: 481px;
+  --fall-b-x: 987px; --fall-b-w: 281px;
+  --rivet-x: 0.5px;  --rivet-y: 107px;
+}
+
+
+/* --- horizontal band stack above the face, canvas y125..143 --------------
+   rebase: left 13-13 = 0 · top 125-125 = 0 ------------------------------- */
+.halo-deck .bt-top {
+  left: 0; top: 0; width: var(--w); height: 18px;
+  background:linear-gradient(180deg,
+    hsl(calc(var(--steel-h) + 8 * var(--steel-spread)) calc(var(--steel-s) * 0.909) calc(6.471% * var(--steel-tint))) 0 1px,   hsl(calc(var(--steel-h) + 6.571 * var(--steel-spread)) calc(var(--steel-s) * 1.228) calc(7.451% * var(--steel-tint))) 1px 3px, hsl(calc(var(--steel-h) + 8 * var(--steel-spread)) calc(var(--steel-s) * 1.111) calc(5.294% * var(--steel-tint))) 3px 4px, hsl(calc(var(--steel-h) + 4 * var(--steel-spread)) calc(var(--steel-s) * 0.273) calc(11.961% * var(--steel-tint))) 4px 5px,
+    hsl(calc(var(--steel-h) + -8.923 * var(--steel-spread)) calc(var(--steel-s) * 0.22) calc(38.627% * var(--steel-tint))) 5px 6px, hsl(calc(var(--steel-h) + -5.75 * var(--steel-spread)) calc(var(--steel-s) * 0.259) calc(40.392% * var(--steel-tint))) 6px 7px, hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 0.333) calc(23.529% * var(--steel-tint))) 7px 8px, hsl(calc(var(--steel-h) + 4 * var(--steel-spread)) calc(var(--steel-s) * 0.179) calc(18.235% * var(--steel-tint))) 8px 9px,
+    hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 0.139) calc(18.824% * var(--steel-tint))) 9px 10px,hsl(calc(var(--steel-h) + 13 * var(--steel-spread)) calc(var(--steel-s) * 0.23) calc(11.373% * var(--steel-tint))) 10px 11px,#000002 11px 12px,hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.068) calc(9.608% * var(--steel-tint))) 12px 13px,
+    hsl(calc(var(--steel-h) + 45.143 * var(--steel-spread)) calc(var(--steel-s) * 0.151) calc(30.392% * var(--steel-tint))) 13px 14px,hsl(calc(var(--steel-h) + 32.615 * var(--steel-spread)) calc(var(--steel-s) * 0.211) calc(40.196% * var(--steel-tint))) 14px 15px,hsl(calc(var(--steel-h) + 13.714 * var(--steel-spread)) calc(var(--steel-s) * 0.295) calc(46.471% * var(--steel-tint))) 15px 16px,hsl(calc(var(--steel-h) + 13 * var(--steel-spread)) calc(var(--steel-s) * 0.354) calc(44.314% * var(--steel-tint))) 16px 17px,
+    hsl(calc(var(--steel-h) + 14.957 * var(--steel-spread)) calc(var(--steel-s) * 0.495) calc(30.392% * var(--steel-tint))) 17px 18px);
+}
+
+/* --- the face itself, canvas y143..241 -----------------------------------
+   rebase: left 13-13 = 0 · top 143-125 = 18 ------------------------------ */
+.halo-deck .bt-face {
+  left: 0; top: 18px; width: var(--w); height: 98px;
+  background:linear-gradient(180deg,
+    hsl(calc(var(--steel-h) + 12.211 * var(--steel-spread)) calc(var(--steel-s) * 0.541) calc(22.941% * var(--steel-tint))) 0 1px,   hsl(calc(var(--steel-h) + 16.75 * var(--steel-spread)) calc(var(--steel-s) * 0.476) calc(21.961% * var(--steel-tint))) 1px 2px,  hsl(calc(var(--steel-h) + 20.5 * var(--steel-spread)) calc(var(--steel-s) * 0.485) calc(21.569% * var(--steel-tint))) 2px 6px,  hsl(calc(var(--steel-h) + 20.5 * var(--steel-spread)) calc(var(--steel-s) * 0.485) calc(21.569% * var(--steel-tint))) 6px 7px,
+    hsl(calc(var(--steel-h) + 20.5 * var(--steel-spread)) calc(var(--steel-s) * 0.476) calc(21.961% * var(--steel-tint))) 7px 8px, hsl(calc(var(--steel-h) + 20 * var(--steel-spread)) calc(var(--steel-s) * 0.442) calc(22.157% * var(--steel-tint))) 8px 9px,  hsl(calc(var(--steel-h) + 20 * var(--steel-spread)) calc(var(--steel-s) * 0.427) calc(22.941% * var(--steel-tint))) 9px 19px, hsl(calc(var(--steel-h) + 17.412 * var(--steel-spread)) calc(var(--steel-s) * 0.468) calc(23.725% * var(--steel-tint))) 19px 21px,
+    hsl(calc(var(--steel-h) + 16.75 * var(--steel-spread)) calc(var(--steel-s) * 0.452) calc(23.137% * var(--steel-tint))) 21px 22px,hsl(calc(var(--steel-h) + 20.5 * var(--steel-spread)) calc(var(--steel-s) * 0.452) calc(23.137% * var(--steel-tint))) 22px 23px,hsl(calc(var(--steel-h) + 19.429 * var(--steel-spread)) calc(var(--steel-s) * 0.402) calc(22.745% * var(--steel-tint))) 23px 24px,hsl(calc(var(--steel-h) + 23 * var(--steel-spread)) calc(var(--steel-s) * 0.351) calc(22.353% * var(--steel-tint))) 24px 29px,
+    hsl(calc(var(--steel-h) + 40 * var(--steel-spread)) calc(var(--steel-s) * 0.303) calc(21.569% * var(--steel-tint))) 29px 30px,hsl(calc(var(--steel-h) + 40 * var(--steel-spread)) calc(var(--steel-s) * 0.314) calc(20.784% * var(--steel-tint))) 30px 31px,hsl(calc(var(--steel-h) + 41.333 * var(--steel-spread)) calc(var(--steel-s) * 0.297) calc(19.804% * var(--steel-tint))) 31px 32px,hsl(calc(var(--steel-h) + 43 * var(--steel-spread)) calc(var(--steel-s) * 0.272) calc(19.216% * var(--steel-tint))) 32px 35px,
+    hsl(calc(var(--steel-h) + 50.5 * var(--steel-spread)) calc(var(--steel-s) * 0.284) calc(18.431% * var(--steel-tint))) 35px 38px,hsl(calc(var(--steel-h) + 48 * var(--steel-spread)) calc(var(--steel-s) * 0.222) calc(17.647% * var(--steel-tint))) 38px 41px,hsl(calc(var(--steel-h) + 76 * var(--steel-spread)) calc(var(--steel-s) * 0.192) calc(17.059% * var(--steel-tint))) 41px 48px,hsl(calc(var(--steel-h) + 78 * var(--steel-spread)) calc(var(--steel-s) * 0.238) calc(16.471% * var(--steel-tint))) 48px 51px,
+    hsl(calc(var(--steel-h) + 78 * var(--steel-spread)) calc(var(--steel-s) * 0.25) calc(15.686% * var(--steel-tint))) 51px 54px,hsl(calc(var(--steel-h) + 78 * var(--steel-spread)) calc(var(--steel-s) * 0.263) calc(14.902% * var(--steel-tint))) 54px 57px,hsl(calc(var(--steel-h) + 68 * var(--steel-spread)) calc(var(--steel-s) * 0.263) calc(14.902% * var(--steel-tint))) 57px 61px,hsl(calc(var(--steel-h) + 65.5 * var(--steel-spread)) calc(var(--steel-s) * 0.36) calc(14.51% * var(--steel-tint))) 61px 66px,
+    hsl(calc(var(--steel-h) + 65.5 * var(--steel-spread)) calc(var(--steel-s) * 0.37) calc(14.118% * var(--steel-tint))) 66px 73px,hsl(calc(var(--steel-h) + 68 * var(--steel-spread)) calc(var(--steel-s) * 0.423) calc(13.922% * var(--steel-tint))) 73px 80px,hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.411) calc(14.314% * var(--steel-tint))) 80px 81px,hsl(calc(var(--steel-h) + 108 * var(--steel-spread)) calc(var(--steel-s) * 0.541) calc(14.51% * var(--steel-tint))) 81px 82px,
+    hsl(calc(var(--steel-h) + 122.286 * var(--steel-spread)) calc(var(--steel-s) * 0.778) calc(11.765% * var(--steel-tint))) 82px 83px,hsl(calc(var(--steel-h) + 121.75 * var(--steel-spread)) calc(var(--steel-s) * 1.026) calc(10.196% * var(--steel-tint))) 83px 84px,hsl(calc(var(--steel-h) + 98 * var(--steel-spread)) calc(var(--steel-s) * 1.053) calc(7.451% * var(--steel-tint))) 84px 85px,hsl(calc(var(--steel-h) + 128 * var(--steel-spread)) calc(var(--steel-s) * 0.137) calc(14.314% * var(--steel-tint))) 85px 90px,
+    hsl(calc(var(--steel-h) + 108 * var(--steel-spread)) calc(var(--steel-s) * 0.149) calc(13.137% * var(--steel-tint))) 90px 96px,hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.37) calc(7.059% * var(--steel-tint))) 96px 97px,hsl(calc(var(--steel-h) + 112 * var(--steel-spread)) calc(var(--steel-s) * 0.725) calc(4.51% * var(--steel-tint))) 97px 98px);
+}
+
+/* faint blue-grey cross-lighting: the face is brighter around x420..500 and
+   x880..980, dimmest at x100..140 and x580..700 (measured on rows 143..150)
+   rebase: left 13-13 = 0 · top 143-125 = 18 ------------------------------ */
+.halo-deck .bt-mod {
+  left: 0; top: 18px; width: var(--w); height: 14px;
+  background:linear-gradient(90deg,
+    rgba(133,163,225,.000)   0px, rgba(133,163,225,.030) 150px,
+    rgba(133,163,225,.035) 250px, rgba(133,163,225,.070) 310px,
+    rgba(133,163,225,.088) 410px, rgba(133,163,225,.088) 460px,
+    rgba(133,163,225,.060) 510px, rgba(133,163,225,.000) 557px,
+    rgba(133,163,225,.035) 607px, rgba(133,163,225,.010) 657px,
+    rgba(133,163,225,.010) 707px, rgba(133,163,225,.020) 757px,
+    rgba(133,163,225,.045) 807px, rgba(133,163,225,.070) 857px,
+    rgba(133,163,225,.088) 907px, rgba(133,163,225,.105) 957px,
+    rgba(133,163,225,.050) 1007px,rgba(133,163,225,.050) 1268px);
+}
+
+/* the canvas y157..171 continuation of that band, no cross-lighting
+   rebase: left 13-13 = 0 · top 157-125 = 32 ------------------------------ */
+.halo-deck .bt-band2 {
+  left: 0; top: 32px; width: var(--w); height: 14px;
+  background:linear-gradient(180deg,
+    hsl(calc(var(--steel-h) + 17.412 * var(--steel-spread)) calc(var(--steel-s) * 0.468) calc(23.725% * var(--steel-tint))) 0 5px,hsl(calc(var(--steel-h) + 16.75 * var(--steel-spread)) calc(var(--steel-s) * 0.452) calc(23.137% * var(--steel-tint))) 5px 6px,hsl(calc(var(--steel-h) + 20.5 * var(--steel-spread)) calc(var(--steel-s) * 0.452) calc(23.137% * var(--steel-tint))) 6px 7px,hsl(calc(var(--steel-h) + 19.429 * var(--steel-spread)) calc(var(--steel-s) * 0.402) calc(22.745% * var(--steel-tint))) 7px 8px,hsl(calc(var(--steel-h) + 23 * var(--steel-spread)) calc(var(--steel-s) * 0.351) calc(22.353% * var(--steel-tint))) 8px 14px);
+}
+
+/* falloff of the grey top rim towards the right end of the banner
+   rebase: left 800-13 = 787 · top 129-125 = 4 ---------------------------- */
+.halo-deck .bt-fallA {
+  left: var(--fall-a-x); top: 4px; width: var(--fall-a-w); height: 11px;
+  background:linear-gradient(90deg, rgba(0,0,0,0) 0px, rgba(0,0,0,.06) 60px,
+             rgba(0,0,0,.13) 140px, rgba(0,0,0,.20) 210px, rgba(0,0,0,.24) 260px,
+             rgba(0,0,0,.24) 481px);
+}
+/* rebase: left 1000-13 = 987 · top 140-125 = 15 -------------------------- */
+.halo-deck .bt-fallB {
+  left: var(--fall-b-x); top: 15px; width: var(--fall-b-w); height: 3px;
+  background:linear-gradient(90deg, rgba(0,0,0,0) 0px, rgba(0,0,0,.14) 60px,
+             rgba(0,0,0,.14) 281px);
+}
+
+/* the blue bevel rows canvas 138..142 are markedly darker over the slate,
+   canvas x73..223 · rebase: left 73-13 = 60 · top 138-125 = 13 ----------- */
+.halo-deck .bt-bev {
+  left: var(--bev-x); top: 13px; width: var(--bev-w); height: 5px;
+  background:linear-gradient(90deg, rgba(18,10,28,.26) 0px, rgba(18,10,28,.26) 60px,
+             rgba(18,10,28,.14) 100px, rgba(18,10,28,.07) 150px);
+}
+
+/* --- the recessed seam that runs canvas x224..1038 at y151..164 ----------
+   rebase: left 224-13 = 211 · top 151-125 = 26 --------------------------- */
+.halo-deck .bt-seam {
+  left: var(--seam-x); top: 26px; width: var(--seam-w); height: 13px;
+  background:linear-gradient(180deg,
+    hsl(calc(var(--steel-h) + 33 * var(--steel-spread)) calc(var(--steel-s) * 0.345) calc(22.745% * var(--steel-tint))) 0 1px,  hsl(calc(var(--steel-h) + 53 * var(--steel-spread)) calc(var(--steel-s) * 0.408) calc(19.216% * var(--steel-tint))) 1px 2px, hsl(calc(var(--steel-h) + 94 * var(--steel-spread)) calc(var(--steel-s) * 0.45) calc(14.51% * var(--steel-tint))) 2px 3px, hsl(calc(var(--steel-h) + 95.5 * var(--steel-spread)) calc(var(--steel-s) * 0.417) calc(12.549% * var(--steel-tint))) 3px 4px,
+    hsl(calc(var(--steel-h) + 65.5 * var(--steel-spread)) calc(var(--steel-s) * 0.325) calc(16.078% * var(--steel-tint))) 4px 5px,hsl(calc(var(--steel-h) + 44.364 * var(--steel-spread)) calc(var(--steel-s) * 0.343) calc(20.98% * var(--steel-tint))) 5px 6px, hsl(calc(var(--steel-h) + 37.231 * var(--steel-spread)) calc(var(--steel-s) * 0.291) calc(29.216% * var(--steel-tint))) 6px 7px, hsl(calc(var(--steel-h) + 23.714 * var(--steel-spread)) calc(var(--steel-s) * 0.238) calc(38.431% * var(--steel-tint))) 7px 8px,
+    hsl(calc(var(--steel-h) + 18 * var(--steel-spread)) calc(var(--steel-s) * 0.333) calc(35.294% * var(--steel-tint))) 8px 9px,hsl(calc(var(--steel-h) + 20.5 * var(--steel-spread)) calc(var(--steel-s) * 0.365) calc(28.627% * var(--steel-tint))) 9px 10px,hsl(calc(var(--steel-h) + 32.615 * var(--steel-spread)) calc(var(--steel-s) * 0.347) calc(24.51% * var(--steel-tint))) 10px 11px,hsl(calc(var(--steel-h) + 16.75 * var(--steel-spread)) calc(var(--steel-s) * 0.423) calc(24.706% * var(--steel-tint))) 11px 12px,
+    hsl(calc(var(--steel-h) + 16.75 * var(--steel-spread)) calc(var(--steel-s) * 0.437) calc(23.922% * var(--steel-tint))) 12px 13px);
+}
+
+/* --- the exposed face strip right of the PROMISED chip, canvas x1038..1058
+   A HOLE-FILLER shaped by c1's C1b chip, not an independent feature.
+   rebase: left 1038-13 = 1025 · top 143-125 = 18 ------------------------- */
+.halo-deck .bt-right {
+  left: var(--right-x); top: 18px; width: var(--right-w); height: 85px;
+  background:linear-gradient(180deg,
+    hsl(calc(var(--steel-h) + 13 * var(--steel-spread)) calc(var(--steel-s) * 0.625) calc(25.098% * var(--steel-tint))) 0 1px,hsl(calc(var(--steel-h) + 13 * var(--steel-spread)) calc(var(--steel-s) * 0.656) calc(23.922% * var(--steel-tint))) 1px 2px,hsl(calc(var(--steel-h) + 13.6 * var(--steel-spread)) calc(var(--steel-s) * 0.689) calc(23.725% * var(--steel-tint))) 2px 6px,hsl(calc(var(--steel-h) + 14.154 * var(--steel-spread)) calc(var(--steel-s) * 0.699) calc(24.314% * var(--steel-tint))) 6px 9px,hsl(calc(var(--steel-h) + 14.154 * var(--steel-spread)) calc(var(--steel-s) * 0.71) calc(23.922% * var(--steel-tint))) 9px 10px,
+    hsl(calc(var(--steel-h) + 14.364 * var(--steel-spread)) calc(var(--steel-s) * 0.621) calc(23.137% * var(--steel-tint))) 10px 14px,hsl(calc(var(--steel-h) + 14.364 * var(--steel-spread)) calc(var(--steel-s) * 0.632) calc(22.745% * var(--steel-tint))) 14px 17px,hsl(calc(var(--steel-h) + 12.348 * var(--steel-spread)) calc(var(--steel-s) * 0.667) calc(22.549% * var(--steel-tint))) 17px 19px,hsl(calc(var(--steel-h) + 12.348 * var(--steel-spread)) calc(var(--steel-s) * 0.678) calc(22.157% * var(--steel-tint))) 19px 21px,
+    hsl(calc(var(--steel-h) + 13.714 * var(--steel-spread)) calc(var(--steel-s) * 0.619) calc(22.157% * var(--steel-tint))) 21px 22px,hsl(calc(var(--steel-h) + 16 * var(--steel-spread)) calc(var(--steel-s) * 0.606) calc(21.569% * var(--steel-tint))) 22px 23px,hsl(calc(var(--steel-h) + 15.368 * var(--steel-spread)) calc(var(--steel-s) * 0.581) calc(21.373% * var(--steel-tint))) 23px 24px,hsl(calc(var(--steel-h) + 15.368 * var(--steel-spread)) calc(var(--steel-s) * 0.603) calc(20.588% * var(--steel-tint))) 24px 25px,
+    hsl(calc(var(--steel-h) + 14.667 * var(--steel-spread)) calc(var(--steel-s) * 0.6) calc(19.608% * var(--steel-tint))) 25px 26px,hsl(calc(var(--steel-h) + 17.412 * var(--steel-spread)) calc(var(--steel-s) * 0.572) calc(19.412% * var(--steel-tint))) 26px 27px,hsl(calc(var(--steel-h) + 16.75 * var(--steel-spread)) calc(var(--steel-s) * 0.556) calc(18.824% * var(--steel-tint))) 27px 28px,hsl(calc(var(--steel-h) + 16.75 * var(--steel-spread)) calc(var(--steel-s) * 0.58) calc(18.039% * var(--steel-tint))) 28px 29px,
+    hsl(calc(var(--steel-h) + 20 * var(--steel-spread)) calc(var(--steel-s) * 0.562) calc(17.451% * var(--steel-tint))) 29px 33px,hsl(calc(var(--steel-h) + 23.385 * var(--steel-spread)) calc(var(--steel-s) * 0.476) calc(17.843% * var(--steel-tint))) 33px 40px,hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.421) calc(17.059% * var(--steel-tint))) 40px 41px,hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.442) calc(16.275% * var(--steel-tint))) 41px 45px,
+    hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.431) calc(16.667% * var(--steel-tint))) 45px 48px,hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.476) calc(16.471% * var(--steel-tint))) 48px 49px,hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.453) calc(15.882% * var(--steel-tint))) 49px 50px,hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.427) calc(15.294% * var(--steel-tint))) 50px 51px,
+    hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.39) calc(15.098% * var(--steel-tint))) 51px 58px,hsl(calc(var(--steel-h) + 40 * var(--steel-spread)) calc(var(--steel-s) * 0.463) calc(14.118% * var(--steel-tint))) 58px 66px,hsl(calc(var(--steel-h) + 35.5 * var(--steel-spread)) calc(var(--steel-s) * 0.392) calc(13.333% * var(--steel-tint))) 66px 80px,hsl(calc(var(--steel-h) + 60.727 * var(--steel-spread)) calc(var(--steel-s) * 0.531) calc(13.529% * var(--steel-tint))) 80px 81px,
+    hsl(calc(var(--steel-h) + 81.333 * var(--steel-spread)) calc(var(--steel-s) * 0.448) calc(13.137% * var(--steel-tint))) 81px 82px,hsl(calc(var(--steel-h) + 98.909 * var(--steel-spread)) calc(var(--steel-s) * 0.643) calc(11.176% * var(--steel-tint))) 82px 83px,hsl(calc(var(--steel-h) + 106.462 * var(--steel-spread)) calc(var(--steel-s) * 0.85) calc(10% * var(--steel-tint))) 83px 84px,hsl(calc(var(--steel-h) + 94 * var(--steel-spread)) calc(var(--steel-s) * 0.794) calc(8.235% * var(--steel-tint))) 84px 85px);
+}
+
+/* 45deg ramp that carries the seam up to the top bevel, canvas x204..226
+   rebase: left 203-13 = 190 · top 134-125 = 9 ---------------------------- */
+.halo-deck .bt-ramp {
+  left: var(--ramp-x); top: 9px; width: 24px; height: 31px; overflow: hidden;
+}
+/* `b` is already LOCAL to .bt-ramp in the original — nothing to rebase. */
+.halo-deck .bt-ramp b {
+  position:absolute; left:3.5px; top:7.5px; width:30px; height:9px;
+  margin-top:-4.5px; transform-origin:0 50%; transform:rotate(44.2deg);
+  background:linear-gradient(180deg,hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.395) calc(23.137% * var(--steel-tint))) 0%,hsl(calc(var(--steel-h) + 55.273 * var(--steel-spread)) calc(var(--steel-s) * 0.421) calc(17.059% * var(--steel-tint))) 18%,hsl(calc(var(--steel-h) + 58 * var(--steel-spread)) calc(var(--steel-s) * 0.49) calc(13.333% * var(--steel-tint))) 34%,
+                             hsl(calc(var(--steel-h) + 17.412 * var(--steel-spread)) calc(var(--steel-s) * 0.414) calc(26.863% * var(--steel-tint))) 46%,hsl(calc(var(--steel-h) + 14.364 * var(--steel-spread)) calc(var(--steel-s) * 0.412) calc(34.902% * var(--steel-tint))) 55%,hsl(calc(var(--steel-h) + 18 * var(--steel-spread)) calc(var(--steel-s) * 0.361) calc(32.549% * var(--steel-tint))) 66%,hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.336) calc(25.294% * var(--steel-tint))) 82%,hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.383) calc(23.922% * var(--steel-tint))) 100%);
+}
+
+/* small chamfer notch in the same band at canvas x662..676
+   rebase: left 662-13 = 649 · top 144-125 = 19 --------------------------- */
+.halo-deck .bt-notch {
+  left: var(--notch-x); top: 19px; width: 14px; height: 5px;
+  background:linear-gradient(90deg,
+    hsl(calc(var(--steel-h) + 10.857 * var(--steel-spread)) calc(var(--steel-s) * 0.49) calc(28.039% * var(--steel-tint))) 0 1px,hsl(calc(var(--steel-h) + 13 * var(--steel-spread)) calc(var(--steel-s) * 0.444) calc(35.294% * var(--steel-tint))) 1px 3px,hsl(calc(var(--steel-h) + 13 * var(--steel-spread)) calc(var(--steel-s) * 0.482) calc(32.549% * var(--steel-tint))) 3px 4px,hsl(calc(var(--steel-h) + 16.571 * var(--steel-spread)) calc(var(--steel-s) * 0.511) calc(26.863% * var(--steel-tint))) 4px 5px,hsl(calc(var(--steel-h) + 17.412 * var(--steel-spread)) calc(var(--steel-s) * 0.584) calc(19.02% * var(--steel-tint))) 5px 6px,
+    hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.531) calc(13.529% * var(--steel-tint))) 6px 7px,hsl(calc(var(--steel-h) + 46 * var(--steel-spread)) calc(var(--steel-s) * 0.617) calc(10.588% * var(--steel-tint))) 7px 9px,hsl(calc(var(--steel-h) + 49.818 * var(--steel-spread)) calc(var(--steel-s) * 0.547) calc(13.137% * var(--steel-tint))) 9px 10px,hsl(calc(var(--steel-h) + 44.364 * var(--steel-spread)) calc(var(--steel-s) * 0.453) calc(15.882% * var(--steel-tint))) 10px 12px,hsl(calc(var(--steel-h) + 32.615 * var(--steel-spread)) calc(var(--steel-s) * 0.447) calc(19.02% * var(--steel-tint))) 12px 14px);
+}
+
+/* --- slate texture panel, canvas x72..215 (feathers out to the right) ----
+   BOTH mask-image prefixes are required — keep the -webkit- pair.
+   rebase: left 72-13 = 59 · top 143-125 = 18 ----------------------------- */
+.halo-deck .bt-slate {
+  left: var(--slate-x); top: 18px; width: var(--slate-w); height: 85px;
+  -webkit-mask-image:linear-gradient(90deg,#000 0 50%,rgba(0,0,0,0) 100%);
+          mask-image:linear-gradient(90deg,#000 0 50%,rgba(0,0,0,0) 100%);
+  background:
+    radial-gradient(40px 22px at 62% 16%, rgba(150,140,165,.030), transparent 72%),
+    radial-gradient(50px 26px at 88% 52%, rgba(120,110,140,.032), transparent 74%),
+    radial-gradient(26px 30px at 14% 68%, rgba( 20, 14, 22,.045), transparent 76%),
+    linear-gradient(180deg,
+    hsl(calc(var(--steel-h) + 36.571 * var(--steel-spread)) calc(var(--steel-s) * 0.424) calc(21.569% * var(--steel-tint))) 0 1px,hsl(calc(var(--steel-h) + 37.231 * var(--steel-spread)) calc(var(--steel-s) * 0.413) calc(20.588% * var(--steel-tint))) 1px 2px,hsl(calc(var(--steel-h) + 33 * var(--steel-spread)) calc(var(--steel-s) * 0.385) calc(20.392% * var(--steel-tint))) 2px 4px,hsl(calc(var(--steel-h) + 32.615 * var(--steel-spread)) calc(var(--steel-s) * 0.405) calc(20.98% * var(--steel-tint))) 4px 5px,hsl(calc(var(--steel-h) + 32.615 * var(--steel-spread)) calc(var(--steel-s) * 0.398) calc(21.373% * var(--steel-tint))) 5px 6px,
+    hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.39) calc(21.765% * var(--steel-tint))) 6px 20px,hsl(calc(var(--steel-h) + 33.455 * var(--steel-spread)) calc(var(--steel-s) * 0.349) calc(20.588% * var(--steel-tint))) 20px 21px,hsl(calc(var(--steel-h) + 43 * var(--steel-spread)) calc(var(--steel-s) * 0.392) calc(20% * var(--steel-tint))) 21px 22px,hsl(calc(var(--steel-h) + 44.364 * var(--steel-spread)) calc(var(--steel-s) * 0.37) calc(19.412% * var(--steel-tint))) 22px 23px,
+    hsl(calc(var(--steel-h) + 44.364 * var(--steel-spread)) calc(var(--steel-s) * 0.378) calc(19.02% * var(--steel-tint))) 23px 24px,hsl(calc(var(--steel-h) + 46 * var(--steel-spread)) calc(var(--steel-s) * 0.355) calc(18.431% * var(--steel-tint))) 24px 25px,hsl(calc(var(--steel-h) + 44.364 * var(--steel-spread)) calc(var(--steel-s) * 0.394) calc(18.235% * var(--steel-tint))) 25px 26px,hsl(calc(var(--steel-h) + 49.818 * var(--steel-spread)) calc(var(--steel-s) * 0.403) calc(17.843% * var(--steel-tint))) 26px 27px,
+    hsl(calc(var(--steel-h) + 49.818 * var(--steel-spread)) calc(var(--steel-s) * 0.412) calc(17.451% * var(--steel-tint))) 27px 28px,hsl(calc(var(--steel-h) + 52 * var(--steel-spread)) calc(var(--steel-s) * 0.379) calc(17.255% * var(--steel-tint))) 28px 29px,hsl(calc(var(--steel-h) + 58 * var(--steel-spread)) calc(var(--steel-s) * 0.388) calc(16.863% * var(--steel-tint))) 29px 30px,hsl(calc(var(--steel-h) + 60.727 * var(--steel-spread)) calc(var(--steel-s) * 0.442) calc(16.275% * var(--steel-tint))) 30px 31px,
+    hsl(calc(var(--steel-h) + 70 * var(--steel-spread)) calc(var(--steel-s) * 0.417) calc(15.686% * var(--steel-tint))) 31px 32px,hsl(calc(var(--steel-h) + 70 * var(--steel-spread)) calc(var(--steel-s) * 0.427) calc(15.294% * var(--steel-tint))) 32px 33px,hsl(calc(var(--steel-h) + 76 * var(--steel-spread)) calc(var(--steel-s) * 0.439) calc(14.902% * var(--steel-tint))) 33px 35px,hsl(calc(var(--steel-h) + 74.667 * var(--steel-spread)) calc(var(--steel-s) * 0.4) calc(14.706% * var(--steel-tint))) 35px 36px,
+    hsl(calc(var(--steel-h) + 81.333 * var(--steel-spread)) calc(var(--steel-s) * 0.411) calc(14.314% * var(--steel-tint))) 36px 38px,hsl(calc(var(--steel-h) + 81.333 * var(--steel-spread)) calc(var(--steel-s) * 0.423) calc(13.922% * var(--steel-tint))) 38px 40px,hsl(calc(var(--steel-h) + 74.667 * var(--steel-spread)) calc(var(--steel-s) * 0.423) calc(13.922% * var(--steel-tint))) 40px 41px,hsl(calc(var(--steel-h) + 80.5 * var(--steel-spread)) calc(var(--steel-s) * 0.392) calc(13.333% * var(--steel-tint))) 41px 44px,
+    hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.404) calc(12.941% * var(--steel-tint))) 44px 47px,hsl(calc(var(--steel-h) + 81.333 * var(--steel-spread)) calc(var(--steel-s) * 0.462) calc(12.745% * var(--steel-tint))) 47px 50px,hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.43) calc(12.157% * var(--steel-tint))) 50px 56px,hsl(calc(var(--steel-h) + 94.667 * var(--steel-spread)) calc(var(--steel-s) * 0.508) calc(11.569% * var(--steel-tint))) 56px 61px,
+    hsl(calc(var(--steel-h) + 94.667 * var(--steel-spread)) calc(var(--steel-s) * 0.526) calc(11.176% * var(--steel-tint))) 61px 66px,hsl(calc(var(--steel-h) + 100 * var(--steel-spread)) calc(var(--steel-s) * 0.595) calc(10.98% * var(--steel-tint))) 66px 71px,hsl(calc(var(--steel-h) + 101.333 * var(--steel-spread)) calc(var(--steel-s) * 0.566) calc(10.392% * var(--steel-tint))) 71px 77px,hsl(calc(var(--steel-h) + 100 * var(--steel-spread)) calc(var(--steel-s) * 0.617) calc(10.588% * var(--steel-tint))) 77px 80px,
+    hsl(calc(var(--steel-h) + 103 * var(--steel-spread)) calc(var(--steel-s) * 0.667) calc(11.765% * var(--steel-tint))) 80px 81px,hsl(calc(var(--steel-h) + 111.077 * var(--steel-spread)) calc(var(--steel-s) * 0.71) calc(11.961% * var(--steel-tint))) 81px 82px,hsl(calc(var(--steel-h) + 121.75 * var(--steel-spread)) calc(var(--steel-s) * 1.026) calc(10.196% * var(--steel-tint))) 82px 83px,#1f0e14 83px 84px,
+    #170a11 84px 85px);
+}
+
+/* --- left gutter between the frame rim and the L bracket, canvas x13..24 --
+   rebase: left 13-13 = 0 · top 142-125 = 17 ------------------------------ */
+.halo-deck .bt-gut {
+  left: 0; top: 17px; width: 11px; height: 71px;
+  background:linear-gradient(90deg,
+    hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.103) calc(19.02% * var(--steel-tint))) 0 1px,hsl(calc(var(--steel-h) + 13 * var(--steel-spread)) calc(var(--steel-s) * 0.256) calc(10.196% * var(--steel-tint))) 1px 2px,hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.145) calc(4.51% * var(--steel-tint))) 2px 3px,hsl(calc(var(--steel-h) + 156.571 * var(--steel-spread)) calc(var(--steel-s) * 0.753) calc(6.078% * var(--steel-tint))) 3px 4px,#20120c 4px 5px,
+    #2e1610 5px 6px,hsl(calc(var(--steel-h) + 158.714 * var(--steel-spread)) calc(var(--steel-s) * 0.676) calc(27.059% * var(--steel-tint))) 6px 7px,hsl(calc(var(--steel-h) + 159.429 * var(--steel-spread)) calc(var(--steel-s) * 0.44) calc(31.176% * var(--steel-tint))) 7px 8px,hsl(calc(var(--steel-h) + 156 * var(--steel-spread)) calc(var(--steel-s) * 0.495) calc(19.804% * var(--steel-tint))) 8px 9px,hsl(calc(var(--steel-h) + 163 * var(--steel-spread)) calc(var(--steel-s) * 0.877) calc(14.902% * var(--steel-tint))) 9px 11px);
+}
+/* rebase: left 13-13 = 0 · top 136-125 = 11 ------------------------------ */
+.halo-deck .bt-gutcap {
+  left: 0; top: 11px; width: 13px; height: 6px;
+  background:linear-gradient(180deg,hsl(calc(var(--steel-h) + 148 * var(--steel-spread)) calc(var(--steel-s) * 0.103) calc(19.02% * var(--steel-tint))) 0 1px,hsl(calc(var(--steel-h) + 178 * var(--steel-spread)) calc(var(--steel-s) * 0.175) calc(7.451% * var(--steel-tint))) 1px 2px,hsl(calc(var(--steel-h) + 158 * var(--steel-spread)) calc(var(--steel-s) * 1.111) calc(3.529% * var(--steel-tint))) 2px 3px,
+                             hsl(calc(var(--steel-h) + 158.909 * var(--steel-spread)) calc(var(--steel-s) * 0.582) calc(12.353% * var(--steel-tint))) 3px 4px,hsl(calc(var(--steel-h) + 158 * var(--steel-spread)) calc(var(--steel-s) * 0.339) calc(23.137% * var(--steel-tint))) 4px 5px,hsl(calc(var(--steel-h) + 156.571 * var(--steel-spread)) calc(var(--steel-s) * 0.449) calc(20.392% * var(--steel-tint))) 5px 6px);
+}
+
+/* --- C10 graph well, canvas x37..72 y139..215 ---------------------------
+   The whole assembly hangs off --well-x / --well-y (local 24 / 18, i.e.
+   canvas 37 / 143). Per-element offsets from that anchor:
+     .bt-welltop  (-1, -4)   canvas 36,139  -> local 23,14
+     .bt-well     (+1,  0)   canvas 38,143  -> local 25,18
+     .bt-welledge ( 0, -1)   canvas 37,142  -> local 24,17
+     .bt-wellr    (+34, 0)   canvas 71,143  -> local 58,18
+     .bt-graph    ( 0,  0)   canvas 37,143  -> local 24,18
+     .bt-warm     (-4,  0)   canvas 33,143  -> local 20,18  (via --warm-x)
+   -------------------------------------------------------------------------- */
+.halo-deck .bt-welltop {
+  left: calc(var(--well-x) - 1px); top: calc(var(--well-y) - 4px);
+  width: 37px; height: 4px;
+  background:linear-gradient(180deg,hsl(calc(var(--steel-h) + -32 * var(--steel-spread)) calc(var(--steel-s) * 0.05) calc(39.412% * var(--steel-tint))) 0 1px,hsl(calc(var(--steel-h) + -13.538 * var(--steel-spread)) calc(var(--steel-s) * 0.175) calc(51.569% * var(--steel-tint))) 1px 2px,hsl(calc(var(--steel-h) + -12 * var(--steel-spread)) calc(var(--steel-s) * 0.323) calc(42.549% * var(--steel-tint))) 2px 3px,hsl(calc(var(--steel-h) + -12 * var(--steel-spread)) calc(var(--steel-s) * 0.385) calc(40.784% * var(--steel-tint))) 3px 4px);
+}
+.halo-deck .bt-well {
+  left: calc(var(--well-x) + 1px); top: var(--well-y);
+  width: 33px; height: 73px;
+  background:
+    linear-gradient(90deg, rgba(0,8,22,0) 0%, rgba(0,8,22,0) 38%, rgba(0,8,22,.16) 100%),
+    linear-gradient(90deg, rgba(130,190,240,.115) 0%, rgba(130,190,240,0) 40%,
+                    rgba(130,190,240,0) 100%),
+    linear-gradient(180deg,
+    hsl(calc(var(--steel-h) + -9.241 * var(--steel-spread)) calc(var(--steel-s) * 0.799) calc(23.725% * var(--steel-tint))) 0px 1px,hsl(calc(var(--steel-h) + -6 * var(--steel-spread)) calc(var(--steel-s) * 1.22) calc(16.078% * var(--steel-tint))) 1px 2px,hsl(calc(var(--steel-h) + -7.556 * var(--steel-spread)) calc(var(--steel-s) * 1.034) calc(17.059% * var(--steel-tint))) 2px 3px,hsl(calc(var(--steel-h) + -6.615 * var(--steel-spread)) calc(var(--steel-s) * 1.032) calc(16.471% * var(--steel-tint))) 3px 4px,hsl(calc(var(--steel-h) + -5.6 * var(--steel-spread)) calc(var(--steel-s) * 1.055) calc(15.49% * var(--steel-tint))) 4px 5px,
+    hsl(calc(var(--steel-h) + -8 * var(--steel-spread)) calc(var(--steel-s) * 1.111) calc(14.706% * var(--steel-tint))) 5px 6px,hsl(calc(var(--steel-h) + -7 * var(--steel-spread)) calc(var(--steel-s) * 1.053) calc(14.902% * var(--steel-tint))) 6px 7px,hsl(calc(var(--steel-h) + -5.6 * var(--steel-spread)) calc(var(--steel-s) * 1.142) calc(14.314% * var(--steel-tint))) 7px 8px,hsl(calc(var(--steel-h) + -7 * var(--steel-spread)) calc(var(--steel-s) * 1.111) calc(14.118% * var(--steel-tint))) 8px 9px,hsl(calc(var(--steel-h) + -6.615 * var(--steel-spread)) calc(var(--steel-s) * 1.032) calc(16.471% * var(--steel-tint))) 9px 10px,
+    hsl(calc(var(--steel-h) + -6.286 * var(--steel-spread)) calc(var(--steel-s) * 1.085) calc(16.863% * var(--steel-tint))) 10px 11px,hsl(calc(var(--steel-h) + -5.333 * var(--steel-spread)) calc(var(--steel-s) * 1.2) calc(14.706% * var(--steel-tint))) 11px 12px,hsl(calc(var(--steel-h) + -5.6 * var(--steel-spread)) calc(var(--steel-s) * 1.111) calc(14.706% * var(--steel-tint))) 12px 13px,hsl(calc(var(--steel-h) + -6.615 * var(--steel-spread)) calc(var(--steel-s) * 1.171) calc(14.51% * var(--steel-tint))) 13px 14px,hsl(calc(var(--steel-h) + -5.6 * var(--steel-spread)) calc(var(--steel-s) * 1.142) calc(14.314% * var(--steel-tint))) 14px 16px,
+    hsl(calc(var(--steel-h) + -5.6 * var(--steel-spread)) calc(var(--steel-s) * 1.082) calc(15.098% * var(--steel-tint))) 16px 17px,hsl(calc(var(--steel-h) + -6.615 * var(--steel-spread)) calc(var(--steel-s) * 1.111) calc(15.294% * var(--steel-tint))) 17px 18px,hsl(calc(var(--steel-h) + -6.615 * var(--steel-spread)) calc(var(--steel-s) * 1.14) calc(14.902% * var(--steel-tint))) 18px 19px,hsl(calc(var(--steel-h) + -4.308 * var(--steel-spread)) calc(var(--steel-s) * 1.171) calc(14.51% * var(--steel-tint))) 19px 20px,hsl(calc(var(--steel-h) + -6.615 * var(--steel-spread)) calc(var(--steel-s) * 1.171) calc(14.51% * var(--steel-tint))) 20px 21px,
+    hsl(calc(var(--steel-h) + -4.308 * var(--steel-spread)) calc(var(--steel-s) * 1.14) calc(14.902% * var(--steel-tint))) 21px 22px,hsl(calc(var(--steel-h) + -4.308 * var(--steel-spread)) calc(var(--steel-s) * 1.171) calc(14.51% * var(--steel-tint))) 22px 23px,hsl(calc(var(--steel-h) + -5.6 * var(--steel-spread)) calc(var(--steel-s) * 1.174) calc(13.922% * var(--steel-tint))) 23px 24px,hsl(calc(var(--steel-h) + -6.615 * var(--steel-spread)) calc(var(--steel-s) * 1.204) calc(14.118% * var(--steel-tint))) 24px 25px,hsl(calc(var(--steel-h) + -7.556 * var(--steel-spread)) calc(var(--steel-s) * 1.268) calc(13.922% * var(--steel-tint))) 25px 26px,
+    hsl(calc(var(--steel-h) + -6.615 * var(--steel-spread)) calc(var(--steel-s) * 1.275) calc(13.333% * var(--steel-tint))) 26px 27px,hsl(calc(var(--steel-h) + -6.615 * var(--steel-spread)) calc(var(--steel-s) * 1.313) calc(12.941% * var(--steel-tint))) 27px 28px,hsl(calc(var(--steel-h) + -5.333 * var(--steel-spread)) calc(var(--steel-s) * 1.268) calc(13.922% * var(--steel-tint))) 28px 29px,hsl(calc(var(--steel-h) + -5.6 * var(--steel-spread)) calc(var(--steel-s) * 1.142) calc(14.314% * var(--steel-tint))) 29px 30px,hsl(calc(var(--steel-h) + -4.5 * var(--steel-spread)) calc(var(--steel-s) * 1.212) calc(12.941% * var(--steel-tint))) 30px 31px,
+    hsl(calc(var(--steel-h) + -4.5 * var(--steel-spread)) calc(var(--steel-s) * 1.29) calc(12.157% * var(--steel-tint))) 31px 32px,hsl(calc(var(--steel-h) + -5.6 * var(--steel-spread)) calc(var(--steel-s) * 1.323) calc(12.353% * var(--steel-tint))) 32px 33px,hsl(calc(var(--steel-h) + -4.5 * var(--steel-spread)) calc(var(--steel-s) * 1.333) calc(11.765% * var(--steel-tint))) 33px 34px,hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 1.379) calc(11.373% * var(--steel-tint))) 34px 35px,hsl(calc(var(--steel-h) + -4.5 * var(--steel-spread)) calc(var(--steel-s) * 1.333) calc(11.765% * var(--steel-tint))) 35px 36px,
+    hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 1.333) calc(11.765% * var(--steel-tint))) 36px 37px,hsl(calc(var(--steel-h) + -0.696 * var(--steel-spread)) calc(var(--steel-s) * 1.345) calc(11.176% * var(--steel-tint))) 37px 39px,hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 1.333) calc(11.765% * var(--steel-tint))) 39px 40px,hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 1.379) calc(11.373% * var(--steel-tint))) 40px 41px,hsl(calc(var(--steel-h) + 0.727 * var(--steel-spread)) calc(var(--steel-s) * 1.31) calc(10.98% * var(--steel-tint))) 41px 42px,
+    hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 1.379) calc(11.373% * var(--steel-tint))) 42px 43px,hsl(calc(var(--steel-h) + -3.304 * var(--steel-spread)) calc(var(--steel-s) * 1.299) calc(11.569% * var(--steel-tint))) 43px 44px,hsl(calc(var(--steel-h) + 0.727 * var(--steel-spread)) calc(var(--steel-s) * 1.264) calc(11.373% * var(--steel-tint))) 44px 45px,hsl(calc(var(--steel-h) + -0.571 * var(--steel-spread)) calc(var(--steel-s) * 1.228) calc(11.176% * var(--steel-tint))) 45px 46px,hsl(calc(var(--steel-h) + 0.727 * var(--steel-spread)) calc(var(--steel-s) * 1.222) calc(11.765% * var(--steel-tint))) 46px 47px,
+    hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 1.222) calc(11.765% * var(--steel-tint))) 47px 48px,hsl(calc(var(--steel-h) + -0.571 * var(--steel-spread)) calc(var(--steel-s) * 1.186) calc(11.569% * var(--steel-tint))) 48px 50px,hsl(calc(var(--steel-h) + -0.571 * var(--steel-spread)) calc(var(--steel-s) * 1.148) calc(11.961% * var(--steel-tint))) 50px 52px,hsl(calc(var(--steel-h) + 1 * var(--steel-spread)) calc(var(--steel-s) * 1.111) calc(11.765% * var(--steel-tint))) 52px 53px,hsl(calc(var(--steel-h) + 1 * var(--steel-spread)) calc(var(--steel-s) * 1.075) calc(12.157% * var(--steel-tint))) 53px 54px,
+    hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 1.075) calc(12.157% * var(--steel-tint))) 54px 56px,hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 0.926) calc(14.118% * var(--steel-tint))) 56px 57px,hsl(calc(var(--steel-h) + -2 * var(--steel-spread)) calc(var(--steel-s) * 0.952) calc(13.725% * var(--steel-tint))) 57px 58px,hsl(calc(var(--steel-h) + 2.737 * var(--steel-spread)) calc(var(--steel-s) * 0.974) calc(12.745% * var(--steel-tint))) 58px 59px,hsl(calc(var(--steel-h) + 4.667 * var(--steel-spread)) calc(var(--steel-s) * 0.909) calc(12.941% * var(--steel-tint))) 59px 60px,
+    hsl(calc(var(--steel-h) + 6.824 * var(--steel-spread)) calc(var(--steel-s) * 0.846) calc(13.137% * var(--steel-tint))) 60px 61px,hsl(calc(var(--steel-h) + 8 * var(--steel-spread)) calc(var(--steel-s) * 0.833) calc(14.118% * var(--steel-tint))) 61px 62px,hsl(calc(var(--steel-h) + 9.25 * var(--steel-spread)) calc(var(--steel-s) * 0.721) calc(14.51% * var(--steel-tint))) 62px 63px,hsl(calc(var(--steel-h) + 12 * var(--steel-spread)) calc(var(--steel-s) * 0.685) calc(14.314% * var(--steel-tint))) 63px 64px,hsl(calc(var(--steel-h) + 18.769 * var(--steel-spread)) calc(var(--steel-s) * 0.594) calc(14.314% * var(--steel-tint))) 64px 65px,
+    hsl(calc(var(--steel-h) + 33.455 * var(--steel-spread)) calc(var(--steel-s) * 0.464) calc(15.49% * var(--steel-tint))) 65px 66px,hsl(calc(var(--steel-h) + 8 * var(--steel-spread)) calc(var(--steel-s) * 0.938) calc(12.549% * var(--steel-tint))) 66px 67px,hsl(calc(var(--steel-h) + 7 * var(--steel-spread)) calc(var(--steel-s) * 1.01) calc(12.941% * var(--steel-tint))) 67px 68px,hsl(calc(var(--steel-h) + 4 * var(--steel-spread)) calc(var(--steel-s) * 0.877) calc(14.902% * var(--steel-tint))) 68px 69px,hsl(calc(var(--steel-h) + 10.353 * var(--steel-spread)) calc(var(--steel-s) * 0.776) calc(14.314% * var(--steel-tint))) 69px 70px,
+    hsl(calc(var(--steel-h) + 15.143 * var(--steel-spread)) calc(var(--steel-s) * 0.667) calc(13.725% * var(--steel-tint))) 70px 71px,hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.541) calc(14.51% * var(--steel-tint))) 71px 72px,hsl(calc(var(--steel-h) + 38 * var(--steel-spread)) calc(var(--steel-s) * 0.526) calc(14.902% * var(--steel-tint))) 72px 73px);
+}
+/* faint square grid — already LOCAL to .bt-well (inset:0), nothing to rebase */
+.halo-deck .bt-well::before {
+  content:""; position:absolute; inset:0;
+  background:
+    repeating-linear-gradient(90deg, rgba(150,205,230,.035) 0 1px, transparent 1px 9.4px),
+    repeating-linear-gradient(180deg, rgba(150,205,230,.030) 0 1px, transparent 1px 9.4px);
+  background-position:3px 9px, 3px 9px;
+}
+/* 1px pale border down the left of the well, 1px shade down the right */
+.halo-deck .bt-welledge {
+  left: var(--well-x); top: calc(var(--well-y) - 1px);
+  width: 1px; height: 73px; background:hsl(calc(var(--steel-h) + 9.053 * var(--steel-spread)) calc(var(--steel-s) * 0.449) calc(27.647% * var(--steel-tint)));
+}
+.halo-deck .bt-wellr {
+  left: calc(var(--well-x) + 34px); top: var(--well-y);
+  width: 1px; height: 73px; background:hsl(calc(var(--steel-h) + 5.5 * var(--steel-spread)) calc(var(--steel-s) * 0.92) calc(11.373% * var(--steel-tint)));
+}
+
+/* the graph trace. In the original this was an inline <svg> carrying its own
+   position + a CANVAS-SPACE viewBox; the viewBox and its polyline points are
+   rewritten in the MARKUP (see the header block). No <defs> — the stroke is
+   inline, so two parts on one page cannot collide. */
+.halo-deck .bt-graph {
+  position: absolute;
+  left: var(--well-x); top: var(--well-y);
+  width: 36px; height: 73px;
+}
+
+/* the warm shadow column between the L bracket and the well, canvas x33..36
+   rebase: left 33-13 = 20 (= --well-x - 4) · top 143-125 = 18 ------------ */
+.halo-deck .bt-warm {
+  left: var(--warm-x); top: var(--well-y); width: 4px; height: 86px;
+  background:linear-gradient(180deg,
+    hsl(calc(var(--steel-h) + 105.143 * var(--steel-spread)) calc(var(--steel-s) * 0.236) calc(19.412% * var(--steel-tint))) 0px 1px,hsl(calc(var(--steel-h) + 118 * var(--steel-spread)) calc(var(--steel-s) * 0.284) calc(18.431% * var(--steel-tint))) 1px 2px,hsl(calc(var(--steel-h) + 110.5 * var(--steel-spread)) calc(var(--steel-s) * 0.296) calc(17.647% * var(--steel-tint))) 2px 3px,hsl(calc(var(--steel-h) + 103 * var(--steel-spread)) calc(var(--steel-s) * 0.31) calc(16.863% * var(--steel-tint))) 3px 4px,hsl(calc(var(--steel-h) + 95.5 * var(--steel-spread)) calc(var(--steel-s) * 0.333) calc(15.686% * var(--steel-tint))) 4px 5px,
+    hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.256) calc(15.294% * var(--steel-tint))) 5px 6px,hsl(calc(var(--steel-h) + 108 * var(--steel-spread)) calc(var(--steel-s) * 0.25) calc(15.686% * var(--steel-tint))) 6px 7px,hsl(calc(var(--steel-h) + 113.714 * var(--steel-spread)) calc(var(--steel-s) * 0.295) calc(15.49% * var(--steel-tint))) 7px 8px,hsl(calc(var(--steel-h) + 108 * var(--steel-spread)) calc(var(--steel-s) * 0.256) calc(15.294% * var(--steel-tint))) 8px 9px,hsl(calc(var(--steel-h) + 113.714 * var(--steel-spread)) calc(var(--steel-s) * 0.275) calc(16.667% * var(--steel-tint))) 9px 10px,
+    hsl(calc(var(--steel-h) + 105.143 * var(--steel-spread)) calc(var(--steel-s) * 0.268) calc(17.059% * var(--steel-tint))) 10px 11px,hsl(calc(var(--steel-h) + 96.571 * var(--steel-spread)) calc(var(--steel-s) * 0.288) calc(15.882% * var(--steel-tint))) 11px 12px,hsl(calc(var(--steel-h) + 98 * var(--steel-spread)) calc(var(--steel-s) * 0.25) calc(15.686% * var(--steel-tint))) 12px 13px,hsl(calc(var(--steel-h) + 96.571 * var(--steel-spread)) calc(var(--steel-s) * 0.295) calc(15.49% * var(--steel-tint))) 13px 14px,hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.256) calc(15.294% * var(--steel-tint))) 14px 15px,
+    hsl(calc(var(--steel-h) + 108 * var(--steel-spread)) calc(var(--steel-s) * 0.256) calc(15.294% * var(--steel-tint))) 15px 16px,hsl(calc(var(--steel-h) + 118 * var(--steel-spread)) calc(var(--steel-s) * 0.25) calc(15.686% * var(--steel-tint))) 16px 17px,hsl(calc(var(--steel-h) + 112 * var(--steel-spread)) calc(var(--steel-s) * 0.206) calc(15.882% * var(--steel-tint))) 17px 18px,hsl(calc(var(--steel-h) + 98 * var(--steel-spread)) calc(var(--steel-s) * 0.25) calc(15.686% * var(--steel-tint))) 18px 20px,hsl(calc(var(--steel-h) + 108 * var(--steel-spread)) calc(var(--steel-s) * 0.25) calc(15.686% * var(--steel-tint))) 20px 21px,
+    hsl(calc(var(--steel-h) + 105.143 * var(--steel-spread)) calc(var(--steel-s) * 0.288) calc(15.882% * var(--steel-tint))) 21px 22px,hsl(calc(var(--steel-h) + 98 * var(--steel-spread)) calc(var(--steel-s) * 0.25) calc(15.686% * var(--steel-tint))) 22px 23px,hsl(calc(var(--steel-h) + 98 * var(--steel-spread)) calc(var(--steel-s) * 0.244) calc(16.078% * var(--steel-tint))) 23px 24px,hsl(calc(var(--steel-h) + 105.143 * var(--steel-spread)) calc(var(--steel-s) * 0.275) calc(16.667% * var(--steel-tint))) 24px 25px,hsl(calc(var(--steel-h) + 110.5 * var(--steel-spread)) calc(var(--steel-s) * 0.31) calc(16.863% * var(--steel-tint))) 25px 28px,
+    hsl(calc(var(--steel-h) + 113.714 * var(--steel-spread)) calc(var(--steel-s) * 0.268) calc(17.059% * var(--steel-tint))) 28px 29px,hsl(calc(var(--steel-h) + 125.5 * var(--steel-spread)) calc(var(--steel-s) * 0.296) calc(17.647% * var(--steel-tint))) 29px 30px,hsl(calc(var(--steel-h) + 122.286 * var(--steel-spread)) calc(var(--steel-s) * 0.268) calc(17.059% * var(--steel-tint))) 30px 31px,hsl(calc(var(--steel-h) + 98 * var(--steel-spread)) calc(var(--steel-s) * 0.25) calc(15.686% * var(--steel-tint))) 31px 34px,hsl(calc(var(--steel-h) + 105.143 * var(--steel-spread)) calc(var(--steel-s) * 0.288) calc(15.882% * var(--steel-tint))) 34px 35px,
+    hsl(calc(var(--steel-h) + 110.5 * var(--steel-spread)) calc(var(--steel-s) * 0.325) calc(16.078% * var(--steel-tint))) 35px 36px,hsl(calc(var(--steel-h) + 96.571 * var(--steel-spread)) calc(var(--steel-s) * 0.288) calc(15.882% * var(--steel-tint))) 36px 37px,hsl(calc(var(--steel-h) + 96.571 * var(--steel-spread)) calc(var(--steel-s) * 0.295) calc(15.49% * var(--steel-tint))) 37px 38px,hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.295) calc(15.49% * var(--steel-tint))) 38px 39px,hsl(calc(var(--steel-h) + 95.5 * var(--steel-spread)) calc(var(--steel-s) * 0.333) calc(15.686% * var(--steel-tint))) 39px 40px,
+    hsl(calc(var(--steel-h) + 96.571 * var(--steel-spread)) calc(var(--steel-s) * 0.295) calc(15.49% * var(--steel-tint))) 40px 41px,hsl(calc(var(--steel-h) + 88 * var(--steel-spread)) calc(var(--steel-s) * 0.303) calc(15.098% * var(--steel-tint))) 41px 42px,hsl(calc(var(--steel-h) + 95.5 * var(--steel-spread)) calc(var(--steel-s) * 0.342) calc(15.294% * var(--steel-tint))) 42px 43px,hsl(calc(var(--steel-h) + 103 * var(--steel-spread)) calc(var(--steel-s) * 0.333) calc(15.686% * var(--steel-tint))) 43px 44px,hsl(calc(var(--steel-h) + 103 * var(--steel-spread)) calc(var(--steel-s) * 0.325) calc(16.078% * var(--steel-tint))) 44px 45px,
+    hsl(calc(var(--steel-h) + 108 * var(--steel-spread)) calc(var(--steel-s) * 0.361) calc(16.275% * var(--steel-tint))) 45px 46px,hsl(calc(var(--steel-h) + 115.273 * var(--steel-spread)) calc(var(--steel-s) * 0.421) calc(17.059% * var(--steel-tint))) 46px 47px,hsl(calc(var(--steel-h) + 113 * var(--steel-spread)) calc(var(--steel-s) * 0.455) calc(17.255% * var(--steel-tint))) 47px 48px,hsl(calc(var(--steel-h) + 112 * var(--steel-spread)) calc(var(--steel-s) * 0.388) calc(16.863% * var(--steel-tint))) 48px 50px,hsl(calc(var(--steel-h) + 109.818 * var(--steel-spread)) calc(var(--steel-s) * 0.412) calc(17.451% * var(--steel-tint))) 50px 51px,
+    hsl(calc(var(--steel-h) + 118 * var(--steel-spread)) calc(var(--steel-s) * 0.435) calc(18.039% * var(--steel-tint))) 51px 52px,hsl(calc(var(--steel-h) + 122.286 * var(--steel-spread)) calc(var(--steel-s) * 0.507) calc(18.039% * var(--steel-tint))) 52px 53px,hsl(calc(var(--steel-h) + 129.25 * var(--steel-spread)) calc(var(--steel-s) * 0.556) calc(18.824% * var(--steel-tint))) 53px 54px,hsl(calc(var(--steel-h) + 126.824 * var(--steel-spread)) calc(var(--steel-s) * 0.584) calc(19.02% * var(--steel-tint))) 54px 55px,hsl(calc(var(--steel-h) + 130.353 * var(--steel-spread)) calc(var(--steel-s) * 0.584) calc(19.02% * var(--steel-tint))) 55px 56px,
+    hsl(calc(var(--steel-h) + 129.053 * var(--steel-spread)) calc(var(--steel-s) * 0.64) calc(19.412% * var(--steel-tint))) 56px 57px,hsl(calc(var(--steel-h) + 130 * var(--steel-spread)) calc(var(--steel-s) * 0.654) calc(20% * var(--steel-tint))) 57px 58px,hsl(calc(var(--steel-h) + 131.636 * var(--steel-spread)) calc(var(--steel-s) * 0.719) calc(20% * var(--steel-tint))) 58px 59px,hsl(calc(var(--steel-h) + 135.586 * var(--steel-spread)) calc(var(--steel-s) * 0.903) calc(20.98% * var(--steel-tint))) 59px 60px,hsl(calc(var(--steel-h) + 139.429 * var(--steel-spread)) calc(var(--steel-s) * 1.077) calc(25.49% * var(--steel-tint))) 60px 61px,
+    hsl(calc(var(--steel-h) + 143 * var(--steel-spread)) calc(var(--steel-s) * 1.064) calc(36.863% * var(--steel-tint))) 61px 62px,hsl(calc(var(--steel-h) + 145.108 * var(--steel-spread)) calc(var(--steel-s) * 1.085) calc(50% * var(--steel-tint))) 62px 63px,#d2686b 63px 64px,#ed6f6d 64px 65px,#f76e69 65px 66px,
+    #fa6e66 66px 67px,#fa6d64 67px 68px,#f06a60 68px 69px,#dd6357 69px 70px,#c1564d 70px 71px,
+    #a34942 71px 72px,#843a34 72px 73px,#6d2e2a 73px 74px,#5d2622 74px 75px,#4e1e1a 75px 76px,
+    #421a16 76px 77px,#371814 77px 78px,#2e1713 78px 79px,hsl(calc(var(--steel-h) + 158 * var(--steel-spread)) calc(var(--steel-s) * 0.938) calc(12.549% * var(--steel-tint))) 79px 80px,hsl(calc(var(--steel-h) + 160 * var(--steel-spread)) calc(var(--steel-s) * 0.439) calc(14.902% * var(--steel-tint))) 80px 81px,
+    hsl(calc(var(--steel-h) + 172 * var(--steel-spread)) calc(var(--steel-s) * 0.156) calc(20.98% * var(--steel-tint))) 81px 82px,hsl(calc(var(--steel-h) + -167 * var(--steel-spread)) calc(var(--steel-s) * 0.108) calc(24.314% * var(--steel-tint))) 82px 83px,hsl(calc(var(--steel-h) + -152 * var(--steel-spread)) calc(var(--steel-s) * 0.111) calc(23.529% * var(--steel-tint))) 83px 84px,hsl(calc(var(--steel-h) + -152 * var(--steel-spread)) calc(var(--steel-s) * 0.2) calc(19.608% * var(--steel-tint))) 84px 85px,hsl(calc(var(--steel-h) + -158.667 * var(--steel-spread)) calc(var(--steel-s) * 0.337) calc(17.451% * var(--steel-tint))) 85px 86px);
+}
+
+/* the frame gutter continues below the bracket foot
+   rebase: left 13-13 = 0 · top 213-125 = 88 ------------------------------ */
+.halo-deck .bt-gutlow {
+  left: 0; top: 88px; width: 11px; height: 16px;
+  background:linear-gradient(180deg,
+    hsl(calc(var(--steel-h) + 178 * var(--steel-spread)) calc(var(--steel-s) * 0.488) calc(16.078% * var(--steel-tint))) 0px 1px,hsl(calc(var(--steel-h) + 178 * var(--steel-spread)) calc(var(--steel-s) * 0.513) calc(15.294% * var(--steel-tint))) 1px 2px,hsl(calc(var(--steel-h) + 175.273 * var(--steel-spread)) calc(var(--steel-s) * 0.564) calc(12.745% * var(--steel-tint))) 2px 3px,hsl(calc(var(--steel-h) + 172 * var(--steel-spread)) calc(var(--steel-s) * 0.595) calc(10.98% * var(--steel-tint))) 3px 4px,hsl(calc(var(--steel-h) + 170.5 * var(--steel-spread)) calc(var(--steel-s) * 0.513) calc(10.196% * var(--steel-tint))) 4px 5px,
+    hsl(calc(var(--steel-h) + 165.143 * var(--steel-spread)) calc(var(--steel-s) * 0.519) calc(8.824% * var(--steel-tint))) 5px 6px,hsl(calc(var(--steel-h) + 168 * var(--steel-spread)) calc(var(--steel-s) * 0.417) calc(9.412% * var(--steel-tint))) 6px 7px,hsl(calc(var(--steel-h) + 148 * var(--steel-spread)) calc(var(--steel-s) * 0.169) calc(11.569% * var(--steel-tint))) 7px 8px,hsl(calc(var(--steel-h) + 148 * var(--steel-spread)) calc(var(--steel-s) * 0.051) calc(12.745% * var(--steel-tint))) 8px 9px,hsl(var(--steel-h) 0% calc(13.725% * var(--steel-tint))) 9px 10px,
+    hsl(calc(var(--steel-h) + -32 * var(--steel-spread)) calc(var(--steel-s) * 0.044) calc(14.706% * var(--steel-tint))) 10px 11px,hsl(calc(var(--steel-h) + 28 * var(--steel-spread)) calc(var(--steel-s) * 0.04) calc(16.275% * var(--steel-tint))) 11px 12px,hsl(calc(var(--steel-h) + 118 * var(--steel-spread)) calc(var(--steel-s) * 0.072) calc(18.039% * var(--steel-tint))) 12px 13px,hsl(var(--steel-h) 0% calc(19.412% * var(--steel-tint))) 13px 14px,hsl(calc(var(--steel-h) + 118 * var(--steel-spread)) calc(var(--steel-s) * 0.064) calc(20.392% * var(--steel-tint))) 14px 15px,
+    hsl(calc(var(--steel-h) + 148 * var(--steel-spread)) calc(var(--steel-s) * 0.119) calc(21.961% * var(--steel-tint))) 15px 16px);
+}
+
+/* the rivet. rebase: left 13.5-13 = 0.5 · top 232-125 = 107
+   The half-pixel x is measured, not a rounding artefact — keep it.
+   TRAP: c12's loose rivet #4 covers all but a 2-row sliver of this in the
+   assembly (max delta 1), so no pixel gate can prove it right. It is correct
+   by construction: last in DOM order, at 0.5/107, 7x7, radius 50%. */
+.halo-deck .bt-rivet {
+  left: var(--rivet-x); top: var(--rivet-y); width: 7px; height: 7px;
+  border-radius: 50%;
+  background:radial-gradient(circle at 50% 45%, hsl(calc(var(--steel-h) + 174.087 * var(--steel-spread)) calc(var(--steel-s) * 0.655) calc(22.941% * var(--steel-tint))) 0 1.4px, hsl(calc(var(--steel-h) + 160.857 * var(--steel-spread)) calc(var(--steel-s) * 0.667) calc(13.725% * var(--steel-tint))) 2.4px, hsl(calc(var(--steel-h) + 156.571 * var(--steel-spread)) calc(var(--steel-s) * 0.631) calc(7.255% * var(--steel-tint))) 100%);
+}

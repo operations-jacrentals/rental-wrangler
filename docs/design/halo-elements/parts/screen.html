@@ -1,0 +1,109 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>screen — preview</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="./screen.css">
+<style>
+  /* Page-scaffolding only — nothing here touches .halo-screen or
+     any of its descendants, and none of it is part of the recreated artwork. */
+  body { min-height: 100vh; padding: 48px 24px; align-items: flex-start; }
+  .sheet { display: flex; flex-direction: column; gap: 44px; align-items: center; }
+  h1 {
+    font-family: var(--mono); font-size: 13px; font-weight: 700;
+    letter-spacing: .08em; text-transform: uppercase; color: #6b7480;
+  }
+  .demo { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .demo .stage { position: relative; border: 1px solid #1b2029; }
+  .cap {
+    font-family: var(--mono); font-size: 11px; line-height: 1.55;
+    color: #6b7480; text-align: center; max-width: 640px;
+  }
+  .cap b { color: #9aa3ad; font-weight: 700; }
+  .cap code { color: #7d8894; }
+  .note {
+    font-family: var(--mono); font-size: 11px; line-height: 1.6;
+    color: #5a626c; max-width: 640px; text-align: left;
+    border-top: 1px solid #1b2029; padding-top: 16px;
+  }
+  .note b { color: #8a939d; font-weight: 700; }
+  .note code { color: #7d8894; }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <h1>c5 — display plate</h1>
+
+  <!-- ============ .is-blank — C5a, band A ============ -->
+  <div class="demo">
+    <div class="stage" style="width:280px;height:150px">
+      <div class="halo-screen is-blank" style="--x:30px; --y:20px">
+        <div class="body oct4"></div>
+        <div class="glass oct4"></div>
+        <div class="hair oct4"><i class="oct4"></i></div>
+      </div>
+    </div>
+    <div class="cap">
+      <b>.is-blank</b> — C5a &middot; band A &middot; canvas (1063,&nbsp;0) &middot; blank/unlit glass, no readout<br>
+      <code>--w:219px --h:110px</code> &middot; <code>--hx:9px --hy:9px --hw:192px --hh:88px</code> &middot;
+      <code>--glass:#191720</code>
+    </div>
+  </div>
+
+  <!-- ============ .is-failed — C5b, band B ============ -->
+  <div class="demo">
+    <div class="stage" style="width:280px;height:150px">
+      <div class="halo-screen is-failed" style="--x:29px; --y:22px">
+        <div class="body oct4"></div>
+        <div class="glass oct4"></div>
+        <div class="hair oct4"><i class="oct4"></i></div>
+        <div class="readout">FAILED</div>
+      </div>
+    </div>
+    <div class="cap">
+      <b>.is-failed</b> — C5b &middot; band B &middot; canvas (1063,&nbsp;136) &middot; carries the red mono
+      <code>.readout</code> child<br>
+      <code>--w:222px --h:106px</code> &middot; <code>--hx:11.5px --hy:8.5px --hw:193px --hh:88px</code> &middot;
+      <code>--glass:#040910</code><br>
+      on the assembled canvas, c12's rivets R1/R2 land on this plate and R3 straddles its top edge —
+      that overlap is drawn by the CONSUMER stacking a separate rivet part on top, not by this sheet
+    </div>
+  </div>
+
+  <div class="note">
+    <b>How to drive this part.</b> The root is <code>position:absolute; left:var(--x); top:var(--y)</code> —
+    set <code>--x</code>/<code>--y</code> and drop it anywhere. Every child is measured from the part's own
+    top-left, so nothing here is tied to the original canvas.<br><br>
+
+    <b>Knobs.</b>
+    <code>--x</code>/<code>--y</code> placement &middot;
+    <code>--w</code>/<code>--h</code> the plate's own painted box &middot;
+    <code>--hx</code>/<code>--hy</code>/<code>--hw</code>/<code>--hh</code> the hairline ring's box — a
+    MEASURED, asymmetric rect, not centred in the plate and not derivable from <code>--w</code>/<code>--h</code>
+    by any formula &middot;
+    <code>--glass</code> the glass tint, feeding <em>both</em> <code>.glass</code> and the small
+    glass-coloured disc inside <code>.hair &gt; i</code> that punches the ring's centre back out, leaving only
+    a 1px cyan hairline.<br><br>
+
+    <b>Not a knob.</b> Each layer's own chamfer radius (<code>--cut</code>, feeding the shared
+    <code>.oct4</code> clip-path from <code>tokens.css</code>) is fixed per layer and does NOT scale with
+    <code>--w</code>/<code>--h</code>: <code>.body</code> 19px, <code>.glass</code> 15px, <code>.hair</code>
+    12px, <code>.hair &gt; i</code> 11.4px.<br><br>
+
+    <b>The "FAILED" readout.</b> In the original this was a raw, unclassed <code>&lt;div&gt;</code> with a
+    wholly inline style block — the one un-classed rule in the whole component. It is now a real class,
+    <code>.readout</code>, carried value-for-value (<code>var(--mono)</code>, weight 700, 40.4px,
+    line-height 1, letter-spacing -0.1px, colour <code>#f4595a</code>, text-shadow
+    <code>0 0 6px rgba(244,95,91,.40)</code>, at local (38px, 32.7px)). It ships only on
+    <code>.is-failed</code>'s markup — include the <code>&lt;div class="readout"&gt;</code> child yourself;
+    the class alone does not add the text.<br><br>
+
+    <b>Painted box == nominal box.</b> Unlike some parts in this kit, neither instance spills past its own
+    <code>--w</code>&times;<code>--h</code> rect — no glow, no blur, no bloom escaping the chamfered edge.
+    C5a additionally touches canvas row 0 in the source mockup; that is the real top of the paint, not a
+    box clipped by the canvas edge.
+  </div>
+</div>
+</body>
+</html>

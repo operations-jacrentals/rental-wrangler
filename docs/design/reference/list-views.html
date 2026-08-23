@@ -1,0 +1,1709 @@
+<title>Rental Wrangler — 3-Column List Views (Inline-Expand Mockup)</title>
+<style>
+  /* ============================================================
+     TOKENS — wrangler-style decisions + style rulebook numbers
+     ============================================================ */
+  :root{
+    color-scheme: dark;
+    /* dark (default) surfaces */
+    --bg:#0a0d11; --panel:#171d25; --card:#12171e; --card-head:#1a212b;
+    --line:#2c343f; --line-soft:#212834;
+    --txt:#eef2f7; --txt-2:#aab4c1; --txt-3:#717b89;
+    /* accent — safety orange, dark ink always */
+    --accent:#ff7e1f;
+    /* status */
+    --c-green:#34d399; --c-yellow:#eed44b; --c-red:#ff4242; --c-red-fill:#d63636;
+    --c-blue:#6394cc; --c-gray:#8b94a3;
+    --green-fill:var(--c-green);
+    --blue-fill-ink:var(--ink-dark);
+    --gray-fill-ink:var(--ink-dark);
+    --commit:#2f6fd0;
+    --tan:#c2925a;
+    /* dark-ink / light-ink pair — never pure #000/#fff (contrast-verified, see build notes) */
+    --ink-dark:#14181d; --ink-light:#fafbfc;
+    /* one control height (rule: 24–28 desktop, >=44 touch) */
+    --h:26px;
+    /* two radii */
+    --r-chip:8px; --r-ref:6px; --r-pill:999px;
+    /* size ladder — no value off this list */
+    --fs-value:28px; --fs-title:15px; --fs-content:13px; --fs-field:12px;
+    --fs-label:11px; --fs-small:10px; --fs-finest:9.5px;
+    /* two type voices */
+    --font-mono: ui-monospace,"Cascadia Code","SF Mono",Menlo,Consolas,monospace;
+    --font-sans: -apple-system,"Segoe UI",Roboto,system-ui,sans-serif;
+  }
+  @media (pointer:coarse){ :root{ --h:44px; } }
+
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background:var(--bg); color:var(--txt); font-family:var(--font-sans);
+    -webkit-font-smoothing:antialiased; overflow-x:hidden;
+  }
+  ::selection{ background:color-mix(in srgb, var(--accent) 30%, transparent); }
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration:.001s !important; animation-delay:0s !important; transition-duration:.001s !important; }
+  }
+
+  /* ============================================================
+     PAGE SHELL
+     ============================================================ */
+  .yard-page{ max-width:1440px; margin:0 auto; padding:22px clamp(12px,2.4vw,30px) 70px; }
+  .yard-top{ margin-bottom:16px; }
+  .yard-eyebrow{
+    font-family:var(--font-mono); text-transform:uppercase; letter-spacing:.08em;
+    font-size:var(--fs-label); font-weight:800; color:var(--accent);
+  }
+  .yard-h1{
+    font-family:var(--font-sans); font-weight:700; font-size:var(--fs-value);
+    color:var(--txt); margin:3px 0 5px; letter-spacing:-.01em;
+  }
+  .yard-sub{
+    font-size:var(--fs-content); color:var(--txt-2); max-width:76ch; line-height:1.5;
+  }
+  .yard-sub b{ color:var(--txt); font-weight:700; }
+
+  .yard-grid{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; align-items:start; }
+  @media (max-width: 980px){ .yard-grid{ grid-template-columns:1fr; } }
+
+  .yard-col{
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    display:flex; flex-direction:column; min-width:0;
+    /* NOT overflow:hidden — the hover-jump popover's ALT (left-stack) placement
+       is spec'd to bleed past the column edge; corners stay rounded via
+       border-radius on col-head (below) rather than ancestor clipping. */
+  }
+  .col-head{
+    display:flex; align-items:center; gap:10px; padding:11px 12px;
+    border-bottom:1px solid var(--line); background:var(--card-head);
+    border-radius:12px 12px 0 0;
+  }
+  .col-titlewrap{ display:flex; flex-direction:column; gap:1px; min-width:0; }
+  .col-title{ font-family:var(--font-sans); font-weight:700; font-size:var(--fs-title); color:var(--txt); }
+  .col-desc{
+    font-family:var(--font-mono); text-transform:uppercase; letter-spacing:.05em;
+    font-size:var(--fs-small); color:var(--txt-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .col-body{ padding:12px; display:flex; flex-direction:column; gap:14px; min-width:0; }
+
+  /* ============================================================
+     DOOR — verb actions (radius = pill). Your-Work toggle = orange active-segment.
+     ============================================================ */
+  .door{
+    height:var(--h); display:inline-flex; align-items:center; gap:5px; padding:0 11px;
+    border-radius:var(--r-pill); font-family:var(--font-mono); font-weight:700;
+    font-size:var(--fs-label); text-transform:uppercase; letter-spacing:.04em;
+    border:1px solid var(--line); background:transparent; color:var(--txt-2);
+    cursor:pointer; white-space:nowrap; flex:0 0 auto; transition:background .12s,border-color .12s,color .12s;
+  }
+  .door:hover{ border-color:color-mix(in srgb, var(--accent) 45%, var(--line)); color:var(--txt); }
+  .door:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .yourwork-tog{ margin-left:auto; }
+  .yourwork-tog.on{ background:var(--accent); border-color:var(--accent); color:var(--ink-dark); }
+  .yourwork-tog svg{ width:12px; height:12px; }
+
+  /* ============================================================
+     PLATE GRAMMAR — group headers. colour = worst item inside.
+     ============================================================ */
+  .gwrap{ display:flex; flex-direction:column; gap:8px; }
+  .gwrap.is-hidden{ display:none; }
+  .ghead{ display:flex; align-items:center; gap:8px; height:var(--h); }
+  .ghead-bar{ width:3px; align-self:stretch; border-radius:2px; background:var(--txt-3); flex:0 0 auto; }
+  .ghead-label{
+    font-family:var(--font-mono); text-transform:uppercase; letter-spacing:.06em;
+    font-size:var(--fs-label); font-weight:800; color:var(--txt-2);
+  }
+  .ghead-count{
+    font-family:var(--font-mono); font-size:var(--fs-label); color:var(--txt-3);
+    font-variant-numeric:tabular-nums; margin-left:2px;
+  }
+  .ghead-line{ flex:1 1 auto; height:1px; background:var(--line-soft); }
+  .ghead[data-c="red"] .ghead-bar{ background:var(--c-red); }
+  .ghead[data-c="red"] .ghead-label{ color:var(--c-red); }
+  .ghead[data-c="yellow"] .ghead-bar{ background:var(--c-yellow); }
+  .ghead[data-c="yellow"] .ghead-label{ color:var(--c-yellow); }
+  .ghead[data-c="blue"] .ghead-bar{ background:var(--c-blue); }
+  .ghead[data-c="blue"] .ghead-label{ color:var(--c-blue); }
+  .ghead[data-c="green"] .ghead-bar{ background:var(--c-green); }
+  .ghead[data-c="green"] .ghead-label{ color:var(--c-green); }
+  .ghead[data-c="gray"] .ghead-bar{ background:var(--c-gray); }
+  .ghead[data-c="gray"] .ghead-label{ color:var(--txt-3); }
+
+  /* ============================================================
+     Signal / Gate — chip family, colour=state, fill=today. radius=chip.
+     ============================================================ */
+  .chipx{
+    height:var(--h); display:inline-flex; align-items:center; gap:4px; padding:0 8px;
+    border-radius:var(--r-chip); border:1px solid transparent; min-width:0;
+    font-family:var(--font-mono); text-transform:uppercase; letter-spacing:.04em;
+    font-weight:700; font-size:var(--fs-label); white-space:nowrap; flex:0 1 auto;
+  }
+  .chipx svg{ width:11px; height:11px; flex:0 0 auto; }
+  .chipx .t{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+
+  .chipx.st-red{ background:color-mix(in srgb, var(--c-red) 14%, transparent); color:var(--c-red); border-color:color-mix(in srgb, var(--c-red) 38%, transparent); }
+  .chipx.st-yellow{ background:color-mix(in srgb, var(--c-yellow) 14%, transparent); color:var(--c-yellow); border-color:color-mix(in srgb, var(--c-yellow) 38%, transparent); }
+  .chipx.st-blue{ background:color-mix(in srgb, var(--c-blue) 14%, transparent); color:var(--c-blue); border-color:color-mix(in srgb, var(--c-blue) 38%, transparent); }
+  .chipx.st-green{ background:color-mix(in srgb, var(--c-green) 14%, transparent); color:var(--c-green); border-color:color-mix(in srgb, var(--c-green) 38%, transparent); }
+  .chipx.st-gray{ background:color-mix(in srgb, var(--c-gray) 14%, transparent); color:var(--txt-3); border-color:var(--line); }
+
+  .chipx.is-fill.st-red{ background:var(--c-red-fill); border-color:var(--c-red-fill); color:var(--ink-light); }
+  .chipx.is-fill.st-yellow{ background:var(--c-yellow); border-color:var(--c-yellow); color:var(--ink-dark); }
+  .chipx.is-fill.st-blue{ background:var(--c-blue); border-color:var(--c-blue); color:var(--blue-fill-ink); }
+  .chipx.is-fill.st-green{ background:var(--green-fill); border-color:var(--green-fill); color:var(--ink-dark); }
+  .chipx.is-fill.st-gray{ background:var(--c-gray); border-color:var(--c-gray); color:var(--gray-fill-ink); }
+
+  .chipx.k-gate svg{ opacity:.95; }
+
+  /* Ref — linked record: square accent-tinted backing + parent icon + bold name */
+  .ref{ height:var(--h); display:inline-flex; align-items:center; gap:6px; min-width:0; }
+  .ref-ico{
+    width:var(--h); height:var(--h); flex:0 0 auto; border-radius:var(--r-ref);
+    background:color-mix(in srgb, var(--accent) 16%, transparent);
+    border:1px solid color-mix(in srgb, var(--accent) 34%, transparent);
+    display:flex; align-items:center; justify-content:center; color:var(--accent);
+  }
+  .ref-ico svg{ width:13px; height:13px; }
+  .ref-name{
+    font-family:var(--font-sans); font-weight:700; font-size:var(--fs-field);
+    color:var(--txt); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;
+  }
+
+  /* Stamp — plain fact, no box, no colour */
+  .stamp{
+    font-family:var(--font-mono); text-transform:uppercase; letter-spacing:.04em;
+    font-size:var(--fs-label); font-weight:700; color:var(--txt-3); white-space:nowrap;
+  }
+
+  /* ============================================================
+     UNITS — 3-up compact tiles
+     ============================================================ */
+  .tiles-grid{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; align-items:start; }
+  @media (max-width:460px){ .tiles-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
+
+  .unit-tile{
+    background:var(--card); border:1px solid var(--line); border-radius:10px;
+    padding:9px; cursor:pointer; min-width:0; position:relative;
+    transition:height .15s ease, border-color .12s, box-shadow .12s;
+  }
+  .unit-tile.is-open{ grid-column:1 / -1; }
+  .unit-tile:hover{ border-color:color-mix(in srgb, var(--accent) 32%, var(--line)); }
+  .unit-tile:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .unit-tile.is-open{ box-shadow:0 10px 26px rgba(0,0,0,.4); }
+
+  .ut-name{
+    font-family:var(--font-sans); font-weight:700; font-size:var(--fs-content); color:var(--txt);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-bottom:1px;
+  }
+  .ut-cat{
+    font-family:var(--font-mono); text-transform:uppercase; letter-spacing:.03em;
+    font-size:var(--fs-finest); color:var(--txt-3); overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap; margin-bottom:7px;
+  }
+  .ut-chip-row{ display:flex; }
+  .ut-chip-row .chipx{ width:100%; justify-content:flex-start; }
+
+  /* ============================================================
+     RENTALS — 2-up mini-cards
+     ============================================================ */
+  .cards-grid{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; align-items:start; }
+  @media (max-width:380px){ .cards-grid{ grid-template-columns:1fr; } }
+
+  .rental-card{
+    background:var(--card); border:1px solid var(--line); border-radius:10px;
+    padding:9px; cursor:pointer; min-width:0; position:relative;
+    transition:height .15s ease, border-color .12s, box-shadow .12s;
+  }
+  /* NOTE: unlike unit-tile, a rental-card does NOT span the full grid row on expand —
+     the calendar anchor must never move, and a right-column card spanning full-width
+     would shift its own x position (and reflow its row). It grows taller in place only. */
+  .rental-card:hover{ border-color:color-mix(in srgb, var(--accent) 32%, var(--line)); }
+  .rental-card:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .rental-card.is-open{ box-shadow:0 10px 26px rgba(0,0,0,.4); }
+
+  /* rc-anchor — the CONSTANT calendar anchor. Fixed intrinsic size (cal-cell is fixed-width,
+     not flex:1), so it never resizes or reflows between collapsed and expanded. Always the
+     first child in normal flow, so its top-left position never moves either. */
+  .rc-anchor{ flex:0 0 auto; width:180px; max-width:100%; } /* 180 = 7 cal-cells(24px) + 6 gaps(2px) exactly — must equal .minical's intrinsic width so max-width never clamps it in either state */
+  .rc-title{
+    font-family:var(--font-sans); font-weight:700; font-size:var(--fs-field); color:var(--txt);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-bottom:6px;
+  }
+  .minical{ display:flex; gap:2px; margin-bottom:7px; width:180px; max-width:100%; }
+  .cal-cell{
+    flex:0 0 24px; width:24px; min-width:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:1px; padding:2.5px 0; border-radius:4px; background:var(--line-soft);
+  }
+  .cal-l{ font-family:var(--font-mono); font-size:var(--fs-finest); color:var(--txt-3); text-transform:uppercase; line-height:1; }
+  .cal-n{ font-family:var(--font-mono); font-size:var(--fs-finest); color:var(--txt-2); font-weight:700; font-variant-numeric:tabular-nums; line-height:1; }
+  .cal-cell.is-hi{ background:var(--accent); }
+  .cal-cell.is-hi .cal-l, .cal-cell.is-hi .cal-n{ color:var(--ink-dark); }
+  .cal-cell.is-today:not(.is-hi){ box-shadow:inset 0 0 0 1.5px var(--accent); }
+  .cal-cell.is-today.is-hi{ box-shadow:inset 0 0 0 1.5px var(--ink-dark); }
+
+  .rc-row{ display:flex; align-items:center; gap:6px; margin-bottom:6px; }
+  .rc-row .ref{ flex:1 1 auto; min-width:0; }
+  .rc-row .ref-name{ font-size:var(--fs-field); }
+  .rc-row .chipx{ padding:0 6px; flex:0 1 auto; }
+  .rc-route{
+    display:flex; align-items:center; gap:4px; font-size:var(--fs-small); color:var(--txt-3);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .rc-route svg{ width:10px; height:10px; flex:0 0 auto; }
+
+  /* rc-reveal — everything revealed around the fixed anchor when a Rental expands. ONE view,
+     no paging: customer Ref + status Gate, balance Signal+number, per-unit rows, PO/protection. */
+  .rc-reveal{ flex:1 1 auto; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:10px; }
+  .rc-reveal-row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .rc-reveal-row .ref{ flex:1 1 auto; min-width:0; }
+  .rc-reveal-d{ font-size:var(--fs-field); color:var(--txt-2); line-height:1.45; }
+  .rc-bal{ display:flex; align-items:center; gap:10px; padding:8px 0; border-top:1px solid var(--line-soft); border-bottom:1px solid var(--line-soft); }
+  .rc-bal-num{ font-family:var(--font-mono); font-weight:800; font-size:var(--fs-value); font-variant-numeric:tabular-nums; }
+  .rc-units{ display:flex; flex-direction:column; gap:6px; }
+  .rc-unit-row{ display:flex; align-items:center; gap:8px; }
+  .rc-unit-row .ref{ flex:1 1 auto; min-width:0; }
+  .rc-unit-rate{ font-family:var(--font-mono); font-size:var(--fs-small); color:var(--txt-3); font-variant-numeric:tabular-nums; flex:0 0 auto; }
+  .rc-po-row{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .rc-po-row .kv-l{ min-width:auto; }
+
+  /* ============================================================
+     CUSTOMERS — strict 1-line rows
+     ============================================================ */
+  .rows-list{ display:flex; flex-direction:column; gap:5px; }
+  .cust-row{
+    background:var(--card); border:1px solid var(--line); border-radius:8px;
+    padding:0 10px; height:calc(var(--h) + 14px); min-height:40px;
+    display:flex; align-items:center; gap:9px; cursor:pointer; min-width:0;
+    transition:height .15s ease, border-color .12s, box-shadow .12s;
+  }
+  .cust-row:hover{ border-color:color-mix(in srgb, var(--accent) 32%, var(--line)); }
+  .cust-row:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .cust-row.is-open{ height:auto; flex-direction:column; align-items:stretch; padding:9px; box-shadow:0 10px 26px rgba(0,0,0,.4); }
+
+  .cr-name{
+    font-family:var(--font-sans); font-weight:700; font-size:var(--fs-content); color:var(--txt);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1 1 auto; min-width:0;
+  }
+  .cr-collapsed{ display:flex; align-items:center; gap:9px; width:100%; min-width:0; }
+  .cr-stamps{ display:flex; gap:8px; flex:0 0 auto; }
+
+  /* ============================================================
+     GENERIC EXPAND MECHANISM — shared across all three densities
+     ============================================================ */
+  .jitem{ overflow:visible; min-width:0; position:relative; }
+  .jitem.is-open{ overflow:hidden; } /* clip only while animating/expanded — collapsed rows need visible
+    overflow so the hover-jump popover (below) can float outside the row's own box */
+  .jitem-collapsed{ display:block; opacity:1; transition:opacity .12s ease; min-width:0; }
+  .jitem-expanded{ display:none; opacity:0; height:100%; flex-direction:column; transition:opacity .12s ease .04s; }
+  .jitem.is-open .jitem-collapsed{ display:none; }
+  .jitem.is-open .jitem-expanded{ display:flex; opacity:1; }
+  .cust-row .jitem-expanded{ height:auto; }
+
+  .jexp-head{ display:flex; align-items:center; gap:8px; margin-bottom:8px; flex:0 0 auto; }
+  .jexp-title{ min-width:0; flex:1 1 auto; }
+  .jexp-name{ font-family:var(--font-sans); font-weight:700; font-size:var(--fs-title); color:var(--txt);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .jexp-meta{ font-family:var(--font-mono); font-size:var(--fs-small); color:var(--txt-3); text-transform:uppercase; letter-spacing:.04em; }
+  .jexp-close{
+    width:var(--h); height:var(--h); flex:0 0 auto; border-radius:var(--r-pill);
+    border:1px solid var(--line); background:transparent; color:var(--txt-2);
+    display:inline-flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  .jexp-close:hover{ color:var(--txt); border-color:color-mix(in srgb, var(--c-red) 40%, var(--line)); }
+  .jexp-close svg{ width:13px; height:13px; }
+
+  .jexp-tabbar{
+    display:flex; gap:5px; overflow-x:auto; padding-bottom:2px; margin-bottom:8px;
+    flex:0 0 auto; scrollbar-width:none;
+  }
+  .jexp-tabbar::-webkit-scrollbar{ display:none; }
+  .jtab{
+    height:var(--h); flex:0 0 auto; padding:0 10px; border-radius:var(--r-pill);
+    border:1px solid var(--line); background:transparent; color:var(--txt-2);
+    font-family:var(--font-mono); text-transform:uppercase; letter-spacing:.04em;
+    font-weight:700; font-size:var(--fs-label); cursor:pointer; white-space:nowrap;
+  }
+  .jtab.is-active{ background:var(--accent); border-color:var(--accent); color:var(--ink-dark); }
+
+  .jexp-pager{ display:flex; align-items:center; gap:8px; margin-bottom:8px; flex:0 0 auto; }
+  .jchev{
+    width:var(--h); height:var(--h); flex:0 0 auto; border-radius:var(--r-pill);
+    border:1px solid var(--line); background:transparent; color:var(--txt-2);
+    display:inline-flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  .jchev:hover{ color:var(--accent); border-color:color-mix(in srgb, var(--accent) 45%, var(--line)); }
+  .jchev svg{ width:13px; height:13px; }
+  .jdots{ flex:1 1 auto; display:flex; align-items:center; justify-content:center; gap:6px; }
+  .jdot{
+    width:6px; height:6px; border-radius:999px; background:var(--line); border:none; padding:8px;
+    background-clip:content-box; cursor:pointer; flex:0 0 auto;
+  }
+  .jdot.is-active{ background:var(--accent); }
+
+  .jexp-sections{ flex:1 1 auto; min-height:0; overflow-y:auto; position:relative; }
+  .jsection{ display:none; }
+  .jsection.is-active{ display:block; }
+  .jsection.anim-in{ animation:sectionIn .16s ease; }
+  @keyframes sectionIn{ from{ opacity:0; transform:translateX(var(--slide-from,10px)); } to{ opacity:1; transform:translateX(0); } }
+
+  /* ============================================================
+     PERSISTENT HISTORY-SEARCH FOOTER — every expanded item, every
+     section (never pages away). Focus/click the search = reveal
+     a short log + quick-filter chips, growing the card taller.
+     ============================================================ */
+  .jhist-wrap{ flex:0 0 auto; margin-top:8px; border-top:1px solid var(--line); padding-top:8px; }
+  .jhist-bar{ display:flex; align-items:center; gap:8px; height:var(--h); }
+  .jhist-label{
+    font-family:var(--font-mono); text-transform:uppercase; letter-spacing:.04em;
+    font-size:var(--fs-label); font-weight:800; color:var(--txt-3); flex:0 0 auto;
+  }
+  .jhist-search-wrap{
+    flex:1 1 auto; min-width:0; height:var(--h); display:flex; align-items:center;
+    border:1px solid var(--line); border-radius:var(--r-chip); background:var(--panel);
+    padding:0 9px; transition:border-color .12s;
+  }
+  .jhist-search-wrap:focus-within{ border-color:color-mix(in srgb, var(--accent) 45%, var(--line)); }
+  .jhist-search{
+    flex:1 1 auto; min-width:0; border:none; background:transparent; outline:none;
+    font-family:var(--font-sans); font-size:var(--fs-field); color:var(--txt);
+  }
+  .jhist-search::placeholder{ color:var(--txt-3); }
+  .jhist-toggle{
+    width:var(--h); height:var(--h); flex:0 0 auto; border-radius:var(--r-pill);
+    border:1px solid var(--line); background:transparent; color:var(--txt-2);
+    display:inline-flex; align-items:center; justify-content:center; cursor:pointer;
+    transition:transform .16s ease, color .12s;
+  }
+  .jhist-toggle svg{ width:13px; height:13px; }
+  .jhist-toggle[aria-expanded="true"]{ transform:rotate(180deg); color:var(--accent); }
+  .jhist-log{ max-height:0; overflow:hidden; transition:max-height .18s ease; }
+  .jhist-log.is-open{ max-height:280px; }
+  .jhist-filters{ display:flex; gap:6px; flex-wrap:wrap; padding:8px 0 6px; }
+  .jhist-filter-chip{
+    height:var(--h); padding:0 10px; border-radius:var(--r-pill); border:1px solid var(--line);
+    background:transparent; color:var(--txt-2); font-family:var(--font-mono); text-transform:uppercase;
+    letter-spacing:.04em; font-weight:700; font-size:var(--fs-label); cursor:pointer;
+  }
+  .jhist-filter-chip.is-active{ background:var(--accent); border-color:var(--accent); color:var(--ink-dark); }
+  .jhist-entries{ max-height:190px; overflow-y:auto; display:flex; flex-direction:column; gap:0; }
+  .jhist-entry{ display:flex; gap:8px; padding:6px 0; border-top:1px solid var(--line-soft); font-size:var(--fs-field); }
+  .jhist-entry:first-child{ border-top:none; }
+  .jhist-entry[hidden]{ display:none; }
+  .jhist-when{ font-family:var(--font-mono); font-size:var(--fs-small); color:var(--txt-3); flex:0 0 auto; white-space:nowrap; }
+  .jhist-text{ color:var(--txt-2); min-width:0; }
+
+  /* ============================================================
+     HOVER-JUMP POPOVER — desktop-only preview of the section rail
+     from a COLLAPSED row/tile/mini-card (spec §2). Instant, no
+     dwell. Frees the row surface entirely: the menu floats ABOVE,
+     tail/notch on the item's TOP edge (contiguous hover zone, no
+     dead-gap) — or, near the list top where "above" has no room,
+     flips BELOW. ALT candidate: hovering the record NAME shows the
+     same chips as a vertical stack to the LEFT (may bleed off the
+     card/column — allowed). Click a chip -> open on that section;
+     click the row -> To Do landing. Rentals has no sections, so it
+     never renders this (see renderRentalCard) or the menu at all.
+     ============================================================ */
+  .jhop{
+    position:absolute; left:8px; right:8px; bottom:100%; z-index:20;
+    display:flex; align-items:center; gap:5px; height:var(--h); overflow:hidden;
+    padding:0 5px; background:var(--card-head); border:1px solid var(--line);
+    border-radius:var(--r-chip); box-shadow:0 6px 16px rgba(0,0,0,.35);
+    opacity:0; transform:translateY(4px); pointer-events:none;
+    transition:opacity .1s ease, transform .1s ease;
+  }
+  .jhop-tail{
+    position:absolute; left:16px; bottom:-5px; width:10px; height:10px;
+    background:var(--card-head); transform:rotate(45deg);
+    border-right:1px solid var(--line); border-bottom:1px solid var(--line);
+  }
+  .jitem[data-hop-flip="below"] .jhop{ bottom:auto; top:100%; transform:translateY(-4px); }
+  .jitem[data-hop-flip="below"] .jhop-tail{
+    bottom:auto; top:-5px; border-right:none; border-bottom:none;
+    border-left:1px solid var(--line); border-top:1px solid var(--line);
+  }
+  .jhop-chip{
+    height:calc(var(--h) - 6px); flex:0 0 auto; padding:0 8px; border-radius:var(--r-chip);
+    border:1px solid var(--line); background:var(--panel); color:var(--txt-2);
+    font-family:var(--font-mono); text-transform:uppercase; letter-spacing:.04em;
+    font-weight:700; font-size:var(--fs-small); cursor:pointer; white-space:nowrap;
+  }
+  .jhop-chip:hover{ border-color:var(--accent); color:var(--accent); }
+
+  .jhop-left{
+    position:absolute; right:calc(100% + 8px); top:0; z-index:20;
+    display:flex; flex-direction:column; gap:5px; width:max-content; max-width:170px;
+    opacity:0; transform:translateX(4px); pointer-events:none;
+    transition:opacity .1s ease, transform .1s ease;
+  }
+  .jhop-left .jhop-chip{ width:100%; display:flex; justify-content:flex-start; text-align:left; }
+
+  .jitem.is-open .jhop, .jitem.is-open .jhop-left{ display:none; }
+
+  /* forced demo state (mockup review only) — always on regardless of hover capability */
+  .jitem.is-hover-demo .jhop{ opacity:1; transform:translateY(0); pointer-events:auto; }
+  .jitem.is-hover-demo-alt .jhop-left{ opacity:1; transform:translateX(0); pointer-events:auto; }
+
+  @media (hover:hover) and (pointer:fine){
+    .jitem:not(.is-open):hover .jhop{ opacity:1; transform:translateY(0); pointer-events:auto; }
+    /* hovering the NAME specifically swaps to the alt left-stack instead of the above popover */
+    .jitem:not(.is-open):has(.ut-name:hover) .jhop,
+    .jitem:not(.is-open):has(.cr-name:hover) .jhop{ opacity:0; pointer-events:none; }
+    .jitem:not(.is-open):has(.ut-name:hover) .jhop-left,
+    .jitem:not(.is-open):has(.cr-name:hover) .jhop-left{ opacity:1; transform:translateX(0); pointer-events:auto; }
+  }
+
+  /* ============================================================
+     MOBILE / COARSE-POINTER — focused full-screen overlay instead
+     of inline expand. Units/Customers keep swipe-paging inside it;
+     Rentals stays the same single calendar-anchored view (no paging).
+     ============================================================ */
+  @media (pointer:coarse), (max-width:680px){
+    .jitem.is-fullscreen{
+      position:fixed; inset:0; z-index:1000; border-radius:0; height:auto !important;
+      background:var(--card); display:flex; flex-direction:column;
+      padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right))
+              max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));
+    }
+    .jitem.is-fullscreen .jitem-collapsed{ display:none; }
+    .jitem.is-fullscreen .jitem-expanded{ display:flex; opacity:1; height:100%; }
+    .jitem.is-fullscreen .rc-anchor{ width:auto; max-width:220px; }
+    .jitem.is-fullscreen .minical{ width:auto; max-width:220px; }
+  }
+  body.no-scroll{ overflow:hidden; }
+
+  /* Signal-summary section */
+  .sig-hero{ display:flex; align-items:baseline; gap:8px; margin-bottom:8px; min-width:0; }
+  .sig-hero-val{ font-family:var(--font-mono); font-weight:800; font-size:var(--fs-value); color:var(--c-red); font-variant-numeric:tabular-nums; flex:0 0 auto; }
+  .sig-hero-lbl{ font-family:var(--font-mono); text-transform:uppercase; letter-spacing:.05em; font-size:var(--fs-label); color:var(--txt-3);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex:1 1 auto; }
+  .sig-item{ display:flex; gap:8px; padding:8px 0; border-top:1px solid var(--line-soft); }
+  .sig-item:first-child{ border-top:none; }
+  .sig-bar{ width:3px; align-self:stretch; border-radius:2px; flex:0 0 auto; }
+  .sig-item[data-c="red"] .sig-bar{ background:var(--c-red); }
+  .sig-item[data-c="yellow"] .sig-bar{ background:var(--c-yellow); }
+  .sig-item[data-c="blue"] .sig-bar{ background:var(--c-blue); }
+  .sig-item[data-c="green"] .sig-bar{ background:var(--c-green); }
+  .sig-item[data-c="gray"] .sig-bar{ background:var(--c-gray); }
+  .sig-body{ min-width:0; }
+  .sig-t{ font-family:var(--font-mono); text-transform:uppercase; letter-spacing:.03em; font-size:var(--fs-label); font-weight:800; margin-bottom:2px; }
+  .sig-item[data-c="red"] .sig-t{ color:var(--c-red); }
+  .sig-item[data-c="yellow"] .sig-t{ color:var(--c-yellow); }
+  .sig-item[data-c="blue"] .sig-t{ color:var(--c-blue); }
+  .sig-item[data-c="green"] .sig-t{ color:var(--c-green); }
+  .sig-item[data-c="gray"] .sig-t{ color:var(--txt-3); }
+  .sig-d{ font-size:var(--fs-field); color:var(--txt-2); line-height:1.45; }
+  .sig-clear{ display:flex; align-items:center; gap:8px; padding:10px 0; color:var(--c-green); }
+  .sig-clear svg{ width:18px; height:18px; flex:0 0 auto; }
+  .sig-clear-t{ font-family:var(--font-mono); text-transform:uppercase; letter-spacing:.04em; font-size:var(--fs-label); font-weight:800; }
+  .sig-clear-d{ font-size:var(--fs-field); color:var(--txt-2); margin-top:1px; }
+
+  /* generic kv rows for lightweight sections */
+  .kv-grid{ display:flex; flex-direction:column; gap:0; }
+  .kv{ display:flex; align-items:baseline; gap:8px; padding:6px 0; border-top:1px solid var(--line-soft); }
+  .kv:first-child{ border-top:none; }
+  .kv-l{ font-family:var(--font-mono); text-transform:uppercase; letter-spacing:.04em; font-size:var(--fs-small); color:var(--txt-3); flex:0 0 auto; min-width:88px; }
+  .kv-v{ font-size:var(--fs-field); color:var(--txt); font-weight:600; overflow-wrap:anywhere; }
+  .kv-v.mono{ font-family:var(--font-mono); font-variant-numeric:tabular-nums; }
+
+  .list-rows{ display:flex; flex-direction:column; gap:0; }
+  .list-row{ padding:7px 0; border-top:1px solid var(--line-soft); }
+  .list-row:first-child{ border-top:none; }
+  .list-row-h{ display:flex; align-items:center; gap:6px; margin-bottom:2px; }
+  .list-row-id{ font-family:var(--font-mono); font-size:var(--fs-small); color:var(--txt-3); font-variant-numeric:tabular-nums; }
+  .list-row-when{ font-family:var(--font-mono); font-size:var(--fs-small); color:var(--txt-3); margin-left:auto; white-space:nowrap; }
+  .list-row-d{ font-size:var(--fs-field); color:var(--txt-2); line-height:1.4; }
+  .empty-note{ font-size:var(--fs-field); color:var(--txt-3); font-style:normal; padding:8px 0; }
+
+  /* ============================================================
+     Footer note
+     ============================================================ */
+  .yard-foot{ margin-top:26px; font-size:var(--fs-small); color:var(--txt-3); line-height:1.6; }
+</style>
+
+<div class="yard-page">
+  <header class="yard-top">
+    <div class="yard-eyebrow">JACRENTALS · DESIGN PROTOTYPE</div>
+    <h1 class="yard-h1">List Views — Units · Rentals · Customers</h1>
+    <p class="yard-sub"><b>Wrangle any tile, card, or row</b> — click it to expand in place, landing on
+      <b>To Do</b>. Page Units/Customers' sections with the tabs, the ‹ › chevrons, the dots, a swipe, or the arrow
+      keys — Rentals stays one calendar-anchored view, no sections. Hover a collapsed row for an instant jump menu
+      (above it, or off its name to the left) straight to a section. Every expanded item keeps a <b>History</b>
+      search footer pinned at the bottom. Click the item again (or ✕) to close it.</p>
+  </header>
+
+  <div class="yard-grid">
+    <section class="yard-col" data-col="units">
+      <div class="col-head">
+        <div class="col-titlewrap">
+          <div class="col-title">Units</div>
+          <div class="col-desc">3-up tiles · staff priority order</div>
+        </div>
+        <button class="door yourwork-tog" data-col="units" type="button">Your Work</button>
+      </div>
+      <div class="col-body" id="col-units"></div>
+    </section>
+
+    <section class="yard-col" data-col="rentals">
+      <div class="col-head">
+        <div class="col-titlewrap">
+          <div class="col-title">Rentals</div>
+          <div class="col-desc">2-up mini-cards · this week at a glance</div>
+        </div>
+        <button class="door yourwork-tog" data-col="rentals" type="button">Your Work</button>
+      </div>
+      <div class="col-body" id="col-rentals"></div>
+    </section>
+
+    <section class="yard-col" data-col="customers">
+      <div class="col-head">
+        <div class="col-titlewrap">
+          <div class="col-title">Customers</div>
+          <div class="col-desc">1-line rows · account standing</div>
+        </div>
+        <button class="door yourwork-tog" data-col="customers" type="button">Your Work</button>
+      </div>
+      <div class="col-body" id="col-customers"></div>
+    </section>
+  </div>
+
+  <p class="yard-foot">Mockup only — sample yard/rental/customer data is invented for this prototype. Today is fixed
+    at Mon Jul 20, 2026 for the mini-calendars. Built to the <code>wrangler-style</code> + <code>style</code> skills:
+    locked steel palette, mono-stamped labels, system-sans record names, matte (no glow), colour = state / fill = today.</p>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------------------------------------------------------
+     ICONS — inline Lucide-style paths (24x24, stroke, no fill)
+     --------------------------------------------------------- */
+  var ICONS = {
+    chevronLeft:  '<path d="m15 18-6-6 6-6"/>',
+    chevronRight: '<path d="m9 18 6-6-6-6"/>',
+    chevronDown:  '<path d="m6 9 6 6 6-6"/>',
+    x:            '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+    wrench:       '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.4-3.4a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94Z"/>',
+    calendar:     '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
+    user:         '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+    mapPin:       '<path d="M20 10c0 4.99-5.54 10.19-7.4 11.8a1 1 0 0 1-1.2 0C9.54 20.19 4 14.99 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>',
+    alertTriangle:'<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+    checkCircle:  '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>'
+  };
+  function icon(name){ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+(ICONS[name]||'')+'</svg>'; }
+
+  var TYPE_ICON = { unit:'wrench', rental:'calendar', customer:'user' };
+
+  /* ---------------------------------------------------------
+     STATE PRIORITY — red > yellow > blue > green > gray
+     --------------------------------------------------------- */
+  var PRI = ['red','yellow','blue','green','gray'];
+  function rollup(colors){
+    for (var i=0;i<PRI.length;i++){ if (colors.indexOf(PRI[i])>-1) return PRI[i]; }
+    return 'gray';
+  }
+
+  /* ---------------------------------------------------------
+     COMPONENT RENDERERS
+     --------------------------------------------------------- */
+  function signalChip(typeName, color, isFill, label, fullTitle){
+    var t = fullTitle ? ' title="'+fullTitle.replace(/"/g,'&quot;')+'"' : '';
+    return '<span class="chipx k-signal st-'+color+(isFill?' is-fill':'')+'"'+t+'>'+icon(TYPE_ICON[typeName])+'<span class="t">'+label+'</span></span>';
+  }
+  function gateChip(color, isFill, label, fullTitle){
+    var t = fullTitle ? ' title="'+fullTitle.replace(/"/g,'&quot;')+'"' : '';
+    return '<span class="chipx k-gate st-'+color+(isFill?' is-fill':'')+'"'+t+'>'+icon('chevronRight')+'<span class="t">'+label+'</span></span>';
+  }
+  function stamp(text){ return '<span class="stamp">'+text+'</span>'; }
+  function ref(name){
+    return '<span class="ref" title="'+name.replace(/"/g,'&quot;')+'"><span class="ref-ico">'+icon('user')+'</span><span class="ref-name">'+name+'</span></span>';
+  }
+
+  function kv(label, value, mono){
+    return '<div class="kv"><span class="kv-l">'+label+'</span><span class="kv-v'+(mono?' mono':'')+'">'+value+'</span></div>';
+  }
+
+  function signalSection(sig, typeName){
+    if (!sig || !sig.length){
+      return '<div class="sig-clear">'+icon('checkCircle')+
+        '<div><div class="sig-clear-t">All clear</div><div class="sig-clear-d">Nothing needs your attention right now.</div></div></div>';
+    }
+    var hero = '';
+    var top = sig[0];
+    var m = /\$[\d,]+(\.\d{2})?/.exec(top.t);
+    if (top.c === 'red' && m){
+      hero = '<div class="sig-hero"><span class="sig-hero-val">'+m[0]+'</span><span class="sig-hero-lbl">'+top.t.replace(m[0],'').replace(/[—-]\s*$/,'').trim()+'</span></div>';
+    }
+    var rows = sig.map(function(s){
+      return '<div class="sig-item" data-c="'+s.c+'"><span class="sig-bar"></span><div class="sig-body">'+
+        '<div class="sig-t">'+s.t+'</div><div class="sig-d">'+s.d+'</div></div></div>';
+    }).join('');
+    return hero + rows;
+  }
+
+  function listRows(items, render){
+    if (!items || !items.length) return '<div class="empty-note">Nothing on file yet.</div>';
+    return '<div class="list-rows">'+items.map(render).join('')+'</div>';
+  }
+
+  /* ---------------------------------------------------------
+     HOVER-JUMP POPOVER — desktop-only preview of a COLLAPSED
+     item's section rail (spec §2). Up to 3 chips, lit sections
+     first; falls back to the first two non-landing sections when
+     nothing's lit. Never built for Rentals (no sections there —
+     see renderRentalCard, which never calls this).
+     --------------------------------------------------------- */
+  function hopChipList(sections, litLabels){
+    var idxs = [];
+    (litLabels||[]).forEach(function(lbl){
+      var i = sections.findIndex(function(s){ return s.label === lbl; });
+      if (i > 0 && idxs.indexOf(i) === -1) idxs.push(i); /* skip idx 0 — the row click already opens on that (To Do) landing */
+    });
+    for (var i=1; i<sections.length && idxs.length<2; i++){ if (idxs.indexOf(i)===-1) idxs.push(i); }
+    return idxs.slice(0,3).map(function(i){
+      return '<button type="button" class="jhop-chip" tabindex="-1" data-sec-idx="'+i+'">'+sections[i].label+'</button>';
+    }).join('');
+  }
+  function hopMarkup(sections, litLabels){
+    var chips = hopChipList(sections, litLabels);
+    return (
+      '<div class="jhop" aria-hidden="true"><span class="jhop-tail"></span>'+chips+'</div>'+
+      '<div class="jhop-left" aria-hidden="true">'+chips+'</div>'
+    );
+  }
+
+  /* ---------------------------------------------------------
+     MINI CALENDAR — 7-day window centred on today (offset 0)
+     --------------------------------------------------------- */
+  var CAL_DAYS = [
+    {o:-3,l:'F',n:17},{o:-2,l:'S',n:18},{o:-1,l:'S',n:19},{o:0,l:'M',n:20},
+    {o:1,l:'T',n:21},{o:2,l:'W',n:22},{o:3,l:'T',n:23}
+  ];
+  function miniCal(startOff, endOff){
+    return '<div class="minical">'+CAL_DAYS.map(function(d){
+      var hi = d.o>=startOff && d.o<=endOff;
+      var today = d.o===0;
+      return '<div class="cal-cell'+(hi?' is-hi':'')+(today?' is-today':'')+'">'+
+        '<span class="cal-l">'+d.l+'</span><span class="cal-n">'+d.n+'</span></div>';
+    }).join('')+'</div>';
+  }
+
+  /* ---------------------------------------------------------
+     DOM helper
+     --------------------------------------------------------- */
+  function el(html){ var t=document.createElement('template'); t.innerHTML=html.trim(); return t.content.firstElementChild; }
+
+  var SECTION_ID = 0;
+
+  /* ---------------------------------------------------------
+     PERSISTENT HISTORY-SEARCH FOOTER — shared by all three card
+     types. Never pages away; lives below whatever else is shown.
+     --------------------------------------------------------- */
+  function hEntry(kind, when, text){ return { kind:kind, when:when, text:text }; }
+
+  function buildUnitHistory(u){
+    var out = [];
+    if (u.insp && u.insp.last && u.insp.last !== '—') out.push(hEntry('inspection', u.insp.last, 'Inspection — '+u.insp.result+' (by '+u.insp.by+')'));
+    (u.wo||[]).forEach(function(w){ out.push(hEntry('wo', '—', w.id+' — '+w.st+': '+w.d)); });
+    out.push(hEntry('wash', (u.svc && u.svc.last !== '—') ? u.svc.last : '—', 'Wash + fuel top-off'));
+    (u.hist||[]).forEach(function(h){ out.push(hEntry('rental', h.when, 'Rented by '+h.who)); });
+    return out;
+  }
+  function buildRentalHistory(r){
+    var out = [];
+    (r.hist||[]).forEach(function(h){ out.push(hEntry('edit', h.when, h.ev)); });
+    (r.notes||[]).forEach(function(n){ out.push(hEntry('edit', n.when, n.by+': '+n.t)); });
+    var owed = parseFloat((r.bal||'').replace(/[^0-9.]/g,'')) || 0;
+    if (owed === 0 && /\$/.test(r.bal||'')) out.push(hEntry('payment', r.win.split(/[–-]/)[0].trim(), 'Balance paid in full'));
+    return out;
+  }
+  function buildCustomerHistory(c){
+    /* two quick-filter buckets to match the customers footer chips: Invoices
+       (billing + payments) and Contacts (the activity/comms log). */
+    var out = [];
+    (c.inv||[]).forEach(function(iv){ out.push(hEntry('invoices', iv.due, iv.num+' — '+iv.amt+' ('+iv.st+')')); });
+    (c.act||[]).forEach(function(a){ out.push(hEntry('contacts', a.when, a.t)); });
+    if (c.pay && c.pay.last) out.push(hEntry('invoices', c.pay.last.split(' on ')[1] || c.pay.last, 'Payment — '+c.pay.last));
+    return out;
+  }
+
+  function historyFooter(kinds, entries){
+    var filterChips = kinds.map(function(k){
+      return '<button type="button" class="jhist-filter-chip" data-kind="'+k.toLowerCase()+'">'+k+'</button>';
+    }).join('');
+    var rows = entries.map(function(e){
+      var searchText = (e.text+' '+e.when).toLowerCase().replace(/"/g,'&quot;');
+      return '<div class="jhist-entry" data-kind="'+e.kind+'" data-text="'+searchText+'">'+
+        '<span class="jhist-when">'+e.when+'</span><span class="jhist-text">'+e.text+'</span></div>';
+    }).join('');
+    return (
+      '<div class="jhist-wrap">'+
+        '<div class="jhist-bar">'+
+          '<span class="jhist-label">History</span>'+
+          '<div class="jhist-search-wrap"><input class="jhist-search" type="text" placeholder="Search history…" aria-label="Search history" /></div>'+
+          '<button type="button" class="jhist-toggle" aria-expanded="false" aria-label="Expand history">'+icon('chevronDown')+'</button>'+
+        '</div>'+
+        '<div class="jhist-log">'+
+          '<div class="jhist-filters">'+filterChips+'</div>'+
+          '<div class="jhist-entries">'+(rows || '<div class="empty-note">No history yet.</div>')+'</div>'+
+        '</div>'+
+      '</div>'
+    );
+  }
+
+  /* build the shared expanded shell: head + tabbar + pager + section panels + history footer.
+     Used by Units and Customers (both still page sections). Rentals does NOT use this — it
+     gets its own single calendar-anchored view (see renderRentalCard). */
+  function expandedShell(titleHtml, metaText, sections, historyKinds, historyEntries){
+    var tabs = sections.map(function(s,i){
+      return '<button class="jtab'+(i===0?' is-active':'')+'" type="button" data-idx="'+i+'" role="tab" aria-selected="'+(i===0?'true':'false')+'">'+s.label+'</button>';
+    }).join('');
+    var dots = sections.map(function(s,i){
+      return '<button class="jdot'+(i===0?' is-active':'')+'" type="button" data-idx="'+i+'" aria-label="Section '+(i+1)+' of '+sections.length+'"></button>';
+    }).join('');
+    var panels = sections.map(function(s,i){
+      return '<div class="jsection'+(i===0?' is-active':'')+'" data-idx="'+i+'" role="tabpanel"'+(i===0?'':' hidden')+'>'+s.body+'</div>';
+    }).join('');
+    return (
+      '<div class="jitem-expanded">'+
+        '<div class="jexp-head">'+
+          '<div class="jexp-title"><div class="jexp-name">'+titleHtml+'</div><div class="jexp-meta">'+metaText+'</div></div>'+
+          '<button class="jexp-close" type="button" aria-label="Close">'+icon('x')+'</button>'+
+        '</div>'+
+        '<div class="jexp-tabbar" role="tablist">'+tabs+'</div>'+
+        '<div class="jexp-pager">'+
+          '<button class="jchev jchev-prev" type="button" aria-label="Previous section">'+icon('chevronLeft')+'</button>'+
+          '<div class="jdots">'+dots+'</div>'+
+          '<button class="jchev jchev-next" type="button" aria-label="Next section">'+icon('chevronRight')+'</button>'+
+        '</div>'+
+        '<div class="jexp-sections">'+panels+'</div>'+
+        historyFooter(historyKinds, historyEntries)+
+      '</div>'
+    );
+  }
+
+  /* ===========================================================
+     UNITS — data + renderers
+     =========================================================== */
+  var UNIT_GROUPS = ['Field Calls','Not Ready/Failed+Reserved','Not Ready','Failed','Transport','Reserved','On Rent','End Rent','Available','Incomplete'];
+  var UNITS = {
+    'Field Calls':[
+      { id:'EX-214', name:'Excavator 214', cat:'Mini Excavator', color:'red', today:true,
+        sig:[{c:'red',t:'FIELD CALL — HYD LEAK',d:'Operator reports rear boom hydraulic leak on active job site. Tech dispatched, ETA 40 min.'}],
+        insp:{last:'Jul 8',result:'Passed',by:'R. Boudreaux',next:'Aug 8'},
+        svc:{last:'Jun 28 — 250-hr service',hours:'814 hrs',next:'900 hrs / ~Aug 15'},
+        wo:[{id:'WO-1088',st:'Open',d:'Hydraulic hose, rear boom — field call in progress'}],
+        specs:{make:'Cat',model:'305.5E2',year:'2019',serial:'CAT03055JAB00214',cap:'11,000 lb op. wt.'},
+        gps:{zone:'Job site — Moss Bluff Rd',ping:'3 min ago',fence:'Off-yard, active job'},
+        inv:{buy:'$142,000',val:'$96,400',rate:'$650/day',util:'74%'},
+        hist:[{who:'Broussard Bros. Excavation',when:'Jul 6 – present'},{who:'Fontenot Industrial',when:'May 2–9'}] },
+      { id:'SS-108', name:'Skid Steer 108', cat:'Skid Steer', color:'red', today:true, hopDemo:true,
+        sig:[{c:'red',t:'FIELD CALL — WON’T START',d:'No-crank reported on site. Battery + starter check requested by customer.'}],
+        insp:{last:'Jul 2',result:'Passed',by:'K. Landry',next:'Aug 2'},
+        svc:{last:'Jul 1 — battery test',hours:'420 hrs',next:'500 hrs / ~Aug 1'},
+        wo:[{id:'WO-1091',st:'Open',d:'No-crank — battery/starter diagnosis'}],
+        specs:{make:'Bobcat',model:'S650',year:'2021',serial:'BCS650KX0108',cap:'2,700 lb rated op.'},
+        gps:{zone:'Job site — Hwy 27 laydown',ping:'11 min ago',fence:'Off-yard, active job'},
+        inv:{buy:'$58,500',val:'$41,200',rate:'$275/day',util:'81%'},
+        hist:[{who:'Guidry Marine Rentals',when:'Jul 5 – present'}] }
+    ],
+    'Not Ready/Failed+Reserved':[
+      { id:'BL-071', name:'Boom Lift 071', cat:'Articulating Boom Lift', color:'red', today:true,
+        sig:[{c:'red',t:'FAILED + RESERVED CONFLICT',d:'Failed annual inspection Jul 17 — a reservation starts tomorrow. Needs re-inspect or swap before pickup.'},
+             {c:'yellow',t:'RESERVED — PICKUP TOMORROW',d:'Comeaux Paving Co. — Jul 21 pickup, Rte 9.'}],
+        insp:{last:'Jul 17',result:'Failed — platform control cable',by:'R. Boudreaux',next:'Re-inspect before release'},
+        svc:{last:'Jul 17 — flagged at inspection',hours:'1,102 hrs',next:'On hold pending repair'},
+        wo:[{id:'WO-1085',st:'Open',d:'Platform control cable replacement'}],
+        specs:{make:'JLG',model:'450AJ',year:'2018',serial:'JLG450AJHT0071',cap:'500 lb platform'},
+        gps:{zone:'Yard A — Row 1',ping:'22 min ago',fence:'In yard'},
+        inv:{buy:'$88,000',val:'$52,900',rate:'$310/day',util:'58%'},
+        hist:[{who:'Comeaux Paving Co.',when:'Jun 1–5'}] }
+    ],
+    'Not Ready':[
+      { id:'RF-302', name:'Reach Forklift 302', cat:'Reach Forklift', color:'yellow', today:false,
+        sig:[{c:'yellow',t:'PREP IN PROGRESS',d:'Wash + fuel + forks swap queued for return-to-ready. Target Jul 22.'}],
+        insp:{last:'Jul 12',result:'Passed',by:'K. Landry',next:'Aug 12'},
+        svc:{last:'In progress — wash/fuel/forks',hours:'661 hrs',next:'700 hrs / ~Aug 5'},
+        wo:[], specs:{make:'JCB',model:'560-80',year:'2020',serial:'JCB56080TN0302',cap:'6,000 lb @ 80in load ctr'},
+        gps:{zone:'Yard B — Wash bay',ping:'2 min ago',fence:'In yard'},
+        inv:{buy:'$96,000',val:'$67,300',rate:'$295/day',util:'69%'},
+        hist:[{who:'Hebert Site Services',when:'Jun 20 – Jul 18'}] },
+      { id:'TL-019', name:'Telehandler 019', cat:'Telehandler', color:'yellow', today:false,
+        sig:[{c:'yellow',t:'AWAITING PARTS',d:'Replacement mirror + light guard on order, ETA Jul 24.'}],
+        insp:{last:'Jul 9',result:'Passed w/ note',by:'R. Boudreaux',next:'Aug 9'},
+        svc:{last:'Jul 9 — minor body repair queued',hours:'930 hrs',next:'1,000 hrs / ~Aug 18'},
+        wo:[{id:'WO-1079',st:'Open',d:'Mirror + light guard replacement — parts on order'}],
+        specs:{make:'Genie',model:'GTH-844',year:'2019',serial:'GNTH844LA0019',cap:'8,000 lb @ 44ft'},
+        gps:{zone:'Yard A — Row 4',ping:'8 min ago',fence:'In yard'},
+        inv:{buy:'$104,000',val:'$71,500',rate:'$340/day',util:'63%'},
+        hist:[{who:'Thibodeaux Oilfield Services',when:'May 26 – Jun 30'}] }
+    ],
+    'Failed':[
+      { id:'SL-455', name:'Scissor Lift 455', cat:'Electric Scissor Lift', color:'red', today:true,
+        sig:[{c:'red',t:'FAILED INSPECTION',d:'Platform gate latch failed Jul 16. Do not release until repaired + re-inspected.'}],
+        insp:{last:'Jul 16',result:'Failed — gate latch',by:'K. Landry',next:'Re-inspect before release'},
+        svc:{last:'Jul 16 — flagged',hours:'505 hrs',next:'On hold'},
+        wo:[{id:'WO-1082',st:'Open',d:'Platform gate latch repair'}],
+        specs:{make:'JLG',model:'2646ES',year:'2020',serial:'JLG2646ES0455',cap:'500 lb platform'},
+        gps:{zone:'Yard B — Row 2',ping:'40 min ago',fence:'In yard'},
+        inv:{buy:'$32,500',val:'$21,800',rate:'$150/day',util:'55%'},
+        hist:[{who:'LeBlanc Concrete',when:'May 30 – Jun 12'}] },
+      { id:'AC-140', name:'Air Compressor 140', cat:'Tow-Behind Air Compressor', color:'red', today:true,
+        sig:[{c:'red',t:'FAILED — OIL LEAK',d:'Fails pre-rent check, active oil leak at compressor housing. Blocked from dispatch.'}],
+        insp:{last:'Jul 15',result:'Failed — oil leak',by:'R. Boudreaux',next:'Re-inspect before release'},
+        svc:{last:'Jul 15 — flagged',hours:'1,340 hrs',next:'On hold'},
+        wo:[{id:'WO-1080',st:'Open',d:'Oil leak, compressor housing seal'}],
+        specs:{make:'Doosan',model:'XP185',year:'2017',serial:'DSNXP185LA0140',cap:'185 CFM'},
+        gps:{zone:'Yard A — Row 2',ping:'1 hr ago',fence:'In yard'},
+        inv:{buy:'$28,000',val:'$14,600',rate:'$95/day',util:'44%'},
+        hist:[{who:'Fontenot Industrial',when:'May 1–8'}] }
+    ],
+    'Transport':[
+      { id:'TR-812', name:'Lowboy Trailer 812', cat:'Lowboy Trailer', color:'blue', today:false,
+        sig:[{c:'blue',t:'IN TRANSPORT',d:'En route to Broussard Bros. jobsite, Moss Bluff. Driver: D. Hebert.'}],
+        insp:{last:'Jul 5',result:'Passed',by:'K. Landry',next:'Aug 5'},
+        svc:{last:'Jun 15 — bearing check',hours:'—',next:'Annual — Oct'}, wo:[],
+        specs:{make:'Trail King',model:'TK80LP',year:'2016',serial:'TKTK80LP0812',cap:'80,000 lb GVW'},
+        gps:{zone:'Hwy 90 westbound',ping:'4 min ago',fence:'In transit'},
+        inv:{buy:'$46,000',val:'$29,000',rate:'$180/day',util:'52%'},
+        hist:[{who:'Broussard Bros. Excavation',when:'Jul 20 – present'}] },
+      { id:'DZ-501', name:'Dozer 501', cat:'Track Dozer', color:'blue', today:false,
+        sig:[{c:'blue',t:'IN TRANSPORT',d:'Loaded for delivery to Guidry Marine Rentals, Iowa LA. ETA 2:30 PM.'}],
+        insp:{last:'Jul 10',result:'Passed',by:'R. Boudreaux',next:'Aug 10'},
+        svc:{last:'Jul 9 — undercarriage grease',hours:'2,240 hrs',next:'2,300 hrs / ~Aug 1'}, wo:[],
+        specs:{make:'Cat',model:'D6',year:'2015',serial:'CATD6LA00501',cap:'Topsoil grade'},
+        gps:{zone:'Hwy 90 westbound',ping:'6 min ago',fence:'In transit'},
+        inv:{buy:'$210,000',val:'$118,000',rate:'$720/day',util:'66%'},
+        hist:[{who:'Guidry Marine Rentals',when:'Jul 20 – present'}] }
+    ],
+    'Reserved':[
+      { id:'LT-233', name:'Light Tower 233', cat:'Towable Light Tower', color:'blue', today:false,
+        sig:[{c:'blue',t:'RESERVED — JUL 24',d:'Reserved for Domingue Site Services, night pour job. Confirm delivery Jul 24 AM.'}],
+        insp:{last:'Jul 3',result:'Passed',by:'K. Landry',next:'Aug 3'},
+        svc:{last:'Jun 25 — fuel + bulb check',hours:'—',next:'Quarterly — Sep'}, wo:[],
+        specs:{make:'Allmand',model:'Night-Lite Pro',year:'2019',serial:'ALLNLP0233',cap:'4x1000W metal halide'},
+        gps:{zone:'Yard A — Row 3',ping:'15 min ago',fence:'In yard'},
+        inv:{buy:'$18,500',val:'$11,900',rate:'$85/day',util:'38%'},
+        hist:[{who:'Domingue Site Services',when:'Jun 3–7'}] },
+      { id:'GN-260', name:'Generator 260', cat:'Towable Diesel Generator', color:'blue', today:false,
+        sig:[{c:'blue',t:'RESERVED — JUL 23',d:'Reserved for Hebert Site Services, weekend standby power.'}],
+        insp:{last:'Jul 1',result:'Passed',by:'R. Boudreaux',next:'Aug 1'},
+        svc:{last:'Jun 29 — load test',hours:'—',next:'Quarterly — Sep'}, wo:[],
+        specs:{make:'Generac',model:'MDG60',year:'2020',serial:'GENMDG600260',cap:'60 kW'},
+        gps:{zone:'Yard B — Row 1',ping:'19 min ago',fence:'In yard'},
+        inv:{buy:'$34,000',val:'$22,400',rate:'$140/day',util:'47%'},
+        hist:[{who:'Hebert Site Services',when:'Jun 10–14'}] }
+    ],
+    'On Rent':[
+      { id:'EX-190', name:'Excavator 190', cat:'Standard Excavator', color:'green', today:false,
+        sig:[{c:'green',t:'ON RENT — ALL CLEAR',d:'Out to Thibodeaux Oilfield Services, no open issues.'}],
+        insp:{last:'Jun 20',result:'Passed',by:'K. Landry',next:'Jul 20'},
+        svc:{last:'Jun 18 — 250-hr service',hours:'1,455 hrs',next:'1,500 hrs / ~Jul 28'}, wo:[],
+        specs:{make:'Cat',model:'320',year:'2018',serial:'CAT320LA00190',cap:'20,000 lb op. wt.'},
+        gps:{zone:'Job site — Sulphur',ping:'9 min ago',fence:'Off-yard, active job'},
+        inv:{buy:'$168,000',val:'$104,000',rate:'$610/day',util:'77%'},
+        hist:[{who:'Thibodeaux Oilfield Services',when:'Jul 1 – present'}] },
+      { id:'SS-140', name:'Skid Steer 140', cat:'Skid Steer', color:'green', today:false,
+        sig:[{c:'green',t:'ON RENT — ALL CLEAR',d:'Out to LeBlanc Concrete, no open issues.'}],
+        insp:{last:'Jun 25',result:'Passed',by:'R. Boudreaux',next:'Jul 25'},
+        svc:{last:'Jun 20 — filter change',hours:'380 hrs',next:'500 hrs / ~Aug 3'}, wo:[],
+        specs:{make:'Bobcat',model:'S770',year:'2022',serial:'BCS770KX0140',cap:'3,150 lb rated op.'},
+        gps:{zone:'Job site — Westlake',ping:'14 min ago',fence:'Off-yard, active job'},
+        inv:{buy:'$64,000',val:'$52,100',rate:'$285/day',util:'83%'},
+        hist:[{who:'LeBlanc Concrete',when:'Jul 8 – present'}] },
+      { id:'WT-006', name:'Water Truck 006', cat:'4,000-Gal Water Truck', color:'green', today:false,
+        sig:[{c:'green',t:'ON RENT — ALL CLEAR',d:'Out to Broussard Bros. Excavation, dust control.'}],
+        insp:{last:'Jun 30',result:'Passed',by:'K. Landry',next:'Jul 30'},
+        svc:{last:'Jun 28 — pump check',hours:'—',next:'Monthly — Aug'}, wo:[],
+        specs:{make:'International',model:'WT4000',year:'2017',serial:'INTWT4K0006',cap:'4,000 gal'},
+        gps:{zone:'Job site — Moss Bluff',ping:'26 min ago',fence:'Off-yard, active job'},
+        inv:{buy:'$92,000',val:'$54,700',rate:'$260/day',util:'70%'},
+        hist:[{who:'Broussard Bros. Excavation',when:'Jul 3 – present'}] }
+    ],
+    'End Rent':[
+      { id:'BL-098', name:'Boom Lift 098', cat:'Telescopic Boom Lift', color:'yellow', today:true,
+        sig:[{c:'yellow',t:'DUE BACK TODAY',d:'Comeaux Paving Co. — end of rental Jul 20. Schedule pickup.'}],
+        insp:{last:'Jul 1',result:'Passed',by:'R. Boudreaux',next:'Aug 1'},
+        svc:{last:'Jun 30 — filter change',hours:'812 hrs',next:'900 hrs / ~Aug 10'}, wo:[],
+        specs:{make:'JLG',model:'660SJ',year:'2019',serial:'JLG660SJ0098',cap:'660 lb platform'},
+        gps:{zone:'Job site — Hwy 27',ping:'12 min ago',fence:'Off-yard, active job'},
+        inv:{buy:'$156,000',val:'$98,200',rate:'$420/day',util:'72%'},
+        hist:[{who:'Comeaux Paving Co.',when:'Jul 6 – present'}] },
+      { id:'RF-275', name:'Reach Forklift 275', cat:'Reach Forklift', color:'yellow', today:true,
+        sig:[{c:'yellow',t:'DUE BACK TODAY',d:'Fontenot Industrial — end of rental Jul 20. Confirm pickup window.'}],
+        insp:{last:'Jun 22',result:'Passed',by:'K. Landry',next:'Jul 22'},
+        svc:{last:'Jun 20 — forks check',hours:'590 hrs',next:'700 hrs / ~Aug 2'}, wo:[],
+        specs:{make:'JCB',model:'540-140',year:'2018',serial:'JCB540140LA275',cap:'4,000 lb @ 140in load ctr'},
+        gps:{zone:'Job site — Sulphur',ping:'20 min ago',fence:'Off-yard, active job'},
+        inv:{buy:'$88,000',val:'$56,300',rate:'$270/day',util:'68%'},
+        hist:[{who:'Fontenot Industrial',when:'Jul 6 – present'}] }
+    ],
+    'Available':[
+      { id:'SS-221', name:'Skid Steer 221', cat:'Skid Steer', color:'green', today:false,
+        sig:[{c:'green',t:'AVAILABLE — READY',d:'Serviced, inspected, staged in Yard A.'}],
+        insp:{last:'Jul 15',result:'Passed',by:'R. Boudreaux',next:'Aug 15'},
+        svc:{last:'Jul 15 — full service',hours:'210 hrs',next:'500 hrs / ~Sep'}, wo:[],
+        specs:{make:'Bobcat',model:'S650',year:'2023',serial:'BCS650KX0221',cap:'2,700 lb rated op.'},
+        gps:{zone:'Yard A — Row 1',ping:'5 min ago',fence:'In yard'},
+        inv:{buy:'$62,000',val:'$54,800',rate:'$275/day',util:'22%'},
+        hist:[{who:'Guidry Marine Rentals',when:'May 12–19'}] },
+      { id:'GN-104', name:'Generator 104', cat:'Towable Diesel Generator', color:'green', today:false,
+        sig:[{c:'green',t:'AVAILABLE — READY',d:'Serviced, inspected, staged in Yard B.'}],
+        insp:{last:'Jul 12',result:'Passed',by:'K. Landry',next:'Aug 12'},
+        svc:{last:'Jul 12 — load test',hours:'—',next:'Quarterly — Oct'}, wo:[],
+        specs:{make:'Generac',model:'MDG40',year:'2021',serial:'GENMDG400104',cap:'40 kW'},
+        gps:{zone:'Yard B — Row 2',ping:'9 min ago',fence:'In yard'},
+        inv:{buy:'$26,000',val:'$19,400',rate:'$110/day',util:'18%'},
+        hist:[{who:'Domingue Site Services',when:'Apr 20–24'}] },
+      { id:'LT-088', name:'Light Tower 088', cat:'Towable Light Tower', color:'yellow', today:true,
+        sig:[{c:'yellow',t:'PM DUE SOON',d:'Ready for dispatch, but 250-hr PM window opens in 3 days — flag if a long rental is requested.'}],
+        insp:{last:'Jul 10',result:'Passed',by:'R. Boudreaux',next:'Aug 10'},
+        svc:{last:'Apr 10 — last PM',hours:'246 hrs',next:'250 hrs / ~Jul 23'}, wo:[],
+        specs:{make:'Allmand',model:'Night-Lite Pro',year:'2018',serial:'ALLNLP0088',cap:'4x1000W metal halide'},
+        gps:{zone:'Yard A — Row 4',ping:'17 min ago',fence:'In yard'},
+        inv:{buy:'$17,000',val:'$9,800',rate:'$80/day',util:'31%'},
+        hist:[{who:'Hebert Site Services',when:'Mar 2–9'}] }
+    ],
+    'Incomplete':[
+      { id:'TL-410', name:'Telehandler 410', cat:'Telehandler', color:'gray', today:false,
+        sig:[{c:'gray',t:'INCOMPLETE SETUP',d:'New unit — specs + photos not yet entered. Not bookable until setup finishes.'}],
+        insp:{last:'—',result:'Not yet inspected',by:'—',next:'Schedule initial inspection'},
+        svc:{last:'—',hours:'0 hrs',next:'—'}, wo:[],
+        specs:{make:'Genie',model:'GTH-1056',year:'2024',serial:'Pending entry',cap:'Pending entry'},
+        gps:{zone:'Yard receiving',ping:'—',fence:'In yard'},
+        inv:{buy:'$118,000',val:'—',rate:'Not set',util:'0%'}, hist:[] }
+    ]
+  };
+
+  function unitStatusLabel(u){ return u.sig && u.sig[0] ? u.sig[0].t : u.cat.toUpperCase(); }
+
+  function renderUnitTile(u){
+    var top = u.sig[0];
+    var collapsed =
+      '<div class="jitem-collapsed">'+
+        '<div class="ut-name">'+u.name+'</div>'+
+        '<div class="ut-cat">'+u.cat+'</div>'+
+        '<div class="ut-chip-row">'+signalChip('unit', u.color, u.today, top ? top.t : u.cat.toUpperCase())+'</div>'+
+      '</div>';
+
+    var sections = [
+      { label:'To Do', body: signalSection(u.sig,'unit') }, /* user-facing rename (2026-07-20) — "Signal" stays the internal component name only */
+      { label:'INSPECTION', body:
+          '<div class="kv-grid">'+kv('LAST','Result: '+u.insp.result+' ('+u.insp.last+')')+kv('INSPECTOR',u.insp.by)+kv('NEXT DUE',u.insp.next)+'</div>' },
+      { label:'SERVICES', body:
+          '<div class="kv-grid">'+kv('LAST SERVICE',u.svc.last)+kv('METER',u.svc.hours,true)+kv('NEXT DUE',u.svc.next)+'</div>' },
+      { label:'WORK ORDERS', body: u.wo.length ? listRows(u.wo, function(w){
+          return '<div class="list-row"><div class="list-row-h"><span class="list-row-id">'+w.id+'</span><span class="list-row-when">'+w.st+'</span></div><div class="list-row-d">'+w.d+'</div></div>';
+        }) : '<div class="empty-note">No open work orders.</div>' },
+      { label:'SPECS', body:
+          '<div class="kv-grid">'+kv('MAKE / MODEL',u.specs.make+' '+u.specs.model)+kv('YEAR',u.specs.year,true)+kv('SERIAL',u.specs.serial,true)+kv('CAPACITY',u.specs.cap)+'</div>' },
+      { label:'GPS', body:
+          '<div class="kv-grid">'+kv('ZONE',u.gps.zone)+kv('LAST PING',u.gps.ping)+kv('GEOFENCE',u.gps.fence)+'</div>' },
+      { label:'INVESTMENT', body:
+          '<div class="sig-hero"><span class="sig-hero-val" style="color:var(--txt)">'+u.inv.val+'</span><span class="sig-hero-lbl">CURRENT VALUE</span></div>'+
+          '<div class="kv-grid">'+kv('PURCHASE',u.inv.buy)+kv('DAY RATE',u.inv.rate)+kv('UTILIZATION',u.inv.util)+'</div>' }
+    ];
+
+    var litUnit = [];
+    if (u.wo && u.wo.length) litUnit.push('WORK ORDERS');
+    if (u.insp && /fail/i.test(u.insp.result||'')) litUnit.push('INSPECTION');
+
+    var item = el('<article class="jitem unit-tile" data-color="'+u.color+'" data-rec-id="'+u.id+'" tabindex="0" role="button" aria-expanded="false"></article>');
+    if (u.hopFlip) item.dataset.hopFlip = 'below';
+    if (u.hopDemo) item.classList.add('is-hover-demo');
+    if (u.hopDemoAlt) item.classList.add('is-hover-demo-alt');
+    item.insertAdjacentHTML('beforeend', collapsed + hopMarkup(sections, litUnit) + expandedShell(u.name, u.cat+' · '+u.id, sections, ['Inspections','WOs','Washes'], buildUnitHistory(u)));
+    wireItem(item);
+    return item;
+  }
+
+  /* ===========================================================
+     RENTALS — data + renderers
+     =========================================================== */
+  var RENTAL_GROUPS = ['Today','Tomorrow','This Week','On Rent','Off Rent','End Rent','Returned','Quote','No Show','Cancelled'];
+  var RENTALS = {
+    'Today':[
+      { id:'RC-4821', unit:'Excavator 214', cust:'Broussard Bros. Excavation', color:'red', today:true, s:-3,e:0,
+        bal:'$2,180.00', rate:'$650/day', po:'PO-88214', protectionOff:false,
+        route:'Rte 12 · Yard → Moss Bluff Rd jobsite', win:'Jul 17 – Jul 20',
+        sig:[{c:'red',t:'DUE BACK TODAY — $2,180.00',d:'End of rental Jul 20 — schedule return pickup before 5 PM.'}],
+        notes:[{by:'Dispatch',when:'Jul 19',t:'Customer confirmed unit stays on site until pickup.'}],
+        hist:[{when:'Jul 17',ev:'Delivered to site'},{when:'Jul 20',ev:'Return due'}] },
+      { id:'RC-4833', unit:'Skid Steer 108', cust:'Guidry Marine Rentals', color:'red', today:true, s:0,e:0,
+        bal:'$0.00', rate:'$275/day', po:null, protectionOff:true,
+        route:'Rte 4 · Yard → Iowa LA yard pickup', win:'Jul 20 (1-day)',
+        sig:[{c:'red',t:'OUT + BACK TODAY',d:'Single-day rental, must return by close of business.'}],
+        notes:[{by:'Counter',when:'Jul 20',t:'Customer picked up 7:40 AM, expects to return ~4 PM.'}],
+        hist:[{when:'Jul 20',ev:'Picked up at counter'}] },
+      { id:'RC-4790', unit:'Boom Lift 098', cust:'Comeaux Paving Co.', color:'red', today:true, s:-1,e:0,
+        bal:'$640.00', rate:'$420/day', po:'PO-77031', protectionOff:false,
+        route:'Rte 9 · Yard → Hwy 27 jobsite', win:'Jul 19 – Jul 20',
+        sig:[{c:'red',t:'DUE BACK TODAY — $640.00',d:'End of rental Jul 20 — balance due at return.'}],
+        notes:[], hist:[{when:'Jul 19',ev:'Delivered to site'},{when:'Jul 20',ev:'Return due'}] }
+    ],
+    'Tomorrow':[
+      { id:'RC-4808', unit:'Reach Forklift 275', cust:'Fontenot Industrial', color:'yellow', today:false, s:-2,e:1,
+        bal:'$1,080.00', rate:'$270/day', po:'PO-56120', protectionOff:false,
+        route:'Rte 3 · Yard → Sulphur plant yard', win:'Jul 18 – Jul 21',
+        sig:[{c:'yellow',t:'DUE BACK TOMORROW',d:'End of rental Jul 21 — confirm pickup window with customer.'}],
+        notes:[{by:'Dispatch',when:'Jul 19',t:'Customer may extend 2 more days — awaiting confirmation.'}],
+        hist:[{when:'Jul 18',ev:'Delivered to site'}] },
+      { id:'RC-4855', unit:'Generator 260', cust:'Hebert Site Services', color:'yellow', today:false, s:1,e:1,
+        bal:'$140.00', rate:'$140/day', po:null, protectionOff:false,
+        route:'Rte 6 · Yard → Weekend standby, Sulphur', win:'Jul 21 (1-day)',
+        sig:[{c:'yellow',t:'DELIVERY TOMORROW',d:'Weekend standby power — confirm delivery Jul 21 AM.'}],
+        notes:[], hist:[{when:'Jul 15',ev:'Contract signed'}] }
+    ],
+    'This Week':[
+      { id:'RC-4860', unit:'Light Tower 233', cust:'Domingue Site Services', color:'blue', today:false, s:2,e:3,
+        bal:'$255.00', rate:'$85/day', po:'PO-90042', protectionOff:false,
+        route:'Rte 9 · Yard → Night pour site, Sulphur', win:'Jul 22 – Jul 23',
+        sig:[{c:'blue',t:'SCHEDULED — JUL 22',d:'Night pour job — confirm delivery Jul 22 AM.'}],
+        notes:[], hist:[{when:'Jul 12',ev:'Contract signed'}] },
+      { id:'RC-4700', unit:'Dozer 501', cust:'Guidry Marine Rentals', color:'blue', today:false, s:-3,e:3,
+        bal:'$4,320.00', rate:'$720/day', po:'PO-90501', protectionOff:false,
+        units:[
+          {name:'Dozer 501', rate:'$720/day', color:'blue', today:false, label:'ON RENT — MULTI-WEEK'},
+          {name:'Light Tower 233', rate:'$85/day', color:'blue', today:false, label:'ON RENT — SAME SITE'}
+        ],
+        route:'Rte 90 · Yard → Iowa LA site', win:'Jul 10 – Jul 27 (multi-week)',
+        sig:[{c:'blue',t:'ON RENT — MULTI-WEEK',d:'Long-term rental, mid-cycle billing Jul 27.'}],
+        notes:[], hist:[{when:'Jul 10',ev:'Delivered to site'}] },
+      { id:'RC-4862', unit:'Telehandler 019', cust:'Thibodeaux Oilfield Services', color:'red', today:true, s:3,e:3,
+        bal:'$340.00', rate:'$340/day', po:'PO-11238', protectionOff:false,
+        route:'Rte 27 · Yard → Delivery pending', win:'Jul 23 (scheduled)',
+        sig:[{c:'red',t:'PAYMENT DECLINED',d:'Card on file declined Jul 19 — delivery Jul 23 is on hold pending payment.'}],
+        notes:[{by:'Billing',when:'Jul 19',t:'Called customer, awaiting updated card info.'}],
+        hist:[{when:'Jul 18',ev:'Contract signed'},{when:'Jul 19',ev:'Payment declined'}] }
+    ],
+    'On Rent':[
+      { id:'RC-4650', unit:'Excavator 190', cust:'Thibodeaux Oilfield Services', color:'green', today:false, s:-3,e:3,
+        bal:'$0.00', rate:'$610/day', po:'PO-11190', protectionOff:false,
+        units:[
+          {name:'Excavator 190', rate:'$610/day', color:'green', today:false, label:'ON RENT — ALL CLEAR'},
+          {name:'Generator 260', rate:'$140/day', color:'yellow', today:true, label:'DUE BACK TODAY'}
+        ],
+        route:'Rte 27 · Yard → Sulphur site', win:'Jul 1 – Aug 1',
+        sig:[{c:'green',t:'ON RENT — ALL CLEAR',d:'Current on billing, no open issues.'}],
+        notes:[], hist:[{when:'Jul 1',ev:'Delivered to site'}] },
+      { id:'RC-4712', unit:'Skid Steer 140', cust:'LeBlanc Concrete', color:'green', today:false, s:-2,e:2,
+        bal:'$0.00', rate:'$285/day', po:null, protectionOff:true,
+        route:'Rte 14 · Yard → Westlake site', win:'Jul 8 – Jul 29',
+        sig:[{c:'green',t:'ON RENT — ALL CLEAR',d:'Current on billing, no open issues.'}],
+        notes:[], hist:[{when:'Jul 8',ev:'Delivered to site'}] }
+    ],
+    'Off Rent':[
+      { id:'RC-4550', unit:'Excavator 214', cust:'Fontenot Industrial', color:'gray', today:false, s:-3,e:-1,
+        bal:'$0.00', rate:'$650/day', po:'PO-55214', protectionOff:false,
+        route:'Rte 12 · Returned to yard', win:'Jun 28 – Jul 19',
+        sig:[{c:'gray',t:'OFF RENT',d:'Closed out, invoice paid in full.'}],
+        notes:[], hist:[{when:'Jul 19',ev:'Returned to yard'}] },
+      { id:'RC-4561', unit:'Scissor Lift 455', cust:'LeBlanc Concrete', color:'gray', today:false, s:-2,e:-1,
+        bal:'$0.00', rate:'$150/day', po:null, protectionOff:false,
+        route:'Rte 14 · Returned to yard', win:'Jun 30 – Jul 19',
+        sig:[{c:'gray',t:'OFF RENT',d:'Closed out, invoice paid in full.'}],
+        notes:[], hist:[{when:'Jul 19',ev:'Returned to yard'}] }
+    ],
+    'End Rent':[
+      { id:'RC-4780', unit:'Boom Lift 071', cust:'Comeaux Paving Co.', color:'yellow', today:true, s:-3,e:1,
+        bal:'$890.00', rate:'$310/day', po:'PO-77071', protectionOff:false,
+        route:'Rte 9 · Staging for return', win:'Jul 15 – Jul 21',
+        sig:[{c:'yellow',t:'RETURN STAGED',d:'Customer confirmed return Jul 21 — transport scheduled.'}],
+        notes:[], hist:[{when:'Jul 15',ev:'Delivered to site'}] },
+      { id:'RC-4791', unit:'Reach Forklift 302', cust:'Hebert Site Services', color:'yellow', today:true, s:-2,e:0,
+        bal:'$410.00', rate:'$295/day', po:null, protectionOff:false,
+        route:'Rte 6 · Staging for return', win:'Jul 18 – Jul 20',
+        sig:[{c:'yellow',t:'RETURN STAGED',d:'Return today — unit prepped for wash bay on arrival.'}],
+        notes:[], hist:[{when:'Jul 18',ev:'Delivered to site'}] }
+    ],
+    'Returned':[
+      { id:'RC-4400', unit:'Generator 104', cust:'Domingue Site Services', color:'gray', today:false, s:-3,e:-2,
+        bal:'$0.00', rate:'$110/day', po:'PO-90104', protectionOff:false,
+        route:'Rte 6 · Returned to yard', win:'Jul 5 – Jul 18',
+        sig:[{c:'gray',t:'RETURNED — CLOSED',d:'Returned and closed out, no balance.'}],
+        notes:[], hist:[{when:'Jul 18',ev:'Returned to yard'},{when:'Jul 18',ev:'Invoice closed'}] },
+      { id:'RC-4390', unit:'Skid Steer 221', cust:'Guidry Marine Rentals', color:'gray', today:false, s:-3,e:-3,
+        bal:'$0.00', rate:'$275/day', po:null, protectionOff:false,
+        route:'Rte 4 · Returned to yard', win:'Jul 10 – Jul 17',
+        sig:[{c:'gray',t:'RETURNED — CLOSED',d:'Returned and closed out, no balance.'}],
+        notes:[], hist:[{when:'Jul 17',ev:'Returned to yard'}] }
+    ],
+    'Quote':[
+      { id:'QT-2201', unit:'Telehandler 410', cust:'Broussard Bros. Excavation', color:'blue', today:false, s:2,e:3,
+        bal:'$0.00 (quote)', rate:'Quote — TBD', po:null, protectionOff:true,
+        route:'Rte 12 · Proposed delivery', win:'Jul 22 – Jul 23 (proposed)',
+        sig:[{c:'blue',t:'QUOTE — AWAITING APPROVAL',d:'Sent Jul 18, follow up if no response by Jul 22.'}],
+        notes:[], hist:[{when:'Jul 18',ev:'Quote sent'}] },
+      { id:'QT-2196', unit:'Light Tower 088', cust:'Fontenot Industrial', color:'blue', today:false, s:1,e:3,
+        bal:'$0.00 (quote)', rate:'$80/day', po:null, protectionOff:false,
+        route:'Rte 3 · Proposed delivery', win:'Jul 21 – Jul 23 (proposed)',
+        sig:[{c:'blue',t:'QUOTE — AWAITING APPROVAL',d:'Sent Jul 17, customer reviewing budget.'}],
+        notes:[], hist:[{when:'Jul 17',ev:'Quote sent'}] }
+    ],
+    'No Show':[
+      { id:'RC-4770', unit:'Air Compressor 140', cust:'Thibodeaux Oilfield Services', color:'red', today:true, s:-1,e:2,
+        bal:'$0.00', rate:'$95/day', po:'PO-11140', protectionOff:false,
+        route:'Rte 27 · Delivery attempted', win:'Jul 19 – Jul 22 (scheduled)',
+        sig:[{c:'red',t:'NO SHOW — JUL 19',d:'Delivery crew arrived, no one on site to receive. Customer not answering — follow up needed.'}],
+        notes:[{by:'Dispatch',when:'Jul 19',t:'Left voicemail, no callback yet.'}],
+        hist:[{when:'Jul 19',ev:'Delivery attempted — no show'}] }
+    ],
+    'Cancelled':[
+      { id:'RC-4655', unit:'Water Truck 006', cust:'LeBlanc Concrete', color:'gray', today:false, s:-3,e:-1,
+        bal:'$0.00', rate:'$260/day', po:null, protectionOff:true,
+        route:'Rte 14 · Cancelled', win:'Jul 17 – Jul 19 (cancelled)',
+        sig:[{c:'gray',t:'CANCELLED',d:'Customer cancelled Jul 16 — job postponed.'}],
+        notes:[], hist:[{when:'Jul 16',ev:'Cancelled by customer'}] }
+    ]
+  };
+
+  /* Rentals — NOT a paged card. ONE view, built around the calendar. The anchor
+     (title + window-picker calendar) is a sibling of both collapsed/expanded blocks,
+     never touched by the open/close toggle, so it is pixel-identical — same size,
+     same top-left position — whether the card is closed or open. Expanding reveals
+     the rest (customer Ref, status Gate, balance, per-unit rows, PO/protection) in
+     the newly-available space below/around it, all at once — no tabs, no chevrons. */
+  function renderRentalCard(r){
+    var top = r.sig[0];
+    var units = r.units || [{ name:r.unit, rate:r.rate, color:r.color, today:r.today, label: top ? top.t : r.color.toUpperCase() }];
+    var owed = parseFloat((r.bal||'').replace(/[^0-9.]/g,'')) || 0;
+    var balColor = owed > 0 ? r.color : 'green';
+    var balLabel = owed > 0 ? 'BALANCE OWED' : 'NO BALANCE DUE';
+    var balValColor = owed > 0 ? 'var(--c-'+(balColor==='gray'?'gray':balColor)+')' : 'var(--txt)';
+
+    var anchor =
+      '<div class="rc-anchor">'+
+        '<div class="rc-title">'+r.unit+'</div>'+
+        miniCal(r.s, r.e)+
+      '</div>';
+
+    var collapsed =
+      '<div class="jitem-collapsed">'+
+        '<div class="rc-row">'+ref(r.cust)+gateChip(r.color, r.today, top ? top.t.split(' — ')[0] : r.color.toUpperCase(), top ? top.t : null)+'</div>'+
+        '<div class="rc-route">'+icon('mapPin')+'<span>'+r.route+'</span></div>'+
+      '</div>';
+
+    var unitRows = units.map(function(u){
+      return '<div class="rc-unit-row">'+ref(u.name)+'<span class="rc-unit-rate">'+u.rate+'</span>'+gateChip(u.color, u.today, u.label)+'</div>';
+    }).join('');
+
+    var expanded =
+      '<div class="jitem-expanded">'+
+        '<div class="jexp-head">'+
+          '<div class="jexp-title"><div class="jexp-name">'+r.unit+'</div><div class="jexp-meta">'+r.cust+' · '+r.id+'</div></div>'+
+          '<button class="jexp-close" type="button" aria-label="Close">'+icon('x')+'</button>'+
+        '</div>'+
+        '<div class="rc-reveal">'+
+          '<div class="rc-reveal-row">'+ref(r.cust)+gateChip(r.color, r.today, top ? top.t : r.color.toUpperCase())+'</div>'+
+          (top ? '<div class="rc-reveal-d">'+top.d+'</div>' : '')+
+          '<div class="rc-bal">'+signalChip('rental', balColor, owed>0 && r.today, balLabel)+
+            '<div class="rc-bal-num" style="color:'+balValColor+'">'+r.bal+'</div></div>'+
+          '<div class="rc-units">'+unitRows+'</div>'+
+          '<div class="rc-po-row">'+
+            '<span class="kv-l">PO</span><span class="kv-v">'+(r.po || '— none on file')+'</span>'+
+            (r.protectionOff ? '<span class="chipx st-yellow"><span class="t">PROTECTION OFF</span></span>' : stamp('PROTECTED'))+
+          '</div>'+
+        '</div>'+
+        historyFooter(['Payments','Edits'], buildRentalHistory(r))+
+      '</div>';
+
+    var item = el('<article class="jitem rental-card" data-color="'+r.color+'" data-rec-id="'+r.id+'" tabindex="0" role="button" aria-expanded="false"></article>');
+    item.insertAdjacentHTML('beforeend', anchor + collapsed + expanded);
+    wireItem(item);
+    return item;
+  }
+
+  /* ===========================================================
+     CUSTOMERS — data + renderers
+     =========================================================== */
+  var CUST_GROUPS = ['Past Due','Not Due','Reserved','On Rent','Members','Non-Members'];
+  var CUSTOMERS = {
+    'Past Due':[
+      { id:'CU-3381', name:'Boudreaux Construction', color:'red', today:true, hopFlip:true, hopDemo:true, s1:'NET-15', s2:'14 RENTALS',
+        sig:[{c:'red',t:'PAST DUE — $2,140.00',d:'Invoice 3381, due Jul 12 — 8 days overdue.'}],
+        acct:{phone:'(337) 555-0142',email:'billing@boudreauxconst.test',bill:'412 Ruth St, Sulphur, LA',since:'2021'},
+        funnel:{stage:'Won · Active account',src:'Referral — repeat customer'},
+        inv:[{num:'INV-3381',amt:'$2,140.00',due:'Jul 12',st:'Past due'}],
+        act:[{when:'Jul 17',t:'Called re: invoice 3381, no answer'},{when:'Jul 10',t:'Picked up Skid Steer 108'}],
+        pay:{method:'Visa •••• 4417',last:'$1,240 on Jun 30',terms:'Net 15'},
+        histSum:{total:'14 rentals',ltv:'$38,600 lifetime',since:'Member since 2021'} },
+      { id:'CU-3402', name:'Domingue Site Services', color:'red', today:true, hopDemoAlt:true, s1:'NET-30', s2:'6 RENTALS',
+        sig:[{c:'red',t:'PAST DUE — $890.00',d:'Invoice 3402, due Jul 5 — 15 days overdue.'}],
+        acct:{phone:'(337) 555-0187',email:'ap@domingueservices.test',bill:'88 Prater Rd, Sulphur, LA',since:'2023'},
+        funnel:{stage:'Won · Active account',src:'Google — organic'},
+        inv:[{num:'INV-3402',amt:'$890.00',due:'Jul 5',st:'Past due'}],
+        act:[{when:'Jul 14',t:'Sent past-due reminder'}],
+        pay:{method:'Mastercard •••• 2280',last:'$620 on Jun 3',terms:'Net 30'},
+        histSum:{total:'6 rentals',ltv:'$9,400 lifetime',since:'Member since 2023'} },
+      { id:'CU-3415', name:'Chad Domingue', color:'red', today:true, s1:'NET-15', s2:'2 RENTALS',
+        sig:[{c:'red',t:'PAST DUE — $340.00',d:'Invoice 3415, due Jul 13 — 7 days overdue.'}],
+        acct:{phone:'(337) 555-0223',email:'chad.domingue@example.test',bill:'204 Cypress Ave, Sulphur, LA',since:'2025'},
+        funnel:{stage:'Won · New account',src:'Walk-in'},
+        inv:[{num:'INV-3415',amt:'$340.00',due:'Jul 13',st:'Past due'}],
+        act:[{when:'Jul 16',t:'Left voicemail re: balance'}],
+        pay:{method:'Visa •••• 9081',last:'No prior payment',terms:'Net 15'},
+        histSum:{total:'2 rentals',ltv:'$1,120 lifetime',since:'Member since 2025'} }
+    ],
+    'Not Due':[
+      { id:'CU-3200', name:'Thibodeaux Oilfield Services', color:'green', today:false, s1:'NET-30', s2:'22 RENTALS',
+        sig:[{c:'green',t:'ACCOUNT CURRENT',d:'No open balance, all invoices paid on time.'}],
+        acct:{phone:'(337) 555-0110',email:'ap@thibodeauxoilfield.test',bill:'900 Refinery Rd, Sulphur, LA',since:'2019'},
+        funnel:{stage:'Won · Key account',src:'Referral'},
+        inv:[
+          {num:'INV-3388',amt:'$4,320.00',due:'Jul 27',st:'Current'},
+          {num:'INV-3360',amt:'$1,340.00',due:'Jul 6',st:'Paid'},
+          {num:'INV-3341',amt:'$2,180.00',due:'Jun 22',st:'Paid'},
+          {num:'INV-3318',amt:'$610.00',due:'Jun 8',st:'Paid'},
+          {num:'INV-3299',amt:'$3,050.00',due:'May 25',st:'Paid'},
+          {num:'INV-3270',amt:'$720.00',due:'May 11',st:'Paid'},
+          {num:'INV-3241',amt:'$1,900.00',due:'Apr 27',st:'Paid'},
+          {num:'INV-3212',amt:'$2,440.00',due:'Apr 13',st:'Paid'},
+          {num:'INV-3188',amt:'$860.00',due:'Mar 30',st:'Paid'},
+          {num:'INV-3160',amt:'$1,220.00',due:'Mar 16',st:'Paid'}
+        ],
+        act:[{when:'Jul 18',t:'Signed contract RC-4862'}],
+        pay:{method:'ACH on file',last:'$2,900 on Jul 1',terms:'Net 30'},
+        histSum:{total:'22 rentals',ltv:'$142,000 lifetime',since:'Member since 2019'} },
+      { id:'CU-3221', name:'Guidry Marine Rentals', color:'green', today:false, s1:'NET-30', s2:'11 RENTALS',
+        sig:[{c:'green',t:'ACCOUNT CURRENT',d:'No open balance.'}],
+        acct:{phone:'(337) 555-0134',email:'accounts@guidrymarine.test',bill:'1500 Dock St, Iowa, LA',since:'2020'},
+        funnel:{stage:'Won · Active account',src:'Trade show'},
+        inv:[{num:'INV-3350',amt:'$0.00',due:'—',st:'Current'}],
+        act:[{when:'Jul 20',t:'Picked up Dozer 501'}],
+        pay:{method:'Visa •••• 6602',last:'$1,900 on Jul 5',terms:'Net 30'},
+        histSum:{total:'11 rentals',ltv:'$54,200 lifetime',since:'Member since 2020'} },
+      { id:'CU-3245', name:'Hebert Site Services', color:'green', today:false, s1:'NET-15', s2:'8 RENTALS',
+        sig:[{c:'green',t:'ACCOUNT CURRENT',d:'No open balance.'}],
+        acct:{phone:'(337) 555-0198',email:'billing@hebertsite.test',bill:'77 Ruth St, Sulphur, LA',since:'2022'},
+        funnel:{stage:'Won · Active account',src:'Referral'},
+        inv:[{num:'INV-3300',amt:'$410.00',due:'Aug 3',st:'Current'}],
+        act:[{when:'Jul 18',t:'Delivered Reach Forklift 302'}],
+        pay:{method:'Mastercard •••• 4471',last:'$780 on Jun 20',terms:'Net 15'},
+        histSum:{total:'8 rentals',ltv:'$22,600 lifetime',since:'Member since 2022'} },
+      { id:'CU-3260', name:'Tammy Broussard', color:'green', today:false, s1:'NET-15', s2:'3 RENTALS',
+        sig:[{c:'green',t:'ACCOUNT CURRENT',d:'No open balance.'}],
+        acct:{phone:'(337) 555-0256',email:'tammy.broussard@example.test',bill:'55 Oak Park Dr, Sulphur, LA',since:'2024'},
+        funnel:{stage:'Won · Active account',src:'Walk-in'},
+        inv:[{num:'INV-3260',amt:'$0.00',due:'—',st:'Current'}],
+        act:[{when:'Jul 9',t:'Returned Scissor Lift 455'}],
+        pay:{method:'Visa •••• 7743',last:'$450 on Jul 9',terms:'Net 15'},
+        histSum:{total:'3 rentals',ltv:'$3,800 lifetime',since:'Member since 2024'} }
+    ],
+    'Reserved':[
+      { id:'CU-3299', name:'Comeaux Paving Co.', color:'blue', today:false, s1:'NET-30', s2:'17 RENTALS',
+        sig:[{c:'blue',t:'RESERVATION — JUL 21',d:'Boom Lift 071 pickup scheduled Jul 21.'}],
+        acct:{phone:'(337) 555-0177',email:'ap@comeauxpaving.test',bill:'340 Hwy 9, Sulphur, LA',since:'2018'},
+        funnel:{stage:'Won · Key account',src:'Repeat customer'},
+        inv:[{num:'INV-3299',amt:'$890.00',due:'Jul 28',st:'Current'}],
+        act:[{when:'Jul 15',t:'Reservation confirmed for Jul 21'}],
+        pay:{method:'ACH on file',last:'$1,100 on Jul 2',terms:'Net 30'},
+        histSum:{total:'17 rentals',ltv:'$71,400 lifetime',since:'Member since 2018'} },
+      { id:'CU-3312', name:'Fontenot Industrial', color:'blue', today:false, s1:'NET-30', s2:'9 RENTALS',
+        sig:[{c:'blue',t:'QUOTE PENDING — JUL 21',d:'Awaiting approval for Telehandler + Light Tower delivery.'}],
+        acct:{phone:'(337) 555-0165',email:'purchasing@fontenotind.test',bill:'220 Industrial Blvd, Sulphur, LA',since:'2021'},
+        funnel:{stage:'Quoted · Awaiting approval',src:'Website form'},
+        inv:[{num:'INV-3200',amt:'$1,080.00',due:'Jul 25',st:'Current'}],
+        act:[{when:'Jul 17',t:'Quote sent for Jul 21 delivery'}],
+        pay:{method:'Visa •••• 3390',last:'$980 on Jul 8',terms:'Net 30'},
+        histSum:{total:'9 rentals',ltv:'$29,700 lifetime',since:'Member since 2021'} },
+      { id:'CU-3330', name:'Marcus Guidry', color:'blue', today:false, s1:'NET-15', s2:'1 RENTAL',
+        sig:[{c:'blue',t:'RESERVATION — JUL 22',d:'Light Tower 233 delivery scheduled Jul 22.'}],
+        acct:{phone:'(337) 555-0289',email:'marcus.guidry@example.test',bill:'19 Bayou Rd, Sulphur, LA',since:'2026'},
+        funnel:{stage:'Won · New account',src:'Referral'},
+        inv:[{num:'INV-3410',amt:'$0.00',due:'—',st:'Current'}],
+        act:[{when:'Jul 12',t:'First contract signed'}],
+        pay:{method:'Visa •••• 5521',last:'No prior payment',terms:'Net 15'},
+        histSum:{total:'1 rental',ltv:'$255 lifetime',since:'Member since 2026'} }
+    ],
+    'On Rent':[
+      { id:'CU-3140', name:'Broussard Bros. Excavation', color:'green', today:false, s1:'NET-30', s2:'19 RENTALS',
+        sig:[{c:'green',t:'ON RENT — ALL CLEAR',d:'2 units out, both current on billing.'}],
+        acct:{phone:'(337) 555-0121',email:'ap@broussardbros.test',bill:'610 Ruth St, Sulphur, LA',since:'2017'},
+        funnel:{stage:'Won · Key account',src:'Referral'},
+        inv:[{num:'INV-3140',amt:'$2,180.00',due:'Jul 30',st:'Current'}],
+        act:[{when:'Jul 17',t:'Delivered Excavator 214'}],
+        pay:{method:'ACH on file',last:'$3,400 on Jul 1',terms:'Net 30'},
+        histSum:{total:'19 rentals',ltv:'$118,900 lifetime',since:'Member since 2017'} },
+      { id:'CU-3155', name:'LeBlanc Concrete', color:'green', today:false, s1:'NET-15', s2:'13 RENTALS',
+        sig:[{c:'green',t:'ON RENT — ALL CLEAR',d:'1 unit out, current on billing.'}],
+        acct:{phone:'(337) 555-0143',email:'billing@leblancconcrete.test',bill:'88 Maplewood Dr, Westlake, LA',since:'2020'},
+        funnel:{stage:'Won · Active account',src:'Referral'},
+        inv:[{num:'INV-3155',amt:'$0.00',due:'—',st:'Current'}],
+        act:[{when:'Jul 8',t:'Delivered Skid Steer 140'}],
+        pay:{method:'Visa •••• 1187',last:'$640 on Jul 9',terms:'Net 15'},
+        histSum:{total:'13 rentals',ltv:'$46,300 lifetime',since:'Member since 2020'} },
+      { id:'CU-3168', name:'Ray Thibodeaux', color:'green', today:false, s1:'NET-15', s2:'4 RENTALS',
+        sig:[{c:'green',t:'ON RENT — ALL CLEAR',d:'1 unit out, current on billing.'}],
+        acct:{phone:'(337) 555-0299',email:'ray.thibodeaux@example.test',bill:'12 Bayou Rd, Sulphur, LA',since:'2023'},
+        funnel:{stage:'Won · Active account',src:'Walk-in'},
+        inv:[{num:'INV-3168',amt:'$0.00',due:'—',st:'Current'}],
+        act:[{when:'Jul 15',t:'Picked up unit at counter'}],
+        pay:{method:'Visa •••• 8843',last:'$310 on Jul 15',terms:'Net 15'},
+        histSum:{total:'4 rentals',ltv:'$5,600 lifetime',since:'Member since 2023'} }
+    ],
+    'Members':[
+      { id:'CU-3050', name:'Kevin Landry', color:'green', today:false, s1:'MEMBER', s2:'27 RENTALS',
+        sig:[{c:'green',t:'MEMBER — GOOD STANDING',d:'Loyalty member since 2016, account current.'}],
+        acct:{phone:'(337) 555-0301',email:'kevin.landry@example.test',bill:'44 Ranch Rd, Sulphur, LA',since:'2016'},
+        funnel:{stage:'Won · Key account',src:'Founding member'},
+        inv:[{num:'INV-3050',amt:'$0.00',due:'—',st:'Current'}],
+        act:[{when:'Jul 5',t:'Renewed membership'}],
+        pay:{method:'ACH on file',last:'$1,200 on Jun 28',terms:'Net 15'},
+        histSum:{total:'27 rentals',ltv:'$203,000 lifetime',since:'Member since 2016'} },
+      { id:'CU-3061', name:'Sulphur Rig Services', color:'green', today:false, s1:'MEMBER', s2:'20 RENTALS',
+        sig:[{c:'green',t:'MEMBER — GOOD STANDING',d:'Loyalty member since 2018, account current.'}],
+        acct:{phone:'(337) 555-0312',email:'ap@sulphurrig.test',bill:'700 Refinery Rd, Sulphur, LA',since:'2018'},
+        funnel:{stage:'Won · Key account',src:'Founding member'},
+        inv:[{num:'INV-3061',amt:'$0.00',due:'—',st:'Current'}],
+        act:[{when:'Jun 30',t:'Renewed membership'}],
+        pay:{method:'ACH on file',last:'$2,600 on Jun 15',terms:'Net 30'},
+        histSum:{total:'20 rentals',ltv:'$156,400 lifetime',since:'Member since 2018'} },
+      { id:'CU-3072', name:'Dwayne Fontenot', color:'red', today:true, s1:'MEMBER', s2:'9 RENTALS',
+        sig:[{c:'red',t:'PAST DUE — $560.00',d:'Invoice 3072, due Jul 8 — 12 days overdue. Member standing on hold until paid.'}],
+        acct:{phone:'(337) 555-0323',email:'dwayne.fontenot@example.test',bill:'901 Cypress Ave, Sulphur, LA',since:'2019'},
+        funnel:{stage:'Won · Member (on hold)',src:'Referral'},
+        inv:[{num:'INV-3072',amt:'$560.00',due:'Jul 8',st:'Past due'}],
+        act:[{when:'Jul 16',t:'Called re: invoice 3072'}],
+        pay:{method:'Visa •••• 2214',last:'$400 on Jun 2',terms:'Net 15'},
+        histSum:{total:'9 rentals',ltv:'$31,200 lifetime',since:'Member since 2019'} }
+    ],
+    'Non-Members':[
+      { id:'CU-3500', name:'Fabian Prejean', color:'gray', today:false, s1:'NON-MEMBER', s2:'1 RENTAL',
+        sig:[{c:'gray',t:'NON-MEMBER',d:'No loyalty program enrollment. Standard rates apply.'}],
+        acct:{phone:'(337) 555-0410',email:'fabian.prejean@example.test',bill:'23 Farm Rd, Sulphur, LA',since:'2026'},
+        funnel:{stage:'Won · New account',src:'Walk-in'},
+        inv:[{num:'INV-3500',amt:'$0.00',due:'—',st:'Current'}],
+        act:[{when:'Jul 2',t:'First rental completed'}],
+        pay:{method:'Visa •••• 9902',last:'$150 on Jul 2',terms:'Net 15'},
+        histSum:{total:'1 rental',ltv:'$150 lifetime',since:'Member since 2026'} },
+      { id:'CU-3511', name:'Ashley Comeaux', color:'gray', today:false, s1:'NON-MEMBER', s2:'2 RENTALS',
+        sig:[{c:'gray',t:'NON-MEMBER',d:'No loyalty program enrollment. Standard rates apply.'}],
+        acct:{phone:'(337) 555-0421',email:'ashley.comeaux@example.test',bill:'8 Cypress Ave, Sulphur, LA',since:'2025'},
+        funnel:{stage:'Won · Active account',src:'Google — organic'},
+        inv:[{num:'INV-3511',amt:'$0.00',due:'—',st:'Current'}],
+        act:[{when:'Jun 20',t:'Rented Air Compressor'}],
+        pay:{method:'Mastercard •••• 6634',last:'$95 on Jun 20',terms:'Net 15'},
+        histSum:{total:'2 rentals',ltv:'$420 lifetime',since:'Member since 2025'} },
+      { id:'CU-3522', name:'Brody Landry', color:'gray', today:false, s1:'NON-MEMBER', s2:'1 RENTAL',
+        sig:[{c:'gray',t:'NON-MEMBER',d:'No loyalty program enrollment. Standard rates apply.'}],
+        acct:{phone:'(337) 555-0432',email:'brody.landry@example.test',bill:'150 Oak Park Dr, Sulphur, LA',since:'2026'},
+        funnel:{stage:'Won · New account',src:'Walk-in'},
+        inv:[{num:'INV-3522',amt:'$0.00',due:'—',st:'Current'}],
+        act:[{when:'Jul 4',t:'First rental completed'}],
+        pay:{method:'Visa •••• 4470',last:'$85 on Jul 4',terms:'Net 15'},
+        histSum:{total:'1 rental',ltv:'$85 lifetime',since:'Member since 2026'} }
+    ]
+  };
+
+  function renderCustRow(c){
+    var top = c.sig[0];
+    var fullLabel = top ? top.t : c.color.toUpperCase();
+    var shortLabel = fullLabel.split(' — ')[0];
+    var collapsed =
+      '<div class="jitem-collapsed"><div class="cr-collapsed">'+
+        '<span class="cr-name">'+c.name+'</span>'+
+        '<div class="cr-stamps">'+stamp(c.s1)+stamp(c.s2)+'</div>'+
+        signalChip('customer', c.color, c.today, shortLabel, fullLabel)+
+      '</div></div>';
+
+    var sections = [
+      { label:'To Do', body: signalSection(c.sig,'customer') }, /* user-facing rename (2026-07-20) — "Signal" stays the internal component name only */
+      { label:'ACCOUNT', body:
+          '<div class="sig-hero"><span class="sig-hero-val" style="color:var(--txt)">'+c.histSum.total+'</span><span class="sig-hero-lbl">'+c.histSum.ltv+'</span></div>'+
+          '<div class="kv-grid">'+
+            kv('PHONE','<a href="tel:'+c.acct.phone.replace(/[^\d+]/g,'')+'" style="color:var(--txt);text-decoration:underline">'+c.acct.phone+'</a>')+
+            kv('EMAIL','<a href="mailto:'+c.acct.email+'" style="color:var(--txt);text-decoration:underline">'+c.acct.email+'</a>')+
+            kv('BILL TO',c.acct.bill)+kv('STANDING',c.histSum.since)+
+          '</div>' },
+      { label:'FUNNEL', body:
+          '<div class="kv-grid">'+kv('STAGE',c.funnel.stage)+kv('SOURCE',c.funnel.src)+'</div>' },
+      { label:'INVOICES', body: listRows(c.inv, function(iv){
+          return '<div class="list-row"><div class="list-row-h"><span class="list-row-id">'+iv.num+'</span><span class="list-row-when">Due '+iv.due+'</span></div><div class="list-row-d">'+iv.amt+' — '+iv.st+'</div></div>';
+        }) },
+      { label:'ACTIVITY', body: listRows(c.act, function(a){
+          return '<div class="list-row"><div class="list-row-h"><span class="list-row-when">'+a.when+'</span></div><div class="list-row-d">'+a.t+'</div></div>';
+        }) },
+      { label:'PAYMENT', body:
+          '<div class="kv-grid">'+kv('METHOD',c.pay.method)+kv('LAST PAID',c.pay.last)+kv('TERMS',c.pay.terms)+'</div>' }
+    ];
+
+    var litCust = [];
+    if (c.inv && c.inv.some(function(iv){ return /past due/i.test(iv.st); })) litCust.push('INVOICES');
+
+    var item = el('<article class="jitem cust-row" data-color="'+c.color+'" data-rec-id="'+c.id+'" tabindex="0" role="button" aria-expanded="false"></article>');
+    if (c.hopFlip) item.dataset.hopFlip = 'below';
+    if (c.hopDemo) item.classList.add('is-hover-demo');
+    if (c.hopDemoAlt) item.classList.add('is-hover-demo-alt');
+    item.insertAdjacentHTML('beforeend', collapsed + hopMarkup(sections, litCust) + expandedShell(c.name, c.s1+' · '+c.id, sections, ['Invoices','Contacts'], buildCustomerHistory(c)));
+    wireItem(item);
+    return item;
+  }
+
+  /* ===========================================================
+     GENERIC EXPAND / PAGER MECHANISM (shared by all three types)
+     =========================================================== */
+  function computeExpandHeight(){
+    return Math.max(260, Math.min(680, Math.round(window.innerHeight*0.7)));
+  }
+
+  /* coarse-pointer or narrow viewport = focused full-screen mode instead of inline expand */
+  function isMobileMode(){
+    return window.matchMedia('(pointer:coarse)').matches || window.innerWidth <= 680;
+  }
+
+  var HIST_GROW_PX = 260; /* fixed grow amount when the history log opens — matches .jhist-log.is-open max-height */
+
+  function setHistoryOpen(item, open){
+    var log = item.querySelector('.jhist-log');
+    var toggle = item.querySelector('.jhist-toggle');
+    if (!log) return;
+    var isOpen = log.classList.contains('is-open');
+    if (open === isOpen) return;
+    var fullscreen = item.classList.contains('is-fullscreen');
+    if (open){
+      log.classList.add('is-open');
+      if (toggle) toggle.setAttribute('aria-expanded','true');
+      if (!fullscreen){
+        var cur = item.getBoundingClientRect().height;
+        item.style.height = cur+'px'; void item.offsetWidth;
+        requestAnimationFrame(function(){ item.style.height = (cur+HIST_GROW_PX)+'px'; });
+      }
+    } else {
+      log.classList.remove('is-open');
+      if (toggle) toggle.setAttribute('aria-expanded','false');
+      if (!fullscreen){
+        var curH = item.getBoundingClientRect().height;
+        item.style.height = curH+'px'; void item.offsetWidth;
+        var floor = parseFloat(item.dataset.collapsedH || '120');
+        requestAnimationFrame(function(){ item.style.height = Math.max(floor, curH-HIST_GROW_PX)+'px'; });
+      }
+    }
+  }
+
+  function applyHistoryFilter(item){
+    var log = item.querySelector('.jhist-log');
+    if (!log) return;
+    var q = (item.querySelector('.jhist-search').value || '').trim().toLowerCase();
+    var activeKinds = Array.prototype.slice.call(log.querySelectorAll('.jhist-filter-chip.is-active')).map(function(c){ return c.dataset.kind; });
+    Array.prototype.slice.call(log.querySelectorAll('.jhist-entry')).forEach(function(row){
+      var kindOk = !activeKinds.length || activeKinds.indexOf(row.dataset.kind) > -1;
+      var textOk = !q || row.dataset.text.indexOf(q) > -1;
+      row.hidden = !(kindOk && textOk);
+    });
+  }
+
+  function toggleHistFilter(item, chip){
+    chip.classList.toggle('is-active');
+    applyHistoryFilter(item);
+  }
+
+  function resetHistory(item){
+    var log = item.querySelector('.jhist-log');
+    if (!log) return;
+    log.classList.remove('is-open');
+    var toggle = item.querySelector('.jhist-toggle');
+    if (toggle) toggle.setAttribute('aria-expanded','false');
+    var search = item.querySelector('.jhist-search');
+    if (search) search.value = '';
+    Array.prototype.slice.call(log.querySelectorAll('.jhist-filter-chip.is-active')).forEach(function(c){ c.classList.remove('is-active'); });
+    Array.prototype.slice.call(log.querySelectorAll('.jhist-entry')).forEach(function(row){ row.hidden = false; });
+  }
+
+  function getPanels(item){ return Array.prototype.slice.call(item.querySelectorAll(':scope > .jitem-expanded .jsection')); }
+  function getTabs(item){ return Array.prototype.slice.call(item.querySelectorAll(':scope > .jitem-expanded .jtab')); }
+  function getDots(item){ return Array.prototype.slice.call(item.querySelectorAll(':scope > .jitem-expanded .jdot')); }
+
+  function setSection(item, newIdx){
+    var panels = getPanels(item), tabs = getTabs(item), dots = getDots(item);
+    var n = panels.length;
+    newIdx = Math.max(0, Math.min(n-1, newIdx));
+    var oldIdx = panels.findIndex(function(p){ return p.classList.contains('is-active'); });
+    if (oldIdx < 0) oldIdx = 0;
+    if (newIdx === oldIdx) return;
+    var dir = newIdx > oldIdx ? 1 : -1;
+
+    panels[oldIdx].classList.remove('is-active');
+    panels[oldIdx].hidden = true;
+    var np = panels[newIdx];
+    np.hidden = false;
+    np.classList.add('is-active');
+    np.style.setProperty('--slide-from', (dir*14)+'px');
+    np.classList.remove('anim-in'); void np.offsetWidth; np.classList.add('anim-in');
+
+    tabs.forEach(function(t,i){ t.classList.toggle('is-active', i===newIdx); t.setAttribute('aria-selected', i===newIdx ? 'true':'false'); });
+    dots.forEach(function(d,i){ d.classList.toggle('is-active', i===newIdx); });
+  }
+
+  function openItem(item){
+    if (item.classList.contains('is-open')) return;
+    if (isMobileMode()){
+      item.classList.add('is-open','is-fullscreen');
+      item.setAttribute('aria-expanded','true');
+      document.body.classList.add('no-scroll');
+      return;
+    }
+    var startH = item.getBoundingClientRect().height;
+    item.dataset.collapsedH = startH;
+    item.style.height = startH+'px';
+    item.classList.add('is-open');
+    item.setAttribute('aria-expanded','true');
+    void item.offsetWidth;
+    var targetH = computeExpandHeight();
+    requestAnimationFrame(function(){ item.style.height = targetH+'px'; });
+  }
+
+  function closeItem(item){
+    if (!item.classList.contains('is-open')) return;
+    resetHistory(item);
+    if (item.classList.contains('is-fullscreen')){
+      item.classList.remove('is-open','is-fullscreen');
+      item.setAttribute('aria-expanded','false');
+      document.body.classList.remove('no-scroll');
+      return;
+    }
+    var currentH = item.getBoundingClientRect().height;
+    item.style.height = currentH+'px';
+    void item.offsetWidth;
+    var targetH = parseFloat(item.dataset.collapsedH || '120');
+    requestAnimationFrame(function(){ item.style.height = targetH+'px'; });
+    item.classList.remove('is-open');
+    item.setAttribute('aria-expanded','false');
+    var cleaned = false;
+    function cleanup(e){
+      if (e && e.target !== item) return;
+      if (cleaned) return; cleaned = true;
+      item.style.height = '';
+      item.removeEventListener('transitionend', cleanup);
+    }
+    item.addEventListener('transitionend', cleanup);
+    setTimeout(cleanup, 260);
+  }
+
+  function toggleItem(item){
+    if (item.classList.contains('is-open')) closeItem(item); else openItem(item);
+  }
+
+  function wireItem(item){
+    item.addEventListener('click', function(e){
+      var hopChip = e.target.closest('.jhop-chip');
+      if (hopChip){ e.stopPropagation(); openItem(item); setSection(item, parseInt(hopChip.dataset.secIdx,10)); return; }
+      var inHist = e.target.closest('.jhist-bar') || e.target.closest('.jhist-log');
+      if (inHist){
+        e.stopPropagation();
+        var histToggle = e.target.closest('.jhist-toggle');
+        var histFilter = e.target.closest('.jhist-filter-chip');
+        if (histToggle){ setHistoryOpen(item, !item.querySelector('.jhist-log').classList.contains('is-open')); }
+        else if (histFilter){ toggleHistFilter(item, histFilter); }
+        else if (e.target.closest('.jhist-search-wrap')){ setHistoryOpen(item, true); }
+        return;
+      }
+      var closeBtn = e.target.closest('.jexp-close');
+      var tab = e.target.closest('.jtab');
+      var dot = e.target.closest('.jdot');
+      var prev = e.target.closest('.jchev-prev');
+      var next = e.target.closest('.jchev-next');
+      var link = e.target.closest('a');
+      if (link) return; /* let tel:/mailto: links work without toggling the card */
+      if (closeBtn){ e.stopPropagation(); closeItem(item); return; }
+      if (tab){ e.stopPropagation(); setSection(item, parseInt(tab.dataset.idx,10)); return; }
+      if (dot){ e.stopPropagation(); setSection(item, parseInt(dot.dataset.idx,10)); return; }
+      if (prev){ e.stopPropagation(); var cp = getPanels(item).findIndex(function(p){return p.classList.contains('is-active');}); setSection(item, cp-1); return; }
+      if (next){ e.stopPropagation(); var cn = getPanels(item).findIndex(function(p){return p.classList.contains('is-active');}); setSection(item, cn+1); return; }
+      toggleItem(item);
+    });
+    item.addEventListener('keydown', function(e){
+      if (e.target !== item) return; /* only when the item itself has focus, not a child control */
+      if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); toggleItem(item); }
+      else if (item.classList.contains('is-open')){
+        if (e.key === 'ArrowRight'){ e.preventDefault(); var c=getPanels(item).findIndex(function(p){return p.classList.contains('is-active');}); setSection(item,c+1); }
+        else if (e.key === 'ArrowLeft'){ e.preventDefault(); var c2=getPanels(item).findIndex(function(p){return p.classList.contains('is-active');}); setSection(item,c2-1); }
+        else if (e.key === 'Escape'){ e.preventDefault(); closeItem(item); }
+      }
+    });
+    /* history search: focusing opens the log, typing filters live, blurring away closes it */
+    item.addEventListener('focusin', function(e){
+      if (e.target.classList && e.target.classList.contains('jhist-search')) setHistoryOpen(item, true);
+    });
+    item.addEventListener('focusout', function(e){
+      if (!(e.target.classList && e.target.classList.contains('jhist-search'))) return;
+      var rt = e.relatedTarget;
+      var wrap = item.querySelector('.jhist-wrap');
+      if (!rt || !wrap || !wrap.contains(rt)) setHistoryOpen(item, false);
+    });
+    item.addEventListener('input', function(e){
+      if (e.target.classList && e.target.classList.contains('jhist-search')) applyHistoryFilter(item);
+    });
+    /* touch/pointer swipe across the section area while open (Units/Customers only — Rentals has no .jexp-sections) */
+    var startX=0, startY=0, tracking=false;
+    item.addEventListener('pointerdown', function(e){
+      if (!item.classList.contains('is-open')) return;
+      if (!e.target.closest('.jexp-sections')) return;
+      startX = e.clientX; startY = e.clientY; tracking = true;
+    });
+    item.addEventListener('pointerup', function(e){
+      if (!tracking) return; tracking = false;
+      var dx = e.clientX - startX, dy = e.clientY - startY;
+      if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)){
+        var cur = getPanels(item).findIndex(function(p){return p.classList.contains('is-active');});
+        setSection(item, dx < 0 ? cur+1 : cur-1);
+      }
+    });
+  }
+
+  /* ===========================================================
+     COLUMN BUILDER + YOUR-WORK FILTER + HEADER ROLLUP
+     =========================================================== */
+  function buildColumn(containerId, groupOrder, dataset, gridClass, renderFn){
+    var body = document.getElementById(containerId);
+    groupOrder.forEach(function(name){
+      var items = dataset[name] || [];
+      if (!items.length) return;
+      var worst = rollup(items.map(function(i){ return i.color; }));
+      var gwrap = document.createElement('div');
+      gwrap.className = 'gwrap';
+      gwrap.dataset.worst = worst;
+      var ghead = document.createElement('div');
+      ghead.className = 'ghead';
+      ghead.dataset.c = worst;
+      ghead.innerHTML = '<span class="ghead-bar"></span><span class="ghead-label">'+name+'</span><span class="ghead-count">'+items.length+'</span><span class="ghead-line"></span>';
+      var grid = document.createElement('div');
+      grid.className = gridClass;
+      items.forEach(function(rec){ grid.appendChild(renderFn(rec)); });
+      gwrap.appendChild(ghead);
+      gwrap.appendChild(grid);
+      body.appendChild(gwrap);
+    });
+  }
+
+  buildColumn('col-units', UNIT_GROUPS, UNITS, 'tiles-grid', renderUnitTile);
+  buildColumn('col-rentals', RENTAL_GROUPS, RENTALS, 'cards-grid', renderRentalCard);
+  buildColumn('col-customers', CUST_GROUPS, CUSTOMERS, 'rows-list', renderCustRow);
+
+  /* ---------------------------------------------------------
+     REVIEW DEMO STATE (mockup-only) — pre-open one item per
+     column so the sections, the To Do landing, the History
+     footer, and (Units/Customers) the section rail are all
+     visible without a click; Customers lands on Invoices to show
+     it scrolling internally within a fixed card height (spec §2).
+     --------------------------------------------------------- */
+  requestAnimationFrame(function(){
+    var u1 = document.querySelector('[data-rec-id="EX-214"]'); if (u1) openItem(u1);
+    var r1 = document.querySelector('[data-rec-id="RC-4700"]'); if (r1) openItem(r1);
+    var c1 = document.querySelector('[data-rec-id="CU-3200"]');
+    if (c1){ openItem(c1); setSection(c1, 3); }
+  });
+
+  document.querySelectorAll('.yourwork-tog').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var on = btn.classList.toggle('on');
+      var col = document.querySelector('.yard-col[data-col="'+btn.dataset.col+'"]');
+      col.querySelectorAll('.gwrap').forEach(function(g){
+        var hideIt = on && (g.dataset.worst === 'green' || g.dataset.worst === 'gray');
+        g.classList.toggle('is-hidden', hideIt);
+      });
+      btn.innerHTML = (on ? icon('checkCircle') : '') + 'Your Work';
+    });
+  });
+})();
+</script>

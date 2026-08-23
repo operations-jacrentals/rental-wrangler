@@ -1,0 +1,370 @@
+<title>Yard Journey — vertical lifecycle timeline</title>
+
+<style>
+  :root{
+    --bg:#0a0d11; --bg2:#0f1318; --panel:#171d25; --panel2:#1d242d; --card:#12171e; --cardh:#1a212b;
+    --line:#2c343f; --lineSoft:#212834; --txt:#eef2f7; --txt2:#aab4c1; --txt3:#717b89;
+    --accent:#ff7e1f; --onAcc:#1a1205; --accSoft:rgba(255,126,31,.15); --accLine:rgba(255,126,31,.5);
+    --green:#34d399; --yellow:#eed44b; --red:#ff4242; --redStrong:#d63636; --blue:#6394cc; --commit:#2f6fd0; --gray:#8b94a3;
+    --tan:#c2925a;
+    --font:-apple-system,"Segoe UI",Roboto,system-ui,sans-serif;
+    --stamp:ui-monospace,"Cascadia Code","SF Mono",Menlo,Consolas,monospace;
+    --h:24px;
+  }
+  @media (prefers-color-scheme:light){ :root{
+    --bg:#e6e8ea; --bg2:#dfe3ea; --panel:#fff; --panel2:#eef1f6; --card:#fff; --cardh:#eef1f6;
+    --line:#cfd6e1; --lineSoft:#e1e6ee; --txt:#141821; --txt2:#414b5a; --txt3:#69727f; --onAcc:#fff;
+    --accent:#cf6000; --red:#d52a2a; --redStrong:#b5241f; --blue:#2f5fb0; --commit:#1f56c0; --green:#0c8f5f; --gray:#566072; --tan:#8a5a2b;
+  } }
+  :root[data-theme="light"]{
+    --bg:#e6e8ea; --panel:#fff; --card:#fff; --cardh:#eef1f6; --line:#cfd6e1; --lineSoft:#e1e6ee;
+    --txt:#141821; --txt2:#414b5a; --txt3:#69727f; --onAcc:#fff; --accent:#cf6000; --red:#d52a2a; --redStrong:#b5241f; --blue:#2f5fb0; --commit:#1f56c0; --green:#0c8f5f; --gray:#566072; --tan:#8a5a2b;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0a0d11; --panel:#171d25; --card:#12171e; --cardh:#1a212b; --line:#2c343f; --lineSoft:#212834;
+    --txt:#eef2f7; --txt2:#aab4c1; --txt3:#717b89; --onAcc:#1a1205; --accent:#ff7e1f; --red:#ff4242; --redStrong:#d63636; --blue:#6394cc; --commit:#2f6fd0; --green:#34d399; --gray:#8b94a3; --tan:#c2925a;
+  }
+  *{box-sizing:border-box} body{margin:0}
+  .wrap{background:var(--bg); color:var(--txt); font-family:var(--font); line-height:1.5; -webkit-font-smoothing:antialiased; padding:clamp(14px,3vw,30px) clamp(10px,3vw,20px) 60px}
+  .sheet{max-width:1180px; margin:0 auto}
+  .eyebrow{font-family:var(--stamp); font-size:12px; letter-spacing:.18em; text-transform:uppercase; color:var(--txt3); margin:0; font-weight:700}
+  h1{font-family:var(--stamp); font-weight:800; font-size:clamp(20px,3.3vw,28px); line-height:1; margin:.26em 0 .32em; letter-spacing:.01em; text-transform:uppercase}
+  h1 .hl{color:var(--accent)}
+  .lede{max-width:88ch; font-size:13px; color:var(--txt2); margin:0} .lede b{color:var(--txt); font-weight:600}
+  .key{display:flex; flex-wrap:wrap; gap:6px 12px; margin:14px 0 2px; font-family:var(--stamp); font-size:10px; letter-spacing:.03em; text-transform:uppercase; color:var(--txt3)}
+  .key b{color:var(--accent)}
+
+  .yard-grid{display:grid; grid-template-columns:1.62fr 1fr; gap:16px; margin-top:20px; align-items:start}
+  @media (max-width:880px){ .yard-grid{grid-template-columns:1fr} }
+
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:14px; overflow:hidden}
+  .pcap{font-family:var(--stamp); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--txt3); padding:9px 13px 0}
+  .ptitle{padding:1px 13px 11px}
+  .pt-name{font-family:var(--font); font-weight:700; font-size:15px; color:var(--txt); letter-spacing:-.005em; display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+  .pt-sub{font-size:11px; color:var(--txt3); margin-top:2px; font-family:var(--stamp); letter-spacing:.02em}
+
+  /* ---------- controls: the five parts (kept identical to the approved detail-views look) ---------- */
+  .ctl{height:var(--h); display:inline-flex; align-items:center; font-family:var(--stamp); font-size:11px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; white-space:nowrap; flex:none}
+  .sig{padding:0 8px; border-radius:7px}
+  .sig.f.red{background:var(--redStrong);color:#fff} .sig.o.red{color:var(--red);box-shadow:inset 0 0 0 1.3px var(--red)}
+  .sig.f.yellow{background:var(--yellow);color:#211a05} .sig.o.yellow{color:var(--yellow);box-shadow:inset 0 0 0 1.3px var(--yellow)}
+  .sig.f.blue{background:var(--blue);color:#0a1220} .sig.o.blue{color:var(--blue);box-shadow:inset 0 0 0 1.3px var(--blue)}
+  .sig.f.green{background:var(--green);color:#04140d} .sig.o.green{color:var(--green);box-shadow:inset 0 0 0 1.3px var(--green)}
+  .sig.o.grey{color:var(--gray);box-shadow:inset 0 0 0 1.3px var(--gray)}
+  .gate{padding:0 8px 0 6px; border-radius:7px; gap:2px; cursor:pointer}
+  .gate .cv{display:inline-flex;align-items:center;justify-content:center;width:11px;height:11px} .gate .cv svg{width:11px;height:11px;display:block}
+  .gate.yellow{background:var(--yellow);color:#211a05} .gate.blue{background:var(--blue);color:#0a1220}
+  .stamp{font-family:var(--stamp); font-size:10.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--txt3); white-space:nowrap}
+  .dot{color:var(--line); font-family:var(--stamp); font-size:10px} .stamp.more{color:var(--accent)}
+  .ref{height:22px; display:inline-flex; align-items:center; gap:6px; padding:0 8px 0 3px; border-radius:7px; background:var(--card); border:1px solid var(--line); color:var(--txt); font-size:12px; font-weight:600; cursor:pointer; text-decoration:none; white-space:nowrap}
+  .ref .ty{width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;color:var(--accent);background:var(--accSoft);border-radius:5px} .ref .ty svg{width:10px;height:10px}
+  .door{height:var(--h); display:inline-flex; align-items:center; font-family:var(--stamp); font-size:10.5px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; cursor:pointer; border-radius:999px; padding:0 13px}
+  .door.save{background:var(--commit); color:#fff; border:0}
+  .door.add{background:transparent; color:var(--commit); border:1.4px dashed var(--commit); padding:0 11px}
+  .door.ghost{background:transparent; color:var(--txt2); border:1px solid var(--line)}
+
+  /* ---------- section-chip rail (top row = the item's own tabs; Yard Journey is a full Units section now) ---------- */
+  .secrail{display:flex; align-items:center; gap:6px; padding:9px 10px; border-bottom:1px solid var(--line); border-top:1px solid var(--line); background:var(--bg2)}
+  .scnav{flex:none; width:20px; height:20px; display:inline-flex; align-items:center; justify-content:center; background:transparent; border:1px solid var(--line); border-radius:6px; color:var(--txt3); cursor:pointer}
+  .scnav svg{width:11px;height:11px}
+  .scchips{display:flex; gap:6px; overflow-x:auto; flex:1; scrollbar-width:none}
+  .scchips::-webkit-scrollbar{display:none}
+  .schip{height:var(--h); display:inline-flex; align-items:center; padding:0 10px; border-radius:7px; font-family:var(--stamp); font-size:11px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; white-space:nowrap; flex:none; color:var(--txt3); border:1px solid transparent; cursor:pointer}
+  .schip.dim{opacity:.5}
+  .schip.active{background:var(--accent); color:var(--onAcc)}
+  .scdots{display:flex; gap:4px; padding:0 12px 8px; justify-content:flex-end; background:var(--bg2)}
+  .scdots i{width:5px;height:5px;border-radius:50%;background:var(--line);display:inline-block;font-style:normal}
+  .scdots i.on{background:var(--accent)}
+
+  /* ---------- NOW + NEXT header (doubles as the field-role Signal / To Do summary) ---------- */
+  .nownext{padding:12px 14px; background:var(--cardh); border-bottom:1px solid var(--line); display:flex; flex-direction:column; gap:7px}
+  .nn-row{display:flex; align-items:center; gap:9px; flex-wrap:wrap}
+  .nn-tag{font-family:var(--stamp); font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; flex:none}
+  .nn-tag.now{color:var(--yellow)}
+  .nn-tag.next{color:var(--commit)}
+  .nn-headline{font-family:var(--font); font-weight:700; font-size:15px; color:var(--txt)}
+  .nn-sub{font-size:12px; color:var(--txt2)}
+  .rolebadge{margin-left:auto; display:inline-flex; align-items:center; gap:5px; font-family:var(--stamp); font-size:9.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--tan); border:1px dashed var(--tan); border-radius:7px; padding:3px 8px; flex:none}
+  .rolebadge svg{width:11px;height:11px}
+
+  /* ---------- vertical timeline ---------- */
+  .timeline{padding:6px 14px 14px}
+  .trow{display:grid; grid-template-columns:20px 1fr; gap:11px}
+  .tdot-col{display:flex; flex-direction:column; align-items:center}
+  .tdot{width:11px; height:11px; border-radius:50%; margin-top:6px; flex:none; background:var(--gray)}
+  .trow.done .tdot{background:var(--green)}
+  .trow.current .tdot{background:var(--yellow); box-shadow:0 0 0 3px rgba(238,212,75,.28)}
+  .trow.upcoming .tdot{background:transparent; border:2px solid var(--line)}
+  .tconn{width:2px; flex:1; min-height:20px; background:var(--line); margin-top:3px}
+  .trow:last-child .tconn{display:none}
+  .tcontent{padding-bottom:16px; border-bottom:1px solid var(--lineSoft); min-width:0}
+  .trow:last-child .tcontent{border-bottom:0; padding-bottom:2px}
+  .thead{display:flex; align-items:center; gap:8px; min-height:var(--h); flex-wrap:wrap}
+  .tlabel{font-family:var(--stamp); font-weight:800; font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:var(--txt)}
+  .trow.upcoming .tlabel{color:var(--txt3)}
+  .twhen{font-family:var(--stamp); font-size:11px; color:var(--txt3); margin-top:4px; font-variant-numeric:tabular-nums; letter-spacing:.01em}
+  .twho{color:var(--txt2)}
+  .twho b{color:var(--txt); font-weight:800}
+  .tevi{display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-top:7px}
+  .troute{display:flex; align-items:center; gap:7px; margin-top:9px; padding:7px 9px; background:var(--card); border:1px solid var(--line); border-radius:7px; flex-wrap:wrap}
+  .troute .rlabel{font-family:var(--stamp); font-size:9px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:var(--txt3); margin-right:2px; flex:none}
+  .rarrow{color:var(--txt3); font-size:12px; flex:none}
+  .tdoor{margin-top:11px; display:flex; align-items:center; gap:8px}
+
+  .htail{padding:9px 12px; border-top:1px solid var(--line)}
+  .h4{font-family:var(--stamp); font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--txt); margin-bottom:2px}
+  .hc{font-family:var(--stamp); font-size:9px; font-weight:700; text-transform:uppercase; color:var(--txt3)}
+  .hsearch{margin-top:6px; height:var(--h); display:flex; align-items:center; gap:6px; padding:0 9px; background:var(--card); border:1px solid var(--line); border-radius:7px; color:var(--txt3); font-size:11.5px}
+  .hsearch svg{width:12px;height:12px;flex:none}
+
+  /* ---------- dormant "Available" panel ---------- */
+  .dcap{display:flex; align-items:center; gap:7px; padding:9px 13px 0}
+  .dcap .lab{font-family:var(--stamp); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--txt3)}
+  .dnote{font-family:var(--stamp); font-size:9px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--txt3); border:1px solid var(--line); border-radius:7px; padding:2px 7px}
+  .dbody{padding:12px 14px 16px; display:flex; flex-direction:column; gap:12px}
+  .dstate{display:flex; align-items:center; gap:10px}
+  .dstate .txt{display:flex; flex-direction:column; gap:2px}
+  .dstate .headline{font-family:var(--font); font-weight:700; font-size:15px; color:var(--txt)}
+  .dstate .sub{font-size:12px; color:var(--txt2)}
+  .dfoot{display:flex; align-items:center; gap:10px; padding-top:2px}
+
+  .foot{margin-top:24px; padding-top:16px; border-top:1px solid var(--line); font-size:13px; color:var(--txt2); max-width:90ch} .foot b{color:var(--txt)}
+  .foot ul{margin:8px 0 0; padding-left:20px} .foot li{margin:3px 0}
+</style>
+
+<div class="wrap"><div class="sheet">
+
+  <p class="eyebrow">Units · Yard Journey · new own-section redesign · built to style + wrangler-style</p>
+  <h1>Yard Journey — <span class="hl">live vertical lifecycle</span></h1>
+  <p class="lede">Replaces the cramped horizontal node-rail (spec §6, 2026-07-20). Framed here as one section of a Unit's
+  inline-expanded card — the top row is the item's own <b>section-chip rail</b>, greyed for every other Units section,
+  with <b>Yard Journey</b> active. Stages run top→bottom as rows: a state dot (<b>done · current · upcoming</b>),
+  a mono timestamp + who, the stage's captured evidence as <b>Stamps/Refs</b>, and the current stage carries the
+  <b>one</b> next <b>Door</b>. A compact <b>NOW + next</b> header leads it — for drivers &amp; maintenance techs this
+  header <b>is</b> their Signal/To-Do summary. Second panel shows the calm <b>Available</b> (dormant) state side by side.</p>
+  <div class="key"><span><b>Signal</b> state chip</span><span><b>Gate</b> turnable</span><span><b>Stamp</b> fact</span><span><b>Ref</b> linked</span><span><b>Door</b> action</span><span>· fill = today · colour = state</span></div>
+
+  <div class="yard-grid">
+
+    <!-- ============ ACTIVE JOURNEY ============ -->
+    <div class="panel">
+      <div class="pcap">Unit · inline-expanded</div>
+      <div class="ptitle">
+        <div class="pt-name">Gator <span class="ctl sig f yellow">recovery</span></div>
+        <div class="pt-sub">CAT 320 Excavator · S/N CX-2091</div>
+      </div>
+
+      <!-- section-chip rail: other Units sections greyed, Yard Journey active -->
+      <div class="secrail">
+        <button class="scnav" aria-label="previous sections"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
+        <div class="scchips">
+          <span class="schip dim">To Do</span>
+          <span class="schip active">Yard Journey</span>
+          <span class="schip dim">Inspection</span>
+          <span class="schip dim">Services</span>
+          <span class="schip dim">Work Orders</span>
+          <span class="schip dim">Specs</span>
+          <span class="schip dim">Investment</span>
+          <span class="schip dim">GPS</span>
+        </div>
+        <button class="scnav" aria-label="next sections"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>
+      </div>
+      <div class="scdots"><i class="on"></i><i></i></div>
+
+      <!-- NOW + NEXT -->
+      <div class="nownext">
+        <div class="nn-row">
+          <span class="nn-tag now">Now</span>
+          <span class="ctl sig f yellow">recovery</span>
+          <span class="nn-headline">Rental ended — awaiting pickup dispatch</span>
+          <span class="rolebadge" title="Default landing section for drivers + maintenance techs; user can reorder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>Driver + tech default</span>
+        </div>
+        <div class="nn-row">
+          <span class="nn-tag next">Next</span>
+          <span class="nn-sub">Saddle up for pickup at Broussard Dirt Works — 14 mi · the door is on the Recovery row below. This header doubles as your <b style="color:var(--txt)">To Do</b>.</span>
+        </div>
+      </div>
+
+      <!-- vertical timeline -->
+      <div class="timeline">
+
+        <div class="trow done">
+          <div class="tdot-col"><span class="tdot"></span><span class="tconn"></span></div>
+          <div class="tcontent">
+            <div class="thead"><span class="tlabel">Reserved</span><span class="ctl sig o green">done</span></div>
+            <div class="twhen">JUL 14 · 9:12 AM · <span class="twho"><b>Denny R.</b> — dispatch</span></div>
+            <div class="tevi">
+              <span class="stamp">6-day booking</span><span class="dot">·</span>
+              <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg></span>Rental #4482</a>
+              <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/></svg></span>Broussard Dirt Works</a>
+            </div>
+          </div>
+        </div>
+
+        <div class="trow done">
+          <div class="tdot-col"><span class="tdot"></span><span class="tconn"></span></div>
+          <div class="tcontent">
+            <div class="thead"><span class="tlabel">Out</span><span class="ctl sig o green">done</span></div>
+            <div class="twhen">JUL 15 · 7:40 AM · <span class="twho"><b>Trey Guidry</b> — driver</span></div>
+            <div class="tevi">
+              <span class="stamp">4 photos</span><span class="dot">·</span>
+              <span class="stamp">Signature captured</span><span class="dot">·</span>
+              <span class="stamp">Meter out 1,180 hrs</span>
+            </div>
+            <div class="troute">
+              <span class="rlabel">Route</span>
+              <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span>Yard</a>
+              <span class="rarrow">→</span>
+              <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/></svg></span>Broussard Dirt Works</a>
+              <span class="stamp" style="margin-left:auto">14 mi</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="trow done">
+          <div class="tdot-col"><span class="tdot"></span><span class="tconn"></span></div>
+          <div class="tcontent">
+            <div class="thead"><span class="tlabel">On Rent</span><span class="ctl sig o green">done</span></div>
+            <div class="twhen">JUL 15 → JUL 20 · Day 5 of 6</div>
+            <div class="tevi">
+              <span class="stamp">GPS reporting</span><span class="dot">·</span>
+              <span class="stamp">Meter running</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="trow done">
+          <div class="tdot-col"><span class="tdot"></span><span class="tconn"></span></div>
+          <div class="tcontent">
+            <div class="thead"><span class="tlabel">Field calls</span><span class="ctl sig o green">1 resolved</span></div>
+            <div class="twhen">JUL 17 · 2:30 PM · <span class="twho"><b>Mikey Fontenot</b> — tech</span></div>
+            <div class="tevi">
+              <span class="stamp">2 photos</span><span class="dot">·</span>
+              <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></span>WO #1188 · hyd hose</a>
+            </div>
+          </div>
+        </div>
+
+        <div class="trow done">
+          <div class="tdot-col"><span class="tdot"></span><span class="tconn"></span></div>
+          <div class="tcontent">
+            <div class="thead"><span class="tlabel">End Rent</span><span class="ctl sig o green">done</span></div>
+            <div class="twhen">JUL 20 · 8:05 AM · <span class="twho">logged by <b>Denny R.</b></span></div>
+            <div class="tevi">
+              <span class="stamp">Signature captured</span><span class="dot">·</span>
+              <span class="stamp">Meter in 1,410 hrs (+230)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="trow current">
+          <div class="tdot-col"><span class="tdot"></span><span class="tconn"></span></div>
+          <div class="tcontent">
+            <div class="thead"><span class="tlabel">Recovery</span><span class="ctl sig f yellow">current</span></div>
+            <div class="twhen">JUL 20 · 8:20 AM · <span class="twho">dispatch pending</span></div>
+            <div class="tevi"><span class="stamp">Awaiting driver assignment</span></div>
+            <div class="troute">
+              <span class="rlabel">Route</span>
+              <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/></svg></span>Broussard Dirt Works</a>
+              <span class="rarrow">→</span>
+              <a class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span>Yard</a>
+              <span class="stamp" style="margin-left:auto">14 mi</span>
+            </div>
+            <div class="tdoor">
+              <span class="ctl door save">Saddle up for pickup</span>
+              <span class="ctl door ghost">Reassign</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="trow upcoming">
+          <div class="tdot-col"><span class="tdot"></span><span class="tconn"></span></div>
+          <div class="tcontent">
+            <div class="thead"><span class="tlabel">Returned</span><span class="ctl sig o grey">upcoming</span></div>
+            <div class="twhen">—</div>
+            <div class="tevi"><span class="stamp" style="opacity:.7">Awaiting recovery</span></div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="htail">
+        <div class="h4">History</div>
+        <div class="hsearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>History: search…</div>
+      </div>
+    </div>
+
+    <!-- ============ DORMANT / AVAILABLE ============ -->
+    <div class="panel">
+      <div class="dcap"><span class="lab">Unit · inline-expanded</span><span class="dnote">dormant example</span></div>
+      <div class="ptitle">
+        <div class="pt-name">Scout <span class="ctl sig o green">available</span></div>
+        <div class="pt-sub">Skid Steer 70hp · S/N SS-14</div>
+      </div>
+
+      <div class="secrail">
+        <button class="scnav" aria-label="previous sections"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
+        <div class="scchips">
+          <span class="schip dim">To Do</span>
+          <span class="schip active">Yard Journey</span>
+          <span class="schip dim">Inspection</span>
+          <span class="schip dim">Services</span>
+          <span class="schip dim">Specs</span>
+        </div>
+        <button class="scnav" aria-label="next sections"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>
+      </div>
+
+      <div class="nownext">
+        <div class="nn-row">
+          <span class="nn-tag" style="color:var(--green)">Now</span>
+          <span class="ctl sig o green">available</span>
+          <span class="nn-headline">Sitting in the yard — no active rental</span>
+        </div>
+        <div class="nn-row">
+          <span class="nn-tag next">Next</span>
+          <span class="nn-sub">Nothing due — no lifecycle rail to show when idle. One move: start a rental.</span>
+        </div>
+      </div>
+
+      <div class="dbody">
+        <div class="dstate">
+          <span class="ctl sig o green" style="height:28px;padding:0 10px">available</span>
+          <div class="txt">
+            <span class="headline">Idle 3 days</span>
+            <span class="sub">Last returned JUL 17 · 1,410 hrs on meter · clean at return</span>
+          </div>
+        </div>
+        <div class="dfoot">
+          <span class="ctl door add">+ Start rental</span>
+        </div>
+      </div>
+
+      <div class="htail">
+        <div class="h4">History</div>
+        <span class="hc">9 Rentals</span>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="foot">
+    <b>Yard Journey</b> is now its own Units section, not a header-strip rail — a live vertical timeline
+    (<b>Reserved → Out → On Rent → Field calls → End Rent → Recovery → Returned</b>) that reads top-to-bottom like a
+    logbook. Notes for review:
+    <ul>
+      <li>Stage rows use the same <b>colour = state</b> function as everywhere else: green dot = done, filled yellow
+      ring = current, hollow grey = upcoming — no new state vocabulary.</li>
+      <li>The <b>NOW + next</b> header is the one place text repeats the current stage in plain language; the actual
+      <b>Door</b> lives once, on the current stage's row (Recovery here) — never duplicated as a second clickable button.</li>
+      <li>Route strips (Out, Recovery only — per spec) are two <b>Refs</b> and a distance <b>Stamp</b>, not a map.</li>
+      <li>The section-chip rail carries the other Units sections <b>greyed</b> (Inspection, Services, Work Orders, Specs,
+      Investment, GPS) plus <b>To Do</b> — Yard Journey sits active among them, so this reads as one section of the
+      larger inline-expand card, not a standalone screen.</li>
+      <li>Dormant units (<b>Scout</b>, right) get a calm <b>Available</b> Stamp + the one <b>+ Start rental</b> Door —
+      never an empty rail.</li>
+      <li>Matte throughout — no glow; the current-stage ring is a flat 3px outline, not a blur. Dimmed CVD-safe
+      <code>--yellow #eed44b</code> used for "current," never the neon value.</li>
+    </ul>
+  </div>
+
+</div></div>

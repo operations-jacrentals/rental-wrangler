@@ -1,0 +1,389 @@
+<title>Dashboard card — first draft (6th card, role-dependent)</title>
+
+<style>
+  :root{
+    --bg:#0a0d11; --bg2:#0f1318; --panel:#171d25; --panel2:#1d242d; --card:#12171e; --cardh:#1a212b;
+    --line:#2c343f; --lineSoft:#212834; --txt:#eef2f7; --txt2:#aab4c1; --txt3:#717b89;
+    --accent:#ff7e1f; --onAcc:#1a1205; --accSoft:rgba(255,126,31,.15); --accLine:rgba(255,126,31,.5);
+    --green:#34d399; --yellow:#eed44b; --red:#ff4242; --redStrong:#d63636; --blue:#6394cc; --commit:#2f6fd0; --gray:#8b94a3;
+    --tan:#c2925a;
+    --font:-apple-system,"Segoe UI",Roboto,system-ui,sans-serif;
+    --stamp:ui-monospace,"Cascadia Code","SF Mono",Menlo,Consolas,monospace;
+    --h:24px;
+  }
+  @media (prefers-color-scheme:light){ :root{
+    --bg:#e6e8ea; --bg2:#dfe3ea; --panel:#fff; --panel2:#eef1f6; --card:#fff; --cardh:#eef1f6;
+    --line:#cfd6e1; --lineSoft:#e1e6ee; --txt:#141821; --txt2:#414b5a; --txt3:#69727f; --onAcc:#1a1205;
+    --accent:#cf6000; --red:#d52a2a; --redStrong:#b5241f; --blue:#2f5fb0; --commit:#1f56c0; --green:#0c8f5f; --gray:#566072; --tan:#8a5a2b;
+  } }
+  :root[data-theme="light"]{
+    --bg:#e6e8ea; --panel:#fff; --card:#fff; --cardh:#eef1f6; --line:#cfd6e1; --lineSoft:#e1e6ee;
+    --txt:#141821; --txt2:#414b5a; --txt3:#69727f; --onAcc:#1a1205; --accent:#cf6000; --red:#d52a2a; --redStrong:#b5241f; --blue:#2f5fb0; --commit:#1f56c0; --green:#0c8f5f; --gray:#566072; --tan:#8a5a2b;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0a0d11; --panel:#171d25; --card:#12171e; --cardh:#1a212b; --line:#2c343f; --lineSoft:#212834;
+    --txt:#eef2f7; --txt2:#aab4c1; --txt3:#717b89; --onAcc:#1a1205; --accent:#ff7e1f; --red:#ff4242; --redStrong:#d63636; --blue:#6394cc; --commit:#2f6fd0; --green:#34d399; --gray:#8b94a3; --tan:#c2925a;
+  }
+  *{box-sizing:border-box} body{margin:0}
+  .wrap{background:var(--bg); color:var(--txt); font-family:var(--font); line-height:1.5; -webkit-font-smoothing:antialiased; padding:clamp(14px,3vw,30px) clamp(10px,3vw,20px) 60px}
+  .sheet{max-width:1180px; margin:0 auto}
+  .eyebrow{font-family:var(--stamp); font-size:12px; letter-spacing:.18em; text-transform:uppercase; color:var(--txt3); margin:0; font-weight:700}
+  h1{font-family:var(--stamp); font-weight:800; font-size:clamp(20px,3.3vw,28px); line-height:1; margin:.26em 0 .32em; letter-spacing:.01em; text-transform:uppercase}
+  h1 .hl{color:var(--accent)}
+  .lede{max-width:92ch; font-size:13px; color:var(--txt2); margin:0} .lede b{color:var(--txt); font-weight:600}
+  .key{display:flex; flex-wrap:wrap; gap:6px 14px; margin:14px 0 2px; font-family:var(--stamp); font-size:10px; letter-spacing:.03em; text-transform:uppercase; color:var(--txt3)}
+  .key b{color:var(--accent)}
+
+  /* ---------- 5+1 card rail ---------- */
+  .railwrap{margin:20px 0 22px}
+  .cardrail{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+  .crail{height:var(--h); display:inline-flex; align-items:center; gap:7px; padding:0 11px 0 4px; border-radius:7px; background:var(--card); border:1px solid var(--line); font-family:var(--font); font-weight:700; font-size:12px; color:var(--txt2); cursor:default; white-space:nowrap}
+  .crail .ty{width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;color:var(--txt3);background:var(--lineSoft);border-radius:5px;flex:none}
+  .crail .ty svg{width:11px;height:11px}
+  .crail.active{background:var(--accent); color:var(--onAcc); border-color:var(--accent); cursor:pointer}
+  .crail.active .ty{background:rgba(0,0,0,.2); color:var(--onAcc)}
+  .crail .n6{font-family:var(--stamp); font-size:9.5px; font-weight:800; letter-spacing:.05em; margin-left:1px; opacity:.85}
+  .raildiv{width:1px; align-self:stretch; background:var(--line); margin:0 2px}
+  .railcap{font-family:var(--stamp); font-size:10px; letter-spacing:.03em; text-transform:uppercase; color:var(--txt3); margin-top:8px}
+  .railcap b{color:var(--txt2)}
+
+  /* ---------- dashboard card shell ---------- */
+  .dcard{background:var(--panel); border:1px solid var(--line); border-radius:14px; overflow:hidden}
+  .dcap{font-family:var(--stamp); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--txt3); padding:10px 15px 0}
+  .dhead{padding:2px 15px 12px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap}
+  .dtitle{display:flex; align-items:center; gap:9px; flex-wrap:wrap}
+  .dtitle .ref{height:var(--h); display:inline-flex; align-items:center; gap:6px; padding:0 9px 0 3px; border-radius:7px; background:var(--card); border:1px solid var(--line); color:var(--txt); font-size:13px; font-weight:700; white-space:nowrap}
+  .dtitle .ref .ty{width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;color:var(--accent);background:var(--accSoft);border-radius:5px} .dtitle .ref .ty svg{width:12px;height:12px}
+  .dsub{font-size:11px; color:var(--txt3)}
+  .rolewrap{display:flex; align-items:center; gap:9px}
+  .rolewrap .rlabel{font-family:var(--stamp); font-size:9.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--txt3)}
+  .seg{height:var(--h); display:inline-flex; border:1px solid var(--line); border-radius:7px; overflow:hidden; flex:none}
+  .seg b{display:inline-flex; align-items:center; gap:5px; padding:0 12px; font-family:var(--stamp); font-size:11px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; color:var(--txt3); border-right:1px solid var(--line); cursor:pointer}
+  .seg b svg{width:11px;height:11px}
+  .seg b:last-child{border-right:0} .seg b.on{background:var(--accent); color:var(--onAcc)}
+
+  .dnote{padding:9px 15px 0; font-family:var(--stamp); font-size:9.5px; letter-spacing:.03em; text-transform:uppercase; color:var(--txt3); display:flex; gap:14px; flex-wrap:wrap}
+  .dnote b{color:var(--accent)}
+
+  .dbody{padding:13px 15px 14px}
+  .roleview{display:none} .roleview.on{display:block}
+  .chartgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:12px}
+
+  /* ---------- chart panel shell ---------- */
+  .cpanel{background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px 11px; display:flex; flex-direction:column}
+  .cpanel.wide{grid-column:span 2}
+  @media (max-width:640px){ .cpanel.wide{grid-column:span 1} }
+  .cphead{display:flex; align-items:flex-start; justify-content:space-between; gap:8px}
+  .ceyebrow{font-family:var(--stamp); font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--txt3)}
+  .ctarget{font-family:var(--stamp); font-size:9.5px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--onAcc); background:var(--accent); border-radius:5px; padding:1px 6px; white-space:nowrap; flex:none; line-height:1.6}
+  .ctitle{font-family:var(--font); font-weight:700; font-size:13px; color:var(--txt); margin:1px 0 8px; letter-spacing:-.01em}
+  .cnote{font-size:10px; color:var(--txt3); margin-top:8px; line-height:1.4}
+  .cnote b{color:var(--txt2)}
+  .clickable{cursor:pointer; transition:filter .12s, opacity .12s}
+  .clickable:hover{filter:brightness(1.18)}
+  .clickable:active{filter:brightness(.92)}
+
+  /* ---------- funnel ---------- */
+  .funnel{display:flex; flex-direction:column; gap:8px; margin-top:2px}
+  .frow{display:flex; align-items:center; gap:8px}
+  .flabel{font-family:var(--stamp); font-size:9.5px; font-weight:800; text-transform:uppercase; color:var(--txt3); width:66px; flex:none}
+  .ftrack{flex:1; height:16px; border-radius:4px; background:var(--lineSoft); position:relative; overflow:hidden}
+  .fbar{height:100%; border-radius:4px; background:var(--blue)}
+  .fbar.won{background:var(--green)}
+  .fval{font-family:var(--font); font-size:11px; font-weight:800; color:var(--txt); font-variant-numeric:tabular-nums; width:24px; text-align:right; flex:none}
+
+  /* ---------- donut ---------- */
+  .donutwrap{display:flex; align-items:center; gap:14px; margin-top:2px}
+  .donutwrap svg{width:112px; height:112px; flex:none}
+  .dcenter-n{font-family:var(--font); font-weight:800; font-size:15px; fill:var(--txt)}
+  .dcenter-l{font-family:var(--stamp); font-weight:800; font-size:9.5px; letter-spacing:.02em; fill:var(--txt3)}
+  .wedge{transition:filter .12s, stroke-width .12s} .wedge:hover{filter:brightness(1.15)}
+  .wedge.sel{stroke-width:20}
+  .donutlegend{display:flex; flex-direction:column; gap:7px; font-size:11px; flex:1; min-width:0}
+  .dli{display:flex; align-items:center; gap:7px; padding:2px 4px; border-radius:5px; border:1px solid transparent}
+  .dli.sel{border-color:var(--red); background:rgba(214,54,54,.12)}
+  .sw{width:9px;height:9px;border-radius:2px;flex:none}
+  .dlv{font-family:var(--stamp); font-weight:800; color:var(--txt); font-variant-numeric:tabular-nums; flex:none}
+  .dlk{color:var(--txt2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .dlbadge{font-family:var(--stamp); font-size:9.5px; font-weight:800; letter-spacing:.03em; color:var(--red); border:1px solid var(--red); border-radius:4px; padding:0 4px; margin-left:auto; flex:none}
+
+  /* ---------- Signal chip (colour = state; dark ink on fill, white only on redStrong) ---------- */
+  .sig{display:inline-flex; align-self:flex-start; align-items:center; height:20px; padding:0 8px; border-radius:7px; font-family:var(--stamp); font-size:9.5px; font-weight:800; letter-spacing:.04em; text-transform:uppercase}
+  .sig.red{background:var(--redStrong); color:#fff}
+  .sig.yellow{background:var(--yellow); color:#211a05}
+
+  /* ---------- callout ---------- */
+  .callout{margin-top:9px; border-left:3px solid var(--red); background:var(--bg2); border-radius:0 8px 8px 0; padding:8px 10px}
+  .callout .ct-t{font-family:var(--stamp); font-size:9.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--txt2); display:flex; align-items:center; gap:5px}
+  .callout .ct-t svg{width:10px;height:10px; color:var(--red); flex:none}
+  .callout .ct-b{font-size:11px; color:var(--txt2); margin-top:4px; line-height:1.45}
+  .callout .ct-b b{color:var(--txt)}
+  .callout .ct-b .k{font-family:var(--stamp); font-size:9.5px; font-weight:800; text-transform:uppercase; color:var(--txt); background:var(--lineSoft); border-radius:4px; padding:1px 5px}
+
+  /* ---------- vertical bars (WO backlog) ---------- */
+  .vbars{display:flex; align-items:flex-end; gap:14px; height:82px; border-bottom:1px solid var(--lineSoft); padding-top:4px; margin-top:2px}
+  .vbar{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%}
+  .vbar .bn{font-family:var(--font); font-size:12px; font-weight:800; color:var(--txt); margin-bottom:4px; font-variant-numeric:tabular-nums}
+  .vbar .bar{width:100%; max-width:36px; border-radius:4px 4px 0 0; background:var(--blue)}
+  .vbar.hot .bar{background:var(--yellow)}
+  .vbar .bl{font-family:var(--stamp); font-size:9.5px; letter-spacing:.02em; text-transform:uppercase; color:var(--txt3); margin-top:6px; text-align:center}
+  .vbar.hot .bl{color:var(--txt)}
+
+  /* ---------- area / trend ---------- */
+  .areawrap{margin-top:2px}
+  .areawrap svg{width:100%; height:auto; display:block}
+  .axweeks{display:flex; justify-content:space-between; margin-top:2px; padding:0 3px}
+  .axweeks span{font-family:var(--stamp); font-size:9.5px; letter-spacing:.02em; color:var(--txt3)}
+  .endlabel{font-family:var(--font); font-weight:800; font-size:11px; fill:var(--green)}
+
+  /* ---------- stat tile (status carried by the .sig chip, not by colouring the big digit —
+     plain yellow/red text on a big number fails the AA floor in light mode; a filled chip
+     with dark/white ink per the locked rule never does) ---------- */
+  .stat{display:flex; flex-direction:column; gap:5px}
+  .stat .sbig{font-family:var(--font); font-weight:800; font-size:28px; letter-spacing:-.02em; font-variant-numeric:tabular-nums; line-height:1; color:var(--txt)}
+  .stat .ssub{font-size:11px; color:var(--txt2)}
+  .stat .ssub b{color:var(--txt)}
+
+  /* ---------- action log ---------- */
+  .actionlog{margin-top:12px; padding:8px 12px; background:var(--bg2); border:1px dashed var(--line); border-radius:8px; font-family:var(--stamp); font-size:10px; letter-spacing:.02em; color:var(--txt3); display:flex; align-items:center; gap:6px}
+  .actionlog b{color:var(--accent); text-transform:uppercase}
+  .actionlog .go{color:var(--commit); font-weight:800}
+
+  .foot{margin-top:22px; padding-top:16px; border-top:1px solid var(--line); font-size:13px; color:var(--txt2); max-width:88ch}
+  .foot b{color:var(--txt)}
+  .foot ul{margin:8px 0 0; padding-left:18px} .foot li{margin:4px 0}
+</style>
+
+<div class="wrap"><div class="sheet">
+
+  <p class="eyebrow">First draft · react-to, not final · role Dashboard card</p>
+  <h1>The Dashboard <span class="hl">card</span></h1>
+  <p class="lede">Every role already keeps the same five cards — <b>Units · Rentals · Customers · Trips ·
+  Categories</b>. This adds a <b>6th: Dashboard</b>, shaped to whoever's looking at it. The Sales card already
+  <i>is</i> a dashboard — the sales job laid out as graphs — so this generalises that idea to every role. Two
+  variants below (<b>Sales</b> and <b>Mechanic</b>) so the role-dependent point is concrete. <b>Nothing here
+  replaces a base card</b> — Yard Journey stays on Units, routes stay on Trips; the charts only <b>drill into</b>
+  those cards with a filter already applied.</p>
+  <div class="key"><span><b>Signal</b> colour = state</span><span><b>Ref</b> linked record</span><span>chart wedge colour = the Signal chip it lands on</span><span>single-click = filter · double-click = open tab</span></div>
+
+  <!-- ================= 5+1 card rail ================= -->
+  <div class="railwrap">
+    <div class="cardrail">
+      <span class="crail"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.73Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg></span>Units</span>
+      <span class="crail"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg></span>Rentals</span>
+      <span class="crail"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>Customers</span>
+      <span class="crail"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg></span>Trips</span>
+      <span class="crail"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg></span>Categories</span>
+      <span class="raildiv"></span>
+      <span class="crail active"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></span>Dashboard<span class="n6">6TH</span></span>
+    </div>
+    <p class="railcap"><b>5 base cards</b>, shared by every role &nbsp;+&nbsp; <b>1 Dashboard</b>, shaped to the role looking at it.</p>
+  </div>
+
+  <!-- ================= Dashboard card ================= -->
+  <div class="dcard">
+    <p class="dcap">Card 6 of 6 · role-dependent · added card, not a landing page</p>
+    <div class="dhead">
+      <div class="dtitle">
+        <span class="ref"><span class="ty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></span>Dashboard</span>
+        <span class="dsub">this role's job, laid out as graphs — every mark below is a link</span>
+      </div>
+      <div class="rolewrap">
+        <span class="rlabel">Viewing as</span>
+        <div class="seg">
+          <b id="segSales" onclick="setRole('sales')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Sales</b>
+          <b id="segMech" class="on" onclick="setRole('mech')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>Mechanic</b>
+        </div>
+      </div>
+    </div>
+    <div class="dnote"><span><b>single-click</b> a mark → filters the target card in place</span><span><b>double-click</b> → opens that filtered view as a session tab</span></div>
+
+    <div class="dbody">
+
+      <!-- ---------------- SALES VIEW ---------------- -->
+      <div class="roleview" id="viewSales">
+        <div class="chartgrid">
+
+          <div class="cpanel">
+            <div class="cphead"><span class="ceyebrow">Pipeline · this month</span><span class="ctarget">→ Customers</span></div>
+            <div class="ctitle">Lead → Signed funnel</div>
+            <div class="funnel">
+              <div class="frow clickable" onclick="act(this,'single-click','Customers','stage = Lead · 38 accounts')" ondblclick="act(this,'double-click','Customers','opens tab · stage = Lead · 38 accounts')">
+                <span class="flabel">Lead</span><span class="ftrack"><span class="fbar" style="width:100%"></span></span><span class="fval">38</span></div>
+              <div class="frow clickable" onclick="act(this,'single-click','Customers','stage = Quoted · 24 accounts')" ondblclick="act(this,'double-click','Customers','opens tab · stage = Quoted · 24 accounts')">
+                <span class="flabel">Quoted</span><span class="ftrack"><span class="fbar" style="width:63%"></span></span><span class="fval">24</span></div>
+              <div class="frow clickable" onclick="act(this,'single-click','Customers','stage = Site Visit · 15 accounts')" ondblclick="act(this,'double-click','Customers','opens tab · stage = Site Visit · 15 accounts')">
+                <span class="flabel">Site Visit</span><span class="ftrack"><span class="fbar" style="width:39%"></span></span><span class="fval">15</span></div>
+              <div class="frow clickable" onclick="act(this,'single-click','Customers','stage = Signed · 9 accounts')" ondblclick="act(this,'double-click','Customers','opens tab · stage = Signed · 9 accounts')">
+                <span class="flabel">Signed</span><span class="ftrack"><span class="fbar won" style="width:24%"></span></span><span class="fval">9</span></div>
+            </div>
+            <div class="cnote">each bar is a stage — <b>click Signed</b> to see the 9 closed-won accounts on Customers.</div>
+          </div>
+
+          <div class="cpanel">
+            <div class="cphead"><span class="ceyebrow">Account standing</span><span class="ctarget">→ Customers</span></div>
+            <div class="ctitle">Customer split</div>
+            <div class="donutwrap">
+              <svg viewBox="0 0 120 120">
+                <circle cx="60" cy="60" r="46" fill="none" stroke="var(--lineSoft)" stroke-width="16"/>
+                <g transform="rotate(-90 60 60)">
+                  <circle class="wedge clickable" cx="60" cy="60" r="46" fill="none" stroke="var(--green)" stroke-width="16" stroke-dasharray="185 104" stroke-dashoffset="0" onclick="act(this,'single-click','Customers','standing = Current · 30 accounts')" ondblclick="act(this,'double-click','Customers','opens tab · standing = Current · 30 accounts')"/>
+                  <circle class="wedge clickable" cx="60" cy="60" r="46" fill="none" stroke="var(--yellow)" stroke-width="16" stroke-dasharray="40 249" stroke-dashoffset="-185" onclick="act(this,'single-click','Customers','standing = Due Today · 7 accounts, incl. Duhon Contracting')" ondblclick="act(this,'double-click','Customers','opens tab · standing = Due Today · 7 accounts')"/>
+                  <circle class="wedge clickable" cx="60" cy="60" r="46" fill="none" stroke="var(--red)" stroke-width="16" stroke-dasharray="64 225" stroke-dashoffset="-225" onclick="act(this,'single-click','Customers','standing = Overdue · 11 accounts')" ondblclick="act(this,'double-click','Customers','opens tab · standing = Overdue · 11 accounts')"/>
+                </g>
+                <text x="60" y="55" text-anchor="middle" class="dcenter-n">48</text>
+                <text x="60" y="71" text-anchor="middle" class="dcenter-l">ACCOUNTS</text>
+              </svg>
+              <div class="donutlegend">
+                <div class="dli clickable" onclick="act(this,'single-click','Customers','standing = Current · 30 accounts')"><span class="sw" style="background:var(--green)"></span><span class="dlv">64%</span><span class="dlk">Current · 30</span></div>
+                <div class="dli clickable" onclick="act(this,'single-click','Customers','standing = Due Today · 7 accounts')"><span class="sw" style="background:var(--yellow)"></span><span class="dlv">14%</span><span class="dlk">Due Today · 7 (Duhon Contracting)</span></div>
+                <div class="dli clickable" onclick="act(this,'single-click','Customers','standing = Overdue · 11 accounts')"><span class="sw" style="background:var(--red)"></span><span class="dlv">22%</span><span class="dlk">Overdue · 11</span></div>
+              </div>
+            </div>
+            <div class="cnote">same red/yellow/green as every Customers Signal chip — this is just those chips, counted.</div>
+          </div>
+
+          <div class="cpanel">
+            <div class="cphead"><span class="ceyebrow">Revenue · 8-wk trend</span><span class="ctarget">→ Rentals</span></div>
+            <div class="ctitle">Weekly billed revenue</div>
+            <div class="areawrap clickable" onclick="act(this,'single-click','Rentals','week = W8 · $35.1k billed')" ondblclick="act(this,'double-click','Rentals','opens tab · week = W8 · $35.1k billed')">
+              <svg viewBox="0 0 300 100" preserveAspectRatio="none">
+                <line x1="10" y1="90" x2="290" y2="90" stroke="var(--lineSoft)" stroke-width="1" stroke-dasharray="2 3"/>
+                <path d="M10,90 L10,72.7 L50,63 L90,74 L130,51.2 L170,41 L210,52.4 L250,33.5 L290,26.3 L290,90 Z" fill="var(--blue)" opacity=".16" stroke="none"/>
+                <polyline points="10,72.7 50,63 90,74 130,51.2 170,41 210,52.4 250,33.5 290,26.3" fill="none" stroke="var(--blue)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="290" cy="26.3" r="4" fill="var(--green)"/>
+                <text x="238" y="18" class="endlabel">$35.1k</text>
+              </svg>
+              <div class="axweeks"><span>W1</span><span>W2</span><span>W3</span><span>W4</span><span>W5</span><span>W6</span><span>W7</span><span>W8</span></div>
+            </div>
+            <div class="cnote">endpoint is this week — <b>click the line</b> to see this week's rentals on Rentals.</div>
+          </div>
+
+          <div class="cpanel">
+            <div class="cphead"><span class="ceyebrow">Receivables</span><span class="ctarget">→ Customers</span></div>
+            <div class="ctitle">Overdue AR</div>
+            <div class="stat clickable" onclick="act(this,'single-click','Customers','A/R overdue · 6 accounts')" ondblclick="act(this,'double-click','Customers','opens tab · A/R overdue · 6 accounts')">
+              <span class="sig red">Overdue</span>
+              <span class="sbig">$18,420</span>
+              <span class="ssub"><b>6</b> accounts overdue · 3 past 30 days</span>
+            </div>
+            <div class="cnote">same red as the Overdue Signal — click to open those 6 accounts.</div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ---------------- MECHANIC VIEW ---------------- -->
+      <div class="roleview on" id="viewMech">
+        <div class="chartgrid">
+
+          <div class="cpanel">
+            <div class="cphead"><span class="ceyebrow">Fleet state</span><span class="ctarget">→ Units</span></div>
+            <div class="ctitle">Down vs rented vs available</div>
+            <div class="donutwrap">
+              <svg viewBox="0 0 120 120">
+                <circle cx="60" cy="60" r="46" fill="none" stroke="var(--lineSoft)" stroke-width="16"/>
+                <g transform="rotate(-90 60 60)">
+                  <circle class="wedge clickable" cx="60" cy="60" r="46" fill="none" stroke="var(--green)" stroke-width="16" stroke-dasharray="191 98" stroke-dashoffset="0" onclick="act(this,'single-click','Units','status = Rented · 31 units')" ondblclick="act(this,'double-click','Units','opens tab · status = Rented · 31 units')"/>
+                  <circle class="wedge clickable" cx="60" cy="60" r="46" fill="none" stroke="var(--gray)" stroke-width="16" stroke-dasharray="74 215" stroke-dashoffset="-191" onclick="act(this,'single-click','Units','status = Available · 12 units')" ondblclick="act(this,'double-click','Units','opens tab · status = Available · 12 units')"/>
+                  <circle id="wedgeDown" class="wedge sel clickable" cx="60" cy="60" r="46" fill="none" stroke="var(--red)" stroke-width="20" stroke-dasharray="24 265" stroke-dashoffset="-265" onclick="act(this,'single-click','Units','status = Down · 4 units — RC-4700 Gator, SS-14 Scout +2')" ondblclick="act(this,'double-click','Units','opens tab · status = Down · 4 units')"/>
+                </g>
+                <text x="60" y="55" text-anchor="middle" class="dcenter-n">47</text>
+                <text x="60" y="71" text-anchor="middle" class="dcenter-l">UNITS</text>
+              </svg>
+              <div class="donutlegend">
+                <div class="dli clickable" onclick="act(this,'single-click','Units','status = Rented · 31 units')"><span class="sw" style="background:var(--green)"></span><span class="dlv">66%</span><span class="dlk">Rented · 31</span></div>
+                <div class="dli clickable" onclick="act(this,'single-click','Units','status = Available · 12 units')"><span class="sw" style="background:var(--gray)"></span><span class="dlv">26%</span><span class="dlk">Available · 12</span></div>
+                <div class="dli sel clickable" onclick="act(this,'single-click','Units','status = Down · 4 units')"><span class="sw" style="background:var(--red)"></span><span class="dlv">8%</span><span class="dlk">Down · 4</span><span class="dlbadge">SEL</span></div>
+              </div>
+            </div>
+            <div class="callout">
+              <div class="ct-t"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>Selected mark</div>
+              <div class="ct-b"><b>→ Units</b> card · <b>4 down units</b> (RC-4700 "Gator" + SS-14 "Scout" + 2 more) ·
+              <span class="k">single-click</span> filters here · <span class="k">double-click</span> opens a tab</div>
+            </div>
+          </div>
+
+          <div class="cpanel">
+            <div class="cphead"><span class="ceyebrow">Open WOs · by phase</span><span class="ctarget">→ Units</span></div>
+            <div class="ctitle">Work-order backlog</div>
+            <div class="vbars">
+              <div class="vbar clickable" onclick="act(this,'single-click','Units','WO phase = Diagnose · 3 open')" ondblclick="act(this,'double-click','Units','opens tab · WO phase = Diagnose · 3 open')">
+                <span class="bn">3</span><span class="bar" style="height:42px"></span><span class="bl">Diagnose</span></div>
+              <div class="vbar hot clickable" onclick="act(this,'single-click','Units','WO phase = Parts Wait · 5 open, bottleneck')" ondblclick="act(this,'double-click','Units','opens tab · WO phase = Parts Wait · 5 open')">
+                <span class="bn">5</span><span class="bar" style="height:70px"></span><span class="bl">Parts Wait</span></div>
+              <div class="vbar clickable" onclick="act(this,'single-click','Units','WO phase = In Repair · 4 open')" ondblclick="act(this,'double-click','Units','opens tab · WO phase = In Repair · 4 open')">
+                <span class="bn">4</span><span class="bar" style="height:56px"></span><span class="bl">In Repair</span></div>
+              <div class="vbar clickable" onclick="act(this,'single-click','Units','WO phase = QC · 2 open')" ondblclick="act(this,'double-click','Units','opens tab · WO phase = QC · 2 open')">
+                <span class="bn">2</span><span class="bar" style="height:28px"></span><span class="bl">QC</span></div>
+            </div>
+            <div class="cnote"><b>Parts Wait</b> is the bottleneck (yellow = aging 3+ days) — 14 open WOs total.</div>
+          </div>
+
+          <div class="cpanel">
+            <div class="cphead"><span class="ceyebrow">Compliance</span><span class="ctarget">→ Units</span></div>
+            <div class="ctitle">Inspections due</div>
+            <div class="stat clickable" onclick="act(this,'single-click','Units','inspection due · 7 units, this week')" ondblclick="act(this,'double-click','Units','opens tab · inspection due · 7 units')">
+              <span class="sig yellow">Due today</span>
+              <span class="sbig">7</span>
+              <span class="ssub">due <b>this week</b> · 2 already past their window</span>
+            </div>
+            <div class="cnote">same yellow as a Due-Today Signal — click to see the 7 units on Units.</div>
+          </div>
+
+          <div class="cpanel">
+            <div class="cphead"><span class="ceyebrow">Returns</span><span class="ctarget">→ Rentals</span></div>
+            <div class="ctitle">Overdue returns</div>
+            <div class="stat clickable" onclick="act(this,'single-click','Rentals','return overdue · 3 units, incl. Duhon Contracting')" ondblclick="act(this,'double-click','Rentals','opens tab · return overdue · 3 units')">
+              <span class="sig red">Overdue</span>
+              <span class="sbig">3</span>
+              <span class="ssub">overdue, incl. <b>Duhon Contracting</b> — 2 days late</span>
+            </div>
+            <div class="cnote">same red as the Overdue Signal — click to open those 3 rentals.</div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="actionlog" id="actionlog">› click any mark above — a chart segment is a link, not a picture.</div>
+
+    </div>
+  </div>
+
+  <div class="foot">
+    <b>First draft — react to it, not final.</b> A few calls made to get this concrete:
+    <ul>
+      <li>Toggle defaults to <b>Mechanic</b> on load (not Sales) so the one fully-legible drill — the Down wedge
+      callout — is visible without clicking anything.</li>
+      <li>The funnel and revenue-trend charts stay <b>blue/neutral</b> rather than status colour, since a pipeline
+      stage or a dollar trend isn't a status enum — only charts that directly split a status field (account
+      standing, fleet state) use the locked red/yellow/green/gray Signal palette. Worth confirming that split
+      reads right to you.</li>
+      <li>"Selected" on the Down wedge is shown as a thicker stroke + a bordered legend row + a static callout,
+      not a blurred glow (matte constraint) — real build would likely add this on hover/click, shown here baked
+      in so it's visible at rest.</li>
+      <li>Click and double-click on every mark are wired to the log line at the bottom, so you can click around
+      and see exactly what would filter vs. what would open a tab.</li>
+      <li>Work-order backlog drills to <b>Units</b> (that's where WOs live today) — flag if you want it split
+      differently, e.g. its own view.</li>
+      <li>Not addressed here on purpose: which roles get which numbers at all (money visibility, etc.) — that's
+      the separate <b>keep-the-keys</b> access-gate call, not a design decision.</li>
+    </ul>
+  </div>
+
+</div></div>
+
+<script>
+  function setRole(role){
+    document.getElementById('viewSales').classList.toggle('on', role==='sales');
+    document.getElementById('viewMech').classList.toggle('on', role==='mech');
+    document.getElementById('segSales').classList.toggle('on', role==='sales');
+    document.getElementById('segMech').classList.toggle('on', role==='mech');
+    document.getElementById('actionlog').innerHTML = '› switched dashboard to <b>' + (role==='sales'?'Sales':'Mechanic') + '</b> — same card, reshaped to the role.';
+  }
+  function act(el, kind, card, detail){
+    var verb = kind === 'single-click' ? 'filters' : 'opens tab ·';
+    document.getElementById('actionlog').innerHTML =
+      '<b>' + kind + '</b> → <span class="go">' + card + '</span> card · ' + verb + ' ' + detail;
+  }
+</script>

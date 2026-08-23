@@ -1,0 +1,426 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Halo assembly — the FULL CARD: Main Item + Subitem on one shell</title>
+<link rel="stylesheet" href="../tokens.css">
+<!-- steel-skin MUST come after tokens.css: it re-declares the steel ladder off the
+     three knobs, and a custom property is substituted where it is DECLARED. Without
+     this link the card renders the pre-knob palette and loses every treatment that
+     hangs off it — the four colourways, the seated bezels, the scribe-cut wells and
+     the --row-hue laser. It was missing, which is why the card still looked old. -->
+<link rel="stylesheet" href="../steel-skin.css">
+<link rel="stylesheet" href="../parts/housing.css">
+<link rel="stylesheet" href="../parts/deck.css">
+<link rel="stylesheet" href="../parts/bracket.css">
+<link rel="stylesheet" href="../parts/etch.css">
+<link rel="stylesheet" href="../parts/conduit-channel.css">
+<link rel="stylesheet" href="../parts/conduit-cap.css">
+<link rel="stylesheet" href="../parts/conduit-rail.css">
+<link rel="stylesheet" href="../parts/cartridge.css">
+<link rel="stylesheet" href="../parts/screen.css">
+<link rel="stylesheet" href="../parts/marks.css">
+<link rel="stylesheet" href="../parts/slots.css">
+<link rel="stylesheet" href="../parts/chip.css">
+<link rel="stylesheet" href="./main-item.css">
+<link rel="stylesheet" href="./subitem.css">
+</head>
+<body>
+<!--
+  ===========================================================================
+  THE FULL CARD — all of band B, rebuilt entirely from separated parts.
+
+  Two rows on ONE shell:
+
+      .halo-main-item   at canvas (1, 125)   assembly/main-item.css
+      .halo-subitem     at canvas (1, 241)   assembly/subitem.css
+
+  Ten parts between them — c13 · c10 · c11 · c2 · c1 · c5 · c12 · c9 · c3 ·
+  c4 — every one of them linked as its own sheet from ../parts/, placed by
+  --x/--y and picked by a variant class. Not one colour, gradient, blur,
+  stop, radius or font is written on this page or in either placement sheet.
+  If a value that is not a coordinate ever has to appear here, the PART is
+  incomplete and the fix belongs in the part's own file.
+
+  ---------------------------------------------------------------------------
+  THE SHELL BELONGS TO THE CARD, NOT TO EITHER ROW
+
+  housing is ONE 1287x254 box at canvas (1,125) spanning the whole
+  band: the Main Item sits in its top half, the Subitem in its bottom half,
+  and every part above it composites against its face. There is exactly one
+  of it on this page — it comes from inside .halo-main-item (which owns it in
+  main-item.css), and .halo-subitem deliberately does not carry one.
+
+  This is also the difference between this page and subitem.html: there the
+  shell is a sibling carrying `clip-to-subitem`, cropped to rows 242..378 so
+  a lone Subitem does not display 117 rows of housing that belong to the row
+  above. Here both rows are present, so the whole shell shows, uncropped, as
+  it must.
+
+  ---------------------------------------------------------------------------
+  PAINT ORDER IS DOM ORDER
+
+  There is not a single z-index anywhere in this kit; every overlap on this
+  canvas resolves by which element appears later in the markup, and nothing
+  else. The order below is ANATOMY.md's overlap map, verbatim:
+
+    c13 shell -> c10 -> (c11 nested INSIDE c10, between .bt-graph and
+    .bt-warm) -> c2 C2b -> c1 C1b -> c5 C5b -> c12 rivets x4
+    -> c9 -> c3 C3b -> c4 C4b -> c12 hexicon + name -> c2 C2c -> c1 C1c
+
+  Two of those placements are not free:
+    * c11 CANNOT be a layer above or below c10. .bt-warm (a c10 element)
+      fully occludes c11's elbow in canvas columns 33..37, and c11's own
+      divider must paint before its elbow — so c11 is slotted into c10's
+      child list. See main-item.css, THE ONE INTERLEAVE.
+    * c3's C3b elbow paints canvas rows 213..335 — it starts 28 rows ABOVE
+      the Subitem's own top and lands over the Main Item's banner face. It
+      is a Subitem part painting into the Main Item's box, which is exactly
+      why it carries a negative local --y (see subitem.css) and why neither
+      row clips.
+
+  ---------------------------------------------------------------------------
+  SHARED SVG <defs> — ONCE PER PAGE, NEVER DUPLICATED
+
+  c1's ring filter and c3's conduit art are both referenced by hard-coded id.
+  Two rows on one page share the single def block each, exactly as the source
+  canvas did with its two conduit instances. They sit outside both row roots
+  on purpose.
+
+  ---------------------------------------------------------------------------
+  THE GATE
+
+    python3 ../_ref/check.py ./main-plus-subitem.html 1292 268 0 118 --full
+
+  Window = canvas x 0, y 118, w 1292, h 268 (rows 118..385) — the whole of
+  band B plus 7 pure-background rows above it and 7 below, which is what
+  proves nothing spills out of the band in either direction. Band B's true
+  painted extent is rows 125..378 (ANATOMY.md, "The canvas"), so the window
+  is generous on every side and no part of this card is left ungated.
+
+  Verified independently before use: original.html with band A and band C
+  deleted scores mean 0.000 / max 0 against original.png inside this exact
+  window, so the window contains band B and nothing else.
+
+  WHY THE FULL 1292x635 STAGE: so the gate is honest. A stage that is not the
+  canvas's own size rasterises fractionally positioned, clip-pathed boxes onto
+  a different pixel grid. Measured on the ORIGINAL's own untouched markup,
+  shifted into a smaller stage by an integer offset and nothing else:
+  1292x268 stage -> mean 0.059 / max 8; 1292x635 -> mean 0.000 / max 0. That
+  0.059 is the harness, not the parts, and a floor like it is exactly where a
+  real 1px defect would hide. (ANATOMY.md, "The stage width changes the
+  pixels".)
+  ===========================================================================
+-->
+
+<!-- c1's chip filter def — ONCE per page, shared by BOTH chips (C1b in the
+     Main Item, C1c in the Subitem). Copied verbatim from
+     parts/chip.verify.html; the id is fixed by chip.css. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <filter id="chip-soft" x="-6%" y="-25%" width="112%" height="150%"><feGaussianBlur stdDeviation=".81"/></filter>
+</defs></svg>
+
+<div class="stage" style="width:1292px;height:635px">
+
+<!-- ==================== ROW 1 — THE MAIN ITEM ====================
+     Markup reused verbatim from assembly/main-item.verify.html; the
+     @step markers are that page's own layer-check index. It carries
+     the c13 shell, which is the CARD's housing and serves BOTH rows.
+     ================================================================ -->
+  <div class="halo-main-item" style="--x:1px; --y:125px">
+
+<!-- @step 1 · c13 banner shell — the housing everything else sits on -->
+    <div class="halo-housing is-banner">
+      <div class="back"></div>
+      <div class="face"></div>
+      <div class="rim-t"></div><div class="rim-b"></div>
+      <div class="rim-l"></div><div class="rim-r"></div>
+    </div>
+<!-- @endstep 1 -->
+
+<!-- @step 2 · c10 banner top row — rims, bands, graph well, slate, seam,
+     bevel, ramp, notch, warm wash, rivet. DOM order IS the recipe. -->
+    <div class="halo-deck is-banner">
+      <i class="bt-top"></i>
+      <i class="bt-face"></i>
+      <i class="bt-mod"></i>
+      <i class="bt-band2"></i>
+      <i class="bt-fallA"></i>
+      <i class="bt-fallB"></i>
+      <i class="bt-bev"></i>
+      <i class="bt-seam"></i>
+      <i class="bt-right"></i>
+      <i class="bt-ramp"><b></b></i>
+      <i class="bt-notch"></i>
+      <i class="bt-slate"></i>
+      <i class="bt-gut"></i>
+      <i class="bt-gutcap"></i>
+      <i class="bt-gutlow"></i>
+      <i class="bt-welltop"></i>
+      <i class="bt-well"></i>
+      <i class="bt-welledge"></i>
+      <i class="bt-wellr"></i>
+      <svg class="bt-graph" viewBox="0 0 36 73" fill="none">
+        <polyline points="0.5,29.6 3,29.6 25,14.6 34.6,5"
+                  stroke="rgba(170,205,228,.30)" stroke-width="1.1"/>
+      </svg>
+
+<!-- @step 3 · c11 L bracket — MUST sit here, after .bt-graph and before
+     .bt-warm (which occludes the elbow in canvas columns 33..37). -->
+      <div class="halo-bracket">
+        <i class="c11-div"></i>
+        <i class="c11-vertical"></i>
+        <i class="c11-tip"></i>
+        <i class="c11-elbow"></i>
+      </div>
+<!-- @endstep 3 -->
+
+      <i class="bt-warm"></i>
+      <i class="bt-rivet"></i>
+    </div>
+<!-- @endstep 2 -->
+
+<!-- @step 4 · c2 C2b — 7 bars R R R Y Y Y Y, hard-clipped at canvas x384 -->
+    <div class="halo-slots is-c2b">
+      <span class="b r" style="left:8.5px"></span>
+      <span class="b r" style="left:46.0px"></span>
+      <span class="b r" style="left:82.5px"></span>
+      <span class="b y" style="left:118.0px"></span>
+      <span class="b y" style="left:155.0px"></span>
+      <span class="b y" style="left:191.5px"></span>
+      <span class="b y" style="left:227.0px"></span>
+    </div>
+<!-- @endstep 4 -->
+
+<!-- @step 5 · c1 C1b — the wide PROMISED chip. The ring path `d` is this
+     instance's own data (canvas coords minus floor(--x)/floor(--y)). -->
+    <div class="halo-chip is-wide is-labelled">
+      <div class="plate oct"></div>
+      <div class="bloom"></div>
+      <div class="cap"></div>
+      <div class="inner oct"></div>
+      <div class="label">PROMISED</div>
+      <svg class="ringlayer">
+        <path class="halo" d="M14.9,10.87 H600.3 L620.7,31.27 V56.38 H35.3 L14.9,35.98 Z"/>
+        <path class="core" d="M14.9,10.87 H600.3 L620.7,31.27 V56.38 H35.3 L14.9,35.98 Z"/>
+      </svg>
+    </div>
+<!-- @endstep 5 -->
+
+<!-- @step 6 · c5 C5b — the FAILED octagon plate -->
+    <div class="halo-screen is-failed">
+      <div class="body oct4"></div>
+      <div class="glass oct4"></div>
+      <div class="hair oct4"><i class="oct4"></i></div>
+      <div class="readout">FAILED</div>
+    </div>
+<!-- @endstep 6 -->
+
+<!-- @step 7 · c12 — the four loose rivets, last so R1/R2/R3 land on C5b
+     and R4 lands on c10's .bt-rivet -->
+    <div class="halo-marks is-rivet mi-rivet-1"></div>
+    <div class="halo-marks is-rivet mi-rivet-2"></div>
+    <div class="halo-marks is-rivet mi-rivet-3"></div>
+    <div class="halo-marks is-rivet mi-rivet-4"></div>
+<!-- @endstep 7 -->
+
+  </div>
+
+<!-- ==================== ROW 2 — THE SUBITEM ======================
+     Markup reused verbatim from assembly/subitem.html, minus that
+     page's clipped stand-in shell — here the shell comes from row 1.
+     116px below row 1: canvas (1,241) vs (1,125).
+     ================================================================ -->
+  <div class="halo-subitem" style="--x:1px; --y:241px">
+
+    <!-- c9 — etched circuit field + microtext. Three of its four background
+         layers are OTHER parts' light baked in as gradients (c4 C4b's rim
+         spill, c3 C3b's red wash, c11 .bt-div's top shadow) — see
+         etch.css REBASE note 4 and its .is-unlit variant. In THIS
+         assembly all three of those neighbours are (or, for c11, will be) in
+         place, so .is-banner — the lit variant — is the correct one. -->
+    <div class="halo-etch is-banner">
+      <svg width="341" height="135" viewBox="0 0 341 135">
+        <g class="halo">
+          <path d="M28.5 0 L50.5 22.5 H144.5 L160 7"/>
+          <path d="M0 4.5 H26 L49 27.5 H151.5 L169 10"/>
+          <path d="M0 8.5 H25.5 L49 32 H154 L174 12"/>
+          <path d="M18 14 H24.5 L47 36.5 H160 L180 16.5"/>
+          <path d="M12.5 19 H23.5 L45.5 41 M33 41 H173"/>
+          <path d="M33 36.5 L43 46 H174.5 L189 31"/>
+          <path d="M8 69.5 H21.5 L41.5 50 H178 L189 39"/>
+          <path d="M26 80.5 L51 55.5 H174 L185 44.5"/>
+          <path d="M38.5 83.5 L57.5 64.5 H122.5"/>
+          <path d="M45 60 H181 L189 52"/>
+          <path d="M46 95.5 L55 86.5 H161"/>
+        </g>
+        <g class="cu">
+          <!-- upper fan: six nested troughs, 45deg chamfers both ends -->
+          <path d="M28.5 0 L50.5 22.5 H144.5 L160 7"/>
+          <path d="M0 4.5 H26 L49 27.5 H151.5 L169 10"/>
+          <path d="M0 8.5 H25.5 L49 32 H154 L174 12"/>
+          <path d="M18 14 H24.5 L47 36.5 H160 L180 16.5"/>
+          <path d="M12.5 19 H23.5 L45.5 41"/>
+          <path d="M33 41 H173"/>
+          <path d="M33 36.5 L43 46 H174.5 L189 31"/>
+          <!-- lower group: three traces climbing out of the text block -->
+          <path d="M8 69.5 H21.5 L41.5 50 H178 L189 39"/>
+          <path d="M26 80.5 L51 55.5 H174 L185 44.5"/>
+          <path d="M38.5 83.5 L57.5 64.5 H122.5"/>
+          <path d="M45 60 H181 L189 52"/>
+          <path d="M46 95.5 L55 86.5 H161"/>
+          <path d="M172 97 L182 106.5"/>
+          <!-- left-edge stubs, top rail, text-block outline -->
+          <path d="M0 32.8 H9"/>
+          <path d="M13.5 38 V44.5"/>
+          <path d="M15 48 V56"/>
+          <path d="M0 80.5 H22"/>
+          <path d="M22 121 L16 127 H1"/>
+          <path d="M80 0 H124"/>
+          <!-- right half, below the conduit: via columns to the bottom rail -->
+          <path d="M195 110 L201.5 103.5 V134"/>
+          <path d="M200 97 L206.5 90.5 V134"/>
+          <path d="M211 100 L217.5 93.5 V134"/>
+          <path d="M223 101 L229.5 94.5 V134"/>
+          <path d="M229 104 L235.5 97.5 V134"/>
+          <path d="M268 96 L274.5 89.5 V134"/>
+          <path d="M273 98 L279.5 91.5 V134"/>
+          <path d="M295 92 L301.5 85.5 V134"/>
+          <path d="M302 93 L308.5 86.5 V134"/>
+          <path d="M332 98 L338.5 91.5 V134"/>
+        </g>
+        <g class="cud">
+          <!-- pads -->
+          <circle cx="11.5" cy="32.8" r="2.1"/>
+          <circle cx="10.5" cy="63.2" r="2.9"/>
+          <circle cx="34.5" cy="41"   r="1.8"/>
+          <circle cx="173"  cy="40.5" r="1.8"/>
+          <circle cx="48.5" cy="56.5" r="1.5"/>
+          <circle cx="163"  cy="86.5" r="1.5"/>
+          <circle cx="186"  cy="88.5" r="1.2"/>
+          <circle cx="183"  cy="108"  r="1.9"/>
+        </g>
+        <g class="cu">
+          <circle cx="76.4" cy="15.4" r="1.9"/>
+          <circle cx="86.4" cy="15.4" r="1.9"/>
+          <rect x="12.5" y="13"   width="5.5" height="5.5"/>
+          <rect x="166.5" y="82.5" width="11" height="9" rx="2"/>
+        </g>
+        <g class="cuf">
+          <rect x="124"   y="63"  width="3.6" height="3.8"/>
+          <rect x="132.5" y="63"  width="4"   height="3.8"/>
+          <rect x="286.5" y="121.6" width="10.5" height="2.6"/>
+          <rect x="286.5" y="129.6" width="10.5" height="2.2"/>
+          <rect x="325"   y="107.6" width="11"   height="2.2"/>
+          <rect x="333"   y="95.6"  width="8.5"  height="2.2"/>
+        </g>
+      </svg>
+      <!-- microtext: pitch 4.55px on a 3px glyph band. The bare &nbsp; spacer
+           line and the inline top:.55px nudge are BOTH load-bearing — copy this
+           block, do not retype it (etch.css, caveat 4). -->
+      <div class="microtext">
+        <div>MJOLNIR-C</div>
+        <div>&nbsp;</div>
+        <div style="top:.55px">LINK ARM 0x8F7 CAL 05.487</div>
+        <div>SEQ.0026.1</div>
+        <div>CHKSUM 4E32 90A7 5B</div>
+        <div>SYS.STAT [6] 088 CHAIN.SLIP_LOCK_STRESS_A1.2</div>
+        <div>LOADOUT RD 0006 @UTP07LRD01</div>
+        <div>SHIELD 100</div>
+        <div>TEMP 028</div>
+        <div>CROSS-TAPHD 4302</div>
+      </div>
+    </div>
+
+    <!-- c3 — conduit spine + elbow, instance C3b. Swapped from the old
+         18-gradient inline-SVG artwork (which stayed on its pre-knob salmon
+         palette and rendered pink against the new steel — see
+         ../parts/conduit-channel.css's own header) to the measured
+         Cap+Channel kit: ../parts/conduit-channel.css, ../parts/conduit-cap.css
+         and ../parts/conduit-rail.css. One .halo-rail (the vertical spine, a
+         plain .halo-channel) carries a single .halo-rail__branch — a
+         side-tap elbow (.halo-cap.is-run-end) plus a horizontal run stub
+         (.halo-channel.is-horizontal) reaching toward this row's content —
+         anchored at the OLD conduit's own canvas position (local 146px,
+         -30px off .halo-subitem, i.e. 28px above the Subitem's own top,
+         same reach the source artwork had; .halo-subitem carries no
+         overflow:hidden, so the straddle renders uncropped exactly as
+         before). Every facet now tracks --steel-h/-s/-tint and
+         --laser-core/--laser-well instead of a hard-coded palette. -->
+    <div class="halo-rail" style="position:absolute; left:146px; top:-30px; --rail-h:118px">
+      <div class="halo-channel"></div>
+      <div class="halo-rail__branch" style="--branch-y:98px">
+        <div class="halo-cap is-run-end"></div>
+        <div class="halo-channel is-horizontal"></div>
+      </div>
+    </div>
+
+    <!-- c4 — sub-panel frame, instance C4b.
+         .pf-lift IS the variant. It is a DOM child, not a var, so .is-c4b
+         alone does not produce it — and its SLOT is load-bearing: inside
+         .pf-body, between .pf-lbev and .pf-lface, so .pf-lface/.pf-chT paint
+         over it and .pf-body's clip-path crops it. It replays the +6/+7/+7
+         composite lift the semi-transparent panel art picks up from the
+         banner's lighter backdrop; move it and the render changes. -->
+    <div class="halo-cartridge is-c4b">
+      <div class="pf-body">
+        <div class="pf-r pf-r0"></div><div class="pf-r pf-r1"></div><div class="pf-r pf-r2"></div>
+        <div class="pf-cav"><div class="pf-cavr"></div></div>
+        <div class="pf-railL"></div><div class="pf-railR"></div>
+        <div class="pf-r pf-r122"></div><div class="pf-r pf-r123"></div><div class="pf-r pf-r124"></div>
+        <div class="pf-rmar"></div><div class="pf-rface"></div><div class="pf-riv"></div>
+        <div class="pf-lbev"></div>
+        <div class="pf-lift"></div><div class="pf-lface"></div><div class="pf-chT"></div>
+      </div>
+      <div class="pf-lside"></div><div class="pf-fct"></div><div class="pf-fcb"></div>
+      <div class="pf-brk"><i class="v"></i><i class="d"></i><i class="ts"></i><i class="bs"></i></div>
+      <div class="pf-bl pf-blt"></div><div class="pf-bl pf-blb"></div>
+    </div>
+
+    <!-- c12 — the two marks that ride on the sub-panel's cavity. Paint order
+         is mandatory: both must come AFTER c4's C4b. (c12's other four
+         instances — the rivets — belong to the Main Item row.) -->
+    <div class="halo-marks is-hexicon si-hexicon">
+      <svg width="30" height="31" viewBox="0 0 30 31" fill="none"
+           stroke="#6f3d22" stroke-width="3.5" stroke-linejoin="miter">
+        <path d="M15 2 L27 9.2 V21.8 L15 29 L3 21.8 V9.2 Z"/>
+      </svg>
+    </div>
+    <div class="halo-marks is-name si-name">Skid Ste...</div>
+
+    <!-- c2 — 5 segment bars, instance C2c, over the sub-panel.
+         Each bar's `left` is LOCAL to the c2 root (canvas left minus 691), and
+         the bars paint ~9px past the root box on each side (skewX(18deg)) plus
+         ~2.5px of blur — the root's --bw/--bh are informational, never a clip. -->
+    <div class="halo-slots is-c2c">
+      <span class="b r" style="left:9.7px"></span>
+      <span class="b r" style="left:41.7px"></span>
+      <span class="b r" style="left:74.2px"></span>
+      <span class="b y" style="left:108.7px"></span>
+      <span class="b y" style="left:143.2px"></span>
+    </div>
+
+    <!-- c1 — narrow PROMISED chip, instance C1c, the top layer of this row.
+         The ringlayer <svg> is a CHILD of the chip root now (it was a
+         canvas-absolute sibling in the source). Its path `d` is the original's
+         canvas coordinates minus floor(--x)/floor(--y) = minus (877, 271), and
+         c1's own rule cancels the remaining .5/.5 so the filtered SVG still
+         lands on an integer pixel. Both halves of that arrangement assume
+         --x:876.5px --y:30.5px inside a row root at an integer canvas (1,241)
+         — see subitem.css, the .halo-chip placement. -->
+    <div class="halo-chip is-narrow is-labelled">
+      <div class="plate oct"></div>
+      <div class="bloom"></div>
+      <div class="cap"></div>
+      <div class="inner oct"></div>
+      <div class="label">PROMISED</div>
+      <svg class="ringlayer">
+        <path class="halo" d="M14.89,11.49 H325.7 L350.5,36.29 V65.18 H39.69 L14.89,40.38 Z"/>
+        <path class="core" d="M14.89,11.49 H325.7 L350.5,36.29 V65.18 H39.69 L14.89,40.38 Z"/>
+      </svg>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>
