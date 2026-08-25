@@ -4107,8 +4107,18 @@ function membershipMetaHtml(c) {
   const graceN = (status === 'Past Due' && c.graceUntil) ? dayDiff(TODAY, parseISO(c.graceUntil)) : null;   // days left in the 7-day grace
   const graceFlag = (graceN != null && graceN >= 0) ? kvPills(badge(`⚠ Canceled in ${graceN} day${graceN === 1 ? '' : 's'}`, 'red')) : '';
   const paidUntil = (isMem && c.paidUntil) ? kv(yrFull(c.paidUntil), { sfx: c.prepaid ? 'prepaid through' : 'paid until' }) : '';
+  // #822 — the Active Member badge names WHEN the membership went live, so the office can see at a
+  // glance that it's a real, dated activation and not a grandfathered/legacy member.
+  const activated = (isMem && c.memberActivatedAt) ? kv(yrFull(c.memberActivatedAt), { sfx: 'activated' }) : '';
   const planBadges = c.paidCadence ? kvPills(`${badge('Paid ' + c.paidCadence, 'green')}${c.unlimitedTransport ? badge('Unlimited Transport', 'purple') : ''}${c.rentalProtection ? badge('Protected', 'blue') : ''}${c.autoRenew ? badge('Auto-Renew', 'navy') : ''}`) : '';
-  return `${stateBadge ? kvPills(stateBadge) : ''}${graceFlag}${paidUntil}${planBadges}${membershipEconomicsHtml(c)}`;
+  // #822 — Activate Membership: the cash/check counterpart to the card enrollment flow. Shown on the
+  // profile of a member-funnel customer who is NOT yet entitled, hidden for 'Pending' (a signed
+  // enrollment whose scheduled card charge hasn't run — activating there would double up on it).
+  // Same canMoney() gate the other lifecycle actions carry; the handler re-checks it.
+  const activateBtn = (!isMem && status !== 'Pending' && canMoney())
+    ? `<div class="kv pillrow">${actionPill('commit', 'Activate Membership', { js: 'js-mem-activate', h: 26, data: { rec: c.customerId } })}<span class="anno">annual dues paid by cash or check</span></div>`
+    : '';
+  return `${stateBadge ? kvPills(stateBadge) : ''}${graceFlag}${paidUntil}${activated}${planBadges}${activateBtn}${membershipEconomicsHtml(c)}`;
 }
 /* Lifecycle actions — re-homed into the agreements window (§3.7). MONEY-gate PRESERVED
    verbatim: Cancel / Pay-Cancellation are canMoney()-gated (same gate as the invoice
@@ -4998,6 +5008,35 @@ async function membershipCancel(custId) {
   reindex('customers', c);
   logAction(c, cxl ? `Membership cancelled — Cancellation Invoice ${money(invoiceTotals(cxl).total)} (remaining term)` : 'Membership cancelled');
   render(); toast(cxl ? 'Membership cancelled — cancellation invoice on the account.' : 'Membership cancelled.');
+}
+/* Cash/check ACTIVATION (2026-08-25, issue #822) — the missing counterpart to the card path.
+   agreementSignCommit hard-refuses a membership without a card ("Add a card on file before
+   enrolling"), and it is the only route that stamps the member fields — so a customer who paid
+   their year in cash or by check could never become Active, and the §10.4 pricing gate
+   (isActiveMember, app.js ~L1076) kept quoting them retail tiers. This stamps the same fields
+   that path stamps, minus the charge.
+   MONEY IS NOT TOUCHED: no invoice is built, no card is charged, nothing is marked paid — the
+   office records the cash/check payment separately. This only flips the entitlement.
+   Two deliberate field choices:
+     • `prepaid` stays FALSE — that flag pins membershipStatus to 'Active' forever (it short-
+       circuits the paidUntil compare), so a cash membership would never lapse. The term rides
+       `paidUntil` instead, which expires on its own after MEMBERSHIP_MONTHS.
+     • `autoRenew` stays FALSE — there is no card to renew against, and it is what keeps
+       membershipBillingFlag's red 'No Billing' pulse off a legitimately cash-paid member. */
+function membershipActivateCash(custId) {
+  const c = IDX.customer.get(custId); if (!c) return;
+  if (isActiveMember(c)) return;                                   // already entitled — nothing to do
+  c.accountType = memberAccountType(c);                            // the pricing gate reads /Member/ off accountType
+  c.memberActivatedAt = TODAY_ISO;
+  c.paidCadence = 'Yearly';
+  c.commitmentStart = TODAY_ISO;
+  c.commitmentEnd = addMonthsISO(TODAY_ISO, MEMBERSHIP_MONTHS);
+  c.paidUntil = addMonthsISO(TODAY_ISO, MEMBERSHIP_MONTHS);
+  c.prepaid = false; c.graceUntil = ''; c.autoRenew = false;
+  markMembershipSigned(c, 'membership');                           // F3 — the terminal funnel stage, never set by hand
+  reindex('customers', c);
+  logAction(c, `Membership activated — annual dues paid by cash/check; member rates through ${c.paidUntil}`);
+  render(); toast('Membership active — member rates apply. ✓');
 }
 async function membershipReactivate(custId) {
   const c = IDX.customer.get(custId); if (!c) return;
@@ -18511,6 +18550,7 @@ function onClick(e) {
   // closure round 2): the legacy js-mem-enroll button bypassed the signed-agreement gate
   // entirely (no signature/selfie/start-date check) — account-type can now ONLY change via
   // agreementSignCommit's inline sign=enroll flow.
+  if (closest('.js-mem-activate')) { e.stopPropagation(); if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; } return membershipActivateCash(closest('.js-mem-activate').dataset.rec); }
   if (closest('.js-mem-cancel')) { e.stopPropagation(); if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; } return membershipCancel(closest('.js-mem-cancel').dataset.rec); }
   if (closest('.js-mem-paycxl')) { e.stopPropagation(); if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; } return membershipReactivate(closest('.js-mem-paycxl').dataset.rec); }
   if (closest('.js-add-card')) {
@@ -26873,7 +26913,7 @@ function exposeTestApi() {
       dataCache, cacheValid, cacheDeviceOk, cacheTokenTag, cacheAppVer, cacheSnapshotEnvelope, CACHE_SCHEMA_VER, FEATURES,   // §instant-cache (spec 2026-07-16)
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, pickFunnelStage, toggleFunnelMembership, rentalFunnelStage, funnelStageOf, inFunnel, inRental, hasRentalActivity, funnelTrackA, funnelTrackEquip, ensureFunnels, funnelMenuHtml, reachFunnelStage, toggleMemberLead, funnelCurrentStage, funnelLayerDate, funnelLayerNote, ensureFunnelLog, markMembershipSigned, funnelLayerAction, funnelScope, naUrgency, naOpenList, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsPickerError, gpsUtilRollup, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, pickFunnelStage, toggleFunnelMembership, rentalFunnelStage, funnelStageOf, inFunnel, inRental, hasRentalActivity, funnelTrackA, funnelTrackEquip, ensureFunnels, funnelMenuHtml, reachFunnelStage, toggleMemberLead, funnelCurrentStage, funnelLayerDate, funnelLayerNote, ensureFunnelLog, markMembershipSigned, funnelLayerAction, funnelScope, naUrgency, naOpenList, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipActivateCash, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsPickerError, gpsUtilRollup, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
       tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, openYardCamera, commitYardCapture, nextCategoryId, nextUnitId,
       tripsLS, tripMerge, tripSplit, assignTripDriver, tripLabel, assignStopDriver, tripSetTime,
       tripPushSoon, tripPushNow, loadTripsFromBackend, tripsSyncFooter, setBackendPassword: (pw) => { backendPassword = pw || ''; },   // §2.3 Phase 4 sync — the setter is test-only (mirrors setRole), letting logic-test.mjs exercise the online path via a mocked window.fetch, never a real backend
