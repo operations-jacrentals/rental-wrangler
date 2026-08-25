@@ -22,7 +22,7 @@ const server = createServer(async (req, res) => {
     res.end(buf);
   } catch { res.writeHead(404); res.end('not found'); }
 });
-await new Promise((r) => server.listen(9147, r));
+await new Promise((r) => server.listen(8000, r));
 
 const browser = await chromium.launch();
 const page = await browser.newPage();
@@ -31,7 +31,7 @@ page.on('pageerror', (e) => pageErrors.push(String(e && e.message || e)));
 
 let failed = false;
 try {
-  await page.goto('http://localhost:9147/#local', { waitUntil: 'domcontentloaded', timeout: 20000 });
+  await page.goto('http://localhost:8000/#local', { waitUntil: 'domcontentloaded', timeout: 20000 });
   await page.waitForFunction(() => !!window.__rw, { timeout: 20000 });
   await page.evaluate(() => window.__rwBootRail);   // let offlineBoot's async wranglerRailLoad() finish before any test
                                                       // touches wranglerRail — else it can land mid-test and wipe fixtures (race)
@@ -1610,6 +1610,38 @@ try {
       const incomplete = T.rentalPrice(r)?.price;
       T.IDX.customer.delete('C-MEMGATE'); T.IDX.rental.delete('R-MEMGATE');
       ok(active != null && incomplete != null && active < incomplete && active === 3 * cat.memberDaily, `gate: Active member pays member rate (${active}) < Incomplete pays retail (${incomplete})`);
+    }
+
+    // === #822 — cash/check membership ACTIVATION drives the §10.4 pricing gate ===
+    // The bug: agreementSignCommit refuses a membership without a card, and it was the only path
+    // that stamped the member fields — so a year paid in cash never reached member rates.
+    {
+      const cat = T.DATA.categories.find((k) => k.memberDaily > 0);
+      const c = { customerId: 'C-CASHMEM', firstName: 'Cash', lastName: 'Member', name: 'Cash Member', company: '',
+        accountType: 'Non-Business', membershipStage: 'Payment Discussed', activityLog: [] };
+      T.DATA.customers.push(c); T.IDX.customer.set('C-CASHMEM', c);
+      const r = { rentalId: 'R-CASHMEM', customerId: 'C-CASHMEM', categoryId: cat.categoryId, unitId: null, startDate: '2026-06-01', endDate: '2026-06-04' };
+      T.IDX.rental.set('R-CASHMEM', r);
+      const before = T.rentalPrice(r)?.price;
+      ok(T.isActiveMember(c) === false && before !== 3 * cat.memberDaily, `#822 before: cash payer is NOT a member → retail ${before}, not member rate ${3 * cat.memberDaily}`);
+      T.membershipActivateCash('C-CASHMEM');
+      const after = T.rentalPrice(r)?.price;
+      ok(T.isActiveMember(c) === true, '#822: Activate Membership makes the account an Active member');
+      ok(after === 3 * cat.memberDaily && after < before, `#822 after: rentals quote at the member/day rate (${after} < ${before})`);
+      ok(/Member/.test(c.accountType) && c.memberActivatedAt && c.paidUntil > c.memberActivatedAt, '#822: stamps accountType + an activation date + a 12-month paid-through');
+      ok(c.prepaid === false && c.autoRenew === false, '#822: NOT prepaid (a cash term must still lapse) and NOT auto-renew (there is no card)');
+      ok(c.membershipStage === 'Signed', '#822: activation advances the membership funnel to its Signed terminal (F3, never set by hand)');
+      // the profile UI: the control is gone once they're active, and the badge now names the date
+      const metaAfter = T.membershipMetaHtml(c);
+      ok(!/js-mem-activate/.test(metaAfter), '#822: the Activate control disappears once the membership is live');
+      ok(/Active Member/.test(metaAfter) && /activated/.test(metaAfter), '#822: the profile shows an Active Member badge WITH the activation date');
+      const metaBefore = T.membershipMetaHtml({ customerId: 'C-CASHMEM2', accountType: 'Non-Business', activityLog: [] });
+      ok(/js-mem-activate/.test(metaBefore) && /data-r="R17"/.test(metaBefore), '#822: a non-member profile offers Activate Membership as an R17 commit action');
+      // the term expires on its own — nothing about a cash activation grants member rates forever
+      const expired = Object.assign({}, c, { paidUntil: '2000-01-01', graceUntil: '2000-01-01' });
+      ok(T.isActiveMember(expired) === false, '#822: once paidUntil passes, the cash membership lapses and pricing reverts to retail');
+      T.IDX.customer.delete('C-CASHMEM'); T.IDX.rental.delete('R-CASHMEM');
+      T.DATA.customers.splice(T.DATA.customers.indexOf(c), 1);
     }
 
     // === F3 — membership funnel 'Signed' is agreement-driven, never manual (spec §3.1) ===
