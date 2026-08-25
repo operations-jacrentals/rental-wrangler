@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Card Border Bake-off — Yard Sandbox</title>
+<!--
+  LOCAL SANDBOX ONLY — not wired into the app. Recreates the real units data-plate
+  card (steel gradient, hazard stripe, corner rivets, title chip) and shows THREE
+  border treatments on it: hazard-tape frame, rivet-bolted bezel, saddle-stitch.
+  Tokens + structure mirrored from style.css (.card, [data-theme=yard]).
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Saira+Condensed:wght@600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    /* mirrored from style.css */
+    --steel-1:#1b222c; --steel-2:#0d1116;
+    --rivet:#4a525e; --rivet-pit:#0b0f14;
+    --card:#14161b; --line:#262a31; --line-soft:#1f232a;
+    --bg:#0b0c0f; --bg-2:#101216; --panel:#15171c; --panel-2:#1b1e24;
+    --txt:#e9edf4; --txt-2:#a7afbc; --txt-3:#6b7480;
+    --accent:#ff7a1a; --accent-line:rgba(255,122,26,.5);
+    --yellow:#ffe000; --green:#147a47; --red:#ff1040;
+    --tan:#c2925a; --tan-deep:#8a5a2b;
+    --radius:16px; --chip-radius:12px;
+    --shadow:0 18px 50px -24px rgba(0,0,0,.75);
+    --chip-shadow:0 6px 16px -10px rgba(0,0,0,.7);
+    --hazard: repeating-linear-gradient(135deg, var(--stripe,#ffe000) 0 13px, #14181d 13px 26px);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; font-family:"Geist",system-ui,sans-serif;
+    background: radial-gradient(1200px 600px at 50% -10%, #16191f 0%, transparent 60%), var(--bg);
+    color: var(--txt); min-height:100vh; padding:0 0 70px; -webkit-font-smoothing:antialiased;
+  }
+  header { border-bottom:1px solid var(--line); background:linear-gradient(180deg,#1b2129,#0c0e11); }
+  .hazard-bar { height:8px; background: repeating-linear-gradient(135deg, var(--yellow) 0 13px, #14181d 13px 26px); }
+  .head-inner { max-width:1080px; margin:0 auto; padding:26px 24px 22px; display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; }
+  .wordmark { font-family:"Saira Condensed",sans-serif; font-weight:800; text-transform:uppercase; letter-spacing:3px; font-size:26px; }
+  .wordmark b { color:var(--accent); }
+  .subtitle { color:var(--txt-3); font-size:13px; }
+  .pill-local { margin-left:auto; font-family:"Saira Condensed",sans-serif; text-transform:uppercase; letter-spacing:1.5px; font-weight:700; font-size:11px; color:var(--yellow); border:1px solid rgba(245,224,0,.4); background:rgba(245,224,0,.1); padding:5px 11px; border-radius:4px; align-self:center; }
+
+  main { max-width:1080px; margin:0 auto; padding:36px 24px 0; }
+  .row3 { display:grid; grid-template-columns:repeat(auto-fit,minmax(290px,1fr)); gap:34px; align-items:start; }
+  .slot { display:flex; flex-direction:column; gap:14px; }
+  .slot-label { font-family:"Saira Condensed",sans-serif; text-transform:uppercase; letter-spacing:2px; font-weight:700; font-size:14px; display:flex; align-items:center; gap:9px; }
+  .slot-label .idx { color:#1a1205; background:var(--accent); border-radius:3px; font-size:12px; padding:1px 8px; letter-spacing:1px; }
+  .slot-note { font-size:12px; color:var(--txt-3); line-height:1.5; }
+  .slot-note b { color:var(--tan); font-weight:600; }
+
+  /* ── THE REAL CARD (units data-plate) ─────────────────────────────────── */
+  .card {
+    position:relative; display:flex; flex-direction:column; min-width:0;
+    background: linear-gradient(180deg, var(--steel-1), var(--steel-2));
+    border:1px solid var(--line); border-radius:var(--radius);
+    box-shadow: var(--shadow); overflow:hidden;
+    --stripe: var(--yellow);
+  }
+  .card .stripe {
+    position:absolute; top:0; left:0; right:0; height:6px; z-index:5;
+    background: var(--hazard); border-bottom:1px solid rgba(0,0,0,.6); pointer-events:none;
+  }
+  .card .rivets {
+    position:absolute; inset:0; z-index:12; pointer-events:none; border-radius:inherit;
+    background:
+      radial-gradient(circle at 12px 15px, var(--rivet) 0 1.4px, var(--rivet-pit) 1.7px 3px, transparent 3.4px),
+      radial-gradient(circle at calc(100% - 12px) 15px, var(--rivet) 0 1.4px, var(--rivet-pit) 1.7px 3px, transparent 3.4px),
+      radial-gradient(circle at 12px calc(100% - 12px), var(--rivet) 0 1.4px, var(--rivet-pit) 1.7px 3px, transparent 3.4px),
+      radial-gradient(circle at calc(100% - 12px) calc(100% - 12px), var(--rivet) 0 1.4px, var(--rivet-pit) 1.7px 3px, transparent 3.4px);
+  }
+  .card-head { flex:0 0 auto; display:flex; align-items:center; gap:8px; padding:13px 10px 6px; }
+  .c-titlecard {
+    display:inline-flex; align-items:center; gap:7px; padding:5px 12px;
+    border-radius:var(--chip-radius); background:var(--bg-2);
+    border:1px solid var(--line); box-shadow:var(--chip-shadow);
+  }
+  .c-titlecard .c-icon { display:inline-flex; color:var(--accent); width:14px; height:14px; }
+  .c-titlecard .c-title { font-size:13.5px; font-weight:800; letter-spacing:.2px; color:var(--txt); }
+  .c-titlecard .c-count { font-size:11px; font-weight:700; color:var(--txt-3); }
+  .c-actions { margin-left:auto; display:inline-flex; gap:2px; padding:3px; border-radius:var(--chip-radius); background:var(--panel); border:1px solid var(--line); box-shadow:var(--chip-shadow); }
+  .hbtn { width:24px; height:24px; border-radius:8px; display:inline-flex; align-items:center; justify-content:center; color:var(--txt-3); }
+  .hbtn svg { width:15px; height:15px; }
+
+  .card-body { padding:6px 10px 14px; display:flex; flex-direction:column; gap:7px; }
+  .urow {
+    display:flex; align-items:center; gap:10px; padding:9px 11px;
+    background:var(--card); border:1px solid var(--line-soft); border-radius:10px;
+  }
+  .u-id { font-family:"Saira Condensed",sans-serif; font-weight:700; letter-spacing:.6px; font-size:14px; color:var(--txt); }
+  .u-name { font-size:12px; color:var(--txt-2); }
+  .u-pill {
+    margin-left:auto; font-family:"Saira Condensed",sans-serif; text-transform:uppercase;
+    letter-spacing:1px; font-weight:700; font-size:10px; padding:3px 8px; border-radius:999px;
+    border:1px solid; white-space:nowrap;
+  }
+  .u-pill.yard { color:#4fd6a0; border-color:rgba(79,214,160,.45); background:rgba(20,122,71,.18); }
+  .u-pill.rent { color:#ffb066; border-color:rgba(255,122,26,.45); background:rgba(255,122,26,.14); }
+  .u-pill.svc  { color:#ffe000; border-color:rgba(245,224,0,.4); background:rgba(245,224,0,.12); }
+
+  /* ════════════════════════════════════════════════════════════════════ */
+  /* A — HAZARD-TAPE FRAME : the signature stripe wraps the whole perimeter */
+  .fr-hazard {
+    --stripe: var(--yellow);
+    padding:7px; border-radius:20px; background: var(--hazard);
+    box-shadow: var(--shadow);
+  }
+  .fr-hazard .card { border-radius:12px; box-shadow:none; border-color:#0a0c10; }
+  .fr-hazard .card .stripe { display:none; }   /* the frame IS the hazard */
+
+  /* ════════════════════════════════════════════════════════════════════ */
+  /* B — RIVET-BOLTED BEZEL : raised steel frame, rivets marching all edges */
+  .fr-rivet {
+    position:relative; padding:11px; border-radius:19px;
+    background: linear-gradient(180deg, #2b333e, #161b22);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.13), inset 0 -2px 7px rgba(0,0,0,.6), var(--shadow);
+  }
+  .fr-rivet::before {       /* rivets marching around all four edges */
+    content:''; position:absolute; inset:4px; border-radius:16px; pointer-events:none;
+    background:
+      radial-gradient(circle at 13px 5px, var(--rivet) 0 1.5px, var(--rivet-pit) 1.8px 3.1px, transparent 3.5px) 6px top   / 30px 10px repeat-x,
+      radial-gradient(circle at 13px 5px, var(--rivet) 0 1.5px, var(--rivet-pit) 1.8px 3.1px, transparent 3.5px) 6px bottom/ 30px 10px repeat-x,
+      radial-gradient(circle at 5px 13px, var(--rivet) 0 1.5px, var(--rivet-pit) 1.8px 3.1px, transparent 3.5px) left   6px / 10px 30px repeat-y,
+      radial-gradient(circle at 5px 13px, var(--rivet) 0 1.5px, var(--rivet-pit) 1.8px 3.1px, transparent 3.5px) right  6px / 10px 30px repeat-y;
+  }
+  .fr-rivet .card { box-shadow:none; }
+  .fr-rivet .card .rivets { display:none; }   /* bezel supplies the rivets */
+
+  /* ════════════════════════════════════════════════════════════════════ */
+  /* C — SADDLE-STITCH : ranch-twist tan dashed border, paired with rivets  */
+  .fr-stitch { position:relative; }
+  .fr-stitch .card { border-color:#33291d; }
+  .fr-stitch .stitch {
+    position:absolute; inset:7px; z-index:13; pointer-events:none;
+    border:1.5px dashed var(--tan); border-radius:11px;
+    opacity:.85;
+  }
+  .fr-stitch .stitch.inner {
+    inset:10px; border-width:1px; border-color:rgba(194,146,90,.45); border-radius:9px;
+  }
+
+  footer { max-width:1080px; margin:42px auto 0; padding:22px 24px 0; border-top:1px dashed rgba(194,146,90,.4); color:var(--txt-3); font-size:12px; line-height:1.6; }
+  footer b { color:var(--tan); font-weight:600; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="hazard-bar"></div>
+    <div class="head-inner">
+      <div>
+        <div class="wordmark">Card <b>Borders</b> · Bake-off</div>
+        <div class="subtitle">Same real units data-plate, three border treatments. Sandbox — pick a direction.</div>
+      </div>
+      <span class="pill-local">Local Sandbox · Not Live</span>
+    </div>
+  </header>
+
+  <main>
+    <div class="row3">
+
+      <!-- A — HAZARD-TAPE FRAME -->
+      <div class="slot">
+        <div class="slot-label"><span class="idx">A</span> Hazard-Tape Frame</div>
+        <div class="fr-hazard">
+          <div class="card" data-card="units">
+            <div class="stripe"></div>
+            <div class="card-head">
+              <span class="c-titlecard">
+                <span class="c-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 8-9 4-9-4 9-4 9 4Z"/><path d="m3 8 9 4v10l-9-4Z"/><path d="m21 8-9 4v10l9-4Z"/></svg></span>
+                <span class="c-title">Units</span><span class="c-count">24</span>
+              </span>
+              <span class="c-actions"><span class="hbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg></span></span>
+            </div>
+            <div class="card-body">
+              <div class="urow"><span class="u-id">CAT&nbsp;305</span><span class="u-name">Mini Excavator</span><span class="u-pill yard">On Yard</span></div>
+              <div class="urow"><span class="u-id">JD&nbsp;332G</span><span class="u-name">Skid Steer</span><span class="u-pill rent">On Rent</span></div>
+              <div class="urow"><span class="u-id">GENIE&nbsp;S-60</span><span class="u-name">Boom Lift</span><span class="u-pill svc">Service</span></div>
+            </div>
+            <div class="rivets"></div>
+          </div>
+        </div>
+        <div class="slot-note">The signature <b>hazard stripe</b> wraps the full perimeter instead of just the top band. Loudest, most unmistakably "yard." Eats ~7px on every edge.</div>
+      </div>
+
+      <!-- B — RIVET-BOLTED BEZEL -->
+      <div class="slot">
+        <div class="slot-label"><span class="idx">B</span> Rivet-Bolted Bezel</div>
+        <div class="fr-rivet">
+          <div class="card" data-card="units">
+            <div class="stripe"></div>
+            <div class="card-head">
+              <span class="c-titlecard">
+                <span class="c-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 8-9 4-9-4 9-4 9 4Z"/><path d="m3 8 9 4v10l-9-4Z"/><path d="m21 8-9 4v10l9-4Z"/></svg></span>
+                <span class="c-title">Units</span><span class="c-count">24</span>
+              </span>
+              <span class="c-actions"><span class="hbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg></span></span>
+            </div>
+            <div class="card-body">
+              <div class="urow"><span class="u-id">CAT&nbsp;305</span><span class="u-name">Mini Excavator</span><span class="u-pill yard">On Yard</span></div>
+              <div class="urow"><span class="u-id">JD&nbsp;332G</span><span class="u-name">Skid Steer</span><span class="u-pill rent">On Rent</span></div>
+              <div class="urow"><span class="u-id">GENIE&nbsp;S-60</span><span class="u-name">Boom Lift</span><span class="u-pill svc">Service</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="slot-note">A raised <b>steel bezel</b> with rivets bolted along every edge — the card reads as a panel torqued onto the rig. Heaviest, most industrial; promotes the corner-rivet motif to the whole frame.</div>
+      </div>
+
+      <!-- C — SADDLE-STITCH -->
+      <div class="slot">
+        <div class="slot-label"><span class="idx">C</span> Saddle-Stitch</div>
+        <div class="fr-stitch">
+          <div class="card" data-card="units">
+            <div class="stripe"></div>
+            <div class="card-head">
+              <span class="c-titlecard">
+                <span class="c-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 8-9 4-9-4 9-4 9 4Z"/><path d="m3 8 9 4v10l-9-4Z"/><path d="m21 8-9 4v10l9-4Z"/></svg></span>
+                <span class="c-title">Units</span><span class="c-count">24</span>
+              </span>
+              <span class="c-actions"><span class="hbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg></span></span>
+            </div>
+            <div class="card-body">
+              <div class="urow"><span class="u-id">CAT&nbsp;305</span><span class="u-name">Mini Excavator</span><span class="u-pill yard">On Yard</span></div>
+              <div class="urow"><span class="u-id">JD&nbsp;332G</span><span class="u-name">Skid Steer</span><span class="u-pill rent">On Rent</span></div>
+              <div class="urow"><span class="u-id">GENIE&nbsp;S-60</span><span class="u-name">Boom Lift</span><span class="u-pill svc">Service</span></div>
+            </div>
+            <div class="rivets"></div>
+            <div class="stitch"></div>
+            <div class="stitch inner"></div>
+          </div>
+        </div>
+        <div class="slot-note">The <b>ranch twist</b> — a leather-tan double saddle-stitch inset, paired with the corner rivets. Subtlest; keeps the steel core dominant and seasons it warm. The only one that leans wrangler.</div>
+      </div>
+
+    </div>
+  </main>
+
+  <footer>
+    <b>Sandbox only.</b> <code>card-borders.html</code> isn't wired into the app — the live cards are untouched. Card surface, hazard stripe, rivets, and tokens are mirrored from <code>style.css</code> (<code>.card</code>, <code>[data-theme="yard"]</code>) so this previews the real thing. Icons here are placeholder Lucide-style "box" glyphs; the real card sources its mark from <code>icons.js</code>.
+  </footer>
+</body>
+</html>
