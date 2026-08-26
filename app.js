@@ -559,6 +559,144 @@ function accountBlock(c) {
   if (!hasValidCard(c)) return { type: 'no-card', reason: 'No valid card on file' };
   return null;
 }
+/* The July-09 manual path persisted this exact marker PAIR. Its lift path deleted
+   _prevAccountType but historically left blacklistedAt behind, so the date alone is
+   not an active blacklist and must never resurrect an already-lifted customer. */
+function customerHasLegacyManualBlacklist(c) {
+  return !!c && !!c.blacklistedAt && Object.prototype.hasOwnProperty.call(c, '_prevAccountType');
+}
+/* One read predicate for every blacklist representation. Manual account blocks use
+   c.block; older records use accountType or the persisted marker pair; an active
+   Collections placement remains a blacklist even if another account workflow
+   rewrites accountType before Recall. */
+function isCustomerBlacklisted(c) {
+  return !!c && ((c.block && c.block.type === 'blacklist') || /Blacklist/i.test(c.accountType || '') || customerHasLegacyManualBlacklist(c) || customerHasActiveCollections(c));
+}
+function customerHasActiveCollections(c) {
+  return !!c && (DATA.invoices || []).some((inv) => inv.customerId === c.customerId && invoiceCollectionsActive(inv));
+}
+/* Defensive owner resolution for old/inconsistent rentals: a rental's direct customer
+   is normally authoritative, but a linked invoice can still carry the account after a
+   stale UI/multi-user clear. Prefer ANY blacklisted owner so missing/mismatched links
+   fail closed instead of turning into a rental bypass. `omitInvoiceIds` lets detach
+   guards evaluate the ownership that would remain AFTER a proposed unlink. */
+function rentalAccountCustomers(r, omitInvoiceIds = null) {
+  if (!r) return null;
+  const omitted = omitInvoiceIds instanceof Set ? omitInvoiceIds : new Set((omitInvoiceIds || []).map(String));
+  const seen = new Set(), owners = [];
+  const add = (id) => { const key = id == null ? '' : String(id); if (!key || seen.has(key)) return; seen.add(key); const c = IDX.customer.get(id); if (c) owners.push(c); };
+  add(r.customerId);
+  const legacyInv = r.invoiceId ? IDX.invoice.get(r.invoiceId) : null;
+  if (legacyInv && !omitted.has(String(legacyInv.invoiceId))) add(legacyInv.customerId);
+  (DATA.invoices || []).forEach((inv) => { if (!omitted.has(String(inv.invoiceId)) && (inv.rentalIds || []).includes(r.rentalId)) add(inv.customerId); });
+  return owners;
+}
+function rentalAccountCustomer(r) {
+  const owners = rentalAccountCustomers(r) || [];
+  return owners.find((c) => isCustomerBlacklisted(c)) || owners[0] || null;
+}
+/* Every invoice↔rental representation, including old records that have only the
+   rental-side pointer. Void/merge must reason over both sides or they can erase a
+   supported legacy link while appearing to handle the modern rentalIds list. */
+function invoiceLinkedRentalIds(inv) {
+  if (!inv) return [];
+  const ids = new Set((inv.rentalIds || []).map(String));
+  (DATA.rentals || []).forEach((r) => { if (String(r.invoiceId || '') === String(inv.invoiceId)) ids.add(String(r.rentalId)); });
+  return [...ids];
+}
+function invoiceLinkedRentals(inv) {
+  return invoiceLinkedRentalIds(inv).map((id) => IDX.rental.get(id)).filter(Boolean);
+}
+/* Removing an invoice is forbidden only when it would erase the LAST surviving
+   blacklisted owner edge. A direct blacklisted customer or another blacklisted invoice
+   keeps the gate intact, so ordinary invoice repair remains available. Status is
+   deliberately irrelevant: after an already-out edge is erased, the timeline can move
+   backward to Reserved and reallocate the same units under a clean customer. Recovery
+   itself remains legal; only destroying its sole owner is frozen until Lift/Recall. */
+function blacklistedOwnerEdgeWouldDisappear(r, removeInvoiceIds) {
+  const owner = rentalAccountCustomer(r);
+  if (!isCustomerBlacklisted(owner)) return false;
+  const removed = new Set((removeInvoiceIds || []).map((id) => String(id)));
+  return !(rentalAccountCustomers(r, removed) || []).some((c) => isCustomerBlacklisted(c));
+}
+/* Attaching billing must not create a new allocation for a blacklisted account, but
+   it also must not strand equipment that was already physically out when the account
+   was blacklisted. Every unit must be on the forward recovery/return side or terminally
+   voided, and at least one must be physical-forward; an all-voided rental has no lines. */
+function blacklistBlocksInvoiceLink(r, owner) {
+  if (!isCustomerBlacklisted(owner)) return false;
+  const eus = rentalUnits(r);
+  if (!eus.length) return true;
+  const statuses = eus.map((eu) => unitStatus(r, eu));
+  const physicalForward = ['On Rent', 'End Rent', 'Off Rent', 'Returned'];
+  const terminalVoided = ['Cancelled', 'No Show'];
+  return statuses.some((status) => !physicalForward.includes(status) && !terminalVoided.includes(status))
+    || !statuses.some((status) => physicalForward.includes(status));
+}
+/* A blacklisted unit already out may need its end extended for recovery. Returned or
+   explicitly voided siblings do not erase that physical need; a derived No Show does,
+   because its stored Reserved status is still a prospective allocation. A safe change
+   preserves the occupied start, requires a real end, and never shortens the window. */
+function blacklistBlocksRentalAllocation(r, change = null) {
+  if (!isCustomerBlacklisted(rentalAccountCustomer(r))) return false;
+  const eus = rentalUnits(r);
+  if (!eus.length) return true;
+  const statuses = eus.map((eu) => unitStatus(r, eu));
+  const recovering = ['On Rent', 'End Rent', 'Off Rent'];
+  const hasRecovering = statuses.some((status) => recovering.includes(status));
+  const hasUnsafeSibling = statuses.some((status, i) => {
+    if (recovering.includes(status) || status === 'Returned' || status === 'Cancelled') return false;
+    const stored = (eus[i] && eus[i].status) || r.status || 'Reserved';
+    return status !== 'No Show' || stored !== 'No Show';
+  });
+  if (!hasRecovering || hasUnsafeSibling) return true;
+  if (!change) return false;   // render/stage the recovery calendar; commit is checked below
+  if (change.kind === 'time') return false;
+  if (change.kind !== 'window') return true;
+  const oldEnd = parseISO(r.endDate), nextEnd = parseISO(change.endDate);
+  return change.startDate !== r.startDate || !oldEnd || !nextEnd || nextEnd < oldEnd;
+}
+function refuseBlacklistedRentalAllocation(r, change = null) {
+  if (!blacklistBlocksRentalAllocation(r, change)) return false;
+  const owner = rentalAccountCustomer(r);
+  toast(`Blocked: ${owner?.name || 'the customer'} is blacklisted — Lift or Recall before rebooking or releasing this allocation (§9).`);
+  return true;
+}
+function blacklistBlocksUnitRemoval(r, unitId) {
+  if (!isCustomerBlacklisted(rentalAccountCustomer(r))) return false;
+  const eu = unitEntry(r, unitId) || rentalUnits(r).find((u) => u.unitId === unitId) || null;
+  return !!eu && ['On Rent', 'End Rent', 'Off Rent'].includes(unitStatus(r, eu));
+}
+function clearRentalCustomer(r) {
+  if (!r) return false;
+  const owner = rentalAccountCustomer(r);
+  if (isCustomerBlacklisted(owner)) { toast(`Blocked: ${owner.name || 'this customer'} is blacklisted (§9). Lift or Recall the blacklist before changing the rental customer.`); return false; }
+  r.customerId = null;
+  return true;
+}
+/* A rental line is also an ownership edge. Freeze only the LAST line for that rental
+   when removing its invoice would erase the final blacklisted owner; sibling lines or a
+   direct blacklisted customer keep ordinary line repair available. */
+function invoiceRentalLinkFrozen(inv, line) {
+  if (!inv || !line || line.kind !== 'rental') return false;
+  const r = IDX.rental.get(line.ref); if (!r) return false;
+  const hasSibling = (inv.lineItems || []).some((li) => li !== line && li.kind === 'rental' && li.ref === line.ref);
+  return !hasSibling && blacklistedOwnerEdgeWouldDisappear(r, [inv.invoiceId]);
+}
+function liftCustomerBlacklist(c, approver = '') {
+  if (!isCustomerBlacklisted(c)) return { ok: false, reason: 'not-blacklisted' };
+  // Collections owns its legacy blacklist until every active placement is recalled.
+  if (customerHasActiveCollections(c)) return { ok: false, reason: 'collections' };
+  if (c.block && c.block.type === 'blacklist') delete c.block;
+  if (/Blacklist/i.test(c.accountType || '')) {
+    c.accountType = c._prevAccountType || 'Non-Business';
+  }
+  delete c._prevAccountType;
+  delete c.blacklistedAt;
+  reindex('customers', c);
+  logAction(c, `Blacklist lifted (Admin approval${approver ? ' — ' + approver : ''})`);
+  return { ok: true };
+}
 /* Phase 3 (T3.2) — mark a REAL decline on a rental (non-membership) invoice charge. Call ONLY from a
    definite backend/Stripe decline response — NEVER from a network/timeout/ambiguous path (spec §5.5:
    those are UNKNOWN, never assumed a failure). CUSTOMER-level, not per-invoice, per Jac's call
@@ -2700,7 +2838,7 @@ function isEmptyMockDraft(card, rec) {
   // An invoice LINKED to a rental is not abandoned (Jac bug 2026-07-06: adding a transport
   // address navigated → sweep deleted the attached-but-not-yet-billed mock invoice and cleared
   // r.invoiceId). Mirrors the rentals branch below, where a link (!rec.invoiceId) counts as content.
-  if (card === 'invoices') return !(rec.lineItems || []).length && !(Number(rec.amountPaid) || 0) && !(rec.rentalIds || []).length && !DATA.rentals.some((r) => r.invoiceId === rec.invoiceId);
+  if (card === 'invoices') return !invoiceCollectionsActive(rec) && !(rec.lineItems || []).length && !(Number(rec.amountPaid) || 0) && !(rec.rentalIds || []).length && !DATA.rentals.some((r) => r.invoiceId === rec.invoiceId);
   if (card === 'rentals')  return !(rentalUnits(rec) || []).length && !rec.customerId && !rec.startDate && !rec.invoiceId;
   return false;
 }
@@ -4707,14 +4845,18 @@ const BLOCK_TYPE_LABEL = { blacklist: 'Blacklisted', 'invoice-hold': 'Held — i
 // app.js ~L381) and self-clear — shown as a read-only badge, no lift control.
 function acctBlockFoot(c) {
   const b = accountBlock(c);
-  if (!b) return `<div class="ag-foot"><span class="sp"></span>${actionPill('danger', 'Block Account', { js: 'js-block-account', data: { rec: c.customerId }, h: 28 })}</div>`;
-  const stateBadge = badge(BLOCK_TYPE_LABEL[b.type] || b.type, 'red');
-  const lift = b.type === 'blacklist'
-    ? actionPill('danger', 'Lift Blacklist', { js: 'js-lift-blacklist', data: { rec: c.customerId }, h: 28 })
-    : b.type === 'no-card' || b.type === 'failed-payment'
-      ? `<span class="muted acct-microcopy">clears automatically</span>`
-      : actionPill('danger', 'Block Account', { js: 'js-block-account', data: { rec: c.customerId }, h: 28 });   // invoice-hold: still offer the picker to add/replace a manual block
-  return `<div class="ag-foot">${stateBadge}<span class="sp"></span>${lift}</div>`;
+  const blockType = isCustomerBlacklisted(c) ? 'blacklist' : (b && b.type);
+  if (!blockType) return `<div class="ag-foot"><span class="sp"></span>${actionPill('danger', 'Block Account', { js: 'js-block-account', data: { rec: c.customerId }, h: 28 })}</div>`;
+  const stateBadge = badge(BLOCK_TYPE_LABEL[blockType] || blockType, 'red');
+  const autoCopy = blockType === 'no-card' || blockType === 'failed-payment'
+    ? `<span class="muted acct-microcopy">clears automatically</span>`
+    : '';
+  const action = blockType === 'blacklist'
+    ? (customerHasActiveCollections(c)
+        ? `<span class="muted acct-microcopy">recall collections to lift</span>`
+        : actionPill('danger', 'Lift Blacklist', { js: 'js-lift-blacklist', data: { rec: c.customerId }, h: 28 }))
+    : actionPill('danger', 'Block Account', { js: 'js-block-account', data: { rec: c.customerId }, h: 28 });
+  return `<div class="ag-foot">${stateBadge}<span class="sp"></span>${autoCopy}${action}</div>`;
 }
 // T2.6 (2026-07-10) — the derived read-only stats the OLD account section's right column carried
 // (Total paid/Visits/Customer-for/Rents-every-N-days/rented categories), folded in here so retiring
@@ -5950,7 +6092,7 @@ const FLAG_COND = {
   },
   customers: {
     'unpaid-balance':    (c) => c.payStatus === 'Unpaid',
-    'blacklisted':       (c) => /Blacklist/i.test(c.accountType || ''),
+    'blacklisted':       (c) => isCustomerBlacklisted(c),
     'no-card':           (c) => cardFlag(c) === 'none' &&
       (DATA.rentals.some((r) => r.customerId === c.customerId && r.status !== 'Reserved') ||
        DATA.invoices.some((i) => i.customerId === c.customerId)),
@@ -7081,7 +7223,7 @@ function rowEl(card, rec) {
   const inner = rowInnerHTML(card, rec);
   let extra = '';
   if (card === 'units' && rec.fleetStatus !== 'Active') extra = ' fleet-dim';   // out of active inventory → dim (failed = gradient, not full red)
-  if (card === 'customers' && /Blacklist/i.test(rec.accountType || '')) extra += ' unavailable';   // §9 blacklisted → red
+  if (card === 'customers' && isCustomerBlacklisted(rec)) extra += ' unavailable';   // §9 blacklisted → red
   // §10 — under an active rental window, tint every unavailable unit/category red
   if (availWin && availUnavailable(card, rec)) extra += ' unavailable';
   if (card === 'calendar' && rec.done) extra += ' trip-done';   // Trips: a done run stays visible, dimmed (spec §2.2)
@@ -8475,10 +8617,12 @@ const DETAIL = {
     // Render every invoice pill (a fully-refunded one carries a ↩ + "re-bill" tip); then offer
     // +Invoice whenever no linked invoice actually holds a charge — so a refund (#378) OR a
     // $0-total credit slot (#414) restores the re-bill path.
+    const unlinkInvIds = [...new Set([...invs.map((iv) => iv.invoiceId), r.invoiceId].filter(Boolean))];
+    const unlinkOwnerFrozen = blacklistedOwnerEdgeWouldDisappear(r, unlinkInvIds);
     const invPill = (invs.length
       ? invs.map((iv, k) => { const refunded = invFullyRefunded(iv);
           const tip = refunded ? 'Refunded — use +Invoice to re-bill on a fresh invoice' : (invs.length > 1 ? 'Invoice ' + (k + 1) + ' of ' + invs.length + (iv.contOf ? ' — continuation (28-day cap)' : '') : '');
-          return `<span class="pill ref link" data-r="R2" data-pill-card="invoices" data-pill-rec="${esc(iv.invoiceId)}"${tip ? ` data-tip="${esc(tip)}"` : ''}>${refunded ? '↩ ' : ''}${CARD_ICON.invoices}${esc(invoiceShort(iv.invoiceId))}${k === 0 && paidForThis <= 0 ? `<span class="x" data-x="inv-remove" data-tip="unlink — allowed while $0 is assigned to this rental; afterwards refund first">✕</span>` : ''}</span>`; }).join('')
+          return `<span class="pill ref link" data-r="R2" data-pill-card="invoices" data-pill-rec="${esc(iv.invoiceId)}"${tip ? ` data-tip="${esc(tip)}"` : ''}>${refunded ? '↩ ' : ''}${CARD_ICON.invoices}${esc(invoiceShort(iv.invoiceId))}${k === 0 && paidForThis <= 0 && !invoiceCollectionsActive(iv) && !unlinkOwnerFrozen ? `<span class="x" data-x="inv-remove" data-tip="unlink — allowed while $0 is assigned to this rental; afterwards refund first">✕</span>` : ''}</span>`; }).join('')
       : '') + (invs.some(invHoldsCharge) ? '' : createInvBtn);
 
     /* Balance (paid / total) for the header right side — summed across the invoice series. */
@@ -8490,7 +8634,7 @@ const DETAIL = {
 
     /* Header: customer + PO left · status gate top-right, then invoice+balance below. */
     const custEl = cust
-      ? entityPill('customers', cust, { x: 'cust-swap' })
+      ? entityPill('customers', cust, isCustomerBlacklisted(rentalAccountCustomer(r)) ? {} : { x: 'cust-swap' })
       : addBtn('Customer', { link: true, js: 'js-quickadd-cust', h: 26, data: { card: 'rentals', rec: r.rentalId, slot: 'customer' } });
     const poField = efld('rentals', r, 'rentalId', 'po', 'Add PO', { fmt: (v) => 'PO ' + v });
     // F4 — Rental Protection advisory: when the account doesn't carry protection, every
@@ -8509,13 +8653,19 @@ const DETAIL = {
        reflects availability for the window live. A fragile (invoiced/out) rental stages
        its edits with an inline "Confirm new window" panel (below the grid, above Clear)
        carrying the money preview — the calendar stays editable, no blocking popup. */
-    if (!state.winEdit || state.winEdit.rentalId !== r.rentalId) {
+    const allocationFrozen = blacklistBlocksRentalAllocation(r);
+    const splitFrozen = blacklistBlocksRentalAllocation(r, { kind: 'split' });
+    if (allocationFrozen) {
+      if (state.winEdit?.rentalId === r.rentalId) state.winEdit = null;
+    } else if (!state.winEdit || state.winEdit.rentalId !== r.rentalId) {
       state.winEdit = { rentalId: r.rentalId, monthISO: firstOfMonthISO(r.startDate || TODAY_ISO), anchor: null };
       if (rentalFragile(r)) state.winEdit.staged = { rentalId: r.rentalId, startDate: r.startDate || '', endDate: r.endDate || '', startTime: r.startTime || '' };
     }
     // (the `.staged` class is no longer styled — the dim/pointer-block went away when the
     //  Confirm panel moved inline (2026-06-26), so we stop emitting the now-inert hook.)
-    const calHtml = `<div class="rdcal-edit" data-rec="${esc(r.rentalId)}" style="--rdcal-hl:var(--${stColor})">${winPickerEl(r)}</div>`;
+    const calHtml = allocationFrozen
+      ? `<div class="rdcal-edit" data-rec="${esc(r.rentalId)}" style="--rdcal-hl:var(--${stColor})"><div class="kv" style="justify-content:space-between"><span>${badge('Window locked', 'red')}</span><span class="derived">${esc(fmtWindow(r.startDate, r.endDate))}</span><span class="muted" style="font-size:0.6471rem">Lift or Recall the blacklist to rebook.</span></div></div>`
+      : `<div class="rdcal-edit" data-rec="${esc(r.rentalId)}" style="--rdcal-hl:var(--${stColor})">${winPickerEl(r)}</div>`;
 
     /* Duration label (shared across all unit rows). */
     const durLabel = hasWin
@@ -8535,7 +8685,7 @@ const DETAIL = {
           const noRates = !voided && catRatesUnset(IDX.category.get(u.categoryId))
             ? flagEl('No rates', 'yellow', { icon: CARD_ICON.categories, card: 'categories', recId: u.categoryId, alert: true, title: 'This category has no day / 7-day / 4-week rate — it bills $0. Set its rates before quoting.' })
             : '';
-          const splitBtn = multi ? `<button class="stall-split js-split-open" data-rec="${esc(r.rentalId)}" data-unit="${esc(u.unitId)}" data-tip="Give ${esc(u.name)} its own dates — splits to a separate rental on the same invoice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>dates</button>` : '';
+          const splitBtn = multi && !splitFrozen ? `<button class="stall-split js-split-open" data-rec="${esc(r.rentalId)}" data-unit="${esc(u.unitId)}" data-tip="Give ${esc(u.name)} its own dates — splits to a separate rental on the same invoice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>dates</button>` : '';
           return `<div class="stall rd-unit${voided ? ' voided' : ''}${lref.fully ? ' stall-refunded' : ''}">
             <div class="rd-unit-top">
               <div class="stall-id rd-unit-id">${entityPill('units', u, { x: 'unit-remove', xData: u.unitId })}${unitCat ? dPill(unitCat.name, 'orange', { card: 'categories', recId: u.categoryId, icon: CARD_ICON.categories }) : ''}${noRates}${multi ? unitStatusGate(r, eu) : ''}</div>
@@ -9030,13 +9180,14 @@ const DETAIL = {
     const t = invoiceTotals(i);
     const cust = IDX.customer.get(i.customerId);
     const locked = !!i.locked;   // pricing sealed (Option B) — line items frozen + tamper-checked
+    const collectionsFrozen = invoiceCollectionsActive(i);
     const subBy = (kind) => (i.lineItems || []).filter((l) => l.kind === kind).reduce((a, l) => a + (Number(l.amount) || 0), 0);
     // ONE section (Jac 2026-06-12): LEFT = actions · RIGHT = the line-item ledger.
     // line item: R7 hyperlink + amount + unlink ✕ — the redundant kind badge is GONE.
     const lines = (i.lineItems || []).map((li, idx) => {
       const ref = li.kind === 'rental' ? `data-pill-card="rentals" data-pill-rec="${esc(li.ref)}"`
         : li.kind === 'WO' ? `data-pill-card="workOrders" data-pill-rec="${esc(li.ref)}"` : '';
-      const x = (!locked && li.kind !== 'transport' && itemPaid(i, li, idx) <= 0) ? `<span class="x line-x" data-x="inv-line-remove" data-idx="${idx}">✕</span>` : '';
+      const x = (!locked && !invoiceRentalLinkFrozen(i, li) && li.kind !== 'transport' && itemPaid(i, li, idx) <= 0) ? `<span class="x line-x" data-x="inv-line-remove" data-idx="${idx}">✕</span>` : '';
       const bal = itemPaid(i, li, idx);   // partial-payment item balance (when assigned)
       const refd = itemRefunded(i, li), fullyR = lineFullyRefunded(i, li);   // §19b per-line refund — strike a fully-refunded line, show the ↩ tally
       return `<div class="hitem inv-line${fullyR ? ' line-refunded' : ''}"><span ${ref} class="inv-line-link${fullyR ? ' struck' : ''}" data-r="R7">${esc(li.label)}</span><span class="spacer"></span>${bal > 0 && !fullyR ? `<span class="dvd c-green derived" data-r="R4" data-tip="paid on this line">${money2(bal)}✓</span>` : ''}${refd > 0.005 ? `<span class="dvd derived refund-chip" data-r="R4" data-tip="refunded on this line">↩${money2(refd)}</span>` : ''}<b class="derived${fullyR ? ' struck' : ''}">${money2(li.amount)}</b>${x}</div>`;
@@ -9045,7 +9196,7 @@ const DETAIL = {
     const kinds = ['rental', 'transport', 'parts', 'labor'].filter((k) => subBy(k) > 0);
     const subRows = kinds.length > 1 ? kinds.map((k) => ledgerRow(`${k[0].toUpperCase()}${k.slice(1)} subtotal`, money2(subBy(k)))).join('') : '';
     // LEFT — customer · PO · payment · the line-management row (adds / lock / unlock / form)
-    const custCell = cust ? refPill('customers', i.customerId, cust.name, locked ? {} : { x: 'inv-cust-remove' }) : (i.mock ? addBtn('Customer', { link: true, js: 'js-quickadd-cust', h: 26, data: { card: 'invoices', rec: i.invoiceId, slot: 'customer' } }) : badge('No customer'));
+    const custCell = cust ? refPill('customers', i.customerId, cust.name, (locked || collectionsFrozen || isCustomerBlacklisted(cust)) ? {} : { x: 'inv-cust-remove' }) : (i.mock && !collectionsFrozen ? addBtn('Customer', { link: true, js: 'js-quickadd-cust', h: 26, data: { card: 'invoices', rec: i.invoiceId, slot: 'customer' } }) : badge('No customer'));
     const poCell = cust?.requiresPO && !i.po
       ? `<span class="req inline-edit" data-r="R6" data-edit="invoicePO" data-rec="${i.invoiceId}">PO #</span>`
       : `<span class="${i.po ? 'pill ghost' : 'add-field'} inline-edit" data-r="${i.po ? 'R18' : 'R5c'}" data-edit="invoicePO" data-rec="${i.invoiceId}"${i.po ? '' : ' style="height:26px"'}>${esc(i.po ? 'PO ' + i.po : '+PO')}</span>`;
@@ -16084,6 +16235,9 @@ const WR_OPERATIONS = {
       const r = pick.rental;
       const invs = this._linked(r);
       if (!invs.length) return { issue: `rental ${r.rentalId} isn’t linked to an invoice` };
+      const inCollections = invs.find(invoiceCollectionsActive);
+      if (inCollections) return { issue: `${invoiceShort(inCollections.invoiceId)} is in Collections — Recall it before unlinking the rental` };
+      if (blacklistedOwnerEdgeWouldDisappear(r, invs.map((inv) => inv.invoiceId))) return { issue: `that invoice is the rental's last blacklisted customer link — Lift or Recall before unlinking it` };
       const paid = invs.find((inv) => rentalAllocated(inv, r.rentalId) > 0.005);
       if (paid) return { issue: `a payment is assigned to this rental on ${invoiceShort(paid.invoiceId)} — that has to be refunded first, which I can’t do` };
       return { summary: `unlink invoice ${invs.map((iv) => invoiceShort(iv.invoiceId)).join(', ')} from ${rentalUnitsLabel(r) || `rental ${r.rentalId}`} (frees it to re-bill)` };
@@ -16091,6 +16245,8 @@ const WR_OPERATIONS = {
     apply(p) {
       const pick = this._pick(p); if (pick.issue || !pick.rental) return null;
       const r = pick.rental; const invs = this._linked(r);
+      if (invs.some(invoiceCollectionsActive)) { toast('Blocked: a linked invoice is in Collections — recall it first (§7.7).'); return null; }
+      if (blacklistedOwnerEdgeWouldDisappear(r, invs.map((inv) => inv.invoiceId))) { toast('Blocked: that invoice is the rental’s last blacklisted customer link — Lift or Recall before unlinking it (§9).'); return null; }
       const label = invs.map((iv) => invoiceShort(iv.invoiceId)).join(', ') || invoiceShort(r.invoiceId);
       // FULL detach — drop the rental from every invoice's rentalIds series list AND clear the legacy
       // pointer, so rentalInvoices() (the chip / +Invoice source) stops returning it (#581).
@@ -16115,7 +16271,7 @@ const WR_OPERATIONS = {
       const cres = wrResolveCustomer(custRef);
       if (cres.many) return { issue: `more than one customer matches “${custRef}” — which one? (${cres.many.slice(0, 3).map((c) => c.name).join(', ')})` };
       if (!cres.rec) return { issue: `no customer matching “${custRef}”` };
-      if (/Blacklist/i.test(cres.rec.accountType || '')) return { issue: `${cres.rec.name} is blacklisted — can't be put on rent` };
+      if (isCustomerBlacklisted(cres.rec)) return { issue: `${cres.rec.name} is blacklisted — can't be put on rent` };
       const win = this._window(p);
       if (win.issue) return { issue: win.issue };
       const refs = (Array.isArray(p && p.unitIds) ? p.unitIds : Array.isArray(p && p.units) ? p.units : ((p && (p.unitId || p.unit)) ? [p.unitId || p.unit] : [])).filter(Boolean);
@@ -17663,21 +17819,21 @@ const DROP_MATRIX = {
     // #552 audit item 11: rentalHasUnit() scans the WHOLE r.units[] (not just the
     // legacy-primary r.unitId), so a non-primary unit already linked to a multi-unit
     // rental no longer visually lights up as a valid drop target.
-    rentals: (u, r) => u.fleetStatus === 'Active' && !rentalHasUnit(r, u.unitId),                 // §9 — non-Active units aren't rentable
+    rentals: (u, r) => u.fleetStatus === 'Active' && !rentalHasUnit(r, u.unitId) && !isCustomerBlacklisted(rentalAccountCustomer(r)),   // §9 — non-Active units and blacklisted customers aren't rentable
     invoices: (u, i) => !i.locked && !!unbilledOpenWOForUnit(u.unitId),                           // §7.6 — needs a billable open WO
   },
   rentals: {
-    units: (r, u) => u.fleetStatus === 'Active' && !rentalHasUnit(r, u.unitId),
-    invoices: (r, i) => !i.locked && !r.invoiceId && (!i.customerId || !r.customerId || i.customerId === r.customerId),   // §7.5 — one invoice per rental + customer scoping
-    customers: (r, c) => r.customerId !== c.customerId && !/Blacklist/i.test(c.accountType || ''),                        // §9 blacklist
+    units: (r, u) => u.fleetStatus === 'Active' && !rentalHasUnit(r, u.unitId) && !isCustomerBlacklisted(rentalAccountCustomer(r)),
+    invoices: (r, i) => !i.locked && !invoiceCollectionsActive(i) && !r.invoiceId && !!r.customerId && !!i.customerId && i.customerId === r.customerId && !blacklistBlocksInvoiceLink(r, IDX.customer.get(i.customerId)),   // §7.5/§9 — fail-closed customer scoping
+    customers: (r, c) => r.customerId !== c.customerId && !isCustomerBlacklisted(c) && !isCustomerBlacklisted(rentalAccountCustomer(r)),             // §9 blacklist freezes both sides
   },
   customers: {
-    rentals: (c, r) => r.customerId !== c.customerId && !/Blacklist/i.test(c.accountType || ''),
-    invoices: (c, i) => i.customerId !== c.customerId && !i.locked && invoiceTotals(i).paid <= 0,  // §7.5 — paid/locked invoice freezes its customer
+    rentals: (c, r) => r.customerId !== c.customerId && !isCustomerBlacklisted(c) && !isCustomerBlacklisted(rentalAccountCustomer(r)),
+    invoices: (c, i) => i.customerId !== c.customerId && !i.locked && invoiceTotals(i).paid <= 0 && !invoiceCollectionsActive(i) && !isCustomerBlacklisted(IDX.customer.get(i.customerId)),  // §7.5/§7.7/§9 — authoritative blacklisted owner stays attached until Lift/Recall
   },
   invoices: {
-    rentals: (i, r) => !i.locked && !r.invoiceId && (!i.customerId || !r.customerId || i.customerId === r.customerId),
-    customers: (i, c) => i.customerId !== c.customerId && !i.locked && invoiceTotals(i).paid <= 0,
+    rentals: (i, r) => !i.locked && !invoiceCollectionsActive(i) && !r.invoiceId && !!r.customerId && !!i.customerId && i.customerId === r.customerId && !blacklistBlocksInvoiceLink(r, IDX.customer.get(i.customerId)),
+    customers: (i, c) => i.customerId !== c.customerId && !i.locked && invoiceTotals(i).paid <= 0 && !invoiceCollectionsActive(i) && !isCustomerBlacklisted(IDX.customer.get(i.customerId)),
     units: (i, u) => !i.locked && !!unbilledOpenWOForUnit(u.unitId),
     workOrders: (i, w) => woDroppableToInvoice(w, i),
   },
@@ -18339,7 +18495,10 @@ function dispatchDrop(p, t) {
     const r = pair === 'rentals>invoices' ? p.rec : t.rec, inv = pair === 'rentals>invoices' ? t.rec : p.rec;
     if (inv.locked) { toast(`Blocked: invoice ${invoiceShort(inv.invoiceId)} is locked — unlock it first (§7.5).`); return; }
     if (!inv.customerId) { flashOr('[data-slot="customer"]', 'Blocked: the invoice needs a customer first (§7.5).'); return; }
-    if (r.customerId && inv.customerId !== r.customerId) { toast(`Blocked: that rental belongs to ${IDX.customer.get(r.customerId)?.name || 'another customer'}, not ${IDX.customer.get(inv.customerId)?.name || 'this invoice’s customer'} (§7.5).`); return; }
+    if (!r.customerId) { toast('Blocked: the rental needs a customer before it can be invoiced (§7.5).'); return; }
+    if (inv.customerId !== r.customerId) { toast(`Blocked: that rental belongs to ${IDX.customer.get(r.customerId)?.name || 'another customer'}, not ${IDX.customer.get(inv.customerId)?.name || 'this invoice’s customer'} (§7.5).`); return; }
+    const owner = IDX.customer.get(inv.customerId);
+    if (blacklistBlocksInvoiceLink(r, owner)) { toast(`Blocked: ${owner?.name || 'the invoice customer'} is blacklisted (§9).`); return; }
     addRentalLineToInvoice(inv.invoiceId, r.rentalId);
     if (r.invoiceId === inv.invoiceId) {                                 // the mutation toasts its own failures
       toast(`Rental ${fmtWindow(r.startDate, r.endDate)} → invoice ${invoiceShort(inv.invoiceId)}.`);
@@ -18696,7 +18855,11 @@ function onClick(e) {
     const rec = closest('.js-lift-blacklist').dataset.rec;
     requireAdmin('Lifting a Blacklist needs Admin approval.', (approver) => {
       const c = IDX.customer.get(rec); if (!c) return;
-      delete c.block; reindex('customers', c); logAction(c, `Blacklist lifted (Admin approval${approver ? ' — ' + approver : ''})`);
+      const lifted = liftCustomerBlacklist(c, approver);
+      if (!lifted.ok) {
+        toast(lifted.reason === 'collections' ? 'Recall every active Collections invoice before lifting this blacklist.' : 'This account is not blacklisted.');
+        return;
+      }
       render(); toast('Blacklist lifted.');
     });
     return;
@@ -18819,7 +18982,7 @@ function onClick(e) {
     e.stopPropagation();
     if (!canMoney()) { toast('Voiding an invoice is Office/Admin only.'); return; }
     const inv = IDX.invoice.get(closest('.js-void-invoice').dataset.rec); if (!inv) return;
-    if (!invoiceVoidable(inv)) { toast('Can’t void — this invoice has a payment, a price lock, or is in collections. Refund / unlock first.'); return; }
+    if (!invoiceVoidable(inv)) { toast(invoiceWouldEraseBlacklistedOwner(inv) ? 'Can’t void — this invoice is a rental’s last blacklisted customer link. Lift or Recall first (§9).' : 'Can’t void — this invoice has a payment, a price lock, or is in collections. Refund / unlock first.'); return; }
     return voidInvoice(inv);
   }
   if (closest('.js-lock-invoice')) { e.stopPropagation(); return lockInvoiceFlow(closest('.js-lock-invoice').dataset.rec, true); }
@@ -19674,7 +19837,7 @@ function handlePillX(xEl) {
     if (eu && unitStatus(rec, eu) === 'On Rent' && (eu.startCapture || eu.fcCapture)) {
       toast(`Blocked: ${u?.name || 'that unit'} is On Rent with a logged capture — recover it (or mark No Show) before removing.`); return;
     }
-    removeUnitFromRental(rec, uid);
+    if (!removeUnitFromRental(rec, uid)) return;
     logAction(rec, `Unit − ${u?.name || uid}`);
     reindexDraft('rentals', rec);
     toast(rentalUnitIds(rec).length ? `${u?.name || 'Unit'} removed.` : 'Unit removed — drag one on.'); return render();
@@ -19682,7 +19845,8 @@ function handlePillX(xEl) {
     rec.unitId = null;
     toast('Unit removed.'); return render();
   } else if (kind === 'cust-swap') {
-    rec.customerId = null; toast('Customer removed — drag a replacement on (or quick-add one).'); return render();
+    if (!clearRentalCustomer(rec)) return;
+    toast('Customer removed — drag a replacement on (or quick-add one).'); return render();
   } else if (kind === 'inv-remove') {
     // Full detach of this rental from its invoice(s). A rental links TWO ways — the legacy r.invoiceId
     // pointer AND the invoice's rentalIds series list (what rentalInvoices() / this chip read) — so clear
@@ -19690,23 +19854,26 @@ function handlePillX(xEl) {
     // refuse while a payment is allocated to this rental on any linked invoice (§7.4).
     const linkedInvs = rentalInvoices(rec).slice(); const legacyInv = rec.invoiceId ? IDX.invoice.get(rec.invoiceId) : null;
     if (legacyInv && !linkedInvs.includes(legacyInv)) linkedInvs.push(legacyInv);
+    if (linkedInvs.some(invoiceCollectionsActive)) { toast('Blocked: a linked invoice is in Collections — recall it first (§7.7).'); return; }
+    if (blacklistedOwnerEdgeWouldDisappear(rec, linkedInvs.map((inv) => inv.invoiceId))) { toast('Blocked: that invoice is this rental’s last blacklisted customer link — Lift or Recall before unlinking it (§9).'); return; }
     if (linkedInvs.some((inv) => rentalAllocated(inv, rec.rentalId) > 0)) { toast('Blocked: a payment is assigned to this rental — refund it first to unlink (§7.4).'); return; }
     linkedInvs.forEach((inv) => { inv.rentalIds = (inv.rentalIds || []).filter((id) => id !== rec.rentalId); reindex('invoices', inv); });
     rec.invoiceId = null; reindex('rentals', rec); toast('Invoice unlinked.'); render();
   } else if (kind === 'inv-cust-remove') {
-    if (invoiceTotals(rec).paid > 0) { toast('Blocked: invoice has a payment — customer locked (§7.5).'); return; }
-    rec.customerId = null; toast('Customer removed — drag a replacement onto the invoice (or quick-add one).'); return render();
+    if (!clearInvoiceCustomer(rec)) return;
+    toast('Customer removed — drag a replacement onto the invoice (or quick-add one).'); return render();
   } else if (kind === 'inv-line-remove') {
     const idx = Number(xEl.dataset.idx);
     const li = rec.lineItems && rec.lineItems[idx];
     if (!li) return;
+    if (invoiceRentalLinkFrozen(rec, li)) { toast('Blocked: this rental belongs to a blacklisted customer — Lift or Recall before unlinking it (§9).'); return; }
     if (itemPaid(rec, li, idx) > 0) { toast('Blocked: payment is assigned to this line — refund first (§7.4).'); return; }
     const r2 = IDX.rental.get(li.ref);
     if (li.kind === 'rental' && r2 && rentalUnits(r2).length > 1) {
       // §20 multi-unit: this ✕ removes JUST this unit (its rental + transport line) and takes
       // it off the rental — siblings stay billed and the rental stays linked. removeUnitFromRental
       // re-syncs the invoice + relabels survivors; it already dropped this unit's lines.
-      removeUnitFromRental(r2, li.unitId);
+      if (!removeUnitFromRental(r2, li.unitId)) return;
     } else {
       rec.lineItems.splice(idx, 1);
       if (li.kind === 'rental') {
@@ -19962,7 +20129,7 @@ async function verifyTierOrPassword(minTier, pw) {
 /** Block on no-valid-card: Admin override unblocks this rental + logs it. */
 function cardOverrideRental(rentalId, val) {
   const r = IDX.rental.get(rentalId); if (!r) return;
-  const cust = r.customerId ? IDX.customer.get(r.customerId) : null;
+  const cust = rentalAccountCustomer(r);
   requireAdmin(`${cust ? cust.name : 'This customer'} — ${cardGateReason(cust) || 'card gate'}. Booking is blocked.`, (approver) => {
     r.cardOverride = true;
     logAction(r, `Admin override${approver ? ' (' + approver + ')' : ''} — booked ${getStatus('rentalStatus', val).label} (${cardGateReason(cust) || 'card gate'})`);
@@ -19973,9 +20140,9 @@ function cardOverrideRental(rentalId, val) {
 /* Phase 3 (T3.3, spec D11/D14) — the account-level block gate, a DISTINCT axis from the card/
    agreement gate above. `no-card` is already covered there (Admin-tier, persistent override —
    STRICTER than D14's Manager-tier ask, so left untouched: never weaken an existing gate).
-   `blacklist` is a hard stop with NO override, checked inline at each call site (reactivating
-   the pre-existing, previously-dormant §9 `/Blacklist/i` check — nothing ever set that string
-   until Phase 3's blockPicker). That leaves `failed-payment` and `invoice-hold` uncovered by
+   `blacklist` is a hard stop with NO override, checked through isCustomerBlacklisted at each
+   call site so both the Phase-3 stored block and legacy accountType records stay blocked.
+   That leaves `failed-payment` and `invoice-hold` uncovered by
    anything today — this is their gate: a D14 per-action Manager override, verified the same way
    tierAuth does. Critically NON-PERSISTENT — `bypassAccountBlock` is a plain function-call
    argument threaded through the retry, never written to the record, so every future attempt
@@ -19989,6 +20156,37 @@ function accountBlockOverride(cust, onOk) {
   openOverlay({ kind: 'tierAuth', minTier: 'manager', custId: cust ? cust.customerId : null, azAction: 'rentalOverride',
     pwReason: `${cust ? cust.name : 'This customer'} — ${ab ? ab.reason : 'account block'}.`,
     step: 'pick', busy: false, error: '', onOk });
+}
+/* A blacklist blocks every prospective booking/out state, including the timeline's
+   End Rent / Off Rent shortcuts. It must not strand equipment that was already out:
+   only the forward On Rent → End Rent → Off Rent → Returned progression remains legal.
+   Once physical history reaches Returned it cannot be rewritten as a voided terminal. */
+const BLACKLIST_OUT_PROGRESS = ['On Rent', 'End Rent', 'Off Rent'];
+const BLACKLIST_PROSPECTIVE_STATUS = new Set(['Quote', ...BOOKING_STATUSES, 'End Rent', 'Off Rent']);
+function blacklistBlocksStatusTransition(cust, current, next) {
+  if (!isCustomerBlacklisted(cust)) return false;
+  const from = BLACKLIST_OUT_PROGRESS.indexOf(current), to = BLACKLIST_OUT_PROGRESS.indexOf(next);
+  if ((from >= 0 || current === 'Returned') && (next === 'Cancelled' || next === 'No Show')) return true;
+  if (next === 'Returned' && current !== 'Returned' && from < 0) return true;
+  if (!BLACKLIST_PROSPECTIVE_STATUS.has(next)) return false;
+  return from < 0 || to < 0 || to < from;
+}
+function blacklistBlocksRentalStatus(r, cust, next) {
+  const eus = rentalUnits(r);
+  const current = eus.length ? eus.map((eu) => unitStatus(r, eu)) : [r.status];
+  return current.some((status) => blacklistBlocksStatusTransition(cust, status, next));
+}
+/* Legacy/customerless invoice links must fail closed for NEW booking/out movement,
+   while an already-out unit may still move forward through recovery and return. */
+function missingCustomerBlocksStatusTransition(current, next) {
+  if (!BLACKLIST_PROSPECTIVE_STATUS.has(next)) return false;
+  const from = BLACKLIST_OUT_PROGRESS.indexOf(current), to = BLACKLIST_OUT_PROGRESS.indexOf(next);
+  return from < 0 || to < 0 || to < from;
+}
+function missingCustomerBlocksRentalStatus(r, next) {
+  const eus = rentalUnits(r);
+  const current = eus.length ? eus.map((eu) => unitStatus(r, eu)) : [r.status];
+  return current.some((status) => missingCustomerBlocksStatusTransition(status, next));
 }
 /* Admin "Rental Rules" (Settings → Rental Rules) — HARD-BLOCK On Rent until every
    requirement an admin marked Required is met. Pure + defensive: with no rules set
@@ -20012,10 +20210,11 @@ function rentalRuleBlock(r, cust, val) {
 function setRentalStatus(rentalId, val, opts = {}) {
   const r = IDX.rental.get(rentalId);
   if (!r) return;
-  const cust = r.customerId ? IDX.customer.get(r.customerId) : null;
+  const cust = rentalAccountCustomer(r);
   // §9 hard gates
   if (val === 'On Rent' && !r.invoiceId) { flashOr('.js-create-invoice', 'Blocked: "On Rent" requires a linked invoice (§9).'); return; }
-  if (['On Rent', 'Reserved'].includes(val) && cust && (accountBlock(cust)?.type === 'blacklist' || /Blacklist/i.test(cust.accountType || ''))) { toast('Blocked: customer is blacklisted (§9).'); return; }
+  if (!cust && (r.invoiceId || rentalInvoices(r).length) && missingCustomerBlocksRentalStatus(r, val)) { toast('Blocked: this invoiced rental needs a customer before booking or going On Rent (§9).'); return; }
+  if (blacklistBlocksRentalStatus(r, cust, val)) { toast('Blocked: customer is blacklisted (§9).'); return; }
   const _rb = rentalRuleBlock(r, cust, val); if (_rb) { flashOr('.js-add-card', _rb); return; }   // admin Rental Rules — hard block
   // §14 — a booking requires a valid card that is SIGNED for the current account
   // type; any unsigned card blocks. An Admin can override. (Charging is never gated.)
@@ -20052,9 +20251,10 @@ function setRentalStatus(rentalId, val, opts = {}) {
 function setUnitStatus(rentalId, unitId, val, opts = {}) {
   const r = IDX.rental.get(rentalId); if (!r) return;
   const eu = unitEntry(r, unitId); if (!eu) return;
-  const cust = r.customerId ? IDX.customer.get(r.customerId) : null;
+  const cust = rentalAccountCustomer(r);
   if (val === 'On Rent' && !r.invoiceId) { flashOr('.js-create-invoice', 'Blocked: "On Rent" requires a linked invoice (§9).'); return; }
-  if (['On Rent', 'Reserved'].includes(val) && cust && (accountBlock(cust)?.type === 'blacklist' || /Blacklist/i.test(cust.accountType || ''))) { toast('Blocked: customer is blacklisted (§9).'); return; }
+  if (!cust && (r.invoiceId || rentalInvoices(r).length) && missingCustomerBlocksStatusTransition(unitStatus(r, eu), val)) { toast('Blocked: this invoiced rental needs a customer before booking or going On Rent (§9).'); return; }
+  if (blacklistBlocksStatusTransition(cust, unitStatus(r, eu), val)) { toast('Blocked: customer is blacklisted (§9).'); return; }
   { const _rb = rentalRuleBlock(r, cust, val); if (_rb) { toast(_rb); return; } }   // admin Rental Rules — hard block
   if (BOOKING_STATUSES.includes(val) && cardGateBlocked(cust) && !r.cardOverride) { toast(`${cust.name} — ${cardGateReason(cust)}. Admin override required.`); return; }
   // Phase 3 (T3.3) — account-block gate (failed-payment / invoice-hold); no-card + blacklist
@@ -20296,13 +20496,17 @@ function yardCapture(rentalId, cap, unitId, opts = {}) {
   // (A scanned delivery/recovery is ADOPTED onto cur.* by adoptScanCaptures, so cur[key] is
   // already set here — no scan-specific gate branch needed; it reads as a normal capture.)
   const replace = !!cur[key] || (cap === 'fc' && !!r.fieldCall);
+  const currentStatus = unitId && cur !== r ? unitStatus(r, cur) : r.status;
+  const startBackfill = cap === 'start' && !replace && ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(currentStatus);
   // §14 a first Start/Delivery moves the unit On Rent — run the §9 gates UP FRONT so a
   // blocked delivery never opens the camera (mirrors setRentalStatus/setUnitStatus so the
-  // driver is never made to record a video that would only then be rejected).
-  if (cap === 'start' && !replace) {
-    const gc = r.customerId ? IDX.customer.get(r.customerId) : null;
+  // driver is never made to record a video that would only then be rejected). An already-
+  // out status with missing evidence is a backfill, not a new delivery/acquisition.
+  if (cap === 'start' && !replace && !startBackfill) {
+    const gc = rentalAccountCustomer(r);
     if (!r.invoiceId) { flashOr('.js-create-invoice', 'Blocked: "On Rent" requires a linked invoice (§9).'); return; }
-    if (gc && (accountBlock(gc)?.type === 'blacklist' || /Blacklist/i.test(gc.accountType || ''))) { toast(`🔒 ${gc.name} — blacklisted. Delivery blocked.`); return; }
+    if (!gc) { toast('Blocked: this invoiced rental needs a customer before logging a delivery (§9).'); return; }
+    if (isCustomerBlacklisted(gc)) { toast(`🔒 ${gc.name} — blacklisted. Delivery blocked.`); return; }
     const rb = rentalRuleBlock(r, gc, 'On Rent'); if (rb) { flashOr('.js-add-card', rb); return; }
     if (cardGateBlocked(gc) && !r.cardOverride) { toast(`🔒 ${gc.name} — ${cardGateReason(gc)}. Sign the card before logging a delivery.`); return; }
     // Phase 3 (T3.3) — account-block gate (failed-payment / invoice-hold), same Manager-tier,
@@ -20343,6 +20547,8 @@ function commitYardCapture(rentalId, cap, unitId, dataUrl, opts = {}) {
   // Re-record → swap the video only; keep the status where it is and don't re-raise the FC.
   // (A scanned capture is already adopted onto tgt.* by adoptScanCaptures — a normal capture here.)
   const replace = !!tgt[key] || (cap === 'fc' && !!r.fieldCall);
+  const currentStatus = unitId && eu ? unitStatus(r, eu) : r.status;
+  const startBackfill = cap === 'start' && !replace && ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(currentStatus);
   // The media NEVER rides the record (a Sheets cell caps at 50k chars) — the stamp
   // persists immediately; the video uploads to Drive and only its URL lands on the
   // stamp afterwards (uploadCapture backend action).
@@ -20360,7 +20566,7 @@ function commitYardCapture(rentalId, cap, unitId, dataUrl, opts = {}) {
     setRentalStatus(rentalId, val, { bypassAccountBlock: opts.bypassAccountBlock }); return r.status === val;
   };
   if (cap === 'start') {
-    if (!replace && !moveStatus('On Rent')) return;
+    if (!replace && !startBackfill && !moveStatus('On Rent')) return;
     setUnitCapture(r, eu, 'startCapture', stamp); logAction(r, `${uname ? uname + ' — ' : ''}Start/Delivery video ${replace ? 're-captured' : 'captured'}`);
   } else if (cap === 'end') {
     if (!replace && !moveStatus('Returned')) return;
@@ -22579,10 +22785,14 @@ function startNewInvoice(customerId) {
 }
 
 function startNewRental(customerId) {
+  const cust = customerId ? IDX.customer.get(customerId) : null;
+  if (cust && isCustomerBlacklisted(cust)) {
+    toast(`Blocked: ${cust.name || 'this customer'} is blacklisted — Lift or Recall before creating a new Quote (§9).`);
+    return null;
+  }
   // Quotes PERSIST across sessions now — the id embeds a time salt so a reloaded
   // app's seq counter can never mint a colliding R-NEW id.
   const id = 'R-NEW' + Date.now().toString(36) + '-' + (state.seq++);
-  const cust = customerId ? IDX.customer.get(customerId) : null;
   const draft = { rentalId: id, customerId: customerId || null, unitId: null, categoryId: null, rentalName: cust ? `New Quote — ${cust.name}` : 'New Quote', startDate: '', endDate: '', startTime: '', status: 'Quote', transportType: 'Self', deliveryAddress: '', po: '', invoiceId: null, startHours: null, returnHours: null, notes: '', mock: true };
   DATA.rentals.push(draft); IDX.rental.set(id, draft); reindex('rentals', draft);
   logAction(draft, cust ? `Quote created for ${cust.name}` : 'Quote created');
@@ -22621,6 +22831,8 @@ function createInvoiceForRental(rentalId) {
   if (!r.customerId) { flashOr('[data-slot="customer"]', 'The Quote needs a customer first — drag one on (or quick-add).'); return; }
   if (!r.startDate || !r.endDate) { flashOr('.rdcal, .timeline, .statusbar.draftwin', 'Set the rental window first.'); return; }
   if (!rentalUnitIds(r).length) { flashOr('.stall-empty, [data-slot="unit"]', 'Add at least one unit before invoicing.'); return; }
+  const owner = rentalAccountCustomer(r);
+  if (blacklistBlocksInvoiceLink(r, owner)) { toast(`Blocked: ${owner?.name || 'the customer'} is blacklisted — Lift or Recall before billing this prospective rental (§9).`); return; }
   // Money-safe duplicate guard (Jac bug 2026-07-10 — Kerrigan): this mints a FRESH invoice
   // billed at the full window price with no credit for anything already paid — correct only
   // when the rental has never been invoiced. If a prior invoice already covers this rental
@@ -22658,11 +22870,20 @@ function createInvoiceForRental(rentalId) {
   if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
   openInvoice(id);
 }
+function reserveQuoteIfAllowed(r) {
+  if (!r || !r.startDate || !r.endDate || r.status !== 'Quote') return true;
+  const cust = rentalAccountCustomer(r);
+  if (isCustomerBlacklisted(cust)) { toast(`Blocked: ${cust.name} is blacklisted (§9).`); return false; }
+  r.status = 'Reserved';
+  return true;
+}
 function setDraftDate(rentalId, which, val) {
   const r = IDX.rental.get(rentalId); if (!r) return;
+  const nextWindow = { kind: 'window', startDate: which === 'start' ? val : r.startDate, endDate: which === 'end' ? val : r.endDate };
+  if (refuseBlacklistedRentalAllocation(r, nextWindow)) return false;
   if (which === 'start') r.startDate = val; else r.endDate = val;
   // a dated quote becomes Reserved (urgency display derives Today/Tomorrow); keep On Rent gated on invoice
-  if (r.startDate && r.endDate && r.status === 'Quote') r.status = 'Reserved';
+  reserveQuoteIfAllowed(r);
   logAction(r, `${which === 'start' ? 'Start' : 'End'} date → ${val ? fmtShortDate(val) : 'cleared'}`);   // #1 — was unlogged
   reanchorRender();
 }
@@ -22762,10 +22983,12 @@ function winStagedChanged() {
 function winPickSave() {
   const wp = state.winEdit; if (!wp) return;
   const r = IDX.rental.get(wp.rentalId);
+  const nextWindow = wp.staged ? { kind: 'window', startDate: wp.staged.startDate, endDate: wp.staged.endDate } : null;
+  if (r && refuseBlacklistedRentalAllocation(r, nextWindow)) { state.winEdit = null; render(); return false; }
   if (r && wp.staged) {
     const prevEnd = r.endDate || '', prevStart = r.startDate || '';
     r.startDate = wp.staged.startDate; r.endDate = wp.staged.endDate; r.startTime = wp.staged.startTime;
-    if (r.startDate && r.endDate && r.status === 'Quote') r.status = 'Reserved';
+    reserveQuoteIfAllowed(r);
     logAction(r, `Rental window → ${r.startDate && r.endDate ? fmtShortDate(r.startDate) + '–' + fmtShortDate(r.endDate) : 'cleared'}`);
     const ext = billExtension(r, prevEnd, prevStart);   // bill the lengthened window (either end) across the ≤28-day invoice series
     // Un-void-by-RE-DATING restores billing (Jac bug 2026-07-06): a No-Show-stale unit's line
@@ -22822,6 +23045,7 @@ function exitAvailabilitySearch() {
 function winPickDay(iso) {
   const wp = state.winEdit; if (!wp) return;
   const r = IDX.rental.get(wp.rentalId); if (!r) return;
+  if (refuseBlacklistedRentalAllocation(r)) return false;
   const t = winTarget();                                 // staged (fragile) or the rental itself (live)
   const subject = winPickSubject();
   if (dayBlocked(subject, iso, r.rentalId) && !state.overbookOn) {   // §10 hard-block only while overbooking is OFF
@@ -22835,18 +23059,18 @@ function winPickDay(iso) {
     else { t.startDate = iso; t.endDate = a; }
     wp.anchor = null;
     if (!wp.staged) {                                    // live (non-fragile): commit status + availability now
-      if (t.startDate && t.endDate && r.status === 'Quote') r.status = 'Reserved';
+      reserveQuoteIfAllowed(r);
       enterAvailabilitySearch(r);                        // §10 push the "available" search onto Units + Categories
     }
   }
   reanchorRender();
 }
-function setWinTime(hhmm) { const wp = state.winEdit; if (!wp) return; const t = winTarget(); if (!t) return; t.startTime = to12(hhmm); reanchorRender(); }
-function winPickClear() { const wp = state.winEdit; if (!wp) return; const t = winTarget(); if (t) { t.startDate = ''; t.endDate = ''; wp.anchor = null; } if (!wp.staged) exitAvailabilitySearch(); reanchorRender(); }
+function setWinTime(hhmm) { const wp = state.winEdit; if (!wp) return; const r = IDX.rental.get(wp.rentalId); if (r && refuseBlacklistedRentalAllocation(r, { kind: 'time' })) return false; const t = winTarget(); if (!t) return; t.startTime = to12(hhmm); reanchorRender(); }
+function winPickClear() { const wp = state.winEdit; if (!wp) return; const r = IDX.rental.get(wp.rentalId); if (r && refuseBlacklistedRentalAllocation(r, { kind: 'window', startDate: '', endDate: '' })) return false; const t = winTarget(); if (t) { t.startDate = ''; t.endDate = ''; wp.anchor = null; } if (!wp.staged) exitAvailabilitySearch(); reanchorRender(); }
 /** §inline — Cancel the staged window edit on a fragile rental: revert the staged copy to
  *  the rental's real dates (the confirm card disappears, nothing is billed). */
 function winPickCancel() { const wp = state.winEdit; if (!wp || !wp.staged) return; const r = IDX.rental.get(wp.rentalId); if (!r) return; wp.staged = { rentalId: wp.rentalId, startDate: r.startDate || '', endDate: r.endDate || '', startTime: r.startTime || '' }; wp.anchor = null; reanchorRender(); }
-function winPickToday() { const wp = state.winEdit; if (!wp) return; wp.monthISO = firstOfMonthISO(TODAY_ISO); const t = winTarget(); if (t) { t.startDate = TODAY_ISO; t.endDate = ''; wp.anchor = TODAY_ISO; } reanchorRender(); }
+function winPickToday() { const wp = state.winEdit; if (!wp) return; const r = IDX.rental.get(wp.rentalId); if (r && refuseBlacklistedRentalAllocation(r, { kind: 'window', startDate: TODAY_ISO, endDate: '' })) return false; wp.monthISO = firstOfMonthISO(TODAY_ISO); const t = winTarget(); if (t) { t.startDate = TODAY_ISO; t.endDate = ''; wp.anchor = TODAY_ISO; } reanchorRender(); }
 
 /* ── R22 DATE PICKER — single date/datetime, reuses the .wp-* calendar styling.
    state.datepick = { field, withTime, monthISO }; writes state.overlay[field]
@@ -23204,12 +23428,17 @@ function unitTransportProto(r) {
   return u ? { transportType: u.transportType, deliveryAddress: u.deliveryAddress, recoveryAddress: u.recoveryAddress, transportMiles: u.transportMiles, transportDriveMin: u.transportDriveMin } : {};
 }
 function removeUnitFromRental(r, unitId, opts = {}) {
+  if (!opts.transfer && blacklistBlocksUnitRemoval(r, unitId)) {
+    toast(`Blocked: ${IDX.unit.get(unitId)?.name || 'that unit'} is already out for a blacklisted customer — recover and mark it Returned before removing (§9).`);
+    return false;
+  }
   const removed = IDX.unit.get(unitId);
   if (r.invoiceId) removeUnitInvoiceLine(r, unitId);   // drop this unit's rental + transport lines (keeps any PAID line — refund first)
   r.units = rentalUnits(r).filter((u) => u.unitId !== unitId);
   syncRentalPrimary(r);
   if (r.invoiceId) { syncTransportLine(r); healInvoiceLines(r); }   // relabel survivors (multi→single) + sweep any orphan
   if (!opts.silent) logAction(r, `Unit cleared: ${removed?.name || unitId}`);   // split passes silent (the Split entry is the single log)
+  return true;
 }
 /* §20 — dropping a unit on a rental ADDS it (a Rental is an EVENT); the §9 fleet
    gate, the "already on" guard, and the §10 overbooking gate all fire per unit. */
@@ -23218,6 +23447,8 @@ function linkUnitToRental(rentalId, unitId) {
   if (!r || !u) return null;
   if (u.fleetStatus !== 'Active') { toast(`Blocked: ${u.name} is ${u.fleetStatus} — not rentable (§9).`); return null; }   // the §9 fleet gate
   if (rentalHasUnit(r, unitId)) { toast(`${u.name} is already on this rental.`); return null; }
+  const cust = rentalAccountCustomer(r);
+  if (isCustomerBlacklisted(cust)) { toast(`Blocked: ${cust.name} is blacklisted (§9).`); return null; }
   // §10 overbooking gate — derived live via rentalsOverlappingUnit, never stored
   const conflicts = (r.startDate && r.endDate) ? rentalsOverlappingUnit(unitId, r.startDate, r.endDate, r.rentalId) : [];
   if (conflicts.length && !state.overbookOn) {
@@ -23236,8 +23467,14 @@ function linkUnitToRental(rentalId, unitId) {
 function linkCustomerToRental(rentalId, customerId) {
   const r = IDX.rental.get(rentalId), c = IDX.customer.get(customerId);
   if (!r || !c) return null;
-  if (/Blacklist/i.test(c.accountType || '')) { toast(`Blocked: ${c.name} is blacklisted (§9).`); return null; }
+  if (isCustomerBlacklisted(c)) { toast(`Blocked: ${c.name} is blacklisted (§9).`); return null; }
   if (r.customerId === customerId) { toast(`${c.name} is already on this rental.`); return null; }
+  const currentOwner = rentalAccountCustomer(r);
+  if (isCustomerBlacklisted(currentOwner)) { toast(`Blocked: ${currentOwner.name || 'the current customer'} is blacklisted (§9). Lift or Recall the blacklist before changing the rental customer.`); return null; }
+  const linkedInvs = rentalInvoices(r).slice(), legacyInv = r.invoiceId ? IDX.invoice.get(r.invoiceId) : null;
+  if (legacyInv && !linkedInvs.includes(legacyInv)) linkedInvs.push(legacyInv);
+  const mismatch = linkedInvs.find((inv) => inv.customerId && inv.customerId !== customerId);
+  if (mismatch) { toast(`Blocked: invoice ${invoiceShort(mismatch.invoiceId)} belongs to another customer (§7.5). Unlink it first.`); return null; }
   const prev = r.customerId ? IDX.customer.get(r.customerId) : null;
   r.customerId = customerId;
   logAction(r, `Customer → ${c.name}${prev ? ` (was ${prev.name})` : ''}`);
@@ -23251,6 +23488,7 @@ function linkCustomerToRental(rentalId, customerId) {
 function splitUnitToNewRental(rentalId, unitId, start, end) {
   const r = IDX.rental.get(rentalId), u = IDX.unit.get(unitId);
   if (!r || !u) return null;
+  if (refuseBlacklistedRentalAllocation(r, { kind: 'split' })) return null;
   if (rentalUnits(r).length < 2) { toast(`${u.name} is the only machine — change the rental's window instead.`); return null; }
   const eu0 = unitEntry(r, unitId);
   if (eu0 && unitVoided(r, eu0)) { toast(`${u.name} is ${unitStatus(r, eu0)} — nothing to split.`); return null; }   // a voided unit has no lines → would make an empty sibling
@@ -23267,7 +23505,7 @@ function splitUnitToNewRental(rentalId, unitId, start, end) {
     status: eu.status || r.status, transportType: eu.transportType || 'Self', deliveryAddress: eu.deliveryAddress || '',
     recoveryAddress: eu.recoveryAddress || '', invoiceId: r.invoiceId || null, po: '', notes: '', actions: [],
     units: [eu], mock: !!r.mock };
-  removeUnitFromRental(r, unitId, { silent: true });   // drops the unit + its OLD invoice lines (ref = rentalId)
+  if (!removeUnitFromRental(r, unitId, { silent: true, transfer: true })) return null;   // safe transfer: the same unit/status is preserved on sib below
   syncRentalPrimary(sib);
   DATA.rentals.push(sib); IDX.rental.set(nid, sib); reindex('rentals', sib);
   if (sib.invoiceId && inv) {                   // re-attach the unit's lines under the NEW ref, same invoice
@@ -23282,14 +23520,30 @@ function splitUnitToNewRental(rentalId, unitId, start, end) {
   toast(`${u.name} split to its own rental${sib.invoiceId ? ` on invoice ${invoiceShort(sib.invoiceId)}` : ''}.`);
   return sib;
 }
-/** Set an invoice's customer — guarded: ANY payment OR a locked invoice freezes
- *  it (§7.5 — the same tests as 'inv-cust-remove', applied on SET too). */
+/** Customer assignment is frozen once payment, pricing lock, a blacklist, or Collections
+ *  makes the invoice identity authoritative. Lift/Recall is the corresponding release path. */
+function invoiceCustomerChangeBlock(inv) {
+  if (invoiceCollectionsActive(inv)) return 'Blocked: invoice is in Collections — recall it first (§7.7).';
+  const owner = inv && inv.customerId ? IDX.customer.get(inv.customerId) : null;
+  if (isCustomerBlacklisted(owner)) return `Blocked: ${owner.name || 'the invoice customer'} is blacklisted — lift the blacklist before changing the invoice customer (§9).`;
+  if (invoiceTotals(inv).paid > 0) return 'Blocked: invoice has a payment — customer locked (§7.5).';
+  if (inv.locked) return 'Blocked: invoice pricing is locked — unlock it first (§7.5).';
+  return '';
+}
+function clearInvoiceCustomer(inv) {
+  if (!inv) return false;
+  const blocked = invoiceCustomerChangeBlock(inv);
+  if (blocked) { toast(blocked); return false; }
+  inv.customerId = null;
+  return true;
+}
+/** Set an invoice's customer — the same hard gate as removal, applied on SET too. */
 function setInvoiceCustomer(invoiceId, customerId) {
   const inv = IDX.invoice.get(invoiceId), c = IDX.customer.get(customerId);
   if (!inv || !c) return null;
   if (inv.customerId === customerId) { toast(`${c.name} is already on this invoice.`); return null; }
-  if (invoiceTotals(inv).paid > 0) { toast('Blocked: invoice has a payment — customer locked (§7.5).'); return null; }
-  if (inv.locked) { toast('Blocked: invoice pricing is locked — unlock it first (§7.5).'); return null; }
+  const blocked = invoiceCustomerChangeBlock(inv);
+  if (blocked) { toast(blocked); return null; }
   const prev = inv.customerId ? IDX.customer.get(inv.customerId) : null;
   inv.customerId = customerId;
   logAction(inv, `Customer → ${c.name}${prev ? ` (was ${prev.name})` : ''}`);
@@ -23344,6 +23598,12 @@ function billWOToInvoice(woId) {
 function addRentalLineToInvoice(invoiceId, rentalId) {
   const inv = IDX.invoice.get(invoiceId), r = IDX.rental.get(rentalId);
   if (!inv || !r) return;
+  if (!inv.customerId) { toast('Blocked: the invoice needs a customer first (§7.5).'); return; }
+  if (!r.customerId) { toast('Blocked: the rental needs a customer before it can be invoiced (§7.5).'); return; }
+  if (inv.customerId !== r.customerId) { toast('Blocked: the rental and invoice belong to different customers (§7.5).'); return; }
+  const owner = IDX.customer.get(inv.customerId);
+  if (blacklistBlocksInvoiceLink(r, owner)) { toast(`Blocked: ${owner?.name || 'the invoice customer'} is blacklisted (§9).`); return; }
+  if (invoiceCollectionsActive(inv)) { toast('Blocked: invoice is in Collections — recall it first (§7.7).'); return; }
   // a rental bills to ONE invoice — block double-billing onto a second (§7.5)
   if (r.invoiceId && r.invoiceId !== invoiceId) { toast(`Already on invoice ${invoiceShort(r.invoiceId)} — remove it there first.`); return; }
   if ((inv.lineItems || []).some((li) => li.kind === 'rental' && li.ref === rentalId)) { flashOr(`.inv-line-link[data-pill-rec="${rentalId}"]`, 'That rental is already on this invoice.'); return; }
@@ -23388,8 +23648,11 @@ function invoiceMergeable(i) {
    un-refunded, no ACH in flight, not already voided, not in collections. Same money-safety
    floor as invoiceMergeable (which DELETES a $0-paid bill) — voiding is strictly gentler: it
    keeps the record. No customer required (a customer-less draft can still be voided). */
+function invoiceWouldEraseBlacklistedOwner(i) {
+  return !!i && invoiceLinkedRentals(i).some((r) => blacklistedOwnerEdgeWouldDisappear(r, [i.invoiceId]));
+}
 function invoiceVoidable(i) {
-  return !!i && !i.voided && !i.locked && !i.refunded && !i.achProcessing && (Number(i.amountPaid) || 0) === 0 && !invoiceCollectionsActive(i);
+  return !!i && !i.voided && !i.locked && !i.refunded && !i.achProcessing && (Number(i.amountPaid) || 0) === 0 && !invoiceCollectionsActive(i) && !invoiceWouldEraseBlacklistedOwner(i);
 }
 /* Void an unpaid invoice: unlink every rental it holds (clearing the stale invoiced flag so the
    slot frees to re-invoice), then mark it Voided. NEVER touches a payment/allocation/lock/refund
@@ -23423,10 +23686,13 @@ function mergeInvoiceInto(keepId, absorbId) {
   // debt-stack audit trail back to every source invoice.
   const moved = (src.lineItems || []).map((li) => Object.assign({}, li, { lid: lineLid(), fromInv: li.fromInv || absorbId }));
   moved.forEach((li) => keep.lineItems.push(li));
-  // union rentalIds + relink the absorbed invoice's rentals to the keeper (§7.5: one invoice per rental)
-  (src.rentalIds || []).forEach((rid) => {
+  // Union BOTH modern rentalIds and legacy rental-side-only pointers, then relink every
+  // absorbed rental to the keeper. Otherwise deleting src can erase the only customer
+  // owner visible to a supported legacy customerless rental.
+  if (!Array.isArray(keep.rentalIds)) keep.rentalIds = [];
+  invoiceLinkedRentalIds(src).forEach((rid) => {
     if (!keep.rentalIds.includes(rid)) keep.rentalIds.push(rid);
-    const r = IDX.rental.get(rid); if (r && r.invoiceId === absorbId) r.invoiceId = keepId;
+    const r = IDX.rental.get(rid); if (r && r.invoiceId === absorbId) { r.invoiceId = keepId; reindex('rentals', r); }
   });
   if (!keep.po && src.po) keep.po = src.po;                 // carry a PO if the keeper has none
   const movedTotal = moved.reduce((a, li) => a + (Number(li.amount) || 0), 0);
@@ -26913,7 +27179,8 @@ function exposeTestApi() {
       dataCache, cacheValid, cacheDeviceOk, cacheTokenTag, cacheAppVer, cacheSnapshotEnvelope, CACHE_SCHEMA_VER, FEATURES,   // §instant-cache (spec 2026-07-16)
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, pickFunnelStage, toggleFunnelMembership, rentalFunnelStage, funnelStageOf, inFunnel, inRental, hasRentalActivity, funnelTrackA, funnelTrackEquip, ensureFunnels, funnelMenuHtml, reachFunnelStage, toggleMemberLead, funnelCurrentStage, funnelLayerDate, funnelLayerNote, ensureFunnelLog, markMembershipSigned, funnelLayerAction, funnelScope, naUrgency, naOpenList, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipActivateCash, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsPickerError, gpsUtilRollup, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, pickFunnelStage, toggleFunnelMembership, rentalFunnelStage, funnelStageOf, inFunnel, inRental, hasRentalActivity, funnelTrackA, funnelTrackEquip, ensureFunnels, funnelMenuHtml, reachFunnelStage, toggleMemberLead, funnelCurrentStage, funnelLayerDate, funnelLayerNote, ensureFunnelLog, markMembershipSigned, funnelLayerAction, funnelScope, naUrgency, naOpenList, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipActivateCash, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, acctBlockFoot, liftCustomerBlacklist, rentalAccountCustomer, clearRentalCustomer, clearInvoiceCustomer, invoiceRentalLinkFrozen, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsPickerError, gpsUtilRollup, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
+      reserveQuoteIfAllowed, winPickDay, winPickSave,
       tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, openYardCamera, commitYardCapture, nextCategoryId, nextUnitId,
       tripsLS, tripMerge, tripSplit, assignTripDriver, tripLabel, assignStopDriver, tripSetTime,
       tripPushSoon, tripPushNow, loadTripsFromBackend, tripsSyncFooter, setBackendPassword: (pw) => { backendPassword = pw || ''; },   // §2.3 Phase 4 sync — the setter is test-only (mirrors setRole), letting logic-test.mjs exercise the online path via a mocked window.fetch, never a real backend
@@ -27786,7 +28053,7 @@ window.JT = {
   startNewRental, startNewInspection, startNewWorkOrder, startNewInvoice,
   createInvoiceForRental, addRentalLineToInvoice, addWOToInvoice, addCustomLine, addPartToWO,
   setInspWash, setInspResult, setDraftDate,
-  linkUnitToRental, linkCustomerToRental, setInvoiceCustomer, billWOToInvoiceExplicit,   // Wave 2: the surviving link paths
+  linkUnitToRental, linkCustomerToRental, clearRentalCustomer, setInvoiceCustomer, clearInvoiceCustomer, billWOToInvoiceExplicit,   // Wave 2: the surviving link paths
   billWOToInvoice, anchorRecord, startNewCustomer, startNewReceipt, openOverlay,
   addUnitToRental, removeUnitFromRental, syncTransportLine, syncRentalLines, healInvoiceLines,   // §20 sync + test harness
   removeUnitInvoiceLine, rentalLineItems, transportLineItems, splitUnitToNewRental, setUnitStatus, setRentalStatus,
