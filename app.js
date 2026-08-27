@@ -23721,6 +23721,12 @@ function mergeInvoiceInto(keepId, absorbId) {
    Single shared password (sent with every call; the URL alone is useless). */
 const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzHahzgJqOYe9o4GKlRVGh-A7USRn1k4Dvyy4ajLh8EYCqVxofouM28qs8trNlObZw/exec';
 const PERSIST_KEYS = ['categories', 'units', 'customers', 'invoices', 'rentals', 'workOrders', 'inspections', 'vendors', 'parts', 'companyFiles', 'expenses', 'models'];
+/* #829 — a bare fetch() to GAS can stall indefinitely (cellular handoff, iOS suspending a
+   home-screen app mid-request, a wedged cold container): it neither resolves nor rejects.
+   Applied to the BOOT load/resume and the live poll ONLY — never blanket-wrapped inside
+   backendCall(), because timing out a card/charge/auth round-trip that the server actually
+   completed would report a real payment as failed. Same 30s budget gpsFetch already uses. */
+const BACKEND_TIMEOUT_MS = 30000;
 let backendPassword = sessionStorage.getItem('jactec.pw') || '';
 let booting = true;                       // suppresses saves during initial load
 let saveTimer = null, saving = false, savePending = false;
@@ -24969,7 +24975,7 @@ function applyLoadResponse(r) {
     applySettings(r.settings);
   }
 }
-async function loadFromBackend() { applyLoadResponse(await backendCall('load')); }
+async function loadFromBackend() { applyLoadResponse(await withTimeout(backendCall('load'), BACKEND_TIMEOUT_MS, 'Backend load')); }   // #829 — a stalled load must reject, not hang the boot forever
 
 /* ══════════════ INSTANT CACHE — on-device data snapshot (spec 2026-07-16) ══════════════
    A DISPLAY-ONLY photograph of the last confirmed backend load, so a PERSONAL (trusted)
@@ -25068,6 +25074,7 @@ function cachePersistSnapshot() {
 // The confirmed backend load replaces this the moment it lands.
 function paintFromCache(env) {
   try {
+    _bootWriteWarned = false;                  // #829 — re-arm the "not saving yet" warning for THIS window (a logout/relogin gets its own)
     if (env.role) currentRole = env.role;
     if (env.user) currentUser = env.user;
     applyLoadResponse({ ok: true, data: env.payload.data, settings: env.payload.settings });
@@ -25093,6 +25100,30 @@ function mountRefreshCue() {
 function cacheRefreshing(on) {
   _cacheRefreshing = !!on;
   try { mountRefreshCue(); document.body.classList.toggle('rw-refreshing', _cacheRefreshing); } catch (e) {}
+}
+/* #829 — the boot write-guard, shared by every debounced writer below.
+   `booting` was only ever meant to suppress saves while boot painted a SPLASH, where no
+   edit was possible (see `let booting = true` — "suppresses saves during initial load").
+   The instant cache changed that: paintFromCache renders the REAL, fully-interactive app
+   while `booting` stays true (spec 2026-07-16 — "The app is fully interactive from cache
+   the whole time — this is a cue, not a gate"), so every `if (booting) return` became a
+   SILENT write drop. An operator could key in inspections, services and hours, see them
+   listed, and lose the lot when applyLoadResponse() replaced DATA — or on refresh. The
+   spec's safety note ("writes are gated on a live backendPassword") does not hold: phoneBoot
+   sets backendPassword BEFORE the paint, so `booting` was the only gate.
+   We do NOT queue the edit — an offline write buffer is an explicit spec non-goal (the
+   rejected "Option B"; it re-opens the corruption surface) and the cache must never become
+   a save baseline. We refuse it OUT LOUD instead, once per window, so nobody keeps working
+   into a screen that isn't recording anything. The window itself is now bounded by
+   BACKEND_TIMEOUT_MS, so this is a seconds-long "hold on", not a silent black hole. */
+let _bootWriteWarned = false;
+function bootWriteBlocked() {
+  if (!booting) return false;
+  if (_cacheRefreshing && !_bootWriteWarned) {
+    _bootWriteWarned = true;
+    toast('Still catching up with the yard — hold on a second. Anything changed right now is NOT saved.');
+  }
+  return true;
 }
 
 // ── Incremental persistence (diff-based sync) ──────────────────────────────
@@ -25161,7 +25192,11 @@ async function refreshFromBackend() {
   if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;              // mid-typing
   refreshing = true;
   try {
-    const r = await backendCall('load');
+    // #829 — a stalled poll used to leave `refreshing = true` forever, permanently killing the
+    // live multi-user refresh: from then on the ONLY way to see someone else's edit was a full
+    // page reload (the reporter's "we have to refresh the whole app" complaint). The timeout
+    // rejects, `finally` clears the flag, and the next 18s tick tries again.
+    const r = await withTimeout(backendCall('load'), BACKEND_TIMEOUT_MS, 'Live refresh');
     if (!r || !r.ok || !r.data) return;
     const data = r.data; let applied = 0;
     PERSIST_KEYS.forEach((k) => {
@@ -25277,7 +25312,7 @@ async function pushChats() {
   if (js === lastChatsJson) return;                 // nothing new since the last successful push
   try { const r = await backendCall('setChats', { chats: state.chat.chats, ...chatSyncIdentity() }); if (r && r.ok) lastChatsJson = js; } catch (e) { /* offline → retries on next change/poll */ }
 }
-function pushChatsSoon() { if (booting || !backendPassword) return; clearTimeout(chatPushTimer); chatPushTimer = setTimeout(pushChats, 1200); }
+function pushChatsSoon() { if (bootWriteBlocked() || !backendPassword) return; clearTimeout(chatPushTimer); chatPushTimer = setTimeout(pushChats, 1200); }   // #829 — same silent-drop class as saveSoon
 async function loadChats() {
   if (!backendPassword) return;
   try {
@@ -25311,7 +25346,7 @@ function mergeWranglerRails(local, remote) {
   const merged = [...byId.values()].sort((a, b) => (b.ts || 0) - (a.ts || 0));
   return { merged, changed, localAhead };
 }
-function pushWranglerRailSoon() { if (booting || !backendPassword) return; clearTimeout(railPushTimer); railPushTimer = setTimeout(pushWranglerRail, 1200); }
+function pushWranglerRailSoon() { if (bootWriteBlocked() || !backendPassword) return; clearTimeout(railPushTimer); railPushTimer = setTimeout(pushWranglerRail, 1200); }   // #829 — the reporter lost Mr. Wrangler entries to exactly this guard
 async function pushWranglerRail() {
   if (!backendPassword) return;
   for (const c of state.wranglerRail) { try { await wrOffloadChatImages(c); } catch (e) {} }   // full fidelity: images → Drive URLs before they ride the sync
@@ -25411,7 +25446,7 @@ function syncMirrorGuard() {
 // ── debounced writer (mirrors pushChatsSoon / pushWranglerRailSoon: 1200ms, boot-guarded) ──
 let _userPrefsTimer = null, _userPrefsDirty = {};
 function flushUserPrefs(section) {
-  if (booting || !syncOn()) return;                                   // device-local only; never push during boot/reset
+  if (bootWriteBlocked() || !syncOn()) return;                        // device-local only; never push during boot/reset (#829 — refuse out loud, not silently)
   if (section) _userPrefsDirty[section] = true;
   else ['prefs', 'views', 'dispatch', 'comms', 'session'].forEach((s) => { _userPrefsDirty[s] = true; });
   clearTimeout(_userPrefsTimer); _userPrefsTimer = setTimeout(pushUserPrefs, 1200);
@@ -25533,7 +25568,7 @@ function upSyncCollapsed() { const up = state.userPrefs; if (!up) return; (up.pr
 function upSyncViews() { const up = state.userPrefs; if (!up) return; up.views = _viewsMap(); flushUserPrefs('views'); }
 function upSyncDispatch() { const up = state.userPrefs; if (!up) return; up.dispatch = { order: _lsJSON('jactec.dispatchOrder'), schedule: _lsJSON('jactec.dispatchSchedule'), lanes: _lsJSON('jactec.dispatchLanes'), times: _lsJSON('jactec.dispatchTimes') }; flushUserPrefs('dispatch'); }
 function upSyncComms() { const up = state.userPrefs; if (!up) return; up.comms = { ended: commsEndedMap(), rail: { sessions: (state.commsRail && state.commsRail.sessions) || {} } }; flushUserPrefs('comms'); }
-function upSyncSession() { const up = state.userPrefs; if (!up || booting) return; up.session = { col: state.mobileCol, mobileCol: state.mobileCol }; flushUserPrefs('session'); }
+function upSyncSession() { const up = state.userPrefs; if (!up || bootWriteBlocked()) return; up.session = { col: state.mobileCol, mobileCol: state.mobileCol }; flushUserPrefs('session'); }
 /* ── §18h Wrangler Ops — the developer live-chat bridge (from-spec re-implementation,
    2026-07-09, of the stale claude/mirror-wrangler-chats-l8pjfd branch). A Developer-tier
    operator (roleTier(currentRole) >= tierRank('developer') — the SAME gate as Design
@@ -25713,7 +25748,7 @@ function wranglerOpsBody(o) {
   const pane = o.openId ? wranglerOpsDetail(o) : '<div class="wrops-empty">Pick a chat to read it — or jump in.</div>';
   return `<div class="wrops-wrap"><div class="wrops-list">${list}</div><div class="wrops-pane">${pane}</div></div>`;
 }
-function saveSoon(ms) { if (booting || !backendPassword) return; clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, ms || 1200); }
+function saveSoon(ms) { if (bootWriteBlocked() || !backendPassword) return; clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, ms || 1200); }   // #829 — bootWriteBlocked() replaces a bare `booting` test: it still refuses the write, but says so
 // #247 — sync-health. A failing backend sync used to be SILENT (savePending → flat
 // 1.2s retry, no signal), so writes vanished with no warning. Now: track consecutive
 // failures, retry with EXPONENTIAL BACKOFF, and once an outage is confirmed (≥2 in a
@@ -26085,7 +26120,7 @@ async function attemptLogin() {
     // password server-side and neither's response feeds the other's request, so they
     // don't need to run back to back — firing 'load' immediately, before awaiting
     // 'auth', turns two serial GAS round-trips (the slow part of login) into one.
-    const loadPromise = backendCall('load');
+    const loadPromise = withTimeout(backendCall('load'), BACKEND_TIMEOUT_MS, 'Backend load');   // #829 — bounded, so "Wrangling the herd…" can't spin forever
     loadPromise.catch(() => {});   // a network-level rejection here is handled where loadPromise is awaited below; this just keeps it from surfacing as an unhandled rejection if an early 'auth' throw skips that await
     // Ask the backend for the role. The role-aware backend returns it; an older
     // backend (pre-roles) replies "unknown action" → we proceed without a role
@@ -26182,7 +26217,12 @@ function phoneBoot() {
   // to the serial path, in roughly half the wall-clock.
   renderBootSplash();
   backendPassword = tok;                       // backendCall sends it as sessionToken on both calls
-  const loadP = backendCall('load');
+  // #829 — BOTH calls are time-boxed. A stalled request here used to neither resolve nor
+  // reject, so the cache-painted app below stayed live and interactive INDEFINITELY with
+  // `booting` still true: every edit silently dropped, no banner, nothing saved, and the lot
+  // erased on the next load or refresh. Bounded, a dead network now falls to the honest
+  // failure paths below within BACKEND_TIMEOUT_MS instead of becoming a zombie app.
+  const loadP = withTimeout(backendCall('load'), BACKEND_TIMEOUT_MS, 'Backend load');
   loadP.catch(() => {});                       // may settle before pidEnter attaches the real handler — silence the interim rejection (the chain below still sees it)
   // §instant-cache: while the two backend calls run, paint the last snapshot as the REAL
   // app (personal device + flag + a valid snapshot) so the reopen shows data, not a
@@ -26197,10 +26237,10 @@ function phoneBoot() {
       else if (env) dataCache.wipe();          // a stale / foreign / malformed snapshot → discard, keep the splash
     }).catch(() => {});
   }
-  backendCall('authResume', { token: tok }).then((r) => {
+  withTimeout(backendCall('authResume', { token: tok }), BACKEND_TIMEOUT_MS, 'Sign-in resume').then((r) => {
     if (r && r.ok) { resumeSettled = true; pidAdopt(r, tok, !!(function () { try { return localStorage.getItem('jactec.pidToken'); } catch (e) { return null; } })()); pidEnter(loadP.then(applyLoadResponse)); }
     else { resumeSettled = true; cacheRefreshing(false); pidTokenClear(); backendPassword = ''; warmBackend(); renderPhoneLogin(); }   // rejected resume: pidTokenClear wipes the snapshot too
-  }).catch(() => { resumeSettled = true; cacheRefreshing(false); backendPassword = ''; warmBackend(); renderPhoneLogin(); });   // network blip: keep the token (+ its cache) for the next try
+  }).catch(() => { resumeSettled = true; cacheRefreshing(false); backendPassword = ''; warmBackend(); renderPhoneLogin("Couldn't reach the database. Try again."); });   // network blip / timeout: keep the token (+ its cache) for the next try — but SAY so (#829: a blank re-login read as "the app just forgot me")
 }
 function pidErr(msg) { pidUI.err = msg || ''; const e = document.getElementById('pid-err'); if (e) e.textContent = pidUI.err; return null; }
 async function pidCall(btnId, fn) {
