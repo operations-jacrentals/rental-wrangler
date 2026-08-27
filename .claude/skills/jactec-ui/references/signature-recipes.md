@@ -2,7 +2,11 @@
 
 The canonical implementations live in `style.css` (the `.login-*` block, the
 `.cancel-arc` block, and the `[data-theme="yard"] .col > .card` block). Match them.
-Spend boldness in ONE place (the hazard stripe); keep everything else quiet.
+
+**Signature devices are OPT-IN (Jac, 2026-07-03).** Load this file only when
+extending a surface that ALREADY wears a device, or when Jac explicitly asks for
+one. Never reach for a recipe because something "looks plain" — quiet is correct,
+and decoration never fixes generic (see `taste.md`).
 
 ## Blued Steel card plate (the `[data-theme="bluedsteel"]` surface system)
 
@@ -46,9 +50,13 @@ Keep DATA on these calm fields — never put the texture behind text.
 
 ---
 
-## Hi-vis hazard stripe (the signature)
+## Hi-vis hazard stripe (the signature — OPT-IN ONLY)
 
-The one bold motif. Use as plate CHROME — never behind text.
+**NEVER apply the stripe unless Jac explicitly asks.** Existing uses stay (card
+cap, login band, drop zones, the R4b cap) — the stripe is structural plate
+chrome, not a garnish; the one time it was added to a data surface unprompted
+(the Graph V2 seam, #450) Jac stripped it within minutes. When asked for, use as
+plate CHROME — never behind text.
 
 ```css
 /* yellow caution band (default) */

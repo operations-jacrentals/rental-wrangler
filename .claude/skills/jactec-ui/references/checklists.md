@@ -26,16 +26,26 @@ Run this before showing Jac and before any push. If a box can't be ticked, it's 
 - [ ] Icons dimmed to text weight; one divide per boundary; glyphs optically aligned.
 - [ ] Density honors a minimum legible size — split views rather than shrink past it.
 
+## Density & charts (Jac's revealed taste — `taste.md`)
+- [ ] No legends; no chart/section titles that repeat the tab; no static period labels.
+- [ ] Counts/values folded ONTO the data (slices, band edges, center totals); hover `data-tip` + aria carry naming.
+- [ ] Vertical footprint reclaimed: single-line chips, top-aligned, no empty bands; marks sized UP where chrome was removed.
+- [ ] Chart work follows `charts.md`: time-rail only where a dated source exists; honest denominators; empty states ("No data in this window."); no auto-select on open; armed = orange OUTLINE.
+- [ ] Fixed opinionated pairings — no user-facing compare/config toggles.
+
 ## Identity & motion
-- [ ] Boldness spent in ONE place (hazard stripe as chrome, not behind text).
+- [ ] NO signature device (hazard stripe, rivets, texture) added unless Jac explicitly asked; existing uses untouched. Where asked-for: chrome only, never behind text.
+- [ ] Nothing decorative added to "fix plain" — quiet is correct; genericness addressed structurally or asked via popup.
 - [ ] Motion fast + crisp, named keyframes only; no `transition: all .2s`, no bounce, no scattered micro-interactions.
 - [ ] Ranch reads industrial-first (copy + a little tan); no western skin.
 - [ ] No template hero / ornamental 01·02·03 / decorative gradient-glass.
 - [ ] Treatment mirrored across themes (not shipped in one only).
 
 ## Process & ship
-- [ ] Token plan made first; design approved (if `brainstorming` opted in, spec saved to `docs/superpowers/specs/`).
+- [ ] `taste.md` read before designing; any in-session Jac correction appended to it in this same PR.
+- [ ] Options-first loop fired for new/reshaped UI (2–3 variants → Jac picked via popup) — and correctly SKIPPED for single-element edits/copy/token tweaks/bugfixes.
+- [ ] Design approved (if `brainstorming` opted in, spec saved to `docs/superpowers/specs/`).
 - [ ] Decisions asked via `AskUserQuestion` popup, not inline.
 - [ ] Self-critique screenshot reviewed; "removed one accessory."
-- [ ] Gates green: `node ci/smoke.mjs` · `node ci/logic-test.mjs` · `node ci/gen-rule-usage.mjs --check` (regen without `--check` only if rule USAGE changed).
+- [ ] Gates green: `node ci/smoke.mjs` · `node ci/logic-test.mjs` · `node ci/gen-rule-usage.mjs --check` (regen without `--check` only if rule USAGE changed) · `node ci/check-window-catalog.mjs` · `node tools/gen-code-map.mjs --check`.
 - [ ] Ship via feature branch → PR → squash-merge to `main` (branch-protected; push = live). No model ids / secrets / passwords in the repo.

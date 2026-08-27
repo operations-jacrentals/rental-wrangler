@@ -5,6 +5,17 @@ inconsistent details. Our defense is a strong, specific identity (the yard
 data-plate) plus the discipline below. The goal isn't novelty for its own sake — it's
 that every element is **deliberate** and **part of one system**.
 
+## Quiet is correct — genericness is never fixed with chrome
+
+The instinct "this looks plain, add visual interest" is itself a slop tell — it's
+how the hazard-stripe seam got added to the Graph V2 section and stripped by Jac
+within minutes (#450). Identity here comes from the tokens, the two type voices,
+the builders, and dense data-forward composition — which every element already
+wears. If a surface still reads generic, the fix is structural (density, real
+data on the marks, tighter composition per `taste.md`) or a popup asking Jac what
+feels plain — **never** stripe, texture, gradients, ornaments, or any signature
+device (those are opt-in: Jac asks, or they don't ship).
+
 ## The three banned AI-default looks
 
 Current generated design clusters around three looks. We are **none** of them:
