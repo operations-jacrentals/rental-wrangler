@@ -4253,7 +4253,10 @@ function membershipMetaHtml(c) {
   // profile of a member-funnel customer who is NOT yet entitled, hidden for 'Pending' (a signed
   // enrollment whose scheduled card charge hasn't run — activating there would double up on it).
   // Same canMoney() gate the other lifecycle actions carry; the handler re-checks it.
-  const activateBtn = (!isMem && status !== 'Pending' && canMoney())
+  // #833 — ALSO shown for 'Past Due': a member inside the 7-day decline grace is the very state a
+  // year paid in cash has to clear (it's what renders the graceFlag countdown above), and hiding
+  // the control there left the office no way to record it.
+  const activateBtn = ((!isMem || status === 'Past Due') && status !== 'Pending' && canMoney())
     ? `<div class="kv pillrow">${actionPill('commit', 'Activate Membership', { js: 'js-mem-activate', h: 26, data: { rec: c.customerId } })}<span class="anno">annual dues paid by cash or check</span></div>`
     : '';
   return `${stateBadge ? kvPills(stateBadge) : ''}${graceFlag}${paidUntil}${activated}${planBadges}${activateBtn}${membershipEconomicsHtml(c)}`;
@@ -5157,23 +5160,56 @@ async function membershipCancel(custId) {
    their year in cash or by check could never become Active, and the §10.4 pricing gate
    (isActiveMember, app.js ~L1076) kept quoting them retail tiers. This stamps the same fields
    that path stamps, minus the charge.
+   #833 — WHY THE SERVER STAMPS IT (2026-08-28): `paidUntil`/`graceUntil` are server-owned /
+   sync-PROTECTED (memberships spec §5.1; docs/handoffs/membership-billing-additions.gs) — a
+   client write is stripped on sync, and the 18s refreshFromBackend poll then adopts the server's
+   row back over ours. #822's client-only stamp therefore EVAPORATED in PROD, and worse: the
+   fields that DO sync (`accountType`, `paidCadence`) enrolled the customer in the backend's
+   membershipBillingCron with no server-side paid-through — so the cron kept charging the card for
+   a year already paid in cash and, on the failed charge, set `graceUntil = today + 7`, which this
+   profile renders as "⚠ Canceled in 7 days". Same defect class as the 2026-06-19 manual
+   cash-payment bug (docs/handoffs/cash-payment-backend.gs): protected fields must be written by
+   the backend, never optimistically by the client. A failed call now changes NOTHING locally —
+   no false Active, no half-state for the cron to chase.
    MONEY IS NOT TOUCHED: no invoice is built, no card is charged, nothing is marked paid — the
-   office records the cash/check payment separately. This only flips the entitlement.
+   office records the cash/check payment separately (recordManualPayment). This only flips the
+   entitlement, and the backend action is money-role gated exactly like its siblings.
    Two deliberate field choices:
      • `prepaid` stays FALSE — that flag pins membershipStatus to 'Active' forever (it short-
        circuits the paidUntil compare), so a cash membership would never lapse. The term rides
        `paidUntil` instead, which expires on its own after MEMBERSHIP_MONTHS.
      • `autoRenew` stays FALSE — there is no card to renew against, and it is what keeps
        membershipBillingFlag's red 'No Billing' pulse off a legitimately cash-paid member. */
-function membershipActivateCash(custId) {
+async function membershipActivateCash(custId) {
   const c = IDX.customer.get(custId); if (!c) return;
-  if (isActiveMember(c)) return;                                   // already entitled — nothing to do
-  c.accountType = memberAccountType(c);                            // the pricing gate reads /Member/ off accountType
+  const status = membershipStatus(c);
+  // Already entitled → nothing to do. 'Past Due' is deliberately NOT excluded (#833): a member
+  // inside the 7-day decline grace is exactly who needs a cash year recorded, and it's the state
+  // showing the cancel countdown. 'Pending' stays out — its scheduled card charge hasn't run yet.
+  if (status === 'Active' || status === 'Pending') return;
+  if (!memIsDemo()) {   // PROD — the backend owns paidUntil/graceUntil; it stamps them and answers with the authoritative term
+    try {
+      const r = await backendCall('membershipActivateCash', { customerId: c.customerId });
+      if (r && r.ok && r.status === 'active') { memApplyCashActive(c, r); return; }
+      toast(/unknown action/i.test(String((r && r.error) || ''))
+        ? 'Cash activation isn’t on the backend yet — nothing was changed.'
+        : 'Activation failed — nothing was changed. Try again.');
+    } catch (e) { toast('Network error — try again.'); }
+    return;
+  }
+  memApplyCashActive(c, null);   // demo (#local) — no backend to ask; client-side exactly as #822 shipped
+}
+/* Stamp the member fields for a cash/check activation. `srv` = the backend's authoritative
+   response (PROD) or null (#local demo) — the server's term always wins when it answers, so the
+   client never invents a paid-through the Sheet doesn't hold (#833). */
+function memApplyCashActive(c, srv) {
+  const paidUntil = (srv && srv.paidUntil) || addMonthsISO(TODAY_ISO, MEMBERSHIP_MONTHS);
+  c.accountType = (srv && srv.accountType) || memberAccountType(c);   // the pricing gate reads /Member/ off accountType
   c.memberActivatedAt = TODAY_ISO;
   c.paidCadence = 'Yearly';
   c.commitmentStart = TODAY_ISO;
-  c.commitmentEnd = addMonthsISO(TODAY_ISO, MEMBERSHIP_MONTHS);
-  c.paidUntil = addMonthsISO(TODAY_ISO, MEMBERSHIP_MONTHS);
+  c.commitmentEnd = (srv && srv.commitmentEnd) || paidUntil;
+  c.paidUntil = paidUntil;
   c.prepaid = false; c.graceUntil = ''; c.autoRenew = false;
   markMembershipSigned(c, 'membership');                           // F3 — the terminal funnel stage, never set by hand
   reindex('customers', c);
