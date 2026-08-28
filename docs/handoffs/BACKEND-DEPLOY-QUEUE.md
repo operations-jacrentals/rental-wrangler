@@ -1,5 +1,31 @@
 # Backend deploy queue — DEPLOYED (2026-07-06 late session); doc kept as the deploy runbook
 
+## ⏳ READY TO PUSH — membership CASH/CHECK activation, server-side (2026-08-28, issue #833)
+- **What:** `docs/handoffs/2026-08-28-membership-activate-cash-backend.gs` — ONE additive,
+  money-role-gated action `membershipActivateCash_` (+ 1 dispatch line + 1 `WRITE_ACTIONS` key).
+  It stamps the same entitlement fields `membershipEnroll_` stamps on a cleared charge
+  (`accountType`, `paidCadence:'Yearly'`, `commitmentStart/End`, `paidUntil = today+12mo`,
+  `memberActivatedAt`, `prepaid:false`, `autoRenew:false`) and CLEARS `graceUntil` —
+  **minus the charge**. Reuses existing helpers only; no outer lock (`memPatchCustomer_`
+  takes its own).
+- **Why:** #822's cash activation wrote `paidUntil`/`graceUntil` **client-side**, but those are
+  sync-PROTECTED/server-owned — the write was stripped and the 18s `refreshFromBackend` poll
+  restored the server's row. The fields that *do* sync (`accountType` + `paidCadence`) are what
+  `membershipBillingCron` rosters on, so the cron kept charging the card for a year already paid
+  in cash and set `graceUntil = today+7` on the failed charge → the customer card showed
+  "⚠ Canceled in 7 days" (#833), and 7 days later `memLapse_` would have revoked the member rate.
+- **Money:** untouched — no invoice, no charge, no paid-marking, no refund. The cash itself is
+  recorded through the existing `recordManualPayment`. **Open (Jac's call, not automated):** dues
+  invoices the cron already created stay open — advancing `paidUntil` stops further charging, but
+  settling/voiding those is a manual money decision.
+- **Frontend:** ships on `claude/mem-cash-activate-833` (PR for #833). **Fails CLOSED until this
+  deploys** — the button toasts "Cash activation isn't on the backend yet — nothing was changed"
+  and writes nothing, which is strictly safer than today's silently-reverting half-state.
+- **Deploy flow:** pull live `Code.js` → paste the function + wire the router → `node --check` →
+  STOP-gate (show Jac) → SA `push` HEAD → **Jac's editor New-version deploy** → verify on a test
+  member: activate → the Sheet row shows `paidUntil` a year out and no `graceUntil`, the profile
+  reads Active Member with no countdown, and the 3am cron leaves the card alone.
+
 ## ✅ DEPLOYED LIVE 2026-07-17 — §authz approval codes (tier-gate swap)
 - **What:** the frontend's tier gates (Net Terms D22, rental-gate override D14, blacklist
   set/lift D13, card-gate override, admin inline pricing edits) no longer take the retired
