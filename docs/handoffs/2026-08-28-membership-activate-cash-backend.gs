@@ -36,6 +36,14 @@
  * check), but the office still has to settle or void those invoices; that write
  * is not automated.
  *
+ * AMENDED 2026-08-28 (issue #835 — BEFORE this ever deployed): the first draft of this
+ * function stamped `paidCadence:'Yearly'` on every activation. `paidCadence` is
+ * `membershipBillingCron`'s PLAN INPUT, so activating a signed $299/mo member rewrote
+ * his plan to Yearly and queued the $2,691 ANNUAL base against his card on the next
+ * cycle (and `memLapse_` would have skipped his Monthly remaining-term Cancellation
+ * Invoice). It now keeps the member's own plan, grants ONE cycle of it, and leaves an
+ * existing 12-month commitment alone.
+ *
  * This file is the tracked source of truth — NO secrets. Two edits to Code.gs:
  *
  * EDIT 1 — dispatch (in handle(), next to the other membership* lines):
@@ -55,7 +63,9 @@
 
 /* Activate a membership paid in CASH / CHECK. Money role only. Stamps the entitlement
    fields server-side (they're sync-PROTECTED, so only the server can), clears any decline
-   grace, and charges NOTHING. Idempotent: a member already paid ahead is returned as-is. */
+   grace, and charges NOTHING. Idempotent: a member already paid ahead is returned as-is.
+   #835 (2026-08-28): records ONE cycle of the member's OWN plan and never rewrites
+   paidCadence / the 12-month commitment — see the two notes inline. */
 function membershipActivateCash_(body, role) {
   var customerId = String(body.customerId || '');
   var c = readRecord_('customers', customerId);
@@ -63,22 +73,34 @@ function membershipActivateCash_(body, role) {
   if (c.stripeSubId) return { ok: false, error: 'stripe-subscription' };   // legacy Stripe-native member (membershipDailySweep owns those) — cancel the subscription first, never run both engines
   var today = todayIso_();
   if (c.paidUntil && c.paidUntil > today && !c.graceUntil) {                // already paid ahead and not counting down → nothing to change
-    return { ok: true, status: 'active', alreadyActive: true, paidUntil: c.paidUntil, accountType: c.accountType, commitmentEnd: c.commitmentEnd || '' };
+    return { ok: true, status: 'active', alreadyActive: true, paidUntil: c.paidUntil, accountType: c.accountType, commitmentEnd: c.commitmentEnd || '', paidCadence: c.paidCadence || '' };
   }
-  var paidUntil = memAddMonthsIso_(today, MEM_TERM_MONTHS);
-  var c2 = memPatchCustomer_(customerId, {
+  /* #835 — the plan is the member's own, set once at enrollment (memEnroll_). Stamping 'Yearly'
+     here converted a signed $299/mo member into a Yearly one, and paidCadence IS
+     membershipBillingCron's plan input (it bills that plan's base and advances paidUntil by 12 or
+     1 month) — so the next cron run would have put the $2,691 ANNUAL base on his card, and
+     memLapse_ would have skipped his Monthly remaining-term Cancellation Invoice. Only a customer
+     with no plan at all gets the annual default the control is annotated for. */
+  var cadence = (c.paidCadence === 'Monthly') ? 'Monthly' : 'Yearly';
+  var paidUntil = memAddMonthsIso_(today, cadence === 'Monthly' ? 1 : 12);   // ONE paid cycle, the same 12-or-1 rule memEnroll_/memCron use
+  /* #835 — the 12-month COMMITMENT is a different clock from the paid-through cycle: never
+     restarted (it would reset a signed member's term) and never collapsed onto paidUntil (the cron
+     reads paidUntil >= commitmentEnd as "term complete" and, with autoRenew false, stops billing). */
+  var commitmentStart = c.commitmentStart || today;
+  var patch = {
     accountType: memMemberAccountType_(c),
-    paidCadence: 'Yearly',
-    commitmentStart: today,
-    commitmentEnd: paidUntil,
+    paidCadence: cadence,
+    commitmentStart: commitmentStart,
+    commitmentEnd: c.commitmentEnd || memAddMonthsIso_(commitmentStart, MEM_TERM_MONTHS),
     paidUntil: paidUntil,
     memberActivatedAt: today,
-    prepaid: false,          // the term must still expire on its own (a cash year is not "prepaid to term")
+    prepaid: false,          // the term must still expire on its own (a cash cycle is not "prepaid to term")
     autoRenew: false,        // there is no card to renew against
     graceUntil: undefined,   // clears the decline countdown the cron set
     renewalFailed: undefined
-  });
+  };
+  var c2 = memPatchCustomer_(customerId, patch);
   if (!c2) return { ok: false, error: 'busy' };
   memLedger_('', customerId, 0, c.stripeId, role, 'membership-cash-activate');   // audit only — 0 cents, no charge
-  return { ok: true, status: 'active', paidUntil: c2.paidUntil, accountType: c2.accountType, commitmentEnd: c2.commitmentEnd };
+  return { ok: true, status: 'active', paidUntil: c2.paidUntil, accountType: c2.accountType, commitmentEnd: c2.commitmentEnd, paidCadence: c2.paidCadence };
 }

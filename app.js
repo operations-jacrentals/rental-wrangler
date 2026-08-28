@@ -4256,8 +4256,11 @@ function membershipMetaHtml(c) {
   // #833 — ALSO shown for 'Past Due': a member inside the 7-day decline grace is the very state a
   // year paid in cash has to clear (it's what renders the graceFlag countdown above), and hiding
   // the control there left the office no way to record it.
+  // #835 — the annotation names the cycle THIS member's plan actually buys, so the office can see
+  // the control records one monthly cycle for a Monthly member, not a year (it no longer converts
+  // the plan; see memApplyCashActive).
   const activateBtn = ((!isMem || status === 'Past Due') && status !== 'Pending' && canMoney())
-    ? `<div class="kv pillrow">${actionPill('commit', 'Activate Membership', { js: 'js-mem-activate', h: 26, data: { rec: c.customerId } })}<span class="anno">annual dues paid by cash or check</span></div>`
+    ? `<div class="kv pillrow">${actionPill('commit', 'Activate Membership', { js: 'js-mem-activate', h: 26, data: { rec: c.customerId } })}<span class="anno">${c.paidCadence === 'Monthly' ? 'monthly' : 'annual'} dues paid by cash or check</span></div>`
     : '';
   return `${stateBadge ? kvPills(stateBadge) : ''}${graceFlag}${paidUntil}${activated}${planBadges}${activateBtn}${membershipEconomicsHtml(c)}`;
 }
@@ -5177,7 +5180,8 @@ async function membershipCancel(custId) {
    Two deliberate field choices:
      • `prepaid` stays FALSE — that flag pins membershipStatus to 'Active' forever (it short-
        circuits the paidUntil compare), so a cash membership would never lapse. The term rides
-       `paidUntil` instead, which expires on its own after MEMBERSHIP_MONTHS.
+       `paidUntil` instead, which expires on its own after ONE cycle of the member's own plan
+       (#835 — a year for a Yearly member, a month for a Monthly one; never the other's).
      • `autoRenew` stays FALSE — there is no card to renew against, and it is what keeps
        membershipBillingFlag's red 'No Billing' pulse off a legitimately cash-paid member. */
 async function membershipActivateCash(custId) {
@@ -5203,17 +5207,31 @@ async function membershipActivateCash(custId) {
    response (PROD) or null (#local demo) — the server's term always wins when it answers, so the
    client never invents a paid-through the Sheet doesn't hold (#833). */
 function memApplyCashActive(c, srv) {
-  const paidUntil = (srv && srv.paidUntil) || addMonthsISO(TODAY_ISO, MEMBERSHIP_MONTHS);
+  /* #835 — THE MEMBER'S OWN PLAN IS NEVER RE-STAMPED HERE. `paidCadence` is not a label: it is
+     membershipBillingCron's plan input (membership-billing-additions.gs L206/217 — it bills THAT
+     plan's base and advances paidUntil by 12 or 1 month) and memLapse_'s mid-term Cancellation
+     Invoice test (L228). Hardcoding 'Yearly' converted a signed $299/mo member into a Yearly one,
+     which (a) showed "PAID YEARLY" on a monthly profile and (b) queued the $2,691 ANNUAL base
+     against his card on the next cycle. The plan is set once, at enrollment, from the signed
+     agreement (agreementSignCommit ~L4802) — only a customer with no plan at all falls back to the
+     annual default this control is annotated for. */
+  const cadence = (srv && srv.paidCadence) || c.paidCadence || 'Yearly';
+  // ONE paid cycle — the same 12-or-1 rule every other membership path uses (agreementChargeNow
+  // ~L4839, memEnroll_ L154, memCron L217). MEMBERSHIP_MONTHS is the COMMITMENT length, not a cycle.
+  const paidUntil = (srv && srv.paidUntil) || addMonthsISO(TODAY_ISO, cadence === 'Monthly' ? 1 : 12);
   c.accountType = (srv && srv.accountType) || memberAccountType(c);   // the pricing gate reads /Member/ off accountType
   c.memberActivatedAt = TODAY_ISO;
-  c.paidCadence = 'Yearly';
-  c.commitmentStart = TODAY_ISO;
-  c.commitmentEnd = (srv && srv.commitmentEnd) || paidUntil;
+  c.paidCadence = cadence;
+  // The 12-month COMMITMENT is a separate clock from the paid-through cycle: never restarted and
+  // never shortened here, or a signed member's remaining-term Cancellation Invoice (§4) evaporates
+  // and the cron reads paidUntil >= commitmentEnd as "term complete" and stops billing on day one.
+  if (!c.commitmentStart) c.commitmentStart = TODAY_ISO;
+  c.commitmentEnd = (srv && srv.commitmentEnd) || c.commitmentEnd || addMonthsISO(c.commitmentStart, MEMBERSHIP_MONTHS);
   c.paidUntil = paidUntil;
   c.prepaid = false; c.graceUntil = ''; c.autoRenew = false;
   markMembershipSigned(c, 'membership');                           // F3 — the terminal funnel stage, never set by hand
   reindex('customers', c);
-  logAction(c, `Membership activated — annual dues paid by cash/check; member rates through ${c.paidUntil}`);
+  logAction(c, `Membership activated — ${cadence === 'Monthly' ? 'monthly' : 'annual'} dues paid by cash/check; member rates through ${c.paidUntil}`);
   render(); toast('Membership active — member rates apply. ✓');
 }
 async function membershipReactivate(custId) {

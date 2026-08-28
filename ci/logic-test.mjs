@@ -2138,6 +2138,39 @@ try {
       T.IDX.customer.delete('C-GRACEMEM2'); T.DATA.customers.splice(T.DATA.customers.indexOf(srv), 1);
     }
 
+    // === #835 — a cash/check activation records the member's OWN plan, never converts it ===
+    // Reported: a $299/mo member whose "Membership · Monthly base" invoice was paid in full read
+    // "PAID YEARLY" on his profile. Root cause: memApplyCashActive hardcoded paidCadence:'Yearly'
+    // + a 12-month paid-through. paidCadence is membershipBillingCron's PLAN INPUT (it bills that
+    // plan's base and advances paidUntil by 12 or 1 month) and memLapse_'s Monthly
+    // remaining-term Cancellation-Invoice test — so the stomp mislabelled the badge AND queued the
+    // $2,691 ANNUAL base against a monthly member's card.
+    {
+      const addDays = (iso, n) => new Date(Date.parse(iso) + n * 86400000).toISOString().slice(0, 10);
+      const commitEnd = T.addMonthsISO(addDays(T.TODAY_ISO, -30), 12);   // signed a month ago on the 12-month commitment
+      const m = { customerId: 'C-MOMEM', firstName: 'Monthly', lastName: 'Member', name: 'Monthly Member', company: '',
+        accountType: 'Non-Business Member', paidCadence: 'Monthly', paidUntil: addDays(T.TODAY_ISO, -3),
+        graceUntil: addDays(T.TODAY_ISO, 7), commitmentStart: addDays(T.TODAY_ISO, -30), commitmentEnd: commitEnd,
+        prepaid: false, membershipStage: 'Signed', activityLog: [] };
+      T.DATA.customers.push(m); T.IDX.customer.set('C-MOMEM', m);
+      ok(/Paid Monthly/.test(T.membershipMetaHtml(m)), '#835 repro: a Monthly member\'s profile badge reads Paid Monthly before activation');
+      await T.membershipActivateCash('C-MOMEM');
+      ok(m.paidCadence === 'Monthly', `#835: the activation KEEPS the member's signed plan — the cron's plan input is never rewritten (got ${m.paidCadence})`);
+      ok(!/Paid Yearly/.test(T.membershipMetaHtml(m)) && /Paid Monthly/.test(T.membershipMetaHtml(m)), '#835: the profile badge still reads Paid Monthly, not PAID YEARLY');
+      ok(m.paidUntil === T.addMonthsISO(T.TODAY_ISO, 1), `#835: one MONTHLY cycle is paid through, not a free year (got ${m.paidUntil})`);
+      ok(T.membershipStatus(m) === 'Active' && m.graceUntil === '', '#835: the activation still clears the decline grace and reads Active');
+      ok(m.commitmentStart === addDays(T.TODAY_ISO, -30) && m.commitmentEnd === commitEnd, '#835: the signed 12-month commitment is neither restarted nor collapsed onto the paid-through (its remaining-term Cancellation Invoice survives)');
+      ok(m.paidUntil < m.commitmentEnd, '#835: paidUntil stays inside the commitment, so the cron reads the term as live (paidUntil >= commitmentEnd = "term complete" → billing stops)');
+      // an ANNUAL member is unchanged — still a full year
+      const y = { customerId: 'C-YRMEM', accountType: 'Non-Business Member', paidCadence: 'Yearly',
+        paidUntil: addDays(T.TODAY_ISO, -3), graceUntil: addDays(T.TODAY_ISO, 7), prepaid: false, activityLog: [] };
+      T.DATA.customers.push(y); T.IDX.customer.set('C-YRMEM', y);
+      await T.membershipActivateCash('C-YRMEM');
+      ok(y.paidCadence === 'Yearly' && y.paidUntil === T.addMonthsISO(T.TODAY_ISO, 12), '#835: a Yearly member still gets the full 12-month cash year (no regression on #822/#833)');
+      T.IDX.customer.delete('C-MOMEM'); T.DATA.customers.splice(T.DATA.customers.indexOf(m), 1);
+      T.IDX.customer.delete('C-YRMEM'); T.DATA.customers.splice(T.DATA.customers.indexOf(y), 1);
+    }
+
     // === F3 — membership funnel 'Signed' is agreement-driven, never manual (spec §3.1) ===
     {
       const c = { customerId: 'C-SIGN', accountType: 'Business Member', membershipStage: 'Contacted', activityLog: [] };

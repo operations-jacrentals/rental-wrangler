@@ -4,10 +4,16 @@
 - **What:** `docs/handoffs/2026-08-28-membership-activate-cash-backend.gs` — ONE additive,
   money-role-gated action `membershipActivateCash_` (+ 1 dispatch line + 1 `WRITE_ACTIONS` key).
   It stamps the same entitlement fields `membershipEnroll_` stamps on a cleared charge
-  (`accountType`, `paidCadence:'Yearly'`, `commitmentStart/End`, `paidUntil = today+12mo`,
-  `memberActivatedAt`, `prepaid:false`, `autoRenew:false`) and CLEARS `graceUntil` —
-  **minus the charge**. Reuses existing helpers only; no outer lock (`memPatchCustomer_`
-  takes its own).
+  (`accountType`, `commitmentStart/End`, `paidUntil`, `memberActivatedAt`, `prepaid:false`,
+  `autoRenew:false`) and CLEARS `graceUntil` — **minus the charge**. Reuses existing helpers
+  only; no outer lock (`memPatchCustomer_` takes its own).
+- **AMENDED 2026-08-28 (issue #835) — re-read the .gs before pasting.** The first draft stamped
+  `paidCadence:'Yearly'` + `paidUntil = today+12mo` + `commitmentEnd = paidUntil` for everyone.
+  `paidCadence` is `membershipBillingCron`'s **plan input**, so activating a signed **$299/mo**
+  member converted him to Yearly and queued the **$2,691 annual base** against his card (and
+  `memLapse_` would have skipped his Monthly remaining-term Cancellation Invoice). It now keeps
+  the member's own plan, grants **ONE cycle of that plan** (12 or 1 month — the same rule
+  `memEnroll_`/`memCron` use), and leaves an existing 12-month commitment alone.
 - **Why:** #822's cash activation wrote `paidUntil`/`graceUntil` **client-side**, but those are
   sync-PROTECTED/server-owned — the write was stripped and the 18s `refreshFromBackend` poll
   restored the server's row. The fields that *do* sync (`accountType` + `paidCadence`) are what
