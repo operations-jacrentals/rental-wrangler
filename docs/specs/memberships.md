@@ -343,6 +343,25 @@ Response (consumed `app.js:3386`): `{ ok, status:'active', charge }`.
   success set `accountType` back to Member, `paidUntil = commitmentEnd`,
   `prepaid = true` (rides to term, no further charges).
 
+### 5.3b `membershipActivateCash` (2026-08-28, issue #833 — frontend shipped, backend QUEUED)
+
+Request: `{ customerId }`. Response: `{ ok, status:'active', paidUntil, accountType,
+commitmentEnd, alreadyActive? }`. Backend source of truth:
+`docs/handoffs/2026-08-28-membership-activate-cash-backend.gs` (money-role gated, `roleMoneyOk_`).
+- The **cash/check** counterpart to §5.1: stamps the same entitlement fields a cleared enrollment
+  charge stamps (`accountType`, `paidCadence:'Yearly'`, `commitmentStart/End`,
+  `paidUntil = today+12mo`, `memberActivatedAt`, `prepaid:false`, `autoRenew:false`) and **clears
+  `graceUntil`** — **minus the charge**. No invoice, no card, no paid-marking, no refund; the cash
+  is recorded separately via `recordManualPayment`. Idempotent; refuses a `stripeSubId` member.
+- **Why it must be server-side (the #833 defect):** #822 shipped this activation client-only, but
+  §5.1's protected-field rule means `paidUntil`/`graceUntil` never landed — while `accountType` +
+  `paidCadence` *did*, which is the pair `membershipBillingCron` rosters on. The cron then charged
+  the card for a year already paid in cash and set `graceUntil = today+7` on the failure, so the
+  profile showed "⚠ Canceled in 7 days" and would have lapsed the member a week later. Client
+  fail-closed until the backend deploys: nothing is written locally.
+- **Open (Jac's call, not automated):** dues invoices the cron already created stay open —
+  advancing `paidUntil` stops further charging, but settling/voiding them is a manual money step.
+
 ### 5.4 `membershipBillingCron` (PROPOSED — Phase 2, not built)
 
 A daily Apps Script **time-trigger** (additive, ships via `/clasp`):
