@@ -13055,7 +13055,7 @@ function ruTimeUtil(rg) {   // proxy: days on rent ÷ available days per categor
   if (!rows.length) return ruEmpty('Nothing on rent in this window.');
   return ruWireNav(ruBarsSVG({ data: rows, fmt: (v) => v + '%' }), rows);
 }
-function ruDollarUtil(rg) {   // annualized range revenue ÷ fleet cost basis, per category
+function ruDollarUtil(rg) {   // annualized range revenue ÷ fleet cost basis, per category + the All-Fleet rollup
   const { a, b, note } = ruUtilWindow(rg);
   const days = Math.max(1, Math.round((parseISO(b) - parseISO(a)) / 86400000));
   const A = ruCatMoney({ k: 'x', a, b });
@@ -13068,7 +13068,26 @@ function ruDollarUtil(rg) {   // annualized range revenue ÷ fleet cost basis, p
     return { label: nm, name: `${nm} — ${pct}% dollar utilization`, value: pct, fill: green, card: 'categories', col: 'name', navValue: nm, tip: `${nm}: ${money(rev)} rev${note} annualized ÷ ${money(basis)} fleet cost — ${pct}%` };
   }).filter((d) => d && d.value > 0).sort((x, y) => y.value - x.value).slice(0, 12);
   if (!rows.length) return ruEmpty('No revenue against a recorded cost basis yet — set true cost or purchase price on units.');
-  return ruWireNav(ruBarsSVG({ data: rows, fmt: (v) => v + '%' }), rows);
+  return ruDuo(ruWireNav(ruBarsSVG({ data: rows, fmt: (v) => v + '%' }), rows), ruFleetDollarUtil(A, days, note));
+}
+/* the ALL-FLEET rollup pinned beside the category bars (#837 — "what is the total dollar
+   utilization across the entire fleet"). Percentages over DIFFERENT denominators cannot be
+   added, so this is not Σ of the bars: it is the same N11 formula at fleet scope —
+   Σrev annualized ÷ Σbasis — which IS the cost-weighted total, so it reconciles with them.
+   Built from the whole `A` rollup, not the drawn rows: it counts every category carrying a
+   cost basis (the bars stop at 12) and keeps idle iron in the denominator, since unrented
+   capital is exactly what a utilization number is supposed to expose. */
+function ruFleetDollarUtil(A, days, note) {
+  let rev = 0, basis = 0, cats = 0;
+  Object.keys(A.basis).forEach((id) => {
+    const bs = A.basis[id] || 0; if (bs <= 0) return;
+    basis += bs; rev += A.rev[id] || 0; cats++;
+  });
+  if (basis <= 0) return null;
+  const pct = Math.round((rev / days * 365) / basis * 100);
+  const n = ruReality({ num: pct + '%', noun: 'All Fleet' });
+  n.dataset.tip = `All Fleet — ${money(rev)} rev${note} annualized ÷ ${money(basis)} fleet cost across ${cats} categor${cats === 1 ? 'y' : 'ies'} — ${pct}%`;
+  return n;
 }
 function ruCostPerHour() {   // per-unit maintenance $ per meter hour — the manager's problem-unit finder (snapshot)
   const spend = {};
