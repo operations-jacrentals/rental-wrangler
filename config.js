@@ -493,16 +493,19 @@ export function legacyTransportPrice(transportType, address, { unlimitedTranspor
 }
 
 /* ── Transport pricing v2 (Jac 2026-06-15) — real per-mile formula ────────────
- * Per unit, per transport leg:  $3.50/mile + $50 load + ($20 fuel if fueled).
+ * Per unit:  ($4.00/mile + $50 load) × legs  +  $35 fuel-fill ONCE per order if fueled.
  * legs = Delivery|Recovery → 1 ; Round-Trip → 2 ; Self|none → 0. One-way miles
  * and drive minutes come from Google (origin = the yard) and are CACHED on the
- * unit entry at save time, so render/billing never calls Google. */
-export const TRANSPORT_RATES = { perMile: 3.5, loadPerLeg: 50, fuelPerLeg: 20 };
+ * unit entry at save time, so render/billing never calls Google.
+ * Rates 2026-09-22 (Jac, diesel ~$6/gal): perMile 3.5→4, fuelPerLeg 20→35, and the
+ * fill is now charged once per order — it fills the MACHINE on delivery, so a
+ * Round-Trip no longer bills it twice. (`fuelPerLeg` keeps its name: one release, no renames.) */
+export const TRANSPORT_RATES = { perMile: 4, loadPerLeg: 50, fuelPerLeg: 35 };
 
 /** The dispatch origin for every transport distance lookup (Google Distance Matrix). */
 export const YARD_ORIGIN = 'JacRentals, Sulphur, LA, USA';
 
-/** A unit is "fueled" (gets the $20/leg fuel-fill) when its category runs on a
+/** A unit is "fueled" (gets the $35 fuel-fill) when its category runs on a
  *  combustion fuel. Electric / battery / unknown → no fuel charge. */
 export function isFueledType(fuelType) {
   return /diesel|gas(oline)?|petrol|propane|\blp\b/i.test(String(fuelType || ''));
@@ -522,9 +525,9 @@ export function computeTransportPrice({ transportType, oneWayMiles, fueled = fal
   if (!legs) return { price: 0, driveMin: 0, label: 'Self', legs: 0 };
   if (unlimitedTransport) return { price: 0, driveMin: 0, label: 'Unlimited', legs };
   if (oneWayMiles == null || !isFinite(oneWayMiles)) return { price: null, driveMin: null, label: '—', legs };
-  const perLeg = TRANSPORT_RATES.perMile * oneWayMiles + TRANSPORT_RATES.loadPerLeg + (fueled ? TRANSPORT_RATES.fuelPerLeg : 0);
-  const price = Math.round(perLeg * legs);
-  return { price, driveMin: null, label: `$${price}`, legs, perLeg: Math.round(perLeg) };
+  const haulPerLeg = TRANSPORT_RATES.perMile * oneWayMiles + TRANSPORT_RATES.loadPerLeg;
+  const price = Math.round(haulPerLeg * legs + (fueled ? TRANSPORT_RATES.fuelPerLeg : 0));   // fill once per order, not per leg
+  return { price, driveMin: null, label: `$${price}`, legs, perLeg: Math.round(price / legs) };   // perLeg = the "/one-way" pill; averages the fill across legs
 }
 
 /* ── Locked date formats (SPEC §12.2) ────────────────────────────────────

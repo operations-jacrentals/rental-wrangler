@@ -50,7 +50,7 @@ is referrer-locked, so it's only usable from `app.jacrentals.com`.)
 
 Reload the app. Open any rental → **+Transport**: you'll get the live Google map,
 real address autocomplete, and pricing computed from Google's actual one-way drive
-distance — `$3.50/mile + $50 load + $20 fuel (per leg)`. Until the key is live the
+distance — `($4.00/mile + $50 load) per leg + $35 fuel-fill once per order`. Until the key is live the
 editor keeps working in mock mode, so nothing is ever broken.
 
 ### How pricing uses the key

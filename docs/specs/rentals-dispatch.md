@@ -374,7 +374,7 @@ Extension and rental lines are taxable by default; `invoiceTotals()` (`app.js:13
 ```
 legs    = Round-Trip→2 ; Delivery|Recovery→1 ; Self|none→0
 fueled  = /diesel|gas|gasoline|petrol|propane|lp/i.test(category.fuelType)
-perLeg  = 3.50 × oneWayMiles + 50 (load) + (fueled ? 20 : 0) (fuel)
+haul    = 4.00 × oneWayMiles + 50 (load);  price = haul × legs + (fueled ? 35 : 0) — fill once per order (2026-09-22)
 price   = perLeg × legs ;  $0 for unlimited-transport active members
 ```
 
