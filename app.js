@@ -1268,7 +1268,7 @@ function rentalLineItems(r) {
     return { kind: 'rental', ref: r.rentalId, unitId: eu.unitId, lid: lineLid(), label: `${u?.name || 'Rental'} · ${p ? p.rate : '—'}`, amount: p ? p.price : 0 };
   });
 }
-/** Is the unit fueled (gets the $20/leg fuel-fill)? Reads its category's fuelType. */
+/** Is the unit fueled (gets the $35 fuel-fill, once per order)? Reads its category's fuelType. */
 function unitFueled(unitId) {
   return isFueledType(IDX.category.get(IDX.unit.get(unitId)?.categoryId)?.fuelType);
 }

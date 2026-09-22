@@ -60,7 +60,7 @@ This documents exactly what exists, as canon. **Pricing is 100% static and manua
 | Rate selection | `rentalPrice(r)` `app.js:836` | Picks the **cheapest blend** of 4-week/7-day/1-day across the window; member + weekend overrides |
 | Unset-rate guard | `catRatesUnset(cat)` `app.js:873` | True when all three of `rate1Day/rate7Day/rate4Wk` are 0 — drives the quote-time caution flag so a $0 category never quotes free |
 | Per-unit pricing | `unitRentalPrice(r, unitId)` `app.js:879` | Each unit billed by **its own** category over the shared window |
-| Transport pricing | `computeTransportPrice()` `config.js:491`, `TRANSPORT_RATES` `config.js:471` | `perMile 3.5, loadPerLeg 50, fuelPerLeg 20` — **out of scope** for v1 (rental rates only) |
+| Transport pricing | `computeTransportPrice()` `config.js:491`, `TRANSPORT_RATES` `config.js:471` | `perMile 4, loadPerLeg 50, fuelPerLeg 35` (fill once per order) — **out of scope** for v1 (rental rates only) |
 
 `rentalPrice()` core, verbatim shape (`app.js:854–858`):
 

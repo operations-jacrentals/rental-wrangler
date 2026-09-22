@@ -93,7 +93,7 @@ The Calendar card body is a **daily driver timeline** over a full-pane live map 
 
 | Function | Where | Behavior |
 |---|---|---|
-| `computeTransportPrice({transportType, oneWayMiles, fueled, unlimitedTransport})` | `config.js:491` | **PURE, testable, no Google.** `perLeg = 3.5*miles + 50 load + (fueled?20:0)`; `price = round(perLeg * legs)`. Unlimited member → `$0`. `miles==null` → `price:null` ("—"). |
+| `computeTransportPrice({transportType, oneWayMiles, fueled, unlimitedTransport})` | `config.js:491` | **PURE, testable, no Google.** `haul = 4*miles + 50 load`; `price = round(haul * legs + (fueled?35:0))` — the fill is charged ONCE per order (2026-09-22). Unlimited member → `$0`. `miles==null` → `price:null` ("—"). |
 | `legsForType` | `config.js:483` | Round-Trip → 2, Delivery/Recovery → 1, Self/none → 0. |
 | `legacyTransportPrice` | `config.js:457` | City-tier `TRANSPORT_MAP` fallback for never-geocoded addresses (seeded demo data, CI). |
 | `transportCost` | `app.js:899` | Picks `computeTransportPrice` when cached `miles != null`, else `legacyTransportPrice`. |
@@ -284,9 +284,9 @@ All new/changed UI runs through `jactec-ui`. The two surfaces here are already i
 ```
 legs   = Round-Trip → 2 ; Delivery|Recovery → 1 ; Self|none → 0      (config.js:483)
 fueled = /diesel|gas(oline)?|petrol|propane|\blp\b/i.test(category.fuelType)   (config.js:478)
-perLeg = TRANSPORT_RATES.perMile(3.5) * oneWayMiles
+haul   = TRANSPORT_RATES.perMile(4) * oneWayMiles
          + TRANSPORT_RATES.loadPerLeg(50)
-         + (fueled ? TRANSPORT_RATES.fuelPerLeg(20) : 0)             (config.js:471, 496)
+price  = round(haul × legs + (fueled ? TRANSPORT_RATES.fuelPerLeg(35) : 0))   fill ONCE per order (config.js:500, 523)
 price  = round(perLeg * legs)                                        (config.js:497)
 ```
 
@@ -334,7 +334,7 @@ price  = round(perLeg * legs)                                        (config.js:
 Doc-of-record (P0):
 
 1. §2 accurately names every shipped function with a correct `file:line` anchor (verified against `app.js`/`config.js` on 2026-06-28).
-2. The price formula in §7.1 matches `computeTransportPrice` (`config.js:491`) exactly, including the `3.5 / 50 / 20` rates and `round(perLeg*legs)`.
+2. The price formula in §7.1 matches `computeTransportPrice` (`config.js:491`) exactly, including the `4 / 50 / 35` rates and `round(haul*legs + fill)`.
 3. The determinism rule ("Google only at save, never at render/billing") is stated and matches the code.
 4. The key is referred to by name only; **no key value, no Script Property value, no PII appears in this file.**
 
@@ -394,7 +394,7 @@ If P1+ ships, additionally:
 
 10. **Multi-yard seam (coordinate with `fleet-spread`).** `YARD_ORIGIN` is a single hardcoded string fed to `RouteMatrix.origins`. When `fleet-spread` lands, the origin becomes per-rental. Confirm Maps/Location only *exposes the seam* (`origins:[yardAddress(r)]`) and `fleet-spread` owns the Location entity + fallback to today's behavior.
 
-11. **`automated-pricing` overlap.** `automated-pricing` explicitly scopes transport pricing **out** of its v1 (rental rates only). Confirm transport rates (`3.5/50/20`) stay a static `config.js` constant here and are **not** pulled into any future pricing-automation engine without a deliberate decision.
+11. **`automated-pricing` overlap.** `automated-pricing` explicitly scopes transport pricing **out** of its v1 (rental rates only). Confirm transport rates (`4/50/35`) stay a static `config.js` constant here and are **not** pulled into any future pricing-automation engine without a deliberate decision.
 
 12. **Ranch-twist dosage in dispatch copy.** The cockpit's "Live · auto-notifies the driver" line is industrial. Is any wrangler seasoning wanted in the cockpit ("Round up the run", "the hand's day"), or keep dispatch strictly operational?
 

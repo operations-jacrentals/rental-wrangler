@@ -1106,16 +1106,20 @@ try {
       ok(/^Open /.test(T.wrRecLabel(res.focus.entity, res.focus.id)), 'WR-auto: wrRecLabel gives an "Open …" link label');
     }
 
-    // 13) Transport pricing v2 — $3.50/mile + $50 load + $20 fuel (fueled), per leg.
+    // 13) Transport pricing v2 (rates 2026-09-22) — ($4.00/mile + $50 load) × legs + $35 fuel-fill ONCE if fueled.
     const tp = (a) => T.computeTransportPrice(a).price;
-    // 10 mi Delivery, fueled: (3.5*10 + 50 + 20) * 1 = 105
-    ok(tp({ transportType: 'Delivery', oneWayMiles: 10, fueled: true }) === 105, 'Delivery 10mi fueled → $105');
-    // 10 mi Round-Trip, fueled: 105 * 2 = 210
-    ok(tp({ transportType: 'Round-Trip', oneWayMiles: 10, fueled: true }) === 210, 'Round-Trip 10mi fueled → $210 (2 legs)');
-    // 10 mi Delivery, NOT fueled: (35 + 50) * 1 = 85
-    ok(tp({ transportType: 'Delivery', oneWayMiles: 10, fueled: false }) === 85, 'Delivery 10mi electric → $85 (no fuel)');
+    // 10 mi Delivery, fueled: (4*10 + 50) * 1 + 35 = 125
+    ok(tp({ transportType: 'Delivery', oneWayMiles: 10, fueled: true }) === 125, 'Delivery 10mi fueled → $125');
+    // 10 mi Round-Trip, fueled: (40 + 50) * 2 + 35 = 215 — the fill is charged ONCE, not per leg
+    ok(tp({ transportType: 'Round-Trip', oneWayMiles: 10, fueled: true }) === 215, 'Round-Trip 10mi fueled → $215 (2 legs, one fill)');
+    // 10 mi Delivery, NOT fueled: (40 + 50) * 1 = 90
+    ok(tp({ transportType: 'Delivery', oneWayMiles: 10, fueled: false }) === 90, 'Delivery 10mi electric → $90 (no fuel)');
+    // 10 mi Round-Trip, NOT fueled: 90 * 2 = 180
+    ok(tp({ transportType: 'Round-Trip', oneWayMiles: 10, fueled: false }) === 180, 'Round-Trip 10mi electric → $180 (2 legs, no fuel)');
     // Recovery = 1 leg like Delivery
-    ok(tp({ transportType: 'Recovery', oneWayMiles: 10, fueled: true }) === 105, 'Recovery 10mi fueled → $105 (1 leg)');
+    ok(tp({ transportType: 'Recovery', oneWayMiles: 10, fueled: true }) === 125, 'Recovery 10mi fueled → $125 (1 leg)');
+    // the "/one-way" pill averages the once-only fill across the legs
+    ok(T.computeTransportPrice({ transportType: 'Round-Trip', oneWayMiles: 10, fueled: true }).perLeg === 108, 'Round-Trip perLeg = round(215/2) = $108');
     // Self / unlimited / unknown miles
     ok(tp({ transportType: 'Self', oneWayMiles: 10, fueled: true }) === 0, 'Self → $0');
     ok(tp({ transportType: 'Round-Trip', oneWayMiles: 10, fueled: true, unlimitedTransport: true }) === 0, 'Unlimited member → $0');
