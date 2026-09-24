@@ -2566,13 +2566,16 @@ try {
       const uSold = mkU('U-UTL3', { name: 'Util Sold', fleetStatus: 'Sold', gpsProvider: 'Hapn', gpsDeviceId: 'dev3' });   // mapped BUT Sold
       const uFailed = mkU('U-UTL4', { name: 'Util Failed', gpsProvider: 'Deere', gpsDeviceId: 'dev4' });    // mapped, fetch failed
       const uOpen2 = mkU('U-UTL5', { name: 'Util Mapped 2', gpsProvider: 'Hapn', gpsDeviceId: 'dev5' });    // same category as U-UTL1 — sum check
-      const fixtureUnits = [uOpen1, uUnmapped, uSold, uFailed, uOpen2];
+      const uInactive = mkU('U-UTL6', { name: 'Util Inactive', fleetStatus: 'Inactive', gpsProvider: 'Hapn', gpsDeviceId: 'dev6' });   // mapped BUT Inactive (#843)
+      const uForSaleUnmapped = mkU('U-UTL7', { name: 'Util For Sale', fleetStatus: 'For Sale' });                                      // unmapped AND non-Active (#843)
+      const fixtureUnits = [uOpen1, uUnmapped, uSold, uFailed, uOpen2, uInactive, uForSaleUnmapped];
 
       const windowDays = 30;
       const usageByUnitId = {
         'U-UTL1': { hours: 15, miles: 0, days: Array(3).fill({}), failed: false },   // only 3 days had data, but a 30-day window
         'U-UTL4': { hours: 0, miles: 0, days: [], failed: true },
         'U-UTL5': { hours: 9, miles: 42.5, days: Array(30).fill({}), failed: false },
+        'U-UTL6': { hours: 50, miles: 10, days: Array(30).fill({}), failed: false },   // must NOT reach the category sum
       };
       const roll = T.gpsUtilRollup(fixtureUnits, usageByUnitId, windowDays);
 
@@ -2590,6 +2593,8 @@ try {
       // (c) a Sold unit is excluded even though it's mapped (mirrors the M4/M5 Sold
       // exclusion — Sold equipment isn't fleet capacity) — and it does NOT inflate unmappedCount either.
       ok(!roll.perUnit.some((r) => r.unitId === 'U-UTL3'), 'gps M6: a Sold-but-mapped unit is excluded from perUnit');
+      // #843 — ONLY Active units belong in the report: Inactive/For Sale are out entirely (rows, sums, unmapped count)
+      ok(!roll.perUnit.some((r) => r.unitId === 'U-UTL6' || r.unitId === 'U-UTL7'), '#843: non-Active (Inactive / For Sale) units never appear in the utilization report');
 
       // (d) a failed-fetch unit shows in perUnit with failed:true, but its hours are NOT
       // silently counted as 0 toward the category total — a gap must stay a gap, not a zero.
@@ -2605,6 +2610,19 @@ try {
       // cleanup — only IDX.category was touched (the fixture units were never added to
       // T.DATA.units/T.IDX.unit, since gpsUtilRollup takes its own units array)
       T.IDX.category.delete(cat.categoryId);
+    }
+
+    // #843 — the M3 time-utilization denominator counts ONLY Active units: flipping a unit
+    // to Sold/Inactive must drop it from its category's fleet count.
+    {
+      const u = T.DATA.units.find((x) => x.categoryId && x.fleetStatus === 'Active');
+      const before = T.ruCatUtilProxy({ k: 'all', a: null, b: null }).fleet[u.categoryId] || 0;
+      const was = u.fleetStatus; u.fleetStatus = 'Sold';
+      const after = T.ruCatUtilProxy({ k: 'all', a: null, b: null }).fleet[u.categoryId] || 0;
+      u.fleetStatus = was;
+      ok(after === before - 1, '#843: a Sold unit drops out of the time-utilization fleet denominator');
+      const activeCount = T.DATA.units.filter((x) => x.categoryId === u.categoryId && x.fleetStatus === 'Active').length;
+      ok(before === activeCount, '#843: the time-utilization fleet count equals the Active units in the category');
     }
 
     // §inv-collision (Jac 2026-07-07) — a locally-minted invoice NUMBER that already belongs to

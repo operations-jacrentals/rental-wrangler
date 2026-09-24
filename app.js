@@ -12701,7 +12701,7 @@ function ruCatMoney(rg) {
     const us = rentalUnits(rr).map((eu) => IDX.unit.get(eu.unitId)).filter((u) => u && u.categoryId);
     if (!us.length) return;
     const share = ((rentalPrice(rr) || {}).price || 0) / us.length;
-    us.forEach((u) => { rev[u.categoryId] = (rev[u.categoryId] || 0) + share; });
+    us.forEach((u) => { if (rg.activeOnly && u.fleetStatus !== 'Active') return; rev[u.categoryId] = (rev[u.categoryId] || 0) + share; });
   });
   DATA.workOrders.forEach((w) => {
     if (w.cancelled) return; if (ruBounded(rg) && !ruIn(w.date, rg)) return;
@@ -12709,7 +12709,7 @@ function ruCatMoney(rg) {
     const c = (w.lineItems || []).reduce((a, li) => a + (Number(li.cost) || 0), 0);
     if (c) exp[u.categoryId] = (exp[u.categoryId] || 0) + c;
   });
-  DATA.units.forEach((u) => { if (!u.categoryId) return; const b = Number(u.trueCost) || Number(u.purchasePrice) || 0; if (b) basis[u.categoryId] = (basis[u.categoryId] || 0) + b; });
+  DATA.units.forEach((u) => { if (!u.categoryId || (rg.activeOnly && u.fleetStatus !== 'Active')) return; const b =Number(u.trueCost) || Number(u.purchasePrice) || 0; if (b) basis[u.categoryId] = (basis[u.categoryId] || 0) + b; });
   return { rev, exp, basis };
 }
 function ruRevByCat(rg) {
@@ -13038,10 +13038,10 @@ function ruCatUtilProxy(rg) {
     if (!rs) return;
     const lo = rs > a ? rs : a, hi = re < b ? re : b; if (lo >= hi) return;
     const d = Math.round((parseISO(hi) - parseISO(lo)) / 86400000); if (d <= 0) return;
-    rentalUnits(r2).forEach((eu) => { const u = IDX.unit.get(eu.unitId); if (u && u.categoryId) rented[u.categoryId] = (rented[u.categoryId] || 0) + d; });
+    rentalUnits(r2).forEach((eu) => { const u = IDX.unit.get(eu.unitId); if (u && u.categoryId && u.fleetStatus === 'Active') rented[u.categoryId] = (rented[u.categoryId] || 0) + d; });
   });
-  const fleet = {};   // categoryId → unit count (available days = units × window days)
-  DATA.units.forEach((u) => { if (u.categoryId) fleet[u.categoryId] = (fleet[u.categoryId] || 0) + 1; });
+  const fleet = {};   // categoryId → Active unit count (available days = units × window days) — non-Active units are out entirely (#843)
+  DATA.units.forEach((u) => { if (u.categoryId && u.fleetStatus === 'Active') fleet[u.categoryId] = (fleet[u.categoryId] || 0) + 1; });
   return { days, note, rented, fleet };
 }
 function ruTimeUtil(rg) {   // proxy: days on rent ÷ available days per category — swaps to (Δhours ÷ expected)×100 once M4 history exists
@@ -13058,7 +13058,7 @@ function ruTimeUtil(rg) {   // proxy: days on rent ÷ available days per categor
 function ruDollarUtil(rg) {   // annualized range revenue ÷ fleet cost basis, per category
   const { a, b, note } = ruUtilWindow(rg);
   const days = Math.max(1, Math.round((parseISO(b) - parseISO(a)) / 86400000));
-  const A = ruCatMoney({ k: 'x', a, b });
+  const A = ruCatMoney({ k: 'x', a, b, activeOnly: true });   // Active fleet only — sold/inactive units out of rev AND basis (#843)
   const green = ruColor('--green');
   const rows = Object.entries(A.rev).map(([id, rev]) => {
     const basis = A.basis[id] || 0;   // same trueCost-||-purchasePrice basis the board's ROI already shows
@@ -24668,7 +24668,7 @@ function gpsUtilRollup(units, usageByUnitId, windowDays = 30) {
   let unmappedCount = 0;
 
   for (const u of (units || [])) {
-    if (u.fleetStatus === 'Sold') continue;   // Sold equipment isn't fleet capacity — never rolled up
+    if (u.fleetStatus !== 'Active') continue;   // only the Active fleet is capacity — Sold/Inactive/For Sale/Retired never rolled up (#843)
     if (!(u.gpsProvider && u.gpsDeviceId)) { unmappedCount++; continue; }
 
     const cat = IDX.category ? IDX.category.get(u.categoryId) : null;
@@ -24699,7 +24699,7 @@ function gpsUtilRollup(units, usageByUnitId, windowDays = 30) {
 }
 
 /* THE I/O SCAN. Computes the ISO window from `days`, fires gpsUsageDaily for every
-   mapped + non-Sold unit via allSettled (one dead device must never blank the report),
+   mapped + Active unit via allSettled (one dead device must never blank the report),
    then hands the built usage map to the pure rollup above. A failed fetch never silently
    becomes a zero — it's recorded with failed:true so gpsUtilRollup can exclude it from
    the category sum while still surfacing the gap per-unit. */
@@ -24709,7 +24709,7 @@ async function gpsUtilScan(days) {
   const startD = new Date(endD.getTime() - win * 86400000);
   const startISO = startD.toISOString().slice(0, 10), endISO = endD.toISOString().slice(0, 10);
 
-  const mapped = (DATA.units || []).filter((u) => u.gpsProvider && u.gpsDeviceId && u.fleetStatus !== 'Sold');
+  const mapped = (DATA.units || []).filter((u) => u.gpsProvider && u.gpsDeviceId && u.fleetStatus === 'Active');
   const results = await Promise.allSettled(mapped.map((u) => gpsUsageDaily(u.gpsProvider, u.gpsDeviceId, startISO, endISO)));
 
   const usageByUnitId = {};
@@ -27273,7 +27273,7 @@ function exposeTestApi() {
       dataCache, cacheValid, cacheDeviceOk, cacheTokenTag, cacheAppVer, cacheSnapshotEnvelope, CACHE_SCHEMA_VER, FEATURES,   // §instant-cache (spec 2026-07-16)
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, pickFunnelStage, toggleFunnelMembership, rentalFunnelStage, funnelStageOf, inFunnel, inRental, hasRentalActivity, funnelTrackA, funnelTrackEquip, ensureFunnels, funnelMenuHtml, reachFunnelStage, toggleMemberLead, funnelCurrentStage, funnelLayerDate, funnelLayerNote, ensureFunnelLog, markMembershipSigned, funnelLayerAction, funnelScope, naUrgency, naOpenList, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipActivateCash, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, acctBlockFoot, liftCustomerBlacklist, rentalAccountCustomer, clearRentalCustomer, clearInvoiceCustomer, invoiceRentalLinkFrozen, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsPickerError, gpsUtilRollup, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, pickFunnelStage, toggleFunnelMembership, rentalFunnelStage, funnelStageOf, inFunnel, inRental, hasRentalActivity, funnelTrackA, funnelTrackEquip, ensureFunnels, funnelMenuHtml, reachFunnelStage, toggleMemberLead, funnelCurrentStage, funnelLayerDate, funnelLayerNote, ensureFunnelLog, markMembershipSigned, funnelLayerAction, funnelScope, naUrgency, naOpenList, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipActivateCash, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, acctBlockFoot, liftCustomerBlacklist, rentalAccountCustomer, clearRentalCustomer, clearInvoiceCustomer, invoiceRentalLinkFrozen, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsPickerError, gpsUtilRollup, ruCatUtilProxy, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
       reserveQuoteIfAllowed, winPickDay, winPickSave,
       tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, openYardCamera, commitYardCapture, nextCategoryId, nextUnitId,
       tripsLS, tripMerge, tripSplit, assignTripDriver, tripLabel, assignStopDriver, tripSetTime,
