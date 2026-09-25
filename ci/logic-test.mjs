@@ -2078,6 +2078,103 @@ try {
       T.DATA.customers.splice(T.DATA.customers.indexOf(c), 1);
     }
 
+    // === #833 — a cash-paid year has to reach the SERVER, or the card counts down to cancellation ===
+    // Root cause: #822 stamped paidUntil/graceUntil CLIENT-side, but those are server-owned /
+    // sync-PROTECTED (memberships spec §5.1) — the write was stripped and refreshFromBackend put
+    // the server's row back. The fields that DO sync (accountType + paidCadence) are what the
+    // backend's membershipBillingCron rosters on, so it kept charging the card for a year paid in
+    // cash and set graceUntil = today+7 on the failed charge → the customer card showed
+    // "⚠ Canceled in 7 days". The activation is server-authoritative now, and a backend that
+    // can't take it leaves the record untouched instead of painting a false Active.
+    {
+      const addDays = (iso, n) => new Date(Date.parse(iso) + n * 86400000).toISOString().slice(0, 10);
+      const inGrace = (id) => ({ customerId: id, firstName: 'Grace', lastName: 'Member', name: 'Grace Member', company: '',
+        accountType: 'Non-Business Member', paidCadence: 'Yearly', paidUntil: addDays(T.TODAY_ISO, -3),
+        graceUntil: addDays(T.TODAY_ISO, 7), prepaid: false, membershipStage: 'Signed', activityLog: [] });
+
+      // (a) the reported symptom, reproduced: the countdown IS the Past-Due grace flag
+      const cd = inGrace('C-GRACEMEM');
+      ok(T.membershipStatus(cd) === 'Past Due', '#833 repro: a lapsed paid-through inside a live 7-day grace derives Past Due');
+      const metaGrace = T.membershipMetaHtml(cd);
+      ok(/Canceled in 7 days/.test(metaGrace), '#833 repro: the membership customer card renders the "⚠ Canceled in 7 days" countdown');
+      // (b) that state now offers a way out — it used to hide Activate exactly where it was needed
+      ok(/js-mem-activate/.test(metaGrace), '#833: Activate Membership is offered to an in-grace member (the countdown state had no way to record a cash year)');
+
+      // (c) #local activation from Past Due clears the countdown and paints the full year
+      T.DATA.customers.push(cd); T.IDX.customer.set('C-GRACEMEM', cd);
+      await T.membershipActivateCash('C-GRACEMEM');
+      ok(T.membershipStatus(cd) === 'Active' && cd.graceUntil === '' && cd.paidUntil === T.addMonthsISO(T.TODAY_ISO, 12), '#833: activation clears the decline grace and sets a 12-month paid-through');
+      const metaFixed = T.membershipMetaHtml(cd);
+      ok(!/Canceled in/.test(metaFixed) && /Active Member/.test(metaFixed), '#833: no countdown left on the card — it reads Active Member');
+      T.IDX.customer.delete('C-GRACEMEM'); T.DATA.customers.splice(T.DATA.customers.indexOf(cd), 1);
+
+      // (d)+(e) PROD path — mocked window.fetch intercepts backendCall's own fetch, exactly like the
+      // Trips Phase-4 suite below; this suite NEVER makes a real network call.
+      const origFetch = window.fetch;
+      const calls = [];
+      const mockFetch = (respond) => (url, opts) => { calls.push(JSON.parse(opts.body)); return Promise.resolve({ ok: true, text: () => Promise.resolve(JSON.stringify(respond())) }); };
+      const srv = inGrace('C-GRACEMEM2');
+      T.DATA.customers.push(srv); T.IDX.customer.set('C-GRACEMEM2', srv);
+
+      // (d) a backend WITHOUT the action (i.e. before Jac's editor deploy) must change NOTHING —
+      //     an optimistic Active here is the whole bug: the sync strips it and the cron chases the card.
+      const before = JSON.stringify(srv);
+      T.setBackendPassword('TEST-PW');
+      window.fetch = mockFetch(() => ({ ok: false, error: 'unknown action' }));
+      await T.membershipActivateCash('C-GRACEMEM2');
+      T.setBackendPassword('');
+      ok(calls.length === 1 && calls[0].action === 'membershipActivateCash' && calls[0].customerId === 'C-GRACEMEM2', `#833: a PROD activation goes to the server-side membershipActivateCash action (${calls.length} call(s))`);
+      ok(JSON.stringify(srv) === before && T.membershipStatus(srv) === 'Past Due', '#833: an undeployed/failed backend leaves the record EXACTLY as it was — no client-written entitlement');
+
+      // (e) a cleared server activation adopts the BACKEND's term, not a locally invented one
+      calls.length = 0;
+      const srvPaidUntil = T.addMonthsISO(T.TODAY_ISO, 14);   // deliberately NOT the client's 12-month guess
+      T.setBackendPassword('TEST-PW');
+      window.fetch = mockFetch(() => ({ ok: true, status: 'active', paidUntil: srvPaidUntil, accountType: 'Non-Business Member', commitmentEnd: srvPaidUntil }));
+      await T.membershipActivateCash('C-GRACEMEM2');
+      T.setBackendPassword('');
+      ok(srv.paidUntil === srvPaidUntil && srv.graceUntil === '' && T.isActiveMember(srv) === true, '#833: the server\'s authoritative paid-through is what lands on the record');
+      ok(!/Canceled in/.test(T.membershipMetaHtml(srv)), '#833: after a server activation the card carries no cancellation countdown');
+      // The activation logs an action, which arms the 1200ms debounced save. Drain it INTO the mock
+      // (password already back to ''), so no stray sync can reach a real backend after this block.
+      await new Promise((r) => setTimeout(r, 1400));
+      window.fetch = origFetch;
+      T.IDX.customer.delete('C-GRACEMEM2'); T.DATA.customers.splice(T.DATA.customers.indexOf(srv), 1);
+    }
+
+    // === #835 — a cash/check activation records the member's OWN plan, never converts it ===
+    // Reported: a $299/mo member whose "Membership · Monthly base" invoice was paid in full read
+    // "PAID YEARLY" on his profile. Root cause: memApplyCashActive hardcoded paidCadence:'Yearly'
+    // + a 12-month paid-through. paidCadence is membershipBillingCron's PLAN INPUT (it bills that
+    // plan's base and advances paidUntil by 12 or 1 month) and memLapse_'s Monthly
+    // remaining-term Cancellation-Invoice test — so the stomp mislabelled the badge AND queued the
+    // $2,691 ANNUAL base against a monthly member's card.
+    {
+      const addDays = (iso, n) => new Date(Date.parse(iso) + n * 86400000).toISOString().slice(0, 10);
+      const commitEnd = T.addMonthsISO(addDays(T.TODAY_ISO, -30), 12);   // signed a month ago on the 12-month commitment
+      const m = { customerId: 'C-MOMEM', firstName: 'Monthly', lastName: 'Member', name: 'Monthly Member', company: '',
+        accountType: 'Non-Business Member', paidCadence: 'Monthly', paidUntil: addDays(T.TODAY_ISO, -3),
+        graceUntil: addDays(T.TODAY_ISO, 7), commitmentStart: addDays(T.TODAY_ISO, -30), commitmentEnd: commitEnd,
+        prepaid: false, membershipStage: 'Signed', activityLog: [] };
+      T.DATA.customers.push(m); T.IDX.customer.set('C-MOMEM', m);
+      ok(/Paid Monthly/.test(T.membershipMetaHtml(m)), '#835 repro: a Monthly member\'s profile badge reads Paid Monthly before activation');
+      await T.membershipActivateCash('C-MOMEM');
+      ok(m.paidCadence === 'Monthly', `#835: the activation KEEPS the member's signed plan — the cron's plan input is never rewritten (got ${m.paidCadence})`);
+      ok(!/Paid Yearly/.test(T.membershipMetaHtml(m)) && /Paid Monthly/.test(T.membershipMetaHtml(m)), '#835: the profile badge still reads Paid Monthly, not PAID YEARLY');
+      ok(m.paidUntil === T.addMonthsISO(T.TODAY_ISO, 1), `#835: one MONTHLY cycle is paid through, not a free year (got ${m.paidUntil})`);
+      ok(T.membershipStatus(m) === 'Active' && m.graceUntil === '', '#835: the activation still clears the decline grace and reads Active');
+      ok(m.commitmentStart === addDays(T.TODAY_ISO, -30) && m.commitmentEnd === commitEnd, '#835: the signed 12-month commitment is neither restarted nor collapsed onto the paid-through (its remaining-term Cancellation Invoice survives)');
+      ok(m.paidUntil < m.commitmentEnd, '#835: paidUntil stays inside the commitment, so the cron reads the term as live (paidUntil >= commitmentEnd = "term complete" → billing stops)');
+      // an ANNUAL member is unchanged — still a full year
+      const y = { customerId: 'C-YRMEM', accountType: 'Non-Business Member', paidCadence: 'Yearly',
+        paidUntil: addDays(T.TODAY_ISO, -3), graceUntil: addDays(T.TODAY_ISO, 7), prepaid: false, activityLog: [] };
+      T.DATA.customers.push(y); T.IDX.customer.set('C-YRMEM', y);
+      await T.membershipActivateCash('C-YRMEM');
+      ok(y.paidCadence === 'Yearly' && y.paidUntil === T.addMonthsISO(T.TODAY_ISO, 12), '#835: a Yearly member still gets the full 12-month cash year (no regression on #822/#833)');
+      T.IDX.customer.delete('C-MOMEM'); T.DATA.customers.splice(T.DATA.customers.indexOf(m), 1);
+      T.IDX.customer.delete('C-YRMEM'); T.DATA.customers.splice(T.DATA.customers.indexOf(y), 1);
+    }
+
     // === F3 — membership funnel 'Signed' is agreement-driven, never manual (spec §3.1) ===
     {
       const c = { customerId: 'C-SIGN', accountType: 'Business Member', membershipStage: 'Contacted', activityLog: [] };
