@@ -867,7 +867,7 @@ async function archiveAgreementMedia(c, k, sig) {
   if (!backendPassword || (!sig.signature && !sig.selfie)) return;
   try {
     const r = await backendCall('archiveAgreementMedia', { customerId: c.customerId, cardId: k.id, signingId: sig.id,
-      signerName: sig.signerName, signedAt: sig.signedAt, signature: sig.signature, selfie: sig.selfie });
+      signerName: sig.signerName, signedAt: sig.signedAt, signature: sig.signature, selfie: sig.selfie }, { timeoutMs: SYNC.timeoutMs });   // RC-65 (2) — bounded: flushSave awaits this via offloadDirtyPhotos
     if (!r || !r.ok) return;   // handler absent / failed → leave images inline, try again on next sign
     if (r.signatureUrl) { sig.driveSignatureUrl = r.signatureUrl; sig.signature = ''; }
     if (r.selfieUrl) { sig.driveSelfieUrl = r.selfieUrl; sig.selfie = ''; }
@@ -2607,6 +2607,20 @@ function commsIsEnded(id, channel, lastAt) {
 function commsEnd(customerId, channel) { const m = commsEndedMap(); m[String(customerId) + '|' + channel] = Date.now(); try { localStorage.setItem(COMMS_ENDED_KEY, JSON.stringify(m)); } catch (e) {} upSyncComms(); }   // §cross-device-sync
 function commsUnend(customerId, channel) { const m = commsEndedMap(); const k = String(customerId) + '|' + channel; if (k in m) { delete m[k]; try { localStorage.setItem(COMMS_ENDED_KEY, JSON.stringify(m)); } catch (e) {} upSyncComms(); } }   // §cross-device-sync
 
+/* Per-load-unique tail for counter-minted record ids (id-collisions, defect 3).
+   `state.seq` restarts at 1 on EVERY page load, so a counter-built id ('MSG' + seq) gave two
+   devices — or two loads on one device — the same id, and the id-keyed sync then
+   replaced or hid one record (mergeChats skips a message id it already holds).
+   seqId() keeps the prefix + counter and appends a salt drawn ONCE per page load:
+   'MSG12-0k3j9x21a8bq7c'. Only [0-9a-z-], so it stays safe in selectors, Drive file
+   names, '|'-joined keys and Sheets id cells. Existing ids are never rewritten.
+   ACH- / SIG- (payment-method + signed-agreement ids) and the invoice-line lineLid()
+   counter deliberately do NOT use this — money/auth boundary, owner decision (RC-65). */
+const ID_SALT = (() => {
+  try { const b = new Uint32Array(2); crypto.getRandomValues(b); return Array.from(b, (x) => x.toString(36).padStart(7, '0')).join(''); } catch (e) {}
+  return (Date.now().toString(36) + Math.random().toString(36).slice(2) + '00000000000000').slice(0, 14);
+})();
+function seqId() { return (state.seq++) + '-' + ID_SALT; }
 const state = {
   data: DATA,
   theme: 'bluedsteel',   // Blued Steel is the only theme now — Yard mode removed (Jac 2026-06-15)
@@ -7960,7 +7974,7 @@ function unitWorstBottleneck(unitId) {
 /* condition is LOCKED while a WO born from a failed inspection / field call is open */
 function unitCondLock(u) { return openWOsForUnit(u.unitId).find((w) => w.woType === 'Failed' || w.woType === 'Field Call') || null; }
 function newInspectionForUnit(u) {
-  const id = 'INS-C' + (state.seq++);
+  const id = 'INS-C' + seqId();
   const n = { inspectionId: id, unitId: u.unitId, date: TODAY_ISO, wash: '', checklist: '', billCustomer: '', description: '', photo: '', mock: true };
   DATA.inspections.push(n); IDX.insp.set(id, n); reindex('inspections', n);
   return n;
@@ -8182,7 +8196,7 @@ function commentMarkerHtml(card, rec) {
 function addRecComment(rec, text, color) {
   if (!rec || !text) return;
   rec.comments = rec.comments || [];
-  rec.comments.push({ id: 'CM' + (state.seq++), text, color: color || 'yellow', by: commentUserKey(), when: TODAY_ISO, at: Date.now(), ack: [commentUserKey()] });   // the author has already seen it
+  rec.comments.push({ id: 'CM' + seqId(), text, color: color || 'yellow', by: commentUserKey(), when: TODAY_ISO, at: Date.now(), ack: [commentUserKey()] });   // the author has already seen it
   logAction(rec, `💬 ${text}`);   // still logs to History
   saveSoon();
 }
@@ -10870,7 +10884,7 @@ function newChat(opts) {
   opts = opts || {};
   // Creator = admin (tracked by `by`) — that alone grants them visibility + control, so
   // members starts empty ("default no one"); the admin adds people deliberately.
-  const c = { id: 'CHAT' + (state.seq++), title: opts.title || '', members: opts.members ? [...opts.members] : [], messages: [], seen: { [commentUserKey()]: Date.now() }, by: commentUserKey() };
+  const c = { id: 'CHAT' + seqId(), title: opts.title || '', members: opts.members ? [...opts.members] : [], messages: [], seen: { [commentUserKey()]: Date.now() }, by: commentUserKey() };
   state.chat.chats.push(c); state.chat.activeId = c.id; state.chat.draft = ''; pushChatsSoon(); return c;
 }
 // ── Team-chat identity + ownership (2026-07-08) ──
@@ -11468,7 +11482,7 @@ function chatSend() {
   const held = state.held;
   if (!text && !held) { if (inp) inp.focus(); return; }                 // nothing to send (no text, no pasted chip)
   let c = activeChat(); if (!c) c = newChat();                          // typing with no active chat opens one to the team
-  const msg = { id: 'MSG' + (state.seq++), by: commentUserKey(), when: TODAY_ISO, at: Date.now(), text };
+  const msg = { id: 'MSG' + seqId(), by: commentUserKey(), when: TODAY_ISO, at: Date.now(), text };
   if (held) { msg.refs = [{ card: held.card, recId: held.recId }]; state.held = null; }   // paste the held element as a live chip
   c.messages.push(msg);
   c.seen[commentUserKey()] = Date.now();                                // author has seen their own update
@@ -20032,7 +20046,7 @@ function startInlineEdit(span) {
         if (idone) return; idone = true;
         const name = input.value.trim();
         if (name && u) {
-          const mo = { modelId: 'MOD-C' + (state.seq++), categoryId: u.categoryId, name, tasks: [], mock: true };
+          const mo = { modelId: 'MOD-C' + seqId(), categoryId: u.categoryId, name, tasks: [], mock: true };
           DATA.models.push(mo); IDX.model.set(mo.modelId, mo); reindex('models', mo);
           logAction(mo, `Model added to ${IDX.category.get(u.categoryId)?.name || 'category'}`);
           const old = u.modelId; u.modelId = mo.modelId; reindex('units', u);
@@ -20365,7 +20379,7 @@ function markFieldCall(rentalId) {
   r.fieldCall = true; reindex('rentals', r);
   const u = IDX.unit.get(r.unitId);
   if (u) { u.inspectionStatus = 'Failed'; reindex('units', u); logAction(u, `Field Call on rental ${r.rentalName || rentalId}`); }
-  const id = 'WO-FC' + (state.seq++);
+  const id = 'WO-FC' + seqId();
   const wo = { woId: id, unitId: r.unitId, customerId: r.customerId || null, woReport: 'Field Call — breakdown', woType: 'Field Call', description: `Field call raised on rental ${r.rentalName || rentalId}.`, phase: 'Part Needed?', billCustomer: 'No', date: TODAY_ISO, eta: '', unitHoursAtCreation: u?.currentHours || 0, assignedMechanic: '', laborHours: 0, lineItems: [], mock: true };
   DATA.workOrders.push(wo); IDX.wo.set(id, wo); reindex('workOrders', wo);
   logAction(r, 'Field Call marked — unit failed, work order opened');
@@ -20660,7 +20674,8 @@ async function offloadPhotoNow(target, field, name, owner, coll, _upload) {
   const v = target && target[field];
   if (!v || typeof v !== 'string' || !v.startsWith('data:')) return false;          // already a URL / empty → no-op
   // Real path uploads via the backend (only when connected); _upload is a test seam.
-  const upload = _upload || ((typeof backendPassword !== 'undefined' && backendPassword) ? ((p) => backendCall('uploadCapture', p)) : null);
+  // RC-65 (2) — bounded: flushSave awaits this (offloadDirtyPhotos), so a stalled upload held `saving` forever.
+  const upload = _upload || ((typeof backendPassword !== 'undefined' && backendPassword) ? ((p) => backendCall('uploadCapture', p, { timeoutMs: SYNC.timeoutMs })) : null);
   if (!upload) return false;                                                         // demo / offline → keep base64
   try {
     const res = await upload({ dataUrl: v, name });
@@ -20718,7 +20733,7 @@ const RW_EXPENSE_CATS = ['Parts', 'Fuel', 'Tools', 'Service', 'Shipping', 'Suppl
 function vendorIdByName(name) {
   const n = String(name || '').trim(); if (!n) return null;
   let v = DATA.vendors.find((x) => (x.name || '').toLowerCase() === n.toLowerCase());
-  if (!v) { v = { vendorId: 'VEN-C' + (state.seq++), name: n, mock: true }; DATA.vendors.push(v); reindex('vendors', v); }
+  if (!v) { v = { vendorId: 'VEN-C' + seqId(), name: n, mock: true }; DATA.vendors.push(v); reindex('vendors', v); }
   return v.vendorId;
 }
 async function wranglerExtract(photo, system) {
@@ -20768,7 +20783,7 @@ async function autofillPartLine(w, li, photo) {
     if (!li.aiPending) p.aiPending = false;
     li.partId = p.partId; reindex('parts', p);
   } else if (li.part && li.part !== ph) {
-    p = { partId: 'PRT-C' + (state.seq++), name: li.part, status: 'Catalog', priceEach: li.cost > 0 ? li.cost : null, qtyOnHand: null, website: li.url || '', orderEmail: '', productNumber: '', vendorId: li.vendorId || null, imageUrl: '', notes: '', woId: w.woId, aiPending: li.aiPending, mock: true };
+    p = { partId: 'PRT-C' + seqId(), name: li.part, status: 'Catalog', priceEach: li.cost > 0 ? li.cost : null, qtyOnHand: null, website: li.url || '', orderEmail: '', productNumber: '', vendorId: li.vendorId || null, imageUrl: '', notes: '', woId: w.woId, aiPending: li.aiPending, mock: true };
     DATA.parts.push(p); li.partId = p.partId; reindex('parts', p);
   }
   reindex('workOrders', w); logAction(w, '✨ Mr. Wrangler filled a part line from the photo'); saveSoon();
@@ -20782,7 +20797,7 @@ async function autofillPartLine(w, li, photo) {
 function resolveOrCreateVendorByName(name) {
   if (!name) return null;
   let v = DATA.vendors.find((x) => (x.name || '').toLowerCase() === name.toLowerCase());
-  if (!v) { v = { vendorId: 'VEN-C' + (state.seq++), name, mock: true }; DATA.vendors.push(v); reindex('vendors', v); }
+  if (!v) { v = { vendorId: 'VEN-C' + seqId(), name, mock: true }; DATA.vendors.push(v); reindex('vendors', v); }
   return v.vendorId;
 }
 function savePartForm() {
@@ -20833,7 +20848,7 @@ function savePartForm() {
     let p = li.partId ? DATA.parts.find((r) => r.partId === li.partId) : null;   // the li↔part link (stamped below) survives renames
     if (!p) p = DATA.parts.find((r) => (r.name || '').toLowerCase() === desc.toLowerCase());
     if (!p) {
-      p = { partId: 'PRT-C' + (state.seq++), name: desc, status: 'Catalog', priceEach: cost !== '' ? Number(cost) || 0 : null, qtyOnHand: null, website: url || '', orderEmail: '', productNumber: '', vendorId: li.vendorId || null, imageUrl: '', notes: '', woId: w.woId, aiPending: li.aiPending, mock: true };
+      p = { partId: 'PRT-C' + seqId(), name: desc, status: 'Catalog', priceEach: cost !== '' ? Number(cost) || 0 : null, qtyOnHand: null, website: url || '', orderEmail: '', productNumber: '', vendorId: li.vendorId || null, imageUrl: '', notes: '', woId: w.woId, aiPending: li.aiPending, mock: true };
       DATA.parts.push(p);
     } else {
       // write-back (was create-only): edited name/cost/url/vendor on the WO line sync to the catalog part
@@ -20873,7 +20888,7 @@ function saveNewModel(categoryId) {
   // own service-completion bookkeeping, not globally).
   const dupSrc = cs.dupFrom ? IDX.model.get(cs.dupFrom) : null;
   const tasks = dupSrc ? dupSrc.tasks.map((t) => ({ ...t })) : [];
-  const mo = { modelId: 'MOD-C' + (state.seq++), categoryId, name, tasks, mock: true };
+  const mo = { modelId: 'MOD-C' + seqId(), categoryId, name, tasks, mock: true };
   DATA.models.push(mo); IDX.model.set(mo.modelId, mo); reindex('models', mo);
   logAction(mo, dupSrc ? `Model duplicated from ${dupSrc.name}` : `Model added to ${IDX.category.get(categoryId)?.name || 'category'}`);
   cs.addingModel = false; cs.dupFrom = null;
@@ -20901,7 +20916,7 @@ function saveSvcTaskForm() {
     t.name = name; t.intervalHours = hours !== '' ? Number(hours) || 0 : null; t.parts = parts;
     logAction(mo, `Edited task: ${auditVal(name)}`);
   } else {
-    mo.tasks.push({ taskId: 'svc-c' + (state.seq++), name, intervalHours: hours !== '' ? Number(hours) || 0 : null, parts, source: 'Added in-app' });
+    mo.tasks.push({ taskId: 'svc-c' + seqId(), name, intervalHours: hours !== '' ? Number(hours) || 0 : null, parts, source: 'Added in-app' });
     logAction(mo, `Added task: ${auditVal(name)}`);
   }
   reindex('models', mo);
@@ -20917,10 +20932,10 @@ function saveReceiptForm() {
   const venName = g('.js-rf-vendor'), amt = g('.js-rf-amount'), date = o.date || TODAY_ISO, partName = g('.js-rf-part');
   const existing = o.expenseId != null ? (IDX.expense.get(o.expenseId) || DATA.expenses.find((r) => r.expenseId === o.expenseId)) : null;
   if (amt === '' && !state.receiptPhoto && !existing?.photo) return attnFlash('.js-rf-amount, .file-drop');   // R19: need a $cost OR a photo for the AI
-  const rec = existing || { expenseId: 'E-NEW' + (state.seq++), vendorId: null, date: TODAY_ISO, amount: 0, reconcile: 'Unreconciled', method: 'Cash', category: 'Parts', woId: null, notes: '', mock: true };
+  const rec = existing || { expenseId: 'E-NEW' + seqId(), vendorId: null, date: TODAY_ISO, amount: 0, reconcile: 'Unreconciled', method: 'Cash', category: 'Parts', woId: null, notes: '', mock: true };
   if (venName) {
     let v = DATA.vendors.find((r) => (r.name || '').toLowerCase() === venName.toLowerCase());
-    if (!v) { v = { vendorId: 'VEN-C' + (state.seq++), name: venName, mock: true }; DATA.vendors.push(v); reindex('vendors', v); }
+    if (!v) { v = { vendorId: 'VEN-C' + seqId(), name: venName, mock: true }; DATA.vendors.push(v); reindex('vendors', v); }
     rec.vendorId = v.vendorId;
   }
   if (amt !== '') rec.amount = Number(amt) || 0;
@@ -20932,7 +20947,7 @@ function saveReceiptForm() {
   // against this receipt — the $cost seeds priceEach on a fresh part.
   if (partName) {
     let p = DATA.parts.find((r) => (r.name || '').toLowerCase() === partName.toLowerCase());
-    if (!p) { p = { partId: 'PRT-C' + (state.seq++), name: partName, status: 'Catalog', priceEach: amt !== '' ? Number(amt) || 0 : null, qtyOnHand: null, website: '', orderEmail: '', productNumber: '', vendorId: rec.vendorId || null, imageUrl: '', notes: '', mock: true }; DATA.parts.push(p); }
+    if (!p) { p = { partId: 'PRT-C' + seqId(), name: partName, status: 'Catalog', priceEach: amt !== '' ? Number(amt) || 0 : null, qtyOnHand: null, website: '', orderEmail: '', productNumber: '', vendorId: rec.vendorId || null, imageUrl: '', notes: '', mock: true }; DATA.parts.push(p); }
     p.receiptId = rec.expenseId; p.receiptQty = p.receiptQty || 1;
     reindex('parts', p); logAction(rec, `Linked part: ${partName}`);
   }
@@ -20955,7 +20970,7 @@ function saveReceiptPartLink(expenseId) {
   const name = g('.js-rp-name'), qty = Math.max(1, Number(g('.js-rp-qty')) || 1), cost = g('.js-rp-cost');
   if (!name) return attnFlash('.js-rp-name');   // R19
   let p = DATA.parts.find((r) => (r.name || '').toLowerCase() === name.toLowerCase());
-  if (!p) { p = { partId: 'PRT-C' + (state.seq++), name, status: 'Catalog', priceEach: cost !== '' ? Number(cost) || 0 : null, qtyOnHand: null, website: '', orderEmail: '', productNumber: '', vendorId: x.vendorId || null, imageUrl: '', notes: '', mock: true }; DATA.parts.push(p); }
+  if (!p) { p = { partId: 'PRT-C' + seqId(), name, status: 'Catalog', priceEach: cost !== '' ? Number(cost) || 0 : null, qtyOnHand: null, website: '', orderEmail: '', productNumber: '', vendorId: x.vendorId || null, imageUrl: '', notes: '', mock: true }; DATA.parts.push(p); }
   else if (cost !== '') p.priceEach = Number(cost) || 0;
   p.receiptId = x.expenseId; p.receiptQty = qty;
   reindex('parts', p);
@@ -21000,7 +21015,7 @@ async function saveFileForm() {
       toast('Demo mode — document uploads land in Drive on the live site.');
     }
   }
-  const f = { fileId: 'FIL-C' + (state.seq++), name: fname, group: '', type: up ? (isImg ? 'Photo' : 'Document') : (link ? 'Link' : 'Note'), reviewByDate: '', link: fileLink, photo: inlinePhoto, driveId, notes: '', mock: true };
+  const f = { fileId: 'FIL-C' + seqId(), name: fname, group: '', type: up ? (isImg ? 'Photo' : 'Document') : (link ? 'Link' : 'Note'), reviewByDate: '', link: fileLink, photo: inlinePhoto, driveId, notes: '', mock: true };
   DATA.companyFiles.push(f); reindex('files', f);   // reindex also sets IDX.file (sync clause)
   logAction(f, 'File created');
   o.fileForm = false; o.fileUpload = null; o.recId = f.fileId;   // save lands ON the new detail
@@ -22796,7 +22811,7 @@ function startNewInspection(unitId) {
   // Wave 2: inspections are UNIT-BORN (mirrors startNewWorkOrder) — no pick mode.
   const u = unitId ? IDX.unit.get(unitId) : null;
   if (!u) { flashOr('.card[data-card="units"] .list', 'Inspections start from a unit — open the unit first.'); return; }
-  const id = 'INS-NEW' + (state.seq++);
+  const id = 'INS-NEW' + seqId();
   const draft = { inspectionId: id, unitId: u.unitId, date: TODAY_ISO, wash: '', checklist: '', billCustomer: 'No', customerId: null, woId: null, photo: '', description: '', mock: true };
   DATA.inspections.push(draft); IDX.insp.set(id, draft); reindex('inspections', draft);
   logAction(draft, 'Inspection created');
@@ -22807,7 +22822,7 @@ function startNewWorkOrder(unitId) {
   // Wave 2: work orders are UNIT-BORN only — no pick mode.
   const u = unitId ? IDX.unit.get(unitId) : null;
   if (!u) { flashOr('.card[data-card="units"] .list', 'Work orders start from a unit — open the unit and use +Work Order.'); return; }
-  const id = 'WO-NEW' + (state.seq++);
+  const id = 'WO-NEW' + seqId();
   const draft = { woId: id, unitId: u.unitId, customerId: null, woReport: 'New Work Order', woType: 'Manual', description: '', phase: 'Part Needed?', billCustomer: 'No', date: TODAY_ISO, eta: '', unitHoursAtCreation: u?.currentHours || 0, assignedMechanic: '', laborHours: 0, lineItems: [], mock: true };
   DATA.workOrders.push(draft); IDX.wo.set(id, draft); reindex('workOrders', draft);
   logAction(draft, 'Work order created');
@@ -23033,6 +23048,25 @@ function winStagedChanged() {
   const wp = state.winEdit; if (!wp || !wp.staged) return false;
   const r = IDX.rental.get(wp.rentalId); if (!r) return false;
   return wp.staged.startDate !== (r.startDate || '') || wp.staged.endDate !== (r.endDate || '') || wp.staged.startTime !== (r.startTime || '');
+}
+/** TRUE only while a window pick is genuinely in progress — a start day is tapped (mid
+ *  range-select, `.anchor`) or a fragile rental's STAGED window differs from the rental (the
+ *  inline "Confirm new rental window?" panel + extension money preview are up, unsaved). A bare
+ *  `state.winEdit` is NOT this: DETAIL.rentals arms it on every render of a rental (the hover
+ *  preview renders DETAIL.rentals too), so it stays truthy for the rest of the tab — the 18s
+ *  refresh poll gated on it stopped for good the moment any rental was viewed. */
+function winPickBusy() { const wp = state.winEdit; return !!(wp && (wp.anchor || winStagedChanged())); }
+/** The refresh poll just ADOPTED a remote version of the rental the inline editor is armed on
+ *  (reachable only while !winPickBusy(), so nothing the user picked is discarded). Re-derive the
+ *  editor from the adopted record exactly as the DETAIL.rentals arming does: an untouched staged
+ *  copy still holding the OLD dates would otherwise differ from the rental and raise a phantom
+ *  Confirm panel whose Save reverts the other user's dates; and a rental that turned fragile
+ *  remotely (invoiced / out) must stage rather than commit live. monthISO is kept. */
+function winEditResync(r) {
+  const wp = state.winEdit; if (!wp || !r || String(wp.rentalId) !== String(r.rentalId)) return;
+  wp.anchor = null;
+  if (rentalFragile(r)) wp.staged = { rentalId: r.rentalId, startDate: r.startDate || '', endDate: r.endDate || '', startTime: r.startTime || '' };
+  else delete wp.staged;
 }
 function winPickSave() {
   const wp = state.winEdit; if (!wp) return;
@@ -23379,7 +23413,7 @@ function setInspBill(id, val) {
   render(); renderOverlay();
 }
 function autoWOFromInspection(n) {
-  const id = 'WO-INS' + (state.seq++);
+  const id = 'WO-INS' + seqId();
   const u = IDX.unit.get(n.unitId);
   // Enrich the report with the failed-item summary (n.description is set by completeChecklist before
   // the cascade fires). The WO references the inspection's LIVE evidence via wo.inspectionId, so any
@@ -23834,7 +23868,7 @@ function signinRetryCue(n, total) {
 }
 let backendPassword = sessionStorage.getItem('jactec.pw') || '';
 let booting = true;                       // suppresses saves during initial load
-let saveTimer = null, saving = false, savePending = false;
+let saveTimer = null, saving = false, savePending = false, saveGen = 0;   // saveGen — bumped each time flushSave starts a save; refreshFromBackend bails if it moved across its load await (RC-65)
 
 /* uploadCapture returns url:f.getUrl() — a Drive file-VIEW page, which does NOT
    render in an <img src> or CSS url(). For IMAGES we build the embeddable form
@@ -23849,7 +23883,7 @@ async function backendCall(action, extra, opts) {
   if (flagOn('phoneIdentity') && backendPassword) payload.sessionToken = backendPassword;   // per-person mode: the device/session token authorizes each call (backend prefers it over `password`); a no-op while the flag is OFF
   // RC-63 — opt-in ABORTABLE limit (opts.timeoutMs). Aborting, unlike withTimeout's race,
   // releases the stalled request instead of leaving it open. Callers that pass nothing
-  // (money, saves) keep the old unbounded behaviour on purpose — see BACKEND_TIMEOUT_MS.
+  // (money, and the sync POST itself) keep the old unbounded behaviour on purpose — see BACKEND_TIMEOUT_MS and SYNC (RC-65).
   const ms = opts && opts.timeoutMs;
   const ac = ms ? new AbortController() : null;
   let timer = ac ? setTimeout(() => ac.abort(), ms) : null;
@@ -25308,17 +25342,19 @@ function healInvoiceIdCollision(oldId, local, remote, saved) {
 }
 async function refreshFromBackend() {
   if (refreshing || booting || !backendPassword || saving || savePending || !lastSaved) return;
-  if (document.hidden || DRAG.active || DRAG.armed || state.winEdit || state.overlay || hoverNode) return;   // don't disrupt active work
+  if (document.hidden || DRAG.active || DRAG.armed || winPickBusy() || state.overlay || hoverNode) return;   // don't disrupt active work — winPickBusy(), NOT a bare state.winEdit (armed by merely viewing a rental; see winPickBusy)
   const ae = document.activeElement;
-  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;              // mid-typing
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' || ae.isContentEditable)) return;              // mid-typing (RC-65: + SELECT — inline edits use <select class="inline-input">)
   refreshing = true;
   try {
     // #829 — a stalled poll used to leave `refreshing = true` forever, permanently killing the
     // live multi-user refresh: from then on the ONLY way to see someone else's edit was a full
     // page reload (the reporter's "we have to refresh the whole app" complaint). The timeout
     // rejects, `finally` clears the flag, and the next 18s tick tries again.
+    const gen0 = saveGen;   // RC-65 — a save that runs while this load is in flight makes its reply stale for what it sent
     const r = await backendCall('load', undefined, { timeoutMs: BACKEND_TIMEOUT_MS });   // RC-63 — abortable, so a stalled poll is released rather than left open
     if (!r || !r.ok || !r.data) return;
+    if (winPickBusy() || saveGen !== gen0) return;   // RC-65 — a pick can start (or start AND be saved) during the await above; a reply read before that save would revert it as "clean". The next 18s tick retries.
     const data = r.data; let applied = 0;
     PERSIST_KEYS.forEach((k) => {
       if (!Array.isArray(data[k])) return;
@@ -25327,7 +25363,16 @@ async function refreshFromBackend() {
       data[k].forEach((remote) => {
         const id = String(remote[idf]); if (id === 'undefined' || id === 'null') return;
         const rjs = JSON.stringify(remote), local = localById.get(id);
-        if (!local) { DATA[k].push(remote); IDX[IDX_MAP[k]]?.set(id, remote); reindex(k, remote); saved.set(id, rjs); applied++; return; }   // new record from another user
+        if (!local) {
+          // RC-65 review — an id with a saved baseline but no local record is a LOCAL delete still waiting to
+          // sync (the absorbed invoice of a merge inside the 1.2 s saveSoon debounce, or during a sync backoff).
+          // Server copy UNCHANGED since our baseline → nobody else touched it: keep it deleted so the delete still
+          // flushes (adopting it would mark it clean and silently drop the delete → e.g. a duplicate invoice).
+          // Server copy CHANGED → another device edited it: bring it back (visible), never let our pending delete
+          // silently erase their edit. Only the pure-resurrection case is suppressed; no conflict is decided here.
+          if (saved.has(id) && saved.get(id) === rjs) return;
+          DATA[k].push(remote); IDX[IDX_MAP[k]]?.set(id, remote); reindex(k, remote); saved.set(id, rjs); applied++; return;   // new record from another user
+        }
         const ljs = JSON.stringify(local);
         if (ljs === rjs) { saved.set(id, rjs); return; }
         if (k === 'invoices' && isInvoiceIdCollision(id, local, remote)) {   // §inv-collision — our minted number already belonged to a different bill; re-issue ours, keep both
@@ -25336,6 +25381,7 @@ async function refreshFromBackend() {
         if (saved.get(id) === ljs) {   // local is CLEAN (no pending edit) → adopt the remote version in place (keeps IDX refs)
           Object.keys(local).forEach((kk) => { if (!(kk in remote)) delete local[kk]; });
           Object.assign(local, remote); reindex(k, local); saved.set(id, rjs); applied++;
+          if (k === 'rentals') winEditResync(local);   // the armed inline window editor re-derives from the adopted rental (stale staged copy / fragility flip)
         }                              // else: local has unsaved edits → keep local; it'll push on next save
       });
     });
@@ -25350,7 +25396,8 @@ async function refreshFromBackend() {
       }
     } catch (e) { /* chat sync is best-effort */ }
     loadWranglerRail();   // also pull this role's Mr. Wrangler rail (cross-device) — best-effort, self-renders
-    if (applied && !state.overlay && !DRAG.active && !hoverNode) { state.cascade = createCascade(DATA); render(); }
+    const ae2 = document.activeElement, typing2 = !!(ae2 && (ae2.tagName === 'INPUT' || ae2.tagName === 'TEXTAREA' || ae2.tagName === 'SELECT' || ae2.isContentEditable));   // RC-65 — a field focused DURING the awaits above: render() would tear it down mid-typing (the data is still adopted; the next render shows it)
+    if (applied && !state.overlay && !DRAG.active && !hoverNode && !typing2 && !winPickBusy()) { state.cascade = createCascade(DATA); render(); }
   } catch (e) { /* offline / blip → retry next tick */ }
   finally { refreshing = false; }
 }
@@ -25486,7 +25533,8 @@ async function loadWranglerRail() {
     if (changed) {
       const beforeById = new Map(localBefore.map((c) => [c.id, c]));
       for (const rc of r.chats) { const lc = beforeById.get(rc.id); if (rc && rc.id && !dismissed.has(rc.id) && (!lc || (rc.ts || 0) > (lc.ts || 0))) { try { await wrStore.putChat(rc); } catch (e) {} } }   // cache the remote winners (never a dismissed one)
-      state.wranglerRail = merged; render();
+      state.wranglerRail = merged;
+      { const ae3 = document.activeElement; if (!(ae3 && (ae3.tagName === 'INPUT' || ae3.tagName === 'TEXTAREA' || ae3.tagName === 'SELECT' || ae3.isContentEditable))) render(); }   // RC-65 review — never re-render under a field mid-typing; the next render shows the merged rail
     }
     if (localAhead) pushWranglerRailSoon(); else lastRailJson = JSON.stringify(state.wranglerRail);
   } catch (e) { /* offline → the refresh poll retries */ }
@@ -25876,7 +25924,13 @@ function saveSoon(ms) { if (bootWriteBlocked() || !backendPassword) return; clea
 // row — one transient blip self-recovers) raise the R25 "Not saving" banner until a
 // sync succeeds. The backend (doSync batched I/O + tryLock_→'busy') is the cure; this
 // is the safety net so a stuck write can never vanish quietly again.
-const SYNC = { failing: false, fails: 0, backoff: 1200 };
+// RC-65 (2) — per-call ABORTABLE limit for the uploads flushSave awaits before a save
+// (uploadCapture / archiveAgreementMedia). 45 s = RC-63's per-attempt limit (slowest good reply ~27 s).
+// A timed-out upload that actually landed costs at most a duplicate Drive file on the retry.
+// The sync POST itself is deliberately NOT bounded here: retrying a sync the server already
+// applied can overwrite another device's newer edit of the same record (invoices included) —
+// that trade-off is the owner's decision (RC-65). A property, not a const, so tests can shrink it.
+const SYNC = { failing: false, fails: 0, backoff: 1200, timeoutMs: 45000 };
 function retrySyncNow() { clearTimeout(saveTimer); SYNC.backoff = 1200; flushSave(); }   // R25 "Retry now"
 // A Google Sheets cell is hard-capped at 50,000 chars; the backend writes each
 // record's full JSON into one cell, so an oversized record makes the write throw
@@ -25942,14 +25996,20 @@ async function flushSave() {
   if (!lastSaved) return;                       // never loaded → nothing to diff against
   let { upserts, deletes, n } = computeChanges();
   if (!n) return;                               // nothing changed
-  saving = true;
-  await offloadDirtyPhotos(upserts);            // base64 photos → Drive before they can ride into a 50k cell (#251)
-  ({ upserts, deletes } = computeChanges());    // re-diff: offloaded records shrank to a ~60-byte URL
-  holdOversized(upserts);                        // keep any still-oversized record out of the batch (fault isolation)
-  if (!Object.keys(upserts).length && !Object.keys(deletes).length) { saving = false; if (savePending) { savePending = false; saveSoon(); } return; }
-  const wireUp = {}; Object.keys(upserts).forEach((k) => { wireUp[k] = upserts[k].map((u) => u.rec); });
+  saving = true; saveGen++;
+  // RC-65 (2) — `saving` is released on EVERY exit (finally). A throw from the photo offload, the
+  // re-diff or the batch build used to leave it true forever: later edits only set savePending,
+  // refreshFromBackend stood down on `saving || savePending`, and the R25 banner never rose. Such a
+  // throw happens BEFORE anything is sent, so the unchanged failure/backoff branch below retrying it
+  // is safe. The uploads are bounded (SYNC.timeoutMs). The sync POST is NOT (see SYNC) — a stall
+  // there still holds `saving` until it settles; bounding it is the owner's call (replay risk).
   let ok = false;
   try {
+    try { await offloadDirtyPhotos(upserts); } catch (e) { /* a failed offload never poisons the batch — holdOversized backstops */ }   // base64 photos → Drive before they can ride into a 50k cell (#251)
+    ({ upserts, deletes } = computeChanges());    // re-diff: offloaded records shrank to a ~60-byte URL
+    holdOversized(upserts);                        // keep any still-oversized record out of the batch (fault isolation)
+    if (!Object.keys(upserts).length && !Object.keys(deletes).length) { saving = false; if (savePending) { savePending = false; saveSoon(); } return; }
+    const wireUp = {}; Object.keys(upserts).forEach((k) => { wireUp[k] = upserts[k].map((u) => u.rec); });
     const r = await backendCall('sync', { upserts: wireUp, deletes });
     if (r && r.ok) {
       // Commit ONLY what we sent — edits made mid-flight stay dirty and re-flush.
@@ -25957,8 +26017,8 @@ async function flushSave() {
       Object.keys(deletes).forEach((k) => deletes[k].forEach((id) => lastSaved[k].delete(id)));
       ok = true;
     }
-  } catch (e) { /* offline → handled below */ }
-  saving = false;
+  } catch (e) { if (!signinNetFailure(e)) logErr('sync', (e && (e.stack || e.message)) || e); /* offline, or a client-side throw → the failure branch below retries */ }
+  finally { saving = false; }
   if (ok) {
     if (SYNC.failing) toast('Back online — changes saved.');   // recovered from an outage
     SYNC.failing = false; SYNC.fails = 0; SYNC.backoff = 1200; renderSyncBanner();
@@ -26134,7 +26194,9 @@ function renderLogin(msg) {
 function finishLoad() {
   snapshotSaved();                                              // baseline = what the backend currently holds
   resetCommsRailForLogin();                                    // the visible fix for "old chats on login": empty the rail on EVERY login mode, before the first main render (Jac 2026-07-17)
-  buildIndexes(); state.cascade = createCascade(DATA); booting = false; render();
+  buildIndexes();
+  { const wr = state.winEdit && IDX.rental.get(state.winEdit.rentalId); if (wr) winEditResync(wr); else state.winEdit = null; }   // RC-65 review — an editor armed on the instant-cache copy re-derives from the fresh load (no phantom Confirm, no stuck poll)
+  state.cascade = createCascade(DATA); booting = false; render();
   cacheRefreshing(false);                                       // §instant-cache: fresh backend data is in — drop the "refreshing" cue
   cachePersistSnapshot();                                       // §instant-cache: photograph this confirmed backend state (personal device + flag only)
   if (flagOn('phoneIdentity')) { try { const emp = ((state.settings || {}).employees) || []; localStorage.setItem('jactec.pidRoster', JSON.stringify(emp.map((e) => ({ id: e.id, name: e.name })))); } catch (e) {} }   // cache non-secret roster names for the shared-device name-pick
@@ -27344,7 +27406,7 @@ function seedDemoRequests() {
    the backend-backed production path. */
 function exposeTestApi() {
   try {
-    window.__rw = { DATA, IDX, TODAY_ISO, backendRead, authRejected, pidFailKeepsToken, signinNetFailure, pidLoadFail, phoneBoot, SIGNIN_TRIES, itemPaid, lineKey, rentalUnits, unitEntry, isPrimaryUnit, linkActionsFor, linkActionPossible, DROP_MATRIX,
+    window.__rw = { DATA, IDX, TODAY_ISO, seqId, idSalt: () => ID_SALT, newInspectionForUnit, markFieldCall, autoWOFromInspection, newChat, mergeChats, addRecComment, vendorIdByName, resolveOrCreateVendorByName, backendRead, authRejected, pidFailKeepsToken, signinNetFailure, pidLoadFail, phoneBoot, SIGNIN_TRIES, itemPaid, lineKey, rentalUnits, unitEntry, isPrimaryUnit, linkActionsFor, linkActionPossible, DROP_MATRIX,
       unitStatus, rentalUnitStatuses, unitsUniform, rentalStatusDisplay, rentalMirrorStatus, rentalDisplayStatus,
       allUnitsTerminal, unitTerminal, unitVoided, rentalCleared, rentalLineItems, transportLineItems, extensionPreview, billExtension, unitBilledRental, unitBilledSeries, retroPricingOn, rentalInvoices, rentalActiveInvoice, invoiceChunks, createInvoiceForRental, syncRentalPrimary,
       nextInvoiceId, maxInvoiceSeq, mintedInvoiceIds, isInvoiceIdCollision, healInvoiceIdCollision, reindex,
@@ -27359,11 +27421,13 @@ function exposeTestApi() {
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
       companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, pickFunnelStage, toggleFunnelMembership, rentalFunnelStage, funnelStageOf, inFunnel, inRental, hasRentalActivity, funnelTrackA, funnelTrackEquip, ensureFunnels, funnelMenuHtml, reachFunnelStage, toggleMemberLead, funnelCurrentStage, funnelLayerDate, funnelLayerNote, ensureFunnelLog, markMembershipSigned, funnelLayerAction, funnelScope, naUrgency, naOpenList, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipActivateCash, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, acctBlockFoot, liftCustomerBlacklist, rentalAccountCustomer, clearRentalCustomer, clearInvoiceCustomer, invoiceRentalLinkFrozen, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsPickerError, gpsUtilRollup, ruCatUtilProxy, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
-      reserveQuoteIfAllowed, winPickDay, winPickSave,
+      reserveQuoteIfAllowed, winPickDay, winPickSave, winPickBusy, winEditResync, refreshFromBackend,
       tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, openYardCamera, commitYardCapture, nextCategoryId, nextUnitId,
       tripsLS, tripMerge, tripSplit, assignTripDriver, tripLabel, assignStopDriver, tripSetTime,
       tripPushSoon, tripPushNow, loadTripsFromBackend, tripsSyncFooter, setBackendPassword: (pw) => { backendPassword = pw || ''; },   // §2.3 Phase 4 sync — the setter is test-only (mirrors setRole), letting logic-test.mjs exercise the online path via a mocked window.fetch, never a real backend
       adoptScanCaptures, setScanCaps: (m) => { SCAN_CAPS = m || {}; },   // §scan-reconcile — test seam: seed SCAN_CAPS then run adoption (logic-test)
+      flushSave, snapshotSaved, computeChanges, SYNC, saveState: () => ({ saving, savePending, baseline: !!lastSaved }),   // RC-65 (2) — save-pipeline seams; logic-test drives them against a mocked window.fetch only
+      resetSaveState: () => { clearTimeout(saveTimer); saving = false; savePending = false; lastSaved = null; SYNC.failing = false; SYNC.fails = 0; SYNC.backoff = 1200; renderSyncBanner(); },   // lastSaved=null → any stray flushSave stops at its first guard
       autoRunRepair, autoRunAnchorsFor, secToClock, AUTORUN_DAY_START_SEC, AUTORUN_EOD_DEADLINE_SEC, AUTORUN_LOAD_BUFFER_SEC, dispatchPinOf,
       openCustomerForm, renderOverlay, render, printInvoice, invoiceDocHtml, renderInvoicePng, invoiceSheetPng, invoicePrintGroups, invoiceAmendments, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature,
       wranglerSend, wranglerNewChat, openWranglerDock, wranglerDockPollTick, devUnlocked, openWranglerOps, wrOpsAgo, openMobileSignSheet, closeMobileSignSheet, agDraft, __state: state };   // UI drivers for headless screenshot/e2e tests

@@ -3495,6 +3495,176 @@ try {
     }
 
 
+    // winEdit poll-stop (2026-09-25) — DETAIL.rentals arms state.winEdit on EVERY render of a
+    // rental, and the 18s refresh poll returned on a bare state.winEdit, so viewing ONE rental
+    // stopped live multi-user refresh for the rest of the tab. The poll now defers only while a
+    // pick is genuinely in progress (winPickBusy) and re-derives the armed editor from a rental
+    // it adopts (winEditResync). The online path runs through setBackendPassword + a window.fetch
+    // mock that stays installed until the debounced save timer the adopt branch arms has drained,
+    // so this block NEVER reaches a real backend.
+    {
+      const S = T.__state, realFetch = window.fetch, savedWin = S.winEdit, savedOverlay = S.overlay;
+      const FR = ['On Rent', 'End Rent', 'Off Rent', 'Returned'];
+      const quote = T.DATA.rentals.find((r) => r.startDate && r.endDate && !r.invoiceId && ['Quote', 'Reserved'].includes(r.status));
+      const billed = T.DATA.rentals.find((r) => r.startDate && r.endDate && r.invoiceId && !FR.slice(1).includes(r.status));
+      const U = T.DATA.units[0];
+      ok(!!quote && !!billed && !!U, 'winEdit poll fixture: a non-fragile and a fragile dated rental + a unit exist');
+      if (quote && billed && U) {
+        const stage = (r) => ({ rentalId: r.rentalId, startDate: r.startDate || '', endDate: r.endDate || '', startTime: r.startTime || '' });
+        const snap = { uName: U.name, bEnd: billed.endDate, qStatus: quote.status };
+        // 1) the predicate — only a real pick is "busy"
+        S.winEdit = { rentalId: quote.rentalId, monthISO: '2099-01-01', anchor: null };
+        ok(!T.winPickBusy(), 'winEdit poll: a merely-armed editor (rental viewed, nothing picked) is NOT busy');
+        S.winEdit.anchor = quote.startDate;
+        ok(T.winPickBusy(), 'winEdit poll: a tapped start day (mid range-select) IS busy');
+        S.winEdit = { rentalId: billed.rentalId, monthISO: '2099-01-01', anchor: null, staged: stage(billed) };
+        ok(!T.winPickBusy(), 'winEdit poll: an untouched staged copy is NOT busy');
+        S.winEdit.staged.endDate = '2099-12-31';
+        ok(T.winPickBusy(), 'winEdit poll: a staged-but-unsaved window (Confirm panel up) IS busy');
+        // 2) the resync — re-derive exactly as the DETAIL.rentals arming does
+        S.winEdit = { rentalId: billed.rentalId, monthISO: '2099-03-01', anchor: null, staged: { ...stage(billed), endDate: '2000-01-01' } };
+        T.winEditResync(billed);
+        ok(S.winEdit.staged.endDate === (billed.endDate || '') && S.winEdit.monthISO === '2099-03-01' && !T.winPickBusy(), 'winEdit resync: a stale staged copy re-derives from the adopted rental (no phantom Confirm), month kept');
+        S.winEdit = { rentalId: quote.rentalId, monthISO: '2099-01-01', anchor: null };
+        quote.status = 'On Rent'; T.winEditResync(quote);
+        ok(!!S.winEdit.staged, 'winEdit resync: a rental that turned fragile (On Rent) now STAGES instead of committing live');
+        quote.status = snap.qStatus; T.winEditResync(quote);
+        ok(!S.winEdit.staged, 'winEdit resync: a no-longer-fragile rental drops its staged copy');
+        const same = JSON.stringify(S.winEdit); T.winEditResync(billed);
+        ok(JSON.stringify(S.winEdit) === same, 'winEdit resync: adopting a DIFFERENT rental leaves the armed editor alone');
+        // 3) the real refreshFromBackend, against a mocked load
+        let remote = null, during = null;
+        window.fetch = (url, opts) => {
+          if (!opts || typeof opts.body !== 'string') return realFetch(url, opts);   // never swallow a non-backend request
+          const p = JSON.parse(opts.body);
+          if (p.action === 'load' && during) { const f = during; during = null; f(); }
+          const body = p.action === 'load' ? { ok: true, data: remote } : p.action === 'getChats' ? { ok: true, chats: JSON.parse(JSON.stringify(S.chat.chats)) } : { ok: true };
+          return Promise.resolve({ ok: true, text: () => Promise.resolve(JSON.stringify(body)) });
+        };
+        const pollOnce = async (mut) => {
+          if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+          S.overlay = null; window.JT.snapshotSaved();
+          remote = JSON.parse(JSON.stringify(T.DATA)); mut(remote);
+          T.setBackendPassword('TEST-PW');
+          try { await T.refreshFromBackend(); } finally { T.setBackendPassword(''); }
+        };
+        const markUnit = (tag) => (d) => { d.units.find((u) => u.unitId === U.unitId).name = snap.uName + tag; };
+        // the poll's own render() re-arms state.winEdit for whatever rental the Rentals card has
+        // open (DETAIL.rentals), so park that card in list view while the editor is hand-armed
+        const rc = T.activeSession().cards.rentals, savedRc = { mode: rc.mode, recId: rc.recId, recType: rc.recType };
+        rc.mode = 'list'; rc.recId = null; rc.recType = null;
+        try {
+          S.winEdit = { rentalId: quote.rentalId, monthISO: '2099-01-01', anchor: null };
+          await pollOnce(markUnit(' ~p1'));
+          ok(U.name === snap.uName + ' ~p1', 'winEdit poll: with a rental merely VIEWED the poll still adopts another user\'s edit (was: stopped for the rest of the tab)');
+          S.winEdit = { rentalId: billed.rentalId, monthISO: '2099-01-01', anchor: null, staged: { ...stage(billed), endDate: '2099-12-31' } };
+          await pollOnce(markUnit(' ~p2'));
+          ok(U.name === snap.uName + ' ~p1', 'winEdit poll: a staged-but-unsaved window defers the whole poll (the money preview cannot shift under the Confirm panel)');
+          S.winEdit = { rentalId: billed.rentalId, monthISO: '2099-01-01', anchor: null, staged: stage(billed) };
+          const newEnd = '2099-12-30';
+          await pollOnce((d) => { d.rentals.find((r) => r.rentalId === billed.rentalId).endDate = newEnd; });
+          ok(billed.endDate === newEnd && S.winEdit.staged.endDate === newEnd && !T.winPickBusy(), 'winEdit poll: adopting the armed fragile rental re-derives its staged copy — no phantom "Confirm new rental window?"');
+          S.winEdit = { rentalId: billed.rentalId, monthISO: '2099-01-01', anchor: null, staged: stage(billed) };
+          during = () => { S.winEdit.staged.endDate = '2099-12-31'; };   // the user stages a window WHILE the load is in flight
+          await pollOnce((d) => { markUnit(' ~p4')(d); d.rentals.find((r) => r.rentalId === billed.rentalId).endDate = '2099-12-29'; });
+          ok(U.name === snap.uName + ' ~p1' && billed.endDate === newEnd && S.winEdit.staged.endDate === '2099-12-31', 'winEdit poll: a pick started during the load await is re-checked — nothing adopted, the staged window survives');
+          S.winEdit = { rentalId: quote.rentalId, monthISO: '2099-01-01', anchor: null };
+          const mockFetch = window.fetch;
+          window.fetch = async (url, opts) => { const resp = await mockFetch(url, opts); if (opts && typeof opts.body === 'string' && JSON.parse(opts.body).action === 'load') { U.name = snap.uName + ' ~saved'; T.reindex('units', U); await window.JT.flushSave(); } return resp; };
+          try { await pollOnce(() => {}); } finally { window.fetch = mockFetch; }
+          ok(U.name === snap.uName + ' ~saved', 'winEdit poll: a save that completed during the load await is never reverted by the stale load reply (RC-65 blocker)');
+        } finally {
+          await new Promise((r) => setTimeout(r, 1600));   // let any saveSoon() the adopt branch armed fire against the MOCK, never the real fetch
+          U.name = snap.uName; billed.endDate = snap.bEnd; quote.status = snap.qStatus;
+          T.reindex('units', U); T.reindex('rentals', billed);
+          window.JT.snapshotSaved();
+          window.fetch = realFetch; Object.assign(rc, savedRc); S.winEdit = savedWin; S.overlay = savedOverlay; T.render();
+        }
+      }
+    }
+
+    // RC-65 (2, safe half) — a throw while PREPARING a save must never wedge `saving`, and a stalled
+    // photo upload is abandoned at SYNC.timeoutMs. (The sync POST itself stays unbounded — owner
+    // decision.) Mocked window.fetch only: every script.google.com call is answered here.
+    {
+      const realFetch = window.fetch; const seen = []; let plan = [];
+      const GAS = (u) => String(u).includes('script.google.com');
+      window.fetch = (u, init) => {
+        if (!GAS(u)) return realFetch(u, init);
+        let body = {}; try { body = JSON.parse((init && init.body) || '{}'); } catch (e) {}
+        seen.push(body);
+        if (body.action !== 'sync' && body.action !== 'uploadCapture' && body.action !== 'archiveAgreementMedia') return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+        const step = plan.shift() || 'ok';
+        if (step === 'hang') return new Promise((_, rej) => { if (init && init.signal) init.signal.addEventListener('abort', () => rej(new DOMException('aborted', 'AbortError'))); });
+        return Promise.resolve(new Response(JSON.stringify({ ok: true, url: 'https://drive.example/f', fileId: 'F1' }), { status: 200 }));
+      };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const bounded = (p, ms) => Promise.race([p, sleep(ms).then(() => 'STUCK')]);
+      const origMs = T.SYNC.timeoutMs;
+      const rec = { vendorId: 'VEN-RC65', name: 'RC65 vendor' };
+      const insp = (T.DATA.inspections || [])[0]; const inspPhoto0 = insp && insp.photo;
+      const sent = (id) => { const s = seen.filter((b) => b.action === 'sync').pop(); return s && (s.upserts.vendors || []).find((r) => r.vendorId === id); };
+      ok(!!insp, 'RC-65 (2) fixture: an inspection exists');
+      try {
+        T.resetSaveState(); T.SYNC.timeoutMs = 60;
+        T.DATA.vendors.push(rec); T.IDX.vendor && T.IDX.vendor.set(rec.vendorId, rec);
+        T.snapshotSaved(); T.setBackendPassword('TEST-PW');
+        if (insp) {
+          // (d) a throw inside the offload no longer wedges saving, and the rest of the batch still saves
+          insp.photo = { notAString: true }; rec.rc65 = 'v3'; plan = ['ok']; seen.length = 0;
+          const rd = await bounded(T.flushSave(), 3000).catch(() => 'THREW');
+          ok(rd !== 'STUCK' && rd !== 'THREW' && T.saveState().saving === false && sent('VEN-RC65') && sent('VEN-RC65').rc65 === 'v3', 'RC-65 (2): a throw inside offloadDirtyPhotos neither wedges `saving` nor blocks the batch');
+          insp.photo = inspPhoto0;
+          // (e) a stalled photo upload is aborted, the photo stays base64, and the sync still goes out
+          insp.photo = 'data:image/jpeg;base64,QUJD'; plan = ['hang', 'ok']; seen.length = 0;
+          const re = await bounded(T.flushSave(), 3000).catch(() => 'THREW');
+          ok(re !== 'STUCK' && seen.map((b) => b.action).join(',') === 'uploadCapture,sync', `RC-65 (2): a stalled uploadCapture is aborted and the sync still goes out (${seen.map((b) => b.action).join(',')})`);
+          ok(String(insp.photo).startsWith('data:'), 'RC-65 (2): an aborted upload never loses the photo (base64 kept for the next offload)');
+          insp.photo = inspPhoto0;
+        }
+      } finally {
+        T.resetSaveState(); T.SYNC.timeoutMs = origMs; T.setBackendPassword('');
+        for (let j = T.DATA.vendors.length - 1; j >= 0; j--) { if (T.DATA.vendors[j].vendorId === 'VEN-RC65') { T.DATA.vendors.splice(j, 1); T.IDX.vendor && T.IDX.vendor.delete('VEN-RC65'); } }
+        if (insp) insp.photo = inspPhoto0;
+        await sleep(100); window.fetch = realFetch;
+        window.JT.snapshotSaved && window.JT.snapshotSaved();
+      }
+    }
+
+    // RC-65 review — the refresh poll must never resurrect a record whose LOCAL delete is still waiting to
+    // sync (e.g. the absorbed invoice of a merge) when the server copy is unchanged; a copy another device
+    // CHANGED comes back visibly instead of being silently erased. Mocked window.fetch only.
+    {
+      const realFetch = window.fetch; let loadData = {}; let loads = 0;
+      window.fetch = (u, init) => {
+        if (!String(u).includes('script.google.com')) return realFetch(u, init);
+        let body = {}; try { body = JSON.parse((init && init.body) || '{}'); } catch (e) {}
+        if (body.action === 'load') { loads++; return Promise.resolve(new Response(JSON.stringify({ ok: true, data: loadData }), { status: 200 })); }
+        return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = T.__state; const ov = st.overlay, we = st.winEdit;
+      const a = { vendorId: 'VEN-RC65-DEL', name: 'deleted here, unchanged there' };
+      const b = { vendorId: 'VEN-RC65-CHG', name: 'deleted here, CHANGED there' };
+      const drop = (rec) => { const i = T.DATA.vendors.indexOf(rec); if (i >= 0) T.DATA.vendors.splice(i, 1); T.IDX.vendor && T.IDX.vendor.delete(rec.vendorId); };
+      try {
+        T.resetSaveState(); T.DATA.vendors.push(a, b); T.IDX.vendor && (T.IDX.vendor.set(a.vendorId, a), T.IDX.vendor.set(b.vendorId, b));
+        T.snapshotSaved(); T.setBackendPassword('TEST-PW');
+        drop(a); drop(b);   // two local deletes, not yet flushed
+        loadData = { vendors: [Object.assign({}, a), Object.assign({}, b, { name: 'renamed on another device' })] };
+        st.overlay = null; st.winEdit = null; if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+        await Promise.race([T.refreshFromBackend(), sleep(3000)]);
+        ok(loads === 1, 'RC-65 review fixture: the refresh poll ran once');
+        ok(!T.DATA.vendors.some((v) => v.vendorId === 'VEN-RC65-DEL') && (T.computeChanges().deletes.vendors || []).includes('VEN-RC65-DEL'), 'RC-65 review: a pending local delete is NOT resurrected when the server copy is unchanged — the delete still flushes');
+        ok(T.DATA.vendors.some((v) => v.vendorId === 'VEN-RC65-CHG' && v.name === 'renamed on another device'), 'RC-65 review: a record another device CHANGED comes back visibly instead of being silently erased');
+      } finally {
+        st.overlay = ov; st.winEdit = we; T.setBackendPassword('');
+        for (let j = T.DATA.vendors.length - 1; j >= 0; j--) { const id = T.DATA.vendors[j].vendorId; if (id === 'VEN-RC65-DEL' || id === 'VEN-RC65-CHG') { T.DATA.vendors.splice(j, 1); T.IDX.vendor && T.IDX.vendor.delete(id); } }
+        T.resetSaveState(); await sleep(100); window.fetch = realFetch;
+        window.JT.snapshotSaved && window.JT.snapshotSaved();
+      }
+    }
+
     // RC-63 — sign-in resilience. Google's web-app front door was losing or stalling replies the
     // script had already produced. Lost replies must be retried, real refusals must not, stalls
     // must abort, and nothing but a real refusal may forget the remembered device.
@@ -3584,6 +3754,73 @@ try {
     }
     return out;
   });
+
+  // id-collisions (defect 3) — counter-minted record ids must never repeat across devices or
+  // page loads. Two fresh pages with the SAME pinned clock (so uniqueness cannot lean on time;
+  // two-page pattern adapted from Codex commit 5e93829, codex/fix-cross-device-continuity).
+  {
+    const peers = [await browser.newPage(), await browser.newPage()];
+    peers.forEach((peer) => peer.on('pageerror', (e) => pageErrors.push(String(e && e.message || e))));
+    await Promise.all(peers.map(async (peer) => {
+      await peer.addInitScript(() => { Date.now = () => 1787860800000; });
+      await peer.goto('http://localhost:8000/#local', { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await peer.waitForFunction(() => !!window.__rw, { timeout: 20000 });
+      await peer.evaluate(() => window.__rwBootRail);
+    }));
+    const minted = await Promise.all(peers.map((peer) => peer.evaluate(() => {
+      const T = window.__rw, unit = T.DATA.units[0], seq0 = T.__state.seq;
+      const ins = [T.newInspectionForUnit(unit), T.newInspectionForUnit(unit)];
+      const b1 = T.DATA.inspections.length; window.JT.startNewInspection(unit.unitId); const sIns = T.DATA.inspections[b1];
+      const b2 = T.DATA.workOrders.length; window.JT.startNewWorkOrder(unit.unitId); const sWo = T.DATA.workOrders[b2];
+      const rental = T.DATA.rentals.find((r) => r.unitId && T.IDX.unit.get(r.unitId));
+      const b3 = T.DATA.workOrders.length; T.markFieldCall(rental.rentalId); const fc = T.DATA.workOrders[b3];
+      const auto = T.autoWOFromInspection(ins[0]);
+      const chat = T.newChat({ title: 'id-collision probe' });
+      const msg = { id: 'MSG' + T.seqId(), by: 'probe', when: T.TODAY_ISO, at: Date.now(), text: 'probe' }; chat.messages.push(msg);
+      const ven = T.vendorIdByName('Id Collision Probe Vendor');
+      T.addRecComment(unit, 'id-collision probe'); const cm = unit.comments[unit.comments.length - 1].id;
+      const burst = new Set(Array.from({ length: 500 }, () => T.seqId()));
+      return {
+        salt: T.idSalt(),
+        ids: [...ins.map((n) => n.inspectionId), sIns.inspectionId, sWo.woId, fc.woId, auto.woId, chat.id, msg.id, ven, cm],
+        burstOk: burst.size === 500 && T.__state.seq - seq0 >= 500,
+        refsOk: ins[0].woId === auto.woId && auto.inspectionId === ins[0].inspectionId,
+        indexOk: ins.every((n) => T.IDX.insp.get(n.inspectionId) === n) && [sWo, fc, auto].every((w) => T.IDX.wo.get(w.woId) === w),
+        chat: JSON.parse(JSON.stringify(chat)),
+      };
+    })));
+    const [a, b] = minted, all = [...a.ids, ...b.ids];
+    const merge = await peers[0].evaluate(({ aChat, bChat }) => {
+      const T = window.__rw;
+      // b's message posted INTO a's thread, plus b's own thread, plus one legacy-shaped id ('MSG2') already on disk
+      const remoteSame = { ...aChat, messages: [{ id: 'MSG2', by: 'legacy', when: T.TODAY_ISO, at: 1, text: 'legacy' }, ...aChat.messages, ...bChat.messages] };
+      const r = T.mergeChats([remoteSame, bChat]);
+      const aT = T.__state.chat.chats.find((c) => c.id === aChat.id), bT = T.__state.chat.chats.find((c) => c.id === bChat.id);
+      const have = new Set(((aT && aT.messages) || []).map((m) => m.id));
+      return r.changed && !!aT && !!bT && have.has(aChat.messages[0].id) && have.has(bChat.messages[0].id) && have.has('MSG2');
+    }, { aChat: a.chat, bChat: b.chat });
+    await Promise.all(peers.map((peer) => peer.close()));
+    results.push({ ok: a.salt !== b.salt && [a.salt, b.salt].every((s) => /^[0-9a-z]{14}$/.test(s)), m: 'id-collisions: each page load draws its own 14-char id salt' });
+    results.push({ ok: new Set(all).size === all.length, m: 'id-collisions: two fresh pages (same clock) mint no shared inspection / WO / chat / message / vendor / comment id (trunk minted INS-NEW1 + WO-NEW3 on both)' });
+    results.push({ ok: all.every((id) => /^(INS-C|INS-NEW|WO-NEW|WO-FC|WO-INS|CHAT|MSG|VEN-C|CM)\d+-[0-9a-z]{14}$/.test(id)), m: 'id-collisions: ids keep their prefix + counter head and add only [0-9a-z-] (safe for selectors, Drive names, |-keys, Sheets id cells)' });
+    results.push({ ok: minted.every((x) => x.burstOk), m: 'id-collisions: 500 seqId() calls in one load are all distinct and still advance state.seq' });
+    results.push({ ok: minted.every((x) => x.refsOk && x.indexOk), m: 'id-collisions: failed-inspection <-> auto-WO cross-refs and IDX lookups hold under the new ids' });
+    results.push({ ok: merge, m: 'id-collisions: mergeChats keeps the threads and messages of both devices, and a legacy MSG2 beside new ids' });
+    const src = await readFile(join(root, 'app.js'), 'utf8');
+    const allow = [
+      ["function seqId() { return (state.seq++) + '-' + ID_SALT; }", 1],
+      ["{ id: 'T' + state.seq++, session: freshSession()", 1],                                  // session-local tab id, never persisted
+      ["const sig = { id: 'SIG-' + (state.seq++), key: p.key || 'rental'", 1],                    // signed agreement on a card — boundary, owner decision
+      ["const sig = { id: 'SIG-' + (state.seq++), key, version: AGREEMENT_CURRENT[key]", 1],      // signed agreement on a card — boundary, owner decision
+      ["c.achAccounts.push({ id: 'ACH-' + (state.seq++), stripePmId: setupIntent.payment_method", 1],   // payment method — money boundary, owner decision
+      ["'R-NEW' + Date.now().toString(36) + '-' + (state.seq++)", 2],                            // already time-salted
+      ["'R-SPLIT' + Date.now().toString(36) + '-' + (state.seq++)", 1],                          // already time-salted
+    ];
+    const total = (src.match(/state\.seq\+\+/g) || []).length;
+    const allowOk = allow.every(([s, n]) => src.split(s).length - 1 === n) && total === allow.reduce((t, [, n]) => t + n, 0) && !/\+\+\s*state\.seq\b|state\.seq\s*[+\-]=/.test(src);
+    results.push({ ok: allowOk, m: 'id-collisions source guard: every remaining state.seq++ is seqId() itself or an allow-listed tab / boundary / time-salted id — a new raw counter id fails CI' });
+    results.push({ ok: (src.match(/\+ seqId\(\)/g) || []).length === 20, m: 'id-collisions source guard: all 20 persisted record / message constructors mint through seqId()' });
+  }
 
   const passed = results.filter((r) => r.ok).length;
   results.forEach((r) => console.log(`${r.ok ? '  ✓' : '  ✗ FAIL:'} ${r.m}`));
