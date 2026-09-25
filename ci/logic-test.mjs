@@ -3494,6 +3494,45 @@ try {
       ['SC-ADOPT-A', 'SC-ADOPT-B', 'SC-ADOPT-C', 'SC-ADOPT-D', 'SC-ADOPT-NS', 'SC-ADOPT-BK', 'SC-ADOPT-MU'].forEach(clean);
     }
 
+
+    // RC-63 — sign-in resilience. Google's web-app front door was losing or stalling replies the
+    // script had already produced. Lost replies must be retried, real refusals must not, stalls
+    // must abort, and nothing but a real refusal may forget the remembered device.
+    {
+      const realFetch = window.fetch; let calls = 0; let plan = [];
+      const isGas = (u) => String(u).includes('script.google.com');
+      const reply = (status, body) => Promise.resolve(new Response(body, { status, headers: { 'Content-Type': status === 200 ? 'application/json' : 'text/html' } }));
+      window.fetch = (u, init) => {
+        if (!isGas(u)) return realFetch(u, init);
+        calls++; const step = plan.shift() || 'ok';
+        if (step === 'hang') return new Promise((_, rej) => { if (init && init.signal) init.signal.addEventListener('abort', () => rej(new DOMException('aborted', 'AbortError'))); });
+        if (step === '404') return reply(404, '<!DOCTYPE html><html>Sorry, unable to open the file at this time.</html>');
+        if (step === 'expired') return reply(200, JSON.stringify({ ok: false, error: 'expired' }));
+        return reply(200, JSON.stringify({ ok: true, data: {} }));
+      };
+      try {
+        const fast = { backoffMs: 1, timeoutMs: 60 };
+        calls = 0; plan = ['404', '404', 'ok'];
+        const r1 = await T.backendRead('load', undefined, fast);
+        ok(r1 && r1.ok === true && calls === 3, 'RC-63: two lost replies (echo 404) are retried and the third attempt succeeds');
+        calls = 0; plan = ['expired', 'ok'];
+        const r2 = await T.backendRead('authResume', { token: 'x' }, fast);
+        ok(r2 && r2.error === 'expired' && calls === 1, 'RC-63: a REAL refusal returns at once and is never retried');
+        calls = 0; plan = ['hang', 'ok'];
+        const r3 = await T.backendRead('load', undefined, fast);
+        ok(r3 && r3.ok === true && calls === 2, 'RC-63: a stalled call is aborted at its limit and retried');
+        calls = 0; plan = ['hang', 'hang', 'hang'];
+        let threw = null; try { await T.backendRead('load', undefined, fast); } catch (e) { threw = e; }
+        ok(threw && threw.rwTimeout === true && calls === T.SIGNIN_TRIES, 'RC-63: repeated stalls give up with a timeout error instead of an endless spinner');
+        calls = 0; plan = ['404', '404', '404'];
+        const r5 = await T.backendRead('load', undefined, fast);
+        ok(r5 && r5.ok === false && r5.error === 'http-404' && !T.authRejected(r5), 'RC-63: a reply lost on every try is reported as lost, never as a sign-in rejection');
+      } finally { window.fetch = realFetch; }
+      ok(T.authRejected({ ok: false, error: 'expired' }) && T.authRejected({ ok: false, error: 'unauthorized' }), 'RC-63: expired / unauthorized count as a real refusal');
+      ok(!T.authRejected({ ok: false, error: 'http-404' }) && !T.authRejected({ ok: false, error: 'bad-json' }) && !T.authRejected({ ok: false, error: 'busy' }) && !T.authRejected(null), 'RC-63: echo 404 / bad-json / busy / no reply are NOT a refusal');
+      ok(T.pidFailKeepsToken(new Error('http-404')) && T.pidFailKeepsToken(Object.assign(new Error('load timed out'), { rwTimeout: true })), 'RC-63: a lost reply or a timeout keeps the remembered device');
+      ok(!T.pidFailKeepsToken(new Error('expired')) && !T.pidFailKeepsToken(new Error('unauthorized')), 'RC-63: only a real refusal forgets the remembered device');
+    }
     return out;
   });
 
