@@ -1982,6 +1982,7 @@ select.inline-input:focus-visible { outline: 2px solid var(--accent); outline-of
 .winpicker .wp-time { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 9px; padding-bottom: 9px; border-bottom: 1px solid var(--line-soft); }
 .winpicker .wp-time label { font-size: 0.5882rem; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; color: var(--txt-3); }
 .winpicker .wp-time input[type="time"] { height: 30px; border-radius: 8px; border: 1px solid #fff; background: #fff; color: #16181d; font: inherit; font-size: 0.7647rem; padding: 0 8px; color-scheme: light; }   /* rule 16: required input = white until entered */
+.winpicker .wp-time-ro { font-size: 0.7647rem; font-weight: 700; color: var(--txt); }   /* RC-67 (5A) — a hover preview's pickup time: plain text, not a dead field */
 .winpicker .wp-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; }
 .winpicker .wp-month { font-size: 0.7647rem; font-weight: 800; }
 .winpicker .wp-nav { display: flex; gap: 4px; }

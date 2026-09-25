@@ -8734,7 +8734,7 @@ const DETAIL = {
     //  Confirm panel moved inline (2026-06-26), so we stop emitting the now-inert hook.)
     const calHtml = allocationFrozen
       ? `<div class="rdcal-edit" data-rec="${esc(r.rentalId)}" style="--rdcal-hl:var(--${stColor})"><div class="kv" style="justify-content:space-between"><span>${badge('Window locked', 'red')}</span><span class="derived">${esc(fmtWindow(r.startDate, r.endDate))}</span><span class="muted" style="font-size:0.6471rem">Lift or Recall the blacklist to rebook.</span></div></div>`
-      : `<div class="rdcal-edit" data-rec="${esc(r.rentalId)}" style="--rdcal-hl:var(--${stColor})"${cs.hoverPreview ? ' inert' : ''}>${winPickerEl(r, cs.hoverPreview ? { rentalId: r.rentalId, monthISO: firstOfMonthISO(r.startDate || TODAY_ISO), anchor: null } : undefined)}</div>`;   // RC-67 (5A) — a preview draws from a DETACHED picker state (never stored) and its calendar is `inert` (no hover, pointer or focus on controls that do nothing); the .hover-preview guards in onClick / onChange back that up
+      : `<div class="rdcal-edit" data-rec="${esc(r.rentalId)}" style="--rdcal-hl:var(--${stColor})"${cs.hoverPreview ? ' inert' : ''}>${winPickerEl(r, cs.hoverPreview ? { rentalId: r.rentalId, monthISO: firstOfMonthISO(r.startDate || TODAY_ISO), anchor: null, readOnly: true } : undefined)}</div>`;   // RC-67 (5A) — a preview draws from a DETACHED picker state (never stored) and its calendar is `inert` (no hover, pointer or focus on controls that do nothing); the .hover-preview guards in onClick / onChange back that up
 
     /* Duration label (shared across all unit rows). */
     const durLabel = hasWin
@@ -17503,6 +17503,7 @@ const scrollMemo = {};   // persistent scroll positions, keyed `card|view` (list
 // just re-homes four nodes. The card-toggle-bar swipe zone follows the toggles (see boot()).
 function render() {
   if (scanActive) return;   // the scan-to-log capture screen owns #app in its own tab — never let a background loader / 18s poll render clobber it mid-flow
+  refreshPaintOwed = false;   // RC-67 (2A) review fix — this render paints everything a held-back refresh adopted
   RENDER_MEMO = {};   // open the render-scoped derivation cache (rmemo) — lives for exactly this render (Jac 2026-07-17). After the early-return so a bailed render never opens a cache it won't close.
   try {   // ALWAYS close the cache below (finally), even if the render body throws — else a crashed render would leave stale money math for out-of-render callers (invoiceTotals etc.) until the next clean render (fix per review)
   const t0 = performance.now();
@@ -23224,6 +23225,7 @@ function winPickerEl(r, wp = state.winEdit) {   // RC-67 (5A) — a hover previe
   const startDow = new Date(y, m, 1).getDay();
   const daysIn = new Date(y, m + 1, 0).getDate();
   const t = wp.staged || IDX.rental.get(wp.rentalId) || r;   // winTarget() of THIS wp (identical for the armed editor)
+  const ro = !!wp.readOnly;   // RC-67 (5A) review fix — a hover preview's copy: no month arrows, no Today / Clear, the time as text (honest affordance: its calendar is inert)
   const s = t.startDate, e = t.endDate, a = wp.anchor;
   const lo = s && e ? (s < e ? s : e) : (s || a);
   const hi = s && e ? (s < e ? e : s) : null;
@@ -23273,13 +23275,13 @@ function winPickerEl(r, wp = state.winEdit) {   // RC-67 (5A) — a hover previe
       </div>`
     : '';
   return `<div class="winpicker">
-    <div class="wp-time"><label>Pickup time</label><input type="time" class="js-wp-time" value="${esc(to24(t.startTime) || '09:00')}"></div>
+    <div class="wp-time"><label>Pickup time</label>${ro ? `<span class="wp-time-ro">${esc(to12(to24(t.startTime) || '09:00'))}</span>` : `<input type="time" class="js-wp-time" value="${esc(to24(t.startTime) || '09:00')}">`}</div>
     <div class="wp-head"><span class="wp-month">${MONTH_NAMES[m]} ${y}</span>
-      <span class="wp-nav"><button class="js-wp-prev" data-tip="Previous month">‹</button><button class="js-wp-next" data-tip="Next month">›</button></span></div>
+      ${ro ? '' : '<span class="wp-nav"><button class="js-wp-prev" data-tip="Previous month">‹</button><button class="js-wp-next" data-tip="Next month">›</button></span>'}</div>
     <div class="wp-grid">${dows}${cells}</div>
     ${subjName ? `<div class="wp-blocknote">Greyed days are ${state.overbookOn ? 'booked' : 'unavailable'} for <b>${esc(subjName)}</b>${state.overbookOn ? ' — overbooking is on, pick to force' : ''}</div>` : ''}
     ${confirmCard}
-    <div class="wp-foot"><button class="pill ghost js-wp-today" data-r="R18">Today</button>${actionPill('commit', 'Clear', { js: 'js-wp-clear' })}</div>
+    ${ro ? '' : `<div class="wp-foot"><button class="pill ghost js-wp-today" data-r="R18">Today</button>${actionPill('commit', 'Clear', { js: 'js-wp-clear' })}</div>`}
   </div>`;
 }
 
@@ -25362,6 +25364,11 @@ let refreshing = false, refreshTimer = null;
 // row (only the FIRST earns the ~3 s retry, so an outage is never a retry storm); runs / drops / lastErr are
 // diagnostics only — in memory, no personal data, never sent; read them with window.__poll() in the console.
 const REFRESH = { startAt: 0, retryTimer: null, retryMs: 3000, eventGapMs: 10000, streak: 0, runs: 0, drops: 0, lastErr: '' };
+// RC-67 (2A) review fix — TRUE when a refresh adopted remote changes but its render was held back (a field focused, a hover
+// preview, a pick or a drag started during the awaits). The next poll paints them even when it brings nothing new, so the
+// R37 line never keeps saying "Updated N s ago" over a screen missing them. Any render() paints DATA → it clears the flag.
+// `var`, not `let`: render() is defined far above and must never meet a temporal dead zone.
+var refreshPaintOwed = false;
 /** §inv-collision (Jac 2026-07-07) — TRUE when a remote invoice shares an id WE minted this
  *  session but is a genuinely DIFFERENT bill (no rental in common). That means our new
  *  invoice number was already taken by another customer's invoice on the backend — the 18s
@@ -25451,7 +25458,8 @@ async function refreshFromBackend() {
     } catch (e) { /* chat sync is best-effort */ }
     loadWranglerRail();   // also pull this role's Mr. Wrangler rail (cross-device) — best-effort, self-renders
     const ae2 = document.activeElement, typing2 = !!(ae2 && (ae2.tagName === 'INPUT' || ae2.tagName === 'TEXTAREA' || ae2.tagName === 'SELECT' || ae2.isContentEditable));   // RC-65 — a field focused DURING the awaits above: render() would tear it down mid-typing (the data is still adopted; the next render shows it)
-    if (applied && !state.overlay && !DRAG.active && !hoverNode && !typing2 && !winPickBusy()) { state.cascade = createCascade(DATA); render(); }
+    if ((applied || refreshPaintOwed) && !state.overlay && !DRAG.active && !hoverNode && !typing2 && !winPickBusy()) { state.cascade = createCascade(DATA); render(); }
+    else if (applied) refreshPaintOwed = true;   // RC-67 (2A) review fix — adopted but not painted: the next poll owes this render
   } catch (e) { /* an adopt / chat-merge error → retry next tick (a lost LOAD no longer lands here — RC-67 3A) */ }
   finally { refreshing = false; if (quickRetry) refreshRetrySoon(); }   // RC-67 3A — armed only once `refreshing` is released, so the entry guard can never swallow the retry
 }
@@ -25471,7 +25479,7 @@ function refreshNoteLoad(r) {
  *  refreshKick, so it meets every refreshFromBackend guard (off screen, typing, a pick, a save in flight). */
 function refreshRetrySoon() {
   clearTimeout(REFRESH.retryTimer);
-  REFRESH.retryTimer = setTimeout(() => { REFRESH.retryTimer = null; refreshKick(); }, REFRESH.retryMs);
+  REFRESH.retryTimer = setTimeout(() => { REFRESH.retryTimer = null; if (document.hidden) REFRESH.startAt = 0; refreshKick(); }, REFRESH.retryMs);   // RC-67 3A review fix — off screen the retry stands down, but it is still owed: clearing startAt lets the return load at once instead of the 10 s gap swallowing it
 }
 /** RC-67 3A — one poll tick NOW. When it really started a load, the 18 s tick restarts a full interval
  *  behind it (never two loads back to back) and a pending quick retry is dropped. A tick that stood down

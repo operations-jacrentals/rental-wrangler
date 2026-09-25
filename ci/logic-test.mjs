@@ -3618,8 +3618,14 @@ try {
           ok(kept(), 'hover preview: glancing at ANOTHER rental leaves the armed editor and its staged window untouched (was: replaced by the glanced rental)');
           ok(!!pv && pv.querySelector('.wp-day.range-start')?.dataset.iso === quote.startDate, `hover preview: the preview draws the GLANCED rental's own window, not the armed editor's (range-start=${pv && pv.querySelector('.wp-day.range-start')?.dataset.iso}, want ${quote.startDate})`);
           ok(!!pv && pv.hasAttribute('inert'), "hover preview: the preview's calendar is inert — no hover, pointer or focus on controls that do nothing (honest affordance)");
-          // a day tap, Today and a time edit inside the preview's calendar are inert
-          const day = pv && pv.querySelector('.js-wp-day[data-iso]:not(.wp-blocked)'), today = pv && pv.querySelector('.js-wp-today'), tm = pv && pv.querySelector('.js-wp-time');
+          // RC-67 (5A) review fix — inert kills the pointer, not the look: a preview draws no control that does nothing
+          // (library/design/rules.md "Honest affordance"). The day grid stays — the highlighted range is real display.
+          ok(!!pv && !pv.querySelector('.wp-nav, .wp-foot, .js-wp-prev, .js-wp-next, .js-wp-today, .js-wp-clear, input, select, textarea') && /^Pickup time\s*\d{1,2}:\d{2} [AP]M$/.test((pv.querySelector('.wp-time')?.textContent || '').trim()) && !!pv.querySelector('.wp-grid .js-wp-day'), `hover preview: the preview's calendar draws no dead controls — no month arrows, no Today / Clear, the pickup time is plain text (honest affordance) (${pv && pv.querySelector('.wp-time')?.textContent})`);
+          // a day tap, Today and a time edit inside the preview's calendar are inert. The preview no longer draws
+          // Today or a time field; the ones planted here pin the click / change guards that still back inert up.
+          const day = pv && pv.querySelector('.js-wp-day[data-iso]:not(.wp-blocked)'), wpBox = pv && pv.querySelector('.winpicker');
+          if (wpBox) wpBox.insertAdjacentHTML('beforeend', '<button class="pill ghost js-wp-today">Today</button><input type="time" class="js-wp-time" value="09:00">');
+          const today = pv && pv.querySelector('.js-wp-today'), tm = pv && pv.querySelector('.js-wp-time');
           [day, today].forEach((b) => b && b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
           if (tm) { tm.value = '13:30'; tm.dispatchEvent(new Event('change', { bubbles: true })); }
           ok(!!day && !!today && !!tm && kept() && JSON.stringify(quote) === q0, 'hover preview: a day tap, Today and a time edit inside the preview never drive the armed editor (or touch the glanced rental)');
@@ -3946,10 +3952,67 @@ try {
         const busySeen = seen.join(','), armed = !!R.retryTimer; st.winEdit = null; pickEd.remove();
         await sleep(250);
         ok(busySeen === 'load' && armed && loads() === 2, `RC-67 3A: a lost load read across a pick skips chats + rail (RC-65 bail) but still earns the quick retry (${busySeen}; retry ${armed}; ${loads()} loads)`);
+        // 14) a quick retry that comes due while the app is off screen stands down — it is still OWED: coming back
+        //     inside the 10 s gap must load (the lost load it followed covers nothing), not wait for the 18 s tick
+        fresh(['404', 'ok']);
+        await T.refreshFromBackend();
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+        try { await sleep(200); } finally { delete document.hidden; }
+        const hiddenLoads = loads(), retryLeft = !!R.retryTimer;
+        document.dispatchEvent(new Event('visibilitychange')); window.dispatchEvent(new Event('focus')); await sleep(150);
+        ok(hiddenLoads === 1 && !retryLeft && loads() === 2 && R.streak === 0, `RC-67 3A: a quick retry used up while off screen does not swallow the return — back inside the gap, it loads at once (${hiddenLoads} → ${loads()} loads; streak ${R.streak})`);
       } finally {
         during = null; pickEd.remove(); T.resetRefreshState(); T.setBackendPassword(''); st.overlay = ov; st.winEdit = we;
         T.resetSaveState(); await sleep(250); window.fetch = realFetch;
         window.JT.snapshotSaved && window.JT.snapshotSaved();
+      }
+    }
+
+    // RC-67 (2A) review fix — a remote change adopted while its render was held back (a field focused, a hover preview
+    // or a pick started during the load / getChats awaits) is painted by the NEXT poll, even one that brings nothing
+    // new. Before, every later quiet poll skipped render() (applied === 0) yet stamped the R37 line fresh, so
+    // "Updated N s ago" sat over a screen missing another user's edit until some unrelated render.
+    {
+      const realFetch = window.fetch; let plan = []; let during = null;
+      window.fetch = (u, init) => {
+        if (!String(u).includes('script.google.com')) return realFetch(u, init);
+        let body = {}; try { body = JSON.parse((init && init.body) || '{}'); } catch (e) {}
+        if (body.action === 'load') return Promise.resolve(new Response(JSON.stringify({ ok: true, data: plan.shift() || {} }), { status: 200 }));
+        if (body.action === 'getChats') { if (during) { const f = during; during = null; f(); } return Promise.resolve(new Response(JSON.stringify({ ok: true, chats: JSON.parse(JSON.stringify(T.__state.chat.chats)) }), { status: 200 })); }
+        return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = T.__state, ov = st.overlay, we = st.winEdit;
+      const cust = (T.DATA.customers || [])[0], had = !!cust && Object.prototype.hasOwnProperty.call(cust, 'name'), name0 = cust && cust.name;
+      const field = document.createElement('input'); field.type = 'text';
+      const mark = () => { const p = document.createElement('i'); p.className = 'rc67-paint-probe'; document.getElementById('app').appendChild(p); return p; };   // render() swaps #app's children in one replaceChildren → a probe leaves the page only when render() ran
+      ok(!!cust, 'RC-67 2A paint-owed fixture: a customer exists');
+      if (cust) {
+        try {
+          T.resetSaveState(); T.snapshotSaved(); T.setBackendPassword('TEST-PW'); T.resetRefreshState(); T.REFRESH.retryMs = 600000;
+          st.overlay = null; st.winEdit = null; if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+          // poll 1 adopts another user's rename, but a field is focused while getChats is out → its render is held back (RC-65)
+          const p1 = mark();
+          plan = [{ customers: [{ ...JSON.parse(JSON.stringify(cust)), name: 'Zzstale Probe' }] }];
+          during = () => { document.body.appendChild(field); field.focus(); };
+          await T.refreshFromBackend();
+          ok(cust.name === 'Zzstale Probe' && p1.isConnected, 'RC-67 2A paint-owed fixture: the rename is adopted and its render held back while a field is focused');
+          field.blur(); field.remove();
+          // poll 2 brings nothing new — it still paints what poll 1 adopted
+          plan = [{}]; await T.refreshFromBackend();
+          ok(!p1.isConnected, 'RC-67 2A: a remote change adopted under a held-back render is painted by the next poll, even one that brings nothing new');
+          // poll 3: nothing owed and nothing new → no render (any render settles the owed paint)
+          const p3 = mark(); plan = [{}]; await T.refreshFromBackend();
+          ok(p3.isConnected, 'RC-67 2A: once painted, a quiet poll renders nothing — any render settles the owed paint');
+          p3.remove();
+        } finally {
+          during = null; field.remove(); document.querySelectorAll('.rc67-paint-probe').forEach((n) => n.remove());
+          st.overlay = ov; st.winEdit = we; T.setBackendPassword(''); T.resetRefreshState();
+          if (had) cust.name = name0; else delete cust.name;
+          T.reindex('customers', cust);
+          T.resetSaveState(); await sleep(100); window.fetch = realFetch;
+          T.render(); window.JT.snapshotSaved && window.JT.snapshotSaved();
+        }
       }
     }
 
@@ -3972,7 +4035,7 @@ try {
         return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
       };
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const ov = S.overlay, we = S.winEdit, fa0 = T.freshAt();
+      const ov = S.overlay, we = S.winEdit;
       const line = () => document.getElementById('fresh-line');
       const hide = (on) => { if (on) Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); else delete document.hidden; document.dispatchEvent(new Event('visibilitychange')); };
       const pickEd = document.createElement('div'); pickEd.className = 'rdcal-edit'; pickEd.dataset.rec = 'R-RC67';   // RC-67 (3A) — a pick is "busy" only while its editor is in the page
@@ -3996,6 +4059,9 @@ try {
         const cs = el && getComputedStyle(el), want = getComputedStyle(probe).color; probe.remove();
         ok(!!cs && cs.color === want && Math.round(parseFloat(cs.fontSize)) === 11, `RC-67 freshness: 11px in --txt-2 ink (--txt-3 fails AA on the blued-steel floor) (${cs && cs.color} / ${cs && cs.fontSize})`);
         // 3) the ticker touches ONLY that node — no render(), and no rewrite when the words did not change
+        // pin the phase first: the words were computed inside render() ~15–25 ms ago, and a whole-second boundary
+        // crossed since then would make the tick below rewrite them for real (a flaky red, not a regression)
+        T.setFreshAt(Date.now() - 5500); T.freshTick();
         const hdr = document.querySelector('.header'), tn = el && el.firstChild;
         T.freshTick();
         ok(!!el && el.firstChild === tn, 'RC-67 freshness: a tick that changes nothing leaves the text node alone');
@@ -4036,10 +4102,13 @@ try {
         during = null; pickEd.remove();
         S.overlay = ov; S.winEdit = we; T.setBackendPassword(''); T.setBooting(false); T.resetRefreshState();
         T.resetSaveState(); await sleep(100); window.fetch = realFetch;
-        T.setFreshAt(fa0); T.freshTickerSync(); T.render();
+        T.setFreshAt(0); T.freshTickerSync(); T.render();   // the BOOT state (demo: no stamp, no ticker) — not a snapshot taken after earlier blocks' refreshes stamped it
         window.JT.snapshotSaved && window.JT.snapshotSaved();
       }
     }
+    // RC-67 (2A) review fix — every successful refresh in the blocks above stamps _freshAt and starts the 1 s ticker;
+    // the block must hand back the BOOT state (demo: no stamp, no ticker), not a snapshot taken after that pollution
+    ok(T.freshAt() === 0 && !T.freshTimerOn() && !document.getElementById('fresh-line'), `RC-67 freshness: the block leaves the boot state behind — no stamp, no ticker, no line (freshAt=${T.freshAt()}, ticker=${T.freshTimerOn()})`);
 
     // RC-63 — sign-in resilience. Google's web-app front door was losing or stalling replies the
     // script had already produced. Lost replies must be retried, real refusals must not, stalls
