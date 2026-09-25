@@ -3631,6 +3631,40 @@ try {
       }
     }
 
+    // RC-65 review — the refresh poll must never resurrect a record whose LOCAL delete is still waiting to
+    // sync (e.g. the absorbed invoice of a merge) when the server copy is unchanged; a copy another device
+    // CHANGED comes back visibly instead of being silently erased. Mocked window.fetch only.
+    {
+      const realFetch = window.fetch; let loadData = {}; let loads = 0;
+      window.fetch = (u, init) => {
+        if (!String(u).includes('script.google.com')) return realFetch(u, init);
+        let body = {}; try { body = JSON.parse((init && init.body) || '{}'); } catch (e) {}
+        if (body.action === 'load') { loads++; return Promise.resolve(new Response(JSON.stringify({ ok: true, data: loadData }), { status: 200 })); }
+        return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = T.__state; const ov = st.overlay, we = st.winEdit;
+      const a = { vendorId: 'VEN-RC65-DEL', name: 'deleted here, unchanged there' };
+      const b = { vendorId: 'VEN-RC65-CHG', name: 'deleted here, CHANGED there' };
+      const drop = (rec) => { const i = T.DATA.vendors.indexOf(rec); if (i >= 0) T.DATA.vendors.splice(i, 1); T.IDX.vendor && T.IDX.vendor.delete(rec.vendorId); };
+      try {
+        T.resetSaveState(); T.DATA.vendors.push(a, b); T.IDX.vendor && (T.IDX.vendor.set(a.vendorId, a), T.IDX.vendor.set(b.vendorId, b));
+        T.snapshotSaved(); T.setBackendPassword('TEST-PW');
+        drop(a); drop(b);   // two local deletes, not yet flushed
+        loadData = { vendors: [Object.assign({}, a), Object.assign({}, b, { name: 'renamed on another device' })] };
+        st.overlay = null; st.winEdit = null; if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+        await Promise.race([T.refreshFromBackend(), sleep(3000)]);
+        ok(loads === 1, 'RC-65 review fixture: the refresh poll ran once');
+        ok(!T.DATA.vendors.some((v) => v.vendorId === 'VEN-RC65-DEL') && (T.computeChanges().deletes.vendors || []).includes('VEN-RC65-DEL'), 'RC-65 review: a pending local delete is NOT resurrected when the server copy is unchanged — the delete still flushes');
+        ok(T.DATA.vendors.some((v) => v.vendorId === 'VEN-RC65-CHG' && v.name === 'renamed on another device'), 'RC-65 review: a record another device CHANGED comes back visibly instead of being silently erased');
+      } finally {
+        st.overlay = ov; st.winEdit = we; T.setBackendPassword('');
+        for (let j = T.DATA.vendors.length - 1; j >= 0; j--) { const id = T.DATA.vendors[j].vendorId; if (id === 'VEN-RC65-DEL' || id === 'VEN-RC65-CHG') { T.DATA.vendors.splice(j, 1); T.IDX.vendor && T.IDX.vendor.delete(id); } }
+        T.resetSaveState(); await sleep(100); window.fetch = realFetch;
+        window.JT.snapshotSaved && window.JT.snapshotSaved();
+      }
+    }
+
     // RC-63 — sign-in resilience. Google's web-app front door was losing or stalling replies the
     // script had already produced. Lost replies must be retried, real refusals must not, stalls
     // must abort, and nothing but a real refusal may forget the remembered device.

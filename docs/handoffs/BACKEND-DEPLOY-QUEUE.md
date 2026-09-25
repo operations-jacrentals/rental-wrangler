@@ -1,7 +1,6 @@
 # Backend deploy queue — DEPLOYED (2026-07-06 late session); doc kept as the deploy runbook
 
-## ✅ DEPLOYED LIVE 2026-09-25 (Version 113) — membership CASH/CHECK activation, server-side (2026-08-28, issue #833)
-- **Status (2026-09-25):** Jac pasted the reviewed `membershipActivateCash_` (byte-identical to the .gs, checked) + 1 dispatch line + 1 `WRITE_ACTIONS` key in the editor and editor-deployed **Version 113** (no REST deploy). Verified far side: anonymous POSTs still return JSON `unauthorized` @ HTTP 200 (anonymous access intact); the Executions page shows every call on Version 113 completing (0.8–3.7 s). **Still open — Jac's call:** the functional test on a test member (activate → Sheet row shows `paidUntil` one cycle out, no `graceUntil`; 3am cron leaves the card alone), and the pre-existing open dues invoices for affected members.
+## ⏳ READY TO PUSH — membership CASH/CHECK activation, server-side (2026-08-28, issue #833)
 - **What:** `docs/handoffs/2026-08-28-membership-activate-cash-backend.gs` — ONE additive,
   money-role-gated action `membershipActivateCash_` (+ 1 dispatch line + 1 `WRITE_ACTIONS` key).
   It stamps the same entitlement fields `membershipEnroll_` stamps on a cleared charge

@@ -25363,7 +25363,16 @@ async function refreshFromBackend() {
       data[k].forEach((remote) => {
         const id = String(remote[idf]); if (id === 'undefined' || id === 'null') return;
         const rjs = JSON.stringify(remote), local = localById.get(id);
-        if (!local) { DATA[k].push(remote); IDX[IDX_MAP[k]]?.set(id, remote); reindex(k, remote); saved.set(id, rjs); applied++; return; }   // new record from another user
+        if (!local) {
+          // RC-65 review — an id with a saved baseline but no local record is a LOCAL delete still waiting to
+          // sync (the absorbed invoice of a merge inside the 1.2 s saveSoon debounce, or during a sync backoff).
+          // Server copy UNCHANGED since our baseline → nobody else touched it: keep it deleted so the delete still
+          // flushes (adopting it would mark it clean and silently drop the delete → e.g. a duplicate invoice).
+          // Server copy CHANGED → another device edited it: bring it back (visible), never let our pending delete
+          // silently erase their edit. Only the pure-resurrection case is suppressed; no conflict is decided here.
+          if (saved.has(id) && saved.get(id) === rjs) return;
+          DATA[k].push(remote); IDX[IDX_MAP[k]]?.set(id, remote); reindex(k, remote); saved.set(id, rjs); applied++; return;   // new record from another user
+        }
         const ljs = JSON.stringify(local);
         if (ljs === rjs) { saved.set(id, rjs); return; }
         if (k === 'invoices' && isInvoiceIdCollision(id, local, remote)) {   // §inv-collision — our minted number already belonged to a different bill; re-issue ours, keep both
@@ -25524,7 +25533,8 @@ async function loadWranglerRail() {
     if (changed) {
       const beforeById = new Map(localBefore.map((c) => [c.id, c]));
       for (const rc of r.chats) { const lc = beforeById.get(rc.id); if (rc && rc.id && !dismissed.has(rc.id) && (!lc || (rc.ts || 0) > (lc.ts || 0))) { try { await wrStore.putChat(rc); } catch (e) {} } }   // cache the remote winners (never a dismissed one)
-      state.wranglerRail = merged; render();
+      state.wranglerRail = merged;
+      { const ae3 = document.activeElement; if (!(ae3 && (ae3.tagName === 'INPUT' || ae3.tagName === 'TEXTAREA' || ae3.tagName === 'SELECT' || ae3.isContentEditable))) render(); }   // RC-65 review — never re-render under a field mid-typing; the next render shows the merged rail
     }
     if (localAhead) pushWranglerRailSoon(); else lastRailJson = JSON.stringify(state.wranglerRail);
   } catch (e) { /* offline → the refresh poll retries */ }
@@ -26184,7 +26194,9 @@ function renderLogin(msg) {
 function finishLoad() {
   snapshotSaved();                                              // baseline = what the backend currently holds
   resetCommsRailForLogin();                                    // the visible fix for "old chats on login": empty the rail on EVERY login mode, before the first main render (Jac 2026-07-17)
-  buildIndexes(); state.cascade = createCascade(DATA); booting = false; render();
+  buildIndexes();
+  { const wr = state.winEdit && IDX.rental.get(state.winEdit.rentalId); if (wr) winEditResync(wr); else state.winEdit = null; }   // RC-65 review — an editor armed on the instant-cache copy re-derives from the fresh load (no phantom Confirm, no stuck poll)
+  state.cascade = createCascade(DATA); booting = false; render();
   cacheRefreshing(false);                                       // §instant-cache: fresh backend data is in — drop the "refreshing" cue
   cachePersistSnapshot();                                       // §instant-cache: photograph this confirmed backend state (personal device + flag only)
   if (flagOn('phoneIdentity')) { try { const emp = ((state.settings || {}).employees) || []; localStorage.setItem('jactec.pidRoster', JSON.stringify(emp.map((e) => ({ id: e.id, name: e.name })))); } catch (e) {} }   // cache non-secret roster names for the shared-device name-pick
