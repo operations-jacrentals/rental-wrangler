@@ -23824,7 +23824,7 @@ const BACKEND_TIMEOUT_MS = 30000;
    authSetPin) get the limit but are never retried; money calls are untouched. */
 const SIGNIN_TIMEOUT_MS = 45000;   // per attempt: observed good replies reach ~27 s, plus load's own 5–11 s
 const SIGNIN_TRIES = 3;
-/* RC-71 (2026-09-25) — fresh-key grace. A key minted seconds ago is sometimes refused by the very
+/* RC-70 (2026-09-25) — fresh-key grace. A key minted seconds ago is sometimes refused by the very
    next execution even though it IS stored (the V113 diagnostic found Cameron's refused keys intact):
    that execution cannot see the write yet, or the reply leg answered from a body-less run. So the
    sign-in load that directly follows a mint in this page asks again after each delay before a
@@ -26348,7 +26348,7 @@ async function attemptLogin() {
    docs/handoffs/phone-identity-backend.gs. NOTE: unverified until the backend deploys —
    the /jactec-ui screenshot self-critique + the end-to-end drive run on staging after
    Jac's editor go-live. ══════════════════════════════════════════════════════════════ */
-const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', _role: '', _mintAt: 0, _sent: null, _spent: false };   // RC-71 _mintAt: when this page's key was minted; RC-68 (2A) _sent: the last delivered authStart reply (this page only); _spent: a verify since then has (or may have) used that code
+const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', _role: '', _mintAt: 0, _sent: null, _spent: false };   // RC-70 _mintAt: when this page's key was minted; RC-68 (2A) _sent: the last delivered authStart reply (this page only); _spent: a verify since then has (or may have) used that code
 function pidTokenGet() { try { return localStorage.getItem('jactec.pidToken') || sessionStorage.getItem('jactec.pidToken') || ''; } catch (e) { return ''; } }
 function pidTokenSet(tok, personal) { try { if (personal) { localStorage.setItem('jactec.pidToken', tok); sessionStorage.removeItem('jactec.pidToken'); } else { sessionStorage.setItem('jactec.pidToken', tok); localStorage.removeItem('jactec.pidToken'); } } catch (e) {} }
 function pidTokenClear() { try { flushUserPrefsNow(); } catch (e) {} try { localStorage.removeItem('jactec.pidToken'); sessionStorage.removeItem('jactec.pidToken'); } catch (e) {} try { dataCache.wipe(); } catch (e) {} currentPersonId = ''; state.userPrefs = null; }   // §instant-cache: logout clears the on-device snapshot. §cross-device-sync: flush any pending prefs, then drop identity + the in-memory doc — but do NOT wipe the mirror here. The login-time syncMirrorGuard (tag-guarded) is the SINGLE wipe point, so a load-fail relogin can't delete a never-backed-up mirror (which would then seed an empty baseline). Shared-device safety still holds: a DIFFERENT person's next login (prev !== tag) wipes it, exactly as switchUser already defers to.
@@ -26371,10 +26371,10 @@ function pidAdopt(r, tok, personal) {
 // login screen: the next person to reload would resume as the last one. Only a personal
 // remembered phone keeps its sign-in — exactly what RC-63 approved.
 function pidLoadFail(e) {
-  if (e && e.rwSuperseded) return;   // RC-71 — a sign-out or a newer sign-in owns the screen now; touch nothing
+  if (e && e.rwSuperseded) return;   // RC-70 — a sign-out or a newer sign-in owns the screen now; touch nothing
   const refused = !pidFailKeepsToken(e);
-  const fresh = refused && !!(e && e.rwFresh);   // RC-71 — still refused after the fresh-key grace: the key is seconds old, so it is NOT "expired"
-  // RC-71 — a personal phone keeps its brand-new key through a fresh refusal (the V113 diagnostic found
+  const fresh = refused && !!(e && e.rwFresh);   // RC-70 — still refused after the fresh-key grace: the key is seconds old, so it is NOT "expired"
+  // RC-70 — a personal phone keeps its brand-new key through a fresh refusal (the V113 diagnostic found
   // such keys still stored), so a reload a minute later resumes instead of burning one of the six
   // hourly codes; a key that really is dead is still cleared at once by that reload's authResume.
   // A shared session is never kept behind a login screen, fresh or not: the fresh branch keeps only
@@ -26388,7 +26388,7 @@ function pidLoadFail(e) {
   backendPassword = ''; pidUI.step = 'identify';
   renderPhoneLogin(fresh ? SIGNIN_FRESH_MSG[keep ? 'personal' : 'shared'] : refused ? 'Your sign-in expired — text yourself a new code.' : !net ? 'Something went wrong opening the app. Reload to try again.' : signinSlowMsg());
 }
-// RC-71 — the sign-in load for a key minted IN THIS PAGE by authVerify / authLoginPin / authSetPin
+// RC-70 — the sign-in load for a key minted IN THIS PAGE by authVerify / authLoginPin / authSetPin
 // (never a boot resume: phoneBoot keeps RC-63's "a refusal is final at once"). A refusal is asked
 // again after each SIGNIN_GRACE delay, and only while backendPassword is still that key: if a
 // sign-out or another sign-in took over meanwhile, this chain bows out without touching anything.
@@ -26633,10 +26633,10 @@ async function pidDoVerify() {
     return pidErr('The reply got lost — that code may already be used. Tap Resend code for a fresh one.'); }
   if (!r.ok) { const el = document.getElementById('pid-code'); if (el) { el.value = ''; el.focus(); }   // clear the bad digits so a retype re-triggers the auto-submit (maxlength blocks editing a full field)
     return pidErr(r.error === 'bad-code' ? `That code didn't match${r.left != null ? ` — ${r.left} left` : ''}.` : r.error === 'expired' ? 'That code expired — resend a fresh one.' : r.error === 'too-many' ? 'Too many tries — resend a fresh code.' : 'Could not verify — resend a code.'); }
-  pidUI._role = r.role || ''; pidUI._tok = r.token || ''; pidUI._mintAt = Date.now();   // RC-71 — when the key was minted, as near as the client can tell (the reply's arrival)
+  pidUI._role = r.role || ''; pidUI._tok = r.token || ''; pidUI._mintAt = Date.now();   // RC-70 — when the key was minted, as near as the client can tell (the reply's arrival)
   const personal = pidUI.kind === 'personal';
   if (!personal && !r.pinSet) { pidUI.step = 'setpin'; return renderPhoneLogin(''); }
-  pidAdopt(r, r.token, personal); pidEnterFresh(r.token, pidUI._mintAt, personal ? 'personal' : 'shared');   // RC-71 — a fresh key gets the grace
+  pidAdopt(r, r.token, personal); pidEnterFresh(r.token, pidUI._mintAt, personal ? 'personal' : 'shared');   // RC-70 — a fresh key gets the grace
 }
 async function pidDoSetPin() {
   const pin = (document.getElementById('pid-pin')?.value || '').replace(/\D/g, ''), pin2 = (document.getElementById('pid-pin2')?.value || '').replace(/\D/g, '');
@@ -26645,13 +26645,13 @@ async function pidDoSetPin() {
   const r = await pidCall('pid-savepin', () => backendCall('authSetPin', { personId: pidUI.personId, pin, token: pidUI._tok }, { timeoutMs: SIGNIN_TIMEOUT_MS }));
   if (!r) return;
   if (!r.ok) {
-    // RC-71 — the same fresh-key miss can refuse the set-PIN (authSetPin_ resolves the verify's key in a
+    // RC-70 — the same fresh-key miss can refuse the set-PIN (authSetPin_ resolves the verify's key in a
     // new execution). It is a write, so it is never retried automatically (RC-63); the PIN fields stay
     // filled, so a second tap is the retry, and setting the same PIN twice is harmless.
     if (authRejected(r)) logErr('signin', `set-PIN refused (${r.error}), shared, fresh key, ${Date.now() - (pidUI._mintAt || Date.now())} ms since mint`);   // F6. Never the key.
     return pidErr(authRejected(r) ? "The database hasn't recognized your new sign-in yet — wait a few seconds, then tap Set PIN again." : 'Could not save the PIN — try again.');
   }
-  pidAdopt({ role: pidUI._role, name: pidUI.name }, pidUI._tok, false); pidEnterFresh(pidUI._tok, pidUI._mintAt || Date.now(), 'shared');   // RC-71 — this load presents the verify's fresh key
+  pidAdopt({ role: pidUI._role, name: pidUI.name }, pidUI._tok, false); pidEnterFresh(pidUI._tok, pidUI._mintAt || Date.now(), 'shared');   // RC-70 — this load presents the verify's fresh key
 }
 async function pidDoLoginPin() {
   const pin = (document.getElementById('pid-loginpin')?.value || '').replace(/\D/g, '');
@@ -26659,7 +26659,7 @@ async function pidDoLoginPin() {
   const r = await pidCall('pid-signin', () => backendCall('authLoginPin', { personId: pidUI.personId, pin }, { timeoutMs: SIGNIN_TIMEOUT_MS }));
   if (!r) return;
   if (!r.ok) return pidErr(r.error === 'locked' ? 'Locked for a bit — text yourself a code instead.' : r.error === 'no-pin' ? 'No PIN yet — text yourself a code to set one.' : r.error === 'bad-pin' ? `Wrong PIN${r.left != null ? ` — ${r.left} left` : ''}.` : 'Could not sign in.');
-  pidAdopt(r, r.token, false); pidEnterFresh(r.token, Date.now(), 'shared');   // RC-71 — a fresh key gets the grace
+  pidAdopt(r, r.token, false); pidEnterFresh(r.token, Date.now(), 'shared');   // RC-70 — a fresh key gets the grace
 }
 
 // §M0 — reflect the viewport width onto <body> so CSS + the gesture layer can key off

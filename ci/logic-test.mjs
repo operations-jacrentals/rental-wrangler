@@ -3752,7 +3752,7 @@ try {
         ok(shown2 && seen.authResume === 1, `RC-63 wiring: a refused resume clears the device with no retry (saw ${seen.authResume})`);
       } finally { window.fetch = realFetch; clearTok(); }
     }
-    // RC-71 / RC-68 (2A) — fresh-key grace, attributable + honest sign-in copy, and the code box.
+    // RC-70 / RC-68 (2A) — fresh-key grace, attributable + honest sign-in copy, and the code box.
     // Drives the REAL freshKeyLoad / pidDoStart / pidDoVerify / pidDoSetPin / pidDoLoginPin / pidLoadFail /
     // phoneBoot against a fake backend keyed by action (script.google.com only). No case here ever lets a
     // load succeed through pidEnter, so finishLoad never runs and no poll or timer outlives the block: the
@@ -3796,7 +3796,7 @@ try {
         clearTok(); localStorage.setItem('jactec.pidToken', TOK); T.setBackendPassword(TOK);
         reset({ load: ['unauthorized', 'unauthorized', 'ok'] });
         let r1 = null; try { r1 = await T.freshKeyLoad(TOK, Date.now(), 'personal'); } catch (e) { r1 = e; }
-        ok(r1 && r1.ok === true && seen.load === 3, `RC-71: a fresh key refused twice is asked again and the third load signs in (saw ${seen.load} loads)`);
+        ok(r1 && r1.ok === true && seen.load === 3, `RC-70: a fresh key refused twice is asked again and the third load signs in (saw ${seen.load} loads)`);
         takeLogs();
 
         // F1 + F6 — refused on every attempt, personal phone, driven through the REAL verify; the retry cue shows
@@ -3805,21 +3805,21 @@ try {
         let cue2 = ''; onCall = (a) => { if (a === 'load' && seen.load === 2) cue2 = (document.querySelector('.login-screen.signing-in .login-btn') || {}).textContent || ''; };
         await T.pidDoVerify();
         const shownP = await waitFor(() => !!document.querySelector('#pid-phone'), 5000);
-        ok(shownP && seen.load === T.SIGNIN_GRACE.delaysMs.length + 1, `RC-71: a fresh key refused every time is asked ${T.SIGNIN_GRACE.delaysMs.length + 1}x before it counts (saw ${seen.load})`);
-        ok(/trying again \(2 of 4\)/.test(cue2) && !/trying again/i.test((document.getElementById('pid-send') || {}).textContent || ''), `RC-71: the grace shows the "trying again (n of 4)" cue, and the fresh login form never keeps it (got "${cue2}")`);
-        ok(!/expired/i.test(errText()) && /recognized your new sign-in/i.test(errText()) && /reload the app/i.test(errText()), `RC-71: a refusal seconds after the mint never says "expired" (got "${errText()}")`);
-        ok(localStorage.getItem('jactec.pidToken') === TOK, 'RC-71: a personal phone keeps its brand-new key after a persistent fresh refusal (a reload resumes; no code burned)');
+        ok(shownP && seen.load === T.SIGNIN_GRACE.delaysMs.length + 1, `RC-70: a fresh key refused every time is asked ${T.SIGNIN_GRACE.delaysMs.length + 1}x before it counts (saw ${seen.load})`);
+        ok(/trying again \(2 of 4\)/.test(cue2) && !/trying again/i.test((document.getElementById('pid-send') || {}).textContent || ''), `RC-70: the grace shows the "trying again (n of 4)" cue, and the fresh login form never keeps it (got "${cue2}")`);
+        ok(!/expired/i.test(errText()) && /recognized your new sign-in/i.test(errText()) && /reload the app/i.test(errText()), `RC-70: a refusal seconds after the mint never says "expired" (got "${errText()}")`);
+        ok(localStorage.getItem('jactec.pidToken') === TOK, 'RC-70: a personal phone keeps its brand-new key after a persistent fresh refusal (a reload resumes; no code burned)');
         const logsP = takeLogs();
         ok(logsP.filter((l) => /signin: load refused \(unauthorized\), attempt [1-4]\/4, personal, fresh key, \d+ ms since mint/.test(l)).length === 4, `F6: every refused fresh load is logged with attempt, kind and ms since the mint (got ${JSON.stringify(logsP)})`);
 
-        // RC-71 — one counter on screen: a lost reply inside the grace never swaps "of 4" back to RC-63's "of 3"
+        // RC-70 — one counter on screen: a lost reply inside the grace never swaps "of 4" back to RC-63's "of 3"
         clearTok(); T.setBackendPassword(''); toCode('personal');
         reset({ authVerify: [verified('personal')], load: ['unauthorized', '404', 'unauthorized', 'unauthorized', 'unauthorized'] });
         const cues = []; onCall = (a) => { if (a === 'load') cues.push((document.querySelector('.login-screen.signing-in .login-btn') || {}).textContent || ''); };
         await T.pidDoVerify();
         const shownC = await waitFor(() => !!document.querySelector('#pid-phone'), 8000);
         const of4 = cues.findIndex((c) => /of 4\)/.test(c));
-        ok(shownC && seen.load === 5 && of4 > 0 && cues.slice(of4).every((c) => !/of 3\)/.test(c)), `RC-71: once the grace counts "of 4", a lost reply inside it never shows "of 3" (got ${JSON.stringify(cues)})`);
+        ok(shownC && seen.load === 5 && of4 > 0 && cues.slice(of4).every((c) => !/of 3\)/.test(c)), `RC-70: once the grace counts "of 4", a lost reply inside it never shows "of 3" (got ${JSON.stringify(cues)})`);
         takeLogs(); clearTok();
 
         // F1 — the same on a SHARED device: honest copy, and the session is still never kept
@@ -3827,8 +3827,8 @@ try {
         reset({ authVerify: [verified('shared')], load: refusedX4() });
         await T.pidDoVerify();
         const shownS = await waitFor(() => !!document.querySelector('#pid-phone'), 5000);
-        ok(shownS && seen.load === 4 && !sessionStorage.getItem('jactec.pidToken') && !localStorage.getItem('jactec.pidToken'), `RC-71: a SHARED session refused after the grace is still never kept behind a login screen (saw ${seen.load})`);
-        ok(!/expired/i.test(errText()) && /recognized your new sign-in/i.test(errText()) && /sign in again/i.test(errText()) && !/reload/i.test(errText()), `RC-71: the shared-device refusal copy is honest too, and says sign in again, not reload (got "${errText()}")`);
+        ok(shownS && seen.load === 4 && !sessionStorage.getItem('jactec.pidToken') && !localStorage.getItem('jactec.pidToken'), `RC-70: a SHARED session refused after the grace is still never kept behind a login screen (saw ${seen.load})`);
+        ok(!/expired/i.test(errText()) && /recognized your new sign-in/i.test(errText()) && /sign in again/i.test(errText()) && !/reload/i.test(errText()), `RC-70: the shared-device refusal copy is honest too, and says sign in again, not reload (got "${errText()}")`);
         const logsS = takeLogs();
         ok(logsS.filter((l) => /attempt [1-4]\/4, shared, fresh key/.test(l)).length === 4, `F6: a shared verify's refused loads are logged as shared (got ${JSON.stringify(logsS)})`);
 
@@ -3838,27 +3838,27 @@ try {
         onCall = (a) => { if (a === 'load' && seen.load === 2) localStorage.setItem('jactec.pidToken', 'rc71-foreign-tab'); };
         await T.pidDoVerify();
         const shownF = await waitFor(() => !!document.querySelector('#pid-phone'), 5000);
-        ok(shownF && seen.load === 4 && !sessionStorage.getItem('jactec.pidToken') && /sign in again/i.test(errText()), `RC-71: a shared session refused after the grace is not kept when another tab wrote a personal key meanwhile (saw ${seen.load}, "${errText()}")`);
+        ok(shownF && seen.load === 4 && !sessionStorage.getItem('jactec.pidToken') && /sign in again/i.test(errText()), `RC-70: a shared session refused after the grace is not kept when another tab wrote a personal key meanwhile (saw ${seen.load}, "${errText()}")`);
         takeLogs(); clearTok();
 
-        // RC-71 — a refused set-PIN right after a verify: honest copy, logged, never auto-retried (a write);
+        // RC-70 — a refused set-PIN right after a verify: honest copy, logged, never auto-retried (a write);
         // then the load that follows a saved PIN gets the grace
         clearTok(); T.setBackendPassword(''); T.pidUI.step = 'setpin'; T.pidUI.personId = 'EMP-RC71'; T.pidUI._tok = TOK; T.pidUI._mintAt = Date.now(); T.renderPhoneLogin('');
         document.getElementById('pid-pin').value = '4321'; document.getElementById('pid-pin2').value = '4321';
         reset({ authSetPin: ['unauthorized'] }); await T.pidDoSetPin();
-        ok(seen.authSetPin === 1 && T.pidUI.step === 'setpin' && /recognized your new sign-in/i.test(errText()) && takeLogs().some((l) => /signin: set-PIN refused \(unauthorized\), shared, fresh key, \d+ ms since mint/.test(l)), `RC-71: a refused set-PIN says so honestly, is logged, and is not auto-retried (got "${errText()}", ${seen.authSetPin} calls)`);
+        ok(seen.authSetPin === 1 && T.pidUI.step === 'setpin' && /recognized your new sign-in/i.test(errText()) && takeLogs().some((l) => /signin: set-PIN refused \(unauthorized\), shared, fresh key, \d+ ms since mint/.test(l)), `RC-70: a refused set-PIN says so honestly, is logged, and is not auto-retried (got "${errText()}", ${seen.authSetPin} calls)`);
         reset({ authSetPin: ['ok'], load: refusedX4() }); await T.pidDoSetPin();
         const shownSP = await waitFor(() => !!document.querySelector('#pid-phone'), 5000);
-        ok(shownSP && seen.load === 4 && !sessionStorage.getItem('jactec.pidToken'), `RC-71: the load right after a set-PIN gets the fresh-key grace, and the shared session is not kept (saw ${seen.load})`);
+        ok(shownSP && seen.load === 4 && !sessionStorage.getItem('jactec.pidToken'), `RC-70: the load right after a set-PIN gets the fresh-key grace, and the shared session is not kept (saw ${seen.load})`);
         takeLogs();
 
-        // RC-71 — a PIN sign-in mints a fresh key too (the shop PC's most common path): the grace applies
+        // RC-70 — a PIN sign-in mints a fresh key too (the shop PC's most common path): the grace applies
         clearTok(); T.setBackendPassword(''); T.pidUI.step = 'pin'; T.pidUI.personId = 'EMP-RC71'; T.renderPhoneLogin('');
         document.getElementById('pid-loginpin').value = '4321';
         reset({ authLoginPin: [{ ok: true, token: TOK, kind: 'shared', personId: 'EMP-RC71', name: 'Test Hand', role: 'Sales' }], load: refusedX4() });
         await T.pidDoLoginPin();
         const shownLP = await waitFor(() => !!document.querySelector('#pid-phone'), 5000);
-        ok(shownLP && seen.load === 4 && !sessionStorage.getItem('jactec.pidToken') && /recognized your new sign-in/i.test(errText()) && /sign in again/i.test(errText()), `RC-71: the load right after a PIN sign-in gets the fresh-key grace, and the shared session is not kept (saw ${seen.load}, "${errText()}")`);
+        ok(shownLP && seen.load === 4 && !sessionStorage.getItem('jactec.pidToken') && /recognized your new sign-in/i.test(errText()) && /sign in again/i.test(errText()), `RC-70: the load right after a PIN sign-in gets the fresh-key grace, and the shared session is not kept (saw ${seen.load}, "${errText()}")`);
         takeLogs();
 
         // F6 — nothing the sign-in path logged carries the key
@@ -3871,7 +3871,7 @@ try {
         const t0 = Date.now(); T.phoneBoot();
         const shownB = await waitFor(() => !!document.querySelector('#pid-phone'), 8000);
         const bootMs = Date.now() - t0;
-        ok(shownB && seen.load === 1 && bootMs < 3000 && !localStorage.getItem('jactec.pidToken') && /expired/i.test(errText()), `RC-71: a boot-resume refusal stays final at once — one load, no delay, key cleared (saw ${seen.load} loads in ${bootMs} ms)`);
+        ok(shownB && seen.load === 1 && bootMs < 3000 && !localStorage.getItem('jactec.pidToken') && /expired/i.test(errText()), `RC-70: a boot-resume refusal stays final at once — one load, no delay, key cleared (saw ${seen.load} loads in ${bootMs} ms)`);
         const logsB = takeLogs();
         ok(logsB.some((l) => /signin: load refused \(unauthorized\), not fresh, personal/.test(l)) && logsB.every((l) => !l.includes('rc71-resume-key')), `F6: a refused resume load is logged too, without its key (got ${JSON.stringify(logsB)})`);
         T.SIGNIN_GRACE.delaysMs = [5, 5, 5];
@@ -3880,10 +3880,10 @@ try {
         clearTok(); T.setBackendPassword(TOK);
         reset({ load: refusedX4() }); onCall = (a) => { if (a === 'load') T.setBackendPassword('rc71-someone-else'); };
         let sup = null; try { await T.freshKeyLoad(TOK, Date.now(), 'personal'); } catch (e) { sup = e; }
-        ok(sup && sup.rwSuperseded === true && seen.load === 1, `RC-71: the grace stops the moment backendPassword is no longer the minted key (saw ${seen.load})`);
+        ok(sup && sup.rwSuperseded === true && seen.load === 1, `RC-70: the grace stops the moment backendPassword is no longer the minted key (saw ${seen.load})`);
         localStorage.setItem('jactec.pidToken', 'rc71-other'); const screen0 = document.getElementById('app').innerHTML;
         T.pidLoadFail(sup);
-        ok(localStorage.getItem('jactec.pidToken') === 'rc71-other' && document.getElementById('app').innerHTML === screen0, 'RC-71: a superseded sign-in chain touches neither the newer key nor the screen');
+        ok(localStorage.getItem('jactec.pidToken') === 'rc71-other' && document.getElementById('app').innerHTML === screen0, 'RC-70: a superseded sign-in chain touches neither the newer key nor the screen');
         clearTok(); T.setBackendPassword(''); takeLogs();
 
         // RC-68 (2A) — (a) a lost authStart reply reuses this page's personId for the same number
