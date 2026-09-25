@@ -3533,6 +3533,55 @@ try {
       ok(T.pidFailKeepsToken(new Error('http-404')) && T.pidFailKeepsToken(Object.assign(new Error('load timed out'), { rwTimeout: true })), 'RC-63: a lost reply or a timeout keeps the remembered device');
       ok(!T.pidFailKeepsToken(new Error('expired')) && !T.pidFailKeepsToken(new Error('unauthorized')), 'RC-63: only a real refusal forgets the remembered device');
     }
+
+    // RC-63 wiring — drives the REAL phoneBoot / pidLoadFail against a fake backend, keyed by action.
+    // Runs LAST: these leave the phone-login screen up. A regression back to the token-wiping code
+    // (live 2ea562f) fails here even though the pure helper checks above would stay green.
+    {
+      const realFetch = window.fetch; const seen = {}; let script = {};
+      window.fetch = (u, init) => {
+        if (!String(u).includes('script.google.com')) return realFetch(u, init);
+        let action = 'GET'; try { action = JSON.parse((init && init.body) || '{}').action || 'GET'; } catch (e) {}
+        seen[action] = (seen[action] || 0) + 1;
+        const step = (script[action] || []).shift() || 'ok';
+        if (step === '404') return Promise.resolve(new Response('<!DOCTYPE html><html>Sorry, unable to open the file at this time.</html>', { status: 404 }));
+        if (step === 'expired') return Promise.resolve(new Response(JSON.stringify({ ok: false, error: 'expired' }), { status: 200 }));
+        return Promise.resolve(new Response(JSON.stringify({ ok: true, data: {} }), { status: 200 }));
+      };
+      const clearTok = () => { try { localStorage.removeItem('jactec.pidToken'); sessionStorage.removeItem('jactec.pidToken'); } catch (e) {} };
+      const waitFor = async (fn, ms) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await new Promise((r) => setTimeout(r, 50)); } return false; };
+      const loginShown = () => !!document.querySelector('#pid-phone');
+      try {
+        // pidLoadFail — the post-sign-in load failure path
+        clearTok(); localStorage.setItem('jactec.pidToken', 'rc63-personal');
+        T.pidLoadFail(new Error('http-404'));
+        ok(localStorage.getItem('jactec.pidToken') === 'rc63-personal', 'RC-63 wiring: a lost load reply keeps a PERSONAL remembered phone signed in');
+        T.pidLoadFail(new Error('unauthorized'));
+        ok(!localStorage.getItem('jactec.pidToken'), 'RC-63 wiring: a refused load forgets the device');
+        clearTok(); sessionStorage.setItem('jactec.pidToken', 'rc63-shared');
+        T.pidLoadFail(new Error('http-404'));
+        ok(!sessionStorage.getItem('jactec.pidToken'), 'RC-63 wiring: a SHARED-device session is never left signed in behind a login screen');
+        ok(!T.signinNetFailure(new TypeError("Cannot read properties of undefined (reading 'x')")) && T.signinNetFailure(new TypeError('Failed to fetch')) && T.signinNetFailure(new TypeError('Load failed')), 'RC-63 wiring: an app crash is told apart from a network failure (Chrome + Safari wording)');
+
+        // phoneBoot — reopen on a remembered phone while the resume reply is lost every time
+        clearTok(); localStorage.setItem('jactec.pidToken', 'rc63-personal');
+        Object.keys(seen).forEach((k) => delete seen[k]); script = { authResume: ['404', '404', '404'], load: ['404', '404', '404'] };
+        T.phoneBoot();
+        const shown1 = await waitFor(loginShown, 15000);
+        ok(shown1 && seen.authResume === T.SIGNIN_TRIES, `RC-63 wiring: a lost resume reply is retried ${T.SIGNIN_TRIES}x before falling back (saw ${seen.authResume})`);
+        ok(localStorage.getItem('jactec.pidToken') === 'rc63-personal', 'RC-63 wiring: a resume reply lost on every try does NOT erase the remembered phone (live 2ea562f erased it)');
+        const btn = document.querySelector('#pid-send');
+        await new Promise((r) => setTimeout(r, 3500));   // give an abandoned boot load time to (wrongly) retry + relabel
+        ok(!btn || !/trying again/i.test(btn.textContent || ''), 'RC-63 wiring: an abandoned boot never relabels the fresh login button');
+
+        // phoneBoot — a REAL refusal clears at once, with no retry
+        clearTok(); localStorage.setItem('jactec.pidToken', 'rc63-personal');
+        Object.keys(seen).forEach((k) => delete seen[k]); script = { authResume: ['expired'] };
+        T.phoneBoot();
+        const shown2 = await waitFor(() => loginShown() && !localStorage.getItem('jactec.pidToken'), 8000);
+        ok(shown2 && seen.authResume === 1, `RC-63 wiring: a refused resume clears the device with no retry (saw ${seen.authResume})`);
+      } finally { window.fetch = realFetch; clearTok(); }
+    }
     return out;
   });
 
