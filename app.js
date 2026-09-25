@@ -23781,6 +23781,57 @@ const PERSIST_KEYS = ['categories', 'units', 'customers', 'invoices', 'rentals',
    backendCall(), because timing out a card/charge/auth round-trip that the server actually
    completed would report a real payment as failed. Same 30s budget gpsFetch already uses. */
 const BACKEND_TIMEOUT_MS = 30000;
+/* RC-63 (2026-09-25) — Google's web-app front door is losing or stalling replies the script
+   already produced: the Executions page shows 0.6–11 s per call, while clients waited 1.4–27 s
+   and about 1 call in 6 came back as the echo 404 page or never answered. A lost reply is NOT
+   a sign-in rejection. So the READ-ONLY sign-in calls (authResume, the sign-in/boot `load`)
+   get an abortable per-attempt limit plus automatic retry, and only a real backend refusal
+   may erase the remembered device. Sign-in WRITES (authStart/authVerify/authLoginPin/
+   authSetPin) get the limit but are never retried; money calls are untouched. */
+const SIGNIN_TIMEOUT_MS = 45000;   // per attempt: observed good replies reach ~27 s, plus load's own 5–11 s
+const SIGNIN_TRIES = 3;
+const AUTH_REJECT = new Set(['unauthorized', 'expired', 'forbidden', 'revoked', 'gone']);   // the backend's real refusals
+/** true only when the backend itself refused the credential — never for a lost/garbled reply. */
+function authRejected(r) { return !!(r && r.ok === false && AUTH_REJECT.has(String(r.error || ''))); }
+/** A sign-in load failure keeps the remembered device unless the backend refused the credential. */
+function pidFailKeepsToken(e) { return !(e && AUTH_REJECT.has(String(e.message || ''))); }
+const SIGNIN_SLOW_MSG = 'The database is slow to answer right now. Reload the app to try again.';
+function signinSlowMsg() { return (typeof navigator !== 'undefined' && navigator.onLine === false) ? 'No connection — check Wi-Fi or data, then reload the app.' : SIGNIN_SLOW_MSG; }
+/** A failure that came from the network or the backend (as opposed to an app crash while opening). */
+function signinNetFailure(e) {
+  if (!e) return true;
+  const m = String(e.message || '');
+  return !!e.rwTimeout || AUTH_REJECT.has(m) || /^(http-\d+|bad-json|busy|server-error|load-failed)$/.test(m) || (e.name === 'TypeError' && /fetch|load failed|network/i.test(m));
+}
+/** Read-only call with retry: a success or a REAL refusal returns at once; a timeout, a network
+ *  drop, or a lost reply (http-404 echo page, bad-json, busy, server-error) is retried. Never use
+ *  this for a write — a retried write can double-apply one the server already completed. */
+async function backendRead(action, extra, opts) {
+  const o = Object.assign({ timeoutMs: SIGNIN_TIMEOUT_MS, tries: SIGNIN_TRIES, backoffMs: 1000, onRetry: null, stop: null }, opts || {});
+  let last = null;
+  for (let i = 1; i <= o.tries; i++) {
+    try {
+      const r = await backendCall(action, extra, { timeoutMs: o.timeoutMs });
+      if (r && (r.ok || authRejected(r))) return r;
+      last = r;
+    } catch (e) { last = e; }
+    if (i < o.tries) {
+      if (o.stop && o.stop()) break;   // the caller already gave up (e.g. the boot fell back to the login screen)
+      if (o.onRetry) { try { o.onRetry(i + 1, o.tries); } catch (e) {} }
+      await new Promise((res) => setTimeout(res, o.backoffMs * i));
+      if (o.stop && o.stop()) break;
+    }
+  }
+  if (last instanceof Error) throw last;
+  return last;
+}
+/** Say so on screen while a sign-in call is being retried — "nothing happens" was the report. */
+function signinRetryCue(n, total) {
+  const t = `Slow connection — trying again (${n} of ${total})…`;
+  // ONLY a sign-in in progress (boot splash / pidEnter carry .signing-in). A fresh login form
+  // must never be relabelled — pidCall would then restore the wrong label for good.
+  document.querySelectorAll('.login-screen.signing-in .login-btn, .login-screen.signing-in .login-hint').forEach((el) => { el.textContent = t; });
+}
 let backendPassword = sessionStorage.getItem('jactec.pw') || '';
 let booting = true;                       // suppresses saves during initial load
 let saveTimer = null, saving = false, savePending = false;
@@ -23792,16 +23843,31 @@ let saveTimer = null, saving = false, savePending = false;
 function driveViewUrl(res) {
   return (res && res.fileId) ? ('https://drive.google.com/uc?export=view&id=' + res.fileId) : ((res && res.url) || '');
 }
-async function backendCall(action, extra) {
+async function backendCall(action, extra, opts) {
   // text/plain avoids a CORS preflight that GAS web apps can't answer
   const payload = Object.assign({ action, password: backendPassword }, extra || {});
   if (flagOn('phoneIdentity') && backendPassword) payload.sessionToken = backendPassword;   // per-person mode: the device/session token authorizes each call (backend prefers it over `password`); a no-op while the flag is OFF
-  const res = await fetch(BACKEND_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
-  // A backend error page (GAS 500/quota/auth HTML) is NOT JSON — res.json() throws, callers
-  // catch it, and a real card/charge failure gets masked as a generic "Network error". Parse
-  // defensively and ALWAYS hand callers an {ok:false,error} they can map via friendlyPayErr,
-  // never a thrown exception. Never coerces a failure into a success. (#220 card-save pipeline)
-  const text = await res.text();
+  // RC-63 — opt-in ABORTABLE limit (opts.timeoutMs). Aborting, unlike withTimeout's race,
+  // releases the stalled request instead of leaving it open. Callers that pass nothing
+  // (money, saves) keep the old unbounded behaviour on purpose — see BACKEND_TIMEOUT_MS.
+  const ms = opts && opts.timeoutMs;
+  const ac = ms ? new AbortController() : null;
+  let timer = ac ? setTimeout(() => ac.abort(), ms) : null;
+  let res, text;
+  try {
+    res = await fetch(BACKEND_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload), signal: ac ? ac.signal : undefined });
+    // The observed failure is a reply that never STARTS. Once it has started, give the
+    // download its own, longer limit so a slow phone can still pull the full load.
+    if (timer) { clearTimeout(timer); timer = setTimeout(() => ac.abort(), (opts && opts.bodyTimeoutMs) || ms * 2); }
+    // A backend error page (GAS 500/quota/auth HTML) is NOT JSON — res.json() throws, callers
+    // catch it, and a real card/charge failure gets masked as a generic "Network error". Parse
+    // defensively and ALWAYS hand callers an {ok:false,error} they can map via friendlyPayErr,
+    // never a thrown exception. Never coerces a failure into a success. (#220 card-save pipeline)
+    text = await res.text();
+  } catch (e) {
+    if (ac && ac.signal.aborted) { const t = new Error(action + ' timed out'); t.rwTimeout = true; throw t; }
+    throw e;
+  } finally { if (timer) clearTimeout(timer); }
   let body; try { body = JSON.parse(text); } catch { body = { ok: false, error: res.ok ? 'bad-json' : ('http-' + res.status) }; }
   if (!res.ok && body && body.ok === undefined) body = { ok: false, error: 'http-' + res.status };
   return body;
@@ -25029,7 +25095,7 @@ function applyLoadResponse(r) {
     applySettings(r.settings);
   }
 }
-async function loadFromBackend() { applyLoadResponse(await withTimeout(backendCall('load'), BACKEND_TIMEOUT_MS, 'Backend load')); }   // #829 — a stalled load must reject, not hang the boot forever
+async function loadFromBackend() { applyLoadResponse(await backendRead('load', undefined, { onRetry: signinRetryCue })); }   // #829 — a stalled load must reject, not hang the boot forever; RC-63 — and a lost reply is retried, not fatal
 
 /* ══════════════ INSTANT CACHE — on-device data snapshot (spec 2026-07-16) ══════════════
    A DISPLAY-ONLY photograph of the last confirmed backend load, so a PERSONAL (trusted)
@@ -25168,8 +25234,9 @@ function cacheRefreshing(on) {
    We do NOT queue the edit — an offline write buffer is an explicit spec non-goal (the
    rejected "Option B"; it re-opens the corruption surface) and the cache must never become
    a save baseline. We refuse it OUT LOUD instead, once per window, so nobody keeps working
-   into a screen that isn't recording anything. The window itself is now bounded by
-   BACKEND_TIMEOUT_MS, so this is a seconds-long "hold on", not a silent black hole. */
+   into a screen that isn't recording anything. The window itself is bounded — since RC-63 by
+   up to SIGNIN_TRIES attempts of SIGNIN_TIMEOUT_MS each (worst case about 2 1/4 min when EVERY
+   reply stalls; normally seconds) — so it is a "hold on", not a silent black hole. */
 let _bootWriteWarned = false;
 function bootWriteBlocked() {
   if (!booting) return false;
@@ -25250,7 +25317,7 @@ async function refreshFromBackend() {
     // live multi-user refresh: from then on the ONLY way to see someone else's edit was a full
     // page reload (the reporter's "we have to refresh the whole app" complaint). The timeout
     // rejects, `finally` clears the flag, and the next 18s tick tries again.
-    const r = await withTimeout(backendCall('load'), BACKEND_TIMEOUT_MS, 'Live refresh');
+    const r = await backendCall('load', undefined, { timeoutMs: BACKEND_TIMEOUT_MS });   // RC-63 — abortable, so a stalled poll is released rather than left open
     if (!r || !r.ok || !r.data) return;
     const data = r.data; let applied = 0;
     PERSIST_KEYS.forEach((k) => {
@@ -25274,7 +25341,7 @@ async function refreshFromBackend() {
     });
     // also pull the shared team-chat threads so messages from other users land live
     try {
-      const cr = await backendCall('getChats', chatSyncIdentity());
+      const cr = await backendCall('getChats', chatSyncIdentity(), { timeoutMs: BACKEND_TIMEOUT_MS });   // RC-63 — this await also holds `refreshing`; unbounded, one lost reply stopped the poll for good
       if (cr && cr.ok && Array.isArray(cr.chats)) {
         const m = mergeChats(cr.chats);
         const pruned = reconcileScopedChats(cr.chats);
@@ -25411,7 +25478,7 @@ async function pushWranglerRail() {
 async function loadWranglerRail() {
   if (!backendPassword) return;
   try {
-    const r = await backendCall('getWranglerRail');
+    const r = await backendCall('getWranglerRail', undefined, { timeoutMs: BACKEND_TIMEOUT_MS });   // RC-63
     if (!r || !r.ok || !Array.isArray(r.chats)) return;
     const dismissed = loadDismissedChats();
     const localBefore = state.wranglerRail;
@@ -26224,7 +26291,21 @@ function pidAdopt(r, tok, personal) {
   if (r && r.scanDeviceToken) scanTokenSet(r.scanDeviceToken);   // remember this device for decal scans (write-only token)
   try { sessionStorage.setItem('jactec.role', currentRole); localStorage.setItem('jactec.user', currentUser); } catch (e) {}
 }
-function pidLoadFail() { pidTokenClear(); backendPassword = ''; pidUI.step = 'identify'; renderPhoneLogin("Couldn't reach the database. Try again."); }
+// RC-63 — only a REAL refusal (the load said expired/unauthorized…) forgets this device. A timeout
+// or a lost reply used to wipe the remembered sign-in too, so one dropped response on a slow day
+// forced a brand-new text code ("can't log in anymore"). Keep the token; a reload resumes.
+// A SHARED device (PIN each session, token in sessionStorage) is never left signed in behind a
+// login screen: the next person to reload would resume as the last one. Only a personal
+// remembered phone keeps its sign-in — exactly what RC-63 approved.
+function pidLoadFail(e) {
+  const refused = !pidFailKeepsToken(e);
+  const keep = !refused && !!pidLocalToken();
+  if (!keep) pidTokenClear();
+  const net = signinNetFailure(e);
+  if (!net) logErr('signin', (e && (e.stack || e.message)) || e);   // an app crash while opening — not the network's fault; leave a trace
+  backendPassword = ''; pidUI.step = 'identify';
+  renderPhoneLogin(refused ? 'Your sign-in expired — text yourself a new code.' : !net ? 'Something went wrong opening the app. Reload to try again.' : signinSlowMsg());
+}
 function pidEnter(loadP) {
   const s = document.querySelector('.login-screen');
   if (s) {
@@ -26275,8 +26356,10 @@ function phoneBoot() {
   // reject, so the cache-painted app below stayed live and interactive INDEFINITELY with
   // `booting` still true: every edit silently dropped, no banner, nothing saved, and the lot
   // erased on the next load or refresh. Bounded, a dead network now falls to the honest
-  // failure paths below within BACKEND_TIMEOUT_MS instead of becoming a zombie app.
-  const loadP = withTimeout(backendCall('load'), BACKEND_TIMEOUT_MS, 'Backend load');
+  // failure paths below instead of becoming a zombie app (RC-63: at most SIGNIN_TRIES x SIGNIN_TIMEOUT_MS).
+  // RC-63 — each call is now retried on a lost reply (abortable per attempt), not just bounded.
+  let bootGaveUp = false;                     // RC-63 — set when this boot falls back to the login screen; stops loadP's retries + cue
+  const loadP = backendRead('load', undefined, { onRetry: signinRetryCue, stop: () => bootGaveUp });
   loadP.catch(() => {});                       // may settle before pidEnter attaches the real handler — silence the interim rejection (the chain below still sees it)
   // §instant-cache: while the two backend calls run, paint the last snapshot as the REAL
   // app (personal device + flag + a valid snapshot) so the reopen shows data, not a
@@ -26291,17 +26374,19 @@ function phoneBoot() {
       else if (env) dataCache.wipe();          // a stale / foreign / malformed snapshot → discard, keep the splash
     }).catch(() => {});
   }
-  withTimeout(backendCall('authResume', { token: tok }), BACKEND_TIMEOUT_MS, 'Sign-in resume').then((r) => {
+  const resumeLost = () => { bootGaveUp = true; resumeSettled = true; cacheRefreshing(false); if (!pidLocalToken()) pidTokenClear(); backendPassword = ''; warmBackend(); renderPhoneLogin(signinSlowMsg()); };   // personal device: keep the token (+ its cache); a shared session is never kept behind a login screen   // network blip / timeout / lost reply: keep the token (+ its cache) for the next try — but SAY so (#829: a blank re-login read as "the app just forgot me")
+  backendRead('authResume', { token: tok }, { onRetry: signinRetryCue }).then((r) => {
     if (r && r.ok) { resumeSettled = true; pidAdopt(r, tok, !!(function () { try { return localStorage.getItem('jactec.pidToken'); } catch (e) { return null; } })()); pidEnter(loadP.then(applyLoadResponse)); }
-    else { resumeSettled = true; cacheRefreshing(false); pidTokenClear(); backendPassword = ''; warmBackend(); renderPhoneLogin(); }   // rejected resume: pidTokenClear wipes the snapshot too
-  }).catch(() => { resumeSettled = true; cacheRefreshing(false); backendPassword = ''; warmBackend(); renderPhoneLogin("Couldn't reach the database. Try again."); });   // network blip / timeout: keep the token (+ its cache) for the next try — but SAY so (#829: a blank re-login read as "the app just forgot me")
+    else if (authRejected(r)) { bootGaveUp = true; resumeSettled = true; cacheRefreshing(false); pidTokenClear(); backendPassword = ''; warmBackend(); renderPhoneLogin(); }   // REAL refusal (expired/revoked): pidTokenClear wipes the snapshot too
+    else resumeLost();   // RC-63 — an echo-404 / bad-json / busy reply used to land in the branch above and erase the remembered device
+  }).catch(resumeLost);
 }
 function pidErr(msg) { pidUI.err = msg || ''; const e = document.getElementById('pid-err'); if (e) e.textContent = pidUI.err; return null; }
 async function pidCall(btnId, fn) {
   const btn = document.getElementById(btnId), prev = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = 'Wrangling the herd…'; }
   try { const r = await fn(); if (btn) { btn.disabled = false; btn.textContent = prev; } return r; }
-  catch (e) { if (btn) { btn.disabled = false; btn.textContent = prev; } pidErr("Couldn't reach the database. Try again."); return null; }
+  catch (e) { if (btn) { btn.disabled = false; btn.textContent = prev; } pidErr(e && e.rwTimeout ? 'The database took too long to answer — try again. If it keeps failing, resend a code.' : "Couldn't reach the database. Try again."); return null; }
 }
 function renderPhoneLogin(msg) {
   resetCommsRailForLogin();   // clock-in = an EMPTY rail (covers a direct phone-login render, e.g. phoneBoot) — Jac 2026-07-17
@@ -26402,7 +26487,7 @@ async function pidDoStart(resend) {
   const phone = resend ? pidUI._phone : (document.getElementById('pid-phone')?.value || '').trim();
   if (!phone) return pidErr('Enter your mobile number.');
   pidUI._phone = phone;
-  const r = await pidCall(resend ? 'pid-resend' : 'pid-send', () => backendCall('authStart', { phone, purpose: 'login' }));
+  const r = await pidCall(resend ? 'pid-resend' : 'pid-send', () => backendCall('authStart', { phone, purpose: 'login' }, { timeoutMs: SIGNIN_TIMEOUT_MS }));
   if (!r) return;
   if (r.ok && r.sent) { pidUI.personId = r.personId; pidUI.name = r.name || ''; pidUI.masked = r.masked || ''; pidUI.err = ''; if (!resend) pidUI.step = 'device'; renderPhoneLogin(''); }
   else pidErr("If that number's on the roster, a code is on its way — check your phone.");
@@ -26410,7 +26495,7 @@ async function pidDoStart(resend) {
 async function pidDoVerify() {
   const code = (document.getElementById('pid-code')?.value || '').replace(/\D/g, '');
   if (code.length !== PHONE_IDENTITY.codeLen) return pidErr(`Enter the ${PHONE_IDENTITY.codeLen}-digit code.`);
-  const r = await pidCall('pid-verify', () => backendCall('authVerify', { personId: pidUI.personId, code, deviceKind: pidUI.kind }));
+  const r = await pidCall('pid-verify', () => backendCall('authVerify', { personId: pidUI.personId, code, deviceKind: pidUI.kind }, { timeoutMs: SIGNIN_TIMEOUT_MS }));
   if (!r) return;
   if (!r.ok) { const el = document.getElementById('pid-code'); if (el) { el.value = ''; el.focus(); }   // clear the bad digits so a retype re-triggers the auto-submit (maxlength blocks editing a full field)
     return pidErr(r.error === 'bad-code' ? `That code didn't match${r.left != null ? ` — ${r.left} left` : ''}.` : r.error === 'expired' ? 'That code expired — resend a fresh one.' : r.error === 'too-many' ? 'Too many tries — resend a fresh code.' : 'Could not verify — resend a code.'); }
@@ -26423,7 +26508,7 @@ async function pidDoSetPin() {
   const pin = (document.getElementById('pid-pin')?.value || '').replace(/\D/g, ''), pin2 = (document.getElementById('pid-pin2')?.value || '').replace(/\D/g, '');
   if (pin.length < PHONE_IDENTITY.pinMinLen) return pidErr(`PIN must be at least ${PHONE_IDENTITY.pinMinLen} digits.`);
   if (pin !== pin2) return pidErr("PINs don't match.");
-  const r = await pidCall('pid-savepin', () => backendCall('authSetPin', { personId: pidUI.personId, pin, token: pidUI._tok }));
+  const r = await pidCall('pid-savepin', () => backendCall('authSetPin', { personId: pidUI.personId, pin, token: pidUI._tok }, { timeoutMs: SIGNIN_TIMEOUT_MS }));
   if (!r) return;
   if (!r.ok) return pidErr('Could not save the PIN — try again.');
   pidAdopt({ role: pidUI._role, name: pidUI.name }, pidUI._tok, false); pidEnter();
@@ -26431,7 +26516,7 @@ async function pidDoSetPin() {
 async function pidDoLoginPin() {
   const pin = (document.getElementById('pid-loginpin')?.value || '').replace(/\D/g, '');
   if (!pin) return pidErr('Enter your PIN.');
-  const r = await pidCall('pid-signin', () => backendCall('authLoginPin', { personId: pidUI.personId, pin }));
+  const r = await pidCall('pid-signin', () => backendCall('authLoginPin', { personId: pidUI.personId, pin }, { timeoutMs: SIGNIN_TIMEOUT_MS }));
   if (!r) return;
   if (!r.ok) return pidErr(r.error === 'locked' ? 'Locked for a bit — text yourself a code instead.' : r.error === 'no-pin' ? 'No PIN yet — text yourself a code to set one.' : r.error === 'bad-pin' ? `Wrong PIN${r.left != null ? ` — ${r.left} left` : ''}.` : 'Could not sign in.');
   pidAdopt(r, r.token, false); pidEnter();
@@ -27259,7 +27344,7 @@ function seedDemoRequests() {
    the backend-backed production path. */
 function exposeTestApi() {
   try {
-    window.__rw = { DATA, IDX, TODAY_ISO, itemPaid, lineKey, rentalUnits, unitEntry, isPrimaryUnit, linkActionsFor, linkActionPossible, DROP_MATRIX,
+    window.__rw = { DATA, IDX, TODAY_ISO, backendRead, authRejected, pidFailKeepsToken, signinNetFailure, pidLoadFail, phoneBoot, SIGNIN_TRIES, itemPaid, lineKey, rentalUnits, unitEntry, isPrimaryUnit, linkActionsFor, linkActionPossible, DROP_MATRIX,
       unitStatus, rentalUnitStatuses, unitsUniform, rentalStatusDisplay, rentalMirrorStatus, rentalDisplayStatus,
       allUnitsTerminal, unitTerminal, unitVoided, rentalCleared, rentalLineItems, transportLineItems, extensionPreview, billExtension, unitBilledRental, unitBilledSeries, retroPricingOn, rentalInvoices, rentalActiveInvoice, invoiceChunks, createInvoiceForRental, syncRentalPrimary,
       nextInvoiceId, maxInvoiceSeq, mintedInvoiceIds, isInvoiceIdCollision, healInvoiceIdCollision, reindex,

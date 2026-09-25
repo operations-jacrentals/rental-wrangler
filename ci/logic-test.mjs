@@ -3494,6 +3494,94 @@ try {
       ['SC-ADOPT-A', 'SC-ADOPT-B', 'SC-ADOPT-C', 'SC-ADOPT-D', 'SC-ADOPT-NS', 'SC-ADOPT-BK', 'SC-ADOPT-MU'].forEach(clean);
     }
 
+
+    // RC-63 — sign-in resilience. Google's web-app front door was losing or stalling replies the
+    // script had already produced. Lost replies must be retried, real refusals must not, stalls
+    // must abort, and nothing but a real refusal may forget the remembered device.
+    {
+      const realFetch = window.fetch; let calls = 0; let plan = [];
+      const isGas = (u) => String(u).includes('script.google.com');
+      const reply = (status, body) => Promise.resolve(new Response(body, { status, headers: { 'Content-Type': status === 200 ? 'application/json' : 'text/html' } }));
+      window.fetch = (u, init) => {
+        if (!isGas(u)) return realFetch(u, init);
+        calls++; const step = plan.shift() || 'ok';
+        if (step === 'hang') return new Promise((_, rej) => { if (init && init.signal) init.signal.addEventListener('abort', () => rej(new DOMException('aborted', 'AbortError'))); });
+        if (step === '404') return reply(404, '<!DOCTYPE html><html>Sorry, unable to open the file at this time.</html>');
+        if (step === 'expired') return reply(200, JSON.stringify({ ok: false, error: 'expired' }));
+        return reply(200, JSON.stringify({ ok: true, data: {} }));
+      };
+      try {
+        const fast = { backoffMs: 1, timeoutMs: 60 };
+        calls = 0; plan = ['404', '404', 'ok'];
+        const r1 = await T.backendRead('load', undefined, fast);
+        ok(r1 && r1.ok === true && calls === 3, 'RC-63: two lost replies (echo 404) are retried and the third attempt succeeds');
+        calls = 0; plan = ['expired', 'ok'];
+        const r2 = await T.backendRead('authResume', { token: 'x' }, fast);
+        ok(r2 && r2.error === 'expired' && calls === 1, 'RC-63: a REAL refusal returns at once and is never retried');
+        calls = 0; plan = ['hang', 'ok'];
+        const r3 = await T.backendRead('load', undefined, fast);
+        ok(r3 && r3.ok === true && calls === 2, 'RC-63: a stalled call is aborted at its limit and retried');
+        calls = 0; plan = ['hang', 'hang', 'hang'];
+        let threw = null; try { await T.backendRead('load', undefined, fast); } catch (e) { threw = e; }
+        ok(threw && threw.rwTimeout === true && calls === T.SIGNIN_TRIES, 'RC-63: repeated stalls give up with a timeout error instead of an endless spinner');
+        calls = 0; plan = ['404', '404', '404'];
+        const r5 = await T.backendRead('load', undefined, fast);
+        ok(r5 && r5.ok === false && r5.error === 'http-404' && !T.authRejected(r5), 'RC-63: a reply lost on every try is reported as lost, never as a sign-in rejection');
+      } finally { window.fetch = realFetch; }
+      ok(T.authRejected({ ok: false, error: 'expired' }) && T.authRejected({ ok: false, error: 'unauthorized' }), 'RC-63: expired / unauthorized count as a real refusal');
+      ok(!T.authRejected({ ok: false, error: 'http-404' }) && !T.authRejected({ ok: false, error: 'bad-json' }) && !T.authRejected({ ok: false, error: 'busy' }) && !T.authRejected(null), 'RC-63: echo 404 / bad-json / busy / no reply are NOT a refusal');
+      ok(T.pidFailKeepsToken(new Error('http-404')) && T.pidFailKeepsToken(Object.assign(new Error('load timed out'), { rwTimeout: true })), 'RC-63: a lost reply or a timeout keeps the remembered device');
+      ok(!T.pidFailKeepsToken(new Error('expired')) && !T.pidFailKeepsToken(new Error('unauthorized')), 'RC-63: only a real refusal forgets the remembered device');
+    }
+
+    // RC-63 wiring — drives the REAL phoneBoot / pidLoadFail against a fake backend, keyed by action.
+    // Runs LAST: these leave the phone-login screen up. A regression back to the token-wiping code
+    // (live 2ea562f) fails here even though the pure helper checks above would stay green.
+    {
+      const realFetch = window.fetch; const seen = {}; let script = {};
+      window.fetch = (u, init) => {
+        if (!String(u).includes('script.google.com')) return realFetch(u, init);
+        let action = 'GET'; try { action = JSON.parse((init && init.body) || '{}').action || 'GET'; } catch (e) {}
+        seen[action] = (seen[action] || 0) + 1;
+        const step = (script[action] || []).shift() || 'ok';
+        if (step === '404') return Promise.resolve(new Response('<!DOCTYPE html><html>Sorry, unable to open the file at this time.</html>', { status: 404 }));
+        if (step === 'expired') return Promise.resolve(new Response(JSON.stringify({ ok: false, error: 'expired' }), { status: 200 }));
+        return Promise.resolve(new Response(JSON.stringify({ ok: true, data: {} }), { status: 200 }));
+      };
+      const clearTok = () => { try { localStorage.removeItem('jactec.pidToken'); sessionStorage.removeItem('jactec.pidToken'); } catch (e) {} };
+      const waitFor = async (fn, ms) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await new Promise((r) => setTimeout(r, 50)); } return false; };
+      const loginShown = () => !!document.querySelector('#pid-phone');
+      try {
+        // pidLoadFail — the post-sign-in load failure path
+        clearTok(); localStorage.setItem('jactec.pidToken', 'rc63-personal');
+        T.pidLoadFail(new Error('http-404'));
+        ok(localStorage.getItem('jactec.pidToken') === 'rc63-personal', 'RC-63 wiring: a lost load reply keeps a PERSONAL remembered phone signed in');
+        T.pidLoadFail(new Error('unauthorized'));
+        ok(!localStorage.getItem('jactec.pidToken'), 'RC-63 wiring: a refused load forgets the device');
+        clearTok(); sessionStorage.setItem('jactec.pidToken', 'rc63-shared');
+        T.pidLoadFail(new Error('http-404'));
+        ok(!sessionStorage.getItem('jactec.pidToken'), 'RC-63 wiring: a SHARED-device session is never left signed in behind a login screen');
+        ok(!T.signinNetFailure(new TypeError("Cannot read properties of undefined (reading 'x')")) && T.signinNetFailure(new TypeError('Failed to fetch')) && T.signinNetFailure(new TypeError('Load failed')), 'RC-63 wiring: an app crash is told apart from a network failure (Chrome + Safari wording)');
+
+        // phoneBoot — reopen on a remembered phone while the resume reply is lost every time
+        clearTok(); localStorage.setItem('jactec.pidToken', 'rc63-personal');
+        Object.keys(seen).forEach((k) => delete seen[k]); script = { authResume: ['404', '404', '404'], load: ['404', '404', '404'] };
+        T.phoneBoot();
+        const shown1 = await waitFor(loginShown, 15000);
+        ok(shown1 && seen.authResume === T.SIGNIN_TRIES, `RC-63 wiring: a lost resume reply is retried ${T.SIGNIN_TRIES}x before falling back (saw ${seen.authResume})`);
+        ok(localStorage.getItem('jactec.pidToken') === 'rc63-personal', 'RC-63 wiring: a resume reply lost on every try does NOT erase the remembered phone (live 2ea562f erased it)');
+        const btn = document.querySelector('#pid-send');
+        await new Promise((r) => setTimeout(r, 3500));   // give an abandoned boot load time to (wrongly) retry + relabel
+        ok(!btn || !/trying again/i.test(btn.textContent || ''), 'RC-63 wiring: an abandoned boot never relabels the fresh login button');
+
+        // phoneBoot — a REAL refusal clears at once, with no retry
+        clearTok(); localStorage.setItem('jactec.pidToken', 'rc63-personal');
+        Object.keys(seen).forEach((k) => delete seen[k]); script = { authResume: ['expired'] };
+        T.phoneBoot();
+        const shown2 = await waitFor(() => loginShown() && !localStorage.getItem('jactec.pidToken'), 8000);
+        ok(shown2 && seen.authResume === 1, `RC-63 wiring: a refused resume clears the device with no retry (saw ${seen.authResume})`);
+      } finally { window.fetch = realFetch; clearTok(); }
+    }
     return out;
   });
 
