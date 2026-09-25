@@ -3162,7 +3162,7 @@ function showHoverPreview(target) {
   const info = recForHover(target); if (!info) return;
   hideHoverPreview();
   const node = el('div', 'hover-preview');
-  try { node.innerHTML = DETAIL[info.ec](info.rec, { historySearch: '', backStack: [], mode: 'standard' }); } catch (e) { return; }
+  try { node.innerHTML = DETAIL[info.ec](info.rec, { historySearch: '', backStack: [], mode: 'standard', hoverPreview: true }); } catch (e) { return; }   // RC-67 (5A) — hoverPreview: a glance never arms the inline window editor (see DETAIL.rentals)
   // SPEC flag-color-system §5: active flags (severity-sorted) listed below the preview.
   const pflags = getEntityFlags(info.ec, info.rec);
   if (pflags.length) {
@@ -6874,6 +6874,7 @@ const RULE_META = {
   R34: ['Wash cycle button', 'washBtn', 'one pressable status pill that advances a unit’s wash on each click — neutral “Wash?” → caution “Wash It!” (yellow, requested) → ready “✓ Washed” (green, logged) → click again un-marks today’s wash. Registry STATUS tones (green/yellow/gray), NOT action colors; a press-to-advance control like R1 but it cycles in place instead of opening a dropdown. Replaces the old Wash / Don’t Wash / Washed R14 toggle; wash no longer gates inspection Pass.'],
   R35: ['Dated-action funnel', 'datedFunnelHtml / .dfunnel', 'the customer-detail funnel as a two-tab (Rental | Equipment Sales) stack of clickable LAYERS, narrowing like a real funnel — everyone sits in both tabs (a fresh customer at Lead). Each layer is a SLOT for a dated next-action ("notes = actions"): arm any layer with an action (note + date) and it glows red/yellow/green by that date’s urgency (naUrgency) — several can be armed at once. A reached-but-unarmed layer is quiet steel history (a check + when it happened); the terminal Signed/Paid, once reached, is SOLID BLUE (closed won). Clicking a layer opens its action editor (arm/edit/complete, or Advance the customer here). The armed actions are the same scheduled entries as the date-sorted queue below. Rental Reserved/Rented history-dates derive from live rentals. Bespoke — layers are NOT .pill, the .dfunnel container carries the stamp.'],
   R36: ['Swipe-toggle deck', 'swipeSeg / swipeTrack / .swipe-track', 'the PHONE-ONLY carousel that turns a VIEW-SWITCH toggle section (the customer funnel · invoices · comms Text/Email) into a swipeable deck: both panes sit side-by-side in a nested horizontal scroll-snap track, and the toggle’s ONE-orange fill (R3) becomes a .deck-thumb that RIDES the scroll (deckPaint). The active tab commits on SNAP with NO render (deckCommit) — both panes are already in the DOM — a haptic ticks per change, and a tab tap smooth-scrolls the track. Nests inside the 5-card .grid rail without stealing its swipe (each scroll listener is class-filtered to its own track). Desktop is byte-identical to before — single pane + the R14 tap toggle. Attaches ONLY to view-switch toggles, never a value/action segCtl (a swipe must never set inspection Fail or a transport leg).'],
+  R37: ['Freshness line', 'freshLineHtml / #fresh-line', 'the always-on, low-key “Updated N s ago” under the header name row (RC-67 2A) — becomes “Catching up…” once 60 s pass without a successful refresh (a backend load this device APPLIED). Plain read-voice text in --txt-2: no pill, no icon, no motion. headerEl paints it; a 1 s ticker rewrites only its text (stopped while the tab is hidden). Never an alert — R25 stays the ONE non-toast alert'],
 };
 /* ════════════ APP-12 · DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
    The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
@@ -7002,7 +7003,7 @@ const RB_TABS = [
   { id: 'upload', label: 'Upload & Capture', intro: 'Add-file zones and photo/site captures.',
     items: [{ r: 'R21' }, { f: 'upload-capture' }] },
   { id: 'data', label: 'Data & Behaviors', intro: 'Visualizations, plus the app’s behaviors — it flashes instead of erroring, right-clicks, tooltips, and self-lints.',
-    items: [{ r: 'R16' }, { r: 'R15' }, { r: 'R35' }, { r: 'R36' }, { r: 'R13' }, { f: 'data-kpi' }, { f: 'data-gauge' }, { r: 'R19' }, { r: 'R25' }, { r: 'R20' }, { r: 'R23' }, { f: 'behavior-preview' }, { r: 'R0' }] },
+    items: [{ r: 'R16' }, { r: 'R15' }, { r: 'R35' }, { r: 'R36' }, { r: 'R13' }, { f: 'data-kpi' }, { f: 'data-gauge' }, { r: 'R19' }, { r: 'R25' }, { r: 'R37' }, { r: 'R20' }, { r: 'R23' }, { f: 'behavior-preview' }, { r: 'R0' }] },
 
   { id: 'windows', label: 'Windows', intro: 'Every pop-up window in the app, by kind. Expand one for a live preview, its fields, and a copy-paste edit reference — your map to wrangle any screen.', items: [] },
 ];
@@ -8725,7 +8726,7 @@ const DETAIL = {
     const splitFrozen = blacklistBlocksRentalAllocation(r, { kind: 'split' });
     if (allocationFrozen) {
       if (state.winEdit?.rentalId === r.rentalId) state.winEdit = null;
-    } else if (!state.winEdit || state.winEdit.rentalId !== r.rentalId) {
+    } else if (!cs.hoverPreview && (!state.winEdit || state.winEdit.rentalId !== r.rentalId)) {   // RC-67 (5A) — never from a hover preview: arming there replaced the editor on screen (a staged window + its Confirm panel) with the glanced rental's
       state.winEdit = { rentalId: r.rentalId, monthISO: firstOfMonthISO(r.startDate || TODAY_ISO), anchor: null };
       if (rentalFragile(r)) state.winEdit.staged = { rentalId: r.rentalId, startDate: r.startDate || '', endDate: r.endDate || '', startTime: r.startTime || '' };
     }
@@ -8733,7 +8734,7 @@ const DETAIL = {
     //  Confirm panel moved inline (2026-06-26), so we stop emitting the now-inert hook.)
     const calHtml = allocationFrozen
       ? `<div class="rdcal-edit" data-rec="${esc(r.rentalId)}" style="--rdcal-hl:var(--${stColor})"><div class="kv" style="justify-content:space-between"><span>${badge('Window locked', 'red')}</span><span class="derived">${esc(fmtWindow(r.startDate, r.endDate))}</span><span class="muted" style="font-size:0.6471rem">Lift or Recall the blacklist to rebook.</span></div></div>`
-      : `<div class="rdcal-edit" data-rec="${esc(r.rentalId)}" style="--rdcal-hl:var(--${stColor})">${winPickerEl(r)}</div>`;
+      : `<div class="rdcal-edit" data-rec="${esc(r.rentalId)}" style="--rdcal-hl:var(--${stColor})"${cs.hoverPreview ? ' inert' : ''}>${winPickerEl(r, cs.hoverPreview ? { rentalId: r.rentalId, monthISO: firstOfMonthISO(r.startDate || TODAY_ISO), anchor: null } : undefined)}</div>`;   // RC-67 (5A) — a preview draws from a DETACHED picker state (never stored) and its calendar is `inert` (no hover, pointer or focus on controls that do nothing); the .hover-preview guards in onClick / onChange back that up
 
     /* Duration label (shared across all unit rows). */
     const durLabel = hasWin
@@ -10571,6 +10572,7 @@ function headerEl() {
         <span class="spacer"></span>
         ${currentUser ? `<span class="hello-name">${esc(currentUser)}</span>` : ''}
       </div>
+      ${freshLineHtml()}${/* RC-67 (2A) — R37 freshness line, right under the name row */ ''}
       ${isPhone || flagOn('cardGlobalSearch') ? '' /* §M7 — no global search on mobile; and when the R33 card-bar global mode is on, the globes replace this giant bar on desktop too */ : `<div class="toolbar">
         <div class="searchwrap ${state.filterTerms.length ? 'has-terms' : ''}${state.query.trim() || state.filterTerms.length ? ' has-query' : ''}">
           ${state.filterTerms.length > 1 ? closeX('js-clear') : ''}
@@ -19519,6 +19521,7 @@ function onClick(e) {
   if (closest('.js-dp-today')) { e.stopPropagation(); const dp = state.datepick; if (dp) { dp.monthISO = firstOfMonthISO(TODAY_ISO); dpSet(dp.field, TODAY_ISO); } return renderOverlay(); }
   if (closest('.js-dp-clear')) { e.stopPropagation(); const dp = state.datepick; if (dp && state.overlay) { dpSet(dp.field, ''); state.overlay[dp.field + 'Time'] = ''; } return renderOverlay(); }
   if (closest('.js-dp-done')) { e.stopPropagation(); state.datepick = null; return renderOverlay(); }
+  if (closest('.hover-preview .winpicker')) { e.stopPropagation(); return; }   // RC-67 (5A) — a preview's calendar is a glance: its taps would drive whichever editor is ARMED (another rental's), never the one shown
   if (closest('.js-wp-day')) { e.stopPropagation(); return winPickDay(closest('.js-wp-day').dataset.iso); }
   if (closest('.js-wp-prev')) { e.stopPropagation(); return winPickMonth(-1); }
   if (closest('.js-wp-next')) { e.stopPropagation(); return winPickMonth(1); }
@@ -21361,7 +21364,7 @@ function onChange(e) {
     reader.readAsDataURL(file);
     return;
   }
-  if (e.target.classList.contains('js-wp-time')) { return setWinTime(e.target.value); }
+  if (e.target.classList.contains('js-wp-time')) { if (e.target.closest('.hover-preview')) return; return setWinTime(e.target.value); }   // RC-67 (5A) — a preview's time field is inert (it would re-time the ARMED rental)
   if (e.target.classList.contains('js-dp-time')) { return dpTime(e.target.value); }
   if (e.target.classList.contains('js-draftdate')) { return setDraftDate(e.target.dataset.rec, e.target.dataset.which, e.target.value); }
 }
@@ -23051,13 +23054,21 @@ function winStagedChanged() {
 }
 /** TRUE only while a window pick is genuinely in progress — a start day is tapped (mid
  *  range-select, `.anchor`) or a fragile rental's STAGED window differs from the rental (the
- *  inline "Confirm new rental window?" panel + extension money preview are up, unsaved). A bare
- *  `state.winEdit` is NOT this: DETAIL.rentals arms it on every render of a rental (the hover
- *  preview renders DETAIL.rentals too), so it stays truthy for the rest of the tab — the 18s
- *  refresh poll gated on it stopped for good the moment any rental was viewed. */
-function winPickBusy() { const wp = state.winEdit; return !!(wp && (wp.anchor || winStagedChanged())); }
+ *  inline "Confirm new rental window?" panel + extension money preview are up, unsaved) — AND
+ *  that rental's editor is still in the page. A bare `state.winEdit` is NOT this: DETAIL.rentals
+ *  arms it on every render of a rental, so it stays truthy for the rest of the tab — the 18s
+ *  refresh poll gated on it stopped for good the moment any rental was viewed. RC-67 (3A) — nor
+ *  is a pick ABANDONED by navigating away (the Rentals card to list view, the Calendar swapped
+ *  in, another tab): it used to pause the poll until reload. Coming back to the rental re-renders
+ *  the same pick, busy again — unless the poll meanwhile adopted another device's edit of that
+ *  rental, which re-derives the editor (winEditResync) and drops the unsaved pick. "In the page",
+ *  not "in view": the phone's swipe rail keeps every panel in the DOM, so a pick left on the
+ *  Rentals panel still pauses the poll while another panel is up. */
+function winEditorInPage(rentalId) { return [...document.querySelectorAll('.rdcal-edit[data-rec]')].some((n) => n.dataset.rec === String(rentalId) && !n.closest('.hover-preview')); }   // a hover preview's display-only copy is not the editor
+function winPickBusy() { const wp = state.winEdit; return !!(wp && (wp.anchor || winStagedChanged()) && winEditorInPage(wp.rentalId)); }
 /** The refresh poll just ADOPTED a remote version of the rental the inline editor is armed on
- *  (reachable only while !winPickBusy(), so nothing the user picked is discarded). Re-derive the
+ *  (reachable only while !winPickBusy(): a pick on screen is never discarded; one ABANDONED off the
+ *  page is, since another device just changed that rental — RC-67 3A). Re-derive the
  *  editor from the adopted record exactly as the DETAIL.rentals arming does: an untouched staged
  *  copy still holding the OLD dates would otherwise differ from the rental and raise a phantom
  *  Confirm panel whose Save reverts the other user's dates; and a rental that turned fragile
@@ -23208,12 +23219,11 @@ function dayBlocked(subject, iso, selfId) {
   return categoryAvailableCount(subject.id, iso, nxt, selfId) === 0;
 }
 /** Render the inline calendar popup for the rental whose picker is open. */
-function winPickerEl(r) {
-  const wp = state.winEdit;
+function winPickerEl(r, wp = state.winEdit) {   // RC-67 (5A) — a hover preview passes its own detached wp, so it never reads the armed editor's
   const md = parseISO(wp.monthISO); const y = md.getFullYear(), m = md.getMonth();
   const startDow = new Date(y, m, 1).getDay();
   const daysIn = new Date(y, m + 1, 0).getDate();
-  const t = winTarget() || r;
+  const t = wp.staged || IDX.rental.get(wp.rentalId) || r;   // winTarget() of THIS wp (identical for the armed editor)
   const s = t.startDate, e = t.endDate, a = wp.anchor;
   const lo = s && e ? (s < e ? s : e) : (s || a);
   const hi = s && e ? (s < e ? e : s) : null;
@@ -23894,7 +23904,7 @@ async function backendCall(action, extra, opts) {
   if (flagOn('phoneIdentity') && backendPassword) payload.sessionToken = backendPassword;   // per-person mode: the device/session token authorizes each call (backend prefers it over `password`); a no-op while the flag is OFF
   // RC-63 — opt-in ABORTABLE limit (opts.timeoutMs). Aborting, unlike withTimeout's race,
   // releases the stalled request instead of leaving it open. Callers that pass nothing
-  // (money, and the sync POST itself) keep the old unbounded behaviour on purpose — see BACKEND_TIMEOUT_MS and SYNC (RC-65).
+  // (money among them) keep the old unbounded behaviour on purpose — see BACKEND_TIMEOUT_MS. The sync POST passes syncLimitMs() (RC-67 4A, see SYNC).
   const ms = opts && opts.timeoutMs;
   const ac = ms ? new AbortController() : null;
   let timer = ac ? setTimeout(() => ac.abort(), ms) : null;
@@ -25266,6 +25276,30 @@ function cacheRefreshing(on) {
   _cacheRefreshing = !!on;
   try { mountRefreshCue(); document.body.classList.toggle('rw-refreshing', _cacheRefreshing); } catch (e) {}
 }
+// RC-67 (2A) — R37, the freshness line: always-on "Updated N s ago" under the header name row, turning
+// "Catching up…" once 60 s pass without a successful refresh (reverses OQ-9 "silence = saved" — owner
+// 2026-09-25). SUCCESS = a backend load this device APPLIED: finishLoad, or a refreshFromBackend reply
+// that got past the RC-65 guards into the adopt loop (nothing changed still counts — the screen was
+// checked against the server). A lost/failed load, a skipped tick (popup, typing, saving, hidden) and a
+// reply the RC-65 guards threw away (winPickBusy / saveGen) do NOT count: none of them brought the
+// screen current. headerEl paints it, so tabs / top bands / phone reflow it for free; the 1 s ticker
+// rewrites ONLY its text (never render()) and stops while the tab is hidden. No aria-live: the node is
+// rebuilt with the header on every render, and a live region re-inserted per render can re-announce on
+// some screen readers — it reads in order on demand instead (R25 stays the one spoken alert).
+// Date.now, not performance.now: an iPad asleep for an hour must wake to "Catching up…", and a clock
+// set BACK reads as stale too.
+const FRESH_STALE_MS = 60000;
+let _freshAt = 0, _freshTimer = null;   // 0 = never confirmed this page (demo / pre-login) → no line
+function freshLineText(now) {
+  const ms = (now || Date.now()) - _freshAt;
+  return ms < 0 || ms >= FRESH_STALE_MS ? 'Catching up…' : `Updated ${Math.floor(ms / 1000)} s ago`;
+}
+function freshLineHtml() { return _freshAt && backendPassword && !booting ? `<div id="fresh-line" data-r="R37">${freshLineText()}</div>` : ''; }   // hidden in demo, signed out, and while booting (the Refreshing chip owns that moment)
+function freshTick() { const el = document.getElementById('fresh-line'); if (!el) return; const t = freshLineText(); if (el.textContent !== t) el.textContent = t; }
+function freshTickerSync() { clearInterval(_freshTimer); _freshTimer = null; if (_freshAt && !document.hidden) { freshTick(); _freshTimer = setInterval(freshTick, 1000); } }
+function freshMark() { _freshAt = Date.now(); if (_freshTimer) freshTick(); else freshTickerSync(); }
+document.addEventListener('visibilitychange', freshTickerSync);   // paused while hidden; on return the first tick already reads the true age
+window.addEventListener('pageshow', freshTickerSync);   // a back/forward-cache restore may bring no visibilitychange — re-sync there too (idempotent)
 /* #829 — the boot write-guard, shared by every debounced writer below.
    `booting` was only ever meant to suppress saves while boot painted a SPLASH, where no
    edit was possible (see `let booting = true` — "suppresses saves during initial load").
@@ -25323,6 +25357,11 @@ function computeChanges() {
 // NEVER delete on refresh (a transient blip can't wipe data).
 const IDX_MAP = { categories: 'category', units: 'unit', customers: 'customer', invoices: 'invoice', rentals: 'rental', workOrders: 'wo', inspections: 'insp', vendors: 'vendor', parts: 'part', companyFiles: 'file', expenses: 'expense', models: 'model' };
 let refreshing = false, refreshTimer = null;
+// RC-67 3A (Jac 2026-09-25) — poll timing + a per-device drop count. `startAt` = when the last refresh really
+// began (spaces the return-to-screen triggers and keeps them off the 18 s tick); `streak` = loads lost in a
+// row (only the FIRST earns the ~3 s retry, so an outage is never a retry storm); runs / drops / lastErr are
+// diagnostics only — in memory, no personal data, never sent; read them with window.__poll() in the console.
+const REFRESH = { startAt: 0, retryTimer: null, retryMs: 3000, eventGapMs: 10000, streak: 0, runs: 0, drops: 0, lastErr: '' };
 /** §inv-collision (Jac 2026-07-07) — TRUE when a remote invoice shares an id WE minted this
  *  session but is a genuinely DIFFERENT bill (no rental in common). That means our new
  *  invoice number was already taken by another customer's invoice on the backend — the 18s
@@ -25356,17 +25395,20 @@ async function refreshFromBackend() {
   if (document.hidden || DRAG.active || DRAG.armed || winPickBusy() || state.overlay || hoverNode) return;   // don't disrupt active work — winPickBusy(), NOT a bare state.winEdit (armed by merely viewing a rental; see winPickBusy)
   const ae = document.activeElement;
   if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' || ae.isContentEditable)) return;              // mid-typing (RC-65: + SELECT — inline edits use <select class="inline-input">)
-  refreshing = true;
+  refreshing = true; REFRESH.startAt = Date.now();   // RC-67 3A — when this load began (refreshOnReturn / refreshKick read it)
+  let quickRetry = false;   // RC-67 3A — set by the first lost load in a row; armed in `finally`, after `refreshing` is released
   try {
     // #829 — a stalled poll used to leave `refreshing = true` forever, permanently killing the
     // live multi-user refresh: from then on the ONLY way to see someone else's edit was a full
     // page reload (the reporter's "we have to refresh the whole app" complaint). The timeout
     // rejects, `finally` clears the flag, and the next 18s tick tries again.
     const gen0 = saveGen;   // RC-65 — a save that runs while this load is in flight makes its reply stale for what it sent
-    const r = await backendCall('load', undefined, { timeoutMs: BACKEND_TIMEOUT_MS });   // RC-63 — abortable, so a stalled poll is released rather than left open
-    if (!r || !r.ok || !r.data) return;
+    const r = await backendCall('load', undefined, { timeoutMs: BACKEND_TIMEOUT_MS }).catch((e) => ({ ok: false, error: (e && e.rwTimeout) ? 'timeout' : 'network' }));   // RC-63 — abortable, so a stalled poll is released rather than left open. RC-67 3A — a stall or drop no longer throws past the chats + rail below
+    const lost = !r || !r.ok || !r.data;
+    quickRetry = refreshNoteLoad(r);   // RC-67 3A — counts a lost load; true only for the first in a row
+    if (authRejected(r)) return;   // RC-67 3A — a refused credential is refused for chats + rail too: one call per tick, as before
     if (winPickBusy() || saveGen !== gen0) return;   // RC-65 — a pick can start (or start AND be saved) during the await above; a reply read before that save would revert it as "clean". The next 18s tick retries.
-    const data = r.data; let applied = 0;
+    const data = lost ? {} : r.data; let applied = 0;   // RC-67 3A — a lost load used to return above and skip chats + rail; now it adopts nothing (every entity absent → the loop skips each) and carries on
     PERSIST_KEYS.forEach((k) => {
       if (!Array.isArray(data[k])) return;
       const idf = PERSIST_ID[k], saved = (lastSaved[k] = lastSaved[k] || new Map());
@@ -25396,6 +25438,7 @@ async function refreshFromBackend() {
         }                              // else: local has unsaved edits → keep local; it'll push on next save
       });
     });
+    if (!lost) freshMark();   // RC-67 (2A) — this reply got past the RC-65 guards and was adopted: the screen is confirmed current (nothing changed counts too). A lost load carries on to chats + rail (RC-67 3A) but is never a success
     // also pull the shared team-chat threads so messages from other users land live
     try {
       const cr = await backendCall('getChats', chatSyncIdentity(), { timeoutMs: BACKEND_TIMEOUT_MS });   // RC-63 — this await also holds `refreshing`; unbounded, one lost reply stopped the poll for good
@@ -25409,10 +25452,48 @@ async function refreshFromBackend() {
     loadWranglerRail();   // also pull this role's Mr. Wrangler rail (cross-device) — best-effort, self-renders
     const ae2 = document.activeElement, typing2 = !!(ae2 && (ae2.tagName === 'INPUT' || ae2.tagName === 'TEXTAREA' || ae2.tagName === 'SELECT' || ae2.isContentEditable));   // RC-65 — a field focused DURING the awaits above: render() would tear it down mid-typing (the data is still adopted; the next render shows it)
     if (applied && !state.overlay && !DRAG.active && !hoverNode && !typing2 && !winPickBusy()) { state.cascade = createCascade(DATA); render(); }
-  } catch (e) { /* offline / blip → retry next tick */ }
-  finally { refreshing = false; }
+  } catch (e) { /* an adopt / chat-merge error → retry next tick (a lost LOAD no longer lands here — RC-67 3A) */ }
+  finally { refreshing = false; if (quickRetry) refreshRetrySoon(); }   // RC-67 3A — armed only once `refreshing` is released, so the entry guard can never swallow the retry
 }
 function startRefreshPoll() { clearInterval(refreshTimer); refreshTimer = setInterval(() => { refreshToday(); refreshFromBackend(); if (syncOn() && !state.userPrefs) loadUserPrefs(); }, 18000); }   // §cross-device-sync — re-drive a prefs load that never hydrated (past the 5-try login cutoff) so a cold-GAS blip doesn't disable sync all session
+/** RC-67 3A — book-keeping for one poll `load` reply; true = arm the quick retry. A usable reply ends the
+ *  loss streak. A lost one (stall, network drop, echo 404, bad JSON, busy) is counted, and only the FIRST
+ *  loss in a row asks for a retry: a second loss waits for the 18 s tick. A real sign-in refusal is neither
+ *  a drop nor a loss in the streak — 3 s will not change its answer. */
+function refreshNoteLoad(r) {
+  REFRESH.runs++;
+  if (r && r.ok && r.data) { REFRESH.streak = 0; return false; }
+  if (authRejected(r)) return false;   // a real refusal: not a drop, not a loss in the streak, never retried
+  REFRESH.streak++; REFRESH.drops++; REFRESH.lastErr = String((r && r.error) || 'no-data');
+  return REFRESH.streak === 1;
+}
+/** RC-67 3A — ONE retry ~3 s after a lost load, instead of waiting out the 18 s tick. It runs through
+ *  refreshKick, so it meets every refreshFromBackend guard (off screen, typing, a pick, a save in flight). */
+function refreshRetrySoon() {
+  clearTimeout(REFRESH.retryTimer);
+  REFRESH.retryTimer = setTimeout(() => { REFRESH.retryTimer = null; refreshKick(); }, REFRESH.retryMs);
+}
+/** RC-67 3A — one poll tick NOW. When it really started a load, the 18 s tick restarts a full interval
+ *  behind it (never two loads back to back) and a pending quick retry is dropped. A tick that stood down
+ *  (booting, signed out, typing, a pick, a save or another load in flight) leaves every timer alone. */
+function refreshKick() {
+  const t0 = REFRESH.startAt; refreshToday(); refreshFromBackend();
+  if (REFRESH.startAt === t0) return;
+  clearTimeout(REFRESH.retryTimer); REFRESH.retryTimer = null; startRefreshPoll();
+}
+/** RC-67 3A — back on screen: refresh at once instead of waiting up to 18 s. One return fires several of
+ *  these together; the first starts the load (the rest meet `refreshing`), and a refresh that began under
+ *  REFRESH.eventGapMs ago already covers a later one (desktop focus flicker never multiplies the load).
+ *  `online` skips that gap: it ends an outage, and a load lost just before it covers nothing. */
+function refreshOnReturn(e) {
+  if (!(e && e.type === 'online') && Date.now() - REFRESH.startAt < REFRESH.eventGapMs) return;
+  refreshKick();
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshOnReturn(); });
+window.addEventListener('focus', refreshOnReturn);
+window.addEventListener('online', refreshOnReturn);
+window.addEventListener('pageshow', (e) => { if (e.persisted) refreshOnReturn(e); });   // a back/forward-cache restore runs no boot; a first load's pageshow is the boot's own load
+window.__poll = () => ({ runs: REFRESH.runs, drops: REFRESH.drops, streak: REFRESH.streak, lastErr: REFRESH.lastErr });   // RC-67 3A — console diagnostic only, like window.__perf(): this tab's poll loads tried / lost; no personal data, never sent
 
 // ── Team-chat sync (Jac 2026-06-15) ────────────────────────────────────────
 // Chat threads were browser-local, so one user's chat never reached another (a
@@ -25938,10 +26019,16 @@ function saveSoon(ms) { if (bootWriteBlocked() || !backendPassword) return; clea
 // RC-65 (2) — per-call ABORTABLE limit for the uploads flushSave awaits before a save
 // (uploadCapture / archiveAgreementMedia). 45 s = RC-63's per-attempt limit (slowest good reply ~27 s).
 // A timed-out upload that actually landed costs at most a duplicate Drive file on the retry.
-// The sync POST itself is deliberately NOT bounded here: retrying a sync the server already
-// applied can overwrite another device's newer edit of the same record (invoices included) —
-// that trade-off is the owner's decision (RC-65). A property, not a const, so tests can shrink it.
+// RC-67 (4A) — the sync POST is bounded too (syncLimitMs), so one lost reply no longer holds
+// `saving` (and with it the refresh poll) until the browser gives up. An aborted POST cannot be
+// un-sent: if the server had already applied it, the retry re-sends those records whole and can
+// overwrite another device's edit of the same record made in between (invoices included), or
+// re-create one another device deleted meanwhile. The owner ACCEPTED the replay (RC-67 4A,
+// 2026-09-25). A property, not a const, so tests can shrink it.
 const SYNC = { failing: false, fails: 0, backoff: 1200, timeoutMs: 45000 };
+// 45 s → 90 s → 135 s (cap): each consecutive failure lengthens the next attempt's limit, so a
+// genuinely slow large save still lands AND answers instead of being aborted and replayed forever.
+function syncLimitMs() { return SYNC.timeoutMs * Math.min(SYNC.fails + 1, 3); }
 function retrySyncNow() { clearTimeout(saveTimer); SYNC.backoff = 1200; flushSave(); }   // R25 "Retry now"
 // A Google Sheets cell is hard-capped at 50,000 chars; the backend writes each
 // record's full JSON into one cell, so an oversized record makes the write throw
@@ -26012,8 +26099,8 @@ async function flushSave() {
   // re-diff or the batch build used to leave it true forever: later edits only set savePending,
   // refreshFromBackend stood down on `saving || savePending`, and the R25 banner never rose. Such a
   // throw happens BEFORE anything is sent, so the unchanged failure/backoff branch below retrying it
-  // is safe. The uploads are bounded (SYNC.timeoutMs). The sync POST is NOT (see SYNC) — a stall
-  // there still holds `saving` until it settles; bounding it is the owner's call (replay risk).
+  // is safe. The uploads are bounded (SYNC.timeoutMs) and so is the sync POST (RC-67 4A, syncLimitMs):
+  // its timeout throws rwTimeout into the catch below → the same failure branch as a network error.
   let ok = false;
   try {
     try { await offloadDirtyPhotos(upserts); } catch (e) { /* a failed offload never poisons the batch — holdOversized backstops */ }   // base64 photos → Drive before they can ride into a 50k cell (#251)
@@ -26021,7 +26108,7 @@ async function flushSave() {
     holdOversized(upserts);                        // keep any still-oversized record out of the batch (fault isolation)
     if (!Object.keys(upserts).length && !Object.keys(deletes).length) { saving = false; if (savePending) { savePending = false; saveSoon(); } return; }
     const wireUp = {}; Object.keys(upserts).forEach((k) => { wireUp[k] = upserts[k].map((u) => u.rec); });
-    const r = await backendCall('sync', { upserts: wireUp, deletes });
+    const r = await backendCall('sync', { upserts: wireUp, deletes }, { timeoutMs: syncLimitMs() });   // RC-67 (4A) — bounded; `saving` blocks a second sync until this one settles or aborts
     if (r && r.ok) {
       // Commit ONLY what we sent — edits made mid-flight stay dirty and re-flush.
       Object.keys(upserts).forEach((k) => upserts[k].forEach((u) => lastSaved[k].set(u.id, u.js)));
@@ -26204,6 +26291,7 @@ function renderLogin(msg) {
 }
 function finishLoad() {
   snapshotSaved();                                              // baseline = what the backend currently holds
+  freshMark();                                                  // RC-67 (2A) — the boot/login load IS a successful refresh; stamped before the render below so the line appears on it
   resetCommsRailForLogin();                                    // the visible fix for "old chats on login": empty the rail on EVERY login mode, before the first main render (Jac 2026-07-17)
   buildIndexes();
   { const wr = state.winEdit && IDX.rental.get(state.winEdit.rentalId); if (wr) winEditResync(wr); else state.winEdit = null; }   // RC-65 review — an editor armed on the instant-cache copy re-derives from the fresh load (no phantom Confirm, no stuck poll)
@@ -27499,12 +27587,15 @@ function exposeTestApi() {
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
       companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, pickFunnelStage, toggleFunnelMembership, rentalFunnelStage, funnelStageOf, inFunnel, inRental, hasRentalActivity, funnelTrackA, funnelTrackEquip, ensureFunnels, funnelMenuHtml, reachFunnelStage, toggleMemberLead, funnelCurrentStage, funnelLayerDate, funnelLayerNote, ensureFunnelLog, markMembershipSigned, funnelLayerAction, funnelScope, naUrgency, naOpenList, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipActivateCash, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, acctBlockFoot, liftCustomerBlacklist, rentalAccountCustomer, clearRentalCustomer, clearInvoiceCustomer, invoiceRentalLinkFrozen, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsPickerError, gpsUtilRollup, ruCatUtilProxy, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
-      reserveQuoteIfAllowed, winPickDay, winPickSave, winPickBusy, winEditResync, refreshFromBackend,
+      reserveQuoteIfAllowed, winPickDay, winPickSave, winPickBusy, winEditResync, refreshFromBackend, showHoverPreview, hideHoverPreview,   // RC-67 (5A) — drive a real hover preview
+      REFRESH, refreshOnReturn, refreshKick, refreshNoteLoad, pollHandle: () => refreshTimer, setBooting: (b) => { booting = !!b; },
+      resetRefreshState: () => { clearInterval(refreshTimer); refreshTimer = null; clearTimeout(REFRESH.retryTimer); Object.assign(REFRESH, { startAt: 0, retryTimer: null, retryMs: 3000, eventGapMs: 10000, streak: 0, runs: 0, drops: 0, lastErr: '' }); },   // RC-67 3A — poll-trigger seams (test-only, like setBackendPassword); logic-test drives them against a mocked window.fetch only
       tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, openYardCamera, commitYardCapture, nextCategoryId, nextUnitId,
       tripsLS, tripMerge, tripSplit, assignTripDriver, tripLabel, assignStopDriver, tripSetTime,
+      freshLineText, freshTick, freshTickerSync, freshAt: () => _freshAt, freshTimerOn: () => !!_freshTimer, setFreshAt: (t) => { _freshAt = t || 0; },   // RC-67 (2A) — freshness-line seams; the setter is test-only (mirrors setBackendPassword); setBooting sits with the RC-67 3A seams
       tripPushSoon, tripPushNow, loadTripsFromBackend, tripsSyncFooter, setBackendPassword: (pw) => { backendPassword = pw || ''; },   // §2.3 Phase 4 sync — the setter is test-only (mirrors setRole), letting logic-test.mjs exercise the online path via a mocked window.fetch, never a real backend
       adoptScanCaptures, setScanCaps: (m) => { SCAN_CAPS = m || {}; },   // §scan-reconcile — test seam: seed SCAN_CAPS then run adoption (logic-test)
-      flushSave, snapshotSaved, computeChanges, SYNC, saveState: () => ({ saving, savePending, baseline: !!lastSaved }),   // RC-65 (2) — save-pipeline seams; logic-test drives them against a mocked window.fetch only
+      flushSave, snapshotSaved, computeChanges, SYNC, syncLimitMs, saveState: () => ({ saving, savePending, baseline: !!lastSaved }),   // RC-65 (2) — save-pipeline seams; logic-test drives them against a mocked window.fetch only
       resetSaveState: () => { clearTimeout(saveTimer); saving = false; savePending = false; lastSaved = null; SYNC.failing = false; SYNC.fails = 0; SYNC.backoff = 1200; renderSyncBanner(); },   // lastSaved=null → any stray flushSave stops at its first guard
       autoRunRepair, autoRunAnchorsFor, secToClock, AUTORUN_DAY_START_SEC, AUTORUN_EOD_DEADLINE_SEC, AUTORUN_LOAD_BUFFER_SEC, dispatchPinOf,
       openCustomerForm, renderOverlay, render, printInvoice, invoiceDocHtml, renderInvoicePng, invoiceSheetPng, invoicePrintGroups, invoiceAmendments, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature,

@@ -3512,12 +3512,17 @@ try {
       if (quote && billed && U) {
         const stage = (r) => ({ rentalId: r.rentalId, startDate: r.startDate || '', endDate: r.endDate || '', startTime: r.startTime || '' });
         const snap = { uName: U.name, bEnd: billed.endDate, qStatus: quote.status };
+        // RC-67 (3A) — "busy" now also needs that rental's editor IN THE PAGE (an abandoned pick no longer
+        // pauses the poll), so a case that must read busy renders the hand-armed rental in the Rentals card
+        // first (DETAIL.rentals keeps an editor already armed on the same rental)
+        const sess = T.activeSession(), rc = sess.cards.rentals, savedRc = { mode: rc.mode, recId: rc.recId, recType: rc.recType }, savedMid = sess.cols.middle;
+        const show = (r) => { Object.assign(rc, r ? { mode: 'standard', recId: r.rentalId, recType: 'rentals' } : { mode: 'list', recId: null, recType: null }); if (r) sess.cols.middle = 'rentals'; T.render(); };
         // 1) the predicate — only a real pick is "busy"
-        S.winEdit = { rentalId: quote.rentalId, monthISO: '2099-01-01', anchor: null };
+        S.winEdit = { rentalId: quote.rentalId, monthISO: '2099-01-01', anchor: null }; show(quote);
         ok(!T.winPickBusy(), 'winEdit poll: a merely-armed editor (rental viewed, nothing picked) is NOT busy');
         S.winEdit.anchor = quote.startDate;
         ok(T.winPickBusy(), 'winEdit poll: a tapped start day (mid range-select) IS busy');
-        S.winEdit = { rentalId: billed.rentalId, monthISO: '2099-01-01', anchor: null, staged: stage(billed) };
+        S.winEdit = { rentalId: billed.rentalId, monthISO: '2099-01-01', anchor: null, staged: stage(billed) }; show(billed);
         ok(!T.winPickBusy(), 'winEdit poll: an untouched staged copy is NOT busy');
         S.winEdit.staged.endDate = '2099-12-31';
         ok(T.winPickBusy(), 'winEdit poll: a staged-but-unsaved window (Confirm panel up) IS busy');
@@ -3550,14 +3555,14 @@ try {
         };
         const markUnit = (tag) => (d) => { d.units.find((u) => u.unitId === U.unitId).name = snap.uName + tag; };
         // the poll's own render() re-arms state.winEdit for whatever rental the Rentals card has
-        // open (DETAIL.rentals), so park that card in list view while the editor is hand-armed
-        const rc = T.activeSession().cards.rentals, savedRc = { mode: rc.mode, recId: rc.recId, recType: rc.recType };
-        rc.mode = 'list'; rc.recId = null; rc.recType = null;
+        // open (DETAIL.rentals), so park that card in list view while the editor is hand-armed —
+        // except where a pick must be ON SCREEN to read busy (RC-67 3A): then show(that rental)
+        show(null);
         try {
           S.winEdit = { rentalId: quote.rentalId, monthISO: '2099-01-01', anchor: null };
           await pollOnce(markUnit(' ~p1'));
           ok(U.name === snap.uName + ' ~p1', 'winEdit poll: with a rental merely VIEWED the poll still adopts another user\'s edit (was: stopped for the rest of the tab)');
-          S.winEdit = { rentalId: billed.rentalId, monthISO: '2099-01-01', anchor: null, staged: { ...stage(billed), endDate: '2099-12-31' } };
+          S.winEdit = { rentalId: billed.rentalId, monthISO: '2099-01-01', anchor: null, staged: { ...stage(billed), endDate: '2099-12-31' } }; show(billed);   // RC-67 (3A) — the pick is on screen (the next two polls keep billed shown: its editor must be in the page to read busy)
           await pollOnce(markUnit(' ~p2'));
           ok(U.name === snap.uName + ' ~p1', 'winEdit poll: a staged-but-unsaved window defers the whole poll (the money preview cannot shift under the Confirm panel)');
           S.winEdit = { rentalId: billed.rentalId, monthISO: '2099-01-01', anchor: null, staged: stage(billed) };
@@ -3568,6 +3573,9 @@ try {
           during = () => { S.winEdit.staged.endDate = '2099-12-31'; };   // the user stages a window WHILE the load is in flight
           await pollOnce((d) => { markUnit(' ~p4')(d); d.rentals.find((r) => r.rentalId === billed.rentalId).endDate = '2099-12-29'; });
           ok(U.name === snap.uName + ' ~p1' && billed.endDate === newEnd && S.winEdit.staged.endDate === '2099-12-31', 'winEdit poll: a pick started during the load await is re-checked — nothing adopted, the staged window survives');
+          show(null);   // RC-67 (3A) — navigate away with that staged pick still unsaved: its editor leaves the page
+          await pollOnce(markUnit(' ~p5'));
+          ok(U.name === snap.uName + ' ~p5' && S.winEdit.rentalId === billed.rentalId && S.winEdit.staged.endDate === '2099-12-31', 'winEdit poll: a pick ABANDONED off screen no longer pauses the poll (was: paused until reload) — and the pick itself is kept');
           S.winEdit = { rentalId: quote.rentalId, monthISO: '2099-01-01', anchor: null };
           const mockFetch = window.fetch;
           window.fetch = async (url, opts) => { const resp = await mockFetch(url, opts); if (opts && typeof opts.body === 'string' && JSON.parse(opts.body).action === 'load') { U.name = snap.uName + ' ~saved'; T.reindex('units', U); await window.JT.flushSave(); } return resp; };
@@ -3578,14 +3586,68 @@ try {
           U.name = snap.uName; billed.endDate = snap.bEnd; quote.status = snap.qStatus;
           T.reindex('units', U); T.reindex('rentals', billed);
           window.JT.snapshotSaved();
-          window.fetch = realFetch; Object.assign(rc, savedRc); S.winEdit = savedWin; S.overlay = savedOverlay; T.render();
+          window.fetch = realFetch; Object.assign(rc, savedRc); sess.cols.middle = savedMid; S.winEdit = savedWin; S.overlay = savedOverlay; T.render();
+        }
+      }
+    }
+
+    // RC-67 (5A) — a hover preview renders DETAIL.rentals, which used to ARM state.winEdit for the
+    // glanced rental: hovering another rental's pill silently replaced the editor on screen (a staged
+    // window + its Confirm/money panel gone), and the preview's calendar then drove a live editor. The
+    // preview now draws from a detached picker state and its calendar is inert. RC-67 (3A) — a copy of
+    // the editor inside a preview never counts as that pick being on screen. Real render + real preview.
+    {
+      const S = T.__state, savedWin = S.winEdit;
+      const FR = ['On Rent', 'End Rent', 'Off Rent', 'Returned'];
+      const quote = T.DATA.rentals.find((r) => r.startDate && r.endDate && r.startDate <= r.endDate && !r.invoiceId && ['Quote', 'Reserved'].includes(r.status));
+      const billed = T.DATA.rentals.find((r) => r.startDate && r.endDate && r.invoiceId && !FR.slice(1).includes(r.status));
+      ok(!!quote && !!billed && quote.startDate !== '2099-01-05', 'hover preview fixture: a dated quote and a billed rental exist');
+      if (quote && billed) {
+        const sess = T.activeSession(), rc = sess.cards.rentals, savedRc = { mode: rc.mode, recId: rc.recId, recType: rc.recType }, savedMid = sess.cols.middle;
+        const pill = document.createElement('span'); pill.dataset.pillCard = 'rentals';   // a real link pill's hover target ([data-pill-card] → recForHover)
+        const preview = (r) => { pill.dataset.pillRec = r.rentalId; T.showHoverPreview(pill); return document.querySelector(`.hover-preview .rdcal-edit[data-rec="${r.rentalId}"]`); };
+        const open = (r) => { Object.assign(rc, r ? { mode: 'standard', recId: r.rentalId, recType: 'rentals' } : { mode: 'list', recId: null, recType: null }); if (r) sess.cols.middle = 'rentals'; T.render(); };
+        try {
+          // billed is open in the Rentals card with a STAGED, unsaved window (Confirm panel up)
+          S.winEdit = { rentalId: billed.rentalId, monthISO: '2099-01-01', anchor: null, staged: { rentalId: billed.rentalId, startDate: '2099-01-05', endDate: '2099-01-07', startTime: '' } };
+          open(billed);
+          const armed = S.winEdit;
+          const kept = () => S.winEdit === armed && S.winEdit.rentalId === billed.rentalId && !S.winEdit.anchor && S.winEdit.staged.startDate === '2099-01-05' && S.winEdit.staged.endDate === '2099-01-07' && S.winEdit.staged.startTime === '';
+          ok(kept() && T.winPickBusy(), 'hover preview fixture: the staged pick is on screen and busy');
+          const pv = preview(quote), q0 = JSON.stringify(quote);
+          ok(kept(), 'hover preview: glancing at ANOTHER rental leaves the armed editor and its staged window untouched (was: replaced by the glanced rental)');
+          ok(!!pv && pv.querySelector('.wp-day.range-start')?.dataset.iso === quote.startDate, `hover preview: the preview draws the GLANCED rental's own window, not the armed editor's (range-start=${pv && pv.querySelector('.wp-day.range-start')?.dataset.iso}, want ${quote.startDate})`);
+          ok(!!pv && pv.hasAttribute('inert'), "hover preview: the preview's calendar is inert — no hover, pointer or focus on controls that do nothing (honest affordance)");
+          // a day tap, Today and a time edit inside the preview's calendar are inert
+          const day = pv && pv.querySelector('.js-wp-day[data-iso]:not(.wp-blocked)'), today = pv && pv.querySelector('.js-wp-today'), tm = pv && pv.querySelector('.js-wp-time');
+          [day, today].forEach((b) => b && b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
+          if (tm) { tm.value = '13:30'; tm.dispatchEvent(new Event('change', { bubbles: true })); }
+          ok(!!day && !!today && !!tm && kept() && JSON.stringify(quote) === q0, 'hover preview: a day tap, Today and a time edit inside the preview never drive the armed editor (or touch the glanced rental)');
+          T.hideHoverPreview();
+          // 3A — navigate away: the staged pick's editor leaves the page → abandoned, not busy …
+          open(null);
+          ok(kept() && !T.winPickBusy(), 'winPickBusy: a staged pick whose editor left the page is NOT busy (abandoned — the poll resumes)');
+          // … ANOTHER rental's editor in the page is not that pick's editor …
+          open(quote); S.winEdit = armed;   // open(quote) armed quote's editor; hand the off-page billed pick back (no re-render)
+          ok(kept() && !T.winPickBusy(), "winPickBusy: another rental's editor on screen does not make an off-screen pick busy");
+          open(null);
+          // … and a hover preview of that same rental draws its calendar, which is NOT the editor on screen
+          const pv2 = preview(billed);
+          ok(!!pv2 && kept() && !T.winPickBusy(), "winPickBusy: a hover preview's copy of the rental's calendar does not count as the editor on screen");
+          T.hideHoverPreview();
+          // back to the rental: the same pick re-renders and is busy again (RC-65's guarantee)
+          open(billed);
+          ok(kept() && T.winPickBusy(), 'winPickBusy: returning to the rental re-renders the same staged pick — busy again');
+        } finally {
+          T.hideHoverPreview();
+          S.winEdit = savedWin; Object.assign(rc, savedRc); sess.cols.middle = savedMid; T.render();
         }
       }
     }
 
     // RC-65 (2, safe half) — a throw while PREPARING a save must never wedge `saving`, and a stalled
-    // photo upload is abandoned at SYNC.timeoutMs. (The sync POST itself stays unbounded — owner
-    // decision.) Mocked window.fetch only: every script.google.com call is answered here.
+    // photo upload is abandoned at SYNC.timeoutMs. (The sync POST's own limit — RC-67 4A — is the
+    // next block.) Mocked window.fetch only: every script.google.com call is answered here.
     {
       const realFetch = window.fetch; const seen = []; let plan = [];
       const GAS = (u) => String(u).includes('script.google.com');
@@ -3631,6 +3693,84 @@ try {
       }
     }
 
+    // RC-67 (4A) — the sync POST is bounded (syncLimitMs) and retried by the existing backoff. A stalled
+    // sync must be aborted, release `saving`, take the SAME failure branch as a network error (SYNC.fails /
+    // backoff / R25 banner / savePending), keep lastSaved untouched so the batch is re-sent, never open a
+    // second sync while one is in flight or re-send before the backoff, and lengthen the limit after
+    // consecutive failures (1× → 2× → 3× SYNC.timeoutMs, capped). The accepted replay (an aborted save the
+    // server DID apply is re-sent whole) is server-side and cannot be seen here. Mocked window.fetch only.
+    {
+      const realFetch = window.fetch; const seen = []; const held = []; let plan = [];
+      const GAS = (u) => String(u).includes('script.google.com');
+      window.fetch = (u, init) => {
+        if (!GAS(u)) return realFetch(u, init);
+        let body = {}; try { body = JSON.parse((init && init.body) || '{}'); } catch (e) {}
+        seen.push(body);
+        if (body.action !== 'sync') return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+        const step = plan.shift() || 'ok';
+        if (step === 'hang') {
+          const t0 = performance.now(), h = { abortedAfter: null }; held.push(h);
+          return new Promise((_, rej) => { if (init && init.signal) init.signal.addEventListener('abort', () => { h.abortedAfter = performance.now() - t0; rej(new DOMException('aborted', 'AbortError')); }); });
+        }
+        return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const bounded = (p, ms) => Promise.race([p, sleep(ms).then(() => 'STUCK')]);
+      const syncs = () => seen.filter((b) => b.action === 'sync');
+      const sent = (id) => { const s = syncs().pop(); return s && (s.upserts.vendors || []).find((r) => r.vendorId === id); };
+      const dirty = (id) => (T.computeChanges().upserts.vendors || []).some((u) => u.id === id);
+      const origMs = T.SYNC.timeoutMs, BASE = 150;
+      const waited = (i, x) => !!held[i] && held[i].abortedAfter !== null && held[i].abortedAfter >= x * BASE - 5;
+      const rec = { vendorId: 'VEN-RC67', name: 'RC67 vendor' };
+      try {
+        T.resetSaveState(); T.SYNC.timeoutMs = BASE;
+        T.DATA.vendors.push(rec); T.IDX.vendor && T.IDX.vendor.set(rec.vendorId, rec);
+        T.snapshotSaved(); T.setBackendPassword('TEST-PW');
+
+        // the limit itself: 1× on a clean run, 2× after one failure, 3× after two, then capped
+        const lim = [0, 1, 2, 3, 9].map((f) => { T.SYNC.fails = f; return T.syncLimitMs() / BASE; }).join(',');
+        T.SYNC.fails = 0;
+        ok(lim === '1,2,3,3,3', `RC-67 (4A): the sync limit escalates 1× → 2× → 3× SYNC.timeoutMs after consecutive failures, then holds at the cap (${lim})`);
+
+        // (a) a stalled sync is aborted at the limit, releases `saving`, counts ONE failure, keeps the batch dirty
+        rec.rc67 = 'v1'; plan = ['hang']; seen.length = 0;
+        const ra = await bounded(T.flushSave(), 3000).catch(() => 'THREW'); await sleep(50);
+        ok(ra !== 'STUCK' && ra !== 'THREW' && T.saveState().saving === false, 'RC-67 (4A): a stalled sync releases `saving` instead of holding it forever');
+        ok(syncs().length === 1 && waited(0, 1), `RC-67 (4A): the sync POST is aborted at SYNC.timeoutMs and not re-sent at once (${syncs().length} sent, aborted after ${held[0] && Math.round(held[0].abortedAfter)} ms)`);
+        ok(T.SYNC.fails === 1 && T.SYNC.failing === false && T.SYNC.backoff === 2400 && !document.body.classList.contains('sync-failing'), 'RC-67 (4A): one stall is one failure on the normal backoff — the banner waits for a second, like any network error');
+        ok(dirty('VEN-RC67'), 'RC-67 (4A): the timed-out batch stays dirty (lastSaved untouched) so it is re-sent, never lost');
+
+        // (b) the next attempt gets a longer limit; a second consecutive stall raises the R25 banner
+        plan = ['hang']; await bounded(T.flushSave(), 3000);
+        ok(waited(1, 2), `RC-67 (4A): after one failure the next sync waits 2× before aborting (${held[1] && Math.round(held[1].abortedAfter)} ms)`);
+        ok(T.SYNC.fails === 2 && T.SYNC.failing === true && document.body.classList.contains('sync-failing'), 'RC-67 (4A): a second consecutive stall raises the R25 "Not saving" banner');
+
+        // (c) no overlapping sync while one is in flight; the mid-flight edit rides the retry
+        plan = ['hang']; seen.length = 0;
+        const pc = T.flushSave(); await sleep(15);
+        rec.rc67 = 'v2'; await T.flushSave(); await T.flushSave();
+        ok(T.saveState().savePending === true && T.saveState().saving === true && syncs().length === 1, 'RC-67 (4A): an edit during the in-flight sync only sets savePending — never a second, overlapping sync POST');
+        await bounded(pc, 3000); await sleep(50);
+        ok(waited(2, 3), `RC-67 (4A): a third consecutive attempt waits 3× (${held[2] && Math.round(held[2].abortedAfter)} ms)`);
+        ok(T.saveState().saving === false && T.saveState().savePending === false && syncs().length === 1, 'RC-67 (4A): after the timeout both flags are released and nothing is re-sent before the backoff timer fires');
+        plan = ['ok']; await bounded(T.flushSave(), 3000);
+        const s2 = sent('VEN-RC67');
+        ok(s2 && s2.rc67 === 'v2', `RC-67 (4A): the retry re-diffs live DATA and carries the mid-flight edit (sent ${s2 && s2.rc67})`);
+        ok(!dirty('VEN-RC67') && T.SYNC.failing === false && T.SYNC.fails === 0 && T.syncLimitMs() === BASE && !document.body.classList.contains('sync-failing'), 'RC-67 (4A): a successful retry commits, lowers the banner, and resets the counter and the limit');
+
+        // (d) the retry is AUTOMATIC: after a stall the backoff timer itself re-sends the batch (no manual flush)
+        T.SYNC.backoff = 10; rec.rc67 = 'v3'; plan = ['hang', 'ok']; seen.length = 0;
+        await bounded(T.flushSave(), 3000); await sleep(400);
+        const s3 = sent('VEN-RC67');
+        ok(syncs().length === 2 && s3 && s3.rc67 === 'v3' && !dirty('VEN-RC67') && T.SYNC.fails === 0, `RC-67 (4A): after a stall the backoff timer re-sends the batch on its own and it commits (${syncs().length} sent)`);
+      } finally {
+        T.resetSaveState(); T.SYNC.timeoutMs = origMs; T.setBackendPassword('');
+        for (let j = T.DATA.vendors.length - 1; j >= 0; j--) { if (T.DATA.vendors[j].vendorId === 'VEN-RC67') { T.DATA.vendors.splice(j, 1); T.IDX.vendor && T.IDX.vendor.delete('VEN-RC67'); } }
+        await sleep(100); window.fetch = realFetch;
+        window.JT.snapshotSaved && window.JT.snapshotSaved();
+      }
+    }
+
     // RC-65 review — the refresh poll must never resurrect a record whose LOCAL delete is still waiting to
     // sync (e.g. the absorbed invoice of a merge) when the server copy is unchanged; a copy another device
     // CHANGED comes back visibly instead of being silently erased. Mocked window.fetch only.
@@ -3661,6 +3801,242 @@ try {
         st.overlay = ov; st.winEdit = we; T.setBackendPassword('');
         for (let j = T.DATA.vendors.length - 1; j >= 0; j--) { const id = T.DATA.vendors[j].vendorId; if (id === 'VEN-RC65-DEL' || id === 'VEN-RC65-CHG') { T.DATA.vendors.splice(j, 1); T.IDX.vendor && T.IDX.vendor.delete(id); } }
         T.resetSaveState(); await sleep(100); window.fetch = realFetch;
+        window.JT.snapshotSaved && window.JT.snapshotSaved();
+      }
+    }
+
+    // RC-67 3A — refresh triggers + quick retry. Coming back to the screen (visible / focus / online /
+    // pageshow) refreshes at once — one load per return, never signed out or booting — and restarts the 18 s
+    // tick behind it. A lost load still refreshes chats + rail and earns ONE ~3 s retry: never a storm, never
+    // off screen. Mocked window.fetch only: every script.google.com call is answered here.
+    {
+      const realFetch = window.fetch; const seen = []; let plan = []; let hold = null; let chatDelayMs = 0;
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      window.fetch = (u, init) => {
+        if (!String(u).includes('script.google.com')) return realFetch(u, init);
+        let body = {}; try { body = JSON.parse((init && init.body) || '{}'); } catch (e) {}
+        seen.push(body.action);
+        if (body.action === 'load') {
+          const step = plan.shift() || 'ok';
+          if (step === 'hold') return new Promise((res) => { hold = () => res(new Response(JSON.stringify({ ok: true, data: {} }), { status: 200 })); });
+          if (step === '404') return Promise.resolve(new Response('<!DOCTYPE html><html>Sorry, unable to open the file at this time.</html>', { status: 404 }));
+          if (step === 'throw') return Promise.reject(new TypeError('Failed to fetch'));
+          if (step === 'expired') return Promise.resolve(new Response(JSON.stringify({ ok: false, error: 'expired' }), { status: 200 }));
+          return Promise.resolve(new Response(JSON.stringify({ ok: true, data: {} }), { status: 200 }));
+        }
+        if (body.action === 'getChats') return sleep(chatDelayMs).then(() => new Response(JSON.stringify({ ok: true, chats: JSON.parse(JSON.stringify(T.__state.chat.chats)) }), { status: 200 }));
+        return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      };
+      const loads = () => seen.filter((a) => a === 'load').length;
+      const R = T.REFRESH, st = T.__state, ov = st.overlay, we = st.winEdit;
+      const fire = (type, persisted = true) => (type === 'visibilitychange' ? document : window).dispatchEvent(type === 'pageshow' ? new PageTransitionEvent('pageshow', { persisted }) : new Event(type));   // pageshow = a back/forward-cache restore unless persisted is false
+      const ready = () => { st.overlay = null; st.winEdit = null; if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); };
+      const fresh = (p, ms) => { T.resetRefreshState(); R.retryMs = ms || 60; seen.length = 0; plan = p; ready(); };
+      try {
+        T.resetSaveState(); T.snapshotSaved(); T.setBackendPassword('TEST-PW');
+        // 1) a lost load (echo 404) whose chats reply is slower than the retry delay: chats + rail still refresh,
+        //    the drop is counted, and the ONE quick retry is armed only after the run ends — then it succeeds
+        fresh(['404', 'ok']); chatDelayMs = 200;
+        await T.refreshFromBackend(); chatDelayMs = 0;
+        ok(loads() === 1 && seen.includes('getChats') && seen.includes('getWranglerRail'), `RC-67 3A: a lost load still refreshes team chats + the Wrangler rail (${seen.join(',')})`);
+        ok(R.drops === 1 && R.streak === 1 && R.lastErr === 'http-404' && typeof window.__poll === 'function' && window.__poll().drops === 1, 'RC-67 3A: the lost load is counted per device (window.__poll)');
+        ok(!!R.retryTimer, 'RC-67 3A: the quick retry is armed after the run releases `refreshing` (a retry armed at the loss would meet the entry guard and vanish)');
+        await sleep(300);
+        ok(loads() === 2 && R.streak === 0 && !R.retryTimer, `RC-67 3A: the quick retry runs ~retryMs later and a usable reply ends the loss streak (${loads()} loads)`);
+        // 2) a thrown load (network drop) takes the same path instead of skipping everything
+        fresh(['throw', 'ok']);
+        await T.refreshFromBackend();
+        ok(seen.includes('getChats') && seen.includes('getWranglerRail') && R.lastErr === 'network' && !!R.retryTimer, `RC-67 3A: a thrown load still refreshes chats + rail and arms the retry (${seen.join(',')})`);
+        await sleep(300);
+        // 3) no retry storm: a second loss in a row waits for the 18 s tick
+        fresh(['404', '404', '404', '404']);
+        await T.refreshFromBackend(); await sleep(500);
+        ok(loads() === 2 && R.streak === 2 && R.drops === 2 && !R.retryTimer, `RC-67 3A: ONE quick retry per run of losses — no retry storm (${loads()} loads)`);
+        // 4) a real sign-in refusal is neither a drop nor retried
+        fresh(['expired']);
+        await T.refreshFromBackend(); await sleep(250);
+        ok(loads() === 1 && R.drops === 0 && !R.retryTimer, `RC-67 3A: a real refusal is not counted as a drop and is not retried (${loads()} loads)`);
+        // 5) a quick retry that comes due while the app is off screen does not load
+        fresh(['404', 'ok']);
+        await T.refreshFromBackend();
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+        try { await sleep(300); } finally { delete document.hidden; }
+        ok(loads() === 1 && !R.retryTimer && !document.hidden, `RC-67 3A: no quick retry while the app is off screen (${loads()} loads)`);
+        // 6) each return-to-screen event refreshes at once and restarts the 18 s tick behind it
+        for (const type of ['visibilitychange', 'focus', 'online', 'pageshow']) {
+          fresh(['ok']); const h0 = T.pollHandle();
+          fire(type); await sleep(150);
+          ok(loads() === 1 && T.pollHandle() != null && T.pollHandle() !== h0, `RC-67 3A: '${type}' refreshes at once and restarts the 18 s tick behind the load (${loads()} loads)`);
+        }
+        // 6b) a first-load pageshow (persisted=false) is the boot's own load — it starts no refresh
+        fresh(['ok']);
+        fire('pageshow', false); await sleep(150);
+        ok(loads() === 0, `RC-67 3A: a first-load pageshow (not a back/forward-cache restore) starts no refresh — the boot does that load (${loads()} loads)`);
+        // 7) one load per return: all four together, then a repeat inside the gap, load once
+        fresh(['ok', 'ok']);
+        ['visibilitychange', 'focus', 'online', 'pageshow'].forEach((t) => fire(t)); await sleep(150);
+        fire('focus'); await sleep(150);
+        ok(loads() === 1, `RC-67 3A: a burst of return events plus a repeat inside the gap make ONE load (${loads()})`);
+        // 8) at most one in flight: a return while a load is still out starts nothing and moves no timer
+        fresh(['hold']);
+        const pend = T.refreshFromBackend(); R.startAt = 0; const h1 = T.pollHandle();
+        fire('focus');
+        ok(loads() === 1 && T.pollHandle() === h1, `RC-67 3A: a return while a load is in flight neither starts a second load nor moves the tick (${loads()} loads)`);
+        if (hold) hold(); await pend;
+        // 9) signed out or booting, a return loads nothing — and a trigger that stands down leaves the timers alone
+        fresh(['404'], 5000);
+        await T.refreshFromBackend();
+        const r0 = R.retryTimer, h2 = T.pollHandle(); R.startAt = 0;
+        T.setBackendPassword(''); try { fire('focus'); } finally { T.setBackendPassword('TEST-PW'); }
+        T.setBooting(true); try { fire('online'); } finally { T.setBooting(false); }
+        ok(loads() === 1 && !!r0 && R.retryTimer === r0 && T.pollHandle() === h2, `RC-67 3A: signed out or booting, a return event loads nothing and leaves the retry + tick timers alone (${loads()} loads)`);
+        // 10) a return that DOES load while a quick retry is pending replaces it — never a second load behind it
+        fresh(['404', 'ok', 'ok'], 200);
+        await T.refreshFromBackend(); R.startAt = 0;
+        fire('focus'); await sleep(450);
+        ok(loads() === 2 && !R.retryTimer, `RC-67 3A: a return-to-screen load drops the pending quick retry (${loads()} loads)`);
+      } finally {
+        if (hold) hold();
+        chatDelayMs = 0; T.resetRefreshState(); T.setBackendPassword(''); st.overlay = ov; st.winEdit = we;
+        T.resetSaveState(); await sleep(250); window.fetch = realFetch;
+        window.JT.snapshotSaved && window.JT.snapshotSaved();
+      }
+    }
+
+    // RC-67 3A (review fixes) — 'online' after an outage is never swallowed by the gap; a real refusal costs one
+    // call and is not a loss; a lost load read across a pick keeps the RC-65 bail but is still retried.
+    {
+      const realFetch = window.fetch; const seen = []; let plan = []; let during = null;
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      window.fetch = (u, init) => {
+        if (!String(u).includes('script.google.com')) return realFetch(u, init);
+        let body = {}; try { body = JSON.parse((init && init.body) || '{}'); } catch (e) {}
+        seen.push(body.action);
+        if (body.action === 'load') {
+          if (during) { const f = during; during = null; f(); }
+          const step = plan.shift() || 'ok';
+          if (step === '404') return Promise.resolve(new Response('<!DOCTYPE html><html>x</html>', { status: 404 }));
+          if (step === 'throw') return Promise.reject(new TypeError('Failed to fetch'));
+          if (step === 'expired') return Promise.resolve(new Response(JSON.stringify({ ok: false, error: 'expired' }), { status: 200 }));
+          return Promise.resolve(new Response(JSON.stringify({ ok: true, data: {} }), { status: 200 }));
+        }
+        if (body.action === 'getChats') return Promise.resolve(new Response(JSON.stringify({ ok: true, chats: JSON.parse(JSON.stringify(T.__state.chat.chats)) }), { status: 200 }));
+        return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      };
+      const loads = () => seen.filter((a) => a === 'load').length;
+      const R = T.REFRESH, st = T.__state, ov = st.overlay, we = st.winEdit;
+      const pickEd = document.createElement('div'); pickEd.className = 'rdcal-edit'; pickEd.dataset.rec = 'RC67-NONE';   // RC-67 (5A/3A) — a pick is "busy" only while its editor is in the page
+      const fresh = (p, ms) => { T.resetRefreshState(); R.retryMs = ms || 60; seen.length = 0; plan = p; st.overlay = null; st.winEdit = null; if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); };
+      try {
+        T.resetSaveState(); T.snapshotSaved(); T.setBackendPassword('TEST-PW');
+        // 11) back online a moment after a run of lost loads (tick + its one retry): refresh at once, gap or not
+        fresh(['throw', 'throw', 'ok']);
+        await T.refreshFromBackend(); await sleep(200);
+        const before = loads();
+        window.dispatchEvent(new Event('online')); await sleep(150);
+        ok(before === 2 && loads() === 3 && R.streak === 0, `RC-67 3A: 'online' right after a run of lost loads refreshes at once — a lost load covers nothing (${before} → ${loads()} loads)`);
+        // 12) a real refusal: one call per tick (chats + rail would be refused too) and not a loss in the streak
+        fresh(['expired']);
+        await T.refreshFromBackend(); await sleep(100);
+        ok(seen.join(',') === 'load' && R.streak === 0 && R.drops === 0, `RC-67 3A: a refused credential costs one call and is not counted as a loss (${seen.join(',')}; streak ${R.streak})`);
+        // 13) a lost load across which a pick starts keeps the RC-65 bail (no chats/rail render under the pick) — and is still retried
+        fresh(['404', 'ok']);
+        during = () => { st.winEdit = { rentalId: 'RC67-NONE', monthISO: '2099-01-01', anchor: '2099-01-05' }; document.body.appendChild(pickEd); };
+        await T.refreshFromBackend();
+        const busySeen = seen.join(','), armed = !!R.retryTimer; st.winEdit = null; pickEd.remove();
+        await sleep(250);
+        ok(busySeen === 'load' && armed && loads() === 2, `RC-67 3A: a lost load read across a pick skips chats + rail (RC-65 bail) but still earns the quick retry (${busySeen}; retry ${armed}; ${loads()} loads)`);
+      } finally {
+        during = null; pickEd.remove(); T.resetRefreshState(); T.setBackendPassword(''); st.overlay = ov; st.winEdit = we;
+        T.resetSaveState(); await sleep(250); window.fetch = realFetch;
+        window.JT.snapshotSaved && window.JT.snapshotSaved();
+      }
+    }
+
+    // RC-67 (2A) — the freshness line (R37): "Updated N s ago", then "Catching up…" once 60 s pass without a
+    // successful refresh. SUCCESS = a load reply this device APPLIED; a lost reply, a skipped tick and a reply the
+    // RC-65 guards threw away never count. The ticker rewrites only its own text (never render()) and stops while
+    // the tab is hidden. Mocked window.fetch only: every script.google.com call is answered here.
+    {
+      const realFetch = window.fetch; const S = T.__state; let plan = []; let loads = 0; let during = null;
+      window.fetch = (u, init) => {
+        if (!String(u).includes('script.google.com')) return realFetch(u, init);
+        let body = {}; try { body = JSON.parse((init && init.body) || '{}'); } catch (e) {}
+        if (body.action === 'load') {
+          loads++; if (during) { const f = during; during = null; f(); }
+          const step = plan.shift() || 'ok';
+          if (step === 'net') return Promise.reject(new TypeError('Failed to fetch'));
+          if (step === 'busy') return Promise.resolve(new Response(JSON.stringify({ ok: false, error: 'busy' }), { status: 200 }));
+          return Promise.resolve(new Response(JSON.stringify({ ok: true, data: {} }), { status: 200 }));
+        }
+        return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const ov = S.overlay, we = S.winEdit, fa0 = T.freshAt();
+      const line = () => document.getElementById('fresh-line');
+      const hide = (on) => { if (on) Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); else delete document.hidden; document.dispatchEvent(new Event('visibilitychange')); };
+      const pickEd = document.createElement('div'); pickEd.className = 'rdcal-edit'; pickEd.dataset.rec = 'R-RC67';   // RC-67 (3A) — a pick is "busy" only while its editor is in the page
+      try {
+        // 1) the words — counts up for the first minute, turns at 60 s, and a clock set BACK never reads as fresh
+        const t0 = 1.7e12; T.setFreshAt(t0);
+        ok(T.freshLineText(t0) === 'Updated 0 s ago' && T.freshLineText(t0 + 12400) === 'Updated 12 s ago' && T.freshLineText(t0 + 59999) === 'Updated 59 s ago', 'RC-67 freshness: reads "Updated N s ago" (whole seconds, floored) for the first minute');
+        ok(T.freshLineText(t0 + 60000) === 'Catching up…' && T.freshLineText(t0 + 3600e3) === 'Catching up…', 'RC-67 freshness: 60 s without a successful refresh turns it into "Catching up…"');
+        ok(T.freshLineText(t0 - 5000) === 'Catching up…', 'RC-67 freshness: a clock set back since the last refresh reads as stale, never as fresh');
+        // 2) where it shows — confirmed + signed in + booted; painted by the header, stamped R37, no live region
+        T.setBackendPassword('TEST-PW'); T.setFreshAt(0); T.render();
+        ok(!line(), 'RC-67 freshness: no line before any confirmed load (demo / pre-login)');
+        T.setBackendPassword(''); T.setFreshAt(Date.now() - 5000); T.render();
+        ok(!line(), 'RC-67 freshness: no line while signed out');
+        T.setBackendPassword('TEST-PW'); T.setBooting(true);
+        try { T.render(); ok(!line(), 'RC-67 freshness: no line while booting (the Refreshing chip owns that moment)'); } finally { T.setBooting(false); }
+        T.render();
+        const el = line();
+        ok(!!el && !!el.parentElement && el.parentElement.classList.contains('header-right') && !!el.previousElementSibling && el.previousElementSibling.classList.contains('hr-top') && el.dataset.r === 'R37' && !el.hasAttribute('aria-live') && !el.hasAttribute('role') && /^Updated [4-6] s ago$/.test(el.textContent), `RC-67 freshness: signed in, the header paints a stamped R37 line under the name row, with no live region (${el && el.outerHTML})`);
+        const probe = document.createElement('span'); probe.style.color = 'var(--txt-2)'; document.body.appendChild(probe);
+        const cs = el && getComputedStyle(el), want = getComputedStyle(probe).color; probe.remove();
+        ok(!!cs && cs.color === want && Math.round(parseFloat(cs.fontSize)) === 11, `RC-67 freshness: 11px in --txt-2 ink (--txt-3 fails AA on the blued-steel floor) (${cs && cs.color} / ${cs && cs.fontSize})`);
+        // 3) the ticker touches ONLY that node — no render(), and no rewrite when the words did not change
+        const hdr = document.querySelector('.header'), tn = el && el.firstChild;
+        T.freshTick();
+        ok(!!el && el.firstChild === tn, 'RC-67 freshness: a tick that changes nothing leaves the text node alone');
+        T.setFreshAt(Date.now() - 61000); T.freshTick();
+        ok(!!el && line() === el && document.querySelector('.header') === hdr && el.textContent === 'Catching up…', 'RC-67 freshness: the ticker rewrites the line in place — the header is not re-rendered');
+        // 4) paused while hidden, resumed on return — and re-synced by a back/forward-cache restore
+        T.setBackendPassword('');   // any refresh a visibility / pageshow listener starts stands down at its first guard
+        T.freshTickerSync();
+        ok(T.freshTimerOn(), 'RC-67 freshness: the 1 s ticker runs while the tab is visible');
+        hide(true);
+        ok(!T.freshTimerOn(), 'RC-67 freshness: the ticker stops while the tab is hidden');
+        hide(false);
+        ok(T.freshTimerOn(), 'RC-67 freshness: the ticker resumes when the tab comes back');
+        hide(true); delete document.hidden;   // hidden, then restored from the back/forward cache WITHOUT a visibilitychange
+        window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+        ok(T.freshTimerOn(), 'RC-67 freshness: a back/forward-cache restore (pageshow) restarts the ticker even with no visibilitychange');
+        // 5) what counts as a successful refresh — the real refreshFromBackend against the mock
+        T.resetSaveState(); T.snapshotSaved(); T.setBackendPassword('TEST-PW');
+        T.resetRefreshState(); T.REFRESH.retryMs = 600000;   // RC-67 3A — a lost load arms a quick retry: keep it from landing mid-check (the finally resets it)
+        S.overlay = null; S.winEdit = null; if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+        const poll = () => Promise.race([T.refreshFromBackend(), sleep(3000)]);
+        T.setFreshAt(0); T.freshTickerSync(); T.setFreshAt(1);   // ticker stopped: only an APPLIED reply may (re)start it
+        loads = 0; plan = ['busy']; await poll();
+        ok(loads === 1 && T.freshAt() === 1, 'RC-67 freshness: a lost / refused load reply is NOT a successful refresh');
+        loads = 0; plan = ['net']; await poll();
+        ok(loads === 1 && T.freshAt() === 1, 'RC-67 freshness: a network failure is NOT a successful refresh');
+        loads = 0; plan = ['ok']; during = () => { S.winEdit = { rentalId: 'R-RC67', monthISO: '2099-01-01', anchor: '2099-01-02' }; document.body.appendChild(pickEd); };   // a pick starts WHILE the load is in flight, its editor in the page
+        try { await poll(); } finally { S.winEdit = null; pickEd.remove(); }
+        ok(loads === 1 && T.freshAt() === 1, 'RC-67 freshness: a reply the RC-65 guard throws away (pick started mid-load) is NOT a successful refresh');
+        S.overlay = { kind: 'rc67-probe' }; loads = 0; plan = ['ok'];
+        try { await poll(); } finally { S.overlay = null; }
+        ok(loads === 0 && T.freshAt() === 1, 'RC-67 freshness: a tick skipped for an open popup is NOT a successful refresh');
+        const before = Date.now(); loads = 0; plan = ['ok']; await poll();
+        ok(loads === 1 && T.freshAt() >= before, 'RC-67 freshness: an applied load reply IS a successful refresh, even when nothing changed');
+        ok(T.freshTimerOn(), 'RC-67 freshness: a successful refresh (re)starts the 1 s ticker — the line can never freeze on "Updated 0 s ago"');
+      } finally {
+        if (Object.getOwnPropertyDescriptor(document, 'hidden')) { delete document.hidden; document.dispatchEvent(new Event('visibilitychange')); }
+        during = null; pickEd.remove();
+        S.overlay = ov; S.winEdit = we; T.setBackendPassword(''); T.setBooting(false); T.resetRefreshState();
+        T.resetSaveState(); await sleep(100); window.fetch = realFetch;
+        T.setFreshAt(fa0); T.freshTickerSync(); T.render();
         window.JT.snapshotSaved && window.JT.snapshotSaved();
       }
     }
@@ -4069,6 +4445,16 @@ try {
     const allowOk = allow.every(([s, n]) => src.split(s).length - 1 === n) && total === allow.reduce((t, [, n]) => t + n, 0) && !/\+\+\s*state\.seq\b|state\.seq\s*[+\-]=/.test(src);
     results.push({ ok: allowOk, m: 'id-collisions source guard: every remaining state.seq++ is seqId() itself or an allow-listed tab / boundary / time-salted id — a new raw counter id fails CI' });
     results.push({ ok: (src.match(/\+ seqId\(\)/g) || []).length === 20, m: 'id-collisions source guard: all 20 persisted record / message constructors mint through seqId()' });
+  }
+
+  // RC-67 (2A) source guard — finishLoad (the boot/login load; too wired into sign-in to drive headless here)
+  // must stamp a successful refresh BEFORE its first render, so the freshness line appears on that render.
+  {
+    const src = await readFile(join(root, 'app.js'), 'utf8');
+    const body = (src.match(/\nfunction finishLoad\(\) \{([\s\S]*?)\n\}/) || [])[1] || '';
+    const iMark = body.indexOf('freshMark();'), iRender = body.indexOf('render();');
+    results.push({ ok: iMark > -1 && iRender > -1 && iMark < iRender, m: 'RC-67 freshness source guard: finishLoad stamps a successful refresh (freshMark) before its first render' });
+    results.push({ ok: /\n\s*R37:\s*\['Freshness line'/.test(src) && src.includes('data-r="R37"'), m: 'RC-67 freshness source guard: the R37 stamp has its RULE_META row (a new element = a new rule)' });
   }
 
   const passed = results.filter((r) => r.ok).length;
