@@ -26348,7 +26348,7 @@ async function attemptLogin() {
    docs/handoffs/phone-identity-backend.gs. NOTE: unverified until the backend deploys —
    the /jactec-ui screenshot self-critique + the end-to-end drive run on staging after
    Jac's editor go-live. ══════════════════════════════════════════════════════════════ */
-const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', _role: '', _mintAt: 0, _sent: null };   // RC-71 _mintAt: when this page's key was minted; RC-68 (2A) _sent: the last delivered authStart reply (this page only)
+const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', _role: '', _mintAt: 0, _sent: null, _spent: false };   // RC-71 _mintAt: when this page's key was minted; RC-68 (2A) _sent: the last delivered authStart reply (this page only); _spent: a verify since then has (or may have) used that code
 function pidTokenGet() { try { return localStorage.getItem('jactec.pidToken') || sessionStorage.getItem('jactec.pidToken') || ''; } catch (e) { return ''; } }
 function pidTokenSet(tok, personal) { try { if (personal) { localStorage.setItem('jactec.pidToken', tok); sessionStorage.removeItem('jactec.pidToken'); } else { sessionStorage.setItem('jactec.pidToken', tok); localStorage.removeItem('jactec.pidToken'); } } catch (e) {} }
 function pidTokenClear() { try { flushUserPrefsNow(); } catch (e) {} try { localStorage.removeItem('jactec.pidToken'); sessionStorage.removeItem('jactec.pidToken'); } catch (e) {} try { dataCache.wipe(); } catch (e) {} currentPersonId = ''; state.userPrefs = null; }   // §instant-cache: logout clears the on-device snapshot. §cross-device-sync: flush any pending prefs, then drop identity + the in-memory doc — but do NOT wipe the mirror here. The login-time syncMirrorGuard (tag-guarded) is the SINGLE wipe point, so a load-fail relogin can't delete a never-backed-up mirror (which would then seed an empty baseline). Shared-device safety still holds: a DIFFERENT person's next login (prev !== tag) wipes it, exactly as switchUser already defers to.
@@ -26401,7 +26401,7 @@ async function freshKeyLoad(tok, mintedAt, kind) {
   for (let n = 1; ; n++) {
     if (gone()) throw signinSuperseded();
     let r;
-    try { r = await backendRead('load', undefined, { onRetry: signinRetryCue, stop: gone }); }
+    try { r = await backendRead('load', undefined, { onRetry: n === 1 ? signinRetryCue : null, stop: gone }); }   // once the grace counts "n of 4", RC-63's inner "of 3" must not write over it
     catch (e) { if (gone()) throw signinSuperseded(); throw e; }
     if (gone()) throw signinSuperseded();
     if (!authRejected(r)) return r;   // a success, or a reply lost on every try — RC-63's handling from here
@@ -26510,7 +26510,7 @@ function renderPhoneLogin(msg) {
       <button type="submit" class="login-btn" data-r="R17" id="pid-send">Text my code</button>
       ${roster.length ? `<button type="button" class="login-ghost" id="pid-topin">Sign in with a PIN</button>` : ''}`;
   } else if (step === 'device') {
-    inner = `<div class="login-hint">Code sent to ${esc(pidUI.name || 'you')}${pidUI.masked ? ' · ' + esc(pidUI.masked) : ''}</div>
+    inner = `<div class="login-hint">${pidUI.masked ? `Code sent to ${esc(pidUI.name || 'you')} · ${esc(pidUI.masked)}` : `Signing in as ${esc(pidUI.name || 'you')}`}</div>
       <div class="login-ask">Is this a shared device?</div>
       <div class="login-choice">
         <button type="button" class="login-choice-btn" data-kind="personal"><span class="lc-t">My phone</span><span class="lc-s">Stays signed in ${P.trustDays} days</span></button>
@@ -26543,7 +26543,7 @@ function renderPhoneLogin(msg) {
       <div class="login-title">Rental Wrangler</div>
       <div class="login-sub">JacRentals · Sulphur, LA</div>
       ${inner}
-      <div class="login-err" id="pid-err">${pidUI.err ? esc(pidUI.err) : ''}</div>
+      <div class="login-err" id="pid-err" role="alert">${pidUI.err ? esc(pidUI.err) : ''}</div>
     </div></form></div>`;
   pidWire();
 }
@@ -26560,7 +26560,7 @@ function pidWire() {
   on('pid-resend', () => pidDoStart(true));
   on('pid-needcode', () => { pidUI.step = 'identify'; pidUI._phone = ''; renderPhoneLogin(''); });
   document.querySelectorAll('.login-choice-btn').forEach((b) => b.addEventListener('click', () => { pidUI.kind = b.getAttribute('data-kind'); pidUI.step = 'code'; renderPhoneLogin(''); }));
-  document.querySelectorAll('.login-pick-btn').forEach((b) => b.addEventListener('click', () => { pidUI.personId = b.getAttribute('data-id'); const r = pidRosterCache().find((x) => String(x.id) === String(pidUI.personId)); pidUI.name = r ? r.name : ''; pidUI.step = step === 'codepick' ? 'device' : 'pin'; renderPhoneLogin(''); }));   // RC-68 (2A) — codepick → device kind → code box
+  document.querySelectorAll('.login-pick-btn').forEach((b) => b.addEventListener('click', () => { pidUI.personId = b.getAttribute('data-id'); const r = pidRosterCache().find((x) => String(x.id) === String(pidUI.personId)); pidUI.name = r ? r.name : ''; pidUI.step = step === 'codepick' ? 'device' : 'pin'; renderPhoneLogin(step === 'codepick' ? 'Use the code from your newest text when it arrives.' : ''); }));   // RC-68 (2A) — codepick → device kind → code box; nothing proves a text went to this name, so the hedge stays
   // Intro-video mute toggle — mirrors the classic sign-in's #login-mute handler: flip the
   // per-device preference, restyle the button, and mute/unmute the live video if it's already rolling.
   const muteEl = document.getElementById('login-mute');
@@ -26588,6 +26588,7 @@ function pidWire() {
   });
   const focusId = { identify: 'pid-phone', code: 'pid-code', setpin: 'pid-pin', pin: 'pid-loginpin' }[step];
   if (focusId) { const el = document.getElementById(focusId); if (el) el.focus(); }
+  else if (step === 'device' || step === 'codepick') { const b = document.querySelector('.login-choice-btn, .login-pick-btn'); if (b) b.focus(); }   // RC-68 (2A) — these steps have no input; land on the first choice, not <body>
 }
 // RC-68 (2A) — a reply that never reached us (a thrown fetch or timeout → pidCall returned null, or
 // the echo-404 page / garbled JSON that backendCall reports as http-NNN / bad-json).
@@ -26598,6 +26599,8 @@ function pidPhoneKey(p) { return String(p || '').replace(/\D/g, '').slice(-10); 
 // this page got for the same number, else let them pick their name from the cached roster (the
 // shared-device PIN list), else say honestly what to do.
 function pidMaybeSent(phone, soon, resend) {
+  // the gap was started by a code this page's verify has (or may have) used — pointing back at it can only fail
+  if (soon && pidUI._spent) return pidErr(`Too soon for a new code — wait 30 seconds, then tap ${resend ? 'Resend code' : 'Text my code'} again.`);
   const msg = soon ? 'A code was just sent — use that one.' : 'The reply got lost, but your code may be on its way — use it when it arrives.';
   if (resend && pidUI.personId) return pidErr(msg);   // already on the code box
   const s = pidUI._sent;
@@ -26609,12 +26612,15 @@ async function pidDoStart(resend) {
   const phone = resend ? pidUI._phone : (document.getElementById('pid-phone')?.value || '').trim();
   if (!phone) return pidErr('Enter your mobile number.');
   pidUI._phone = phone;
+  const at = pidUI.step;
   const r = await pidCall(resend ? 'pid-resend' : 'pid-send', () => backendCall('authStart', { phone, purpose: 'login' }, { timeoutMs: SIGNIN_TIMEOUT_MS }));
-  if (r && r.ok && r.sent) { pidUI._sent = { phone: pidPhoneKey(phone), personId: r.personId, name: r.name || '', masked: r.masked || '' }; pidUI.personId = r.personId; pidUI.name = r.name || ''; pidUI.masked = r.masked || ''; pidUI.err = ''; if (!resend) pidUI.step = 'device'; return renderPhoneLogin(''); }
+  // the person moved on while this waited (up to 45 s): a PIN sign-in, a sign-in already loading, or the app itself — a late reply must not re-render over it
+  if (pidUI.step !== at || !document.querySelector('.login-screen:not(.signing-in) #pid-form')) return;
+  if (r && r.ok && r.sent) { pidUI._sent = { phone: pidPhoneKey(phone), personId: r.personId, name: r.name || '', masked: r.masked || '' }; pidUI._spent = false; pidUI.personId = r.personId; pidUI.name = r.name || ''; pidUI.masked = r.masked || ''; pidUI.err = ''; if (!resend) pidUI.step = 'device'; return renderPhoneLogin(''); }
   // RC-68 (2A) — authStart_ texts the code BEFORE it replies, so a lost reply may still have sent one; 'too-soon' means one WAS just sent
   if (pidReplyLost(r) || (r.ok && r.reason === 'too-soon')) return pidMaybeSent(phone, !!r && r.reason === 'too-soon', resend);
   // 'rate' writes no new code, so on a resend the last one stays good — and the code box has no PIN button
-  if (r.ok && r.reason === 'rate') return pidErr(resend ? "This hour's sign-in codes are used up. If your last code arrives, enter it here — otherwise wait up to an hour." : pidRosterCache().length ? "This hour's sign-in codes are used up. Use Sign in with a PIN, or wait up to an hour." : "This hour's sign-in codes are used up. Wait up to an hour, then try again.");
+  if (r.ok && r.reason === 'rate') return pidErr(resend ? (pidUI._spent ? "This hour's sign-in codes are used up. Wait up to an hour, then try again." : "This hour's sign-in codes are used up. If your last code arrives, enter it here — otherwise wait up to an hour.") : pidRosterCache().length ? "This hour's sign-in codes are used up. Use Sign in with a PIN, or wait up to an hour." : "This hour's sign-in codes are used up. Wait up to an hour, then try again.");
   if (r.ok && r.reason) return pidErr("Couldn't send the text — try again.");
   pidErr("If that number's on the roster, a code is on its way — check your phone.");   // no reason = not on the roster — kept vague on purpose (anti-enumeration)
 }
@@ -26622,6 +26628,7 @@ async function pidDoVerify() {
   const code = (document.getElementById('pid-code')?.value || '').replace(/\D/g, '');
   if (code.length !== PHONE_IDENTITY.codeLen) return pidErr(`Enter the ${PHONE_IDENTITY.codeLen}-digit code.`);
   const r = await pidCall('pid-verify', () => backendCall('authVerify', { personId: pidUI.personId, code, deviceKind: pidUI.kind }, { timeoutMs: SIGNIN_TIMEOUT_MS }));
+  if (!(r && r.error === 'bad-code')) pidUI._spent = true;   // RC-68 (2A) — past a plain mismatch, treat the code as gone: authVerify_ burns it on success, expiry and too-many, and a lost reply may have
   if (pidReplyLost(r)) { const el = document.getElementById('pid-code'); if (el) { el.value = ''; el.focus(); }   // RC-68 (2A) — the verify may have run and burned the code; retyping it can only fail
     return pidErr('The reply got lost — that code may already be used. Tap Resend code for a fresh one.'); }
   if (!r.ok) { const el = document.getElementById('pid-code'); if (el) { el.value = ''; el.focus(); }   // clear the bad digits so a retype re-triggers the auto-submit (maxlength blocks editing a full field)
