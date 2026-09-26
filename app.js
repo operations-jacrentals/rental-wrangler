@@ -3162,7 +3162,7 @@ function showHoverPreview(target) {
   const info = recForHover(target); if (!info) return;
   hideHoverPreview();
   const node = el('div', 'hover-preview');
-  try { node.innerHTML = DETAIL[info.ec](info.rec, { historySearch: '', backStack: [], mode: 'standard' }); } catch (e) { return; }
+  try { node.innerHTML = DETAIL[info.ec](info.rec, { historySearch: '', backStack: [], mode: 'standard', hoverPreview: true }); } catch (e) { return; }   // RC-67 (5A) — hoverPreview: a glance never arms the inline window editor (see DETAIL.rentals)
   // SPEC flag-color-system §5: active flags (severity-sorted) listed below the preview.
   const pflags = getEntityFlags(info.ec, info.rec);
   if (pflags.length) {
@@ -6874,6 +6874,7 @@ const RULE_META = {
   R34: ['Wash cycle button', 'washBtn', 'one pressable status pill that advances a unit’s wash on each click — neutral “Wash?” → caution “Wash It!” (yellow, requested) → ready “✓ Washed” (green, logged) → click again un-marks today’s wash. Registry STATUS tones (green/yellow/gray), NOT action colors; a press-to-advance control like R1 but it cycles in place instead of opening a dropdown. Replaces the old Wash / Don’t Wash / Washed R14 toggle; wash no longer gates inspection Pass.'],
   R35: ['Dated-action funnel', 'datedFunnelHtml / .dfunnel', 'the customer-detail funnel as a two-tab (Rental | Equipment Sales) stack of clickable LAYERS, narrowing like a real funnel — everyone sits in both tabs (a fresh customer at Lead). Each layer is a SLOT for a dated next-action ("notes = actions"): arm any layer with an action (note + date) and it glows red/yellow/green by that date’s urgency (naUrgency) — several can be armed at once. A reached-but-unarmed layer is quiet steel history (a check + when it happened); the terminal Signed/Paid, once reached, is SOLID BLUE (closed won). Clicking a layer opens its action editor (arm/edit/complete, or Advance the customer here). The armed actions are the same scheduled entries as the date-sorted queue below. Rental Reserved/Rented history-dates derive from live rentals. Bespoke — layers are NOT .pill, the .dfunnel container carries the stamp.'],
   R36: ['Swipe-toggle deck', 'swipeSeg / swipeTrack / .swipe-track', 'the PHONE-ONLY carousel that turns a VIEW-SWITCH toggle section (the customer funnel · invoices · comms Text/Email) into a swipeable deck: both panes sit side-by-side in a nested horizontal scroll-snap track, and the toggle’s ONE-orange fill (R3) becomes a .deck-thumb that RIDES the scroll (deckPaint). The active tab commits on SNAP with NO render (deckCommit) — both panes are already in the DOM — a haptic ticks per change, and a tab tap smooth-scrolls the track. Nests inside the 5-card .grid rail without stealing its swipe (each scroll listener is class-filtered to its own track). Desktop is byte-identical to before — single pane + the R14 tap toggle. Attaches ONLY to view-switch toggles, never a value/action segCtl (a swipe must never set inspection Fail or a transport leg).'],
+  R37: ['Freshness line', 'freshLineHtml / #fresh-line', 'the always-on, low-key “Updated N s ago” under the header name row (RC-67 2A) — becomes “Catching up…” once 60 s pass without a successful refresh (a backend load this device APPLIED). Plain read-voice text in --txt-2: no pill, no icon, no motion. headerEl paints it; a 1 s ticker rewrites only its text (stopped while the tab is hidden). Never an alert — R25 stays the ONE non-toast alert'],
 };
 /* ════════════ APP-12 · DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
    The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
@@ -7002,7 +7003,7 @@ const RB_TABS = [
   { id: 'upload', label: 'Upload & Capture', intro: 'Add-file zones and photo/site captures.',
     items: [{ r: 'R21' }, { f: 'upload-capture' }] },
   { id: 'data', label: 'Data & Behaviors', intro: 'Visualizations, plus the app’s behaviors — it flashes instead of erroring, right-clicks, tooltips, and self-lints.',
-    items: [{ r: 'R16' }, { r: 'R15' }, { r: 'R35' }, { r: 'R36' }, { r: 'R13' }, { f: 'data-kpi' }, { f: 'data-gauge' }, { r: 'R19' }, { r: 'R25' }, { r: 'R20' }, { r: 'R23' }, { f: 'behavior-preview' }, { r: 'R0' }] },
+    items: [{ r: 'R16' }, { r: 'R15' }, { r: 'R35' }, { r: 'R36' }, { r: 'R13' }, { f: 'data-kpi' }, { f: 'data-gauge' }, { r: 'R19' }, { r: 'R25' }, { r: 'R37' }, { r: 'R20' }, { r: 'R23' }, { f: 'behavior-preview' }, { r: 'R0' }] },
 
   { id: 'windows', label: 'Windows', intro: 'Every pop-up window in the app, by kind. Expand one for a live preview, its fields, and a copy-paste edit reference — your map to wrangle any screen.', items: [] },
 ];
@@ -8725,7 +8726,7 @@ const DETAIL = {
     const splitFrozen = blacklistBlocksRentalAllocation(r, { kind: 'split' });
     if (allocationFrozen) {
       if (state.winEdit?.rentalId === r.rentalId) state.winEdit = null;
-    } else if (!state.winEdit || state.winEdit.rentalId !== r.rentalId) {
+    } else if (!cs.hoverPreview && (!state.winEdit || state.winEdit.rentalId !== r.rentalId)) {   // RC-67 (5A) — never from a hover preview: arming there replaced the editor on screen (a staged window + its Confirm panel) with the glanced rental's
       state.winEdit = { rentalId: r.rentalId, monthISO: firstOfMonthISO(r.startDate || TODAY_ISO), anchor: null };
       if (rentalFragile(r)) state.winEdit.staged = { rentalId: r.rentalId, startDate: r.startDate || '', endDate: r.endDate || '', startTime: r.startTime || '' };
     }
@@ -8733,7 +8734,7 @@ const DETAIL = {
     //  Confirm panel moved inline (2026-06-26), so we stop emitting the now-inert hook.)
     const calHtml = allocationFrozen
       ? `<div class="rdcal-edit" data-rec="${esc(r.rentalId)}" style="--rdcal-hl:var(--${stColor})"><div class="kv" style="justify-content:space-between"><span>${badge('Window locked', 'red')}</span><span class="derived">${esc(fmtWindow(r.startDate, r.endDate))}</span><span class="muted" style="font-size:0.6471rem">Lift or Recall the blacklist to rebook.</span></div></div>`
-      : `<div class="rdcal-edit" data-rec="${esc(r.rentalId)}" style="--rdcal-hl:var(--${stColor})">${winPickerEl(r)}</div>`;
+      : `<div class="rdcal-edit" data-rec="${esc(r.rentalId)}" style="--rdcal-hl:var(--${stColor})"${cs.hoverPreview ? ' inert' : ''}>${winPickerEl(r, cs.hoverPreview ? { rentalId: r.rentalId, monthISO: firstOfMonthISO(r.startDate || TODAY_ISO), anchor: null, readOnly: true } : undefined)}</div>`;   // RC-67 (5A) — a preview draws from a DETACHED picker state (never stored) and its calendar is `inert` (no hover, pointer or focus on controls that do nothing); the .hover-preview guards in onClick / onChange back that up
 
     /* Duration label (shared across all unit rows). */
     const durLabel = hasWin
@@ -10571,6 +10572,7 @@ function headerEl() {
         <span class="spacer"></span>
         ${currentUser ? `<span class="hello-name">${esc(currentUser)}</span>` : ''}
       </div>
+      ${freshLineHtml()}${/* RC-67 (2A) — R37 freshness line, right under the name row */ ''}
       ${isPhone || flagOn('cardGlobalSearch') ? '' /* §M7 — no global search on mobile; and when the R33 card-bar global mode is on, the globes replace this giant bar on desktop too */ : `<div class="toolbar">
         <div class="searchwrap ${state.filterTerms.length ? 'has-terms' : ''}${state.query.trim() || state.filterTerms.length ? ' has-query' : ''}">
           ${state.filterTerms.length > 1 ? closeX('js-clear') : ''}
@@ -17501,6 +17503,7 @@ const scrollMemo = {};   // persistent scroll positions, keyed `card|view` (list
 // just re-homes four nodes. The card-toggle-bar swipe zone follows the toggles (see boot()).
 function render() {
   if (scanActive) return;   // the scan-to-log capture screen owns #app in its own tab — never let a background loader / 18s poll render clobber it mid-flow
+  refreshPaintOwed = false;   // RC-67 (2A) review fix — this render paints everything a held-back refresh adopted
   RENDER_MEMO = {};   // open the render-scoped derivation cache (rmemo) — lives for exactly this render (Jac 2026-07-17). After the early-return so a bailed render never opens a cache it won't close.
   try {   // ALWAYS close the cache below (finally), even if the render body throws — else a crashed render would leave stale money math for out-of-render callers (invoiceTotals etc.) until the next clean render (fix per review)
   const t0 = performance.now();
@@ -19519,6 +19522,7 @@ function onClick(e) {
   if (closest('.js-dp-today')) { e.stopPropagation(); const dp = state.datepick; if (dp) { dp.monthISO = firstOfMonthISO(TODAY_ISO); dpSet(dp.field, TODAY_ISO); } return renderOverlay(); }
   if (closest('.js-dp-clear')) { e.stopPropagation(); const dp = state.datepick; if (dp && state.overlay) { dpSet(dp.field, ''); state.overlay[dp.field + 'Time'] = ''; } return renderOverlay(); }
   if (closest('.js-dp-done')) { e.stopPropagation(); state.datepick = null; return renderOverlay(); }
+  if (closest('.hover-preview .winpicker')) { e.stopPropagation(); return; }   // RC-67 (5A) — a preview's calendar is a glance: its taps would drive whichever editor is ARMED (another rental's), never the one shown
   if (closest('.js-wp-day')) { e.stopPropagation(); return winPickDay(closest('.js-wp-day').dataset.iso); }
   if (closest('.js-wp-prev')) { e.stopPropagation(); return winPickMonth(-1); }
   if (closest('.js-wp-next')) { e.stopPropagation(); return winPickMonth(1); }
@@ -21361,7 +21365,7 @@ function onChange(e) {
     reader.readAsDataURL(file);
     return;
   }
-  if (e.target.classList.contains('js-wp-time')) { return setWinTime(e.target.value); }
+  if (e.target.classList.contains('js-wp-time')) { if (e.target.closest('.hover-preview')) return; return setWinTime(e.target.value); }   // RC-67 (5A) — a preview's time field is inert (it would re-time the ARMED rental)
   if (e.target.classList.contains('js-dp-time')) { return dpTime(e.target.value); }
   if (e.target.classList.contains('js-draftdate')) { return setDraftDate(e.target.dataset.rec, e.target.dataset.which, e.target.value); }
 }
@@ -21387,6 +21391,7 @@ function openLogoMenu(anchorEl) {
 function switchUser() {
   document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
   try { flushUserPrefsNow(); } catch (e) {}   // §cross-device-sync — push a pending prefs edit before the token is dropped
+  staleClear();   // RC-71 — the next person never inherits this one's remembered failed batches
   backendPassword = ''; currentRole = ''; currentPersonId = ''; state.userPrefs = null; booting = true;   // §cross-device-sync — drop the leaving person's identity + synced doc so nothing pushes under the next person
   sessionStorage.removeItem('jactec.pw'); sessionStorage.removeItem('jactec.role');
   renderLogin();
@@ -23051,13 +23056,21 @@ function winStagedChanged() {
 }
 /** TRUE only while a window pick is genuinely in progress — a start day is tapped (mid
  *  range-select, `.anchor`) or a fragile rental's STAGED window differs from the rental (the
- *  inline "Confirm new rental window?" panel + extension money preview are up, unsaved). A bare
- *  `state.winEdit` is NOT this: DETAIL.rentals arms it on every render of a rental (the hover
- *  preview renders DETAIL.rentals too), so it stays truthy for the rest of the tab — the 18s
- *  refresh poll gated on it stopped for good the moment any rental was viewed. */
-function winPickBusy() { const wp = state.winEdit; return !!(wp && (wp.anchor || winStagedChanged())); }
+ *  inline "Confirm new rental window?" panel + extension money preview are up, unsaved) — AND
+ *  that rental's editor is still in the page. A bare `state.winEdit` is NOT this: DETAIL.rentals
+ *  arms it on every render of a rental, so it stays truthy for the rest of the tab — the 18s
+ *  refresh poll gated on it stopped for good the moment any rental was viewed. RC-67 (3A) — nor
+ *  is a pick ABANDONED by navigating away (the Rentals card to list view, the Calendar swapped
+ *  in, another tab): it used to pause the poll until reload. Coming back to the rental re-renders
+ *  the same pick, busy again — unless the poll meanwhile adopted another device's edit of that
+ *  rental, which re-derives the editor (winEditResync) and drops the unsaved pick. "In the page",
+ *  not "in view": the phone's swipe rail keeps every panel in the DOM, so a pick left on the
+ *  Rentals panel still pauses the poll while another panel is up. */
+function winEditorInPage(rentalId) { return [...document.querySelectorAll('.rdcal-edit[data-rec]')].some((n) => n.dataset.rec === String(rentalId) && !n.closest('.hover-preview')); }   // a hover preview's display-only copy is not the editor
+function winPickBusy() { const wp = state.winEdit; return !!(wp && (wp.anchor || winStagedChanged()) && winEditorInPage(wp.rentalId)); }
 /** The refresh poll just ADOPTED a remote version of the rental the inline editor is armed on
- *  (reachable only while !winPickBusy(), so nothing the user picked is discarded). Re-derive the
+ *  (reachable only while !winPickBusy(): a pick on screen is never discarded; one ABANDONED off the
+ *  page is, since another device just changed that rental — RC-67 3A). Re-derive the
  *  editor from the adopted record exactly as the DETAIL.rentals arming does: an untouched staged
  *  copy still holding the OLD dates would otherwise differ from the rental and raise a phantom
  *  Confirm panel whose Save reverts the other user's dates; and a rental that turned fragile
@@ -23208,12 +23221,12 @@ function dayBlocked(subject, iso, selfId) {
   return categoryAvailableCount(subject.id, iso, nxt, selfId) === 0;
 }
 /** Render the inline calendar popup for the rental whose picker is open. */
-function winPickerEl(r) {
-  const wp = state.winEdit;
+function winPickerEl(r, wp = state.winEdit) {   // RC-67 (5A) — a hover preview passes its own detached wp, so it never reads the armed editor's
   const md = parseISO(wp.monthISO); const y = md.getFullYear(), m = md.getMonth();
   const startDow = new Date(y, m, 1).getDay();
   const daysIn = new Date(y, m + 1, 0).getDate();
-  const t = winTarget() || r;
+  const t = wp.staged || IDX.rental.get(wp.rentalId) || r;   // winTarget() of THIS wp (identical for the armed editor)
+  const ro = !!wp.readOnly;   // RC-67 (5A) review fix — a hover preview's copy: no month arrows, no Today / Clear, the time as text (honest affordance: its calendar is inert)
   const s = t.startDate, e = t.endDate, a = wp.anchor;
   const lo = s && e ? (s < e ? s : e) : (s || a);
   const hi = s && e ? (s < e ? e : s) : null;
@@ -23263,13 +23276,13 @@ function winPickerEl(r) {
       </div>`
     : '';
   return `<div class="winpicker">
-    <div class="wp-time"><label>Pickup time</label><input type="time" class="js-wp-time" value="${esc(to24(t.startTime) || '09:00')}"></div>
+    <div class="wp-time"><label>Pickup time</label>${ro ? `<span class="wp-time-ro">${esc(to12(to24(t.startTime) || '09:00'))}</span>` : `<input type="time" class="js-wp-time" value="${esc(to24(t.startTime) || '09:00')}">`}</div>
     <div class="wp-head"><span class="wp-month">${MONTH_NAMES[m]} ${y}</span>
-      <span class="wp-nav"><button class="js-wp-prev" data-tip="Previous month">‹</button><button class="js-wp-next" data-tip="Next month">›</button></span></div>
+      ${ro ? '' : '<span class="wp-nav"><button class="js-wp-prev" data-tip="Previous month">‹</button><button class="js-wp-next" data-tip="Next month">›</button></span>'}</div>
     <div class="wp-grid">${dows}${cells}</div>
     ${subjName ? `<div class="wp-blocknote">Greyed days are ${state.overbookOn ? 'booked' : 'unavailable'} for <b>${esc(subjName)}</b>${state.overbookOn ? ' — overbooking is on, pick to force' : ''}</div>` : ''}
     ${confirmCard}
-    <div class="wp-foot"><button class="pill ghost js-wp-today" data-r="R18">Today</button>${actionPill('commit', 'Clear', { js: 'js-wp-clear' })}</div>
+    ${ro ? '' : `<div class="wp-foot"><button class="pill ghost js-wp-today" data-r="R18">Today</button>${actionPill('commit', 'Clear', { js: 'js-wp-clear' })}</div>`}
   </div>`;
 }
 
@@ -23894,7 +23907,7 @@ async function backendCall(action, extra, opts) {
   if (flagOn('phoneIdentity') && backendPassword) payload.sessionToken = backendPassword;   // per-person mode: the device/session token authorizes each call (backend prefers it over `password`); a no-op while the flag is OFF
   // RC-63 — opt-in ABORTABLE limit (opts.timeoutMs). Aborting, unlike withTimeout's race,
   // releases the stalled request instead of leaving it open. Callers that pass nothing
-  // (money, and the sync POST itself) keep the old unbounded behaviour on purpose — see BACKEND_TIMEOUT_MS and SYNC (RC-65).
+  // (money among them) keep the old unbounded behaviour on purpose — see BACKEND_TIMEOUT_MS. The sync POST passes syncLimitMs() (RC-67 4A, see SYNC).
   const ms = opts && opts.timeoutMs;
   const ac = ms ? new AbortController() : null;
   let timer = ac ? setTimeout(() => ac.abort(), ms) : null;
@@ -25266,6 +25279,30 @@ function cacheRefreshing(on) {
   _cacheRefreshing = !!on;
   try { mountRefreshCue(); document.body.classList.toggle('rw-refreshing', _cacheRefreshing); } catch (e) {}
 }
+// RC-67 (2A) — R37, the freshness line: always-on "Updated N s ago" under the header name row, turning
+// "Catching up…" once 60 s pass without a successful refresh (reverses OQ-9 "silence = saved" — owner
+// 2026-09-25). SUCCESS = a backend load this device APPLIED: finishLoad, or a refreshFromBackend reply
+// that got past the RC-65 guards into the adopt loop (nothing changed still counts — the screen was
+// checked against the server). A lost/failed load, a skipped tick (popup, typing, saving, hidden) and a
+// reply the RC-65 guards threw away (winPickBusy / saveGen) do NOT count: none of them brought the
+// screen current. headerEl paints it, so tabs / top bands / phone reflow it for free; the 1 s ticker
+// rewrites ONLY its text (never render()) and stops while the tab is hidden. No aria-live: the node is
+// rebuilt with the header on every render, and a live region re-inserted per render can re-announce on
+// some screen readers — it reads in order on demand instead (R25 stays the one spoken alert).
+// Date.now, not performance.now: an iPad asleep for an hour must wake to "Catching up…", and a clock
+// set BACK reads as stale too.
+const FRESH_STALE_MS = 60000;
+let _freshAt = 0, _freshTimer = null;   // 0 = never confirmed this page (demo / pre-login) → no line
+function freshLineText(now) {
+  const ms = (now || Date.now()) - _freshAt;
+  return ms < 0 || ms >= FRESH_STALE_MS ? 'Catching up…' : `Updated ${Math.floor(ms / 1000)} s ago`;
+}
+function freshLineHtml() { return _freshAt && backendPassword && !booting ? `<div id="fresh-line" data-r="R37">${freshLineText()}</div>` : ''; }   // hidden in demo, signed out, and while booting (the Refreshing chip owns that moment)
+function freshTick() { const el = document.getElementById('fresh-line'); if (!el) return; const t = freshLineText(); if (el.textContent !== t) el.textContent = t; }
+function freshTickerSync() { clearInterval(_freshTimer); _freshTimer = null; if (_freshAt && !document.hidden) { freshTick(); _freshTimer = setInterval(freshTick, 1000); } }
+function freshMark() { _freshAt = Date.now(); if (_freshTimer) freshTick(); else freshTickerSync(); }
+document.addEventListener('visibilitychange', freshTickerSync);   // paused while hidden; on return the first tick already reads the true age
+window.addEventListener('pageshow', freshTickerSync);   // a back/forward-cache restore may bring no visibilitychange — re-sync there too (idempotent)
 /* #829 — the boot write-guard, shared by every debounced writer below.
    `booting` was only ever meant to suppress saves while boot painted a SPLASH, where no
    edit was possible (see `let booting = true` — "suppresses saves during initial load").
@@ -25299,6 +25336,74 @@ function bootWriteBlocked() {
 // a few-hundred-byte, sub-second call.
 const PERSIST_ID = { categories: 'categoryId', units: 'unitId', customers: 'customerId', invoices: 'invoiceId', rentals: 'rentalId', workOrders: 'woId', inspections: 'inspectionId', vendors: 'vendorId', parts: 'partId', companyFiles: 'fileId', expenses: 'expenseId', models: 'modelId' };
 let lastSaved = null;   // { entity: Map(id → JSON) } — the last successfully-persisted state
+// RC-71 (4A option C, owner 2026-09-25) — the stale-landing guard. A sync POST that failed AFTER it was sent
+// cannot be un-sent: still queued behind the backend's script lock (doSync waits up to 30 s; not FIFO) it can land
+// AFTER a newer save of the same record committed. The next poll would then adopt that old copy as "clean" —
+// silently reverting this device's own save (Q-4A consequence a) — or re-create a record this device deleted
+// since, e.g. a merged invoice (b). For STALE.ms after each failed send this device remembers, per record, what
+// that batch sent; refreshFromBackend does not adopt a poll copy that matches it and differs from the local copy:
+// the baseline takes the server's copy, so the local record (or its delete) is re-sent instead. A match compares
+// every client-authored field exactly — staleFp drops only the money-outcome fields the server owns and rewrites
+// on every write (Code.gs PROTECTED, V113). Each failed send explains AT MOST ONE landing: a match is consumed —
+// but never by a copy the baseline already holds (this device's own committed retry of the same bytes, which the
+// server may store without an empty money field). A sealed invoice that differs from the local copy only in the
+// fields its seal freezes is adopted at once: a re-send could never change them. An entry is dropped only once a
+// load that BEGAN after its window closed has been checked against it (polls stand down while hidden), and a send
+// is booked only against the baseline it was diffed from (a switch user / re-login while it was out resets it).
+// A send made while the device is offline never left it and is not remembered.
+// A delete is only re-sent over a copy with NO server-owned field — what doSync stores when no row is left; a copy
+// someone has since paid, charged or sealed comes back visibly, as before RC-71. Limits: an
+// edit by another device that sets a record back to exactly the bytes this device failed to send is taken for
+// the late landing once (and overwritten by the re-send); a batch the server refused outright ('busy', a refused
+// credential — nothing was written) is never remembered. In memory only; cleared on sign-out, switch user and
+// every fresh load (finishLoad). NOT the full fix: another device's delete undone by a late replay (c) remains,
+// and Phase 2 must propose the server-side per-record revision (RC-71).
+const STALE = { ms: 6 * 60 * 1000, byKey: new Map() };   // byKey: 'entity\u0001id' → Map(fingerprint → { n: failed sends not yet seen landing, at: last failedAt ms }). A property bag so tests can age entries
+const STALE_SERVER_OWNED = {   // mirror of Code.gs PROTECTED (V113): the server keeps its own values for these on every sync write, so they never identify a batch. Drift is fail-safe: a field missing here only makes a match rarer
+  customers: ['stripeId', 'defaultPmId', 'cardBrand', 'cardLast4', 'cardExpMonth', 'cardExpYear', 'cardMandate', 'membershipStatus', 'paidUntil', 'graceUntil', 'stripeSubId', 'membershipStartedAt', 'membershipLapsedAt'],
+  invoices: ['paid', 'paidAt', 'pendingPaymentIntentId', 'chargeAttempts', 'paymentMethod', 'amountPaid', 'payments', 'lastPaymentIntentId', 'refunded', 'refundedAmount', 'lineItemsSig', 'locked', 'achProcessing'],
+};
+function staleFp(k, rec) { const own = STALE_SERVER_OWNED[k]; if (!own) return JSON.stringify(rec); const c = Object.assign({}, rec); own.forEach((f) => { delete c[f]; }); return JSON.stringify(c); }
+/** true = `remote` carries none of the server-owned fields: what doSync stores for an upsert with no row left. A copy
+ *  holding any of them (a payment, a charge, a seal, a Stripe id) was touched since — never deleted by the guard. */
+function staleNoRow(k, remote) { return !(STALE_SERVER_OWNED[k] || []).some((f) => remote[f] !== undefined); }
+const STALE_LOCKED_FROZEN = ['lineItems', 'customerId', 'taxExempt'];   // mirror of Code.gs LOCKED_INVOICE_FIELDS: on a LOCKED invoice doSync keeps the server's own values for these too
+function staleEmpty(v) { return v === undefined || v === null || v === false || v === 0 || v === '' || (Array.isArray(v) && !v.length); }
+/** RC-71 review — true = `remote` is the baseline `base` exactly as doSync stores it on an insert: every client-authored
+ *  field equal, no server-owned field, and every server-owned field the baseline held EMPTY (the dropped amountPaid: 0
+ *  of a new invoice). A baseline holding a real payment, charge or seal is never matched: that copy CHANGED. */
+function staleSameAsBase(k, base, remote) {
+  if (base === undefined || !staleNoRow(k, remote)) return false;
+  const b = JSON.parse(base);
+  return (STALE_SERVER_OWNED[k] || []).every((f) => staleEmpty(b[f])) && staleFp(k, b) === staleFp(k, remote);
+}
+function staleUnfrozen(k, rec) { const c = JSON.parse(staleFp(k, rec)); STALE_LOCKED_FROZEN.forEach((f) => { delete c[f]; }); return JSON.stringify(c); }
+function stalePrune(now) { const t = now || Date.now(); STALE.byKey.forEach((m, key) => { m.forEach((e, fp) => { if (t - e.at >= STALE.ms) m.delete(fp); }); if (!m.size) STALE.byKey.delete(key); }); }
+/** flushSave: a batch that was SENT but did not come back ok may still land — remember what it carried. */
+function staleNoteFailed(upserts) {
+  const t = Date.now();   // no prune here (RC-71 review): an entry is dropped only after a load checked it (refreshFromBackend)
+  Object.keys(upserts).forEach((k) => upserts[k].forEach((u) => {
+    const key = k + '\u0001' + u.id; let m = STALE.byKey.get(key);
+    if (!m) { m = new Map(); STALE.byKey.set(key, m); }
+    const fp = staleFp(k, JSON.parse(u.js)), e = m.get(fp);   // from u.js — the bytes actually sent; the live record may have moved on since
+    if (e) { e.n++; e.at = t; } else m.set(fp, { n: 1, at: t });   // one count per failed send: each can land at most once
+  }));
+}
+/** true = `remote` is one of this device's own failed batches landing late — and that landing is consumed. With a local
+ *  copy, it must also differ from it: a copy equal to the local one (the same batch, re-sent and committed) is current.
+ *  `base` (the baseline's JSON, local branch only): a copy the baseline already holds is current too, never consumed. */
+function staleLanding(k, id, remote, local, base) {
+  const key = k + '\u0001' + id, m = STALE.byKey.get(key); if (!m) return false;
+  const fp = staleFp(k, remote), e = m.get(fp);
+  if (!e) return false;                                   // bytes this device never failed to send: another device's edit
+  if (base !== undefined && staleFp(k, JSON.parse(base)) === fp) return false;   // RC-71 review — the baseline already holds these bytes (a retry of the same batch committed them; the server may have dropped an empty money field): current, not a late landing — never consumed, so the real late landing is still caught
+  if (local && staleFp(k, local) === fp) return false;    // the local copy IS this batch: simply current, adopted as stored
+  if (local && k === 'invoices' && remote.locked && staleUnfrozen(k, local) === staleUnfrozen(k, remote)) return false;   // RC-71 review — sealed: the copies differ only in fields the seal freezes, so a re-send can never win — adopt, never fight (not consumed)
+  if (--e.n <= 0) m.delete(fp);                           // consumed: one failed send explains at most one landing
+  if (!m.size) STALE.byKey.delete(key);
+  return true;
+}
+function staleClear() { STALE.byKey.clear(); }
 function snapshotSaved() {
   lastSaved = {};
   PERSIST_KEYS.forEach((k) => { const m = new Map(); (DATA[k] || []).forEach((r) => m.set(String(r[PERSIST_ID[k]]), JSON.stringify(r))); lastSaved[k] = m; });
@@ -25323,6 +25428,16 @@ function computeChanges() {
 // NEVER delete on refresh (a transient blip can't wipe data).
 const IDX_MAP = { categories: 'category', units: 'unit', customers: 'customer', invoices: 'invoice', rentals: 'rental', workOrders: 'wo', inspections: 'insp', vendors: 'vendor', parts: 'part', companyFiles: 'file', expenses: 'expense', models: 'model' };
 let refreshing = false, refreshTimer = null;
+// RC-67 3A (Jac 2026-09-25) — poll timing + a per-device drop count. `startAt` = when the last refresh really
+// began (spaces the return-to-screen triggers and keeps them off the 18 s tick); `streak` = loads lost in a
+// row (only the FIRST earns the ~3 s retry, so an outage is never a retry storm); runs / drops / lastErr are
+// diagnostics only — in memory, no personal data, never sent; read them with window.__poll() in the console.
+const REFRESH = { startAt: 0, retryTimer: null, retryMs: 3000, eventGapMs: 10000, streak: 0, runs: 0, drops: 0, lastErr: '', lostChatsMs: 8000 };   // lostChatsMs — getChats' limit after a LOST load (Q-3A-stall B); the healthy path keeps BACKEND_TIMEOUT_MS
+// RC-67 (2A) review fix — TRUE when a refresh adopted remote changes but its render was held back (a field focused, a hover
+// preview, a pick or a drag started during the awaits). The next poll paints them even when it brings nothing new, so the
+// R37 line never keeps saying "Updated N s ago" over a screen missing them. Any render() paints DATA → it clears the flag.
+// `var`, not `let`: render() is defined far above and must never meet a temporal dead zone.
+var refreshPaintOwed = false;
 /** §inv-collision (Jac 2026-07-07) — TRUE when a remote invoice shares an id WE minted this
  *  session but is a genuinely DIFFERENT bill (no rental in common). That means our new
  *  invoice number was already taken by another customer's invoice on the backend — the 18s
@@ -25356,17 +25471,21 @@ async function refreshFromBackend() {
   if (document.hidden || DRAG.active || DRAG.armed || winPickBusy() || state.overlay || hoverNode) return;   // don't disrupt active work — winPickBusy(), NOT a bare state.winEdit (armed by merely viewing a rental; see winPickBusy)
   const ae = document.activeElement;
   if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' || ae.isContentEditable)) return;              // mid-typing (RC-65: + SELECT — inline edits use <select class="inline-input">)
-  refreshing = true;
+  refreshing = true; REFRESH.startAt = Date.now();   // RC-67 3A — when this load began (refreshOnReturn / refreshKick read it)
+  let quickRetry = false;   // RC-67 3A — set by the first lost load in a row; armed in `finally`, after `refreshing` is released
   try {
     // #829 — a stalled poll used to leave `refreshing = true` forever, permanently killing the
     // live multi-user refresh: from then on the ONLY way to see someone else's edit was a full
     // page reload (the reporter's "we have to refresh the whole app" complaint). The timeout
     // rejects, `finally` clears the flag, and the next 18s tick tries again.
+    const loadAt = Date.now();   // RC-71 review — STALE entries whose window closed before this load began are dropped once it has been checked
     const gen0 = saveGen;   // RC-65 — a save that runs while this load is in flight makes its reply stale for what it sent
-    const r = await backendCall('load', undefined, { timeoutMs: BACKEND_TIMEOUT_MS });   // RC-63 — abortable, so a stalled poll is released rather than left open
-    if (!r || !r.ok || !r.data) return;
+    const r = await backendCall('load', undefined, { timeoutMs: BACKEND_TIMEOUT_MS }).catch((e) => ({ ok: false, error: (e && e.rwTimeout) ? 'timeout' : 'network' }));   // RC-63 — abortable, so a stalled poll is released rather than left open. RC-67 3A — a stall or drop no longer throws past the chats + rail below
+    const lost = !r || !r.ok || !r.data;
+    quickRetry = refreshNoteLoad(r);   // RC-67 3A — counts a lost load; true only for the first in a row
+    if (authRejected(r)) return;   // RC-67 3A — a refused credential is refused for chats + rail too: one call per tick, as before
     if (winPickBusy() || saveGen !== gen0) return;   // RC-65 — a pick can start (or start AND be saved) during the await above; a reply read before that save would revert it as "clean". The next 18s tick retries.
-    const data = r.data; let applied = 0;
+    const data = lost ? {} : r.data; let applied = 0, staleResend = false;   // RC-67 3A — a lost load used to return above and skip chats + rail; now it adopts nothing (every entity absent → the loop skips each) and carries on
     PERSIST_KEYS.forEach((k) => {
       if (!Array.isArray(data[k])) return;
       const idf = PERSIST_ID[k], saved = (lastSaved[k] = lastSaved[k] || new Map());
@@ -25381,11 +25500,13 @@ async function refreshFromBackend() {
           // flushes (adopting it would mark it clean and silently drop the delete → e.g. a duplicate invoice).
           // Server copy CHANGED → another device edited it: bring it back (visible), never let our pending delete
           // silently erase their edit. Only the pure-resurrection case is suppressed; no conflict is decided here.
-          if (saved.has(id) && saved.get(id) === rjs) return;
+          if (saved.has(id) && (saved.get(id) === rjs || staleSameAsBase(k, saved.get(id), remote))) return;   // RC-71 review — also unchanged: the baseline as doSync stored it on an insert (an empty amountPaid dropped)
+          if (staleNoRow(k, remote) && staleLanding(k, id, remote)) { saved.set(id, rjs); staleResend = true; return; }   // RC-71 (b) — this device's own failed upsert landed late over a delete it committed since (a merged / absorbed invoice): keep it deleted. The baseline now holds the server copy, so the delete is re-sent. A copy carrying any server-owned field (paid, charged, sealed since) is never deleted here: it comes back visibly, as before
           DATA[k].push(remote); IDX[IDX_MAP[k]]?.set(id, remote); reindex(k, remote); saved.set(id, rjs); applied++; return;   // new record from another user
         }
         const ljs = JSON.stringify(local);
         if (ljs === rjs) { saved.set(id, rjs); return; }
+        if (staleLanding(k, id, remote, local, saved.get(id))) { saved.set(id, rjs); staleResend = true; return; }   // RC-71 (a) — this device's own failed batch landed late over a newer save: NOT adopted as "clean". The baseline now holds the server copy, so the local record is dirty and re-sent. A copy the baseline already holds (caught before, or this device's own committed retry) is never counted
         if (k === 'invoices' && isInvoiceIdCollision(id, local, remote)) {   // §inv-collision — our minted number already belonged to a different bill; re-issue ours, keep both
           healInvoiceIdCollision(id, local, remote, saved); applied++; return;
         }
@@ -25396,9 +25517,12 @@ async function refreshFromBackend() {
         }                              // else: local has unsaved edits → keep local; it'll push on next save
       });
     });
+    if (!lost) stalePrune(loadAt);   // RC-71 review — every entry whose window closed before this load began has now been checked once
+    if (staleResend) saveSoon();   // RC-71 — re-send what a late-landing batch overwrote (the usual debounce; any retry already pending is re-armed)
+    if (!lost) freshMark();   // RC-67 (2A) — this reply got past the RC-65 guards and was adopted: the screen is confirmed current (nothing changed counts too). A lost load carries on to chats + rail (RC-67 3A) but is never a success
     // also pull the shared team-chat threads so messages from other users land live
     try {
-      const cr = await backendCall('getChats', chatSyncIdentity(), { timeoutMs: BACKEND_TIMEOUT_MS });   // RC-63 — this await also holds `refreshing`; unbounded, one lost reply stopped the poll for good
+      const cr = await backendCall('getChats', chatSyncIdentity(), { timeoutMs: lost ? REFRESH.lostChatsMs : BACKEND_TIMEOUT_MS });   // RC-67 3A (Q-3A-stall, option B) — after a LOST load the chats call gets the short limit: a stalled front door must not hold the quick retry ~27 s behind it. The rail is not awaited here, so it cannot delay the retry and keeps its own limit   // RC-63 — this await also holds `refreshing`; unbounded, one lost reply stopped the poll for good
       if (cr && cr.ok && Array.isArray(cr.chats)) {
         const m = mergeChats(cr.chats);
         const pruned = reconcileScopedChats(cr.chats);
@@ -25408,11 +25532,50 @@ async function refreshFromBackend() {
     } catch (e) { /* chat sync is best-effort */ }
     loadWranglerRail();   // also pull this role's Mr. Wrangler rail (cross-device) — best-effort, self-renders
     const ae2 = document.activeElement, typing2 = !!(ae2 && (ae2.tagName === 'INPUT' || ae2.tagName === 'TEXTAREA' || ae2.tagName === 'SELECT' || ae2.isContentEditable));   // RC-65 — a field focused DURING the awaits above: render() would tear it down mid-typing (the data is still adopted; the next render shows it)
-    if (applied && !state.overlay && !DRAG.active && !hoverNode && !typing2 && !winPickBusy()) { state.cascade = createCascade(DATA); render(); }
-  } catch (e) { /* offline / blip → retry next tick */ }
-  finally { refreshing = false; }
+    if ((applied || refreshPaintOwed) && !state.overlay && !DRAG.active && !hoverNode && !typing2 && !winPickBusy()) { state.cascade = createCascade(DATA); render(); }
+    else if (applied) refreshPaintOwed = true;   // RC-67 (2A) review fix — adopted but not painted: the next poll owes this render
+  } catch (e) { /* an adopt / chat-merge error → retry next tick (a lost LOAD no longer lands here — RC-67 3A) */ }
+  finally { refreshing = false; if (quickRetry) refreshRetrySoon(); }   // RC-67 3A — armed only once `refreshing` is released, so the entry guard can never swallow the retry
 }
 function startRefreshPoll() { clearInterval(refreshTimer); refreshTimer = setInterval(() => { refreshToday(); refreshFromBackend(); if (syncOn() && !state.userPrefs) loadUserPrefs(); }, 18000); }   // §cross-device-sync — re-drive a prefs load that never hydrated (past the 5-try login cutoff) so a cold-GAS blip doesn't disable sync all session
+/** RC-67 3A — book-keeping for one poll `load` reply; true = arm the quick retry. A usable reply ends the
+ *  loss streak. A lost one (stall, network drop, echo 404, bad JSON, busy) is counted, and only the FIRST
+ *  loss in a row asks for a retry: a second loss waits for the 18 s tick. A real sign-in refusal is neither
+ *  a drop nor a loss in the streak — 3 s will not change its answer. */
+function refreshNoteLoad(r) {
+  REFRESH.runs++;
+  if (r && r.ok && r.data) { REFRESH.streak = 0; return false; }
+  if (authRejected(r)) return false;   // a real refusal: not a drop, not a loss in the streak, never retried
+  REFRESH.streak++; REFRESH.drops++; REFRESH.lastErr = String((r && r.error) || 'no-data');
+  return REFRESH.streak === 1;
+}
+/** RC-67 3A — ONE retry ~3 s after a lost load, instead of waiting out the 18 s tick. It runs through
+ *  refreshKick, so it meets every refreshFromBackend guard (off screen, typing, a pick, a save in flight). */
+function refreshRetrySoon() {
+  clearTimeout(REFRESH.retryTimer);
+  REFRESH.retryTimer = setTimeout(() => { REFRESH.retryTimer = null; if (document.hidden) REFRESH.startAt = 0; refreshKick(); }, REFRESH.retryMs);   // RC-67 3A review fix — off screen the retry stands down, but it is still owed: clearing startAt lets the return load at once instead of the 10 s gap swallowing it
+}
+/** RC-67 3A — one poll tick NOW. When it really started a load, the 18 s tick restarts a full interval
+ *  behind it (never two loads back to back) and a pending quick retry is dropped. A tick that stood down
+ *  (booting, signed out, typing, a pick, a save or another load in flight) leaves every timer alone. */
+function refreshKick() {
+  const t0 = REFRESH.startAt; refreshToday(); refreshFromBackend();
+  if (REFRESH.startAt === t0) return;
+  clearTimeout(REFRESH.retryTimer); REFRESH.retryTimer = null; startRefreshPoll();
+}
+/** RC-67 3A — back on screen: refresh at once instead of waiting up to 18 s. One return fires several of
+ *  these together; the first starts the load (the rest meet `refreshing`), and a refresh that began under
+ *  REFRESH.eventGapMs ago already covers a later one (desktop focus flicker never multiplies the load).
+ *  `online` skips that gap: it ends an outage, and a load lost just before it covers nothing. */
+function refreshOnReturn(e) {
+  if (!(e && e.type === 'online') && Date.now() - REFRESH.startAt < REFRESH.eventGapMs) return;
+  refreshKick();
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshOnReturn(); });
+window.addEventListener('focus', refreshOnReturn);
+window.addEventListener('online', refreshOnReturn);
+window.addEventListener('pageshow', (e) => { if (e.persisted) refreshOnReturn(e); });   // a back/forward-cache restore runs no boot; a first load's pageshow is the boot's own load
+window.__poll = () => ({ runs: REFRESH.runs, drops: REFRESH.drops, streak: REFRESH.streak, lastErr: REFRESH.lastErr });   // RC-67 3A — console diagnostic only, like window.__perf(): this tab's poll loads tried / lost; no personal data, never sent
 
 // ── Team-chat sync (Jac 2026-06-15) ────────────────────────────────────────
 // Chat threads were browser-local, so one user's chat never reached another (a
@@ -25938,10 +26101,16 @@ function saveSoon(ms) { if (bootWriteBlocked() || !backendPassword) return; clea
 // RC-65 (2) — per-call ABORTABLE limit for the uploads flushSave awaits before a save
 // (uploadCapture / archiveAgreementMedia). 45 s = RC-63's per-attempt limit (slowest good reply ~27 s).
 // A timed-out upload that actually landed costs at most a duplicate Drive file on the retry.
-// The sync POST itself is deliberately NOT bounded here: retrying a sync the server already
-// applied can overwrite another device's newer edit of the same record (invoices included) —
-// that trade-off is the owner's decision (RC-65). A property, not a const, so tests can shrink it.
-const SYNC = { failing: false, fails: 0, backoff: 1200, timeoutMs: 45000 };
+// RC-67 (4A) — the sync POST is bounded too (syncLimitMs), so one lost reply no longer holds
+// `saving` (and with it the refresh poll) until the browser gives up. An aborted POST cannot be
+// un-sent: if the server had already applied it, the retry re-sends those records whole and can
+// overwrite another device's edit of the same record made in between (invoices included), or
+// re-create one another device deleted meanwhile. The owner ACCEPTED the replay (RC-67 4A,
+// 2026-09-25). A property, not a const, so tests can shrink it.
+const SYNC = { failing: false, fails: 0, backoff: 1200, timeoutMs: 45000, syncMs: 60000 };   // syncMs — the sync POST's own base: doSync may wait 30 s for the script lock before it runs
+// 60 s → 120 s → 180 s (cap): each consecutive failure lengthens the next attempt's limit, so a
+// genuinely slow large save still lands AND answers instead of being aborted and replayed forever.
+function syncLimitMs() { return SYNC.syncMs * Math.min(SYNC.fails + 1, 3); }
 function retrySyncNow() { clearTimeout(saveTimer); SYNC.backoff = 1200; flushSave(); }   // R25 "Retry now"
 // A Google Sheets cell is hard-capped at 50,000 chars; the backend writes each
 // record's full JSON into one cell, so an oversized record makes the write throw
@@ -26008,26 +26177,30 @@ async function flushSave() {
   let { upserts, deletes, n } = computeChanges();
   if (!n) return;                               // nothing changed
   saving = true; saveGen++;
+  const base0 = lastSaved;   // RC-71 review — the baseline this batch is diffed from; only snapshotSaved (finishLoad) replaces it, so identity marks a switch user / re-login while the batch was out
   // RC-65 (2) — `saving` is released on EVERY exit (finally). A throw from the photo offload, the
   // re-diff or the batch build used to leave it true forever: later edits only set savePending,
   // refreshFromBackend stood down on `saving || savePending`, and the R25 banner never rose. Such a
   // throw happens BEFORE anything is sent, so the unchanged failure/backoff branch below retrying it
-  // is safe. The uploads are bounded (SYNC.timeoutMs). The sync POST is NOT (see SYNC) — a stall
-  // there still holds `saving` until it settles; bounding it is the owner's call (replay risk).
-  let ok = false;
+  // is safe. The uploads are bounded (SYNC.timeoutMs) and so is the sync POST (RC-67 4A, syncLimitMs):
+  // its timeout throws rwTimeout into the catch below → the same failure branch as a network error.
+  let ok = false, sent = null;   // sent — RC-71: the batch once it has gone out (see STALE)
   try {
     try { await offloadDirtyPhotos(upserts); } catch (e) { /* a failed offload never poisons the batch — holdOversized backstops */ }   // base64 photos → Drive before they can ride into a 50k cell (#251)
     ({ upserts, deletes } = computeChanges());    // re-diff: offloaded records shrank to a ~60-byte URL
     holdOversized(upserts);                        // keep any still-oversized record out of the batch (fault isolation)
     if (!Object.keys(upserts).length && !Object.keys(deletes).length) { saving = false; if (savePending) { savePending = false; saveSoon(); } return; }
     const wireUp = {}; Object.keys(upserts).forEach((k) => { wireUp[k] = upserts[k].map((u) => u.rec); });
-    const r = await backendCall('sync', { upserts: wireUp, deletes });
+    sent = (typeof navigator !== 'undefined' && navigator.onLine === false) ? null : upserts;   // RC-71 — from here this batch may reach the server even if the attempt fails. Offline (review): the fetch is refused on the device, nothing leaves it
+    const r = await backendCall('sync', { upserts: wireUp, deletes }, { timeoutMs: syncLimitMs() });   // RC-67 (4A) — bounded; `saving` blocks a second sync until this one settles or aborts
     if (r && r.ok) {
       // Commit ONLY what we sent — edits made mid-flight stay dirty and re-flush.
-      Object.keys(upserts).forEach((k) => upserts[k].forEach((u) => lastSaved[k].set(u.id, u.js)));
-      Object.keys(deletes).forEach((k) => deletes[k].forEach((id) => lastSaved[k].delete(id)));
+      if (lastSaved === base0) {   // RC-71 review — never into a baseline reset while this was out: the new session loaded the older copy, and the next poll adopts this commit
+        Object.keys(upserts).forEach((k) => upserts[k].forEach((u) => lastSaved[k].set(u.id, u.js)));
+        Object.keys(deletes).forEach((k) => deletes[k].forEach((id) => lastSaved[k].delete(id)));
+      }
       ok = true;
-    }
+    } else if (r && r.ok === false && (r.error === 'busy' || authRejected(r))) sent = null;   // RC-71 — refused before doSync wrote anything (lock not taken / credential refused): it can never land late
   } catch (e) { if (!signinNetFailure(e)) logErr('sync', (e && (e.stack || e.message)) || e); /* offline, or a client-side throw → the failure branch below retries */ }
   finally { saving = false; }
   if (ok) {
@@ -26035,6 +26208,7 @@ async function flushSave() {
     SYNC.failing = false; SYNC.fails = 0; SYNC.backoff = 1200; renderSyncBanner();
     if (savePending) { savePending = false; saveSoon(); }      // flush edits made mid-flight
   } else {
+    if (sent && lastSaved === base0) staleNoteFailed(sent);    // RC-71 — sent but not confirmed: it may still land late (STALE)
     savePending = false;                                       // the backoff timer owns the retry now
     if (++SYNC.fails >= 2) SYNC.failing = true;                // confirmed outage → raise the banner
     renderSyncBanner();
@@ -26203,7 +26377,9 @@ function renderLogin(msg) {
   document.getElementById(currentUser ? 'login-pw' : 'login-name').focus();
 }
 function finishLoad() {
+  staleClear();                                                 // RC-71 — a fresh load is a new baseline: a remembered failed batch no longer tells a late landing from this load's own copy
   snapshotSaved();                                              // baseline = what the backend currently holds
+  freshMark();                                                  // RC-67 (2A) — the boot/login load IS a successful refresh; stamped before the render below so the line appears on it
   resetCommsRailForLogin();                                    // the visible fix for "old chats on login": empty the rail on EVERY login mode, before the first main render (Jac 2026-07-17)
   buildIndexes();
   { const wr = state.winEdit && IDX.rental.get(state.winEdit.rentalId); if (wr) winEditResync(wr); else state.winEdit = null; }   // RC-65 review — an editor armed on the instant-cache copy re-derives from the fresh load (no phantom Confirm, no stuck poll)
@@ -26351,7 +26527,7 @@ async function attemptLogin() {
 const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', _role: '', _mintAt: 0, _sent: null, _spent: false };   // RC-70 _mintAt: when this page's key was minted; RC-68 (2A) _sent: the last delivered authStart reply (this page only); _spent: a verify since then has (or may have) used that code
 function pidTokenGet() { try { return localStorage.getItem('jactec.pidToken') || sessionStorage.getItem('jactec.pidToken') || ''; } catch (e) { return ''; } }
 function pidTokenSet(tok, personal) { try { if (personal) { localStorage.setItem('jactec.pidToken', tok); sessionStorage.removeItem('jactec.pidToken'); } else { sessionStorage.setItem('jactec.pidToken', tok); localStorage.removeItem('jactec.pidToken'); } } catch (e) {} }
-function pidTokenClear() { try { flushUserPrefsNow(); } catch (e) {} try { localStorage.removeItem('jactec.pidToken'); sessionStorage.removeItem('jactec.pidToken'); } catch (e) {} try { dataCache.wipe(); } catch (e) {} currentPersonId = ''; state.userPrefs = null; }   // §instant-cache: logout clears the on-device snapshot. §cross-device-sync: flush any pending prefs, then drop identity + the in-memory doc — but do NOT wipe the mirror here. The login-time syncMirrorGuard (tag-guarded) is the SINGLE wipe point, so a load-fail relogin can't delete a never-backed-up mirror (which would then seed an empty baseline). Shared-device safety still holds: a DIFFERENT person's next login (prev !== tag) wipes it, exactly as switchUser already defers to.
+function pidTokenClear() { try { flushUserPrefsNow(); } catch (e) {} try { localStorage.removeItem('jactec.pidToken'); sessionStorage.removeItem('jactec.pidToken'); } catch (e) {} try { dataCache.wipe(); } catch (e) {} currentPersonId = ''; state.userPrefs = null; staleClear(); }   // §instant-cache: logout clears the on-device snapshot. §cross-device-sync: flush any pending prefs, then drop identity + the in-memory doc — but do NOT wipe the mirror here. The login-time syncMirrorGuard (tag-guarded) is the SINGLE wipe point, so a load-fail relogin can't delete a never-backed-up mirror (which would then seed an empty baseline). Shared-device safety still holds: a DIFFERENT person's next login (prev !== tag) wipes it, exactly as switchUser already defers to.
 function pidRosterCache() { try { return JSON.parse(localStorage.getItem('jactec.pidRoster') || '[]'); } catch (e) { return []; } }
 // The verified token becomes the per-call credential: a truthy backendPassword keeps every
 // existing online-guard working, and backendCall sends it as sessionToken (backend prefers it).
@@ -27499,13 +27675,16 @@ function exposeTestApi() {
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
       companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, pickFunnelStage, toggleFunnelMembership, rentalFunnelStage, funnelStageOf, inFunnel, inRental, hasRentalActivity, funnelTrackA, funnelTrackEquip, ensureFunnels, funnelMenuHtml, reachFunnelStage, toggleMemberLead, funnelCurrentStage, funnelLayerDate, funnelLayerNote, ensureFunnelLog, markMembershipSigned, funnelLayerAction, funnelScope, naUrgency, naOpenList, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipActivateCash, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, acctBlockFoot, liftCustomerBlacklist, rentalAccountCustomer, clearRentalCustomer, clearInvoiceCustomer, invoiceRentalLinkFrozen, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsPickerError, gpsUtilRollup, ruCatUtilProxy, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
-      reserveQuoteIfAllowed, winPickDay, winPickSave, winPickBusy, winEditResync, refreshFromBackend,
+      reserveQuoteIfAllowed, winPickDay, winPickSave, winPickBusy, winEditResync, refreshFromBackend, showHoverPreview, hideHoverPreview,   // RC-67 (5A) — drive a real hover preview
+      REFRESH, refreshOnReturn, refreshKick, refreshNoteLoad, pollHandle: () => refreshTimer, setBooting: (b) => { booting = !!b; },
+      resetRefreshState: () => { clearInterval(refreshTimer); refreshTimer = null; clearTimeout(REFRESH.retryTimer); Object.assign(REFRESH, { startAt: 0, retryTimer: null, retryMs: 3000, eventGapMs: 10000, streak: 0, runs: 0, drops: 0, lastErr: '' }); },   // RC-67 3A — poll-trigger seams (test-only, like setBackendPassword); logic-test drives them against a mocked window.fetch only
       tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, openYardCamera, commitYardCapture, nextCategoryId, nextUnitId,
       tripsLS, tripMerge, tripSplit, assignTripDriver, tripLabel, assignStopDriver, tripSetTime,
+      freshLineText, freshTick, freshTickerSync, freshAt: () => _freshAt, freshTimerOn: () => !!_freshTimer, setFreshAt: (t) => { _freshAt = t || 0; },   // RC-67 (2A) — freshness-line seams; the setter is test-only (mirrors setBackendPassword); setBooting sits with the RC-67 3A seams
       tripPushSoon, tripPushNow, loadTripsFromBackend, tripsSyncFooter, setBackendPassword: (pw) => { backendPassword = pw || ''; },   // §2.3 Phase 4 sync — the setter is test-only (mirrors setRole), letting logic-test.mjs exercise the online path via a mocked window.fetch, never a real backend
       adoptScanCaptures, setScanCaps: (m) => { SCAN_CAPS = m || {}; },   // §scan-reconcile — test seam: seed SCAN_CAPS then run adoption (logic-test)
-      flushSave, snapshotSaved, computeChanges, SYNC, saveState: () => ({ saving, savePending, baseline: !!lastSaved }),   // RC-65 (2) — save-pipeline seams; logic-test drives them against a mocked window.fetch only
-      resetSaveState: () => { clearTimeout(saveTimer); saving = false; savePending = false; lastSaved = null; SYNC.failing = false; SYNC.fails = 0; SYNC.backoff = 1200; renderSyncBanner(); },   // lastSaved=null → any stray flushSave stops at its first guard
+      flushSave, snapshotSaved, computeChanges, SYNC, syncLimitMs, STALE, pidTokenClear, saveState: () => ({ saving, savePending, baseline: !!lastSaved }),   // RC-65 (2) — save-pipeline seams; logic-test drives them against a mocked window.fetch only
+      resetSaveState: () => { clearTimeout(saveTimer); saving = false; savePending = false; lastSaved = null; SYNC.failing = false; SYNC.fails = 0; SYNC.backoff = 1200; STALE.byKey.clear(); renderSyncBanner(); },   // lastSaved=null → any stray flushSave stops at its first guard
       autoRunRepair, autoRunAnchorsFor, secToClock, AUTORUN_DAY_START_SEC, AUTORUN_EOD_DEADLINE_SEC, AUTORUN_LOAD_BUFFER_SEC, dispatchPinOf,
       openCustomerForm, renderOverlay, render, printInvoice, invoiceDocHtml, renderInvoicePng, invoiceSheetPng, invoicePrintGroups, invoiceAmendments, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature,
       wranglerSend, wranglerNewChat, openWranglerDock, wranglerDockPollTick, devUnlocked, openWranglerOps, wrOpsAgo, openMobileSignSheet, closeMobileSignSheet, agDraft, __state: state };   // UI drivers for headless screenshot/e2e tests

@@ -1982,6 +1982,7 @@ select.inline-input:focus-visible { outline: 2px solid var(--accent); outline-of
 .winpicker .wp-time { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 9px; padding-bottom: 9px; border-bottom: 1px solid var(--line-soft); }
 .winpicker .wp-time label { font-size: 0.5882rem; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; color: var(--txt-3); }
 .winpicker .wp-time input[type="time"] { height: 30px; border-radius: 8px; border: 1px solid #fff; background: #fff; color: #16181d; font: inherit; font-size: 0.7647rem; padding: 0 8px; color-scheme: light; }   /* rule 16: required input = white until entered */
+.winpicker .wp-time-ro { font-size: 0.7647rem; font-weight: 700; color: var(--txt); }   /* RC-67 (5A) — a hover preview's pickup time: plain text, not a dead field */
 .winpicker .wp-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; }
 .winpicker .wp-month { font-size: 0.7647rem; font-weight: 800; }
 .winpicker .wp-nav { display: flex; gap: 4px; }
@@ -3404,6 +3405,14 @@ body.rw-refreshing #cache-refreshing {
   @keyframes crStripe { to { background-position: 11.31px 0; } }
 }
 :root[data-theme="light"] #cache-refreshing { background: linear-gradient(180deg, #ffffff, #eef1f5); }
+/* ── RC-67 (2A) — R37 the freshness line ("Updated N s ago" → "Catching up…") ────────────────────
+   Painted by headerEl in .header-right, right under the name row, on the hello-name's 4px inset.
+   Low-key by SIZE and WEIGHT, not by dimness: --txt-3 measured 4.41:1 on the blued-steel floor
+   (fails AA), --txt-2 measured 8.8–9.0:1. Read voice (--font), 11px (ladder), regular, no motion (nothing
+   for reduced-motion to calm). body already sets tabular-nums, so the ticking seconds do not jitter.
+   Desktop/tablet: fits inside the existing 100px header (no reflow). */
+#fresh-line { align-self: flex-end; padding-right: 4px; font-family: var(--font); font-size: 0.6471rem; font-weight: 400; line-height: 1.2; color: var(--txt-2); white-space: nowrap; }
+.is-phone .hr-top:not(.has-tabs) + #fresh-line { margin-top: -5px; }   /* phone: an empty tab rail is 0px tall — cancel its 5px column gap so the line costs 13px, not 18 (with tabs the gap stays) */
 
 /* ── LOGIN — phone-verified device identity states (Phase 2, flagOn('phoneIdentity')) —
    EXTEND the data-plate vocabulary above: same steel wells (#0e1217 / #2a313b), orange
