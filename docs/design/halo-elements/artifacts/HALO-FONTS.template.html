@@ -1,0 +1,625 @@
+<title>Halo type × Rental Wrangler</title>
+<style>
+/*FONTS*/
+
+:root{
+  --ground:#080a0e;
+  --deck:#0d1117;
+  --panel:#12171f;
+  --field:#1e202c;
+  --line:#232b35;
+  --line-hi:#33404e;
+  --chrome:#aebac6;
+  --text:#c7d1da;
+  --dim:#79879a;
+  --hot:#f95a5c;
+  --hot-fill:#ff433e;
+  --accent:#ff7e1f;
+  --tan:#c2925a;
+  --cyan:#3fb6c4;
+
+  --mono:ui-monospace,"Cascadia Code","SF Mono",Menlo,Consolas,monospace;
+  --prose:"RW-Archivo","Helvetica Neue",-apple-system,"Segoe UI",sans-serif;
+
+  --step:1.5rem;
+}
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+body{
+  background:var(--ground);
+  color:var(--text);
+  font-family:var(--prose);
+  font-size:15px;
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+
+.wrap{
+  max-width:1040px;
+  margin:0 auto;
+  padding:clamp(28px,5vw,72px) clamp(16px,4vw,32px) 96px;
+  display:flex;
+  flex-direction:column;
+  gap:clamp(48px,7vw,80px);
+}
+
+/* ---- stamped voice: the page's own labels speak canon mono ---------- */
+.stamp{
+  font-family:var(--mono);
+  font-weight:700;
+  font-size:11px;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--dim);
+}
+
+h1,h2,h3{text-wrap:balance;font-weight:700}
+
+/* ================= HERO ============================================== */
+.hero{display:flex;flex-direction:column;gap:28px}
+.hero__kick{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.hero__kick .rule{flex:1;height:1px;background:var(--line);min-width:24px}
+.hero h1{
+  font-family:var(--mono);
+  font-size:clamp(20px,3.2vw,28px);
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  color:#e6edf4;
+  line-height:1.25;
+}
+.hero p{max-width:62ch;color:var(--dim)}
+.hero p b{color:var(--text);font-weight:700}
+
+/* the type ladder — the four candidate faces, same three words ------- */
+.ladder{
+  border:1px solid var(--line);
+  background:linear-gradient(180deg,#0f141b,#0a0e13);
+  display:flex;
+  flex-direction:column;
+}
+.rung{
+  display:grid;
+  grid-template-columns:1fr auto;
+  gap:8px 24px;
+  align-items:center;
+  padding:18px clamp(14px,2.5vw,24px);
+  border-bottom:1px solid var(--line);
+}
+.rung:last-child{border-bottom:0}
+.rung__word{
+  font-family:var(--face);
+  font-weight:var(--face-w,700);
+  letter-spacing:var(--face-track,.02em);
+  font-size:clamp(20px,var(--face-vw,4.4vw),var(--face-max,44px));
+  color:#dce5ee;
+  line-height:1.05;
+  text-transform:uppercase;
+  white-space:nowrap;
+  overflow-x:auto;
+  scrollbar-width:none;
+}
+.rung__word::-webkit-scrollbar{display:none}
+.rung__tag{text-align:right;line-height:1.5}
+.rung__tag em{display:block;font-style:normal;color:var(--tan);letter-spacing:.1em}
+
+/* ================= SECTIONS ========================================= */
+.sec{display:flex;flex-direction:column;gap:22px}
+.sec__head{display:flex;flex-direction:column;gap:6px}
+.sec__head h2{
+  font-family:var(--mono);
+  font-size:15px;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:#e6edf4;
+}
+.sec__head p{color:var(--dim);max-width:66ch}
+
+/* ================= SCHEME PANEL ===================================== */
+.schemes{display:flex;flex-direction:column;gap:28px}
+
+.scheme{
+  border:1px solid var(--line);
+  background:var(--panel);
+  display:grid;
+  grid-template-columns:minmax(0,264px) minmax(0,1fr);
+}
+@media (max-width:760px){.scheme{grid-template-columns:1fr}}
+
+.scheme__spec{
+  border-right:1px solid var(--line);
+  padding:20px;
+  display:flex;
+  flex-direction:column;
+  gap:16px;
+  background:linear-gradient(180deg,#131922,#0f141b);
+}
+@media (max-width:760px){.scheme__spec{border-right:0;border-bottom:1px solid var(--line)}}
+
+.scheme__game{
+  font-family:var(--face);
+  font-weight:var(--face-w,700);
+  letter-spacing:var(--face-track,.02em);
+  font-size:22px;
+  text-transform:uppercase;
+  color:#e6edf4;
+  line-height:1.15;
+}
+.roles{display:flex;flex-direction:column;gap:10px}
+.role{display:flex;flex-direction:column;gap:2px}
+.role b{font-weight:700;color:var(--text);font-size:13px}
+.role b .sub{color:var(--dim);font-weight:400}
+
+.scheme__rig{padding:clamp(14px,2.5vw,22px);min-width:0;overflow-x:auto}
+
+/* ================= THE SURFACE UNDER TEST =========================== */
+/* One Rental Wrangler surface, rebuilt four times. Only the display and
+   body faces change between copies — geometry, colour and the mono
+   stamp voice are held constant, so the type is the only variable. */
+.rig{
+  --hex:#22303f;
+  min-width:520px;
+  background:
+    linear-gradient(0deg,rgba(8,10,14,.45),rgba(8,10,14,.45)),
+    repeating-linear-gradient(60deg,var(--hex) 0 1px,transparent 1px 13px),
+    repeating-linear-gradient(-60deg,var(--hex) 0 1px,transparent 1px 13px),
+    repeating-linear-gradient(0deg,var(--hex) 0 1px,transparent 1px 22px),
+    var(--deck);
+  border:1px solid var(--line-hi);
+  padding:16px;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+
+/* housing bar — the red banner from the Halo kit */
+.housing{
+  display:flex;
+  align-items:center;
+  gap:14px;
+  background:linear-gradient(180deg,#2a2028,#1b1419);
+  border:1px solid #3a2a2e;
+  border-left:4px solid var(--hot);
+  padding:9px 14px;
+}
+.housing__title{
+  font-family:var(--face);
+  font-weight:var(--face-w,700);
+  letter-spacing:var(--face-track,.02em);
+  font-size:19px;
+  text-transform:uppercase;
+  color:#f2d7d5;
+  white-space:nowrap;
+}
+.housing__alert{
+  font-family:var(--face);
+  font-weight:var(--face-w,700);
+  letter-spacing:var(--face-track,.02em);
+  font-size:15px;
+  text-transform:uppercase;
+  color:var(--hot);
+  white-space:nowrap;
+}
+.bars{display:flex;gap:5px;margin-left:auto}
+.bars i{display:block;width:26px;height:9px;background:var(--hot-fill)}
+.bars i:nth-child(n+4){background:#4a2226}
+
+/* the unit board */
+.board{
+  background:linear-gradient(180deg,#232c37,#161c24);
+  border:1px solid var(--line-hi);
+  padding:10px 14px;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  align-items:center;
+  gap:4px 16px;
+}
+.board__unit{
+  font-family:var(--face);
+  font-weight:var(--face-w,700);
+  letter-spacing:var(--face-track,.02em);
+  font-size:26px;
+  line-height:1.05;
+  text-transform:uppercase;
+  color:#e9f0f6;
+}
+.board__meta{
+  grid-column:1;
+  font-family:var(--body);
+  font-size:11.5px;
+  letter-spacing:.05em;
+  text-transform:uppercase;
+  color:#8fa0b2;
+  font-variant-numeric:tabular-nums;
+}
+.board__ctrls{grid-row:1/3;grid-column:2;display:flex;gap:6px}
+.board__ctrls i{
+  width:24px;height:24px;
+  border:1px solid #46586b;
+  background:#111820;
+  display:grid;place-items:center;
+}
+.board__ctrls i::after{
+  content:"";width:9px;height:6px;background:var(--cyan);
+  clip-path:polygon(0 0,100% 0,50% 100%);
+}
+
+/* slot rack */
+.slots{display:flex;gap:7px}
+.slots i{
+  width:16px;height:12px;
+  border:1.5px solid #2f5f68;
+  border-left:0;border-right:0;
+  clip-path:polygon(0 0,55% 0,100% 50%,55% 100%,0 100%,45% 50%);
+  background:#2f5f68;
+}
+.slots i:nth-child(n+6){background:#1e3238;border-color:#1e3238}
+
+/* prose line — the body face doing its real job */
+.rig__line{
+  font-family:var(--body);
+  font-size:13px;
+  color:var(--text);
+  max-width:60ch;
+}
+.rig__line b{font-weight:700}
+
+/* chips — mono stamp voice, identical in all four */
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{
+  font-family:var(--mono);
+  font-weight:700;
+  font-size:11px;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  padding:4px 9px;
+  border:1px solid var(--line-hi);
+  color:var(--dim);
+  font-variant-numeric:tabular-nums;
+}
+.chip--hot{border-color:#7a2f31;color:var(--hot)}
+.chip--acc{border-color:#7a4a1c;color:var(--accent)}
+
+/* ================= VERDICT ========================================== */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+.card{
+  border:1px solid var(--line);
+  border-top:2px solid var(--edge-hue,var(--line-hi));
+  background:var(--panel);
+  padding:18px;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.card h3{font-size:14px;letter-spacing:.02em;color:#e6edf4}
+.card p{font-size:13.5px;color:var(--dim)}
+.card--yes{--edge-hue:var(--accent)}
+.card--maybe{--edge-hue:var(--tan)}
+.card--no{--edge-hue:#4a5666}
+
+.note{
+  border-left:2px solid var(--tan);
+  padding:2px 0 2px 16px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  color:var(--dim);
+  font-size:13.5px;
+  max-width:72ch;
+}
+.note b{color:var(--text)}
+
+table{border-collapse:collapse;width:100%;font-size:13px}
+.tablewrap{overflow-x:auto;border:1px solid var(--line)}
+th,td{text-align:left;padding:9px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);font-weight:700;background:#0f141b}
+tr:last-child td{border-bottom:0}
+td b{color:#e6edf4}
+td .sub{color:var(--dim)}
+
+a{color:var(--accent)}
+a:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---- the four candidate schemes ------------------------------------ */
+.s-ce{--face:"RW-Orbitron",var(--prose);--body:"RW-Overpass",var(--prose);--face-w:700;--face-track:.045em;--face-vw:3.4vw;--face-max:34px}
+.s-h3{--face:"RW-ChakraPetch",var(--prose);--body:"RW-ChakraPetch",var(--prose);--face-w:700;--face-track:.03em;--face-vw:4.8vw;--face-max:48px}
+.s-rc{--face:"RW-ArchivoNarrow",var(--prose);--body:"RW-ArchivoNarrow",var(--prose);--face-w:700;--face-track:.035em;--face-vw:5vw;--face-max:50px}
+.s-in{--face:"RW-Saira",var(--prose);--body:"RW-Archivo",var(--prose);--face-w:700;--face-track:.02em;--face-vw:4.4vw;--face-max:44px}
+</style>
+
+<div class="wrap">
+
+  <!-- ============================ HERO ============================ -->
+  <header class="hero">
+    <div class="hero__kick">
+      <span class="stamp">Type study · halo elements kit</span>
+      <span class="rule"></span>
+      <span class="stamp">2026-08-10</span>
+    </div>
+    <h1>Four Halo eras, one Rental Wrangler surface</h1>
+    <p>The Halo kit already contradicts canon on type — ledger&nbsp;#214 pins its faces as
+      <b>Roboto/Consolas</b>, and&nbsp;#215 maps <code>MOCKUP</code>&nbsp;→&nbsp;<code>CANON</code> as
+      Archivo&nbsp;+&nbsp;mono. That mapping treats type as a swap with no candidate on the other side.
+      This is the candidate list: the faces the games actually shipped, matched to open-source
+      stand-ins, driving the same surface four times.</p>
+
+    <div class="ladder">
+      <div class="rung s-ce">
+        <div class="rung__word">Rental Wrangler</div>
+        <div class="rung__tag stamp">Combat Evolved<em>Handel Gothic</em></div>
+      </div>
+      <div class="rung s-h3">
+        <div class="rung__word">Rental Wrangler</div>
+        <div class="rung__tag stamp">Halo 3 · ODST<em>ITC Conduit</em></div>
+      </div>
+      <div class="rung s-rc">
+        <div class="rung__word">Rental Wrangler</div>
+        <div class="rung__tag stamp">Reach<em>TV Nord</em></div>
+      </div>
+      <div class="rung s-in">
+        <div class="rung__word">Rental Wrangler</div>
+        <div class="rung__tag stamp">Infinite<em>Industry</em></div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========================= THE SURFACE ========================= -->
+  <section class="sec">
+    <div class="sec__head">
+      <h2>The same surface, four times</h2>
+      <p>Field Calls housing, a unit board, a slot rack, one prose line, three chips. Geometry,
+        colour and the mono stamp voice are frozen across all four — the display and body faces are
+        the only variable, so anything you see is the type doing it.</p>
+    </div>
+
+    <div class="schemes">
+
+      <!-- ---------------- CE ---------------- -->
+      <article class="scheme s-ce">
+        <div class="scheme__spec">
+          <div>
+            <div class="stamp">01 · Combat Evolved</div>
+            <div class="scheme__game">Handel Gothic</div>
+          </div>
+          <div class="roles">
+            <div class="role"><span class="stamp">Display</span>
+              <b>Handel Gothic <span class="sub">→ Orbitron</span></b></div>
+            <div class="role"><span class="stamp">Body</span>
+              <b>Highway Gothic <span class="sub">→ Overpass</span></b></div>
+            <div class="role"><span class="stamp">Stamp</span>
+              <b>Canon mono <span class="sub">unchanged</span></b></div>
+          </div>
+          <p class="rig__line" style="--body:var(--prose);font-size:12.5px;color:var(--dim)">
+            Overpass is drawn from the real Highway Gothic, so the body half is the one
+            authentic face in this whole study — it is literally road-sign type, which is
+            already the voice of a rental yard.</p>
+        </div>
+        <div class="scheme__rig">
+          <div class="rig">
+            <div class="housing">
+              <span class="housing__title">Field Calls</span>
+              <span class="housing__alert">Parts needed</span>
+              <span class="bars"><i></i><i></i><i></i><i></i><i></i></span>
+            </div>
+            <div class="board">
+              <span class="board__unit">Jambalaya</span>
+              <span class="board__meta">RWO-4471 · Excavator 8K · 1,224 hrs · Cat 336</span>
+              <span class="board__ctrls"><i></i><i></i><i></i></span>
+            </div>
+            <div class="slots"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <p class="rig__line">8k Excavator · <b>Passed</b> inspection 06 Aug · available from
+              the Sulphur yard Monday.</p>
+            <div class="chips">
+              <span class="chip chip--hot">Overdue 3d</span>
+              <span class="chip">Reserved</span>
+              <span class="chip chip--acc">Round up</span>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- ---------------- H3 ---------------- -->
+      <article class="scheme s-h3">
+        <div class="scheme__spec">
+          <div>
+            <div class="stamp">02 · Halo 3 · ODST · Wars</div>
+            <div class="scheme__game">ITC Conduit</div>
+          </div>
+          <div class="roles">
+            <div class="role"><span class="stamp">Display</span>
+              <b>ITC Conduit <span class="sub">→ Chakra Petch</span></b></div>
+            <div class="role"><span class="stamp">Body</span>
+              <b>ITC Conduit <span class="sub">→ Chakra Petch</span></b></div>
+            <div class="role"><span class="stamp">Stamp</span>
+              <b>Canon mono <span class="sub">unchanged</span></b></div>
+          </div>
+          <p class="rig__line" style="--body:var(--prose);font-size:12.5px;color:var(--dim)">
+            One face doing both jobs — the most "Halo UI" of the four, and the one that fights
+            the mono stamp hardest, because it is already halfway to being a mono itself.</p>
+        </div>
+        <div class="scheme__rig">
+          <div class="rig">
+            <div class="housing">
+              <span class="housing__title">Field Calls</span>
+              <span class="housing__alert">Parts needed</span>
+              <span class="bars"><i></i><i></i><i></i><i></i><i></i></span>
+            </div>
+            <div class="board">
+              <span class="board__unit">Jambalaya</span>
+              <span class="board__meta">RWO-4471 · Excavator 8K · 1,224 hrs · Cat 336</span>
+              <span class="board__ctrls"><i></i><i></i><i></i></span>
+            </div>
+            <div class="slots"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <p class="rig__line">8k Excavator · <b>Passed</b> inspection 06 Aug · available from
+              the Sulphur yard Monday.</p>
+            <div class="chips">
+              <span class="chip chip--hot">Overdue 3d</span>
+              <span class="chip">Reserved</span>
+              <span class="chip chip--acc">Round up</span>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- ---------------- Reach ---------------- -->
+      <article class="scheme s-rc">
+        <div class="scheme__spec">
+          <div>
+            <div class="stamp">03 · Reach</div>
+            <div class="scheme__game">TV Nord</div>
+          </div>
+          <div class="roles">
+            <div class="role"><span class="stamp">Display</span>
+              <b>TV Nord <span class="sub">→ Archivo Narrow</span></b></div>
+            <div class="role"><span class="stamp">Body</span>
+              <b>TV Nord <span class="sub">→ Archivo Narrow</span></b></div>
+            <div class="role"><span class="stamp">Stamp</span>
+              <b>Canon mono <span class="sub">unchanged</span></b></div>
+          </div>
+          <p class="rig__line" style="--body:var(--prose);font-size:12.5px;color:var(--dim)">
+            The stand-in here is the locked body voice's own narrow cut — so this scheme costs
+            no new family, only a second width of Archivo.</p>
+        </div>
+        <div class="scheme__rig">
+          <div class="rig">
+            <div class="housing">
+              <span class="housing__title">Field Calls</span>
+              <span class="housing__alert">Parts needed</span>
+              <span class="bars"><i></i><i></i><i></i><i></i><i></i></span>
+            </div>
+            <div class="board">
+              <span class="board__unit">Jambalaya</span>
+              <span class="board__meta">RWO-4471 · Excavator 8K · 1,224 hrs · Cat 336</span>
+              <span class="board__ctrls"><i></i><i></i><i></i></span>
+            </div>
+            <div class="slots"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <p class="rig__line">8k Excavator · <b>Passed</b> inspection 06 Aug · available from
+              the Sulphur yard Monday.</p>
+            <div class="chips">
+              <span class="chip chip--hot">Overdue 3d</span>
+              <span class="chip">Reserved</span>
+              <span class="chip chip--acc">Round up</span>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- ---------------- Infinite ---------------- -->
+      <article class="scheme s-in">
+        <div class="scheme__spec">
+          <div>
+            <div class="stamp">04 · Infinite</div>
+            <div class="scheme__game">Industry + Normative</div>
+          </div>
+          <div class="roles">
+            <div class="role"><span class="stamp">Display</span>
+              <b>Industry <span class="sub">→ Saira</span></b></div>
+            <div class="role"><span class="stamp">Body</span>
+              <b>Normative Pro <span class="sub">→ Archivo (canon)</span></b></div>
+            <div class="role"><span class="stamp">Stamp</span>
+              <b>Canon mono <span class="sub">unchanged</span></b></div>
+          </div>
+          <p class="rig__line" style="--body:var(--prose);font-size:12.5px;color:var(--dim)">
+            Normative Pro and Archivo are the same animal — a square-terminal neo-grotesque built
+            for dark panels. Two thirds of this scheme is already what the app runs.</p>
+        </div>
+        <div class="scheme__rig">
+          <div class="rig">
+            <div class="housing">
+              <span class="housing__title">Field Calls</span>
+              <span class="housing__alert">Parts needed</span>
+              <span class="bars"><i></i><i></i><i></i><i></i><i></i></span>
+            </div>
+            <div class="board">
+              <span class="board__unit">Jambalaya</span>
+              <span class="board__meta">RWO-4471 · Excavator 8K · 1,224 hrs · Cat 336</span>
+              <span class="board__ctrls"><i></i><i></i><i></i></span>
+            </div>
+            <div class="slots"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <p class="rig__line">8k Excavator · <b>Passed</b> inspection 06 Aug · available from
+              the Sulphur yard Monday.</p>
+            <div class="chips">
+              <span class="chip chip--hot">Overdue 3d</span>
+              <span class="chip">Reserved</span>
+              <span class="chip chip--acc">Round up</span>
+            </div>
+          </div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ========================= THE READ ========================= -->
+  <section class="sec">
+    <div class="sec__head">
+      <h2>The read</h2>
+      <p>Judged against the two standing constraints: <b>"industrial rental yard before western"</b>,
+        and <b>never a third family</b> (<code>wrangler-style</code> §2).</p>
+    </div>
+    <div class="cards">
+      <div class="card card--yes">
+        <div class="stamp">Recommend</div>
+        <h3>Infinite — Industry over Archivo</h3>
+        <p>It is the only scheme that adds nothing to the family count in the body: Normative and
+          Archivo are near-interchangeable, so the change is one display face on housing titles and
+          unit names. Yard-legible at 11px, and it never reads western.</p>
+      </div>
+      <div class="card card--maybe">
+        <div class="stamp">Strong second</div>
+        <h3>Reach — TV Nord</h3>
+        <p>Zero new families: Archivo Narrow is a width of a face already locked. Buys real
+          condensed display room for long unit names, which the board needs. Least distinctive of
+          the four — it looks like good signage, not like Halo.</p>
+      </div>
+      <div class="card card--no">
+        <div class="stamp">Reject for UI</div>
+        <h3>Combat Evolved &amp; Halo 3</h3>
+        <p>Orbitron's wide round caps eat the housing bar and cost the descriptor line its
+          space. Conduit is the most Halo-looking, and that is the problem — it collides with the
+          mono stamp voice, so chips and labels stop being a separate register.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================= LICENSING ========================= -->
+  <section class="sec">
+    <div class="sec__head">
+      <h2>What you are actually looking at</h2>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Halo face</th><th>Status</th><th>Rendered here as</th><th>License</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><b>Handel Gothic</b><br><span class="sub">CE, H2 headings</span></td>
+              <td>Commercial · Monotype</td><td>Orbitron 700</td><td>OFL — free, embeddable</td></tr>
+          <tr><td><b>Highway Gothic</b><br><span class="sub">CE body</span></td>
+              <td>FHWA public design</td><td>Overpass 400/600</td><td>OFL — Overpass is drawn from it</td></tr>
+          <tr><td><b>ITC Conduit</b><br><span class="sub">H2/H3/ODST/Wars</span></td>
+              <td>Commercial · Monotype</td><td>Chakra Petch 400/600/700</td><td>OFL</td></tr>
+          <tr><td><b>TV Nord</b><br><span class="sub">Reach</span></td>
+              <td>Commercial · URW</td><td>Archivo Narrow 400/700</td><td>OFL</td></tr>
+          <tr><td><b>Industry</b><br><span class="sub">Infinite headings</span></td>
+              <td>Commercial · Fort Foundry</td><td>Saira 600/700</td><td>OFL</td></tr>
+          <tr><td><b>Normative Pro</b><br><span class="sub">Infinite body</span></td>
+              <td>Commercial · Rosetta</td><td>Archivo 400/700 <span class="sub">(canon)</span></td><td>OFL</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note">
+      <p><b>None of the real Halo faces are here.</b> Every one of them is a licensed retail font;
+        buying one for a public web app means a webfont licence priced per pageview, and the app is
+        served from public Pages. Everything above is an OFL stand-in, embedded in this page as a
+        data URI so it renders without a CDN.</p>
+      <p><b>The stand-ins are the shippable answer, not a placeholder for one.</b> Swapping any of
+        them into the app is one Google Fonts line in <code>index.html</code>, the same way Archivo
+        already ships (<code>wrangler-style</code> §2). If a real face is ever bought, it drops into
+        the same slot.</p>
+      <p><b>Nothing here is a decision yet.</b> No ledger row was added — pick one and it gets
+        written up as a MOCKUP-mode type row against #215.</p>
+    </div>
+  </section>
+
+</div>
