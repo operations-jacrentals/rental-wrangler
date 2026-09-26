@@ -3921,17 +3921,19 @@ try {
         await poll({ invoices: [nStored] });
         ok(!('amountPaid' in n) && n.note === 'RC71 N1' && !dirtyUp('invoices', 'INV-RC71-N'), 'RC-71 (a2): a failed batch re-sent unchanged and stored normalized by the server is adopted as stored — never re-sent every poll');
 
-        // (L) a sealed invoice: L1 fails; the office then seals its pricing (stripeLockInvoice_ writes only locked +
-        //     lineItemsSig, both server-owned) while this device's newer line-item edit commits — but a sealed invoice keeps
-        //     its own line items, so every poll still shows L1's. The guard re-sends once, then the seal is adopted
+        // (L) a sealed invoice: L1 fails TWICE (two sends that may each land); the office then seals its pricing
+        //     (stripeLockInvoice_ writes only locked + lineItemsSig, both server-owned) while this device's newer line-item
+        //     edit commits — but a sealed invoice keeps its own line items (Code.gs LOCKED_INVOICE_FIELDS), so every poll
+        //     still shows L1's. A re-send can never change a frozen field: the seal is adopted at once, nothing is re-sent
         T.SYNC.backoff = 20000; l.note = 'RC71 L1'; plan = ['hang']; await bounded(T.flushSave(), 3000);
+        plan = ['hang']; await bounded(T.flushSave(), 3000);
         const s1l = JSON.parse(JSON.stringify(l));
         l.lineItems = l.lineItems.concat([{ lid: 'l2', desc: 'Extension', amount: 25 }]); plan = ['ok']; await bounded(T.flushSave(), 3000);
         const sealed = () => Object.assign(JSON.parse(JSON.stringify(s1l)), { locked: true, lineItemsSig: 'sig-rc71' });
         seen.length = 0; const lockSeen = [];
         for (let i = 0; i < 3; i++) { await poll({ invoices: [sealed()] }); await waitFor(() => !dirtyUp('invoices', 'INV-RC71-L'), 3000); lockSeen.push(l.locked === true); }
         const reL = syncs().filter((s) => ((s.upserts || {}).invoices || []).some((r) => r.invoiceId === 'INV-RC71-L')).length;
-        ok(l.locked === true && lockSeen[1] === true && reL === 1, `RC-71 (L): a sealed invoice is adopted within one extra poll — one re-send, never a 6 min re-send loop (locked after polls: ${lockSeen.join(',')}; re-sends: ${reL})`);
+        ok(l.locked === true && lockSeen[0] === true && reL === 0, `RC-71 (L): a sealed invoice is adopted on the first poll — the frozen fields are never fought, however many failed sends are remembered (locked after polls: ${lockSeen.join(',')}; re-sends: ${reL})`);
 
         // (h) a batch the server refused outright never ran (doSync never took the lock / the credential was refused before
         //     dispatch), so it can never land: not remembered. It stays queued for the retry
@@ -3942,12 +3944,17 @@ try {
         ok(T.SYNC.fails === 2 && hBusy === '' && hAuth === '' && !!dirtyUp('vendors', 'VEN-RC71-H'), `RC-71 (h): a batch the server refused outright (busy / a refused credential) is not remembered — it never ran (${hBusy || '-'} / ${hAuth || '-'})`);
         plan = ['ok']; await bounded(T.flushSave(), 3000);
 
-        // (d) the memory ages out: past STALE.ms the same late landing is adopted exactly as before RC-71
+        // (d) the memory ages out: an entry whose window has closed is still checked by the first load that began after
+        //     it (a landing inside the window is caught however late it is first seen), then dropped — past that, the same
+        //     bytes are adopted exactly as before RC-71
         ok(T.STALE.ms === 6 * 60 * 1000, `RC-71 (d): failed batches are remembered for 6 min (${T.STALE.ms} ms)`);
         const s1d = await abortThenCommit(d, { name: 'RC71 D1' }, { name: 'RC71 D2' });
         T.STALE.byKey.forEach((m) => m.forEach((e) => { e.at -= T.STALE.ms + 1000; }));   // age every entry past the window
         await poll({ vendors: [s1d] });
-        ok(d.name === 'RC71 D1' && T.STALE.byKey.size === 0, `RC-71 (d): after the window a late landing is adopted as before and the expired entries are dropped (${d.name}; ${T.STALE.byKey.size} left)`);
+        const dFirst = d.name, dLeft = T.STALE.byKey.size;
+        await waitFor(() => !dirtyUp('vendors', 'VEN-RC71-D'), 5000);
+        await poll({ vendors: [s1d] });
+        ok(dFirst === 'RC71 D2' && dLeft === 0 && d.name === 'RC71 D1', `RC-71 (d): an expired entry is checked by the first load after its window, then dropped — after that the same bytes are adopted as before (${dFirst} -> ${d.name}; ${dLeft} left)`);
 
         // (e) sign-out forgets: nothing remembered survives pidTokenClear (switchUser + finishLoad — the source guard at the end)
         const s1e = await abortThenCommit(a, { name: 'RC71 E1' }, { name: 'RC71 E2' });
@@ -3977,6 +3984,195 @@ try {
         IDS.forEach(([k, id]) => drop(k, id));
         await sleep(250); window.fetch = realFetch;
         window.JT.snapshotSaved && window.JT.snapshotSaved();
+      }
+    }
+    // RC-71 review — the stale-landing guard's own edges. (Q1-Q3) a poll that sees this device's OWN committed retry of
+    // a failed send (stored by the server without the money-outcome fields it owns, so not byte-equal to the baseline)
+    // never uses up that failed send: its real late landing is still caught after the newer save / the merge-delete
+    // commits. (Q5) RC-65: a pending merge-delete is not resurrected by a server copy that is unchanged except for the
+    // empty server-owned fields doSync drops on an insert; a baseline holding a real payment (Q5b), or a copy another
+    // device has paid since (Q5c), still comes back visibly.
+    // (Q4) an entry is dropped only once a load that began after its window closed has been checked against it — never
+    // by wall clock while every poll was suspended (a phone in a pocket). (Q6/Q7) a send that straddles a baseline reset
+    // (switch user, re-login) is booked against neither the new session's memory nor its baseline. (M) on a sealed
+    // invoice a landing that also reverted a field the server does NOT freeze still fires, and on an unsealed one a
+    // landing that reverted only the line items does (M2). (O) a send made while the
+    // device is offline never left: it is not remembered; one that failed while online still is. Mocked window.fetch only.
+    {
+      const realFetch = window.fetch; const seen = []; let plan = []; let loadData = {}; let loadMode = 'ok'; const held = [];
+      window.fetch = (u, init) => {
+        if (!String(u).includes('script.google.com')) return realFetch(u, init);
+        let body = {}; try { body = JSON.parse((init && init.body) || '{}'); } catch (e) {}
+        seen.push(body);
+        if (body.action === 'load') return Promise.resolve(new Response(JSON.stringify(loadMode === 'lost' ? { ok: false, error: 'server-error' } : { ok: true, data: loadData }), { status: 200 }));
+        if (body.action === 'getChats') return Promise.resolve(new Response(JSON.stringify({ ok: true, chats: JSON.parse(JSON.stringify(T.__state.chat.chats)) }), { status: 200 }));
+        if (body.action !== 'sync') return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+        const step = plan.shift() || 'ok';
+        if (step === 'hang') return new Promise((_, rej) => { if (init && init.signal) init.signal.addEventListener('abort', () => rej(new DOMException('aborted', 'AbortError'))); });
+        if (step === 'hold') return new Promise((res) => { held.push(() => res(new Response(JSON.stringify({ ok: true }), { status: 200 }))); });
+        if (step === 'neterr') return Promise.reject(new TypeError('Failed to fetch'));
+        return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const bounded = (p, ms) => Promise.race([p, sleep(ms).then(() => 'STUCK')]);
+      const waitFor = async (fn, ms) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { if (fn()) return true; await sleep(10); } return !!fn(); };
+      const st = T.__state, ov = st.overlay, we = st.winEdit, up0 = st.userPrefs;
+      const ready = () => { st.overlay = null; st.winEdit = null; if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); };
+      const poll = async (data) => { loadMode = 'ok'; loadData = data; ready(); return bounded(T.refreshFromBackend(), 3000); };
+      const dirtyUp = (k, id) => (T.computeChanges().upserts[k] || []).find((u) => u.id === id);
+      const delQueued = (k, id) => (T.computeChanges().deletes[k] || []).includes(id);
+      const counts = (k, id) => { const m = T.STALE.byKey.get(k + '\u0001' + id); return m ? [...m.values()].map((e) => e.n).join(',') : ''; };
+      const syncs = () => seen.filter((b) => b.action === 'sync');
+      const loads = () => seen.filter((b) => b.action === 'load').length;
+      const origMs = T.SYNC.timeoutMs, origSyncMs = T.SYNC.syncMs, BASE = 150;
+      const IDX_OF = { vendors: 'vendor', invoices: 'invoice' }, ID_OF = { vendors: 'vendorId', invoices: 'invoiceId' };
+      const add = (k, rec) => { T.DATA[k].push(rec); T.IDX[IDX_OF[k]] && T.IDX[IDX_OF[k]].set(rec[ID_OF[k]], rec); };
+      const drop = (k, id) => { for (let j = T.DATA[k].length - 1; j >= 0; j--) if (T.DATA[k][j][ID_OF[k]] === id) T.DATA[k].splice(j, 1); T.IDX[IDX_OF[k]] && T.IDX[IDX_OF[k]].delete(id); };
+      const inv = (id) => ({ invoiceId: id, customerId: 'C0009', rentalIds: [], date: '2026-09-25', dueDate: '2026-09-25', po: '', amountPaid: 0, lineItems: [{ lid: 'l1', desc: 'Day', amount: 100 }], note: 'v0' });
+      const stored = (rec) => { const c = JSON.parse(JSON.stringify(rec)); delete c.amountPaid; return c; };   // doSync on an insert: the server-owned amountPaid is dropped
+      const IDS = [['invoices', 'INV-RVW-Q1'], ['invoices', 'INV-RVW-Q2'], ['invoices', 'INV-RVW-Q3'], ['invoices', 'INV-RVW-Q5'], ['invoices', 'INV-RVW-Q5B'], ['invoices', 'INV-RVW-Q5C'], ['invoices', 'INV-RVW-M'], ['vendors', 'VEN-RVW-Q4'], ['vendors', 'VEN-RVW-Q4X'], ['invoices', 'INV-RVW-MU'], ['vendors', 'VEN-RVW-Q6'], ['vendors', 'VEN-RVW-Q7'], ['vendors', 'VEN-RVW-O']];
+      const hang = async () => { T.SYNC.backoff = 20000; plan = ['hang']; await bounded(T.flushSave(), 3000); };
+      const commit = async () => { plan = ['ok']; await bounded(T.flushSave(), 3000); };
+      const relogin = (k, rec, loaded) => { T.pidTokenClear(); Object.keys(rec).forEach((kk) => delete rec[kk]); Object.assign(rec, loaded); T.snapshotSaved(); T.setBackendPassword('TEST-PW'); };   // what switch user + the next login's finishLoad do to the save state
+      try {
+        T.resetSaveState(); T.SYNC.timeoutMs = BASE; T.SYNC.syncMs = BASE; T.setBackendPassword('TEST-PW');
+        const q1 = inv('INV-RVW-Q1'), q2 = inv('INV-RVW-Q2'), q3 = inv('INV-RVW-Q3'), q5 = inv('INV-RVW-Q5'), mm = inv('INV-RVW-M');
+        const q5b = Object.assign(inv('INV-RVW-Q5B'), { amountPaid: 100, paid: true, paidAt: '2026-09-25T12:00:00Z', paymentMethod: 'Cash' });
+        const q5c = inv('INV-RVW-Q5C');
+        [q1, q2, q3, q5, q5b, q5c, mm].forEach((r) => add('invoices', r));
+        T.snapshotSaved();
+
+        // (Q1) B1 {V1} fails after it was sent; B2 re-sends V1 and commits; V2 is in its debounce when a poll sees B2's
+        //      stored copy; V2 commits; B1 lands late
+        q1.note = 'Q1 V1'; await hang(); const b1q1 = stored(q1);
+        await commit();
+        q1.note = 'Q1 V2';
+        await poll({ invoices: [b1q1] });
+        const q1c1 = counts('invoices', 'INV-RVW-Q1');
+        await commit();
+        await poll({ invoices: [b1q1] });
+        ok(q1.note === 'Q1 V2' && q1c1 === '1', `RC-71 review (Q1): a poll that sees this device's own committed retry does not use up the failed send — its late landing still does not revert the newer save (note ${q1.note}; remembered after the retry's copy ${q1c1 || '-'})`);
+        await waitFor(() => !dirtyUp('invoices', 'INV-RVW-Q1'), 5000);
+
+        // (Q2) the same, but the invoice is merged away and a poll sees B2's copy inside the delete's debounce; the delete
+        //      commits; B1 lands late with no row left
+        q2.note = 'Q2 V1'; await hang(); const b1q2 = stored(q2);
+        await commit();
+        drop('invoices', 'INV-RVW-Q2');
+        await poll({ invoices: [b1q2] });
+        const q2held = !T.IDX.invoice.has('INV-RVW-Q2') && delQueued('invoices', 'INV-RVW-Q2'), q2c1 = counts('invoices', 'INV-RVW-Q2');
+        await commit();
+        await poll({ invoices: [b1q2] });
+        ok(q2held && q2c1 === '1' && !T.IDX.invoice.has('INV-RVW-Q2') && !T.DATA.invoices.some((iv) => iv.invoiceId === 'INV-RVW-Q2'), `RC-71 review (Q2): the failed send's late landing does not resurrect the merged invoice after a poll saw the committed retry (delete kept at poll 1 ${q2held}; remembered ${q2c1 || '-'}; back ${T.IDX.invoice.has('INV-RVW-Q2')})`);
+        await waitFor(() => !delQueued('invoices', 'INV-RVW-Q2'), 5000);
+
+        // (Q3) outage: B1 {V1} fails; B2 {V1} commits; V2's own send fails too; a poll in its backoff sees B2's copy;
+        //      V2 commits; B1 lands late
+        q3.note = 'Q3 V1'; await hang(); const b1q3 = stored(q3);
+        await commit();
+        q3.note = 'Q3 V2'; await hang();
+        await poll({ invoices: [b1q3] });
+        await commit();
+        await poll({ invoices: [b1q3] });
+        ok(q3.note === 'Q3 V2', `RC-71 review (Q3): the late landing does not revert the newer save when a poll during a later backoff saw the committed retry (note ${q3.note})`);
+        await waitFor(() => !dirtyUp('invoices', 'INV-RVW-Q3'), 5000);
+
+        // (Q5) RC-65, no failed send: V1 commits normally (stored without amountPaid); the invoice is merged away before any
+        //      poll adopted the stored copy; a poll sees that unchanged server copy inside the delete's debounce
+        q5.note = 'Q5 V1'; await commit(); const s5 = stored(q5);
+        drop('invoices', 'INV-RVW-Q5');
+        await poll({ invoices: [s5] });
+        ok(!T.IDX.invoice.has('INV-RVW-Q5') && delQueued('invoices', 'INV-RVW-Q5'), `RC-71 review (Q5): a pending merge-delete is not resurrected by the unchanged server copy of a new invoice stored without its empty amountPaid (back ${T.IDX.invoice.has('INV-RVW-Q5')})`);
+        await commit();
+        // (Q5b) money: the baseline holds a REAL payment and the server copy carries none — that is a change, not the
+        //       insert's dropped zero: it comes back visibly, as RC-65 decided
+        drop('invoices', 'INV-RVW-Q5B');
+        const s5b = stored(q5b); ['paid', 'paidAt', 'paymentMethod'].forEach((f) => delete s5b[f]);
+        await poll({ invoices: [s5b] });
+        ok(T.IDX.invoice.has('INV-RVW-Q5B') && !delQueued('invoices', 'INV-RVW-Q5B'), `RC-71 review (Q5b): a pending delete over a baseline holding a real payment is NOT kept when the server copy lost it — it comes back visibly (back ${T.IDX.invoice.has('INV-RVW-Q5B')})`);
+        // (Q5c) money: a new invoice commits (its empty amountPaid dropped), is merged away here, and ANOTHER device records
+        //       a payment on it before the delete goes out — that copy carries a server-owned field: it comes back visibly
+        q5c.note = 'Q5C V1'; await commit();
+        drop('invoices', 'INV-RVW-Q5C');
+        await poll({ invoices: [Object.assign(stored(q5c), { amountPaid: 100, paid: true, paidAt: '2026-09-25T12:00:00Z', paymentMethod: 'Cash' })] });
+        const q5cBack = T.IDX.invoice.get('INV-RVW-Q5C');
+        ok(!!q5cBack && q5cBack.paid === true && !delQueued('invoices', 'INV-RVW-Q5C'), `RC-71 review (Q5c): a pending merge-delete never erases a new invoice another device has since PAID — it comes back visibly (back ${!!q5cBack})`);
+
+        // (M) sealed invoice, but the landing also reverted a field the server does not freeze: M1 fails; M2 (a note) commits;
+        //     the office seals; every poll shows M1's note under the seal → the guard still fires and re-sends M2
+        mm.note = 'M1'; await hang(); const s1m = JSON.parse(JSON.stringify(mm));
+        mm.note = 'M2'; await commit();
+        await poll({ invoices: [Object.assign(s1m, { locked: true, lineItemsSig: 'sig-rvw' })] });
+        ok(mm.note === 'M2' && !!dirtyUp('invoices', 'INV-RVW-M'), `RC-71 review (M): on a sealed invoice a late landing that reverted an unfrozen field (the note) is still caught and re-sent (note ${mm.note})`);
+        await waitFor(() => !dirtyUp('invoices', 'INV-RVW-M'), 5000);
+        // (M2) the same "differs only in the line items", but NOT sealed: there line items are client-authored — still caught
+        const mu = inv('INV-RVW-MU'); add('invoices', mu); T.snapshotSaved();
+        mu.note = 'MU1'; await hang(); const s1mu = JSON.parse(JSON.stringify(mu));
+        mu.lineItems = mu.lineItems.concat([{ lid: 'l2', desc: 'Extension', amount: 25 }]); await commit();
+        await poll({ invoices: [s1mu] });
+        ok(mu.lineItems.length === 2 && !!dirtyUp('invoices', 'INV-RVW-MU'), `RC-71 review (M2): on an unsealed invoice a late landing that reverted only the line items is still caught and re-sent (lines ${mu.lineItems.length})`);
+        await waitFor(() => !dirtyUp('invoices', 'INV-RVW-MU'), 5000);
+
+        // (Q4) B1 {V1} fails; V2 commits; the phone is pocketed (hidden: every poll stands down); B1 lands inside its
+        //      window; the phone comes back after the window closed. Neither another record's failed send nor a LOST load
+        //      drops the entry: only the first load that is actually checked against it
+        const v4 = { vendorId: 'VEN-RVW-Q4', name: 'Q4 v0' }, v4x = { vendorId: 'VEN-RVW-Q4X', name: 'Q4X v0' }; add('vendors', v4); add('vendors', v4x); T.snapshotSaved();
+        v4.name = 'Q4 V1'; await hang(); const b1q4 = JSON.parse(JSON.stringify(v4));
+        v4.name = 'Q4 V2'; await commit();
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+        const l0 = loads(); await poll({ vendors: [b1q4] }); const stoodDown = loads() === l0;
+        T.STALE.byKey.forEach((m) => m.forEach((e) => { e.at -= T.STALE.ms + 1000; }));   // ~7 min in the pocket
+        delete document.hidden;
+        v4x.name = 'Q4X V1'; await hang();   // another record's send fails first
+        loadMode = 'lost'; ready(); await bounded(T.refreshFromBackend(), 3000); T.resetRefreshState();   // then a lost load (its quick retry disarmed)
+        const kept4 = T.STALE.byKey.has('vendors\u0001VEN-RVW-Q4');
+        await poll({ vendors: [b1q4] });
+        ok(stoodDown && kept4 && v4.name === 'Q4 V2' && !T.STALE.byKey.has('vendors\u0001VEN-RVW-Q4'), `RC-71 review (Q4): a landing inside its window is still caught when every poll was suspended until after it — a failed send or a lost load in between never drops the entry; the first checked load does (name ${v4.name}; hidden poll stood down ${stoodDown}; kept past the lost load ${kept4})`);
+        await waitFor(() => !dirtyUp('vendors', 'VEN-RVW-Q4'), 5000);
+        await commit();
+
+        // (Q6) person A's edit is on the wire and stuck; switch user + the next login's load (server not yet written) reset
+        //      the baseline; THEN A's send hits its limit; A's edit lands late → adopted, never reverted with the older copy
+        T.SYNC.syncMs = 400;
+        const v6 = { vendorId: 'VEN-RVW-Q6', name: 'Q6 v0' }, v7 = { vendorId: 'VEN-RVW-Q7', name: 'Q7 v0' };
+        add('vendors', v6); add('vendors', v7); T.snapshotSaved();
+        v6.name = 'Q6 A-edit'; T.SYNC.backoff = 20000; plan = ['hang']; const n6 = syncs().length;
+        const p6 = T.flushSave(); await waitFor(() => syncs().length > n6, 2000);
+        const landed6 = JSON.parse(JSON.stringify(v6));
+        relogin('vendors', v6, { vendorId: 'VEN-RVW-Q6', name: 'Q6 v0' });
+        await bounded(p6, 3000);
+        const c6 = counts('vendors', 'VEN-RVW-Q6');
+        await poll({ vendors: [landed6] });
+        ok(v6.name === 'Q6 A-edit' && !dirtyUp('vendors', 'VEN-RVW-Q6') && c6 === '', `RC-71 review (Q6): a send from before a baseline reset that fails after it is not remembered by the new session — its late landing is adopted (name ${v6.name}; remembered ${c6 || '-'})`);
+
+        // (Q7) the same straddle, but A's send COMMITS after the reset: it must not be written into the new baseline under
+        //      the older loaded copy (that would queue the older copy to overwrite the edit that just committed)
+        T.SYNC.backoff = 1200; T.SYNC.fails = 0;
+        v7.name = 'Q7 A-edit'; plan = ['hold']; const p7 = T.flushSave(); await waitFor(() => held.length > 0, 2000);
+        relogin('vendors', v7, { vendorId: 'VEN-RVW-Q7', name: 'Q7 v0' });
+        held.shift()(); await bounded(p7, 3000);
+        const d7 = dirtyUp('vendors', 'VEN-RVW-Q7');
+        ok(!d7, `RC-71 review (Q7): a send from before a baseline reset that commits after it does not leave the older loaded copy queued over it (queued ${d7 ? JSON.parse(d7.js).name : 'nothing'})`);
+        T.SYNC.syncMs = BASE;
+
+        // (O) offline: the fetch is refused on the device, nothing left it → not remembered; a network error while online
+        //     may have reached the server → still remembered
+        const vo = { vendorId: 'VEN-RVW-O', name: 'O v0' }; add('vendors', vo); T.snapshotSaved();
+        vo.name = 'O offline'; T.SYNC.backoff = 20000;
+        Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false });
+        try { plan = ['neterr']; await bounded(T.flushSave(), 3000); } finally { delete navigator.onLine; }
+        const cOff = counts('vendors', 'VEN-RVW-O'), qOff = !!dirtyUp('vendors', 'VEN-RVW-O');
+        plan = ['neterr']; await bounded(T.flushSave(), 3000);
+        const cOn = counts('vendors', 'VEN-RVW-O');
+        ok(cOff === '' && qOff && cOn === '1', `RC-71 review (O): a send made while offline never left the device and is not remembered; one that failed while online still is (offline ${cOff || '-'}; online ${cOn || '-'}; still queued ${qOff})`);
+      } finally {
+        try { delete document.hidden; } catch (e) {}
+        try { delete navigator.onLine; } catch (e) {}
+        held.forEach((f) => { try { f(); } catch (e) {} });
+        T.resetSaveState(); T.SYNC.timeoutMs = origMs; T.SYNC.syncMs = origSyncMs; T.setBackendPassword(''); st.overlay = ov; st.winEdit = we; st.userPrefs = up0;
+        IDS.forEach(([k, id]) => drop(k, id));
+        await sleep(250); window.fetch = realFetch;
+        window.JT && window.JT.snapshotSaved && window.JT.snapshotSaved();
       }
     }
     // RC-65 review — the refresh poll must never resurrect a record whose LOCAL delete is still waiting to

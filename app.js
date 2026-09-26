@@ -25344,10 +25344,15 @@ let lastSaved = null;   // { entity: Map(id → JSON) } — the last successfull
 // that batch sent; refreshFromBackend does not adopt a poll copy that matches it and differs from the local copy:
 // the baseline takes the server's copy, so the local record (or its delete) is re-sent instead. A match compares
 // every client-authored field exactly — staleFp drops only the money-outcome fields the server owns and rewrites
-// on every write (Code.gs PROTECTED, V113). Each failed send explains AT MOST ONE landing: a match is consumed, so
-// a copy the server keeps re-shaping (a sealed invoice keeps its own line items) is adopted on the next poll, never
-// fought for 6 min. A delete is only re-sent over a copy with NO server-owned field — what doSync stores when no
-// row is left; a copy someone has since paid, charged or sealed comes back visibly, as before RC-71. Limits: an
+// on every write (Code.gs PROTECTED, V113). Each failed send explains AT MOST ONE landing: a match is consumed —
+// but never by a copy the baseline already holds (this device's own committed retry of the same bytes, which the
+// server may store without an empty money field). A sealed invoice that differs from the local copy only in the
+// fields its seal freezes is adopted at once: a re-send could never change them. An entry is dropped only once a
+// load that BEGAN after its window closed has been checked against it (polls stand down while hidden), and a send
+// is booked only against the baseline it was diffed from (a switch user / re-login while it was out resets it).
+// A send made while the device is offline never left it and is not remembered.
+// A delete is only re-sent over a copy with NO server-owned field — what doSync stores when no row is left; a copy
+// someone has since paid, charged or sealed comes back visibly, as before RC-71. Limits: an
 // edit by another device that sets a record back to exactly the bytes this device failed to send is taken for
 // the late landing once (and overwritten by the re-send); a batch the server refused outright ('busy', a refused
 // credential — nothing was written) is never remembered. In memory only; cleared on sign-out, switch user and
@@ -25362,10 +25367,21 @@ function staleFp(k, rec) { const own = STALE_SERVER_OWNED[k]; if (!own) return J
 /** true = `remote` carries none of the server-owned fields: what doSync stores for an upsert with no row left. A copy
  *  holding any of them (a payment, a charge, a seal, a Stripe id) was touched since — never deleted by the guard. */
 function staleNoRow(k, remote) { return !(STALE_SERVER_OWNED[k] || []).some((f) => remote[f] !== undefined); }
+const STALE_LOCKED_FROZEN = ['lineItems', 'customerId', 'taxExempt'];   // mirror of Code.gs LOCKED_INVOICE_FIELDS: on a LOCKED invoice doSync keeps the server's own values for these too
+function staleEmpty(v) { return v === undefined || v === null || v === false || v === 0 || v === '' || (Array.isArray(v) && !v.length); }
+/** RC-71 review — true = `remote` is the baseline `base` exactly as doSync stores it on an insert: every client-authored
+ *  field equal, no server-owned field, and every server-owned field the baseline held EMPTY (the dropped amountPaid: 0
+ *  of a new invoice). A baseline holding a real payment, charge or seal is never matched: that copy CHANGED. */
+function staleSameAsBase(k, base, remote) {
+  if (base === undefined || !staleNoRow(k, remote)) return false;
+  const b = JSON.parse(base);
+  return (STALE_SERVER_OWNED[k] || []).every((f) => staleEmpty(b[f])) && staleFp(k, b) === staleFp(k, remote);
+}
+function staleUnfrozen(k, rec) { const c = JSON.parse(staleFp(k, rec)); STALE_LOCKED_FROZEN.forEach((f) => { delete c[f]; }); return JSON.stringify(c); }
 function stalePrune(now) { const t = now || Date.now(); STALE.byKey.forEach((m, key) => { m.forEach((e, fp) => { if (t - e.at >= STALE.ms) m.delete(fp); }); if (!m.size) STALE.byKey.delete(key); }); }
 /** flushSave: a batch that was SENT but did not come back ok may still land — remember what it carried. */
 function staleNoteFailed(upserts) {
-  const t = Date.now(); stalePrune(t);
+  const t = Date.now();   // no prune here (RC-71 review): an entry is dropped only after a load checked it (refreshFromBackend)
   Object.keys(upserts).forEach((k) => upserts[k].forEach((u) => {
     const key = k + '\u0001' + u.id; let m = STALE.byKey.get(key);
     if (!m) { m = new Map(); STALE.byKey.set(key, m); }
@@ -25374,12 +25390,15 @@ function staleNoteFailed(upserts) {
   }));
 }
 /** true = `remote` is one of this device's own failed batches landing late — and that landing is consumed. With a local
- *  copy, it must also differ from it: a copy equal to the local one (the same batch, re-sent and committed) is current. */
-function staleLanding(k, id, remote, local) {
+ *  copy, it must also differ from it: a copy equal to the local one (the same batch, re-sent and committed) is current.
+ *  `base` (the baseline's JSON, local branch only): a copy the baseline already holds is current too, never consumed. */
+function staleLanding(k, id, remote, local, base) {
   const key = k + '\u0001' + id, m = STALE.byKey.get(key); if (!m) return false;
   const fp = staleFp(k, remote), e = m.get(fp);
   if (!e) return false;                                   // bytes this device never failed to send: another device's edit
+  if (base !== undefined && staleFp(k, JSON.parse(base)) === fp) return false;   // RC-71 review — the baseline already holds these bytes (a retry of the same batch committed them; the server may have dropped an empty money field): current, not a late landing — never consumed, so the real late landing is still caught
   if (local && staleFp(k, local) === fp) return false;    // the local copy IS this batch: simply current, adopted as stored
+  if (local && k === 'invoices' && remote.locked && staleUnfrozen(k, local) === staleUnfrozen(k, remote)) return false;   // RC-71 review — sealed: the copies differ only in fields the seal freezes, so a re-send can never win — adopt, never fight (not consumed)
   if (--e.n <= 0) m.delete(fp);                           // consumed: one failed send explains at most one landing
   if (!m.size) STALE.byKey.delete(key);
   return true;
@@ -25459,13 +25478,14 @@ async function refreshFromBackend() {
     // live multi-user refresh: from then on the ONLY way to see someone else's edit was a full
     // page reload (the reporter's "we have to refresh the whole app" complaint). The timeout
     // rejects, `finally` clears the flag, and the next 18s tick tries again.
+    const loadAt = Date.now();   // RC-71 review — STALE entries whose window closed before this load began are dropped once it has been checked
     const gen0 = saveGen;   // RC-65 — a save that runs while this load is in flight makes its reply stale for what it sent
     const r = await backendCall('load', undefined, { timeoutMs: BACKEND_TIMEOUT_MS }).catch((e) => ({ ok: false, error: (e && e.rwTimeout) ? 'timeout' : 'network' }));   // RC-63 — abortable, so a stalled poll is released rather than left open. RC-67 3A — a stall or drop no longer throws past the chats + rail below
     const lost = !r || !r.ok || !r.data;
     quickRetry = refreshNoteLoad(r);   // RC-67 3A — counts a lost load; true only for the first in a row
     if (authRejected(r)) return;   // RC-67 3A — a refused credential is refused for chats + rail too: one call per tick, as before
     if (winPickBusy() || saveGen !== gen0) return;   // RC-65 — a pick can start (or start AND be saved) during the await above; a reply read before that save would revert it as "clean". The next 18s tick retries.
-    const data = lost ? {} : r.data; let applied = 0, staleResend = false; stalePrune();   // RC-67 3A — a lost load used to return above and skip chats + rail; now it adopts nothing (every entity absent → the loop skips each) and carries on
+    const data = lost ? {} : r.data; let applied = 0, staleResend = false;   // RC-67 3A — a lost load used to return above and skip chats + rail; now it adopts nothing (every entity absent → the loop skips each) and carries on
     PERSIST_KEYS.forEach((k) => {
       if (!Array.isArray(data[k])) return;
       const idf = PERSIST_ID[k], saved = (lastSaved[k] = lastSaved[k] || new Map());
@@ -25480,13 +25500,13 @@ async function refreshFromBackend() {
           // flushes (adopting it would mark it clean and silently drop the delete → e.g. a duplicate invoice).
           // Server copy CHANGED → another device edited it: bring it back (visible), never let our pending delete
           // silently erase their edit. Only the pure-resurrection case is suppressed; no conflict is decided here.
-          if (saved.has(id) && saved.get(id) === rjs) return;
+          if (saved.has(id) && (saved.get(id) === rjs || staleSameAsBase(k, saved.get(id), remote))) return;   // RC-71 review — also unchanged: the baseline as doSync stored it on an insert (an empty amountPaid dropped)
           if (staleNoRow(k, remote) && staleLanding(k, id, remote)) { saved.set(id, rjs); staleResend = true; return; }   // RC-71 (b) — this device's own failed upsert landed late over a delete it committed since (a merged / absorbed invoice): keep it deleted. The baseline now holds the server copy, so the delete is re-sent. A copy carrying any server-owned field (paid, charged, sealed since) is never deleted here: it comes back visibly, as before
           DATA[k].push(remote); IDX[IDX_MAP[k]]?.set(id, remote); reindex(k, remote); saved.set(id, rjs); applied++; return;   // new record from another user
         }
         const ljs = JSON.stringify(local);
         if (ljs === rjs) { saved.set(id, rjs); return; }
-        if (saved.get(id) !== rjs && staleLanding(k, id, remote, local)) { saved.set(id, rjs); staleResend = true; return; }   // RC-71 (a) — this device's own failed batch landed late over a newer save: NOT adopted as "clean". The baseline now holds the server copy, so the local record is dirty and re-sent. A copy the baseline already holds was caught before: not counted twice
+        if (staleLanding(k, id, remote, local, saved.get(id))) { saved.set(id, rjs); staleResend = true; return; }   // RC-71 (a) — this device's own failed batch landed late over a newer save: NOT adopted as "clean". The baseline now holds the server copy, so the local record is dirty and re-sent. A copy the baseline already holds (caught before, or this device's own committed retry) is never counted
         if (k === 'invoices' && isInvoiceIdCollision(id, local, remote)) {   // §inv-collision — our minted number already belonged to a different bill; re-issue ours, keep both
           healInvoiceIdCollision(id, local, remote, saved); applied++; return;
         }
@@ -25497,6 +25517,7 @@ async function refreshFromBackend() {
         }                              // else: local has unsaved edits → keep local; it'll push on next save
       });
     });
+    if (!lost) stalePrune(loadAt);   // RC-71 review — every entry whose window closed before this load began has now been checked once
     if (staleResend) saveSoon();   // RC-71 — re-send what a late-landing batch overwrote (the usual debounce; any retry already pending is re-armed)
     if (!lost) freshMark();   // RC-67 (2A) — this reply got past the RC-65 guards and was adopted: the screen is confirmed current (nothing changed counts too). A lost load carries on to chats + rail (RC-67 3A) but is never a success
     // also pull the shared team-chat threads so messages from other users land live
@@ -26156,6 +26177,7 @@ async function flushSave() {
   let { upserts, deletes, n } = computeChanges();
   if (!n) return;                               // nothing changed
   saving = true; saveGen++;
+  const base0 = lastSaved;   // RC-71 review — the baseline this batch is diffed from; only snapshotSaved (finishLoad) replaces it, so identity marks a switch user / re-login while the batch was out
   // RC-65 (2) — `saving` is released on EVERY exit (finally). A throw from the photo offload, the
   // re-diff or the batch build used to leave it true forever: later edits only set savePending,
   // refreshFromBackend stood down on `saving || savePending`, and the R25 banner never rose. Such a
@@ -26169,12 +26191,14 @@ async function flushSave() {
     holdOversized(upserts);                        // keep any still-oversized record out of the batch (fault isolation)
     if (!Object.keys(upserts).length && !Object.keys(deletes).length) { saving = false; if (savePending) { savePending = false; saveSoon(); } return; }
     const wireUp = {}; Object.keys(upserts).forEach((k) => { wireUp[k] = upserts[k].map((u) => u.rec); });
-    sent = upserts;   // RC-71 — from here this batch may reach the server even if the attempt fails
+    sent = (typeof navigator !== 'undefined' && navigator.onLine === false) ? null : upserts;   // RC-71 — from here this batch may reach the server even if the attempt fails. Offline (review): the fetch is refused on the device, nothing leaves it
     const r = await backendCall('sync', { upserts: wireUp, deletes }, { timeoutMs: syncLimitMs() });   // RC-67 (4A) — bounded; `saving` blocks a second sync until this one settles or aborts
     if (r && r.ok) {
       // Commit ONLY what we sent — edits made mid-flight stay dirty and re-flush.
-      Object.keys(upserts).forEach((k) => upserts[k].forEach((u) => lastSaved[k].set(u.id, u.js)));
-      Object.keys(deletes).forEach((k) => deletes[k].forEach((id) => lastSaved[k].delete(id)));
+      if (lastSaved === base0) {   // RC-71 review — never into a baseline reset while this was out: the new session loaded the older copy, and the next poll adopts this commit
+        Object.keys(upserts).forEach((k) => upserts[k].forEach((u) => lastSaved[k].set(u.id, u.js)));
+        Object.keys(deletes).forEach((k) => deletes[k].forEach((id) => lastSaved[k].delete(id)));
+      }
       ok = true;
     } else if (r && r.ok === false && (r.error === 'busy' || authRejected(r))) sent = null;   // RC-71 — refused before doSync wrote anything (lock not taken / credential refused): it can never land late
   } catch (e) { if (!signinNetFailure(e)) logErr('sync', (e && (e.stack || e.message)) || e); /* offline, or a client-side throw → the failure branch below retries */ }
@@ -26184,7 +26208,7 @@ async function flushSave() {
     SYNC.failing = false; SYNC.fails = 0; SYNC.backoff = 1200; renderSyncBanner();
     if (savePending) { savePending = false; saveSoon(); }      // flush edits made mid-flight
   } else {
-    if (sent) staleNoteFailed(sent);                           // RC-71 — sent but not confirmed: it may still land late (STALE)
+    if (sent && lastSaved === base0) staleNoteFailed(sent);    // RC-71 — sent but not confirmed: it may still land late (STALE)
     savePending = false;                                       // the backoff timer owns the retry now
     if (++SYNC.fails >= 2) SYNC.failing = true;                // confirmed outage → raise the banner
     renderSyncBanner();
