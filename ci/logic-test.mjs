@@ -3752,6 +3752,255 @@ try {
         ok(shown2 && seen.authResume === 1, `RC-63 wiring: a refused resume clears the device with no retry (saw ${seen.authResume})`);
       } finally { window.fetch = realFetch; clearTok(); }
     }
+    // RC-70 / RC-68 (2A) — fresh-key grace, attributable + honest sign-in copy, and the code box.
+    // Drives the REAL freshKeyLoad / pidDoStart / pidDoVerify / pidDoSetPin / pidDoLoginPin / pidLoadFail /
+    // phoneBoot against a fake backend keyed by action (script.google.com only). No case here ever lets a
+    // load succeed through pidEnter, so finishLoad never runs and no poll or timer outlives the block: the
+    // one success is checked on freshKeyLoad's own return value. ERR_LOG is a 30-entry ring, so each
+    // logging case clears it first (errLogClear) and every captured line is kept in allLogs for the key check.
+    {
+      const realFetch = window.fetch; const seen = {}; let script = {}; let onCall = null;
+      const ECHO404 = '<!DOCTYPE html><html>Sorry, unable to open the file at this time.</html>';
+      window.fetch = (u, init) => {
+        if (!String(u).includes('script.google.com')) return realFetch(u, init);
+        let body = {}; try { body = JSON.parse((init && init.body) || '{}'); } catch (e) {}
+        const action = body.action || 'GET';
+        seen[action] = (seen[action] || 0) + 1;
+        if (onCall) onCall(action);
+        const step = (script[action] || []).shift() || 'ok';
+        if (step && typeof step.then === 'function') return step;   // a held reply: the case resolves it later with a Response
+        if (typeof step === 'object') return Promise.resolve(new Response(JSON.stringify(step), { status: 200 }));
+        if (step === 'throw') return Promise.reject(new TypeError('Failed to fetch'));
+        if (step === '404') return Promise.resolve(new Response(ECHO404, { status: 404 }));
+        if (step === 'badjson') return Promise.resolve(new Response('not json', { status: 200 }));
+        if (step === 'unauthorized' || step === 'expired') return Promise.resolve(new Response(JSON.stringify({ ok: false, error: step }), { status: 200 }));
+        return Promise.resolve(new Response(JSON.stringify({ ok: true, data: {} }), { status: 200 }));
+      };
+      const reset = (s) => { Object.keys(seen).forEach((k) => delete seen[k]); script = s || {}; onCall = null; };
+      const clearTok = () => { try { localStorage.removeItem('jactec.pidToken'); sessionStorage.removeItem('jactec.pidToken'); } catch (e) {} };
+      const waitFor = async (fn, ms) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await new Promise((r) => setTimeout(r, 50)); } return false; };
+      const errText = () => ((document.getElementById('pid-err') || {}).textContent || '');
+      const allLogs = []; const takeLogs = () => { const l = T.errLog(); allLogs.push(...l); T.errLogClear(); return l; };
+      const refusedX4 = () => ['unauthorized', 'unauthorized', 'unauthorized', 'unauthorized'];
+      const verified = (kind) => ({ ok: true, token: TOK, kind, personId: 'EMP-RC71', name: 'Test Hand', role: 'Sales', pinSet: true });
+      const toCode = (kind) => { T.pidUI.step = 'code'; T.pidUI.personId = 'EMP-RC71'; T.pidUI.kind = kind; T.renderPhoneLogin(''); document.getElementById('pid-code').value = '123456'; };
+      const toPhone = () => { T.pidUI.step = 'identify'; T.pidUI._phone = ''; T.pidUI.personId = ''; T.renderPhoneLogin(''); document.getElementById('pid-phone').value = '(337) 555-0171'; };
+      const TOK = 'rc71-FRESH-KEY-never-logged';
+      const grace0 = T.SIGNIN_GRACE.delaysMs.slice();
+      const roster0 = localStorage.getItem('jactec.pidRoster');
+      const ROSTER = JSON.stringify([{ id: 'EMP-RC71', name: 'Test Hand' }, { id: 'EMP-RC72', name: 'Other Hand' }]);
+      try {
+        T.SIGNIN_GRACE.delaysMs = [5, 5, 5];
+
+        // F1 — a fresh key refused twice, then accepted: the third load succeeds
+        clearTok(); localStorage.setItem('jactec.pidToken', TOK); T.setBackendPassword(TOK);
+        reset({ load: ['unauthorized', 'unauthorized', 'ok'] });
+        let r1 = null; try { r1 = await T.freshKeyLoad(TOK, Date.now(), 'personal'); } catch (e) { r1 = e; }
+        ok(r1 && r1.ok === true && seen.load === 3, `RC-70: a fresh key refused twice is asked again and the third load signs in (saw ${seen.load} loads)`);
+        takeLogs();
+
+        // F1 + F6 — refused on every attempt, personal phone, driven through the REAL verify; the retry cue shows
+        clearTok(); T.setBackendPassword(''); toCode('personal');
+        reset({ authVerify: [verified('personal')], load: refusedX4() });
+        let cue2 = ''; onCall = (a) => { if (a === 'load' && seen.load === 2) cue2 = (document.querySelector('.login-screen.signing-in .login-btn') || {}).textContent || ''; };
+        await T.pidDoVerify();
+        const shownP = await waitFor(() => !!document.querySelector('#pid-phone'), 5000);
+        ok(shownP && seen.load === T.SIGNIN_GRACE.delaysMs.length + 1, `RC-70: a fresh key refused every time is asked ${T.SIGNIN_GRACE.delaysMs.length + 1}x before it counts (saw ${seen.load})`);
+        ok(/trying again \(2 of 4\)/.test(cue2) && !/trying again/i.test((document.getElementById('pid-send') || {}).textContent || ''), `RC-70: the grace shows the "trying again (n of 4)" cue, and the fresh login form never keeps it (got "${cue2}")`);
+        ok(!/expired/i.test(errText()) && /recognized your new sign-in/i.test(errText()) && /reload the app/i.test(errText()), `RC-70: a refusal seconds after the mint never says "expired" (got "${errText()}")`);
+        ok(localStorage.getItem('jactec.pidToken') === TOK, 'RC-70: a personal phone keeps its brand-new key after a persistent fresh refusal (a reload resumes; no code burned)');
+        const logsP = takeLogs();
+        ok(logsP.filter((l) => /signin: load refused \(unauthorized\), attempt [1-4]\/4, personal, fresh key, \d+ ms since mint/.test(l)).length === 4, `F6: every refused fresh load is logged with attempt, kind and ms since the mint (got ${JSON.stringify(logsP)})`);
+
+        // RC-70 — one counter on screen: a lost reply inside the grace never swaps "of 4" back to RC-63's "of 3"
+        clearTok(); T.setBackendPassword(''); toCode('personal');
+        reset({ authVerify: [verified('personal')], load: ['unauthorized', '404', 'unauthorized', 'unauthorized', 'unauthorized'] });
+        const cues = []; onCall = (a) => { if (a === 'load') cues.push((document.querySelector('.login-screen.signing-in .login-btn') || {}).textContent || ''); };
+        await T.pidDoVerify();
+        const shownC = await waitFor(() => !!document.querySelector('#pid-phone'), 8000);
+        const of4 = cues.findIndex((c) => /of 4\)/.test(c));
+        ok(shownC && seen.load === 5 && of4 > 0 && cues.slice(of4).every((c) => !/of 3\)/.test(c)), `RC-70: once the grace counts "of 4", a lost reply inside it never shows "of 3" (got ${JSON.stringify(cues)})`);
+        takeLogs(); clearTok();
+
+        // F1 — the same on a SHARED device: honest copy, and the session is still never kept
+        clearTok(); T.setBackendPassword(''); toCode('shared');
+        reset({ authVerify: [verified('shared')], load: refusedX4() });
+        await T.pidDoVerify();
+        const shownS = await waitFor(() => !!document.querySelector('#pid-phone'), 5000);
+        ok(shownS && seen.load === 4 && !sessionStorage.getItem('jactec.pidToken') && !localStorage.getItem('jactec.pidToken'), `RC-70: a SHARED session refused after the grace is still never kept behind a login screen (saw ${seen.load})`);
+        ok(!/expired/i.test(errText()) && /recognized your new sign-in/i.test(errText()) && /sign in again/i.test(errText()) && !/reload/i.test(errText()), `RC-70: the shared-device refusal copy is honest too, and says sign in again, not reload (got "${errText()}")`);
+        const logsS = takeLogs();
+        ok(logsS.filter((l) => /attempt [1-4]\/4, shared, fresh key/.test(l)).length === 4, `F6: a shared verify's refused loads are logged as shared (got ${JSON.stringify(logsS)})`);
+
+        // F1 — a SHARED session is not kept even if another tab writes a "My phone" key during the grace
+        clearTok(); T.setBackendPassword(''); toCode('shared');
+        reset({ authVerify: [verified('shared')], load: refusedX4() });
+        onCall = (a) => { if (a === 'load' && seen.load === 2) localStorage.setItem('jactec.pidToken', 'rc71-foreign-tab'); };
+        await T.pidDoVerify();
+        const shownF = await waitFor(() => !!document.querySelector('#pid-phone'), 5000);
+        ok(shownF && seen.load === 4 && !sessionStorage.getItem('jactec.pidToken') && /sign in again/i.test(errText()), `RC-70: a shared session refused after the grace is not kept when another tab wrote a personal key meanwhile (saw ${seen.load}, "${errText()}")`);
+        takeLogs(); clearTok();
+
+        // RC-70 — a refused set-PIN right after a verify: honest copy, logged, never auto-retried (a write);
+        // then the load that follows a saved PIN gets the grace
+        clearTok(); T.setBackendPassword(''); T.pidUI.step = 'setpin'; T.pidUI.personId = 'EMP-RC71'; T.pidUI._tok = TOK; T.pidUI._mintAt = Date.now(); T.renderPhoneLogin('');
+        document.getElementById('pid-pin').value = '4321'; document.getElementById('pid-pin2').value = '4321';
+        reset({ authSetPin: ['unauthorized'] }); await T.pidDoSetPin();
+        ok(seen.authSetPin === 1 && T.pidUI.step === 'setpin' && /recognized your new sign-in/i.test(errText()) && takeLogs().some((l) => /signin: set-PIN refused \(unauthorized\), shared, fresh key, \d+ ms since mint/.test(l)), `RC-70: a refused set-PIN says so honestly, is logged, and is not auto-retried (got "${errText()}", ${seen.authSetPin} calls)`);
+        reset({ authSetPin: ['ok'], load: refusedX4() }); await T.pidDoSetPin();
+        const shownSP = await waitFor(() => !!document.querySelector('#pid-phone'), 5000);
+        ok(shownSP && seen.load === 4 && !sessionStorage.getItem('jactec.pidToken'), `RC-70: the load right after a set-PIN gets the fresh-key grace, and the shared session is not kept (saw ${seen.load})`);
+        takeLogs();
+
+        // RC-70 — a PIN sign-in mints a fresh key too (the shop PC's most common path): the grace applies
+        clearTok(); T.setBackendPassword(''); T.pidUI.step = 'pin'; T.pidUI.personId = 'EMP-RC71'; T.renderPhoneLogin('');
+        document.getElementById('pid-loginpin').value = '4321';
+        reset({ authLoginPin: [{ ok: true, token: TOK, kind: 'shared', personId: 'EMP-RC71', name: 'Test Hand', role: 'Sales' }], load: refusedX4() });
+        await T.pidDoLoginPin();
+        const shownLP = await waitFor(() => !!document.querySelector('#pid-phone'), 5000);
+        ok(shownLP && seen.load === 4 && !sessionStorage.getItem('jactec.pidToken') && /recognized your new sign-in/i.test(errText()) && /sign in again/i.test(errText()), `RC-70: the load right after a PIN sign-in gets the fresh-key grace, and the shared session is not kept (saw ${seen.load}, "${errText()}")`);
+        takeLogs();
+
+        // F6 — nothing the sign-in path logged carries the key
+        ok(allLogs.length > 0 && allLogs.every((l) => !l.includes(TOK)), 'F6: the sign-in log never carries the key');
+
+        // Boot resume keeps RC-63's rule: a refused load is final at once — one load, no grace delay
+        clearTok(); localStorage.setItem('jactec.pidToken', 'rc71-resume-key');
+        T.SIGNIN_GRACE.delaysMs = [4000, 4000, 4000];   // any grace here would now be unmistakably slow
+        reset({ authResume: [{ ok: true, personId: 'EMP-RC71', name: 'Test Hand', role: 'Sales' }], load: refusedX4() });
+        const t0 = Date.now(); T.phoneBoot();
+        const shownB = await waitFor(() => !!document.querySelector('#pid-phone'), 8000);
+        const bootMs = Date.now() - t0;
+        ok(shownB && seen.load === 1 && bootMs < 3000 && !localStorage.getItem('jactec.pidToken') && /expired/i.test(errText()), `RC-70: a boot-resume refusal stays final at once — one load, no delay, key cleared (saw ${seen.load} loads in ${bootMs} ms)`);
+        const logsB = takeLogs();
+        ok(logsB.some((l) => /signin: load refused \(unauthorized\), not fresh, personal/.test(l)) && logsB.every((l) => !l.includes('rc71-resume-key')), `F6: a refused resume load is logged too, without its key (got ${JSON.stringify(logsB)})`);
+        T.SIGNIN_GRACE.delaysMs = [5, 5, 5];
+
+        // F1 — the grace is pinned to the minted key: a sign-out / another sign-in stops it, quietly
+        clearTok(); T.setBackendPassword(TOK);
+        reset({ load: refusedX4() }); onCall = (a) => { if (a === 'load') T.setBackendPassword('rc71-someone-else'); };
+        let sup = null; try { await T.freshKeyLoad(TOK, Date.now(), 'personal'); } catch (e) { sup = e; }
+        ok(sup && sup.rwSuperseded === true && seen.load === 1, `RC-70: the grace stops the moment backendPassword is no longer the minted key (saw ${seen.load})`);
+        localStorage.setItem('jactec.pidToken', 'rc71-other'); const screen0 = document.getElementById('app').innerHTML;
+        T.pidLoadFail(sup);
+        ok(localStorage.getItem('jactec.pidToken') === 'rc71-other' && document.getElementById('app').innerHTML === screen0, 'RC-70: a superseded sign-in chain touches neither the newer key nor the screen');
+        clearTok(); T.setBackendPassword(''); takeLogs();
+
+        // RC-68 (2A) — (a) a lost authStart reply reuses this page's personId for the same number
+        T.pidUI._sent = null; localStorage.setItem('jactec.pidRoster', '[]');
+        toPhone(); reset({ authStart: [{ ok: true, sent: true, personId: 'EMP-RC71', name: 'Test Hand', masked: '(•••) •••-0171' }] });
+        await T.pidDoStart(false);
+        ok(T.pidUI.step === 'device' && T.pidUI.personId === 'EMP-RC71', '2A fixture: a delivered authStart reply reaches the device step');
+        ok(/Code sent to Test Hand/.test((document.querySelector('.login-hint') || {}).textContent || ''), '2A: a delivered send still says who the code went to');
+        ok((document.getElementById('pid-err') || { getAttribute: () => '' }).getAttribute('role') === 'alert', '2A: the sign-in error line is announced to a screen reader (role=alert)');
+        toPhone(); reset({ authStart: ['404'] });
+        await T.pidDoStart(false);
+        const lostA = T.pidUI.step === 'device' && T.pidUI.personId === 'EMP-RC71' && /may be on its way/i.test(errText());
+        ok(!!document.activeElement && document.activeElement.classList.contains('login-choice-btn'), `2A: the device step puts focus on its first choice (focus on ${document.activeElement && document.activeElement.tagName})`);
+        const kindBtn = document.querySelector('.login-choice-btn[data-kind="personal"]'); if (kindBtn) kindBtn.click();
+        ok(lostA && !!document.getElementById('pid-code'), `2A: a lost authStart reply (echo 404) still leads to the code box via the remembered personId (step ${T.pidUI.step})`);
+        toPhone(); reset({ authStart: ['badjson'] });
+        await T.pidDoStart(false);
+        ok(T.pidUI.step === 'device' && T.pidUI.personId === 'EMP-RC71' && /may be on its way/i.test(errText()), `2A: a garbled authStart reply (bad-json) counts as lost too (step ${T.pidUI.step}, "${errText()}")`);
+
+        // (a2) a resend from the code box: lost / too-soon / rate stay on the box and only change the error line
+        const toCodeResend = () => { toCode('personal'); T.pidUI._phone = '(337) 555-0171'; T.pidUI._sent = null; T.pidUI._spent = false; localStorage.setItem('jactec.pidRoster', ROSTER); };
+        toCodeResend(); reset({ authStart: ['404'] }); await T.pidDoStart(true);
+        const rsLost = T.pidUI.step === 'code' && !!document.getElementById('pid-code') && T.pidUI.personId === 'EMP-RC71' && /may be on its way/i.test(errText());
+        toCodeResend(); reset({ authStart: [{ ok: true, sent: false, reason: 'too-soon' }] }); await T.pidDoStart(true);
+        const rsSoon = T.pidUI.step === 'code' && !!document.getElementById('pid-code') && /just sent/i.test(errText());
+        ok(rsLost && rsSoon, `2A: a lost or too-soon reply to Resend code keeps the person on the code box (lost ${rsLost}, too-soon ${rsSoon}, "${errText()}")`);
+        toCodeResend(); reset({ authStart: [{ ok: true, sent: false, reason: 'rate' }] }); await T.pidDoStart(true);
+        ok(T.pidUI.step === 'code' && !!document.getElementById('pid-code') && /If your last code arrives, enter it here/.test(errText()) && !/PIN/.test(errText()), `2A: the hourly cap on Resend code points at the box on screen, not a PIN button that is not there (got "${errText()}")`);
+
+        // (b) a thrown authStart, nothing remembered: the cached-roster name pick → the code box
+        T.pidUI._sent = null; localStorage.setItem('jactec.pidRoster', ROSTER);
+        toPhone(); reset({ authStart: ['throw'] });
+        await T.pidDoStart(false);
+        const pick = document.querySelector('.login-pick-btn[data-id="EMP-RC71"]');
+        ok(T.pidUI.step === 'codepick' && !!pick && /may be on its way/i.test(errText()), '2A: a dropped authStart fetch with nothing remembered offers the cached-roster name pick');
+        ok(((document.getElementById('pid-tophone') || {}).textContent || '') === 'Change number', `2A: the name pick's way back says "Change number", not "Use my phone instead" (got "${(document.getElementById('pid-tophone') || {}).textContent}")`);
+        ok(!!document.activeElement && document.activeElement.classList.contains('login-pick-btn'), `2A: the name pick puts focus on the first name (focus on ${document.activeElement && document.activeElement.tagName})`);
+        if (pick) pick.click();
+        ok(T.pidUI.step === 'device' && T.pidUI.personId === 'EMP-RC71' && !document.getElementById('pid-loginpin'), '2A: picking a name leads toward the code box, not the PIN box');
+        const pickHint = (document.querySelector('.login-hint') || {}).textContent || '';
+        ok(!/Code sent to/.test(pickHint) && /Test Hand/.test(pickHint) && /newest text/i.test(errText()), `2A: after a name pick the device step never claims a code was sent, and keeps the hedge (hint "${pickHint}", "${errText()}")`);
+
+        // (c) too-soon: a code WAS just sent — offer the box; a new device gets honest copy instead
+        T.pidUI._sent = null; localStorage.setItem('jactec.pidRoster', ROSTER);
+        toPhone(); reset({ authStart: [{ ok: true, sent: false, reason: 'too-soon' }] });
+        await T.pidDoStart(false);
+        ok(T.pidUI.step === 'codepick' && /just sent/i.test(errText()), `2A: too-soon offers the code box (step ${T.pidUI.step}, "${errText()}")`);
+        T.pidUI._sent = null; localStorage.setItem('jactec.pidRoster', '[]');
+        toPhone(); reset({ authStart: [{ ok: true, sent: false, reason: 'too-soon' }] });
+        await T.pidDoStart(false);
+        ok(T.pidUI.step === 'identify' && /wait 30 seconds/i.test(errText()), `2A: a new device with nothing to pick is told to wait 30 s and tap again (got "${errText()}")`);
+
+        // (d) rate: honest copy, no code box — the PIN route is named only when this device has one
+        toPhone(); reset({ authStart: [{ ok: true, sent: false, reason: 'rate' }] });
+        await T.pidDoStart(false);
+        ok(T.pidUI.step === 'identify' && !document.getElementById('pid-code') && !document.querySelector('.login-pick-btn') && /used up/i.test(errText()) && !/PIN/.test(errText()), `2A: the hourly cap gets honest copy and no code box (got "${errText()}")`);
+        localStorage.setItem('jactec.pidRoster', ROSTER);
+        toPhone(); reset({ authStart: [{ ok: true, sent: false, reason: 'rate' }] });
+        await T.pidDoStart(false);
+        ok(T.pidUI.step === 'identify' && /used up/i.test(errText()) && /Sign in with a PIN/.test(errText()) && !!document.getElementById('pid-topin'), `2A: the hourly cap on a device with saved PINs points at Sign in with a PIN (got "${errText()}")`);
+
+        // (e) a send failure
+        toPhone(); reset({ authStart: [{ ok: true, sent: false, reason: 'sms-failed' }] });
+        await T.pidDoStart(false);
+        ok(T.pidUI.step === 'identify' && errText() === "Couldn't send the text — try again.", `2A: a send failure says so (got "${errText()}")`);
+
+        // (f) not on the roster: the anti-enumeration message stays, word for word
+        localStorage.setItem('jactec.pidRoster', ROSTER);
+        toPhone(); reset({ authStart: [{ ok: true, sent: false }] });
+        await T.pidDoStart(false);
+        ok(T.pidUI.step === 'identify' && errText() === "If that number's on the roster, a code is on its way — check your phone.", `2A: a number not on the roster keeps the anti-enumeration message (got "${errText()}")`);
+
+        // (g) a lost verify reply: the code may already be spent — say so, and clear the spent digits
+        toCode('personal'); reset({ authVerify: ['404'] }); await T.pidDoVerify();
+        const lostV1 = errText(), lostV1Val = (document.getElementById('pid-code') || {}).value;
+        toCode('personal'); reset({ authVerify: ['throw'] }); await T.pidDoVerify();
+        ok(/may already be used/i.test(lostV1) && /may already be used/i.test(errText()) && T.pidUI.step === 'code', `2A: a lost verify reply (echo 404 or a dropped fetch) says the code may be spent (got "${lostV1}" / "${errText()}")`);
+        ok(lostV1Val === '', `2A: a lost verify reply clears the spent digits from the code box (got "${lostV1Val}")`);
+
+        // (h) a Resend inside the 30 s send gap after a lost verify: never point back at the code that verify may
+        // have spent — not as "use that one", not as "enter it here"; a delivered send makes "use that one" true again
+        toCodeResend(); reset({ authVerify: ['404'], authStart: [{ ok: true, sent: false, reason: 'too-soon' }, { ok: true, sent: false, reason: 'rate' }] });
+        await T.pidDoVerify(); await T.pidDoStart(true);
+        const spentSoon = errText();
+        ok(T.pidUI.step === 'code' && !/use that one/i.test(spentSoon) && /wait 30 seconds/i.test(spentSoon) && /Resend code/.test(spentSoon), `2A: a too-soon Resend after a lost verify says wait 30 s, never "use that one" (got "${spentSoon}")`);
+        await T.pidDoStart(true);
+        ok(T.pidUI.step === 'code' && /used up/i.test(errText()) && !/enter it here/i.test(errText()), `2A: the hourly cap after a lost verify never points at the spent code (got "${errText()}")`);
+        T.pidUI.step = 'identify'; T.renderPhoneLogin(''); document.getElementById('pid-phone').value = '(337) 555-0171';
+        T.pidUI._sent = { phone: '3375550171', personId: 'EMP-RC71', name: 'Test Hand', masked: 'x' };
+        reset({ authStart: [{ ok: true, sent: false, reason: 'too-soon' }] }); await T.pidDoStart(false);
+        ok(T.pidUI.step === 'identify' && /wait 30 seconds/i.test(errText()) && /Text my code/.test(errText()), `2A: Text my code inside the gap after a spent code stays put and says wait 30 s (step ${T.pidUI.step}, "${errText()}")`);
+        toCode('personal'); T.pidUI._phone = '(337) 555-0171';
+        reset({ authStart: [{ ok: true, sent: true, personId: 'EMP-RC71', name: 'Test Hand', masked: 'x' }, { ok: true, sent: false, reason: 'too-soon' }] });
+        await T.pidDoStart(true); await T.pidDoStart(true);
+        ok(/just sent/i.test(errText()), `2A: a delivered send makes the next too-soon say "use that one" again (got "${errText()}")`);
+
+        // (i) a late authStart reply must not yank a person who moved on: to a PIN sign-in, or a sign-in already loading
+        let releaseA; const heldA = new Promise((res) => { releaseA = res; });
+        T.pidUI._sent = null; T.pidUI._spent = false; localStorage.setItem('jactec.pidRoster', ROSTER);
+        toPhone(); reset({ authStart: [heldA] });
+        const lateA = T.pidDoStart(false);
+        T.pidUI.step = 'pin'; T.pidUI.personId = 'EMP-RC72'; T.pidUI.name = 'Other Hand'; T.renderPhoneLogin('');
+        const screenA = document.getElementById('app').innerHTML;
+        releaseA(new Response(ECHO404, { status: 404 })); await lateA;
+        ok(T.pidUI.step === 'pin' && T.pidUI.personId === 'EMP-RC72' && document.getElementById('app').innerHTML === screenA, `2A: a late lost authStart reply leaves a PIN sign-in alone (step ${T.pidUI.step}, person ${T.pidUI.personId})`);
+        let releaseB; const heldB = new Promise((res) => { releaseB = res; });
+        toCode('personal'); T.pidUI._phone = '(337) 555-0171'; reset({ authStart: [heldB] });
+        const lateB = T.pidDoStart(true);
+        document.querySelector('.login-screen').classList.add('signing-in');
+        releaseB(new Response(JSON.stringify({ ok: true, sent: true, personId: 'EMP-RC71', name: 'Test Hand', masked: 'x' }), { status: 200 })); await lateB;
+        ok(!!document.querySelector('.login-screen.signing-in'), '2A: a late Resend reply never re-renders over a sign-in already loading');
+      } finally {
+        window.fetch = realFetch; T.SIGNIN_GRACE.delaysMs = grace0; T.setBackendPassword(''); clearTok();
+        Object.assign(T.pidUI, { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', _role: '', _mintAt: 0, _sent: null, _spent: false });
+        if (roster0 == null) localStorage.removeItem('jactec.pidRoster'); else localStorage.setItem('jactec.pidRoster', roster0);
+      }
+    }
     return out;
   });
 
