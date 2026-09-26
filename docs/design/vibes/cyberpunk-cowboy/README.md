@@ -36,3 +36,22 @@ its own theme, accent and sign-in state in `localStorage` only.
 - Status never rides on colour alone: chips carry an icon and a word; the day palette
   uses tinted fills with dark ink. Contrast and colour-blind separation were checked
   numerically before the palette was locked.
+
+## Round two (Jac's picks: louder western, louder cyberpunk, new default accent, deeper dashboard)
+
+- **Default accent is now sunset amber**, orange against the cyan uplink. Magenta stays as a
+  fixed "hot" state colour (riding, hot cards). All four accents remain in the Rig picker.
+- **Louder cyberpunk**: periodic glitch on the wordmark with chromatic fringing, HUD corner
+  brackets on every panel (cyan on the featured ones), a neon rail across the top bar and
+  status bar, heavier scanlines with a slow CRT sweep, mono data readouts in panel headers
+  that carry real totals.
+- **Louder western**: panel titles in Rye, wanted-poster frames as a panel variant, rope
+  dividers, a circle-bar brand mark on every eyebrow, and more ranch voice ("Corral by",
+  "Round up the ledger", "Nail it up", "On the wire", "trail 1 of 2").
+- **Dashboard deep pass**: a filter row (7 / 14 / 30 / 90 day range, sector) that drives a
+  seeded 90-day series; the bar chart got a table view; new line-and-area latency chart with
+  a crosshair and a threshold band; a bounties-by-status donut with a hover-linked legend; a
+  scrip-by-sector bar list that sets the sector filter; richer stat tiles (goal bar, risk
+  mini-bars, crew presence dots, p95 readout).
+- The status palette was re-searched numerically around the new accent so every co-occurring
+  pair clears the colour-blind floor; day-mode info and hot chips became fills like the rest.

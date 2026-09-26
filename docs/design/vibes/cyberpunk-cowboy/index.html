@@ -18,16 +18,17 @@
   --bg:#120c1c; --bg-deep:#0b0712; --panel:#1a1226; --panel-2:#221833; --panel-3:#2a1f3d;
   --line:#3a2a4a; --line-strong:#6f5a85;
   --ink:#f3e9d8; --muted:#a894b5; --dim:#7a6a8a;
-  --neon:#ff2e88; --neon-ink:#120c1c; --neon-soft:rgba(255,46,136,.16);
+  --neon:#ff9a3c; --neon-ink:#120c1c; --neon-soft:rgba(255,154,60,.16);
+  --hot:#ff3d9e; --hot-soft:rgba(255,61,158,.16);
   --uplink:#2ee6ff; --uplink-soft:rgba(46,230,255,.14);
   --sunset:#ff9a3c; --sunset-soft:rgba(255,154,60,.16);
   --leather:#b5713e; --leather-soft:rgba(181,113,62,.22);
-  --good:#63f0a6; --warn:#ffcf3f; --crit:#ff6b4a;
-  --good-soft:rgba(99,240,166,.14); --warn-soft:rgba(255,207,63,.14); --crit-soft:rgba(255,107,74,.16);
+  --good:#98f7ad; --warn:#ffef3d; --crit:#ff3838;
+  --good-soft:rgba(152,247,173,.14); --warn-soft:rgba(255,239,61,.14); --crit-soft:rgba(255,56,56,.16);
   --status-ink:var(--ink);
-  --glow:0 0 14px rgba(255,46,136,.55),0 0 2px rgba(255,46,136,.9);
+  --glow:0 0 14px rgba(255,154,60,.55),0 0 2px rgba(255,154,60,.9);
   --glow-uplink:0 0 12px rgba(46,230,255,.45);
-  --tube:0 0 8px rgba(255,46,136,.6), inset 0 0 8px rgba(255,46,136,.25);
+  --tube:0 0 8px rgba(255,154,60,.6), inset 0 0 8px rgba(255,154,60,.25);
   --shadow:0 12px 32px rgba(0,0,0,.45);
   --r-state:2px; --r-opener:6px 6px 0 0; --r-record:8px; --r-pill:999px; --r-card:12px;
   --H:36px; --Hc:24px;
@@ -43,12 +44,13 @@
   --bg:#efe3c8; --bg-deep:#e5d5b2; --panel:#f7eedb; --panel-2:#f1e5cc; --panel-3:#e9dbbd;
   --line:#cdb996; --line-strong:#8d7556;
   --ink:#2b1d12; --muted:#6b5643; --dim:#8c7863;
-  --neon:#b0104f; --neon-ink:#f7eedb; --neon-soft:rgba(176,16,79,.12);
+  --neon:#9a3b0a; --neon-ink:#f7eedb; --neon-soft:rgba(154,59,10,.14);
+  --hot:#b0104f; --hot-soft:rgba(176,16,79,.12);
   --uplink:#086a78; --uplink-soft:rgba(8,106,120,.12);
   --sunset:#9a3b0a; --sunset-soft:rgba(154,59,10,.14);
   --leather:#7a4a22; --leather-soft:rgba(122,74,34,.18);
   --good:#14612c; --warn:#7a4d00; --crit:#a8231b;
-  --good-soft:#9fe6b6; --warn-soft:#e9b93a; --crit-soft:#e2705f;
+  --good-soft:#9fe6b6; --warn-soft:#e9b93a; --crit-soft:#e2705f; --info-fill:#15aebc; --hot-fill:#760a49;
   --status-ink:#2b1d12;
   --glow:none; --glow-uplink:none; --tube:none;
   --shadow:0 10px 28px rgba(60,40,10,.18);
@@ -129,7 +131,7 @@ kbd,.kbd{font-family:var(--font-mono);font-size:10px;letter-spacing:.06em;paddin
 .juke{padding:10px;border:1px solid var(--line);border-radius:var(--r-card);background:var(--panel);display:flex;flex-direction:column;gap:8px}
 .juke .disc{width:34px;height:34px;border-radius:50%;flex:none;background:conic-gradient(from 0deg,var(--panel-3),var(--line-strong),var(--panel-3),var(--line-strong),var(--panel-3));
   border:2px solid var(--line-strong);position:relative}
-.juke .disc::after{content:"";position:absolute;inset:11px;border-radius:50%;background:var(--neon);box-shadow:var(--glow)}
+.juke .disc::after{content:"";position:absolute;inset:11px;border-radius:50%;background:var(--hot)}
 .juke.playing .disc{animation:spin 3s linear infinite}
 .juke .tr{display:flex;align-items:center;gap:10px;min-width:0}
 .juke .tr b{display:block;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -229,9 +231,11 @@ kbd,.kbd{font-family:var(--font-mono);font-size:10px;letter-spacing:.06em;paddin
 .chip-warn{color:var(--warn);border-color:var(--warn);background:var(--warn-soft)}
 .chip-crit{color:var(--crit);border-color:var(--crit);background:var(--crit-soft)}
 .chip-info{color:var(--uplink);border-color:var(--uplink);background:var(--uplink-soft)}
-.chip-neon{color:var(--neon);border-color:var(--neon);background:var(--neon-soft)}
+.chip-neon{color:var(--hot);border-color:var(--hot);background:var(--hot-soft)}
 .chip-sun{color:var(--sunset);border-color:var(--sunset);background:var(--sunset-soft)}
-:root[data-mode="noon"] .chip-good,:root[data-mode="noon"] .chip-warn,:root[data-mode="noon"] .chip-crit{color:var(--status-ink);border-color:transparent}
+:root[data-mode="noon"] .chip-good,:root[data-mode="noon"] .chip-warn,:root[data-mode="noon"] .chip-crit,:root[data-mode="noon"] .chip-info,:root[data-mode="noon"] .chip-neon{color:var(--status-ink);border-color:transparent}
+:root[data-mode="noon"] .chip-info{background:var(--info-fill)}
+:root[data-mode="noon"] .chip-neon{background:var(--hot-fill);color:var(--neon-ink)}
 .chip.fill{color:var(--neon-ink)}
 .chip.nodot::before{display:none}
 .tag{display:inline-flex;align-items:center;gap:6px;height:var(--Hc);padding:0 9px;border-radius:var(--r-record);background:var(--panel-3);
@@ -336,7 +340,7 @@ table.tbl{width:100%;border-collapse:collapse;min-width:820px}
 .kcard{background:var(--panel-2);border:1px solid var(--line);border-left:3px solid var(--line-strong);border-radius:var(--r-record);padding:10px;cursor:grab;display:flex;flex-direction:column;gap:6px}
 .kcard:active{cursor:grabbing}
 .kcard.dragging{opacity:.4}
-.kcard[data-pri="hot"]{border-left-color:var(--neon)}
+.kcard[data-pri="hot"]{border-left-color:var(--hot)}
 .kcard[data-pri="warm"]{border-left-color:var(--sunset)}
 .kcard[data-pri="cold"]{border-left-color:var(--uplink)}
 .kcard b{font-size:13px}
@@ -561,6 +565,89 @@ table.tbl{width:100%;border-collapse:collapse;min-width:820px}
 .flicker{animation:flick 2.2s steps(1,end) 1}
 @keyframes flick{0%,4%,8%{opacity:.35}2%,6%,10%,100%{opacity:1}22%{opacity:.6}24%{opacity:1}}
 
+/* ── round two: louder western · louder cyberpunk ── */
+.top::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,transparent,var(--uplink) 30%,var(--neon) 70%,transparent);opacity:.9;pointer-events:none}
+.statusbar{background:linear-gradient(180deg,var(--panel-2),var(--bg-deep));border-top-color:var(--line-strong)}
+.statusbar::before{content:"";position:absolute;left:0;right:0;top:-1px;height:1px;background:linear-gradient(90deg,var(--neon),transparent 35%,transparent 65%,var(--uplink));pointer-events:none}
+.wordmark .gl{position:relative;display:inline-block;text-shadow:-1px 0 0 color-mix(in srgb,var(--uplink) 65%,transparent),1px 0 0 color-mix(in srgb,var(--hot) 65%,transparent),var(--glow)}
+.wordmark .gl::before,.wordmark .gl::after{content:attr(data-text);position:absolute;left:0;top:0;width:100%;color:var(--uplink);text-shadow:none;opacity:0;pointer-events:none}
+.wordmark .gl::after{color:var(--hot)}
+.wordmark .gl::before{animation:gl1 7s infinite steps(1,end)}
+.wordmark .gl::after{animation:gl2 7s infinite steps(1,end) .05s}
+@keyframes gl1{0%,91%,100%{opacity:0;clip-path:inset(0 0 100% 0);transform:none}92%{opacity:.9;clip-path:inset(8% 0 58% 0);transform:translate(-3px,0)}94%{clip-path:inset(62% 0 8% 0);transform:translate(2px,0)}96%{opacity:.9;clip-path:inset(30% 0 42% 0);transform:translate(-2px,1px)}97.5%{opacity:0}}
+@keyframes gl2{0%,91%,100%{opacity:0;clip-path:inset(0 0 100% 0);transform:none}92.5%{opacity:.9;clip-path:inset(55% 0 4% 0);transform:translate(3px,0)}94.5%{clip-path:inset(0 0 72% 0);transform:translate(-2px,0)}96.5%{opacity:.9;clip-path:inset(40% 0 30% 0);transform:translate(2px,-1px)}98%{opacity:0}}
+:root[data-mode="noon"] .wordmark .gl::before,:root[data-mode="noon"] .wordmark .gl::after{animation:none}
+.panel::before,.panel::after{content:"";position:absolute;width:10px;height:10px;border-color:var(--line-strong);border-style:solid;opacity:.9;pointer-events:none}
+.panel::before{top:-1px;left:-1px;border-width:2px 0 0 2px;border-top-left-radius:var(--r-card)}
+.panel::after{bottom:-1px;right:-1px;border-width:0 2px 2px 0;border-bottom-right-radius:var(--r-card)}
+.panel.hud::before,.panel.hud::after{width:16px;height:16px;border-color:var(--uplink)}
+.panel.flat::before,.panel.flat::after,.panel.poster::after{display:none}
+.panel-h .title{font-family:var(--font-display);font-weight:400;font-size:17px;letter-spacing:.01em}
+.readout{margin-left:auto;font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--uplink);padding:2px 7px;border:1px solid color-mix(in srgb,var(--uplink) 40%,transparent);border-radius:var(--r-state);background:var(--uplink-soft);white-space:nowrap}
+.readout b{font-weight:400;color:var(--ink)}
+.panel.poster{border:3px double var(--leather);border-radius:4px;background:repeating-linear-gradient(0deg,transparent 0 6px,var(--leather-soft) 6px 7px),var(--panel)}
+.panel.poster::before{content:"";position:absolute;inset:6px;width:auto;height:auto;border:1px solid var(--leather);opacity:.45;border-radius:2px;border-top-left-radius:2px}
+.panel.poster .panel-h .title{color:var(--sunset);letter-spacing:.06em;text-transform:uppercase}
+.rope{border:0;height:8px;margin:14px 0;background:repeating-linear-gradient(-45deg,var(--leather) 0 5px,color-mix(in srgb,var(--leather) 40%,transparent) 5px 10px);border-radius:4px;opacity:.8;
+  -webkit-mask:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent);mask:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent)}
+.eyebrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.eyebrow::before{content:"";width:12px;height:12px;border:2px solid var(--leather);border-radius:50%;background:linear-gradient(var(--leather),var(--leather)) center/100% 2px no-repeat;flex:none}
+.fx::before{opacity:.5;background:repeating-linear-gradient(0deg,rgba(0,0,0,.22) 0 1px,transparent 1px 3px)}
+.fx .sweep{position:absolute;left:0;right:0;height:140px;top:-140px;background:linear-gradient(180deg,transparent,color-mix(in srgb,var(--uplink) 6%,transparent) 50%,transparent);animation:sweep 9s linear infinite}
+@keyframes sweep{to{top:100%}}
+:root[data-mode="noon"] .fx .sweep{display:none}
+@media (prefers-reduced-motion:reduce){.fx .sweep{display:none}.wordmark .gl::before,.wordmark .gl::after{animation:none}}
+.seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:var(--r-record);overflow:hidden;background:var(--bg-deep)}
+.seg button{height:28px;padding:0 12px;border:0;background:transparent;color:var(--muted);cursor:pointer;font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--neon-soft);color:var(--neon)}
+.filters{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 14px}
+.filters select.input{width:auto;height:28px;padding:0 28px 0 10px;font-size:11px;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:.06em;background-position:calc(100% - 16px) 11px,calc(100% - 11px) 11px}
+.chart svg{height:200px}
+.chart .ln{fill:none;stroke:var(--uplink);stroke-width:2;stroke-linejoin:round}
+.chart .ar{fill:var(--uplink);opacity:.12}
+.chart .xh{stroke:var(--muted);stroke-dasharray:3 3}
+.chart .pt{fill:var(--uplink);stroke:var(--panel);stroke-width:2}
+.chart .pt.end{fill:var(--neon)}
+.chart .band{fill:var(--crit);opacity:.07}
+.donut{display:grid;grid-template-columns:150px minmax(0,1fr);gap:16px;align-items:center}
+.donut svg{width:150px;height:150px;display:block;max-width:100%}
+.donut .sg{fill:none;stroke-width:18;transition:opacity .15s}
+.donut .sg.dim{opacity:.3}
+.donut .tot{font-family:var(--font-mono);font-size:24px;fill:var(--ink);text-anchor:middle}
+.donut .lab{font-family:var(--font-mono);font-size:9px;letter-spacing:.14em;fill:var(--dim);text-anchor:middle}
+.dl{display:flex;flex-direction:column;gap:5px}
+.dl .r{display:grid;grid-template-columns:10px 14px minmax(0,1fr) auto 40px;gap:8px;align-items:center;font-size:12px;cursor:default;padding:3px 6px;border-radius:var(--r-state)}
+.dl .r:hover{background:var(--panel-2)}
+.dl .r i{width:10px;height:10px;border-radius:2px}
+.dl .r .ic{width:14px;height:14px;color:var(--muted)}
+.dl .r .n{font-family:var(--font-mono);color:var(--ink)}
+.dl .r .p{font-family:var(--font-mono);font-size:10px;color:var(--dim);text-align:right}
+.hb{display:flex;flex-direction:column;gap:8px}
+.hb .r{display:grid;grid-template-columns:104px minmax(0,1fr) 64px;gap:10px;align-items:center;font-size:12px;cursor:pointer;padding:3px 6px;margin:0 -6px;border-radius:var(--r-state)}
+.hb .r:hover{background:var(--panel-2)}
+.hb .r .bar{height:10px}
+.hb .r .bar i{background:var(--uplink);box-shadow:none;border-radius:2px}
+.hb .r.on .bar i{background:var(--neon)}
+.hb .r.on .k{color:var(--neon)}
+.hb .r .v{font-family:var(--font-mono);font-size:11px;text-align:right;color:var(--muted)}
+.hb .r .k{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dtable{width:100%;border-collapse:collapse;font-family:var(--font-mono);font-size:11px}
+.dtable th,.dtable td{padding:5px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+.dtable th:first-child,.dtable td:first-child{text-align:left}
+.dtable th{color:var(--muted);font-weight:400;letter-spacing:.08em;text-transform:uppercase;position:sticky;top:0;background:var(--panel)}
+.tile .goal{display:flex;flex-direction:column;gap:4px;margin-top:6px}
+.tile .goal .row{font-family:var(--font-mono);font-size:10px;color:var(--dim);justify-content:space-between}
+.tile .mini{display:flex;gap:8px;align-items:flex-end;height:44px;margin-top:auto;padding-top:14px}
+.tile .mini i{flex:1;background:var(--uplink);border-radius:2px 2px 0 0;min-height:3px;position:relative}
+.tile .mini i.w{background:var(--warn)}.tile .mini i.c{background:var(--crit)}.tile .mini i.g{background:var(--good)}
+.tile .mini i span{position:absolute;bottom:100%;left:0;right:0;text-align:center;font-family:var(--font-mono);font-size:9px;color:var(--dim);padding-bottom:2px;white-space:nowrap}
+.tile .dots{display:flex;gap:6px;margin-top:auto;align-items:center;flex-wrap:wrap}
+.tile .dots .avatar{width:26px;height:26px;font-size:9px}
+.tile .dots .avatar.off{opacity:.35;filter:grayscale(1)}
+.tile .p95{margin-top:4px;font-family:var(--font-mono);font-size:10px;color:var(--dim);display:flex;justify-content:space-between}
+@media (max-width:560px){.donut{grid-template-columns:1fr}.donut svg{margin:0 auto}.hb .r{grid-template-columns:80px minmax(0,1fr) 56px}}
+
 /* responsive */
 .menu-btn{display:none}
 @media (max-width:980px){
@@ -600,7 +687,7 @@ table.tbl{width:100%;border-collapse:collapse;min-width:820px}
 </style>
 </head>
 <body>
-<div class="fx" aria-hidden="true"></div>
+<div class="fx" aria-hidden="true"><div class="sweep"></div></div>
 <div id="app"></div>
 <div class="toasts" id="toasts" aria-live="polite"></div>
 <div id="overlay"></div>
@@ -732,7 +819,7 @@ const S={
   onboarded:store.get('onboarded',false),
   mode:store.get('mode','night'),
   fx:store.get('fx',true),
-  accent:store.get('accent','neon'),
+  accent:store.get('schema',1)>=2?store.get('accent','sunset'):'sunset',
   glow:store.get('glow',70),
   consent:store.get('consent',false),
   prefs:store.get('prefs',{wire:true,dust:true,quiet:false,brand:true,twofa:false,sound:true}),
@@ -767,7 +854,7 @@ function applyTheme(){
   const g=noon?0:S.glow/100;
   r.style.setProperty('--glow',g?`0 0 ${Math.round(6+16*g)}px rgba(${v[3]},${(.2+.45*g).toFixed(2)}),0 0 2px rgba(${v[3]},.9)`:'none');
   r.style.setProperty('--tube',g?`0 0 ${Math.round(4+10*g)}px rgba(${v[3]},${(.25+.45*g).toFixed(2)}),inset 0 0 8px rgba(${v[3]},.22)`:'none');
-  store.set('mode',S.mode);store.set('fx',S.fx);store.set('accent',S.accent);store.set('glow',S.glow);
+  store.set('mode',S.mode);store.set('fx',S.fx);store.set('accent',S.accent);store.set('glow',S.glow);store.set('schema',2);
 }
 
 /* ── small view helpers ── */
@@ -784,20 +871,44 @@ const unreadN=()=>S.notifs.filter(n=>!n.read).length;
 function spark(arr,color){const w=260,h=36,mx=Math.max(...arr),mn=Math.min(...arr);const pts=arr.map((v,i)=>[i/(arr.length-1)*w,h-4-((v-mn)/(mx-mn||1))*(h-8)]);
   const d=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');const l=pts[pts.length-1];
   return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMinYMid meet" aria-hidden="true"><path d="${d} L${w} ${h} L0 ${h}Z" fill="${color}" opacity=".12"/><path d="${d}" fill="none" stroke="${color}" stroke-width="2"/><circle cx="${l[0].toFixed(1)}" cy="${l[1].toFixed(1)}" r="3" fill="${color}"/></svg>`}
-const SCRIP14=[1200,3400,900,5600,2100,7800,450,300,4200,650,9900,1800,700,3400];
-function chartHtml(){const data=SCRIP14,W=560,H=190,L=40,B=22,T=10,R=6,max=10000,iw=(W-L-R)/data.length,bw=iw*.62;const y=v=>T+(H-T-B)*(1-v/max);
-  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Scrip earned over the last 14 days">`;
-  for(const g of[0,2500,5000,7500,10000])s+=`<line class="grid-l" x1="${L}" x2="${W-R}" y1="${y(g).toFixed(1)}" y2="${y(g).toFixed(1)}"/><text x="${L-6}" y="${(y(g)+3).toFixed(1)}" text-anchor="end">${g?g/1000+'k':'0'}</text>`;
-  data.forEach((v,i)=>{const x=L+i*iw+(iw-bw)/2,d=dateOf(i-13);s+=`<rect class="bar-r ${i===13?'hot':''}" data-i="${i}" x="${x.toFixed(1)}" y="${y(v).toFixed(1)}" width="${bw.toFixed(1)}" height="${(y(0)-y(v)).toFixed(1)}" rx="2"><title>${shortDate(d)}: ${fmt(v)} §</title></rect>`;
-    if(i%2===1)s+=`<text x="${(x+bw/2).toFixed(1)}" y="${H-6}" text-anchor="middle">${shortDate(d)}</text>`});
-  return s+'</svg><div class="tip" id="chart-tip" hidden></div>'}
+/* ── dashboard data (seeded, deterministic) ── */
+const R90=(()=>{let s=1337;const r=()=>(s=(s*16807)%2147483647)/2147483647;return Array.from({length:90},(_,i)=>{const wk=dateOf(i-89).getDay();const base=1600+Math.round(r()*2800);const spike=r()<.12?Math.round(r()*6500):0;return Math.max(150,Math.round((base+spike)*(wk===0?.5:wk===6?.7:1)))})})();
+const LAT48=(()=>{let s=4242;const r=()=>(s=(s*16807)%2147483647)/2147483647;let v=46;return Array.from({length:48},(_,i)=>{v=Math.max(22,Math.min(150,v+Math.round((r()-.5)*22)+(i===31?70:0)+(i===32?-40:0)));return v})})();
+const SECTOR_SHARE={'Sector 7':.27,'Rustline':.19,'The Flats':.15,'Chrome Mesa':.13,'Old Reactor':.11,'Saltwire':.09,'Dead Signal':.06};
+S.dash={range:14,sector:'all',table:false};
+const series=()=>{const arr=R90.slice(90-S.dash.range);const sh=S.dash.sector==='all'?1:SECTOR_SHARE[S.dash.sector];return arr.map(v=>Math.round(v*sh))};
+const sum=a=>a.reduce((x,y)=>x+y,0);
+const niceMax=v=>{const p=Math.pow(10,Math.floor(Math.log10(v)));const m=v/p;return (m<=1?1:m<=2?2:m<=2.5?2.5:m<=5?5:10)*p};
+const kfmt=v=>v>=1000?(v/1000).toFixed(v%1000?1:0)+'k':String(v);
+function barChart(){const data=series(),n=data.length,W=560,H=200,L=40,B=22,T=10,R=6,max=niceMax(Math.max(...data)),iw=(W-L-R)/n,bw=Math.max(2,iw*(n>30?.7:.62)),step=Math.ceil(n/7);const y=v=>T+(H-T-B)*(1-v/max);
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Scrip roped, last ${n} days">`;
+  for(let g=0;g<=4;g++){const v=max*g/4;s+=`<line class="grid-l" x1="${L}" x2="${W-R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text x="${L-6}" y="${(y(v)+3).toFixed(1)}" text-anchor="end">${kfmt(v)}</text>`}
+  data.forEach((v,i)=>{const x=L+i*iw+(iw-bw)/2,d=dateOf(i-(n-1));s+=`<rect class="bar-r ${i===n-1?'hot':''}" data-i="${i}" x="${x.toFixed(1)}" y="${y(v).toFixed(1)}" width="${bw.toFixed(1)}" height="${(y(0)-y(v)).toFixed(1)}" rx="${n>30?1:2}"><title>${shortDate(d)}: ${fmt(v)} §</title></rect>`;
+    if(i%step===step-1||(step===1))s+=`<text x="${(x+bw/2).toFixed(1)}" y="${H-6}" text-anchor="middle">${shortDate(d)}</text>`});
+  return s+'</svg><div class="tip" hidden></div>'}
+function lineChart(){const data=LAT48,n=data.length,W=560,H=200,L=40,B=22,T=10,R=6,max=160,px=i=>L+i*(W-L-R)/(n-1),py=v=>T+(H-T-B)*(1-v/max);
+  const pts=data.map((v,i)=>[px(i),py(v)]);const d=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Uplink latency, last 24 hours"><rect class="band" x="${L}" y="${py(160)}" width="${W-L-R}" height="${(py(80)-py(160)).toFixed(1)}"/>`;
+  for(const g of[0,40,80,120,160])s+=`<line class="grid-l" x1="${L}" x2="${W-R}" y1="${py(g).toFixed(1)}" y2="${py(g).toFixed(1)}"/><text x="${L-6}" y="${(py(g)+3).toFixed(1)}" text-anchor="end">${g}</text>`;
+  for(let i=0;i<n;i+=8){const h=(new Date().getHours()-((n-1-i)/2)+48)%24;s+=`<text x="${px(i).toFixed(1)}" y="${H-6}" text-anchor="middle">${pad(Math.floor(h))}:00</text>`}
+  s+=`<path class="ar" d="${d} L${px(n-1).toFixed(1)} ${py(0).toFixed(1)} L${L} ${py(0).toFixed(1)}Z"/><path class="ln" d="${d}"/><line class="xh" id="lat-xh" x1="0" x2="0" y1="${T}" y2="${py(0)}" hidden/><circle class="pt" id="lat-pt" r="4" cx="0" cy="0" hidden/><circle class="pt end" cx="${px(n-1).toFixed(1)}" cy="${py(data[n-1]).toFixed(1)}" r="4"/></svg><div class="tip" hidden></div>`;
+  return s}
+const DONUT=[['open','circle-dot','var(--uplink)'],['claimed','hand','var(--warn)'],['riding','zap','var(--hot)'],['done','circle-check','var(--good)'],['void','ban','var(--dim)']];
+function donutChart(){const counts=DONUT.map(d=>S.bounties.filter(b=>b.status===d[0]).length),tot=sum(counts),r=48,C=2*Math.PI*r;let off=0,segs='';
+  counts.forEach((c,i)=>{if(!c)return;const len=C*c/tot;segs+=`<circle class="sg" data-s="${DONUT[i][0]}" cx="75" cy="75" r="${r}" stroke="${DONUT[i][2]}" stroke-dasharray="${Math.max(0,len-2).toFixed(1)} ${(C-len+2).toFixed(1)}" stroke-dashoffset="${(-off).toFixed(1)}" transform="rotate(-90 75 75)"><title>${STATUS_META[DONUT[i][0]][0]}: ${c}</title></circle>`;off+=len});
+  return `<div class="donut"><svg viewBox="0 0 150 150" role="img" aria-label="Bounties by status">${segs}<text class="tot" x="75" y="80">${tot}</text><text class="lab" x="75" y="96">POSTED</text></svg>
+  <div class="dl">${DONUT.map((d,i)=>`<div class="r" data-hover="${d[0]}"><i style="background:${d[2]}"></i>${ic(d[1])}<span>${STATUS_META[d[0]][0]}</span><span class="n">${counts[i]}</span><span class="p">${tot?Math.round(counts[i]/tot*100):0}%</span></div>`).join('')}</div></div>`}
+function sectorBars(){const tot=sum(R90.slice(90-S.dash.range));const rows=Object.entries(SECTOR_SHARE).map(([k,v])=>[k,Math.round(tot*v)]).sort((a,b)=>b[1]-a[1]);const max=rows[0][1];
+  return `<div class="hb">${rows.map(r=>`<div class="r ${S.dash.sector===r[0]?'on':''}" data-act="dash-sector" data-v="${r[0]}" role="button" tabindex="0"><span class="k">${esc(r[0])}</span><div class="bar"><i style="width:${Math.round(r[1]/max*100)}%"></i></div><span class="v num">${fmt(r[1])} §</span></div>`).join('')}</div>`}
+function dataTable(){const data=series(),n=data.length;return `<div style="max-height:200px;overflow:auto"><table class="dtable"><thead><tr><th>Day</th><th>Scrip</th><th>vs prev</th></tr></thead><tbody>${data.map((v,i)=>{const p=i?data[i-1]:v;const d=v-p;return `<tr><td>${shortDate(dateOf(i-(n-1)))}</td><td>${fmt(v)} §</td><td style="color:${d>0?'var(--good)':d<0?'var(--crit)':'var(--dim)'}">${d>0?'+':''}${fmt(d)}</td></tr>`}).join('')}</tbody></table></div>`}
+
 function skeleton(){return `<div class="stack"><div class="skel" style="height:34px;width:40%"></div><div class="grid g4"><div class="skel" style="height:110px"></div><div class="skel" style="height:110px"></div><div class="skel" style="height:110px"></div><div class="skel" style="height:110px"></div></div><div class="grid g-main"><div class="skel" style="height:260px"></div><div class="skel" style="height:260px"></div></div></div>`}
 function ph(eyebrow,title,desc,acts=''){return `<div class="ph"><div class="txt"><div class="eyebrow">${eyebrow}</div><h1 class="display">${title}</h1>${desc?`<p>${desc}</p>`:''}</div>${acts?`<div class="acts">${acts}</div>`:''}</div>`}
 const closeBtn=()=>`<button class="btn btn-ghost btn-icon btn-sm" data-act="close" aria-label="Close">${ic('x','ic-sm')}</button>`;
 
 /* ── login ── */
 function loginView(){return `<div class="login"><div class="card">
-  <div class="wordmark ${reduced?'':'flicker'}">NEON GULCH<small>FRONTIER CONSOLE // SECTOR 7</small></div>
+  <div class="wordmark ${reduced?'':'flicker'}"><span class="gl" data-text="NEON GULCH">NEON GULCH</span><small>FRONTIER CONSOLE // SECTOR 7</small></div>
   <form id="login-form" data-form="login" novalidate>
     <div class="field" id="f-user"><label for="login-user">Handle</label><div class="inwrap">${ic('user-round')}<input class="input" id="login-user" placeholder="dusty.vector" autocomplete="username" spellcheck="false"></div><div class="err">Need a handle, partner.</div></div>
     <div class="field" id="f-pass"><label for="login-pass">Passkey</label><div class="inwrap">${ic('key-round')}<input class="input" id="login-pass" type="password" placeholder="anything works out here" autocomplete="current-password"><button type="button" class="btn btn-ghost btn-icon btn-sm tail" data-act="peek" aria-label="Show passkey">${ic('eye','ic-sm')}</button></div><div class="err">Passkey's empty. Any old key opens this door.</div></div>
@@ -836,7 +947,7 @@ function jukeHtml(){const t=TRACKS[S.juke.i],p=S.juke;return `<div class="juke $
   <div class="bar sun"><i id="juke-bar" style="width:${(p.pos/t[2]*100).toFixed(1)}%"></i></div>
   <div class="row between"><span class="tiny num" id="juke-t">${mmss(p.pos)}</span><div class="ctl"><button class="btn btn-ghost btn-icon btn-sm" data-act="juke-prev" aria-label="Previous track">${ic('skip-back','ic-sm')}</button><button class="btn btn-icon btn-sm round ${p.playing?'btn-neon':'btn-uplink'}" data-act="juke-toggle" aria-label="${p.playing?'Pause':'Play'}">${ic(p.playing?'pause':'play','ic-sm')}</button><button class="btn btn-ghost btn-icon btn-sm" data-act="juke-next" aria-label="Next track">${ic('skip-forward','ic-sm')}</button></div><span class="tiny num">${mmss(t[2])}</span></div></div>`}
 function sideHtml(){const open=S.bounties.filter(b=>b.status==='open').length;const un=CHANNELS.reduce((a,c)=>a+c[2],0);
-  return `<aside class="side ${S.sideOpen?'open':''}" id="side"><div class="brand"><div class="wordmark">NEON GULCH<small>FRONTIER CONSOLE v0.9.3</small></div></div>
+  return `<aside class="side ${S.sideOpen?'open':''}" id="side"><div class="brand"><div class="wordmark"><span class="gl" data-text="NEON GULCH">NEON GULCH</span><small>FRONTIER CONSOLE v0.9.3</small></div></div>
   <nav class="nav" aria-label="Main"><div class="sect label">Ride</div>${navItem('overwatch')}${navItem('bounties',open)}${navItem('corral')}${navItem('saloon',un)}${navItem('almanac')}<div class="sect label">You</div>${navItem('poster')}${navItem('rig')}${navItem('help')}</nav>
   <div class="spacer"></div>
   <div class="rig"><div class="row"><span class="label">Rig charge</span><span class="mono small ml num" id="charge-n">${S.charge}%</span></div><div class="bar ${S.charge<20?'neon':S.charge>=100?'good':''}" style="margin-top:6px"><i id="charge-bar" style="width:${S.charge}%"></i></div><button class="btn btn-sm btn-uplink btn-block" style="margin-top:8px" data-act="plug" id="plug-btn">${ic(S.plugged?'unplug':'plug','ic-sm')} ${S.plugged?'Unplug':'Plug in'}</button></div>
@@ -856,34 +967,44 @@ function topHtml(){const R=ROUTES[view()];const un=unreadN();const lat=S.latency
   <button class="btn btn-ghost btn-icon" data-act="mode" aria-label="Toggle High Noon" data-tip="${S.mode==='noon'?'Back to night':'High Noon'}">${ic(S.mode==='noon'?'moon':'sun')}</button>
   <div class="hasdrop"><button class="btn btn-ghost btn-icon" data-act="drop" data-v="bell" aria-label="Notifications, ${un} unread" aria-expanded="${S.drop==='bell'}">${ic('bell')}${un?`<span class="badge">${un}</span>`:''}</button>${S.drop==='bell'?bellDrop():''}</div>
   <div class="hasdrop"><button class="avatar on" data-hue style="--h:${hue(S.user.name)};cursor:pointer" data-act="drop" data-v="me" aria-label="Account menu" aria-expanded="${S.drop==='me'}">${initials(S.user.name)}</button>${S.drop==='me'?meDrop():''}</div></header>`}
-function statusHtml(){return `<footer class="statusbar"><span class="live">● Live</span><span>Uplink <b id="lat2" class="num">${S.latency} ms</b></span><span>Sector 7 · Neon Gulch</span><span>Crew online <b>${CREW.filter(c=>c.on).length}/${CREW.length}</b></span><span class="ml num" id="clock">${clock()}</span><span>v0.9.3</span></footer>`}
+function statusHtml(){return `<footer class="statusbar"><span class="live">● On the wire</span><span>Uplink <b id="lat2" class="num">${S.latency} ms</b></span><span>Sector 7 · Neon Gulch</span><span>Crew online <b>${CREW.filter(c=>c.on).length}/${CREW.length}</b></span><span class="ml num" id="clock">${clock()}</span><span>v0.9.3</span></footer>`}
 function bannerHtml(){return `<div class="banner" id="banner">${ic('cookie')}<div style="flex:1"><b class="small">This console uses cookies. And dust.</b><p>Mostly to remember your handle and which way the neon points. No trackers, no cattle brands.</p><div class="row"><button class="btn btn-sm btn-neon" data-act="consent">Fine by me</button><button class="btn btn-sm btn-ghost" data-act="consent">Just the dust</button></div></div></div>`}
 
 /* ── views ── */
 const VIEWS={};
 VIEWS.overwatch=()=>{
-  const h=new Date().getHours(),greet=h<5?'Small hours':h<12?'Morning':h<18?'Afternoon':'Evening';
-  const riding=S.bounties.filter(b=>b.status==='riding'),open=S.bounties.filter(b=>b.status==='open').length;
+  const h=new Date().getHours(),greet=h===12?'High noon':h<5?'Small hours':h<12?'Morning':h<18?'Afternoon':'Evening';
+  const riding=S.bounties.filter(b=>b.status==='riding'),openB=S.bounties.filter(b=>b.status==='open'),open=openB.length;const data=series(),total=sum(data);
+  const p95=[...LAT48].sort((a,b)=>a-b)[Math.floor(47*.95)];const risk=[1,2,3].map(r=>openB.filter(b=>b.risk===r).length);
   const tiles=[
-    ['Scrip on hand','48,210 §','+12% vs last week','up',[30,34,31,38,36,41,44,43,48],'var(--neon)',true],
-    ['Open bounties',String(open),'+3 since dawn','up',[9,9,10,8,11,12,12,13,open],'var(--uplink)'],
-    ['Crew online',`${CREW.filter(c=>c.on).length}/${CREW.length}`,'Sal and the Kid are dark','down',[6,5,5,4,6,6,5,4,4],'var(--sunset)'],
-    ['Uplink latency',`${S.latency} ms`,'−9 ms, wire is clean','up',[62,58,60,49,51,44,40,38,S.latency],'var(--good)'],
+    ['Scrip on hand','48,210 §','+12% vs last moon','up',`${spark([30,34,31,38,36,41,44,43,48],'var(--neon)')}<div class="goal"><div class="row"><span>Goal 60,000 §</span><span>80%</span></div><div class="bar neon"><i style="width:80%"></i></div></div>`,true],
+    ['Open bounties',String(open),'+3 since dawn','up',`<div class="mini" aria-label="Open bounties by risk">${risk.map((c,i)=>`<i class="${['g','w','c'][i]}" style="height:${Math.max(8,c/Math.max(1,...risk)*100)}%"><span>${['Low','Med','High'][i]} ${c}</span></i>`).join('')}</div>`],
+    ['Crew online',`${CREW.filter(c=>c.on).length}/${CREW.length}`,'Sal and the Kid are dark','down',`<div class="dots">${CREW.map(c=>`<span class="avatar ${c.on?'on':'off'}" data-hue style="--h:${hue(c.name)}" title="${esc(c.name)} · ${c.on?'on':'dark'}">${initials(c.name)}</span>`).join('')}</div>`],
+    ['Uplink latency',`${S.latency} ms`,'−9 ms, wire is clean','up',`${spark(LAT48.slice(-12),'var(--good)')}<div class="p95"><span>p95 ${p95} ms</span><span>0 drops · 24 h</span></div>`],
   ];
   return ph(`Overwatch // <b>${new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</b>`,`${greet}, ${esc(S.user.name.split(' ')[0])}.`,
     'Three riders out, one storm coming, and the porch rig is begging. Here\'s the lay of the land.',
-    `<button class="btn btn-neon" data-act="new-bounty">${ic('plus')} Post bounty</button><button class="btn btn-ghost" data-act="export">${ic('download')} Export ledger</button>`)+
-  `<div class="grid g4">${tiles.map(t=>`<div class="panel tile ${t[6]?'neon':''}"><span class="label">${t[0]}</span><span class="value">${t[1]}</span><span class="delta ${t[3]}">${ic(t[3]==='up'?'trending-up':'trending-down','ic-sm')} ${t[2]}</span>${spark(t[4],t[5])}</div>`).join('')}</div>
+    `<button class="btn btn-neon" data-act="new-bounty">${ic('plus')} Post bounty</button><button class="btn btn-ghost" data-act="export">${ic('download')} Round up the ledger</button>`)+
+  `<div class="filters"><span class="label">Corral by</span><div class="seg" role="group" aria-label="Range">${[7,14,30,90].map(n=>`<button data-act="dash-range" data-v="${n}" aria-pressed="${S.dash.range===n}">${n}d</button>`).join('')}</div>
+    <select class="input" data-ch="dash-sector" aria-label="Sector"><option value="all" ${S.dash.sector==='all'?'selected':''}>All sectors</option>${SECTORS.map(s=>`<option ${S.dash.sector===s?'selected':''}>${s}</option>`).join('')}</select>
+    ${S.dash.sector!=='all'?`<button class="fchip" data-act="dash-sector" data-v="all" aria-pressed="true">${ic('x','ic-sm')} ${esc(S.dash.sector)}</button>`:''}
+    <span class="readout">Σ ${S.dash.range}d <b>${fmt(total)} §</b></span></div>
+  <div class="grid g4">${tiles.map(t=>`<div class="panel tile ${t[5]?'neon':''}"><span class="label">${t[0]}</span><span class="value">${t[1]}</span><span class="delta ${t[3]}">${ic(t[3]==='up'?'trending-up':'trending-down','ic-sm')} ${t[2]}</span>${t[4]}</div>`).join('')}</div>
   <div class="grid g-main mt"><div class="stack">
-    <div class="panel hud"><div class="panel-h"><span class="title">Scrip earned · last 14 days</span><div class="legend"><span><i></i>Scrip in</span><span><i class="hot"></i>Today</span></div></div><div class="chart" id="chart">${chartHtml()}</div></div>
+    <div class="panel hud"><div class="panel-h"><span class="title">Scrip roped · ${S.dash.sector==='all'?'all sectors':esc(S.dash.sector)} · ${S.dash.range} days</span><div class="legend"><span><i></i>Scrip in</span><span><i class="hot"></i>Today</span></div><button class="btn btn-ghost btn-sm" data-act="dash-table" aria-pressed="${S.dash.table}">${ic(S.dash.table?'chart-column':'table','ic-sm')} ${S.dash.table?'Chart':'Table'}</button></div>
+      ${S.dash.table?dataTable():`<div class="chart" data-kind="bar">${barChart()}</div>`}
+      <div class="row between" style="margin-top:8px"><span class="tiny">Best day ${fmt(Math.max(...data))} § · worst ${fmt(Math.min(...data))} §</span><span class="tiny num">avg ${fmt(Math.round(total/data.length))} § / day</span></div></div>
+    <div class="grid g2"><div class="panel"><div class="panel-h"><span class="title">Uplink · 24 h</span><span class="readout">p95 <b>${p95} ms</b></span></div><div class="chart" data-kind="line">${lineChart()}</div><div class="tiny" style="margin-top:6px">Red band: over 80 ms the wire starts dropping words.</div></div>
+      <div class="panel"><div class="panel-h"><span class="title">Bounties by status</span><span class="readout"><b>${S.bounties.length}</b> posted</span></div>${donutChart()}</div></div>
     <div class="panel"><div class="panel-h"><span class="title">Quick draws</span><span class="stamp">Six-shooter</span></div><div class="quick">
       <button data-act="new-bounty">${ic('plus')}New bounty</button><button data-act="quick" data-v="sheriff">${ic('badge-check')}Ping sheriff</button><button data-act="quick" data-v="gate">${ic('door-open')}Open gate</button><button data-act="quick" data-v="ride">${ic('route')}Log a ride</button><button data-act="quick" data-v="diag">${ic('activity')}Diagnostics</button><button data-act="quick" data-v="brand">${ic('flame')}Brand a card</button></div></div>
     <div class="grid g2"><div class="panel"><div class="panel-h"><span class="title">On the wire</span><a href="#saloon" class="small">Open saloon</a></div><div class="feed">${FEED.map(f=>`<div class="feed-i"><span class="ico ${f[1]}">${ic(f[0])}</span><div><p>${f[2]}</p><time>${ago(f[3])}</time></div></div>`).join('')}</div></div>
       <div class="panel"><div class="panel-h"><span class="title">Riding now</span><span class="chip chip-neon">${riding.length} out</span></div><div class="stack" style="gap:12px">${riding.map((b,i)=>`<div><div class="row between"><span class="row" style="gap:8px">${av(crew(b.who),'sm')}<b class="small">${esc(b.title)}</b></span><span class="tiny">${[64,31,88][i%3]}%</span></div><div class="bar neon" style="margin-top:6px"><i style="width:${[64,31,88][i%3]}%"></i></div><div class="tiny" style="margin-top:4px">${esc(crew(b.who).name)} · ${esc(b.sector)} · due ${shortDate(dateOf(b.due))}</div></div>`).join('')||'<div class="empty small">Nobody\'s out. Suspicious.</div>'}</div></div></div>
   </div><div class="stack">
-    <div class="panel"><div class="panel-h"><span class="title">Dust &amp; weather</span><span class="chip chip-warn nodot">${ic('tornado')}Storm 21:00</span></div><div class="weather">${ic('cloud-sun','ic-lg')}<div><div class="big">31<small>°C</small></div><div class="small muted">Chrome Mesa · wind 44 km/h · visibility 40 m after dark</div></div></div><hr class="hr"><div class="row between small"><span class="muted">Sunset</span><b class="num">19:42</b></div><div class="row between small"><span class="muted">Dust index</span><b class="num">7.8 / 10</b></div><div class="row between small"><span class="muted">Coyotes</span><b>Chatty</b></div></div>
+    <div class="panel"><div class="panel-h"><span class="title">Scrip by sector</span><span class="stamp">${S.dash.range}d</span></div>${sectorBars()}<div class="tiny" style="margin-top:8px">Tap a sector to corral the charts to it.</div></div>
+    <div class="panel"><div class="panel-h"><span class="title">Dust &amp; weather</span><span class="chip chip-warn nodot">${ic('tornado')}Storm 21:00</span></div><div class="weather">${ic('cloud-sun','ic-lg')}<div><div class="big">31<small>°C</small></div><div class="small muted">Chrome Mesa · wind 44 km/h · visibility 40 m after dark</div></div></div><hr class="rope"><div class="row between small"><span class="muted">Sunset</span><b class="num">19:42</b></div><div class="row between small"><span class="muted">Dust index</span><b class="num">7.8 / 10</b></div><div class="row between small"><span class="muted">Coyotes</span><b>Chatty</b></div></div>
     <div class="panel"><div class="panel-h"><span class="title">Porch rig</span><span class="stamp">${S.plugged?'Charging':'Unplugged'}</span></div><div class="row" style="gap:16px"><div class="ring"><svg viewBox="0 0 84 84"><circle class="bg" cx="42" cy="42" r="36"/><circle class="fg" id="ring-fg" cx="42" cy="42" r="36" stroke-dasharray="226.2" stroke-dashoffset="${(226.2*(1-S.charge/100)).toFixed(1)}"/></svg><b id="ring-n">${S.charge}%</b></div><div class="small"><b>Mustang MkII</b><div class="muted">Range at this charge: <span class="num" id="ring-km">${Math.round(S.charge*3.2)} km</span></div><div class="muted">Plug it in or it walks home.</div><button class="btn btn-sm btn-uplink mt" style="margin-top:8px" data-act="plug">${ic('plug','ic-sm')} ${S.plugged?'Unplug':'Plug in'}</button></div></div></div>
-    <div class="panel"><div class="panel-h"><span class="title">Top riders</span><span class="stamp">This moon</span></div><div class="lb">${[...CREW].sort((a,b)=>b.score-a.score).map((c,i)=>`<div class="lb-row"><span class="rk">${i+1}</span>${av(c,'sm')}<div><div class="nm">${i===0?'<span class="star" style="width:12px;height:12px;vertical-align:-1px"></span> ':''}${esc(c.name)}</div><div class="bar ${i===0?'neon':''}"><i style="width:${Math.round(c.score/128.4)}%"></i></div></div><span class="sc num">${fmt(c.score)}</span></div>`).join('')}</div></div>
+    <div class="panel poster"><div class="panel-h"><span class="title">Top riders</span><span class="stamp">This moon</span></div><div class="lb">${[...CREW].sort((a,b)=>b.score-a.score).map((c,i)=>`<div class="lb-row"><span class="rk">${i+1}</span>${av(c,'sm')}<div><div class="nm">${i===0?'<span class="star" style="width:12px;height:12px;vertical-align:-1px"></span> ':''}${esc(c.name)}</div><div class="bar ${i===0?'neon':''}"><i style="width:${Math.round(c.score/128.4)}%"></i></div></div><span class="sc num">${fmt(c.score)}</span></div>`).join('')}</div></div>
   </div></div>`};
 
 /* bounty board */
@@ -894,15 +1015,15 @@ function tableHtml(){const t=S.tbl,all=tblRows(),pages=Math.max(1,Math.ceil(all.
   const th=(k,l,cls='')=>`<th class="${cls}" data-act="tbl-sort" data-v="${k}" ${t.sort===k?`aria-sort="${t.dir>0?'ascending':'descending'}"`:''}>${l}${ic(t.sort===k?(t.dir>0?'arrow-up':'arrow-down'):'arrow-up-down')}</th>`;
   const counts=s=>s==='all'?S.bounties.length:S.bounties.filter(b=>b.status===s).length;
   return `<div class="toolbar"><div class="inwrap">${ic('search')}<input class="input" id="tbl-q" placeholder="Search bounties, posters, sectors…" value="${esc(t.q)}" data-on="tbl-q"></div>
-    <div class="fchips">${['all',...STATUSES].map(s=>`<button class="fchip" data-act="tbl-filter" data-v="${s}" aria-pressed="${t.status===s}">${s==='all'?'All':STATUS_META[s][0]} <span class="dim">${counts(s)}</span></button>`).join('')}</div>
+    <span class="label">Corral by</span><div class="fchips">${['all',...STATUSES].map(s=>`<button class="fchip" data-act="tbl-filter" data-v="${s}" aria-pressed="${t.status===s}">${s==='all'?'All':STATUS_META[s][0]} <span class="dim">${counts(s)}</span></button>`).join('')}</div>
     <select class="input ml" style="width:auto;height:28px;padding:0 28px 0 10px;font-size:11px" data-ch="tbl-per" aria-label="Rows per page">${[5,8,12,50].map(n=>`<option ${t.per===n?'selected':''} value="${n}">${n} / page</option>`).join('')}</select></div>
   ${t.sel.size?`<div class="bulk">${ic('lasso')}<b class="small">${t.sel.size} roped</b><button class="btn btn-sm btn-neon" data-act="bulk-claim">Claim all</button><button class="btn btn-sm btn-danger" data-act="bulk-void">Void</button><button class="btn btn-sm btn-ghost ml" data-act="bulk-clear">Let 'em go</button></div>`:''}
   <div class="tbl-wrap"><table class="tbl"><thead><tr><th style="width:36px;cursor:default"><input type="checkbox" aria-label="Select page" data-ch="tbl-selall" ${rows.length&&rows.every(r=>t.sel.has(r.id))?'checked':''}></th>${th('id','ID')}${th('title','Bounty')}${th('sector','Sector')}${th('risk','Risk')}${th('reward','Reward','money')}${th('status','Status')}${th('who','Rider')}${th('due','Due')}<th style="width:44px;cursor:default"></th></tr></thead>
   <tbody>${rows.length?rows.map(b=>`<tr aria-selected="${t.sel.has(b.id)}"><td><input type="checkbox" aria-label="Select ${b.id}" data-ch="tbl-sel" data-v="${b.id}" ${t.sel.has(b.id)?'checked':''}></td><td class="id"><a href="#bounties/${b.id}" data-act="tbl-open" data-v="${b.id}" style="text-decoration:none">${b.id}</a></td><td class="tname" style="white-space:normal;min-width:220px">${esc(b.title)}<small>posted by ${esc(b.poster)}</small></td><td>${esc(b.sector)}</td><td>${riskEl(b.risk)}</td><td class="money num">${scrip(b.reward)}</td><td>${chipFor(b.status)}</td><td>${b.who?`<span class="row" style="gap:6px">${av(crew(b.who),'sm')}<span class="small">${esc(crew(b.who).name)}</span></span>`:'<span class="dim">—</span>'}</td><td class="num small">${shortDate(dateOf(b.due))}</td><td class="hasdrop"><button class="btn btn-ghost btn-icon btn-sm" data-act="row-menu" data-v="${b.id}" aria-label="Actions for ${b.id}">${ic('ellipsis','ic-sm')}</button>${S.rowMenu===b.id?`<div class="drop menu" id="drop" style="right:8px"><button class="item" data-act="tbl-claim" data-v="${b.id}">${ic('hand')} Claim it</button><button class="item" data-act="tbl-done" data-v="${b.id}">${ic('circle-check')} Mark done</button><button class="item" data-act="tbl-copy" data-v="${b.id}">${ic('copy')} Copy id</button><div class="sep"></div><button class="item danger" data-act="tbl-void" data-v="${b.id}">${ic('ban')} Void it</button></div>`:''}</td></tr>`).join('')
     :`<tr><td colspan="10"><div class="empty">${ic('wind')}<div class="display">Nothing but tumbleweeds.</div><span>No bounty matches that. Loosen the filter or post one.</span></div></td></tr>`}</tbody></table>
-  <div class="pager"><span>${all.length} bounties</span><span class="ml"></span><button class="pg" data-act="tbl-page" data-v="${t.page-1}" ${t.page<=1?'disabled':''} aria-label="Previous page">‹</button>${Array.from({length:pages},(_,i)=>`<button class="pg" data-act="tbl-page" data-v="${i+1}" ${t.page===i+1?'aria-current="page"':''}>${i+1}</button>`).join('')}<button class="pg" data-act="tbl-page" data-v="${t.page+1}" ${t.page>=pages?'disabled':''} aria-label="Next page">›</button></div></div>`}
+  <div class="pager"><span>${all.length} on the board · trail ${t.page} of ${pages}</span><span class="ml"></span><button class="pg" data-act="tbl-page" data-v="${t.page-1}" ${t.page<=1?'disabled':''} aria-label="Previous page">‹</button>${Array.from({length:pages},(_,i)=>`<button class="pg" data-act="tbl-page" data-v="${i+1}" ${t.page===i+1?'aria-current="page"':''}>${i+1}</button>`).join('')}<button class="pg" data-act="tbl-page" data-v="${t.page+1}" ${t.page>=pages?'disabled':''} aria-label="Next page">›</button></div></div>`}
 VIEWS.bounties=()=>ph(`Bounty Board // <b>${S.bounties.length} posted</b>`,'Bounty Board','Every job in the gulch, who\'s on it, and what it pays. Claim what you can ride.',
-  `<button class="btn btn-neon" data-act="new-bounty">${ic('plus')} Post bounty</button><button class="btn btn-ghost" data-act="export">${ic('download')} Export CSV</button>`)+`<div id="tbl-area">${tableHtml()}</div>`;
+  `<button class="btn btn-neon" data-act="new-bounty">${ic('plus')} Post bounty</button><button class="btn btn-ghost" data-act="export">${ic('download')} Round up as CSV</button>`)+`<div id="tbl-area">${tableHtml()}</div>`;
 
 /* corral */
 VIEWS.corral=()=>ph('Corral // <b>drag to move</b>','The Corral','Loose work gets roped, roped work gets branded, branded work ships. Drag a card between pens, or use its menu on touch.',
@@ -936,7 +1057,7 @@ VIEWS.poster=()=>{const u=S.user;const tabs=[['overview','Overview'],['activity'
     <div class="field"><label for="p-bio">Bio</label><textarea class="input" id="p-bio" maxlength="160" data-on="count">${esc(u.bio||'Rides at night. Pays on time. Allergic to ghosts.')}</textarea><div class="hint"><span id="bio-n">${(u.bio||'Rides at night. Pays on time. Allergic to ghosts.').length}</span>/160</div></div>
     <div class="grid g2"><div class="field"><label for="p-sector">Home sector</label><select class="input" id="p-sector">${SECTORS.map(s=>`<option ${s===(u.sector||'Sector 7')?'selected':''}>${s}</option>`).join('')}</select></div><div class="field"><label>Poster photo</label><div class="drop-zone" data-act="dz" tabindex="0" role="button">${ic('image')}<b class="small">Drop a photo or tap to pick</b><div class="tiny">PNG, JPG · under 4 MB · no filters, the sun does that</div><input type="file" accept="image/*" hidden id="dz-file" data-ch="dz-file"></div></div></div>
     <div id="dz-out" hidden class="row small" style="gap:8px">${ic('file-check')}<span id="dz-name"></span><div class="bar" style="flex:1"><i id="dz-bar" style="width:0"></i></div></div>
-    <div class="row end"><button type="button" class="btn btn-ghost" data-act="prof-reset">Discard</button><button class="btn btn-neon" type="submit">${ic('save')} Save poster</button></div></form>`;
+    <div class="row end"><button type="button" class="btn btn-ghost" data-act="prof-reset">Discard</button><button class="btn btn-neon" type="submit">${ic('save')} Nail it up</button></div></form>`;
   if(S.tab==='activity')body=`<div class="feed">${FEED.map(f=>`<div class="feed-i"><span class="ico ${f[1]}">${ic(f[0])}</span><div><p>${f[2]}</p><time>${ago(f[3])}</time></div></div>`).join('')}</div>`;
   if(S.tab==='security')body=`<form class="stack" data-form="pass" style="gap:12px"><div class="grid g2"><div class="field"><label for="pw1">New passkey</label><input class="input" id="pw1" type="password" data-on="pw" autocomplete="new-password"><div class="meter" id="pw-meter" data-s="0"><i></i><i></i><i></i><i></i></div><div class="hint" id="pw-hint">Longer beats clever. A sentence works.</div></div><div class="field"><label for="pw2">Say it again</label><input class="input" id="pw2" type="password" autocomplete="new-password"><div class="err">Those don't match.</div></div></div><div class="row end"><button class="btn btn-neon" type="submit">${ic('key-round')} Change passkey</button></div></form>
     <hr class="wire">
@@ -958,7 +1079,7 @@ VIEWS.rig=()=>{const p=S.prefs;const sw=(k,t,s)=>`<div class="setrow"><div class
       <div class="setrow"><div class="t"><b>Scanlines &amp; vignette</b><small>The CRT haze. Off if you're reading for an hour.</small></div><label class="switch"><input type="checkbox" ${S.fx?'checked':''} data-ch="set-fx"><span class="k"></span></label></div>
       <div class="setrow"><div class="t"><b>Accent</b><small>One colour carries every action. Pick the sign you want lit.</small></div><div class="swatches">${Object.entries(ACCENTS).map(([k,a])=>`<button class="swatch" style="background:${S.mode==='noon'?a.noon[0]:a.night[0]}" data-act="set-accent" data-v="${k}" aria-pressed="${S.accent===k}" aria-label="${a.label}" data-tip="${a.label}"></button>`).join('')}</div></div>
       <div class="setrow"><div class="t"><b>Neon intensity</b><small>How hard the tubes glow. Does nothing in High Noon; the sun wins.</small></div><input type="range" class="range" style="width:160px" min="0" max="100" value="${S.glow}" data-on="set-glow" aria-label="Neon intensity"></div>
-      <div class="setrow"><div class="t"><b>Wordmark preview</b><small>Live sample of the current accent and glow.</small></div><span class="wordmark" style="font-size:22px">NEON GULCH</span></div></div>
+      <div class="setrow"><div class="t"><b>Wordmark preview</b><small>Live sample of the current accent and glow.</small></div><span class="wordmark" style="font-size:22px"><span class="gl" data-text="NEON GULCH">NEON GULCH</span></span></div></div>
     <div class="panel"><div class="panel-h"><span class="title">The wire</span><span class="stamp">Notifications</span></div>${sw('wire','Wire alerts','Bounties claimed, scrip landing, riders calling.')}${sw('dust','Dust advisories','Storms, visibility, the sky doing things.')}${sw('brand','Brand-new riders','A howdy when someone joins the outfit.')}${sw('sound','Jukebox sound','Let the jukebox actually make noise. It is a synth. It knows five notes.')}
       <div class="setrow"><div class="t"><b>Quiet hours</b><small>The wire holds its tongue between these.</small></div><label class="switch"><input type="checkbox" ${p.quiet?'checked':''} data-ch="pref" data-v="quiet"><span class="k"></span></label></div>
       <div class="row wrap" style="padding:4px 0 8px;opacity:${p.quiet?1:.45}"><div class="field"><label for="q1">From</label><input type="time" class="input" id="q1" value="23:00" ${p.quiet?'':'disabled'}></div><div class="field"><label for="q2">Until</label><input type="time" class="input" id="q2" value="06:30" ${p.quiet?'':'disabled'}></div></div></div>
@@ -966,7 +1087,7 @@ VIEWS.rig=()=>{const p=S.prefs;const sw=(k,t,s)=>`<div class="setrow"><div class
   </div><div class="stack">
     <div class="panel"><div class="panel-h"><span class="title">Integrations</span></div>${[['Telegraph','Long-range messages over the old wire','radio',true],['NetLink','Identity and single sign-on','wifi',true],['Halcyon Freight API','Their manifests in your board','truck',false],['Sheriff\'s feed','Warrants and advisories, live','badge-check',false]].map((g,i)=>`<div class="integ"><span class="logo">${ic(g[2])}</span><div class="t"><b class="small">${g[0]}</b><small>${g[1]}</small></div><button class="btn btn-sm ${S.integ?.[i]??g[3]?'btn-ghost':'btn-uplink'}" data-act="integ" data-v="${i}|${g[0]}">${S.integ?.[i]??g[3]?'Disconnect':'Connect'}</button></div>`).join('')}</div>
     <div class="panel"><div class="panel-h"><span class="title">API key</span><span class="stamp">Keep it holstered</span></div><div class="keyrow"><code id="apikey">${S.apikey||'ng_live_7f3a…c91d'}</code><button class="btn btn-icon" data-act="key-copy" aria-label="Copy key" data-tip="Copy">${ic('copy')}</button><button class="btn btn-icon" data-act="key-regen" aria-label="Regenerate key" data-tip="Regenerate">${ic('refresh-cw')}</button></div><div class="hint muted small" style="margin-top:8px">Regenerating kills the old key everywhere. Halcyon will call you.</div></div>
-    <div class="panel"><div class="panel-h"><span class="title">Your data</span></div><div class="stack" style="gap:10px"><button class="btn btn-uplink" data-act="export">${ic('download')} Export the ledger</button><div class="drop-zone" data-act="dz" tabindex="0" role="button">${ic('upload')}<b class="small">Import a ledger</b><div class="tiny">JSON or CSV, drop it here</div><input type="file" hidden id="dz-file" data-ch="dz-file"></div><div id="dz-out" hidden class="row small" style="gap:8px">${ic('file-check')}<span id="dz-name"></span><div class="bar" style="flex:1"><i id="dz-bar" style="width:0"></i></div></div></div></div>
+    <div class="panel"><div class="panel-h"><span class="title">Your data</span></div><div class="stack" style="gap:10px"><button class="btn btn-uplink" data-act="export">${ic('download')} Round up the ledger</button><div class="drop-zone" data-act="dz" tabindex="0" role="button">${ic('upload')}<b class="small">Import a ledger</b><div class="tiny">JSON or CSV, drop it here</div><input type="file" hidden id="dz-file" data-ch="dz-file"></div><div id="dz-out" hidden class="row small" style="gap:8px">${ic('file-check')}<span id="dz-name"></span><div class="bar" style="flex:1"><i id="dz-bar" style="width:0"></i></div></div></div></div>
     <div class="panel danger"><div class="panel-h"><span class="title">Boot Hill</span>${ic('skull')}</div><p class="small muted" style="margin:0 0 12px">Where accounts go to rest. Nothing here can be undone, which is the whole point of a graveyard.</p><div class="row wrap"><button class="btn btn-danger btn-sm" data-act="rideoff-all">${ic('log-out','ic-sm')} Ride off everywhere</button><button class="btn btn-danger btn-sm" data-act="bury">${ic('skull','ic-sm')} Bury this account</button></div></div>
   </div></div>`};
 
@@ -1083,6 +1204,7 @@ const ACT={
   integ(el){const[i,name]=el.dataset.v.split('|');S.integ=S.integ||{};const cur=S.integ[i]??[true,true,false,false][i];S.integ[i]=!cur;paint();toast(cur?name+' disconnected.':name+' connected.','',cur?'warn':'good')},
   async 'key-copy'(){try{await navigator.clipboard.writeText($('#apikey').textContent);toast('Key copied.','Holster it.','good')}catch(e){toast('Clipboard\'s locked.','','warn')}},
   async 'key-regen'(){if(!await confirmDlg({title:'Regenerate the key?',body:'The old key dies everywhere the moment you do. Halcyon will call.',ok:'Regenerate',danger:true}))return;S.apikey='ng_live_'+Math.random().toString(16).slice(2,6)+'…'+Math.random().toString(16).slice(2,6);paint();toast('New key minted.','The old one is ash.','good')},
+  'dash-range'(el){S.dash.range=+el.dataset.v;paint()},'dash-table'(){S.dash.table=!S.dash.table;paint()},'dash-sector'(el){S.dash.sector=(S.dash.sector===el.dataset.v||el.dataset.v==='all')?'all':el.dataset.v;paint()},
   veil(el,e){if(e.target===el)closeOverlay()},close(){closeOverlay()},
   'modal-ok'(){const r=modalResolve;modalResolve=null;$('#overlay').innerHTML='';r&&r(true)},
   'pal-pick'(el){const it=palFiltered()[+el.dataset.v];it&&it.run()},
@@ -1103,6 +1225,7 @@ const CH={
   'tbl-selall'(el){const rows=tblRows().slice((S.tbl.page-1)*S.tbl.per,S.tbl.page*S.tbl.per);rows.forEach(r=>el.checked?S.tbl.sel.add(r.id):S.tbl.sel.delete(r.id));repaintTable()},
   'cal-pick'(el){const[y,m,d]=el.value.split('-').map(Number);if(!y)return;S.cal={y,m:m-1,sel:d};paint()},
   pref(el){S.prefs[el.dataset.v]=el.checked;store.set('prefs',S.prefs);if(el.dataset.v==='quiet')paint();if(el.dataset.v==='twofa')toast(el.checked?'Second key armed.':'Second key holstered.','',el.checked?'good':'warn');if(el.dataset.v==='sound'&&!el.checked)audioStop()},
+  'dash-sector'(el){S.dash.sector=el.value;paint()},
   'set-mode'(){ACT.mode()},'set-fx'(el){S.fx=el.checked;applyTheme()},
   'dz-file'(el){fileIn(el.files&&el.files[0])},
 };
@@ -1146,8 +1269,17 @@ document.addEventListener('dragleave',e=>{const z=e.target.closest&&e.target.clo
 document.addEventListener('drop',e=>{const z=e.target.closest&&e.target.closest('.kcol,.drop-zone');if(!z)return;e.preventDefault();z.classList.remove('over');
   if(z.classList.contains('drop-zone')){fileIn(e.dataTransfer.files&&e.dataTransfer.files[0]);return}
   const id=S.drag||e.dataTransfer.getData('text/plain');const c=S.cards.find(x=>x.id===id);S.drag=null;if(c&&c.pen!==z.dataset.pen){c.pen=z.dataset.pen;paint();toast('Moved to '+PENS.find(p=>p[0]===c.pen)[1]+'.','',c.pen==='shipped'?'good':'')}});
-document.addEventListener('mousemove',e=>{const r=e.target.closest&&e.target.closest('.bar-r');const tip=$('#chart-tip');if(!tip)return;if(!r){tip.hidden=true;$$('.bar-r.on').forEach(b=>b.classList.remove('on'));return}
-  const i=+r.dataset.i;const box=$('#chart').getBoundingClientRect(),rb=r.getBoundingClientRect();tip.hidden=false;tip.innerHTML=`${shortDate(dateOf(i-13))} · <b>${fmt(SCRIP14[i])} §</b>`;tip.style.left=(rb.left-box.left+rb.width/2)+'px';tip.style.top=(rb.top-box.top)+'px';$$('.bar-r.on').forEach(b=>b.classList.remove('on'));r.classList.add('on')});
+document.addEventListener('mousemove',e=>{const ch=e.target.closest&&e.target.closest('.chart');
+  if(!ch){$$('.chart .tip:not([hidden])').forEach(t=>t.hidden=true);$$('.bar-r.on').forEach(b=>b.classList.remove('on'));const xh=$('#lat-xh'),pt=$('#lat-pt');xh&&(xh.hidden=true);pt&&(pt.hidden=true);return}
+  const tip=$('.tip',ch),box=ch.getBoundingClientRect();
+  if(ch.dataset.kind==='bar'){const r=e.target.closest('.bar-r');if(!r){tip.hidden=true;$$('.bar-r.on',ch).forEach(b=>b.classList.remove('on'));return}const data=series(),i=+r.dataset.i,rb=r.getBoundingClientRect();
+    tip.hidden=false;tip.innerHTML=`${shortDate(dateOf(i-(data.length-1)))} · <b>${fmt(data[i])} §</b>`;tip.style.left=(rb.left-box.left+rb.width/2)+'px';tip.style.top=(rb.top-box.top)+'px';$$('.bar-r.on',ch).forEach(b=>b.classList.remove('on'));r.classList.add('on');return}
+  if(ch.dataset.kind==='line'){const svg=$('svg',ch),sb=svg.getBoundingClientRect(),W=560,H=200,L=40,B=22,T=10,R=6,n=LAT48.length;const x=(e.clientX-sb.left)/sb.width*W;const i=Math.max(0,Math.min(n-1,Math.round((x-L)/((W-L-R)/(n-1)))));
+    const px=L+i*(W-L-R)/(n-1),py=T+(H-T-B)*(1-LAT48[i]/160);const xh=$('#lat-xh'),pt=$('#lat-pt');xh.hidden=false;pt.hidden=false;xh.setAttribute('x1',px);xh.setAttribute('x2',px);pt.setAttribute('cx',px);pt.setAttribute('cy',py);
+    const h=(new Date().getHours()-((n-1-i)/2)+48)%24;tip.hidden=false;tip.innerHTML=`${pad(Math.floor(h))}:${h%1?'30':'00'} · <b>${LAT48[i]} ms</b>`;tip.style.left=(px/W*sb.width+(sb.left-box.left))+'px';tip.style.top=(py/H*sb.height+(sb.top-box.top))+'px'}});
+document.addEventListener('mouseover',e=>{const r=e.target.closest&&e.target.closest('.dl .r');const d=e.target.closest&&e.target.closest('.donut');if(!d&&!r)return;const key=r?r.dataset.hover:null;$$('.donut .sg').forEach(s=>s.classList.toggle('dim',!!key&&s.dataset.s!==key))});
+document.addEventListener('mouseout',e=>{if(e.target.closest&&e.target.closest('.dl')&&!(e.relatedTarget&&e.relatedTarget.closest&&e.relatedTarget.closest('.dl')))$$('.donut .sg').forEach(s=>s.classList.remove('dim'))});
+
 window.addEventListener('hashchange',()=>{if(S.sideOpen)S.sideOpen=false;render(true);const m=location.hash.match(/^#bounties\/(BNT-\d+)/);if(m){const b=S.bounties.find(x=>x.id===m[1]);b&&setTimeout(()=>bountyModal(b),200)}});
 
 /* ── timers ── */
