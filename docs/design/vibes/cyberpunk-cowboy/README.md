@@ -55,3 +55,35 @@ its own theme, accent and sign-in state in `localStorage` only.
   mini-bars, crew presence dots, p95 readout).
 - The status palette was re-searched numerically around the new accent so every co-occurring
   pair clears the colour-blind floor; day-mode info and hot chips became fills like the rest.
+
+## Round three: the world out back
+
+Jac: *"I want a 3D world behind my container cards that changes as I interact in the app."*
+
+A Three.js scene (pinned r128 build from the CDN, no bundler) renders behind every card;
+panels are translucent with a backdrop blur so the street ghosts through. The scene is
+Neon Gulch's main street: saloon with a neon sign and lit windows, notice board, corral
+with crates and a flatbed, your rig on a charging cable, water tower, windmill, antenna
+beacon, mesas, a distant neon skyline, stars, moon or sun, drifting dust.
+
+What your actions do out there:
+
+| You | The world |
+|---|---|
+| Move between pages | The camera rides to a new vantage: the porch, the notice board, the corral, the rig, the sky, the water tower |
+| Jack in / ride off | The saloon sign buzzes on / the street goes dark |
+| Post a bounty | A poster gets nailed to the notice board (open bounties = posters) |
+| Claim a bounty | A rider gallops through town |
+| Mark a bounty done | The saloon flashes |
+| Move Corral cards | Crates move between pens; shipped crates stack on the flatbed |
+| Plug in the rig | The cable and charge strip glow; headlights brighten as charge climbs |
+| Play the jukebox | The saloon windows pulse to the beat |
+| Uplink latency | The antenna beacon goes green, yellow or red and blinks faster; the neon flickers when the wire is bad |
+| Storm advisory (bell) or the weather chip | A dust storm rolls in: wind, fog, windmill spins up |
+| High Noon | Sun, sand, shadows; neon and stars off |
+| Accent picker | The neon sign changes colour |
+| Onboarding rig choice | The parked rig changes shape (Mustang, Iron Mule, Ghostwire) |
+
+Idle: the windmill turns, dust drifts, the beacon breathes, the camera sways with the mouse.
+Respects reduced-motion (no sway), pauses when the tab is hidden, and has an off switch in
+the Rig. If the CDN build cannot load, the page falls back to the flat gradient.
