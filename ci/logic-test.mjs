@@ -3991,13 +3991,13 @@ try {
     // never uses up that failed send: its real late landing is still caught after the newer save / the merge-delete
     // commits. (Q5) RC-65: a pending merge-delete is not resurrected by a server copy that is unchanged except for the
     // empty server-owned fields doSync drops on an insert; a baseline holding a real payment (Q5b), or a copy another
-    // device has paid since (Q5c), still comes back visibly.
-    // (Q4) an entry is dropped only once a load that began after its window closed has been checked against it — never
+    // device has paid since (Q5c), still comes back visibly. (a4) a poll copy equal to the local record is current and
+    // never uses up a failed send. (Q4) an entry is dropped only once a load that began after its window closed has been checked against it — never
     // by wall clock while every poll was suspended (a phone in a pocket). (Q6/Q7) a send that straddles a baseline reset
     // (switch user, re-login) is booked against neither the new session's memory nor its baseline. (M) on a sealed
     // invoice a landing that also reverted a field the server does NOT freeze still fires, and on an unsealed one a
-    // landing that reverted only the line items does (M2). (O) a send made while the
-    // device is offline never left: it is not remembered; one that failed while online still is. Mocked window.fetch only.
+    // landing that reverted only the line items does (M2). (O) a send made while the device
+    // is offline never left: it is not remembered; one that failed while online still is. Mocked window.fetch only.
     {
       const realFetch = window.fetch; const seen = []; let plan = []; let loadData = {}; let loadMode = 'ok'; const held = [];
       window.fetch = (u, init) => {
@@ -4030,7 +4030,7 @@ try {
       const drop = (k, id) => { for (let j = T.DATA[k].length - 1; j >= 0; j--) if (T.DATA[k][j][ID_OF[k]] === id) T.DATA[k].splice(j, 1); T.IDX[IDX_OF[k]] && T.IDX[IDX_OF[k]].delete(id); };
       const inv = (id) => ({ invoiceId: id, customerId: 'C0009', rentalIds: [], date: '2026-09-25', dueDate: '2026-09-25', po: '', amountPaid: 0, lineItems: [{ lid: 'l1', desc: 'Day', amount: 100 }], note: 'v0' });
       const stored = (rec) => { const c = JSON.parse(JSON.stringify(rec)); delete c.amountPaid; return c; };   // doSync on an insert: the server-owned amountPaid is dropped
-      const IDS = [['invoices', 'INV-RVW-Q1'], ['invoices', 'INV-RVW-Q2'], ['invoices', 'INV-RVW-Q3'], ['invoices', 'INV-RVW-Q5'], ['invoices', 'INV-RVW-Q5B'], ['invoices', 'INV-RVW-Q5C'], ['invoices', 'INV-RVW-M'], ['vendors', 'VEN-RVW-Q4'], ['vendors', 'VEN-RVW-Q4X'], ['invoices', 'INV-RVW-MU'], ['vendors', 'VEN-RVW-Q6'], ['vendors', 'VEN-RVW-Q7'], ['vendors', 'VEN-RVW-O']];
+      const IDS = [['invoices', 'INV-RVW-Q1'], ['invoices', 'INV-RVW-Q2'], ['invoices', 'INV-RVW-Q3'], ['invoices', 'INV-RVW-Q5'], ['invoices', 'INV-RVW-Q5B'], ['invoices', 'INV-RVW-Q5C'], ['invoices', 'INV-RVW-R'], ['invoices', 'INV-RVW-M'], ['vendors', 'VEN-RVW-Q4'], ['vendors', 'VEN-RVW-Q4X'], ['invoices', 'INV-RVW-MU'], ['vendors', 'VEN-RVW-Q6'], ['vendors', 'VEN-RVW-Q7'], ['vendors', 'VEN-RVW-O']];
       const hang = async () => { T.SYNC.backoff = 20000; plan = ['hang']; await bounded(T.flushSave(), 3000); };
       const commit = async () => { plan = ['ok']; await bounded(T.flushSave(), 3000); };
       const relogin = (k, rec, loaded) => { T.pidTokenClear(); Object.keys(rec).forEach((kk) => delete rec[kk]); Object.assign(rec, loaded); T.snapshotSaved(); T.setBackendPassword('TEST-PW'); };   // what switch user + the next login's finishLoad do to the save state
@@ -4038,8 +4038,8 @@ try {
         T.resetSaveState(); T.SYNC.timeoutMs = BASE; T.SYNC.syncMs = BASE; T.setBackendPassword('TEST-PW');
         const q1 = inv('INV-RVW-Q1'), q2 = inv('INV-RVW-Q2'), q3 = inv('INV-RVW-Q3'), q5 = inv('INV-RVW-Q5'), mm = inv('INV-RVW-M');
         const q5b = Object.assign(inv('INV-RVW-Q5B'), { amountPaid: 100, paid: true, paidAt: '2026-09-25T12:00:00Z', paymentMethod: 'Cash' });
-        const q5c = inv('INV-RVW-Q5C');
-        [q1, q2, q3, q5, q5b, q5c, mm].forEach((r) => add('invoices', r));
+        const q5c = inv('INV-RVW-Q5C'), rr = inv('INV-RVW-R');
+        [q1, q2, q3, q5, q5b, q5c, rr, mm].forEach((r) => add('invoices', r));
         T.snapshotSaved();
 
         // (Q1) B1 {V1} fails after it was sent; B2 re-sends V1 and commits; V2 is in its debounce when a poll sees B2's
@@ -4076,6 +4076,16 @@ try {
         await poll({ invoices: [b1q3] });
         ok(q3.note === 'Q3 V2', `RC-71 review (Q3): the late landing does not revert the newer save when a poll during a later backoff saw the committed retry (note ${q3.note})`);
         await waitFor(() => !dirtyUp('invoices', 'INV-RVW-Q3'), 5000);
+
+        // (a4) the local copy IS the landed batch: R1 fails; R2 commits; the operator edits back to R1 (not yet sent); a poll
+        //      shows R1 (stored without the empty amountPaid) → current, not a late landing: the failed send is not used up
+        rr.note = 'R1'; await hang(); const b1r = stored(rr);
+        rr.note = 'R2'; await commit();
+        rr.note = 'R1';
+        await poll({ invoices: [b1r] });
+        const ra = counts('invoices', 'INV-RVW-R');
+        ok(rr.note === 'R1' && ra === '1', `RC-71 review (a4): a poll copy equal to the local record (the same batch) is current — never taken for the late landing (note ${rr.note}; remembered ${ra || '-'})`);
+        await commit();
 
         // (Q5) RC-65, no failed send: V1 commits normally (stored without amountPaid); the invoice is merged away before any
         //      poll adopted the stored copy; a poll sees that unchanged server copy inside the delete's debounce
@@ -4150,9 +4160,9 @@ try {
         T.SYNC.backoff = 1200; T.SYNC.fails = 0;
         v7.name = 'Q7 A-edit'; plan = ['hold']; const p7 = T.flushSave(); await waitFor(() => held.length > 0, 2000);
         relogin('vendors', v7, { vendorId: 'VEN-RVW-Q7', name: 'Q7 v0' });
-        held.shift()(); await bounded(p7, 3000);
+        const rel7 = held.shift(); if (rel7) rel7(); await bounded(p7, 3000);
         const d7 = dirtyUp('vendors', 'VEN-RVW-Q7');
-        ok(!d7, `RC-71 review (Q7): a send from before a baseline reset that commits after it does not leave the older loaded copy queued over it (queued ${d7 ? JSON.parse(d7.js).name : 'nothing'})`);
+        ok(!!rel7 && !d7,`RC-71 review (Q7): a send from before a baseline reset that commits after it does not leave the older loaded copy queued over it (queued ${d7 ? JSON.parse(d7.js).name : 'nothing'})`);
         T.SYNC.syncMs = BASE;
 
         // (O) offline: the fetch is refused on the device, nothing left it → not remembered; a network error while online
