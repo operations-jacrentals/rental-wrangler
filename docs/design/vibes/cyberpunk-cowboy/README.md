@@ -87,3 +87,22 @@ What your actions do out there:
 Idle: the windmill turns, dust drifts, the beacon breathes, the camera sways with the mouse.
 Respects reduced-motion (no sway), pauses when the tab is hidden, and has an off switch in
 the Rig. If the CDN build cannot load, the page falls back to the flat gradient.
+
+## Round four: the fleet
+
+Jac: *"Can you include a fleet of excavators, scissor lifts, skid steers, and light towers?"*
+
+A rental yard east of the notice board (the Rig page's camera looks over it): three
+excavators, three skid steers, three scissor lifts and four light towers, all low-poly
+box-and-cylinder builds with the right silhouettes (tracks and a slewing house with boom,
+stick and bucket; a crossed-arm scissor stack under a railed platform; a compact loader with
+lift arms and a bucket; a trailer with a mast and a four-lamp head).
+
+| You | The fleet |
+|---|---|
+| Night / High Noon | Light towers switch on and light the yard / switch off |
+| Storm | Tower lamps flicker; scissor lifts drop to the deck for safety |
+| Claim a bounty | A skid steer rolls out of its slot, up to the street and away east, then returns to its slot |
+| Mark a bounty done | Every excavator slews and digs a cycle |
+| Jukebox | Scissor platforms bounce to the beat |
+| Idle | Booms sway, lift arms bob, platforms cycle slowly up and down |
