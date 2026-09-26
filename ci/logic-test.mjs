@@ -3725,11 +3725,11 @@ try {
       const syncs = () => seen.filter((b) => b.action === 'sync');
       const sent = (id) => { const s = syncs().pop(); return s && (s.upserts.vendors || []).find((r) => r.vendorId === id); };
       const dirty = (id) => (T.computeChanges().upserts.vendors || []).some((u) => u.id === id);
-      const origMs = T.SYNC.timeoutMs, BASE = 150;
+      const origMs = T.SYNC.timeoutMs, origSyncMs = T.SYNC.syncMs, BASE = 150;
       const waited = (i, x) => !!held[i] && held[i].abortedAfter !== null && held[i].abortedAfter >= x * BASE - 5;
       const rec = { vendorId: 'VEN-RC67', name: 'RC67 vendor' };
       try {
-        T.resetSaveState(); T.SYNC.timeoutMs = BASE;
+        T.resetSaveState(); T.SYNC.timeoutMs = BASE; T.SYNC.syncMs = BASE;
         T.DATA.vendors.push(rec); T.IDX.vendor && T.IDX.vendor.set(rec.vendorId, rec);
         T.snapshotSaved(); T.setBackendPassword('TEST-PW');
 
@@ -3770,13 +3770,215 @@ try {
         const s3 = sent('VEN-RC67');
         ok(syncs().length === 2 && s3 && s3.rc67 === 'v3' && !dirty('VEN-RC67') && T.SYNC.fails === 0, `RC-67 (4A): after a stall the backoff timer re-sends the batch on its own and it commits (${syncs().length} sent)`);
       } finally {
-        T.resetSaveState(); T.SYNC.timeoutMs = origMs; T.setBackendPassword('');
+        T.resetSaveState(); T.SYNC.timeoutMs = origMs; T.SYNC.syncMs = origSyncMs; T.setBackendPassword('');
         for (let j = T.DATA.vendors.length - 1; j >= 0; j--) { if (T.DATA.vendors[j].vendorId === 'VEN-RC67') { T.DATA.vendors.splice(j, 1); T.IDX.vendor && T.IDX.vendor.delete('VEN-RC67'); } }
         await sleep(100); window.fetch = realFetch;
         window.JT.snapshotSaved && window.JT.snapshotSaved();
       }
     }
 
+    // RC-71 (4A option C) — the sync POST's own 60 s base, and the stale-landing guard. A sync that failed AFTER it
+    // was sent may still land late, after a newer save of the same record committed. The next poll must NOT adopt
+    // those bytes as "clean" (a) nor re-create a record this device deleted since (b): the baseline takes the server
+    // copy and the local record (or its delete) is re-sent. Each failed send explains one landing (a3, L); a copy
+    // someone paid since is never deleted (b2); another device's edit is still adopted (c); the same batch re-sent and
+    // stored normalized is adopted, never re-sent every poll (a2); a batch refused outright is not remembered (h); the
+    // memory ages out (d) and sign-out clears it (e). Q-3A-stall (g): after a LOST load getChats gets the short limit.
+    // Mocked window.fetch only.
+    {
+      const realFetch = window.fetch; const seen = []; let plan = []; let loadData = {}; let loadMode = 'ok'; let chatMode = 'ok'; const chatHeld = [];
+      const GAS = (u) => String(u).includes('script.google.com');
+      const chatsReply = () => new Response(JSON.stringify({ ok: true, chats: JSON.parse(JSON.stringify(T.__state.chat.chats)) }), { status: 200 });
+      window.fetch = (u, init) => {
+        if (!GAS(u)) return realFetch(u, init);
+        let body = {}; try { body = JSON.parse((init && init.body) || '{}'); } catch (e) {}
+        seen.push(body);
+        if (body.action === 'load') {
+          if (loadMode === '404') return Promise.resolve(new Response('<!DOCTYPE html><html>Sorry, unable to open the file at this time.</html>', { status: 404 }));
+          return Promise.resolve(new Response(JSON.stringify({ ok: true, data: loadData }), { status: 200 }));
+        }
+        if (body.action === 'getChats') {
+          if (chatMode !== 'hang') return Promise.resolve(chatsReply());
+          const t0 = performance.now(), h = { abortedAfter: null, release: null }; chatHeld.push(h);
+          return new Promise((res, rej) => { h.release = () => res(chatsReply()); if (init && init.signal) init.signal.addEventListener('abort', () => { h.abortedAfter = performance.now() - t0; rej(new DOMException('aborted', 'AbortError')); }); });
+        }
+        if (body.action !== 'sync') return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+        const step = plan.shift() || 'ok';
+        if (step === 'hang') return new Promise((_, rej) => { if (init && init.signal) init.signal.addEventListener('abort', () => rej(new DOMException('aborted', 'AbortError'))); });
+        if (step === 'busy' || step === 'unauthorized') return Promise.resolve(new Response(JSON.stringify({ ok: false, error: step }), { status: 200 }));
+        return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const bounded = (p, ms) => Promise.race([p, sleep(ms).then(() => 'STUCK')]);
+      const waitFor = async (fn, ms) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { if (fn()) return true; await sleep(25); } return !!fn(); };
+      const syncs = () => seen.filter((b) => b.action === 'sync');
+      const st = T.__state, ov = st.overlay, we = st.winEdit, up0 = st.userPrefs, R = T.REFRESH, lcm0 = R.lostChatsMs;
+      const ready = () => { st.overlay = null; st.winEdit = null; if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); };
+      const poll = async (data) => { loadMode = 'ok'; loadData = data; ready(); return bounded(T.refreshFromBackend(), 3000); };
+      const dirtyUp = (k, id) => (T.computeChanges().upserts[k] || []).find((u) => u.id === id);
+      const delQueued = (k, id) => (T.computeChanges().deletes[k] || []).includes(id);
+      const counts = (k, id) => { const m = T.STALE.byKey.get(k + '\u0001' + id); return m ? [...m.values()].map((e) => e.n).join(',') : ''; };   // remembered failed sends per fingerprint
+      const origMs = T.SYNC.timeoutMs, origSyncMs = T.SYNC.syncMs, BASE = 150;
+      const IDX_OF = { vendors: 'vendor', invoices: 'invoice' }, ID_OF = { vendors: 'vendorId', invoices: 'invoiceId' };
+      const add = (k, rec) => { T.DATA[k].push(rec); T.IDX[IDX_OF[k]] && T.IDX[IDX_OF[k]].set(rec[ID_OF[k]], rec); };
+      const drop = (k, id) => { for (let j = T.DATA[k].length - 1; j >= 0; j--) if (T.DATA[k][j][ID_OF[k]] === id) T.DATA[k].splice(j, 1); T.IDX[IDX_OF[k]] && T.IDX[IDX_OF[k]].delete(id); };
+      const IDS = [['vendors', 'VEN-RC71-F'], ['vendors', 'VEN-RC71-A'], ['vendors', 'VEN-RC71-D'], ['vendors', 'VEN-RC71-H'], ['invoices', 'INV-RC71-B'], ['invoices', 'INV-RC71-N'], ['invoices', 'INV-RC71-P'], ['invoices', 'INV-RC71-L']];
+      const inv = (id) => ({ invoiceId: id, customerId: 'C0009', rentalIds: [], date: '2026-09-25', dueDate: '2026-09-25', po: '', amountPaid: 0, lineItems: [{ lid: 'l1', desc: 'Day', amount: 100 }], note: 'RC71 v0' });
+      // S1 goes out and is aborted at the limit (the server may still apply it later) while the operator keeps typing;
+      // S2, that newer edit, then commits. The failed attempt's own backoff retry is pushed out of the test window
+      // (SYNC.backoff) so only the guard can re-send.
+      const abortThenCommit = async (rec, s1, s2) => {
+        T.SYNC.backoff = 20000; Object.assign(rec, s1); plan = ['hang'];
+        const sent1 = JSON.parse(JSON.stringify(rec)), n0 = syncs().length;
+        const p1 = T.flushSave(); await waitFor(() => syncs().length > n0, 2000);   // S1's bytes are on the wire
+        Object.assign(rec, s2);   // edited while S1 is out: what S1 carried must be remembered from what was SENT, not the live record
+        await bounded(p1, 3000);
+        plan = ['ok']; await bounded(T.flushSave(), 3000);
+        return sent1;
+      };
+      try {
+        // (f) the sync POST has its own 60 s base — 60 / 120 / 180 s (cap) — and uploads keep 45 s (production values)
+        const f0 = T.SYNC.fails;
+        const lim = [0, 1, 2, 5].map((f) => { T.SYNC.fails = f; return T.syncLimitMs() / 1000; }).join(',');
+        T.SYNC.fails = f0;
+        ok(lim === '60,120,180,180' && origMs === 45000 && origSyncMs === 60000, `RC-71 (f): the sync POST limit is 60 → 120 → 180 s (cap); uploads keep 45 s (${lim}; uploads ${origMs / 1000} s)`);
+        T.resetSaveState();
+        const fz = { vendorId: 'VEN-RC71-F', name: 'RC71 F0' }; add('vendors', fz);
+        T.snapshotSaved(); T.setBackendPassword('TEST-PW');
+        fz.name = 'RC71 F1'; T.SYNC.timeoutMs = 5000; T.SYNC.syncMs = BASE; T.SYNC.backoff = 20000; plan = ['hang'];
+        const tf = performance.now(); const rf = await bounded(T.flushSave(), 2000); const tookF = performance.now() - tf;
+        ok(rf !== 'STUCK' && tookF < 2000 && T.SYNC.fails === 1, `RC-71 (f): the sync POST is aborted at its OWN limit (SYNC.syncMs), not the uploads' SYNC.timeoutMs (${Math.round(tookF)} ms)`);
+
+        T.resetSaveState(); T.SYNC.timeoutMs = BASE; T.SYNC.syncMs = BASE;
+        const a = { vendorId: 'VEN-RC71-A', name: 'RC71 v0' }, d = { vendorId: 'VEN-RC71-D', name: 'RC71 v0' }, hh = { vendorId: 'VEN-RC71-H', name: 'RC71 v0' };
+        const b = inv('INV-RC71-B'), n = inv('INV-RC71-N'), p = inv('INV-RC71-P'), l = inv('INV-RC71-L');
+        add('vendors', a); add('vendors', d); add('vendors', hh); add('invoices', b); add('invoices', n); add('invoices', p); add('invoices', l);
+        T.snapshotSaved();
+
+        // (a) the Q-4A reorder: S1 failed after it was sent, S2 (a newer edit) committed, then S1 lands late
+        const s1a = await abortThenCommit(a, { name: 'RC71 S1' }, { name: 'RC71 S2' });
+        ok(T.SYNC.fails === 0 && !dirtyUp('vendors', 'VEN-RC71-A') && s1a.name === 'RC71 S1', 'RC-71 fixture (a): S1 failed after it was sent, then S2 committed');
+        seen.length = 0;
+        await poll({ vendors: [s1a] });
+        ok(a.name === 'RC71 S2', `RC-71 (a): a late-landing copy of this device's own failed batch is NOT adopted over its newer committed save (${a.name})`);
+        const upA = dirtyUp('vendors', 'VEN-RC71-A');
+        ok(!!upA && JSON.parse(upA.js).name === 'RC71 S2', 'RC-71 (a): the record is re-marked dirty against the server copy, carrying the newer local edit');
+        await waitFor(() => !dirtyUp('vendors', 'VEN-RC71-A'), 5000);
+        const reA = syncs().map((s) => ((s.upserts || {}).vendors || []).find((r) => r.vendorId === 'VEN-RC71-A')).filter(Boolean).pop();
+        ok(!!reA && reA.name === 'RC71 S2' && !dirtyUp('vendors', 'VEN-RC71-A'), `RC-71 (a): the newer copy is re-sent on its own and commits (${syncs().length} sync)`);
+
+        // (a3) one failed send explains one landing, and a copy the baseline already holds is not counted twice: T1 fails
+        //      TWICE (two sends, each of which may land), T2 commits; T1 is seen on two polls in a row, then lands again
+        T.SYNC.backoff = 20000; a.name = 'RC71 T1'; const t1 = JSON.parse(JSON.stringify(a));
+        plan = ['hang']; await bounded(T.flushSave(), 3000);
+        plan = ['hang']; await bounded(T.flushSave(), 3000);
+        a.name = 'RC71 T2'; plan = ['ok']; await bounded(T.flushSave(), 3000);
+        ok(T.SYNC.fails === 0 && !dirtyUp('vendors', 'VEN-RC71-A') && counts('vendors', 'VEN-RC71-A') === '2', `RC-71 fixture (a3): T1 failed twice, then T2 committed (${counts('vendors', 'VEN-RC71-A')})`);
+        await poll({ vendors: [t1] });
+        await poll({ vendors: [t1] });   // the same copy again, before the re-send: the baseline already holds it
+        ok(a.name === 'RC71 T2' && counts('vendors', 'VEN-RC71-A') === '1', `RC-71 (a3): a landing the baseline already holds is not counted twice — the second failed send still guards its own landing (${counts('vendors', 'VEN-RC71-A') || 'none left'})`);
+        await waitFor(() => !dirtyUp('vendors', 'VEN-RC71-A'), 5000);
+        await poll({ vendors: [t1] });   // the second failed send lands late too
+        ok(a.name === 'RC71 T2' && !!dirtyUp('vendors', 'VEN-RC71-A') && counts('vendors', 'VEN-RC71-A') === '', `RC-71 (a3): the second failed send's own late landing is caught too — and then nothing is left remembered (${a.name})`);
+        await waitFor(() => !dirtyUp('vendors', 'VEN-RC71-A'), 5000);
+
+        // (c) no over-blocking: C1 failed and is still remembered; another device's edit (bytes this device never sent) is adopted
+        const s1c = await abortThenCommit(a, { name: 'RC71 C1' }, { name: 'RC71 C2' });
+        await poll({ vendors: [Object.assign({}, s1c, { name: 'RC71 other device' })] });
+        ok(a.name === 'RC71 other device' && !dirtyUp('vendors', 'VEN-RC71-A') && counts('vendors', 'VEN-RC71-A') === '1', `RC-71 (c): another device's edit of the same record is still adopted normally (${a.name})`);
+
+        // (b) the delete variant: S1 (an upsert of an invoice) fails after it was sent; the invoice is then merged away
+        //     here and S2 — its delete — commits; S1 lands late, as doSync stores it with no row left: WITHOUT the
+        //     money-outcome fields the server owns (amountPaid). It must not come back
+        T.SYNC.backoff = 20000; b.note = 'RC71 S1'; plan = ['hang']; await bounded(T.flushSave(), 3000);
+        const s1b = JSON.parse(JSON.stringify(b)); delete s1b.amountPaid;
+        drop('invoices', 'INV-RC71-B'); plan = ['ok']; await bounded(T.flushSave(), 3000);
+        ok(!delQueued('invoices', 'INV-RC71-B') && T.SYNC.fails === 0, 'RC-71 fixture (b): the delete committed after the failed upsert');
+        seen.length = 0;
+        await poll({ invoices: [s1b] });
+        ok(!T.DATA.invoices.some((iv) => iv.invoiceId === 'INV-RC71-B') && !T.IDX.invoice.has('INV-RC71-B'), "RC-71 (b): a late-landing copy of this device's own failed upsert does NOT resurrect an invoice it deleted since (merged / absorbed)");
+        ok(delQueued('invoices', 'INV-RC71-B'), 'RC-71 (b): the delete is re-marked against the server copy that came back');
+        await waitFor(() => !delQueued('invoices', 'INV-RC71-B'), 5000);
+        ok(syncs().some((s) => ((s.deletes || {}).invoices || []).includes('INV-RC71-B')) && !delQueued('invoices', 'INV-RC71-B'), `RC-71 (b): the delete is re-sent on its own and commits (${syncs().length} sync)`);
+
+        // (b2) money: the same late landing, but another device has since recorded a cash payment on the resurrected copy
+        //      (recordManualPayment_ writes only server-owned fields, so its fingerprint still matches P1). The guard must
+        //      never delete it: it comes back visibly, exactly as before RC-71
+        T.SYNC.backoff = 20000; p.note = 'RC71 P1'; plan = ['hang']; await bounded(T.flushSave(), 3000);
+        const s1p = JSON.parse(JSON.stringify(p)); delete s1p.amountPaid;
+        drop('invoices', 'INV-RC71-P'); plan = ['ok']; await bounded(T.flushSave(), 3000);
+        ok(!delQueued('invoices', 'INV-RC71-P') && T.SYNC.fails === 0, 'RC-71 fixture (b2): the delete committed after the failed upsert');
+        const paidCopy = Object.assign({}, s1p, { amountPaid: 100, payments: [{ type: 'cash', amountCents: 10000, at: '2026-09-25T12:00:00Z', role: 'office' }], paymentMethod: 'Cash', paidAt: '2026-09-25T12:00:00Z', paid: true });
+        await poll({ invoices: [paidCopy] });
+        const pBack = T.IDX.invoice.get('INV-RC71-P');
+        ok(!!pBack && pBack.paid === true && T.DATA.invoices.includes(pBack) && !delQueued('invoices', 'INV-RC71-P'), 'RC-71 (b2): a resurrected invoice that another device has since PAID comes back visibly — the guard never deletes it');
+
+        // (a2) no self-loop: N1 fails, the SAME bytes are re-sent and commit, and the server stores them normalized
+        //      (a money-outcome field it owns dropped). That copy matches N1 but IS the local record: adopted as before
+        T.SYNC.backoff = 20000; n.note = 'RC71 N1'; plan = ['hang']; await bounded(T.flushSave(), 3000);
+        plan = ['ok']; await bounded(T.flushSave(), 3000);
+        const nStored = JSON.parse(JSON.stringify(n)); delete nStored.amountPaid;
+        await poll({ invoices: [nStored] });
+        ok(!('amountPaid' in n) && n.note === 'RC71 N1' && !dirtyUp('invoices', 'INV-RC71-N'), 'RC-71 (a2): a failed batch re-sent unchanged and stored normalized by the server is adopted as stored — never re-sent every poll');
+
+        // (L) a sealed invoice: L1 fails; the office then seals its pricing (stripeLockInvoice_ writes only locked +
+        //     lineItemsSig, both server-owned) while this device's newer line-item edit commits — but a sealed invoice keeps
+        //     its own line items, so every poll still shows L1's. The guard re-sends once, then the seal is adopted
+        T.SYNC.backoff = 20000; l.note = 'RC71 L1'; plan = ['hang']; await bounded(T.flushSave(), 3000);
+        const s1l = JSON.parse(JSON.stringify(l));
+        l.lineItems = l.lineItems.concat([{ lid: 'l2', desc: 'Extension', amount: 25 }]); plan = ['ok']; await bounded(T.flushSave(), 3000);
+        const sealed = () => Object.assign(JSON.parse(JSON.stringify(s1l)), { locked: true, lineItemsSig: 'sig-rc71' });
+        seen.length = 0; const lockSeen = [];
+        for (let i = 0; i < 3; i++) { await poll({ invoices: [sealed()] }); await waitFor(() => !dirtyUp('invoices', 'INV-RC71-L'), 3000); lockSeen.push(l.locked === true); }
+        const reL = syncs().filter((s) => ((s.upserts || {}).invoices || []).some((r) => r.invoiceId === 'INV-RC71-L')).length;
+        ok(l.locked === true && lockSeen[1] === true && reL === 1, `RC-71 (L): a sealed invoice is adopted within one extra poll — one re-send, never a 6 min re-send loop (locked after polls: ${lockSeen.join(',')}; re-sends: ${reL})`);
+
+        // (h) a batch the server refused outright never ran (doSync never took the lock / the credential was refused before
+        //     dispatch), so it can never land: not remembered. It stays queued for the retry
+        T.SYNC.backoff = 20000; hh.name = 'RC71 H1'; plan = ['busy']; await bounded(T.flushSave(), 3000);
+        const hBusy = counts('vendors', 'VEN-RC71-H');
+        plan = ['unauthorized']; await bounded(T.flushSave(), 3000);
+        const hAuth = counts('vendors', 'VEN-RC71-H');
+        ok(T.SYNC.fails === 2 && hBusy === '' && hAuth === '' && !!dirtyUp('vendors', 'VEN-RC71-H'), `RC-71 (h): a batch the server refused outright (busy / a refused credential) is not remembered — it never ran (${hBusy || '-'} / ${hAuth || '-'})`);
+        plan = ['ok']; await bounded(T.flushSave(), 3000);
+
+        // (d) the memory ages out: past STALE.ms the same late landing is adopted exactly as before RC-71
+        ok(T.STALE.ms === 6 * 60 * 1000, `RC-71 (d): failed batches are remembered for 6 min (${T.STALE.ms} ms)`);
+        const s1d = await abortThenCommit(d, { name: 'RC71 D1' }, { name: 'RC71 D2' });
+        T.STALE.byKey.forEach((m) => m.forEach((e) => { e.at -= T.STALE.ms + 1000; }));   // age every entry past the window
+        await poll({ vendors: [s1d] });
+        ok(d.name === 'RC71 D1' && T.STALE.byKey.size === 0, `RC-71 (d): after the window a late landing is adopted as before and the expired entries are dropped (${d.name}; ${T.STALE.byKey.size} left)`);
+
+        // (e) sign-out forgets: nothing remembered survives pidTokenClear (switchUser + finishLoad — the source guard at the end)
+        const s1e = await abortThenCommit(a, { name: 'RC71 E1' }, { name: 'RC71 E2' });
+        const had = T.STALE.byKey.size;
+        T.pidTokenClear();
+        await poll({ vendors: [s1e] });
+        ok(had > 0 && T.STALE.byKey.size === 0 && a.name === 'RC71 E1', `RC-71 (e): sign-out clears the remembered failed batches (${had} → ${T.STALE.byKey.size}; ${a.name})`);
+
+        // (g) Q-3A-stall: after a LOST load a stalled getChats is cut at the short limit (8 s) so the quick retry is not
+        //     held ~27 s behind it; a healthy refresh keeps the normal limit
+        ok(lcm0 === 8000, `RC-71 (g): the lost-path chats limit is 8 s (${lcm0} ms)`);
+        T.resetRefreshState(); R.lostChatsMs = 120; R.retryMs = 60000;
+        loadMode = '404'; chatMode = 'hang'; chatHeld.length = 0; ready();
+        const rg = await bounded(T.refreshFromBackend(), 2500);
+        const g1 = chatHeld[0];
+        ok(rg !== 'STUCK' && !!g1 && g1.abortedAfter !== null && g1.abortedAfter >= 110 && !!R.retryTimer, `RC-71 (g): after a lost load a stalled getChats is abandoned at the short limit and the quick retry is armed (${g1 && g1.abortedAfter !== null ? Math.round(g1.abortedAfter) + ' ms' : 'not aborted'})`);
+        chatHeld.forEach((h) => h.release && h.release()); await sleep(50);
+        T.resetRefreshState(); R.lostChatsMs = 120; chatHeld.length = 0;
+        const pg = poll({}); await sleep(500);
+        const g2 = chatHeld[0];
+        ok(!!g2 && g2.abortedAfter === null, 'RC-71 (g): a healthy refresh keeps the normal chats limit — a slow getChats is not cut at the short one');
+        chatHeld.forEach((h) => h.release && h.release()); await pg;
+      } finally {
+        chatHeld.forEach((h) => { try { h.release && h.release(); } catch (e) {} }); chatMode = 'ok'; loadMode = 'ok';
+        T.resetRefreshState(); R.lostChatsMs = lcm0;
+        T.resetSaveState(); T.SYNC.timeoutMs = origMs; T.SYNC.syncMs = origSyncMs; T.setBackendPassword(''); st.overlay = ov; st.winEdit = we; st.userPrefs = up0;
+        IDS.forEach(([k, id]) => drop(k, id));
+        await sleep(250); window.fetch = realFetch;
+        window.JT.snapshotSaved && window.JT.snapshotSaved();
+      }
+    }
     // RC-65 review — the refresh poll must never resurrect a record whose LOCAL delete is still waiting to
     // sync (e.g. the absorbed invoice of a merge) when the server copy is unchanged; a copy another device
     // CHANGED comes back visibly instead of being silently erased. Mocked window.fetch only.
@@ -4524,6 +4726,17 @@ try {
     const iMark = body.indexOf('freshMark();'), iRender = body.indexOf('render();');
     results.push({ ok: iMark > -1 && iRender > -1 && iMark < iRender, m: 'RC-67 freshness source guard: finishLoad stamps a successful refresh (freshMark) before its first render' });
     results.push({ ok: /\n\s*R37:\s*\['Freshness line'/.test(src) && src.includes('data-r="R37"'), m: 'RC-67 freshness source guard: the R37 stamp has its RULE_META row (a new element = a new rule)' });
+  }
+
+  // RC-71 (e) source guard — switchUser (too wired into the login screen to drive headless here), pidTokenClear and
+  // finishLoad must all forget the remembered failed batches: the next person never inherits them, and a fresh load is
+  // a new baseline a remembered batch can no longer be told apart from.
+  {
+    const src = await readFile(join(root, 'app.js'), 'utf8');
+    const sw = (src.match(/\nfunction switchUser\(\) \{([\s\S]*?)\n\}/) || [])[1] || '';
+    const pc = (src.match(/\nfunction pidTokenClear\(\) \{([^\n]*)/) || [])[1] || '';
+    const fl = (src.match(/\nfunction finishLoad\(\) \{([\s\S]*?)\n\}/) || [])[1] || '';
+    results.push({ ok: sw.includes('staleClear();') && pc.includes('staleClear();') && fl.includes('staleClear();'), m: 'RC-71 (e) source guard: switchUser, pidTokenClear and finishLoad all clear the remembered failed batches (staleClear)' });
   }
 
   const passed = results.filter((r) => r.ok).length;
