@@ -1,0 +1,1515 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Neon Gulch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rye&family=Chakra+Petch:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Share+Tech+Mono&display=swap">
+<style>
+/* ─────────────────────────────────────────────────────────────
+   NEON GULCH — a cyberpunk-cowboy UI sandbox.
+   Throwaway vibe test: every common app pattern, one personality.
+   Tokens first; everything below derives from them.
+   ───────────────────────────────────────────────────────────── */
+:root{
+  color-scheme:dark;
+  --bg:#120c1c; --bg-deep:rgba(11,7,18,.74); --panel:rgba(26,18,38,.66); --panel-2:rgba(34,24,51,.72); --panel-3:#2a1f3d;
+  --line:#3a2a4a; --line-strong:#6f5a85;
+  --ink:#f3e9d8; --muted:#a894b5; --dim:#7a6a8a;
+  --neon:#ff9a3c; --neon-ink:#120c1c; --neon-soft:rgba(255,154,60,.16);
+  --hot:#ff3d9e; --hot-soft:rgba(255,61,158,.16);
+  --uplink:#2ee6ff; --uplink-soft:rgba(46,230,255,.14);
+  --sunset:#ff9a3c; --sunset-soft:rgba(255,154,60,.16);
+  --leather:#b5713e; --leather-soft:rgba(181,113,62,.22);
+  --good:#98f7ad; --warn:#ffef3d; --crit:#ff3838;
+  --good-soft:rgba(152,247,173,.14); --warn-soft:rgba(255,239,61,.14); --crit-soft:rgba(255,56,56,.16);
+  --status-ink:var(--ink);
+  --glow:0 0 14px rgba(255,154,60,.55),0 0 2px rgba(255,154,60,.9);
+  --glow-uplink:0 0 12px rgba(46,230,255,.45);
+  --tube:0 0 8px rgba(255,154,60,.6), inset 0 0 8px rgba(255,154,60,.25);
+  --shadow:0 12px 32px rgba(0,0,0,.45);
+  --r-state:2px; --r-opener:6px 6px 0 0; --r-record:8px; --r-pill:999px; --r-card:12px;
+  --H:36px; --Hc:24px;
+  --font-body:'Chakra Petch','Segoe UI',system-ui,sans-serif;
+  --font-mono:'Share Tech Mono',ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;
+  --font-display:'Rye','Rockwell','Georgia',serif;
+  --neon-h:338;
+  --skyline:radial-gradient(1100px 520px at 50% 118%, rgba(255,46,136,.13), transparent 60%),
+            radial-gradient(700px 380px at 12% -10%, rgba(46,230,255,.08), transparent 60%);
+}
+:root[data-mode="noon"]{
+  color-scheme:light;
+  --bg:#efe3c8; --bg-deep:rgba(229,213,178,.74); --panel:rgba(247,238,219,.7); --panel-2:rgba(241,229,204,.74); --panel-3:#e9dbbd;
+  --line:#cdb996; --line-strong:#8d7556;
+  --ink:#2b1d12; --muted:#6b5643; --dim:#8c7863;
+  --neon:#9a3b0a; --neon-ink:#f7eedb; --neon-soft:rgba(154,59,10,.14);
+  --hot:#b0104f; --hot-soft:rgba(176,16,79,.12);
+  --uplink:#086a78; --uplink-soft:rgba(8,106,120,.12);
+  --sunset:#9a3b0a; --sunset-soft:rgba(154,59,10,.14);
+  --leather:#7a4a22; --leather-soft:rgba(122,74,34,.18);
+  --good:#14612c; --warn:#7a4d00; --crit:#a8231b;
+  --good-soft:#9fe6b6; --warn-soft:#e9b93a; --crit-soft:#e2705f; --info-fill:#15aebc; --hot-fill:#760a49;
+  --status-ink:#2b1d12;
+  --glow:none; --glow-uplink:none; --tube:none;
+  --shadow:0 10px 28px rgba(60,40,10,.18);
+  --skyline:radial-gradient(900px 420px at 50% -20%, rgba(255,255,255,.55), transparent 60%);
+}
+*,*::before,*::after{box-sizing:border-box}
+html{height:100%;scroll-behavior:smooth}
+body{margin:0;min-height:100%;background:var(--skyline),var(--bg);color:var(--ink);
+  font:400 13px/1.5 var(--font-body);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+img{max-width:100%}
+a{color:var(--uplink)}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--uplink);outline-offset:2px}
+::selection{background:var(--neon);color:var(--neon-ink)}
+[hidden]{display:none!important}
+h1,h2,h3{margin:0;text-wrap:balance}
+.mono{font-family:var(--font-mono)}
+.num{font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.dim{color:var(--dim)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+/* ── icons (Lucide, runtime) ── */
+.ic{display:inline-block;width:18px;height:18px;flex:none;vertical-align:-4px}
+.ic svg{width:100%;height:100%;display:block}
+.ic-sm{width:14px;height:14px;vertical-align:-2px}
+.ic-lg{width:22px;height:22px}
+
+/* ── scanline + vignette overlay ── */
+.fx{pointer-events:none;position:fixed;inset:0;z-index:90}
+.fx::before{content:"";position:absolute;inset:0;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.18) 0 1px,transparent 1px 3px);opacity:.38;mix-blend-mode:multiply}
+.fx::after{content:"";position:absolute;inset:0;box-shadow:inset 0 0 160px rgba(0,0,0,.55)}
+:root[data-mode="noon"] .fx::before{opacity:.10}
+:root[data-mode="noon"] .fx::after{box-shadow:inset 0 0 120px rgba(90,60,20,.18)}
+:root[data-fx="off"] .fx{display:none}
+
+/* ── type ── */
+.eyebrow{font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.eyebrow b{color:var(--uplink);font-weight:400}
+.display{font-family:var(--font-display);font-weight:400;font-size:22px;line-height:1.15;letter-spacing:.01em}
+.display-xl{font-size:34px}
+.title{font-size:15px;font-weight:700}
+.label{font-family:var(--font-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.value{font-size:28px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.small{font-size:12px}
+.tiny{font-family:var(--font-mono);font-size:10px;letter-spacing:.06em;color:var(--dim)}
+kbd,.kbd{font-family:var(--font-mono);font-size:10px;letter-spacing:.06em;padding:1px 5px;border:1px solid var(--line-strong);
+  border-bottom-width:2px;border-radius:3px;background:var(--panel-2);color:var(--muted)}
+
+/* ── shell ── */
+.shell{display:grid;grid-template-columns:236px minmax(0,1fr);min-height:100vh}
+.side{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:14px;padding:18px 14px calc(14px + env(safe-area-inset-bottom,0px));
+  background:linear-gradient(180deg,var(--panel),var(--bg-deep));border-right:1px solid var(--line);overflow:auto;z-index:40}
+.brand{display:flex;flex-direction:column;gap:4px;padding:6px 8px 10px;border-bottom:1px dashed var(--leather)}
+.wordmark{font-family:var(--font-display);font-size:26px;line-height:1;color:var(--neon);text-shadow:var(--glow);letter-spacing:.02em}
+.wordmark small{display:block;font-family:var(--font-mono);font-size:10px;letter-spacing:.2em;color:var(--uplink);text-shadow:none;margin-top:6px}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav a{display:flex;align-items:center;gap:10px;height:var(--H);padding:0 10px;border-radius:var(--r-record);color:var(--muted);text-decoration:none;
+  font-weight:500;border:1px solid transparent;position:relative}
+.nav a .ic{color:var(--dim)}
+.nav a:hover{color:var(--ink);background:var(--panel-2)}
+.nav a[aria-current="page"]{color:var(--ink);background:var(--neon-soft);border-color:color-mix(in srgb,var(--neon) 40%,transparent)}
+.nav a[aria-current="page"] .ic{color:var(--neon);filter:drop-shadow(0 0 4px rgba(255,46,136,.7))}
+:root[data-mode="noon"] .nav a[aria-current="page"] .ic{filter:none}
+.nav a .cnt{margin-left:auto;font-family:var(--font-mono);font-size:10px;color:var(--uplink);background:var(--uplink-soft);padding:1px 6px;border-radius:var(--r-state)}
+.nav .sect{margin:10px 10px 4px}
+.side .spacer{flex:1}
+
+/* rig charge + jukebox in the rail */
+.rig{padding:10px;border:1px solid var(--line);border-radius:var(--r-card);background:var(--panel)}
+.rig .row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.bar{height:6px;background:var(--panel-3);border-radius:var(--r-state);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--uplink);box-shadow:var(--glow-uplink);border-radius:var(--r-state);transition:width .4s}
+.bar.neon i{background:var(--neon);box-shadow:var(--glow)}
+.bar.sun i{background:var(--sunset);box-shadow:none}
+.bar.good i{background:var(--good);box-shadow:none}
+.juke{padding:10px;border:1px solid var(--line);border-radius:var(--r-card);background:var(--panel);display:flex;flex-direction:column;gap:8px}
+.juke .disc{width:34px;height:34px;border-radius:50%;flex:none;background:conic-gradient(from 0deg,var(--panel-3),var(--line-strong),var(--panel-3),var(--line-strong),var(--panel-3));
+  border:2px solid var(--line-strong);position:relative}
+.juke .disc::after{content:"";position:absolute;inset:11px;border-radius:50%;background:var(--hot)}
+.juke.playing .disc{animation:spin 3s linear infinite}
+.juke .tr{display:flex;align-items:center;gap:10px;min-width:0}
+.juke .tr b{display:block;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.juke .ctl{display:flex;justify-content:center;gap:4px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* topbar */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:30;display:flex;align-items:center;gap:10px;height:56px;padding:0 20px;
+  background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.crumbs{display:flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);min-width:0;white-space:nowrap;overflow:hidden}
+.crumbs b{color:var(--ink);font-weight:400}
+.crumbs .ic{width:12px;height:12px;color:var(--dim)}
+.searchbtn{margin-left:auto;display:flex;align-items:center;gap:8px;height:var(--H);padding:0 12px;min-width:220px;border:1px solid var(--line-strong);
+  border-radius:var(--r-record);background:var(--panel);color:var(--muted);cursor:text;text-align:left}
+.searchbtn kbd{margin-left:auto}
+.uplink{display:flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:11px;letter-spacing:.06em;color:var(--muted);white-space:nowrap}
+.uplink .dot{width:8px;height:8px;border-radius:50%;background:var(--good);box-shadow:0 0 8px var(--good)}
+.uplink.weak .dot{background:var(--warn);box-shadow:0 0 8px var(--warn)}
+.uplink.down .dot{background:var(--crit);box-shadow:0 0 8px var(--crit)}
+:root[data-mode="noon"] .uplink .dot{box-shadow:none}
+.avatar{width:32px;height:32px;border-radius:50%;display:inline-grid;place-items:center;font-family:var(--font-mono);font-size:11px;letter-spacing:.05em;
+  background:linear-gradient(135deg,var(--panel-3),var(--panel));border:1px solid var(--line-strong);color:var(--ink);flex:none;position:relative}
+.avatar.lg{width:72px;height:72px;font-size:22px}
+.avatar.sm{width:24px;height:24px;font-size:9px}
+.avatar.on::after{content:"";position:absolute;right:-1px;bottom:-1px;width:9px;height:9px;border-radius:50%;background:var(--good);border:2px solid var(--panel)}
+.avatar[data-hue]{background:linear-gradient(135deg,hsl(var(--h) 70% 30%),hsl(var(--h) 60% 18%));color:#fff}
+:root[data-mode="noon"] .avatar[data-hue]{background:linear-gradient(135deg,hsl(var(--h) 50% 40%),hsl(var(--h) 45% 28%))}
+.badge{position:absolute;top:-4px;right:-4px;min-width:16px;height:16px;padding:0 4px;border-radius:var(--r-pill);background:var(--neon);color:var(--neon-ink);
+  font-family:var(--font-mono);font-size:10px;display:grid;place-items:center;box-shadow:var(--glow)}
+
+/* main */
+.main{padding:22px 24px 88px;max-width:1280px;width:100%;min-width:0}
+.ph{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 18px;margin-bottom:18px}
+.ph .txt{flex:1 1 320px;min-width:0}
+.ph p{margin:6px 0 0;color:var(--muted);max-width:62ch}
+.ph .acts{display:flex;gap:8px;flex-wrap:wrap}
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.g-main{grid-template-columns:minmax(0,2fr) minmax(0,1fr)}
+.stack{display:flex;flex-direction:column;gap:14px}
+.row{display:flex;align-items:center;gap:10px}
+.row.wrap{flex-wrap:wrap}
+.row.between{justify-content:space-between}
+.row.end{justify-content:flex-end}
+.ml{margin-left:auto}
+.mt{margin-top:14px}
+.hr{border:0;border-top:1px dashed var(--line-strong);margin:12px 0}
+.wire{border:0;height:6px;margin:14px 0;background:repeating-linear-gradient(90deg,var(--leather) 0 14px,transparent 14px 20px);opacity:.6;
+  -webkit-mask:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent);mask:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent)}
+
+/* panels */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-card);padding:16px;min-width:0;position:relative}
+.panel.hud::before,.panel.hud::after{content:"";position:absolute;width:14px;height:14px;border-color:var(--uplink);border-style:solid;opacity:.8}
+.panel.hud::before{top:-1px;left:-1px;border-width:2px 0 0 2px;border-top-left-radius:var(--r-card)}
+.panel.hud::after{bottom:-1px;right:-1px;border-width:0 2px 2px 0;border-bottom-right-radius:var(--r-card)}
+.panel-h{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.panel-h .title{flex:1;min-width:0}
+.panel.flat{background:transparent;border-style:dashed}
+.tile{display:flex;flex-direction:column;gap:8px}
+.tile .value{color:var(--ink)}
+.tile .delta{font-family:var(--font-mono);font-size:11px;display:inline-flex;align-items:center;gap:4px}
+.tile .delta.up{color:var(--good)} .tile .delta.down{color:var(--crit)}
+.tile svg.spark{width:100%;height:36px;display:block;margin-top:auto}
+.tile.neon{border-color:color-mix(in srgb,var(--neon) 50%,transparent);box-shadow:var(--tube)}
+.tile.neon .value{color:var(--neon);text-shadow:var(--glow)}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:var(--H);padding:0 16px;border-radius:var(--r-pill);
+  border:1px solid var(--line-strong);background:var(--panel-2);color:var(--ink);cursor:pointer;font-family:var(--font-mono);font-size:11px;
+  letter-spacing:.1em;text-transform:uppercase;white-space:nowrap;text-decoration:none;transition:transform .08s,background .15s,box-shadow .15s}
+.btn:hover{background:var(--panel-3);border-color:var(--muted)}
+.btn:active{transform:translateY(1px)}
+.btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.btn-neon{background:var(--neon);border-color:var(--neon);color:var(--neon-ink);box-shadow:var(--glow);font-weight:400}
+.btn-neon:hover{background:var(--neon);border-color:var(--neon);filter:brightness(1.08)}
+.btn-uplink{border-color:var(--uplink);color:var(--uplink);background:transparent}
+.btn-uplink:hover{background:var(--uplink-soft);border-color:var(--uplink)}
+.btn-ghost{background:transparent;border-color:transparent;color:var(--muted)}
+.btn-ghost:hover{color:var(--ink);background:var(--panel-2);border-color:transparent}
+.btn-danger{border-color:var(--crit);color:var(--crit);background:transparent}
+.btn-danger:hover{background:var(--crit-soft);border-color:var(--crit)}
+.btn-sm{height:28px;padding:0 12px;font-size:10px}
+.btn-icon{width:var(--H);padding:0;border-radius:var(--r-record)}
+.btn-icon.round{border-radius:50%}
+.btn-icon.btn-sm{width:28px}
+.btn .spin{width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .7s linear infinite}
+.btn-block{width:100%}
+
+/* chips (state · squared) / tags (record · rounded) / stamps (plain) */
+.chip{display:inline-flex;align-items:center;gap:6px;height:var(--Hc);padding:0 8px;border-radius:var(--r-state);border:1px solid var(--line-strong);
+  font-family:var(--font-mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);white-space:nowrap;background:transparent}
+.chip::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+.chip .ic{width:12px;height:12px;vertical-align:0}
+.chip-good{color:var(--good);border-color:var(--good);background:var(--good-soft)}
+.chip-warn{color:var(--warn);border-color:var(--warn);background:var(--warn-soft)}
+.chip-crit{color:var(--crit);border-color:var(--crit);background:var(--crit-soft)}
+.chip-info{color:var(--uplink);border-color:var(--uplink);background:var(--uplink-soft)}
+.chip-neon{color:var(--hot);border-color:var(--hot);background:var(--hot-soft)}
+.chip-sun{color:var(--sunset);border-color:var(--sunset);background:var(--sunset-soft)}
+:root[data-mode="noon"] .chip-good,:root[data-mode="noon"] .chip-warn,:root[data-mode="noon"] .chip-crit,:root[data-mode="noon"] .chip-info,:root[data-mode="noon"] .chip-neon{color:var(--status-ink);border-color:transparent}
+:root[data-mode="noon"] .chip-info{background:var(--info-fill)}
+:root[data-mode="noon"] .chip-neon{background:var(--hot-fill);color:var(--neon-ink)}
+.chip.fill{color:var(--neon-ink)}
+.chip.nodot::before{display:none}
+.tag{display:inline-flex;align-items:center;gap:6px;height:var(--Hc);padding:0 9px;border-radius:var(--r-record);background:var(--panel-3);
+  border:1px solid var(--line);font-size:12px;color:var(--ink);white-space:nowrap}
+.tag .ic{width:12px;height:12px;color:var(--uplink)}
+.tag.click{cursor:pointer}
+.tag.click:hover{border-color:var(--uplink)}
+.stamp{font-family:var(--font-mono);font-size:11px;letter-spacing:.06em;color:var(--muted);text-transform:uppercase}
+.star{display:inline-block;width:18px;height:18px;background:var(--sunset);
+  clip-path:polygon(50% 0%,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%);vertical-align:-4px;flex:none}
+.star.lg{width:44px;height:44px}
+
+/* forms */
+.field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.field label{font-family:var(--font-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.field .hint{font-size:11px;color:var(--dim)}
+.field .err{font-size:11px;color:var(--crit);display:none}
+.field.invalid .err{display:block}
+.field.invalid .input{border-color:var(--crit)}
+.input{height:var(--H);width:100%;padding:0 12px;border:1px solid var(--line-strong);border-radius:var(--r-record);background:var(--bg-deep);color:var(--ink);
+  transition:border-color .15s,box-shadow .15s}
+.input:focus{outline:none;border-color:var(--uplink);box-shadow:0 0 0 3px var(--uplink-soft)}
+.input::placeholder{color:var(--dim)}
+textarea.input{height:auto;min-height:88px;padding:10px 12px;resize:vertical;line-height:1.45}
+select.input{appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+  background-position:calc(100% - 16px) 15px,calc(100% - 11px) 15px;background-size:5px 5px;background-repeat:no-repeat;padding-right:32px}
+.inwrap{position:relative}
+.inwrap>.ic{position:absolute;left:11px;top:9px;color:var(--dim)}
+.inwrap .input{padding-left:36px}
+.inwrap .tail{position:absolute;right:4px;top:4px}
+.switch{--w:40px;position:relative;display:inline-flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
+.switch input{position:absolute;opacity:0;width:0;height:0}
+.switch .k{width:var(--w);height:22px;border-radius:var(--r-pill);background:var(--panel-3);border:1px solid var(--line-strong);position:relative;transition:background .2s;flex:none}
+.switch .k::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--muted);transition:transform .2s,background .2s}
+.switch input:checked+.k{background:var(--neon-soft);border-color:var(--neon)}
+.switch input:checked+.k::after{transform:translateX(18px);background:var(--neon);box-shadow:var(--glow)}
+.switch input:focus-visible+.k{outline:2px solid var(--uplink);outline-offset:2px}
+.check{display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none;font-size:12px}
+.check input{width:16px;height:16px;accent-color:var(--neon);margin:0}
+.radio-cards{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.radio-card{border:1px solid var(--line-strong);border-radius:var(--r-record);padding:12px;cursor:pointer;display:flex;flex-direction:column;gap:6px;background:var(--panel-2)}
+.radio-card input{position:absolute;opacity:0}
+.radio-card:has(input:checked){border-color:var(--neon);box-shadow:var(--tube);background:var(--neon-soft)}
+.radio-card:has(input:focus-visible){outline:2px solid var(--uplink);outline-offset:2px}
+.radio-card b{font-size:13px}
+.range{width:100%;accent-color:var(--neon)}
+.swatches{display:flex;gap:8px}
+.swatch{width:28px;height:28px;border-radius:50%;border:2px solid var(--line-strong);cursor:pointer;padding:0}
+.swatch[aria-pressed="true"]{border-color:var(--ink);box-shadow:0 0 0 3px var(--panel),0 0 0 4px var(--line-strong)}
+.meter{display:flex;gap:4px}
+.meter i{flex:1;height:5px;border-radius:var(--r-state);background:var(--panel-3)}
+.meter[data-s="1"] i:nth-child(-n+1){background:var(--crit)}
+.meter[data-s="2"] i:nth-child(-n+2){background:var(--warn)}
+.meter[data-s="3"] i:nth-child(-n+3){background:var(--uplink)}
+.meter[data-s="4"] i:nth-child(-n+4){background:var(--good)}
+.drop-zone{border:2px dashed var(--line-strong);border-radius:var(--r-card);padding:22px;text-align:center;color:var(--muted);cursor:pointer;background:var(--bg-deep)}
+.drop-zone.over{border-color:var(--uplink);background:var(--uplink-soft);color:var(--ink)}
+.drop-zone .ic{width:28px;height:28px;color:var(--uplink);display:block;margin:0 auto 8px}
+
+/* table */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r-card);background:var(--panel)}
+table.tbl{width:100%;border-collapse:collapse;min-width:820px}
+.tbl th,.tbl td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:middle;white-space:nowrap}
+.tbl th{font-family:var(--font-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:400;background:var(--panel-2);
+  position:sticky;top:0;cursor:pointer;user-select:none}
+.tbl th .ic{width:12px;height:12px;margin-left:4px;color:var(--dim);vertical-align:-2px}
+.tbl th[aria-sort] .ic{color:var(--uplink)}
+.tbl tbody tr:hover{background:var(--panel-2)}
+.tbl tbody tr[aria-selected="true"]{background:var(--neon-soft)}
+.tbl tr:last-child td{border-bottom:0}
+.tbl td.id{font-family:var(--font-mono);color:var(--uplink);font-size:12px}
+.tbl td.money{font-family:var(--font-mono);text-align:right}
+.tbl th.money{text-align:right}
+.tbl .tname{font-weight:700}
+.tbl .tname small{display:block;font-weight:400;color:var(--muted);font-size:11px}
+.risk{display:inline-flex;gap:3px}
+.risk i{width:5px;height:12px;border-radius:1px;background:var(--panel-3)}
+.risk[data-r="1"] i:nth-child(1){background:var(--good)}
+.risk[data-r="2"] i:nth-child(-n+2){background:var(--warn)}
+.risk[data-r="3"] i:nth-child(-n+3){background:var(--crit)}
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:12px}
+.toolbar .inwrap{flex:1 1 220px;max-width:340px}
+.fchips{display:flex;gap:6px;flex-wrap:wrap}
+.fchip{height:28px;padding:0 10px;border-radius:var(--r-pill);border:1px solid var(--line-strong);background:transparent;color:var(--muted);cursor:pointer;
+  font-family:var(--font-mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;display:inline-flex;align-items:center;gap:6px}
+.fchip[aria-pressed="true"]{background:var(--uplink-soft);border-color:var(--uplink);color:var(--uplink)}
+.bulk{display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--neon);border-radius:var(--r-record);background:var(--neon-soft);margin-bottom:12px}
+.pager{display:flex;align-items:center;gap:6px;justify-content:flex-end;padding:10px 12px;border-top:1px solid var(--line);font-family:var(--font-mono);font-size:11px;color:var(--muted)}
+.pager .pg{width:28px;height:28px;border-radius:var(--r-record);border:1px solid transparent;background:transparent;color:var(--muted);cursor:pointer;font-family:var(--font-mono)}
+.pager .pg[aria-current="page"]{border-color:var(--uplink);color:var(--uplink)}
+.pager .pg:hover{background:var(--panel-2)}
+.empty{padding:40px 20px;text-align:center;color:var(--muted)}
+.empty .display{color:var(--sunset);margin-bottom:6px}
+.empty .ic{width:36px;height:36px;color:var(--leather);display:block;margin:0 auto 10px}
+
+/* kanban */
+.kanban{display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:12px;overflow-x:auto;padding-bottom:6px}
+.kcol{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-card);padding:10px;display:flex;flex-direction:column;gap:8px;min-height:240px}
+.kcol.over{border-color:var(--uplink);background:var(--uplink-soft)}
+.kcol-h{display:flex;align-items:center;gap:8px;padding:2px 4px 8px;border-bottom:1px solid var(--line)}
+.kcol-h .cnt{margin-left:auto}
+.kcard{background:var(--panel-2);border:1px solid var(--line);border-left:3px solid var(--line-strong);border-radius:var(--r-record);padding:10px;cursor:grab;display:flex;flex-direction:column;gap:6px}
+.kcard:active{cursor:grabbing}
+.kcard.dragging{opacity:.4}
+.kcard[data-pri="hot"]{border-left-color:var(--hot)}
+.kcard[data-pri="warm"]{border-left-color:var(--sunset)}
+.kcard[data-pri="cold"]{border-left-color:var(--uplink)}
+.kcard b{font-size:13px}
+.kcard .foot{display:flex;align-items:center;gap:6px;margin-top:2px}
+.kadd{border:1px dashed var(--line-strong);background:transparent;color:var(--muted);border-radius:var(--r-record);height:32px;cursor:pointer;font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+.kadd:hover{color:var(--ink);border-color:var(--muted)}
+
+/* chat */
+.chat{display:grid;grid-template-columns:200px minmax(0,1fr);border:1px solid var(--line);border-radius:var(--r-card);background:var(--panel);overflow:hidden;min-height:520px}
+.chan{border-right:1px solid var(--line);padding:10px;display:flex;flex-direction:column;gap:2px;background:var(--bg-deep)}
+.chan a{display:flex;align-items:center;gap:8px;height:32px;padding:0 8px;border-radius:var(--r-record);color:var(--muted);text-decoration:none;font-family:var(--font-mono);font-size:12px}
+.chan a[aria-current="true"]{background:var(--neon-soft);color:var(--ink)}
+.chan a .cnt{margin-left:auto;font-size:10px;color:var(--neon)}
+.thread{display:flex;flex-direction:column;min-height:0}
+.thread .msgs{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:12px;max-height:420px}
+.msg{display:grid;grid-template-columns:32px minmax(0,1fr);gap:10px}
+.msg .who{display:flex;align-items:baseline;gap:8px}
+.msg .who b{font-size:12px}
+.msg .who time{font-family:var(--font-mono);font-size:10px;color:var(--dim)}
+.msg p{margin:2px 0 0;max-width:62ch}
+.msg.me{grid-template-columns:minmax(0,1fr) 32px}
+.msg.me .body{text-align:right}
+.msg.me p{margin-left:auto;background:var(--neon-soft);border:1px solid color-mix(in srgb,var(--neon) 35%,transparent);padding:6px 10px;border-radius:var(--r-record);display:inline-block;text-align:left}
+.msg .react{display:inline-flex;gap:4px;margin-top:4px}
+.msg .react button{height:20px;padding:0 6px;border-radius:var(--r-pill);border:1px solid var(--line-strong);background:transparent;color:var(--muted);font-size:10px;cursor:pointer;font-family:var(--font-mono)}
+.typing{font-family:var(--font-mono);font-size:11px;color:var(--dim);padding:0 14px 6px;min-height:18px}
+.typing i{display:inline-block;width:4px;height:4px;border-radius:50%;background:var(--uplink);margin-right:2px;animation:blink 1.2s infinite}
+.typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,80%,100%{opacity:.2}40%{opacity:1}}
+.composer{display:flex;gap:8px;padding:10px;border-top:1px solid var(--line)}
+.composer .input{flex:1}
+
+/* calendar */
+.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.cal .dow{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);text-align:center;padding:4px 0}
+.cal .day{aspect-ratio:1;max-width:100%;min-height:52px;border:1px solid var(--line);border-radius:var(--r-record);padding:6px;background:var(--panel-2);cursor:pointer;
+  display:flex;flex-direction:column;gap:3px;font-variant-numeric:tabular-nums;color:var(--ink);text-align:left}
+.cal .day.out{opacity:.35}
+.cal .day.today{border-color:var(--neon);box-shadow:var(--tube)}
+.cal .day[aria-pressed="true"]{border-color:var(--uplink);background:var(--uplink-soft)}
+.cal .day .n{font-family:var(--font-mono);font-size:11px}
+.cal .day .ev{height:4px;border-radius:2px;background:var(--uplink)}
+.cal .day .ev.sun{background:var(--sunset)}.cal .day .ev.neon{background:var(--neon)}
+.evlist{display:flex;flex-direction:column;gap:8px}
+.ev-row{display:grid;grid-template-columns:4px minmax(0,1fr);gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r-record);background:var(--panel-2)}
+.ev-row i{border-radius:2px;background:var(--uplink)}
+.ev-row.sun i{background:var(--sunset)}.ev-row.neon i{background:var(--neon)}
+
+/* wanted poster */
+.wanted{position:relative;padding:22px;border:3px double var(--leather);border-radius:4px;background:
+  repeating-linear-gradient(0deg,transparent 0 6px,rgba(181,113,62,.05) 6px 7px),var(--panel);text-align:center}
+.wanted::before{content:"";position:absolute;inset:6px;border:1px solid var(--leather);opacity:.5;pointer-events:none}
+.wanted .w-head{font-family:var(--font-display);font-size:34px;letter-spacing:.08em;color:var(--sunset);line-height:1}
+.wanted .w-sub{font-family:var(--font-mono);font-size:11px;letter-spacing:.3em;color:var(--muted);text-transform:uppercase;margin-top:4px}
+.wanted .avatar.lg{margin:16px auto 10px;border:3px solid var(--leather)}
+.wanted .w-name{font-size:22px;font-weight:700}
+.wanted .w-reward{font-family:var(--font-display);font-size:20px;color:var(--neon);text-shadow:var(--glow);margin-top:10px}
+.wanted .w-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px;padding-top:12px;border-top:1px dashed var(--leather)}
+.wanted .w-stats b{display:block;font-size:18px;font-variant-numeric:tabular-nums}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:14px;overflow-x:auto}
+.tabs button{height:var(--H);padding:0 14px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;
+  font-family:var(--font-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;white-space:nowrap;border-radius:var(--r-opener)}
+.tabs button[aria-selected="true"]{color:var(--neon);border-bottom-color:var(--neon);background:var(--neon-soft)}
+.sess{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--line);border-radius:var(--r-record);background:var(--panel-2)}
+.sess .ic{color:var(--uplink)}
+.sess b{display:block;font-size:12px}
+.sess small{color:var(--muted);font-family:var(--font-mono);font-size:10px}
+.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.plan{border:1px solid var(--line);border-radius:var(--r-card);padding:16px;background:var(--panel-2);display:flex;flex-direction:column;gap:8px}
+.plan.hot{border-color:var(--neon);box-shadow:var(--tube)}
+.plan .pn{font-family:var(--font-display);font-size:20px;color:var(--sunset)}
+.plan .pp{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums}
+.plan .pp small{font-size:11px;color:var(--muted);font-weight:400;font-family:var(--font-mono)}
+.plan ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+.plan ul li::before{content:"› ";color:var(--uplink)}
+.setrow{display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px dashed var(--line)}
+.setrow:last-child{border-bottom:0}
+.setrow .t{flex:1;min-width:0}
+.setrow .t b{display:block;font-size:13px}
+.setrow .t small{color:var(--muted);font-size:12px}
+.setrow .input{max-width:220px}
+.danger{border-color:var(--crit)}
+.danger .panel-h .title{color:var(--crit)}
+.keyrow{display:flex;gap:8px;align-items:center}
+.keyrow code{flex:1;font-family:var(--font-mono);font-size:12px;padding:0 12px;height:var(--H);display:flex;align-items:center;border:1px solid var(--line-strong);border-radius:var(--r-record);background:var(--bg-deep);color:var(--uplink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.integ{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px dashed var(--line)}
+.integ:last-child{border-bottom:0}
+.integ .logo{width:34px;height:34px;border-radius:var(--r-record);display:grid;place-items:center;background:var(--panel-3);color:var(--uplink);flex:none}
+.integ .t{flex:1}.integ .t b{display:block}.integ .t small{color:var(--muted)}
+
+/* activity / lists */
+.feed{display:flex;flex-direction:column;gap:0}
+.feed-i{display:grid;grid-template-columns:24px minmax(0,1fr);gap:10px;padding:8px 0;border-bottom:1px dashed var(--line);align-items:start}
+.feed-i:last-child{border-bottom:0}
+.feed-i .ico{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:var(--panel-3);color:var(--uplink)}
+.feed-i .ico.neon{color:var(--neon)}.feed-i .ico.sun{color:var(--sunset)}.feed-i .ico.good{color:var(--good)}.feed-i .ico.crit{color:var(--crit)}
+.feed-i .ico .ic{width:13px;height:13px}
+.feed-i p{margin:0;font-size:12px}.feed-i time{font-family:var(--font-mono);font-size:10px;color:var(--dim)}
+.lb{display:flex;flex-direction:column;gap:10px}
+.lb-row{display:grid;grid-template-columns:20px 28px minmax(0,1fr) 70px;gap:10px;align-items:center}
+.lb-row .rk{font-family:var(--font-mono);font-size:11px;color:var(--dim);text-align:right}
+.lb-row .nm{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lb-row .bar{margin-top:3px}
+.lb-row .sc{font-family:var(--font-mono);font-size:11px;text-align:right;color:var(--muted)}
+.quick{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.quick button{height:64px;border:1px solid var(--line);border-radius:var(--r-record);background:var(--panel-2);color:var(--ink);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase}
+.quick button .ic{color:var(--uplink)}
+.quick button:hover{border-color:var(--uplink);background:var(--uplink-soft)}
+.weather{display:flex;align-items:center;gap:14px}
+.weather .big{font-size:34px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
+.weather .big small{font-size:14px;color:var(--muted);font-weight:400}
+.weather .ic-lg{width:40px;height:40px;color:var(--sunset)}
+.ring{width:84px;height:84px;position:relative;display:grid;place-items:center;flex:none}
+.ring svg{position:absolute;inset:0;transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:7}
+.ring .bg{stroke:var(--panel-3)}
+.ring .fg{stroke:var(--uplink);stroke-linecap:round;transition:stroke-dashoffset .6s}
+.ring b{font-family:var(--font-mono);font-size:15px}
+
+/* chart */
+.chart{position:relative}
+.chart svg{width:100%;height:190px;display:block;overflow:visible}
+.chart .grid-l{stroke:var(--line);stroke-dasharray:2 4}
+.chart .bar-r{fill:var(--uplink);opacity:.85;transition:opacity .1s}
+.chart .bar-r.hot{fill:var(--neon)}
+.chart .bar-r:hover,.chart .bar-r.on{opacity:1}
+.chart text{font-family:var(--font-mono);font-size:10px;fill:var(--dim)}
+.chart .tip{position:absolute;pointer-events:none;background:var(--panel-3);border:1px solid var(--line-strong);border-radius:var(--r-record);padding:6px 10px;font-family:var(--font-mono);font-size:11px;transform:translate(-50%,-110%);white-space:nowrap;box-shadow:var(--shadow)}
+.chart .tip b{color:var(--uplink)}
+.legend{display:flex;gap:14px;font-family:var(--font-mono);font-size:10px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:-1px;margin-right:6px;background:var(--uplink)}
+.legend i.hot{background:var(--neon)}
+
+/* overlays: modal, palette, dropdowns, toasts, tooltips */
+.veil{position:fixed;inset:0;background:rgba(8,4,14,.7);backdrop-filter:blur(3px);z-index:100;display:grid;place-items:center;padding:20px;animation:fade .15s}
+:root[data-mode="noon"] .veil{background:rgba(60,40,10,.45)}
+.modal{width:min(520px,100%);background:var(--panel);border:1px solid var(--line-strong);border-radius:var(--r-card);box-shadow:var(--shadow);animation:pop .18s;max-height:calc(100vh - 40px);overflow:auto}
+.modal.wide{width:min(720px,100%)}
+.modal-h{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line)}
+.modal-h .display{flex:1;font-size:20px;color:var(--sunset)}
+.modal-b{padding:16px;display:flex;flex-direction:column;gap:14px}
+.modal-f{display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;border-top:1px solid var(--line);flex-wrap:wrap}
+@keyframes fade{from{opacity:0}}
+@keyframes pop{from{transform:translateY(8px) scale(.98);opacity:0}}
+.palette{width:min(600px,100%);align-self:start;margin-top:8vh;background:var(--panel);border:1px solid var(--uplink);border-radius:var(--r-card);box-shadow:var(--shadow),var(--glow-uplink);overflow:hidden;animation:pop .18s}
+.palette .inwrap .input{border:0;border-bottom:1px solid var(--line);border-radius:0;height:52px;font-size:15px;background:transparent;padding-left:44px}
+.palette .inwrap .input:focus{box-shadow:none}
+.palette .inwrap .ic{top:17px;left:14px}
+.plist{max-height:min(380px,50vh);overflow:auto;padding:6px}
+.pgroup{font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);padding:8px 10px 4px}
+.pitem{display:flex;align-items:center;gap:10px;height:40px;padding:0 10px;border-radius:var(--r-record);cursor:pointer;color:var(--ink)}
+.pitem .ic{color:var(--uplink)}
+.pitem[aria-selected="true"]{background:var(--neon-soft);outline:1px solid color-mix(in srgb,var(--neon) 40%,transparent)}
+.pitem small{margin-left:auto;font-family:var(--font-mono);font-size:10px;color:var(--dim)}
+.pfoot{display:flex;gap:14px;padding:8px 12px;border-top:1px solid var(--line);font-family:var(--font-mono);font-size:10px;color:var(--dim)}
+.drop{position:absolute;top:calc(100% + 8px);right:0;width:320px;max-width:calc(100vw - 32px);background:var(--panel);border:1px solid var(--line-strong);border-radius:var(--r-card);box-shadow:var(--shadow);z-index:60;animation:pop .15s;overflow:hidden}
+.drop.menu{width:220px}
+.drop-h{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.drop-h .title{flex:1}
+.drop .item{display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;border:0;background:transparent;width:100%;text-align:left;color:var(--ink);font:inherit}
+.drop .item:hover{background:var(--panel-2)}
+.drop .item .ic{color:var(--muted)}
+.drop .item.danger{color:var(--crit)}
+.drop .item.danger .ic{color:var(--crit)}
+.drop .sep{border-top:1px solid var(--line)}
+.ntf{display:grid;grid-template-columns:8px minmax(0,1fr);gap:10px;padding:10px 12px;border-bottom:1px dashed var(--line);cursor:pointer}
+.ntf:hover{background:var(--panel-2)}
+.ntf i{width:8px;height:8px;border-radius:50%;background:var(--neon);margin-top:5px;box-shadow:var(--glow)}
+.ntf.read i{background:transparent;box-shadow:none;border:1px solid var(--line-strong)}
+.ntf b{font-size:12px;display:block}.ntf p{margin:2px 0 0;font-size:12px;color:var(--muted)}.ntf time{font-family:var(--font-mono);font-size:10px;color:var(--dim)}
+.hasdrop{position:relative}
+.hasdrop>.btn{position:relative}
+.toasts{position:fixed;right:16px;bottom:calc(58px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:8px;z-index:120;width:min(360px,calc(100vw - 32px))}
+.toast{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--panel);border:1px solid var(--line-strong);border-left:3px solid var(--uplink);border-radius:var(--r-record);box-shadow:var(--shadow);animation:slide .2s;font-size:12px}
+.toast.good{border-left-color:var(--good)}.toast.warn{border-left-color:var(--warn)}.toast.crit{border-left-color:var(--crit)}.toast.neon{border-left-color:var(--neon)}
+.toast .ic{color:var(--uplink)}.toast.good .ic{color:var(--good)}.toast.warn .ic{color:var(--warn)}.toast.crit .ic{color:var(--crit)}.toast.neon .ic{color:var(--neon)}
+.toast .t{flex:1;min-width:0}
+.toast .t b{display:block}
+@keyframes slide{from{transform:translateX(20px);opacity:0}}
+[data-tip]{position:relative}
+[data-tip]:hover::after{content:attr(data-tip);position:absolute;left:50%;bottom:calc(100% + 8px);transform:translateX(-50%);background:var(--panel-3);color:var(--ink);
+  border:1px solid var(--line-strong);border-radius:var(--r-record);padding:4px 8px;font-family:var(--font-mono);font-size:10px;letter-spacing:.06em;white-space:nowrap;z-index:70;pointer-events:none}
+.banner{position:fixed;left:16px;bottom:calc(58px + env(safe-area-inset-bottom,0px));width:min(420px,calc(100vw - 32px));z-index:110;background:var(--panel);border:1px solid var(--leather);border-radius:var(--r-card);padding:14px;box-shadow:var(--shadow);display:flex;gap:12px;align-items:flex-start;animation:slide .3s}
+.banner .ic{color:var(--sunset);width:22px;height:22px}
+.banner p{margin:0 0 10px;font-size:12px;color:var(--muted)}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(420px,100%);background:var(--panel);border-left:1px solid var(--line-strong);box-shadow:var(--shadow);z-index:105;display:flex;flex-direction:column;animation:drawer .2s;padding-top:env(safe-area-inset-top,0px)}
+@keyframes drawer{from{transform:translateX(30px);opacity:0}}
+.drawer-h{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line)}
+.drawer-b{padding:16px;overflow:auto;display:flex;flex-direction:column;gap:16px}
+.cl-i{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px}
+.cl-i ul{margin:6px 0 0;padding-left:16px;color:var(--muted);font-size:12px}
+.stepper{display:flex;align-items:center;gap:6px;margin-bottom:16px}
+.step{display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+.step i{width:24px;height:24px;border-radius:50%;border:1px solid var(--line-strong);display:grid;place-items:center;font-style:normal;font-size:11px}
+.step.on{color:var(--ink)}.step.on i{border-color:var(--neon);color:var(--neon);box-shadow:var(--glow)}
+.step.done i{background:var(--good);border-color:var(--good);color:var(--bg)}
+.stepper .ln{flex:1;height:1px;background:var(--line-strong)}
+.skel{background:linear-gradient(90deg,var(--panel-2) 25%,var(--panel-3) 50%,var(--panel-2) 75%);background-size:200% 100%;animation:shimmer 1.1s infinite;border-radius:var(--r-record);min-height:14px}
+@keyframes shimmer{to{background-position:-200% 0}}
+.statusbar{position:fixed;left:236px;right:0;bottom:0;height:calc(34px + env(safe-area-inset-bottom,0px));padding:0 16px env(safe-area-inset-bottom,0px);z-index:35;display:flex;align-items:center;gap:16px;
+  background:var(--bg-deep);border-top:1px solid var(--line);font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);overflow:hidden;white-space:nowrap}
+.statusbar b{color:var(--muted);font-weight:400}
+.statusbar .live{color:var(--good)}
+.statusbar .ml{margin-left:auto}
+.notfound{text-align:center;padding:60px 20px}
+.notfound .display-xl{color:var(--sunset);font-size:44px}
+.notfound .code{font-family:var(--font-mono);font-size:80px;color:var(--neon);text-shadow:var(--glow);line-height:1;letter-spacing:.1em}
+
+/* login */
+.login{min-height:100vh;display:grid;place-items:center;padding:24px 16px;background:var(--skyline),var(--bg)}
+.login .card{width:min(440px,100%);background:var(--panel);border:1px solid var(--line-strong);border-radius:var(--r-card);padding:26px;box-shadow:var(--shadow);position:relative}
+.login .card::before,.login .card::after{content:"";position:absolute;width:18px;height:18px;border:2px solid var(--neon);opacity:.9}
+.login .card::before{top:-2px;left:-2px;border-width:2px 0 0 2px;border-top-left-radius:var(--r-card)}
+.login .card::after{bottom:-2px;right:-2px;border-width:0 2px 2px 0;border-bottom-right-radius:var(--r-card)}
+.login .wordmark{font-size:38px;text-align:center}
+.login .wordmark small{font-size:11px}
+.login form{display:flex;flex-direction:column;gap:14px;margin-top:22px}
+.login .social{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.login .or{display:flex;align-items:center;gap:10px;font-family:var(--font-mono);font-size:10px;letter-spacing:.2em;color:var(--dim)}
+.login .or::before,.login .or::after{content:"";flex:1;border-top:1px dashed var(--line-strong)}
+.login .foot{margin-top:18px;text-align:center;font-size:12px;color:var(--muted)}
+.flicker{animation:flick 2.2s steps(1,end) 1}
+@keyframes flick{0%,4%,8%{opacity:.35}2%,6%,10%,100%{opacity:1}22%{opacity:.6}24%{opacity:1}}
+
+/* ── round two: louder western · louder cyberpunk ── */
+.top::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,transparent,var(--uplink) 30%,var(--neon) 70%,transparent);opacity:.9;pointer-events:none}
+.statusbar{background:linear-gradient(180deg,var(--panel-2),var(--bg-deep));border-top-color:var(--line-strong)}
+.statusbar::before{content:"";position:absolute;left:0;right:0;top:-1px;height:1px;background:linear-gradient(90deg,var(--neon),transparent 35%,transparent 65%,var(--uplink));pointer-events:none}
+.wordmark .gl{position:relative;display:inline-block;text-shadow:-1px 0 0 color-mix(in srgb,var(--uplink) 65%,transparent),1px 0 0 color-mix(in srgb,var(--hot) 65%,transparent),var(--glow)}
+.wordmark .gl::before,.wordmark .gl::after{content:attr(data-text);position:absolute;left:0;top:0;width:100%;color:var(--uplink);text-shadow:none;opacity:0;pointer-events:none}
+.wordmark .gl::after{color:var(--hot)}
+.wordmark .gl::before{animation:gl1 7s infinite steps(1,end)}
+.wordmark .gl::after{animation:gl2 7s infinite steps(1,end) .05s}
+@keyframes gl1{0%,91%,100%{opacity:0;clip-path:inset(0 0 100% 0);transform:none}92%{opacity:.9;clip-path:inset(8% 0 58% 0);transform:translate(-3px,0)}94%{clip-path:inset(62% 0 8% 0);transform:translate(2px,0)}96%{opacity:.9;clip-path:inset(30% 0 42% 0);transform:translate(-2px,1px)}97.5%{opacity:0}}
+@keyframes gl2{0%,91%,100%{opacity:0;clip-path:inset(0 0 100% 0);transform:none}92.5%{opacity:.9;clip-path:inset(55% 0 4% 0);transform:translate(3px,0)}94.5%{clip-path:inset(0 0 72% 0);transform:translate(-2px,0)}96.5%{opacity:.9;clip-path:inset(40% 0 30% 0);transform:translate(2px,-1px)}98%{opacity:0}}
+:root[data-mode="noon"] .wordmark .gl::before,:root[data-mode="noon"] .wordmark .gl::after{animation:none}
+.panel::before,.panel::after{content:"";position:absolute;width:10px;height:10px;border-color:var(--line-strong);border-style:solid;opacity:.9;pointer-events:none}
+.panel::before{top:-1px;left:-1px;border-width:2px 0 0 2px;border-top-left-radius:var(--r-card)}
+.panel::after{bottom:-1px;right:-1px;border-width:0 2px 2px 0;border-bottom-right-radius:var(--r-card)}
+.panel.hud::before,.panel.hud::after{width:16px;height:16px;border-color:var(--uplink)}
+.panel.flat::before,.panel.flat::after,.panel.poster::after{display:none}
+.panel-h .title{font-family:var(--font-display);font-weight:400;font-size:17px;letter-spacing:.01em}
+.readout{margin-left:auto;font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--uplink);padding:2px 7px;border:1px solid color-mix(in srgb,var(--uplink) 40%,transparent);border-radius:var(--r-state);background:var(--uplink-soft);white-space:nowrap}
+.readout b{font-weight:400;color:var(--ink)}
+.panel.poster{border:3px double var(--leather);border-radius:4px;background:repeating-linear-gradient(0deg,transparent 0 6px,var(--leather-soft) 6px 7px),var(--panel)}
+.panel.poster::before{content:"";position:absolute;inset:6px;width:auto;height:auto;border:1px solid var(--leather);opacity:.45;border-radius:2px;border-top-left-radius:2px}
+.panel.poster .panel-h .title{color:var(--sunset);letter-spacing:.06em;text-transform:uppercase}
+.rope{border:0;height:8px;margin:14px 0;background:repeating-linear-gradient(-45deg,var(--leather) 0 5px,color-mix(in srgb,var(--leather) 40%,transparent) 5px 10px);border-radius:4px;opacity:.8;
+  -webkit-mask:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent);mask:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent)}
+.eyebrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.eyebrow::before{content:"";width:12px;height:12px;border:2px solid var(--leather);border-radius:50%;background:linear-gradient(var(--leather),var(--leather)) center/100% 2px no-repeat;flex:none}
+.fx::before{opacity:.5;background:repeating-linear-gradient(0deg,rgba(0,0,0,.22) 0 1px,transparent 1px 3px)}
+.fx .sweep{position:absolute;left:0;right:0;height:140px;top:-140px;background:linear-gradient(180deg,transparent,color-mix(in srgb,var(--uplink) 6%,transparent) 50%,transparent);animation:sweep 9s linear infinite}
+@keyframes sweep{to{top:100%}}
+:root[data-mode="noon"] .fx .sweep{display:none}
+@media (prefers-reduced-motion:reduce){.fx .sweep{display:none}.wordmark .gl::before,.wordmark .gl::after{animation:none}}
+.seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:var(--r-record);overflow:hidden;background:var(--bg-deep)}
+.seg button{height:28px;padding:0 12px;border:0;background:transparent;color:var(--muted);cursor:pointer;font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--neon-soft);color:var(--neon)}
+.filters{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 14px}
+.filters select.input{width:auto;height:28px;padding:0 28px 0 10px;font-size:11px;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:.06em;background-position:calc(100% - 16px) 11px,calc(100% - 11px) 11px}
+.chart svg{height:200px}
+.chart .ln{fill:none;stroke:var(--uplink);stroke-width:2;stroke-linejoin:round}
+.chart .ar{fill:var(--uplink);opacity:.12}
+.chart .xh{stroke:var(--muted);stroke-dasharray:3 3}
+.chart .pt{fill:var(--uplink);stroke:var(--panel);stroke-width:2}
+.chart .pt.end{fill:var(--neon)}
+.chart .band{fill:var(--crit);opacity:.07}
+.donut{display:grid;grid-template-columns:150px minmax(0,1fr);gap:16px;align-items:center}
+.donut svg{width:150px;height:150px;display:block;max-width:100%}
+.donut .sg{fill:none;stroke-width:18;transition:opacity .15s}
+.donut .sg.dim{opacity:.3}
+.donut .tot{font-family:var(--font-mono);font-size:24px;fill:var(--ink);text-anchor:middle}
+.donut .lab{font-family:var(--font-mono);font-size:9px;letter-spacing:.14em;fill:var(--dim);text-anchor:middle}
+.dl{display:flex;flex-direction:column;gap:5px}
+.dl .r{display:grid;grid-template-columns:10px 14px minmax(0,1fr) auto 40px;gap:8px;align-items:center;font-size:12px;cursor:default;padding:3px 6px;border-radius:var(--r-state)}
+.dl .r:hover{background:var(--panel-2)}
+.dl .r i{width:10px;height:10px;border-radius:2px}
+.dl .r .ic{width:14px;height:14px;color:var(--muted)}
+.dl .r .n{font-family:var(--font-mono);color:var(--ink)}
+.dl .r .p{font-family:var(--font-mono);font-size:10px;color:var(--dim);text-align:right}
+.hb{display:flex;flex-direction:column;gap:8px}
+.hb .r{display:grid;grid-template-columns:104px minmax(0,1fr) 64px;gap:10px;align-items:center;font-size:12px;cursor:pointer;padding:3px 6px;margin:0 -6px;border-radius:var(--r-state)}
+.hb .r:hover{background:var(--panel-2)}
+.hb .r .bar{height:10px}
+.hb .r .bar i{background:var(--uplink);box-shadow:none;border-radius:2px}
+.hb .r.on .bar i{background:var(--neon)}
+.hb .r.on .k{color:var(--neon)}
+.hb .r .v{font-family:var(--font-mono);font-size:11px;text-align:right;color:var(--muted)}
+.hb .r .k{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dtable{width:100%;border-collapse:collapse;font-family:var(--font-mono);font-size:11px}
+.dtable th,.dtable td{padding:5px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+.dtable th:first-child,.dtable td:first-child{text-align:left}
+.dtable th{color:var(--muted);font-weight:400;letter-spacing:.08em;text-transform:uppercase;position:sticky;top:0;background:var(--panel)}
+.tile .goal{display:flex;flex-direction:column;gap:4px;margin-top:6px}
+.tile .goal .row{font-family:var(--font-mono);font-size:10px;color:var(--dim);justify-content:space-between}
+.tile .mini{display:flex;gap:8px;align-items:flex-end;height:44px;margin-top:auto;padding-top:14px}
+.tile .mini i{flex:1;background:var(--uplink);border-radius:2px 2px 0 0;min-height:3px;position:relative}
+.tile .mini i.w{background:var(--warn)}.tile .mini i.c{background:var(--crit)}.tile .mini i.g{background:var(--good)}
+.tile .mini i span{position:absolute;bottom:100%;left:0;right:0;text-align:center;font-family:var(--font-mono);font-size:9px;color:var(--dim);padding-bottom:2px;white-space:nowrap}
+.tile .dots{display:flex;gap:6px;margin-top:auto;align-items:center;flex-wrap:wrap}
+.tile .dots .avatar{width:26px;height:26px;font-size:9px}
+.tile .dots .avatar.off{opacity:.35;filter:grayscale(1)}
+.tile .p95{margin-top:4px;font-family:var(--font-mono);font-size:10px;color:var(--dim);display:flex;justify-content:space-between}
+@media (max-width:560px){.donut{grid-template-columns:1fr}.donut svg{margin:0 auto}.hb .r{grid-template-columns:80px minmax(0,1fr) 56px}}
+
+/* ── the world behind the cards ── */
+#world{position:fixed;inset:0;width:100%;height:100%;z-index:0;display:block;pointer-events:none}
+#app{position:relative;z-index:1}
+.login{background:transparent}
+.panel,.side,.statusbar,.tbl-wrap,.chat,.kcol,.login .card,.modal,.drop,.palette,.toast,.wanted,.banner,.drawer{backdrop-filter:blur(12px) saturate(1.2);-webkit-backdrop-filter:blur(12px) saturate(1.2)}
+.top{background:color-mix(in srgb,var(--bg) 62%,transparent)}
+:root[data-world="off"] #world{display:none}
+
+/* responsive */
+.menu-btn{display:none}
+@media (max-width:980px){
+  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .g3{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .g-main{grid-template-columns:1fr}
+}
+@media (max-width:820px){
+  .shell{grid-template-columns:1fr}
+  .side{position:fixed;left:0;top:0;bottom:0;width:min(280px,86vw);transform:translateX(-102%);transition:transform .2s;box-shadow:var(--shadow);padding-top:calc(18px + env(safe-area-inset-top,0px))}
+  .side.open{transform:none}
+  .side-veil{position:fixed;inset:0;background:rgba(8,4,14,.6);z-index:39}
+  .menu-btn{display:inline-flex}
+  .statusbar{left:0}
+  .main{padding:16px 16px 84px}
+  .top{padding:0 12px}
+  .searchbtn{min-width:0;flex:1}
+  .searchbtn span.ph{display:none}
+  .uplink span{display:none}
+  .chat{grid-template-columns:1fr}
+  .chan{flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line)}
+  .kanban{grid-template-columns:repeat(4,minmax(240px,1fr))}
+}
+@media (max-width:560px){
+  .g4,.g3,.g2{grid-template-columns:1fr}
+  .quick{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .value{font-size:24px}
+  .display{font-size:20px}
+  .wanted .w-head{font-size:26px}
+  .login .social{grid-template-columns:1fr}
+  .modal-f .btn{flex:1 1 auto}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001s!important;transition-duration:.001s!important;scroll-behavior:auto}
+  .juke.playing .disc{animation:none}
+}
+</style>
+</head>
+<body>
+<canvas id="world" aria-hidden="true"></canvas>
+<div class="fx" aria-hidden="true"><div class="sweep"></div></div>
+<div id="app"></div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<div id="overlay"></div>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script>if(!window.lucide){var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/lucide@0.460.0/dist/umd/lucide.min.js';s.onload=function(){window.icons&&window.icons()};document.head.appendChild(s)}</script>
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   NEON GULCH — sandbox runtime. Vanilla JS, no build step.
+   Sections: data · state · helpers · shell · views · overlays · boot
+   ═══════════════════════════════════════════════════════════════ */
+'use strict';
+const $=(s,r=document)=>r.querySelector(s);
+const $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ic=(n,cls='')=>`<i class="ic ${cls}" data-lucide="${n}" aria-hidden="true"></i>`;
+const fmt=n=>Number(n).toLocaleString('en-US');
+const scrip=n=>`${fmt(n)} <span class="dim">§</span>`;
+const pad=n=>String(n).padStart(2,'0');
+const hue=s=>{let h=0;for(const c of s)h=(h*31+c.charCodeAt(0))%360;return h};
+const initials=s=>s.split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();
+const rnd=(a,b)=>a+Math.floor(Math.random()*(b-a+1));
+const pick=a=>a[rnd(0,a.length-1)];
+const ago=m=>m<1?'just now':m<60?`${m}m ago`:m<1440?`${Math.round(m/60)}h ago`:`${Math.round(m/1440)}d ago`;
+window.icons=()=>{try{window.lucide&&lucide.createIcons()}catch(e){}};
+const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ── storage (per-viewer convenience only) ── */
+const store={get(k,d){try{const v=localStorage.getItem('ng.'+k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem('ng.'+k,JSON.stringify(v))}catch(e){}},del(k){try{localStorage.removeItem('ng.'+k)}catch(e){}}};
+
+/* ── seed data ── */
+const CREW=[
+  {id:'u1',name:'Dusty Vector',role:'Trailboss',on:true,score:12840,rank:'Marshal'},
+  {id:'u2',name:'Ma Ravenholt',role:'Fixer',on:true,score:11210,rank:'Ranger'},
+  {id:'u3',name:'Kid Kilobyte',role:'Netrunner',on:false,score:9870,rank:'Ranger'},
+  {id:'u4',name:'Preacher Nought',role:'Medic',on:true,score:7430,rank:'Drifter'},
+  {id:'u5',name:'Sal Tumbleweed',role:'Wheelman',on:false,score:6120,rank:'Drifter'},
+  {id:'u6',name:'Doc Ferrous',role:'Rigger',on:true,score:5480,rank:'Drifter'},
+];
+const crew=id=>CREW.find(c=>c.id===id);
+const SECTORS=['Sector 7','Rustline','The Flats','Chrome Mesa','Old Reactor','Saltwire','Dead Signal'];
+const POSTERS=['Halcyon Freight','Marrow & Sons','Sheriff Okonkwo','Vellum Trust','The Cartwright Twins','Ironclad Mutual','Nobody (anon)'];
+const BOUNTY_TITLES=[
+  ['Recover the ledger drive','Halcyon lost a drive on the Rustline haul. Bring it back sealed.'],
+  ['Escort the water convoy','Three tankers, one night, no stops.'],
+  ['Trace the ghost signal','Something on Dead Signal is repeating our callsign.'],
+  ['Repossess a stolen rig','Plate NG-4471. Owner wants it back with paint intact.'],
+  ['Deliver medicine to the Flats','Cold chain. Sixteen hours. Don\'t let it thaw.'],
+  ['Wire the reactor perimeter','Twelve nodes, one uplink, zero downtime.'],
+  ['Find the Cartwright horse','It\'s a drone. It\'s shaped like a horse. It ran.'],
+  ['Silence the saloon feedback','Someone rigged the jukebox to the alarm system.'],
+  ['Audit Vellum\'s vault seals','Count them twice. Report any that hum.'],
+  ['Retrieve a lost saddle','Carbon-fibre. Sentimental value. Reward is real.'],
+  ['Map the Chrome Mesa tunnels','Nobody who went in has filed a map. Be the first.'],
+  ['Break the Saltwire jam','Comms are dead past the old fence line.'],
+  ['Stand watch at the wake','Doc Ferrous\'s cousin. Keep it peaceful.'],
+  ['Tag the wandering herd','Forty head, all tagged wrong. Fix the tags.'],
+  ['Move a piano across town','It\'s a real piano. It\'s very heavy.'],
+  ['Debug the town clock','It strikes thirteen. Nobody thinks that\'s funny.'],
+];
+const STATUSES=['open','claimed','riding','done','void'];
+const STATUS_META={open:['Open','chip-info','circle-dot'],claimed:['Claimed','chip-warn','hand'],riding:['Riding','chip-neon','zap'],done:['Done','chip-good','circle-check'],void:['Void','','ban']};
+function seedBounties(){
+  return BOUNTY_TITLES.map((t,i)=>({id:`BNT-${420+i*7}`,title:t[0],desc:t[1],poster:POSTERS[i%POSTERS.length],reward:[1200,3400,900,5600,2100,7800,450,300,4200,650,9900,1800,700,1500,2600,999][i],
+    sector:SECTORS[i%SECTORS.length],risk:[1,2,3][i%3],status:STATUSES[[0,0,1,2,0,3,1,4,0,2,0,3,0,1,0,2][i]],due:i+2,who:[null,'u1','u2','u3',null,'u4','u5',null,null,'u6',null,'u1',null,'u2',null,'u3'][i]}));
+}
+const PENS=[['loose','Loose'],['roped','Roped'],['branded','Branded'],['shipped','Shipped']];
+function seedCards(){
+  return [
+    {id:'k1',pen:'loose',t:'Rewire the porch light',pri:'cold',who:'u6'},
+    {id:'k2',pen:'loose',t:'Price the water run',pri:'warm',who:'u2'},
+    {id:'k3',pen:'roped',t:'Patch rig firmware 4.2',pri:'hot',who:'u3'},
+    {id:'k4',pen:'roped',t:'Talk to Sheriff Okonkwo',pri:'warm',who:'u1'},
+    {id:'k5',pen:'branded',t:'Tune the jukebox amp',pri:'cold',who:'u5'},
+    {id:'k6',pen:'branded',t:'Stitch Doc\'s duster',pri:'cold',who:'u4'},
+    {id:'k7',pen:'shipped',t:'Ledger drive returned',pri:'hot',who:'u1'},
+    {id:'k8',pen:'shipped',t:'Convoy escort logged',pri:'warm',who:'u2'},
+  ];
+}
+const CHANNELS=[['saloon','saloon',3],['dispatch','dispatch',0],['campfire','campfire',1]];
+function seedMsgs(){
+  const now=Date.now();
+  return {
+    saloon:[
+      {who:'u2',t:'Whoever left the rig charging on the porch: it\'s at 12% and screaming.',at:now-52*60000},
+      {who:'u3',t:'that was me. it was at 60 when i left. the porch light is eating power again',at:now-49*60000},
+      {who:'u6',t:'Porch light is on my list. Loose pen. It\'ll get roped tonight.',at:now-41*60000},
+      {who:'u1',t:'Dead Signal is repeating our callsign again. Anyone want a bounty with a ghost in it?',at:now-18*60000,react:['👀 3','🐎 1']},
+      {who:'u4',t:'I\'ll ride it. Bring the good lantern.',at:now-9*60000},
+    ],
+    dispatch:[
+      {who:'u1',t:'Water convoy leaves 04:00. Three tankers. No stops. Sal, you\'re wheel.',at:now-190*60000},
+      {who:'u5',t:'Copy. Fuel\'s topped. Tires are… tires.',at:now-180*60000},
+    ],
+    campfire:[
+      {who:'u4',t:'Anybody remember the words to Cold Iron Lullaby? Second verse.',at:now-600*60000},
+      {who:'u2',t:'"The wire hums low where the coyotes go…" then something about a sheriff.',at:now-590*60000},
+    ]
+  };
+}
+const NOTIFS=[
+  {id:'n1',t:'Bounty claimed',p:'Kid Kilobyte claimed "Trace the ghost signal".',m:6,read:false,ic:'hand'},
+  {id:'n2',t:'Scrip received',p:'Halcyon Freight paid 3,400 § for the convoy escort.',m:41,read:false,ic:'coins'},
+  {id:'n3',t:'Dust storm advisory',p:'Chrome Mesa, tonight 21:00. Visibility under 40 m.',m:120,read:false,ic:'tornado'},
+  {id:'n4',t:'Rig charge low',p:'Porch rig at 12%. Plug it in or it walks home.',m:300,read:true,ic:'battery-warning'},
+  {id:'n5',t:'New rider joined',p:'Doc Ferrous saddled up. Say howdy in #saloon.',m:1500,read:true,ic:'user-plus'},
+];
+const FEED=[
+  ['coins','good','Halcyon Freight paid <b>3,400 §</b> for the convoy escort.',41],
+  ['hand','sun','Kid Kilobyte claimed <b>Trace the ghost signal</b>.',6],
+  ['zap','neon','Preacher Nought is riding <b>Deliver medicine to the Flats</b>.',75],
+  ['circle-check','good','<b>Ledger drive returned</b> moved to Shipped.',130],
+  ['battery-warning','crit','Porch rig dropped to <b>12%</b>.',300],
+  ['tornado','sun','Dust storm advisory posted for Chrome Mesa.',120],
+  ['user-plus','','Doc Ferrous joined the outfit.',1500],
+  ['music','','Jukebox queued <b>Sodium Sunset</b>.',2100],
+];
+const TRACKS=[['Cold Iron Lullaby','The Rustline Choir',214],['Sodium Sunset','Ma Ravenholt',187],['Ghost Town Bandwidth','Kid Kilobyte',263],['Two Moons Over Sector 7','Doc Ferrous',199],['Saddle Static','Preacher Nought',176]];
+const CHANGELOG=[
+  ['0.9.3','Jukebox learned to actually make noise. Neon intensity slider. High Noon mode.'],
+  ['0.9.2','Bounty Board: bulk claim, sortable columns, risk meters.'],
+  ['0.9.1','Corral drag-and-drop. Command palette. The town clock still strikes thirteen.'],
+];
+const SHORTCUTS=[['⌘ K','Whistle (command palette)'],['?','This help'],['G then O','Go to Overwatch'],['G then B','Go to Bounty Board'],['N','New bounty'],['T','Toggle High Noon'],['Esc','Close whatever\'s open']];
+const RIGS=[['mustang','Mustang MkII','Fast, loud, eats scrip.'],['mule','Iron Mule','Slow, honest, carries anything.'],['ghost','Ghostwire','Quiet. Reads the wire. No cupholders.']];
+
+/* ── state ── */
+const S={
+  user:store.get('user',null),
+  onboarded:store.get('onboarded',false),
+  mode:store.get('mode','night'),
+  fx:store.get('fx',true),
+  world:store.get('world',true),
+  accent:store.get('schema',1)>=2?store.get('accent','sunset'):'sunset',
+  glow:store.get('glow',70),
+  consent:store.get('consent',false),
+  prefs:store.get('prefs',{wire:true,dust:true,quiet:false,brand:true,twofa:false,sound:true}),
+  bounties:seedBounties(),
+  cards:seedCards(),
+  msgs:seedMsgs(),
+  notifs:NOTIFS.map(n=>({...n})),
+  chan:'saloon',
+  tbl:{q:'',status:'all',sort:'due',dir:1,page:1,per:8,sel:new Set()},
+  cal:(()=>{const d=new Date();return {y:d.getFullYear(),m:d.getMonth(),sel:d.getDate()}})(),
+  juke:{i:0,playing:false,pos:0},
+  tab:'overview',
+  sideOpen:false,
+  drop:null,
+  charge:12,
+  latency:38,
+};
+</script>
+<script>
+/* ── theme ── */
+const ACCENTS={
+  neon:{night:['#ff2e88','#120c1c','rgba(255,46,136,.16)','255,46,136'],noon:['#b0104f','#f7eedb','rgba(176,16,79,.12)','176,16,79'],label:'Neon magenta'},
+  uplink:{night:['#2ee6ff','#120c1c','rgba(46,230,255,.16)','46,230,255'],noon:['#086a78','#f7eedb','rgba(8,106,120,.12)','8,106,120'],label:'Uplink cyan'},
+  sunset:{night:['#ff9a3c','#120c1c','rgba(255,154,60,.16)','255,154,60'],noon:['#9a3b0a','#f7eedb','rgba(154,59,10,.14)','154,59,10'],label:'Sunset amber'},
+  acid:{night:['#c6ff3d','#120c1c','rgba(198,255,61,.16)','198,255,61'],noon:['#3f6300','#f7eedb','rgba(63,99,0,.14)','63,99,0'],label:'Acid cactus'},
+};
+function applyTheme(){
+  const r=document.documentElement;const noon=S.mode==='noon';
+  r.dataset.mode=noon?'noon':'night';r.dataset.fx=S.fx?'on':'off';
+  const a=ACCENTS[S.accent]||ACCENTS.neon;const v=noon?a.noon:a.night;
+  r.style.setProperty('--neon',v[0]);r.style.setProperty('--neon-ink',v[1]);r.style.setProperty('--neon-soft',v[2]);
+  const g=noon?0:S.glow/100;
+  r.style.setProperty('--glow',g?`0 0 ${Math.round(6+16*g)}px rgba(${v[3]},${(.2+.45*g).toFixed(2)}),0 0 2px rgba(${v[3]},.9)`:'none');
+  r.style.setProperty('--tube',g?`0 0 ${Math.round(4+10*g)}px rgba(${v[3]},${(.25+.45*g).toFixed(2)}),inset 0 0 8px rgba(${v[3]},.22)`:'none');
+  store.set('mode',S.mode);store.set('fx',S.fx);store.set('accent',S.accent);store.set('glow',S.glow);store.set('schema',2);store.set('world',S.world);r.dataset.world=S.world?'on':'off';if(window.W){W.setMode(noon);W.setAccent(v[0]);W.enable(S.world)}
+}
+
+/* ── small view helpers ── */
+const av=(c,cls='')=>`<span class="avatar ${cls} ${c.on?'on':''}" data-hue style="--h:${hue(c.name)}" title="${esc(c.name)}">${initials(c.name)}</span>`;
+const chipFor=s=>{const m=STATUS_META[s];return `<span class="chip ${m[1]} nodot">${ic(m[2])}${m[0]}</span>`};
+const riskEl=r=>`<span class="risk" data-r="${r}" data-tip="${['','Low','Medium','High'][r]} risk" aria-label="${['','Low','Medium','High'][r]} risk"><i></i><i></i><i></i></span>`;
+const dateOf=d=>new Date(Date.now()+d*864e5);
+const shortDate=d=>d.toLocaleDateString('en-US',{month:'short',day:'2-digit'});
+const clock=()=>{const d=new Date();return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`};
+const mmss=s=>`${Math.floor(s/60)}:${pad(s%60)}`;
+const ROUTES={overwatch:['Overwatch','layout-dashboard'],bounties:['Bounty Board','scroll-text'],corral:['Corral','square-kanban'],saloon:['Saloon','messages-square'],almanac:['Almanac','calendar'],poster:['Wanted Poster','user-round'],rig:['Rig','settings'],help:['Help','circle-help']};
+const view=()=>(location.hash.replace(/^#\/?/,'')||'overwatch').split('/')[0];
+const unreadN=()=>S.notifs.filter(n=>!n.read).length;
+function spark(arr,color){const w=260,h=36,mx=Math.max(...arr),mn=Math.min(...arr);const pts=arr.map((v,i)=>[i/(arr.length-1)*w,h-4-((v-mn)/(mx-mn||1))*(h-8)]);
+  const d=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');const l=pts[pts.length-1];
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMinYMid meet" aria-hidden="true"><path d="${d} L${w} ${h} L0 ${h}Z" fill="${color}" opacity=".12"/><path d="${d}" fill="none" stroke="${color}" stroke-width="2"/><circle cx="${l[0].toFixed(1)}" cy="${l[1].toFixed(1)}" r="3" fill="${color}"/></svg>`}
+/* ── dashboard data (seeded, deterministic) ── */
+const R90=(()=>{let s=1337;const r=()=>(s=(s*16807)%2147483647)/2147483647;return Array.from({length:90},(_,i)=>{const wk=dateOf(i-89).getDay();const base=1600+Math.round(r()*2800);const spike=r()<.12?Math.round(r()*6500):0;return Math.max(150,Math.round((base+spike)*(wk===0?.5:wk===6?.7:1)))})})();
+const LAT48=(()=>{let s=4242;const r=()=>(s=(s*16807)%2147483647)/2147483647;let v=46;return Array.from({length:48},(_,i)=>{v=Math.max(22,Math.min(150,v+Math.round((r()-.5)*22)+(i===31?70:0)+(i===32?-40:0)));return v})})();
+const SECTOR_SHARE={'Sector 7':.27,'Rustline':.19,'The Flats':.15,'Chrome Mesa':.13,'Old Reactor':.11,'Saltwire':.09,'Dead Signal':.06};
+S.dash={range:14,sector:'all',table:false};
+const series=()=>{const arr=R90.slice(90-S.dash.range);const sh=S.dash.sector==='all'?1:SECTOR_SHARE[S.dash.sector];return arr.map(v=>Math.round(v*sh))};
+const sum=a=>a.reduce((x,y)=>x+y,0);
+const niceMax=v=>{const p=Math.pow(10,Math.floor(Math.log10(v)));const m=v/p;return (m<=1?1:m<=2?2:m<=2.5?2.5:m<=5?5:10)*p};
+const kfmt=v=>v>=1000?(v/1000).toFixed(v%1000?1:0)+'k':String(v);
+function barChart(){const data=series(),n=data.length,W=560,H=200,L=40,B=22,T=10,R=6,max=niceMax(Math.max(...data)),iw=(W-L-R)/n,bw=Math.max(2,iw*(n>30?.7:.62)),step=Math.ceil(n/7);const y=v=>T+(H-T-B)*(1-v/max);
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Scrip roped, last ${n} days">`;
+  for(let g=0;g<=4;g++){const v=max*g/4;s+=`<line class="grid-l" x1="${L}" x2="${W-R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text x="${L-6}" y="${(y(v)+3).toFixed(1)}" text-anchor="end">${kfmt(v)}</text>`}
+  data.forEach((v,i)=>{const x=L+i*iw+(iw-bw)/2,d=dateOf(i-(n-1));s+=`<rect class="bar-r ${i===n-1?'hot':''}" data-i="${i}" x="${x.toFixed(1)}" y="${y(v).toFixed(1)}" width="${bw.toFixed(1)}" height="${(y(0)-y(v)).toFixed(1)}" rx="${n>30?1:2}"><title>${shortDate(d)}: ${fmt(v)} §</title></rect>`;
+    if(i%step===step-1||(step===1))s+=`<text x="${(x+bw/2).toFixed(1)}" y="${H-6}" text-anchor="middle">${shortDate(d)}</text>`});
+  return s+'</svg><div class="tip" hidden></div>'}
+function lineChart(){const data=LAT48,n=data.length,W=560,H=200,L=40,B=22,T=10,R=6,max=160,px=i=>L+i*(W-L-R)/(n-1),py=v=>T+(H-T-B)*(1-v/max);
+  const pts=data.map((v,i)=>[px(i),py(v)]);const d=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Uplink latency, last 24 hours"><rect class="band" x="${L}" y="${py(160)}" width="${W-L-R}" height="${(py(80)-py(160)).toFixed(1)}"/>`;
+  for(const g of[0,40,80,120,160])s+=`<line class="grid-l" x1="${L}" x2="${W-R}" y1="${py(g).toFixed(1)}" y2="${py(g).toFixed(1)}"/><text x="${L-6}" y="${(py(g)+3).toFixed(1)}" text-anchor="end">${g}</text>`;
+  for(let i=0;i<n;i+=8){const h=(new Date().getHours()-((n-1-i)/2)+48)%24;s+=`<text x="${px(i).toFixed(1)}" y="${H-6}" text-anchor="middle">${pad(Math.floor(h))}:00</text>`}
+  s+=`<path class="ar" d="${d} L${px(n-1).toFixed(1)} ${py(0).toFixed(1)} L${L} ${py(0).toFixed(1)}Z"/><path class="ln" d="${d}"/><line class="xh" id="lat-xh" x1="0" x2="0" y1="${T}" y2="${py(0)}" hidden/><circle class="pt" id="lat-pt" r="4" cx="0" cy="0" hidden/><circle class="pt end" cx="${px(n-1).toFixed(1)}" cy="${py(data[n-1]).toFixed(1)}" r="4"/></svg><div class="tip" hidden></div>`;
+  return s}
+const DONUT=[['open','circle-dot','var(--uplink)'],['claimed','hand','var(--warn)'],['riding','zap','var(--hot)'],['done','circle-check','var(--good)'],['void','ban','var(--dim)']];
+function donutChart(){const counts=DONUT.map(d=>S.bounties.filter(b=>b.status===d[0]).length),tot=sum(counts),r=48,C=2*Math.PI*r;let off=0,segs='';
+  counts.forEach((c,i)=>{if(!c)return;const len=C*c/tot;segs+=`<circle class="sg" data-s="${DONUT[i][0]}" cx="75" cy="75" r="${r}" stroke="${DONUT[i][2]}" stroke-dasharray="${Math.max(0,len-2).toFixed(1)} ${(C-len+2).toFixed(1)}" stroke-dashoffset="${(-off).toFixed(1)}" transform="rotate(-90 75 75)"><title>${STATUS_META[DONUT[i][0]][0]}: ${c}</title></circle>`;off+=len});
+  return `<div class="donut"><svg viewBox="0 0 150 150" role="img" aria-label="Bounties by status">${segs}<text class="tot" x="75" y="80">${tot}</text><text class="lab" x="75" y="96">POSTED</text></svg>
+  <div class="dl">${DONUT.map((d,i)=>`<div class="r" data-hover="${d[0]}"><i style="background:${d[2]}"></i>${ic(d[1])}<span>${STATUS_META[d[0]][0]}</span><span class="n">${counts[i]}</span><span class="p">${tot?Math.round(counts[i]/tot*100):0}%</span></div>`).join('')}</div></div>`}
+function sectorBars(){const tot=sum(R90.slice(90-S.dash.range));const rows=Object.entries(SECTOR_SHARE).map(([k,v])=>[k,Math.round(tot*v)]).sort((a,b)=>b[1]-a[1]);const max=rows[0][1];
+  return `<div class="hb">${rows.map(r=>`<div class="r ${S.dash.sector===r[0]?'on':''}" data-act="dash-sector" data-v="${r[0]}" role="button" tabindex="0"><span class="k">${esc(r[0])}</span><div class="bar"><i style="width:${Math.round(r[1]/max*100)}%"></i></div><span class="v num">${fmt(r[1])} §</span></div>`).join('')}</div>`}
+function dataTable(){const data=series(),n=data.length;return `<div style="max-height:200px;overflow:auto"><table class="dtable"><thead><tr><th>Day</th><th>Scrip</th><th>vs prev</th></tr></thead><tbody>${data.map((v,i)=>{const p=i?data[i-1]:v;const d=v-p;return `<tr><td>${shortDate(dateOf(i-(n-1)))}</td><td>${fmt(v)} §</td><td style="color:${d>0?'var(--good)':d<0?'var(--crit)':'var(--dim)'}">${d>0?'+':''}${fmt(d)}</td></tr>`}).join('')}</tbody></table></div>`}
+
+function skeleton(){return `<div class="stack"><div class="skel" style="height:34px;width:40%"></div><div class="grid g4"><div class="skel" style="height:110px"></div><div class="skel" style="height:110px"></div><div class="skel" style="height:110px"></div><div class="skel" style="height:110px"></div></div><div class="grid g-main"><div class="skel" style="height:260px"></div><div class="skel" style="height:260px"></div></div></div>`}
+function ph(eyebrow,title,desc,acts=''){return `<div class="ph"><div class="txt"><div class="eyebrow">${eyebrow}</div><h1 class="display">${title}</h1>${desc?`<p>${desc}</p>`:''}</div>${acts?`<div class="acts">${acts}</div>`:''}</div>`}
+const closeBtn=()=>`<button class="btn btn-ghost btn-icon btn-sm" data-act="close" aria-label="Close">${ic('x','ic-sm')}</button>`;
+
+/* ── login ── */
+function loginView(){return `<div class="login"><div class="card">
+  <div class="wordmark ${reduced?'':'flicker'}"><span class="gl" data-text="NEON GULCH">NEON GULCH</span><small>FRONTIER CONSOLE // SECTOR 7</small></div>
+  <form id="login-form" data-form="login" novalidate>
+    <div class="field" id="f-user"><label for="login-user">Handle</label><div class="inwrap">${ic('user-round')}<input class="input" id="login-user" placeholder="dusty.vector" autocomplete="username" spellcheck="false"></div><div class="err">Need a handle, partner.</div></div>
+    <div class="field" id="f-pass"><label for="login-pass">Passkey</label><div class="inwrap">${ic('key-round')}<input class="input" id="login-pass" type="password" placeholder="anything works out here" autocomplete="current-password"><button type="button" class="btn btn-ghost btn-icon btn-sm tail" data-act="peek" aria-label="Show passkey">${ic('eye','ic-sm')}</button></div><div class="err">Passkey's empty. Any old key opens this door.</div></div>
+    <div class="row between wrap"><label class="check"><input type="checkbox" id="login-rem" checked> Remember this rig</label><a href="#" data-act="forgot" class="small">Lost your key?</a></div>
+    <button class="btn btn-neon btn-block" type="submit" id="login-go">${ic('log-in')} Jack in</button>
+    <div class="or">or ride in with</div>
+    <div class="social"><button type="button" class="btn" data-act="social" data-v="NetLink">${ic('wifi')} NetLink</button><button type="button" class="btn" data-act="social" data-v="Telegraph">${ic('radio')} Telegraph</button></div>
+  </form>
+  <div class="foot">New in town? <a href="#" data-act="signup">Post your own wanted poster</a>.</div>
+</div></div>`}
+
+/* ── onboarding ── */
+function onboardView(){
+  const o=S.ob||(S.ob={step:1,name:S.user.name,handle:S.user.handle,rig:'mule',prefs:{wire:true,dust:true,brand:false}});
+  const steps=['Your name','Your rig','The wire'].map((t,i)=>`<div class="step ${o.step===i+1?'on':''} ${o.step>i+1?'done':''}"><i>${o.step>i+1?'✓':i+1}</i><span>${t}</span></div>`).join('<div class="ln"></div>');
+  let body='';
+  if(o.step===1)body=`<div class="field"><label for="ob-name">What do they call you?</label><input class="input" id="ob-name" value="${esc(o.name)}" data-on="ob-name"><div class="hint">Shows on your wanted poster. Pick something you'd answer to at 4 a.m.</div></div>
+    <div class="field"><label for="ob-handle">Handle</label><div class="inwrap">${ic('at-sign')}<input class="input" id="ob-handle" value="${esc(o.handle)}" data-on="ob-handle" spellcheck="false"></div></div>
+    <div class="row wrap" style="margin-top:4px">${av({name:o.name||'?',on:false},'lg')}<div><b>${esc(o.name||'Nameless')}</b><div class="tiny">@${esc(o.handle||'nobody')} · Drifter</div></div></div>`;
+  if(o.step===2)body=`<div class="radio-cards">${RIGS.map(r=>`<label class="radio-card"><input type="radio" name="rig" value="${r[0]}" ${o.rig===r[0]?'checked':''} data-ch="ob-rig"><span class="row">${ic('truck')}<b>${r[1]}</b></span><span class="small muted">${r[2]}</span></label>`).join('')}</div>
+    <div class="hint muted small">You can swap rigs later in the Rig page. Nobody swaps rigs later.</div>`;
+  if(o.step===3)body=`<div class="stack" style="gap:10px">
+    <label class="switch"><input type="checkbox" ${o.prefs.wire?'checked':''} data-ch="ob-pref" data-v="wire"><span class="k"></span><span><b>Wire alerts</b><br><span class="small muted">Bounties claimed, scrip landing, riders calling.</span></span></label>
+    <label class="switch"><input type="checkbox" ${o.prefs.dust?'checked':''} data-ch="ob-pref" data-v="dust"><span class="k"></span><span><b>Dust advisories</b><br><span class="small muted">Storms, visibility, the sky doing things.</span></span></label>
+    <label class="switch"><input type="checkbox" ${o.prefs.brand?'checked':''} data-ch="ob-pref" data-v="brand"><span class="k"></span><span><b>Brand-new riders</b><br><span class="small muted">A howdy when someone joins the outfit.</span></span></label></div>`;
+  return `<div class="login"><div class="card" style="width:min(560px,100%)">
+    <div class="eyebrow">Saddle up // <b>step ${o.step} of 3</b></div><h1 class="display" style="margin:6px 0 16px">${['Howdy, stranger.','Pick your iron.','Tune the wire.'][o.step-1]}</h1>
+    <div class="stepper">${steps}</div>
+    <form data-form="ob" class="stack" style="gap:14px">${body}
+    <div class="row end" style="margin-top:6px">${o.step>1?`<button type="button" class="btn btn-ghost" data-act="ob-back">${ic('chevron-left')} Back</button>`:`<button type="button" class="btn btn-ghost" data-act="ob-skip">Skip the tour</button>`}<button class="btn btn-neon" type="submit">${o.step<3?'Next '+ic('chevron-right'):ic('flag')+' Saddle up'}</button></div></form>
+  </div></div>`}
+
+/* ── shell ── */
+function navItem(k,cnt){const R=ROUTES[k];return `<a href="#${k}" ${view()===k?'aria-current="page"':''}>${ic(R[1])}<span>${R[0]}</span>${cnt?`<span class="cnt">${cnt}</span>`:''}</a>`}
+function jukeHtml(){const t=TRACKS[S.juke.i],p=S.juke;return `<div class="juke ${p.playing?'playing':''}" id="juke"><div class="tr"><div class="disc"></div><div style="min-width:0"><b>${esc(t[0])}</b><span class="tiny">${esc(t[1])}</span></div></div>
+  <div class="bar sun"><i id="juke-bar" style="width:${(p.pos/t[2]*100).toFixed(1)}%"></i></div>
+  <div class="row between"><span class="tiny num" id="juke-t">${mmss(p.pos)}</span><div class="ctl"><button class="btn btn-ghost btn-icon btn-sm" data-act="juke-prev" aria-label="Previous track">${ic('skip-back','ic-sm')}</button><button class="btn btn-icon btn-sm round ${p.playing?'btn-neon':'btn-uplink'}" data-act="juke-toggle" aria-label="${p.playing?'Pause':'Play'}">${ic(p.playing?'pause':'play','ic-sm')}</button><button class="btn btn-ghost btn-icon btn-sm" data-act="juke-next" aria-label="Next track">${ic('skip-forward','ic-sm')}</button></div><span class="tiny num">${mmss(t[2])}</span></div></div>`}
+function sideHtml(){const open=S.bounties.filter(b=>b.status==='open').length;const un=CHANNELS.reduce((a,c)=>a+c[2],0);
+  return `<aside class="side ${S.sideOpen?'open':''}" id="side"><div class="brand"><div class="wordmark"><span class="gl" data-text="NEON GULCH">NEON GULCH</span><small>FRONTIER CONSOLE v0.9.3</small></div></div>
+  <nav class="nav" aria-label="Main"><div class="sect label">Ride</div>${navItem('overwatch')}${navItem('bounties',open)}${navItem('corral')}${navItem('saloon',un)}${navItem('almanac')}<div class="sect label">You</div>${navItem('poster')}${navItem('rig')}${navItem('help')}</nav>
+  <div class="spacer"></div>
+  <div class="rig"><div class="row"><span class="label">Rig charge</span><span class="mono small ml num" id="charge-n">${S.charge}%</span></div><div class="bar ${S.charge<20?'neon':S.charge>=100?'good':''}" style="margin-top:6px"><i id="charge-bar" style="width:${S.charge}%"></i></div><button class="btn btn-sm btn-uplink btn-block" style="margin-top:8px" data-act="plug" id="plug-btn">${ic(S.plugged?'unplug':'plug','ic-sm')} ${S.plugged?'Unplug':'Plug in'}</button></div>
+  ${jukeHtml()}</aside>${S.sideOpen?'<div class="side-veil" data-act="side-close"></div>':''}`}
+function bellDrop(){const un=unreadN();return `<div class="drop" id="drop"><div class="drop-h"><span class="title">The Wire</span><button class="btn btn-ghost btn-sm" data-act="ntf-readall" ${un?'':'disabled'}>Mark all read</button></div>
+  <div style="max-height:360px;overflow:auto">${S.notifs.map(n=>`<div class="ntf ${n.read?'read':''}" data-act="ntf-open" data-v="${n.id}" role="button" tabindex="0"><i></i><div><b>${esc(n.t)}</b><p>${esc(n.p)}</p><time>${ago(n.m)}</time></div></div>`).join('')}</div>
+  <div class="pfoot"><span>${un} unread</span><span class="ml">Wired to #dispatch</span></div></div>`}
+function meDrop(){return `<div class="drop menu" id="drop"><div class="drop-h">${av(S.user,'sm')}<div><b class="small">${esc(S.user.name)}</b><div class="tiny">@${esc(S.user.handle)} · ${esc(S.user.rank||'Drifter')}</div></div></div>
+  <a class="item" href="#poster" data-act="drop-close">${ic('scroll-text')} Wanted poster</a><a class="item" href="#rig" data-act="drop-close">${ic('settings')} Rig &amp; settings</a>
+  <button class="item" data-act="whatsnew">${ic('sparkles')} What's new</button><button class="item" data-act="shortcuts">${ic('keyboard')} Shortcuts <kbd style="margin-left:auto">?</kbd></button>
+  <div class="sep"></div><button class="item danger" data-act="logout">${ic('log-out')} Ride off</button></div>`}
+function topHtml(){const R=ROUTES[view()];const un=unreadN();const lat=S.latency;const cls=lat>140?'down':lat>80?'weak':'';
+  return `<header class="top"><button class="btn btn-ghost btn-icon menu-btn" data-act="side-open" aria-label="Open menu">${ic('menu')}</button>
+  <div class="crumbs"><span>Neon Gulch</span>${ic('chevron-right')}<b>${R?R[0]:'Lost'}</b></div>
+  <button class="searchbtn" data-act="palette" aria-label="Whistle for anything">${ic('search')}<span class="ph">Whistle for anything…</span><kbd>⌘K</kbd></button>
+  <div class="uplink ${cls}" id="uplink" data-tip="Uplink latency"><span class="dot"></span><span id="lat" class="num">${lat} ms</span></div>
+  <button class="btn btn-ghost btn-icon" data-act="mode" aria-label="Toggle High Noon" data-tip="${S.mode==='noon'?'Back to night':'High Noon'}">${ic(S.mode==='noon'?'moon':'sun')}</button>
+  <div class="hasdrop"><button class="btn btn-ghost btn-icon" data-act="drop" data-v="bell" aria-label="Notifications, ${un} unread" aria-expanded="${S.drop==='bell'}">${ic('bell')}${un?`<span class="badge">${un}</span>`:''}</button>${S.drop==='bell'?bellDrop():''}</div>
+  <div class="hasdrop"><button class="avatar on" data-hue style="--h:${hue(S.user.name)};cursor:pointer" data-act="drop" data-v="me" aria-label="Account menu" aria-expanded="${S.drop==='me'}">${initials(S.user.name)}</button>${S.drop==='me'?meDrop():''}</div></header>`}
+function statusHtml(){return `<footer class="statusbar"><span class="live">● On the wire</span><span>Uplink <b id="lat2" class="num">${S.latency} ms</b></span><span>Sector 7 · Neon Gulch</span><span>Crew online <b>${CREW.filter(c=>c.on).length}/${CREW.length}</b></span><span class="ml num" id="clock">${clock()}</span><span>v0.9.3</span></footer>`}
+function bannerHtml(){return `<div class="banner" id="banner">${ic('cookie')}<div style="flex:1"><b class="small">This console uses cookies. And dust.</b><p>Mostly to remember your handle and which way the neon points. No trackers, no cattle brands.</p><div class="row"><button class="btn btn-sm btn-neon" data-act="consent">Fine by me</button><button class="btn btn-sm btn-ghost" data-act="consent">Just the dust</button></div></div></div>`}
+
+/* ── views ── */
+const VIEWS={};
+VIEWS.overwatch=()=>{
+  const h=new Date().getHours(),greet=h===12?'High noon':h<5?'Small hours':h<12?'Morning':h<18?'Afternoon':'Evening';
+  const riding=S.bounties.filter(b=>b.status==='riding'),openB=S.bounties.filter(b=>b.status==='open'),open=openB.length;const data=series(),total=sum(data);
+  const p95=[...LAT48].sort((a,b)=>a-b)[Math.floor(47*.95)];const risk=[1,2,3].map(r=>openB.filter(b=>b.risk===r).length);
+  const tiles=[
+    ['Scrip on hand','48,210 §','+12% vs last moon','up',`${spark([30,34,31,38,36,41,44,43,48],'var(--neon)')}<div class="goal"><div class="row"><span>Goal 60,000 §</span><span>80%</span></div><div class="bar neon"><i style="width:80%"></i></div></div>`,true],
+    ['Open bounties',String(open),'+3 since dawn','up',`<div class="mini" aria-label="Open bounties by risk">${risk.map((c,i)=>`<i class="${['g','w','c'][i]}" style="height:${Math.max(8,c/Math.max(1,...risk)*100)}%"><span>${['Low','Med','High'][i]} ${c}</span></i>`).join('')}</div>`],
+    ['Crew online',`${CREW.filter(c=>c.on).length}/${CREW.length}`,'Sal and the Kid are dark','down',`<div class="dots">${CREW.map(c=>`<span class="avatar ${c.on?'on':'off'}" data-hue style="--h:${hue(c.name)}" title="${esc(c.name)} · ${c.on?'on':'dark'}">${initials(c.name)}</span>`).join('')}</div>`],
+    ['Uplink latency',`${S.latency} ms`,'−9 ms, wire is clean','up',`${spark(LAT48.slice(-12),'var(--good)')}<div class="p95"><span>p95 ${p95} ms</span><span>0 drops · 24 h</span></div>`],
+  ];
+  return ph(`Overwatch // <b>${new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</b>`,`${greet}, ${esc(S.user.name.split(' ')[0])}.`,
+    'Three riders out, one storm coming, and the porch rig is begging. Here\'s the lay of the land.',
+    `<button class="btn btn-neon" data-act="new-bounty">${ic('plus')} Post bounty</button><button class="btn btn-ghost" data-act="export">${ic('download')} Round up the ledger</button>`)+
+  `<div class="filters"><span class="label">Corral by</span><div class="seg" role="group" aria-label="Range">${[7,14,30,90].map(n=>`<button data-act="dash-range" data-v="${n}" aria-pressed="${S.dash.range===n}">${n}d</button>`).join('')}</div>
+    <select class="input" data-ch="dash-sector" aria-label="Sector"><option value="all" ${S.dash.sector==='all'?'selected':''}>All sectors</option>${SECTORS.map(s=>`<option ${S.dash.sector===s?'selected':''}>${s}</option>`).join('')}</select>
+    ${S.dash.sector!=='all'?`<button class="fchip" data-act="dash-sector" data-v="all" aria-pressed="true">${ic('x','ic-sm')} ${esc(S.dash.sector)}</button>`:''}
+    <span class="readout">Σ ${S.dash.range}d <b>${fmt(total)} §</b></span></div>
+  <div class="grid g4">${tiles.map(t=>`<div class="panel tile ${t[5]?'neon':''}"><span class="label">${t[0]}</span><span class="value">${t[1]}</span><span class="delta ${t[3]}">${ic(t[3]==='up'?'trending-up':'trending-down','ic-sm')} ${t[2]}</span>${t[4]}</div>`).join('')}</div>
+  <div class="grid g-main mt"><div class="stack">
+    <div class="panel hud"><div class="panel-h"><span class="title">Scrip roped · ${S.dash.sector==='all'?'all sectors':esc(S.dash.sector)} · ${S.dash.range} days</span><div class="legend"><span><i></i>Scrip in</span><span><i class="hot"></i>Today</span></div><button class="btn btn-ghost btn-sm" data-act="dash-table" aria-pressed="${S.dash.table}">${ic(S.dash.table?'chart-column':'table','ic-sm')} ${S.dash.table?'Chart':'Table'}</button></div>
+      ${S.dash.table?dataTable():`<div class="chart" data-kind="bar">${barChart()}</div>`}
+      <div class="row between" style="margin-top:8px"><span class="tiny">Best day ${fmt(Math.max(...data))} § · worst ${fmt(Math.min(...data))} §</span><span class="tiny num">avg ${fmt(Math.round(total/data.length))} § / day</span></div></div>
+    <div class="grid g2"><div class="panel"><div class="panel-h"><span class="title">Uplink · 24 h</span><span class="readout">p95 <b>${p95} ms</b></span></div><div class="chart" data-kind="line">${lineChart()}</div><div class="tiny" style="margin-top:6px">Red band: over 80 ms the wire starts dropping words.</div></div>
+      <div class="panel"><div class="panel-h"><span class="title">Bounties by status</span><span class="readout"><b>${S.bounties.length}</b> posted</span></div>${donutChart()}</div></div>
+    <div class="panel"><div class="panel-h"><span class="title">Quick draws</span><span class="stamp">Six-shooter</span></div><div class="quick">
+      <button data-act="new-bounty">${ic('plus')}New bounty</button><button data-act="quick" data-v="sheriff">${ic('badge-check')}Ping sheriff</button><button data-act="quick" data-v="gate">${ic('door-open')}Open gate</button><button data-act="quick" data-v="ride">${ic('route')}Log a ride</button><button data-act="quick" data-v="diag">${ic('activity')}Diagnostics</button><button data-act="quick" data-v="brand">${ic('flame')}Brand a card</button></div></div>
+    <div class="grid g2"><div class="panel"><div class="panel-h"><span class="title">On the wire</span><a href="#saloon" class="small">Open saloon</a></div><div class="feed">${FEED.map(f=>`<div class="feed-i"><span class="ico ${f[1]}">${ic(f[0])}</span><div><p>${f[2]}</p><time>${ago(f[3])}</time></div></div>`).join('')}</div></div>
+      <div class="panel"><div class="panel-h"><span class="title">Riding now</span><span class="chip chip-neon">${riding.length} out</span></div><div class="stack" style="gap:12px">${riding.map((b,i)=>`<div><div class="row between"><span class="row" style="gap:8px">${av(crew(b.who),'sm')}<b class="small">${esc(b.title)}</b></span><span class="tiny">${[64,31,88][i%3]}%</span></div><div class="bar neon" style="margin-top:6px"><i style="width:${[64,31,88][i%3]}%"></i></div><div class="tiny" style="margin-top:4px">${esc(crew(b.who).name)} · ${esc(b.sector)} · due ${shortDate(dateOf(b.due))}</div></div>`).join('')||'<div class="empty small">Nobody\'s out. Suspicious.</div>'}</div></div></div>
+  </div><div class="stack">
+    <div class="panel"><div class="panel-h"><span class="title">Scrip by sector</span><span class="stamp">${S.dash.range}d</span></div>${sectorBars()}<div class="tiny" style="margin-top:8px">Tap a sector to corral the charts to it.</div></div>
+    <div class="panel"><div class="panel-h"><span class="title">Dust &amp; weather</span><button class="chip chip-warn nodot" data-act="quick" data-v="storm" style="cursor:pointer" title="Roll the storm in now">${ic('tornado')}Storm 21:00</button></div><div class="weather">${ic('cloud-sun','ic-lg')}<div><div class="big">31<small>°C</small></div><div class="small muted">Chrome Mesa · wind 44 km/h · visibility 40 m after dark</div></div></div><hr class="rope"><div class="row between small"><span class="muted">Sunset</span><b class="num">19:42</b></div><div class="row between small"><span class="muted">Dust index</span><b class="num">7.8 / 10</b></div><div class="row between small"><span class="muted">Coyotes</span><b>Chatty</b></div></div>
+    <div class="panel"><div class="panel-h"><span class="title">Porch rig</span><span class="stamp">${S.plugged?'Charging':'Unplugged'}</span></div><div class="row" style="gap:16px"><div class="ring"><svg viewBox="0 0 84 84"><circle class="bg" cx="42" cy="42" r="36"/><circle class="fg" id="ring-fg" cx="42" cy="42" r="36" stroke-dasharray="226.2" stroke-dashoffset="${(226.2*(1-S.charge/100)).toFixed(1)}"/></svg><b id="ring-n">${S.charge}%</b></div><div class="small"><b>Mustang MkII</b><div class="muted">Range at this charge: <span class="num" id="ring-km">${Math.round(S.charge*3.2)} km</span></div><div class="muted">Plug it in or it walks home.</div><button class="btn btn-sm btn-uplink mt" style="margin-top:8px" data-act="plug">${ic('plug','ic-sm')} ${S.plugged?'Unplug':'Plug in'}</button></div></div></div>
+    <div class="panel poster"><div class="panel-h"><span class="title">Top riders</span><span class="stamp">This moon</span></div><div class="lb">${[...CREW].sort((a,b)=>b.score-a.score).map((c,i)=>`<div class="lb-row"><span class="rk">${i+1}</span>${av(c,'sm')}<div><div class="nm">${i===0?'<span class="star" style="width:12px;height:12px;vertical-align:-1px"></span> ':''}${esc(c.name)}</div><div class="bar ${i===0?'neon':''}"><i style="width:${Math.round(c.score/128.4)}%"></i></div></div><span class="sc num">${fmt(c.score)}</span></div>`).join('')}</div></div>
+  </div></div>`};
+
+/* bounty board */
+function tblRows(){const t=S.tbl;let rows=S.bounties.filter(b=>t.status==='all'||b.status===t.status);const q=t.q.trim().toLowerCase();
+  if(q)rows=rows.filter(b=>(b.id+' '+b.title+' '+b.poster+' '+b.sector+' '+(b.who?crew(b.who).name:'')).toLowerCase().includes(q));
+  const key=t.sort;rows.sort((a,b)=>{let x=a[key],y=b[key];if(key==='who'){x=x?crew(x).name:'~';y=y?crew(y).name:'~'}if(typeof x==='string')return x.localeCompare(y)*t.dir;return (x-y)*t.dir});return rows}
+function tableHtml(){const t=S.tbl,all=tblRows(),pages=Math.max(1,Math.ceil(all.length/t.per));if(t.page>pages)t.page=pages;const rows=all.slice((t.page-1)*t.per,t.page*t.per);
+  const th=(k,l,cls='')=>`<th class="${cls}" data-act="tbl-sort" data-v="${k}" ${t.sort===k?`aria-sort="${t.dir>0?'ascending':'descending'}"`:''}>${l}${ic(t.sort===k?(t.dir>0?'arrow-up':'arrow-down'):'arrow-up-down')}</th>`;
+  const counts=s=>s==='all'?S.bounties.length:S.bounties.filter(b=>b.status===s).length;
+  return `<div class="toolbar"><div class="inwrap">${ic('search')}<input class="input" id="tbl-q" placeholder="Search bounties, posters, sectors…" value="${esc(t.q)}" data-on="tbl-q"></div>
+    <span class="label">Corral by</span><div class="fchips">${['all',...STATUSES].map(s=>`<button class="fchip" data-act="tbl-filter" data-v="${s}" aria-pressed="${t.status===s}">${s==='all'?'All':STATUS_META[s][0]} <span class="dim">${counts(s)}</span></button>`).join('')}</div>
+    <select class="input ml" style="width:auto;height:28px;padding:0 28px 0 10px;font-size:11px" data-ch="tbl-per" aria-label="Rows per page">${[5,8,12,50].map(n=>`<option ${t.per===n?'selected':''} value="${n}">${n} / page</option>`).join('')}</select></div>
+  ${t.sel.size?`<div class="bulk">${ic('lasso')}<b class="small">${t.sel.size} roped</b><button class="btn btn-sm btn-neon" data-act="bulk-claim">Claim all</button><button class="btn btn-sm btn-danger" data-act="bulk-void">Void</button><button class="btn btn-sm btn-ghost ml" data-act="bulk-clear">Let 'em go</button></div>`:''}
+  <div class="tbl-wrap"><table class="tbl"><thead><tr><th style="width:36px;cursor:default"><input type="checkbox" aria-label="Select page" data-ch="tbl-selall" ${rows.length&&rows.every(r=>t.sel.has(r.id))?'checked':''}></th>${th('id','ID')}${th('title','Bounty')}${th('sector','Sector')}${th('risk','Risk')}${th('reward','Reward','money')}${th('status','Status')}${th('who','Rider')}${th('due','Due')}<th style="width:44px;cursor:default"></th></tr></thead>
+  <tbody>${rows.length?rows.map(b=>`<tr aria-selected="${t.sel.has(b.id)}"><td><input type="checkbox" aria-label="Select ${b.id}" data-ch="tbl-sel" data-v="${b.id}" ${t.sel.has(b.id)?'checked':''}></td><td class="id"><a href="#bounties/${b.id}" data-act="tbl-open" data-v="${b.id}" style="text-decoration:none">${b.id}</a></td><td class="tname" style="white-space:normal;min-width:220px">${esc(b.title)}<small>posted by ${esc(b.poster)}</small></td><td>${esc(b.sector)}</td><td>${riskEl(b.risk)}</td><td class="money num">${scrip(b.reward)}</td><td>${chipFor(b.status)}</td><td>${b.who?`<span class="row" style="gap:6px">${av(crew(b.who),'sm')}<span class="small">${esc(crew(b.who).name)}</span></span>`:'<span class="dim">—</span>'}</td><td class="num small">${shortDate(dateOf(b.due))}</td><td class="hasdrop"><button class="btn btn-ghost btn-icon btn-sm" data-act="row-menu" data-v="${b.id}" aria-label="Actions for ${b.id}">${ic('ellipsis','ic-sm')}</button>${S.rowMenu===b.id?`<div class="drop menu" id="drop" style="right:8px"><button class="item" data-act="tbl-claim" data-v="${b.id}">${ic('hand')} Claim it</button><button class="item" data-act="tbl-done" data-v="${b.id}">${ic('circle-check')} Mark done</button><button class="item" data-act="tbl-copy" data-v="${b.id}">${ic('copy')} Copy id</button><div class="sep"></div><button class="item danger" data-act="tbl-void" data-v="${b.id}">${ic('ban')} Void it</button></div>`:''}</td></tr>`).join('')
+    :`<tr><td colspan="10"><div class="empty">${ic('wind')}<div class="display">Nothing but tumbleweeds.</div><span>No bounty matches that. Loosen the filter or post one.</span></div></td></tr>`}</tbody></table>
+  <div class="pager"><span>${all.length} on the board · trail ${t.page} of ${pages}</span><span class="ml"></span><button class="pg" data-act="tbl-page" data-v="${t.page-1}" ${t.page<=1?'disabled':''} aria-label="Previous page">‹</button>${Array.from({length:pages},(_,i)=>`<button class="pg" data-act="tbl-page" data-v="${i+1}" ${t.page===i+1?'aria-current="page"':''}>${i+1}</button>`).join('')}<button class="pg" data-act="tbl-page" data-v="${t.page+1}" ${t.page>=pages?'disabled':''} aria-label="Next page">›</button></div></div>`}
+VIEWS.bounties=()=>ph(`Bounty Board // <b>${S.bounties.length} posted</b>`,'Bounty Board','Every job in the gulch, who\'s on it, and what it pays. Claim what you can ride.',
+  `<button class="btn btn-neon" data-act="new-bounty">${ic('plus')} Post bounty</button><button class="btn btn-ghost" data-act="export">${ic('download')} Round up as CSV</button>`)+`<div id="tbl-area">${tableHtml()}</div>`;
+
+/* corral */
+VIEWS.corral=()=>ph('Corral // <b>drag to move</b>','The Corral','Loose work gets roped, roped work gets branded, branded work ships. Drag a card between pens, or use its menu on touch.',
+  `<button class="btn btn-neon" data-act="k-add" data-v="loose">${ic('plus')} Rope a card</button>`)+
+  `<div class="kanban">${PENS.map(p=>{const cards=S.cards.filter(c=>c.pen===p[0]);return `<div class="kcol" data-pen="${p[0]}"><div class="kcol-h"><span class="title">${p[1]}</span><span class="cnt chip nodot" style="height:20px">${cards.length}</span></div>
+    ${cards.map(c=>`<div class="kcard" draggable="true" data-id="${c.id}" data-pri="${c.pri}"><b>${esc(c.t)}</b><div class="foot">${av(crew(c.who),'sm')}<span class="tiny">${esc(crew(c.who).name.split(' ')[0])}</span><span class="chip nodot ml" style="height:20px">${c.pri}</span><span class="hasdrop"><button class="btn btn-ghost btn-icon btn-sm" data-act="k-menu" data-v="${c.id}" aria-label="Card actions">${ic('ellipsis','ic-sm')}</button>${S.kMenu===c.id?`<div class="drop menu" id="drop">${PENS.filter(x=>x[0]!==c.pen).map(x=>`<button class="item" data-act="k-move" data-v="${c.id}|${x[0]}">${ic('move-right')} To ${x[1]}</button>`).join('')}<div class="sep"></div><button class="item danger" data-act="k-del" data-v="${c.id}">${ic('flame')} Brand &amp; burn</button></div>`:''}</span></div></div>`).join('')}
+    <button class="kadd" data-act="k-add" data-v="${p[0]}">+ Rope a card</button></div>`}).join('')}</div>`;
+
+/* saloon */
+function threadHtml(){const list=S.msgs[S.chan]||[];return list.map(m=>{const me=m.who==='me';const c=me?S.user:crew(m.who);const d=new Date(m.at);return `<div class="msg ${me?'me':''}">${me?'':av(c,'')}<div class="body"><div class="who" style="${me?'justify-content:flex-end':''}"><b>${esc(c.name)}</b><time>${pad(d.getHours())}:${pad(d.getMinutes())}</time></div><p>${esc(m.t)}</p>${m.react?`<div class="react">${m.react.map(r=>`<button data-act="react">${r}</button>`).join('')}</div>`:''}</div>${me?av(c,''):''}</div>`}).join('')}
+VIEWS.saloon=()=>ph('Saloon // <b>#'+S.chan+'</b>','The Saloon','Where the outfit talks. Pull up a stool.')+
+  `<div class="chat"><div class="chan">${CHANNELS.map(c=>`<a href="#saloon" data-act="chan" data-v="${c[0]}" aria-current="${S.chan===c[0]}">${ic('hash','ic-sm')}${c[1]}${c[2]?`<span class="cnt">${c[2]}</span>`:''}</a>`).join('')}<div class="spacer" style="flex:1"></div><div class="tiny" style="padding:8px">${CREW.filter(c=>c.on).length} at the bar</div></div>
+  <div class="thread"><div class="msgs" id="msgs">${threadHtml()}</div><div class="typing" id="typing"></div><form class="composer" data-form="chat"><input class="input" id="chat-in" placeholder="Say something to #${S.chan}…" autocomplete="off"><button type="button" class="btn btn-ghost btn-icon" data-act="attach" aria-label="Attach">${ic('paperclip')}</button><button class="btn btn-neon btn-icon" type="submit" aria-label="Send">${ic('send')}</button></form></div></div>`;
+
+/* almanac */
+function seedEvents(){const d=new Date(),y=d.getFullYear(),m=d.getMonth();const k=(day)=>`${y}-${pad(m+1)}-${pad(day)}`;return [{d:k(3),t:'Water convoy leaves 04:00',k:'sun'},{d:k(8),t:'Sheriff\'s poker night',k:'neon'},{d:k(14),t:'Rig inspection',k:''},{d:k(d.getDate()),t:'Dust storm, Chrome Mesa 21:00',k:'sun'},{d:k(27),t:'Payday (allegedly)',k:'neon'}]}
+S.events=seedEvents();
+VIEWS.almanac=()=>{const c=S.cal;const first=new Date(c.y,c.m,1),start=first.getDay(),days=new Date(c.y,c.m+1,0).getDate(),prevDays=new Date(c.y,c.m,0).getDate();const today=new Date();const key=d=>`${c.y}-${pad(c.m+1)}-${pad(d)}`;
+  let cells='';for(let i=0;i<42;i++){const n=i-start+1;const out=n<1||n>days;const dn=out?(n<1?prevDays+n:n-days):n;const evs=out?[]:S.events.filter(e=>e.d===key(n));const isT=!out&&today.getFullYear()===c.y&&today.getMonth()===c.m&&today.getDate()===n;
+    cells+=`<button class="day ${out?'out':''} ${isT?'today':''}" ${!out&&c.sel===n?'aria-pressed="true"':''} data-act="cal-day" data-v="${out?'':n}" ${out?'disabled':''}><span class="n">${dn}</span>${evs.slice(0,2).map(e=>`<span class="ev ${e.k}"></span>`).join('')}</button>`}
+  const sel=S.events.filter(e=>e.d===key(c.sel));const selDate=new Date(c.y,c.m,c.sel);
+  return ph('Almanac // <b>'+first.toLocaleDateString('en-US',{month:'long',year:'numeric'})+'</b>','The Almanac','Convoys, storms, poker nights. Tap a day to see what\'s riding in.',`<button class="btn btn-neon" data-act="cal-add">${ic('plus')} Add event</button>`)+
+  `<div class="grid g-main"><div class="panel hud"><div class="panel-h"><button class="btn btn-ghost btn-icon btn-sm" data-act="cal-prev" aria-label="Previous month">${ic('chevron-left','ic-sm')}</button><span class="title" style="text-align:center">${first.toLocaleDateString('en-US',{month:'long',year:'numeric'})}</span><button class="btn btn-ghost btn-icon btn-sm" data-act="cal-next" aria-label="Next month">${ic('chevron-right','ic-sm')}</button><button class="btn btn-ghost btn-sm" data-act="cal-today">Today</button></div>
+    <div class="cal">${['Su','Mo','Tu','We','Th','Fr','Sa'].map(d=>`<div class="dow">${d}</div>`).join('')}${cells}</div></div>
+  <div class="stack"><div class="panel"><div class="panel-h"><span class="title">${selDate.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</span><span class="stamp">${sel.length} riding in</span></div><div class="evlist">${sel.length?sel.map(e=>`<div class="ev-row ${e.k}"><i></i><div><b class="small">${esc(e.t)}</b><div class="tiny">${e.k==='sun'?'Weather / convoy':e.k==='neon'?'Social':'Maintenance'}</div></div></div>`).join(''):'<div class="empty small" style="padding:20px">Quiet day. Enjoy it, they\'re rare.</div>'}</div></div>
+    <div class="panel flat"><div class="panel-h"><span class="title">Pick a date</span></div><div class="field"><label for="dp">Date picker</label><input type="date" class="input" id="dp" value="${key(c.sel)}" data-ch="cal-pick"></div><div class="hint muted small" style="margin-top:8px">A native date picker, wearing the console's colours via color-scheme.</div></div></div></div>`};
+
+/* wanted poster (profile) */
+VIEWS.poster=()=>{const u=S.user;const tabs=[['overview','Overview'],['activity','Activity'],['security','Security']];let body='';
+  if(S.tab==='overview')body=`<form class="stack" data-form="profile" style="gap:12px"><div class="grid g2"><div class="field"><label for="p-name">Display name</label><input class="input" id="p-name" value="${esc(u.name)}"></div><div class="field"><label for="p-handle">Handle</label><div class="inwrap">${ic('at-sign')}<input class="input" id="p-handle" value="${esc(u.handle)}" spellcheck="false"></div></div></div>
+    <div class="field"><label for="p-bio">Bio</label><textarea class="input" id="p-bio" maxlength="160" data-on="count">${esc(u.bio||'Rides at night. Pays on time. Allergic to ghosts.')}</textarea><div class="hint"><span id="bio-n">${(u.bio||'Rides at night. Pays on time. Allergic to ghosts.').length}</span>/160</div></div>
+    <div class="grid g2"><div class="field"><label for="p-sector">Home sector</label><select class="input" id="p-sector">${SECTORS.map(s=>`<option ${s===(u.sector||'Sector 7')?'selected':''}>${s}</option>`).join('')}</select></div><div class="field"><label>Poster photo</label><div class="drop-zone" data-act="dz" tabindex="0" role="button">${ic('image')}<b class="small">Drop a photo or tap to pick</b><div class="tiny">PNG, JPG · under 4 MB · no filters, the sun does that</div><input type="file" accept="image/*" hidden id="dz-file" data-ch="dz-file"></div></div></div>
+    <div id="dz-out" hidden class="row small" style="gap:8px">${ic('file-check')}<span id="dz-name"></span><div class="bar" style="flex:1"><i id="dz-bar" style="width:0"></i></div></div>
+    <div class="row end"><button type="button" class="btn btn-ghost" data-act="prof-reset">Discard</button><button class="btn btn-neon" type="submit">${ic('save')} Nail it up</button></div></form>`;
+  if(S.tab==='activity')body=`<div class="feed">${FEED.map(f=>`<div class="feed-i"><span class="ico ${f[1]}">${ic(f[0])}</span><div><p>${f[2]}</p><time>${ago(f[3])}</time></div></div>`).join('')}</div>`;
+  if(S.tab==='security')body=`<form class="stack" data-form="pass" style="gap:12px"><div class="grid g2"><div class="field"><label for="pw1">New passkey</label><input class="input" id="pw1" type="password" data-on="pw" autocomplete="new-password"><div class="meter" id="pw-meter" data-s="0"><i></i><i></i><i></i><i></i></div><div class="hint" id="pw-hint">Longer beats clever. A sentence works.</div></div><div class="field"><label for="pw2">Say it again</label><input class="input" id="pw2" type="password" autocomplete="new-password"><div class="err">Those don't match.</div></div></div><div class="row end"><button class="btn btn-neon" type="submit">${ic('key-round')} Change passkey</button></div></form>
+    <hr class="wire">
+    <div class="setrow"><div class="t"><b>Two-factor: the second key</b><small>A one-time code from your rig every time you jack in from a new device.</small></div><label class="switch"><input type="checkbox" ${S.prefs.twofa?'checked':''} data-ch="pref" data-v="twofa"><span class="k"></span></label></div>
+    <div class="label" style="margin:12px 0 8px">Saddled devices</div><div class="stack" style="gap:8px">${[['smartphone','Rig terminal · Mustang MkII','This device · Sector 7 · now',true],['laptop','Doc\'s workbench slate','Chrome Mesa · 2 h ago',false],['monitor','Saloon wall console','Neon Gulch · 3 d ago',false]].map((s,i)=>`<div class="sess" id="sess-${i}">${ic(s[0])}<div style="flex:1"><b>${s[1]}</b><small>${s[2]}</small></div>${s[3]?'<span class="chip chip-good">This one</span>':`<button class="btn btn-sm btn-ghost" data-act="sess-revoke" data-v="${i}">Revoke</button>`}</div>`).join('')}</div>
+    <div class="row end mt"><button class="btn btn-danger btn-sm" data-act="rideoff-all">${ic('log-out','ic-sm')} Ride off everywhere</button></div>`;
+  return ph('Wanted Poster // <b>@'+esc(u.handle)+'</b>','Wanted Poster','Who you are to the gulch: name, rig, record, and what you\'re worth to the sheriff.')+
+  `<div class="grid g-main" style="grid-template-columns:minmax(0,1fr) minmax(0,1.6fr)"><div class="stack"><div class="wanted"><div class="w-head">WANTED</div><div class="w-sub">Dead or online</div>${av(u,'lg')}<div class="w-name">${esc(u.name)}</div><div class="tiny">@${esc(u.handle)} · ${esc(u.sector||'Sector 7')} · ${esc(u.rig||'Iron Mule')}</div><div class="w-reward">REWARD 12,840 §</div><div class="small muted" style="margin-top:4px">for crimes against bandwidth</div>
+    <div class="w-stats"><div><b class="num">41</b><span class="tiny">Bounties</span></div><div><b class="num">128</b><span class="tiny">Rides</span></div><div><b><span class="star" style="width:14px;height:14px;vertical-align:-1px"></span> ${esc(u.rank||'Drifter')}</b><span class="tiny">Rank</span></div></div></div>
+    <div class="panel"><div class="panel-h"><span class="title">Brands</span><span class="stamp">${5} earned</span></div><div class="row wrap">${[['Night rider','moon'],['Storm chaser','tornado'],['Pays on time','coins'],['Ghost-adjacent','ghost'],['Piano mover','music']].map(b=>`<span class="tag">${ic(b[1])}${b[0]}</span>`).join('')}</div></div></div>
+  <div class="panel"><div class="tabs" role="tablist">${tabs.map(t=>`<button role="tab" aria-selected="${S.tab===t[0]}" data-act="tab" data-v="${t[0]}">${t[1]}</button>`).join('')}</div>${body}</div></div>`};
+
+/* rig (settings) */
+VIEWS.rig=()=>{const p=S.prefs;const sw=(k,t,s)=>`<div class="setrow"><div class="t"><b>${t}</b><small>${s}</small></div><label class="switch"><input type="checkbox" ${p[k]?'checked':''} data-ch="pref" data-v="${k}"><span class="k"></span></label></div>`;
+  return ph('Rig // <b>settings</b>','The Rig','Everything you can tune without a wrench. Changes take hold the moment you make them.')+
+  `<div class="grid g-main"><div class="stack">
+    <div class="panel hud"><div class="panel-h"><span class="title">Appearance</span><span class="stamp">${S.mode==='noon'?'High Noon':'Night'}</span></div>
+      <div class="setrow"><div class="t"><b>High Noon mode</b><small>Sun-bleached paper instead of neon. Easier on the eyes at the fuel pump.</small></div><label class="switch"><input type="checkbox" ${S.mode==='noon'?'checked':''} data-ch="set-mode"><span class="k"></span></label></div>
+      <div class="setrow"><div class="t"><b>Scanlines &amp; vignette</b><small>The CRT haze. Off if you're reading for an hour.</small></div><label class="switch"><input type="checkbox" ${S.fx?'checked':''} data-ch="set-fx"><span class="k"></span></label></div>
+      <div class="setrow"><div class="t"><b>The world out back</b><small>The 3D main street behind the cards. Turn it off to save battery on a weak rig.</small></div><label class="switch"><input type="checkbox" ${S.world?'checked':''} data-ch="set-world"><span class="k"></span></label></div>
+      <div class="setrow"><div class="t"><b>Accent</b><small>One colour carries every action. Pick the sign you want lit.</small></div><div class="swatches">${Object.entries(ACCENTS).map(([k,a])=>`<button class="swatch" style="background:${S.mode==='noon'?a.noon[0]:a.night[0]}" data-act="set-accent" data-v="${k}" aria-pressed="${S.accent===k}" aria-label="${a.label}" data-tip="${a.label}"></button>`).join('')}</div></div>
+      <div class="setrow"><div class="t"><b>Neon intensity</b><small>How hard the tubes glow. Does nothing in High Noon; the sun wins.</small></div><input type="range" class="range" style="width:160px" min="0" max="100" value="${S.glow}" data-on="set-glow" aria-label="Neon intensity"></div>
+      <div class="setrow"><div class="t"><b>Wordmark preview</b><small>Live sample of the current accent and glow.</small></div><span class="wordmark" style="font-size:22px"><span class="gl" data-text="NEON GULCH">NEON GULCH</span></span></div></div>
+    <div class="panel"><div class="panel-h"><span class="title">The wire</span><span class="stamp">Notifications</span></div>${sw('wire','Wire alerts','Bounties claimed, scrip landing, riders calling.')}${sw('dust','Dust advisories','Storms, visibility, the sky doing things.')}${sw('brand','Brand-new riders','A howdy when someone joins the outfit.')}${sw('sound','Jukebox sound','Let the jukebox actually make noise. It is a synth. It knows five notes.')}
+      <div class="setrow"><div class="t"><b>Quiet hours</b><small>The wire holds its tongue between these.</small></div><label class="switch"><input type="checkbox" ${p.quiet?'checked':''} data-ch="pref" data-v="quiet"><span class="k"></span></label></div>
+      <div class="row wrap" style="padding:4px 0 8px;opacity:${p.quiet?1:.45}"><div class="field"><label for="q1">From</label><input type="time" class="input" id="q1" value="23:00" ${p.quiet?'':'disabled'}></div><div class="field"><label for="q2">Until</label><input type="time" class="input" id="q2" value="06:30" ${p.quiet?'':'disabled'}></div></div></div>
+    <div class="panel"><div class="panel-h"><span class="title">Your plan</span><span class="chip chip-neon nodot">${ic('star')}Ranger</span></div><div class="plans">${[['Drifter','0',['One rig','Bounty board, read-only','Saloon access'],false,'Current-ish'],['Ranger','1,200',['Three rigs','Post &amp; claim bounties','Corral, almanac, the wire','Jukebox with sound'],true,'You\'re here'],['Marshal','4,800',['Unlimited rigs','Sheriff\'s feed','Priority uplink','A star. An actual star.'],false,'Ride up']].map(pl=>`<div class="plan ${pl[3]?'hot':''}"><div class="pn">${pl[0]}</div><div class="pp">${pl[1]} §<small>/moon</small></div><ul>${pl[2].map(x=>`<li>${x}</li>`).join('')}</ul><button class="btn ${pl[3]?'btn-ghost':'btn-uplink'} btn-sm" style="margin-top:auto" data-act="plan" data-v="${pl[0]}" ${pl[3]?'disabled':''}>${pl[4]}</button></div>`).join('')}</div></div>
+  </div><div class="stack">
+    <div class="panel"><div class="panel-h"><span class="title">Integrations</span></div>${[['Telegraph','Long-range messages over the old wire','radio',true],['NetLink','Identity and single sign-on','wifi',true],['Halcyon Freight API','Their manifests in your board','truck',false],['Sheriff\'s feed','Warrants and advisories, live','badge-check',false]].map((g,i)=>`<div class="integ"><span class="logo">${ic(g[2])}</span><div class="t"><b class="small">${g[0]}</b><small>${g[1]}</small></div><button class="btn btn-sm ${S.integ?.[i]??g[3]?'btn-ghost':'btn-uplink'}" data-act="integ" data-v="${i}|${g[0]}">${S.integ?.[i]??g[3]?'Disconnect':'Connect'}</button></div>`).join('')}</div>
+    <div class="panel"><div class="panel-h"><span class="title">API key</span><span class="stamp">Keep it holstered</span></div><div class="keyrow"><code id="apikey">${S.apikey||'ng_live_7f3a…c91d'}</code><button class="btn btn-icon" data-act="key-copy" aria-label="Copy key" data-tip="Copy">${ic('copy')}</button><button class="btn btn-icon" data-act="key-regen" aria-label="Regenerate key" data-tip="Regenerate">${ic('refresh-cw')}</button></div><div class="hint muted small" style="margin-top:8px">Regenerating kills the old key everywhere. Halcyon will call you.</div></div>
+    <div class="panel"><div class="panel-h"><span class="title">Your data</span></div><div class="stack" style="gap:10px"><button class="btn btn-uplink" data-act="export">${ic('download')} Round up the ledger</button><div class="drop-zone" data-act="dz" tabindex="0" role="button">${ic('upload')}<b class="small">Import a ledger</b><div class="tiny">JSON or CSV, drop it here</div><input type="file" hidden id="dz-file" data-ch="dz-file"></div><div id="dz-out" hidden class="row small" style="gap:8px">${ic('file-check')}<span id="dz-name"></span><div class="bar" style="flex:1"><i id="dz-bar" style="width:0"></i></div></div></div></div>
+    <div class="panel danger"><div class="panel-h"><span class="title">Boot Hill</span>${ic('skull')}</div><p class="small muted" style="margin:0 0 12px">Where accounts go to rest. Nothing here can be undone, which is the whole point of a graveyard.</p><div class="row wrap"><button class="btn btn-danger btn-sm" data-act="rideoff-all">${ic('log-out','ic-sm')} Ride off everywhere</button><button class="btn btn-danger btn-sm" data-act="bury">${ic('skull','ic-sm')} Bury this account</button></div></div>
+  </div></div>`};
+
+/* help */
+VIEWS.help=()=>ph('Help // <b>the trail guide</b>','Trail Guide','Short answers, a shortcut list, and what changed lately.',`<button class="btn btn-uplink" data-act="whatsnew">${ic('sparkles')} What's new</button><button class="btn btn-ghost" data-act="shortcuts">${ic('keyboard')} Shortcuts</button>`)+
+  `<div class="grid g-main"><div class="panel"><div class="panel-h"><span class="title">Frequently hollered questions</span></div><div class="stack" style="gap:6px">${[['Why does the town clock strike thirteen?','It was rigged that way in 0.9.1 as a joke and now three bounties depend on it. Debugging it is itself a bounty. Claim it if you dare.'],['What is scrip?','Company money that works everywhere the company reaches, which out here is everywhere. The § is silent.'],['Can I run two rigs?','On Ranger, three. On Drifter, one, and it had better be the Mule.'],['Who is the sheriff?','Sheriff Okonkwo. She posts bounties, she pays on time, she does not answer the wire after nine.'],['Why is everything pink?','That\'s the neon. Try High Noon in the Rig if you want paper and rust instead.']].map(q=>`<details class="panel flat" style="padding:10px 14px"><summary style="cursor:pointer;font-weight:600">${q[0]}</summary><p class="muted small" style="margin:8px 0 0;max-width:62ch">${q[1]}</p></details>`).join('')}</div></div>
+  <div class="stack"><div class="panel hud"><div class="panel-h"><span class="title">Keyboard</span></div><div class="stack" style="gap:8px">${SHORTCUTS.map(s=>`<div class="row between small"><span class="muted">${s[1]}</span><kbd>${s[0]}</kbd></div>`).join('')}</div></div>
+  <div class="panel"><div class="panel-h"><span class="title">Status</span></div><div class="row between small"><span class="muted">Uplink</span><span class="chip chip-good">Nominal</span></div><div class="row between small" style="margin-top:6px"><span class="muted">Jukebox</span><span class="chip chip-good">Humming</span></div><div class="row between small" style="margin-top:6px"><span class="muted">Town clock</span><span class="chip chip-warn">Strikes 13</span></div><div class="row between small" style="margin-top:6px"><span class="muted">Coyotes</span><span class="chip chip-crit">Chatty</span></div></div></div></div>`;
+const notFound=()=>`<div class="notfound"><div class="code">404</div><h1 class="display display-xl">This trail's gone cold.</h1><p class="muted">There's no page at <code class="mono">#${esc(location.hash.slice(1))}</code>. Could be a dead link, could be a ghost.</p><div class="row" style="justify-content:center;margin-top:16px"><a class="btn btn-neon" href="#overwatch">${ic('layout-dashboard')} Back to Overwatch</a><button class="btn btn-ghost" data-act="palette">${ic('search')} Whistle for it</button></div></div>`;
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>if(!window.THREE){var s3=document.createElement('script');s3.src='https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js';s3.onload=function(){window.W&&W.init()};document.head.appendChild(s3)}</script>
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   THE WORLD BEHIND THE CARDS — Neon Gulch main street (Three.js r128).
+   Every setter writes state first, so calls before init are honoured.
+   ═══════════════════════════════════════════════════════════════ */
+var W=(()=>{
+  const st={ready:false,enabled:true,noon:false,accent:'#ff9a3c',route:'login',charge:12,plugged:false,lat:38,juke:false,storm:0,rig:'mule',loggedIn:false,posters:0,cards:[],beat:0,flash:0,signOn:false,reduced:matchMedia('(prefers-reduced-motion: reduce)').matches};
+  let T,renderer,scene,cam,camPos,camLook,tgtPos,tgtLook,clock,raf=0,riders=[];const parts={},mouse={x:0,y:0};
+  const PX=-14,PZ=-1;
+  const CAMS={login:[[0,7,32],[0,4,-8]],overwatch:[[2,5.5,21],[0,3,-6]],bounties:[[11.5,2.6,3.5],[9,1.6,-4]],poster:[[11.5,2.6,3.5],[9,1.6,-4]],corral:[[-11,5,9],[-14,1,-2]],saloon:[[0,2.4,2],[0,3,-6]],almanac:[[0,3,18],[-20,28,-120]],rig:[[9,4.5,17],[20,1.5,6]],help:[[-5,5,5],[-8,9,-14]],lost:[[32,9,32],[0,2,-10]]};
+  const V=(x,y,z)=>new T.Vector3(x,y,z);
+  const mat=(c,o={})=>new T.MeshStandardMaterial(Object.assign({color:c,roughness:.9,metalness:.05},o));
+  const box=(w,h,d,m)=>new T.Mesh(new T.BoxGeometry(w,h,d),m);
+  const cyl=(rt,rb,h,m,seg=10)=>new T.Mesh(new T.CylinderGeometry(rt,rb,h,seg),m);
+  let seed=7;const rr=()=>(seed=(seed*16807)%2147483647)/2147483647;
+  function build(){
+    scene=new T.Scene();scene.background=new T.Color(0x0b0712);scene.fog=new T.FogExp2(0x0b0712,.010);
+    cam=new T.PerspectiveCamera(48,innerWidth/innerHeight,.1,400);camPos=V(...CAMS.login[0]);camLook=V(...CAMS.login[1]);tgtPos=camPos.clone();tgtLook=camLook.clone();
+    parts.ground=new T.Mesh(new T.PlaneGeometry(400,400),mat(0x1b1424));parts.ground.rotation.x=-Math.PI/2;parts.ground.receiveShadow=true;scene.add(parts.ground);
+    parts.street=new T.Mesh(new T.PlaneGeometry(140,9),mat(0x241a30,{roughness:1}));parts.street.rotation.x=-Math.PI/2;parts.street.position.y=.01;parts.street.receiveShadow=true;scene.add(parts.street);
+    const wood=mat(0x3a2418),woodL=mat(0x5a3a26);
+    /* saloon */
+    const sal=new T.Group();const body=box(12,6,8,wood);body.position.set(0,3,-10);body.castShadow=body.receiveShadow=true;sal.add(body);
+    const facade=box(13,7.6,.3,woodL);facade.position.set(0,3.8,-5.9);facade.castShadow=true;sal.add(facade);
+    const roof=box(13.4,.3,3.2,wood);roof.position.set(0,4.3,-4.4);roof.castShadow=true;sal.add(roof);
+    for(const x of[-6,-2,2,6]){const p=cyl(.14,.14,4.3,woodL,8);p.position.set(x,2.15,-3);sal.add(p)}
+    const porch=box(13.4,.3,3.4,mat(0x2c1b12));porch.position.set(0,.15,-4.4);porch.receiveShadow=true;sal.add(porch);
+    parts.winM=new T.MeshStandardMaterial({color:0x2a1a10,emissive:0xffb060,emissiveIntensity:.9,roughness:.4});
+    for(const x of[-4,4]){const w=new T.Mesh(new T.PlaneGeometry(1.8,2.2),parts.winM);w.position.set(x,3,-5.73);sal.add(w)}
+    parts.winL=new T.PointLight(0xffb060,.8,14,2);parts.winL.position.set(0,3,-4);sal.add(parts.winL);
+    const door=box(1.6,3,.1,mat(0x120a08));door.position.set(0,1.5,-5.72);sal.add(door);
+    parts.signM=new T.MeshStandardMaterial({color:0x111111,emissive:new T.Color(st.accent),emissiveIntensity:2,roughness:.3});
+    parts.sign=box(8,1.3,.25,parts.signM);parts.sign.position.set(0,6.3,-5.6);sal.add(parts.sign);
+    parts.signL=new T.PointLight(new T.Color(st.accent),2.2,40,2);parts.signL.position.set(0,6.3,-3.5);sal.add(parts.signL);
+    scene.add(sal);
+    /* notice board */
+    for(const x of[7.8,10.2]){const p=cyl(.1,.1,2.8,woodL,8);p.position.set(x,1.4,-4);scene.add(p)}
+    const bd=box(3,2,.15,mat(0x2b1a12));bd.position.set(9,1.8,-4);bd.castShadow=true;scene.add(bd);
+    parts.posters=[];const pm=new T.MeshStandardMaterial({color:0xe8d8b8,roughness:.9,emissive:0x443322,emissiveIntensity:.35});
+    for(let i=0;i<12;i++){const p=new T.Mesh(new T.PlaneGeometry(.55,.75),pm);p.position.set(7.9+(i%4)*.72,2.45-Math.floor(i/4)*.8,-3.91);p.rotation.z=((i%3)-1)*.06;p.visible=false;scene.add(p);parts.posters.push(p)}
+    /* corral + flatbed */
+    const rail=mat(0x4a3020);const w=9,d=6;
+    for(let i=0;i<=6;i++)for(const z of[PZ-d/2,PZ+d/2]){const p=cyl(.09,.09,1.4,rail,6);p.position.set(PX-w/2+i*w/6,.7,z);scene.add(p)}
+    for(let i=1;i<4;i++)for(const x of[PX-w/2,PX+w/2]){const p=cyl(.09,.09,1.4,rail,6);p.position.set(x,.7,PZ-d/2+i*d/4);scene.add(p)}
+    for(const y of[.5,1.1]){for(const z of[PZ-d/2,PZ+d/2]){const r=box(w,.08,.08,rail);r.position.set(PX,y,z);scene.add(r)}for(const x of[PX-w/2,PX+w/2]){const r=box(.08,.08,d,rail);r.position.set(x,y,PZ);scene.add(r)}}
+    parts.crates=[];const cm=[mat(0x6b4a2a),mat(0x7d5a33),mat(0x55402a)];for(let i=0;i<16;i++){const c=box(.8,.8,.8,cm[i%3]);c.castShadow=true;c.visible=false;scene.add(c);parts.crates.push(c)}
+    const bed=box(4,.3,2.2,mat(0x2f2a3a,{metalness:.3,roughness:.6}));bed.position.set(-22,.7,2);bed.castShadow=true;scene.add(bed);
+    for(const [x,z] of[[-23.5,.9],[-20.5,.9],[-23.5,3.1],[-20.5,3.1]]){const wh=cyl(.45,.45,.3,mat(0x111111),12);wh.rotation.x=Math.PI/2;wh.position.set(x,.45,z);scene.add(wh)}
+    /* rig + cable */
+    parts.rig=new T.Group();parts.rig.position.set(4,0,2);scene.add(parts.rig);buildRig(st.rig);
+    const curve=new T.QuadraticBezierCurve3(V(6,.3,-3),V(5.6,2.4,-.6),V(4.4,1,1.1));parts.cableM=new T.MeshStandardMaterial({color:0x101418,emissive:0x2ee6ff,emissiveIntensity:0,roughness:.5});scene.add(new T.Mesh(new T.TubeGeometry(curve,24,.05,6,false),parts.cableM));
+    /* water tower */
+    const wt=new T.Group();for(const [x,z] of[[-1.4,-1.4],[1.4,-1.4],[-1.4,1.4],[1.4,1.4]]){const l=cyl(.1,.12,8,woodL,6);l.position.set(x,4,z);wt.add(l)}
+    const tank=cyl(2.2,2.2,3,mat(0x4a3a2c));tank.position.y=9.5;tank.castShadow=true;wt.add(tank);const cone=new T.Mesh(new T.ConeGeometry(2.5,1.4,12),mat(0x2f2420));cone.position.y=11.7;wt.add(cone);wt.position.set(-8,0,-14);scene.add(wt);
+    /* windmill */
+    const wm=new T.Group();const pole=cyl(.12,.2,12,mat(0x555a66,{metalness:.6,roughness:.5}),8);pole.position.y=6;wm.add(pole);parts.blades=new T.Group();parts.blades.position.set(0,12,.4);
+    for(let i=0;i<8;i++){const b=box(.35,2.6,.05,mat(0x8a8f99,{metalness:.7,roughness:.4}));b.position.y=1.5;const g=new T.Group();g.add(b);g.rotation.z=i*Math.PI/4;parts.blades.add(g)}wm.add(parts.blades);wm.position.set(16,0,-12);scene.add(wm);
+    /* antenna beacon */
+    const an=cyl(.05,.12,16,mat(0x3a3f4a,{metalness:.7}),6);an.position.set(12,8,-16);scene.add(an);
+    parts.beaconM=new T.MeshBasicMaterial({color:0x98f7ad});parts.beacon=new T.Mesh(new T.SphereGeometry(.3,10,10),parts.beaconM);parts.beacon.position.set(12,16.2,-16);scene.add(parts.beacon);
+    parts.beaconL=new T.PointLight(0x98f7ad,1,22,2);parts.beaconL.position.copy(parts.beacon.position);scene.add(parts.beaconL);
+    /* mesas */
+    parts.mesaM=mat(0x22172f,{roughness:1});[[-70,-80,12,9,7],[-35,-95,10,14,9],[10,-90,8,10,6],[45,-85,14,18,11],[80,-75,9,12,7],[-100,-60,7,9,5]].forEach(([x,z,rt,rb,h])=>{const m=new T.Mesh(new T.CylinderGeometry(rt,rb,h,7),parts.mesaM);m.position.set(x,h/2,z);scene.add(m)});
+    /* distant skyline with window dots */
+    parts.city=new T.Group();const cmat=mat(0x0d0913,{roughness:1});for(let i=0;i<34;i++){const bw=2+rr()*4,bh=4+rr()*16,x=-70+i*4.2+rr()*2;const b=box(bw,bh,3,cmat);b.position.set(x,bh/2,-46-rr()*6);parts.city.add(b)}
+    {const n=700,pos=new Float32Array(n*3),col=new Float32Array(n*3);const cs=[new T.Color(0x2ee6ff),new T.Color(0xff3d9e),new T.Color(0xffb060)];for(let i=0;i<n;i++){pos[i*3]=-72+rr()*144;pos[i*3+1]=.5+rr()*17;pos[i*3+2]=-44.4-rr()*.2;const c=cs[Math.floor(rr()*3)];col[i*3]=c.r;col[i*3+1]=c.g;col[i*3+2]=c.b}
+      const g=new T.BufferGeometry();g.setAttribute('position',new T.BufferAttribute(pos,3));g.setAttribute('color',new T.BufferAttribute(col,3));parts.cityDots=new T.Points(g,new T.PointsMaterial({size:.35,vertexColors:true,transparent:true,opacity:.9}));parts.city.add(parts.cityDots)}
+    scene.add(parts.city);
+    /* sky */
+    {const n=1400,pos=new Float32Array(n*3);for(let i=0;i<n;i++){const th=rr()*Math.PI*2,ph=Math.acos(rr()*.92),r=170;pos[i*3]=r*Math.sin(ph)*Math.cos(th);pos[i*3+1]=Math.abs(r*Math.cos(ph))+6;pos[i*3+2]=r*Math.sin(ph)*Math.sin(th)}
+      const g=new T.BufferGeometry();g.setAttribute('position',new T.BufferAttribute(pos,3));parts.stars=new T.Points(g,new T.PointsMaterial({color:0xdfe6ff,size:.6,transparent:true,opacity:.85,fog:false}));scene.add(parts.stars)}
+    parts.moon=new T.Mesh(new T.SphereGeometry(5,16,16),new T.MeshBasicMaterial({color:0xe8ecff,fog:false}));parts.moon.position.set(-50,48,-130);scene.add(parts.moon);
+    parts.sun=new T.Mesh(new T.SphereGeometry(6,16,16),new T.MeshBasicMaterial({color:0xfff1c8,fog:false}));parts.sun.position.set(45,62,-110);scene.add(parts.sun);
+    /* dust */
+    {const n=900,pos=new Float32Array(n*3);parts.dustV=new Float32Array(n);for(let i=0;i<n;i++){pos[i*3]=-70+rr()*140;pos[i*3+1]=rr()*14;pos[i*3+2]=-40+rr()*70;parts.dustV[i]=.5+rr()}
+      const g=new T.BufferGeometry();g.setAttribute('position',new T.BufferAttribute(pos,3));parts.dust=new T.Points(g,new T.PointsMaterial({color:0xc9a06a,size:.25,transparent:true,opacity:.25}));scene.add(parts.dust)}
+    /* lights */
+    parts.amb=new T.AmbientLight(0x6a5a8a,.35);scene.add(parts.amb);
+    parts.hemi=new T.HemisphereLight(0x3a2a5a,0x1a1020,.5);scene.add(parts.hemi);
+    const dl=(c,i)=>{const l=new T.DirectionalLight(c,i);l.castShadow=true;l.shadow.mapSize.set(1024,1024);Object.assign(l.shadow.camera,{left:-36,right:36,top:36,bottom:-36,near:1,far:140});l.shadow.bias=-.0008;l.shadow.camera.updateProjectionMatrix();scene.add(l);return l};
+    parts.moonL=dl(0x9fb4ff,.55);parts.moonL.position.set(-30,40,-20);parts.sunL=dl(0xffe2b0,0);parts.sunL.position.set(30,50,-10);parts.sunL.castShadow=false;
+    buildFleet();for(let i=0;i<3;i++)riders.push(makeRider());
+  }
+  function buildRig(kind){const g=parts.rig;while(g.children.length)g.remove(g.children[0]);
+    const pm=mat(kind==='ghost'?0x1c2230:kind==='mustang'?0x7a1f1f:0x4a4d3a,{metalness:.5,roughness:.5});const dims=kind==='ghost'?[4.2,.6,1.5]:kind==='mustang'?[3.8,.9,1.9]:[3.2,1.8,2];const by=kind==='mule'?1.3:.9;
+    const b=box(dims[0],dims[1],dims[2],pm);b.position.y=by;b.castShadow=true;g.add(b);
+    if(kind==='mustang'){const c=box(1.8,.7,1.6,pm);c.position.set(-.3,by+.75,0);c.castShadow=true;g.add(c)}
+    if(kind==='ghost')for(const z of[-.9,.9]){const f=box(1.2,.5,.08,pm);f.position.set(-1.6,by+.4,z);g.add(f)}
+    if(kind==='mule'){const c=box(1.4,.9,2,pm);c.position.set(1.4,by+.9,0);c.castShadow=true;g.add(c)}
+    for(const [x,z] of[[-1.3,-1],[1.3,-1],[-1.3,1],[1.3,1]]){const wh=cyl(.42,.42,.35,mat(0x141414,{roughness:.8}),14);wh.rotation.x=Math.PI/2;wh.position.set(x,.42,z);g.add(wh)}
+    parts.headM=new T.MeshStandardMaterial({color:0x111111,emissive:0xfff2c8,emissiveIntensity:.2});for(const z of[-.6,.6]){const h=new T.Mesh(new T.PlaneGeometry(.35,.2),parts.headM);h.position.set(dims[0]/2+.01,by,z);h.rotation.y=Math.PI/2;g.add(h)}
+    parts.headL=new T.SpotLight(0xfff2c8,0,26,.55,.5,1.5);parts.headL.position.set(dims[0]/2,by,0);parts.headL.target.position.set(dims[0]/2+12,0,0);g.add(parts.headL);g.add(parts.headL.target);
+    parts.chargeM=new T.MeshStandardMaterial({color:0x111111,emissive:0x2ee6ff,emissiveIntensity:0});const s=box(dims[0]*.8,.07,.07,parts.chargeM);s.position.set(0,by+dims[1]/2+.05,dims[2]/2+.04);g.add(s);parts.chargeStrip=s;
+    parts.chargeL=new T.PointLight(0x2ee6ff,0,8,2);parts.chargeL.position.set(0,by+1,dims[2]/2+.5);g.add(parts.chargeL);
+    applyCharge()}
+  function makeRider(){const g=new T.Group();const m=mat(0x2a2f3a,{metalness:.6,roughness:.4});const body=box(1.7,.6,.6,m);body.position.y=1.1;body.castShadow=true;g.add(body);
+    const neck=box(.35,.7,.3,m);neck.position.set(.95,1.55,0);neck.rotation.z=-.5;g.add(neck);const head=box(.6,.3,.3,m);head.position.set(1.25,1.85,0);g.add(head);
+    g.legs=[];for(const [x,z] of[[-.6,-.2],[.6,-.2],[-.6,.2],[.6,.2]]){const l=box(.14,.9,.14,m);l.position.set(x,.55,z);g.add(l);g.legs.push(l)}
+    const rider=box(.5,.7,.4,mat(0x5a3a26));rider.position.set(-.1,1.75,0);g.add(rider);const hat=cyl(.38,.38,.08,mat(0x1a120c),10);hat.position.set(-.1,2.15,0);g.add(hat);
+    const em=new T.MeshBasicMaterial({color:0x2ee6ff});const eye=new T.Mesh(new T.SphereGeometry(.07,6,6),em);eye.position.set(1.5,1.9,.16);g.add(eye);const stripe=box(1.5,.05,.62,em);stripe.position.y=1.1;g.add(stripe);
+    g.visible=false;g.t=-1;scene.add(g);return g}
+  /* ── the fleet (rental yard east of the notice board) ── */
+  const YARD={x:24,z:8};const fleet={exc:[],sci:[],skid:[],tow:[]};
+  const YEL=()=>mat(0xd9a21b,{roughness:.6,metalness:.2}),DARK=()=>mat(0x1c1c20,{roughness:.8}),GLASS=()=>new T.MeshStandardMaterial({color:0x0f1a26,roughness:.2,metalness:.6,emissive:0x0a2a3a,emissiveIntensity:.3});
+  function makeExcavator(){const g=new T.Group();const y=YEL();for(const z of[-.9,.9]){const tr=box(3,.7,.6,DARK());tr.position.set(0,.35,z);tr.castShadow=true;g.add(tr)}
+    const under=box(2,.4,1.6,y);under.position.y=.9;g.add(under);const house=new T.Group();house.position.y=1.1;g.add(house);g.house=house;
+    const hb=box(2.4,1.1,1.8,y);hb.position.set(-.3,.55,0);hb.castShadow=true;house.add(hb);const cab=box(1,1,.9,GLASS());cab.position.set(.6,1.6,-.4);house.add(cab);const cw=box(1,1,.8,y);cw.position.set(-.5,1.6,.4);house.add(cw);
+    const boom=new T.Group();boom.position.set(.9,1,.2);house.add(boom);g.boom=boom;const bb=box(3.2,.45,.4,y);bb.position.set(1.6,0,0);bb.castShadow=true;boom.add(bb);
+    const stick=new T.Group();stick.position.set(3.2,0,0);boom.add(stick);g.stick=stick;const sb=box(2.2,.32,.3,y);sb.position.set(1.1,0,0);sb.castShadow=true;stick.add(sb);
+    const bucket=new T.Group();bucket.position.set(2.2,0,0);stick.add(bucket);g.bucket=bucket;const bk=box(.7,.6,.7,DARK());bk.position.set(.25,-.3,0);bucket.add(bk);
+    g.base=[.55,-1.25,.7];boom.rotation.z=.55;stick.rotation.z=-1.25;bucket.rotation.z=.7;scene.add(g);return g}
+  function makeScissor(){const g=new T.Group();const blue=mat(0x2f6fd6,{roughness:.5,metalness:.3});const base=box(2.2,.5,1.2,blue);base.position.y=.55;base.castShadow=true;g.add(base);
+    for(const [x,z] of[[-.8,-.65],[.8,-.65],[-.8,.65],[.8,.65]]){const w=cyl(.25,.25,.2,DARK(),10);w.rotation.x=Math.PI/2;w.position.set(x,.25,z);g.add(w)}
+    g.stages=[];const gm=mat(0x8a8f99,{metalness:.7,roughness:.4});for(let i=0;i<3;i++){const s=new T.Group();for(const r of[.9,-.9]){const a=box(1.9,.08,.08,gm);a.rotation.z=r;s.add(a)}g.add(s);g.stages.push(s)}
+    const plat=new T.Group();g.add(plat);g.plat=plat;const pb=box(2.4,.12,1.3,blue);plat.add(pb);for(const z of[-.6,.6]){const r=box(2.4,.04,.04,gm);r.position.set(0,1,z);plat.add(r);for(const x of[-1.15,0,1.15]){const p=box(.04,1,.04,gm);p.position.set(x,.5,z);plat.add(p)}}
+    scene.add(g);return g}
+  function setScissor(g,h){const H=.15+h*3.4,stH=H/3,ang=Math.asin(Math.min(1,stH/1.9));g.stages.forEach((s,i)=>{s.position.y=.8+stH*(i+.5);s.children[0].rotation.z=ang;s.children[1].rotation.z=-ang});g.plat.position.y=.8+H}
+  function makeSkid(){const g=new T.Group();const wh=mat(0xe8e2d2,{roughness:.6}),org=mat(0xe06a1a,{roughness:.5,metalness:.2});const b=box(1.8,.9,1.3,wh);b.position.y=.85;b.castShadow=true;g.add(b);
+    const cab=box(1,.9,1,GLASS());cab.position.set(-.1,1.75,0);g.add(cab);const cf=box(1.1,.06,1.1,org);cf.position.set(-.1,2.22,0);g.add(cf);
+    g.wheels=[];for(const [x,z] of[[-.6,-.75],[.6,-.75],[-.6,.75],[.6,.75]]){const w=cyl(.36,.36,.3,DARK(),12);w.rotation.x=Math.PI/2;w.position.set(x,.36,z);g.add(w);g.wheels.push(w)}
+    const arms=new T.Group();arms.position.set(-.6,1.5,0);g.add(arms);g.arms=arms;for(const z of[-.72,.72]){const a=box(2,.12,.1,org);a.position.set(1,0,z);arms.add(a)}const bk=box(.5,.55,1.5,DARK());bk.position.set(2,-.35,0);arms.add(bk);
+    arms.rotation.z=.18;g.t=-1;scene.add(g);return g}
+  function makeTower(){const g=new T.Group();const wh=mat(0xdad6cc,{roughness:.6});const base=box(1.6,.6,1,wh);base.position.y=.6;base.castShadow=true;g.add(base);for(const z of[-.6,.6]){const w=cyl(.3,.3,.2,DARK(),10);w.rotation.x=Math.PI/2;w.position.set(0,.3,z);g.add(w)}
+    const tongue=box(1.2,.08,.08,wh);tongue.position.set(-1.3,.5,0);g.add(tongue);const mast=cyl(.07,.1,7.5,mat(0xd9a21b,{metalness:.5}),8);mast.position.y=4.5;g.add(mast);
+    const bar=box(1.6,.1,.1,DARK());bar.position.y=8.3;g.add(bar);g.lampM=new T.MeshStandardMaterial({color:0x222222,emissive:0xfff4d6,emissiveIntensity:0});for(const x of[-.6,-.2,.2,.6]){const l=box(.3,.35,.2,g.lampM);l.position.set(x,8.1,.12);g.add(l)}
+    g.light=new T.PointLight(0xfff4d6,0,28,2);g.light.position.set(0,8,.8);g.add(g.light);scene.add(g);return g}
+  function buildFleet(){parts.yard=new T.Mesh(new T.PlaneGeometry(30,18),mat(0x1f1926,{roughness:1}));parts.yard.rotation.x=-Math.PI/2;parts.yard.position.set(YARD.x,.02,YARD.z);parts.yard.receiveShadow=true;scene.add(parts.yard);
+    const bm=mat(0x3a3f4a,{metalness:.5});for(let i=0;i<8;i++){const p=cyl(.06,.06,1.1,bm,6);p.position.set(YARD.x-15+i*30/7,.55,YARD.z+9);scene.add(p)}
+    [[16,12,-.4],[22,12.5,-.2],[28,12,.1]].forEach(([x,z,r],i)=>{const e=makeExcavator();e.position.set(x,0,z);e.rotation.y=Math.PI+r;e.phase=i*2.1;fleet.exc.push(e)});
+    [[15,3.5],[19,3.5],[23,3.5]].forEach(([x,z],i)=>{const s=makeSkid();s.position.set(x,0,z);s.rotation.y=Math.PI/2;s.slot=[x,z];s.phase=i;fleet.skid.push(s)});
+    [[30,5],[34,5],[32,9]].forEach(([x,z],i)=>{const s=makeScissor();s.position.set(x,0,z);s.rotation.y=.4*i;s.phase=i*2;s.lift=0;setScissor(s,0);fleet.sci.push(s)});
+    [[11,0],[37,0],[11,16],[37,16]].forEach(([x,z],i)=>{const t=makeTower();t.position.set(x,0,z);t.rotation.y=(i%2?-1:1)*Math.PI/4+(i>1?Math.PI:0);t.phase=i;fleet.tow.push(t)})}
+  function applyTowers(){if(!st.ready)return;const on=!st.noon;fleet.tow.forEach(t=>{t.lampM.emissiveIntensity=on?2.2:0;t.light.intensity=on?1.5:0});if(parts.yard)parts.yard.material.color.set(st.noon?0xb8a07a:0x1f1926)}
+  function dispatchSkid(){const s=fleet.skid.find(x=>x.t<0);if(s)s.t=0}
+  function animFleet(dt,t){const sway=st.reduced?0:1;
+    fleet.exc.forEach(e=>{const d=st.dig||0,p=1-d,s=Math.sin(p*Math.PI);const idle=Math.sin(t*.5+e.phase)*.04*sway;e.boom.rotation.z=e.base[0]-s*.5+idle;e.stick.rotation.z=e.base[1]+s*.9;e.bucket.rotation.z=e.base[2]+Math.sin(p*Math.PI*2)*.5;e.house.rotation.y=d?s*.7:Math.sin(t*.2+e.phase)*.05*sway});
+    fleet.sci.forEach(s=>{const target=(Math.sin(t*.22+s.phase)+1)/2*.75*(1-st.storm)+(st.juke?st.beat*.12:0);s.lift+=(target-s.lift)*Math.min(1,dt*1.5);setScissor(s,s.lift)});
+    fleet.skid.forEach(s=>{if(s.t<0){s.arms.rotation.z=.18+Math.sin(t*.7+s.phase)*.02*sway;return}s.t+=dt/7;if(s.t>1){s.t=-1;s.position.set(s.slot[0],0,s.slot[1]);s.rotation.y=Math.PI/2;return}
+      const p=s.t;if(p<.22){const q=p/.22;s.position.set(s.slot[0],0,s.slot[1]+(3-s.slot[1])*q);s.rotation.y=Math.PI}else{const q=(p-.22)/.78;s.position.set(s.slot[0]+(72-s.slot[0])*q,Math.abs(Math.sin(q*40))*.03,3);s.rotation.y=Math.PI/2}
+      s.wheels.forEach(w=>w.rotation.y+=dt*9);s.arms.rotation.z=.3});
+    fleet.tow.forEach(tw=>{if(st.noon)return;const flick=st.storm>.3&&Math.sin(t*23+tw.phase)*Math.sin(t*7)>.5?.15:1;tw.light.intensity=1.5*flick;tw.lampM.emissiveIntensity=2.2*flick})}
+  /* ── appliers ── */
+  function applyMode(){if(!st.ready)return;const n=st.noon;scene.background.set(n?0xd9c39c:0x0b0712);scene.fog.color.set(n?0xd9c39c:0x0b0712);
+    parts.ground.material.color.set(n?0xc9b08a:0x1b1424);parts.street.material.color.set(n?0xb59d78:0x241a30);parts.mesaM.color.set(n?0x9a5a3a:0x22172f);
+    parts.amb.intensity=n?.9:.35;parts.amb.color.set(n?0xfff0d8:0x6a5a8a);parts.hemi.intensity=n?.8:.5;parts.hemi.color.set(n?0xbfd8ff:0x3a2a5a);parts.hemi.groundColor.set(n?0xc9a070:0x1a1020);
+    parts.moonL.intensity=n?0:.55;parts.moonL.castShadow=!n;parts.sunL.intensity=n?1.4:0;parts.sunL.castShadow=n;
+    parts.stars.visible=!n;parts.moon.visible=!n;parts.sun.visible=n;parts.cityDots.visible=!n;parts.dust.material.color.set(n?0xb08a5a:0xc9a06a);applySign();applyTowers()}
+  function applySign(){if(!st.ready)return;const on=st.signOn&&!st.noon;parts.signM.emissive.set(st.accent);parts.signL.color.set(st.accent);parts.signM.emissiveIntensity=on?2:.08;parts.signL.intensity=on?2.2:0;
+    parts.winM.emissiveIntensity=st.noon?.05:(st.loggedIn?.9:.25);parts.winL.intensity=st.noon?0:(st.loggedIn?.8:.2)}
+  function applyCharge(){if(!st.ready||!parts.headM)return;const p=st.charge/100,on=st.plugged||st.charge>=100;parts.headM.emissiveIntensity=on?.3+p*2.5:.15;parts.headL.intensity=on?p*2.5:0;
+    parts.cableM.emissiveIntensity=st.plugged?1.4:0;parts.chargeM.emissiveIntensity=st.plugged?1.6:(st.charge>=100?.8:0);parts.chargeL.intensity=st.plugged?.9:0;parts.chargeStrip.scale.x=Math.max(.05,p)}
+  function applyLat(){if(!st.ready)return;const c=st.lat>140?0xff3838:st.lat>80?0xffef3d:0x98f7ad;parts.beaconM.color.set(c);parts.beaconL.color.set(c)}
+  function applyPosters(){if(!st.ready)return;parts.posters.forEach((p,i)=>p.visible=i<st.posters)}
+  function applyCrates(){if(!st.ready)return;const slots={loose:k=>[PX-3+(k%3)*2.2,.4,PZ-1.6+Math.floor(k/3)*1.8],roped:k=>[PX+3.2,.4,PZ-2.2+(k%5)*1],branded:k=>[PX-3.6+(k%2)*.9,.4+Math.floor(k/2)*.8,PZ+2.1],shipped:k=>[-23.2+(k%4)*.9,1.25+Math.floor(k/4)*.8,1.6+((k%4)%2)*.9]};
+    const cnt={loose:0,roped:0,branded:0,shipped:0};let i=0;for(const c of st.cards){const m=parts.crates[i++];if(!m)break;const f=slots[c.pen];const p=f?f(cnt[c.pen]++):[0,-5,0];m.visible=true;m.position.set(p[0],p[1],p[2]);m.rotation.y=(i*.7)%1}
+    for(;i<parts.crates.length;i++)parts.crates[i].visible=false}
+  function applyRoute(){const c=CAMS[st.route]||CAMS.lost;if(!st.ready)return;tgtPos.set(c[0][0],c[0][1],c[0][2]);tgtLook.set(c[1][0],c[1][1],c[1][2])}
+  /* ── loop ── */
+  function frame(){raf=requestAnimationFrame(frame);if(document.hidden||!st.enabled)return;const dt=Math.min(.05,clock.getDelta()),t=clock.elapsedTime,k=1-Math.pow(.02,dt);
+    camPos.lerp(tgtPos,k);camLook.lerp(tgtLook,k);const sw=st.reduced?0:1;
+    cam.position.set(camPos.x+mouse.x*1.2*sw+Math.sin(t*.3)*.15*sw,camPos.y+mouse.y*.6*sw+Math.sin(t*.5)*.05*sw,camPos.z);cam.lookAt(camLook);
+    st.storm=Math.max(0,st.storm-dt/9);st.dig=Math.max(0,(st.dig||0)-dt/3.2);st.beat=Math.max(0,st.beat-dt*2.2);st.flash=Math.max(0,st.flash-dt*1.5);
+    const wind=1+st.storm*9;parts.blades.rotation.z-=dt*(.9+st.storm*5)*(st.reduced?.3:1);
+    scene.fog.density=(st.noon?.008:.010)*(1+st.storm*2.5);parts.dust.material.opacity=.25+st.storm*.55;
+    const dp=parts.dust.geometry.attributes.position;for(let i=0;i<dp.count;i++){let x=dp.getX(i)+parts.dustV[i]*wind*dt*1.6;if(x>70)x=-70;dp.setX(i,x);dp.setY(i,dp.getY(i)+Math.sin(t*1.3+i)*dt*.3)}dp.needsUpdate=true;
+    const blink=st.lat>140?(Math.sin(t*14)>0?1:.1):st.lat>80?(Math.sin(t*6)>0?1:.25):(.7+Math.sin(t*2)*.3);parts.beaconL.intensity=blink;parts.beacon.scale.setScalar(.8+blink*.3);
+    if(st.signOn&&!st.noon){const flick=(st.lat>140||st.storm>.5)&&Math.sin(t*37)*Math.sin(t*11)>.6?.15:1;parts.signM.emissiveIntensity=(2+st.flash*2)*flick;parts.signL.intensity=(2.2+st.flash*2)*flick}
+    if(!st.noon){const base=st.loggedIn?.9:.25;const pulse=st.juke?st.beat*1.3:0;parts.winM.emissiveIntensity=base+pulse+st.flash*1.5;parts.winL.intensity=(st.loggedIn?.8:.2)+pulse*.6+st.flash}
+    for(const r of riders){if(r.t<0)continue;r.t+=dt/5.5;if(r.t>1){r.t=-1;r.visible=false;continue}const x=(-46+r.t*92)*r.dir;r.position.set(x,Math.abs(Math.sin(r.t*60))*.12,1.6+r.lane);r.rotation.y=r.dir>0?0:Math.PI;r.legs.forEach((l,i)=>l.rotation.z=Math.sin(r.t*60+i*1.6)*.7)}
+    animFleet(dt,t);renderer.render(scene,cam)}
+  function resize(){if(!st.ready)return;cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight,false)}
+  const api={
+    init(){if(st.ready||!window.THREE)return;T=window.THREE;const canvas=document.getElementById('world');if(!canvas)return;
+      try{renderer=new T.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.5));renderer.setSize(innerWidth,innerHeight,false);renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;renderer.outputEncoding=T.sRGBEncoding;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.05}catch(e){canvas.hidden=true;return}
+      clock=new T.Clock();build();st.ready=true;canvas.hidden=!st.enabled;applyMode();applyCharge();applyLat();applyPosters();applyCrates();applyRoute();camPos.copy(tgtPos);camLook.copy(tgtLook);
+      addEventListener('resize',resize);addEventListener('mousemove',e=>{mouse.x=(e.clientX/innerWidth-.5)*2;mouse.y=-(e.clientY/innerHeight-.5)*2});frame()},
+    goto(route){st.route=route;applyRoute()},
+    setMode(noon){st.noon=!!noon;applyMode()},
+    setAccent(hex){st.accent=hex;applySign()},
+    login(on){st.loggedIn=!!on;st.signOn=!!on;applySign()},
+    setCharge(pct,plugged){st.charge=pct;st.plugged=!!plugged;applyCharge()},
+    setLatency(ms){st.lat=ms;applyLat()},
+    jukebox(on){st.juke=!!on},
+    beat(v=1){st.beat=Math.max(st.beat,v)},
+    flash(){st.flash=1;st.dig=1},
+    storm(){st.storm=1},
+    posters(n){st.posters=Math.min(12,n);applyPosters()},
+    crates(cards){st.cards=cards.slice(0,16);applyCrates()},
+    setRig(kind){if(st.rig===kind&&st.ready&&parts.rig.children.length)return;st.rig=kind;if(st.ready)buildRig(kind)},
+    ride(){dispatchSkid();const r=riders.find(x=>x.t<0);if(!r)return;r.t=0;r.dir=Math.random()<.5?1:-1;r.lane=Math.random()*2-1;r.visible=true},
+    enable(on){st.enabled=!!on;const c=document.getElementById('world');if(c)c.hidden=!st.enabled},
+    get ready(){return st.ready},
+  };
+  if(window.THREE)api.init();
+  return api})();
+</script>
+<script>
+/* ── overlays ── */
+let toastN=0;
+function toast(title,body='',kind='',action){const id='t'+(++toastN);const el=document.createElement('div');el.className='toast '+kind;el.id=id;
+  el.innerHTML=`${ic({good:'circle-check',warn:'triangle-alert',crit:'circle-alert',neon:'sparkles'}[kind]||'info')}<div class="t"><b>${esc(title)}</b>${body?`<span class="muted">${esc(body)}</span>`:''}</div>${action?`<button class="btn btn-sm btn-uplink" data-act="toast-action" data-v="${id}">${esc(action.label)}</button>`:''}<button class="btn btn-ghost btn-icon btn-sm" data-act="toast-close" data-v="${id}" aria-label="Dismiss">${ic('x','ic-sm')}</button>`;
+  el._action=action&&action.fn;const st=$('#toasts');st.appendChild(el);while(st.children.length>4)st.firstChild.remove();icons();setTimeout(()=>el.remove(),action?7000:4500)}
+let modalResolve=null;
+function openModal(inner,{wide=false}={}){$('#overlay').innerHTML=`<div class="veil" data-act="veil"><div class="modal ${wide?'wide':''}" role="dialog" aria-modal="true">${inner}</div></div>`;icons();const f=$('#overlay .modal input:not([type=hidden]),#overlay .modal textarea,#overlay .modal select,#overlay .modal button');f&&f.focus()}
+function closeOverlay(){$('#overlay').innerHTML='';if(modalResolve){const r=modalResolve;modalResolve=null;r(false)}}
+function confirmDlg({title,body,ok='Do it',danger=false,typed=null}){return new Promise(res=>{modalResolve=res;
+  openModal(`<div class="modal-h"><span class="display">${esc(title)}</span>${closeBtn()}</div><div class="modal-b"><p style="margin:0" class="muted">${body}</p>${typed?`<div class="field"><label for="typed">Type <b>${esc(typed)}</b> to confirm</label><input class="input" id="typed" autocomplete="off"></div>`:''}</div><div class="modal-f"><button class="btn btn-ghost" data-act="close">Hold your horses</button><button class="btn ${danger?'btn-danger':'btn-neon'}" data-act="modal-ok" id="modal-ok" ${typed?'disabled':''}>${esc(ok)}</button></div>`);
+  if(typed)$('#typed').addEventListener('input',e=>{$('#modal-ok').disabled=e.target.value.trim()!==typed})})}
+function bountyModal(b){const c=b.who?crew(b.who):null;openModal(`<div class="modal-h"><span class="display">${esc(b.title)}</span>${chipFor(b.status)}${closeBtn()}</div><div class="modal-b"><p class="muted" style="margin:0">${esc(b.desc)}</p>
+  <div class="grid g2" style="gap:10px"><div><div class="label">Posted by</div><b class="small">${esc(b.poster)}</b></div><div><div class="label">Reward</div><b class="num">${scrip(b.reward)}</b></div><div><div class="label">Sector</div><span class="tag">${ic('map-pin')}${esc(b.sector)}</span></div><div><div class="label">Risk</div>${riskEl(b.risk)}</div><div><div class="label">Due</div><b class="small num">${shortDate(dateOf(b.due))}</b></div><div><div class="label">Rider</div>${c?`<span class="row" style="gap:6px">${av(c,'sm')}<span class="small">${esc(c.name)}</span></span>`:'<span class="dim">Unclaimed</span>'}</div></div></div>
+  <div class="modal-f"><button class="btn btn-ghost" data-act="close">Close</button><button class="btn btn-ghost" data-act="tbl-copy" data-v="${b.id}">${ic('copy','ic-sm')} Copy id</button>${b.status==='open'?`<button class="btn btn-neon" data-act="tbl-claim" data-v="${b.id}">${ic('hand','ic-sm')} Claim it</button>`:b.status==='claimed'||b.status==='riding'?`<button class="btn btn-neon" data-act="tbl-done" data-v="${b.id}">${ic('circle-check','ic-sm')} Mark done</button>`:''}</div>`)}
+function newBountyModal(){openModal(`<form data-form="bounty"><div class="modal-h"><span class="display">Post a bounty</span>${closeBtn()}</div><div class="modal-b">
+  <div class="field" id="nb-f-title"><label for="nb-title">What needs doing</label><input class="input" id="nb-title" placeholder="Find the Cartwright horse" maxlength="80"><div class="err">A bounty needs a job.</div></div>
+  <div class="grid g2" style="gap:10px"><div class="field" id="nb-f-reward"><label for="nb-reward">Reward (§)</label><input class="input num" id="nb-reward" type="number" min="1" step="50" placeholder="1200"><div class="err">Nobody rides for free.</div></div><div class="field"><label for="nb-due">Due</label><input class="input" id="nb-due" type="date" value="${dateOf(5).toISOString().slice(0,10)}"></div>
+  <div class="field"><label for="nb-sector">Sector</label><select class="input" id="nb-sector">${SECTORS.map(s=>`<option>${s}</option>`).join('')}</select></div><div class="field"><label for="nb-risk">Risk</label><select class="input" id="nb-risk"><option value="1">Low</option><option value="2" selected>Medium</option><option value="3">High</option></select></div></div>
+  <div class="field"><label for="nb-desc">Details</label><textarea class="input" id="nb-desc" placeholder="Where, when, what it looks like, what to avoid."></textarea></div></div>
+  <div class="modal-f"><button type="button" class="btn btn-ghost" data-act="close">Never mind</button><button class="btn btn-neon" type="submit">${ic('scroll-text','ic-sm')} Post it</button></div></form>`)}
+function eventModal(){const c=S.cal;openModal(`<form data-form="event"><div class="modal-h"><span class="display">Add to the almanac</span>${closeBtn()}</div><div class="modal-b"><div class="field" id="ev-f-t"><label for="ev-t">What's riding in</label><input class="input" id="ev-t" placeholder="Convoy leaves at dawn"><div class="err">Give it a name.</div></div><div class="grid g2" style="gap:10px"><div class="field"><label for="ev-d">Day</label><input class="input" id="ev-d" type="date" value="${c.y}-${pad(c.m+1)}-${pad(c.sel)}"></div><div class="field"><label for="ev-k">Kind</label><select class="input" id="ev-k"><option value="">Maintenance</option><option value="sun">Weather / convoy</option><option value="neon">Social</option></select></div></div></div><div class="modal-f"><button type="button" class="btn btn-ghost" data-act="close">Never mind</button><button class="btn btn-neon" type="submit">Add it</button></div></form>`)}
+function shortcutsModal(){openModal(`<div class="modal-h"><span class="display">Shortcuts</span>${closeBtn()}</div><div class="modal-b"><div class="stack" style="gap:8px">${SHORTCUTS.map(s=>`<div class="row between small"><span class="muted">${s[1]}</span><kbd>${s[0]}</kbd></div>`).join('')}</div></div><div class="modal-f"><button class="btn btn-ghost" data-act="close">Got it</button></div>`)}
+function openDrawer(){$('#overlay').innerHTML=`<div class="veil" data-act="veil" style="place-items:stretch end;padding:0"><div class="drawer" role="dialog" aria-modal="true"><div class="drawer-h"><span class="display" style="flex:1;font-size:20px;color:var(--sunset)">What's new</span>${closeBtn()}</div><div class="drawer-b">${CHANGELOG.map((c,i)=>`<div class="cl-i"><span class="chip ${i?'':'chip-neon'} nodot">v${c[0]}</span><div><b class="small">${i?'':'Latest · '}${['Jukebox &amp; High Noon','Bounty Board tools','Corral &amp; palette'][i]}</b><ul><li>${esc(c[1])}</li></ul></div></div>`).join('')}<hr class="wire"><p class="small muted" style="margin:0">Older releases are carved on a rock outside town. Bring a lantern.</p></div></div></div>`;icons()}
+function palItems(){const items=[];
+  for(const[k,r]of Object.entries(ROUTES))items.push({g:'Pages',t:r[0],ic:r[1],k:'#'+k,run:()=>{location.hash=k}});
+  [['Post a bounty','plus',()=>newBountyModal()],['Toggle High Noon','sun-moon',()=>ACT.mode()],[S.plugged?'Unplug the rig':'Plug in the rig','plug',()=>ACT.plug()],[S.juke.playing?'Pause the jukebox':'Play the jukebox','music',()=>ACT['juke-toggle']()],['Mark the wire read','bell-off',()=>ACT['ntf-readall']()],['Keyboard shortcuts','keyboard',()=>shortcutsModal()],['What\'s new','sparkles',()=>openDrawer()],['Ride off (sign out)','log-out',()=>ACT.logout()]].forEach(a=>items.push({g:'Actions',t:a[0],ic:a[1],run:()=>{closeOverlay();a[2]()}}));
+  S.bounties.forEach(b=>items.push({g:'Bounties',t:b.title,ic:'scroll-text',k:b.id,run:()=>{closeOverlay();bountyModal(b)}}));
+  CREW.forEach(c=>items.push({g:'Riders',t:c.name,ic:'user-round',k:c.role,run:()=>{closeOverlay();toast(c.name,`${c.role} · ${c.on?'at the bar':'dark'} · ${fmt(c.score)} §`,'')}}));
+  return items}
+function palFiltered(){const q=S.pal.q.trim().toLowerCase();const all=palItems();if(!q)return all;return all.filter(it=>{const t=(it.t+' '+(it.k||'')).toLowerCase();if(t.includes(q))return true;let j=0;for(const ch of t){if(ch===q[j])j++;if(j===q.length)return true}return false})}
+function paintPal(){const list=palFiltered();const el=$('#pal-list');if(!el)return;if(!list.length){el.innerHTML=`<div class="empty">${ic('wind')}<div class="display">Nothing but tumbleweeds.</div><span>No match for “${esc(S.pal.q)}”.</span></div>`;icons();return}
+  if(S.pal.i>=list.length)S.pal.i=list.length-1;let g='';el.innerHTML=list.map((it,i)=>{let h='';if(it.g!==g){g=it.g;h=`<div class="pgroup">${g}</div>`}return h+`<div class="pitem" role="option" aria-selected="${i===S.pal.i}" data-act="pal-pick" data-v="${i}">${ic(it.ic)}<span>${esc(it.t)}</span>${it.k?`<small>${esc(it.k)}</small>`:''}</div>`}).join('');icons();const on=$('.pitem[aria-selected="true"]',el);on&&on.scrollIntoView({block:'nearest'})}
+function openPalette(){if($('#pal-q'))return;S.pal={q:'',i:0};$('#overlay').innerHTML=`<div class="veil" data-act="veil" style="align-items:start"><div class="palette" role="dialog" aria-modal="true"><div class="inwrap">${ic('search')}<input class="input" id="pal-q" placeholder="Whistle for a page, a bounty, a rider, an action…" autocomplete="off" spellcheck="false"></div><div class="plist" id="pal-list" role="listbox"></div><div class="pfoot"><span>↑↓ ride</span><span>↵ pick</span><span>esc close</span><span class="ml">${palItems().length} things</span></div></div></div>`;icons();paintPal();const q=$('#pal-q');q.focus();q.addEventListener('input',e=>{S.pal.q=e.target.value;S.pal.i=0;paintPal()})}
+
+/* ── render ── */
+function syncWorld(){if(!window.W)return;W.posters(S.bounties.filter(b=>b.status==='open').length);W.crates(S.cards);W.setCharge(S.charge,!!S.plugged);W.setLatency(S.latency);W.jukebox(S.juke.playing);W.setRig((S.user&&S.user.rigKey)||'mule')}
+function render(skel){const app=$('#app');S.drop=null;S.rowMenu=null;S.kMenu=null;if(window.W){W.login(!!S.user);W.goto(!S.user||!S.onboarded?'login':(VIEWS[view()]?view():'lost'))}
+  if(!S.user){app.innerHTML=loginView();icons();$('#login-user')?.focus();return}
+  if(!S.onboarded){app.innerHTML=onboardView();icons();return}
+  app.innerHTML=`<div class="shell">${sideHtml()}<div style="min-width:0">${topHtml()}<main class="main" id="main">${skel?skeleton():''}</main></div></div>${statusHtml()}${S.consent?'':bannerHtml()}`;icons();
+  if(skel&&!reduced)setTimeout(paint,160);else paint()}
+function paint(){const m=$('#main');if(!m)return;const v=view();m.innerHTML=(VIEWS[v]||notFound)();icons();syncWorld();if(v==='saloon'){const ms=$('#msgs');ms&&(ms.scrollTop=ms.scrollHeight)}}
+function repaintShell(){const side=$('#side');if(side){side.outerHTML=sideHtml();$('.side-veil')?.remove()}const top=$('.top');top&&(top.outerHTML=topHtml());icons()}
+function repaintTable(){const a=$('#tbl-area');a&&(a.innerHTML=tableHtml(),icons());syncWorld()}
+function login(name){const handle=name.toLowerCase().replace(/[^a-z0-9]+/g,'.').replace(/^\.|\.$/g,'')||'stranger';const disp=name.split(/[.\s_]+/).filter(Boolean).map(w=>w[0].toUpperCase()+w.slice(1)).join(' ')||'Stranger';
+  S.user={name:disp,handle,rank:'Drifter',on:true};if($('#login-rem')?.checked!==false)store.set('user',S.user);toast('Jacked in.',`Howdy, ${disp}. The wire's been waiting.`,'good');if(!location.hash||location.hash==='#')location.hash='#overwatch';render(true)}
+
+/* ── actions (click) ── */
+const ACT={
+  peek(el){const i=$('#login-pass');i.type=i.type==='password'?'text':'password';el.innerHTML=ic(i.type==='password'?'eye':'eye-off','ic-sm');icons()},
+  forgot(){toast('Key recovery','Out here we just make a new one. Type anything and jack in.','warn')},
+  social(el){const b=el;b.disabled=true;b.innerHTML=`<span class="spin"></span> ${el.dataset.v}…`;setTimeout(()=>login(el.dataset.v==='NetLink'?'dusty.vector':'ma.ravenholt'),900)},
+  signup(){toast('Same door.','Any handle you type becomes your poster. No forms, no waiting.','')},
+  'ob-back'(){S.ob.step--;render()},'ob-skip'(){S.onboarded=true;store.set('onboarded',true);render(true)},
+  'side-open'(){S.sideOpen=true;repaintShell()},'side-close'(){S.sideOpen=false;repaintShell()},
+  palette(){openPalette()},
+  mode(){S.mode=S.mode==='noon'?'night':'noon';applyTheme();render();toast(S.mode==='noon'?'High Noon.':'Night falls.',S.mode==='noon'?'Paper and rust. Neon\'s off till sundown.':'Tubes are lit.','')},
+  drop(el){S.drop=S.drop===el.dataset.v?null:el.dataset.v;repaintShell()},
+  'drop-close'(){S.drop=null;repaintShell()},
+  'ntf-readall'(){S.notifs.forEach(n=>n.read=true);S.drop=null;repaintShell();toast('Wire cleared.','','good')},
+  'ntf-open'(el){const n=S.notifs.find(x=>x.id===el.dataset.v);n.read=true;if(n.id==='n3'&&window.W)W.storm();S.drop=null;repaintShell();toast(n.t,n.p,'')},
+  whatsnew(){S.drop=null;repaintShell();openDrawer()},shortcuts(){S.drop=null;repaintShell();shortcutsModal()},
+  async logout(){S.drop=null;repaintShell();if(!await confirmDlg({title:'Ride off?',body:'You\'ll be signed out of this rig. Your poster stays on the wall.',ok:'Ride off'}))return;S.user=null;store.del('user');S.onboarded=false;store.del('onboarded');S.ob=null;render()},
+  consent(){S.consent=true;store.set('consent',true);$('#banner')?.remove()},
+  plug(){S.plugged=!S.plugged;repaintShell();syncWorld();$('#main')&&view()==='overwatch'&&paint();toast(S.plugged?'Rig plugged in.':'Rig unplugged.',S.plugged?'Charging. It stopped screaming.':'It will remember this.',S.plugged?'good':'warn')},
+  'juke-toggle'(){S.juke.playing=!S.juke.playing;S.juke.playing?audioStart():audioStop();repaintShell();window.W&&W.jukebox(S.juke.playing)},
+  'juke-next'(){S.juke.i=(S.juke.i+1)%TRACKS.length;S.juke.pos=0;repaintShell();if(S.juke.playing)audioStart()},
+  'juke-prev'(){S.juke.i=(S.juke.i+TRACKS.length-1)%TRACKS.length;S.juke.pos=0;repaintShell();if(S.juke.playing)audioStart()},
+  'new-bounty'(){newBountyModal()},
+  async export(){const csv=['id,title,poster,sector,risk,reward,status,due',...S.bounties.map(b=>[b.id,`"${b.title.replace(/"/g,'""')}"`,`"${b.poster}"`,b.sector,b.risk,b.reward,b.status,dateOf(b.due).toISOString().slice(0,10)].join(','))].join('\n');
+    try{await navigator.clipboard.writeText(csv);toast('Ledger copied as CSV.',`${S.bounties.length} rows on your clipboard. Downloads are corralled in this preview.`,'good')}catch(e){toast('Clipboard\'s locked.','Select the board and copy it the old way.','warn')}},
+  quick(el){const v=el.dataset.v;({sheriff:()=>toast('Sheriff pinged.','Okonkwo says: "After nine? Bold."','neon'),gate:()=>toast('Gate\'s open.','Sixty seconds, then it closes on whatever\'s in it.','warn'),ride:()=>toast('Ride logged.','128 rides. Sal is still ahead of you.','good'),
+    diag:()=>{toast('Running diagnostics…','','');setTimeout(()=>toast('All systems nominal.','Except the town clock. Still thirteen.','good'),1400)},brand:()=>{location.hash='corral'},storm:()=>{window.W&&W.storm();toast('Dust storm rolling in.','Chrome Mesa is gone. Hold the porch.','warn')}})[v]()},
+  'tbl-sort'(el){const k=el.dataset.v;const t=S.tbl;if(t.sort===k)t.dir*=-1;else{t.sort=k;t.dir=1}repaintTable()},
+  'tbl-filter'(el){S.tbl.status=el.dataset.v;S.tbl.page=1;repaintTable()},
+  'tbl-page'(el){S.tbl.page=+el.dataset.v;repaintTable()},
+  'tbl-open'(el,e){e.preventDefault();bountyModal(S.bounties.find(b=>b.id===el.dataset.v))},
+  'row-menu'(el){S.rowMenu=S.rowMenu===el.dataset.v?null:el.dataset.v;repaintTable()},
+  'tbl-claim'(el){const b=S.bounties.find(x=>x.id===el.dataset.v);b.status='claimed';b.who='u1';S.rowMenu=null;closeOverlay();repaintTable();repaintShell();window.W&&W.ride();toast('Claimed.',`${b.title} is yours. Ride safe.`,'neon')},
+  'tbl-done'(el){const b=S.bounties.find(x=>x.id===el.dataset.v);b.status='done';S.rowMenu=null;closeOverlay();repaintTable();repaintShell();window.W&&W.flash();toast('Bounty done.',`${fmt(b.reward)} § landing on the wire.`,'good')},
+  'tbl-void'(el){const b=S.bounties.find(x=>x.id===el.dataset.v);const was=b.status;b.status='void';S.rowMenu=null;repaintTable();repaintShell();toast('Voided.',b.title,'warn',{label:'Undo',fn:()=>{b.status=was;repaintTable();repaintShell()}})},
+  async 'tbl-copy'(el){try{await navigator.clipboard.writeText(el.dataset.v);toast('Copied '+el.dataset.v,'','good')}catch(e){toast('Clipboard\'s locked.','','warn')}S.rowMenu=null;repaintTable()},
+  'bulk-claim'(){const n=S.tbl.sel.size;window.W&&W.ride();S.bounties.filter(b=>S.tbl.sel.has(b.id)&&b.status==='open').forEach(b=>{b.status='claimed';b.who='u1'});S.tbl.sel.clear();repaintTable();repaintShell();toast(`${n} claimed.`,'Greedy. Respect.','neon')},
+  'bulk-void'(){const n=S.tbl.sel.size;S.bounties.filter(b=>S.tbl.sel.has(b.id)).forEach(b=>b.status='void');S.tbl.sel.clear();repaintTable();repaintShell();toast(`${n} voided.`,'','warn')},
+  'bulk-clear'(){S.tbl.sel.clear();repaintTable()},
+  async 'k-add'(el){const pen=el.dataset.v;openModal(`<form data-form="kcard" data-pen="${pen}"><div class="modal-h"><span class="display">Rope a card</span>${closeBtn()}</div><div class="modal-b"><div class="field" id="kc-f"><label for="kc-t">What is it</label><input class="input" id="kc-t" placeholder="Fix the porch light"><div class="err">Needs words.</div></div><div class="field"><label for="kc-p">Heat</label><select class="input" id="kc-p"><option value="cold">Cold</option><option value="warm" selected>Warm</option><option value="hot">Hot</option></select></div></div><div class="modal-f"><button type="button" class="btn btn-ghost" data-act="close">Never mind</button><button class="btn btn-neon" type="submit">Rope it</button></div></form>`)},
+  'k-menu'(el){S.kMenu=S.kMenu===el.dataset.v?null:el.dataset.v;paint()},
+  'k-move'(el){const[id,pen]=el.dataset.v.split('|');const c=S.cards.find(x=>x.id===id);c.pen=pen;S.kMenu=null;paint();toast('Moved to '+PENS.find(p=>p[0]===pen)[1]+'.','',pen==='shipped'?'good':'')},
+  'k-del'(el){const i=S.cards.findIndex(x=>x.id===el.dataset.v);const[c]=S.cards.splice(i,1);S.kMenu=null;paint();toast('Branded and burned.',c.t,'crit',{label:'Undo',fn:()=>{S.cards.splice(i,0,c);paint()}})},
+  chan(el,e){e.preventDefault();S.chan=el.dataset.v;const ch=CHANNELS.find(c=>c[0]===S.chan);ch[2]=0;paint();repaintShell()},
+  react(el){el.textContent=el.textContent.replace(/\d+$/,n=>+n+1);toast('Reacted.','','')},
+  attach(){toast('Attachments','Drop a file on the composer. Or don\'t, it\'s a saloon.','')},
+  'cal-prev'(){const c=S.cal;c.m--;if(c.m<0){c.m=11;c.y--}c.sel=1;paint()},'cal-next'(){const c=S.cal;c.m++;if(c.m>11){c.m=0;c.y++}c.sel=1;paint()},
+  'cal-today'(){const d=new Date();S.cal={y:d.getFullYear(),m:d.getMonth(),sel:d.getDate()};paint()},
+  'cal-day'(el){if(!el.dataset.v)return;S.cal.sel=+el.dataset.v;paint()},'cal-add'(){eventModal()},
+  tab(el){S.tab=el.dataset.v;paint()},
+  'prof-reset'(){paint();toast('Discarded.','Poster\'s back how it was.','')},
+  dz(el){$('#dz-file',el)?.click()},
+  'sess-revoke'(el){const s=$('#sess-'+el.dataset.v);s.style.opacity='.4';el.disabled=true;el.textContent='Revoked';toast('Session revoked.','That device will have to jack in again.','good')},
+  async 'rideoff-all'(){if(!await confirmDlg({title:'Ride off everywhere?',body:'Every device gets signed out, this one included. Your poster stays up.',ok:'Do it',danger:true}))return;S.user=null;store.del('user');S.onboarded=false;store.del('onboarded');S.ob=null;render();toast('Signed out everywhere.','','good')},
+  async bury(){if(!await confirmDlg({title:'Bury this account?',body:'Boot Hill is permanent. Bounties you posted stay posted. Scrip you\'re owed gets paid to the sheriff, who will not give it back.',ok:'Bury it',danger:true,typed:S.user.handle}))return;toast('Buried.','Well. Almost. This is a sandbox, so: signed out instead.','crit');S.user=null;store.del('user');S.onboarded=false;store.del('onboarded');S.ob=null;render()},
+  'set-accent'(el){S.accent=el.dataset.v;applyTheme();paint();toast(ACCENTS[S.accent].label+'.','Every action wears it now.','neon')},
+  plan(el){toast('Plan change','Talk to the sheriff. She handles upgrades, and she\'s off after nine.','warn')},
+  integ(el){const[i,name]=el.dataset.v.split('|');S.integ=S.integ||{};const cur=S.integ[i]??[true,true,false,false][i];S.integ[i]=!cur;paint();toast(cur?name+' disconnected.':name+' connected.','',cur?'warn':'good')},
+  async 'key-copy'(){try{await navigator.clipboard.writeText($('#apikey').textContent);toast('Key copied.','Holster it.','good')}catch(e){toast('Clipboard\'s locked.','','warn')}},
+  async 'key-regen'(){if(!await confirmDlg({title:'Regenerate the key?',body:'The old key dies everywhere the moment you do. Halcyon will call.',ok:'Regenerate',danger:true}))return;S.apikey='ng_live_'+Math.random().toString(16).slice(2,6)+'…'+Math.random().toString(16).slice(2,6);paint();toast('New key minted.','The old one is ash.','good')},
+  'dash-range'(el){S.dash.range=+el.dataset.v;paint()},'dash-table'(){S.dash.table=!S.dash.table;paint()},'dash-sector'(el){S.dash.sector=(S.dash.sector===el.dataset.v||el.dataset.v==='all')?'all':el.dataset.v;paint()},
+  veil(el,e){if(e.target===el)closeOverlay()},close(){closeOverlay()},
+  'modal-ok'(){const r=modalResolve;modalResolve=null;$('#overlay').innerHTML='';r&&r(true)},
+  'pal-pick'(el){const it=palFiltered()[+el.dataset.v];it&&it.run()},
+  'toast-action'(el){const t=$('#'+el.dataset.v);t._action&&t._action();t.remove()},'toast-close'(el){$('#'+el.dataset.v)?.remove()},
+};
+/* input / change / submit handlers */
+const ON={
+  'ob-name'(el){S.ob.name=el.value},'ob-handle'(el){S.ob.handle=el.value.toLowerCase().replace(/[^a-z0-9.]/g,'')},
+  'tbl-q'(el){S.tbl.q=el.value;S.tbl.page=1;const a=$('#tbl-area');const q=el;const pos=q.selectionStart;repaintTable();const n=$('#tbl-q');n&&(n.focus(),n.setSelectionRange(pos,pos))},
+  'set-glow'(el){S.glow=+el.value;applyTheme()},
+  count(el){$('#bio-n').textContent=el.value.length},
+  pw(el){const v=el.value;let s=0;if(v.length>=8)s++;if(v.length>=14)s++;if(/[A-Z]/.test(v)&&/[a-z]/.test(v))s++;if(/\d|[^\w]/.test(v))s++;if(!v)s=0;$('#pw-meter').dataset.s=s;$('#pw-hint').textContent=['Longer beats clever. A sentence works.','Weak. A coyote could guess it.','Getting there.','Solid.','Iron. Nobody\'s cracking that.'][s]},
+};
+const CH={
+  'ob-rig'(el){S.ob.rig=el.value;window.W&&W.setRig(el.value)},'ob-pref'(el){S.ob.prefs[el.dataset.v]=el.checked},
+  'tbl-per'(el){S.tbl.per=+el.value;S.tbl.page=1;repaintTable()},
+  'tbl-sel'(el){el.checked?S.tbl.sel.add(el.dataset.v):S.tbl.sel.delete(el.dataset.v);repaintTable()},
+  'tbl-selall'(el){const rows=tblRows().slice((S.tbl.page-1)*S.tbl.per,S.tbl.page*S.tbl.per);rows.forEach(r=>el.checked?S.tbl.sel.add(r.id):S.tbl.sel.delete(r.id));repaintTable()},
+  'cal-pick'(el){const[y,m,d]=el.value.split('-').map(Number);if(!y)return;S.cal={y,m:m-1,sel:d};paint()},
+  pref(el){S.prefs[el.dataset.v]=el.checked;store.set('prefs',S.prefs);if(el.dataset.v==='quiet')paint();if(el.dataset.v==='twofa')toast(el.checked?'Second key armed.':'Second key holstered.','',el.checked?'good':'warn');if(el.dataset.v==='sound'&&!el.checked)audioStop()},
+  'dash-sector'(el){S.dash.sector=el.value;paint()},
+  'set-world'(el){S.world=el.checked;applyTheme();toast(S.world?'World\'s back.':'World\'s dark.','',S.world?'good':'')},
+  'set-mode'(){ACT.mode()},'set-fx'(el){S.fx=el.checked;applyTheme()},
+  'dz-file'(el){fileIn(el.files&&el.files[0])},
+};
+function fileIn(f){if(!f)return;const out=$('#dz-out');if(!out)return;out.hidden=false;$('#dz-name').textContent=`${f.name} · ${(f.size/1024).toFixed(0)} KB`;const bar=$('#dz-bar');let p=0;const t=setInterval(()=>{p=Math.min(100,p+rnd(8,22));bar.style.width=p+'%';if(p>=100){clearInterval(t);toast('Uploaded.',f.name,'good')}},120)}
+const FORMS={
+  login(f){const u=$('#login-user'),p=$('#login-pass');let ok=true;$('#f-user').classList.toggle('invalid',!u.value.trim());$('#f-pass').classList.toggle('invalid',!p.value);if(!u.value.trim()||!p.value){(!u.value.trim()?u:p).focus();return}const b=$('#login-go');b.disabled=true;b.innerHTML='<span class="spin"></span> Jacking in…';setTimeout(()=>login(u.value.trim()),800)},
+  ob(){const o=S.ob;if(o.step<3){if(o.step===1&&!(o.name||'').trim()){toast('Need a name.','Even "Stranger" is a name.','warn');return}o.step++;render();return}
+    S.user={...S.user,name:o.name.trim(),handle:o.handle||S.user.handle,rig:RIGS.find(r=>r[0]===o.rig)[1],rigKey:o.rig};store.set('user',S.user);S.prefs={...S.prefs,...o.prefs};store.set('prefs',S.prefs);S.onboarded=true;store.set('onboarded',true);render(true);toast('Saddled up.',`${S.user.rig}, tuned wire, and a poster on the wall.`,'good')},
+  chat(){const i=$('#chat-in');const t=i.value.trim();if(!t)return;(S.msgs[S.chan]=S.msgs[S.chan]||[]).push({who:'me',t,at:Date.now()});i.value='';const ms=$('#msgs');ms.innerHTML=threadHtml();icons();ms.scrollTop=ms.scrollHeight;
+    const who=pick(CREW.filter(c=>c.on));const ty=$('#typing');ty.innerHTML=`${esc(who.name)} is typing <i></i><i></i><i></i>`;
+    setTimeout(()=>{ty.innerHTML='';S.msgs[S.chan].push({who:who.id,t:pick(['Copy that.','Ha. Bring the good lantern.','Roped. On it after the convoy.','Say that again on the wire, the saloon\'s loud.','Sheriff won\'t like it. Do it anyway.','The clock just struck thirteen again.','Tumbleweed says no.']),at:Date.now()});const m2=$('#msgs');if(m2){m2.innerHTML=threadHtml();icons();m2.scrollTop=m2.scrollHeight}},rnd(1400,2600))},
+  bounty(){const t=$('#nb-title'),r=$('#nb-reward');let ok=true;$('#nb-f-title').classList.toggle('invalid',!t.value.trim());$('#nb-f-reward').classList.toggle('invalid',!(+r.value>0));if(!t.value.trim()||!(+r.value>0))return;
+    const due=Math.max(0,Math.round((new Date($('#nb-due').value||Date.now())-Date.now())/864e5));const b={id:'BNT-'+(Math.max(...S.bounties.map(x=>+x.id.slice(4)))+7),title:t.value.trim(),desc:$('#nb-desc').value.trim()||'No details. Ask around.',poster:S.user.name,reward:+r.value,sector:$('#nb-sector').value,risk:+$('#nb-risk').value,status:'open',due,who:null};
+    S.bounties.unshift(b);closeOverlay();S.tbl.page=1;S.tbl.status='all';if(view()==='bounties')repaintTable();else location.hash='bounties';repaintShell();toast('Bounty posted.',`${b.id} · ${fmt(b.reward)} §`,'neon',{label:'Undo',fn:()=>{S.bounties=S.bounties.filter(x=>x!==b);repaintTable();repaintShell()}})},
+  event(){const t=$('#ev-t');if(!t.value.trim()){$('#ev-f-t').classList.add('invalid');return}S.events.push({d:$('#ev-d').value,t:t.value.trim(),k:$('#ev-k').value});const[y,m,d]=$('#ev-d').value.split('-').map(Number);S.cal={y,m:m-1,sel:d};closeOverlay();paint();toast('Added to the almanac.',t.value.trim(),'good')},
+  kcard(f){const t=$('#kc-t');if(!t.value.trim()){$('#kc-f').classList.add('invalid');return}S.cards.push({id:'k'+Date.now(),pen:f.dataset.pen,t:t.value.trim(),pri:$('#kc-p').value,who:'u1'});closeOverlay();paint();toast('Roped.',t.value.trim(),'good')},
+  profile(){S.user={...S.user,name:$('#p-name').value.trim()||S.user.name,handle:$('#p-handle').value.trim()||S.user.handle,bio:$('#p-bio').value,sector:$('#p-sector').value};store.set('user',S.user);render();toast('Poster saved.','Nailed to the saloon wall.','good')},
+  pass(){const a=$('#pw1'),b=$('#pw2');const bad=!a.value||a.value!==b.value;b.closest('.field').classList.toggle('invalid',bad);if(bad)return;a.value=b.value='';$('#pw-meter').dataset.s=0;toast('Passkey changed.','Old one\'s in Boot Hill.','good')},
+};
+
+/* ── event wiring ── */
+document.addEventListener('click',e=>{const el=e.target.closest('[data-act]');
+  if(!el){if(S.drop&&!e.target.closest('.drop')){S.drop=null;repaintShell()}if(S.rowMenu&&!e.target.closest('.drop')){S.rowMenu=null;repaintTable()}if(S.kMenu&&!e.target.closest('.drop')){S.kMenu=null;paint()}return}
+  const fn=ACT[el.dataset.act];if(!fn)return;if(el.tagName==='A'&&el.getAttribute('href')==='#')e.preventDefault();fn(el,e)});
+document.addEventListener('input',e=>{const el=e.target.closest('[data-on]');el&&ON[el.dataset.on]&&ON[el.dataset.on](el,e)});
+document.addEventListener('change',e=>{const el=e.target.closest('[data-ch]');el&&CH[el.dataset.ch]&&CH[el.dataset.ch](el,e)});
+document.addEventListener('submit',e=>{const f=e.target.closest('[data-form]');if(!f)return;e.preventDefault();FORMS[f.dataset.form]&&FORMS[f.dataset.form](f)});
+document.addEventListener('keydown',e=>{const tag=(e.target.tagName||'').toLowerCase();const typing=tag==='input'||tag==='textarea'||tag==='select';
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();$('#pal-q')?closeOverlay():openPalette();return}
+  if(e.key==='Escape'){if($('#overlay').innerHTML){closeOverlay();return}if(S.drop||S.rowMenu||S.kMenu){S.drop=null;S.rowMenu=null;S.kMenu=null;repaintShell();repaintTable();}if(S.sideOpen){S.sideOpen=false;repaintShell()}return}
+  if($('#pal-q')){const list=palFiltered();if(e.key==='ArrowDown'){e.preventDefault();S.pal.i=Math.min(list.length-1,S.pal.i+1);paintPal()}else if(e.key==='ArrowUp'){e.preventDefault();S.pal.i=Math.max(0,S.pal.i-1);paintPal()}else if(e.key==='Enter'){e.preventDefault();list[S.pal.i]&&list[S.pal.i].run()}return}
+  if(typing||!S.user||!S.onboarded||e.metaKey||e.ctrlKey||e.altKey)return;
+  const k=e.key.toLowerCase();
+  if(S.gPending){S.gPending=false;if(k==='o')location.hash='overwatch';if(k==='b')location.hash='bounties';if(k==='c')location.hash='corral';if(k==='s')location.hash='saloon';return}
+  if(k==='g'){S.gPending=true;setTimeout(()=>S.gPending=false,900);return}
+  if(e.key==='?'){shortcutsModal();return}if(k==='n'){newBountyModal();return}if(k==='t'){ACT.mode();return}if(k==='/'){e.preventDefault();openPalette()}});
+document.addEventListener('dragstart',e=>{const c=e.target.closest&&e.target.closest('.kcard');if(!c)return;S.drag=c.dataset.id;c.classList.add('dragging');e.dataTransfer.effectAllowed='move';try{e.dataTransfer.setData('text/plain',c.dataset.id)}catch(x){}});
+document.addEventListener('dragend',()=>{$$('.kcard.dragging').forEach(c=>c.classList.remove('dragging'));$$('.kcol.over,.drop-zone.over').forEach(c=>c.classList.remove('over'))});
+document.addEventListener('dragover',e=>{const z=e.target.closest&&e.target.closest('.kcol,.drop-zone');if(!z)return;e.preventDefault();z.classList.add('over')});
+document.addEventListener('dragleave',e=>{const z=e.target.closest&&e.target.closest('.kcol,.drop-zone');if(z&&!z.contains(e.relatedTarget))z.classList.remove('over')});
+document.addEventListener('drop',e=>{const z=e.target.closest&&e.target.closest('.kcol,.drop-zone');if(!z)return;e.preventDefault();z.classList.remove('over');
+  if(z.classList.contains('drop-zone')){fileIn(e.dataTransfer.files&&e.dataTransfer.files[0]);return}
+  const id=S.drag||e.dataTransfer.getData('text/plain');const c=S.cards.find(x=>x.id===id);S.drag=null;if(c&&c.pen!==z.dataset.pen){c.pen=z.dataset.pen;paint();toast('Moved to '+PENS.find(p=>p[0]===c.pen)[1]+'.','',c.pen==='shipped'?'good':'')}});
+document.addEventListener('mousemove',e=>{const ch=e.target.closest&&e.target.closest('.chart');
+  if(!ch){$$('.chart .tip:not([hidden])').forEach(t=>t.hidden=true);$$('.bar-r.on').forEach(b=>b.classList.remove('on'));const xh=$('#lat-xh'),pt=$('#lat-pt');xh&&(xh.hidden=true);pt&&(pt.hidden=true);return}
+  const tip=$('.tip',ch),box=ch.getBoundingClientRect();
+  if(ch.dataset.kind==='bar'){const r=e.target.closest('.bar-r');if(!r){tip.hidden=true;$$('.bar-r.on',ch).forEach(b=>b.classList.remove('on'));return}const data=series(),i=+r.dataset.i,rb=r.getBoundingClientRect();
+    tip.hidden=false;tip.innerHTML=`${shortDate(dateOf(i-(data.length-1)))} · <b>${fmt(data[i])} §</b>`;tip.style.left=(rb.left-box.left+rb.width/2)+'px';tip.style.top=(rb.top-box.top)+'px';$$('.bar-r.on',ch).forEach(b=>b.classList.remove('on'));r.classList.add('on');return}
+  if(ch.dataset.kind==='line'){const svg=$('svg',ch),sb=svg.getBoundingClientRect(),W=560,H=200,L=40,B=22,T=10,R=6,n=LAT48.length;const x=(e.clientX-sb.left)/sb.width*W;const i=Math.max(0,Math.min(n-1,Math.round((x-L)/((W-L-R)/(n-1)))));
+    const px=L+i*(W-L-R)/(n-1),py=T+(H-T-B)*(1-LAT48[i]/160);const xh=$('#lat-xh'),pt=$('#lat-pt');xh.hidden=false;pt.hidden=false;xh.setAttribute('x1',px);xh.setAttribute('x2',px);pt.setAttribute('cx',px);pt.setAttribute('cy',py);
+    const h=(new Date().getHours()-((n-1-i)/2)+48)%24;tip.hidden=false;tip.innerHTML=`${pad(Math.floor(h))}:${h%1?'30':'00'} · <b>${LAT48[i]} ms</b>`;tip.style.left=(px/W*sb.width+(sb.left-box.left))+'px';tip.style.top=(py/H*sb.height+(sb.top-box.top))+'px'}});
+document.addEventListener('mouseover',e=>{const r=e.target.closest&&e.target.closest('.dl .r');const d=e.target.closest&&e.target.closest('.donut');if(!d&&!r)return;const key=r?r.dataset.hover:null;$$('.donut .sg').forEach(s=>s.classList.toggle('dim',!!key&&s.dataset.s!==key))});
+document.addEventListener('mouseout',e=>{if(e.target.closest&&e.target.closest('.dl')&&!(e.relatedTarget&&e.relatedTarget.closest&&e.relatedTarget.closest('.dl')))$$('.donut .sg').forEach(s=>s.classList.remove('dim'))});
+
+window.addEventListener('hashchange',()=>{if(S.sideOpen)S.sideOpen=false;render(true);const m=location.hash.match(/^#bounties\/(BNT-\d+)/);if(m){const b=S.bounties.find(x=>x.id===m[1]);b&&setTimeout(()=>bountyModal(b),200)}});
+
+/* ── timers ── */
+setInterval(()=>{const c=$('#clock');c&&(c.textContent=clock())},1000);
+setInterval(()=>{S.latency=Math.max(18,Math.min(190,S.latency+rnd(-9,9)+(Math.random()<.06?rnd(40,90):0)));window.W&&W.setLatency(S.latency);const l=$('#lat'),l2=$('#lat2'),u=$('#uplink');l&&(l.textContent=S.latency+' ms');l2&&(l2.textContent=S.latency+' ms');u&&(u.className='uplink '+(S.latency>140?'down':S.latency>80?'weak':''))},2500);
+setInterval(()=>{if(!S.plugged||S.charge>=100)return;S.charge=Math.min(100,S.charge+1);window.W&&W.setCharge(S.charge,true);const n=$('#charge-n'),b=$('#charge-bar'),rn=$('#ring-n'),rf=$('#ring-fg'),rk=$('#ring-km');n&&(n.textContent=S.charge+'%');b&&(b.style.width=S.charge+'%');rn&&(rn.textContent=S.charge+'%');rf&&(rf.style.strokeDashoffset=(226.2*(1-S.charge/100)).toFixed(1));rk&&(rk.textContent=Math.round(S.charge*3.2)+' km');
+  if(S.charge===20||S.charge===100){repaintShell();if(S.charge===100)toast('Rig fully charged.','It has forgiven you.','good')}},700);
+setInterval(()=>{if(!S.juke.playing)return;const t=TRACKS[S.juke.i];S.juke.pos++;window.W&&W.beat(.8);if(S.juke.pos>=t[2]){ACT['juke-next']();return}const b=$('#juke-bar'),n=$('#juke-t');b&&(b.style.width=(S.juke.pos/t[2]*100).toFixed(1)+'%');n&&(n.textContent=mmss(S.juke.pos))},1000);
+
+/* ── jukebox synth (WebAudio, five notes, no samples) ── */
+let AC=null,seq=null;
+function audioStart(){audioStop();if(!S.prefs.sound)return;try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();AC.resume();const base=[110,130.8,146.8,164.8,196][S.juke.i%5];const scale=[1,1.2,1.5,1.667,2,2.4,3];let step=0;
+  const master=AC.createGain();master.gain.value=.08;master.connect(AC.destination);
+  const drone=AC.createOscillator(),df=AC.createBiquadFilter(),dg=AC.createGain();drone.type='sawtooth';drone.frequency.value=base/2;df.type='lowpass';df.frequency.value=220;dg.gain.value=.5;drone.connect(df).connect(dg).connect(master);drone.start();
+  seq={master,drone,timer:setInterval(()=>{const f=base*scale[[0,2,3,4,2,5,3,1][step%8]]*(step%16>=8?1.5:1);const o=AC.createOscillator(),g=AC.createGain();o.type=step%4===0?'square':'triangle';o.frequency.value=f;g.gain.setValueAtTime(.0001,AC.currentTime);g.gain.exponentialRampToValueAtTime(.6,AC.currentTime+.01);g.gain.exponentialRampToValueAtTime(.0001,AC.currentTime+.32);o.connect(g).connect(master);o.start();o.stop(AC.currentTime+.35);step++;window.W&&W.beat(step%4===0?1:.5)},300)}}catch(e){seq=null}}
+function audioStop(){if(!seq)return;try{clearInterval(seq.timer);seq.drone.stop();seq.master.disconnect()}catch(e){}seq=null}
+
+/* ── boot ── */
+applyTheme();render(true);
+</script>
+</body>
+</html>
