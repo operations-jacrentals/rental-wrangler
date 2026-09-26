@@ -165,9 +165,13 @@ These merge cleanly but are sandbox/branding/doc artifacts. Low risk either way.
   merge base; `reconcile/staging-into-trunk` is 485. That lineage predates the trunk rename and is
   **archive, not backlog**.
 
-**21 branches are provably safe to delete** — verified by content, holding back trunk, production,
+**33 branches are provably safe to delete** — verified by content, holding back trunk, production,
 the current branch, and any open-PR head. Run `node tools/prune-absorbed-branches.mjs` for the dry
 run and `--yes` to execute.
+
+> It was **21** before this cleanup merged. Landing the 12 parked notes on trunk made their branches
+> absorbed too — deleting them can no longer lose anything, which it could have beforehand. Re-run
+> the dry run rather than trusting any number written down here; the tool is the source of truth.
 
 ⚠ **Deletion cannot be done from a cloud session.** The sandboxed git proxy returns **HTTP 403** on
 ref deletion (it permits pushes to the session's own branch, not deletes), and the GitHub MCP server

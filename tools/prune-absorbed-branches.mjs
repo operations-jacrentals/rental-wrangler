@@ -192,13 +192,19 @@ for (const { name, sha } of absorbed) {
     console.log(`  deleted ${name}`);
     ok++;
   } catch (e) {
-    const msg = e.message || e.stderr?.toString() || '';
-    if (/stale info|force-with-lease|non-fast-forward|rejected/i.test(msg)) {
+    // Classify on STDERR only. `e.message` starts with "Command failed: git push origin
+    // --force-with-lease=..." — it echoes the command line, so matching it for "force-with-lease"
+    // matches EVERY failure and mislabels unrelated errors (a 403, a network drop) as "moved".
+    const err = (e.stderr ? e.stderr.toString() : '') || '';
+    if (/stale info/i.test(err)) {
       stale++;
       console.error(`  SKIPPED ${name}  (moved since it was classified — re-run to re-evaluate)`);
     } else {
       fail++;
-      console.error(`  FAILED  ${name}${msg.includes('403') ? '  (HTTP 403 — this environment forbids ref deletion; run from a session with real push rights)' : ''}`);
+      const why = /\b403\b/.test(err)
+        ? '  (HTTP 403 — this environment forbids ref deletion; run from a session with real push rights)'
+        : `  (${err.split('\n').find((l) => l.trim()) || 'unknown error'})`;
+      console.error(`  FAILED  ${name}${why}`);
     }
   }
 }
