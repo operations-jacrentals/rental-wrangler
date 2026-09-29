@@ -194,6 +194,7 @@ intent → rule → builder; **extend the builder, never hand-roll markup.** The
 | **R23** | Tooltip | `data-tip` | Every hover hint; a native `title=` is an R0 violation. |
 | **R24** | Close ✕ | `closeX` | Red circle · white ✕. |
 | **R25** | Sync banner | `renderSyncBanner` | The persistent “Not saving” plate — red hazard-stripe cap; the ONE non-toast alert, lives on `<body>`. |
+| **R38** | Deleted-elsewhere plate | `renderTombPlate` | Records another screen deleted that this one keeps visible — money on them, an unexplained invoice delete, or unsaved edits (RC-77 Q2-A). Caution-yellow hazard-stripe cap like R27, lives on `<body>`; Open · Keep (only when it can neither double-bill nor drop a payment) · Discard; never auto-clears. |
 
 The `components` tokens above carry each element's color/type/radius; borders, dashes, and
 gradients (the orange ref-pill outline, blue/gray add dashes, the ignition gradient face)

@@ -2105,6 +2105,7 @@ select.inline-input:focus-visible { outline: 2px solid var(--accent); outline-of
 .pl-title { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .pl-tag { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; font-size: 0.5588rem; color: var(--txt-3); }
 .popup-foot { display: flex; align-items: center; justify-content: flex-end; gap: 9px; flex: 0 0 auto; padding: 11px 16px; border-top: 1px solid var(--line); background: var(--bg-2); }
+.is-phone .settings-popup .popup-foot { flex-wrap: wrap; row-gap: 8px; }   /* RC-83 review fix — the Settings footer (Reset page · the armed Reset all · Undo · Cancel · Save) wraps on a phone instead of pushing the destructive confirm off-screen */
 .pill.ignition { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 800; color: var(--on-orange); border-color: transparent;   /* the plate's ONE ignition/primary action (rule 3) */
   background: linear-gradient(180deg, #ff9038, var(--accent)); box-shadow: 0 6px 16px -6px var(--accent), inset 0 1px 0 rgba(255,255,255,.4); }
 .pill.ignition:hover { filter: brightness(1.05); }
@@ -5582,6 +5583,60 @@ body.sync-failing #sched-banner { top: 40px; }   /* an active R25 sync band outr
 #sched-banner .close-x { flex-shrink: 0; margin-top: 1px; }
 body.sched-due #app { padding-top: var(--sched-band, 46px); }
 body.sync-failing.sched-due #app { padding-top: calc(40px + var(--sched-band, 46px)); }
+/* ── R38 — "Deleted on another screen" plate (Phase 2b, RC-77 Q2-A) ────────────
+   A copy another screen deleted that this one keeps visible (it carries money,
+   its invoice delete is unexplained, or it holds unsaved edits): Open · Keep ·
+   Discard per row. Body-level like R25/R27 so render()'s #app swap can't wipe
+   it. Caution-YELLOW hazard stripe — R27's heads-up signature (NOT R25's danger
+   red, NOT the reserved orange accent). Stacks UNDER R25 and R27 when they are
+   up and reserves its own band via body.feed-tomb (height in --tomb-band, set
+   by renderTombPlate). No new colour: every text/fill pair is one R27 already
+   ships (AA in every theme: ink 15.0, --txt-2 8.1, yellow stamp 12.8, count 14.1 on bluedsteel). */
+#feed-tomb {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 9400;
+  display: flex; align-items: flex-start; gap: 14px;
+  padding: 10px 12px 9px 18px;
+  background: var(--panel); border-bottom: 1px solid var(--line); box-shadow: var(--shadow);
+  max-height: 42vh; overflow-y: auto;
+}
+body.sync-failing #feed-tomb { top: 40px; }
+body.sched-due #feed-tomb { top: var(--sched-band, 46px); }
+body.sync-failing.sched-due #feed-tomb { top: calc(40px + var(--sched-band, 46px)); }
+#feed-tomb .ftp-stripe {
+  position: absolute; top: 0; left: 0; right: 0; height: 4px;
+  background: repeating-linear-gradient(135deg, var(--yellow) 0 13px, #14181d 13px 26px);
+}
+#feed-tomb .ftp-plate { display: flex; align-items: center; gap: 8px; flex-shrink: 0; padding-top: 2px; }
+#feed-tomb .ftp-stamp {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase;
+  letter-spacing: 1.4px; font-weight: 800; font-size: 0.8235rem; color: var(--yellow); white-space: nowrap;
+}
+#feed-tomb .ftp-stamp svg { width: 15px; height: 15px; }
+#feed-tomb .ftp-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 19px; height: 19px; padding: 0 5px; border-radius: 9px;
+  background: var(--yellow); color: #1a1205;
+  font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 800; font-size: 0.7059rem;
+}
+#feed-tomb .ftp-list { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; padding-top: 1px; }
+#feed-tomb .ftp-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.7353rem; }
+#feed-tomb .ftp-name { color: var(--txt); font-weight: 700; min-width: 0; }
+#feed-tomb .ftp-why { color: var(--txt-2); min-width: 0; }
+#feed-tomb .pill { flex-shrink: 0; }
+#feed-tomb .pill:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }   /* the app has no global focus ring — every new control brings its own */
+#feed-tomb .pill.c-commit { color: var(--bg); }   /* review fix — Keep takes DESIGN.md's action-commit ink ({colors.bg}, ~7:1 on --blue), not the shipped R17 pill's pure white (2.7:1) */
+/* R38 on a phone (review fix): the stamp row sits above the list, the plate keeps to about a third of the screen (the rest
+   scrolls inside it), and every control clears the §M-touch 44 px floor with a clear gap between Keep and Discard. */
+.is-phone #feed-tomb { flex-direction: column; align-items: stretch; gap: 6px; max-height: 30vh; }
+.is-phone #feed-tomb .ftp-row { gap: 8px 10px; }
+.is-phone #feed-tomb .pill { min-height: 44px; min-width: 44px; }
+/* An open popup outranks the plate: it drops under the popup's backdrop (.overlay, z 50) so it never covers a popup's header or ✕. */
+body:has(#overlay-root .overlay) #feed-tomb { z-index: 40; }
+body.feed-tomb #app { padding-top: var(--tomb-band, 46px); }
+body.sync-failing.feed-tomb #app { padding-top: calc(40px + var(--tomb-band, 46px)); }
+body.sched-due.feed-tomb #app { padding-top: calc(var(--sched-band, 46px) + var(--tomb-band, 46px)); }
+body.sync-failing.sched-due.feed-tomb #app { padding-top: calc(40px + var(--sched-band, 46px) + var(--tomb-band, 46px)); }
 /* ── §Perf/SW — update-ready toast (spec frontend-performance P1) ─────────────
    Steel plate pinned bottom-center; hi-vis hazard stripe on the left edge; Saira
    stamped message; the one orange = the Reload ignition. Reduced-motion: appears

@@ -3579,10 +3579,15 @@ function resetPageSettings() {
    empty config so it sticks across devices, then reloads the board clean. */
 async function resetAllSettings() {
   const o = state.overlay; if (!o || o.kind !== 'settings') return;
-  try { if (o.adminPw) await backendCall('setConfig', { password: o.adminPw, config: { roles: o.config.roles, admin: o.config.admin, settings: {} } }); } catch (e) {}
-  persistAdminSettings({});
-  o.draftSettings = {}; o.config.settings = {}; o.resetArm = false;
-  closeOverlay(); toast('All customizations reset to the shipped defaults.'); render();
+  // RC-83 Q13-A — "Reset all" KEEPS the roster (settings.employees). setConfig replaces the whole settings object, and the backend
+  // then purges the sign-ins of everyone missing from the new roster (pidReconcileRoster_), so the empty roster this used to send
+  // signed the whole crew out. Staff are removed only from the Team Roster tab. The roster kept is the one this window loaded.
+  const emp = ((o.config && o.config.settings) || {}).employees;
+  const kept = Array.isArray(emp) ? { employees: emp } : {};
+  try { if (o.adminPw) await backendCall('setConfig', { password: o.adminPw, config: { roles: o.config.roles, admin: o.config.admin, settings: kept } }); } catch (e) {}
+  persistAdminSettings(kept);
+  o.draftSettings = {}; o.config.settings = kept; o.resetArm = false;
+  closeOverlay(); toast('All customizations reset to the shipped defaults — the Team Roster is kept.'); render();
 }
 /* Undo the single most recent Save (restores jactec.settings.prev). */
 async function undoLastSettings() {
@@ -6875,6 +6880,7 @@ const RULE_META = {
   R35: ['Dated-action funnel', 'datedFunnelHtml / .dfunnel', 'the customer-detail funnel as a two-tab (Rental | Equipment Sales) stack of clickable LAYERS, narrowing like a real funnel — everyone sits in both tabs (a fresh customer at Lead). Each layer is a SLOT for a dated next-action ("notes = actions"): arm any layer with an action (note + date) and it glows red/yellow/green by that date’s urgency (naUrgency) — several can be armed at once. A reached-but-unarmed layer is quiet steel history (a check + when it happened); the terminal Signed/Paid, once reached, is SOLID BLUE (closed won). Clicking a layer opens its action editor (arm/edit/complete, or Advance the customer here). The armed actions are the same scheduled entries as the date-sorted queue below. Rental Reserved/Rented history-dates derive from live rentals. Bespoke — layers are NOT .pill, the .dfunnel container carries the stamp.'],
   R36: ['Swipe-toggle deck', 'swipeSeg / swipeTrack / .swipe-track', 'the PHONE-ONLY carousel that turns a VIEW-SWITCH toggle section (the customer funnel · invoices · comms Text/Email) into a swipeable deck: both panes sit side-by-side in a nested horizontal scroll-snap track, and the toggle’s ONE-orange fill (R3) becomes a .deck-thumb that RIDES the scroll (deckPaint). The active tab commits on SNAP with NO render (deckCommit) — both panes are already in the DOM — a haptic ticks per change, and a tab tap smooth-scrolls the track. Nests inside the 5-card .grid rail without stealing its swipe (each scroll listener is class-filtered to its own track). Desktop is byte-identical to before — single pane + the R14 tap toggle. Attaches ONLY to view-switch toggles, never a value/action segCtl (a swipe must never set inspection Fail or a transport leg).'],
   R37: ['Freshness line', 'freshLineHtml / #fresh-line', 'the always-on, low-key “Updated N s ago” under the header name row (RC-67 2A) — becomes “Catching up…” once 60 s pass without a successful refresh (a backend load this device APPLIED). Plain read-voice text in --txt-2: no pill, no icon, no motion. headerEl paints it; a 1 s ticker rewrites only its text (stopped while the tab is hidden). Never an alert — R25 stays the ONE non-toast alert'],
+  R38: ['Deleted-elsewhere plate', 'renderTombPlate / #feed-tomb', 'top-of-screen plate for records another screen deleted that this one keeps visible (Phase 2b, RC-77 Q2-A): each row names the record — “Deleted on another screen”, plus “— office to check” when it carries money (a payment, charge, seal or Stripe link), its invoice delete is unexplained, or it cannot be kept — with Open, Keep (only when bringing it back can neither double-bill nor drop a payment) and Discard. Caution-YELLOW hazard-stripe cap like R27; lives on <body>, stacks under R25/R27; never auto-clears; the copy is held from saving until Keep or Discard.'],
 };
 /* ════════════ APP-12 · DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
    The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
@@ -14538,7 +14544,7 @@ function buildPopupEl(o, overlay, opts = {}) {
       pop.innerHTML = `${head}<div class="popup-body settings-body"><div class="set-loading"><div class="set-loading-bar" aria-hidden="true"></div><div class="set-loading-lbl">Rounding up the yard settings…</div></div></div>`;
     } else {
       if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {}));
-      const foot = `${pageDefaultSlice(o.tab) ? '<button class="pill ghost js-settings-resetpage" data-r="R18" data-tip="Reset just this tab to defaults (Save to keep)">Reset page</button>' : ''}<button class="pill ghost set-danger js-settings-reset${o.resetArm ? ' armed' : ''}" data-r="R18">${o.resetArm ? 'Click again — reset everything' : 'Reset all'}</button>${hasSettingsBackup() ? '<button class="pill ghost js-settings-undo" data-r="R18">Undo last change</button>' : ''}<span class="spacer"></span>${o.error ? `<span class="set-err">${esc(o.error)}</span>` : ''}<button class="pill ghost js-close" data-r="R18"${o.saving ? ' disabled' : ''}>Cancel</button><button class="pill ignition js-settings-save${o.saving ? ' is-disabled' : ''}" data-r="R17"${o.saving ? ' disabled' : ''}>${o.saving ? 'Saving…' : 'Save settings'}</button>`;
+      const foot = `${pageDefaultSlice(o.tab) ? '<button class="pill ghost js-settings-resetpage" data-r="R18" data-tip="Reset just this tab to defaults (Save to keep)">Reset page</button>' : ''}<button class="pill ghost set-danger js-settings-reset${o.resetArm ? ' armed' : ''}" data-r="R18" data-tip="Resets every customization except the Team Roster">${o.resetArm ? 'Click again — reset all but the Team Roster' : 'Reset all'}</button>${hasSettingsBackup() ? '<button class="pill ghost js-settings-undo" data-r="R18">Undo last change</button>' : ''}<span class="spacer"></span>${o.error ? `<span class="set-err">${esc(o.error)}</span>` : ''}<button class="pill ghost js-close" data-r="R18"${o.saving ? ' disabled' : ''}>Cancel</button><button class="pill ignition js-settings-save${o.saving ? ' is-disabled' : ''}" data-r="R17"${o.saving ? ' disabled' : ''}>${o.saving ? 'Saving…' : 'Save settings'}</button>`;
       pop.innerHTML = `${head}
       <div class="popup-body settings-body">${settingsBoardHtml(o)}</div>
       <div class="popup-foot">${foot}</div>`;
@@ -18651,6 +18657,16 @@ function onClick(e) {
   // R26 — dismiss the top "Due Today" scheduled-actions band (manual X only; sticks for the session)
   if (closest('.js-sched-dismiss')) { e.stopPropagation(); dismissSchedBanner(); return; }
 
+  // R38 — the "Deleted on another screen" plate (Phase 2b, RC-77 Q2-A): Open / Keep / Discard one held copy
+  { const tb = closest('.js-tomb-open, .js-tomb-keep, .js-tomb-discard');
+    if (tb) {
+      e.stopPropagation(); const k = tb.dataset.k, id = tb.dataset.id;
+      if (tb.classList.contains('js-tomb-keep')) tombKeep(k, id);
+      else if (tb.classList.contains('js-tomb-discard')) tombDiscard(k, id);
+      else wrFocusRecord(k === 'companyFiles' ? 'files' : k, id);   // the app's own record nav (a board popup for vendors / parts / receipts / files)
+      return;
+    } }
+
   // clicked card → orange-border focus (§0.1 visual feedback; applied immediately,
   // independent of whatever else this click does — anchor stays a separate action)
   const fc = closest('.card');
@@ -21392,6 +21408,7 @@ function switchUser() {
   document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
   try { flushUserPrefsNow(); } catch (e) {}   // §cross-device-sync — push a pending prefs edit before the token is dropped
   staleClear();   // RC-71 — the next person never inherits this one's remembered failed batches
+  feedReset(false);   // 2b — nor this one's feed cursor, owed ids or delete plate; the feed timers stop until the next sign-in (finishLoad)
   backendPassword = ''; currentRole = ''; currentPersonId = ''; state.userPrefs = null; booting = true;   // §cross-device-sync — drop the leaving person's identity + synced doc so nothing pushes under the next person
   sessionStorage.removeItem('jactec.pw'); sessionStorage.removeItem('jactec.role');
   renderLogin();
@@ -23892,7 +23909,7 @@ function signinRetryCue(n, total) {
 }
 let backendPassword = sessionStorage.getItem('jactec.pw') || '';
 let booting = true;                       // suppresses saves during initial load
-let saveTimer = null, saving = false, savePending = false, saveGen = 0;   // saveGen — bumped each time flushSave starts a save; refreshFromBackend bails if it moved across its load await (RC-65)
+let saveTimer = null, saving = false, savePending = false, saveGen = 0, saveDueAt = 0;   // saveGen — bumped each time flushSave starts a save; refreshFromBackend bails if it moved across its load await (RC-65)
 
 /* uploadCapture returns url:f.getUrl() — a Drive file-VIEW page, which does NOT
    render in an <img src> or CSS url(). For IMAGES we build the embeddable form
@@ -23904,6 +23921,7 @@ function driveViewUrl(res) {
 async function backendCall(action, extra, opts) {
   // text/plain avoids a CORS preflight that GAS web apps can't answer
   const payload = Object.assign({ action, password: backendPassword }, extra || {});
+  try { feedNoteCall(action, extra); } catch (e) { /* 2b — book-keeping only (a load's send time; a money call's id is owed): it can never block or change a call */ }
   if (flagOn('phoneIdentity') && backendPassword) payload.sessionToken = backendPassword;   // per-person mode: the device/session token authorizes each call (backend prefers it over `password`); a no-op while the flag is OFF
   // RC-63 — opt-in ABORTABLE limit (opts.timeoutMs). Aborting, unlike withTimeout's race,
   // releases the stalled request instead of leaving it open. Callers that pass nothing
@@ -25413,7 +25431,7 @@ function computeChanges() {
   PERSIST_KEYS.forEach((k) => {
     const idf = PERSIST_ID[k]; const prev = (lastSaved && lastSaved[k]) || new Map(); const seen = new Set();
     const ups = [];
-    (DATA[k] || []).forEach((r) => { const id = String(r[idf]); seen.add(id); if (isEmptyMockDraft(k, r)) return; const js = JSON.stringify(r); if (prev.get(id) !== js) ups.push({ id, js, rec: r }); });   // #227 — a content-free mock draft is held out of the sync until it earns content
+    (DATA[k] || []).forEach((r) => { const id = String(r[idf]); seen.add(id); if (isEmptyMockDraft(k, r)) return; if (FEED.tomb.size && FEED.tomb.has(k + '\u0001' + id)) return; /* 2b — a copy on the R38 plate (deleted on another screen) is held out of the sync until Keep */ const js = JSON.stringify(r); if (prev.get(id) !== js) ups.push({ id, js, rec: r }); });   // #227 — a content-free mock draft is held out of the sync until it earns content
     const dels = []; prev.forEach((_, id) => { if (!seen.has(id)) dels.push(id); });
     if (ups.length) { upserts[k] = ups; n += ups.length; }
     if (dels.length) { deletes[k] = dels; n += dels.length; }
@@ -25438,6 +25456,30 @@ const REFRESH = { startAt: 0, retryTimer: null, retryMs: 3000, eventGapMs: 10000
 // R37 line never keeps saying "Updated N s ago" over a screen missing them. Any render() paints DATA → it clears the flag.
 // `var`, not `let`: render() is defined far above and must never meet a temporal dead zone.
 var refreshPaintOwed = false;
+// Phase 2b (RC-67 1A–7A · RC-77 Q2-A/Q3-A · RC-79 Q8-A) — the "what changed?" feed. While FEED.on, a tick asks the backend's
+// 'changes' action (live since backend v117, RC-82) for the records written since this screen's cursor instead of downloading
+// every tab: ~8 s while someone works this screen, ~20 s otherwise, never faster than the fleet throttle (pollMinMs, the log's
+// row 1). A 'snapshot' (a whole load that also returns the log head) after a reset and every 10 min (30 min idle); explicit
+// delete markers (applyDeleteMarkers). An older backend ('unknown action'), 'feed-off', or three server-errors in a row put
+// this screen back on the exact Phase 1 poll (startRefreshPoll: 'load' every 18 s) for 30 min, then one 'changes' probe.
+// In memory only — never written to dataCache (the instant-cache invariant). No record shape changes: no cache-schema bump.
+const FEED_TUNING = { fastMs: 8000, idleMs: 20000, inputMs: 90000, stretchMs: 18000, fullGapMs: 18000, snapEveryMs: 10 * 60000, snapIdleMs: 30 * 60000, jitterMs: 5000, feedTimeoutMs: 10000, offMs: 30 * 60000, markCap: 50, owedMax: 50, moneyOweMs: 10 * 60000, pollMinCapMs: 10 * 60000 };   // a property bag so tests can shrink it (resetFeedState restores it)
+const FEED_STATE0 = {
+  on: false, offUntil: 0, offWhy: '',             // on = ticks ask 'changes' / 'snapshot'; off = the Phase 1 'load' poll (never enabled, or a fallback until offUntil)
+  cursor: null, epoch: null, srvAfter: 0,         // the log position this screen has applied: head, epoch, and the server clock of that reply
+  loadSendAt: 0,                                   // when the latest 'load' call was SENT (backendCall) — finishLoad starts the bootstrap window there
+  loadSentAt: 0, snapAt: 0,                        // the last APPLIED full scan ('load' / 'snapshot'): when it was sent (a bootstrap / probe window starts there) and applied (the safety net counts from here)
+  sentAt: 0, fullSentAt: 0,                        // when the last call / the last full scan went out (pollMinMs; the 18 s full-scan spacing)
+  needSnap: '', snapDueAt: 0,                      // 'reset' | 'cap' — ONE adopt-only snapshot owed (after 0–5 s jitter); its absent records go through the marker path (RC-79 Q8-A)
+  pollMinMs: 0, serverErrs: 0, lastInputAt: 0,
+  deltas: 0, snaps: 0, resets: 0, misses: 0, marks: 0, held: 0, fallbacks: 0,   // diagnostics for window.__feed() — counts only, never a record id; never sent
+};
+const FEED = Object.assign({
+  timer: null,                                     // the chained setTimeout (feedSchedule)
+  owed: new Map(),                                 // 'entity\u0001id' → until (ms): re-asked by id (ids, ≤ 50) — a dirty copy kept over a newer remote one, and each money / membership call's invoice or customer for 10 min
+  tomb: new Map(),                                 // 'entity\u0001id' → { k, id, base, canKeep, office }: copies another screen deleted that this one keeps visible on the R38 plate, held out of computeChanges
+}, FEED_STATE0, FEED_TUNING);
+const SIDE = { timer: null, busy: false, ms: 18000, runs: 0, lastAt: 0 };   // 2b — the Phase 1 poll's other duties (team chats, the rail, the day roll-over, the prefs retry) on their own 18 s timer while the feed runs
 /** §inv-collision (Jac 2026-07-07) — TRUE when a remote invoice shares an id WE minted this
  *  session but is a genuinely DIFFERENT bill (no rental in common). That means our new
  *  invoice number was already taken by another customer's invoice on the backend — the 18s
@@ -25466,11 +25508,23 @@ function healInvoiceIdCollision(oldId, local, remote, saved) {
   toast(`Invoice ${invoiceShort(oldId)} clashed with an existing bill — yours was reissued as ${invoiceShort(freshId)}.`);
   saveSoon();                                             // persist the re-id + the repointed rental
 }
-async function refreshFromBackend() {
-  if (refreshing || booting || !backendPassword || saving || savePending || !lastSaved) return;
-  if (document.hidden || DRAG.active || DRAG.armed || winPickBusy() || state.overlay || hoverNode) return;   // don't disrupt active work — winPickBusy(), NOT a bare state.winEdit (armed by merely viewing a rental; see winPickBusy)
+/** 2d guard split (PHASE2D-PRESENCE 'WITH 2b') — MAY CALL: this screen may ask the backend at all (nothing in flight, booted,
+ *  signed in, a baseline, on screen). 2d-1's presence peeks add FEED.on on top; refreshFromBackend does not, so the Phase 1
+ *  fallback poll keeps passing it. */
+function mayCall() { return !refreshing && !booting && !!backendPassword && !!lastSaved && !document.hidden; }
+/** MAY ADOPT: a reply may change what is on screen — the RC-65 guards that stood at the top of refreshFromBackend, moved here
+ *  byte-identical (no behaviour change). */
+function mayAdopt() {
+  if (saving || savePending) return false;
+  if (DRAG.active || DRAG.armed || winPickBusy() || state.overlay || hoverNode) return false;   // don't disrupt active work — winPickBusy(), NOT a bare state.winEdit (armed by merely viewing a rental; see winPickBusy)
   const ae = document.activeElement;
-  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' || ae.isContentEditable)) return;              // mid-typing (RC-65: + SELECT — inline edits use <select class="inline-input">)
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' || ae.isContentEditable)) return false;              // mid-typing (RC-65: + SELECT — inline edits use <select class="inline-input">)
+  return true;
+}
+async function refreshFromBackend() {
+  if (!mayCall() || !mayAdopt()) return;   // 2d guard split — exactly the guards that stood here (pure reads: their order never mattered)
+  const q = feedPlan(Date.now());   // 2b — this tick's call: 'load' (the Phase 1 path, feed off) | 'changes' | 'snapshot'; null = not now (the fleet throttle, or a snapshot inside its 18 s gap)
+  if (!q) return;
   refreshing = true; REFRESH.startAt = Date.now();   // RC-67 3A — when this load began (refreshOnReturn / refreshKick read it)
   let quickRetry = false;   // RC-67 3A — set by the first lost load in a row; armed in `finally`, after `refreshing` is released
   try {
@@ -25480,12 +25534,14 @@ async function refreshFromBackend() {
     // rejects, `finally` clears the flag, and the next 18s tick tries again.
     const loadAt = Date.now();   // RC-71 review — STALE entries whose window closed before this load began are dropped once it has been checked
     const gen0 = saveGen;   // RC-65 — a save that runs while this load is in flight makes its reply stale for what it sent
-    const r = await backendCall('load', undefined, { timeoutMs: BACKEND_TIMEOUT_MS }).catch((e) => ({ ok: false, error: (e && e.rwTimeout) ? 'timeout' : 'network' }));   // RC-63 — abortable, so a stalled poll is released rather than left open. RC-67 3A — a stall or drop no longer throws past the chats + rail below
+    const r = await feedFetch(q).catch((e) => ({ ok: false, error: (e && e.rwTimeout) ? 'timeout' : 'network' }));   // RC-63 — abortable, so a stalled poll is released rather than left open. RC-67 3A — a stall or drop no longer throws past the chats + rail below
     const lost = !r || !r.ok || !r.data;
+    if (feedOffReply(q, r)) { feedFallback(r.error); return; }   // 2b — not a loss: this backend has no feed (an older version: 'unknown action') or Jac switched it off ('feed-off') → the exact Phase 1 poll for 30 min, then one probe
     quickRetry = refreshNoteLoad(r);   // RC-67 3A — counts a lost load; true only for the first in a row
     if (authRejected(r)) return;   // RC-67 3A — a refused credential is refused for chats + rail too: one call per tick, as before
     if (winPickBusy() || saveGen !== gen0) return;   // RC-65 — a pick can start (or start AND be saved) during the await above; a reply read before that save would revert it as "clean". The next 18s tick retries.
     const data = lost ? {} : r.data; let applied = 0, staleResend = false;   // RC-67 3A — a lost load used to return above and skip chats + rail; now it adopts nothing (every entity absent → the loop skips each) and carries on
+    if (!lost) feedUntomb(data);   // 2b — a plated record the server holds again (a delta, a snapshot, or the fallback's 'load') leaves the plate BEFORE the adopt loop, which then treats it like any other copy
     PERSIST_KEYS.forEach((k) => {
       if (!Array.isArray(data[k])) return;
       const idf = PERSIST_ID[k], saved = (lastSaved[k] = lastSaved[k] || new Map());
@@ -25514,30 +25570,22 @@ async function refreshFromBackend() {
           Object.keys(local).forEach((kk) => { if (!(kk in remote)) delete local[kk]; });
           Object.assign(local, remote); reindex(k, local); saved.set(id, rjs); applied++;
           if (k === 'rentals') winEditResync(local);   // the armed inline window editor re-derives from the adopted rental (stale staged copy / fragility flip)
-        }                              // else: local has unsaved edits → keep local; it'll push on next save
+        } else feedOwe(k, id, 0);      // else: local has unsaved edits → keep local; it'll push on next save
       });
     });
-    if (!lost) stalePrune(loadAt);   // RC-71 review — every entry whose window closed before this load began has now been checked once
-    if (staleResend) saveSoon();   // RC-71 — re-send what a late-landing batch overwrote (the usual debounce; any retry already pending is re-armed)
-    if (!lost) freshMark();   // RC-67 (2A) — this reply got past the RC-65 guards and was adopted: the screen is confirmed current (nothing changed counts too). A lost load carries on to chats + rail (RC-67 3A) but is never a success
-    // also pull the shared team-chat threads so messages from other users land live
-    try {
-      const cr = await backendCall('getChats', chatSyncIdentity(), { timeoutMs: lost ? REFRESH.lostChatsMs : BACKEND_TIMEOUT_MS });   // RC-67 3A (Q-3A-stall, option B) — after a LOST load the chats call gets the short limit: a stalled front door must not hold the quick retry ~27 s behind it. The rail is not awaited here, so it cannot delay the retry and keeps its own limit   // RC-63 — this await also holds `refreshing`; unbounded, one lost reply stopped the poll for good
-      if (cr && cr.ok && Array.isArray(cr.chats)) {
-        const m = mergeChats(cr.chats);
-        const pruned = reconcileScopedChats(cr.chats);
-        if (m.localAhead) pushChats(); else lastChatsJson = JSON.stringify(state.chat.chats);
-        if (m.changed || pruned) applied++;
-      }
-    } catch (e) { /* chat sync is best-effort */ }
-    loadWranglerRail();   // also pull this role's Mr. Wrangler rail (cross-device) — best-effort, self-renders
-    const ae2 = document.activeElement, typing2 = !!(ae2 && (ae2.tagName === 'INPUT' || ae2.tagName === 'TEXTAREA' || ae2.tagName === 'SELECT' || ae2.isContentEditable));   // RC-65 — a field focused DURING the awaits above: render() would tear it down mid-typing (the data is still adopted; the next render shows it)
-    if ((applied || refreshPaintOwed) && !state.overlay && !DRAG.active && !hoverNode && !typing2 && !winPickBusy()) { state.cascade = createCascade(DATA); render(); }
-    else if (applied) refreshPaintOwed = true;   // RC-67 (2A) review fix — adopted but not painted: the next poll owes this render
+    if (!lost && q.full) stalePrune(loadAt);   /* 2b (A1-13) — only a FULL scan ('load' / 'snapshot') checked every entry; a delta never prunes */   // RC-71 review — every entry whose window closed before this load began has now been checked once
+    applied += feedAfterReply(q, r, lost, loadAt, applied);   // 2b — delete markers (after a reset snapshot, the records it no longer holds: RC-79 Q8-A), THEN the cursor: a bail, a lost reply or a throw leaves it where it was
+    if (staleResend) saveSoon();   // RC-71 — re-send what a late-landing batch overwrote (the usual debounce; any retry already pending is re-armed; 2b: never a retry backoff, which saveSoon now keeps)
+    if (!lost && !r.reset) freshMark();   /* 2b — a feed delta (a quiet one too) or a snapshot counts the same; a reset reply brought nothing, so it does not */   // RC-67 (2A) — this reply got past the RC-65 guards and was adopted: the screen is confirmed current (nothing changed counts too). A lost load carries on to chats + rail (RC-67 3A) but is never a success
+    if (q.side) applied += await refreshChats(lost);   // the Phase 1 path (feed off): team chats + the Mr. Wrangler rail ride this tick exactly as before. 2b — while the feed runs they ride refreshSideChannels' own 18 s timer instead
+    refreshPaint(applied);   // RC-65 / RC-67 (2A) — paint what was adopted, or owe the paint (moved unchanged into refreshPaint)
   } catch (e) { /* an adopt / chat-merge error → retry next tick (a lost LOAD no longer lands here — RC-67 3A) */ }
   finally { refreshing = false; if (quickRetry) refreshRetrySoon(); }   // RC-67 3A — armed only once `refreshing` is released, so the entry guard can never swallow the retry
 }
-function startRefreshPoll() { clearInterval(refreshTimer); refreshTimer = setInterval(() => { refreshToday(); refreshFromBackend(); if (syncOn() && !state.userPrefs) loadUserPrefs(); }, 18000); }   // §cross-device-sync — re-drive a prefs load that never hydrated (past the 5-try login cutoff) so a cold-GAS blip doesn't disable sync all session
+function startRefreshPoll() {
+  if (FEED.on) { clearInterval(refreshTimer); refreshTimer = null; feedSchedule(); sideStart(); return; }   // 2b — the feed keeps its own chained cadence and the side channels their 18 s timer
+  feedStop();   // 2b — the Phase 1 poll (feed never enabled, or a fallback): no feed timer, no side-channel timer; then Phase 1's 18 s interval, unchanged
+  clearInterval(refreshTimer); refreshTimer = setInterval(() => { refreshToday(); refreshFromBackend(); if (syncOn() && !state.userPrefs) loadUserPrefs(); }, 18000); }   // §cross-device-sync — re-drive a prefs load that never hydrated (past the 5-try login cutoff) so a cold-GAS blip doesn't disable sync all session
 /** RC-67 3A — book-keeping for one poll `load` reply; true = arm the quick retry. A usable reply ends the
  *  loss streak. A lost one (stall, network drop, echo 404, bad JSON, busy) is counted, and only the FIRST
  *  loss in a row asks for a retry: a second loss waits for the 18 s tick. A real sign-in refusal is neither
@@ -25569,12 +25617,334 @@ function refreshKick() {
  *  `online` skips that gap: it ends an outage, and a load lost just before it covers nothing. */
 function refreshOnReturn(e) {
   if (!(e && e.type === 'online') && Date.now() - REFRESH.startAt < REFRESH.eventGapMs) return;
-  refreshKick();
+  const t0 = REFRESH.startAt; refreshKick();
+  if (FEED.on && REFRESH.startAt !== t0) refreshSideChannels();   // 2b — back on screen, chats + the rail refresh at once too, as the Phase 1 load path did (RC-67 3A) — only when the return really refreshed, so a throttled or standing-down return adds no calls
 }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshOnReturn(); });
 window.addEventListener('focus', refreshOnReturn);
 window.addEventListener('online', refreshOnReturn);
 window.addEventListener('pageshow', (e) => { if (e.persisted) refreshOnReturn(e); });   // a back/forward-cache restore runs no boot; a first load's pageshow is the boot's own load
+// ── Phase 2b — the "what changed?" feed (RC-67 1A–7A · RC-77 Q2-A/Q3-A · RC-79 Q8-A) ────────────────────────────────────
+/** RC-67 3A — pull the shared team-chat threads (so messages from other users land live) and this role's Mr. Wrangler rail.
+ *  1 = the chats changed. `shortLimit` — after a LOST refresh getChats gets the short limit (Q-3A-stall, option B): a stalled
+ *  front door must not hold the quick retry ~27 s behind it. The rail is not awaited, so it cannot delay it and keeps its own
+ *  limit. Moved here unchanged from refreshFromBackend, so the Phase 1 path and refreshSideChannels share one copy. */
+async function refreshChats(shortLimit) {
+  let changed = 0;
+  try {
+    const cr = await backendCall('getChats', chatSyncIdentity(), { timeoutMs: shortLimit ? REFRESH.lostChatsMs : BACKEND_TIMEOUT_MS });   // RC-63 — this await also holds `refreshing`; unbounded, one lost reply stopped the poll for good
+    if (cr && cr.ok && Array.isArray(cr.chats)) {
+      const m = mergeChats(cr.chats);
+      const pruned = reconcileScopedChats(cr.chats);
+      if (m.localAhead) pushChats(); else lastChatsJson = JSON.stringify(state.chat.chats);
+      if (m.changed || pruned) changed = 1;
+    }
+  } catch (e) { /* chat sync is best-effort */ }
+  loadWranglerRail();   // also pull this role's Mr. Wrangler rail (cross-device) — best-effort, self-renders
+  return changed;
+}
+/** RC-65 / RC-67 (2A) — paint what a refresh adopted, unless that would tear down active work; then the next refresh owes the
+ *  paint. Moved here unchanged from refreshFromBackend's tail (refreshSideChannels paints through it too). */
+function refreshPaint(applied) {
+  const ae2 = document.activeElement, typing2 = !!(ae2 && (ae2.tagName === 'INPUT' || ae2.tagName === 'TEXTAREA' || ae2.tagName === 'SELECT' || ae2.isContentEditable));   // RC-65 — a field focused DURING the awaits above: render() would tear it down mid-typing (the data is still adopted; the next render shows it)
+  if ((applied || refreshPaintOwed) && !state.overlay && !DRAG.active && !hoverNode && !typing2 && !winPickBusy()) { state.cascade = createCascade(DATA); render(); }
+  else if (applied) refreshPaintOwed = true;   // RC-67 (2A) review fix — adopted but not painted: the next poll owes this render
+}
+function feedInput() { FEED.lastInputAt = Date.now(); }   // 2b — someone is working this screen: the feed ticks at its fast pace for the next 90 s
+['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach((t) => document.addEventListener(t, feedInput, { capture: true, passive: true }));
+/** 2b — which call this tick makes. Feed off: exactly Phase 1's 'load' — plus, 30 min after a fallback, one 'changes' probe
+ *  (a bootstrap from the last applied load). Feed on: a snapshot when one is owed (a reset or the marker cap, after its
+ *  jitter) or due (10 min active / 30 min idle), never within 18 s of the last full scan; else 'changes' — the bootstrap
+ *  first, then from the cursor. Three server-errors in a row: one plain 'load' decides the fallback. null = no call now
+ *  (the fleet throttle, or a snapshot inside its 18 s gap). `side` = this tick also carries chats + rail (the Phase 1 path). */
+function feedPlan(now) {
+  if (!FEED.on) return (FEED.offUntil && now >= FEED.offUntil && FEED.loadSentAt) ? { action: 'changes', body: feedBody(true, now), probe: true, side: true } : { action: 'load', full: true, side: true };
+  if (FEED.pollMinMs && now - FEED.sentAt < FEED.pollMinMs) return null;   // never faster than the fleet throttle, whatever asked for this tick
+  const fullOk = now - FEED.fullSentAt >= FEED.fullGapMs;
+  if (FEED.serverErrs >= 3) return fullOk ? { action: 'load', full: true, errLoad: true } : null;
+  if (FEED.needSnap) return (fullOk && now >= FEED.snapDueAt) ? { action: 'snapshot', full: true, why: FEED.needSnap } : null;
+  if (FEED.cursor == null) return { action: 'changes', body: feedBody(true, now) };
+  if (fullOk && now - FEED.snapAt >= (now - FEED.lastInputAt < FEED.inputMs ? FEED.snapEveryMs : FEED.snapIdleMs)) return { action: 'snapshot', full: true, why: 'periodic' };
+  return { action: 'changes', body: feedBody(false, now) };
+}
+/** Code.gs changes_: a bootstrap is a time window that starts when the last applied full scan was SENT (the server widens it
+ *  by 60 s, CHG_BOOT_MARGIN_MS); otherwise the cursor, its epoch and the server clock of the last applied reply. Owed ids ride
+ *  both, at most FEED.owedMax (CHG_MAX_OWED). */
+function feedBody(boot, now) {
+  const b = boot ? { since: -1, agoMs: Math.max(0, now - FEED.loadSentAt) } : { since: FEED.cursor, epoch: FEED.epoch, srvAfter: FEED.srvAfter };
+  if (FEED.owed.size) {
+    const ids = {}; let n = 0;
+    for (const key of FEED.owed.keys()) { if (n++ >= FEED.owedMax) break; const i = key.indexOf('\u0001'), k = key.slice(0, i); (ids[k] = ids[k] || []).push(key.slice(i + 1)); }
+    b.ids = ids;
+  }
+  return b;
+}
+/** 2b — send this tick's call. 'load' is exactly Phase 1's call. 'changes' keeps the 10 s limit the server's bootstrap margin
+ *  assumes (Code.gs CHG_BOOT_MARGIN_MS = 60 s is > it); a 'snapshot' is a whole load server-side, so it keeps the load's limit.
+ *  Never backendRead: it would retry 'unknown action' three times. */
+function feedFetch(q) {
+  FEED.sentAt = Date.now(); if (q.full) FEED.fullSentAt = FEED.sentAt;
+  if (q.action === 'load') return backendCall('load', undefined, { timeoutMs: BACKEND_TIMEOUT_MS });
+  return backendCall(q.action, q.body, { timeoutMs: q.action === 'snapshot' ? BACKEND_TIMEOUT_MS : FEED.feedTimeoutMs });
+}
+/** true = this backend has no feed (an older version answers 'unknown action') or Jac switched it off ('feed-off' in row 1). */
+function feedOffReply(q, r) { return q.action !== 'load' && !!r && r.ok === false && (r.error === 'unknown action' || r.error === 'feed-off'); }
+/** 2b — back to the exact Phase 1 poll for 30 min, then one probe. Not a loss: it never arms the quick retry. */
+function feedFallback(why) {
+  FEED.on = false; FEED.offUntil = Date.now() + FEED.offMs; FEED.offWhy = String(why || ''); FEED.fallbacks++;
+  FEED.cursor = null; FEED.epoch = null; FEED.needSnap = ''; FEED.serverErrs = 0;
+  startRefreshPoll();   // feed off → it stops the feed + side-channel timers and starts Phase 1's 18 s interval, unchanged
+}
+/** 2b — after the adopt loop, under the same guards: book-keeping for this reply, then (feed replies) the delete markers, and
+ *  the cursor LAST — a bail, a lost reply or a throw leaves cursor and srvAfter where they were. Returns how many records the
+ *  markers changed on screen. `loopApplied` — what the adopt loop changed (a periodic snapshot counts it in misses). */
+function feedAfterReply(q, r, lost, loadAt, loopApplied) {
+  const now = Date.now();
+  if (q.action === 'load') {   // the Phase 1 poll, or the server-error probe
+    if (lost) return 0;
+    FEED.loadSentAt = loadAt; FEED.snapAt = now;
+    if (q.errLoad) feedFallback('server-error');   // three server-errors, and a plain load works: the Phase 1 poll for 30 min
+    return 0;
+  }
+  if (lost) { if (r && r.error === 'server-error') FEED.serverErrs++; return 0; }   // only the backend's own catch counts toward the fallback; a lost reply (timeout, echo 404) never does
+  FEED.serverErrs = 0;
+  if (typeof r.pollMinMs === 'number' && isFinite(r.pollMinMs)) FEED.pollMinMs = Math.min(Math.max(0, r.pollMinMs), FEED.pollMinCapMs);   // 'changes' carries the fleet throttle (a snapshot does not: the last one stands); capped, so a typo in row 1 can never freeze a screen
+  if (q.probe) { FEED.on = true; FEED.offUntil = 0; FEED.offWhy = ''; startRefreshPoll(); }   // the 30-min probe answered: back on the feed
+  if (r.reset) {   // the log cannot prove what this screen missed: ONE adopt-only snapshot after 0–5 s of jitter (never a second while one is owed)
+    FEED.resets++;
+    if (!FEED.needSnap) { FEED.needSnap = 'reset'; FEED.snapDueAt = now + Math.floor(Math.random() * (FEED.jitterMs + 1)); }
+    FEED.owed.forEach((until, key) => { if (until <= now) FEED.owed.delete(key); });   // the snapshot re-reads everything; a money id inside its 10 min stays owed
+    return 0;
+  }
+  if (!mayAdopt() && feedHasMarks(q.action !== 'snapshot' ? r.deletes : q.why === 'periodic' ? null : feedAbsent(r.data))) return 0;   // review fix — a popup opened, a field focused, a drag or a hover started DURING the await: a marker must not remove a record from under the person working it (its Save would find nothing). Nothing is applied and the cursor stays, so this same reply is asked again next tick (the loop's adoptions are idempotent)
+  let n = 0;
+  if (q.action === 'snapshot') {
+    if (q.why === 'periodic') FEED.misses += loopApplied;   // a far-side check on the log: with a healthy cursor, every record the safety net had to bring is one the feed missed
+    else n = applyDeleteMarkers(feedAbsent(r.data), true);   // RC-79 Q8-A — after a reset (or the marker cap), a baselined record the snapshot no longer holds is a delete
+    FEED.snapAt = now; FEED.loadSentAt = loadAt; FEED.needSnap = ''; FEED.snaps++;
+  } else {
+    n = applyDeleteMarkers(r.deletes, false);
+    FEED.deltas++;
+  }
+  FEED.cursor = Number.isInteger(r.head) ? r.head : null; FEED.epoch = FEED.cursor == null ? null : r.epoch;   // no usable head → the next tick bootstraps from this scan
+  if (typeof r.now === 'number') FEED.srvAfter = r.now;
+  feedOwedSettle(q, r.data, now);
+  return n;
+}
+/** Owe one record: it is re-asked by id on every feed call until it settles, and never before `minMs` has passed. */
+function feedOwe(k, id, minMs) { const key = k + '\u0001' + id, until = Date.now() + (minMs || 0); if (!(FEED.owed.get(key) >= until)) FEED.owed.set(key, until); }
+/** An owed id leaves once past its minimum and this reply brought a copy that settled here (adopted, equal, or gone locally),
+ *  or the server no longer holds it (a full scan without it, or asked by id and not returned). */
+function feedOwedSettle(q, data, now) {
+  if (!FEED.owed.size || !lastSaved) return;
+  const asked = (q.body && q.body.ids) || {};
+  FEED.owed.forEach((until, key) => {
+    if (until > now) return;
+    const i = key.indexOf('\u0001'), k = key.slice(0, i), id = key.slice(i + 1), idf = PERSIST_ID[k];
+    const got = !!idf && Array.isArray(data && data[k]) && data[k].some((rec) => String(rec[idf]) === id);
+    const local = got ? feedLocalRec(k, id) : null;
+    if (got ? (!local || (lastSaved[k] && lastSaved[k].get(id) === JSON.stringify(local))) : (q.full || (asked[k] || []).includes(id))) FEED.owed.delete(key);
+  });
+}
+const FEED_MONEY_CALL = /^(recordManual(Payment|Refund)|stripe(?!PubKey$|Diag$)\w+|membership\w+)$/;   // every money / membership action (Code.gs handle()): each writes its invoice or customer server-side
+/** 2b — backendCall runs this for EVERY call before it goes out (wrapped in try: book-keeping only, never changes the call).
+ *  The time a 'load' is sent (the boot bootstrap window starts there); and, whatever the reply — ok, failed or lost — a money or
+ *  membership call's invoice / customer is re-asked by id for 10 min, so a landed payment whose reply was lost still shows on
+ *  this screen within a tick (A1-8a). */
+function feedNoteCall(action, extra) {
+  if (action === 'load') { FEED.loadSendAt = Date.now(); return; }
+  if (!extra || !FEED_MONEY_CALL.test(String(action || ''))) return;
+  if (extra.invoiceId) feedOwe('invoices', String(extra.invoiceId), FEED.moneyOweMs);
+  if (extra.customerId) feedOwe('customers', String(extra.customerId), FEED.moneyOweMs);
+}
+/** 2b — a new baseline (finishLoad: on) or none (switch user / sign-out: off). Forgets the cursor, owed ids and the plate; the
+ *  fallback timer survives (it describes the backend, not the person). A load whose send time is unknown (a reseed) starts
+ *  with a snapshot instead of a bootstrap. Never arms a timer: startRefreshPoll does. */
+function feedReset(on) {
+  const now = Date.now();
+  FEED.cursor = null; FEED.epoch = null; FEED.srvAfter = 0; FEED.needSnap = ''; FEED.snapDueAt = 0; FEED.serverErrs = 0;
+  if (!on) FEED.tomb.forEach((t) => feedDropLocal(t.k, t.id, null));   // review fix — a held copy has no baseline: once the plate forgets it, computeChanges would UPSERT it (re-creating what another screen deleted, a paid invoice stripped of its payments included) on any save before the next finishLoad. The server already deleted it; the next load replaces DATA anyway. (finishLoad — on — has already replaced DATA: nothing held is left to drop.)
+  FEED.owed.clear(); FEED.tomb.clear(); renderTombPlate();
+  if (!on) { FEED.on = false; FEED.loadSentAt = 0; feedStop(); return; }
+  FEED.on = !FEED.offUntil; FEED.loadSentAt = FEED.loadSendAt; FEED.fullSentAt = FEED.loadSendAt; FEED.snapAt = now;
+  if (!FEED.loadSentAt) { FEED.needSnap = 'reset'; FEED.snapDueAt = now; }
+}
+function feedStop() { clearTimeout(FEED.timer); FEED.timer = null; clearInterval(SIDE.timer); SIDE.timer = null; }
+/** 2b — the feed's chained timer: the next tick is armed once this one is done, or when a kick restarts it. */
+function feedSchedule(ms) { clearTimeout(FEED.timer); FEED.timer = setTimeout(feedTick, ms != null ? ms : feedDelay()); }
+/** 8 s while someone worked this screen in the last 90 s, 20 s otherwise; ≥ 18 s after two lost replies in a row until one lands
+ *  (RC-67: 10–40% of replies are lost); an owed snapshot waits out its jitter and the 18 s full-scan gap; never under the fleet
+ *  throttle (pollMinMs). A hidden page sends nothing (mayCall) — the chain just stays alive at the idle pace. */
+function feedDelay() {
+  const now = Date.now();
+  let ms = document.hidden ? FEED.idleMs : FEED.needSnap ? Math.max(0, FEED.snapDueAt - now, FEED.fullSentAt + FEED.fullGapMs - now) : (now - FEED.lastInputAt < FEED.inputMs ? FEED.fastMs : FEED.idleMs);
+  if (REFRESH.streak >= 2) ms = Math.max(ms, FEED.stretchMs);
+  return Math.max(ms, FEED.pollMinMs || 0);
+}
+function feedTick() {
+  FEED.timer = null;
+  if (!FEED.on) return;   // a fallback started meanwhile: Phase 1's interval owns the poll
+  const again = () => { if (FEED.on && !FEED.timer) feedSchedule(); };
+  refreshFromBackend().then(again, again);
+}
+function sideStart() { if (!SIDE.timer) SIDE.timer = setInterval(sideTick, SIDE.ms); }   // armed once — a kick never pushes it back
+function sideTick() { refreshToday(); if (syncOn() && !state.userPrefs) loadUserPrefs(); refreshSideChannels(); }   // the Phase 1 interval's other duties, unchanged
+/** 2b — team chats + the Mr. Wrangler rail on their own 18 s timer while the feed runs, so a feed tick costs one call, not
+ *  three (the RC-77 Q3-A budget). Its own re-entry flag; the do-not-disturb guards (mayAdopt); getChats' short limit while the
+ *  feed's last reply was lost; painted through the same guard as refreshFromBackend. */
+async function refreshSideChannels() {
+  if (SIDE.busy || booting || !backendPassword || !lastSaved || document.hidden || !mayAdopt()) return;
+  const now = Date.now();
+  if (FEED.pollMinMs && now - SIDE.lastAt < FEED.pollMinMs - 250) return;   // review fix — the fleet throttle (pollMinMs, the no-deploy quota lever) slows the side channels too: getChats + the rail are about half of an active screen's calls
+  SIDE.busy = true; SIDE.runs++; SIDE.lastAt = now;
+  try { refreshPaint(await refreshChats(REFRESH.streak > 0)); }
+  catch (e) { /* best-effort, as on the Phase 1 path */ }
+  finally { SIDE.busy = false; }
+}
+/** true = a marker set { entity: [ids] } names at least one record. */
+function feedHasMarks(d) { return !!d && typeof d === 'object' && PERSIST_KEYS.some((k) => Array.isArray(d[k]) && d[k].length > 0); }
+function feedLocalRec(k, id) { const idf = PERSIST_ID[k]; return idf ? ((DATA[k] || []).find((rec) => String(rec[idf]) === id) || null) : null; }
+/** a payment, charge, seal or Stripe link: a non-empty field doSync keeps server-side (Code.gs PROTECTED, mirrored as STALE_SERVER_OWNED) */
+function feedMoney(k, rec) { return (STALE_SERVER_OWNED[k] || []).some((f) => !staleEmpty(rec[f])); }
+/** true = a merge explains this invoice's delete: another invoice now holds a line stamped fromInv = its id (mergeInvoiceInto
+ *  stamps every line it moves). Merge evidence ONLY — a rental shared with another invoice is not one: a 28-day billing series
+ *  (contOf), an extension or a re-bill share rentals without any merge (review fix, RC-77 Q2-A: "deleted other than by a merge"). */
+function feedInvMerged(inv) {
+  const id = String(inv.invoiceId);
+  return (DATA.invoices || []).some((o) => o !== inv && String(o.invoiceId) !== id && (o.lineItems || []).some((li) => !!li && String(li.fromInv || '') === id));
+}
+/** Keep is never offered for these (review fix, RC-77 Q2-A: Keep only when it cannot double-bill or drop a payment). Invoices and
+ *  customers carry server-owned fields that doSync strips from a re-created row, and a payment this screen declined in the dirty
+ *  branch is invisible here — until 2c's server-side refusal lands (A1-3), no client check can prove Keep safe. A rental is what
+ *  gets billed: bringing back one another screen deleted (or replaced) can bill the job twice. Discard only — office to check. */
+const FEED_NO_KEEP = new Set(['invoices', 'customers', 'rentals']);
+/** Remove one copy from DATA, its IDX map and its search blob (reindex's key: card + ':' + id — companyFiles are the 'files'
+ *  card). The baseline is the caller's business. */
+function feedDropLocal(k, id, local) {
+  const arr = DATA[k] || [], rec = local || feedLocalRec(k, id), i = rec ? arr.indexOf(rec) : -1;
+  if (i >= 0) arr.splice(i, 1);
+  const m = IDX[IDX_MAP[k]]; if (m) m.delete(id);
+  if (IDX.search) IDX.search.delete((k === 'companyFiles' ? 'files' : k) + ':' + id);
+  if (k === 'rentals' && state.winEdit && String(state.winEdit.rentalId) === id) state.winEdit = null;   // an inline window editor armed on a rental that no longer exists
+}
+/** 2b — the server's delete markers { entity: [ids] } (RC-67 7A as amended by RC-77 Q2-A), after the adopt loop, under the
+ *  same guards. Per id:
+ *   (a) an untouched plain copy is removed — from DATA, its IDX map, its search blob AND lastSaved in one step (a baseline left
+ *       behind would make computeChanges send a real delete); rentals are re-linked;
+ *   (b) a local delete still waiting to sync: the server already did it — only the baseline goes, so nothing is sent;
+ *   (c) a copy being edited, a copy carrying money, or an invoice whose delete neither a merge nor an empty draft explains:
+ *       kept visible on the R38 plate and held out of computeChanges; Keep only for an edited copy that can neither double-bill
+ *       nor drop a payment (never an invoice, customer or rental: FEED_NO_KEEP); anything Discard-only says 'office to check'.
+ *  A record this screen never saved (no baseline — e.g. a re-issued invoice number) is left alone: the marker is about the old
+ *  one. More than FEED.markCap in one reply: none is applied — a delta's wait for a snapshot to confirm each by its absence
+ *  (`fromAbsent` = they already came from one). Returns how many records changed on screen. Never emits a server delete. */
+function applyDeleteMarkers(dels, fromAbsent) {
+  if (!dels || typeof dels !== 'object' || !lastSaved) return 0;
+  const list = [];
+  PERSIST_KEYS.forEach((k) => { if (Array.isArray(dels[k])) dels[k].forEach((id) => list.push([k, String(id)])); });
+  if (!list.length) return 0;
+  if (list.length > FEED.markCap) { FEED.held += list.length; if (!fromAbsent && !FEED.needSnap) { FEED.needSnap = 'cap'; FEED.snapDueAt = Date.now(); } return 0; }
+  let n = 0, relink = false, plate = false;
+  list.forEach(([k, id]) => {
+    const key = k + '\u0001' + id, saved = lastSaved[k] || (lastSaved[k] = new Map());
+    if (FEED.tomb.has(key)) return;                                   // already on the plate
+    const local = feedLocalRec(k, id);
+    if (!local) { if (saved.delete(id)) FEED.marks++; return; }        // (b)
+    if (!saved.has(id)) return;                                       // never saved here: a different record under a reused id
+    const base = saved.get(id), edited = base !== JSON.stringify(local), money = feedMoney(k, local);
+    const explained = k !== 'invoices' || !(local.lineItems || []).length || feedInvMerged(local);
+    saved.delete(id); FEED.marks++;                                   // the server no longer holds it: no baseline, so never a server delete (nor an upsert while held)
+    if (!edited && !money && explained) { feedDropLocal(k, id, local); n++; if (k === 'rentals' || k === 'customers') relink = true; return; }   // (a)
+    const canKeep = edited && !money && !FEED_NO_KEEP.has(k);
+    FEED.tomb.set(key, { k, id, base, canKeep, office: money || !explained || !canKeep }); plate = true;   // (c)
+  });
+  if (relink) reindexRentalLinks();
+  if (plate) renderTombPlate();
+  return n;
+}
+/** RC-79 Q8-A — after a reset snapshot: every baselined record (a local copy, or a local delete still waiting) that the snapshot
+ *  no longer holds, as markers { entity: [ids] } — so a delete made across a deploy boundary (a new log epoch) still reaches
+ *  this screen, with the Q2-A plate and the 50 cap. An entity the reply does not carry proves nothing. */
+function feedAbsent(data) {
+  const out = {};
+  if (!data || !lastSaved) return out;
+  PERSIST_KEYS.forEach((k) => {
+    if (!Array.isArray(data[k]) || !lastSaved[k]) return;
+    if (!data[k].length && lastSaved[k].size) return;   // review fix — a whole tab that comes back EMPTY (a missing sheet, a reseed in progress, a read blip) proves nothing about any one record
+    const idf = PERSIST_ID[k], have = new Set(data[k].map((rec) => String(rec[idf])));
+    const ids = []; lastSaved[k].forEach((_, id) => { if (!have.has(id)) ids.push(id); });
+    if (ids.length) out[k] = ids;
+  });
+  return out;
+}
+/** 2b — the server holds a plated record again (another screen kept or re-created it): it leaves the plate BEFORE the adopt loop
+ *  and gets back the baseline the marker took, so the loop adopts the server copy (untouched) or keeps the edits (dirty). */
+function feedUntomb(data) {
+  if (!FEED.tomb.size || !lastSaved) return;
+  let changed = false;
+  FEED.tomb.forEach((t, key) => {
+    const recs = data[t.k], idf = PERSIST_ID[t.k];
+    if (!Array.isArray(recs) || !recs.some((rec) => String(rec[idf]) === t.id)) return;
+    FEED.tomb.delete(key); changed = true;
+    (lastSaved[t.k] = lastSaved[t.k] || new Map()).set(t.id, t.base);
+  });
+  if (changed) renderTombPlate();
+}
+const FEED_NOUN = { categories: 'Category', units: 'Unit', customers: 'Customer', invoices: 'Invoice', rentals: 'Rental', workOrders: 'Work order', inspections: 'Inspection', vendors: 'Vendor', parts: 'Part', companyFiles: 'File', expenses: 'Receipt', models: 'Model' };
+function feedRecLabel(k, rec) {
+  const id = rec ? String(rec[PERSIST_ID[k]]) : '';
+  let name = '';
+  try { name = !rec ? '' : k === 'invoices' ? invoiceShort(id) : k === 'customers' ? (fullName(rec) || rec.company || '') : k === 'rentals' ? rentalDisplayName(rec) : (rec.name || ''); } catch (e) { name = ''; }
+  return (FEED_NOUN[k] || k) + ' ' + (name || id);
+}
+/** R38 — "Deleted on another screen" (RC-77 Q2-A). Body-level like R25 / R27 so render() can't wipe it; rebuilt only when its
+ *  content changes (the node is the polite live region, so an unchanged plate never re-announces). Each row: the record,
+ *  why, then Open · Keep (only when bringing it back can neither double-bill nor drop a payment) · Discard. Never auto-clears. */
+function renderTombPlate() {
+  let node = document.getElementById('feed-tomb');
+  FEED.tomb.forEach((t, key) => { if (!feedLocalRec(t.k, t.id)) FEED.tomb.delete(key); });   // a copy that left DATA some other way (a sweep, a merge here) has nothing left to decide
+  if (!FEED.tomb.size) { if (node) node.remove(); document.body.classList.remove('feed-tomb'); document.body.style.removeProperty('--tomb-band'); return; }
+  const items = [...FEED.tomb.values()].map((t) => ({ t, label: feedRecLabel(t.k, feedLocalRec(t.k, t.id)) }));
+  const sig = items.map(({ t, label }) => [t.k, t.id, t.canKeep ? 1 : 0, t.office ? 1 : 0, label].join('|')).join('~');
+  if (node && node.dataset.sig === sig) return;
+  const rows = items.map(({ t, label }) => {
+    const why = 'Deleted on another screen' + (t.office ? ' — office to check' : '');
+    const data = { k: t.k, id: t.id };
+    return `<div class="ftp-row" role="group" aria-label="${esc(label + ': ' + why)}">`
+      + `<span class="ftp-name">${esc(label)}</span><span class="ftp-why">${esc(why)}</span>`
+      + (t.k === 'models' ? '' : ghostPill('Open', { js: 'js-tomb-open', data }))
+      + (t.canKeep ? actionPill('commit', 'Keep', { js: 'js-tomb-keep', data }) : '')
+      + ghostPill('Discard', { js: 'js-tomb-discard', data })
+      + `</div>`;
+  }).join('');
+  if (!node) {
+    node = document.createElement('div');
+    node.id = 'feed-tomb'; node.dataset.r = 'R38';
+    node.setAttribute('role', 'status'); node.setAttribute('aria-live', 'polite');
+    document.body.appendChild(node);
+  }
+  node.dataset.sig = sig;
+  node.innerHTML = `<span class="ftp-stripe" aria-hidden="true"></span>`
+    + `<div class="ftp-plate"><span class="ftp-stamp">${I.alert}<span>Deleted elsewhere</span></span><span class="ftp-count" aria-hidden="true">${items.length}</span></div>`
+    + `<div class="ftp-list">${rows}</div>`;
+  document.body.classList.add('feed-tomb');
+  requestAnimationFrame(() => { const n = document.getElementById('feed-tomb'); if (n) document.body.style.setProperty('--tomb-band', n.offsetHeight + 'px'); });   // reserve the exact band so the plate never covers the yard (variable rows), as R27 does
+}
+/** R38 Keep — bring the held copy back: the marker took its baseline, so the next save re-creates it on the server. Re-checked
+ *  now (a payment or a merge may have landed since): refused → Discard-only, 'office to check'. */
+function tombKeep(k, id) {
+  const key = k + '\u0001' + id, t = FEED.tomb.get(key), rec = feedLocalRec(k, id); if (!t || !rec) return;
+  if (!t.canKeep || FEED_NO_KEEP.has(k) || feedMoney(k, rec)) { t.canKeep = false; t.office = true; renderTombPlate(); toast('That one can’t be kept — bringing it back could bill twice or lose a payment. Office to check.'); return; }
+  FEED.tomb.delete(key); renderTombPlate(); saveSoon();
+}
+/** R38 Discard — drop the held copy here too. The server already deleted it and the marker took its baseline: nothing is sent. */
+function tombDiscard(k, id) {
+  const key = k + '\u0001' + id; if (!FEED.tomb.has(key)) return;
+  FEED.tomb.delete(key); feedDropLocal(k, id, null);
+  if (k === 'rentals' || k === 'customers') reindexRentalLinks();
+  renderTombPlate(); state.cascade = createCascade(DATA); render();
+}
+window.__feed = () => ({ on: FEED.on, offWhy: FEED.offWhy, offUntil: FEED.offUntil, cursor: FEED.cursor, epoch: FEED.epoch, pollMinMs: FEED.pollMinMs, deltas: FEED.deltas, snaps: FEED.snaps, resets: FEED.resets, misses: FEED.misses, marks: FEED.marks, held: FEED.held, plate: FEED.tomb.size, owed: FEED.owed.size, serverErrs: FEED.serverErrs, losses: REFRESH.streak, fallbacks: FEED.fallbacks, side: SIDE.runs });   // 2b — console diagnostic only, like window.__poll(): counts, never a record id or a name; never sent
 window.__poll = () => ({ runs: REFRESH.runs, drops: REFRESH.drops, streak: REFRESH.streak, lastErr: REFRESH.lastErr });   // RC-67 3A — console diagnostic only, like window.__perf(): this tab's poll loads tried / lost; no personal data, never sent
 
 // ── Team-chat sync (Jac 2026-06-15) ────────────────────────────────────────
@@ -26091,7 +26461,7 @@ function wranglerOpsBody(o) {
   const pane = o.openId ? wranglerOpsDetail(o) : '<div class="wrops-empty">Pick a chat to read it — or jump in.</div>';
   return `<div class="wrops-wrap"><div class="wrops-list">${list}</div><div class="wrops-pane">${pane}</div></div>`;
 }
-function saveSoon(ms) { if (bootWriteBlocked() || !backendPassword) return; clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, ms || 1200); }   // #829 — bootWriteBlocked() replaces a bare `booting` test: it still refuses the write, but says so
+function saveSoon(ms) { if (bootWriteBlocked() || !backendPassword) return; if (ms === undefined && SYNC.fails > 0 && saveDueAt > Date.now()) return; /* 2b — while a retry backoff is armed, a call with no explicit delay (an edit, reindex, logAction, a feed adoption) never pulls it in: at feed speed that would collapse a 30 s backoff into a retry storm; the backoff re-diffs live DATA, and R25 "Retry now" still retries at once */ clearTimeout(saveTimer); saveDueAt = Date.now() + (ms || 1200); saveTimer = setTimeout(flushSave, ms || 1200); }   // #829 — bootWriteBlocked() replaces a bare `booting` test: it still refuses the write, but says so
 // #247 — sync-health. A failing backend sync used to be SILENT (savePending → flat
 // 1.2s retry, no signal), so writes vanished with no warning. Now: track consecutive
 // failures, retry with EXPONENTIAL BACKOFF, and once an outage is confirmed (≥2 in a
@@ -26111,7 +26481,7 @@ const SYNC = { failing: false, fails: 0, backoff: 1200, timeoutMs: 45000, syncMs
 // 60 s → 120 s → 180 s (cap): each consecutive failure lengthens the next attempt's limit, so a
 // genuinely slow large save still lands AND answers instead of being aborted and replayed forever.
 function syncLimitMs() { return SYNC.syncMs * Math.min(SYNC.fails + 1, 3); }
-function retrySyncNow() { clearTimeout(saveTimer); SYNC.backoff = 1200; flushSave(); }   // R25 "Retry now"
+function retrySyncNow() { clearTimeout(saveTimer); saveDueAt = 0; SYNC.backoff = 1200; flushSave(); }   // R25 "Retry now"
 // A Google Sheets cell is hard-capped at 50,000 chars; the backend writes each
 // record's full JSON into one cell, so an oversized record makes the write throw
 // and — with the all-or-nothing commit below — jams the WHOLE sync (#251). The
@@ -26378,6 +26748,7 @@ function renderLogin(msg) {
 }
 function finishLoad() {
   staleClear();                                                 // RC-71 — a fresh load is a new baseline: a remembered failed batch no longer tells a late landing from this load's own copy
+  feedReset(true);                                              // 2b — a new baseline for the feed too: no cursor yet (the first tick bootstraps from when this load was SENT), no owed ids, an empty plate; startRefreshPoll below arms its timers
   snapshotSaved();                                              // baseline = what the backend currently holds
   freshMark();                                                  // RC-67 (2A) — the boot/login load IS a successful refresh; stamped before the render below so the line appears on it
   resetCommsRailForLogin();                                    // the visible fix for "old chats on login": empty the rail on EVERY login mode, before the first main render (Jac 2026-07-17)
@@ -26527,7 +26898,7 @@ async function attemptLogin() {
 const pidUI = { step: 'identify', personId: '', name: '', masked: '', kind: '', err: '', _phone: '', _tok: '', _role: '', _mintAt: 0, _sent: null, _spent: false };   // RC-70 _mintAt: when this page's key was minted; RC-68 (2A) _sent: the last delivered authStart reply (this page only); _spent: a verify since then has (or may have) used that code
 function pidTokenGet() { try { return localStorage.getItem('jactec.pidToken') || sessionStorage.getItem('jactec.pidToken') || ''; } catch (e) { return ''; } }
 function pidTokenSet(tok, personal) { try { if (personal) { localStorage.setItem('jactec.pidToken', tok); sessionStorage.removeItem('jactec.pidToken'); } else { sessionStorage.setItem('jactec.pidToken', tok); localStorage.removeItem('jactec.pidToken'); } } catch (e) {} }
-function pidTokenClear() { try { flushUserPrefsNow(); } catch (e) {} try { localStorage.removeItem('jactec.pidToken'); sessionStorage.removeItem('jactec.pidToken'); } catch (e) {} try { dataCache.wipe(); } catch (e) {} currentPersonId = ''; state.userPrefs = null; staleClear(); }   // §instant-cache: logout clears the on-device snapshot. §cross-device-sync: flush any pending prefs, then drop identity + the in-memory doc — but do NOT wipe the mirror here. The login-time syncMirrorGuard (tag-guarded) is the SINGLE wipe point, so a load-fail relogin can't delete a never-backed-up mirror (which would then seed an empty baseline). Shared-device safety still holds: a DIFFERENT person's next login (prev !== tag) wipes it, exactly as switchUser already defers to.
+function pidTokenClear() { try { flushUserPrefsNow(); } catch (e) {} try { localStorage.removeItem('jactec.pidToken'); sessionStorage.removeItem('jactec.pidToken'); } catch (e) {} try { dataCache.wipe(); } catch (e) {} currentPersonId = ''; state.userPrefs = null; staleClear(); feedReset(false); }   // §instant-cache: logout clears the on-device snapshot. §cross-device-sync: flush any pending prefs, then drop identity + the in-memory doc — but do NOT wipe the mirror here. The login-time syncMirrorGuard (tag-guarded) is the SINGLE wipe point, so a load-fail relogin can't delete a never-backed-up mirror (which would then seed an empty baseline). Shared-device safety still holds: a DIFFERENT person's next login (prev !== tag) wipes it, exactly as switchUser already defers to.
 function pidRosterCache() { try { return JSON.parse(localStorage.getItem('jactec.pidRoster') || '[]'); } catch (e) { return []; } }
 // The verified token becomes the per-call credential: a truthy backendPassword keeps every
 // existing online-guard working, and backendCall sends it as sessionToken (backend prefers it).
@@ -27677,6 +28048,8 @@ function exposeTestApi() {
       companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, pickFunnelStage, toggleFunnelMembership, rentalFunnelStage, funnelStageOf, inFunnel, inRental, hasRentalActivity, funnelTrackA, funnelTrackEquip, ensureFunnels, funnelMenuHtml, reachFunnelStage, toggleMemberLead, funnelCurrentStage, funnelLayerDate, funnelLayerNote, ensureFunnelLog, markMembershipSigned, funnelLayerAction, funnelScope, naUrgency, naOpenList, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipActivateCash, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, acctBlockFoot, liftCustomerBlacklist, rentalAccountCustomer, clearRentalCustomer, clearInvoiceCustomer, invoiceRentalLinkFrozen, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsPickerError, gpsUtilRollup, ruCatUtilProxy, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
       reserveQuoteIfAllowed, winPickDay, winPickSave, winPickBusy, winEditResync, refreshFromBackend, showHoverPreview, hideHoverPreview,   // RC-67 (5A) — drive a real hover preview
       REFRESH, refreshOnReturn, refreshKick, refreshNoteLoad, pollHandle: () => refreshTimer, setBooting: (b) => { booting = !!b; },
+      FEED, SIDE, feedPlan, feedFetch, feedReset, feedDelay, feedTick, feedStop, applyDeleteMarkers, feedAbsent, refreshSideChannels, sideStart, feedOwe, mayCall, mayAdopt, renderTombPlate, tombKeep, tombDiscard, startRefreshPoll, resetAllSettings, saveDue: () => saveDueAt, saveTimerClear: () => { clearTimeout(saveTimer); saveDueAt = 0; }, feedTimerOn: () => !!FEED.timer, sideTimerOn: () => !!SIDE.timer,   // 2b — feed seams (test-only, like resetRefreshState); logic-test drives them against a mocked window.fetch only
+      resetFeedState: () => { feedStop(); Object.assign(FEED, FEED_STATE0, FEED_TUNING); FEED.owed.clear(); FEED.tomb.clear(); renderTombPlate(); Object.assign(SIDE, { busy: false, runs: 0, ms: 18000, lastAt: 0 }); },
       resetRefreshState: () => { clearInterval(refreshTimer); refreshTimer = null; clearTimeout(REFRESH.retryTimer); Object.assign(REFRESH, { startAt: 0, retryTimer: null, retryMs: 3000, eventGapMs: 10000, streak: 0, runs: 0, drops: 0, lastErr: '' }); },   // RC-67 3A — poll-trigger seams (test-only, like setBackendPassword); logic-test drives them against a mocked window.fetch only
       tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, openYardCamera, commitYardCapture, nextCategoryId, nextUnitId,
       tripsLS, tripMerge, tripSplit, assignTripDriver, tripLabel, assignStopDriver, tripSetTime,
@@ -27684,7 +28057,7 @@ function exposeTestApi() {
       tripPushSoon, tripPushNow, loadTripsFromBackend, tripsSyncFooter, setBackendPassword: (pw) => { backendPassword = pw || ''; },   // §2.3 Phase 4 sync — the setter is test-only (mirrors setRole), letting logic-test.mjs exercise the online path via a mocked window.fetch, never a real backend
       adoptScanCaptures, setScanCaps: (m) => { SCAN_CAPS = m || {}; },   // §scan-reconcile — test seam: seed SCAN_CAPS then run adoption (logic-test)
       flushSave, snapshotSaved, computeChanges, SYNC, syncLimitMs, STALE, pidTokenClear, saveState: () => ({ saving, savePending, baseline: !!lastSaved }),   // RC-65 (2) — save-pipeline seams; logic-test drives them against a mocked window.fetch only
-      resetSaveState: () => { clearTimeout(saveTimer); saving = false; savePending = false; lastSaved = null; SYNC.failing = false; SYNC.fails = 0; SYNC.backoff = 1200; STALE.byKey.clear(); renderSyncBanner(); },   // lastSaved=null → any stray flushSave stops at its first guard
+      resetSaveState: () => { clearTimeout(saveTimer); saveDueAt = 0; saving = false; savePending = false; lastSaved = null; SYNC.failing = false; SYNC.fails = 0; SYNC.backoff = 1200; STALE.byKey.clear(); renderSyncBanner(); },   // lastSaved=null → any stray flushSave stops at its first guard
       autoRunRepair, autoRunAnchorsFor, secToClock, AUTORUN_DAY_START_SEC, AUTORUN_EOD_DEADLINE_SEC, AUTORUN_LOAD_BUFFER_SEC, dispatchPinOf,
       openCustomerForm, renderOverlay, render, printInvoice, invoiceDocHtml, renderInvoicePng, invoiceSheetPng, invoicePrintGroups, invoiceAmendments, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature,
       wranglerSend, wranglerNewChat, openWranglerDock, wranglerDockPollTick, devUnlocked, openWranglerOps, wrOpsAgo, openMobileSignSheet, closeMobileSignSheet, agDraft, __state: state };   // UI drivers for headless screenshot/e2e tests
@@ -27792,6 +28165,7 @@ async function reseedFromFile() {
     if (!r || !r.ok) throw new Error((r && r.error) || 'seed-failed');
     sessionStorage.setItem('jactec.pw', pw);
     history.replaceState(null, '', location.pathname + location.search);   // drop #reseed so a refresh won't wipe edits
+    FEED.loadSendAt = 0;   // 2b — this baseline came from the file, not a load: the feed starts with a snapshot, never a bootstrap window
     alert('Reseed complete — the live database now holds the imported data. Loading the app…');
     finishLoad();
   } catch (e) {

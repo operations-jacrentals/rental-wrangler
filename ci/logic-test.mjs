@@ -4518,6 +4518,473 @@ try {
     // the block must hand back the BOOT state (demo: no stamp, no ticker), not a snapshot taken after that pollution
     ok(T.freshAt() === 0 && !T.freshTimerOn() && !document.getElementById('fresh-line'), `RC-67 freshness: the block leaves the boot state behind — no stamp, no ticker, no line (freshAt=${T.freshAt()}, ticker=${T.freshTimerOn()})`);
 
+    // Phase 2b — the "what changed?" feed (RC-67 1A–7A · RC-77 Q2-A/Q3-A · RC-79 Q8-A · PHASE2D-PRESENCE 'WITH 2b') and
+    // RC-83 Q13-A (Reset all keeps the Team Roster). Drives the REAL refreshFromBackend / feedPlan / applyDeleteMarkers /
+    // refreshSideChannels / the R38 plate / resetAllSettings against a mocked window.fetch (script.google.com only). The feed's
+    // own timers are slowed to 10 min so only the calls a check makes ever go out; every block restores what it touched.
+    {
+      const realFetch = window.fetch; const seen = []; let script = {}; let during = null;
+      const st = T.__state, ov = st.overlay, we = st.winEdit, F = T.FEED, R = T.REFRESH;
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const res = (o, status = 200) => new Response(typeof o === 'string' ? o : JSON.stringify(o), { status });
+      window.fetch = (u, init) => {
+        if (!String(u).includes('script.google.com')) return realFetch(u, init);
+        let body = {}; try { body = JSON.parse((init && init.body) || '{}'); } catch (e) {}
+        seen.push(body);
+        if (during) { const f = during; during = null; f(body); }
+        const q = script[body.action];
+        const step = Array.isArray(q) ? q.shift() : q;
+        if (step === 'hang') return new Promise((_, rej) => { if (init && init.signal) init.signal.addEventListener('abort', () => rej(new DOMException('aborted', 'AbortError'))); });
+        if (step === '404') return Promise.resolve(res('<!DOCTYPE html><html>Sorry, unable to open the file at this time.</html>', 404));
+        if (step && typeof step === 'object') return Promise.resolve(res(step));
+        if (body.action === 'load') return Promise.resolve(res({ ok: true, data: {} }));
+        if (body.action === 'getChats') return Promise.resolve(res({ ok: true, chats: JSON.parse(JSON.stringify(st.chat.chats)) }));
+        return Promise.resolve(res({ ok: true }));
+      };
+      const KEYS = ['categories', 'units', 'customers', 'invoices', 'rentals', 'workOrders', 'inspections', 'vendors', 'parts', 'companyFiles', 'expenses', 'models'];
+      const IDF = { categories: 'categoryId', units: 'unitId', customers: 'customerId', invoices: 'invoiceId', rentals: 'rentalId', workOrders: 'woId', inspections: 'inspectionId', vendors: 'vendorId', parts: 'partId', companyFiles: 'fileId', expenses: 'expenseId', models: 'modelId' };
+      const IXN = { vendors: 'vendor', invoices: 'invoice', customers: 'customer' };
+      const clone = (x) => JSON.parse(JSON.stringify(x));
+      const acts = () => seen.map((b) => b.action).join(',');
+      const last = (a) => seen.filter((b) => b.action === a).pop() || null;
+      const ready = () => { st.overlay = null; st.winEdit = null; if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); };
+      const tick = () => { ready(); return Promise.race([T.refreshFromBackend(), sleep(4000).then(() => 'STUCK')]); };
+      const chg = (o) => Object.assign({ ok: true, head: 0, epoch: 7, now: Date.now(), pollMinMs: 0, data: {}, deletes: {}, landed: {} }, o || {});
+      const snapR = (o) => Object.assign({ ok: true, data: {}, head: 0, floor: 1, epoch: 7, now: Date.now() }, o || {});
+      const fullData = (omit) => { const d = {}; KEYS.forEach((k) => { d[k] = (T.DATA[k] || []).filter((r) => !(omit || []).includes(k + ':' + r[IDF[k]])).map(clone); }); return d; };
+      const fixtures = [];   // [entity, id]
+      const add = (k, rec) => { T.DATA[k].push(rec); if (T.IDX[IXN[k]]) T.IDX[IXN[k]].set(rec[IDF[k]], rec); fixtures.push([k, rec[IDF[k]]]); return rec; };
+      const drop = (k, id) => { for (let j = T.DATA[k].length - 1; j >= 0; j--) if (String(T.DATA[k][j][IDF[k]]) === id) T.DATA[k].splice(j, 1); if (T.IDX[IXN[k]]) T.IDX[IXN[k]].delete(id); if (T.IDX.search) T.IDX.search.delete(k + ':' + id); };
+      const has = (k, id) => (T.DATA[k] || []).some((r) => String(r[IDF[k]]) === id);
+      const get = (k, id) => (T.DATA[k] || []).find((r) => String(r[IDF[k]]) === id);
+      const upQ = (k, id) => (T.computeChanges().upserts[k] || []).some((u) => u.id === id);
+      const delQ = (k, id) => (T.computeChanges().deletes[k] || []).includes(id);
+      const V = (id, name, x) => Object.assign({ vendorId: id, name }, x || {});
+      const INV = (id, x) => Object.assign({ invoiceId: id, customerId: 'C0009', rentalIds: [], date: '2026-09-28', dueDate: '2026-09-28', po: '', amountPaid: 0, lineItems: [{ lid: 'l1', kind: 'custom', desc: 'Day', amount: 100 }] }, x || {});
+      const slow = () => { F.fastMs = F.idleMs = F.stretchMs = 600000; T.SIDE.ms = 600000; R.retryMs = 600000; };   // none of the feed's own timers may fire mid-check
+      const on = (loadAgo) => { T.resetFeedState(); T.resetRefreshState(); slow(); F.loadSendAt = Date.now() - (loadAgo || 4000); T.feedReset(true); F.jitterMs = 0; seen.length = 0; script = {}; };
+      const fresh = (setup) => { T.setBackendPassword(''); T.resetSaveState(); if (setup) setup(); T.snapshotSaved(); T.setBackendPassword('TEST-PW'); };   // fixtures baselined with no save armed (saveSoon stands down while signed out)
+      const k = (e, id) => e + '\u0001' + id;
+      const si0 = window.setInterval, pid0 = localStorage.getItem('jactec.pidToken');
+      const set0 = { s: localStorage.getItem('jactec.settings'), p: localStorage.getItem('jactec.settings.prev'), st: st.settings };
+      const pickEd = document.createElement('div'); pickEd.className = 'rdcal-edit'; pickEd.dataset.rec = 'R-F2B';
+      const field = document.createElement('input'); field.type = 'text';
+      const custCard0 = (() => { const c = T.activeSession().cards.customers; return c ? { mode: c.mode, recId: c.recId, recType: c.recType } : null; })();
+      try {
+        // (1) PHASE2D 'WITH 2b' — mayCall() / mayAdopt() are the old RC-65 guards, split and named: refreshFromBackend sends
+        //     nothing unless both pass, exactly as before
+        fresh(); on(); ready();
+        ok(T.mayCall() && T.mayAdopt(), '2b guard split: signed in, booted, a baseline, on screen, nothing open → may call AND may adopt');
+        const blocked = async (arrange, undo) => { seen.length = 0; arrange(); const mc = T.mayCall(), ma = T.mayAdopt(); try { await Promise.race([T.refreshFromBackend(), sleep(2000)]); } finally { undo(); } return { mc, ma, sent: seen.length }; };
+        const gBoot = await blocked(() => T.setBooting(true), () => T.setBooting(false));
+        const gOut = await blocked(() => T.setBackendPassword(''), () => T.setBackendPassword('TEST-PW'));
+        const gHid = await blocked(() => Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }), () => { delete document.hidden; });
+        const gOv = await blocked(() => { st.overlay = { kind: 'f2b-probe' }; }, () => { st.overlay = null; });
+        const gType = await blocked(() => { document.body.appendChild(field); field.focus(); }, () => { field.blur(); field.remove(); });
+        const gPick = await blocked(() => { st.winEdit = { rentalId: 'R-F2B', monthISO: '2099-01-01', anchor: '2099-01-02' }; document.body.appendChild(pickEd); }, () => { st.winEdit = null; pickEd.remove(); });
+        ok(!gBoot.mc && !gOut.mc && !gHid.mc && gOv.mc && !gOv.ma && gType.mc && !gType.ma && gPick.mc && !gPick.ma, `2b guard split: booting / signed out / hidden fail MAY CALL; a popup, a focused field and a live pick fail MAY ADOPT (${[gBoot, gOut, gHid, gOv, gType, gPick].map((g) => (g.mc ? 'C' : 'c') + (g.ma ? 'A' : 'a')).join(' ')})`);
+        ok([gBoot, gOut, gHid, gOv, gType, gPick].every((g) => g.sent === 0), `2b guard split: in every one of those cases refreshFromBackend sends nothing (${[gBoot, gOut, gHid, gOv, gType, gPick].map((g) => g.sent).join(',')})`);
+
+        // (2) the bootstrap: the first feed tick asks 'changes' {since:-1, agoMs} from when the boot load was SENT; the reply sets
+        //     cursor / epoch / srvAfter, and the next tick asks from them. A feed tick is ONE call (chats + rail ride the side channels)
+        on(4000); script.changes = [chg({ head: 10, epoch: 7, now: 111111 })];
+        await tick();
+        const b1 = last('changes') || {};
+        ok(acts() === 'changes' && b1.since === -1 && b1.agoMs >= 3900 && b1.agoMs < 9000 && !('epoch' in b1) && !('srvAfter' in b1), `2b bootstrap: the first feed tick is ONE 'changes' {since:-1, agoMs} measured from when the boot load was sent (${acts()} ${JSON.stringify(b1)})`);
+        ok(F.cursor === 10 && F.epoch === 7 && F.srvAfter === 111111, `2b bootstrap: its reply sets cursor, epoch and srvAfter (${F.cursor}/${F.epoch}/${F.srvAfter})`);
+        seen.length = 0; script.changes = [chg({ head: 12, epoch: 7, now: 222222 })];
+        await tick();
+        const b2 = last('changes') || {};
+        ok(acts() === 'changes' && b2.since === 10 && b2.epoch === 7 && b2.srvAfter === 111111 && F.cursor === 12 && F.srvAfter === 222222, `2b delta: the next tick asks from the cursor, its epoch and the server clock of the last applied reply (${JSON.stringify(b2)})`);
+
+        // (3) an older backend ('unknown action') or 'feed-off' → the exact Phase 1 poll for 30 min: Phase 1's 18 s interval, its
+        //     byte-identical 'load' with chats + rail, no feed / side timer, and it is not a loss (no quick retry, no drop)
+        for (const err of ['unknown action', 'feed-off']) {
+          on(); let iv = null; window.setInterval = (fn, ms, ...a) => { iv = ms; return si0(fn, ms, ...a); };
+          try {
+            script.changes = [{ ok: false, error: err }];
+            await tick();
+            ok(!F.on && F.offWhy === err && F.offUntil > Date.now() + 29 * 60000 && iv === 18000 && T.pollHandle() != null && !T.feedTimerOn() && !T.sideTimerOn() && R.drops === 0 && !R.retryTimer, `2b fallback (${err}): Phase 1's 18 s poll for 30 min, feed + side timers stopped, not counted as a loss (on ${F.on}; interval ${iv}; drops ${R.drops}; retry ${!!R.retryTimer})`);
+          } finally { window.setInterval = si0; }
+          seen.length = 0; await tick();
+          const lb = last('load');
+          ok(acts() === 'load,getChats,getWranglerRail' && JSON.stringify(lb) === JSON.stringify({ action: 'load', password: 'TEST-PW', sessionToken: 'TEST-PW' }), `2b fallback (${err}): the next tick is Phase 1's call byte for byte, with chats + rail (${acts()} ${JSON.stringify(lb)})`);
+          T.resetRefreshState();
+        }
+
+        // (4) 30 min later ONE 'changes' probe (a bootstrap from the last applied load): no feed yet → another 30 min; an answer
+        //     → back on the feed, cursor at its head, the Phase 1 interval stopped
+        F.offUntil = Date.now() - 1; seen.length = 0; script.changes = [{ ok: false, error: 'unknown action' }];
+        await tick();
+        ok(acts() === 'changes' && (last('changes') || {}).since === -1 && !F.on && F.offUntil > Date.now() + 29 * 60000, `2b probe: 30 min after a fallback one 'changes' probe goes out; still no feed → another 30 min on the Phase 1 poll (${acts()})`);
+        F.offUntil = Date.now() - 1; seen.length = 0; script.changes = [chg({ head: 40, epoch: 9 })];
+        await tick();
+        ok(F.on && F.offUntil === 0 && F.cursor === 40 && F.epoch === 9 && T.feedTimerOn() && T.sideTimerOn() && T.pollHandle() == null, `2b probe: the feed answered → back on it (cursor ${F.cursor}; feed timer ${T.feedTimerOn()}; Phase 1 interval ${T.pollHandle() != null})`);
+        T.feedStop(); T.resetRefreshState();
+
+        // (5) five timeouts in a row are losses, never server-errors; three server-errors in a row → ONE plain 'load' → the fallback
+        on(); script.changes = [chg({ head: 5 })]; await tick();
+        F.feedTimeoutMs = 60; F.fullGapMs = 0; seen.length = 0; script.changes = ['hang', 'hang', 'hang', 'hang', 'hang'];
+        for (let i = 0; i < 5; i++) await tick();
+        ok(acts() === 'changes,changes,changes,changes,changes' && F.on && F.serverErrs === 0 && F.cursor === 5 && R.streak === 5, `2b: five timeouts in a row never trip the fallback, and the cursor stays put (${acts()}; serverErrs ${F.serverErrs}; streak ${R.streak})`);
+        const se = { ok: false, error: 'server-error' };
+        seen.length = 0; script.changes = [se, se, se];
+        for (let i = 0; i < 3; i++) await tick();
+        const errsAt3 = F.serverErrs, onAt3 = F.on;
+        seen.length = 0; script.load = [{ ok: true, data: {} }];
+        await tick();
+        ok(errsAt3 === 3 && onAt3 && acts() === 'load' && !F.on && F.offWhy === 'server-error', `2b: three server-errors in a row → ONE plain load; it works → the Phase 1 poll for 30 min (${errsAt3}; ${acts()}; on ${F.on} ${F.offWhy})`);
+        T.resetRefreshState();
+
+        // (6) a delta runs through the unchanged adopt loop: a clean copy adopted, an edited one kept (and owed, then asked by id
+        //     until it settles), a pending local delete kept when the server copy is unchanged, brought back when it changed, a new one added
+        const vA = V('VEN-F2B-A', 'A0'), vB = V('VEN-F2B-B', 'B0');
+        fresh(() => { add('vendors', vA); add('vendors', vB); add('vendors', V('VEN-F2B-C', 'C0')); add('vendors', V('VEN-F2B-D', 'D0')); fixtures.push(['vendors', 'VEN-F2B-N']); });
+        on(); vB.name = 'B-local'; drop('vendors', 'VEN-F2B-C'); drop('vendors', 'VEN-F2B-D');
+        script.changes = [chg({ head: 20, data: { vendors: [V('VEN-F2B-A', 'A1'), V('VEN-F2B-B', 'B-remote'), V('VEN-F2B-C', 'C0'), V('VEN-F2B-D', 'D-remote'), V('VEN-F2B-N', 'N1')] } })];
+        await tick();
+        ok(get('vendors', 'VEN-F2B-A') === vA && vA.name === 'A1', `2b delta: a clean copy is adopted in place (${vA.name})`);
+        ok(vB.name === 'B-local' && upQ('vendors', 'VEN-F2B-B') && F.owed.has(k('vendors', 'VEN-F2B-B')), `2b delta: an edited copy is kept (it pushes on the next save) and owed (${vB.name}; owed ${F.owed.has(k('vendors', 'VEN-F2B-B'))})`);
+        ok(!has('vendors', 'VEN-F2B-C') && delQ('vendors', 'VEN-F2B-C'), '2b delta: a pending local delete is not resurrected by an unchanged server copy (RC-65) — the delete still flushes');
+        ok((get('vendors', 'VEN-F2B-D') || {}).name === 'D-remote' && !delQ('vendors', 'VEN-F2B-D'), '2b delta: a pending local delete whose server copy CHANGED comes back visibly (RC-65)');
+        ok(!!get('vendors', 'VEN-F2B-N') && T.IDX.vendor.get('VEN-F2B-N') === get('vendors', 'VEN-F2B-N'), '2b delta: a record new to this screen is added and indexed');
+        seen.length = 0; script.changes = [chg({ head: 21, data: { vendors: [V('VEN-F2B-B', 'B-remote')] } })];
+        await tick();
+        ok(((((last('changes') || {}).ids) || {}).vendors || []).includes('VEN-F2B-B') && F.owed.has(k('vendors', 'VEN-F2B-B')), `2b owed: the kept copy is asked by id on the next tick, and stays owed while still edited (${JSON.stringify((last('changes') || {}).ids)})`);
+        script.sync = [{ ok: true }]; await Promise.race([T.flushSave(), sleep(3000)]);
+        seen.length = 0; script.changes = [chg({ head: 22, data: { vendors: [clone(vB)] } })];
+        await tick();
+        ok(!F.owed.has(k('vendors', 'VEN-F2B-B')), '2b owed: once this device\'s own save comes back the copy is settled and no longer asked');
+
+        // (7) the cursor rule: it moves only after the guards, the adopt loop AND the markers — a save started during the await
+        //     (RC-65 saveGen), a lost reply, or a throw while applying the markers leave cursor and srvAfter where they were
+        const c0 = F.cursor, s0 = F.srvAfter;
+        vA.name = 'A-edit'; script.sync = [{ ok: true }];
+        during = (b) => { if (b.action === 'changes') T.flushSave(); };
+        script.changes = [chg({ head: c0 + 5, now: s0 + 5, data: { vendors: [V('VEN-F2B-A', 'A-remote')] } })];
+        await tick(); await sleep(60);
+        ok(F.cursor === c0 && F.srvAfter === s0 && vA.name === 'A-edit', `2b cursor rule: a save started during the await discards the reply (RC-65) and the cursor stays (${F.cursor} vs ${c0}; ${vA.name})`);
+        script.changes = ['404']; await tick();
+        ok(F.cursor === c0 && F.srvAfter === s0, '2b cursor rule: a lost reply moves neither the cursor nor srvAfter');
+        const trap = {}; Object.defineProperty(trap, 'vendorId', { enumerable: true, get() { throw new Error('f2b-probe'); } });
+        T.DATA.vendors.push(trap);
+        try { script.changes = [chg({ head: c0 + 9, now: s0 + 9, deletes: { vendors: ['VEN-F2B-GONE'] } })]; await tick(); }
+        finally { const i = T.DATA.vendors.indexOf(trap); if (i >= 0) T.DATA.vendors.splice(i, 1); }
+        ok(F.cursor === c0 && F.srvAfter === s0, `2b cursor rule: a throw while applying the markers leaves the cursor where it was — the delta is asked again (${F.cursor})`);
+
+        // (7b) review fix — a popup opened or a field focused WHILE the reply was in flight: no marker is applied and the cursor
+        //      stays, so the same reply is asked again; once the screen is free the next tick applies it
+        const vW = V('VEN-F2B-W', 'W0'); fresh(() => add('vendors', vW));
+        on(); script.changes = [chg({ head: 1 })]; await tick();
+        const out7 = [];
+        for (const arrange of [() => { st.overlay = { kind: 'f2b-probe' }; }, () => { document.body.appendChild(field); field.focus(); }]) {
+          during = (b) => { if (b.action === 'changes') arrange(); };
+          script.changes = [chg({ head: 2, deletes: { vendors: ['VEN-F2B-W'] } })];
+          await tick();
+          out7.push(has('vendors', 'VEN-F2B-W') && T.IDX.vendor.has('VEN-F2B-W') && !F.tomb.has(k('vendors', 'VEN-F2B-W')) && F.cursor === 1);
+          during = null; st.overlay = null; field.blur(); field.remove();
+        }
+        script.changes = [chg({ head: 2, deletes: { vendors: ['VEN-F2B-W'] } })]; await tick();
+        ok(out7.join() === 'true,true' && !has('vendors', 'VEN-F2B-W') && F.cursor === 2, `2b markers: a popup opened or a field focused during the await stops every marker and keeps the cursor (the record stays under the person working it); the next free tick applies it (${out7.join()}; cursor ${F.cursor})`);
+
+        // (8) a reset → ONE adopt-only snapshot after its jitter, never within 18 s of the last full scan; then deltas from its head
+        on(); script.changes = [chg({ head: 30, epoch: 7 })]; await tick();
+        F.fullGapMs = 18000; F.fullSentAt = Date.now();
+        seen.length = 0; script.changes = [chg({ reset: true, head: 99, epoch: 8 })];
+        await tick();
+        ok(F.needSnap === 'reset' && F.cursor === 30 && F.resets === 1, `2b reset: the log cannot prove what this screen missed → one snapshot owed, the cursor untouched (${F.needSnap}; ${F.cursor})`);
+        on(); script.changes = [chg({ head: 30, epoch: 7 })]; await tick(); F.jitterMs = 5000; F.fullGapMs = 18000; F.fullSentAt = Date.now();
+        const jits = []; for (let i = 0; i < 20; i++) { F.needSnap = ''; script.changes = [chg({ reset: true, head: 99, epoch: 8 })]; await tick(); jits.push(F.snapDueAt - Date.now()); }
+        ok(jits.every((j) => j > -100 && j <= 5000) && new Set(jits.map((j) => Math.round(j / 250))).size > 1, `2b reset: the snapshot waits 0–5 s of random jitter, so a fleet reset never lands as one burst (${jits.map((j) => Math.round(j / 100) / 10).join(' ')} s)`);
+        F.snapDueAt = 0; seen.length = 0; await tick(); await tick();   // the jitter has passed: only the 18 s gap can hold it back now
+        ok(seen.length === 0, `2b: a snapshot is never sent within 18 s of the last full scan — ticks inside that gap send nothing (${acts()})`);
+        F.snapDueAt = 0; F.fullSentAt = Date.now() - 18001; script.snapshot = [snapR({ data: fullData(), head: 99, epoch: 8, now: 333333 })];
+        seen.length = 0; await tick();
+        ok(acts() === 'snapshot' && F.cursor === 99 && F.epoch === 8 && F.srvAfter === 333333 && F.needSnap === '' && F.snaps === 1, `2b reset: the owed snapshot goes out once the gap has passed and sets cursor / epoch / srvAfter (${acts()}; ${F.cursor}/${F.epoch})`);
+        seen.length = 0; script.changes = [chg({ head: 99, epoch: 8 })]; await tick();
+        ok(acts() === 'changes' && (last('changes') || {}).since === 99 && (last('changes') || {}).epoch === 8, `2b reset: exactly ONE snapshot — the next tick is a delta from its head (${acts()})`);
+
+        // (9) delete markers (RC-67 7A as amended by RC-77 Q2-A): untouched plain copies disappear everywhere they were indexed,
+        //     a pending local delete only loses its baseline, and a copy being edited / carrying money / an unexplained invoice
+        //     delete stays visible on the R38 plate, held out of the sync. No server delete is ever emitted. More than 50: none.
+        const mC = V('VEN-F2B-MC', 'MC0'), iEM = INV('INV-F2B-EM', { rentalIds: ['R-F2B-1'] }), iEP = INV('INV-F2B-EP'), vNew = V('VEN-F2B-NEW', 'new here');
+        fresh(() => {
+          const mA = add('vendors', V('VEN-F2B-MA', 'MA0')); T.reindex('vendors', mA); add('vendors', V('VEN-F2B-MB', 'MB0')); add('vendors', mC);
+          add('invoices', INV('INV-F2B-P', { amountPaid: 100, payments: [{ amount: 100, method: 'cash' }] })); add('invoices', INV('INV-F2B-E', { lineItems: [] }));
+          add('invoices', INV('INV-F2B-M')); add('invoices', INV('INV-F2B-K', { rentalIds: ['R-F2B-1'], lineItems: [{ lid: 'k1', kind: 'custom', desc: 'Day', amount: 100, fromInv: 'INV-F2B-M' }, { lid: 'k2', kind: 'custom', desc: 'Day', amount: 100, fromInv: 'INV-F2B-P' }] }));
+          add('invoices', INV('INV-F2B-O')); add('invoices', iEM); add('invoices', iEP);
+          add('customers', { customerId: 'C-F2B-S', firstName: 'Zz', lastName: 'Stripe', name: 'Zz Stripe', stripeId: 'cus_f2b_probe' });
+          add('invoices', INV('INV-F2B-S1', { rentalIds: ['R-F2B-S'] })); add('invoices', INV('INV-F2B-S2', { rentalIds: ['R-F2B-S'], contOf: 'INV-F2B-S1' }));   // a 28-day billing series: two invoices, one rental
+        });
+        on(); script.changes = [chg({ head: 1 })]; await tick();
+        const searchHad = T.IDX.search.has('vendors:VEN-F2B-MA');
+        drop('vendors', 'VEN-F2B-MB'); mC.name = 'MC-edited'; iEM.po = 'edited'; iEP.po = 'edited'; add('vendors', vNew);
+        seen.length = 0;
+        script.changes = [chg({ head: 2, deletes: { vendors: ['VEN-F2B-MA', 'VEN-F2B-MB', 'VEN-F2B-MC', 'VEN-F2B-NEW'], invoices: ['INV-F2B-P', 'INV-F2B-E', 'INV-F2B-M', 'INV-F2B-O', 'INV-F2B-EM', 'INV-F2B-EP', 'INV-F2B-S1', 'INV-F2B-S2'], customers: ['C-F2B-S'] } })];
+        await tick();
+        const tb = (e, id) => F.tomb.get(k(e, id)) || null;
+        ok(searchHad && !has('vendors', 'VEN-F2B-MA') && !T.IDX.vendor.has('VEN-F2B-MA') && !T.IDX.search.has('vendors:VEN-F2B-MA') && !delQ('vendors', 'VEN-F2B-MA'), '2b markers (a): an untouched plain copy leaves DATA, its IDX map, its search blob AND lastSaved — computeChanges sends no delete');
+        ok(!delQ('vendors', 'VEN-F2B-MB') && !has('vendors', 'VEN-F2B-MB'), '2b markers (b): a pending local delete only loses its baseline — the server already did it, nothing is sent');
+        ok(has('vendors', 'VEN-F2B-MC') && !upQ('vendors', 'VEN-F2B-MC') && !!tb('vendors', 'VEN-F2B-MC') && tb('vendors', 'VEN-F2B-MC').canKeep === true && tb('vendors', 'VEN-F2B-MC').office === false, '2b markers (c): a copy being edited stays visible on the plate with Keep / Discard, held out of the sync');
+        ok(has('invoices', 'INV-F2B-P') && !!tb('invoices', 'INV-F2B-P') && tb('invoices', 'INV-F2B-P').office && !tb('invoices', 'INV-F2B-P').canKeep, '2b markers (c): an untouched invoice carrying a payment never vanishes, even when a merge explains its delete (a stale copy merged elsewhere, A1-2) — plate, Discard only, office to check (Q2-A)');
+        ok(has('customers', 'C-F2B-S') && !!tb('customers', 'C-F2B-S') && tb('customers', 'C-F2B-S').office && !tb('customers', 'C-F2B-S').canKeep, '2b markers (c): an untouched customer with a Stripe link never vanishes — plate, office to check');
+        ok(!has('invoices', 'INV-F2B-E') && !T.IDX.invoice.has('INV-F2B-E') && !has('invoices', 'INV-F2B-M') && !T.IDX.invoice.has('INV-F2B-M'), '2b markers (a): an untouched invoice whose delete is explained — an empty draft, or merged (another invoice holds its lines) — disappears');
+        ok(has('invoices', 'INV-F2B-O') && !!tb('invoices', 'INV-F2B-O') && tb('invoices', 'INV-F2B-O').office && !tb('invoices', 'INV-F2B-O').canKeep, '2b markers (c): an untouched invoice with lines and no merge to explain its delete stays — office to check');
+        ok(has('invoices', 'INV-F2B-S1') && has('invoices', 'INV-F2B-S2') && !!tb('invoices', 'INV-F2B-S1') && tb('invoices', 'INV-F2B-S1').office && !tb('invoices', 'INV-F2B-S1').canKeep && !!tb('invoices', 'INV-F2B-S2') && tb('invoices', 'INV-F2B-S2').office, '2b markers (c): untouched invoices of a 28-day billing series (they share a rental, contOf) deleted elsewhere are no merge — they stay, office to check (review fix: merge evidence only)');
+        ok(!!tb('invoices', 'INV-F2B-EM') && !tb('invoices', 'INV-F2B-EM').canKeep && tb('invoices', 'INV-F2B-EM').office, '2b markers (c): an edited invoice whose rentals are now on another invoice is Discard-only — Keep would bill them twice');
+        ok(!!tb('invoices', 'INV-F2B-EP') && !tb('invoices', 'INV-F2B-EP').canKeep && tb('invoices', 'INV-F2B-EP').office, '2b markers (c): an edited invoice with no money in sight is still Discard-only — re-creating it could drop a payment the server holds (review fix) — office to check');
+        ok(has('vendors', 'VEN-F2B-NEW') && upQ('vendors', 'VEN-F2B-NEW') && !tb('vendors', 'VEN-F2B-NEW'), '2b markers: a record this screen never saved (a reused id) is left alone — the marker is about the old one');
+        const plate = document.getElementById('feed-tomb');
+        const rows = plate ? [...plate.querySelectorAll('.ftp-row')] : [];
+        const rowOf = (id) => rows.find((r) => r.querySelector(`[data-id="${id}"]`));
+        const btns = plate ? [...plate.querySelectorAll('.pill')] : [];
+        ok(!!plate && plate.dataset.r === 'R38' && plate.getAttribute('role') === 'status' && plate.getAttribute('aria-live') === 'polite' && document.body.classList.contains('feed-tomb') && rows.length === 8, `2b plate: one R38 plate on <body>, a polite live region, one row per held copy (${rows.length})`);
+        ok(rows.every((r) => r.getAttribute('role') === 'group' && /Deleted on another screen/.test(r.getAttribute('aria-label') || '')) && btns.length > 0 && btns.every((b) => b.tagName === 'BUTTON'), '2b plate: each row is a labelled group and every control is a real <button> (honest affordance, screen readers)');
+        ok(!!rowOf('VEN-F2B-MC') && !!rowOf('VEN-F2B-MC').querySelector('.js-tomb-keep') && !/office to check/.test(rowOf('VEN-F2B-MC').textContent) && !!rowOf('INV-F2B-P') && !rowOf('INV-F2B-P').querySelector('.js-tomb-keep') && /office to check/.test(rowOf('INV-F2B-P').textContent) && rows.every((r) => !!r.querySelector('.js-tomb-discard')), '2b plate: Keep only where it is safe; Discard-only rows say "office to check"; every row can Discard');
+        const why = plate && plate.querySelector('.ftp-why');
+        const lum = (c) => { const m = (c.match(/[\d.]+/g) || []).slice(0, 3).map(Number).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]; };
+        const cr = why ? ((a, b) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05))(lum(getComputedStyle(why).color), lum(getComputedStyle(plate).backgroundColor)) : 0;
+        const focusRule = [...document.styleSheets].some((s) => { try { return [...s.cssRules].some((r) => r.selectorText === '#feed-tomb .pill:focus-visible'); } catch (e) { return false; } });
+        ok(cr >= 4.5 && focusRule, `2b plate: its text clears AA on the plate (${cr.toFixed(2)}:1) and its buttons carry an explicit focus ring`);
+        const bgOf = (n) => { for (let e = n; e; e = e.parentElement) { const c = getComputedStyle(e).backgroundColor; if (!/rgba\([^)]*,\s*0\)$|transparent/.test(c)) return c; } return 'rgb(0,0,0)'; };
+        const crs = plate ? [...plate.querySelectorAll('.pill, .ftp-stamp, .ftp-count, .ftp-name, .ftp-why')].map((n) => { const a = lum(getComputedStyle(n).color), b = lum(bgOf(n)); return { n: n.textContent.trim().slice(0, 12), c: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) }; }) : [];
+        const worst = crs.reduce((m, x) => (x.c < m.c ? x : m), { n: '-', c: 99 });
+        ok(crs.length > 8 && worst.c >= 4.5 && !!plate.querySelector('.js-tomb-keep'), `2b plate: every control and label clears AA — Keep, Open, Discard, the stamp, the count chip (worst "${worst.n}" ${worst.c.toFixed(2)}:1 of ${crs.length}; review fix)`);
+        script.sync = [{ ok: true }]; seen.length = 0; await Promise.race([T.flushSave(), sleep(3000)]);
+        const sb = last('sync') || {}, sentDel = JSON.stringify(sb.deletes || {}), sentUp = ((sb.upserts || {}).vendors || []).map((v) => v.vendorId).concat(((sb.upserts || {}).invoices || []).map((v) => v.invoiceId), ((sb.upserts || {}).customers || []).map((v) => v.customerId));
+        ok(!!sb.action && sentDel === '{}' && sentUp.join() === 'VEN-F2B-NEW', `2b markers: the next save sends no delete at all and no held copy — only the genuinely new record (deletes ${sentDel}; upserts ${sentUp.join()})`);
+
+        // (10) the plate's actions — through the real buttons and the one document click handler
+        const click = (sel) => { const b = document.querySelector(sel); if (b) b.click(); return !!b; };
+        T.saveTimerClear();
+        const kMC = click('#feed-tomb .js-tomb-keep[data-id="VEN-F2B-MC"]');
+        ok(kMC && !tb('vendors', 'VEN-F2B-MC') && upQ('vendors', 'VEN-F2B-MC') && !rowOf2('VEN-F2B-MC') && T.saveDue() > Date.now(), `2b plate Keep: the copy leaves the plate and a save is armed at once to re-create it (due in ${T.saveDue() - Date.now()} ms)`);
+        function rowOf2(id) { const p = document.getElementById('feed-tomb'); return p ? p.querySelector(`.ftp-row [data-id="${id}"]`) : null; }
+        tb('invoices', 'INV-F2B-EP').canKeep = true;   // even a row that says it may be kept is re-checked at the click
+        T.tombKeep('invoices', 'INV-F2B-EP');
+        ok(!!tb('invoices', 'INV-F2B-EP') && !tb('invoices', 'INV-F2B-EP').canKeep && tb('invoices', 'INV-F2B-EP').office && !upQ('invoices', 'INV-F2B-EP') && !document.querySelector('#feed-tomb .js-tomb-keep[data-id="INV-F2B-EP"]'), '2b plate Keep: re-checked at the click — an invoice is never brought back (it could drop a payment), even from a row marked keepable');
+        const dO = click('#feed-tomb .js-tomb-discard[data-id="INV-F2B-O"]');
+        ok(dO && !has('invoices', 'INV-F2B-O') && !T.IDX.invoice.has('INV-F2B-O') && !delQ('invoices', 'INV-F2B-O') && !rowOf2('INV-F2B-O'), '2b plate Discard: the copy leaves this screen too and nothing is sent (the server already deleted it)');
+        const oS = click('#feed-tomb .js-tomb-open[data-id="C-F2B-S"]');
+        const cc = T.activeSession().cards.customers;
+        ok(oS && !!cc && cc.mode === 'standard' && String(cc.recId) === 'C-F2B-S' && !!tb('customers', 'C-F2B-S'), '2b plate Open: opens the held record where it lives (the app\'s own record nav); it stays on the plate');
+        ['INV-F2B-P', 'INV-F2B-EM', 'INV-F2B-EP', 'INV-F2B-S1', 'INV-F2B-S2'].forEach((id) => T.tombDiscard('invoices', id)); T.tombDiscard('customers', 'C-F2B-S');
+        ok(!document.getElementById('feed-tomb') && !document.body.classList.contains('feed-tomb') && F.tomb.size === 0, '2b plate: gone once nothing is held — it never lingers empty');
+        // more than 50 markers in one reply: none applied; a snapshot must confirm each by its absence first
+        const capIds = []; fresh(() => { for (let i = 0; i < 51; i++) { add('vendors', V('VEN-F2B-CAP' + i, 'cap')); capIds.push('VEN-F2B-CAP' + i); } });
+        on(); script.changes = [chg({ head: 1 })]; await tick();
+        script.changes = [chg({ head: 2, deletes: { vendors: capIds } })]; await tick();
+        ok(capIds.every((id) => has('vendors', id)) && F.held === 51 && F.needSnap === 'cap' && F.cursor === 2, `2b markers: more than 50 in one reply → none applied, one snapshot owed to confirm them (held ${F.held}; ${F.needSnap})`);
+
+        // (10b) a plated record the server holds again (another screen kept or re-created it) leaves the plate BEFORE the adopt
+        //       loop: an untouched copy takes the server's, an edited one keeps its edits (dirty, re-sent) — like any other copy
+        const uO = INV('INV-F2B-UO'), uE = V('VEN-F2B-UE', 'UE0');
+        fresh(() => { add('invoices', uO); add('vendors', uE); });
+        on(); script.changes = [chg({ head: 1 })]; await tick();
+        uE.name = 'UE-edited';
+        script.changes = [chg({ head: 2, deletes: { invoices: ['INV-F2B-UO'], vendors: ['VEN-F2B-UE'] } })]; await tick();
+        const platedBoth = !!tb('invoices', 'INV-F2B-UO') && !!tb('vendors', 'VEN-F2B-UE');
+        script.changes = [chg({ head: 3, data: { invoices: [INV('INV-F2B-UO', { po: 'kept elsewhere' })], vendors: [V('VEN-F2B-UE', 'UE-elsewhere')] } })]; await tick();
+        ok(platedBoth && F.tomb.size === 0 && uO.po === 'kept elsewhere' && !upQ('invoices', 'INV-F2B-UO') && uE.name === 'UE-edited' && upQ('vendors', 'VEN-F2B-UE') && !document.getElementById('feed-tomb'), `2b plate: a held record the server holds again leaves the plate — untouched takes the server copy, edited keeps its edits (${uO.po}; ${uE.name}; plate ${F.tomb.size})`);
+
+        const uF = INV('INV-F2B-UF'); fresh(() => add('invoices', uF));
+        on(); script.changes = [chg({ head: 1 }), chg({ head: 2, deletes: { invoices: ['INV-F2B-UF'] } })]; await tick(); await tick();
+        const platedF = !!tb('invoices', 'INV-F2B-UF');
+        F.on = false; F.offUntil = Date.now() + 60000; seen.length = 0; script.load = [{ ok: true, data: { invoices: [INV('INV-F2B-UF', { po: 'revived' })] } }];
+        await tick();
+        ok(platedF && acts().startsWith('load') && !tb('invoices', 'INV-F2B-UF') && uF.po === 'revived' && !upQ('invoices', 'INV-F2B-UF'), `2b plate: the same holds through the Phase 1 fallback's 'load' — a held record the server holds again leaves the plate (${uF.po})`);
+        T.resetRefreshState();
+
+        // (10c) review fixes — an invoice edited here whose newer server copy carries a payment the dirty branch declined: the
+        //       marker plates it Discard-only (Keep would re-create it without the payment); and a sign-out / switch of person
+        //       drops every held copy with the plate, so no later save can re-create what another screen deleted
+        const pd = INV('INV-F2B-PD'), rsV = V('VEN-F2B-RS', 'RS0');
+        fresh(() => { add('invoices', pd); add('vendors', rsV); });
+        on(); script.changes = [chg({ head: 1 })]; await tick();
+        pd.po = 'edited here'; rsV.name = 'RS-edited';
+        script.changes = [chg({ head: 2, data: { invoices: [INV('INV-F2B-PD', { amountPaid: 100, payments: [{ amount: 100, method: 'card' }] })] } }), chg({ head: 3, deletes: { invoices: ['INV-F2B-PD'], vendors: ['VEN-F2B-RS'] } })];
+        await tick(); const declined = pd.po === 'edited here' && !pd.amountPaid; await tick();
+        ok(declined && !!F.tomb.get(k('invoices', 'INV-F2B-PD')) && !F.tomb.get(k('invoices', 'INV-F2B-PD')).canKeep && F.tomb.get(k('invoices', 'INV-F2B-PD')).office && !document.querySelector('#feed-tomb .js-tomb-keep[data-id="INV-F2B-PD"]'), `2b markers (c): an invoice edited here whose newer server copy carries a payment (declined, dirty) is never keepable — Keep would re-create it without the payment (review fix; declined ${declined})`);
+        const heldBoth = F.tomb.has(k('invoices', 'INV-F2B-PD')) && F.tomb.has(k('vendors', 'VEN-F2B-RS'));
+        T.feedReset(false);
+        ok(heldBoth && !has('invoices', 'INV-F2B-PD') && !has('vendors', 'VEN-F2B-RS') && !upQ('invoices', 'INV-F2B-PD') && !upQ('vendors', 'VEN-F2B-RS') && !delQ('invoices', 'INV-F2B-PD') && !delQ('vendors', 'VEN-F2B-RS') && !document.getElementById('feed-tomb'), '2b feed reset (sign-out / switch person): every held copy leaves with the plate — no later save re-creates what another screen deleted (review fix)');
+
+        // (11) RC-79 Q8-A — a deploy boundary (a new log epoch) resets the feed; in the snapshot that follows, a baselined record it
+        //      no longer holds goes through the marker path (a plain one disappears, a paid invoice goes on the plate); a PERIODIC
+        //      snapshot never deletes by absence (it counts what the feed missed); more than 50 absent: none applied
+        const qM = V('VEN-F2B-QM', 'QM0');
+        fresh(() => { add('vendors', V('VEN-F2B-QX', 'QX0')); add('vendors', V('VEN-F2B-QZ', 'QZ0')); add('vendors', qM); add('invoices', INV('INV-F2B-QP', { amountPaid: 100, payments: [{ amount: 100 }] })); });
+        on(); F.fullGapMs = 0; script.changes = [chg({ head: 50, epoch: 7 })]; await tick();
+        seen.length = 0; script.changes = [chg({ reset: true, head: 3, epoch: 8 })];
+        script.snapshot = [snapR({ data: fullData(['vendors:VEN-F2B-QX', 'invoices:INV-F2B-QP']), head: 3, epoch: 8 })];
+        await tick(); await tick();
+        ok(acts() === 'changes,snapshot' && !has('vendors', 'VEN-F2B-QX') && !delQ('vendors', 'VEN-F2B-QX') && !!tb('invoices', 'INV-F2B-QP') && tb('invoices', 'INV-F2B-QP').office && F.cursor === 3 && F.epoch === 8, `RC-79 Q8-A: across a deploy boundary the reset snapshot deletes an absent plain record and plates an absent paid invoice (${acts()}; plate ${F.tomb.size}; ${F.cursor}/${F.epoch})`);
+        F.snapAt = 0; F.lastInputAt = 0; F.misses = 0; seen.length = 0;
+        const per = fullData(['vendors:VEN-F2B-QZ', 'invoices:INV-F2B-QP']); per.vendors = per.vendors.map((v) => (v.vendorId === 'VEN-F2B-QM' ? Object.assign(v, { name: 'QM-missed' }) : v));
+        script.snapshot = [snapR({ data: per, head: 3, epoch: 8 })];
+        await tick();
+        ok(acts() === 'snapshot' && has('vendors', 'VEN-F2B-QZ') && !delQ('vendors', 'VEN-F2B-QZ') && qM.name === 'QM-missed' && F.misses === 1, `RC-79 Q8-A: a PERIODIC snapshot never deletes by absence, and counts each record the feed missed (${acts()}; misses ${F.misses})`);
+        const cap2 = []; fresh(() => { for (let i = 0; i < 51; i++) { add('vendors', V('VEN-F2B-AB' + i, 'ab')); cap2.push('VEN-F2B-AB' + i); } });
+        on(); F.fullGapMs = 0; script.changes = [chg({ head: 1 }), chg({ reset: true, head: 4, epoch: 9 })];
+        script.snapshot = [snapR({ data: fullData(cap2.map((id) => 'vendors:' + id)), head: 4, epoch: 9 })];
+        await tick(); await tick(); await tick();
+        ok(cap2.every((id) => has('vendors', id)) && F.held === 51 && F.cursor === 4, `RC-79 Q8-A: more than 50 records absent from one reset snapshot → none applied (held ${F.held})`);
+
+        const eV = V('VEN-F2B-EV', 'ev'); fresh(() => add('vendors', eV));
+        on(); F.fullGapMs = 0; script.changes = [chg({ head: 1 }), chg({ reset: true, head: 5, epoch: 10 })];
+        const emptyV = fullData(); emptyV.vendors = [];
+        script.snapshot = [snapR({ data: emptyV, head: 5, epoch: 10 })];
+        await tick(); await tick(); await tick();
+        ok(has('vendors', 'VEN-F2B-EV') && !F.tomb.has(k('vendors', 'VEN-F2B-EV')) && T.DATA.vendors.length > 1 && F.cursor === 5, `RC-79 Q8-A: a whole tab that comes back EMPTY in a reset snapshot deletes nothing by absence — a read blip proves nothing (review fix; cursor ${F.cursor})`);
+
+        // (12) cadence — 8 s while someone works the screen, 20 s idle, ≥ 18 s after two lost replies in a row, never under the
+        //      fleet throttle; pollMinMs holds back any trigger; a hidden page sends nothing
+        T.resetFeedState(); F.offUntil = Date.now() + 60000; F.loadSendAt = Date.now(); T.feedReset(true); const staysOff = !F.on; T.resetFeedState();
+        ok(staysOff, '2b: a new baseline (finishLoad) inside a fallback keeps the Phase 1 poll — the 30 min describe the backend, not the person');
+        T.resetFeedState(); const t12 = Date.now();
+        F.lastInputAt = t12; const dFast = T.feedDelay();
+        F.lastInputAt = t12 - 91000; const dIdle = T.feedDelay();
+        F.lastInputAt = t12; R.streak = 2; const dStretch = T.feedDelay(); R.streak = 0;
+        F.pollMinMs = 30000; const dMin = T.feedDelay(); F.pollMinMs = 0;
+        ok(dFast === 8000 && dIdle === 20000 && dStretch === 18000 && dMin === 30000 && T.SIDE.ms === 18000, `2b cadence: 8 s active / 20 s idle / ≥ 18 s after two losses / never under pollMinMs; side channels every 18 s (${dFast}/${dIdle}/${dStretch}/${dMin}; ${T.SIDE.ms})`);
+        fresh(); on(); script.changes = [chg({ head: 5, pollMinMs: 60000 })]; await tick();
+        seen.length = 0; await tick(); T.refreshKick(); R.startAt = 0; window.dispatchEvent(new Event('focus')); await sleep(30);
+        ok(F.pollMinMs === 60000 && seen.length === 0, `2b cadence: the fleet throttle (pollMinMs) holds back every trigger — a tick, a kick or a return inside it sends nothing (${acts()})`);
+        F.pollMinMs = 0; F.sentAt = 0; script.changes = [chg({ head: 6, pollMinMs: 1e9 })]; await tick();
+        ok(F.pollMinMs === 600000, `2b cadence: a pollMinMs typo in row 1 (1e9) is clamped to 10 min — it can never freeze a screen (${F.pollMinMs})`);
+        F.pollMinMs = 0; F.sentAt = 0; seen.length = 0;
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+        try { await tick(); } finally { delete document.hidden; }
+        ok(seen.length === 0, '2b cadence: a hidden page sends nothing');
+        T.feedStop(); T.resetRefreshState();
+
+        // (12b) the safety net: a periodic snapshot once the last full scan is 10 min old while someone works the screen, 30 min
+        //       when idle, never sooner; and the chained timer re-arms itself after each tick, and stops once the feed is off
+        fresh(); on(); F.fullGapMs = 0; script.changes = [chg({ head: 1 })]; await tick();
+        const t12b = Date.now(), plan = (snapAgo, inputAgo) => { F.snapAt = t12b - snapAgo; F.lastInputAt = t12b - inputAgo; return (T.feedPlan(t12b) || {}).action; };
+        const p1 = plan(9 * 60000, 1000), p2 = plan(10 * 60000 + 1, 1000), p3 = plan(11 * 60000, 120000), p4 = plan(30 * 60000 + 1, 120000);
+        ok(p1 === 'changes' && p2 === 'snapshot' && p3 === 'changes' && p4 === 'snapshot', `2b safety net: a periodic snapshot at 10 min while active, 30 min idle, a delta before either (${p1}/${p2}/${p3}/${p4})`);
+        F.snapAt = Date.now(); script.changes = [chg({ head: 2 })]; T.feedTick(); await sleep(80);
+        const rearmed = T.feedTimerOn(); T.feedStop(); F.on = false; T.feedTick(); await sleep(30);
+        ok(rearmed && !T.feedTimerOn() && acts().endsWith('changes'), `2b cadence: the feed's chained timer re-arms after each tick and stays down once the feed is off (${rearmed})`);
+        T.resetRefreshState();
+
+        // (13) side channels — chats + rail on their own 18 s timer (a feed tick is one call); getChats' short limit while the
+        //      feed's last reply was lost; back on screen they refresh at once with the feed
+        on(); script.changes = [chg({ head: 1 })]; await tick();
+        seen.length = 0; await T.refreshSideChannels(); await sleep(30);
+        ok(acts() === 'getChats,getWranglerRail' && T.SIDE.runs === 1, `2b side channels: refreshSideChannels carries team chats + the Mr. Wrangler rail (${acts()})`);
+        R.lostChatsMs = 120; R.streak = 1; script.getChats = ['hang']; seen.length = 0;
+        const t13 = performance.now(); await Promise.race([T.refreshSideChannels(), sleep(2500)]); const took = performance.now() - t13;
+        ok(took >= 100 && took < 1500, `2b side channels: while the feed's last reply was lost, getChats is cut at the short limit (${Math.round(took)} ms)`);
+        R.streak = 0; R.lostChatsMs = 8000; R.startAt = 0; seen.length = 0; script.changes = [chg({ head: 2 })];
+        window.dispatchEvent(new Event('focus')); await sleep(200);
+        ok(seen.some((b) => b.action === 'changes') && seen.some((b) => b.action === 'getChats') && seen.some((b) => b.action === 'getWranglerRail') && !seen.some((b) => b.action === 'load'), `2b side channels: back on screen the feed AND chats + rail refresh at once, as the Phase 1 load did (${acts()})`);
+        await sleep(50); seen.length = 0; st.overlay = { kind: 'f2b-probe' }; await T.refreshSideChannels(); st.overlay = null;
+        document.body.appendChild(field); field.focus(); await T.refreshSideChannels(); field.blur(); field.remove();
+        ok(seen.length === 0, `2b side channels: they stand down under an open popup or a focused field (mayAdopt), like the feed (${acts()})`);
+        T.feedStop(); ready(); F.pollMinMs = 600000; T.SIDE.lastAt = Date.now(); T.SIDE.ms = 25; seen.length = 0; T.sideStart(); await sleep(250);
+        const throttled = !seen.some((b) => b.action === 'getChats'); F.pollMinMs = 0; await sleep(200);
+        const resumed = seen.some((b) => b.action === 'getChats'); T.feedStop(); T.SIDE.ms = 600000; await sleep(50);
+        ok(throttled && resumed, `2b side channels: the fleet throttle (pollMinMs) holds their own timer back too, side channels included; lifted, they run again (review fix; ${throttled}/${resumed})`);
+        F.on = true; T.sideStart(); const h13 = T.SIDE.timer; T.startRefreshPoll(); const sameSide = h13 != null && T.SIDE.timer === h13; T.feedStop();
+        ok(sameSide, '2b side channels: their timer is armed once — a kick (startRefreshPoll) never re-arms or pushes it back');
+        T.feedStop(); T.resetRefreshState();
+
+        // (14) R37 — a successful feed tick (a quiet delta too) or snapshot is a successful refresh; a reset reply is not.
+        //      stalePrune runs after a full scan only (A1-13)
+        on(); script.changes = [chg({ head: 1 })]; await tick();
+        T.setFreshAt(1); script.changes = [chg({ reset: true, head: 1 })]; await tick();
+        const afterReset = T.freshAt();
+        F.needSnap = ''; T.setFreshAt(1); const t14 = Date.now(); script.changes = [chg({ head: 1 })]; await tick();
+        ok(afterReset === 1 && T.freshAt() >= t14, `2b freshness: a quiet delta stamps "Updated N s ago"; a reset reply does not (${afterReset} → ${T.freshAt() >= t14})`);
+        T.STALE.byKey.set(k('vendors', 'VEN-F2B-SP'), new Map([['{"probe":1}', { n: 1, at: Date.now() - T.STALE.ms - 1000 }]]));
+        script.changes = [chg({ head: 2 })]; await tick();
+        const keptAfterDelta = T.STALE.byKey.has(k('vendors', 'VEN-F2B-SP'));
+        F.fullGapMs = 0; F.snapAt = 0; F.lastInputAt = 0; script.snapshot = [snapR({ data: fullData(), head: 2, epoch: 7 })]; await tick();
+        ok(keptAfterDelta && !T.STALE.byKey.has(k('vendors', 'VEN-F2B-SP')) && acts().endsWith('snapshot'), '2b (A1-13): a delta never prunes the stale-landing memory; the next full scan does');
+        T.STALE.byKey.clear();
+
+        // (15) RC-71 (a) through a delta — this device's own failed batch landing late is still caught by the Phase 1 guard
+        const vL = V('VEN-F2B-L', 'L0'); fresh(() => add('vendors', vL)); on(); script.changes = [chg({ head: 1 })]; await tick();
+        const sMs = T.SYNC.syncMs, sTo = T.SYNC.timeoutMs; T.SYNC.syncMs = 150; T.SYNC.timeoutMs = 150; T.SYNC.backoff = 20000;
+        try {
+          vL.name = 'L1'; script.sync = ['hang'];
+          const p1 = T.flushSave(); await sleep(20); vL.name = 'L2'; await Promise.race([p1, sleep(3000)]);
+          script.sync = [{ ok: true }]; await Promise.race([T.flushSave(), sleep(3000)]);
+          script.changes = [chg({ head: 2, data: { vendors: [V('VEN-F2B-L', 'L1')] } })]; await tick();
+          ok(vL.name === 'L2' && upQ('vendors', 'VEN-F2B-L'), `2b + RC-71 (a): a late landing of this device's own failed batch arriving in a DELTA is caught — the newer save is kept and re-sent (${vL.name})`);
+        } finally { T.SYNC.syncMs = sMs; T.SYNC.timeoutMs = sTo; T.resetSaveState(); }
+
+        // (16) saveSoon — while a retry backoff is armed, an undelayed call (an edit, reindex, a feed adoption) never pulls it in
+        T.resetSaveState(); T.setBackendPassword('TEST-PW');
+        T.SYNC.fails = 1; window.JT.saveSoon(20000); const due1 = T.saveDue();
+        window.JT.saveSoon(); T.reindex('vendors', vA); const keptDue = T.saveDue() === due1;
+        T.SYNC.fails = 0; window.JT.saveSoon(); const due2 = T.saveDue();
+        ok(keptDue && due1 > Date.now() + 15000 && due2 < Date.now() + 2000, `2b saveSoon: an armed backoff is never shortened by an undelayed call; with no failure pending a save is ~1.2 s away as before (${keptDue}; ${Math.round((due1 - Date.now()) / 1000)} s / ${Math.round((due2 - Date.now()) / 1000)} s)`);
+        T.resetSaveState();
+
+        // (17) a money / membership call owes its invoice / customer for 10 min whatever the reply (here: lost) — asked by id on
+        //      each feed call; it leaves only past its minimum; a non-money call owes nothing
+        fresh(); on(); script.changes = [chg({ head: 1 })]; await tick();
+        script.recordManualPayment = ['404']; script.membershipCancel = ['404'];
+        await T.backendRead('recordManualPayment', { invoiceId: 'INV-F2B-OWE', amountCents: 100, method: 'cash' }, { tries: 1, timeoutMs: 2000 });
+        await T.backendRead('membershipCancel', { customerId: 'C-F2B-OWE' }, { tries: 1, timeoutMs: 2000 });
+        await T.backendRead('stripePubKey', { invoiceId: 'INV-F2B-NOT' }, { tries: 1, timeoutMs: 2000 });
+        ok(JSON.stringify(last('recordManualPayment')) === JSON.stringify({ action: 'recordManualPayment', password: 'TEST-PW', invoiceId: 'INV-F2B-OWE', amountCents: 100, method: 'cash', sessionToken: 'TEST-PW' }), `2b owed: the hook in backendCall never changes a money call's request (${JSON.stringify(last('recordManualPayment'))})`);
+        ok(F.owed.get(k('invoices', 'INV-F2B-OWE')) > Date.now() + 9 * 60000 && F.owed.get(k('customers', 'C-F2B-OWE')) > Date.now() + 9 * 60000 && !F.owed.has(k('invoices', 'INV-F2B-NOT')), '2b owed: a money / membership call owes its invoice / customer for 10 min even when its reply was lost; stripePubKey owes nothing');
+        seen.length = 0; script.changes = [chg({ head: 2 })]; await tick();
+        const ids17 = (last('changes') || {}).ids || {};
+        ok((ids17.invoices || []).includes('INV-F2B-OWE') && (ids17.customers || []).includes('C-F2B-OWE') && F.owed.has(k('invoices', 'INV-F2B-OWE')), `2b owed: they are asked by id and stay owed inside their 10 min (${JSON.stringify(ids17)})`);
+        F.owed.set(k('invoices', 'INV-F2B-OWE'), Date.now() - 1);
+        script.changes = [chg({ head: 3 })]; await tick();
+        ok(!F.owed.has(k('invoices', 'INV-F2B-OWE')) && F.owed.has(k('customers', 'C-F2B-OWE')), '2b owed: past its minimum, an id the server no longer returns stops being asked');
+        F.owed.set(k('vendors', 'VEN-F2B-EXP'), Date.now() - 1);
+        script.changes = [chg({ reset: true, head: 3 })]; await tick();
+        ok(F.owed.has(k('customers', 'C-F2B-OWE')) && !F.owed.has(k('vendors', 'VEN-F2B-EXP')), '2b owed: a reset clears only expired owed ids — a money id inside its 10 min stays owed');
+        F.needSnap = ''; F.owed.set(k('vendors', 'VEN-F2B-FS'), Date.now() - 1); F.fullGapMs = 0; F.snapAt = 0; F.lastInputAt = 0;
+        script.snapshot = [snapR({ data: fullData(), head: 3, epoch: 7 })]; seen.length = 0; await tick();
+        ok(acts() === 'snapshot' && !F.owed.has(k('vendors', 'VEN-F2B-FS')) && F.owed.has(k('customers', 'C-F2B-OWE')), `2b owed: a full scan that no longer holds an owed id settles it (${acts()})`);
+        F.loadSendAt = 0; const t17 = Date.now(); await T.backendRead('load', undefined, { tries: 1, timeoutMs: 2000 });
+        ok(F.loadSendAt >= t17, '2b bootstrap: a real load through backendCall stamps when it was sent (the boot bootstrap window starts there)');
+
+        // (18) RC-83 Q13-A — Settings → Reset all keeps the Team Roster: the setConfig it sends carries settings.employees and
+        //      nothing else, so the backend never purges the crew's sign-ins; with no roster loaded it sends {} as before
+        const roster = [{ id: 'EMP-F2B-1', name: 'Test Hand', role: 'Sales', phone: '' }, { id: 'EMP-F2B-2', name: 'Other Hand', role: 'Office', phone: '' }];
+        st.overlay = { kind: 'settings', adminPw: 'ADMIN-TEST', config: { roles: { Sales: 'x' }, admin: 'y', settings: { employees: roster, company: { name: 'Zz Co' }, kpis: { probe: 1 } } } };
+        seen.length = 0; script.setConfig = [{ ok: true, saved: true }];
+        await T.resetAllSettings();
+        const sc = last('setConfig');
+        ok(!!sc && JSON.stringify(sc.config.settings) === JSON.stringify({ employees: roster }) && sc.config.roles.Sales === 'x' && sc.config.admin === 'y' && sc.password === 'ADMIN-TEST', `RC-83 Q13-A: Reset all sends the loaded roster and nothing else (${sc && JSON.stringify(sc.config.settings)})`);
+        ok(Array.isArray((st.settings || {}).employees) && st.settings.employees.length === 2 && !st.settings.company && !st.settings.kpis && !st.overlay, 'RC-83 Q13-A: this device keeps the roster too; every other customization is reset');
+        st.overlay = { kind: 'settings', adminPw: 'ADMIN-TEST', config: { roles: { Sales: 'x' }, admin: 'y', settings: { company: { name: 'Zz' } } } };
+        seen.length = 0; script.setConfig = [{ ok: true }];
+        await T.resetAllSettings();
+        ok(JSON.stringify(((last('setConfig') || {}).config || {}).settings) === '{}', 'RC-83 Q13-A: with no roster loaded there is nothing to keep — an empty settings object, as before');
+
+        // (19) the instant cache stays a photograph of finishLoad only: no feed reply — delta or snapshot — writes it
+        localStorage.setItem('jactec.pidToken', 'f2b-cache-probe');
+        const w0 = T.dataCache.write; let writes = 0; T.dataCache.write = () => { writes++; return Promise.resolve(); };
+        try {
+          fresh(); on(); F.fullGapMs = 0;
+          script.changes = [chg({ head: 1, data: { vendors: [V('VEN-F2B-CW', 'cw')] } })]; fixtures.push(['vendors', 'VEN-F2B-CW']); await tick();
+          F.snapAt = 0; F.lastInputAt = 0; script.snapshot = [snapR({ data: fullData(), head: 1, epoch: 7 })]; await tick();
+          ok(T.cacheDeviceOk() && writes === 0 && acts() === 'changes,snapshot', `2b instant cache: a delta and a snapshot never write the on-device snapshot (writes ${writes}; ${acts()})`);
+        } finally { T.dataCache.write = w0; if (pid0 == null) localStorage.removeItem('jactec.pidToken'); else localStorage.setItem('jactec.pidToken', pid0); }
+      } finally {
+        during = null; window.setInterval = si0; if (Object.getOwnPropertyDescriptor(document, 'hidden')) delete document.hidden;
+        field.remove(); pickEd.remove();
+        T.resetFeedState(); T.resetRefreshState(); T.resetSaveState(); T.STALE.byKey.clear();
+        st.overlay = ov; st.winEdit = we; T.setBackendPassword('');
+        fixtures.forEach(([e, id]) => drop(e, id));
+        if (custCard0) Object.assign(T.activeSession().cards.customers, custCard0);
+        try { if (set0.s == null) localStorage.removeItem('jactec.settings'); else localStorage.setItem('jactec.settings', set0.s); if (set0.p == null) localStorage.removeItem('jactec.settings.prev'); else localStorage.setItem('jactec.settings.prev', set0.p); } catch (e) {}
+        st.settings = set0.st; try { T.applySettings(st.settings); } catch (e) {}
+        await sleep(150); window.fetch = realFetch;
+        T.setFreshAt(0); T.freshTickerSync(); T.render();
+        window.JT.snapshotSaved && window.JT.snapshotSaved();
+      }
+    }
     // RC-63 — sign-in resilience. Google's web-app front door was losing or stalling replies the
     // script had already produced. Lost replies must be retried, real refusals must not, stalls
     // must abort, and nothing but a real refusal may forget the remembered device.
@@ -4945,6 +5412,67 @@ try {
     results.push({ ok: sw.includes('staleClear();') && pc.includes('staleClear();') && fl.includes('staleClear();'), m: 'RC-71 (e) source guard: switchUser, pidTokenClear and finishLoad all clear the remembered failed batches (staleClear)' });
   }
 
+  // Phase 2b review fixes at PHONE size (375×812 — his screen is the evidence): the R38 plate stacks its stamp above its rows and
+  // keeps to under a third of the screen, clears the §M-touch 44 px floor with room between Keep and Discard, and drops under an
+  // open popup (whose ✕ stays tappable); the armed RC-83 "Reset all" confirm stays on screen even with Undo in the footer.
+  {
+    const ph = await browser.newPage({ viewport: { width: 375, height: 812 } });
+    ph.on('pageerror', (e) => pageErrors.push(String(e && e.message || e)));
+    await ph.goto('http://localhost:8000/#local', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await ph.waitForFunction(() => !!window.__rw, { timeout: 20000 });
+    await ph.evaluate(() => window.__rwBootRail);
+    const m = await ph.evaluate(async () => {
+      const T = window.__rw, F = T.FEED, st = T.__state;
+      const raf = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const hold = (k, rec, idf, canKeep) => F.tomb.set(k + '\u0001' + rec[idf], { k, id: String(rec[idf]), base: '', canKeep, office: !canKeep });
+      hold('vendors', T.DATA.vendors[0], 'vendorId', true); hold('invoices', T.DATA.invoices[0], 'invoiceId', false);
+      hold('invoices', T.DATA.invoices[1], 'invoiceId', false); hold('customers', T.DATA.customers[0], 'customerId', false);
+      T.renderTombPlate(); await raf();
+      const plate = document.getElementById('feed-tomb'), pr = plate.getBoundingClientRect();
+      const pills = [...plate.querySelectorAll('.pill')].map((b) => b.getBoundingClientRect());
+      const kb = plate.querySelector('.js-tomb-keep'), keep = kb.getBoundingClientRect(), disc = kb.parentElement.querySelector('.js-tomb-discard').getBoundingClientRect();
+      const res = { phone: document.body.classList.contains('is-phone'), col: getComputedStyle(plate).flexDirection, h: Math.round(pr.height), vh: innerHeight,
+        minW: Math.round(Math.min(...pills.map((r) => r.width))), minH: Math.round(Math.min(...pills.map((r) => r.height))),
+        gap: Math.round(Math.max(disc.left - keep.right, disc.top - keep.bottom, keep.left - disc.right, keep.top - disc.bottom)) };
+      try { localStorage.setItem('jactec.settings.prev', JSON.stringify({ company: { name: 'probe' } })); } catch (e) {}
+      st.overlay = { kind: 'settings', adminPw: 'x', tab: 'kpis', resetArm: true, config: { roles: {}, admin: '', settings: {} } };
+      T.renderOverlay(); await raf();
+      for (let i = 0, top = -1; i < 40; i++) { await new Promise((r) => setTimeout(r, 60)); const t = document.querySelector('.settings-popup').getBoundingClientRect().top; if (t === top) break; top = t; }   // the phone sheet slides up: measure where it settles
+      const x = document.querySelector('.settings-popup .popup-head .x'), xr = x.getBoundingClientRect();
+      const hit = document.elementFromPoint(xr.left + xr.width / 2, xr.top + xr.height / 2);
+      res.xHit = !!hit && (hit === x || x.contains(hit)); res.xUnderPlate = xr.top < pr.bottom;
+      const arm = document.querySelector('.js-settings-reset.armed'), ar = arm.getBoundingClientRect();
+      res.arm = { l: Math.round(ar.left), r: Math.round(ar.right), w: innerWidth, text: arm.textContent.trim() };
+      res.undo = !!document.querySelector('.js-settings-undo');
+      return res;
+    });
+    await ph.close();
+    results.push({ ok: m.phone && m.col === 'column' && m.h <= Math.round(0.31 * m.vh), m: `2b plate at 375×812: the stamp sits above the rows and the plate keeps under a third of the screen, the rest scrolling (${m.col}; ${m.h} of ${m.vh} px; review fix)` });
+    results.push({ ok: m.minW >= 44 && m.minH >= 44 && m.gap >= 8, m: `2b plate at 375×812: every button clears the 44 px touch floor and Keep sits at least 8 px from Discard (smallest ${m.minW}×${m.minH}; gap ${m.gap} px; review fix)` });
+    results.push({ ok: m.xUnderPlate && m.xHit, m: `2b plate at 375×812: an open popup outranks the plate — its ✕ (under the plate's band) is still what a tap hits (${m.xUnderPlate}/${m.xHit}; review fix)` });
+    results.push({ ok: m.undo && m.arm.l >= 0 && m.arm.r <= m.arm.w && /Team Roster/.test(m.arm.text), m: `RC-83 at 375×812: the armed "${m.arm.text}" stays on screen, Undo in the footer too (${m.arm.l}..${m.arm.r} of ${m.arm.w}; review fix)` });
+  }
+
+  // Phase 2b source guards — too wired into sign-in / boot to drive headless: (1) the 2d guard split moved RC-65's adopt guards
+  // into mayAdopt BYTE-IDENTICAL and refreshFromBackend opens with exactly mayCall()/mayAdopt(); (2) feed calls go through
+  // backendCall, never backendRead (which would retry 'unknown action' three times), and 'load' stays Phase 1's exact call;
+  // (3) every baseline reset point forgets FEED (finishLoad before it re-arms the poll), and a reseed starts with a snapshot;
+  // (4) the instant cache is still written from finishLoad only; (5) the R38 plate is stamped and has its RULE_META row.
+  {
+    const src = await readFile(join(root, 'app.js'), 'utf8');
+    const rfb = (src.match(/\nasync function refreshFromBackend\(\) \{\n([^\n]*)\n/) || [])[1] || '';
+    const ma = (src.match(/\nfunction mayAdopt\(\) \{([\s\S]*?)\n\}/) || [])[1] || '';
+    results.push({ ok: rfb.trim().startsWith('if (!mayCall() || !mayAdopt()) return;') && ma.includes('if (saving || savePending) return false;') && ma.includes('if (DRAG.active || DRAG.armed || winPickBusy() || state.overlay || hoverNode) return false;') && ma.includes("if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' || ae.isContentEditable)) return false;") && /\nfunction mayCall\(\) \{ return !refreshing && !booting && !!backendPassword && !!lastSaved && !document\.hidden; \}/.test(src), m: '2b source guard: refreshFromBackend opens with mayCall()/mayAdopt(), and mayAdopt holds the RC-65 guards byte-identical (PHASE2D \'WITH 2b\')' });
+    const ff = (src.match(/\nfunction feedFetch\(q\) \{([\s\S]*?)\n\}/) || [])[1] || '';
+    results.push({ ok: ff.includes("backendCall('load', undefined, { timeoutMs: BACKEND_TIMEOUT_MS })") && ff.includes('FEED.feedTimeoutMs') && !ff.includes('backendRead'), m: '2b source guard: feed calls go through backendCall (never backendRead), and the fallback \'load\' is Phase 1\'s exact call' });
+    const sw = (src.match(/\nfunction switchUser\(\) \{([\s\S]*?)\n\}/) || [])[1] || '';
+    const pc = (src.match(/\nfunction pidTokenClear\(\) \{([^\n]*)/) || [])[1] || '';
+    const fl = (src.match(/\nfunction finishLoad\(\) \{([\s\S]*?)\n\}/) || [])[1] || '';
+    const rs = (src.match(/\nasync function reseedFromFile\(\) \{([\s\S]*?)\n\}/) || [])[1] || '';
+    results.push({ ok: sw.includes('feedReset(false);') && pc.includes('feedReset(false);') && fl.includes('feedReset(true);') && fl.indexOf('feedReset(true);') < fl.indexOf('startRefreshPoll();') && rs.includes('FEED.loadSendAt = 0;') && rs.indexOf('FEED.loadSendAt = 0;') < rs.indexOf('finishLoad();'), m: '2b source guard: switchUser, pidTokenClear and finishLoad reset the feed (finishLoad before it arms the poll); a reseed starts with a snapshot' });
+    results.push({ ok: (src.match(/cachePersistSnapshot\(\);/g) || []).length === 1 && fl.includes('cachePersistSnapshot();'), m: '2b source guard: the instant cache is written from finishLoad only — no feed reply ever photographs DATA' });
+    results.push({ ok: /\n\s*R38:\s*\['Deleted-elsewhere plate'/.test(src) && src.includes("node.dataset.r = 'R38'"), m: '2b source guard: the R38 plate is stamped and has its RULE_META row (a new element = a new rule)' });
+  }
   const passed = results.filter((r) => r.ok).length;
   results.forEach((r) => console.log(`${r.ok ? '  ✓' : '  ✗ FAIL:'} ${r.m}`));
   if (pageErrors.length) { console.error('❌ Console/page errors:\n  - ' + pageErrors.join('\n  - ')); failed = true; }
