@@ -5028,6 +5028,19 @@ try {
         const askedRM = ((((last('changes') || {}).ids) || {}).invoices || []).includes('INV-F2B-RM');
         ok(platedRM && staysRM && askedRM && (get('invoices', 'INV-F2B-RM') || {}).po === 'new bill' && !F.tomb.size && !upQ('invoices', 'INV-F2B-RM'), `2b fix: a different bill under a plated invoice's number (re-minted elsewhere) never takes the plate row away — office to check; after Discard the new bill arrives as new (${platedRM}/${staysRM}/${askedRM})`);
 
+        // (20e2) the same rental's invoice back WITHOUT the payment the held copy carries (a re-bill, or a stale copy re-created
+        //        with its server-owned fields stripped) is still a deleted paid invoice: it stays plated; back WITH it, it leaves
+        const pr = INV('INV-F2B-PR', { rentalIds: ['R-F2B-PR1'], amountPaid: 100, payments: [{ amount: 100, method: 'cash' }] });
+        const pk = INV('INV-F2B-PK', { rentalIds: ['R-F2B-PK1'], amountPaid: 100, payments: [{ amount: 100, method: 'cash' }] });
+        fresh(() => { add('invoices', pr); add('invoices', pk); });
+        on(); script.changes = [chg({ head: 1 }), chg({ head: 2, deletes: { invoices: ['INV-F2B-PR', 'INV-F2B-PK'] } })]; await tick(); await tick();
+        const platedPP = F.tomb.has(k('invoices', 'INV-F2B-PR')) && F.tomb.has(k('invoices', 'INV-F2B-PK'));
+        script.changes = [chg({ head: 3, data: { invoices: [INV('INV-F2B-PR', { rentalIds: ['R-F2B-PR1'], po: 're-billed' }), clone(pk)] } })]; await tick();
+        const prHeld = F.tomb.has(k('invoices', 'INV-F2B-PR')) && get('invoices', 'INV-F2B-PR') === pr && pr.amountPaid === 100 && pr.po === '' && !upQ('invoices', 'INV-F2B-PR');
+        const pkBack = !F.tomb.has(k('invoices', 'INV-F2B-PK')) && get('invoices', 'INV-F2B-PK') === pk && !upQ('invoices', 'INV-F2B-PK');
+        T.tombDiscard('invoices', 'INV-F2B-PR');
+        ok(platedPP && prHeld && pkBack, `2b fix: a plated paid invoice whose number comes back without its payment (re-billed, or re-created stripped) stays plated — office to check; back with it, it leaves the plate (${platedPP}/${prHeld}/${pkBack})`);
+
         // (20f) R37 — a reply whose markers were deferred (a popup opened during the await) is not a fresh reply
         const vFm = V('VEN-F2B-FM', 'FM0'); fresh(() => add('vendors', vFm));
         on(); script.changes = [chg({ head: 1 })]; await tick();

@@ -25907,12 +25907,14 @@ function feedUntomb(data) {
   if (changed) renderTombPlate();
 }
 /** true = the server's invoice under a held invoice's id is the SAME bill (kept or re-created elsewhere): the §inv-collision test
- *  — a rental in common — or, for an invoice with no rentals (a membership), the same customer. */
+ *  — a rental in common — or, for an invoice with no rentals (a membership), the same customer; AND every payment, charge or
+ *  seal the held copy carries is on the server copy too. A re-created row loses those (doSync keeps server-owned fields
+ *  server-side) and a re-bill of the same rental has none: either way a paid invoice was deleted, so it stays 'office to check'. */
 function feedSameBill(local, remote) {
   if (!local || !remote) return false;
   const mine = (local.rentalIds || []).map(String), theirs = (remote.rentalIds || []).map(String);
-  if (mine.length || theirs.length) return mine.some((rid) => theirs.includes(rid));
-  return String(local.customerId == null ? '' : local.customerId) === String(remote.customerId == null ? '' : remote.customerId);
+  if (!(mine.length || theirs.length ? mine.some((rid) => theirs.includes(rid)) : String(local.customerId == null ? '' : local.customerId) === String(remote.customerId == null ? '' : remote.customerId))) return false;
+  return (STALE_SERVER_OWNED.invoices || []).every((f) => staleEmpty(local[f]) || JSON.stringify(local[f]) === JSON.stringify(remote[f]));
 }
 const FEED_NOUN = { categories: 'Category', units: 'Unit', customers: 'Customer', invoices: 'Invoice', rentals: 'Rental', workOrders: 'Work order', inspections: 'Inspection', vendors: 'Vendor', parts: 'Part', companyFiles: 'File', expenses: 'Receipt', models: 'Model' };
 function feedRecLabel(k, rec) {
