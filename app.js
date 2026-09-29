@@ -17596,6 +17596,7 @@ function render() {
   mountWranglerDock();   // §18 wire paste + drag-drop image input on the wrangler dock after each render
   mountDispatchMap();   // §2.3 office cockpit: re-parent the singleton dispatch map + refresh pins/route/truck
   renderSchedBanner();   // R27 — top "Due Today" scheduled-actions band (lives on <body>, survives the #app swap)
+  try { renderTombPlate(); } catch (e) { /* 2b fix round — R38 re-checked on every render (a row whose copy left DATA goes; labels follow edits); cheap when unchanged (its signature). Guarded: a render during boot must never fail on it */ }
   ruMountStrips();   // §13.7 gauge strips — build each open strip's chart into its measured 25% box
   applyTitles();   // full text on hover wherever we truncate (custom ~0.5s tooltip)
   scoreTick();     // §11 gamification — pop +X over any ring whose metric just rose
@@ -18663,7 +18664,7 @@ function onClick(e) {
       e.stopPropagation(); const k = tb.dataset.k, id = tb.dataset.id;
       if (tb.classList.contains('js-tomb-keep')) tombKeep(k, id);
       else if (tb.classList.contains('js-tomb-discard')) tombDiscard(k, id);
-      else wrFocusRecord(k === 'companyFiles' ? 'files' : k, id);   // the app's own record nav (a board popup for vendors / parts / receipts / files)
+      else tombOpen(k, id);   // the app's own record nav, plus a 'won't save' cue (fix round)
       return;
     } }
 
@@ -25463,7 +25464,7 @@ var refreshPaintOwed = false;
 // delete markers (applyDeleteMarkers). An older backend ('unknown action'), 'feed-off', or three server-errors in a row put
 // this screen back on the exact Phase 1 poll (startRefreshPoll: 'load' every 18 s) for 30 min, then one 'changes' probe.
 // In memory only — never written to dataCache (the instant-cache invariant). No record shape changes: no cache-schema bump.
-const FEED_TUNING = { fastMs: 8000, idleMs: 20000, inputMs: 90000, stretchMs: 18000, fullGapMs: 18000, snapEveryMs: 10 * 60000, snapIdleMs: 30 * 60000, jitterMs: 5000, feedTimeoutMs: 10000, offMs: 30 * 60000, markCap: 50, owedMax: 50, moneyOweMs: 10 * 60000, pollMinCapMs: 10 * 60000 };   // a property bag so tests can shrink it (resetFeedState restores it)
+const FEED_TUNING = { fastMs: 8000, idleMs: 20000, inputMs: 90000, stretchMs: 18000, fullGapMs: 18000, snapEveryMs: 10 * 60000, snapIdleMs: 30 * 60000, jitterMs: 5000, feedTimeoutMs: BACKEND_TIMEOUT_MS, offMs: 30 * 60000, markCap: 50, owedMax: 50, moneyOweMs: 10 * 60000, pollMinCapMs: 10 * 60000 };   // a property bag so tests can shrink it (resetFeedState restores it)
 const FEED_STATE0 = {
   on: false, offUntil: 0, offWhy: '',             // on = ticks ask 'changes' / 'snapshot'; off = the Phase 1 'load' poll (never enabled, or a fallback until offUntil)
   cursor: null, epoch: null, srvAfter: 0,         // the log position this screen has applied: head, epoch, and the server clock of that reply
@@ -25534,7 +25535,9 @@ async function refreshFromBackend() {
     // rejects, `finally` clears the flag, and the next 18s tick tries again.
     const loadAt = Date.now();   // RC-71 review — STALE entries whose window closed before this load began are dropped once it has been checked
     const gen0 = saveGen;   // RC-65 — a save that runs while this load is in flight makes its reply stale for what it sent
+    const base0 = lastSaved;   // fix round — the baseline this call was made against (snapshotSaved replaces it on every finishLoad)
     const r = await feedFetch(q).catch((e) => ({ ok: false, error: (e && e.rwTimeout) ? 'timeout' : 'network' }));   // RC-63 — abortable, so a stalled poll is released rather than left open. RC-67 3A — a stall or drop no longer throws past the chats + rail below
+    if (booting || !backendPassword || lastSaved !== base0) return;   // fix round — Switch user / sign-out / a new person's login happened during the await: this reply belongs to a session that is gone (its markers, absence and cursor would land on the wrong baseline, or over the login screen). Same baseline-identity test flushSave uses
     const lost = !r || !r.ok || !r.data;
     if (feedOffReply(q, r)) { feedFallback(r.error); return; }   // 2b — not a loss: this backend has no feed (an older version: 'unknown action') or Jac switched it off ('feed-off') → the exact Phase 1 poll for 30 min, then one probe
     quickRetry = refreshNoteLoad(r);   // RC-67 3A — counts a lost load; true only for the first in a row
@@ -25574,11 +25577,12 @@ async function refreshFromBackend() {
       });
     });
     if (!lost && q.full) stalePrune(loadAt);   /* 2b (A1-13) — only a FULL scan ('load' / 'snapshot') checked every entry; a delta never prunes */   // RC-71 review — every entry whose window closed before this load began has now been checked once
-    applied += feedAfterReply(q, r, lost, loadAt, applied);   // 2b — delete markers (after a reset snapshot, the records it no longer holds: RC-79 Q8-A), THEN the cursor: a bail, a lost reply or a throw leaves it where it was
+    const fa = feedAfterReply(q, r, lost, loadAt, applied); if (fa > 0) applied += fa;   // 2b — delete markers (after a reset snapshot, the records it no longer holds: RC-79 Q8-A), THEN the cursor: a bail, a lost reply or a throw leaves it where it was
     if (staleResend) saveSoon();   // RC-71 — re-send what a late-landing batch overwrote (the usual debounce; any retry already pending is re-armed; 2b: never a retry backoff, which saveSoon now keeps)
-    if (!lost && !r.reset) freshMark();   /* 2b — a feed delta (a quiet one too) or a snapshot counts the same; a reset reply brought nothing, so it does not */   // RC-67 (2A) — this reply got past the RC-65 guards and was adopted: the screen is confirmed current (nothing changed counts too). A lost load carries on to chats + rail (RC-67 3A) but is never a success
+    if (!lost && !r.reset && fa >= 0) freshMark();   /* 2b — a feed delta (a quiet one too) or a snapshot counts the same; a reset reply brought nothing, so it does not; fix round — nor a reply whose markers were deferred (fa < 0: asked again next tick) */   // RC-67 (2A) — this reply got past the RC-65 guards and was adopted: the screen is confirmed current (nothing changed counts too). A lost load carries on to chats + rail (RC-67 3A) but is never a success
     if (q.side) applied += await refreshChats(lost);   // the Phase 1 path (feed off): team chats + the Mr. Wrangler rail ride this tick exactly as before. 2b — while the feed runs they ride refreshSideChannels' own 18 s timer instead
-    refreshPaint(applied);   // RC-65 / RC-67 (2A) — paint what was adopted, or owe the paint (moved unchanged into refreshPaint)
+    if (booting || !backendPassword || lastSaved !== base0) return;   // fix round — the session changed during the chats await: never paint the old one over a login screen or the next person's
+    refreshPaint(applied);  // RC-65 / RC-67 (2A) — paint what was adopted, or owe the paint (moved unchanged into refreshPaint)
   } catch (e) { /* an adopt / chat-merge error → retry next tick (a lost LOAD no longer lands here — RC-67 3A) */ }
   finally { refreshing = false; if (quickRetry) refreshRetrySoon(); }   // RC-67 3A — armed only once `refreshing` is released, so the entry guard can never swallow the retry
 }
@@ -25679,8 +25683,10 @@ function feedBody(boot, now) {
   }
   return b;
 }
-/** 2b — send this tick's call. 'load' is exactly Phase 1's call. 'changes' keeps the 10 s limit the server's bootstrap margin
- *  assumes (Code.gs CHG_BOOT_MARGIN_MS = 60 s is > it); a 'snapshot' is a whole load server-side, so it keeps the load's limit.
+/** 2b — send this tick's call. 'load' is exactly Phase 1's call; a 'snapshot' is a whole load server-side, so it keeps the load's
+ *  limit. 'changes' has the load's 30 s limit too (fix round: at 10 s, on a day like RC-84's 20–40 s front door every delta was
+ *  lost while Phase 1's 30 s load would have landed — and timeouts never count toward the fallback). Still under the server's
+ *  bootstrap margin (Code.gs CHG_BOOT_MARGIN_MS = 60 s must exceed this limit: a boot call that runs later was abandoned here).
  *  Never backendRead: it would retry 'unknown action' three times. */
 function feedFetch(q) {
   FEED.sentAt = Date.now(); if (q.full) FEED.fullSentAt = FEED.sentAt;
@@ -25706,7 +25712,10 @@ function feedAfterReply(q, r, lost, loadAt, loopApplied) {
     if (q.errLoad) feedFallback('server-error');   // three server-errors, and a plain load works: the Phase 1 poll for 30 min
     return 0;
   }
-  if (lost) { if (r && r.error === 'server-error') FEED.serverErrs++; return 0; }   // only the backend's own catch counts toward the fallback; a lost reply (timeout, echo 404) never does
+  if (lost) {
+    if (q.probe) { FEED.offUntil = Date.now() + FEED.offMs; return 0; }   // fix round — a probe that got no usable answer (lost, or a server-error) re-arms the 30 min: the next ticks are Phase 1 loads again, never a probe on every tick in place of the load
+    if (r && r.error === 'server-error') FEED.serverErrs++; return 0;   // only the backend's own catch counts toward the fallback; a lost reply (timeout, echo 404) never does
+  }
   FEED.serverErrs = 0;
   if (typeof r.pollMinMs === 'number' && isFinite(r.pollMinMs)) FEED.pollMinMs = Math.min(Math.max(0, r.pollMinMs), FEED.pollMinCapMs);   // 'changes' carries the fleet throttle (a snapshot does not: the last one stands); capped, so a typo in row 1 can never freeze a screen
   if (q.probe) { FEED.on = true; FEED.offUntil = 0; FEED.offWhy = ''; startRefreshPoll(); }   // the 30-min probe answered: back on the feed
@@ -25716,8 +25725,13 @@ function feedAfterReply(q, r, lost, loadAt, loopApplied) {
     FEED.owed.forEach((until, key) => { if (until <= now) FEED.owed.delete(key); });   // the snapshot re-reads everything; a money id inside its 10 min stays owed
     return 0;
   }
-  if (!mayAdopt() && feedHasMarks(q.action !== 'snapshot' ? r.deletes : q.why === 'periodic' ? null : feedAbsent(r.data))) return 0;   // review fix — a popup opened, a field focused, a drag or a hover started DURING the await: a marker must not remove a record from under the person working it (its Save would find nothing). Nothing is applied and the cursor stays, so this same reply is asked again next tick (the loop's adoptions are idempotent)
+  if (!mayAdopt() && feedHasMarks(q.action !== 'snapshot' ? r.deletes : q.why === 'periodic' ? null : feedAbsent(r.data))) return -1;   // (-1: deferred — not a fresh reply for R37) review fix — a popup opened, a field focused, a drag or a hover started DURING the await: a marker must not remove a record from under the person working it (its Save would find nothing). Nothing is applied and the cursor stays, so this same reply is asked again next tick (the loop's adoptions are idempotent)
   let n = 0;
+  if (q.action === 'snapshot' && q.why === 'periodic' && FEED.cursor != null) {   // fix round — the safety net is ADOPT-ONLY for the log position: a snapshot carries no delete rows, so moving the cursor to its head would skip every 'd' row in (cursor, head] for good (a merged-away invoice left as a zombie). Cursor, epoch, srvAfter and the bootstrap window stay; the next delta re-reads that span (idempotent adoptions) and delivers its markers — or, past 1000 rows, the server answers reset and the reset snapshot's absence path covers them
+    FEED.misses += loopApplied; FEED.snapAt = now; FEED.snaps++;
+    feedOwedSettle(q, r.data, now);
+    return 0;
+  }
   if (q.action === 'snapshot') {
     if (q.why === 'periodic') FEED.misses += loopApplied;   // a far-side check on the log: with a healthy cursor, every record the safety net had to bring is one the feed missed
     else n = applyDeleteMarkers(feedAbsent(r.data), true);   // RC-79 Q8-A — after a reset (or the marker cap), a baselined record the snapshot no longer holds is a delete
@@ -25797,7 +25811,7 @@ async function refreshSideChannels() {
   const now = Date.now();
   if (FEED.pollMinMs && now - SIDE.lastAt < FEED.pollMinMs - 250) return;   // review fix — the fleet throttle (pollMinMs, the no-deploy quota lever) slows the side channels too: getChats + the rail are about half of an active screen's calls
   SIDE.busy = true; SIDE.runs++; SIDE.lastAt = now;
-  try { refreshPaint(await refreshChats(REFRESH.streak > 0)); }
+  try { const ch = await refreshChats(REFRESH.streak > 0); if (booting || !backendPassword) return; refreshPaint(ch); }   // fix round — signed out / switched person during the await: never paint over the login screen
   catch (e) { /* best-effort, as on the Phase 1 path */ }
   finally { SIDE.busy = false; }
 }
@@ -25884,11 +25898,21 @@ function feedUntomb(data) {
   let changed = false;
   FEED.tomb.forEach((t, key) => {
     const recs = data[t.k], idf = PERSIST_ID[t.k];
-    if (!Array.isArray(recs) || !recs.some((rec) => String(rec[idf]) === t.id)) return;
+    const remote = Array.isArray(recs) ? recs.find((rec) => String(rec[idf]) === t.id) : null;
+    if (!remote) return;
+    if (t.k === 'invoices' && !feedSameBill(feedLocalRec(t.k, t.id), remote)) return;   // fix round — a re-minted invoice number (another screen's nextInvoiceId after the delete) is a DIFFERENT bill: the held one stays plated, 'office to check' (RC-77 Q2-A). With no baseline the adopt loop keeps the held copy and owes the id; after Discard the new bill arrives as new
     FEED.tomb.delete(key); changed = true;
     (lastSaved[t.k] = lastSaved[t.k] || new Map()).set(t.id, t.base);
   });
   if (changed) renderTombPlate();
+}
+/** true = the server's invoice under a held invoice's id is the SAME bill (kept or re-created elsewhere): the §inv-collision test
+ *  — a rental in common — or, for an invoice with no rentals (a membership), the same customer. */
+function feedSameBill(local, remote) {
+  if (!local || !remote) return false;
+  const mine = (local.rentalIds || []).map(String), theirs = (remote.rentalIds || []).map(String);
+  if (mine.length || theirs.length) return mine.some((rid) => theirs.includes(rid));
+  return String(local.customerId == null ? '' : local.customerId) === String(remote.customerId == null ? '' : remote.customerId);
 }
 const FEED_NOUN = { categories: 'Category', units: 'Unit', customers: 'Customer', invoices: 'Invoice', rentals: 'Rental', workOrders: 'Work order', inspections: 'Inspection', vendors: 'Vendor', parts: 'Part', companyFiles: 'File', expenses: 'Receipt', models: 'Model' };
 function feedRecLabel(k, rec) {
@@ -25898,12 +25922,28 @@ function feedRecLabel(k, rec) {
   return (FEED_NOUN[k] || k) + ' ' + (name || id);
 }
 /** R38 — "Deleted on another screen" (RC-77 Q2-A). Body-level like R25 / R27 so render() can't wipe it; rebuilt only when its
- *  content changes (the node is the polite live region, so an unchanged plate never re-announces). Each row: the record,
- *  why, then Open · Keep (only when bringing it back can neither double-bill nor drop a payment) · Discard. Never auto-clears. */
+ *  content changes. Each row: the record, why, then Open · Keep (only when bringing it back can neither double-bill nor drop a
+ *  payment) · Discard. Never auto-clears. render() calls it too (fix round), so a row whose copy left DATA some other way never
+ *  keeps dead buttons and a label follows an edit. The plate is a labelled region; what it announces goes through
+ *  #feed-tomb-live — a polite status node that exists from the first render on and is never removed, filled a frame later, so a
+ *  screen reader hears a new row (a live region inserted already holding its text is generally not announced). A
+ *  ResizeObserver keeps the reserved band (--tomb-band) equal to the plate's height through a rotation or a resize. */
+const tombSaid = new Set();   // the rows #feed-tomb-live has already announced (keys): an unchanged or shrinking plate never re-announces
+function tombLiveNode() {
+  let live = document.getElementById('feed-tomb-live');
+  if (!live) {
+    live = document.createElement('div'); live.id = 'feed-tomb-live';
+    live.setAttribute('role', 'status'); live.setAttribute('aria-live', 'polite');
+    document.body.appendChild(live);
+  }
+  return live;
+}
 function renderTombPlate() {
   let node = document.getElementById('feed-tomb');
+  const live = tombLiveNode();
   FEED.tomb.forEach((t, key) => { if (!feedLocalRec(t.k, t.id)) FEED.tomb.delete(key); });   // a copy that left DATA some other way (a sweep, a merge here) has nothing left to decide
-  if (!FEED.tomb.size) { if (node) node.remove(); document.body.classList.remove('feed-tomb'); document.body.style.removeProperty('--tomb-band'); return; }
+  tombSaid.forEach((key) => { if (!FEED.tomb.has(key)) tombSaid.delete(key); });
+  if (!FEED.tomb.size) { if (node) { if (node._ro) node._ro.disconnect(); node.remove(); } live.textContent = ''; document.body.classList.remove('feed-tomb'); document.body.style.removeProperty('--tomb-band'); return; }
   const items = [...FEED.tomb.values()].map((t) => ({ t, label: feedRecLabel(t.k, feedLocalRec(t.k, t.id)) }));
   const sig = items.map(({ t, label }) => [t.k, t.id, t.canKeep ? 1 : 0, t.office ? 1 : 0, label].join('|')).join('~');
   if (node && node.dataset.sig === sig) return;
@@ -25920,29 +25960,54 @@ function renderTombPlate() {
   if (!node) {
     node = document.createElement('div');
     node.id = 'feed-tomb'; node.dataset.r = 'R38';
-    node.setAttribute('role', 'status'); node.setAttribute('aria-live', 'polite');
+    node.setAttribute('role', 'region'); node.setAttribute('aria-label', 'Deleted on another screen');
     document.body.appendChild(node);
+    if (typeof ResizeObserver === 'function') { const n0 = node; n0._ro = new ResizeObserver(() => { if (n0.isConnected) document.body.style.setProperty('--tomb-band', n0.offsetHeight + 'px'); }); n0._ro.observe(n0, { box: 'border-box' }); }   // fix round — the band follows the plate through a rotation (is-phone flips column / 30vh) or a resize, not only a content change
   }
+  const fresh = items.filter(({ t }) => !tombSaid.has(t.k + '\u0001' + t.id));
+  fresh.forEach(({ t }) => tombSaid.add(t.k + '\u0001' + t.id));
+  const say = fresh.map(({ t, label }) => label + ' — deleted on another screen' + (t.office ? ', office to check' : '')).join('. ');
   node.dataset.sig = sig;
   node.innerHTML = `<span class="ftp-stripe" aria-hidden="true"></span>`
     + `<div class="ftp-plate"><span class="ftp-stamp">${I.alert}<span>Deleted elsewhere</span></span><span class="ftp-count" aria-hidden="true">${items.length}</span></div>`
     + `<div class="ftp-list">${rows}</div>`;
   document.body.classList.add('feed-tomb');
-  requestAnimationFrame(() => { const n = document.getElementById('feed-tomb'); if (n) document.body.style.setProperty('--tomb-band', n.offsetHeight + 'px'); });   // reserve the exact band so the plate never covers the yard (variable rows), as R27 does
+  requestAnimationFrame(() => { const n = document.getElementById('feed-tomb'); if (n) document.body.style.setProperty('--tomb-band', n.offsetHeight + 'px'); if (say) live.textContent = say + '.'; });   // reserve the exact band so the plate never covers the yard (variable rows), as R27 does; fix round — announce the new rows through the standing live node, a frame after it exists
 }
+/** fix round — Keep / Discard rebuild the plate, destroying the focused button: put a keyboard / screen-reader user on the row that
+ *  now sits where theirs was (or the one above it), else — the plate gone — on the app's first button (never a field: a focused
+ *  field would stand the refresh down). Only when focus was on the plate. */
+function tombRefocus(idx, hadFocus) {
+  if (!hadFocus) return;
+  const rows = document.querySelectorAll('#feed-tomb .ftp-row');
+  const row = rows.length ? rows[Math.min(Math.max(idx, 0), rows.length - 1)] : null;
+  const to = row ? row.querySelector('.pill') : document.querySelector('#app button:not([disabled])');
+  if (to) to.focus();
+}
+function tombRowIdx(k, id) { return [...FEED.tomb.values()].findIndex((t) => t.k === k && t.id === id); }
+function tombHasFocus() { const ae = document.activeElement; return !!(ae && ae.closest && ae.closest('#feed-tomb')); }
 /** R38 Keep — bring the held copy back: the marker took its baseline, so the next save re-creates it on the server. Re-checked
  *  now (a payment or a merge may have landed since): refused → Discard-only, 'office to check'. */
 function tombKeep(k, id) {
   const key = k + '\u0001' + id, t = FEED.tomb.get(key), rec = feedLocalRec(k, id); if (!t || !rec) return;
-  if (!t.canKeep || FEED_NO_KEEP.has(k) || feedMoney(k, rec)) { t.canKeep = false; t.office = true; renderTombPlate(); toast('That one can’t be kept — bringing it back could bill twice or lose a payment. Office to check.'); return; }
-  FEED.tomb.delete(key); renderTombPlate(); saveSoon();
+  const idx = tombRowIdx(k, id), hadFocus = tombHasFocus();
+  if (!t.canKeep || FEED_NO_KEEP.has(k) || feedMoney(k, rec)) { t.canKeep = false; t.office = true; renderTombPlate(); tombRefocus(idx, hadFocus); toast('That one can’t be kept — bringing it back could bill twice or lose a payment. Office to check.'); return; }
+  FEED.tomb.delete(key); renderTombPlate(); tombRefocus(idx, hadFocus); saveSoon();
 }
 /** R38 Discard — drop the held copy here too. The server already deleted it and the marker took its baseline: nothing is sent. */
 function tombDiscard(k, id) {
   const key = k + '\u0001' + id; if (!FEED.tomb.has(key)) return;
+  const idx = tombRowIdx(k, id), hadFocus = tombHasFocus();
   FEED.tomb.delete(key); feedDropLocal(k, id, null);
   if (k === 'rentals' || k === 'customers') reindexRentalLinks();
-  renderTombPlate(); state.cascade = createCascade(DATA); render();
+  renderTombPlate(); state.cascade = createCascade(DATA); render(); tombRefocus(idx, hadFocus);
+}
+/** R38 Open — fix round: the held copy opens in its normal, editable view, but nothing done there is saved (it is held out of
+ *  computeChanges until Keep) — say so, so silence never reads as 'saved'. */
+function tombOpen(k, id) {
+  const t = FEED.tomb.get(k + '\u0001' + id);
+  wrFocusRecord(k === 'companyFiles' ? 'files' : k, id);   // the app's own record nav (a board popup for vendors / parts / receipts / files)
+  if (t) toast('Deleted on another screen — changes here won’t save' + (t.canKeep ? ' unless you press Keep.' : '. Office to check.'));
 }
 window.__feed = () => ({ on: FEED.on, offWhy: FEED.offWhy, offUntil: FEED.offUntil, cursor: FEED.cursor, epoch: FEED.epoch, pollMinMs: FEED.pollMinMs, deltas: FEED.deltas, snaps: FEED.snaps, resets: FEED.resets, misses: FEED.misses, marks: FEED.marks, held: FEED.held, plate: FEED.tomb.size, owed: FEED.owed.size, serverErrs: FEED.serverErrs, losses: REFRESH.streak, fallbacks: FEED.fallbacks, side: SIDE.runs });   // 2b — console diagnostic only, like window.__poll(): counts, never a record id or a name; never sent
 window.__poll = () => ({ runs: REFRESH.runs, drops: REFRESH.drops, streak: REFRESH.streak, lastErr: REFRESH.lastErr });   // RC-67 3A — console diagnostic only, like window.__perf(): this tab's poll loads tried / lost; no personal data, never sent

@@ -5631,8 +5631,12 @@ body.sync-failing.sched-due #feed-tomb { top: calc(40px + var(--sched-band, 46px
 .is-phone #feed-tomb { flex-direction: column; align-items: stretch; gap: 6px; max-height: 30vh; }
 .is-phone #feed-tomb .ftp-row { gap: 8px 10px; }
 .is-phone #feed-tomb .pill { min-height: 44px; min-width: 44px; }
-/* An open popup outranks the plate: it drops under the popup's backdrop (.overlay, z 50) so it never covers a popup's header or ✕. */
-body:has(#overlay-root .overlay) #feed-tomb { z-index: 40; }
+/* An open popup outranks the plate: it drops under the popup's backdrop (.overlay, z 50) so it never covers a popup's header or ✕.
+   The phone's full-screen comms view (.mcomms, z 9000 inside #app, which makes no stacking context) outranks it too (fix round):
+   its inbox ✕ and its thread's Back sit where the plate would be. */
+body:has(#overlay-root .overlay, #app > .mcomms) #feed-tomb { z-index: 40; }
+/* R38's announcer (fix round): a polite status node that stands from the first render on, so a new plate row is heard; never seen. */
+#feed-tomb-live { position: fixed; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 body.feed-tomb #app { padding-top: var(--tomb-band, 46px); }
 body.sync-failing.feed-tomb #app { padding-top: calc(40px + var(--tomb-band, 46px)); }
 body.sched-due.feed-tomb #app { padding-top: calc(var(--sched-band, 46px) + var(--tomb-band, 46px)); }

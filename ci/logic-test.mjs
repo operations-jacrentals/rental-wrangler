@@ -4738,7 +4738,7 @@ try {
         const rows = plate ? [...plate.querySelectorAll('.ftp-row')] : [];
         const rowOf = (id) => rows.find((r) => r.querySelector(`[data-id="${id}"]`));
         const btns = plate ? [...plate.querySelectorAll('.pill')] : [];
-        ok(!!plate && plate.dataset.r === 'R38' && plate.getAttribute('role') === 'status' && plate.getAttribute('aria-live') === 'polite' && document.body.classList.contains('feed-tomb') && rows.length === 8, `2b plate: one R38 plate on <body>, a polite live region, one row per held copy (${rows.length})`);
+        ok(!!plate && plate.dataset.r === 'R38' && plate.getAttribute('role') === 'region' && /Deleted on another screen/.test(plate.getAttribute('aria-label') || '') && document.body.classList.contains('feed-tomb') && rows.length === 8, `2b plate: one R38 plate on <body>, a labelled region (its announcements go through #feed-tomb-live), one row per held copy (${rows.length})`);
         ok(rows.every((r) => r.getAttribute('role') === 'group' && /Deleted on another screen/.test(r.getAttribute('aria-label') || '')) && btns.length > 0 && btns.every((b) => b.tagName === 'BUTTON'), '2b plate: each row is a labelled group and every control is a real <button> (honest affordance, screen readers)');
         ok(!!rowOf('VEN-F2B-MC') && !!rowOf('VEN-F2B-MC').querySelector('.js-tomb-keep') && !/office to check/.test(rowOf('VEN-F2B-MC').textContent) && !!rowOf('INV-F2B-P') && !rowOf('INV-F2B-P').querySelector('.js-tomb-keep') && /office to check/.test(rowOf('INV-F2B-P').textContent) && rows.every((r) => !!r.querySelector('.js-tomb-discard')), '2b plate: Keep only where it is safe; Discard-only rows say "office to check"; every row can Discard');
         const why = plate && plate.querySelector('.ftp-why');
@@ -4972,6 +4972,131 @@ try {
           F.snapAt = 0; F.lastInputAt = 0; script.snapshot = [snapR({ data: fullData(), head: 1, epoch: 7 })]; await tick();
           ok(T.cacheDeviceOk() && writes === 0 && acts() === 'changes,snapshot', `2b instant cache: a delta and a snapshot never write the on-device snapshot (writes ${writes}; ${acts()})`);
         } finally { T.dataCache.write = w0; if (pid0 == null) localStorage.removeItem('jactec.pidToken'); else localStorage.setItem('jactec.pidToken', pid0); }
+
+        // (20) fix round — each check failed on e8accfb and passes here
+        // (20a) a PERIODIC snapshot is adopt-only for the log position: a delete logged between the cursor and the snapshot's head
+        //       still reaches the marker path on the next delta (it used to be skipped for good — a zombie a later edit re-creates)
+        const zU = V('VEN-F2B-ZU', 'ZU0'); fresh(() => add('vendors', zU));
+        on(); F.fullGapMs = 0; script.changes = [chg({ head: 500, epoch: 7, now: 5000 })]; await tick();
+        F.snapAt = 0; F.lastInputAt = 0; seen.length = 0;
+        script.snapshot = [snapR({ data: fullData(['vendors:VEN-F2B-ZU']), head: 501, epoch: 7, now: 6000 })]; await tick();
+        const z1 = { a: acts(), cur: F.cursor, srv: F.srvAfter, ep: F.epoch, kept: has('vendors', 'VEN-F2B-ZU'), snaps: F.snaps };
+        F.snapAt = Date.now(); seen.length = 0; script.changes = [chg({ head: 501, epoch: 7, now: 7000, deletes: { vendors: ['VEN-F2B-ZU'] } })]; await tick();
+        const zb = last('changes') || {};
+        ok(z1.a === 'snapshot' && z1.cur === 500 && z1.srv === 5000 && z1.ep === 7 && z1.kept && z1.snaps === 1 && zb.since === 500 && zb.srvAfter === 5000 && !has('vendors', 'VEN-F2B-ZU') && !delQ('vendors', 'VEN-F2B-ZU') && F.cursor === 501, `2b fix: a periodic snapshot never moves the cursor — a delete logged between the cursor and its head still reaches the marker path on the next delta (${z1.a}; cursor ${z1.cur} → since ${zb.since}; ${F.cursor})`);
+
+        // (20b) 'changes' gets the load's 30 s limit (RC-84: a 20–40 s front door lost every 10 s delta while a 30 s load landed)
+        T.resetFeedState();
+        ok(F.feedTimeoutMs === 30000, `2b fix: a 'changes' call waits as long as Phase 1's load (${F.feedTimeoutMs} ms)`);
+
+        // (20c) after a fallback, a probe that gets no usable answer (a server-error, or a hang) re-arms the 30 min: the next tick
+        //       is Phase 1's load again, never another probe in its place
+        const probeOut = [];
+        for (const step of [{ ok: false, error: 'server-error' }, 'hang']) {
+          on(); F.on = false; F.offUntil = Date.now() - 1; F.loadSentAt = Date.now() - 4000; F.feedTimeoutMs = 80; seen.length = 0; script.changes = [step];
+          await tick(); await sleep(30);
+          const first = (seen[0] || {}).action, rearmed = F.offUntil > Date.now() + 29 * 60000;
+          seen.length = 0; await tick(); await sleep(30);
+          probeOut.push(`${first}>${(seen[0] || {}).action}:${rearmed}:${F.on}`);
+          T.resetRefreshState();
+        }
+        ok(probeOut.join() === 'changes>load:true:false,changes>load:true:false', `2b fix: a lost or failing probe re-arms the 30 min — the next tick is Phase 1's load, not another probe (${probeOut.join()})`);
+
+        // (20d) the session changed while a reply was in flight (a new login's baseline, or a sign-out): nothing of it is applied
+        const sv = V('VEN-F2B-SS', 'SS0'); fresh(() => add('vendors', sv)); fixtures.push(['vendors', 'VEN-F2B-SX']);
+        const sessOut = [];
+        for (const swap of [() => T.snapshotSaved(), () => T.setBackendPassword('')]) {
+          on(); script.changes = [chg({ head: 1 })]; await tick();
+          during = (b) => { if (b.action === 'changes') swap(); };
+          script.changes = [chg({ head: 2, deletes: { vendors: ['VEN-F2B-SS'] }, data: { vendors: [V('VEN-F2B-SX', 'sx')] } })]; await tick();
+          sessOut.push(has('vendors', 'VEN-F2B-SS') && !has('vendors', 'VEN-F2B-SX') && F.cursor === 1 && !F.tomb.size);
+          during = null; T.setBackendPassword('TEST-PW');
+        }
+        ok(sessOut.join() === 'true,true', `2b fix: a reply that lands after Switch user / a new login (a new baseline) or a sign-out is dropped whole — no marker, no adoption, no cursor (${sessOut.join()})`);
+
+        // (20e) a re-minted invoice number (another screen's nextInvoiceId after the delete) is a different bill: the held paid
+        //       invoice stays plated, office to check; after Discard the new bill arrives as new
+        const rm = INV('INV-F2B-RM', { rentalIds: ['R-F2B-RM1'], amountPaid: 100, payments: [{ amount: 100, method: 'cash' }] });
+        fresh(() => add('invoices', rm));
+        on(); script.changes = [chg({ head: 1 }), chg({ head: 2, deletes: { invoices: ['INV-F2B-RM'] } })]; await tick(); await tick();
+        const platedRM = !!F.tomb.get(k('invoices', 'INV-F2B-RM'));
+        const otherBill = INV('INV-F2B-RM', { customerId: 'C0001', rentalIds: ['R-F2B-OTHER'], po: 'new bill' });
+        script.changes = [chg({ head: 3, data: { invoices: [clone(otherBill)] } })]; await tick();
+        const staysRM = !!F.tomb.get(k('invoices', 'INV-F2B-RM')) && F.tomb.get(k('invoices', 'INV-F2B-RM')).office && get('invoices', 'INV-F2B-RM') === rm && rm.amountPaid === 100 && !!document.querySelector('#feed-tomb [data-id="INV-F2B-RM"]') && !upQ('invoices', 'INV-F2B-RM');
+        T.tombDiscard('invoices', 'INV-F2B-RM');
+        seen.length = 0; script.changes = [chg({ head: 4, data: { invoices: [clone(otherBill)] } })]; await tick();
+        const askedRM = ((((last('changes') || {}).ids) || {}).invoices || []).includes('INV-F2B-RM');
+        ok(platedRM && staysRM && askedRM && (get('invoices', 'INV-F2B-RM') || {}).po === 'new bill' && !F.tomb.size && !upQ('invoices', 'INV-F2B-RM'), `2b fix: a different bill under a plated invoice's number (re-minted elsewhere) never takes the plate row away — office to check; after Discard the new bill arrives as new (${platedRM}/${staysRM}/${askedRM})`);
+
+        // (20f) R37 — a reply whose markers were deferred (a popup opened during the await) is not a fresh reply
+        const vFm = V('VEN-F2B-FM', 'FM0'); fresh(() => add('vendors', vFm));
+        on(); script.changes = [chg({ head: 1 })]; await tick();
+        T.setFreshAt(1); during = (b) => { if (b.action === 'changes') st.overlay = { kind: 'f2b-probe' }; };
+        script.changes = [chg({ head: 2, deletes: { vendors: ['VEN-F2B-FM'] } })]; await tick();
+        const frDeferred = T.freshAt(); during = null; st.overlay = null;
+        script.changes = [chg({ head: 2, deletes: { vendors: ['VEN-F2B-FM'] } })]; await tick();
+        ok(frDeferred === 1 && T.freshAt() > 1 && !has('vendors', 'VEN-F2B-FM'), `2b fix: a reply whose delete markers were deferred never stamps "Updated N s ago"; the tick that applies them does (${frDeferred} → ${T.freshAt() > 1})`);
+
+        // (20g) R38 — a standing announcer: #feed-tomb-live exists (empty) before the plate does, then speaks the new rows a frame
+        //       later; Keep / Discard put focus on the next row (or, the plate gone, on the app's first button)
+        const fv = ['VEN-F2B-FA', 'VEN-F2B-FB', 'VEN-F2B-FC'].map((id) => V(id, id.slice(-2) + '0'));
+        fresh(() => fv.forEach((v) => add('vendors', v)));
+        on(); script.changes = [chg({ head: 1 })]; await tick();
+        const liveB = document.getElementById('feed-tomb-live'), liveEmpty = !!liveB && liveB.textContent === '' && liveB.getAttribute('role') === 'status' && liveB.getAttribute('aria-live') === 'polite' && !document.getElementById('feed-tomb');
+        fv.forEach((v) => { v.name += '-edited'; });
+        script.changes = [chg({ head: 2, deletes: { vendors: fv.map((v) => v.vendorId) } })]; await tick();
+        const saidNow = (document.getElementById('feed-tomb-live') || {}).textContent || '';
+        await sleep(80);
+        const liveA = document.getElementById('feed-tomb-live'), said = liveA ? liveA.textContent : '';
+        ok(liveEmpty && liveA === liveB && saidNow === '' && /FA0-edited/.test(said) && /FC0-edited/.test(said) && /deleted on another screen/.test(said), `2b fix: the plate's announcer stands empty before the plate exists and speaks its new rows a frame later (${liveEmpty}; "${said.slice(0, 60)}")`);
+        const pressFocused = (sel) => { const b = document.querySelector(sel); if (!b) return false; b.focus(); b.click(); return true; };
+        const f1 = pressFocused('#feed-tomb .js-tomb-discard[data-id="VEN-F2B-FA"]'), ae1 = document.activeElement;
+        const onB = f1 && !!ae1 && ae1.classList.contains('pill') && ae1.dataset.id === 'VEN-F2B-FB' && !!ae1.closest('#feed-tomb');
+        const f2 = pressFocused('#feed-tomb .js-tomb-keep[data-id="VEN-F2B-FB"]'), ae2 = document.activeElement;
+        const onC = f2 && !!ae2 && ae2.dataset && ae2.dataset.id === 'VEN-F2B-FC';
+        T.saveTimerClear();
+        const f3 = pressFocused('#feed-tomb .js-tomb-discard[data-id="VEN-F2B-FC"]'), ae3 = document.activeElement;
+        const onApp = f3 && !document.getElementById('feed-tomb') && !!ae3 && ae3.tagName === 'BUTTON' && !!ae3.closest('#app');
+        if (ae3 && ae3.blur) ae3.blur();
+        ok(onB && onC && onApp, `2b fix: Keep / Discard leave keyboard focus on the next plate row — and on the app once the plate is gone — never on <body> (${onB}/${onC}/${onApp})`);
+
+        // (20h) render() re-checks the plate: a held copy that left DATA some other way loses its row (no dead Open / Keep), and a
+        //       label follows an edit; Open says the held copy's edits are not being saved
+        const rv = V('VEN-F2B-RV', 'RV0'), rw = V('VEN-F2B-RW', 'RW0'); fresh(() => { add('vendors', rv); add('vendors', rw); });
+        on(); script.changes = [chg({ head: 1 })]; await tick();
+        rv.name = 'RV-edited'; rw.name = 'RW-edited';
+        script.changes = [chg({ head: 2, deletes: { vendors: ['VEN-F2B-RV', 'VEN-F2B-RW'] } })]; await tick();
+        const twoRows = document.querySelectorAll('#feed-tomb .ftp-row').length === 2;
+        drop('vendors', 'VEN-F2B-RV'); rw.name = 'RW-renamed'; T.render();
+        const plH = document.getElementById('feed-tomb');
+        ok(twoRows && !!plH && !plH.querySelector('[data-id="VEN-F2B-RV"]') && !F.tomb.has(k('vendors', 'VEN-F2B-RV')) && /RW-renamed/.test(plH.textContent), `2b fix: every render re-checks the plate — a row whose copy is gone leaves, a label follows an edit (${twoRows})`);
+        const toastEl = document.getElementById('toast'); if (toastEl) toastEl.textContent = '';
+        const oRW = click('#feed-tomb .js-tomb-open[data-id="VEN-F2B-RW"]');
+        const tTxt = toastEl ? toastEl.textContent : '';
+        st.overlay = null; T.render(); T.tombDiscard('vendors', 'VEN-F2B-RW');
+        ok(oRW && /Deleted on another screen/.test(tTxt) && /won’t save/.test(tTxt) && /Keep/.test(tTxt), `2b fix: Open on a held copy says its changes won't save (unless Keep) — silence never reads as saved ("${tTxt}")`);
+
+        // (20i) a sign-out during the chats await never paints: the side channels' getChats, and the Phase 1 path's chats after its
+        //       load (the paint is observable as a fresh cascade). Each with a control: no sign-out → it does paint
+        const scChat = { id: 'f2b-sc-probe', title: 'Probe', members: [], messages: [{ id: 'f2b-sc-m1', text: 'probe', at: Date.now(), by: 'probe' }], seen: {} };
+        const paints = [];
+        for (const signOut of [false, true]) {
+          on(); script.changes = [chg({ head: 1 })]; await tick();
+          const cas0 = st.cascade; T.SIDE.lastAt = 0; T.SIDE.busy = false;
+          script.getChats = [{ ok: true, chats: clone(st.chat.chats).concat([clone(scChat)]) }];
+          during = function hk(b) { if (b.action !== 'getChats') { during = hk; return; } if (signOut) T.setBackendPassword(''); };
+          ready(); await T.refreshSideChannels();
+          paints.push('side:' + (st.cascade !== cas0)); during = null; T.setBackendPassword('TEST-PW');
+          st.chat.chats = st.chat.chats.filter((c) => c.id !== 'f2b-sc-probe');
+          on(); F.on = false; F.offUntil = Date.now() + 60000; fixtures.push(['vendors', 'VEN-F2B-SP1']);
+          script.load = [{ ok: true, data: { vendors: [V('VEN-F2B-SP1', 'sp1' + signOut)] } }];
+          const cas1 = st.cascade;
+          during = function hk(b) { if (b.action !== 'getChats') { during = hk; return; } if (signOut) T.setBackendPassword(''); };
+          await tick();
+          paints.push('p1:' + (st.cascade !== cas1)); during = null; T.setBackendPassword('TEST-PW'); T.resetRefreshState();
+          drop('vendors', 'VEN-F2B-SP1');
+        }
+        ok(paints.join() === 'side:true,p1:true,side:false,p1:false', `2b fix: signed out while chats were in flight → no paint over the login screen, on the side channels and on the Phase 1 path (${paints.join()})`);
       } finally {
         during = null; window.setInterval = si0; if (Object.getOwnPropertyDescriptor(document, 'hidden')) delete document.hidden;
         field.remove(); pickEd.remove();
@@ -5452,6 +5577,50 @@ try {
     results.push({ ok: m.minW >= 44 && m.minH >= 44 && m.gap >= 8, m: `2b plate at 375×812: every button clears the 44 px touch floor and Keep sits at least 8 px from Discard (smallest ${m.minW}×${m.minH}; gap ${m.gap} px; review fix)` });
     results.push({ ok: m.xUnderPlate && m.xHit, m: `2b plate at 375×812: an open popup outranks the plate — its ✕ (under the plate's band) is still what a tap hits (${m.xUnderPlate}/${m.xHit}; review fix)` });
     results.push({ ok: m.undo && m.arm.l >= 0 && m.arm.r <= m.arm.w && /Team Roster/.test(m.arm.text), m: `RC-83 at 375×812: the armed "${m.arm.text}" stays on screen, Undo in the footer too (${m.arm.l}..${m.arm.r} of ${m.arm.w}; review fix)` });
+  }
+
+  // Phase 2b fix round at PHONE size — the full-screen comms view (.mcomms) outranks the plate (its inbox ✕ and its thread's Back
+  // are what a tap hits); and the band the plate reserves follows a rotation (landscape → portrait flips is-phone: column, 30vh).
+  {
+    const ph = await browser.newPage({ viewport: { width: 812, height: 375 } });
+    ph.on('pageerror', (e) => pageErrors.push(String(e && e.message || e)));
+    await ph.goto('http://localhost:8000/#local', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await ph.waitForFunction(() => !!window.__rw, { timeout: 20000 });
+    await ph.evaluate(() => window.__rwBootRail);
+    const land = await ph.evaluate(async () => { const raf2 = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const T = window.__rw, F = T.FEED;
+      const hold = (k, rec, idf, canKeep) => F.tomb.set(k + '\u0001' + rec[idf], { k, id: String(rec[idf]), base: '', canKeep, office: !canKeep });
+      hold('vendors', T.DATA.vendors[0], 'vendorId', true); hold('invoices', T.DATA.invoices[0], 'invoiceId', false); hold('customers', T.DATA.customers[0], 'customerId', false);
+      T.renderTombPlate(); await raf2(); await raf2();
+      const p = document.getElementById('feed-tomb');
+      return { phone: document.body.classList.contains('is-phone'), h: p.offsetHeight, band: document.body.style.getPropertyValue('--tomb-band') };
+    });
+    await ph.setViewportSize({ width: 375, height: 812 });   // rotate to portrait
+    await ph.waitForTimeout(400);
+    const port = await ph.evaluate(async () => { const raf2 = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      await raf2();
+      const p = document.getElementById('feed-tomb');
+      return { phone: document.body.classList.contains('is-phone'), h: p.offsetHeight, band: document.body.style.getPropertyValue('--tomb-band') };
+    });
+    results.push({ ok: !land.phone && port.phone && land.band === land.h + 'px' && port.h !== land.h && port.band === port.h + 'px', m: `2b fix: the band the plate reserves follows a rotation — landscape ${land.h}px (band ${land.band}) → portrait ${port.h}px (band ${port.band})` });
+    const mc = await ph.evaluate(async () => { const raf2 = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const T = window.__rw, st = T.__state;
+      const hitOk = (sel) => { const x = document.querySelector(sel); if (!x) return 'missing'; const r = x.getBoundingClientRect(); const h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!h && (h === x || x.contains(h)); };
+      const pr = document.getElementById('feed-tomb').getBoundingClientRect();
+      const cat0 = st.commsRail.cat, sess = st.commsRail.sessions.team, open0 = sess ? sess.lastOpen : null;
+      st.commsRail.cat = 'team'; if (sess) sess.lastOpen = null; T.render(); await raf2();
+      const xr = (document.querySelector('.mcomms .js-comms-menu-x') || { getBoundingClientRect: () => ({ top: 999 }) }).getBoundingClientRect();
+      const inbox = { hit: hitOk('.mcomms .js-comms-menu-x'), under: xr.top < pr.bottom };
+      const cid = 'f2b-mc-probe'; st.chat.chats.push({ id: cid, title: 'Probe', members: [], messages: [], seen: {} });
+      if (sess) sess.lastOpen = cid; T.render(); await raf2();
+      const br = (document.querySelector('.mcomms .js-mcomms-back') || { getBoundingClientRect: () => ({ top: 999 }) }).getBoundingClientRect();
+      const thread = { hit: hitOk('.mcomms .js-mcomms-back'), under: br.top < pr.bottom };
+      st.chat.chats = st.chat.chats.filter((c) => c.id !== cid); if (sess) sess.lastOpen = open0; st.commsRail.cat = cat0; T.render();
+      T.FEED.tomb.clear(); T.renderTombPlate();
+      return { inbox, thread };
+    });
+    await ph.close();
+    results.push({ ok: mc.inbox.hit === true && mc.inbox.under && mc.thread.hit === true && mc.thread.under, m: `2b fix at 375×812: the phone's full-screen comms view outranks the plate — its inbox ✕ and its thread's Back (both under the plate's band) are what a tap hits (${JSON.stringify(mc)})` });
   }
 
   // Phase 2b source guards — too wired into sign-in / boot to drive headless: (1) the 2d guard split moved RC-65's adopt guards
