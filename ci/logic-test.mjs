@@ -5028,6 +5028,17 @@ try {
         const askedRM = ((((last('changes') || {}).ids) || {}).invoices || []).includes('INV-F2B-RM');
         ok(platedRM && staysRM && askedRM && (get('invoices', 'INV-F2B-RM') || {}).po === 'new bill' && !F.tomb.size && !upQ('invoices', 'INV-F2B-RM'), `2b fix: a different bill under a plated invoice's number (re-minted elsewhere) never takes the plate row away — office to check; after Discard the new bill arrives as new (${platedRM}/${staysRM}/${askedRM})`);
 
+        // (20e3) the same, for a plated invoice with NO money (an unexplained delete): a re-minted number on another rental's
+        //        bill is a different bill — it stays plated; the held copy is not overwritten
+        const ro = INV('INV-F2B-RO', { rentalIds: ['R-F2B-RO1'] });
+        fresh(() => add('invoices', ro));
+        on(); script.changes = [chg({ head: 1 }), chg({ head: 2, deletes: { invoices: ['INV-F2B-RO'] } })]; await tick(); await tick();
+        const platedRO = !!F.tomb.get(k('invoices', 'INV-F2B-RO')) && !!F.tomb.get(k('invoices', 'INV-F2B-RO')).office;
+        script.changes = [chg({ head: 3, data: { invoices: [INV('INV-F2B-RO', { customerId: 'C0001', rentalIds: ['R-F2B-RO2'], po: 'other rental' })] } })]; await tick();
+        const roHeld = !!F.tomb.get(k('invoices', 'INV-F2B-RO')) && get('invoices', 'INV-F2B-RO') === ro && ro.po === '' && (ro.rentalIds || []).join() === 'R-F2B-RO1';
+        T.tombDiscard('invoices', 'INV-F2B-RO');
+        ok(platedRO && roHeld, `2b fix: a plated unpaid invoice whose number comes back on another rental's bill stays plated — the held copy is never overwritten by a different bill (${platedRO}/${roHeld})`);
+
         // (20e2) the same rental's invoice back WITHOUT the payment the held copy carries (a re-bill, or a stale copy re-created
         //        with its server-owned fields stripped) is still a deleted paid invoice: it stays plated; back WITH it, it leaves
         const pr = INV('INV-F2B-PR', { rentalIds: ['R-F2B-PR1'], amountPaid: 100, payments: [{ amount: 100, method: 'cash' }] });
