@@ -5059,7 +5059,7 @@ try {
         fv.forEach((v) => { v.name += '-edited'; });
         script.changes = [chg({ head: 2, deletes: { vendors: fv.map((v) => v.vendorId) } })]; await tick();
         const saidNow = (document.getElementById('feed-tomb-live') || {}).textContent || '';
-        await sleep(80);
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));   // the frame the announcer fills in (a fixed sleep flaked under load)
         const liveA = document.getElementById('feed-tomb-live'), said = liveA ? liveA.textContent : '';
         ok(liveEmpty && liveA === liveB && saidNow === '' && /FA0-edited/.test(said) && /FC0-edited/.test(said) && /deleted on another screen/.test(said), `2b fix: the plate's announcer stands empty before the plate exists and speaks its new rows a frame later (${liveEmpty}; "${said.slice(0, 60)}")`);
         const pressFocused = (sel) => { const b = document.querySelector(sel); if (!b) return false; b.focus(); b.click(); return true; };
@@ -5088,6 +5088,14 @@ try {
         const tTxt = toastEl ? toastEl.textContent : '';
         st.overlay = null; T.render(); T.tombDiscard('vendors', 'VEN-F2B-RW');
         ok(oRW && /Deleted on another screen/.test(tTxt) && /won’t save/.test(tTxt) && /Keep/.test(tTxt), `2b fix: Open on a held copy says its changes won't save (unless Keep) — silence never reads as saved ("${tTxt}")`);
+
+        // (20h2) a plate that empties before its frame never announces rows that are already gone
+        const vGo = T.DATA.vendors[0];
+        F.tomb.set(k('vendors', String(vGo.vendorId)), { k: 'vendors', id: String(vGo.vendorId), base: '', canKeep: true, office: false }); T.renderTombPlate();
+        F.tomb.clear(); T.renderTombPlate();
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        const goneSaid = (document.getElementById('feed-tomb-live') || {}).textContent;
+        ok(goneSaid === '' && !document.getElementById('feed-tomb'), `2b fix: a plate that empties before its frame never announces the rows it no longer holds ("${goneSaid}")`);
 
         // (20i) a sign-out during the chats await never paints: the side channels' getChats, and the Phase 1 path's chats after its
         //       load (the paint is observable as a fresh cascade). Each with a control: no sign-out → it does paint
@@ -5611,7 +5619,8 @@ try {
     await ph.setViewportSize({ width: 375, height: 812 });   // rotate to portrait
     await ph.waitForTimeout(400);
     const port = await ph.evaluate(async () => { const raf2 = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-      await raf2();
+      for (let i = 0; i < 60 && !document.body.classList.contains('is-phone'); i++) await new Promise((r) => setTimeout(r, 50));   // the app's own resize handling flips is-phone
+      await raf2(); await raf2();
       const p = document.getElementById('feed-tomb');
       return { phone: document.body.classList.contains('is-phone'), h: p.offsetHeight, band: document.body.style.getPropertyValue('--tomb-band') };
     });

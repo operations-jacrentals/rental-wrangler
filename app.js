@@ -25974,7 +25974,7 @@ function renderTombPlate() {
     + `<div class="ftp-plate"><span class="ftp-stamp">${I.alert}<span>Deleted elsewhere</span></span><span class="ftp-count" aria-hidden="true">${items.length}</span></div>`
     + `<div class="ftp-list">${rows}</div>`;
   document.body.classList.add('feed-tomb');
-  requestAnimationFrame(() => { const n = document.getElementById('feed-tomb'); if (n) document.body.style.setProperty('--tomb-band', n.offsetHeight + 'px'); if (say) live.textContent = say + '.'; });   // reserve the exact band so the plate never covers the yard (variable rows), as R27 does; fix round — announce the new rows through the standing live node, a frame after it exists
+  requestAnimationFrame(() => { const n = document.getElementById('feed-tomb'); if (n) document.body.style.setProperty('--tomb-band', n.offsetHeight + 'px'); if (say && n && n.dataset.sig === sig) live.textContent = say + '.'; });   // reserve the exact band so the plate never covers the yard (variable rows), as R27 does; fix round — announce the new rows through the standing live node, a frame after it exists
 }
 /** fix round — Keep / Discard rebuild the plate, destroying the focused button: put a keyboard / screen-reader user on the row that
  *  now sits where theirs was (or the one above it), else — the plate gone — on the app's first button (never a field: a focused
