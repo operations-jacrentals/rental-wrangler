@@ -4798,16 +4798,17 @@ try {
         // (10c) review fixes — an invoice edited here whose newer server copy carries a payment the dirty branch declined: the
         //       marker plates it Discard-only (Keep would re-create it without the payment); and a sign-out / switch of person
         //       drops every held copy with the plate, so no later save can re-create what another screen deleted
-        const pd = INV('INV-F2B-PD'), rsV = V('VEN-F2B-RS', 'RS0');
-        fresh(() => { add('invoices', pd); add('vendors', rsV); });
+        const pd = INV('INV-F2B-PD'), rsV = V('VEN-F2B-RS', 'RS0'), rk = Object.assign(clone(T.DATA.rentals[0]), { rentalId: 'R-F2B-RK' });
+        fresh(() => { add('invoices', pd); add('vendors', rsV); add('rentals', rk); });
         on(); script.changes = [chg({ head: 1 })]; await tick();
-        pd.po = 'edited here'; rsV.name = 'RS-edited';
-        script.changes = [chg({ head: 2, data: { invoices: [INV('INV-F2B-PD', { amountPaid: 100, payments: [{ amount: 100, method: 'card' }] })] } }), chg({ head: 3, deletes: { invoices: ['INV-F2B-PD'], vendors: ['VEN-F2B-RS'] } })];
+        pd.po = 'edited here'; rsV.name = 'RS-edited'; rk.notes = 'edited here';
+        script.changes = [chg({ head: 2, data: { invoices: [INV('INV-F2B-PD', { amountPaid: 100, payments: [{ amount: 100, method: 'card' }] })] } }), chg({ head: 3, deletes: { invoices: ['INV-F2B-PD'], vendors: ['VEN-F2B-RS'], rentals: ['R-F2B-RK'] } })];
         await tick(); const declined = pd.po === 'edited here' && !pd.amountPaid; await tick();
         ok(declined && !!F.tomb.get(k('invoices', 'INV-F2B-PD')) && !F.tomb.get(k('invoices', 'INV-F2B-PD')).canKeep && F.tomb.get(k('invoices', 'INV-F2B-PD')).office && !document.querySelector('#feed-tomb .js-tomb-keep[data-id="INV-F2B-PD"]'), `2b markers (c): an invoice edited here whose newer server copy carries a payment (declined, dirty) is never keepable — Keep would re-create it without the payment (review fix; declined ${declined})`);
+        ok(!!F.tomb.get(k('rentals', 'R-F2B-RK')) && !F.tomb.get(k('rentals', 'R-F2B-RK')).canKeep && F.tomb.get(k('rentals', 'R-F2B-RK')).office && F.tomb.get(k('vendors', 'VEN-F2B-RS')).canKeep, '2b markers (c): an edited rental is Discard-only — bringing back a rental another screen deleted could bill the job twice; an edited vendor still offers Keep (review fix)');
         const heldBoth = F.tomb.has(k('invoices', 'INV-F2B-PD')) && F.tomb.has(k('vendors', 'VEN-F2B-RS'));
         T.feedReset(false);
-        ok(heldBoth && !has('invoices', 'INV-F2B-PD') && !has('vendors', 'VEN-F2B-RS') && !upQ('invoices', 'INV-F2B-PD') && !upQ('vendors', 'VEN-F2B-RS') && !delQ('invoices', 'INV-F2B-PD') && !delQ('vendors', 'VEN-F2B-RS') && !document.getElementById('feed-tomb'), '2b feed reset (sign-out / switch person): every held copy leaves with the plate — no later save re-creates what another screen deleted (review fix)');
+        ok(heldBoth && !has('invoices', 'INV-F2B-PD') && !has('vendors', 'VEN-F2B-RS') && !has('rentals', 'R-F2B-RK') && !upQ('rentals', 'R-F2B-RK') && !upQ('invoices', 'INV-F2B-PD') && !upQ('vendors', 'VEN-F2B-RS') && !delQ('invoices', 'INV-F2B-PD') && !delQ('vendors', 'VEN-F2B-RS') && !document.getElementById('feed-tomb'), '2b feed reset (sign-out / switch person): every held copy leaves with the plate — no later save re-creates what another screen deleted (review fix)');
 
         // (11) RC-79 Q8-A — a deploy boundary (a new log epoch) resets the feed; in the snapshot that follows, a baselined record it
         //      no longer holds goes through the marker path (a plain one disappears, a paid invoice goes on the plate); a PERIODIC
