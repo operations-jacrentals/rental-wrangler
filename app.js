@@ -23902,21 +23902,38 @@ function driveViewUrl(res) {
   return (res && res.fileId) ? ('https://drive.google.com/uc?export=view&id=' + res.fileId) : ((res && res.url) || '');
 }
 async function backendCall(action, extra, opts) {
-  // text/plain avoids a CORS preflight that GAS web apps can't answer
   const payload = Object.assign({ action, password: backendPassword }, extra || {});
   if (flagOn('phoneIdentity') && backendPassword) payload.sessionToken = backendPassword;   // per-person mode: the device/session token authorizes each call (backend prefers it over `password`); a no-op while the flag is OFF
+  // RC-84 — the router (below) picks the backend per call. With RAIL_URL '' it is never consulted and
+  // this is the pre-router call, byte for byte. Any exception inside the choice falls to Apps Script.
+  let to = 'gas';
+  if (RAIL.url) {
+    try { if (railNeedsWait(action, payload)) await railRefresh(); to = railPick(action, payload); } catch (e) { to = 'gas'; }
+    if (to === 'rail') return railSend(action, payload, opts);
+    if (RAIL.actions.has(action)) return railGas(action, payload, opts, Date.now(), '');
+  }
+  return backendPost(BACKEND_URL, GAS_CONTENT_TYPE, action, payload, opts);
+}
+// text/plain avoids a CORS preflight that GAS web apps can't answer
+const GAS_CONTENT_TYPE = 'text/plain;charset=utf-8';
+/** One POST of `payload` to `url`, parsed to a body the callers can read. The transport backendCall has
+ *  always used, split out so the router can send the same payload to either backend. `onRes` sees the
+ *  response headers (the router reads X-RW-Routes); `opts.deadlineMs` bounds the whole attempt at once. */
+async function backendPost(url, contentType, action, payload, opts, onRes) {
   // RC-63 — opt-in ABORTABLE limit (opts.timeoutMs). Aborting, unlike withTimeout's race,
   // releases the stalled request instead of leaving it open. Callers that pass nothing
   // (money among them) keep the old unbounded behaviour on purpose — see BACKEND_TIMEOUT_MS. The sync POST passes syncLimitMs() (RC-67 4A, see SYNC).
-  const ms = opts && opts.timeoutMs;
+  const ms = opts && (opts.deadlineMs || opts.timeoutMs);
   const ac = ms ? new AbortController() : null;
   let timer = ac ? setTimeout(() => ac.abort(), ms) : null;
   let res, text;
   try {
-    res = await fetch(BACKEND_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload), signal: ac ? ac.signal : undefined });
+    res = await fetch(url, { method: 'POST', headers: { 'Content-Type': contentType }, body: JSON.stringify(payload), signal: ac ? ac.signal : undefined });
+    if (onRes) { try { onRes(res); } catch (e) {} }
     // The observed failure is a reply that never STARTS. Once it has started, give the
     // download its own, longer limit so a slow phone can still pull the full load.
-    if (timer) { clearTimeout(timer); timer = setTimeout(() => ac.abort(), (opts && opts.bodyTimeoutMs) || ms * 2); }
+    // (A deadline — the router's rw-api read attempt — keeps its one timer for the whole attempt.)
+    if (timer && !opts.deadlineMs) { clearTimeout(timer); timer = setTimeout(() => ac.abort(), (opts && opts.bodyTimeoutMs) || ms * 2); }
     // A backend error page (GAS 500/quota/auth HTML) is NOT JSON — res.json() throws, callers
     // catch it, and a real card/charge failure gets masked as a generic "Network error". Parse
     // defensively and ALWAYS hand callers an {ok:false,error} they can map via friendlyPayErr,
@@ -23930,6 +23947,162 @@ async function backendCall(action, extra, opts) {
   if (!res.ok && body && body.ok === undefined) body = { ok: false, error: 'http-' + res.status };
   return body;
 }
+
+/* ── rw-api ROUTER (RC-84 · rw-api repo CONTRACT.md v1.0.0 §3.5) ─────────────────────────────────
+   rw-api is our private service on Railway that answers some actions from the SAME Sheet through the
+   Sheets API, because Google's web-app front door loses replies (RC-63). backendCall asks this router,
+   per call, which backend gets it. rw-api publishes the actions it owns at GET /v1/routes; a flip is a
+   commit in the rw-api repo, so this build routes NOTHING until rw-api publishes a table naming an
+   action (and nothing at all while RAIL_URL is '').
+     choice    cohort 'off' → Apps Script · breaker open → Apps Script · else the cohort's set
+               ('canary' for this device when ?rail=canary, 'all' otherwise) names the action → rw-api
+     sticky    authVerify follows the latest authStart of this page (codes live on one engine);
+               authSetPin follows its token (rw1_… was minted by rw-api). Beats the table and the breaker;
+               the 'off' cohort beats it
+     reads     authResume / load: rw-api gets one 20 s try; anything but ok:true is re-sent once to Apps
+               Script, whose answer is final — so only Apps Script can confirm a refusal that erases a
+               device (R2, Q-C4 A)
+     writes    go to the chosen backend only; only 'rail-not-owner' (rw-api did nothing) is re-sent
+     breaker   3 rw-api failures in a row → this device uses Apps Script only for 5 min
+   RAIL.actions is this build's own ceiling: whatever a routes table says, no other action (money, sync,
+   every other write) is ever sent to rw-api by this build. Tokens stay opaque strings (either backend's
+   work on both, via the v118 bridge). */
+const RAIL_URL = '';   // the rw-api origin, https://<service>.up.railway.app. '' = router OFF. Set when the Railway service exists; lives here (cache-busted with app.js), never in config.js, the address bar or storage — a link must never be able to point credentials at another host
+const RAIL = {
+  url: RAIL_URL,
+  contract: '1.0.0',                                   // the rw-api contract this router speaks; a routes table of another MAJOR is ignored
+  actions: new Set(['authResume', 'load', 'authStart', 'authVerify', 'authSetPin', 'authLoginPin']),   // Slice 1a — the only actions this build ever sends to rw-api
+  reads: new Set(['authResume', 'load']),              // read-only: safe to re-send to Apps Script
+  contentType: 'application/json',                     // rw-api takes JSON (or text/plain, CONTRACT §1.2); JSON costs one CORS preflight per 10 min
+  ttlMaxMs: 60000,          // routes cache: a table older than this (or than its own ttlMs) is refreshed before a routed call
+  routesWaitMs: 1500,       // the refresh a call waits for is abandoned after this
+  refreshRetryMs: 60000,    // a failed refresh is not retried for this long
+  readMs: 20000,            // rw-api's one try at a read (above rw-api's own 15 s answer deadline)
+  strikesToOpen: 3, breakerMs: 300000,
+};
+const RAIL_KEY = { cohort: 'jactec.rail.cohort', routes: 'jactec.rail.routes', breaker: 'jactec.rail.breaker' };
+const railMem = { strikes: 0, inflight: null, failAt: 0, stickyStart: '', last: {} };   // per page; `last` is window.__rail's per-action trace (never a token, body or name)
+function railSafe(fn) { try { return fn(); } catch (e) { return undefined; } }
+/** 'canary' | 'off' | 'default'. Throws when storage is blocked — backendCall then uses Apps Script. */
+function railCohort() { const c = localStorage.getItem(RAIL_KEY.cohort); return c === 'canary' || c === 'off' ? c : 'default'; }
+function railNames(a) { return Array.isArray(a) && a.every((n) => typeof n === 'string'); }
+function railShapeOk(t) { return !!(t && typeof t.version === 'string' && t.version && railNames(t.all) && railNames(t.canary) && Number.isFinite(t.ttlMs) && t.ttlMs > 0); }
+/** The cached routes table, or null (absent, unparseable or the wrong shape — a refresh replaces it). */
+function railTable() {
+  let t = null; try { t = JSON.parse(localStorage.getItem(RAIL_KEY.routes) || 'null'); } catch (e) { return null; }
+  return railShapeOk(t) && Number.isFinite(t.fetchedAt) ? t : null;
+}
+function railStale(t) { const age = Date.now() - (t ? t.fetchedAt : 0); return !t || age < 0 || age >= Math.min(t.ttlMs, RAIL.ttlMaxMs); }
+function railBreaker() {
+  let b = null; try { b = JSON.parse(localStorage.getItem(RAIL_KEY.breaker) || 'null'); } catch (e) {}
+  return (b && Number.isFinite(b.openUntil)) ? b : { openUntil: 0 };
+}
+/** Open for at most breakerMs from now: a clock set back can never hold a device off rw-api for longer. */
+function railBreakerOpen() { const left = railBreaker().openUntil - Date.now(); return left > 0 && left <= RAIL.breakerMs; }
+/** One shared GET /v1/routes, abandoned after routesWaitMs. Resolves true when a valid table was cached;
+ *  never rejects. A failure keeps the old table (used at any age) and blocks new tries for refreshRetryMs. */
+function railRefresh() {
+  if (!RAIL.url) return Promise.resolve(false);
+  if (railMem.inflight) return railMem.inflight;
+  if (railMem.failAt && Date.now() - railMem.failAt < RAIL.refreshRetryMs) return Promise.resolve(false);
+  const ac = new AbortController(), timer = setTimeout(() => ac.abort(), RAIL.routesWaitMs);
+  const p = (async () => {
+    try {
+      const res = await fetch(RAIL.url + '/v1/routes', { method: 'GET', cache: 'no-store', signal: ac.signal });
+      const j = JSON.parse(await res.text());
+      if (!(res.ok && j && j.ok === true && String(j.contract || '').split('.')[0] === RAIL.contract.split('.')[0] && railShapeOk(j))) throw new Error('routes-shape');
+      localStorage.setItem(RAIL_KEY.routes, JSON.stringify({ version: j.version, all: j.all, canary: j.canary, ttlMs: j.ttlMs, fetchedAt: Date.now() }));
+      railMem.failAt = 0; return true;
+    } catch (e) { railMem.failAt = Date.now(); return false; }
+    finally { clearTimeout(timer); }
+  })();
+  railMem.inflight = p;
+  p.then(() => { if (railMem.inflight === p) railMem.inflight = null; });
+  return p;
+}
+/** Must this call wait for a routes refresh? Only when the table decides it and the table is stale. */
+function railNeedsWait(action, payload) {
+  if (!RAIL.url || !RAIL.actions.has(action) || railCohort() === 'off') return false;
+  if (action === 'authSetPin' || (action === 'authVerify' && railMem.stickyStart)) return false;
+  if (railBreakerOpen()) return false;
+  if (railMem.failAt && Date.now() - railMem.failAt < RAIL.refreshRetryMs && !railMem.inflight) return false;
+  return railStale(railTable());
+}
+/** 'rail' or 'gas' for this call, from what is cached now (never waits). */
+function railPick(action, payload) {
+  if (!RAIL.url || !RAIL.actions.has(action)) return 'gas';
+  const cohort = railCohort();
+  if (cohort === 'off') return 'gas';
+  if (action === 'authSetPin') return /^rw1_/.test(String((payload && payload.token) || '')) ? 'rail' : 'gas';
+  if (action === 'authVerify' && railMem.stickyStart) return railMem.stickyStart;
+  if (railBreakerOpen()) return 'gas';
+  const t = railTable(), set = t ? (cohort === 'canary' ? t.canary : t.all) : null;
+  return set && set.indexOf(action) >= 0 ? 'rail' : 'gas';
+}
+/** A reply that says rw-api itself is failing. Refusals, other action errors, a shed load, rail-not-owner
+ *  and ip-rate are answers, not failures. Any non-JSON HTTP status counts (a dead Railway service answers
+ *  its own 404 page). */
+function railIsStrike(body, thrown) {
+  if (thrown) return true;
+  if (!body || body.ok === true) return false;
+  const e = String(body.error || '');
+  return e === 'server-error' || e === 'bad-json' || /^http-\d+$/.test(e) || (e === 'busy' && !body.shed);
+}
+function railWord(body, thrown) { return thrown ? (thrown.rwTimeout ? 'timeout' : 'network') : !body ? 'none' : body.ok === true ? 'ok' : String(body.error || 'error'); }
+/** Bookkeeping after an rw-api reply: the breaker, a refresh when rw-api says the table moved. */
+function railAfter(action, body, thrown, hdrVersion) {
+  if (railIsStrike(body, thrown)) {
+    railMem.strikes += 1;
+    if (railMem.strikes >= RAIL.strikesToOpen) { railMem.strikes = 0; localStorage.setItem(RAIL_KEY.breaker, JSON.stringify({ openUntil: Date.now() + RAIL.breakerMs })); }
+  } else railMem.strikes = 0;
+  const t = railTable();
+  if ((body && body.error === 'rail-not-owner') || (hdrVersion && (!t || hdrVersion !== t.version))) railRefresh();
+}
+function railTrace(action, to, word, t0, fell) {
+  railMem.last[action] = Object.assign({ to, result: word, ms: Date.now() - t0, at: Date.now() }, fell ? { fell } : {});
+}
+/** Apps Script leg of a routed action, traced. `fell` names rw-api's answer when this is the second try. */
+async function railGas(action, payload, opts, t0, fell) {
+  if (action === 'authStart') railMem.stickyStart = 'gas';
+  let body;
+  try { body = await backendPost(BACKEND_URL, GAS_CONTENT_TYPE, action, payload, opts); }
+  catch (e) { railSafe(() => railTrace(action, 'gas', railWord(null, e), t0, fell)); throw e; }
+  railSafe(() => railTrace(action, 'gas', railWord(body, null), t0, fell));
+  return body;
+}
+async function railSend(action, payload, opts) {
+  const t0 = Date.now(), read = RAIL.reads.has(action);
+  if (action === 'authStart') railMem.stickyStart = 'rail';   // a lost reply may still have minted a code there
+  let body = null, thrown = null, hdr = '';
+  try { body = await backendPost(RAIL.url + '/v1', RAIL.contentType, action, payload, read ? { deadlineMs: RAIL.readMs } : opts, (res) => { hdr = res.headers.get('X-RW-Routes') || ''; }); }
+  catch (e) { thrown = e; }
+  railSafe(() => railAfter(action, body, thrown, hdr));
+  const word = railWord(body, thrown);
+  if (body && body.ok === true) { railSafe(() => railTrace(action, 'rail', word, t0)); return body; }
+  if (read || (body && body.error === 'rail-not-owner')) return railGas(action, payload, opts, t0, word);
+  railSafe(() => railTrace(action, 'rail', word, t0));
+  if (thrown) throw thrown;
+  return body;
+}
+/** ?rail=canary | off | default — this device's cohort, kept in localStorage; then the parameter leaves the address bar. */
+function railInitCohort() {
+  let sp; try { sp = new URLSearchParams(location.search); } catch (e) { return; }
+  if (!sp.has('rail')) return;
+  const v = String(sp.get('rail') || '').trim().toLowerCase();
+  try { if (v === 'canary' || v === 'off') localStorage.setItem(RAIL_KEY.cohort, v); else if (v === 'default') localStorage.removeItem(RAIL_KEY.cohort); } catch (e) {}
+  try { sp.delete('rail'); const q = sp.toString(); history.replaceState(history.state, '', location.pathname + (q ? '?' + q : '') + location.hash); } catch (e) {}
+}
+/** window.__rail — console inspection for the canary check. No tokens, bodies or names. */
+function railInspect() {
+  let cohort = 'blocked', t = null, b = { openUntil: 0 };
+  try { cohort = railCohort(); t = railTable(); b = railBreaker(); } catch (e) {}
+  return { contract: RAIL.contract, on: !!RAIL.url, cohort, version: t ? t.version : '', fetchedAt: t ? t.fetchedAt : 0,
+    table: t ? { all: t.all.slice(), canary: t.canary.slice() } : null, breaker: { strikes: railMem.strikes, openUntil: b.openUntil },
+    last: JSON.parse(JSON.stringify(railMem.last)) };
+}
+railInitCohort();
+try { Object.defineProperty(window, '__rail', { get: railInspect, configurable: true }); } catch (e) {}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') railSafe(() => { if (RAIL.url && railCohort() !== 'off') railRefresh(); }); });
 
 /* ── GPS BACKEND CLIENT (WranglerGPS integration · spec docs/superpowers/specs/
    2026-07-07-wrangler-gps-integration-design.md) ───────────────────────────────
@@ -25809,7 +25982,8 @@ function flushUserPrefsNow() {
     let queued = false;
     if (navigator.sendBeacon) {
       const payload = JSON.stringify({ action: 'setUserPrefs', password: backendPassword, sessionToken: backendPassword, doc });
-      queued = navigator.sendBeacon(BACKEND_URL, new Blob([payload], { type: 'text/plain;charset=utf-8' }));   // false = payload over the ~64KB / pending-queue limit
+      let beaconUrl = BACKEND_URL; try { if (railPick('setUserPrefs', null) === 'rail') beaconUrl = RAIL.url + '/v1'; } catch (e) {}   // RC-84 — the router's choice (setUserPrefs is never routed in Slice 1a, so this stays BACKEND_URL); a beacon reads no reply, so it never strikes or falls back. text/plain: a beacon may not carry a type that needs a preflight
+      queued = navigator.sendBeacon(beaconUrl, new Blob([payload], { type: 'text/plain;charset=utf-8' }));   // false = payload over the ~64KB / pending-queue limit
     }
     if (!queued) { Object.keys(doc).forEach((s) => { if (s !== 'v') _userPrefsDirty[s] = true; }); pushUserPrefs(); }   // no beacon OR beacon rejected → best-effort fetch, re-mark dirty
   } catch (e) { /* best-effort — the change also re-flushes on the next edit */ }
@@ -26923,7 +27097,8 @@ function mountEnvBadge() {
 let _backendWarmed = false;
 function warmBackend() {
   if (_backendWarmed) return; _backendWarmed = true;
-  try { fetch(BACKEND_URL, { method: 'GET', mode: 'no-cors', cache: 'no-store' }).catch(() => {}); } catch (e) {}
+  let rail = false; try { rail = railPick('authStart', null) === 'rail'; } catch (e) {}   // RC-84 — the sign-in's first call goes to rw-api: warm that instead (no body, no credential)
+  try { fetch(rail ? RAIL.url + '/healthz' : BACKEND_URL, { method: 'GET', mode: 'no-cors', cache: 'no-store' }).catch(() => {}); } catch (e) {}
 }
 /* ══════════════ SCAN-TO-LOG (QR DECAL → VIDEO) — standalone capture (FEATURES.qrScanLog) ══════════════
    A #u=<unitId> decal scan opens this focused full-screen plate (mounted like renderLogin), records
@@ -27681,7 +27856,9 @@ function exposeTestApi() {
       tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, openYardCamera, commitYardCapture, nextCategoryId, nextUnitId,
       tripsLS, tripMerge, tripSplit, assignTripDriver, tripLabel, assignStopDriver, tripSetTime,
       freshLineText, freshTick, freshTickerSync, freshAt: () => _freshAt, freshTimerOn: () => !!_freshTimer, setFreshAt: (t) => { _freshAt = t || 0; },   // RC-67 (2A) — freshness-line seams; the setter is test-only (mirrors setBackendPassword); setBooting sits with the RC-67 3A seams
-      tripPushSoon, tripPushNow, loadTripsFromBackend, tripsSyncFooter, setBackendPassword: (pw) => { backendPassword = pw || ''; },   // §2.3 Phase 4 sync — the setter is test-only (mirrors setRole), letting logic-test.mjs exercise the online path via a mocked window.fetch, never a real backend
+      backendCall, RAIL, RAIL_KEY, railMem, railPick, railRefresh, railTable, railInitCohort, warmBackend,   // RC-84 router seams — logic-test sets RAIL.url to a fake origin and answers both hosts from a mocked window.fetch; never a real backend
+      railReset: () => { Object.assign(railMem, { strikes: 0, inflight: null, failAt: 0, stickyStart: '', last: {} }); _backendWarmed = false; RAIL.url = RAIL_URL; try { Object.values(RAIL_KEY).forEach((k) => localStorage.removeItem(k)); } catch (e) {} },
+      tripPushSoon, tripPushNow, loadTripsFromBackend, tripsSyncFooter,setBackendPassword: (pw) => { backendPassword = pw || ''; },   // §2.3 Phase 4 sync — the setter is test-only (mirrors setRole), letting logic-test.mjs exercise the online path via a mocked window.fetch, never a real backend
       adoptScanCaptures, setScanCaps: (m) => { SCAN_CAPS = m || {}; },   // §scan-reconcile — test seam: seed SCAN_CAPS then run adoption (logic-test)
       flushSave, snapshotSaved, computeChanges, SYNC, syncLimitMs, STALE, pidTokenClear, saveState: () => ({ saving, savePending, baseline: !!lastSaved }),   // RC-65 (2) — save-pipeline seams; logic-test drives them against a mocked window.fetch only
       resetSaveState: () => { clearTimeout(saveTimer); saving = false; savePending = false; lastSaved = null; SYNC.failing = false; SYNC.fails = 0; SYNC.backoff = 1200; STALE.byKey.clear(); renderSyncBanner(); },   // lastSaved=null → any stray flushSave stops at its first guard
