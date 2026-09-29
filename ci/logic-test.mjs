@@ -4809,6 +4809,17 @@ try {
         await T.pidDoStart(false);
         ok(T.pidUI.step === 'identify' && errText() === "If that number's on the roster, a code is on its way — check your phone.", `2A: a number not on the roster keeps the anti-enumeration message (got "${errText()}")`);
 
+        // (f2) RC-84 — rw-api's busy (R4: nothing written, nothing sent) never claims a code is on its way
+        toPhone(); reset({ authStart: [{ ok: false, error: 'busy' }] });
+        await T.pidDoStart(false);
+        ok(T.pidUI.step === 'identify' && errText() === "Couldn't send the text — try again.", `RC-84: an authStart answered busy says the text was not sent (got "${errText()}")`);
+        // (f3) RC-84 — rw-api's busy / ip-rate on authVerify: refused before the code was read, so it stays good and stays in the box
+        for (const word of ['busy', 'ip-rate']) {
+          toCode('personal'); T.pidUI._spent = false; reset({ authVerify: [{ ok: false, error: word }] }); await T.pidDoVerify();
+          const val = (document.getElementById('pid-code') || {}).value;
+          ok(T.pidUI.step === 'code' && T.pidUI._spent === false && val === '123456' && /tap Confirm/.test(errText()) && !/resend/i.test(errText()), `RC-84: an authVerify answered ${word} keeps the code (not spent, still in the box) and says try again (spent ${T.pidUI._spent}, box "${val}", "${errText()}")`);
+        }
+
         // (g) a lost verify reply: the code may already be spent — say so, and clear the spent digits
         toCode('personal'); reset({ authVerify: ['404'] }); await T.pidDoVerify();
         const lostV1 = errText(), lostV1Val = (document.getElementById('pid-code') || {}).value;
@@ -4961,11 +4972,19 @@ try {
       await p.evaluate(() => window.__rwBootRail);
       // The two-host mock. plan.gas[action] / plan.rail[action] / plan.routes are queues of steps:
       // an object (a JSON reply; `__h` adds headers, `__s` sets the status), 'throw', 'hold' (never answers
-      // unless aborted), 'badjson', '502' (a non-JSON error page). An empty queue answers ok.
+      // unless aborted), 'badjson', '502' (a non-JSON error page), 'stall' (headers at once, a body that never
+      // ends unless aborted); `__bodyAfter: ms` sends the headers at once and the JSON body ms later. An empty queue answers ok.
       await p.evaluate((RAIL_TEST) => {
         const M = window.__railMock = { log: [], plan: { gas: {}, rail: {}, routes: [] }, routesDefault: { ok: true, contract: '1.0.0', version: 'v-empty', ttlMs: 60000, state: 'ok', all: [], canary: [] } };
         const realFetch = window.fetch;
+        const streamed = (text, ms, init) => new Response(new ReadableStream({ start(c) {
+          const s = init && init.signal; let t = null;
+          if (ms != null) t = setTimeout(() => { try { c.enqueue(new TextEncoder().encode(text)); c.close(); } catch (e) {} }, ms);
+          if (s) s.addEventListener('abort', () => { clearTimeout(t); try { c.error(new DOMException('aborted', 'AbortError')); } catch (e) {} });
+        } }), { status: 200 });
         const reply = (step, init) => {
+          if (step === 'stall') return Promise.resolve(streamed('', null, init));
+          if (step && step.__bodyAfter) { const o = Object.assign({}, step); delete o.__bodyAfter; return Promise.resolve(streamed(JSON.stringify(o), step.__bodyAfter, init)); }
           if (step === 'throw') return Promise.reject(new TypeError('Failed to fetch'));
           if (step === 'hold') return new Promise((res, rej) => { const s = init && init.signal; if (s) s.addEventListener('abort', () => rej(new DOMException('aborted', 'AbortError'))); });
           if (step === 'badjson') return Promise.resolve(new Response('not json', { status: 200 }));
@@ -5092,6 +5111,15 @@ try {
         const r6 = await call('load', undefined, { timeoutMs: 5000 }); const took = Date.now() - t0;
         ok(r6.via === 'gas' && took >= 350 && took < 3000, `rw-api's read try is bounded (RAIL.readMs), then Apps Script answers (${took} ms)`);
         T.railMem.strikes = 0; localStorage.removeItem(T.RAIL_KEY.breaker);
+        const body0 = T.RAIL.readBodyMs;
+        try {
+          T.RAIL.readBodyMs = 1500; clear(); M.plan.rail.load = [{ ok: true, data: { units: [] }, settings: {}, __bodyAfter: 700 }];
+          const rSlow = await call('load', undefined, { timeoutMs: 5000 });
+          ok(rSlow.data && rSlow.via === undefined && n('gas') === 0, 'read-only: a reply that STARTED inside RAIL.readMs gets its own body limit — a slow download is answered by rw-api, not abandoned (RC-63)');
+          T.RAIL.readBodyMs = 900; clear(); M.plan.rail.load = ['stall']; t0 = Date.now();
+          const rStall = await call('load', undefined, { timeoutMs: 5000 }); const tookS = Date.now() - t0;
+          ok(rStall.via === 'gas' && tookS >= 850 && tookS < 3000, `read-only: a body that stalls gets RAIL.readBodyMs from the moment the reply starts (not RAIL.readMs, not twice it), then Apps Script answers (${tookS} ms)`);
+        } finally { T.RAIL.readBodyMs = body0; T.railMem.strikes = 0; localStorage.removeItem(T.RAIL_KEY.breaker); }
         clear(); M.plan.rail.load = [{ ok: true, data: { units: [] }, settings: {} }];
         ok((await call('load')).data && n('gas') === 0, 'read-only: an rw-api ok:true is final (no second call)');
 
@@ -5137,6 +5165,7 @@ try {
         await call('authSetPin', { personId: 'E1', pin: '1234', token: HEX });
         put(FLIP1, SIX); await call('authSetPin', { personId: 'E1', pin: '1234', token: HEX });
         ok(n('rail', 'authSetPin') === 1 && n('gas', 'authSetPin') === 2, 'sticky: authSetPin follows its token — rw1_ → rw-api, an Apps Script token → Apps Script, whatever the table says');
+        put(FLIP1, SIX, { fetchedAt: Date.now() - 120000 }); T.railMem.failAt = 0;   // stale: only the off guard can keep the GET away
         localStorage.setItem(T.RAIL_KEY.cohort, 'off'); clear();
         await call('authVerify', { personId: 'E1', code: '1' }); await call('authSetPin', { personId: 'E1', pin: '1234', token: RW1 }); await call('load');
         ok(n('rail') === 0 && n('gas') === 3 && routesGets() === 0, 'the off cohort beats stickiness, and fetches no table');
@@ -5147,8 +5176,10 @@ try {
         clear(); await strikeRun([{ ok: false, error: 'server-error' }, { ok: false, error: 'busy' }, '502']);
         const br = JSON.parse(localStorage.getItem(T.RAIL_KEY.breaker) || '{}');
         ok(br.openUntil > Date.now() + 290000 && br.openUntil <= Date.now() + 300000, 'breaker: server-error, busy (not shed) and an HTTP error page are 3 strikes → open for 5 min, kept in localStorage');
+        put(FLIP1, SIX, { fetchedAt: Date.now() - 120000 }); T.railMem.failAt = 0;   // stale: only the breaker guard can keep the GET away
         clear(); await call('load'); await call('authResume', { token: 't' });
         ok(n('rail') === 0 && n('gas') === 2 && routesGets() === 0, 'breaker open: routed actions go to Apps Script, no table is awaited');
+        put(FLIP1, SIX);
         localStorage.setItem(T.RAIL_KEY.breaker, JSON.stringify({ openUntil: Date.now() - 1 })); clear(); await call('load');
         ok(n('rail', 'load') === 1, 'breaker: after its 5 min the table decides again');
         localStorage.setItem(T.RAIL_KEY.breaker, JSON.stringify({ openUntil: Date.now() + 86400000 })); clear(); await call('load');
@@ -5168,16 +5199,64 @@ try {
         localStorage.removeItem(T.RAIL_KEY.breaker); T.railMem.strikes = 0; localStorage.setItem(T.RAIL_KEY.cohort, 'canary');
         for (let i = 0; i < 2; i++) { M.plan.rail.load = [{ ok: false, error: 'server-error' }]; await call('load'); }
         M.plan.rail.authLoginPin = [{ ok: false, error: 'ip-rate' }]; await call('authLoginPin', { personId: 'E1', pin: '1234' });
-        ok(T.railMem.strikes === 0, 'breaker: ip-rate is not a strike');
+        ok(T.railMem.strikes === 0 && !localStorage.getItem(T.RAIL_KEY.breaker), 'breaker: ip-rate is not a strike (the count resets and the breaker stays shut)');
         localStorage.removeItem(T.RAIL_KEY.cohort);
 
         // ── X-RW-Routes ──────────────────────────────────────────────────────────────────────
+        localStorage.removeItem(T.RAIL_KEY.breaker); T.railMem.strikes = 0;   // no case below leans on a breaker an earlier case left open
         put(FLIP1, SIX); T.railMem.failAt = 0; clear();
         M.plan.rail.load = [{ ok: true, data: {}, __h: { 'X-RW-Routes': 'v1' } }]; await call('load'); await sleep(30);
         ok(routesGets() === 0, 'an rw-api reply carrying the cached routes version triggers no refresh');
         M.plan.rail.load = [{ ok: true, data: {}, __h: { 'X-RW-Routes': 'v9' } }]; M.plan.routes = [table(FLIP1, SIX, { version: 'v9' })];
         await call('load'); await sleep(50);
         ok(routesGets() === 1 && T.railTable().version === 'v9', 'an rw-api reply carrying a new X-RW-Routes refreshes the table at once (not awaited)');
+
+        // ── return to the screen: refreshed, never for the off cohort ───────────────────────────
+        {
+          const visible = () => { Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true }); document.dispatchEvent(new Event('visibilitychange')); };
+          try {
+            put(FLIP1, SIX, { version: 'v-old', fetchedAt: Date.now() - 120000 }); T.railMem.failAt = 0; clear();
+            visible(); await sleep(50);
+            ok(routesGets() === 1 && T.railTable().version === 'v1', 'return to the screen refreshes a stale routes table');
+            put(FLIP1, SIX, { version: 'v-old', fetchedAt: Date.now() - 120000 }); T.railMem.failAt = 0; localStorage.setItem(T.RAIL_KEY.cohort, 'off'); clear();
+            visible(); await sleep(50);
+            ok(routesGets() === 0, 'return to the screen fetches nothing for the off cohort');
+          } finally { delete document.visibilityState; localStorage.removeItem(T.RAIL_KEY.cohort); }
+        }
+
+        // ── storage that takes no writes: this page stops routing (§3.5 failure inside the router) ──
+        {
+          const realSet = Storage.prototype.setItem;
+          const full = () => { Storage.prototype.setItem = function () { throw new DOMException('full', 'QuotaExceededError'); }; };
+          T.railReset(); T.RAIL.url = RAIL_TEST; T.RAIL.routesWaitMs = 300; T.RAIL.readMs = 400;
+          localStorage.setItem(T.RAIL_KEY.cohort, 'canary'); put(FLIP1, SIX); T.errLogClear(); clear();
+          full();
+          try {
+            for (let i = 0; i < 3; i++) { M.plan.rail.authLoginPin = ['throw']; await call('authLoginPin', { personId: 'E1', pin: '1234' }); }
+            await call('authLoginPin', { personId: 'E1', pin: '1234' }); await call('load');
+          } finally { Storage.prototype.setItem = realSet; }
+          ok(n('rail') === 3 && n('gas', 'authLoginPin') === 1 && n('gas', 'load') === 1, `a breaker that cannot be stored still stops routing: after 3 strikes this page uses Apps Script (${n('rail')} rw-api, ${n('gas')} Apps Script)`);
+          ok(window.__rail.broken === true, 'window.__rail shows a page that stopped routing');
+          ok(/rail: storage write failed/.test(T.errLog().join('\n')), 'a page that stopped routing says so in ERR_LOG (a glitch report carries it)');
+          T.railReset(); T.RAIL.url = RAIL_TEST; T.RAIL.routesWaitMs = 300; T.RAIL.readMs = 400;
+          localStorage.setItem(T.RAIL_KEY.cohort, 'canary'); put(FLIP1, SIX, { fetchedAt: Date.now() - 120000 }); clear(); M.plan.routes = [table(FLIP1, SIX, { version: 'v5' })];
+          full();
+          try { await call('load'); await call('load'); }
+          finally { Storage.prototype.setItem = realSet; }
+          ok(n('rail') === 0 && n('gas', 'load') === 2, `a routes table that cannot be stored stops routing — the stale table is not used at any age (${n('rail')} rw-api)`);
+          T.railMem.failAt = 0; clear(); await call('load');
+          ok(routesGets() === 0 && n('gas', 'load') === 1, 'a page that stopped routing awaits no routes refresh either');
+          T.railReset(); T.RAIL.url = RAIL_TEST; T.RAIL.routesWaitMs = 300; T.RAIL.readMs = 400; put(FLIP1, SIX); T.errLogClear(); clear();
+          await call('authResume', { token: RW1 });
+          for (const st of [{ ok: false, error: 'server-error' }, '502', { ok: false, error: 'server-error' }]) { M.plan.rail.load = [st]; await call('load'); }
+          localStorage.removeItem(T.RAIL_KEY.breaker);
+          for (const st of [{ ok: false, error: 'server-error' }, { ok: false, error: 'server-error' }, { ok: false, error: 'server-error' }]) { M.plan.rail.load = [st]; await call('load'); }
+          const logs2 = T.errLog(), railLines = logs2.filter((l) => /rail:/.test(l));
+          ok(railLines.filter((l) => /rail: breaker opened/.test(l)).length === 1 && railLines.some((l) => /rail: breaker opened.* last=server-error on load/.test(l)), `the breaker opening is noted once per page in ERR_LOG, with the action and the last word (${railLines.join(' | ')})`);
+          ok(railLines.filter((l) => /rail: load fell back to Apps Script/.test(l)).length === 1, 'a read that fell back to Apps Script is noted once per action per page');
+          ok(!logs2.join('').includes(RW1) && !logs2.join('').includes('ab'.repeat(32)) && !logs2.join('').includes('rc84-tok'), 'the router\'s ERR_LOG lines carry no token');
+          T.railReset(); T.RAIL.url = RAIL_TEST; T.RAIL.routesWaitMs = 300; T.RAIL.readMs = 400; T.errLogClear(); put(FLIP1, SIX); clear();
+        }
 
         // ── a failure inside the router falls through to Apps Script ──────────────────────────
         clear(); const realGet = Storage.prototype.getItem;
@@ -5246,6 +5325,17 @@ try {
     results.push({ ok: c3.cohort === null && c3.rail === 'default' && c3.search === '', m: 'RC-84 router: ?rail=default returns the device to the default cohort' });
     const c4 = await cohortCase('?rail=everything', 'off');
     results.push({ ok: c4.cohort === 'off' && c4.search === '', m: 'RC-84 router: an unknown ?rail= value is ignored (and still removed)' });
+    // a ?rail= lever that storage refuses to keep (full, blocked) turns routing off for this page rather than being ignored
+    {
+      const p = await browser.newPage();
+      p.on('pageerror', (e) => pageErrors.push(String(e && e.message || e)));
+      await p.addInitScript(() => { const real = Storage.prototype.setItem; Storage.prototype.setItem = function (k, v) { if (k === 'jactec.rail.cohort') throw new DOMException('full', 'QuotaExceededError'); return real.call(this, k, v); }; });
+      await p.goto('http://localhost:8000/?rail=off#local', { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await p.waitForFunction(() => !!window.__rw, { timeout: 20000 });
+      const c5 = await p.evaluate(() => ({ cohort: localStorage.getItem('jactec.rail.cohort'), broken: window.__rail.broken, search: location.search, log: window.__rw.errLog().join(' ') }));
+      await p.close();
+      results.push({ ok: c5.cohort === null && c5.broken === true && c5.search === '' && /rail: storage write failed/.test(c5.log), m: 'RC-84 router: a ?rail= lever storage will not keep stops routing for this page (and says so in ERR_LOG)' });
+    }
 
     // Source guards: the shipped origin is a literal (never read from the URL or storage) and the ceiling is the six Slice 1a actions.
     const src = await readFile(join(root, 'app.js'), 'utf8');
