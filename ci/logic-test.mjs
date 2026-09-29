@@ -4831,12 +4831,12 @@ try {
         await tick(); await tick(); await tick();
         ok(cap2.every((id) => has('vendors', id)) && F.held === 51 && F.cursor === 4, `RC-79 Q8-A: more than 50 records absent from one reset snapshot → none applied (held ${F.held})`);
 
-        const eV = V('VEN-F2B-EV', 'ev'); fresh(() => add('vendors', eV));
+        const eP = { partId: 'PRT-F2B-EV', name: 'ev probe part' }; fresh(() => add('parts', eP));   // parts: a small tab (the vendor tab holds the cap fixtures above, which the 50 cap would swallow)
         on(); F.fullGapMs = 0; script.changes = [chg({ head: 1 }), chg({ reset: true, head: 5, epoch: 10 })];
-        const emptyV = fullData(); emptyV.vendors = [];
+        const emptyV = fullData(); emptyV.parts = [];
         script.snapshot = [snapR({ data: emptyV, head: 5, epoch: 10 })];
         await tick(); await tick(); await tick();
-        ok(has('vendors', 'VEN-F2B-EV') && !F.tomb.has(k('vendors', 'VEN-F2B-EV')) && T.DATA.vendors.length > 1 && F.cursor === 5, `RC-79 Q8-A: a whole tab that comes back EMPTY in a reset snapshot deletes nothing by absence — a read blip proves nothing (review fix; cursor ${F.cursor})`);
+        ok(has('parts', 'PRT-F2B-EV') && !F.tomb.has(k('parts', 'PRT-F2B-EV')) && T.DATA.parts.length > 1 && T.DATA.parts.length < 50 && F.cursor === 5, `RC-79 Q8-A: a whole tab that comes back EMPTY in a reset snapshot deletes nothing by absence — a read blip proves nothing (review fix; cursor ${F.cursor})`);
 
         // (12) cadence — 8 s while someone works the screen, 20 s idle, ≥ 18 s after two lost replies in a row, never under the
         //      fleet throttle; pollMinMs holds back any trigger; a hidden page sends nothing
