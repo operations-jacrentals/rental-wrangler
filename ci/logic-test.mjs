@@ -5056,6 +5056,10 @@ try {
         T.railMem.failAt = 0; clear(); M.plan.routes = [{ ok: true, contract: '1.0.0', version: 'bad', ttlMs: 60000, all: 'load', canary: [] }];
         await call('load');
         ok(T.railTable() === null && n('gas', 'load') === 1, 'a routes reply of the wrong shape is never cached');
+        put(FLIP1, SIX, { version: 'good', fetchedAt: Date.now() - 120000 }); T.railMem.failAt = 0; clear(); M.plan.routes = [{ ok: true, contract: '1.0.0', version: 'bad', ttlMs: 60000, all: ['load'], canary: [7] }];
+        const rBad = await call('load'); const kept = JSON.parse(localStorage.getItem(T.RAIL_KEY.routes) || 'null');
+        ok(kept && kept.version === 'good' && rBad.via === 'rail', 'a routes reply of the wrong shape leaves the previous good table in place (used at any age)');
+        localStorage.removeItem(T.RAIL_KEY.routes);   // the next cases start with no table
         T.railMem.failAt = 0; clear(); M.plan.routes = [table(FLIP1, SIX, { contract: '2.0.0' })];
         await call('load');
         ok(T.railTable() === null && n('rail') === 0, 'a routes table of another contract MAJOR is ignored');
@@ -5139,7 +5143,7 @@ try {
 
         // ── the breaker ──────────────────────────────────────────────────────────────────────
         T.railReset(); T.RAIL.url = RAIL_TEST; T.RAIL.routesWaitMs = 300; T.RAIL.readMs = 400; put(FLIP1, SIX);
-        const strikeRun = async (steps) => { for (const s of steps) { M.plan.rail.load = [s]; await call('load'); } };
+        const strikeRun = async (steps) => { for (const s of steps) { M.plan.rail.load = [s]; await call('load', undefined, { timeoutMs: 3000 }); } };   // the caller's own limit only bounds the Apps Script leg
         clear(); await strikeRun([{ ok: false, error: 'server-error' }, { ok: false, error: 'busy' }, '502']);
         const br = JSON.parse(localStorage.getItem(T.RAIL_KEY.breaker) || '{}');
         ok(br.openUntil > Date.now() + 290000 && br.openUntil <= Date.now() + 300000, 'breaker: server-error, busy (not shed) and an HTTP error page are 3 strikes → open for 5 min, kept in localStorage');
