@@ -25727,14 +25727,13 @@ function feedAfterReply(q, r, lost, loadAt, loopApplied) {
   }
   if (!mayAdopt() && feedHasMarks(q.action !== 'snapshot' ? r.deletes : q.why === 'periodic' ? null : feedAbsent(r.data))) return -1;   // (-1: deferred — not a fresh reply for R37) review fix — a popup opened, a field focused, a drag or a hover started DURING the await: a marker must not remove a record from under the person working it (its Save would find nothing). Nothing is applied and the cursor stays, so this same reply is asked again next tick (the loop's adoptions are idempotent)
   let n = 0;
-  if (q.action === 'snapshot' && q.why === 'periodic' && FEED.cursor != null) {   // fix round — the safety net is ADOPT-ONLY for the log position: a snapshot carries no delete rows, so moving the cursor to its head would skip every 'd' row in (cursor, head] for good (a merged-away invoice left as a zombie). Cursor, epoch, srvAfter and the bootstrap window stay; the next delta re-reads that span (idempotent adoptions) and delivers its markers — or, past 1000 rows, the server answers reset and the reset snapshot's absence path covers them
-    FEED.misses += loopApplied; FEED.snapAt = now; FEED.snaps++;
+  if (q.action === 'snapshot' && q.why === 'periodic') {   // fix round — the safety net is ADOPT-ONLY for the log position (feedPlan sends it only with a cursor; a null one would stay null and the next tick bootstrap): a snapshot carries no delete rows, so moving the cursor to its head would skip every 'd' row in (cursor, head] for good (a merged-away invoice left as a zombie). Cursor, epoch, srvAfter and the bootstrap window stay; the next delta re-reads that span (idempotent adoptions) and delivers its markers — or, past 1000 rows, the server answers reset and the reset snapshot's absence path covers them
+    FEED.misses += loopApplied; FEED.snapAt = now; FEED.snaps++;   // misses: a far-side check on the log — with a healthy cursor, every record the safety net had to bring is one the feed missed
     feedOwedSettle(q, r.data, now);
     return 0;
   }
   if (q.action === 'snapshot') {
-    if (q.why === 'periodic') FEED.misses += loopApplied;   // a far-side check on the log: with a healthy cursor, every record the safety net had to bring is one the feed missed
-    else n = applyDeleteMarkers(feedAbsent(r.data), true);   // RC-79 Q8-A — after a reset (or the marker cap), a baselined record the snapshot no longer holds is a delete
+    n = applyDeleteMarkers(feedAbsent(r.data), true);   // RC-79 Q8-A — after a reset (or the marker cap), a baselined record the snapshot no longer holds is a delete
     FEED.snapAt = now; FEED.loadSentAt = loadAt; FEED.needSnap = ''; FEED.snaps++;
   } else {
     n = applyDeleteMarkers(r.deletes, false);

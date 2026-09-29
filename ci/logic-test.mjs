@@ -4970,7 +4970,8 @@ try {
           fresh(); on(); F.fullGapMs = 0;
           script.changes = [chg({ head: 1, data: { vendors: [V('VEN-F2B-CW', 'cw')] } })]; fixtures.push(['vendors', 'VEN-F2B-CW']); await tick();
           F.snapAt = 0; F.lastInputAt = 0; script.snapshot = [snapR({ data: fullData(), head: 1, epoch: 7 })]; await tick();
-          ok(T.cacheDeviceOk() && writes === 0 && acts() === 'changes,snapshot', `2b instant cache: a delta and a snapshot never write the on-device snapshot (writes ${writes}; ${acts()})`);
+          script.changes = [chg({ reset: true, head: 1 })]; await tick(); F.snapDueAt = 0; script.snapshot = [snapR({ data: fullData(), head: 1, epoch: 7 })]; await tick();   // fix round — a reset snapshot too (the periodic one now takes its own branch)
+          ok(T.cacheDeviceOk() && writes === 0 && acts() === 'changes,snapshot,changes,snapshot', `2b instant cache: a delta and a snapshot (periodic or after a reset) never write the on-device snapshot (writes ${writes}; ${acts()})`);
         } finally { T.dataCache.write = w0; if (pid0 == null) localStorage.removeItem('jactec.pidToken'); else localStorage.setItem('jactec.pidToken', pid0); }
 
         // (20) fix round — each check failed on e8accfb and passes here
