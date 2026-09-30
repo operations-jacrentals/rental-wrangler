@@ -21,6 +21,9 @@ const SHELL_SET = new Set(SHELL.map((p) => new URL(p, self.location.href).pathna
  * opt-in URLs appeared to be a login screen (2026-07-13). Nav requests to these bypass the SW. */
 const PUBLIC = ['./about.html', './sample-quote.html', './opt-in.html', './privacy.html', './sms-terms.html'];
 const PUBLIC_SET = new Set(PUBLIC.map((p) => new URL(p, self.location.href).pathname));
+/* S3-A (RC-92) — rail.json is the router's kill switch: it must always come from the network, never from
+ * Cache Storage, so it is not in SHELL and is passed through here by name before any shell rule. */
+const RAIL_GATE = new URL('./rail.json', self.location.href).pathname;
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -34,6 +37,7 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;                                   // every backendCall is a POST → network-only
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;                    // third-party (Stripe/Maps/fonts/GAS) → network-only
+  if (url.pathname === RAIL_GATE) return;                             // rail.json (S3-A kill switch) → network-only, never cached, never the shell
   const isNav = req.mode === 'navigate';
   if (isNav && PUBLIC_SET.has(url.pathname)) return;                  // standalone public page → network, NEVER the SPA shell
   if (!isNav && !SHELL_SET.has(url.pathname)) return;                 // not on the shell allowlist → network-only, never cached

@@ -23957,7 +23957,12 @@ async function backendPost(url, contentType, action, payload, opts, onRes) {
                ('canary' for this device when ?rail=canary, 'all' otherwise) names the action → rw-api
      sticky    authVerify follows the latest authStart of this page (codes live on one engine);
                authSetPin follows its token (rw1_… was minted by rw-api). Beats the table and the breaker;
-               the 'off' cohort beats it
+               the 'off' cohort and the gate beat it
+     gate      S3-A (RC-92), the kill switch rw-api cannot touch: ./rail.json on the app's OWN site, read
+               same-origin, no-store, without credentials, in every routes refresh (in parallel, under the
+               same routesWaitMs cap). Only an object whose `on` is exactly true lets ANY call go to rw-api;
+               404, a network error, a timeout, bad JSON, {"on":"true"} or anything else = OFF = every
+               call to Apps Script, sticky sign-in steps included. The gate only ever removes routing
      reads     authResume / load: rw-api gets one try (20 s for the reply to start, then 20 s for its body, as
                RC-63 gives Apps Script); anything but ok:true is re-sent once to Apps Script, whose answer is
                final — so only Apps Script can confirm a refusal that erases a device (R2, Q-C4 A)
@@ -23976,14 +23981,15 @@ const RAIL = {
   reads: new Set(['authResume', 'load']),              // read-only: safe to re-send to Apps Script
   contentType: 'application/json',                     // rw-api takes JSON (or text/plain, CONTRACT §1.2); JSON costs one CORS preflight per 10 min
   ttlMaxMs: 60000,          // routes cache: a table older than this (or than its own ttlMs) is refreshed before a routed call
-  routesWaitMs: 1500,       // the refresh a call waits for is abandoned after this
+  gateUrl: './rail.json',   // S3-A kill switch: same-origin, published with the app (never rw-api's to change); sw.js never caches it
+  routesWaitMs: 1500,       // the refresh a call waits for is abandoned after this (the routes table AND rail.json)
   refreshRetryMs: 60000,    // a failed refresh is not retried for this long
   readMs: 20000,            // rw-api's one try at a read: the reply must START within this (above rw-api's own 15 s answer deadline)
   readBodyMs: 20000,        // …and, once started, its body must arrive within this (a slow phone pulling a full load)
   strikesToOpen: 3, breakerMs: 300000,
 };
 const RAIL_KEY = { cohort: 'jactec.rail.cohort', routes: 'jactec.rail.routes', breaker: 'jactec.rail.breaker' };
-const railMem = { strikes: 0, inflight: null, failAt: 0, stickyStart: '', last: {}, broken: false, noted: {} };   // per page; `last` is window.__rail's per-action trace (never a token, body or name)
+const railMem = { strikes: 0, inflight: null, failAt: 0, stickyStart: '', last: {}, broken: false, noted: {}, gate: false, gateAt: 0, gateWord: 'unchecked' };   // per page; `last` is window.__rail's per-action trace (never a token, body or name); gate* = the last rail.json read (never stored: a new page starts OFF)
 function railSafe(fn) { try { return fn(); } catch (e) { return undefined; } }
 /** One line in ERR_LOG (the ring a glitch report carries off the device) — at most once per `key` per page.
  *  Words only: an action name and a reply word cut to [A-Za-z0-9_-]; never a token, a body or a name. */
@@ -24010,13 +24016,36 @@ function railBreaker() {
 }
 /** Open for at most breakerMs from now: a clock set back can never hold a device off rw-api for longer. */
 function railBreakerOpen() { const left = railBreaker().openUntil - Date.now(); return left > 0 && left <= RAIL.breakerMs; }
-/** One shared GET /v1/routes, abandoned after routesWaitMs. Resolves true when a valid table was cached;
- *  never rejects. A failure keeps the old table (used at any age) and blocks new tries for refreshRetryMs. */
+/** S3-A (RC-92) — read ./rail.json: 'on' only for an object whose `on` is exactly true, otherwise the word
+ *  for why it is OFF ('off' | 'http-<n>' | 'bad-json' | 'timeout' | 'network'). Same-origin only (a redirect
+ *  to another origin fails), no-store (neither the HTTP cache nor sw.js answers it), no credentials. Never rejects. */
+async function railGateRead(signal) {
+  try {
+    const res = await fetch(RAIL.gateUrl, { method: 'GET', mode: 'same-origin', cache: 'no-store', credentials: 'omit', signal });
+    if (!res.ok) return 'http-' + res.status;
+    const text = await res.text();
+    let j; try { j = JSON.parse(text); } catch (e) { return 'bad-json'; }
+    return j && j.on === true ? 'on' : 'off';   // exactly true: "true", 1, [true] and null are OFF
+  } catch (e) { return signal && signal.aborted ? 'timeout' : 'network'; }
+}
+/** Keep the latest rail.json answer for this page; ERR_LOG gets each direction of change once per page. */
+function railGateSet(word) {
+  const was = railMem.gate;
+  railMem.gate = word === 'on'; railMem.gateWord = String(word || 'off'); railMem.gateAt = Date.now();
+  if (railMem.gate && !was) railNote('gate:on', 'rail.json on, rw-api routing allowed (first time this page)');
+  if (!railMem.gate && was) railNote('gate:off', 'rail.json off (' + railMem.gateWord + '), Apps Script only (first time this page)');
+}
+/** The gate must be re-read: never read on this page, or read ttlMaxMs ago (or the clock went back). */
+function railGateStale() { const age = Date.now() - railMem.gateAt; return !railMem.gateAt || age < 0 || age >= RAIL.ttlMaxMs; }
+/** One shared refresh: GET /v1/routes and ./rail.json in parallel, both abandoned after routesWaitMs.
+ *  Resolves true when a valid table was cached; never rejects. A table failure keeps the old table (used at
+ *  any age) and blocks new tries for refreshRetryMs. Every refresh replaces the gate, whatever the table did. */
 function railRefresh() {
   if (!RAIL.url) return Promise.resolve(false);
   if (railMem.inflight) return railMem.inflight;
   if (railMem.failAt && Date.now() - railMem.failAt < RAIL.refreshRetryMs) return Promise.resolve(false);
   const ac = new AbortController(), timer = setTimeout(() => ac.abort(), RAIL.routesWaitMs);
+  const gate = railGateRead(ac.signal);
   const p = (async () => {
     try {
       const res = await fetch(RAIL.url + '/v1/routes', { method: 'GET', cache: 'no-store', signal: ac.signal });
@@ -24025,27 +24054,36 @@ function railRefresh() {
       if (!railPersist(() => localStorage.setItem(RAIL_KEY.routes, JSON.stringify({ version: j.version, all: j.all, canary: j.canary, ttlMs: j.ttlMs, fetchedAt: Date.now() })))) throw new Error('routes-store');
       railMem.failAt = 0; return true;
     } catch (e) { railMem.failAt = Date.now(); return false; }
-    finally { clearTimeout(timer); }
+    finally { const w = await gate; railSafe(() => railGateSet(w)); clearTimeout(timer); }
   })();
   railMem.inflight = p;
   p.then(() => { if (railMem.inflight === p) railMem.inflight = null; });
   return p;
 }
-/** Must this call wait for a routes refresh? Only when the table decides it and the table is stale. */
+/** A sign-in step that must stay on one engine: where it goes ('rail' | 'gas'), or '' for any other call. */
+function railSticky(action, payload) {
+  if (action === 'authSetPin') return /^rw1_/.test(String((payload && payload.token) || '')) ? 'rail' : 'gas';
+  if (action === 'authVerify' && railMem.stickyStart) return railMem.stickyStart;
+  return '';
+}
+/** Must this call wait for a refresh? When the table decides it and the table or the gate is stale; a sticky
+ *  step bound for rw-api waits only to re-read a stale gate (nothing bound for Apps Script ever waits on it). */
 function railNeedsWait(action, payload) {
   if (!RAIL.url || !RAIL.actions.has(action) || railCohort() === 'off') return false;
-  if (action === 'authSetPin' || (action === 'authVerify' && railMem.stickyStart)) return false;
-  if (railMem.broken || railBreakerOpen()) return false;
   if (railMem.failAt && Date.now() - railMem.failAt < RAIL.refreshRetryMs && !railMem.inflight) return false;
-  return railStale(railTable());
+  const sticky = railSticky(action, payload);
+  if (sticky) return sticky === 'rail' && railGateStale();
+  if (railMem.broken || railBreakerOpen()) return false;
+  return railStale(railTable()) || railGateStale();
 }
 /** 'rail' or 'gas' for this call, from what is cached now (never waits). */
 function railPick(action, payload) {
   if (!RAIL.url || !RAIL.actions.has(action)) return 'gas';
   const cohort = railCohort();
   if (cohort === 'off') return 'gas';
-  if (action === 'authSetPin') return /^rw1_/.test(String((payload && payload.token) || '')) ? 'rail' : 'gas';
-  if (action === 'authVerify' && railMem.stickyStart) return railMem.stickyStart;
+  if (railMem.gate !== true) return 'gas';   // S3-A: rail.json not {"on":true} at the last refresh → nothing to rw-api, sticky steps included
+  const sticky = railSticky(action, payload);
+  if (sticky) return sticky;
   if (railMem.broken || railBreakerOpen()) return 'gas';
   const t = railTable(), set = t ? (cohort === 'canary' ? t.canary : t.all) : null;
   return set && set.indexOf(action) >= 0 ? 'rail' : 'gas';
@@ -24116,6 +24154,7 @@ function railInspect() {
   try { cohort = railCohort(); t = railTable(); b = railBreaker(); } catch (e) {}
   return { contract: RAIL.contract, on: !!RAIL.url, broken: railMem.broken, cohort, version: t ? t.version : '', fetchedAt: t ? t.fetchedAt : 0,
     table: t ? { all: t.all.slice(), canary: t.canary.slice() } : null, breaker: { strikes: railMem.strikes, openUntil: b.openUntil },
+    gate: { on: railMem.gate === true, word: railMem.gateWord, checkedAt: railMem.gateAt },   // S3-A: the last rail.json read on this page
     last: JSON.parse(JSON.stringify(railMem.last)) };
 }
 railInitCohort();
@@ -27879,8 +27918,8 @@ function exposeTestApi() {
       tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, openYardCamera, commitYardCapture, nextCategoryId, nextUnitId,
       tripsLS, tripMerge, tripSplit, assignTripDriver, tripLabel, assignStopDriver, tripSetTime,
       freshLineText, freshTick, freshTickerSync, freshAt: () => _freshAt, freshTimerOn: () => !!_freshTimer, setFreshAt: (t) => { _freshAt = t || 0; },   // RC-67 (2A) — freshness-line seams; the setter is test-only (mirrors setBackendPassword); setBooting sits with the RC-67 3A seams
-      backendCall, RAIL, RAIL_KEY, railMem, railPick, railRefresh, railTable, railInitCohort, warmBackend,   // RC-84 router seams — logic-test sets RAIL.url to a fake origin and answers both hosts from a mocked window.fetch; never a real backend
-      railReset: () => { Object.assign(railMem, { strikes: 0, inflight: null, failAt: 0, stickyStart: '', last: {}, broken: false, noted: {} }); _backendWarmed = false; RAIL.url = RAIL_URL; try { Object.values(RAIL_KEY).forEach((k) => localStorage.removeItem(k)); } catch (e) {} },
+      backendCall, RAIL, RAIL_KEY, railMem, railPick, railNeedsWait, railRefresh, railTable, railInitCohort, warmBackend,   // RC-84 router seams — logic-test sets RAIL.url to a fake origin and answers both hosts from a mocked window.fetch; never a real backend
+      railReset: () => { Object.assign(railMem, { strikes: 0, inflight: null, failAt: 0, stickyStart: '', last: {}, broken: false, noted: {}, gate: false, gateAt: 0, gateWord: 'unchecked' }); _backendWarmed = false; RAIL.url = RAIL_URL; try { Object.values(RAIL_KEY).forEach((k) => localStorage.removeItem(k)); } catch (e) {} },
       tripPushSoon, tripPushNow, loadTripsFromBackend, tripsSyncFooter,setBackendPassword: (pw) => { backendPassword = pw || ''; },   // §2.3 Phase 4 sync — the setter is test-only (mirrors setRole), letting logic-test.mjs exercise the online path via a mocked window.fetch, never a real backend
       adoptScanCaptures, setScanCaps: (m) => { SCAN_CAPS = m || {}; },   // §scan-reconcile — test seam: seed SCAN_CAPS then run adoption (logic-test)
       flushSave, snapshotSaved, computeChanges, SYNC, syncLimitMs, STALE, pidTokenClear, saveState: () => ({ saving, savePending, baseline: !!lastSaved }),   // RC-65 (2) — save-pipeline seams; logic-test drives them against a mocked window.fetch only
