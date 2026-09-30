@@ -27,6 +27,15 @@ name: Auto-promote — take a merged Wrangler auto-fix live
 #   2. The fix's own branch already deployed to staging (in wrangler-fix.yml), so
 #      promote.mjs's staging-freshness gate passes AND staging stays in sync with
 #      production (no drift for the next human promote).
+#   2b. A range that touches rail.json (the rw-api routing switch, S3-5 A) is
+#      refused, so a routing flip never rides an auto-fix live. The refusal that
+#      counts is the INLINE step below ("Refuse an unattended range that touches
+#      rail.json"): shell and git only, no repo script. The range being judged
+#      could rewrite any repo script (the wrangler-fix PAT has Contents: write),
+#      but not this file (that PAT has no Workflows permission). promote.mjs
+#      --unattended repeats the same check as a second layer, and the step after
+#      the promote fails the job loudly if production did not land on exactly the
+#      trunk tip the inline step checked.
 #   3. promote.mjs is fast-forward-only (never --force) and verifies the live
 #      `?v=` bytes after pushing. If anything is off it fails — it never forces a
 #      half-broken state onto the live site.
@@ -83,10 +92,59 @@ jobs:
           git fetch origin production
           echo "PROD_BEFORE=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_ENV"
 
+      - name: Refuse an unattended range that touches rail.json (S3-5 A)
+        # S3-5 A, RC-92, first layer. rail.json turns rw-api routing on or off for every
+        # device, so it only ever goes live through a human promote. This check lives
+        # HERE, inline, because everything else this job runs comes from the merged
+        # PR's own checkout: an auto-fix could rewrite promote.mjs / promote-guard.mjs
+        # and the tests that pin them in the same PR that turns routing on. The
+        # wrangler-fix PAT cannot edit a workflow file, so it cannot edit this step.
+        # Same rule as tools/lib/promote-guard.mjs: every path any commit in
+        # production..trunk touched (merges diffed against each parent, renames as
+        # delete + add) plus the net diff; a last path segment of rail.json in any
+        # case counts. Any git failure fails the step (fails closed). Shell + git only:
+        # never call a repo script from this step. ci/promote-test.mjs runs this block.
+        id: rail-refusal
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch -q --no-tags origin '+refs/heads/trunk:refs/remotes/origin/trunk' '+refs/heads/production:refs/remotes/origin/production'
+          PROD=$(git rev-parse --verify 'refs/remotes/origin/production^{commit}')
+          TRUNK=$(git rev-parse --verify 'refs/remotes/origin/trunk^{commit}')
+          HITS=$( { git diff -z --name-only --no-renames "$PROD" "$TRUNK"; git log -z --format= --name-only --no-renames -m "$PROD..$TRUNK"; } | tr '\0' '\n' | awk -F/ 'tolower($NF) == "rail.json"' | sort -u | tr '\n' ' ' )
+          if [ -n "$HITS" ]; then
+            echo "::error::auto-promote: refusing an unattended promote, this range touches $HITS(the rw-api routing switch, S3-5 A). Routing goes live only through a human promote. Nothing was pushed."
+            exit 1
+          fi
+          echo "RAIL_CHECKED_PROD=$PROD" >> "$GITHUB_ENV"
+          echo "RAIL_CHECKED_TRUNK=$TRUNK" >> "$GITHUB_ENV"
+          echo "auto-promote: rail.json is untouched in $PROD..$TRUNK (S3-5 A)."
+
       - name: Promote the merged auto-fix to production (go live)
         # promote.mjs: fetch trunk+production, verify staging is fresh, fast-forward
         # production -> trunk, then verify the live ?v= bytes. --yes runs it for real.
-        run: node tools/promote.mjs --yes
+        # --unattended (S3-5 A, RC-92) is the SECOND layer of the rail.json refusal:
+        # promote.mjs comes from the merged checkout, so the inline step above is the
+        # one that holds even if an auto-fix rewrote promote.mjs.
+        run: node tools/promote.mjs --yes --unattended
+
+      - name: Confirm production landed on the trunk tip that was checked (S3-5 A)
+        # promote.mjs fetches trunk again, so trunk could move between the inline
+        # check above and the push. Whatever the promote step did, production must now
+        # sit either where it started (nothing pushed) or on exactly the trunk tip the
+        # inline step checked. Anything else fails the job loudly: a commit nobody
+        # checked for rail.json may be live. Shell + git only, like the refusal step.
+        if: always() && steps.rail-refusal.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch -q --no-tags origin '+refs/heads/production:refs/remotes/origin/production'
+          NOW=$(git rev-parse --verify 'refs/remotes/origin/production^{commit}')
+          if [ "$NOW" != "$RAIL_CHECKED_TRUNK" ] && [ "$NOW" != "$RAIL_CHECKED_PROD" ]; then
+            echo "::error::auto-promote: production is at $NOW, which is neither the trunk tip checked for rail.json ($RAIL_CHECKED_TRUNK) nor where it started ($RAIL_CHECKED_PROD). Commits nobody checked may be live: read rail.json on production now, and if it changed put it back by a human promote (S3-5 A)."
+            exit 1
+          fi
+          echo "auto-promote: production is at $NOW (checked for rail.json, S3-5 A)."
 
       - name: Tell the reporter it's live
         if: success()

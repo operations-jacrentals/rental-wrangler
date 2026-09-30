@@ -25,6 +25,10 @@ await new Promise((r) => server.listen(8000, r));
 
 const browser = await chromium.launch();
 const page = await browser.newPage();
+// S3-2 A — app.js now names the production rw-api (RAIL_URL). The boot check must never reach it: any request to a
+// Railway host is aborted before it leaves the machine and recorded; a boot that sends one anything but a GET fails.
+const railwayHits = [];
+await page.route(/^https?:\/\/[^/?#]*\.railway\.app([/?#:]|$)/i, (r) => { railwayHits.push(r.request().method() + ' ' + r.request().url()); return r.abort(); });
 // Local files that may legitimately 404 in CI and must NOT fail the boot check:
 // dev-version.txt (the localhost-only dev-reload poller fetches it; it's gitignored).
 const ALLOW_404 = ['/dev-version.txt', '/favicon.ico'];
@@ -52,6 +56,7 @@ try {
   if (badResources.length) { console.error('❌ Missing resources on boot:\n  - ' + badResources.join('\n  - ')); failed = true; }
   if (!appExists) { console.error('❌ #app mount point missing'); failed = true; }
   if (!hasLogin) { console.error('❌ Login screen did not render (boot may have crashed)'); failed = true; }
+  if (railwayHits.some((h) => !/^GET /.test(h))) { console.error('❌ Boot sent a non-GET request toward rw-api (rail.json is off):\n  - ' + railwayHits.join('\n  - ')); failed = true; }
   if (!failed) console.log('✅ Smoke test passed — app boots clean and the login screen renders.');
 } catch (e) {
   console.error('❌ Smoke test threw:', e && e.message || e); failed = true;

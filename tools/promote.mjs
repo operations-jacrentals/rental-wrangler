@@ -28,6 +28,8 @@
 // USAGE
 //   node tools/promote.mjs           # PREVIEW ONLY — shows what would go live, does nothing
 //   node tools/promote.mjs --yes     # promote: fast-forward + push `production`, then verify live
+//   node tools/promote.mjs --yes --unattended   # the auto-promote.yml path: also refuses any range touching rail.json
+//                                    # (S3-5 A; any run inside GitHub Actions counts as unattended, flag or not)
 //
 // SAFETY
 //   Without --yes this script only fetches + prints a preview and exits — it never
@@ -46,6 +48,8 @@ import { SLOT_URLS } from './lib/staging-control.mjs';
 // Content-verified freshness — confirm a slot serves trunk's ACTUAL bytes (a content hash over
 // the files the ?v= token versions), not merely a matching, collision-prone token. See the lib.
 import { resolveFreshSlot, contentHash } from './lib/promote-freshness.mjs';
+// S3-5 A (RC-92): an unattended promote (auto-promote.yml, or anything in GitHub Actions) never carries rail.json.
+import { isUnattended, unattendedRailRefusal, railGatePaths } from './lib/promote-guard.mjs';
 
 // TODO(jac): confirm — the release-pointer branch Pages serves as PRODUCTION (plan Phase 0.2/0.3).
 const PRODUCTION_BRANCH = 'production';
@@ -79,6 +83,9 @@ const CONFIRMED = ARGV.includes('--yes');
 // Deliberate, loud override for when staging genuinely can't be verified (its Pages host is
 // down, etc.). Requires a conscious flag — the freshness gate never silently no-ops.
 const SKIP_STAGING_CHECK = ARGV.includes('--skip-staging-check');
+// The unattended path (auto-promote.yml passes --unattended; any run inside GitHub Actions counts too) refuses a range
+// that touches rail.json, the rw-api routing switch: turning routing on or off is always a human promote (S3-5 A).
+const UNATTENDED = isUnattended(ARGV, process.env);
 // Optional human pin: `--slot N` checks that exact slot's URL instead of auto-resolving the
 // slot serving the trunk token. Unset → NaN → auto-resolve. An explicit `--slot` with a
 // missing/non-numeric value FAILS LOUDLY (never a silent downgrade to auto-scan — a pin the
@@ -152,6 +159,30 @@ commitLog.forEach(c => console.log('    ' + c));
 console.log('  Files changed:');
 diffStat.forEach(l => console.log('    ' + l));
 console.log('='.repeat(72));
+
+// --- Step 2a: the rw-api routing switch (rail.json) never rides an unattended promote (S3-5 A) ---
+// Every path ANY commit in the range touched (merges diffed against each parent, renames as delete + add), plus the
+// net diff: a switch flipped on and back off inside the range still counts. Runs before any network probe or push.
+function rangePaths() {
+  const net = gitTry(['diff', '--name-only', '--no-renames', prodRef, trunkRef]);
+  const each = gitTry(['log', '--format=', '--name-only', '--no-renames', '-m', range]);
+  return net.ok && each.ok ? [...new Set(lines(net.out + '\n' + each.out))] : null;
+}
+const touched = rangePaths();
+const railRefusal = unattendedRailRefusal({ unattended: UNATTENDED, paths: touched });
+if (railRefusal) {
+  fail(
+    `refusing an unattended promote — ${railRefusal}.\n` +
+    `promote: rail.json turns rw-api routing on or off for every device, so it only ever goes live through a human ` +
+    `promote (S3-5 A): run \`node tools/promote.mjs\` from a terminal, read the range, then --yes. Nothing was pushed.`
+  );
+}
+const railHits = railGatePaths(touched || []);
+if (railHits.length) {
+  console.log(`promote: ⚠️ this range touches ${railHits.join(', ')} — the rw-api routing switch. It goes live with this promote; the unattended path would refuse it.`);
+} else if (UNATTENDED) {
+  console.log('promote: unattended — rail.json is untouched in this range (S3-5 A).');
+}
 
 // --- Step 2b: STAGING-FRESHNESS GATE (content-verified) ----------------------
 // Staging must be showing the EXACT bytes we're about to promote. If it's behind (or

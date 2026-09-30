@@ -113,7 +113,9 @@ function isDenied(rel) { return DENY_PATTERNS.some((re) => re.test(rel)); }
 //     static import or href — the crawler below can't see it.
 //   - .nojekyll is Pages hosting hygiene (skip Jekyll processing); it's a dotfile, so the
 //     *.html-seeded crawl below never reaches it on its own.
-const ALWAYS_SHIP = ['sw.js', '.nojekyll'];
+//   - rail.json is the rw-api router's kill switch (S3-A, RC-92), read at runtime from a string
+//     (RAIL.gateUrl) — a slot without it answers 404, which the router reads as OFF.
+const ALWAYS_SHIP = ['sw.js', '.nojekyll', 'rail.json'];
 
 function stripQuery(p) { return p.replace(/^\.\//, '').split(/[?#]/)[0]; }
 function isExternal(ref) { return /^([a-z][\w+.-]*:)?\/\//i.test(ref) || /^(mailto|tel|data):/i.test(ref) || ref.startsWith('#'); }

@@ -3579,10 +3579,15 @@ function resetPageSettings() {
    empty config so it sticks across devices, then reloads the board clean. */
 async function resetAllSettings() {
   const o = state.overlay; if (!o || o.kind !== 'settings') return;
-  try { if (o.adminPw) await backendCall('setConfig', { password: o.adminPw, config: { roles: o.config.roles, admin: o.config.admin, settings: {} } }); } catch (e) {}
-  persistAdminSettings({});
-  o.draftSettings = {}; o.config.settings = {}; o.resetArm = false;
-  closeOverlay(); toast('All customizations reset to the shipped defaults.'); render();
+  // RC-83 Q13-A — "Reset all" KEEPS the roster (settings.employees). setConfig replaces the whole settings object, and the backend
+  // then purges the sign-ins of everyone missing from the new roster (pidReconcileRoster_), so the empty roster this used to send
+  // signed the whole crew out. Staff are removed only from the Team Roster tab. The roster kept is the one this window loaded.
+  const emp = ((o.config && o.config.settings) || {}).employees;
+  const kept = Array.isArray(emp) ? { employees: emp } : {};
+  try { if (o.adminPw) await backendCall('setConfig', { password: o.adminPw, config: { roles: o.config.roles, admin: o.config.admin, settings: kept } }); } catch (e) {}
+  persistAdminSettings(kept);
+  o.draftSettings = {}; o.config.settings = kept; o.resetArm = false;
+  closeOverlay(); toast('All customizations reset to the shipped defaults — the Team Roster is kept.'); render();
 }
 /* Undo the single most recent Save (restores jactec.settings.prev). */
 async function undoLastSettings() {
@@ -5624,7 +5629,14 @@ function rerenderSettingsPane() {
   const st = (body.querySelector('.set-pane') || {}).scrollTop || 0;
   body.innerHTML = settingsBoardHtml(o);
   const np = body.querySelector('.set-pane'); if (np) np.scrollTop = st;
+  // The footer carries state too (Reset all's armed confirm, Reset page per tab, Undo, the error, Saving…): repaint it with the
+  // board, or the first Reset all click arms with nothing on screen and the second resets with no confirm ever shown.
+  const foot = document.querySelector('.overlay .settings-popup .popup-foot'); if (foot) foot.innerHTML = settingsFootHtml(o);
   return true;
+}
+// The Settings footer — one builder for the first paint (renderOverlay) and every in-place repaint (rerenderSettingsPane).
+function settingsFootHtml(o) {
+  return `${pageDefaultSlice(o.tab) ? '<button class="pill ghost js-settings-resetpage" data-r="R18" data-tip="Reset just this tab to defaults (Save to keep)">Reset page</button>' : ''}<button class="pill ghost set-danger js-settings-reset${o.resetArm ? ' armed' : ''}" data-r="R18" data-tip="Resets every customization except the Team Roster">${o.resetArm ? 'Click again — reset all but the Team Roster' : 'Reset all'}</button>${hasSettingsBackup() ? '<button class="pill ghost js-settings-undo" data-r="R18">Undo last change</button>' : ''}<span class="spacer"></span>${o.error ? `<span class="set-err">${esc(o.error)}</span>` : ''}<button class="pill ghost js-close" data-r="R18"${o.saving ? ' disabled' : ''}>Cancel</button><button class="pill ignition js-settings-save${o.saving ? ' is-disabled' : ''}" data-r="R17"${o.saving ? ' disabled' : ''}>${o.saving ? 'Saving…' : 'Save settings'}</button>`;
 }
 // In-settings re-render that never flashes; falls back to a full overlay render when the settings
 // board isn't the live surface. Use from any settings-pane handler in place of renderOverlay().
@@ -6045,7 +6057,10 @@ async function lockKpiFromWrangler(mi) {
   persistAdminSettings(settings);           // mirror + apply live so the header ring updates now
   m.filed = true; w.kpiTarget = null;
   toast(`Locked in “${v.ring.label}” for ${kt.roleLabel} · Ring ${kt.idx + 1}.${warn} 🤠`);
-  openOverlay({ kind: 'settings', config: { roles: kt.roles, admin: kt.admin, settings }, adminPw: kt.adminPw, tab: 'kpis', kpiRole: kt.role, draftSettings: settings });
+  // The loaded config is a COPY of what was just saved: the draft is edited in place (a Team Roster × splices draftSettings.employees),
+  // and RC-83 Q13-A's Reset all keeps the roster this window LOADED (o.config.settings.employees) — sharing one object would let an
+  // unsaved delete ride Reset all to the backend and purge that person's sign-ins.
+  openOverlay({ kind: 'settings', config: { roles: kt.roles, admin: kt.admin, settings: JSON.parse(JSON.stringify(settings)) }, adminPw: kt.adminPw, tab: 'kpis', kpiRole: kt.role, draftSettings: settings });
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -14538,7 +14553,7 @@ function buildPopupEl(o, overlay, opts = {}) {
       pop.innerHTML = `${head}<div class="popup-body settings-body"><div class="set-loading"><div class="set-loading-bar" aria-hidden="true"></div><div class="set-loading-lbl">Rounding up the yard settings…</div></div></div>`;
     } else {
       if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {}));
-      const foot = `${pageDefaultSlice(o.tab) ? '<button class="pill ghost js-settings-resetpage" data-r="R18" data-tip="Reset just this tab to defaults (Save to keep)">Reset page</button>' : ''}<button class="pill ghost set-danger js-settings-reset${o.resetArm ? ' armed' : ''}" data-r="R18">${o.resetArm ? 'Click again — reset everything' : 'Reset all'}</button>${hasSettingsBackup() ? '<button class="pill ghost js-settings-undo" data-r="R18">Undo last change</button>' : ''}<span class="spacer"></span>${o.error ? `<span class="set-err">${esc(o.error)}</span>` : ''}<button class="pill ghost js-close" data-r="R18"${o.saving ? ' disabled' : ''}>Cancel</button><button class="pill ignition js-settings-save${o.saving ? ' is-disabled' : ''}" data-r="R17"${o.saving ? ' disabled' : ''}>${o.saving ? 'Saving…' : 'Save settings'}</button>`;
+      const foot = settingsFootHtml(o);
       pop.innerHTML = `${head}
       <div class="popup-body settings-body">${settingsBoardHtml(o)}</div>
       <div class="popup-foot">${foot}</div>`;
@@ -23902,9 +23917,24 @@ function driveViewUrl(res) {
   return (res && res.fileId) ? ('https://drive.google.com/uc?export=view&id=' + res.fileId) : ((res && res.url) || '');
 }
 async function backendCall(action, extra, opts) {
-  // text/plain avoids a CORS preflight that GAS web apps can't answer
   const payload = Object.assign({ action, password: backendPassword }, extra || {});
   if (flagOn('phoneIdentity') && backendPassword) payload.sessionToken = backendPassword;   // per-person mode: the device/session token authorizes each call (backend prefers it over `password`); a no-op while the flag is OFF
+  // RC-84 — the router (below) picks the backend per call. With RAIL_URL '' (or RAIL.url cleared) it is never consulted and
+  // this is the pre-router call, byte for byte. Any exception inside the choice falls to Apps Script.
+  let to = 'gas';
+  if (RAIL.url) {
+    try { if (railNeedsWait(action, payload)) await railRefresh(); to = railPick(action, payload); } catch (e) { to = 'gas'; }
+    if (to === 'rail') return railSend(action, payload, opts);
+    if (RAIL.actions.has(action)) return railGas(action, payload, opts, Date.now(), '');
+  }
+  return backendPost(BACKEND_URL, GAS_CONTENT_TYPE, action, payload, opts);
+}
+// text/plain avoids a CORS preflight that GAS web apps can't answer
+const GAS_CONTENT_TYPE = 'text/plain;charset=utf-8';
+/** One POST of `payload` to `url`, parsed to a body the callers can read. The transport backendCall has
+ *  always used, split out so the router can send the same payload to either backend. `onRes` sees the
+ *  response headers (the router reads X-RW-Routes). */
+async function backendPost(url, contentType, action, payload, opts, onRes) {
   // RC-63 — opt-in ABORTABLE limit (opts.timeoutMs). Aborting, unlike withTimeout's race,
   // releases the stalled request instead of leaving it open. Callers that pass nothing
   // (money among them) keep the old unbounded behaviour on purpose — see BACKEND_TIMEOUT_MS. The sync POST passes syncLimitMs() (RC-67 4A, see SYNC).
@@ -23913,7 +23943,8 @@ async function backendCall(action, extra, opts) {
   let timer = ac ? setTimeout(() => ac.abort(), ms) : null;
   let res, text;
   try {
-    res = await fetch(BACKEND_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload), signal: ac ? ac.signal : undefined });
+    res = await fetch(url, { method: 'POST', headers: { 'Content-Type': contentType }, body: JSON.stringify(payload), signal: ac ? ac.signal : undefined });
+    if (onRes) { try { onRes(res); } catch (e) {} }
     // The observed failure is a reply that never STARTS. Once it has started, give the
     // download its own, longer limit so a slow phone can still pull the full load.
     if (timer) { clearTimeout(timer); timer = setTimeout(() => ac.abort(), (opts && opts.bodyTimeoutMs) || ms * 2); }
@@ -23930,6 +23961,238 @@ async function backendCall(action, extra, opts) {
   if (!res.ok && body && body.ok === undefined) body = { ok: false, error: 'http-' + res.status };
   return body;
 }
+
+/* ── rw-api ROUTER (RC-84 · rw-api repo CONTRACT.md v1.0.0 §3.5) ─────────────────────────────────
+   rw-api is our private service on Railway that answers some actions from the SAME Sheet through the
+   Sheets API, because Google's web-app front door loses replies (RC-63). backendCall asks this router,
+   per call, which backend gets it. rw-api publishes the actions it owns at GET /v1/routes; a flip is a
+   commit in the rw-api repo, so this build routes NOTHING until rw-api publishes a table naming an
+   action (and nothing at all while RAIL_URL is '').
+     choice    cohort 'off' → Apps Script · breaker open → Apps Script · else the cohort's set
+               ('canary' for this device when ?rail=canary, 'all' otherwise) names the action → rw-api
+     sticky    authVerify follows the latest authStart of this page (codes live on one engine);
+               authSetPin follows its token (rw1_… was minted by rw-api). Beats the table and the breaker;
+               the 'off' cohort and the gate beat it
+     gate      S3-A (RC-92), the kill switch rw-api cannot touch: ./rail.json on the app's OWN site, read
+               same-origin, no-store, without credentials, in every routes refresh (in parallel, under the
+               same routesWaitMs cap). Only an object whose `on` is exactly true AND whose `url` is exactly
+               this build's RAIL_URL lets ANY call go to rw-api (S3-4 A: the switch names the host it opens,
+               so an old build that names another host stays OFF when a later release turns routing on);
+               404, a network error, a timeout, bad JSON, {"on":"true"}, {"on":true} without the url, a url
+               with a trailing slash or another host, or anything else = OFF = every call to Apps Script,
+               sticky sign-in steps included. The gate only ever removes routing
+     reads     authResume / load: rw-api gets one try (20 s for the reply to start, then 20 s for its body, as
+               RC-63 gives Apps Script); anything but ok:true is re-sent once to Apps Script, whose answer is
+               final — so only Apps Script can confirm a refusal that erases a device (R2, Q-C4 A)
+     writes    go to the chosen backend only; only 'rail-not-owner' (rw-api did nothing) is re-sent
+     breaker   3 rw-api failures in a row → this device uses Apps Script only for 5 min (noted in ERR_LOG)
+     storage   a router write to localStorage that fails (full, blocked) → this page uses Apps Script only,
+               as if the breaker never closed: a breaker, table or cohort it cannot keep must not keep routing
+   RAIL.actions is this build's own ceiling: whatever a routes table says, no other action (money, sync,
+   every other write) is ever sent to rw-api by this build. Tokens stay opaque strings (either backend's
+   work on both, via the v118 bridge). */
+const RAIL_URL = 'https://rw-api-production.up.railway.app';   // the rw-api origin (S3-2 A: the Railway domain; no trailing slash). '' = router OFF. Lives here (cache-busted with app.js), never in config.js, the address bar or storage — a link must never be able to point credentials at another host. rail.json must name this exact string to turn routing on (S3-4 A)
+const RAIL = {
+  url: RAIL_URL,
+  contract: '1.0.0',                                   // the rw-api contract this router speaks; a routes table of another MAJOR is ignored
+  actions: new Set(['authResume', 'load', 'authStart', 'authVerify', 'authSetPin', 'authLoginPin']),   // Slice 1a — the only actions this build ever sends to rw-api
+  reads: new Set(['authResume', 'load']),              // read-only: safe to re-send to Apps Script
+  contentType: 'application/json',                     // rw-api takes JSON (or text/plain, CONTRACT §1.2); JSON costs one CORS preflight per 10 min
+  ttlMaxMs: 60000,          // routes cache: a table older than this (or than its own ttlMs) is refreshed before a routed call
+  gateUrl: './rail.json',   // S3-A kill switch: same-origin, published with the app (never rw-api's to change); sw.js never caches it
+  routesWaitMs: 1500,       // the refresh a call waits for is abandoned after this (the routes table AND rail.json)
+  refreshRetryMs: 60000,    // a failed refresh is not retried for this long
+  readMs: 20000,            // rw-api's one try at a read: the reply must START within this (above rw-api's own 15 s answer deadline)
+  readBodyMs: 20000,        // …and, once started, its body must arrive within this (a slow phone pulling a full load)
+  strikesToOpen: 3, breakerMs: 300000,
+};
+const RAIL_KEY = { cohort: 'jactec.rail.cohort', routes: 'jactec.rail.routes', breaker: 'jactec.rail.breaker' };
+const railMem = { strikes: 0, inflight: null, failAt: 0, stickyStart: '', last: {}, broken: false, noted: {}, gate: false, gateAt: 0, gateWord: 'unchecked' };   // per page; `last` is window.__rail's per-action trace (never a token, body or name); gate* = the last rail.json read (never stored: a new page starts OFF)
+function railSafe(fn) { try { return fn(); } catch (e) { return undefined; } }
+/** One line in ERR_LOG (the ring a glitch report carries off the device) — at most once per `key` per page.
+ *  Words only: an action name and a reply word cut to [A-Za-z0-9_-]; never a token, a body or a name. */
+function railNote(key, msg) { if (railMem.noted[key]) return; railMem.noted[key] = 1; logErr('rail', String(msg).replace(/[^\w .,=()-]/g, '').slice(0, 160)); }
+/** Every router write to localStorage goes through here. One that throws (storage full or blocked) means this
+ *  page cannot keep its breaker, table or cohort, so it stops routing: CONTRACT §3.5, a failure inside the
+ *  router sends the call to BACKEND_URL. Sticky sign-in steps still follow their engine, as past the breaker. */
+function railPersist(fn) {
+  try { fn(); return true; } catch (e) { railMem.broken = true; railNote('broken', 'storage write failed, Apps Script only for this page'); return false; }
+}
+/** 'canary' | 'off' | 'default'. Throws when storage is blocked — backendCall then uses Apps Script. */
+function railCohort() { const c = localStorage.getItem(RAIL_KEY.cohort); return c === 'canary' || c === 'off' ? c : 'default'; }
+function railNames(a) { return Array.isArray(a) && a.every((n) => typeof n === 'string'); }
+function railShapeOk(t) { return !!(t && typeof t.version === 'string' && t.version && railNames(t.all) && railNames(t.canary) && Number.isFinite(t.ttlMs) && t.ttlMs > 0); }
+/** The cached routes table, or null (absent, unparseable or the wrong shape — a refresh replaces it). */
+function railTable() {
+  let t = null; try { t = JSON.parse(localStorage.getItem(RAIL_KEY.routes) || 'null'); } catch (e) { return null; }
+  return railShapeOk(t) && Number.isFinite(t.fetchedAt) ? t : null;
+}
+function railStale(t) { const age = Date.now() - (t ? t.fetchedAt : 0); return !t || age < 0 || age >= Math.min(t.ttlMs, RAIL.ttlMaxMs); }
+function railBreaker() {
+  let b = null; try { b = JSON.parse(localStorage.getItem(RAIL_KEY.breaker) || 'null'); } catch (e) {}
+  return (b && Number.isFinite(b.openUntil)) ? b : { openUntil: 0 };
+}
+/** Open for at most breakerMs from now: a clock set back can never hold a device off rw-api for longer. */
+function railBreakerOpen() { const left = railBreaker().openUntil - Date.now(); return left > 0 && left <= RAIL.breakerMs; }
+/** S3-A (RC-92) + S3-4 A — read ./rail.json: 'on' only for an object whose `on` is exactly true and whose `url` is
+ *  exactly this build's origin (RAIL.url, which is RAIL_URL: the test seam's reset is its only other writer), otherwise
+ *  the word for why it is OFF ('off' | 'url-mismatch' | 'http-<n>' | 'bad-json' | 'timeout' | 'network'). Same-origin
+ *  only (a redirect to another origin fails), no-store (neither the HTTP cache nor sw.js answers it), no credentials. Never rejects. */
+async function railGateRead(signal) {
+  try {
+    const res = await fetch(RAIL.gateUrl, { method: 'GET', mode: 'same-origin', cache: 'no-store', credentials: 'omit', signal });
+    if (!res.ok) return 'http-' + res.status;
+    const text = await res.text();
+    let j; try { j = JSON.parse(text); } catch (e) { return 'bad-json'; }
+    if (!(j && j.on === true)) return 'off';   // exactly true: "true", 1, [true] and null are OFF
+    return typeof j.url === 'string' && j.url !== '' && j.url === RAIL.url ? 'on' : 'url-mismatch';   // S3-4 A: exact string — no trailing slash, no case folding, never another host
+  } catch (e) { return signal && signal.aborted ? 'timeout' : 'network'; }
+}
+/** Keep the latest rail.json answer for this page; ERR_LOG gets each direction of change once per page. */
+function railGateSet(word) {
+  const was = railMem.gate;
+  railMem.gate = word === 'on'; railMem.gateWord = String(word || 'off'); railMem.gateAt = Date.now();
+  if (railMem.gate && !was) railNote('gate:on', 'rail.json on, rw-api routing allowed (first time this page)');
+  if (!railMem.gate && was) railNote('gate:off', 'rail.json off (' + railMem.gateWord + '), Apps Script only (first time this page)');
+  if (railMem.gateWord === 'url-mismatch') railNote('gate:url', 'rail.json on for another rw-api host than this build, Apps Script only (first time this page)');
+}
+/** Why the gate is where it is, for window.__rail: 'on' | 'off' | 'url-mismatch' | 'error' (unreadable: http-<n>,
+ *  bad-json, timeout, network) | 'unchecked' (this page has not read rail.json yet). */
+function railGateWhy(word) { return word === 'on' || word === 'off' || word === 'url-mismatch' || word === 'unchecked' ? word : 'error'; }
+/** The gate must be re-read: never read on this page, or read ttlMaxMs ago (or the clock went back). */
+function railGateStale() { const age = Date.now() - railMem.gateAt; return !railMem.gateAt || age < 0 || age >= RAIL.ttlMaxMs; }
+/** No new TABLE try yet: GET /v1/routes failed under refreshRetryMs ago. A clock that went back ends the block
+ *  (as railStale, railGateStale and railBreakerOpen treat it), so a clock step can never stretch it. */
+function railRetryBlocked() { const a = Date.now() - railMem.failAt; return !!railMem.failAt && a >= 0 && a < RAIL.refreshRetryMs; }
+/** One shared refresh: ./rail.json and GET /v1/routes in parallel, both abandoned after routesWaitMs.
+ *  Resolves true when a valid table was cached; never rejects. A table failure keeps the old table (used at
+ *  any age) and blocks new TABLE tries for refreshRetryMs. The gate is read in every refresh, the blocked ones
+ *  too, so a failing rw-api can never delay it. The caller goes on as soon as the gate reads anything but on:
+ *  nothing can route then, so it does not wait for the table (whose fetch still finishes in the background). */
+function railRefresh() {
+  if (!RAIL.url) return Promise.resolve(false);
+  if (railMem.inflight) return railMem.inflight;
+  const ac = new AbortController(), timer = setTimeout(() => ac.abort(), RAIL.routesWaitMs);
+  const gate = railGateRead(ac.signal).then((w) => { railSafe(() => railGateSet(w)); return w; });
+  const table = railRetryBlocked() ? Promise.resolve(false) : (async () => {
+    try {
+      const res = await fetch(RAIL.url + '/v1/routes', { method: 'GET', cache: 'no-store', signal: ac.signal });
+      const j = JSON.parse(await res.text());
+      if (!(res.ok && j && j.ok === true && String(j.contract || '').split('.')[0] === RAIL.contract.split('.')[0] && railShapeOk(j))) throw new Error('routes-shape');
+      if (!railPersist(() => localStorage.setItem(RAIL_KEY.routes, JSON.stringify({ version: j.version, all: j.all, canary: j.canary, ttlMs: j.ttlMs, fetchedAt: Date.now() })))) throw new Error('routes-store');
+      railMem.failAt = 0; return true;
+    } catch (e) { railMem.failAt = Date.now(); return false; }
+  })();
+  const done = Promise.all([gate, table]).then((r) => { clearTimeout(timer); return r[1]; });
+  const p = Promise.race([done, gate.then((w) => (w === 'on' ? done : false))]);
+  railMem.inflight = p;
+  done.then(() => { if (railMem.inflight === p) railMem.inflight = null; });
+  return p;
+}
+/** A sign-in step that must stay on one engine: where it goes ('rail' | 'gas'), or '' for any other call. */
+function railSticky(action, payload) {
+  if (action === 'authSetPin') return /^rw1_/.test(String((payload && payload.token) || '')) ? 'rail' : 'gas';
+  if (action === 'authVerify' && railMem.stickyStart) return railMem.stickyStart;
+  return '';
+}
+/** Must this call wait for a refresh? When the table decides it and the table or the gate is stale; a sticky
+ *  step bound for rw-api waits only to re-read a stale gate (nothing bound for Apps Script ever waits on it).
+ *  A gate read off under 60 s ago waits for nothing (nothing can route). While table tries are blocked, only a
+ *  stale gate is waited for. */
+function railNeedsWait(action, payload) {
+  if (!RAIL.url || !RAIL.actions.has(action) || railCohort() === 'off') return false;
+  const gateDue = railGateStale();
+  if (!gateDue && railMem.gate !== true) return false;
+  const sticky = railSticky(action, payload);
+  if (sticky) return sticky === 'rail' && gateDue;
+  if (railMem.broken || railBreakerOpen()) return false;
+  if (railRetryBlocked() && !railMem.inflight) return gateDue;
+  return railStale(railTable()) || gateDue;
+}
+/** 'rail' or 'gas' for this call, from what is cached now (never waits). */
+function railPick(action, payload) {
+  if (!RAIL.url || !RAIL.actions.has(action)) return 'gas';
+  const cohort = railCohort();
+  if (cohort === 'off') return 'gas';
+  if (railMem.gate !== true) return 'gas';   // S3-A: rail.json not {"on":true} at the last refresh → nothing to rw-api, sticky steps included
+  const sticky = railSticky(action, payload);
+  if (sticky) return sticky;
+  if (railMem.broken || railBreakerOpen()) return 'gas';
+  const t = railTable(), set = t ? (cohort === 'canary' ? t.canary : t.all) : null;
+  return set && set.indexOf(action) >= 0 ? 'rail' : 'gas';
+}
+/** A reply that says rw-api itself is failing. Refusals, other action errors, a shed load, rail-not-owner
+ *  and ip-rate are answers, not failures. Any non-JSON HTTP status counts (a dead Railway service answers
+ *  its own 404 page). */
+function railIsStrike(body, thrown) {
+  if (thrown) return true;
+  if (!body || body.ok === true) return false;
+  const e = String(body.error || '');
+  return e === 'server-error' || e === 'bad-json' || /^http-\d+$/.test(e) || (e === 'busy' && !body.shed);
+}
+function railWord(body, thrown) { return thrown ? (thrown.rwTimeout ? 'timeout' : 'network') : !body ? 'none' : body.ok === true ? 'ok' : String(body.error || 'error').replace(/[^\w-]/g, '').slice(0, 40) || 'error'; }
+/** Bookkeeping after an rw-api reply: the breaker, a refresh when rw-api says the table moved. */
+function railAfter(action, body, thrown, hdrVersion) {
+  if (railIsStrike(body, thrown)) {
+    railMem.strikes += 1;
+    if (railMem.strikes >= RAIL.strikesToOpen) {
+      railMem.strikes = 0;
+      railPersist(() => localStorage.setItem(RAIL_KEY.breaker, JSON.stringify({ openUntil: Date.now() + RAIL.breakerMs })));
+      railNote('breaker', 'breaker opened (first time this page) for ' + Math.round(RAIL.breakerMs / 60000) + ' min after ' + RAIL.strikesToOpen + ' rw-api failures, last=' + railWord(body, thrown) + ' on ' + action);
+    }
+  } else railMem.strikes = 0;
+  const t = railTable();
+  if ((body && body.error === 'rail-not-owner') || (hdrVersion && (!t || hdrVersion !== t.version))) railRefresh();
+}
+function railTrace(action, to, word, t0, fell) {
+  railMem.last[action] = Object.assign({ to, result: word, ms: Date.now() - t0, at: Date.now() }, fell ? { fell } : {});
+}
+/** Apps Script leg of a routed action, traced. `fell` names rw-api's answer when this is the second try. */
+async function railGas(action, payload, opts, t0, fell) {
+  if (action === 'authStart') railMem.stickyStart = 'gas';
+  let body;
+  try { body = await backendPost(BACKEND_URL, GAS_CONTENT_TYPE, action, payload, opts); }
+  catch (e) { railSafe(() => railTrace(action, 'gas', railWord(null, e), t0, fell)); throw e; }
+  railSafe(() => railTrace(action, 'gas', railWord(body, null), t0, fell));
+  return body;
+}
+async function railSend(action, payload, opts) {
+  const t0 = Date.now(), read = RAIL.reads.has(action);
+  if (action === 'authStart') railMem.stickyStart = 'rail';   // a lost reply may still have minted a code there
+  let body = null, thrown = null, hdr = '';
+  try { body = await backendPost(RAIL.url + '/v1', RAIL.contentType, action, payload, read ? { timeoutMs: RAIL.readMs, bodyTimeoutMs: RAIL.readBodyMs } : opts, (res) => { hdr = res.headers.get('X-RW-Routes') || ''; }); }
+  catch (e) { thrown = e; }
+  railSafe(() => railAfter(action, body, thrown, hdr));
+  const word = railWord(body, thrown);
+  if (body && body.ok === true) { railSafe(() => railTrace(action, 'rail', word, t0)); return body; }
+  if (read || (body && body.error === 'rail-not-owner')) {
+    if (read) railSafe(() => railNote('fell:' + action, action + ' fell back to Apps Script (rw-api said ' + word + '), first time this page'));
+    return railGas(action, payload, opts, t0, word);
+  }
+  railSafe(() => railTrace(action, 'rail', word, t0));
+  if (thrown) throw thrown;
+  return body;
+}
+/** ?rail=canary | off | default — this device's cohort, kept in localStorage; then the parameter leaves the address bar. */
+function railInitCohort() {
+  let sp; try { sp = new URLSearchParams(location.search); } catch (e) { return; }
+  if (!sp.has('rail')) return;
+  const v = String(sp.get('rail') || '').trim().toLowerCase();
+  railPersist(() => { if (v === 'canary' || v === 'off') localStorage.setItem(RAIL_KEY.cohort, v); else if (v === 'default') localStorage.removeItem(RAIL_KEY.cohort); });   // a lever that did not stick turns routing off for this page
+  try { sp.delete('rail'); const q = sp.toString(); history.replaceState(history.state, '', location.pathname + (q ? '?' + q : '') + location.hash); } catch (e) {}
+}
+/** window.__rail — console inspection for the canary check. No tokens, bodies or names. */
+function railInspect() {
+  let cohort = 'blocked', t = null, b = { openUntil: 0 };
+  try { cohort = railCohort(); t = railTable(); b = railBreaker(); } catch (e) {}
+  return { contract: RAIL.contract, on: !!RAIL.url, broken: railMem.broken, cohort, version: t ? t.version : '', fetchedAt: t ? t.fetchedAt : 0,
+    table: t ? { all: t.all.slice(), canary: t.canary.slice() } : null, breaker: { strikes: railMem.strikes, openUntil: b.openUntil },
+    gate: { on: railMem.gate === true, why: railGateWhy(railMem.gateWord), word: railMem.gateWord, checkedAt: railMem.gateAt },   // S3-A: the last rail.json read on this page; why = on | off | url-mismatch | error | unchecked
+    last: JSON.parse(JSON.stringify(railMem.last)) };
+}
+railInitCohort();
+try { Object.defineProperty(window, '__rail', { get: railInspect, configurable: true }); } catch (e) {}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') railSafe(() => { if (RAIL.url && railCohort() !== 'off') railRefresh(); }); });
 
 /* ── GPS BACKEND CLIENT (WranglerGPS integration · spec docs/superpowers/specs/
    2026-07-07-wrangler-gps-integration-design.md) ───────────────────────────────
@@ -25809,7 +26072,8 @@ function flushUserPrefsNow() {
     let queued = false;
     if (navigator.sendBeacon) {
       const payload = JSON.stringify({ action: 'setUserPrefs', password: backendPassword, sessionToken: backendPassword, doc });
-      queued = navigator.sendBeacon(BACKEND_URL, new Blob([payload], { type: 'text/plain;charset=utf-8' }));   // false = payload over the ~64KB / pending-queue limit
+      let beaconUrl = BACKEND_URL; try { if (railPick('setUserPrefs', null) === 'rail') beaconUrl = RAIL.url + '/v1'; } catch (e) {}   // RC-84 — the router's choice (setUserPrefs is never routed in Slice 1a, so this stays BACKEND_URL); a beacon reads no reply, so it never strikes or falls back. text/plain: a beacon may not carry a type that needs a preflight
+      queued = navigator.sendBeacon(beaconUrl, new Blob([payload], { type: 'text/plain;charset=utf-8' }));   // false = payload over the ~64KB / pending-queue limit
     }
     if (!queued) { Object.keys(doc).forEach((s) => { if (s !== 'v') _userPrefsDirty[s] = true; }); pushUserPrefs(); }   // no beacon OR beacon rejected → best-effort fetch, re-mark dirty
   } catch (e) { /* best-effort — the change also re-flushes on the next edit */ }
@@ -26798,12 +27062,17 @@ async function pidDoStart(resend) {
   // 'rate' writes no new code, so on a resend the last one stays good — and the code box has no PIN button
   if (r.ok && r.reason === 'rate') return pidErr(resend ? (pidUI._spent ? "This hour's sign-in codes are used up. Wait up to an hour, then try again." : "This hour's sign-in codes are used up. If your last code arrives, enter it here — otherwise wait up to an hour.") : pidRosterCache().length ? "This hour's sign-in codes are used up. Use Sign in with a PIN, or wait up to an hour." : "This hour's sign-in codes are used up. Wait up to an hour, then try again.");
   if (r.ok && r.reason) return pidErr("Couldn't send the text — try again.");
+  // RC-84 — rw-api's 'busy' (CONTRACT R4): refused before anything was written or sent, so no code is on its way. Apps Script never answers it
+  if (r.ok === false && r.error === 'busy') return pidErr("Couldn't send the text — try again.");
   pidErr("If that number's on the roster, a code is on its way — check your phone.");   // no reason = not on the roster — kept vague on purpose (anti-enumeration)
 }
 async function pidDoVerify() {
   const code = (document.getElementById('pid-code')?.value || '').replace(/\D/g, '');
   if (code.length !== PHONE_IDENTITY.codeLen) return pidErr(`Enter the ${PHONE_IDENTITY.codeLen}-digit code.`);
   const r = await pidCall('pid-verify', () => backendCall('authVerify', { personId: pidUI.personId, code, deviceKind: pidUI.kind }, { timeoutMs: SIGNIN_TIMEOUT_MS }));
+  // RC-84 — rw-api's 'busy' (R4) and 'ip-rate' (§1.8.5) are refused before the code is read: it is untouched and still good
+  const untouched = !!r && r.ok === false && (r.error === 'busy' || r.error === 'ip-rate');
+  if (untouched) return pidErr("Couldn't check the code just now — wait a moment, then tap Confirm.");   // the digits stay in the box
   if (!(r && r.error === 'bad-code')) pidUI._spent = true;   // RC-68 (2A) — past a plain mismatch, treat the code as gone: authVerify_ burns it on success, expiry and too-many, and a lost reply may have
   if (pidReplyLost(r)) { const el = document.getElementById('pid-code'); if (el) { el.value = ''; el.focus(); }   // RC-68 (2A) — the verify may have run and burned the code; retyping it can only fail
     return pidErr('The reply got lost — that code may already be used. Tap Resend code for a fresh one.'); }
@@ -26923,7 +27192,8 @@ function mountEnvBadge() {
 let _backendWarmed = false;
 function warmBackend() {
   if (_backendWarmed) return; _backendWarmed = true;
-  try { fetch(BACKEND_URL, { method: 'GET', mode: 'no-cors', cache: 'no-store' }).catch(() => {}); } catch (e) {}
+  let rail = false; try { rail = railPick('authStart', null) === 'rail'; } catch (e) {}   // RC-84 — the sign-in's first call goes to rw-api: warm that instead (no body, no credential)
+  try { fetch(rail ? RAIL.url + '/healthz' : BACKEND_URL, { method: 'GET', mode: 'no-cors', cache: 'no-store' }).catch(() => {}); } catch (e) {}
 }
 /* ══════════════ SCAN-TO-LOG (QR DECAL → VIDEO) — standalone capture (FEATURES.qrScanLog) ══════════════
    A #u=<unitId> decal scan opens this focused full-screen plate (mounted like renderLogin), records
@@ -27681,13 +27951,16 @@ function exposeTestApi() {
       tripsFor, tripTown, telHref, tripMatches, tripSort, stopDone, dispatchStopId, tripRowHTML: (t) => ROWS.calendar(t), yardCapture, openYardCamera, commitYardCapture, nextCategoryId, nextUnitId,
       tripsLS, tripMerge, tripSplit, assignTripDriver, tripLabel, assignStopDriver, tripSetTime,
       freshLineText, freshTick, freshTickerSync, freshAt: () => _freshAt, freshTimerOn: () => !!_freshTimer, setFreshAt: (t) => { _freshAt = t || 0; },   // RC-67 (2A) — freshness-line seams; the setter is test-only (mirrors setBackendPassword); setBooting sits with the RC-67 3A seams
-      tripPushSoon, tripPushNow, loadTripsFromBackend, tripsSyncFooter, setBackendPassword: (pw) => { backendPassword = pw || ''; },   // §2.3 Phase 4 sync — the setter is test-only (mirrors setRole), letting logic-test.mjs exercise the online path via a mocked window.fetch, never a real backend
+      backendCall, RAIL, RAIL_KEY, railMem, railPick, railNeedsWait, railRefresh, railTable, railInitCohort, warmBackend,   // RC-84 router seams — logic-test sets RAIL.url to a fake origin and answers both hosts from a mocked window.fetch; never a real backend
+      railReset: () => { Object.assign(railMem, { strikes: 0, inflight: null, failAt: 0, stickyStart: '', last: {}, broken: false, noted: {}, gate: false, gateAt: 0, gateWord: 'unchecked' }); _backendWarmed = false; RAIL.url = RAIL_URL; try { Object.values(RAIL_KEY).forEach((k) => localStorage.removeItem(k)); } catch (e) {} },
+      flushUserPrefsNow, BACKEND_URL, prefsBeaconSeam: (pid, dirty) => { const was = currentPersonId; currentPersonId = pid == null ? was : String(pid); if (dirty) _userPrefsDirty[dirty] = true; return was; },   // RC-84 beacon seam — logic-test sets a person id and one dirty prefs section, then stubs navigator.sendBeacon to see where the beacon goes; never a real backend
+      tripPushSoon, tripPushNow, loadTripsFromBackend, tripsSyncFooter,setBackendPassword: (pw) => { backendPassword = pw || ''; },   // §2.3 Phase 4 sync — the setter is test-only (mirrors setRole), letting logic-test.mjs exercise the online path via a mocked window.fetch, never a real backend
       adoptScanCaptures, setScanCaps: (m) => { SCAN_CAPS = m || {}; },   // §scan-reconcile — test seam: seed SCAN_CAPS then run adoption (logic-test)
       flushSave, snapshotSaved, computeChanges, SYNC, syncLimitMs, STALE, pidTokenClear, saveState: () => ({ saving, savePending, baseline: !!lastSaved }),   // RC-65 (2) — save-pipeline seams; logic-test drives them against a mocked window.fetch only
       resetSaveState: () => { clearTimeout(saveTimer); saving = false; savePending = false; lastSaved = null; SYNC.failing = false; SYNC.fails = 0; SYNC.backoff = 1200; STALE.byKey.clear(); renderSyncBanner(); },   // lastSaved=null → any stray flushSave stops at its first guard
       autoRunRepair, autoRunAnchorsFor, secToClock, AUTORUN_DAY_START_SEC, AUTORUN_EOD_DEADLINE_SEC, AUTORUN_LOAD_BUFFER_SEC, dispatchPinOf,
       openCustomerForm, renderOverlay, render, printInvoice, invoiceDocHtml, renderInvoicePng, invoiceSheetPng, invoicePrintGroups, invoiceAmendments, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature,
-      wranglerSend, wranglerNewChat, openWranglerDock, wranglerDockPollTick, devUnlocked, openWranglerOps, wrOpsAgo, openMobileSignSheet, closeMobileSignSheet, agDraft, __state: state };   // UI drivers for headless screenshot/e2e tests
+      wranglerSend, wranglerNewChat, openWranglerDock, wranglerDockPollTick, devUnlocked, openWranglerOps, wrOpsAgo, openMobileSignSheet, closeMobileSignSheet, agDraft, resetAllSettings, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }
 }

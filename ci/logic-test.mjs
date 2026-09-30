@@ -6,6 +6,7 @@ import { chromium } from 'playwright';
 import { createServer } from 'http';
 import { readFile } from 'fs/promises';
 import { extname, join, normalize } from 'path';
+import { railUrlFromSource, railFileOk, railFileForms } from './rail-guard.mjs';
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
   '.css': 'text/css', '.json': 'application/json', '.jpg': 'image/jpeg', '.png': 'image/png',
@@ -22,9 +23,24 @@ const server = createServer(async (req, res) => {
     res.end(buf);
   } catch { res.writeHead(404); res.end('not found'); }
 });
+// Suite watchdog: a regression that leaves one await pending forever (rail-mutants S11 is one) must FAIL the suite, not hang CI
+// until GitHub's job limit. The whole suite runs in a few minutes; 12 min is far past any honest run.
+setTimeout(() => { console.error('❌ Logic test threw: watchdog — the suite ran past 12 min (an await never settled); failing instead of hanging'); process.exit(1); }, 12 * 60e3).unref();
 await new Promise((r) => server.listen(8000, r));
 
 const browser = await chromium.launch();
+// S3-2 A — the shipped RAIL_URL names the PRODUCTION rw-api. No test page may ever reach it (or any Railway host): every
+// such request is aborted here before it leaves the machine, and recorded. The router suite answers its fake origins from a
+// mocked window.fetch, which never gets this far; anything that does is a real request the suite must account for.
+const railwayHits = [];
+{
+  const newPage = browser.newPage.bind(browser);
+  browser.newPage = async (...a) => {
+    const p = await newPage(...a);
+    await p.route(/^https?:\/\/[^/?#]*\.railway\.app([/?#:]|$)/i, (r) => { railwayHits.push(r.request().method() + ' ' + r.request().url()); return r.abort(); });
+    return p;
+  };
+}
 const page = await browser.newPage();
 const pageErrors = [];
 page.on('pageerror', (e) => pageErrors.push(String(e && e.message || e)));
@@ -4518,6 +4534,69 @@ try {
     // the block must hand back the BOOT state (demo: no stamp, no ticker), not a snapshot taken after that pollution
     ok(T.freshAt() === 0 && !T.freshTimerOn() && !document.getElementById('fresh-line'), `RC-67 freshness: the block leaves the boot state behind — no stamp, no ticker, no line (freshAt=${T.freshAt()}, ticker=${T.freshTimerOn()})`);
 
+    // RC-83 Q13-A (auth) — Settings → Reset all KEEPS the Team Roster. setConfig replaces the whole settings object and the
+    // backend then purges the sign-ins of everyone missing from it (pidReconcileRoster_), so the empty roster Reset all used to
+    // send signed the whole crew out. Drives the REAL resetAllSettings against a mocked window.fetch (script.google.com only).
+    // Ported from rw-phase2b 3eba2a3 check (18), the Q13-A part only.
+    {
+      const realFetch = window.fetch; const seen = []; const st = T.__state, ov = st.overlay;
+      const set0 = { s: localStorage.getItem('jactec.settings'), p: localStorage.getItem('jactec.settings.prev'), st: st.settings };
+      window.fetch = (u, init) => {
+        if (!String(u).includes('script.google.com')) return realFetch(u, init);
+        let body = {}; try { body = JSON.parse((init && init.body) || '{}'); } catch (e) {}
+        seen.push(body);
+        return Promise.resolve(new Response(JSON.stringify({ ok: true, saved: true }), { status: 200 }));
+      };
+      const last = (a) => seen.filter((b) => b.action === a).pop() || null;
+      try {
+        const roster = [{ id: 'EMP-Q13-1', name: 'Test Hand', role: 'Sales', phone: '' }, { id: 'EMP-Q13-2', name: 'Other Hand', role: 'Office', phone: '' }];
+        st.overlay = { kind: 'settings', adminPw: 'ADMIN-TEST', config: { roles: { Sales: 'x' }, admin: 'y', settings: { employees: roster, company: { name: 'Zz Co' }, kpis: { probe: 1 } } } };
+        seen.length = 0;
+        await T.resetAllSettings();
+        const sc = last('setConfig');
+        ok(!!sc && JSON.stringify(sc.config.settings) === JSON.stringify({ employees: roster }) && sc.config.roles.Sales === 'x' && sc.config.admin === 'y' && sc.password === 'ADMIN-TEST', `RC-83 Q13-A: Reset all sends the loaded roster and nothing else (${sc && JSON.stringify(sc.config.settings)})`);
+        let ls = null; try { ls = JSON.parse(localStorage.getItem('jactec.settings') || 'null'); } catch (e) {}
+        ok(Array.isArray((st.settings || {}).employees) && st.settings.employees.length === 2 && !st.settings.company && !st.settings.kpis && !st.overlay && !!ls && JSON.stringify(ls) === JSON.stringify({ employees: roster }), 'RC-83 Q13-A: this device keeps the roster too (memory and jactec.settings); every other customization is reset');
+        st.overlay = { kind: 'settings', adminPw: 'ADMIN-TEST', config: { roles: { Sales: 'x' }, admin: 'y', settings: { company: { name: 'Zz' } } } };
+        seen.length = 0;
+        await T.resetAllSettings();
+        ok(JSON.stringify(((last('setConfig') || {}).config || {}).settings) === '{}' && JSON.stringify(st.settings) === '{}', 'RC-83 Q13-A: with no roster loaded there is nothing to keep — an empty settings object, as before');
+        // The KPI lock-in reopen (lockKpiFromWrangler): Settings reopens on the KPIs tab with the settings it just saved. The
+        // roster Reset all keeps must be THAT saved roster — an unsaved Team Roster × (which splices the draft) must not ride
+        // Reset all to the backend and purge that person's sign-ins. Real clicks: .js-wr-kpi-lock, .js-emp-del, .js-settings-reset ×2.
+        {
+          const w = st.wrangler, kt0 = w.kpiTarget, msgs0 = w.messages;
+          const click = (el) => el && el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          const ids = (b) => { const e = ((((b || {}).config || {}).settings) || {}).employees; return Array.isArray(e) ? e.map((x) => x.id).join(',') : '(none)'; };
+          const sets = () => seen.filter((b) => b.action === 'setConfig');
+          const mk = () => [{ id: 'EMP-Q13-A', name: 'Alpha Hand', role: 'Sales', phone: '' }, { id: 'EMP-Q13-B', name: 'Bravo Hand', role: 'Office', phone: '' }];
+          const waitFor = async (fn, ms) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { if (fn()) return true; await new Promise((r) => setTimeout(r, 20)); } return !!fn(); };
+          try {
+            st.overlay = null; seen.length = 0;
+            w.kpiTarget = { role: 'mechanic', roleLabel: 'Mechanic', idx: 0, adminPw: 'ADMIN-TEST', roles: { Sales: 'x' }, admin: 'y', draftSettings: { employees: mk(), company: { name: 'Zz' } } };
+            w.messages = [{ role: 'assistant', text: '', action: { _kpi: { ok: true, ring: { label: 'Q13 probe ring' } } } }];
+            const btn = document.createElement('button'); btn.className = 'js-wr-kpi-lock'; btn.dataset.mi = '0'; document.body.appendChild(btn);
+            click(btn); await waitFor(() => st.overlay && st.overlay.kind === 'settings', 3000); btn.remove();
+            const o = st.overlay, savedIds = ids(sets().pop());
+            o.tab = 'team'; T.renderOverlay();
+            click(document.querySelector('.settings-popup .js-emp-del[data-i="0"]'));
+            const draftIds = ((o.draftSettings || {}).employees || []).map((x) => x.id).join(',');
+            const n0 = sets().length;
+            click(document.querySelector('.settings-popup .js-settings-reset'));
+            click(document.querySelector('.settings-popup .js-settings-reset'));
+            await waitFor(() => sets().length > n0, 3000);
+            const sent = sets().slice(n0).pop();
+            ok(savedIds === 'EMP-Q13-A,EMP-Q13-B' && draftIds === 'EMP-Q13-B' && ids(sent) === 'EMP-Q13-A,EMP-Q13-B', `RC-83 Q13-A on the KPI lock-in reopen: Reset all after an UNSAVED Team Roster delete sends the saved roster (saved ${savedIds} · draft after × ${draftIds} · Reset all sent ${ids(sent)})`);
+          } finally { w.kpiTarget = kt0; w.messages = msgs0; }
+        }
+      } finally {
+        window.fetch = realFetch; st.overlay = ov;
+        try { if (set0.s == null) localStorage.removeItem('jactec.settings'); else localStorage.setItem('jactec.settings', set0.s); if (set0.p == null) localStorage.removeItem('jactec.settings.prev'); else localStorage.setItem('jactec.settings.prev', set0.p); } catch (e) {}
+        st.settings = set0.st; try { T.applySettings(st.settings); } catch (e) {}
+        T.render();
+      }
+    }
+
     // RC-63 — sign-in resilience. Google's web-app front door was losing or stalling replies the
     // script had already produced. Lost replies must be retried, real refusals must not, stalls
     // must abort, and nothing but a real refusal may forget the remembered device.
@@ -4809,6 +4888,17 @@ try {
         await T.pidDoStart(false);
         ok(T.pidUI.step === 'identify' && errText() === "If that number's on the roster, a code is on its way — check your phone.", `2A: a number not on the roster keeps the anti-enumeration message (got "${errText()}")`);
 
+        // (f2) RC-84 — rw-api's busy (R4: nothing written, nothing sent) never claims a code is on its way
+        toPhone(); reset({ authStart: [{ ok: false, error: 'busy' }] });
+        await T.pidDoStart(false);
+        ok(T.pidUI.step === 'identify' && errText() === "Couldn't send the text — try again.", `RC-84: an authStart answered busy says the text was not sent (got "${errText()}")`);
+        // (f3) RC-84 — rw-api's busy / ip-rate on authVerify: refused before the code was read, so it stays good and stays in the box
+        for (const word of ['busy', 'ip-rate']) {
+          toCode('personal'); T.pidUI._spent = false; reset({ authVerify: [{ ok: false, error: word }] }); await T.pidDoVerify();
+          const val = (document.getElementById('pid-code') || {}).value;
+          ok(T.pidUI.step === 'code' && T.pidUI._spent === false && val === '123456' && /tap Confirm/.test(errText()) && !/resend/i.test(errText()), `RC-84: an authVerify answered ${word} keeps the code (not spent, still in the box) and says try again (spent ${T.pidUI._spent}, box "${val}", "${errText()}")`);
+        }
+
         // (g) a lost verify reply: the code may already be spent — say so, and clear the spent digits
         toCode('personal'); reset({ authVerify: ['404'] }); await T.pidDoVerify();
         const lostV1 = errText(), lostV1Val = (document.getElementById('pid-code') || {}).value;
@@ -4943,6 +5033,760 @@ try {
     const pc = (src.match(/\nfunction pidTokenClear\(\) \{([^\n]*)/) || [])[1] || '';
     const fl = (src.match(/\nfunction finishLoad\(\) \{([\s\S]*?)\n\}/) || [])[1] || '';
     results.push({ ok: sw.includes('staleClear();') && pc.includes('staleClear();') && fl.includes('staleClear();'), m: 'RC-71 (e) source guard: switchUser, pidTokenClear and finishLoad all clear the remembered failed batches (staleClear)' });
+  }
+
+  // CI bound — the required smoke job has a time limit, so a hung suite fails the check instead of blocking trunk for 6 hours
+  // (the release review's S11 note). The suite's own watchdog (top of this file) fails first; this is the job-level backstop.
+  {
+    const yml = await readFile(join(root, '.github', 'workflows', 'ci.yml'), 'utf8').catch(() => '');
+    const L = yml.split(/\r?\n/), at = L.indexOf('  smoke:'), job = [];
+    for (let i = at + 1; at >= 0 && i < L.length && (L[i].trim() === '' || L[i].startsWith('    ')); i++) job.push(L[i]);
+    const lim = Number(((job.find((l) => /^    timeout-minutes:\s*\d+\s*$/.test(l)) || '').match(/\d+/) || [])[0] || 0);
+    results.push({ ok: lim > 0 && lim <= 60, m: `CI bound: the required smoke job in ci.yml has a job-level timeout-minutes of at most 60 (${lim || 'none'})` });
+  }
+
+  // RC-83 Q13-A at PHONE size (375×812 — his screen is the evidence) and on the desktop: the Reset all button says what it
+  // keeps (the Team Roster), and its armed confirm SHOWS after a REAL first click and stays on screen even with Reset page and
+  // Undo in the footer (the footer wraps on a phone). Ported from rw-phase2b 3eba2a3, the RC-83 part of its phone block; since
+  // the release review it arms through a real mouse click on .js-settings-reset — the in-place repaint (reSettings) used to
+  // leave the footer untouched, so the first click armed with nothing on screen and the second reset with no confirm shown.
+  for (const vp of [{ width: 375, height: 812 }, { width: 1280, height: 900 }]) {
+    const ph = await browser.newPage({ viewport: vp });
+    ph.on('pageerror', (e) => pageErrors.push(String(e && e.message || e)));
+    await ph.goto('http://localhost:8000/#local', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await ph.waitForFunction(() => !!window.__rw, { timeout: 20000 });
+    await ph.evaluate(() => window.__rwBootRail);
+    const settleSheet = () => ph.evaluate(async () => { for (let i = 0, top = -1; i < 40; i++) { await new Promise((r) => setTimeout(r, 60)); const t = document.querySelector('.settings-popup').getBoundingClientRect().top; if (t === top) break; top = t; } });   // the phone sheet slides up: measure where it settles
+    const idle = await ph.evaluate(async () => {
+      const T = window.__rw, st = T.__state, realFetch = window.fetch; window.__q13Sets = 0;
+      window.fetch = (u, init) => { if (!String(u).includes('script.google.com')) return realFetch(u, init); window.__q13Sets++; return Promise.resolve(new Response('{"ok":true,"saved":true}', { status: 200 })); };
+      try { localStorage.setItem('jactec.settings.prev', JSON.stringify({ company: { name: 'probe' } })); } catch (e) {}
+      st.overlay = { kind: 'settings', adminPw: 'x', tab: 'kpis', resetArm: false, config: { roles: {}, admin: '', settings: {} } };
+      T.renderOverlay();
+      const b = document.querySelector('.settings-popup .js-settings-reset');
+      return { phone: document.body.classList.contains('is-phone'), tip: b ? b.getAttribute('data-tip') || '' : '', text: b ? b.textContent.trim() : '' };
+    });
+    await settleSheet();
+    await ph.click('.settings-popup .js-settings-reset');   // REAL click #1 — arms
+    await settleSheet();
+    const m = await ph.evaluate(() => {
+      const st = window.__rw.__state, arm = document.querySelector('.settings-popup .js-settings-reset.armed'), ar = arm && arm.getBoundingClientRect();
+      return { resetArm: !!(st.overlay && st.overlay.resetArm), arm: arm ? { l: Math.round(ar.left), r: Math.round(ar.right), w: innerWidth, text: arm.textContent.trim() } : null,
+        undo: !!document.querySelector('.settings-popup .js-settings-undo'), page: !!document.querySelector('.settings-popup .js-settings-resetpage'), sets: window.__q13Sets };
+    });
+    await ph.click('.settings-popup .js-settings-reset');   // REAL click #2 — resets
+    await ph.waitForFunction(() => !window.__rw.__state.overlay, { timeout: 3000 }).catch(() => {});
+    const after = await ph.evaluate(() => ({ open: !!window.__rw.__state.overlay, sets: window.__q13Sets }));
+    await ph.close();
+    const sz = `${vp.width}×${vp.height}`;
+    results.push({ ok: idle.phone === (vp.width < 768) && /Team Roster/.test(idle.tip) && idle.text === 'Reset all', m: `RC-83 Q13-A at ${sz}: the idle Reset all button's tip says it keeps the Team Roster ("${idle.tip}")` });
+    results.push({ ok: m.resetArm && !!m.arm && /Team Roster/.test(m.arm.text) && m.sets === 0, m: `RC-83 Q13-A at ${sz}: a REAL first click on Reset all shows the armed confirm and sends nothing (armed=${m.resetArm}, "${m.arm ? m.arm.text : 'no .armed button on screen'}", setConfig ×${m.sets})` });
+    results.push({ ok: !!m.arm && m.undo && m.page && m.arm.l >= 0 && m.arm.r <= m.arm.w, m: `RC-83 Q13-A at ${sz}: the armed confirm stays on screen with Reset page and Undo in the footer too (${m.arm ? m.arm.l + '..' + m.arm.r + ' of ' + m.arm.w : 'not shown'})` });
+    results.push({ ok: !after.open && after.sets === 1, m: `RC-83 Q13-A at ${sz}: the REAL second click resets (overlay open=${after.open}, setConfig ×${after.sets})` });
+  }
+
+  // ── RC-84 rw-api router — BEGIN ───────────────────────────────────────────────────────────────
+  // rw-api CONTRACT.md v1.0.0 §3.5 and §7 ("Router logic tests"): every row of §3.5, driven through the
+  // REAL backendCall / phoneBoot / warmBackend on fresh #local pages. RAIL.url is pointed at a fake origin
+  // (rw-api.invalid) and a mocked window.fetch answers BOTH hosts — this suite never reaches a network.
+  // The shipped build names the production rw-api (S3-2 A) and ships rail.json {"on":false}: the source guards below hold
+  // both, and the "shipped build" case reads the REAL rail.json from the local site. A page never reaches a Railway host
+  // (see railwayHits at the top of this file).
+  {
+    const RAIL_TEST = 'https://rw-api.invalid', RAIL_TEST_OLD = 'https://rw-api-old.invalid';   // fake origins: "this build" and an older build that named another host
+    const RAIL_PROD = 'https://rw-api-production.up.railway.app';   // the shipped RAIL_URL (S3-2 A) — only ever answered by the mock
+    const openRail = async (query, seedCohort) => {
+      const p = await browser.newPage();
+      p.on('pageerror', (e) => pageErrors.push(String(e && e.message || e)));
+      if (seedCohort) await p.addInitScript((c) => { try { localStorage.setItem('jactec.rail.cohort', c); } catch (e) {} }, seedCohort);
+      await p.goto('http://localhost:8000/' + (query || '') + '#local', { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await p.waitForFunction(() => !!window.__rw, { timeout: 20000 });
+      await p.evaluate(() => window.__rwBootRail);
+      // The two-host mock. plan.gas[action] / plan.rail[action] / plan.routes are queues of steps:
+      // an object (a JSON reply; `__h` adds headers, `__s` sets the status), 'throw', 'hold' (never answers
+      // unless aborted), 'badjson', '502' (a non-JSON error page), 'stall' (headers at once, a body that never
+      // ends unless aborted); `__bodyAfter: ms` sends the headers at once and the JSON body ms later. An empty queue answers ok.
+      await p.evaluate(({ RAIL_TEST, RAIL_TEST_OLD, RAIL_PROD }) => {
+        const M = window.__railMock = { log: [], plan: { gas: {}, rail: {}, routes: [], gate: [] }, gateReal: false, gateDefault: { on: true, url: RAIL_TEST }, routesDefault: { ok: true, contract: '1.0.0', version: 'v-empty', ttlMs: 60000, state: 'ok', all: [], canary: [] } };
+        const realFetch = window.fetch;
+        const streamed = (text, ms, init) => new Response(new ReadableStream({ start(c) {
+          const s = init && init.signal; let t = null;
+          if (ms != null) t = setTimeout(() => { try { c.enqueue(new TextEncoder().encode(text)); c.close(); } catch (e) {} }, ms);
+          if (s) s.addEventListener('abort', () => { clearTimeout(t); try { c.error(new DOMException('aborted', 'AbortError')); } catch (e) {} });
+        } }), { status: 200 });
+        const reply = (step, init) => {
+          if (step === 'stall') return Promise.resolve(streamed('', null, init));
+          if (step && step.__raw != null) return Promise.resolve(new Response(step.__raw, { status: step.__s || 200 }));   // literal bytes (S3-A: a Pages 404 page, {"on":"true"}, …)
+          if (step && step.__bodyAfter) { const o = Object.assign({}, step); delete o.__bodyAfter; return Promise.resolve(streamed(JSON.stringify(o), step.__bodyAfter, init)); }
+          if (step === 'throw') return Promise.reject(new TypeError('Failed to fetch'));
+          if (step === 'hold') return new Promise((res, rej) => { const s = init && init.signal; if (s) s.addEventListener('abort', () => rej(new DOMException('aborted', 'AbortError'))); });
+          if (step === 'badjson') return Promise.resolve(new Response('not json', { status: 200 }));
+          if (step === '502') return Promise.resolve(new Response('<html>Bad Gateway</html>', { status: 502 }));
+          const o = Object.assign({}, step), h = o.__h || {}, s = o.__s || 200; delete o.__h; delete o.__s;
+          return Promise.resolve(new Response(JSON.stringify(o), { status: s, headers: h }));
+        };
+        window.fetch = (u, init) => {
+          const url = String(u), RAILS = [RAIL_TEST, RAIL_TEST_OLD, RAIL_PROD];   // RAIL_PROD (the shipped origin) is answered here and never passed to the network
+          const origin = RAILS.find((o) => url.startsWith(o)) || '', host = origin ? 'rail' : url.includes('script.google.com') ? 'gas' : '';
+          if (url === './rail.json' || /\/rail\.json([?#]|$)/.test(url)) {   // S3-A: the same-origin kill switch; plan.gate is its queue, gateDefault ({on:true,url:RAIL_TEST}) answers when a case scripts none
+            M.log.push({ host: 'gate', url, method: (init && init.method) || 'GET', mode: init && init.mode, cache: init && init.cache, credentials: init && init.credentials, t: Date.now() });
+            if (M.gateReal) return realFetch(u, init);   // the site's own rail.json, as shipped (the "shipped build" case)
+            return reply(M.plan.gate.length ? M.plan.gate.shift() : M.gateDefault, init);
+          }
+          if (!host) return realFetch(u, init);
+          let body = {}; try { body = JSON.parse((init && init.body) || '{}'); } catch (e) {}
+          const e = { host, origin, url, method: (init && init.method) || 'GET', action: body.action || '', ctype: init && init.headers && init.headers['Content-Type'], raw: init && init.body, mode: init && init.mode, t: Date.now() };
+          M.log.push(e);
+          if (host === 'rail' && url === origin + '/v1/routes') return reply(M.plan.routes.shift() || M.routesDefault, init);   // the table rw-api publishes when a case scripts none
+          if (e.method !== 'POST') return Promise.resolve(new Response('', { status: 200 }));
+          const q = M.plan[host][e.action] || [];
+          return reply(q.length ? q.shift() : { ok: true, data: {}, via: host }, init);
+        };
+      }, { RAIL_TEST, RAIL_TEST_OLD, RAIL_PROD });
+      return p;
+    };
+    // the shipped rail.json, read here only to know which of its two legal forms the shipped-build case must expect
+    const SHIPPED_ON = (await readFile(join(root, 'rail.json'), 'utf8').catch(() => '')).replace(/\r?\n$/, '') === '{"on":true,"url":"' + RAIL_PROD + '"}';
+    const rp = await openRail('');
+    const railOut = await rp.evaluate(async ({ RAIL_TEST, RAIL_TEST_OLD, RAIL_PROD, SHIPPED_ON }) => {
+      const T = window.__rw, M = window.__railMock, out = []; const ok = (c, m) => out.push({ ok: !!c, m: 'RC-84 router: ' + m });
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const n = (host, action) => M.log.filter((e) => e.host === host && (action == null || e.action === action) && e.method === 'POST').length;
+      const routesGets = () => M.log.filter((e) => e.url === RAIL_TEST + '/v1/routes').length;
+      const clear = () => { M.log.length = 0; M.plan.gas = {}; M.plan.rail = {}; M.plan.routes = []; M.plan.gate = []; };
+      const table = (all, canary, extra) => Object.assign({ ok: true, contract: '1.0.0', version: 'v1', ttlMs: 60000, state: 'ok', all, canary }, extra || {});
+      const put = (all, canary, extra) => localStorage.setItem(T.RAIL_KEY.routes, JSON.stringify(Object.assign({ version: 'v1', all, canary, ttlMs: 60000, fetchedAt: Date.now() }, extra || {})));
+      const SIX = ['authResume', 'load', 'authStart', 'authVerify', 'authSetPin', 'authLoginPin'], FLIP1 = ['authResume', 'load'];
+      const call = (a, x, o) => T.backendCall(a, x, o).then((r) => r, (e) => ({ threw: e && (e.rwTimeout ? 'timeout' : e.message) }));
+      const RW1 = 'rw1_' + 'ab'.repeat(32), HEX = 'cd'.repeat(32);
+      const ON = { on: true, url: RAIL_TEST };   // S3-4 A: the on file names this page's origin
+      const gateOn = () => Object.assign(T.railMem, { gate: true, gateAt: Date.now(), gateWord: 'on' });   // S3-A precondition: this page read rail.json {"on":true} just now (for cases that must see no refresh)
+      T.railReset(); T.setBackendPassword('rc84-tok');
+      try {
+        // ── off by default ────────────────────────────────────────────────────────────────
+        clear();
+        ok(T.RAIL.url === RAIL_PROD && window.__rail.on === true, `the shipped build names the production rw-api origin exactly (S3-2 A; ${T.RAIL.url})`);
+        // the shipped build end to end: RAIL_URL as shipped, the site's REAL rail.json, and a routes table that names load
+        // and authResume for everyone. rail.json {"on":false} keeps every call on Apps Script; rw-api sees only GET /v1/routes.
+        M.gateReal = true; M.routesDefault = { ok: true, contract: '1.0.0', version: 'v-flip1', ttlMs: 60000, state: 'ok', all: ['authResume', 'load'], canary: ['authResume', 'load'] };
+        const rShip1 = await call('load'), rShip2 = await call('authResume', { token: 't' });
+        const prodLog = M.log.filter((e) => e.origin === RAIL_PROD), shipGate = window.__rail.gate;
+        if (SHIPPED_ON) {   // a later release that ships the on file: the same build routes Flip 1 to the production origin (answered by the mock)
+          ok(rShip1.via === 'rail' && rShip2.via === 'rail' && n('gas') === 0 && prodLog.filter((e) => e.method === 'POST').length === 2 && window.__rail.gate.why === 'on',
+            `shipped build + shipped rail.json {"on":true,"url":<RAIL_URL>}: load and authResume go to the production origin (${prodLog.map((e) => e.method + ' ' + e.url.slice(RAIL_PROD.length)).join(', ')})`);
+        } else {
+        ok(rShip1.via === 'gas' && rShip2.via === 'gas' && n('gas') === 2 && n('rail') === 0 && prodLog.length === 1 && prodLog[0].method === 'GET' && prodLog[0].url === RAIL_PROD + '/v1/routes' && M.log.filter((e) => e.host === 'gate').length === 1,
+          `shipped build + shipped rail.json {"on":false}: load and authResume go to Apps Script; the production rw-api sees only one GET /v1/routes, never a POST (${prodLog.map((e) => e.method + ' ' + e.url.slice(RAIL_PROD.length)).join(', ')})`);
+        ok(shipGate.on === false && shipGate.why === 'off' && shipGate.word === 'off', `shipped build: window.__rail.gate says off, why off (${JSON.stringify(shipGate)})`);
+        }
+        M.gateReal = false; M.routesDefault = { ok: true, contract: '1.0.0', version: 'v-empty', ttlMs: 60000, state: 'ok', all: [], canary: [] };
+        T.railReset(); T.RAIL.url = '';   // the '' branch (a build with no origin): the router is off
+        clear();
+        ok(window.__rail.on === false, 'RAIL.url \'\': the router is off');
+        const r0 = await call('load');
+        ok(r0.via === 'gas' && n('gas') === 1 && M.log.filter((e) => e.host === 'rail').length === 0, 'router off: load goes to Apps Script only, and no routes table is fetched');
+        ok(M.log[0].ctype === 'text/plain;charset=utf-8' && JSON.parse(M.log[0].raw).action === 'load', 'router off: the Apps Script POST keeps text/plain (no CORS preflight)');
+        T.warmBackend(); await sleep(0);
+        ok(M.log.some((e) => e.host === 'gas' && e.method === 'GET' && e.mode === 'no-cors'), 'router off: warmBackend warms Apps Script as before');
+
+        T.RAIL.url = RAIL_TEST; T.RAIL.routesWaitMs = 300; T.RAIL.readMs = 400;
+
+        // ── routes table: an empty table routes nothing (the release state before any flip) ─────
+        clear();
+        const r1 = await call('load');
+        ok(r1.via === 'gas' && routesGets() === 1 && n('rail') === 0 && T.railTable() && T.railTable().version === 'v-empty', 'an empty routes table (no flip yet) sends load to Apps Script, and the table is cached');
+        clear(); await call('load'); await call('authResume', { token: 'x' });
+        ok(routesGets() === 0, 'a table younger than 60 s is not fetched again');
+
+        // ── Flip 1 on a device with an EMPTY cache: the first call awaits the table and goes to rw-api ──
+        T.railReset(); T.RAIL.url = RAIL_TEST; T.RAIL.routesWaitMs = 300; T.RAIL.readMs = 400; clear();
+        M.plan.routes = [table(FLIP1, SIX)];
+        const r2 = await call('load');
+        const railPost = M.log.find((e) => e.host === 'rail' && e.method === 'POST');
+        ok(r2.via === 'rail' && n('gas') === 0 && routesGets() === 1, 'empty cache + a Flip 1 table: load awaits the table and is answered by rw-api');
+        ok(railPost && railPost.url === RAIL_TEST + '/v1' && railPost.ctype === 'application/json', 'rw-api gets POST <RAIL_URL>/v1 with Content-Type application/json');
+        clear(); M.plan.rail.load = [{ ok: false, error: 'busy' }];
+        await call('load');
+        const legs = M.log.filter((e) => e.method === 'POST');
+        ok(legs.length === 2 && legs[0].host === 'rail' && legs[1].host === 'gas' && legs[0].raw === legs[1].raw, 'the payload is the same bytes on both legs (password, sessionToken, action unchanged)');
+        clear();
+        ok((await call('authStart', { phone: '3375550100', purpose: 'login' })).via === 'gas' && n('rail') === 0, 'an action outside the table (authStart before Flip 2) goes to Apps Script');
+
+        // ── this build's own ceiling: only the six Slice 1a actions can ever be routed ─────────────
+        put(FLIP1.concat(['sync', 'stripeChargeInvoice', 'setUserPrefs', 'recordManualPayment']), SIX.concat(['sync', 'stripeChargeInvoice']));
+        clear();
+        ok((await call('sync', { changes: {} })).via === 'gas' && n('rail') === 0, 'a table naming sync still leaves sync on Apps Script');
+        ok(['stripeChargeInvoice', 'setUserPrefs', 'recordManualPayment', 'getConfig'].every((a) => T.railPick(a, {}) === 'gas'), 'money actions and setUserPrefs are never routed, whatever the table names');
+
+        // ── the routes cache ───────────────────────────────────────────────────────────────
+        put(FLIP1, SIX, { fetchedAt: Date.now() - 61000, ttlMs: 600000 }); clear(); M.plan.routes = [table(FLIP1, SIX, { version: 'v2' })];
+        await Promise.all([call('load'), call('authResume', { token: 't' })]);
+        ok(routesGets() === 1 && T.railTable().version === 'v2', 'a table older than 60 s is refreshed before the call (ttlMs above 60 s is capped), ONE shared GET for two calls');
+        put(FLIP1, SIX, { fetchedAt: Date.now() - 1500, ttlMs: 1000 }); clear();
+        await call('load');
+        ok(routesGets() === 1, 'a server ttlMs below 60 s is honoured');
+        put(FLIP1, SIX, { fetchedAt: Date.now() - 120000 }); T.railMem.failAt = 0; clear(); M.plan.routes = ['hold'];
+        let t0 = Date.now(); const r3 = await call('load'); const waited = Date.now() - t0;
+        ok(r3.via === 'rail' && waited >= 250 && waited < 1500, `a routes refresh that hangs is abandoned at the cap and the stale table is used at any age (waited ${waited} ms)`);
+        clear(); await call('load');
+        ok(routesGets() === 0 && n('rail', 'load') === 1, 'a failed refresh is not retried for 60 s (the stale table keeps deciding)');
+        T.railReset(); T.RAIL.url = RAIL_TEST; T.RAIL.routesWaitMs = 300; T.RAIL.readMs = 400; clear(); M.plan.routes = ['throw'];
+        ok((await call('load')).via === 'gas' && n('rail') === 0, 'no table and no answer from /v1/routes: everything goes to Apps Script');
+        T.railMem.failAt = 0; clear(); M.plan.routes = [{ ok: true, contract: '1.0.0', version: 'bad', ttlMs: 60000, all: 'load', canary: [] }];
+        await call('load');
+        ok(T.railTable() === null && n('gas', 'load') === 1, 'a routes reply of the wrong shape is never cached');
+        put(FLIP1, SIX, { version: 'good', fetchedAt: Date.now() - 120000 }); T.railMem.failAt = 0; clear(); M.plan.routes = [{ ok: true, contract: '1.0.0', version: 'bad', ttlMs: 60000, all: ['load'], canary: [7] }];
+        const rBad = await call('load'); const kept = JSON.parse(localStorage.getItem(T.RAIL_KEY.routes) || 'null');
+        ok(kept && kept.version === 'good' && rBad.via === 'rail', 'a routes reply of the wrong shape leaves the previous good table in place (used at any age)');
+        localStorage.removeItem(T.RAIL_KEY.routes);   // the next cases start with no table
+        T.railMem.failAt = 0; clear(); M.plan.routes = [table(FLIP1, SIX, { contract: '2.0.0' })];
+        await call('load');
+        ok(T.railTable() === null && n('rail') === 0, 'a routes table of another contract MAJOR is ignored');
+        T.railMem.failAt = 0; clear(); M.plan.routes = [Object.assign(table(FLIP1, SIX), { __s: 503 })];
+        await call('load');
+        ok(T.railTable() === null && n('rail') === 0, 'a routes reply with a non-200 status is never cached');
+        localStorage.setItem(T.RAIL_KEY.routes, '{not json'); T.railMem.failAt = 0; clear(); M.plan.routes = [table(FLIP1, SIX)];
+        ok((await call('load')).via === 'rail', 'unreadable cached JSON is treated as no table and replaced by a refresh');
+
+        // ── read-only calls: rw-api gets one try, anything but ok:true is confirmed by Apps Script ──
+        put(FLIP1, SIX); M.routesDefault = table(FLIP1, SIX);   // from here on, a refresh (e.g. after rail-not-owner) republishes the Flip 1 table
+        const readCase = async (step, label) => {
+          clear(); M.plan.rail.load = [step]; const r = await call('load', undefined, { timeoutMs: 5000 });
+          ok(r.via === 'gas' && n('rail', 'load') === 1 && n('gas', 'load') === 1, `read-only: rw-api ${label} → the same call once to Apps Script, whose answer is final`);
+        };
+        await readCase({ ok: false, error: 'busy', shed: 1 }, 'busy (shed)');
+        await readCase({ ok: false, error: 'server-error' }, 'server-error');
+        await readCase({ ok: false, error: 'rail-not-owner', routesVersion: 'x' }, 'rail-not-owner');
+        await readCase('throw', 'network error');
+        await readCase('502', 'http-502 page');
+        await readCase('badjson', 'bad-json');
+        T.railMem.strikes = 0; localStorage.removeItem(T.RAIL_KEY.breaker);
+        clear(); M.plan.rail.load = [{ ok: false, error: 'unauthorized' }];
+        const r4 = await call('load');
+        ok(r4.ok === true && r4.via === 'gas', 'R2: an rw-api refusal of load is NOT final — Apps Script accepting the token wins');
+        clear(); M.plan.rail.authResume = [{ ok: false, error: 'expired' }]; M.plan.gas.authResume = [{ ok: false, error: 'expired' }];
+        const r5 = await call('authResume', { token: 'dead' });
+        ok(r5.error === 'expired' && n('gas', 'authResume') === 1, 'a refusal both backends agree on reaches the caller once, from Apps Script');
+        clear(); M.plan.rail.load = ['hold']; t0 = Date.now();
+        const r6 = await call('load', undefined, { timeoutMs: 5000 }); const took = Date.now() - t0;
+        ok(r6.via === 'gas' && took >= 350 && took < 3000, `rw-api's read try is bounded (RAIL.readMs), then Apps Script answers (${took} ms)`);
+        T.railMem.strikes = 0; localStorage.removeItem(T.RAIL_KEY.breaker);
+        const body0 = T.RAIL.readBodyMs;
+        try {
+          T.RAIL.readBodyMs = 1500; clear(); M.plan.rail.load = [{ ok: true, data: { units: [] }, settings: {}, __bodyAfter: 700 }];
+          const rSlow = await call('load', undefined, { timeoutMs: 5000 });
+          ok(rSlow.data && rSlow.via === undefined && n('gas') === 0, 'read-only: a reply that STARTED inside RAIL.readMs gets its own body limit — a slow download is answered by rw-api, not abandoned (RC-63)');
+          T.RAIL.readBodyMs = 1400; clear(); M.plan.rail.load = ['stall']; t0 = Date.now();
+          const rStall = await call('load', undefined, { timeoutMs: 5000 }); const tookS = Date.now() - t0;
+          ok(rStall.via === 'gas' && tookS >= 1300 && tookS < 3000, `read-only: a body that stalls gets RAIL.readBodyMs from the moment the reply starts (not RAIL.readMs, not twice it), then Apps Script answers (${tookS} ms)`);
+        } finally { T.RAIL.readBodyMs = body0; T.railMem.strikes = 0; localStorage.removeItem(T.RAIL_KEY.breaker); }
+        clear(); M.plan.rail.load = [{ ok: true, data: { units: [] }, settings: {} }];
+        ok((await call('load')).data && n('gas') === 0, 'read-only: an rw-api ok:true is final (no second call)');
+
+        // ── writes: sent to one backend only; only rail-not-owner is re-sent ───────────────────
+        localStorage.setItem(T.RAIL_KEY.cohort, 'canary'); put(FLIP1, SIX);
+        const writeCase = async (action, step, expect, label) => {
+          clear(); T.railMem.strikes = 0; localStorage.removeItem(T.RAIL_KEY.breaker); M.plan.rail[action] = [step];
+          const r = await call(action, { personId: 'E1', pin: '1234', code: '123456' });
+          ok(expect(r) && n('gas', action) === 0 && n('rail', action) === 1, `write ${action}: rw-api ${label} goes back to the caller — never re-sent to Apps Script`);
+        };
+        await writeCase('authStart', { ok: true, sent: true, personId: 'E1', name: 'N', masked: 'm' }, (r) => r.sent === true, 'sent');
+        await writeCase('authStart', { ok: false, error: 'server-error' }, (r) => r.error === 'server-error', 'server-error');
+        await writeCase('authLoginPin', { ok: false, error: 'busy' }, (r) => r.error === 'busy', 'busy');
+        await writeCase('authLoginPin', 'throw', (r) => r.threw === 'Failed to fetch', 'network error (rethrown)');
+        await writeCase('authVerify', { ok: false, error: 'bad-code', left: 3 }, (r) => r.error === 'bad-code', 'bad-code');
+        clear(); T.railMem.failAt = 0; M.plan.rail.authLoginPin = [{ ok: false, error: 'rail-not-owner', routesVersion: 'v3' }]; M.plan.routes = [table(FLIP1, FLIP1, { version: 'v3' })];
+        const r7 = await call('authLoginPin', { personId: 'E1', pin: '1234' }); await sleep(50);
+        ok(r7.via === 'gas' && n('rail', 'authLoginPin') === 1 && n('gas', 'authLoginPin') === 1, 'write: rail-not-owner (rw-api did nothing) is re-sent to Apps Script once');
+        ok(routesGets() === 1 && T.railTable().version === 'v3', 'rail-not-owner refreshes the routes table');
+
+        // ── sticky sign-in steps ─────────────────────────────────────────────────────────────
+        T.railReset(); T.RAIL.url = RAIL_TEST; T.RAIL.routesWaitMs = 300; T.RAIL.readMs = 400; localStorage.setItem(T.RAIL_KEY.cohort, 'canary');
+        put(FLIP1, SIX); clear();
+        await call('authStart', { phone: '1' });
+        put(FLIP1, ['authStart']);   // a flip mid-sign-in: authVerify leaves the table
+        await call('authVerify', { personId: 'E1', code: '1' });
+        ok(n('rail', 'authStart') === 1 && n('rail', 'authVerify') === 1 && n('gas') === 0, 'sticky: authVerify goes where authStart went (rw-api), whatever the table now says');
+        localStorage.setItem(T.RAIL_KEY.breaker, JSON.stringify({ openUntil: Date.now() + 60000 })); clear();
+        await call('authVerify', { personId: 'E1', code: '1' });
+        ok(n('rail', 'authVerify') === 1, 'sticky beats the breaker');
+        localStorage.removeItem(T.RAIL_KEY.breaker); T.railMem.strikes = 0;
+        put(FLIP1, ['authVerify']); clear();
+        await call('authStart', { phone: '1' }); await call('authVerify', { personId: 'E1', code: '1' });
+        ok(n('gas', 'authStart') === 1 && n('gas', 'authVerify') === 1 && n('rail') === 0, 'sticky: an authStart sent to Apps Script keeps authVerify on Apps Script even when the table names authVerify');
+        put(FLIP1, SIX); clear(); M.plan.rail.authStart = [{ ok: false, error: 'rail-not-owner', routesVersion: 'v1' }]; M.plan.routes = [table(FLIP1, SIX)]; T.railMem.failAt = 0;
+        await call('authStart', { phone: '1' }); await call('authVerify', { personId: 'E1', code: '1' });
+        ok(n('gas', 'authStart') === 1 && n('gas', 'authVerify') === 1, 'sticky: an authStart bounced to Apps Script (rail-not-owner) keeps authVerify there too');
+        put([], []); clear(); M.plan.rail.authStart = ['throw'];
+        put(FLIP1, SIX); await call('authStart', { phone: '1' }); put([], []); await call('authVerify', { personId: 'E1', code: '1' });
+        ok(n('rail', 'authVerify') === 1, 'sticky: an authStart whose rw-api reply was lost keeps authVerify on rw-api (the code may be there)');
+        put([], []); clear();
+        await call('authSetPin', { personId: 'E1', pin: '1234', token: RW1 });
+        await call('authSetPin', { personId: 'E1', pin: '1234', token: HEX });
+        put(FLIP1, SIX); await call('authSetPin', { personId: 'E1', pin: '1234', token: HEX });
+        ok(n('rail', 'authSetPin') === 1 && n('gas', 'authSetPin') === 2, 'sticky: authSetPin follows its token — rw1_ → rw-api, an Apps Script token → Apps Script, whatever the table says');
+        put(FLIP1, SIX, { fetchedAt: Date.now() - 120000 }); T.railMem.failAt = 0;   // stale: only the off guard can keep the GET away
+        localStorage.setItem(T.RAIL_KEY.cohort, 'off'); clear();
+        await call('authVerify', { personId: 'E1', code: '1' }); await call('authSetPin', { personId: 'E1', pin: '1234', token: RW1 }); await call('load');
+        ok(n('rail') === 0 && n('gas') === 3 && routesGets() === 0, 'the off cohort beats stickiness, and fetches no table');
+
+        // ── the breaker ──────────────────────────────────────────────────────────────────────
+        T.railReset(); T.RAIL.url = RAIL_TEST; T.RAIL.routesWaitMs = 300; T.RAIL.readMs = 400; put(FLIP1, SIX);
+        const strikeRun = async (steps) => { for (const s of steps) { M.plan.rail.load = [s]; await call('load', undefined, { timeoutMs: 3000 }); } };   // the caller's own limit only bounds the Apps Script leg
+        clear(); await strikeRun([{ ok: false, error: 'server-error' }, { ok: false, error: 'busy' }, '502']);
+        const br = JSON.parse(localStorage.getItem(T.RAIL_KEY.breaker) || '{}');
+        ok(br.openUntil > Date.now() + 290000 && br.openUntil <= Date.now() + 300000, 'breaker: server-error, busy (not shed) and an HTTP error page are 3 strikes → open for 5 min, kept in localStorage');
+        put(FLIP1, SIX, { fetchedAt: Date.now() - 120000 }); T.railMem.failAt = 0;   // stale: only the breaker guard can keep the GET away
+        clear(); await call('load'); await call('authResume', { token: 't' });
+        ok(n('rail') === 0 && n('gas') === 2 && routesGets() === 0, 'breaker open: routed actions go to Apps Script, no table is awaited');
+        put(FLIP1, SIX);
+        localStorage.setItem(T.RAIL_KEY.breaker, JSON.stringify({ openUntil: Date.now() - 1 })); clear(); await call('load');
+        ok(n('rail', 'load') === 1, 'breaker: after its 5 min the table decides again');
+        localStorage.setItem(T.RAIL_KEY.breaker, JSON.stringify({ openUntil: Date.now() + 86400000 })); clear(); await call('load');
+        ok(n('rail', 'load') === 1, 'breaker: an openUntil beyond 5 min (clock moved) is not honoured');
+        localStorage.removeItem(T.RAIL_KEY.breaker); T.railMem.strikes = 0;
+        clear(); await strikeRun(['hold', 'throw', 'badjson']);
+        ok(T.railPick('load', {}) === 'gas' && !!localStorage.getItem(T.RAIL_KEY.breaker), 'breaker: a timeout, a network error and bad-json are strikes');
+        const resetBy = async (step, label) => {
+          localStorage.removeItem(T.RAIL_KEY.breaker); T.railMem.strikes = 0;
+          await strikeRun([{ ok: false, error: 'server-error' }, { ok: false, error: 'server-error' }, step, { ok: false, error: 'server-error' }, { ok: false, error: 'server-error' }]);
+          ok(!localStorage.getItem(T.RAIL_KEY.breaker) && T.railMem.strikes === 2, `breaker: ${label} is not a strike and resets the count`);
+        };
+        await resetBy({ ok: false, error: 'busy', shed: 1 }, 'busy with shed:1');
+        await resetBy({ ok: false, error: 'rail-not-owner', routesVersion: 'v1' }, 'rail-not-owner');
+        await resetBy({ ok: false, error: 'unauthorized' }, 'a refusal');
+        await resetBy({ ok: true, data: {} }, 'ok');
+        localStorage.removeItem(T.RAIL_KEY.breaker); T.railMem.strikes = 0; localStorage.setItem(T.RAIL_KEY.cohort, 'canary');
+        for (let i = 0; i < 2; i++) { M.plan.rail.load = [{ ok: false, error: 'server-error' }]; await call('load'); }
+        M.plan.rail.authLoginPin = [{ ok: false, error: 'ip-rate' }]; await call('authLoginPin', { personId: 'E1', pin: '1234' });
+        ok(T.railMem.strikes === 0 && !localStorage.getItem(T.RAIL_KEY.breaker), 'breaker: ip-rate is not a strike (the count resets and the breaker stays shut)');
+        localStorage.removeItem(T.RAIL_KEY.cohort);
+
+        // ── X-RW-Routes ──────────────────────────────────────────────────────────────────────
+        localStorage.removeItem(T.RAIL_KEY.breaker); T.railMem.strikes = 0;   // no case below leans on a breaker an earlier case left open
+        put(FLIP1, SIX); T.railMem.failAt = 0; clear();
+        M.plan.rail.load = [{ ok: true, data: {}, __h: { 'X-RW-Routes': 'v1' } }]; await call('load'); await sleep(30);
+        ok(routesGets() === 0, 'an rw-api reply carrying the cached routes version triggers no refresh');
+        M.plan.rail.load = [{ ok: true, data: {}, __h: { 'X-RW-Routes': 'v9' } }]; M.plan.routes = [table(FLIP1, SIX, { version: 'v9' })];
+        await call('load'); await sleep(50);
+        ok(routesGets() === 1 && T.railTable().version === 'v9', 'an rw-api reply carrying a new X-RW-Routes refreshes the table at once (not awaited)');
+
+        // ── return to the screen: refreshed, never for the off cohort ───────────────────────────
+        {
+          const visible = () => { Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true }); document.dispatchEvent(new Event('visibilitychange')); };
+          try {
+            put(FLIP1, SIX, { version: 'v-old', fetchedAt: Date.now() - 120000 }); T.railMem.failAt = 0; clear();
+            visible(); await sleep(50);
+            ok(routesGets() === 1 && T.railTable().version === 'v1', 'return to the screen refreshes a stale routes table');
+            put(FLIP1, SIX, { version: 'v-old', fetchedAt: Date.now() - 120000 }); T.railMem.failAt = 0; localStorage.setItem(T.RAIL_KEY.cohort, 'off'); clear();
+            visible(); await sleep(50);
+            ok(routesGets() === 0, 'return to the screen fetches nothing for the off cohort');
+          } finally { delete document.visibilityState; localStorage.removeItem(T.RAIL_KEY.cohort); }
+        }
+
+        // ── storage that takes no writes: this page stops routing (§3.5 failure inside the router) ──
+        {
+          const realSet = Storage.prototype.setItem;
+          const full = () => { Storage.prototype.setItem = function () { throw new DOMException('full', 'QuotaExceededError'); }; };
+          T.railReset(); T.RAIL.url = RAIL_TEST; T.RAIL.routesWaitMs = 300; T.RAIL.readMs = 400;
+          localStorage.setItem(T.RAIL_KEY.cohort, 'canary'); put(FLIP1, SIX); gateOn(); T.errLogClear(); clear();
+          full();
+          try {
+            for (let i = 0; i < 3; i++) { M.plan.rail.authLoginPin = ['throw']; await call('authLoginPin', { personId: 'E1', pin: '1234' }); }
+            await call('authLoginPin', { personId: 'E1', pin: '1234' }); await call('load');
+          } finally { Storage.prototype.setItem = realSet; }
+          ok(n('rail') === 3 && n('gas', 'authLoginPin') === 1 && n('gas', 'load') === 1, `a breaker that cannot be stored still stops routing: after 3 strikes this page uses Apps Script (${n('rail')} rw-api, ${n('gas')} Apps Script)`);
+          ok(window.__rail.broken === true, 'window.__rail shows a page that stopped routing');
+          ok(/rail: storage write failed/.test(T.errLog().join('\n')), 'a page that stopped routing says so in ERR_LOG (a glitch report carries it)');
+          T.railReset(); T.RAIL.url = RAIL_TEST; T.RAIL.routesWaitMs = 300; T.RAIL.readMs = 400;
+          localStorage.setItem(T.RAIL_KEY.cohort, 'canary'); put(FLIP1, SIX, { fetchedAt: Date.now() - 120000 }); clear(); M.plan.routes = [table(FLIP1, SIX, { version: 'v5' })];
+          full();
+          try { await call('load'); await call('load'); }
+          finally { Storage.prototype.setItem = realSet; }
+          ok(n('rail') === 0 && n('gas', 'load') === 2, `a routes table that cannot be stored stops routing — the stale table is not used at any age (${n('rail')} rw-api)`);
+          T.railMem.failAt = 0; clear(); await call('load');
+          ok(routesGets() === 0 && n('gas', 'load') === 1, 'a page that stopped routing awaits no routes refresh either');
+          T.railReset(); T.RAIL.url = RAIL_TEST; T.RAIL.routesWaitMs = 300; T.RAIL.readMs = 400; put(FLIP1, SIX); T.errLogClear(); clear();
+          await call('authResume', { token: RW1 });
+          for (const st of [{ ok: false, error: 'server-error' }, '502', { ok: false, error: 'server-error' }]) { M.plan.rail.load = [st]; await call('load'); }
+          localStorage.removeItem(T.RAIL_KEY.breaker);
+          for (const st of [{ ok: false, error: 'server-error' }, { ok: false, error: 'server-error' }, { ok: false, error: 'server-error' }]) { M.plan.rail.load = [st]; await call('load'); }
+          const logs2 = T.errLog(), railLines = logs2.filter((l) => /rail:/.test(l));
+          ok(railLines.filter((l) => /rail: breaker opened/.test(l)).length === 1 && railLines.some((l) => /rail: breaker opened.* last=server-error on load/.test(l)), `the breaker opening is noted once per page in ERR_LOG, with the action and the last word (${railLines.join(' | ')})`);
+          ok(railLines.filter((l) => /rail: load fell back to Apps Script/.test(l)).length === 1, 'a read that fell back to Apps Script is noted once per action per page');
+          ok(!logs2.join('').includes(RW1) && !logs2.join('').includes('ab'.repeat(32)) && !logs2.join('').includes('rc84-tok'), 'the router\'s ERR_LOG lines carry no token');
+          T.railReset(); T.RAIL.url = RAIL_TEST; T.RAIL.routesWaitMs = 300; T.RAIL.readMs = 400; T.errLogClear(); put(FLIP1, SIX); clear();
+        }
+
+        // ── a failure inside the router falls through to Apps Script ──────────────────────────
+        clear(); const realGet = Storage.prototype.getItem;
+        Storage.prototype.getItem = function () { throw new Error('storage blocked'); };
+        let r8; try { r8 = await call('load'); } finally { Storage.prototype.getItem = realGet; }
+        ok(r8.via === 'gas' && n('gas') === 1 && M.log.filter((e) => e.host === 'rail').length === 0 && M.log[0].ctype === 'text/plain;charset=utf-8', 'an exception inside the router (storage blocked) sends the call to Apps Script, exactly as before the router');
+
+        // ── warmBackend follows authStart's route ───────────────────────────────────────────────
+        put(FLIP1, SIX); localStorage.setItem(T.RAIL_KEY.cohort, 'canary'); T.railReset(); T.RAIL.url = RAIL_TEST; localStorage.setItem(T.RAIL_KEY.cohort, 'canary'); put(FLIP1, SIX); gateOn(); clear();
+        T.warmBackend(); await sleep(0);
+        ok(M.log.length === 1 && M.log[0].url === RAIL_TEST + '/healthz' && M.log[0].mode === 'no-cors' && !M.log[0].raw, 'warmBackend warms rw-api (GET /healthz, no body) when authStart routes there');
+        T.railReset(); T.RAIL.url = RAIL_TEST; put(FLIP1, SIX); clear();
+        T.warmBackend(); await sleep(0);
+        ok(M.log.length === 1 && M.log[0].host === 'gas', 'warmBackend warms Apps Script while authStart stays there');
+
+        // ── window.__rail ───────────────────────────────────────────────────────────────────
+        put(FLIP1, SIX); clear(); await call('load'); M.plan.rail.authResume = [{ ok: false, error: 'busy' }]; await call('authResume', { token: RW1 });
+        const ins = window.__rail, insTxt = JSON.stringify(ins);
+        ok(ins.on === true && ins.contract === '1.0.0' && ins.cohort === 'default' && ins.version === 'v1' && ins.last.load.to === 'rail' && ins.last.authResume.to === 'gas' && ins.last.authResume.fell === 'busy' && typeof ins.last.load.ms === 'number',
+          'window.__rail shows the cohort, the table version and where each action last went');
+        ok(!insTxt.includes('rc84-tok') && !insTxt.includes(RW1) && !insTxt.includes('ab'.repeat(32)), 'window.__rail carries no token');
+
+        // ── S3-A (RC-92): ./rail.json, the kill switch rw-api cannot touch ─────────────────────
+        // Only {"on":true} at the page's latest refresh lets anything go to rw-api; every other answer is OFF.
+        {
+          const gateGets = () => M.log.filter((e) => e.host === 'gate').length, gateNow = () => window.__rail.gate || {};
+          const fresh = () => { T.railReset(); T.RAIL.url = RAIL_TEST; T.RAIL.routesWaitMs = 300; T.RAIL.readMs = 400; M.routesDefault = table(FLIP1, SIX); put(FLIP1, SIX); T.errLogClear(); clear(); };
+          const bounded = (p) => Promise.race([p, sleep(4000).then(() => ({ hung: true }))]);   // a call that never returns fails here instead of hanging the suite
+          const stale = () => { T.railMem.gateAt = Date.now() - 61000; };   // the gate was read more than 60 s ago
+          // router off (RAIL_URL ''): rail.json is never read
+          T.railReset(); T.RAIL.url = ''; clear(); await call('load');
+          ok(gateGets() === 0 && n('gas', 'load') === 1, 'S3-A: with RAIL.url \'\' rail.json is never read (a build with no origin adds no request)');
+          // a new page starts OFF
+          fresh();
+          ok(T.railPick('load', {}) === 'gas' && T.railPick('authSetPin', { token: RW1 }) === 'gas' && gateNow().on === false && gateNow().word === 'unchecked',
+            'S3-A: a page that has not read rail.json routes nothing, sticky steps included');
+          M.plan.gate = [ON];
+          const rOn = await bounded(call('load')); const g = M.log.find((e) => e.host === 'gate');
+          ok(rOn.via === 'rail' && n('rail', 'load') === 1 && n('gas') === 0 && gateGets() === 1 && routesGets() === 1,
+            'S3-A: rail.json {"on":true} lets load go to rw-api — the first routed call of a page reads it in the same refresh as the table, even when the cached table is fresh');
+          ok(g && g.url === './rail.json' && g.method === 'GET' && g.mode === 'same-origin' && g.cache === 'no-store' && g.credentials === 'omit',
+            `S3-A: rail.json is read same-origin, no-store, without credentials (${g && [g.url, g.method, g.mode, g.cache, g.credentials].join(' ')})`);
+          ok(gateNow().on === true && gateNow().word === 'on' && gateNow().checkedAt > 0, 'S3-A: window.__rail shows the gate');
+          clear(); await call('load'); await call('authResume', { token: 't' });
+          ok(gateGets() === 0 && routesGets() === 0 && n('rail') === 2, 'S3-A: a gate read under 60 s ago is not read again');
+          // every answer that is not an object with on === true is OFF
+          const offCase = async (step, label, word, why) => {
+            fresh(); M.plan.gate = [step]; const t0 = Date.now();
+            const r1 = await bounded(call('load')), took = Date.now() - t0, r2 = await bounded(call('authResume', { token: 't' }));
+            const w = gateNow().word, y = gateNow().why;
+            why = why || (word === 'off' || word === 'url-mismatch' ? word : 'error');
+            ok(r1.via === 'gas' && r2.via === 'gas' && n('rail') === 0 && n('gas') === 2 && gateGets() === 1 && gateNow().on === false && w === word && y === why,
+              `S3-A: rail.json ${label} is OFF — every call to Apps Script (word ${w}, why ${y}, first call ${took} ms)`);
+            return took;
+          };
+          await offCase({ on: false }, '{"on":false} (as shipped)', 'off');
+          await offCase({ __raw: '<html>404</html>', __s: 404 }, 'answering 404', 'http-404');
+          await offCase({ on: true, url: RAIL_TEST, __s: 500 }, '{"on":true,"url":<this origin>} under HTTP 500', 'http-500');
+          await offCase('throw', 'unreachable', 'network');
+          const tHold = await offCase('hold', 'that never answers', 'timeout');
+          await offCase('badjson', 'that is not JSON', 'bad-json');
+          await offCase({ __raw: '{"on":"true"}' }, '{"on":"true"}', 'off');
+          await offCase({ __raw: '{"on":1}' }, '{"on":1}', 'off');
+          await offCase({ __raw: 'true' }, 'true', 'off');
+          await offCase({ __raw: 'null' }, 'null', 'off');
+          ok(tHold >= 250 && tHold < 1000, `S3-A: a rail.json that never answers is abandoned at the refresh cap (routesWaitMs 300 here; waited ${tHold} ms)`);
+
+          // ── S3-4 A: the on file must name this build's origin exactly — {"on":true,"url":"<RAIL_URL>"} ──────────
+          fresh();
+          ok(gateNow().why === 'unchecked', `S3-4: window.__rail.gate.why is 'unchecked' before the first read (${gateNow().why})`);
+          M.plan.gate = [ON]; const rUrlOn = await bounded(call('load'));
+          ok(rUrlOn.via === 'rail' && n('rail', 'load') === 1 && gateNow().on === true && gateNow().why === 'on' && gateNow().word === 'on',
+            `S3-4: {"on":true,"url":<this build's origin>} routes, and window.__rail.gate.why says on (${JSON.stringify(gateNow())})`);
+          await offCase({ on: true }, '{"on":true} with no url (the RC-92 on file)', 'url-mismatch');
+          await offCase({ on: true, url: RAIL_TEST + '/' }, 'naming this origin with a trailing slash', 'url-mismatch');
+          await offCase({ on: true, url: RAIL_TEST_OLD }, 'naming another host', 'url-mismatch');
+          await offCase({ on: true, url: RAIL_TEST.toUpperCase() }, 'naming this origin in another case', 'url-mismatch');
+          await offCase({ on: true, url: RAIL_TEST + '/v1' }, 'naming this origin plus a path', 'url-mismatch');
+          await offCase({ on: true, url: ' ' + RAIL_TEST }, 'naming this origin with a leading space', 'url-mismatch');
+          await offCase({ on: true, url: '' }, 'with an empty url', 'url-mismatch');
+          await offCase({ on: true, url: null }, 'with url null', 'url-mismatch');
+          await offCase({ on: true, url: 1 }, 'with a numeric url', 'url-mismatch');
+          await offCase({ on: true, url: [RAIL_TEST] }, 'with the url inside an array', 'url-mismatch');
+          await offCase({ on: true, url: { href: RAIL_TEST } }, 'with the url inside an object', 'url-mismatch');
+          await offCase({ on: false, url: RAIL_TEST }, '{"on":false} naming this origin', 'off');
+          await offCase({ on: 'true', url: RAIL_TEST }, '{"on":"true"} naming this origin', 'off');
+          await offCase({ url: RAIL_TEST }, 'naming this origin with no on', 'off');
+          await offCase({ __raw: '[{"on":true,"url":"' + RAIL_TEST + '"}]' }, 'the on file inside an array', 'off');
+          // an OLD build (RAIL_URL = another host) that is still open, or cached, when a later release turns routing on
+          const oldBuild = async (gateStep) => { fresh(); T.RAIL.url = RAIL_TEST_OLD; M.plan.gate = [gateStep]; await bounded(call('load')); await bounded(call('authResume', { token: 't' })); return M.log.filter((e) => e.host === 'rail' && e.method === 'POST'); };
+          const oldPosts = await oldBuild(ON);
+          ok(oldPosts.length === 0 && n('gas') === 2 && gateNow().on === false && gateNow().why === 'url-mismatch',
+            `S3-4: an old build whose RAIL_URL is another host stays OFF when rail.json turns routing on for the new host — nothing to either origin (${oldPosts.length} rw-api POSTs, why ${gateNow().why})`);
+          const oldOwn = await oldBuild({ on: true, url: RAIL_TEST_OLD });
+          ok(oldOwn.length === 2 && oldOwn.every((e) => e.origin === RAIL_TEST_OLD) && gateNow().why === 'on',
+            `S3-4 control: the same old build routes when rail.json names ITS host — so the mismatch alone kept it off (${oldOwn.length} POSTs to ${oldOwn.map((e) => e.origin).join(',')})`);
+          T.RAIL.url = RAIL_TEST;
+          // a page that was on turns off when the file is re-published for another host (the url-mismatch re-read)
+          fresh(); M.plan.gate = [ON]; await call('load');
+          const wasOnUrl = n('rail', 'load') === 1; stale(); clear(); M.plan.gate = [{ on: true, url: RAIL_TEST_OLD }];
+          const rMis = await bounded(call('load'));
+          ok(wasOnUrl && rMis.via === 'gas' && n('rail') === 0 && gateNow().why === 'url-mismatch', `S3-4: an on page turns OFF when its re-read names another host (was on ${wasOnUrl}, why ${gateNow().why})`);
+          const ml = T.errLog().filter((l) => /rail: rail\.json/.test(l));
+          ok(ml.filter((l) => /rail: rail\.json on for another rw-api host than this build/.test(l)).length === 1 && ml.some((l) => /rail: rail\.json off \(url-mismatch\)/.test(l)),
+            `S3-4: ERR_LOG says once that rail.json names another host (${ml.join(' | ')})`);
+          stale(); clear(); M.plan.gate = [{ on: true, url: RAIL_TEST_OLD }]; await call('load');
+          ok(T.errLog().filter((l) => /another rw-api host/.test(l)).length === 1, 'S3-4: the url-mismatch note is written once per page, not on every re-read');
+          // a sticky rw-api sign-in step obeys the url binding too
+          fresh(); T.railMem.stickyStart = 'rail'; M.plan.gate = [{ on: true }];
+          await call('authVerify', { personId: 'E1', code: '1' }); await call('authSetPin', { personId: 'E1', pin: '1234', token: RW1 });
+          ok(n('rail') === 0 && n('gas', 'authVerify') === 1 && n('gas', 'authSetPin') === 1, 'S3-4 sticky: {"on":true} with no url sends a sticky authVerify and an rw1_ authSetPin to Apps Script');
+          // why 'error' for an unreadable file
+          fresh(); M.plan.gate = [{ __raw: 'x', __s: 404 }]; await call('load');
+          ok(gateNow().why === 'error' && gateNow().word === 'http-404', `S3-4: window.__rail.gate.why is 'error' for an unreadable rail.json, word keeps the detail (${gateNow().why} ${gateNow().word})`);
+          // the gate never adds routing: on + a table naming nothing / the breaker / the off cohort all stay on Apps Script
+          fresh(); put([], []); gateOn(); await call('load'); await call('authStart', { phone: '1' });
+          ok(n('rail') === 0 && n('gas') === 2, 'S3-A: {"on":true} with an empty table routes nothing — the gate only removes routing');
+          fresh(); gateOn(); localStorage.setItem(T.RAIL_KEY.breaker, JSON.stringify({ openUntil: Date.now() + 60000 })); await call('load');
+          ok(n('rail') === 0 && n('gas', 'load') === 1, 'S3-A: {"on":true} does not beat an open breaker');
+          localStorage.removeItem(T.RAIL_KEY.breaker);
+          fresh(); stale(); T.railMem.gate = true; localStorage.setItem(T.RAIL_KEY.cohort, 'off'); await call('load'); localStorage.removeItem(T.RAIL_KEY.cohort);
+          ok(n('rail') === 0 && gateGets() === 0 && routesGets() === 0, 'S3-A: the off cohort reads no rail.json and sends nothing to rw-api');
+          // a failing rail.json is not a failing table, and a failing table still replaces the gate
+          fresh(); put(FLIP1, SIX, { fetchedAt: Date.now() - 120000 }); M.plan.gate = [{ __raw: 'x', __s: 404 }]; M.plan.routes = [table(FLIP1, SIX, { version: 'v7' })];
+          await call('load');
+          ok(T.railTable().version === 'v7' && T.railMem.failAt === 0 && n('rail') === 0 && n('gas', 'load') === 1, 'S3-A: a rail.json 404 leaves the table refresh alone (cached, no retry block) and routes nothing');
+          fresh(); gateOn(); put(FLIP1, SIX, { fetchedAt: Date.now() - 120000 }); M.plan.routes = ['throw']; M.plan.gate = [{ on: false }];
+          await call('load');
+          ok(n('rail') === 0 && n('gas', 'load') === 1 && gateNow().on === false, 'S3-A: a refresh whose table fails still replaces the gate (on → off: Apps Script, though the stale table names load)');
+          // on → off → on → off within one page, and ERR_LOG notes each direction once
+          fresh(); M.plan.gate = [ON]; await call('load');
+          stale(); clear(); M.plan.gate = [{ on: false }];
+          const rFlip = await call('load');
+          ok(rFlip.via === 'gas' && n('rail') === 0 && gateGets() === 1 && routesGets() === 1, 'S3-A: rail.json turned off mid-page — a gate older than 60 s is re-read (with the table) before the next routed call, which goes to Apps Script');
+          stale(); clear(); M.plan.gate = [ON]; await call('load');
+          ok(n('rail', 'load') === 1, 'S3-A: rail.json turned back on — routing resumes at the next re-read');
+          await sleep(5); stale(); clear(); M.plan.gate = [{ on: false }]; await call('load');   // a later millisecond than the first off note, so a per-time note key could not hide a repeat
+          const gl = T.errLog().filter((l) => /rail: rail\.json/.test(l));
+          ok(n('rail') === 0 && gl.filter((l) => /rail: rail\.json on, rw-api routing allowed/.test(l)).length === 1 && gl.filter((l) => /rail: rail\.json off \(off\), Apps Script only/.test(l)).length === 1,
+            `S3-A: each direction of a gate change is noted once per page in ERR_LOG (${gl.join(' | ')})`);
+          {
+            const visible = () => { Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true }); document.dispatchEvent(new Event('visibilitychange')); };
+            try {
+              fresh(); gateOn(); clear(); M.plan.gate = [{ on: false }];
+              visible(); await sleep(50);
+              ok(gateGets() === 1 && T.railPick('load', {}) === 'gas', 'S3-A: return to the screen re-reads rail.json (off takes effect before the next call)');
+            } finally { delete document.visibilityState; }
+          }
+          // sticky sign-in steps across a flip: the gate beats stickiness (unlike the breaker)
+          fresh(); localStorage.setItem(T.RAIL_KEY.cohort, 'canary'); M.plan.gate = [ON];
+          await call('authStart', { phone: '1' });
+          ok(n('rail', 'authStart') === 1 && T.railMem.stickyStart === 'rail', 'S3-A sticky: authStart goes to rw-api while rail.json is on');
+          stale(); clear(); M.plan.gate = [{ on: false }];
+          await call('authVerify', { personId: 'E1', code: '1' });
+          ok(n('rail') === 0 && n('gas', 'authVerify') === 1 && gateGets() === 1, 'S3-A sticky: an authVerify bound to rw-api re-reads a stale gate first; rail.json off sends it to Apps Script');
+          clear(); await call('authSetPin', { personId: 'E1', pin: '1234', token: RW1 });
+          ok(n('rail') === 0 && n('gas', 'authSetPin') === 1 && gateGets() === 0, 'S3-A sticky: with rail.json off an rw1_ authSetPin goes to Apps Script too');
+          localStorage.removeItem(T.RAIL_KEY.cohort);
+          fresh(); M.plan.gate = [ON]; localStorage.setItem(T.RAIL_KEY.cohort, 'canary'); await call('authStart', { phone: '1' }); stale(); clear(); M.plan.gate = [ON]; put(FLIP1, ['authStart']);
+          await call('authVerify', { personId: 'E1', code: '1' });
+          ok(n('rail', 'authVerify') === 1 && gateGets() === 1, 'S3-A sticky: while rail.json stays on, authVerify still follows authStart to rw-api after the re-read (sticky semantics unchanged)');
+          localStorage.removeItem(T.RAIL_KEY.cohort);
+          T.railReset(); T.RAIL.url = RAIL_TEST; T.RAIL.routesWaitMs = 300; put([], []); clear(); M.plan.gate = [ON]; M.plan.routes = [table([], [])];
+          await bounded(call('authSetPin', { personId: 'E1', pin: '1234', token: RW1 }));
+          ok(n('rail', 'authSetPin') === 1 && gateGets() === 1, 'S3-A sticky: an rw1_ authSetPin on a page that has not read rail.json waits for it and, when on, follows its token to rw-api (whatever the table says)');
+          stale(); clear(); T.railMem.stickyStart = 'gas';
+          await call('authSetPin', { personId: 'E1', pin: '1234', token: HEX }); await call('authVerify', { personId: 'E1', code: '1' });
+          ok(gateGets() === 0 && routesGets() === 0 && n('gas') === 2, 'S3-A: a sticky step bound for Apps Script never waits on rail.json');
+          // latency at the shipped cap (1500 ms): what a slow rail.json can add to a call Apps Script answers
+          // (a call that returns before the cap leaves the table fetch running in the background: let it end before the next case resets the page)
+          const lat = async (gateStep, routesStep) => { fresh(); T.RAIL.routesWaitMs = 1500; put(FLIP1, SIX, { fetchedAt: Date.now() - 120000 }); M.plan.gate = [gateStep]; M.plan.routes = [routesStep]; const t0 = Date.now(); await bounded(call('load')); const took = Date.now() - t0; await sleep(Math.max(0, 1600 - took)); return took; };
+          const lFast = await lat({ on: false }, table(FLIP1, SIX)), lGate = await lat('hold', table(FLIP1, SIX)), lTable = await lat({ on: false }, 'hold'), lBoth = await lat('hold', 'hold');
+          ok(lGate >= 1400 && lGate < 1800 && lBoth < 1800 && lTable < 1800 && lFast < 300,
+            `S3-A latency (cap 1500 ms): rail.json + table fast ${lFast} ms · rail.json hangs ${lGate} ms · table hangs ${lTable} ms · both hang ${lBoth} ms — one timer bounds both`);
+          ok(lTable < 300, `S3-A latency: rail.json off with /v1/routes hanging — the call goes to Apps Script at once, not after the cap (${lTable} ms; a wedged rw-api is off the critical path)`);
+          T.RAIL.routesWaitMs = 300;
+
+          // ── RC-93 review fixes: the switch never waits on rw-api's own endpoint, and a clock step cannot hide it ──
+          const settle = () => sleep(T.RAIL.routesWaitMs + 60);   // a background table fetch (hung until the cap) ends before the next reset
+          // an ON page turns OFF on any re-read that is not {"on":true} — the file deleted (404), unreachable, timeout
+          for (const [step, word] of [[{ __raw: '<html>404</html>', __s: 404 }, 'http-404'], ['throw', 'network'], ['hold', 'timeout']]) {
+            fresh(); M.plan.gate = [ON]; await call('load');
+            const wasOn = n('rail', 'load') === 1 && gateNow().on === true;
+            stale(); clear(); M.plan.gate = [step];
+            const r = await bounded(call('load'));
+            ok(wasOn && r.via === 'gas' && n('rail') === 0 && gateNow().on === false && gateNow().word === word,
+              `S3-A: a page that read {"on":true} turns OFF when its re-read answers ${word} — the next call goes to Apps Script (was on ${wasOn}, word ${gateNow().word})`);
+          }
+          // the device clock stepped back 5 min after a failed table refresh: failAt and gateAt now lie in the future
+          fresh(); gateOn(); { const ahead = Date.now() + 300000; Object.assign(T.railMem, { failAt: ahead, gateAt: ahead }); } clear(); M.plan.gate = [{ on: false }];
+          const rBack = await bounded(call('load'));
+          ok(rBack.via === 'gas' && n('rail') === 0 && gateGets() === 1 && routesGets() === 1,
+            `S3-A: after the clock steps back 5 min, the next routed call re-reads rail.json and retries the table (the retry block is not stretched): off → Apps Script (gate reads ${gateGets()}, table GETs ${routesGets()})`);
+          fresh(); gateOn(); T.railMem.stickyStart = 'rail'; T.railMem.gateAt = Date.now() + 300000; clear(); M.plan.gate = [{ on: false }];
+          await call('authVerify', { personId: 'E1', code: '1' });
+          ok(n('rail') === 0 && n('gas', 'authVerify') === 1 && gateGets() === 1, 'S3-A sticky: a gate read "in the future" (the clock went back) counts as stale — an authVerify bound to rw-api re-reads it first; off → Apps Script');
+          // under the 60 s table retry block (rw-api failed /v1/routes) the gate is still read: rw-api cannot delay the switch at all
+          fresh(); gateOn(); stale(); T.railMem.failAt = Date.now() - 1000; clear(); M.plan.gate = [{ on: false }];
+          const rBlk = await bounded(call('load'));
+          ok(rBlk.via === 'gas' && n('rail') === 0 && gateGets() === 1 && routesGets() === 0,
+            `S3-A: under the table retry block a stale gate is still re-read before the next routed call (off → Apps Script) and the table is not retried (gate reads ${gateGets()}, table GETs ${routesGets()})`);
+          fresh(); gateOn(); stale(); T.railMem.failAt = Date.now() - 1000; clear(); M.plan.gate = [ON];
+          const rBlkOn = await bounded(call('load'));
+          ok(rBlkOn.via === 'rail' && gateGets() === 1 && routesGets() === 0, 'S3-A: under the table retry block a stale gate re-read as on keeps routing by the cached table (the table is still not retried)');
+          fresh(); gateOn(); put(FLIP1, SIX, { fetchedAt: Date.now() - 120000 }); T.railMem.failAt = Date.now() - 1000; clear();
+          const rBlkFresh = await bounded(call('load'));
+          ok(rBlkFresh.via === 'rail' && gateGets() === 0 && routesGets() === 0, `S3-A: under the table retry block, with the gate read on under 60 s ago, a call over a stale table waits for nothing — no gate re-read, no table GET (gate reads ${gateGets()}, table GETs ${routesGets()})`);
+          fresh(); gateOn(); stale(); T.railMem.failAt = Date.now() - 1000; T.railMem.stickyStart = 'rail'; clear(); M.plan.gate = [{ on: false }];
+          await call('authVerify', { personId: 'E1', code: '1' });
+          ok(n('rail') === 0 && n('gas', 'authVerify') === 1 && gateGets() === 1 && routesGets() === 0, 'S3-A sticky: under the table retry block an authVerify bound to rw-api still re-reads a stale gate; off → Apps Script');
+          {
+            const visible = () => { Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true }); document.dispatchEvent(new Event('visibilitychange')); };
+            try {
+              fresh(); gateOn(); T.railMem.failAt = Date.now() - 1000; clear(); M.plan.gate = [{ on: false }];
+              visible(); await sleep(50);
+              ok(gateGets() === 1 && routesGets() === 0 && T.railPick('load', {}) === 'gas', 'S3-A: return to the screen re-reads rail.json even under the table retry block (off takes effect before the next call); the table is not retried');
+            } finally { delete document.visibilityState; }
+          }
+          // while rail.json reads off, no routed call waits on GET /v1/routes
+          fresh(); put(FLIP1, SIX, { fetchedAt: Date.now() - 120000 }); Object.assign(T.railMem, { gate: false, gateAt: Date.now(), gateWord: 'off' }); clear(); M.plan.routes = ['hold'];
+          let tq = Date.now(); const rQ1 = await bounded(call('load')); const q1 = Date.now() - tq;
+          ok(rQ1.via === 'gas' && q1 < 200 && routesGets() === 0 && gateGets() === 0, `S3-A: a gate read off under 60 s ago waits for nothing, even with a stale table (${q1} ms, no GET /v1/routes, no re-read)`);
+          fresh(); put(FLIP1, SIX, { fetchedAt: Date.now() - 120000 }); Object.assign(T.railMem, { gate: false, gateAt: Date.now() - 61000, gateWord: 'off' }); clear(); M.plan.routes = ['hold']; M.plan.gate = [{ on: false }];
+          tq = Date.now(); const rQ2 = await bounded(call('load')); const q2 = Date.now() - tq;
+          ok(rQ2.via === 'gas' && q2 < 200 && gateGets() === 1 && routesGets() === 1, `S3-A: a stale gate re-read as off lets the call go at once, without waiting for a hung /v1/routes (${q2} ms)`);
+          await settle();
+          fresh(); put(FLIP1, SIX, { fetchedAt: Date.now() - 120000 }); clear(); M.plan.routes = [{ __bodyAfter: 150, ok: true, contract: '1.0.0', version: 'v9', ttlMs: 60000, state: 'ok', all: FLIP1, canary: SIX }]; M.plan.gate = [ON];
+          const rSlow = await bounded(call('load'));
+          ok(rSlow.via === 'rail' && T.railTable().version === 'v9', 'S3-A: with rail.json on, the call still waits for the table the same refresh fetched (it decides with the new table)');
+        }
+        // ── the setUserPrefs beacon (flushUserPrefsNow) — it carries password + sessionToken and reads no reply, so it must
+        // follow the router's choice (CONTRACT §3.5 "The beacon") and that choice is Apps Script for every action outside
+        // RAIL.actions. Routing fully ON (gate on, a table naming every action AND setUserPrefs) must still beacon to BACKEND_URL.
+        {
+          const st = T.__state, up0 = st.userPrefs, pid0 = T.prefsBeaconSeam(null), beacons = [];
+          const own0 = Object.getOwnPropertyDescriptor(navigator, 'sendBeacon');
+          Object.defineProperty(navigator, 'sendBeacon', { configurable: true, writable: true, value: (u, data) => { beacons.push(String(u)); return true; } });
+          try {
+            T.railReset(); T.RAIL.url = RAIL_TEST; T.setBackendPassword('rc84-tok');
+            const EVERY = SIX.concat(['setUserPrefs']); put(EVERY, EVERY); gateOn(); clear();
+            ok(T.railPick('load', null) === 'rail', 'beacon precondition: routing is fully on (load picks rw-api)');
+            st.userPrefs = { v: 1, prefs: { probe: 'rc84-beacon' } }; T.prefsBeaconSeam('PER-RC84-BEACON', 'prefs');
+            T.flushUserPrefsNow();
+            ok(beacons.length === 1 && beacons[0] === T.BACKEND_URL && !beacons.some((u) => u.startsWith(RAIL_TEST)) && n('rail') === 0, `the setUserPrefs beacon (password + sessionToken) goes to Apps Script even with routing fully on — setUserPrefs is outside RAIL.actions (${beacons.map((u) => u === T.BACKEND_URL ? 'BACKEND_URL' : u.startsWith(RAIL_TEST) ? 'RAIL_URL/…' : 'another url').join(', ') || 'no beacon'})`);
+          } finally {
+            if (own0) Object.defineProperty(navigator, 'sendBeacon', own0); else delete navigator.sendBeacon;
+            st.userPrefs = up0; T.prefsBeaconSeam(pid0); T.railReset(); T.setBackendPassword('rc84-tok');
+          }
+        }
+      } catch (e) { ok(false, 'threw: ' + (e && e.stack || e)); }
+      finally { T.railReset(); T.setBackendPassword(''); }
+      return out;
+    }, { RAIL_TEST, RAIL_TEST_OLD, RAIL_PROD, SHIPPED_ON });
+    results.push(...railOut);
+    await rp.close();
+
+    // phoneBoot with an EMPTY routes cache and a Flip 1 table: the boot's authResume and load go to rw-api,
+    // and an rw-api refusal erases nothing until Apps Script confirms it (R2 / Q-C4).
+    const bootCase = async (gasResume) => {
+      const p = await openRail('');
+      const res = await p.evaluate(async ({ RAIL_TEST, gasResume }) => {
+        const T = window.__rw, M = window.__railMock;
+        T.railReset(); T.RAIL.url = RAIL_TEST; T.RAIL.readMs = 400; T.RAIL.routesWaitMs = 300;
+        M.plan.routes = [{ ok: true, contract: '1.0.0', version: 'v1', ttlMs: 60000, state: 'ok', all: ['authResume', 'load'], canary: ['authResume', 'load'] }];
+        M.plan.rail.authResume = [{ ok: false, error: 'expired' }]; M.plan.rail.load = ['hold']; M.plan.gas.load = ['hold', 'hold', 'hold'];
+        M.plan.gas.authResume = [gasResume];
+        localStorage.setItem('jactec.pidToken', 'rc84-boot-tok');
+        T.phoneBoot();
+        const t0 = Date.now(); while (Date.now() - t0 < 4000 && !M.log.some((e) => e.host === 'gas' && e.action === 'authResume')) await new Promise((r) => setTimeout(r, 50));
+        await new Promise((r) => setTimeout(r, 300));
+        const seq = M.log.filter((e) => e.host !== 'gate').map((e) => (e.url.endsWith('/v1/routes') ? 'routes' : e.host + ':' + e.action));   // rail.json (S3-A) is read beside the table; the order asserted here is the table and the POSTs
+        return { seq, tok: localStorage.getItem('jactec.pidToken'), login: !!document.querySelector('#pid-phone') };
+      }, { RAIL_TEST, gasResume });
+      await p.close();
+      return res;
+    };
+    const b1 = await bootCase({ ok: false, error: 'expired' });
+    results.push({ ok: b1.seq[0] === 'routes' && b1.seq.includes('rail:authResume') && b1.seq.includes('rail:load') && !b1.seq.slice(0, 3).some((s) => s.startsWith('gas:')), m: `RC-84 router: empty cache + Flip 1 table — the boot's authResume and load go to rw-api first (${b1.seq.join(' ')})` });
+    results.push({ ok: b1.seq.filter((s) => s === 'gas:authResume').length === 1 && !b1.tok && b1.login, m: 'RC-84 router: a boot resume refused by rw-api AND Apps Script clears the device (one confirming call)' });
+    const b2 = await bootCase({ ok: true, personId: 'E1', name: 'N', role: 'Office', tier: 2 });
+    results.push({ ok: b2.tok === 'rc84-boot-tok' && !b2.login, m: 'RC-84 router: a boot resume refused by rw-api but accepted by Apps Script keeps the device signed in (R2)' });
+
+    // ?rail=canary | off | default — stored per device, then removed from the address bar (hash kept).
+    const cohortCase = async (query, seed) => {
+      const p = await openRail(query, seed);
+      const r = await p.evaluate(() => ({ cohort: localStorage.getItem('jactec.rail.cohort'), search: location.search, hash: location.hash, rail: window.__rail.cohort }));
+      await p.close(); return r;
+    };
+    const c1 = await cohortCase('?rail=canary');
+    results.push({ ok: c1.cohort === 'canary' && c1.rail === 'canary' && c1.search === '' && c1.hash === '#local', m: 'RC-84 router: ?rail=canary makes this device canary and leaves the address bar (hash kept)' });
+    const c2 = await cohortCase('?x=1&rail=off');
+    results.push({ ok: c2.cohort === 'off' && c2.search === '?x=1', m: 'RC-84 router: ?rail=off makes this device off; other parameters stay' });
+    const c3 = await cohortCase('?rail=default', 'canary');
+    results.push({ ok: c3.cohort === null && c3.rail === 'default' && c3.search === '', m: 'RC-84 router: ?rail=default returns the device to the default cohort' });
+    const c4 = await cohortCase('?rail=everything', 'off');
+    results.push({ ok: c4.cohort === 'off' && c4.search === '', m: 'RC-84 router: an unknown ?rail= value is ignored (and still removed)' });
+    // a ?rail= lever that storage refuses to keep (full, blocked) turns routing off for this page rather than being ignored
+    {
+      const p = await browser.newPage();
+      p.on('pageerror', (e) => pageErrors.push(String(e && e.message || e)));
+      await p.addInitScript(() => { const real = Storage.prototype.setItem; Storage.prototype.setItem = function (k, v) { if (k === 'jactec.rail.cohort') throw new DOMException('full', 'QuotaExceededError'); return real.call(this, k, v); }; });
+      await p.goto('http://localhost:8000/?rail=off#local', { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await p.waitForFunction(() => !!window.__rw, { timeout: 20000 });
+      const c5 = await p.evaluate(() => ({ cohort: localStorage.getItem('jactec.rail.cohort'), broken: window.__rail.broken, search: location.search, log: window.__rw.errLog().join(' ') }));
+      await p.close();
+      results.push({ ok: c5.cohort === null && c5.broken === true && c5.search === '' && /rail: storage write failed/.test(c5.log), m: 'RC-84 router: a ?rail= lever storage will not keep stops routing for this page (and says so in ERR_LOG)' });
+    }
+
+    // Source guards: the shipped origin is a literal (never read from the URL or storage) and the ceiling is the six Slice 1a actions.
+    const src = await readFile(join(root, 'app.js'), 'utf8');
+    const urlDecl = (src.match(/\nconst RAIL_URL = ('[^'\n]*');/) || [])[1];
+    results.push({ ok: urlDecl === "''" || /^'https:\/\/[a-z0-9-]+\.up\.railway\.app'$/.test(urlDecl || ''), m: `RC-84 router source guard: RAIL_URL is '' or an https Railway origin literal (${urlDecl})` });
+    results.push({ ok: urlDecl === "'https://rw-api-production.up.railway.app'" && railUrlFromSource(src) === 'https://rw-api-production.up.railway.app', m: `S3-2 A source guard: RAIL_URL is exactly the production rw-api domain, no trailing slash (${urlDecl}); moving it is a decision, not an edit` });
+    results.push({ ok: (src.match(/RAIL\.url = /g) || []).length === 1 && src.includes('RAIL.url = RAIL_URL;') && /\n  url: RAIL_URL,\n/.test(src), m: 'RC-84 router source guard: RAIL.url comes only from RAIL_URL (the one reassignment is the #local test seam\'s reset)' });
+    results.push({ ok: src.includes("actions: new Set(['authResume', 'load', 'authStart', 'authVerify', 'authSetPin', 'authLoginPin'])") && src.includes("reads: new Set(['authResume', 'load'])"), m: 'RC-84 router source guard: routable actions are exactly the six Slice 1a actions; the read-only pair is authResume + load' });
+
+    // S3-A (RC-92) — rail.json is one of the two literals (this release ships it OFF), is read from a fixed same-origin path, reaches every staging slot, and
+    // the service worker never answers it from Cache Storage. sw.js is run in a vm with a fake `self`.
+    const gateFile = await readFile(join(root, 'rail.json'), 'utf8').catch(() => '(missing)');   // a missing file is a failed check, not a thrown suite
+    // Either literal passes, so the runbook's one-file turn-on (step 4a) and turn-off both merge; anything else — {"on":"true"},
+    // inner whitespace, a BOM, a missing file — fails here instead of silently reading as OFF on devices. One final newline is allowed.
+    // S3-4 A: the on form names app.js's RAIL_URL byte for byte (ci/rail-guard.mjs), so {"on":true} alone, another host or a
+    // trailing slash fails here. Both forms pass, so turning routing on or off is a one-file commit (then a human promote, S3-5 A).
+    const shippedUrl = railUrlFromSource(src);
+    results.push({ ok: railFileOk(gateFile, shippedUrl), m: `S3-4 source guard: rail.json at the site root is exactly one of ${railFileForms(shippedUrl).join(' or ')} (${JSON.stringify(gateFile)})` });
+    // the guard itself, case by case (a guard nobody tests is a guard that silently accepts everything)
+    {
+      const U = 'https://rw-api-production.up.railway.app', ON1 = '{"on":true,"url":"' + U + '"}';
+      const cases = [
+        ['{"on":false}', U, true], ['{"on":false}\n', U, true], ['{"on":false}\r\n', U, true], [ON1, U, true], [ON1 + '\n', U, true], ['{"on":false}', '', true],
+        ['{"on":true}', U, false], ['{"on":true,"url":"' + U + '/"}', U, false], ['{"on":true,"url":"https://rw-api-old.up.railway.app"}', U, false],
+        ['{"url":"' + U + '","on":true}', U, false], ['{"on":true, "url":"' + U + '"}', U, false], ['{ "on":false}', U, false], ['{"on": false}', U, false],
+        ['{"on":false,"url":"' + U + '"}', U, false], ['{"on":"true","url":"' + U + '"}', U, false], ['{"on":true,"url":"' + U.toUpperCase() + '"}', U, false],
+        ['\uFEFF{"on":false}', U, false], ['\uFEFF' + ON1, U, false], ['{"on":false}\n\n', U, false], ['{"on":false} ', U, false], ['', U, false], ['(missing)', U, false], [null, U, false],
+        ['{"on":true,"url":""}', '', false], ['{"on":true,"url":"' + U + '"}', '', false], ['{"on":true,"url":"' + U + '"}', null, false], ['{"on":true,"url":"https://rw-api.invalid"}', 'https://rw-api.invalid', true],
+        ['{"on":true,"url":"' + U + '","x":1}', U, false], ['{"on":true,"url":"' + U + '"}{"on":false}', U, false],
+      ];
+      const wrong = cases.filter(([t, u, want]) => railFileOk(t, u) !== want).map(([t, u, want]) => JSON.stringify(t) + ' @ ' + JSON.stringify(u) + ' want ' + want);
+      results.push({ ok: wrong.length === 0, m: `S3-4 guard test: rail-guard accepts exactly {"on":false} and {"on":true,"url":<RAIL_URL>} (one final newline), across ${cases.length} cases${wrong.length ? ' — WRONG: ' + wrong.join('; ') : ''}` });
+      const srcCases = [["\nconst RAIL_URL = '" + U + "';   // c", U], ["\nconst RAIL_URL = '';", ''], ['\nconst RAIL_URL = "' + U + '";', null], ['\nlet RAIL_URL = \'' + U + '\';', null], ['', null]];
+      const srcWrong = srcCases.filter(([t, want]) => railUrlFromSource(t) !== want).map(([t, want]) => JSON.stringify(t) + ' want ' + JSON.stringify(want));
+      results.push({ ok: srcWrong.length === 0, m: `S3-4 guard test: railUrlFromSource reads only the single-quoted const declaration${srcWrong.length ? ' — WRONG: ' + srcWrong.join('; ') : ''}` });
+      results.push({ ok: railFileOk(ON1, shippedUrl) && !railFileOk('{"on":true}', shippedUrl), m: 'S3-4 guard test: for the shipped RAIL_URL, the url-bearing on file would pass CI and the RC-92 {"on":true} would not' });
+    }
+    results.push({ ok: (src.match(/RAIL\.gateUrl/g) || []).length === 1 && src.includes("  gateUrl: './rail.json',"), m: 'S3-A source guard: the gate is read only from the literal ./rail.json (never from the address bar, storage or rw-api)' });
+    const dsSrc = await readFile(join(root, 'tools', 'deploy-staging.mjs'), 'utf8');
+    results.push({ ok: /\nconst ALWAYS_SHIP = \[[^\]]*'rail\.json'[^\]]*\];/.test(dsSrc), m: 'S3-A: deploy-staging ships rail.json to every slot (the crawler cannot see a runtime string)' });
+    {
+      const vm = await import('node:vm');
+      const swSrc = await readFile(join(root, 'sw.js'), 'utf8');
+      const L = {}, self = { location: new URL('https://app.jacrentals.com/sw.js?v=t'), addEventListener: (k, f) => { L[k] = f; }, skipWaiting() {}, clients: { claim() {} } };
+      const ctx = vm.createContext({ self, URL, Set, caches: { open: () => new Promise(() => {}) }, fetch: () => Promise.reject(new Error('no network in the guard')) });
+      vm.runInContext(swSrc + '\n;globalThis.__SHELL = SHELL;', ctx);
+      const respond = (url, mode) => { let used = false; L.fetch({ request: { url, method: 'GET', mode }, respondWith() { used = true; } }); return used; };
+      const shellHasGate = ctx.__SHELL.some((p) => /rail\.json/.test(p));
+      const gateCors = respond('https://app.jacrentals.com/rail.json', 'same-origin'), gateNav = respond('https://app.jacrentals.com/rail.json', 'navigate');
+      const shellStill = respond('https://app.jacrentals.com/app.js?v=t', 'no-cors');
+      results.push({ ok: !shellHasGate && !gateCors && !gateNav && shellStill, m: `S3-A: sw.js leaves rail.json to the network — not in SHELL, never answered from cache (fetch or navigation), while app.js still is (${[shellHasGate, gateCors, gateNav, shellStill].join(' ')})` });
+      // S3-2 A: the rw-api origin RAIL_URL now names is cross-origin, so sw.js never answers (or caches) any of its replies
+      const railUrl = railUrlFromSource(src), apiHits = !railUrl ? [] : ['/v1/routes', '/v1', '/healthz', '/app.js', '/index.html', '/rail.json'].map((p) => [p, respond(railUrl + p, 'cors'), respond(railUrl + p, 'no-cors')]).filter((r) => r[1] || r[2]);
+      results.push({ ok: !!railUrl && apiHits.length === 0 && !ctx.__SHELL.some((p) => /railway/.test(p)), m: `S3-2 A: sw.js leaves every rw-api request (${railUrl}) to the network — never answered from or written to Cache Storage (${apiHits.map((r) => r[0]).join(', ') || 'none answered'})` });
+    }
+  }
+  // ── RC-84 rw-api router — END ─────────────────────────────────────────────────────────────────
+
+  // S3-2 A — no page of this suite reached a Railway host (every attempt was aborted at the browser and is listed here),
+  // and none of them was a POST: with the shipped rail.json off, no credential-bearing call ever leaves for rw-api.
+  {
+    const posts = railwayHits.filter((h) => !/^GET /.test(h));
+    results.push({ ok: posts.length === 0, m: `S3-2 A: no test page sent anything but a GET toward a Railway host (${railwayHits.length} aborted before the network${railwayHits.length ? ': ' + [...new Set(railwayHits.map((h) => h.replace(/^(\w+) https?:\/\/([^/?#]*)([^?#]*).*$/, '$1 $2$3')))].slice(0, 6).join(', ') : ''})` });
   }
 
   const passed = results.filter((r) => r.ok).length;
