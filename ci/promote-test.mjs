@@ -1,6 +1,6 @@
 // promote-test.mjs — pure-Node tests for the content-verified staging-freshness resolver.
 //
-// NO network, NO browser, NO Playwright — this is NOT part of the port-8000→9147 swap. It
+// NO network, NO browser, NO Playwright (section 7 runs git against throwaway LOCAL repos, curl through a dead proxy) — this is NOT part of the port-8000→9147 swap. It
 // imports the PURE helpers from tools/lib/promote-freshness.mjs (normalizeForHash / contentHash
 // / resolveFreshSlot) and drives resolveFreshSlot with a fully in-memory `probe`, so every
 // freshness branch (content-match, token-collision, multi-slot pick, --slot pin, none,
@@ -10,6 +10,12 @@
 // process.exit(anyFail?1:0).
 
 import { normalizeForHash, contentHash, resolveFreshSlot } from '../tools/lib/promote-freshness.mjs';
+import { railGatePaths, isUnattended, unattendedRailRefusal } from '../tools/lib/promote-guard.mjs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 
 const results = [];
 const ok = (c, m) => results.push({ ok: !!c, m });
@@ -146,6 +152,99 @@ group('empty-hash-guard', () => {
   const r = resolveFreshSlot({ expectedToken: 'p', expectedHash: '', slotArg: NaN }, deps([1], { 1: P('p', TRUNK_FILES) }));
   ok(r.fresh === false, 'empty expectedHash → never fresh (no authority to confirm bytes)');
 });
+
+// ── 7. S3-5 A (RC-92) — the unattended promote path never carries rail.json ──
+group('rail-guard-pure', () => {
+  ok(JSON.stringify(railGatePaths(['app.js', 'rail.json', 'docs/x.md'])) === '["rail.json"]', 'railGatePaths finds rail.json among the touched paths');
+  ok(railGatePaths(['Rail.JSON']).length === 1 && railGatePaths(['sub\\rail.json']).length === 1 && railGatePaths(['a/b/rail.json']).length === 1, 'railGatePaths is conservative: any case, any folder, either slash');
+  ok(railGatePaths(['rail.json.bak', 'rails.json', 'trail.json', 'rail.jsonx', '']).length === 0 && railGatePaths(null).length === 0, 'railGatePaths ignores look-alikes and empty input');
+  ok(isUnattended(['--yes', '--unattended'], {}) === true, 'isUnattended: --unattended');
+  ok(isUnattended(['--yes'], { GITHUB_ACTIONS: 'true' }) === true, 'isUnattended: any run inside GitHub Actions, even without the flag');
+  ok(isUnattended(['--yes'], { GITHUB_ACTIONS: 'false' }) === false && isUnattended(['--yes'], {}) === false && isUnattended([], { CI: 'true' }) === false, 'isUnattended: a terminal promote is attended (CI=true alone does not count)');
+  ok(/rail\.json/.test(unattendedRailRefusal({ unattended: true, paths: ['app.js', 'rail.json'] }) || ''), 'unattended + rail.json in the range → refused, naming the file');
+  ok(unattendedRailRefusal({ unattended: true, paths: ['app.js', 'index.html'] }) === null, 'unattended + rail.json untouched → allowed');
+  ok(unattendedRailRefusal({ unattended: false, paths: ['rail.json'] }) === null, 'attended (a human promote) + rail.json → not refused by this guard');
+  ok(typeof unattendedRailRefusal({ unattended: true, paths: null }) === 'string', 'unattended + the touched paths could not be listed → refused (fails closed)');
+});
+
+// The whole wiring, end to end: tools/promote.mjs run against throwaway local repositories (a bare `origin` holding
+// trunk + production, and a clone). No network: git talks to a local path, and every curl goes to a dead proxy.
+{
+  const promoteJs = fileURLToPath(new URL('../tools/promote.mjs', import.meta.url));
+  const tmp = mkdtempSync(join(tmpdir(), 'rw-promote-rail-'));
+  const idEnv = { GIT_AUTHOR_NAME: 'promote-test', GIT_AUTHOR_EMAIL: 'promote-test@invalid', GIT_COMMITTER_NAME: 'promote-test', GIT_COMMITTER_EMAIL: 'promote-test@invalid', GIT_TERMINAL_PROMPT: '0' };
+  const baseEnv = { ...process.env, ...idEnv };
+  for (const k of ['GITHUB_ACTIONS', 'NO_PROXY', 'no_proxy']) delete baseEnv[k];
+  const dead = 'http://127.0.0.1:9';
+  Object.assign(baseEnv, { http_proxy: dead, https_proxy: dead, HTTP_PROXY: dead, HTTPS_PROXY: dead, ALL_PROXY: dead, all_proxy: dead });
+  const g = (cwd, ...a) => execFileSync('git', ['-c', 'core.autocrlf=false', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=' + join(tmp, 'no-hooks'), ...a], { cwd, env: baseEnv, encoding: 'utf8' }).trim();
+  const put = (dir, f, text) => writeFileSync(join(dir, f), text);
+  let n = 0;
+  // origin: trunk === production at a base commit; then `build(work)` adds trunk commits and pushes trunk only
+  const scenario = (build) => {
+    const root = join(tmp, 's' + (++n)), origin = join(root, 'origin.git'), work = join(root, 'work');
+    mkdirSync(root, { recursive: true });
+    g(root, 'init', '-q', '--bare', origin);
+    g(root, 'init', '-q', work); g(work, 'checkout', '-q', '-b', 'trunk');
+    put(work, 'index.html', '<script src="app.js?v=t1"></script>\n'); put(work, 'app.js', '// v1\n'); put(work, 'rail.json', '{"on":false}');
+    g(work, 'add', '-A'); g(work, 'commit', '-q', '-m', 'base');
+    g(work, 'remote', 'add', 'origin', origin); g(work, 'push', '-q', 'origin', 'trunk', 'trunk:production');
+    build(work);
+    g(work, 'push', '-q', 'origin', 'trunk');
+    return { origin, work, prodBefore: g(origin, 'rev-parse', 'production'), trunk: g(origin, 'rev-parse', 'trunk') };
+  };
+  const promote = (sc, args, env) => spawnSync(process.execPath, [promoteJs, ...args], { cwd: sc.work, env: { ...baseEnv, ...(env || {}) }, encoding: 'utf8', timeout: 120000 });
+  const said = (r) => (r.stdout || '') + (r.stderr || '');
+  const onFile = '{"on":true,"url":"https://rw-api-production.up.railway.app"}';
+  try {
+    const flip = scenario((w) => { put(w, 'app.js', '// v2 fix\n'); g(w, 'commit', '-qam', 'auto-fix'); put(w, 'rail.json', onFile); g(w, 'commit', '-qam', 'routing on'); });
+    const r1 = promote(flip, ['--yes', '--unattended']);
+    ok(r1.status === 1 && /refusing an unattended promote/.test(said(r1)) && /rail\.json/.test(said(r1)), `e2e: --yes --unattended over a range that turns routing on → refused, exit 1 (exit ${r1.status})`);
+    ok(!/staging freshness/.test(said(r1)) && !/pushing /.test(said(r1)), 'e2e: the refusal comes before any staging probe or push');
+    ok(g(flip.origin, 'rev-parse', 'production') === flip.prodBefore, 'e2e: production did not move');
+    const r2 = promote(flip, ['--yes'], { GITHUB_ACTIONS: 'true' });
+    ok(r2.status === 1 && /refusing an unattended promote/.test(said(r2)) && g(flip.origin, 'rev-parse', 'production') === flip.prodBefore, `e2e: the same range inside GitHub Actions WITHOUT --unattended → still refused (exit ${r2.status})`);
+    const r3 = promote(flip, []);
+    ok(r3.status === 0 && !/refusing an unattended promote/.test(said(r3)) && /touches rail\.json/.test(said(r3)) && /PREVIEW ONLY/.test(said(r3)), `e2e: a human preview of the same range is not refused, and says the switch rides this promote (exit ${r3.status})`);
+    const round = scenario((w) => { put(w, 'rail.json', onFile); g(w, 'commit', '-qam', 'on'); put(w, 'rail.json', '{"on":false}'); g(w, 'commit', '-qam', 'off again'); put(w, 'app.js', '// v3\n'); g(w, 'commit', '-qam', 'fix'); });
+    ok(g(round.work, 'diff', '--name-only', round.prodBefore, round.trunk) === 'app.js', 'e2e setup: on → off inside the range leaves rail.json out of the net diff');
+    const r4 = promote(round, ['--unattended']);
+    ok(r4.status === 1 && /refusing an unattended promote/.test(said(r4)), `e2e: a range that flips rail.json on and back off is refused too (every commit counts, not the net diff; exit ${r4.status})`);
+    const merged = scenario((w) => { g(w, 'checkout', '-q', '-b', 'side'); put(w, 'rail.json', onFile); g(w, 'commit', '-qam', 'side: on'); g(w, 'checkout', '-q', 'trunk'); put(w, 'app.js', '// v4\n'); g(w, 'commit', '-qam', 'trunk fix'); g(w, 'merge', '-q', '--no-ff', '-m', 'merge side', 'side'); });
+    const r5 = promote(merged, ['--unattended']);
+    ok(r5.status === 1 && /refusing an unattended promote/.test(said(r5)), `e2e: rail.json arriving through a merge commit is refused (exit ${r5.status})`);
+    // two "evil" merges: the first merge commit itself turns routing on, the second turns it back off — no ordinary
+    // commit touches rail.json and the net diff is empty, so only diffing each merge against its parents sees it
+    const evil = scenario((w) => {
+      for (const [br, text] of [['side1', onFile], ['side2', '{"on":false}']]) {
+        g(w, 'checkout', '-q', '-b', br); put(w, br + '.txt', br); g(w, 'add', br + '.txt'); g(w, 'commit', '-qm', br);
+        g(w, 'checkout', '-q', 'trunk'); g(w, 'merge', '-q', '--no-ff', '--no-commit', br); put(w, 'rail.json', text); g(w, 'add', 'rail.json'); g(w, 'commit', '-qm', 'merge ' + br);
+      }
+    });
+    ok(!/rail\.json/.test(g(evil.work, 'log', '--format=', '--name-only', '--no-renames', evil.prodBefore + '..' + evil.trunk)) && !/rail\.json/.test(g(evil.work, 'diff', '--name-only', evil.prodBefore, evil.trunk)), 'e2e setup: the evil merges hide rail.json from the plain log and the net diff');
+    const rEvil = promote(evil, ['--unattended']);
+    ok(rEvil.status === 1 && /refusing an unattended promote/.test(said(rEvil)), `e2e: rail.json flipped only inside merge commits is refused (each merge diffed against its parents; exit ${rEvil.status})`);
+    const renamed = scenario((w) => { g(w, 'mv', 'rail.json', 'rail.off'); g(w, 'commit', '-qm', 'rename'); });
+    const r6 = promote(renamed, ['--unattended']);
+    ok(r6.status === 1 && /refusing an unattended promote/.test(said(r6)), `e2e: renaming rail.json away (the file devices read goes missing) is refused (exit ${r6.status})`);
+    const clean = scenario((w) => { put(w, 'app.js', '// v5 fix\n'); g(w, 'commit', '-qam', 'auto-fix'); });
+    const r7 = promote(clean, ['--unattended']);
+    ok(r7.status === 0 && /unattended — rail\.json is untouched/.test(said(r7)) && /staging freshness/.test(said(r7)) && /PREVIEW ONLY/.test(said(r7)), `e2e: an unattended range that leaves rail.json alone passes this guard and goes on to the staging gate (exit ${r7.status})`);
+    const r8 = promote(clean, ['--yes', '--unattended']);
+    ok(r8.status === 1 && /refusing to promote — no deck deploy or slot/.test(said(r8)) && g(clean.origin, 'rev-parse', 'production') === clean.prodBefore, `e2e control: with --yes the clean range is stopped by the staging gate (no staging reachable here), never pushed (exit ${r8.status})`);
+  } catch (e) {
+    ok(false, `e2e — UNEXPECTED THROW: ${e && e.message || e}`);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+// auto-promote.yml (and any other workflow) runs promote.mjs only with --unattended
+{
+  const wfDir = fileURLToPath(new URL('../.github/workflows/', import.meta.url));
+  const calls = readdirSync(wfDir).filter((f) => /\.ya?ml$/.test(f)).flatMap((f) => readFileSync(join(wfDir, f), 'utf8').split('\n').filter((l) => /tools\/promote\.mjs/.test(l) && /^\s*(-\s*)?run:/.test(l)).map((l) => f + ': ' + l.trim()));
+  ok(calls.length >= 1 && calls.some((c) => /^auto-promote\.ya?ml: /.test(c)) && calls.every((c) => /--unattended(\s|$)/.test(c)), `every workflow step that runs promote.mjs passes --unattended (${calls.join(' | ')})`);
+}
 
 const passed = results.filter((r) => r.ok).length;
 results.forEach((r) => console.log(`${r.ok ? '  ✓' : '  ✗ FAIL:'} ${r.m}`));

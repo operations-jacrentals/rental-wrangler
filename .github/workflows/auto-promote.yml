@@ -27,6 +27,8 @@ name: Auto-promote — take a merged Wrangler auto-fix live
 #   2. The fix's own branch already deployed to staging (in wrangler-fix.yml), so
 #      promote.mjs's staging-freshness gate passes AND staging stays in sync with
 #      production (no drift for the next human promote).
+#   2b. promote.mjs --unattended refuses any range that touches rail.json (the
+#      rw-api routing switch, S3-5 A): a routing flip never rides an auto-fix live.
 #   3. promote.mjs is fast-forward-only (never --force) and verifies the live
 #      `?v=` bytes after pushing. If anything is off it fails — it never forces a
 #      half-broken state onto the live site.
@@ -86,7 +88,10 @@ jobs:
       - name: Promote the merged auto-fix to production (go live)
         # promote.mjs: fetch trunk+production, verify staging is fresh, fast-forward
         # production -> trunk, then verify the live ?v= bytes. --yes runs it for real.
-        run: node tools/promote.mjs --yes
+        # --unattended (S3-5 A, RC-92): refuse any range in which a commit touches rail.json, the rw-api routing
+        # switch — turning routing on or off is always a human promote. promote.mjs also treats any run inside
+        # GitHub Actions as unattended, so dropping this flag cannot disable the guard.
+        run: node tools/promote.mjs --yes --unattended
 
       - name: Tell the reporter it's live
         if: success()
