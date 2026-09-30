@@ -12,6 +12,9 @@ on:
 jobs:
   smoke:
     runs-on: ubuntu-latest
+    # A hung suite (a regression that leaves an await pending, like rail-mutants S11) must fail this required check,
+    # not hold it pending for GitHub's 6-hour default and block trunk (a rail.json off commit included).
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 

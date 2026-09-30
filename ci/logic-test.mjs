@@ -23,6 +23,9 @@ const server = createServer(async (req, res) => {
     res.end(buf);
   } catch { res.writeHead(404); res.end('not found'); }
 });
+// Suite watchdog: a regression that leaves one await pending forever (rail-mutants S11 is one) must FAIL the suite, not hang CI
+// until GitHub's job limit. The whole suite runs in a few minutes; 12 min is far past any honest run.
+setTimeout(() => { console.error('❌ Logic test threw: watchdog — the suite ran past 12 min (an await never settled); failing instead of hanging'); process.exit(1); }, 12 * 60e3).unref();
 await new Promise((r) => server.listen(8000, r));
 
 const browser = await chromium.launch();
@@ -4558,6 +4561,34 @@ try {
         seen.length = 0;
         await T.resetAllSettings();
         ok(JSON.stringify(((last('setConfig') || {}).config || {}).settings) === '{}' && JSON.stringify(st.settings) === '{}', 'RC-83 Q13-A: with no roster loaded there is nothing to keep — an empty settings object, as before');
+        // The KPI lock-in reopen (lockKpiFromWrangler): Settings reopens on the KPIs tab with the settings it just saved. The
+        // roster Reset all keeps must be THAT saved roster — an unsaved Team Roster × (which splices the draft) must not ride
+        // Reset all to the backend and purge that person's sign-ins. Real clicks: .js-wr-kpi-lock, .js-emp-del, .js-settings-reset ×2.
+        {
+          const w = st.wrangler, kt0 = w.kpiTarget, msgs0 = w.messages;
+          const click = (el) => el && el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          const ids = (b) => { const e = ((((b || {}).config || {}).settings) || {}).employees; return Array.isArray(e) ? e.map((x) => x.id).join(',') : '(none)'; };
+          const sets = () => seen.filter((b) => b.action === 'setConfig');
+          const mk = () => [{ id: 'EMP-Q13-A', name: 'Alpha Hand', role: 'Sales', phone: '' }, { id: 'EMP-Q13-B', name: 'Bravo Hand', role: 'Office', phone: '' }];
+          const waitFor = async (fn, ms) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { if (fn()) return true; await new Promise((r) => setTimeout(r, 20)); } return !!fn(); };
+          try {
+            st.overlay = null; seen.length = 0;
+            w.kpiTarget = { role: 'mechanic', roleLabel: 'Mechanic', idx: 0, adminPw: 'ADMIN-TEST', roles: { Sales: 'x' }, admin: 'y', draftSettings: { employees: mk(), company: { name: 'Zz' } } };
+            w.messages = [{ role: 'assistant', text: '', action: { _kpi: { ok: true, ring: { label: 'Q13 probe ring' } } } }];
+            const btn = document.createElement('button'); btn.className = 'js-wr-kpi-lock'; btn.dataset.mi = '0'; document.body.appendChild(btn);
+            click(btn); await waitFor(() => st.overlay && st.overlay.kind === 'settings', 3000); btn.remove();
+            const o = st.overlay, savedIds = ids(sets().pop());
+            o.tab = 'team'; T.renderOverlay();
+            click(document.querySelector('.settings-popup .js-emp-del[data-i="0"]'));
+            const draftIds = ((o.draftSettings || {}).employees || []).map((x) => x.id).join(',');
+            const n0 = sets().length;
+            click(document.querySelector('.settings-popup .js-settings-reset'));
+            click(document.querySelector('.settings-popup .js-settings-reset'));
+            await waitFor(() => sets().length > n0, 3000);
+            const sent = sets().slice(n0).pop();
+            ok(savedIds === 'EMP-Q13-A,EMP-Q13-B' && draftIds === 'EMP-Q13-B' && ids(sent) === 'EMP-Q13-A,EMP-Q13-B', `RC-83 Q13-A on the KPI lock-in reopen: Reset all after an UNSAVED Team Roster delete sends the saved roster (saved ${savedIds} · draft after × ${draftIds} · Reset all sent ${ids(sent)})`);
+          } finally { w.kpiTarget = kt0; w.messages = msgs0; }
+        }
       } finally {
         window.fetch = realFetch; st.overlay = ov;
         try { if (set0.s == null) localStorage.removeItem('jactec.settings'); else localStorage.setItem('jactec.settings', set0.s); if (set0.p == null) localStorage.removeItem('jactec.settings.prev'); else localStorage.setItem('jactec.settings.prev', set0.p); } catch (e) {}
@@ -5004,32 +5035,54 @@ try {
     results.push({ ok: sw.includes('staleClear();') && pc.includes('staleClear();') && fl.includes('staleClear();'), m: 'RC-71 (e) source guard: switchUser, pidTokenClear and finishLoad all clear the remembered failed batches (staleClear)' });
   }
 
-  // RC-83 Q13-A at PHONE size (375×812 — his screen is the evidence): the Reset all button says what it keeps (the Team
-  // Roster), and its armed confirm stays on screen even with Reset page and Undo in the footer (the footer wraps). Ported from
-  // rw-phase2b 3eba2a3, the RC-83 part of its phone block only.
+  // CI bound — the required smoke job has a time limit, so a hung suite fails the check instead of blocking trunk for 6 hours
+  // (the release review's S11 note). The suite's own watchdog (top of this file) fails first; this is the job-level backstop.
   {
-    const ph = await browser.newPage({ viewport: { width: 375, height: 812 } });
+    const yml = await readFile(join(root, '.github', 'workflows', 'ci.yml'), 'utf8').catch(() => '');
+    const L = yml.split(/\r?\n/), at = L.indexOf('  smoke:'), job = [];
+    for (let i = at + 1; at >= 0 && i < L.length && (L[i].trim() === '' || L[i].startsWith('    ')); i++) job.push(L[i]);
+    const lim = Number(((job.find((l) => /^    timeout-minutes:\s*\d+\s*$/.test(l)) || '').match(/\d+/) || [])[0] || 0);
+    results.push({ ok: lim > 0 && lim <= 60, m: `CI bound: the required smoke job in ci.yml has a job-level timeout-minutes of at most 60 (${lim || 'none'})` });
+  }
+
+  // RC-83 Q13-A at PHONE size (375×812 — his screen is the evidence) and on the desktop: the Reset all button says what it
+  // keeps (the Team Roster), and its armed confirm SHOWS after a REAL first click and stays on screen even with Reset page and
+  // Undo in the footer (the footer wraps on a phone). Ported from rw-phase2b 3eba2a3, the RC-83 part of its phone block; since
+  // the release review it arms through a real mouse click on .js-settings-reset — the in-place repaint (reSettings) used to
+  // leave the footer untouched, so the first click armed with nothing on screen and the second reset with no confirm shown.
+  for (const vp of [{ width: 375, height: 812 }, { width: 1280, height: 900 }]) {
+    const ph = await browser.newPage({ viewport: vp });
     ph.on('pageerror', (e) => pageErrors.push(String(e && e.message || e)));
     await ph.goto('http://localhost:8000/#local', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await ph.waitForFunction(() => !!window.__rw, { timeout: 20000 });
     await ph.evaluate(() => window.__rwBootRail);
-    const m = await ph.evaluate(async () => {
-      const T = window.__rw, st = T.__state;
-      const raf = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const settleSheet = () => ph.evaluate(async () => { for (let i = 0, top = -1; i < 40; i++) { await new Promise((r) => setTimeout(r, 60)); const t = document.querySelector('.settings-popup').getBoundingClientRect().top; if (t === top) break; top = t; } });   // the phone sheet slides up: measure where it settles
+    const idle = await ph.evaluate(async () => {
+      const T = window.__rw, st = T.__state, realFetch = window.fetch; window.__q13Sets = 0;
+      window.fetch = (u, init) => { if (!String(u).includes('script.google.com')) return realFetch(u, init); window.__q13Sets++; return Promise.resolve(new Response('{"ok":true,"saved":true}', { status: 200 })); };
       try { localStorage.setItem('jactec.settings.prev', JSON.stringify({ company: { name: 'probe' } })); } catch (e) {}
       st.overlay = { kind: 'settings', adminPw: 'x', tab: 'kpis', resetArm: false, config: { roles: {}, admin: '', settings: {} } };
-      T.renderOverlay(); await raf();
-      const idle = document.querySelector('.js-settings-reset');
-      const tip = idle ? idle.getAttribute('data-tip') || '' : '';
-      st.overlay.resetArm = true; T.renderOverlay(); await raf();
-      for (let i = 0, top = -1; i < 40; i++) { await new Promise((r) => setTimeout(r, 60)); const t = document.querySelector('.settings-popup').getBoundingClientRect().top; if (t === top) break; top = t; }   // the phone sheet slides up: measure where it settles
-      const arm = document.querySelector('.js-settings-reset.armed'), ar = arm.getBoundingClientRect();
-      return { phone: document.body.classList.contains('is-phone'), tip, arm: { l: Math.round(ar.left), r: Math.round(ar.right), w: innerWidth, text: arm.textContent.trim() },
-        undo: !!document.querySelector('.js-settings-undo'), page: !!document.querySelector('.js-settings-resetpage') };
+      T.renderOverlay();
+      const b = document.querySelector('.settings-popup .js-settings-reset');
+      return { phone: document.body.classList.contains('is-phone'), tip: b ? b.getAttribute('data-tip') || '' : '', text: b ? b.textContent.trim() : '' };
     });
+    await settleSheet();
+    await ph.click('.settings-popup .js-settings-reset');   // REAL click #1 — arms
+    await settleSheet();
+    const m = await ph.evaluate(() => {
+      const st = window.__rw.__state, arm = document.querySelector('.settings-popup .js-settings-reset.armed'), ar = arm && arm.getBoundingClientRect();
+      return { resetArm: !!(st.overlay && st.overlay.resetArm), arm: arm ? { l: Math.round(ar.left), r: Math.round(ar.right), w: innerWidth, text: arm.textContent.trim() } : null,
+        undo: !!document.querySelector('.settings-popup .js-settings-undo'), page: !!document.querySelector('.settings-popup .js-settings-resetpage'), sets: window.__q13Sets };
+    });
+    await ph.click('.settings-popup .js-settings-reset');   // REAL click #2 — resets
+    await ph.waitForFunction(() => !window.__rw.__state.overlay, { timeout: 3000 }).catch(() => {});
+    const after = await ph.evaluate(() => ({ open: !!window.__rw.__state.overlay, sets: window.__q13Sets }));
     await ph.close();
-    results.push({ ok: m.phone && /Team Roster/.test(m.tip) && /Team Roster/.test(m.arm.text), m: `RC-83 Q13-A: Reset all says it keeps the Team Roster — its tip ("${m.tip}") and its armed confirm ("${m.arm.text}")` });
-    results.push({ ok: m.phone && m.undo && m.page && m.arm.l >= 0 && m.arm.r <= m.arm.w, m: `RC-83 Q13-A at 375×812: the armed confirm stays on screen with Reset page and Undo in the footer too (${m.arm.l}..${m.arm.r} of ${m.arm.w})` });
+    const sz = `${vp.width}×${vp.height}`;
+    results.push({ ok: idle.phone === (vp.width < 768) && /Team Roster/.test(idle.tip) && idle.text === 'Reset all', m: `RC-83 Q13-A at ${sz}: the idle Reset all button's tip says it keeps the Team Roster ("${idle.tip}")` });
+    results.push({ ok: m.resetArm && !!m.arm && /Team Roster/.test(m.arm.text) && m.sets === 0, m: `RC-83 Q13-A at ${sz}: a REAL first click on Reset all shows the armed confirm and sends nothing (armed=${m.resetArm}, "${m.arm ? m.arm.text : 'no .armed button on screen'}", setConfig ×${m.sets})` });
+    results.push({ ok: !!m.arm && m.undo && m.page && m.arm.l >= 0 && m.arm.r <= m.arm.w, m: `RC-83 Q13-A at ${sz}: the armed confirm stays on screen with Reset page and Undo in the footer too (${m.arm ? m.arm.l + '..' + m.arm.r + ' of ' + m.arm.w : 'not shown'})` });
+    results.push({ ok: !after.open && after.sets === 1, m: `RC-83 Q13-A at ${sz}: the REAL second click resets (overlay open=${after.open}, setConfig ×${after.sets})` });
   }
 
   // ── RC-84 rw-api router — BEGIN ───────────────────────────────────────────────────────────────
@@ -5593,6 +5646,25 @@ try {
           fresh(); put(FLIP1, SIX, { fetchedAt: Date.now() - 120000 }); clear(); M.plan.routes = [{ __bodyAfter: 150, ok: true, contract: '1.0.0', version: 'v9', ttlMs: 60000, state: 'ok', all: FLIP1, canary: SIX }]; M.plan.gate = [ON];
           const rSlow = await bounded(call('load'));
           ok(rSlow.via === 'rail' && T.railTable().version === 'v9', 'S3-A: with rail.json on, the call still waits for the table the same refresh fetched (it decides with the new table)');
+        }
+        // ── the setUserPrefs beacon (flushUserPrefsNow) — it carries password + sessionToken and reads no reply, so it must
+        // follow the router's choice (CONTRACT §3.5 "The beacon") and that choice is Apps Script for every action outside
+        // RAIL.actions. Routing fully ON (gate on, a table naming every action AND setUserPrefs) must still beacon to BACKEND_URL.
+        {
+          const st = T.__state, up0 = st.userPrefs, pid0 = T.prefsBeaconSeam(null), beacons = [];
+          const own0 = Object.getOwnPropertyDescriptor(navigator, 'sendBeacon');
+          Object.defineProperty(navigator, 'sendBeacon', { configurable: true, writable: true, value: (u, data) => { beacons.push(String(u)); return true; } });
+          try {
+            T.railReset(); T.RAIL.url = RAIL_TEST; T.setBackendPassword('rc84-tok');
+            const EVERY = SIX.concat(['setUserPrefs']); put(EVERY, EVERY); gateOn(); clear();
+            ok(T.railPick('load', null) === 'rail', 'beacon precondition: routing is fully on (load picks rw-api)');
+            st.userPrefs = { v: 1, prefs: { probe: 'rc84-beacon' } }; T.prefsBeaconSeam('PER-RC84-BEACON', 'prefs');
+            T.flushUserPrefsNow();
+            ok(beacons.length === 1 && beacons[0] === T.BACKEND_URL && !beacons.some((u) => u.startsWith(RAIL_TEST)) && n('rail') === 0, `the setUserPrefs beacon (password + sessionToken) goes to Apps Script even with routing fully on — setUserPrefs is outside RAIL.actions (${beacons.map((u) => u === T.BACKEND_URL ? 'BACKEND_URL' : u.startsWith(RAIL_TEST) ? 'RAIL_URL/…' : 'another url').join(', ') || 'no beacon'})`);
+          } finally {
+            if (own0) Object.defineProperty(navigator, 'sendBeacon', own0); else delete navigator.sendBeacon;
+            st.userPrefs = up0; T.prefsBeaconSeam(pid0); T.railReset(); T.setBackendPassword('rc84-tok');
+          }
         }
       } catch (e) { ok(false, 'threw: ' + (e && e.stack || e)); }
       finally { T.railReset(); T.setBackendPassword(''); }

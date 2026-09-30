@@ -5629,7 +5629,14 @@ function rerenderSettingsPane() {
   const st = (body.querySelector('.set-pane') || {}).scrollTop || 0;
   body.innerHTML = settingsBoardHtml(o);
   const np = body.querySelector('.set-pane'); if (np) np.scrollTop = st;
+  // The footer carries state too (Reset all's armed confirm, Reset page per tab, Undo, the error, Saving…): repaint it with the
+  // board, or the first Reset all click arms with nothing on screen and the second resets with no confirm ever shown.
+  const foot = document.querySelector('.overlay .settings-popup .popup-foot'); if (foot) foot.innerHTML = settingsFootHtml(o);
   return true;
+}
+// The Settings footer — one builder for the first paint (renderOverlay) and every in-place repaint (rerenderSettingsPane).
+function settingsFootHtml(o) {
+  return `${pageDefaultSlice(o.tab) ? '<button class="pill ghost js-settings-resetpage" data-r="R18" data-tip="Reset just this tab to defaults (Save to keep)">Reset page</button>' : ''}<button class="pill ghost set-danger js-settings-reset${o.resetArm ? ' armed' : ''}" data-r="R18" data-tip="Resets every customization except the Team Roster">${o.resetArm ? 'Click again — reset all but the Team Roster' : 'Reset all'}</button>${hasSettingsBackup() ? '<button class="pill ghost js-settings-undo" data-r="R18">Undo last change</button>' : ''}<span class="spacer"></span>${o.error ? `<span class="set-err">${esc(o.error)}</span>` : ''}<button class="pill ghost js-close" data-r="R18"${o.saving ? ' disabled' : ''}>Cancel</button><button class="pill ignition js-settings-save${o.saving ? ' is-disabled' : ''}" data-r="R17"${o.saving ? ' disabled' : ''}>${o.saving ? 'Saving…' : 'Save settings'}</button>`;
 }
 // In-settings re-render that never flashes; falls back to a full overlay render when the settings
 // board isn't the live surface. Use from any settings-pane handler in place of renderOverlay().
@@ -6050,7 +6057,10 @@ async function lockKpiFromWrangler(mi) {
   persistAdminSettings(settings);           // mirror + apply live so the header ring updates now
   m.filed = true; w.kpiTarget = null;
   toast(`Locked in “${v.ring.label}” for ${kt.roleLabel} · Ring ${kt.idx + 1}.${warn} 🤠`);
-  openOverlay({ kind: 'settings', config: { roles: kt.roles, admin: kt.admin, settings }, adminPw: kt.adminPw, tab: 'kpis', kpiRole: kt.role, draftSettings: settings });
+  // The loaded config is a COPY of what was just saved: the draft is edited in place (a Team Roster × splices draftSettings.employees),
+  // and RC-83 Q13-A's Reset all keeps the roster this window LOADED (o.config.settings.employees) — sharing one object would let an
+  // unsaved delete ride Reset all to the backend and purge that person's sign-ins.
+  openOverlay({ kind: 'settings', config: { roles: kt.roles, admin: kt.admin, settings: JSON.parse(JSON.stringify(settings)) }, adminPw: kt.adminPw, tab: 'kpis', kpiRole: kt.role, draftSettings: settings });
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -14543,7 +14553,7 @@ function buildPopupEl(o, overlay, opts = {}) {
       pop.innerHTML = `${head}<div class="popup-body settings-body"><div class="set-loading"><div class="set-loading-bar" aria-hidden="true"></div><div class="set-loading-lbl">Rounding up the yard settings…</div></div></div>`;
     } else {
       if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {}));
-      const foot = `${pageDefaultSlice(o.tab) ? '<button class="pill ghost js-settings-resetpage" data-r="R18" data-tip="Reset just this tab to defaults (Save to keep)">Reset page</button>' : ''}<button class="pill ghost set-danger js-settings-reset${o.resetArm ? ' armed' : ''}" data-r="R18" data-tip="Resets every customization except the Team Roster">${o.resetArm ? 'Click again — reset all but the Team Roster' : 'Reset all'}</button>${hasSettingsBackup() ? '<button class="pill ghost js-settings-undo" data-r="R18">Undo last change</button>' : ''}<span class="spacer"></span>${o.error ? `<span class="set-err">${esc(o.error)}</span>` : ''}<button class="pill ghost js-close" data-r="R18"${o.saving ? ' disabled' : ''}>Cancel</button><button class="pill ignition js-settings-save${o.saving ? ' is-disabled' : ''}" data-r="R17"${o.saving ? ' disabled' : ''}>${o.saving ? 'Saving…' : 'Save settings'}</button>`;
+      const foot = settingsFootHtml(o);
       pop.innerHTML = `${head}
       <div class="popup-body settings-body">${settingsBoardHtml(o)}</div>
       <div class="popup-foot">${foot}</div>`;
@@ -27943,6 +27953,7 @@ function exposeTestApi() {
       freshLineText, freshTick, freshTickerSync, freshAt: () => _freshAt, freshTimerOn: () => !!_freshTimer, setFreshAt: (t) => { _freshAt = t || 0; },   // RC-67 (2A) — freshness-line seams; the setter is test-only (mirrors setBackendPassword); setBooting sits with the RC-67 3A seams
       backendCall, RAIL, RAIL_KEY, railMem, railPick, railNeedsWait, railRefresh, railTable, railInitCohort, warmBackend,   // RC-84 router seams — logic-test sets RAIL.url to a fake origin and answers both hosts from a mocked window.fetch; never a real backend
       railReset: () => { Object.assign(railMem, { strikes: 0, inflight: null, failAt: 0, stickyStart: '', last: {}, broken: false, noted: {}, gate: false, gateAt: 0, gateWord: 'unchecked' }); _backendWarmed = false; RAIL.url = RAIL_URL; try { Object.values(RAIL_KEY).forEach((k) => localStorage.removeItem(k)); } catch (e) {} },
+      flushUserPrefsNow, BACKEND_URL, prefsBeaconSeam: (pid, dirty) => { const was = currentPersonId; currentPersonId = pid == null ? was : String(pid); if (dirty) _userPrefsDirty[dirty] = true; return was; },   // RC-84 beacon seam — logic-test sets a person id and one dirty prefs section, then stubs navigator.sendBeacon to see where the beacon goes; never a real backend
       tripPushSoon, tripPushNow, loadTripsFromBackend, tripsSyncFooter,setBackendPassword: (pw) => { backendPassword = pw || ''; },   // §2.3 Phase 4 sync — the setter is test-only (mirrors setRole), letting logic-test.mjs exercise the online path via a mocked window.fetch, never a real backend
       adoptScanCaptures, setScanCaps: (m) => { SCAN_CAPS = m || {}; },   // §scan-reconcile — test seam: seed SCAN_CAPS then run adoption (logic-test)
       flushSave, snapshotSaved, computeChanges, SYNC, syncLimitMs, STALE, pidTokenClear, saveState: () => ({ saving, savePending, baseline: !!lastSaved }),   // RC-65 (2) — save-pipeline seams; logic-test drives them against a mocked window.fetch only

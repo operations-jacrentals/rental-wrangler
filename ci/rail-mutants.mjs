@@ -2,7 +2,8 @@
 // rail-mutants.mjs — the mutation proof for the rw-api router (RC-84), its rail.json kill switch (RC-92 S3-A), the url
 // binding (S3-4 A), the CI guard (ci/rail-guard.mjs), the unattended-promote refusal (S3-5 A: the inline step in
 // auto-promote.yml, and promote.mjs / promote-guard.mjs behind it) and the shipped RAIL_URL
-// (S3-2 A), plus the RC-83 Q13-A carrier in this release (Settings → Reset all keeps the Team Roster; rows Q01–Q07).
+// (S3-2 A), plus the RC-83 Q13-A carrier in this release (Settings → Reset all keeps the Team Roster; rows Q01–Q10), the setUserPrefs
+// beacon (B01–B02) and the CI job bound (C01).
 // Each row below breaks the code in one named way; the suite that owns it must then FAIL ("killed"). A row
 // marked `survive` is a control (the unmutated tree, or a legal rail.json) and must PASS.
 //
@@ -199,6 +200,13 @@ const M = [
   ['Q05', "'Click again — reset all but the Team Roster'", "'Click again — reset everything'"],   // the armed confirm no longer says what it keeps
   ['Q06', ' data-tip="Resets every customization except the Team Roster"', ''],   // the button's tip gone
   ['Q07', '.is-phone .settings-popup .popup-foot { flex-wrap: wrap; row-gap: 8px; }', '.is-phone .settings-popup .popup-foot { row-gap: 8px; }', { file: 'style.css' }],   // on a phone the armed confirm is pushed off-screen
+  // ── release review fixes (RC-97 run): the Settings footer repaint, the KPI lock-in reopen, the beacon, the CI bound ──
+  ['Q08', 'settings: JSON.parse(JSON.stringify(settings)) }, adminPw: kt.adminPw', 'settings }, adminPw: kt.adminPw'],   // the KPI reopen shares one object: an unsaved roster delete rides Reset all
+  ['Q09', "  const foot = document.querySelector('.overlay .settings-popup .popup-foot'); if (foot) foot.innerHTML = settingsFootHtml(o);\n", ''],   // the in-place repaint leaves the footer: the armed confirm never shows
+  ['Q10', 'if (o.resetArm) return resetAllSettings(); o.resetArm = true; reSettings(); return;', 'if (o.resetArm) return resetAllSettings(); o.resetArm = true; return;'],   // click #1 arms with no repaint at all
+  ['B01', "let beaconUrl = BACKEND_URL; try { if (railPick('setUserPrefs', null) === 'rail') beaconUrl = RAIL.url + '/v1'; } catch (e) {}", "let beaconUrl = RAIL.url + '/v1';"],   // the credential-bearing beacon always goes to rw-api
+  ['B02', "railPick('setUserPrefs', null)", "railPick('load', null)"],   // the beacon follows load's route instead of its own action's
+  ['C01', '    timeout-minutes: 30\n', '', { file: '.github/workflows/ci.yml' }],   // the required CI job loses its time limit: a hung suite blocks trunk for 6 h
 ];
 
 const rows = M.filter(([id]) => !ONLY || ONLY.has(id)).map(([id, from, to, o]) => ({ id, from, to, file: 'app.js', suite: 'logic', survive: false, ...(o || {}) }));
