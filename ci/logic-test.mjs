@@ -5160,9 +5160,9 @@ try {
           T.RAIL.readBodyMs = 1500; clear(); M.plan.rail.load = [{ ok: true, data: { units: [] }, settings: {}, __bodyAfter: 700 }];
           const rSlow = await call('load', undefined, { timeoutMs: 5000 });
           ok(rSlow.data && rSlow.via === undefined && n('gas') === 0, 'read-only: a reply that STARTED inside RAIL.readMs gets its own body limit — a slow download is answered by rw-api, not abandoned (RC-63)');
-          T.RAIL.readBodyMs = 900; clear(); M.plan.rail.load = ['stall']; t0 = Date.now();
+          T.RAIL.readBodyMs = 1400; clear(); M.plan.rail.load = ['stall']; t0 = Date.now();
           const rStall = await call('load', undefined, { timeoutMs: 5000 }); const tookS = Date.now() - t0;
-          ok(rStall.via === 'gas' && tookS >= 850 && tookS < 3000, `read-only: a body that stalls gets RAIL.readBodyMs from the moment the reply starts (not RAIL.readMs, not twice it), then Apps Script answers (${tookS} ms)`);
+          ok(rStall.via === 'gas' && tookS >= 1300 && tookS < 3000, `read-only: a body that stalls gets RAIL.readBodyMs from the moment the reply starts (not RAIL.readMs, not twice it), then Apps Script answers (${tookS} ms)`);
         } finally { T.RAIL.readBodyMs = body0; T.railMem.strikes = 0; localStorage.removeItem(T.RAIL_KEY.breaker); }
         clear(); M.plan.rail.load = [{ ok: true, data: { units: [] }, settings: {} }];
         ok((await call('load')).data && n('gas') === 0, 'read-only: an rw-api ok:true is final (no second call)');
@@ -5437,7 +5437,7 @@ try {
           ok(rFlip.via === 'gas' && n('rail') === 0 && gateGets() === 1 && routesGets() === 1, 'S3-A: rail.json turned off mid-page — a gate older than 60 s is re-read (with the table) before the next routed call, which goes to Apps Script');
           stale(); clear(); M.plan.gate = [ON]; await call('load');
           ok(n('rail', 'load') === 1, 'S3-A: rail.json turned back on — routing resumes at the next re-read');
-          stale(); clear(); M.plan.gate = [{ on: false }]; await call('load');
+          await sleep(5); stale(); clear(); M.plan.gate = [{ on: false }]; await call('load');   // a later millisecond than the first off note, so a per-time note key could not hide a repeat
           const gl = T.errLog().filter((l) => /rail: rail\.json/.test(l));
           ok(n('rail') === 0 && gl.filter((l) => /rail: rail\.json on, rw-api routing allowed/.test(l)).length === 1 && gl.filter((l) => /rail: rail\.json off \(off\), Apps Script only/.test(l)).length === 1,
             `S3-A: each direction of a gate change is noted once per page in ERR_LOG (${gl.join(' | ')})`);
@@ -5641,7 +5641,7 @@ try {
       const shellStill = respond('https://app.jacrentals.com/app.js?v=t', 'no-cors');
       results.push({ ok: !shellHasGate && !gateCors && !gateNav && shellStill, m: `S3-A: sw.js leaves rail.json to the network — not in SHELL, never answered from cache (fetch or navigation), while app.js still is (${[shellHasGate, gateCors, gateNav, shellStill].join(' ')})` });
       // S3-2 A: the rw-api origin RAIL_URL now names is cross-origin, so sw.js never answers (or caches) any of its replies
-      const railUrl = railUrlFromSource(src), apiHits = ['/v1/routes', '/v1', '/healthz', '/app.js', '/index.html', '/rail.json'].map((p) => [p, respond(railUrl + p, 'cors'), respond(railUrl + p, 'no-cors')]).filter((r) => r[1] || r[2]);
+      const railUrl = railUrlFromSource(src), apiHits = !railUrl ? [] : ['/v1/routes', '/v1', '/healthz', '/app.js', '/index.html', '/rail.json'].map((p) => [p, respond(railUrl + p, 'cors'), respond(railUrl + p, 'no-cors')]).filter((r) => r[1] || r[2]);
       results.push({ ok: !!railUrl && apiHits.length === 0 && !ctx.__SHELL.some((p) => /railway/.test(p)), m: `S3-2 A: sw.js leaves every rw-api request (${railUrl}) to the network — never answered from or written to Cache Storage (${apiHits.map((r) => r[0]).join(', ') || 'none answered'})` });
     }
   }
