@@ -4627,6 +4627,66 @@ try {
             ok(savedIds === 'EMP-Q13-A,EMP-Q13-B' && draftIds === 'EMP-Q13-B' && ids(sent) === 'EMP-Q13-A,EMP-Q13-B', `RC-83 Q13-A on the KPI lock-in reopen: Reset all after an UNSAVED Team Roster delete sends the saved roster (saved ${savedIds} · draft after × ${draftIds} · Reset all sent ${ids(sent)})`);
           } finally { w.kpiTarget = kt0; w.messages = msgs0; }
         }
+        // RC-104 R1-A review fix (auth) — Reset all sends the ROLES MAP this window loaded, never an unsaved role × or + Role. The
+        // Logins pane edits o.config.roles in place, so an unsaved × used to ride Reset all: the server lost that role's login while
+        // R1-A kept its tier, the role vanished from the Logins pane, and the next Save pruned the orphaned tier (re-tiering every
+        // hand on it). Kept = loaded, never the draft — as for the roster (Q13-A) and the tiers (R1-A). Real clicks throughout.
+        {
+          const click = (el) => el && el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          const sets = () => seen.filter((b) => b.action === 'setConfig');
+          const waitFor = async (fn, ms) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { if (fn()) return true; await new Promise((r) => setTimeout(r, 20)); } return !!fn(); };
+          const LOADED = { roles: { Owner: 'fake-o', Office: 'fake-2', Sales: 'fake-1', developer: 'fake-d' }, admin: 'fake-a',
+            settings: { employees: [{ id: 'EMP-R1R-1', name: 'Office Hand', role: 'Office', phone: '' }], roleMeta: { Owner: { label: 'Owner', tier: 'admin' }, Office: { label: 'Office', tier: 'staff' }, Sales: { label: 'Sales', tier: 'money' }, developer: { label: 'Developer', tier: 'developer' } } } };
+          const keys = (b) => Object.keys(((b || {}).config || {}).roles || {}).sort().join(',');
+          const resetTwice = async () => { const n0 = sets().length; click(document.querySelector('.settings-popup .js-settings-reset')); click(document.querySelector('.settings-popup .js-settings-reset')); await waitFor(() => sets().length > n0, 3000); return sets().slice(n0).pop(); };
+          // (f) an unsaved × on a role, then Reset all ×2
+          st.overlay = { kind: 'settings', adminPw: 'ADMIN-TEST', tab: 'logins', config: JSON.parse(JSON.stringify(LOADED)) };
+          T.renderOverlay();
+          click(document.querySelector('.settings-popup .js-role-del[data-role="Office"]'));
+          const delGone = !!st.overlay && !('Office' in (st.overlay.config.roles || {}));
+          const sf = await resetTwice();
+          ok(delGone && keys(sf) === 'Office,Owner,Sales,developer' && ((sf || {}).config || {}).roles.Office === 'fake-2' && (((((sf || {}).config || {}).settings || {}).roleMeta || {}).Office || {}).tier === 'staff', `RC-104 R1-A review: an unsaved role × does not ride Reset all — the loaded roles map is sent, so the kept tier is never orphaned (× applied in the pane: ${delGone} · roles sent ${keys(sf)})`);
+          // (g) an unsaved + Role, then Reset all ×2: no new server-side login appears
+          st.overlay = { kind: 'settings', adminPw: 'ADMIN-TEST', tab: 'logins', config: JSON.parse(JSON.stringify(LOADED)) };
+          T.renderOverlay();
+          click(document.querySelector('.settings-popup .js-role-add'));
+          const added = !!st.overlay && Object.keys(st.overlay.config.roles || {}).length === 5;
+          const sg = await resetTwice();
+          ok(added && keys(sg) === 'Office,Owner,Sales,developer', `RC-104 R1-A review: an unsaved + Role does not ride Reset all — no new login is created on the server (added in the pane: ${added} · roles sent ${keys(sg)})`);
+        }
+        // RC-104 R1-A review fix — the KPI lock-in reopen's DRAFT is its own copy, not the live state.settings. Sharing one object
+        // meant an unsaved edit went live in the app at once (and survived Cancel), and the Save audit compared the draft with
+        // itself: a flag turned Off there was saved with NO flagAuditLog row (spec design-system D1: a disabled safety flag must be
+        // traceable). Real clicks: .js-wr-kpi-lock, .js-flag-ov (Off), then .js-settings-save.
+        {
+          const w = st.wrangler, kt0 = w.kpiTarget, msgs0 = w.messages;
+          const click = (el) => el && el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          const sets = () => seen.filter((b) => b.action === 'setConfig');
+          const waitFor = async (fn, ms) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { if (fn()) return true; await new Promise((r) => setTimeout(r, 20)); } return !!fn(); };
+          try {
+            st.overlay = null; seen.length = 0;
+            w.kpiTarget = { role: 'mechanic', roleLabel: 'Mechanic', idx: 0, adminPw: 'ADMIN-TEST', roles: { Sales: 'x' }, admin: 'y', draftSettings: { company: { name: 'Zz' } } };
+            w.messages = [{ role: 'assistant', text: '', action: { _kpi: { ok: true, ring: { label: 'KPI draft probe ring' } } } }];
+            const btn = document.createElement('button'); btn.className = 'js-wr-kpi-lock'; btn.dataset.mi = '0'; document.body.appendChild(btn);
+            click(btn); await waitFor(() => st.overlay && st.overlay.kind === 'settings', 3000); btn.remove();
+            const o = st.overlay;
+            // Structural guard (defence in depth): the loaded config, the draft and the live settings are three separate objects. Either
+            // copy alone stops an unsaved edit riding Reset all, so this is what keeps each copy honest on its own (mutants Q08, Q21).
+            ok(!!o && !!o.config && o.config.settings !== st.settings && o.draftSettings !== st.settings && o.draftSettings !== o.config.settings, `RC-104 R1-A review: the KPI lock-in reopen holds the loaded config, the draft and the live settings as three separate objects (loaded is live: ${!!o && !!o.config && o.config.settings === st.settings} · draft is live: ${!!o && o.draftSettings === st.settings} · draft is loaded: ${!!o && !!o.config && o.draftSettings === o.config.settings})`);
+            o.tab = 'flags'; T.renderOverlay();
+            const off = document.querySelector('.settings-popup .js-flag-ov[data-val="off"]');
+            const ent = off && off.dataset.ent, fid = off && off.dataset.id;
+            click(off);
+            const liveOff = !!((((st.settings || {}).flagOverrides || {})[ent] || {})[fid] || {}).off;
+            ok(!!off && o.draftSettings !== st.settings && !liveOff, `RC-104 R1-A review: after the KPI lock-in reopen an UNSAVED flag Off stays in the draft — the live settings are untouched until Save (draft is state.settings: ${o.draftSettings === st.settings} · live ${ent}/${fid} off: ${liveOff})`);
+            const n0 = sets().length;
+            click(document.querySelector('.settings-popup .js-settings-save'));
+            await waitFor(() => sets().length > n0, 3000);
+            const saved = ((sets().slice(n0).pop() || {}).config || {}).settings || {};
+            const rows = (saved.flagAuditLog || []).filter((r) => r && r.text === `Flag ${ent}/${fid} turned OFF`).length;
+            ok(!!(((saved.flagOverrides || {})[ent] || {})[fid] || {}).off && rows === 1, `RC-104 R1-A review: a flag turned Off after the KPI lock-in reopen is saved WITH its audit row (flagAuditLog rows for ${ent}/${fid}: ${rows})`);
+          } finally { w.kpiTarget = kt0; w.messages = msgs0; }
+        }
       } finally {
         window.fetch = realFetch; st.overlay = ov;
         try { if (set0.s == null) localStorage.removeItem('jactec.settings'); else localStorage.setItem('jactec.settings', set0.s); if (set0.p == null) localStorage.removeItem('jactec.settings.prev'); else localStorage.setItem('jactec.settings.prev', set0.p); } catch (e) {}

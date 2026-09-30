@@ -3588,9 +3588,12 @@ async function resetAllSettings() {
   const loaded = (o.config && o.config.settings) || {}, emp = loaded.employees, meta = loaded.roleMeta;
   const kept = Array.isArray(emp) ? { employees: emp } : {};
   if (meta && typeof meta === 'object' && !Array.isArray(meta)) kept.roleMeta = meta;
-  try { if (o.adminPw) await backendCall('setConfig', { password: o.adminPw, config: { roles: o.config.roles, admin: o.config.admin, settings: kept } }); } catch (e) {}
+  // The ROLES MAP sent is the loaded one too: the Logins pane's × and + Role edit o.config.roles in place, so an unsaved role edit
+  // would otherwise ride this reset (a × drops that role's login while its tier is kept above, orphaned and pruned by the next Save).
+  const roles = o.loadedRoles || o.config.roles;
+  try { if (o.adminPw) await backendCall('setConfig', { password: o.adminPw, config: { roles, admin: o.config.admin, settings: kept } }); } catch (e) {}
   persistAdminSettings(kept);
-  o.draftSettings = {}; o.config.settings = kept; o.resetArm = false;
+  o.draftSettings = {}; o.config.settings = kept; o.config.roles = roles; o.resetArm = false;
   closeOverlay(); toast('All customizations reset to the shipped defaults — the Team Roster and role tiers are kept.'); render();
 }
 /* Undo the single most recent Save (restores jactec.settings.prev). */
@@ -5319,6 +5322,9 @@ function captureTeamEdits(o) {   // keep typed roster edits across re-renders + 
   const emps = o.draftSettings.employees || (o.draftSettings.employees = []);
   inputs.forEach((i) => { const idx = Number(i.dataset.i); if (emps[idx]) emps[idx][i.dataset.emp] = i.value; });
 }
+// The roles map as this window LOADED it, remembered once before the first in-place edit of o.config.roles (the Logins × and + Role)
+// — Reset all sends this, never the unsaved edits (RC-104 R1-A: kept = loaded, never the draft).
+function keepLoadedRoles(o) { if (o && o.config && !o.loadedRoles) o.loadedRoles = JSON.parse(JSON.stringify(o.config.roles || {})); }
 function captureLoginEdits(o) {   // keep typed-but-unsaved role-name/tier edits across a re-render
   const root = document.querySelector('.settings-popup .popup-body'); if (!root) return;
   const labels = root.querySelectorAll('.set-input[data-rolelabel]');
@@ -6064,7 +6070,9 @@ async function lockKpiFromWrangler(mi) {
   // The loaded config is a COPY of what was just saved: the draft is edited in place (a Team Roster × splices draftSettings.employees),
   // and RC-83 Q13-A's Reset all keeps the roster this window LOADED (o.config.settings.employees) — sharing one object would let an
   // unsaved delete ride Reset all to the backend and purge that person's sign-ins.
-  openOverlay({ kind: 'settings', config: { roles: kt.roles, admin: kt.admin, settings: JSON.parse(JSON.stringify(settings)) }, adminPw: kt.adminPw, tab: 'kpis', kpiRole: kt.role, draftSettings: settings });
+  // The DRAFT is its own copy too: persistAdminSettings made `settings` the live state.settings, so sharing it would put an unsaved edit
+  // live at once (surviving Cancel) and blind saveSettings' flag-disable audit, which compares the draft with state.settings.
+  openOverlay({ kind: 'settings', config: { roles: kt.roles, admin: kt.admin, settings: JSON.parse(JSON.stringify(settings)) }, adminPw: kt.adminPw, tab: 'kpis', kpiRole: kt.role, draftSettings: JSON.parse(JSON.stringify(settings)) });
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -18712,8 +18720,8 @@ function onClick(e) {
   if (closest('.js-switch-user')) { e.stopPropagation(); return switchUser(); }
   if (closest('.js-open-settings')) { e.stopPropagation(); return openSettings(); }
   if (closest('.js-role-tier')) { e.stopPropagation(); const o = state.overlay; if (o) { captureLoginEdits(o); const b = closest('.js-role-tier'); const meta = draftRoleMeta(o); (meta[b.dataset.role] || (meta[b.dataset.role] = {})).tier = b.dataset.tier; o.error = null; reSettings(); } return; }   // pick a role's permission tier
-  if (closest('.js-role-del')) { e.stopPropagation(); const o = state.overlay; if (!o) return; const id = closest('.js-role-del').dataset.role; if (PROTECTED_ROLE_IDS.includes(String(id).toLowerCase())) { o.error = 'That built-in role can’t be removed.'; reSettings(); return; } captureLoginEdits(o); delete o.config.roles[id]; delete draftRoleMeta(o)[id]; o.error = null; reSettings(); return; }   // remove a role
-  if (closest('.js-role-add')) { e.stopPropagation(); const o = state.overlay; if (!o) return; captureLoginEdits(o); o.config.roles = o.config.roles || {}; let n = Object.keys(o.config.roles).length + 1, id = 'role' + n; while (o.config.roles[id] != null) { n++; id = 'role' + n; }
+  if (closest('.js-role-del')) { e.stopPropagation(); const o = state.overlay; if (!o) return; const id = closest('.js-role-del').dataset.role; if (PROTECTED_ROLE_IDS.includes(String(id).toLowerCase())) { o.error = 'That built-in role can’t be removed.'; reSettings(); return; } captureLoginEdits(o); keepLoadedRoles(o); delete o.config.roles[id]; delete draftRoleMeta(o)[id]; o.error = null; reSettings(); return; }   // remove a role
+  if (closest('.js-role-add')) { e.stopPropagation(); const o = state.overlay; if (!o) return; captureLoginEdits(o); keepLoadedRoles(o); o.config.roles = o.config.roles || {}; let n = Object.keys(o.config.roles).length + 1, id = 'role' + n; while (o.config.roles[id] != null) { n++; id = 'role' + n; }
     // Shared passwords are retired from the UI but still the flag-off backout — give a new role a
     // random, unguessable one (never blank: a blank password would be an empty-credential hole).
     o.config.roles[id] = 'pw-' + Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 12);

@@ -2,7 +2,7 @@
 // rail-mutants.mjs — the mutation proof for the rw-api router (RC-84), its rail.json kill switch (RC-92 S3-A), the url
 // binding (S3-4 A), the CI guard (ci/rail-guard.mjs), the unattended-promote refusal (S3-5 A: the inline step in
 // auto-promote.yml, and promote.mjs / promote-guard.mjs behind it) and the shipped RAIL_URL
-// (S3-2 A), plus the RC-83 Q13-A carrier in this release (Settings → Reset all keeps the Team Roster; rows Q01–Q10), RC-104 R1-A (it keeps the role tiers too; rows Q11–Q17), the setUserPrefs
+// (S3-2 A), plus the RC-83 Q13-A carrier in this release (Settings → Reset all keeps the Team Roster; rows Q01–Q10), RC-104 R1-A (it keeps the role tiers too; rows Q11–Q17; its review fixes Q18–Q21), the setUserPrefs
 // beacon (B01–B02) and the CI job bound (C01).
 // Each row below breaks the code in one named way; the suite that owns it must then FAIL ("killed"). A row
 // marked `survive` is a control (the unmutated tree, or a legal rail.json) and must PASS.
@@ -208,8 +208,13 @@ const M = [
   ['Q15', "'Click again — reset all but the Team Roster and role tiers'", "'Click again — reset all but the Team Roster'"],   // the armed confirm no longer says the tiers are kept
   ['Q16', ' data-tip="Resets every customization except the Team Roster and role tiers"', ' data-tip="Resets every customization except the Team Roster"'],   // the tip no longer says the tiers are kept
   ['Q17', "the Team Roster and role tiers are kept.');", "the Team Roster is kept.');"],   // the toast no longer says the tiers are kept
+  // ── RC-104 R1-A review fixes: Reset all sends the LOADED roles map; the KPI lock-in reopen's draft is its own copy ──
+  ['Q18', 'const roles = o.loadedRoles || o.config.roles;', 'const roles = o.config.roles;'],   // an unsaved role × / + Role rides Reset all (a login dropped, its kept tier orphaned)
+  ['Q19', 'captureLoginEdits(o); keepLoadedRoles(o); delete o.config.roles[id];', 'captureLoginEdits(o); delete o.config.roles[id];'],   // the × edits the loaded roles map with nothing remembered: the delete rides Reset all
+  ['Q20', 'captureLoginEdits(o); keepLoadedRoles(o); o.config.roles = o.config.roles || {};', 'captureLoginEdits(o); o.config.roles = o.config.roles || {};'],   // + Role edits the loaded roles map with nothing remembered: a new login rides Reset all
+  ['Q21', "kpiRole: kt.role, draftSettings: JSON.parse(JSON.stringify(settings)) });", 'kpiRole: kt.role, draftSettings: settings });'],   // the KPI reopen's draft IS state.settings: unsaved edits go live and a flag Off is saved unaudited
   // ── release review fixes (RC-97 run): the Settings footer repaint, the KPI lock-in reopen, the beacon, the CI bound ──
-  ['Q08', 'settings: JSON.parse(JSON.stringify(settings)) }, adminPw: kt.adminPw', 'settings }, adminPw: kt.adminPw'],   // the KPI reopen shares one object: an unsaved roster delete rides Reset all
+  ['Q08', 'settings: JSON.parse(JSON.stringify(settings)) }, adminPw: kt.adminPw', 'settings }, adminPw: kt.adminPw'],   // the KPI reopen's loaded config IS the live settings (killed by the three-separate-objects check; the draft copy, Q21, independently stops the roster delete riding Reset all)
   ['Q09', "  const foot = document.querySelector('.overlay .settings-popup .popup-foot'); if (foot) foot.innerHTML = settingsFootHtml(o);\n", ''],   // the in-place repaint leaves the footer: the armed confirm never shows
   ['Q10', 'if (o.resetArm) return resetAllSettings(); o.resetArm = true; reSettings(); return;', 'if (o.resetArm) return resetAllSettings(); o.resetArm = true; return;'],   // click #1 arms with no repaint at all
   ['B01', "let beaconUrl = BACKEND_URL; try { if (railPick('setUserPrefs', null) === 'rail') beaconUrl = RAIL.url + '/v1'; } catch (e) {}", "let beaconUrl = RAIL.url + '/v1';"],   // the credential-bearing beacon always goes to rw-api
