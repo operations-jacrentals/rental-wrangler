@@ -3579,10 +3579,15 @@ function resetPageSettings() {
    empty config so it sticks across devices, then reloads the board clean. */
 async function resetAllSettings() {
   const o = state.overlay; if (!o || o.kind !== 'settings') return;
-  try { if (o.adminPw) await backendCall('setConfig', { password: o.adminPw, config: { roles: o.config.roles, admin: o.config.admin, settings: {} } }); } catch (e) {}
-  persistAdminSettings({});
-  o.draftSettings = {}; o.config.settings = {}; o.resetArm = false;
-  closeOverlay(); toast('All customizations reset to the shipped defaults.'); render();
+  // RC-83 Q13-A — "Reset all" KEEPS the roster (settings.employees). setConfig replaces the whole settings object, and the backend
+  // then purges the sign-ins of everyone missing from the new roster (pidReconcileRoster_), so the empty roster this used to send
+  // signed the whole crew out. Staff are removed only from the Team Roster tab. The roster kept is the one this window loaded.
+  const emp = ((o.config && o.config.settings) || {}).employees;
+  const kept = Array.isArray(emp) ? { employees: emp } : {};
+  try { if (o.adminPw) await backendCall('setConfig', { password: o.adminPw, config: { roles: o.config.roles, admin: o.config.admin, settings: kept } }); } catch (e) {}
+  persistAdminSettings(kept);
+  o.draftSettings = {}; o.config.settings = kept; o.resetArm = false;
+  closeOverlay(); toast('All customizations reset to the shipped defaults — the Team Roster is kept.'); render();
 }
 /* Undo the single most recent Save (restores jactec.settings.prev). */
 async function undoLastSettings() {
@@ -5624,7 +5629,14 @@ function rerenderSettingsPane() {
   const st = (body.querySelector('.set-pane') || {}).scrollTop || 0;
   body.innerHTML = settingsBoardHtml(o);
   const np = body.querySelector('.set-pane'); if (np) np.scrollTop = st;
+  // The footer carries state too (Reset all's armed confirm, Reset page per tab, Undo, the error, Saving…): repaint it with the
+  // board, or the first Reset all click arms with nothing on screen and the second resets with no confirm ever shown.
+  const foot = document.querySelector('.overlay .settings-popup .popup-foot'); if (foot) foot.innerHTML = settingsFootHtml(o);
   return true;
+}
+// The Settings footer — one builder for the first paint (renderOverlay) and every in-place repaint (rerenderSettingsPane).
+function settingsFootHtml(o) {
+  return `${pageDefaultSlice(o.tab) ? '<button class="pill ghost js-settings-resetpage" data-r="R18" data-tip="Reset just this tab to defaults (Save to keep)">Reset page</button>' : ''}<button class="pill ghost set-danger js-settings-reset${o.resetArm ? ' armed' : ''}" data-r="R18" data-tip="Resets every customization except the Team Roster">${o.resetArm ? 'Click again — reset all but the Team Roster' : 'Reset all'}</button>${hasSettingsBackup() ? '<button class="pill ghost js-settings-undo" data-r="R18">Undo last change</button>' : ''}<span class="spacer"></span>${o.error ? `<span class="set-err">${esc(o.error)}</span>` : ''}<button class="pill ghost js-close" data-r="R18"${o.saving ? ' disabled' : ''}>Cancel</button><button class="pill ignition js-settings-save${o.saving ? ' is-disabled' : ''}" data-r="R17"${o.saving ? ' disabled' : ''}>${o.saving ? 'Saving…' : 'Save settings'}</button>`;
 }
 // In-settings re-render that never flashes; falls back to a full overlay render when the settings
 // board isn't the live surface. Use from any settings-pane handler in place of renderOverlay().
@@ -6045,7 +6057,10 @@ async function lockKpiFromWrangler(mi) {
   persistAdminSettings(settings);           // mirror + apply live so the header ring updates now
   m.filed = true; w.kpiTarget = null;
   toast(`Locked in “${v.ring.label}” for ${kt.roleLabel} · Ring ${kt.idx + 1}.${warn} 🤠`);
-  openOverlay({ kind: 'settings', config: { roles: kt.roles, admin: kt.admin, settings }, adminPw: kt.adminPw, tab: 'kpis', kpiRole: kt.role, draftSettings: settings });
+  // The loaded config is a COPY of what was just saved: the draft is edited in place (a Team Roster × splices draftSettings.employees),
+  // and RC-83 Q13-A's Reset all keeps the roster this window LOADED (o.config.settings.employees) — sharing one object would let an
+  // unsaved delete ride Reset all to the backend and purge that person's sign-ins.
+  openOverlay({ kind: 'settings', config: { roles: kt.roles, admin: kt.admin, settings: JSON.parse(JSON.stringify(settings)) }, adminPw: kt.adminPw, tab: 'kpis', kpiRole: kt.role, draftSettings: settings });
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -14538,7 +14553,7 @@ function buildPopupEl(o, overlay, opts = {}) {
       pop.innerHTML = `${head}<div class="popup-body settings-body"><div class="set-loading"><div class="set-loading-bar" aria-hidden="true"></div><div class="set-loading-lbl">Rounding up the yard settings…</div></div></div>`;
     } else {
       if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {}));
-      const foot = `${pageDefaultSlice(o.tab) ? '<button class="pill ghost js-settings-resetpage" data-r="R18" data-tip="Reset just this tab to defaults (Save to keep)">Reset page</button>' : ''}<button class="pill ghost set-danger js-settings-reset${o.resetArm ? ' armed' : ''}" data-r="R18">${o.resetArm ? 'Click again — reset everything' : 'Reset all'}</button>${hasSettingsBackup() ? '<button class="pill ghost js-settings-undo" data-r="R18">Undo last change</button>' : ''}<span class="spacer"></span>${o.error ? `<span class="set-err">${esc(o.error)}</span>` : ''}<button class="pill ghost js-close" data-r="R18"${o.saving ? ' disabled' : ''}>Cancel</button><button class="pill ignition js-settings-save${o.saving ? ' is-disabled' : ''}" data-r="R17"${o.saving ? ' disabled' : ''}>${o.saving ? 'Saving…' : 'Save settings'}</button>`;
+      const foot = settingsFootHtml(o);
       pop.innerHTML = `${head}
       <div class="popup-body settings-body">${settingsBoardHtml(o)}</div>
       <div class="popup-foot">${foot}</div>`;
@@ -27687,7 +27702,7 @@ function exposeTestApi() {
       resetSaveState: () => { clearTimeout(saveTimer); saving = false; savePending = false; lastSaved = null; SYNC.failing = false; SYNC.fails = 0; SYNC.backoff = 1200; STALE.byKey.clear(); renderSyncBanner(); },   // lastSaved=null → any stray flushSave stops at its first guard
       autoRunRepair, autoRunAnchorsFor, secToClock, AUTORUN_DAY_START_SEC, AUTORUN_EOD_DEADLINE_SEC, AUTORUN_LOAD_BUFFER_SEC, dispatchPinOf,
       openCustomerForm, renderOverlay, render, printInvoice, invoiceDocHtml, renderInvoicePng, invoiceSheetPng, invoicePrintGroups, invoiceAmendments, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature,
-      wranglerSend, wranglerNewChat, openWranglerDock, wranglerDockPollTick, devUnlocked, openWranglerOps, wrOpsAgo, openMobileSignSheet, closeMobileSignSheet, agDraft, __state: state };   // UI drivers for headless screenshot/e2e tests
+      wranglerSend, wranglerNewChat, openWranglerDock, wranglerDockPollTick, devUnlocked, openWranglerOps, wrOpsAgo, openMobileSignSheet, closeMobileSignSheet, agDraft, resetAllSettings, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }
 }

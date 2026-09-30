@@ -22,6 +22,9 @@ const server = createServer(async (req, res) => {
     res.end(buf);
   } catch { res.writeHead(404); res.end('not found'); }
 });
+// Suite watchdog: a regression that leaves one await pending forever (rail-mutants S11 is one) must FAIL the suite, not hang CI
+// until GitHub's job limit. The whole suite runs in a few minutes; 12 min is far past any honest run.
+setTimeout(() => { console.error('❌ Logic test threw: watchdog — the suite ran past 12 min (an await never settled); failing instead of hanging'); process.exit(1); }, 12 * 60e3).unref();
 await new Promise((r) => server.listen(8000, r));
 
 const browser = await chromium.launch();
@@ -4518,6 +4521,69 @@ try {
     // the block must hand back the BOOT state (demo: no stamp, no ticker), not a snapshot taken after that pollution
     ok(T.freshAt() === 0 && !T.freshTimerOn() && !document.getElementById('fresh-line'), `RC-67 freshness: the block leaves the boot state behind — no stamp, no ticker, no line (freshAt=${T.freshAt()}, ticker=${T.freshTimerOn()})`);
 
+    // RC-83 Q13-A (auth) — Settings → Reset all KEEPS the Team Roster. setConfig replaces the whole settings object and the
+    // backend then purges the sign-ins of everyone missing from it (pidReconcileRoster_), so the empty roster Reset all used to
+    // send signed the whole crew out. Drives the REAL resetAllSettings against a mocked window.fetch (script.google.com only).
+    // Ported from rw-phase2b 3eba2a3 check (18), the Q13-A part only.
+    {
+      const realFetch = window.fetch; const seen = []; const st = T.__state, ov = st.overlay;
+      const set0 = { s: localStorage.getItem('jactec.settings'), p: localStorage.getItem('jactec.settings.prev'), st: st.settings };
+      window.fetch = (u, init) => {
+        if (!String(u).includes('script.google.com')) return realFetch(u, init);
+        let body = {}; try { body = JSON.parse((init && init.body) || '{}'); } catch (e) {}
+        seen.push(body);
+        return Promise.resolve(new Response(JSON.stringify({ ok: true, saved: true }), { status: 200 }));
+      };
+      const last = (a) => seen.filter((b) => b.action === a).pop() || null;
+      try {
+        const roster = [{ id: 'EMP-Q13-1', name: 'Test Hand', role: 'Sales', phone: '' }, { id: 'EMP-Q13-2', name: 'Other Hand', role: 'Office', phone: '' }];
+        st.overlay = { kind: 'settings', adminPw: 'ADMIN-TEST', config: { roles: { Sales: 'x' }, admin: 'y', settings: { employees: roster, company: { name: 'Zz Co' }, kpis: { probe: 1 } } } };
+        seen.length = 0;
+        await T.resetAllSettings();
+        const sc = last('setConfig');
+        ok(!!sc && JSON.stringify(sc.config.settings) === JSON.stringify({ employees: roster }) && sc.config.roles.Sales === 'x' && sc.config.admin === 'y' && sc.password === 'ADMIN-TEST', `RC-83 Q13-A: Reset all sends the loaded roster and nothing else (${sc && JSON.stringify(sc.config.settings)})`);
+        let ls = null; try { ls = JSON.parse(localStorage.getItem('jactec.settings') || 'null'); } catch (e) {}
+        ok(Array.isArray((st.settings || {}).employees) && st.settings.employees.length === 2 && !st.settings.company && !st.settings.kpis && !st.overlay && !!ls && JSON.stringify(ls) === JSON.stringify({ employees: roster }), 'RC-83 Q13-A: this device keeps the roster too (memory and jactec.settings); every other customization is reset');
+        st.overlay = { kind: 'settings', adminPw: 'ADMIN-TEST', config: { roles: { Sales: 'x' }, admin: 'y', settings: { company: { name: 'Zz' } } } };
+        seen.length = 0;
+        await T.resetAllSettings();
+        ok(JSON.stringify(((last('setConfig') || {}).config || {}).settings) === '{}' && JSON.stringify(st.settings) === '{}', 'RC-83 Q13-A: with no roster loaded there is nothing to keep — an empty settings object, as before');
+        // The KPI lock-in reopen (lockKpiFromWrangler): Settings reopens on the KPIs tab with the settings it just saved. The
+        // roster Reset all keeps must be THAT saved roster — an unsaved Team Roster × (which splices the draft) must not ride
+        // Reset all to the backend and purge that person's sign-ins. Real clicks: .js-wr-kpi-lock, .js-emp-del, .js-settings-reset ×2.
+        {
+          const w = st.wrangler, kt0 = w.kpiTarget, msgs0 = w.messages;
+          const click = (el) => el && el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          const ids = (b) => { const e = ((((b || {}).config || {}).settings) || {}).employees; return Array.isArray(e) ? e.map((x) => x.id).join(',') : '(none)'; };
+          const sets = () => seen.filter((b) => b.action === 'setConfig');
+          const mk = () => [{ id: 'EMP-Q13-A', name: 'Alpha Hand', role: 'Sales', phone: '' }, { id: 'EMP-Q13-B', name: 'Bravo Hand', role: 'Office', phone: '' }];
+          const waitFor = async (fn, ms) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { if (fn()) return true; await new Promise((r) => setTimeout(r, 20)); } return !!fn(); };
+          try {
+            st.overlay = null; seen.length = 0;
+            w.kpiTarget = { role: 'mechanic', roleLabel: 'Mechanic', idx: 0, adminPw: 'ADMIN-TEST', roles: { Sales: 'x' }, admin: 'y', draftSettings: { employees: mk(), company: { name: 'Zz' } } };
+            w.messages = [{ role: 'assistant', text: '', action: { _kpi: { ok: true, ring: { label: 'Q13 probe ring' } } } }];
+            const btn = document.createElement('button'); btn.className = 'js-wr-kpi-lock'; btn.dataset.mi = '0'; document.body.appendChild(btn);
+            click(btn); await waitFor(() => st.overlay && st.overlay.kind === 'settings', 3000); btn.remove();
+            const o = st.overlay, savedIds = ids(sets().pop());
+            o.tab = 'team'; T.renderOverlay();
+            click(document.querySelector('.settings-popup .js-emp-del[data-i="0"]'));
+            const draftIds = ((o.draftSettings || {}).employees || []).map((x) => x.id).join(',');
+            const n0 = sets().length;
+            click(document.querySelector('.settings-popup .js-settings-reset'));
+            click(document.querySelector('.settings-popup .js-settings-reset'));
+            await waitFor(() => sets().length > n0, 3000);
+            const sent = sets().slice(n0).pop();
+            ok(savedIds === 'EMP-Q13-A,EMP-Q13-B' && draftIds === 'EMP-Q13-B' && ids(sent) === 'EMP-Q13-A,EMP-Q13-B', `RC-83 Q13-A on the KPI lock-in reopen: Reset all after an UNSAVED Team Roster delete sends the saved roster (saved ${savedIds} · draft after × ${draftIds} · Reset all sent ${ids(sent)})`);
+          } finally { w.kpiTarget = kt0; w.messages = msgs0; }
+        }
+      } finally {
+        window.fetch = realFetch; st.overlay = ov;
+        try { if (set0.s == null) localStorage.removeItem('jactec.settings'); else localStorage.setItem('jactec.settings', set0.s); if (set0.p == null) localStorage.removeItem('jactec.settings.prev'); else localStorage.setItem('jactec.settings.prev', set0.p); } catch (e) {}
+        st.settings = set0.st; try { T.applySettings(st.settings); } catch (e) {}
+        T.render();
+      }
+    }
+
     // RC-63 — sign-in resilience. Google's web-app front door was losing or stalling replies the
     // script had already produced. Lost replies must be retried, real refusals must not, stalls
     // must abort, and nothing but a real refusal may forget the remembered device.
@@ -4943,6 +5009,56 @@ try {
     const pc = (src.match(/\nfunction pidTokenClear\(\) \{([^\n]*)/) || [])[1] || '';
     const fl = (src.match(/\nfunction finishLoad\(\) \{([\s\S]*?)\n\}/) || [])[1] || '';
     results.push({ ok: sw.includes('staleClear();') && pc.includes('staleClear();') && fl.includes('staleClear();'), m: 'RC-71 (e) source guard: switchUser, pidTokenClear and finishLoad all clear the remembered failed batches (staleClear)' });
+  }
+
+  // CI bound — the required smoke job has a time limit, so a hung suite fails the check instead of blocking trunk for 6 hours
+  // (the release review's S11 note). The suite's own watchdog (top of this file) fails first; this is the job-level backstop.
+  {
+    const yml = await readFile(join(root, '.github', 'workflows', 'ci.yml'), 'utf8').catch(() => '');
+    const L = yml.split(/\r?\n/), at = L.indexOf('  smoke:'), job = [];
+    for (let i = at + 1; at >= 0 && i < L.length && (L[i].trim() === '' || L[i].startsWith('    ')); i++) job.push(L[i]);
+    const lim = Number(((job.find((l) => /^    timeout-minutes:\s*\d+\s*$/.test(l)) || '').match(/\d+/) || [])[0] || 0);
+    results.push({ ok: lim > 0 && lim <= 60, m: `CI bound: the required smoke job in ci.yml has a job-level timeout-minutes of at most 60 (${lim || 'none'})` });
+  }
+
+  // RC-83 Q13-A at PHONE size (375×812 — his screen is the evidence) and on the desktop: the Reset all button says what it
+  // keeps (the Team Roster), and its armed confirm SHOWS after a REAL first click and stays on screen even with Reset page and
+  // Undo in the footer (the footer wraps on a phone). Ported from rw-phase2b 3eba2a3, the RC-83 part of its phone block; since
+  // the release review it arms through a real mouse click on .js-settings-reset — the in-place repaint (reSettings) used to
+  // leave the footer untouched, so the first click armed with nothing on screen and the second reset with no confirm shown.
+  for (const vp of [{ width: 375, height: 812 }, { width: 1280, height: 900 }]) {
+    const ph = await browser.newPage({ viewport: vp });
+    ph.on('pageerror', (e) => pageErrors.push(String(e && e.message || e)));
+    await ph.goto('http://localhost:8000/#local', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await ph.waitForFunction(() => !!window.__rw, { timeout: 20000 });
+    await ph.evaluate(() => window.__rwBootRail);
+    const settleSheet = () => ph.evaluate(async () => { for (let i = 0, top = -1; i < 40; i++) { await new Promise((r) => setTimeout(r, 60)); const t = document.querySelector('.settings-popup').getBoundingClientRect().top; if (t === top) break; top = t; } });   // the phone sheet slides up: measure where it settles
+    const idle = await ph.evaluate(async () => {
+      const T = window.__rw, st = T.__state, realFetch = window.fetch; window.__q13Sets = 0;
+      window.fetch = (u, init) => { if (!String(u).includes('script.google.com')) return realFetch(u, init); window.__q13Sets++; return Promise.resolve(new Response('{"ok":true,"saved":true}', { status: 200 })); };
+      try { localStorage.setItem('jactec.settings.prev', JSON.stringify({ company: { name: 'probe' } })); } catch (e) {}
+      st.overlay = { kind: 'settings', adminPw: 'x', tab: 'kpis', resetArm: false, config: { roles: {}, admin: '', settings: {} } };
+      T.renderOverlay();
+      const b = document.querySelector('.settings-popup .js-settings-reset');
+      return { phone: document.body.classList.contains('is-phone'), tip: b ? b.getAttribute('data-tip') || '' : '', text: b ? b.textContent.trim() : '' };
+    });
+    await settleSheet();
+    await ph.click('.settings-popup .js-settings-reset');   // REAL click #1 — arms
+    await settleSheet();
+    const m = await ph.evaluate(() => {
+      const st = window.__rw.__state, arm = document.querySelector('.settings-popup .js-settings-reset.armed'), ar = arm && arm.getBoundingClientRect();
+      return { resetArm: !!(st.overlay && st.overlay.resetArm), arm: arm ? { l: Math.round(ar.left), r: Math.round(ar.right), w: innerWidth, text: arm.textContent.trim() } : null,
+        undo: !!document.querySelector('.settings-popup .js-settings-undo'), page: !!document.querySelector('.settings-popup .js-settings-resetpage'), sets: window.__q13Sets };
+    });
+    await ph.click('.settings-popup .js-settings-reset');   // REAL click #2 — resets
+    await ph.waitForFunction(() => !window.__rw.__state.overlay, { timeout: 3000 }).catch(() => {});
+    const after = await ph.evaluate(() => ({ open: !!window.__rw.__state.overlay, sets: window.__q13Sets }));
+    await ph.close();
+    const sz = `${vp.width}×${vp.height}`;
+    results.push({ ok: idle.phone === (vp.width < 768) && /Team Roster/.test(idle.tip) && idle.text === 'Reset all', m: `RC-83 Q13-A at ${sz}: the idle Reset all button's tip says it keeps the Team Roster ("${idle.tip}")` });
+    results.push({ ok: m.resetArm && !!m.arm && /Team Roster/.test(m.arm.text) && m.sets === 0, m: `RC-83 Q13-A at ${sz}: a REAL first click on Reset all shows the armed confirm and sends nothing (armed=${m.resetArm}, "${m.arm ? m.arm.text : 'no .armed button on screen'}", setConfig ×${m.sets})` });
+    results.push({ ok: !!m.arm && m.undo && m.page && m.arm.l >= 0 && m.arm.r <= m.arm.w, m: `RC-83 Q13-A at ${sz}: the armed confirm stays on screen with Reset page and Undo in the footer too (${m.arm ? m.arm.l + '..' + m.arm.r + ' of ' + m.arm.w : 'not shown'})` });
+    results.push({ ok: !after.open && after.sets === 1, m: `RC-83 Q13-A at ${sz}: the REAL second click resets (overlay open=${after.open}, setConfig ×${after.sets})` });
   }
 
   const passed = results.filter((r) => r.ok).length;
