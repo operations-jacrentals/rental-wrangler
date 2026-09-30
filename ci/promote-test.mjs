@@ -1,6 +1,6 @@
 // promote-test.mjs — pure-Node tests for the content-verified staging-freshness resolver.
 //
-// NO network, NO browser, NO Playwright (section 7 runs git against throwaway LOCAL repos, curl through a dead proxy) — this is NOT part of the port-8000→9147 swap. It
+// NO network, NO browser, NO Playwright (sections 7 and 8 run git, and auto-promote.yml's inline bash steps, against throwaway LOCAL repos, curl through a dead proxy) — this is NOT part of the port-8000→9147 swap. It
 // imports the PURE helpers from tools/lib/promote-freshness.mjs (normalizeForHash / contentHash
 // / resolveFreshSlot) and drives resolveFreshSlot with a fully in-memory `probe`, so every
 // freshness branch (content-match, token-collision, multi-slot pick, --slot pin, none,
@@ -167,6 +167,56 @@ group('rail-guard-pure', () => {
   ok(typeof unattendedRailRefusal({ unattended: true, paths: null }) === 'string', 'unattended + the touched paths could not be listed → refused (fails closed)');
 });
 
+// ── 8. S3-5 A, first layer — the inline refusal step in auto-promote.yml ──
+// auto-promote.yml runs promote.mjs from the merged PR's own checkout, so an auto-fix that turns rail.json on could
+// also rewrite promote.mjs / promote-guard.mjs / this file in the same PR. The workflow file is the one thing the
+// wrangler-fix PAT cannot edit (no Workflows permission), so the refusal that counts is an inline shell + git step in
+// it. This section reads the job's steps (a small reader for this file's own shape, no YAML library) and, in the e2e
+// block below, RUNS those inline blocks with bash the way GitHub runs `shell: bash` (bash --noprofile --norc -eo
+// pipefail) against throwaway local repositories.
+const AUTO_PROMOTE_YML = fileURLToPath(new URL('../.github/workflows/auto-promote.yml', import.meta.url));
+function workflowSteps(text) {
+  const L = String(text).replace(/\r\n/g, '\n').split('\n');
+  const at = L.findIndex((l) => /^    steps:\s*$/.test(l));
+  const raw = [];
+  for (let i = at + 1; at >= 0 && i < L.length; i++) {
+    const l = L[i];
+    if (/^      - /.test(l)) { raw.push([l.replace(/^      - /, '        ')]); continue; }
+    if (l.trim() === '') { if (raw.length) raw[raw.length - 1].push(''); continue; }
+    if (!/^        /.test(l) || !raw.length) break;
+    raw[raw.length - 1].push(l);
+  }
+  return raw.map((lines) => {
+    const st = { keys: {}, run: null };
+    for (let j = 0; j < lines.length; j++) {
+      const m = lines[j].match(/^        ([A-Za-z][\w-]*):(?:\s+(.*))?$/);
+      if (!m) continue;
+      if (m[1] === 'run' && (m[2] || '').trim() === '|') {
+        const body = []; let k = j + 1;
+        for (; k < lines.length; k++) { const b = lines[k]; if (b.trim() === '') { body.push(''); continue; } if (!/^          /.test(b)) break; body.push(b.slice(10)); }
+        st.run = body.join('\n').replace(/\n+$/, '') + '\n'; j = k - 1;
+      } else st.keys[m[1]] = (m[2] || '').trim();
+    }
+    return st;
+  });
+}
+// Anything in an inline block that could hand control to a file the promoted range can rewrite.
+const CALLS_REPO_CODE = /\b(node|npm|npx|pnpm|yarn|deno|bun|python3?|ruby|perl|source|sh|bash|zsh|make|eval)\b|(^|[\s;&|(=`'"])\.{1,2}\/|\btools\/|\bci\/|\.m?js\b|\.cjs\b|\.sh\b|\.py\b/m;
+const WF_STEPS = workflowSteps(readFileSync(AUTO_PROMOTE_YML, 'utf8'));
+const WF_REFUSE = WF_STEPS.findIndex((s) => s.keys.id === 'rail-refusal');
+const WF_PROMOTE = WF_STEPS.findIndex((s) => /tools\/promote\.mjs/.test(s.keys.run || ''));
+const WF_CONFIRM = WF_STEPS.findIndex((s) => /steps\.rail-refusal\.outcome/.test(s.keys.if || ''));
+group('auto-promote-inline-shape', () => {
+  const r = WF_STEPS[WF_REFUSE], p = WF_STEPS[WF_PROMOTE], c = WF_STEPS[WF_CONFIRM];
+  ok(WF_STEPS.length >= 4 && WF_PROMOTE >= 0, `the reader finds auto-promote.yml's steps and the promote step (${WF_STEPS.length} steps)`);
+  ok(!!r && typeof r.run === 'string' && /rail\.json/.test(r.run) && /exit 1/.test(r.run), 'auto-promote.yml has an inline step (id: rail-refusal) with its own rail.json check that exits 1');
+  ok(!!r && WF_REFUSE < WF_PROMOTE, `the inline refusal runs BEFORE the step that runs promote.mjs (refusal #${WF_REFUSE}, promote #${WF_PROMOTE})`);
+  ok(!!r && r.keys.shell === 'bash' && !('if' in r.keys) && !('continue-on-error' in r.keys), 'the refusal step runs under shell: bash (-eo pipefail), always, and its failure is never ignored (no if:, no continue-on-error)');
+  ok(!!r && !CALLS_REPO_CODE.test(r.run), 'the refusal step is shell + git only: it runs no script from the checkout the range could rewrite');
+  ok(!!p && !('if' in p.keys) && !('continue-on-error' in p.keys), 'the promote step has no if: / continue-on-error, so a failed refusal stops it');
+  ok(!!c && WF_CONFIRM > WF_PROMOTE && /always\(\)/.test(c.keys.if) && c.keys.shell === 'bash' && typeof c.run === 'string' && !CALLS_REPO_CODE.test(c.run) && !('continue-on-error' in c.keys), 'after the promote, an always() shell + git step confirms production landed on the trunk tip that was checked');
+});
+
 // The whole wiring, end to end: tools/promote.mjs run against throwaway local repositories (a bare `origin` holding
 // trunk + production, and a clone). No network: git talks to a local path, and every curl goes to a dead proxy.
 {
@@ -232,6 +282,51 @@ group('rail-guard-pure', () => {
     ok(r7.status === 0 && /unattended — rail\.json is untouched/.test(said(r7)) && /staging freshness/.test(said(r7)) && /PREVIEW ONLY/.test(said(r7)), `e2e: an unattended range that leaves rail.json alone passes this guard and goes on to the staging gate (exit ${r7.status})`);
     const r8 = promote(clean, ['--yes', '--unattended']);
     ok(r8.status === 1 && /refusing to promote — no deck deploy or slot/.test(said(r8)) && g(clean.origin, 'rev-parse', 'production') === clean.prodBefore, `e2e control: with --yes the clean range is stopped by the staging gate (no staging reachable here), never pushed (exit ${r8.status})`);
+
+    // ── 8 (e2e): auto-promote.yml's inline blocks, run the way GitHub runs `shell: bash`, in the same repositories ──
+    const refuseRun = WF_REFUSE >= 0 ? WF_STEPS[WF_REFUSE].run : null, confirmRun = WF_CONFIRM >= 0 ? WF_STEPS[WF_CONFIRM].run : null;
+    let nb = 0;
+    const block = (sc, script, extraEnv) => {
+      const f = join(tmp, 'step' + (++nb) + '.sh'), envFile = join(tmp, 'github_env' + nb);
+      writeFileSync(f, script || 'echo "auto-promote.yml: step missing"; exit 97\n'); writeFileSync(envFile, '');
+      const r = spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', f], { cwd: sc.work, env: { ...baseEnv, GITHUB_ENV: envFile, ...(extraEnv || {}) }, encoding: 'utf8', timeout: 120000 });
+      const setEnv = Object.fromEntries(readFileSync(envFile, 'utf8').split('\n').filter(Boolean).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]));
+      return { status: r.status, out: (r.stdout || '') + (r.stderr || '') + (r.error ? String(r.error) : ''), env: setEnv };
+    };
+    const refusedInline = (sc, label) => {
+      const r = block(sc, refuseRun);
+      ok(r.status === 1 && /::error::auto-promote: refusing an unattended promote/i.test(r.out) && /rail\.json/i.test(r.out) && !r.env.RAIL_CHECKED_TRUNK && g(sc.origin, 'rev-parse', 'production') === sc.prodBefore, `inline step: ${label} → refused, exit 1, nothing recorded (exit ${r.status}; ${r.out.trim().split('\n').pop().slice(0, 140)})`);
+    };
+    refusedInline(flip, 'a range that turns routing on');
+    refusedInline(round, 'rail.json on and back off inside the range (every commit counts, not the net diff)');
+    refusedInline(merged, 'rail.json arriving through a merge commit');
+    refusedInline(evil, 'rail.json changed only inside merge commits (each merge diffed against its parents)');
+    refusedInline(renamed, 'rail.json renamed away (renames count as delete + add)');
+    const cased = scenario((w) => { mkdirSync(join(w, 'Sub'), { recursive: true }); put(w, 'Sub/RAIL.JSON', onFile); g(w, 'add', '-A'); g(w, 'commit', '-qm', 'cased'); });
+    refusedInline(cased, 'Sub/RAIL.JSON (any case, any folder, same rule as promote-guard.mjs)');
+    // the bypass the review reproduced: one auto-fix commit turns routing on AND relaxes the repo's own guard
+    const bypass = scenario((w) => {
+      mkdirSync(join(w, 'tools', 'lib'), { recursive: true });
+      put(w, 'tools/lib/promote-guard.mjs', 'export function unattendedRailRefusal() { return null; }\n'); put(w, 'rail.json', onFile);
+      g(w, 'add', '-A'); g(w, 'commit', '-qm', 'Wrangler fix: glitch');
+    });
+    refusedInline(bypass, 'the same commit also rewrites tools/lib/promote-guard.mjs to allow everything (the step reads no repo file)');
+    const rc = block(clean, refuseRun);
+    ok(rc.status === 0 && /rail\.json is untouched/.test(rc.out) && rc.env.RAIL_CHECKED_TRUNK === clean.trunk && rc.env.RAIL_CHECKED_PROD === clean.prodBefore, `inline step: a range that leaves rail.json alone passes and records the exact trunk and production tips it checked (exit ${rc.status})`);
+    const gone = scenario((w) => { put(w, 'app.js', '// v6\n'); g(w, 'commit', '-qam', 'fix'); });
+    g(gone.origin, 'branch', '-D', 'production');
+    const rg = block(gone, refuseRun);
+    ok(rg.status !== 0 && !rg.env.RAIL_CHECKED_TRUNK, `inline step: when git cannot read production the step fails (fails closed), recording nothing (exit ${rg.status})`);
+    // the confirm step: production must be where it started or exactly on the checked trunk tip
+    const confirm = (sc, env) => block(sc, confirmRun, env);
+    const c1 = confirm(clean, rc.env);
+    ok(c1.status === 0, `confirm step: production still where it started (nothing pushed) → passes (exit ${c1.status})`);
+    g(clean.work, 'push', '-q', 'origin', clean.trunk + ':refs/heads/production');
+    const c2 = confirm(clean, rc.env);
+    ok(c2.status === 0 && g(clean.origin, 'rev-parse', 'production') === clean.trunk, `confirm step: production on exactly the checked trunk tip → passes (exit ${c2.status})`);
+    put(clean.work, 'rail.json', onFile); g(clean.work, 'commit', '-qam', 'routing on, after the check'); g(clean.work, 'push', '-q', 'origin', 'HEAD:refs/heads/trunk', 'HEAD:refs/heads/production');
+    const c3 = confirm(clean, rc.env);
+    ok(c3.status === 1 && /::error::auto-promote: production is at/.test(c3.out), `confirm step: production moved past the checked tip (trunk changed between the check and the push) → fails loudly (exit ${c3.status})`);
   } catch (e) {
     ok(false, `e2e — UNEXPECTED THROW: ${e && e.message || e}`);
   } finally {

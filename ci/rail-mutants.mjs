@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // rail-mutants.mjs — the mutation proof for the rw-api router (RC-84), its rail.json kill switch (RC-92 S3-A), the url
-// binding (S3-4 A), the CI guard (ci/rail-guard.mjs), the unattended-promote refusal (S3-5 A) and the shipped RAIL_URL
+// binding (S3-4 A), the CI guard (ci/rail-guard.mjs), the unattended-promote refusal (S3-5 A: the inline step in
+// auto-promote.yml, and promote.mjs / promote-guard.mjs behind it) and the shipped RAIL_URL
 // (S3-2 A). Each row below breaks the code in one named way; the suite that owns it must then FAIL ("killed"). A row
 // marked `survive` is a control (the unmutated tree, or a legal rail.json) and must PASS.
 //
@@ -37,6 +38,10 @@ const OUT = resolve(opt('--out', '') || mkdtempSync(join(tmpdir(), 'rw-rail-mut-
 mkdirSync(OUT, { recursive: true });
 
 const U = 'https://rw-api-production.up.railway.app';
+// Whole-step anchors in auto-promote.yml (a row that deletes a step): the text from one step's `- name:` to the next's.
+const WF = (() => { try { return readFileSync(join(ROOT, '.github', 'workflows', 'auto-promote.yml'), 'utf8'); } catch { return ''; } })();
+const wfStep = (name, next) => { const i = WF.indexOf('      - name: ' + name), j = WF.indexOf('      - name: ' + next, i + 1); return i >= 0 && j > i ? WF.slice(i, j) : '\u0000no such step: ' + name; };
+const WFY = { file: '.github/workflows/auto-promote.yml', suite: 'promote' };
 // [id, from, to, { file = 'app.js', suite = 'logic', survive = false }]; from/to may be arrays (all replaced); to null deletes the file
 const M = [
   ['CTRL1', null, null, { survive: true }],
@@ -167,6 +172,19 @@ const M = [
   ['P07', 'run: node tools/promote.mjs --yes --unattended', 'run: node tools/promote.mjs --yes', { file: '.github/workflows/auto-promote.yml', suite: 'promote' }],
   ['P08', ["['diff', '--name-only', '--no-renames', prodRef, trunkRef]", "['log', '--format=', '--name-only', '--no-renames', '-m', range]"], ["['diff', '--name-only', prodRef, trunkRef]", "['log', '--format=', '--name-only', '-m', range]"], { file: 'tools/promote.mjs', suite: 'promote' }],
   ['P09', ['const touched = rangePaths();', "console.log('');\nconsole.log('promote: --yes given"], ["const touched = [];", "if (unattendedRailRefusal({ unattended: UNATTENDED, paths: rangePaths() })) fail('late refusal');\nconsole.log('');\nconsole.log('promote: --yes given"], { file: 'tools/promote.mjs', suite: 'promote' }],   // the refusal after the staging probes
+  // ── S3-5 A (3b): the inline auto-promote.yml step, the layer an auto-fix cannot rewrite ──
+  ['P10', wfStep('Refuse an unattended range that touches rail.json', 'Promote the merged auto-fix'), '', WFY],   // the inline step deleted
+  ['P11', 'Nothing was pushed."\n            exit 1', 'Nothing was pushed."\n            exit 0', WFY],   // it finds rail.json and says so, but lets the promote run
+  ['P12', '--no-renames -m "$PROD..$TRUNK"', '--no-renames "$PROD..$TRUNK"', WFY],   // merge commits not diffed against their parents
+  ['P13', "'tolower($NF) == \"rail.json\"'", "'$NF == \"rail.json\"'", WFY],   // case-sensitive
+  ['P14', 'git diff -z --name-only --no-renames "$PROD" "$TRUNK"; git log -z --format= --name-only --no-renames -m', 'git diff -z --name-only "$PROD" "$TRUNK"; git log -z --format= --name-only -m', WFY],   // a rename hides rail.json
+  ['P15', '        id: rail-refusal\n', '        id: rail-refusal\n        continue-on-error: true\n', WFY],   // a refusal the job ignores
+  ['P16', "        if: always() && steps.rail-refusal.outcome == 'success'", "        if: success() && steps.rail-refusal.outcome == 'success'", WFY],   // no confirm when the promote step fails after pushing
+  ['P17', '          if [ "$NOW" != "$RAIL_CHECKED_TRUNK" ] && [ "$NOW" != "$RAIL_CHECKED_PROD" ]; then', '          if false; then', WFY],   // the confirm step never fails
+  ['P18', wfStep('Confirm production landed on the trunk tip that was checked', 'Tell the reporter'), '', WFY],   // the confirm step deleted
+  ['P19', "          set -euo pipefail\n          git fetch -q --no-tags origin '+refs/heads/trunk", "          set -euo pipefail\n          node tools/lib/rail-check.mjs\n          git fetch -q --no-tags origin '+refs/heads/trunk", WFY],   // the step hands control to a repo script
+  ['P20', "          set -euo pipefail\n          git fetch -q --no-tags origin '+refs/heads/trunk", "          set +e\n          git fetch -q --no-tags origin '+refs/heads/trunk", WFY],   // fails open when git fails
+  ['P21', '        run: node tools/promote.mjs --yes --unattended', '        if: always()\n        run: node tools/promote.mjs --yes --unattended', WFY],   // the promote runs even after a refusal
   // ── S3-2 A (4): the shipped RAIL_URL, and nothing caches rw-api ──
   ['W01', "const RAIL_URL = '" + U + "';", "const RAIL_URL = '" + U + "/';"],
   ['W02', "const RAIL_URL = '" + U + "';", "const RAIL_URL = '';"],

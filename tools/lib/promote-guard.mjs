@@ -12,6 +12,11 @@
 // Actions (GITHUB_ACTIONS=true): a workflow that forgets the flag is still refused. A human promote from a terminal is
 // never refused by this guard; it prints a notice instead so the switch is never promoted unnoticed.
 //
+// THIS IS THE SECOND LAYER. auto-promote.yml runs this file from the merged PR's own checkout, so the range being judged
+// could rewrite it (the wrangler-fix PAT has Contents: write). The layer that holds is the inline shell + git step in
+// .github/workflows/auto-promote.yml ("Refuse an unattended range that touches rail.json"), which that PAT cannot edit
+// (no Workflows permission). Keep the two rules the same: ci/promote-test.mjs runs the inline step on the same ranges.
+//
 // PURE + TESTABLE: no I/O. promote.mjs gathers the paths with git; ci/promote-test.mjs drives these functions and,
 // end to end, runs promote.mjs against throwaway local repositories.
 
