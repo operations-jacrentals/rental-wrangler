@@ -5383,11 +5383,66 @@ try {
           await call('authSetPin', { personId: 'E1', pin: '1234', token: HEX }); await call('authVerify', { personId: 'E1', code: '1' });
           ok(gateGets() === 0 && routesGets() === 0 && n('gas') === 2, 'S3-A: a sticky step bound for Apps Script never waits on rail.json');
           // latency at the shipped cap (1500 ms): what a slow rail.json can add to a call Apps Script answers
-          const lat = async (gateStep, routesStep) => { fresh(); T.RAIL.routesWaitMs = 1500; put(FLIP1, SIX, { fetchedAt: Date.now() - 120000 }); M.plan.gate = [gateStep]; M.plan.routes = [routesStep]; const t0 = Date.now(); await bounded(call('load')); return Date.now() - t0; };
+          // (a call that returns before the cap leaves the table fetch running in the background: let it end before the next case resets the page)
+          const lat = async (gateStep, routesStep) => { fresh(); T.RAIL.routesWaitMs = 1500; put(FLIP1, SIX, { fetchedAt: Date.now() - 120000 }); M.plan.gate = [gateStep]; M.plan.routes = [routesStep]; const t0 = Date.now(); await bounded(call('load')); const took = Date.now() - t0; await sleep(Math.max(0, 1600 - took)); return took; };
           const lFast = await lat({ on: false }, table(FLIP1, SIX)), lGate = await lat('hold', table(FLIP1, SIX)), lTable = await lat({ on: false }, 'hold'), lBoth = await lat('hold', 'hold');
           ok(lGate >= 1400 && lGate < 1800 && lBoth < 1800 && lTable < 1800 && lFast < 300,
             `S3-A latency (cap 1500 ms): rail.json + table fast ${lFast} ms · rail.json hangs ${lGate} ms · table hangs ${lTable} ms · both hang ${lBoth} ms — one timer bounds both`);
+          ok(lTable < 300, `S3-A latency: rail.json off with /v1/routes hanging — the call goes to Apps Script at once, not after the cap (${lTable} ms; a wedged rw-api is off the critical path)`);
           T.RAIL.routesWaitMs = 300;
+
+          // ── RC-93 review fixes: the switch never waits on rw-api's own endpoint, and a clock step cannot hide it ──
+          const settle = () => sleep(T.RAIL.routesWaitMs + 60);   // a background table fetch (hung until the cap) ends before the next reset
+          // an ON page turns OFF on any re-read that is not {"on":true} — the file deleted (404), unreachable, timeout
+          for (const [step, word] of [[{ __raw: '<html>404</html>', __s: 404 }, 'http-404'], ['throw', 'network'], ['hold', 'timeout']]) {
+            fresh(); M.plan.gate = [{ on: true }]; await call('load');
+            const wasOn = n('rail', 'load') === 1 && gateNow().on === true;
+            stale(); clear(); M.plan.gate = [step];
+            const r = await bounded(call('load'));
+            ok(wasOn && r.via === 'gas' && n('rail') === 0 && gateNow().on === false && gateNow().word === word,
+              `S3-A: a page that read {"on":true} turns OFF when its re-read answers ${word} — the next call goes to Apps Script (was on ${wasOn}, word ${gateNow().word})`);
+          }
+          // the device clock stepped back 5 min after a failed table refresh: failAt and gateAt now lie in the future
+          fresh(); gateOn(); { const ahead = Date.now() + 300000; Object.assign(T.railMem, { failAt: ahead, gateAt: ahead }); } clear(); M.plan.gate = [{ on: false }];
+          const rBack = await bounded(call('load'));
+          ok(rBack.via === 'gas' && n('rail') === 0 && gateGets() === 1 && routesGets() === 1,
+            `S3-A: after the clock steps back 5 min, the next routed call re-reads rail.json and retries the table (the retry block is not stretched): off → Apps Script (gate reads ${gateGets()}, table GETs ${routesGets()})`);
+          fresh(); gateOn(); T.railMem.stickyStart = 'rail'; T.railMem.gateAt = Date.now() + 300000; clear(); M.plan.gate = [{ on: false }];
+          await call('authVerify', { personId: 'E1', code: '1' });
+          ok(n('rail') === 0 && n('gas', 'authVerify') === 1 && gateGets() === 1, 'S3-A sticky: a gate read "in the future" (the clock went back) counts as stale — an authVerify bound to rw-api re-reads it first; off → Apps Script');
+          // under the 60 s table retry block (rw-api failed /v1/routes) the gate is still read: rw-api cannot delay the switch at all
+          fresh(); gateOn(); stale(); T.railMem.failAt = Date.now() - 1000; clear(); M.plan.gate = [{ on: false }];
+          const rBlk = await bounded(call('load'));
+          ok(rBlk.via === 'gas' && n('rail') === 0 && gateGets() === 1 && routesGets() === 0,
+            `S3-A: under the table retry block a stale gate is still re-read before the next routed call (off → Apps Script) and the table is not retried (gate reads ${gateGets()}, table GETs ${routesGets()})`);
+          fresh(); gateOn(); stale(); T.railMem.failAt = Date.now() - 1000; clear(); M.plan.gate = [{ on: true }];
+          const rBlkOn = await bounded(call('load'));
+          ok(rBlkOn.via === 'rail' && gateGets() === 1 && routesGets() === 0, 'S3-A: under the table retry block a stale gate re-read as on keeps routing by the cached table (the table is still not retried)');
+          fresh(); gateOn(); put(FLIP1, SIX, { fetchedAt: Date.now() - 120000 }); T.railMem.failAt = Date.now() - 1000; clear();
+          const rBlkFresh = await bounded(call('load'));
+          ok(rBlkFresh.via === 'rail' && gateGets() === 0 && routesGets() === 0, `S3-A: under the table retry block, with the gate read on under 60 s ago, a call over a stale table waits for nothing — no gate re-read, no table GET (gate reads ${gateGets()}, table GETs ${routesGets()})`);
+          fresh(); gateOn(); stale(); T.railMem.failAt = Date.now() - 1000; T.railMem.stickyStart = 'rail'; clear(); M.plan.gate = [{ on: false }];
+          await call('authVerify', { personId: 'E1', code: '1' });
+          ok(n('rail') === 0 && n('gas', 'authVerify') === 1 && gateGets() === 1 && routesGets() === 0, 'S3-A sticky: under the table retry block an authVerify bound to rw-api still re-reads a stale gate; off → Apps Script');
+          {
+            const visible = () => { Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true }); document.dispatchEvent(new Event('visibilitychange')); };
+            try {
+              fresh(); gateOn(); T.railMem.failAt = Date.now() - 1000; clear(); M.plan.gate = [{ on: false }];
+              visible(); await sleep(50);
+              ok(gateGets() === 1 && routesGets() === 0 && T.railPick('load', {}) === 'gas', 'S3-A: return to the screen re-reads rail.json even under the table retry block (off takes effect before the next call); the table is not retried');
+            } finally { delete document.visibilityState; }
+          }
+          // while rail.json reads off, no routed call waits on GET /v1/routes
+          fresh(); put(FLIP1, SIX, { fetchedAt: Date.now() - 120000 }); Object.assign(T.railMem, { gate: false, gateAt: Date.now(), gateWord: 'off' }); clear(); M.plan.routes = ['hold'];
+          let tq = Date.now(); const rQ1 = await bounded(call('load')); const q1 = Date.now() - tq;
+          ok(rQ1.via === 'gas' && q1 < 200 && routesGets() === 0 && gateGets() === 0, `S3-A: a gate read off under 60 s ago waits for nothing, even with a stale table (${q1} ms, no GET /v1/routes, no re-read)`);
+          fresh(); put(FLIP1, SIX, { fetchedAt: Date.now() - 120000 }); Object.assign(T.railMem, { gate: false, gateAt: Date.now() - 61000, gateWord: 'off' }); clear(); M.plan.routes = ['hold']; M.plan.gate = [{ on: false }];
+          tq = Date.now(); const rQ2 = await bounded(call('load')); const q2 = Date.now() - tq;
+          ok(rQ2.via === 'gas' && q2 < 200 && gateGets() === 1 && routesGets() === 1, `S3-A: a stale gate re-read as off lets the call go at once, without waiting for a hung /v1/routes (${q2} ms)`);
+          await settle();
+          fresh(); put(FLIP1, SIX, { fetchedAt: Date.now() - 120000 }); clear(); M.plan.routes = [{ __bodyAfter: 150, ok: true, contract: '1.0.0', version: 'v9', ttlMs: 60000, state: 'ok', all: FLIP1, canary: SIX }]; M.plan.gate = [{ on: true }];
+          const rSlow = await bounded(call('load'));
+          ok(rSlow.via === 'rail' && T.railTable().version === 'v9', 'S3-A: with rail.json on, the call still waits for the table the same refresh fetched (it decides with the new table)');
         }
       } catch (e) { ok(false, 'threw: ' + (e && e.stack || e)); }
       finally { T.railReset(); T.setBackendPassword(''); }
@@ -5455,10 +5510,12 @@ try {
     results.push({ ok: (src.match(/RAIL\.url = /g) || []).length === 1 && src.includes('RAIL.url = RAIL_URL;') && /\n  url: RAIL_URL,\n/.test(src), m: 'RC-84 router source guard: RAIL.url comes only from RAIL_URL (the one reassignment is the #local test seam\'s reset)' });
     results.push({ ok: src.includes("actions: new Set(['authResume', 'load', 'authStart', 'authVerify', 'authSetPin', 'authLoginPin'])") && src.includes("reads: new Set(['authResume', 'load'])"), m: 'RC-84 router source guard: routable actions are exactly the six Slice 1a actions; the read-only pair is authResume + load' });
 
-    // S3-A (RC-92) — rail.json ships OFF, is read from a fixed same-origin path, reaches every staging slot, and
+    // S3-A (RC-92) — rail.json is one of the two literals (this release ships it OFF), is read from a fixed same-origin path, reaches every staging slot, and
     // the service worker never answers it from Cache Storage. sw.js is run in a vm with a fake `self`.
     const gateFile = await readFile(join(root, 'rail.json'), 'utf8').catch(() => '(missing)');   // a missing file is a failed check, not a thrown suite
-    results.push({ ok: gateFile === '{"on":false}', m: `S3-A source guard: rail.json at the site root is exactly {"on":false} — the release ships with the switch OFF (${JSON.stringify(gateFile)})` });
+    // Either literal passes, so the runbook's one-file turn-on (step 4a) and turn-off both merge; anything else — {"on":"true"},
+    // inner whitespace, a BOM, a missing file — fails here instead of silently reading as OFF on devices. One final newline is allowed.
+    results.push({ ok: /^\{"on":(true|false)\}\r?\n?$/.test(gateFile), m: `S3-A source guard: rail.json at the site root is exactly {"on":false} or {"on":true} (${JSON.stringify(gateFile)})` });
     results.push({ ok: (src.match(/RAIL\.gateUrl/g) || []).length === 1 && src.includes("  gateUrl: './rail.json',"), m: 'S3-A source guard: the gate is read only from the literal ./rail.json (never from the address bar, storage or rw-api)' });
     const dsSrc = await readFile(join(root, 'tools', 'deploy-staging.mjs'), 'utf8');
     results.push({ ok: /\nconst ALWAYS_SHIP = \[[^\]]*'rail\.json'[^\]]*\];/.test(dsSrc), m: 'S3-A: deploy-staging ships rail.json to every slot (the crawler cannot see a runtime string)' });

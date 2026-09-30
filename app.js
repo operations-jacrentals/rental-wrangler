@@ -24037,16 +24037,20 @@ function railGateSet(word) {
 }
 /** The gate must be re-read: never read on this page, or read ttlMaxMs ago (or the clock went back). */
 function railGateStale() { const age = Date.now() - railMem.gateAt; return !railMem.gateAt || age < 0 || age >= RAIL.ttlMaxMs; }
-/** One shared refresh: GET /v1/routes and ./rail.json in parallel, both abandoned after routesWaitMs.
+/** No new TABLE try yet: GET /v1/routes failed under refreshRetryMs ago. A clock that went back ends the block
+ *  (as railStale, railGateStale and railBreakerOpen treat it), so a clock step can never stretch it. */
+function railRetryBlocked() { const a = Date.now() - railMem.failAt; return !!railMem.failAt && a >= 0 && a < RAIL.refreshRetryMs; }
+/** One shared refresh: ./rail.json and GET /v1/routes in parallel, both abandoned after routesWaitMs.
  *  Resolves true when a valid table was cached; never rejects. A table failure keeps the old table (used at
- *  any age) and blocks new tries for refreshRetryMs. Every refresh replaces the gate, whatever the table did. */
+ *  any age) and blocks new TABLE tries for refreshRetryMs. The gate is read in every refresh, the blocked ones
+ *  too, so a failing rw-api can never delay it. The caller goes on as soon as the gate reads anything but on:
+ *  nothing can route then, so it does not wait for the table (whose fetch still finishes in the background). */
 function railRefresh() {
   if (!RAIL.url) return Promise.resolve(false);
   if (railMem.inflight) return railMem.inflight;
-  if (railMem.failAt && Date.now() - railMem.failAt < RAIL.refreshRetryMs) return Promise.resolve(false);
   const ac = new AbortController(), timer = setTimeout(() => ac.abort(), RAIL.routesWaitMs);
-  const gate = railGateRead(ac.signal);
-  const p = (async () => {
+  const gate = railGateRead(ac.signal).then((w) => { railSafe(() => railGateSet(w)); return w; });
+  const table = railRetryBlocked() ? Promise.resolve(false) : (async () => {
     try {
       const res = await fetch(RAIL.url + '/v1/routes', { method: 'GET', cache: 'no-store', signal: ac.signal });
       const j = JSON.parse(await res.text());
@@ -24054,10 +24058,11 @@ function railRefresh() {
       if (!railPersist(() => localStorage.setItem(RAIL_KEY.routes, JSON.stringify({ version: j.version, all: j.all, canary: j.canary, ttlMs: j.ttlMs, fetchedAt: Date.now() })))) throw new Error('routes-store');
       railMem.failAt = 0; return true;
     } catch (e) { railMem.failAt = Date.now(); return false; }
-    finally { const w = await gate; railSafe(() => railGateSet(w)); clearTimeout(timer); }
   })();
+  const done = Promise.all([gate, table]).then((r) => { clearTimeout(timer); return r[1]; });
+  const p = Promise.race([done, gate.then((w) => (w === 'on' ? done : false))]);
   railMem.inflight = p;
-  p.then(() => { if (railMem.inflight === p) railMem.inflight = null; });
+  done.then(() => { if (railMem.inflight === p) railMem.inflight = null; });
   return p;
 }
 /** A sign-in step that must stay on one engine: where it goes ('rail' | 'gas'), or '' for any other call. */
@@ -24067,14 +24072,18 @@ function railSticky(action, payload) {
   return '';
 }
 /** Must this call wait for a refresh? When the table decides it and the table or the gate is stale; a sticky
- *  step bound for rw-api waits only to re-read a stale gate (nothing bound for Apps Script ever waits on it). */
+ *  step bound for rw-api waits only to re-read a stale gate (nothing bound for Apps Script ever waits on it).
+ *  A gate read off under 60 s ago waits for nothing (nothing can route). While table tries are blocked, only a
+ *  stale gate is waited for. */
 function railNeedsWait(action, payload) {
   if (!RAIL.url || !RAIL.actions.has(action) || railCohort() === 'off') return false;
-  if (railMem.failAt && Date.now() - railMem.failAt < RAIL.refreshRetryMs && !railMem.inflight) return false;
+  const gateDue = railGateStale();
+  if (!gateDue && railMem.gate !== true) return false;
   const sticky = railSticky(action, payload);
-  if (sticky) return sticky === 'rail' && railGateStale();
+  if (sticky) return sticky === 'rail' && gateDue;
   if (railMem.broken || railBreakerOpen()) return false;
-  return railStale(railTable()) || railGateStale();
+  if (railRetryBlocked() && !railMem.inflight) return gateDue;
+  return railStale(railTable()) || gateDue;
 }
 /** 'rail' or 'gas' for this call, from what is cached now (never waits). */
 function railPick(action, payload) {
