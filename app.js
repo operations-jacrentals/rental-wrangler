@@ -23904,7 +23904,7 @@ function driveViewUrl(res) {
 async function backendCall(action, extra, opts) {
   const payload = Object.assign({ action, password: backendPassword }, extra || {});
   if (flagOn('phoneIdentity') && backendPassword) payload.sessionToken = backendPassword;   // per-person mode: the device/session token authorizes each call (backend prefers it over `password`); a no-op while the flag is OFF
-  // RC-84 — the router (below) picks the backend per call. With RAIL_URL '' it is never consulted and
+  // RC-84 — the router (below) picks the backend per call. With RAIL_URL '' (or RAIL.url cleared) it is never consulted and
   // this is the pre-router call, byte for byte. Any exception inside the choice falls to Apps Script.
   let to = 'gas';
   if (RAIL.url) {
@@ -23960,9 +23960,12 @@ async function backendPost(url, contentType, action, payload, opts, onRes) {
                the 'off' cohort and the gate beat it
      gate      S3-A (RC-92), the kill switch rw-api cannot touch: ./rail.json on the app's OWN site, read
                same-origin, no-store, without credentials, in every routes refresh (in parallel, under the
-               same routesWaitMs cap). Only an object whose `on` is exactly true lets ANY call go to rw-api;
-               404, a network error, a timeout, bad JSON, {"on":"true"} or anything else = OFF = every
-               call to Apps Script, sticky sign-in steps included. The gate only ever removes routing
+               same routesWaitMs cap). Only an object whose `on` is exactly true AND whose `url` is exactly
+               this build's RAIL_URL lets ANY call go to rw-api (S3-4 A: the switch names the host it opens,
+               so an old build that names another host stays OFF when a later release turns routing on);
+               404, a network error, a timeout, bad JSON, {"on":"true"}, {"on":true} without the url, a url
+               with a trailing slash or another host, or anything else = OFF = every call to Apps Script,
+               sticky sign-in steps included. The gate only ever removes routing
      reads     authResume / load: rw-api gets one try (20 s for the reply to start, then 20 s for its body, as
                RC-63 gives Apps Script); anything but ok:true is re-sent once to Apps Script, whose answer is
                final — so only Apps Script can confirm a refusal that erases a device (R2, Q-C4 A)
@@ -23973,7 +23976,7 @@ async function backendPost(url, contentType, action, payload, opts, onRes) {
    RAIL.actions is this build's own ceiling: whatever a routes table says, no other action (money, sync,
    every other write) is ever sent to rw-api by this build. Tokens stay opaque strings (either backend's
    work on both, via the v118 bridge). */
-const RAIL_URL = '';   // the rw-api origin, https://<service>.up.railway.app. '' = router OFF. Set when the Railway service exists; lives here (cache-busted with app.js), never in config.js, the address bar or storage — a link must never be able to point credentials at another host
+const RAIL_URL = 'https://rw-api-production.up.railway.app';   // the rw-api origin (S3-2 A: the Railway domain; no trailing slash). '' = router OFF. Lives here (cache-busted with app.js), never in config.js, the address bar or storage — a link must never be able to point credentials at another host. rail.json must name this exact string to turn routing on (S3-4 A)
 const RAIL = {
   url: RAIL_URL,
   contract: '1.0.0',                                   // the rw-api contract this router speaks; a routes table of another MAJOR is ignored
@@ -24016,16 +24019,18 @@ function railBreaker() {
 }
 /** Open for at most breakerMs from now: a clock set back can never hold a device off rw-api for longer. */
 function railBreakerOpen() { const left = railBreaker().openUntil - Date.now(); return left > 0 && left <= RAIL.breakerMs; }
-/** S3-A (RC-92) — read ./rail.json: 'on' only for an object whose `on` is exactly true, otherwise the word
- *  for why it is OFF ('off' | 'http-<n>' | 'bad-json' | 'timeout' | 'network'). Same-origin only (a redirect
- *  to another origin fails), no-store (neither the HTTP cache nor sw.js answers it), no credentials. Never rejects. */
+/** S3-A (RC-92) + S3-4 A — read ./rail.json: 'on' only for an object whose `on` is exactly true and whose `url` is
+ *  exactly this build's origin (RAIL.url, which is RAIL_URL: the test seam's reset is its only other writer), otherwise
+ *  the word for why it is OFF ('off' | 'url-mismatch' | 'http-<n>' | 'bad-json' | 'timeout' | 'network'). Same-origin
+ *  only (a redirect to another origin fails), no-store (neither the HTTP cache nor sw.js answers it), no credentials. Never rejects. */
 async function railGateRead(signal) {
   try {
     const res = await fetch(RAIL.gateUrl, { method: 'GET', mode: 'same-origin', cache: 'no-store', credentials: 'omit', signal });
     if (!res.ok) return 'http-' + res.status;
     const text = await res.text();
     let j; try { j = JSON.parse(text); } catch (e) { return 'bad-json'; }
-    return j && j.on === true ? 'on' : 'off';   // exactly true: "true", 1, [true] and null are OFF
+    if (!(j && j.on === true)) return 'off';   // exactly true: "true", 1, [true] and null are OFF
+    return typeof j.url === 'string' && j.url !== '' && j.url === RAIL.url ? 'on' : 'url-mismatch';   // S3-4 A: exact string — no trailing slash, no case folding, never another host
   } catch (e) { return signal && signal.aborted ? 'timeout' : 'network'; }
 }
 /** Keep the latest rail.json answer for this page; ERR_LOG gets each direction of change once per page. */
@@ -24034,7 +24039,11 @@ function railGateSet(word) {
   railMem.gate = word === 'on'; railMem.gateWord = String(word || 'off'); railMem.gateAt = Date.now();
   if (railMem.gate && !was) railNote('gate:on', 'rail.json on, rw-api routing allowed (first time this page)');
   if (!railMem.gate && was) railNote('gate:off', 'rail.json off (' + railMem.gateWord + '), Apps Script only (first time this page)');
+  if (railMem.gateWord === 'url-mismatch') railNote('gate:url', 'rail.json on for another rw-api host than this build, Apps Script only (first time this page)');
 }
+/** Why the gate is where it is, for window.__rail: 'on' | 'off' | 'url-mismatch' | 'error' (unreadable: http-<n>,
+ *  bad-json, timeout, network) | 'unchecked' (this page has not read rail.json yet). */
+function railGateWhy(word) { return word === 'on' || word === 'off' || word === 'url-mismatch' || word === 'unchecked' ? word : 'error'; }
 /** The gate must be re-read: never read on this page, or read ttlMaxMs ago (or the clock went back). */
 function railGateStale() { const age = Date.now() - railMem.gateAt; return !railMem.gateAt || age < 0 || age >= RAIL.ttlMaxMs; }
 /** No new TABLE try yet: GET /v1/routes failed under refreshRetryMs ago. A clock that went back ends the block
@@ -24163,7 +24172,7 @@ function railInspect() {
   try { cohort = railCohort(); t = railTable(); b = railBreaker(); } catch (e) {}
   return { contract: RAIL.contract, on: !!RAIL.url, broken: railMem.broken, cohort, version: t ? t.version : '', fetchedAt: t ? t.fetchedAt : 0,
     table: t ? { all: t.all.slice(), canary: t.canary.slice() } : null, breaker: { strikes: railMem.strikes, openUntil: b.openUntil },
-    gate: { on: railMem.gate === true, word: railMem.gateWord, checkedAt: railMem.gateAt },   // S3-A: the last rail.json read on this page
+    gate: { on: railMem.gate === true, why: railGateWhy(railMem.gateWord), word: railMem.gateWord, checkedAt: railMem.gateAt },   // S3-A: the last rail.json read on this page; why = on | off | url-mismatch | error | unchecked
     last: JSON.parse(JSON.stringify(railMem.last)) };
 }
 railInitCohort();
