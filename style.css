@@ -2105,6 +2105,7 @@ select.inline-input:focus-visible { outline: 2px solid var(--accent); outline-of
 .pl-title { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .pl-tag { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; font-size: 0.5588rem; color: var(--txt-3); }
 .popup-foot { display: flex; align-items: center; justify-content: flex-end; gap: 9px; flex: 0 0 auto; padding: 11px 16px; border-top: 1px solid var(--line); background: var(--bg-2); }
+.is-phone .settings-popup .popup-foot { flex-wrap: wrap; row-gap: 8px; }   /* RC-83 review fix — the Settings footer (Reset page · the armed Reset all · Undo · Cancel · Save) wraps on a phone instead of pushing the destructive confirm off-screen */
 .pill.ignition { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 800; color: var(--on-orange); border-color: transparent;   /* the plate's ONE ignition/primary action (rule 3) */
   background: linear-gradient(180deg, #ff9038, var(--accent)); box-shadow: 0 6px 16px -6px var(--accent), inset 0 1px 0 rgba(255,255,255,.4); }
 .pill.ignition:hover { filter: brightness(1.05); }

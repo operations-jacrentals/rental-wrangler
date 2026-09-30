@@ -4531,6 +4531,41 @@ try {
     // the block must hand back the BOOT state (demo: no stamp, no ticker), not a snapshot taken after that pollution
     ok(T.freshAt() === 0 && !T.freshTimerOn() && !document.getElementById('fresh-line'), `RC-67 freshness: the block leaves the boot state behind — no stamp, no ticker, no line (freshAt=${T.freshAt()}, ticker=${T.freshTimerOn()})`);
 
+    // RC-83 Q13-A (auth) — Settings → Reset all KEEPS the Team Roster. setConfig replaces the whole settings object and the
+    // backend then purges the sign-ins of everyone missing from it (pidReconcileRoster_), so the empty roster Reset all used to
+    // send signed the whole crew out. Drives the REAL resetAllSettings against a mocked window.fetch (script.google.com only).
+    // Ported from rw-phase2b 3eba2a3 check (18), the Q13-A part only.
+    {
+      const realFetch = window.fetch; const seen = []; const st = T.__state, ov = st.overlay;
+      const set0 = { s: localStorage.getItem('jactec.settings'), p: localStorage.getItem('jactec.settings.prev'), st: st.settings };
+      window.fetch = (u, init) => {
+        if (!String(u).includes('script.google.com')) return realFetch(u, init);
+        let body = {}; try { body = JSON.parse((init && init.body) || '{}'); } catch (e) {}
+        seen.push(body);
+        return Promise.resolve(new Response(JSON.stringify({ ok: true, saved: true }), { status: 200 }));
+      };
+      const last = (a) => seen.filter((b) => b.action === a).pop() || null;
+      try {
+        const roster = [{ id: 'EMP-Q13-1', name: 'Test Hand', role: 'Sales', phone: '' }, { id: 'EMP-Q13-2', name: 'Other Hand', role: 'Office', phone: '' }];
+        st.overlay = { kind: 'settings', adminPw: 'ADMIN-TEST', config: { roles: { Sales: 'x' }, admin: 'y', settings: { employees: roster, company: { name: 'Zz Co' }, kpis: { probe: 1 } } } };
+        seen.length = 0;
+        await T.resetAllSettings();
+        const sc = last('setConfig');
+        ok(!!sc && JSON.stringify(sc.config.settings) === JSON.stringify({ employees: roster }) && sc.config.roles.Sales === 'x' && sc.config.admin === 'y' && sc.password === 'ADMIN-TEST', `RC-83 Q13-A: Reset all sends the loaded roster and nothing else (${sc && JSON.stringify(sc.config.settings)})`);
+        let ls = null; try { ls = JSON.parse(localStorage.getItem('jactec.settings') || 'null'); } catch (e) {}
+        ok(Array.isArray((st.settings || {}).employees) && st.settings.employees.length === 2 && !st.settings.company && !st.settings.kpis && !st.overlay && !!ls && JSON.stringify(ls) === JSON.stringify({ employees: roster }), 'RC-83 Q13-A: this device keeps the roster too (memory and jactec.settings); every other customization is reset');
+        st.overlay = { kind: 'settings', adminPw: 'ADMIN-TEST', config: { roles: { Sales: 'x' }, admin: 'y', settings: { company: { name: 'Zz' } } } };
+        seen.length = 0;
+        await T.resetAllSettings();
+        ok(JSON.stringify(((last('setConfig') || {}).config || {}).settings) === '{}' && JSON.stringify(st.settings) === '{}', 'RC-83 Q13-A: with no roster loaded there is nothing to keep — an empty settings object, as before');
+      } finally {
+        window.fetch = realFetch; st.overlay = ov;
+        try { if (set0.s == null) localStorage.removeItem('jactec.settings'); else localStorage.setItem('jactec.settings', set0.s); if (set0.p == null) localStorage.removeItem('jactec.settings.prev'); else localStorage.setItem('jactec.settings.prev', set0.p); } catch (e) {}
+        st.settings = set0.st; try { T.applySettings(st.settings); } catch (e) {}
+        T.render();
+      }
+    }
+
     // RC-63 — sign-in resilience. Google's web-app front door was losing or stalling replies the
     // script had already produced. Lost replies must be retried, real refusals must not, stalls
     // must abort, and nothing but a real refusal may forget the remembered device.
@@ -4967,6 +5002,34 @@ try {
     const pc = (src.match(/\nfunction pidTokenClear\(\) \{([^\n]*)/) || [])[1] || '';
     const fl = (src.match(/\nfunction finishLoad\(\) \{([\s\S]*?)\n\}/) || [])[1] || '';
     results.push({ ok: sw.includes('staleClear();') && pc.includes('staleClear();') && fl.includes('staleClear();'), m: 'RC-71 (e) source guard: switchUser, pidTokenClear and finishLoad all clear the remembered failed batches (staleClear)' });
+  }
+
+  // RC-83 Q13-A at PHONE size (375×812 — his screen is the evidence): the Reset all button says what it keeps (the Team
+  // Roster), and its armed confirm stays on screen even with Reset page and Undo in the footer (the footer wraps). Ported from
+  // rw-phase2b 3eba2a3, the RC-83 part of its phone block only.
+  {
+    const ph = await browser.newPage({ viewport: { width: 375, height: 812 } });
+    ph.on('pageerror', (e) => pageErrors.push(String(e && e.message || e)));
+    await ph.goto('http://localhost:8000/#local', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await ph.waitForFunction(() => !!window.__rw, { timeout: 20000 });
+    await ph.evaluate(() => window.__rwBootRail);
+    const m = await ph.evaluate(async () => {
+      const T = window.__rw, st = T.__state;
+      const raf = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      try { localStorage.setItem('jactec.settings.prev', JSON.stringify({ company: { name: 'probe' } })); } catch (e) {}
+      st.overlay = { kind: 'settings', adminPw: 'x', tab: 'kpis', resetArm: false, config: { roles: {}, admin: '', settings: {} } };
+      T.renderOverlay(); await raf();
+      const idle = document.querySelector('.js-settings-reset');
+      const tip = idle ? idle.getAttribute('data-tip') || '' : '';
+      st.overlay.resetArm = true; T.renderOverlay(); await raf();
+      for (let i = 0, top = -1; i < 40; i++) { await new Promise((r) => setTimeout(r, 60)); const t = document.querySelector('.settings-popup').getBoundingClientRect().top; if (t === top) break; top = t; }   // the phone sheet slides up: measure where it settles
+      const arm = document.querySelector('.js-settings-reset.armed'), ar = arm.getBoundingClientRect();
+      return { phone: document.body.classList.contains('is-phone'), tip, arm: { l: Math.round(ar.left), r: Math.round(ar.right), w: innerWidth, text: arm.textContent.trim() },
+        undo: !!document.querySelector('.js-settings-undo'), page: !!document.querySelector('.js-settings-resetpage') };
+    });
+    await ph.close();
+    results.push({ ok: m.phone && /Team Roster/.test(m.tip) && /Team Roster/.test(m.arm.text), m: `RC-83 Q13-A: Reset all says it keeps the Team Roster — its tip ("${m.tip}") and its armed confirm ("${m.arm.text}")` });
+    results.push({ ok: m.phone && m.undo && m.page && m.arm.l >= 0 && m.arm.r <= m.arm.w, m: `RC-83 Q13-A at 375×812: the armed confirm stays on screen with Reset page and Undo in the footer too (${m.arm.l}..${m.arm.r} of ${m.arm.w})` });
   }
 
   // ── RC-84 rw-api router — BEGIN ───────────────────────────────────────────────────────────────

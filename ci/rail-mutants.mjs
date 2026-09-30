@@ -2,7 +2,8 @@
 // rail-mutants.mjs — the mutation proof for the rw-api router (RC-84), its rail.json kill switch (RC-92 S3-A), the url
 // binding (S3-4 A), the CI guard (ci/rail-guard.mjs), the unattended-promote refusal (S3-5 A: the inline step in
 // auto-promote.yml, and promote.mjs / promote-guard.mjs behind it) and the shipped RAIL_URL
-// (S3-2 A). Each row below breaks the code in one named way; the suite that owns it must then FAIL ("killed"). A row
+// (S3-2 A), plus the RC-83 Q13-A carrier in this release (Settings → Reset all keeps the Team Roster; rows Q01–Q07).
+// Each row below breaks the code in one named way; the suite that owns it must then FAIL ("killed"). A row
 // marked `survive` is a control (the unmutated tree, or a legal rail.json) and must PASS.
 //
 // It NEVER touches this checkout: every worker copies the tracked (and untracked, non-ignored) files into its own
@@ -190,6 +191,14 @@ const M = [
   ['W02', "const RAIL_URL = '" + U + "';", "const RAIL_URL = '';"],
   ['W03', "const RAIL_URL = '" + U + "';", "const RAIL_URL = 'https://rw-api-staging.up.railway.app';"],
   ['W04', '  if (url.origin !== self.location.origin) return;', '', { file: 'sw.js' }],   // a cross-origin rw-api path that collides with the shell would be answered from cache
+  // ── RC-83 Q13-A (auth): Settings → Reset all keeps settings.employees, so the backend never purges the crew's sign-ins ──
+  ['Q01', ["  const emp = ((o.config && o.config.settings) || {}).employees;\n  const kept = Array.isArray(emp) ? { employees: emp } : {};\n", 'settings: kept } }); } catch (e) {}\n  persistAdminSettings(kept);\n  o.draftSettings = {}; o.config.settings = kept;'], ['', 'settings: {} } }); } catch (e) {}\n  persistAdminSettings({});\n  o.draftSettings = {}; o.config.settings = {};']],   // the whole fix reverted: the 0a01796 behaviour
+  ['Q02', 'admin: o.config.admin, settings: kept } });', 'admin: o.config.admin, settings: {} } });'],   // the backend is sent an empty roster (the crew-wide sign-out)
+  ['Q03', '  persistAdminSettings(kept);\n', '  persistAdminSettings({});\n'],   // this device forgets the roster
+  ['Q04', 'const kept = Array.isArray(emp) ? { employees: emp } : {};', 'const kept = o.config.settings || {};'],   // "Reset all" resets nothing
+  ['Q05', "'Click again — reset all but the Team Roster'", "'Click again — reset everything'"],   // the armed confirm no longer says what it keeps
+  ['Q06', ' data-tip="Resets every customization except the Team Roster"', ''],   // the button's tip gone
+  ['Q07', '.is-phone .settings-popup .popup-foot { flex-wrap: wrap; row-gap: 8px; }', '.is-phone .settings-popup .popup-foot { row-gap: 8px; }', { file: 'style.css' }],   // on a phone the armed confirm is pushed off-screen
 ];
 
 const rows = M.filter(([id]) => !ONLY || ONLY.has(id)).map(([id, from, to, o]) => ({ id, from, to, file: 'app.js', suite: 'logic', survive: false, ...(o || {}) }));
