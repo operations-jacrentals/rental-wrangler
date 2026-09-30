@@ -2,7 +2,7 @@
 // rail-mutants.mjs — the mutation proof for the rw-api router (RC-84), its rail.json kill switch (RC-92 S3-A), the url
 // binding (S3-4 A), the CI guard (ci/rail-guard.mjs), the unattended-promote refusal (S3-5 A: the inline step in
 // auto-promote.yml, and promote.mjs / promote-guard.mjs behind it) and the shipped RAIL_URL
-// (S3-2 A), plus the RC-83 Q13-A carrier in this release (Settings → Reset all keeps the Team Roster; rows Q01–Q10), the setUserPrefs
+// (S3-2 A), plus the RC-83 Q13-A carrier in this release (Settings → Reset all keeps the Team Roster; rows Q01–Q10), RC-104 R1-A (it keeps the role tiers too; rows Q11–Q17), the setUserPrefs
 // beacon (B01–B02) and the CI job bound (C01).
 // Each row below breaks the code in one named way; the suite that owns it must then FAIL ("killed"). A row
 // marked `survive` is a control (the unmutated tree, or a legal rail.json) and must PASS.
@@ -193,13 +193,21 @@ const M = [
   ['W03', "const RAIL_URL = '" + U + "';", "const RAIL_URL = 'https://rw-api-staging.up.railway.app';"],
   ['W04', '  if (url.origin !== self.location.origin) return;', '', { file: 'sw.js' }],   // a cross-origin rw-api path that collides with the shell would be answered from cache
   // ── RC-83 Q13-A (auth): Settings → Reset all keeps settings.employees, so the backend never purges the crew's sign-ins ──
-  ['Q01', ["  const emp = ((o.config && o.config.settings) || {}).employees;\n  const kept = Array.isArray(emp) ? { employees: emp } : {};\n", 'settings: kept } }); } catch (e) {}\n  persistAdminSettings(kept);\n  o.draftSettings = {}; o.config.settings = kept;'], ['', 'settings: {} } }); } catch (e) {}\n  persistAdminSettings({});\n  o.draftSettings = {}; o.config.settings = {};']],   // the whole fix reverted: the 0a01796 behaviour
+  ['Q01', ["  const loaded = (o.config && o.config.settings) || {}, emp = loaded.employees, meta = loaded.roleMeta;\n  const kept = Array.isArray(emp) ? { employees: emp } : {};\n  if (meta && typeof meta === 'object' && !Array.isArray(meta)) kept.roleMeta = meta;\n", 'settings: kept } }); } catch (e) {}\n  persistAdminSettings(kept);\n  o.draftSettings = {}; o.config.settings = kept;'], ['', 'settings: {} } }); } catch (e) {}\n  persistAdminSettings({});\n  o.draftSettings = {}; o.config.settings = {};']],   // the whole fix reverted: the 0a01796 behaviour
   ['Q02', 'admin: o.config.admin, settings: kept } });', 'admin: o.config.admin, settings: {} } });'],   // the backend is sent an empty roster (the crew-wide sign-out)
   ['Q03', '  persistAdminSettings(kept);\n', '  persistAdminSettings({});\n'],   // this device forgets the roster
   ['Q04', 'const kept = Array.isArray(emp) ? { employees: emp } : {};', 'const kept = o.config.settings || {};'],   // "Reset all" resets nothing
-  ['Q05', "'Click again — reset all but the Team Roster'", "'Click again — reset everything'"],   // the armed confirm no longer says what it keeps
-  ['Q06', ' data-tip="Resets every customization except the Team Roster"', ''],   // the button's tip gone
+  ['Q05', "'Click again — reset all but the Team Roster and role tiers'", "'Click again — reset everything'"],   // the armed confirm no longer says what it keeps
+  ['Q06', ' data-tip="Resets every customization except the Team Roster and role tiers"', ''],   // the button's tip gone
   ['Q07', '.is-phone .settings-popup .popup-foot { flex-wrap: wrap; row-gap: 8px; }', '.is-phone .settings-popup .popup-foot { row-gap: 8px; }', { file: 'style.css' }],   // on a phone the armed confirm is pushed off-screen
+  // ── RC-104 R1-A (auth): Settings → Reset all keeps the role tiers (settings.roleMeta) as it keeps the roster; a missing roleMeta stays missing ──
+  ['Q11', "  if (meta && typeof meta === 'object' && !Array.isArray(meta)) kept.roleMeta = meta;\n", ''],   // the role tiers are reset: every custom login falls back to the built-in tiers
+  ['Q12', 'emp = loaded.employees, meta = loaded.roleMeta;', 'emp = loaded.employees, meta = (o.draftSettings && o.draftSettings.roleMeta) || loaded.roleMeta;'],   // an unsaved (or backfilled) draft tier rides Reset all to the backend
+  ['Q13', "if (meta && typeof meta === 'object' && !Array.isArray(meta)) kept.roleMeta = meta;", "kept.roleMeta = (meta && typeof meta === 'object' && !Array.isArray(meta)) ? meta : {};"],   // a roleMeta the server never had is invented
+  ['Q14', "if (meta && typeof meta === 'object' && !Array.isArray(meta)) kept.roleMeta = meta;", 'if (meta !== undefined) kept.roleMeta = meta;'],   // a null roleMeta is sent as a key
+  ['Q15', "'Click again — reset all but the Team Roster and role tiers'", "'Click again — reset all but the Team Roster'"],   // the armed confirm no longer says the tiers are kept
+  ['Q16', ' data-tip="Resets every customization except the Team Roster and role tiers"', ' data-tip="Resets every customization except the Team Roster"'],   // the tip no longer says the tiers are kept
+  ['Q17', "the Team Roster and role tiers are kept.');", "the Team Roster is kept.');"],   // the toast no longer says the tiers are kept
   // ── release review fixes (RC-97 run): the Settings footer repaint, the KPI lock-in reopen, the beacon, the CI bound ──
   ['Q08', 'settings: JSON.parse(JSON.stringify(settings)) }, adminPw: kt.adminPw', 'settings }, adminPw: kt.adminPw'],   // the KPI reopen shares one object: an unsaved roster delete rides Reset all
   ['Q09', "  const foot = document.querySelector('.overlay .settings-popup .popup-foot'); if (foot) foot.innerHTML = settingsFootHtml(o);\n", ''],   // the in-place repaint leaves the footer: the armed confirm never shows

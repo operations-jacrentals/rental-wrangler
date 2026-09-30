@@ -3582,12 +3582,16 @@ async function resetAllSettings() {
   // RC-83 Q13-A — "Reset all" KEEPS the roster (settings.employees). setConfig replaces the whole settings object, and the backend
   // then purges the sign-ins of everyone missing from the new roster (pidReconcileRoster_), so the empty roster this used to send
   // signed the whole crew out. Staff are removed only from the Team Roster tab. The roster kept is the one this window loaded.
-  const emp = ((o.config && o.config.settings) || {}).employees;
+  // RC-104 R1-A — it KEEPS the role tiers (settings.roleMeta) the same way: the backend resolves every money and admin gate through
+  // roleTierRank_ (roleMeta, then the built-in tiers), so dropping it re-tiered every custom login. The tiers kept are the ones this
+  // window loaded (never the draft); a roleMeta the server never had stays missing, never invented.
+  const loaded = (o.config && o.config.settings) || {}, emp = loaded.employees, meta = loaded.roleMeta;
   const kept = Array.isArray(emp) ? { employees: emp } : {};
+  if (meta && typeof meta === 'object' && !Array.isArray(meta)) kept.roleMeta = meta;
   try { if (o.adminPw) await backendCall('setConfig', { password: o.adminPw, config: { roles: o.config.roles, admin: o.config.admin, settings: kept } }); } catch (e) {}
   persistAdminSettings(kept);
   o.draftSettings = {}; o.config.settings = kept; o.resetArm = false;
-  closeOverlay(); toast('All customizations reset to the shipped defaults — the Team Roster is kept.'); render();
+  closeOverlay(); toast('All customizations reset to the shipped defaults — the Team Roster and role tiers are kept.'); render();
 }
 /* Undo the single most recent Save (restores jactec.settings.prev). */
 async function undoLastSettings() {
@@ -5636,7 +5640,7 @@ function rerenderSettingsPane() {
 }
 // The Settings footer — one builder for the first paint (renderOverlay) and every in-place repaint (rerenderSettingsPane).
 function settingsFootHtml(o) {
-  return `${pageDefaultSlice(o.tab) ? '<button class="pill ghost js-settings-resetpage" data-r="R18" data-tip="Reset just this tab to defaults (Save to keep)">Reset page</button>' : ''}<button class="pill ghost set-danger js-settings-reset${o.resetArm ? ' armed' : ''}" data-r="R18" data-tip="Resets every customization except the Team Roster">${o.resetArm ? 'Click again — reset all but the Team Roster' : 'Reset all'}</button>${hasSettingsBackup() ? '<button class="pill ghost js-settings-undo" data-r="R18">Undo last change</button>' : ''}<span class="spacer"></span>${o.error ? `<span class="set-err">${esc(o.error)}</span>` : ''}<button class="pill ghost js-close" data-r="R18"${o.saving ? ' disabled' : ''}>Cancel</button><button class="pill ignition js-settings-save${o.saving ? ' is-disabled' : ''}" data-r="R17"${o.saving ? ' disabled' : ''}>${o.saving ? 'Saving…' : 'Save settings'}</button>`;
+  return `${pageDefaultSlice(o.tab) ? '<button class="pill ghost js-settings-resetpage" data-r="R18" data-tip="Reset just this tab to defaults (Save to keep)">Reset page</button>' : ''}<button class="pill ghost set-danger js-settings-reset${o.resetArm ? ' armed' : ''}" data-r="R18" data-tip="Resets every customization except the Team Roster and role tiers">${o.resetArm ? 'Click again — reset all but the Team Roster and role tiers' : 'Reset all'}</button>${hasSettingsBackup() ? '<button class="pill ghost js-settings-undo" data-r="R18">Undo last change</button>' : ''}<span class="spacer"></span>${o.error ? `<span class="set-err">${esc(o.error)}</span>` : ''}<button class="pill ghost js-close" data-r="R18"${o.saving ? ' disabled' : ''}>Cancel</button><button class="pill ignition js-settings-save${o.saving ? ' is-disabled' : ''}" data-r="R17"${o.saving ? ' disabled' : ''}>${o.saving ? 'Saving…' : 'Save settings'}</button>`;
 }
 // In-settings re-render that never flashes; falls back to a full overlay render when the settings
 // board isn't the live surface. Use from any settings-pane handler in place of renderOverlay().

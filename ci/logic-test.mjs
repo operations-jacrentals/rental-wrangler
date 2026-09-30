@@ -4561,6 +4561,44 @@ try {
         seen.length = 0;
         await T.resetAllSettings();
         ok(JSON.stringify(((last('setConfig') || {}).config || {}).settings) === '{}' && JSON.stringify(st.settings) === '{}', 'RC-83 Q13-A: with no roster loaded there is nothing to keep — an empty settings object, as before');
+        // RC-104 R1-A (auth) — Reset all KEEPS the role tiers (settings.roleMeta) exactly as it keeps the Team Roster. The backend
+        // resolves every money and admin gate through roleTierRank_(settings.roleMeta, then BUILTIN_ROLE_TIERS), so a reset that
+        // dropped roleMeta silently re-tiered every custom login. Kept = the roleMeta this window LOADED; a roleMeta the server
+        // never had stays missing (roleTierRank_ then falls back to the built-in tiers, as it does today) — never invented.
+        {
+          const meta = { Sales: { label: 'Sales', tier: 'money' }, Yardboss: { label: 'Yard Boss', tier: 'admin' } };
+          const roster = [{ id: 'EMP-R1-1', name: 'Tier Hand', role: 'Yardboss', phone: '' }];
+          const sent = () => ((last('setConfig') || {}).config || {}).settings;
+          const lsNow = () => { try { return JSON.parse(localStorage.getItem('jactec.settings') || 'null'); } catch (e) { return null; } };
+          // (a) roster + tiers + other customizations loaded: exactly the roster and the tiers survive, everything else resets
+          st.overlay = { kind: 'settings', adminPw: 'ADMIN-TEST', config: { roles: { Sales: 'x', Yardboss: 'z' }, admin: 'y', settings: { employees: roster, roleMeta: meta, company: { name: 'Zz Co' }, kpis: { probe: 1 } } } };
+          seen.length = 0;
+          await T.resetAllSettings();
+          const want = JSON.stringify({ employees: roster, roleMeta: meta });
+          ok(JSON.stringify(sent()) === want && JSON.stringify(st.settings) === want && JSON.stringify(lsNow()) === want, `RC-104 R1-A: Reset all sends and keeps the loaded role tiers with the roster, and nothing else (sent ${JSON.stringify(sent())} · device ${JSON.stringify(st.settings)})`);
+          const tt = ((document.getElementById('toast') || {}).textContent || '');
+          ok(/Team Roster/.test(tt) && /role tiers/.test(tt), `RC-104 R1-A: the Reset all toast says the Team Roster and role tiers are kept ("${tt}")`);
+          // (b) tiers but no roster: the tiers alone survive
+          st.overlay = { kind: 'settings', adminPw: 'ADMIN-TEST', config: { roles: { Sales: 'x' }, admin: 'y', settings: { roleMeta: meta, company: { name: 'Zz' } } } };
+          seen.length = 0;
+          await T.resetAllSettings();
+          ok(JSON.stringify(sent()) === JSON.stringify({ roleMeta: meta }) && JSON.stringify(st.settings) === JSON.stringify({ roleMeta: meta }), `RC-104 R1-A: with no roster loaded Reset all still keeps the role tiers (sent ${JSON.stringify(sent())})`);
+          // (c) an UNSAVED tier edit in the draft does not ride Reset all: the tiers kept are the LOADED ones, as with the roster
+          st.overlay = { kind: 'settings', adminPw: 'ADMIN-TEST', config: { roles: { Sales: 'x' }, admin: 'y', settings: { roleMeta: { Sales: { label: 'Sales', tier: 'money' } } } }, draftSettings: { roleMeta: { Sales: { label: 'Sales', tier: 'developer' } } } };
+          seen.length = 0;
+          await T.resetAllSettings();
+          ok(((((sent() || {}).roleMeta) || {}).Sales || {}).tier === 'money' && ((st.settings.roleMeta || {}).Sales || {}).tier === 'money', `RC-104 R1-A: an unsaved draft tier edit does not ride Reset all — the loaded tier is kept (sent ${JSON.stringify(sent())})`);
+          // (d) the server has NO roleMeta — but the Logins pane backfilled one into the draft (ensureRoleMeta): nothing is invented
+          st.overlay = { kind: 'settings', adminPw: 'ADMIN-TEST', config: { roles: { Sales: 'x', Yardboss: 'z' }, admin: 'y', settings: { employees: roster, company: { name: 'Zz' } } }, draftSettings: { employees: roster, roleMeta: { Sales: { label: 'Sales', tier: 'money' }, Yardboss: { label: 'Yardboss', tier: 'staff' } } } };
+          seen.length = 0;
+          await T.resetAllSettings();
+          ok(!!sent() && !('roleMeta' in sent()) && !('roleMeta' in (st.settings || {})) && !('roleMeta' in (lsNow() || {})) && JSON.stringify(sent()) === JSON.stringify({ employees: roster }), `RC-104 R1-A: a roleMeta the server never had stays missing after Reset all — not invented from the draft or defaults (sent ${JSON.stringify(sent())})`);
+          // (e) a null roleMeta is missing too (roleTierRank_ reads it as no tiers): not sent as a key
+          st.overlay = { kind: 'settings', adminPw: 'ADMIN-TEST', config: { roles: {}, admin: 'y', settings: { roleMeta: null, company: { name: 'Zz' } } } };
+          seen.length = 0;
+          await T.resetAllSettings();
+          ok(JSON.stringify(sent()) === '{}' && JSON.stringify(st.settings) === '{}', `RC-104 R1-A: a null roleMeta is treated as missing — an empty settings object (sent ${JSON.stringify(sent())})`);
+        }
         // The KPI lock-in reopen (lockKpiFromWrangler): Settings reopens on the KPIs tab with the settings it just saved. The
         // roster Reset all keeps must be THAT saved roster — an unsaved Team Roster × (which splices the draft) must not ride
         // Reset all to the backend and purge that person's sign-ins. Real clicks: .js-wr-kpi-lock, .js-emp-del, .js-settings-reset ×2.
@@ -5083,6 +5121,8 @@ try {
     results.push({ ok: m.resetArm && !!m.arm && /Team Roster/.test(m.arm.text) && m.sets === 0, m: `RC-83 Q13-A at ${sz}: a REAL first click on Reset all shows the armed confirm and sends nothing (armed=${m.resetArm}, "${m.arm ? m.arm.text : 'no .armed button on screen'}", setConfig ×${m.sets})` });
     results.push({ ok: !!m.arm && m.undo && m.page && m.arm.l >= 0 && m.arm.r <= m.arm.w, m: `RC-83 Q13-A at ${sz}: the armed confirm stays on screen with Reset page and Undo in the footer too (${m.arm ? m.arm.l + '..' + m.arm.r + ' of ' + m.arm.w : 'not shown'})` });
     results.push({ ok: !after.open && after.sets === 1, m: `RC-83 Q13-A at ${sz}: the REAL second click resets (overlay open=${after.open}, setConfig ×${after.sets})` });
+    results.push({ ok: /role tiers/.test(idle.tip), m: `RC-104 R1-A at ${sz}: the idle Reset all button's tip says it keeps the role tiers too ("${idle.tip}")` });
+    results.push({ ok: !!m.arm && /role tiers/.test(m.arm.text), m: `RC-104 R1-A at ${sz}: the armed confirm says it keeps the role tiers too ("${m.arm ? m.arm.text : 'no .armed button on screen'}")` });
   }
 
   // ── RC-84 rw-api router — BEGIN ───────────────────────────────────────────────────────────────
