@@ -5042,6 +5042,24 @@ try {
         if (roster0 == null) localStorage.removeItem('jactec.pidRoster'); else localStorage.setItem('jactec.pidRoster', roster0);
       }
     }
+    // #856 — transport-revenue charts: billed transport lines by invoice date; the attached
+    // chart sums rental + extension + transport ONLY for rentals that carry a transport line.
+    {
+      const rg = { k: 'custom', a: '2031-03-01', b: '2031-03-08' };   // a far-future window only the probe invoices land in
+      const mk = (id, lines, extra) => ({ invoiceId: id, date: '2031-03-03', customerId: null, lineItems: lines, ...extra });
+      const probes = [
+        mk('INV-T856a', [{ kind: 'rental', ref: 'R-A', amount: 500 }, { kind: 'transport', ref: 'R-A', amount: 120 }, { kind: 'extension', ref: 'R-A', amount: 80 },
+          { kind: 'rental', ref: 'R-B', amount: 300 }, { kind: 'custom', ref: null, amount: 40 }]),
+        mk('INV-T856b', [{ kind: 'rental', ref: 'R-C', amount: 900 }, { kind: 'transport', ref: 'R-C', amount: 60 }], { voided: true }),
+      ];
+      T.DATA.invoices.push(...probes);
+      try {
+        const sum = (x) => x.vals.reduce((a, v) => a + v, 0);
+        const tr = T.ruTransportSums(rg, false), at = T.ruTransportSums(rg, true);
+        ok(sum(tr) === 120, `#856: transport revenue sums only billed transport lines, voided invoices off the books (${sum(tr)})`);
+        ok(sum(at) === 700, `#856: transport-attached revenue = rental + extension + transport of hauled rentals only (${sum(at)})`);
+      } finally { probes.forEach((p) => T.DATA.invoices.splice(T.DATA.invoices.indexOf(p), 1)); }
+    }
     return out;
   });
 

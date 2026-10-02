@@ -13169,6 +13169,33 @@ function ruNetSales(rg) {   // N1 — payments net of refunds, bucketed by invoi
   const rows = bk.map((b, i) => ({ label: b.label, name: `${b.label} — ${money(vals[i])} net`, value: Math.round(vals[i]), fill: green, card: 'invoices', col: '__daterange', navValue: b.key, tip: `${b.label} — ${money(vals[i])} collected net of refunds` }));
   return ruWireNav(ruBarsSVG({ data: rows, money: true }), rows);
 }
+/* #856 — transport revenue, off the BILLED invoice lines (pre-tax), same ruBuckets + invoice
+   date as Net Sales. A rental "had transport" when its invoice carries a transport line
+   (one-way or round trip). Voided invoices are off the books. */
+function ruTransportSums(rg, attached) {
+  const bk = ruBuckets(rg);
+  return { bk, vals: bk.map((b) => DATA.invoices.reduce((a, inv) => {
+    const d = (inv.date || '').slice(0, 10); if (inv.voided || !(d >= b.a && d < b.b)) return a;
+    const lis = inv.lineItems || [];
+    if (!attached) return a + lis.reduce((s, li) => s + (li.kind === 'transport' ? Number(li.amount) || 0 : 0), 0);
+    const hauled = new Set(lis.filter((li) => li.kind === 'transport' && li.ref).map((li) => li.ref));
+    return a + lis.reduce((s, li) => s + ((li.kind === 'rental' || li.kind === 'extension' || li.kind === 'transport') && hauled.has(li.ref) ? Number(li.amount) || 0 : 0), 0);
+  }, 0)) };
+}
+function ruTransportRev(rg) {   // #856 — transport charges (delivery + pickup legs) per bucket
+  const { bk, vals } = ruTransportSums(rg, false);
+  if (!vals.some((v) => Math.abs(v) > 0.005)) return ruEmpty('No transport billed in this window.');
+  const brown = ruColor('--brown');
+  const rows = bk.map((b, i) => ({ label: b.label, name: `${b.label} — ${money(vals[i])} transport`, value: Math.round(vals[i]), fill: brown, card: 'invoices', col: '__daterange', navValue: b.key, tip: `${b.label} — ${money(vals[i])} in transport charges` }));
+  return ruWireNav(ruBarsSVG({ data: rows, money: true }), rows);
+}
+function ruTransportAttached(rg) {   // #856 — rental + transport combined, rentals that had transport only
+  const { bk, vals } = ruTransportSums(rg, true);
+  if (!vals.some((v) => Math.abs(v) > 0.005)) return ruEmpty('No rentals with transport in this window.');
+  const green = ruColor('--green');
+  const rows = bk.map((b, i) => ({ label: b.label, name: `${b.label} — ${money(vals[i])} rental + transport`, value: Math.round(vals[i]), fill: green, card: 'invoices', col: '__daterange', navValue: b.key, tip: `${b.label} — ${money(vals[i])} rental + transport, rentals with transport` }));
+  return ruWireNav(ruBarsSVG({ data: rows, money: true }), rows);
+}
 function ruRefunds(rg) {   // N2 — refunded $ (bucketed by the invoice's issue date — refunds carry no own date)
   const bk = ruBuckets(rg);
   const vals = bk.map((b) => DATA.invoices.reduce((a, inv) => { const d = (inv.date || '').slice(0, 10); return d >= b.a && d < b.b ? a + (Number(inv.refundedAmount) || 0) : a; }, 0));
@@ -13238,7 +13265,7 @@ const RU_PANELS = {
   'inv-status': { build: ruInvoiceStatus }, 'rent-tiles': { build: ruRentTiles },
   'wo-phase': { build: ruWoPhase }, 'svc-urgency': { build: ruSvcUrgency },
   'fleet-mix': { build: ruFleetMix }, 'accounts': { build: ruAccounts }, 'card-health': { build: ruCardHealth },
-  'net-sales': { build: ruNetSales }, 'refunds': { build: ruRefunds }, 'aging': { build: ruAging },
+  'net-sales': { build: ruNetSales }, 'transport-rev': { build: ruTransportRev }, 'transport-attached': { build: ruTransportAttached }, 'refunds': { build: ruRefunds }, 'aging': { build: ruAging },
   'billed-wos': { build: ruBilledWos }, 'work-by-role': { build: ruWorkByRole },
   'time-util': { build: ruTimeUtil }, 'dollar-util': { build: ruDollarUtil }, 'cost-hour': { build: ruCostPerHour },
   'voided': { build: ruVoided }, 'cust-active': { build: ruCustActive }, 'memberships': { build: ruMemberships },
@@ -13247,6 +13274,7 @@ const RU_SECTIONS = [
   { id: 'money', label: 'Money', panels: [
     { id: 'rev-cat', title: 'Revenue by Category', phase: 'B' }, { id: 'exp-cat', title: 'Expenses by Category', phase: 'B' },
     { id: 'rev-status', title: 'Revenue by Rental Status', phase: 'B' }, { id: 'net-sales', title: 'Net Sales', phase: 'M1' },
+    { id: 'transport-rev', title: 'Transport Revenue Over Time' }, { id: 'transport-attached', title: 'Transport-Attached Rental Revenue' },
     { id: 'refunds', title: 'Refunds', phase: 'M1' }, { id: 'aging', title: 'Invoice Aging', phase: 'M1' },
     { id: 'top-spend', title: 'Top Customers', phase: 'B' },
     { id: 'balances', title: 'Biggest Open Balances', phase: 'B' } ] },
@@ -27954,7 +27982,7 @@ function exposeTestApi() {
       wrValidatePlan, applyWranglerData, wrPlanNeedsApply, wrPlanSummary, wrFunnel, wrResolveCustomer, wrResolveUnit, wrResolveCategory, wrResolveVendor, wrResolvePart, wrResolveRental, wrChatFormat, wrFocusRecord, wrRecLabel, activeSession, invoiceMergeable, mergeInvoiceInto, invoiceVoidable, voidInvoice, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv, wrRunAgent, wrApplyChangesTool, wranglerDigest, wrPruneOldChats, WR_CHAT_RETAIN_DAYS, WR_TOOL_IMPL, WR_TOOLS, WR_OPERATIONS,
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       dataCache, cacheValid, cacheDeviceOk, cacheTokenTag, cacheAppVer, cacheSnapshotEnvelope, CACHE_SCHEMA_VER, FEATURES,   // §instant-cache (spec 2026-07-16)
-      recordDateMatch, dateTermHits, rowMatches,
+      recordDateMatch, dateTermHits, rowMatches, ruTransportSums,   // #856 transport-revenue charts
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
       companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, pickFunnelStage, toggleFunnelMembership, rentalFunnelStage, funnelStageOf, inFunnel, inRental, hasRentalActivity, funnelTrackA, funnelTrackEquip, ensureFunnels, funnelMenuHtml, reachFunnelStage, toggleMemberLead, funnelCurrentStage, funnelLayerDate, funnelLayerNote, ensureFunnelLog, markMembershipSigned, funnelLayerAction, funnelScope, naUrgency, naOpenList, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipActivateCash, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, acctBlockFoot, liftCustomerBlacklist, rentalAccountCustomer, clearRentalCustomer, clearInvoiceCustomer, invoiceRentalLinkFrozen, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsPickerError, gpsUtilRollup, ruCatUtilProxy, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
       reserveQuoteIfAllowed, winPickDay, winPickSave, winPickBusy, winEditResync, refreshFromBackend, showHoverPreview, hideHoverPreview,   // RC-67 (5A) — drive a real hover preview
