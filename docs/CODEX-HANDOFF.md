@@ -9,13 +9,19 @@ so it works wherever Codex reads it.
 > what's next.
 
 ## TL;DR — most of this is agent-agnostic and already travels
-The project is mostly portable Node + markdown on a GitHub repo. There are **three real work
-items**, everything else just works if Codex runs on the same repo:
+The project is mostly portable Node + markdown on a GitHub repo. Most of the setup is **already
+done** — what remains is short:
 
-1. **Create `AGENTS.md`** — Codex's instruction file (it does not read `CLAUDE.md`).
-2. **Re-provision secrets** in Codex's environment — *you* do this, never through chat or the repo.
-3. **Swap the two LLM-calling GitHub Actions** to OpenAI (`wrangler-fix.yml`, check `auto-promote.yml`).
-4. **If Claude + Codex run at once:** namespace branches (`codex/*`) + a `docs/WIP.md` ledger +
+1. ~~**Create `AGENTS.md`**~~ — ✅ done (#762/#765, refreshed 2026-08-10). Codex reads `AGENTS.md`,
+   not `CLAUDE.md`.
+2. ~~**Wrap the ship flow in npm scripts**~~ — ✅ done: `gates`, `deploy:staging`, `promote`,
+   `cachebust`. ~~**Build the Codex plugin**~~ — ✅ done, 12 commands.
+3. **Re-provision secrets** in Codex's environment — *you* do this, never through chat or the repo.
+   **Still open.**
+4. **Swap `wrangler-fix.yml` to OpenAI** (or disable it). **Still open** — it is the only workflow
+   that actually calls an LLM.
+5. **Split `app.js`** by CODE-MAP chapters — **still open**, and the largest single token win (§5).
+6. **If Claude + Codex run at once:** namespace branches (`codex/*`) + a `docs/WIP.md` ledger +
    a cross-review skill (§8). The staging deck already isolates deploys for free.
 
 ---
@@ -48,11 +54,19 @@ Every skill is a markdown file under `.claude/skills/<name>/SKILL.md`. Point `AG
 | `style` · `wrangler-style` | **PORT (critical)** | the design canon (palette, type voices, Signal·Gate·Stamp·Ref·Door, and the measurable spec — control height, size ladder, contrast floors). The reason the UI is one family. |
 | `wrangler-fix` | **PORT** | "prove the root cause with citations before changing code" — the debugging methodology. |
 | `atlas` | **PORT (as instruction)** | CODE-MAP-first navigation → the #2 token lever (§5). |
-| `start` | **ADAPT** | session orientation — keep the branch-flow parts, drop Claude-session bits. |
+| `art-pipeline` | **PORT (critical, added 2026-08-05)** | the Figma→code method for illustrated UI: export never recreate, 9-slice, stretch-vs-round, and eight measured traps. This is the *active* design method — not yet wrapped as a Codex command. |
+| `startup` | **ADAPT** | session orientation. **Renamed from `start` on 2026-07-28 (#802)** to end a plugin name collision; the Codex plugin command is still `start`. Keep the branch-flow parts, drop Claude-session bits. |
 | `run-live` · `lazy-audit` · `webapp-testing` | **ADAPT** | Playwright-based test/audit flows — portable, useful. |
+| `paint` | **ADAPT** | the guided design pipeline (inspiration → Canva critique → Figma → gated code). Depends on Canva/Figma MCP connectors, so port only what Codex can actually reach. |
+| `prompt-a` · `prompt-b` · `promptai` | **ADAPT** | the external-model audit handoff. Ironically useful in reverse: Codex can use these to hand a prototype to *another* model. |
 | `brainstorming` | **ADAPT** | the spec-first design dialogue — a useful pattern, not Claude-specific. |
 | `audit` | **DROP** | Claude token-efficiency audit — harness-specific. |
 | `end` · `skill-creator` | **DROP** | Claude session/skill management. |
+
+**Not yet wrapped as Codex commands:** `art-pipeline`, `paint`, `lazy-audit`, `run-live`,
+`prompt-a`/`prompt-b`. The plugin currently ships 12: `start`, `style`, `wrangler-style`, `atlas`,
+`wrangler-fix`, `gates`, `build`, `deploy`, `merge`, `promote`, `live`, `clasp`. Codex can still
+**read** the unwrapped ones as plain markdown under `.claude/skills/<name>/SKILL.md`.
 
 ## 3. Secrets — YOU re-provision, never through the agent or the repo
 **Hard rule (unchanged): the repo is PUBLIC via Pages. No secret value ever goes in the repo, a
@@ -111,13 +125,22 @@ Two homes for secrets:
    required check.
 
 ## 7. First-week Codex checklist
-- [ ] Confirm Codex on the **same** GitHub repo (inherits CI + branch protection + Actions secrets).
-- [ ] Create `AGENTS.md` (seed from `CLAUDE.md`; graft in `build`/`deploy`/`promote`/`clasp`/
-      `style`/`wrangler-style` runbooks; point it at `docs/CODE-MAP.md` as the nav entrypoint).
-- [ ] Add the §6 npm scripts so the ship flow is agent-agnostic.
-- [ ] Re-provision agent-env secrets from your vault (§3) — never via chat/repo.
-- [ ] Swap `wrangler-fix.yml` (and check `auto-promote.yml`) to OpenAI, or disable.
-- [ ] Split `app.js` by CODE-MAP chapters, re-running the full gate suite after each move.
+*Status as of 2026-08-10.*
+- [x] Confirm Codex on the **same** GitHub repo (inherits CI + branch protection + Actions secrets).
+- [x] Create `AGENTS.md` — **done** (#762/#765, refreshed 2026-08-10). It carries the ship flow,
+      the backend runbook, the design canon, and the Codex command list.
+- [x] Add the §6 npm scripts — **done**: `gates`, `deploy:staging`, `promote`, `cachebust`.
+- [x] Build the Codex plugin — **done**: `plugins/rental-wrangler-commands` (12 commands) with its
+      marketplace manifest at `.agents/plugins/marketplace.json`.
+- [ ] **Re-provision agent-env secrets from your vault (§3) — YOURS to do, never via chat/repo.**
+- [ ] **Swap `wrangler-fix.yml` to OpenAI, or disable it.** Still open: it calls Claude to triage
+      auto-fix issues. `branch-janitor.yml` also mentions Claude but only to recognise `claude/*`
+      branch names — no LLM call, so it needs a `codex/*` pattern, not a model swap.
+      `auto-promote.yml` and `ci.yml` are LLM-free.
+- [ ] **Split `app.js` (27,687 lines) by CODE-MAP chapters**, re-running the full gate suite after
+      each move. Still open — the #1 token lever (§5).
+- [ ] Wrap the unwrapped skills as Codex commands (§2b) — `art-pipeline` first, since it is the
+      active design method.
 
 ## 8. Running Claude + Codex on one repo — collisions & cross-review
 Both agents on one repo is safe *if* each stays in its own lane and the shared integration point
@@ -154,12 +177,29 @@ on demand — never a gate, never a merge block, never a required check.**
   run it whenever you want a second opinion, and it never touches the merge.
 
 ## 9. Current work-in-flight (context for whoever picks up the UI)
-The active branch `claude/rental-wrangler-ui-research-rhd74v` (PR #752) holds the **Phase-2
-`dv2` redesign**, gated behind `FEATURES.designV2` (off in production; auto-on on staging/local
-via the `html.dv2` class). Steps 1–2 of the inline-expand model are built: a single-click reveals
-a record **in the list** (row expands, height-capped to the column), reshaped to the section
-**plate-stack** (header-as-close, collapsed Inspection + History, swipe-easing reveal). Remaining:
-carry the reshape into Rentals + Customers, the History-search footer, links-land-on-section,
-mobile paged sections + To-Do, and retiring the legacy card-swap detail. Full plan:
-`docs/superpowers/specs/2026-07-20-list-views-inline-expand-design.md` and
-`docs/superpowers/plans/2026-07-21-list-detail-views-build-plan.md`.
+*Refreshed 2026-08-10. The earlier version of this section described the `dv2` inline-expand branch
+as in-flight; that work **landed on `trunk` as #766** and its `FEATURES.designV2` flag was retired.*
+
+The live frontier is the **design system / V2 card**, landed as **#798** (`def4a15`). It is a
+Figma-sourced, illustrated UI — the interface *is* artwork — so the working method is the
+**`art-pipeline`** skill: **export from Figma, never recreate in CSS**; bake static art as one
+z-ordered `background-image`; carry anything state-coloured as a white-silhouette `mask-image`
+filled with `var(--row-hue)`; make panels resize with `border-image` 9-slice using the measured
+bands in `docs/design/SLICE-SPEC.md` (structure `stretch`, countable rhythm `round`).
+
+**Read `docs/design/HANDOFF-2026-08-05.md` before touching any of this.** Two things it settles
+that will otherwise cost you a day:
+
+- **The V2 card is "a start," not at fidelity.** It still uses fixed-size scaled art, not
+  `border-image` 9-slice. The spec exists; nothing is wired to it yet.
+- **Four panels are blocked on Jac redrawing the artwork — do not try to fix them in CSS.**
+  `asm-deck` cannot slice below 1316px (its chips and nameplate are frozen in a 1100px corner);
+  `asm-housing`'s interior staircase is a near-rhythm that can neither `stretch` nor `round`;
+  `asm-headboard`/`asm-rowboard` need text-free re-exports; the rail export has three defects
+  (#259). **`asm-headboard`, `asm-rowboard` and `asm-channel` slice cleanly today** — start there.
+
+Ledger rows **#238–#261** cover everything settled in that run, including two errors that were
+scoped back rather than deleted. Read them; re-deriving them is what made the last session slow.
+
+Also live but unrelated to the redesign: `docs/handoffs/audit-2026-07-19-rentals-dispatcher-remaining-work.md`
+carries the parked Bucket-B dispatcher findings from the RENTALS audit.
