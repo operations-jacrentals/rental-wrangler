@@ -4683,7 +4683,7 @@ function agreementExpandedHtml(c, k) {
   if (st === 'authorized') {
     const sg = cardCurrentSigning(c, k);
     body = `<div class="ag-meta">${esc(meta)}<span class="ag-metasep"></span>${badge('Authorized', 'green')}</div>`
-      + `<div class="ag-signed"><span class="ag-lock">${AG_LOCK}</span><span class="t"><b>${esc(signingTitle(sg))}</b> · signed ${esc(sg.signedAt || '—')}</span></div>`
+      + `<div class="ag-signed"><span class="ag-lock">${AG_LOCK}</span><span class="t"><b>${esc(signingTitle(sg))}</b> · signed ${esc(sg.signedAt || '—')}</span>${actionPill('commit', '⤓ PDF', { js: 'js-agsign-pdf', data: { rec: c.customerId, card: k.id, sig: sg.id } })}</div>`
       + `<div class="ag-packet">`
       + `<div class="ag-pcell"><div class="ag-pcap">Selfie</div>${signingSelfieSrc(sg) ? `<img class="ag-selfie" src="${esc(signingSelfieSrc(sg))}" alt="selfie on file">` : '<div class="ag-selfie empty">—</div>'}</div>`
       + `<div class="ag-pcell"><div class="ag-pcap">Signature</div>${signingSignatureSrc(sg) ? `<img class="ag-sigthumb" src="${esc(signingSignatureSrc(sg))}" alt="signature on file">` : '<div class="ag-sigthumb"></div>'}</div>`
@@ -18879,6 +18879,7 @@ function onClick(e) {
   // Account section: open/close + its embedded Agreements accordion (mirrors the Invoices
   // pattern above) + the field toggles. UI SHELL — the starred handlers below are Phase 2/3
   // no-op stubs (real enrollment/charge is Phase 2; block-gate enforcement is Phase 3).
+  if (closest('.js-agsign-pdf')) { e.stopPropagation(); const b = closest('.js-agsign-pdf'); return openSignedPdf(b.dataset.rec, b.dataset.card, b.dataset.sig); }   // the profile's Agreements row — same signed PDF as Edit account's card tab (js-ncsign-pdf)
   if (closest('.js-acct-toggle')) { e.stopPropagation(); const rec = closest('.js-acct-toggle').dataset.rec; return guardAgLeave(rec, () => { state.custAcctOpen = state.custAcctOpen || {}; state.custAcctOpen[rec] = !state.custAcctOpen[rec]; render(); }); }
   if (closest('.js-svc-sec-toggle')) { e.stopPropagation(); const rec = closest('.js-svc-sec-toggle').dataset.rec; state.svcSecOpen = state.svcSecOpen || {}; state.svcSecOpen[rec] = !state.svcSecOpen[rec]; return render(); }   // Unit detail — collapse/expand the Services (service-order) section
   if (closest('.js-unit-sec')) { e.stopPropagation(); const b = closest('.js-unit-sec'); const rec = b.dataset.rec, sec = b.dataset.sec; state.unitSecOpen = state.unitSecOpen || {}; state.unitSecOpen[rec] = state.unitSecOpen[rec] || {}; state.unitSecOpen[rec][sec] = !state.unitSecOpen[rec][sec]; return render(); }   // Unit detail — collapse/expand a generic detail section (Work Orders / Specs / GPS / Investment[+Coverage])
