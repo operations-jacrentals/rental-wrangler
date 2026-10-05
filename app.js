@@ -296,7 +296,7 @@ function migrateCustomers() {
         // Reclaim space from the first card-bound release (#151), which baked the full
         // ~6–8 KB agreement text into every signing: drop it, keep a small version id.
         k.agreements.forEach((s) => {
-          if (s && s.text) { if (!s.version) s.version = (s.key === 'membership' ? 'membership' : 'rental') + '@2026-06'; /* pre-2026-10 record → pinned to the text it was signed under, never CURRENT */ delete s.text; migrationDirty = true; }
+          if (s && s.text) { if (!s.version) s.version = AGREEMENT_CURRENT[s.key === 'membership' ? 'membership' : 'rental'] || ''; delete s.text; migrationDirty = true; }
         });
         return;
       }
@@ -306,8 +306,8 @@ function migrateCustomers() {
       if (legacy && legacy.signature) {
         const key = legacy.version === 'membership' ? 'membership' : 'rental';
         const ag = AGREEMENTS[key] || AGREEMENTS.rental;
-        k.agreements.push({ id: 'SIG-' + c.customerId + '-' + (k.id || '0'), key, version: key + '@2026-06', title: ag.title,
-          accountType: c.accountType || '', signedAt: legacy.signedAt || '', signerName: c.name || '',   // legacy fold predates 2026-10 → pinned, never CURRENT
+        k.agreements.push({ id: 'SIG-' + c.customerId + '-' + (k.id || '0'), key, version: AGREEMENT_CURRENT[key] || '', title: ag.title,
+          accountType: c.accountType || '', signedAt: legacy.signedAt || '', signerName: c.name || '',
           signature: legacy.signature, selfie: legacy.selfie || '', driveSignatureUrl: '', driveSelfieUrl: '', driveFolderId: '' });
       }
       migrationDirty = true;

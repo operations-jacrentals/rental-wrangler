@@ -66,7 +66,7 @@ Chapter **CASC** — no internal banners, the whole file is one chapter.
 
 Chapter **SVC** — no internal banners, the whole file is one chapter.
 
-## agreements.js — 282 lines, 0 chapters
+## agreements.js — 154 lines, 0 chapters
 
 Chapter **AGR** — no internal banners, the whole file is one chapter.
 
