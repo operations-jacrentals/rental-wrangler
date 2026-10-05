@@ -58,7 +58,7 @@ Customer agrees to maintain throughout any active rental: $500,000 Commercial Au
 This is a rental agreement only. Jac retains title at all times.
 
 17. GOVERNING LAW
-Governed by the laws of the State of Texas, without regard to conflict-of-law principles. Any claim or dispute shall be brought exclusively in the state courts of Jefferson County, Texas. Customer irrevocably consents to personal jurisdiction and waives objection to venue or forum. Both parties knowingly waive trial by jury. If Equipment is used outside Texas, Texas law and the exclusive venue still apply to the fullest extent permitted by law.
+Governed by the laws of the State of Louisiana, without regard to conflict-of-law principles. Any claim or dispute shall be brought exclusively in the state courts of Calcasieu Parish, Louisiana. Customer irrevocably consents to personal jurisdiction and waives objection to venue or forum. Both parties knowingly waive trial by jury. If Equipment is used outside Louisiana, Louisiana law and the exclusive venue still apply to the fullest extent permitted by law.
 
 18. MISCELLANEOUS
 No waiver unless in writing. If one provision is unenforceable, the remainder survives. Digital signatures are binding. This Agreement supersedes prior agreements.
@@ -124,7 +124,7 @@ Customer agrees to maintain throughout any active rental: $500,000 Commercial Au
 This is a rental agreement only. Jac retains title at all times.
 
 18. GOVERNING LAW
-Governed by the laws of the State of Texas, without regard to conflict-of-law principles. Any claim or dispute shall be brought exclusively in the state courts of Jefferson County, Texas. Customer irrevocably consents to personal jurisdiction and waives objection to venue or forum. Both parties knowingly waive trial by jury. If Equipment is used outside Texas, Texas law and the exclusive venue still apply to the fullest extent permitted by law.
+Governed by the laws of the State of Louisiana, without regard to conflict-of-law principles. Any claim or dispute shall be brought exclusively in the state courts of Calcasieu Parish, Louisiana. Customer irrevocably consents to personal jurisdiction and waives objection to venue or forum. Both parties knowingly waive trial by jury. If Equipment is used outside Louisiana, Louisiana law and the exclusive venue still apply to the fullest extent permitted by law.
 
 19. MISCELLANEOUS
 No waiver unless in writing. If one provision is unenforceable, the remainder survives. Digital signatures are binding. This Agreement supersedes prior agreements.
@@ -142,6 +142,9 @@ export default AGREEMENTS;
    is resolved from this append-only registry at display/PDF time. When an agreement
    above is revised, ADD a new dated entry here and bump AGREEMENT_CURRENT[key]; old
    signings keep resolving their original frozen text. Never edit a shipped entry. */
+/* 2026-10-05 owner decision: governing law + venue (rental §17, membership §18) changed
+   IN PLACE to Louisiana / Calcasieu Parish so EVERY signing, past and future, resolves the
+   Louisiana text. The prior Texas / Jefferson County wording is in git history (trunk 0ad2c3b). */
 export const AGREEMENT_VERSIONS = {
   'rental@2026-06': { key: 'rental', title: AGREEMENTS.rental.title, text: AGREEMENTS.rental.text },
   'membership@2026-06': { key: 'membership', title: AGREEMENTS.membership.title, text: AGREEMENTS.membership.text },
