@@ -4297,7 +4297,7 @@ function membershipMetaHtml(c) {
    entirely; enrollment now happens ONLY via agreementSignCommit's inline sign=enroll flow.
    Handlers (js-mem-cancel/paycxl/print-magreement) are UNCHANGED and re-check canMoney() as
    defence-in-depth. */
-function membershipActionsHtml(c) {
+function membershipActionsHtml(c, { planPick } = {}) {
   const status = membershipStatus(c);
   const isMem = status === 'Active' || status === 'Past Due';
   const stageSet = !!(c.membershipStage && c.membershipStage !== 'N/A');
@@ -4306,8 +4306,45 @@ function membershipActionsHtml(c) {
   const cancelBtn = (isMem && mayMoney) ? actionPill('danger', 'Cancel Membership', { js: 'js-mem-cancel', h: 26, data: { rec: c.customerId } }) : '';
   const payCxlBtn = (cxlInv && mayMoney) ? actionPill('money', 'Pay Cancellation ' + money2(invoiceTotals(cxlInv).balance), { js: 'js-mem-paycxl', h: 26, data: { rec: c.customerId } }) : '';
   const printBtn = stageSet ? actionPill('commit', 'Print Agreement', { js: 'js-print-magreement', h: 26, data: { rec: c.customerId } }) : '';
-  const actions = [cancelBtn, payCxlBtn, printBtn].filter(Boolean).join('');
-  return actions ? `<div class="kv pillrow ag-lifecycle">${actions}</div>` : '';
+  // Change plan — offered on EVERY member status (Active · Past Due · Lapsed · Pending · Member
+  // Incomplete: anything whose accountType carries /Member/), money-gated like Cancel because
+  // `paidCadence` is the nightly billing cron's plan input (see memApplyCashActive #835). The
+  // pill opens an INLINE chooser below the row (`planPick` = the staged plan, held on the
+  // agreement overlay) — same staged-confirm shape as the fragile-rental window (.wp-confirm).
+  const isMemAcct = /Member/.test(c.accountType || '');
+  const planBtn = (isMemAcct && mayMoney) ? actionPill('commit', 'Change plan', { js: 'js-mem-plan', h: 26, data: { rec: c.customerId } }) : '';
+  const actions = [cancelBtn, payCxlBtn, planBtn, printBtn].filter(Boolean).join('');
+  const planPanel = (planBtn && planPick) ? membershipPlanPanelHtml(c, planPick) : '';
+  return actions ? `<div class="kv pillrow ag-lifecycle">${actions}</div>${planPanel}` : '';
+}
+/* The inline Change-plan chooser: Monthly | Yearly (R14), the member's CURRENT plan named on its
+   tab, the staged pick riding blue. Confirm is inert-by-handler when the pick equals the current
+   plan (membershipChangePlan no-ops), so the copy spells out exactly what it does and does not move. */
+function membershipPlanPanelHtml(c, pick) {
+  const cur = c.paidCadence || '';
+  const tab = (p) => ({ js: 'js-mem-plan-pick', on: p === pick ? 'blue' : null, data: { rec: c.customerId, plan: p }, label: p + (p === cur ? ' · current' : '') });
+  return `<div class="wp-confirm">
+      <div class="wp-confirm-h">Change membership plan?</div>
+      ${segCtl([tab('Monthly'), tab('Yearly')])}
+      <div class="anno" style="margin-top:7px">Changes what the nightly billing charges from the next cycle. Paid-until date, invoices and past charges are not changed.</div>
+      <div class="wp-confirm-foot">${ghostPill('Cancel', { js: 'js-mem-plan-cancel' })}${actionPill('commit', 'Confirm', { js: 'js-mem-plan-save', data: { rec: c.customerId, plan: pick } })}</div>
+    </div>`;
+}
+/* Commit a plan change. BILLING PLAN ONLY: rewrites `paidCadence` (an unprotected field — the
+   regular sync carries it to the Sheet, where membershipBillingCron reads it on the next cycle)
+   and nothing else. paidUntil / graceUntil / prepaid / autoRenew / commitment / addOns and every
+   invoice stay exactly as they are, and no backend money action is called — identical in #local. */
+function membershipChangePlan(custId, plan) {
+  const c = IDX.customer.get(custId); if (!c) return false;
+  if (!/Member/.test(c.accountType || '')) return false;
+  if (plan !== 'Monthly' && plan !== 'Yearly') return false;
+  const old = c.paidCadence || '';
+  if (old === plan) return false;   // unchanged — nothing to log, nothing to sync
+  c.paidCadence = plan;
+  logAction(c, `Membership plan changed: ${old || 'none'} → ${plan} (billing plan only — paid-until date unchanged)`);
+  reindex('customers', c);
+  render(); toast(`Plan changed to ${plan} — billing uses it from the next cycle. ✓`);
+  return true;
 }
 /* ── The funnel toggle (§3.5–§3.8) — ONE section whose centered R14 segmented toggle
    IS the header: RENTAL | EQUIPMENT SALES, each tab carrying an RYG dot for its
@@ -5061,6 +5098,13 @@ function invoiceStatMenu(i, c, open) {
   items.push(`<button class="im-item js-print-invoice" role="menuitem" data-rec="${esc(i.invoiceId)}"><span class="im-ic">🖨</span> Print</button>`);
   items.push(`<button class="im-item" role="menuitem" disabled data-tip="Sending invoices to customers is coming soon"><span class="im-ic">✉</span> Send</button>`);
   if (canRefund) items.push(`<div class="im-sep"></div><button class="im-item danger js-pay-invoice" role="menuitem" data-rec="${esc(i.invoiceId)}"><span class="im-ic">↩</span> ${t.status === 'Refunded' ? 'Details' : 'Refund'}</button>`);
+  // Void (#818) — the DETAIL.invoices Void pill became unreachable when Invoices left the grid
+  // (COLUMN_OF routes invoice links into Customer Details), so it lives here now. Same money-safe
+  // floor (invoiceVoidable: $0 paid, unlocked, not in collections) and the same js-void-invoice
+  // handler; two taps, because a void has no undo (the record survives as a $0 Voided invoice).
+  if (mayMoney && invoiceVoidable(i)) items.push(`<div class="im-sep"></div>` + (state.invVoidArm === i.invoiceId
+    ? `<button class="im-item danger js-void-invoice" role="menuitem" data-rec="${esc(i.invoiceId)}"><span class="im-ic">⊘</span> Confirm void — $0, kept on record</button>`
+    : `<button class="im-item danger js-void-arm" role="menuitem" data-rec="${esc(i.invoiceId)}"><span class="im-ic">⊘</span> Void…</button>`));
   return `<div class="io-menu-wrap">`
     + `<button class="io-statmenu ${ps.cls}${open ? ' open' : ''} js-inv-statmenu" data-r="R29" data-rec="${esc(i.invoiceId)}" data-cust="${esc(c.customerId)}" aria-expanded="${open ? 'true' : 'false'}" aria-haspopup="menu" data-tip="Invoice status · actions">${esc(ps.word)} <span class="cv">${I.chev}</span></button>`
     + (open ? `<div class="io-menu" role="menu">${items.join('')}</div>` : '')
@@ -14698,7 +14742,7 @@ function buildPopupEl(o, overlay, opts = {}) {
     // §3.7 — the membership lifecycle actions live HERE now (they act on the agreement).
     // MONEY-gate PRESERVED: membershipActionsHtml keeps the exact canMoney() gate + the
     // js-mem-cancel/paycxl/print-magreement handlers (unchanged). Enroll retired 2026-07-10.
-    const lifecycle = membershipActionsHtml(c);
+    const lifecycle = membershipActionsHtml(c, { planPick: o.planPick });   // o.planPick = the staged Change-plan pick (inline chooser open)
     const pop = el('div', 'popup nc-popup');
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: ag.title, tag: 'Customer · agreement',
       foot: `<button class="pill ghost js-close" data-r="R18">Close</button><button class="pill ignition js-edit-customer" data-r="R17" data-rec="${c.customerId}">Edit account</button>`,
@@ -18838,6 +18882,21 @@ function onClick(e) {
   if (closest('.js-mem-activate')) { e.stopPropagation(); if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; } return membershipActivateCash(closest('.js-mem-activate').dataset.rec); }
   if (closest('.js-mem-cancel')) { e.stopPropagation(); if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; } return membershipCancel(closest('.js-mem-cancel').dataset.rec); }
   if (closest('.js-mem-paycxl')) { e.stopPropagation(); if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; } return membershipReactivate(closest('.js-mem-paycxl').dataset.rec); }
+  // Change plan — the staged pick lives on the agreement overlay (o.planPick) so the inline
+  // chooser survives its own re-render; render() doesn't repaint popups, so each step calls
+  // renderOverlay() itself. Every step re-checks canMoney() (defence-in-depth, like Cancel).
+  if (closest('.js-mem-plan')) { e.stopPropagation(); if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; } const cust = IDX.customer.get(closest('.js-mem-plan').dataset.rec); if (!cust || !state.overlay) return; state.overlay.planPick = state.overlay.planPick ? null : (cust.paidCadence === 'Monthly' ? 'Monthly' : 'Yearly'); renderOverlay(); return; }
+  if (closest('.js-mem-plan-pick')) { e.stopPropagation(); if (!canMoney() || !state.overlay) return; state.overlay.planPick = closest('.js-mem-plan-pick').dataset.plan; renderOverlay(); return; }
+  if (closest('.js-mem-plan-cancel')) { e.stopPropagation(); if (state.overlay) { state.overlay.planPick = null; renderOverlay(); } return; }
+  if (closest('.js-mem-plan-save')) {
+    e.stopPropagation();
+    if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; }
+    const b = closest('.js-mem-plan-save'); const cust = IDX.customer.get(b.dataset.rec);
+    if (cust && cust.paidCadence === b.dataset.plan) toast(`Already on the ${b.dataset.plan} plan — nothing changed.`);
+    else membershipChangePlan(b.dataset.rec, b.dataset.plan);
+    if (state.overlay) { state.overlay.planPick = null; renderOverlay(); }
+    return;
+  }
   if (closest('.js-add-card')) {
     e.stopPropagation();
     if (!canMoney()) { toast('Cards on file are Office/Admin only.'); return; }   // §14 card-on-file is Office/Admin only — same gate as Pay/Charge/Refund (canMoney)
@@ -18871,7 +18930,7 @@ function onClick(e) {
   // time); the status pill toggles its action menu; clicking anywhere else in the open
   // invoice's header (not just the chevron) collapses it — excluding the status menu's
   // own dropdown (io-menu-wrap), whose Pay/Print/Refund items need the click themselves.
-  if (closest('.js-inv-statmenu')) { e.stopPropagation(); const b = closest('.js-inv-statmenu'); const cu = b.dataset.cust, rec = b.dataset.rec; state.custInvMenu = state.custInvMenu || {}; state.custInvMenu[cu] = (state.custInvMenu[cu] === rec) ? null : rec; return render(); }
+  if (closest('.js-inv-statmenu')) { e.stopPropagation(); const b = closest('.js-inv-statmenu'); const cu = b.dataset.cust, rec = b.dataset.rec; state.custInvMenu = state.custInvMenu || {}; state.custInvMenu[cu] = (state.custInvMenu[cu] === rec) ? null : rec; state.invVoidArm = null; return render(); }
   if (closest('.js-inv-collapse') && !closest('.io-menu-wrap') && !closest('.js-print-invoice')) { e.stopPropagation(); const cu = closest('.js-inv-collapse').dataset.cust; if (state.custInvOpen) state.custInvOpen[cu] = null; if (state.custInvMenu) state.custInvMenu[cu] = null; return render(); }   // header-click collapses — EXCEPT the status menu (.io-menu-wrap) or the Save-PDF pill (.js-print-invoice), which own their clicks
   if (closest('.js-inv-add-pill')) { e.stopPropagation(); const b = closest('.js-inv-add-pill'); if (state.linking && state.linking.targetCard === 'invoices') { e.preventDefault(); return linkCreateInvoice(b.dataset.cust); } return; }   // §3.4 — otherwise drag-only (hidden except mid-drag)
   if (closest('.js-inv-row')) { e.stopPropagation(); const b = closest('.js-inv-row'); if (state.linking && state.linking.targetCard === 'invoices' && b.dataset.rec) { e.preventDefault(); return openLinkConfirm(b.dataset.rec); }   /* §3.4 — pick this invoice as the menu-link target */ const cu = b.dataset.cust, rec = b.dataset.rec; state.custInvOpen = state.custInvOpen || {}; state.custInvOpen[cu] = (state.custInvOpen[cu] === rec) ? null : rec; if (state.custInvMenu) state.custInvMenu[cu] = null; return render(); }
@@ -19105,9 +19164,15 @@ function onClick(e) {
     reindex('invoices', inv); toast(`${invoiceShort(inv.invoiceId)} recalled — back on the aging ladder.`);
     return;
   }
+  if (closest('.js-void-arm')) {   // #818 — first tap of the status-menu Void: arm it; the menu re-renders with the confirm item
+    e.stopPropagation();
+    if (!canMoney()) { toast('Voiding an invoice is Office/Admin only.'); return; }
+    state.invVoidArm = closest('.js-void-arm').dataset.rec; return render();
+  }
   if (closest('.js-void-invoice')) {
     e.stopPropagation();
     if (!canMoney()) { toast('Voiding an invoice is Office/Admin only.'); return; }
+    state.invVoidArm = null;
     const inv = IDX.invoice.get(closest('.js-void-invoice').dataset.rec); if (!inv) return;
     if (!invoiceVoidable(inv)) { toast(invoiceWouldEraseBlacklistedOwner(inv) ? 'Can’t void — this invoice is a rental’s last blacklisted customer link. Lift or Recall first (§9).' : 'Can’t void — this invoice has a payment, a price lock, or is in collections. Refund / unlock first.'); return; }
     return voidInvoice(inv);
@@ -27985,7 +28050,7 @@ function exposeTestApi() {
       dataCache, cacheValid, cacheDeviceOk, cacheTokenTag, cacheAppVer, cacheSnapshotEnvelope, CACHE_SCHEMA_VER, FEATURES,   // §instant-cache (spec 2026-07-16)
       recordDateMatch, dateTermHits, rowMatches, ruTransportSums,   // #856 transport-revenue charts
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, pickFunnelStage, toggleFunnelMembership, rentalFunnelStage, funnelStageOf, inFunnel, inRental, hasRentalActivity, funnelTrackA, funnelTrackEquip, ensureFunnels, funnelMenuHtml, reachFunnelStage, toggleMemberLead, funnelCurrentStage, funnelLayerDate, funnelLayerNote, ensureFunnelLog, markMembershipSigned, funnelLayerAction, funnelScope, naUrgency, naOpenList, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, funnelSectionHtml, membershipCancel, membershipReactivate, membershipActivateCash, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, acctBlockFoot, liftCustomerBlacklist, rentalAccountCustomer, clearRentalCustomer, clearInvoiceCustomer, invoiceRentalLinkFrozen, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsPickerError, gpsUtilRollup, ruCatUtilProxy, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, pickFunnelStage, toggleFunnelMembership, rentalFunnelStage, funnelStageOf, inFunnel, inRental, hasRentalActivity, funnelTrackA, funnelTrackEquip, ensureFunnels, funnelMenuHtml, reachFunnelStage, toggleMemberLead, funnelCurrentStage, funnelLayerDate, funnelLayerNote, ensureFunnelLog, markMembershipSigned, funnelLayerAction, funnelScope, naUrgency, naOpenList, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipMetaHtml, membershipActionsHtml, invoiceStatMenu, membershipChangePlan, funnelSectionHtml, membershipCancel, membershipReactivate, membershipActivateCash, membershipCancellationInvoice, agreementSignCommit, addMonthsISO, acctBlockFoot, liftCustomerBlacklist, rentalAccountCustomer, clearRentalCustomer, clearInvoiceCustomer, invoiceRentalLinkFrozen, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsPickerError, gpsUtilRollup, ruCatUtilProxy, gpsBounciePlan, gpsApplyBouncieTrucks, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
       reserveQuoteIfAllowed, winPickDay, winPickSave, winPickBusy, winEditResync, refreshFromBackend, showHoverPreview, hideHoverPreview,   // RC-67 (5A) — drive a real hover preview
       REFRESH, refreshOnReturn, refreshKick, refreshNoteLoad, pollHandle: () => refreshTimer, setBooting: (b) => { booting = !!b; },
       resetRefreshState: () => { clearInterval(refreshTimer); refreshTimer = null; clearTimeout(REFRESH.retryTimer); Object.assign(REFRESH, { startAt: 0, retryTimer: null, retryMs: 3000, eventGapMs: 10000, streak: 0, runs: 0, drops: 0, lastErr: '' }); },   // RC-67 3A — poll-trigger seams (test-only, like setBackendPassword); logic-test drives them against a mocked window.fetch only
