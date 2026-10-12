@@ -2250,6 +2250,15 @@ try {
       T.IDX.customer.delete('C-PLANNONE'); T.DATA.customers.splice(T.DATA.customers.indexOf(np), 1);
     }
 
+    // === Membership actions — the agreements window's opener, restored to the membership meta (lost in #693) ===
+    {
+      const m = { customerId: 'C-MACT', accountType: 'Business Member', paidCadence: 'Monthly', paidUntil: '2099-01-01', activityLog: [] };
+      const h = T.membershipMetaHtml(m);
+      ok(/js-view-agreement/.test(h) && /Membership actions/.test(h) && /data-rec="C-MACT"/.test(h), 'membership-actions: the membership meta offers Membership actions → the agreements window');
+      ok(!/js-view-agreement/.test(T.membershipMetaHtml({ customerId: 'C-NOMEM', accountType: 'Business', activityLog: [] })), 'membership-actions: never offered to a non-member');
+      ok(/js-view-agreement/.test(T.membershipMetaHtml(Object.assign({}, m, { paidUntil: '2000-01-01', graceUntil: '2000-01-01' }))), 'membership-actions: still offered once the membership has lapsed (Cancel / Pay Cancellation stay reachable)');
+    }
+
     // === F3 — membership funnel 'Signed' is agreement-driven, never manual (spec §3.1) ===
     {
       const c = { customerId: 'C-SIGN', accountType: 'Business Member', membershipStage: 'Contacted', activityLog: [] };

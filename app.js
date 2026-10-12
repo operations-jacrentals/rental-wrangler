@@ -4288,7 +4288,14 @@ function membershipMetaHtml(c) {
   const activateBtn = ((!isMem || status === 'Past Due') && status !== 'Pending' && canMoney())
     ? `<div class="kv pillrow">${actionPill('commit', 'Activate Membership', { js: 'js-mem-activate', h: 26, data: { rec: c.customerId } })}<span class="anno">${c.paidCadence === 'Monthly' ? 'monthly' : 'annual'} dues paid by cash or check</span></div>`
     : '';
-  return `${stateBadge ? kvPills(stateBadge) : ''}${graceFlag}${paidUntil}${activated}${planBadges}${activateBtn}${membershipEconomicsHtml(c)}`;
+  // The agreements window (Cancel Membership · Pay Cancellation · Change plan · Print Agreement) lost
+  // its only opener when the funnel redesign (#693, 2026-07-17) dropped acctBtn from the funnel top
+  // row; this re-opens it from the membership state the office is already looking at. Same
+  // js-view-agreement handler; the actions inside stay canMoney()-gated.
+  const actionsBtn = /Member/.test(c.accountType || '')
+    ? `<div class="kv pillrow">${actionPill('commit', 'Membership actions', { js: 'js-view-agreement', h: 26, data: { rec: c.customerId } })}<span class="anno">cancel · change plan · agreement</span></div>`
+    : '';
+  return `${stateBadge ? kvPills(stateBadge) : ''}${graceFlag}${paidUntil}${activated}${planBadges}${activateBtn}${actionsBtn}${membershipEconomicsHtml(c)}`;
 }
 /* Lifecycle actions — re-homed into the agreements window (§3.7). MONEY-gate PRESERVED
    verbatim: Cancel / Pay-Cancellation are canMoney()-gated (same gate as the invoice
