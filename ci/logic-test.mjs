@@ -2191,6 +2191,46 @@ try {
       T.IDX.customer.delete('C-YRMEM'); T.DATA.customers.splice(T.DATA.customers.indexOf(y), 1);
     }
 
+    // === Change plan — a money-gated BILLING-PLAN-ONLY switch (Monthly ⇄ Yearly) ===
+    // paidCadence is membershipBillingCron's plan input (#835), so the switch rewrites THAT field
+    // and nothing else: the paid-through, the decline grace and the 12-month commitment never move.
+    {
+      const addDays = (iso, n) => new Date(Date.parse(iso) + n * 86400000).toISOString().slice(0, 10);
+      const commitEnd = T.addMonthsISO(addDays(T.TODAY_ISO, -30), 12);
+      const p = { customerId: 'C-PLANMEM', firstName: 'Plan', lastName: 'Member', name: 'Plan Member', company: '',
+        accountType: 'Non-Business Member', paidCadence: 'Monthly', paidUntil: addDays(T.TODAY_ISO, 20),
+        graceUntil: '', prepaid: false, autoRenew: true, commitmentStart: addDays(T.TODAY_ISO, -30), commitmentEnd: commitEnd,
+        membershipStage: 'Signed', activityLog: [] };
+      T.DATA.customers.push(p); T.IDX.customer.set('C-PLANMEM', p);
+      const html = T.membershipActionsHtml(p);
+      ok(/js-mem-plan"/.test(html) && /Change plan/.test(html) && /data-r="R17"/.test(html), 'change-plan: a member\'s lifecycle row offers Change plan as an R17 action');
+      ok(!/js-mem-plan-save/.test(html), 'change-plan: the inline chooser stays closed until the pill is tapped');
+      const panel = T.membershipActionsHtml(p, { planPick: 'Yearly' });
+      ok(/js-mem-plan-pick/.test(panel) && /Monthly · current/.test(panel) && /js-mem-plan-save/.test(panel) && /js-mem-plan-cancel/.test(panel), 'change-plan: the open chooser shows Monthly/Yearly with the current plan marked, plus Confirm and Cancel');
+      ok(/Changes what the nightly billing charges from the next cycle\. Paid-until date, invoices and past charges are not changed\./.test(panel), 'change-plan: the confirm copy says plainly what it does and does not change');
+      ok(/js-mem-plan"/.test(T.membershipActionsHtml(Object.assign({}, p, { accountType: 'Member Incomplete' }))), 'change-plan: offered to a Member Incomplete account too (every /Member/ status)');
+      ok(!/js-mem-plan"/.test(T.membershipActionsHtml(Object.assign({}, p, { accountType: 'Non-Business' }))), 'change-plan: never offered to a non-member account');
+      T.setRole('driver');   // staff tier — below money
+      ok(!/js-mem-plan"/.test(T.membershipActionsHtml(p)), 'change-plan: hidden below the money tier (canMoney gate)');
+      T.setRole('');
+      const before = { paidUntil: p.paidUntil, graceUntil: p.graceUntil, commitmentStart: p.commitmentStart, commitmentEnd: p.commitmentEnd, prepaid: p.prepaid, autoRenew: p.autoRenew };
+      const nInv = T.DATA.invoices.length;
+      ok(T.membershipChangePlan('C-PLANMEM', 'Yearly') === true && p.paidCadence === 'Yearly', `change-plan: Monthly → Yearly flips paidCadence (got ${p.paidCadence})`);
+      const last = (p.actions || [])[(p.actions || []).length - 1];
+      ok(last && last.text === 'Membership plan changed: Monthly → Yearly (billing plan only — paid-until date unchanged)', `change-plan: the action log records the old → new plan (got ${last && last.text})`);
+      ok(p.paidUntil === before.paidUntil && p.graceUntil === before.graceUntil && p.commitmentEnd === before.commitmentEnd && p.commitmentStart === before.commitmentStart, 'change-plan: paidUntil / graceUntil / commitment are untouched');
+      ok(p.prepaid === before.prepaid && p.autoRenew === before.autoRenew && T.DATA.invoices.length === nInv, 'change-plan: prepaid / autoRenew untouched and no invoice is created');
+      const nAct = p.actions.length;
+      ok(T.membershipChangePlan('C-PLANMEM', 'Yearly') === false && p.actions.length === nAct, 'change-plan: picking the current plan is a no-op (no log line)');
+      ok(T.membershipChangePlan('C-PLANMEM', 'Weekly') === false && p.paidCadence === 'Yearly', 'change-plan: only Monthly or Yearly is accepted');
+      const np = { customerId: 'C-PLANNONE', accountType: 'Business Member', activityLog: [] };
+      T.DATA.customers.push(np); T.IDX.customer.set('C-PLANNONE', np);
+      T.membershipChangePlan('C-PLANNONE', 'Monthly');
+      ok(np.paidCadence === 'Monthly' && /Membership plan changed: none → Monthly/.test(np.actions[np.actions.length - 1].text), 'change-plan: a member with no plan yet logs "none → Monthly"');
+      T.IDX.customer.delete('C-PLANMEM'); T.DATA.customers.splice(T.DATA.customers.indexOf(p), 1);
+      T.IDX.customer.delete('C-PLANNONE'); T.DATA.customers.splice(T.DATA.customers.indexOf(np), 1);
+    }
+
     // === F3 — membership funnel 'Signed' is agreement-driven, never manual (spec §3.1) ===
     {
       const c = { customerId: 'C-SIGN', accountType: 'Business Member', membershipStage: 'Contacted', activityLog: [] };
