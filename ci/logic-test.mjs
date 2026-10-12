@@ -120,13 +120,13 @@ try {
       const mc = { customerId: 'C-VMENU', accountType: 'Business', activityLog: [] };
       const mi = { invoiceId: 'VOIDMENU1', customerId: 'C-VMENU', rentalIds: [], amountPaid: 0, lineItems: [{ kind: 'custom', lid: 'VM1', ref: null, amount: 300 }] };
       T.DATA.customers.push(mc); T.IDX.customer.set('C-VMENU', mc); T.DATA.invoices.push(mi); T.IDX.invoice.set('VOIDMENU1', mi);
-      T.state.invVoidArm = null;
+      T.__state.invVoidArm = null;
       const m1 = T.invoiceStatMenu(mi, mc, true);
       ok(/js-void-arm/.test(m1) && !/js-void-invoice/.test(m1), 'void-menu: an open menu offers Void… (arm) and not the confirm yet');
-      T.state.invVoidArm = 'VOIDMENU1';
+      T.__state.invVoidArm = 'VOIDMENU1';
       const m2 = T.invoiceStatMenu(mi, mc, true);
       ok(/js-void-invoice/.test(m2) && /Confirm void/.test(m2), 'void-menu: once armed, the menu shows Confirm void wired to the existing void handler');
-      T.state.invVoidArm = null;
+      T.__state.invVoidArm = null;
       ok(!/js-void-/.test(T.invoiceStatMenu(Object.assign({}, mi, { amountPaid: 50 }), mc, true)), 'void-menu: never offered on an invoice with a payment (invoiceVoidable floor)');
       T.setRole('driver');
       ok(!/js-void-/.test(T.invoiceStatMenu(mi, mc, true)), 'void-menu: hidden below the money tier');
